@@ -36,6 +36,15 @@ reachability (asyncssh) and reports whether `sshfs` is available on the runtime.
 
 ## Status
 
-Scaffold. Interfaces, sshfs mount/unmount, SFTP browsing, and the bridge are in
-place with friendly errors when keys/sshfs are missing. End-to-end validation
-against 2222/2224 and known_hosts pinning are the next milestone.
+**Working, verified end-to-end against 2222 and 2224** (2026-10-28):
+
+- `sshfs` installed on the 2223 runtime; the server's key (`~/.ssh/id_ed25519`)
+  is authorized on both remote hosts.
+- Connections for `srv-2222` / `srv-2224` registered (keys encrypted in the vault).
+- Proven live: asyncssh reachability, SFTP folder browse, sshfs mount, the agent's
+  built-in Write tool landing a file on the remote host (confirmed by independent
+  `ssh cat`), and `mcp__remote__remote_bash` executing commands on the remote
+  (returned the remote hostname).
+
+Remaining hardening: pin `known_hosts` (currently `StrictHostKeyChecking=no` /
+`known_hosts=None`), and unmount stale sshfs mounts on a schedule.

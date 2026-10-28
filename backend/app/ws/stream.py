@@ -16,6 +16,7 @@ import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app.auth import COOKIE_NAME, AuthManager
 from app.services.session_service import SessionService
 
 router = APIRouter()
@@ -23,6 +24,15 @@ router = APIRouter()
 
 @router.websocket("/ws/chat/{sid}")
 async def chat_stream(websocket: WebSocket, sid: str) -> None:
+    # BaseHTTPMiddleware does not see WebSocket scopes, so the auth gate is
+    # enforced here explicitly: banned IPs and unauthenticated sockets are
+    # rejected at the handshake.
+    auth: AuthManager = websocket.app.state.auth
+    ip = auth.client_ip(websocket)  # type: ignore[arg-type]
+    if auth.is_banned(ip) or not auth.verify_token(websocket.cookies.get(COOKIE_NAME)):
+        await websocket.close(code=4401)
+        return
+
     await websocket.accept()
     svc: SessionService = websocket.app.state.session_service
 

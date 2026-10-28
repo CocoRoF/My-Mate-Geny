@@ -51,9 +51,28 @@ class RemoteSshConnector(WorkspaceConnector):
 
     # ---- helpers ----
 
+    def _conn_dir(self) -> str:
+        d = str(settings.mount_root_path / self._spec.connection_id)
+        os.makedirs(d, exist_ok=True)
+        return d
+
     def _mount_point(self, path: str) -> str:
         digest = hashlib.sha1(path.encode()).hexdigest()[:10]
-        return str(settings.mount_root_path / self._spec.connection_id / digest)
+        return os.path.join(self._conn_dir(), digest)
+
+    def _ensure_key_file(self) -> str:
+        """Write the decrypted private key to one 0600 file, reused by sshfs and
+        the bash bridge. Returns its path."""
+        if not self._spec.private_key_pem:
+            raise WorkspaceError("no SSH private key configured for this connection")
+        key_path = os.path.join(self._conn_dir(), "id_key")
+        pem = self._spec.private_key_pem
+        if not pem.endswith("\n"):
+            pem += "\n"
+        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(pem)
+        return key_path
 
     async def _asyncssh_connect(self):
         try:
@@ -87,15 +106,13 @@ class RemoteSshConnector(WorkspaceConnector):
 
         remote_path = path or self._spec.default_path
         mount_point = self._mount_point(remote_path)
-        if self._mounts.get(remote_path) and os.path.ismount(mount_point):
+        # Reuse an existing mount (persists across connector instances / turns).
+        if os.path.ismount(mount_point):
+            self._mounts[remote_path] = mount_point
             return mount_point
 
         os.makedirs(mount_point, exist_ok=True)
-        # Write key to a temp 0600 file for sshfs (which needs IdentityFile).
-        key_path = os.path.join(mount_point + ".key")
-        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as fh:
-            fh.write(self._spec.private_key_pem)
+        key_path = self._ensure_key_file()  # 0600, shared with the bash bridge
 
         target = f"{self._spec.username}@{self._spec.host}:{remote_path}"
         argv = [
@@ -160,6 +177,7 @@ class RemoteSshConnector(WorkspaceConnector):
     async def mcp_config(self, path: str) -> dict[str, Any] | None:
         """Attach the remote-bash MCP bridge so Bash runs on the remote host."""
         bridge = os.path.join(os.path.dirname(__file__), "mcp_remote_bridge.py")
+        key_path = self._ensure_key_file()
         return {
             "mcpServers": {
                 "remote": {
@@ -171,7 +189,7 @@ class RemoteSshConnector(WorkspaceConnector):
                         "HRH_SSH_PORT": str(self._spec.port),
                         "HRH_SSH_USER": self._spec.username,
                         "HRH_SSH_CWD": path or self._spec.default_path,
-                        # Key passed by path (0600) rather than inline env.
+                        "HRH_SSH_KEY_FILE": key_path,  # 0600, same key as sshfs
                     },
                 }
             }
