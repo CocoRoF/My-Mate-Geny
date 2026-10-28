@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useProviderStore } from "../../stores/providerStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import WorkspacePicker from "../workspaces/WorkspacePicker";
+import Icon from "../ui/Icon";
 
 export default function NewSessionPanel() {
   const providers = useProviderStore((s) => s.providers);
@@ -37,51 +38,77 @@ export default function NewSessionPanel() {
   };
 
   return (
-    <div className="max-w-xl mx-auto mt-10 p-5 bg-panel border border-border rounded-lg space-y-4">
-      <h2 className="text-lg font-medium">Start a new chat</h2>
+    <div className="h-full overflow-y-auto grid place-items-center p-6">
+      <div className="w-full max-w-lg card p-6 animate-fade-in">
+        <div className="flex items-center gap-2.5 mb-5">
+          <div className="grid place-items-center w-9 h-9 rounded-lg bg-gradient-to-br from-accent to-cyan shadow-glow">
+            <Icon name="plus" size={18} className="text-white" />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold">Start a new chat</h2>
+            <p className="text-xs text-content-faint">Pick an engine, a model, and where it runs.</p>
+          </div>
+        </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs text-gray-400">Provider</label>
-          <select
-            value={provider}
-            onChange={(e) => setProvider(e.target.value)}
-            className="w-full bg-black/40 border border-border rounded px-2 py-1.5 text-sm"
-          >
-            {providers.map((p) => (
-              <option key={p.provider} value={p.provider} disabled={!p.connected}>
-                {p.provider} {p.connected ? "" : "(not connected)"}
-              </option>
-            ))}
-          </select>
+        {/* Provider */}
+        <label className="text-[11px] font-medium uppercase tracking-wider text-content-faint">
+          Provider
+        </label>
+        <div className="grid grid-cols-2 gap-2 mt-1.5 mb-4">
+          {providers.map((p) => {
+            const sel = provider === p.provider;
+            return (
+              <button
+                key={p.provider}
+                onClick={() => p.connected && setProvider(p.provider)}
+                disabled={!p.connected}
+                className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition ${
+                  sel ? "border-accent/60 bg-accent-soft" : "border-border bg-surface/60 hover:border-border-strong"
+                } ${!p.connected ? "opacity-45 cursor-not-allowed" : ""}`}
+              >
+                <Icon name="cpu" size={18} className={sel ? "text-accent" : "text-content-faint"} />
+                <div className="min-w-0">
+                  <div className="text-sm font-medium capitalize">{p.provider}</div>
+                  <div className={`text-[10px] ${p.connected ? "text-success" : "text-content-faint"}`}>
+                    {p.connected ? "connected" : "not connected"}
+                  </div>
+                </div>
+                {sel && <Icon name="check" size={15} className="ml-auto text-accent" />}
+              </button>
+            );
+          })}
         </div>
-        <div>
-          <label className="text-xs text-gray-400">Model</label>
-          <input
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder="sonnet"
-            className="w-full bg-black/40 border border-border rounded px-2 py-1.5 text-sm"
-          />
-        </div>
+
+        {/* Model */}
+        <label className="text-[11px] font-medium uppercase tracking-wider text-content-faint">
+          Model
+        </label>
+        <input
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          placeholder="sonnet"
+          className="field mt-1.5 mb-4 font-mono"
+        />
+
+        {/* Workspace */}
+        <WorkspacePicker
+          connectionId={connectionId}
+          setConnectionId={setConnectionId}
+          path={path}
+          setPath={setPath}
+        />
+
+        {error && (
+          <p className="mt-3 text-xs text-danger flex items-center gap-1.5">
+            <Icon name="x" size={13} /> {error}
+          </p>
+        )}
+
+        <button onClick={start} disabled={busy} className="btn-primary w-full mt-5">
+          {busy ? <Icon name="spinner" size={16} spin /> : <Icon name="bolt" size={16} />}
+          {busy ? "Starting…" : "Start chat"}
+        </button>
       </div>
-
-      <WorkspacePicker
-        connectionId={connectionId}
-        setConnectionId={setConnectionId}
-        path={path}
-        setPath={setPath}
-      />
-
-      {error && <p className="text-xs text-red-400">{error}</p>}
-
-      <button
-        onClick={start}
-        disabled={busy}
-        className="w-full py-2 rounded bg-accent text-black font-medium disabled:opacity-50"
-      >
-        {busy ? "Starting…" : "Start chat"}
-      </button>
     </div>
   );
 }

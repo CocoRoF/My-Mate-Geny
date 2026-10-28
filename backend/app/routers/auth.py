@@ -19,30 +19,47 @@ class LoginBody(BaseModel):
 _LOGIN_HTML = """<!doctype html>
 <html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a0c10">
 <title>hr·harnessor — 로그인</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  body { margin:0; height:100vh; display:flex; align-items:center; justify-content:center;
-    background:#0f1115; color:#e5e7eb; font-family:ui-sans-serif,system-ui,-apple-system,sans-serif; }
-  .card { width:320px; background:#171a21; border:1px solid #272b35; border-radius:12px; padding:28px; }
-  h1 { font-size:18px; margin:0 0 4px; }
-  p { color:#9ca3af; font-size:12px; margin:0 0 20px; }
-  label { font-size:12px; color:#9ca3af; }
-  input { width:100%; margin:4px 0 14px; padding:10px; background:#0f1115; border:1px solid #272b35;
-    border-radius:8px; color:#e5e7eb; font-size:14px; }
-  input:focus { outline:none; border-color:#6aa8ff; }
-  button { width:100%; padding:10px; background:#6aa8ff; color:#000; border:0; border-radius:8px;
-    font-weight:600; cursor:pointer; font-size:14px; }
-  button:disabled { opacity:.5; }
-  .err { color:#f87171; font-size:12px; min-height:16px; margin-top:8px; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+    font-family:Inter,ui-sans-serif,system-ui,sans-serif; color:#e6e9f0;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, #15213a 0%, transparent 55%),
+      radial-gradient(900px 500px at -10% 110%, #1a1430 0%, transparent 50%), #0a0c10; }
+  .card { width:340px; background:rgba(22,26,34,.72); border:1px solid #232936; border-radius:16px;
+    padding:30px; box-shadow:0 20px 60px -20px rgba(0,0,0,.7); backdrop-filter:blur(12px); }
+  .brand { display:flex; align-items:center; gap:10px; margin-bottom:22px; }
+  .logo { width:38px; height:38px; border-radius:11px; display:grid; place-items:center;
+    background:linear-gradient(135deg,#6e8bff,#22d3ee); box-shadow:0 0 0 1px #6e8bff40,0 8px 32px -8px #6e8bff80; }
+  .logo svg { stroke:#fff; }
+  h1 { font-size:16px; font-weight:600; margin:0; letter-spacing:-.01em; }
+  .sub { color:#5e6676; font-size:11px; margin-top:1px; }
+  .grad { background:linear-gradient(135deg,#8098ff,#22d3ee); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  label { font-size:11px; color:#9aa3b4; text-transform:uppercase; letter-spacing:.06em; font-weight:500; }
+  input { width:100%; margin:6px 0 14px; padding:11px 12px; background:rgba(15,18,24,.8); border:1px solid #232936;
+    border-radius:10px; color:#e6e9f0; font-size:14px; font-family:inherit; transition:.15s; }
+  input:focus { outline:none; border-color:rgba(110,139,255,.6); box-shadow:0 0 0 3px rgba(110,139,255,.15); }
+  button { width:100%; padding:11px; color:#fff; border:0; border-radius:10px; font-weight:600; cursor:pointer;
+    font-size:14px; font-family:inherit; background:linear-gradient(135deg,#6e8bff,#5b7cff);
+    box-shadow:0 6px 20px -8px #6e8bffaa; transition:.15s; }
+  button:hover:not(:disabled){ background:linear-gradient(135deg,#8098ff,#6e8bff); }
+  button:disabled { opacity:.5; cursor:default; }
+  .err { color:#f87171; font-size:12px; min-height:16px; margin-top:10px; }
 </style></head>
 <body>
   <form class="card" id="f">
-    <h1>hr<span style="color:#6aa8ff">·</span>harnessor</h1>
-    <p>관리자 로그인</p>
+    <div class="brand">
+      <div class="logo"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg></div>
+      <div><h1>hr<span class="grad">·</span>harnessor</h1><div class="sub">agent console</div></div>
+    </div>
     <label>ID</label>
-    <input id="u" autocomplete="username" autofocus>
+    <input id="u" autocomplete="username" value="admin" autofocus>
     <label>Password</label>
     <input id="p" type="password" autocomplete="current-password">
     <button id="b" type="submit">로그인</button>

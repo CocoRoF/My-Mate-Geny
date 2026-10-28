@@ -1,61 +1,94 @@
 import { useState } from "react";
-import type { Turn } from "../../stores/chatStore";
+import type { Turn, ToolActivity } from "../../stores/chatStore";
+import Icon from "../ui/Icon";
+import Markdown from "../ui/Markdown";
 
-function ToolRow({
-  name,
-  input,
-  output,
-  isError,
-}: {
-  name: string;
-  input?: unknown;
-  output?: string;
-  isError?: boolean;
-}) {
+function ToolCard({ tool }: { tool: ToolActivity }) {
   const [open, setOpen] = useState(false);
+  const remote = tool.name.startsWith("mcp__remote__");
+  const label = tool.name.replace("mcp__remote__", "").replace("mcp__", "");
   return (
-    <div className="my-1 text-xs border border-border rounded bg-black/30">
+    <div className="my-1.5 overflow-hidden rounded-lg border border-border bg-surface/60">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-2 py-1 text-left"
+        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left hover:bg-surface-3/50"
       >
-        <span className="text-cyan-400">⚙ {name}</span>
-        {isError && <span className="text-red-400">error</span>}
-        <span className="ml-auto text-gray-500">{open ? "−" : "+"}</span>
+        <Icon name={remote ? "server" : "terminal"} size={13} className="text-cyan" />
+        <span className="font-mono text-[12px] text-content/90">{label}</span>
+        {remote && <span className="pill bg-cyan/10 text-cyan">remote</span>}
+        {tool.isError && <span className="pill bg-danger/15 text-danger">error</span>}
+        {!tool.output && !tool.isError && (
+          <Icon name="spinner" size={12} spin className="text-content-faint" />
+        )}
+        <Icon
+          name="chevron"
+          size={13}
+          className={`ml-auto text-content-faint transition-transform ${open ? "rotate-90" : ""}`}
+        />
       </button>
       {open && (
-        <pre className="px-2 py-1 overflow-x-auto text-gray-400 border-t border-border whitespace-pre-wrap">
-          {JSON.stringify(input, null, 2)}
-          {output ? `\n\n→ ${output.slice(0, 2000)}` : ""}
-        </pre>
+        <div className="border-t border-border px-2.5 py-2 space-y-2">
+          {tool.input !== undefined && (
+            <pre className="overflow-x-auto rounded bg-bg/60 p-2 text-[11px] text-content-dim font-mono">
+              {JSON.stringify(tool.input, null, 2)}
+            </pre>
+          )}
+          {tool.output && (
+            <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-bg/60 p-2 text-[11px] text-content-dim font-mono max-h-64">
+              {tool.output.slice(0, 4000)}
+            </pre>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
 export default function MessageItem({ turn }: { turn: Turn }) {
-  const isUser = turn.role === "user";
+  if (turn.role === "user") {
+    return (
+      <div className="flex justify-end animate-fade-in">
+        <div className="max-w-[78%] rounded-2xl rounded-br-md bg-accent-soft border border-accent/25 px-3.5 py-2 text-sm text-content whitespace-pre-wrap">
+          {turn.text}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-      <div
-        className={`max-w-[80%] rounded-lg px-3 py-2 ${
-          isUser ? "bg-accent/20" : "bg-panel border border-border"
-        }`}
-      >
-        {!isUser && turn.thinking && (
-          <details className="mb-1 text-xs text-gray-500">
-            <summary className="cursor-pointer">thinking…</summary>
-            <pre className="whitespace-pre-wrap mt-1">{turn.thinking}</pre>
+    <div className="flex gap-3 animate-fade-in">
+      <div className="mt-0.5 grid place-items-center w-7 h-7 shrink-0 rounded-lg bg-gradient-to-br from-accent to-cyan shadow-glow">
+        <Icon name="bolt" size={14} className="text-white" />
+      </div>
+      <div className="min-w-0 flex-1 space-y-1">
+        {turn.thinking && (
+          <details className="text-xs text-content-faint">
+            <summary className="cursor-pointer select-none hover:text-content-dim">thinking</summary>
+            <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px]">{turn.thinking}</pre>
           </details>
         )}
-        {!isUser && turn.tools.map((t) => <ToolRow key={t.id} {...t} />)}
-        <div className="whitespace-pre-wrap text-sm leading-relaxed">
-          {turn.text}
-          {!turn.complete && <span className="animate-pulse">▋</span>}
-        </div>
-        {!isUser && turn.complete && turn.costUsd ? (
-          <div className="mt-1 text-[10px] text-gray-500">
-            {turn.model} · ${turn.costUsd.toFixed(4)}
+        {turn.tools.map((t) => (
+          <ToolCard key={t.id} tool={t} />
+        ))}
+        {turn.text ? (
+          <Markdown>{turn.text}</Markdown>
+        ) : (
+          !turn.complete &&
+          turn.tools.length === 0 && (
+            <div className="flex items-center gap-1.5 text-content-faint text-sm">
+              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" />
+              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot [animation-delay:0.2s]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot [animation-delay:0.4s]" />
+            </div>
+          )
+        )}
+        {!turn.complete && turn.text && (
+          <span className="inline-block w-1.5 h-4 translate-y-0.5 bg-accent animate-pulse-dot" />
+        )}
+        {turn.complete && (turn.costUsd || turn.model) ? (
+          <div className="flex items-center gap-2 pt-0.5 text-[10px] text-content-faint">
+            {turn.model && <span className="font-mono">{turn.model}</span>}
+            {turn.costUsd ? <span>· ${turn.costUsd.toFixed(4)}</span> : null}
           </div>
         ) : null}
       </div>

@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import Header from "./components/layout/Header";
 import Sidebar from "./components/layout/Sidebar";
 import ChatView from "./components/chat/ChatView";
 import ProvidersView from "./components/providers/ProvidersView";
@@ -22,16 +21,13 @@ export default function App() {
   }, [loadProviders, loadConnections, loadSessions]);
 
   return (
-    <div className="h-screen flex flex-col bg-bg text-gray-200">
-      <Header />
-      <div className="flex-1 flex overflow-hidden">
-        <Sidebar />
-        <main className="flex-1 overflow-hidden">
-          {view === "chat" && <ChatView />}
-          {view === "providers" && <ProvidersView />}
-          {view === "connections" && <ConnectionsView />}
-        </main>
-      </div>
+    <div className="h-screen flex overflow-hidden text-content">
+      <Sidebar />
+      <main className="flex-1 min-w-0 overflow-hidden">
+        {view === "chat" && <ChatView />}
+        {view === "providers" && <ProvidersView />}
+        {view === "connections" && <ConnectionsView />}
+      </main>
     </div>
   );
 }

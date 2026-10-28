@@ -3,6 +3,7 @@ import { useChatSocket } from "../../hooks/useChatSocket";
 import MessageList from "./MessageList";
 import InputBar from "./InputBar";
 import NewSessionPanel from "./NewSessionPanel";
+import Icon from "../ui/Icon";
 
 export default function ChatView() {
   const activeId = useSessionStore((s) => s.activeId);
@@ -15,13 +16,17 @@ export default function ChatView() {
   return (
     <div className="h-full flex flex-col">
       {active && (
-        <div className="px-4 py-2 border-b border-border text-xs text-gray-400 flex gap-3">
-          <span className="text-gray-200">{active.title}</span>
-          <span className="px-1.5 rounded bg-black/40">{active.provider}</span>
-          {active.model && <span>{active.model}</span>}
-          <span className="font-mono truncate">
-            {active.connection_id ? "🌐 " : "💻 "}
-            {active.workspace_path}
+        <div className="flex items-center gap-2 px-5 h-14 border-b border-border/70 bg-surface/40 backdrop-blur-sm">
+          <Icon
+            name={active.connection_id ? "server" : "cpu"}
+            size={16}
+            className={active.connection_id ? "text-cyan" : "text-accent"}
+          />
+          <span className="text-sm font-medium text-content truncate max-w-[40%]">{active.title}</span>
+          <span className="pill bg-surface-3 text-content-dim">{active.provider}</span>
+          {active.model && <span className="pill bg-surface-3 text-content-dim">{active.model}</span>}
+          <span className="ml-auto flex items-center gap-1.5 text-[11px] text-content-faint font-mono truncate">
+            {active.connection_id ? "remote" : "local"} · {active.workspace_path}
           </span>
         </div>
       )}
