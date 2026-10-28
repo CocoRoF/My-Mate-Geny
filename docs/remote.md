@@ -1,17 +1,22 @@
 # Remote workspaces (2222 / 2224)
 
 Goal: the runtime stays on **2223**, but an agent can operate a folder on a
-remote SSH host. Two moving parts (`app/workspaces/remote_ssh.py`):
+remote SSH host. Design (`app/workspaces/remote_ssh.py` + `mcp_remote_bridge.py`):
 
-1. **Files — sshfs mount.** `resolve_cwd(path)` mounts the remote folder onto
-   2223 at `<MOUNT_ROOT>/<connection_id>/<hash>` and returns that path as the
-   agent's `cwd`. The provider CLI's built-in Read/Write/Edit/Glob/Grep then
-   operate on remote files transparently.
-2. **Commands — remote-bash MCP bridge.** `mcp_config(path)` attaches
-   `mcp_remote_bridge.py` (a stdio MCP server) so the agent's shell commands run
-   on the remote host over SSH instead of on 2223.
+- The agent starts in a small **local scratch dir** (`resolve_cwd`) containing a
+  generated `CLAUDE.md` that tells it the remote target and to use the remote
+  tools. It never cd's into the remote filesystem.
+- All remote I/O goes through an **SSH-backed MCP bridge** (`mcp_config` →
+  `mcp_remote_bridge.py`, a stdio MCP server) exposing:
+  `remote_bash` (run a command), `remote_read`, `remote_write`, `remote_list`.
+  Paths resolve against the chosen remote workspace path; transport is the
+  system `ssh` with the connection's key.
 
-Browsing (`list_dir`) uses SFTP directly — no mount needed to pick a folder.
+This replaced an earlier sshfs-mount approach: sshfs/fuse is brittle inside
+containers (mount-namespace visibility), while the MCP-tools approach is
+dependency-free and works identically on host and in Docker.
+
+Browsing (`list_dir`) uses SFTP directly (asyncssh) — no mount needed.
 
 ## Connections
 
@@ -27,24 +32,20 @@ The private key is stored **encrypted in the vault**; the public connection
 record only carries `has_key: true`. `GET /api/connections/{id}/status` probes
 reachability (asyncssh) and reports whether `sshfs` is available on the runtime.
 
-## Requirements on the runtime host
+## Requirements
 
-- `sshfs` + `fuse3` (the backend Docker image installs these; for host runs:
-  `apt-get install sshfs`).
-- In Docker, the backend needs `cap_add: SYS_ADMIN`, `/dev/fuse`, and
-  `apparmor:unconfined` to mount — see `docker-compose.yml`.
+- Only an SSH key authorized on the remote host. No sshfs/fuse needed.
+- The runtime's key (`~/.ssh/id_ed25519`) is authorized on 2222 and 2224.
 
 ## Status
 
-**Working, verified end-to-end against 2222 and 2224** (2026-10-28):
+**Working, verified end-to-end against 2222/2224 in the Docker deployment** (2026-10-28):
 
-- `sshfs` installed on the 2223 runtime; the server's key (`~/.ssh/id_ed25519`)
-  is authorized on both remote hosts.
-- Connections for `srv-2222` / `srv-2224` registered (keys encrypted in the vault).
-- Proven live: asyncssh reachability, SFTP folder browse, sshfs mount, the agent's
-  built-in Write tool landing a file on the remote host (confirmed by independent
-  `ssh cat`), and `mcp__remote__remote_bash` executing commands on the remote
-  (returned the remote hostname).
+- Connections `srv-2222` / `srv-2224` registered (keys encrypted in the vault).
+- Proven live over https://agent.hrletsgo.me: asyncssh reachability, SFTP browse,
+  and an agent turn that used `remote_bash` (returned the remote hostname
+  `my-server`), `remote_write` + `remote_read` (file round-trip,
+  confirmed by independent `ssh cat`).
 
 Remaining hardening: pin `known_hosts` (currently `StrictHostKeyChecking=no` /
-`known_hosts=None`), and unmount stale sshfs mounts on a schedule.
+`known_hosts=None`); add `remote_glob`/`remote_grep` convenience tools.

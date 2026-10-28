@@ -1,0 +1,53 @@
+# Production deployment for agent.hrletsgo.me.
+# Daemon-managed (restart: unless-stopped) so it survives logout and reboots —
+# the only reliably-persistent mechanism on this host. Reuses the host's
+# existing vault/session keys and SQLite DB so registered connections/sessions
+# carry over from the earlier host-run deployment.
+name: hr-harnessor
+
+services:
+  backend:
+    build:
+      context: ../backend
+    # Run as hrjang (uid 1000), NOT root: the Claude CLI refuses permissive
+    # modes under root. HOME=/home/hrjang means ~/.claude, ~/.claude.json,
+    # ~/.codex, ~/.ssh, ~/.hr-harnessor and the DB are all present via the
+    # /home mount at their real host paths — identical to the host setup.
+    user: "1000:1000"
+    env_file:
+      - ../backend/.env          # AUTH_USERNAME / AUTH_PASSWORD
+    environment:
+      - HOME=/home/hrjang
+      - HOST=0.0.0.0
+      - PORT=8080
+      - CORS_ORIGINS=https://agent.hrletsgo.me
+      - COOKIE_SECURE=true
+      - DB_PATH=/home/hr-harnessor/backend/data/harnessor.db
+      - MOUNT_ROOT=/home/hrjang/.hr-harnessor/mounts
+      - STATIC_DIR=/app/static
+      - CLAUDE_BINARY=claude
+      - CODEX_BINARY=codex
+    volumes:
+      - /home:/home                                      # real host paths: auth, keys, DB, workspaces
+      - /home/hr-harnessor/backend/app:/app/app:ro       # app code (so edits apply on restart, no rebuild)
+      - /home/hr-harnessor/frontend/dist:/app/static:ro  # built SPA
+      - /etc/passwd:/etc/passwd:ro                        # so uid 1000 resolves to a name
+      - /etc/group:/etc/group:ro
+    # No fuse/SYS_ADMIN needed: remote workspaces operate over SSH-backed MCP
+    # tools (remote_bash/read/write/list), not sshfs mounts.
+    restart: unless-stopped
+    networks: [internal]
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    user: "1000:1000"          # match the owner (uid 1000) of the 0400 creds file
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.docker.yml run
+    volumes:
+      - ./cloudflared:/etc/cloudflared:ro
+    depends_on: [backend]
+    restart: unless-stopped
+    networks: [internal]
+
+networks:
+  internal:
+    driver: bridge

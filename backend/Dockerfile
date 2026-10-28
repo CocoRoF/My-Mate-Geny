@@ -14,15 +14,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Provider CLIs. Claude Code is wired; codex is optional (uncomment when used).
-RUN npm install -g @anthropic-ai/claude-code
-# RUN npm install -g @openai/codex
+# Provider CLIs. Both are wired; auth is mounted in at runtime (~/.claude, ~/.codex).
+RUN npm install -g @anthropic-ai/claude-code @openai/codex
 
 RUN pip install --no-cache-dir uv
 COPY pyproject.toml /app/
-RUN uv pip install --system --no-cache .
-
 COPY app/ /app/app/
+RUN uv pip install --system --no-cache .
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

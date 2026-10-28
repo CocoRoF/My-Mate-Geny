@@ -24,7 +24,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
-import shutil
 from dataclasses import dataclass
 from typing import Any
 
@@ -95,43 +94,36 @@ class RemoteSshConnector(WorkspaceConnector):
     # ---- contract ----
 
     async def resolve_cwd(self, path: str) -> str:
-        """Mount the remote folder via sshfs and return the local mount point."""
-        if shutil.which("sshfs") is None:
-            raise WorkspaceError(
-                "sshfs not available on the runtime host — install it "
-                "(apt-get install sshfs) to use remote workspaces"
-            )
+        """Return a small LOCAL scratch dir for the agent to start in.
+
+        The agent never cd's into the remote filesystem (sshfs-in-container is
+        brittle). Instead all remote I/O goes through the remote_* MCP tools
+        (see :meth:`mcp_config`). A CLAUDE.md in the scratch dir tells the agent
+        the remote target and to use those tools.
+        """
         if not self._spec.private_key_pem:
             raise WorkspaceError("no SSH private key configured for this connection")
+        self._ensure_key_file()  # 0600, shared with the bridge
 
         remote_path = path or self._spec.default_path
-        mount_point = self._mount_point(remote_path)
-        # Reuse an existing mount (persists across connector instances / turns).
-        if os.path.ismount(mount_point):
-            self._mounts[remote_path] = mount_point
-            return mount_point
-
-        os.makedirs(mount_point, exist_ok=True)
-        key_path = self._ensure_key_file()  # 0600, shared with the bash bridge
-
-        target = f"{self._spec.username}@{self._spec.host}:{remote_path}"
-        argv = [
-            "sshfs",
-            target,
-            mount_point,
-            "-p",
-            str(self._spec.port),
-            "-o",
-            f"IdentityFile={key_path},StrictHostKeyChecking=no,reconnect",
-        ]
-        proc = await asyncio.create_subprocess_exec(
-            *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        scratch = os.path.join(self._conn_dir(), "scratch_" + hashlib.sha1(remote_path.encode()).hexdigest()[:8])
+        os.makedirs(scratch, exist_ok=True)
+        guide = (
+            f"# Remote session\n\n"
+            f"This is a LOCAL scratch directory. The real workspace is on a remote host:\n\n"
+            f"- Host: `{self._spec.username}@{self._spec.host}:{self._spec.port}`\n"
+            f"- Remote path: `{remote_path}`\n\n"
+            f"Operate the remote host ONLY through the `remote_*` MCP tools "
+            f"(`remote_bash`, `remote_read`, `remote_write`, `remote_list`). "
+            f"Do NOT use your built-in file/Bash tools for the task — they act on "
+            f"this local scratch dir, not the remote host.\n"
         )
-        _, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            raise WorkspaceError(f"sshfs mount failed: {stderr.decode(errors='replace')[:500]}")
-        self._mounts[remote_path] = mount_point
-        return mount_point
+        try:
+            with open(os.path.join(scratch, "CLAUDE.md"), "w") as fh:
+                fh.write(guide)
+        except OSError:
+            pass
+        return scratch
 
     async def list_dir(self, path: str) -> list[DirEntry]:
         """List a remote directory over SFTP (no mount needed for browsing)."""
@@ -161,7 +153,6 @@ class RemoteSshConnector(WorkspaceConnector):
         info: dict[str, Any] = {
             "kind": self.kind,
             "host": f"{self._spec.username}@{self._spec.host}:{self._spec.port}",
-            "sshfs_available": shutil.which("sshfs") is not None,
             "has_key": bool(self._spec.private_key_pem),
         }
         try:
@@ -176,15 +167,21 @@ class RemoteSshConnector(WorkspaceConnector):
 
     async def mcp_config(self, path: str) -> dict[str, Any] | None:
         """Attach the remote-bash MCP bridge so Bash runs on the remote host."""
+        import sys
+
         bridge = os.path.join(os.path.dirname(__file__), "mcp_remote_bridge.py")
         key_path = self._ensure_key_file()
         return {
             "mcpServers": {
                 "remote": {
                     "type": "stdio",
-                    "command": "python3",
+                    # Absolute interpreter so the spawn never depends on the
+                    # child PATH; PATH is still passed so the bridge finds `ssh`.
+                    "command": sys.executable,
                     "args": [bridge],
                     "env": {
+                        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                        "HOME": os.environ.get("HOME", "/root"),
                         "HRH_SSH_HOST": self._spec.host,
                         "HRH_SSH_PORT": str(self._spec.port),
                         "HRH_SSH_USER": self._spec.username,

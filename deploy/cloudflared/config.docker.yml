@@ -1,0 +1,9 @@
+# Tunnel config used by the cloudflared container (credentials + routing are
+# resolved inside the container at /etc/cloudflared).
+tunnel: <tunnel-id>
+credentials-file: /etc/cloudflared/<tunnel-id>.json
+
+ingress:
+  - hostname: agent.hrletsgo.me
+    service: http://backend:8080
+  - service: http_status:404
