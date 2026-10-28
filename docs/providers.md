@@ -34,18 +34,28 @@ claude --print --verbose
 Verified E2E: a turn runs `ls` via the Bash tool and returns a result with
 `usage`, `cost_usd`, and a resumable `cli_session_id`.
 
-## Codex — `app/providers/codex.py` (stub)
+## Codex — `app/providers/codex.py` (installed & wired)
 
-Implements the contract so Codex is selectable today; `run_turn_stream` yields
-one actionable `error` until the CLI is wired. To finish:
+`codex` CLI 0.165 is installed. The provider spawns:
 
-```bash
-npm install -g @openai/codex
-codex login            # ChatGPT OAuth, or set OPENAI_API_KEY
+```
+codex exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox
+  -C <cwd> [-m <model>] "<latest user message>"
+# resume:  codex exec resume <thread_id> --json ...
 ```
 
-Then map `codex exec --json` (or the `codex proto` stdin/stdout protocol) events
-to the normalized schema in a dedicated accumulator — see the TODO in the file.
+and normalizes its JSONL events (`_codex_json.py`): `thread.started` →
+resumable id, `item.*` (agent_message → text, reasoning → thinking,
+command_execution → tool.use/result), `turn.completed` → usage, `error` → error.
+
+**Auth needed to run** (one of):
+```bash
+codex login                 # ChatGPT OAuth, stored under ~/.codex
+# or export OPENAI_API_KEY=... (or save it via the Providers tab)
+```
+Verified: unauthenticated turns stream a clean `error` event (no hang); auth
+status reports installed/not-logged-in correctly. The `item.*` field names
+should be reconfirmed on the first authenticated run (the parser is defensive).
 
 ## Adding a provider
 

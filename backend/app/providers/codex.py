@@ -1,20 +1,13 @@
-"""Codex (OpenAI CLI) provider — interface stub.
+"""Codex (OpenAI CLI) provider.
 
-The ``codex`` CLI is not installed on this host yet. This class implements the
-:class:`Provider` contract so the rest of the system (sessions, routing, UI)
-can treat Codex as a first-class provider today; ``run_turn_stream`` yields a
-single actionable ``error`` event until the CLI is wired.
+Spawns ``codex exec --json`` and normalizes its JSONL event stream (see
+:mod:`app.providers._codex_json`). Non-interactive automation uses
+``--dangerously-bypass-approvals-and-sandbox`` because the harness is the
+sandbox boundary (same spirit as the Claude provider's permission allow-list).
 
-TODO (when codex is available):
-  * Install:  npm i -g @openai/codex   (binary name: ``codex``)
-  * Non-interactive run:  ``codex exec --json "<prompt>"`` streams JSONL events,
-    OR the richer ``codex proto`` stdin/stdout protocol. Map its events to the
-    same normalized schema in a dedicated accumulator (mirror
-    ``_stream_json.StreamJsonAccumulator``): message deltas -> text.delta,
-    tool/exec calls -> tool.use/tool.result, final -> turn.complete.
-  * Auth: ``codex login`` (ChatGPT OAuth) or OPENAI_API_KEY env. Report it in
-    :meth:`auth_status` like the Claude provider does for ~/.claude.
-  * cwd = workspace path; remote workspaces get the same sshfs-mount treatment.
+Auth: ``codex login`` (ChatGPT OAuth, stored under ``~/.codex``) or an
+``OPENAI_API_KEY`` passed through. Execution requires one of these — the
+provider surfaces a clear error otherwise.
 """
 
 from __future__ import annotations
@@ -24,7 +17,12 @@ import shutil
 from typing import AsyncIterator
 
 from app.config import settings
+from app.providers._cli_runtime import CLIProcessRunner
+from app.providers._codex_json import CodexJsonAccumulator
 from app.providers.base import AuthStatus, Provider, ProviderEvent, TurnRequest
+
+# Model aliases that belong to Claude — ignore them for Codex (use its default).
+_CLAUDE_ALIASES = {"", "sonnet", "opus", "haiku"}
 
 
 class CodexProvider(Provider):
@@ -48,28 +46,83 @@ class CodexProvider(Provider):
             return AuthStatus(
                 provider=self.name, connected=True, auth_mode="api_key", detail="API key configured"
             )
-        codex_home = os.path.expanduser("~/.codex")
-        has_auth = os.path.exists(os.path.join(codex_home, "auth.json"))
+        auth_file = os.path.expanduser("~/.codex/auth.json")
+        has_auth = os.path.exists(auth_file)
         return AuthStatus(
             provider=self.name,
             connected=has_auth,
             auth_mode="oauth",
-            detail="codex login detected" if has_auth else "run `codex login`",
+            detail="codex login detected" if has_auth else "run `codex login` (or set an API key)",
         )
 
+    def _build_argv(self, req: TurnRequest) -> list[str]:
+        argv = [
+            "exec",
+            "--json",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "-C",
+            req.cwd,
+        ]
+        if req.model and req.model not in _CLAUDE_ALIASES:
+            argv += ["-m", req.model]
+        # Resume a prior thread when we have one; otherwise start fresh.
+        if req.cli_session_id:
+            argv = ["exec", "resume", req.cli_session_id, "--json",
+                    "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox",
+                    "-C", req.cwd]
+            if req.model and req.model not in _CLAUDE_ALIASES:
+                argv += ["-m", req.model]
+        # Latest user message as the prompt (positional).
+        last_user = next(
+            (m["content"] for m in reversed(req.messages) if m.get("role") == "user"), ""
+        )
+        argv.append(last_user)
+        return argv
+
     async def run_turn_stream(self, req: TurnRequest) -> AsyncIterator[ProviderEvent]:
+        env_extras = dict(req.extra_env)
+        if req.api_key:
+            env_extras["OPENAI_API_KEY"] = req.api_key
+
+        runner = CLIProcessRunner(
+            binary=self._binary,
+            cwd=req.cwd,
+            env_extras=env_extras,
+            timeout_s=req.timeout_s or settings.turn_timeout_s,
+        )
+        accum = CodexJsonAccumulator()
+
         yield ProviderEvent(
             type="session.start",
             data={"provider": self.name, "model": req.model or "default", "workspace": req.cwd},
         )
-        yield ProviderEvent(
-            type="error",
-            data={
-                "code": "exec.cli.not_implemented",
-                "message": (
-                    "Codex provider is not wired yet. Install the codex CLI "
-                    "(npm i -g @openai/codex) and implement run_turn_stream — "
-                    "see app/providers/codex.py TODO."
-                ),
-            },
-        )
+
+        saw_error = False
+        try:
+            async for line in runner.stream(self._build_argv(req), stdin=b""):
+                for ev in accum.feed_line(line):
+                    if ev.type == "error":
+                        saw_error = True
+                    yield ev
+        except TimeoutError:
+            yield ProviderEvent(
+                type="error", data={"code": "exec.cli.timeout", "message": "codex turn timed out"}
+            )
+            return
+        except FileNotFoundError:
+            yield ProviderEvent(
+                type="error",
+                data={"code": "exec.cli.binary_not_found", "message": f"codex not found: {self._binary}"},
+            )
+            return
+
+        result = runner.last_result
+        if result is not None and result.returncode != 0 and not saw_error:
+            yield ProviderEvent(
+                type="error",
+                data={"code": "exec.cli.exited", "message": (result.stderr or "codex exited non-zero")[:2000]},
+            )
+            return
+        if not saw_error:
+            yield accum.terminal(req.cli_session_id)
