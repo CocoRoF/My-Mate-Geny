@@ -10,11 +10,15 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app import __version__
+from app.auth import AuthManager, AuthMiddleware
 from app.config import settings
 from app.db import Database
 from app.routers import (
+    auth as auth_router,
     config as config_router,
     connections,
     execute,
@@ -38,6 +42,7 @@ async def lifespan(app: FastAPI):
     db.bootstrap()
     vault = SecretVault(db)
 
+    app.state.auth = AuthManager(db)
     provider_service = ProviderService(db, vault)
     connection_service = ConnectionService(db, vault)
     workspace_service = WorkspaceService(connection_service)
@@ -57,6 +62,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="hr-harnessor", version=__version__, lifespan=lifespan)
 
+# Auth gate runs first (added last = outermost). CORS added after so it wraps.
+app.add_middleware(AuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -66,6 +73,7 @@ app.add_middleware(
 )
 
 for r in (
+    auth_router.router,
     health.router,
     config_router.router,
     providers.router,
@@ -78,6 +86,15 @@ for r in (
     app.include_router(r)
 
 app.include_router(stream.router)
+
+# Serve the built frontend (single origin => the auth gate covers the UI too).
+_static = settings.static_path
+if _static is not None:
+    @app.get("/")
+    async def _index() -> FileResponse:
+        return FileResponse(_static / "index.html")
+
+    app.mount("/", StaticFiles(directory=str(_static), html=True), name="static")
 
 
 def main() -> None:  # pragma: no cover - manual entry

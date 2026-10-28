@@ -48,6 +48,22 @@ class Settings(BaseSettings):
     # Single agent turn wall-clock timeout (seconds)
     turn_timeout_s: float = 600.0
 
+    # ---- auth ----
+    # Login credentials. Password MUST be provided via env (never committed).
+    auth_username: str = "admin"
+    auth_password: str = ""
+    # Signs the session cookie. Empty -> auto key file at ~/.hr-harnessor/session.key.
+    session_secret: str = ""
+    # Browser session lifetime after a successful login.
+    session_ttl_days: int = 7
+    # Set the session cookie's Secure flag (True behind HTTPS; False for http dev).
+    cookie_secure: bool = True
+    # Block an IP after this many failed logins, for this many hours.
+    max_login_fails: int = 3
+    ban_hours: int = 24
+    # Directory of the built frontend (served as the SPA). Empty -> disabled.
+    static_dir: str = ""
+
     # ---- derived helpers ----
 
     @property
@@ -69,6 +85,17 @@ class Settings(BaseSettings):
     @property
     def vault_key_file(self) -> Path:
         return self.home_dir / "vault.key"
+
+    @property
+    def session_key_file(self) -> Path:
+        return self.home_dir / "session.key"
+
+    @property
+    def static_path(self) -> Path | None:
+        if not self.static_dir:
+            return None
+        p = Path(os.path.expanduser(self.static_dir)).resolve()
+        return p if p.is_dir() else None
 
 
 @lru_cache

@@ -10,6 +10,9 @@ from cryptography.fernet import Fernet
 
 # Fix the vault key BEFORE any app import so SecretVault doesn't touch $HOME.
 os.environ.setdefault("VAULT_KEY", Fernet.generate_key().decode())
+os.environ.setdefault("AUTH_PASSWORD", "test-pass")
+os.environ.setdefault("SESSION_SECRET", "test-session-secret")
+os.environ.setdefault("COOKIE_SECURE", "false")
 
 from app.db import Database  # noqa: E402
 

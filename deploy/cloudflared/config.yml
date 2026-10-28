@@ -1,0 +1,9 @@
+# Dedicated tunnel for agent.hrletsgo.me — separate from the host's other
+# tunnels so it can be started/stopped independently.
+tunnel: <tunnel-id>
+credentials-file: /home/hrjang/.cloudflared/<tunnel-id>.json
+
+ingress:
+  - hostname: agent.hrletsgo.me
+    service: http://localhost:8099
+  - service: http_status:404

@@ -26,7 +26,10 @@ mobile/web-build/
 *.key
 data/
 mounts/
+logs/
 .hr-harnessor/
+# Cloudflare tunnel credentials (if copied into the repo dir)
+deploy/cloudflared/*.json
 
 # OS / editor
 .DS_Store

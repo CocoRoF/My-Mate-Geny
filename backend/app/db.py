@@ -71,6 +71,13 @@ CREATE TABLE IF NOT EXISTS events (
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS login_attempts (
+    ip           TEXT PRIMARY KEY,
+    fails        INTEGER NOT NULL DEFAULT 0,
+    banned_until TEXT,                  -- ISO timestamp; NULL => not banned
+    updated_at   TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_events_session   ON events(session_id, seq);
 """
