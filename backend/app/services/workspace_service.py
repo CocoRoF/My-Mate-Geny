@@ -1,0 +1,34 @@
+"""Resolve workspace connectors (local or remote) and browse folders."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from app.services.connection_service import ConnectionService
+from app.workspaces.base import WorkspaceConnector
+from app.workspaces.local import LocalConnector
+
+
+class WorkspaceService:
+    def __init__(self, connections: ConnectionService) -> None:
+        self._connections = connections
+        self._local = LocalConnector()
+
+    def connector_for(self, connection_id: str | None) -> WorkspaceConnector:
+        if not connection_id:
+            return self._local
+        return self._connections.build_connector(connection_id)
+
+    async def list_dir(self, connection_id: str | None, path: str) -> dict[str, Any]:
+        connector = self.connector_for(connection_id)
+        entries = await connector.list_dir(path)
+        return {
+            "connection_id": connection_id,
+            "path": path,
+            "entries": [
+                {"name": e.name, "path": e.path, "is_dir": e.is_dir} for e in entries
+            ],
+        }
+
+    async def status(self, connection_id: str | None) -> dict[str, Any]:
+        return await self.connector_for(connection_id).status()
