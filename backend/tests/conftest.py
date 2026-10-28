@@ -8,11 +8,14 @@ import tempfile
 import pytest
 from cryptography.fernet import Fernet
 
-# Fix the vault key BEFORE any app import so SecretVault doesn't touch $HOME.
+# Set env BEFORE any app import so the cached Settings pick it up. Isolate the
+# DB to a temp file so the TestClient-based tests never touch the prod DB.
 os.environ.setdefault("VAULT_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("AUTH_PASSWORD", "test-pass")
 os.environ.setdefault("SESSION_SECRET", "test-session-secret")
 os.environ.setdefault("COOKIE_SECURE", "false")
+os.environ.setdefault("STATIC_DIR", "")
+os.environ.setdefault("DB_PATH", os.path.join(tempfile.gettempdir(), "hrh_test_app.db"))
 
 from app.db import Database  # noqa: E402
 
