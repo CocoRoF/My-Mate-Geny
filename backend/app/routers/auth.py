@@ -83,8 +83,11 @@ async def login(body: LoginBody, request: Request):
         return JSONResponse({"detail": msg}, status_code=403 if banned else 401)
 
     auth.clear_failures(ip)
-    resp = JSONResponse({"ok": True})
-    resp.set_cookie(value=auth.issue_token(body.username), **auth.cookie_kwargs())
+    token = auth.issue_token(body.username)
+    # Token in the body is for native clients (mobile) that can't hold the
+    # HttpOnly cookie; the web UI ignores it and uses the cookie.
+    resp = JSONResponse({"ok": True, "token": token})
+    resp.set_cookie(value=token, **auth.cookie_kwargs())
     return resp
 
 

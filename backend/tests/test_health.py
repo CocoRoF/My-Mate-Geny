@@ -33,3 +33,14 @@ def test_bad_password_rejected():
     with TestClient(app) as client:
         r = client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
         assert r.status_code in (401, 403)
+
+
+def test_bearer_token_auth():
+    # Native clients authenticate with the token (returned in the login body)
+    # via Authorization: Bearer, no cookie.
+    with TestClient(app) as client:
+        r = client.post("/api/auth/login", json={"username": "admin", "password": "test-pass"})
+        token = r.json()["token"]
+        client.cookies.clear()
+        r2 = client.get("/api/config", headers={"Authorization": f"Bearer {token}"})
+        assert r2.status_code == 200

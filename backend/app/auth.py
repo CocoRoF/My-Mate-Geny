@@ -91,6 +91,17 @@ class AuthManager:
         sig = _b64e(hmac.new(self._secret, payload.encode(), hashlib.sha256).digest())
         return f"{payload}.{sig}"
 
+    def token_from_request(self, request: Request) -> str | None:
+        """Session token from the cookie (web) or an Authorization: Bearer
+        header (mobile/native clients that can't hold HttpOnly cookies)."""
+        cookie = request.cookies.get(COOKIE_NAME)
+        if cookie:
+            return cookie
+        authz = request.headers.get("authorization", "")
+        if authz.lower().startswith("bearer "):
+            return authz[7:].strip()
+        return None
+
     def verify_token(self, token: str | None) -> bool:
         if not token or "." not in token:
             return False
@@ -175,7 +186,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if path.startswith(_PUBLIC_PREFIXES):
             return await call_next(request)
 
-        if auth.verify_token(request.cookies.get(COOKIE_NAME)):
+        if auth.verify_token(auth.token_from_request(request)):
             # Sliding session: every authenticated hit re-issues the cookie, so a
             # browser that returns within the 7-day window stays logged in
             # indefinitely. Only true 7-day inactivity logs it out.

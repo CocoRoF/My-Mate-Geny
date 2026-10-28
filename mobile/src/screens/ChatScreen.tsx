@@ -17,7 +17,22 @@ export default function ChatScreen({ sessionId }: { sessionId: string }) {
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    const ws = new WebSocket(wsUrl(`/ws/chat/${sessionId}`));
+    let ws: WebSocket | null = null;
+    let closed = false;
+    (async () => {
+      const url = await wsUrl(`/ws/chat/${sessionId}`);
+      if (closed) return;
+      ws = new WebSocket(url);
+      wire(ws);
+      wsRef.current = ws;
+    })();
+    return () => {
+      closed = true;
+      ws?.close();
+    };
+  }, [sessionId]);
+
+  const wire = (ws: WebSocket) => {
     ws.onmessage = (e) => {
       const ev = JSON.parse(e.data);
       setBubbles((prev) => {
@@ -33,9 +48,7 @@ export default function ChatScreen({ sessionId }: { sessionId: string }) {
         return next;
       });
     };
-    wsRef.current = ws;
-    return () => ws.close();
-  }, [sessionId]);
+  };
 
   const send = () => {
     const text = input.trim();

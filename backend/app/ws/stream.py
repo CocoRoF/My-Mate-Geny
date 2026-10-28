@@ -29,7 +29,9 @@ async def chat_stream(websocket: WebSocket, sid: str) -> None:
     # rejected at the handshake.
     auth: AuthManager = websocket.app.state.auth
     ip = auth.client_ip(websocket)  # type: ignore[arg-type]
-    if auth.is_banned(ip) or not auth.verify_token(websocket.cookies.get(COOKIE_NAME)):
+    # Token from cookie (web) or ?token= query param (native clients).
+    token = websocket.cookies.get(COOKIE_NAME) or websocket.query_params.get("token")
+    if auth.is_banned(ip) or not auth.verify_token(token):
         await websocket.close(code=4401)
         return
 

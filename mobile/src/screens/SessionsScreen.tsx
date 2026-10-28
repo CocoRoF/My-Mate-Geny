@@ -2,7 +2,13 @@ import { useEffect, useState } from "react";
 import { FlatList, Text, TouchableOpacity, View } from "react-native";
 import { listSessions, type Session } from "../api/client";
 
-export default function SessionsScreen({ onOpen }: { onOpen: (s: Session) => void }) {
+export default function SessionsScreen({
+  onOpen,
+  onNew,
+}: {
+  onOpen: (s: Session) => void;
+  onNew: () => void;
+}) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [error, setError] = useState("");
 
@@ -14,9 +20,12 @@ export default function SessionsScreen({ onOpen }: { onOpen: (s: Session) => voi
 
   return (
     <View style={{ flex: 1, backgroundColor: "#0f1115", padding: 12 }}>
-      <Text style={{ color: "#e5e7eb", fontSize: 18, fontWeight: "600", marginBottom: 12 }}>
-        Sessions
-      </Text>
+      <TouchableOpacity
+        onPress={onNew}
+        style={{ backgroundColor: "#6aa8ff", borderRadius: 8, padding: 12, marginBottom: 12 }}
+      >
+        <Text style={{ color: "#000", fontWeight: "600", textAlign: "center" }}>+ 새 채팅</Text>
+      </TouchableOpacity>
       {error ? <Text style={{ color: "#f87171" }}>{error}</Text> : null}
       <FlatList
         data={sessions}
@@ -28,13 +37,12 @@ export default function SessionsScreen({ onOpen }: { onOpen: (s: Session) => voi
           >
             <Text style={{ color: "#e5e7eb" }}>{item.title}</Text>
             <Text style={{ color: "#6b7280", fontSize: 12 }}>
+              {item.connection_id ? "🌐 " : "💻 "}
               {item.provider} · {item.workspace_path}
             </Text>
           </TouchableOpacity>
         )}
-        ListEmptyComponent={
-          <Text style={{ color: "#6b7280" }}>No sessions. Create one from the web UI.</Text>
-        }
+        ListEmptyComponent={<Text style={{ color: "#6b7280" }}>세션이 없습니다. 새 채팅을 시작하세요.</Text>}
       />
     </View>
   );

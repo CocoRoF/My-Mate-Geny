@@ -54,15 +54,17 @@ pick a local folder as the workspace, and chat.
 | Area | State |
 |---|---|
 | Backend core (config/db/vault) | ✅ |
-| Claude Code provider | ✅ working (local workspace) |
-| Codex provider | 🟡 interface stub (needs `codex` CLI) |
+| Claude Code provider | ✅ working (local + remote) |
+| Codex provider | ✅ wired (`codex exec --json`); needs `codex login` to run |
 | Local workspace | ✅ |
-| Remote SSH workspace | 🟡 scaffold (sshfs mount + asyncssh bash MCP bridge) |
+| Remote SSH workspace (2222/2224) | ✅ working E2E (sshfs mount + asyncssh bash bridge) |
 | Web UI | ✅ chat E2E |
-| Mobile (Expo) | 🟡 minimal scaffold |
-| Docker / nginx deploy | ✅ compose |
+| Mobile (Expo) | ✅ buildout (login/sessions/new/chat); not yet device-tested |
+| Auth + IP ban + tunnel | ✅ live at https://agent.hrletsgo.me |
+| Docker / nginx deploy | ✅ compose (host-run deploy is live) |
 
-See [docs/architecture.md](docs/architecture.md) for the full design.
+Deployment & auth: [docs/deploy.md](docs/deploy.md). Full design:
+[docs/architecture.md](docs/architecture.md).
 
 Architecture patterns are adapted from the local `geny-executor` (provider argv / stream-json),
 `geny-executor-web` (FastAPI + React + WS), and GAPT (asyncssh + encrypted vault).
