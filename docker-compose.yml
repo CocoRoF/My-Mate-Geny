@@ -1,0 +1,52 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    env_file:
+      - .env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:58080}
+      - DB_PATH=/data/harnessor.db
+      - MOUNT_ROOT=/data/mounts
+    volumes:
+      - hrh-data:/data
+      # Share the host's Claude subscription auth into the container so the
+      # claude CLI runs under your existing login (GAPT SHARE_HOST_CLAUDE_AUTH
+      # pattern). Point this at the user that ran `claude setup-token`.
+      - ${HOST_CLAUDE_DIR:-~/.claude}:/root/.claude
+      # Mount host folders you want to use as LOCAL workspaces (read-write).
+      - /home:/home
+    # sshfs/fuse need these to mount remote workspaces from inside the container.
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    security_opt:
+      - apparmor:unconfined
+    restart: unless-stopped
+    networks: [internal]
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    networks: [internal]
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "58080:58080"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on: [backend, frontend]
+    restart: unless-stopped
+    networks: [internal]
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  hrh-data:

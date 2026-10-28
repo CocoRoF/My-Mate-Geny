@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "hr-harnessor",
+    "slug": "hr-harnessor",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "platforms": ["ios", "android"],
+    "extra": {
+      "apiBaseUrl": "http://192.168.0.2223:8080"
+    },
+    "ios": { "supportsTablet": true, "bundleIdentifier": "com.hrjang.harnessor" },
+    "android": { "package": "com.hrjang.harnessor" }
+  }
+}
