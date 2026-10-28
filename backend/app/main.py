@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from app import __version__
 from app.auth import AuthManager, AuthMiddleware
 from app.config import settings
+from app.providers.oauth import OAuthManager
 from app.db import Database
 from app.routers import (
     auth as auth_router,
@@ -43,6 +44,7 @@ async def lifespan(app: FastAPI):
     vault = SecretVault(db)
 
     app.state.auth = AuthManager(db)
+    app.state.oauth = OAuthManager()
     provider_service = ProviderService(db, vault)
     connection_service = ConnectionService(db, vault)
     workspace_service = WorkspaceService(connection_service)

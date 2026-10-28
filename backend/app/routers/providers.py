@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 
 from app.routers._deps import provider_service
 from app.schemas.models import ProviderConnect
 from app.services.provider_service import ProviderService
 
 router = APIRouter(prefix="/api/providers")
+
+
+class OAuthCode(BaseModel):
+    code: str
 
 
 @router.get("")
@@ -48,3 +53,46 @@ async def connect(
 async def disconnect(provider: str, svc: ProviderService = Depends(provider_service)) -> dict:
     svc.disconnect(provider)
     return {"provider": provider, "connected": False}
+
+
+# ---- web OAuth (browser-driven CLI login) ----
+
+@router.post("/{provider}/oauth/start")
+async def oauth_start(provider: str, request: Request) -> dict:
+    oauth = request.app.state.oauth
+    if provider == "codex":
+        return oauth.start_codex()
+    if provider == "claude":
+        return oauth.start_claude()
+    raise HTTPException(status_code=400, detail=f"oauth not supported for {provider}")
+
+
+@router.get("/{provider}/oauth/status")
+async def oauth_status(
+    provider: str, request: Request, svc: ProviderService = Depends(provider_service)
+) -> dict:
+    oauth = request.app.state.oauth
+    if provider == "codex":
+        st = oauth.codex_status()
+        if st.get("status") == "connected":
+            svc.mark_oauth("codex")
+        return st
+    if provider == "claude":
+        connected = oauth.claude_logged_in()
+        if connected:
+            svc.mark_oauth("claude")
+        return {"status": "connected" if connected else "pending"}
+    raise HTTPException(status_code=400, detail=f"oauth not supported for {provider}")
+
+
+@router.post("/{provider}/oauth/complete")
+async def oauth_complete(
+    provider: str, body: OAuthCode, request: Request, svc: ProviderService = Depends(provider_service)
+) -> dict:
+    oauth = request.app.state.oauth
+    if provider != "claude":
+        raise HTTPException(status_code=400, detail="complete step is only for claude")
+    res = oauth.complete_claude(body.code)
+    if res.get("ok"):
+        svc.mark_oauth("claude")
+    return res
