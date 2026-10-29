@@ -72,7 +72,13 @@ class ClaudeCodeProvider(Provider):
 
     def _build_argv(self, req: TurnRequest) -> list[str]:
         model = req.model or "sonnet"
-        allow = req.allow_tools or _DEFAULT_ALLOW
+        allow = list(req.allow_tools or _DEFAULT_ALLOW)
+        # Pre-allow every attached MCP server's tools (e.g. the remote-exec
+        # bridge). Newer Claude CLI requires MCP tools to be explicitly allowed
+        # or it refuses them in non-interactive --print mode.
+        if isinstance(req.mcp_config, dict):
+            for server in req.mcp_config.get("mcpServers", {}):
+                allow.append(f"mcp__{server}")
         settings_inline = json.dumps({"permissions": {"allow": allow}})
 
         argv = [
