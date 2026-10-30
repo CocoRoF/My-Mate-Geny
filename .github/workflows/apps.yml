@@ -101,7 +101,8 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: gradle
-      - uses: android-actions/setup-android@v3
+      # The runner image ships the Android SDK (ANDROID_HOME, licenses
+      # accepted); Gradle fetches the exact platform/build-tools it needs.
       - run: npm ci
       - run: npx cap sync android
       - name: Release keystore

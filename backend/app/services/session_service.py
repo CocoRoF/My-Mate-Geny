@@ -51,6 +51,7 @@ MAX_EXTRA_DIRS = 20
 
 # A stored provider session that no longer exists (deleted transcript, other
 # machine…): retry once from a full handoff instead of failing the turn.
+_STOPPED = re.compile(r"doesn't want to proceed|tool use was rejected|interrupted to apply", re.I)
 _STALE_RESUME = re.compile(r"no conversation found|no rollout found|thread/resume failed", re.I)
 
 
@@ -810,7 +811,8 @@ class SessionService:
             run = self.active_runs.get(sid)
             if run is not None:
                 run["tools"] += 1
-        elif ev.type == "tool.result" and ev.data.get("is_error"):
+        elif ev.type == "tool.result" and ev.data.get("is_error") and not _STOPPED.search(str(ev.data.get("output") or "")):
+            # (a call cut off by Stop is the user's action, not a malfunction)
             call = st["tool_calls"].get(str(ev.data.get("id")), {})
             output = str(ev.data.get("output") or "")
             first = next((ln for ln in output.splitlines() if ln.strip()), "tool returned an error")

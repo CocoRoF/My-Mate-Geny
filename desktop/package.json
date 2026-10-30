@@ -25,6 +25,7 @@
     "directories": { "buildResources": "build", "output": "dist" },
     "files": ["src/**/*", "package.json"],
     "afterPack": "build/after-pack.js",
+    "publish": null,
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
       "artifactName": "hr-harnessor-${version}-windows-x64-setup.${ext}"
