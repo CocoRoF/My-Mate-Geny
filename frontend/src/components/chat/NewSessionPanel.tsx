@@ -1,19 +1,30 @@
 import { useState } from "react";
 import { useProviderStore } from "../../stores/providerStore";
 import { useSessionStore } from "../../stores/sessionStore";
+import { useConfigStore } from "../../stores/configStore";
 import WorkspacePicker from "../workspaces/WorkspacePicker";
 import Icon from "../ui/Icon";
 
 export default function NewSessionPanel() {
   const providers = useProviderStore((s) => s.providers);
+  const catalog = useConfigStore((s) => s.catalog);
   const createSession = useSessionStore((s) => s.create);
 
-  const [provider, setProvider] = useState("claude");
-  const [model, setModel] = useState("sonnet");
+  const firstConnected = providers.find((p) => p.connected)?.provider || "claude";
+  const [provider, setProvider] = useState(firstConnected);
+  const entry = catalog[provider];
+  const [model, setModel] = useState(entry?.default_model || "sonnet");
+  const [effort, setEffort] = useState("default");
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [path, setPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  const pickProvider = (id: string) => {
+    setProvider(id);
+    setModel(catalog[id]?.default_model || "");
+    setEffort("default");
+  };
 
   const start = async () => {
     if (!path) {
@@ -26,6 +37,7 @@ export default function NewSessionPanel() {
       await createSession({
         provider,
         model,
+        effort,
         connection_id: connectionId,
         workspace_path: path,
         title: path.split("/").pop() || "chat",
@@ -36,6 +48,9 @@ export default function NewSessionPanel() {
       setBusy(false);
     }
   };
+
+  const models = catalog[provider]?.models || [];
+  const efforts = catalog[provider]?.effort || ["default"];
 
   return (
     <div className="h-full overflow-y-auto grid place-items-center p-6">
@@ -51,26 +66,26 @@ export default function NewSessionPanel() {
         </div>
 
         {/* Provider */}
-        <label className="text-[11px] font-medium uppercase tracking-wider text-content-faint">
-          Provider
-        </label>
+        <label className="text-[11px] font-medium uppercase tracking-wider text-content-faint">Provider</label>
         <div className="grid grid-cols-2 gap-2 mt-1.5 mb-4">
-          {providers.map((p) => {
-            const sel = provider === p.provider;
+          {(Object.keys(catalog).length ? Object.keys(catalog) : ["claude", "codex"]).map((id) => {
+            const p = providers.find((x) => x.provider === id);
+            const sel = provider === id;
+            const connected = p?.connected;
             return (
               <button
-                key={p.provider}
-                onClick={() => p.connected && setProvider(p.provider)}
-                disabled={!p.connected}
+                key={id}
+                onClick={() => connected && pickProvider(id)}
+                disabled={!connected}
                 className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition ${
                   sel ? "border-accent/60 bg-accent-soft" : "border-border bg-surface/60 hover:border-border-strong"
-                } ${!p.connected ? "opacity-45 cursor-not-allowed" : ""}`}
+                } ${!connected ? "opacity-45 cursor-not-allowed" : ""}`}
               >
                 <Icon name="cpu" size={18} className={sel ? "text-accent" : "text-content-faint"} />
                 <div className="min-w-0">
-                  <div className="text-sm font-medium capitalize">{p.provider}</div>
-                  <div className={`text-[10px] ${p.connected ? "text-success" : "text-content-faint"}`}>
-                    {p.connected ? "connected" : "not connected"}
+                  <div className="text-sm font-medium">{catalog[id]?.label || id}</div>
+                  <div className={`text-[10px] ${connected ? "text-success" : "text-content-faint"}`}>
+                    {connected ? "connected" : "not connected"}
                   </div>
                 </div>
                 {sel && <Icon name="check" size={15} className="ml-auto text-accent" />}
@@ -79,16 +94,33 @@ export default function NewSessionPanel() {
           })}
         </div>
 
-        {/* Model */}
-        <label className="text-[11px] font-medium uppercase tracking-wider text-content-faint">
-          Model
-        </label>
-        <input
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          placeholder="sonnet"
-          className="field mt-1.5 mb-4 font-mono"
-        />
+        {/* Model + Think */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="text-[11px] font-medium uppercase tracking-wider text-content-faint">Model</label>
+            <select value={model} onChange={(e) => setModel(e.target.value)} className="field mt-1.5">
+              {models.length ? (
+                models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))
+              ) : (
+                <option value={model}>{model}</option>
+              )}
+            </select>
+          </div>
+          <div>
+            <label className="text-[11px] font-medium uppercase tracking-wider text-content-faint">Think</label>
+            <select value={effort} onChange={(e) => setEffort(e.target.value)} className="field mt-1.5">
+              {efforts.map((e) => (
+                <option key={e} value={e}>
+                  {e === "default" ? "Default" : e}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
 
         {/* Workspace */}
         <WorkspacePicker
