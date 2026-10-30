@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 import traceback
 from typing import TYPE_CHECKING, Any, AsyncIterator
@@ -31,6 +32,7 @@ from app.providers import get_provider
 from app.providers.accounts import AccountPool, classify_error, link_shared_state
 from app.providers.base import ProviderEvent, SteerMessage, TurnInbox, TurnRequest
 from app.services._ids import new_id, now_iso
+from app.services.context_handoff import build_blocks, catchup_preamble, handoff_preamble, ENGINE_LABEL
 from app.services.provider_service import ProviderService
 from app.services.workspace_service import WorkspaceService
 
@@ -40,6 +42,10 @@ if TYPE_CHECKING:
 
 MODES = ("agent", "plan")
 MAX_EXTRA_DIRS = 20
+
+# A stored provider session that no longer exists (deleted transcript, other
+# machine…): retry once from a full handoff instead of failing the turn.
+_STALE_RESUME = re.compile(r"no conversation found|no rollout found|thread/resume failed", re.I)
 
 
 class TurnBusyError(RuntimeError):
@@ -137,8 +143,12 @@ class SessionService:
         params: list[Any] = []
         if provider is not None and provider != session["provider"]:
             get_provider(provider)  # validate
-            sets += ["provider = ?", "cli_session_id = NULL", "cli_info = '{}'"]
-            params.append(provider)
+            # Each engine keeps its own CLI session; the conversation itself is
+            # carried over by the handoff/catch-up preamble on the next turn.
+            state = self._cli_state(session)  # also persists a migrated legacy id
+            own = state.get(provider, {})
+            sets += ["provider = ?", "cli_session_id = ?", "cli_info = '{}'", "cli_sessions = ?"]
+            params += [provider, own.get("id"), json.dumps(state)]
         if model is not None:
             sets.append("model = ?")
             params.append(model)
@@ -165,7 +175,7 @@ class SessionService:
 
     def _row(self, row: Any) -> dict[str, Any]:
         d = dict(row)
-        for key, empty in (("extra_dirs", []), ("cli_info", {})):
+        for key, empty in (("extra_dirs", []), ("cli_info", {}), ("cli_sessions", {})):
             try:
                 d[key] = json.loads(d.get(key) or json.dumps(empty))
             except ValueError:
@@ -201,7 +211,7 @@ class SessionService:
 
     def messages(self, sid: str) -> list[dict[str, Any]]:
         rows = self._db.query(
-            "SELECT id, role, content, created_at FROM messages WHERE session_id = ? ORDER BY created_at",
+            "SELECT id, role, content, provider, model, created_at FROM messages WHERE session_id = ? ORDER BY created_at",
             (sid,),
         )
         by_msg = self._attachments.by_message(sid) if self._attachments is not None else {}
@@ -224,7 +234,10 @@ class SessionService:
         if sid in self._tasks:
             raise TurnBusyError("stop the running turn first")
         self.get(sid)
-        self._db.execute("UPDATE sessions SET cli_session_id = NULL WHERE id = ?", (sid,))
+        self._db.execute(
+            "UPDATE sessions SET cli_session_id = NULL, cli_sessions = '{}', context_floor = ? WHERE id = ?",
+            (now_iso(), sid),
+        )
         ev = ProviderEvent(type="notice", data={
             "level": "info", "code": "context.reset",
             "message": "Context cleared — the agent starts a fresh conversation from here.",
@@ -235,11 +248,13 @@ class SessionService:
 
     # ---- persistence helpers ----
 
-    def _add_message(self, sid: str, role: str, content: str) -> str:
+    def _add_message(
+        self, sid: str, role: str, content: str, provider: str | None = None, model: str | None = None
+    ) -> str:
         mid = new_id("msg_")
         self._db.execute(
-            "INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
-            (mid, sid, role, content, now_iso()),
+            "INSERT INTO messages (id, session_id, role, content, provider, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (mid, sid, role, content, provider, model, now_iso()),
         )
         self._db.execute("UPDATE sessions SET updated_at = ? WHERE id = ?", (now_iso(), sid))
         return mid
@@ -250,11 +265,76 @@ class SessionService:
             (sid, ev.seq, ev.type, json.dumps(ev.data), ev.timestamp),
         )
 
-    def _set_cli_session(self, sid: str, cli_session_id: str | None) -> None:
-        if cli_session_id:
-            self._db.execute(
-                "UPDATE sessions SET cli_session_id = ? WHERE id = ?", (cli_session_id, sid)
-            )
+    def _set_cli_session(self, sid: str, cli_session_id: str | None, provider: str | None = None) -> None:
+        """Remember an engine's CLI session and that it has now seen the whole
+        conversation up to this point (its catch-up watermark)."""
+        if not cli_session_id:
+            return
+        session = self.get(sid)
+        provider = provider or session["provider"]
+        state = self._cli_state(session)
+        state[provider] = {"id": cli_session_id, "seen": now_iso()}
+        self._db.execute(
+            "UPDATE sessions SET cli_sessions = ?, cli_session_id = CASE WHEN provider = ? THEN ? ELSE cli_session_id END WHERE id = ?",
+            (json.dumps(state), provider, cli_session_id, sid),
+        )
+
+    def _drop_cli_session(self, sid: str, provider: str) -> None:
+        session = self.get(sid)
+        state = self._cli_state(session)
+        state.pop(provider, None)
+        self._db.execute(
+            "UPDATE sessions SET cli_sessions = ?, cli_session_id = CASE WHEN provider = ? THEN NULL ELSE cli_session_id END WHERE id = ?",
+            (json.dumps(state), provider, sid),
+        )
+
+    def _cli_state(self, session: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        state = session.get("cli_sessions")
+        if isinstance(state, str):
+            try:
+                state = json.loads(state or "{}")
+            except ValueError:
+                state = {}
+        state = dict(state or {})
+        if not state and session.get("cli_session_id"):
+            # Chats from before per-engine sessions: the stored id belongs to the
+            # current engine. Trust it only if that engine ran the whole chat —
+            # otherwise its session lacks the earlier turns, so start it fresh
+            # with a full handoff.
+            engines = {
+                json.loads(r["data"]).get("provider")
+                for r in self._db.query(
+                    "SELECT data FROM events WHERE session_id = ? AND type = 'session.start'", (session["id"],)
+                )
+            } - {None}
+            if engines <= {session["provider"]}:
+                state[session["provider"]] = {"id": session["cli_session_id"], "seen": now_iso()}
+        return state
+
+    def _context_for(
+        self, session: dict[str, Any], provider: str, current_msg_id: str, *, fresh: bool = False
+    ) -> tuple[str | None, str, str, int]:
+        """(resume id, preamble, kind, n_messages) for the engine about to run."""
+        own = {} if fresh else self._cli_state(session).get(provider, {})
+        floor = session.get("context_floor") or ""
+        msgs = [
+            m for m in self.messages(session["id"])
+            if m["id"] != current_msg_id and m["created_at"] > floor
+        ]
+        resume_id = own.get("id")
+        if resume_id:
+            seen = own.get("seen") or ""
+            msgs = [m for m in msgs if m["created_at"] > seen]
+        if not msgs:
+            return resume_id, "", "", 0
+        since = min(m["created_at"] for m in msgs)
+        events = [e for e in self.events(session["id"]) if e["timestamp"] >= since]
+        blocks = build_blocks(msgs, events)
+        if not blocks:
+            return resume_id, "", "", 0
+        if resume_id:
+            return resume_id, catchup_preamble(provider, blocks), "catchup", len(msgs)
+        return None, handoff_preamble(provider, blocks), "handoff", len(msgs)
 
     # ---- live subscription (WebSocket fan-out) ----
 
@@ -438,7 +518,7 @@ class SessionService:
             "attachments": len(attachments),
         }
         try:
-            async for ev in self._run_turn(sid, session, attachments, ctx):
+            async for ev in self._run_turn(sid, session, attachments, ctx, msg_id):
                 yield ev
         finally:
             self.active_runs.pop(sid, None)
@@ -450,7 +530,7 @@ class SessionService:
         return bool(row) and row["c"] == 1
 
     async def _run_turn(
-        self, sid: str, session: dict[str, Any], attachments: list, ctx: dict[str, Any]
+        self, sid: str, session: dict[str, Any], attachments: list, ctx: dict[str, Any], msg_id: str
     ) -> AsyncIterator[ProviderEvent]:
         connector = self._workspaces.connector_for(session["connection_id"])
         extra_dirs: list[str] = list(session.get("extra_dirs") or [])
@@ -525,12 +605,16 @@ class SessionService:
             if run is not None:
                 run["account"] = lease.label
 
+        # Context: this engine's own session + whatever of the chat it hasn't
+        # seen (full handoff after a provider switch, catch-up when returning).
+        resume_id, preamble, ctx_kind, ctx_n = self._context_for(session, provider_name, msg_id)
+
         req = TurnRequest(
             messages=[{"role": m["role"], "content": m["content"]} for m in history],
             model=session["model"],
             effort=session.get("effort") or "default",
             cwd=cwd,
-            cli_session_id=session.get("cli_session_id"),
+            cli_session_id=resume_id,
             mcp_config=mcp_config,
             api_key=api_key,
             extra_env=extra_env,
@@ -538,58 +622,110 @@ class SessionService:
             mode=session.get("mode") or "agent",
             extra_dirs=local_extra,
             inbox=TurnInbox(),
+            preamble=preamble,
         )
         self._inboxes[sid] = req.inbox
 
+        def context_notice() -> ProviderEvent | None:
+            if not ctx_kind:
+                return None
+            engine = ENGINE_LABEL.get(provider_name, provider_name)
+            msg = (
+                f"Handed the conversation so far ({ctx_n} message{'s' if ctx_n != 1 else ''}) over to {engine}"
+                if ctx_kind == "handoff"
+                else f"Caught {engine} up on {ctx_n} message{'s' if ctx_n != 1 else ''} from the other engine"
+            )
+            return ProviderEvent(type="notice", data={"level": "info", "code": f"context.{ctx_kind}", "message": msg})
+
         final_text = ""
+        final_model = None
         err_code = err_msg = None
         tool_calls: dict[str, dict[str, Any]] = {}
         started = time.monotonic()
+        noted = False
         try:
-            async for ev in provider.run_turn_stream(req):
-                if ev.type == "session.info":
-                    info = {**ev.data, "account": ctx.get("account")}
-                    self._db.execute("UPDATE sessions SET cli_info = ? WHERE id = ?", (json.dumps(info), sid))
-                    yield ProviderEvent(type="session.info", data=info, seq=ev.seq, timestamp=ev.timestamp)
-                    continue
-                self._add_event(sid, ev)
-                if ev.type == "turn.complete":
-                    final_text = ev.data.get("text", "")
-                    self._set_cli_session(sid, ev.data.get("cli_session_id"))
-                elif ev.type == "tool.use":
-                    tool_calls[str(ev.data.get("id"))] = {
-                        "name": ev.data.get("name"), "input": ev.data.get("input"),
-                    }
-                    run = self.active_runs.get(sid)
-                    if run is not None:
-                        run["tools"] += 1
-                elif ev.type == "tool.result" and ev.data.get("is_error"):
-                    call = tool_calls.get(str(ev.data.get("id")), {})
-                    output = str(ev.data.get("output") or "")
-                    first = next((ln for ln in output.splitlines() if ln.strip()), "tool returned an error")
-                    self._log(
-                        "warning", "tool", first[:300],
-                        code=str(call.get("name") or ev.data.get("name") or "tool"),
-                        detail={**ctx, "tool_use_id": ev.data.get("id"),
-                                "input": call.get("input"), "output": output},
-                        session_id=sid,
-                    )
-                elif ev.type == "notice" and ev.data.get("level") == "warning":
-                    self._log(
-                        "warning", "provider", str(ev.data.get("message")),
-                        code=str(ev.data.get("code") or "provider.notice"), detail=ctx, session_id=sid,
-                    )
-                elif ev.type == "error":
-                    err_code = ev.data.get("code")
-                    err_msg = ev.data.get("message")
-                    self._log(
-                        "error", "provider", str(err_msg or err_code),
-                        code=str(err_code or "exec.error"),
-                        detail={**ctx, "elapsed_s": round(time.monotonic() - started, 1),
-                                "tools_run": len(tool_calls)},
-                        session_id=sid,
-                    )
-                yield ev
+            for attempt in (0, 1):
+                progressed = False  # anything beyond start/info: no silent retry after that
+                retry = False
+                async for ev in provider.run_turn_stream(req):
+                    if ev.type == "session.info":
+                        info = {**ev.data, "account": ctx.get("account")}
+                        self._db.execute("UPDATE sessions SET cli_info = ? WHERE id = ?", (json.dumps(info), sid))
+                        yield ProviderEvent(type="session.info", data=info, seq=ev.seq, timestamp=ev.timestamp)
+                        continue
+                    if (
+                        ev.type == "error" and attempt == 0 and req.cli_session_id and not progressed
+                        and _STALE_RESUME.search(str(ev.data.get("message") or ""))
+                    ):
+                        # The engine lost that session: start it fresh with the
+                        # whole conversation handed over, transparently.
+                        self._log("warning", "provider", f"stale {provider_name} session, starting fresh: {ev.data.get('message')}",
+                                  code="context.stale_session", detail=ctx, session_id=sid)
+                        self._drop_cli_session(sid, provider_name)
+                        _, preamble2, kind2, n2 = self._context_for(self.get(sid), provider_name, msg_id, fresh=True)
+                        req.cli_session_id, req.preamble = None, preamble2
+                        ctx_kind, ctx_n = kind2, n2
+                        retry = True
+                        break
+                    if ev.type == "session.start" and attempt == 1:
+                        continue  # the turn already has its start event
+                    if ev.type != "session.start":
+                        if not progressed and not noted:
+                            # Say what context the engine got — once, right before
+                            # its first real output (after any stale-session retry).
+                            noted = True
+                            note = context_notice()
+                            if note is not None:
+                                self._add_event(sid, note)
+                                yield note
+                        progressed = True
+                    self._add_event(sid, ev)
+                    if ev.type == "turn.complete":
+                        final_text = ev.data.get("text", "")
+                        final_model = ev.data.get("model") or None
+                        # Answer first, then the watermark: the engine has seen
+                        # everything up to and including its own reply.
+                        if final_text:
+                            self._add_message(sid, "assistant", final_text, provider_name,
+                                              final_model or session["model"])
+                        self._set_cli_session(sid, ev.data.get("cli_session_id"), provider_name)
+                    elif ev.type == "tool.use":
+                        tool_calls[str(ev.data.get("id"))] = {
+                            "name": ev.data.get("name"), "input": ev.data.get("input"),
+                        }
+                        run = self.active_runs.get(sid)
+                        if run is not None:
+                            run["tools"] += 1
+                    elif ev.type == "tool.result" and ev.data.get("is_error"):
+                        call = tool_calls.get(str(ev.data.get("id")), {})
+                        output = str(ev.data.get("output") or "")
+                        first = next((ln for ln in output.splitlines() if ln.strip()), "tool returned an error")
+                        self._log(
+                            "warning", "tool", first[:300],
+                            code=str(call.get("name") or ev.data.get("name") or "tool"),
+                            detail={**ctx, "tool_use_id": ev.data.get("id"),
+                                    "input": call.get("input"), "output": output},
+                            session_id=sid,
+                        )
+                    elif ev.type == "notice" and ev.data.get("level") == "warning":
+                        self._log(
+                            "warning", "provider", str(ev.data.get("message")),
+                            code=str(ev.data.get("code") or "provider.notice"), detail=ctx, session_id=sid,
+                        )
+                    elif ev.type == "error":
+                        err_code = ev.data.get("code")
+                        err_msg = ev.data.get("message")
+                        if err_code != "turn.interrupted":
+                            self._log(
+                                "error", "provider", str(err_msg or err_code),
+                                code=str(err_code or "exec.error"),
+                                detail={**ctx, "elapsed_s": round(time.monotonic() - started, 1),
+                                        "tools_run": len(tool_calls)},
+                                session_id=sid,
+                            )
+                    yield ev
+                if not retry:
+                    break
         finally:
             if self._inboxes.get(sid) is req.inbox:
                 self._inboxes.pop(sid, None)
@@ -607,8 +743,7 @@ class SessionService:
                 else:
                     self._pool.report(lease, ok=True)
 
-        if final_text:
-            self._add_message(sid, "assistant", final_text)
+
 
 
 def _title_from(text: str) -> str:

@@ -108,6 +108,8 @@ class CodexProvider(Provider):
             (m["content"] for m in reversed(req.messages) if m.get("role") == "user"), ""
         )
         has_images = any(a.is_image for a in req.attachments)
+        if req.preamble:
+            last_user = f"{req.preamble}\n\n{last_user}"
         text = compose_text(last_user, req.attachments, inline_images=has_images)
         if req.extra_dirs:
             text += "\n\n<additional_folders>\nYou may also read and edit these folders:\n" + "\n".join(

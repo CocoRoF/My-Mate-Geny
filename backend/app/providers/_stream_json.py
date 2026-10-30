@@ -165,9 +165,10 @@ class StreamJsonAccumulator:
                 "error_during_execution": "the agent stopped because of an execution error",
             }
             sub = obj.get("subtype", "unknown")
+            errs = [str(e) for e in (obj.get("errors") or []) if e]
             yield self._ev(
                 "error",
-                {"code": f"exec.cli.{sub}", "message": reasons.get(sub, sub)},
+                {"code": f"exec.cli.{sub}", "message": "; ".join(errs) or reasons.get(sub, sub)},
             )
             return
         if obj.get("is_error"):

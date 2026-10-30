@@ -125,6 +125,8 @@ class ClaudeCodeProvider(Provider):
         last_user = next(
             (m.get("content", "") for m in reversed(req.messages) if m.get("role") == "user"), ""
         )
+        if req.preamble:
+            last_user = f"{req.preamble}\n\n{last_user}"
         return self._envelope(last_user, req.attachments)
 
     @staticmethod

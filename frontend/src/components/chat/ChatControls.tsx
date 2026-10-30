@@ -97,6 +97,7 @@ export default function ChatControls({ session }: { session: Session }) {
   const providerItems = Object.entries(catalog).map(([id, c]) => ({
     id,
     label: c.label + (connectedProviders.includes(id) ? "" : " (not connected)"),
+    hint: id === session.provider ? undefined : "Switch engine — the conversation so far carries over",
   }));
   const modelItems = entry?.models.map((m) => ({ id: m.id, label: m.label, hint: m.description })) ?? [];
   const curModel = entry?.models.find((m) => m.id === session.model);

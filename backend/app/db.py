@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     mode          TEXT NOT NULL DEFAULT 'agent',    -- agent | plan
     extra_dirs    TEXT NOT NULL DEFAULT '[]',       -- additional folders (JSON list of paths)
     cli_info      TEXT NOT NULL DEFAULT '{}',       -- last CLI capabilities (tools, slash commands, MCP…)
+    cli_sessions  TEXT NOT NULL DEFAULT '{}',       -- per provider: {"claude": {"id", "seen"}, "codex": {...}}
+    context_floor TEXT,                             -- /clear: handoffs only include messages after this
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL
 );
@@ -59,8 +61,10 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS messages (
     id         TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
-    role       TEXT NOT NULL,       -- user | assistant
+    role       TEXT NOT NULL,       -- user | assistant | steer
     content    TEXT NOT NULL DEFAULT '',
+    provider   TEXT,                -- assistant: which engine answered (claude | codex)
+    model      TEXT,
     created_at TEXT NOT NULL,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
@@ -198,9 +202,15 @@ class Database:
                 ("mode", "TEXT NOT NULL DEFAULT 'agent'"),
                 ("extra_dirs", "TEXT NOT NULL DEFAULT '[]'"),
                 ("cli_info", "TEXT NOT NULL DEFAULT '{}'"),
+                ("cli_sessions", "TEXT NOT NULL DEFAULT '{}'"),
+                ("context_floor", "TEXT"),
             ):
                 if col not in cols:
                     self._conn.execute(f"ALTER TABLE sessions ADD COLUMN {col} {ddl}")
+            mcols = {r["name"] for r in self._conn.execute("PRAGMA table_info(messages)")}
+            for col in ("provider", "model"):
+                if col not in mcols:
+                    self._conn.execute(f"ALTER TABLE messages ADD COLUMN {col} TEXT")
             gcols = {r["name"] for r in self._conn.execute("PRAGMA table_info(git_accounts)")}
             if gcols and "scopes" not in gcols:
                 self._conn.execute("ALTER TABLE git_accounts ADD COLUMN scopes TEXT NOT NULL DEFAULT ''")

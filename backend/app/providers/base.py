@@ -147,6 +147,10 @@ class TurnRequest:
     mode: str = "agent"                   # agent (full autonomy) | plan (read-only, propose a plan)
     extra_dirs: list[str] = field(default_factory=list)  # additional folders the agent may use
     inbox: TurnInbox | None = None        # mid-turn steering (None => provider can't be steered)
+    # Conversation context this engine hasn't seen (full handoff after a
+    # provider switch, or a catch-up on turns another engine ran). Prepended
+    # to the user's message.
+    preamble: str = ""
 
 
 class ProviderTurnError(RuntimeError):
