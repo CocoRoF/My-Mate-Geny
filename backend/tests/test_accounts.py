@@ -82,3 +82,15 @@ def test_classify_error():
     assert classify_error("exec.cli.exited", "rate limit exceeded") == "rate_limited"
     assert classify_error("exec.cli.exited", "401 unauthorized") == "provider_auth"
     assert classify_error("exec.cli.timeout", "timed out") == "timeout"
+
+
+def test_most_remaining_puts_unknown_usage_last():
+    from app.providers.accounts import AccountSnapshot, _most_remaining
+
+    base = dict(enabled=True, weight=1, max_concurrency=8, in_flight=0,
+                status="ready", cooldown_until=0.0, usable=True, last_used=0.0)
+    sub40 = AccountSnapshot(id="sub", utilization=40.0, **base)
+    apikey = AccountSnapshot(id="key", utilization=None, **base)
+    sub90 = AccountSnapshot(id="sub90", utilization=90.0, **base)
+    assert _most_remaining([apikey, sub40, sub90]).id == "sub"
+    assert _most_remaining([apikey]).id == "key"  # still usable when it's the only one

@@ -68,10 +68,39 @@ class RemoteSshConnector(WorkspaceConnector):
         pem = self._spec.private_key_pem
         if not pem.endswith("\n"):
             pem += "\n"
-        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            with open(key_path) as fh:
+                if fh.read() == pem:
+                    return key_path  # unchanged: never rewrite under a running ssh
+        except OSError:
+            pass
+        tmp = key_path + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as fh:
             fh.write(pem)
+        os.replace(tmp, key_path)  # atomic: readers see old or new, never half
         return key_path
+
+    def _known_hosts(self) -> str:
+        return os.path.join(self._conn_dir(), "known_hosts")
+
+    async def _pin_host_key(self) -> str:
+        """Trust-on-first-use: record the server's host key once; later
+        connections must present the same key (MITM protection)."""
+        import asyncssh
+
+        path = self._known_hosts()
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            return path
+        key = await asyncssh.get_server_host_key(self._spec.host, self._spec.port)
+        if key is None:
+            raise WorkspaceError("could not obtain the server's host key")
+        host = self._spec.host if self._spec.port == 22 else f"[{self._spec.host}]:{self._spec.port}"
+        line = f"{host} {key.export_public_key().decode().strip()}\n"
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(line)
+        return path
 
     async def _asyncssh_connect(self):
         try:
@@ -83,12 +112,13 @@ class RemoteSshConnector(WorkspaceConnector):
         if not self._spec.private_key_pem:
             raise WorkspaceError("no SSH private key configured for this connection")
         client_key = asyncssh.import_private_key(self._spec.private_key_pem)
+        known = await self._pin_host_key()
         return await asyncssh.connect(
             host=self._spec.host,
             port=self._spec.port,
             username=self._spec.username,
             client_keys=[client_key],
-            known_hosts=None,  # TODO: pin known_hosts in a follow-up
+            known_hosts=known,
         )
 
     # ---- contract ----
@@ -133,6 +163,12 @@ class RemoteSshConnector(WorkspaceConnector):
         conn = await self._asyncssh_connect()
         try:
             async with conn.start_sftp_client() as sftp:
+                if remote_path.startswith("~"):
+                    remote_path = "." + remote_path[1:]
+                # Absolute paths for the UI: relative ones ("./proj", ".")
+                # turned into "/./proj" in breadcrumbs and ".." jumped to "/".
+                remote_path = await sftp.realpath(remote_path)
+                self.resolved_path = remote_path
                 names = await sftp.listdir(remote_path)
                 entries: list[DirEntry] = []
                 for name in sorted(names):
@@ -172,7 +208,8 @@ class RemoteSshConnector(WorkspaceConnector):
         key = self._ensure_key_file()
         return [
             "ssh", "-p", str(self._spec.port), "-i", key,
-            "-o", "StrictHostKeyChecking=no", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8",
+            "-o", "StrictHostKeyChecking=accept-new", "-o", f"UserKnownHostsFile={self._known_hosts()}",
+            "-o", "BatchMode=yes", "-o", "ConnectTimeout=8",
             f"{self._spec.username}@{self._spec.host}",
         ]
 
@@ -198,10 +235,27 @@ class RemoteSshConnector(WorkspaceConnector):
                         "HRH_SSH_USER": self._spec.username,
                         "HRH_SSH_CWD": path or self._spec.default_path,
                         "HRH_SSH_KEY_FILE": key_path,  # 0600, same key as sshfs
+                        "HRH_SSH_KNOWN_HOSTS": self._known_hosts(),
                     },
                 }
             }
         }
+
+    async def read_file(self, path: str, limit: int) -> bytes:
+        """Read up to ``limit`` bytes of a remote file over SFTP."""
+        conn = await self._asyncssh_connect()
+        try:
+            async with conn.start_sftp_client() as sftp:
+                try:
+                    async with sftp.open(path, "rb") as fh:
+                        return await fh.read(limit)
+                except Exception as exc:  # asyncssh.SFTPNoSuchFile etc.
+                    if "No such file" in str(exc) or getattr(exc, "code", None) == 2:
+                        raise FileNotFoundError(path) from exc
+                    raise
+        finally:
+            conn.close()
+            await conn.wait_closed()
 
     async def upload_files(self, session_id: str, files: list[tuple[str, str, str]]) -> dict[str, str]:
         """Copy attachments to ``~/.hr-harnessor/uploads/<session>/<id>/<name>``

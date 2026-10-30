@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import os
 
 from fastapi import APIRouter, HTTPException, Request
@@ -30,7 +32,8 @@ def _cred_dir(provider: str, account_id: str | None) -> str:
 async def subscription(request: Request, provider: str = "claude", account_id: str | None = None) -> dict:
     """The real plan usage (session 5h / weekly 7d), like the CLI's /usage."""
     try:
-        return subscription_usage(provider, _cred_dir(provider, account_id))
+        # HTTPS call to the provider: off the event loop.
+        return await asyncio.to_thread(subscription_usage, provider, _cred_dir(provider, account_id))
     except UsageError as exc:
         return {"provider": provider, "available": False, "error": str(exc)}
     except Exception as exc:  # noqa: BLE001

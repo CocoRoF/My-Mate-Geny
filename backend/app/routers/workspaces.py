@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import shlex
 import subprocess
 
@@ -51,6 +53,6 @@ async def git_info(
                 p = subprocess.run(["git", "-C", path, *args], capture_output=True, text=True, timeout=12)
                 return p.returncode, p.stdout
 
-        return compute_git_info(run)
+        return await asyncio.to_thread(compute_git_info, run)
     except Exception as exc:  # noqa: BLE001
         return {"is_repo": False, "error": str(exc)[:200]}

@@ -14,13 +14,16 @@ restarts so existing logins survive a redeploy.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import secrets
 import time
+from collections import deque
 from datetime import datetime, timezone
 
 from fastapi import Request
@@ -32,8 +35,16 @@ from app.db import Database
 
 COOKIE_NAME = "hrh_session"
 
-# Paths reachable without a session (login flow + health only).
-_PUBLIC_PREFIXES = ("/login", "/api/auth/login", "/api/auth/logout", "/health", "/favicon.ico")
+# Paths reachable without a session (login flow + health only). Exact
+# matches: a prefix test would also open e.g. "/login-anything".
+_PUBLIC_PATHS = frozenset({"/login", "/api/auth/login", "/api/auth/logout", "/health", "/favicon.ico"})
+_UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+# Distributed guessing (many IPs): above this many failures in the window,
+# every login attempt is slowed down (tarpit) — the owner is never locked out.
+_GLOBAL_WINDOW_S = 600
+_GLOBAL_FAILS = 30
+_TARPIT_S = 3.0
 
 
 def _now() -> int:
@@ -57,7 +68,11 @@ def _load_session_secret() -> bytes:
         return settings.session_secret.encode()
     f = settings.session_key_file
     if f.exists():
-        return f.read_bytes().strip()
+        key = f.read_bytes().strip()
+        if len(key) >= 32:
+            return key
+        # Empty/truncated key file (e.g. crash mid-write) would make tokens
+        # forgeable: replace it (existing logins end once).
     f.parent.mkdir(parents=True, exist_ok=True)
     key = secrets.token_bytes(32)
     fd = os.open(f, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -66,22 +81,78 @@ def _load_session_secret() -> bytes:
     return base64.urlsafe_b64encode(key)
 
 
+def _is_private(host: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return host in ("testclient", "localhost")
+    return ip.is_private or ip.is_loopback
+
+
+def ban_key(ip: str) -> str:
+    """IPv6 clients are banned per /64 (one client = a whole /64 to rotate in)."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if addr.version == 6:
+        return str(ipaddress.ip_network(f"{addr}/64", strict=False))
+    return ip
+
+
 class AuthManager:
     def __init__(self, db: Database) -> None:
         self._db = db
-        self._secret = _load_session_secret()
+        self._base_secret = _load_session_secret()
+        self._db.execute("CREATE TABLE IF NOT EXISTS app_kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        self._global_fails: deque[float] = deque()
+        self._derive_secret()
+
+    def _generation(self) -> str:
+        row = self._db.query_one("SELECT value FROM app_kv WHERE key = 'session_generation'")
+        return row["value"] if row else "0"
+
+    def _derive_secret(self) -> None:
+        # Tokens are bound to: the key file, a generation counter ("sign out
+        # everywhere" bumps it) and the password (changing it ends sessions).
+        pw = hashlib.sha256(settings.auth_password.encode()).hexdigest()
+        self._secret = hmac.new(self._base_secret, f"gen:{self._generation()}:pw:{pw}".encode(), hashlib.sha256).digest()
+
+    def revoke_all(self) -> None:
+        gen = str(int(self._generation()) + 1)
+        self._db.execute(
+            "INSERT INTO app_kv (key, value) VALUES ('session_generation', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (gen,))
+        self._derive_secret()
 
     # ---- client ip (behind cloudflare/nginx) ----
 
     @staticmethod
     def client_ip(request: Request) -> str:
-        cf = request.headers.get("cf-connecting-ip")
-        if cf:
-            return cf.strip()
-        xff = request.headers.get("x-forwarded-for")
-        if xff:
-            return xff.split(",")[0].strip()
-        return request.client.host if request.client else "unknown"
+        peer = request.client.host if request.client else "unknown"
+        # Forwarding headers are only believed from our own proxy hop (the
+        # tunnel / nginx on the private docker network); anyone talking to
+        # the backend directly could otherwise pick any IP.
+        if _is_private(peer):
+            cf = request.headers.get("cf-connecting-ip")
+            if cf:
+                return cf.strip()
+            xff = request.headers.get("x-forwarded-for")
+            if xff:
+                return xff.split(",")[0].strip()
+        return peer
+
+    # ---- distributed-guessing tarpit ----
+
+    def note_global_failure(self) -> None:
+        self._global_fails.append(time.monotonic())
+
+    async def tarpit(self) -> None:
+        now = time.monotonic()
+        while self._global_fails and now - self._global_fails[0] > _GLOBAL_WINDOW_S:
+            self._global_fails.popleft()
+        if len(self._global_fails) >= _GLOBAL_FAILS:
+            await asyncio.sleep(_TARPIT_S)
 
     # ---- session token ----
 
@@ -121,15 +192,17 @@ class AuthManager:
         if not settings.auth_password:
             # Misconfiguration guard: refuse all logins rather than allow-all.
             return False
-        u_ok = hmac.compare_digest(username, settings.auth_username)
-        p_ok = hmac.compare_digest(password, settings.auth_password)
+        # Bytes, not str: compare_digest raises on non-ASCII str (e.g. a
+        # password typed with a Korean IME), which used to 500 the login.
+        u_ok = hmac.compare_digest(username.encode(), settings.auth_username.encode())
+        p_ok = hmac.compare_digest(password.encode(), settings.auth_password.encode())
         return u_ok and p_ok
 
     # ---- ip ban tracking ----
 
     def is_banned(self, ip: str) -> bool:
         row = self._db.query_one(
-            "SELECT banned_until FROM login_attempts WHERE ip = ?", (ip,)
+            "SELECT banned_until FROM login_attempts WHERE ip = ?", (ban_key(ip),)
         )
         if not row or not row["banned_until"]:
             return False
@@ -137,6 +210,8 @@ class AuthManager:
 
     def record_failure(self, ip: str) -> bool:
         """Increment failure count; ban when threshold reached. Returns is_banned."""
+        ip = ban_key(ip)
+        self.note_global_failure()
         row = self._db.query_one("SELECT fails FROM login_attempts WHERE ip = ?", (ip,))
         fails = (row["fails"] if row else 0) + 1
         banned_until = None
@@ -155,7 +230,7 @@ class AuthManager:
         return banned_until is not None
 
     def clear_failures(self, ip: str) -> None:
-        self._db.execute("DELETE FROM login_attempts WHERE ip = ?", (ip,))
+        self._db.execute("DELETE FROM login_attempts WHERE ip IN (?, ?)", (ip, ban_key(ip)))
 
     def cookie_kwargs(self) -> dict:
         return {
@@ -166,6 +241,24 @@ class AuthManager:
             "max_age": settings.session_ttl_days * 86400,
             "path": "/",
         }
+
+
+def origin_allowed(origin: str | None, host: str | None) -> bool:
+    """Same-origin (or a configured CORS origin). No Origin header = not a
+    browser cross-site request (curl, native apps) -> allowed."""
+    if not origin:
+        return True
+    if origin == "null":  # sandboxed/opaque origins never carry our cookie legitimately
+        return False
+    try:
+        from urllib.parse import urlsplit
+
+        o = urlsplit(origin)
+    except ValueError:
+        return False
+    if host and o.netloc.lower() == host.lower():
+        return True
+    return origin.rstrip("/") in {x.rstrip("/") for x in settings.cors_origin_list}
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -183,10 +276,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 status_code=403,
             )
 
-        if path.startswith(_PUBLIC_PREFIXES):
+        if path in _PUBLIC_PATHS:
             return await call_next(request)
 
         if auth.verify_token(auth.token_from_request(request)):
+            # CSRF: a cookie-authenticated, state-changing request must come
+            # from our own pages (sibling subdomains are "same-site" for Lax).
+            if (
+                request.method in _UNSAFE_METHODS
+                and request.cookies.get(COOKIE_NAME)
+                and not origin_allowed(request.headers.get("origin"), request.headers.get("host"))
+            ):
+                return JSONResponse({"detail": "cross-origin request blocked"}, status_code=403)
             # Sliding session: every authenticated hit re-issues the cookie, so a
             # browser that returns within the 7-day window stays logged in
             # indefinitely. Only true 7-day inactivity logs it out.

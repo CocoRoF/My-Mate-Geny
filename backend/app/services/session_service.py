@@ -20,6 +20,9 @@ events-table row id (``eid``) as a cursor. :meth:`stop` interrupts a turn
 from __future__ import annotations
 
 import asyncio
+import base64
+import contextlib
+import dataclasses
 import json
 import os
 import re
@@ -31,8 +34,11 @@ from app.db import Database
 from app.providers import get_provider
 from app.providers.accounts import AccountPool, classify_error, link_shared_state
 from app.providers.base import ProviderEvent, SteerMessage, TurnInbox, TurnRequest
+from app.providers.claude_engine import ClaudeEngine
 from app.services._ids import new_id, now_iso
 from app.services.context_handoff import build_blocks, catchup_preamble, handoff_preamble, ENGINE_LABEL
+from app.services.engines import EngineManager
+from app.services import changes as change_tracker
 from app.services.provider_service import ProviderService
 from app.services.workspace_service import WorkspaceService
 
@@ -73,6 +79,22 @@ class SessionService:
         self._tasks: dict[str, asyncio.Task] = {}
         self._subscribers: dict[str, set[asyncio.Queue]] = {}
         self._inboxes: dict[str, TurnInbox] = {}  # running turns that accept steering
+        self.persistent_engines = True  # Claude: one long-lived CLI process per chat
+        self.live_usage: dict[str, dict[str, Any]] = {}
+        self._engines = EngineManager(
+            on_task=self._on_task,
+            on_usage=self._on_usage,
+            on_auto_turn=self._on_auto_turn,
+            on_closed=self._on_engine_closed,
+        )
+        # Engines don't survive a restart: tasks still marked running are gone.
+        try:
+            self._db.execute(
+                "UPDATE bg_tasks SET status = 'lost', updated_at = ? WHERE status IN ('running', 'pending')",
+                (now_iso(),),
+            )
+        except Exception:  # noqa: BLE001 - table may not exist on very old test DBs
+            pass
 
     def _log(self, level: str, source: str, message: str, **kw: Any) -> None:
         if self._logs is not None:
@@ -204,7 +226,10 @@ class SessionService:
         return out
 
     def delete(self, sid: str) -> None:
-        self.stop(sid)
+        task = self._tasks.get(sid)
+        if task is not None and not task.done():
+            task.cancel()
+        self._retire_engine(sid, "session deleted")
         self._db.execute("DELETE FROM sessions WHERE id = ?", (sid,))
         if self._attachments is not None:
             self._attachments.purge_session(sid)
@@ -238,6 +263,8 @@ class SessionService:
             "UPDATE sessions SET cli_session_id = NULL, cli_sessions = '{}', context_floor = ? WHERE id = ?",
             (now_iso(), sid),
         )
+        # A live engine still holds the old conversation: retire it.
+        self._retire_engine(sid, "context cleared")
         ev = ProviderEvent(type="notice", data={
             "level": "info", "code": "context.reset",
             "message": "Context cleared — the agent starts a fresh conversation from here.",
@@ -440,8 +467,31 @@ class SessionService:
         task = self._tasks.get(sid)
         if task is None or task.done():
             return False
-        task.cancel()
+        slot = self._engines.slot(sid)
+        if slot is not None and slot.engine.turn_active:
+            # Interrupt keeps the engine (and its background tasks) alive.
+            asyncio.create_task(self._interrupt_or_cancel(sid, task))
+        else:
+            task.cancel()
         return True
+
+    def _retire_engine(self, sid: str, reason: str) -> None:
+        if self._engines.slot(sid) is None:
+            return
+        try:
+            asyncio.get_running_loop().create_task(self._engines.shutdown(sid, reason=reason))
+        except RuntimeError:  # no loop (sync caller): nothing can be running then
+            pass
+
+    async def _interrupt_or_cancel(self, sid: str, task: asyncio.Task) -> None:
+        if await self._engines.interrupt(sid):
+            with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError, Exception):
+                await asyncio.wait_for(asyncio.shield(task), timeout=12)
+            if task.done():
+                return
+        # The engine didn't wind down in time: hard stop (kills the process).
+        task.cancel()
+        await self._engines.shutdown(sid, reason="stop timeout")
 
     async def _drive(
         self, sid: str, user_input: str, rows: list[dict[str, Any]], client_msg_id: str | None
@@ -584,13 +634,19 @@ class SessionService:
         provider_name = session["provider"]
         api_key = self._providers.resolved_api_key(provider_name)
         provider = get_provider(provider_name)
+        # Claude runs in a persistent engine (background tasks, auto turns,
+        # live interrupt); everything else is one process per turn.
+        persistent = self.persistent_engines and hasattr(provider, "engine_argv")
 
-        # Multi-account pool: lease an account when the pool is enabled. Only
-        # the credentials dir differs per account — HOME stays the real one
-        # (so ~/.ssh, ~/.gitconfig, caches all work) and everything except the
-        # credentials is shared with the host config (link_shared_state).
-        lease = self._pool.acquire(provider_name) if self._pool else None
+        # Multi-account pool. One-shot turns lease per turn; a persistent
+        # engine leases when it starts and keeps its account. Only the
+        # credentials dir differs per account — HOME stays the real one and
+        # everything else is shared with the host config (link_shared_state).
+        lease = None
         extra_env: dict[str, str] = {}
+        if not persistent and self._pool is not None:
+            # May fetch plan usage over HTTPS (most_remaining): off the event loop.
+            lease = await asyncio.to_thread(self._pool.acquire, provider_name)
         if lease is not None:
             ctx["account"] = lease.label
             if not lease.is_primary:
@@ -609,6 +665,12 @@ class SessionService:
         # seen (full handoff after a provider switch, catch-up when returning).
         resume_id, preamble, ctx_kind, ctx_n = self._context_for(session, provider_name, msg_id)
 
+        uploads_dir = None
+        if self._attachments is not None:
+            d = self._attachments.session_dir(sid)
+            d.mkdir(parents=True, exist_ok=True)
+            uploads_dir = str(d)
+
         req = TurnRequest(
             messages=[{"role": m["role"], "content": m["content"]} for m in history],
             model=session["model"],
@@ -623,6 +685,7 @@ class SessionService:
             extra_dirs=local_extra,
             inbox=TurnInbox(),
             preamble=preamble,
+            uploads_dir=uploads_dir,
         )
         self._inboxes[sid] = req.inbox
 
@@ -637,21 +700,21 @@ class SessionService:
             )
             return ProviderEvent(type="notice", data={"level": "info", "code": f"context.{ctx_kind}", "message": msg})
 
-        final_text = ""
-        final_model = None
-        err_code = err_msg = None
-        tool_calls: dict[str, dict[str, Any]] = {}
-        started = time.monotonic()
+        st = self._turn_state(ctx, provider_name, session["model"])
+        st["changes"] = await self._snapshot_before(session, connector)
+        holder: dict[str, Any] = {}
         noted = False
         try:
             for attempt in (0, 1):
                 progressed = False  # anything beyond start/info: no silent retry after that
                 retry = False
-                async for ev in provider.run_turn_stream(req):
+                stream = (
+                    self._engine_turn(sid, provider, req, holder, ctx)
+                    if persistent else provider.run_turn_stream(req)
+                )
+                async for ev in stream:
                     if ev.type == "session.info":
-                        info = {**ev.data, "account": ctx.get("account")}
-                        self._db.execute("UPDATE sessions SET cli_info = ? WHERE id = ?", (json.dumps(info), sid))
-                        yield ProviderEvent(type="session.info", data=info, seq=ev.seq, timestamp=ev.timestamp)
+                        yield self._session_info(sid, ev, ctx)
                         continue
                     if (
                         ev.type == "error" and attempt == 0 and req.cli_session_id and not progressed
@@ -665,11 +728,13 @@ class SessionService:
                         _, preamble2, kind2, n2 = self._context_for(self.get(sid), provider_name, msg_id, fresh=True)
                         req.cli_session_id, req.preamble = None, preamble2
                         ctx_kind, ctx_n = kind2, n2
+                        req.inbox = TurnInbox()
+                        self._inboxes[sid] = req.inbox
                         retry = True
                         break
                     if ev.type == "session.start" and attempt == 1:
                         continue  # the turn already has its start event
-                    if ev.type != "session.start":
+                    if ev.type not in ("session.start", "task.update"):
                         if not progressed and not noted:
                             # Say what context the engine got — once, right before
                             # its first real output (after any stale-session retry).
@@ -679,50 +744,12 @@ class SessionService:
                                 self._add_event(sid, note)
                                 yield note
                         progressed = True
-                    self._add_event(sid, ev)
-                    if ev.type == "turn.complete":
-                        final_text = ev.data.get("text", "")
-                        final_model = ev.data.get("model") or None
-                        # Answer first, then the watermark: the engine has seen
-                        # everything up to and including its own reply.
-                        if final_text:
-                            self._add_message(sid, "assistant", final_text, provider_name,
-                                              final_model or session["model"])
-                        self._set_cli_session(sid, ev.data.get("cli_session_id"), provider_name)
-                    elif ev.type == "tool.use":
-                        tool_calls[str(ev.data.get("id"))] = {
-                            "name": ev.data.get("name"), "input": ev.data.get("input"),
-                        }
-                        run = self.active_runs.get(sid)
-                        if run is not None:
-                            run["tools"] += 1
-                    elif ev.type == "tool.result" and ev.data.get("is_error"):
-                        call = tool_calls.get(str(ev.data.get("id")), {})
-                        output = str(ev.data.get("output") or "")
-                        first = next((ln for ln in output.splitlines() if ln.strip()), "tool returned an error")
-                        self._log(
-                            "warning", "tool", first[:300],
-                            code=str(call.get("name") or ev.data.get("name") or "tool"),
-                            detail={**ctx, "tool_use_id": ev.data.get("id"),
-                                    "input": call.get("input"), "output": output},
-                            session_id=sid,
-                        )
-                    elif ev.type == "notice" and ev.data.get("level") == "warning":
-                        self._log(
-                            "warning", "provider", str(ev.data.get("message")),
-                            code=str(ev.data.get("code") or "provider.notice"), detail=ctx, session_id=sid,
-                        )
-                    elif ev.type == "error":
-                        err_code = ev.data.get("code")
-                        err_msg = ev.data.get("message")
-                        if err_code != "turn.interrupted":
-                            self._log(
-                                "error", "provider", str(err_msg or err_code),
-                                code=str(err_code or "exec.error"),
-                                detail={**ctx, "elapsed_s": round(time.monotonic() - started, 1),
-                                        "tools_run": len(tool_calls)},
-                                session_id=sid,
-                            )
+                    if ev.type in ("turn.complete", "error"):
+                        changed = await self._changes_event(st)
+                        if changed is not None:
+                            await self._record_event(sid, changed, st)
+                            yield changed
+                    await self._record_event(sid, ev, st)
                     yield ev
                 if not retry:
                     break
@@ -730,20 +757,378 @@ class SessionService:
             if self._inboxes.get(sid) is req.inbox:
                 self._inboxes.pop(sid, None)
             req.inbox.close()
-            if lease is not None and self._pool is not None:
-                if err_code is not None:
-                    outcome = classify_error(err_code, err_msg)
-                    self._pool.report(lease, ok=False, code=outcome, error=err_msg)
-                    self._log(
-                        "warning", "account",
-                        f"{provider_name} account '{lease.label}' failed a turn ({outcome})",
-                        code=f"account.{outcome}", detail={**ctx, "error": err_msg},
-                        session_id=sid,
-                    )
-                else:
-                    self._pool.report(lease, ok=True)
+            slot = holder.get("slot") if persistent else None
+            if slot is not None and slot.engine.alive and slot.engine.cli_session_id:
+                # A live engine has seen this turn whatever its outcome (stopped,
+                # failed): its session is current — no handoff to itself next time.
+                self._set_cli_session(sid, slot.engine.cli_session_id, provider_name)
+            outcome_lease = slot.lease if slot is not None else lease
+            self._report_outcome(provider_name, outcome_lease, st, ctx, sid, release=not persistent)
+
+    # ---- shared turn bookkeeping (user turns and auto turns) ----
+
+    @staticmethod
+    def _turn_state(ctx: dict[str, Any], provider_name: str, model: str) -> dict[str, Any]:
+        return {"ctx": ctx, "provider": provider_name, "model": model, "tool_calls": {},
+                "started": time.monotonic(), "final_text": "", "err_code": None, "err_msg": None}
+
+    def _session_info(self, sid: str, ev: ProviderEvent, ctx: dict[str, Any]) -> ProviderEvent:
+        info = {**ev.data, "account": ctx.get("account")}
+        self._db.execute("UPDATE sessions SET cli_info = ? WHERE id = ?", (json.dumps(info), sid))
+        return ProviderEvent(type="session.info", data=info, seq=ev.seq, timestamp=ev.timestamp)
+
+    async def _record_event(self, sid: str, ev: ProviderEvent, st: dict[str, Any]) -> None:
+        """Persist one turn event + side effects (assistant message, engine
+        watermark, admin logs, artifact images)."""
+        ctx = st["ctx"]
+        if ev.type == "tool.result" and ev.data.get("images") and self._attachments is not None:
+            stored = []
+            for k, img in enumerate(ev.data["images"]):
+                try:
+                    raw = base64.b64decode(img.get("data") or "")
+                    ext = (img.get("media_type") or "image/png").split("/")[-1].replace("jpeg", "jpg")
+                    stored.append(await self._attachments.save_bytes(
+                        sid, f"tool-image-{k + 1}.{ext}", img.get("media_type") or "image/png", raw,
+                        tag=f"artifact:{ev.data.get('id')}",
+                    ))
+                except Exception:  # noqa: BLE001 - an unreadable image must not break the turn
+                    continue
+            ev.data = {**ev.data, "images": stored}
+        if ev.type == "turn.complete":
+            ev.data = {**ev.data, "provider": st["provider"]}  # usage is attributed per turn
+        self._add_event(sid, ev)
+        if ev.type == "turn.complete":
+            final_text = ev.data.get("text", "")
+            st["final_text"] = final_text
+            # Answer first, then the watermark: the engine has seen
+            # everything up to and including its own reply.
+            if final_text:
+                self._add_message(sid, "assistant", final_text, st["provider"], ev.data.get("model") or st["model"])
+            self._set_cli_session(sid, ev.data.get("cli_session_id"), st["provider"])
+        elif ev.type == "tool.use":
+            st["tool_calls"][str(ev.data.get("id"))] = {"name": ev.data.get("name"), "input": ev.data.get("input")}
+            run = self.active_runs.get(sid)
+            if run is not None:
+                run["tools"] += 1
+        elif ev.type == "tool.result" and ev.data.get("is_error"):
+            call = st["tool_calls"].get(str(ev.data.get("id")), {})
+            output = str(ev.data.get("output") or "")
+            first = next((ln for ln in output.splitlines() if ln.strip()), "tool returned an error")
+            self._log(
+                "warning", "tool", first[:300],
+                code=str(call.get("name") or ev.data.get("name") or "tool"),
+                detail={**ctx, "tool_use_id": ev.data.get("id"), "input": call.get("input"), "output": output},
+                session_id=sid,
+            )
+        elif ev.type == "notice" and ev.data.get("level") == "warning":
+            self._log("warning", "provider", str(ev.data.get("message")),
+                      code=str(ev.data.get("code") or "provider.notice"), detail=ctx, session_id=sid)
+        elif ev.type == "error":
+            st["err_code"] = ev.data.get("code")
+            st["err_msg"] = ev.data.get("message")
+            if st["err_code"] != "turn.interrupted":
+                self._log(
+                    "error", "provider", str(st["err_msg"] or st["err_code"]),
+                    code=str(st["err_code"] or "exec.error"),
+                    detail={**ctx, "elapsed_s": round(time.monotonic() - st["started"], 1),
+                            "tools_run": len(st["tool_calls"])},
+                    session_id=sid,
+                )
+
+    def _report_outcome(self, provider_name: str, lease: Any, st: dict[str, Any], ctx: dict[str, Any],
+                        sid: str, *, release: bool) -> None:
+        if lease is None or self._pool is None:
+            return
+        failed = st["err_code"] is not None and st["err_code"] != "turn.interrupted"
+        if failed:
+            outcome = classify_error(st["err_code"], st["err_msg"])
+            self._pool.record_outcome(lease, ok=False, code=outcome, error=st["err_msg"])
+            self._log("warning", "account", f"{provider_name} account '{lease.label}' failed a turn ({outcome})",
+                      code=f"account.{outcome}", detail={**ctx, "error": st["err_msg"]}, session_id=sid)
+        else:
+            self._pool.record_outcome(lease, ok=True)
+        if release:
+            self._pool.release(lease)
+
+    async def _engine_turn(self, sid: str, provider: Any, req: TurnRequest, holder: dict[str, Any],
+                           ctx: dict[str, Any]) -> AsyncIterator[ProviderEvent]:
+        """One turn on the session's persistent Claude engine (spawned on demand)."""
+
+        async def make(lease: Any) -> ClaudeEngine:
+            env: dict[str, str] = {}
+            key = req.api_key
+            if lease is not None:
+                if not lease.is_primary:
+                    await asyncio.to_thread(link_shared_state, "claude", lease.account_id)
+                    env["CLAUDE_CONFIG_DIR"] = lease.config_dir
+                if lease.auth_mode == "api_key" and lease.api_key:
+                    key = lease.api_key
+            if key:
+                env["ANTHROPIC_API_KEY"] = key
+            launch = dataclasses.replace(req, api_key=key)
+            return ClaudeEngine(
+                binary=provider._binary, argv=provider.engine_argv(launch), cwd=req.cwd, env_extras=env,
+                fingerprint=provider.engine_fingerprint(req), model=req.model or "sonnet", mode=req.mode,
+            )
+
+        slot, _fresh, note = await self._engines.ensure(
+            sid,
+            make_engine=make,
+            fingerprint=provider.engine_fingerprint(req),
+            model=req.model or "sonnet",
+            mode=req.mode,
+            permission_mode=provider.permission_mode(req.mode),
+            acquire_lease=lambda: self._pool.acquire("claude") if self._pool else None,
+            release_lease=lambda lease: self._pool.release(lease) if self._pool else None,
+        )
+        holder["slot"] = slot
+        if slot.lease is not None:
+            ctx["account"] = slot.lease.label
+            run = self.active_runs.get(sid)
+            if run is not None:
+                run["account"] = slot.lease.label
+        first = True
+        async for ev in self._engines.turn(sid, slot, provider.envelope(req), req.inbox):
+            yield ev
+            if first and note:
+                first = False
+                notice = ProviderEvent(type="notice", data={"level": "warning", "code": "engine.restarted", "message": note})
+                yield notice
+
+    # ---- per-turn file changes (git snapshots) ----
+
+    def _change_runner(self, session: dict[str, Any], connector: Any) -> change_tracker.ShellRunner | None:
+        if not session["connection_id"]:
+            return change_tracker.local_runner()
+        prefix = getattr(connector, "ssh_prefix", None)
+        return change_tracker.ShellRunner(prefix()) if prefix else None
+
+    async def _snapshot_before(self, session: dict[str, Any], connector: Any) -> dict[str, Any] | None:
+        runner = self._change_runner(session, connector)
+        if runner is None:
+            return None
+        roots = [session["workspace_path"], *(session.get("extra_dirs") or [])]
+        try:
+            before = await change_tracker.snapshot_all(runner, roots)
+        except Exception:  # noqa: BLE001 - tracking is best-effort, never blocks a turn
+            return None
+        return {"runner": runner, "before": before} if before else None
+
+    async def _changes_event(self, st: dict[str, Any]) -> ProviderEvent | None:
+        snap = st.pop("changes", None)  # once per turn
+        if not snap:
+            return None
+        runner, before = snap["runner"], snap["before"]
+        repos = []
+        try:
+            for root, tree in before.items():
+                after = await change_tracker.snapshot(runner, root)
+                if after is None:
+                    continue
+                summary = await change_tracker.summarize(runner, root, tree, after[1])
+                if summary is not None:
+                    repos.append(summary)
+        except Exception:  # noqa: BLE001
+            return None
+        if not repos:
+            return None
+        return ProviderEvent(type="turn.changes", data={
+            "repos": repos,
+            "files": sum(len(r["files"]) for r in repos),
+            "added": sum(r["added"] for r in repos),
+            "removed": sum(r["removed"] for r in repos),
+        })
+
+    def _change_record(self, sid: str, eid: int) -> tuple[dict[str, Any], dict[str, Any]]:
+        row = self._db.query_one(
+            "SELECT data FROM events WHERE id = ? AND session_id = ? AND type = 'turn.changes'", (eid, sid))
+        if row is None:
+            raise KeyError("changes not found")
+        return self.get(sid), json.loads(row["data"])
+
+    async def changes_patch(self, sid: str, eid: int, repo: int, path: str | None) -> str:
+        session, data = self._change_record(sid, eid)
+        r = data["repos"][repo]
+        runner = self._change_runner(session, self._workspaces.connector_for(session["connection_id"]))
+        if runner is None:
+            raise KeyError("workspace unavailable")
+        paths = [path] if path else []
+        if path:
+            f = next((x for x in r["files"] if x["path"] == path), None)
+            if f is None:
+                raise KeyError("file not in this change set")
+            if f.get("old_path"):
+                paths.append(f["old_path"])
+        return await change_tracker.patch(runner, r["root"], r["before"], r["after"], paths)
+
+    async def revert_changes(self, sid: str, eid: int, repo: int | None, paths: list[str] | None) -> dict[str, Any]:
+        if sid in self._tasks:
+            raise TurnBusyError("stop the running turn first")
+        session, data = self._change_record(sid, eid)
+        runner = self._change_runner(session, self._workspaces.connector_for(session["connection_id"]))
+        if runner is None:
+            raise KeyError("workspace unavailable")
+        reverted: list[str] = []
+        for i, r in enumerate(data["repos"]):
+            if repo is not None and i != repo:
+                continue
+            reverted += await change_tracker.revert(runner, r, paths)
+        ev = ProviderEvent(type="notice", data={
+            "level": "info", "code": "changes.reverted",
+            "message": f"Reverted {len(reverted)} file{'s' if len(reverted) != 1 else ''} to how they were before that turn",
+        })
+        self._add_event(sid, ev)
+        self._publish(sid, ev.to_dict())
+        return {"reverted": reverted}
+
+    # ---- engine callbacks: auto turns, background tasks, live usage ----
+
+    def _on_auto_turn(self, sid: str, stream: AsyncIterator[ProviderEvent], inbox: TurnInbox) -> None:
+        if sid in self._tasks:  # never two drivers for one session
+            asyncio.create_task(_drain_quietly(stream))
+            return
+        self._inboxes[sid] = inbox
+        self._tasks[sid] = asyncio.create_task(self._drive_auto(sid, stream, inbox))
+
+    async def _drive_auto(self, sid: str, stream: AsyncIterator[ProviderEvent], inbox: TurnInbox) -> None:
+        """A turn Claude started on its own (e.g. a background task finished)."""
+        try:
+            session = self.get(sid)
+        except KeyError:
+            return
+        slot = self._engines.slot(sid)
+        ctx = {"provider": "claude", "model": session["model"], "mode": session.get("mode"),
+               "connection_id": session["connection_id"], "workspace": session["workspace_path"],
+               "trigger": "background", "account": getattr(slot.lease, "label", None) if slot else None}
+        self.active_runs[sid] = {**ctx, "session_id": sid, "title": session["title"], "started_at": now_iso(),
+                                 "tools": 0, "attachments": 0}
+        st = self._turn_state(ctx, "claude", session["model"])
+        self._publish(sid, {"type": "run.state", "data": {"running": True}})
+        try:
+            with contextlib.suppress(Exception):
+                st["changes"] = await self._snapshot_before(
+                    session, self._workspaces.connector_for(session["connection_id"]))
+            async for ev in stream:
+                if ev.type == "session.info":
+                    self._publish(sid, self._session_info(sid, ev, ctx).to_dict())
+                    continue
+                if ev.type in ("turn.complete", "error"):
+                    changed = await self._changes_event(st)
+                    if changed is not None:
+                        await self._record_event(sid, changed, st)
+                        self._publish(sid, changed.to_dict())
+                await self._record_event(sid, ev, st)
+                self._publish(sid, ev.to_dict())
+        except asyncio.CancelledError:
+            ev = ProviderEvent(type="error", data={"code": "turn.interrupted", "message": "Stopped by user"})
+            self._add_event(sid, ev)
+            self._publish(sid, ev.to_dict())
+        except Exception as exc:  # noqa: BLE001
+            self._log("error", "ws", f"auto turn crashed: {exc}", code="exec.autoturn.crashed",
+                      detail={"traceback": traceback.format_exc()}, session_id=sid)
+        finally:
+            if self._inboxes.get(sid) is inbox:
+                self._inboxes.pop(sid, None)
+            self._tasks.pop(sid, None)
+            self.active_runs.pop(sid, None)
+            self._report_outcome("claude", slot.lease if slot else None, st, ctx, sid, release=False)
+            self._publish(sid, {"type": "run.state", "data": {"running": False}})
+
+    def _on_task(self, sid: str, task: dict[str, Any]) -> None:
+        try:
+            self._db.execute(
+                """
+                INSERT INTO bg_tasks (session_id, task_id, tool_use_id, description, task_type, is_backgrounded,
+                                      status, output_file, summary, started_at, ended_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(session_id, task_id) DO UPDATE SET
+                    tool_use_id = COALESCE(excluded.tool_use_id, tool_use_id),
+                    description = COALESCE(excluded.description, description),
+                    task_type = COALESCE(excluded.task_type, task_type),
+                    is_backgrounded = MAX(excluded.is_backgrounded, is_backgrounded),
+                    status = excluded.status,
+                    output_file = COALESCE(excluded.output_file, output_file),
+                    summary = COALESCE(excluded.summary, summary),
+                    ended_at = COALESCE(excluded.ended_at, ended_at),
+                    updated_at = excluded.updated_at
+                """,
+                (sid, task.get("task_id"), task.get("tool_use_id"), task.get("description"), task.get("task_type"),
+                 1 if task.get("is_backgrounded") else 0, task.get("status") or "running", task.get("output_file"),
+                 task.get("summary"), task.get("started_at"), task.get("ended_at"), now_iso()),
+            )
+        except Exception:  # noqa: BLE001 - e.g. the session was just deleted
+            return
+        row = self._db.query_one("SELECT * FROM bg_tasks WHERE session_id = ? AND task_id = ?", (sid, task.get("task_id")))
+        if row is not None:
+            self._publish(sid, {"type": "task.state", "data": self._task_out(row)})
+
+    def _on_usage(self, sid: str, info: dict[str, Any]) -> None:
+        self.live_usage["claude"] = {**info, "at": now_iso()}
+        self._publish(sid, {"type": "usage.update", "data": info})
+
+    def _on_engine_closed(self, sid: str, lease: Any, reason: str) -> None:
+        if self._pool is not None and lease is not None:
+            self._pool.release(lease)
+        rows = self._db.query(
+            "SELECT * FROM bg_tasks WHERE session_id = ? AND status IN ('running', 'pending')", (sid,)
+        )
+        for r in rows:
+            self._db.execute(
+                "UPDATE bg_tasks SET status = 'killed', ended_at = ?, updated_at = ? WHERE session_id = ? AND task_id = ?",
+                (time.time(), now_iso(), sid, r["task_id"]),
+            )
+            row = self._db.query_one("SELECT * FROM bg_tasks WHERE session_id = ? AND task_id = ?", (sid, r["task_id"]))
+            if row is not None:
+                self._publish(sid, {"type": "task.state", "data": self._task_out(row)})
+        if reason == "exited":
+            self._log("warning", "provider", "Claude engine process exited", code="engine.exited", session_id=sid)
+
+    # ---- background tasks API ----
+
+    @staticmethod
+    def _task_out(row: Any) -> dict[str, Any]:
+        d = dict(row)
+        d["is_backgrounded"] = bool(d.get("is_backgrounded"))
+        d.pop("output_file", None)  # served through the API, never exposed as a path
+        return d
+
+    def list_tasks(self, sid: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
+        if sid:
+            rows = self._db.query(
+                "SELECT * FROM bg_tasks WHERE session_id = ? ORDER BY started_at DESC LIMIT ?", (sid, limit))
+        else:
+            rows = self._db.query("SELECT * FROM bg_tasks ORDER BY started_at DESC LIMIT ?", (limit,))
+        return [self._task_out(r) for r in rows]
+
+    def task_output(self, sid: str, task_id: str, tail: int = 65536) -> dict[str, Any]:
+        row = self._db.query_one("SELECT * FROM bg_tasks WHERE session_id = ? AND task_id = ?", (sid, task_id))
+        if row is None:
+            raise KeyError(task_id)
+        path = row["output_file"]
+        if not path or not os.path.exists(path):
+            return {"task_id": task_id, "output": "", "truncated": False, "available": False}
+        size = os.path.getsize(path)
+        with open(path, "rb") as fh:
+            if size > tail:
+                fh.seek(size - tail)
+            data = fh.read()
+        return {"task_id": task_id, "output": data.decode(errors="replace"), "truncated": size > tail,
+                "size": size, "available": True}
+
+    async def stop_task(self, sid: str, task_id: str) -> bool:
+        return await self._engines.stop_task(sid, task_id)
+
+    def engines(self) -> list[dict[str, Any]]:
+        return self._engines.describe()
+
+    async def shutdown(self) -> None:
+        await self._engines.shutdown_all()
 
 
+async def _drain_quietly(stream: AsyncIterator[ProviderEvent]) -> None:
+    with contextlib.suppress(Exception):
+        async for _ in stream:
+            pass
 
 
 def _title_from(text: str) -> str:

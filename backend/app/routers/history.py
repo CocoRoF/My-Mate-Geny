@@ -8,6 +8,13 @@ from app.routers._deps import session_service
 from app.services.session_service import SessionService
 
 router = APIRouter(prefix="/api/history")
+tasks_router = APIRouter(prefix="/api/tasks")
+
+
+@tasks_router.get("")
+async def all_tasks(svc: SessionService = Depends(session_service)) -> list[dict]:
+    """Background tasks across every chat (newest first)."""
+    return svc.list_tasks(None, limit=300)
 
 
 @router.get("/{sid}")

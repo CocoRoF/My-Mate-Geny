@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from app.routers._deps import session_service
 from app.schemas.models import SessionCreate, SessionUpdate
@@ -44,6 +45,54 @@ async def update_session(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{sid}/tasks")
+async def list_tasks(sid: str, svc: SessionService = Depends(session_service)) -> list[dict]:
+    return svc.list_tasks(sid)
+
+
+@router.get("/{sid}/tasks/{task_id}/output")
+async def task_output(sid: str, task_id: str, tail: int = 65536, svc: SessionService = Depends(session_service)) -> dict:
+    try:
+        return svc.task_output(sid, task_id, max(1024, min(tail, 4 * 1024 * 1024)))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="task not found") from exc
+
+
+@router.post("/{sid}/tasks/{task_id}/stop")
+async def stop_task(sid: str, task_id: str, svc: SessionService = Depends(session_service)) -> dict:
+    ok = await svc.stop_task(sid, task_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail="no running engine for this session")
+    return {"task_id": task_id, "stopping": True}
+
+
+@router.get("/{sid}/changes/{eid}/diff")
+async def changes_diff(sid: str, eid: int, repo: int = 0, path: str | None = None,
+                       svc: SessionService = Depends(session_service)) -> dict:
+    try:
+        return {"patch": await svc.changes_patch(sid, eid, repo, path)}
+    except (KeyError, IndexError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+class RevertBody(BaseModel):
+    repo: int | None = None
+    paths: list[str] | None = None
+
+
+@router.post("/{sid}/changes/{eid}/revert")
+async def changes_revert(sid: str, eid: int, body: RevertBody,
+                         svc: SessionService = Depends(session_service)) -> dict:
+    try:
+        return await svc.revert_changes(sid, eid, body.repo, body.paths)
+    except (KeyError, IndexError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except TurnBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/{sid}/stop")

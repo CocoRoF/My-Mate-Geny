@@ -24,7 +24,7 @@ class WorkspaceService:
         entries = await connector.list_dir(path)
         return {
             "connection_id": connection_id,
-            "path": path,
+            "path": getattr(connector, "resolved_path", None) or path,
             "entries": [
                 {"name": e.name, "path": e.path, "is_dir": e.is_dir} for e in entries
             ],

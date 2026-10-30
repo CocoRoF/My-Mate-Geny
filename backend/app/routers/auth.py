@@ -94,6 +94,7 @@ async def login(body: LoginBody, request: Request):
     if auth.is_banned(ip):
         return JSONResponse({"detail": "접속 시도가 너무 많습니다. IP가 차단되었습니다."}, status_code=403)
 
+    await auth.tarpit()  # slows distributed guessing; never locks the owner out
     if not auth.check_credentials(body.username, body.password):
         banned = auth.record_failure(ip)
         logs = request.app.state.logs
@@ -116,6 +117,21 @@ async def login(body: LoginBody, request: Request):
     # HttpOnly cookie; the web UI ignores it and uses the cookie.
     resp = JSONResponse({"ok": True, "token": token})
     resp.set_cookie(value=token, **auth.cookie_kwargs())
+    return resp
+
+
+@router.post("/api/auth/revoke-all")
+async def revoke_all(request: Request):
+    """Sign out every device (all existing session tokens stop working),
+    then sign this browser back in with a fresh token."""
+    auth: AuthManager = request.app.state.auth
+    auth.revoke_all()
+    request.app.state.logs.record("info", "auth", "all sessions revoked", code="auth.revoked_all",
+                                  ip=AuthManager.client_ip(request))
+    from app.config import settings
+
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(value=auth.issue_token(settings.auth_username), **auth.cookie_kwargs())
     return resp
 
 

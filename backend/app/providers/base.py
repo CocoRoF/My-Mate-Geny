@@ -35,6 +35,10 @@ EVENT_TYPES = (
     "notice",          # NON-terminal warning/info shown inline; data: {level, message, code}
     "session.info",    # CLI capabilities (tools, slash commands, skills, MCP servers…); not persisted as an event
     "user.steer",      # the user added instructions mid-turn; data: {text, attachments, client_msg_id}
+    "task.update",     # background/long task state (Claude); data: {task_id, status, description, …}
+    "usage.update",    # live plan utilization (Claude rate_limit_event); not persisted
+    "engine.exit",     # internal: the persistent engine process ended
+    "turn.changes",    # files the turn changed (git snapshots); data: {repos[], files, added, removed}
 )
 
 EventType = Literal[
@@ -48,6 +52,10 @@ EventType = Literal[
     "notice",
     "session.info",
     "user.steer",
+    "task.update",
+    "usage.update",
+    "engine.exit",
+    "turn.changes",
 ]
 
 
@@ -151,6 +159,9 @@ class TurnRequest:
     # provider switch, or a catch-up on turns another engine ran). Prepended
     # to the user's message.
     preamble: str = ""
+    # Per-session uploads dir, always an additional working dir for Claude so
+    # attachments never change the persistent engine's launch settings.
+    uploads_dir: str | None = None
 
 
 class ProviderTurnError(RuntimeError):

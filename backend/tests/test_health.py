@@ -44,3 +44,16 @@ def test_bearer_token_auth():
         client.cookies.clear()
         r2 = client.get("/api/config", headers={"Authorization": f"Bearer {token}"})
         assert r2.status_code == 200
+
+
+def test_cross_origin_post_with_cookie_is_blocked():
+    with TestClient(app) as client:
+        _login(client)
+        r = client.post("/api/sessions", json={"provider": "claude", "workspace_path": "/tmp", "title": "x"},
+                        headers={"Origin": "https://evil.example"})
+        assert r.status_code == 403
+        ok = client.post("/api/sessions", json={"provider": "claude", "workspace_path": "/tmp", "title": "x"},
+                         headers={"Origin": "http://testserver"})
+        assert ok.status_code == 200
+    with TestClient(app) as anon:
+        assert anon.get("/login-anything").status_code == 401  # not public by prefix

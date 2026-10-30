@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import subprocess
 import urllib.error
 import urllib.parse
@@ -37,6 +39,14 @@ def _owner_repo(remote: str) -> str:
     return "/".join(parts[-2:]) if len(parts) >= 2 else r
 
 
+_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def strip_userinfo(url: str) -> str:
+    """Never show credentials embedded in a remote URL (https://user:pass@host/...)."""
+    return re.sub(r"^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@]*@", r"\1", url.strip())
+
+
 def git_info(run) -> dict[str, Any]:
     """Compute a workspace's git context using a ``run(args) -> (rc, stdout)``.
 
@@ -46,6 +56,7 @@ def git_info(run) -> dict[str, Any]:
     if rc != 0 or out.strip() != "true":
         return {"is_repo": False}
     _, remote = run(["remote", "get-url", "origin"])
+    remote = strip_userinfo(remote)
     _, branch = run(["branch", "--show-current"])
     branch = branch.strip()
     if not branch:
@@ -175,6 +186,10 @@ class GitService:
         if r and r["token_ref"]:
             self._vault.delete(r["token_ref"])
         self._db.execute("DELETE FROM git_accounts WHERE id = ?", (aid,))
+        try:
+            self._credentials_path(aid).unlink()
+        except FileNotFoundError:
+            pass
 
     def _token(self, aid: str) -> tuple[dict, str]:
         r = self._db.query_one("SELECT * FROM git_accounts WHERE id = ?", (aid,))
@@ -190,8 +205,14 @@ class GitService:
         base = _api_base(provider, host)
         try:
             if provider == "github":
-                url = f"{base}/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member"
-                data = _req(url, token, provider)
+                data = []
+                for page in range(1, 6):  # up to 500 repos, newest activity first
+                    url = (f"{base}/user/repos?per_page=100&page={page}&sort=updated"
+                           "&affiliation=owner,collaborator,organization_member")
+                    batch = _req(url, token, provider)
+                    data += batch
+                    if len(batch) < 100:
+                        break
                 repos = [
                     {
                         "full_name": x["full_name"],
@@ -228,37 +249,71 @@ class GitService:
 
     # ---- clone ----
 
-    def _tokenized_url(self, clone_url: str, provider: str, username: str, token: str) -> str:
-        p = urllib.parse.urlsplit(clone_url)
-        if provider == "github":
-            userinfo = f"x-access-token:{token}"
-        else:
-            userinfo = f"oauth2:{token}"
-        return urllib.parse.urlunsplit((p.scheme, f"{userinfo}@{p.netloc}", p.path, p.query, p.fragment))
+    def _git_host(self, acc: dict) -> str:
+        if acc["provider"] == "github":
+            return "github.com"
+        host = acc.get("host") or "gitlab.com"
+        return urllib.parse.urlsplit(host if "://" in host else f"https://{host}").hostname or host
+
+    def _credentials_path(self, aid: str):
+        return settings.home_dir / "git-credentials" / aid
+
+    def _write_credentials(self, acc: dict, token: str) -> str:
+        """Token for git over HTTPS, in a 0600 file OUTSIDE the repo; the repo's
+        origin stays a clean URL (never shown in the UI/API with a token)."""
+        path = self._credentials_path(acc["id"])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        os.chmod(path.parent, 0o700)
+        user = "x-access-token" if acc["provider"] == "github" else "oauth2"
+        line = f"https://{urllib.parse.quote(user, safe='')}:{urllib.parse.quote(token, safe='')}@{self._git_host(acc)}\n"
+        tmp = path.with_suffix(".tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(line)
+        os.replace(tmp, path)
+        return str(path)
 
     def clone(self, aid: str, full_name: str, clone_url: str) -> dict:
         acc, token = self._token(aid)
-        dest = settings.repos_root_path / acc["provider"] / full_name
+        parts = full_name.strip("/").split("/")
+        if not 2 <= len(parts) <= 8 or any(not _SEGMENT.match(p) or p in (".", "..") for p in parts):
+            raise GitError("invalid repository name")
+        u = urllib.parse.urlsplit(clone_url)
+        if u.scheme != "https" or u.username or u.password or (u.hostname or "").lower() != self._git_host(acc).lower():
+            raise GitError("clone URL must be https on this account's host")
+        root = (settings.repos_root_path / acc["provider"]).resolve()
+        dest = (root / "/".join(parts)).resolve()
+        if root not in dest.parents:
+            raise GitError("invalid repository name")
         if (dest / ".git").exists():
             return {"path": str(dest), "cloned": False}
         dest.parent.mkdir(parents=True, exist_ok=True)
-        auth_url = self._tokenized_url(clone_url, acc["provider"], acc["username"] or "", token)
+        helper = f"store --file={self._write_credentials(acc, token)}"
+        clean_url = urllib.parse.urlunsplit(("https", u.hostname, u.path, "", ""))
+        existed = dest.exists()
         try:
             proc = subprocess.run(
-                ["git", "clone", auth_url, str(dest)],
-                capture_output=True, text=True, timeout=300,
+                # empty helper first: ignore any global helper, use only ours
+                ["git", "-c", "credential.helper=", "-c", f"credential.helper={helper}", "clone", clean_url, str(dest)],
+                capture_output=True, text=True, timeout=600,
                 env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
             )
         except FileNotFoundError as exc:
             raise GitError("git not installed on the runtime") from exc
         except subprocess.TimeoutExpired as exc:
+            if not existed:
+                shutil.rmtree(dest, ignore_errors=True)  # no half-cloned leftovers
             raise GitError("clone timed out") from exc
         if proc.returncode != 0:
+            if not existed:
+                shutil.rmtree(dest, ignore_errors=True)
             raise GitError(f"clone failed: {proc.stderr.strip()[:300]}")
-        # Identify the agent as the user for commits.
-        try:
-            subprocess.run(["git", "-C", str(dest), "config", "user.name", acc["username"] or "hr-harnessor"], check=False)
-            subprocess.run(["git", "-C", str(dest), "config", "user.email", f"{acc['username']}@users.noreply.{acc['provider']}.com"], check=False)
-        except Exception:  # noqa: BLE001
-            pass
+        # Pushes by the agent authenticate through the same out-of-repo file.
+        for args in (
+            ["config", "--local", "--replace-all", "credential.helper", ""],
+            ["config", "--local", "--add", "credential.helper", helper],
+            ["config", "user.name", acc["username"] or "hr-harnessor"],
+            ["config", "user.email", f"{acc['username']}@users.noreply.{acc['provider']}.com"],
+        ):
+            subprocess.run(["git", "-C", str(dest), *args], check=False, capture_output=True)
         return {"path": str(dest), "cloned": True}

@@ -61,9 +61,14 @@ def _safe_name(name: str | None) -> str:
     name = re.sub(r"[\x00-\x1f\x7f]", "", name).strip().lstrip(".")
     if not name:
         name = "file"
-    if len(name) > 120:
+    # Filesystems cap names at 255 BYTES; Hangul is 3 bytes/char in UTF-8.
+    limit = 180
+    if len(name.encode()) > limit:
         stem, ext = os.path.splitext(name)
-        name = stem[: 120 - len(ext)] + ext
+        ext = ext if len(ext.encode()) <= 20 else ""
+        budget = limit - len(ext.encode())
+        stem = stem.encode()[:budget].decode(errors="ignore")
+        name = (stem or "file") + ext
     return name
 
 
@@ -185,6 +190,35 @@ class AttachmentService:
         )
         return self.out(self.get(aid))
 
+    async def save_bytes(self, sid: str, name: str, mime: str, data: bytes, *, tag: str) -> dict[str, Any]:
+        """Store bytes the agent produced (e.g. an image a tool returned) as an
+        artifact: same storage/serving as uploads, linked to ``tag`` instead of
+        a message so it never shows up as a pending composer attachment."""
+        name = _safe_name(name)
+        aid = new_id("att_")
+        folder = self.session_dir(sid) / aid
+        folder.mkdir(parents=True, exist_ok=True)
+        dest = folder / name
+        await asyncio.to_thread(dest.write_bytes, data)
+        mime = _sniff(data[:32]) or mime or "application/octet-stream"
+        kind, width, height, model_path, model_mime = "file", None, None, None, None
+        if mime.startswith("image/") and mime != "image/svg+xml":
+            info = await asyncio.to_thread(_process_image, str(dest), mime)
+            if info is not None:
+                kind, width, height = "image", info["width"], info["height"]
+                mime = info["mime"]
+                model_path, model_mime = info.get("model_path"), info.get("model_mime")
+        self._db.execute(
+            """
+            INSERT INTO attachments
+                (id, session_id, message_id, name, mime, size, kind, width, height,
+                 path, model_path, model_mime, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (aid, sid, tag, name, mime, len(data), kind, width, height, str(dest), model_path, model_mime, now_iso()),
+        )
+        return self.out(self.get(aid))
+
     # ---- read ----
 
     def get(self, aid: str) -> dict[str, Any] | None:
@@ -226,7 +260,8 @@ class AttachmentService:
     def by_message(self, sid: str) -> dict[str, list[dict[str, Any]]]:
         out: dict[str, list[dict[str, Any]]] = {}
         for r in self._db.query(
-            "SELECT * FROM attachments WHERE session_id = ? AND message_id IS NOT NULL ORDER BY created_at",
+            "SELECT * FROM attachments WHERE session_id = ? AND message_id IS NOT NULL "
+            "AND message_id NOT LIKE 'artifact:%' ORDER BY created_at",
             (sid,),
         ):
             out.setdefault(r["message_id"], []).append(self.out(dict(r)))
@@ -261,6 +296,18 @@ class AttachmentService:
         self._db.execute("DELETE FROM attachments WHERE id = ?", (aid,))
         shutil.rmtree(os.path.dirname(row["path"]), ignore_errors=True)
         return True
+
+    def purge_abandoned(self, max_age_s: int = 24 * 3600) -> int:
+        """Composer uploads never sent (message_id NULL) older than a day."""
+        from datetime import datetime, timedelta, timezone
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=max_age_s)).isoformat()
+        rows = self._db.query(
+            "SELECT id, path FROM attachments WHERE message_id IS NULL AND created_at < ?", (cutoff,))
+        for r in rows:
+            self._db.execute("DELETE FROM attachments WHERE id = ?", (r["id"],))
+            shutil.rmtree(os.path.dirname(r["path"]), ignore_errors=True)
+        return len(rows)
 
     def purge_session(self, sid: str) -> None:
         shutil.rmtree(self.session_dir(sid), ignore_errors=True)

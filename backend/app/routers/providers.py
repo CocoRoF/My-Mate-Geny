@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
@@ -61,9 +63,9 @@ async def disconnect(provider: str, svc: ProviderService = Depends(provider_serv
 async def oauth_start(provider: str, request: Request) -> dict:
     oauth = request.app.state.oauth
     if provider == "codex":
-        return oauth.start_codex()
+        return await asyncio.to_thread(oauth.start_codex)
     if provider == "claude":
-        return oauth.start_claude()
+        return await asyncio.to_thread(oauth.start_claude)
     raise HTTPException(status_code=400, detail=f"oauth not supported for {provider}")
 
 
@@ -92,16 +94,14 @@ async def oauth_complete(
     oauth = request.app.state.oauth
     if provider != "claude":
         raise HTTPException(status_code=400, detail="complete step is only for claude")
-    res = oauth.complete_claude(body.code)
+    res = await asyncio.to_thread(oauth.complete_claude, body.code)
     if res.get("ok") and res.get("credentials"):
-        # Provider-level sign-in writes to this machine's ~/.claude.
-        import json
+        # Provider-level sign-in updates this machine's ~/.claude — merged, so
+        # fields the CLI keeps there (rateLimitTier, …) survive.
         import os
 
-        cfg = os.path.expanduser("~/.claude")
-        os.makedirs(cfg, exist_ok=True)
-        fd = os.open(os.path.join(cfg, ".credentials.json"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as fh:
-            fh.write(json.dumps(res["credentials"]))
+        from app.providers.accounts import merge_claude_credentials
+
+        merge_claude_credentials(os.path.expanduser("~/.claude/.credentials.json"), res["credentials"])
         svc.mark_oauth("claude")
     return {"ok": res.get("ok", False), "error": res.get("error", "")}

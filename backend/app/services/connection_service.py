@@ -69,6 +69,12 @@ class ConnectionService:
         if row and row["key_ref"]:
             self._vault.delete(row["key_ref"])
         self._db.execute("DELETE FROM connections WHERE id = ?", (cid,))
+        # Decrypted key + pinned host key live in the connection's runtime dir.
+        import shutil
+
+        from app.config import settings
+
+        shutil.rmtree(settings.mount_root_path / cid, ignore_errors=True)
 
     def build_connector(self, cid: str) -> RemoteSshConnector:
         """Construct a live connector, decrypting the key into memory."""

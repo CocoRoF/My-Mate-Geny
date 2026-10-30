@@ -92,6 +92,8 @@ class ClaudeCodeProvider(Provider):
         # Extra folders + the per-session uploads dir (attachments live outside
         # the workspace) become additional working directories.
         upload_dirs = {os.path.dirname(os.path.dirname(a.path)) for a in req.attachments}
+        if req.uploads_dir:
+            upload_dirs.add(req.uploads_dir)
         dirs = list(dict.fromkeys([*req.extra_dirs, *sorted(upload_dirs)]))
         if dirs:
             argv += ["--add-dir", *dirs]
@@ -128,6 +130,34 @@ class ClaudeCodeProvider(Provider):
         if req.preamble:
             last_user = f"{req.preamble}\n\n{last_user}"
         return self._envelope(last_user, req.attachments)
+
+    # ---- persistent engine (one process per chat) ----
+
+    def engine_fingerprint(self, req: TurnRequest) -> str:
+        """Launch settings that need a process restart to change. Model and
+        permission mode are switched live, so they're not part of it."""
+        import hashlib
+
+        key = json.dumps({
+            "binary": self._binary,
+            "cwd": req.cwd,
+            "effort": req.effort or "default",
+            "dirs": sorted(set(req.extra_dirs) | ({req.uploads_dir} if req.uploads_dir else set())),
+            "mcp": req.mcp_config,
+            "api_key": hashlib.sha256((req.api_key or "").encode()).hexdigest()[:12],
+            "allow": sorted(req.allow_tools or []),
+        }, sort_keys=True)
+        return hashlib.sha256(key.encode()).hexdigest()
+
+    def engine_argv(self, req: TurnRequest) -> list[str]:
+        return self._build_argv(req)
+
+    def envelope(self, req: TurnRequest) -> bytes:
+        return self._build_stdin(req)
+
+    @staticmethod
+    def permission_mode(mode: str) -> str:
+        return _PERMISSION_MODE.get(mode, "bypassPermissions")
 
     @staticmethod
     def _envelope(text: str, attachments: list) -> bytes:

@@ -76,7 +76,16 @@ class LoginSession:
     done: bool = False
     ok: bool = False
     error: str = ""
+    started_at: float = field(default_factory=time.time)
+    auth_file: str = ""  # where a successful login writes credentials
     lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+def _fresh(path: str, since: float) -> bool:
+    try:
+        return os.path.getmtime(path) >= since - 1
+    except OSError:
+        return False
 
 
 class OAuthManager:
@@ -122,6 +131,8 @@ class OAuthManager:
     def start_codex(self, timeout: float = 25.0, *, key: str = "codex", env_extra: dict | None = None) -> dict:
         self._kill(key)
         s = LoginSession(key)
+        codex_home = (env_extra or {}).get("CODEX_HOME") or os.path.join(self._home, ".codex")
+        s.auth_file = os.path.join(codex_home, "auth.json")
         self._sessions[key] = s
         # Run under a pty: a pipe would block-buffer codex's output so the
         # URL/code never arrive line-by-line. A pty makes it flush interactively.
@@ -176,10 +187,24 @@ class OAuthManager:
             proc.wait()
             with s.lock:
                 s.done = True
-                s.ok = self.codex_logged_in()
+                # Judge THIS login by its own auth file (an account's CODEX_HOME,
+                # not the host's ~/.codex) and only if written after it started.
+                s.ok = proc.returncode == 0 and _fresh(s.auth_file, s.started_at)
+                if not s.ok and not s.error:
+                    tail = s.output.strip().splitlines()[-3:]
+                    s.error = " ".join(tail)[:300] or "login did not complete"
 
         threading.Thread(target=reader, daemon=True).start()
         return self._wait_for(s, lambda: bool(s.url and s.user_code), timeout, "device")
+
+    def session_state(self, key: str) -> dict | None:
+        """done/ok/error/started_at of the login started under ``key``."""
+        s = self._sessions.get(key)
+        if s is None:
+            return None
+        with s.lock:
+            return {"done": s.done, "ok": s.ok, "error": s.error, "started_at": s.started_at,
+                    "auth_file": s.auth_file}
 
     def codex_status(self) -> dict:
         if self.codex_logged_in():

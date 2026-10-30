@@ -29,7 +29,7 @@ import contextlib
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.auth import COOKIE_NAME, AuthManager
+from app.auth import COOKIE_NAME, AuthManager, origin_allowed
 from app.services.attachment_service import AttachmentError
 from app.services.session_service import SessionService, TurnBusyError
 
@@ -44,9 +44,15 @@ async def chat_stream(websocket: WebSocket, sid: str) -> None:
     auth: AuthManager = websocket.app.state.auth
     ip = auth.client_ip(websocket)  # type: ignore[arg-type]
     # Token from cookie (web) or ?token= query param (native clients).
-    token = websocket.cookies.get(COOKIE_NAME) or websocket.query_params.get("token")
+    cookie = websocket.cookies.get(COOKIE_NAME)
+    token = cookie or websocket.query_params.get("token")
     if auth.is_banned(ip) or not auth.verify_token(token):
         await websocket.close(code=4401)
+        return
+    # Cross-site WebSocket hijacking: a cookie-authenticated socket must be
+    # opened by our own pages.
+    if cookie and not origin_allowed(websocket.headers.get("origin"), websocket.headers.get("host")):
+        await websocket.close(code=4403)
         return
 
     await websocket.accept()

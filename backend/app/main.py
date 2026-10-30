@@ -6,6 +6,7 @@ startup, stash them on ``app.state``, tear down on shutdown.
 
 from __future__ import annotations
 
+import asyncio
 import traceback
 from contextlib import asynccontextmanager
 
@@ -26,6 +27,7 @@ from app.routers import (
     admin,
     attachments,
     auth as auth_router,
+    files,
     config as config_router,
     connections,
     execute,
@@ -82,8 +84,20 @@ async def lifespan(app: FastAPI):
     app.state.workspace_service = workspace_service
     app.state.session_service = session_service
 
+    async def housekeeping() -> None:
+        while True:
+            try:
+                await asyncio.to_thread(attachment_service.purge_abandoned)
+            except Exception:  # noqa: BLE001
+                pass
+            await asyncio.sleep(3600)
+
+    housekeeper = asyncio.create_task(housekeeping())
+
     yield
 
+    housekeeper.cancel()
+    await session_service.shutdown()  # end engines (and their background tasks) cleanly
     db.close()
 
 
@@ -140,9 +154,11 @@ for r in (
     sessions.router,
     execute.router,
     history.router,
+    history.tasks_router,
     usage.router,
     git.router,
     attachments.router,
+    files.router,
     admin.router,
 ):
     app.include_router(r)

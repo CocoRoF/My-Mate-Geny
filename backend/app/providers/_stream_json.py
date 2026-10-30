@@ -75,16 +75,21 @@ class StreamJsonAccumulator:
                 })
             return
 
+        # Messages from inside a subagent (Task tool) carry the parent tool id:
+        # their tool calls nest under that row, their prose isn't the answer.
+        parent = obj.get("parent_tool_use_id") or None
+
         if kind == "stream_event":
-            yield from self._handle_stream_event(obj.get("event", {}))
+            if not parent:
+                yield from self._handle_stream_event(obj.get("event", {}))
             return
 
         if kind == "assistant":
-            yield from self._handle_assistant(obj.get("message", {}))
+            yield from self._handle_assistant(obj.get("message", {}), parent)
             return
 
         if kind == "user":
-            yield from self._handle_user(obj.get("message", {}))
+            yield from self._handle_user(obj.get("message", {}), parent)
             return
 
         if kind == "result":
@@ -109,8 +114,8 @@ class StreamJsonAccumulator:
 
     # ---- complete assistant turn (tool_use blocks) ----
 
-    def _handle_assistant(self, message: dict[str, Any]) -> Iterator[ProviderEvent]:
-        if message.get("model"):
+    def _handle_assistant(self, message: dict[str, Any], parent: str | None = None) -> Iterator[ProviderEvent]:
+        if message.get("model") and not parent:
             self.model = message["model"]
         for block in message.get("content", []):
             btype = block.get("type")
@@ -119,35 +124,48 @@ class StreamJsonAccumulator:
                 if tid in self._seen_tool_ids:
                     continue
                 self._seen_tool_ids.add(tid)
-                yield self._ev(
-                    "tool.use",
-                    {"id": tid, "name": block.get("name", ""), "input": block.get("input", {})},
-                )
-            elif btype == "text" and block.get("text"):
+                data = {"id": tid, "name": block.get("name", ""), "input": block.get("input", {})}
+                if parent:
+                    data["parent"] = parent
+                yield self._ev("tool.use", data)
+            elif btype == "text" and block.get("text") and not parent:
                 # Keep the last complete text as the canonical final answer.
                 self.final_text = block["text"]
 
     # ---- tool results (arrive as user messages) ----
 
-    def _handle_user(self, message: dict[str, Any]) -> Iterator[ProviderEvent]:
+    def _handle_user(self, message: dict[str, Any], parent: str | None = None) -> Iterator[ProviderEvent]:
         content = message.get("content", [])
         if not isinstance(content, list):
             return
         for block in content:
             if isinstance(block, dict) and block.get("type") == "tool_result":
                 out = block.get("content", "")
+                images: list[dict[str, str]] = []
                 if isinstance(out, list):
-                    out = "".join(
-                        part.get("text", "") for part in out if isinstance(part, dict)
-                    )
-                yield self._ev(
-                    "tool.result",
-                    {
-                        "id": block.get("tool_use_id", ""),
-                        "output": out,
-                        "is_error": bool(block.get("is_error", False)),
-                    },
-                )
+                    texts = []
+                    for part in out:
+                        if not isinstance(part, dict):
+                            continue
+                        if part.get("type") == "image" and isinstance(part.get("source"), dict):
+                            src = part["source"]
+                            if src.get("type") == "base64" and src.get("data"):
+                                # Raw image the tool returned (e.g. a screenshot the agent
+                                # Read). The session layer stores it as a file.
+                                images.append({"media_type": src.get("media_type", "image/png"), "data": src["data"]})
+                        else:
+                            texts.append(part.get("text", ""))
+                    out = "".join(texts)
+                data = {
+                    "id": block.get("tool_use_id", ""),
+                    "output": out,
+                    "is_error": bool(block.get("is_error", False)),
+                }
+                if images:
+                    data["images"] = images
+                if parent:
+                    data["parent"] = parent
+                yield self._ev("tool.result", data)
 
     # ---- terminal result ----
 

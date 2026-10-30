@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
@@ -46,7 +48,8 @@ async def get_pool(provider: str, request: Request) -> dict:
     _check(provider)
     store = request.app.state.account_store
     pool = request.app.state.account_pool
-    return {"pool": store.pool(provider), "accounts": pool.public_accounts(provider)}
+    # public_accounts fetches plan usage per account over HTTPS: off the loop.
+    return {"pool": store.pool(provider), "accounts": await asyncio.to_thread(pool.public_accounts, provider)}
 
 
 @router.put("/{provider}/pool")
@@ -72,7 +75,7 @@ async def create_account(provider: str, body: AccountCreate, request: Request) -
     # First account added -> enable the pool for convenience.
     if len(store.list(provider)) == 1:
         store.set_pool(provider, enabled=True)
-    return request.app.state.account_pool.public_accounts(provider)[-1]
+    return (await asyncio.to_thread(request.app.state.account_pool.public_accounts, provider))[-1]
 
 
 @router.patch("/{provider}/accounts/{account_id}")
@@ -105,9 +108,10 @@ async def account_oauth_start(provider: str, account_id: str, request: Request) 
     home, cfg = ensure_account_dirs(provider, account_id)
     if provider == "claude":
         env = {"HOME": str(home), "CLAUDE_CONFIG_DIR": str(cfg)}
-        return oauth.start_claude(key=account_id, env_extra=env)
+        return await asyncio.to_thread(oauth.start_claude, key=account_id, env_extra=env)
     env = {"HOME": str(home), "CODEX_HOME": str(cfg)}
-    return oauth.start_codex(key=account_id, env_extra=env)
+    # Waits (up to ~25s) for the device code: never on the event loop.
+    return await asyncio.to_thread(oauth.start_codex, key=account_id, env_extra=env)
 
 
 @router.get("/{provider}/accounts/{account_id}/oauth/status")
@@ -116,9 +120,19 @@ async def account_oauth_status(provider: str, account_id: str, request: Request)
     import os
 
     cfg = account_config_dir(provider, account_id)
-    ok = any(os.path.exists(cfg / f) for f in (".credentials.json", "credentials.json", "auth.json"))
-    if ok:
-        request.app.state.account_store.update(account_id, status="ready")
+    files = [cfg / f for f in (".credentials.json", "credentials.json", "auth.json")]
+    st = request.app.state.oauth.session_state(account_id)
+    if st is not None:
+        # Connected only if THIS sign-in produced fresh credentials — an old
+        # (expired) file from before must not flip the account back to ready.
+        fresh = any(os.path.exists(f) and os.path.getmtime(f) >= st["started_at"] - 1 for f in files)
+        if fresh or st["ok"]:
+            request.app.state.account_store.update(account_id, status="ready")
+            return {"status": "connected"}
+        if st["done"]:
+            return {"status": "failed", "error": st["error"] or "sign-in did not complete"}
+        return {"status": "pending"}
+    ok = any(os.path.exists(f) for f in files)
     return {"status": "connected" if ok else "pending"}
 
 
@@ -129,7 +143,7 @@ async def account_oauth_complete(
     _check(provider)
     if provider != "claude":
         raise HTTPException(status_code=400, detail="complete step is only for claude")
-    res = request.app.state.oauth.complete_claude(body.code, key=account_id)
+    res = await asyncio.to_thread(request.app.state.oauth.complete_claude, body.code, key=account_id)
     store = request.app.state.account_store
     if res.get("ok") and res.get("credentials"):
         # Write OAuth creds to the account's isolated dir; the CLI refreshes them.

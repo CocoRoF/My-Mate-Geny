@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
@@ -32,7 +34,7 @@ async def list_accounts(request: Request) -> list[dict]:
 @router.post("/accounts")
 async def connect(body: GitConnect, request: Request) -> dict:
     try:
-        return _svc(request).connect(body.provider, body.token, host=body.host, label=body.label)
+        return await asyncio.to_thread(_svc(request).connect, body.provider, body.token, host=body.host, label=body.label)
     except GitError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -46,7 +48,7 @@ async def delete(aid: str, request: Request) -> dict:
 @router.get("/accounts/{aid}/repos")
 async def repos(aid: str, request: Request, q: str = "") -> list[dict]:
     try:
-        return _svc(request).repos(aid, q)
+        return await asyncio.to_thread(_svc(request).repos, aid, q)
     except GitError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -54,6 +56,7 @@ async def repos(aid: str, request: Request, q: str = "") -> list[dict]:
 @router.post("/accounts/{aid}/clone")
 async def clone(aid: str, body: CloneBody, request: Request) -> dict:
     try:
-        return _svc(request).clone(aid, body.full_name, body.clone_url)
+        # Network + git work off the event loop: chats keep streaming meanwhile.
+        return await asyncio.to_thread(_svc(request).clone, aid, body.full_name, body.clone_url)
     except GitError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

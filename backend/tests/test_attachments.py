@@ -152,3 +152,23 @@ def test_codex_images_flag_and_stdin_prompt(tmp_path):
     assert argv[-1] == "-"  # prompt read from stdin
     prompt = p._build_prompt(req).decode()
     assert prompt.startswith("- starts with a dash") and a.path in prompt
+
+
+def test_session_file_preview_is_confined_to_session_folders(tmp_path):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "shot.png").write_bytes(_png(10, 10))
+    (ws / "notes.md").write_text("# hi\n")
+    (tmp_path / "secret.txt").write_text("nope")
+    (ws / "link").symlink_to(tmp_path / "secret.txt")
+    with TestClient(app) as client:
+        _login(client)
+        sid = client.post("/api/sessions", json={"provider": "claude", "model": "sonnet", "connection_id": None,
+                                                 "workspace_path": str(ws), "title": "t"}).json()["id"]
+        r = client.get(f"/api/sessions/{sid}/file", params={"path": "shot.png"})
+        assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+        t = client.get(f"/api/sessions/{sid}/file", params={"path": str(ws / "notes.md"), "text": 1}).json()
+        assert t["content"] == "# hi\n"
+        assert client.get(f"/api/sessions/{sid}/file", params={"path": str(tmp_path / "secret.txt")}).status_code == 403
+        assert client.get(f"/api/sessions/{sid}/file", params={"path": "../secret.txt"}).status_code == 403
+        assert client.get(f"/api/sessions/{sid}/file", params={"path": "link"}).status_code == 403  # symlink escape

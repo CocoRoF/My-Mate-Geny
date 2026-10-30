@@ -20,7 +20,6 @@ Env: HRH_SSH_HOST, HRH_SSH_PORT, HRH_SSH_USER, HRH_SSH_CWD, HRH_SSH_KEY_FILE
 
 from __future__ import annotations
 
-import base64
 import json
 import os
 import shlex
@@ -74,12 +73,15 @@ def _ssh_prefix() -> list[str]:
         "-p",
         os.environ.get("HRH_SSH_PORT", "22"),
         "-o",
-        "StrictHostKeyChecking=no",
-        "-o",
         "BatchMode=yes",
         "-o",
         "ConnectTimeout=10",
     ]
+    known = os.environ.get("HRH_SSH_KNOWN_HOSTS", "")
+    if known:  # host key pinned on first use (see RemoteSshConnector)
+        argv += ["-o", "StrictHostKeyChecking=accept-new", "-o", f"UserKnownHostsFile={known}"]
+    else:
+        argv += ["-o", "StrictHostKeyChecking=accept-new"]
     key = os.environ.get("HRH_SSH_KEY_FILE", "")
     if key:
         argv += ["-i", key]
@@ -87,10 +89,10 @@ def _ssh_prefix() -> list[str]:
     return argv
 
 
-def _run(remote_cmd: str, timeout: int = 300) -> tuple[int, str]:
+def _run(remote_cmd: str, timeout: int = 300, stdin: str | None = None) -> tuple[int, str]:
     try:
         proc = subprocess.run(
-            [*_ssh_prefix(), remote_cmd], capture_output=True, text=True, timeout=timeout
+            [*_ssh_prefix(), remote_cmd], capture_output=True, text=True, timeout=timeout, input=stdin,
         )
         out = proc.stdout + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
         return proc.returncode, out
@@ -98,12 +100,25 @@ def _run(remote_cmd: str, timeout: int = 300) -> tuple[int, str]:
         return 1, f"remote exec failed: {exc}"
 
 
+def _q(path: str) -> str:
+    """Shell-quote a remote path, keeping a leading ~ expandable."""
+    if path == "~":
+        return '"$HOME"'
+    if path.startswith("~/"):
+        return '"$HOME"/' + shlex.quote(path[2:])
+    return shlex.quote(path)
+
+
 def _in_cwd(cmd: str) -> str:
-    return f"cd {shlex.quote(CWD)} 2>/dev/null; {cmd}"
+    # Never run the command somewhere else if the workspace can't be entered.
+    return (f"cd {_q(CWD)} || {{ echo 'remote_bash: cannot enter workspace {CWD}' >&2; exit 97; }}\n"
+            f"{cmd}")
 
 
 def _resolve(path: str) -> str:
-    return path if path.startswith("/") else f"{CWD.rstrip('/')}/{path}"
+    if path.startswith("/") or path.startswith("~"):
+        return path
+    return f"{CWD.rstrip('/')}/{path}"
 
 
 def _call(name: str, args: dict) -> dict:
@@ -111,16 +126,15 @@ def _call(name: str, args: dict) -> dict:
         rc, out = _run(_in_cwd(args.get("command", "")))
         return {"content": [{"type": "text", "text": out or "(no output)"}], "isError": rc != 0}
     if name == "remote_read":
-        rc, out = _run(f"cat {shlex.quote(_resolve(args.get('path', '')))}")
+        rc, out = _run(f"cat -- {_q(_resolve(args.get('path', '')))}")
         return {"content": [{"type": "text", "text": out}], "isError": rc != 0}
     if name == "remote_write":
-        # base64 the content so arbitrary bytes/quotes survive the shell.
-        b64 = base64.b64encode(args.get("content", "").encode()).decode()
-        target = shlex.quote(_resolve(args.get("path", "")))
-        rc, out = _run(f"echo {b64} | base64 -d > {target} && echo WROTE {target}")
+        # Content goes over stdin: any size, any bytes/quotes.
+        target = _q(_resolve(args.get("path", "")))
+        rc, out = _run(f"cat > {target} && echo WROTE {target}", stdin=args.get("content", ""))
         return {"content": [{"type": "text", "text": out}], "isError": rc != 0}
     if name == "remote_list":
-        rc, out = _run(f"ls -la {shlex.quote(_resolve(args.get('path', '.')))}")
+        rc, out = _run(f"ls -la -- {_q(_resolve(args.get('path', '.')))}")
         return {"content": [{"type": "text", "text": out}], "isError": rc != 0}
     return {"content": [{"type": "text", "text": f"unknown tool {name}"}], "isError": True}
 

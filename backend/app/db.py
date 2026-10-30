@@ -159,6 +159,25 @@ CREATE TABLE IF NOT EXISTS error_logs (
     ip          TEXT
 );
 
+-- Background / long-running tasks the Claude engine reported (Claude Code's
+-- "background tasks"): live status + where their output is written.
+CREATE TABLE IF NOT EXISTS bg_tasks (
+    session_id      TEXT NOT NULL,
+    task_id         TEXT NOT NULL,
+    tool_use_id     TEXT,
+    description     TEXT,
+    task_type       TEXT,
+    is_backgrounded INTEGER NOT NULL DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'running',
+    output_file     TEXT,
+    summary         TEXT,
+    started_at      REAL,
+    ended_at        REAL,
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY (session_id, task_id),
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_attachments_session ON attachments(session_id, message_id);
 CREATE INDEX IF NOT EXISTS idx_error_logs_ts ON error_logs(ts);

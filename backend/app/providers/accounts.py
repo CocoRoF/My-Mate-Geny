@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import shutil
 import threading
 import time
@@ -144,13 +145,32 @@ def write_claude_credentials(account_id: str, creds: dict) -> None:
     The CLI reads+refreshes ``.credentials.json`` there on every turn (via
     CLAUDE_CONFIG_DIR), so the account's token stays fresh automatically.
     """
-    import json as _json
-
     _, cfg = ensure_account_dirs("claude", account_id)
-    p = cfg / ".credentials.json"
-    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    merge_claude_credentials(str(cfg / ".credentials.json"), creds)
+
+
+def merge_claude_credentials(path: str, creds: dict) -> None:
+    """Merge new OAuth credentials into a CLI credentials file atomically,
+    keeping fields the CLI wrote itself (rateLimitTier, refreshTokenExpiresAt,
+    other top-level keys) instead of replacing the whole file."""
+    try:
+        with open(path) as fh:
+            current = json.load(fh)
+        if not isinstance(current, dict):
+            current = {}
+    except (OSError, ValueError):
+        current = {}
+    for key, value in creds.items():
+        if isinstance(value, dict) and isinstance(current.get(key), dict):
+            current[key] = {**current[key], **value}
+        else:
+            current[key] = value
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as fh:
-        fh.write(_json.dumps(creds))
+        json.dump(current, fh)
+    os.replace(tmp, path)
 
 
 # ---------------------------------------------------------------- balancer (pure)
@@ -169,15 +189,15 @@ class AccountSnapshot:
     last_used: float = 0.0
     total_leases: int = 0
     consecutive_failures: int = 0
-    utilization: float = 0.0  # plan usage % (0..100) for usage-based balancing
+    utilization: float | None = 0.0  # plan usage % (0..100); None = unknown (API key, fetch failed)
 
     @property
     def load(self) -> float:
         return self.in_flight / max(1, self.max_concurrency)
 
     @property
-    def remaining(self) -> float:
-        return max(0.0, 100.0 - self.utilization)
+    def remaining(self) -> float | None:
+        return None if self.utilization is None else max(0.0, 100.0 - self.utilization)
 
 
 @dataclass
@@ -233,8 +253,11 @@ def _lru(cands: list[AccountSnapshot]) -> AccountSnapshot:
 
 def _most_remaining(cands: list[AccountSnapshot]) -> AccountSnapshot:
     # Pick the account with the most plan headroom (lowest utilization), then
-    # the least busy. This spreads load toward accounts with quota to spare.
-    return min(cands, key=lambda a: (round(a.utilization, 2), round(a.load, 6), a.last_used, a.id))
+    # the least busy. Unknown usage (API-key accounts, failed fetch) sorts
+    # LAST — it must not look like an empty plan and soak up every turn.
+    return min(cands, key=lambda a: (
+        a.utilization is None, round(a.utilization or 0.0, 2), round(a.load, 6), a.last_used, a.id,
+    ))
 
 
 def choose(
@@ -301,19 +324,39 @@ def apply_outcome(
     return HealthDecision(a.status, fails, a.cooldown_until)
 
 
+# Word-boundary patterns: "generated" must not read as "rate", a path like
+# "/author-site" must not read as "auth", an id containing 429 isn't HTTP 429.
+_RATE = re.compile(r"\b(rate[ _-]?limit\w*|too many requests|overloaded(_error)?|http\s*429|status\s*429|\b429\b(?=\s*(too many|rate)))", re.I)
+_QUOTA = re.compile(r"\b(usage limit|quota|credit balance|out of credits|limit reached)\b", re.I)
+_AUTH = re.compile(
+    r"\b(invalid api key|authentication[_ ]error|unauthori[sz]ed|oauth token (has )?expired|"
+    r"token (is )?expired|please run /login|not logged in|log in again|invalid_grant|http\s*401|status\s*401)\b",
+    re.I,
+)
+
+
 def classify_error(code: str | None, message: str | None) -> str:
-    """Map a provider error event to a balancer outcome code."""
-    text = f"{code or ''} {message or ''}".lower()
-    if "rate" in text or "overloaded" in text or "429" in text:
-        return "rate_limited"
-    if "quota" in text or "usage limit" in text:
-        return "provider_quota"
-    if "auth" in text or "login" in text or "credential" in text or "401" in text:
-        return "provider_auth"
-    if code == "exec.cli.timeout":
+    """Map a provider error event to a balancer outcome code.
+
+    Only errors that say something about the ACCOUNT move it into cooldown /
+    expired; workspace, tool, MCP or user-caused failures never do.
+    """
+    code = code or ""
+    if code in ("exec.cli.timeout",):
         return "timeout"
     if code == "exec.cli.not_implemented":
         return "not_implemented"
+    if code.startswith(("exec.workspace", "attachment", "turn.", "upload")):
+        return "failed"
+    text = message or ""
+    if "mcp" in text.lower() and _AUTH.search(text):
+        return "failed"  # an MCP server's own auth, not the account
+    if _RATE.search(text):
+        return "rate_limited"
+    if _QUOTA.search(text):
+        return "provider_quota"
+    if _AUTH.search(text):
+        return "provider_auth"
     return "failed"
 
 
@@ -547,13 +590,17 @@ class AccountPool:
             consecutive_failures=acc["consecutive_failures"],
         )
 
-    def _utilization(self, provider: str, acc_id: str, *, primary: bool = False, account: dict | None = None) -> float:
-        """Plan utilization % for an account, cached 60s (usage-based balancing)."""
+    def _utilization(self, provider: str, acc_id: str, *, primary: bool = False, account: dict | None = None) -> float | None:
+        """Plan utilization % for an account, cached 60s (usage-based balancing).
+        None when it can't be known (API-key account, no credentials, fetch failed)."""
         now = time.time()
         cached = self._util_cache.get(acc_id)
         if cached and now - cached[1] < 60:
             return cached[0]
-        util = cached[0] if cached else 0.0
+        if account is not None and account.get("auth_mode") == "api_key":
+            self._util_cache[acc_id] = (None, now)
+            return None
+        util = cached[0] if cached else None
         try:
             from app.providers import subscription as sub
 
@@ -591,12 +638,12 @@ class AccountPool:
             if self._host_usable(provider):
                 s = self._primary_snapshot(provider, now)
                 if usage_based:
-                    s = replace(s, utilization=util_map.get(pid, 0.0))
+                    s = replace(s, utilization=util_map.get(pid))
                 snaps.append(s)
             for a in accounts:
                 s = self._snapshot(a, now)
                 if usage_based:
-                    s = replace(s, utilization=util_map.get(a["id"], 0.0))
+                    s = replace(s, utilization=util_map.get(a["id"]))
                 snaps.append(s)
             if not snaps:
                 return None
@@ -633,6 +680,20 @@ class AccountPool:
         )
 
     def report(self, lease: Lease | None, *, ok: bool, code: str | None = None, error: str | None = None) -> None:
+        """Record a turn's outcome and release the lease (one-shot turns)."""
+        self.record_outcome(lease, ok=ok, code=code, error=error)
+        if lease is not None:
+            self._release(lease)
+
+    def release(self, lease: Lease | None) -> None:
+        """Release a long-held lease (persistent engines release on shutdown)."""
+        if lease is not None:
+            self._release(lease)
+
+    def record_outcome(
+        self, lease: Lease | None, *, ok: bool, code: str | None = None, error: str | None = None
+    ) -> None:
+        """Update account health from a turn's outcome without releasing."""
         if lease is None:
             return
         if lease.account_id.startswith(PRIMARY_PREFIX):
@@ -643,7 +704,6 @@ class AccountPool:
                 "cooldown_until": d.cooldown_until,
                 "consecutive_failures": d.consecutive_failures,
             }
-            self._release(lease)
             return
         acc = self._store.get(lease.account_id)
         if acc is not None:
@@ -654,7 +714,6 @@ class AccountPool:
                 self._store.mark_ok(lease.account_id)
             else:
                 self._store.mark_failure(lease.account_id, f"{code or 'unknown'}: {error or ''}")
-        self._release(lease)
 
     def _release(self, lease: Lease) -> None:
         if lease.released:

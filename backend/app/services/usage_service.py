@@ -10,6 +10,15 @@ from typing import Any
 from app.db import Database
 
 
+def _engine_of(model: str) -> str | None:
+    m = (model or "").lower()
+    if m.startswith("claude") or m in ("sonnet", "opus", "haiku", "fable"):
+        return "claude"
+    if m.startswith(("gpt", "o3", "o4", "codex")):
+        return "codex"
+    return None
+
+
 def _tok(usage: dict, key: str) -> int:
     try:
         return int(usage.get(key, 0) or 0)
@@ -52,8 +61,10 @@ class UsageService:
             cread = _tok(usage, "cache_read_input_tokens")
             cwrite = _tok(usage, "cache_creation_input_tokens")
             tokens = inp + out + cread + cwrite
-            provider = r["provider"] or "unknown"
             model = data.get("model") or r["model"] or "unknown"
+            # The engine that ran THIS turn (recorded since engines can be
+            # switched mid-chat); older turns are inferred from the model.
+            provider = data.get("provider") or _engine_of(model) or r["provider"] or "unknown"
             day = (r["at"] or "")[:10]
 
             total["turns"] += 1

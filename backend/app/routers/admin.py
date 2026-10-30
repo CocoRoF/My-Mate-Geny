@@ -148,6 +148,8 @@ async def system(request: Request, providers: ProviderService = Depends(provider
         "cli": {"claude": claude_v, "codex": codex_v},
         "providers": await providers.status_all(),
         "active_runs": list(state.session_service.active_runs.values()),
+        "engines": state.session_service.engines(),
+        "live_usage": state.session_service.live_usage,
         "counts": {
             "sessions": _count(db, "sessions"),
             "messages": _count(db, "messages"),
