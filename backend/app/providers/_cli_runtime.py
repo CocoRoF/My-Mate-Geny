@@ -38,12 +38,15 @@ class CLIProcessRunner:
         return env
 
     async def stream(
-        self, argv: list[str], *, stdin: bytes | None = None
+        self, argv: list[str], *, stdin: bytes | None = None, keep_stdin_open: bool = False
     ) -> AsyncIterator[bytes]:
         """Spawn ``[binary, *argv]`` and yield stdout lines (with newline).
 
-        Collects stderr for diagnostics; on non-zero exit the caller inspects
-        :attr:`last_result`. Raises :class:`asyncio.TimeoutError` on timeout.
+        With ``keep_stdin_open`` the caller can push more input mid-run
+        (:meth:`write`) and must :meth:`close_stdin` when done — used to steer
+        a running Claude turn. Collects stderr for diagnostics; on non-zero
+        exit the caller inspects :attr:`last_result`. Raises
+        :class:`asyncio.TimeoutError` on timeout.
         """
         proc = await asyncio.create_subprocess_exec(
             self.binary,
@@ -59,11 +62,13 @@ class CLIProcessRunner:
             limit=16 * 1024 * 1024,  # stream-json lines (e.g. big tool output) can be large
         )
         assert proc.stdout is not None and proc.stdin is not None
+        self._proc = proc
 
         if stdin is not None:
             proc.stdin.write(stdin)
             await proc.stdin.drain()
-        proc.stdin.close()
+        if not keep_stdin_open:
+            proc.stdin.close()
 
         stderr_chunks: list[bytes] = []
 
@@ -115,6 +120,29 @@ class CLIProcessRunner:
         )
 
     last_result: CLIResult | None = None
+    _proc: asyncio.subprocess.Process | None = None
+
+    async def write(self, data: bytes) -> bool:
+        """Send more input to a running process (``keep_stdin_open`` mode)."""
+        proc = self._proc
+        if proc is None or proc.stdin is None or proc.stdin.is_closing() or proc.returncode is not None:
+            return False
+        try:
+            proc.stdin.write(data)
+            await proc.stdin.drain()
+            return True
+        except (BrokenPipeError, ConnectionResetError, RuntimeError):
+            return False
+
+    def close_stdin(self) -> None:
+        proc = self._proc
+        if proc is not None and proc.stdin is not None and not proc.stdin.is_closing():
+            proc.stdin.close()
+
+    def terminate(self) -> None:
+        """Kill the running process group (the stream then ends normally)."""
+        if self._proc is not None and self._proc.returncode is None:
+            _kill_group(self._proc)
 
 
 def _kill_group(proc: asyncio.subprocess.Process) -> None:

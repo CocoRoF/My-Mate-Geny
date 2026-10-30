@@ -12,6 +12,7 @@ provider surfaces a clear error otherwise.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 from typing import AsyncIterator
@@ -21,7 +22,7 @@ from app.providers._attachments import compose_text
 from app.providers._cli_runtime import CLIProcessRunner
 from app.providers._codex_json import CodexJsonAccumulator
 from app.providers.catalog import codex_model_known
-from app.providers.base import AuthStatus, Provider, ProviderEvent, TurnRequest
+from app.providers.base import AuthStatus, Provider, ProviderEvent, SteerMessage, TurnRequest
 
 # Model ids that belong to Claude (or mean "no preference") — never pass to Codex.
 _NOT_CODEX = {"", "default", "sonnet", "opus", "haiku"}
@@ -70,17 +71,19 @@ class CodexProvider(Provider):
             return None
         return req.model if codex_model_known(req.model) is not False else None
 
-    def _build_argv(self, req: TurnRequest) -> list[str]:
+    def _build_argv(
+        self, req: TurnRequest, *, resume_id: str | None = None, images: list | None = None
+    ) -> list[str]:
         # NB: `exec resume` accepts far fewer flags than `exec` (no -C, --sandbox,
         # --add-dir). The working dir comes from the process cwd either way, and
         # the sandbox is set through `-c sandbox_mode=…`, which both accept.
-        resume = bool(req.cli_session_id)
-        argv = ["exec", "resume", req.cli_session_id] if resume else ["exec"]
+        resume = resume_id if resume_id is not None else req.cli_session_id
+        argv = ["exec", "resume", resume] if resume else ["exec"]
         argv.append("--json")
         # Images first, each as its own `--image <path>` and always followed by
         # another flag: `-i` takes multiple values and would otherwise swallow
         # the trailing prompt argument.
-        for a in req.attachments:
+        for a in req.attachments if images is None else images:
             if a.is_image:
                 argv += ["--image", a.inline_path]
         argv.append("--skip-git-repo-check")
@@ -114,17 +117,24 @@ class CodexProvider(Provider):
             text = _PLAN_PREFIX + text
         return text.encode()
 
+    @staticmethod
+    def _steer_prompt(req: TurnRequest, msgs: list[SteerMessage]) -> bytes:
+        atts = [a for m in msgs for a in m.attachments]
+        body = "\n\n".join(m.text for m in msgs if m.text.strip())
+        text = compose_text(
+            "The user sent additional instructions while you were working "
+            "(your current step was interrupted to apply them). Take them into account "
+            "and continue the task:\n\n" + body,
+            atts,
+            inline_images=any(a.is_image for a in atts),
+        )
+        return ((_PLAN_PREFIX if req.mode == "plan" else "") + text).encode()
+
     async def run_turn_stream(self, req: TurnRequest) -> AsyncIterator[ProviderEvent]:
         env_extras = dict(req.extra_env)
         if req.api_key:
             env_extras["OPENAI_API_KEY"] = req.api_key
 
-        runner = CLIProcessRunner(
-            binary=self._binary,
-            cwd=req.cwd,
-            env_extras=env_extras,
-            timeout_s=req.timeout_s or settings.turn_timeout_s,
-        )
         accum = CodexJsonAccumulator()
         model = self._model(req)
 
@@ -143,10 +153,62 @@ class CodexProvider(Provider):
                 },
             )
 
+        # `codex exec` reads its prompt once, so steering = interrupt the
+        # current step and resume the SAME thread with the new instructions.
+        inbox = req.inbox
+        argv = self._build_argv(req)
+        prompt = self._build_prompt(req)
         try:
-            async for line in runner.stream(self._build_argv(req), stdin=self._build_prompt(req)):
-                for ev in accum.feed_line(line):
-                    yield ev
+            while True:
+                runner = CLIProcessRunner(
+                    binary=self._binary,
+                    cwd=req.cwd,
+                    env_extras=env_extras,
+                    timeout_s=req.timeout_s or settings.turn_timeout_s,
+                )
+                pending: list[SteerMessage] = []
+                interrupted = asyncio.Event()
+
+                async def watch() -> None:
+                    msg = await inbox.queue.get()
+                    pending.append(msg)
+                    # Need a thread id to resume into; it arrives right away.
+                    while not (accum.thread_id or req.cli_session_id) and runner.last_result is None:
+                        await asyncio.sleep(0.2)
+                    while not inbox.queue.empty():
+                        pending.append(inbox.queue.get_nowait())
+                    for m in pending:
+                        m.resolve(True)
+                    interrupted.set()
+                    runner.terminate()
+
+                watcher = asyncio.create_task(watch()) if inbox is not None else None
+                accum.begin_run()
+                try:
+                    async for line in runner.stream(argv, stdin=prompt):
+                        for ev in accum.feed_line(line):
+                            yield ev
+                finally:
+                    if watcher is not None:
+                        watcher.cancel()
+
+                if not pending:
+                    break
+                for m in pending:  # applied below, whatever the watcher got to
+                    m.resolve(True)
+                if interrupted.is_set() and not accum.completed:
+                    for ev in accum.close_open_tools("(interrupted to apply your new instructions)"):
+                        yield ev
+                    yield ProviderEvent(type="notice", data={
+                        "level": "info", "code": "codex.steered",
+                        "message": "Interrupted the current step to apply your instructions",
+                    })
+                thread = accum.thread_id or req.cli_session_id
+                if not thread:  # nothing to resume into — give up on steering
+                    break
+                images = [a for m in pending for a in m.attachments]
+                argv = self._build_argv(req, resume_id=thread, images=images)
+                prompt = self._steer_prompt(req, pending)
         except TimeoutError:
             yield ProviderEvent(
                 type="error", data={"code": "exec.cli.timeout", "message": "codex turn timed out"}
@@ -158,6 +220,9 @@ class CodexProvider(Provider):
                 data={"code": "exec.cli.binary_not_found", "message": f"codex not found: {self._binary}"},
             )
             return
+        finally:
+            if inbox is not None:
+                inbox.close()
 
         result = runner.last_result
         if not accum.completed and not accum.failed and result is not None and result.returncode != 0:

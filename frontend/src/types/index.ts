@@ -110,7 +110,9 @@ export type EventType =
   | "notice"
   | "session.info"
   | "run.state"
-  | "user.message";
+  | "user.message"
+  | "user.steer"
+  | "steer.rejected";
 
 export interface ProviderEvent {
   type: EventType;

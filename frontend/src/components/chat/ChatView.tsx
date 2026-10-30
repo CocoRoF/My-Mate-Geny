@@ -14,7 +14,7 @@ export default function ChatView() {
   const activeId = useSessionStore((s) => s.activeId);
   const sessions = useSessionStore((s) => s.sessions);
   const active = sessions.find((s) => s.id === activeId) || null;
-  const { send, stop: stopWs } = useChatSocket(activeId);
+  const { send, steer, stop: stopWs } = useChatSocket(activeId);
   const [showUsage, setShowUsage] = useState(false);
   const [panel, setPanel] = useState(() => {
     try {
@@ -131,7 +131,7 @@ export default function ChatView() {
         </div>
       )}
       <MessageList />
-      {active && <InputBar key={active.id} onSend={send} onStop={stop} session={active} />}
+      {active && <InputBar key={active.id} onSend={send} onSteer={steer} onStop={stop} session={active} />}
       {showUsage && active && <UsageModal provider={active.provider} onClose={() => setShowUsage(false)} />}
     </div>
     {panel && active && (

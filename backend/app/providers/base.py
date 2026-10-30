@@ -15,7 +15,9 @@ Normalized event schema (mirrors geny-executor's ``PipelineEvent`` shape):
 from __future__ import annotations
 
 import abc
+import asyncio
 from dataclasses import dataclass, field
+from typing import Callable
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Literal
 
@@ -32,6 +34,7 @@ EVENT_TYPES = (
     "error",           # terminal failure; data: {code, message}  (code "turn.interrupted" = user pressed Stop)
     "notice",          # NON-terminal warning/info shown inline; data: {level, message, code}
     "session.info",    # CLI capabilities (tools, slash commands, skills, MCP servers…); not persisted as an event
+    "user.steer",      # the user added instructions mid-turn; data: {text, attachments, client_msg_id}
 )
 
 EventType = Literal[
@@ -44,6 +47,7 @@ EventType = Literal[
     "error",
     "notice",
     "session.info",
+    "user.steer",
 ]
 
 
@@ -82,6 +86,50 @@ class AuthStatus:
 
 
 @dataclass
+class SteerMessage:
+    """Extra instructions the user sent while the turn is running."""
+
+    text: str
+    attachments: list[Attachment] = field(default_factory=list)
+    delivered: "asyncio.Future[bool] | None" = None  # resolved by the provider
+    # Runs synchronously at the moment of delivery, so the session records the
+    # instruction in its true place — before the provider emits anything else.
+    on_delivered: Callable[[], None] | None = None
+
+    def resolve(self, ok: bool) -> None:
+        if self.delivered is not None and self.delivered.done():
+            return
+        if ok and self.on_delivered is not None:
+            self.on_delivered()
+        if self.delivered is not None:
+            self.delivered.set_result(ok)
+
+
+class TurnInbox:
+    """Mid-turn input channel from the session to the running provider.
+
+    The provider closes it once the turn can no longer take input (final
+    result produced / process ended); ``offer`` then returns False and the UI
+    falls back to sending the message as the next turn.
+    """
+
+    def __init__(self) -> None:
+        self.queue: asyncio.Queue[SteerMessage] = asyncio.Queue()
+        self.open = True
+
+    def offer(self, msg: SteerMessage) -> bool:
+        if not self.open:
+            return False
+        self.queue.put_nowait(msg)
+        return True
+
+    def close(self) -> None:
+        self.open = False
+        while not self.queue.empty():  # nobody will deliver these now
+            self.queue.get_nowait().resolve(False)
+
+
+@dataclass
 class TurnRequest:
     """Everything a provider needs to run one chat turn."""
 
@@ -98,6 +146,7 @@ class TurnRequest:
     attachments: list[Attachment] = field(default_factory=list)  # files sent with the latest user message
     mode: str = "agent"                   # agent (full autonomy) | plan (read-only, propose a plan)
     extra_dirs: list[str] = field(default_factory=list)  # additional folders the agent may use
+    inbox: TurnInbox | None = None        # mid-turn steering (None => provider can't be steered)
 
 
 class ProviderTurnError(RuntimeError):

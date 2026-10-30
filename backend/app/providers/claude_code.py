@@ -15,6 +15,7 @@ matter for CLI >= 2.1.x:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -28,6 +29,7 @@ from app.providers.base import (
     AuthStatus,
     Provider,
     ProviderEvent,
+    SteerMessage,
     TurnRequest,
 )
 
@@ -120,27 +122,24 @@ class ClaudeCodeProvider(Provider):
         Attached images become inline ``image`` blocks; every attachment is
         also listed (with its path) in the text block.
         """
-        last_user = ""
-        for msg in reversed(req.messages):
-            if msg.get("role") == "user":
-                last_user = msg.get("content", "")
-                break
-        content: str | list[dict] = last_user
-        if req.attachments:
-            images = [a for a in req.attachments if a.is_image]
+        last_user = next(
+            (m.get("content", "") for m in reversed(req.messages) if m.get("role") == "user"), ""
+        )
+        return self._envelope(last_user, req.attachments)
+
+    @staticmethod
+    def _envelope(text: str, attachments: list) -> bytes:
+        content: str | list[dict] = text
+        if attachments:
             blocks: list[dict] = []
-            for a in images:
-                try:
-                    blocks.append(claude_image_block(a))
-                except OSError:
-                    pass  # file vanished; the path note below still tells the agent
-            text = compose_text(last_user, req.attachments, inline_images=bool(blocks))
-            content = [*blocks, {"type": "text", "text": text}]
-        envelope = {
-            "type": "user",
-            "message": {"role": "user", "content": content},
-        }
-        return (json.dumps(envelope) + "\n").encode()
+            for a in attachments:
+                if a.is_image:
+                    try:
+                        blocks.append(claude_image_block(a))
+                    except OSError:
+                        pass
+            content = [*blocks, {"type": "text", "text": compose_text(text, attachments, inline_images=bool(blocks))}]
+        return (json.dumps({"type": "user", "message": {"role": "user", "content": content}}) + "\n").encode()
 
     # ---- turn ----
 
@@ -164,12 +163,29 @@ class ClaudeCodeProvider(Provider):
             data={"provider": self.name, "model": req.model or "sonnet", "workspace": req.cwd},
         )
 
+        # Steering: stdin stays open while the turn runs; extra instructions are
+        # written as further user messages and the CLI folds them into the
+        # running turn at its next step (exactly like typing into Claude Code
+        # while it works). Input closes once the final result is in.
+        inbox = req.inbox
+        feeder: asyncio.Task | None = None
+        if inbox is not None:
+            async def feed() -> None:
+                while True:
+                    msg: SteerMessage = await inbox.queue.get()
+                    msg.resolve(await runner.write(self._envelope(msg.text, msg.attachments)))
+
+            feeder = asyncio.create_task(feed())
+
         saw_terminal = False
         try:
-            async for line in runner.stream(argv, stdin=stdin):
+            async for line in runner.stream(argv, stdin=stdin, keep_stdin_open=inbox is not None):
                 for ev in accum.feed_line(line):
                     if ev.type in ("turn.complete", "error"):
                         saw_terminal = True
+                        if inbox is not None:
+                            inbox.close()
+                            runner.close_stdin()
                     yield ev
         except TimeoutError:  # asyncio.TimeoutError is an alias of TimeoutError on 3.11+
             yield ProviderEvent(
@@ -186,6 +202,12 @@ class ClaudeCodeProvider(Provider):
                 },
             )
             return
+        finally:
+            if feeder is not None:
+                feeder.cancel()
+            if inbox is not None:
+                inbox.close()
+            runner.close_stdin()
 
         if not saw_terminal:
             result = runner.last_result

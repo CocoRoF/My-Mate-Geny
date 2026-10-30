@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { FlowItem, ToolActivity, Turn } from "../../../stores/chatStore";
 import Icon from "../../ui/Icon";
 import Markdown from "../../ui/Markdown";
+import MessageAttachments from "../../attachments/MessageAttachments";
 import ThinkingBlock from "./ThinkingBlock";
 import TodoCard, { todosOf } from "./TodoCard";
 import ToolGroup from "./ToolGroup";
@@ -12,7 +13,8 @@ type Segment =
   | { kind: "thinking"; item: Extract<FlowItem, { kind: "thinking" }> }
   | { kind: "tools"; tools: ToolActivity[] }
   | { kind: "todo"; tool: ToolActivity }
-  | { kind: "notice"; item: Extract<FlowItem, { kind: "notice" }> };
+  | { kind: "notice"; item: Extract<FlowItem, { kind: "notice" }> }
+  | { kind: "steer"; item: Extract<FlowItem, { kind: "steer" }> };
 
 /** Flow -> render segments: prose stays prose, consecutive tool calls fold
  * into one group, task lists get their own checklist. */
@@ -29,6 +31,8 @@ function segment(turn: Turn): Segment[] {
       if (item.text.trim() || !item.endedAt) out.push({ kind: "thinking", item });
     } else if (item.kind === "notice") {
       out.push({ kind: "notice", item });
+    } else if (item.kind === "steer") {
+      out.push({ kind: "steer", item });
     } else {
       const tool = byId.get(item.toolId);
       if (!tool) continue;
@@ -115,6 +119,32 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
               return <ToolGroup key={i} tools={s.tools} turnLive={live} />;
             case "todo":
               return <TodoCard key={i} todos={todosOf(s.tool.input)} />;
+            case "steer":
+              return (
+                <div key={i} className="flex flex-col items-end gap-1 py-0.5">
+                  <span className="inline-flex items-center gap-1.5 text-[10.5px] text-content-faint">
+                    {s.item.pending ? (
+                      <>
+                        <Icon name="spinner" size={10} spin /> sending to the agent…
+                      </>
+                    ) : (
+                      <>
+                        <Icon name="check" size={10} className="text-success" /> added while working
+                      </>
+                    )}
+                  </span>
+                  {s.item.attachments.length > 0 && <MessageAttachments attachments={s.item.attachments} />}
+                  {s.item.text && (
+                    <div
+                      className={`max-w-[85%] rounded-2xl rounded-br-md border px-3.5 py-2 text-sm text-content whitespace-pre-wrap break-words ${
+                        s.item.pending ? "border-border bg-surface-2/60 opacity-70" : "border-accent/25 bg-accent-soft"
+                      }`}
+                    >
+                      {s.item.text}
+                    </div>
+                  )}
+                </div>
+              );
             case "notice":
               return (
                 <div

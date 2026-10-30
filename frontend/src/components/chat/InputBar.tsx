@@ -75,10 +75,12 @@ interface Queued {
 
 export default function InputBar({
   onSend,
+  onSteer,
   onStop,
   session,
 }: {
   onSend: (text: string, attachments: Attachment[]) => boolean;
+  onSteer: (text: string, attachments: Attachment[]) => boolean;
   onStop: () => void;
   session: Session;
 }) {
@@ -98,6 +100,8 @@ export default function InputBar({
   const connection = useChatStore((s) => s.connection);
   const cost = useChatStore((s) => s.runningCostUsd);
   const info = useChatStore((s) => s.info);
+  const bounced = useChatStore((s) => s.bounced);
+  const takeBounced = useChatStore((s) => s.takeBounced);
   const allItems = useComposerStore((s) => s.items);
   const add = useComposerStore((s) => s.add);
   const clearSent = useComposerStore((s) => s.clearSent);
@@ -173,21 +177,37 @@ export default function InputBar({
     if (!item.keepOpen) setMenuClosedFor(`${trigger.kind}:${trigger.start}`);
   };
 
-  const dispatch = (text: string, atts: Attachment[]) => {
+  const enqueue = (text: string, atts: Attachment[]) =>
+    setQueue((q) => [...q, { id: `q${Date.now()}${q.length}`, text, attachments: atts }]);
+
+  // While the agent works, Enter steers the running turn (Claude Code style);
+  // "Queue" holds the message until the turn is done.
+  const dispatch = (text: string, atts: Attachment[], how: "auto" | "queue" = "auto") => {
     if (isStreaming) {
-      setQueue((q) => [...q, { id: `q${Date.now()}`, text, attachments: atts }]);
-      return true;
+      if (how === "queue") {
+        enqueue(text, atts);
+        return true;
+      }
+      return onSteer(text, atts);
     }
     return onSend(text, atts);
   };
 
-  const submit = () => {
+  // A steer the turn could no longer take (it was finishing): send it next.
+  useEffect(() => {
+    if (!bounced.length) return;
+    const items = takeBounced();
+    items.forEach((b) => enqueue(b.text, b.attachments));
+    setNotice("The turn was finishing — your message will be sent as the next one.");
+  }, [bounced, takeBounced]);
+
+  const submit = (how: "auto" | "queue" = "auto") => {
     const text = input.trim();
     const builtin = /^\/(clear|plan|agent|stop)$/.exec(text);
     if (builtin) return runAction(builtin[1] as NonNullable<MenuItem["action"]>);
     if (uploading) return setNotice("Waiting for uploads to finish…");
     if (!hasContent) return;
-    if (!dispatch(text, ready.map((i) => i.attachment!))) {
+    if (!dispatch(text, ready.map((i) => i.attachment!), how)) {
       setNotice("Not connected — reconnecting. Your message was kept.");
       return;
     }
@@ -304,7 +324,7 @@ export default function InputBar({
             rows={1}
             placeholder={
               isStreaming
-                ? "Agent is working — type to queue a follow-up…"
+                ? "Add instructions while it works — Enter adds them to this turn…"
                 : items.length
                   ? "Add a message (optional)…"
                   : "Message the agent…   / for commands · @ for files"
@@ -333,14 +353,29 @@ export default function InputBar({
             )}
             <div className="ml-auto flex items-center gap-1.5">
               {isStreaming && hasContent && (
-                <button
-                  onClick={submit}
-                  disabled={uploading}
-                  className="h-9 rounded-xl border border-border px-3 text-[12px] text-content-dim hover:text-content hover:bg-surface-3 transition disabled:opacity-40"
-                  title="Send when the current turn finishes"
-                >
-                  Queue
-                </button>
+                <>
+                  <button
+                    onClick={() => submit("queue")}
+                    disabled={uploading}
+                    className="h-9 rounded-xl border border-border px-3 text-[12px] text-content-dim hover:text-content hover:bg-surface-3 transition disabled:opacity-40"
+                    title="Send after the current turn finishes"
+                  >
+                    Queue
+                  </button>
+                  <button
+                    onClick={() => submit()}
+                    disabled={uploading}
+                    className="h-9 inline-flex items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium text-white transition disabled:opacity-40"
+                    style={{ background: "linear-gradient(135deg,#6e8bff,#5b7cff)" }}
+                    title={
+                      session.provider === "codex"
+                        ? "Add to the running turn now (Enter) — Codex pauses its current step and continues with this"
+                        : "Add to the running turn now (Enter) — the agent picks it up at its next step"
+                    }
+                  >
+                    <Icon name="arrow-up" size={14} /> Add now
+                  </button>
+                </>
               )}
               {isStreaming ? (
                 <button
@@ -352,7 +387,7 @@ export default function InputBar({
                 </button>
               ) : (
                 <button
-                  onClick={submit}
+                  onClick={() => submit()}
                   disabled={!hasContent || uploading}
                   className="grid place-items-center w-9 h-9 rounded-xl text-white transition disabled:opacity-30"
                   style={{ background: "linear-gradient(135deg,#6e8bff,#5b7cff)" }}
@@ -391,8 +426,8 @@ export default function InputBar({
               <span className="text-warning">{notice}</span>
             ) : isStreaming ? (
               <span className="inline-flex items-center gap-1.5 text-accent">
-                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" /> working… · Esc to stop · keeps
-                running if you close this tab
+                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" /> working… · Enter adds to this
+                turn · Queue sends after · Esc stops · keeps running if you close this tab
               </span>
             ) : (
               "Enter to send · Shift+Enter newline · / commands · @ files · paste or drop files"

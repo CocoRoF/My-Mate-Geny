@@ -18,7 +18,17 @@ export type FlowItem =
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string; startedAt: number; endedAt?: number }
   | { kind: "tool"; toolId: string }
-  | { kind: "notice"; level: "info" | "warning"; message: string; code?: string };
+  | { kind: "notice"; level: "info" | "warning"; message: string; code?: string }
+  // Instructions the user added while the agent was working (pending until
+  // the runtime confirms delivery into the running turn).
+  | { kind: "steer"; text: string; attachments: Attachment[]; clientMsgId?: string; pending: boolean };
+
+export interface Bounced {
+  clientMsgId: string;
+  text: string;
+  attachments: Attachment[];
+  reason: string;
+}
 
 export type TurnStatus = "running" | "done" | "error" | "interrupted";
 
@@ -47,9 +57,12 @@ interface ChatState {
   lastEid: number;
   info: CliInfo | null;
   connection: "connecting" | "open" | "reconnecting";
+  bounced: Bounced[]; // steers the turn could no longer take -> composer queues them
   reset: () => void;
   loadHistory: (h: History) => void;
   pushUser: (text: string, attachments: Attachment[], clientMsgId: string) => void;
+  pushSteer: (text: string, attachments: Attachment[], clientMsgId: string) => void;
+  takeBounced: () => Bounced[];
   setStreaming: (v: boolean) => void;
   setConnection: (c: ChatState["connection"]) => void;
   applyEvent: (ev: ProviderEvent) => void;
@@ -211,6 +224,44 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
       }
       return { isStreaming: running };
     }
+    case "user.steer": {
+      const cid = data.client_msg_id ? String(data.client_msg_id) : "";
+      const item = {
+        kind: "steer" as const,
+        text: String(data.text || ""),
+        attachments: (data.attachments as Attachment[]) || [],
+        clientMsgId: cid || undefined,
+        pending: false,
+      };
+      if (!hasLiveTurn(turns)) {
+        // Nothing running here (e.g. delivered just as the turn closed): plain user bubble.
+        turns.push({ key: newKey("u"), role: "user", text: item.text, flow: [], tools: [], complete: true, attachments: item.attachments });
+        break;
+      }
+      const t = liveTurn(turns, at);
+      const mine = cid ? t.flow.find((f) => f.kind === "steer" && f.clientMsgId === cid) : undefined;
+      if (mine && mine.kind === "steer") mine.pending = false;
+      else {
+        closeThinking(t, at);
+        t.flow.push(item);
+      }
+      break;
+    }
+    case "steer.rejected": {
+      const cid = String(data.client_msg_id || "");
+      for (let i = turns.length - 1; i >= 0; i--) {
+        const t = turns[i];
+        const idx = t.flow.findIndex((f) => f.kind === "steer" && f.clientMsgId === cid && f.pending);
+        if (idx >= 0) {
+          const item = t.flow[idx] as Extract<FlowItem, { kind: "steer" }>;
+          turns[i] = { ...t, flow: t.flow.filter((_, k) => k !== idx) };
+          return {
+            bounced: [{ clientMsgId: cid, text: item.text, attachments: item.attachments, reason: String(data.reason || "") }],
+          };
+        }
+      }
+      break;
+    }
     case "user.message": {
       const cid = data.client_msg_id ? String(data.client_msg_id) : "";
       if (cid && ownMessages.has(cid)) {
@@ -270,15 +321,16 @@ function reconstruct(messages: ChatMessage[], events: ProviderEvent[]): Turn[] {
 
 const totalCost = (turns: Turn[]) => turns.reduce((n, t) => n + (t.costUsd || 0), 0);
 
-export const useChatStore = create<ChatState>((set) => ({
+export const useChatStore = create<ChatState>((set, get) => ({
   turns: [],
   isStreaming: false,
   runningCostUsd: 0,
   lastEid: 0,
   info: null,
   connection: "connecting",
+  bounced: [],
 
-  reset: () => set({ turns: [], isStreaming: false, runningCostUsd: 0, lastEid: 0, info: null }),
+  reset: () => set({ turns: [], isStreaming: false, runningCostUsd: 0, lastEid: 0, info: null, bounced: [] }),
 
   loadHistory: (h) => {
     const turns = reconstruct(h.messages, h.events);
@@ -308,6 +360,22 @@ export const useChatStore = create<ChatState>((set) => ({
     }));
   },
 
+  pushSteer: (text, attachments, clientMsgId) =>
+    set((s) => {
+      const turns = [...s.turns];
+      if (!hasLiveTurn(turns)) return {};
+      const t = liveTurn(turns, Date.now());
+      closeThinking(t, Date.now());
+      t.flow.push({ kind: "steer", text, attachments, clientMsgId, pending: true });
+      return { turns };
+    }),
+
+  takeBounced: () => {
+    const b = get().bounced;
+    if (b.length) set({ bounced: [] });
+    return b;
+  },
+
   setStreaming: (v) => set({ isStreaming: v }),
   setConnection: (c) => set({ connection: c }),
 
@@ -316,6 +384,8 @@ export const useChatStore = create<ChatState>((set) => ({
       if (ev.eid && ev.eid <= s.lastEid) return {}; // already applied (replay overlap)
       const turns = [...s.turns];
       const extra = reduce(turns, ev);
+      if (extra.bounced) extra.bounced = [...s.bounced, ...extra.bounced];
+      if (hasLiveTurn(turns) && ev.type !== "run.state") extra.isStreaming = true;
       return {
         turns,
         ...extra,

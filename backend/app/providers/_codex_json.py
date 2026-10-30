@@ -57,8 +57,11 @@ class CodexJsonAccumulator:
         self._started: set[str] = set()
         self._text_so_far: dict[str, str] = {}
         self._todos_seen: dict[str, str] = {}
+        self._open: set[str] = set()
 
     def _ev(self, type_: str, data: dict[str, Any]) -> ProviderEvent:
+        if type_ == "tool.result":
+            self._open.discard(str(data.get("id")))
         self._seq += 1
         return ProviderEvent(type=type_, data=data, seq=self._seq)  # type: ignore[arg-type]
 
@@ -95,7 +98,19 @@ class CodexJsonAccumulator:
     def _tool(self, etype: str, iid: str, name: str, inp: Any) -> Iterator[ProviderEvent]:
         if iid not in self._started:
             self._started.add(iid)
+            self._open.add(iid)
             yield self._ev("tool.use", {"id": iid, "name": name, "input": inp})
+
+    def close_open_tools(self, note: str) -> Iterator[ProviderEvent]:
+        """Finish tool calls cut off by an interrupt (so none spin forever)."""
+        for iid in sorted(self._open):
+            yield self._ev("tool.result", {"id": iid, "output": note, "is_error": False})
+        self._open.clear()
+
+    def begin_run(self) -> None:
+        """Reset per-process state before a resumed run in the same turn."""
+        self.completed = False
+        self.failed = None
 
     def _handle_item(self, etype: str, item: dict[str, Any]) -> Iterator[ProviderEvent]:
         itype = item.get("type", "")

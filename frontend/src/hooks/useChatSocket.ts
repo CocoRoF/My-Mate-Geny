@@ -110,9 +110,29 @@ export function useChatSocket(sessionId: string | null) {
     [store],
   );
 
+  /** Add instructions to the RUNNING turn. False when not connected. */
+  const steer = useCallback(
+    (input: string, attachments: Attachment[] = []): boolean => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+      const clientMsgId = `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+      store.getState().pushSteer(input, attachments, clientMsgId);
+      ws.send(
+        JSON.stringify({
+          type: "steer",
+          input,
+          attachments: attachments.map((a) => a.id),
+          client_msg_id: clientMsgId,
+        }),
+      );
+      return true;
+    },
+    [store],
+  );
+
   const stop = useCallback(() => {
     wsRef.current?.send(JSON.stringify({ type: "stop" }));
   }, []);
 
-  return { send, stop };
+  return { send, steer, stop };
 }

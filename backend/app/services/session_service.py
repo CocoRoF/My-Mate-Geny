@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any, AsyncIterator
 from app.db import Database
 from app.providers import get_provider
 from app.providers.accounts import AccountPool, classify_error, link_shared_state
-from app.providers.base import ProviderEvent, TurnRequest
+from app.providers.base import ProviderEvent, SteerMessage, TurnInbox, TurnRequest
 from app.services._ids import new_id, now_iso
 from app.services.provider_service import ProviderService
 from app.services.workspace_service import WorkspaceService
@@ -66,6 +66,7 @@ class SessionService:
         self.active_runs: dict[str, dict[str, Any]] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._subscribers: dict[str, set[asyncio.Queue]] = {}
+        self._inboxes: dict[str, TurnInbox] = {}  # running turns that accept steering
 
     def _log(self, level: str, source: str, message: str, **kw: Any) -> None:
         if self._logs is not None:
@@ -301,6 +302,60 @@ class SessionService:
         task = asyncio.create_task(self._drive(sid, user_input, rows, client_msg_id))
         self._tasks[sid] = task
 
+    async def steer(
+        self,
+        sid: str,
+        text: str,
+        attachment_ids: list[str] | None = None,
+        client_msg_id: str | None = None,
+    ) -> bool:
+        """Deliver extra instructions into the RUNNING turn. Returns False when
+        the turn can't take input any more (caller sends it as the next turn).
+        Raises ``AttachmentError`` for invalid attachments."""
+        inbox = self._inboxes.get(sid)
+        if inbox is None or not inbox.open:
+            return False
+        session = self.get(sid)
+        rows = (
+            self._attachments.pending(sid, attachment_ids)
+            if attachment_ids and self._attachments is not None
+            else []
+        )
+        atts = [self._attachments.to_provider(r) for r in rows] if self._attachments else []
+        if atts and session["connection_id"]:
+            try:
+                remote = await self._workspaces.connector_for(session["connection_id"]).upload_files(
+                    sid, [(a.id, a.path, a.name) for a in atts]
+                )
+                for a in atts:
+                    a.remote_path = remote.get(a.id)
+            except Exception as exc:  # noqa: BLE001
+                self._log("warning", "upload", f"could not copy attachments to the remote host: {exc}",
+                          code="upload.remote_copy_failed", session_id=sid)
+        def record() -> None:
+            # Kept as its own role so history pairing (user -> assistant turn)
+            # is untouched; the event places it inside the running turn.
+            mid = self._add_message(sid, "steer", text)
+            if rows and self._attachments is not None:
+                self._attachments.link([r["id"] for r in rows], mid)
+            ev = ProviderEvent(type="user.steer", data={
+                "text": text,
+                "client_msg_id": client_msg_id,
+                "message_id": mid,
+                "attachments": [self._attachments.out(r) for r in rows] if self._attachments else [],
+            })
+            self._add_event(sid, ev)
+            self._publish(sid, ev.to_dict())
+
+        fut: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+        msg = SteerMessage(text=text, attachments=atts, delivered=fut, on_delivered=record)
+        if not inbox.offer(msg):
+            return False
+        try:
+            return await asyncio.wait_for(asyncio.shield(fut), timeout=30)
+        except asyncio.TimeoutError:
+            return False
+
     def stop(self, sid: str) -> bool:
         task = self._tasks.get(sid)
         if task is None or task.done():
@@ -482,7 +537,9 @@ class SessionService:
             attachments=attachments,
             mode=session.get("mode") or "agent",
             extra_dirs=local_extra,
+            inbox=TurnInbox(),
         )
+        self._inboxes[sid] = req.inbox
 
         final_text = ""
         err_code = err_msg = None
@@ -534,6 +591,9 @@ class SessionService:
                     )
                 yield ev
         finally:
+            if self._inboxes.get(sid) is req.inbox:
+                self._inboxes.pop(sid, None)
+            req.inbox.close()
             if lease is not None and self._pool is not None:
                 if err_code is not None:
                     outcome = classify_error(err_code, err_msg)

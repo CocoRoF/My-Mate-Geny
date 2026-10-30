@@ -222,3 +222,36 @@ def test_link_shared_state(tmp_path, monkeypatch):
     assert not (cfg / ".credentials.json").is_symlink()
     assert json.loads((cfg / ".claude.json").read_text())["mcpServers"] == {"x": {"command": "y"}}
     accounts.link_shared_state("claude", acc)  # idempotent
+
+
+class SteerableProvider:
+    """Fake provider that waits for one steering message, then finishes."""
+
+    name = "claude"
+
+    async def run_turn_stream(self, req):
+        yield ProviderEvent(type="session.start", data={})
+        yield ProviderEvent(type="tool.use", data={"id": "t1", "name": "Bash", "input": {}}, seq=1)
+        msg = await asyncio.wait_for(req.inbox.queue.get(), timeout=5)
+        msg.resolve(True)
+        yield ProviderEvent(type="tool.result", data={"id": "t1", "output": "ok"}, seq=2)
+        req.inbox.close()
+        yield ProviderEvent(type="turn.complete", data={"text": f"done + {msg.text}"}, seq=3)
+
+
+async def test_steer_while_running_then_rejected_after(db, tmp_path, monkeypatch):
+    monkeypatch.setattr(ss_mod, "get_provider", lambda name: SteerableProvider())
+    svc = _svc(db)
+    s = svc.create(provider="claude", workspace_path=str(tmp_path))
+    q = svc.subscribe(s["id"])
+    svc.start_turn(s["id"], "go")
+    while (await asyncio.wait_for(q.get(), timeout=5))["type"] != "tool.use":
+        pass
+    assert await svc.steer(s["id"], "also do X", client_msg_id="k1") is True
+    while (m := await asyncio.wait_for(q.get(), timeout=5))["type"] != "run.state":
+        if m["type"] == "user.steer":
+            assert m["data"]["client_msg_id"] == "k1" and m.get("eid")
+    types = [e["type"] for e in svc.events(s["id"])]
+    assert types.index("user.steer") < types.index("turn.complete")  # placed inside the turn
+    assert [m["role"] for m in svc.messages(s["id"])] == ["user", "steer", "assistant"]
+    assert await svc.steer(s["id"], "late") is False  # nothing running -> caller queues it
