@@ -104,9 +104,23 @@ interface ChatState {
   applyEvent: (ev: ProviderEvent) => void;
 }
 
+// Returns a COPY of the in-progress assistant turn (fresh flow/tools arrays and
+// item objects) swapped into `turns`. Live events must never mutate the turn
+// in place: components memoize on `turn.flow` / `turn.tools` identity, so an
+// in-place push leaves them rendering a stale snapshot (e.g. the timeline
+// stuck on the first tool while the count keeps climbing).
 function lastAssistant(turns: Turn[]): Turn {
-  const last = turns[turns.length - 1];
-  if (last && last.role === "assistant" && !last.complete) return last;
+  const i = turns.length - 1;
+  const last = turns[i];
+  if (last && last.role === "assistant" && !last.complete) {
+    const copy: Turn = {
+      ...last,
+      flow: last.flow.map((f) => ({ ...f })),
+      tools: last.tools.map((t) => ({ ...t })),
+    };
+    turns[i] = copy;
+    return copy;
+  }
   const fresh: Turn = { role: "assistant", text: "", flow: [], tools: [], complete: false };
   turns.push(fresh);
   return fresh;
