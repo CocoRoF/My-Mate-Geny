@@ -103,11 +103,18 @@ class DownloadService:
                 meta = json.loads(m.group(1))
             except ValueError:
                 meta = {}
-        assets = []
+        # The rolling release is updated in place: for a moment it holds both
+        # the old and the new file of a platform. Offer only the newest.
+        newest: dict[str, dict] = {}
         for a in rel.get("assets") or []:
-            kind = self.classify(a["name"])
-            if kind is None:
+            if a.get("state", "uploaded") != "uploaded" or self.classify(a["name"]) is None:
                 continue
+            key = self.classify(a["name"])["label"]
+            if key not in newest or (a.get("updated_at") or "") > (newest[key].get("updated_at") or ""):
+                newest[key] = a
+        assets = []
+        for a in newest.values():
+            kind = self.classify(a["name"])
             assets.append({
                 "id": a["id"],
                 "name": a["name"],

@@ -113,7 +113,7 @@ jobs:
         working-directory: mobile/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon -PversionCode=${{ github.run_number }} -PversionName=$VERSION
+          ./gradlew assembleRelease --no-daemon -PhrhVersionCode=${{ github.run_number }} -PhrhVersionName=$VERSION
           cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/hr-harnessor-$VERSION-android.apk"
         env:
           HRH_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
