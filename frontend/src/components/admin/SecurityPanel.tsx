@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { securityInfo, unbanIp, type SecurityInfo } from "../../api/admin";
+import { revokeAllSessions, securityInfo, unbanIp, type SecurityInfo } from "../../api/admin";
 import Icon from "../ui/Icon";
 import { absTime, relTime } from "./format";
 
@@ -24,8 +24,28 @@ export default function SecurityPanel() {
     }
   };
 
+  const revokeAll = async () => {
+    if (!window.confirm("Sign out every device and app (this browser stays signed in)?")) return;
+    setBusy("__all__");
+    try {
+      await revokeAllSessions();
+      window.alert("All other sessions have been signed out.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div className="space-y-3">
+      <div className="card flex flex-wrap items-center gap-3 p-4">
+        <div className="min-w-0 flex-1 text-[12.5px] text-content-dim">
+          Lost a device or shared a session? Ends every signed-in browser, desktop and Android app at once.
+          Changing the password does the same.
+        </div>
+        <button onClick={revokeAll} disabled={busy === "__all__"} className="btn-ghost text-danger hover:text-danger">
+          {busy === "__all__" ? <Icon name="spinner" size={14} spin /> : <Icon name="logout" size={14} />} Sign out all devices
+        </button>
+      </div>
       <div className="card p-4 text-[12.5px] text-content-dim">
         An IP is blocked for <b className="text-content">{info.ban_hours}h</b> after{" "}
         <b className="text-content">{info.max_login_fails}</b> failed logins. Your current IP is{" "}

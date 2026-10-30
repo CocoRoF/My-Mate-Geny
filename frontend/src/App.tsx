@@ -1,11 +1,6 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import Sidebar from "./components/layout/Sidebar";
 import ChatView from "./components/chat/ChatView";
-import ProvidersView from "./components/providers/ProvidersView";
-import ConnectionsView from "./components/connections/ConnectionsView";
-import UsageView from "./components/usage/UsageView";
-import AdminView from "./components/admin/AdminView";
-import DownloadsView from "./components/downloads/DownloadsView";
 import MobileTopBar from "./components/layout/MobileTopBar";
 import UpdateBanner from "./components/layout/UpdateBanner";
 import { useBackHandler } from "./lib/back";
@@ -14,6 +9,13 @@ import { useProviderStore } from "./stores/providerStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useSessionStore } from "./stores/sessionStore";
 import { useConfigStore } from "./stores/configStore";
+
+// Secondary views load on demand: the chat (first screen) stays light.
+const ProvidersView = lazy(() => import("./components/providers/ProvidersView"));
+const ConnectionsView = lazy(() => import("./components/connections/ConnectionsView"));
+const UsageView = lazy(() => import("./components/usage/UsageView"));
+const AdminView = lazy(() => import("./components/admin/AdminView"));
+const DownloadsView = lazy(() => import("./components/downloads/DownloadsView"));
 
 export default function App() {
   const view = useUIStore((s) => s.view);
@@ -67,12 +69,14 @@ export default function App() {
         {/* chat with an open session has its own header */}
         {!(view === "chat" && activeId) && <MobileTopBar title={titles[view] || ""} />}
         <div className="flex-1 min-h-0">
+          <Suspense fallback={<div className="grid h-full place-items-center text-sm text-content-faint">Loading…</div>}>
           {view === "chat" && <ChatView />}
           {view === "providers" && <ProvidersView />}
           {view === "connections" && <ConnectionsView />}
           {view === "usage" && <UsageView />}
           {view === "admin" && <AdminView />}
           {view === "downloads" && <DownloadsView />}
+          </Suspense>
         </div>
       </main>
     </div>

@@ -49,7 +49,13 @@ export default function FileTree({ connectionId, initialPath, onPick, selected }
     setLoading(true);
     setQuery("");
     listDir(path, connectionId)
-      .then((r) => alive && setEntries(r.entries))
+      .then((r) => {
+        if (!alive) return;
+        setEntries(r.entries);
+        // Remote paths come back resolved (absolute): adopt them so
+        // breadcrumbs and ".." work from the real location.
+        if (r.path && r.path !== path) setPath(r.path);
+      })
       .catch((e) => alive && setError(String(e.message || e)))
       .finally(() => alive && setLoading(false));
     return () => {

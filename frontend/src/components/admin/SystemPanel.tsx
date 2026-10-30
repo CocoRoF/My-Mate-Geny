@@ -76,6 +76,30 @@ export default function SystemPanel() {
         )}
       </Card>
 
+      <Card title={`Claude engines (${info.engines?.length || 0})`} icon="cpu">
+        {!info.engines?.length ? (
+          <p className="text-[12px] text-content-faint py-1">
+            No live engine. One starts with a chat's first Claude turn and stays up while it's used or has background tasks.
+          </p>
+        ) : (
+          <div className="space-y-1.5">
+            {info.engines.map((e) => (
+              <div key={e.session_id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-lg bg-surface-2/70 px-3 py-2 text-[12px]">
+                <span className={`w-2 h-2 rounded-full ${e.turn_active ? "bg-accent animate-pulse-dot" : "bg-success"}`} />
+                <span className="font-mono text-content-dim">pid {e.pid}</span>
+                <span className="font-mono text-content-faint">{e.model}</span>
+                <span className="text-content-faint">{e.mode}</span>
+                {e.account && <span className="text-content-faint">· {e.account}</span>}
+                <span className="ml-auto text-content-faint">
+                  {e.turn_active ? "working" : `idle ${duration(e.idle_s)}`}
+                  {e.running_tasks ? ` · ${e.running_tasks} task(s)` : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
       <div className="grid gap-3 sm:grid-cols-2">
         <Card title="Runtime" icon="server">
           <KV k="Version" v={info.version} mono />

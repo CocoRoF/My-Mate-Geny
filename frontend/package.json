@@ -9,14 +9,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "hast-util-to-text": "^4.0.3",
     "highlight.js": "^11.12.0",
+    "lowlight": "^3.3.0",
     "qrcode-generator": "^1.4.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-icons": "^5.7.0",
     "react-markdown": "^9.0.1",
-    "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.0",
+    "unist-util-visit": "^5.2.0",
     "zustand": "^5.0.0"
   },
   "devDependencies": {

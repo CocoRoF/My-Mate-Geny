@@ -56,6 +56,16 @@ export interface SystemInfo {
   cli: Record<string, string>;
   providers: ProviderStatus[];
   active_runs: ActiveRun[];
+  engines?: {
+    session_id: string;
+    pid: number | null;
+    model: string;
+    mode: string;
+    turn_active: boolean;
+    running_tasks: number;
+    idle_s: number;
+    account?: string | null;
+  }[];
   counts: Record<string, number>;
   storage: {
     db_bytes: number;
@@ -86,6 +96,7 @@ export const logStats = () => apiFetch<LogStats>("/api/admin/logs/stats");
 export const clearLogs = () => apiFetch<{ deleted: number }>("/api/admin/logs", { method: "DELETE" });
 export const systemInfo = () => apiFetch<SystemInfo>("/api/admin/system");
 export const securityInfo = () => apiFetch<SecurityInfo>("/api/admin/security");
+export const revokeAllSessions = () => apiFetch("/api/auth/revoke-all", { method: "POST" });
 export const unbanIp = (ip: string) =>
   apiFetch(`/api/admin/security/${encodeURIComponent(ip)}`, { method: "DELETE" });
 

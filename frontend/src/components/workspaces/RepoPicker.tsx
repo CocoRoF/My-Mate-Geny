@@ -15,13 +15,26 @@ export default function RepoPicker({
   const [query, setQuery] = useState("");
   const [cloning, setCloning] = useState<string | null>(null);
 
+  // Repos are tagged with the account they came from: after a quick account
+  // switch, a stale list must never be cloned with the other account's token.
+  const [reposOf, setReposOf] = useState<string | null>(null);
   useEffect(() => {
+    let alive = true;
     setLoading(true);
     setError("");
+    setRepos([]);
+    setReposOf(null);
     getRepos(accountId)
-      .then(setRepos)
-      .catch((e) => setError(String(e.message || e)))
-      .finally(() => setLoading(false));
+      .then((r) => {
+        if (!alive) return;
+        setRepos(r);
+        setReposOf(accountId);
+      })
+      .catch((e) => alive && setError(String(e.message || e)))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
   }, [accountId]);
 
   const filtered = useMemo(
@@ -30,6 +43,7 @@ export default function RepoPicker({
   );
 
   const use = async (r: GitRepo) => {
+    if (reposOf !== accountId) return;
     setCloning(r.full_name);
     setError("");
     try {
