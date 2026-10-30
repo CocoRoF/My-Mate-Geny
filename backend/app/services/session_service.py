@@ -184,12 +184,12 @@ class SessionService:
         extra_env: dict[str, str] = {}
         if lease is not None:
             if provider_name == "claude":
-                if lease.oauth_token:
-                    # Pooled Claude account -> inject its long-lived token.
-                    extra_env["CLAUDE_CODE_OAUTH_TOKEN"] = lease.oauth_token
+                if not lease.is_primary:
+                    # Pooled account: isolated creds dir (CLI reads+refreshes there).
+                    extra_env["HOME"] = lease.home
+                    extra_env["CLAUDE_CONFIG_DIR"] = lease.config_dir
                 # Primary (host) account: no override -> uses this machine's auth.
             elif provider_name == "codex":
-                # Codex isolates via HOME + CODEX_HOME (device-auth creds live there).
                 extra_env["HOME"] = lease.home
                 extra_env["CODEX_HOME"] = lease.config_dir
             if lease.auth_mode == "api_key" and lease.api_key:

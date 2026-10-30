@@ -52,6 +52,21 @@ def ensure_account_dirs(provider: str, account_id: str) -> tuple[Path, Path]:
     return home, cfg
 
 
+def write_claude_credentials(account_id: str, creds: dict) -> None:
+    """Write a Claude account's OAuth credentials to its isolated config dir.
+
+    The CLI reads+refreshes ``.credentials.json`` there on every turn (via
+    CLAUDE_CONFIG_DIR), so the account's token stays fresh automatically.
+    """
+    import json as _json
+
+    _, cfg = ensure_account_dirs("claude", account_id)
+    p = cfg / ".credentials.json"
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(_json.dumps(creds))
+
+
 # ---------------------------------------------------------------- balancer (pure)
 
 
@@ -354,13 +369,14 @@ class AccountStore:
         return None
 
     def usable(self, account: dict) -> bool:
-        # A stored secret (api key or long-lived OAuth token) makes it usable.
-        ref = account.get("secret_ref")
-        if ref and self._vault.exists(ref):
-            return True
-        # Otherwise a credentials file in the account's isolated dir (codex).
+        # A credentials file in the account's isolated dir (claude .credentials.json
+        # written at sign-in, or codex auth.json from device-auth).
         cfg = account_config_dir(account["provider"], account["id"])
-        return any((cfg / f).exists() for f in (".credentials.json", "credentials.json", "auth.json"))
+        if any((cfg / f).exists() for f in (".credentials.json", "credentials.json", "auth.json")):
+            return True
+        # Or a stored API key.
+        ref = account.get("secret_ref")
+        return bool(ref and self._vault.exists(ref))
 
 
 # ---------------------------------------------------------------- pool (in-memory)
@@ -456,12 +472,8 @@ class AccountPool:
             from app.providers import subscription as sub
 
             if provider == "claude":
-                if primary:
-                    util = sub.max_utilization(sub.claude_subscription(self._host_cred_dir(provider)))
-                else:
-                    tok = self._store.oauth_token(account) if account else None
-                    if tok:
-                        util = sub.max_utilization(sub.claude_usage_from_token(tok))
+                cdir = self._host_cred_dir(provider) if primary else str(account_config_dir(provider, acc_id))
+                util = sub.max_utilization(sub.claude_subscription(cdir))
             elif provider == "codex":
                 cdir = self._host_cred_dir(provider) if primary else str(account_config_dir(provider, acc_id))
                 util = sub.max_utilization(sub.codex_subscription(cdir))

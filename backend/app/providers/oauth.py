@@ -17,17 +17,32 @@ State lives in-memory (single uvicorn process, single user).
 
 from __future__ import annotations
 
+import base64
 import fcntl
+import hashlib
+import json
 import os
 import pty
 import re
+import secrets
 import select
 import struct
 import subprocess
 import termios
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass, field
+
+# Claude Code's public OAuth client (same across installs). We implement the
+# PKCE exchange directly rather than driving the CLI pty — robust + web-native.
+_CLAUDE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+_CLAUDE_AUTHORIZE = "https://claude.com/cai/oauth/authorize"
+_CLAUDE_TOKEN = "https://platform.claude.com/v1/oauth/token"
+_CLAUDE_REDIRECT = "https://platform.claude.com/oauth/code/callback"
+_CLAUDE_SCOPES = "org:create_api_key user:profile user:inference"
 
 _ANSI = re.compile(
     rb"\x1b\[[0-9;?]*[a-zA-Z]"  # CSI
@@ -55,6 +70,8 @@ class LoginSession:
     url: str = ""
     user_code: str = ""
     token: str = ""
+    verifier: str = ""
+    state: str = ""
     output: str = ""
     done: bool = False
     ok: bool = False
@@ -174,102 +191,89 @@ class OAuthManager:
                     return {"status": "failed", "error": s.error or "login did not complete"}
         return {"status": "pending"}
 
-    # ---- claude: auth-url + paste-code flow (pty) ----
+    # ---- claude: direct OAuth PKCE flow (authorize URL -> paste code -> token) ----
 
     def start_claude(self, timeout: float = 25.0, *, key: str = "claude", env_extra: dict | None = None) -> dict:
         self._kill(key)
         s = LoginSession(key)
+        verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+        challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(verifier.encode()).digest()
+        ).rstrip(b"=").decode()
+        state = secrets.token_urlsafe(24)
+        s.verifier = verifier
+        s.state = state
+        params = {
+            "code": "true",
+            "client_id": _CLAUDE_CLIENT_ID,
+            "response_type": "code",
+            "redirect_uri": _CLAUDE_REDIRECT,
+            "scope": _CLAUDE_SCOPES,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+            "state": state,
+        }
+        s.url = _CLAUDE_AUTHORIZE + "?" + urllib.parse.urlencode(params)
         self._sessions[key] = s
-        self._claude_env_extra = env_extra
-        master, slave = pty.openpty()
-        # Wide window so the URL never wraps.
-        try:
-            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 60, 400, 0, 0))
-        except Exception:
-            pass
-        try:
-            proc = subprocess.Popen(
-                ["claude", "setup-token"],
-                stdin=slave,
-                stdout=slave,
-                stderr=slave,
-                env=self._env(env_extra),
-                close_fds=True,
-                preexec_fn=os.setsid,
-            )
-        except FileNotFoundError:
-            os.close(master)
-            os.close(slave)
-            return {"flow": "paste", "error": "claude CLI not found"}
-        os.close(slave)
-        s.proc = proc
-        s.master_fd = master
-
-        def reader() -> None:
-            buf = b""
-            while True:
-                try:
-                    r, _, _ = select.select([master], [], [], 0.5)
-                except OSError:
-                    break
-                if master in r:
-                    try:
-                        data = os.read(master, 4096)
-                    except OSError:
-                        break
-                    if not data:
-                        break
-                    buf += data
-                    with s.lock:
-                        s.output = _strip(buf)
-                        if not s.url:
-                            m = _CLAUDE_OSC.search(buf) or _CLAUDE_PLAIN.search(buf)
-                            if m:
-                                s.url = (m.group(1) if m.re is _CLAUDE_OSC else m.group(0)).decode(
-                                    errors="replace"
-                                )
-                        if not s.token:
-                            tm = _TOKEN_RE.search(buf)
-                            if tm:
-                                s.token = tm.group(0).decode(errors="replace")
-                if proc.poll() is not None:
-                    break
-            proc.wait()
-            with s.lock:
-                s.done = True
-                s.ok = self.claude_logged_in()
-
-        threading.Thread(target=reader, daemon=True).start()
-        return self._wait_for(s, lambda: bool(s.url), timeout, "paste")
+        return {"flow": "paste", "url": s.url}
 
     def complete_claude(self, code: str, timeout: float = 40.0, *, key: str = "claude",
                         check_dir: str | None = None) -> dict:
         s = self._sessions.get(key)
-        if not s or s.master_fd is None:
+        if not s or not s.verifier:
             return {"ok": False, "error": "no active claude login — start again"}
-
-        def logged_in() -> bool:
-            if check_dir:
-                return any(
-                    os.path.exists(os.path.join(check_dir, f))
-                    for f in (".credentials.json", "credentials.json", "auth.json")
-                )
-            return self.claude_logged_in()
-
+        raw = code.strip()
+        # The callback shows "<code>#<state>" (CLI splits on '#').
+        the_code = raw.split("#")[0].split("&")[0].strip()
+        the_state = raw.split("#")[1] if "#" in raw else s.state
+        body = json.dumps({
+            "grant_type": "authorization_code",
+            "code": the_code,
+            "state": the_state,
+            "client_id": _CLAUDE_CLIENT_ID,
+            "redirect_uri": _CLAUDE_REDIRECT,
+            "code_verifier": s.verifier,
+        }).encode()
+        req = urllib.request.Request(
+            _CLAUDE_TOKEN, data=body, method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                # Required to pass Cloudflare on platform.claude.com.
+                "User-Agent": "claude-cli/2.1.204 (external, cli)",
+                "anthropic-beta": "oauth-2025-04-20",
+            },
+        )
         try:
-            os.write(s.master_fd, (code.strip() + "\r").encode())
-        except OSError as exc:
-            return {"ok": False, "error": f"failed to send code: {exc}"}
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            with s.lock:
-                if s.token:
-                    return {"ok": True, "error": "", "token": s.token}
-                if s.done or logged_in():
-                    return {"ok": s.ok or logged_in(), "error": s.error, "token": s.token}
-            time.sleep(0.3)
-        with s.lock:
-            return {"ok": bool(s.token) or logged_in(), "error": "" if (s.token or logged_in()) else "timed out", "token": s.token}
+            with urllib.request.urlopen(req, timeout=20) as r:
+                tok = json.loads(r.read().decode())
+        except urllib.error.HTTPError as exc:
+            detail = ""
+            try:
+                detail = exc.read().decode()[:200]
+            except Exception:
+                pass
+            return {"ok": False, "error": f"token exchange failed ({exc.code}) {detail}"}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"token exchange error: {exc}"}
+
+        access = tok.get("access_token")
+        if not access:
+            return {"ok": False, "error": "no access_token in response"}
+        expires_at = int(time.time() * 1000) + int(tok.get("expires_in", 0)) * 1000
+        account = tok.get("account") or {}
+        creds = {
+            "claudeAiOauth": {
+                "accessToken": access,
+                "refreshToken": tok.get("refresh_token", ""),
+                "expiresAt": expires_at,
+                "scopes": (tok.get("scope") or _CLAUDE_SCOPES).split(),
+                "subscriptionType": account.get("subscription_type")
+                or tok.get("subscription_type")
+                or "",
+            }
+        }
+        return {"ok": True, "error": "", "credentials": creds}
 
     # ---- shared ----
 

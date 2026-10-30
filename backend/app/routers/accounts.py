@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from app.providers.accounts import account_config_dir, ensure_account_dirs
+from app.providers.accounts import account_config_dir, ensure_account_dirs, write_claude_credentials
 
 router = APIRouter(prefix="/api/providers")
 
@@ -129,12 +129,10 @@ async def account_oauth_complete(
     _check(provider)
     if provider != "claude":
         raise HTTPException(status_code=400, detail="complete step is only for claude")
-    cfg = account_config_dir(provider, account_id)
-    res = request.app.state.oauth.complete_claude(body.code, key=account_id, check_dir=str(cfg))
+    res = request.app.state.oauth.complete_claude(body.code, key=account_id)
     store = request.app.state.account_store
-    if res.get("ok") and res.get("token"):
-        # Long-lived token -> vault; injected as CLAUDE_CODE_OAUTH_TOKEN per turn.
-        store.set_oauth_token(account_id, res["token"])
-    elif res.get("ok"):
+    if res.get("ok") and res.get("credentials"):
+        # Write OAuth creds to the account's isolated dir; the CLI refreshes them.
+        write_claude_credentials(account_id, res["credentials"])
         store.update(account_id, status="ready")
     return {"ok": res.get("ok", False), "error": res.get("error", "")}

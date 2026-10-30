@@ -93,6 +93,15 @@ async def oauth_complete(
     if provider != "claude":
         raise HTTPException(status_code=400, detail="complete step is only for claude")
     res = oauth.complete_claude(body.code)
-    if res.get("ok"):
+    if res.get("ok") and res.get("credentials"):
+        # Provider-level sign-in writes to this machine's ~/.claude.
+        import json
+        import os
+
+        cfg = os.path.expanduser("~/.claude")
+        os.makedirs(cfg, exist_ok=True)
+        fd = os.open(os.path.join(cfg, ".credentials.json"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(json.dumps(res["credentials"]))
         svc.mark_oauth("claude")
-    return res
+    return {"ok": res.get("ok", False), "error": res.get("error", "")}
