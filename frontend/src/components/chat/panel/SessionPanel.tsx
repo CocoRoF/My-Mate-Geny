@@ -51,9 +51,23 @@ interface Change {
   failed: boolean;
 }
 
-/** Files the agent touched this session (Edit/Write/MultiEdit/apply_patch). */
+/** Files the agent changed this session: exact git-based turn changes when
+ * the workspace is a repo, otherwise what Edit/Write/apply_patch touched. */
 function changesOf(turns: Turn[]): Change[] {
   const map = new Map<string, Change>();
+  if (turns.some((t) => t.changes)) {
+    for (const t of turns)
+      for (const r of t.changes?.repos || [])
+        for (const f of r.files) {
+          const path = `${r.root}/${f.path}`;
+          const c = map.get(path) || { path, ops: 0, created: false, failed: false };
+          c.ops += 1;
+          c.created ||= f.status === "A";
+          map.delete(path);
+          map.set(path, c);
+        }
+    return [...map.values()].reverse();
+  }
   const touch = (path: string, created: boolean, failed: boolean) => {
     if (!path) return;
     const c = map.get(path) || { path, ops: 0, created: false, failed: false };

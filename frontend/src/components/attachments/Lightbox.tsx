@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { Attachment } from "../../types";
 import { downloadUrl } from "../../api/attachments";
 import Icon from "../ui/Icon";
+import { useBackHandler } from "../../lib/back";
 import { formatBytes } from "./fileMeta";
 
 /** Full-screen image viewer: ←/→ to browse, Esc / backdrop to close. */
@@ -19,6 +20,7 @@ export default function Lightbox({
   const [loaded, setLoaded] = useState(false);
   const img = images[i];
   const many = images.length > 1;
+  useBackHandler(true, onClose);
 
   const go = useCallback(
     (d: number) => {

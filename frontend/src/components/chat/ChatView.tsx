@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { stopTurn } from "../../api/sessions";
 import SessionPanel from "./panel/SessionPanel";
 import { MenuButton } from "../layout/MobileTopBar";
+import { useBackHandler } from "../../lib/back";
 import TasksPanel from "../tasks/TasksPanel";
 import { isRunning, useTaskStore } from "../../stores/taskStore";
 import { useSessionStore } from "../../stores/sessionStore";
@@ -37,6 +38,8 @@ export default function ChatView() {
       }
       return !v;
     });
+  useBackHandler(panel && window.innerWidth < 1280, () => togglePanel());
+  useBackHandler(showUsage, () => setShowUsage(false));
   const stop = useCallback(() => {
     stopWs();
     if (activeId) stopTurn(activeId).catch(() => {}); // also works while the socket is reconnecting

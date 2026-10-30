@@ -7,6 +7,8 @@ import UsageView from "./components/usage/UsageView";
 import AdminView from "./components/admin/AdminView";
 import DownloadsView from "./components/downloads/DownloadsView";
 import MobileTopBar from "./components/layout/MobileTopBar";
+import UpdateBanner from "./components/layout/UpdateBanner";
+import { useBackHandler } from "./lib/back";
 import { useUIStore } from "./stores/uiStore";
 import { useProviderStore } from "./stores/providerStore";
 import { useConnectionStore } from "./stores/connectionStore";
@@ -18,10 +20,23 @@ export default function App() {
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const setSidebar = useUIStore((s) => s.setSidebar);
   const activeId = useSessionStore((s) => s.activeId);
+  const setView = useUIStore((s) => s.setView);
+  // Android back: close the drawer, else return to the chat view.
+  useBackHandler(view !== "chat", () => setView("chat"));
+  useBackHandler(sidebarOpen, () => setSidebar(false));
   const loadProviders = useProviderStore((s) => s.load);
   const loadConnections = useConnectionStore((s) => s.load);
   const loadSessions = useSessionStore((s) => s.load);
   const loadConfig = useConfigStore((s) => s.load);
+
+  // Deep link: /?view=downloads (desktop menu, update banners).
+  useEffect(() => {
+    const v = new URLSearchParams(window.location.search).get("view");
+    if (v && ["chat", "providers", "connections", "usage", "admin", "downloads"].includes(v)) {
+      useUIStore.getState().setView(v as any);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
 
   useEffect(() => {
     loadProviders();
@@ -48,6 +63,7 @@ export default function App() {
         </div>
       )}
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
+        <UpdateBanner />
         {/* chat with an open session has its own header */}
         {!(view === "chat" && activeId) && <MobileTopBar title={titles[view] || ""} />}
         <div className="flex-1 min-h-0">

@@ -1,0 +1,31 @@
+{
+  "appId": "me.hrletsgo.harnessor",
+  "appName": "hr-harnessor",
+  "webDir": "www",
+  "server": {
+    "url": "https://agent.hrletsgo.me",
+    "cleartext": false,
+    "allowNavigation": ["agent.hrletsgo.me"],
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#0a0c10"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 600,
+      "launchAutoHide": true,
+      "backgroundColor": "#0a0c10",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "overlaysWebView": false,
+      "style": "DARK",
+      "backgroundColor": "#0a0c10"
+    },
+    "LocalNotifications": {
+      "iconColor": "#6e8bff"
+    }
+  }
+}

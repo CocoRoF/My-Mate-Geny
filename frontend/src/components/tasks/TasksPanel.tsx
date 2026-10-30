@@ -5,6 +5,7 @@ import { useSessionStore } from "../../stores/sessionStore";
 import { isRunning, useTaskStore } from "../../stores/taskStore";
 import type { TaskInfo } from "../../types";
 import Icon from "../ui/Icon";
+import { useBackHandler } from "../../lib/back";
 import { fmtMs } from "../chat/turn/toolMeta";
 
 function useNow(active: boolean) {
@@ -118,6 +119,7 @@ export default function TasksPanel({ sid, onClose }: { sid: string; onClose: () 
   const running = tasks.filter(isRunning);
   const done = tasks.filter((t) => !isRunning(t));
   const now = useNow(running.length > 0);
+  useBackHandler(true, onClose);
 
   useEffect(() => {
     if (scope === "chat") loadSession(sid).catch(() => {});

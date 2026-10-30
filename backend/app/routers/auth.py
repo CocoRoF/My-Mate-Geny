@@ -26,12 +26,12 @@ _LOGIN_HTML = """<!doctype html>
 <title>hr·harnessor — 로그인</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
-    font-family:Inter,ui-sans-serif,system-ui,sans-serif; color:#e6e9f0;
+    font-family:Inter,"Noto Sans KR",ui-sans-serif,system-ui,sans-serif; color:#e6e9f0;
     background:
       radial-gradient(1200px 600px at 80% -10%, #15213a 0%, transparent 55%),
       radial-gradient(900px 500px at -10% 110%, #1a1430 0%, transparent 50%), #0a0c10; }

@@ -347,7 +347,9 @@ export default function InputBar({
                 ? "Add instructions while it works — Enter adds them to this turn…"
                 : items.length
                   ? "Add a message (optional)…"
-                  : "Message the agent…   / for commands · @ for files"
+                  : window.innerWidth < 640
+                    ? "Message the agent…"
+                    : "Message the agent…   / for commands · @ for files"
             }
             className="block w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm text-content placeholder:text-content-faint outline-none max-h-[240px]"
           />

@@ -5,7 +5,7 @@ import Markdown from "../../ui/Markdown";
 import MessageAttachments from "../../attachments/MessageAttachments";
 import ThinkingBlock from "./ThinkingBlock";
 import TodoCard, { todosOf } from "./TodoCard";
-import ToolGroup from "./ToolGroup";
+import ToolGroup, { wasStopped } from "./ToolGroup";
 import { fmtMs } from "./toolMeta";
 import TurnChangesCard from "../../changes/TurnChangesCard";
 import { relTime, absTime } from "../../admin/format";
@@ -83,7 +83,7 @@ function Footer({ turn }: { turn: Turn }) {
   const canRetry = isLast && !isStreaming && (turn.status === "error" || turn.status === "interrupted") && prevUser;
   const dur = turn.startedAt && turn.endedAt ? fmtMs(turn.endedAt - turn.startedAt) : null;
   const tk = tokens(turn.usage);
-  const failed = turn.tools.filter((t) => t.isError).length;
+  const failed = turn.tools.filter((t) => t.isError && !wasStopped(t)).length;
   const parts = [
     turn.model,
     dur && `worked ${dur}`,

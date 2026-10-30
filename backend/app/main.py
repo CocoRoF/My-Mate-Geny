@@ -27,6 +27,7 @@ from app.routers import (
     admin,
     attachments,
     auth as auth_router,
+    downloads,
     files,
     config as config_router,
     connections,
@@ -40,6 +41,7 @@ from app.routers import (
     workspaces,
 )
 from app.services.attachment_service import AttachmentService
+from app.services.downloads import DownloadService
 from app.services.connection_service import ConnectionService
 from app.services.log_service import LogService, install_log_bridge
 from app.services.git_service import GitService
@@ -61,6 +63,7 @@ async def lifespan(app: FastAPI):
     install_log_bridge(logs)  # WARNING+ from python logging -> admin log
     attachment_service = AttachmentService(db)
     app.state.attachment_service = attachment_service
+    app.state.downloads = DownloadService()
 
     app.state.auth = AuthManager(db)
     app.state.oauth = OAuthManager()
@@ -159,6 +162,7 @@ for r in (
     git.router,
     attachments.router,
     files.router,
+    downloads.router,
     admin.router,
 ):
     app.include_router(r)

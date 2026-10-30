@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { wsUrl } from "../api/client";
+import { toLogin, wsUrl } from "../api/client";
 import { getHistory } from "../api/sessions";
 import { useChatStore } from "../stores/chatStore";
 import { useSessionStore } from "../stores/sessionStore";
@@ -109,7 +109,8 @@ export function useChatSocket(sessionId: string | null) {
       };
       ws.onclose = (e) => {
         if (wsRef.current === ws) wsRef.current = null;
-        if (!alive || e.code === 4401) return; // unmounted / logged out
+        if (e.code === 4401) return toLogin(); // session expired / revoked
+        if (!alive) return; // unmounted
         schedule();
       };
     };

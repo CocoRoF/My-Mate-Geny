@@ -1,5 +1,5 @@
 import type { Attachment } from "../types";
-import { apiFetch } from "./client";
+import { apiFetch, toLogin } from "./client";
 
 export const getUploadLimits = () =>
   apiFetch<{ max_mb: number; max_files: number }>("/api/attachments/limits");
@@ -21,6 +21,7 @@ export function uploadAttachment(
       } catch {
         /* non-JSON error page */
       }
+      if (xhr.status === 401) toLogin();
       if (xhr.status >= 200 && xhr.status < 300 && Array.isArray(body)) resolve(body[0]);
       else reject(new Error(body?.detail || `upload failed (HTTP ${xhr.status})`));
     };

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import FileTree from "../../workspaces/FileTree";
 import Icon from "../../ui/Icon";
+import { useBackHandler } from "../../../lib/back";
 
 /** Modal folder browser (local host or the session's SSH host). */
 export default function FolderPicker({
@@ -22,6 +23,7 @@ export default function FolderPicker({
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useBackHandler(true, onClose);
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();

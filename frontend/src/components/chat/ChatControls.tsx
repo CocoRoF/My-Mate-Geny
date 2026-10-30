@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useBackHandler } from "../../lib/back";
 import { useConfigStore } from "../../stores/configStore";
 import { useProviderStore } from "../../stores/providerStore";
 import { useSessionStore } from "../../stores/sessionStore";
@@ -27,7 +28,7 @@ function Chip({
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11.5px] font-medium transition ${
+      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 sm:py-1 text-[12px] sm:text-[11.5px] font-medium transition ${
         open
           ? "border-accent/50 bg-accent-soft text-accent"
           : "border-border bg-surface text-content-dim hover:text-content hover:border-border-strong"
@@ -57,6 +58,7 @@ function Menu({
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null);
   const mobile = typeof window !== "undefined" && window.innerWidth < 640;
+  useBackHandler(true, onClose);
 
   useLayoutEffect(() => {
     const el = anchor.current?.parentElement;

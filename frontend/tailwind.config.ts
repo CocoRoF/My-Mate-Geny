@@ -25,7 +25,8 @@ export default {
         warning: "#fbbf24",
       },
       fontFamily: {
-        sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
+        // Noto Sans KR: identical Korean rendering in browsers and the apps.
+        sans: ["Inter", "Noto Sans KR", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "monospace"],
       },
       borderRadius: {

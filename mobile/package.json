@@ -1,23 +1,22 @@
 {
   "name": "hr-harnessor-mobile",
-  "version": "0.1.0",
-  "main": "expo/AppEntry.js",
+  "version": "0.2.0",
+  "private": true,
+  "description": "hr·harnessor agent console — Android app (Capacitor shell around the live console)",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios"
+    "sync": "cap sync android",
+    "icons": "capacitor-assets generate --android --assetPath assets"
   },
   "dependencies": {
-    "expo": "~51.0.0",
-    "expo-status-bar": "~1.12.1",
-    "react": "18.2.0",
-    "react-native": "0.74.5",
-    "@react-native-async-storage/async-storage": "1.23.1"
+    "@capacitor/android": "8.6.0",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/local-notifications": "8.3.1",
+    "@capacitor/splash-screen": "8.0.2",
+    "@capacitor/status-bar": "8.0.4"
   },
   "devDependencies": {
-    "@babel/core": "^7.24.0",
-    "@types/react": "~18.2.79",
-    "typescript": "~5.3.3"
-  },
-  "private": true
+    "@capacitor/assets": "3.0.5",
+    "@capacitor/cli": "8.6.0"
+  }
 }

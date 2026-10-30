@@ -10,6 +10,10 @@ import ToolDetail from "./ToolDetail";
 import { fmtMs, summarize, toolMeta } from "./toolMeta";
 
 const useActive = () => useSessionStore((s) => s.sessions.find((x) => x.id === s.activeId));
+
+/** A call cut off by Stop: the CLI reports it as a rejected (error) result. */
+export const wasStopped = (t: ToolActivity) =>
+  !!t.isError && /doesn't want to proceed|tool use was rejected|interrupted to apply/i.test(t.output || "");
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp)$/i;
 
 function useNow(active: boolean) {
@@ -122,7 +126,11 @@ function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; chi
           {kidsRunning.length ? ` · ${toolMeta(kidsRunning[0].name, kidsRunning[0].input, session?.workspace_path).running}` : ""}
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2">
-          {tool.isError && <span className="pill bg-danger/15 text-danger">failed</span>}
+          {tool.isError && (wasStopped(tool) ? (
+            <span className="pill bg-surface-3 text-content-dim">stopped</span>
+          ) : (
+            <span className="pill bg-danger/15 text-danger">failed</span>
+          ))}
           {task && (background || isRunning(task)) && <TaskPill task={task} now={now} />}
           {running && !(task && isRunning(task)) ? (
             <span className="flex items-center gap-1 text-[11px] text-accent tabular-nums">
@@ -170,7 +178,8 @@ export default function ToolGroup({ tools, allTools }: { tools: ToolActivity[]; 
   const now = useNow(!!running || everything.some((t) => t.task && isRunning(t.task)));
   const [open, setOpen] = useState<boolean | null>(null);
   const metas = useMemo(() => tools.map((t) => toolMeta(t.name, t.input, session?.workspace_path)), [tools, session?.workspace_path]);
-  const failed = tools.filter((t) => t.isError).length;
+  const failed = tools.filter((t) => t.isError && !wasStopped(t)).length;
+  const stopped = tools.filter(wasStopped).length;
   const start = Math.min(...tools.map((t) => t.startedAt));
   const end = running ? now : Math.max(...tools.map((t) => t.startedAt + (t.durationMs || 0)));
   const images = useMemo(() => imagesOf(everything, session?.id), [everything, session?.id]);
@@ -192,6 +201,8 @@ export default function ToolGroup({ tools, allTools }: { tools: ToolActivity[]; 
           <span className="w-3.5 h-3.5 shrink-0 rounded-full border-2 border-accent border-t-transparent animate-spin" />
         ) : failed ? (
           <Icon name="alert-circle" size={14} className="shrink-0 text-warning" />
+        ) : stopped ? (
+          <Icon name="ban" size={14} className="shrink-0 text-content-faint" />
         ) : (
           <Icon name="check" size={14} className="shrink-0 text-success" />
         )}

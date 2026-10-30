@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { changesDiff, fileText, revertChanges } from "../../api/sessions";
 import type { ChangedFile, TurnChanges } from "../../types";
 import Icon from "../ui/Icon";
+import { useBackHandler } from "../../lib/back";
 import { parsePatch, type PatchFile } from "./parsePatch";
 import PatchView from "./PatchView";
 
@@ -44,6 +45,7 @@ export default function ChangesModal({
   const [error, setError] = useState("");
   const [reverted, setReverted] = useState<Set<string>>(new Set());
   const multiRepo = changes.repos.length > 1;
+  useBackHandler(true, onClose);
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();

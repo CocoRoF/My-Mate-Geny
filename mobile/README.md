@@ -1,34 +1,14 @@
-# hr-harnessor mobile (Expo)
+# hr-harnessor Android
 
-Minimal React Native client for the hr-harnessor backend. Lists sessions and
-streams chat over the same `/ws/chat/{id}` WebSocket the web UI uses.
+Capacitor shell that loads the live console (`server.url` in
+`capacitor.config.json`) with its mobile layout. Native: notifications
+(LocalNotifications), hardware back button (closes the top overlay, then
+backgrounds the app), status bar/safe areas, file chooser + camera for uploads,
+offline page.
 
-## Run
-
-```bash
-cd mobile
-npm install
-# set the backend URL for your phone/emulator in app.json > expo.extra.apiBaseUrl
-#   (use your 2223 server's LAN IP, or a Cloudflare tunnel URL)
-npm start           # then press a (Android) / i (iOS), or scan the QR in Expo Go
-```
-
-## Auth
-
-The app logs in against `/api/auth/login`, stores the returned **token** in
-AsyncStorage, and sends it as `Authorization: Bearer <token>` on REST and as
-`?token=` on the chat WebSocket (native clients can't hold the HttpOnly cookie
-the web UI uses). Same 7-day sliding session and IP-ban rules apply server-side.
-
-## Screens
-
-- **Login** → **Sessions** (list + logout + new) → **New session** (provider +
-  location + workspace path) → **Chat** (streaming turns over WS).
-
-## Status
-
-Functional buildout against the token API (login, sessions, session creation
-with provider/location/path, streaming chat). Not yet run on a device/emulator
-here — `npm install && npm start`, set `expo.extra.apiBaseUrl` to your
-deployment (defaults to https://agent.hrletsgo.me), then open in Expo Go.
-Remaining: in-app connection/provider management and store builds.
+- `npm ci && npx cap sync android && (cd android && ./gradlew assembleRelease)`
+- Release signing via env: `HRH_KEYSTORE_FILE`, `HRH_KEYSTORE_PASSWORD`,
+  `HRH_KEY_ALIAS`, `HRH_KEY_PASSWORD` (GitHub secrets in CI). Keep the
+  keystore: every update must be signed with the same key. A backup lives on
+  the runtime server in `~/.hr-harnessor/android-signing/`.
+- Icons/splash: `npm run icons` regenerates from `assets/`.

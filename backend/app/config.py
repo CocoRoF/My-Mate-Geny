@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     # Admin error log retention (rows beyond this are pruned, oldest first).
     log_max_rows: int = 20000
 
+    # Native app downloads: CI publishes builds to this repo's release; the
+    # token (read access) lets the backend serve them from a private repo.
+    github_token: str = ""
+    apps_repo: str = "CocoRoF/hr-harnessor"
+    apps_release_tag: str = "apps-latest"
+
     # Provider CLI binaries
     claude_binary: str = "claude"
     codex_binary: str = "codex"
