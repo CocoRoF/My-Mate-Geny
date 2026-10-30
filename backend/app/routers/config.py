@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from app import __version__
 from app.providers import list_providers
+from app.providers.catalog import PROVIDER_CATALOG
 from app.routers._deps import provider_service
 from app.services.provider_service import ProviderService
 
@@ -16,4 +17,5 @@ async def get_config(svc: ProviderService = Depends(provider_service)) -> dict:
         "version": __version__,
         "providers": list_providers(),
         "provider_status": await svc.status_all(),
+        "catalog": PROVIDER_CATALOG,
     }

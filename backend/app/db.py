@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     title         TEXT NOT NULL DEFAULT 'New chat',
     provider      TEXT NOT NULL,              -- claude | codex
     model         TEXT NOT NULL DEFAULT '',
+    effort        TEXT NOT NULL DEFAULT 'default',  -- reasoning/think level
     connection_id TEXT,                       -- NULL => local workspace
     workspace_path TEXT NOT NULL,             -- absolute path (local or under mount root)
     cli_session_id TEXT,                      -- provider-side resumable session id
@@ -102,6 +103,18 @@ class Database:
         assert self._conn is not None
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            self._conn.commit()
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Additive, idempotent column migrations for pre-existing databases."""
+        assert self._conn is not None
+        with self._lock:
+            cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(sessions)")}
+            if "effort" not in cols:
+                self._conn.execute(
+                    "ALTER TABLE sessions ADD COLUMN effort TEXT NOT NULL DEFAULT 'default'"
+                )
             self._conn.commit()
 
     def close(self) -> None:

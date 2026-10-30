@@ -95,6 +95,10 @@ class ClaudeCodeProvider(Provider):
             settings_inline,
         ]
 
+        # Reasoning/think level -> --effort (omit for "default").
+        if req.effort and req.effort != "default":
+            argv += ["--effort", req.effort]
+
         # api_key path uses --bare; OAuth path must not.
         if req.api_key:
             argv.append("--bare")

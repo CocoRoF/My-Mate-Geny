@@ -48,9 +48,16 @@ class ListDirQuery(BaseModel):
 class SessionCreate(BaseModel):
     provider: str = "claude"
     model: str = ""
+    effort: str = "default"
     connection_id: str | None = None
     workspace_path: str
     title: str = "New chat"
+
+
+class SessionUpdate(BaseModel):
+    provider: str | None = None
+    model: str | None = None
+    effort: str | None = None
 
 
 class SessionOut(BaseModel):

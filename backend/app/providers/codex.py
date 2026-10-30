@@ -66,6 +66,8 @@ class CodexProvider(Provider):
         ]
         if req.model and req.model not in _CLAUDE_ALIASES:
             argv += ["-m", req.model]
+        if req.effort and req.effort != "default":
+            argv += ["-c", f"model_reasoning_effort={req.effort}"]
         # Resume a prior thread when we have one; otherwise start fresh.
         if req.cli_session_id:
             argv = ["exec", "resume", req.cli_session_id, "--json",
@@ -73,6 +75,8 @@ class CodexProvider(Provider):
                     "-C", req.cwd]
             if req.model and req.model not in _CLAUDE_ALIASES:
                 argv += ["-m", req.model]
+            if req.effort and req.effort != "default":
+                argv += ["-c", f"model_reasoning_effort={req.effort}"]
         # Latest user message as the prompt (positional).
         last_user = next(
             (m["content"] for m in reversed(req.messages) if m.get("role") == "user"), ""

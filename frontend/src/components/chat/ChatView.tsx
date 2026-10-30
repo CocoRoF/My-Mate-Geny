@@ -31,7 +31,7 @@ export default function ChatView() {
         </div>
       )}
       <MessageList />
-      <InputBar onSend={send} />
+      <InputBar onSend={send} session={active} />
     </div>
   );
 }

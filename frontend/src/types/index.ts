@@ -23,6 +23,7 @@ export interface Session {
   title: string;
   provider: string;
   model: string;
+  effort: string;
   connection_id: string | null;
   workspace_path: string;
   cli_session_id: string | null;
@@ -30,6 +31,16 @@ export interface Session {
   updated_at: string;
   message_count?: number;
 }
+
+export interface ProviderCatalogEntry {
+  label: string;
+  models: { id: string; label: string }[];
+  default_model: string;
+  effort: string[];
+  default_effort: string;
+}
+
+export type ProviderCatalog = Record<string, ProviderCatalogEntry>;
 
 export interface DirEntry {
   name: string;

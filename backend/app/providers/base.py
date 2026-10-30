@@ -78,6 +78,7 @@ class TurnRequest:
     messages: list[dict[str, str]]        # [{role, content}, ...] full history
     model: str                            # alias ("sonnet") or full id; "" => provider default
     cwd: str                              # working directory (local path or sshfs mount)
+    effort: str = ""                      # reasoning/think level; "" or "default" => provider default
     cli_session_id: str | None = None     # resume a provider-side session when set
     mcp_config: dict[str, Any] | None = None   # e.g. remote-bash bridge
     allow_tools: list[str] = field(default_factory=list)

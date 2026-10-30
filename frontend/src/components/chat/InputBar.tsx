@@ -1,8 +1,16 @@
 import { useRef, useState } from "react";
 import { useChatStore } from "../../stores/chatStore";
+import type { Session } from "../../types";
+import ChatControls from "./ChatControls";
 import Icon from "../ui/Icon";
 
-export default function InputBar({ onSend }: { onSend: (text: string) => void }) {
+export default function InputBar({
+  onSend,
+  session,
+}: {
+  onSend: (text: string) => void;
+  session?: Session | null;
+}) {
   const [input, setInput] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
   const isStreaming = useChatStore((s) => s.isStreaming);
@@ -28,6 +36,11 @@ export default function InputBar({ onSend }: { onSend: (text: string) => void })
   return (
     <div className="px-5 pb-5">
       <div className="mx-auto max-w-3xl">
+        {session && (
+          <div className="pb-2">
+            <ChatControls session={session} />
+          </div>
+        )}
         <div className="flex items-end gap-2 rounded-2xl border border-border bg-surface-2/80 p-2 shadow-card backdrop-blur-sm focus-within:border-accent/50 transition">
           <textarea
             ref={taRef}

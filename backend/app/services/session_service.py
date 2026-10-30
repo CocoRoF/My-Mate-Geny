@@ -42,6 +42,7 @@ class SessionService:
         *,
         provider: str,
         model: str = "",
+        effort: str = "default",
         connection_id: str | None = None,
         workspace_path: str,
         title: str = "New chat",
@@ -52,12 +53,43 @@ class SessionService:
         self._db.execute(
             """
             INSERT INTO sessions
-                (id, title, provider, model, connection_id, workspace_path,
+                (id, title, provider, model, effort, connection_id, workspace_path,
                  cli_session_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
             """,
-            (sid, title, provider, model, connection_id, workspace_path, now, now),
+            (sid, title, provider, model, effort, connection_id, workspace_path, now, now),
         )
+        return self.get(sid)
+
+    def update(
+        self,
+        sid: str,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+        effort: str | None = None,
+    ) -> dict[str, Any]:
+        """Change engine/model/think level mid-conversation. Switching provider
+        resets the provider-side session id (the new engine starts fresh, but
+        the message history is still replayed as context)."""
+        session = self.get(sid)
+        sets: list[str] = []
+        params: list[Any] = []
+        if provider is not None and provider != session["provider"]:
+            get_provider(provider)  # validate
+            sets += ["provider = ?", "cli_session_id = NULL"]
+            params.append(provider)
+        if model is not None:
+            sets.append("model = ?")
+            params.append(model)
+        if effort is not None:
+            sets.append("effort = ?")
+            params.append(effort)
+        if sets:
+            sets.append("updated_at = ?")
+            params.append(now_iso())
+            params.append(sid)
+            self._db.execute(f"UPDATE sessions SET {', '.join(sets)} WHERE id = ?", params)
         return self.get(sid)
 
     def get(self, sid: str) -> dict[str, Any]:
@@ -144,6 +176,7 @@ class SessionService:
         req = TurnRequest(
             messages=[{"role": m["role"], "content": m["content"]} for m in history],
             model=session["model"],
+            effort=session.get("effort") or "default",
             cwd=cwd,
             cli_session_id=session.get("cli_session_id"),
             mcp_config=mcp_config,

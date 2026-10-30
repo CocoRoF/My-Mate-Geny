@@ -4,6 +4,7 @@ import {
   createSession,
   deleteSession,
   listSessions,
+  updateSession,
   type SessionInput,
 } from "../api/sessions";
 
@@ -12,6 +13,7 @@ interface SessionState {
   activeId: string | null;
   load: () => Promise<void>;
   create: (body: SessionInput) => Promise<Session>;
+  update: (id: string, patch: { provider?: string; model?: string; effort?: string }) => Promise<void>;
   remove: (id: string) => Promise<void>;
   setActive: (id: string | null) => void;
 }
@@ -25,6 +27,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     await get().load();
     set({ activeId: s.id });
     return s;
+  },
+  update: async (id, patch) => {
+    const updated = await updateSession(id, patch);
+    set((s) => ({ sessions: s.sessions.map((x) => (x.id === id ? { ...x, ...updated } : x)) }));
   },
   remove: async (id) => {
     await deleteSession(id);
