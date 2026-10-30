@@ -25,6 +25,9 @@ import {
   LuExternalLink,
   LuKeyRound,
   LuPencil,
+  LuGitBranch,
+  LuGithub,
+  LuRefreshCw,
 } from "react-icons/lu";
 
 const MAP = {
@@ -51,6 +54,9 @@ const MAP = {
   external: LuExternalLink,
   key: LuKeyRound,
   pencil: LuPencil,
+  "git-branch": LuGitBranch,
+  github: LuGithub,
+  refresh: LuRefreshCw,
 } satisfies Record<string, IconType>;
 
 export type IconName = keyof typeof MAP;

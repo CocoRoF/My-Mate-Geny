@@ -165,6 +165,15 @@ class RemoteSshConnector(WorkspaceConnector):
             info["error"] = str(exc)[:300]
         return info
 
+    def ssh_prefix(self) -> list[str]:
+        """argv prefix to run a command on the remote host over SSH."""
+        key = self._ensure_key_file()
+        return [
+            "ssh", "-p", str(self._spec.port), "-i", key,
+            "-o", "StrictHostKeyChecking=no", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8",
+            f"{self._spec.username}@{self._spec.host}",
+        ]
+
     async def mcp_config(self, path: str) -> dict[str, Any] | None:
         """Attach the remote-bash MCP bridge so Bash runs on the remote host."""
         import sys

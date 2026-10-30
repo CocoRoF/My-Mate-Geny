@@ -21,6 +21,58 @@ class GitError(RuntimeError):
     pass
 
 
+def _owner_repo(remote: str) -> str:
+    """owner/repo from an https or ssh git remote URL."""
+    r = remote.strip()
+    if not r:
+        return ""
+    if r.endswith(".git"):
+        r = r[:-4]
+    if r.startswith("git@"):  # git@host:owner/repo
+        r = r.split(":", 1)[-1]
+    elif "://" in r:  # https://host/owner/repo (strip userinfo + host)
+        r = r.split("://", 1)[1]
+        r = r.split("/", 1)[1] if "/" in r else r
+    parts = [p for p in r.split("/") if p]
+    return "/".join(parts[-2:]) if len(parts) >= 2 else r
+
+
+def git_info(run) -> dict[str, Any]:
+    """Compute a workspace's git context using a ``run(args) -> (rc, stdout)``.
+
+    Works for local (subprocess) or remote (ssh) by swapping ``run``.
+    """
+    rc, out = run(["rev-parse", "--is-inside-work-tree"])
+    if rc != 0 or out.strip() != "true":
+        return {"is_repo": False}
+    _, remote = run(["remote", "get-url", "origin"])
+    _, branch = run(["branch", "--show-current"])
+    branch = branch.strip()
+    if not branch:
+        _, sha = run(["rev-parse", "--short", "HEAD"])
+        branch = sha.strip()
+    _, status = run(["status", "--porcelain"])
+    changes = len([ln for ln in status.splitlines() if ln.strip()])
+    behind = ahead = 0
+    _, ab = run(["rev-list", "--count", "--left-right", "@{u}...HEAD"])
+    ab = ab.strip()
+    if "\t" in ab:
+        try:
+            b, a = ab.split("\t")
+            behind, ahead = int(b), int(a)
+        except ValueError:
+            pass
+    return {
+        "is_repo": True,
+        "remote": remote.strip(),
+        "repo": _owner_repo(remote),
+        "branch": branch,
+        "changes": changes,
+        "ahead": ahead,
+        "behind": behind,
+    }
+
+
 def _api_base(provider: str, host: str | None) -> str:
     if provider == "github":
         return "https://api.github.com"
@@ -28,16 +80,31 @@ def _api_base(provider: str, host: str | None) -> str:
     return f"https://{h}/api/v4"
 
 
-def _req(url: str, token: str, provider: str) -> Any:
-    headers = {"User-Agent": "hr-harnessor", "Accept": "application/json"}
+def _headers(token: str, provider: str) -> dict[str, str]:
+    h = {"User-Agent": "hr-harnessor", "Accept": "application/json"}
     if provider == "github":
-        headers["Authorization"] = f"Bearer {token}"
-        headers["Accept"] = "application/vnd.github+json"
+        h["Authorization"] = f"Bearer {token}"
+        h["Accept"] = "application/vnd.github+json"
     else:
-        headers["PRIVATE-TOKEN"] = token
-    req = urllib.request.Request(url, headers=headers, method="GET")
+        h["PRIVATE-TOKEN"] = token
+    return h
+
+
+def _req(url: str, token: str, provider: str) -> Any:
+    req = urllib.request.Request(url, headers=_headers(token, provider), method="GET")
     with urllib.request.urlopen(req, timeout=15) as r:
         return json.loads(r.read().decode())
+
+
+def _req_full(url: str, token: str, provider: str) -> tuple[Any, dict[str, str]]:
+    req = urllib.request.Request(url, headers=_headers(token, provider), method="GET")
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read().decode()), {k.lower(): v for k, v in r.headers.items()}
+
+
+def _github_scopes(headers: dict[str, str]) -> list[str]:
+    raw = headers.get("x-oauth-scopes", "")
+    return [s.strip() for s in raw.split(",") if s.strip()]
 
 
 class GitService:
@@ -52,27 +119,47 @@ class GitService:
             raise GitError("provider must be github or gitlab")
         base = _api_base(provider, host)
         try:
-            me = _req(f"{base}/user", token, provider)
+            me, headers = _req_full(f"{base}/user", token, provider)
         except urllib.error.HTTPError as exc:
             raise GitError(f"token rejected ({exc.code}) — check scopes (repo/read_api)") from exc
         except Exception as exc:  # noqa: BLE001
             raise GitError(f"could not reach {provider}: {exc}") from exc
         username = me.get("login") or me.get("username") or ""
+
+        # Capture the token's granted scopes so the UI can reflect its powers.
+        scopes: list[str] = []
+        if provider == "github":
+            scopes = _github_scopes(headers)
+            # Classic PATs report scopes; fine-grained PATs don't — assume push.
+            can_push = (not scopes) or any(s in scopes for s in ("repo", "public_repo"))
+        else:
+            try:
+                tok_info = _req(f"{base}/personal_access_tokens/self", token, provider)
+                scopes = tok_info.get("scopes", []) or []
+            except Exception:  # noqa: BLE001
+                scopes = []
+            can_push = (not scopes) or any(s in scopes for s in ("api", "write_repository"))
+
         aid = new_id(f"git_{provider}_")
         ref = self._vault.put("git", f"{aid}.token", token)
         self._db.execute(
-            "INSERT INTO git_accounts (id, provider, label, host, username, token_ref, created_at) VALUES (?,?,?,?,?,?,?)",
-            (aid, provider, label or username or provider, host, username, ref, now_iso()),
+            """INSERT INTO git_accounts (id, provider, label, host, username, token_ref, scopes, can_push, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (aid, provider, label or username or provider, host, username, ref,
+             ",".join(scopes), 1 if can_push else 0, now_iso()),
         )
         return self.get(aid)  # type: ignore[return-value]
 
     def _row(self, r) -> dict:
+        keys = r.keys()
         return {
             "id": r["id"],
             "provider": r["provider"],
             "label": r["label"],
             "host": r["host"],
             "username": r["username"],
+            "scopes": (r["scopes"].split(",") if ("scopes" in keys and r["scopes"]) else []),
+            "can_push": bool(r["can_push"]) if "can_push" in keys else True,
             "created_at": r["created_at"],
         }
 

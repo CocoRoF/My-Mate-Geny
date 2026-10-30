@@ -33,15 +33,12 @@ export default function GitAccounts() {
   };
 
   return (
-    <div className="mt-6">
-      <div className="flex items-center gap-2.5 mb-1">
-        <Icon name="file" size={18} className="text-violet" />
-        <h2 className="text-base font-semibold">Git (GitHub / GitLab)</h2>
-      </div>
+    <div>
       <p className="text-sm text-content-dim mb-3">
-        Connect with a personal access token (scope: <code className="text-xs bg-surface-3 px-1 rounded">repo</code> /{" "}
-        <code className="text-xs bg-surface-3 px-1 rounded">read_api</code>). Then start a chat on any repo — the
-        agent clones it and can commit &amp; push.
+        Connect with a personal access token. The token's own scopes decide what's possible — a
+        full-scope token (<code className="text-xs bg-surface-3 px-1 rounded">repo</code> on GitHub,{" "}
+        <code className="text-xs bg-surface-3 px-1 rounded">api</code> on GitLab) lets the agent clone
+        private repos and commit &amp; push.
       </p>
 
       <div className="card p-4">
@@ -77,23 +74,35 @@ export default function GitAccounts() {
 
       <div className="mt-3 space-y-2">
         {accounts.map((a) => (
-          <div key={a.id} className="card flex items-center gap-3 p-3">
-            <div className="grid place-items-center w-9 h-9 rounded-lg bg-surface-3">
-              <Icon name="file" size={16} className="text-violet" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium flex items-center gap-2">
-                {a.label}
-                <span className="pill bg-surface-3 text-content-faint">{a.provider}</span>
+          <div key={a.id} className="card p-3">
+            <div className="flex items-center gap-3">
+              <div className="grid place-items-center w-9 h-9 rounded-lg bg-surface-3">
+                <Icon name="file" size={16} className="text-violet" />
               </div>
-              <div className="text-xs text-content-faint font-mono truncate">
-                {a.username}
-                {a.host ? ` · ${a.host}` : ""}
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium flex items-center gap-2">
+                  {a.label}
+                  <span className="pill bg-surface-3 text-content-faint">{a.provider}</span>
+                  <span className={`pill ${a.can_push ? "bg-success/12 text-success" : "bg-warning/15 text-warning"}`}>
+                    {a.can_push ? "read + write" : "read-only"}
+                  </span>
+                </div>
+                <div className="text-xs text-content-faint font-mono truncate">
+                  {a.username}
+                  {a.host ? ` · ${a.host}` : ""}
+                </div>
               </div>
+              <button onClick={() => remove(a.id)} className="btn-ghost text-danger hover:text-danger" title="Remove">
+                <Icon name="trash" size={15} />
+              </button>
             </div>
-            <button onClick={() => remove(a.id)} className="btn-ghost text-danger hover:text-danger" title="Remove">
-              <Icon name="trash" size={15} />
-            </button>
+            {a.scopes.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2.5 pl-12">
+                {a.scopes.map((s) => (
+                  <span key={s} className="pill bg-surface-3 text-content-dim font-mono">{s}</span>
+                ))}
+              </div>
+            )}
           </div>
         ))}
         {accounts.length === 0 && <p className="text-xs text-content-faint">No Git accounts connected.</p>}

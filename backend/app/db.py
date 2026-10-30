@@ -79,6 +79,8 @@ CREATE TABLE IF NOT EXISTS git_accounts (
     host       TEXT,                        -- for self-hosted gitlab
     username   TEXT,
     token_ref  TEXT NOT NULL,               -- vault id for the PAT
+    scopes     TEXT NOT NULL DEFAULT '',    -- granted token scopes (comma-sep)
+    can_push   INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL
 );
 
@@ -153,6 +155,10 @@ class Database:
                 self._conn.execute(
                     "ALTER TABLE sessions ADD COLUMN effort TEXT NOT NULL DEFAULT 'default'"
                 )
+            gcols = {r["name"] for r in self._conn.execute("PRAGMA table_info(git_accounts)")}
+            if gcols and "scopes" not in gcols:
+                self._conn.execute("ALTER TABLE git_accounts ADD COLUMN scopes TEXT NOT NULL DEFAULT ''")
+                self._conn.execute("ALTER TABLE git_accounts ADD COLUMN can_push INTEGER NOT NULL DEFAULT 1")
             self._conn.commit()
 
     def close(self) -> None:

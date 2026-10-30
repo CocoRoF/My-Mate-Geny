@@ -6,6 +6,8 @@ export interface GitAccount {
   label: string;
   host: string | null;
   username: string | null;
+  scopes: string[];
+  can_push: boolean;
   created_at: string;
 }
 
