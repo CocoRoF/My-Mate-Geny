@@ -55,8 +55,10 @@ function AssetButton({ a, primary }: { a: AppAsset; primary?: boolean }) {
       <Icon name="download" size={16} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13.5px] font-medium">{a.label}</span>
-        <span className={`block truncate text-[11px] ${primary ? "text-white/75" : "text-content-faint"}`}>
-          {a.name} · {formatBytes(a.size)}
+        {/* the size stays visible when a narrow screen truncates the file name */}
+        <span className={`flex gap-1 text-[11px] ${primary ? "text-white/75" : "text-content-faint"}`}>
+          <span className="truncate">{a.name}</span>
+          <span className="shrink-0">· {formatBytes(a.size)}</span>
         </span>
       </span>
     </a>
@@ -164,12 +166,12 @@ export default function DownloadsView() {
           {error && <p className="mt-3 text-xs text-danger">{error}</p>}
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {PLATFORMS.map((p) => {
             const list = forPlatform(p.id);
             const isMine = p.id === platform;
             return (
-              <section key={p.id} className={`card p-4 ${isMine ? "ring-1 ring-accent/40" : ""}`}>
+              <section key={p.id} className={`card min-w-0 p-4 ${isMine ? "ring-1 ring-accent/40" : ""}`}>
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">
                     <h2 className="flex items-center gap-2 text-[15px] font-semibold">

@@ -100,7 +100,7 @@ export default function SystemPanel() {
         )}
       </Card>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Card title="Runtime" icon="server">
           <KV k="Version" v={info.version} mono />
           <KV k="Host" v={info.hostname} mono />

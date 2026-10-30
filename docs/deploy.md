@@ -62,8 +62,11 @@ Login returns the signed session token both as the `hrh_session` HttpOnly cookie
 - The tunnel is the dedicated `hr-harnessor` tunnel
   (`<tunnel-id>`); DNS `agent.hrletsgo.me` CNAME → it.
   It does not touch the host's other tunnels.
-- Changing `AUTH_PASSWORD` in `backend/.env` → `docker compose restart backend`.
-- Deleting `~/.hr-harnessor/session.key` invalidates all live sessions.
+- Changing `AUTH_PASSWORD` in `backend/.env` → `docker compose up -d backend`
+  (`restart` does not re-read `env_file`). Sessions are bound to the password,
+  so every device has to sign in again.
+- Admin → Security → "Sign out everywhere" (or deleting
+  `~/.hr-harnessor/session.key`) invalidates all live sessions.
 - Stop everything: `cd deploy && docker compose down`.
 - The older host-run scripts (`start-*.sh`) remain for a non-Docker host run,
   but Docker is the deployed path.

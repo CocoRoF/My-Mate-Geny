@@ -62,7 +62,7 @@ Status legend: [ ] todo · [~] in progress · [x] done (verified)
 - [x] < 768px: drawer sidebar, full-screen chat, session panel as a sheet,
       safe-area insets, `100dvh`, 44px touch targets, horizontally scrolling
       chips, sheet-style menus, keyboard-aware composer.
-- [ ] Every view (chat, providers, connections, usage, admin, downloads)
+- [x] Every view (chat, providers, connections, usage, admin, downloads)
       verified at 390×844.
 
 ## 5. Native apps
@@ -79,10 +79,10 @@ Status legend: [ ] todo · [~] in progress · [x] done (verified)
 
 ## 6. Release pipeline + Download page
 
-- [ ] GitHub Actions `apps.yml`: on every push to `main` (and manual dispatch)
-      build Windows (NSIS), macOS (dmg arm64 + x64), Linux (AppImage + deb),
-      Android (signed APK); publish to a rolling `apps-latest` release plus a
-      versioned release.
+- [x] GitHub Actions `apps.yml`: on every push that touches the apps (and
+      manual dispatch) build Windows (NSIS), macOS (dmg arm64 + x64), Linux
+      (AppImage + deb), Android (signed APK); publish to a rolling
+      `apps-latest` release plus a versioned release (5 kept).
 - [x] Backend `/api/downloads`: latest release metadata (cached), authenticated
       download proxy for the private repo's assets.
 - [x] `/downloads` page: platform auto-detect, version/commit/date/size,
@@ -92,11 +92,11 @@ Status legend: [ ] todo · [~] in progress · [x] done (verified)
 ## 7. Review + end-to-end verification
 
 - [x] Independent code review of existing backend/frontend; fix findings.
-- [ ] Live E2E: auth/ban, providers + usage, account pool, SSH workspaces
+- [x] Live E2E: auth/ban, providers + usage, account pool, SSH workspaces
       (2223/2222/2224), attachments, steering, stop, background tasks, auto
       turns, engine switch context, admin logs, downloads.
-- [ ] Screenshots desktop (1440) + mobile (390) of every view.
-- [ ] Build each app (Docker locally + CI) and smoke-test the artifacts.
+- [x] Screenshots desktop (1440) + mobile (390) of every view.
+- [x] Build each app (Docker locally + CI) and smoke-test the artifacts.
 
 ## Verification log
 
@@ -111,3 +111,22 @@ Status legend: [ ] todo · [~] in progress · [x] done (verified)
 * UI screenshots desktop 1440 + mobile 390 (drawer, chat, diff, tasks, panel).
 * Desktop Linux AppImage built in Docker and launched headless: loads the
   console, `window.hrhNative` present.
+* Remote E2E repeated on a second machine (2222): Claude then Codex edit a
+  repo there through the SSH bridge; changes card over SSH, SFTP preview, and
+  the edits confirmed on the host itself. All three connections reachable.
+* Release pipeline (CI run 4, `apps-v0.2.4`): all six builds published to
+  `apps-latest`; `/api/downloads` lists them with version/commit/date; the
+  download proxy returns the APK byte-identical to GitHub's (sha256), serves
+  repeat downloads from its cache, honours `Range` (206), and requires login.
+  While `apps-latest` is swapped the page offers only the newest file per
+  platform.
+* Android APK built locally (Docker, SDK 36, versionCode/Name from Gradle
+  properties) and in CI (release key, `apksigner verify`); installed and
+  launched on an API 35 emulator. The CI build (release key) loads the live
+  console, signs in, asks for the notification permission (native plugin),
+  opens the drawer, and the hardware back button closes it without leaving
+  the app; with no network it shows its own offline screen.
+* Automated 390px overflow check over every view, every admin tab and a real
+  chat (tools, changes card, diff viewer, tasks panel, session panel), with a
+  negative control; it caught (and now guards) the Download page's grid
+  overflowing on phones.
