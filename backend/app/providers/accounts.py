@@ -349,12 +349,53 @@ class Lease:
     released: bool = False
 
 
+PRIMARY_PREFIX = "__primary__"
+
+
 class AccountPool:
     def __init__(self, store: AccountStore) -> None:
         self._store = store
         self._in_flight: dict[str, int] = {}
         self._state = BalancerState()
         self._lock = threading.Lock()
+        # In-memory health for the synthetic "primary" (host) account per provider.
+        self._primary_health: dict[str, dict] = {}
+        self._primary_last_used: dict[str, float] = {}
+
+    # ---- primary (host) account: the subscription already on this machine ----
+
+    @staticmethod
+    def _primary_id(provider: str) -> str:
+        return f"{PRIMARY_PREFIX}{provider}"
+
+    @staticmethod
+    def _host_cred_dir(provider: str) -> str:
+        sub = ".codex" if provider == "codex" else ".claude"
+        return os.path.join(os.path.expanduser("~"), sub)
+
+    def _host_usable(self, provider: str) -> bool:
+        cfg = self._host_cred_dir(provider)
+        return any(
+            os.path.exists(os.path.join(cfg, f))
+            for f in (".credentials.json", "credentials.json", "auth.json")
+        )
+
+    def _primary_snapshot(self, provider: str, now: float) -> AccountSnapshot:
+        pid = self._primary_id(provider)
+        h = self._primary_health.get(pid, {})
+        return AccountSnapshot(
+            id=pid,
+            enabled=True,
+            usable=self._host_usable(provider),
+            status=h.get("status", "ready"),
+            weight=1,
+            max_concurrency=8,
+            in_flight=self._in_flight.get(pid, 0),
+            cooldown_until=h.get("cooldown_until", 0.0),
+            last_used=self._primary_last_used.get(pid, 0.0),
+            total_leases=0,
+            consecutive_failures=h.get("consecutive_failures", 0),
+        )
 
     def _snapshot(self, acc: dict, now: float) -> AccountSnapshot:
         return AccountSnapshot(
@@ -376,18 +417,32 @@ class AccountPool:
         if not cfg["enabled"]:
             return None
         accounts = self._store.list(provider)
-        if not accounts:
-            return None
         by_id = {a["id"]: a for a in accounts}
+        pid = self._primary_id(provider)
         now = time.time()
         with self._lock:
             snaps = [self._snapshot(a, now) for a in accounts]
+            if self._host_usable(provider):
+                snaps.insert(0, self._primary_snapshot(provider, now))
+            if not snaps:
+                return None
             pick = choose(snaps, strategy=cfg["strategy"], now=now, state=self._state)
             if pick is None:
                 pick = over_capacity(snaps, now=now)
             if pick is None:
                 return None
             self._in_flight[pick.id] = self._in_flight.get(pick.id, 0) + 1
+        if pick.id == pid:
+            self._primary_last_used[pid] = now
+            return Lease(
+                account_id=pid,
+                label="Primary · this machine",
+                provider=provider,
+                auth_mode="oauth",
+                home=os.path.expanduser("~"),
+                config_dir=self._host_cred_dir(provider),
+                api_key="",
+            )
         acc = by_id[pick.id]
         self._store.mark_used(acc["id"])
         return Lease(
@@ -402,6 +457,16 @@ class AccountPool:
 
     def report(self, lease: Lease | None, *, ok: bool, code: str | None = None, error: str | None = None) -> None:
         if lease is None:
+            return
+        if lease.account_id.startswith(PRIMARY_PREFIX):
+            snap = self._primary_snapshot(lease.provider, time.time())
+            d = apply_outcome(snap, ok=ok, code=code, now=time.time(), policy=HealthPolicy())
+            self._primary_health[lease.account_id] = {
+                "status": d.status,
+                "cooldown_until": d.cooldown_until,
+                "consecutive_failures": d.consecutive_failures,
+            }
+            self._release(lease)
             return
         acc = self._store.get(lease.account_id)
         if acc is not None:
@@ -426,15 +491,43 @@ class AccountPool:
                 self._in_flight.pop(lease.account_id, None)
 
     def public_accounts(self, provider: str) -> list[dict]:
-        """Accounts with live health for the admin UI (no secrets)."""
+        """Accounts with live health for the admin UI (no secrets).
+
+        The host subscription is surfaced first as a non-deletable "primary"
+        account so the whole page is account-centric."""
         now = time.time()
         out = []
+        if self._host_usable(provider):
+            snap = self._primary_snapshot(provider, now)
+            reason = ineligible_reason(snap, now=now)
+            out.append({
+                "id": snap.id,
+                "label": "Primary · this machine",
+                "primary": True,
+                "auth_mode": "oauth",
+                "enabled": True,
+                "weight": snap.weight,
+                "max_concurrency": snap.max_concurrency,
+                "status": snap.status,
+                "usable": True,
+                "in_flight": snap.in_flight,
+                "eligible": reason is None,
+                "ineligible_reason": reason,
+                "total_leases": 0,
+                "total_failures": 0,
+                "consecutive_failures": snap.consecutive_failures,
+                "cooldown_until": None,
+                "last_used_at": None,
+                "last_ok_at": None,
+                "last_error": None,
+            })
         for a in self._store.list(provider):
             snap = self._snapshot(a, now)
             reason = ineligible_reason(snap, now=now)
             out.append({
                 "id": a["id"],
                 "label": a["label"],
+                "primary": False,
                 "auth_mode": a["auth_mode"],
                 "enabled": bool(a["enabled"]),
                 "weight": a["weight"],
@@ -455,4 +548,7 @@ class AccountPool:
         return out
 
     def clear_cooldown(self, account_id: str) -> None:
+        if account_id.startswith(PRIMARY_PREFIX):
+            self._primary_health.pop(account_id, None)
+            return
         self._store.set_health(account_id, HealthDecision("ready", 0, 0.0))

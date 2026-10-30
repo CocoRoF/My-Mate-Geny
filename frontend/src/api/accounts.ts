@@ -4,6 +4,7 @@ import type { OAuthStart } from "./providers";
 export interface Account {
   id: string;
   label: string;
+  primary?: boolean;
   auth_mode: string;
   enabled: boolean;
   weight: number;
