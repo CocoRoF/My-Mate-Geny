@@ -190,7 +190,7 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
                 )}
                 {a.utilization != null && a.usable && (
                   <span
-                    className={`pill ${
+                    className={`ml-auto pill ${
                       a.utilization >= 90
                         ? "bg-danger/15 text-danger"
                         : a.utilization >= 70
@@ -202,9 +202,9 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
                     {Math.round(a.utilization)}% used
                   </span>
                 )}
-                <span className="ml-auto text-[11px] text-content-faint">
-                  {a.in_flight}/{a.max_concurrency} busy{!a.primary && ` · ${a.total_leases} leases`}
-                </span>
+                {a.in_flight > 0 && (
+                  <span className="text-[11px] text-accent">{a.in_flight} active</span>
+                )}
               </div>
 
               <div className="flex items-center gap-2 mt-2.5 flex-wrap text-[12px]">
@@ -218,36 +218,12 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
                   </button>
                 )}
                 {!a.primary && (
-                  <>
-                    <button
-                      onClick={() => updateAccount(provider, a.id, { enabled: !a.enabled }).then(load)}
-                      className={`pill ${a.enabled ? "bg-accent-soft text-accent" : "bg-surface-3 text-content-faint"}`}
-                    >
-                      {a.enabled ? "enabled" : "disabled"}
-                    </button>
-                    <label className="flex items-center gap-1 text-content-faint">
-                      w
-                      <input
-                        type="number"
-                        min={1}
-                        defaultValue={a.weight}
-                        onBlur={(e) => updateAccount(provider, a.id, { weight: Number(e.target.value) }).then(load)}
-                        className="field w-11 py-0.5 text-center"
-                      />
-                    </label>
-                    <label className="flex items-center gap-1 text-content-faint">
-                      max
-                      <input
-                        type="number"
-                        min={1}
-                        defaultValue={a.max_concurrency}
-                        onBlur={(e) =>
-                          updateAccount(provider, a.id, { max_concurrency: Number(e.target.value) }).then(load)
-                        }
-                        className="field w-12 py-0.5 text-center"
-                      />
-                    </label>
-                  </>
+                  <button
+                    onClick={() => updateAccount(provider, a.id, { enabled: !a.enabled }).then(load)}
+                    className={`pill ${a.enabled ? "bg-accent-soft text-accent" : "bg-surface-3 text-content-faint"}`}
+                  >
+                    {a.enabled ? "enabled" : "disabled"}
+                  </button>
                 )}
                 {!a.usable && !a.primary && (
                   <button onClick={() => setOauthFor(a)} className="btn-soft py-1">
