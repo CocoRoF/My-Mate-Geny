@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import type { ToolActivity } from "../../../stores/chatStore";
 import Icon from "../../ui/Icon";
 import ToolDetail from "./ToolDetail";
+import { useSessionStore } from "../../../stores/sessionStore";
 import { fmtMs, summarize, toolMeta } from "./toolMeta";
+
+const useRoot = () =>
+  useSessionStore((s) => s.sessions.find((x) => x.id === s.activeId)?.workspace_path || null);
 
 function useNow(active: boolean) {
   const [now, setNow] = useState(() => Date.now());
@@ -16,7 +20,8 @@ function useNow(active: boolean) {
 
 function ToolRow({ tool, now }: { tool: ToolActivity; now: number }) {
   const [open, setOpen] = useState(false);
-  const m = toolMeta(tool.name, tool.input);
+  const root = useRoot();
+  const m = toolMeta(tool.name, tool.input, root);
   const running = tool.durationMs === undefined;
   const dur = running ? now - tool.startedAt : tool.durationMs!;
   return (
@@ -46,7 +51,7 @@ function ToolRow({ tool, now }: { tool: ToolActivity; now: number }) {
       </button>
       {open && (
         <div className="px-2 pb-2 pt-0.5">
-          <ToolDetail tool={tool} />
+          <ToolDetail tool={tool} root={root} />
         </div>
       )}
     </div>
@@ -60,7 +65,8 @@ export default function ToolGroup({ tools }: { tools: ToolActivity[]; turnLive?:
   const running = tools.find((t) => t.durationMs === undefined);
   const now = useNow(!!running);
   const [open, setOpen] = useState<boolean | null>(null);
-  const metas = useMemo(() => tools.map((t) => toolMeta(t.name, t.input)), [tools]);
+  const root = useRoot();
+  const metas = useMemo(() => tools.map((t) => toolMeta(t.name, t.input, root)), [tools, root]);
   const failed = tools.filter((t) => t.isError).length;
   const start = Math.min(...tools.map((t) => t.startedAt));
   const end = running ? now : Math.max(...tools.map((t) => t.startedAt + (t.durationMs || 0)));
@@ -87,7 +93,7 @@ export default function ToolGroup({ tools }: { tools: ToolActivity[]; turnLive?:
         <span className="min-w-0 truncate text-[13px] text-content-dim">
           {running ? (
             <>
-              <span className="text-content">{toolMeta(running.name, running.input).running}</span>
+              <span className="text-content">{toolMeta(running.name, running.input, root).running}</span>
               {tools.length > 1 && <span className="text-content-faint"> · {summarize(metas)}</span>}
             </>
           ) : (

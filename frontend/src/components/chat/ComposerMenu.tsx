@@ -146,7 +146,13 @@ export default function ComposerMenu({
   return (
     <div className="absolute bottom-[calc(100%+8px)] left-0 right-0 z-40 overflow-hidden rounded-xl border border-border bg-surface-2 shadow-float animate-fade-in">
       <div className="flex items-center gap-2 border-b border-border/70 px-3 py-1.5 text-[10.5px] uppercase tracking-wide text-content-faint">
-        {trigger.kind === "mention" ? `Files in ${session.workspace_path}` : "Commands"}
+        {trigger.kind === "mention" ? (
+          <span>
+            Files in <span className="normal-case tracking-normal font-mono">{session.workspace_path}</span>
+          </span>
+        ) : (
+          "Commands"
+        )}
         <span className="ml-auto normal-case tracking-normal">↑↓ navigate · Enter/Tab select · Esc close</span>
       </div>
       <div ref={listRef} className="max-h-72 overflow-y-auto py-1">

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import FileTree from "../../workspaces/FileTree";
 import Icon from "../../ui/Icon";
 
@@ -44,8 +45,10 @@ export default function FolderPicker({
 
   const dup = selected ? exclude.includes(selected.replace(/\/+$/, "")) : false;
 
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+  // Portal: the panel uses backdrop-filter, which would otherwise become the
+  // containing block of this fixed overlay and clip it to the panel.
+  return createPortal(
+    <div className="fixed inset-0 z-[90] grid place-items-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="w-full max-w-xl card p-5 animate-fade-in" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2.5 mb-1">
           <Icon name="folder" size={18} className="text-accent" />
@@ -71,6 +74,7 @@ export default function FolderPicker({
         </div>
         {error && <p className="mt-2 text-xs text-danger">{error}</p>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

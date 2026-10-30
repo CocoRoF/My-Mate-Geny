@@ -2,6 +2,7 @@ import type { ToolActivity } from "../../../stores/chatStore";
 import Markdown from "../../ui/Markdown";
 import DiffView from "./DiffView";
 import TodoCard, { todosOf } from "./TodoCard";
+import { relPath } from "./toolMeta";
 
 const Pre = ({ children, tone = "" }: { children: string; tone?: string }) => (
   <pre
@@ -16,7 +17,7 @@ const Pre = ({ children, tone = "" }: { children: string; tone?: string }) => (
 const clip = (s: string, n = 20000) => (s.length > n ? s.slice(0, n) + `\n… (${s.length - n} more chars)` : s);
 
 /** Rich, per-tool rendering of a call's input + result. */
-export default function ToolDetail({ tool }: { tool: ToolActivity }) {
+export default function ToolDetail({ tool, root }: { tool: ToolActivity; root?: string | null }) {
   const name = tool.name.startsWith("mcp__remote__") ? tool.name.slice(13) : tool.name;
   const lower = name.toLowerCase();
   const i = (tool.input && typeof tool.input === "object" ? tool.input : {}) as Record<string, any>;
@@ -36,7 +37,7 @@ export default function ToolDetail({ tool }: { tool: ToolActivity }) {
   if (lower === "edit") {
     return (
       <div className="space-y-1.5">
-        <DiffView path={i.file_path} oldText={String(i.old_string ?? "")} newText={String(i.new_string ?? "")} />
+        <DiffView path={relPath(i.file_path, root)} oldText={String(i.old_string ?? "")} newText={String(i.new_string ?? "")} />
         {tool.isError && <Pre tone={errTone}>{clip(out)}</Pre>}
       </div>
     );
@@ -45,7 +46,7 @@ export default function ToolDetail({ tool }: { tool: ToolActivity }) {
     return (
       <div className="space-y-1.5">
         {i.edits.map((e: any, k: number) => (
-          <DiffView key={k} path={k === 0 ? i.file_path : undefined} oldText={String(e.old_string ?? "")} newText={String(e.new_string ?? "")} />
+          <DiffView key={k} path={k === 0 ? relPath(i.file_path, root) : undefined} oldText={String(e.old_string ?? "")} newText={String(e.new_string ?? "")} />
         ))}
         {tool.isError && <Pre tone={errTone}>{clip(out)}</Pre>}
       </div>
@@ -54,7 +55,7 @@ export default function ToolDetail({ tool }: { tool: ToolActivity }) {
   if (lower === "write" || lower === "remote_write") {
     return (
       <div className="space-y-1.5">
-        <DiffView path={i.file_path || i.path} oldText="" newText={String(i.content ?? "")} maxRows={200} />
+        <DiffView path={relPath(i.file_path || i.path, root)} oldText="" newText={String(i.content ?? "")} maxRows={200} />
         {tool.isError && <Pre tone={errTone}>{clip(out)}</Pre>}
       </div>
     );
@@ -67,7 +68,7 @@ export default function ToolDetail({ tool }: { tool: ToolActivity }) {
             <span className={c.kind === "delete" ? "text-danger" : c.kind === "add" ? "text-success" : "text-warning"}>
               {c.kind || "update"}
             </span>
-            <span className="truncate text-content-dim">{c.path}</span>
+            <span className="truncate text-content-dim">{relPath(c.path, root)}</span>
           </div>
         ))}
         {tool.isError && <Pre tone={errTone}>{clip(out)}</Pre>}
@@ -100,7 +101,7 @@ export default function ToolDetail({ tool }: { tool: ToolActivity }) {
     return (
       <div className="space-y-1.5">
         <div className="font-mono text-[11px] text-content-faint">
-          {i.file_path || i.path}
+          {relPath(i.file_path || i.path, root)}
           {i.offset ? ` · from line ${i.offset}` : ""}
           {i.limit ? ` · ${i.limit} lines` : ""}
         </div>

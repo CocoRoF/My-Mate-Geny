@@ -14,7 +14,15 @@ export interface ToolMeta {
 const base = (p: string) => p.split("/").filter(Boolean).pop() || p;
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 
-export function toolMeta(name: string, input: unknown): ToolMeta {
+/** Path relative to the workspace when it's inside it (how Claude Code shows paths). */
+export function relPath(p: string, root?: string | null): string {
+  if (!p || !root) return p;
+  const r = root.replace(/\/+$/, "");
+  if (p === r) return ".";
+  return p.startsWith(r + "/") ? p.slice(r.length + 1) : p;
+}
+
+export function toolMeta(name: string, input: unknown, root?: string | null): ToolMeta {
   const i = (input && typeof input === "object" ? input : {}) as Record<string, any>;
   const n = name.startsWith("mcp__remote__") ? name.slice(13) : name;
   const lower = n.toLowerCase();
@@ -32,7 +40,7 @@ export function toolMeta(name: string, input: unknown): ToolMeta {
     };
   }
   if (["read", "remote_read", "notebookread"].includes(lower)) {
-    const p = str(i.file_path) || str(i.path) || str(i.notebook_path);
+    const p = relPath(str(i.file_path) || str(i.path) || str(i.notebook_path), root);
     return { category: "read", label: "Read", target: p, running: `Reading ${base(p)}`, icon: "file", tone: "text-accent bg-accent/12" };
   }
   if (lower === "remote_list") {
@@ -40,7 +48,7 @@ export function toolMeta(name: string, input: unknown): ToolMeta {
     return { category: "read", label: "List", target: p, running: `Listing ${p}`, icon: "folder", tone: "text-accent bg-accent/12" };
   }
   if (["edit", "multiedit", "write", "notebookedit", "remote_write", "apply_patch"].includes(lower)) {
-    let p = str(i.file_path) || str(i.path) || str(i.notebook_path);
+    let p = relPath(str(i.file_path) || str(i.path) || str(i.notebook_path), root);
     if (lower === "apply_patch" && Array.isArray(i.changes)) {
       p = i.changes.map((c: any) => base(String(c.path || ""))).join(", ");
     }
@@ -53,7 +61,7 @@ export function toolMeta(name: string, input: unknown): ToolMeta {
     return {
       category: "search",
       label: web ? "Web search" : lower === "glob" ? "Find files" : lower === "toolsearch" ? "Tool search" : "Search",
-      target: q + (str(i.path) ? `  in ${i.path}` : ""),
+      target: q + (str(i.path) ? `  in ${relPath(i.path, root)}` : ""),
       running: `Searching ${q.slice(0, 50)}`,
       icon: web ? "external" : "search",
       tone: "text-violet bg-violet/12",

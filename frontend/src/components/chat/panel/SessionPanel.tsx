@@ -8,6 +8,7 @@ import Icon, { type IconName } from "../../ui/Icon";
 import GitContext from "../GitContext";
 import TodoCard, { todosOf, type Todo } from "../turn/TodoCard";
 import FolderPicker from "./FolderPicker";
+import { relPath } from "../turn/toolMeta";
 
 function Section({
   title,
@@ -193,7 +194,14 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
                   >
                     {c.failed ? "!" : c.created ? "A" : "M"}
                   </span>
-                  <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-content-dim">{c.path}</span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-[11.5px]">
+                    <span className="text-content-dim">{base(c.path)}</span>
+                    {(() => {
+                      const rel = relPath(c.path, session.workspace_path);
+                      const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : rel === base(c.path) ? "" : rel;
+                      return dir ? <span className="text-content-faint"> {dir}</span> : null;
+                    })()}
+                  </span>
                   {c.ops > 1 && <span className="shrink-0 text-[10.5px] text-content-faint">×{c.ops}</span>}
                 </li>
               ))}
