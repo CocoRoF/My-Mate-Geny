@@ -42,7 +42,6 @@
       "hardenedRuntime": false,
       "artifactName": "hr-harnessor-${version}-macos-${arch}.${ext}"
     },
-    "dmg": { "title": "hr-harnessor ${version}" },
     "linux": {
       "target": ["AppImage", "deb"],
       "category": "Development",

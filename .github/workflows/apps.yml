@@ -1,8 +1,9 @@
 # Native apps: desktop (Windows / macOS / Linux, Electron) + Android (Capacitor).
 # Both apps load the live console, so UI changes reach them without a new
 # build; this pipeline rebuilds and publishes the app shells whenever they
-# change (or on demand), and the console's Download page always serves the
-# newest build from the rolling `apps-latest` release.
+# change (or on demand). Builds upload straight to a GitHub Release (no
+# Actions artifact storage); the console's Download page serves the rolling
+# `apps-latest` release.
 name: apps
 
 on:
@@ -24,28 +25,36 @@ concurrency:
 
 env:
   VERSION: 0.2.${{ github.run_number }}
+  GH_TOKEN: ${{ github.token }}
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Draft release for this build
+        run: gh release create "apps-v$VERSION" --draft --title "Apps $VERSION" --notes "Building…" --target "$GITHUB_SHA"
+
   desktop:
     name: desktop (${{ matrix.name }})
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: linux
             os: ubuntu-latest
-            build: npx electron-builder --linux AppImage deb --publish never
           - name: windows
             os: windows-latest
-            build: npx electron-builder --win nsis --x64 --publish never
           - name: macos
             os: macos-latest
-            build: npx electron-builder --mac dmg --arm64 --x64 --publish never
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: desktop
         shell: bash
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false" # no signing identity: unsigned (+ ad-hoc on macOS)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -54,21 +63,28 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
       - run: npm ci
-      - name: Build
-        run: ${{ matrix.build }} -c.extraMetadata.version=${{ env.VERSION }}
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false" # no signing identity: unsigned builds (+ ad-hoc on macOS)
-      - uses: actions/upload-artifact@v4
-        with:
-          name: desktop-${{ matrix.name }}
-          if-no-files-found: error
-          path: |
-            desktop/dist/*.exe
-            desktop/dist/*.dmg
-            desktop/dist/*.AppImage
-            desktop/dist/*.deb
+      - name: Build (linux)
+        if: matrix.name == 'linux'
+        run: npx electron-builder --linux AppImage deb --publish never -c.extraMetadata.version=$VERSION
+      - name: Build (windows)
+        if: matrix.name == 'windows'
+        run: npx electron-builder --win nsis --x64 --publish never -c.extraMetadata.version=$VERSION
+      - name: Build (macos)
+        if: matrix.name == 'macos'
+        run: |
+          sudo mdutil -a -i off || true   # Spotlight indexing breaks dmg detach on runners
+          # One arch at a time, each with its own volume name (they collide otherwise).
+          npx electron-builder --mac dmg --arm64 --publish never -c.extraMetadata.version=$VERSION -c.dmg.title="hr-harnessor-arm64"
+          npx electron-builder --mac dmg --x64 --publish never -c.extraMetadata.version=$VERSION -c.dmg.title="hr-harnessor-x64"
+      - name: Upload to release
+        run: |
+          shopt -s nullglob
+          files=(dist/*.exe dist/*.dmg dist/*.AppImage dist/*.deb)
+          ls -la "${files[@]}"
+          gh release upload "apps-v$VERSION" "${files[@]}" --clobber
 
   android:
+    needs: prepare
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -96,9 +112,8 @@ jobs:
         working-directory: mobile/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon \
-            -PversionCode=${{ github.run_number }} -PversionName=${{ env.VERSION }}
-          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/hr-harnessor-${{ env.VERSION }}-android.apk"
+          ./gradlew assembleRelease --no-daemon -PversionCode=${{ github.run_number }} -PversionName=$VERSION
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/hr-harnessor-$VERSION-android.apk"
         env:
           HRH_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
           HRH_KEYSTORE_PASSWORD: ${{ secrets.HRH_KEYSTORE_PASSWORD }}
@@ -107,29 +122,21 @@ jobs:
       - name: Verify signature
         run: |
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
-          "$APKSIGNER" verify --print-certs "$GITHUB_WORKSPACE/hr-harnessor-${{ env.VERSION }}-android.apk" | head -3
-      - uses: actions/upload-artifact@v4
-        with:
-          name: android
-          if-no-files-found: error
-          path: hr-harnessor-*-android.apk
+          "$APKSIGNER" verify --print-certs "$RUNNER_TEMP/hr-harnessor-$VERSION-android.apk" | head -3
+      - name: Upload to release
+        run: gh release upload "apps-v$VERSION" "$RUNNER_TEMP/hr-harnessor-$VERSION-android.apk" --clobber
 
-  release:
+  publish:
     needs: [desktop, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@v4
-        with:
-          path: out
-          merge-multiple: true
       - name: Publish
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          gh release download "apps-v$VERSION" -D out
           ls -la out
           prev=$(git tag --list 'apps-v*' --sort=-v:refname | head -1)
           {
@@ -141,11 +148,9 @@ jobs:
               git log --no-merges --format='- %s (%h)' "$prev"..HEAD | head -40
             fi
           } > notes.md
+          gh release edit "apps-v$VERSION" --draft=false --notes-file notes.md
 
-          # Versioned release (history) …
-          gh release create "apps-v$VERSION" out/* --title "Apps $VERSION" --notes-file notes.md --target "$GITHUB_SHA"
-
-          # … and the rolling one the Download page reads: updated in place so
+          # The rolling release the Download page reads, updated in place so
           # downloads never disappear mid-swap.
           if gh release view apps-latest >/dev/null 2>&1; then
             git tag -f apps-latest "$GITHUB_SHA" && git push -f origin apps-latest
@@ -163,3 +168,11 @@ jobs:
           for t in $(gh release list --limit 100 --json tagName --jq '.[].tagName' | grep '^apps-v' | sort -V -r | tail -n +6); do
             gh release delete "$t" --yes --cleanup-tag
           done
+
+  cleanup:
+    needs: [desktop, android, publish]
+    if: failure() || cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Drop the unfinished draft
+        run: gh release delete "apps-v$VERSION" --yes --repo "$GITHUB_REPOSITORY" || true

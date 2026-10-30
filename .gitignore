@@ -14,10 +14,8 @@ dist/
 .vite/
 *.tsbuildinfo
 
-# Expo / RN
-mobile/.expo/
-mobile/android/
-mobile/ios/
+# Mobile (Capacitor): the android/ project IS tracked; its build outputs are
+# ignored by mobile/.gitignore and mobile/android/.gitignore.
 mobile/web-build/
 
 # Env & secrets & runtime data
