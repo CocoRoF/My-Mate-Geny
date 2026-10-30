@@ -1,6 +1,70 @@
 import { create } from "zustand";
 import type { ChatMessage, ProviderEvent } from "../types";
 
+// Rebuild rendered turns from the persisted event stream + messages so a
+// reloaded session shows the full process timeline (not just final text).
+function reconstruct(messages: ChatMessage[], events: ProviderEvent[]): Turn[] {
+  const assistantTurns: Turn[] = [];
+  let cur: Turn | null = null;
+  for (const ev of events) {
+    const data = ev.data as Record<string, any>;
+    switch (ev.type) {
+      case "session.start":
+        cur = { role: "assistant", text: "", flow: [], tools: [], complete: false };
+        assistantTurns.push(cur);
+        break;
+      case "text.delta":
+        if (cur) appendText(cur, String(data.text || ""));
+        break;
+      case "thinking.delta":
+        if (cur) cur.thinking = (cur.thinking || "") + String(data.text || "");
+        break;
+      case "tool.use":
+        if (cur) {
+          const id = String(data.id || `t${cur.tools.length}`);
+          cur.tools.push({ id, name: String(data.name || ""), input: data.input, startedAt: 0, durationMs: 0 });
+          cur.flow.push({ kind: "tool", toolId: id });
+        }
+        break;
+      case "tool.result":
+        if (cur) {
+          const t = cur.tools.find((x) => x.id === String(data.id || ""));
+          if (t) {
+            t.output = String(data.output ?? "");
+            t.isError = Boolean(data.is_error);
+          }
+        }
+        break;
+      case "turn.complete":
+        if (cur) {
+          if (data.text) cur.text = String(data.text);
+          cur.complete = true;
+          cur.costUsd = Number(data.cost_usd || 0);
+          cur.model = String(data.model || "");
+        }
+        break;
+      case "error":
+        if (cur) {
+          appendText(cur, `\n\n⚠️ ${data.message || ""}`);
+          cur.complete = true;
+        }
+        break;
+    }
+  }
+  assistantTurns.forEach((t) => (t.complete = true));
+
+  // Interleave user messages with reconstructed assistant turns.
+  const users = messages.filter((m) => m.role === "user");
+  const out: Turn[] = [];
+  const n = Math.max(users.length, assistantTurns.length);
+  for (let i = 0; i < n; i++) {
+    if (users[i])
+      out.push({ role: "user", text: users[i].content, flow: [{ kind: "text", text: users[i].content }], tools: [], complete: true });
+    if (assistantTurns[i]) out.push(assistantTurns[i]);
+  }
+  return out;
+}
+
 export interface ToolActivity {
   id: string;
   name: string;
@@ -31,7 +95,7 @@ interface ChatState {
   isStreaming: boolean;
   runningCostUsd: number;
   reset: () => void;
-  loadHistory: (messages: ChatMessage[]) => void;
+  loadHistory: (messages: ChatMessage[], events: ProviderEvent[]) => void;
   pushUser: (text: string) => void;
   setStreaming: (v: boolean) => void;
   applyEvent: (ev: ProviderEvent) => void;
@@ -57,17 +121,8 @@ export const useChatStore = create<ChatState>((set) => ({
   isStreaming: false,
   runningCostUsd: 0,
   reset: () => set({ turns: [], isStreaming: false, runningCostUsd: 0 }),
-  loadHistory: (messages) =>
-    set({
-      turns: messages.map((m) => ({
-        role: m.role,
-        text: m.content,
-        flow: [{ kind: "text", text: m.content }],
-        tools: [],
-        complete: true,
-      })),
-      runningCostUsd: 0,
-    }),
+  loadHistory: (messages, events) =>
+    set({ turns: reconstruct(messages, events), runningCostUsd: 0 }),
   pushUser: (text) =>
     set((s) => ({
       turns: [...s.turns, { role: "user", text, flow: [{ kind: "text", text }], tools: [], complete: true }],

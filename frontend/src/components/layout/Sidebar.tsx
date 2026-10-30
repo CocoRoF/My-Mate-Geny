@@ -39,7 +39,7 @@ export default function Sidebar() {
     setView("chat");
     reset();
     const h = await getHistory(id);
-    loadHistory(h.messages);
+    loadHistory(h.messages, h.events);
   };
 
   const newChat = () => {
