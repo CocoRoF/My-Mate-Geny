@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type View = "chat" | "providers" | "connections" | "usage";
+export type View = "chat" | "providers" | "connections" | "usage" | "admin";
 
 interface UIState {
   view: View;

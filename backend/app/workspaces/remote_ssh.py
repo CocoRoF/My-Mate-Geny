@@ -201,6 +201,27 @@ class RemoteSshConnector(WorkspaceConnector):
             }
         }
 
+    async def upload_files(self, session_id: str, files: list[tuple[str, str, str]]) -> dict[str, str]:
+        """Copy attachments to ``~/.hr-harnessor/uploads/<session>/<id>/<name>``
+        on the remote host over SFTP so remote tools can use them."""
+        if not files:
+            return {}
+        conn = await self._asyncssh_connect()
+        out: dict[str, str] = {}
+        try:
+            async with conn.start_sftp_client() as sftp:
+                home = await sftp.realpath(".")
+                for aid, local_path, name in files:
+                    folder = f"{home}/.hr-harnessor/uploads/{session_id}/{aid}"
+                    await sftp.makedirs(folder, exist_ok=True)
+                    target = f"{folder}/{name}"
+                    await sftp.put(local_path, target)
+                    out[aid] = target
+        finally:
+            conn.close()
+            await conn.wait_closed()
+        return out
+
     async def teardown(self) -> None:
         for remote_path, mount_point in list(self._mounts.items()):
             try:

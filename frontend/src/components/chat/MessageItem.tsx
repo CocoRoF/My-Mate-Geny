@@ -2,14 +2,19 @@ import type { Turn } from "../../stores/chatStore";
 import Icon from "../ui/Icon";
 import Markdown from "../ui/Markdown";
 import ProcessTimeline from "./ProcessTimeline";
+import MessageAttachments from "../attachments/MessageAttachments";
 
 export default function MessageItem({ turn }: { turn: Turn }) {
   if (turn.role === "user") {
+    const atts = turn.attachments || [];
     return (
-      <div className="flex justify-end animate-fade-in">
-        <div className="max-w-[78%] rounded-2xl rounded-br-md bg-accent-soft border border-accent/25 px-3.5 py-2 text-sm text-content whitespace-pre-wrap">
-          {turn.text}
-        </div>
+      <div className="flex flex-col items-end gap-1.5 animate-fade-in">
+        {atts.length > 0 && <MessageAttachments attachments={atts} />}
+        {turn.text && (
+          <div className="max-w-[78%] rounded-2xl rounded-br-md bg-accent-soft border border-accent/25 px-3.5 py-2 text-sm text-content whitespace-pre-wrap break-words">
+            {turn.text}
+          </div>
+        )}
       </div>
     );
   }

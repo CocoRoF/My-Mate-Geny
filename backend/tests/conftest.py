@@ -16,6 +16,7 @@ os.environ.setdefault("SESSION_SECRET", "test-session-secret")
 os.environ.setdefault("COOKIE_SECURE", "false")
 os.environ.setdefault("STATIC_DIR", "")
 os.environ.setdefault("DB_PATH", os.path.join(tempfile.gettempdir(), "hrh_test_app.db"))
+os.environ.setdefault("UPLOADS_ROOT", tempfile.mkdtemp(prefix="hrh_test_uploads_"))
 
 from app.db import Database  # noqa: E402
 

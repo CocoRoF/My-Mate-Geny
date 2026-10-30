@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { wsUrl } from "../api/client";
 import { useChatStore } from "../stores/chatStore";
-import type { ProviderEvent } from "../types";
+import type { Attachment, ProviderEvent } from "../types";
 
 /**
  * Manages a WebSocket to /ws/chat/{sid}. Reconnects when the session changes.
@@ -31,13 +31,15 @@ export function useChatSocket(sessionId: string | null) {
     };
   }, [sessionId, applyEvent, setStreaming]);
 
+  /** Returns false when the socket isn't open (the caller keeps the draft). */
   const send = useCallback(
-    (input: string) => {
+    (input: string, attachments: Attachment[] = []): boolean => {
       const ws = wsRef.current;
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      pushUser(input);
+      if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+      pushUser(input, attachments);
       setStreaming(true);
-      ws.send(JSON.stringify({ type: "chat", input }));
+      ws.send(JSON.stringify({ type: "chat", input, attachments: attachments.map((a) => a.id) }));
+      return true;
     },
     [pushUser, setStreaming],
   );

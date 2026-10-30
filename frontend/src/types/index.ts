@@ -48,9 +48,24 @@ export interface DirEntry {
   is_dir: boolean;
 }
 
+export interface Attachment {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  kind: "image" | "file";
+  width: number | null;
+  height: number | null;
+  url: string; // original
+  preview_url: string; // model-sized variant for images (falls back to original)
+  created_at: string;
+}
+
 export interface ChatMessage {
+  id?: string;
   role: "user" | "assistant";
   content: string;
+  attachments?: Attachment[];
 }
 
 export type EventType =

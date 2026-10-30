@@ -55,6 +55,14 @@ class WorkspaceConnector(abc.ABC):
         Local returns ``None`` (the CLI's built-in tools run on 2223 directly)."""
         return None
 
+    async def upload_files(self, session_id: str, files: list[tuple[str, str, str]]) -> dict[str, str]:
+        """Make chat attachments reachable where the agent works.
+
+        ``files`` is ``[(attachment_id, local_path, name), ...]``; returns
+        ``{attachment_id: path_on_target}`` for files that had to be copied.
+        Local workspaces already see the runtime filesystem, so: no-op."""
+        return {}
+
     async def teardown(self) -> None:
         """Release resources (e.g. unmount). Default no-op."""
         return None

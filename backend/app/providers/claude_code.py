@@ -19,6 +19,7 @@ import shutil
 from typing import AsyncIterator
 
 from app.config import settings
+from app.providers._attachments import claude_image_block, compose_text
 from app.providers._cli_runtime import CLIProcessRunner
 from app.providers._stream_json import StreamJsonAccumulator
 from app.providers.base import (
@@ -91,6 +92,13 @@ class ClaudeCodeProvider(Provider):
             "--include-partial-messages",
             "--model",
             model,
+        ]
+        # Let the agent's tools reach the attachment files (they live outside
+        # the workspace, under the per-session uploads dir).
+        upload_dirs = sorted({os.path.dirname(os.path.dirname(a.path)) for a in req.attachments})
+        if upload_dirs:
+            argv += ["--add-dir", *upload_dirs]
+        argv += [
             "--settings",
             settings_inline,
         ]
@@ -116,15 +124,28 @@ class ClaudeCodeProvider(Provider):
 
         History continuity is handled by ``--resume`` (cli_session_id) when
         present; otherwise the caller flattens prior context into the message.
+        Attached images become inline ``image`` blocks; every attachment is
+        also listed (with its path) in the text block.
         """
         last_user = ""
         for msg in reversed(req.messages):
             if msg.get("role") == "user":
                 last_user = msg.get("content", "")
                 break
+        content: str | list[dict] = last_user
+        if req.attachments:
+            images = [a for a in req.attachments if a.is_image]
+            blocks: list[dict] = []
+            for a in images:
+                try:
+                    blocks.append(claude_image_block(a))
+                except OSError:
+                    pass  # file vanished; the path note below still tells the agent
+            text = compose_text(last_user, req.attachments, inline_images=bool(blocks))
+            content = [*blocks, {"type": "text", "text": text}]
         envelope = {
             "type": "user",
-            "message": {"role": "user", "content": last_user},
+            "message": {"role": "user", "content": content},
         }
         return (json.dumps(envelope) + "\n").encode()
 

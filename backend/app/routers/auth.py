@@ -96,6 +96,17 @@ async def login(body: LoginBody, request: Request):
 
     if not auth.check_credentials(body.username, body.password):
         banned = auth.record_failure(ip)
+        logs = request.app.state.logs
+        ua = request.headers.get("user-agent")
+        logs.record(
+            "warning", "auth", f"failed login for user '{body.username[:64]}'",
+            code="auth.login_failed", ip=ip, path=request.url.path, detail={"user_agent": ua},
+        )
+        if banned:
+            logs.record(
+                "error", "auth", f"IP {ip} blocked after repeated failed logins",
+                code="auth.ip_banned", ip=ip, path=request.url.path, detail={"user_agent": ua},
+            )
         msg = "접속 시도가 너무 많습니다. IP가 차단되었습니다." if banned else "아이디 또는 비밀번호가 올바르지 않습니다."
         return JSONResponse({"detail": msg}, status_code=403 if banned else 401)
 

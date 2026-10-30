@@ -6,12 +6,14 @@ startup, stash them on ``app.state``, tear down on shutdown.
 
 from __future__ import annotations
 
+import traceback
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app import __version__
 from app.auth import AuthManager, AuthMiddleware
@@ -21,6 +23,8 @@ from app.providers.accounts import AccountPool, AccountStore
 from app.db import Database
 from app.routers import (
     accounts,
+    admin,
+    attachments,
     auth as auth_router,
     config as config_router,
     connections,
@@ -33,7 +37,9 @@ from app.routers import (
     usage,
     workspaces,
 )
+from app.services.attachment_service import AttachmentService
 from app.services.connection_service import ConnectionService
+from app.services.log_service import LogService, install_log_bridge
 from app.services.git_service import GitService
 from app.services.provider_service import ProviderService
 from app.services.session_service import SessionService
@@ -48,6 +54,12 @@ async def lifespan(app: FastAPI):
     db.bootstrap()
     vault = SecretVault(db)
 
+    logs = LogService(db)
+    app.state.logs = logs
+    install_log_bridge(logs)  # WARNING+ from python logging -> admin log
+    attachment_service = AttachmentService(db)
+    app.state.attachment_service = attachment_service
+
     app.state.auth = AuthManager(db)
     app.state.oauth = OAuthManager()
     account_store = AccountStore(db, vault)
@@ -58,7 +70,10 @@ async def lifespan(app: FastAPI):
     connection_service = ConnectionService(db, vault)
     app.state.git_service = GitService(db, vault)
     workspace_service = WorkspaceService(connection_service)
-    session_service = SessionService(db, provider_service, workspace_service, pool=account_pool)
+    session_service = SessionService(
+        db, provider_service, workspace_service, pool=account_pool,
+        attachments=attachment_service, logs=logs,
+    )
 
     app.state.db = db
     app.state.vault = vault
@@ -74,7 +89,37 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="hr-harnessor", version=__version__, lifespan=lifespan)
 
-# Auth gate runs first (added last = outermost). CORS added after so it wraps.
+
+class ErrorLogMiddleware(BaseHTTPMiddleware):
+    """Record unhandled exceptions and 5xx responses in the admin error log
+    (with traceback), and answer with a JSON 500 carrying the log id."""
+
+    async def dispatch(self, request: Request, call_next):
+        logs: LogService = request.app.state.logs
+        ip = AuthManager.client_ip(request)
+        try:
+            response = await call_next(request)
+        except Exception as exc:  # noqa: BLE001
+            log_id = logs.record(
+                "error", "http", f"{request.method} {request.url.path} -> {type(exc).__name__}: {exc}",
+                code="http.unhandled",
+                detail={"method": request.method, "query": request.url.query,
+                        "traceback": traceback.format_exc()},
+                path=request.url.path, ip=ip,
+            )
+            return JSONResponse({"detail": "internal server error", "log_id": log_id}, status_code=500)
+        if response.status_code >= 500:
+            logs.record(
+                "error", "http", f"{request.method} {request.url.path} -> HTTP {response.status_code}",
+                code=f"http.{response.status_code}", detail={"method": request.method, "query": request.url.query},
+                path=request.url.path, ip=ip,
+            )
+        return response
+
+
+# Innermost first: error logging wraps the app, the auth gate wraps that, and
+# CORS (added last) is outermost.
+app.add_middleware(ErrorLogMiddleware)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -97,6 +142,8 @@ for r in (
     history.router,
     usage.router,
     git.router,
+    attachments.router,
+    admin.router,
 ):
     app.include_router(r)
 

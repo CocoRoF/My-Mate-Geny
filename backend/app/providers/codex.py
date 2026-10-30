@@ -17,6 +17,7 @@ import shutil
 from typing import AsyncIterator
 
 from app.config import settings
+from app.providers._attachments import compose_text
 from app.providers._cli_runtime import CLIProcessRunner
 from app.providers._codex_json import CodexJsonAccumulator
 from app.providers.base import AuthStatus, Provider, ProviderEvent, TurnRequest
@@ -56,9 +57,19 @@ class CodexProvider(Provider):
         )
 
     def _build_argv(self, req: TurnRequest) -> list[str]:
-        argv = [
-            "exec",
-            "--json",
+        if req.cli_session_id:
+            # Resume the prior thread; otherwise start fresh.
+            argv = ["exec", "resume", req.cli_session_id]
+        else:
+            argv = ["exec"]
+        argv.append("--json")
+        # Images first, each as its own `--image <path>` and always followed by
+        # another flag: `-i` takes multiple values and would otherwise swallow
+        # the trailing prompt argument.
+        for a in req.attachments:
+            if a.is_image:
+                argv += ["--image", a.inline_path]
+        argv += [
             "--skip-git-repo-check",
             "--dangerously-bypass-approvals-and-sandbox",
             "-C",
@@ -68,21 +79,17 @@ class CodexProvider(Provider):
             argv += ["-m", req.model]
         if req.effort and req.effort != "default":
             argv += ["-c", f"model_reasoning_effort={req.effort}"]
-        # Resume a prior thread when we have one; otherwise start fresh.
-        if req.cli_session_id:
-            argv = ["exec", "resume", req.cli_session_id, "--json",
-                    "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox",
-                    "-C", req.cwd]
-            if req.model and req.model not in _CLAUDE_ALIASES:
-                argv += ["-m", req.model]
-            if req.effort and req.effort != "default":
-                argv += ["-c", f"model_reasoning_effort={req.effort}"]
-        # Latest user message as the prompt (positional).
+        # Prompt comes from stdin (`-`): safe for any text, including text that
+        # starts with "-" or is very long.
+        argv.append("-")
+        return argv
+
+    def _build_prompt(self, req: TurnRequest) -> bytes:
         last_user = next(
             (m["content"] for m in reversed(req.messages) if m.get("role") == "user"), ""
         )
-        argv.append(last_user)
-        return argv
+        has_images = any(a.is_image for a in req.attachments)
+        return compose_text(last_user, req.attachments, inline_images=has_images).encode()
 
     async def run_turn_stream(self, req: TurnRequest) -> AsyncIterator[ProviderEvent]:
         env_extras = dict(req.extra_env)
@@ -104,7 +111,7 @@ class CodexProvider(Provider):
 
         saw_error = False
         try:
-            async for line in runner.stream(self._build_argv(req), stdin=b""):
+            async for line in runner.stream(self._build_argv(req), stdin=self._build_prompt(req)):
                 for ev in accum.feed_line(line):
                     if ev.type == "error":
                         saw_error = True

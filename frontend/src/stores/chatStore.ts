@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ChatMessage, ProviderEvent } from "../types";
+import type { Attachment, ChatMessage, ProviderEvent } from "../types";
 
 // Rebuild rendered turns from the persisted event stream + messages so a
 // reloaded session shows the full process timeline (not just final text).
@@ -62,7 +62,14 @@ function reconstruct(messages: ChatMessage[], events: ProviderEvent[]): Turn[] {
   const n = Math.max(users.length, assistantTurns.length);
   for (let i = 0; i < n; i++) {
     if (users[i])
-      out.push({ role: "user", text: users[i].content, flow: [{ kind: "text", text: users[i].content }], tools: [], complete: true });
+      out.push({
+        role: "user",
+        text: users[i].content,
+        flow: [{ kind: "text", text: users[i].content }],
+        tools: [],
+        complete: true,
+        attachments: users[i].attachments || [],
+      });
     if (assistantTurns[i]) out.push(assistantTurns[i]);
   }
   return out;
@@ -91,6 +98,7 @@ export interface Turn {
   complete: boolean;
   costUsd?: number;
   model?: string;
+  attachments?: Attachment[]; // user turns: files sent with the message
 }
 
 interface ChatState {
@@ -99,7 +107,7 @@ interface ChatState {
   runningCostUsd: number;
   reset: () => void;
   loadHistory: (messages: ChatMessage[], events: ProviderEvent[]) => void;
-  pushUser: (text: string) => void;
+  pushUser: (text: string, attachments?: Attachment[]) => void;
   setStreaming: (v: boolean) => void;
   applyEvent: (ev: ProviderEvent) => void;
 }
@@ -140,9 +148,12 @@ export const useChatStore = create<ChatState>((set) => ({
   reset: () => set({ turns: [], isStreaming: false, runningCostUsd: 0 }),
   loadHistory: (messages, events) =>
     set({ turns: reconstruct(messages, events), runningCostUsd: 0 }),
-  pushUser: (text) =>
+  pushUser: (text, attachments = []) =>
     set((s) => ({
-      turns: [...s.turns, { role: "user", text, flow: [{ kind: "text", text }], tools: [], complete: true }],
+      turns: [
+        ...s.turns,
+        { role: "user", text, flow: [{ kind: "text", text }], tools: [], complete: true, attachments },
+      ],
     })),
   setStreaming: (v) => set({ isStreaming: v }),
   applyEvent: (ev) =>

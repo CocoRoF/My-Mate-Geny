@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Literal
 
+from app.providers._attachments import Attachment
+
 # Normalized event vocabulary emitted to the web/mobile clients.
 EVENT_TYPES = (
     "session.start",   # turn began; data: {provider, model, workspace}
@@ -85,6 +87,7 @@ class TurnRequest:
     api_key: str | None = None            # when auth_mode == api_key
     extra_env: dict[str, str] = field(default_factory=dict)
     timeout_s: float | None = None
+    attachments: list[Attachment] = field(default_factory=list)  # files sent with the latest user message
 
 
 class ProviderTurnError(RuntimeError):

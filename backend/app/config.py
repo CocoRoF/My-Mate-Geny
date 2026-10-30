@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     # Where Git repos are cloned (becomes a local workspace).
     repos_root: str = "~/.hr-harnessor/repos"
 
+    # Chat attachments (photos/files) — stored per session under this root.
+    uploads_root: str = "~/.hr-harnessor/uploads"
+    upload_max_mb: int = 50          # per file
+    upload_max_files: int = 20       # per message
+
+    # Admin error log retention (rows beyond this are pruned, oldest first).
+    log_max_rows: int = 20000
+
     # Provider CLI binaries
     claude_binary: str = "claude"
     codex_binary: str = "codex"
@@ -84,6 +92,10 @@ class Settings(BaseSettings):
     @property
     def repos_root_path(self) -> Path:
         return Path(os.path.expanduser(self.repos_root)).resolve()
+
+    @property
+    def uploads_root_path(self) -> Path:
+        return Path(os.path.expanduser(self.uploads_root)).resolve()
 
     @property
     def home_dir(self) -> Path:

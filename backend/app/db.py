@@ -119,7 +119,43 @@ CREATE TABLE IF NOT EXISTS login_attempts (
     updated_at   TEXT NOT NULL
 );
 
+-- Chat attachments. Uploaded first (message_id NULL = still in the composer),
+-- then linked to the user message they were sent with.
+CREATE TABLE IF NOT EXISTS attachments (
+    id          TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    message_id  TEXT,
+    name        TEXT NOT NULL,
+    mime        TEXT NOT NULL,
+    size        INTEGER NOT NULL,
+    kind        TEXT NOT NULL,            -- image | file
+    width       INTEGER,
+    height      INTEGER,
+    path        TEXT NOT NULL,            -- original, on this runtime host
+    model_path  TEXT,                     -- image variant sized for the model
+    model_mime  TEXT,
+    created_at  TEXT NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+
+-- Admin: everything that went wrong (provider/tool/http/ws/auth/client/...).
+CREATE TABLE IF NOT EXISTS error_logs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          TEXT NOT NULL,
+    level       TEXT NOT NULL,            -- error | warning | info
+    source      TEXT NOT NULL,            -- provider | tool | http | ws | auth | account | workspace | upload | client | system
+    code        TEXT NOT NULL DEFAULT '',
+    message     TEXT NOT NULL DEFAULT '',
+    detail      TEXT NOT NULL DEFAULT '{}',
+    session_id  TEXT,
+    path        TEXT,
+    ip          TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_attachments_session ON attachments(session_id, message_id);
+CREATE INDEX IF NOT EXISTS idx_error_logs_ts ON error_logs(ts);
+CREATE INDEX IF NOT EXISTS idx_error_logs_filter ON error_logs(level, source);
 CREATE INDEX IF NOT EXISTS idx_events_session   ON events(session_id, seq);
 """
 
@@ -173,6 +209,14 @@ class Database:
         with self._lock:
             self._conn.execute(sql, tuple(params))
             self._conn.commit()
+
+    def insert(self, sql: str, params: Iterable[Any] = ()) -> int | None:
+        """Execute an INSERT and return the new rowid."""
+        assert self._conn is not None, "database not connected"
+        with self._lock:
+            cur = self._conn.execute(sql, tuple(params))
+            self._conn.commit()
+            return cur.lastrowid
 
     def query(self, sql: str, params: Iterable[Any] = ()) -> list[sqlite3.Row]:
         assert self._conn is not None, "database not connected"
