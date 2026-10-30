@@ -9,27 +9,37 @@ local **2223** server and can operate folders on remote servers (2222 / 2224) to
 
 hr-harnessor turns coding agents into a chat service you control:
 
-- **Providers** — Claude Code (`claude` CLI) is wired and working; Codex (`codex` CLI) has an
-  interface stub ready to connect. Each provider is spawned as a subprocess in stream-json
-  mode and its output is normalized to a single event schema.
-- **Workspaces** — pick *where* an agent runs: a local folder on 2223, or a folder on a
-  remote SSH host (2222 / 2224). The runtime always stays on 2223; remote folders are
-  mounted (sshfs) and remote commands are proxied over SSH.
-- **Web + Mobile** — a React/Vite web UI and an Expo (React Native) app talk to the same
-  FastAPI backend over REST + WebSocket.
+- **Engines** — Claude Code (`claude` CLI) and Codex (`codex` CLI), switchable mid-chat with
+  the conversation handed over. Claude runs as a **persistent engine** per chat (background
+  tasks, Claude's own follow-up turns, live interrupt / model / permission-mode changes);
+  Codex runs one `exec` per turn. Output is normalized to one event schema.
+- **Workspaces** — a local folder on 2223, or a folder on a remote SSH host (2222 / 2224 /
+  2223 itself). The runtime stays on 2223; remote work goes through an SSH-backed MCP
+  bridge (`remote_bash/read/write/list`) for both engines. Extra folders per chat.
+- **Agent UX** — prose and tool activity kept apart (folded tool groups, diffs, subagent
+  nesting), exact per-turn file changes from git snapshots with diff viewer and undo,
+  background-tasks panel, steering a running turn, queueing, `/` commands and `@` files,
+  photos/files/clipboard attachments, images the agent produced, notifications.
+- **Clients** — the web console (desktop + mobile layouts), a **desktop app** (Electron:
+  Windows / macOS / Linux) and an **Android app** (Capacitor). The apps load the live console,
+  so UI updates reach them instantly; app builds are produced by CI and offered on the
+  console's **Download** page.
+- **Operations** — multi-account load balancing (plan-usage aware), admin console (error
+  logs, system, security), revocable sessions, IP bans.
 
 ```
- Web (React/Vite)        Mobile (Expo/RN)
-        └───────────┬──────────┘   REST + WS
-                    ▼
-         nginx  →  FastAPI backend (2223 = runtime)
-                    ├─ Provider layer   claude | codex   (CLI, stream-json)
-                    ├─ Workspace layer  local(2223) | remote_ssh(2222/2224)
-                    ├─ Secret Vault     OAuth/tokens + SSH keys (encrypted SQLite)
-                    └─ Session store    chat & event history (SQLite)
+ Web console      Desktop app (Electron)      Android app (Capacitor)
+        └──────────────────┬───────────────────────┘   REST + WS (same origin)
+                           ▼
+        Cloudflare tunnel → FastAPI backend (2223 = runtime)
+                           ├─ Engines       claude (persistent) | codex (per turn)
+                           ├─ Workspaces    local | remote SSH (MCP bridge)
+                           ├─ Changes       git snapshots per turn
+                           ├─ Vault         OAuth/tokens + SSH keys (encrypted)
+                           └─ Store         sessions, events, tasks, logs (SQLite)
 ```
 
-Two orthogonal axes compose a session: **Provider × Workspace × conversation**.
+Two orthogonal axes compose a session: **Engine × Workspace × conversation**.
 
 ## Quick start (dev)
 
@@ -49,19 +59,15 @@ npm run dev                    # http://localhost:5173 (proxies /api + /ws to :8
 Then open the web UI, connect the Claude provider (uses your `claude` subscription auth),
 pick a local folder as the workspace, and chat.
 
-## Status
+## Apps & releases
 
-| Area | State |
-|---|---|
-| Backend core (config/db/vault) | ✅ |
-| Claude Code provider | ✅ working (local + remote) |
-| Codex provider | ✅ wired (`codex exec --json`); needs `codex login` to run |
-| Local workspace | ✅ |
-| Remote SSH workspace (2222/2224) | ✅ working E2E (sshfs mount + asyncssh bash bridge) |
-| Web UI | ✅ chat E2E |
-| Mobile (Expo) | ✅ buildout (login/sessions/new/chat); not yet device-tested |
-| Auth + IP ban + tunnel | ✅ live at https://agent.hrletsgo.me |
-| Docker / nginx deploy | ✅ compose (host-run deploy is live) |
+- `desktop/` — Electron shell (see [desktop/README.md](desktop/README.md)).
+- `mobile/` — Capacitor Android shell (see [mobile/README.md](mobile/README.md)).
+- `.github/workflows/apps.yml` — on every push touching the apps (or on demand) builds Windows
+  NSIS, macOS dmg (arm64 + x64), Linux AppImage + deb and a signed APK, then updates the
+  rolling `apps-latest` release that the console's Download page serves.
+
+Plan & verification log: [docs/PLAN-apps-agent-ux.md](docs/PLAN-apps-agent-ux.md).
 
 Deployment & auth: [docs/deploy.md](docs/deploy.md). Full design:
 [docs/architecture.md](docs/architecture.md).

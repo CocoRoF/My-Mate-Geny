@@ -5,14 +5,17 @@
 
 ## 개요
 
-- **Provider** — Claude Code(`claude` CLI)는 실동작하며, Codex(`codex` CLI)는 연결만 하면 되는
-  인터페이스 stub가 준비돼 있다. 각 provider는 stream-json 모드의 subprocess로 실행되고,
-  그 출력은 하나의 정규화 이벤트 스키마로 변환된다.
+- **엔진** — Claude Code(`claude` CLI)와 Codex(`codex` CLI) 모두 실동작하며, 대화 중 엔진을
+  바꿔도 맥락이 넘어간다. Claude는 채팅마다 **상주 엔진**으로 실행돼 백그라운드 작업, Claude의
+  자발적 후속 턴, 실시간 중단·모델·권한 전환을 지원하고, Codex는 턴마다 `exec`로 실행된다.
+  출력은 하나의 정규화 이벤트 스키마로 변환된다.
 - **Workspace** — 에이전트가 *어디서* 돌지 고른다: 2223 로컬 폴더, 또는 원격 SSH 호스트
-  (2222 / 2224)의 폴더. 런타임은 항상 2223에 있고, 원격 폴더는 sshfs로 마운트되며 원격 명령은
-  SSH로 프록시된다.
-- **Web + Mobile** — React/Vite 웹 UI와 Expo(React Native) 앱이 동일한 FastAPI 백엔드에
-  REST + WebSocket으로 접속한다.
+  (2222 / 2224)의 폴더. 런타임은 항상 2223에 있고, 원격 작업은 SSH 기반 MCP 브리지
+  (`remote_bash/read/write/list`)로 Claude·Codex 모두 수행한다.
+- **Web + Apps** — 웹 콘솔(데스크톱/모바일 레이아웃), 데스크톱 앱(Electron: Windows·macOS·Linux),
+  안드로이드 앱(Capacitor)이 같은 콘솔을 사용합니다. 앱은 콘솔을 실시간으로 불러오므로 UI 업데이트가
+  즉시 반영되고, 앱 빌드는 CI가 만들어 콘솔의 Download 페이지에 올립니다.
+- 모든 클라이언트는 동일한 FastAPI 백엔드에 REST + WebSocket으로 접속한다.
 
 세션 = **Provider × Workspace × 대화기록** 의 조합.
 
