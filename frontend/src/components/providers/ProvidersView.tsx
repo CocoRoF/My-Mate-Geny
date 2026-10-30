@@ -144,8 +144,9 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
               </button>
             </div>
             <p className="text-xs text-content-faint mt-0.5">
-              When on, each turn goes to the least-busy healthy account. Rate-limited accounts cool
-              down and fail over automatically.
+              When on, each turn is routed across your accounts by the chosen strategy — e.g.{" "}
+              <span className="text-content-dim">Most remaining usage</span> sends it to the account
+              with the most plan headroom. Rate-limited accounts cool down and fail over automatically.
             </p>
             {pool?.enabled && (
               <div className="flex items-center gap-2 mt-2.5">
