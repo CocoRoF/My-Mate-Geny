@@ -12,6 +12,7 @@ const NAV: { id: View; label: string; icon: IconName }[] = [
   { id: "chat", label: "Chat", icon: "chat" },
   { id: "providers", label: "Providers", icon: "plug" },
   { id: "connections", label: "Connections", icon: "server" },
+  { id: "usage", label: "Usage", icon: "cpu" },
 ];
 
 export default function Sidebar() {

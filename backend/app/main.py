@@ -27,6 +27,7 @@ from app.routers import (
     history,
     providers,
     sessions,
+    usage,
     workspaces,
 )
 from app.services.connection_service import ConnectionService
@@ -84,6 +85,7 @@ for r in (
     sessions.router,
     execute.router,
     history.router,
+    usage.router,
 ):
     app.include_router(r)
 

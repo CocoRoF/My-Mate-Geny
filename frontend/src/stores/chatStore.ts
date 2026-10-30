@@ -22,7 +22,8 @@ function reconstruct(messages: ChatMessage[], events: ProviderEvent[]): Turn[] {
       case "tool.use":
         if (cur) {
           const id = String(data.id || `t${cur.tools.length}`);
-          cur.tools.push({ id, name: String(data.name || ""), input: data.input, startedAt: 0, durationMs: 0 });
+          const at = Date.parse(ev.timestamp) || 0;
+          cur.tools.push({ id, name: String(data.name || ""), input: data.input, startedAt: at, durationMs: 0 });
           cur.flow.push({ kind: "tool", toolId: id });
         }
         break;
@@ -32,6 +33,8 @@ function reconstruct(messages: ChatMessage[], events: ProviderEvent[]): Turn[] {
           if (t) {
             t.output = String(data.output ?? "");
             t.isError = Boolean(data.is_error);
+            const at = Date.parse(ev.timestamp) || 0;
+            t.durationMs = at && t.startedAt ? Math.max(0, at - t.startedAt) : 0;
           }
         }
         break;
