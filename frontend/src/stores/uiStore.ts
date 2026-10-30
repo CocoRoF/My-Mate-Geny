@@ -1,13 +1,17 @@
 import { create } from "zustand";
 
-export type View = "chat" | "providers" | "connections" | "usage" | "admin";
+export type View = "chat" | "providers" | "connections" | "usage" | "admin" | "downloads";
 
 interface UIState {
   view: View;
+  sidebarOpen: boolean; // mobile drawer
   setView: (v: View) => void;
+  setSidebar: (open: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
   view: "chat",
-  setView: (v) => set({ view: v }),
+  sidebarOpen: false,
+  setView: (v) => set({ view: v, sidebarOpen: false }),
+  setSidebar: (open) => set({ sidebarOpen: open }),
 }));

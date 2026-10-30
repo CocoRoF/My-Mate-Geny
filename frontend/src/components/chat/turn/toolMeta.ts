@@ -3,6 +3,7 @@ import type { IconName } from "../../ui/Icon";
 export type ToolCategory = "command" | "read" | "edit" | "search" | "fetch" | "agent" | "skill" | "todo" | "mcp" | "other";
 
 export interface ToolMeta {
+  descriptive?: boolean; // label is the agent's own description (not a tool name)
   category: ToolCategory;
   label: string; // display name
   target: string; // what it acted on (command / file / pattern / url)
@@ -30,13 +31,16 @@ export function toolMeta(name: string, input: unknown, root?: string | null): To
   if (["bash", "shell", "remote_bash"].includes(lower)) {
     const cmd = str(i.command) || (Array.isArray(i.command) ? i.command.join(" ") : str(input));
     const clean = cmd.replace(/^\/bin\/(ba)?sh -l?c\s+/, "").replace(/^'(.*)'$/s, "$1");
+    // The agent's own one-line description reads better than the command.
+    const desc = str(i.description);
     return {
       category: "command",
-      label: lower === "remote_bash" ? "Remote shell" : "Bash",
+      label: desc || (lower === "remote_bash" ? "Remote shell" : "Bash"),
       target: clean,
-      running: `Running ${clean.slice(0, 60)}`,
+      running: desc ? `${desc}…` : `Running ${clean.slice(0, 60)}`,
       icon: lower === "remote_bash" ? "server" : "terminal",
       tone: "text-content-dim bg-surface-3",
+      descriptive: !!desc,
     };
   }
   if (["read", "remote_read", "notebookread"].includes(lower)) {
@@ -73,7 +77,10 @@ export function toolMeta(name: string, input: unknown, root?: string | null): To
   }
   if (lower === "task" || lower === "agent") {
     const d = str(i.description) || str(i.subagent_type);
-    return { category: "agent", label: "Subagent", target: d, running: `Subagent: ${d}`, icon: "bolt", tone: "text-violet bg-violet/12" };
+    return {
+      category: "agent", label: d || "Subagent", target: str(i.subagent_type), running: `Subagent: ${d}`,
+      icon: "bolt", tone: "text-violet bg-violet/12", descriptive: !!d,
+    };
   }
   if (lower === "skill") {
     const s = str(i.skill) || str(i.command) || str(i.name);

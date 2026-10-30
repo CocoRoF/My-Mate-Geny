@@ -112,7 +112,11 @@ export type EventType =
   | "run.state"
   | "user.message"
   | "user.steer"
-  | "steer.rejected";
+  | "steer.rejected"
+  | "task.update"
+  | "task.state"
+  | "usage.update"
+  | "turn.changes";
 
 export interface ProviderEvent {
   type: EventType;
@@ -120,4 +124,54 @@ export interface ProviderEvent {
   eid?: number; // events-table id (resume cursor); absent for live-only messages
   timestamp: string;
   data: Record<string, unknown>;
+}
+
+/** A background / long-running task the Claude engine reported. */
+export interface TaskInfo {
+  session_id?: string;
+  task_id: string;
+  tool_use_id?: string | null;
+  description?: string | null;
+  task_type?: string | null;
+  is_backgrounded?: boolean;
+  status: string; // running | completed | failed | stopped | killed | lost
+  summary?: string | null;
+  started_at?: number | null; // epoch seconds
+  ended_at?: number | null;
+}
+
+export interface ChangedFile {
+  path: string;
+  old_path?: string;
+  status: string; // A M D R C
+  added?: number;
+  removed?: number;
+  binary?: boolean;
+}
+
+export interface ChangeRepo {
+  root: string;
+  before: string;
+  after: string;
+  files: ChangedFile[];
+  added: number;
+  removed: number;
+  truncated?: boolean;
+}
+
+/** Files one turn changed (git snapshots), plus the event id for diffs/revert. */
+export interface TurnChanges {
+  eid?: number;
+  repos: ChangeRepo[];
+  files: number;
+  added: number;
+  removed: number;
+}
+
+/** Live plan utilization (Claude rate_limit_event). */
+export interface PlanUsage {
+  status?: string;
+  utilization?: number;
+  rateLimitType?: string;
+  unifiedWindows?: Record<string, { utilization?: number; resetsAt?: number; status?: string }>;
 }

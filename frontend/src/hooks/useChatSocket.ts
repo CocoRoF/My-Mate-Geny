@@ -3,7 +3,37 @@ import { wsUrl } from "../api/client";
 import { getHistory } from "../api/sessions";
 import { useChatStore } from "../stores/chatStore";
 import { useSessionStore } from "../stores/sessionStore";
+import { useTaskStore } from "../stores/taskStore";
 import type { Attachment, ProviderEvent } from "../types";
+
+declare global {
+  interface Window {
+    // Bridge the desktop (Electron) / Android (Capacitor) shells inject.
+    hrhNative?: {
+      platform: string;
+      version: string;
+      notify?: (title: string, body: string) => void;
+      openExternal?: (url: string) => void;
+    };
+  }
+}
+
+/** Tell the user a turn finished while they were looking elsewhere. */
+function notifyDone(title: string, body: string) {
+  if (!document.hidden) return;
+  if (window.hrhNative?.notify) return window.hrhNative.notify(title, body);
+  if ("Notification" in window && Notification.permission === "granted") {
+    try {
+      const n = new Notification(title, { body, tag: "hrh-turn", icon: "/favicon.svg" });
+      n.onclick = () => {
+        window.focus();
+        n.close();
+      };
+    } catch {
+      /* some browsers only allow notifications from a service worker */
+    }
+  }
+}
 
 /**
  * Owns a session's live view: load history, then a WebSocket that attaches
@@ -30,6 +60,7 @@ export function useChatSocket(sessionId: string | null) {
         if (!alive) return;
         loadHistory(h);
         useSessionStore.getState().patchLocal(sessionId, { ...h.session });
+        useTaskStore.getState().loadSession(sessionId).catch(() => {});
       } catch {
         if (alive) schedule();
         return;
@@ -48,10 +79,30 @@ export function useChatSocket(sessionId: string | null) {
         } catch {
           return;
         }
+        if (ev.type === "task.state") {
+          useTaskStore.getState().upsert(sessionId, ev.data as any);
+          return;
+        }
+        if (ev.type === "usage.update") {
+          useTaskStore.getState().setUsage(ev.data as any);
+          return;
+        }
         applyEvent(ev);
         if (ev.type === "run.state") {
           useSessionStore.getState().patchLocal(sessionId, { running: Boolean(ev.data.running) });
-          if (!ev.data.running) useSessionStore.getState().load().catch(() => {}); // titles, order
+          if (!ev.data.running) {
+            useSessionStore.getState().load().catch(() => {}); // titles, order
+            const turns = store.getState().turns;
+            const last = turns[turns.length - 1];
+            const title = useSessionStore.getState().sessions.find((x) => x.id === sessionId)?.title || "hr·harnessor";
+            if (last?.role === "assistant") {
+              const body =
+                last.status === "error" ? `Failed: ${last.error?.message || ""}` :
+                last.status === "interrupted" ? "Stopped" :
+                (last.text.trim().split("\n").find((l) => l.trim()) || "Done").slice(0, 160);
+              notifyDone(title, body);
+            }
+          }
         } else if (ev.type === "session.info") {
           useSessionStore.getState().patchLocal(sessionId, { cli_info: ev.data as any });
         }
@@ -95,6 +146,9 @@ export function useChatSocket(sessionId: string | null) {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) return false;
       const clientMsgId = `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+      if (!window.hrhNative && "Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission().catch(() => {});
+      }
       store.getState().pushUser(input, attachments, clientMsgId);
       store.getState().setStreaming(true);
       ws.send(

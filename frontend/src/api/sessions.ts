@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { ChatMessage, ProviderEvent, Session } from "../types";
+import type { ChatMessage, ProviderEvent, Session, TaskInfo } from "../types";
 
 export type SessionPatch = {
   provider?: string;
@@ -46,3 +46,33 @@ export interface History {
 }
 
 export const getHistory = (id: string) => apiFetch<History>(`/api/history/${id}`);
+
+// ---- background tasks ----
+export const listTasks = (sid: string) => apiFetch<TaskInfo[]>(`/api/sessions/${sid}/tasks`);
+export const allTasks = () => apiFetch<TaskInfo[]>("/api/tasks");
+export const taskOutput = (sid: string, taskId: string, tail = 65536) =>
+  apiFetch<{ output: string; truncated: boolean; available: boolean; size?: number }>(
+    `/api/sessions/${sid}/tasks/${encodeURIComponent(taskId)}/output?tail=${tail}`,
+  );
+export const stopTask = (sid: string, taskId: string) =>
+  apiFetch(`/api/sessions/${sid}/tasks/${encodeURIComponent(taskId)}/stop`, { method: "POST" });
+
+// ---- per-turn changes ----
+export const changesDiff = (sid: string, eid: number, repo = 0, path?: string) => {
+  const q = new URLSearchParams({ repo: String(repo) });
+  if (path) q.set("path", path);
+  return apiFetch<{ patch: string }>(`/api/sessions/${sid}/changes/${eid}/diff?${q}`);
+};
+export const revertChanges = (sid: string, eid: number, body: { repo?: number; paths?: string[] }) =>
+  apiFetch<{ reverted: string[] }>(`/api/sessions/${sid}/changes/${eid}/revert`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+// ---- workspace file preview ----
+export const fileUrl = (sid: string, path: string) =>
+  `/api/sessions/${sid}/file?path=${encodeURIComponent(path)}`;
+export const fileText = (sid: string, path: string) =>
+  apiFetch<{ path: string; mime: string; content: string; truncated: boolean }>(
+    `/api/sessions/${sid}/file?path=${encodeURIComponent(path)}&text=1`,
+  );

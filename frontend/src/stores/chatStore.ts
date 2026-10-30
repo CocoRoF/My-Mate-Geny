@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { History } from "../api/sessions";
-import type { Attachment, ChatMessage, CliInfo, ProviderEvent } from "../types";
+import type { Attachment, ChatMessage, CliInfo, ProviderEvent, TaskInfo, TurnChanges } from "../types";
 
 export interface ToolActivity {
   id: string;
@@ -10,6 +10,9 @@ export interface ToolActivity {
   isError?: boolean;
   startedAt: number;
   durationMs?: number; // undefined while running
+  parent?: string; // a subagent's call: nested under that Task/Agent row
+  images?: Attachment[]; // images the tool returned (e.g. a screenshot it read)
+  task?: TaskInfo; // when the CLI ran it as a (background) task
 }
 
 // Ordered stream of what the assistant did, in the order it happened: prose,
@@ -48,6 +51,8 @@ export interface Turn {
   endedAt?: number;
   attachments?: Attachment[];
   level?: "info" | "warning"; // system turns
+  trigger?: string; // "background": Claude started this turn itself
+  changes?: TurnChanges; // files the turn changed (git snapshots)
 }
 
 interface ChatState {
@@ -144,10 +149,11 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
     case "session.start": {
       const last = turns[turns.length - 1];
       if (last && last.role === "assistant" && !last.complete && !last.flow.length) {
-        turns[turns.length - 1] = { ...last, startedAt: at };
+        turns[turns.length - 1] = { ...last, startedAt: at, trigger: data.trigger || last.trigger };
       } else {
         if (hasLiveTurn(turns)) finish(liveTurn(turns, at), at);
-        liveTurn(turns, at); // opens a fresh running turn
+        const t = liveTurn(turns, at); // opens a fresh running turn
+        if (data.trigger) t.trigger = String(data.trigger);
       }
       break;
     }
@@ -165,8 +171,9 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
       const t = liveTurn(turns, at);
       closeThinking(t, at);
       const id = String(data.id || `t${t.tools.length}`);
-      t.tools.push({ id, name: String(data.name || ""), input: data.input, startedAt: at });
-      t.flow.push({ kind: "tool", toolId: id });
+      const parent = data.parent ? String(data.parent) : undefined;
+      t.tools.push({ id, name: String(data.name || ""), input: data.input, startedAt: at, parent });
+      if (!parent) t.flow.push({ kind: "tool", toolId: id }); // subagent calls nest under their parent
       break;
     }
     case "tool.result": {
@@ -177,7 +184,27 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
         tool.output = String(data.output ?? "");
         tool.isError = Boolean(data.is_error);
         tool.durationMs = Math.max(0, at - tool.startedAt);
+        if (Array.isArray(data.images) && data.images.length) tool.images = data.images as Attachment[];
       }
+      break;
+    }
+    case "task.update": {
+      // Live state of a tool call the CLI runs as a task (background or long).
+      const tid = String(data.tool_use_id || "");
+      for (let i = turns.length - 1; i >= 0 && tid; i--) {
+        const idx = turns[i].tools.findIndex((x) => x.id === tid);
+        if (idx >= 0) {
+          const t = { ...turns[i], tools: turns[i].tools.map((x) => ({ ...x })) };
+          t.tools[idx].task = { ...(t.tools[idx].task || {}), ...(data as unknown as TaskInfo) };
+          turns[i] = t;
+          break;
+        }
+      }
+      break;
+    }
+    case "turn.changes": {
+      const t = liveTurn(turns, at);
+      t.changes = { ...(data as unknown as TurnChanges), eid: ev.eid };
       break;
     }
     case "notice": {

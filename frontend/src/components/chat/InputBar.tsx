@@ -3,6 +3,7 @@ import { resetContext } from "../../api/sessions";
 import { useChatStore } from "../../stores/chatStore";
 import { nameClipboardFiles, useComposerStore } from "../../stores/composerStore";
 import { useSessionStore } from "../../stores/sessionStore";
+import { useTaskStore } from "../../stores/taskStore";
 import type { Attachment, Session } from "../../types";
 import AttachmentTray from "../attachments/AttachmentTray";
 import Icon from "../ui/Icon";
@@ -101,6 +102,15 @@ export default function InputBar({
   const cost = useChatStore((s) => s.runningCostUsd);
   const info = useChatStore((s) => s.info);
   const bounced = useChatStore((s) => s.bounced);
+  const planUsage = useTaskStore((s) => s.usage);
+  const windows = planUsage?.unifiedWindows || {};
+  const pct = (w?: { utilization?: number }) => (w?.utilization !== undefined ? `${Math.round(w.utilization * 100)}%` : null);
+  const usageLabel =
+    session.provider === "claude" && (windows.five_hour || windows.seven_day)
+      ? [pct(windows.five_hour) && `5h ${pct(windows.five_hour)}`, pct(windows.seven_day) && `7d ${pct(windows.seven_day)}`]
+          .filter(Boolean)
+          .join(" · ")
+      : null;
   const takeBounced = useChatStore((s) => s.takeBounced);
   const allItems = useComposerStore((s) => s.items);
   const add = useComposerStore((s) => s.add);
@@ -219,6 +229,16 @@ export default function InputBar({
     });
   };
 
+  // Retry from a failed/stopped turn's footer re-sends that message.
+  useEffect(() => {
+    const h = (e: Event) => {
+      const d = (e as CustomEvent).detail || {};
+      if (!isStreaming) onSend(String(d.text || ""), d.attachments || []);
+    };
+    window.addEventListener("hrh:resend", h);
+    return () => window.removeEventListener("hrh:resend", h);
+  }, [isStreaming, onSend]);
+
   // Deliver queued messages one at a time as each turn finishes.
   useEffect(() => {
     if (isStreaming || !queue.length || connection !== "open") return;
@@ -261,7 +281,7 @@ export default function InputBar({
   };
 
   return (
-    <div className="px-3 sm:px-5 pb-4 sm:pb-5">
+    <div className="px-3 sm:px-5 pb-3 sm:pb-5 pb-safe">
       <div className="mx-auto max-w-3xl">
         <div className="pb-2">
           <ChatControls session={session} />
@@ -335,7 +355,7 @@ export default function InputBar({
             <div className="relative">
               <button
                 onClick={() => setMenu((v) => !v)}
-                className={`grid place-items-center w-8 h-8 rounded-lg transition ${
+                className={`grid place-items-center w-10 h-10 sm:w-8 sm:h-8 rounded-lg transition ${
                   menu ? "bg-accent-soft text-accent" : "text-content-dim hover:text-content hover:bg-surface-3"
                 }`}
                 title="Attach photos or files"
@@ -380,7 +400,7 @@ export default function InputBar({
               {isStreaming ? (
                 <button
                   onClick={onStop}
-                  className="grid place-items-center w-9 h-9 rounded-xl bg-content text-bg hover:bg-white transition"
+                  className="grid place-items-center w-10 h-10 sm:w-9 sm:h-9 rounded-xl bg-content text-bg hover:bg-white transition"
                   title="Stop (Esc)"
                 >
                   <span className="block w-3 h-3 rounded-[3px] bg-bg" />
@@ -389,7 +409,7 @@ export default function InputBar({
                 <button
                   onClick={() => submit()}
                   disabled={!hasContent || uploading}
-                  className="grid place-items-center w-9 h-9 rounded-xl text-white transition disabled:opacity-30"
+                  className="grid place-items-center w-10 h-10 sm:w-9 sm:h-9 rounded-xl text-white transition disabled:opacity-30"
                   style={{ background: "linear-gradient(135deg,#6e8bff,#5b7cff)" }}
                   title={uploading ? "Waiting for uploads…" : "Send (Enter)"}
                 >
@@ -430,10 +450,13 @@ export default function InputBar({
                 turn · Queue sends after · Esc stops · keeps running if you close this tab
               </span>
             ) : (
-              "Enter to send · Shift+Enter newline · / commands · @ files · paste or drop files"
+              <span className="hidden sm:inline">Enter to send · Shift+Enter newline · / commands · @ files · paste or drop files</span>
             )}
           </span>
-          <span className="font-mono shrink-0">session ${cost.toFixed(4)}</span>
+          <span className="font-mono shrink-0" title="Plan usage reported by the provider on the last turn">
+            {usageLabel && <span className="mr-2 text-content-dim">plan {usageLabel}</span>}
+            session ${cost.toFixed(4)}
+          </span>
         </div>
       </div>
     </div>

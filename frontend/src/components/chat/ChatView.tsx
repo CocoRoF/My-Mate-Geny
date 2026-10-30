@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { stopTurn } from "../../api/sessions";
 import SessionPanel from "./panel/SessionPanel";
+import { MenuButton } from "../layout/MobileTopBar";
+import TasksPanel from "../tasks/TasksPanel";
+import { isRunning, useTaskStore } from "../../stores/taskStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useChatSocket } from "../../hooks/useChatSocket";
 import MessageList from "./MessageList";
@@ -16,6 +19,8 @@ export default function ChatView() {
   const active = sessions.find((s) => s.id === activeId) || null;
   const { send, steer, stop: stopWs } = useChatSocket(activeId);
   const [showUsage, setShowUsage] = useState(false);
+  const [showTasks, setShowTasks] = useState(false);
+  const runningTasks = useTaskStore((s) => (activeId ? (s.bySession[activeId] || []).filter(isRunning).length : 0));
   const [panel, setPanel] = useState(() => {
     try {
       return localStorage.getItem("hrh_session_panel") !== "0" && window.innerWidth >= 1100;
@@ -100,19 +105,30 @@ export default function ChatView() {
         </div>
       )}
       {active && (
-        <div className="flex items-center gap-2 px-4 sm:px-5 h-14 shrink-0 border-b border-border/70 bg-surface/40 backdrop-blur-sm">
+        <div className="pt-safe shrink-0 border-b border-border/70 bg-surface/40 backdrop-blur-sm">
+        <div className="flex items-center gap-2 px-3 sm:px-5 h-12 md:h-14">
+          <MenuButton />
           <Icon
             name={active.connection_id ? "server" : "cpu"}
             size={16}
             className={`shrink-0 ${active.connection_id ? "text-cyan" : "text-accent"}`}
           />
-          <span className="text-sm font-medium text-content truncate min-w-0">{active.title}</span>
+          <span className="text-[14px] md:text-sm font-medium text-content truncate min-w-0">{active.title}</span>
           <span className="pill bg-surface-3 text-content-dim shrink-0 hidden sm:inline-flex">{active.provider}</span>
           {active.mode === "plan" && <span className="pill bg-violet/15 text-violet shrink-0">plan</span>}
           <div className="ml-auto flex items-center gap-2 min-w-0 shrink-0">
             <span className="hidden lg:inline text-[11px] text-content-faint font-mono truncate max-w-[220px]">
               {active.connection_id ? "remote" : "local"} · {active.workspace_path}
             </span>
+            <button
+              onClick={() => setShowTasks(true)}
+              className={`btn-ghost py-1 px-2 shrink-0 ${runningTasks ? "text-accent" : ""}`}
+              title="Background tasks"
+            >
+              {runningTasks ? <Icon name="spinner" size={14} spin /> : <Icon name="activity" size={14} />}
+              <span className="hidden sm:inline">Tasks</span>
+              {runningTasks > 0 && <span className="pill bg-accent-soft text-accent">{runningTasks}</span>}
+            </button>
             <button onClick={() => setShowUsage(true)} className="btn-ghost py-1 px-2 shrink-0" title="Account & usage">
               <Icon name="cpu" size={14} /> <span className="hidden sm:inline">Usage</span>
             </button>
@@ -129,15 +145,20 @@ export default function ChatView() {
             </button>
           </div>
         </div>
+        </div>
       )}
       <MessageList />
       {active && <InputBar key={active.id} onSend={send} onSteer={steer} onStop={stop} session={active} />}
       {showUsage && active && <UsageModal provider={active.provider} onClose={() => setShowUsage(false)} />}
+      {showTasks && active && <TasksPanel sid={active.id} onClose={() => setShowTasks(false)} />}
     </div>
     {panel && active && (
-      <div className="fixed inset-y-0 right-0 z-40 xl:static xl:z-auto shadow-float xl:shadow-none">
-        <SessionPanel session={active} onClose={togglePanel} />
-      </div>
+      <>
+        <div className="fixed inset-0 z-30 bg-black/45 xl:hidden animate-fade-in" onClick={togglePanel} />
+        <div className="fixed inset-y-0 right-0 z-40 pt-safe xl:pt-0 bg-surface xl:static xl:z-auto shadow-float xl:shadow-none">
+          <SessionPanel session={active} onClose={togglePanel} />
+        </div>
+      </>
     )}
     </div>
   );

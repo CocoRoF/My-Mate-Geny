@@ -50,8 +50,8 @@ export default function Lightbox({
       <div className="flex items-center gap-3 px-4 h-14 shrink-0 text-sm" onClick={(e) => e.stopPropagation()}>
         <span className="truncate font-medium text-content">{img.name}</span>
         <span className="shrink-0 text-xs text-content-faint">
-          {img.width && img.height ? `${img.width}×${img.height} · ` : ""}
-          {formatBytes(img.size)}
+          {img.width && img.height ? `${img.width}×${img.height}` : ""}
+          {img.size ? `${img.width ? " · " : ""}${formatBytes(img.size)}` : ""}
           {many ? ` · ${i + 1} / ${images.length}` : ""}
         </span>
         <span className="ml-auto flex items-center gap-1">

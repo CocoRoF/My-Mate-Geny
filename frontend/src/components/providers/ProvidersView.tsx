@@ -45,7 +45,7 @@ export default function ProvidersView() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-2xl px-6 py-8">
+      <div className="mx-auto max-w-2xl px-4 sm:px-6 py-5 sm:py-8">
         <div className="flex items-center gap-2.5 mb-1">
           <Icon name="plug" size={20} className="text-accent" />
           <h1 className="text-lg font-semibold">Providers</h1>

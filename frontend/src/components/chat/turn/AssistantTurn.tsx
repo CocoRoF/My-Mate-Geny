@@ -7,6 +7,9 @@ import ThinkingBlock from "./ThinkingBlock";
 import TodoCard, { todosOf } from "./TodoCard";
 import ToolGroup from "./ToolGroup";
 import { fmtMs } from "./toolMeta";
+import TurnChangesCard from "../../changes/TurnChangesCard";
+import { relTime, absTime } from "../../admin/format";
+import { useChatStore } from "../../../stores/chatStore";
 
 type Segment =
   | { kind: "text"; text: string }
@@ -62,8 +65,22 @@ function tokens(usage?: Record<string, any>): string | null {
   return `${k(inp)} in · ${k(out)} out`;
 }
 
+/** Ask the composer to re-send a message (retry after an error/stop). */
+export function requestResend(text: string, attachments: any[] = []) {
+  window.dispatchEvent(new CustomEvent("hrh:resend", { detail: { text, attachments } }));
+}
+
 function Footer({ turn }: { turn: Turn }) {
   const [copied, setCopied] = useState(false);
+  const turns = useChatStore((s) => s.turns);
+  const isStreaming = useChatStore((s) => s.isStreaming);
+  const isLast = turns[turns.length - 1]?.key === turn.key;
+  const prevUser = (() => {
+    const i = turns.findIndex((t) => t.key === turn.key);
+    for (let j = i - 1; j >= 0; j--) if (turns[j].role === "user") return turns[j];
+    return null;
+  })();
+  const canRetry = isLast && !isStreaming && (turn.status === "error" || turn.status === "interrupted") && prevUser;
   const dur = turn.startedAt && turn.endedAt ? fmtMs(turn.endedAt - turn.startedAt) : null;
   const tk = tokens(turn.usage);
   const failed = turn.tools.filter((t) => t.isError).length;
@@ -78,6 +95,18 @@ function Footer({ turn }: { turn: Turn }) {
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-[10.5px] text-content-faint">
       {turn.status === "interrupted" && <span className="pill bg-surface-3 text-content-dim">Stopped</span>}
       <span className="font-mono">{parts.join(" · ")}</span>
+      {turn.endedAt ? (
+        <span title={absTime(new Date(turn.endedAt).toISOString())}>· {relTime(new Date(turn.endedAt).toISOString())}</span>
+      ) : null}
+      {canRetry && (
+        <button
+          onClick={() => requestResend(prevUser!.text)}
+          className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-accent hover:bg-accent-soft transition"
+          title="Send the same message again"
+        >
+          <Icon name="refresh" size={11} /> Retry
+        </button>
+      )}
       {turn.text.trim() && (
         <button
           onClick={() =>
@@ -107,6 +136,11 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
         <Icon name="bolt" size={14} className="text-white" />
       </div>
       <div className="min-w-0 flex-1 space-y-2.5">
+        {turn.trigger === "background" && (
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-0.5 text-[11.5px] text-accent">
+            <Icon name="activity" size={12} /> Started by Claude after a background task finished
+          </div>
+        )}
         {segments.map((s, i) => {
           switch (s.kind) {
             case "text":
@@ -116,7 +150,7 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
                 <ThinkingBlock key={i} text={s.item.text} startedAt={s.item.startedAt} endedAt={s.item.endedAt} live={live} />
               );
             case "tools":
-              return <ToolGroup key={i} tools={s.tools} turnLive={live} />;
+              return <ToolGroup key={i} tools={s.tools} allTools={turn.tools} />;
             case "todo":
               return <TodoCard key={i} todos={todosOf(s.tool.input)} />;
             case "steer":
@@ -177,6 +211,8 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
             </div>
           </div>
         )}
+
+        {turn.changes && turn.changes.files > 0 && <TurnChangesCard changes={turn.changes} />}
 
         {turn.complete && <Footer turn={turn} />}
       </div>

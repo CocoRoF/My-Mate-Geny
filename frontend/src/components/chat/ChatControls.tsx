@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useConfigStore } from "../../stores/configStore";
 import { useProviderStore } from "../../stores/providerStore";
 import { useSessionStore } from "../../stores/sessionStore";
@@ -50,38 +51,79 @@ function Menu({
   onPick: (id: string) => void;
   onClose: () => void;
 }) {
+  // Rendered through a portal: the chip row scrolls horizontally on phones,
+  // which would clip an absolutely positioned menu.
+  const anchor = useRef<HTMLSpanElement>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null);
+  const mobile = typeof window !== "undefined" && window.innerWidth < 640;
+
+  useLayoutEffect(() => {
+    const el = anchor.current?.parentElement;
+    if (!el || mobile) return;
+    const r = el.getBoundingClientRect();
+    setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - 336)), bottom: window.innerHeight - r.top + 6 });
+  }, [mobile]);
+
   useEffect(() => {
-    const h = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    const h = (e: MouseEvent | TouchEvent) => {
+      const t = e.target as Node;
+      if (ref.current?.contains(t) || anchor.current?.parentElement?.contains(t)) return;
+      onClose();
     };
+    const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("mousedown", h);
-    return () => window.removeEventListener("mousedown", h);
+    window.addEventListener("touchstart", h);
+    window.addEventListener("keydown", k);
+    return () => {
+      window.removeEventListener("mousedown", h);
+      window.removeEventListener("touchstart", h);
+      window.removeEventListener("keydown", k);
+    };
   }, [onClose]);
-  return (
-    <div
-      ref={ref}
-      className="absolute bottom-[calc(100%+6px)] left-0 z-40 min-w-[200px] max-w-[320px] max-h-80 overflow-y-auto rounded-xl border border-border bg-surface-2 shadow-float animate-fade-in"
+
+  const list = items.map((it) => (
+    <button
+      key={it.id}
+      onClick={() => {
+        onPick(it.id);
+        onClose();
+      }}
+      className={`flex w-full items-center gap-2 px-3 py-2.5 sm:py-2 text-[14px] sm:text-[13px] transition hover:bg-surface-3 ${
+        it.id === current ? "text-accent" : "text-content"
+      }`}
     >
-      {items.map((it) => (
-        <button
-          key={it.id}
-          onClick={() => {
-            onPick(it.id);
-            onClose();
-          }}
-          className={`flex w-full items-center gap-2 px-3 py-2 text-[13px] transition hover:bg-surface-3 ${
-            it.id === current ? "text-accent" : "text-content"
-          }`}
-        >
-          <span className="w-3.5 shrink-0">{it.id === current && <Icon name="check" size={13} />}</span>
-          <span className="min-w-0 text-left">
-            <span className="block truncate">{it.label}</span>
-            {it.hint && <span className="block truncate text-[11px] text-content-faint">{it.hint}</span>}
-          </span>
-        </button>
-      ))}
-    </div>
+      <span className="w-3.5 shrink-0">{it.id === current && <Icon name="check" size={13} />}</span>
+      <span className="min-w-0 text-left">
+        <span className="block truncate">{it.label}</span>
+        {it.hint && <span className="block truncate text-[11px] text-content-faint">{it.hint}</span>}
+      </span>
+    </button>
+  ));
+
+  return (
+    <>
+      <span ref={anchor} className="hidden" />
+      {createPortal(
+        mobile ? (
+          <div className="fixed inset-0 z-[70] flex items-end bg-black/45 animate-fade-in">
+            <div ref={ref} className="w-full max-h-[70vh] overflow-y-auto rounded-t-2xl border-t border-border bg-surface-2 pb-safe pt-1.5 shadow-float">
+              <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-border-strong" />
+              {list}
+            </div>
+          </div>
+        ) : pos ? (
+          <div
+            ref={ref}
+            style={{ left: pos.left, bottom: pos.bottom }}
+            className="fixed z-[70] min-w-[200px] max-w-[320px] max-h-80 overflow-y-auto rounded-xl border border-border bg-surface-2 shadow-float animate-fade-in"
+          >
+            {list}
+          </div>
+        ) : null,
+        document.body,
+      )}
+    </>
   );
 }
 
@@ -113,7 +155,7 @@ export default function ChatControls({ session }: { session: Session }) {
     entry?.models.find((m) => m.id === session.model)?.label || session.model || "model";
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 px-1">
+    <div className="flex flex-nowrap sm:flex-wrap items-center gap-1.5 px-1 overflow-x-auto sm:overflow-visible no-scrollbar">
       {/* Mode */}
       <div className="relative">
         <Chip

@@ -13,6 +13,7 @@ const NAV: { id: View; label: string; icon: IconName }[] = [
   { id: "connections", label: "Connections", icon: "server" },
   { id: "usage", label: "Usage", icon: "cpu" },
   { id: "admin", label: "Admin", icon: "shield" },
+  { id: "downloads", label: "Download", icon: "download" },
 ];
 
 export default function Sidebar() {
@@ -37,7 +38,7 @@ export default function Sidebar() {
   // History loading + live attach is owned by useChatSocket (ChatView).
   const openSession = (id: string) => {
     setActive(id);
-    setView("chat");
+    setView("chat"); // also closes the mobile drawer
   };
 
   const newChat = () => {
@@ -63,7 +64,7 @@ export default function Sidebar() {
   }, [anyRunning, loadSessions]);
 
   return (
-    <aside className="w-[268px] shrink-0 flex flex-col border-r border-border bg-surface/80 backdrop-blur-xl">
+    <aside className="w-full md:w-[268px] h-full shrink-0 flex flex-col border-r border-border bg-surface md:bg-surface/80 backdrop-blur-xl pt-safe pb-safe">
       {/* Brand */}
       <div className="flex items-center gap-2.5 px-4 h-14">
         <div className="grid place-items-center w-8 h-8 rounded-lg bg-gradient-to-br from-accent to-cyan shadow-glow">
@@ -168,7 +169,7 @@ export default function Sidebar() {
                     e.stopPropagation();
                     setMenuId(menuId === s.id ? null : s.id);
                   }}
-                  className="opacity-0 group-hover:opacity-100 rounded-md p-1 text-content-faint hover:text-content hover:bg-surface-3 transition"
+                  className="md:opacity-0 group-hover:opacity-100 rounded-md p-1.5 md:p-1 text-content-faint hover:text-content hover:bg-surface-3 transition"
                 >
                   <Icon name="more" size={15} />
                 </button>

@@ -27,7 +27,7 @@ export default function UsageView() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-2xl px-6 py-8">
+      <div className="mx-auto max-w-2xl px-4 sm:px-6 py-5 sm:py-8">
         <div className="flex items-center gap-2.5 mb-6">
           <Icon name="cpu" size={20} className="text-accent" />
           <h1 className="text-lg font-semibold">Account &amp; Usage</h1>

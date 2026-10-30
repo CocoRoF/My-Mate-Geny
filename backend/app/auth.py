@@ -37,7 +37,12 @@ COOKIE_NAME = "hrh_session"
 
 # Paths reachable without a session (login flow + health only). Exact
 # matches: a prefix test would also open e.g. "/login-anything".
-_PUBLIC_PATHS = frozenset({"/login", "/api/auth/login", "/api/auth/logout", "/health", "/favicon.ico"})
+_PUBLIC_PATHS = frozenset({
+    "/login", "/api/auth/login", "/api/auth/logout", "/health", "/favicon.ico",
+    # Icons + web manifest: fetched without cookies (and on the login page).
+    "/favicon.svg", "/favicon-32.png", "/apple-touch-icon.png", "/icon-192.png", "/icon-512.png",
+    "/icon-maskable-512.png", "/manifest.webmanifest",
+})
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 # Distributed guessing (many IPs): above this many failures in the window,
