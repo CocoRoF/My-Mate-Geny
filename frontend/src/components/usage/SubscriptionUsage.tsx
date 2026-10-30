@@ -87,18 +87,20 @@ export default function SubscriptionUsage({ provider, accountId }: { provider: s
 
       <div>
         <div className="text-[11px] uppercase tracking-wider text-content-faint mb-1">Usage</div>
-        {sub.session && <Meter label="Session (5hr)" percent={sub.session.percent} resets={sub.session.resets_at} />}
-        {sub.weekly && <Meter label="Weekly (7 day)" percent={sub.weekly.percent} resets={sub.weekly.resets_at} />}
+        {(sub.windows || []).map((w, i) => (
+          <Meter key={i} label={w.label} percent={w.percent} resets={w.resets_at} />
+        ))}
+        {(sub.windows || []).length === 0 && (
+          <p className="text-sm text-content-faint py-2">No active limits.</p>
+        )}
       </div>
 
-      {sub.limits && sub.limits.filter((l) => l.scope?.model?.display_name).length > 0 && (
+      {sub.model_windows && sub.model_windows.length > 0 && (
         <div>
           <div className="text-[11px] uppercase tracking-wider text-content-faint mb-1">By model (weekly)</div>
-          {sub.limits
-            .filter((l) => l.scope?.model?.display_name)
-            .map((l, i) => (
-              <Meter key={i} label={l.scope.model.display_name} percent={l.percent} resets={l.resets_at} />
-            ))}
+          {sub.model_windows.map((w, i) => (
+            <Meter key={i} label={w.label} percent={w.percent} resets={w.resets_at} />
+          ))}
         </div>
       )}
 
