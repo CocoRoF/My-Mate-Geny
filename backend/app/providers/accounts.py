@@ -14,7 +14,9 @@ Three layers:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import shutil
 import threading
 import time
 from dataclasses import dataclass, field, replace
@@ -50,6 +52,90 @@ def ensure_account_dirs(provider: str, account_id: str) -> tuple[Path, Path]:
     except OSError:
         pass
     return home, cfg
+
+
+# Everything in the host's ~/.claude / ~/.codex is shared with pooled accounts
+# EXCEPT their own credentials. Sessions/projects (so --resume works whichever
+# account the balancer picks next), memory, CLAUDE.md/AGENTS.md, settings and
+# hooks, skills, commands, agents, plugins — identical on every account.
+_PRIVATE = {
+    "claude": {".credentials.json", ".claude.json", "backups", ".last-cleanup", ".last-update-result.json"},
+    "codex": {"auth.json", ".tmp", "tmp", "installation_id"},
+}
+_link_lock = threading.Lock()
+
+
+def _host_config_dir(provider: str) -> Path:
+    return Path(os.path.expanduser("~/.codex" if provider == "codex" else "~/.claude"))
+
+
+def _merge_into(src: Path, dst: Path) -> None:
+    """Move files from an account-local dir into the shared host dir (host
+    copies win), so nothing an account wrote before linking is lost."""
+    for root, _dirs, files in os.walk(src):
+        rel = Path(root).relative_to(src)
+        for f in files:
+            target = dst / rel / f
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    shutil.move(str(Path(root) / f), str(target))
+                except OSError:
+                    pass
+
+
+def link_shared_state(provider: str, account_id: str) -> None:
+    """Point a pooled account's config dir at the host's shared state."""
+    host = _host_config_dir(provider)
+    if not host.is_dir():
+        return
+    _, cfg = ensure_account_dirs(provider, account_id)
+    private = _PRIVATE.get(provider, set())
+    with _link_lock:
+        for entry in host.iterdir():
+            if entry.name in private:
+                continue
+            target = cfg / entry.name
+            if target.is_symlink():
+                if os.readlink(target) == str(entry):
+                    continue
+                target.unlink()
+            elif target.is_dir() and entry.is_dir():
+                _merge_into(target, entry)
+                shutil.rmtree(target, ignore_errors=True)
+            elif target.exists():
+                target.rename(target.with_name(target.name + ".account-local"))
+            try:
+                target.symlink_to(entry)
+            except OSError:
+                pass
+        if provider == "claude":
+            _sync_mcp_servers(cfg)
+
+
+def _sync_mcp_servers(cfg: Path) -> None:
+    """User-scope MCP servers live in ~/.claude.json, which is per-account
+    (it also holds the account's oauth identity) — copy just that key over."""
+    try:
+        host_cfg = json.load(open(os.path.expanduser("~/.claude.json")))
+    except (OSError, ValueError):
+        return
+    servers = host_cfg.get("mcpServers")
+    if not servers:
+        return
+    path = cfg / ".claude.json"
+    try:
+        acc_cfg = json.load(open(path)) if path.exists() else {}
+    except (OSError, ValueError):
+        return
+    if acc_cfg.get("mcpServers") == servers:
+        return
+    acc_cfg["mcpServers"] = servers
+    tmp = path.with_suffix(".json.tmp")
+    with open(tmp, "w") as fh:
+        json.dump(acc_cfg, fh, indent=2)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
 
 
 def write_claude_credentials(account_id: str, creds: dict) -> None:

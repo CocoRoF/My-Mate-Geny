@@ -6,6 +6,7 @@ import {
   listSessions,
   updateSession,
   type SessionInput,
+  type SessionPatch,
 } from "../api/sessions";
 
 interface SessionState {
@@ -13,7 +14,9 @@ interface SessionState {
   activeId: string | null;
   load: () => Promise<void>;
   create: (body: SessionInput) => Promise<Session>;
-  update: (id: string, patch: { provider?: string; model?: string; effort?: string }) => Promise<void>;
+  update: (id: string, patch: SessionPatch) => Promise<void>;
+  /** Merge a server-side session snapshot (e.g. from history / live info). */
+  patchLocal: (id: string, patch: Partial<Session>) => void;
   remove: (id: string) => Promise<void>;
   setActive: (id: string | null) => void;
 }
@@ -38,5 +41,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     await get().load();
     if (activeId === id) set({ activeId: null });
   },
+  patchLocal: (id, patch) =>
+    set((s) => ({ sessions: s.sessions.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
   setActive: (id) => set({ activeId: id }),
 }));

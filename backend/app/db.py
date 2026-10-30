@@ -49,6 +49,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     connection_id TEXT,                       -- NULL => local workspace
     workspace_path TEXT NOT NULL,             -- absolute path (local or under mount root)
     cli_session_id TEXT,                      -- provider-side resumable session id
+    mode          TEXT NOT NULL DEFAULT 'agent',    -- agent | plan
+    extra_dirs    TEXT NOT NULL DEFAULT '[]',       -- additional folders (JSON list of paths)
+    cli_info      TEXT NOT NULL DEFAULT '{}',       -- last CLI capabilities (tools, slash commands, MCP…)
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL
 );
@@ -191,6 +194,13 @@ class Database:
                 self._conn.execute(
                     "ALTER TABLE sessions ADD COLUMN effort TEXT NOT NULL DEFAULT 'default'"
                 )
+            for col, ddl in (
+                ("mode", "TEXT NOT NULL DEFAULT 'agent'"),
+                ("extra_dirs", "TEXT NOT NULL DEFAULT '[]'"),
+                ("cli_info", "TEXT NOT NULL DEFAULT '{}'"),
+            ):
+                if col not in cols:
+                    self._conn.execute(f"ALTER TABLE sessions ADD COLUMN {col} {ddl}")
             gcols = {r["name"] for r in self._conn.execute("PRAGMA table_info(git_accounts)")}
             if gcols and "scopes" not in gcols:
                 self._conn.execute("ALTER TABLE git_accounts ADD COLUMN scopes TEXT NOT NULL DEFAULT ''")

@@ -13,11 +13,13 @@ router = APIRouter(prefix="/api/history")
 @router.get("/{sid}")
 async def get_history(sid: str, svc: SessionService = Depends(session_service)) -> dict:
     try:
-        svc.get(sid)
+        session = svc.get(sid)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {
         "session_id": sid,
+        "session": session,
+        "running": svc.is_running(sid),
         "messages": svc.messages(sid),
         "events": svc.events(sid),
     }

@@ -52,12 +52,17 @@ class SessionCreate(BaseModel):
     connection_id: str | None = None
     workspace_path: str
     title: str = "New chat"
+    mode: str = "agent"
+    extra_dirs: list[str] = []
 
 
 class SessionUpdate(BaseModel):
     provider: str | None = None
     model: str | None = None
     effort: str | None = None
+    mode: str | None = None
+    extra_dirs: list[str] | None = None
+    title: str | None = None
 
 
 class SessionOut(BaseModel):

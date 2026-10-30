@@ -93,7 +93,7 @@ class RemoteSshConnector(WorkspaceConnector):
 
     # ---- contract ----
 
-    async def resolve_cwd(self, path: str) -> str:
+    async def resolve_cwd(self, path: str, extra_dirs: list[str] | None = None) -> str:
         """Return a small LOCAL scratch dir for the agent to start in.
 
         The agent never cd's into the remote filesystem (sshfs-in-container is
@@ -112,7 +112,9 @@ class RemoteSshConnector(WorkspaceConnector):
             f"# Remote session\n\n"
             f"This is a LOCAL scratch directory. The real workspace is on a remote host:\n\n"
             f"- Host: `{self._spec.username}@{self._spec.host}:{self._spec.port}`\n"
-            f"- Remote path: `{remote_path}`\n\n"
+            f"- Remote path: `{remote_path}`\n"
+            + "".join(f"- Additional remote folder: `{d}`\n" for d in (extra_dirs or []))
+            + "\n"
             f"Operate the remote host ONLY through the `remote_*` MCP tools "
             f"(`remote_bash`, `remote_read`, `remote_write`, `remote_list`). "
             f"Do NOT use your built-in file/Bash tools for the task — they act on "

@@ -35,7 +35,7 @@ class WorkspaceConnector(abc.ABC):
     kind: str  # "local" | "remote_ssh"
 
     @abc.abstractmethod
-    async def resolve_cwd(self, path: str) -> str:
+    async def resolve_cwd(self, path: str, extra_dirs: list[str] | None = None) -> str:
         """Return a path on the 2223 filesystem the provider CLI can cd into.
 
         For local this is the path itself; for remote it is the sshfs mount

@@ -11,7 +11,7 @@ from app.workspaces.base import DirEntry, WorkspaceConnector, WorkspaceError
 class LocalConnector(WorkspaceConnector):
     kind = "local"
 
-    async def resolve_cwd(self, path: str) -> str:
+    async def resolve_cwd(self, path: str, extra_dirs: list[str] | None = None) -> str:
         abspath = os.path.abspath(os.path.expanduser(path))
         if not os.path.isdir(abspath):
             raise WorkspaceError(f"not a directory: {abspath}")

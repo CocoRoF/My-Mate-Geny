@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import signal
 from dataclasses import dataclass, field
 from typing import AsyncIterator
 
@@ -52,6 +53,10 @@ class CLIProcessRunner:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            # Own process group, so Stop/timeout also kills the shells and MCP
+            # servers the agent spawned — not just the CLI itself.
+            start_new_session=True,
+            limit=16 * 1024 * 1024,  # stream-json lines (e.g. big tool output) can be large
         )
         assert proc.stdout is not None and proc.stdin is not None
 
@@ -87,12 +92,22 @@ class CLIProcessRunner:
                 await agen.aclose()
 
             await asyncio.wait_for(proc.wait(), timeout=self.timeout_s)
-        except (asyncio.TimeoutError, asyncio.CancelledError):
-            proc.kill()
-            await stderr_task
+        except BaseException:
+            # Timeout, Stop (CancelledError) or the consumer abandoning us at a
+            # yield (GeneratorExit): never leave the CLI running behind.
+            if proc.returncode is None:
+                _kill_group(proc)
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=5)
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    pass
             raise
         finally:
-            await stderr_task
+            if not stderr_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(stderr_task), timeout=5)
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    stderr_task.cancel()
 
         self.last_result = CLIResult(
             returncode=proc.returncode if proc.returncode is not None else -1,
@@ -100,3 +115,24 @@ class CLIProcessRunner:
         )
 
     last_result: CLIResult | None = None
+
+
+def _kill_group(proc: asyncio.subprocess.Process) -> None:
+    """SIGTERM the CLI's whole process group, then SIGKILL anything left."""
+    try:
+        pgid = os.getpgid(proc.pid)
+    except ProcessLookupError:
+        return
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(pgid, sig)
+        except ProcessLookupError:
+            return
+        if sig is signal.SIGTERM:
+            # Give the CLI a moment to flush its session transcript.
+            import time
+
+            for _ in range(20):
+                if proc.returncode is not None:
+                    break
+                time.sleep(0.05)

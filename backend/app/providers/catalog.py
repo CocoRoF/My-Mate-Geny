@@ -9,9 +9,10 @@ connected account can run, not a hand-maintained guess:
 * Claude: ``GET api.anthropic.com/v1/models`` with the account OAuth token.
   Returns real ids + display names (e.g. ``claude-opus-5-5`` / "Claude Opus
   5.5"). The ``claude`` CLI accepts full ids via ``--model``.
-* Codex: the ``codex`` CLI only drives a small fixed set of reasoning models
-  (the chatgpt web ``/models`` slugs are NOT CLI-compatible), so that list is
-  curated.
+* Codex: ``GET chatgpt.com/backend-api/codex/models?client_version=<cli>`` —
+  the same list the ``codex`` CLI itself uses (NOT the chatgpt web ``/models``
+  slugs). Only ``visibility == "list"`` models, ordered by ``priority``; each
+  carries its own supported reasoning levels.
 
 Results are cached briefly so /api/config stays fast and we don't hammer the
 provider. Any fetch failure falls back to the static list below — the picker
@@ -30,7 +31,7 @@ import urllib.request
 # ---- static fallbacks (used only if the live fetch fails) -------------------
 
 _EFFORT_CLAUDE = ["default", "low", "medium", "high", "xhigh", "max"]
-_EFFORT_CODEX = ["default", "minimal", "low", "medium", "high"]
+_EFFORT_CODEX = ["default", "low", "medium", "high", "xhigh"]
 
 _STATIC: dict[str, dict] = {
     "claude": {
@@ -47,15 +48,12 @@ _STATIC: dict[str, dict] = {
     },
     "codex": {
         "label": "Codex",
-        "models": [
-            {"id": "gpt-5-codex", "label": "GPT-5 Codex"},
-            {"id": "gpt-5", "label": "GPT-5"},
-            {"id": "o3", "label": "o3"},
-        ],
-        "default_model": "gpt-5-codex",
+        # Fallback only: "default" lets the CLI pick the account's own default.
+        "models": [{"id": "default", "label": "Codex default"}],
+        "default_model": "default",
         "effort": _EFFORT_CODEX,
         "default_effort": "default",
-        "models_source": "curated",
+        "models_source": "static",
     },
 }
 
@@ -147,6 +145,108 @@ def _claude_catalog(cred_dir: str) -> dict:
     }
 
 
+# ---- codex live models ------------------------------------------------------
+
+_CHATGPT = "https://chatgpt.com/backend-api"
+_codex_version_cache: tuple[float, str] | None = None
+
+
+def _codex_client_version() -> str:
+    """Version of the installed codex CLI (the models API requires it)."""
+    global _codex_version_cache
+    if _codex_version_cache and time.monotonic() - _codex_version_cache[0] < _TTL:
+        return _codex_version_cache[1]
+    import re
+    import subprocess
+
+    from app.config import settings
+
+    version = "0.166.0"
+    try:
+        out = subprocess.run([settings.codex_binary, "--version"], capture_output=True, text=True, timeout=8)
+        m = re.search(r"(\d+\.\d+\.\d+)", out.stdout or out.stderr or "")
+        if m:
+            version = m.group(1)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    _codex_version_cache = (time.monotonic(), version)
+    return version
+
+
+def _fetch_codex_models(cred_dir: str) -> list[dict] | None:
+    try:
+        auth = json.load(open(os.path.join(cred_dir, "auth.json")))
+    except (OSError, ValueError):
+        return None
+    tokens = auth.get("tokens") or {}
+    token = tokens.get("access_token")
+    if not token:
+        return None
+    version = _codex_client_version()
+    req = urllib.request.Request(
+        f"{_CHATGPT}/codex/models?client_version={version}",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "chatgpt-account-id": tokens.get("account_id") or "",
+            "User-Agent": f"codex_cli_rs/{version}",
+            "originator": "codex_cli_rs",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode())
+    except (urllib.error.URLError, ValueError, TimeoutError):
+        return None
+    raw = data.get("models", []) if isinstance(data, dict) else []
+    listed = sorted(
+        (m for m in raw if m.get("slug") and m.get("visibility") == "list"),
+        key=lambda m: m.get("priority", 999),
+    )
+    out = []
+    for m in listed:
+        levels = [
+            (lv.get("effort") if isinstance(lv, dict) else lv)
+            for lv in (m.get("supported_reasoning_levels") or [])
+        ]
+        out.append({
+            "id": m["slug"],
+            "label": m.get("display_name") or m["slug"],
+            "description": m.get("description") or "",
+            "effort": ["default", *[lv for lv in levels if lv]],
+            "default_effort": m.get("default_reasoning_level") or "default",
+            "context_window": m.get("context_window"),
+        })
+    return out or None
+
+
+def _codex_catalog(cred_dir: str) -> dict:
+    models = _cached("codex")
+    if models is None:
+        models = _fetch_codex_models(cred_dir)
+        if models:
+            with _lock:
+                _store("codex", models)
+    if not models:
+        return dict(_STATIC["codex"])
+    return {
+        "label": "Codex",
+        "models": models,
+        "default_model": models[0]["id"],  # priority 1 = the account's default
+        "effort": _EFFORT_CODEX,
+        "default_effort": "default",
+        "models_source": "live",
+    }
+
+
+def codex_model_known(model: str | None) -> bool | None:
+    """True/False when the live list is cached, None when we can't tell."""
+    models = _cached("codex")
+    if not models or not model:
+        return None
+    return any(m["id"] == model for m in models)
+
+
 # ---- public -----------------------------------------------------------------
 
 
@@ -156,9 +256,10 @@ def build_catalog(
 ) -> dict[str, dict]:
     """Build the per-provider catalog, fetching live models where possible."""
     claude_dir = claude_cred_dir or os.path.expanduser("~/.claude")
+    codex_dir = codex_cred_dir or os.path.expanduser("~/.codex")
     catalog = {
         "claude": _claude_catalog(claude_dir),
-        "codex": dict(_STATIC["codex"]),
+        "codex": _codex_catalog(codex_dir),
     }
     return catalog
 

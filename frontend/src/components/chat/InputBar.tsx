@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { resetContext } from "../../api/sessions";
 import { useChatStore } from "../../stores/chatStore";
 import { nameClipboardFiles, useComposerStore } from "../../stores/composerStore";
+import { useSessionStore } from "../../stores/sessionStore";
 import type { Attachment, Session } from "../../types";
-import ChatControls from "./ChatControls";
 import AttachmentTray from "../attachments/AttachmentTray";
 import Icon from "../ui/Icon";
+import ChatControls from "./ChatControls";
+import ComposerMenu, { triggerAt, type MenuItem } from "./ComposerMenu";
 
 /** Files on a paste event. Office apps put an image AND tab/newline text on the
  * clipboard for copied cells — that's a text paste, not an attachment. */
@@ -64,31 +67,54 @@ function AttachMenu({ onPick, onClose }: { onPick: (kind: "photo" | "file") => v
   );
 }
 
+interface Queued {
+  id: string;
+  text: string;
+  attachments: Attachment[];
+}
+
 export default function InputBar({
   onSend,
+  onStop,
   session,
 }: {
   onSend: (text: string, attachments: Attachment[]) => boolean;
-  session?: Session | null;
+  onStop: () => void;
+  session: Session;
 }) {
   const [input, setInput] = useState("");
   const [menu, setMenu] = useState(false);
   const [notice, setNotice] = useState("");
+  const [queue, setQueue] = useState<Queued[]>([]);
+  const [caret, setCaret] = useState(0);
+  const [menuClosedFor, setMenuClosedFor] = useState<string | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const photoRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
   const isStreaming = useChatStore((s) => s.isStreaming);
+  const connection = useChatStore((s) => s.connection);
   const cost = useChatStore((s) => s.runningCostUsd);
+  const info = useChatStore((s) => s.info);
   const allItems = useComposerStore((s) => s.items);
   const add = useComposerStore((s) => s.add);
   const clearSent = useComposerStore((s) => s.clearSent);
+  const updateSession = useSessionStore((s) => s.update);
 
-  const sid = session?.id || null;
+  const sid = session.id;
   const items = useMemo(() => allItems.filter((i) => i.sessionId === sid), [allItems, sid]);
   const uploading = items.some((i) => i.status === "uploading");
   const ready = items.filter((i) => i.status === "done" && i.attachment);
   const failed = items.filter((i) => i.status === "error").length;
-  const canSend = !!sid && !isStreaming && !uploading && (!!input.trim() || ready.length > 0);
+  const hasContent = !!input.trim() || ready.length > 0;
+
+  const trigger = triggerAt(input, caret);
+  const triggerKey = trigger ? `${trigger.kind}:${trigger.start}` : null;
+  const menuOpen = !!trigger && triggerKey !== menuClosedFor;
+
+  useEffect(() => setActiveIndex(0), [trigger?.kind, trigger?.query]);
 
   const grow = () => {
     const ta = taRef.current;
@@ -97,32 +123,119 @@ export default function InputBar({
     ta.style.height = Math.min(ta.scrollHeight, 240) + "px";
   };
 
+  const setText = (text: string, pos?: number) => {
+    setInput(text);
+    requestAnimationFrame(() => {
+      const ta = taRef.current;
+      if (!ta) return;
+      const p = pos ?? text.length;
+      ta.focus();
+      ta.setSelectionRange(p, p);
+      setCaret(p);
+      grow();
+    });
+  };
+
   const addFiles = (files: File[]) => {
-    if (!sid || !files.length) return;
+    if (!files.length) return;
     add(sid, files);
     setNotice("");
     taRef.current?.focus();
   };
 
-  const submit = () => {
-    if (!canSend) {
-      if (uploading) setNotice("Waiting for uploads to finish…");
-      return;
+  const runAction = useCallback(
+    async (action: NonNullable<MenuItem["action"]>) => {
+      setText("");
+      try {
+        if (action === "clear") {
+          await resetContext(sid);
+          setNotice("Context cleared — the next message starts a fresh agent conversation.");
+        } else if (action === "plan" || action === "agent") {
+          await updateSession(sid, { mode: action });
+          setNotice(action === "plan" ? "Plan mode: read-only, the agent will propose a plan." : "Agent mode: full autonomy.");
+        } else if (action === "stop") {
+          onStop();
+        }
+      } catch (e: any) {
+        setNotice(String(e.message || e));
+      }
+    },
+    [sid, updateSession, onStop],
+  );
+
+  const pick = (item: MenuItem) => {
+    if (item.action) return runAction(item.action);
+    if (!trigger) return;
+    const before = input.slice(0, trigger.start);
+    const after = input.slice(caret);
+    const next = before + item.insert + after;
+    setText(next, (before + item.insert).length);
+    if (!item.keepOpen) setMenuClosedFor(`${trigger.kind}:${trigger.start}`);
+  };
+
+  const dispatch = (text: string, atts: Attachment[]) => {
+    if (isStreaming) {
+      setQueue((q) => [...q, { id: `q${Date.now()}`, text, attachments: atts }]);
+      return true;
     }
-    const ok = onSend(input.trim(), ready.map((i) => i.attachment!));
-    if (!ok) {
-      setNotice("Connection lost — reconnecting. Your message was kept.");
+    return onSend(text, atts);
+  };
+
+  const submit = () => {
+    const text = input.trim();
+    const builtin = /^\/(clear|plan|agent|stop)$/.exec(text);
+    if (builtin) return runAction(builtin[1] as NonNullable<MenuItem["action"]>);
+    if (uploading) return setNotice("Waiting for uploads to finish…");
+    if (!hasContent) return;
+    if (!dispatch(text, ready.map((i) => i.attachment!))) {
+      setNotice("Not connected — reconnecting. Your message was kept.");
       return;
     }
     setInput("");
     setNotice("");
-    if (sid) clearSent(sid);
+    clearSent(sid);
     requestAnimationFrame(() => {
       if (taRef.current) taRef.current.style.height = "auto";
     });
   };
 
-  const pick = (kind: "photo" | "file") => {
+  // Deliver queued messages one at a time as each turn finishes.
+  useEffect(() => {
+    if (isStreaming || !queue.length || connection !== "open") return;
+    const [next, ...rest] = queue;
+    if (onSend(next.text, next.attachments)) setQueue(rest);
+  }, [isStreaming, queue, connection, onSend]);
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (menuOpen && menuItems.length) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        return setActiveIndex((activeIndex + 1) % menuItems.length);
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        return setActiveIndex((activeIndex - 1 + menuItems.length) % menuItems.length);
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing)) {
+        e.preventDefault();
+        return pick(menuItems[Math.min(activeIndex, menuItems.length - 1)]);
+      }
+    }
+    if (menuOpen && e.key === "Escape") {
+      e.preventDefault();
+      return setMenuClosedFor(triggerKey);
+    }
+    if (e.key === "Escape" && isStreaming) {
+      e.preventDefault();
+      return onStop();
+    }
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      submit();
+    }
+  };
+
+  const pickFile = (kind: "photo" | "file") => {
     setMenu(false);
     (kind === "photo" ? photoRef : fileRef).current?.click();
   };
@@ -130,26 +243,57 @@ export default function InputBar({
   return (
     <div className="px-3 sm:px-5 pb-4 sm:pb-5">
       <div className="mx-auto max-w-3xl">
-        {session && (
-          <div className="pb-2">
-            <ChatControls session={session} />
+        <div className="pb-2">
+          <ChatControls session={session} />
+        </div>
+
+        {queue.length > 0 && (
+          <div className="mb-2 space-y-1">
+            {queue.map((q) => (
+              <div key={q.id} className="flex items-center gap-2 rounded-lg border border-border bg-surface-2/60 px-3 py-1.5 text-[12px]">
+                <Icon name="clock" size={12} className="shrink-0 text-content-faint" />
+                <span className="text-content-faint shrink-0">Queued</span>
+                <span className="truncate text-content-dim">
+                  {q.text || `${q.attachments.length} attachment(s)`}
+                  {q.text && q.attachments.length ? ` · +${q.attachments.length} file(s)` : ""}
+                </span>
+                <button
+                  onClick={() => setQueue((all) => all.filter((x) => x.id !== q.id))}
+                  className="ml-auto shrink-0 text-content-faint hover:text-danger"
+                  title="Remove from queue"
+                >
+                  <Icon name="x" size={13} />
+                </button>
+              </div>
+            ))}
           </div>
         )}
-        <div className="rounded-2xl border border-border bg-surface-2/80 shadow-card backdrop-blur-sm focus-within:border-accent/50 transition">
+
+        <div className="relative rounded-2xl border border-border bg-surface-2/80 shadow-card backdrop-blur-sm focus-within:border-accent/50 transition">
+          {menuOpen && trigger && (
+            <ComposerMenu
+              trigger={trigger}
+              session={session}
+              info={info}
+              onPick={pick}
+              onClose={() => setMenuClosedFor(triggerKey)}
+              activeIndex={activeIndex}
+              setActiveIndex={setActiveIndex}
+              setItems={setMenuItems}
+            />
+          )}
           <AttachmentTray items={items} />
           <textarea
             ref={taRef}
             value={input}
             onChange={(e) => {
               setInput(e.target.value);
+              setCaret(e.target.selectionStart);
+              setMenuClosedFor(null);
               grow();
             }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault();
-                submit();
-              }
-            }}
+            onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart)}
+            onKeyDown={onKeyDown}
             onPaste={(e) => {
               const files = filesFromClipboard(e.clipboardData);
               if (files.length) {
@@ -158,14 +302,19 @@ export default function InputBar({
               }
             }}
             rows={1}
-            placeholder={items.length ? "Add a message (optional)…" : "Message the agent…"}
+            placeholder={
+              isStreaming
+                ? "Agent is working — type to queue a follow-up…"
+                : items.length
+                  ? "Add a message (optional)…"
+                  : "Message the agent…   / for commands · @ for files"
+            }
             className="block w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm text-content placeholder:text-content-faint outline-none max-h-[240px]"
           />
           <div className="flex items-center gap-1 px-2 pb-2 pt-0.5">
             <div className="relative">
               <button
                 onClick={() => setMenu((v) => !v)}
-                disabled={!sid}
                 className={`grid place-items-center w-8 h-8 rounded-lg transition ${
                   menu ? "bg-accent-soft text-accent" : "text-content-dim hover:text-content hover:bg-surface-3"
                 }`}
@@ -173,7 +322,7 @@ export default function InputBar({
               >
                 <Icon name="plus" size={18} />
               </button>
-              {menu && <AttachMenu onPick={pick} onClose={() => setMenu(false)} />}
+              {menu && <AttachMenu onPick={pickFile} onClose={() => setMenu(false)} />}
             </div>
             {items.length > 0 && (
               <span className="text-[11px] text-content-faint">
@@ -182,15 +331,37 @@ export default function InputBar({
                 {failed > 0 && <span className="text-danger"> · {failed} failed</span>}
               </span>
             )}
-            <button
-              onClick={submit}
-              disabled={!canSend}
-              className="ml-auto grid place-items-center w-9 h-9 rounded-xl text-white transition disabled:opacity-30"
-              style={{ background: "linear-gradient(135deg,#6e8bff,#5b7cff)" }}
-              title={uploading ? "Waiting for uploads…" : "Send (Enter)"}
-            >
-              {isStreaming || uploading ? <Icon name="spinner" size={16} spin /> : <Icon name="arrow-up" size={17} />}
-            </button>
+            <div className="ml-auto flex items-center gap-1.5">
+              {isStreaming && hasContent && (
+                <button
+                  onClick={submit}
+                  disabled={uploading}
+                  className="h-9 rounded-xl border border-border px-3 text-[12px] text-content-dim hover:text-content hover:bg-surface-3 transition disabled:opacity-40"
+                  title="Send when the current turn finishes"
+                >
+                  Queue
+                </button>
+              )}
+              {isStreaming ? (
+                <button
+                  onClick={onStop}
+                  className="grid place-items-center w-9 h-9 rounded-xl bg-content text-bg hover:bg-white transition"
+                  title="Stop (Esc)"
+                >
+                  <span className="block w-3 h-3 rounded-[3px] bg-bg" />
+                </button>
+              ) : (
+                <button
+                  onClick={submit}
+                  disabled={!hasContent || uploading}
+                  className="grid place-items-center w-9 h-9 rounded-xl text-white transition disabled:opacity-30"
+                  style={{ background: "linear-gradient(135deg,#6e8bff,#5b7cff)" }}
+                  title={uploading ? "Waiting for uploads…" : "Send (Enter)"}
+                >
+                  {uploading ? <Icon name="spinner" size={16} spin /> : <Icon name="arrow-up" size={17} />}
+                </button>
+              )}
+            </div>
           </div>
           <input
             ref={photoRef}
@@ -220,13 +391,14 @@ export default function InputBar({
               <span className="text-warning">{notice}</span>
             ) : isStreaming ? (
               <span className="inline-flex items-center gap-1.5 text-accent">
-                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" /> working…
+                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" /> working… · Esc to stop · keeps
+                running if you close this tab
               </span>
             ) : (
-              "Enter to send · Shift+Enter for newline · paste or drop files to attach"
+              "Enter to send · Shift+Enter newline · / commands · @ files · paste or drop files"
             )}
           </span>
-          <span className="font-mono shrink-0">session cost ${cost.toFixed(4)}</span>
+          <span className="font-mono shrink-0">session ${cost.toFixed(4)}</span>
         </div>
       </div>
     </div>

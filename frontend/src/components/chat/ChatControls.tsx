@@ -5,15 +5,12 @@ import { useSessionStore } from "../../stores/sessionStore";
 import type { Session } from "../../types";
 import Icon, { type IconName } from "../ui/Icon";
 
-const EFFORT_LABEL: Record<string, string> = {
-  default: "Think: default",
-  minimal: "Think: minimal",
-  low: "Think: low",
-  medium: "Think: medium",
-  high: "Think: high",
-  xhigh: "Think: xhigh",
-  max: "Think: max",
-};
+const effortLabel = (e: string) => `Think: ${e}`;
+
+const MODES = [
+  { id: "agent", label: "Agent", hint: "Full autonomy — edits files, runs commands" },
+  { id: "plan", label: "Plan", hint: "Read-only — investigates and proposes a plan" },
+];
 
 function Chip({
   icon,
@@ -48,7 +45,7 @@ function Menu({
   onPick,
   onClose,
 }: {
-  items: { id: string; label: string }[];
+  items: { id: string; label: string; hint?: string }[];
   current: string;
   onPick: (id: string) => void;
   onClose: () => void;
@@ -64,7 +61,7 @@ function Menu({
   return (
     <div
       ref={ref}
-      className="absolute bottom-[calc(100%+6px)] left-0 z-40 min-w-[180px] overflow-hidden rounded-xl border border-border bg-surface-2 shadow-float animate-fade-in"
+      className="absolute bottom-[calc(100%+6px)] left-0 z-40 min-w-[200px] max-w-[320px] max-h-80 overflow-y-auto rounded-xl border border-border bg-surface-2 shadow-float animate-fade-in"
     >
       {items.map((it) => (
         <button
@@ -77,8 +74,11 @@ function Menu({
             it.id === current ? "text-accent" : "text-content"
           }`}
         >
-          <span className="w-3.5">{it.id === current && <Icon name="check" size={13} />}</span>
-          {it.label}
+          <span className="w-3.5 shrink-0">{it.id === current && <Icon name="check" size={13} />}</span>
+          <span className="min-w-0 text-left">
+            <span className="block truncate">{it.label}</span>
+            {it.hint && <span className="block truncate text-[11px] text-content-faint">{it.hint}</span>}
+          </span>
         </button>
       ))}
     </div>
@@ -89,7 +89,7 @@ export default function ChatControls({ session }: { session: Session }) {
   const catalog = useConfigStore((s) => s.catalog);
   const providers = useProviderStore((s) => s.providers);
   const update = useSessionStore((s) => s.update);
-  const [openMenu, setOpenMenu] = useState<"provider" | "model" | "effort" | null>(null);
+  const [openMenu, setOpenMenu] = useState<"provider" | "model" | "effort" | "mode" | null>(null);
 
   const entry = catalog[session.provider];
   const connectedProviders = providers.filter((p) => p.connected).map((p) => p.provider);
@@ -98,17 +98,39 @@ export default function ChatControls({ session }: { session: Session }) {
     id,
     label: c.label + (connectedProviders.includes(id) ? "" : " (not connected)"),
   }));
-  const modelItems = entry?.models.map((m) => ({ id: m.id, label: m.label })) ?? [];
-  const effortItems = (entry?.effort ?? ["default"]).map((e) => ({
+  const modelItems = entry?.models.map((m) => ({ id: m.id, label: m.label, hint: m.description })) ?? [];
+  const curModel = entry?.models.find((m) => m.id === session.model);
+  // Codex models each declare their own reasoning levels.
+  const efforts = curModel?.effort?.length ? curModel.effort : entry?.effort ?? ["default"];
+  const effortItems = efforts.map((e) => ({
     id: e,
-    label: e === "default" ? "Default" : e,
+    label: e === "default" ? `Default${curModel?.default_effort && curModel.default_effort !== "default" ? ` (${curModel.default_effort})` : ""}` : e,
   }));
+  const mode = session.mode || "agent";
 
   const curModelLabel =
     entry?.models.find((m) => m.id === session.model)?.label || session.model || "model";
 
   return (
-    <div className="flex items-center gap-1.5 px-1">
+    <div className="flex flex-wrap items-center gap-1.5 px-1">
+      {/* Mode */}
+      <div className="relative">
+        <Chip
+          icon={mode === "plan" ? "file-text" : "bolt"}
+          label={mode === "plan" ? "Plan" : "Agent"}
+          open={openMenu === "mode"}
+          onClick={() => setOpenMenu(openMenu === "mode" ? null : "mode")}
+        />
+        {openMenu === "mode" && (
+          <Menu
+            items={MODES}
+            current={mode}
+            onClose={() => setOpenMenu(null)}
+            onPick={(id) => update(session.id, { mode: id as "agent" | "plan" })}
+          />
+        )}
+      </div>
+
       {/* Provider */}
       <div className="relative">
         <Chip
@@ -134,7 +156,7 @@ export default function ChatControls({ session }: { session: Session }) {
       {modelItems.length > 0 && (
         <div className="relative">
           <Chip
-            icon="bolt"
+            icon="activity"
             label={curModelLabel}
             open={openMenu === "model"}
             onClick={() => setOpenMenu(openMenu === "model" ? null : "model")}
@@ -144,7 +166,11 @@ export default function ChatControls({ session }: { session: Session }) {
               items={modelItems}
               current={session.model}
               onClose={() => setOpenMenu(null)}
-              onPick={(id) => update(session.id, { model: id })}
+              onPick={(id) => {
+                const m = entry?.models.find((x) => x.id === id);
+                const keep = !m?.effort?.length || m.effort.includes(session.effort);
+                update(session.id, keep ? { model: id } : { model: id, effort: "default" });
+              }}
             />
           )}
         </div>
@@ -155,7 +181,7 @@ export default function ChatControls({ session }: { session: Session }) {
         <div className="relative">
           <Chip
             icon="terminal"
-            label={EFFORT_LABEL[session.effort] || `Think: ${session.effort}`}
+            label={effortLabel(session.effort || "default")}
             open={openMenu === "effort"}
             onClick={() => setOpenMenu(openMenu === "effort" ? null : "effort")}
           />

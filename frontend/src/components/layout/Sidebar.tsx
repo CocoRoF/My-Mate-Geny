@@ -1,9 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUIStore, type View } from "../../stores/uiStore";
 import { useProviderStore } from "../../stores/providerStore";
 import { useChatStore } from "../../stores/chatStore";
-import { getHistory } from "../../api/sessions";
 import { apiFetch } from "../../api/client";
 import { APP_VERSION } from "../../version";
 import Icon, { type IconName } from "../ui/Icon";
@@ -24,7 +23,6 @@ export default function Sidebar() {
   const setActive = useSessionStore((s) => s.setActive);
   const remove = useSessionStore((s) => s.remove);
   const providers = useProviderStore((s) => s.providers);
-  const loadHistory = useChatStore((s) => s.loadHistory);
   const reset = useChatStore((s) => s.reset);
 
   const [query, setQuery] = useState("");
@@ -36,12 +34,10 @@ export default function Sidebar() {
     [sessions, query],
   );
 
-  const openSession = async (id: string) => {
+  // History loading + live attach is owned by useChatSocket (ChatView).
+  const openSession = (id: string) => {
     setActive(id);
     setView("chat");
-    reset();
-    const h = await getHistory(id);
-    loadHistory(h.messages, h.events);
   };
 
   const newChat = () => {
@@ -56,6 +52,15 @@ export default function Sidebar() {
   };
 
   const connectedCount = providers.filter((p) => p.connected).length;
+
+  // Turns run in the background: keep the "working" dots fresh while any runs.
+  const anyRunning = sessions.some((s) => s.running);
+  const loadSessions = useSessionStore((s) => s.load);
+  useEffect(() => {
+    if (!anyRunning) return;
+    const t = setInterval(() => loadSessions().catch(() => {}), 5000);
+    return () => clearInterval(t);
+  }, [anyRunning, loadSessions]);
 
   return (
     <aside className="w-[268px] shrink-0 flex flex-col border-r border-border bg-surface/80 backdrop-blur-xl">
@@ -148,8 +153,14 @@ export default function Sidebar() {
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px] text-content/90">{s.title}</div>
-                  <div className="truncate text-[10.5px] text-content-faint">
+                  <div className="flex items-center gap-1.5 truncate text-[10.5px] text-content-faint">
+                    {s.running && (
+                      <span className="inline-flex items-center gap-1 text-accent" title="Agent is working">
+                        <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" /> working ·
+                      </span>
+                    )}
                     {s.connection_id ? "remote" : "local"} · {s.provider}
+                    {s.mode === "plan" && " · plan"}
                   </div>
                 </div>
                 <button

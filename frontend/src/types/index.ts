@@ -27,14 +27,44 @@ export interface Session {
   connection_id: string | null;
   workspace_path: string;
   cli_session_id: string | null;
+  mode: "agent" | "plan";
+  extra_dirs: string[];
+  cli_info?: CliInfo;
+  running?: boolean;
   created_at: string;
   updated_at: string;
   message_count?: number;
 }
 
+/** What the provider CLI reported about itself at the start of the last turn. */
+export interface CliInfo {
+  model?: string;
+  cwd?: string;
+  tools?: string[];
+  slash_commands?: string[];
+  terminal_slash_commands?: string[]; // interactive-only; not usable headless
+  skills?: string[];
+  agents?: string[];
+  mcp_servers?: { name: string; status: string; source?: string }[];
+  plugins?: { name: string; source?: string }[];
+  permissionMode?: string;
+  additional_directories?: string[] | null;
+  claude_code_version?: string;
+  account?: string | null;
+}
+
+export interface CatalogModel {
+  id: string;
+  label: string;
+  description?: string;
+  effort?: string[]; // per-model reasoning levels (Codex)
+  default_effort?: string;
+  context_window?: number | null;
+}
+
 export interface ProviderCatalogEntry {
   label: string;
-  models: { id: string; label: string }[];
+  models: CatalogModel[];
   default_model: string;
   effort: string[];
   default_effort: string;
@@ -65,6 +95,7 @@ export interface ChatMessage {
   id?: string;
   role: "user" | "assistant";
   content: string;
+  created_at?: string;
   attachments?: Attachment[];
 }
 
@@ -75,11 +106,16 @@ export type EventType =
   | "tool.use"
   | "tool.result"
   | "turn.complete"
-  | "error";
+  | "error"
+  | "notice"
+  | "session.info"
+  | "run.state"
+  | "user.message";
 
 export interface ProviderEvent {
   type: EventType;
   seq: number;
+  eid?: number; // events-table id (resume cursor); absent for live-only messages
   timestamp: string;
   data: Record<string, unknown>;
 }

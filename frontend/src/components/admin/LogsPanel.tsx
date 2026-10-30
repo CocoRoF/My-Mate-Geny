@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { clearLogs, listLogs, logStats, type LogEntry, type LogFilter, type LogStats } from "../../api/admin";
-import { getHistory } from "../../api/sessions";
-import { useChatStore } from "../../stores/chatStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUIStore } from "../../stores/uiStore";
 import Icon, { type IconName } from "../ui/Icon";
@@ -20,17 +18,12 @@ function useOpenSession() {
   const setActive = useSessionStore((s) => s.setActive);
   const sessions = useSessionStore((s) => s.sessions);
   const setView = useUIStore((s) => s.setView);
-  const reset = useChatStore((s) => s.reset);
-  const loadHistory = useChatStore((s) => s.loadHistory);
   return {
     exists: (id: string) => sessions.some((s) => s.id === id),
     title: (id: string) => sessions.find((s) => s.id === id)?.title,
-    open: async (id: string) => {
+    open: (id: string) => {
       setActive(id);
       setView("chat");
-      reset();
-      const h = await getHistory(id);
-      loadHistory(h.messages, h.events);
     },
   };
 }

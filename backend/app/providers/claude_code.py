@@ -7,8 +7,10 @@ matter for CLI >= 2.1.x:
 * ``--verbose`` is required alongside ``--output-format stream-json``.
 * ``--bare`` is only used on the api_key path; on the OAuth subscription path
   we must NOT pass ``--bare`` and must NOT inject ``ANTHROPIC_API_KEY``.
-* ``bypassPermissions`` is blocked when running as root, so we pre-allow tools
-  via an inline ``--settings`` permission allow-list instead.
+* Permissions: the runtime runs the CLI as a non-root user, so "agent" mode
+  uses ``--permission-mode bypassPermissions`` — every tool works headless
+  (subagents/Task, Skill, MCP, NotebookEdit…), exactly like Codex's bypass.
+  "plan" mode uses ``--permission-mode plan`` (read-only, proposes a plan).
 """
 
 from __future__ import annotations
@@ -29,8 +31,7 @@ from app.providers.base import (
     TurnRequest,
 )
 
-# Built-in tools we pre-allow so the agent runs without interactive prompts.
-_DEFAULT_ALLOW = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"]
+_PERMISSION_MODE = {"agent": "bypassPermissions", "plan": "plan"}
 
 
 class ClaudeCodeProvider(Provider):
@@ -73,15 +74,6 @@ class ClaudeCodeProvider(Provider):
 
     def _build_argv(self, req: TurnRequest) -> list[str]:
         model = req.model or "sonnet"
-        allow = list(req.allow_tools or _DEFAULT_ALLOW)
-        # Pre-allow every attached MCP server's tools (e.g. the remote-exec
-        # bridge). Newer Claude CLI requires MCP tools to be explicitly allowed
-        # or it refuses them in non-interactive --print mode.
-        if isinstance(req.mcp_config, dict):
-            for server in req.mcp_config.get("mcpServers", {}):
-                allow.append(f"mcp__{server}")
-        settings_inline = json.dumps({"permissions": {"allow": allow}})
-
         argv = [
             "--print",
             "--verbose",
@@ -92,16 +84,17 @@ class ClaudeCodeProvider(Provider):
             "--include-partial-messages",
             "--model",
             model,
+            "--permission-mode",
+            _PERMISSION_MODE.get(req.mode, "bypassPermissions"),
         ]
-        # Let the agent's tools reach the attachment files (they live outside
-        # the workspace, under the per-session uploads dir).
-        upload_dirs = sorted({os.path.dirname(os.path.dirname(a.path)) for a in req.attachments})
-        if upload_dirs:
-            argv += ["--add-dir", *upload_dirs]
-        argv += [
-            "--settings",
-            settings_inline,
-        ]
+        # Extra folders + the per-session uploads dir (attachments live outside
+        # the workspace) become additional working directories.
+        upload_dirs = {os.path.dirname(os.path.dirname(a.path)) for a in req.attachments}
+        dirs = list(dict.fromkeys([*req.extra_dirs, *sorted(upload_dirs)]))
+        if dirs:
+            argv += ["--add-dir", *dirs]
+        if req.allow_tools:
+            argv += ["--settings", json.dumps({"permissions": {"allow": list(req.allow_tools)}})]
 
         # Reasoning/think level -> --effort (omit for "default").
         if req.effort and req.effort != "default":

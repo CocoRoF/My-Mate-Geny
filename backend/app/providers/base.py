@@ -29,7 +29,9 @@ EVENT_TYPES = (
     "tool.use",        # agent invoked a tool; data: {id, name, input}
     "tool.result",     # tool returned; data: {id, name, output, is_error}
     "turn.complete",   # terminal success; data: {text, model, usage, cost_usd, stop_reason, cli_session_id}
-    "error",           # terminal failure; data: {code, message}
+    "error",           # terminal failure; data: {code, message}  (code "turn.interrupted" = user pressed Stop)
+    "notice",          # NON-terminal warning/info shown inline; data: {level, message, code}
+    "session.info",    # CLI capabilities (tools, slash commands, skills, MCP servers…); not persisted as an event
 )
 
 EventType = Literal[
@@ -40,6 +42,8 @@ EventType = Literal[
     "tool.result",
     "turn.complete",
     "error",
+    "notice",
+    "session.info",
 ]
 
 
@@ -53,14 +57,18 @@ class ProviderEvent:
     data: dict[str, Any] = field(default_factory=dict)
     seq: int = 0
     timestamp: str = field(default_factory=_now_iso)
+    eid: int | None = None  # events-table row id once persisted (client resume cursor)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d = {
             "type": self.type,
             "seq": self.seq,
             "timestamp": self.timestamp,
             "data": self.data,
         }
+        if self.eid is not None:
+            d["eid"] = self.eid
+        return d
 
 
 @dataclass
@@ -88,6 +96,8 @@ class TurnRequest:
     extra_env: dict[str, str] = field(default_factory=dict)
     timeout_s: float | None = None
     attachments: list[Attachment] = field(default_factory=list)  # files sent with the latest user message
+    mode: str = "agent"                   # agent (full autonomy) | plan (read-only, propose a plan)
+    extra_dirs: list[str] = field(default_factory=list)  # additional folders the agent may use
 
 
 class ProviderTurnError(RuntimeError):

@@ -52,8 +52,27 @@ class StreamJsonAccumulator:
         kind = obj.get("type")
 
         if kind == "system":
-            if obj.get("subtype") == "init" and obj.get("session_id"):
-                self.session_id = obj["session_id"]
+            sub = obj.get("subtype")
+            if sub == "init":
+                if obj.get("session_id"):
+                    self.session_id = obj["session_id"]
+                if obj.get("model"):
+                    self.model = obj["model"]
+                yield self._ev("session.info", {
+                    k: obj.get(k)
+                    for k in ("model", "cwd", "tools", "slash_commands", "skills", "agents",
+                              "mcp_servers", "plugins", "permissionMode", "additional_directories",
+                              "claude_code_version", "output_style", "memory_paths",
+                              "terminal_slash_commands")
+                })
+            elif sub == "compact_boundary":
+                meta = obj.get("compact_metadata") or {}
+                pre = meta.get("pre_tokens")
+                yield self._ev("notice", {
+                    "level": "info", "code": "context.compacted",
+                    "message": "Conversation context was compacted"
+                               + (f" (was {pre:,} tokens)" if isinstance(pre, int) else ""),
+                })
             return
 
         if kind == "stream_event":
@@ -141,9 +160,22 @@ class StreamJsonAccumulator:
         self.cost_usd = float(obj.get("total_cost_usd", 0.0) or 0.0)
 
         if obj.get("subtype") not in (None, "success"):
+            reasons = {
+                "error_max_turns": "the agent hit its maximum number of turns",
+                "error_during_execution": "the agent stopped because of an execution error",
+            }
+            sub = obj.get("subtype", "unknown")
             yield self._ev(
                 "error",
-                {"code": "exec.cli.result_error", "message": obj.get("subtype", "unknown")},
+                {"code": f"exec.cli.{sub}", "message": reasons.get(sub, sub)},
+            )
+            return
+        if obj.get("is_error"):
+            # API-level failures (auth expired, usage limit, overloaded…) arrive
+            # as a "success" result flagged is_error, with the reason as text.
+            yield self._ev(
+                "error",
+                {"code": "exec.cli.api_error", "message": str(obj.get("result") or "API error")},
             )
             return
 
@@ -156,5 +188,7 @@ class StreamJsonAccumulator:
                 "cost_usd": self.cost_usd,
                 "stop_reason": self.stop_reason,
                 "cli_session_id": self.session_id,
+                "duration_ms": obj.get("duration_ms"),
+                "num_turns": obj.get("num_turns"),
             },
         )

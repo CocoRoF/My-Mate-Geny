@@ -1,25 +1,33 @@
 """Streaming chat over WebSocket.
 
-Protocol (mirrors geny-executor-web ``ws/stream.py``):
+Turns run in the background (see :class:`SessionService`); a socket is just a
+viewer + remote control, so closing the tab never kills the agent.
 
-    client -> {"type": "chat", "input": "<text>", "attachments": ["att_…", …]}
-    server -> one normalized ProviderEvent JSON per message
-              ({type, seq, timestamp, data})
+Protocol::
 
-The connection stays open across turns; send another ``chat`` message to
-continue the conversation (the provider resumes via its cli_session_id).
+    client -> {"type": "attach", "after": <last eid seen>}   # on every (re)connect
+    client -> {"type": "chat", "input": "<text>", "attachments": ["att_…"], "client_msg_id": "…"}
+    client -> {"type": "stop"}
+
+    server -> {"type": "run.state", "data": {"running": bool}}
+    server -> {"type": "user.message", "data": {...}}         # a turn started (any tab)
+    server -> normalized ProviderEvent ({type, seq, eid?, timestamp, data})
+
+``attach`` replays persisted events with ``eid > after`` (what happened while
+the client was away), then streams live; ``eid`` lets the client drop dupes.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
-import traceback
+import contextlib
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.auth import COOKIE_NAME, AuthManager
 from app.services.attachment_service import AttachmentError
-from app.services.session_service import SessionService
+from app.services.session_service import SessionService, TurnBusyError
 
 router = APIRouter()
 
@@ -39,6 +47,7 @@ async def chat_stream(websocket: WebSocket, sid: str) -> None:
 
     await websocket.accept()
     svc: SessionService = websocket.app.state.session_service
+    logs = websocket.app.state.logs
 
     try:
         svc.get(sid)
@@ -49,6 +58,29 @@ async def chat_stream(websocket: WebSocket, sid: str) -> None:
         await websocket.close()
         return
 
+    queue = svc.subscribe(sid)
+    send_lock = asyncio.Lock()
+    last_sent = 0  # highest eid delivered on this socket
+
+    async def send(msg: dict) -> None:
+        nonlocal last_sent
+        eid = msg.get("eid")
+        if eid is not None:
+            if eid <= last_sent:
+                return  # already delivered via replay
+            last_sent = eid
+        async with send_lock:
+            await websocket.send_json(msg)
+
+    async def pump() -> None:
+        while True:
+            await send(await queue.get())
+
+    pump_task: asyncio.Task | None = None
+
+    async def error(code: str, message: str) -> None:
+        await send({"type": "error", "seq": 0, "data": {"code": code, "message": message}})
+
     try:
         while True:
             raw = await websocket.receive_text()
@@ -56,40 +88,44 @@ async def chat_stream(websocket: WebSocket, sid: str) -> None:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
                 continue
-            if msg.get("type") != "chat":
-                continue
-            text = (msg.get("input") or "").strip()
-            raw_ids = msg.get("attachments") or []
-            attachment_ids = [str(a) for a in raw_ids if isinstance(a, str)] if isinstance(raw_ids, list) else []
-            if not text and not attachment_ids:
-                continue
+            kind = msg.get("type")
 
-            try:
-                async for ev in svc.run_turn(sid, text, attachment_ids):
-                    await websocket.send_json(ev.to_dict())
-            except WebSocketDisconnect:
-                raise
-            except AttachmentError as exc:
-                websocket.app.state.logs.record(
-                    "warning", "upload", str(exc), code="upload.invalid_on_send",
-                    detail={"attachments": attachment_ids}, session_id=sid, ip=ip,
-                )
-                await websocket.send_json(
-                    {"type": "error", "seq": 0, "data": {"code": "attachment.invalid", "message": str(exc)}}
-                )
-            except Exception as exc:  # noqa: BLE001 - never kill the socket on turn error
-                websocket.app.state.logs.record(
-                    "error", "ws", f"chat turn crashed: {exc}", code="exec.turn.crashed",
-                    detail={"exception": type(exc).__name__, "traceback": traceback.format_exc(),
-                            "input_preview": text[:500], "attachments": attachment_ids},
-                    session_id=sid, path=f"/ws/chat/{sid}", ip=ip,
-                )
-                await websocket.send_json(
-                    {
-                        "type": "error",
-                        "seq": 0,
-                        "data": {"code": "exec.turn.crashed", "message": str(exc)[:1000]},
-                    }
-                )
+            if kind == "attach":
+                after = int(msg.get("after") or 0)
+                # Subscribed before reading the backlog, so nothing falls in the
+                # gap; the eid check in send() drops the overlap.
+                for ev in svc.events(sid, after=after):
+                    await send(ev)
+                await send({"type": "run.state", "data": {"running": svc.is_running(sid)}})
+                if pump_task is None:
+                    pump_task = asyncio.create_task(pump())
+
+            elif kind == "chat":
+                if pump_task is None:  # old clients that never attach
+                    pump_task = asyncio.create_task(pump())
+                text = (msg.get("input") or "").strip()
+                raw_ids = msg.get("attachments") or []
+                ids = [str(a) for a in raw_ids if isinstance(a, str)] if isinstance(raw_ids, list) else []
+                if not text and not ids:
+                    continue
+                try:
+                    svc.start_turn(sid, text, ids, client_msg_id=msg.get("client_msg_id"))
+                except TurnBusyError as exc:
+                    await error("turn.busy", str(exc))
+                except AttachmentError as exc:
+                    logs.record(
+                        "warning", "upload", str(exc), code="upload.invalid_on_send",
+                        detail={"attachments": ids}, session_id=sid, ip=ip,
+                    )
+                    await error("attachment.invalid", str(exc))
+
+            elif kind == "stop":
+                svc.stop(sid)
     except WebSocketDisconnect:
-        return
+        pass
+    finally:
+        svc.unsubscribe(sid, queue)
+        if pump_task is not None:
+            pump_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await pump_task
