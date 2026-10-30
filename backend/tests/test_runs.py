@@ -255,3 +255,16 @@ async def test_steer_while_running_then_rejected_after(db, tmp_path, monkeypatch
     assert types.index("user.steer") < types.index("turn.complete")  # placed inside the turn
     assert [m["role"] for m in svc.messages(s["id"])] == ["user", "steer", "assistant"]
     assert await svc.steer(s["id"], "late") is False  # nothing running -> caller queues it
+
+
+def test_codex_gets_the_remote_mcp_bridge(tmp_path):
+    p = CodexProvider()
+    req = TurnRequest(messages=[{"role": "user", "content": "x"}], model="default", cwd=str(tmp_path),
+                      mcp_config={"mcpServers": {"remote": {"command": "/usr/bin/python3", "args": ["/b/bridge.py"],
+                                                            "env": {"HRH_SSH_HOST": "h", "Q": 'a"b'}}}})
+    argv = p._build_argv(req)
+    cfg = [argv[i + 1] for i, a in enumerate(argv) if a == "-c"]
+    assert 'mcp_servers.remote.command="/usr/bin/python3"' in cfg
+    assert 'mcp_servers.remote.args=["/b/bridge.py"]' in cfg
+    assert 'mcp_servers.remote.env={"HRH_SSH_HOST" = "h", "Q" = "a\\"b"}' in cfg
+    assert argv[-1] == "-"

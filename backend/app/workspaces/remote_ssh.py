@@ -150,11 +150,13 @@ class RemoteSshConnector(WorkspaceConnector):
             f"Do NOT use your built-in file/Bash tools for the task — they act on "
             f"this local scratch dir, not the remote host.\n"
         )
-        try:
-            with open(os.path.join(scratch, "CLAUDE.md"), "w") as fh:
-                fh.write(guide)
-        except OSError:
-            pass
+        # Claude reads CLAUDE.md, Codex reads AGENTS.md: same guide for both.
+        for name in ("CLAUDE.md", "AGENTS.md"):
+            try:
+                with open(os.path.join(scratch, name), "w") as fh:
+                    fh.write(guide)
+            except OSError:
+                pass
         return scratch
 
     async def list_dir(self, path: str) -> list[DirEntry]:

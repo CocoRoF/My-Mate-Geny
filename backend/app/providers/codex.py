@@ -13,6 +13,8 @@ provider surfaces a clear error otherwise.
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 import os
 import shutil
 from typing import AsyncIterator
@@ -98,10 +100,28 @@ class CodexProvider(Provider):
             argv += ["-m", model]
         if req.effort and req.effort != "default":
             argv += ["-c", f"model_reasoning_effort={req.effort}"]
+        argv += self._mcp_overrides(req)
         # Prompt comes from stdin (`-`): safe for any text, including text that
         # starts with "-" or is very long.
         argv.append("-")
         return argv
+
+    @staticmethod
+    def _mcp_overrides(req: TurnRequest) -> list[str]:
+        """MCP servers (e.g. the remote-workspace bridge) as `-c mcp_servers.*`
+        config overrides — values are TOML (JSON strings/arrays are valid TOML)."""
+        servers = (req.mcp_config or {}).get("mcpServers") or {}
+        out: list[str] = []
+        for name, spec in servers.items():
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", name) or not spec.get("command"):
+                continue
+            out += ["-c", f"mcp_servers.{name}.command={json.dumps(spec['command'])}"]
+            out += ["-c", f"mcp_servers.{name}.args={json.dumps(list(spec.get('args') or []))}"]
+            env = spec.get("env") or {}
+            if env:
+                table = ", ".join(f"{json.dumps(str(k))} = {json.dumps(str(v))}" for k, v in env.items())
+                out += ["-c", f"mcp_servers.{name}.env={{{table}}}"]
+        return out
 
     def _build_prompt(self, req: TurnRequest) -> bytes:
         last_user = next(
