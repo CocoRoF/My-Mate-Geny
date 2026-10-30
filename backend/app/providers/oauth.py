@@ -64,10 +64,12 @@ class OAuthManager:
         self._sessions: dict[str, LoginSession] = {}
         self._home = os.environ.get("HOME", os.path.expanduser("~"))
 
-    def _env(self) -> dict[str, str]:
+    def _env(self, extra: dict[str, str] | None = None) -> dict[str, str]:
         env = dict(os.environ)
         env["HOME"] = self._home
         env.setdefault("TERM", "xterm-256color")
+        if extra:
+            env.update(extra)
         return env
 
     def _kill(self, provider: str) -> None:
@@ -97,10 +99,10 @@ class OAuthManager:
 
     # ---- codex: device-code flow (stdout pipes) ----
 
-    def start_codex(self, timeout: float = 25.0) -> dict:
-        self._kill("codex")
-        s = LoginSession("codex")
-        self._sessions["codex"] = s
+    def start_codex(self, timeout: float = 25.0, *, key: str = "codex", env_extra: dict | None = None) -> dict:
+        self._kill(key)
+        s = LoginSession(key)
+        self._sessions[key] = s
         # Run under a pty: a pipe would block-buffer codex's output so the
         # URL/code never arrive line-by-line. A pty makes it flush interactively.
         master, slave = pty.openpty()
@@ -114,7 +116,7 @@ class OAuthManager:
                 stdin=slave,
                 stdout=slave,
                 stderr=slave,
-                env=self._env(),
+                env=self._env(env_extra),
                 close_fds=True,
                 preexec_fn=os.setsid,
             )
@@ -171,10 +173,11 @@ class OAuthManager:
 
     # ---- claude: auth-url + paste-code flow (pty) ----
 
-    def start_claude(self, timeout: float = 25.0) -> dict:
-        self._kill("claude")
-        s = LoginSession("claude")
-        self._sessions["claude"] = s
+    def start_claude(self, timeout: float = 25.0, *, key: str = "claude", env_extra: dict | None = None) -> dict:
+        self._kill(key)
+        s = LoginSession(key)
+        self._sessions[key] = s
+        self._claude_env_extra = env_extra
         master, slave = pty.openpty()
         # Wide window so the URL never wraps.
         try:
@@ -187,7 +190,7 @@ class OAuthManager:
                 stdin=slave,
                 stdout=slave,
                 stderr=slave,
-                env=self._env(),
+                env=self._env(env_extra),
                 close_fds=True,
                 preexec_fn=os.setsid,
             )
@@ -232,10 +235,20 @@ class OAuthManager:
         threading.Thread(target=reader, daemon=True).start()
         return self._wait_for(s, lambda: bool(s.url), timeout, "paste")
 
-    def complete_claude(self, code: str, timeout: float = 40.0) -> dict:
-        s = self._sessions.get("claude")
+    def complete_claude(self, code: str, timeout: float = 40.0, *, key: str = "claude",
+                        check_dir: str | None = None) -> dict:
+        s = self._sessions.get(key)
         if not s or s.master_fd is None:
             return {"ok": False, "error": "no active claude login — start again"}
+
+        def logged_in() -> bool:
+            if check_dir:
+                return any(
+                    os.path.exists(os.path.join(check_dir, f))
+                    for f in (".credentials.json", "credentials.json", "auth.json")
+                )
+            return self.claude_logged_in()
+
         try:
             os.write(s.master_fd, (code.strip() + "\r").encode())
         except OSError as exc:
@@ -243,11 +256,10 @@ class OAuthManager:
         deadline = time.time() + timeout
         while time.time() < deadline:
             with s.lock:
-                if s.done or self.claude_logged_in():
-                    return {"ok": s.ok or self.claude_logged_in(), "error": s.error}
+                if s.done or logged_in():
+                    return {"ok": s.ok or logged_in(), "error": s.error}
             time.sleep(0.3)
-        # Even if the CLI hasn't exited, a fresh credential file means success.
-        return {"ok": self.claude_logged_in(), "error": "" if self.claude_logged_in() else "timed out"}
+        return {"ok": logged_in(), "error": "" if logged_in() else "timed out"}
 
     # ---- shared ----
 

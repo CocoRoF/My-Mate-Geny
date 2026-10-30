@@ -22,6 +22,7 @@ from app.providers.base import ProviderEvent, TurnRequest
 from app.services._ids import new_id, now_iso
 from app.services.provider_service import ProviderService
 from app.services.workspace_service import WorkspaceService
+from app.providers.accounts import AccountPool, classify_error
 
 
 class SessionService:
@@ -30,10 +31,12 @@ class SessionService:
         db: Database,
         providers: ProviderService,
         workspaces: WorkspaceService,
+        pool: "AccountPool | None" = None,
     ) -> None:
         self._db = db
         self._providers = providers
         self._workspaces = workspaces
+        self._pool = pool
 
     # ---- CRUD ----
 
@@ -170,8 +173,21 @@ class SessionService:
             return
 
         history = self.messages(sid)
-        api_key = self._providers.resolved_api_key(session["provider"])
-        provider = get_provider(session["provider"])
+        provider_name = session["provider"]
+        api_key = self._providers.resolved_api_key(provider_name)
+        provider = get_provider(provider_name)
+
+        # Multi-account pool: lease an isolated account when the pool is enabled.
+        lease = self._pool.acquire(provider_name) if self._pool else None
+        extra_env: dict[str, str] = {}
+        if lease is not None:
+            extra_env["HOME"] = lease.home
+            if provider_name == "claude":
+                extra_env["CLAUDE_CONFIG_DIR"] = lease.config_dir
+            elif provider_name == "codex":
+                extra_env["CODEX_HOME"] = lease.config_dir
+            if lease.auth_mode == "api_key" and lease.api_key:
+                api_key = lease.api_key
 
         req = TurnRequest(
             messages=[{"role": m["role"], "content": m["content"]} for m in history],
@@ -181,15 +197,29 @@ class SessionService:
             cli_session_id=session.get("cli_session_id"),
             mcp_config=mcp_config,
             api_key=api_key,
+            extra_env=extra_env,
         )
 
         final_text = ""
-        async for ev in provider.run_turn_stream(req):
-            self._add_event(sid, ev)
-            if ev.type == "turn.complete":
-                final_text = ev.data.get("text", "")
-                self._set_cli_session(sid, ev.data.get("cli_session_id"))
-            yield ev
+        err_code = err_msg = None
+        try:
+            async for ev in provider.run_turn_stream(req):
+                self._add_event(sid, ev)
+                if ev.type == "turn.complete":
+                    final_text = ev.data.get("text", "")
+                    self._set_cli_session(sid, ev.data.get("cli_session_id"))
+                elif ev.type == "error":
+                    err_code = ev.data.get("code")
+                    err_msg = ev.data.get("message")
+                yield ev
+        finally:
+            if lease is not None and self._pool is not None:
+                if err_code is not None:
+                    self._pool.report(
+                        lease, ok=False, code=classify_error(err_code, err_msg), error=err_msg
+                    )
+                else:
+                    self._pool.report(lease, ok=True)
 
         if final_text:
             self._add_message(sid, "assistant", final_text)

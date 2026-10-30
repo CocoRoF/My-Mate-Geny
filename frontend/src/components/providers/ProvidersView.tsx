@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useProviderStore } from "../../stores/providerStore";
 import Icon from "../ui/Icon";
 import ProviderOAuthModal from "./ProviderOAuthModal";
+import AccountsPanel from "./AccountsPanel";
 
 export default function ProvidersView() {
   const providers = useProviderStore((s) => s.providers);
@@ -100,6 +101,8 @@ export default function ProvidersView() {
                     </button>
                   </div>
                 )}
+
+                <AccountsPanel provider={p.provider} />
               </div>
             );
           })}

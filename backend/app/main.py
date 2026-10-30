@@ -17,8 +17,10 @@ from app import __version__
 from app.auth import AuthManager, AuthMiddleware
 from app.config import settings
 from app.providers.oauth import OAuthManager
+from app.providers.accounts import AccountPool, AccountStore
 from app.db import Database
 from app.routers import (
+    accounts,
     auth as auth_router,
     config as config_router,
     connections,
@@ -46,10 +48,14 @@ async def lifespan(app: FastAPI):
 
     app.state.auth = AuthManager(db)
     app.state.oauth = OAuthManager()
+    account_store = AccountStore(db, vault)
+    account_pool = AccountPool(account_store)
+    app.state.account_store = account_store
+    app.state.account_pool = account_pool
     provider_service = ProviderService(db, vault)
     connection_service = ConnectionService(db, vault)
     workspace_service = WorkspaceService(connection_service)
-    session_service = SessionService(db, provider_service, workspace_service)
+    session_service = SessionService(db, provider_service, workspace_service, pool=account_pool)
 
     app.state.db = db
     app.state.vault = vault
@@ -80,6 +86,7 @@ for r in (
     health.router,
     config_router.router,
     providers.router,
+    accounts.router,
     connections.router,
     workspaces.router,
     sessions.router,

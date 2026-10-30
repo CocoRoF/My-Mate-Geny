@@ -4,15 +4,32 @@ import Icon from "../ui/Icon";
 
 type Phase = "starting" | "device" | "paste" | "verifying" | "done" | "error";
 
+export interface OAuthApi {
+  start: () => Promise<OAuthStart>;
+  status: () => Promise<{ status: string; error?: string }>;
+  complete: (code: string) => Promise<{ ok: boolean; error?: string }>;
+}
+
 export default function ProviderOAuthModal({
   provider,
+  title: titleProp,
+  sub: subProp,
+  api,
   onClose,
   onConnected,
 }: {
   provider: string;
+  title?: string;
+  sub?: string;
+  api?: OAuthApi;
   onClose: () => void;
   onConnected: () => void;
 }) {
+  const call: OAuthApi = api || {
+    start: () => oauthStart(provider),
+    status: () => oauthStatus(provider),
+    complete: (code: string) => oauthComplete(provider, code),
+  };
   const [phase, setPhase] = useState<Phase>("starting");
   const [data, setData] = useState<OAuthStart | null>(null);
   const [code, setCode] = useState("");
@@ -22,7 +39,7 @@ export default function ProviderOAuthModal({
 
   useEffect(() => {
     let alive = true;
-    oauthStart(provider)
+    call.start()
       .then((d) => {
         if (!alive) return;
         if (d.error && !d.url) {
@@ -56,7 +73,7 @@ export default function ProviderOAuthModal({
   const startPolling = () => {
     pollRef.current = setInterval(async () => {
       try {
-        const st = await oauthStatus(provider);
+        const st = await call.status();
         if (st.status === "connected") {
           if (pollRef.current) clearInterval(pollRef.current);
           setPhase("done");
@@ -86,7 +103,7 @@ export default function ProviderOAuthModal({
     setPhase("verifying");
     setError("");
     try {
-      const r = await oauthComplete(provider, code.trim());
+      const r = await call.complete(code.trim());
       if (r.ok) {
         setPhase("done");
         setTimeout(() => {
@@ -103,8 +120,8 @@ export default function ProviderOAuthModal({
     }
   };
 
-  const title = provider === "codex" ? "Connect Codex" : "Connect Claude";
-  const sub = provider === "codex" ? "ChatGPT account (device code)" : "Claude subscription (token)";
+  const title = titleProp || (provider === "codex" ? "Connect Codex" : "Connect Claude");
+  const sub = subProp || (provider === "codex" ? "ChatGPT account (device code)" : "Claude subscription (token)");
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>

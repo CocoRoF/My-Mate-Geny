@@ -72,6 +72,34 @@ CREATE TABLE IF NOT EXISTS events (
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS provider_accounts (
+    id            TEXT PRIMARY KEY,
+    provider      TEXT NOT NULL,              -- claude | codex
+    label         TEXT NOT NULL,
+    auth_mode     TEXT NOT NULL DEFAULT 'oauth',  -- oauth | api_key
+    secret_ref    TEXT,                       -- vault id (api key) when auth_mode=api_key
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    weight        INTEGER NOT NULL DEFAULT 1,
+    max_concurrency INTEGER NOT NULL DEFAULT 8,
+    status        TEXT NOT NULL DEFAULT 'unknown',  -- ready | expired | cooldown | unknown
+    cooldown_until TEXT,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    total_leases  INTEGER NOT NULL DEFAULT 0,
+    total_failures INTEGER NOT NULL DEFAULT 0,
+    last_used_at  TEXT,
+    last_ok_at    TEXT,
+    last_error    TEXT,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS provider_pool (
+    provider  TEXT PRIMARY KEY,               -- claude | codex
+    enabled   INTEGER NOT NULL DEFAULT 0,      -- use the pool for this provider?
+    strategy  TEXT NOT NULL DEFAULT 'least_busy',
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS login_attempts (
     ip           TEXT PRIMARY KEY,
     fails        INTEGER NOT NULL DEFAULT 0,
