@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.error
+import urllib.request
 from typing import Any
-
-import httpx
 
 _ANTHROPIC = "https://api.anthropic.com"
 _CLAUDE_HEADERS = {
@@ -50,23 +50,27 @@ def _plan_label(profile: dict, oauth: dict) -> str:
     return f"Claude {sub.capitalize()}" if sub else "Claude"
 
 
+def _get_json(url: str, headers: dict[str, str]) -> Any:
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    with urllib.request.urlopen(req, timeout=12) as resp:
+        return json.loads(resp.read().decode())
+
+
 def claude_subscription(cred_dir: str) -> dict[str, Any]:
     oauth = _read_claude_oauth(cred_dir)
     token = oauth["accessToken"]
     headers = {**_CLAUDE_HEADERS, "Authorization": f"Bearer {token}"}
-    with httpx.Client(timeout=12.0) as client:
-        ur = client.get(f"{_ANTHROPIC}/api/oauth/usage", headers=headers)
-        if ur.status_code == 401:
-            raise UsageError("token expired — re-authenticate this account")
-        ur.raise_for_status()
-        usage = ur.json()
-        profile: dict = {}
-        try:
-            pr = client.get(f"{_ANTHROPIC}/api/oauth/profile", headers=headers)
-            if pr.status_code == 200:
-                profile = pr.json()
-        except httpx.HTTPError:
-            pass
+    try:
+        usage = _get_json(f"{_ANTHROPIC}/api/oauth/usage", headers)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            raise UsageError("token expired — re-authenticate this account") from exc
+        raise UsageError(f"usage request failed ({exc.code})") from exc
+    profile: dict = {}
+    try:
+        profile = _get_json(f"{_ANTHROPIC}/api/oauth/profile", headers)
+    except urllib.error.HTTPError:
+        pass
 
     five = usage.get("five_hour") or {}
     seven = usage.get("seven_day") or {}
