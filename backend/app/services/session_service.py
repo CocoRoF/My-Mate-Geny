@@ -177,14 +177,20 @@ class SessionService:
         api_key = self._providers.resolved_api_key(provider_name)
         provider = get_provider(provider_name)
 
-        # Multi-account pool: lease an isolated account when the pool is enabled.
+        # Multi-account pool: lease an account when the pool is enabled. Each
+        # account's auth is injected per turn so switching accounts/providers
+        # always uses the right credentials.
         lease = self._pool.acquire(provider_name) if self._pool else None
         extra_env: dict[str, str] = {}
         if lease is not None:
-            extra_env["HOME"] = lease.home
             if provider_name == "claude":
-                extra_env["CLAUDE_CONFIG_DIR"] = lease.config_dir
+                if lease.oauth_token:
+                    # Pooled Claude account -> inject its long-lived token.
+                    extra_env["CLAUDE_CODE_OAUTH_TOKEN"] = lease.oauth_token
+                # Primary (host) account: no override -> uses this machine's auth.
             elif provider_name == "codex":
+                # Codex isolates via HOME + CODEX_HOME (device-auth creds live there).
+                extra_env["HOME"] = lease.home
                 extra_env["CODEX_HOME"] = lease.config_dir
             if lease.auth_mode == "api_key" and lease.api_key:
                 api_key = lease.api_key

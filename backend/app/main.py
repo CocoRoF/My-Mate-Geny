@@ -25,6 +25,7 @@ from app.routers import (
     config as config_router,
     connections,
     execute,
+    git,
     health,
     history,
     providers,
@@ -33,6 +34,7 @@ from app.routers import (
     workspaces,
 )
 from app.services.connection_service import ConnectionService
+from app.services.git_service import GitService
 from app.services.provider_service import ProviderService
 from app.services.session_service import SessionService
 from app.services.workspace_service import WorkspaceService
@@ -54,6 +56,7 @@ async def lifespan(app: FastAPI):
     app.state.account_pool = account_pool
     provider_service = ProviderService(db, vault)
     connection_service = ConnectionService(db, vault)
+    app.state.git_service = GitService(db, vault)
     workspace_service = WorkspaceService(connection_service)
     session_service = SessionService(db, provider_service, workspace_service, pool=account_pool)
 
@@ -93,6 +96,7 @@ for r in (
     execute.router,
     history.router,
     usage.router,
+    git.router,
 ):
     app.include_router(r)
 

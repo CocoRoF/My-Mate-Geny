@@ -17,7 +17,7 @@ import asyncio
 import os
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -68,10 +68,15 @@ class AccountSnapshot:
     last_used: float = 0.0
     total_leases: int = 0
     consecutive_failures: int = 0
+    utilization: float = 0.0  # plan usage % (0..100) for usage-based balancing
 
     @property
     def load(self) -> float:
         return self.in_flight / max(1, self.max_concurrency)
+
+    @property
+    def remaining(self) -> float:
+        return max(0.0, 100.0 - self.utilization)
 
 
 @dataclass
@@ -125,6 +130,12 @@ def _lru(cands: list[AccountSnapshot]) -> AccountSnapshot:
     return min(cands, key=lambda a: (a.last_used, a.total_leases, a.id))
 
 
+def _most_remaining(cands: list[AccountSnapshot]) -> AccountSnapshot:
+    # Pick the account with the most plan headroom (lowest utilization), then
+    # the least busy. This spreads load toward accounts with quota to spare.
+    return min(cands, key=lambda a: (round(a.utilization, 2), round(a.load, 6), a.last_used, a.id))
+
+
 def choose(
     accounts: list[AccountSnapshot], *, strategy: str, now: float, state: BalancerState
 ) -> AccountSnapshot | None:
@@ -137,6 +148,8 @@ def choose(
         return _weighted(cands, state)
     if strategy == "least_recently_used":
         return _lru(cands)
+    if strategy == "most_remaining":
+        return _most_remaining(cands)
     return _least_busy(cands)
 
 
@@ -326,10 +339,26 @@ class AccountStore:
             (error[:300], account_id),
         )
 
+    def set_oauth_token(self, account_id: str, token: str) -> None:
+        """Store a Claude long-lived token (from `claude setup-token`)."""
+        ref = self._vault.put("account", f"{account_id}.token", token)
+        self._db.execute(
+            "UPDATE provider_accounts SET secret_ref=?, status='ready', updated_at=? WHERE id=?",
+            (ref, now_iso(), account_id),
+        )
+
+    def oauth_token(self, account: dict) -> str | None:
+        ref = account.get("secret_ref")
+        if ref and self._vault.exists(ref):
+            return self._vault.read(ref)
+        return None
+
     def usable(self, account: dict) -> bool:
-        if account["auth_mode"] == "api_key":
-            return bool(account.get("secret_ref"))
-        # oauth: credentials file present in the account's config dir
+        # A stored secret (api key or long-lived OAuth token) makes it usable.
+        ref = account.get("secret_ref")
+        if ref and self._vault.exists(ref):
+            return True
+        # Otherwise a credentials file in the account's isolated dir (codex).
         cfg = account_config_dir(account["provider"], account["id"])
         return any((cfg / f).exists() for f in (".credentials.json", "credentials.json", "auth.json"))
 
@@ -346,6 +375,8 @@ class Lease:
     home: str
     config_dir: str
     api_key: str = ""
+    oauth_token: str = ""  # Claude long-lived token (CLAUDE_CODE_OAUTH_TOKEN)
+    is_primary: bool = False
     released: bool = False
 
 
@@ -361,6 +392,8 @@ class AccountPool:
         # In-memory health for the synthetic "primary" (host) account per provider.
         self._primary_health: dict[str, dict] = {}
         self._primary_last_used: dict[str, float] = {}
+        # Plan-utilization cache for usage-based balancing: id -> (percent, fetched_at).
+        self._util_cache: dict[str, tuple[float, float]] = {}
 
     # ---- primary (host) account: the subscription already on this machine ----
 
@@ -412,6 +445,31 @@ class AccountPool:
             consecutive_failures=acc["consecutive_failures"],
         )
 
+    def _utilization(self, provider: str, acc_id: str, *, primary: bool = False, account: dict | None = None) -> float:
+        """Plan utilization % for an account, cached 60s (usage-based balancing)."""
+        now = time.time()
+        cached = self._util_cache.get(acc_id)
+        if cached and now - cached[1] < 60:
+            return cached[0]
+        util = cached[0] if cached else 0.0
+        try:
+            from app.providers import subscription as sub
+
+            if provider == "claude":
+                if primary:
+                    util = sub.max_utilization(sub.claude_subscription(self._host_cred_dir(provider)))
+                else:
+                    tok = self._store.oauth_token(account) if account else None
+                    if tok:
+                        util = sub.max_utilization(sub.claude_usage_from_token(tok))
+            elif provider == "codex":
+                cdir = self._host_cred_dir(provider) if primary else str(account_config_dir(provider, acc_id))
+                util = sub.max_utilization(sub.codex_subscription(cdir))
+        except Exception:
+            pass
+        self._util_cache[acc_id] = (util, now)
+        return util
+
     def acquire(self, provider: str) -> Lease | None:
         cfg = self._store.pool(provider)
         if not cfg["enabled"]:
@@ -420,10 +478,28 @@ class AccountPool:
         by_id = {a["id"]: a for a in accounts}
         pid = self._primary_id(provider)
         now = time.time()
-        with self._lock:
-            snaps = [self._snapshot(a, now) for a in accounts]
+        usage_based = cfg["strategy"] == "most_remaining"
+
+        # Compute utilization OUTSIDE the lock (cached; may do a short HTTP call).
+        util_map: dict[str, float] = {}
+        if usage_based:
             if self._host_usable(provider):
-                snaps.insert(0, self._primary_snapshot(provider, now))
+                util_map[pid] = self._utilization(provider, pid, primary=True)
+            for a in accounts:
+                util_map[a["id"]] = self._utilization(provider, a["id"], account=a)
+
+        with self._lock:
+            snaps: list[AccountSnapshot] = []
+            if self._host_usable(provider):
+                s = self._primary_snapshot(provider, now)
+                if usage_based:
+                    s = replace(s, utilization=util_map.get(pid, 0.0))
+                snaps.append(s)
+            for a in accounts:
+                s = self._snapshot(a, now)
+                if usage_based:
+                    s = replace(s, utilization=util_map.get(a["id"], 0.0))
+                snaps.append(s)
             if not snaps:
                 return None
             pick = choose(snaps, strategy=cfg["strategy"], now=now, state=self._state)
@@ -441,10 +517,12 @@ class AccountPool:
                 auth_mode="oauth",
                 home=os.path.expanduser("~"),
                 config_dir=self._host_cred_dir(provider),
-                api_key="",
+                is_primary=True,
             )
         acc = by_id[pick.id]
         self._store.mark_used(acc["id"])
+        token = self._store.oauth_token(acc) if acc["auth_mode"] == "oauth" else ""
+        api_key = self._store.api_key(acc) if acc["auth_mode"] == "api_key" else ""
         return Lease(
             account_id=acc["id"],
             label=acc["label"],
@@ -452,7 +530,8 @@ class AccountPool:
             auth_mode=acc["auth_mode"],
             home=str(account_home(provider, acc["id"])),
             config_dir=str(account_config_dir(provider, acc["id"])),
-            api_key=self._store.api_key(acc) or "",
+            api_key=api_key or "",
+            oauth_token=token or "",
         )
 
     def report(self, lease: Lease | None, *, ok: bool, code: str | None = None, error: str | None = None) -> None:
@@ -513,6 +592,7 @@ class AccountPool:
                 "in_flight": snap.in_flight,
                 "eligible": reason is None,
                 "ineligible_reason": reason,
+                "utilization": self._utilization(provider, snap.id, primary=True),
                 "total_leases": 0,
                 "total_failures": 0,
                 "consecutive_failures": snap.consecutive_failures,
@@ -537,6 +617,7 @@ class AccountPool:
                 "in_flight": snap.in_flight,
                 "eligible": reason is None,
                 "ineligible_reason": reason,
+                "utilization": self._utilization(provider, a["id"], account=a) if snap.usable else None,
                 "total_leases": a["total_leases"],
                 "total_failures": a["total_failures"],
                 "consecutive_failures": a["consecutive_failures"],

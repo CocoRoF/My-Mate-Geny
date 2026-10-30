@@ -19,6 +19,7 @@ import ProviderOAuthModal from "./ProviderOAuthModal";
 import UsageModal from "../usage/UsageModal";
 
 const STRATEGIES = [
+  { id: "most_remaining", label: "Most remaining usage" },
   { id: "least_busy", label: "Least busy" },
   { id: "round_robin", label: "Round robin" },
   { id: "weighted", label: "Weighted" },
@@ -186,6 +187,20 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
                 {a.usable && a.eligible && <span className="pill bg-success/10 text-success">eligible</span>}
                 {a.usable && !a.eligible && (
                   <span className="pill bg-surface-3 text-content-faint">{a.ineligible_reason}</span>
+                )}
+                {a.utilization != null && a.usable && (
+                  <span
+                    className={`pill ${
+                      a.utilization >= 90
+                        ? "bg-danger/15 text-danger"
+                        : a.utilization >= 70
+                          ? "bg-warning/15 text-warning"
+                          : "bg-success/12 text-success"
+                    }`}
+                    title="Plan usage"
+                  >
+                    {Math.round(a.utilization)}% used
+                  </span>
                 )}
                 <span className="ml-auto text-[11px] text-content-faint">
                   {a.in_flight}/{a.max_concurrency} busy{!a.primary && ` · ${a.total_leases} leases`}

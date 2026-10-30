@@ -131,6 +131,10 @@ async def account_oauth_complete(
         raise HTTPException(status_code=400, detail="complete step is only for claude")
     cfg = account_config_dir(provider, account_id)
     res = request.app.state.oauth.complete_claude(body.code, key=account_id, check_dir=str(cfg))
-    if res.get("ok"):
-        request.app.state.account_store.update(account_id, status="ready")
-    return res
+    store = request.app.state.account_store
+    if res.get("ok") and res.get("token"):
+        # Long-lived token -> vault; injected as CLAUDE_CODE_OAUTH_TOKEN per turn.
+        store.set_oauth_token(account_id, res["token"])
+    elif res.get("ok"):
+        store.update(account_id, status="ready")
+    return {"ok": res.get("ok", False), "error": res.get("error", "")}

@@ -35,6 +35,8 @@ _ANSI = re.compile(
     rb"|\x1b[>=@-Z\\-_]"  # misc 2-byte
 )
 _CODE_RE = re.compile(r"\b([A-Z0-9]{4}-[A-Z0-9]{4,6})\b")
+# Long-lived token printed by `claude setup-token` (sk-ant-oat01-...).
+_TOKEN_RE = re.compile(rb"sk-ant-oat[0-9A-Za-z._-]{20,}")
 _CODEX_URL = "https://auth.openai.com/codex/device"
 # Claude prints its URL inside an OSC-8 hyperlink: ESC]8;id=..;<URL>ESC\
 _CLAUDE_OSC = re.compile(rb"\x1b\]8;[^;]*;(https://claude\.com/[^\x1b\x07]+)")
@@ -52,6 +54,7 @@ class LoginSession:
     master_fd: int | None = None
     url: str = ""
     user_code: str = ""
+    token: str = ""
     output: str = ""
     done: bool = False
     ok: bool = False
@@ -225,6 +228,10 @@ class OAuthManager:
                                 s.url = (m.group(1) if m.re is _CLAUDE_OSC else m.group(0)).decode(
                                     errors="replace"
                                 )
+                        if not s.token:
+                            tm = _TOKEN_RE.search(buf)
+                            if tm:
+                                s.token = tm.group(0).decode(errors="replace")
                 if proc.poll() is not None:
                     break
             proc.wait()
@@ -256,10 +263,13 @@ class OAuthManager:
         deadline = time.time() + timeout
         while time.time() < deadline:
             with s.lock:
+                if s.token:
+                    return {"ok": True, "error": "", "token": s.token}
                 if s.done or logged_in():
-                    return {"ok": s.ok or logged_in(), "error": s.error}
+                    return {"ok": s.ok or logged_in(), "error": s.error, "token": s.token}
             time.sleep(0.3)
-        return {"ok": logged_in(), "error": "" if logged_in() else "timed out"}
+        with s.lock:
+            return {"ok": bool(s.token) or logged_in(), "error": "" if (s.token or logged_in()) else "timed out", "token": s.token}
 
     # ---- shared ----
 

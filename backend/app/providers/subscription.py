@@ -76,6 +76,35 @@ def _claude_plan(profile: dict, oauth: dict) -> str:
     return f"Claude {sub.capitalize()}" if sub else "Claude"
 
 
+def max_utilization(sub: dict | None) -> float:
+    """Highest window utilization % across a normalized subscription dict."""
+    if not sub or not sub.get("available"):
+        return 0.0
+    vals = [float(w.get("percent") or 0) for w in sub.get("windows", [])]
+    return max(vals) if vals else 0.0
+
+
+def claude_usage_from_token(token: str) -> dict[str, Any]:
+    """Minimal usage (windows only) from a raw Claude OAuth/long-lived token."""
+    headers = {
+        "anthropic-beta": "oauth-2025-04-20",
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
+    usage = _get_json(f"{_ANTHROPIC}/api/oauth/usage", headers)
+    five = usage.get("five_hour") or {}
+    seven = usage.get("seven_day") or {}
+    return {
+        "provider": "claude",
+        "available": True,
+        "windows": [
+            _window("Session (5hr)", five.get("utilization"), five.get("resets_at")),
+            _window("Weekly (7 day)", seven.get("utilization"), seven.get("resets_at")),
+        ],
+    }
+
+
 def claude_subscription(cred_dir: str) -> dict[str, Any]:
     oauth = _read_claude_oauth(cred_dir)
     headers = {

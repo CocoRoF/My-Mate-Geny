@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # Where remote workspaces get sshfs-mounted on this runtime host.
     mount_root: str = "~/.hr-harnessor/mounts"
 
+    # Where Git repos are cloned (becomes a local workspace).
+    repos_root: str = "~/.hr-harnessor/repos"
+
     # Provider CLI binaries
     claude_binary: str = "claude"
     codex_binary: str = "codex"
@@ -77,6 +80,10 @@ class Settings(BaseSettings):
     @property
     def mount_root_path(self) -> Path:
         return Path(os.path.expanduser(self.mount_root)).resolve()
+
+    @property
+    def repos_root_path(self) -> Path:
+        return Path(os.path.expanduser(self.repos_root)).resolve()
 
     @property
     def home_dir(self) -> Path:

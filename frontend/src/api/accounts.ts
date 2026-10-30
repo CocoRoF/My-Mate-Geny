@@ -14,6 +14,7 @@ export interface Account {
   in_flight: number;
   eligible: boolean;
   ineligible_reason: string | null;
+  utilization?: number | null;
   total_leases: number;
   total_failures: number;
   consecutive_failures: number;

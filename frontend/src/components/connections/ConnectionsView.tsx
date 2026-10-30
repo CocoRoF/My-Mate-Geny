@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useConnectionStore } from "../../stores/connectionStore";
 import { connectionStatus } from "../../api/connections";
 import ConnectionForm from "./ConnectionForm";
+import GitAccounts from "./GitAccounts";
 import Icon from "../ui/Icon";
 
 export default function ConnectionsView() {
@@ -69,6 +70,8 @@ export default function ConnectionsView() {
             );
           })}
         </div>
+
+        <GitAccounts />
       </div>
     </div>
   );

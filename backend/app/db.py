@@ -72,6 +72,16 @@ CREATE TABLE IF NOT EXISTS events (
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS git_accounts (
+    id         TEXT PRIMARY KEY,
+    provider   TEXT NOT NULL,              -- github | gitlab
+    label      TEXT NOT NULL,
+    host       TEXT,                        -- for self-hosted gitlab
+    username   TEXT,
+    token_ref  TEXT NOT NULL,               -- vault id for the PAT
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS provider_accounts (
     id            TEXT PRIMARY KEY,
     provider      TEXT NOT NULL,              -- claude | codex

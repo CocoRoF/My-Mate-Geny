@@ -9,7 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 #  - curl : healthcheck + nodesource bootstrap
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       sshfs openssh-client fuse3 curl ca-certificates gnupg \
+       git sshfs openssh-client fuse3 curl ca-certificates gnupg \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
