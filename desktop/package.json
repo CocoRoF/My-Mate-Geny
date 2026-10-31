@@ -1,10 +1,10 @@
 {
   "name": "hr-harnessor-desktop",
-  "productName": "hr-harnessor",
-  "version": "0.2.0",
-  "description": "hr·harnessor agent console — desktop app",
+  "productName": "My Mate Geny",
+  "version": "0.3.0",
+  "description": "My Mate Geny — agent console and desktop Mate",
   "main": "src/main.js",
-  "author": "hr-harnessor <noreply@hrletsgo.me>",
+  "author": "My Mate Geny <noreply@hrletsgo.me>",
   "homepage": "https://agent.hrletsgo.me",
   "license": "UNLICENSED",
   "private": true,
@@ -20,35 +20,40 @@
   },
   "build": {
     "appId": "me.hrletsgo.harnessor",
-    "productName": "hr-harnessor",
-    "copyright": "hr-harnessor",
+    "productName": "My Mate Geny",
+    "copyright": "My Mate Geny",
     "directories": { "buildResources": "build", "output": "dist" },
-    "files": ["src/**/*", "package.json"],
+    "files": ["src/**/*", "build/icon.png", "package.json"],
     "afterPack": "build/after-pack.js",
     "publish": null,
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
-      "artifactName": "hr-harnessor-${version}-windows-x64-setup.${ext}"
+      "artifactName": "my-mate-geny-${version}-windows-x64-setup.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "hr-harnessor"
+      "shortcutName": "My Mate Geny",
+      "uninstallDisplayName": "My Mate Geny"
     },
     "mac": {
       "category": "public.app-category.developer-tools",
       "identity": null,
       "hardenedRuntime": false,
-      "artifactName": "hr-harnessor-${version}-macos-${arch}.${ext}"
+      "artifactName": "my-mate-geny-${version}-macos-${arch}.${ext}",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "My Mate Geny uses the microphone when you talk to your Mate (push-to-talk)."
+      }
     },
     "linux": {
       "target": ["AppImage", "deb"],
       "category": "Development",
-      "maintainer": "hr-harnessor <noreply@hrletsgo.me>",
-      "synopsis": "Agent console for Claude Code & Codex",
-      "artifactName": "hr-harnessor-${version}-linux-${arch}.${ext}"
+      "maintainer": "My Mate Geny <noreply@hrletsgo.me>",
+      "synopsis": "Agent console for Claude Code & Codex, with a desktop Mate",
+      "executableArgs": ["--ozone-platform=x11"],
+      "artifactName": "my-mate-geny-${version}-linux-${arch}.${ext}"
     },
     "deb": { "depends": ["libnotify4", "libxtst6", "libnss3"] }
   }

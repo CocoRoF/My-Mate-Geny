@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">hr-harnessor</string>
-    <string name="title_activity_main">hr-harnessor</string>
+    <string name="app_name">My Mate Geny</string>
+    <string name="title_activity_main">My Mate Geny</string>
     <string name="package_name">me.hrletsgo.harnessor</string>
     <string name="custom_url_scheme">me.hrletsgo.harnessor</string>
 </resources>

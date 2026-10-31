@@ -26,7 +26,13 @@ from app.config import settings
 _API = "https://api.github.com"
 _META_TTL = 60.0
 
-# file name -> (platform, arch, kind, label)
+# The product as shown on the Download page (docs/mate.md §0).
+PRODUCT_NAME = "My Mate Geny"
+
+# file name -> (platform, arch, kind, label). Matched on the suffix only, so
+# both artifact names are recognised: `my-mate-geny-<v>-…` (since 0.3) and the
+# old `hr-harnessor-<v>-…` still in the published release until the next
+# build replaces them (one per platform is offered, the newest; see latest()).
 _PATTERNS: list[tuple[re.Pattern, str, str, str, str]] = [
     (re.compile(r"windows-x64-setup\.exe$"), "windows", "x64", "installer", "Windows installer (x64)"),
     (re.compile(r"macos-arm64\.dmg$"), "macos", "arm64", "dmg", "macOS · Apple Silicon"),
@@ -64,7 +70,7 @@ class DownloadService:
             "Authorization": f"Bearer {settings.github_token}",
             "Accept": accept,
             "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "hr-harnessor",
+            "User-Agent": "hr-harnessor",  # internal id, unchanged
         }
 
     def _get(self, url: str) -> Any:
@@ -125,6 +131,7 @@ class DownloadService:
             })
         out = {
             "available": bool(assets),
+            "product": PRODUCT_NAME,
             "version": meta.get("version") or rel.get("name") or rel.get("tag_name"),
             "commit": meta.get("commit"),
             "commit_message": meta.get("commit_message"),

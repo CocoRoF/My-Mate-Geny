@@ -38,4 +38,11 @@
     <!-- Take a photo straight from the attach menu -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- Talking to the Mate (push-to-talk, getUserMedia audio). Capacitor's
+         BridgeWebChromeClient.onPermissionRequest asks for both at runtime
+         when the page requests the microphone and grants the WebView only
+         if all are granted, so both must be declared. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 </manifest>

@@ -9,8 +9,8 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // CI passes -PhrhVersionCode=<run number> -PhrhVersionName=<x.y.z>
         // (not -PversionCode: a project property of that name shadows the DSL's)
-        versionCode = Integer.parseInt((project.findProperty("hrhVersionCode") ?: "1").toString())
-        versionName = (project.findProperty("hrhVersionName") ?: "0.2.0-dev").toString()
+        versionCode = Integer.parseInt((project.findProperty("hrhVersionCode") ?: "3").toString())
+        versionName = (project.findProperty("hrhVersionName") ?: "0.3.0-dev").toString()
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

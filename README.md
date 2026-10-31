@@ -1,4 +1,6 @@
-# hr-harnessor
+# My Mate Geny
+
+*(formerly hr-harnessor — repo, directories, app ids and storage keys keep that name.)*
 
 A self-hosted **agent harness service** — chat-driven, provider-pluggable, runs on your
 local **2223** server and can operate folders on remote servers (2222 / 2224) too.
@@ -7,7 +9,7 @@ local **2223** server and can operate folders on remote servers (2222 / 2224) to
 
 ## What it is
 
-hr-harnessor turns coding agents into a chat service you control:
+My Mate Geny turns coding agents into a chat service you control:
 
 - **Engines** — Claude Code (`claude` CLI) and Codex (`codex` CLI), switchable mid-chat with
   the conversation handed over. Claude runs as a **persistent engine** per chat (background
@@ -57,6 +59,16 @@ hr-harnessor turns coding agents into a chat service you control:
 ```
 
 Two orthogonal axes compose a session: **Engine × Workspace × conversation**.
+
+## Mate
+
+On top of the chats sits the **Mate**: an avatar you talk to (video, photo or Live2D body,
+persona, voice in and out). It does not do the work itself — it is a secretary that hands
+work to the chat sessions the way you would, follows up and reports back. In the console it
+is the **Mate** item above **Chat**; the desktop app also puts it on the desktop (a
+transparent always-on-top avatar with a hover action bar, a quick chat card on
+**Ctrl/Cmd+Shift+G**, a mate chat window, tray and start at login), and the Android app
+runs it in-page with the microphone. Design contract: [docs/mate.md](docs/mate.md).
 
 ## Quick start (dev)
 
