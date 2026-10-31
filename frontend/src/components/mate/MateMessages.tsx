@@ -2,7 +2,7 @@
  * The mate conversation as bubbles: her lines (emotion tags stripped, light markdown, streaming), what she did with
  * her tools as small activity chips, delegation results as compact cards linking to the worker chat.
  */
-import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo } from "react";
 import type { FlowItem, ToolActivity, Turn } from "../../stores/chatStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUIStore } from "../../stores/uiStore";
@@ -10,6 +10,9 @@ import { parseEmotionText } from "../../mate/emotion";
 import { currentSurface, desktopMate } from "../../mate/desktop";
 import Icon, { type IconName } from "../ui/Icon";
 import MiniMarkdown from "./MiniMarkdown";
+import { useMateChat } from "../../mate/useMateConversation";
+import { useHistoryScroll } from "../../hooks/useHistoryScroll";
+import HistoryEdge from "../chat/HistoryEdge";
 
 /** open a worker chat: in the console's Chat view, or (desktop Mate windows) in the console window */
 export function openWorkerChat(sid: string) {
@@ -233,31 +236,14 @@ export default function MateMessages({
   emptyText?: string;
   className?: string;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const stick = useRef(true);
-  const [showJump, setShowJump] = useState(false);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [turns]);
-  const first = turns[0]?.key;
-  useEffect(() => {
-    stick.current = true;
-    const el = ref.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [first]);
-  const onScroll = () => {
-    const el = ref.current;
-    if (!el) return;
-    const at = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-    stick.current = at;
-    setShowJump(!at);
-  };
+  // (the mate's store: older turns load as the reader scrolls up)
+  const { ref, onScroll, showJump, jump, paging, loadOlder } = useHistoryScroll(useMateChat, 100);
 
   return (
     <div className={`relative min-h-0 flex-1 ${className}`}>
       <div ref={ref} onScroll={onScroll} className="h-full overflow-y-auto overscroll-contain">
         <div className={`mx-auto flex max-w-2xl flex-col ${compact ? "gap-2.5 px-3 py-3" : "gap-3.5 px-4 py-5"}`}>
+          <HistoryEdge paging={paging} empty={turns.length === 0} onRetry={loadOlder} />
           {turns.length === 0 && emptyText && <p className="pt-10 text-center text-sm text-content-faint">{emptyText}</p>}
           {turns.map((t) => {
             if (t.role === "user") {
@@ -283,10 +269,7 @@ export default function MateMessages({
       </div>
       {showJump && (
         <button
-          onClick={() => {
-            stick.current = true;
-            ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: "smooth" });
-          }}
+          onClick={jump}
           className="absolute bottom-2 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 rounded-full border border-border bg-surface-2 px-3 py-1 text-[11.5px] text-content-dim shadow-float hover:text-content"
         >
           <Icon name="arrow-up" size={12} className="rotate-180" /> Latest

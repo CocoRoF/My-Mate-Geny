@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { History } from "../api/sessions";
+import { getOlderPage, type History, type HistoryBefore, type HistoryPage, type OlderPage } from "../api/sessions";
 import type { Attachment, ChatMessage, CliInfo, Compaction, ContextInfo, ProviderEvent, TaskInfo, TurnChanges } from "../types";
 
 export interface ToolActivity {
@@ -101,7 +101,23 @@ export interface Turn {
   meta?: MessageMeta; // user turns: via a mate, internal messages
 }
 
+/** Paged history (backend services/history_page.py): the newest turns are
+ * loaded first, older ones as the reader scrolls up. */
+export interface Paging {
+  paged: boolean; // false: the whole chat came at once (nothing older to load)
+  cursor: string | null; // start of the loaded range (null = the beginning)
+  hasMore: boolean;
+  loading: boolean;
+  error: string | null;
+  baseEid: number; // highest eid the last (re)load covered; newer ones came live
+}
+
+/** Turns of the first page; each older page. */
+export const FIRST_TURNS = 5;
+export const OLDER_TURNS = 10;
+
 interface ChatState {
+  sid: string | null; // the session this store shows
   turns: Turn[];
   isStreaming: boolean; // a turn is running server-side (any tab)
   runningCostUsd: number;
@@ -111,8 +127,23 @@ interface ChatState {
   lastCompaction: Compaction | null;
   connection: "connecting" | "open" | "reconnecting";
   bounced: Bounced[]; // steers the turn could no longer take -> composer queues them
-  reset: () => void;
-  loadHistory: (h: History) => void;
+  paging: Paging;
+  older: HistoryBefore | null; // the not-yet-loaded part of the chat: cost, files, todos
+  // Events that belong to a turn not loaded yet (a background subagent of an
+  // old turn reporting): kept until that turn is loaded. `detached` shows
+  // them meanwhile, under the launching calls of still-running background
+  // work (`pinnedTools`, sent with the first page).
+  orphans: ProviderEvent[];
+  detached: Turn | null;
+  pinnedTools: ReadonlySet<string>;
+  openSeq: number; // bumps when a chat is opened (lists jump to its end)
+  opened: boolean;
+  gen: number; // bumps on every (re)load: stale older pages are dropped
+  reset: (sid?: string | null) => void;
+  loadHistory: (h: History | HistoryPage) => void;
+  /** Prepend the previous page. `beforeApply` runs right before the turns
+   * change (lists measure their scroll height there). */
+  loadOlder: (beforeApply?: () => void) => Promise<void>;
   pushUser: (text: string, attachments: Attachment[], clientMsgId: string) => void;
   pushSteer: (text: string, attachments: Attachment[], clientMsgId: string) => void;
   takeBounced: () => Bounced[];
@@ -473,7 +504,11 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
 
 /** Rebuild turns from persisted history: user messages and events merged on
  * one timeline (not paired by index, which drifts on errors/notices). */
-function reconstruct(messages: ChatMessage[], events: ProviderEvent[]): Turn[] {
+function reconstruct(
+  messages: ChatMessage[],
+  events: ProviderEvent[],
+  park?: (turns: Turn[], ev: ProviderEvent) => boolean,
+): Turn[] {
   type Item = { at: string; order: number; eid: number; user?: ChatMessage; ev?: ProviderEvent };
   const items: Item[] = [
     ...messages
@@ -513,10 +548,78 @@ function reconstruct(messages: ChatMessage[], events: ProviderEvent[]): Turn[] {
         meta: it.user.meta || undefined,
       });
     } else if (it.ev) {
+      if (park && park(turns, it.ev)) continue;
       reduce(turns, it.ev);
     }
   }
   return turns;
+}
+
+// ---- paging: events of turns that aren't loaded ------------------------------
+
+/** The tool call an event reports into (it can't be applied without it). */
+function anchorOf(ev: ProviderEvent): string | null {
+  const d = ev.data as Record<string, any>;
+  switch (ev.type) {
+    case "tool.use":
+    case "subagent.text":
+    case "subagent.thinking":
+      return d.parent ? String(d.parent) : null;
+    case "tool.result":
+      return d.id ? String(d.id) : null;
+    case "task.update":
+      return d.tool_use_id ? String(d.tool_use_id) : null;
+  }
+  return null;
+}
+
+const isOrphan = (turns: Turn[], ev: ProviderEvent) => {
+  const a = anchorOf(ev);
+  return !!a && turnOf(turns, a) < 0;
+};
+
+/** Apply a parked event to the detached holder when it belongs there (a
+ * pinned launch, or a step under one). */
+function intoHolder(holder: Turn | null, ev: ProviderEvent): Turn | null {
+  const launch = ev.type === "tool.use" && !(ev.data as Record<string, any>).parent;
+  const a = anchorOf(ev);
+  if (!launch && (!holder || !a || !holder.tools.some((t) => t.id === a))) return holder;
+  const ts: Turn[] = holder ? [{ ...holder, complete: false }] : [];
+  reduce(ts, ev);
+  const t = ts[ts.length - 1];
+  return t ? { ...t, key: "detached", complete: true, status: "done" } : holder;
+}
+
+const byEid = (a: ProviderEvent, b: ProviderEvent) => (a.eid || 0) - (b.eid || 0);
+
+function mergeOrphans(...lists: ProviderEvent[][]): ProviderEvent[] {
+  const seen = new Set<number>();
+  const out: ProviderEvent[] = [];
+  for (const l of lists)
+    for (const e of l) {
+      if (e.eid) {
+        if (seen.has(e.eid)) continue;
+        seen.add(e.eid);
+      }
+      out.push(e);
+    }
+  return out.sort(byEid);
+}
+
+/** The loaded turns plus the detached holder (subagent lists, the panel). */
+export const withDetached = (turns: Turn[], detached: Turn | null) => (detached ? [...turns, detached] : turns);
+
+/** An older page's last turn still open: close it the way the full replay
+ * would when the next turn (`next`, the first loaded one) begins. */
+function closeTrailing(turns: Turn[], next: Turn | undefined) {
+  if (!hasLiveTurn(turns)) return;
+  const t = liveTurn(turns, Date.now());
+  if (next?.role === "assistant" && next.trigger === "background") {
+    finish(t, next.startedAt || t.startedAt || Date.now()); // (session.start)
+  } else {
+    finish(t, t.startedAt || Date.now()); // (a user message)
+    t.status = t.status === "running" ? "done" : t.status;
+  }
 }
 
 /** A terminal event's API-equivalent cost for this turn (the backend serves
@@ -532,8 +635,22 @@ const totalCost = (turns: Turn[]) => turns.reduce((n, t) => n + (t.costUsd || 0)
 
 /** A conversation store: the Chat view's (useChatStore) and, separately, the
  * Mate's (so both can be live at once). Same reducer, same turn model. */
+const NO_PAGING: Paging = { paged: false, cursor: null, hasMore: false, loading: false, error: null, baseEid: 0 };
+const NO_PINS: ReadonlySet<string> = new Set();
+
+/** A page's reconstruct parks events whose tool call is in an older page. */
+function parker(on: boolean, parked: ProviderEvent[]) {
+  if (!on) return undefined;
+  return (turns: Turn[], ev: ProviderEvent) => {
+    if (!isOrphan(turns, ev)) return false;
+    parked.push(ev);
+    return true;
+  };
+}
+
 export function createChatStore() {
   return create<ChatState>((set, get) => ({
+  sid: null,
   turns: [],
   isStreaming: false,
   runningCostUsd: 0,
@@ -543,26 +660,111 @@ export function createChatStore() {
   lastCompaction: null,
   connection: "connecting",
   bounced: [],
+  paging: NO_PAGING,
+  older: null,
+  orphans: [],
+  detached: null,
+  pinnedTools: NO_PINS,
+  openSeq: 0,
+  opened: false,
+  gen: 0,
 
-  reset: () =>
-    set({ turns: [], isStreaming: false, runningCostUsd: 0, lastEid: 0, info: null, bounced: [], context: null, lastCompaction: null }),
+  reset: (sid = null) =>
+    set((s) => ({
+      sid,
+      turns: [],
+      isStreaming: false,
+      runningCostUsd: 0,
+      lastEid: 0,
+      info: null,
+      bounced: [],
+      context: null,
+      lastCompaction: null,
+      paging: NO_PAGING,
+      older: null,
+      orphans: [],
+      detached: null,
+      pinnedTools: NO_PINS,
+      opened: false,
+      gen: s.gen + 1,
+    })),
 
   loadHistory: (h) => {
-    const turns = reconstruct(h.messages, h.events);
+    // A paged response (?turns= / ?since=) or the whole chat (the old one).
+    const page = "page" in h && h.page ? (h as HistoryPage) : null;
+    const more = !!page?.page.has_more;
+    const parked: ProviderEvent[] = [];
+    const turns = reconstruct(h.messages, h.events, parker(more, parked));
     if (!h.running && hasLiveTurn(turns)) {
       const t = liveTurn(turns, Date.now());
       finish(t, t.endedAt || t.startedAt || Date.now());
       t.status = "interrupted";
       t.error = { code: "turn.lost", message: "The run ended unexpectedly" };
     }
-    const lastEid = h.events.reduce((m, e) => Math.max(m, e.eid || 0), 0);
-    set({
+    const lastEid = Math.max(h.events.reduce((m, e) => Math.max(m, e.eid || 0), 0), page?.page.last_eid || 0);
+    const pinned = page?.summary?.pinned || [];
+    const orphans = more ? mergeOrphans(pinned, parked) : [];
+    const older = page ? page.before : null;
+    set((s) => ({
       turns,
       lastEid,
       isStreaming: h.running,
-      runningCostUsd: totalCost(turns),
+      runningCostUsd: (older?.cost_usd || 0) + totalCost(turns),
       info: (h.session?.cli_info as CliInfo) || null,
-      ...contextOf(h.events),
+      ...(page
+        ? { context: page.summary?.context ?? null, lastCompaction: page.summary?.last_compaction ?? null }
+        : contextOf(h.events)),
+      older,
+      orphans,
+      detached: orphans.reduce(intoHolder, null as Turn | null),
+      pinnedTools: new Set(pinned.filter((e) => e.type === "tool.use").map((e) => String(e.data.id))),
+      paging: { paged: !!page, cursor: page?.page.cursor ?? null, hasMore: more, loading: false, error: null, baseEid: lastEid },
+      openSeq: s.opened ? s.openSeq : s.openSeq + 1,
+      opened: true,
+      gen: s.gen + 1,
+    }));
+  },
+
+  loadOlder: async (beforeApply) => {
+    const s0 = get();
+    const { sid, gen } = s0;
+    const cursor = s0.paging.cursor;
+    if (!sid || !cursor || !s0.paging.hasMore || s0.paging.loading) return;
+    set({ paging: { ...s0.paging, loading: true, error: null } });
+    let page: OlderPage;
+    try {
+      page = await getOlderPage(sid, cursor, OLDER_TURNS);
+    } catch (e) {
+      if (get().gen === gen) set((s) => ({ paging: { ...s.paging, loading: false, error: String((e as Error)?.message || e) } }));
+      return;
+    }
+    if (get().gen !== gen || get().paging.cursor !== cursor) return; // reloaded meanwhile
+    beforeApply?.();
+    set((s) => {
+      // (an event newer than the last reload already came live)
+      const events = page.events.filter((e) => !(e.eid && e.eid > s.paging.baseEid));
+      const inPage = new Set(page.events.map((e) => e.eid || 0));
+      const parked: ProviderEvent[] = [];
+      const prev = reconstruct(page.messages, events, parker(page.page.has_more, parked));
+      closeTrailing(prev, s.turns[0]);
+      const turns = [...prev, ...s.turns];
+      // Parked events whose turn is loaded now go where they belong.
+      const still: ProviderEvent[] = [];
+      for (const ev of s.orphans) {
+        if (ev.eid && inPage.has(ev.eid)) continue; // (pinned: the page has it)
+        const launch = ev.type === "tool.use" && !(ev.data as Record<string, any>).parent;
+        if (launch || isOrphan(turns, ev)) still.push(ev); // (a pinned launch waits for its own page)
+        else reduce(turns, ev);
+      }
+      const orphans = page.page.has_more ? mergeOrphans(parked, still) : [];
+      return {
+        turns,
+        orphans,
+        detached: orphans.reduce(intoHolder, null as Turn | null),
+        older: page.before,
+        runningCostUsd: (page.before?.cost_usd || 0) + totalCost(turns),
+        paging: { ...s.paging, cursor: page.page.cursor, hasMore: page.page.has_more, loading: false, error: null },
+      };
     });
   },
 
@@ -598,6 +800,12 @@ export function createChatStore() {
   applyEvent: (ev) =>
     set((s) => {
       if (ev.eid && ev.eid <= s.lastEid) return {}; // already applied (replay overlap)
+      const lastEid = ev.eid ? Math.max(s.lastEid, ev.eid) : s.lastEid;
+      if (s.paging.hasMore && isOrphan(s.turns, ev)) {
+        // For a turn not loaded yet: parked until it is (shown under its
+        // launching call meanwhile, when that one is pinned).
+        return { orphans: [...s.orphans, ev], detached: intoHolder(s.detached, ev), lastEid };
+      }
       const turns = [...s.turns];
       const extra = reduce(turns, ev);
       if (extra.bounced) extra.bounced = [...s.bounced, ...extra.bounced];
@@ -606,8 +814,9 @@ export function createChatStore() {
       return {
         turns,
         ...extra,
-        lastEid: ev.eid ? Math.max(s.lastEid, ev.eid) : s.lastEid,
-        runningCostUsd: ev.type === "turn.complete" || ev.type === "error" ? totalCost(turns) : s.runningCostUsd,
+        lastEid,
+        runningCostUsd:
+          ev.type === "turn.complete" || ev.type === "error" ? (s.older?.cost_usd || 0) + totalCost(turns) : s.runningCostUsd,
       };
     }),
   }));

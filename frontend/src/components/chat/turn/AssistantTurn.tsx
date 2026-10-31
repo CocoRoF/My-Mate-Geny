@@ -82,14 +82,15 @@ export function requestResend(text: string, attachments: any[] = []) {
 
 function Footer({ turn }: { turn: Turn }) {
   const [copied, setCopied] = useState(false);
-  const turns = useChatStore((s) => s.turns);
-  const isStreaming = useChatStore((s) => s.isStreaming);
-  const isLast = turns[turns.length - 1]?.key === turn.key;
-  const prevUser = (() => {
-    const i = turns.findIndex((t) => t.key === turn.key);
-    for (let j = i - 1; j >= 0; j--) if (turns[j].role === "user") return turns[j];
+  // (narrow selectors: a footer re-renders only when it becomes / stops being
+  // the last turn — not on every change of a long, paged transcript)
+  const isLast = useChatStore((s) => s.turns[s.turns.length - 1]?.key === turn.key);
+  const prevUser = useChatStore((s) => {
+    if (s.turns[s.turns.length - 1]?.key !== turn.key) return null;
+    for (let j = s.turns.length - 2; j >= 0; j--) if (s.turns[j].role === "user") return s.turns[j];
     return null;
-  })();
+  });
+  const isStreaming = useChatStore((s) => s.isStreaming);
   const canRetry = isLast && !isStreaming && (turn.status === "error" || turn.status === "interrupted") && prevUser;
   const dur = turn.startedAt && turn.endedAt ? fmtMs(turn.endedAt - turn.startedAt) : null;
   const tk = tokens(turn.usage);

@@ -1,5 +1,5 @@
 import { apiFetch, apiResponse } from "./client";
-import type { AccountRef, ChatMessage, PlanUsage, ProviderEvent, Session, TaskInfo } from "../types";
+import type { AccountRef, ChatMessage, Compaction, ContextInfo, PlanUsage, ProviderEvent, Session, TaskInfo } from "../types";
 
 export type SessionPatch = {
   provider?: string;
@@ -58,6 +58,63 @@ export interface History {
 }
 
 export const getHistory = (id: string) => apiFetch<History>(`/api/history/${id}`);
+
+// ---- paged history (backend/app/services/history_page.py) ----
+
+/** Where a slice of the history sits: turns start at a user message or an
+ * auto turn; `cursor` is the slice's start (null = the beginning). */
+export interface HistoryPageInfo {
+  cursor: string | null;
+  until: string | null;
+  has_more: boolean;
+  turns: number;
+  last_eid?: number; // newest pages: the highest event id (attach after it)
+}
+
+export interface ChangedFile {
+  path: string;
+  ops: number;
+  created: boolean;
+  failed: boolean;
+}
+
+/** What precedes a page's cursor — the parts of the chat not loaded yet. */
+export interface HistoryBefore {
+  cost_usd: number;
+  costed_turns: number;
+  usage: Record<string, number>;
+  changes: { git: boolean; files: ChangedFile[] };
+  todos: unknown; // the latest TodoWrite input before the cursor
+}
+
+export interface HistorySummary {
+  cost_usd: number;
+  costed_turns: number;
+  usage: Record<string, number>;
+  context: ContextInfo | null;
+  last_compaction: Compaction | null;
+  /** running background work launched before the cursor: its call + steps */
+  pinned: ProviderEvent[];
+}
+
+export interface HistoryPage extends History {
+  page: HistoryPageInfo;
+  before: HistoryBefore;
+  summary?: HistorySummary; // newest / since pages
+}
+
+/** An older page: the slice + what precedes it. */
+export type OlderPage = Pick<HistoryPage, "session_id" | "messages" | "events" | "page" | "before">;
+
+export const getHistoryPage = (id: string, q: { turns?: number; since?: string }) => {
+  const p = new URLSearchParams();
+  if (q.turns) p.set("turns", String(q.turns));
+  if (q.since !== undefined) p.set("since", q.since);
+  return apiFetch<HistoryPage>(`/api/history/${id}?${p}`);
+};
+
+export const getOlderPage = (id: string, before: string, turns: number) =>
+  apiFetch<OlderPage>(`/api/history/${id}?${new URLSearchParams({ turns: String(turns), before })}`);
 
 // ---- background tasks ----
 export const listTasks = (sid: string) => apiFetch<TaskInfo[]>(`/api/sessions/${sid}/tasks`);

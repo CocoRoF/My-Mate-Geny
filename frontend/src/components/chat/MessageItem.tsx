@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { Turn } from "../../stores/chatStore";
 import Icon from "../ui/Icon";
 import MessageAttachments from "../attachments/MessageAttachments";
@@ -5,7 +6,9 @@ import AssistantTurn from "./turn/AssistantTurn";
 import CompactionDivider from "./CompactionDivider";
 import ViaBadge from "./ViaBadge";
 
-export default function MessageItem({ turn }: { turn: Turn }) {
+// Memoized: a turn re-renders only when it changes (copy-on-write in the store)
+// — prepending older turns or streaming into the last one leaves the rest alone.
+export default memo(function MessageItem({ turn }: { turn: Turn }) {
   if (turn.role === "user") {
     const atts = turn.attachments || [];
     return (
@@ -36,4 +39,4 @@ export default function MessageItem({ turn }: { turn: Turn }) {
   }
 
   return <AssistantTurn turn={turn} />;
-}
+});

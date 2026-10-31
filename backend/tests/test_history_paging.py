@@ -190,7 +190,10 @@ def test_session_summaries(chat):
     svc, c = chat
     c.turn(0, tools=[("TodoWrite", {"todos": [{"content": "old plan", "status": "pending"}]})])
     c.turn(1, tools=[("Write", {"file_path": "/w/a.py", "content": "print(1)"}),
-                     ("Edit", {"file_path": "/w/b.py", "old_string": "a", "new_string": "b", "fail": True})])
+                     ("Edit", {"file_path": "/w/b.py", "old_string": "a", "new_string": "b", "fail": True}),
+                     ("mcp__remote__edit", {"file_path": "/w/r.py"}),
+                     ("apply_patch", {"changes": [{"path": "/w/p.py", "kind": "add"}]}),
+                     ("Read", {"file_path": "/w/z.py"})])
     c.turn(2, tools=[("TodoWrite", {"todos": [{"content": "new plan", "status": "in_progress"}]}),
                      ("Edit", {"file_path": "/w/a.py", "old_string": "1", "new_string": "2"})])
     c.ev("notice", {"level": "info", "code": "context.compacted", "message": "Context compacted",
@@ -199,17 +202,19 @@ def test_session_summaries(chat):
     c.ev("context.update", {"tokens": 5555})  # a per-call report without the window
     for k in range(4, 8):
         c.turn(k)
+    c.ev("context.update", {"tokens": 7777})  # the latest lacks the window: an earlier one has it
     sid = c.sid
     p = svc.history_page(sid, turns=4)  # turns 4..7: no todos / edits in the page
     s, b = p["summary"], p["before"]
-    assert s["context"]["tokens"] == 1007 and s["context"]["window"] == 200000
+    assert s["context"]["tokens"] == 7777 and s["context"]["window"] == 200000 and s["context"]["auto_compact"]
     assert s["last_compaction"]["pre_tokens"] == 150000
     assert b["todos"]["todos"][0]["content"] == "new plan"  # the latest TodoWrite before the page
     files = {f["path"]: f for f in b["changes"]["files"]}
     assert not b["changes"]["git"]
     assert files["/w/a.py"] == {"path": "/w/a.py", "ops": 2, "created": True, "failed": False}
     assert files["/w/b.py"]["failed"] is True
-    assert [f["path"] for f in b["changes"]["files"]] == ["/w/b.py", "/w/a.py"]  # most recent last
+    assert [f["path"] for f in b["changes"]["files"]] == ["/w/b.py", "/w/r.py", "/w/p.py", "/w/a.py"]  # most recent last
+    assert files["/w/p.py"]["created"] and not files["/w/r.py"]["created"]
     # git-based changes win once the chat has any
     c.ev("turn.changes", {"repos": [{"root": "/w", "files": [{"path": "c.py", "status": "A"}]}]})
     c.turn(8)

@@ -57,11 +57,6 @@ _AUTO_START = '"trigger": "background"'
 _TODO_NAME = '"name": "TodoWrite"'
 # Tool calls the "Changed files" list counts (SessionPanel.changesOf):
 _EDIT_NAMES = ("edit", "multiedit", "notebookedit", "write", "remote_write", "apply_patch")
-_EDIT_PATTERNS = (
-    '"name": "Edit"', '"name": "MultiEdit"', '"name": "NotebookEdit"', '"name": "Write"',
-    '"name": "apply_patch"', '"name": "remote_write"', '"name": "mcp__remote__',
-    '"name": "edit"', '"name": "multiedit"', '"name": "notebookedit"', '"name": "write"',
-)
 _CTX_KEYS = ("window", "model_window", "threshold", "window_source")
 
 MAX_TURNS = 200
@@ -318,14 +313,26 @@ class HistoryPager:
             d = json.loads(r["data"])
             if d.get("is_error"):
                 failed.add(str(d.get("id")))
-        cond = " OR ".join("instr(data, ?) > 0" for _ in _EDIT_PATTERNS)
-        for r in self._db.query(
-            "SELECT id, data FROM events INDEXED BY idx_events_sid_type "
-            f"WHERE session_id = ? AND type = 'tool.use' AND created_at < ? AND ({cond}) ORDER BY id",
-            (sid, start, *_EDIT_PATTERNS),
-        ):
-            if r["id"] in skip:
-                continue
+        # The call's name sits right after its id ({"id": …, "name": …}): read
+        # just that much of every call, then the edits in full.
+        names = ",".join("?" * len(_EDIT_NAMES))
+        hits = [
+            r["id"] for r in self._db.query(
+                "SELECT id FROM (SELECT id, substr(data, instr(data, '\"name\": \"') + 9, 64) AS head "
+                "  FROM events INDEXED BY idx_events_sid_type"
+                "  WHERE session_id = ? AND type = 'tool.use' AND created_at < ?) "
+                f"WHERE lower(substr(head, 1, instr(head, '\"') - 1)) IN ({names}) "
+                "OR head LIKE 'mcp\\_\\_remote\\_\\_%' ESCAPE '\\' ORDER BY id",
+                (sid, start, *_EDIT_NAMES),
+            )
+            if r["id"] not in skip
+        ]
+        rows: list[Any] = []
+        for k in range(0, len(hits), 500):
+            chunk = hits[k:k + 500]
+            rows += self._db.query(
+                f"SELECT id, data FROM events WHERE id IN ({','.join('?' * len(chunk))}) ORDER BY id", chunk)
+        for r in rows:
             d = json.loads(r["data"])
             n = _tool_norm(d.get("name"))
             if n not in _EDIT_NAMES:
@@ -413,29 +420,47 @@ class HistoryPager:
             if launch is None:
                 continue  # launched inside the slice (or unknown): nothing to pin
             ids = {tid}
-            # Only rows that name a parent / task / this call are read in full.
+            span = (sid, launch["created_at"], start)
+
+            def keep(r: Any, d: dict[str, Any]) -> None:
+                out[r["id"]] = {"eid": r["id"], "seq": r["seq"], "type": r["type"], "data": d,
+                                "timestamp": r["created_at"]}
+
+            # The calls and steps (small rows; nested subagents' steps follow
+            # their own parent call) ...
             for r in self._db.query(
                 "SELECT id, seq, type, data, created_at FROM events INDEXED BY idx_events_sid_ts "
                 "WHERE session_id = ? AND created_at >= ? AND created_at < ? AND type IN "
-                "('tool.use', 'tool.result', 'subagent.text', 'subagent.thinking', 'task.update') "
-                "AND (id = ? OR instr(data, '\"parent\": \"') > 0 OR instr(data, '\"tool_use_id\": \"') > 0 "
-                "OR instr(data, ?) > 0) ORDER BY id",
-                (sid, launch["created_at"], start, launch["id"], json.dumps(tid)),
+                "('tool.use', 'subagent.text', 'subagent.thinking', 'task.update') "
+                "AND (id = ? OR type = 'task.update' OR instr(data, '\"parent\": \"') > 0) ORDER BY id",
+                (*span, launch["id"]),
             ):
                 d = json.loads(r["data"])
                 if r["id"] == launch["id"]:
-                    hit = True
+                    keep(r, d)
                 elif r["type"] == "task.update":
-                    hit = str(d.get("tool_use_id")) in ids
-                elif r["type"] == "tool.use":
-                    hit = str(d.get("parent")) in ids
-                    if hit:
-                        ids.add(str(d.get("id")))  # nested subagents' steps follow their own parent
-                elif r["type"] == "tool.result":
-                    hit = str(d.get("id")) in ids or str(d.get("parent")) in ids
-                else:
-                    hit = str(d.get("parent")) in ids
-                if hit:
-                    out[r["id"]] = {"eid": r["id"], "seq": r["seq"], "type": r["type"], "data": d,
-                                    "timestamp": r["created_at"]}
+                    if str(d.get("tool_use_id")) in ids:
+                        keep(r, d)
+                elif str(d.get("parent")) in ids:
+                    keep(r, d)
+                    if r["type"] == "tool.use":
+                        ids.add(str(d.get("id")))
+            # ... then the results of those calls ({"id": … comes first: only
+            # the matching ones — tool outputs can be big — are read in full).
+            heads = self._db.query(
+                "SELECT id, substr(data, 1, 96) AS head FROM events INDEXED BY idx_events_sid_ts "
+                "WHERE session_id = ? AND created_at >= ? AND created_at < ? AND type = 'tool.result' ORDER BY id",
+                span,
+            )
+            prefixes = tuple('{"id": ' + json.dumps(i) for i in ids)
+            hits = [h["id"] for h in heads if str(h["head"] or "").startswith(prefixes)]
+            for k in range(0, len(hits), 500):
+                chunk = hits[k:k + 500]
+                for r in self._db.query(
+                    "SELECT id, seq, type, data, created_at FROM events "
+                    f"WHERE id IN ({','.join('?' * len(chunk))})", chunk,
+                ):
+                    d = json.loads(r["data"])
+                    if str(d.get("id")) in ids:
+                        keep(r, d)
         return [out[k] for k in sorted(out)]
