@@ -1,5 +1,61 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>My Mate Geny</title>
-<style>body{margin:0;height:100vh;display:grid;place-items:center;background:#0a0c10;color:#9aa3b4;font:14px system-ui,sans-serif}</style>
-</head><body>Loading…</body></html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Connect — My Mate Geny</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{background:#0a0c10}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;color:#e6e9f0;font:15px system-ui,sans-serif;
+       padding:max(24px,env(safe-area-inset-top)) 20px max(24px,env(safe-area-inset-bottom))}
+  .card{width:100%;max-width:420px}
+  .head{text-align:center;margin-bottom:22px}
+  .head img{width:84px;height:84px;border-radius:20px;display:block;margin:0 auto 12px}
+  h1{font-size:20px;margin:0 0 4px} .sub{color:#9aa3b4;font-size:13px;margin:0}
+  label{display:block;font-size:13px;color:#9aa3b4;margin:0 0 6px}
+  .field{margin-bottom:14px}
+  input[type=text],input[type=password],input[type=url]{width:100%;padding:13px 14px;border-radius:12px;border:1px solid #232936;background:#0f1218;color:#e6e9f0;font:inherit;outline:none}
+  input:focus{border-color:#5b7cff}
+  input[aria-invalid=true]{border-color:#f87171}
+  .hint{font-size:12px;color:#5e6676;margin-top:6px}
+  .pw{position:relative} .pw input{padding-right:72px}
+  .pw button{position:absolute;right:6px;top:50%;transform:translateY(-50%);padding:8px 10px;border-radius:9px;border:0;background:#1c212c;color:#9aa3b4;font:inherit;font-size:13px}
+  .check{display:flex;align-items:center;gap:10px;color:#9aa3b4;font-size:14px;margin:6px 0 20px}
+  .check input{accent-color:#5b7cff;width:18px;height:18px;margin:0;flex:none}
+  .go{width:100%;padding:14px;border:0;border-radius:12px;background:linear-gradient(135deg,#6e8bff,#5b7cff);color:#fff;font:inherit;font-weight:600}
+  .go:disabled{opacity:.6}
+  .status{min-height:22px;margin-top:16px;font-size:14px;color:#9aa3b4;display:flex;gap:8px;align-items:flex-start}
+  .status.err{color:#fca5a5}
+  .status small{display:block;color:#7c8597;margin-top:3px;word-break:break-word}
+  .spin{width:15px;height:15px;margin-top:2px;border-radius:50%;border:2px solid #39415a;border-top-color:#6e8bff;animation:r .8s linear infinite;flex:none}
+  @keyframes r{to{transform:rotate(360deg)}}
+</style></head>
+<body>
+<form class="card" id="form" novalidate autocomplete="on">
+  <div class="head">
+    <img src="logo.png" alt="">
+    <h1>Connect to your server</h1>
+    <p class="sub">My Mate Geny <span id="ver"></span></p>
+  </div>
+  <div class="field">
+    <label for="server">Server address</label>
+    <input id="server" name="server" type="url" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="example.com or 192.168.0.10:58080" autocomplete="url">
+    <div class="hint">The address of your My Mate Geny server.</div>
+  </div>
+  <div class="field">
+    <label for="username">Username</label>
+    <input id="username" name="username" type="text" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="username">
+  </div>
+  <div class="field">
+    <label for="password">Password</label>
+    <div class="pw">
+      <input id="password" name="password" type="password" autocomplete="current-password">
+      <button type="button" id="show" aria-pressed="false">Show</button>
+    </div>
+  </div>
+  <label class="check"><input type="checkbox" id="remember" checked> Remember the server and username (never the password)</label>
+  <button type="submit" class="go" id="go">Connect</button>
+  <div class="status" id="status" role="status" aria-live="polite"></div>
+</form>
+<script src="connect-core.js"></script>
+<script src="connect.js"></script>
+</body></html>

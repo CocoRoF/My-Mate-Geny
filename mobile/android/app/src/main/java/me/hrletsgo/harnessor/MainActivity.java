@@ -2,6 +2,7 @@ package me.hrletsgo.harnessor;
 
 import android.app.DownloadManager;
 import android.content.Context;
+import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -19,8 +20,20 @@ public class MainActivity extends BridgeActivity {
     private static final Pattern FILENAME_STAR = Pattern.compile("filename\\*\\s*=\\s*(?:UTF-8|utf-8)''([^;]+)");
     private static final Pattern FILENAME = Pattern.compile("filename\\s*=\\s*\"?([^\";]+)\"?");
 
+    /** Launcher shortcut (res/xml/shortcuts.xml): back to the connect page. */
+    static final String ACTION_SWITCH_SERVER = "me.hrletsgo.harnessor.SWITCH_SERVER";
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // The server is the user's choice (GenyServerPlugin): no saved server →
+        // the local connect page; a saved one → Capacitor's server.url.
+        Intent intent = getIntent();
+        if (intent != null && ACTION_SWITCH_SERVER.equals(intent.getAction())) {
+            if (savedInstanceState == null) GenyServerPlugin.forgetServer(this, false);
+            setIntent(new Intent(Intent.ACTION_MAIN)); // handled once (BridgeActivity re-delivers it below)
+        }
+        registerPlugin(GenyServerPlugin.class);
+        config = GenyServerPlugin.buildConfig(this);
         super.onCreate(savedInstanceState);
         // The Mate reads replies aloud when they arrive (not inside a tap), so
         // media may start without a user gesture. Microphone requests are
@@ -51,6 +64,17 @@ public class MainActivity extends BridgeActivity {
                 Toast.makeText(this, "Download failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
             }
         });
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        if (intent != null && ACTION_SWITCH_SERVER.equals(intent.getAction())) {
+            GenyServerPlugin.forgetServer(this, false);
+            setIntent(new Intent(Intent.ACTION_MAIN));
+            recreate();
+            return;
+        }
+        super.onNewIntent(intent);
     }
 
     /** Name from Content-Disposition (RFC 5987 first, so Korean names survive), else guessed. */

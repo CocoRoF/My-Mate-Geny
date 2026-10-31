@@ -1,7 +1,7 @@
 // The only surface the web app sees: window.hrhNative (contextIsolation on,
 // sandboxed preload). The same preload serves every window: the console, the
 // Mate surfaces (overlay / quick / chat, docs/mate.md §6–7), the local pages
-// (offline, server) and the action bar. The main process checks every
+// (connect, offline) and the action bar. The main process checks every
 // message's sender, so exposing a call here grants nothing by itself.
 const { contextBridge, ipcRenderer } = require("electron");
 
@@ -55,11 +55,34 @@ contextBridge.exposeInMainWorld("hrhNative", {
   surface,
   notify: (title, body) => ipcRenderer.invoke("hrh:notify", { title, body }),
   openExternal: (url) => ipcRenderer.invoke("hrh:openExternal", url),
-  setServer: (url) => ipcRenderer.invoke("hrh:setServer", url),
   retry: () => ipcRenderer.invoke("hrh:retry"),
-  changeServer: () => ipcRenderer.invoke("hrh:changeServer"),
+  // back to the connect screen (another server or account); signOut also
+  // clears this server's cookies. changeServer: the pre-0.4 name.
+  switchServer: () => ipcRenderer.invoke("hrh:switchServer"),
+  changeServer: () => ipcRenderer.invoke("hrh:switchServer"),
+  signOut: () => ipcRenderer.invoke("hrh:signOut"),
   mate,
 });
+
+// The local connect screen (src/connect.html) only.
+const onConnectPage = (() => {
+  try {
+    return location.protocol === "file:" && location.pathname.endsWith("/connect.html");
+  } catch {
+    return false;
+  }
+})();
+if (onConnectPage) {
+  const str = (v) => (typeof v === "string" ? v : "");
+  contextBridge.exposeInMainWorld("hrhConnect", {
+    state: () => ipcRenderer.invoke("connect:state"),
+    findServer: (input) => ipcRenderer.invoke("connect:find", str(input)),
+    signIn: (o = {}) => ipcRenderer.invoke("connect:signIn", {
+      server: str(o.server), username: str(o.username), password: str(o.password), remember: o.remember !== false,
+    }),
+    cancel: () => ipcRenderer.invoke("connect:cancel"),
+  });
+}
 
 if (surface === "bar") {
   contextBridge.exposeInMainWorld("hrhBar", {

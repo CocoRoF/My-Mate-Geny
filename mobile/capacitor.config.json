@@ -3,9 +3,7 @@
   "appName": "My Mate Geny",
   "webDir": "www",
   "server": {
-    "url": "https://agent.hrletsgo.me",
-    "cleartext": false,
-    "allowNavigation": ["agent.hrletsgo.me"],
+    "cleartext": true,
     "errorPath": "offline.html"
   },
   "android": {

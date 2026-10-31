@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the launcher icon → "Switch server": back to the connect page
+     even when the server's own pages don't load (MainActivity). -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="switch_server"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_switch_server"
+        android:shortcutLongLabel="@string/shortcut_switch_server_long">
+        <intent
+            android:action="me.hrletsgo.harnessor.SWITCH_SERVER"
+            android:targetPackage="me.hrletsgo.harnessor"
+            android:targetClass="me.hrletsgo.harnessor.MainActivity" />
+    </shortcut>
+</shortcuts>

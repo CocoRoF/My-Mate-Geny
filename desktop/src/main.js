@@ -2,18 +2,25 @@
 // and features are identical to the web and UI updates need no reinstall,
 // plus the Mate on the desktop (mate.js, docs/mate.md §7).
 //
+// No built-in server: the first start (and Server → Switch server…) shows the
+// local connect screen (connect.html; connect-core.js finds the server and
+// signs in with exchange:true), then the window loads
+// {server}/auth/exchange?code=… so the session cookie is set first-party.
+// Later starts go straight to the saved server.
+//
 // Naming (docs/mate.md §0): the product is shown as "My Mate Geny", but the
 // internal ids stay — appId `me.hrletsgo.harnessor` (Windows notifications,
 // installer GUID, in-place updates) and the userData folder `hr-harnessor`
 // (settings.json, the login cookie), pinned below because Electron would
 // otherwise derive it from the new productName and log everyone out.
-const { app, BrowserWindow, Menu, Notification, ipcMain, shell, dialog, clipboard, session, systemPreferences } = require("electron");
+const { app, BrowserWindow, Menu, Notification, ipcMain, shell, clipboard, session, systemPreferences, net } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 
 app.setPath("userData", path.join(app.getPath("appData"), "hr-harnessor"));
 
-const { readSettings, writeSettings, serverUrl, sameOrigin } = require("./settings");
+const { LEGACY_SERVER, readSettings, writeSettings, settingsExisted, serverUrl, sameOrigin } = require("./settings");
+const core = require("./connect-core");
 const mate = require("./mate");
 
 const PRODUCT = "My Mate Geny";
@@ -159,7 +166,9 @@ function createWindow(url) {
     if (items.length) Menu.buildFromTemplate(items).popup();
   });
 
-  w.loadURL(url || serverUrl());
+  if (url) w.loadURL(url);
+  else if (serverUrl()) w.loadURL(`${serverUrl()}/`);
+  else loadConnect(w);
   return w;
 }
 
@@ -176,20 +185,157 @@ function openConsole(url) {
   win.focus();
 }
 
-function changeServer() {
-  const current = serverUrl();
-  // Minimal prompt without extra deps: a tiny window with an input.
-  const parent = win && !win.isDestroyed() && win.isVisible() ? win : undefined;
-  const w = new BrowserWindow({
-    width: 460, height: 210, resizable: false, parent, modal: !!parent, backgroundColor: "#0a0c10",
-    title: `Server — ${PRODUCT}`, autoHideMenuBar: true,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"), contextIsolation: true, sandbox: true,
-      additionalArguments: [`--hrh-version=${app.getVersion()}`, "--hrh-surface=server"],
-    },
-  });
-  w.loadFile(path.join(__dirname, "server.html"), { query: { server: current } });
+// ── the server: connect screen, sign-in, switch, sign out ──────
+
+const CONNECT_PAGE = path.join(__dirname, "connect.html");
+const httpRequest = core.fetchRequest((url, init) => net.fetch(url, init));
+const found = new Set(); // servers findServer confirmed during this run
+
+function loadConnect(w, query = {}) {
+  w.loadFile(CONNECT_PAGE, { query });
 }
+
+/** The connect screen in the console window (first start, Switch server…). */
+function showConnect(query = {}) {
+  if (!win || win.isDestroyed()) createWindow(null);
+  loadConnect(win, query);
+  if (win.isMinimized()) win.restore();
+  if (mac) app.focus({ steal: true });
+  win.show();
+  win.focus();
+}
+
+async function clearServerCookies(base) {
+  const ses = session.defaultSession;
+  try {
+    const origin = new URL(base).origin;
+    const list = await ses.cookies.get({ url: `${origin}/` });
+    await Promise.all(list.map((c) => ses.cookies.remove(`${origin}${c.path || "/"}`, c.name).catch(() => {})));
+    await ses.clearStorageData({ origin, storages: ["cookies"] }).catch(() => {});
+    await ses.cookies.flushStore().catch(() => {});
+  } catch (e) {
+    console.warn(`[desktop] could not clear cookies: ${e.message}`);
+  }
+}
+
+/** Close everything but the console and the Mate (popups of the old server). */
+function closeStrays() {
+  const keep = new Set([win, ...mate.mateWindows()]);
+  BrowserWindow.getAllWindows().forEach((w) => !keep.has(w) && w.close());
+}
+
+function refreshMenus() {
+  buildMenu();
+  mate.refresh();
+}
+
+/** Sign out: the server's cookies go, the connect screen comes back
+ *  (prefilled with the server and username if they were remembered). */
+async function signOut() {
+  const base = serverUrl();
+  if (base) {
+    try {
+      // the server's own logout (best effort; it only deletes the cookie today)
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 3000);
+      await session.defaultSession.fetch(`${base}/api/auth/logout`, { method: "POST", credentials: "include", signal: ctrl.signal }).catch(() => {});
+      clearTimeout(t);
+    } catch {}
+    await clearServerCookies(base);
+  }
+  writeSettings({ serverUrl: undefined, forgetServer: undefined });
+  mate.disconnect();
+  closeStrays();
+  refreshMenus();
+  showConnect({ notice: "signed-out" });
+}
+
+/** Builds before 0.4 fell back to the owner's server when none was saved.
+ *  Such an install that is still signed in there keeps going to it; one that
+ *  isn't gets it prefilled on the connect screen (never used silently). */
+async function migrateLegacy() {
+  const s = readSettings();
+  if (s.connectMigrated) return;
+  if (s.serverUrl || !settingsExisted()) {
+    writeSettings({ connectMigrated: true });
+    return;
+  }
+  let signedIn = false;
+  try {
+    signedIn = (await session.defaultSession.cookies.get({ url: LEGACY_SERVER, name: "hrh_session" })).length > 0;
+  } catch {}
+  writeSettings(signedIn
+    ? { serverUrl: LEGACY_SERVER, lastServer: LEGACY_SERVER, rememberConnect: true, connectMigrated: true }
+    : { lastServer: s.lastServer || LEGACY_SERVER, connectMigrated: true });
+}
+
+/** A server connected without "Remember" is dropped (with its cookies) at the next start. */
+async function forgetIfAsked() {
+  if (!readSettings().forgetServer) return;
+  const base = serverUrl();
+  writeSettings({ serverUrl: undefined, forgetServer: undefined });
+  if (base) await clearServerCookies(base);
+}
+
+// connect.html's calls: only from the local connect page in the console window
+const fromConnect = (e) => {
+  if (!win || win.isDestroyed() || e.sender !== win.webContents) return false;
+  const f = e.senderFrame;
+  if (!f || f.parent) return false;
+  try {
+    const u = new URL(f.url);
+    return u.protocol === "file:" && u.pathname.endsWith("/connect.html");
+  } catch {
+    return false;
+  }
+};
+const plain = (r) => JSON.parse(JSON.stringify(r));
+
+ipcMain.handle("connect:state", (e) => {
+  if (!fromConnect(e)) return null;
+  const s = readSettings();
+  return {
+    server: serverUrl(),
+    lastServer: core.cleanBase(s.lastServer),
+    username: typeof s.username === "string" ? s.username : "",
+    remember: s.rememberConnect !== false,
+    version: app.getVersion(),
+  };
+});
+ipcMain.handle("connect:find", async (e, input) => {
+  if (!fromConnect(e)) return null;
+  const r = await core.findServer(String(input ?? "").slice(0, 2048), httpRequest);
+  if (r.ok) found.add(r.server);
+  return plain(r);
+});
+ipcMain.handle("connect:signIn", async (e, o = {}) => {
+  if (!fromConnect(e)) return null;
+  let server = core.cleanBase(o.server);
+  if (!server || !found.has(server)) {
+    const r = await core.findServer(String(o.server ?? "").slice(0, 2048), httpRequest);
+    if (!r.ok) return plain(r);
+    server = r.server;
+    found.add(server);
+  }
+  const r = await core.signIn(server, o.username, o.password, httpRequest);
+  if (!r.ok || !win || win.isDestroyed()) return plain(r);
+  const remember = o.remember !== false;
+  writeSettings(remember
+    ? { serverUrl: server, lastServer: server, username: String(o.username || "").trim(), rememberConnect: true, forgetServer: undefined }
+    : { serverUrl: server, rememberConnect: false, forgetServer: true, username: undefined });
+  closeStrays();
+  // Mate windows of the old server go; they come back once the console has
+  // landed on the app with the new cookie (mate.consoleNavigated)
+  mate.disconnect();
+  refreshMenus();
+  win.loadURL(r.exchangeUrl);
+  return { ok: true, server };
+});
+ipcMain.handle("connect:cancel", (e) => {
+  if (!fromConnect(e) || !serverUrl()) return false;
+  win.loadURL(`${serverUrl()}/`);
+  return true;
+});
 
 // Every hrh:* call comes from a top-level page in one of our windows.
 const ours = (e) => {
@@ -213,29 +359,22 @@ ipcMain.handle("hrh:notify", (e, { title, body } = {}) => {
 ipcMain.handle("hrh:openExternal", (e, url) => {
   if (ours(e) && /^https?:/.test(String(url))) shell.openExternal(String(url));
 });
-ipcMain.handle("hrh:setServer", (e, url) => {
-  if (!ours(e) || !fileOrServer(e)) return false;
-  try {
-    const u = new URL(String(url));
-    if (!/^https?:$/.test(u.protocol)) throw new Error("http(s) only");
-    writeSettings({ serverUrl: u.origin });
-    const keep = new Set([win, ...mate.mateWindows()]);
-    BrowserWindow.getAllWindows().forEach((w) => !keep.has(w) && w.close());
-    if (win && !win.isDestroyed()) win.loadURL(serverUrl());
-    else openConsole();
-    mate.reloadSurfaces();
-    return true;
-  } catch (err) {
-    dialog.showErrorBox("Invalid server URL", String(err.message || err));
-    return false;
-  }
-});
 ipcMain.handle("hrh:retry", (e) => {
   if (!ours(e)) return;
   if (mate.retry(e.sender)) return;
-  if (win && !win.isDestroyed()) win.loadURL(serverUrl());
+  if (!win || win.isDestroyed()) return;
+  if (serverUrl()) win.loadURL(`${serverUrl()}/`);
+  else loadConnect(win);
 });
-ipcMain.handle("hrh:changeServer", (e) => ours(e) && changeServer());
+// Switch server… / Sign out — from our local pages or the console itself
+ipcMain.handle("hrh:switchServer", (e) => {
+  if (ours(e) && fileOrServer(e)) showConnect();
+});
+ipcMain.handle("hrh:signOut", async (e) => {
+  if (!ours(e) || !fileOrServer(e)) return false;
+  await signOut();
+  return true;
+});
 
 // Microphone for push-to-talk (getUserMedia audio) on the server's pages, plus
 // what the console already uses (clipboard writes, fullscreen video);
@@ -299,12 +438,19 @@ function buildMenu() {
     },
     { role: "windowMenu" },
     {
+      label: "Server",
+      submenu: [
+        { label: "Switch server…", click: () => showConnect() },
+        { label: "Sign out", enabled: !!serverUrl(), click: () => signOut() },
+        { type: "separator" },
+        { label: serverUrl() ? `Connected to ${serverUrl()}` : "Not connected", enabled: false },
+        { label: "Open in browser", enabled: !!serverUrl(), click: () => shell.openExternal(`${serverUrl()}/`) },
+        { label: "Downloads page", enabled: !!serverUrl(), click: () => openConsole(`${serverUrl()}/?view=downloads`) },
+      ],
+    },
+    {
       label: "Help",
       submenu: [
-        { label: "Change server…", click: changeServer },
-        { label: "Open in browser", click: () => shell.openExternal(serverUrl()) },
-        { label: "Downloads page", click: () => openConsole(`${serverUrl()}/?view=downloads`) },
-        { type: "separator" },
         { label: `${PRODUCT} ${app.getVersion()}`, enabled: false },
       ],
     },
@@ -323,10 +469,18 @@ if (restartOnX11 && relaunchOnX11()) {
     openConsole();
   });
   app.setAppUserModelId("me.hrletsgo.harnessor"); // Windows notifications (unchanged id)
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    await forgetIfAsked();
+    await migrateLegacy();
     setupPermissions();
     buildMenu();
-    mate.init({ openConsole, consoleWindow: () => (win && !win.isDestroyed() ? win : null), changeServer, quit });
+    mate.init({
+      openConsole,
+      consoleWindow: () => (win && !win.isDestroyed() ? win : null),
+      switchServer: () => showConnect(),
+      signOut: () => signOut(),
+      quit,
+    });
     const loginHidden = mac && (() => {
       try {
         return app.getLoginItemSettings().wasOpenedAtLogin;
