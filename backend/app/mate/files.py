@@ -31,7 +31,7 @@ from typing import Any
 from urllib.parse import quote
 
 from app.config import settings
-from app.mate.store import MateError
+from app.mate.store import DEFAULT_GREETINGS, MateError, normalize_avatar
 from app.services._ids import new_id
 
 CORE_URL = "https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"
@@ -712,10 +712,18 @@ def ailism_voice(doc: dict[str, Any], voice_dir: Path | None, mate_id: str) -> d
     return {"tts": tts} if tts else None
 
 
-# ---- built-in mates (bundled ailism content: mates/, assets/, voices/) ----
+# ---- built-in mates (bundled content: personas/, mates/, assets/, voices/) ----
+#
+# personas/<key>.json is what the mate is told — English, written from the
+# authors' content — plus per-language display data (names, greetings).
+# mates/<key>.json is the original content (body, voice) and, mapped by
+# legacy_persona(), the persona that was bundled before personas/ existed: the
+# first migration compares against it to tell the user's edits from bundled text.
 
 BUILTIN_DIR = Path(__file__).resolve().parent / "builtin"
-BUILTIN_ORDER = ("estelle", "chaerin", "seoa", "mao")  # the first is the default mate
+BUILTIN_ORDER = ("chaerin", "estelle", "seoa", "mao")  # the first is the default mate on a new install
+# persona fields a bundle sets for every language (greeting and name are per language)
+BUNDLE_FIELDS = ("description", "personality", "speech", "address", "instructions")
 
 
 def builtin_keys() -> list[str]:
@@ -727,13 +735,187 @@ def builtin_doc(key: str) -> dict[str, Any]:
     return _read_json(BUILTIN_DIR / "mates" / f"{key}.json")
 
 
-def builtin_persona(doc: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    """(name, persona) of a bundled character: an ailism MateDoc, or our own
-    ``{name, persona}`` doc (the Live2D built-ins)."""
+def legacy_persona(doc: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """(name, persona) as bundled before personas/: the ailism MateDoc mapped by
+    ailism_persona(), or our own ``{name, persona}`` doc (Mao)."""
     if isinstance(doc.get("persona"), dict):
         name = str(doc.get("name") or doc.get("key") or "Mate").strip()
         return name, {k: str(v) for k, v in doc["persona"].items() if isinstance(v, (str, int, float))}
     return ailism_persona(doc)
+
+
+def _lines(v: Any) -> list[str]:
+    items = v if isinstance(v, list) else [v] if v else []
+    return [str(x).strip() for x in items if str(x).strip()]
+
+
+def compose_persona(src: dict[str, Any]) -> dict[str, str]:
+    """A personas/<key>.json document -> the persona fields all languages share.
+    Same layout as an ailism import: tagline/profile/appearance/background/
+    relationship/knowledge/world -> description; speech + the example exchanges
+    -> speech; the author's note, opening and return lines, interests ->
+    instructions. A value may be a string or a list of lines."""
+    def text(k: str) -> str:  # (a list keeps its blank lines: paragraph breaks)
+        v = src.get(k)
+        return "\n".join(str(x).rstrip() for x in v).strip() if isinstance(v, list) else str(v or "").strip()
+
+    sections = [
+        ("", text("tagline")),
+        ("", text("profile")),
+        ("Appearance", text("appearance")),
+        ("Background", text("background")),
+        ("Your relationship with the user", text("relationship")),
+        ("What you know", text("knowledge")),
+        ("Your world", text("world")),
+    ]
+    description = "\n\n".join(f"{t}:\n{x}" if t else x for t, x in sections if x)
+    speech = [text("speech")]
+    for k, title in (("examples", "Example exchanges"),
+                     ("examples_ko", "The same exchanges as they go in Korean (your own words)")):
+        ex = [e for e in src.get(k) or [] if isinstance(e, dict) and str(e.get("content") or "").strip()]
+        if ex:
+            speech.append(title + ":\n" + "\n".join(
+                ("user: " if e.get("speaker") == "user" else "you: ") + str(e["content"]).strip().replace("\n", " / ")
+                for e in ex))
+    notes = [text("note")]
+    for k, title in (("opening", "When you first meet the user you open like this:"),
+                     ("opening_ko", "In Korean:"),
+                     ("returning", "When the user comes back after a while, you greet them in this spirit:"),
+                     ("returning_ko", "In Korean:")):
+        lines = _lines(src.get(k))
+        if lines:
+            bullet = "- " if k.startswith("returning") else ""
+            notes.append(title + "\n" + "\n".join(bullet + x for x in lines))
+    interests = _lines(src.get("interests"))
+    if interests:
+        notes.append("Things you like to talk about: " + ", ".join(interests))
+    return {
+        "description": description,
+        "personality": text("personality"),
+        "speech": "\n\n".join(x for x in speech if x),
+        "address": str(src.get("address") or ""),
+        "instructions": "\n\n".join(x for x in notes if x),
+    }
+
+
+def _per_lang(v: Any) -> dict[str, str]:
+    if not isinstance(v, dict):
+        return {}
+    return {str(k).lower(): str(x).strip() for k, x in v.items() if isinstance(x, str) and x.strip()}
+
+
+def builtin_bundle(key: str, doc: dict[str, Any] | None = None) -> dict[str, Any]:
+    """What a built-in is bundled with: ``{language, names, greetings, persona}``
+    (names/greetings per language code, persona = the BUNDLE_FIELDS). It is also
+    the snapshot kept per built-in mate, so the next update can tell the fields
+    the user edited from the ones still as bundled."""
+    path = BUILTIN_DIR / "personas" / f"{key}.json"
+    if not path.is_file():
+        return legacy_bundle(doc if doc is not None else builtin_doc(key))
+    src = _read_json(path)
+    if not isinstance(src, dict):
+        raise MateError(f"built-in {key}: personas/{key}.json must be an object")
+    names = _per_lang(src.get("names")) or {"en": key}
+    return {"language": str(src.get("language") or "ko"), "names": names,
+            "greetings": _per_lang(src.get("greetings")), "persona": compose_persona(src)}
+
+
+def legacy_bundle(doc: dict[str, Any]) -> dict[str, Any]:
+    """The bundle as it was before personas/ (one language: the source's)."""
+    name, p = legacy_persona(doc)
+    lang = str(p.get("language") or "ko")
+    return {"language": lang, "names": {lang: name},
+            "greetings": {lang: str(p["greeting"])} if p.get("greeting") else {},
+            "persona": {k: str(p.get(k) or "") for k in BUNDLE_FIELDS}}
+
+
+def pick_lang(texts: dict[str, str], language: str) -> str:
+    """The text for ``language`` ("ko-KR" -> "ko"), else the English one, else any."""
+    lang = (language or "").strip().lower().split("-")[0]
+    return texts.get(lang) or texts.get("en") or next(iter(texts.values()), "")
+
+
+def localized(bundle: dict[str, Any], language: str | None = None) -> tuple[str, dict[str, str]]:
+    """(name, persona) of a bundle for a reply language (default: the bundle's own)."""
+    lang = language or str(bundle.get("language") or "ko")
+    persona = {**bundle["persona"], "greeting": pick_lang(bundle.get("greetings") or {}, lang), "language": lang}
+    return pick_lang(bundle.get("names") or {}, lang), persona
+
+
+def builtin_snapshot(key: str, doc: dict[str, Any]) -> dict[str, Any]:
+    """The current bundle of a built-in with its (normalized) avatar."""
+    return {**builtin_bundle(key, doc), "avatar": normalize_avatar(builtin_avatar(key, doc) or {"kind": "none"})}
+
+
+def legacy_snapshot(mate: dict[str, Any], doc: dict[str, Any], avatar: dict[str, Any]) -> dict[str, Any]:
+    """What a built-in synced before snapshots existed counts as bundled: all of
+    it if the user never edited it; else what the old bundle (the source mapped
+    by legacy_persona()) had, and the bundled avatar (its files are unchanged)."""
+    if not mate.get("customized"):
+        p = mate["persona"]
+        return {"names": {"": mate["name"]}, "greetings": {"": p.get("greeting") or ""},
+                "persona": {k: p.get(k) or "" for k in BUNDLE_FIELDS}, "avatar": mate["avatar"]}
+    return {**legacy_bundle(doc), "avatar": avatar}
+
+
+def merge_builtin(mate: dict[str, Any], prev: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+    """The update a new bundle makes to a built-in mate, field by field: what
+    still equals the previous bundle (``prev``: a snapshot) becomes the new
+    bundle's, what the user changed stays. Name and greeting follow the mate's
+    reply language; the language itself (and voice, model, memories, default)
+    is never touched. Returns a store patch ({} = nothing to change)."""
+    p = mate["persona"]
+    lang = p.get("language") or str(new.get("language") or "ko")
+    patch: dict[str, Any] = {}
+    name = pick_lang(new.get("names") or {}, lang)
+    if name and name != mate["name"] and mate["name"] in (prev.get("names") or {}).values():
+        patch["name"] = name
+    persona: dict[str, str] = {}
+    old_greetings = set((prev.get("greetings") or {}).values()) or {""}
+    greeting = pick_lang(new.get("greetings") or {}, lang)
+    if greeting != (p.get("greeting") or "") and (p.get("greeting") or "") in old_greetings:
+        persona["greeting"] = greeting
+    for k in BUNDLE_FIELDS:
+        cur, was, now = p.get(k) or "", (prev.get("persona") or {}).get(k) or "", new["persona"].get(k) or ""
+        if cur == was and now != cur:
+            persona[k] = now
+    if persona:
+        patch["persona"] = persona
+    if "avatar" in new and prev.get("avatar") is not None and mate["avatar"] == prev["avatar"] \
+            and new["avatar"] != mate["avatar"]:
+        patch["avatar"] = new["avatar"]
+    return patch
+
+
+def localize_patch(mate: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+    """A PATCH that switches the reply language also swaps the name and greeting
+    for that language's bundled version — when they still are bundled ones (a
+    built-in's names/greetings, the default Geny greeting); user-written ones stay."""
+    p = patch.get("persona")
+    if not isinstance(p, dict) or not isinstance(p.get("language"), str):
+        return patch
+    old, lang = mate["persona"].get("language") or "", p["language"].strip()
+    if not lang or lang == old:
+        return patch
+    names: dict[str, str] = {}
+    greetings: dict[str, str] = {}
+    key = mate.get("builtin")
+    if key:
+        try:
+            b = builtin_bundle(key) if key in builtin_keys() else {}
+        except (MateError, OSError, ValueError):
+            b = {}
+        names, greetings = b.get("names") or {}, b.get("greetings") or {}
+    else:
+        greetings = dict(DEFAULT_GREETINGS)
+    out = {**patch, "persona": dict(p)}
+    name = patch["name"] if isinstance(patch.get("name"), str) else mate["name"]
+    if names and name.strip() in names.values() and pick_lang(names, lang):
+        out["name"] = pick_lang(names, lang)
+    greeting = p["greeting"] if isinstance(p.get("greeting"), str) else mate["persona"].get("greeting") or ""
+    if greetings and greeting.strip() in greetings.values() and pick_lang(greetings, lang):
+        out["persona"]["greeting"] = pick_lang(greetings, lang)
+    return out
 
 
 def builtin_url(key: str, rel: str) -> str:
@@ -801,7 +983,8 @@ def builtin_hash(key: str) -> str:
     """Changes when the bundled character changes (persona, body, files)."""
     h = hashlib.sha256()
     assets = BUILTIN_DIR / "assets" / key
-    for f in sorted([BUILTIN_DIR / "mates" / f"{key}.json", *assets.rglob("*"), *(BUILTIN_DIR / "voices" / key).glob("*")]):
+    for f in sorted([BUILTIN_DIR / "mates" / f"{key}.json", BUILTIN_DIR / "personas" / f"{key}.json",
+                     *assets.rglob("*"), *(BUILTIN_DIR / "voices" / key).glob("*")]):
         if f.is_file():
             st = f.stat()
             name = str(f.relative_to(assets)) if assets in f.parents else f.name

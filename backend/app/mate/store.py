@@ -48,14 +48,23 @@ _VAULT_SCOPE = "mate"
 
 _MODEL_RE = re.compile(r"^[A-Za-z0-9._:\-\[\]/]{0,120}$")
 
+# The avatar-less "Geny" (only created when there is no mate at all). The
+# persona is English whatever the reply language; the greeting is what the user
+# sees first, so it comes in the reply language (swapped when that changes).
+DEFAULT_GREETINGS = {
+    "en": "Hi! I'm Geny. What can I help you with today?",
+    "ko": "안녕하세요! 저는 지니예요. 오늘은 어떤 일을 도와드릴까요?",
+}
 DEFAULT_PERSONA = {
     "description": (
-        "사용자의 개인 비서. 사용자의 여러 작업 채팅(코딩 에이전트)을 살펴보고, 일을 맡기고, "
-        "진행 상황을 챙겨서 알려 준다."
+        "The user's personal secretary. You keep an eye on the user's work chats (coding agents), hand work "
+        "to them, and keep the user posted on how it's going."
     ),
-    "personality": "밝고 다정하며 눈치가 빠르다. 꼼꼼하게 챙기지만 수다스럽지 않다. 모르는 건 솔직하게 묻는다.",
-    "speech": "부드러운 존댓말(해요체). 짧고 자연스럽게, 한 번에 한두 문장.",
-    "greeting": "안녕하세요! 저는 지니예요. 오늘은 어떤 일을 도와드릴까요?",
+    "personality": ("Bright, warm and quick to pick up on things. Thorough without being chatty. "
+                    "You honestly ask about what you don't know."),
+    "speech": ("Soft and polite; short and natural, one or two sentences at a time. In Korean: gentle 존댓말 "
+               "(해요체), never 반말. In English: warm and friendly, never stiff."),
+    "greeting": DEFAULT_GREETINGS["ko"],
     "address": "",
     "language": "ko",
     "instructions": "",
@@ -437,7 +446,10 @@ class MateStore:
 
     def by_builtin(self, key: str) -> dict[str, Any] | None:
         row = self._db.query_one("SELECT * FROM mates WHERE builtin = ?", (key,))
-        return None if row is None else {**self._out(row), "builtin_hash": row["builtin_hash"]}
+        if row is None:
+            return None
+        snap = _loads(row["builtin_snapshot"], {}) if "builtin_snapshot" in row.keys() else {}
+        return {**self._out(row), "builtin_hash": row["builtin_hash"], "builtin_snapshot": snap or None}
 
     def builtin_removed(self) -> set[str]:
         return {r["key"] for r in self._db.query("SELECT key FROM mate_builtin_removed")}
@@ -448,8 +460,14 @@ class MateStore:
     def set_customized(self, mate_id: str, on: bool) -> None:
         self._db.execute("UPDATE mates SET customized = ? WHERE id = ?", (1 if on else 0, mate_id))
 
-    def mark_builtin(self, mate_id: str, key: str, version: str) -> None:
-        self._db.execute("UPDATE mates SET builtin = ?, builtin_hash = ? WHERE id = ?", (key, version, mate_id))
+    def mark_builtin(self, mate_id: str, key: str, version: str, snapshot: dict[str, Any] | None = None) -> None:
+        """Record the bundle version a built-in was synced from (and, given, that
+        bundle's snapshot: what the next update compares the mate's fields with)."""
+        if snapshot is None:
+            self._db.execute("UPDATE mates SET builtin = ?, builtin_hash = ? WHERE id = ?", (key, version, mate_id))
+        else:
+            self._db.execute("UPDATE mates SET builtin = ?, builtin_hash = ?, builtin_snapshot = ? WHERE id = ?",
+                             (key, version, json.dumps(snapshot, ensure_ascii=False), mate_id))
 
     def set_session(self, mate_id: str, sid: str | None) -> None:
         self._db.execute("UPDATE mates SET session_id = ? WHERE id = ?", (sid, mate_id))

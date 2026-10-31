@@ -81,7 +81,7 @@ async def test_mate_engine_flags_and_delegation_roundtrip(db, tmp_path, monkeypa
         assert argv[argv.index("--effort") + 1] == "low"
         prompt = _prompt(argv)
         assert prompt.startswith("You are Geny") and "<delegation_result" in prompt and "[joy]" in prompt
-        assert "Reply in Korean" in prompt and "(nothing yet)" in prompt
+        assert "Always reply in Korean, whatever language" in prompt and "(nothing yet)" in prompt
         mcp_file = argv[argv.index("--mcp-config") + 1]
         assert oct(os.stat(mcp_file).st_mode & 0o777) == "0o600" and "HRH_MATE_TOKEN" not in " ".join(argv)
         server = json.load(open(mcp_file))["mcpServers"]["mate"]

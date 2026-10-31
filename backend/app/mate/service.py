@@ -92,29 +92,36 @@ class MateService:
 
     def sync_builtins(self) -> None:
         """Every bundled character exists as a mate (unless the user deleted
-        it). A new bundle version updates persona + body of the mates the
-        user hasn't edited; their voice/model choices are never overwritten."""
+        it). A new bundle version is merged field by field (files.merge_builtin):
+        persona fields, name, greeting and body still as previously bundled get
+        the new version, whatever the user changed stays theirs. The reply
+        language, voice, model, memories and default flag are never touched."""
         removed = self.store.builtin_removed()
         for key in files.builtin_keys():
             try:
                 version = files.builtin_hash(key)
                 cur = self.store.by_builtin(key)
-                if cur is not None and (cur["customized"] or cur["builtin_hash"] == version):
+                if cur is not None and cur["builtin_hash"] == version and cur["builtin_snapshot"]:
                     continue
                 if cur is None and key in removed:
                     continue
                 doc = files.builtin_doc(key)
-                name, persona = files.builtin_persona(doc)
-                avatar = files.builtin_avatar(key, doc) or {"kind": "none"}
+                snapshot = files.builtin_snapshot(key, doc)
                 if cur is None:
-                    mate = self.store.create(name=name, persona=persona, avatar=avatar)
-                    self.store.mark_builtin(mate["id"], key, version)
+                    name, persona = files.localized(snapshot)
+                    mate = self.store.create(name=name, persona=persona, avatar=snapshot["avatar"])
+                    self.store.mark_builtin(mate["id"], key, version, snapshot)
                     voice = files.ailism_voice(doc, files.builtin_voice_dir(key), mate["id"])
                     if voice:
                         self.store.update(mate["id"], {"voice": voice, "_sync": True})
-                else:
-                    self.store.update(cur["id"], {"persona": persona, "avatar": avatar, "_sync": True})
-                    self.store.mark_builtin(cur["id"], key, version)
+                    continue
+                prev = cur["builtin_snapshot"] or files.legacy_snapshot(cur, doc, snapshot["avatar"])
+                patch = files.merge_builtin(cur, prev, snapshot)
+                if patch:
+                    self.store.update(cur["id"], {**patch, "_sync": True})
+                    self._log("info", f"built-in mate {key} updated: {', '.join(sorted(patch))}"
+                              + (f" ({', '.join(sorted(patch['persona']))})" if "persona" in patch else ""))
+                self.store.mark_builtin(cur["id"], key, version, snapshot)
             except Exception as exc:  # noqa: BLE001 - one broken bundle must not stop the app
                 self._log("warning", f"built-in mate {key}: {exc}")
 
@@ -132,12 +139,12 @@ class MateService:
         if not key or key not in files.builtin_keys():
             raise MateError("only a built-in mate has a bundled avatar to go back to")
         doc = files.builtin_doc(key)
-        _name, persona = files.builtin_persona(doc)
-        avatar = files.builtin_avatar(key, doc) or {"kind": "none"}
-        mate, _changed = self.store.update(mate_id, {"avatar": avatar, "_sync": True})
+        snapshot = files.builtin_snapshot(key, doc)
+        mate, _changed = self.store.update(mate_id, {"avatar": snapshot["avatar"], "_sync": True})
+        _name, persona = files.localized(snapshot, mate["persona"]["language"])
         if mate["customized"] and normalize_persona(persona, mate["persona"]) == mate["persona"]:
             self.store.set_customized(mate_id, False)
-            self.store.mark_builtin(mate_id, key, files.builtin_hash(key))
+            self.store.mark_builtin(mate_id, key, files.builtin_hash(key), snapshot)
         return self.store.get(mate_id)
 
     def get(self, mate_id: str) -> dict[str, Any]:
@@ -150,6 +157,7 @@ class MateService:
 
     def update(self, mate_id: str, patch: dict[str, Any]) -> dict[str, Any]:
         before = self.store.get(mate_id)
+        patch = files.localize_patch(before, patch)  # a new reply language: bundled name/greeting follow it
         mate, changed = self.store.update(mate_id, patch)
         sid = self._live_session(mate)
         if sid and changed & {"llm", "name"}:

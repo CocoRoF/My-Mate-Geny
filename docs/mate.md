@@ -253,27 +253,63 @@ Asset upload / import:
 
 ### Built-in mates (shipped with the app)
 
-The ailism characters — **Estelle** (default), **Chaerin**, **Seoa** — are
-bundled in `backend/app/mate/builtin/` (`mates/<key>.json`, `assets/<key>/`
-video clips + stills + `rig.json`, `voices/<key>/voice.json`). On startup every
-bundled character exists as a mate (`builtin: "<key>"`), persona mapped exactly
-like the import above, body served from `GET /api/mates/builtin/<key>/<file>`
-(no copy). A new bundle version refreshes persona + body of built-ins the user
-hasn't edited (`customized` turns on with the user's first persona/avatar
-edit); voice/model choices are never overwritten. A deleted built-in stays
-deleted; `POST /api/mates/builtin/restore` brings them back.
-`POST /api/mates/{id}/avatar/reset` (built-ins only, else 400) re-applies the
-bundled avatar of that key (clip/trigger/still edits undone; voice/model kept)
-and turns `customized` off again — with the current bundle hash recorded — only
-when the persona is still the bundled one; a mate whose persona the user
-edited keeps `customized` (app updates still leave it alone). The avatar-less
-"Geny" mate is only created when there is no mate at all.
+The ailism characters — **Chaerin** (한채린, the default on a new install),
+**Estelle**, **Seoa** — are bundled in `backend/app/mate/builtin/`
+(`mates/<key>.json` = the authors' original ailism content, `assets/<key>/`
+video clips + stills + `rig.json`, `voices/<key>/voice.json`). Order:
+`files.BUILTIN_ORDER` (chaerin, estelle, seoa, mao); the first one created on a
+new install is the default — an existing install keeps the user's default.
+
+**Personas are English** (`personas/<key>.json`): everything the authors wrote
+(tagline, profile, appearance, background, relationship, knowledge, world,
+personality, speech, all example exchanges, opening and return lines,
+interests, author's note) written in English, with the character's Korean
+speech habits spelled out ("When you speak Korean: … / When you speak
+English: …") and the Korean example exchanges / opening / return lines kept
+verbatim. They are composed (`files.compose_persona`) into the same fields as
+an ailism import. Per language the file has `names` and `greetings`
+(`{en, ko}`; the Korean greeting is the author's line) and a `language` (the
+bundled reply language: `ko`, as before). The mate contract says "Always reply
+in ‹language›, whatever language your instructions are written in". The
+default "Geny" persona is English too (`store.DEFAULT_PERSONA`, greeting per
+language in `DEFAULT_GREETINGS`).
+
+On startup every bundled character exists as a mate (`builtin: "<key>"`), body
+served from `GET /api/mates/builtin/<key>/<file>` (no copy). Name and greeting
+follow the mate's reply language (`files.localized`). **Updates merge field by
+field** (`files.merge_builtin`): each built-in keeps a snapshot of the bundle it
+was last synced from (`mates.builtin_snapshot`: names, greetings, persona
+fields, avatar); on a new bundle version (`builtin_hash`, covering
+`personas/<key>.json` too) every persona field, the name, the greeting and the
+avatar that still equal the snapshot get the new version, anything the user
+changed stays. The reply language, voice, model, memories and default flag are
+never touched. Mates synced before snapshots existed: an unedited one
+(`customized` off) counts as entirely bundled; an edited one is compared with
+the old bundled persona (`files.legacy_persona` of `mates/<key>.json`) — so the
+owner's address/greeting edits stay and the untouched fields become English,
+while a Korean-replying mate keeps its Korean name and greeting. The changed
+persona restarts the engine (prompt key) and the next message carries the
+settings note. `customized` still turns on with the user's first persona/avatar
+edit (the profile notice shows only while it's off).
+
+Switching the reply language (PATCH `persona.language`) swaps the name and
+greeting for that language's bundled version when they still are bundled ones
+(any language's; for a non-built-in, the default Geny greeting) —
+`files.localize_patch`; user-written ones stay.
+
+A deleted built-in stays deleted; `POST /api/mates/builtin/restore` brings
+them back. `POST /api/mates/{id}/avatar/reset` (built-ins only, else 400)
+re-applies the bundled avatar of that key (clip/trigger/still edits undone;
+voice/model kept) and turns `customized` off again — with the current bundle
+hash recorded — only when the persona is still the bundled one (for the mate's
+language); a mate whose persona the user edited keeps `customized`. The
+avatar-less "Geny" mate is only created when there is no mate at all.
 
 **Mao** (key `mao`, after the three) is a built-in **Live2D** mate: Live2D's
 free sample model *Niziiro Mao (PRO)* (Free Material License — its
-`ReadMe.txt` ships next to it in `assets/mao/`), a Korean-speaking friendly
-secretary persona (`mates/mao.json`: our own `{name, persona}` doc instead of
-an ailism one). `assets/<key>/live2d.json` makes a bundle Live2D: the fields of
+`ReadMe.txt` ships next to it in `assets/mao/`), a friendly secretary persona
+(`personas/mao.json`, English, names Mao/마오; `mates/mao.json` is our original
+Korean `{name, persona}` doc, kept as the pre-English baseline). `assets/<key>/live2d.json` makes a bundle Live2D: the fields of
 the Live2D avatar with `model` relative to the folder (validated: the model and
 its `.moc3` exist; motion groups named in `idle_group` / `emotion_motions` /
 `tap_motions` must exist). Our copy of `mao_pro.model3.json` names the sample's
