@@ -43,3 +43,6 @@ deploy/cloudflared/config.docker.yml
 # OS / editor
 .DS_Store
 *.log
+
+# This machine's own deployment files (never committed)
+deploy/*.local.yml
