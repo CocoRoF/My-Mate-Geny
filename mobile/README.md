@@ -4,6 +4,7 @@ Capacitor shell that loads the live console (`server.url` in
 `capacitor.config.json`) with its mobile layout. Native: notifications
 (LocalNotifications), hardware back button (closes the top overlay, then
 backgrounds the app), status bar/safe areas, file chooser + camera for uploads,
+downloads (DownloadManager with the login cookie → Downloads folder),
 offline page.
 
 - `npm ci && npx cap sync android && (cd android && ./gradlew assembleRelease)`

@@ -1,5 +1,72 @@
 package me.hrletsgo.harnessor;
 
+import android.app.DownloadManager;
+import android.content.Context;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Environment;
+import android.webkit.CookieManager;
+import android.webkit.URLUtil;
+import android.widget.Toast;
 import com.getcapacitor.BridgeActivity;
+import java.net.URLDecoder;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-public class MainActivity extends BridgeActivity {}
+public class MainActivity extends BridgeActivity {
+
+    private static final Pattern FILENAME_STAR = Pattern.compile("filename\\*\\s*=\\s*(?:UTF-8|utf-8)''([^;]+)");
+    private static final Pattern FILENAME = Pattern.compile("filename\\s*=\\s*\"?([^\";]+)\"?");
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        // Capacitor's WebView has no DownloadListener: without this, download
+        // links (file viewer, explorer, attachments, Download page) do nothing.
+        // The download runs in DownloadManager with the console's login cookie.
+        getBridge().getWebView().setDownloadListener((url, userAgent, disposition, mimeType, length) -> {
+            try {
+                String name = fileName(url, disposition, mimeType);
+                DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
+                String cookies = CookieManager.getInstance().getCookie(url);
+                if (cookies != null) req.addRequestHeader("Cookie", cookies);
+                req.addRequestHeader("User-Agent", userAgent);
+                if (mimeType != null && !mimeType.isEmpty()) req.setMimeType(mimeType);
+                req.setTitle(name);
+                req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name);
+                } else {
+                    // Android 7–9: the public folder would need a storage permission
+                    req.setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, name);
+                }
+                ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).enqueue(req);
+                Toast.makeText(this, "Downloading " + name, Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                Toast.makeText(this, "Download failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            }
+        });
+    }
+
+    /** Name from Content-Disposition (RFC 5987 first, so Korean names survive), else guessed. */
+    static String fileName(String url, String disposition, String mimeType) {
+        String name = null;
+        if (disposition != null) {
+            Matcher m = FILENAME_STAR.matcher(disposition);
+            if (m.find()) {
+                try {
+                    name = URLDecoder.decode(m.group(1).trim(), "UTF-8");
+                } catch (Exception ignored) {
+                    // fall through
+                }
+            }
+            if (name == null) {
+                m = FILENAME.matcher(disposition);
+                if (m.find()) name = m.group(1).trim();
+            }
+        }
+        if (name == null || name.isEmpty()) name = URLUtil.guessFileName(url, disposition, mimeType);
+        return name.replaceAll("[/\\\\:*?\"<>|]", "_");
+    }
+}
