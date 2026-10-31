@@ -9,10 +9,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toLogin, wsUrl } from "../api/client";
-import { getHistory } from "../api/sessions";
+import { getHistoryPage } from "../api/sessions";
 import { openConversation, resetConversation, speech, SpeechFallbackError, type Mate } from "../api/mates";
 import { onResync } from "../lib/sync";
-import { createChatStore, type Turn } from "../stores/chatStore";
+import { createChatStore, FIRST_TURNS, type Turn } from "../stores/chatStore";
 import { useMateStore } from "../stores/mateStore";
 import type { Attachment, ProviderEvent } from "../types";
 import { getMateAudioQueue, useMateAudio } from "./audioQueue";
@@ -191,11 +191,13 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
 
     // follow the reply being written: sentences → voice/caption, tags → react
     let follow: { key: string; stream: SentenceStream; emo: EmotionTracker; quiet: boolean } | null = null;
-    let baseline = 0; // turns that came with the history are not read aloud
+    // Turns that came with the history are not read aloud (by key: older
+    // pages prepended later shift the indexes).
+    let quiet = new Set<string>();
     const followTurn = (fresh: boolean) => {
       const turns = store.getState().turns;
       const la = lastAssistant(turns);
-      if (!la || la.index < baseline) return;
+      if (!la || quiet.has(la.turn.key)) return;
       const t = la.turn;
       if (!follow || follow.key !== t.key) {
         follow = { key: t.key, stream: new SentenceStream({ minChars: 8 }), emo: new EmotionTracker(), quiet: !fresh };
@@ -223,19 +225,25 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
           const conv = await openConversation(mateId);
           if (!alive || mine !== gen) return;
           sid = conv.session_id;
+          store.setState({ sid }); // (older pages are fetched for it)
           setSessionId(sid);
           useMateStore.getState().upsert(conv.mate);
         }
-        const h = await getHistory(sid);
+        // the newest turns first; a reconnect reloads what is shown (older pages stay)
+        const s = store.getState();
+        const h = await getHistoryPage(
+          sid,
+          s.opened && s.sid === sid && s.paging.paged ? { since: s.paging.cursor ?? "" } : { turns: FIRST_TURNS },
+        );
         if (!alive || mine !== gen) return;
         loadHistory(h);
         const turns = store.getState().turns;
-        baseline = turns.length;
+        quiet = new Set(turns.map((t) => t.key));
         follow = null;
         const la = lastAssistant(turns);
         if (h.running && la && !la.turn.complete) {
           // a reply already being written: follow it from here on (what was said before stays unsaid)
-          baseline = la.index;
+          quiet.delete(la.turn.key);
           followTurn(false);
           if (follow) (follow as { quiet: boolean }).quiet = false;
         }

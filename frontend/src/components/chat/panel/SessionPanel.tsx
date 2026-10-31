@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { API_COST_HINT, fmtUsd } from "../../../lib/usage";
 import { ctxBar, fmtCtx, fmtWindow, limitsFor, meterOf } from "../../../lib/context";
 import { useUsageStore } from "../../../stores/usageStore";
-import { useChatStore, type Turn } from "../../../stores/chatStore";
+import { useChatStore, type ToolActivity, type Turn } from "../../../stores/chatStore";
+import type { HistoryBefore } from "../../../api/sessions";
 import { useConfigStore } from "../../../stores/configStore";
 import { useConnectionStore } from "../../../stores/connectionStore";
 import { useSessionStore } from "../../../stores/sessionStore";
@@ -56,10 +57,16 @@ interface Change {
 }
 
 /** Files the agent changed this session: exact git-based turn changes when
- * the workspace is a repo, otherwise what Edit/Write/apply_patch touched. */
-function changesOf(turns: Turn[]): Change[] {
+ * the workspace is a repo, otherwise what Edit/Write/apply_patch touched.
+ * `older`: the same for the part of the chat not loaded yet (the server's
+ * count); `extra`: calls parked outside the loaded turns (background work of
+ * an older turn that reported since). */
+function changesOf(turns: Turn[], older: HistoryBefore | null, extra: ToolActivity[]): Change[] {
   const map = new Map<string, Change>();
-  if (turns.some((t) => t.changes)) {
+  const repoMode = !!older?.changes.git || turns.some((t) => t.changes);
+  const seed = older && older.changes.git === repoMode ? older.changes.files : [];
+  for (const c of seed) map.set(c.path, { ...c });
+  if (repoMode) {
     for (const t of turns)
       for (const r of t.changes?.repos || [])
         for (const f of r.files) {
@@ -81,29 +88,33 @@ function changesOf(turns: Turn[]): Change[] {
     map.delete(path);
     map.set(path, c); // most recent last
   };
-  for (const t of turns)
-    for (const tool of t.tools) {
-      const n = tool.name.replace(/^mcp__remote__/, "").toLowerCase();
-      const i = (tool.input || {}) as Record<string, any>;
-      if (["edit", "multiedit", "notebookedit"].includes(n)) touch(i.file_path || i.notebook_path, false, !!tool.isError);
-      else if (n === "write" || n === "remote_write") touch(i.file_path || i.path, true, !!tool.isError);
-      else if (n === "apply_patch" && Array.isArray(i.changes))
-        i.changes.forEach((c: any) => touch(String(c.path || ""), c.kind === "add", !!tool.isError));
-    }
+  for (const tool of [...turns.flatMap((t) => t.tools), ...extra]) {
+    const n = tool.name.replace(/^mcp__remote__/, "").toLowerCase();
+    const i = (tool.input || {}) as Record<string, any>;
+    if (["edit", "multiedit", "notebookedit"].includes(n)) touch(i.file_path || i.notebook_path, false, !!tool.isError);
+    else if (n === "write" || n === "remote_write") touch(i.file_path || i.path, true, !!tool.isError);
+    else if (n === "apply_patch" && Array.isArray(i.changes))
+      i.changes.forEach((c: any) => touch(String(c.path || ""), c.kind === "add", !!tool.isError));
+  }
   return [...map.values()].reverse();
 }
 
-function latestTodos(turns: Turn[]): Todo[] {
+/** The latest TodoWrite: in the loaded turns, else the one the server found
+ * in the part of the chat not loaded yet. */
+function latestTodos(turns: Turn[], older: HistoryBefore | null): Todo[] {
   for (let i = turns.length - 1; i >= 0; i--) {
     const tools = turns[i].tools;
     for (let j = tools.length - 1; j >= 0; j--)
       if (tools[j].name.toLowerCase() === "todowrite") return todosOf(tools[j].input);
   }
-  return [];
+  return older?.todos ? todosOf(older.todos) : [];
 }
 
 export default function SessionPanel({ session, onClose }: { session: Session; onClose: () => void }) {
   const turns = useChatStore((s) => s.turns);
+  const older = useChatStore((s) => s.older);
+  const detached = useChatStore((s) => s.detached);
+  const pinned = useChatStore((s) => s.pinnedTools);
   const info = useChatStore((s) => s.info);
   const cost = useChatStore((s) => s.runningCostUsd);
   const update = useSessionStore((s) => s.update);
@@ -116,8 +127,12 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
   const conn = connections.find((c) => c.id === session.connection_id);
   const hostLabel = conn ? `${conn.name} (${conn.username}@${conn.host})` : "this server";
   const dirs = session.extra_dirs || [];
-  const changes = useMemo(() => changesOf(turns), [turns]);
-  const todos = useMemo(() => latestTodos(turns), [turns]);
+  // (pinned calls precede the loaded range: the server's count has them)
+  const changes = useMemo(
+    () => changesOf(turns, older, (detached?.tools || []).filter((t) => !pinned.has(t.id))),
+    [turns, older, detached, pinned],
+  );
+  const todos = useMemo(() => latestTodos(turns, older), [turns, older]);
   // Context = the last model call's input + cache tokens (each call re-reads
   // the whole context), NOT a turn's usage, which sums every call of the turn.
   const context = useChatStore((s) => s.context);

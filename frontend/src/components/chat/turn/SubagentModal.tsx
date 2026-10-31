@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { stopTask } from "../../../api/sessions";
-import { useChatStore, type ToolActivity, type Turn } from "../../../stores/chatStore";
+import { useChatStore, withDetached, type ToolActivity, type Turn } from "../../../stores/chatStore";
 import { useSessionStore } from "../../../stores/sessionStore";
 import { useSubagentUi } from "../../../stores/subagentStore";
 import { useTaskStore } from "../../../stores/taskStore";
@@ -73,7 +73,8 @@ const SectionTitle = ({ children }: { children: ReactNode }) => (
 
 /** Everything one subagent did: prompt, its prose/reasoning and calls in order, its report. */
 function Detail({ id, depth, onBack, onClose }: { id: string; depth: number; onBack: () => void; onClose: () => void }) {
-  const turn = useChatStore((s) => turnWith(s.turns, id));
+  // (or under background work whose turn isn't loaded yet)
+  const turn = useChatStore((s) => turnWith(s.turns, id) || (s.detached ? turnWith([s.detached], id) : null));
   const tool = turn?.tools.find((t) => t.id === id);
   if (!turn || !tool) {
     return (
@@ -257,7 +258,9 @@ function DetailBody({
 
 /** Every subagent in this chat: running first, then the latest finished ones. */
 function AgentList({ onClose }: { onClose: () => void }) {
-  const turns = useChatStore((s) => s.turns);
+  const loaded = useChatStore((s) => s.turns);
+  const detached = useChatStore((s) => s.detached);
+  const turns = useMemo(() => withDetached(loaded, detached), [loaded, detached]);
   const sid = useSessionStore((s) => s.activeId);
   const tasks = useTaskStore((s) => (sid ? s.bySession[sid] : undefined));
   const agents = useMemo(() => allAgents(turns), [turns]);
@@ -336,7 +339,9 @@ export function SubagentLayer() {
 
 /** "2 subagents running" — at a glance, near the bottom of the chat. */
 export function SubagentPill() {
-  const turns = useChatStore((s) => s.turns);
+  const loaded = useChatStore((s) => s.turns);
+  const detached = useChatStore((s) => s.detached);
+  const turns = useMemo(() => withDetached(loaded, detached), [loaded, detached]);
   const sid = useSessionStore((s) => s.activeId);
   const tasks = useTaskStore((s) => (sid ? s.bySession[sid] : undefined));
   const setList = useSubagentUi((s) => s.setList);

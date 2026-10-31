@@ -228,6 +228,14 @@ CREATE INDEX IF NOT EXISTS idx_attachments_session ON attachments(session_id, me
 CREATE INDEX IF NOT EXISTS idx_error_logs_ts ON error_logs(ts);
 CREATE INDEX IF NOT EXISTS idx_error_logs_filter ON error_logs(level, source);
 CREATE INDEX IF NOT EXISTS idx_events_session   ON events(session_id, seq);
+-- Paged history (services/history_page.py): replay tails by id, turn slices by
+-- time, "the latest X" lookups by type, and the (rare) failed tool results.
+-- The error index matches json.dumps' text, so it never parses JSON.
+CREATE INDEX IF NOT EXISTS idx_events_sid_id    ON events(session_id, id);
+CREATE INDEX IF NOT EXISTS idx_events_sid_ts    ON events(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_events_sid_type  ON events(session_id, type, created_at);
+CREATE INDEX IF NOT EXISTS idx_events_tool_err  ON events(session_id, id)
+    WHERE type = 'tool.result' AND instr(data, '"is_error": true') > 0;
 """
 
 

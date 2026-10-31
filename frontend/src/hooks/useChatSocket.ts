@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef } from "react";
 import { toLogin, wsUrl } from "../api/client";
-import { getHistory } from "../api/sessions";
+import { getHistoryPage } from "../api/sessions";
 import { onResync } from "../lib/sync";
-import { useChatStore } from "../stores/chatStore";
+import { FIRST_TURNS, useChatStore } from "../stores/chatStore";
 import { useSessionStore } from "../stores/sessionStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useUsageStore } from "../stores/usageStore";
@@ -62,13 +62,19 @@ export function useChatSocket(sessionId: string | null) {
     let probe: ReturnType<typeof setTimeout> | undefined;
     let gen = 0; // a newer connect() supersedes one still loading history
     const { reset, loadHistory, applyEvent, setConnection } = store.getState();
-    reset();
+    reset(sessionId);
 
     const connect = async () => {
       const mine = ++gen;
       setConnection(retry ? "reconnecting" : "connecting");
       try {
-        const h = await getHistory(sessionId);
+        // First the newest turns; a reconnect reloads what is shown (from the
+        // oldest loaded turn on), so pages already scrolled through stay.
+        const s = store.getState();
+        const h = await getHistoryPage(
+          sessionId,
+          s.opened && s.sid === sessionId && s.paging.paged ? { since: s.paging.cursor ?? "" } : { turns: FIRST_TURNS },
+        );
         if (!alive || mine !== gen) return;
         loadHistory(h);
         useUsageStore.getState().setAccount(sessionId, h.account);

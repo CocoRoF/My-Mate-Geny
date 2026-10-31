@@ -51,6 +51,7 @@ from app.providers.claude_code import ClaudeCodeProvider
 from app.providers.claude_engine import ClaudeEngine
 from app.services._ids import new_id, now_iso
 from app.services.turn_cost import needs_normalizing, normalize_events
+from app.services.history_page import HistoryPager
 from app.services.context_handoff import build_blocks, catchup_preamble, handoff_preamble, ENGINE_LABEL
 from app.services.engines import EngineManager
 from app.services import changes as change_tracker
@@ -357,6 +358,19 @@ class SessionService:
             ]
             normalize_events(out, prior)
         return out
+
+    def history_page(self, sid: str, *, turns: int | None = None, before: str | None = None,
+                     since: str | None = None) -> dict[str, Any]:
+        """A slice of the history, whole turns at a time (services/history_page.py)."""
+        pager = HistoryPager(self._db, self._attachments.by_message if self._attachments is not None else None)
+        running = [] if before is not None else [
+            dict(r) for r in self._db.query(
+                "SELECT tool_use_id, started_at FROM bg_tasks WHERE session_id = ? "
+                "AND status IN ('running', 'pending') AND tool_use_id IS NOT NULL",
+                (sid,),
+            )
+        ]
+        return pager.page(sid, turns=turns, before=before, since=since, running_tasks=running)
 
     def reset_context(self, sid: str) -> dict[str, Any]:
         """``/clear``: the next turn starts a fresh provider conversation."""
