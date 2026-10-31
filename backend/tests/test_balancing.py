@@ -601,3 +601,38 @@ def test_limit_priority_setting_round_trips(db):
     assert store.set_pool("claude", limit_priority="seven_day")["limit_priority"] == "seven_day"
     with pytest.raises(ValueError):
         store.set_pool("claude", limit_priority="monthly")
+
+
+def test_a_live_engine_moves_once_its_account_is_near_the_5h_limit(pool):
+    """5-hour at 95 % moves a busy chat to an account with headroom even when
+    that account's 7-day usage is higher — before the next turn, not only
+    after a refusal at 100 %."""
+    store = pool._store
+    store.set_pool("claude", strategy="most_remaining", limit_priority="seven_day")
+    work = store.create("claude", label="work")
+    reset = time.time() + 3600
+    pool.record_live("claude", PID, {"status": "allowed_warning", "unifiedWindows": {
+        "five_hour": {"utilization": 0.95, "resetsAt": reset},
+        "seven_day": {"utilization": 0.62, "resetsAt": reset + 5e5}}})
+    pool.record_live("claude", work["id"], {"status": "allowed", "unifiedWindows": {
+        "five_hour": {"utilization": 0.10, "resetsAt": reset},
+        "seven_day": {"utilization": 0.80, "resetsAt": reset + 5e5}}})
+    why, phrase = pool.near_limit_move("claude", PID)
+    assert why == "near_5h" and "5-hour" in phrase
+    # the next selection for that chat lands on the other account
+    lease = pool.select("claude", prefer=PID)
+    assert lease.account_id == work["id"]
+    pool.release(lease)
+    # below the "Move at" % nothing moves
+    pool.record_live("claude", PID, {"status": "allowed", "unifiedWindows": {
+        "five_hour": {"utilization": 0.50, "resetsAt": reset},
+        "seven_day": {"utilization": 0.62, "resetsAt": reset + 5e5}}})
+    assert pool.near_limit_move("claude", PID) == (None, "")
+    # both accounts near a limit: stay (the refusal failover still covers 100 %)
+    pool.record_live("claude", PID, {"status": "allowed_warning", "unifiedWindows": {
+        "five_hour": {"utilization": 0.95, "resetsAt": reset},
+        "seven_day": {"utilization": 0.62, "resetsAt": reset + 5e5}}})
+    pool.record_live("claude", work["id"], {"status": "allowed", "unifiedWindows": {
+        "five_hour": {"utilization": 0.10, "resetsAt": reset},
+        "seven_day": {"utilization": 0.97, "resetsAt": reset + 5e5}}})
+    assert pool.near_limit_move("claude", PID)[0] is None

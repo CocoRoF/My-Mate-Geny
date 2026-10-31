@@ -1169,6 +1169,30 @@ class AccountPool:
         why = ineligible_reason(replace(s, in_flight=0), now=now)  # its own engine's turns don't count
         return (why, describe_reason(why, s, now=now, limit=self.limit_info(account_id))) if why else (None, "")
 
+    def near_limit_move(self, provider: str, account_id: str) -> tuple[str | None, str]:
+        """(soft reason, phrase) a LIVE engine should move off its account
+        before the next turn: the account is near a plan limit (or is the
+        primary login in fallback mode) and another account has headroom —
+        the same rule a respawn applies (see :func:`sticky_reason`). Without
+        this a busy chat kept its engine until the account was refused at
+        100 %. Cached / live numbers only (no HTTP)."""
+        cfg = self._store.pool(provider)
+        if not cfg["enabled"]:
+            return None, ""
+        snaps, _ = self._snapshots(provider, cfg, fetch=False)
+        cur = next((s for s in snaps if s.id == account_id), None)
+        if cur is None:
+            return None, ""
+        cur = replace(cur, in_flight=0)  # its own engine's turn doesn't count
+        snaps = [cur if s.id == account_id else s for s in snaps]
+        limits = LimitPolicy(cfg.get("near_5h", NEAR_LIMIT_5H), cfg.get("near_7d", NEAR_LIMIT_7D),
+                             cfg.get("limit_priority") or "balanced")
+        now = time.time()
+        why = sticky_reason(cur, snaps, now=now, limits=limits, primary_mode=cfg.get("primary_mode") or "normal")
+        if why in ("near_5h", "near_7d", "fallback_only"):
+            return why, describe_reason(why, cur, now=now, limit=self.limit_info(account_id))
+        return None, ""
+
     # ---- turns + release ----
 
     def begin_turn(self, lease: Lease | None) -> None:

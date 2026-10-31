@@ -1301,7 +1301,17 @@ class SessionService:
         if rec.get("manual") and rec.get("id") and rec["id"] != slot.lease.account_id:
             return "manual"
         why, phrase = self._pool.peek("claude", slot.lease.account_id)
-        return phrase if why else None
+        if why:
+            return phrase
+        # Near a plan limit (e.g. 5-hour ≥ the "Move at" %) while another
+        # account has headroom: move now, not only once it's refused at 100 %.
+        # Not while background tasks run — a restart would kill them; the
+        # next turn checks again.
+        if not getattr(slot.engine, "running_tasks", None):
+            soft, phrase = self._pool.near_limit_move("claude", slot.lease.account_id)
+            if soft:
+                return phrase
+        return None
 
     async def _engine_turn(self, sid: str, provider: Any, req: TurnRequest, holder: dict[str, Any],
                            ctx: dict[str, Any]) -> AsyncIterator[ProviderEvent]:
