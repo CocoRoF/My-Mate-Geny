@@ -10,6 +10,9 @@ Everything the engine says *outside* a turn is routed here:
 * ``usage.update`` -> ``on_usage(sid, info)``
 * output while idle (Claude reacting to a finished background task) ->
   ``on_auto_turn(sid, stream, inbox)``: a turn nobody typed.
+* a background subagent's work while idle (events carrying ``parent``) ->
+  ``on_subagent(sid, event)``: it belongs to the turn that launched it, so it
+  must not open a turn of its own.
 """
 
 from __future__ import annotations
@@ -46,12 +49,14 @@ class EngineManager:
         on_usage: Callable[[str, dict[str, Any]], None],
         on_auto_turn: Callable[[str, AsyncIterator[ProviderEvent], TurnInbox], None],
         on_closed: Callable[[str, Any, str], None],
+        on_subagent: Callable[[str, ProviderEvent], Awaitable[None]] | None = None,
     ) -> None:
         self._slots: dict[str, EngineSlot] = {}
         self._on_task = on_task
         self._on_usage = on_usage
         self._on_auto_turn = on_auto_turn
         self._on_closed = on_closed
+        self._on_subagent = on_subagent
         self._reaper: asyncio.Task | None = None
         self._lock = asyncio.Lock()
 
@@ -221,6 +226,14 @@ class EngineManager:
                 return
             if slot.sink is not None:
                 await slot.sink.put(ev)
+                continue
+            if ev.data.get("parent"):
+                # A background subagent working while the chat is idle.
+                if self._on_subagent is not None:
+                    try:
+                        await self._on_subagent(sid, ev)
+                    except Exception:  # noqa: BLE001 - never stop the dispatcher
+                        pass
                 continue
             if ev.type in _TURN_START:
                 # Claude started a turn on its own (e.g. a background task finished).

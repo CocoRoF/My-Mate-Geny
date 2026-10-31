@@ -34,6 +34,7 @@ from app.db import Database
 from app.providers import get_provider
 from app.providers.accounts import AccountPool, classify_error, link_shared_state
 from app.providers.base import ProviderEvent, SteerMessage, TurnInbox, TurnRequest
+from app.providers.claude_code import CLI_ENV as CLAUDE_ENV
 from app.providers.claude_engine import ClaudeEngine
 from app.services._ids import new_id, now_iso
 from app.services.context_handoff import build_blocks, catchup_preamble, handoff_preamble, ENGINE_LABEL
@@ -53,6 +54,10 @@ MAX_EXTRA_DIRS = 20
 # machine…): retry once from a full handoff instead of failing the turn.
 _STOPPED = re.compile(r"doesn't want to proceed|tool use was rejected|interrupted to apply", re.I)
 _STALE_RESUME = re.compile(r"no conversation found|no rollout found|thread/resume failed", re.I)
+# Task fields the engine reports for a running subagent (task_progress) that
+# bg_tasks doesn't keep: passed through on the live task.state message.
+_LIVE_TASK_FIELDS = ("subagent_type", "activity", "last_tool_name", "tool_uses", "total_tokens", "duration_ms",
+                     "parent_task_id")
 
 
 class TurnBusyError(RuntimeError):
@@ -87,6 +92,7 @@ class SessionService:
             on_usage=self._on_usage,
             on_auto_turn=self._on_auto_turn,
             on_closed=self._on_engine_closed,
+            on_subagent=self._on_subagent,
         )
         # Engines don't survive a restart: tasks still marked running are gone.
         try:
@@ -778,23 +784,28 @@ class SessionService:
         self._db.execute("UPDATE sessions SET cli_info = ? WHERE id = ?", (json.dumps(info), sid))
         return ProviderEvent(type="session.info", data=info, seq=ev.seq, timestamp=ev.timestamp)
 
+    async def _store_images(self, sid: str, ev: ProviderEvent) -> None:
+        """Images a tool returned become artifacts (the event keeps references)."""
+        if ev.type != "tool.result" or not ev.data.get("images") or self._attachments is None:
+            return
+        stored = []
+        for k, img in enumerate(ev.data["images"]):
+            try:
+                raw = base64.b64decode(img.get("data") or "")
+                ext = (img.get("media_type") or "image/png").split("/")[-1].replace("jpeg", "jpg")
+                stored.append(await self._attachments.save_bytes(
+                    sid, f"tool-image-{k + 1}.{ext}", img.get("media_type") or "image/png", raw,
+                    tag=f"artifact:{ev.data.get('id')}",
+                ))
+            except Exception:  # noqa: BLE001 - an unreadable image must not break the turn
+                continue
+        ev.data = {**ev.data, "images": stored}
+
     async def _record_event(self, sid: str, ev: ProviderEvent, st: dict[str, Any]) -> None:
         """Persist one turn event + side effects (assistant message, engine
         watermark, admin logs, artifact images)."""
         ctx = st["ctx"]
-        if ev.type == "tool.result" and ev.data.get("images") and self._attachments is not None:
-            stored = []
-            for k, img in enumerate(ev.data["images"]):
-                try:
-                    raw = base64.b64decode(img.get("data") or "")
-                    ext = (img.get("media_type") or "image/png").split("/")[-1].replace("jpeg", "jpg")
-                    stored.append(await self._attachments.save_bytes(
-                        sid, f"tool-image-{k + 1}.{ext}", img.get("media_type") or "image/png", raw,
-                        tag=f"artifact:{ev.data.get('id')}",
-                    ))
-                except Exception:  # noqa: BLE001 - an unreadable image must not break the turn
-                    continue
-            ev.data = {**ev.data, "images": stored}
+        await self._store_images(sid, ev)
         if ev.type == "turn.complete":
             ev.data = {**ev.data, "provider": st["provider"]}  # usage is attributed per turn
         self._add_event(sid, ev)
@@ -857,7 +868,7 @@ class SessionService:
         """One turn on the session's persistent Claude engine (spawned on demand)."""
 
         async def make(lease: Any) -> ClaudeEngine:
-            env: dict[str, str] = {}
+            env: dict[str, str] = dict(CLAUDE_ENV)
             key = req.api_key
             if lease is not None:
                 if not lease.is_primary:
@@ -1062,7 +1073,20 @@ class SessionService:
             return
         row = self._db.query_one("SELECT * FROM bg_tasks WHERE session_id = ? AND task_id = ?", (sid, task.get("task_id")))
         if row is not None:
-            self._publish(sid, {"type": "task.state", "data": self._task_out(row)})
+            # Subagent progress (activity, tool count) is shown live, not stored.
+            live = {k: task[k] for k in _LIVE_TASK_FIELDS if task.get(k) is not None}
+            self._publish(sid, {"type": "task.state", "data": {**self._task_out(row), **live}})
+
+    async def _on_subagent(self, sid: str, ev: ProviderEvent) -> None:
+        """A background subagent's step while no turn runs: stored and shown
+        under the Agent call that launched it (an earlier turn)."""
+        try:
+            self.get(sid)
+        except KeyError:
+            return
+        await self._store_images(sid, ev)
+        self._add_event(sid, ev)
+        self._publish(sid, ev.to_dict())
 
     def _on_usage(self, sid: str, info: dict[str, Any]) -> None:
         self.live_usage["claude"] = {**info, "at": now_iso()}

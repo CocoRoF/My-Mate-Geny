@@ -28,9 +28,11 @@ EVENT_TYPES = (
     "session.start",   # turn began; data: {provider, model, workspace}
     "text.delta",      # streaming assistant text; data: {text}
     "thinking.delta",  # streaming reasoning; data: {text}
-    "tool.use",        # agent invoked a tool; data: {id, name, input}
-    "tool.result",     # tool returned; data: {id, name, output, is_error}
-    "turn.complete",   # terminal success; data: {text, model, usage, cost_usd, stop_reason, cli_session_id}
+    "tool.use",        # agent invoked a tool; data: {id, name, input, parent?}  (parent = the Agent/Task call it ran in)
+    "tool.result",     # tool returned; data: {id, name, output, is_error, parent?, agent?}  (agent = subagent report + stats)
+    "subagent.text",   # a subagent's prose (one complete block); data: {parent, text} — never part of the answer
+    "subagent.thinking",  # a subagent's reasoning block; data: {parent, text}
+    "turn.complete",  # terminal success; data: {text, model, usage, cost_usd, stop_reason, cli_session_id}
     "error",           # terminal failure; data: {code, message}  (code "turn.interrupted" = user pressed Stop)
     "notice",          # NON-terminal warning/info shown inline; data: {level, message, code}
     "session.info",    # CLI capabilities (tools, slash commands, skills, MCP servers…); not persisted as an event
@@ -47,6 +49,8 @@ EventType = Literal[
     "thinking.delta",
     "tool.use",
     "tool.result",
+    "subagent.text",
+    "subagent.thinking",
     "turn.complete",
     "error",
     "notice",

@@ -75,11 +75,14 @@ class StreamJsonAccumulator:
                 })
             return
 
-        # Messages from inside a subagent (Task tool) carry the parent tool id:
-        # their tool calls nest under that row, their prose isn't the answer.
+        # Messages from inside a subagent (Agent/Task tool) carry the parent
+        # tool id: their tool calls nest under that row, and their prose and
+        # reasoning become ``subagent.*`` events — never part of the answer.
         parent = obj.get("parent_tool_use_id") or None
 
         if kind == "stream_event":
+            # Subagent output arrives as complete messages (handled below);
+            # partial frames for it, should a CLI send them, would duplicate it.
             if not parent:
                 yield from self._handle_stream_event(obj.get("event", {}))
             return
@@ -89,7 +92,7 @@ class StreamJsonAccumulator:
             return
 
         if kind == "user":
-            yield from self._handle_user(obj.get("message", {}), parent)
+            yield from self._handle_user(obj.get("message", {}), parent, obj.get("tool_use_result"))
             return
 
         if kind == "result":
@@ -128,13 +131,21 @@ class StreamJsonAccumulator:
                 if parent:
                     data["parent"] = parent
                 yield self._ev("tool.use", data)
-            elif btype == "text" and block.get("text") and not parent:
-                # Keep the last complete text as the canonical final answer.
-                self.final_text = block["text"]
+            elif btype == "text" and block.get("text"):
+                if parent:
+                    yield self._ev("subagent.text", {"parent": parent, "text": block["text"]})
+                else:
+                    # Keep the last complete text as the canonical final answer.
+                    self.final_text = block["text"]
+            elif btype == "thinking" and parent and str(block.get("thinking") or "").strip():
+                # (empty when the CLI omits the reasoning display)
+                yield self._ev("subagent.thinking", {"parent": parent, "text": block["thinking"]})
 
     # ---- tool results (arrive as user messages) ----
 
-    def _handle_user(self, message: dict[str, Any], parent: str | None = None) -> Iterator[ProviderEvent]:
+    def _handle_user(
+        self, message: dict[str, Any], parent: str | None = None, structured: Any = None
+    ) -> Iterator[ProviderEvent]:
         content = message.get("content", [])
         if not isinstance(content, list):
             return
@@ -165,6 +176,9 @@ class StreamJsonAccumulator:
                     data["images"] = images
                 if parent:
                     data["parent"] = parent
+                agent = _agent_result(structured)
+                if agent:
+                    data["agent"] = agent
                 yield self._ev("tool.result", data)
 
     # ---- terminal result ----
@@ -211,3 +225,28 @@ class StreamJsonAccumulator:
                 "num_turns": obj.get("num_turns"),
             },
         )
+
+
+_AGENT_FIELDS = (
+    ("status", "status"), ("agentType", "agent_type"), ("resolvedModel", "model"),
+    ("totalDurationMs", "duration_ms"), ("totalTokens", "total_tokens"),
+    ("totalToolUseCount", "tool_uses"), ("isAsync", "is_async"),
+)
+
+
+def _agent_result(structured: Any) -> dict[str, Any] | None:
+    """Summary of an Agent/Task tool result from the CLI's structured
+    ``tool_use_result``: the subagent's clean final report and run stats,
+    without the hand-back framing the model sees in the text result."""
+    if not isinstance(structured, dict) or not structured.get("agentId"):
+        return None
+    out: dict[str, Any] = {"agent_id": str(structured["agentId"])}
+    for src, dst in _AGENT_FIELDS:
+        if structured.get(src) is not None:
+            out[dst] = structured[src]
+    content = structured.get("content")
+    if isinstance(content, list):
+        text = "".join(p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text")
+        if text:
+            out["result"] = text
+    return out

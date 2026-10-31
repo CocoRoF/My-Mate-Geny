@@ -17,7 +17,7 @@ export const wasStopped = (t: ToolActivity) =>
   !!t.isError && /doesn't want to proceed|tool use was rejected|interrupted to apply/i.test(t.output || "");
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp)$/i;
 
-function useNow(active: boolean) {
+export function useNow(active: boolean) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!active) return;
@@ -189,7 +189,15 @@ function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; chi
 const LIVE_TAIL = 3;
 
 /** A run of consecutive tool calls: one summary line, expandable. */
-export default function ToolGroup({ tools, allTools }: { tools: ToolActivity[]; allTools?: ToolActivity[] }) {
+export default function ToolGroup({
+  tools,
+  allTools,
+  defaultOpen = false,
+}: {
+  tools: ToolActivity[];
+  allTools?: ToolActivity[];
+  defaultOpen?: boolean; // list every call from the start (subagent detail)
+}) {
   const session = useActive();
   const kids = useMemo(() => {
     const map = new Map<string, ToolActivity[]>();
@@ -199,7 +207,7 @@ export default function ToolGroup({ tools, allTools }: { tools: ToolActivity[]; 
   const everything = useMemo(() => [...tools, ...tools.flatMap((t) => kids.get(t.id) || [])], [tools, kids]);
   const running = tools.find((t) => t.durationMs === undefined);
   const now = useNow(!!running || everything.some((t) => t.task && isRunning(t.task)));
-  const [open, setOpen] = useState<boolean | null>(null);
+  const [open, setOpen] = useState<boolean | null>(defaultOpen ? true : null);
   const metas = useMemo(() => tools.map((t) => toolMeta(t.name, t.input, session?.workspace_path)), [tools, session?.workspace_path]);
   const failed = tools.filter((t) => t.isError && !wasStopped(t)).length;
   const stopped = tools.filter(wasStopped).length;
