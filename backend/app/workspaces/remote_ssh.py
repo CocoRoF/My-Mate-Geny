@@ -310,6 +310,8 @@ class RemoteSshConnector(WorkspaceConnector):
         on the remote host over SFTP so remote tools can use them."""
         if not files:
             return {}
+        import asyncssh
+
         conn = await self._asyncssh_connect()
         out: dict[str, str] = {}
         try:
@@ -319,7 +321,18 @@ class RemoteSshConnector(WorkspaceConnector):
                     folder = f"{home}/.hr-harnessor/uploads/{session_id}/{aid}"
                     await sftp.makedirs(folder, exist_ok=True)
                     target = f"{folder}/{name}"
-                    await sftp.put(local_path, target)
+                    # Upload under a temporary name, then rename over the target:
+                    # when the "remote" host is this machine, the target IS the
+                    # local file, and putting straight onto it truncated it to 0
+                    # bytes before it was read (broken images in that chat).
+                    part = f"{target}.part"
+                    await sftp.put(local_path, part)
+                    try:
+                        await sftp.posix_rename(part, target)
+                    except (asyncssh.SFTPOpUnsupported, AttributeError):
+                        if await sftp.exists(target):
+                            await sftp.remove(target)
+                        await sftp.rename(part, target)
                     out[aid] = target
         finally:
             conn.close()
