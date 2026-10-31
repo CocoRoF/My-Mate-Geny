@@ -9,10 +9,10 @@ import tempfile
 from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from app.config import settings
-from app.mate import files, netio
+from app.mate import files, live2d_core, netio
 from app.mate.service import MateService
 from app.mate.store import MateError
 from app.mate.voice import VoiceService
@@ -102,32 +102,32 @@ async def list_voices(request: Request, engine: str = "openai") -> dict:
 
 @router.get("/live2d/core")
 async def core_status() -> dict:
-    return files.core_status()
+    """{installed, installing, size?, source, received?, total?, error?}"""
+    return live2d_core.installer.status()
 
 
 @router.post("/live2d/core/install")
-async def core_install(request: Request) -> dict:
+async def core_install(request: Request) -> StreamingResponse:
     """Download the Cubism Core from Live2D's CDN (the user accepted the
-    Live2D licence in the UI; it is not redistributed with the app)."""
+    Live2D licence in the UI; it is not redistributed with the app). Streams
+    NDJSON progress (docs/mate.md §2): ``downloading`` lines, ``verifying``,
+    then ``done`` or ``error``. Concurrent requests share one download."""
     body = {}
     if request.headers.get("content-type", "").startswith("application/json"):
         body = await _json(request)
     if body.get("accept_license") is False:
         raise HTTPException(status_code=400, detail="the Live2D licence must be accepted")
-    try:
-        resp = await netio.request("GET", files.CORE_URL, timeout=60)
-        if resp.status >= 400:
-            raise netio.UpstreamError(f"Live2D CDN: HTTP {resp.status}", status=resp.status)
-        return await asyncio.to_thread(files.store_core, resp.body)
-    except (MateError, netio.UpstreamError) as exc:
-        raise _http(exc) from exc
+    return StreamingResponse(live2d_core.installer.stream(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 
 @router.get("/live2d/core.js")
 async def core_js() -> FileResponse:
     p = files.core_path()
     if not p.is_file():
-        raise HTTPException(status_code=404, detail="Live2D Cubism Core is not installed")
+        # never cached: the body retries the same URL right after an install
+        raise HTTPException(status_code=404, detail="Live2D Cubism Core is not installed",
+                            headers={"Cache-Control": "no-store"})
     return FileResponse(p, media_type="application/javascript",
                         headers={"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff"})
 

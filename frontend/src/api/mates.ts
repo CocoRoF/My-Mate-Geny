@@ -1,6 +1,7 @@
 /** /api/mates (docs/mate.md §1–5). */
 import { apiFetch, apiResponse, toLogin } from "./client";
 import type { Avatar } from "../mate/types";
+import { markLive2DCoreInstalled } from "../mate/live2dCore";
 import type { Session } from "../types";
 
 export interface Persona {
@@ -136,12 +137,59 @@ export const putVoiceSettings = (patch: VoiceSettingsPatch) =>
 export const listVoices = (engine: string) =>
   apiFetch<{ engine: string; voices: VoiceOption[] }>(`/api/mates/voices?engine=${enc(engine)}`);
 
-export const coreStatus = () => apiFetch<{ installed: boolean; size?: number; source?: string }>("/api/mates/live2d/core");
-export const installCore = () =>
-  apiFetch<{ installed: boolean; size?: number; source?: string }>("/api/mates/live2d/core/install", {
-    method: "POST",
-    ...j({ accept_license: true }),
-  });
+export interface CoreStatus {
+  installed: boolean;
+  installing?: boolean;
+  size?: number;
+  source?: string;
+  /** while installing: bytes so far / expected (null when the CDN doesn't say) */
+  received?: number;
+  total?: number | null;
+  /** the last install failed (and nothing is installed) */
+  error?: string;
+}
+/** one line of the install stream (docs/mate.md §2) */
+export type CoreInstallEvent =
+  | { phase: "downloading"; received: number; total: number | null }
+  | { phase: "verifying" }
+  | { phase: "done"; installed: true; size: number; source?: string }
+  | { phase: "error"; error: string };
+
+export const coreStatus = () => apiFetch<CoreStatus>("/api/mates/live2d/core");
+/**
+ * Install the Cubism Core (the user accepted the Live2D licence): reads the NDJSON progress stream, calls
+ * `onProgress` for every line, resolves with the final status, throws on an error line. On success every Live2D
+ * body waiting for the core loads at once (markLive2DCoreInstalled).
+ */
+export async function installCore(onProgress?: (e: CoreInstallEvent) => void): Promise<CoreStatus> {
+  const res = await apiResponse("/api/mates/live2d/core/install", { method: "POST", ...j({ accept_license: true }) });
+  let end: CoreInstallEvent | null = null;
+  const take = (line: string) => {
+    if (!line.trim()) return;
+    end = JSON.parse(line) as CoreInstallEvent;
+    onProgress?.(end);
+  };
+  let buf = "";
+  const reader = res.body?.getReader();
+  if (reader) {
+    const dec = new TextDecoder();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() ?? "";
+      lines.forEach(take);
+    }
+    buf += dec.decode();
+  } else buf = await res.text();
+  buf.split("\n").forEach(take);
+  const last = end as CoreInstallEvent | null;
+  if (last?.phase === "error") throw new Error(last.error);
+  if (last?.phase !== "done") throw new Error("the install stopped before it finished");
+  markLive2DCoreInstalled();
+  return { installed: true, installing: false, size: last.size, source: last.source };
+}
 
 /** the model a mate talks on when none is set (backend DEFAULT_MATE_MODEL) */
 export const DEFAULT_MATE_MODEL = "claude-sonnet-5-5";

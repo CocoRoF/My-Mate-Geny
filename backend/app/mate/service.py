@@ -104,7 +104,7 @@ class MateService:
                 if cur is None and key in removed:
                     continue
                 doc = files.builtin_doc(key)
-                name, persona = files.ailism_persona(doc)
+                name, persona = files.builtin_persona(doc)
                 avatar = files.builtin_avatar(key, doc) or {"kind": "none"}
                 if cur is None:
                     mate = self.store.create(name=name, persona=persona, avatar=avatar)

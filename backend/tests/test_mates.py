@@ -16,7 +16,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.mate import netio
 
 ESTELLE_JSON = Path("/home/workspace_app/ailism-mate/apps/api/mate_api/content/mates/estelle.json")
 ESTELLE_ASSETS = Path("/home/workspace_app/ailism-mate/apps/api/mate_api/content/assets/estelle")
@@ -237,31 +236,104 @@ def test_import_local_live2d_folder_from_geny(client, tmp_path):
     assert r.json()["mate"]["name"] == "Keeps name" and r.json()["mate"]["avatar"]["kind"] == "live2d"
 
 
-def test_live2d_core_install_and_serve(client, monkeypatch):
-    from app.mate import files
+def _ndjson(resp):
+    return [json.loads(x) for x in resp.text.splitlines() if x.strip()]
+
+
+CORE_JS = b"/* Live2DCubismCore */ var Live2DCubismCore = {};" + b" " * 200_000
+
+
+def test_live2d_core_install_streams_progress_and_serves(client, monkeypatch):
+    from app.mate import files, live2d_core
     if files.core_path().exists():
         files.core_path().unlink()
-    assert client.get("/api/mates/live2d/core").json()["installed"] is False
-    assert client.get("/api/mates/live2d/core.js").status_code == 404
+    st = client.get("/api/mates/live2d/core").json()
+    assert st["installed"] is False and st["installing"] is False
+    js404 = client.get("/api/mates/live2d/core.js")
+    assert js404.status_code == 404 and js404.headers["cache-control"] == "no-store"
     calls = []
 
-    async def fake(method, url, **kw):
-        calls.append((method, url))
-        return netio.Response(200, b"/* Live2DCubismCore */ var Live2DCubismCore = {};" + b" " * 20000,
-                              {"content-type": "application/javascript"})
+    def fake(url, progress):
+        calls.append(url)
+        for n in range(0, len(CORE_JS) + 1, 50_000):
+            progress(n, len(CORE_JS))
+        progress(len(CORE_JS), len(CORE_JS))
+        return CORE_JS
 
-    monkeypatch.setattr(netio, "request", fake)
+    monkeypatch.setattr(live2d_core, "fetch", fake)
     r = client.post("/api/mates/live2d/core/install", json={"accept_license": True})
-    assert r.status_code == 200 and r.json()["installed"] is True
-    assert calls == [("GET", "https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js")]
+    assert r.status_code == 200 and r.headers["content-type"].startswith("application/x-ndjson")
+    lines = _ndjson(r)
+    assert calls == ["https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"]
+    assert lines[0] == {"phase": "downloading", "received": 0, "total": lines[0]["total"]}
+    assert any(x.get("total") == len(CORE_JS) for x in lines)
+    assert all(x["phase"] == "downloading" for x in lines[:-2])
+    assert [x["phase"] for x in lines[-2:]] == ["verifying", "done"]
+    assert lines[-1]["installed"] is True and lines[-1]["size"] == len(CORE_JS)
+    received = [x["received"] for x in lines if x["phase"] == "downloading"]
+    assert received == sorted(received)
+    st = client.get("/api/mates/live2d/core").json()
+    assert st["installed"] is True and st["installing"] is False and st["size"] == len(CORE_JS)
     js = client.get("/api/mates/live2d/core.js")
     assert js.status_code == 200 and js.headers["content-type"].startswith("application/javascript")
 
-    async def bad(method, url, **kw):
-        return netio.Response(200, b"<html>not it</html>", {})
+    # not the core (an HTML error page, say): an error line, the installed copy stays
+    monkeypatch.setattr(live2d_core, "fetch", lambda url, progress: b"<html>not it</html>")
+    lines = _ndjson(client.post("/api/mates/live2d/core/install"))
+    assert lines[-1]["phase"] == "error" and "not the Live2D Cubism Core" in lines[-1]["error"]
+    assert client.get("/api/mates/live2d/core").json()["installed"] is True
 
-    monkeypatch.setattr(netio, "request", bad)
-    assert client.post("/api/mates/live2d/core/install").status_code == 502
+    def unreachable(url, progress):
+        raise RuntimeError("cannot reach cubism.live2d.com: timed out")
+
+    files.core_path().unlink()
+    monkeypatch.setattr(live2d_core, "fetch", unreachable)
+    lines = _ndjson(client.post("/api/mates/live2d/core/install"))
+    assert lines[-1] == {"phase": "error", "error": "cannot reach cubism.live2d.com: timed out"}
+    st = client.get("/api/mates/live2d/core").json()
+    assert st["installed"] is False and st["error"].startswith("cannot reach")
+    assert client.post("/api/mates/live2d/core/install", json={"accept_license": False}).status_code == 400
+
+
+def test_live2d_core_concurrent_installs_share_one_download(client, monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from app.mate import files, live2d_core
+    if files.core_path().exists():
+        files.core_path().unlink()
+    calls = []
+    release = threading.Event()
+
+    def slow(url, progress):
+        calls.append(url)
+        progress(0, len(CORE_JS))
+        progress(len(CORE_JS) // 2, len(CORE_JS))
+        assert release.wait(10)
+        progress(len(CORE_JS), len(CORE_JS))
+        return CORE_JS
+
+    monkeypatch.setattr(live2d_core, "fetch", slow)
+
+    def install():
+        return _ndjson(client.post("/api/mates/live2d/core/install", json={"accept_license": True}))
+
+    with ThreadPoolExecutor(2) as pool:
+        first = pool.submit(install)
+        for _ in range(100):  # the download is under way
+            st = client.get("/api/mates/live2d/core").json()
+            if st["installing"] and st.get("received"):
+                break
+            threading.Event().wait(0.02)
+        assert st["installing"] is True and st["received"] == len(CORE_JS) // 2 and st["total"] == len(CORE_JS)
+        second = pool.submit(install)
+        threading.Event().wait(0.3)
+        release.set()
+        a, b = first.result(10), second.result(10)
+    assert len(calls) == 1  # one download for both
+    assert a[-1]["phase"] == b[-1]["phase"] == "done" and b[-1]["installed"] is True
+    assert any(x["phase"] == "downloading" for x in b)
+    assert client.get("/api/mates/live2d/core").json()["installed"] is True
 
 
 def test_mate_conversation_is_hidden_from_chat_list(client, tmp_path):

@@ -9,9 +9,8 @@
   border-radius:var(--mate-plain-radius,18px);box-shadow:0 10px 36px rgba(0,0,0,.35)}
 .mate-plain-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 
-/* the voice level (0..1, smoothed) in --mate-level: a very small lift/scale while she talks */
-.mate-motion{transform-origin:50% 100%;
-  transform:translateY(calc(var(--mate-level,0) * -0.9%)) scale(calc(1 + var(--mate-level,0) * 0.012))}
+/* (the video body has no level-driven transform: rescaling the canvas every frame made her edges swim — the talk
+   clips move on their own) */
 
 /* stills: a picture fades in over the base; the base goes only when it is fully in (never a see-through moment), and
    comes back at once when the picture goes (ailism-mate mate-core.css) */

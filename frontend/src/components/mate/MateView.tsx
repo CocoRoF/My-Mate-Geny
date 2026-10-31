@@ -1,6 +1,7 @@
 /**
  * The Mate view (sidebar → Mate): switcher, avatar stage, conversation, composer, settings.
- * Desktop: stage on the left, conversation on the right, settings as a side panel.
+ * Desktop: like Geny's VTuber tab — the avatar gets half the width (big, bottom-anchored, scaled to the height), the
+ * conversation the other half; Mate settings / Global settings open over the conversation half.
  * Phone: a compact (collapsible) stage on top, the conversation below, settings full screen.
  */
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -9,6 +10,7 @@ import { usePhone } from "../../lib/device";
 import { useBackHandler } from "../../lib/back";
 import { useMateStore } from "../../stores/mateStore";
 import { useMateConversation } from "../../mate/useMateConversation";
+import { OPEN_GLOBAL_SETTINGS_EVENT } from "../../mate/live2dCore";
 import { MenuButton } from "../layout/MobileTopBar";
 import Icon from "../ui/Icon";
 import MateComposer from "./MateComposer";
@@ -16,6 +18,10 @@ import MateMessages from "./MateMessages";
 import MateStage, { BuiltinBadge, MateThumb, MOOD_LABEL } from "./MateStage";
 
 const MateSettings = lazy(() => import("./settings/MateSettings"));
+const GlobalSettings = lazy(() => import("./settings/GlobalSettings"));
+
+/** which settings panel is open (they share one slot) */
+type Panel = null | "mate" | "global";
 
 const COLLAPSE_KEY = "hrh_mate_stage_collapsed";
 
@@ -28,7 +34,15 @@ export default function MateView() {
   const mate = mates.find((m) => m.id === activeId) ?? mates[0] ?? null;
   const conv = useMateConversation(mate);
   const phone = usePhone();
-  const [settings, setSettings] = useState(false);
+  const [panel, setPanel] = useState<Panel>(null);
+  const settings = panel !== null;
+  const togglePanel = (p: Exclude<Panel, null>) => setPanel((cur) => (cur === p ? null : p));
+  // a Live2D body without its runtime (or anything else) asks for Global settings
+  useEffect(() => {
+    const open = () => setPanel("global");
+    window.addEventListener(OPEN_GLOBAL_SETTINGS_EVENT, open);
+    return () => window.removeEventListener(OPEN_GLOBAL_SETTINGS_EVENT, open);
+  }, []);
   const [switcher, setSwitcher] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
   // a press anywhere outside the switcher closes it (a fixed backdrop would be
@@ -56,7 +70,7 @@ export default function MateView() {
     const t = setTimeout(() => setInfo(null), 8000);
     return () => clearTimeout(t);
   }, [info]);
-  useBackHandler(settings, () => setSettings(false));
+  useBackHandler(settings, () => setPanel(null));
   useBackHandler(switcher || newMate, () => {
     setSwitcher(false);
     setNewMate(false);
@@ -175,9 +189,19 @@ export default function MateView() {
             <Icon name="rotate" size={15} spin={resetting} />
           </button>
           <button
-            onClick={() => setSettings((v) => !v)}
-            className={`btn-ghost !px-2.5 ${settings ? "!bg-surface-3 !text-content" : ""}`}
-            title="Mate settings"
+            onClick={() => togglePanel("global")}
+            className={`btn-ghost !px-2.5 ${panel === "global" ? "!bg-surface-3 !text-content" : ""}`}
+            title="Global settings (all mates: voice services, Live2D runtime, desktop app)"
+            aria-label="Global settings"
+            data-testid="mate-global-settings-open"
+          >
+            <Icon name="sliders" size={16} />
+          </button>
+          <button
+            onClick={() => togglePanel("mate")}
+            className={`btn-ghost !px-2.5 ${panel === "mate" ? "!bg-surface-3 !text-content" : ""}`}
+            title={`Mate settings (${mate.name})`}
+            aria-label="Mate settings"
             data-testid="mate-settings-open"
           >
             <Icon name="settings" size={16} />
@@ -213,7 +237,7 @@ export default function MateView() {
   );
 
   const conversation = (
-    <div className="flex min-h-0 min-w-[280px] flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {banners}
       <MateMessages turns={conv.turns} emptyText={conv.connection === "open" ? `Say hi to ${mate.name}.` : "Loading…"} />
       <div className="shrink-0 px-3 pb-3 pt-1 sm:px-4">
@@ -224,7 +248,13 @@ export default function MateView() {
 
   const settingsPanel = settings && (
     <Suspense fallback={<div className="grid h-full place-items-center text-sm text-content-faint">Loading…</div>}>
-      <MateSettings mate={mate} conv={conv} onClose={() => setSettings(false)} />
+      {panel === "global" ? (
+        <div className="h-full overflow-y-auto" data-testid="mate-global-settings">
+          <GlobalSettings onClose={() => setPanel(null)} />
+        </div>
+      ) : (
+        <MateSettings mate={mate} conv={conv} onClose={() => setPanel(null)} />
+      )}
     </Suspense>
   );
 
@@ -243,7 +273,7 @@ export default function MateView() {
                 react={conv.react}
                 caption={conv.caption}
                 size="sm"
-                className="h-[32dvh] shrink-0 border-b border-border/60 bg-gradient-to-b from-surface-2/40 to-transparent"
+                className="h-[36dvh] shrink-0 border-b border-border/60 bg-gradient-to-b from-surface-2/40 to-transparent pt-1"
                 onTap={() => conv.poke("greet")}
               />
             )}
@@ -258,19 +288,24 @@ export default function MateView() {
   return (
     <div className="flex h-full flex-col" data-testid="mate-view">
       {header}
-      <div className="flex min-h-0 flex-1">
+      {/* half avatar, half conversation (Geny's VTuber tab); settings cover the conversation half */}
+      <div className="flex min-h-0 flex-1" data-testid="mate-split">
         <MateStage
           mate={mate}
           mood={conv.mood}
           react={conv.react}
           caption={conv.caption}
-          className={`w-[38%] min-w-[260px] max-w-[440px] shrink-0 border-r ${settings ? "hidden min-[1440px]:flex" : ""} border-border/60 bg-gradient-to-b from-surface-2/40 to-transparent pt-4`}
+          className="min-w-[300px] flex-1 basis-0 border-r border-border/60 bg-[radial-gradient(ellipse_at_50%_100%,rgba(22,26,34,0.9),transparent_70%)] px-4 pt-4"
           onTap={() => conv.poke("greet")}
         />
-        {conversation}
-        {settings && (
-          <div className="w-[min(540px,50vw)] shrink-0 border-l border-border bg-surface/95 animate-fade-in">{settingsPanel}</div>
-        )}
+        <div className="relative flex min-h-0 min-w-[360px] flex-1 basis-0" data-testid="mate-chat-half">
+          {conversation}
+          {settings && (
+            <div className="absolute inset-0 z-20 border-l border-border bg-surface animate-fade-in" data-testid="mate-panel">
+              {settingsPanel}
+            </div>
+          )}
+        </div>
       </div>
       <NewMateDialog open={newMate} onClose={() => setNewMate(false)} onImported={setInfo} />
     </div>

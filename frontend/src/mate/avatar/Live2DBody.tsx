@@ -15,7 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import { emotionCandidates, lookupEmotion } from "../emotion";
 import type { BodyMood, Live2D, MateReact } from "../types";
 import { subscribe as subscribeVoice, voiceBridge } from "../voiceBridge";
-import { getLive2DCoreUrl, loadCubismCore } from "./live2dCore";
+import { getLive2DCoreUrl, loadCubismCore, openGlobalSettings, useLive2DCoreInstalls } from "../live2dCore";
 
 export interface Live2DBodyProps {
   live2d: Live2D;
@@ -77,6 +77,8 @@ export default function Live2DBody({ live2d, mood, react, name, coreUrl, onTap, 
   const box = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const [retry, setRetry] = useState(0);
+  // the core was just installed (settings, another window): load now, no reload needed
+  const installs = useLive2DCoreInstalls();
   /** set once the model is up: the imperative handles the other effects use */
   const api = useRef<{
     model: AnyModel;
@@ -396,7 +398,7 @@ export default function Live2DBody({ live2d, mood, react, name, coreUrl, onTap, 
       el.querySelectorAll("canvas").forEach((c) => c.remove());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live2d.model, url, hiddenKey, idleGroup, retry, interactive]);
+  }, [live2d.model, url, hiddenKey, idleGroup, retry, installs, interactive]);
 
   // framing changes without a reload
   useEffect(() => {
@@ -440,16 +442,26 @@ export default function Live2DBody({ live2d, mood, react, name, coreUrl, onTap, 
       style={{ touchAction: interactive ? "none" : undefined, cursor: interactive ? "pointer" : undefined }}
     >
       {status.kind === "no-runtime" ? (
-        <div className="mate-status">
+        <div className="mate-status" data-testid="mate-live2d-no-runtime">
           <b>Live2D runtime not installed</b>
-          <span>Install the Live2D Cubism Core in Mate settings → Avatar to show this model.</span>
-          <button
-            type="button"
-            className="mt-1 rounded-md border border-border-strong px-2 py-0.5 text-[11px] text-content-dim hover:text-content"
-            onClick={() => setRetry((n) => n + 1)}
-          >
-            Retry
-          </button>
+          <span>This model needs Live2D's Cubism Core. Install it once in Global settings — it shows up here right away.</span>
+          <span className="mt-1 flex flex-wrap justify-center gap-1.5">
+            <button
+              type="button"
+              className="rounded-md bg-accent/90 px-2.5 py-1 text-[11.5px] font-medium text-white hover:bg-accent"
+              onClick={() => openGlobalSettings("live2d")}
+              data-testid="mate-live2d-open-settings"
+            >
+              Open Global settings
+            </button>
+            <button
+              type="button"
+              className="rounded-md border border-border-strong px-2 py-1 text-[11.5px] text-content-dim hover:text-content"
+              onClick={() => setRetry((n) => n + 1)}
+            >
+              Retry
+            </button>
+          </span>
         </div>
       ) : status.kind === "error" ? (
         <div className="mate-status">

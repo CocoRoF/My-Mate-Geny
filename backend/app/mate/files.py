@@ -708,7 +708,7 @@ def ailism_voice(doc: dict[str, Any], voice_dir: Path | None, mate_id: str) -> d
 # ---- built-in mates (bundled ailism content: mates/, assets/, voices/) ----
 
 BUILTIN_DIR = Path(__file__).resolve().parent / "builtin"
-BUILTIN_ORDER = ("estelle", "chaerin", "seoa")  # the first is the default mate
+BUILTIN_ORDER = ("estelle", "chaerin", "seoa", "mao")  # the first is the default mate
 
 
 def builtin_keys() -> list[str]:
@@ -720,16 +720,69 @@ def builtin_doc(key: str) -> dict[str, Any]:
     return _read_json(BUILTIN_DIR / "mates" / f"{key}.json")
 
 
+def builtin_persona(doc: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """(name, persona) of a bundled character: an ailism MateDoc, or our own
+    ``{name, persona}`` doc (the Live2D built-ins)."""
+    if isinstance(doc.get("persona"), dict):
+        name = str(doc.get("name") or doc.get("key") or "Mate").strip()
+        return name, {k: str(v) for k, v in doc["persona"].items() if isinstance(v, (str, int, float))}
+    return ailism_persona(doc)
+
+
 def builtin_url(key: str, rel: str) -> str:
     return f"/api/mates/builtin/{quote(key)}/{quote(rel)}"
 
 
 def builtin_avatar(key: str, doc: dict[str, Any]) -> dict[str, Any] | None:
+    """The body of a bundled character: ``assets/<key>/live2d.json`` (a Live2D
+    model inside that folder), else ``rig.json`` / the doc's ailism body."""
     folder = BUILTIN_DIR / "assets" / key
+    if (folder / "live2d.json").is_file():
+        return builtin_live2d(key, _read_json(folder / "live2d.json"))
     raw = _read_json(folder / "rig.json") if (folder / "rig.json").is_file() else ((doc.get("doc") or {}).get("mate") or {}).get("body")
     if not folder.is_dir() or not raw:
         return None
     return rig_avatar(raw, folder.resolve(), lambda rel: builtin_url(key, rel))
+
+
+def builtin_live2d(key: str, cfg: Any) -> dict[str, Any]:
+    """``live2d.json`` (fields of the Live2D avatar, ``model`` relative to the
+    character's folder) -> Avatar live2d served from /api/mates/builtin/<key>/."""
+    if not isinstance(cfg, dict):
+        raise MateError("live2d.json must be an object")
+    folder = (BUILTIN_DIR / "assets" / key).resolve()
+    rel = safe_rel(str(cfg.get("model") or ""))
+    model_path = (folder / rel).resolve()
+    if folder not in model_path.parents or not model_path.is_file():
+        raise MateError(f"built-in {key}: {rel} is missing")
+    model3 = _read_json(model_path)
+    refs = model3.get("FileReferences") if isinstance(model3, dict) else None
+    moc = refs.get("Moc") if isinstance(refs, dict) else None
+    if not isinstance(moc, str) or not (model_path.parent / moc).is_file():
+        raise MateError(f"built-in {key}: {rel} is not a Cubism model with its .moc3")
+    groups = set((refs.get("Motions") or {}) if isinstance(refs.get("Motions"), dict) else {})
+    out: dict[str, Any] = {"model": builtin_url(key, rel)}
+    for k in ("scale", "x", "y"):
+        if isinstance(cfg.get(k), (int, float)) and not isinstance(cfg.get(k), bool):
+            out[k] = float(cfg[k])
+    idle = str(cfg.get("idle_group") or "")
+    out["idle_group"] = idle if idle in groups else ("Idle" if "Idle" in groups else (sorted(groups)[0] if groups else "Idle"))
+    emotions = {str(e): v for e, v in (cfg.get("emotions") or {}).items()
+                if isinstance(v, (str, int)) and not isinstance(v, bool)}
+    if emotions:
+        out["emotions"] = emotions
+    motions = {str(e): str(g) for e, g in (cfg.get("emotion_motions") or {}).items() if str(g) in groups}
+    if motions:
+        out["emotion_motions"] = motions
+    taps = {}
+    for hit, t in (cfg.get("tap_motions") or {}).items():
+        if isinstance(t, dict) and str(t.get("group") or "") in groups:
+            taps[str(hit)] = {"group": str(t["group"]), **({"index": int(t["index"])} if isinstance(t.get("index"), int) else {})}
+    if taps:
+        out["tap_motions"] = taps
+    if isinstance(cfg.get("hidden_parts"), list) and cfg["hidden_parts"]:
+        out["hidden_parts"] = [str(x) for x in cfg["hidden_parts"]]
+    return {"kind": "live2d", "live2d": out}
 
 
 def builtin_voice_dir(key: str) -> Path | None:
@@ -738,19 +791,26 @@ def builtin_voice_dir(key: str) -> Path | None:
 
 
 def builtin_hash(key: str) -> str:
-    """Changes when the bundled character changes (persona, rig, files)."""
+    """Changes when the bundled character changes (persona, body, files)."""
     h = hashlib.sha256()
-    for f in sorted([BUILTIN_DIR / "mates" / f"{key}.json", *(BUILTIN_DIR / "assets" / key).glob("*"),
-                     *(BUILTIN_DIR / "voices" / key).glob("*")]):
+    assets = BUILTIN_DIR / "assets" / key
+    for f in sorted([BUILTIN_DIR / "mates" / f"{key}.json", *assets.rglob("*"), *(BUILTIN_DIR / "voices" / key).glob("*")]):
         if f.is_file():
             st = f.stat()
-            h.update(f"{f.name}:{st.st_size}".encode())
+            name = str(f.relative_to(assets)) if assets in f.parents else f.name
+            h.update(f"{name}:{st.st_size}".encode())
             if f.suffix == ".json":
                 h.update(f.read_bytes())
     return h.hexdigest()[:16]
 
 
 def resolve_builtin(key: str, rel: str) -> Path:
+    if not re.match(r"^[a-z0-9_-]{1,40}$", key or "") or not (BUILTIN_DIR / "assets" / key).is_dir():
+        raise MateError("asset not found", status=404)
+    try:
+        rel = safe_rel(rel)
+    except MateError as exc:
+        raise MateError("asset not found", status=404) from exc
     root_dir = (BUILTIN_DIR / "assets" / key).resolve()
     p = (root_dir / rel).resolve()
     if root_dir not in p.parents or not p.is_file():

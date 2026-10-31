@@ -7,6 +7,12 @@
  * alpha (a transparent page shows through). Two video elements take turns: the next clip loads in the spare one while
  * the current one plays, so a switch at the end of a clip (every clip starts and ends on the same home frame) shows no
  * seam; a switch in the middle crossfades.
+ *
+ * Differences from the ailism original (each one a double exposure seen in the browser): a show() asked for while a
+ * crossfade runs waits for it to finish (it used to reload the slot that was still fading out, so the fade jumped
+ * or restarted from a half-blended picture); a prepare() during a crossfade is queued, not dropped; and a slot whose
+ * frame can't be read for a moment (seeking) keeps its last frame instead of snapping the fade to the end for one
+ * frame and back.
  */
 
 export interface ClipPlayer {
@@ -15,6 +21,13 @@ export interface ClipPlayer {
   prepare(src: string): void;
   show(src: string, opts?: ShowOptions): void;
   setPaused(paused: boolean): void;
+  /** seconds left of the clip on screen (Infinity while it loops or nothing plays yet) */
+  remaining(): number;
+  /**
+   * finish the clip on screen within about `within` seconds — played faster (at most `maxRate`×), no longer looping —
+   * so the next clip starts on the shared home frame instead of crossfading two poses. false: nothing to hurry.
+   */
+  hurry(within?: number, maxRate?: number): boolean;
   dispose(): void;
 }
 
@@ -38,6 +51,16 @@ export interface ShowOptions {
 }
 
 type Slot = { video: HTMLVideoElement; tex: WebGLTexture; src: string; ready: boolean };
+
+/** play `v` to its end within ~`within` s (faster, never slower, at most `maxRate`×); it stops looping */
+function hurryVideo(v: HTMLVideoElement, within: number, maxRate: number, paused: boolean): boolean {
+  if (!Number.isFinite(v.duration) || !v.duration || v.ended) return false;
+  v.loop = false;
+  const left = Math.max(0, v.duration - v.currentTime);
+  v.playbackRate = Math.min(maxRate, Math.max(1, left / Math.max(0.1, within)));
+  if (v.paused && !paused) void v.play().catch(() => {});
+  return true;
+}
 
 /** what a clip waiting to go on screen listens for: loaded (a new src), can play, or seeked (back to its first frame) */
 const WAIT = ["loadeddata", "canplay", "seeked"] as const;
@@ -65,6 +88,8 @@ export class StackedPlayer implements ClipPlayer {
   private waiting = 0;
   /** what prepare() was asked to load while a show was pending: loaded right after the switch */
   private queued: string | null = null;
+  /** a show() asked for during a crossfade: run when the crossfade ends (only the newest) */
+  private deferred: { src: string; opts: ShowOptions } | null = null;
 
   static supported(): boolean {
     try {
@@ -131,23 +156,48 @@ export class StackedPlayer implements ClipPlayer {
 
   /** load a clip into the spare slot ahead of time (it plays when :meth:`show` asks for the same src) */
   prepare(src: string): void {
-    if (this.pending) {
+    // the spare slot is busy loading a clip for show(), or still fading out: load it after that
+    if (this.pending || this.fade) {
       this.queued = src;
       return;
     }
     const spare = this.slots[1 - this.cur];
-    if (spare.src === src || this.fade) return;
+    if (spare.src === src) return;
     spare.src = src;
     spare.ready = false;
     spare.video.src = src;
     spare.video.load();
   }
 
+  remaining(): number {
+    const v = this.slots[this.cur].video;
+    if (!this.drawn || v.loop || !Number.isFinite(v.duration) || !v.duration) return Infinity;
+    return Math.max(0, v.duration - v.currentTime);
+  }
+
+  hurry(within = 0.8, maxRate = 4): boolean {
+    if (!this.drawn || this.fade) return false;
+    return hurryVideo(this.slots[this.cur].video, within, maxRate, this.paused);
+  }
+
   /** put a clip on screen: at once (the spare already has it, or the first clip) or with a crossfade */
-  show(src: string, { loop = false, fadeMs = 0 }: ShowOptions = {}): void {
+  show(src: string, opts: ShowOptions = {}): void {
+    // the spare slot is the one fading out: never load over it mid-fade (the old picture would jump or vanish)
+    if (this.fade) {
+      this.deferred = { src, opts };
+      return;
+    }
+    this.deferred = null;
+    const { loop = false, fadeMs = 0 } = opts;
     const now = this.slots[this.cur];
-    if (now.src === src && !this.fade) {
+    if (now.src === src) {
+      // the clip on screen after all: a switch still waiting for its clip is called off
+      if (this.pending) {
+        this.waiting++;
+        this.pending = false;
+      }
       now.video.loop = loop;
+      now.video.playbackRate = 1;
       if (now.video.paused && !this.paused) void now.video.play().catch(() => {});
       return;
     }
@@ -158,6 +208,7 @@ export class StackedPlayer implements ClipPlayer {
       spare.ready = false;
       spare.video.src = src;
     }
+    spare.video.playbackRate = 1;
     spare.video.loop = loop;
     // a clip played before (or a preloaded one) starts again from its first frame: that is a seek, which never fires
     // loadeddata again, so the wait below ends on whichever comes first of loaded, can play and seeked
@@ -242,7 +293,13 @@ export class StackedPlayer implements ClipPlayer {
         from.video.pause();
         this.fade = null;
         from = now;
-        if (this.queued) {
+        const deferred = this.deferred;
+        this.deferred = null;
+        if (deferred) {
+          // a switch asked for during the fade: now (it loads into the slot that just faded out; what was queued for
+          // that slot follows once it is on screen)
+          this.show(deferred.src, deferred.opts);
+        } else if (this.queued) {
           const queued = this.queued;
           this.queued = null;
           this.prepare(queued);
@@ -251,7 +308,11 @@ export class StackedPlayer implements ClipPlayer {
     }
     if (!this.fade && now === this.last.slot && v.currentTime === this.last.t) return;
     if (!this.upload(1, now)) return;
-    if (from !== now && !this.upload(0, from)) t = 1;
+    if (from !== now && !this.upload(0, from)) {
+      // the fading-out slot can't hand over a frame right now: its texture still holds the last one, keep blending
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, from.tex);
+    }
     if (from === now) {
       // no crossfade: both samplers read the frame just uploaded (no second upload)
       gl.activeTexture(gl.TEXTURE0);
@@ -308,8 +369,12 @@ export class PlainPlayer implements ClipPlayer {
     );
   }
 
+  /** the old clip is still visible under a fading-in one until then (its slot must not be reloaded) */
+  private fadingUntil = 0;
+  private deferTimer: ReturnType<typeof setTimeout> | null = null;
+
   prepare(src: string): void {
-    if (this.pending) {
+    if (this.pending || performance.now() < this.fadingUntil) {
       this.queued = src;
       return;
     }
@@ -320,10 +385,38 @@ export class PlainPlayer implements ClipPlayer {
     spare.video.load();
   }
 
-  show(src: string, { loop = false, fadeMs = 0 }: ShowOptions = {}): void {
+  remaining(): number {
+    const v = this.slots[this.cur].video;
+    if (!this.drawn || v.loop || !Number.isFinite(v.duration) || !v.duration) return Infinity;
+    return Math.max(0, v.duration - v.currentTime);
+  }
+
+  hurry(within = 0.8, maxRate = 4): boolean {
+    if (!this.drawn || performance.now() < this.fadingUntil) return false;
+    return hurryVideo(this.slots[this.cur].video, within, maxRate, this.paused);
+  }
+
+  show(src: string, opts: ShowOptions = {}): void {
+    if (this.deferTimer) clearTimeout(this.deferTimer);
+    this.deferTimer = null;
+    const wait = this.fadingUntil - performance.now();
+    if (wait > 0) {
+      // the slot it would load into is still showing under the fade: after it
+      this.deferTimer = setTimeout(() => {
+        this.deferTimer = null;
+        if (this.alive) this.show(src, opts);
+      }, wait + 16);
+      return;
+    }
+    const { loop = false, fadeMs = 0 } = opts;
     const now = this.slots[this.cur];
     if (now.src === src && this.drawn) {
+      if (this.pending) {
+        this.waiting++;
+        this.pending = false;
+      }
       now.video.loop = loop;
+      now.video.playbackRate = 1;
       if (now.video.paused && !this.paused) void now.video.play().catch(() => {});
       return;
     }
@@ -334,6 +427,7 @@ export class PlainPlayer implements ClipPlayer {
       spare.video.src = src;
     }
     spare.video.loop = loop;
+    spare.video.playbackRate = 1;
     if (spare.video.currentTime !== 0) spare.video.currentTime = 0;
     const token = ++this.waiting;
     const stop = () => {
@@ -358,8 +452,10 @@ export class PlainPlayer implements ClipPlayer {
         old.video.style.transition = "none";
         old.video.style.opacity = "0";
       };
-      if (fade) setTimeout(hideOld, fadeMs);
-      else requestAnimationFrame(hideOld);
+      if (fade) {
+        this.fadingUntil = performance.now() + fadeMs;
+        setTimeout(hideOld, fadeMs);
+      } else requestAnimationFrame(hideOld);
       this.cur = next;
       if (!this.drawn) {
         this.drawn = true;
@@ -384,6 +480,7 @@ export class PlainPlayer implements ClipPlayer {
 
   dispose(): void {
     this.alive = false;
+    if (this.deferTimer) clearTimeout(this.deferTimer);
     for (const s of this.slots) {
       s.video.pause();
       s.video.removeAttribute("src");

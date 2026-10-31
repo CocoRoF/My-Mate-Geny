@@ -79,7 +79,7 @@ function Overlay() {
         </div>
       )}
       <div className="absolute inset-x-0 bottom-0 top-10">
-        <MateAvatar avatar={mate.avatar} name={mate.name} mood={conv.mood} react={conv.react} onTap={() => conv.poke("greet")} />
+        <MateAvatar key={mate.id} avatar={mate.avatar} name={mate.name} mood={conv.mood} react={conv.react} onTap={() => conv.poke("greet")} />
       </div>
       {moveMode && (
         <div className="absolute inset-x-0 bottom-2 z-20 flex justify-center">
@@ -210,7 +210,7 @@ function ChatWindow() {
     <div className="flex h-full flex-col bg-bg" data-testid="mate-chat-window">
       <div className="flex shrink-0 items-center gap-2 border-b border-border/70 bg-surface/80 px-3 py-2">
         <div className="relative h-10 w-8 shrink-0">
-          <MateAvatar avatar={mate.avatar} name={mate.name} size="sm" mood={conv.mood} react={conv.react} interactive={false} />
+          <MateAvatar key={mate.id} avatar={mate.avatar} name={mate.name} size="sm" mood={conv.mood} react={conv.react} interactive={false} />
         </div>
         <div className="min-w-0 flex-1 leading-tight">
           <div className="truncate text-[13.5px] font-semibold">{mate.name}</div>
