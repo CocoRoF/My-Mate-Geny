@@ -179,8 +179,8 @@ class TurnRequest:
     # CLI's own prompt + the harness's wait guide.
     system_prompt: str | None = None
     # ... or that prompt in a file (``--system-prompt-file``: no argv size
-    # limit). Likewise the MCP config as a file: it may carry a token that
-    # must not show up in the process list.
+    # limit; Codex: ``model_instructions_file``). Likewise the MCP config as a
+    # file: it may carry a token that must not show up in the process list.
     system_prompt_file: str | None = None
     mcp_config_file: str | None = None
     # Identity of the launch prompt for the engine fingerprint ("" = hash of
@@ -192,8 +192,14 @@ class TurnRequest:
     # Claude: tools allowed without a prompt (``--allowedTools``).
     allowed_tools: list[str] = field(default_factory=list)
     # Claude: no skills / slash commands, no user/project settings files
-    # (hooks, plugins) — a sealed engine (Mate).
+    # (hooks, plugins) — a sealed engine (Mate). Codex: runs in its own
+    # ``engine_home`` (below) with only the instructions + MCP servers given
+    # here, and none of Codex's own tools (shell, apply_patch, web, images…).
     sealed: bool = False
+    # Codex, sealed: a private CODEX_HOME the provider owns (its config, the
+    # threads to resume; the account's auth.json linked in). Required when
+    # sealed — the user's own ~/.codex config is never loaded.
+    engine_home: str | None = None
     # Attachments as ids + inline contents instead of paths for the agent's
     # tools (an engine without file tools: Mate). The contents are filled in
     # beforehand (``_inline_files.prepare_inline``).

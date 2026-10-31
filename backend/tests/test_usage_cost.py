@@ -214,5 +214,5 @@ def test_default_claude_model_is_opus_5_5(db, tmp_path):
         "claude-sonnet-5-5"  # an explicit choice is kept
     assert svc.update(s["id"], model="")["model"] == "claude-opus-5-5"
     codex = svc.create(provider="codex", model="", workspace_path=str(tmp_path))
-    assert codex["model"] == ""  # codex: "" = the account's own default
+    assert codex["model"] == "gpt-6.1-sol"  # codex: GPT-6.1-Sol ("default" = the account's own default)
     assert svc.update(codex["id"], provider="claude", model="")["model"] == "claude-opus-5-5"

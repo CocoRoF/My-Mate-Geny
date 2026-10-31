@@ -37,9 +37,12 @@ export interface MateVoice {
   stt: { engine: SttEngine; model: string; language: string };
 }
 
+/** the engines that can run a mate (sealed: own prompt, only the mate tools) */
+export type MateEngine = "claude" | "codex";
+
 export interface MateLlm {
-  provider: "claude";
-  model: string; // "" = catalog default
+  provider: MateEngine;
+  model: string; // "" = the engine's mate default
   effort: string; // default|low|medium|high|xhigh|max
 }
 
@@ -321,6 +324,10 @@ function toCoreEvent(raw: unknown): CoreEvent | null {
 
 /** the model a mate talks on when none is set (backend DEFAULT_MATE_MODEL) */
 export const DEFAULT_MATE_MODEL = "claude-sonnet-5-5";
+/** ... per engine (backend catalog.DEFAULT_MATE_MODELS) */
+export const DEFAULT_MATE_MODELS: Record<MateEngine, string> = { claude: DEFAULT_MATE_MODEL, codex: "gpt-6.1-sol" };
+/** the reasoning levels a mate can store (backend store.EFFORTS) */
+export const MATE_EFFORTS = ["default", "low", "medium", "high", "xhigh", "max"];
 
 /** an asset path of a mate → its URL */
 export const assetUrl = (id: string, path: string) =>

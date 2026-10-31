@@ -36,7 +36,7 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
     "instructions": ""      // extra standing instructions
   },
   "avatar": Avatar,         // §2
-  "llm":   { "provider": "claude", "model": "claude-sonnet-5-5", "effort": "low" },   // new mates talk on Sonnet ("" falls back to it too)
+  "llm":   { "provider": "claude", "model": "claude-sonnet-5-5", "effort": "low" },   // new mates talk on Sonnet ("" falls back to it too); or "codex" / "gpt-6.1-sol"
   "voice": {
     "auto_read": true,
     "volume": 1.0,          // 0.0 – 3.0 (300 %); see §5 "Volume"
@@ -67,9 +67,11 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
   `persona` / `llm` / `voice` (incl. `tts`/`stt`) merge field by field,
   `avatar` is replaced, `is_default: true` moves the default;
   `DELETE /api/mates/{id}` (its conversation and files go too). Validation
-  errors are 400 with `detail`. `llm.provider` is `claude` only (the mate engine
-  needs Claude Code's `--system-prompt` / `--tools` / MCP). `llm.effort`:
-  `default|low|medium|high|xhigh|max` (default `low`).
+  errors are 400 with `detail`. `llm.provider`: `claude | codex` (the engines
+  that can run sealed — §3 *Engines*). Changing it without a `model` sets that
+  engine's mate default (`claude-sonnet-5-5` / `gpt-6.1-sol`; `""` falls back to
+  it too). `llm.effort`: `default|low|medium|high|xhigh|max` (default `low`;
+  for Codex the model's reasoning level).
 - Memory: `GET /api/mates/{id}/memories` → `[{id, text, created_at}]`,
   `POST {text}` → the memory, `DELETE /api/mates/{id}/memories/{mid}`.
   (The mate edits the same list with its `remember` / `forget` tools.)
@@ -369,7 +371,14 @@ Live2D content. The originals are authoritative; see
   carry `meta` (null, or e.g. `{via: {kind: "mate", mate_id, name}}` /
   `{internal: true, kind: "delegation_result", delegations: [...]}`). The live
   `user.message` / `user.steer` events carry the same keys in `data`.
-- Engine (Claude Code, persistent like chats, same account pool):
+- **Engines.** The session's `provider` follows `mate.llm.provider`; both are
+  the same sealed secretary (same prompt, same `mate` tools, same events), the
+  system prompt being persona + mate contract + memories (`app/mate/prompt.py`).
+  Switching engine (PATCH `llm.provider`) is a chat's engine switch: each engine
+  keeps its own CLI session, at the next message the new one gets the
+  conversation so far as a handoff (`context.handoff` notice), and going back
+  catches the previous one up (`context.catchup`). Reset clears both.
+- Engine **Claude Code** (persistent like chats, same account pool):
   `--system-prompt-file <persona + mate contract + memories>` with
   `--system-prompt-snapshot off` (so an edited persona reaches the model on
   resume), `--tools ""` (no built-in tools: it can't run code or edit files),
@@ -379,11 +388,45 @@ Live2D content. The originals are authoritative; see
   `mate.llm`. Editing name/persona/effort or the memory list (by the user)
   restarts the engine at the next turn (`--resume`, same conversation); a model
   change is applied live; what the mate `remember`s itself doesn't restart it.
+- Engine **Codex** (`codex exec --json` per turn like Codex chats, resuming the
+  thread; same account pool; default model `gpt-6.1-sol`), sealed by
+  `app/providers/_codex_sealed.py` (verified against codex 0.166):
+  - `CODEX_HOME` = `HOME` = `<id>/codex/` (0700), never the user's `~/.codex`:
+    no user config.toml / MCP servers / profiles / hooks, no AGENTS.md, skills,
+    plugins, memories or rules. Only the turn's account login is linked in:
+    `auth.json` → the account's file (host `~/.codex` or a pooled account's
+    CODEX_HOME; codex writes a token refresh through the link), plus
+    `auth.lock` when the account has one. The mate's threads live here, so
+    `exec resume` works whichever account runs the next turn.
+  - `config.toml` (0600, rewritten every turn; the bridge token is in it, not
+    in argv): `model_instructions_file` = the prompt file (replaces Codex's base
+    instructions; a resumed thread reads a changed file — the CLI then appends
+    it as a "replaces the base instructions" message, so while only the mate's
+    own `remember`s changed the previous text is kept, same rule as the Claude
+    engine's prompt key), only `[mcp_servers.mate]` (tools pre-approved:
+    `default_tools_approval_mode = "approve"`), `web_search = "disabled"`,
+    `project_doc_max_bytes = 0`, skills/permissions/collaboration/apps
+    instructions off, `history.persistence = "none"`, features `shell_tool
+    unified_exec shell_snapshot view_image image_generation memories plugins
+    apps hooks goals multi_agent multi_agent_v2 browser_use computer_use
+    in_app_browser tool_suggest skill_search sleep_tool` off, and as the
+    backstop `sandbox_mode = "read-only"` + `approval_policy = "never"` (no
+    `--dangerously-bypass-…`).
+  - `model_catalog_json` = a copy of the account's `models_cache.json` without
+    the tools a model brings itself (`apply_patch_tool_type`, `tool_mode`
+    code mode, `multi_agent_version`, tool search, experimental tools). Left
+    out when there is no cache (a `codex.sealed` warning notice; the sandbox
+    still keeps it from changing anything). The model then sees only the
+    `mate` tools (+ Codex's harmless MCP-resource listing tools); asked to run
+    `ls` it says it can't.
+  - Images go as `--image`, other files inline as for Claude; steering =
+    interrupt + resume the thread (as in Codex chats); `-m` / `-c
+    model_reasoning_effort` from `mate.llm`.
 - **Attachments** work like in a chat: uploads go to
   `POST /api/sessions/{mate sid}/attachments`, the ws `chat` / `steer` messages
   carry their ids, history and live `user.message` / `user.steer` events carry
   them, and the Mate views show them (thumbnails, file cards). The mate can't
-  open files (`--tools ""`), so for a mate session the text block of the
+  open files (no file tools on either engine), so for a mate session the text block of the
   envelope (`inline_files`, `app/providers/_inline_files.py`) holds, instead of
   paths, an `<attachments>` list with each file's id —
   `- [att_…] name — mime, size — image, shown to you | <how it was read>, included below | <what it is> — not available to you; forward it…`
@@ -580,6 +623,7 @@ Android (Capacitor): the Mate view runs in-page; microphone permission added.
 
 - Files under `MATES_ROOT` (default `~/.hr-harnessor/mates`): `<id>/assets/…`,
   `<id>/home/` (engine cwd), `<id>/engine/` (prompt + MCP config files),
+  `<id>/codex/` (the Codex engine's sealed CODEX_HOME),
   `_runtime/live2dcubismcore.min.js`, `_cache/tts/`.
 - Code: `backend/app/mate/` (`store`, `files`, `prompt`, `service`,
   `mcp_bridge`, `voice`, `netio`: stdlib HTTP, no new dependencies); routers

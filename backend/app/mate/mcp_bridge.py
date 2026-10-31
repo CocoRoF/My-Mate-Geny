@@ -2,7 +2,7 @@
 """Mate MCP bridge — the mate engine's only tools.
 
 A stdio MCP server (JSON-RPC 2.0, one message per line; stdlib only) that the
-mate's Claude Code engine starts via ``--mcp-config``. Each ``tools/call`` is
+mate engine (Claude Code ``--mcp-config``, Codex ``mcp_servers.mate``) starts. Each ``tools/call`` is
 forwarded to the backend's internal API (``POST <api>/api/internal/mate/call``)
 authenticated by the per-conversation token — never the user's cookie. The
 backend does the work (list/read/steer chats, create chats, find folders,

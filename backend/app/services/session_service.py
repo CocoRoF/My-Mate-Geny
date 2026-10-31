@@ -45,7 +45,9 @@ from app.providers.accounts import (
 )
 from app.providers._inline_files import prepare_inline
 from app.providers.base import ProviderEvent, SteerMessage, TurnInbox, TurnRequest
-from app.providers.catalog import DEFAULT_CLAUDE_MODEL, clean_auto_compact_window, context_limits
+from app.providers.catalog import (
+    DEFAULT_CLAUDE_MODEL, DEFAULT_CODEX_MODEL, clean_auto_compact_window, context_limits,
+)
 from app.providers.claude_code import CLI_ENV as CLAUDE_ENV
 from app.providers.claude_code import ClaudeCodeProvider
 from app.providers.claude_engine import ClaudeEngine
@@ -1769,10 +1771,14 @@ def _iso_or_none(ts: float | None) -> str | None:
 
 
 def _default_model(provider: str, model: str | None) -> str:
-    """A Claude chat without a model runs on the default (Opus 5.5), recorded
-    explicitly so the picker, the engine and the logs agree."""
-    if provider == "claude" and not (model or "").strip():
-        return DEFAULT_CLAUDE_MODEL
+    """A chat without a model runs on the engine's default (Claude: Opus 5.5,
+    Codex: GPT-6.1-Sol), recorded explicitly so the picker, the engine and the
+    logs agree. ("default" stays: the Codex account's own default.)"""
+    if not (model or "").strip():
+        if provider == "claude":
+            return DEFAULT_CLAUDE_MODEL
+        if provider == "codex":
+            return DEFAULT_CODEX_MODEL
     return model or ""
 
 

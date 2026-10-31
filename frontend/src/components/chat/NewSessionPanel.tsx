@@ -5,6 +5,9 @@ import { useConfigStore } from "../../stores/configStore";
 import WorkspacePicker from "../workspaces/WorkspacePicker";
 import Icon from "../ui/Icon";
 
+/** a new chat's model per engine until the catalog says otherwise (backend catalog defaults) */
+const DEFAULT_CHAT_MODELS: Record<string, string> = { claude: "claude-opus-5-5", codex: "gpt-6.1-sol" };
+
 export default function NewSessionPanel() {
   const providers = useProviderStore((s) => s.providers);
   const catalog = useConfigStore((s) => s.catalog);
@@ -15,11 +18,14 @@ export default function NewSessionPanel() {
   const entry = catalog[provider];
   const models = entry?.models || [];
   // The user's explicit pick; until then (or when it isn't offered) the
-  // provider's default — Opus 5.5 for Claude. The catalog may arrive after
-  // this screen mounts, so the default is derived, not captured once.
+  // provider's default — Opus 5.5 for Claude, GPT-6.1-Sol for Codex. The
+  // catalog may arrive after this screen mounts, so the default is derived,
+  // not captured once.
   const [picked, setPicked] = useState<string | null>(null);
   const model =
-    picked && (!models.length || models.some((m) => m.id === picked)) ? picked : entry?.default_model || "";
+    picked && (!models.length || models.some((m) => m.id === picked))
+      ? picked
+      : entry?.default_model || DEFAULT_CHAT_MODELS[provider] || "";
   const [effort, setEffort] = useState("default");
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [path, setPath] = useState<string | null>(null);
