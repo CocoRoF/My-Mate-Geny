@@ -32,10 +32,21 @@ from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from app.db import Database
 from app.providers import get_provider
-from app.providers.accounts import PRIMARY_LABEL, PRIMARY_PREFIX, AccountPool, classify_error, link_shared_state
+from app.providers.accounts import (
+    ACCOUNT_OUTCOMES,
+    PRIMARY_LABEL,
+    PRIMARY_PREFIX,
+    AccountPool,
+    AccountUnavailable,
+    classify_error,
+    fmt_clock,
+    limit_name,
+    link_shared_state,
+)
 from app.providers.base import ProviderEvent, SteerMessage, TurnInbox, TurnRequest
-from app.providers.catalog import DEFAULT_CLAUDE_MODEL
+from app.providers.catalog import DEFAULT_CLAUDE_MODEL, clean_auto_compact_window, context_limits
 from app.providers.claude_code import CLI_ENV as CLAUDE_ENV
+from app.providers.claude_code import ClaudeCodeProvider
 from app.providers.claude_engine import ClaudeEngine
 from app.services._ids import new_id, now_iso
 from app.services.turn_cost import needs_normalizing, normalize_events
@@ -60,6 +71,14 @@ _STALE_RESUME = re.compile(r"no conversation found|no rollout found|thread/resum
 # bg_tasks doesn't keep: passed through on the live task.state message.
 _LIVE_TASK_FIELDS = ("subagent_type", "activity", "last_tool_name", "tool_uses", "total_tokens", "duration_ms",
                      "parent_task_id")
+# Sent (instead of the original message) when a turn that already did work is
+# continued on another account after the first one hit its limit: the CLI
+# session on disk holds everything up to the refused call.
+_CONTINUE_AFTER_FAILOVER = (
+    "[The previous request was refused because the account hit its usage limit; the conversation "
+    "has moved to another account.] Continue exactly where you left off."
+)
+_OVERLOADED = re.compile(r"overloaded", re.I)
 
 
 class TurnBusyError(RuntimeError):
@@ -92,6 +111,8 @@ class SessionService:
         # (admin view) and per chat (the composer shows only its own chat's).
         self.live_usage: dict[str, dict[str, Any]] = {}
         self._live_usage_by_session: dict[str, dict[str, Any]] = {}
+        # Context window + auto-compact point each chat's engine last reported.
+        self._ctx_limits: dict[str, dict[str, Any]] = {}
         self._engines = EngineManager(
             on_task=self._on_task,
             on_usage=self._on_usage,
@@ -170,12 +191,32 @@ class SessionService:
         mode: str | None = None,
         extra_dirs: list[str] | None = None,
         title: str | None = None,
+        auto_compact_window: int | None = None,
+        account_id: str | None = None,
     ) -> dict[str, Any]:
         """Change engine/model/think level/mode/folders mid-conversation.
-        Switching provider resets the provider-side session id."""
+        Switching provider resets the provider-side session id.
+
+        ``auto_compact_window``: tokens, 0 = the CLI's default, -1 = back to
+        the global default (applies at the next turn: the engine restarts).
+        ``account_id``: run this chat on that account from the next turn
+        (a manual switch; the balancer keeps it there while it's usable)."""
         session = self.get(sid)
         sets: list[str] = []
         params: list[Any] = []
+        if auto_compact_window is not None:
+            sets.append("auto_compact_window = ?")
+            params.append(None if auto_compact_window < 0 else clean_auto_compact_window(auto_compact_window))
+        if account_id is not None:
+            prov = provider or session["provider"]
+            if self._pool is None or not self._pool_enabled(prov):
+                raise ValueError("turn on load balancing to choose an account")
+            if account_id not in self._pool.labels(prov):
+                raise ValueError(f"unknown account: {account_id}")
+            accounts = dict(session.get("accounts") or {})
+            accounts[prov] = {**(accounts.get(prov) or {}), "id": account_id, "manual": True, "at": now_iso()}
+            sets.append("accounts = ?")
+            params.append(json.dumps(accounts))
         if provider is not None and provider != session["provider"]:
             get_provider(provider)  # validate
             # Each engine keeps its own CLI session; the conversation itself is
@@ -210,7 +251,7 @@ class SessionService:
 
     def _row(self, row: Any) -> dict[str, Any]:
         d = dict(row)
-        for key, empty in (("extra_dirs", []), ("cli_info", {}), ("cli_sessions", {})):
+        for key, empty in (("extra_dirs", []), ("cli_info", {}), ("cli_sessions", {}), ("accounts", {})):
             try:
                 d[key] = json.loads(d.get(key) or json.dumps(empty))
             except ValueError:
@@ -671,9 +712,25 @@ class SessionService:
         # everything else is shared with the host config (link_shared_state).
         lease = None
         extra_env: dict[str, str] = {}
+        holder: dict[str, Any] = {"notices": []}
         if not persistent and self._pool is not None:
-            # May fetch plan usage over HTTPS (most_remaining): off the event loop.
-            lease = await asyncio.to_thread(self._pool.acquire, provider_name)
+            # Sticky like an engine; may fetch plan usage over HTTPS: off the event loop.
+            try:
+                lease = await asyncio.to_thread(
+                    self._pool.select, provider_name, prefer=self._sticky_account(session, provider_name),
+                    begin_turn=True,
+                )
+            except AccountUnavailable as exc:
+                ev = self._unavailable_event(provider_name, exc)
+                self._add_event(sid, ev)
+                yield ev
+                return
+            if lease is not None:
+                self._remember_account(sid, provider_name, lease)
+                note = self._switch_notice(lease)
+                if note is not None:
+                    holder["notices"].append(note)
+                self._log_lease(sid, provider_name, lease, ctx, "turn")
         if not persistent:  # (an engine says which account it holds once it's up)
             ctx.update(self._account_ref(provider_name, lease, api_key))
         if lease is not None:
@@ -714,6 +771,7 @@ class SessionService:
             inbox=TurnInbox(),
             preamble=preamble,
             uploads_dir=uploads_dir,
+            auto_compact_window=self.auto_compact_window(session) if provider_name == "claude" else 0,
         )
         self._inboxes[sid] = req.inbox
 
@@ -730,10 +788,11 @@ class SessionService:
 
         st = self._turn_state(ctx, provider_name, session["model"])
         st["changes"] = await self._snapshot_before(session, connector)
-        holder: dict[str, Any] = {}
         noted = False
+        stale_retried = failed_over = False
+        worked = False  # the turn did something (tool call, text…) on any attempt
         try:
-            for attempt in (0, 1):
+            for attempt in range(3):  # first try + at most one stale-session retry + one account failover
                 progressed = False  # anything beyond start/info: no silent retry after that
                 retry = False
                 stream = (
@@ -744,9 +803,19 @@ class SessionService:
                     if ev.type == "session.info":
                         yield self._session_info(sid, ev, ctx)
                         continue
+                    if ev.type == "error" and persistent and not failed_over:
+                        moved = await self._failover(sid, req, holder, ev, ctx, st, worked)
+                        if moved:
+                            # The account hit its limit: the same turn continues
+                            # on another account (resumed), once.
+                            failed_over = retry = True
+                            break
+                        for note in holder.pop("after", []):
+                            await self._record_event(sid, note, st)
+                            yield note
                     if (
-                        ev.type == "error" and attempt == 0 and req.cli_session_id and not progressed
-                        and _STALE_RESUME.search(str(ev.data.get("message") or ""))
+                        ev.type == "error" and not stale_retried and req.cli_session_id and not progressed
+                        and not worked and _STALE_RESUME.search(str(ev.data.get("message") or ""))
                     ):
                         # The engine lost that session: start it fresh with the
                         # whole conversation handed over, transparently.
@@ -758,11 +827,24 @@ class SessionService:
                         ctx_kind, ctx_n = kind2, n2
                         req.inbox = TurnInbox()
                         self._inboxes[sid] = req.inbox
-                        retry = True
+                        stale_retried = retry = True
                         break
-                    if ev.type == "session.start" and attempt == 1:
-                        continue  # the turn already has its start event
-                    if ev.type not in ("session.start", "task.update"):
+                    if ev.type == "session.start":
+                        if attempt == 0:
+                            await self._record_event(sid, ev, st)
+                            yield ev
+                        # (a retry continues the turn: it already has its start event)
+                        for note in holder["notices"]:  # account switch / engine restart, right after the start
+                            self._add_event(sid, note)
+                            yield note
+                        holder["notices"] = []
+                        continue
+                    if ev.type in ("turn.complete", "error") and st.get("carry_cost"):
+                        # Spent on the account that hit its limit, earlier in this turn.
+                        ev.data = {**ev.data, "cost_usd": round(float(ev.data.get("cost_usd") or 0) + st["carry_cost"], 6)}
+                    if ev.type not in ("session.start", "task.update", "context.update"):
+                        if ev.type != "notice":
+                            worked = True
                         if not progressed and not noted:
                             # Say what context the engine got — once, right before
                             # its first real output (after any stale-session retry).
@@ -792,6 +874,8 @@ class SessionService:
                 self._set_cli_session(sid, slot.engine.cli_session_id, provider_name)
             outcome_lease = slot.lease if slot is not None else lease
             self._report_outcome(provider_name, outcome_lease, st, ctx, sid, release=not persistent)
+            if self._pool is not None and outcome_lease is not None:
+                self._pool.end_turn(outcome_lease)  # the engine keeps its lease; the turn is over
 
     # ---- shared turn bookkeeping (user turns and auto turns) ----
 
@@ -826,6 +910,8 @@ class SessionService:
         """Persist one turn event + side effects (assistant message, engine
         watermark, admin logs, artifact images)."""
         ctx = st["ctx"]
+        if ev.type == "context.update":
+            ev.data = self._context_data(sid, ev.data, st["model"])
         await self._store_images(sid, ev)
         if ev.type in ("turn.complete", "error"):
             ev.data = {**ev.data, "provider": st["provider"]}  # usage is attributed per turn
@@ -863,6 +949,7 @@ class SessionService:
         elif ev.type == "error":
             st["err_code"] = ev.data.get("code")
             st["err_msg"] = ev.data.get("message")
+            st["api_error"] = ev.data.get("api_error")
             if st["err_code"] != "turn.interrupted":
                 self._log(
                     "error", "provider", str(st["err_msg"] or st["err_code"]),
@@ -878,8 +965,9 @@ class SessionService:
             return
         failed = st["err_code"] is not None and st["err_code"] != "turn.interrupted"
         if failed:
-            outcome = classify_error(st["err_code"], st["err_msg"])
-            self._pool.record_outcome(lease, ok=False, code=outcome, error=st["err_msg"])
+            outcome = classify_error(st["err_code"], st["err_msg"], st.get("api_error"))
+            self._pool.record_outcome(lease, ok=False, code=outcome, error=st["err_msg"],
+                                      until=_reset_of(st.get("api_error")))
             self._log("warning", "account", f"{provider_name} account '{lease.label}' failed a turn ({outcome})",
                       code=f"account.{outcome}", detail={**ctx, "error": st["err_msg"]}, session_id=sid)
         else:
@@ -887,12 +975,200 @@ class SessionService:
         if release:
             self._pool.release(lease)
 
+    # ---- context window (meter) ----
+
+    def auto_compact_window(self, session: dict[str, Any]) -> int:
+        """The chat's auto-compact window: its own value, else the global
+        default (Providers page), else 0 = the CLI's default."""
+        own = session.get("auto_compact_window")
+        if own is not None:
+            return int(own)
+        if self._pool is not None:
+            return int(self._pool.settings("claude").get("auto_compact_window") or 0)
+        return 0
+
+    def _context_data(self, sid: str, data: dict[str, Any], model: str) -> dict[str, Any]:
+        """Complete a ``context.update``: per-call sizes get the window and the
+        auto-compact point the engine last reported (the CLI's own numbers),
+        or — before it has — what the model and settings imply."""
+        out = {**data, "at": now_iso()}
+        keys = ("window", "model_window", "threshold", "auto_compact", "window_source")
+        if data.get("source") == "cli" and data.get("window"):
+            self._ctx_limits[sid] = {k: data.get(k) for k in keys}
+            return out
+        known = self._ctx_limits.get(sid)
+        if known is None:
+            try:
+                session = self.get(sid)
+            except KeyError:
+                return out
+            lim = context_limits(data.get("model") or model or session["model"], self.auto_compact_window(session))
+            known = {**lim, "auto_compact": True, "window_source": "estimate"}
+        for k in keys:
+            if out.get(k) is None and known.get(k) is not None:
+                out[k] = known[k]
+        return out
+
+    # ---- accounts: sticky choice, switches, failover ----
+
+    def _pool_enabled(self, provider: str) -> bool:
+        return self._pool is not None and self._pool.enabled(provider)
+
+    @staticmethod
+    def _sticky_account(session: dict[str, Any], provider: str) -> str | None:
+        """The account this chat ran on last (balancing reuses it while it's
+        usable). Chats from before stickiness: the last turn's account."""
+        rec = (session.get("accounts") or {}).get(provider) or {}
+        return rec.get("id") or None
+
+    def _remember_account(self, sid: str, provider: str, lease: Any) -> None:
+        try:
+            session = self.get(sid)
+        except KeyError:
+            return
+        accounts = dict(session.get("accounts") or {})
+        cur = accounts.get(provider) or {}
+        if cur.get("id") == lease.account_id and not cur.get("manual"):
+            return
+        accounts[provider] = {"id": lease.account_id, "label": lease.label, "at": now_iso()}
+        self._db.execute("UPDATE sessions SET accounts = ? WHERE id = ?", (json.dumps(accounts), sid))
+
+    def _switch_notice(self, lease: Any, *, failover: dict[str, Any] | None = None) -> ProviderEvent | None:
+        """The notice for a chat moving to another account (None if it didn't)."""
+        if failover is not None:
+            return ProviderEvent(type="notice", data={
+                "level": "warning", "code": "account.failover",
+                "message": f"Account {failover['label']} {failover['why']} — continued on {lease.label}",
+                "from": failover["label"], "from_id": failover["id"], "to": lease.label, "to_id": lease.account_id,
+                "resets_at": failover.get("resets_at"),
+            })
+        if not lease.previous_id:
+            return None
+        prev = lease.previous_label or "the previous account"
+        if lease.previous_why == "manual":
+            msg = f"Switched account: {prev} → {lease.label} (chosen by hand)"
+        else:
+            msg = f"Switched account: {prev} → {lease.label} — {prev} {lease.previous_why or 'is unavailable'}"
+        return ProviderEvent(type="notice", data={
+            "level": "info", "code": "account.switched", "message": msg,
+            "from": lease.previous_label, "from_id": lease.previous_id, "to": lease.label, "to_id": lease.account_id,
+        })
+
+    @staticmethod
+    def _unavailable_event(provider: str, exc: AccountUnavailable, prefix: str = "") -> ProviderEvent:
+        return ProviderEvent(type="error", data={
+            "code": "account.unavailable", "message": prefix + str(exc),
+            "earliest": _iso_or_none(exc.earliest), "provider": provider,
+        })
+
+    def _log_lease(self, sid: str, provider: str, lease: Any, ctx: dict[str, Any], what: str) -> None:
+        name = "Claude engine" if what == "engine" else f"{provider} turn"
+        why = {"sticky": "the chat's account", "strategy": "picked by the pool strategy"}.get(lease.reason, lease.reason)
+        self._log("info", "account", f"{name} started on account '{lease.label}' ({why})",
+                  code="account.leased",
+                  detail={**ctx, "account": lease.label, "account_id": lease.account_id, "reason": lease.reason,
+                          "previous": lease.previous_label, "previous_id": lease.previous_id,
+                          "previous_why": lease.previous_why},
+                  session_id=sid)
+
+    async def _failover(self, sid: str, req: TurnRequest, holder: dict[str, Any], ev: ProviderEvent,
+                        ctx: dict[str, Any], st: dict[str, Any], worked: bool) -> bool:
+        """The engine's account refused the turn (usage limit, rate limit,
+        signed out): cool it down until its reset, retire the engine and let
+        the turn continue on another account (``--resume``: same conversation).
+        Returns False (the error stands) when that isn't possible or wise."""
+        slot = holder.get("slot")
+        lease = getattr(slot, "lease", None)
+        if lease is None or self._pool is None or not self._pool_enabled("claude"):
+            return False
+        code, msg = ev.data.get("code"), str(ev.data.get("message") or "")
+        api_error = ev.data.get("api_error")
+        outcome = classify_error(code, msg, api_error)
+        if outcome not in ACCOUNT_OUTCOMES or (outcome == "rate_limited" and _OVERLOADED.search(msg)):
+            return False  # not about the account (or a service-wide overload another account won't fix)
+        reset = _reset_of(api_error) or (self._pool.limit_info(lease.account_id) or {}).get("resets_at")
+        info = (api_error or {}).get("rate_limit_info") or self._pool.limit_info(lease.account_id) or {}
+        kind = info.get("rateLimitType") or info.get("type")
+        if outcome == "provider_auth":
+            why = "is signed out (authentication failed)"
+        elif reset:
+            why = f"hit its {limit_name(kind)} (resets {fmt_clock(reset)})"
+        else:
+            why = "hit a usage limit" if outcome == "provider_quota" else "is rate-limited"
+        self._pool.record_outcome(lease, ok=False, code=outcome, error=msg, until=reset)
+        self._log("warning", "account", f"Claude account '{lease.label}' {why}", code=f"account.{outcome}",
+                  detail={**ctx, "error": msg, "api_error": api_error}, session_id=sid)
+        running = len(slot.engine.running_tasks)
+        if running:
+            # Moving means restarting the engine, which stops its background
+            # work: never do that on our own — say so, and let the user decide.
+            holder.setdefault("after", []).append(ProviderEvent(type="notice", data={
+                "level": "warning", "code": "account.failover_held",
+                "message": (f"Account {lease.label} {why}. Not switching accounts automatically: "
+                            f"{running} background task{'s' if running != 1 else ''} would be stopped. "
+                            "Send a message to continue on another account (this stops them)."),
+            }))
+            return False
+        if slot.engine.cli_session_id:
+            self._set_cli_session(sid, slot.engine.cli_session_id, "claude")
+            req.cli_session_id = slot.engine.cli_session_id
+        st["carry_cost"] = round(float(st.get("carry_cost") or 0) + float(ev.data.get("cost_usd") or 0), 6)
+        await self._engines.shutdown(sid, reason="account limit")  # releases its lease
+        holder["slot"] = None
+        holder["avoid"] = {lease.account_id}
+        holder["failover"] = {"id": lease.account_id, "label": lease.label, "why": why,
+                              "resets_at": _iso_or_none(reset)}
+        # The conversation (incl. this turn so far) is in the resumed session:
+        # resend the request only if nothing happened yet, else ask to go on.
+        holder["envelope"] = (
+            None if not worked else ClaudeCodeProvider._envelope(_CONTINUE_AFTER_FAILOVER, [])
+        )
+        req.preamble = ""
+        req.inbox = TurnInbox()
+        self._inboxes[sid] = req.inbox
+        return True
+
+    def _move_reason(self, sid: str, session: dict[str, Any], slot: Any) -> str | None:
+        """Why the chat's live engine should move to another account before
+        this turn: its account can't serve requests (refused / signed out /
+        disabled / removed), or the user picked another one."""
+        if self._pool is None or slot is None or slot.lease is None or not self._pool_enabled("claude"):
+            return None
+        rec = (session.get("accounts") or {}).get("claude") or {}
+        if rec.get("manual") and rec.get("id") and rec["id"] != slot.lease.account_id:
+            return "manual"
+        why, phrase = self._pool.peek("claude", slot.lease.account_id)
+        return phrase if why else None
+
     async def _engine_turn(self, sid: str, provider: Any, req: TurnRequest, holder: dict[str, Any],
                            ctx: dict[str, Any]) -> AsyncIterator[ProviderEvent]:
         """One turn on the session's persistent Claude engine (spawned on demand)."""
+        session = self.get(sid)
+        live = self._engines.slot(sid)
+        move = self._move_reason(sid, session, live)
+        moved_from = None
+        if move is not None and live is not None:
+            running = len(live.engine.running_tasks)
+            moved_from = live.lease
+            self._log("info", "account", f"moving the chat off account '{live.lease.label}' ({move})",
+                      code="account.moving", detail={**ctx, "reason": move}, session_id=sid)
+            await self._engines.shutdown(sid, reason="account change")
+            if running:
+                holder["notices"].append(ProviderEvent(type="notice", data={
+                    "level": "warning", "code": "engine.restarted",
+                    "message": f"Engine restarted on another account — {running} background task(s) were stopped",
+                }))
+        failover = holder.pop("failover", None)
+        avoid = holder.pop("avoid", set())
+        prefer = self._sticky_account(session, "claude")
+
+        def acquire() -> Any:
+            if self._pool is None:
+                return None
+            return self._pool.select("claude", prefer=prefer, avoid=avoid, begin_turn=True)
 
         async def make(lease: Any) -> ClaudeEngine:
-            env: dict[str, str] = dict(CLAUDE_ENV)
+            env: dict[str, str] = {**CLAUDE_ENV, **provider.engine_env(req)}
             key = req.api_key
             if lease is not None:
                 if not lease.is_primary:
@@ -909,35 +1185,54 @@ class SessionService:
                 mode=req.mode,
             )
 
-        slot, fresh, note = await self._engines.ensure(
-            sid,
-            make_engine=make,
-            fingerprint=provider.engine_fingerprint(req),
-            model=req.model or DEFAULT_CLAUDE_MODEL,
-            mode=req.mode,
-            permission_mode=provider.permission_mode(req.mode),
-            acquire_lease=lambda: self._pool.acquire("claude") if self._pool else None,
-            release_lease=lambda lease: self._pool.release(lease) if self._pool else None,
-        )
+        try:
+            slot, fresh, note = await self._engines.ensure(
+                sid,
+                make_engine=make,
+                fingerprint=provider.engine_fingerprint(req),
+                model=req.model or DEFAULT_CLAUDE_MODEL,
+                mode=req.mode,
+                permission_mode=provider.permission_mode(req.mode),
+                acquire_lease=acquire,
+                release_lease=lambda lease: self._pool.release(lease) if self._pool else None,
+            )
+        except AccountUnavailable as exc:
+            prefix = f"Account {failover['label']} {failover['why']}. " if failover else ""
+            yield ProviderEvent(type="session.start", data={"provider": "claude", "model": req.model, "workspace": req.cwd})
+            yield self._unavailable_event("claude", exc, prefix)
+            return
         holder["slot"] = slot
+        if note:
+            holder["notices"].append(ProviderEvent(type="notice", data={
+                "level": "warning", "code": "engine.restarted", "message": note}))
         # The engine keeps the account it leased at spawn for its whole life.
         if fresh or "account" not in slot.meta:
             slot.meta["account"] = self._account_ref("claude", slot.lease, req.api_key)
         ctx.update(slot.meta["account"])
         if fresh:
-            self._log("info", "account", f"Claude engine started on account '{ctx['account']}'",
-                      code="account.leased", detail={**ctx, "pid": getattr(slot.engine._proc, "pid", None)},
-                      session_id=sid)
+            self._ctx_limits.pop(sid, None)  # a new process may have other limits
+            lease = slot.lease
+            if lease is not None:
+                self._remember_account(sid, "claude", lease)
+                if moved_from is not None and moved_from.account_id != lease.account_id and not failover:
+                    lease.previous_id, lease.previous_label = moved_from.account_id, moved_from.label
+                    lease.previous_why = move
+                switched = self._switch_notice(lease, failover=failover)
+                if switched is not None:
+                    holder["notices"].append(switched)
+                self._log_lease(sid, "claude", lease, {**ctx, "pid": getattr(slot.engine._proc, "pid", None)}, "engine")
+            else:
+                self._log("info", "account", f"Claude engine started on account '{ctx['account']}'",
+                          code="account.leased", detail={**ctx, "pid": getattr(slot.engine._proc, "pid", None)},
+                          session_id=sid)
+        elif self._pool is not None:
+            self._pool.begin_turn(slot.lease)  # (a fresh lease counts its turn from the pick)
         run = self.active_runs.get(sid)
         if run is not None:
             run["account"] = ctx["account"]
-        first = True
-        async for ev in self._engines.turn(sid, slot, provider.envelope(req), req.inbox):
+        envelope = holder.pop("envelope", None) or provider.envelope(req)
+        async for ev in self._engines.turn(sid, slot, envelope, req.inbox):
             yield ev
-            if first and note:
-                first = False
-                notice = ProviderEvent(type="notice", data={"level": "warning", "code": "engine.restarted", "message": note})
-                yield notice
 
     # ---- per-turn file changes (git snapshots) ----
 
@@ -1047,6 +1342,8 @@ class SessionService:
         self.active_runs[sid] = {**ctx, "session_id": sid, "title": session["title"], "started_at": now_iso(),
                                  "tools": 0, "attachments": 0}
         st = self._turn_state(ctx, "claude", session["model"])
+        if self._pool is not None and slot is not None:
+            self._pool.begin_turn(slot.lease)  # an active turn on the engine's account
         self._publish(sid, {"type": "run.state", "data": {"running": True}})
         try:
             with contextlib.suppress(Exception):
@@ -1076,6 +1373,8 @@ class SessionService:
             self._tasks.pop(sid, None)
             self.active_runs.pop(sid, None)
             self._report_outcome("claude", slot.lease if slot else None, st, ctx, sid, release=False)
+            if self._pool is not None and slot is not None:
+                self._pool.end_turn(slot.lease)
             self._publish(sid, {"type": "run.state", "data": {"running": False}})
 
     def _on_task(self, sid: str, task: dict[str, Any]) -> None:
@@ -1124,6 +1423,9 @@ class SessionService:
         # chat's subscribers get them.
         data = {**info, **self._engine_account(self._engines.slot(sid)), "provider": "claude",
                 "session_id": sid, "at": now_iso()}
+        if self._pool is not None:
+            # Fresh numbers for balancing (and a refused account cools down now).
+            self._pool.record_live("claude", data.get("account_id"), info)
         self._live_usage_by_session[sid] = data
         self.live_usage[data.get("account_id") or "claude"] = data
         self._publish(sid, {"type": "usage.update", "data": data})
@@ -1172,6 +1474,7 @@ class SessionService:
             self._pool.release(lease)
         # The next engine may lease another account: don't show this one's numbers as current.
         self._live_usage_by_session.pop(sid, None)
+        self._ctx_limits.pop(sid, None)
         rows = self._db.query(
             "SELECT * FROM bg_tasks WHERE session_id = ? AND status IN ('running', 'pending')", (sid,)
         )
@@ -1232,6 +1535,24 @@ async def _drain_quietly(stream: AsyncIterator[ProviderEvent]) -> None:
     with contextlib.suppress(Exception):
         async for _ in stream:
             pass
+
+
+def _reset_of(api_error: dict[str, Any] | None) -> float | None:
+    """When the limit named by a typed API error resets (epoch seconds)."""
+    info = (api_error or {}).get("rate_limit_info") or {}
+    try:
+        v = float(info.get("resetsAt") or 0)
+    except (TypeError, ValueError):
+        return None
+    return v if v > time.time() else None
+
+
+def _iso_or_none(ts: float | None) -> str | None:
+    if not ts:
+        return None
+    from datetime import datetime, timezone
+
+    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
 
 
 def _default_model(provider: str, model: str | None) -> str:

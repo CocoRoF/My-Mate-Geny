@@ -44,6 +44,11 @@ class StreamJsonAccumulator:
         self.stop_reason: str = ""
         self.model: str = ""
         self._seen_tool_ids: set[str] = set()
+        # Context size of the main conversation as of its latest API call, and
+        # the CLI's typed API error (usage limit, auth…) if a call failed.
+        self.context_tokens: int | None = None
+        self._ctx_call: str | None = None
+        self.api_error: dict[str, Any] | None = None
 
     def _ev(self, type_: str, data: dict[str, Any]) -> ProviderEvent:
         self._seq += 1
@@ -77,13 +82,7 @@ class StreamJsonAccumulator:
                               "terminal_slash_commands")
                 })
             elif sub == "compact_boundary":
-                meta = obj.get("compact_metadata") or {}
-                pre = meta.get("pre_tokens")
-                yield self._ev("notice", {
-                    "level": "info", "code": "context.compacted",
-                    "message": "Conversation context was compacted"
-                               + (f" (was {pre:,} tokens)" if isinstance(pre, int) else ""),
-                })
+                yield self._ev("notice", compaction_notice(obj.get("compact_metadata") or {}))
             return
 
         # Messages from inside a subagent (Agent/Task tool) carry the parent
@@ -99,6 +98,8 @@ class StreamJsonAccumulator:
             return
 
         if kind == "assistant":
+            if not parent:
+                yield from self._main_call(obj)
             yield from self._handle_assistant(obj.get("message", {}), parent)
             return
 
@@ -151,6 +152,45 @@ class StreamJsonAccumulator:
             elif btype == "thinking" and parent and str(block.get("thinking") or "").strip():
                 # (empty when the CLI omits the reasoning display)
                 yield self._ev("subagent.thinking", {"parent": parent, "text": block["thinking"]})
+
+    # ---- per API call of the main conversation (not a subagent's) ----
+
+    def _main_call(self, obj: dict[str, Any]) -> Iterator[ProviderEvent]:
+        """Context size after each main-conversation API call, and the typed
+        API error of a failed one.
+
+        Every call re-sends the whole context, so the context size is that
+        call's input + cache read + cache write tokens (the result's usage is
+        summed over all calls of the turn — not a context size). One call can
+        arrive as several assistant messages (one per content block) with the
+        same id: reported once."""
+        if obj.get("error") or obj.get("is_api_error_message") or obj.get("api_error"):
+            params = obj.get("api_error_params") or {}
+            self.api_error = {
+                "error": obj.get("error"),
+                "kind": obj.get("api_error"),
+                "status": obj.get("api_error_status"),
+                "rate_limit_info": params.get("rate_limit_info") if isinstance(params, dict) else None,
+            }
+        message = obj.get("message") or {}
+        usage = message.get("usage")
+        if not isinstance(usage, dict):
+            return
+        tokens = 0
+        for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"):
+            try:
+                tokens += int(usage.get(k) or 0)
+            except (TypeError, ValueError):
+                pass
+        call = message.get("id") or obj.get("request_id") or obj.get("uuid")
+        if tokens <= 0 or (call and call == self._ctx_call):
+            return
+        self._ctx_call = call
+        self.context_tokens = tokens
+        yield self._ev("context.update", {"tokens": tokens, "source": "call", "model": message.get("model")})
+
+    def _api_error_fields(self) -> dict[str, Any]:
+        return {"api_error": self.api_error} if self.api_error else {}
 
     # ---- tool results (arrive as user messages) ----
 
@@ -208,7 +248,7 @@ class StreamJsonAccumulator:
         self.cost_usd = round(total - self.cost_base if total >= self.cost_base else total, 6)
         self.cost_total = total
         # Failed / stopped turns still used tokens: their cost travels on the error.
-        spent = {"usage": self.usage, **self.cost_fields()}
+        spent = {"usage": self.usage, **self.cost_fields(), **self._api_error_fields()}
 
         if obj.get("subtype") not in (None, "success"):
             reasons = {
@@ -250,6 +290,28 @@ class StreamJsonAccumulator:
         that is already per turn (events from before it may be cumulative —
         see ``app.services.turn_cost``)."""
         return {"cost_usd": self.cost_usd, "cost_kind": "turn", "process_cost_usd": round(self.cost_total, 6)}
+
+
+def compaction_notice(meta: dict[str, Any]) -> dict[str, Any]:
+    """``compact_boundary`` -> a ``context.compacted`` notice (rendered as a
+    divider): auto/manual, and the context size before -> after."""
+    trigger = meta.get("trigger") if meta.get("trigger") in ("auto", "manual") else None
+    pre, post = meta.get("pre_tokens"), meta.get("post_tokens")
+    pre = pre if isinstance(pre, int) else None
+    post = post if isinstance(post, int) else None
+
+    def k(n: int) -> str:
+        return f"{n / 1000:.0f}k" if n >= 10_000 else f"{n:,}"
+
+    sizes = f"{k(pre)} → {k(post)} tokens" if pre is not None and post is not None else (
+        f"was {k(pre)} tokens" if pre is not None else "")
+    what = {"auto": "Context auto-compacted", "manual": "Context compacted"}.get(trigger or "", "Context compacted")
+    return {
+        "level": "info", "code": "context.compacted",
+        "message": what + (f" ({sizes})" if sizes else ""),
+        "trigger": trigger, "pre_tokens": pre, "post_tokens": post,
+        "duration_ms": meta.get("duration_ms") if isinstance(meta.get("duration_ms"), (int, float)) else None,
+    }
 
 
 _AGENT_FIELDS = (

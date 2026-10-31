@@ -43,6 +43,8 @@ EVENT_TYPES = (
     "usage.update",    # live plan utilization (Claude rate_limit_event); not persisted
     "engine.exit",     # internal: the persistent engine process ended
     "turn.changes",    # files the turn changed (git snapshots); data: {repos[], files, added, removed}
+    "context.update",  # main-conversation context size (Claude); data: {tokens, window, threshold, auto_compact, source}
+                       #   source "call" = after an API call (usage of that call), "cli" = the engine's own count
 )
 
 EventType = Literal[
@@ -62,6 +64,7 @@ EventType = Literal[
     "usage.update",
     "engine.exit",
     "turn.changes",
+    "context.update",
 ]
 
 
@@ -168,6 +171,8 @@ class TurnRequest:
     # Per-session uploads dir, always an additional working dir for Claude so
     # attachments never change the persistent engine's launch settings.
     uploads_dir: str | None = None
+    # Claude: CLAUDE_CODE_AUTO_COMPACT_WINDOW (tokens); 0 = the CLI's default.
+    auto_compact_window: int = 0
 
 
 class ProviderTurnError(RuntimeError):

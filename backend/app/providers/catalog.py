@@ -23,10 +23,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 import urllib.error
 import urllib.request
+from typing import Any
 
 # ---- static fallbacks (used only if the live fetch fails) -------------------
 
@@ -256,6 +258,57 @@ def codex_model_known(model: str | None) -> bool | None:
     return any(m["id"] == model for m in models)
 
 
+# ---- context window (Claude) --------------------------------------------------
+
+# The CLI compacts a conversation once its context reaches the effective
+# window minus this buffer (room for the summary + output). Measured on
+# Claude Code 2.1.314 with ``get_context_usage``: window 100k -> 67k,
+# 300k -> 267k, 1M -> 967k. The engine reports the real threshold after every
+# turn; this is only the fallback before it has.
+AUTOCOMPACT_BUFFER = 33_000
+# Auto-compact window choices offered in the UI (0 = the CLI's default: the
+# model's full window, same as Claude Code itself).
+AUTO_COMPACT_PRESETS = (0, 200_000, 400_000, 600_000)
+_MIN_AUTO_COMPACT = 100_000
+
+_FAMILY = re.compile(r"(opus|sonnet|haiku|fable)-(\d+)", re.I)
+
+
+def context_window(model: str | None) -> int:
+    """The model's full context window (tokens). ``[1m]`` variants and the
+    5.x generation run at 1M; older models at 200k."""
+    m = (model or "").lower()
+    if "[1m]" in m:
+        return 1_000_000
+    if m in ("", "default", "opus", "sonnet", "haiku", "fable", "best", "opusplan"):
+        return 1_000_000  # aliases resolve to the current (5.x) models
+    hit = _FAMILY.search(m)
+    if hit and int(hit.group(2)) >= 5:
+        return 1_000_000
+    return 200_000
+
+
+def clean_auto_compact_window(value: Any) -> int:
+    """A stored/posted auto-compact window: 0 (CLI default) or >= 100k tokens."""
+    try:
+        n = int(value or 0)
+    except (TypeError, ValueError):
+        raise ValueError("auto-compact window must be a number of tokens") from None
+    if n <= 0:
+        return 0
+    if n < _MIN_AUTO_COMPACT:
+        raise ValueError(f"auto-compact window must be at least {_MIN_AUTO_COMPACT:,} tokens")
+    return n
+
+
+def context_limits(model: str | None, auto_compact_window: int = 0) -> dict[str, int]:
+    """{window, threshold} the CLI will use: the configured auto-compact
+    window caps the model's window (the CLI ignores a bigger value)."""
+    full = context_window(model)
+    window = min(full, auto_compact_window) if auto_compact_window else full
+    return {"window": window, "model_window": full, "threshold": max(0, window - AUTOCOMPACT_BUFFER)}
+
+
 # ---- public -----------------------------------------------------------------
 
 
@@ -266,8 +319,13 @@ def build_catalog(
     """Build the per-provider catalog, fetching live models where possible."""
     claude_dir = claude_cred_dir or os.path.expanduser("~/.claude")
     codex_dir = codex_cred_dir or os.path.expanduser("~/.codex")
+    claude = _claude_catalog(claude_dir)
+    claude["models"] = [{**m, "context_window": m.get("context_window") or context_window(m["id"])}
+                        for m in claude["models"]]
+    claude["auto_compact_presets"] = list(AUTO_COMPACT_PRESETS)
+    claude["auto_compact_buffer"] = AUTOCOMPACT_BUFFER
     catalog = {
-        "claude": _claude_catalog(claude_dir),
+        "claude": claude,
         "codex": _codex_catalog(codex_dir),
     }
     return catalog

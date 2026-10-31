@@ -41,6 +41,23 @@ _PERMISSION_MODE = {"agent": "bypassPermissions", "plan": "plan"}
 # because an older CLI ignores it instead of rejecting an unknown flag.
 CLI_ENV = {"CLAUDE_CODE_FORWARD_SUBAGENT_TEXT": "1"}
 
+# Appended to Claude's system prompt. Every check of a sleep/poll loop is a
+# full API call that re-reads the whole context (often 400k+ tokens), so
+# waiting by polling burns plan usage for nothing; in this harness the engine
+# stays alive between turns and a finished background task starts a new turn
+# by itself, and the user sees that turn live.
+WAIT_GUIDE = (
+    "Waiting on long-running work in this environment: start it with Bash run_in_background "
+    "(or as a background subagent) and end your turn, or keep doing other useful work. You are "
+    "notified automatically when a background task finishes, even after your turn has ended, "
+    "and you continue in a new turn that the user sees live. Do not wait with sleep commands, "
+    "sleep/poll loops or repeated status checks: every check is a full model call that re-reads "
+    "the entire conversation and burns the user's plan usage. If you must watch for a condition, "
+    "use one background command that waits for it (or the Monitor tool when available) instead "
+    "of polling from your own turn."
+)
+AUTO_COMPACT_ENV = "CLAUDE_CODE_AUTO_COMPACT_WINDOW"
+
 
 class ClaudeCodeProvider(Provider):
     name = "claude"
@@ -94,6 +111,8 @@ class ClaudeCodeProvider(Provider):
             model,
             "--permission-mode",
             _PERMISSION_MODE.get(req.mode, "bypassPermissions"),
+            "--append-system-prompt",
+            WAIT_GUIDE,
         ]
         # Extra folders + the per-session uploads dir (attachments live outside
         # the workspace) become additional working directories.
@@ -152,11 +171,20 @@ class ClaudeCodeProvider(Provider):
             "mcp": req.mcp_config,
             "api_key": hashlib.sha256((req.api_key or "").encode()).hexdigest()[:12],
             "allow": sorted(req.allow_tools or []),
+            "auto_compact": req.auto_compact_window or 0,
         }, sort_keys=True)
         return hashlib.sha256(key.encode()).hexdigest()
 
     def engine_argv(self, req: TurnRequest) -> list[str]:
         return self._build_argv(req)
+
+    @staticmethod
+    def engine_env(req: TurnRequest) -> dict[str, str]:
+        """Launch environment from the turn's settings (on top of CLI_ENV)."""
+        env: dict[str, str] = {}
+        if req.auto_compact_window and req.auto_compact_window > 0:
+            env[AUTO_COMPACT_ENV] = str(int(req.auto_compact_window))
+        return env
 
     def envelope(self, req: TurnRequest) -> bytes:
         return self._build_stdin(req)
@@ -182,7 +210,7 @@ class ClaudeCodeProvider(Provider):
     # ---- turn ----
 
     async def run_turn_stream(self, req: TurnRequest) -> AsyncIterator[ProviderEvent]:
-        env_extras = {**CLI_ENV, **req.extra_env}
+        env_extras = {**CLI_ENV, **self.engine_env(req), **req.extra_env}
         if req.api_key:
             env_extras["ANTHROPIC_API_KEY"] = req.api_key
 

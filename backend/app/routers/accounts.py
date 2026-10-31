@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.providers.accounts import account_config_dir, ensure_account_dirs, write_claude_credentials
+from app.providers.catalog import clean_auto_compact_window
 
 router = APIRouter(prefix="/api/providers")
 
@@ -32,6 +33,10 @@ class AccountUpdate(BaseModel):
 class PoolUpdate(BaseModel):
     enabled: bool | None = None
     strategy: str | None = None
+    primary_mode: str | None = None       # host login: normal | fallback | off
+    near_5h: float | None = None          # avoid accounts at/above this 5-hour %
+    near_7d: float | None = None          # ... and this 7-day %
+    auto_compact_window: int | None = None  # Claude: default auto-compact window (0 = CLI default)
 
 
 class OAuthCode(BaseModel):
@@ -56,7 +61,13 @@ async def get_pool(provider: str, request: Request) -> dict:
 async def set_pool(provider: str, body: PoolUpdate, request: Request) -> dict:
     _check(provider)
     store = request.app.state.account_store
-    return store.set_pool(provider, enabled=body.enabled, strategy=body.strategy)
+    fields = body.model_dump(exclude_none=True)
+    try:
+        if "auto_compact_window" in fields:
+            fields["auto_compact_window"] = clean_auto_compact_window(fields["auto_compact_window"])
+        return store.set_pool(provider, **fields)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/{provider}/accounts")
