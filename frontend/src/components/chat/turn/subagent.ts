@@ -12,10 +12,14 @@ export const isAgentTool = (t: ToolActivity) => ["task", "agent"].includes(t.nam
 
 const STOPPED = /doesn't want to proceed|tool use was rejected|interrupted to apply/i;
 
-/** The live task for a call: the engine's latest word (task store) over what the turn recorded. */
+/** The live task for a call: the engine's latest word (task store) over what the turn recorded.
+ *  The server lists every running task of the chat, so a task missing from a
+ *  loaded list has ended — the "running" the turn recorded at launch is stale. */
 export function taskFor(tool: ToolActivity, tasks?: TaskInfo[]): TaskInfo | undefined {
   const live = tasks?.find((t) => (tool.task && t.task_id === tool.task.task_id) || t.tool_use_id === tool.id);
-  return live ? { ...(tool.task || {}), ...live } : tool.task;
+  if (live) return { ...(tool.task || {}), ...live };
+  if (tasks && tool.task && isRunning(tool.task)) return { ...tool.task, status: "completed" };
+  return tool.task;
 }
 
 export const isBackground = (tool: ToolActivity, task?: TaskInfo) =>

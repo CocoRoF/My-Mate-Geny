@@ -1673,10 +1673,14 @@ class SessionService:
         d.pop("output_file", None)  # served through the API, never exposed as a path
         return d
 
-    def list_tasks(self, sid: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
+    def list_tasks(self, sid: str | None = None, limit: int = 1000) -> list[dict[str, Any]]:
         if sid:
+            # Every task still running (however old) + the newest others: the
+            # UI treats a call whose task isn't listed as no longer running.
             rows = self._db.query(
-                "SELECT * FROM bg_tasks WHERE session_id = ? ORDER BY started_at DESC LIMIT ?", (sid, limit))
+                "SELECT * FROM bg_tasks WHERE session_id = ? AND status IN ('running', 'pending') "
+                "UNION SELECT * FROM (SELECT * FROM bg_tasks WHERE session_id = ? ORDER BY started_at DESC LIMIT ?) "
+                "ORDER BY started_at DESC", (sid, sid, limit))
         else:
             rows = self._db.query("SELECT * FROM bg_tasks ORDER BY started_at DESC LIMIT ?", (limit,))
         return [self._task_out(r) for r in rows]

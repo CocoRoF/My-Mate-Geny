@@ -98,3 +98,15 @@ def test_background_tasks_count_as_working(db, tmp_path):
         svc.unsubscribe_list(q)
 
     asyncio.run(main())
+
+
+def test_task_list_always_includes_running_tasks(db, tmp_path):
+    svc = _services(db)
+    s = svc.create(provider="claude", workspace_path=str(tmp_path))
+    svc._on_task(s["id"], {"task_id": "old-running", "status": "running", "started_at": 1.0})
+    for i in range(30):
+        svc._on_task(s["id"], {"task_id": f"t{i}", "status": "completed", "started_at": 100.0 + i})
+    listed = svc.list_tasks(s["id"], limit=10)
+    ids = [t["task_id"] for t in listed]
+    assert "old-running" in ids and len(ids) == 11  # every running task + the newest 10
+    assert ids[0] == "t29"  # newest first
