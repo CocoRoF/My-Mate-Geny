@@ -122,26 +122,27 @@ state silently.
 | cgroup limit hit | new `max` events (10 min cooldown) | — |
 | backend restart | clean (info) / unclean = no clean shutdown recorded (warning) / host rebooted (warning) | — |
 
-## Host memory guard (my-server)
+## Host memory guard (optional)
 
-The host runs `~/server-hardening` (see its README): a 22 GB ceiling for the
-user slice, `capped` per-command cgroups and **memguard**, which SIGTERMs the
-fastest-growing big process when machine-wide available memory drops below
-1.5 GB (600 MB hard) or PSI memory full exceeds 40 %. The monitor detects it
-(`/usr/local/sbin/memguard` or `~/server-hardening/memguard.py`) and:
+Some hosts run a user-space memory guard: per-command cgroups plus a daemon
+(**memguard**) that SIGTERMs the fastest-growing big process when machine-wide
+available memory drops below a floor (default 1.5 GB, 600 MB hard) or PSI
+memory "full" exceeds 40 %, usually together with a memory ceiling for the
+user slice. The monitor detects such a guard (`/usr/local/sbin/memguard` or
+`~/server-hardening/memguard.py`) and:
 
-* draws memguard's line on the memory chart (total − 1.5 GB) and its PSI line
-  on the pressure chart;
+* draws memguard's line on the memory chart (total − its floor) and its PSI
+  line on the pressure chart;
 * alerts when available memory comes within 1 GB of that line;
 * shows the *Memory protection* card (container working set / limit / OOM
   kills, headroom above memguard's line, the user-slice ceiling).
 
-The deployed backend runs in Docker (system slice), so the 22 GB user-slice
-ceiling does not apply to it or its engines, and the container cannot read
-the user slice; set `MONITOR_USER_CEILING=22G` to show it anyway. memguard's
-own kills are in `journalctl -u memguard` on the host (not visible from the
-container). Settings: `MONITOR_GUARD=auto|on|off`, `MONITOR_GUARD_AVAIL`,
-`MONITOR_GUARD_AVAIL_HARD`, `MONITOR_GUARD_PSI_FULL`.
+A backend running in Docker (system slice) is not under a user-slice ceiling
+and cannot read it from inside the container; set `MONITOR_USER_CEILING`
+(e.g. `22G`) to show it anyway. memguard's own kills are only visible on the
+host (`journalctl -u memguard`). Settings: `MONITOR_GUARD=auto|on|off`,
+`MONITOR_GUARD_AVAIL`, `MONITOR_GUARD_AVAIL_HARD`, `MONITOR_GUARD_PSI_FULL`.
+Without a guard none of this appears.
 
 ## UI
 

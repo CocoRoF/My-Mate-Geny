@@ -40,10 +40,12 @@ values (or the defaults) apply again.
 ## Sessions
 
 * A successful login sets the `hrh_session` cookie (HttpOnly, SameSite=Lax,
-  7 days, sliding: every authenticated request renews it). It is `Secure` when
-  `COOKIE_SECURE=true` (the default) and also whenever the request arrived over
-  https (directly, `X-Forwarded-Proto: https`, or Cloudflare's `CF-Visitor`).
-  Set `COOKIE_SECURE=false` only for plain-http setups.
+  7 days, sliding: every authenticated request renews it). With
+  `COOKIE_SECURE=auto` (the default) it is `Secure` exactly when the request
+  arrived over https (directly, `X-Forwarded-Proto: https`, or Cloudflare's
+  `CF-Visitor`), so the same setting works behind an HTTPS proxy and on a
+  plain-http LAN server. `COOKIE_SECURE=true` forces the flag on every
+  response.
 * The same token is returned in the login response body. Native clients that
   cannot hold the cookie send it as `Authorization: Bearer <token>` (HTTP) or
   `?token=<token>` (WebSocket).

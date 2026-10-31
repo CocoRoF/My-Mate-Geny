@@ -101,7 +101,7 @@ Settings (`serverUrl`, `lastServer`, `username`, `rememberConnect`, `mateId`, `m
 ## Naming
 
 Shown as **My Mate Geny**; internal ids are unchanged so existing installs
-update in place and stay logged in: appId `me.hrletsgo.harnessor` (Windows
+update in place and stay logged in: `appId` in `package.json` (Windows
 notifications and installer identity), package name `hr-harnessor-desktop`
 (Debian package), and the data folder (`…/hr-harnessor`, pinned in
 `src/main.js` because Electron would otherwise derive it from the new

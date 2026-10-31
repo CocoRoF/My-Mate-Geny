@@ -7,9 +7,11 @@ The Apache License covers ONLY the original source code in this repository.
 It bundles, downloads or talks to third-party components and content that are
 licensed separately under their own terms and are NOT covered by the Apache
 License, among them:
-  - Live2D sample model "Niziiro Mao (PRO)"   (Live2D Inc. - Live2D Free Material
-    License Agreement + Terms of Use for Live2D Cubism Sample Data).
-    This content uses sample data owned and copyrighted by Live2D Inc.
+  - Live2D sample models such as "Niziiro Mao (PRO)" (Live2D Inc. - Live2D
+    Free Material License Agreement + Terms of Use for Live2D Cubism Sample
+    Data). NOT bundled: users download them from live2d.com and import them
+    themselves; works that show them must carry the notice "This content uses
+    sample data owned and copyrighted by Live2D Inc."
   - Live2D Cubism Core                       (Live2D Inc. - Live2D Proprietary
     Software License; NOT bundled, downloaded only after the user accepts it)
   - Built-in mate characters Estelle / Chaerin / Seoa (artwork, video, voice)

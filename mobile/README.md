@@ -29,7 +29,8 @@ starts on the local connect page `www/index.html` (served at
   stays off on purpose: it would also reroute the console's own fetch/XHR.
 - After `POST /api/auth/login {…, exchange: true}` the page hands the server
   and `{server}/auth/exchange?code=…&next=/` to the **GenyServer** plugin
-  (`android/app/src/main/java/me/hrletsgo/harnessor/GenyServerPlugin.java`).
+  (`GenyServerPlugin.java` in the app's Java package under
+  `android/app/src/main/java/`).
   It saves the server and recreates the activity with Capacitor's
   `server.url` = the server's origin, `server.appStartPath` = the exchange URL
   (then its sub-path on later starts) and `server.allowNavigation` = its host
@@ -73,6 +74,6 @@ starts on the local connect page `www/index.html` (served at
   `assets/` (made by `scripts/make-icons.py` from `assets/geny-logo.png`).
 
 Naming: shown as **My Mate Geny** (`appName`, `app_name`); the package id
-`me.hrletsgo.harnessor` and the signing key are unchanged, so existing installs
+(`applicationId` in `android/app/build.gradle`) and the signing key are unchanged, so existing installs
 update in place. Version: `versionName`/`versionCode` come from CI
 (`0.4.<run>` / run number); local builds default to 0.4.0-dev / 4.

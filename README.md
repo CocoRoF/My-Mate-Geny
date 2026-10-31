@@ -1,9 +1,9 @@
-<p align="center"><img src="assets/geny-logo.png" width="240" alt="Geny logo"></p>
+<p align="center"><img src="assets/geny-logo.png" width="200" alt="Geny logo"></p>
 
 <h1 align="center">My Mate Geny</h1>
 
 <p align="center">
-  A self-hosted console for coding agents (Claude Code, Codex) — with an avatar secretary who hands them the work.
+  <b>Your own server for Claude Code and Codex, plus an avatar mate who hands them the work.</b>
 </p>
 
 <p align="center">
@@ -14,140 +14,231 @@
   <img alt="Apps" src="https://img.shields.io/badge/apps-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-555">
 </p>
 
-<p align="center"><a href="README_ko.md">한국어</a></p>
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#the-mate">The Mate</a> ·
+  <a href="#apps">Apps</a> ·
+  <a href="docs/">Docs</a> ·
+  <a href="README_ko.md">한국어</a>
+</p>
 
 ---
 
-My Mate Geny turns the **Claude Code** and **Codex** CLIs into a chat service you run on
-your own machine or server: open it in a browser, the desktop app or the Android app, start
-chats in local or remote (SSH) folders, watch every tool call and file change, and let
-several subscription accounts share the load. On top of the chats sits the **Mate** — an
-avatar you talk to (video, photo or Live2D body, voice in and out) that delegates work to
-those chats, follows up and reports back.
+My Mate Geny turns the **Claude Code** and **Codex** CLIs into a chat service on your own
+machine or server. Open it in a browser, the desktop app or the Android app; start chats in
+local or SSH folders; watch every tool call, subagent and file change; and let several
+subscription accounts share the load.
 
-*(Formerly "hr-harnessor": some internal identifiers — the `~/.hr-harnessor` state
-directory, cookie/storage keys, the app ids — keep that name so existing installs update in
-place.)*
+On top of the chats lives the **Mate**: a character you talk to, with a video, photo or
+Live2D body and a voice. Tell her what you need. She finds the project, gives the job to a
+chat, keeps an eye on it and tells you how it went.
 
-<!-- Screenshots: add docs/images/console.png, docs/images/mate.png, docs/images/desktop-mate.png -->
-| Console | Mate | Desktop mate |
-|---|---|---|
-| _screenshot: chat + explorer_ | _screenshot: mate stage_ | _screenshot: desktop overlay_ |
+<p align="center">
+  <img src="docs/images/console.webp" alt="Chat console: a Claude Code chat with tool calls, a subagent, changed files and the session panel" width="100%">
+</p>
+
+| | |
+|---|---|
+| <img src="docs/images/mate.webp" alt="The Mate view: Han Chaerin on the stage, a conversation with a delegation card"> | <img src="docs/images/explorer.webp" alt="Explorer and code viewer next to the chat"> |
+| **Mate**: talk to her; she delegates to chats and reports back | **Explorer + viewers**: browse the workspace, open what the agent touched |
+| <img src="docs/images/mate-settings.webp" alt="Mate settings: the clip library of a video avatar"> | <img src="docs/images/global-settings.webp" alt="Global settings: voice services"> |
+| **Mate settings**: clips, stills, Live2D, voice, model, memory | **Global settings**: voice services and the Live2D runtime, set up once |
+| <img src="docs/images/providers.webp" alt="Providers: three pooled Claude accounts with 5-hour and 7-day usage bars"> | <img src="docs/images/monitoring.webp" alt="Admin, System: live CPU, memory, disk, network and process charts"> |
+| **Providers**: pooled accounts, balanced by 5-hour / 7-day usage | **Admin → System**: live monitoring of the host and the agents |
+
+<p align="center">
+  <img src="docs/images/phone.webp" alt="The Mate on a phone" width="260"><br>
+  <sub>The same console on a phone (Android app or mobile browser)</sub>
+</p>
+
+<sub>Screenshots show demo data on a throwaway server; the usage numbers are mocked.</sub>
 
 ## Features
 
-- **Engines** — Claude Code (`claude`) and Codex (`codex`), switchable mid-chat with the
-  conversation handed over. Claude runs as a persistent engine per chat (background tasks,
-  follow-up turns, live interrupt / model / permission-mode changes); Codex runs one `exec`
-  per turn. Both stream into one normalized event schema.
-- **Workspaces** — a folder on the server, or a folder on a remote SSH host through an
-  SSH-backed MCP bridge (`remote_bash/read/write/list`). Clone Git repos as workspaces.
-  Extra folders per chat.
-- **Agent UX** — prose and tool activity kept apart (folded tool groups, diffs, subagent
-  nesting), exact per-turn file changes from git snapshots with diff viewer and undo,
-  background-task panel, steering a running turn, queueing, `/` commands and `@` files,
-  photo/file/clipboard attachments, notifications.
-- **Explorer + viewers** — VS Code-style explorer (local or remote) and file tabs: code,
-  markdown, CSV/TSV, Excel, Word, PowerPoint, PDF, notebooks, HTML (sandboxed),
-  images/audio/video. Paths the agent prints open on click. The server's own credentials are
-  never served.
-- **Context & usage** — context meter, compaction dividers, "Compact now", configurable
-  auto-compact window, per-chat cost and plan-usage views.
-- **Accounts** — several Claude / Codex logins in a pool with plan-usage-aware balancing,
-  sticky chats (prompt cache per account), cool-down on rate limits and automatic hand-over.
-- **Operations** — admin console (error logs, system, security), revocable sessions,
-  per-IP login bans.
-- **Mate** — persona, memory, voice (browser, OpenAI, ElevenLabs, OmniVoice or any HTTP
-  TTS; Whisper-compatible STT), video / photo / Live2D bodies with emotion tags and
-  lip-sync, delegation to chats. On the desktop app it lives on your desktop (transparent
-  always-on-top avatar, quick chat on **Ctrl/Cmd+Shift+G**).
-- **Clients** — web console (desktop + mobile layouts), desktop app (Electron: Windows /
-  macOS / Linux), Android app (Capacitor). The apps load your server's console, so UI
-  updates reach them without a new build.
+**Console: chats with real coding agents**
 
-## Quick start (Docker)
+- **Two engines, one chat.** Claude Code (`claude`) and Codex (`codex`); switch engines
+  mid-chat and the conversation is handed over. Claude runs as a persistent engine per chat
+  (follow-up turns, background tasks, live interrupt and model / permission changes);
+  Codex runs one `exec` per turn. Both stream into one event format.
+- **Readable agent work.** Prose and tool activity kept apart: folded tool groups, inline
+  diffs, nested **subagents** with their own steps, steering a running turn, a message
+  queue, `/` commands and `@` files, photo / file / clipboard attachments, notifications.
+- **Changes you can undo.** Every turn's file changes come from git snapshots, with a diff
+  viewer and per-file or per-turn undo.
+- **Background tasks.** Long commands and background subagents show in a task panel with
+  their output; when one finishes, Claude picks the result up in a turn of its own.
+- **Explorer and viewers.** VS Code-style explorer (local or remote) and file tabs for code,
+  Markdown, CSV/TSV, Excel, Word, PowerPoint, PDF, notebooks, sandboxed HTML, images,
+  audio and video. Paths the agent prints are clickable.
+- **Context meter and compaction.** See how full the context is, where Claude will
+  auto-compact, and compaction markers in the chat; compact now, or pick a smaller
+  auto-compact window to keep calls cheap.
+- **Workspaces.** Any folder on the server, a folder on an SSH host (SSH-backed MCP
+  bridge), or a cloned Git repo. Extra folders per chat.
+- **Account load balancing.** Pool several Claude / Codex logins. New chats go to the
+  account with the most headroom; you choose whether the **5-hour or the 7-day** window
+  decides and at what percentage an account counts as "near the limit". Chats stay on
+  their account (prompt cache), rate-limited accounts cool down, and a turn that hits a
+  limit continues on another account.
+- **Usage.** Plan usage per account (5-hour, weekly, per-model weekly), the
+  API-equivalent cost of every turn and chat, and the server's token totals.
 
-Requirements: Docker with Compose v2.24+, ~3 GB disk for the image.
+**The Mate**
+
+- **Bodies**: video (clip state machine with idle / talk / listen / think / emotion
+  clips), photo (stills with blinking and mouth shapes) or **Live2D** (Cubism 4/5),
+  driven by emotion tags in her replies and lip-synced to her voice.
+- **Voice in and out**: browser speech (free), OpenAI, ElevenLabs, OmniVoice
+  (self-hosted voice cloning) or any HTTP TTS; Whisper-compatible or OpenAI speech-to-text.
+  Hold the mic to talk.
+- **Delegation**: she can list and read your chats, start a chat in the right folder, send
+  instructions to a running one, and gets each result back to report on.
+- **Memory**: things she should remember (she can add them herself; you can edit them).
+- **Global vs Mate settings**: voice services, the Live2D runtime and desktop options are
+  set up once in **Global settings**; each mate has its own profile, avatar, language
+  model, voice and memory in **Mate settings**.
+- Three built-in characters (Han Chaerin, Estelle, Seoa), or your own.
+
+**Apps, operations, security**
+
+- **Desktop app** (Windows / macOS / Linux, Electron) and **Android app** (Capacitor).
+  Both open with a connect screen: your server's address, username and password. They load
+  your server's console, so UI updates arrive without reinstalling. On the desktop the Mate
+  can live on your screen (transparent, always on top; quick chat on **Ctrl/Cmd+Shift+G**).
+- **Monitoring**: Admin → System shows CPU, memory, swap, disk, network, GPU, pressure,
+  the agent processes and running turns, live or as history up to 30 days, with alerts in
+  the admin log. Admin → Error logs collects provider, tool, HTTP and client errors.
+- **Security model**: one login protects everything (the console is served by the backend
+  behind it); signed, revocable sessions; per-IP login bans; OAuth tokens, API keys and SSH
+  keys encrypted in a vault; the file viewer never serves the server's own credentials.
+  See [Security](#security).
+
+## Quick start
+
+Requirements: Docker with Compose v2.24+, about 3 GB of disk for the image.
 
 ```bash
-git clone <this repo> my-mate-geny && cd my-mate-geny
+git clone https://github.com/CocoRoF/My-Mate-Geny.git
+cd My-Mate-Geny
 docker compose up -d
 ```
 
-Open **http://localhost:8080** and sign in with **`admin` / `geny-admin`**. Change the
-password right away in **Admin → Security** (see [docs/auth.md](docs/auth.md)).
+1. Open **http://localhost:8080** and sign in with **`admin` / `geny-admin`**.
+2. Change the login right away: **Admin → Security** ([docs/auth.md](docs/auth.md)).
+3. Connect the agents in **Providers**. Both CLIs are already in the image, so no terminal
+   is needed:
+   - **Claude Code**: **Add account** → **Sign in**, open the link, approve, paste the code
+     back. Add more accounts to pool them.
+   - **Codex**: **Add account**, open the device link and enter the code shown (or save an
+     OpenAI API key).
+4. Start a chat: pick the engine, the workspace and the folder, and talk.
 
 Everything the server keeps (database, encrypted vault, account logins, mates, uploads,
-cloned repos) lives in the `geny-home` Docker volume. Optional knobs (port, bind address,
-uid, a host folder for workspaces) are in [.env.example](.env.example); copy it to `.env`.
+cloned repos) lives in the `geny-home` Docker volume. Back it up; delete it to start over.
 
-### Connect Claude Code / Codex
+**Folders to work in.** Agents work in `/workspaces` inside the container (a Docker volume by
+default). To work on host folders, copy [.env.example](.env.example) to `.env`, set
+`GENY_WORKSPACES=/path/to/projects` plus `GENY_UID` / `GENY_GID` (the folder owner's
+`id -u` / `id -g`), then `docker compose up -d --build`. Remote machines: **Connections** →
+add an SSH host (its key is stored encrypted).
 
-The image already contains both CLIs. Log them in from the console — no terminal needed:
-
-1. **Providers** → Claude → **Add account** → **Sign in**: open the link, approve, paste the
-   code back. Add more accounts to pool them.
-2. Add a **Codex** account → open the device link and enter the shown code (or save an
-   OpenAI API key).
-
-Alternatively reuse the logins of your host user: run `claude` / `codex login` on the host
-once, then uncomment the `~/.claude`, `~/.claude.json`, `~/.codex` mounts in
+**Reuse your host logins instead** (optional): run `claude` / `codex login` on the host
+once, then uncomment the `~/.claude`, `~/.claude.json` and `~/.codex` mounts in
 [docker-compose.yml](docker-compose.yml).
 
-### Pick folders to work in
-
-Agents work in `/workspaces` inside the container. By default that is a Docker volume; to
-work on host folders set `GENY_WORKSPACES=/path/to/projects` (and `GENY_UID`/`GENY_GID` to
-the folder owner's `id -u` / `id -g`) in `.env`, then `docker compose up -d --build`.
-Remote machines: **Connections** → add an SSH host (key stored encrypted).
-
-Then start a chat: choose engine, workspace and folder, and talk.
-
-### Set up the Mate
-
-1. Open **Mate**. Built-in mates are ready to pick; or create your own (persona, greeting,
-   language) and give it a body — video clips / photos (zip or server folder import) or a
-   **Live2D** model.
-2. **Live2D runtime**: Live2D bodies need the Cubism Core, which is not redistributable.
-   In the Mate view's **Global settings → Live2D**, read and accept the Live2D licence; the server
-   then downloads the Core from live2d.com once.
-3. **Voice**: keys and service URLs go in **Global settings → Voice services**; each mate's
-   **Voice** tab picks the TTS engine — `browser` (free, built in),
-   `openai` or `elevenlabs` (API key, stored in the vault), `omnivoice` (self-hosted, see
-   [geny-audio-services](https://github.com/CocoRoF/geny-audio-services); its model weights
-   are non-commercial) or any `http` TTS — and optionally a Whisper-compatible STT URL for
-   voice input.
-4. Ask the mate to do something in a project; it opens or reuses a chat, delegates, and
-   reports back.
-
-Design and API: [docs/mate.md](docs/mate.md).
-
-## Production deployment
-
-Put HTTPS in front (Caddy / nginx examples) or use a Cloudflare tunnel:
-[docs/deploy.md](docs/deploy.md) and [deploy/](deploy/). For a non-Docker run on a host,
-`deploy/start-backend.sh` starts the backend as your user.
-
-## Apps
-
-- **Desktop** (`desktop/`, Electron) and **Android** (`mobile/`, Capacitor) are thin shells
-  that load *your* server's console: on first launch enter your server URL. See
-  [desktop/README.md](desktop/README.md) and [mobile/README.md](mobile/README.md).
-- [.github/workflows/apps.yml](.github/workflows/apps.yml) builds Windows / macOS / Linux
-  installers and a signed APK into a GitHub release; the console's **Download** page lists
-  the release named by `APPS_REPO` / `APPS_RELEASE_TAG`.
-- **Forks publishing their own apps**: change the app id (`appId` in
-  `desktop/package.json`, `appId` in `mobile/capacitor.config.json`, `applicationId` /
-  `namespace` in `mobile/android/app/build.gradle` and the Java package), set your own
-  Android signing secrets (`HRH_KEYSTORE_B64`, `HRH_KEYSTORE_PASSWORD`, `HRH_KEY_ALIAS`,
-  `HRH_KEY_PASSWORD`) and point `APPS_REPO` at your repo. The upstream id
-  `me.hrletsgo.harnessor` is kept only so existing installs keep updating.
+**Production**: put HTTPS in front (Caddy and nginx examples) or use a Cloudflare tunnel.
+See [docs/deploy.md](docs/deploy.md) and [deploy/](deploy/). `deploy/start-backend.sh` runs the
+backend without Docker.
 
 ## Configuration
 
-Every backend setting, with defaults and comments: [backend/.env.example](backend/.env.example)
-(copy to `backend/.env`). Compose-level settings: [.env.example](.env.example) and
-[deploy/.env.example](deploy/.env.example).
+- Compose-level settings (port, bind address, uid/gid, workspace folder, cookie mode):
+  [.env.example](.env.example), and [deploy/.env.example](deploy/.env.example) for the
+  production compose.
+- Every backend setting with its default and an explanation:
+  [backend/.env.example](backend/.env.example) (copy to `backend/.env`).
+
+Nothing is required: the defaults boot a working server.
+
+## The Mate
+
+1. Open **Mate**. Han Chaerin is ready; Estelle and Seoa are in the mate picker. Or create
+   your own (**New mate**): persona, greeting, reply language, and a body.
+2. **Voice.** Add keys and service URLs once in **Global settings → Voice services**, then
+   pick the voice per mate in **Mate settings → Voice**:
+   - `browser`: free and built in, no setup;
+   - `openai` / `elevenlabs`: API key (stored encrypted);
+   - `omnivoice`: your own server from
+     [geny-audio-services](https://github.com/CocoRoF/geny-audio-services). The built-in
+     characters carry OmniVoice voices (a reference clip or a voice design), so they sound
+     like themselves there. Its model weights are licensed for non-commercial use;
+   - `http`: any OpenAI-compatible TTS server.
+
+   For talking to her, set a Whisper-compatible STT URL (or use the OpenAI key).
+3. **Live2D runtime** (only for Live2D bodies). Live2D's Cubism Core may not be
+   redistributed, so it is not included. In **Global settings → Live2D**, read and accept
+   Live2D's licence; the server then downloads the Core from live2d.com once.
+4. Ask her to do something in a project. She opens or reuses a chat, delegates, and
+   reports back; the result shows as a card that links to the chat.
+
+Design, API and the avatar formats: [docs/mate.md](docs/mate.md).
+
+### Your own avatars
+
+Open **Mate settings → Avatar** (or **New mate → Import from the server**):
+
+- **Video rig packs**: a zip (or server folder) with a `rig.json` and its clips and
+  stills: H.264 MP4 clips for idle / talk / listen / think / emotions (`stacked-alpha`
+  packing for transparency) and still images. Edit which clip plays when in the clip
+  library. Format: [docs/mate.md §2](docs/mate.md#2-avatar-three-kinds--none).
+- **Photos**: choose **Photo** and upload stills: `neutral` plus emotions, and optionally
+  `blink` and `mouth_*` frames so she blinks and talks.
+- **Live2D**: upload a model zip or enter a folder containing `*.model3.json` (Cubism 4/5).
+  Exports from geny-avatar are read with their `avatar-editor.json` (emotion map, idle
+  motion, tap motions, scale and offset). Then map emotions to expressions or motions.
+- **Live2D's free sample models** (Mao, Hiyori, …) are not included, because their licence
+  forbids redistribution. Download one from
+  [Live2D's sample page](https://www.live2d.com/en/learn/sample/), accept their terms, and
+  import the zip as above. Wherever you show it, credit *"This content uses sample data
+  owned and copyrighted by Live2D Inc."*. Step by step:
+  [docs/mate.md](docs/mate.md#using-live2ds-free-sample-models).
+
+## Apps
+
+- **Download** the desktop installers and the Android APK from the console's **Download**
+  page or from [GitHub Releases](https://github.com/CocoRoF/My-Mate-Geny/releases).
+- **Connect** on first launch: enter your server's address (`example.com`,
+  `192.168.0.10:8080`, `https://geny.example.com`, …), username and password. The app
+  checks that it's a My Mate Geny server, signs in and remembers the server (never the
+  password). **Server → Switch server…** changes it later.
+- The apps are thin shells around *your* server's console. Details:
+  [desktop/README.md](desktop/README.md), [mobile/README.md](mobile/README.md).
+- **Forks publishing their own apps**: [.github/workflows/apps.yml](.github/workflows/apps.yml)
+  builds the installers and a signed APK into a release that the Download page reads
+  (`APPS_REPO` / `APPS_RELEASE_TAG`). Change the app id (`appId` in `desktop/package.json`
+  and `mobile/capacitor.config.json`, `applicationId` / `namespace` in
+  `mobile/android/app/build.gradle` and the Java package), add your own Android signing
+  secrets (`HRH_KEYSTORE_B64`, `HRH_KEYSTORE_PASSWORD`, `HRH_KEY_ALIAS`, `HRH_KEY_PASSWORD`)
+  and point `APPS_REPO` at your repository. The upstream app id is kept only so existing
+  installs keep updating.
+
+## Security
+
+My Mate Geny runs coding agents **with a real shell**. Anyone who can sign in can make them
+read, change and run anything the server user can, so treat the login like SSH access:
+
+- change the default `admin` / `geny-admin` login first (Admin → Security);
+- keep the port on localhost or a private network (the quick start binds to 127.0.0.1),
+  or put HTTPS in front; the session cookie is then `Secure` automatically;
+- run it as an unprivileged user (the image does) and mount only the folders agents need;
+- back up and protect `~/.hr-harnessor/vault.key` and `session.key` (in the `geny-home`
+  volume).
+
+Agents run with pre-approved tool permissions so chats don't stall on prompts; the
+container user is the sandbox. Threat model, known limitations and how to report a
+vulnerability: [SECURITY.md](SECURITY.md).
 
 ## Development
 
@@ -156,9 +247,9 @@ Every backend setting, with defaults and comments: [backend/.env.example](backen
 cd backend
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e '.[dev]'
-cp .env.example .env                   # then edit (COOKIE_SECURE=false for http://localhost)
+cp .env.example .env                   # optional: every setting has a default
 uvicorn app.main:app --reload --port 8080
-pytest -q                              # tests
+pytest -q                              # tests (no real CLIs needed)
 
 # web console (Node 22)
 cd frontend
@@ -167,8 +258,9 @@ npm run dev                            # http://localhost:5173, proxies /api + /
 npx tsc -p . --noEmit                  # typecheck
 ```
 
-You need `claude` and/or `codex` on `PATH` for real turns
-(`npm i -g @anthropic-ai/claude-code @openai/codex`). The tests don't.
+Real turns need `claude` and/or `codex` on `PATH`
+(`npm i -g @anthropic-ai/claude-code @openai/codex`). Contribution guide:
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Architecture
 
@@ -176,34 +268,50 @@ You need `claude` and/or `codex` on `PATH` for real turns
  Web console      Desktop app (Electron)      Android app (Capacitor)
         └──────────────────┬───────────────────────┘   REST + WebSocket (same origin)
                            ▼
-        (HTTPS proxy / tunnel) → FastAPI backend — serves the console, API, WS, login
+        (HTTPS proxy / tunnel) → FastAPI backend: console, API, WS, login
                            ├─ Engines       claude (persistent) | codex (per turn)
                            ├─ Accounts      pooled CLI logins, balancing
                            ├─ Workspaces    local | remote SSH (MCP bridge)
                            ├─ Changes       git snapshots per turn
                            ├─ Mate          persona, voice, avatar, delegation
+                           ├─ Monitor       host + process sampling, alerts
                            ├─ Vault         OAuth tokens, API keys, SSH keys (Fernet)
                            └─ Store         sessions, events, tasks, logs (SQLite)
 ```
 
-A chat is **engine × workspace × conversation**. More: [docs/architecture.md](docs/architecture.md),
-[docs/providers.md](docs/providers.md), [docs/remote.md](docs/remote.md),
-[docs/mate.md](docs/mate.md).
+A chat is **engine × workspace × conversation**. More:
+[architecture](docs/architecture.md) · [providers](docs/providers.md) ·
+[remote workspaces](docs/remote.md) · [Mate](docs/mate.md) · [auth](docs/auth.md) ·
+[monitoring](docs/monitoring.md) · [deployment](docs/deploy.md)
 
-## Branding (forks)
-
-All icons are generated from one master image, `assets/geny-logo.png`. To rebrand,
-replace it (square, transparent PNG) and run `python3 scripts/make-icons.py` (needs
-Pillow); it rewrites the favicons, PWA icons, in-app logo, desktop icon and Android icon
-sources. The logo and the built-in characters are project artwork, not covered by the
-Apache licence — see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+*(Formerly "hr-harnessor": some internal identifiers, such as the `~/.hr-harnessor` state
+directory, cookie and storage keys and the app ids, keep that name so existing installs
+update in place.)*
 
 ## Contributing, security, licence
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) — how to propose changes.
-- [SECURITY.md](SECURITY.md) — how to report a vulnerability (please don't open a public issue).
-- Code: [Apache-2.0](LICENSE) (see [NOTICE](NOTICE)). Bundled characters, the Live2D
-  sample model and the logo have their own terms: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+- [CONTRIBUTING.md](CONTRIBUTING.md): how to propose changes.
+- [SECURITY.md](SECURITY.md): how to report a vulnerability (please don't open a public issue).
+- Code: [Apache-2.0](LICENSE) (see [NOTICE](NOTICE)).
+- The built-in characters (Han Chaerin, Estelle, Seoa) and the Geny logo are project
+  artwork, **all rights reserved**, not covered by the Apache licence. Forks that publish
+  builds should rebrand: replace `assets/geny-logo.png` (square, transparent PNG) and run
+  `python3 scripts/make-icons.py`. Details and every third-party licence:
+  [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 My Mate Geny is not affiliated with Anthropic, OpenAI or Live2D. Use of Claude Code, Codex
 and connected accounts is subject to their providers' terms.
+
+## Acknowledgements
+
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and
+  [Codex CLI](https://github.com/openai/codex), the engines doing the real work.
+- [Live2D Cubism](https://www.live2d.com/) and
+  [pixi-live2d-display](https://github.com/guansss/pixi-live2d-display) on
+  [PixiJS](https://pixijs.com/) for Live2D bodies.
+- [FastAPI](https://fastapi.tiangolo.com/), [React](https://react.dev/),
+  [Vite](https://vite.dev/), [Tailwind CSS](https://tailwindcss.com/),
+  [Electron](https://www.electronjs.org/) and [Capacitor](https://capacitorjs.com/).
+- [OmniVoice](https://github.com/CocoRoF/geny-audio-services) and Whisper-compatible
+  servers for the Mate's voice.
+- The built-in characters were created for the Ailism mate apps.

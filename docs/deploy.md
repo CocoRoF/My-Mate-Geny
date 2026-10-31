@@ -20,7 +20,8 @@ docker compose up -d           # root docker-compose.yml
 
 Console on **http://localhost:8080**, first login **admin / geny-admin** —
 change it in Admin right away (see [auth.md](auth.md)). This binds to
-127.0.0.1 only and uses plain http (`COOKIE_SECURE=false`).
+127.0.0.1 only and uses plain http (the default `COOKIE_SECURE=auto` marks the
+login cookie `Secure` only on https requests, so this works as is).
 
 ## 2. Production (`deploy/docker-compose.yml`)
 
@@ -31,8 +32,9 @@ cp ../backend/.env.example ../backend/.env   # optional app settings
 docker compose up -d              # console on 127.0.0.1:${GENY_PORT:-8080}
 ```
 
-Same image as the quick start, with `COOKIE_SECURE=true` (HTTPS in front is
-required for the login cookie). Put one of these in front:
+Same image as the quick start. Put HTTPS in front (with `COOKIE_SECURE=auto`
+the login cookie becomes `Secure` as soon as requests arrive over https; set
+`true` to force it):
 
 - **Caddy** (automatic certificates): [deploy/examples/Caddyfile](../deploy/examples/Caddyfile)
 - **nginx**: [deploy/examples/nginx.conf](../deploy/examples/nginx.conf)
@@ -96,7 +98,7 @@ usually touch in production:
 
 | Setting | Why |
 |---|---|
-| `COOKIE_SECURE` | `true` behind HTTPS (deploy compose default), `false` for plain http |
+| `COOKIE_SECURE` | `auto` (default): `Secure` cookie exactly on https requests; `true` forces it |
 | `SESSION_TTL_DAYS`, `MAX_LOGIN_FAILS`, `BAN_HOURS` | session lifetime and login lockout |
 | `VAULT_KEY` | fixed vault key instead of the generated `vault.key` file |
 | `UPLOAD_MAX_MB`, `MATE_IMPORT_MAX_MB` | size limits (keep your proxy's body limit above them) |
