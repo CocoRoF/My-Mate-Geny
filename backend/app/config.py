@@ -103,7 +103,7 @@ class Settings(BaseSettings):
     # Alert thresholds (logged to the admin log with hysteresis).
     monitor_mem_warn_pct: float = 85
     monitor_mem_crit_pct: float = 95
-    monitor_swap_warn_pct: float = 50
+    monitor_swap_warn_pct: float = 80          # some swap use is normal (idle pages); growth matters more
     monitor_swap_growth_mb: int = 256         # swap grew this much within 5 minutes
     monitor_psi_full_warn: float = 5          # PSI memory "full" avg10 %
     monitor_disk_warn_pct: float = 90

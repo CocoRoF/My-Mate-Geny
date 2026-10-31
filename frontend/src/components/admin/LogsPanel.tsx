@@ -6,7 +6,7 @@ import Icon, { type IconName } from "../ui/Icon";
 import HourlyChart from "./HourlyChart";
 import { absTime, compact, relTime } from "./format";
 
-const SOURCES = ["provider", "tool", "workspace", "account", "upload", "http", "ws", "auth", "client", "system"];
+const SOURCES = ["provider", "tool", "workspace", "account", "upload", "http", "ws", "auth", "client", "system", "monitor"];
 
 const LEVEL: Record<string, { icon: IconName; cls: string; label: string }> = {
   error: { icon: "alert-circle", cls: "text-danger bg-danger/12", label: "Error" },

@@ -6,8 +6,10 @@
 * :class:`Agg` — running min / sum / max / n per metric.
 * :class:`MetricsStore` — ``sys_metrics`` rows at two resolutions:
   1-minute aggregates kept 7 days, 15-minute aggregates kept 90 days (both
-  configurable). A row's ``data`` is ``{"metric": [min, avg, max]}`` (a bare
-  number when min == max). Queries re-bucket rows to ~300-700 points.
+  configurable). A row's ``data`` is zlib-compressed JSON
+  ``{"metric": [min, avg, max]}`` (a bare number when min == max), ~0.5 KB.
+  (A plain rowid table: ~1 KB rows would spill into overflow pages in a
+  WITHOUT ROWID b-tree.) Queries re-bucket rows to ~300-700 points.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from __future__ import annotations
 import json
 import math
 import time
+import zlib
 from collections import deque
 from typing import Any, Iterable
 
@@ -25,12 +28,13 @@ RES_15M = 900
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sys_metrics (
+    id   INTEGER PRIMARY KEY,
     res  INTEGER NOT NULL,      -- bucket length in seconds (60 | 900)
     ts   INTEGER NOT NULL,      -- bucket start, epoch seconds (UTC)
     n    INTEGER NOT NULL,      -- samples aggregated
-    data TEXT    NOT NULL,      -- {"metric": [min, avg, max] | value}
-    PRIMARY KEY (res, ts)
-) WITHOUT ROWID;
+    data BLOB    NOT NULL       -- zlib(JSON {"metric": [min, avg, max] | value})
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_metrics ON sys_metrics(res, ts);
 CREATE TABLE IF NOT EXISTS sys_monitor_state (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -96,6 +100,16 @@ class Ring:
             "t": [round(ts, 1) for ts, _ in rows],
             "series": {k: {"avg": [_maybe(m.get(k)) for _, m in rows]} for k in names},
         }
+
+
+def pack(data: dict[str, Any]) -> bytes:
+    return zlib.compress(json.dumps(data, separators=(",", ":")).encode(), 6)
+
+
+def unpack(raw: bytes | str) -> dict[str, Any]:
+    if isinstance(raw, (bytes, bytearray, memoryview)):
+        raw = zlib.decompress(bytes(raw)).decode()
+    return json.loads(raw)
 
 
 def _maybe(v: float | None) -> float | int | None:
@@ -187,12 +201,12 @@ class MetricsStore:
         row = self.db.query_one("SELECT n, data FROM sys_metrics WHERE res = ? AND ts = ?", (res, ts))
         if row is not None:
             merged = Agg()
-            merged.merge(json.loads(row["data"]), row["n"])
+            merged.merge(unpack(row["data"]), row["n"])
             merged.absorb(agg)
             agg = merged
         self.db.execute(
             "INSERT OR REPLACE INTO sys_metrics (res, ts, n, data) VALUES (?, ?, ?, ?)",
-            (res, ts, agg.n, json.dumps(agg.result(), separators=(",", ":"))),
+            (res, ts, agg.n, pack(agg.result())),
         )
 
     def prune(self, now: float | None = None) -> int:
@@ -218,7 +232,7 @@ class MetricsStore:
             sql += " AND ts < ?"
             params.append(int(until))
         rows = self.db.query(sql + " ORDER BY ts", params)
-        return [(r["ts"], r["n"], json.loads(r["data"])) for r in rows]
+        return [(r["ts"], r["n"], unpack(r["data"])) for r in rows]
 
     # -- key/value state (restart detection)
 

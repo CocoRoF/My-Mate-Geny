@@ -49,6 +49,7 @@ class Gauge:
     _up: int = 0
     _down: int = 0
     _last_clear: float = -1e18
+    _last_escalate: float = -1e18
 
     def target(self, v: float) -> str:
         if self.crit is not None and v >= self.crit:
@@ -74,7 +75,12 @@ class Gauge:
                 self.logged = now - self._last_clear >= self.cooldown
                 return Transition(self.key, "raise", want, v, v, now, self.logged)
             self.level = want
-            return Transition(self.key, "escalate", want, v, self.peak, self.since, self.logged)
+            # Bouncing crit -> warn -> crit within one episode logs the first escalation only
+            # (until the cooldown passes).
+            log = self.logged and now - self._last_escalate >= self.cooldown
+            if log:
+                self._last_escalate = now
+            return Transition(self.key, "escalate", want, v, self.peak, self.since, log)
         self._up = 0
         if cur == "ok":
             return None

@@ -248,6 +248,13 @@ def test_gauge_sustain_margin_cooldown():
     for _ in range(3):
         e = g.update(99, 2)
     assert e.kind == "escalate" and g.level == "crit"
+    # crit -> warn (eased silently) -> crit again: the second escalation is not logged.
+    g.update(88, 2.5)
+    e = g.update(88, 2.6)
+    assert e.kind == "ease" and g.level == "warn"
+    for _ in range(3):
+        e = g.update(99, 2.7)
+    assert e.kind == "escalate" and not e.logged
     assert g.update(79, 3) is None
     c = g.update(79, 4)
     assert c.kind == "clear" and c.peak == 99 and g.level == "ok"

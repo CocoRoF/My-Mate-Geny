@@ -16,7 +16,7 @@ export default function AdminView() {
   const [tab, setTab] = useState<Tab>("logs");
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-4xl px-4 sm:px-4 sm:px-6 py-5 sm:py-8">
+      <div className={`mx-auto ${tab === "system" ? "max-w-6xl" : "max-w-4xl"} px-3 sm:px-6 py-5 sm:py-8`}>
         <div className="flex items-center gap-2.5 mb-1">
           <Icon name="shield" size={20} className="text-accent" />
           <h1 className="text-lg font-semibold">Admin</h1>
