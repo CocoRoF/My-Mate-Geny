@@ -20,8 +20,7 @@ import MateStage, { BuiltinBadge, MateThumb, MOOD_LABEL } from "./MateStage";
 const MateSettings = lazy(() => import("./settings/MateSettings"));
 const GlobalSettings = lazy(() => import("./settings/GlobalSettings"));
 
-/** which settings panel is open (they share one slot) */
-type Panel = null | "mate" | "global";
+type GlobalSection = Parameters<ReturnType<typeof useMateStore.getState>["openGlobal"]>[0];
 
 const COLLAPSE_KEY = "hrh_mate_stage_collapsed";
 
@@ -34,12 +33,33 @@ export default function MateView() {
   const mate = mates.find((m) => m.id === activeId) ?? mates[0] ?? null;
   const conv = useMateConversation(mate);
   const phone = usePhone();
-  const [panel, setPanel] = useState<Panel>(null);
-  const settings = panel !== null;
-  const togglePanel = (p: Exclude<Panel, null>) => setPanel((cur) => (cur === p ? null : p));
+  // one panel slot: Mate settings (local) or Global settings (the store's: Mate settings and anything else open it
+  // with openGlobal(section); inside Mate settings it swaps itself for Global settings)
+  const [mateOpen, setMateOpen] = useState(false);
+  const globalOpen = useMateStore((s) => s.globalOpen);
+  const settings = mateOpen || globalOpen;
+  const closePanels = () => {
+    setMateOpen(false);
+    useMateStore.getState().closeGlobal();
+  };
+  const toggleGlobal = () => {
+    const st = useMateStore.getState();
+    if (st.globalOpen) st.closeGlobal();
+    else st.openGlobal();
+  };
+  const toggleMate = () => {
+    if (mateOpen && !globalOpen) return setMateOpen(false);
+    useMateStore.getState().closeGlobal();
+    setMateOpen(true);
+  };
+  // leaving the Mate view closes Global settings (it isn't shown anywhere else)
+  useEffect(() => () => useMateStore.getState().closeGlobal(), []);
   // a Live2D body without its runtime (or anything else) asks for Global settings
   useEffect(() => {
-    const open = () => setPanel("global");
+    const open = (e: Event) => {
+      const section = ((e as CustomEvent).detail?.section as GlobalSection) || "live2d";
+      useMateStore.getState().openGlobal(section);
+    };
     window.addEventListener(OPEN_GLOBAL_SETTINGS_EVENT, open);
     return () => window.removeEventListener(OPEN_GLOBAL_SETTINGS_EVENT, open);
   }, []);
@@ -70,7 +90,7 @@ export default function MateView() {
     const t = setTimeout(() => setInfo(null), 8000);
     return () => clearTimeout(t);
   }, [info]);
-  useBackHandler(settings, () => setPanel(null));
+  useBackHandler(settings, closePanels);
   useBackHandler(switcher || newMate, () => {
     setSwitcher(false);
     setNewMate(false);
@@ -189,8 +209,8 @@ export default function MateView() {
             <Icon name="rotate" size={15} spin={resetting} />
           </button>
           <button
-            onClick={() => togglePanel("global")}
-            className={`btn-ghost !px-2.5 ${panel === "global" ? "!bg-surface-3 !text-content" : ""}`}
+            onClick={toggleGlobal}
+            className={`btn-ghost !px-2.5 ${globalOpen ? "!bg-surface-3 !text-content" : ""}`}
             title="Global settings (all mates: voice services, Live2D runtime, desktop app)"
             aria-label="Global settings"
             data-testid="mate-global-settings-open"
@@ -198,8 +218,8 @@ export default function MateView() {
             <Icon name="sliders" size={16} />
           </button>
           <button
-            onClick={() => togglePanel("mate")}
-            className={`btn-ghost !px-2.5 ${panel === "mate" ? "!bg-surface-3 !text-content" : ""}`}
+            onClick={toggleMate}
+            className={`btn-ghost !px-2.5 ${mateOpen && !globalOpen ? "!bg-surface-3 !text-content" : ""}`}
             title={`Mate settings (${mate.name})`}
             aria-label="Mate settings"
             data-testid="mate-settings-open"
@@ -248,12 +268,11 @@ export default function MateView() {
 
   const settingsPanel = settings && (
     <Suspense fallback={<div className="grid h-full place-items-center text-sm text-content-faint">Loading…</div>}>
-      {panel === "global" ? (
-        <div className="h-full overflow-y-auto" data-testid="mate-global-settings">
-          <GlobalSettings onClose={() => setPanel(null)} />
-        </div>
+      {mateOpen ? (
+        // shows Global settings itself while those are open (and closes them when it goes)
+        <MateSettings mate={mate} conv={conv} onClose={closePanels} />
       ) : (
-        <MateSettings mate={mate} conv={conv} onClose={() => setPanel(null)} />
+        <GlobalSettings onClose={() => useMateStore.getState().closeGlobal()} />
       )}
     </Suspense>
   );

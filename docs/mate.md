@@ -122,8 +122,18 @@ Live2D body (`ParamMouthOpenY`, RMS smoothing 0.3 / threshold 0.015 / scale 1.8
 as in Geny).
 
 - **Video**: ailism-mate `StackedPlayer` (WebGL, two `<video>` slots, preloaded
-  Blob URLs, seamless clip switching on the home frame, 200 ms crossfade on
-  mood change); `plain` packing plays the video as-is in a rounded frame.
+  Blob URLs, seamless clip switching on the home frame); `plain` packing plays
+  the video as-is in a rounded frame. One player per avatar: `MateAvatar` keys
+  the body by mate + rig + size, so another mate never reuses (or keeps
+  playing) the previous one's player, canvas, videos or Blob URLs. Switching
+  is calm: a mood counts only after it held 600 ms (thinking ↔ talking flips
+  while a reply streams are ignored); talking (or a voice starting), a
+  reaction, or leaving a looping clip **hurries the clip on screen to its end**
+  (faster playback, ≤ 0.8 s, ≤ 4×) so the next clip starts on the home frame;
+  every other mood waits for the clip on screen to end. A mid-clip crossfade
+  blends two poses with alpha (the see-through "overlapping frames" look), so it
+  is only a fallback, ≥ 1.2 s apart, and a switch asked for during one waits
+  for it to finish.
 - **Photo**: ailism-mate `StillBody` (blink 2.5–6 s; mouth stills driven by the
   voice level instead of a random timer); a single photo gets a gentle
   breathing/sway and a level-driven pulse.
@@ -132,13 +142,39 @@ as in Geny).
   motions (hit area → group from `tap_motions`, fixing Geny's hard-coded
   `TapBody`), pointer focus inside the canvas.
 - **Cubism Core is not bundled** (Live2D licence, see project-geny-app
-  `live2d-runtime.ts`): `GET /api/mates/live2d/core` → `{installed}`;
-  `POST /api/mates/live2d/core/install` (user accepted the licence in the UI;
-  optional body `{accept_license: true}`) downloads
-  `https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js`
-  to the data dir (`<MATES_ROOT>/_runtime/`; checked to be the Core script, else
-  502) → `{installed, size, source}`; served at `GET /api/mates/live2d/core.js`
-  (404 until installed).
+  `live2d-runtime.ts`). Binding contract:
+  - `GET /api/mates/live2d/core` →
+    `{installed, installing, size?, source, received?, total?, phase?, error?}`
+    (`received`/`total`/`phase` while an install runs; `error` = the last
+    install failed and nothing is installed).
+  - `POST /api/mates/live2d/core/install` (the user accepted the licence in the
+    UI; optional body `{accept_license: true}`, `false` → 400 before anything
+    starts) downloads
+    `https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js`
+    (env `MATE_LIVE2D_CORE_URL` overrides it, for tests) to
+    `<MATES_ROOT>/_runtime/` and **streams NDJSON** (`application/x-ndjson`,
+    status 200, one JSON object per line):
+    ```
+    {"phase":"downloading","received":0,"total":null}
+    {"phase":"downloading","received":65536,"total":203772}   … (~every 80 ms)
+    {"phase":"verifying"}
+    {"phase":"done","installed":true,"size":203772,"source":"https://…"}
+    ```
+    or, as the last line, `{"phase":"error","error":"…"}` (unreachable CDN,
+    HTTP error, > 8 MB, or not the Core script — the check is the same as
+    before: 10 KB–8 MB containing `Live2DCubismCore`; a failed install never
+    replaces an installed copy). Concurrent requests share one download: a
+    second request streams the same progress and the same final line.
+  - Served at `GET /api/mates/live2d/core.js` (404 with `Cache-Control:
+    no-store` until installed).
+  - Frontend: `src/mate/live2dCore.ts` — `markLive2DCoreInstalled()` (the
+    settings panel calls it on `done`) dispatches the window event
+    `hrh:live2d-core-installed` and tells the app's other windows
+    (BroadcastChannel); every Live2D body that showed "runtime not installed"
+    retries at once (fresh URL), no reload. That state offers **Open Global
+    settings** (`openGlobalSettings("live2d")` → window event
+    `hrh:open-global-settings`, which the Mate view turns into
+    `useMateStore().openGlobal("live2d")`).
 
 Asset upload / import:
 - `POST /api/mates/{id}/assets` (multipart `file`, `path`) → `{path, url, size}`;
@@ -198,6 +234,23 @@ hasn't edited (`customized` turns on with the user's first persona/avatar
 edit); voice/model choices are never overwritten. A deleted built-in stays
 deleted; `POST /api/mates/builtin/restore` brings them back. The avatar-less
 "Geny" mate is only created when there is no mate at all.
+
+**Mao** (key `mao`, after the three) is a built-in **Live2D** mate: Live2D's
+free sample model *Niziiro Mao (PRO)* (Free Material License — its
+`ReadMe.txt` ships next to it in `assets/mao/`), a Korean-speaking friendly
+secretary persona (`mates/mao.json`: our own `{name, persona}` doc instead of
+an ailism one). `assets/<key>/live2d.json` makes a bundle Live2D: the fields of
+the Live2D avatar with `model` relative to the folder (validated: the model and
+its `.moc3` exist; motion groups named in `idle_group` / `emotion_motions` /
+`tap_motions` must exist). Our copy of `mao_pro.model3.json` names the sample's
+unnamed motion group (`Tap` = mtn_02–04, `Special` = the magic-effect
+special_01–03); taps on `HitAreaHead`/`HitAreaBody` play `Tap`; emotions map to
+the expressions by what they show (exp_01 neutral, exp_02 smile/laugh/agree/
+greet, exp_03 sleepy, exp_04 joy, exp_05 sad, exp_06 shy, exp_07 surprised,
+exp_08 angry — Geny's registry indexes pointed anger at the closed-eyes one).
+Files (nested folders too) are served from `/api/mates/builtin/mao/runtime/…`;
+the body renders once the Cubism Core is installed. The bundle hash covers
+nested files.
 
 ## 3. Conversation = a session of kind "mate"
 
@@ -295,6 +348,32 @@ user's cookie (404 / 401 otherwise). `find_folders` searches
   openai fixed list; elevenlabs via its API (key needed; `preview_url`);
   omnivoice via `/voices` (`emotions` = the profile's reference clips);
   `browser`/`http` → `[]` (the page lists its own).
+- Providers (Global settings): `GET /api/mates/providers[?refresh=1]` →
+  `{tts: [...], stt: [...]}`, each `{engine, label, kind, configured, ok, error,
+  detail, checked_at}` (engines `openai` (TTS+STT, one key) / `elevenlabs` /
+  `omnivoice` / `http` / `whisper`). A verification uses only free read calls
+  (OpenAI `/models`, ElevenLabs `/voices`, OmniVoice `/health` + `/voices`, an
+  OpenAI-compatible server's `/models`, Whisper `/v1/models` else `/health`);
+  results are kept in `mate_settings` (`verify:<engine>`), dropped when that
+  provider's key/URL changes, re-checked after 30 min or on demand
+  (`POST /api/mates/providers/{engine}/verify`). `PUT /api/mates/settings?verify=1`
+  checks the changed providers at once and adds `providers` to the answer.
+- `GET /api/mates/models?engine=&kind=tts|stt` → `{engine, kind, models: [{id,
+  name, description?, languages?}], default, languages?}`: OpenAI's fixed lists,
+  ElevenLabs `/v1/models` (`can_do_text_to_speech` only), a self-hosted
+  server's `/models` (a Whisper server's first model is then the transcription
+  default, e.g. vLLM's `openai/whisper-large-v3`), OmniVoice `languages`.
+  `GET /api/mates/voices` items also carry `category`, `labels`, `languages`,
+  `previews` (ElevenLabs), `models` (OpenAI), `emotions` (OmniVoice).
+- `POST …/speech` may carry `tts` (unsaved voice fields: a settings preview).
+  An engine whose key/URL is no longer set answers **204 +
+  `X-Speech-Fallback: browser`** + `X-Speech-Fallback-Reason` (the page speaks
+  with the browser voice); a configured engine that fails is still 502.
+  API bases: `MATE_OPENAI_BASE`, `MATE_ELEVENLABS_BASE` (tests / proxies).
+- Settings UI: **Global settings** (voice services, Live2D runtime, desktop app
+  per computer, defaults) vs **Mate settings** (Profile · Avatar · Language
+  model · Voice · Memory · Danger zone); a mate's Voice tab offers only Off,
+  the browser and verified providers.
 - Client: replies are split into sentences/bubbles, synthesized in order with
   one-ahead prefetch, played through the voice bridge (level → avatar). Mic:
   push-to-talk button (and hands-free later).
@@ -303,8 +382,13 @@ user's cookie (404 / 401 otherwise). `find_folders` searches
 
 The web console gains a **Mate** item above **Chat** in the sidebar (mate list,
 avatar stage, conversation, mic, Mate settings: Profile · Avatar · Language
-model · Voice · Memory). Extra full-page surfaces (no sidebar), used by the
-desktop app:
+model · Voice · Memory). Layout as in Geny's VTuber tab: on desktop the avatar
+gets half the width (big, bottom-anchored, scaled to the height) and the
+conversation the other half; Mate settings / Global settings (header buttons:
+sliders = Global, gear = this mate) open over the conversation half, so the
+stage never moves or overflows (1280 / 1440 / 1600 px alike). Phones: the stage
+on top (36 dvh, collapsible), the conversation below, settings full screen.
+Extra full-page surfaces (no sidebar), used by the desktop app:
 
 - `/?surface=mate-overlay&mate=<id>` — transparent page: avatar + caption
   bubble only; plays the voice.

@@ -66,9 +66,16 @@ export function loadCubismCore(url = coreUrl): Promise<boolean> {
   return p;
 }
 
+// every "installed" event counts, whoever dispatched it (markLive2DCoreInstalled, another module, a test); registered at
+// import, i.e. before any body's listener, so a body retrying on the event already asks for a fresh copy
+if (typeof window !== "undefined") window.addEventListener(LIVE2D_CORE_INSTALLED_EVENT, () => (installs += 1));
+
+let lastHeard = 0;
 function heard(): void {
-  installs += 1;
-  window.dispatchEvent(new CustomEvent(LIVE2D_CORE_INSTALLED_EVENT, { detail: { at: Date.now() } }));
+  // the same install announced twice in a row (two modules, two windows) is one retry
+  if (Date.now() - lastHeard < 400) return;
+  lastHeard = Date.now();
+  window.dispatchEvent(new CustomEvent(LIVE2D_CORE_INSTALLED_EVENT, { detail: { at: lastHeard } }));
 }
 
 let channel: BroadcastChannel | null = null;
@@ -98,11 +105,10 @@ export function markLive2DCoreInstalled(): void {
 
 /** a number that changes whenever the core was just installed (use as an effect dependency to retry) */
 export function useLive2DCoreInstalls(): number {
-  const [n, setN] = useState(installs);
+  const [n, setN] = useState(0);
   useEffect(() => {
-    const on = () => setN(installs);
+    const on = () => setN((v) => v + 1);
     window.addEventListener(LIVE2D_CORE_INSTALLED_EVENT, on);
-    on();
     return () => window.removeEventListener(LIVE2D_CORE_INSTALLED_EVENT, on);
   }, []);
   return n;

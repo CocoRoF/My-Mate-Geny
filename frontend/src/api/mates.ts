@@ -1,7 +1,6 @@
 /** /api/mates (docs/mate.md §1–5). */
 import { apiFetch, apiResponse, toLogin } from "./client";
 import type { Avatar } from "../mate/types";
-import { markLive2DCoreInstalled } from "../mate/live2dCore";
 import type { Session } from "../types";
 
 export interface Persona {
@@ -102,11 +101,76 @@ export type VoiceSettingsPatch = Partial<{
 export interface VoiceOption {
   id: string;
   name: string;
-  language?: string;
-  preview_url?: string;
-  emotions?: unknown;
-  [k: string]: unknown;
+  language?: string | null;
+  /** ElevenLabs: premade | cloned | generated | professional …; OmniVoice: template */
+  category?: string | null;
+  /** ElevenLabs labels (accent, gender, age, use_case, …) */
+  labels?: Record<string, string>;
+  /** ElevenLabs verified languages */
+  languages?: string[];
+  description?: string;
+  preview_url?: string | null;
+  /** ElevenLabs: a preview per verified language */
+  previews?: Record<string, string>;
+  /** OmniVoice: the profile's reference-clip emotions */
+  emotions?: string[];
+  /** OpenAI: the models this voice speaks on */
+  models?: string[];
 }
+
+export interface ModelOption {
+  id: string;
+  name: string;
+  description?: string | null;
+  languages?: string[];
+}
+
+export interface ModelList {
+  engine: string;
+  kind: "tts" | "stt";
+  models: ModelOption[];
+  /** what the backend uses when the mate names no model */
+  default: string;
+  /** OmniVoice: the languages it speaks */
+  languages?: string[];
+}
+
+/** a voice provider set up in Global settings (GET /api/mates/providers) */
+export interface ProviderStatus {
+  engine: string;
+  label: string;
+  kind?: "tts" | "stt";
+  /** its key / URL is set */
+  configured: boolean;
+  /** the last verification passed (null: configured, not checked yet) */
+  ok: boolean | null;
+  error: string | null;
+  detail: string | null;
+  checked_at: string | null;
+}
+
+export interface Providers {
+  tts: ProviderStatus[];
+  stt: ProviderStatus[];
+}
+
+/** the Live2D Cubism Core on the server (GET /api/mates/live2d/core) */
+export interface CoreStatus {
+  installed: boolean;
+  installing?: boolean;
+  received?: number;
+  total?: number | null;
+  error?: string | null;
+  size?: number;
+  source?: string;
+}
+
+/** one line of the install stream (POST /api/mates/live2d/core/install, NDJSON) */
+export type CoreEvent =
+  | { phase: "downloading"; received: number; total: number | null }
+  | { phase: "verifying" }
+  | { phase: "done"; installed: boolean; size?: number }
+  | { phase: "error"; error: string };
 
 const j = (body: unknown): RequestInit => ({ body: JSON.stringify(body) });
 const enc = encodeURIComponent;
@@ -132,63 +196,123 @@ export const deleteMemory = (id: string, mid: string) =>
   apiFetch<{ deleted: boolean }>(`/api/mates/${enc(id)}/memories/${enc(mid)}`, { method: "DELETE" });
 
 export const getVoiceSettings = () => apiFetch<VoiceSettings>("/api/mates/settings");
-export const putVoiceSettings = (patch: VoiceSettingsPatch) =>
-  apiFetch<VoiceSettings>("/api/mates/settings", { method: "PUT", ...j(patch) });
+/** save keys / URLs; `verify`: the changed providers are checked right away (→ `providers`) */
+export const putVoiceSettings = (patch: VoiceSettingsPatch, verify = false) =>
+  apiFetch<VoiceSettings & { providers?: Providers }>(`/api/mates/settings${verify ? "?verify=1" : ""}`, {
+    method: "PUT",
+    ...j(patch),
+  });
 export const listVoices = (engine: string) =>
   apiFetch<{ engine: string; voices: VoiceOption[] }>(`/api/mates/voices?engine=${enc(engine)}`);
-
-export interface CoreStatus {
-  installed: boolean;
-  installing?: boolean;
-  size?: number;
-  source?: string;
-  /** while installing: bytes so far / expected (null when the CDN doesn't say) */
-  received?: number;
-  total?: number | null;
-  /** the last install failed (and nothing is installed) */
-  error?: string;
-}
-/** one line of the install stream (docs/mate.md §2) */
-export type CoreInstallEvent =
-  | { phase: "downloading"; received: number; total: number | null }
-  | { phase: "verifying" }
-  | { phase: "done"; installed: true; size: number; source?: string }
-  | { phase: "error"; error: string };
+export const listModels = (engine: string, kind: "tts" | "stt") =>
+  apiFetch<ModelList>(`/api/mates/models?engine=${enc(engine)}&kind=${kind}`);
+/** every provider's state; configured ones are (re-)verified when stale, or all of them with `refresh` */
+export const getProviders = (refresh = false) => apiFetch<Providers>(`/api/mates/providers${refresh ? "?refresh=1" : ""}`);
+export const verifyProvider = (engine: string) =>
+  apiFetch<ProviderStatus>(`/api/mates/providers/${enc(engine)}/verify`, { method: "POST" });
 
 export const coreStatus = () => apiFetch<CoreStatus>("/api/mates/live2d/core");
+
 /**
- * Install the Cubism Core (the user accepted the Live2D licence): reads the NDJSON progress stream, calls
- * `onProgress` for every line, resolves with the final status, throws on an error line. On success every Live2D
- * body waiting for the core loads at once (markLive2DCoreInstalled).
+ * Install the Cubism Core, reporting progress. The server streams NDJSON lines (`{"phase":"downloading",…}` …
+ * `{"phase":"done"|"error",…}`); an older server answers one JSON object. Either way the last event is returned
+ * (always "done" or "error").
  */
-export async function installCore(onProgress?: (e: CoreInstallEvent) => void): Promise<CoreStatus> {
-  const res = await apiResponse("/api/mates/live2d/core/install", { method: "POST", ...j({ accept_license: true }) });
-  let end: CoreInstallEvent | null = null;
-  const take = (line: string) => {
-    if (!line.trim()) return;
-    end = JSON.parse(line) as CoreInstallEvent;
-    onProgress?.(end);
+export async function installCore(onEvent: (e: CoreEvent) => void, signal?: AbortSignal): Promise<CoreEvent> {
+  const fail = (error: string): CoreEvent => {
+    const e: CoreEvent = { phase: "error", error };
+    onEvent(e);
+    return e;
   };
-  let buf = "";
-  const reader = res.body?.getReader();
-  if (reader) {
-    const dec = new TextDecoder();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      const lines = buf.split("\n");
-      buf = lines.pop() ?? "";
-      lines.forEach(take);
+  let res: Response;
+  try {
+    res = await fetch("/api/mates/live2d/core/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/x-ndjson, application/json" },
+      body: JSON.stringify({ accept_license: true }),
+      signal,
+    });
+  } catch (e) {
+    return fail(`Couldn't reach the server: ${(e as Error).message}`);
+  }
+  if (res.status === 401) {
+    toLogin();
+    return fail("authentication required");
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    return fail(String(err.detail || res.statusText || `HTTP ${res.status}`));
+  }
+  let last: CoreEvent | null = null;
+  const emit = (raw: unknown) => {
+    const e = toCoreEvent(raw);
+    if (e) {
+      last = e;
+      onEvent(e);
     }
-    buf += dec.decode();
-  } else buf = await res.text();
-  buf.split("\n").forEach(take);
-  const last = end as CoreInstallEvent | null;
-  if (last?.phase === "error") throw new Error(last.error);
-  if (last?.phase !== "done") throw new Error("the install stopped before it finished");
-  markLive2DCoreInstalled();
-  return { installed: true, installing: false, size: last.size, source: last.source };
+  };
+  const ctype = res.headers.get("content-type") || "";
+  if (!res.body || (ctype.includes("application/json") && !ctype.includes("ndjson"))) {
+    emit(await res.json().catch(() => null)); // the old one-shot answer
+  } else {
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    const line = (l: string) => {
+      const t = l.trim();
+      if (!t) return;
+      try {
+        emit(JSON.parse(t));
+      } catch {
+        /* not a complete JSON line: skip it */
+      }
+    };
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true }); // a chunk may end mid-line (or mid-character)
+        let nl: number;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          line(buf.slice(0, nl));
+          buf = buf.slice(nl + 1);
+        }
+      }
+      buf += dec.decode();
+      line(buf);
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      return fail(`The connection dropped during the install: ${(e as Error).message}`);
+    }
+  }
+  const end = last as CoreEvent | null;
+  if (end && (end.phase === "done" || end.phase === "error")) return end;
+  return fail("The install stopped before it finished — try again.");
+}
+
+function toCoreEvent(raw: unknown): CoreEvent | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  switch (r.phase) {
+    case "downloading":
+      return { phase: "downloading", received: Number(r.received) || 0, total: r.total == null ? null : Number(r.total) || null };
+    case "verifying":
+      return { phase: "verifying" };
+    case "done":
+      return r.installed === false
+        ? { phase: "error", error: String(r.error || "the server says the core isn't installed") }
+        : { phase: "done", installed: true, size: typeof r.size === "number" ? r.size : undefined };
+    case "error":
+      return { phase: "error", error: String(r.error || r.detail || "install failed") };
+  }
+  // the old answer: {installed, size, source}
+  if (typeof r.installed === "boolean") {
+    return r.installed
+      ? { phase: "done", installed: true, size: typeof r.size === "number" ? r.size : undefined }
+      : { phase: "error", error: String(r.error || r.detail || "not installed") };
+  }
+  if (r.detail) return { phase: "error", error: String(r.detail) };
+  return null;
 }
 
 /** the model a mate talks on when none is set (backend DEFAULT_MATE_MODEL) */
@@ -236,13 +360,35 @@ export function transcribe(id: string, audio: Blob) {
   return upload<{ text: string; language?: string }>(`/api/mates/${enc(id)}/transcribe`, f);
 }
 
-/** TTS for one sentence: a Blob, or null when the page speaks itself (204: browser / off). */
-export async function speech(id: string, text: string, emotion: string | null, signal?: AbortSignal): Promise<Blob | null> {
+/** The mate's engine isn't set up in Global settings (any more): the browser voice should speak instead. */
+export class SpeechFallbackError extends Error {
+  readonly fallback = "browser";
+}
+
+/**
+ * TTS for one sentence: a Blob, or null when the page speaks itself (204: browser / off). `tts`: unsaved voice fields
+ * to try (a settings preview; never stored). An engine that isn't set up throws {@link SpeechFallbackError} (the
+ * server's `X-Speech-Fallback`), so the caller can say why and speak with the browser voice.
+ */
+export async function speech(
+  id: string,
+  text: string,
+  emotion: string | null,
+  signal?: AbortSignal,
+  tts?: Partial<MateVoice["tts"]>,
+): Promise<Blob | null> {
   const res = await apiResponse(`/api/mates/${enc(id)}/speech`, {
     method: "POST",
     signal,
-    ...j({ text, emotion: emotion || "" }),
+    ...j({ text, emotion: emotion || "", ...(tts ? { tts } : {}) }),
   });
-  if (res.status === 204) return null;
+  if (res.status === 204) {
+    if (res.headers.get("X-Speech-Fallback")) {
+      throw new SpeechFallbackError(
+        `${res.headers.get("X-Speech-Fallback-Reason") || "This voice engine isn't set up"} (the browser voice speaks instead)`,
+      );
+    }
+    return null;
+  }
   return res.blob();
 }

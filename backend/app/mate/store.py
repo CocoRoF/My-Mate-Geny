@@ -33,6 +33,11 @@ MAX_MEMORIES = 200        # per mate
 # Global settings: plain values (URLs) and vault-held keys.
 SETTING_URLS = ("omnivoice_url", "whisper_url", "http_tts_url")
 SETTING_KEYS = ("openai_key", "elevenlabs_key", "http_tts_key")
+# Which voice provider (app/mate/providers.py) each setting belongs to: a
+# change drops that provider's cached verification.
+SETTING_PROVIDERS = {"openai_key": "openai", "elevenlabs_key": "elevenlabs", "omnivoice_url": "omnivoice",
+                     "whisper_url": "whisper", "http_tts_url": "http", "http_tts_key": "http"}
+_VERIFY_PREFIX = "verify:"
 _VAULT_SCOPE = "mate"
 
 _MODEL_RE = re.compile(r"^[A-Za-z0-9._:\-\[\]/]{0,120}$")
@@ -206,6 +211,7 @@ class MateStore:
         self._db = db
         self._vault = vault
         self._lock = threading.Lock()
+        self.last_changed: set[str] = set()  # the settings the last update_settings() changed
 
     # ---- mates ----
 
@@ -416,15 +422,22 @@ class MateStore:
 
     def update_settings(self, patch: dict[str, Any]) -> dict[str, Any]:
         """URLs: set ("" clears). Keys: a non-empty string sets, "" or null
-        removes, absent keeps."""
-        for k in SETTING_URLS:
+        removes, absent keeps. A changed setting drops its provider's cached
+        verification; :attr:`last_changed` names what changed."""
+        urls: dict[str, str] = {}
+        for k in SETTING_URLS:  # validate everything before writing anything
             if k in patch and patch[k] is not None:
                 url = _s(patch[k], 500).strip().rstrip("/")
-                if url and not re.match(r"^https?://", url):
+                if url and not re.match(r"^https?://[^\s/]+", url):
                     raise MateError(f"{k} must be an http(s) URL")
-                self._db.execute(
-                    "INSERT INTO mate_settings (key, value) VALUES (?, ?) "
-                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (k, url))
+                urls[k] = url
+        changed: set[str] = set()
+        for k, url in urls.items():
+            if url != self._setting(k):
+                changed.add(k)
+            self._db.execute(
+                "INSERT INTO mate_settings (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (k, url))
         for k in SETTING_KEYS:
             if k not in patch:
                 continue
@@ -434,6 +447,26 @@ class MateStore:
             ref = SecretVault.make_id(_VAULT_SCOPE, k)
             if val:
                 self._vault.put(_VAULT_SCOPE, k, _s(val, 4000).strip())
+                changed.add(k)
             elif self._vault.exists(ref):
                 self._vault.delete(ref)
+                changed.add(k)
+        for provider in {SETTING_PROVIDERS[k] for k in changed}:
+            self.set_verification(provider, None)
+        self.last_changed = changed
         return self.settings()
+
+    # ---- voice provider verification results (kept across restarts) ----
+
+    def verification(self, provider: str) -> dict[str, Any] | None:
+        raw = self._setting(_VERIFY_PREFIX + provider)
+        return (_loads(raw, {}) or None) if raw else None
+
+    def set_verification(self, provider: str, doc: dict[str, Any] | None) -> None:
+        key = _VERIFY_PREFIX + provider
+        if doc is None:
+            self._db.execute("DELETE FROM mate_settings WHERE key = ?", (key,))
+            return
+        self._db.execute(
+            "INSERT INTO mate_settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, json.dumps(doc, ensure_ascii=False)))

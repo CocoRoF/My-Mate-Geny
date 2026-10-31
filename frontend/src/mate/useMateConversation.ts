@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toLogin, wsUrl } from "../api/client";
 import { getHistory } from "../api/sessions";
-import { openConversation, resetConversation, speech, type Mate } from "../api/mates";
+import { openConversation, resetConversation, speech, SpeechFallbackError, type Mate } from "../api/mates";
 import { onResync } from "../lib/sync";
 import { createChatStore, type Turn } from "../stores/chatStore";
 import { useMateStore } from "../stores/mateStore";
@@ -128,12 +128,29 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
   useEffect(() => {
     if (!mateId) return;
     const server = engine !== "browser" && engine !== "off";
-    queue.fallbackToBrowser = engine === "browser";
+    // a server engine that is no longer set up answers "use the browser voice" (SpeechFallbackError): the page speaks
+    queue.fallbackToBrowser = engine !== "off";
     queue.setBrowserVoice({ lang: lang || undefined, voice: engine === "browser" ? tts?.voice || undefined : undefined, rate: tts?.speed || 1 });
-    queue.setResolver(server ? (item, signal) => speech(mateId, item.text || "", item.emotion ?? null, signal) : null);
+    /** why the browser voice speaks instead of the mate's engine (shown, not an error that stops anything) */
+    let fallbackWhy: string | null = null;
+    queue.setResolver(
+      server
+        ? async (item, signal) => {
+            try {
+              const clip = await speech(mateId, item.text || "", item.emotion ?? null, signal);
+              fallbackWhy = null;
+              return clip;
+            } catch (err) {
+              if (!(err instanceof SpeechFallbackError)) throw err;
+              fallbackWhy = err.message;
+              return null;
+            }
+          }
+        : null,
+    );
     queue.onItemStart = (item) => {
       if (item.text) setCaption({ text: String((item.meta as any)?.display ?? item.text), at: Date.now() });
-      setVoiceError(null);
+      setVoiceError(fallbackWhy);
     };
     queue.onError = (_item, err) => setVoiceError((err as Error)?.message || String(err));
     return () => {
