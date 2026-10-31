@@ -172,3 +172,19 @@ def test_session_file_preview_is_confined_to_session_folders(tmp_path):
         assert client.get(f"/api/sessions/{sid}/file", params={"path": str(tmp_path / "secret.txt")}).status_code == 403
         assert client.get(f"/api/sessions/{sid}/file", params={"path": "../secret.txt"}).status_code == 403
         assert client.get(f"/api/sessions/{sid}/file", params={"path": "link"}).status_code == 403  # symlink escape
+
+
+def test_an_emptied_file_is_gone_not_a_cached_blank_image(tmp_path):
+    with TestClient(app) as client:
+        _login(client)
+        sid = _session(client, tmp_path)
+        img = client.post(f"/api/sessions/{sid}/attachments",
+                          files={"files": ("shot.png", _png(32, 32), "image/png")}).json()[0]
+        row = app.state.attachment_service.get(img["id"]) if hasattr(app.state, "attachment_service") else None
+        path = row["path"] if row else None
+        if path is None:  # locate it via the service used by the router
+            from app.routers.attachments import _svc
+            path = _svc(type("R", (), {"app": app})()).get(img["id"])["path"]
+        open(path, "wb").close()  # the data was lost (e.g. truncated)
+        got = client.get(img["preview_url"])
+        assert got.status_code == 410 and got.headers.get("cache-control") == "no-store"

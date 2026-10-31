@@ -75,6 +75,11 @@ async def content(aid: str, request: Request, download: bool = False, variant: s
     path, mime = row["path"], row["mime"]
     if variant == "preview" and row["model_path"] and os.path.exists(row["model_path"]):
         path, mime = row["model_path"], row["model_mime"] or mime
+    # An empty file is lost data, not a valid image: never serve it (it would be
+    # cached as "immutable" and show as a broken image for a week).
+    if os.path.exists(path) and os.path.getsize(path) == 0 and (row["size"] or 0) > 0:
+        raise HTTPException(status_code=410, detail="attachment data is gone",
+                            headers={"Cache-Control": "no-store"})
     if not os.path.exists(path):
         request.app.state.logs.record(
             "warning", "upload", f"attachment file missing on disk: {row['name']}",

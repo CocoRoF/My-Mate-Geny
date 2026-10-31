@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Attachment } from "../../types";
 import { downloadUrl } from "../../api/attachments";
+import { freshImg } from "./fileMeta";
 import Icon from "../ui/Icon";
 import { useBackHandler } from "../../lib/back";
 import { formatBytes } from "./fileMeta";
@@ -73,7 +74,7 @@ export default function Lightbox({
         {!loaded && <Icon name="spinner" size={26} spin className="absolute text-content-faint" />}
         <img
           key={img.id}
-          src={img.url}
+          src={freshImg(img.url)}
           alt={img.name}
           onLoad={() => setLoaded(true)}
           onClick={(e) => e.stopPropagation()}

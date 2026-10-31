@@ -32,3 +32,8 @@ export function fileVisual(name: string, mime: string): { icon: IconName; tone: 
 /** Types the browser can show in a tab (served inline by the backend). */
 export const opensInline = (mime: string) =>
   mime === "application/pdf" || mime === "text/plain" || mime.startsWith("audio/") || mime.startsWith("video/");
+
+/** Bumped when cached image responses must not be reused (an earlier bug
+ *  served emptied files with a week-long immutable cache). */
+const IMG_REV = "r=2";
+export const freshImg = (url: string) => `${url}${url.includes("?") ? "&" : "?"}${IMG_REV}`;
