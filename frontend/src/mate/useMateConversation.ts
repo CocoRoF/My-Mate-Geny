@@ -159,6 +159,12 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
     };
   }, [queue, mateId, engine, lang, tts?.voice, tts?.speed]);
 
+  // the mate's volume (0–300 %): clips through a GainNode + limiter, the browser voice up to 100 %
+  const volume = mate?.voice.volume ?? 1;
+  useEffect(() => {
+    queue.setVolume(volume);
+  }, [queue, volume]);
+
   // a different mate (or leaving the view): stop talking
   useEffect(() => () => queue.stop(), [queue, mateId]);
   // muted / no longer the owner: stop at once

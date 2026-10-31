@@ -1,22 +1,23 @@
 /**
  * Avatar: kind (none / video / photo / Live2D), imports (zip, a folder on the server), simple asset upload for photo
  * stills and video clips, a note when the Live2D runtime is missing (installed in Global settings) and emotion → expression / motion mapping, with
- * a live preview and test buttons.
+ * a live preview and test buttons. Video/photo rigs get the clip library + trigger editor (ClipLibrary.tsx); built-ins a
+ * "Reset to the bundled version".
  */
 import { useEffect, useRef, useState } from "react";
 import { coreStatus, importAvatarZip, importLocal, uploadAsset, type Mate } from "../../../api/mates";
 import { MateAvatar } from "../../../mate/avatar/MateAvatar";
 import { EMOTIONS } from "../../../mate/emotion";
-import type { Avatar, BodyMood, ClipKind, Live2D, MateReact, Rig, RigClip } from "../../../mate/types";
+import type { Avatar, BodyMood, Live2D, MateReact, Rig } from "../../../mate/types";
 import type { MateConversation } from "../../../mate/useMateConversation";
 import { end as voiceEnd, fakeLevel, level as voiceLevel, start as voiceStart } from "../../../mate/voiceBridge";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
+import { BundledReset, ClipLibrary, StillTriggers, TriggerPreview, type TriggerPick } from "./ClipLibrary";
 import { Banner, ErrorLine, Field, SaveBar, Section, useSaver } from "./ui";
 
 const MOODS: BodyMood[] = ["idle", "listening", "thinking", "talking", "away"];
 const STILLS = ["neutral", "smile", "laugh", "shy", "surprised", "sad", "thinking", "sleepy", "blink", "mouth_half", "mouth_open", "mouth_o"];
-const CLIP_KINDS: ClipKind[] = ["idle", "talk", "listen", "think", "react", "away"];
 
 const emptyRig = (): Rig => ({ aspect: [3, 4], home: "", stills: {}, clips: [] });
 const rigOf = (a: Avatar): Rig => (a.kind === "video" || a.kind === "photo" ? a.rig : emptyRig());
@@ -47,6 +48,9 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
   const serverAvatar = JSON.stringify(mate.avatar);
   useEffect(() => setAvatar(JSON.parse(serverAvatar)), [serverAvatar]);
   const save = () => saver.run(() => useMateStore.getState().patch(mate.id, { avatar }));
+  // the clip editor's "show it on the avatar preview"
+  const [poke, setPoke] = useState<{ pick: TriggerPick; at: number } | null>(null);
+  const onPoke = (pick: TriggerPick) => setPoke({ pick, at: Date.now() });
 
   const setKind = (kind: Avatar["kind"]) => {
     if (kind === avatar.kind) return;
@@ -58,7 +62,7 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
 
   return (
     <>
-      <Preview mate={mate} avatar={avatar} conv={conv} />
+      <Preview mate={mate} avatar={avatar} conv={conv} poke={poke} />
       <Section title="Kind">
         <div className="grid grid-cols-4 gap-1.5">
           {(["none", "photo", "video", "live2d"] as const).map((k) => (
@@ -76,11 +80,18 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
         </div>
       </Section>
       <ImportSection mate={mate} />
-      {avatar.kind === "photo" && <StillsEditor mate={mate} rig={avatar.rig} onChange={(rig) => setAvatar({ kind: "photo", rig })} />}
+      {avatar.kind === "photo" && (
+        <>
+          <StillsEditor mate={mate} rig={avatar.rig} onChange={(rig) => setAvatar({ kind: "photo", rig })} />
+          <StillTriggers rig={avatar.rig} onChange={(rig) => setAvatar({ kind: "photo", rig })} onPoke={onPoke} video={false} />
+        </>
+      )}
       {avatar.kind === "video" && (
         <>
-          <ClipsEditor mate={mate} rig={avatar.rig} onChange={(rig) => setAvatar({ kind: "video", rig })} />
+          <ClipLibrary mate={mate} rig={avatar.rig} onChange={(rig) => setAvatar({ kind: "video", rig })} />
+          <TriggerPreview rig={avatar.rig} onChange={(rig) => setAvatar({ kind: "video", rig })} onPoke={onPoke} />
           <StillsEditor mate={mate} rig={avatar.rig} onChange={(rig) => setAvatar({ kind: "video", rig })} />
+          <StillTriggers rig={avatar.rig} onChange={(rig) => setAvatar({ kind: "video", rig })} onPoke={onPoke} video />
         </>
       )}
       {avatar.kind === "live2d" && (
@@ -89,14 +100,22 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
           <Live2DEditor live2d={avatar.live2d} onChange={(live2d) => setAvatar({ kind: "live2d", live2d })} />
         </>
       )}
-      <SaveBar saver={saver} onSave={save} dirty={dirty} />
+      <BundledReset mate={mate} dirty={dirty} />
+      <SaveBar saver={saver} onSave={save} dirty={dirty} onReset={() => setAvatar(mate.avatar)} />
     </>
   );
 }
 
-function Preview({ mate, avatar, conv }: { mate: Mate; avatar: Avatar; conv: MateConversation }) {
+function Preview({ mate, avatar, conv, poke }: { mate: Mate; avatar: Avatar; conv: MateConversation; poke: { pick: TriggerPick; at: number } | null }) {
   const [mood, setMood] = useState<BodyMood>("idle");
   const [react, setReact] = useState<MateReact>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!poke) return;
+    if (poke.pick.type === "mood") setMood(poke.pick.mood);
+    else setReact({ name: poke.pick.name, at: poke.at });
+    box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [poke]);
   const talkTimer = useRef<number | null>(null);
   const fakeTalk = () => {
     if (talkTimer.current) cancelAnimationFrame(talkTimer.current);
@@ -119,12 +138,12 @@ function Preview({ mate, avatar, conv }: { mate: Mate; avatar: Avatar; conv: Mat
   }, []);
   return (
     <Section title="Preview" hint="Unsaved changes show here first.">
-      <div className="mx-auto h-64 w-full max-w-xs overflow-hidden rounded-xl border border-border bg-[repeating-conic-gradient(#161a22_0%_25%,#11141b_0%_50%)] [background-size:24px_24px]" data-testid="mate-avatar-preview">
+      <div ref={box} className="mx-auto h-64 w-full max-w-xs overflow-hidden rounded-xl border border-border bg-[repeating-conic-gradient(#161a22_0%_25%,#11141b_0%_50%)] [background-size:24px_24px]" data-testid="mate-avatar-preview">
         <MateAvatar avatar={avatar} name={mate.name} mood={mood} react={react} />
       </div>
       <div className="flex flex-wrap gap-1">
         {MOODS.map((m) => (
-          <button key={m} onClick={() => setMood(m)} className={`pill border ${mood === m ? "border-accent/50 bg-accent-soft text-accent" : "border-border text-content-dim hover:text-content"}`}>
+          <button key={m} onClick={() => setMood(m)} data-testid={`mate-preview-mood-${m}`} className={`pill border ${mood === m ? "border-accent/50 bg-accent-soft text-accent" : "border-border text-content-dim hover:text-content"}`}>
             {m}
           </button>
         ))}
@@ -137,7 +156,7 @@ function Preview({ mate, avatar, conv }: { mate: Mate; avatar: Avatar; conv: Mat
       </div>
       <div className="flex flex-wrap gap-1">
         {EMOTIONS.map((e) => (
-          <button key={e} onClick={() => setReact({ name: e, at: Date.now() })} className="pill border border-border text-content-faint hover:text-content">
+          <button key={e} onClick={() => setReact({ name: e, at: Date.now() })} className="pill border border-border text-content-faint hover:text-content" data-testid={`mate-preview-emotion-${e}`}>
             {e}
           </button>
         ))}
@@ -270,74 +289,6 @@ function StillsEditor({ mate, rig, onChange }: { mate: Mate; rig: Rig; onChange:
           );
         })}
       </div>
-      <ErrorLine text={err} />
-    </Section>
-  );
-}
-
-function ClipsEditor({ mate, rig, onChange }: { mate: Mate; rig: Rig; onChange: (r: Rig) => void }) {
-  const [busy, setBusy] = useState<number | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const setClip = (i: number, patch: Partial<RigClip>) => onChange({ ...rig, clips: rig.clips.map((c, k) => (k === i ? { ...c, ...patch } : c)) });
-  const add = () => onChange({ ...rig, clips: [...rig.clips, { id: `clip${rig.clips.length + 1}`, kind: "idle", src: "", loop: true }] });
-  const remove = (i: number) => onChange({ ...rig, clips: rig.clips.filter((_, k) => k !== i) });
-  const up = async (i: number, f: File) => {
-    setBusy(i);
-    setErr(null);
-    try {
-      const c = rig.clips[i];
-      const r = await uploadAsset(mate.id, f, `clips/${c.id.replace(/[^\w-]/g, "_") || `clip${i}`}.${extOf(f, "mp4")}`);
-      setClip(i, { src: r.url });
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
-  return (
-    <Section
-      title="Clips"
-      hint="Short loops that start and end on the same home frame. Stacked-alpha = colour on top, alpha below (H.264); plain = an ordinary video in a rounded frame."
-    >
-      <Field label="Packing">
-        <select className="field" value={rig.packing || "stacked-alpha"} onChange={(e) => onChange({ ...rig, packing: e.target.value as Rig["packing"] })}>
-          <option value="stacked-alpha">stacked-alpha (transparent)</option>
-          <option value="plain">plain</option>
-        </select>
-      </Field>
-      <div className="space-y-2">
-        {rig.clips.map((c, i) => (
-          <div key={i} className="grid grid-cols-[1fr_auto] gap-2 rounded-lg border border-border p-2">
-            <div className="grid min-w-0 grid-cols-3 gap-2">
-              <input className="field !py-1 text-[12px]" value={c.id} onChange={(e) => setClip(i, { id: e.target.value })} placeholder="id" />
-              <select className="field !py-1 text-[12px]" value={c.kind} onChange={(e) => setClip(i, { kind: e.target.value as ClipKind })}>
-                {CLIP_KINDS.map((k) => (
-                  <option key={k}>{k}</option>
-                ))}
-              </select>
-              <select className="field !py-1 text-[12px]" value={c.emotion || ""} onChange={(e) => setClip(i, { emotion: e.target.value || undefined })} disabled={c.kind !== "react"}>
-                <option value="">emotion…</option>
-                {EMOTIONS.map((e) => (
-                  <option key={e}>{e}</option>
-                ))}
-              </select>
-              <div className="col-span-3 flex min-w-0 items-center gap-2 text-[11.5px] text-content-faint">
-                <label className="btn-ghost cursor-pointer border border-border !px-2 !py-1 text-[12px]">
-                  <input type="file" accept="video/*" hidden onChange={(e) => e.target.files?.[0] && up(i, e.target.files[0])} />
-                  {busy === i ? <Icon name="spinner" size={12} spin /> : <Icon name="upload" size={12} />} video
-                </label>
-                <span className="truncate">{c.src ? c.src.split("/").pop()?.split("?")[0] : "no file yet"}</span>
-              </div>
-            </div>
-            <button onClick={() => remove(i)} className="self-start rounded p-1 text-content-faint hover:text-danger" aria-label="Remove clip">
-              <Icon name="trash" size={13} />
-            </button>
-          </div>
-        ))}
-      </div>
-      <button className="btn-ghost border border-border" onClick={add}>
-        <Icon name="plus" size={14} /> Add clip
-      </button>
       <ErrorLine text={err} />
     </Section>
   );

@@ -9,6 +9,7 @@ they live in the vault (scope ``mate``) and the API reports only ``*_key_set``.
 from __future__ import annotations
 
 import json
+import math
 import re
 import threading
 from typing import Any
@@ -22,6 +23,11 @@ PERSONA_FIELDS = ("description", "personality", "speech", "greeting", "address",
 TTS_ENGINES = ("off", "browser", "openai", "elevenlabs", "omnivoice", "http")
 STT_ENGINES = ("off", "browser", "openai", "whisper")
 AVATAR_KINDS = ("none", "video", "photo", "live2d")
+CLIP_KINDS = ("idle", "talk", "listen", "think", "react", "away")
+# stills that make her blink / talk: mechanics, never shown for an emotion
+MECHANIC_STILLS = ("blink", "mouth_half", "mouth_open", "mouth_o")
+MAX_CLIPS = 200
+MAX_VOLUME = 3.0          # voice.volume: 0.0 – 3.0 (300 %), 1.0 = as synthesized
 EFFORTS = ("default", "low", "medium", "high", "xhigh", "max")
 LLM_PROVIDERS = ("claude",)  # the mate engine needs --system-prompt / --tools / MCP (Claude Code)
 
@@ -119,6 +125,19 @@ def _num(v: Any, lo: float, hi: float, default: float) -> float:
     return max(lo, min(hi, f))
 
 
+def _volume(v: Any) -> float:
+    """voice.volume: 0.0 – 3.0 (1.0 = as synthesized; above it the page amplifies with a limiter)."""
+    if isinstance(v, bool):
+        return 1.0
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 1.0
+    if not math.isfinite(f):  # NaN / inf
+        return 1.0
+    return round(max(0.0, min(MAX_VOLUME, f)), 3)
+
+
 def normalize_voice(patch: Any, base: dict[str, Any] | None = None) -> dict[str, Any]:
     base = base or {}
     # instruct: OmniVoice voice design ("female, young adult, low pitch");
@@ -127,13 +146,18 @@ def normalize_voice(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
            "instruct": "", "ref": "", "ref_text": "",
            **(base.get("tts") or {})}
     stt = {"engine": "browser", "model": "", "language": "", **(base.get("stt") or {})}
-    out = {"auto_read": bool(base.get("auto_read", True)), "tts": tts, "stt": stt}
+    out = {"auto_read": bool(base.get("auto_read", True)), "volume": _volume(base.get("volume", 1.0)),
+           "tts": tts, "stt": stt}
     if patch is None:
         return out
     if not isinstance(patch, dict):
         raise MateError("voice must be an object")
     if "auto_read" in patch:
         out["auto_read"] = bool(patch["auto_read"])
+    if "volume" in patch:
+        if isinstance(patch["volume"], bool) or not isinstance(patch["volume"], (int, float, str, type(None))):
+            raise MateError("voice.volume must be a number (0.0 – 3.0)")
+        out["volume"] = _volume(patch["volume"])
     pt = patch.get("tts")
     if pt is not None:
         if not isinstance(pt, dict):
@@ -166,6 +190,98 @@ def normalize_voice(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
     return out
 
 
+def _name(v: Any, what: str, limit: int = 64) -> str:
+    if not isinstance(v, str) or not v.strip():
+        raise MateError(f"{what} must be a non-empty string")
+    return v.strip()[:limit]
+
+
+def normalize_clip(c: Any) -> dict[str, Any]:
+    """One rig clip: ``{id, kind, src, small?, emotion?, loop?, disabled?}`` (unknown keys are kept)."""
+    if not isinstance(c, dict):
+        raise MateError("every rig clip must be an object")
+    out = dict(c)
+    out["id"] = _name(c.get("id"), "clip id")
+    if c.get("kind") not in CLIP_KINDS:
+        raise MateError(f"clip {out['id']}: unknown kind {c.get('kind')!r} (one of {', '.join(CLIP_KINDS)})")
+    out["src"] = _s(c.get("src"), 2000)
+    for k in ("small", "emotion"):
+        if c.get(k) in (None, ""):
+            out.pop(k, None)
+        else:
+            out[k] = _s(c[k], 2000 if k == "small" else 64).strip()
+    for k in ("loop", "disabled"):  # flags: present only when on
+        if c.get(k):
+            out[k] = True
+        else:
+            out.pop(k, None)
+    return out
+
+
+def normalize_rig(rig: dict[str, Any], *, photo: bool = False) -> dict[str, Any]:
+    """A video/photo rig (docs/mate.md §2): clips validated (unique ids, known kinds, ``disabled``),
+    ``emotions`` (emotion -> clip ids; ids that aren't clips are dropped, an empty list means "no
+    clip for this emotion") and ``emotion_stills`` (emotion -> still name, "" = none; not a mechanic
+    still). Other keys are kept as they are."""
+    rig = dict(rig)
+    rig.setdefault("aspect", [1, 1])
+    rig.setdefault("home", "")
+    rig.setdefault("stills", {})
+    rig.setdefault("clips", [])
+    if not isinstance(rig["stills"], dict) or not isinstance(rig["clips"], list):
+        raise MateError("rig.stills must be an object and rig.clips a list")
+    rig["stills"] = {str(k)[:64]: v for k, v in rig["stills"].items() if isinstance(v, str)}
+    if photo:
+        rig["clips"] = []
+    if len(rig["clips"]) > MAX_CLIPS:
+        raise MateError(f"a rig has at most {MAX_CLIPS} clips")
+    clips = [normalize_clip(c) for c in rig["clips"]]
+    ids = [c["id"] for c in clips]
+    dup = next((i for i in ids if ids.count(i) > 1), None)
+    if dup is not None:
+        raise MateError(f"two clips are called {dup!r}: clip ids must be unique")
+    rig["clips"] = clips
+    emotions = rig.get("emotions")
+    if emotions is None or photo:
+        rig.pop("emotions", None)
+    else:
+        if not isinstance(emotions, dict):
+            raise MateError("rig.emotions must be an object (emotion -> clip ids)")
+        known = set(ids)
+        out: dict[str, list[str]] = {}
+        for emo, lst in emotions.items():
+            key = str(emo).strip().lower()[:64]
+            if not key:
+                continue
+            if isinstance(lst, str):
+                lst = [lst]
+            if not isinstance(lst, list):
+                raise MateError(f"rig.emotions.{key} must be a list of clip ids")
+            keep: list[str] = []
+            for x in lst:
+                if isinstance(x, str) and x in known and x not in keep:
+                    keep.append(x)
+            # every id gone (clips removed) -> the key goes too; an empty list the user set stays ("nothing")
+            if keep or not lst:
+                out[key] = keep
+        rig["emotions"] = out
+    es = rig.get("emotion_stills")
+    if es is None:
+        rig.pop("emotion_stills", None)
+    else:
+        if not isinstance(es, dict):
+            raise MateError("rig.emotion_stills must be an object (emotion -> still name)")
+        out_s: dict[str, str] = {}
+        for emo, name in es.items():
+            key = str(emo).strip().lower()[:64]
+            if not key or not isinstance(name, str):
+                continue
+            if name == "" or (name in rig["stills"] and name not in MECHANIC_STILLS):
+                out_s[key] = name
+        rig["emotion_stills"] = out_s
+    return rig
+
+
 def normalize_avatar(v: Any) -> dict[str, Any]:
     if v is None:
         return {"kind": "none"}
@@ -182,16 +298,7 @@ def normalize_avatar(v: Any) -> dict[str, Any]:
         rig = v.get("rig")
         if not isinstance(rig, dict):
             raise MateError(f"a {kind} avatar needs a rig")
-        rig = dict(rig)
-        rig.setdefault("aspect", [1, 1])
-        rig.setdefault("home", "")
-        rig.setdefault("stills", {})
-        rig.setdefault("clips", [])
-        if not isinstance(rig["stills"], dict) or not isinstance(rig["clips"], list):
-            raise MateError("rig.stills must be an object and rig.clips a list")
-        if kind == "photo":
-            rig["clips"] = []
-        return {"kind": kind, "rig": rig}
+        return {"kind": kind, "rig": normalize_rig(rig, photo=kind == "photo")}
     l2d = v.get("live2d")
     if not isinstance(l2d, dict) or not isinstance(l2d.get("model"), str) or not l2d["model"]:
         raise MateError("a live2d avatar needs live2d.model (URL of the *.model3.json)")
@@ -337,6 +444,9 @@ class MateStore:
 
     def restore_builtins(self) -> None:
         self._db.execute("DELETE FROM mate_builtin_removed")
+
+    def set_customized(self, mate_id: str, on: bool) -> None:
+        self._db.execute("UPDATE mates SET customized = ? WHERE id = ?", (1 if on else 0, mate_id))
 
     def mark_builtin(self, mate_id: str, key: str, version: str) -> None:
         self._db.execute("UPDATE mates SET builtin = ?, builtin_hash = ? WHERE id = ?", (key, version, mate_id))

@@ -12,7 +12,17 @@
  * A resolver returning null (engine "browser"/"off", HTTP 204) falls back to speechSynthesis when `fallbackToBrowser`
  * is on (the default), else the item is skipped.
  */
-import { attachAudio, end as voiceEnd, fakeLevel, level as voiceLevel, start as voiceStart, unlockAudio } from "./voiceBridge";
+import {
+  attachAudio,
+  end as voiceEnd,
+  fakeLevel,
+  level as voiceLevel,
+  MAX_VOLUME,
+  outputGain,
+  setOutputVolume,
+  start as voiceStart,
+  unlockAudio,
+} from "./voiceBridge";
 import { useSyncExternalStore } from "react";
 
 export type ClipSource = string | Blob;
@@ -95,6 +105,8 @@ export class MateAudioQueue {
   private objectUrl: string | null = null;
   private finishCurrent: (() => void) | null = null;
   private browserDefaults: BrowserVoiceOptions = {};
+  /** 0..MAX_VOLUME (1 = as synthesized): a GainNode + limiter for clips, utterance.volume (≤ 1) for the browser */
+  private volume = 1;
   /** null from the resolver → speak with speechSynthesis */
   fallbackToBrowser = true;
   /** how many items ahead are resolved while one plays (docs: one-ahead) */
@@ -116,6 +128,24 @@ export class MateAudioQueue {
   /** defaults for speechSynthesis items (language, voice, rate) */
   setBrowserVoice(opts: BrowserVoiceOptions): void {
     this.browserDefaults = { ...opts };
+  }
+
+  /**
+   * The mate's volume, 0..3 (voice.volume; 1 = 100 %). Applies at once, also to the clip playing. Clips above 100 % are
+   * amplified through Web Audio (a GainNode with a limiter); the browser's speechSynthesis stops at 100 %.
+   */
+  setVolume(v: number): void {
+    this.volume = Number.isFinite(v) ? Math.max(0, Math.min(MAX_VOLUME, v)) : 1;
+    if (this.el) setOutputVolume(this.el, this.volume);
+  }
+
+  getVolume(): number {
+    return this.volume;
+  }
+
+  /** the gain the voice's GainNode applies now (null until the audio element is routed through Web Audio) */
+  outputGain(): number | null {
+    return this.el ? outputGain(this.el) : null;
   }
 
   enqueue(item: AudioQueueItem): string {
@@ -178,6 +208,7 @@ export class MateAudioQueue {
       (el as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
       el.setAttribute("playsinline", "");
       this.el = el;
+      setOutputVolume(el, this.volume);
       this.detach = attachAudio(el, "mate-voice");
     }
     return this.el;
@@ -293,7 +324,8 @@ export class MateAudioQueue {
       if (opts.lang) u.lang = opts.lang;
       if (opts.rate) u.rate = opts.rate;
       if (opts.pitch) u.pitch = opts.pitch;
-      if (opts.volume !== undefined) u.volume = opts.volume;
+      // speechSynthesis can't go above 100 %: the mate's volume is clamped there
+      u.volume = Math.max(0, Math.min(1, opts.volume ?? this.volume));
       const voice = pickVoice(opts);
       if (voice) u.voice = voice;
       const id = job.item.id;
@@ -422,7 +454,12 @@ let shared: MateAudioQueue | null = null;
 
 /** the page's mate voice queue (one voice at a time across all surfaces) */
 export function getMateAudioQueue(): MateAudioQueue {
-  return (shared ??= new MateAudioQueue());
+  if (!shared) {
+    shared = new MateAudioQueue();
+    // a handle for checks from the console / browser tests (volume, gain): window.__hrhMateAudio.outputGain()
+    if (typeof window !== "undefined") (window as unknown as { __hrhMateAudio?: MateAudioQueue }).__hrhMateAudio = shared;
+  }
+  return shared;
 }
 
 const EMPTY: QueueState = { current: null, pending: 0, blocked: false };
