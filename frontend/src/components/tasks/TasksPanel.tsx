@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { stopTask, taskOutput } from "../../api/sessions";
 import { useSessionStore } from "../../stores/sessionStore";
+import { useChatStore } from "../../stores/chatStore";
+import { useSubagentUi } from "../../stores/subagentStore";
 import { isRunning, useTaskStore } from "../../stores/taskStore";
 import type { TaskInfo } from "../../types";
 import Icon from "../ui/Icon";
@@ -63,6 +65,12 @@ function Row({ task, now, showChat }: { task: TaskInfo; now: number; showChat: b
   const icon = running ? null : task.status === "completed" ? "check" : task.status === "failed" ? "x" : "ban";
   const tone = task.status === "completed" ? "text-success" : task.status === "failed" ? "text-danger" : "text-content-faint";
   const chat = showChat ? sessions.find((s) => s.id === task.session_id)?.title : null;
+  // A subagent of the open chat: its full detail (steps, report) is one click away.
+  const activeId = useSessionStore((s) => s.activeId);
+  const inChat = useChatStore(
+    (s) => !!task.tool_use_id && task.session_id === activeId && s.turns.some((t) => t.tools.some((x) => x.id === task.tool_use_id)),
+  );
+  const openAgent = useSubagentUi((s) => s.open);
   return (
     <div className={`rounded-xl border border-border/70 ${open ? "bg-surface-2/60" : "bg-surface/60"}`}>
       <div className="flex items-center gap-2.5 px-3 py-2">
@@ -84,6 +92,15 @@ function Row({ task, now, showChat }: { task: TaskInfo; now: number; showChat: b
           </span>
         </button>
         <span className="shrink-0 font-mono text-[11px] tabular-nums text-content-faint">{start ? fmtMs(Math.max(0, end - start)) : ""}</span>
+        {task.task_type === "local_agent" && inChat && (
+          <button
+            onClick={() => openAgent(task.tool_use_id!)}
+            className="shrink-0 rounded-lg border border-border px-2 py-1 text-[11.5px] text-content-dim transition hover:border-violet/50 hover:text-violet"
+            title="Show what this subagent did"
+          >
+            Details
+          </button>
+        )}
         {running && task.session_id && (
           <button
             onClick={async () => {

@@ -13,6 +13,29 @@ export interface ToolActivity {
   parent?: string; // a subagent's call: nested under that Task/Agent row
   images?: Attachment[]; // images the tool returned (e.g. a screenshot it read)
   task?: TaskInfo; // when the CLI ran it as a (background) task
+  // Agent/Task calls: what the subagent did, in order, and its report.
+  sub?: SubItem[];
+  lastAt?: number; // the subagent's latest step
+  agent?: AgentReport;
+}
+
+/** One step of a subagent's work (its tool calls live in `Turn.tools`). */
+export type SubItem =
+  | { kind: "text"; text: string; at: number }
+  | { kind: "thinking"; text: string; at: number }
+  | { kind: "tool"; toolId: string };
+
+/** The CLI's summary of a finished (or launched, for background) subagent. */
+export interface AgentReport {
+  agent_id?: string;
+  status?: string; // completed | async_launched | …
+  agent_type?: string;
+  model?: string;
+  duration_ms?: number;
+  total_tokens?: number;
+  tool_uses?: number;
+  is_async?: boolean;
+  result?: string; // its final report, without the hand-back framing
 }
 
 // Ordered stream of what the assistant did, in the order it happened: prose,
@@ -133,11 +156,53 @@ function systemTurn(turns: Turn[], message: string, level: "info" | "warning") {
   turns.push({ key: newKey("s"), role: "system", text: message, flow: [], tools: [], complete: true, level });
 }
 
+const isBackgroundAgent = (t: ToolActivity) =>
+  !!((t.input as any)?.run_in_background || t.task?.is_backgrounded || t.agent?.is_async);
+
+/** A call made inside a background subagent (at any depth): it outlives the turn. */
+function underBackground(turn: Turn, tool: ToolActivity): boolean {
+  let p = tool.parent;
+  for (let hops = 0; p && hops < 20; hops++) {
+    const a = turn.tools.find((x) => x.id === p);
+    if (!a) return false;
+    if (isBackgroundAgent(a)) return true;
+    p = a.parent;
+  }
+  return false;
+}
+
 function finish(turn: Turn, at: number) {
   closeThinking(turn, at);
   turn.complete = true;
   turn.endedAt = at;
-  for (const t of turn.tools) if (t.durationMs === undefined) t.durationMs = Math.max(0, at - t.startedAt);
+  for (const t of turn.tools) {
+    if (t.durationMs === undefined && !underBackground(turn, t)) t.durationMs = Math.max(0, at - t.startedAt);
+  }
+}
+
+/** Index of the (latest) turn holding tool `id`, or -1. */
+function turnOf(turns: Turn[], id: string): number {
+  for (let i = turns.length - 1; i >= 0; i--) if (turns[i].tools.some((t) => t.id === id)) return i;
+  return -1;
+}
+
+/** Copy-on-write access to the turn holding tool `id` — the running turn or
+ * an earlier one (a background subagent keeps reporting after its turn). */
+function turnWith(turns: Turn[], id: string, at: number): Turn | null {
+  const i = turnOf(turns, id);
+  if (i < 0) return null;
+  if (i === turns.length - 1 && !turns[i].complete) return liveTurn(turns, at);
+  const copy: Turn = { ...turns[i], tools: turns[i].tools.map((t) => ({ ...t })) };
+  turns[i] = copy;
+  return copy;
+}
+
+/** Record a subagent step under its Agent/Task call. */
+function pushSub(turn: Turn, parent: string, item: SubItem, at: number) {
+  const p = turn.tools.find((t) => t.id === parent);
+  if (!p) return;
+  p.sub = [...(p.sub || []), item];
+  p.lastAt = at;
 }
 
 /** Apply one event to `turns` (a fresh array the caller owns). Returns extra
@@ -168,24 +233,46 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
       break;
     }
     case "tool.use": {
+      const parent = data.parent ? String(data.parent) : undefined;
+      if (parent) {
+        // A subagent's call: nests under its Agent/Task call, wherever that is.
+        const t = turnWith(turns, parent, at) || (hasLiveTurn(turns) ? liveTurn(turns, at) : null);
+        if (!t) break;
+        const id = String(data.id || `t${t.tools.length}`);
+        t.tools.push({ id, name: String(data.name || ""), input: data.input, startedAt: at, parent });
+        pushSub(t, parent, { kind: "tool", toolId: id }, at);
+        break;
+      }
       const t = liveTurn(turns, at);
       closeThinking(t, at);
       const id = String(data.id || `t${t.tools.length}`);
-      const parent = data.parent ? String(data.parent) : undefined;
-      t.tools.push({ id, name: String(data.name || ""), input: data.input, startedAt: at, parent });
-      if (!parent) t.flow.push({ kind: "tool", toolId: id }); // subagent calls nest under their parent
+      t.tools.push({ id, name: String(data.name || ""), input: data.input, startedAt: at });
+      t.flow.push({ kind: "tool", toolId: id });
       break;
     }
     case "tool.result": {
-      if (!hasLiveTurn(turns)) break;
-      const t = liveTurn(turns, at);
-      const tool = t.tools.find((x) => x.id === String(data.id || ""));
-      if (tool) {
+      const id = String(data.id || "");
+      const t = id ? turnWith(turns, id, at) : null;
+      const tool = t?.tools.find((x) => x.id === id);
+      if (t && tool) {
         tool.output = String(data.output ?? "");
         tool.isError = Boolean(data.is_error);
         tool.durationMs = Math.max(0, at - tool.startedAt);
         if (Array.isArray(data.images) && data.images.length) tool.images = data.images as Attachment[];
+        if (data.agent && typeof data.agent === "object") tool.agent = data.agent as AgentReport;
+        if (tool.parent) {
+          const p = t.tools.find((x) => x.id === tool.parent);
+          if (p) p.lastAt = at;
+        }
       }
+      break;
+    }
+    case "subagent.text":
+    case "subagent.thinking": {
+      // A subagent's prose / reasoning: shown in its card, never in the answer.
+      const parent = String(data.parent || "");
+      const t = parent ? turnWith(turns, parent, at) : null;
+      if (t) pushSub(t, parent, { kind: ev.type === "subagent.text" ? "text" : "thinking", text: String(data.text || ""), at }, at);
       break;
     }
     case "task.update": {

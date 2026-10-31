@@ -105,6 +105,8 @@ export type EventType =
   | "thinking.delta"
   | "tool.use"
   | "tool.result"
+  | "subagent.text"
+  | "subagent.thinking"
   | "turn.complete"
   | "error"
   | "notice"
@@ -138,6 +140,14 @@ export interface TaskInfo {
   summary?: string | null;
   started_at?: number | null; // epoch seconds
   ended_at?: number | null;
+  // Subagent progress (live from the engine, not stored with the task)
+  subagent_type?: string | null;
+  activity?: string | null; // what it is doing now ("Running …")
+  last_tool_name?: string | null;
+  tool_uses?: number | null;
+  total_tokens?: number | null;
+  duration_ms?: number | null;
+  parent_task_id?: string | null;
 }
 
 export interface ChangedFile {

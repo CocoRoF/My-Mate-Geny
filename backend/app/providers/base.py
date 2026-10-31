@@ -28,8 +28,10 @@ EVENT_TYPES = (
     "session.start",   # turn began; data: {provider, model, workspace}
     "text.delta",      # streaming assistant text; data: {text}
     "thinking.delta",  # streaming reasoning; data: {text}
-    "tool.use",        # agent invoked a tool; data: {id, name, input}
-    "tool.result",     # tool returned; data: {id, name, output, is_error}
+    "tool.use",        # agent invoked a tool; data: {id, name, input, parent?}  (parent = the Agent/Task call it ran in)
+    "tool.result",     # tool returned; data: {id, name, output, is_error, parent?, agent?}  (agent = subagent report + stats)
+    "subagent.text",   # a subagent's prose (one complete block); data: {parent, text} — never part of the answer
+    "subagent.thinking",  # a subagent's reasoning block; data: {parent, text}
     "turn.complete",   # terminal success; data: {text, model, usage, cost_usd, cost_kind, stop_reason, cli_session_id}
                        #   cost_usd = this turn's API-equivalent cost when cost_kind == "turn"
                        #   ("none": the engine reports no cost; unmarked = legacy, see services.turn_cost)
@@ -49,6 +51,8 @@ EventType = Literal[
     "thinking.delta",
     "tool.use",
     "tool.result",
+    "subagent.text",
+    "subagent.thinking",
     "turn.complete",
     "error",
     "notice",

@@ -36,6 +36,11 @@ from app.providers.catalog import DEFAULT_CLAUDE_MODEL
 
 _PERMISSION_MODE = {"agent": "bypassPermissions", "plan": "plan"}
 
+# Environment every Claude process gets. Subagent prose/reasoning is only on
+# the stream when asked for (``--forward-subagent-text``); the env form is used
+# because an older CLI ignores it instead of rejecting an unknown flag.
+CLI_ENV = {"CLAUDE_CODE_FORWARD_SUBAGENT_TEXT": "1"}
+
 
 class ClaudeCodeProvider(Provider):
     name = "claude"
@@ -177,7 +182,7 @@ class ClaudeCodeProvider(Provider):
     # ---- turn ----
 
     async def run_turn_stream(self, req: TurnRequest) -> AsyncIterator[ProviderEvent]:
-        env_extras = dict(req.extra_env)
+        env_extras = {**CLI_ENV, **req.extra_env}
         if req.api_key:
             env_extras["ANTHROPIC_API_KEY"] = req.api_key
 

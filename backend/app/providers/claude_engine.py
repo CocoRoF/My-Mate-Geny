@@ -30,7 +30,7 @@ from app.providers._cli_runtime import _ENV_WHITELIST, _kill_group
 from app.providers._stream_json import StreamJsonAccumulator
 from app.providers.base import ProviderEvent
 
-_TASK_SUBTYPES = ("task_started", "task_updated", "task_notification")
+_TASK_SUBTYPES = ("task_started", "task_updated", "task_progress", "task_notification")
 
 
 class EngineError(RuntimeError):
@@ -184,9 +184,25 @@ class ClaudeEngine:
     def _task_event(self, sub: str, obj: dict[str, Any]) -> ProviderEvent:
         tid = str(obj.get("task_id") or "")
         task = self.tasks.setdefault(tid, {"task_id": tid, "status": "running", "started_at": time.time()})
-        for k in ("tool_use_id", "description", "task_type", "is_backgrounded", "output_file", "summary"):
+        if sub == "task_progress":
+            # A running subagent's heartbeat: its description is the current
+            # activity ("Running …"), not the task's title.
+            if obj.get("description"):
+                task["activity"] = obj["description"]
+            if obj.get("last_tool_name"):
+                task["last_tool_name"] = obj["last_tool_name"]
+        else:
+            for k in ("tool_use_id", "description", "task_type", "is_backgrounded", "output_file", "summary"):
+                if obj.get(k) is not None:
+                    task[k] = obj[k]
+        for k in ("subagent_type", "parent_task_id"):
             if obj.get(k) is not None:
                 task[k] = obj[k]
+        usage = obj.get("usage")
+        if isinstance(usage, dict):
+            for k in ("tool_uses", "total_tokens", "duration_ms"):
+                if isinstance(usage.get(k), (int, float)):
+                    task[k] = usage[k]
         patch = obj.get("patch") or {}
         if sub == "task_started":
             task["status"] = "running"

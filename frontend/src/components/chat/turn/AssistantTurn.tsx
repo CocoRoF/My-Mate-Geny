@@ -6,6 +6,8 @@ import MessageAttachments from "../../attachments/MessageAttachments";
 import ThinkingBlock from "./ThinkingBlock";
 import TodoCard, { todosOf } from "./TodoCard";
 import ToolGroup, { wasStopped } from "./ToolGroup";
+import SubagentCard from "./SubagentCard";
+import { isAgentTool } from "./subagent";
 import { fmtMs } from "./toolMeta";
 import TurnChangesCard from "../../changes/TurnChangesCard";
 import { relTime, absTime } from "../../admin/format";
@@ -17,11 +19,12 @@ type Segment =
   | { kind: "thinking"; item: Extract<FlowItem, { kind: "thinking" }> }
   | { kind: "tools"; tools: ToolActivity[] }
   | { kind: "todo"; tool: ToolActivity }
+  | { kind: "agent"; tool: ToolActivity }
   | { kind: "notice"; item: Extract<FlowItem, { kind: "notice" }> }
   | { kind: "steer"; item: Extract<FlowItem, { kind: "steer" }> };
 
 /** Flow -> render segments: prose stays prose, consecutive tool calls fold
- * into one group, task lists get their own checklist. */
+ * into one group, task lists get their own checklist, subagents their card. */
 function segment(turn: Turn): Segment[] {
   const byId = new Map(turn.tools.map((t) => [t.id, t]));
   const out: Segment[] = [];
@@ -42,6 +45,10 @@ function segment(turn: Turn): Segment[] {
       if (!tool) continue;
       if (tool.name.toLowerCase() === "todowrite") {
         out.push({ kind: "todo", tool });
+        continue;
+      }
+      if (isAgentTool(tool)) {
+        out.push({ kind: "agent", tool });
         continue;
       }
       const last = out[out.length - 1];
@@ -154,6 +161,8 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
               return <ToolGroup key={i} tools={s.tools} allTools={turn.tools} />;
             case "todo":
               return <TodoCard key={i} todos={todosOf(s.tool.input)} />;
+            case "agent":
+              return <SubagentCard key={i} tool={s.tool} allTools={turn.tools} />;
             case "steer":
               return (
                 <div key={i} className="flex flex-col items-end gap-1 py-0.5">
@@ -195,7 +204,7 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
           }
         })}
 
-        {live && (empty || segments[segments.length - 1].kind !== "tools") && (
+        {live && (empty || !["tools", "agent"].includes(segments[segments.length - 1].kind)) && (
           <div className="flex items-center gap-1.5 py-1 text-content-faint text-sm">
             <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" />
             <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot [animation-delay:0.2s]" />

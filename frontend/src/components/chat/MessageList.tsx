@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useChatStore } from "../../stores/chatStore";
 import MessageItem from "./MessageItem";
 import Icon from "../ui/Icon";
+import { SubagentLayer, SubagentPill } from "./turn/SubagentModal";
 
 const NEAR_BOTTOM = 120;
 
@@ -64,14 +65,18 @@ export default function MessageList() {
           <Icon name="spinner" size={12} spin /> Reconnecting — the agent keeps working
         </div>
       )}
-      {showJump && (
-        <button
-          onClick={jump}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1.5 touch:h-10 touch:px-4 text-[12px] text-content-dim shadow-float hover:text-content transition animate-fade-in"
-        >
-          <Icon name="arrow-up" size={13} className="rotate-180" /> Latest
-        </button>
-      )}
+      <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center gap-2 px-3">
+        <SubagentPill />
+        {showJump && (
+          <button
+            onClick={jump}
+            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1.5 touch:h-10 touch:px-4 text-[12px] text-content-dim shadow-float hover:text-content transition animate-fade-in"
+          >
+            <Icon name="arrow-up" size={13} className="rotate-180" /> Latest
+          </button>
+        )}
+      </div>
+      <SubagentLayer />
     </div>
   );
 }
