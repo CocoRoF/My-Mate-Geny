@@ -1,0 +1,45 @@
+/* Mate avatar bodies (src/mate/avatar). Every layer fills the box and is fitted with object-fit: contain, anchored at
+   the bottom centre, so stills, canvases and videos of one rig line up exactly whatever the box's shape. */
+.mate-avatar{position:relative;width:100%;height:100%;overflow:hidden;contain:layout paint;
+  -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+.mate-layer{position:absolute;inset:0}
+.mate-fit{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:50% 100%;display:block}
+.mate-canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:50% 100%;display:block}
+.mate-plain-frame{position:absolute;left:50%;bottom:0;transform:translateX(-50%);overflow:hidden;
+  border-radius:var(--mate-plain-radius,18px);box-shadow:0 10px 36px rgba(0,0,0,.35)}
+.mate-plain-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+
+/* the voice level (0..1, smoothed) in --mate-level: a very small lift/scale while she talks */
+.mate-motion{transform-origin:50% 100%;
+  transform:translateY(calc(var(--mate-level,0) * -0.9%)) scale(calc(1 + var(--mate-level,0) * 0.012))}
+
+/* stills: a picture fades in over the base; the base goes only when it is fully in (never a see-through moment), and
+   comes back at once when the picture goes (ailism-mate mate-core.css) */
+.mate-still-base.off{opacity:0;transition:opacity 0s .14s}
+.mate-still-face{animation:mate-fade .14s ease-out}
+.mate-still.quick .mate-still-base.off{transition:none}
+.mate-still.quick .mate-still-face{animation:none}
+@keyframes mate-fade{from{opacity:0}to{opacity:1}}
+
+/* a single photo: gentle breathing + sway; the voice level adds a pulse */
+.mate-breathe{transform-origin:50% 100%;animation:mate-breathe 5.2s ease-in-out infinite}
+.mate-pulse{transform-origin:50% 100%;transform:scale(calc(1 + var(--mate-level,0) * 0.03)) translateY(calc(var(--mate-level,0) * -0.6%))}
+@keyframes mate-breathe{
+  0%,100%{transform:translateY(0) scale(1,1) rotate(0deg)}
+  30%{transform:translateY(-0.35%) scale(1.004,1.009) rotate(0.25deg)}
+  70%{transform:translateY(-0.2%) scale(1.002,1.006) rotate(-0.25deg)}}
+
+/* kind "none" / nothing to show: an initial in a soft disc */
+.mate-initial{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+.mate-initial span{display:flex;align-items:center;justify-content:center;width:min(42%,42vh);max-height:70%;aspect-ratio:1;
+  border-radius:9999px;background:radial-gradient(circle at 35% 30%,#8098ff,#4b5fd1 60%,#2b2f6b);color:#fff;
+  font-weight:600;font-size:clamp(18px,9vmin,110px);box-shadow:0 10px 40px rgba(60,80,200,.35)}
+
+.mate-status{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:6px;padding:12px;text-align:center;font-size:12px;line-height:1.45;color:#9aa3b4}
+.mate-status b{color:#e6e9f0;font-weight:600;font-size:13px}
+
+@media (prefers-reduced-motion:reduce){
+  .mate-breathe{animation:none}
+  .mate-still-face{animation:none}
+}
