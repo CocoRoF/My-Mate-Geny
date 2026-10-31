@@ -1,5 +1,4 @@
 import { useUIStore } from "../../stores/uiStore";
-import Icon from "../ui/Icon";
 
 /** Phone-only header: opens the sidebar drawer. */
 export function MenuButton({ className = "" }: { className?: string }) {
@@ -22,9 +21,7 @@ export default function MobileTopBar({ title }: { title: string }) {
     <div className="md:hidden pt-safe shrink-0 border-b border-border/70 bg-surface/80 backdrop-blur-xl">
       <div className="flex h-12 items-center gap-1 px-3">
         <MenuButton />
-        <div className="grid place-items-center w-6 h-6 rounded-md bg-gradient-to-br from-accent to-cyan">
-          <Icon name="bolt" size={12} className="text-white" />
-        </div>
+        <img src="/logo.png" alt="" width={28} height={28} className="w-7 h-7 shrink-0 select-none" draggable={false} />
         <span className="ml-1.5 text-[15px] font-semibold">{title}</span>
       </div>
     </div>
