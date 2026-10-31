@@ -163,7 +163,7 @@ export default function VoiceTab({ mate, conv }: { mate: Mate; conv: MateConvers
           onChange={pickTts}
           testId="mate-tts-engine"
         />
-        {v.tts.engine !== "off" && <TtsDetails key={v.tts.engine} mate={mate} tts={v.tts} set={tts} />}
+        {v.tts.engine !== "off" && <TtsDetails key={v.tts.engine} mate={mate} tts={v.tts} set={tts} ready={ttsAvail(v.tts.engine).state === "ready"} />}
         <Toggle
           on={v.auto_read}
           onChange={(on) => setV((x) => ({ ...x, auto_read: on }))}
@@ -185,7 +185,7 @@ export default function VoiceTab({ mate, conv }: { mate: Mate; conv: MateConvers
       <Section title="Listening (mic)" hint="How the mic button turns your speech into text.">
         {!usable(savedStt) && <FallbackNote kind="stt" engine={mate.voice.stt.engine} avail={savedStt} />}
         <EnginePicker kind="stt" engines={STT_ENGINES} value={v.stt.engine} avail={sttAvail} onChange={(engine: SttEngine) => stt({ engine, model: "" })} testId="mate-stt-engine" />
-        {v.stt.engine !== "off" && <SttDetails key={v.stt.engine} mate={mate} stt={v.stt} set={stt} />}
+        {v.stt.engine !== "off" && <SttDetails key={v.stt.engine} mate={mate} stt={v.stt} set={stt} ready={sttAvail(v.stt.engine).state === "ready"} />}
       </Section>
       <SaveBar saver={saver} onSave={save} dirty={dirty} onReset={() => setV(mate.voice)} />
     </>
@@ -206,9 +206,11 @@ function FallbackNote({ kind, engine, avail }: { kind: "tts" | "stt"; engine: st
           ? `it's ${avail.why.toLowerCase()}`
           : "";
   const what =
-    kind === "tts"
-      ? " — until it is, this mate speaks with the browser voice."
-      : " — the mic can't transcribe with it. Pick another engine or set it up.";
+    kind === "stt"
+      ? " — the mic can't transcribe with it. Pick another engine or fix it."
+      : avail.state === "missing"
+        ? " — until it is, this mate speaks with the browser voice."
+        : " — speaking fails until it works again (pick another engine, or fix it).";
   return (
     <Banner
       tone="warn"
@@ -339,7 +341,7 @@ function LanguageField({ value, onChange, mate, extra, hint }: { value: string; 
   );
 }
 
-function TtsDetails({ mate, tts, set }: { mate: Mate; tts: Tts; set: (p: Partial<Tts>) => void }) {
+function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: Partial<Tts>) => void; ready: boolean }) {
   const engine = tts.engine;
   const lang = (tts.language || mate.persona.language || "ko").toLowerCase();
   const sample = SAMPLE[lang.slice(0, 2)] || SAMPLE.en;
@@ -347,8 +349,8 @@ function TtsDetails({ mate, tts, set }: { mate: Mate; tts: Tts; set: (p: Partial
   const [lo, hi] = SPEED[engine] ?? [0.5, 2];
 
   const server = engine !== "browser";
-  const voices = useFetched<VoiceOption[]>(server && engine !== "http" ? `voices:${engine}` : null, () => listVoices(engine).then((r) => r.voices));
-  const models = useFetched<ModelList>(server ? `models:${engine}:tts` : null, () => listModels(engine, "tts"));
+  const voices = useFetched<VoiceOption[]>(ready && server && engine !== "http" ? `voices:${engine}` : null, () => listVoices(engine).then((r) => r.voices));
+  const models = useFetched<ModelList>(ready && server ? `models:${engine}:tts` : null, () => listModels(engine, "tts"));
 
   const previewKey = `tts:${engine}:${tts.voice}:${tts.profile}:${tts.model}:${tts.speed}:${tts.instruct}:${tts.language}`;
   const synth = async () => {
@@ -546,7 +548,16 @@ function VoicePicker({
       }
       as="div"
     >
-      <SearchSelect value={value} options={options} onChange={onChange} right={right} loading={voices.busy} noneLabel={noneLabel} testId="mate-tts-voice" />
+      <SearchSelect
+        value={value}
+        options={options}
+        onChange={onChange}
+        right={right}
+        loading={voices.busy}
+        noneLabel={required ? undefined : noneLabel}
+        placeholder={noneLabel}
+        testId="mate-tts-voice"
+      />
       <ErrorLine text={voices.err} />
       {missing && <p className="mt-1 text-[12px] text-warning">“{value}” isn't in the list any more — pick another voice.</p>}
       {required && !value && voices.data && <p className="mt-1 text-[12px] text-warning">Pick a voice — this engine needs one.</p>}
@@ -651,9 +662,9 @@ function OmniVoice({ mate, tts, set, voices }: { mate: Mate; tts: Tts; set: (p: 
   );
 }
 
-function SttDetails({ mate, stt, set }: { mate: Mate; stt: Stt; set: (p: Partial<Stt>) => void }) {
+function SttDetails({ mate, stt, set, ready }: { mate: Mate; stt: Stt; set: (p: Partial<Stt>) => void; ready: boolean }) {
   const engine = stt.engine;
-  const models = useFetched<ModelList>(engine === "openai" || engine === "whisper" ? `models:${engine}:stt` : null, () => listModels(engine, "stt"));
+  const models = useFetched<ModelList>(ready && (engine === "openai" || engine === "whisper") ? `models:${engine}:stt` : null, () => listModels(engine, "stt"));
   return (
     <div className="space-y-3 rounded-lg border border-border/70 bg-surface/40 p-3" data-testid={`mate-stt-details-${engine}`}>
       {(engine === "openai" || engine === "whisper") && (
