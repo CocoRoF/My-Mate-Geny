@@ -91,14 +91,16 @@ function TaskPill({ task, now }: { task: TaskInfo; now: number }) {
   if (isRunning(task)) {
     const since = task.started_at ? now - task.started_at * 1000 : 0;
     return (
-      <span className="pill bg-accent-soft text-accent" title={task.description || ""}>
-        <span className="w-2 h-2 rounded-full border-[1.5px] border-accent border-t-transparent animate-spin" />
-        {task.is_backgrounded ? "background" : "running"} {since > 0 ? fmtMs(since) : ""}
+      <span className="pill whitespace-nowrap bg-accent-soft text-accent" title={task.description || ""}>
+        <span className="w-2 h-2 shrink-0 rounded-full border-[1.5px] border-accent border-t-transparent animate-spin" />
+        {/* the word goes on narrow screens: the spinner already says it, the time matters */}
+        <span className="hidden sm:inline">{task.is_backgrounded ? "background" : "running"}</span>
+        {since > 0 ? fmtMs(since) : ""}
       </span>
     );
   }
   const tone = task.status === "completed" ? "bg-success/12 text-success" : "bg-surface-3 text-content-faint";
-  return <span className={`pill ${tone}`}>{task.is_backgrounded ? `background · ${task.status}` : task.status}</span>;
+  return <span className={`pill whitespace-nowrap ${tone}`}>{task.is_backgrounded ? `background · ${task.status}` : task.status}</span>;
 }
 
 function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; children: ToolActivity[] }) {
@@ -117,18 +119,18 @@ function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; chi
       ? String(inp.file_path || inp.path || inp.notebook_path || "")
       : "";
   return (
-    <div className={`rounded-lg ${open ? "bg-surface-2/60" : ""}`}>
+    <div className={`min-w-0 rounded-lg ${open ? "bg-surface-2/60" : ""}`}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-surface-2/70 transition"
+        className="flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-surface-2/70 transition"
       >
         <span className={`grid place-items-center w-5 h-5 shrink-0 rounded-md ${m.tone}`}>
           <Icon name={m.icon} size={11} />
         </span>
-        <span className={`shrink-0 max-w-[60%] truncate text-[12.5px] ${m.descriptive ? "text-content/90" : "font-medium text-content/90"}`}>
+        <span className={`min-w-0 max-w-[60%] shrink truncate text-[12.5px] ${m.descriptive ? "text-content/90" : "font-medium text-content/90"}`}>
           {m.label}
         </span>
-        <span className="min-w-0 truncate font-mono text-[11.5px] text-content-faint">
+        <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-content-faint">
           {filePath && session ? (
             <span
               role="link"
@@ -148,7 +150,7 @@ function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; chi
           )}
           {kidsRunning.length ? ` · ${toolMeta(kidsRunning[0].name, kidsRunning[0].input, session?.workspace_path).running}` : ""}
         </span>
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2">
+        <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-1 sm:pl-2">
           {tool.isError && (wasStopped(tool) ? (
             <span className="pill bg-surface-3 text-content-dim">stopped</span>
           ) : (
@@ -156,7 +158,7 @@ function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; chi
           ))}
           {task && (background || isRunning(task)) && <TaskPill task={task} now={now} />}
           {running && !(task && isRunning(task)) ? (
-            <span className="flex items-center gap-1 text-[11px] text-accent tabular-nums">
+            <span className="flex items-center gap-1 whitespace-nowrap text-[11px] text-accent tabular-nums">
               <span className="w-2.5 h-2.5 rounded-full border-[1.5px] border-accent border-t-transparent animate-spin" />
               {fmtMs(dur)}
             </span>
@@ -223,10 +225,10 @@ export default function ToolGroup({
   const hidden = tools.length - visible.length;
 
   return (
-    <div className="rounded-xl border border-border/80 bg-surface/50">
+    <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-border/80 bg-surface/50">
       <button
         onClick={() => setOpen(!expanded)}
-        className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-2/50 rounded-xl transition"
+        className="flex w-full min-w-0 items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-2/50 rounded-xl transition"
       >
         {running ? (
           <span className="w-3.5 h-3.5 shrink-0 rounded-full border-2 border-accent border-t-transparent animate-spin" />
@@ -248,8 +250,8 @@ export default function ToolGroup({
           )}
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">
-          {bgRunning > 0 && <span className="pill bg-accent-soft text-accent">{bgRunning} in background</span>}
-          {failed > 0 && <span className="pill bg-warning/15 text-warning">{failed} failed</span>}
+          {bgRunning > 0 && <span className="pill whitespace-nowrap bg-accent-soft text-accent">{bgRunning}<span className="hidden sm:inline">&nbsp;in background</span><span className="sm:hidden">&nbsp;bg</span></span>}
+          {failed > 0 && <span className="pill whitespace-nowrap bg-warning/15 text-warning">{failed} failed</span>}
           <span className="font-mono text-[10.5px] text-content-faint tabular-nums">{fmtMs(end - start)}</span>
           <Icon name={expanded ? "chevron-down" : "chevron"} size={13} className="text-content-faint" />
         </span>
