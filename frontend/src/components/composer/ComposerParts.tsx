@@ -4,13 +4,15 @@ import { useTouchFirst } from "../../lib/device";
 import type { QueuedMessage } from "../../stores/draftStore";
 import Icon from "../ui/Icon";
 
-/** The + menu: Photos / Files. */
+export type PickKind = "photo" | "camera" | "file";
+
+/** The + menu: Photos / Camera (touch screens) / Files. */
 export function AttachMenu({
   onPick,
   onClose,
   className = "bottom-[calc(100%+8px)] left-0",
 }: {
-  onPick: (kind: "photo" | "file") => void;
+  onPick: (kind: PickKind) => void;
   onClose: () => void;
   className?: string;
 }) {
@@ -41,6 +43,17 @@ export function AttachMenu({
           <span className="block text-[11px] text-content-faint">PNG, JPG, GIF, WebP…</span>
         </span>
       </button>
+      {touch && (
+        <button onClick={() => onPick("camera")} className="flex w-full items-center gap-3 px-3 py-2.5 text-[13px] text-content hover:bg-surface-3" data-testid="attach-camera">
+          <span className="grid place-items-center w-7 h-7 rounded-lg bg-cyan/12 text-cyan">
+            <Icon name="camera" size={15} />
+          </span>
+          <span className="text-left">
+            <span className="block font-medium">Camera</span>
+            <span className="block text-[11px] text-content-faint">Take a photo now</span>
+          </span>
+        </button>
+      )}
       <button onClick={() => onPick("file")} className="flex w-full items-center gap-3 px-3 py-2.5 text-[13px] text-content hover:bg-surface-3" data-testid="attach-files">
         <span className="grid place-items-center w-7 h-7 rounded-lg bg-accent/12 text-accent">
           <Icon name="paperclip" size={15} />
@@ -81,13 +94,17 @@ export function QueuedList({ queue, onRemove, className = "mb-2" }: { queue: Que
   );
 }
 
-/** The hidden pickers behind the + menu. */
+/** The hidden pickers behind the + menu. On Android (app WebView and Chrome) `accept="image/*"` opens the photo
+ * picker / gallery, `capture` the camera app (the app declares CAMERA; Capacitor asks for it on first use), and
+ * no `accept` the system file chooser. */
 export function FileInputs({
   photoRef,
+  cameraRef,
   fileRef,
   onFiles,
 }: {
   photoRef: RefObject<HTMLInputElement>;
+  cameraRef?: RefObject<HTMLInputElement>;
   fileRef: RefObject<HTMLInputElement>;
   onFiles: (files: File[]) => void;
 }) {
@@ -98,6 +115,7 @@ export function FileInputs({
   return (
     <>
       <input ref={photoRef} type="file" accept="image/*" multiple hidden onChange={take} data-testid="composer-photo-input" />
+      {cameraRef && <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={take} data-testid="composer-camera-input" />}
       <input ref={fileRef} type="file" multiple hidden onChange={take} data-testid="composer-file-input" />
     </>
   );

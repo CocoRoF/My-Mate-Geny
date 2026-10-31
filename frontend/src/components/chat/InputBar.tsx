@@ -186,7 +186,7 @@ export default function InputBar({
               )}
             </div>
           </div>
-          <FileInputs photoRef={c.photoRef} fileRef={c.fileRef} onFiles={c.addFiles} />
+          <FileInputs photoRef={c.photoRef} cameraRef={c.cameraRef} fileRef={c.fileRef} onFiles={c.addFiles} />
         </div>
         <div className="flex items-center justify-between gap-3 px-1.5 pt-1.5 text-[10px] text-content-faint">
           <span className="truncate">

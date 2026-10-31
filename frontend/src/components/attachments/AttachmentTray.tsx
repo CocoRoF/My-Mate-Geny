@@ -34,7 +34,10 @@ function RemoveButton({ onClick }: { onClick: () => void }) {
 function ImageTile({ it, onOpen }: { it: PendingFile; onOpen: () => void }) {
   const remove = useComposerStore((s) => s.remove);
   const retry = useComposerStore((s) => s.retry);
-  const src = it.previewUrl || it.attachment?.preview_url;
+  // The local preview first (instant); if it can't be read (an Android picker's content URI can refuse a second
+  // read), the server's thumbnail once the upload is in; else an icon.
+  const [failed, setFailed] = useState<string[]>([]);
+  const src = [it.previewUrl, it.attachment?.preview_url].find((u) => u && !failed.includes(u));
   return (
     <div className="group relative shrink-0" title={it.error ? `${it.name} — ${it.error}` : it.name}>
       <button
@@ -43,7 +46,13 @@ function ImageTile({ it, onOpen }: { it: PendingFile; onOpen: () => void }) {
           it.status === "error" ? "border-danger/60" : "border-border"
         }`}
       >
-        {src && <img src={src} alt={it.name} className="h-full w-full object-cover" />}
+        {src ? (
+          <img src={src} alt="" onError={() => setFailed((f) => [...f, src])} className="h-full w-full object-cover" />
+        ) : (
+          <span className="grid h-full w-full place-items-center text-content-faint">
+            <Icon name="image" size={20} />
+          </span>
+        )}
         {it.status === "uploading" && (
           <span className="absolute inset-0 grid place-items-center bg-black/45">
             <Ring value={it.progress} />

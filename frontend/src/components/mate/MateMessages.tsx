@@ -142,7 +142,8 @@ function UserBubble({ text, attachments, pending }: { text: string; attachments?
   return (
     <div className={`flex flex-col items-end gap-1.5 ${pending ? "opacity-70" : ""}`} data-testid="mate-user-message">
       {!!attachments?.length && (
-        <div className="max-w-[85%]" data-testid="mate-user-attachments">
+        // (the full width: three thumbnails in a row don't fit 85 % of a phone)
+        <div className="max-w-full" data-testid="mate-user-attachments">
           <MessageAttachments attachments={attachments} />
         </div>
       )}
@@ -284,10 +285,12 @@ export default function MateMessages({
           })}
         </div>
       </div>
+      {/* only while scrolled up (at the bottom the list follows by itself), just above the composer */}
       {showJump && (
         <button
           onClick={jump}
-          className="absolute bottom-2 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 rounded-full border border-border bg-surface-2 px-3 py-1 text-[11.5px] text-content-dim shadow-float hover:text-content"
+          className="absolute bottom-2 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 rounded-full border border-border bg-surface-2/95 px-3 py-1 touch:h-9 touch:px-4 text-[11.5px] text-content-dim shadow-float hover:text-content animate-fade-in"
+          data-testid="mate-jump-latest"
         >
           <Icon name="arrow-up" size={12} className="rotate-180" /> Latest
         </button>
