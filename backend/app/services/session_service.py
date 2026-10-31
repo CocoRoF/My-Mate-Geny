@@ -105,6 +105,12 @@ class SessionService:
         self.active_runs: dict[str, dict[str, Any]] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._subscribers: dict[str, set[asyncio.Queue]] = {}
+        # Session-list change feed (/ws/sessions): every device's sidebar
+        # refetches only when this version moves. Seeded from the clock so a
+        # restarted server never reuses a version a client already saw.
+        self._list_version = int(time.time() * 1000)
+        self._list_subs: set[asyncio.Queue] = set()
+        self._list_loop: asyncio.AbstractEventLoop | None = None
         self._inboxes: dict[str, TurnInbox] = {}  # running turns that accept steering
         self.persistent_engines = True  # Claude: one long-lived CLI process per chat
         # Latest plan usage an engine reported (rate_limit_event), per account
@@ -162,6 +168,7 @@ class SessionService:
             (sid, title, provider, model, effort, connection_id, workspace_path,
              mode if mode in MODES else "agent", json.dumps(dirs), now, now),
         )
+        self.list_changed("created", sid)
         return self.get(sid)
 
     @staticmethod
@@ -247,6 +254,7 @@ class SessionService:
             params.append(now_iso())
             params.append(sid)
             self._db.execute(f"UPDATE sessions SET {', '.join(sets)} WHERE id = ?", params)
+            self.list_changed("updated", sid)
         return self.get(sid)
 
     def _row(self, row: Any) -> dict[str, Any]:
@@ -288,6 +296,7 @@ class SessionService:
         self._db.execute("DELETE FROM sessions WHERE id = ?", (sid,))
         if self._attachments is not None:
             self._attachments.purge_session(sid)
+        self.list_changed("deleted", sid)
 
     def messages(self, sid: str) -> list[dict[str, Any]]:
         rows = self._db.query(
@@ -451,6 +460,48 @@ class SessionService:
                 q.put_nowait(msg)
             except asyncio.QueueFull:  # a stuck client must not stall the agent
                 self.unsubscribe(sid, q)
+        if msg.get("type") == "run.state":
+            self.list_changed("running" if msg["data"].get("running") else "idle", sid)
+
+    # ---- session-list change feed (/ws/sessions) ----
+
+    @property
+    def list_version(self) -> int:
+        return self._list_version
+
+    def subscribe_list(self) -> asyncio.Queue:
+        self._list_loop = asyncio.get_running_loop()
+        q: asyncio.Queue = asyncio.Queue(maxsize=256)
+        self._list_subs.add(q)
+        return q
+
+    def unsubscribe_list(self, q: asyncio.Queue) -> None:
+        self._list_subs.discard(q)
+
+    def list_changed(self, reason: str, sid: str | None = None) -> None:
+        """The session list changed (created / renamed / deleted / a turn
+        started or ended / account moved): tell every open sidebar. Only a
+        version is sent — clients coalesce bursts and refetch once."""
+        self._list_version += 1
+        msg = {"type": "sessions.changed", "data": {"version": self._list_version, "reason": reason, "sid": sid}}
+        loop = self._list_loop
+        if loop is None or loop.is_closed():
+            return
+        try:
+            here = asyncio.get_running_loop()
+        except RuntimeError:
+            here = None
+        if here is loop:
+            self._fan_out_list(msg)
+        else:  # called from a worker thread
+            loop.call_soon_threadsafe(self._fan_out_list, msg)
+
+    def _fan_out_list(self, msg: dict[str, Any]) -> None:
+        for q in list(self._list_subs):
+            try:
+                q.put_nowait(msg)
+            except asyncio.QueueFull:  # a stuck socket drops out; it resyncs on reconnect
+                self._list_subs.discard(q)
 
     def is_running(self, sid: str) -> bool:
         return sid in self._tasks
@@ -1032,6 +1083,7 @@ class SessionService:
             return
         accounts[provider] = {"id": lease.account_id, "label": lease.label, "at": now_iso()}
         self._db.execute("UPDATE sessions SET accounts = ? WHERE id = ?", (json.dumps(accounts), sid))
+        self.list_changed("account", sid)
 
     def _switch_notice(self, lease: Any, *, failover: dict[str, Any] | None = None) -> ProviderEvent | None:
         """The notice for a chat moving to another account (None if it didn't)."""

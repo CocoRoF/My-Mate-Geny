@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { toLogin, wsUrl } from "../api/client";
 import { getHistory } from "../api/sessions";
+import { onResync } from "../lib/sync";
 import { useChatStore } from "../stores/chatStore";
 import { useSessionStore } from "../stores/sessionStore";
 import { useTaskStore } from "../stores/taskStore";
@@ -41,6 +42,9 @@ function notifyDone(title: string, body: string) {
  * with the last event id seen (so nothing is missed or duplicated). Turns run
  * server-side; if the socket drops (network, sleep, deploy) we reconnect with
  * backoff, reload history and re-attach — the agent keeps working meanwhile.
+ * Back in the foreground, a re-sent attach both catches up and proves the
+ * socket alive (a phone may hand back a dead one); the sidebar's refresh
+ * forces a full reload.
  */
 export function useChatSocket(sessionId: string | null) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -51,21 +55,24 @@ export function useChatSocket(sessionId: string | null) {
     let alive = true;
     let retry = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let probe: ReturnType<typeof setTimeout> | undefined;
+    let gen = 0; // a newer connect() supersedes one still loading history
     const { reset, loadHistory, applyEvent, setConnection } = store.getState();
     reset();
 
     const connect = async () => {
+      const mine = ++gen;
       setConnection(retry ? "reconnecting" : "connecting");
       try {
         const h = await getHistory(sessionId);
-        if (!alive) return;
+        if (!alive || mine !== gen) return;
         loadHistory(h);
         useUsageStore.getState().setAccount(sessionId, h.account);
         useUsageStore.getState().setLive(sessionId, h.live_usage);
         useSessionStore.getState().patchLocal(sessionId, { ...h.session });
         useTaskStore.getState().loadSession(sessionId).catch(() => {});
       } catch {
-        if (alive) schedule();
+        if (alive && mine === gen) schedule();
         return;
       }
       const ws = new WebSocket(wsUrl(`/ws/chat/${sessionId}`));
@@ -76,6 +83,7 @@ export function useChatSocket(sessionId: string | null) {
         ws.send(JSON.stringify({ type: "attach", after: store.getState().lastEid }));
       };
       ws.onmessage = (e) => {
+        clearTimeout(probe);
         let ev: ProviderEvent;
         try {
           ev = JSON.parse(e.data);
@@ -103,7 +111,7 @@ export function useChatSocket(sessionId: string | null) {
         if (ev.type === "run.state") {
           useSessionStore.getState().patchLocal(sessionId, { running: Boolean(ev.data.running) });
           if (!ev.data.running) {
-            useSessionStore.getState().load().catch(() => {}); // titles, order
+            // (titles / order: the session feed refetches the list)
             const turns = store.getState().turns;
             const last = turns[turns.length - 1];
             const title = useSessionStore.getState().sessions.find((x) => x.id === sessionId)?.title || "hr·harnessor";
@@ -120,7 +128,9 @@ export function useChatSocket(sessionId: string | null) {
         }
       };
       ws.onclose = (e) => {
-        if (wsRef.current === ws) wsRef.current = null;
+        if (wsRef.current !== ws) return; // replaced by a newer connection
+        wsRef.current = null;
+        clearTimeout(probe);
         if (e.code === 4401) return toLogin(); // session expired / revoked
         if (!alive) return; // unmounted
         schedule();
@@ -133,23 +143,48 @@ export function useChatSocket(sessionId: string | null) {
       timer = setTimeout(() => alive && connect(), delay);
     };
 
-    // Back from sleep / tab hidden for long: reconnect immediately.
+    // Drop the current socket (if any) and reload + re-attach right away.
+    const reconnectNow = () => {
+      if (!alive) return;
+      clearTimeout(timer);
+      clearTimeout(probe);
+      const old = wsRef.current;
+      wsRef.current = null;
+      old?.close();
+      retry = 0;
+      connect();
+    };
+
+    // Back from sleep / background: re-attach on the open socket — it replays
+    // what was missed and answers at once; silence means the socket is dead.
     const onVisible = () => {
-      if (document.visibilityState === "visible" && alive && !wsRef.current) {
-        clearTimeout(timer);
-        retry = 0;
-        connect();
+      if (document.visibilityState !== "visible" || !alive) return;
+      const ws = wsRef.current;
+      if (!ws) return reconnectNow();
+      if (ws.readyState !== WebSocket.OPEN) return; // connecting
+      try {
+        ws.send(JSON.stringify({ type: "attach", after: store.getState().lastEid }));
+      } catch {
+        return reconnectNow();
       }
+      clearTimeout(probe);
+      probe = setTimeout(reconnectNow, 5000);
     };
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onVisible);
+    const offResync = onResync(reconnectNow);
 
     connect();
     return () => {
       alive = false;
       clearTimeout(timer);
+      clearTimeout(probe);
       document.removeEventListener("visibilitychange", onVisible);
-      wsRef.current?.close();
+      window.removeEventListener("online", onVisible);
+      offResync();
+      const old = wsRef.current;
       wsRef.current = null;
+      old?.close();
     };
   }, [sessionId, store]);
 

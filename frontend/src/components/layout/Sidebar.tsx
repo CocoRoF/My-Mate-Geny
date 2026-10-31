@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUIStore, type View } from "../../stores/uiStore";
 import { useProviderStore } from "../../stores/providerStore";
 import { useChatStore } from "../../stores/chatStore";
 import { apiFetch } from "../../api/client";
+import { requestResync } from "../../lib/sync";
 import { APP_VERSION } from "../../version";
 import Icon, { type IconName } from "../ui/Icon";
 
@@ -54,14 +55,23 @@ export default function Sidebar() {
 
   const connectedCount = providers.filter((p) => p.connected).length;
 
-  // Turns run in the background: keep the "working" dots fresh while any runs.
-  const anyRunning = sessions.some((s) => s.running);
+  // The list follows server-pushed changes (useSessionSync); this is the
+  // manual "make sure": reload the list + providers and resync the open chat.
   const loadSessions = useSessionStore((s) => s.load);
-  useEffect(() => {
-    if (!anyRunning) return;
-    const t = setInterval(() => loadSessions().catch(() => {}), 5000);
-    return () => clearInterval(t);
-  }, [anyRunning, loadSessions]);
+  const loadProviders = useProviderStore((s) => s.load);
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    requestResync();
+    try {
+      await Promise.all([loadSessions(), loadProviders()]);
+    } catch {
+      /* the next push / refresh retries */
+    } finally {
+      setTimeout(() => setRefreshing(false), 400); // let the spin read as feedback
+    }
+  };
 
   return (
     <aside className="w-full md:w-[268px] h-full shrink-0 flex flex-col border-r border-border bg-surface md:bg-surface/80 backdrop-blur-xl pt-safe pb-safe">
@@ -76,6 +86,15 @@ export default function Sidebar() {
           </div>
           <div className="text-[10px] text-content-faint">agent console</div>
         </div>
+        <button
+          onClick={refresh}
+          disabled={refreshing}
+          title="Refresh — reload chats and resync this one"
+          aria-label="Refresh"
+          className="ml-auto grid place-items-center w-8 h-8 touch:w-10 touch:h-10 rounded-lg text-content-faint transition hover:text-content hover:bg-surface-2 disabled:opacity-70"
+        >
+          <Icon name="refresh" size={15} spin={refreshing} />
+        </button>
       </div>
 
       {/* New chat */}

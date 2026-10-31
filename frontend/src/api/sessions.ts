@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiFetch, apiResponse } from "./client";
 import type { AccountRef, ChatMessage, PlanUsage, ProviderEvent, Session, TaskInfo } from "../types";
 
 export type SessionPatch = {
@@ -13,6 +13,14 @@ export type SessionPatch = {
 };
 
 export const listSessions = () => apiFetch<Session[]>("/api/sessions");
+
+/** The list plus its server version (see /ws/sessions): a feed message with a
+ *  newer version means this list is stale. */
+export async function listSessionsVersioned(): Promise<{ sessions: Session[]; version: number | null }> {
+  const res = await apiResponse("/api/sessions");
+  const v = Number(res.headers.get("X-Sessions-Version"));
+  return { sessions: (await res.json()) as Session[], version: Number.isFinite(v) && v > 0 ? v : null };
+}
 
 export interface SessionInput {
   provider: string;

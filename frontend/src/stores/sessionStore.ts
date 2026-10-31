@@ -3,7 +3,7 @@ import type { Session } from "../types";
 import {
   createSession,
   deleteSession,
-  listSessions,
+  listSessionsVersioned,
   updateSession,
   type SessionInput,
   type SessionPatch,
@@ -12,6 +12,10 @@ import {
 interface SessionState {
   sessions: Session[];
   activeId: string | null;
+  /** Server version of `sessions` (X-Sessions-Version); null before the first load. */
+  version: number | null;
+  /** Fetch the list. Calls made while one is in flight share one follow-up
+   *  fetch, so a burst of changes costs at most two requests. */
   load: () => Promise<void>;
   create: (body: SessionInput) => Promise<Session>;
   update: (id: string, patch: SessionPatch) => Promise<void>;
@@ -31,28 +35,29 @@ const remember = (id: string | null) => {
 };
 
 let opened = false; // first load picks a chat once; later loads keep the user's choice
+let inflight: Promise<void> | null = null;
+let again = false;
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
   activeId: null,
-  load: async () => {
-    const sessions = await listSessions();
-    set({ sessions });
-    // The app opens on a chat, not on "New chat": the last one opened here,
-    // else the most recent (the list is newest first). Only an empty history
-    // (or the New chat button) shows the new-chat screen.
-    if (!opened) {
-      opened = true;
-      if (!get().activeId && sessions.length) {
-        let last: string | null = null;
-        try {
-          last = localStorage.getItem(LAST_KEY);
-        } catch {
-          /* ignore */
-        }
-        set({ activeId: sessions.find((x) => x.id === last)?.id ?? sessions[0].id });
-      }
+  version: null,
+  load: () => {
+    if (inflight) {
+      again = true; // something changed mid-fetch: one more fetch after this one
+      return inflight;
     }
+    inflight = (async () => {
+      try {
+        do {
+          again = false;
+          await fetchList(set, get);
+        } while (again);
+      } finally {
+        inflight = null;
+      }
+    })();
+    return inflight;
   },
   create: async (body) => {
     const s = await createSession(body);
@@ -79,3 +84,28 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ activeId: id });
   },
 }));
+
+type StoreSet = (partial: Partial<SessionState>) => void;
+
+async function fetchList(set: StoreSet, get: () => SessionState) {
+  const { sessions, version } = await listSessionsVersioned();
+  set({ sessions, version });
+  // The app opens on a chat, not on "New chat": the last one opened here,
+  // else the most recent (the list is newest first). Only an empty history
+  // (or the New chat button) shows the new-chat screen.
+  if (!opened) {
+    opened = true;
+    if (!get().activeId && sessions.length) {
+      let last: string | null = null;
+      try {
+        last = localStorage.getItem(LAST_KEY);
+      } catch {
+        /* ignore */
+      }
+      set({ activeId: sessions.find((x) => x.id === last)?.id ?? sessions[0].id });
+    }
+  }
+  // The open chat was deleted on another device: move to the most recent.
+  const { activeId } = get();
+  if (opened && activeId && !sessions.some((x) => x.id === activeId)) set({ activeId: sessions[0]?.id ?? null });
+}

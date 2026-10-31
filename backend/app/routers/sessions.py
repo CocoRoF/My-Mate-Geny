@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
 from app.routers._deps import session_service
@@ -11,7 +11,11 @@ router = APIRouter(prefix="/api/sessions")
 
 
 @router.get("")
-async def list_sessions(svc: SessionService = Depends(session_service)) -> list[dict]:
+async def list_sessions(response: Response, svc: SessionService = Depends(session_service)) -> list[dict]:
+    # Version read BEFORE the query: a change racing the read carries a newer
+    # version, so the client's feed (/ws/sessions) fetches again — never misses.
+    response.headers["X-Sessions-Version"] = str(svc.list_version)
+    response.headers["Cache-Control"] = "no-store"
     return svc.list_all()
 
 

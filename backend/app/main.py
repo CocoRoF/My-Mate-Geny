@@ -50,6 +50,7 @@ from app.services.provider_service import ProviderService
 from app.services.session_service import SessionService
 from app.services.workspace_service import WorkspaceService
 from app.vault import SecretVault
+from app.ws import sessions as sessions_ws
 from app.ws import stream
 
 
@@ -170,6 +171,7 @@ for r in (
     app.include_router(r)
 
 app.include_router(stream.router)
+app.include_router(sessions_ws.router)
 
 # Serve the built frontend (single origin => the auth gate covers the UI too).
 _static = settings.static_path

@@ -1,6 +1,11 @@
 const BASE = "";
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await apiResponse(path, init)).json() as Promise<T>;
+}
+
+/** Like {@link apiFetch} but hands back the Response (for its headers). */
+export async function apiResponse(path: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
     ...init,
@@ -14,7 +19,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || res.statusText);
   }
-  return res.json() as Promise<T>;
+  return res;
 }
 
 export function wsUrl(path: string): string {

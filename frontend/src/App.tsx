@@ -4,6 +4,7 @@ import ChatView from "./components/chat/ChatView";
 import MobileTopBar from "./components/layout/MobileTopBar";
 import UpdateBanner from "./components/layout/UpdateBanner";
 import { useBackHandler } from "./lib/back";
+import { useSessionSync } from "./hooks/useSessionSync";
 import { useUIStore } from "./stores/uiStore";
 import { useProviderStore } from "./stores/providerStore";
 import { useConnectionStore } from "./stores/connectionStore";
@@ -30,6 +31,7 @@ export default function App() {
   const loadConnections = useConnectionStore((s) => s.load);
   const loadSessions = useSessionStore((s) => s.load);
   const loadConfig = useConfigStore((s) => s.load);
+  useSessionSync(); // every device's session list follows server-pushed changes
 
   // Deep link: /?view=downloads (desktop menu, update banners).
   useEffect(() => {
