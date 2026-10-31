@@ -10,6 +10,7 @@ import Icon from "../ui/Icon";
 import ChatControls from "./ChatControls";
 import ComposerMenu, { triggerAt, type MenuItem } from "./ComposerMenu";
 import { useWorkbench } from "../../stores/workbenchStore";
+import { usePhone, useTouchFirst } from "../../lib/device";
 
 /** Files on a paste event. Office apps put an image AND tab/newline text on the
  * clipboard for copied cells — that's a text paste, not an attachment. */
@@ -29,6 +30,7 @@ export function filesFromClipboard(dt: DataTransfer | null): File[] {
 
 function AttachMenu({ onPick, onClose }: { onPick: (kind: "photo" | "file") => void; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const touch = useTouchFirst();
   useEffect(() => {
     const h = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && onClose();
     const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -62,9 +64,11 @@ function AttachMenu({ onPick, onClose }: { onPick: (kind: "photo" | "file") => v
           <span className="block text-[11px] text-content-faint">PDF, code, docs, archives…</span>
         </span>
       </button>
-      <div className="border-t border-border/70 px-3 py-2 text-[11px] text-content-faint">
-        You can also paste (Ctrl/⌘+V) or drag & drop.
-      </div>
+      {!touch && (
+        <div className="border-t border-border/70 px-3 py-2 text-[11px] text-content-faint">
+          You can also paste (Ctrl/⌘+V) or drag & drop.
+        </div>
+      )}
     </div>
   );
 }
@@ -97,6 +101,10 @@ export default function InputBar({
   const taRef = useRef<HTMLTextAreaElement>(null);
   const photoRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Touch keyboards: Enter adds a line, the send button sends (Ctrl/⌘+Enter too).
+  const touch = useTouchFirst();
+  // Phones: the mode/engine/model/think chips fold into one button in the composer.
+  const phone = usePhone();
 
   const isStreaming = useChatStore((s) => s.isStreaming);
   const connection = useChatStore((s) => s.connection);
@@ -148,7 +156,8 @@ export default function InputBar({
     const ta = taRef.current;
     if (!ta) return;
     ta.style.height = "auto";
-    ta.style.height = Math.min(ta.scrollHeight, 240) + "px";
+    // a short (keyboard-up) phone screen keeps room for the conversation
+    ta.style.height = Math.min(ta.scrollHeight, 240, Math.round(window.innerHeight * 0.4)) + "px";
   };
 
   const setText = (text: string, pos?: number) => {
@@ -261,6 +270,9 @@ export default function InputBar({
   }, [isStreaming, queue, connection, onSend]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // IME (Korean, Japanese…): the Enter that commits the composition is not a send.
+    const composing = e.nativeEvent.isComposing || e.keyCode === 229;
+    const enter = e.key === "Enter" && !e.shiftKey && !composing;
     if (menuOpen && menuItems.length) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -270,7 +282,7 @@ export default function InputBar({
         e.preventDefault();
         return setActiveIndex((activeIndex - 1 + menuItems.length) % menuItems.length);
       }
-      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing)) {
+      if (e.key === "Tab" || (enter && !touch)) {
         e.preventDefault();
         return pick(menuItems[Math.min(activeIndex, menuItems.length - 1)]);
       }
@@ -283,7 +295,9 @@ export default function InputBar({
       e.preventDefault();
       return onStop();
     }
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    // Desktop: Enter sends, Shift+Enter is a newline. Touch: Enter is a newline.
+    // Ctrl/⌘+Enter sends on both (a tablet with a hardware keyboard).
+    if (enter && (!touch || e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       submit();
     }
@@ -295,11 +309,13 @@ export default function InputBar({
   };
 
   return (
-    <div className="px-3 sm:px-5 pb-3 sm:pb-5 pb-safe">
+    <div className="px-3 sm:px-5 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-5">
       <div className="mx-auto max-w-3xl">
-        <div className="pb-2">
-          <ChatControls session={session} />
-        </div>
+        {!phone && (
+          <div className="pb-2">
+            <ChatControls session={session} />
+          </div>
+        )}
 
         {queue.length > 0 && (
           <div className="mb-2 space-y-1">
@@ -313,7 +329,7 @@ export default function InputBar({
                 </span>
                 <button
                   onClick={() => setQueue((all) => all.filter((x) => x.id !== q.id))}
-                  className="ml-auto shrink-0 text-content-faint hover:text-danger"
+                  className="ml-auto shrink-0 text-content-faint hover:text-danger touch:-m-2 touch:p-2"
                   title="Remove from queue"
                 >
                   <Icon name="x" size={13} />
@@ -356,9 +372,12 @@ export default function InputBar({
               }
             }}
             rows={1}
+            enterKeyHint={touch ? "enter" : "send"}
             placeholder={
               isStreaming
-                ? "Add instructions while it works — Enter adds them to this turn…"
+                ? touch
+                  ? "Add instructions while it works…"
+                  : "Add instructions while it works — Enter adds them to this turn…"
                 : items.length
                   ? "Add a message (optional)…"
                   : window.innerWidth < 640
@@ -380,20 +399,22 @@ export default function InputBar({
               </button>
               {menu && <AttachMenu onPick={pickFile} onClose={() => setMenu(false)} />}
             </div>
+            {/* while a turn runs, Queue / Add now need the room */}
+            {phone && !(isStreaming && hasContent) && <ChatControls session={session} compact />}
             {items.length > 0 && (
-              <span className="text-[11px] text-content-faint">
+              <span className="shrink-0 text-[11px] text-content-faint">
                 {items.length} attached
                 {uploading && " · uploading…"}
                 {failed > 0 && <span className="text-danger"> · {failed} failed</span>}
               </span>
             )}
-            <div className="ml-auto flex items-center gap-1.5">
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
               {isStreaming && hasContent && (
                 <>
                   <button
                     onClick={() => submit("queue")}
                     disabled={uploading}
-                    className="h-9 rounded-xl border border-border px-3 text-[12px] text-content-dim hover:text-content hover:bg-surface-3 transition disabled:opacity-40"
+                    className="h-10 sm:h-9 rounded-xl border border-border px-3 text-[12px] text-content-dim hover:text-content hover:bg-surface-3 transition disabled:opacity-40"
                     title="Send after the current turn finishes"
                   >
                     Queue
@@ -401,13 +422,13 @@ export default function InputBar({
                   <button
                     onClick={() => submit()}
                     disabled={uploading}
-                    className="h-9 inline-flex items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium text-white transition disabled:opacity-40"
+                    className="h-10 sm:h-9 inline-flex items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium text-white transition disabled:opacity-40"
                     style={{ background: "linear-gradient(135deg,#6e8bff,#5b7cff)" }}
-                    title={
+                    title={`Add to the running turn now${touch ? "" : " (Enter)"} — ${
                       session.provider === "codex"
-                        ? "Add to the running turn now (Enter) — Codex pauses its current step and continues with this"
-                        : "Add to the running turn now (Enter) — the agent picks it up at its next step"
-                    }
+                        ? "Codex pauses its current step and continues with this"
+                        : "the agent picks it up at its next step"
+                    }`}
                   >
                     <Icon name="arrow-up" size={14} /> Add now
                   </button>
@@ -427,7 +448,7 @@ export default function InputBar({
                   disabled={!hasContent || uploading}
                   className="grid place-items-center w-10 h-10 sm:w-9 sm:h-9 rounded-xl text-white transition disabled:opacity-30"
                   style={{ background: "linear-gradient(135deg,#6e8bff,#5b7cff)" }}
-                  title={uploading ? "Waiting for uploads…" : "Send (Enter)"}
+                  title={uploading ? "Waiting for uploads…" : touch ? "Send" : "Send (Enter)"}
                 >
                   {uploading ? <Icon name="spinner" size={16} spin /> : <Icon name="arrow-up" size={17} />}
                 </button>
@@ -462,9 +483,13 @@ export default function InputBar({
               <span className="text-warning">{notice}</span>
             ) : isStreaming ? (
               <span className="inline-flex items-center gap-1.5 text-accent">
-                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" /> working… · Enter adds to this
-                turn · Queue sends after · Esc stops · keeps running if you close this tab
+                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" />
+                {touch
+                  ? "working… · Add now joins this turn · Queue sends after · keeps running if you close the app"
+                  : "working… · Enter adds to this turn · Queue sends after · Esc stops · keeps running if you close this tab"}
               </span>
+            ) : touch ? (
+              <span className="hidden sm:inline">Return adds a line · tap ↑ to send · / commands · @ files</span>
             ) : (
               <span className="hidden sm:inline">Enter to send · Shift+Enter newline · / commands · @ files · paste or drop files</span>
             )}

@@ -92,7 +92,7 @@ export default function FileTree({ connectionId, initialPath, onPick, selected }
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") go(draft);
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) go(draft);
               if (e.key === "Escape") setEditing(false);
             }}
             onBlur={() => setEditing(false)}

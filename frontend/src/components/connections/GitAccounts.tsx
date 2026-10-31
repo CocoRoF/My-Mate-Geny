@@ -62,7 +62,7 @@ export default function GitAccounts() {
             placeholder={`${provider === "github" ? "GitHub" : "GitLab"} personal access token`}
             value={token}
             onChange={(e) => setToken(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
+            onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && submit()}
             className="field flex-1 font-mono text-xs"
           />
           <button onClick={submit} disabled={busy} className="btn-primary">

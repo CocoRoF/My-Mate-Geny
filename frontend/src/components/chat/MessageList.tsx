@@ -67,7 +67,7 @@ export default function MessageList() {
       {showJump && (
         <button
           onClick={jump}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[12px] text-content-dim shadow-float hover:text-content transition animate-fade-in"
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1.5 touch:h-10 touch:px-4 text-[12px] text-content-dim shadow-float hover:text-content transition animate-fade-in"
         >
           <Icon name="arrow-up" size={13} className="rotate-180" /> Latest
         </button>

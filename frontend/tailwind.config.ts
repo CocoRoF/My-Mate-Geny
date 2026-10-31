@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import plugin from "tailwindcss/plugin";
 
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
@@ -58,5 +59,12 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    plugin(({ addVariant }) => {
+      // `touch:` finger-sized targets on phones/tablets; `can-hover:` hover-only
+      // affordances that touch screens must still show.
+      addVariant("touch", "@media (hover: none) and (pointer: coarse)");
+      addVariant("can-hover", "@media (hover: hover)");
+    }),
+  ],
 } satisfies Config;

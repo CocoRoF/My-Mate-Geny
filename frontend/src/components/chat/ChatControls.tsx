@@ -129,11 +129,84 @@ function Menu({
   );
 }
 
-export default function ChatControls({ session }: { session: Session }) {
+type Option = { id: string; label: string; hint?: string };
+
+/** Phones: every setting in one bottom sheet. Short choices are pills, models a list. */
+function SettingsSheet({
+  groups,
+  onClose,
+}: {
+  groups: { title: string; items: Option[]; current: string; onPick: (id: string) => void; list?: boolean }[];
+  onClose: () => void;
+}) {
+  useBackHandler(true, onClose);
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onClose]);
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[70] flex items-end bg-black/45 animate-fade-in"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="w-full max-h-[80vh] overflow-y-auto rounded-t-2xl border-t border-border bg-surface-2 pb-safe pt-1.5 shadow-float">
+        <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-border-strong" />
+        <div className="flex items-center px-4 pt-1">
+          <span className="text-[13px] font-semibold text-content">Chat settings</span>
+          <button onClick={onClose} className="ml-auto h-10 rounded-lg px-3 text-[13px] font-medium text-accent hover:bg-surface-3">
+            Done
+          </button>
+        </div>
+        {groups.map((g) => (
+          <div key={g.title} className="pb-2">
+            <div className="px-4 pb-1.5 pt-2 text-[10.5px] font-semibold uppercase tracking-wider text-content-faint">{g.title}</div>
+            {g.list ? (
+              g.items.map((it) => (
+                <button
+                  key={it.id}
+                  onClick={() => g.onPick(it.id)}
+                  className={`flex w-full min-h-[44px] items-center gap-2 px-4 py-2 text-[14px] transition hover:bg-surface-3 ${
+                    it.id === g.current ? "text-accent" : "text-content"
+                  }`}
+                >
+                  <span className="w-3.5 shrink-0">{it.id === g.current && <Icon name="check" size={13} />}</span>
+                  <span className="min-w-0 text-left">
+                    <span className="block truncate">{it.label}</span>
+                    {it.hint && <span className="block truncate text-[11px] text-content-faint">{it.hint}</span>}
+                  </span>
+                </button>
+              ))
+            ) : (
+              <div className="flex flex-wrap gap-2 px-4">
+                {g.items.map((it) => (
+                  <button
+                    key={it.id}
+                    onClick={() => g.onPick(it.id)}
+                    className={`h-10 rounded-lg border px-3.5 text-[13.5px] font-medium transition ${
+                      it.id === g.current
+                        ? "border-accent/50 bg-accent-soft text-accent"
+                        : "border-border bg-surface text-content-dim hover:text-content"
+                    }`}
+                  >
+                    {it.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export default function ChatControls({ session, compact = false }: { session: Session; compact?: boolean }) {
   const catalog = useConfigStore((s) => s.catalog);
   const providers = useProviderStore((s) => s.providers);
   const update = useSessionStore((s) => s.update);
-  const [openMenu, setOpenMenu] = useState<"provider" | "model" | "effort" | "mode" | null>(null);
+  const [openMenu, setOpenMenu] = useState<"provider" | "model" | "effort" | "mode" | "all" | null>(null);
 
   const entry = catalog[session.provider];
   const connectedProviders = providers.filter((p) => p.connected).map((p) => p.provider);
@@ -156,8 +229,57 @@ export default function ChatControls({ session }: { session: Session }) {
   const curModelLabel =
     entry?.models.find((m) => m.id === session.model)?.label || session.model || "model";
 
+  const pickMode = (id: string) => update(session.id, { mode: id as "agent" | "plan" });
+  const pickProvider = (id: string) => {
+    const def = catalog[id]?.default_model || "";
+    update(session.id, { provider: id, model: def, effort: "default" });
+  };
+  const pickModel = (id: string) => {
+    const m = entry?.models.find((x) => x.id === id);
+    const keep = !m?.effort?.length || m.effort.includes(session.effort);
+    update(session.id, keep ? { model: id } : { model: id, effort: "default" });
+  };
+  const pickEffort = (id: string) => update(session.id, { effort: id });
+
+  if (compact) {
+    const effort = session.effort && session.effort !== "default" ? session.effort : "";
+    const summary = [
+      mode === "plan" ? "Plan" : "Agent",
+      curModel?.label || session.model || entry?.label || session.provider,
+      effort,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return (
+      <div data-controls className="min-w-0">
+        <button
+          onClick={() => setOpenMenu("all")}
+          className={`flex h-10 max-w-full items-center gap-1.5 rounded-lg px-2 text-[13px] font-medium transition ${
+            openMenu === "all" ? "bg-accent-soft text-accent" : "text-content-dim hover:bg-surface-3 hover:text-content"
+          }`}
+          title="Mode, engine, model and think level"
+        >
+          <Icon name={mode === "plan" ? "file-text" : "bolt"} size={14} className={`shrink-0 ${mode === "plan" ? "text-violet" : "text-accent"}`} />
+          <span className="truncate">{summary}</span>
+          <Icon name="chevron-down" size={12} className="shrink-0 opacity-60" />
+        </button>
+        {openMenu === "all" && (
+          <SettingsSheet
+            onClose={() => setOpenMenu(null)}
+            groups={[
+              { title: "Mode", items: MODES, current: mode, onPick: pickMode, list: true },
+              { title: "Engine", items: providerItems.map((p) => ({ ...p, hint: undefined })), current: session.provider, onPick: pickProvider },
+              ...(modelItems.length ? [{ title: "Model", items: modelItems, current: session.model, onPick: pickModel, list: true }] : []),
+              ...(effortItems.length > 1 ? [{ title: "Think", items: effortItems, current: session.effort, onPick: pickEffort }] : []),
+            ]}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-nowrap sm:flex-wrap items-center gap-1.5 px-1 overflow-x-auto sm:overflow-visible no-scrollbar">
+    <div data-controls className="flex flex-nowrap sm:flex-wrap items-center gap-1.5 px-1 overflow-x-auto sm:overflow-visible no-scrollbar">
       {/* Mode */}
       <div className="relative">
         <Chip
@@ -171,7 +293,7 @@ export default function ChatControls({ session }: { session: Session }) {
             items={MODES}
             current={mode}
             onClose={() => setOpenMenu(null)}
-            onPick={(id) => update(session.id, { mode: id as "agent" | "plan" })}
+            onPick={pickMode}
           />
         )}
       </div>
@@ -189,10 +311,7 @@ export default function ChatControls({ session }: { session: Session }) {
             items={providerItems}
             current={session.provider}
             onClose={() => setOpenMenu(null)}
-            onPick={(id) => {
-              const def = catalog[id]?.default_model || "";
-              update(session.id, { provider: id, model: def, effort: "default" });
-            }}
+            onPick={pickProvider}
           />
         )}
       </div>
@@ -211,11 +330,7 @@ export default function ChatControls({ session }: { session: Session }) {
               items={modelItems}
               current={session.model}
               onClose={() => setOpenMenu(null)}
-              onPick={(id) => {
-                const m = entry?.models.find((x) => x.id === id);
-                const keep = !m?.effort?.length || m.effort.includes(session.effort);
-                update(session.id, keep ? { model: id } : { model: id, effort: "default" });
-              }}
+              onPick={pickModel}
             />
           )}
         </div>
@@ -235,7 +350,7 @@ export default function ChatControls({ session }: { session: Session }) {
               items={effortItems}
               current={session.effort}
               onClose={() => setOpenMenu(null)}
-              onPick={(id) => update(session.id, { effort: id })}
+              onPick={pickEffort}
             />
           )}
         </div>

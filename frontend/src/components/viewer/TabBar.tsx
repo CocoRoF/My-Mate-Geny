@@ -31,7 +31,7 @@ export default function TabBar({ sid }: { sid: string }) {
   const dup = (name: string) => tabs.filter((t) => baseName(t.path) === name).length > 1;
 
   return (
-    <div ref={strip} className="no-scrollbar flex h-9 shrink-0 items-stretch overflow-x-auto border-b border-border/70 bg-surface/30">
+    <div ref={strip} className="no-scrollbar flex h-9 touch:h-11 shrink-0 items-stretch overflow-x-auto border-b border-border/70 bg-surface/30">
       <button
         data-tab="chat"
         data-active={active === null}
@@ -80,8 +80,8 @@ export default function TabBar({ sid }: { sid: string }) {
                 e.stopPropagation();
                 closeTab(sid, t.id);
               }}
-              className={`ml-0.5 shrink-0 rounded p-0.5 hover:bg-surface-3 hover:text-content ${
-                on ? "opacity-100" : "opacity-60 sm:opacity-0 group-hover:opacity-100"
+              className={`ml-0.5 shrink-0 rounded p-0.5 touch:p-2 hover:bg-surface-3 hover:text-content ${
+                on ? "opacity-100" : "opacity-60 sm:can-hover:opacity-0 group-hover:opacity-100"
               }`}
               title="Close"
             >

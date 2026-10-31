@@ -92,7 +92,7 @@ export default function Sidebar() {
             key={n.id}
             onClick={() => setView(n.id)}
             data-active={view === n.id}
-            className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium text-content-dim transition hover:text-content hover:bg-surface-2 data-[active=true]:bg-surface-3 data-[active=true]:text-content"
+            className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 touch:py-2.5 text-[13px] font-medium text-content-dim transition hover:text-content hover:bg-surface-2 data-[active=true]:bg-surface-3 data-[active=true]:text-content"
           >
             <Icon
               name={n.icon}
@@ -111,7 +111,7 @@ export default function Sidebar() {
 
       {/* Session search */}
       <div className="px-3 pb-2">
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5">
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5 touch:py-2">
           <Icon name="search" size={14} className="text-content-faint" />
           <input
             value={query}
@@ -125,7 +125,7 @@ export default function Sidebar() {
       {/* Sessions section */}
       <button
         onClick={() => setShowSessions((v) => !v)}
-        className="flex items-center gap-1.5 px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-content-faint hover:text-content-dim"
+        className="flex items-center gap-1.5 px-3 pb-1 touch:py-2 text-[10px] font-semibold uppercase tracking-wider text-content-faint hover:text-content-dim"
       >
         <Icon name={showSessions ? "chevron-down" : "chevron"} size={12} />
         Sessions
@@ -145,7 +145,7 @@ export default function Sidebar() {
               <div
                 key={s.id}
                 onClick={() => openSession(s.id)}
-                className={`group relative flex items-center rounded-lg pl-3 pr-1.5 py-2 cursor-pointer transition ${
+                className={`group relative flex items-center rounded-lg pl-3 pr-1.5 py-2 touch:py-1 cursor-pointer transition ${
                   active ? "bg-surface-3" : "hover:bg-surface-2"
                 }`}
               >
@@ -169,13 +169,13 @@ export default function Sidebar() {
                     e.stopPropagation();
                     setMenuId(menuId === s.id ? null : s.id);
                   }}
-                  className="md:opacity-0 group-hover:opacity-100 rounded-md p-1.5 md:p-1 text-content-faint hover:text-content hover:bg-surface-3 transition"
+                  className="md:can-hover:opacity-0 group-hover:opacity-100 rounded-md p-1.5 md:can-hover:p-1 touch:p-3 text-content-faint hover:text-content hover:bg-surface-3 transition"
                 >
                   <Icon name="more" size={15} />
                 </button>
                 {menuId === s.id && (
                   <div
-                    className="absolute right-2 top-9 z-20 w-32 overflow-hidden rounded-lg border border-border bg-surface-2 shadow-float animate-fade-in"
+                    className="absolute right-2 top-9 touch:top-12 z-20 w-32 overflow-hidden rounded-lg border border-border bg-surface-2 shadow-float animate-fade-in"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <button
@@ -183,7 +183,7 @@ export default function Sidebar() {
                         remove(s.id);
                         setMenuId(null);
                       }}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-danger hover:bg-surface-3"
+                      className="flex w-full items-center gap-2 px-3 py-2 touch:py-3 text-[13px] text-danger hover:bg-surface-3"
                     >
                       <Icon name="trash" size={14} /> Delete
                     </button>
@@ -203,7 +203,7 @@ export default function Sidebar() {
         </div>
         <span className="text-xs">admin</span>
         <span className="ml-auto text-[10px]">v{APP_VERSION}</span>
-        <button onClick={logout} className="rounded-md p-1 hover:text-danger hover:bg-surface-3 transition" title="Log out">
+        <button onClick={logout} className="rounded-md p-1 touch:p-2.5 touch:-mr-1.5 hover:text-danger hover:bg-surface-3 transition" title="Log out">
           <Icon name="logout" size={15} />
         </button>
       </div>

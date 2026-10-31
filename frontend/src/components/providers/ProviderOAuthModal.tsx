@@ -174,7 +174,7 @@ export default function ProviderOAuthModal({
               <input
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && submitCode()}
+                onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && submitCode()}
                 placeholder="Paste code here"
                 disabled={phase === "verifying"}
                 className="field font-mono"
