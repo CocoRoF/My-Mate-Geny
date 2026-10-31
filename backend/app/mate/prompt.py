@@ -88,7 +88,8 @@ def base_prompt(name: str, persona: dict[str, Any]) -> str:
     if p.get("speech"):
         who.append("Speaking style:\n" + p["speech"].strip())
     if p.get("address"):
-        who.append(f"Address the user as: {p['address'].strip()}")
+        who.append(f"Always call the user “{p['address'].strip()}”. If earlier messages in this conversation "
+                   "used another name or a more formal address, switch to this one now.")
     if who:
         lines.append("## Who you are\n" + "\n\n".join(who))
     lines.append(_CONTRACT.format(language=language_name(p.get("language") or "ko"),
@@ -116,3 +117,40 @@ def prompt_key(name: str, persona: dict[str, Any], memory_rev: int) -> str:
     (already in its context), so ``remember`` never restarts the engine."""
     raw = base_prompt(name, persona) + f"\n#memory-rev:{memory_rev}"
     return hashlib.sha256(raw.encode()).hexdigest()
+
+
+# Persona fields whose change the mate should notice at once (the restarted
+# engine has the new system prompt, but the conversation so far still shows
+# the old habit — e.g. the old way of addressing the user).
+_CHANGE_LABELS = {
+    "address": "Call the user",
+    "language": "Reply language",
+    "speech": "Speaking style",
+    "personality": "Personality",
+    "description": "Who you are",
+    "instructions": "Standing instructions",
+}
+
+
+def settings_change_note(old_name: str, old: dict[str, Any], new_name: str, new: dict[str, Any]) -> str:
+    """A short note for the next user message listing what the user changed
+    in the mate's settings since the conversation last ran ("" if nothing)."""
+    lines = []
+    if (old_name or "") != (new_name or ""):
+        lines.append(f"- Your name is now “{new_name}” (before: “{old_name}”).")
+    for key, label in _CHANGE_LABELS.items():
+        a, b = str((old or {}).get(key) or "").strip(), str((new or {}).get(key) or "").strip()
+        if a == b:
+            continue
+        if key == "address":
+            lines.append(f"- {label} “{b}”" + (f" (before: “{a}”)." if a else ".") if b else
+                         f"- No fixed way to call the user any more (before: “{a}”).")
+        elif key == "language":
+            lines.append(f"- {label}: {language_name(b or 'ko')}.")
+        else:
+            lines.append(f"- {label} was updated (see your system prompt).")
+    if not lines:
+        return ""
+    return ("<settings_update>The user just changed your settings. Apply this from your very next sentence, "
+            "even if earlier messages did otherwise; mention it only if it fits naturally:\n"
+            + "\n".join(lines) + "\n</settings_update>")
