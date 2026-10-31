@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { ChatMessage, ProviderEvent, Session, TaskInfo } from "../types";
+import type { AccountRef, ChatMessage, PlanUsage, ProviderEvent, Session, TaskInfo } from "../types";
 
 export type SessionPatch = {
   provider?: string;
@@ -43,6 +43,8 @@ export interface History {
   running: boolean;
   messages: ChatMessage[];
   events: ProviderEvent[];
+  account?: AccountRef | null; // which account this chat runs on (None before the first turn)
+  live_usage?: PlanUsage | null; // what this chat's engine last reported
 }
 
 export const getHistory = (id: string) => apiFetch<History>(`/api/history/${id}`);

@@ -1,5 +1,6 @@
 import { apiFetch } from "./client";
 import type { OAuthStart } from "./providers";
+import type { UsageWindow } from "./usage";
 
 export interface Account {
   id: string;
@@ -14,7 +15,11 @@ export interface Account {
   in_flight: number;
   eligible: boolean;
   ineligible_reason: string | null;
-  utilization?: number | null;
+  utilization?: number | null; // highest window % (what the balancer uses)
+  windows?: UsageWindow[]; // 5-hour + 7-day (server-cached ~60s)
+  model_windows?: UsageWindow[]; // per-model weekly limits, when the plan has them
+  plan_fetched_at?: string | null;
+  plan_error?: string | null;
   total_leases: number;
   total_failures: number;
   consecutive_failures: number;

@@ -1,6 +1,8 @@
 import { apiFetch } from "./client";
 
+// cost_usd everywhere = API-equivalent (what the tokens would cost on the API).
 export interface UsageSummary {
+  cost_basis?: "api_equivalent";
   total: { turns: number; cost_usd: number; input: number; output: number; cache_read: number; cache_write: number };
   by_provider: Record<string, { turns: number; cost_usd: number; input: number; output: number }>;
   by_model: Record<string, { turns: number; cost_usd: number; tokens: number }>;
@@ -12,8 +14,9 @@ export const getUsage = (days = 14) => apiFetch<UsageSummary>(`/api/usage?days=$
 
 export interface UsageWindow {
   label: string;
-  percent: number;
+  percent: number; // 0..100
   resets_at: string | null;
+  kind?: "five_hour" | "seven_day" | "model_weekly" | "daily" | "other";
 }
 export interface SubscriptionUsage {
   provider: string;

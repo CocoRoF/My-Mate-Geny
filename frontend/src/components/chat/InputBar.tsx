@@ -3,12 +3,12 @@ import { resetContext } from "../../api/sessions";
 import { useChatStore } from "../../stores/chatStore";
 import { nameClipboardFiles, useComposerStore } from "../../stores/composerStore";
 import { useSessionStore } from "../../stores/sessionStore";
-import { useTaskStore } from "../../stores/taskStore";
 import type { Attachment, Session } from "../../types";
 import AttachmentTray from "../attachments/AttachmentTray";
 import Icon from "../ui/Icon";
 import ChatControls from "./ChatControls";
 import ComposerMenu, { triggerAt, type MenuItem } from "./ComposerMenu";
+import UsageFooter from "./UsageFooter";
 import { useWorkbench } from "../../stores/workbenchStore";
 
 /** Files on a paste event. Office apps put an image AND tab/newline text on the
@@ -100,18 +100,8 @@ export default function InputBar({
 
   const isStreaming = useChatStore((s) => s.isStreaming);
   const connection = useChatStore((s) => s.connection);
-  const cost = useChatStore((s) => s.runningCostUsd);
   const info = useChatStore((s) => s.info);
   const bounced = useChatStore((s) => s.bounced);
-  const planUsage = useTaskStore((s) => s.usage);
-  const windows = planUsage?.unifiedWindows || {};
-  const pct = (w?: { utilization?: number }) => (w?.utilization !== undefined ? `${Math.round(w.utilization * 100)}%` : null);
-  const usageLabel =
-    session.provider === "claude" && (windows.five_hour || windows.seven_day)
-      ? [pct(windows.five_hour) && `5h ${pct(windows.five_hour)}`, pct(windows.seven_day) && `7d ${pct(windows.seven_day)}`]
-          .filter(Boolean)
-          .join(" · ")
-      : null;
   const takeBounced = useChatStore((s) => s.takeBounced);
   const allItems = useComposerStore((s) => s.items);
   const add = useComposerStore((s) => s.add);
@@ -469,10 +459,7 @@ export default function InputBar({
               <span className="hidden sm:inline">Enter to send · Shift+Enter newline · / commands · @ files · paste or drop files</span>
             )}
           </span>
-          <span className="font-mono shrink-0" title="Plan usage reported by the provider on the last turn">
-            {usageLabel && <span className="mr-2 text-content-dim">plan {usageLabel}</span>}
-            session ${cost.toFixed(4)}
-          </span>
+          <UsageFooter session={session} />
         </div>
       </div>
     </div>

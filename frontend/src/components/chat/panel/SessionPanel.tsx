@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { API_COST_HINT, fmtUsd } from "../../../lib/usage";
 import { useChatStore, type Turn } from "../../../stores/chatStore";
 import { useConfigStore } from "../../../stores/configStore";
 import { useConnectionStore } from "../../../stores/connectionStore";
@@ -305,8 +306,8 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
         <Section title="Usage" icon="cpu">
           <dl className="space-y-1 text-[12px]">
             <div className="flex justify-between">
-              <dt className="text-content-faint">Session cost</dt>
-              <dd className="font-mono text-content-dim">${cost.toFixed(4)}</dd>
+              <dt className="text-content-faint" title={API_COST_HINT}>API-equivalent cost</dt>
+              <dd className="font-mono text-content-dim" title={API_COST_HINT}>≈ {fmtUsd(cost)}</dd>
             </div>
             {ctxTokens > 0 && (
               <div className="flex justify-between">

@@ -168,10 +168,25 @@ export interface TurnChanges {
   removed: number;
 }
 
-/** Live plan utilization (Claude rate_limit_event). */
+/** Live plan utilization (Claude rate_limit_event; utilization is a 0..1
+ * fraction), tagged by the backend with the chat + account it belongs to. */
 export interface PlanUsage {
   status?: string;
   utilization?: number;
+  resetsAt?: number;
   rateLimitType?: string;
   unifiedWindows?: Record<string, { utilization?: number; resetsAt?: number; status?: string }>;
+  account?: string | null;
+  account_id?: string | null;
+  session_id?: string;
+  provider?: string;
+  at?: string;
+}
+
+/** The account a chat's engine runs on (lease label + id). */
+export interface AccountRef {
+  account: string | null;
+  account_id: string | null;
+  provider?: string | null;
+  live?: boolean; // its engine is running right now
 }

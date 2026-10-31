@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getUsage, type UsageSummary } from "../../api/usage";
 import { useProviderStore } from "../../stores/providerStore";
+import { API_COST_HINT, fmtUsd } from "../../lib/usage";
 import Icon from "../ui/Icon";
 import SubscriptionUsage from "./SubscriptionUsage";
 
@@ -69,7 +70,7 @@ export default function UsageView() {
         </button>
         {showLocal && local && (
           <div className="card p-4 mt-2">
-            <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
               <div>
                 <div className="text-lg font-semibold tabular-nums">{local.total.turns}</div>
                 <div className="text-[11px] text-content-faint">turns</div>
@@ -82,9 +83,14 @@ export default function UsageView() {
                 <div className="text-lg font-semibold tabular-nums">{fmtNum(local.total.input + local.total.cache_read)}</div>
                 <div className="text-[11px] text-content-faint">input (incl. cache)</div>
               </div>
+              <div title={API_COST_HINT}>
+                <div className="text-lg font-semibold tabular-nums">≈ {fmtUsd(local.total.cost_usd)}</div>
+                <div className="text-[11px] text-content-faint">API-equivalent</div>
+              </div>
             </div>
             <p className="mt-3 text-[11px] text-content-faint text-center">
-              Local token counts only — not your plan limits (shown above). $ cost applies to API-key use.
+              Tokens the agents processed on this machine, and what they would cost at API prices — informational,
+              not a charge on your subscription (your plan limits are above). Codex reports tokens only.
             </p>
           </div>
         )}

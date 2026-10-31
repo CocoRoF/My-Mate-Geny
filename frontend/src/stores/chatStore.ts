@@ -219,7 +219,7 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
       if (data.text && !t.text.trim()) appendText(t, String(data.text), at);
       finish(t, at);
       t.status = "done";
-      t.costUsd = Number(data.cost_usd || 0);
+      t.costUsd = turnCost(data);
       t.model = String(data.model || "");
       t.usage = data.usage || undefined;
       return { isStreaming: false };
@@ -236,6 +236,11 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
       finish(t, at);
       t.status = code === "turn.interrupted" ? "interrupted" : "error";
       t.error = { code, message };
+      if (data.cost_kind === "turn") {
+        // A stopped / failed turn that still ran: its tokens count too.
+        t.costUsd = turnCost(data);
+        t.usage = data.usage || t.usage;
+      }
       break;
     }
     case "session.info":
@@ -346,6 +351,15 @@ function reconstruct(messages: ChatMessage[], events: ProviderEvent[]): Turn[] {
   return turns;
 }
 
+/** A terminal event's API-equivalent cost for this turn (the backend serves
+ * per-turn values, legacy ones normalized); undefined when the engine reports
+ * no cost (Codex). */
+function turnCost(data: Record<string, any>): number | undefined {
+  if (data.cost_kind === "none" || data.cost_usd === undefined || data.cost_usd === null) return undefined;
+  return Number(data.cost_usd) || 0;
+}
+
+/** API-equivalent cost of the whole chat (turns that reported one). */
 const totalCost = (turns: Turn[]) => turns.reduce((n, t) => n + (t.costUsd || 0), 0);
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -417,7 +431,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         turns,
         ...extra,
         lastEid: ev.eid ? Math.max(s.lastEid, ev.eid) : s.lastEid,
-        runningCostUsd: ev.type === "turn.complete" ? totalCost(turns) : s.runningCostUsd,
+        runningCostUsd: ev.type === "turn.complete" || ev.type === "error" ? totalCost(turns) : s.runningCostUsd,
       };
     }),
 }));
