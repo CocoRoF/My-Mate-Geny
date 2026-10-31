@@ -1,0 +1,17 @@
+# Locally-managed Cloudflare tunnel (alternative to the token-based `tunnel`
+# service in deploy/docker-compose.yml). Copy to config.yml (gitignored):
+#
+#   cloudflared tunnel login
+#   cloudflared tunnel create my-mate-geny        # prints <TUNNEL-ID>, writes ~/.cloudflared/<TUNNEL-ID>.json
+#   cloudflared tunnel route dns my-mate-geny geny.example.com
+#
+# Never commit the credentials JSON (deploy/cloudflared/*.json is gitignored).
+tunnel: <TUNNEL-ID>
+credentials-file: /path/to/.cloudflared/<TUNNEL-ID>.json
+
+ingress:
+  - hostname: geny.example.com
+    # host run (deploy/start-backend.sh): http://localhost:8099
+    # cloudflared container on the compose network: http://geny:8080
+    service: http://localhost:8099
+  - service: http_status:404

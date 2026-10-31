@@ -1,19 +1,18 @@
 """Remote SSH workspace connector (scaffold).
 
-Strategy — the runtime stays on 2223, but the agent operates a folder on a
-remote host (2222 / 2224):
+Strategy — the runtime stays on the server host, but the agent operates a folder on a
+remote host:
 
-1. **Files** — the remote folder is mounted onto 2223 with ``sshfs`` at
+1. **Files** — the remote folder is mounted onto the runtime host with ``sshfs`` at
    ``<MOUNT_ROOT>/<connection_id>/<path-hash>``. The provider CLI's cwd is set
    to that mount, so its built-in Read/Write/Edit/Glob/Grep operate on remote
    files transparently.
 2. **Commands** — a remote-bash MCP bridge (see
    :mod:`app.workspaces.mcp_remote_bridge`) is attached to the provider so Bash
-   tool calls execute on the remote host over ``asyncssh``, not on 2223.
+   tool calls execute on the remote host over ``asyncssh``, not on the runtime host.
 
 This is a scaffold: connection validation + mount/unmount are implemented
-defensively (friendly errors when ``sshfs`` or keys are missing). End-to-end
-verification against 2222/2224 is a follow-up milestone.
+defensively (friendly errors when ``sshfs`` or keys are missing).
 
 Adapted from GAPT's ``SshConnectionSpec`` / ``RemoteSshTarget`` (asyncssh,
 in-memory keys).

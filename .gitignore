@@ -21,13 +21,24 @@ mobile/web-build/
 # Env & secrets & runtime data
 .env
 .env.local
+.env.*.local
 *.key
+*.pem
+*.p12
+*.jks
+*.keystore
 data/
 mounts/
 logs/
+/workspaces/
 .hr-harnessor/
-# Cloudflare tunnel credentials (if copied into the repo dir)
+# Machine-specific compose overrides
+docker-compose.override.yml
+deploy/docker-compose.override.yml
+# Cloudflare tunnel config + credentials (copy config.example.yml locally)
 deploy/cloudflared/*.json
+deploy/cloudflared/config.yml
+deploy/cloudflared/config.docker.yml
 
 # OS / editor
 .DS_Store
