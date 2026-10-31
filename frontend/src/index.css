@@ -6,6 +6,18 @@
   :root {
     color-scheme: dark;
   }
+  /* No blinking text cursor in plain text (sidebar, messages, labels) — it
+     shows on a click when the browser's caret browsing (F7) is on. Only real
+     text fields get one; text stays selectable and copyable. */
+  body {
+    caret-color: transparent;
+  }
+  input,
+  textarea,
+  select,
+  [contenteditable]:not([contenteditable="false"]) {
+    caret-color: auto;
+  }
   html,
   body,
   #root {
