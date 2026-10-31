@@ -22,6 +22,15 @@ import urllib.request
 
 _PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")
 
+_ATTACHMENTS_PARAM = {
+    "type": "array",
+    "items": {"type": "string"},
+    "description": (
+        "Optional: ids of files from this conversation to send along (the [att_…] ids in the "
+        "<attachments> list of the user's messages). The chat gets copies, exactly like a user upload."
+    ),
+}
+
 TOOLS = [
     {
         "name": "list_sessions",
@@ -64,13 +73,16 @@ TOOLS = [
             "starts a new turn; if it is running, the message is added to the running turn (steering). The "
             "chat shows it as sent via you. Write a complete, self-contained instruction in the user's "
             "language — the worker cannot see your conversation. When that chat finishes, you get its answer "
-            "as a <delegation_result>; tell the user briefly what you sent and end your turn meanwhile."
+            "as a <delegation_result>; tell the user briefly what you sent and end your turn meanwhile. "
+            "To pass along files the user gave you (a screenshot, a document…), list their ids in "
+            "`attachments`: the chat receives them exactly like a user upload, and can open what you can't."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "session_id": {"type": "string", "description": "Target chat's session_id."},
                 "message": {"type": "string", "description": "The instruction for the worker."},
+                "attachments": _ATTACHMENTS_PARAM,
             },
             "required": ["session_id", "message"],
         },
@@ -81,13 +93,15 @@ TOOLS = [
             "Open a new chat on a project folder of this server (it must exist; use find_folders to get the "
             "exact path), optionally with a first instruction which starts its first turn right away (its "
             "result comes back to you as a <delegation_result>). Only when no existing chat works on that "
-            "project. If you are not sure which folder the user means, ask them instead."
+            "project. If you are not sure which folder the user means, ask them instead. Files the user gave "
+            "you can go along with the first instruction (`attachments`)."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "workspace_path": {"type": "string", "description": "Absolute path of the project folder."},
                 "message": {"type": "string", "description": "Optional first instruction for the new chat."},
+                "attachments": _ATTACHMENTS_PARAM,
                 "title": {"type": "string", "description": "Optional chat title (default: from the message)."},
                 "provider": {"type": "string", "enum": ["claude", "codex"],
                              "description": "Agent engine (default claude)."},

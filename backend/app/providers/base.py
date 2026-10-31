@@ -112,6 +112,8 @@ class SteerMessage:
     # Runs synchronously at the moment of delivery, so the session records the
     # instruction in its true place — before the provider emits anything else.
     on_delivered: Callable[[], None] | None = None
+    # The engine can't open files (Mate): contents go inline (see _attachments).
+    inline_files: bool = False
 
     def resolve(self, ok: bool) -> None:
         if self.delivered is not None and self.delivered.done():
@@ -192,6 +194,10 @@ class TurnRequest:
     # Claude: no skills / slash commands, no user/project settings files
     # (hooks, plugins) — a sealed engine (Mate).
     sealed: bool = False
+    # Attachments as ids + inline contents instead of paths for the agent's
+    # tools (an engine without file tools: Mate). The contents are filled in
+    # beforehand (``_inline_files.prepare_inline``).
+    inline_files: bool = False
 
 
 class ProviderTurnError(RuntimeError):

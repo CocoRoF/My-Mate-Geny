@@ -314,6 +314,20 @@ nested files.
   `mate.llm`. Editing name/persona/effort or the memory list (by the user)
   restarts the engine at the next turn (`--resume`, same conversation); a model
   change is applied live; what the mate `remember`s itself doesn't restart it.
+- **Attachments** work like in a chat: uploads go to
+  `POST /api/sessions/{mate sid}/attachments`, the ws `chat` / `steer` messages
+  carry their ids, history and live `user.message` / `user.steer` events carry
+  them, and the Mate views show them (thumbnails, file cards). The mate can't
+  open files (`--tools ""`), so for a mate session the text block of the
+  envelope (`inline_files`, `app/providers/_inline_files.py`) holds, instead of
+  paths, an `<attachments>` list with each file's id —
+  `- [att_…] name — mime, size — image, shown to you | <how it was read>, included below | <what it is> — not available to you; forward it…`
+  — followed by `<file id="att_…" name="…">…</file>` blocks with the readable
+  text: text/code/markdown/CSV/JSON… as is (first 256 KB read), docx/pptx/xlsx/
+  odt text from their XML (stdlib), PDF text via `pdftotext` (poppler, ≤ 40
+  pages) when the server has it; ≤ 20 000 characters per file and 60 000 per
+  message, cut with `…[truncated]` and a note. Images still go as inline image
+  blocks; anything else (archives, binaries, a scanned PDF) is only described.
 - Reply format the prompt asks for: short conversational text in the mate's
   language, no heavy markdown; optional inline emotion tags at the start of a
   sentence: `[neutral] [joy] [smile] [laugh] [shy] [surprised] [sad] [angry]
@@ -328,8 +342,21 @@ Tools the mate gets (all others are disabled):
 |---|---|
 | `list_sessions()` | chat sessions (not mates): id, title, workspace, provider/model, running, updated_at, last user + assistant snippet |
 | `read_session(session_id, limit=10)` | recent messages, running state, current activity |
-| `send_to_session(session_id, message)` | exactly like the user typing in that chat: idle → starts a turn; running → steers the running turn. Marked `via: {kind:"mate", mate_id, name}` (the chat shows "via <name>") |
-| `create_session(workspace_path, message?, title?, provider?, model?)` | new chat for a folder (+ first message) |
+| `send_to_session(session_id, message, attachments?)` | exactly like the user typing in that chat: idle → starts a turn; running → steers the running turn. Marked `via: {kind:"mate", mate_id, name}` (the chat shows "via <name>") |
+| `create_session(workspace_path, message?, title?, provider?, model?, attachments?)` | new chat for a folder (+ first message) |
+
+`attachments` = ids (`att_…`, `[att_…]` accepted) of files **from the mate's
+own conversation** (listed in its messages, §3). Each is copied into the
+worker session (`<UPLOADS_ROOT>/<worker sid>/<new id>/<name>` + its
+model-sized image variant) as a pending upload and sent with the message —
+the same envelope as a user message with attachments (image blocks + the
+`<attachments>` note with paths for the worker's tools; remote sessions get
+their copy on the remote host as usual), shown on the "via ‹mate›" message.
+Unknown ids, ids of another session, a missing file or more than
+`UPLOAD_MAX_FILES` → a tool error, nothing sent; with `create_session` they
+need a `message`. Copies are removed again if the delivery fails. The tool
+result says what went (`… with 2 files (shot.png, bug.md)`). `read_session`
+lists each message's `files` (names).
 | `find_folders(query)` | candidate project folders: workspaces of existing chats, then a bounded search of `/home` (depth ≤ 3, names/git repos) |
 | `remember(text)` / `forget(id)` | the mate's memory (shown in Mate settings, injected into its system prompt) |
 
@@ -434,6 +461,25 @@ conversation the other half; Mate settings / Global settings (header buttons:
 sliders = Global, gear = this mate) open over the conversation half, so the
 stage never moves or overflows (1280 / 1440 / 1600 px alike). Phones: the stage
 on top (36 dvh, collapsible), the conversation below, settings full screen.
+**Mate composer** = the Chat composer's machinery
+(`src/components/composer/`: `useComposer`, `ComposerParts` (`AttachMenu`,
+`QueuedList`, `FileInputs`), `useFileDrop` + `DropOverlay`, `files.ts`
+(`filesFromClipboard`)) — the Chat view's `InputBar` uses the same hook — in
+the mate's chrome (`MateComposer`): + menu (Photos / Files), paste anywhere on
+the page (clipboard images named `pasted-<stamp>.png`), drag & drop over the
+conversation, the attachment tray (upload progress, retry, remove,
+thumbnails), per-conversation drafts incl. uploaded files (draftStore /
+composerStore keyed by the mate's **session id**; `pin(sid)` keeps them from
+the chat-list prune; an old `mate:<id>` text draft moves over once), queued
+messages, steer while she answers (Enter / ↑ = add to her running turn, Queue
+= after it; a bounced steer is queued), Enter / Shift+Enter / touch rules
+(`lib/device.ts`), IME-safe Enter, Escape stops her reply (not in the quick
+card, where Escape closes it), auto-grow, `/clear` (new conversation) and
+`/stop` in a `/` menu (no `@` mentions: a mate has no workspace), plus
+push-to-talk (the transcript goes out with the attached files) and the
+read-aloud toggle. The quick card's + opens the file picker directly. The
+console Mate view, the quick card and the chat window all have it.
+
 Extra full-page surfaces (no sidebar), used by the desktop app:
 
 - `/?surface=mate-overlay&mate=<id>` — transparent page: avatar + caption

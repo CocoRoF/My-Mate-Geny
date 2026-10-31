@@ -9,6 +9,10 @@ sessions, also copied to the remote host). How it reaches the model:
 * **Every file** (images included) is also listed in an ``<attachments>``
   note with its paths, so the agent can open it with its own tools (Read a
   PDF, copy a file into the project, unzip an archive, …).
+* **Engines without file tools** (a Mate, ``inline_files``) get
+  :func:`inline_note` instead: each file's id (to forward it to a chat), what
+  it is, and its readable text inline (filled in by
+  ``_inline_files.prepare_inline`` before the envelope is built).
 """
 
 from __future__ import annotations
@@ -28,6 +32,10 @@ class Attachment:
     model_path: str | None = None   # downscaled image for the model
     model_mime: str | None = None
     remote_path: str | None = None  # copy on the remote host (remote sessions)
+    # Engines without file tools (Mate): the readable content that goes into
+    # the message (None = not readable) and how it was read / what it is.
+    extracted: str | None = None
+    extract_note: str = ""
 
     @property
     def is_image(self) -> bool:
@@ -70,8 +78,41 @@ def attachment_note(atts: list[Attachment], *, inline_images: bool) -> str:
     return "\n".join(lines)
 
 
-def compose_text(text: str, atts: list[Attachment], *, inline_images: bool) -> str:
-    note = attachment_note(atts, inline_images=inline_images)
+def _file_attr(v: str) -> str:
+    return v.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace("\n", " ")
+
+
+def inline_note(atts: list[Attachment], *, inline_images: bool) -> str:
+    """Manifest for an engine that can't open files (a Mate): ids to forward
+    files with, what each one is, and the readable contents."""
+    if not atts:
+        return ""
+    lines = [
+        "<attachments>",
+        "The user attached these files to this message. You can't open files yourself: images are shown "
+        "to you directly and the readable text of other files is included below. To hand files to a chat, "
+        "pass their ids in the `attachments` argument of send_to_session / create_session — the chat gets "
+        "them exactly like a user upload and can open everything, including what you can't read here.",
+    ]
+    for a in atts:
+        if a.is_image:
+            what = "image, shown to you" if inline_images else "image (could not be shown to you)"
+        elif a.extracted is not None:
+            what = f"{a.extract_note or 'text'}, included below"
+        else:
+            what = (f"{a.extract_note or 'a binary file'} — its contents are not available to you; "
+                    "forward it to a chat if it needs to be opened")
+        lines.append(f"- [{a.id}] {a.name} — {a.mime}, {human_size(a.size)} — {what}")
+    lines.append("</attachments>")
+    for a in atts:
+        if a.extracted is not None:
+            lines.append(f'<file id="{a.id}" name="{_file_attr(a.name)}">\n{a.extracted}\n</file>')
+    return "\n".join(lines)
+
+
+def compose_text(text: str, atts: list[Attachment], *, inline_images: bool, inline_files: bool = False) -> str:
+    note = (inline_note(atts, inline_images=inline_images) if inline_files
+            else attachment_note(atts, inline_images=inline_images))
     body = text.strip() or ("(No message text — see the attached files.)" if atts else "")
     return f"{body}\n\n{note}" if note else body
 

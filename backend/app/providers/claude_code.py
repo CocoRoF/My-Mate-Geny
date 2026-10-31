@@ -169,7 +169,7 @@ class ClaudeCodeProvider(Provider):
         )
         if req.preamble:
             last_user = f"{req.preamble}\n\n{last_user}"
-        return self._envelope(last_user, req.attachments)
+        return self._envelope(last_user, req.attachments, inline_files=req.inline_files)
 
     # ---- persistent engine (one process per chat) ----
 
@@ -216,7 +216,7 @@ class ClaudeCodeProvider(Provider):
         return _PERMISSION_MODE.get(mode, "bypassPermissions")
 
     @staticmethod
-    def _envelope(text: str, attachments: list) -> bytes:
+    def _envelope(text: str, attachments: list, *, inline_files: bool = False) -> bytes:
         content: str | list[dict] = text
         if attachments:
             blocks: list[dict] = []
@@ -226,7 +226,8 @@ class ClaudeCodeProvider(Provider):
                         blocks.append(claude_image_block(a))
                     except OSError:
                         pass
-            content = [*blocks, {"type": "text", "text": compose_text(text, attachments, inline_images=bool(blocks))}]
+            body = compose_text(text, attachments, inline_images=bool(blocks), inline_files=inline_files)
+            content = [*blocks, {"type": "text", "text": body}]
         return (json.dumps({"type": "user", "message": {"role": "user", "content": content}}) + "\n").encode()
 
     # ---- turn ----
@@ -261,7 +262,7 @@ class ClaudeCodeProvider(Provider):
             async def feed() -> None:
                 while True:
                     msg: SteerMessage = await inbox.queue.get()
-                    msg.resolve(await runner.write(self._envelope(msg.text, msg.attachments)))
+                    msg.resolve(await runner.write(self._envelope(msg.text, msg.attachments, inline_files=msg.inline_files)))
 
             feeder = asyncio.create_task(feed())
 
