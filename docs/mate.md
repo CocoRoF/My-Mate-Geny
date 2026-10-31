@@ -295,6 +295,32 @@ user's cookie (404 / 401 otherwise). `find_folders` searches
   openai fixed list; elevenlabs via its API (key needed; `preview_url`);
   omnivoice via `/voices` (`emotions` = the profile's reference clips);
   `browser`/`http` → `[]` (the page lists its own).
+- Providers (Global settings): `GET /api/mates/providers[?refresh=1]` →
+  `{tts: [...], stt: [...]}`, each `{engine, label, kind, configured, ok, error,
+  detail, checked_at}` (engines `openai` (TTS+STT, one key) / `elevenlabs` /
+  `omnivoice` / `http` / `whisper`). A verification uses only free read calls
+  (OpenAI `/models`, ElevenLabs `/voices`, OmniVoice `/health` + `/voices`, an
+  OpenAI-compatible server's `/models`, Whisper `/v1/models` else `/health`);
+  results are kept in `mate_settings` (`verify:<engine>`), dropped when that
+  provider's key/URL changes, re-checked after 30 min or on demand
+  (`POST /api/mates/providers/{engine}/verify`). `PUT /api/mates/settings?verify=1`
+  checks the changed providers at once and adds `providers` to the answer.
+- `GET /api/mates/models?engine=&kind=tts|stt` → `{engine, kind, models: [{id,
+  name, description?, languages?}], default, languages?}`: OpenAI's fixed lists,
+  ElevenLabs `/v1/models` (`can_do_text_to_speech` only), a self-hosted
+  server's `/models` (a Whisper server's first model is then the transcription
+  default, e.g. vLLM's `openai/whisper-large-v3`), OmniVoice `languages`.
+  `GET /api/mates/voices` items also carry `category`, `labels`, `languages`,
+  `previews` (ElevenLabs), `models` (OpenAI), `emotions` (OmniVoice).
+- `POST …/speech` may carry `tts` (unsaved voice fields: a settings preview).
+  An engine whose key/URL is no longer set answers **204 +
+  `X-Speech-Fallback: browser`** + `X-Speech-Fallback-Reason` (the page speaks
+  with the browser voice); a configured engine that fails is still 502.
+  API bases: `MATE_OPENAI_BASE`, `MATE_ELEVENLABS_BASE` (tests / proxies).
+- Settings UI: **Global settings** (voice services, Live2D runtime, desktop app
+  per computer, defaults) vs **Mate settings** (Profile · Avatar · Language
+  model · Voice · Memory · Danger zone); a mate's Voice tab offers only Off,
+  the browser and verified providers.
 - Client: replies are split into sentences/bubbles, synthesized in order with
   one-ahead prefetch, played through the voice bridge (level → avatar). Mic:
   push-to-talk button (and hands-free later).

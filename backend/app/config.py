@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     mate_import_max_mb: int = 600    # everything an import unpacks/copies
     # Where the mate's find_folders tool looks for project folders (comma-separated).
     mate_search_roots: str = "/home"
+    # Voice provider API bases (tests and self-hosted proxies point these elsewhere).
+    mate_openai_base: str = "https://api.openai.com/v1"
+    mate_elevenlabs_base: str = "https://api.elevenlabs.io/v1"
 
     # Admin error log retention (rows beyond this are pruned, oldest first).
     log_max_rows: int = 20000

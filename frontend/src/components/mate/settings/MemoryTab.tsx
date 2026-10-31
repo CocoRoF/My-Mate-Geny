@@ -46,8 +46,8 @@ export default function MemoryTab({ mate }: { mate: Mate }) {
 
   return (
     <Section
-      title="Memory"
-      hint={`What ${mate.name} keeps in mind across conversations. It adds and forgets things itself too ("remember that…").`}
+      title={items ? `Memory · ${items.length} / 200` : "Memory"}
+      hint={`What ${mate.name} keeps in mind across conversations — it is part of every reply. ${mate.name} adds and forgets things itself too ("remember that…"); you can add or remove them here.`}
       right={
         <button className="btn-ghost !px-2" onClick={load} title="Reload">
           <Icon name="refresh" size={14} />

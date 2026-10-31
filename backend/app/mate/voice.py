@@ -21,13 +21,13 @@ import re
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from app.mate import files, netio
-from app.mate.store import MateError, MateStore
+from app.mate.providers import Providers, elevenlabs_api, openai_api, openai_voices
+from app.mate.store import MateError, MateStore, normalize_voice
 
-OPENAI_API = "https://api.openai.com/v1"
-ELEVENLABS_API = "https://api.elevenlabs.io/v1"
-OPENAI_VOICES = ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse"]
+# API bases: app.mate.providers.openai_api() / elevenlabs_api() (settings.mate_*_base)
 OPENAI_TTS_DEFAULT = "gpt-4o-mini-tts"
 OPENAI_STT_DEFAULT = "gpt-4o-mini-transcribe"
 ELEVEN_DEFAULT_MODEL = "eleven_multilingual_v2"
@@ -43,14 +43,21 @@ _voices_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
 
 class Speech:
-    def __init__(self, body: bytes, media_type: str, cached: bool) -> None:
-        self.body, self.media_type, self.cached = body, media_type, cached
+    """Audio for one utterance. ``fallback`` (no audio): the engine isn't set
+    up in Global settings — the page speaks with the browser voice instead."""
+
+    def __init__(self, body: bytes, media_type: str, cached: bool, fallback: str | None = None) -> None:
+        self.body, self.media_type, self.cached, self.fallback = body, media_type, cached, fallback
 
 
-def _need(value: str, what: str) -> str:
+def _need(value: str, what: str, where: str = "Global settings → Voice services") -> str:
     if not value:
-        raise MateError(f"{what} is not set — add it under Mate settings → Voice")
+        raise MateError(f"{what} is not set — add it in {where}")
     return value
+
+
+# mate TTS overrides a preview may send (POST …/speech {tts: {...}}): never saved
+_TTS_OVERRIDE = ("engine", "voice", "model", "speed", "profile", "language", "instruct")
 
 
 def _check(resp: netio.Response, service: str) -> netio.Response:
@@ -124,6 +131,7 @@ _OMNI_EMOTION = {"joy": "joy", "smile": "joy", "laugh": "joy", "greet": "joy", "
 class VoiceService:
     def __init__(self, store: MateStore) -> None:
         self.store = store
+        self.providers = Providers(store)
 
     # ---- TTS ----
 
@@ -132,13 +140,23 @@ class VoiceService:
         d.mkdir(parents=True, exist_ok=True)
         return d
 
-    async def speech(self, mate: dict[str, Any], text: str, emotion: str | None = None) -> Speech | None:
+    async def speech(self, mate: dict[str, Any], text: str, emotion: str | None = None,
+                     override: dict[str, Any] | None = None) -> Speech | None:
         """Audio for one utterance, or None when the page speaks itself
-        (engine browser/off)."""
-        tts = mate["voice"]["tts"]
+        (engine browser/off). ``override``: unsaved TTS fields (a preview in
+        the settings). An engine that isn't set up in Global settings (any
+        more) is not an error: the answer says to fall back to the browser."""
+        tts = dict(mate["voice"]["tts"])
+        if override:
+            if not isinstance(override, dict):
+                raise MateError("tts must be an object")
+            patch = {k: override[k] for k in _TTS_OVERRIDE if k in override}
+            tts = normalize_voice({"tts": patch}, {"tts": tts})["tts"]
         engine = tts.get("engine") or "browser"
         if engine in ("browser", "off"):
             return None
+        if not self.providers.configured(engine):
+            return Speech(b"", "", False, fallback=self.providers.missing_reason(engine))
         text = (text or "").strip()
         if not text:
             raise MateError("nothing to say")
@@ -182,19 +200,19 @@ class VoiceService:
                                 "response_format": "mp3", "speed": float(tts.get("speed") or 1.0)}
         if shape["emotion"] and model.startswith("gpt-4o"):
             body["instructions"] = f"Speak in a natural, {shape['emotion']} tone."
-        resp = await netio.request("POST", f"{OPENAI_API}/audio/speech", json_body=body, timeout=90,
+        resp = await netio.request("POST", f"{openai_api()}/audio/speech", json_body=body, timeout=90,
                                    headers={"Authorization": f"Bearer {key}"})
         return _audio(resp, "OpenAI", "audio/mpeg")
 
     async def _tts_elevenlabs(self, tts: dict, text: str, shape: dict, cfg: dict) -> tuple[bytes, str]:
         key = _need(self.store.secret("elevenlabs_key"), "The ElevenLabs API key")
-        voice = _need(tts.get("voice") or "", "The ElevenLabs voice")
+        voice = quote(_need(tts.get("voice") or "", "The ElevenLabs voice", "this mate's settings → Voice"), safe="")
         body: dict[str, Any] = {"text": text, "model_id": tts.get("model") or ELEVEN_DEFAULT_MODEL}
         speed = float(tts.get("speed") or 1.0)
         if speed != 1.0:
             body["voice_settings"] = {"speed": max(0.7, min(1.2, speed))}
         resp = await netio.request(
-            "POST", f"{ELEVENLABS_API}/text-to-speech/{voice}?output_format=mp3_44100_128", json_body=body,
+            "POST", f"{elevenlabs_api()}/text-to-speech/{voice}?output_format=mp3_44100_128", json_body=body,
             timeout=90, headers={"xi-api-key": key, "Accept": "audio/mpeg"})
         return _audio(resp, "ElevenLabs", "audio/mpeg")
 
@@ -242,16 +260,18 @@ class VoiceService:
             raise MateError("no audio")
         if len(audio) > MAX_AUDIO_IN:
             raise MateError("audio is larger than 25 MB", status=413)
+        if not self.providers.configured(engine):
+            raise MateError(self.providers.missing_reason(engine))
         cfg = self.store.settings()
         language = (stt.get("language") or mate["persona"].get("language") or "").split("-")[0]
         if engine == "openai":
-            url = f"{OPENAI_API}/audio/transcriptions"
+            url = f"{openai_api()}/audio/transcriptions"
             headers = {"Authorization": f"Bearer {_need(self.store.secret('openai_key'), 'The OpenAI API key')}"}
             model = stt.get("model") or OPENAI_STT_DEFAULT
         else:  # whisper
             url = _transcription_url(_need(cfg.get("whisper_url") or "", "The Whisper server URL"))
             headers = {}
-            model = stt.get("model") or "whisper-1"
+            model = stt.get("model") or self.providers.default_model("whisper")
         fields = {"model": model, "response_format": "json"}
         if language:
             fields["language"] = language
@@ -269,25 +289,50 @@ class VoiceService:
     # ---- voices ----
 
     async def voices(self, engine: str) -> list[dict[str, Any]]:
+        """The voices an engine offers: ``[{id, name, language?, …}]``.
+        ElevenLabs: everything in the account (premade, cloned, generated,
+        added from the library) with ``category``, ``labels``, ``languages``,
+        ``preview_url``; OmniVoice: its profiles with their ``emotions``."""
         if engine == "openai":
-            return [{"id": v, "name": v.capitalize()} for v in OPENAI_VOICES]
+            return openai_voices()
         if engine == "elevenlabs":
-            key = _need(self.store.secret("elevenlabs_key"), "The ElevenLabs API key")
-            resp = _check(await netio.request("GET", f"{ELEVENLABS_API}/voices", timeout=20,
+            if not self.providers.configured("elevenlabs"):
+                raise MateError(self.providers.missing_reason("elevenlabs"))
+            key = self.store.secret("elevenlabs_key")
+            resp = _check(await netio.request("GET", f"{elevenlabs_api()}/voices?show_legacy=true", timeout=20,
                                               headers={"xi-api-key": key}), "ElevenLabs")
-            out = []
-            for v in (resp.json() or {}).get("voices") or []:
-                labels = v.get("labels") or {}
-                out.append({"id": v.get("voice_id"), "name": v.get("name"),
-                            "language": labels.get("language") or labels.get("accent"),
-                            "preview_url": v.get("preview_url")})
-            return out
+            return [_eleven_voice(v) for v in (resp.json() or {}).get("voices") or []
+                    if isinstance(v, dict) and v.get("voice_id")]
         if engine == "omnivoice":
-            url = _need(self.store.settings().get("omnivoice_url") or "", "The OmniVoice URL")
+            if not self.providers.configured("omnivoice"):
+                raise MateError(self.providers.missing_reason("omnivoice"))
+            url = self.store.settings().get("omnivoice_url") or ""
             return [{"id": p.get("id"), "name": p.get("name") or p.get("id"), "language": p.get("language"),
                      "emotions": sorted({str(r.get("emotion")) for r in p.get("ref_audios") or []
-                                         if isinstance(r, dict) and r.get("emotion")})}
+                                         if isinstance(r, dict) and r.get("emotion")}),
+                     **({"category": "template"} if p.get("is_template") else {})}
                     for p in await omnivoice_profiles(url)]
         if engine in ("browser", "http", "off"):
             return []  # the page lists its own voices; a generic server has no listing
         raise MateError(f"unknown tts engine: {engine}")
+
+
+def _eleven_voice(v: dict[str, Any]) -> dict[str, Any]:
+    labels = {str(k): str(val) for k, val in (v.get("labels") or {}).items() if val not in (None, "")}
+    verified = [x for x in v.get("verified_languages") or [] if isinstance(x, dict)]
+    languages = sorted({str(x.get("language")) for x in verified if x.get("language")})
+    out: dict[str, Any] = {"id": v["voice_id"], "name": v.get("name") or v["voice_id"],
+                           "language": labels.get("language") or (languages[0] if languages else None)
+                           or labels.get("accent"),
+                           "category": v.get("category") or None,
+                           "labels": labels,
+                           "preview_url": v.get("preview_url")}
+    if languages:
+        out["languages"] = languages
+    if v.get("description"):
+        out["description"] = str(v["description"])[:300]
+    # a library voice's preview per language (e.g. the Korean sample of a multilingual voice)
+    previews = {str(x["language"]): x["preview_url"] for x in verified if x.get("language") and x.get("preview_url")}
+    if previews:
+        out["previews"] = previews
+    return out
