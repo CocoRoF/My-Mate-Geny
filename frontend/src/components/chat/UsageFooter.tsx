@@ -222,8 +222,11 @@ export default function UsageFooter({ session }: { session: Session }) {
   const wl = windowsLabel(windows);
   const worst = Math.max(windows.five?.percent ?? -1, windows.seven?.percent ?? -1);
 
+  // (+ the part of the chat not loaded yet: the server's sums)
+  const older = useChatStore((s) => s.older);
   const costed = useMemo(() => turns.filter((t) => t.costUsd !== undefined), [turns]);
-  const tokens = useMemo(() => sumTokens(costed.map((t) => t.usage)), [costed]);
+  const costedCount = costed.length + (older?.costed_turns || 0);
+  const tokens = useMemo(() => sumTokens([...costed.map((t) => t.usage), older?.usage]), [costed, older]);
 
   return (
     <span className="flex shrink-0 items-center gap-2 font-mono">
@@ -241,7 +244,7 @@ export default function UsageFooter({ session }: { session: Session }) {
       >
         {() => <AccountsPanel sid={sid} provider={provider} current={current} live={liveMine} />}
       </HoverPopover>
-      {costed.length > 0 && (
+      {costedCount > 0 && (
         <HoverPopover
           label="API-equivalent cost of this chat"
           triggerClassName="rounded px-1 -mx-1 py-0.5 text-content-faint hover:bg-surface-3 hover:text-content-dim transition"
@@ -251,7 +254,7 @@ export default function UsageFooter({ session }: { session: Session }) {
             </>
           }
         >
-          <CostPanel cost={cost} turns={costed.length} tokens={tokens} />
+          <CostPanel cost={cost} turns={costedCount} tokens={tokens} />
         </HoverPopover>
       )}
     </span>

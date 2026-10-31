@@ -24,6 +24,9 @@ interface Draft {
 interface DraftState {
   drafts: Record<string, Draft>;
   queues: Record<string, QueuedMessage[]>; // not persisted
+  /** conversations that aren't in the chat list (mates): prune keeps their drafts */
+  pinned: Record<string, true>;
+  pin: (sid: string) => void;
   setText: (sid: string, text: string) => void;
   setAttachments: (sid: string, attachments: Attachment[]) => void;
   setQueue: (sid: string, queue: QueuedMessage[]) => void;
@@ -49,6 +52,8 @@ export const useDraftStore = create<DraftState>()(
     (set) => ({
       drafts: {},
       queues: {},
+      pinned: {},
+      pin: (sid) => set((s) => (s.pinned[sid] ? s : { pinned: { ...s.pinned, [sid]: true } })),
       setText: (sid, text) =>
         set((s) => ((s.drafts[sid]?.text ?? "") === text ? s : { drafts: put(s.drafts, sid, { text }) })),
       setAttachments: (sid, attachments) =>
@@ -63,9 +68,9 @@ export const useDraftStore = create<DraftState>()(
       prune: (liveIds) =>
         set((s) => {
           const now = Date.now();
-          // ("mate:<id>": a mate's composer — mates aren't in the chat list)
+          // (a mate's conversation isn't in the chat list: pinned; "mate:<id>" = older mate drafts)
           const keep = Object.entries(s.drafts).filter(
-            ([sid, d]) => (liveIds.has(sid) || sid.startsWith("mate:")) && now - d.at < MAX_AGE_MS,
+            ([sid, d]) => (liveIds.has(sid) || s.pinned[sid] || sid.startsWith("mate:")) && now - d.at < MAX_AGE_MS,
           );
           if (keep.length === Object.keys(s.drafts).length) return s;
           return { drafts: Object.fromEntries(keep) };
@@ -75,7 +80,7 @@ export const useDraftStore = create<DraftState>()(
       name: KEY,
       version: 1,
       storage: createJSONStorage(() => localStorage),
-      partialize: (s) => ({ drafts: s.drafts }),
+      partialize: (s) => ({ drafts: s.drafts, pinned: s.pinned }),
     },
   ),
 );

@@ -76,15 +76,19 @@ class Settings(BaseSettings):
     # Single agent turn wall-clock timeout (seconds)
     turn_timeout_s: float = 600.0
 
-    # ---- auth ----
-    # Login credentials. Password MUST be provided via env (never committed).
+    # ---- auth (docs/auth.md) ----
+    # Login credentials, precedence: set in Admin -> Security (stored hashed in
+    # the DB) > these env values > the built-in default admin / geny-admin
+    # (which the UI and the startup log warn about). Never commit a password.
     auth_username: str = "admin"
     auth_password: str = ""
     # Signs the session cookie. Empty -> auto key file at ~/.hr-harnessor/session.key.
     session_secret: str = ""
     # Browser session lifetime after a successful login.
     session_ttl_days: int = 7
-    # Set the session cookie's Secure flag (True behind HTTPS; False for http dev).
+    # Always set the session cookie's Secure flag (True behind HTTPS; False for
+    # plain-http setups). When False it is still set for requests that arrived
+    # over https (directly, X-Forwarded-Proto or Cloudflare's CF-Visitor).
     cookie_secure: bool = True
     # Block an IP after this many failed logins, for this many hours.
     max_login_fails: int = 3

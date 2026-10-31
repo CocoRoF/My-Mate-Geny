@@ -68,7 +68,10 @@ function Row({ task, now, showChat }: { task: TaskInfo; now: number; showChat: b
   // A subagent of the open chat: its full detail (steps, report) is one click away.
   const activeId = useSessionStore((s) => s.activeId);
   const inChat = useChatStore(
-    (s) => !!task.tool_use_id && task.session_id === activeId && s.turns.some((t) => t.tools.some((x) => x.id === task.tool_use_id)),
+    (s) =>
+      !!task.tool_use_id &&
+      task.session_id === activeId &&
+      [...s.turns, ...(s.detached ? [s.detached] : [])].some((t) => t.tools.some((x) => x.id === task.tool_use_id)),
   );
   const openAgent = useSubagentUi((s) => s.open);
   return (

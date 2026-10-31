@@ -1,23 +1,27 @@
 # Architecture
 
-hr-harnessor is a chat-driven agent harness. The runtime runs on the **2223**
-server; it can operate local folders and (via SSH) folders on remote hosts.
+My Mate Geny (formerly hr-harnessor) is a chat-driven agent harness. One
+backend process on your server runs the agent CLIs; it can operate local
+folders and (via SSH) folders on remote hosts. The Mate layer on top is
+described in [mate.md](mate.md).
 
 ```
- Web (React/Vite)        Mobile (Expo/RN)
-        └───────────┬──────────┘   REST + WebSocket
-                    ▼
-         nginx  (reverse proxy, :58080)
-                    ▼
-        FastAPI backend  (app/main.py) — the runtime on 2223
-        ├─ providers/    claude (working) | codex (stub)   — CLI subprocess, stream-json
-        ├─ workspaces/   local (working)  | remote_ssh (scaffold)
+ Web console (React/Vite)   Desktop app (Electron)   Android app (Capacitor)
+        └──────────────────────────┬──────────────────────────┘   REST + WebSocket
+                                   ▼
+        (optional HTTPS reverse proxy / tunnel)
+                                   ▼
+        FastAPI backend (app/main.py) — also serves the built console (STATIC_DIR)
+        ├─ providers/    claude (persistent engine) | codex (exec per turn) — CLI subprocesses
+        ├─ providers/accounts.py   pooled CLI logins + balancing
+        ├─ workspaces/   local | remote_ssh (SSH-backed MCP bridge)
+        ├─ mate/         persona, voice, avatar, delegation to chats
         ├─ vault/        Fernet-encrypted secrets in SQLite
-        ├─ services/     provider · connection · workspace · session
+        ├─ services/     provider · connection · workspace · session · git · logs
         ├─ routers/      /api/* REST
-        └─ ws/stream.py  /ws/chat/{sid} streaming
-                    │
-        SQLite (data/harnessor.db): sessions, messages, events, connections, provider_auth, secrets
+        └─ ws/           /ws/* streaming
+                                   │
+        SQLite (DB_PATH): sessions, messages, events, tasks, connections, accounts, mates, logs, secrets
 ```
 
 ## Two orthogonal axes

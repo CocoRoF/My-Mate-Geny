@@ -18,6 +18,8 @@ export type SttEngine = "off" | "browser" | "openai" | "whisper";
 
 export interface MateVoice {
   auto_read: boolean;
+  /** 0.0 – 3.0 (1.0 = 100 %, as synthesized); above 1 the page amplifies with a limiter. Missing on old documents = 1. */
+  volume?: number;
   tts: {
     engine: TtsEngine;
     voice: string;
@@ -54,7 +56,7 @@ export interface Mate {
   session_id: string | null;
   /** a mate shipped with the app (estelle | chaerin | seoa), else null */
   builtin?: string | null;
-  /** a built-in the user edited (bundle updates leave it alone) */
+  /** a built-in the user edited (bundle updates keep the fields the user changed) */
   customized?: boolean;
 }
 
@@ -64,7 +66,7 @@ export interface MatePatch {
   persona?: Partial<Persona>;
   avatar?: Avatar;
   llm?: Partial<MateLlm>;
-  voice?: { auto_read?: boolean; tts?: Partial<MateVoice["tts"]>; stt?: Partial<MateVoice["stt"]> };
+  voice?: { auto_read?: boolean; volume?: number; tts?: Partial<MateVoice["tts"]>; stt?: Partial<MateVoice["stt"]> };
 }
 
 export interface Conversation {
@@ -182,6 +184,8 @@ export const updateMate = (id: string, patch: MatePatch) =>
   apiFetch<Mate>(`/api/mates/${enc(id)}`, { method: "PATCH", ...j(patch) });
 /** bring back deleted built-in mates → the whole list */
 export const restoreBuiltins = () => apiFetch<Mate[]>("/api/mates/builtin/restore", { method: "POST" });
+/** a built-in mate: the bundled avatar back (clip / trigger edits undone) → the mate */
+export const resetBuiltinAvatar = (id: string) => apiFetch<Mate>(`/api/mates/${enc(id)}/avatar/reset`, { method: "POST" });
 export const deleteMate = (id: string) => apiFetch<{ deleted: boolean }>(`/api/mates/${enc(id)}`, { method: "DELETE" });
 
 export const openConversation = (id: string) =>

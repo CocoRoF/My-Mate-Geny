@@ -61,23 +61,24 @@ export function triggerAt(text: string, caret: number): { kind: "slash" | "menti
 
 const join = (a: string, b: string) => (a.endsWith("/") ? a + b : `${a}/${b}`);
 
-function useMentionItems(session: Session, query: string, enabled: boolean): MenuItem[] {
+function useMentionItems(session: Session | undefined, query: string, enabled: boolean): MenuItem[] {
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const slash = query.lastIndexOf("/");
   const dir = slash >= 0 ? query.slice(0, slash) : "";
   const leaf = (slash >= 0 ? query.slice(slash + 1) : query).toLowerCase();
-  const root = session.workspace_path;
+  const root = session?.workspace_path ?? "";
+  const connectionId = session?.connection_id ?? null;
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !root) return;
     let alive = true;
-    listDir(dir ? join(root, dir) : root, session.connection_id)
+    listDir(dir ? join(root, dir) : root, connectionId)
       .then((r) => alive && setEntries(r.entries))
       .catch(() => alive && setEntries([]));
     return () => {
       alive = false;
     };
-  }, [enabled, dir, root, session.connection_id]);
+  }, [enabled, dir, root, connectionId]);
 
   return useMemo(
     () =>
@@ -100,10 +101,15 @@ function useMentionItems(session: Session, query: string, enabled: boolean): Men
   );
 }
 
+/**
+ * The `/` and `@` menu above a composer. `commands` replaces the chat's command list (BUILTIN + the CLI's own) —
+ * e.g. the Mate's; `@` mentions list files of `session`'s workspace.
+ */
 export default function ComposerMenu({
   trigger,
   session,
-  info,
+  info = null,
+  commands,
   onPick,
   onClose,
   activeIndex,
@@ -111,8 +117,9 @@ export default function ComposerMenu({
   setItems,
 }: {
   trigger: { kind: "slash" | "mention"; query: string };
-  session: Session;
-  info: CliInfo | null;
+  session?: Session;
+  info?: CliInfo | null;
+  commands?: MenuItem[];
   onPick: (item: MenuItem) => void;
   onClose: () => void;
   activeIndex: number;
@@ -123,8 +130,8 @@ export default function ComposerMenu({
   const items = useMemo(() => {
     if (trigger.kind === "mention") return mention;
     const q = trigger.query.toLowerCase();
-    return slashItems(info, session.provider).filter((i) => i.label.slice(1).toLowerCase().includes(q)).slice(0, 80);
-  }, [trigger, mention, info, session.provider]);
+    return (commands ?? slashItems(info, session?.provider ?? "")).filter((i) => i.label.slice(1).toLowerCase().includes(q)).slice(0, 80);
+  }, [trigger, mention, info, session?.provider, commands]);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setItems(items), [items, setItems]);
@@ -144,11 +151,11 @@ export default function ComposerMenu({
   }
 
   return (
-    <div className="absolute bottom-[calc(100%+8px)] left-0 right-0 z-40 overflow-hidden rounded-xl border border-border bg-surface-2 shadow-float animate-fade-in">
+    <div className="absolute bottom-[calc(100%+8px)] left-0 right-0 z-40 overflow-hidden rounded-xl border border-border bg-surface-2 shadow-float animate-fade-in" data-testid="composer-menu">
       <div className="flex items-center gap-2 border-b border-border/70 px-3 py-1.5 text-[10.5px] uppercase tracking-wide text-content-faint">
         {trigger.kind === "mention" ? (
           <span>
-            Files in <span className="normal-case tracking-normal font-mono">{session.workspace_path}</span>
+            Files in <span className="normal-case tracking-normal font-mono">{session?.workspace_path}</span>
           </span>
         ) : (
           "Commands"

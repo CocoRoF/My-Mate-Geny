@@ -82,7 +82,7 @@ export const MateAvatar = memo(function MateAvatar({
     const packing = rig.packing ?? "stacked-alpha";
     const video =
       avatar.kind === "video" &&
-      rig.clips.length > 0 &&
+      rig.clips.some((c) => !c.disabled) &&
       !videoFailed &&
       (packing === "plain" ? plainOk : webgl);
     return (
@@ -100,7 +100,7 @@ export const MateAvatar = memo(function MateAvatar({
             onFail={() => setVideoFailed(true)}
           />
         ) : home ? (
-          <PhotoBody key={`p|${home}`} stills={rig.stills} home={home} mood={mood} react={react} name={name} />
+          <PhotoBody key={`p|${home}`} stills={rig.stills} emotionStills={rig.emotion_stills} home={home} mood={mood} react={react} name={name} />
         ) : (
           <Initial name={name} />
         )}

@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Icon, { type IconName } from "../ui/Icon";
+import { onAdminTab, takeAdminTab, type AdminTab } from "./adminTab";
 import LogsPanel from "./LogsPanel";
 import SecurityPanel from "./SecurityPanel";
 import SystemPanel from "./SystemPanel";
 
-type Tab = "logs" | "system" | "security";
+type Tab = AdminTab;
 
 const TABS: { id: Tab; label: string; icon: IconName }[] = [
   { id: "logs", label: "Error logs", icon: "warning" },
@@ -13,7 +14,8 @@ const TABS: { id: Tab; label: string; icon: IconName }[] = [
 ];
 
 export default function AdminView() {
-  const [tab, setTab] = useState<Tab>("logs");
+  const [tab, setTab] = useState<Tab>(() => takeAdminTab() || "logs");
+  useEffect(() => onAdminTab(setTab), []);
   return (
     <div className="h-full overflow-y-auto">
       <div className={`mx-auto ${tab === "system" ? "max-w-6xl" : "max-w-4xl"} px-3 sm:px-6 py-5 sm:py-8`}>

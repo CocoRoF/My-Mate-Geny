@@ -4,7 +4,7 @@
  * models are fetched from the provider (ElevenLabs account voices + TTS models, OpenAI's catalogue, OmniVoice
  * profiles, a self-hosted server's /models), with previews of the unsaved choice.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   assetUrl,
   listModels,
@@ -18,10 +18,11 @@ import {
   type TtsEngine,
   type VoiceOption,
 } from "../../../api/mates";
+import { getMateAudioQueue } from "../../../mate/audioQueue";
 import { bcp47, type MateConversation } from "../../../mate/useMateConversation";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
-import { availability, playPreview, speakPreview, stopPreview, STT_ENGINES, TTS_ENGINES, usable, usePreviewPlaying, type Availability, type EngineInfo } from "./engines";
+import { availability, playPreview, setPreviewVolume, speakPreview, stopPreview, STT_ENGINES, TTS_ENGINES, usable, usePreviewPlaying, type Availability, type EngineInfo } from "./engines";
 import { Banner, ErrorLine, Field, LinkButton, SaveBar, SearchSelect, Section, Segmented, Toggle, useSaver, type PickOption } from "./ui";
 
 type Tts = MateVoice["tts"];
@@ -130,6 +131,22 @@ export default function VoiceTab({ mate, conv }: { mate: Mate; conv: MateConvers
   const stt = (patch: Partial<Stt>) => setV((x) => ({ ...x, stt: { ...x.stt, ...patch } }));
   const save = () => saver.run(() => useMateStore.getState().patch(mate.id, { voice: v }));
   useEffect(() => () => stopPreview(), []);
+  // the volume slider is live: previews and the mate's voice (also a sentence playing now) follow the unsaved value;
+  // leaving the tab puts the saved one back
+  const volume = v.volume ?? 1;
+  const savedVolume = useRef(mate.voice.volume ?? 1);
+  savedVolume.current = mate.voice.volume ?? 1;
+  useEffect(() => {
+    setPreviewVolume(volume);
+    getMateAudioQueue().setVolume(volume);
+  }, [volume]);
+  useEffect(
+    () => () => {
+      setPreviewVolume(1);
+      getMateAudioQueue().setVolume(savedVolume.current);
+    },
+    [],
+  );
 
   const ttsAvail = (id: string) => availability(providers, "tts", id);
   const sttAvail = (id: string) => availability(providers, "stt", id);
@@ -164,6 +181,7 @@ export default function VoiceTab({ mate, conv }: { mate: Mate; conv: MateConvers
           testId="mate-tts-engine"
         />
         {v.tts.engine !== "off" && <TtsDetails key={v.tts.engine} mate={mate} tts={v.tts} set={tts} ready={ttsAvail(v.tts.engine).state === "ready"} />}
+        {v.tts.engine !== "off" && <VolumeField value={volume} engine={v.tts.engine} onChange={(x) => setV((cur) => ({ ...cur, volume: x }))} />}
         <Toggle
           on={v.auto_read}
           onChange={(on) => setV((x) => ({ ...x, auto_read: on }))}
@@ -189,6 +207,71 @@ export default function VoiceTab({ mate, conv }: { mate: Mate; conv: MateConvers
       </Section>
       <SaveBar saver={saver} onSave={save} dirty={dirty} onReset={() => setV(mate.voice)} />
     </>
+  );
+}
+
+/** 0–300 % in 5 % steps, 100 % marked; the browser voice stops at 100 % */
+function VolumeField({ value, engine, onChange }: { value: number; engine: TtsEngine; onChange: (v: number) => void }) {
+  const pct = Math.round(value * 100);
+  const capped = engine === "browser" && pct > 100;
+  return (
+    <div className="space-y-1.5 rounded-lg border border-border/70 bg-surface/40 p-3" data-testid="mate-volume">
+      <div className="flex items-center gap-2">
+        <Icon name="volume" size={14} className="text-content-faint" />
+        <span className="text-[12px] font-medium text-content-dim">Volume</span>
+        <span className={`ml-auto font-mono text-[12.5px] tabular-nums ${pct > 100 ? "text-warning" : "text-content"}`} data-testid="mate-volume-value">
+          {pct} %
+        </span>
+        {pct !== 100 && (
+          <button type="button" className="btn-ghost !px-2 !py-0.5 text-[11.5px]" onClick={() => onChange(1)} data-testid="mate-volume-reset">
+            100 %
+          </button>
+        )}
+      </div>
+      <div className="relative px-0.5">
+        <input
+          type="range"
+          min={0}
+          max={300}
+          step={5}
+          value={pct}
+          onChange={(e) => onChange(Number(e.target.value) / 100)}
+          className="relative z-[1] w-full accent-accent"
+          aria-label="Volume"
+          aria-valuetext={`${pct} percent`}
+          list="mate-volume-marks"
+          data-testid="mate-volume-slider"
+        />
+        <datalist id="mate-volume-marks">
+          <option value="0" />
+          <option value="100" />
+          <option value="200" />
+          <option value="300" />
+        </datalist>
+        <div className="relative mt-0.5 h-3.5 text-[10px] text-content-faint" aria-hidden>
+          <span className="absolute left-0">0</span>
+          {/* 100 %: a third of the way (the thumb's half-width aside) */}
+          <span className="absolute -translate-x-1/2 font-semibold text-content-dim" style={{ left: "33.33%" }}>
+            ▲ 100 %
+          </span>
+          <span className="absolute -translate-x-1/2" style={{ left: "66.67%" }}>
+            200 %
+          </span>
+          <span className="absolute right-0">300 %</span>
+        </div>
+      </div>
+      <p className="text-[11px] leading-relaxed text-content-faint">
+        {capped ? (
+          <span className="text-warning" data-testid="mate-volume-browser-note">
+            The browser voice can't go above 100 % — it plays at 100 % until you pick a provider voice (OpenAI, ElevenLabs, …).
+          </span>
+        ) : engine === "browser" ? (
+          "The browser voice goes from 0 to 100 %."
+        ) : (
+          "Above 100 % the voice is amplified on this device, with a limiter so it doesn't distort. Try it with Preview or Say hello."
+        )}
+      </p>
+    </div>
   );
 }
 

@@ -9,12 +9,12 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toLogin, wsUrl } from "../api/client";
-import { getHistory } from "../api/sessions";
+import { getHistoryPage } from "../api/sessions";
 import { openConversation, resetConversation, speech, SpeechFallbackError, type Mate } from "../api/mates";
 import { onResync } from "../lib/sync";
-import { createChatStore, type Turn } from "../stores/chatStore";
+import { createChatStore, FIRST_TURNS, type Turn } from "../stores/chatStore";
 import { useMateStore } from "../stores/mateStore";
-import type { ProviderEvent } from "../types";
+import type { Attachment, ProviderEvent } from "../types";
 import { getMateAudioQueue, useMateAudio } from "./audioQueue";
 import { EmotionTracker } from "./emotion";
 import { SentenceStream } from "./sentences";
@@ -78,7 +78,10 @@ export interface MateConversation {
   caption: Caption | null;
   voiceError: string | null;
   speaks: boolean; // this page is the one reading aloud
-  send: (text: string) => boolean;
+  /** a new turn (text and/or files) */
+  send: (text: string, attachments?: Attachment[]) => boolean;
+  /** add to her running turn */
+  steer: (text: string, attachments?: Attachment[]) => boolean;
   stop: () => void;
   reset: () => Promise<void>;
   /** the user is typing / talking: the mate listens */
@@ -159,6 +162,12 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
     };
   }, [queue, mateId, engine, lang, tts?.voice, tts?.speed]);
 
+  // the mate's volume (0–300 %): clips through a GainNode + limiter, the browser voice up to 100 %
+  const volume = mate?.voice.volume ?? 1;
+  useEffect(() => {
+    queue.setVolume(volume);
+  }, [queue, volume]);
+
   // a different mate (or leaving the view): stop talking
   useEffect(() => () => queue.stop(), [queue, mateId]);
   // muted / no longer the owner: stop at once
@@ -182,11 +191,13 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
 
     // follow the reply being written: sentences → voice/caption, tags → react
     let follow: { key: string; stream: SentenceStream; emo: EmotionTracker; quiet: boolean } | null = null;
-    let baseline = 0; // turns that came with the history are not read aloud
+    // Turns that came with the history are not read aloud (by key: older
+    // pages prepended later shift the indexes).
+    let quiet = new Set<string>();
     const followTurn = (fresh: boolean) => {
       const turns = store.getState().turns;
       const la = lastAssistant(turns);
-      if (!la || la.index < baseline) return;
+      if (!la || quiet.has(la.turn.key)) return;
       const t = la.turn;
       if (!follow || follow.key !== t.key) {
         follow = { key: t.key, stream: new SentenceStream({ minChars: 8 }), emo: new EmotionTracker(), quiet: !fresh };
@@ -214,19 +225,25 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
           const conv = await openConversation(mateId);
           if (!alive || mine !== gen) return;
           sid = conv.session_id;
+          store.setState({ sid }); // (older pages are fetched for it)
           setSessionId(sid);
           useMateStore.getState().upsert(conv.mate);
         }
-        const h = await getHistory(sid);
+        // the newest turns first; a reconnect reloads what is shown (older pages stay)
+        const s = store.getState();
+        const h = await getHistoryPage(
+          sid,
+          s.opened && s.sid === sid && s.paging.paged ? { since: s.paging.cursor ?? "" } : { turns: FIRST_TURNS },
+        );
         if (!alive || mine !== gen) return;
         loadHistory(h);
         const turns = store.getState().turns;
-        baseline = turns.length;
+        quiet = new Set(turns.map((t) => t.key));
         follow = null;
         const la = lastAssistant(turns);
         if (h.running && la && !la.turn.complete) {
           // a reply already being written: follow it from here on (what was said before stays unsaid)
-          baseline = la.index;
+          quiet.delete(la.turn.key);
           followTurn(false);
           if (follow) (follow as { quiet: boolean }).quiet = false;
         }
@@ -261,11 +278,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
         } else if (ev.type === "user.message") {
           touch();
         }
-        if (ev.type === "run.state" && !ev.data.running) {
-          // steers the turn could no longer take: send them as the next message
-          const bounced = store.getState().takeBounced();
-          for (const b of bounced) sendChat(b.text);
-        }
+        // (steers the turn could no longer take: the composer queues them for the next turn)
       };
       ws.onclose = (e) => {
         if (wsRef.current !== ws) return;
@@ -326,35 +339,38 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mateId, store]);
 
-  const sendChat = (input: string): boolean => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-    const clientMsgId = `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-    store.getState().pushUser(input, [], clientMsgId);
-    store.getState().setStreaming(true);
-    ws.send(JSON.stringify({ type: "chat", input, attachments: [], client_msg_id: clientMsgId }));
-    return true;
-  };
-
-  /** false when not connected (the caller keeps the draft) */
+  /** a new turn with these files; false when not connected (the caller keeps the draft) */
   const send = useCallback(
-    (input: string): boolean => {
+    (input: string, attachments: Attachment[] = []): boolean => {
       const text = input.trim();
-      if (!text) return false;
+      if (!text && !attachments.length) return false;
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) return false;
       touch();
       queue.stop(); // a new question: she stops talking
-      if (store.getState().isStreaming) {
-        // she is answering: add it to her running turn (like a chat's steer)
-        const clientMsgId = `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-        store.getState().pushSteer(text, [], clientMsgId);
-        ws.send(JSON.stringify({ type: "steer", input: text, attachments: [], client_msg_id: clientMsgId }));
-        return true;
-      }
-      return sendChat(text);
+      const clientMsgId = `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+      store.getState().pushUser(text, attachments, clientMsgId);
+      store.getState().setStreaming(true);
+      ws.send(JSON.stringify({ type: "chat", input: text, attachments: attachments.map((a) => a.id), client_msg_id: clientMsgId }));
+      return true;
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [store, queue, touch],
+  );
+
+  /** add to her running turn (like a chat's steer); false when not connected */
+  const steer = useCallback(
+    (input: string, attachments: Attachment[] = []): boolean => {
+      const text = input.trim();
+      if (!text && !attachments.length) return false;
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+      touch();
+      queue.stop();
+      const clientMsgId = `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+      store.getState().pushSteer(text, attachments, clientMsgId);
+      ws.send(JSON.stringify({ type: "steer", input: text, attachments: attachments.map((a) => a.id), client_msg_id: clientMsgId }));
+      return true;
+    },
     [store, queue, touch],
   );
 
@@ -429,6 +445,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
     voiceError,
     speaks,
     send,
+    steer,
     stop,
     reset,
     setListening,

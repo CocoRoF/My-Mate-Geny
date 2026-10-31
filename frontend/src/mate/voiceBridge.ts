@@ -151,12 +151,79 @@ export function fakeLevel(tMs: number): number {
   return Math.max(0, Math.min(1, 0.03 + 0.32 * syllable * phrase + Math.random() * 0.04));
 }
 
+// ── output volume (0 – 300 %) ────────────────────────────────────────────────────────────────────────────────────
+
+/** the loudest a mate may be: 3 = 300 % */
+export const MAX_VOLUME = 3;
+
+/**
+ * An element routed through Web Audio: source → analyser → gain → limiter → speakers. The analyser sits before the gain,
+ * so the level (lip-sync) is the same at any volume. The limiter (a compressor) is transparent up to 100 % and catches
+ * the peaks above it, so 300 % gets loud without clipping harshly.
+ */
+type ElementGraph = { an: AnalyserNode; gain: GainNode; limiter: DynamicsCompressorNode };
+
 /** a media element can feed only one MediaElementSource, ever: made once per element */
-const elementGraphs = new WeakMap<HTMLMediaElement, AnalyserNode>();
+const elementGraphs = new WeakMap<HTMLMediaElement, ElementGraph>();
+/** the volume asked for per element (kept until the graph exists) */
+const elementVolumes = new WeakMap<HTMLMediaElement, number>();
+
+const clampVolume = (v: number) => (Number.isFinite(v) ? Math.max(0, Math.min(MAX_VOLUME, v)) : 1);
+
+function applyVolume(el: HTMLMediaElement): void {
+  const v = elementVolumes.get(el) ?? 1;
+  const g = elementGraphs.get(el);
+  if (!g) {
+    // not routed (yet): the element itself can only go down to silence and up to 100 %
+    el.volume = Math.min(1, v);
+    return;
+  }
+  el.volume = 1;
+  g.gain.gain.value = v;
+  const l = g.limiter;
+  if (v > 1) {
+    l.threshold.value = -6;
+    l.knee.value = 4;
+    l.ratio.value = 12;
+    l.attack.value = 0.002;
+    l.release.value = 0.2;
+  } else {
+    // ratio 1 = no compression (and no make-up gain): what you hear at ≤ 100 % is the clip as it is
+    l.threshold.value = 0;
+    l.knee.value = 0;
+    l.ratio.value = 1;
+  }
+}
+
+/**
+ * The volume of an element, 0..MAX_VOLUME (1 = as recorded). Above 1 it really amplifies (a GainNode + limiter), once
+ * the element is routed through the page's AudioContext (it is the first time it plays with a running context, or
+ * after routeOutput); until then it is capped at 100 % by the element's own volume.
+ */
+export function setOutputVolume(el: HTMLMediaElement, v: number): void {
+  elementVolumes.set(el, clampVolume(v));
+  applyVolume(el);
+}
+
+/** the gain the element's GainNode applies now (null: not routed through Web Audio) */
+export function outputGain(el: HTMLMediaElement): number | null {
+  return elementGraphs.get(el)?.gain.gain.value ?? null;
+}
+
+/**
+ * Route an element through Web Audio now (resuming the context first — call it from a gesture), so a volume over
+ * 100 % applies. Only for same-origin / blob: media: a cross-origin element without CORS would play silence.
+ */
+export async function routeOutput(el: HTMLMediaElement): Promise<boolean> {
+  const c = getAudioContext();
+  if (!c) return false;
+  if (c.state !== "running") await c.resume().catch(() => {});
+  return graphFor(el) !== null;
+}
 
 function graphFor(el: HTMLMediaElement): AnalyserNode | null {
   const known = elementGraphs.get(el);
-  if (known) return known;
+  if (known) return known.an;
   const c = getAudioContext();
   // Routing an element through a context that is not running would mute it: until the page is unlocked we leave the
   // element alone (it plays directly) and fake the level instead.
@@ -164,9 +231,14 @@ function graphFor(el: HTMLMediaElement): AnalyserNode | null {
   try {
     const src = c.createMediaElementSource(el);
     const an = makeAnalyser(c);
+    const gain = c.createGain();
+    const limiter = c.createDynamicsCompressor();
     src.connect(an);
-    an.connect(c.destination);
-    elementGraphs.set(el, an);
+    an.connect(gain);
+    gain.connect(limiter);
+    limiter.connect(c.destination);
+    elementGraphs.set(el, { an, gain, limiter });
+    applyVolume(el);
     return an;
   } catch {
     return null;

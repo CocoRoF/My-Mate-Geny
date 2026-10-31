@@ -206,7 +206,7 @@ class EngineManager:
         while True:
             msg: SteerMessage = await inbox.queue.get()
             try:
-                await engine.send_user(ClaudeCodeProvider._envelope(msg.text, msg.attachments))
+                await engine.send_user(ClaudeCodeProvider._envelope(msg.text, msg.attachments, inline_files=msg.inline_files))
                 msg.resolve(True)
             except EngineError:
                 msg.resolve(False)

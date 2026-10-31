@@ -12,7 +12,7 @@ def test_health_is_public():
     with TestClient(app) as client:
         r = client.get("/health")
         assert r.status_code == 200
-        assert r.json()["service"] == "hr-harnessor"
+        assert r.json()["service"] == "my-mate-geny"
 
 
 def test_config_requires_auth():

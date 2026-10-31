@@ -81,7 +81,7 @@ async def test_mate_engine_flags_and_delegation_roundtrip(db, tmp_path, monkeypa
         assert argv[argv.index("--effort") + 1] == "low"
         prompt = _prompt(argv)
         assert prompt.startswith("You are Geny") and "<delegation_result" in prompt and "[joy]" in prompt
-        assert "Reply in Korean" in prompt and "(nothing yet)" in prompt
+        assert "Always reply in Korean, whatever language" in prompt and "(nothing yet)" in prompt
         mcp_file = argv[argv.index("--mcp-config") + 1]
         assert oct(os.stat(mcp_file).st_mode & 0o777) == "0o600" and "HRH_MATE_TOKEN" not in " ".join(argv)
         server = json.load(open(mcp_file))["mcpServers"]["mate"]
@@ -261,3 +261,29 @@ async def test_read_side_tools_and_create_session(db, tmp_path, monkeypatch):
         assert f'session_id="{new["id"]}"' in res["text"] and "echo[" in res["text"]
     finally:
         await svc.shutdown()
+
+
+def test_persona_edit_reaches_the_next_message(db, tmp_path, monkeypatch):
+    """Changing how the mate calls the user takes effect at the next message:
+    new system prompt and an explicit settings note in that message."""
+    from app.mate.prompt import settings_change_note, system_prompt
+
+    note = settings_change_note("한채린", {"address": ""}, "한채린", {"address": "하렴"})
+    assert "하렴" in note and note.startswith("<settings_update>")
+    assert settings_change_note("A", {"address": "x"}, "A", {"address": "x"}) == ""
+    assert "Always call the user “하렴”" in system_prompt("한채린", {"address": "하렴"}, [])
+
+    svc, store, mates = _setup(db, tmp_path, monkeypatch)
+    m = store.create(name="Rin", persona={"address": "사용자"})
+    session = {"id": "sess_x", "mate_id": m["id"], "title": "Rin", "model": m["llm"]["model"], "effort": m["llm"]["effort"]}
+    from app.providers.base import TurnRequest
+    req = TurnRequest(messages=[{"role": "user", "content": "hi"}], model="", cwd=str(tmp_path))
+    mates.configure_engine(session, req)
+    assert "settings_update" not in req.preamble  # first turn: nothing to announce
+    mates.update(m["id"], {"persona": {"address": "하렴"}})
+    req2 = TurnRequest(messages=[{"role": "user", "content": "hi"}], model="", cwd=str(tmp_path))
+    mates.configure_engine(session, req2)
+    assert "settings_update" in req2.preamble and "하렴" in req2.preamble
+    req3 = TurnRequest(messages=[{"role": "user", "content": "hi"}], model="", cwd=str(tmp_path))
+    mates.configure_engine(session, req3)
+    assert "settings_update" not in req3.preamble  # announced once

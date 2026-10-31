@@ -1,50 +1,44 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useChatStore } from "../../stores/chatStore";
+import { useChatStore, type Turn } from "../../stores/chatStore";
+import { useHistoryScroll } from "../../hooks/useHistoryScroll";
 import MessageItem from "./MessageItem";
+import HistoryEdge from "./HistoryEdge";
 import Icon from "../ui/Icon";
 import { SubagentLayer, SubagentPill } from "./turn/SubagentModal";
+import SubagentCard from "./turn/SubagentCard";
+import ToolGroup from "./turn/ToolGroup";
+import { isAgentTool } from "./turn/subagent";
 
-const NEAR_BOTTOM = 120;
+/** Background work launched in a turn that isn't loaded yet (scrolled out of
+ * the loaded range) and still running: shown here until its turn is. */
+function Detached({ turn }: { turn: Turn }) {
+  const top = turn.tools.filter((t) => !t.parent);
+  if (!top.length) return null;
+  const agents = top.filter(isAgentTool);
+  const others = top.filter((t) => !isAgentTool(t));
+  return (
+    <div className="space-y-2 rounded-xl border border-dashed border-border/80 p-2.5" data-testid="detached-work">
+      <div className="flex items-center gap-1.5 px-1 text-[11.5px] text-content-faint">
+        <Icon name="activity" size={12} /> Started earlier in this chat
+      </div>
+      {agents.map((t) => (
+        <SubagentCard key={t.id} tool={t} allTools={turn.tools} />
+      ))}
+      {others.length > 0 && <ToolGroup tools={others} allTools={turn.tools} />}
+    </div>
+  );
+}
 
 export default function MessageList() {
   const turns = useChatStore((s) => s.turns);
+  const detached = useChatStore((s) => s.detached);
   const connection = useChatStore((s) => s.connection);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const stick = useRef(true); // follow new output only while the reader is at the bottom
-  const [showJump, setShowJump] = useState(false);
-
-  const onScroll = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM;
-    stick.current = atBottom;
-    setShowJump(!atBottom);
-  };
-
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [turns]);
-
-  // A freshly opened session starts at the latest message.
-  const first = turns[0]?.key;
-  useEffect(() => {
-    stick.current = true;
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [first]);
-
-  const jump = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    stick.current = true;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  };
+  const { ref, onScroll, showJump, jump, paging, loadOlder } = useHistoryScroll(useChatStore);
 
   return (
     <div className="relative flex-1 min-h-0">
-      <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto">
+      <div ref={ref} onScroll={onScroll} className="h-full overflow-y-auto" data-testid="message-scroll">
         <div className="mx-auto max-w-3xl px-4 sm:px-5 py-6 space-y-6">
+          <HistoryEdge paging={paging} empty={turns.length === 0} onRetry={loadOlder} />
           {turns.length === 0 && (
             <div className="grid place-items-center pt-24 text-center">
               <div className="grid place-items-center w-12 h-12 rounded-xl bg-surface-2 border border-border mb-3">
@@ -58,6 +52,7 @@ export default function MessageList() {
           {turns.map((t) => (
             <MessageItem key={t.key} turn={t} />
           ))}
+          {detached && <Detached turn={detached} />}
         </div>
       </div>
       {connection === "reconnecting" && (

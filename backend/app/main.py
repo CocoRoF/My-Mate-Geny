@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app import __version__
-from app.auth import AuthManager, AuthMiddleware
+from app.auth import AuthManager, AuthMiddleware, OpenCORSMiddleware
 from app.config import settings
 from app.providers.oauth import OAuthManager
 from app.providers.accounts import AccountPool, AccountStore
@@ -76,6 +76,7 @@ async def lifespan(app: FastAPI):
     app.state.downloads = DownloadService()
 
     app.state.auth = AuthManager(db)
+    app.state.auth.warn_if_default()  # also lands in the admin log (bridge above)
     app.state.oauth = OAuthManager()
     account_store = AccountStore(db, vault)
     account_pool = AccountPool(account_store)
@@ -160,8 +161,9 @@ class ErrorLogMiddleware(BaseHTTPMiddleware):
         return response
 
 
-# Innermost first: error logging wraps the app, the auth gate wraps that, and
-# CORS (added last) is outermost.
+# Innermost first: error logging wraps the app, the auth gate wraps that, then
+# the credentialed CORS policy, and outermost the open (``*``, no credentials)
+# CORS for /health + /api/auth/login that native connect pages need.
 app.add_middleware(ErrorLogMiddleware)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(
@@ -171,6 +173,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(OpenCORSMiddleware)
 
 for r in (
     auth_router.router,

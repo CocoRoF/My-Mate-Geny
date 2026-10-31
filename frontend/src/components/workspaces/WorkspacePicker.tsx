@@ -44,7 +44,7 @@ export default function WorkspacePicker({ connectionId, setConnectionId, path, s
     <div>
       <label className="text-[11px] font-medium uppercase tracking-wider text-content-faint">Workspace</label>
       <select value={source} onChange={(e) => onSource(e.target.value)} className="field mt-1.5 mb-2">
-        <option value="">💻  Local — this server (2223)</option>
+        <option value="">💻  Local — this server</option>
         {connections.map((c) => (
           <option key={c.id} value={`ssh:${c.id}`}>
             🌐  {c.name} — {c.username}@{c.host}:{c.port}
