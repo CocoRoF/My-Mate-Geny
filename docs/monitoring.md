@@ -42,9 +42,11 @@ slice).
 
 **Cost.** One tick reads ~20 small kernel files plus `stat` of the backend's
 descendants: measured **~3 ms CPU per tick ≈ 0.15 % of one core** (shown live
-in the *Monitor* card: `sampler.avg_cpu_ms`, `cpu_pct`). JSON encoding for live
-viewers happens once per tick regardless of the number of viewers, and only
-while at least one is connected.
+in the *Monitor* card: `sampler.avg_cpu_ms`, `cpu_pct`). Cross-check from
+outside: two otherwise idle backends over 100 s — monitor on 0.31 %, off
+0.13 % of a core, i.e. +0.18 %. JSON encoding for live viewers happens once
+per tick regardless of the number of viewers, and only while at least one is
+connected. Command lines are read once per process; zombies are only counted.
 
 ## Storage
 
@@ -52,11 +54,14 @@ while at least one is connected.
   in memory (`(ts, keys, values)` tuples sharing one keys tuple: ~1 MB).
 * **SQLite** — table `sys_metrics(res, ts, n, data)`: 1-minute aggregates kept
   `MONITOR_KEEP_1M_DAYS` (7), 15-minute aggregates kept `MONITOR_KEEP_15M_DAYS`
-  (90). `data` is `{"metric": [min, avg, max]}` (a bare number when constant),
-  values rounded to 4 significant digits. Rows are pruned at start and hourly.
-  A bucket written twice (restart mid-minute) is merged, not replaced; the
-  15-minute bucket is resumed from 1-minute rows after a restart.
-  Size: ~0.7 KB per row → ≈ 13 MB at full retention.
+  (90). `data` is zlib-compressed JSON `{"metric": [min, avg, max]}` (a bare
+  number when constant), values rounded to 4 significant digits. Rows are
+  pruned at start and hourly. A bucket written twice (restart mid-minute) is
+  merged, not replaced; the 15-minute bucket is resumed from 1-minute rows
+  after a restart. Size: ~0.6 KB per row incl. index → ≈ 12 MB at full
+  retention (18,720 rows). A plain rowid table on purpose: ~1 KB rows in a
+  WITHOUT ROWID b-tree spill into overflow pages (measured 7× larger).
+  Range queries: 1h 15 ms, 24h 0.2 s, 30d 0.3 s (bucketing ~3k rows).
 * `sys_monitor_state` holds the last heartbeat (restart detection).
 
 Range → source: `15m`/`30m` live ring (2 s) · `1h`/`6h` 1-min rows · `24h`

@@ -184,7 +184,7 @@ def test_collector_rates_and_process_tree(tmp_path):
     eng = kids[200]
     assert eng.rss == 50000 * procfs.PAGE and eng.rss_tree == 51000 * procfs.PAGE and eng.nprocs == 2
     assert eng.cpu == pytest.approx(50) and eng.cmd.startswith("claude --print")
-    assert kids[300].state == "Z"
+    assert 300 not in kids          # zombies are counted, not listed
     du = col.disk_usage()
     assert du[0]["label"] == "tmp" and 0 <= du[0]["pct"] <= 100
 

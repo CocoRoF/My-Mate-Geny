@@ -420,6 +420,7 @@ class Collector:
         self._disks = physical_disks(sys)
         self._cg_rel = own_cgroup_path(proc, str(self.self_pid) if self_pid else "self")
         self._has_children_file: bool | None = None
+        self._cmds: dict[tuple[int, int], str] = {}
         self.cpu_model = cpu_model(proc)
         self.in_container = os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv")
 
@@ -618,7 +619,7 @@ class Collector:
                     stack.extend(children(c))
             started = (btime + s.start / CLK_TCK) if btime else now
             return ProcView(
-                pid=pid, comm=s.comm, state=s.state, cmd=_cmdline(self.proc, pid, s.comm),
+                pid=pid, comm=s.comm, state=s.state, cmd=self._cmd(pid, s),
                 rss=s.rss, rss_tree=rss_tree, cpu=own_cpu, cpu_tree=cpu_tree, threads=s.threads,
                 nprocs=n, started=started, zombies=zombies,
             )
@@ -627,21 +628,34 @@ class Collector:
         kids: dict[int, ProcView] = {}
         zombies_direct = 0
         for c in children(self.self_pid):
-            v = view(c)
-            if v is None:
+            s = stat(c)
+            if s is None:
                 continue
-            if v.state == "Z":
+            if s.state == "Z":   # defunct: counted, not listed (nothing else to read)
                 zombies_direct += 1
-            kids[c] = v
+                continue
+            v = view(c)
+            if v is not None:
+                kids[c] = v
         if me is not None:
             me.zombies = zombies_direct + sum(v.zombies for v in kids.values())
-            me.nprocs = 1 + sum(v.nprocs for v in kids.values())
+            me.nprocs = 1 + zombies_direct + sum(v.nprocs for v in kids.values())
             me.rss_tree = me.rss + sum(v.rss_tree for v in kids.values())
             me.cpu_tree = me.cpu + sum(v.cpu_tree for v in kids.values())
         # Forget processes that are gone.
         for key in [k for k in self._prev_ticks if k not in seen_keys]:
             del self._prev_ticks[key]
+        for key in [k for k in self._cmds if k not in seen_keys]:
+            del self._cmds[key]
         return me, kids
+
+    def _cmd(self, pid: int, s: PidStat) -> str:
+        """Command line, read once per process (it does not change)."""
+        key = (pid, s.start)
+        hit = self._cmds.get(key)
+        if hit is None:
+            hit = self._cmds[key] = _cmdline(self.proc, pid, s.comm)
+        return hit
 
 
 def _cmdline(proc: str, pid: int, fallback: str) -> str:
