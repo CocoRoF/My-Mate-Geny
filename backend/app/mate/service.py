@@ -28,7 +28,7 @@ from typing import Any
 
 from app.config import settings
 from app.mate import files
-from app.mate.prompt import prompt_key, system_prompt
+from app.mate.prompt import prompt_key, settings_change_note, system_prompt
 from app.mate.store import MateError, MateStore
 from app.providers import get_provider
 from app.providers.catalog import DEFAULT_MATE_MODEL
@@ -231,6 +231,9 @@ class MateService:
                     "llm": {"model": session.get("model") or "", "effort": session.get("effort") or "low"}}
         memories = self.store.memories(mate_id) if mate_id else []
         prompt = system_prompt(mate["name"], mate["persona"], memories)
+        note = self._settings_note(mate_id, mate)
+        if note:  # persona edited since the conversation last ran: say so in this message
+            req.preamble = f"{note}\n\n{req.preamble}" if req.preamble else note
         # (a file: persona + 200 memories can outgrow one argv string)
         req.system_prompt_file = files.engine_file(mate_id, "prompt", "md", prompt)
         req.prompt_key = prompt_key(mate["name"], mate["persona"], int(mate.get("memory_rev") or 0))
@@ -256,6 +259,27 @@ class MateService:
         req.mcp_config_file = files.engine_file(mate_id, "mcp", "json", json.dumps(req.mcp_config, indent=1))
         if session.get("model") != req.model or (session.get("effort") or "default") != req.effort:
             self._svc.update(session["id"], model=req.model, effort=req.effort)
+
+    def _settings_note(self, mate_id: str, mate: dict[str, Any]) -> str:
+        """Compare the persona with the one the conversation last ran with
+        (kept next to the mate's engine files) and remember the new one."""
+        if not mate_id:
+            return ""
+        path = files.home_dir(mate_id) / ".applied-persona.json"
+        now = {"name": mate.get("name") or "", "persona": mate.get("persona") or {}}
+        try:
+            before = json.loads(path.read_text("utf-8"))
+        except (OSError, ValueError):
+            before = None
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(now, ensure_ascii=False), "utf-8")
+        except OSError:
+            pass
+        if not isinstance(before, dict):
+            return ""  # first turn ever: the system prompt says it all
+        return settings_change_note(str(before.get("name") or ""), before.get("persona") or {},
+                                    now["name"], now["persona"])
 
     # ---- tools (called by the bridge through the internal API) ----
 
