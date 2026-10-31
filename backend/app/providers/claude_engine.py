@@ -59,6 +59,9 @@ class ClaudeEngine:
         self.events: asyncio.Queue[ProviderEvent] = asyncio.Queue()
         self.tasks: dict[str, dict[str, Any]] = {}
         self.cli_session_id: str | None = None
+        # API-equivalent cost this process has run up (the CLI's result lines
+        # report this running total, not the turn's cost).
+        self.cost_total = 0.0
         self.started_at = time.time()
         self.last_activity = time.monotonic()
         self.turn_active = False
@@ -232,9 +235,12 @@ class ClaudeEngine:
                         self.cli_session_id = obj["session_id"]
                     await self.events.put(ev)
                     if ev.type in ("turn.complete", "error"):
-                        # one accumulator per turn; the session id carries over
+                        # One accumulator per turn; the session id and the
+                        # process's running cost total carry over, so each
+                        # turn reports only its own share of the cost.
                         sid = acc.session_id
-                        acc = StreamJsonAccumulator()
+                        self.cost_total = acc.cost_total
+                        acc = StreamJsonAccumulator(cost_base=self.cost_total)
                         acc.session_id = sid
         finally:
             rc = None

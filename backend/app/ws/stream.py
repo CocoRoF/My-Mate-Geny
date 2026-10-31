@@ -121,6 +121,9 @@ async def chat_stream(websocket: WebSocket, sid: str) -> None:
                 for ev in svc.events(sid, after=after):
                     await send(ev)
                 await send({"type": "run.state", "data": {"running": svc.is_running(sid)}})
+                live = svc.live_usage_for(sid)  # this chat's engine's plan usage, if it reported any
+                if live:
+                    await send({"type": "usage.update", "data": live})
                 if pump_task is None:
                     pump_task = asyncio.create_task(pump())
 

@@ -33,15 +33,20 @@ import urllib.request
 _EFFORT_CLAUDE = ["default", "low", "medium", "high", "xhigh", "max"]
 _EFFORT_CODEX = ["default", "low", "medium", "high", "xhigh"]
 
+# What a new Claude chat runs on unless the user picks something else (also
+# the fallback when a session has no model stored).
+DEFAULT_CLAUDE_MODEL = "claude-opus-5-5"
+
 _STATIC: dict[str, dict] = {
     "claude": {
         "label": "Claude Code",
         "models": [
+            {"id": DEFAULT_CLAUDE_MODEL, "label": "Claude Opus 5.5"},
             {"id": "opus", "label": "Opus (latest)"},
             {"id": "sonnet", "label": "Sonnet (latest)"},
             {"id": "haiku", "label": "Haiku (latest)"},
         ],
-        "default_model": "sonnet",
+        "default_model": DEFAULT_CLAUDE_MODEL,
         "effort": _EFFORT_CLAUDE,
         "default_effort": "default",
         "models_source": "static",
@@ -119,11 +124,15 @@ def _fetch_claude_models(cred_dir: str) -> list[dict] | None:
 
 
 def _claude_default(models: list[dict]) -> str:
-    # Prefer the newest Sonnet (balanced default), else the first model.
-    for m in models:
-        if "sonnet" in m["id"]:
-            return m["id"]
-    return models[0]["id"] if models else "sonnet"
+    # Opus 5.5 when the account offers it, else the newest Opus (the API lists
+    # newest first), else the first model.
+    ids = [m["id"] for m in models]
+    if DEFAULT_CLAUDE_MODEL in ids:
+        return DEFAULT_CLAUDE_MODEL
+    for mid in ids:
+        if "opus" in mid:
+            return mid
+    return ids[0] if ids else DEFAULT_CLAUDE_MODEL
 
 
 def _claude_catalog(cred_dir: str) -> dict:

@@ -213,6 +213,7 @@ class CodexJsonAccumulator:
                 "model": model,
                 "usage": self.usage,
                 "cost_usd": 0.0,  # codex reports tokens, not cost
+                "cost_kind": "none",
                 "stop_reason": "end_turn",
                 "cli_session_id": self.thread_id or cli_session_id,
             },

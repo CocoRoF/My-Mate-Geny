@@ -37,7 +37,12 @@ log = open(FAKE_DIR + "/calls.log", "a")
 log.write(json.dumps({"pid": os.getpid(), "argv": args}) + "\n"); log.flush()
 def init(): emit({"type": "system", "subtype": "init", "session_id": SID, "model": model, "permissionMode": "bypassPermissions"})
 def say(t): emit({"type": "assistant", "message": {"model": model, "content": [{"type": "text", "text": t}]}})
-def result(t, sub="success"): emit({"type": "result", "subtype": sub, "is_error": sub != "success", "result": t, "session_id": SID, "total_cost_usd": 0.001, "usage": {"input_tokens": 5, "output_tokens": 3}})
+spent = [0.0]
+def result(t, sub="success"):
+    # like the real CLI: total_cost_usd is the PROCESS's running total
+    spent[0] += 0.25
+    emit({"type": "result", "subtype": sub, "is_error": sub != "success", "result": t, "session_id": SID, "total_cost_usd": spent[0], "usage": {"input_tokens": 5, "output_tokens": 3}})
+def rate_limit(): emit({"type": "rate_limit_event", "rate_limit_info": {"status": "allowed", "unifiedWindows": {"five_hour": {"utilization": 0.52, "resetsAt": 1793774715}, "seven_day": {"utilization": 0.07, "resetsAt": 1794774715}}}})
 pending = []
 while True:
     try:
@@ -64,6 +69,7 @@ while True:
     text = content if isinstance(content, str) else content[-1]["text"]
     text = text.strip().splitlines()[-1]  # the new message (after any context preamble)
     init()
+    rate_limit()
     if "LONG" in text:
         emit({"type": "assistant", "message": {"model": model, "content": [{"type": "tool_use", "id": "tl", "name": "Bash", "input": {"command": "sleep 99"}}]}})
         end = time.time() + 20
@@ -123,8 +129,22 @@ async def test_engine_persists_across_turns_and_handles_tasks(db, tmp_path, monk
     try:
         seen = await _turn(svc, q, sid, "hello")
         assert any(m["type"] == "turn.complete" and m["data"]["text"] == "echo[m1]: hello" for m in seen)
-        await _turn(svc, q, sid, "again")
+        # which account the engine runs on: recorded with the turn, sent with live usage
+        start = next(m for m in seen if m["type"] == "session.start")
+        assert start["data"]["account"] == "Primary · this machine"
+        assert start["data"]["account_id"] == "__primary__claude"
+        live = next(m for m in seen if m["type"] == "usage.update")["data"]
+        assert live["account"] == "Primary · this machine" and live["session_id"] == sid
+        assert live["unifiedWindows"]["five_hour"]["utilization"] == 0.52
+        assert svc.live_usage_for(sid)["account_id"] == "__primary__claude"
+        assert svc.session_account(sid)["live"] is True
+        seen = await _turn(svc, q, sid, "again")
         assert len(set(_pids(tmp_path))) == 1  # same process served both turns
+        # the CLI reports the process's running total (0.25, then 0.5): each turn gets its share
+        done = next(m for m in seen if m["type"] == "turn.complete")["data"]
+        assert done["cost_usd"] == 0.25 and done["cost_kind"] == "turn" and done["process_cost_usd"] == 0.5
+        hist = [e for e in svc.events(sid) if e["type"] == "turn.complete"]
+        assert [e["data"]["cost_usd"] for e in hist] == [0.25, 0.25]
 
         svc.update(sid, model="m2")  # live switch, no restart
         seen = await _turn(svc, q, sid, "third")
@@ -150,15 +170,18 @@ async def test_engine_persists_across_turns_and_handles_tasks(db, tmp_path, monk
         seen = await _until(q, lambda m: m["type"] == "run.state" and not m["data"]["running"])
         err = [m for m in seen if m["type"] == "error"]
         assert err and err[0]["data"]["code"] == "turn.interrupted"
+        assert err[0]["data"]["cost_usd"] == 0.25  # a stopped turn's cost is kept
         seen = await _turn(svc, q, sid, "after stop")
         assert len(set(_pids(tmp_path))) == 1
         assert not any(m["type"] == "notice" and "context" in m["data"].get("code", "") for m in seen)  # no self-handoff
 
         # a launch setting (effort) changes -> fresh process, resuming the CLI session
         svc.update(sid, effort="high")
-        await _turn(svc, q, sid, "with effort")
+        seen = await _turn(svc, q, sid, "with effort")
         calls = [json.loads(l) for l in open(tmp_path / "calls.log")]
         assert len({c["pid"] for c in calls}) == 2
+        # a fresh process starts its running total from 0 again
+        assert next(m for m in seen if m["type"] == "turn.complete")["data"]["cost_usd"] == 0.25
         assert calls[-1]["argv"][calls[-1]["argv"].index("--resume") + 1] == "fake-cli-session"
         assert svc.engines() and svc.engines()[0]["session_id"] == sid
     finally:

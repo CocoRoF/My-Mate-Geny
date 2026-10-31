@@ -32,10 +32,12 @@ from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from app.db import Database
 from app.providers import get_provider
-from app.providers.accounts import AccountPool, classify_error, link_shared_state
+from app.providers.accounts import PRIMARY_LABEL, PRIMARY_PREFIX, AccountPool, classify_error, link_shared_state
 from app.providers.base import ProviderEvent, SteerMessage, TurnInbox, TurnRequest
+from app.providers.catalog import DEFAULT_CLAUDE_MODEL
 from app.providers.claude_engine import ClaudeEngine
 from app.services._ids import new_id, now_iso
+from app.services.turn_cost import needs_normalizing, normalize_events
 from app.services.context_handoff import build_blocks, catchup_preamble, handoff_preamble, ENGINE_LABEL
 from app.services.engines import EngineManager
 from app.services import changes as change_tracker
@@ -81,7 +83,10 @@ class SessionService:
         self._subscribers: dict[str, set[asyncio.Queue]] = {}
         self._inboxes: dict[str, TurnInbox] = {}  # running turns that accept steering
         self.persistent_engines = True  # Claude: one long-lived CLI process per chat
+        # Latest plan usage an engine reported (rate_limit_event), per account
+        # (admin view) and per chat (the composer shows only its own chat's).
         self.live_usage: dict[str, dict[str, Any]] = {}
+        self._live_usage_by_session: dict[str, dict[str, Any]] = {}
         self._engines = EngineManager(
             on_task=self._on_task,
             on_usage=self._on_usage,
@@ -116,6 +121,7 @@ class SessionService:
         extra_dirs: list[str] | None = None,
     ) -> dict[str, Any]:
         get_provider(provider)  # validate
+        model = _default_model(provider, model)
         sid = new_id("sess_")
         now = now_iso()
         dirs = self._clean_dirs(connection_id, extra_dirs or [])
@@ -174,7 +180,7 @@ class SessionService:
             params += [provider, own.get("id"), json.dumps(state)]
         if model is not None:
             sets.append("model = ?")
-            params.append(model)
+            params.append(_default_model(provider or session["provider"], model))
         if effort is not None:
             sets.append("effort = ?")
             params.append(effort)
@@ -231,6 +237,7 @@ class SessionService:
         if task is not None and not task.done():
             task.cancel()
         self._retire_engine(sid, "session deleted")
+        self._live_usage_by_session.pop(sid, None)
         self._db.execute("DELETE FROM sessions WHERE id = ?", (sid,))
         if self._attachments is not None:
             self._attachments.purge_session(sid)
@@ -249,11 +256,24 @@ class SessionService:
             "SELECT id, seq, type, data, created_at FROM events WHERE session_id = ? AND id > ? ORDER BY id",
             (sid, after),
         )
-        return [
+        out = [
             {"eid": r["id"], "seq": r["seq"], "type": r["type"], "data": json.loads(r["data"]),
              "timestamp": r["created_at"]}
             for r in rows
         ]
+        if any(needs_normalizing(e["type"], e["data"]) for e in out):
+            # Legacy turns hold the engine's running cost total: hand out per-turn
+            # values (the same normalization the Usage page uses). A tail read
+            # needs the session's earlier terminal events for the running total.
+            prior = [] if not after else [
+                json.loads(r["data"]) for r in self._db.query(
+                    "SELECT data FROM events WHERE session_id = ? AND id <= ? "
+                    "AND type IN ('turn.complete', 'error') ORDER BY id",
+                    (sid, after),
+                )
+            ]
+            normalize_events(out, prior)
+        return out
 
     def reset_context(self, sid: str) -> dict[str, Any]:
         """``/clear``: the next turn starts a fresh provider conversation."""
@@ -648,8 +668,9 @@ class SessionService:
         if not persistent and self._pool is not None:
             # May fetch plan usage over HTTPS (most_remaining): off the event loop.
             lease = await asyncio.to_thread(self._pool.acquire, provider_name)
+        if not persistent:  # (an engine says which account it holds once it's up)
+            ctx.update(self._account_ref(provider_name, lease, api_key))
         if lease is not None:
-            ctx["account"] = lease.label
             if not lease.is_primary:
                 await asyncio.to_thread(link_shared_state, provider_name, lease.account_id)
                 if provider_name == "claude":
@@ -658,9 +679,9 @@ class SessionService:
                     extra_env["CODEX_HOME"] = lease.config_dir
             if lease.auth_mode == "api_key" and lease.api_key:
                 api_key = lease.api_key
-            run = self.active_runs.get(sid)
-            if run is not None:
-                run["account"] = lease.label
+        run = self.active_runs.get(sid)
+        if run is not None and ctx.get("account"):
+            run["account"] = ctx["account"]
 
         # Context: this engine's own session + whatever of the chat it hasn't
         # seen (full handoff after a provider switch, catch-up when returning).
@@ -795,8 +816,11 @@ class SessionService:
                 except Exception:  # noqa: BLE001 - an unreadable image must not break the turn
                     continue
             ev.data = {**ev.data, "images": stored}
-        if ev.type == "turn.complete":
+        if ev.type in ("turn.complete", "error"):
             ev.data = {**ev.data, "provider": st["provider"]}  # usage is attributed per turn
+        elif ev.type == "session.start":
+            # Which account ran this turn — kept with the chat, so it's auditable.
+            ev.data = {**ev.data, "account": ctx.get("account"), "account_id": ctx.get("account_id")}
         self._add_event(sid, ev)
         if ev.type == "turn.complete":
             final_text = ev.data.get("text", "")
@@ -870,25 +894,32 @@ class SessionService:
             launch = dataclasses.replace(req, api_key=key)
             return ClaudeEngine(
                 binary=provider._binary, argv=provider.engine_argv(launch), cwd=req.cwd, env_extras=env,
-                fingerprint=provider.engine_fingerprint(req), model=req.model or "sonnet", mode=req.mode,
+                fingerprint=provider.engine_fingerprint(req), model=req.model or DEFAULT_CLAUDE_MODEL,
+                mode=req.mode,
             )
 
-        slot, _fresh, note = await self._engines.ensure(
+        slot, fresh, note = await self._engines.ensure(
             sid,
             make_engine=make,
             fingerprint=provider.engine_fingerprint(req),
-            model=req.model or "sonnet",
+            model=req.model or DEFAULT_CLAUDE_MODEL,
             mode=req.mode,
             permission_mode=provider.permission_mode(req.mode),
             acquire_lease=lambda: self._pool.acquire("claude") if self._pool else None,
             release_lease=lambda lease: self._pool.release(lease) if self._pool else None,
         )
         holder["slot"] = slot
-        if slot.lease is not None:
-            ctx["account"] = slot.lease.label
-            run = self.active_runs.get(sid)
-            if run is not None:
-                run["account"] = slot.lease.label
+        # The engine keeps the account it leased at spawn for its whole life.
+        if fresh or "account" not in slot.meta:
+            slot.meta["account"] = self._account_ref("claude", slot.lease, req.api_key)
+        ctx.update(slot.meta["account"])
+        if fresh:
+            self._log("info", "account", f"Claude engine started on account '{ctx['account']}'",
+                      code="account.leased", detail={**ctx, "pid": getattr(slot.engine._proc, "pid", None)},
+                      session_id=sid)
+        run = self.active_runs.get(sid)
+        if run is not None:
+            run["account"] = ctx["account"]
         first = True
         async for ev in self._engines.turn(sid, slot, provider.envelope(req), req.inbox):
             yield ev
@@ -1001,7 +1032,7 @@ class SessionService:
         slot = self._engines.slot(sid)
         ctx = {"provider": "claude", "model": session["model"], "mode": session.get("mode"),
                "connection_id": session["connection_id"], "workspace": session["workspace_path"],
-               "trigger": "background", "account": getattr(slot.lease, "label", None) if slot else None}
+               "trigger": "background", **self._engine_account(slot)}
         self.active_runs[sid] = {**ctx, "session_id": sid, "title": session["title"], "started_at": now_iso(),
                                  "tools": 0, "attachments": 0}
         st = self._turn_state(ctx, "claude", session["model"])
@@ -1065,12 +1096,58 @@ class SessionService:
             self._publish(sid, {"type": "task.state", "data": self._task_out(row)})
 
     def _on_usage(self, sid: str, info: dict[str, Any]) -> None:
-        self.live_usage["claude"] = {**info, "at": now_iso()}
-        self._publish(sid, {"type": "usage.update", "data": info})
+        # The engine's own account: the numbers belong to it, and only this
+        # chat's subscribers get them.
+        data = {**info, **self._engine_account(self._engines.slot(sid)), "provider": "claude",
+                "session_id": sid, "at": now_iso()}
+        self._live_usage_by_session[sid] = data
+        self.live_usage[data.get("account_id") or "claude"] = data
+        self._publish(sid, {"type": "usage.update", "data": data})
+
+    # ---- which account a chat runs on ----
+
+    def _account_ref(self, provider: str, lease: Any, api_key: str | None = None) -> dict[str, Any]:
+        """{account, account_id} for a turn/engine. No lease (pool off, or no
+        pool) means the host's own login — or the configured API key."""
+        if lease is not None:
+            return {"account": lease.label, "account_id": lease.account_id}
+        if api_key:
+            return {"account": "API key", "account_id": None}
+        return {"account": PRIMARY_LABEL, "account_id": f"{PRIMARY_PREFIX}{provider}"}
+
+    def _engine_account(self, slot: Any) -> dict[str, Any]:
+        if slot is None:
+            return {"account": None, "account_id": None}
+        return slot.meta.get("account") or self._account_ref("claude", slot.lease)
+
+    def session_account(self, sid: str) -> dict[str, Any] | None:
+        """The account this chat runs on: its live engine's, else the one the
+        last turn recorded (None before the first turn)."""
+        slot = self._engines.slot(sid)
+        if slot is not None:
+            return {**self._engine_account(slot), "provider": "claude", "live": True}
+        row = self._db.query_one(
+            "SELECT data FROM events WHERE session_id = ? AND type = 'session.start' ORDER BY id DESC LIMIT 1", (sid,))
+        if row is None:
+            return None
+        try:
+            d = json.loads(row["data"])
+        except ValueError:
+            return None
+        if not d.get("account"):
+            return None
+        return {"account": d.get("account"), "account_id": d.get("account_id"), "provider": d.get("provider"),
+                "live": False}
+
+    def live_usage_for(self, sid: str) -> dict[str, Any] | None:
+        """The plan usage this chat's engine last reported (None if it hasn't)."""
+        return self._live_usage_by_session.get(sid)
 
     def _on_engine_closed(self, sid: str, lease: Any, reason: str) -> None:
         if self._pool is not None and lease is not None:
             self._pool.release(lease)
+        # The next engine may lease another account: don't show this one's numbers as current.
+        self._live_usage_by_session.pop(sid, None)
         rows = self._db.query(
             "SELECT * FROM bg_tasks WHERE session_id = ? AND status IN ('running', 'pending')", (sid,)
         )
@@ -1131,6 +1208,14 @@ async def _drain_quietly(stream: AsyncIterator[ProviderEvent]) -> None:
     with contextlib.suppress(Exception):
         async for _ in stream:
             pass
+
+
+def _default_model(provider: str, model: str | None) -> str:
+    """A Claude chat without a model runs on the default (Opus 5.5), recorded
+    explicitly so the picker, the engine and the logs agree."""
+    if provider == "claude" and not (model or "").strip():
+        return DEFAULT_CLAUDE_MODEL
+    return model or ""
 
 
 def _title_from(text: str) -> str:
