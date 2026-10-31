@@ -441,9 +441,11 @@ def test_other_endpoints_keep_strict_cors(client):
     pre = client.options("/api/auth/credentials", headers={"Origin": "null",
                                                            "Access-Control-Request-Method": "POST"})
     assert pre.headers.get("access-control-allow-origin") not in ("*", "null")
-    # configured dev origin: credentialed, echoed (never '*')
-    r = client.get("/api/auth/status", headers={"Origin": "http://localhost:5173"})
-    assert r.headers["access-control-allow-origin"] == "http://localhost:5173"
+    # a configured origin (whatever CORS_ORIGINS says on this machine): credentialed, echoed (never '*')
+    from app.config import settings
+    origin = settings.cors_origin_list[0]
+    r = client.get("/api/auth/status", headers={"Origin": origin})
+    assert r.headers["access-control-allow-origin"] == origin
     r = client.get("/auth/exchange", headers={"Origin": "null"}, follow_redirects=False)
     assert "access-control-allow-origin" not in r.headers
 
