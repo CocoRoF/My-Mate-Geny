@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     # Native app downloads: CI publishes builds to this repo's release; the
     # token (read access) lets the backend serve them from a private repo.
     github_token: str = ""
-    apps_repo: str = "CocoRoF/hr-harnessor"
+    apps_repo: str = "CocoRoF/My-Mate-Geny"
     apps_release_tag: str = "apps-latest"
 
     # Provider CLI binaries

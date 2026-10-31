@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -19,6 +20,13 @@ from app.services.workspace_service import WorkspaceService
 from app.vault import SecretVault
 
 
+# Live2D's Mao sample may not be redistributed, so it is not in the repo; an
+# install may add it locally (docs/mate.md). Its tests run only where it is.
+HAS_MAO = (files.BUILTIN_DIR / "mates" / "mao.json").is_file()
+needs_mao = pytest.mark.skipif(not HAS_MAO, reason="Live2D Mao sample not bundled on this install")
+KEYS = ["chaerin", "estelle", "seoa"] + (["mao"] if HAS_MAO else [])
+
+
 def _service(db):
     vault = SecretVault(db)
     svc = SessionService(db, ProviderService(db, vault), WorkspaceService(ConnectionService(db, vault)))
@@ -26,10 +34,10 @@ def _service(db):
 
 
 def test_bundled_characters_are_mates_out_of_the_box(db):
-    assert files.builtin_keys() == ["chaerin", "estelle", "seoa", "mao"]
+    assert files.builtin_keys() == KEYS
     mates = _service(db).list()
     by_key = {m["builtin"]: m for m in mates}
-    assert set(by_key) == {"estelle", "chaerin", "seoa", "mao"} and len(mates) == 4  # no extra "Geny"
+    assert set(by_key) == set(KEYS) and len(mates) == len(KEYS)  # no extra "Geny"
     # a new install: Chaerin first and the default
     assert mates[0]["builtin"] == "chaerin" and [m["is_default"] for m in mates].count(True) == 1
     assert by_key["chaerin"]["is_default"] and by_key["chaerin"]["name"] == "한채린"
@@ -80,6 +88,7 @@ def test_builtin_files_are_served_and_confined():
         assert client.get("/api/mates/builtin/nobody/neutral.webp").status_code == 404
 
 
+@needs_mao
 def test_mao_is_a_builtin_live2d_mate(db):
     mao = _service(db).store.by_builtin("mao")
     assert mao["name"] == "마오" and not mao["is_default"]  # (a Korean-replying mate: the Korean name)
@@ -104,6 +113,7 @@ def test_mao_is_a_builtin_live2d_mate(db):
     assert "Free Material License" in (files.BUILTIN_DIR / "assets" / "mao" / "ReadMe.txt").read_text("utf-8")
 
 
+@needs_mao
 def test_builtin_hash_sees_nested_live2d_files(db, monkeypatch, tmp_path):
     import shutil
 
@@ -120,6 +130,7 @@ def test_builtin_hash_sees_nested_live2d_files(db, monkeypatch, tmp_path):
     assert mates.store.by_builtin("mao") is None and mates.store.by_builtin("estelle") is not None
 
 
+@needs_mao
 def test_builtin_live2d_files_are_served():
     with TestClient(app) as client:
         assert client.post("/api/auth/login", json={"username": "admin", "password": "test-pass"}).status_code == 200

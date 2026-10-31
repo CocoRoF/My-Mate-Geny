@@ -46,3 +46,9 @@ deploy/cloudflared/config.docker.yml
 
 # This machine's own deployment files (never committed)
 deploy/*.local.yml
+
+# Live2D's sample model "Mao" may not be redistributed (Free Material License):
+# it is never committed. An install can add it locally — see docs/mate.md.
+backend/app/mate/builtin/assets/mao/
+backend/app/mate/builtin/mates/mao.json
+backend/app/mate/builtin/personas/mao.json

@@ -37,7 +37,7 @@ def _seed_legacy(db):
     (persona mapped from the Korean source, no snapshot, an older bundle hash)."""
     store = MateStore(db, SecretVault(db))
     ids = {}
-    for key in ("estelle", "chaerin", "seoa", "mao"):  # the old order: Estelle was the default
+    for key in [k for k in ("estelle", "chaerin", "seoa", "mao") if k in files.builtin_keys()]:  # old order
         doc = files.builtin_doc(key)
         name, persona = files.legacy_persona(doc)
         m = store.create(name=name, persona=persona, avatar=files.builtin_avatar(key, doc))
@@ -104,7 +104,8 @@ def test_migration_of_an_unedited_builtin(db):
     row = mates.store.by_builtin("estelle")
     assert row["builtin_hash"] == files.builtin_hash("estelle") and row["builtin_snapshot"]["persona"] == new["persona"]
     # Mao's bundled name is now per language: the Korean one for a Korean-replying mate
-    assert mates.get(ids["mao"])["name"] == "마오"
+    if "mao" in ids:  # (Mao is only on installs that added the Live2D sample)
+        assert mates.get(ids["mao"])["name"] == "마오"
     # idempotent: a restart changes nothing
     _service(db)
     assert mates.get(ids["estelle"]) == est
