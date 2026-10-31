@@ -119,6 +119,9 @@ function createMock(opts = {}) {
     expireCodes() {
       for (const v of codes.values()) v.exp = 0;
     },
+    expireSessions() {
+      sessions.clear();
+    },
     listen(port = 0, host = "127.0.0.1", tls = null) {
       const server = tls ? https.createServer(tls, handler) : http.createServer(handler);
       return new Promise((resolve) => {

@@ -124,6 +124,7 @@ public class GenyServerPlugin extends Plugin {
 
     /** Forget the connected server (kept: lastServer/username for prefill, if remembered). */
     static void forgetServer(Context c, boolean signOut) {
+        android.util.Log.i("GenyServer", signOut ? "signing out" : "switching server");
         SharedPreferences p = prefs(c);
         SharedPreferences.Editor e = p.edit().remove(K_SERVER).remove(K_PENDING).remove(K_EPHEMERAL);
         if (!p.getBoolean(K_REMEMBER, true)) e.remove(K_LAST).remove(K_USER);
@@ -154,11 +155,14 @@ public class GenyServerPlugin extends Plugin {
             return CapConfig.loadDefault(a);
         }
         try {
-            JSONObject android = json.optJSONObject("android");
-            if (android == null) json.put("android", android = new JSONObject());
-            if (!android.has("webContentsDebuggingEnabled")) {
-                android.put("webContentsDebuggingEnabled", (a.getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0);
-            }
+            // (the config is parsed without a Context below, so the debug-build
+            // defaults Capacitor derives from one are set here)
+            boolean debuggable = (a.getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+            JSONObject androidCfg = json.optJSONObject("android");
+            if (androidCfg == null) json.put("android", androidCfg = new JSONObject());
+            if (!androidCfg.has("webContentsDebuggingEnabled")) androidCfg.put("webContentsDebuggingEnabled", debuggable);
+            // (loggingBehavior stays "debug" → off: Capacitor would log plugin
+            // call data, including the sign-in request with the password)
             JSONObject server = json.optJSONObject("server");
             if (server == null) json.put("server", server = new JSONObject());
             server.remove("url");
@@ -179,6 +183,7 @@ public class GenyServerPlugin extends Plugin {
                 server.put("appStartPath", path);
                 server.put("allowNavigation", new JSONArray().put(new URL(origin).getHost()));
             }
+            android.util.Log.i("GenyServer", base == null ? "start: connect page" : "start: " + server.optString("url") + server.optString("appStartPath").replaceAll("code=[^&]+", "code=…"));
         } catch (Exception e) {
             Logger.error("GenyServer", "could not apply the saved server", e);
         }
@@ -270,6 +275,7 @@ public class GenyServerPlugin extends Plugin {
         if (url == null || url.getPath() == null || !url.getPath().startsWith("/__geny/")) return null;
         if (bridge == null || !String.valueOf(url.getHost()).equalsIgnoreCase(bridge.getHost())) return null;
         String action = url.getPath().substring("/__geny/".length());
+        android.util.Log.i("GenyServer", "local page asked for " + action);
         switch (action) {
             case "switch-server":
                 forgetServer(getContext(), false);

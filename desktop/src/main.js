@@ -148,7 +148,15 @@ function createWindow(url) {
     }
   });
   // back on the app after signing in: Mate windows left on the login page reload
-  wc.on("did-navigate", (_e, url) => mate.consoleNavigated(url));
+  wc.on("did-navigate", (_e, url) => {
+    // just signed in (exchange → console): write the new cookie to disk now,
+    // not at Chromium's next periodic flush, so a crash can't lose it
+    if (flushCookies && sameOrigin(url)) {
+      flushCookies = false;
+      session.defaultSession.cookies.flushStore().catch(() => {});
+    }
+    mate.consoleNavigated(url);
+  });
   wc.on("did-fail-load", (_e, code, desc, _url, isMainFrame) => {
     if (!isMainFrame || code === -3) return; // -3: aborted (navigation replaced)
     w.loadFile(path.join(__dirname, "offline.html"), { query: { server: serverUrl(), error: desc || String(code) } });
@@ -190,6 +198,7 @@ function openConsole(url) {
 const CONNECT_PAGE = path.join(__dirname, "connect.html");
 const httpRequest = core.fetchRequest((url, init) => net.fetch(url, init));
 const found = new Set(); // servers findServer confirmed during this run
+let flushCookies = false;
 
 function loadConnect(w, query = {}) {
   w.loadFile(CONNECT_PAGE, { query });
@@ -328,6 +337,7 @@ ipcMain.handle("connect:signIn", async (e, o = {}) => {
   // landed on the app with the new cookie (mate.consoleNavigated)
   mate.disconnect();
   refreshMenus();
+  flushCookies = true;
   win.loadURL(r.exchangeUrl);
   return { ok: true, server };
 });

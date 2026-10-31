@@ -8,7 +8,9 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.webkit.CookieManager;
+import android.view.ViewGroup;
 import android.webkit.URLUtil;
+import android.webkit.WebView;
 import android.widget.Toast;
 import com.getcapacitor.BridgeActivity;
 import java.net.URLDecoder;
@@ -64,6 +66,34 @@ public class MainActivity extends BridgeActivity {
                 Toast.makeText(this, "Download failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
             }
         });
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        // the login cookie to disk now: a swiped-away app must not lose it
+        try {
+            CookieManager.getInstance().flush();
+        } catch (Exception ignored) {
+            // no WebView provider
+        }
+    }
+
+    @Override
+    public void onDestroy() {
+        // Switching servers recreates the activity; the old WebView (and the
+        // page it held) must go with it rather than linger until GC.
+        WebView old = getBridge() != null ? getBridge().getWebView() : null;
+        super.onDestroy();
+        if (old != null) {
+            try {
+                old.stopLoading();
+                if (old.getParent() instanceof ViewGroup) ((ViewGroup) old.getParent()).removeView(old);
+                old.destroy();
+            } catch (Exception ignored) {
+                // already gone
+            }
+        }
     }
 
     @Override
