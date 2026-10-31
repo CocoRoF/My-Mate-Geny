@@ -401,6 +401,13 @@ def test_login_cors_preflight_any_origin(client, origin):
     assert "access-control-allow-credentials" not in r.headers
 
 
+def test_login_cors_preflight_private_network(client):
+    r = client.options("/api/auth/login", headers={
+        "Origin": "https://localhost", "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Private-Network": "true"})
+    assert r.headers["access-control-allow-private-network"] == "true"
+
+
 def test_login_cors_response_without_credentials(client):
     r = client.post("/api/auth/login", json={"username": "admin", "password": "test-pass", "exchange": True},
                     headers={"Origin": "null"})
@@ -461,3 +468,11 @@ def test_cors_login_failures_count_toward_ban(client):
         assert client.get("/health", headers=ip).status_code == 403
     finally:
         auth.clear_failures("203.0.113.77")
+
+
+def test_login_page_assets_are_public(client):
+    page = client.get("/login").text
+    assert 'src="/logo.png"' in page and 'href="/favicon.ico"' in page
+    for path in ("/logo.png", "/favicon.ico", "/favicon-32.png", "/apple-touch-icon.png",
+                 "/icon-192.png", "/manifest.webmanifest"):
+        assert client.get(path).status_code != 401, path  # 404 here: no STATIC_DIR in tests

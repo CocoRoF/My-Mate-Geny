@@ -61,7 +61,8 @@ _LOGIN_HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0a0c10">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
 <title>My Mate Geny — Sign in</title>
@@ -69,41 +70,41 @@ _LOGIN_HTML = """<!doctype html>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root { color-scheme: dark; }
+  :root { color-scheme: dark; --mint:#8ee6c0; --mint-2:#5fd4a4; }
   * { box-sizing: border-box; }
-  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px 16px;
     font-family:Inter,"Noto Sans KR",ui-sans-serif,system-ui,sans-serif; color:#e6e9f0;
     background:
-      radial-gradient(1200px 600px at 80% -10%, #15213a 0%, transparent 55%),
-      radial-gradient(900px 500px at -10% 110%, #1a1430 0%, transparent 50%), #0a0c10; }
-  .card { width:340px; background:rgba(22,26,34,.72); border:1px solid #232936; border-radius:16px;
-    padding:30px; box-shadow:0 20px 60px -20px rgba(0,0,0,.7); backdrop-filter:blur(12px); }
-  .brand { display:flex; align-items:center; gap:10px; margin-bottom:22px; }
-  .logo { width:38px; height:38px; border-radius:11px; display:grid; place-items:center;
-    background:linear-gradient(135deg,#6e8bff,#22d3ee); box-shadow:0 0 0 1px #6e8bff40,0 8px 32px -8px #6e8bff80; }
-  .logo svg { stroke:#fff; }
-  h1 { font-size:16px; font-weight:600; margin:0; letter-spacing:-.01em; }
-  .sub { color:#5e6676; font-size:11px; margin-top:1px; }
-  .grad { background:linear-gradient(135deg,#8098ff,#22d3ee); -webkit-background-clip:text; background-clip:text; color:transparent; }
-  label { font-size:11px; color:#9aa3b4; text-transform:uppercase; letter-spacing:.06em; font-weight:500; }
-  input { width:100%; margin:6px 0 14px; padding:11px 12px; background:rgba(15,18,24,.8); border:1px solid #232936;
+      radial-gradient(1000px 520px at 50% -12%, rgba(95,212,164,.10) 0%, transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, #141a2e 0%, transparent 50%), #0a0c10; }
+  .card { width:352px; max-width:100%; background:rgba(20,24,31,.78); border:1px solid #222a33; border-radius:18px;
+    padding:30px 30px 26px; box-shadow:0 0 0 1px rgba(142,230,192,.05), 0 24px 70px -24px rgba(0,0,0,.8);
+    backdrop-filter:blur(12px); }
+  .brand { display:flex; flex-direction:column; align-items:center; text-align:center; margin-bottom:22px; }
+  .logo { width:104px; height:104px; margin:-4px 0 10px; user-select:none;
+    filter:drop-shadow(0 10px 26px rgba(95,212,164,.22)); }
+  h1 { font-size:18px; font-weight:600; margin:0; letter-spacing:-.01em; }
+  .sub { color:#5e6676; font-size:11.5px; margin-top:3px; }
+  .grad { background:linear-gradient(135deg,var(--mint),#22d3ee); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  label { display:block; font-size:11px; color:#9aa3b4; text-transform:uppercase; letter-spacing:.06em; font-weight:500; }
+  input { width:100%; margin:6px 0 14px; padding:11px 12px; background:rgba(13,16,21,.85); border:1px solid #232b35;
     border-radius:10px; color:#e6e9f0; font-size:14px; font-family:inherit; transition:.15s; }
-  input:focus { outline:none; border-color:rgba(110,139,255,.6); box-shadow:0 0 0 3px rgba(110,139,255,.15); }
-  button { width:100%; padding:11px; color:#fff; border:0; border-radius:10px; font-weight:600; cursor:pointer;
-    font-size:14px; font-family:inherit; background:linear-gradient(135deg,#6e8bff,#5b7cff);
-    box-shadow:0 6px 20px -8px #6e8bffaa; transition:.15s; }
-  button:hover:not(:disabled){ background:linear-gradient(135deg,#8098ff,#6e8bff); }
+  input:focus { outline:none; border-color:rgba(142,230,192,.55); box-shadow:0 0 0 3px rgba(142,230,192,.13); }
+  button { width:100%; padding:11px; color:#06140f; border:0; border-radius:10px; font-weight:600; cursor:pointer;
+    font-size:14px; font-family:inherit; background:linear-gradient(135deg,var(--mint),var(--mint-2));
+    box-shadow:0 8px 22px -10px rgba(95,212,164,.7); transition:.15s; }
+  button:hover:not(:disabled){ filter:brightness(1.06); }
   button:disabled { opacity:.5; cursor:default; }
-  .err { color:#f87171; font-size:12px; min-height:16px; margin-top:10px; }
-  .warn { display:flex; gap:8px; align-items:flex-start; margin:-6px 0 18px; padding:10px 12px; border-radius:10px;
+  .err { color:#f87171; font-size:12px; min-height:16px; margin-top:10px; text-align:center; }
+  .warn { display:flex; gap:8px; align-items:flex-start; margin:0 0 18px; padding:10px 12px; border-radius:10px;
     background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.35); color:#fbbf24; font-size:12px; line-height:1.45; }
   .warn b { color:#fcd34d; }
 </style></head>
 <body>
   <form class="card" id="f">
     <div class="brand">
-      <div class="logo"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg></div>
-      <div><h1>My Mate <span class="grad">Geny</span></h1><div class="sub">your mate + agent console</div></div>
+      <img class="logo" src="/logo.png" alt="Geny" width="104" height="104" draggable="false">
+      <h1>My Mate <span class="grad">Geny</span></h1><div class="sub">your mate + agent console</div>
     </div>
     __WARNING__
     <label for="u">Username</label>
@@ -115,6 +116,8 @@ _LOGIN_HTML = """<!doctype html>
   </form>
 <script>
   // Same-origin login: the cookie set by /api/auth/login is all the web UI needs.
+  // Native apps use their own connect screen + POST /api/auth/login {exchange:true}
+  // -> GET /auth/exchange (docs/auth.md).
   const f=document.getElementById('f'),e=document.getElementById('e'),b=document.getElementById('b');
   f.onsubmit=async(ev)=>{ev.preventDefault();e.textContent='';b.disabled=true;
     try{

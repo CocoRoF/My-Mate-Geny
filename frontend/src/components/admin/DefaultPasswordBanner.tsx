@@ -1,24 +1,16 @@
-import { useEffect, useState } from "react";
-import { AUTH_CHANGED_EVENT, authStatus } from "../../api/admin";
 import { useUIStore } from "../../stores/uiStore";
 import Icon from "../ui/Icon";
 import { requestAdminTab } from "./adminTab";
+import { useAuthStatus } from "./useAuthStatus";
 
 /** Shown on every view while the public default password (admin / geny-admin)
  * still signs in to this server. Not dismissible: it goes away once the
  * credentials are changed in Admin -> Security (or AUTH_PASSWORD is set). */
 export default function DefaultPasswordBanner() {
-  const [isDefault, setDefault] = useState(false);
+  const st = useAuthStatus();
   const setView = useUIStore((s) => s.setView);
 
-  useEffect(() => {
-    const check = () => authStatus().then((s) => setDefault(s.default_password)).catch(() => {});
-    check();
-    window.addEventListener(AUTH_CHANGED_EVENT, check);
-    return () => window.removeEventListener(AUTH_CHANGED_EVENT, check);
-  }, []);
-
-  if (!isDefault) return null;
+  if (!st?.default_password) return null;
   const open = () => {
     requestAdminTab("security");
     setView("admin");

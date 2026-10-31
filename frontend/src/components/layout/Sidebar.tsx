@@ -7,6 +7,7 @@ import { apiFetch } from "../../api/client";
 import { requestResync } from "../../lib/sync";
 import { APP_VERSION } from "../../version";
 import Icon, { type IconName } from "../ui/Icon";
+import { useAuthStatus } from "../admin/useAuthStatus";
 
 const NAV: { id: View; label: string; icon: IconName }[] = [
   { id: "mate", label: "Mate", icon: "sparkles" },
@@ -21,6 +22,7 @@ const NAV: { id: View; label: string; icon: IconName }[] = [
 export default function Sidebar() {
   const view = useUIStore((s) => s.view);
   const setView = useUIStore((s) => s.setView);
+  const user = useAuthStatus()?.username ?? "";
   const sessions = useSessionStore((s) => s.sessions);
   const activeId = useSessionStore((s) => s.activeId);
   const setActive = useSessionStore((s) => s.setActive);
@@ -225,9 +227,9 @@ export default function Sidebar() {
       {/* Footer */}
       <div className="flex items-center gap-2 px-3 h-12 border-t border-border/70 text-content-faint">
         <div className="grid place-items-center w-6 h-6 rounded-full bg-surface-3 text-[11px] font-semibold text-content-dim">
-          A
+          {(user || "?").slice(0, 1).toUpperCase()}
         </div>
-        <span className="text-xs">admin</span>
+        <span className="min-w-0 truncate text-xs" title="Signed in as">{user}</span>
         <span className="ml-auto text-[10px]">v{APP_VERSION}</span>
         <button onClick={logout} className="rounded-md p-1 touch:p-2.5 touch:-mr-1.5 hover:text-danger hover:bg-surface-3 transition" title="Log out">
           <Icon name="logout" size={15} />

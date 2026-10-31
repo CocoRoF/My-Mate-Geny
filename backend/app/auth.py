@@ -75,7 +75,7 @@ _PUBLIC_PATHS = frozenset({
     "/login", "/api/auth/login", "/api/auth/logout", "/auth/exchange", "/health", "/favicon.ico",
     # Icons + web manifest: fetched without cookies (and on the login page).
     "/favicon.svg", "/favicon-32.png", "/apple-touch-icon.png", "/icon-192.png", "/icon-512.png",
-    "/icon-maskable-512.png", "/manifest.webmanifest",
+    "/icon-maskable-512.png", "/manifest.webmanifest", "/logo.png",
 })
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
@@ -609,13 +609,19 @@ class OpenCORSMiddleware:
             await self.app(scope, receive, send)
             return
         methods = OPEN_CORS_PATHS[scope["path"]]
-        if scope["method"] == "OPTIONS" and "access-control-request-method" in Headers(scope=scope):
-            await Response(status_code=204, headers={
+        req = Headers(scope=scope)
+        if scope["method"] == "OPTIONS" and "access-control-request-method" in req:
+            headers = {
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Methods": methods,
                 "Access-Control-Allow-Headers": "Content-Type",
                 "Access-Control-Max-Age": "600",
-            })(scope, receive, send)
+            }
+            # Chromium Private Network Access: a server on a LAN / loopback
+            # address may be probed from a "more public" connect page.
+            if req.get("access-control-request-private-network") == "true":
+                headers["Access-Control-Allow-Private-Network"] = "true"
+            await Response(status_code=204, headers=headers)(scope, receive, send)
             return
 
         async def send_open(message):
