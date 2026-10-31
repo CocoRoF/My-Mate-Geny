@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { History } from "../api/sessions";
-import type { Attachment, ChatMessage, CliInfo, ProviderEvent, TaskInfo, TurnChanges } from "../types";
+import type { Attachment, ChatMessage, CliInfo, Compaction, ContextInfo, ProviderEvent, TaskInfo, TurnChanges } from "../types";
 
 export interface ToolActivity {
   id: string;
@@ -44,7 +44,7 @@ export type FlowItem =
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string; startedAt: number; endedAt?: number }
   | { kind: "tool"; toolId: string }
-  | { kind: "notice"; level: "info" | "warning"; message: string; code?: string }
+  | { kind: "notice"; level: "info" | "warning"; message: string; code?: string; data?: Record<string, any> }
   // Instructions the user added while the agent was working (pending until
   // the runtime confirms delivery into the running turn).
   | { kind: "steer"; text: string; attachments: Attachment[]; clientMsgId?: string; pending: boolean };
@@ -74,6 +74,8 @@ export interface Turn {
   endedAt?: number;
   attachments?: Attachment[];
   level?: "info" | "warning"; // system turns
+  code?: string; // system turns: the notice code (e.g. context.compacted)
+  data?: Record<string, any>; // system turns: the notice's data
   trigger?: string; // "background": Claude started this turn itself
   changes?: TurnChanges; // files the turn changed (git snapshots)
 }
@@ -84,6 +86,8 @@ interface ChatState {
   runningCostUsd: number;
   lastEid: number;
   info: CliInfo | null;
+  context: ContextInfo | null; // main-conversation context size (Claude)
+  lastCompaction: Compaction | null;
   connection: "connecting" | "open" | "reconnecting";
   bounced: Bounced[]; // steers the turn could no longer take -> composer queues them
   reset: () => void;
@@ -152,8 +156,42 @@ function appendText(turn: Turn, text: string, at: number) {
   else turn.flow.push({ kind: "text", text });
 }
 
-function systemTurn(turns: Turn[], message: string, level: "info" | "warning") {
-  turns.push({ key: newKey("s"), role: "system", text: message, flow: [], tools: [], complete: true, level });
+function systemTurn(turns: Turn[], message: string, level: "info" | "warning", code?: string, data?: Record<string, any>) {
+  turns.push({ key: newKey("s"), role: "system", text: message, flow: [], tools: [], complete: true, level, code, data });
+}
+
+/** A context report on top of the previous one: per-call reports may lack
+ * the window/threshold the engine reported earlier. */
+function mergeContext(prev: ContextInfo | null, next: ContextInfo): ContextInfo {
+  if (!prev) return next;
+  const out: ContextInfo = { ...next };
+  for (const k of ["window", "model_window", "threshold", "window_source"] as const) {
+    if (out[k] === undefined || out[k] === null) (out as any)[k] = prev[k];
+  }
+  if (out.auto_compact === undefined) out.auto_compact = prev.auto_compact;
+  return out;
+}
+
+const compactionOf = (d: Record<string, any>, at: string): Compaction => ({
+  trigger: d.trigger,
+  pre_tokens: d.pre_tokens,
+  post_tokens: d.post_tokens,
+  at,
+});
+
+/** Context state after a list of (history) events. */
+function contextOf(events: ProviderEvent[]): { context: ContextInfo | null; lastCompaction: Compaction | null } {
+  let context: ContextInfo | null = null;
+  let lastCompaction: Compaction | null = null;
+  for (const e of events) {
+    const d = e.data as Record<string, any>;
+    if (e.type === "context.update") context = mergeContext(context, d as unknown as ContextInfo);
+    else if (e.type === "notice" && d.code === "context.reset") {
+      context = null;
+      lastCompaction = null;
+    } else if (e.type === "notice" && d.code === "context.compacted") lastCompaction = compactionOf(d, e.timestamp);
+  }
+  return { context, lastCompaction };
 }
 
 const isBackgroundAgent = (t: ToolActivity) =>
@@ -297,10 +335,14 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
     case "notice": {
       const level = data.level === "warning" ? "warning" : "info";
       const message = String(data.message || "");
-      if (data.code === "context.reset" || !hasLiveTurn(turns)) systemTurn(turns, message, level);
-      else liveTurn(turns, at).flow.push({ kind: "notice", level, message, code: data.code });
+      if (data.code === "context.reset" || !hasLiveTurn(turns)) systemTurn(turns, message, level, data.code, data);
+      else liveTurn(turns, at).flow.push({ kind: "notice", level, message, code: data.code, data });
+      if (data.code === "context.reset") return { context: null, lastCompaction: null };
+      if (data.code === "context.compacted") return { lastCompaction: compactionOf(data, ev.timestamp) };
       break;
     }
+    case "context.update":
+      return { context: data as unknown as ContextInfo };
     case "turn.complete": {
       const t = liveTurn(turns, at);
       if (data.text && !t.text.trim()) appendText(t, String(data.text), at);
@@ -455,10 +497,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   runningCostUsd: 0,
   lastEid: 0,
   info: null,
+  context: null,
+  lastCompaction: null,
   connection: "connecting",
   bounced: [],
 
-  reset: () => set({ turns: [], isStreaming: false, runningCostUsd: 0, lastEid: 0, info: null, bounced: [] }),
+  reset: () =>
+    set({ turns: [], isStreaming: false, runningCostUsd: 0, lastEid: 0, info: null, bounced: [], context: null, lastCompaction: null }),
 
   loadHistory: (h) => {
     const turns = reconstruct(h.messages, h.events);
@@ -475,6 +520,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isStreaming: h.running,
       runningCostUsd: totalCost(turns),
       info: (h.session?.cli_info as CliInfo) || null,
+      ...contextOf(h.events),
     });
   },
 
@@ -513,6 +559,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const turns = [...s.turns];
       const extra = reduce(turns, ev);
       if (extra.bounced) extra.bounced = [...s.bounced, ...extra.bounced];
+      if (extra.context) extra.context = mergeContext(s.context, extra.context);
       if (hasLiveTurn(turns) && ev.type !== "run.state") extra.isStreaming = true;
       return {
         turns,

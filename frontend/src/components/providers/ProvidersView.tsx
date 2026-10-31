@@ -13,8 +13,10 @@ import {
   accountOAuthComplete,
   type Account,
   type PoolConfig,
+  type PrimaryMode,
 } from "../../api/accounts";
 import { fromAccount } from "../../lib/usage";
+import { COMPACT_BUFFER, DEFAULT_PRESETS, WINDOW_HINT, fmtWindow } from "../../lib/context";
 import Icon from "../ui/Icon";
 import ProviderOAuthModal from "./ProviderOAuthModal";
 import PlanWindowBars from "../usage/PlanWindowBars";
@@ -85,6 +87,66 @@ export default function ProvidersView() {
   );
 }
 
+/** A percent threshold, saved on blur / Enter. */
+function LimitInput({ value, onSave }: { value: number; onSave: (v: number) => Promise<unknown> }) {
+  const [v, setV] = useState(String(value));
+  useEffect(() => setV(String(value)), [value]);
+  const save = () => {
+    const n = Number(v);
+    if (Number.isFinite(n) && n !== value) onSave(Math.min(100, Math.max(50, n))).catch(() => setV(String(value)));
+    else setV(String(value));
+  };
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      <input
+        value={v}
+        onChange={(e) => setV(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+        inputMode="numeric"
+        className="field w-12 py-0.5 px-1.5 text-center text-[11px]"
+      />
+      %
+    </span>
+  );
+}
+
+/** Claude: the default auto-compact window for chats without their own. */
+function ContextCard({ value, onSave }: { value: number; onSave: (v: number) => Promise<unknown> }) {
+  const presets = useConfigStore((s) => s.catalog.claude?.auto_compact_presets) || DEFAULT_PRESETS;
+  const [error, setError] = useState("");
+  return (
+    <div className="card p-4">
+      <div className="flex items-start gap-3">
+        <div className="grid place-items-center w-9 h-9 rounded-lg bg-accent-soft shrink-0">
+          <Icon name="activity" size={17} className="text-accent" />
+        </div>
+        <div className="flex-1">
+          <div className="font-medium">Context · auto-compact window</div>
+          <p className="text-xs text-content-faint mt-0.5">
+            {WINDOW_HINT} <span className="text-content-dim">Full</span> is Claude Code's own default (the model's whole
+            window, 1M for Opus 5.5). Each chat can override this from its context meter; changes apply from a chat's next
+            message (its engine restarts).
+          </p>
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {presets.map((p) => (
+              <button
+                key={p}
+                onClick={() => onSave(p).then(() => setError("")).catch((e) => setError(String(e?.message || e)))}
+                className={`pill ${value === p ? "bg-accent-soft text-accent" : "bg-surface-3 text-content-dim hover:text-content"}`}
+              >
+                {p === 0 ? "Full window (default)" : `${fmtWindow(p)} · compacts at ~${fmtWindow(p - COMPACT_BUFFER)}`}
+              </button>
+            ))}
+            {!presets.includes(value) && <span className="pill bg-accent-soft text-accent">{fmtWindow(value)}</span>}
+          </div>
+          {error && <p className="mt-1.5 text-[11px] text-danger">{error}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProviderPanel({ provider, label }: { provider: string; label: string }) {
   const connect = useProviderStore((s) => s.connect);
   const reloadProviders = useProviderStore((s) => s.load);
@@ -146,24 +208,35 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
               </button>
             </div>
             <p className="text-xs text-content-faint mt-0.5">
-              When on, each turn is routed across your accounts by the chosen strategy — e.g.{" "}
-              <span className="text-content-dim">Most remaining usage</span> sends it to the account
-              with the most plan headroom. Rate-limited accounts cool down and fail over automatically.
+              When on, each chat is placed on one of your accounts by the chosen strategy — e.g.{" "}
+              <span className="text-content-dim">Most remaining usage</span> picks the account with the most
+              plan headroom — and then stays there: its prompt cache lives on that account, and moving a big
+              context means writing it to another account's cache again. A chat moves only when its account is
+              unavailable or near a limit below; an account that hits its limit cools down until its reset and the
+              turn continues on another account.
             </p>
             {pool?.enabled && (
-              <div className="flex items-center gap-2 mt-2.5">
-                <span className="text-[11px] text-content-faint">Strategy</span>
-                <select
-                  value={pool.strategy}
-                  onChange={(e) => setPool(provider, { strategy: e.target.value }).then(load)}
-                  className="field py-1 text-xs w-40"
-                >
-                  {STRATEGIES.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
+              <div className="mt-2.5 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-content-faint w-16">Strategy</span>
+                  <select
+                    value={pool.strategy}
+                    onChange={(e) => setPool(provider, { strategy: e.target.value }).then(load)}
+                    className="field py-1 text-xs w-44"
+                  >
+                    {STRATEGIES.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap text-[11px] text-content-faint">
+                  <span className="w-16">Move at</span>
+                  <LimitInput value={pool.near_5h} onSave={(v) => setPool(provider, { near_5h: v }).then(load)} /> 5-hour
+                  <LimitInput value={pool.near_7d} onSave={(v) => setPool(provider, { near_7d: v }).then(load)} /> 7-day
+                  <span>usage — if another account has headroom</span>
+                </div>
               </div>
             )}
           </div>
@@ -205,6 +278,24 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
                       Couldn't refresh plan usage: {a.plan_error}
                     </p>
                   )}
+                </div>
+              )}
+
+              {a.primary && pool?.enabled && (
+                <div className="mt-2.5 flex items-center gap-2 flex-wrap text-[11px] text-content-faint">
+                  <span>In load balancing</span>
+                  <select
+                    value={a.primary_mode || "normal"}
+                    onChange={(e) => setPool(provider, { primary_mode: e.target.value as PrimaryMode }).then(load)}
+                    className="field py-0.5 text-[11px] w-64"
+                  >
+                    <option value="normal">Use like any account</option>
+                    <option value="fallback">Only when others are unavailable</option>
+                    <option value="off">Don't use</option>
+                  </select>
+                  <span className="basis-full">
+                    This machine's own login — shared with Claude Code in your editor/terminal on this machine.
+                  </span>
                 </div>
               )}
 
@@ -277,6 +368,10 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
           </div>
         )}
       </div>
+
+      {provider === "claude" && pool && (
+        <ContextCard value={pool.auto_compact_window} onSave={(v) => setPool(provider, { auto_compact_window: v }).then(load)} />
+      )}
 
       {/* API key (secondary) */}
       <div className="card p-4">

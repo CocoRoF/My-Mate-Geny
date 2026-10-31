@@ -1323,8 +1323,23 @@ class SessionService:
     # ---- engine callbacks: auto turns, background tasks, live usage ----
 
     def _on_auto_turn(self, sid: str, stream: AsyncIterator[ProviderEvent], inbox: TurnInbox) -> None:
-        if sid in self._tasks:  # never two drivers for one session
-            asyncio.create_task(_drain_quietly(stream))
+        running = self._tasks.get(sid)
+        if running is not None:
+            # Never two drivers for one session. The previous turn's driver is
+            # usually just wrapping up (Claude reacted to a background task the
+            # moment the turn ended): its events wait in the auto turn's queue
+            # and are shown once that driver is done — not dropped.
+            asyncio.create_task(self._drive_auto_after(sid, running, stream, inbox))
+            return
+        self._inboxes[sid] = inbox
+        self._tasks[sid] = asyncio.create_task(self._drive_auto(sid, stream, inbox))
+
+    async def _drive_auto_after(self, sid: str, running: asyncio.Task, stream: AsyncIterator[ProviderEvent],
+                                inbox: TurnInbox) -> None:
+        with contextlib.suppress(Exception, asyncio.CancelledError):
+            await asyncio.wait_for(asyncio.shield(running), timeout=30)
+        if sid in self._tasks:  # a user turn took over (it superseded this stream)
+            await _drain_quietly(stream)
             return
         self._inboxes[sid] = inbox
         self._tasks[sid] = asyncio.create_task(self._drive_auto(sid, stream, inbox))

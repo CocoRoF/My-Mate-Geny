@@ -255,6 +255,11 @@ class EngineManager:
                 return
             if slot.sink is not None:
                 await slot.sink.put(ev)
+                if ev.type in _TERMINAL:
+                    # That turn is over: whatever comes next (Claude reacting to
+                    # a background task the moment it ended) is a turn of its
+                    # own — never queued into the finished one and lost.
+                    slot.sink = None
                 continue
             if ev.data.get("parent"):
                 # A background subagent working while the chat is idle.

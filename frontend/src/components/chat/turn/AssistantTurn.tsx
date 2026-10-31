@@ -13,6 +13,7 @@ import TurnChangesCard from "../../changes/TurnChangesCard";
 import { relTime, absTime } from "../../admin/format";
 import { useChatStore } from "../../../stores/chatStore";
 import TurnCost from "../TurnCost";
+import CompactionDivider from "../CompactionDivider";
 
 type Segment =
   | { kind: "text"; text: string }
@@ -190,6 +191,8 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
                 </div>
               );
             case "notice":
+              if (s.item.code === "context.compacted")
+                return <CompactionDivider key={i} data={s.item.data} message={s.item.message} />;
               return (
                 <div
                   key={i}

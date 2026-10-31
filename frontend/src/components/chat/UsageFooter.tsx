@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Account } from "../../api/accounts";
 import {
   API_COST_HINT,
@@ -14,6 +14,7 @@ import {
 } from "../../lib/usage";
 import { useChatStore } from "../../stores/chatStore";
 import { useConfigStore } from "../../stores/configStore";
+import { useSessionStore } from "../../stores/sessionStore";
 import { useUsageStore } from "../../stores/usageStore";
 import type { AccountRef, PlanUsage, Session } from "../../types";
 import PlanWindowBars from "../usage/PlanWindowBars";
@@ -33,10 +34,39 @@ function windowsFor(a: Account, mine: boolean, live?: PlanUsage): PlanWindows {
   return mine && live ? mergeWindows(fromLive(live), base) : base;
 }
 
-function AccountsPanel({ provider, current, live }: { provider: string; current: AccountRef | null; live?: PlanUsage }) {
+function AccountsPanel({
+  sid,
+  provider,
+  current,
+  live,
+}: {
+  sid: string;
+  provider: string;
+  current: AccountRef | null;
+  live?: PlanUsage;
+}) {
   const pool = useUsageStore((s) => s.accounts[provider]);
+  const loadAccounts = useUsageStore((s) => s.loadAccounts);
+  const update = useSessionStore((s) => s.update);
+  const pinned = useSessionStore((s) => s.sessions.find((x) => x.id === sid)?.accounts?.[provider]);
   const label = useConfigStore((s) => s.catalog[provider]?.label) || provider;
+  const [switching, setSwitching] = useState("");
+  const [error, setError] = useState("");
   const list = pool?.list || [];
+  const balancing = !!pool?.pool?.enabled;
+
+  const switchTo = async (a: Account) => {
+    setSwitching(a.id);
+    setError("");
+    try {
+      await update(sid, { account_id: a.id });
+      await loadAccounts(provider, 0);
+    } catch (e: any) {
+      setError(String(e.message || e));
+    } finally {
+      setSwitching("");
+    }
+  };
   const known = list.some((a) => a.id === current?.account_id);
   const ago = pool ? Math.max(0, Math.round((Date.now() - pool.at) / 1000)) : null;
 
@@ -52,6 +82,8 @@ function AccountsPanel({ provider, current, live }: { provider: string; current:
           ? <>This chat runs on <span className="text-content-dim">{current.account}</span>{current.live === false ? " (its last turn)" : ""}.</>
           : "This chat's engine picks an account when it starts."}
         {pool?.pool && !pool.pool.enabled && " Load balancing is off: chats use the primary account."}
+        {balancing &&
+          " A chat stays on its account (its prompt cache lives there) and moves only when that account is unavailable or near its limit."}
       </p>
 
       <div className="mt-2.5 space-y-2">
@@ -84,13 +116,31 @@ function AccountsPanel({ provider, current, live }: { provider: string; current:
                 )}
                 {a.status === "cooldown" && a.cooldown_until && (
                   <p className="mt-1 text-[10.5px] text-warning/90">
-                    Cooling down until {new Date(a.cooldown_until).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                    {a.limit ? "Hit its limit — " : ""}cooling down until{" "}
+                    {new Date(a.cooldown_until).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
                   </p>
+                )}
+                {a.primary && balancing && a.primary_mode && a.primary_mode !== "normal" && (
+                  <p className="mt-1 text-[10.5px] text-content-faint">
+                    {a.primary_mode === "off" ? "Excluded from load balancing." : "Used only when no other account is available."}
+                  </p>
+                )}
+                {balancing && !mine && a.usable && a.eligible && (
+                  <button
+                    onClick={() => switchTo(a)}
+                    disabled={!!switching}
+                    className="btn-ghost mt-1.5 py-0.5 px-1.5 text-[11px]"
+                    title="Run this chat on this account from the next message (its engine restarts there)"
+                  >
+                    {switching === a.id ? <Icon name="spinner" size={11} spin /> : <Icon name="refresh" size={11} />}
+                    {pinned?.manual && pinned.id === a.id ? "Switching at the next message" : "Use for this chat"}
+                  </button>
                 )}
               </div>
             </div>
           );
         })}
+        {error && <p className="text-[11px] text-danger">{error}</p>}
         {pool && !list.length && <p className="text-[11px] text-content-faint">No accounts connected.</p>}
         {current?.account && pool && !known && (
           <p className="text-[11px] text-content-faint">
@@ -189,7 +239,7 @@ export default function UsageFooter({ session }: { session: Session }) {
           </>
         }
       >
-        {() => <AccountsPanel provider={provider} current={current} live={liveMine} />}
+        {() => <AccountsPanel sid={sid} provider={provider} current={current} live={liveMine} />}
       </HoverPopover>
       {costed.length > 0 && (
         <HoverPopover

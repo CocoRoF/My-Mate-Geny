@@ -375,6 +375,12 @@ while True:
     spent[0] += 0.1
     emit({"type": "result", "subtype": "success", "is_error": False, "result": "[%s] %s" % (account, text.strip().splitlines()[-1]),
           "session_id": SID, "total_cost_usd": spent[0], "usage": {"input_tokens": 3, "output_tokens": 2}})
+    if "RACE" in text:
+        # a background task finished right as the turn ended: Claude reacts at once
+        emit({"type": "system", "subtype": "init", "session_id": SID, "model": model})
+        emit({"type": "assistant", "message": {"id": "auto", "model": model, "content": [{"type": "text", "text": "auto done"}]}})
+        emit({"type": "result", "subtype": "success", "is_error": False, "result": "auto done", "session_id": SID,
+              "total_cost_usd": spent[0], "usage": {}})
 '''
 
 
@@ -514,5 +520,20 @@ async def test_sticky_respawn_and_auto_compact_window(db, tmp_path, monkeypatch)
         note = next(m for m in seen if m["type"] == "notice" and m["data"]["code"] == "account.switched")
         assert "chosen by hand" in note["data"]["message"]
         assert pool.counters(first_id) == (0, 0) and pool.counters(other) == (0, 1)
+    finally:
+        await svc.shutdown()
+
+
+async def test_auto_turn_right_after_a_turn_is_not_dropped(db, tmp_path, monkeypatch):
+    svc, pool, _ = _service(db, tmp_path, monkeypatch, pool_on=False)
+    sid = svc.create(provider="claude", model="claude-opus-5-5", workspace_path=str(tmp_path))["id"]
+    q = svc.subscribe(sid)
+    try:
+        await _turn(svc, q, sid, "RACE please")
+        # Claude's own turn (reacting to a background task) still reaches the chat
+        auto = await _until(q, lambda m: m["type"] == "turn.complete" and m["data"]["text"] == "auto done")
+        assert any(m["type"] == "session.start" and m["data"].get("trigger") == "background" for m in auto)
+        await _until(q, lambda m: m["type"] == "run.state" and not m["data"]["running"])
+        assert svc.messages(sid)[-1]["content"] == "auto done"
     finally:
         await svc.shutdown()
