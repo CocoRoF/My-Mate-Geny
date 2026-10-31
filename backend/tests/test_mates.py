@@ -39,12 +39,21 @@ def _new(client, name="Test", **kw):
     return r.json()
 
 
+def test_geny_is_created_only_when_there_is_no_mate(db):
+    from app.mate.store import MateStore
+    from app.vault import SecretVault
+
+    store = MateStore(db, SecretVault(db))
+    assert store.ensure_default() is True  # empty install (no bundled characters synced)
+    geny = next(m for m in store.list() if m["name"] == "Geny")
+    assert geny["avatar"] == {"kind": "none"} and geny["voice"]["tts"]["engine"] == "browser"
+    assert geny["persona"]["greeting"] and geny["is_default"]
+    assert store.ensure_default() is False and len(store.list()) == 1  # only once
+
+
 def test_default_mate_and_crud(client):
     mates = client.get("/api/mates").json()
-    geny = next(m for m in mates if m["name"] == "Geny")  # created on first list
-    assert geny["avatar"] == {"kind": "none"} and geny["voice"]["tts"]["engine"] == "browser"
-    assert geny["persona"]["language"] == "ko" and geny["persona"]["greeting"]
-    assert len([m for m in client.get("/api/mates").json() if m["name"] == "Geny"]) == 1  # only once
+    assert mates and [m["is_default"] for m in mates].count(True) == 1  # the built-ins exist out of the box
 
     m = _new(client, "Estelle", persona={"personality": "lazy"}, llm={"model": "haiku"})
     assert m["persona"]["personality"] == "lazy" and m["persona"]["speech"] == ""
