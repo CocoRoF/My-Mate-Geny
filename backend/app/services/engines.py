@@ -24,9 +24,16 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Awaitable, Callable
 
 from app.providers.base import ProviderEvent, SteerMessage, TurnInbox
-from app.providers.claude_engine import ClaudeEngine, EngineError
+from app.providers.claude_engine import ClaudeEngine, EngineError, cli_context
 
-IDLE_TIMEOUT_S = 30 * 60          # close an idle engine (no turn, no running task)
+# Close an engine after this long without a turn or a running task. Each engine
+# is a Claude Code (node) process holding a few hundred MB, so idle ones don't
+# stay forever. Closing one does NOT cost the prompt cache: the cache lives
+# server-side per account (1h TTL, refreshed by each call), and the next turn
+# respawns with --resume on the SAME account (sticky balancing), so a chat
+# picked up within the hour still reads its context from cache. (What used to
+# cost a full re-write was the respawn landing on a different account.)
+IDLE_TIMEOUT_S = 30 * 60
 MAX_TASK_HOLD_S = 12 * 3600       # but never keep one alive for tasks longer than this
 _TURN_START = ("session.info", "text.delta", "thinking.delta", "tool.use", "notice")
 _TERMINAL = ("turn.complete", "error")
@@ -151,6 +158,11 @@ class EngineManager:
                 pass  # the process already died (e.g. stale --resume); its exit/error is in the stream
             async for ev in self._drain(sink, engine, inbox):
                 yield ev
+            if slot.sink is sink:
+                slot.sink = None  # output from here on is a turn of Claude's own
+            ctx = await self._context_event(engine)
+            if ctx is not None:
+                yield ctx
         finally:
             if feeder is not None:
                 feeder.cancel()
@@ -179,6 +191,15 @@ class EngineManager:
             if ev.type in _TERMINAL:
                 return
 
+    @staticmethod
+    async def _context_event(engine: ClaudeEngine) -> ProviderEvent | None:
+        """After a turn: the CLI's own context count, window and auto-compact
+        point (a local control request — no API call)."""
+        if not engine.alive:
+            return None
+        info = await engine.context_usage()
+        return ProviderEvent(type="context.update", data=cli_context(info)) if info else None
+
     async def _feed(self, engine: ClaudeEngine, inbox: TurnInbox) -> None:
         from app.providers.claude_code import ClaudeCodeProvider
 
@@ -200,6 +221,11 @@ class EngineManager:
             })
             async for ev in self._drain(sink, engine, inbox):
                 yield ev
+            if slot.sink is sink:
+                slot.sink = None
+            ctx = await self._context_event(engine)
+            if ctx is not None:
+                yield ctx
         finally:
             feeder.cancel()
             inbox.close()
@@ -229,6 +255,11 @@ class EngineManager:
                 return
             if slot.sink is not None:
                 await slot.sink.put(ev)
+                if ev.type in _TERMINAL:
+                    # That turn is over: whatever comes next (Claude reacting to
+                    # a background task the moment it ended) is a turn of its
+                    # own — never queued into the finished one and lost.
+                    slot.sink = None
                 continue
             if ev.data.get("parent"):
                 # A background subagent working while the chat is idle.

@@ -9,6 +9,7 @@ import Icon from "../ui/Icon";
 import ChatControls from "./ChatControls";
 import ComposerMenu, { triggerAt, type MenuItem } from "./ComposerMenu";
 import UsageFooter from "./UsageFooter";
+import ContextMeter from "./ContextMeter";
 import { useWorkbench } from "../../stores/workbenchStore";
 import { usePhone, useTouchFirst } from "../../lib/device";
 
@@ -484,7 +485,15 @@ export default function InputBar({
               <span className="hidden sm:inline">Enter to send · Shift+Enter newline · / commands · @ files · paste or drop files</span>
             )}
           </span>
-          <UsageFooter session={session} />
+          <span className="flex shrink-0 items-center gap-2 font-mono">
+            <ContextMeter
+              session={session}
+              onCompact={() => {
+                if (!onSend("/compact", [])) setNotice("Not connected — try again in a moment.");
+              }}
+            />
+            <UsageFooter session={session} />
+          </span>
         </div>
       </div>
     </div>

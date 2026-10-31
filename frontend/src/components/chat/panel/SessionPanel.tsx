@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import { API_COST_HINT, fmtUsd } from "../../../lib/usage";
+import { ctxBar, fmtCtx, fmtWindow, limitsFor, meterOf } from "../../../lib/context";
+import { useUsageStore } from "../../../stores/usageStore";
 import { useChatStore, type Turn } from "../../../stores/chatStore";
 import { useConfigStore } from "../../../stores/configStore";
 import { useConnectionStore } from "../../../stores/connectionStore";
@@ -116,11 +118,14 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
   const dirs = session.extra_dirs || [];
   const changes = useMemo(() => changesOf(turns), [turns]);
   const todos = useMemo(() => latestTodos(turns), [turns]);
-  const lastUsage = [...turns].reverse().find((t) => t.usage)?.usage;
-  const ctxTokens = lastUsage
-    ? (lastUsage.input_tokens || 0) + (lastUsage.cache_read_input_tokens || 0) + (lastUsage.cache_creation_input_tokens || 0)
-    : 0;
-  const ctxWindow = catalog[session.provider]?.models.find((m) => m.id === session.model)?.context_window || null;
+  // Context = the last model call's input + cache tokens (each call re-reads
+  // the whole context), NOT a turn's usage, which sums every call of the turn.
+  const context = useChatStore((s) => s.context);
+  const poolDefault = useUsageStore((s) => s.accounts[session.provider]?.pool?.auto_compact_window) ?? 0;
+  const fallback = limitsFor(session.model, session.auto_compact_window ?? poolDefault);
+  const ctxMeter = session.provider === "claude" ? meterOf(context, fallback) : null;
+  const ctxTokens = ctxMeter?.tokens || 0;
+  const ctxWindow = ctxMeter?.window || catalog[session.provider]?.models.find((m) => m.id === session.model)?.context_window || null;
   const live = info || session.cli_info;
 
   const setDirs = async (next: string[]) => {
@@ -311,23 +316,32 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
             </div>
             {ctxTokens > 0 && (
               <div className="flex justify-between">
-                <dt className="text-content-faint">Last turn context</dt>
+                <dt className="text-content-faint" title="The last model call's input + cache tokens">Context now</dt>
                 <dd className="font-mono text-content-dim">
-                  {(ctxTokens / 1000).toFixed(1)}k{ctxWindow ? ` / ${Math.round(ctxWindow / 1000)}k` : ""}
+                  {fmtCtx(ctxTokens)}
+                  {ctxWindow ? ` / ${fmtWindow(ctxWindow)}` : ""}
                 </dd>
+              </div>
+            )}
+            {ctxMeter && ctxTokens > 0 && (
+              <div className="flex justify-between">
+                <dt className="text-content-faint">Auto-compacts at</dt>
+                <dd className="font-mono text-content-dim">{ctxMeter.threshold ? fmtCtx(ctxMeter.threshold) : "off"}</dd>
               </div>
             )}
           </dl>
           {ctxWindow && ctxTokens > 0 && (
             <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-accent/15">
               <div
-                className={`h-full rounded-full ${ctxTokens / ctxWindow > 0.85 ? "bg-warning" : "bg-accent"}`}
+                className={`h-full rounded-full ${ctxBar(ctxMeter?.toCompact ?? ctxTokens / ctxWindow)}`}
                 style={{ width: `${Math.min(100, (ctxTokens / ctxWindow) * 100)}%` }}
               />
             </div>
           )}
-          {ctxWindow && ctxTokens / ctxWindow > 0.85 && (
-            <p className="mt-1 text-[11px] text-warning">Context is filling up — try /compact or /clear.</p>
+          {ctxMeter && (ctxMeter.toCompact ?? 0) >= 0.75 && (
+            <p className="mt-1 text-[11px] text-warning">
+              Context is filling up — it auto-compacts at {fmtCtx(ctxMeter.threshold)}; /compact now or /clear to start fresh.
+            </p>
           )}
         </Section>
       </div>

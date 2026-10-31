@@ -31,6 +31,8 @@ export interface Session {
   extra_dirs: string[];
   cli_info?: CliInfo;
   running?: boolean;
+  auto_compact_window?: number | null; // Claude: this chat's auto-compact window (null = global default, 0 = CLI default)
+  accounts?: Record<string, { id?: string; label?: string; manual?: boolean; at?: string }>; // account it ran on last
   created_at: string;
   updated_at: string;
   message_count?: number;
@@ -68,6 +70,8 @@ export interface ProviderCatalogEntry {
   default_model: string;
   effort: string[];
   default_effort: string;
+  auto_compact_presets?: number[]; // Claude: auto-compact window choices (0 = CLI default)
+  auto_compact_buffer?: number; // the CLI compacts at window - buffer
 }
 
 export type ProviderCatalog = Record<string, ProviderCatalogEntry>;
@@ -118,7 +122,8 @@ export type EventType =
   | "task.update"
   | "task.state"
   | "usage.update"
-  | "turn.changes";
+  | "turn.changes"
+  | "context.update";
 
 export interface ProviderEvent {
   type: EventType;
@@ -199,4 +204,27 @@ export interface AccountRef {
   account_id: string | null;
   provider?: string | null;
   live?: boolean; // its engine is running right now
+}
+
+/** The main conversation's context size against the window the CLI uses
+ * (Claude). ``source`` "cli" = the engine's own count after a turn; "call" =
+ * the latest API call's input + cache tokens while the turn runs. */
+export interface ContextInfo {
+  tokens: number | null;
+  window?: number | null; // effective window (auto-compact window or the model's)
+  model_window?: number | null;
+  threshold?: number | null; // the CLI auto-compacts once the context reaches this
+  auto_compact?: boolean;
+  window_source?: string | null; // env | model-default | settings… | estimate
+  source?: "cli" | "call";
+  model?: string | null;
+  at?: string;
+}
+
+/** A compaction boundary (the CLI summarised the conversation). */
+export interface Compaction {
+  trigger?: "auto" | "manual" | null;
+  pre_tokens?: number | null;
+  post_tokens?: number | null;
+  at: string;
 }

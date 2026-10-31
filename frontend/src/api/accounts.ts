@@ -12,7 +12,11 @@ export interface Account {
   max_concurrency: number;
   status: string;
   usable: boolean;
-  in_flight: number;
+  in_flight: number; // active turns
+  engines?: number; // live chat engines bound to it
+  primary_mode?: PrimaryMode; // the host login: how it takes part in balancing
+  limit?: { type?: string | null; resets_at?: number | null } | null; // a limit that refused it, while in force
+  live_status?: string | null; // last rate-limit status an engine saw (allowed | allowed_warning | rejected)
   eligible: boolean;
   ineligible_reason: string | null;
   utilization?: number | null; // highest window % (what the balancer uses)
@@ -28,8 +32,20 @@ export interface Account {
   last_error: string | null;
 }
 
+export type PrimaryMode = "normal" | "fallback" | "off";
+
+export interface PoolSettings {
+  provider: string;
+  enabled: boolean;
+  strategy: string;
+  primary_mode: PrimaryMode;
+  near_5h: number; // avoid an account at/above this 5-hour %
+  near_7d: number; // ... and this 7-day %
+  auto_compact_window: number; // Claude: default auto-compact window (0 = CLI default)
+}
+
 export interface PoolConfig {
-  pool: { provider: string; enabled: boolean; strategy: string };
+  pool: PoolSettings;
   accounts: Account[];
 }
 
@@ -37,7 +53,7 @@ const base = (p: string) => `/api/providers/${p}`;
 
 export const getPool = (provider: string) => apiFetch<PoolConfig>(`${base(provider)}/pool`);
 
-export const setPool = (provider: string, patch: { enabled?: boolean; strategy?: string }) =>
+export const setPool = (provider: string, patch: Partial<Omit<PoolSettings, "provider">>) =>
   apiFetch(`${base(provider)}/pool`, { method: "PUT", body: JSON.stringify(patch) });
 
 export const createAccount = (

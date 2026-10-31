@@ -30,8 +30,19 @@ hr-harnessor turns coding agents into a chat service you control:
   Windows / macOS / Linux) and an **Android app** (Capacitor). The apps load the live console,
   so UI updates reach them instantly; app builds are produced by CI and offered on the
   console's **Download** page.
-- **Operations** — multi-account load balancing (plan-usage aware), admin console (error
-  logs, system, security), revocable sessions, IP bans.
+- **Context** — a context meter in the composer (the last model call's input + cache tokens
+  against the window and auto-compact point the CLI itself reports), compaction dividers,
+  "Compact now", and a configurable auto-compact window (global default + per chat, passed
+  as `CLAUDE_CODE_AUTO_COMPACT_WINDOW`): every model call re-reads the whole context, so a
+  smaller window spends less plan usage per call at the cost of summarised history.
+- **Operations** — multi-account load balancing (plan-usage aware, live rate-limit aware),
+  admin console (error logs, system, security), revocable sessions, IP bans. Chats are
+  **sticky** to the account they ran on (the prompt cache is per account; idle engines are
+  closed after 30 min and respawn with `--resume` on the same account, so closing one costs
+  no cache). A chat moves only when its account is unusable or near a limit (5h ≥ 90%,
+  7d ≥ 95% by default) while another has headroom; an account that hits its limit cools down
+  until its reset and the running turn continues once on another account, with a notice.
+  The machine's own login can be excluded or kept as a fallback.
 
 ```
  Web console      Desktop app (Electron)      Android app (Capacitor)

@@ -8,6 +8,8 @@ export type SessionPatch = {
   mode?: "agent" | "plan";
   extra_dirs?: string[];
   title?: string;
+  auto_compact_window?: number; // tokens; 0 = CLI default; -1 = back to the global default
+  account_id?: string; // run on this account from the next turn
 };
 
 export const listSessions = () => apiFetch<Session[]>("/api/sessions");

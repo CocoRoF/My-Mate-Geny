@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     cli_info      TEXT NOT NULL DEFAULT '{}',       -- last CLI capabilities (tools, slash commands, MCP…)
     cli_sessions  TEXT NOT NULL DEFAULT '{}',       -- per provider: {"claude": {"id", "seen"}, "codex": {...}}
     context_floor TEXT,                             -- /clear: handoffs only include messages after this
+    auto_compact_window INTEGER,                    -- Claude: this chat's auto-compact window (NULL = default, 0 = CLI default)
+    accounts      TEXT NOT NULL DEFAULT '{}',       -- per provider: the account it ran on last (sticky balancing)
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL
 );
@@ -116,6 +118,10 @@ CREATE TABLE IF NOT EXISTS provider_pool (
     provider  TEXT PRIMARY KEY,               -- claude | codex
     enabled   INTEGER NOT NULL DEFAULT 0,      -- use the pool for this provider?
     strategy  TEXT NOT NULL DEFAULT 'least_busy',
+    primary_mode TEXT NOT NULL DEFAULT 'normal',  -- host login: normal | fallback | off
+    near_5h   REAL,                           -- avoid an account at/above this 5-hour % (default 90)
+    near_7d   REAL,                           -- ... and this 7-day % (default 95)
+    auto_compact_window INTEGER NOT NULL DEFAULT 0,  -- Claude: default auto-compact window (0 = CLI default)
     updated_at TEXT NOT NULL
 );
 
@@ -223,9 +229,20 @@ class Database:
                 ("cli_info", "TEXT NOT NULL DEFAULT '{}'"),
                 ("cli_sessions", "TEXT NOT NULL DEFAULT '{}'"),
                 ("context_floor", "TEXT"),
+                ("auto_compact_window", "INTEGER"),
+                ("accounts", "TEXT NOT NULL DEFAULT '{}'"),
             ):
                 if col not in cols:
                     self._conn.execute(f"ALTER TABLE sessions ADD COLUMN {col} {ddl}")
+            pcols = {r["name"] for r in self._conn.execute("PRAGMA table_info(provider_pool)")}
+            for col, ddl in (
+                ("primary_mode", "TEXT NOT NULL DEFAULT 'normal'"),
+                ("near_5h", "REAL"),
+                ("near_7d", "REAL"),
+                ("auto_compact_window", "INTEGER NOT NULL DEFAULT 0"),
+            ):
+                if pcols and col not in pcols:
+                    self._conn.execute(f"ALTER TABLE provider_pool ADD COLUMN {col} {ddl}")
             mcols = {r["name"] for r in self._conn.execute("PRAGMA table_info(messages)")}
             for col in ("provider", "model"):
                 if col not in mcols:

@@ -37,6 +37,25 @@ class EngineError(RuntimeError):
     pass
 
 
+def cli_context(info: dict[str, Any]) -> dict[str, Any]:
+    """``get_context_usage`` -> ``context.update`` data (what the CLI itself
+    will do: its effective window and the point it auto-compacts at)."""
+    def num(k: str) -> int | None:
+        v = info.get(k)
+        return int(v) if isinstance(v, (int, float)) else None
+
+    return {
+        "tokens": num("totalTokens"),
+        "window": num("maxTokens"),
+        "model_window": num("rawMaxTokens"),
+        "threshold": num("autoCompactThreshold"),
+        "auto_compact": bool(info.get("isAutoCompactEnabled", True)),
+        "window_source": info.get("autocompactSource"),
+        "model": info.get("model"),
+        "source": "cli",
+    }
+
+
 class ClaudeEngine:
     def __init__(
         self,
@@ -168,6 +187,17 @@ class ClaudeEngine:
         if model and model != self.model:
             await self.control({"subtype": "set_model", "model": model})
             self.model = model
+
+    async def context_usage(self, timeout: float = 4.0) -> dict[str, Any] | None:
+        """The CLI's own view of the context window (``get_context_usage``,
+        summary detail: answered from the last response's usage, no API
+        call): totalTokens, maxTokens (effective window), autoCompactThreshold,
+        isAutoCompactEnabled, autocompactSource… None when it can't say."""
+        try:
+            resp = await self.control({"subtype": "get_context_usage", "detail": "summary"}, timeout=timeout)
+        except (EngineError, asyncio.TimeoutError):
+            return None
+        return resp if isinstance(resp, dict) and resp.get("maxTokens") else None
 
     async def set_mode(self, permission_mode: str, mode: str) -> None:
         if mode != self.mode:
