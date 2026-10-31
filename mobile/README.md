@@ -1,10 +1,12 @@
-# hr-harnessor Android
+# My Mate Geny Android
 
 Capacitor shell that loads the live console (`server.url` in
 `capacitor.config.json`) with its mobile layout. Native: notifications
 (LocalNotifications), hardware back button (closes the top overlay, then
 backgrounds the app), status bar/safe areas, file chooser + camera for uploads,
 downloads (DownloadManager with the login cookie → Downloads folder),
+microphone for talking to the Mate (RECORD_AUDIO, asked when the page
+requests it; media plays without a tap so replies can be read aloud),
 offline page.
 
 - `npm ci && npx cap sync android && (cd android && ./gradlew assembleRelease)`
@@ -13,3 +15,7 @@ offline page.
   keystore: every update must be signed with the same key. A backup lives on
   the runtime server in `~/.hr-harnessor/android-signing/`.
 - Icons/splash: `npm run icons` regenerates from `assets/`.
+
+Naming: shown as **My Mate Geny** (`appName`, `app_name`); the package id
+`me.hrletsgo.harnessor` and the signing key are unchanged, so existing installs
+update in place.

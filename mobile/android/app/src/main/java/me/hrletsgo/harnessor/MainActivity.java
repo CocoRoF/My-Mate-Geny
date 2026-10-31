@@ -22,6 +22,10 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // The Mate reads replies aloud when they arrive (not inside a tap), so
+        // media may start without a user gesture. Microphone requests are
+        // handled by Capacitor's BridgeWebChromeClient (runtime permission).
+        getBridge().getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
         // Capacitor's WebView has no DownloadListener: without this, download
         // links (file viewer, explorer, attachments, Download page) do nothing.
         // The download runs in DownloadManager with the console's login cookie.

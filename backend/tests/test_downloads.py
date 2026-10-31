@@ -12,6 +12,21 @@ def test_asset_classification():
     assert c("latest.yml") is None and c("hr-harnessor-0.2.7-windows-x64-setup.exe.blockmap") is None
 
 
+def test_asset_classification_new_names():
+    """Since 0.3 the artifacts are named my-mate-geny-…; both names classify the same."""
+    c = DownloadService.classify
+    assert c("my-mate-geny-0.3.12-windows-x64-setup.exe")["kind"] == "installer"
+    assert c("my-mate-geny-0.3.12-macos-arm64.dmg")["arch"] == "arm64"
+    assert c("my-mate-geny-0.3.12-macos-x64.dmg")["label"] == "macOS · Intel"
+    assert c("my-mate-geny-0.3.12-linux-x86_64.AppImage")["platform"] == "linux"
+    assert c("my-mate-geny-0.3.12-linux-amd64.deb")["kind"] == "deb"
+    assert c("my-mate-geny-0.3.12-android.apk")["platform"] == "android"
+    assert c("my-mate-geny-0.3.12-windows-x64-setup.exe.blockmap") is None
+    for old, new in [("hr-harnessor-0.2.9-android.apk", "my-mate-geny-0.3.10-android.apk"),
+                     ("hr-harnessor-0.2.9-linux-amd64.deb", "my-mate-geny-0.3.10-linux-amd64.deb")]:
+        assert c(old) == c(new)
+
+
 def test_not_configured_without_token(monkeypatch):
     from app.config import settings
     monkeypatch.setattr(settings, "github_token", "")
@@ -45,3 +60,31 @@ def test_latest_offers_one_build_per_platform_mid_swap(monkeypatch):
     assert out["version"] == "0.2.5" and out["commit"] == "abc"
     assert sorted(a["id"] for a in out["assets"]) == [2, 4]
     assert out["notes"] == "Built from abc"
+    assert out["product"] == "My Mate Geny"
+
+
+def test_latest_mid_rename_swap(monkeypatch):
+    """The first my-mate-geny build lands in apps-latest next to the old
+    hr-harnessor files: one per platform, the newest, whatever its name."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "github_token", "t")
+    monkeypatch.setattr(settings, "apps_repo", "o/r")
+
+    def asset(i, name, at):
+        return {"id": i, "name": name, "size": 10, "updated_at": at, "state": "uploaded"}
+
+    rel = {
+        "tag_name": "apps-latest",
+        "body": '<!-- hrh-meta {"version": "0.3.40"} -->',
+        "assets": [
+            asset(1, "hr-harnessor-0.2.39-android.apk", "2026-10-30T10:00:00Z"),
+            asset(2, "my-mate-geny-0.3.40-android.apk", "2026-10-31T10:00:00Z"),
+            asset(3, "hr-harnessor-0.2.39-windows-x64-setup.exe", "2026-10-30T10:00:00Z"),
+        ],
+    }
+    svc = DownloadService()
+    monkeypatch.setattr(svc, "_get", lambda url: rel)
+    out = svc.latest()
+    by_platform = {a["platform"]: a["name"] for a in out["assets"]}
+    assert by_platform == {"android": "my-mate-geny-0.3.40-android.apk",
+                           "windows": "hr-harnessor-0.2.39-windows-x64-setup.exe"}

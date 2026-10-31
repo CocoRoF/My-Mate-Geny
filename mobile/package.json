@@ -1,8 +1,8 @@
 {
   "name": "hr-harnessor-mobile",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "hr·harnessor agent console — Android app (Capacitor shell around the live console)",
+  "description": "My Mate Geny — Android app (Capacitor shell around the live console)",
   "scripts": {
     "sync": "cap sync android",
     "icons": "capacitor-assets generate --android --assetPath assets"

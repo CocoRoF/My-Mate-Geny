@@ -3,7 +3,9 @@
 # build; this pipeline rebuilds and publishes the app shells whenever they
 # change (or on demand). Builds upload straight to a GitHub Release (no
 # Actions artifact storage); the console's Download page serves the rolling
-# `apps-latest` release.
+# `apps-latest` release. Artifacts are named `my-mate-geny-<version>-…` since
+# 0.3 (formerly `hr-harnessor-…`; backend/app/services/downloads.py matches
+# both by suffix, so the swap is seamless).
 name: apps
 
 on:
@@ -24,7 +26,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  VERSION: 0.2.${{ github.run_number }}
+  VERSION: 0.3.${{ github.run_number }}
   GH_TOKEN: ${{ github.token }}
 
 jobs:
@@ -74,8 +76,8 @@ jobs:
         run: |
           sudo mdutil -a -i off || true   # Spotlight indexing breaks dmg detach on runners
           # One arch at a time, each with its own volume name (they collide otherwise).
-          npx electron-builder --mac dmg --arm64 --publish never -c.extraMetadata.version=$VERSION -c.dmg.title="hr-harnessor-arm64"
-          npx electron-builder --mac dmg --x64 --publish never -c.extraMetadata.version=$VERSION -c.dmg.title="hr-harnessor-x64"
+          npx electron-builder --mac dmg --arm64 --publish never -c.extraMetadata.version=$VERSION -c.dmg.title="my-mate-geny-arm64"
+          npx electron-builder --mac dmg --x64 --publish never -c.extraMetadata.version=$VERSION -c.dmg.title="my-mate-geny-x64"
       - name: Upload to release
         run: |
           shopt -s nullglob
@@ -114,7 +116,7 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon -PhrhVersionCode=${{ github.run_number }} -PhrhVersionName=$VERSION
-          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/hr-harnessor-$VERSION-android.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/my-mate-geny-$VERSION-android.apk"
         env:
           HRH_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
           HRH_KEYSTORE_PASSWORD: ${{ secrets.HRH_KEYSTORE_PASSWORD }}
@@ -123,9 +125,9 @@ jobs:
       - name: Verify signature
         run: |
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
-          "$APKSIGNER" verify --print-certs "$RUNNER_TEMP/hr-harnessor-$VERSION-android.apk" | head -3
+          "$APKSIGNER" verify --print-certs "$RUNNER_TEMP/my-mate-geny-$VERSION-android.apk" | head -3
       - name: Upload to release
-        run: gh release upload "apps-v$VERSION" "$RUNNER_TEMP/hr-harnessor-$VERSION-android.apk" --clobber
+        run: gh release upload "apps-v$VERSION" "$RUNNER_TEMP/my-mate-geny-$VERSION-android.apk" --clobber
 
   publish:
     needs: [desktop, android]
