@@ -35,6 +35,14 @@ const q = (path: string, conn: string | null, extra: Record<string, string> = {}
   return p.toString();
 };
 
+/** Where a relative path the agent printed really is (tried roots, then the
+ *  folders the chat has been working in, then a bounded search). Best first. */
+export const fsResolve = (path: string, conn: string | null, sessionId: string, roots: string[]) => {
+  const p = new URLSearchParams(q(path, conn, { session_id: sessionId }));
+  roots.forEach((r) => p.append("roots", r));
+  return apiFetch<{ matches: { path: string; is_dir: boolean }[] }>(`/api/fs/resolve?${p.toString()}`);
+};
+
 export const fsList = (path: string, conn: string | null) =>
   apiFetch<{ path: string; entries: FsEntry[]; truncated: boolean }>(`/api/fs/list?${q(path, conn)}`);
 

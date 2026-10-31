@@ -101,3 +101,23 @@ def test_is_secret_patterns():
     assert not is_secret("/home/u/.ssh/known_hosts")
     assert not is_secret("/home/u/proj/.env")
     assert not is_secret("/home/u/proj/auth.json")
+
+
+def test_resolve_uses_the_chats_working_folders(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+    (repo / "docs" / "mate.md").write_text("# mate")
+    with TestClient(app) as client:
+        _login(client)
+        s = client.post("/api/sessions", json={
+            "provider": "claude", "model": "", "connection_id": None, "workspace_path": "/", "title": "t",
+        }).json()
+        svc = app.state.session_service
+        from app.providers.base import ProviderEvent
+        svc._add_event(s["id"], ProviderEvent(type="tool.use", data={"id": "t1", "name": "Write",
+                                                                    "input": {"file_path": str(repo / "docs" / "mate.md")}}))
+        r = client.get("/api/fs/resolve", params={"path": "docs/mate.md", "session_id": s["id"], "roots": ["/"]}).json()
+        assert r["matches"] == [{"path": str(repo / "docs" / "mate.md"), "is_dir": False}]
+        r = client.get("/api/fs/resolve", params={"path": "nothing/here.md", "session_id": s["id"], "roots": ["/"]}).json()
+        assert r["matches"] == []
+        client.delete(f"/api/sessions/{s['id']}")

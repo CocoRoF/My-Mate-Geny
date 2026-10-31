@@ -20,12 +20,13 @@ import os
 import posixpath
 import stat as stat_mod
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 
 from app.config import settings
 from app.routers._deps import workspace_service
 from app.routers.attachments import _INLINE_PREFIXES, _SAFE_HEADERS
+from app.services import path_resolver
 from app.services.workspace_service import WorkspaceService
 from app.workspaces.remote_ssh import RemoteSshConnector
 
@@ -202,6 +203,46 @@ async def stat_path(
     info["mime"] = None if info["is_dir"] else _mime(info["path"])
     info["secret"] = is_secret(info["path"])
     return info
+
+
+@router.get("/resolve")
+async def resolve_path(
+    request: Request,
+    path: str = Query(...),
+    session_id: str | None = Query(default=None),
+    connection_id: str | None = Query(default=None),
+    roots: list[str] = Query(default=[]),
+    svc: WorkspaceService = Depends(workspace_service),
+) -> dict:
+    """Where a relative path the agent printed really is: the roots the client
+    tried, then the folders this chat has been working in (its recent tool
+    calls and answers), then a bounded search (see ``path_resolver``)."""
+    mentioned: list[str] = []
+    if session_id:
+        rows = request.app.state.db.query(
+            "SELECT type, data FROM events WHERE session_id = ? AND type IN ('tool.use', 'tool.result', 'turn.complete')"
+            " ORDER BY id DESC LIMIT 600",
+            (session_id,),
+        )
+        mentioned = path_resolver.paths_in_events((r["type"], r["data"]) for r in rows)
+    if connection_id:
+        c = _remote(svc, connection_id)
+        ref = path_resolver.clean_ref(path)
+        cands = [posixpath.join(b, ref) for b in roots]
+        cands += path_resolver.direct_hits(ref, mentioned)
+        cands += [posixpath.join(b, ref) for b in path_resolver.candidate_bases(mentioned)[:24]]
+        found: list[dict] = []
+        for cand in dict.fromkeys(posixpath.normpath(x) for x in cands):
+            try:
+                info = await c.explore(cand, "stat")
+            except Exception:  # noqa: BLE001 - not there (or unreadable): next candidate
+                continue
+            found.append({"path": info["path"], "is_dir": info["is_dir"]})
+            if len(found) >= 5:
+                break
+        return {"matches": found}
+    hits = await asyncio.to_thread(path_resolver.resolve, path, [os.path.expanduser(r) for r in roots], mentioned)
+    return {"matches": [{"path": h, "is_dir": os.path.isdir(h)} for h in hits if not is_secret(h)]}
 
 
 @router.get("/text")

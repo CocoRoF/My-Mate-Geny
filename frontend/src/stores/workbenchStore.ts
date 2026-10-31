@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { fsList, fsStat, type FsEntry } from "../api/fs";
+import { fsList, fsResolve, fsStat, type FsEntry } from "../api/fs";
 import { dirName } from "../lib/fileView";
 import { parsePathRef, resolvePath } from "../lib/paths";
 import type { Session } from "../types";
@@ -254,20 +254,33 @@ export async function openPath(session: Session, raw: string, opts: { base?: str
   const wb = useWorkbench.getState();
   const ref = parsePathRef(raw);
   const relative = !ref.path.startsWith("/") && !ref.path.startsWith("~");
-  const bases = opts.base ? [opts.base] : [session.workspace_path, ...(session.extra_dirs || [])];
+  const bases = opts.base
+    ? [opts.base, session.workspace_path, ...(session.extra_dirs || [])]
+    : [session.workspace_path, ...(session.extra_dirs || [])];
+  const show = async (st: { path: string; is_dir: boolean }) => {
+    if (st.is_dir) {
+      wb.setExplorer(true);
+      await revealInExplorer(session, st.path, true);
+    } else {
+      wb.openFile(session.id, st.path, { preview: opts.preview ?? true, line: ref.line, endLine: ref.endLine });
+      if (wb.explorerOpen) revealInExplorer(session, st.path).catch(() => {});
+    }
+  };
   let lastErr = "";
-  for (const base of relative ? bases : [session.workspace_path]) {
-    const abs = resolvePath(ref.path, base);
+  for (const base of relative ? bases.slice(0, 1) : [session.workspace_path]) {
     try {
-      const st = await fsStat(abs, session.connection_id);
-      if (st.is_dir) {
-        wb.setExplorer(true);
-        await revealInExplorer(session, st.path, true);
-      } else {
-        wb.openFile(session.id, st.path, { preview: opts.preview ?? true, line: ref.line, endLine: ref.endLine });
-        if (wb.explorerOpen) revealInExplorer(session, st.path).catch(() => {});
-      }
-      return;
+      return await show(await fsStat(resolvePath(ref.path, base), session.connection_id));
+    } catch (e: any) {
+      lastErr = String(e.message || e);
+    }
+  }
+  if (relative && lastErr === "not found") {
+    // Not under the first root: the agent may have meant a folder it was
+    // working in (a chat on "/" that edited /home/x/repo prints "docs/a.md").
+    try {
+      const roots = [...bases, ...(wb.pinnedRoots[session.id] || [])];
+      const { matches } = await fsResolve(ref.path, session.connection_id, session.id, roots);
+      if (matches.length) return await show(matches[0]);
     } catch (e: any) {
       lastErr = String(e.message || e);
     }
