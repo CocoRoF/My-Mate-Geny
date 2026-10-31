@@ -97,6 +97,30 @@ export const clearLogs = () => apiFetch<{ deleted: number }>("/api/admin/logs", 
 export const systemInfo = () => apiFetch<SystemInfo>("/api/admin/system");
 export const securityInfo = () => apiFetch<SecurityInfo>("/api/admin/security");
 export const revokeAllSessions = () => apiFetch("/api/auth/revoke-all", { method: "POST" });
+
+/** Where the sign-in credentials come from (precedence db > env > default). */
+export interface AuthStatus {
+  username: string;
+  source: "db" | "env" | "default";
+  default_password: boolean;
+  updated_at: string | null;
+  min_password_length: number;
+}
+export const authStatus = () => apiFetch<AuthStatus>("/api/auth/status");
+/** Change username and/or password (empty new_password = keep it). Signs out
+ * every other session; this browser gets a fresh cookie. */
+export const changeCredentials = (body: { current_password: string; username: string; new_password: string }) =>
+  apiFetch<AuthStatus & { ok: true }>("/api/auth/credentials", { method: "POST", body: JSON.stringify(body) });
+/** Fired after a successful change so the banner / signed-in name re-check. */
+export const AUTH_CHANGED_EVENT = "hrh-auth-changed";
+
+// One request shared by every consumer (banner, sidebar) until a change.
+let statusPromise: Promise<AuthStatus> | null = null;
+export const sharedAuthStatus = () => {
+  if (!statusPromise) statusPromise = authStatus().catch((e) => ((statusPromise = null), Promise.reject(e)));
+  return statusPromise;
+};
+if (typeof window !== "undefined") window.addEventListener(AUTH_CHANGED_EVENT, () => (statusPromise = null), true);
 export const unbanIp = (ip: string) =>
   apiFetch(`/api/admin/security/${encodeURIComponent(ip)}`, { method: "DELETE" });
 
