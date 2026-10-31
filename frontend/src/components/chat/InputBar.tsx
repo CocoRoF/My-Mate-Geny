@@ -9,6 +9,7 @@ import AttachmentTray from "../attachments/AttachmentTray";
 import Icon from "../ui/Icon";
 import ChatControls from "./ChatControls";
 import ComposerMenu, { triggerAt, type MenuItem } from "./ComposerMenu";
+import { useWorkbench } from "../../stores/workbenchStore";
 
 /** Files on a paste event. Office apps put an image AND tab/newline text on the
  * clipboard for copied cells — that's a text paste, not an attachment. */
@@ -118,6 +119,19 @@ export default function InputBar({
   const updateSession = useSessionStore((s) => s.update);
 
   const sid = session.id;
+  // "Mention in chat" from the explorer appends `@path ` here.
+  const insert = useWorkbench((s) => s.insert);
+  useEffect(() => {
+    if (!insert || insert.sid !== sid) return;
+    setInput((v) => (v && !/\s$/.test(v) ? `${v} ` : v) + insert.text);
+    requestAnimationFrame(() => {
+      const ta = taRef.current;
+      if (!ta) return;
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [insert?.n]);
   const items = useMemo(() => allItems.filter((i) => i.sessionId === sid), [allItems, sid]);
   const uploading = items.some((i) => i.status === "uploading");
   const ready = items.filter((i) => i.status === "done" && i.attachment);

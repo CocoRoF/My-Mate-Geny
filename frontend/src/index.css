@@ -168,6 +168,105 @@
   padding: 0.35rem 0.6rem;
 }
 
+/* Paths the agent printed: open in the workbench (file tab / explorer). */
+.md .md-path {
+  cursor: pointer;
+  color: inherit;
+  text-decoration: underline dotted #5e6676;
+  text-underline-offset: 3px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.md .md-path:hover {
+  color: #8098ff;
+  text-decoration-color: #8098ff;
+}
+.md code.md-path:hover {
+  border-color: #6e8bff66;
+}
+
+/* A markdown FILE (viewer tab): document-sized type, GitHub-like. */
+.md-doc {
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  color: #d5dae4;
+}
+.md-doc :where(p, ul, ol, pre, blockquote, table) {
+  margin: 0.8rem 0;
+}
+.md-doc h1,
+.md-doc h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid #232936;
+}
+.md-doc h1 {
+  font-size: 1.75rem;
+  margin: 1.4rem 0 0.9rem;
+}
+.md-doc h2 {
+  font-size: 1.4rem;
+  margin: 1.6rem 0 0.8rem;
+}
+.md-doc h3 {
+  font-size: 1.15rem;
+  margin: 1.3rem 0 0.6rem;
+}
+.md-doc h4,
+.md-doc h5,
+.md-doc h6 {
+  font-weight: 600;
+  font-size: 1rem;
+  margin: 1.1rem 0 0.5rem;
+}
+.md-doc > div > :first-child,
+.md-doc h1:first-child {
+  margin-top: 0;
+}
+.md-doc li + li {
+  margin-top: 0.25rem;
+}
+.md-doc hr {
+  border: 0;
+  border-top: 1px solid #232936;
+  margin: 1.5rem 0;
+}
+.md-doc img {
+  max-height: none;
+}
+.md-doc table {
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.md-doc th {
+  background: #161a22;
+}
+.md :where(input[type="checkbox"]) {
+  margin-right: 0.4rem;
+  vertical-align: middle;
+}
+
+/* File viewer: highlight.js tokens on the editor background */
+.hljs-view .hljs {
+  background: transparent;
+}
+
+/* docx-preview: pages on our dark canvas */
+.docx-host .docx-wrapper {
+  background: transparent !important;
+  padding: 16px 12px !important;
+}
+.docx-host .docx-wrapper > section.docx {
+  box-shadow: 0 8px 28px -10px rgba(0, 0, 0, 0.7) !important;
+  margin-bottom: 18px !important;
+}
+
+/* Explorer tree */
+.tree-row[data-selected="true"] {
+  background: #6e8bff22;
+  outline: 1px solid #6e8bff55;
+  outline-offset: -1px;
+}
+
 /* highlight.js inside our code frame: keep the frame's background */
 .md pre code.hljs {
   background: transparent;

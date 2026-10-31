@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { stopTurn } from "../../api/sessions";
 import SessionPanel from "./panel/SessionPanel";
 import { MenuButton } from "../layout/MobileTopBar";
@@ -13,6 +13,37 @@ import { useComposerStore } from "../../stores/composerStore";
 import NewSessionPanel from "./NewSessionPanel";
 import UsageModal from "../usage/UsageModal";
 import Icon from "../ui/Icon";
+import ExplorerPanel from "../explorer/ExplorerPanel";
+import TabBar from "../viewer/TabBar";
+import { useChatStore } from "../../stores/chatStore";
+import { useSessionTabs, useWorkbench } from "../../stores/workbenchStore";
+
+// Viewers (and their format libraries) load when a file is first opened.
+const FileViewer = lazy(() => import("../viewer/FileViewer"));
+const WIDE = 1280; // below this the side panels are drawers
+
+function Toast() {
+  const toast = useWorkbench((s) => s.toast);
+  const [shown, setShown] = useState<typeof toast>(null);
+  useEffect(() => {
+    if (!toast) return;
+    setShown(toast);
+    const t = setTimeout(() => setShown(null), toast.tone === "error" ? 4000 : 1800);
+    return () => clearTimeout(t);
+  }, [toast]);
+  if (!shown) return null;
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[80] flex justify-center px-4">
+      <div
+        className={`max-w-[90vw] truncate rounded-lg border px-3 py-1.5 text-[12.5px] shadow-float animate-fade-in ${
+          shown.tone === "error" ? "border-danger/30 bg-surface-2 text-danger" : "border-border bg-surface-2 text-content"
+        }`}
+      >
+        {shown.msg}
+      </div>
+    </div>
+  );
+}
 
 export default function ChatView() {
   const activeId = useSessionStore((s) => s.activeId);
@@ -24,6 +55,8 @@ export default function ChatView() {
   const runningTasks = useTaskStore((s) => (activeId ? (s.bySession[activeId] || []).filter(isRunning).length : 0));
   const [panel, setPanel] = useState(() => {
     try {
+      // one right-side panel at a time: a saved-open explorer wins
+      if (useWorkbench.getState().explorerOpen) return false;
       return localStorage.getItem("hrh_session_panel") !== "0" && window.innerWidth >= 1100;
     } catch {
       return false;
@@ -38,7 +71,41 @@ export default function ChatView() {
       }
       return !v;
     });
-  useBackHandler(panel && window.innerWidth < 1280, () => togglePanel());
+  const explorer = useWorkbench((s) => s.explorerOpen);
+  const setExplorer = useWorkbench((s) => s.setExplorer);
+  const { tabs, active: activeTab } = useSessionTabs(activeId);
+  const activate = useWorkbench((s) => s.activate);
+  // A side panel takes width: the workspace path in the header waits for a very wide screen.
+  const compact = explorer || panel;
+  // Narrow screens open on the chat: a drawer left open last time stays closed.
+  useEffect(() => {
+    if (window.innerWidth < WIDE) setExplorer(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // The explorer and the session panel share the right side: one at a time.
+  useEffect(() => {
+    if (explorer && panel) setPanel(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [explorer]);
+  useEffect(() => {
+    if (panel && explorer) setExplorer(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panel]);
+  // Tabs mount on first view and then stay mounted (scroll, zoom, sheet survive switching).
+  const [visited, setVisited] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    if (activeId && activeTab) setVisited((v) => (v.has(`${activeId}:${activeTab}`) ? v : new Set(v).add(`${activeId}:${activeTab}`)));
+  }, [activeId, activeTab]);
+  // A finished turn may have changed files: explorer + open files refresh.
+  const streaming = useChatStore((s) => s.isStreaming);
+  const wasStreaming = useRef(streaming);
+  useEffect(() => {
+    if (wasStreaming.current && !streaming) useWorkbench.getState().bump();
+    wasStreaming.current = streaming;
+  }, [streaming]);
+  useBackHandler(panel && window.innerWidth < WIDE, () => togglePanel());
+  useBackHandler(explorer && window.innerWidth < WIDE, () => setExplorer(false));
+  useBackHandler(!!activeId && activeTab !== null && window.innerWidth < 768, () => activeId && activate(activeId, null));
   useBackHandler(showUsage, () => setShowUsage(false));
   const stop = useCallback(() => {
     stopWs();
@@ -120,9 +187,13 @@ export default function ChatView() {
           <span className="pill bg-surface-3 text-content-dim shrink-0 hidden sm:inline-flex">{active.provider}</span>
           {active.mode === "plan" && <span className="pill bg-violet/15 text-violet shrink-0">plan</span>}
           <div className="ml-auto flex items-center gap-2 min-w-0 shrink-0">
-            <span className="hidden lg:inline text-[11px] text-content-faint font-mono truncate max-w-[220px]">
+            <button
+              onClick={() => setExplorer(true)}
+              className={`${compact ? "hidden 2xl:inline" : "hidden lg:inline"} text-[11px] text-content-faint font-mono truncate max-w-[220px] hover:text-content`}
+              title="Show in explorer"
+            >
               {active.connection_id ? "remote" : "local"} · {active.workspace_path}
-            </span>
+            </button>
             <button
               onClick={() => setShowTasks(true)}
               className={`btn-ghost py-1 px-2 shrink-0 ${runningTasks ? "text-accent" : ""}`}
@@ -134,6 +205,14 @@ export default function ChatView() {
             </button>
             <button onClick={() => setShowUsage(true)} className="btn-ghost py-1 px-2 shrink-0" title="Account & usage">
               <Icon name="cpu" size={14} /> <span className="hidden sm:inline">Usage</span>
+            </button>
+            <button
+              onClick={() => setExplorer(!explorer)}
+              className={`btn-ghost py-1 px-2 shrink-0 ${explorer ? "bg-surface-3 text-content" : ""}`}
+              title="Explorer — browse and open the workspace's files"
+            >
+              <Icon name="files" size={14} />
+              <span className="hidden sm:inline">Explorer</span>
             </button>
             <button
               onClick={togglePanel}
@@ -150,11 +229,39 @@ export default function ChatView() {
         </div>
         </div>
       )}
-      <MessageList />
-      {active && <InputBar key={active.id} onSend={send} onSteer={steer} onStop={stop} session={active} />}
+      {active && tabs.length > 0 && <TabBar sid={active.id} />}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <MessageList />
+        {active && <InputBar key={active.id} onSend={send} onSteer={steer} onStop={stop} session={active} />}
+        {active &&
+          tabs
+            .filter((t) => t.id === activeTab || visited.has(`${active.id}:${t.id}`))
+            .map((t) => (
+              <div
+                key={`${active.id}:${t.id}`}
+                className={`absolute inset-0 z-20 bg-bg ${t.id === activeTab ? "" : "invisible pointer-events-none"}`}
+              >
+                <Suspense fallback={null}>
+                  <FileViewer session={active} tab={t} />
+                </Suspense>
+              </div>
+            ))}
+      </div>
       {showUsage && active && <UsageModal provider={active.provider} onClose={() => setShowUsage(false)} />}
       {showTasks && active && <TasksPanel sid={active.id} onClose={() => setShowTasks(false)} />}
     </div>
+    {explorer && active && (
+      <>
+        <div className="fixed inset-0 z-30 bg-black/45 xl:hidden animate-fade-in" onClick={() => setExplorer(false)} />
+        <div className="fixed inset-y-0 right-0 z-40 pt-safe xl:pt-0 bg-surface xl:static xl:z-auto shadow-float xl:shadow-none">
+          <ExplorerPanel
+            session={active}
+            onClose={() => setExplorer(false)}
+            onOpened={() => window.innerWidth < WIDE && setExplorer(false)}
+          />
+        </div>
+      </>
+    )}
     {panel && active && (
       <>
         <div className="fixed inset-0 z-30 bg-black/45 xl:hidden animate-fade-in" onClick={togglePanel} />
@@ -163,6 +270,7 @@ export default function ChatView() {
         </div>
       </>
     )}
+    <Toast />
     </div>
   );
 }

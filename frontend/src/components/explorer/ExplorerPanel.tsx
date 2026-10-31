@@ -1,0 +1,359 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { fsRawUrl, type FsEntry } from "../../api/fs";
+import { baseName, formatBytes, formatTime } from "../../lib/fileView";
+import { displayPath } from "../../lib/paths";
+import { useConnectionStore } from "../../stores/connectionStore";
+import {
+  dirKey,
+  explorerRoots,
+  openPath,
+  useDirCache,
+  useSessionTabs,
+  useWorkbench,
+} from "../../stores/workbenchStore";
+import type { Session } from "../../types";
+import Icon from "../ui/Icon";
+import { fileIcon } from "../viewer/fileIcon";
+
+// Noise hidden unless "show all" is on (dotfiles like .env / .github stay visible).
+const NOISE = new Set([".git", ".DS_Store", "Thumbs.db", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".hg", ".svn"]);
+const INDENT = 12;
+
+interface Menu {
+  x: number;
+  y: number;
+  entry: FsEntry;
+}
+
+/**
+ * VS Code-style explorer for the session's host: the workspace, its extra
+ * folders and any folder opened here, as lazily loaded trees. Clicking a file
+ * opens a preview tab (double-click keeps it); folders expand in place.
+ */
+export default function ExplorerPanel({ session, onClose, onOpened }: {
+  session: Session;
+  onClose: () => void;
+  onOpened?: () => void; // a file was opened (mobile: close the drawer)
+}) {
+  const sid = session.id;
+  const conn = session.connection_id;
+  const connections = useConnectionStore((s) => s.connections);
+  const pinned = useWorkbench((s) => s.pinnedRoots[sid]);
+  const roots = useMemo(() => explorerRoots(session, pinned), [session, pinned]);
+  const expandedList = useWorkbench((s) => s.expanded[sid]);
+  const expanded = useMemo(() => new Set(expandedList || []), [expandedList]);
+  const showHidden = useWorkbench((s) => s.showHidden);
+  const selected = useWorkbench((s) => s.selected);
+  const reveal = useWorkbench((s) => s.reveal);
+  const epoch = useWorkbench((s) => s.epoch);
+  const width = useWorkbench((s) => s.explorerWidth);
+  const { tabs, active } = useSessionTabs(sid);
+  const wb = useWorkbench.getState();
+  const dirs = useDirCache((s) => s.dirs);
+  const load = useDirCache((s) => s.load);
+  const [goto, setGoto] = useState("");
+  const [menu, setMenu] = useState<Menu | null>(null);
+  const [openRoots, setOpenRoots] = useState<Record<string, boolean>>({});
+  const scroller = useRef<HTMLDivElement>(null);
+  const gotoRef = useRef<HTMLInputElement>(null);
+
+  const conn_ = connections.find((c) => c.id === conn);
+  const host = conn_ ? `${conn_.name} · ${conn_.username}@${conn_.host}` : "this server (2223)";
+  const activePath = tabs.find((t) => t.id === active)?.path;
+
+  // Roots load on open; expanded folders (persisted) reload with them.
+  useEffect(() => {
+    for (const r of roots) if (openRoots[r] !== false) load(conn, r);
+    for (const d of expanded) load(conn, d);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roots, conn]);
+
+  // A turn ended: refresh what's on screen (the agent may have added/removed files).
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [epoch]);
+
+  useEffect(() => {
+    if (!reveal) return;
+    const t = setTimeout(() => {
+      const el = scroller.current?.querySelector<HTMLElement>(`[data-path="${CSS.escape(reveal.path)}"]`);
+      el?.scrollIntoView({ block: "center" });
+    }, 60);
+    return () => clearTimeout(t);
+  }, [reveal, dirs]);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [menu]);
+
+  const refresh = () => {
+    for (const r of roots) load(conn, r, true);
+    for (const d of expanded) load(conn, d, true);
+  };
+
+  const toggleDir = (path: string) => {
+    const open = !expanded.has(path);
+    wb.setExpanded(sid, path, open);
+    if (open) load(conn, path);
+    wb.select(path);
+  };
+
+  const openFile = (path: string, pin: boolean) => {
+    wb.select(path);
+    wb.openFile(sid, path, { preview: !pin });
+    onOpened?.();
+  };
+
+  const visible = (e: FsEntry) => showHidden || !NOISE.has(e.name);
+
+  const rows = (path: string, depth: number): React.ReactNode => {
+    const st = dirs[dirKey(conn, path)];
+    if (!st || (!st.entries && st.loading))
+      return (
+        <div className="py-1 text-[11.5px] text-content-faint" style={{ paddingLeft: depth * INDENT + 22 }}>
+          Loading…
+        </div>
+      );
+    if (st.error)
+      return (
+        <div className="py-1 text-[11.5px] text-danger" style={{ paddingLeft: depth * INDENT + 22 }}>
+          {st.error}
+        </div>
+      );
+    const list = (st.entries || []).filter(visible);
+    if (!list.length)
+      return (
+        <div className="py-1 text-[11.5px] italic text-content-faint" style={{ paddingLeft: depth * INDENT + 22 }}>
+          empty
+        </div>
+      );
+    return (
+      <>
+        {list.map((e) => {
+          const open = e.is_dir && expanded.has(e.path);
+          const isSel = selected === e.path;
+          const isActive = !e.is_dir && activePath === e.path;
+          const { icon, tone } = e.is_dir ? { icon: open ? "folder-open" : "folder", tone: "text-warning/80" } : fileIcon(e.name);
+          return (
+            <div key={e.path}>
+              <div
+                data-path={e.path}
+                data-selected={isSel}
+                onClick={() => (e.is_dir ? toggleDir(e.path) : openFile(e.path, false))}
+                onDoubleClick={() => !e.is_dir && openFile(e.path, true)}
+                onContextMenu={(ev) => {
+                  ev.preventDefault();
+                  wb.select(e.path);
+                  setMenu({ x: ev.clientX, y: ev.clientY, entry: e });
+                }}
+                title={`${e.path}${e.is_dir ? "" : `\n${formatBytes(e.size)}${e.mtime ? ` · ${formatTime(e.mtime)}` : ""}`}`}
+                className={`tree-row group relative flex h-[26px] cursor-pointer select-none items-center gap-1.5 pr-2 text-[12.5px] transition-colors ${
+                  isActive ? "bg-surface-3 text-content" : "text-content/80 hover:bg-surface-2"
+                } ${NOISE.has(e.name) || e.name.startsWith(".") ? "opacity-70" : ""}`}
+                style={{ paddingLeft: depth * INDENT + 6 }}
+              >
+                {/* indent guides */}
+                {Array.from({ length: depth }, (_, i) => (
+                  <span key={i} className="absolute top-0 h-full w-px bg-border/70" style={{ left: i * INDENT + 12 }} />
+                ))}
+                <span className="grid w-3.5 shrink-0 place-items-center text-content-faint">
+                  {e.is_dir && <Icon name={open ? "chevron-down" : "chevron"} size={12} />}
+                </span>
+                <Icon name={icon as any} size={14} className={`shrink-0 ${tone}`} />
+                <span className="min-w-0 truncate">{e.name}</span>
+                {e.is_link && <span className="shrink-0 text-[10px] text-content-faint">↗</span>}
+                {!e.is_dir && (
+                  <span className="ml-auto hidden shrink-0 pl-2 text-[10.5px] text-content-faint group-hover:inline">
+                    {formatBytes(e.size)}
+                  </span>
+                )}
+              </div>
+              {open && rows(e.path, depth + 1)}
+            </div>
+          );
+        })}
+        {st.truncated && (
+          <div className="py-1 text-[11px] text-warning" style={{ paddingLeft: depth * INDENT + 22 }}>
+            first 5,000 entries only
+          </div>
+        )}
+      </>
+    );
+  };
+
+  const menuItems = (e: FsEntry): [string, () => void][] => {
+    const rel = displayPath(e.path, [session.workspace_path]);
+    const items: [string, () => void][] = [];
+    if (!e.is_dir) items.push(["Open", () => openFile(e.path, true)]);
+    else items.push(["Open as root folder", () => wb.addRoot(sid, e.path)], ["Refresh", () => load(conn, e.path, true)]);
+    items.push(
+      ["Mention in chat", () => {
+        wb.insertText(sid, `@${rel.includes(" ") ? `"${rel}"` : rel} `);
+        wb.activate(sid, null);
+        onOpened?.();
+      }],
+      ["Copy path", () => navigator.clipboard?.writeText(e.path)],
+      ["Copy relative path", () => navigator.clipboard?.writeText(rel)],
+    );
+    if (!e.is_dir)
+      items.push(["Download", () => {
+        const a = document.createElement("a");
+        a.href = fsRawUrl(e.path, conn, true);
+        a.download = e.name;
+        a.click();
+      }]);
+    return items;
+  };
+
+  // drag the left edge to resize (wide screens)
+  const startResize = (ev: React.PointerEvent) => {
+    ev.preventDefault();
+    const x0 = ev.clientX;
+    const w0 = width;
+    const move = (e: PointerEvent) => wb.setExplorerWidth(w0 + (x0 - e.clientX));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.style.cursor = "";
+    };
+    document.body.style.cursor = "col-resize";
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  return (
+    <aside
+      className="relative flex h-full max-w-[92vw] shrink-0 flex-col border-l border-border bg-surface/95 backdrop-blur-xl"
+      style={{ width }}
+    >
+      <div
+        onPointerDown={startResize}
+        className="absolute inset-y-0 -left-1 z-10 hidden w-2 cursor-col-resize hover:bg-accent/30 xl:block"
+        title="Drag to resize"
+      />
+      <div className="flex h-14 shrink-0 items-center gap-1 border-b border-border/70 pl-4 pr-2">
+        <Icon name="files" size={15} className="text-accent" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] font-semibold leading-tight">Explorer</span>
+          <span className="block truncate text-[10.5px] leading-tight text-content-faint">{host}</span>
+        </span>
+        <button onClick={() => wb.toggleHidden()} className={`rounded-md p-1.5 hover:bg-surface-3 ${showHidden ? "text-accent" : "text-content-faint hover:text-content"}`} title={showHidden ? "Hide .git and caches" : "Show all files (.git, caches)"}>
+          <Icon name={showHidden ? "eye" : "eye-off"} size={14} />
+        </button>
+        <button onClick={() => wb.collapseAll(sid)} className="rounded-md p-1.5 text-content-faint hover:bg-surface-3 hover:text-content" title="Collapse folders">
+          <Icon name="collapse" size={14} />
+        </button>
+        <button onClick={refresh} className="rounded-md p-1.5 text-content-faint hover:bg-surface-3 hover:text-content" title="Refresh">
+          <Icon name="refresh" size={14} />
+        </button>
+        <button onClick={onClose} className="rounded-md p-1.5 text-content-faint hover:bg-surface-3 hover:text-content" title="Close explorer">
+          <Icon name="x" size={16} />
+        </button>
+      </div>
+
+      {/* go to path: open a file, or reveal / open a folder anywhere on the host */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const p = goto.trim();
+          if (!p) return;
+          openPath(session, p, { preview: false }).then(() => onOpened?.());
+          setGoto("");
+        }}
+        className="flex shrink-0 items-center gap-1.5 border-b border-border/60 px-3 py-1.5"
+      >
+        <Icon name="search" size={12} className="text-content-faint" />
+        <input
+          ref={gotoRef}
+          value={goto}
+          onChange={(e) => setGoto(e.target.value)}
+          placeholder="Go to path…  (relative, /abs, ~/…)"
+          className="min-w-0 flex-1 bg-transparent font-mono text-[12px] text-content placeholder:font-sans placeholder:text-content-faint outline-none"
+        />
+        <button type="submit" className="rounded p-0.5 text-content-faint hover:text-content" title="Open">
+          <Icon name="arrow-up" size={12} className="rotate-90" />
+        </button>
+      </form>
+
+      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-6">
+        {roots.map((r, i) => {
+          const open = openRoots[r] !== false;
+          const kind = i === 0 ? "workspace" : (session.extra_dirs || []).some((d) => d.replace(/\/+$/, "") === r) ? "folder" : "opened";
+          return (
+            <section key={r} className="border-b border-border/50">
+              <div
+                className="group sticky top-0 z-[5] flex h-7 cursor-pointer select-none items-center gap-1.5 bg-surface/95 px-2 text-[11px] font-semibold uppercase tracking-wide text-content-dim backdrop-blur hover:text-content"
+                onClick={() => {
+                  setOpenRoots((s) => ({ ...s, [r]: !open }));
+                  if (!open) load(conn, r);
+                }}
+                onContextMenu={(ev) => {
+                  ev.preventDefault();
+                  setMenu({ x: ev.clientX, y: ev.clientY, entry: { name: baseName(r), path: r, is_dir: true, size: 0, mtime: null } });
+                }}
+                title={r}
+              >
+                <Icon name={open ? "chevron-down" : "chevron"} size={12} className="shrink-0" />
+                <span className="truncate">{baseName(r) || "/"}</span>
+                <span className="shrink-0 font-normal normal-case tracking-normal text-content-faint">{kind}</span>
+                {kind === "opened" && (
+                  <button
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      wb.removeRoot(sid, r);
+                    }}
+                    className="ml-auto shrink-0 rounded p-0.5 text-content-faint opacity-0 hover:text-content group-hover:opacity-100"
+                    title="Remove from explorer"
+                  >
+                    <Icon name="x" size={12} />
+                  </button>
+                )}
+              </div>
+              {open && <div className="pb-1">{rows(r, 0)}</div>}
+            </section>
+          );
+        })}
+        <button
+          onClick={() => {
+            // (no window.prompt: the Electron app doesn't implement it)
+            setGoto(session.workspace_path.replace(/\/[^/]*$/, "/") || "/");
+            gotoRef.current?.focus();
+          }}
+          className="mx-3 mt-3 flex items-center gap-1.5 text-[12px] text-content-faint hover:text-content"
+        >
+          <Icon name="folder-plus" size={13} /> Open another folder…
+        </button>
+      </div>
+
+      {menu && (
+        <div
+          className="fixed z-[70] min-w-[180px] overflow-hidden rounded-lg border border-border bg-surface-2 py-1 text-[12.5px] shadow-float"
+          style={{ left: Math.min(menu.x, window.innerWidth - 190), top: Math.min(menu.y, window.innerHeight - 220) }}
+        >
+          {menuItems(menu.entry).map(([label, fn]) => (
+            <button
+              key={label}
+              onClick={fn}
+              className="block w-full px-3 py-1.5 text-left text-content-dim hover:bg-surface-3 hover:text-content"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </aside>
+  );
+}

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import { createLowlight } from "lowlight";
 import { toText } from "hast-util-to-text";
 import { visit } from "unist-util-visit";
@@ -26,7 +26,10 @@ import yaml from "highlight.js/lib/languages/yaml";
 import remarkGfm from "remark-gfm";
 import "highlight.js/styles/github-dark.css";
 import { fileUrl } from "../../api/sessions";
+import { fsRawUrl } from "../../api/fs";
+import { BARE_PATH, isBarePathCandidate, looksLikePath, parsePathRef, resolvePath } from "../../lib/paths";
 import { useSessionStore } from "../../stores/sessionStore";
+import { openPath } from "../../stores/workbenchStore";
 import Icon from "./Icon";
 
 function textOf(node: ReactNode): string {
@@ -71,11 +74,16 @@ const lowlight = createLowlight(LANGUAGES);
 lowlight.registerAlias(ALIASES);
 
 /** Highlight ```lang blocks with only the registered languages (rehype-highlight
- * would bundle its ~37-language default set on top). Unknown languages stay plain. */
+ * would bundle its ~37-language default set on top). Unknown languages stay plain.
+ * Inline code is marked so a path in it can become a link. */
 function rehypeCodeHighlight() {
   return (tree: any) => {
     visit(tree, "element", (node: any, _i: number | undefined, parent: any) => {
-      if (node.tagName !== "code" || parent?.tagName !== "pre") return;
+      if (node.tagName !== "code") return;
+      if (parent?.tagName !== "pre") {
+        node.properties = { ...node.properties, dataInline: "1" };
+        return;
+      }
       const cls: string[] = node.properties?.className || [];
       const lang = cls.find((c) => String(c).startsWith("language-"))?.slice(9);
       if (!lang || !lowlight.registered(lang)) return;
@@ -90,25 +98,101 @@ function rehypeCodeHighlight() {
   };
 }
 
-// Renders assistant text as GitHub-flavored markdown with highlighted code.
-// Styling lives in the `.md` block in index.css. Links open in a new tab.
-export default function Markdown({ children }: { children: string }) {
+/** Bare absolute paths in prose (`/home/x/y`, `~/proj`) become links. */
+function remarkBarePaths() {
+  return (tree: any) => {
+    visit(tree, "text", (node: any, index: number | undefined, parent: any) => {
+      if (index === undefined || !parent || parent.type === "link" || parent.type === "linkReference") return;
+      const value: string = node.value;
+      if (!value.includes("/")) return;
+      const out: any[] = [];
+      let last = 0;
+      for (const m of value.matchAll(BARE_PATH)) {
+        const path = m[2];
+        if (!isBarePathCandidate(path)) continue;
+        const start = (m.index ?? 0) + m[1].length;
+        if (start > last) out.push({ type: "text", value: value.slice(last, start) });
+        out.push({ type: "link", url: path, data: { hProperties: { dataPath: "1" } }, children: [{ type: "text", value: path }] });
+        last = start + path.length;
+      }
+      if (!out.length) return;
+      if (last < value.length) out.push({ type: "text", value: value.slice(last) });
+      parent.children.splice(index, 1, ...out);
+      return index + out.length;
+    });
+  };
+}
+
+const EXTERNAL = /^(https?:|mailto:|tel:|data:|blob:|#)/i;
+const keepFileUrls = (url: string) => (url.startsWith("file:") ? url : defaultUrlTransform(url));
+
+/**
+ * Renders assistant text (or a markdown file) as GitHub-flavored markdown with
+ * highlighted code. Styling lives in the `.md` block in index.css. Web links
+ * open in a new tab; paths — links, `inline code`, bare absolute paths — open
+ * in the workbench (file tab / explorer). `baseDir` = rendering a file: its
+ * relative links and images resolve against its own folder.
+ */
+export default function Markdown({ children, baseDir, doc = false }: { children: string; baseDir?: string; doc?: boolean }) {
   const session = useSessionStore((s) => s.sessions.find((x) => x.id === s.activeId));
 
   // Images the agent references by workspace path render through the
-  // session's (confined) file preview endpoint.
+  // session's (confined) file preview endpoint; a markdown file's own images
+  // through the explorer's reader, relative to the file.
   const imgSrc = (src?: string) => {
     if (!src || !session || /^(https?:|data:|blob:|\/api\/)/.test(src)) return src;
-    return fileUrl(session.id, src.replace(/^file:\/\//, ""));
+    const p = src.replace(/^file:\/\//, "");
+    if (baseDir) return fsRawUrl(resolvePath(decodeURI(p), baseDir), session.connection_id);
+    return fileUrl(session.id, p);
   };
+  const open = (raw: string) => session && openPath(session, raw, { base: baseDir });
 
   return (
-    <div className="md text-sm leading-relaxed">
+    <div className={`md ${doc ? "md-doc" : "text-sm"} leading-relaxed`}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={baseDir ? [remarkGfm] : [remarkGfm, remarkBarePaths]}
         rehypePlugins={[rehypeCodeHighlight]}
+        urlTransform={keepFileUrls}
         components={{
-          a: ({ node, ...props }) => <a target="_blank" rel="noreferrer" {...props} />,
+          a: ({ node, href, ...props }) => {
+            if (!href || EXTERNAL.test(href) || !session) return <a target="_blank" rel="noreferrer" href={href} {...props} />;
+            return (
+              <a
+                {...props}
+                href={href}
+                className="md-path"
+                title={`Open ${parsePathRef(href).path}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  open(href);
+                }}
+              />
+            );
+          },
+          code: ({ node, className, children, ...props }) => {
+            const inline = (node as any)?.properties?.dataInline;
+            const text = typeof children === "string" ? children : textOf(children);
+            if (inline && session && looksLikePath(text)) {
+              return (
+                <code
+                  {...props}
+                  role="link"
+                  tabIndex={0}
+                  className="md-path"
+                  title={`Open ${parsePathRef(text).path}`}
+                  onClick={() => open(text)}
+                  onKeyDown={(e) => e.key === "Enter" && open(text)}
+                >
+                  {children}
+                </code>
+              );
+            }
+            return (
+              <code className={className} {...props}>
+                {children}
+              </code>
+            );
+          },
           pre: ({ children }) => {
             const child: any = Array.isArray(children) ? children[0] : children;
             const cls: string = child?.props?.className || "";

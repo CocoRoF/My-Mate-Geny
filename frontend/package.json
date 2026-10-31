@@ -9,9 +9,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "docx-preview": "^0.4.1",
     "hast-util-to-text": "^4.0.3",
     "highlight.js": "^11.12.0",
+    "jszip": "^3.10.2",
     "lowlight": "^3.3.0",
+    "pdfjs-dist": "^6.4.299",
     "qrcode-generator": "^1.4.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -19,6 +22,7 @@
     "react-markdown": "^9.0.1",
     "remark-gfm": "^4.0.0",
     "unist-util-visit": "^5.2.0",
+    "xlsx": "file:vendor/xlsx-0.20.3.tgz",
     "zustand": "^5.0.0"
   },
   "devDependencies": {

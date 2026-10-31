@@ -9,6 +9,7 @@ import GitContext from "../GitContext";
 import TodoCard, { todosOf, type Todo } from "../turn/TodoCard";
 import FolderPicker from "./FolderPicker";
 import { relPath } from "../turn/toolMeta";
+import { openPath } from "../../../stores/workbenchStore";
 
 function Section({
   title,
@@ -200,7 +201,15 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
           ) : (
             <ul className="space-y-0.5">
               {changes.map((c) => (
-                <li key={c.path} className="flex items-center gap-2 py-0.5" title={c.path}>
+                <li
+                  key={c.path}
+                  onClick={() => {
+                    openPath(session, c.path);
+                    if (window.innerWidth < 1280) onClose(); // drawer: show the file
+                  }}
+                  className="-mx-1.5 flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-0.5 hover:bg-surface-3"
+                  title={`Open ${c.path}`}
+                >
                   <span
                     className={`w-4 shrink-0 text-center font-mono text-[11px] ${
                       c.failed ? "text-danger" : c.created ? "text-success" : "text-warning"

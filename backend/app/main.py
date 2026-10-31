@@ -29,6 +29,7 @@ from app.routers import (
     auth as auth_router,
     downloads,
     files,
+    fs,
     config as config_router,
     connections,
     execute,
@@ -162,6 +163,7 @@ for r in (
     git.router,
     attachments.router,
     files.router,
+    fs.router,
     downloads.router,
     admin.router,
 ):

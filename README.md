@@ -20,6 +20,12 @@ hr-harnessor turns coding agents into a chat service you control:
   nesting), exact per-turn file changes from git snapshots with diff viewer and undo,
   background-tasks panel, steering a running turn, queueing, `/` commands and `@` files,
   photos/files/clipboard attachments, images the agent produced, notifications.
+- **Explorer + file tabs** — a VS Code-style explorer (right side, local or remote host) and
+  file tabs next to the chat. Paths the agent prints (`inline code`, links, bare absolute
+  paths, `file.py:42`) open on click. Viewers: code (highlighting, line jump), markdown
+  (rendered/source), CSV/TSV (sortable table; UTF-8/CP949/UTF-16), Excel (sheet tabs), Word,
+  PowerPoint (outline), PDF (pdf.js), notebooks, HTML (sandboxed), images/audio/video.
+  Rules live in `frontend/src/lib/fileView.ts`; the harness's own credentials are never served.
 - **Clients** — the web console (desktop + mobile layouts), a **desktop app** (Electron:
   Windows / macOS / Linux) and an **Android app** (Capacitor). The apps load the live console,
   so UI updates reach them instantly; app builds are produced by CI and offered on the

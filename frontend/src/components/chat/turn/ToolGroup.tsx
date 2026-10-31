@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { fileUrl } from "../../../api/sessions";
 import type { ToolActivity } from "../../../stores/chatStore";
 import { useSessionStore } from "../../../stores/sessionStore";
+import { openPath } from "../../../stores/workbenchStore";
 import { isRunning, useTaskStore } from "../../../stores/taskStore";
 import type { Attachment, TaskInfo } from "../../../types";
 import Lightbox from "../../attachments/Lightbox";
@@ -109,6 +110,12 @@ function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; chi
   const running = tool.durationMs === undefined;
   const dur = running ? now - tool.startedAt : tool.durationMs!;
   const kidsRunning = children.filter((c) => c.durationMs === undefined);
+  // Read / Edit / Write / List targets open in the workbench (file tab / explorer).
+  const inp = (tool.input || {}) as Record<string, any>;
+  const filePath =
+    !children.length && (m.category === "read" || m.category === "edit") && !Array.isArray(inp.changes)
+      ? String(inp.file_path || inp.path || inp.notebook_path || "")
+      : "";
   return (
     <div className={`rounded-lg ${open ? "bg-surface-2/60" : ""}`}>
       <button
@@ -122,7 +129,23 @@ function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; chi
           {m.label}
         </span>
         <span className="min-w-0 truncate font-mono text-[11.5px] text-content-faint">
-          {children.length ? `${children.length} tool${children.length > 1 ? "s" : ""}` : m.target}
+          {filePath && session ? (
+            <span
+              role="link"
+              onClick={(e) => {
+                e.stopPropagation();
+                openPath(session, filePath);
+              }}
+              className="underline decoration-dotted decoration-content-faint/60 underline-offset-[3px] hover:text-accent hover:decoration-accent"
+              title={`Open ${filePath}`}
+            >
+              {m.target}
+            </span>
+          ) : children.length ? (
+            `${children.length} tool${children.length > 1 ? "s" : ""}`
+          ) : (
+            m.target
+          )}
           {kidsRunning.length ? ` · ${toolMeta(kidsRunning[0].name, kidsRunning[0].input, session?.workspace_path).running}` : ""}
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2">

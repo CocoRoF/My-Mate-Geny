@@ -24,6 +24,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import posixpath
+import stat
 from dataclasses import dataclass
 from typing import Any
 
@@ -255,6 +257,51 @@ class RemoteSshConnector(WorkspaceConnector):
                     if "No such file" in str(exc) or getattr(exc, "code", None) == 2:
                         raise FileNotFoundError(path) from exc
                     raise
+        finally:
+            conn.close()
+            await conn.wait_closed()
+
+    async def explore(self, path: str, op: str) -> dict[str, Any]:
+        """File-explorer primitives over one SFTP session.
+
+        ``op="stat"`` -> ``{path, is_dir, size, mtime}``; ``op="list"`` adds
+        ``entries`` (dotfiles included, attrs from READDIR, so no per-entry
+        round trip). ``~`` resolves to the login home. Missing paths raise
+        :class:`FileNotFoundError`."""
+        conn = await self._asyncssh_connect()
+        try:
+            async with conn.start_sftp_client() as sftp:
+                p = path or self._spec.default_path or "."
+                if p == "~" or p.startswith("~/"):
+                    p = "." + p[1:]
+                try:
+                    p = await sftp.realpath(p)
+                    attrs = await sftp.stat(p)
+                except Exception as exc:
+                    if "No such file" in str(exc) or getattr(exc, "code", None) == 2:
+                        raise FileNotFoundError(path) from exc
+                    raise
+                is_dir = stat.S_ISDIR(attrs.permissions or 0)
+                out: dict[str, Any] = {"path": p, "is_dir": is_dir, "size": attrs.size or 0, "mtime": attrs.mtime}
+                if op == "list" and is_dir:
+                    entries = []
+                    for n in await sftp.readdir(p):
+                        if n.filename in (".", ".."):
+                            continue
+                        a = n.attrs
+                        mode = a.permissions or 0
+                        full = posixpath.join(p, n.filename)
+                        link = stat.S_ISLNK(mode)
+                        d = stat.S_ISDIR(mode)
+                        if link:  # follow the link to tell folders from files
+                            try:
+                                d = stat.S_ISDIR((await sftp.stat(full)).permissions or 0)
+                            except Exception:  # noqa: BLE001 - dangling link
+                                d = False
+                        entries.append({"name": n.filename, "path": full, "is_dir": d, "is_link": link,
+                                        "size": a.size or 0, "mtime": a.mtime})
+                    out["entries"] = entries
+                return out
         finally:
             conn.close()
             await conn.wait_closed()

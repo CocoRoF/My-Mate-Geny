@@ -49,6 +49,21 @@ import {
   LuPause,
   LuPlay,
   LuCircleAlert,
+  LuFiles,
+  LuEye,
+  LuEyeOff,
+  LuCode,
+  LuWrapText,
+  LuListCollapse,
+  LuFolderOpen,
+  LuFolderPlus,
+  LuPin,
+  LuCrosshair,
+  LuAtSign,
+  LuPresentation,
+  LuNotebook,
+  LuFileJson,
+  LuFileImage,
 } from "react-icons/lu";
 
 const MAP = {
@@ -99,6 +114,21 @@ const MAP = {
   ban: LuBan,
   pause: LuPause,
   play: LuPlay,
+  files: LuFiles,
+  eye: LuEye,
+  "eye-off": LuEyeOff,
+  code: LuCode,
+  wrap: LuWrapText,
+  collapse: LuListCollapse,
+  "folder-open": LuFolderOpen,
+  "folder-plus": LuFolderPlus,
+  pin: LuPin,
+  crosshair: LuCrosshair,
+  at: LuAtSign,
+  "file-slides": LuPresentation,
+  notebook: LuNotebook,
+  "file-json": LuFileJson,
+  "file-image": LuFileImage,
 } satisfies Record<string, IconType>;
 
 export type IconName = keyof typeof MAP;
