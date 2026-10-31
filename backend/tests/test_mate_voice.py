@@ -77,10 +77,11 @@ def test_openai_tts_request_and_cache(client, http):
                             "speed": 1.25, "instructions": "Speak in a natural, joy tone."}
     r2 = client.post(f"/api/mates/{mid}/speech", json={"text": text, "emotion": "joy"})
     assert r2.headers["x-speech-cache"] == "hit" and r2.content == MP3.body and len(http.calls) == 1
-    # missing key -> clear 400, upstream failure -> 502 with its message
+    # key removed in Global settings -> 204 + "fall back to the browser voice"; upstream failure -> 502
     client.put("/api/mates/settings", json={"openai_key": ""})
     r = client.post(f"/api/mates/{mid}/speech", json={"text": "new text"})
-    assert r.status_code == 400 and "OpenAI API key" in r.json()["detail"]
+    assert r.status_code == 204 and r.headers["x-speech-fallback"] == "browser"
+    assert "OpenAI" in r.headers["x-speech-fallback-reason"] and len(http.calls) == 1
     client.put("/api/mates/settings", json={"openai_key": "sk-test"})
     http.routes = [(lambda m, u: True, netio.Response(401, b'{"error": {"message": "Incorrect API key"}}',
                                                       {"content-type": "application/json"}))]
@@ -91,7 +92,8 @@ def test_openai_tts_request_and_cache(client, http):
 def test_elevenlabs_tts_request(client, http):
     mid = _mate(client, {"engine": "elevenlabs", "voice": "", "model": ""})
     client.put("/api/mates/settings", json={"elevenlabs_key": "xi-key"})
-    assert "voice" in client.post(f"/api/mates/{mid}/speech", json={"text": "hi"}).json()["detail"]
+    r = client.post(f"/api/mates/{mid}/speech", json={"text": "hi"})
+    assert r.status_code == 400 and "voice" in r.json()["detail"] and "Voice" in r.json()["detail"]
     client.patch(f"/api/mates/{mid}", json={"voice": {"tts": {"voice": "v123"}}})
     http.on(lambda m, u: "text-to-speech" in u, MP3)
     r = client.post(f"/api/mates/{mid}/speech", json={"text": "hello " + secrets.token_hex(3)})
@@ -99,11 +101,12 @@ def test_elevenlabs_tts_request(client, http):
     call = http.calls[-1]
     assert call["url"] == "https://api.elevenlabs.io/v1/text-to-speech/v123?output_format=mp3_44100_128"
     assert call["headers"]["xi-api-key"] == "xi-key" and call["json"]["model_id"] == "eleven_multilingual_v2"
-    http.on(lambda m, u: u.endswith("/v1/voices"), netio.Response(200, json.dumps({"voices": [
+    http.on(lambda m, u: "/v1/voices" in u, netio.Response(200, json.dumps({"voices": [
         {"voice_id": "v1", "name": "Rachel", "labels": {"accent": "american"}, "preview_url": "https://x/p.mp3"}]}).encode(),
         {"content-type": "application/json"}))
     vs = client.get("/api/mates/voices?engine=elevenlabs").json()["voices"]
-    assert vs == [{"id": "v1", "name": "Rachel", "language": "american", "preview_url": "https://x/p.mp3"}]
+    assert vs == [{"id": "v1", "name": "Rachel", "language": "american", "category": None,
+                   "labels": {"accent": "american"}, "preview_url": "https://x/p.mp3"}]
 
 
 PROFILES = {"voices": [{"id": "mao_pro", "name": "마오", "language": "ko", "is_template": False, "ref_audios": [
@@ -115,7 +118,8 @@ PROFILES = {"voices": [{"id": "mao_pro", "name": "마오", "language": "ko", "is
 def test_omnivoice_profile_and_emotion_reference(client, http):
     mid = _mate(client, {"engine": "omnivoice", "profile": "mao_pro"})
     client.put("/api/mates/settings", json={"omnivoice_url": ""})
-    assert "OmniVoice URL" in client.post(f"/api/mates/{mid}/speech", json={"text": "x"}).json()["detail"]
+    r = client.post(f"/api/mates/{mid}/speech", json={"text": "x"})
+    assert r.status_code == 204 and "OmniVoice" in r.headers["x-speech-fallback-reason"]
     client.put("/api/mates/settings", json={"omnivoice_url": "http://omni:9880/"})
     http.on(lambda m, u: u == "http://omni:9880/voices", netio.Response(200, json.dumps(PROFILES).encode(),
                                                                         {"content-type": "application/json"}))
@@ -168,6 +172,8 @@ def test_transcription_openai_and_whisper(client, http):
 
 def test_voice_listing(client, http):
     vs = client.get("/api/mates/voices?engine=openai").json()["voices"]
-    assert {"id": "nova", "name": "Nova"} in vs
+    nova = next(v for v in vs if v["id"] == "nova")
+    assert nova["name"] == "Nova" and "tts-1" in nova["models"]
+    assert next(v for v in vs if v["id"] == "verse")["models"] == ["gpt-4o-mini-tts"]
     assert client.get("/api/mates/voices?engine=browser").json()["voices"] == []
     assert client.get("/api/mates/voices?engine=martian").status_code == 400

@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from app.config import settings
 from app.mate import files, netio
 from app.mate.service import MateService
-from app.mate.store import MateError
+from app.mate.store import SETTING_PROVIDERS, MateError
 from app.mate.voice import VoiceService
 from app.services.session_service import TurnBusyError
 
@@ -85,10 +85,46 @@ async def get_settings(request: Request) -> dict:
 
 
 @router.put("/settings")
-async def put_settings(request: Request) -> dict:
+async def put_settings(request: Request, verify: bool = False) -> dict:
+    """Keys / URLs (docs/mate.md §1). ``?verify=1``: the providers whose
+    settings changed are checked right away; the answer then also carries
+    ``providers`` (the GET /providers shape)."""
+    store = _svc(request).store
     try:
-        return _svc(request).store.update_settings(await _json(request))
+        out = store.update_settings(await _json(request))
     except MateError as exc:
+        raise _http(exc) from exc
+    if verify:
+        providers = _voice(request).providers
+        changed = {SETTING_PROVIDERS[k] for k in store.last_changed}
+        await asyncio.gather(*(providers.verify(p) for p in sorted(changed)))
+        out = {**out, "providers": await providers.status()}
+    return out
+
+
+@router.get("/providers")
+async def list_providers(request: Request, refresh: bool = False) -> dict:
+    """``{tts: [...], stt: [...]}``, each ``{engine, label, configured, ok,
+    error, detail, checked_at, kind}``. Configured providers are verified when
+    their last check is missing or old (``?refresh=1``: all of them now)."""
+    return await _voice(request).providers.status(refresh=refresh)
+
+
+@router.post("/providers/{engine}/verify")
+async def verify_provider(engine: str, request: Request) -> dict:
+    try:
+        return await _voice(request).providers.verify(engine)
+    except MateError as exc:
+        raise _http(exc) from exc
+
+
+@router.get("/models")
+async def list_models(request: Request, engine: str = "openai", kind: str = "tts") -> dict:
+    """What a voice engine can be asked for: OpenAI's fixed lists, ElevenLabs'
+    TTS models (``can_do_text_to_speech``), a self-hosted server's /models."""
+    try:
+        return await _voice(request).providers.models(engine, kind)
+    except (MateError, netio.UpstreamError) as exc:
         raise _http(exc) from exc
 
 
@@ -335,16 +371,24 @@ async def import_avatar(mate_id: str, request: Request, file: UploadFile = File(
 
 @router.post("/{mate_id}/speech")
 async def speech(mate_id: str, request: Request) -> Response:
-    """{text, emotion?} -> audio. 204 when the mate's TTS engine is
-    ``browser``/``off`` (the page speaks)."""
+    """{text, emotion?, tts?} -> audio. 204 when the mate's TTS engine is
+    ``browser``/``off`` (the page speaks), and when its engine isn't set up
+    in Global settings (any more): then ``X-Speech-Fallback: browser`` +
+    ``X-Speech-Fallback-Reason``. ``tts``: unsaved voice fields to try (a
+    preview in the settings; never stored)."""
     mate = _mate(request, mate_id)
     body = await _json(request)
     try:
-        out = await _voice(request).speech(mate, str(body.get("text") or ""), str(body.get("emotion") or ""))
+        out = await _voice(request).speech(mate, str(body.get("text") or ""), str(body.get("emotion") or ""),
+                                           override=body.get("tts") or None)
     except (MateError, netio.UpstreamError) as exc:
         raise _http(exc) from exc
     if out is None:
         return Response(status_code=204)
+    if out.fallback:
+        reason = out.fallback.encode("ascii", "replace").decode().replace("?", "-")
+        return Response(status_code=204, headers={"X-Speech-Fallback": "browser", "X-Speech-Fallback-Reason": reason,
+                                                  "Cache-Control": "no-store"})
     return Response(content=out.body, media_type=out.media_type, headers={
         "Cache-Control": "private, max-age=86400", "X-Speech-Cache": "hit" if out.cached else "miss"})
 
