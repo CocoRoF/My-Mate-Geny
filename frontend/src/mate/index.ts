@@ -3,6 +3,13 @@ export type * from "./types";
 export { MateAvatar, setLive2DCoreUrl, getLive2DCoreUrl } from "./avatar/MateAvatar";
 export type { MateAvatarExtraProps } from "./avatar/MateAvatar";
 export {
+  markLive2DCoreInstalled,
+  useLive2DCoreInstalls,
+  openGlobalSettings,
+  LIVE2D_CORE_INSTALLED_EVENT,
+  OPEN_GLOBAL_SETTINGS_EVENT,
+} from "./live2dCore";
+export {
   voiceBridge,
   start as voiceStart,
   level as voiceLevel,

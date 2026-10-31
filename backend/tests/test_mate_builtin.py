@@ -4,6 +4,8 @@ deletions and edits."""
 
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -24,10 +26,11 @@ def _service(db):
 
 
 def test_bundled_characters_are_mates_out_of_the_box(db):
-    assert files.builtin_keys() == ["estelle", "chaerin", "seoa"]
+    assert files.builtin_keys() == ["estelle", "chaerin", "seoa", "mao"]
     mates = _service(db).list()
     by_key = {m["builtin"]: m for m in mates}
-    assert set(by_key) == {"estelle", "chaerin", "seoa"} and len(mates) == 3  # no extra "Geny"
+    assert set(by_key) == {"estelle", "chaerin", "seoa", "mao"} and len(mates) == 4  # no extra "Geny"
+    assert mates[0]["builtin"] == "estelle" and [m["is_default"] for m in mates].count(True) == 1
     est = by_key["estelle"]
     assert est["is_default"] and est["name"] == "에스텔 루미나르"
     assert est["avatar"]["kind"] == "video" and len(est["avatar"]["rig"]["clips"]) >= 10
@@ -43,7 +46,7 @@ def test_sync_is_idempotent_respects_deletes_and_edits(db):
     est = mates.store.by_builtin("estelle")
     # a restart (new service on the same DB) creates nothing new
     _service(db)
-    assert len(mates.store.list()) == 3
+    assert len(mates.store.list()) == 4
     # the user edits Estelle: a newer bundle no longer overwrites her
     mates.update(est["id"], {"persona": {"greeting": "mine"}})
     mates.store.mark_builtin(est["id"], "estelle", "old-version")
@@ -73,3 +76,61 @@ def test_builtin_files_are_served_and_confined():
         assert part.status_code == 206 and len(part.content) == 100
         assert client.get("/api/mates/builtin/estelle/..%2F..%2Fmates%2Festelle.json").status_code == 404
         assert client.get("/api/mates/builtin/nobody/neutral.webp").status_code == 404
+
+
+def test_mao_is_a_builtin_live2d_mate(db):
+    mao = _service(db).store.by_builtin("mao")
+    assert mao["name"] == "Mao" and not mao["is_default"]
+    p = mao["persona"]
+    assert p["language"] == "ko" and "마오" in p["greeting"] and "비서" in p["description"]
+    assert mao["avatar"]["kind"] == "live2d"
+    l2d = mao["avatar"]["live2d"]
+    assert l2d["model"] == "/api/mates/builtin/mao/runtime/mao_pro.model3.json"
+    assert l2d["idle_group"] == "Idle"
+    # the unnamed motion group of the sample is named in our copy, and taps use real groups
+    model3 = json.loads((files.BUILTIN_DIR / "assets" / "mao" / "runtime" / "mao_pro.model3.json").read_text("utf-8"))
+    groups = model3["FileReferences"]["Motions"]
+    assert "" not in groups and {"Idle", "Tap", "Special"} <= set(groups)
+    assert l2d["tap_motions"] == {"HitAreaHead": {"group": "Tap"}, "HitAreaBody": {"group": "Tap"}}
+    assert all(g in groups for g in l2d["emotion_motions"].values())
+    names = {e["Name"] for e in model3["FileReferences"]["Expressions"]}
+    assert l2d["emotions"]["neutral"] == "exp_01" and set(l2d["emotions"].values()) <= names
+    for tag in ("joy", "smile", "sad", "shy", "surprised", "angry", "sleepy"):
+        assert tag in l2d["emotions"]
+    # the licence text of the sample travels with it
+    assert "Free Material License" in (files.BUILTIN_DIR / "assets" / "mao" / "ReadMe.txt").read_text("utf-8")
+
+
+def test_builtin_hash_sees_nested_live2d_files(db, monkeypatch, tmp_path):
+    import shutil
+
+    root = tmp_path / "builtin"
+    shutil.copytree(files.BUILTIN_DIR / "mates", root / "mates")
+    shutil.copytree(files.BUILTIN_DIR / "assets" / "mao", root / "assets" / "mao")
+    monkeypatch.setattr(files, "BUILTIN_DIR", root)
+    before = files.builtin_hash("mao")
+    (root / "assets" / "mao" / "runtime" / "motions" / "mtn_02.motion3.json").write_text("{}", "utf-8")
+    assert files.builtin_hash("mao") != before
+    # a broken bundle (model missing) is skipped, never stops the others
+    (root / "assets" / "mao" / "runtime" / "mao_pro.model3.json").unlink()
+    mates = _service(db)
+    assert mates.store.by_builtin("mao") is None and mates.store.by_builtin("estelle") is not None
+
+
+def test_builtin_live2d_files_are_served():
+    with TestClient(app) as client:
+        assert client.post("/api/auth/login", json={"username": "admin", "password": "test-pass"}).status_code == 200
+        mao = next(m for m in client.get("/api/mates").json() if m["builtin"] == "mao")
+        url = mao["avatar"]["live2d"]["model"]
+        r = client.get(url)
+        assert r.status_code == 200 and r.headers["content-type"] == "application/json"
+        model3 = r.json()
+        base = url.rsplit("/", 1)[0]
+        moc = client.get(f"{base}/{model3['FileReferences']['Moc']}", headers={"Range": "bytes=0-3"})
+        assert moc.status_code == 206 and moc.content == b"MOC3"
+        tex = client.get(f"{base}/{model3['FileReferences']['Textures'][0]}")
+        assert tex.status_code == 200 and tex.headers["content-type"] == "image/png"
+        exp = client.get(f"{base}/{model3['FileReferences']['Expressions'][0]['File']}")
+        assert exp.status_code == 200
+        assert client.get("/api/mates/builtin/../mates/mao.json").status_code == 404
+        assert client.get("/api/mates/builtin/mao/..%2Fmates%2Fmao.json").status_code == 404

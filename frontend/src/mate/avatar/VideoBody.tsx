@@ -2,12 +2,23 @@
  * The video body: motion clips by mood, one-shot emotions played whole (ported from ailism-mate `MateBody.tsx`
  * VideoBody). Every clip is fetched once into a Blob URL in the order she needs them (idle first, then talk, think,
  * listen, the reactions), so a switch starts at once. Paused while the tab is hidden or the body is off screen.
+ *
+ * One player per avatar: MateAvatar keys this component by the rig (and MateStage by the mate), so another mate or
+ * another size always gets a fresh player, canvas, videos and Blob URLs — nothing of the previous one is reused.
+ *
+ * Switching is calm on purpose. Every clip starts and ends on the same home frame, so a switch at the end of a clip
+ * is invisible; a switch in the middle used to be a crossfade, i.e. two poses blended with alpha — the "overlapping
+ * frames / bad chroma key" look (a see-through sleeve over her dress), and it ran on every thinking ↔ talking flip
+ * while a reply streamed. Now: a mood has to hold for MOOD_SETTLE_MS before it counts; only talking (or a real voice
+ * starting), a reaction, or leaving a looping clip cuts in, and it does so by hurrying the clip on screen to its end
+ * (faster playback, ≤ HURRY_S) so the next clip starts on the home frame; everything else waits for the clip on screen
+ * to end. A crossfade is only the fallback, at least MIN_FADE_GAP_MS apart.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BodyMood, MateReact, Rig, RigClip } from "../types";
 import { subscribe as subscribeVoice, voiceBridge } from "../voiceBridge";
 import { PlainPlayer, StackedPlayer, type ClipPlayer } from "./player";
-import { clipFor, clipUrl, useLevelVar } from "./shared";
+import { clipFor, clipUrl } from "./shared";
 
 export interface VideoBodyProps {
   rig: Rig;
@@ -20,19 +31,46 @@ export interface VideoBodyProps {
   onFail?: () => void;
 }
 
+/** a mood shorter than this never switches a clip */
+export const MOOD_SETTLE_MS = 600;
+/** at most one crossfade per this long */
+export const MIN_FADE_GAP_MS = 1200;
+/** a clip with less than this left plays to its end (the switch there is seamless) */
+const END_SOON_S = 0.6;
+/** a clip that has to make way (talking starts, a reaction) finishes within about this long, played faster */
+const HURRY_S = 0.8;
+const HURRY_MAX_RATE = 4;
+const FADE_MS = 220;
+
 const RANK: Record<string, number> = { idle: 0, talk: 1, think: 2, listen: 3, react: 4, away: 5 };
 
 const kindOf = (m: BodyMood) =>
   m === "talking" ? "talk" : m === "thinking" ? "think" : m === "listening" ? "listen" : m === "away" ? "away" : "idle";
 
+type State = {
+  /** the mood that counts (held for MOOD_SETTLE_MS) */
+  mood: BodyMood;
+  voice: boolean;
+  react: RigClip | null;
+  playing: RigClip | null;
+  last: string;
+  /** the clip loaded ahead for when the one on screen ends (used then if it still suits what she is doing) */
+  upcoming: RigClip | null;
+  lastFade: number;
+};
+
 export default function VideoBody({ rig, size, mood, react, poster, name, onFail }: VideoBodyProps) {
   const wrap = useRef<HTMLDivElement>(null);
-  /** puts the next clip on (urgent: now, with a short crossfade; otherwise the clip on screen just ended) */
-  const nextRef = useRef<((urgent: boolean) => void) | null>(null);
-  /** what she does changed (her mood, her voice): the clip for it now, unless a reaction is playing */
-  const changeRef = useRef<(() => void) | null>(null);
+  /** what she does changed: `now` = the mood that counts asks for a cut, else only get the end-of-clip switch ready */
+  const changeRef = useRef<((now: boolean) => void) | null>(null);
+  /** a reaction: on now (or at the end of a clip that is about to end) */
+  const reactRef = useRef<((c: RigClip) => void) | null>(null);
   const failRef = useRef(onFail);
   failRef.current = onFail;
+  const moodRef = useRef(mood);
+  moodRef.current = mood;
+  /** reactions older than this body belong to the previous mate/avatar */
+  const born = useRef(Date.now());
   const [shown, setShown] = useState(false);
   const packing = rig.packing ?? "stacked-alpha";
   const aspectW = rig.aspect?.[0] > 0 ? rig.aspect[0] : 3;
@@ -48,21 +86,22 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
     return m;
   }, [clips]);
   // what the next clip should be is read when a clip ends: refs, not state (no re-render per clip)
-  const st = useRef({
-    mood,
-    voice: !!voiceBridge.speaking,
-    react: null as RigClip | null,
-    playing: null as RigClip | null,
-    last: "",
-    /** the clip loaded ahead for when the one on screen ends (used then if it still suits what she is doing) */
-    upcoming: null as RigClip | null,
-  });
-
-  useLevelVar(wrap);
+  const st = useRef<State | null>(null);
 
   useEffect(() => {
     const box = wrap.current;
     if (!box) return;
+    // fresh state for every player: nothing of a previous avatar (its upcoming clip, its reaction) carries over
+    const s: State = {
+      mood: moodRef.current,
+      voice: !!voiceBridge.speaking,
+      react: null,
+      playing: null,
+      last: "",
+      upcoming: null,
+      lastFade: 0,
+    };
+    st.current = s;
     let p: ClipPlayer;
     let el: HTMLElement | null = null;
     let ro: ResizeObserver | null = null;
@@ -76,9 +115,9 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
         const bw = box.clientWidth;
         const bh = box.clientHeight;
         if (!bw || !bh) return;
-        const s = Math.min(bw / aspectW, bh / aspectH);
-        frame.style.width = `${Math.round(aspectW * s)}px`;
-        frame.style.height = `${Math.round(aspectH * s)}px`;
+        const k = Math.min(bw / aspectW, bh / aspectH);
+        frame.style.width = `${Math.round(aspectW * k)}px`;
+        frame.style.height = `${Math.round(aspectH * k)}px`;
       };
       fit();
       if (typeof ResizeObserver !== "undefined") {
@@ -101,6 +140,7 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
         return;
       }
     }
+    const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
     let alive = true;
     const memory = new Map<string, string>();
     const srcOf = (c: RigClip) => memory.get(clipUrl(c, size)) ?? clipUrl(c, size);
@@ -109,12 +149,13 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
         const url = clipUrl(c, size);
         if (!url || memory.has(url) || url.startsWith("blob:")) continue;
         try {
-          const res = await fetch(url, { credentials: "include" });
+          const res = await fetch(url, { credentials: "include", signal: ctrl?.signal });
           if (!res.ok) continue;
           const blob = await res.blob();
           if (!alive) return;
           memory.set(url, URL.createObjectURL(blob));
         } catch {
+          if (!alive) return;
           /* this clip plays from the network */
         }
       }
@@ -123,14 +164,26 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
     const wanted = (m: BodyMood) => (byKind[kindOf(m)]?.length ? kindOf(m) : "idle");
     const pickFrom = (list: RigClip[] | undefined) => {
       if (!list?.length) return null;
-      const others = list.filter((c) => c.id !== st.current.last);
+      const others = list.filter((c) => c.id !== s.last);
       const pool = others.length ? others : list;
       return pool[Math.floor(Math.random() * pool.length)];
     };
     const forMood = (m: BodyMood): RigClip | null => pickFrom(byKind[wanted(m)]) ?? clips[0] ?? null;
-    const moodNow = (): BodyMood => (st.current.voice ? "talking" : st.current.mood);
+    const moodNow = (): BodyMood => (s.voice ? "talking" : s.mood);
+    /** the first frame is on the canvas (before that, a switch is instant: nothing to fade from) */
+    const shownRef = { current: false };
+    /** load what plays when the clip on screen ends (a pending reaction, else a clip for the mood that counts) */
+    const prepareNext = () => {
+      let c: RigClip | null = s.react;
+      if (!c) {
+        const m = moodNow();
+        c = s.upcoming && s.upcoming.kind === wanted(m) ? s.upcoming : forMood(m);
+        s.upcoming = c;
+      }
+      if (c && c.id !== s.playing?.id) p.prepare(srcOf(c));
+    };
+    /** put the next clip on (urgent: now, crossfading; otherwise the clip on screen just ended) */
     const next = (urgent: boolean) => {
-      const s = st.current;
       let c: RigClip | null;
       if (s.react) {
         c = s.react;
@@ -143,8 +196,10 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
       if (!c) return;
       s.playing = c;
       s.last = c.id;
-      // a clip marked loop (e.g. dozing) loops; so does the only clip of an idle rig
-      p.show(srcOf(c), { loop: !!c.loop, fadeMs: urgent ? 200 : 0 });
+      const fade = urgent && shownRef.current;
+      if (fade) s.lastFade = performance.now();
+      // a clip marked loop (e.g. dozing) loops
+      p.show(srcOf(c), { loop: !!c.loop, fadeMs: fade ? FADE_MS : 0 });
       // have the likely next clip ready, so the switch at the end shows no seam
       const after = forMood(moodNow());
       if (after && after.id !== c.id) {
@@ -152,15 +207,40 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
         p.prepare(srcOf(after));
       }
     };
-    /** what she does changed: the clip for it starts now, except over a reaction, which always plays to its end */
-    const change = () => {
-      if (st.current.playing?.kind === "react") return;
+    let gapTimer: ReturnType<typeof setTimeout> | null = null;
+    /**
+     * the next clip as soon as possible, without blending two poses: the clip on screen hurries to its end (played
+     * faster, ≤ HURRY_S) and the next one starts on the shared home frame. Only when that can't be done (e.g. the
+     * player is mid-crossfade) a crossfade, and those at least MIN_FADE_GAP_MS apart.
+     */
+    const cut = () => {
+      if (gapTimer) clearTimeout(gapTimer);
+      gapTimer = null;
+      prepareNext();
+      if (p.remaining() < END_SOON_S || p.hurry(HURRY_S, HURRY_MAX_RATE)) return;
+      const since = performance.now() - s.lastFade;
+      if (since < MIN_FADE_GAP_MS) {
+        gapTimer = setTimeout(() => (s.react ? cut() : change(true)), MIN_FADE_GAP_MS - since);
+        return;
+      }
       next(true);
     };
-    p.onFirstFrame = () => setShown(true);
+    /** what she does changed: a cut when asked for and needed; a reaction always plays to its end */
+    const change = (now: boolean) => {
+      if (s.playing?.kind === "react" || (s.playing && s.playing.kind === wanted(moodNow()))) return prepareNext();
+      if (now) cut();
+      else prepareNext();
+    };
+    p.onFirstFrame = () => {
+      shownRef.current = true;
+      setShown(true);
+    };
     p.onEnded = () => next(false);
-    nextRef.current = next;
     changeRef.current = change;
+    reactRef.current = (c) => {
+      s.react = c;
+      cut();
+    };
     next(false);
     // asleep when nobody can see it: the tab is hidden or the body is off screen
     let hidden = document.hidden;
@@ -179,53 +259,60 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
           })
         : null;
     io?.observe(box);
+    // a voice actually starting is talking for real: the talk clip now
     const unsub = subscribeVoice((e) => {
-      const s = st.current;
       if (e.type === "start") {
         s.voice = true;
-        if (s.playing?.kind !== "talk") change();
+        change(true);
       } else if (e.type === "end") {
         s.voice = false;
+        change(false);
       }
     });
     return () => {
       alive = false;
+      ctrl?.abort();
+      if (gapTimer) clearTimeout(gapTimer);
       unsub();
       io?.disconnect();
       document.removeEventListener("visibilitychange", vis);
       ro?.disconnect();
+      p.onEnded = null;
+      p.onFirstFrame = null;
       p.dispose();
       el?.remove();
       for (const url of memory.values()) URL.revokeObjectURL(url);
-      nextRef.current = null;
       changeRef.current = null;
+      reactRef.current = null;
+      if (st.current === s) st.current = null;
       setShown(false);
     };
   }, [byKind, clips, size, packing, aspectW, aspectH]);
 
-  // a new mood: talking, thinking and dozing start now (a short crossfade); the others wait for the clip to end
+  // a new mood counts once it held MOOD_SETTLE_MS: talking cuts in (and so does leaving a looping clip, e.g. waking
+  // from a doze); thinking, listening, idle and away wait for the clip on screen to end
   useEffect(() => {
-    const s = st.current;
-    const was = s.mood;
-    s.mood = mood;
-    if (mood !== was && (mood === "talking" || mood === "thinking" || mood === "away" || s.playing?.kind === "away"))
-      changeRef.current?.();
+    const t = setTimeout(() => {
+      const s = st.current;
+      if (!s || s.mood === mood) return;
+      s.mood = mood;
+      changeRef.current?.(mood === "talking" || !!s.playing?.loop);
+    }, MOOD_SETTLE_MS);
+    return () => clearTimeout(t);
   }, [mood]);
 
   // a reaction plays once, now and whole (only a newer one cuts it)
   const reactAt = react?.at;
   const reactName = react?.name;
   useEffect(() => {
-    if (!reactName) return;
+    if (!reactName || !reactAt || reactAt < born.current) return;
     const c = clipFor({ clips, emotions }, reactName);
-    if (!c) return;
-    st.current.react = c;
-    nextRef.current?.(true);
+    if (c) reactRef.current?.(c);
   }, [reactAt, reactName, clips, emotions]);
 
   return (
     <div
-      className="mate-layer mate-motion"
+      className="mate-layer"
       ref={wrap}
       role="img"
       aria-label={name}

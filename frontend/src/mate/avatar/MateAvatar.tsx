@@ -59,6 +59,7 @@ export const MateAvatar = memo(function MateAvatar({
       <div className={cls} style={{ aspectRatio: "3 / 4" }} data-mate-kind="live2d">
         <Suspense fallback={null}>
           <Live2DBody
+            key={`l|${avatar.live2d.model}`}
             live2d={avatar.live2d}
             mood={mood}
             react={react}
@@ -88,6 +89,8 @@ export const MateAvatar = memo(function MateAvatar({
       <div className={cls} style={style} data-mate-kind={avatar.kind}>
         {video ? (
           <VideoBody
+            // one player per rig and size: another avatar never reuses this one's player, canvas, videos or clips
+            key={`v|${size}|${packing}|${rig.clips.map((c) => c.src).join(",")}`}
             rig={rig}
             size={size}
             mood={mood}
@@ -97,7 +100,7 @@ export const MateAvatar = memo(function MateAvatar({
             onFail={() => setVideoFailed(true)}
           />
         ) : home ? (
-          <PhotoBody stills={rig.stills} home={home} mood={mood} react={react} name={name} />
+          <PhotoBody key={`p|${home}`} stills={rig.stills} home={home} mood={mood} react={react} name={name} />
         ) : (
           <Initial name={name} />
         )}
