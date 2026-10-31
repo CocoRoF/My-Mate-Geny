@@ -1,4 +1,4 @@
-"""Workspace layer — where an agent runs (local 2223 or remote SSH)."""
+"""Workspace layer — where an agent runs (local or remote SSH)."""
 
 from app.workspaces.base import DirEntry, WorkspaceConnector, WorkspaceError
 from app.workspaces.local import LocalConnector

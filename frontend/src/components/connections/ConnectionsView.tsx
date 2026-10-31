@@ -61,7 +61,7 @@ function SshTab() {
   return (
     <div>
       <p className="text-sm text-content-dim mb-3">
-        The agent runs on 2223 and operates these remote folders over SSH. Keys are stored encrypted in the vault.
+        The agent runs on this server and operates these remote folders over SSH. Keys are stored encrypted in the vault.
       </p>
       <ConnectionForm />
       <div className="mt-4 space-y-2">

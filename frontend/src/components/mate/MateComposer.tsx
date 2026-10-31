@@ -1,29 +1,29 @@
 /**
- * The mate's composer: text (draft kept per mate, like a chat's), push-to-talk mic, read-aloud toggle, send / stop.
- * Enter sends on a desktop; on touch screens Enter is a new line (lib/device.ts) unless `enterSends`.
+ * The mate's composer: the Chat composer's machinery (components/composer: drafts + files + queue per conversation,
+ * paste / + menu / drop, steer while she answers, Queue, IME-safe Enter, Escape stops, auto-grow, `/` commands) in
+ * the mate's chrome, plus push-to-talk and the read-aloud toggle. Drafts are keyed by the mate's session id.
  */
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { Mate } from "../../api/mates";
-import { useTouchFirst } from "../../lib/device";
 import { useDraftStore } from "../../stores/draftStore";
 import { useMateStore } from "../../stores/mateStore";
-import type { MateConversation } from "../../mate/useMateConversation";
+import { useMateChat, type MateConversation } from "../../mate/useMateConversation";
+import AttachmentTray from "../attachments/AttachmentTray";
+import ComposerMenu, { type MenuItem } from "../chat/ComposerMenu";
+import { AttachMenu, FileInputs, QueuedList } from "../composer/ComposerParts";
+import { useComposer, type ComposerAction } from "../composer/useComposer";
 import Icon from "../ui/Icon";
 import { useMic } from "./useMic";
 
 const HOLD_MS = 350;
 
-export default function MateComposer({
-  mate,
-  conv,
-  compact = false,
-  enterSends,
-  autoFocus,
-  focusKey,
-  onSent,
-  showVoiceToggle = true,
-  placeholder,
-}: {
+const ACTIONS: readonly ComposerAction[] = ["clear", "stop"];
+const commandsFor = (name: string): MenuItem[] => [
+  { key: "m:clear", label: "/clear", insert: "", hint: `New conversation — ${name} forgets the chat above (memories stay)`, icon: "refresh", action: "clear" },
+  { key: "m:stop", label: "/stop", insert: "", hint: `Stop ${name}'s reply`, icon: "x", action: "stop" },
+];
+
+interface Props {
   mate: Mate;
   conv: MateConversation;
   compact?: boolean;
@@ -34,54 +34,99 @@ export default function MateComposer({
   onSent?: () => void;
   showVoiceToggle?: boolean;
   placeholder?: string;
-}) {
-  const key = `mate:${mate.id}`;
-  const text = useDraftStore((s) => s.drafts[key]?.text ?? "");
-  const setText = (v: string) => useDraftStore.getState().setText(key, v);
-  const touch = useTouchFirst();
-  const sendsOnEnter = enterSends ?? !touch;
-  const ta = useRef<HTMLTextAreaElement>(null);
+  /** the + button opens the file picker right away (no menu) */
+  attachDirect?: boolean;
+  /** Escape stops the reply (the quick card uses Escape to close itself) */
+  escapeStops?: boolean;
+}
+
+export default function MateComposer(props: Props) {
+  const sid = props.conv.sessionId;
+  // the conversation opens first (its session id keys the draft and the uploads)
+  if (!sid) return <ComposerPlaceholder compact={props.compact} name={props.mate.name} />;
+  return <Composer key={sid} sid={sid} {...props} />;
+}
+
+function ComposerPlaceholder({ compact, name }: { compact?: boolean; name: string }) {
+  return (
+    <div className={compact ? "" : "pb-safe"}>
+      <div className={`mx-auto flex max-w-2xl items-center rounded-2xl border border-border bg-surface-2/60 text-content-faint ${compact ? "h-10 px-3 text-[13px]" : "h-12 px-4 text-sm"}`}>
+        Connecting to {name}…
+      </div>
+    </div>
+  );
+}
+
+function Composer({
+  sid,
+  mate,
+  conv,
+  compact = false,
+  enterSends,
+  autoFocus,
+  focusKey,
+  onSent,
+  showVoiceToggle = true,
+  placeholder,
+  escapeStops,
+  attachDirect = false,
+}: Props & { sid: string }) {
   const muted = useMateStore((s) => s.muted);
   const reading = mate.voice.auto_read && !muted && mate.voice.tts.engine !== "off";
+  const { send, steer, stop, setListening } = conv;
 
-  const { send, setListening, streaming } = conv;
+  // a draft written before drafts were per conversation ("mate:<id>") moves over once
+  useEffect(() => {
+    const st = useDraftStore.getState();
+    st.pin(sid);
+    const old = st.drafts[`mate:${mate.id}`]?.text;
+    if (old) {
+      if (!st.drafts[sid]?.text) st.setText(sid, old);
+      st.setText(`mate:${mate.id}`, "");
+    }
+  }, [sid, mate.id]);
+
+  const runAction = useCallback(
+    async (action: ComposerAction) => {
+      if (action === "stop") {
+        stop();
+        return;
+      }
+      await conv.reset();
+      return `New conversation — ${mate.name} forgets the chat above (memories stay).`;
+    },
+    [stop, conv, mate.name],
+  );
+  const commands = useMemo(() => commandsFor(mate.name), [mate.name]);
+
+  const c = useComposer({
+    sid,
+    store: useMateChat,
+    onSend: send,
+    onSteer: steer,
+    onStop: stop,
+    actions: ACTIONS,
+    runAction,
+    slash: true,
+    enterSends,
+    maxHeight: compact ? 120 : 180,
+    onSent,
+    escapeStops,
+  });
+  const { input, items, uploading, failed, hasContent, notice, isStreaming: streaming, touch, sendsOnEnter, trigger } = c;
+
   const mic = useMic(mate, (heard) => {
-    if (send(heard)) onSent?.();
-    else setText(heard); // not connected: keep it
+    c.submit("auto", heard);
   });
   const recording = mic.state === "recording" || mic.state === "starting";
 
   useEffect(() => {
-    setListening(recording || (!!text.trim() && document.activeElement === ta.current));
-  }, [recording, text, setListening]);
-
-  useLayoutEffect(() => {
-    const el = ta.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, compact ? 120 : 180)}px`;
-  }, [text, compact]);
+    setListening(recording || (!!input.trim() && document.activeElement === c.taRef.current));
+  }, [recording, input, setListening, c.taRef]);
 
   useEffect(() => {
-    if (autoFocus || focusKey) ta.current?.focus();
-  }, [autoFocus, focusKey]);
-
-  const submit = () => {
-    const v = text.trim();
-    if (!v) return;
-    if (send(v)) {
-      setText("");
-      onSent?.();
-    }
-  };
-
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const composing = e.nativeEvent.isComposing || e.keyCode === 229;
-    if (e.key === "Enter" && !e.shiftKey && !composing && (sendsOnEnter || e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      submit();
-    }
-  };
+    if (autoFocus || focusKey) c.taRef.current?.focus();
+  }, [autoFocus, focusKey, c.taRef]);
 
   // push-to-talk: hold to talk, or tap to start / tap again to stop
   const pressAt = useRef(0);
@@ -117,6 +162,17 @@ export default function MateComposer({
       : mic.state === "transcribing"
         ? "Transcribing…"
         : "Hold to talk (or tap to start, tap to stop)";
+  const connected = conv.connection === "open";
+  const ph =
+    placeholder && !streaming && !items.length
+      ? placeholder
+      : streaming
+        ? touch || compact
+          ? `Add while ${mate.name} answers…`
+          : `Add while ${mate.name} answers — Enter adds it now…`
+        : items.length
+          ? "Add a message (optional)…"
+          : `Talk to ${mate.name}…`;
 
   return (
     <div className={compact ? "" : "pb-safe"}>
@@ -136,72 +192,136 @@ export default function MateComposer({
           )}
         </div>
       )}
+      <QueuedList queue={c.queue} onRemove={c.unqueue} className="mx-auto mb-1.5 max-w-2xl" />
       <div
-        className={`mx-auto flex max-w-2xl items-end gap-1.5 rounded-2xl border bg-surface-2/90 shadow-card transition ${
+        className={`relative mx-auto max-w-2xl rounded-2xl border bg-surface-2/90 shadow-card transition ${
           recording ? "border-danger/50" : "border-border focus-within:border-accent/50"
-        } ${compact ? "p-1" : "p-1.5"}`}
+        }`}
+        data-testid="mate-composer"
       >
-        {showVoiceToggle && (
-          <button
-            onClick={toggleRead}
-            className={`${btn} ${reading ? "text-accent hover:bg-accent/10" : "text-content-faint hover:text-content hover:bg-surface-3"}`}
-            title={reading ? "Reading replies aloud — click to mute" : "Read replies aloud"}
-            aria-pressed={reading}
-            data-testid="mate-read-toggle"
-          >
-            <Icon name={reading ? "volume" : "volume-off"} size={compact ? 15 : 17} />
-          </button>
+        {c.menuOpen && trigger && (
+          <ComposerMenu
+            trigger={trigger}
+            commands={commands}
+            onPick={c.pick}
+            onClose={c.closeMenu}
+            activeIndex={c.activeIndex}
+            setActiveIndex={c.setActiveIndex}
+            setItems={c.setMenuItems}
+          />
         )}
-        <textarea
-          ref={ta}
-          value={recording && mic.interim ? mic.interim : text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKeyDown}
-          onFocus={() => text.trim() && setListening(true)}
-          onBlur={() => !recording && setListening(false)}
-          rows={1}
-          enterKeyHint={sendsOnEnter ? "send" : "enter"}
-          placeholder={placeholder ?? `Talk to ${mate.name}…`}
-          className={`min-w-0 flex-1 resize-none bg-transparent px-2 text-content placeholder:text-content-faint outline-none ${
-            compact ? "py-1.5 text-[13.5px]" : "py-2 text-sm"
-          }`}
-          data-testid="mate-input"
-        />
-        <button
-          onPointerDown={onMicDown}
-          onPointerUp={onMicUp}
-          onPointerLeave={onMicUp}
-          onContextMenu={(e) => e.preventDefault()}
-          className={`${btn} select-none touch-none ${
-            recording
-              ? "bg-danger text-white animate-pulse"
-              : mic.unavailable
-                ? "text-content-faint/50 hover:text-content-faint"
-                : "text-content-dim hover:text-content hover:bg-surface-3"
-          }`}
-          title={micTitle}
-          aria-label={micTitle}
-          data-testid="mate-mic"
-        >
-          <Icon name={mic.state === "transcribing" ? "spinner" : mic.unavailable ? "mic-off" : "mic"} size={compact ? 15 : 17} spin={mic.state === "transcribing"} />
-        </button>
-        {streaming && !text.trim() ? (
-          <button onClick={conv.stop} className={`${btn} bg-surface-3 text-content hover:bg-border-strong`} title="Stop" data-testid="mate-stop">
-            <Icon name="stop" size={compact ? 12 : 14} />
-          </button>
-        ) : (
+        <AttachmentTray items={items} />
+        <div className={`flex items-end gap-1 ${compact ? "p-1" : "p-1.5"}`}>
+          <div className="relative shrink-0">
+            <button
+              // (a window that hugs its one-line card has no room for the menu: straight to the file picker)
+              onClick={() => (attachDirect ? c.pickFile("file") : c.setAttachOpen((v) => !v))}
+              className={`${btn} ${c.attachOpen ? "bg-accent-soft text-accent" : "text-content-dim hover:text-content hover:bg-surface-3"}`}
+              title="Attach photos or files"
+              aria-label="Attach photos or files"
+              data-testid="mate-attach"
+            >
+              <Icon name="plus" size={compact ? 16 : 18} />
+            </button>
+            {c.attachOpen && <AttachMenu onPick={c.pickFile} onClose={() => c.setAttachOpen(false)} />}
+          </div>
+          {showVoiceToggle && (
+            <button
+              onClick={toggleRead}
+              className={`${btn} ${reading ? "text-accent hover:bg-accent/10" : "text-content-faint hover:text-content hover:bg-surface-3"}`}
+              title={reading ? "Reading replies aloud — click to mute" : "Read replies aloud"}
+              aria-pressed={reading}
+              data-testid="mate-read-toggle"
+            >
+              <Icon name={reading ? "volume" : "volume-off"} size={compact ? 15 : 17} />
+            </button>
+          )}
+          <textarea
+            {...c.textareaProps}
+            value={recording && mic.interim ? mic.interim : input}
+            onFocus={() => input.trim() && setListening(true)}
+            onBlur={() => !recording && setListening(false)}
+            placeholder={ph}
+            className={`min-w-0 flex-1 resize-none bg-transparent px-2 text-content placeholder:text-content-faint outline-none ${
+              compact ? "py-1.5 text-[13.5px]" : "py-2 text-sm"
+            }`}
+            data-testid="mate-input"
+          />
           <button
-            onClick={submit}
-            disabled={!text.trim() || conv.connection !== "open"}
-            className={`${btn} text-white disabled:opacity-40`}
-            style={{ background: "linear-gradient(135deg,#6e8bff,#5b7cff)" }}
-            title={conv.connection !== "open" ? "Connecting…" : sendsOnEnter ? "Send (Enter)" : "Send"}
-            data-testid="mate-send"
+            onPointerDown={onMicDown}
+            onPointerUp={onMicUp}
+            onPointerLeave={onMicUp}
+            onContextMenu={(e) => e.preventDefault()}
+            className={`${btn} select-none touch-none ${
+              recording
+                ? "bg-danger text-white animate-pulse"
+                : mic.unavailable
+                  ? "text-content-faint/50 hover:text-content-faint"
+                  : "text-content-dim hover:text-content hover:bg-surface-3"
+            }`}
+            title={micTitle}
+            aria-label={micTitle}
+            data-testid="mate-mic"
           >
-            <Icon name="arrow-up" size={compact ? 15 : 17} />
+            <Icon name={mic.state === "transcribing" ? "spinner" : mic.unavailable ? "mic-off" : "mic"} size={compact ? 15 : 17} spin={mic.state === "transcribing"} />
           </button>
-        )}
+          {streaming && hasContent && (
+            <button
+              onClick={() => c.submit("queue")}
+              disabled={uploading}
+              className={`shrink-0 rounded-full border border-border px-2.5 text-[12px] text-content-dim transition hover:bg-surface-3 hover:text-content disabled:opacity-40 ${compact ? "h-8" : "h-9 touch:h-10"}`}
+              title={`Send after ${mate.name} finishes`}
+              data-testid="mate-queue"
+            >
+              Queue
+            </button>
+          )}
+          {streaming && !hasContent ? (
+            <button onClick={stop} className={`${btn} bg-surface-3 text-content hover:bg-border-strong`} title={touch ? "Stop" : "Stop (Esc)"} data-testid="mate-stop">
+              <Icon name="stop" size={compact ? 12 : 14} />
+            </button>
+          ) : (
+            <button
+              onClick={() => c.submit()}
+              disabled={!hasContent || uploading || !connected}
+              className={`${btn} text-white disabled:opacity-40`}
+              style={{ background: "linear-gradient(135deg,#6e8bff,#5b7cff)" }}
+              title={
+                !connected
+                  ? "Connecting…"
+                  : uploading
+                    ? "Waiting for uploads…"
+                    : streaming
+                      ? `Add to ${mate.name}'s reply now${sendsOnEnter ? " (Enter)" : ""}`
+                      : sendsOnEnter
+                        ? "Send (Enter)"
+                        : "Send"
+              }
+              data-testid="mate-send"
+            >
+              {uploading ? <Icon name="spinner" size={compact ? 14 : 16} spin /> : <Icon name="arrow-up" size={compact ? 15 : 17} />}
+            </button>
+          )}
+        </div>
+        <FileInputs photoRef={c.photoRef} fileRef={c.fileRef} onFiles={c.addFiles} />
       </div>
+      {(notice || failed > 0 || !compact) && (
+        <div className="mx-auto flex max-w-2xl items-center gap-2 px-2 pt-1 text-[10.5px] text-content-faint" data-testid="mate-composer-hint">
+          {notice ? (
+            <span className="truncate text-warning">{notice}</span>
+          ) : failed > 0 ? (
+            <span className="truncate text-danger">{failed} file{failed === 1 ? "" : "s"} failed — click to retry, or remove</span>
+          ) : streaming ? (
+            <span className="truncate">
+              {touch ? "↑ adds to the reply now · Queue sends after" : "Enter adds to the reply now · Queue sends after · Esc stops"}
+            </span>
+          ) : (
+            <span className="hidden truncate sm:inline">
+              {touch ? "Return adds a line · tap ↑ to send · / commands" : "Enter to send · Shift+Enter newline · / commands · paste or drop files · hold the mic to talk"}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

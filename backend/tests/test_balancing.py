@@ -566,15 +566,15 @@ def test_plan_usage_backs_off_after_429(monkeypatch):
 
 
 def test_seven_day_priority_spreads_the_weekly_budget():
-    # primary: 5h 43% / 7d 56%; hrjang: 5h 60% / 7d 8% (the screenshot case, 5h flipped)
+    # primary: 5h 43% / 7d 56%; second: 5h 60% / 7d 8% (the screenshot case, 5h flipped)
     a = snap("primary", five=43.0, seven=56.0, utilization=56.0)
-    b = snap("hrjang", five=60.0, seven=8.0, utilization=60.0)
+    b = snap("second", five=60.0, seven=8.0, utilization=60.0)
     st = BalancerState()
-    # balanced: the fuller window decides -> primary (56) beats hrjang (60)
+    # balanced: the fuller window decides -> primary (56) beats second (60)
     assert choose([a, b], strategy="most_remaining", now=0, state=st, limits=LimitPolicy()).id == "primary"
     # 7-day first: the account with the most weekly headroom wins
     assert choose([a, b], strategy="most_remaining", now=0, state=st,
-                  limits=LimitPolicy(priority="seven_day")).id == "hrjang"
+                  limits=LimitPolicy(priority="seven_day")).id == "second"
     # 5-hour first
     assert choose([a, b], strategy="most_remaining", now=0, state=st,
                   limits=LimitPolicy(priority="five_hour")).id == "primary"

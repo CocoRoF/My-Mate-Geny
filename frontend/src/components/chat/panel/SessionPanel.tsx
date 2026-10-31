@@ -114,7 +114,7 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
   const [showSkills, setShowSkills] = useState(false);
 
   const conn = connections.find((c) => c.id === session.connection_id);
-  const hostLabel = conn ? `${conn.name} (${conn.username}@${conn.host})` : "this server (2223)";
+  const hostLabel = conn ? `${conn.name} (${conn.username}@${conn.host})` : "this server";
   const dirs = session.extra_dirs || [];
   const changes = useMemo(() => changesOf(turns), [turns]);
   const todos = useMemo(() => latestTodos(turns), [turns]);

@@ -382,7 +382,8 @@ class MateService:
             "messages": [
                 {"role": "user (added mid-turn)" if m["role"] == "steer" else m["role"],
                  **({"via": m["meta"]["via"].get("name")} if (m.get("meta") or {}).get("via") else {}),
-                 "at": m["created_at"], "text": _clip(m["content"], 1500)}
+                 "at": m["created_at"], "text": _clip(m["content"], 1500),
+                 **({"files": [a["name"] for a in m["attachments"]]} if m.get("attachments") else {})}
                 for m in msgs
             ],
         }
@@ -406,19 +407,67 @@ class MateService:
     def _via(self, mate: dict[str, Any]) -> dict[str, Any]:
         return {"via": {"kind": "mate", "mate_id": mate["id"], "name": mate["name"]}}
 
-    async def _deliver(self, sid: str, text: str, meta: dict[str, Any]) -> str:
+    def _forwarded(self, mate_sid: str, raw: Any) -> list[dict[str, Any]]:
+        """The mate's ``attachments`` argument -> rows of files from its own
+        conversation (the ``[att_…]`` ids it sees with the user's messages)."""
+        if raw in (None, "", []):
+            return []
+        items = raw if isinstance(raw, list) else re.split(r"[\s,]+", str(raw))
+        ids = list(dict.fromkeys(i for i in (str(x).strip().strip("[]").strip() for x in items) if i))
+        svc = self._svc._attachments
+        if svc is None or not ids:
+            return []
+        if len(ids) > settings.upload_max_files:
+            raise MateError(f"at most {settings.upload_max_files} attachments per message")
+        rows = []
+        for aid in ids:
+            row = svc.get(aid)
+            if row is None or row["session_id"] != mate_sid:
+                raise MateError(f"no attachment {aid!r} in this conversation — use the [att_…] ids listed "
+                                "with the user's messages")
+            if not os.path.exists(row["path"]):
+                raise MateError(f"the file of {aid} ({row['name']}) is gone")
+            rows.append(row)
+        return rows
+
+    async def _copies(self, rows: list[dict[str, Any]], target_sid: str) -> list[str]:
+        """The mate's files, copied into the worker chat as pending uploads
+        (what the user uploading them there would make)."""
+        out: list[str] = []
+        try:
+            for row in rows:
+                out.append((await asyncio.to_thread(self._svc._attachments.copy_to, row, target_sid))["id"])
+        except Exception:
+            self._drop_copies(out)
+            raise
+        return out
+
+    def _drop_copies(self, ids: list[str]) -> None:
+        for aid in ids:
+            self._svc._attachments.delete_pending(aid)  # (a no-op once sent)
+
+    @staticmethod
+    def _files_phrase(rows: list[dict[str, Any]]) -> str:
+        if not rows:
+            return ""
+        names = ", ".join(r["name"] for r in rows[:5]) + (f" +{len(rows) - 5}" if len(rows) > 5 else "")
+        return f" with {len(rows)} file{'s' if len(rows) != 1 else ''} ({names})"
+
+    async def _deliver(self, sid: str, text: str, meta: dict[str, Any],
+                       attachment_ids: list[str] | None = None) -> str:
         """Exactly like the user: idle -> new turn, running -> steer. A turn
-        that is just wrapping up can't take input: wait for it, then start."""
+        that is just wrapping up can't take input: wait for it, then start.
+        ``attachment_ids``: pending uploads of that chat, sent with it."""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + 45
         while True:
             if not self._svc.is_running(sid):
                 try:
-                    self._svc.start_turn(sid, text, meta=meta)
+                    self._svc.start_turn(sid, text, attachment_ids or None, meta=meta)
                     return "started"
                 except TurnBusyError:
                     pass
-            elif await self._svc.steer(sid, text, meta=meta):
+            elif await self._svc.steer(sid, text, attachment_ids or None, meta=meta):
                 return "steered"
             if loop.time() > deadline:
                 raise MateError("that chat is busy finishing its turn; try again in a moment")
@@ -435,15 +484,19 @@ class MateService:
         text = str(args.get("message") or "").strip()
         if not text:
             raise MateError("message is empty")
+        rows = self._forwarded(mate_sid, args.get("attachments"))
+        copies = await self._copies(rows, s["id"])
         self._track(s["id"], mate, mate_sid, s["title"])
         try:
-            how = await self._deliver(s["id"], text, self._via(mate))
+            how = await self._deliver(s["id"], text, self._via(mate), copies)
         except Exception:
             self._delegations.pop(s["id"], None)
+            self._drop_copies(copies)
             raise
         what = "it started a new turn" if how == "started" else "it was added to the turn it is running"
-        return (f"Sent to \"{s['title']}\" ({s['id']}): {what}. Its result will reach you as a "
-                "<delegation_result> when it finishes — tell the user what you sent and end your turn.")
+        return (f"Sent to \"{s['title']}\" ({s['id']}){self._files_phrase(rows)}: {what}. Its result will "
+                "reach you as a <delegation_result> when it finishes — tell the user what you sent and end "
+                "your turn.")
 
     async def _tool_create_session(self, mate: dict[str, Any], mate_sid: str, args: dict[str, Any]) -> str:
         raw = str(args.get("workspace_path") or "").strip()
@@ -460,19 +513,25 @@ class MateService:
         except KeyError as exc:
             raise MateError(f"unknown provider: {provider} (claude or codex)") from exc
         title = _clip(str(args.get("title") or "").strip(), 120) or os.path.basename(path.rstrip("/")) or path
+        msg = str(args.get("message") or "").strip()
+        rows = self._forwarded(mate_sid, args.get("attachments"))
+        if rows and not msg:
+            raise MateError("attachments go with a message: say what the chat should do with them")
         s = self._svc.create(provider=provider, model=str(args.get("model") or "").strip(),
                              workspace_path=path, title=title)
-        msg = str(args.get("message") or "").strip()
         if not msg:
             return f"Created chat \"{s['title']}\" ({s['id']}) on {path}. No instruction sent yet."
+        copies = await self._copies(rows, s["id"])
         self._track(s["id"], mate, mate_sid, s["title"])
         try:
-            await self._deliver(s["id"], msg, self._via(mate))
+            await self._deliver(s["id"], msg, self._via(mate), copies)
         except Exception:
             self._delegations.pop(s["id"], None)
+            self._drop_copies(copies)
             raise
-        return (f"Created chat \"{s['title']}\" ({s['id']}) on {path} and sent the instruction; it is working "
-                "on it. Its result will reach you as a <delegation_result>.")
+        return (f"Created chat \"{s['title']}\" ({s['id']}) on {path} and sent the instruction"
+                f"{self._files_phrase(rows)}; it is working on it. Its result will reach you as a "
+                "<delegation_result>.")
 
     async def _tool_find_folders(self, mate: dict[str, Any], _sid: str, args: dict[str, Any]) -> Any:
         q = str(args.get("query") or "").strip()

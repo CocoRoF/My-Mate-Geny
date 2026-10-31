@@ -7,7 +7,7 @@ printed — so any path on the host can be browsed, the same reach the folder
 picker already has. The harness's own secrets (vault/session keys, SSH and
 CLI credentials, tunnel creds, its env file and DB) are never served.
 
-Local paths are read on 2223 (symlinks resolved before the secret check);
+Local paths are read on this server (symlinks resolved before the secret check);
 remote paths go over SFTP through the connection's connector.
 """
 
@@ -42,6 +42,12 @@ mimetypes.add_type("text/csv", ".csv")
 mimetypes.add_type("text/tab-separated-values", ".tsv")
 
 
+# This checkout's own env files (backend/.env, ./.env), wherever it is cloned —
+# the cwd-relative ones below only cover the usual `cd backend` launch.
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_OWN_ENV_FILES = (os.path.join(_BACKEND_DIR, ".env"), os.path.join(os.path.dirname(_BACKEND_DIR), ".env"))
+
+
 def is_secret(path: str) -> bool:
     """Credentials the harness itself relies on — never shown in the UI."""
     parts = path.split("/")
@@ -58,7 +64,7 @@ def is_secret(path: str) -> bool:
         return True
     if name in (".env", ".env.local") and "hr-harnessor" in dirs:  # this app's own login password
         return True
-    own = {os.path.realpath(p) for p in (".env", "../.env")} | {
+    own = {os.path.realpath(p) for p in (".env", "../.env", *_OWN_ENV_FILES)} | {
         str(settings.db_file), str(settings.vault_key_file), str(settings.session_key_file)}
     return path in own or path.split(".db-")[0] in own  # SQLite -wal/-shm too
 

@@ -1,53 +1,59 @@
-# Production deployment for agent.hrletsgo.me.
-# Daemon-managed (restart: unless-stopped) so it survives logout and reboots —
-# the only reliably-persistent mechanism on this host. Reuses the host's
-# existing vault/session keys and SQLite DB so registered connections/sessions
-# carry over from the earlier host-run deployment.
-name: hr-harnessor
+# My Mate Geny — production-style example (HTTPS in front, persistent state).
+#
+#   cd deploy
+#   cp .env.example .env            # set GENY_UID/GID, GENY_WORKSPACES, tunnel token...
+#   docker compose up -d                       # behind your own reverse proxy
+#   docker compose --profile tunnel up -d      # or with a Cloudflare tunnel
+#
+# Same image as the root docker-compose.yml (built from the repo root). The
+# console listens on 127.0.0.1:${GENY_PORT} only, for a reverse proxy on this
+# host (Caddy / nginx examples in deploy/examples/); the optional `tunnel`
+# service reaches it over the compose network instead. See docs/deploy.md.
+#
+# Machine-specific changes (extra mounts, a different user/home, ...) belong in
+# a docker-compose.override.yml next to this file (gitignored, merged
+# automatically by `docker compose`).
+
+name: my-mate-geny
 
 services:
-  backend:
+  geny:
     build:
-      context: ../backend
-    # Run as hrjang (uid 1000), NOT root: the Claude CLI refuses permissive
-    # modes under root. HOME=/home/hrjang means ~/.claude, ~/.claude.json,
-    # ~/.codex, ~/.ssh, ~/.hr-harnessor and the DB are all present via the
-    # /home mount at their real host paths — identical to the host setup.
-    user: "1000:1000"
+      context: ..
+      args:
+        GENY_UID: ${GENY_UID:-1000}
+        GENY_GID: ${GENY_GID:-1000}
+    image: my-mate-geny:local
+    init: true
     env_file:
-      - ../backend/.env          # AUTH_USERNAME / AUTH_PASSWORD
+      - path: ../backend/.env
+        required: false
     environment:
-      - HOME=/home/hrjang
-      - HOST=0.0.0.0
-      - PORT=8080
-      - CORS_ORIGINS=https://agent.hrletsgo.me
-      - COOKIE_SECURE=true
-      - DB_PATH=/home/hr-harnessor/backend/data/harnessor.db
-      - MOUNT_ROOT=/home/hrjang/.hr-harnessor/mounts
-      - STATIC_DIR=/app/static
-      - CLAUDE_BINARY=claude
-      - CODEX_BINARY=codex
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}     # served over HTTPS
+    ports:
+      - "127.0.0.1:${GENY_PORT:-8080}:8080"
     volumes:
-      - /home:/home                                      # real host paths: auth, keys, DB, workspaces
-      - /home/hr-harnessor/backend/app:/app/app:ro       # app code (so edits apply on restart, no rebuild)
-      - /home/hr-harnessor/frontend/dist:/app/static:ro  # built SPA
-      - /etc/passwd:/etc/passwd:ro                        # so uid 1000 resolves to a name
-      - /etc/group:/etc/group:ro
-    # No fuse/SYS_ADMIN needed: remote workspaces operate over SSH-backed MCP
-    # tools (remote_bash/read/write/list), not sshfs mounts.
+      - ${GENY_HOME:-geny-home}:/home/geny
+      - ${GENY_WORKSPACES:-geny-workspaces}:/workspaces
+      # Optional: the host user's CLI logins and SSH key (see docs/deploy.md).
+      # - ${HOME}/.claude:/home/geny/.claude
+      # - ${HOME}/.claude.json:/home/geny/.claude.json
+      # - ${HOME}/.codex:/home/geny/.codex
+      # - ${HOME}/.ssh:/home/geny/.ssh:ro
     restart: unless-stopped
-    networks: [internal]
 
+  # Cloudflare tunnel (remotely managed): create a tunnel in the Cloudflare
+  # dashboard, add a public hostname -> http://geny:8080, put its token in
+  # CLOUDFLARE_TUNNEL_TOKEN. Started only with `--profile tunnel`.
   tunnel:
+    profiles: [tunnel]
     image: cloudflare/cloudflared:latest
-    user: "1000:1000"          # match the owner (uid 1000) of the 0400 creds file
-    command: tunnel --no-autoupdate --config /etc/cloudflared/config.docker.yml run
-    volumes:
-      - ./cloudflared:/etc/cloudflared:ro
-    depends_on: [backend]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on: [geny]
     restart: unless-stopped
-    networks: [internal]
 
-networks:
-  internal:
-    driver: bridge
+volumes:
+  geny-home:
+  geny-workspaces:

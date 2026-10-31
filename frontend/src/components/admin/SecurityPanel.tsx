@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { revokeAllSessions, securityInfo, unbanIp, type SecurityInfo } from "../../api/admin";
 import Icon from "../ui/Icon";
+import CredentialsCard from "./CredentialsCard";
 import { absTime, relTime } from "./format";
 
 export default function SecurityPanel() {
@@ -37,10 +38,11 @@ export default function SecurityPanel() {
 
   return (
     <div className="space-y-3">
+      <CredentialsCard />
       <div className="card flex flex-wrap items-center gap-3 p-4">
         <div className="min-w-0 flex-1 text-[12.5px] text-content-dim">
           Lost a device or shared a session? Ends every signed-in browser, desktop and Android app at once.
-          Changing the password does the same.
+          Changing the credentials above does the same.
         </div>
         <button onClick={revokeAll} disabled={busy === "__all__"} className="btn-ghost text-danger hover:text-danger">
           {busy === "__all__" ? <Icon name="spinner" size={14} spin /> : <Icon name="logout" size={14} />} Sign out all devices

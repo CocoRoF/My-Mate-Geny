@@ -1,4 +1,4 @@
-"""Local workspace connector — folders on the 2223 runtime host."""
+"""Local workspace connector — folders on the runtime host."""
 
 from __future__ import annotations
 
@@ -33,4 +33,4 @@ class LocalConnector(WorkspaceConnector):
         return entries
 
     async def status(self) -> dict[str, Any]:
-        return {"kind": self.kind, "reachable": True, "host": "localhost (2223)"}
+        return {"kind": self.kind, "reachable": True, "host": "localhost"}
