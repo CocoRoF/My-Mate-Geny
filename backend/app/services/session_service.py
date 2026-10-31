@@ -43,6 +43,7 @@ from app.providers.accounts import (
     limit_name,
     link_shared_state,
 )
+from app.providers._inline_files import prepare_inline
 from app.providers.base import ProviderEvent, SteerMessage, TurnInbox, TurnRequest
 from app.providers.catalog import DEFAULT_CLAUDE_MODEL, clean_auto_compact_window, context_limits
 from app.providers.claude_code import CLI_ENV as CLAUDE_ENV
@@ -622,6 +623,9 @@ class SessionService:
             else []
         )
         atts = [self._attachments.to_provider(r) for r in rows] if self._attachments else []
+        inline = session.get("kind") == "mate"  # no file tools: contents go into the message
+        if atts and inline:
+            await asyncio.to_thread(prepare_inline, atts)
         if atts and session["connection_id"]:
             try:
                 remote = await self._workspaces.connector_for(session["connection_id"]).upload_files(
@@ -649,7 +653,7 @@ class SessionService:
             self._publish(sid, ev.to_dict())
 
         fut: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
-        msg = SteerMessage(text=text, attachments=atts, delivered=fut, on_delivered=record)
+        msg = SteerMessage(text=text, attachments=atts, delivered=fut, on_delivered=record, inline_files=inline)
         if not inbox.offer(msg):
             return False
         try:
@@ -741,6 +745,9 @@ class SessionService:
         if rows and self._attachments is not None:
             self._attachments.link([r["id"] for r in rows], msg_id)
         attachments = [self._attachments.to_provider(r) for r in rows] if self._attachments else []
+        if attachments and session.get("kind") == "mate":
+            # A mate can't open files: their readable text goes into the message.
+            await asyncio.to_thread(prepare_inline, attachments)
         # Other tabs/devices watching this session render the user's bubble.
         self._publish(sid, {"type": "user.message", "data": {
             "message_id": msg_id, "client_msg_id": client_msg_id, "text": user_input,
@@ -905,6 +912,7 @@ class SessionService:
             inbox=TurnInbox(),
             preamble=preamble,
             uploads_dir=uploads_dir,
+            inline_files=session.get("kind") == "mate",
             auto_compact_window=self.auto_compact_window(session) if provider_name == "claude" else 0,
         )
         if session.get("kind") == "mate" and self.mate_engine is not None:

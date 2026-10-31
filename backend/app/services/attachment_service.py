@@ -219,6 +219,36 @@ class AttachmentService:
         )
         return self.out(self.get(aid))
 
+    def copy_to(self, row: dict[str, Any], sid: str) -> dict[str, Any]:
+        """Copy an attachment (of another session) into ``sid`` as a pending
+        upload — exactly what the user uploading the same file there makes
+        (own folder, own model-sized variant), ready to be sent with a message.
+        Blocking (file copy): run it in a thread. Returns the new row."""
+        aid = new_id("att_")
+        folder = self.session_dir(sid) / aid
+        folder.mkdir(parents=True, exist_ok=True)
+        try:
+            dest = folder / os.path.basename(row["path"])
+            shutil.copy2(row["path"], dest)
+            model_path = None
+            if row.get("model_path") and os.path.exists(row["model_path"]):
+                model_path = str(folder / os.path.basename(row["model_path"]))
+                shutil.copy2(row["model_path"], model_path)
+        except BaseException:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
+        self._db.execute(
+            """
+            INSERT INTO attachments
+                (id, session_id, message_id, name, mime, size, kind, width, height,
+                 path, model_path, model_mime, created_at)
+            VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (aid, sid, row["name"], row["mime"], row["size"], row["kind"], row["width"], row["height"],
+             str(dest), model_path, row["model_mime"] if model_path else None, now_iso()),
+        )
+        return self.get(aid)  # type: ignore[return-value]
+
     # ---- read ----
 
     def get(self, aid: str) -> dict[str, Any] | None:
