@@ -3,17 +3,33 @@
 <title>My Mate Geny — offline</title>
 <style>
   body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a0c10;color:#e6e9f0;font:15px system-ui,sans-serif;padding:24px;box-sizing:border-box}
-  .card{max-width:340px;text-align:center}
-  .logo{width:52px;height:52px;margin:0 auto 16px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#6e8bff,#22d3ee)}
-  h1{font-size:17px;margin:0 0 8px} p{color:#9aa3b4;line-height:1.5;margin:0}
-  button{margin-top:22px;width:100%;padding:13px;border:0;border-radius:12px;background:linear-gradient(135deg,#6e8bff,#5b7cff);color:#fff;font:inherit;font-weight:600}
+  .card{max-width:340px;width:100%;text-align:center}
+  .logo{width:72px;height:72px;margin:0 auto 14px;border-radius:18px;display:block}
+  h1{font-size:17px;margin:0 0 8px} p{color:#9aa3b4;line-height:1.5;margin:0} code{color:#5e6676;font-size:12px;word-break:break-all;display:block;margin-top:8px}
+  button{margin-top:12px;width:100%;padding:13px;border:0;border-radius:12px;font:inherit;font-weight:600}
+  .primary{margin-top:22px;background:linear-gradient(135deg,#6e8bff,#5b7cff);color:#fff} .ghost{background:#1c212c;color:#9aa3b4}
 </style></head>
 <body><div class="card">
-  <div class="logo"><svg width="26" height="26" viewBox="0 0 24 24" fill="#fff" stroke="#fff" stroke-width="1.7" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg></div>
+  <img class="logo" src="logo.png" alt="">
   <div style="font-size:12px;color:#9aa3b4;margin:0 0 6px">My Mate Geny</div>
-  <h1>Can't reach the console</h1>
+  <h1>Can't reach the server</h1>
   <p>Check your connection. The app reconnects automatically.</p>
-  <button onclick="location.href='https://agent.hrletsgo.me/'">Retry</button>
+  <code id="srv"></code>
+  <button class="primary" id="retry">Retry</button>
+  <button class="ghost" id="switch">Switch server</button>
 </div>
-<script>window.addEventListener("online", () => location.href = "https://agent.hrletsgo.me/");</script>
+<script>
+  // Shown by Capacitor (server.errorPath) at https://localhost/offline.html
+  // when the saved server doesn't load. /__geny/* is handled natively
+  // (GenyServerPlugin.shouldOverrideLoad): retry reloads the saved server,
+  // switch-server goes back to the connect page.
+  var saved = "";
+  try { saved = localStorage.getItem("geny.server") || ""; } catch (e) {}
+  document.getElementById("srv").textContent = saved;
+  var go = function (action) { location.href = "/__geny/" + action; };
+  document.getElementById("retry").onclick = function () { go("retry"); };
+  document.getElementById("switch").onclick = function () { go("switch-server"); };
+  window.addEventListener("online", function () { go("retry"); });
+  setInterval(function () { if (navigator.onLine) go("retry"); }, 20000);
+</script>
 </body></html>

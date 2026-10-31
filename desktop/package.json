@@ -1,15 +1,16 @@
 {
   "name": "hr-harnessor-desktop",
   "productName": "My Mate Geny",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "My Mate Geny — agent console and desktop Mate",
   "main": "src/main.js",
-  "author": "My Mate Geny <noreply@hrletsgo.me>",
-  "homepage": "https://agent.hrletsgo.me",
+  "author": "My Mate Geny contributors",
+  "homepage": "https://github.com/CocoRoF/hr-harnessor",
   "license": "UNLICENSED",
   "private": true,
   "scripts": {
     "start": "electron .",
+    "test": "node --test test/*.test.js",
     "dist:linux": "electron-builder --linux AppImage deb --publish never",
     "dist:win": "electron-builder --win nsis --x64 --publish never",
     "dist:mac": "electron-builder --mac dmg --arm64 --x64 --publish never"
@@ -21,7 +22,7 @@
   "build": {
     "appId": "me.hrletsgo.harnessor",
     "productName": "My Mate Geny",
-    "copyright": "My Mate Geny",
+    "copyright": "My Mate Geny contributors",
     "directories": { "buildResources": "build", "output": "dist" },
     "files": ["src/**/*", "build/icon.png", "package.json"],
     "afterPack": "build/after-pack.js",
@@ -50,7 +51,7 @@
     "linux": {
       "target": ["AppImage", "deb"],
       "category": "Development",
-      "maintainer": "My Mate Geny <noreply@hrletsgo.me>",
+      "maintainer": "My Mate Geny contributors <my-mate-geny@users.noreply.github.com>",
       "synopsis": "Agent console for Claude Code & Codex, with a desktop Mate",
       "executableArgs": ["--ozone-platform=x11"],
       "artifactName": "my-mate-geny-${version}-linux-${arch}.${ext}"

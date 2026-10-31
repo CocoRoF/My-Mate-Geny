@@ -37,7 +37,7 @@ const DRAG_CSS = `html,body{-webkit-app-region:drag!important;cursor:move!import
 html{outline:2px dashed rgba(110,139,255,.95)!important;outline-offset:-2px;background:rgba(110,139,255,.10)!important}
 button,a,input,textarea,select,[data-no-drag]{-webkit-app-region:no-drag!important}`;
 
-let deps = { openConsole: () => {}, consoleWindow: () => null, changeServer: () => {}, quit: () => app.quit() };
+let deps = { openConsole: () => {}, consoleWindow: () => null, switchServer: () => {}, signOut: () => {}, quit: () => app.quit() };
 let avatar = null;
 let bar = null;
 let quick = null;
@@ -71,9 +71,22 @@ const wanted = () => !!S().mateVisible && !gaveUp;
 const validId = (id) => (typeof id === "string" && /^[\w.:-]{1,100}$/.test(id) ? id : null);
 const alive = (w) => !!w && !w.isDestroyed();
 
+/** connected to a server (until then the Mate surfaces have nothing to load) */
+const connected = () => !!serverUrl();
+
 function surfaceUrl(kind) {
   const id = mateId();
-  return `${serverUrl()}/?surface=mate-${kind}${id ? `&mate=${encodeURIComponent(id)}` : ""}`;
+  return connected() ? `${serverUrl()}/?surface=mate-${kind}${id ? `&mate=${encodeURIComponent(id)}` : ""}` : "";
+}
+
+/** Load a Mate window's surface from the connected server (none: stay hidden). */
+function loadSurface(win, kind) {
+  if (!alive(win)) return;
+  if (!connected()) {
+    win.hide();
+    return;
+  }
+  win.loadURL(surfaceUrl(kind));
 }
 
 /** Is this window actually showing its Mate surface? A signed-out start is
@@ -190,20 +203,22 @@ function guard(win, kind) {
 function retryOverlaySoon() {
   failDelay = Math.min(60_000, failDelay ? failDelay * 2 : 5000);
   clearTimeout(failTimer);
-  failTimer = setTimeout(() => alive(avatar) && avatar.loadURL(surfaceUrl("overlay")), failDelay);
+  failTimer = setTimeout(() => loadSurface(avatar, "overlay"), failDelay);
 }
 
 /** The console window navigated (e.g. after signing in): reload Mate windows
  *  that were left on the login page. */
 function consoleNavigated(url) {
-  if (!sameOrigin(url) || /\/login\b/.test(new URL(url).pathname)) return;
+  if (!sameOrigin(url) || /\/(login|auth\/exchange)\b/.test(new URL(url).pathname)) return;
+  // connected (again): an avatar the user wants out comes back
+  if (wanted() && !alive(avatar)) createAvatar();
   for (const [w, kind] of [[avatar, "overlay"], [quick, "quick"], [chat, "chat"]]) {
     if (alive(w) && !w.webContents.isLoading() && !onSurface(w, kind)) {
       if (kind === "overlay") {
         failDelay = 0;
         clearTimeout(failTimer);
       }
-      w.loadURL(surfaceUrl(kind));
+      loadSurface(w, kind);
     }
   }
 }
@@ -322,7 +337,7 @@ function createAvatar() {
       broadcast();
       return;
     }
-    setTimeout(() => alive(win) && win.loadURL(surfaceUrl("overlay")), 3000);
+    setTimeout(() => loadSurface(win, "overlay"), 3000);
   });
   win.on("move", () => {
     placeBar();
@@ -334,7 +349,7 @@ function createAvatar() {
     dragCssKey = null;
     alive(bar) && bar.hide();
   });
-  win.loadURL(surfaceUrl("overlay"));
+  loadSurface(win, "overlay");
 }
 
 function applyInput() {
@@ -350,10 +365,16 @@ function showAvatar(id) {
   const next = validId(id);
   const switching = next && next !== mateId();
   writeSettings({ mateVisible: true, ...(next ? { mateId: next } : {}) });
+  if (!connected()) {
+    // nothing to show yet: the connect screen first (the Mate follows)
+    broadcast();
+    deps.openConsole();
+    return;
+  }
   if (switching) reloadSurfaces();
   if (!alive(avatar)) createAvatar();
   else if (retrying || (!avatar.webContents.isLoading() && (overlayFailed || !onSurface(avatar, "overlay")))) {
-    avatar.loadURL(surfaceUrl("overlay")); // shown by did-finish-load
+    loadSurface(avatar, "overlay"); // shown by did-finish-load
   } else {
     avatar.setBounds(clampAvatar(avatar.getBounds()));
     if (!avatar.webContents.isLoading()) avatar.showInactive();
@@ -577,12 +598,12 @@ function createQuick() {
     if (input.type === "keyDown" && input.key === "Escape") hideQuick();
   });
   win.webContents.on("render-process-gone", (_e, d) => {
-    if (d.reason !== "clean-exit") setTimeout(() => alive(win) && win.loadURL(surfaceUrl("quick")), 3000);
+    if (d.reason !== "clean-exit") setTimeout(() => loadSurface(win, "quick"), 3000);
   });
   win.on("closed", () => {
     if (quick === win) quick = null;
   });
-  win.loadURL(surfaceUrl("quick"));
+  loadSurface(win, "quick");
 }
 
 function placeQuick() {
@@ -592,11 +613,12 @@ function placeQuick() {
 }
 
 function openQuick() {
+  if (!connected()) return deps.openConsole();
   if (!alive(quick)) createQuick();
   const win = quick;
   quickShownAt = Date.now();
   placeQuick();
-  if (!win.webContents.isLoading() && !presentable(win, "quick")) win.loadURL(surfaceUrl("quick"));
+  if (!win.webContents.isLoading() && !presentable(win, "quick")) loadSurface(win, "quick");
   const go = () => {
     if (!alive(win) || !presentable(win, "quick")) return;
     quickShownAt = Date.now();
@@ -678,13 +700,13 @@ function createChat() {
     hideChat();
   });
   win.webContents.on("render-process-gone", (_e, d) => {
-    if (d.reason !== "clean-exit") setTimeout(() => alive(win) && win.loadURL(surfaceUrl("chat")), 3000);
+    if (d.reason !== "clean-exit") setTimeout(() => loadSurface(win, "chat"), 3000);
   });
   win.on("closed", () => {
     if (chat === win) chat = null;
   });
   win.webContents.once("did-finish-load", () => showChatNow());
-  win.loadURL(surfaceUrl("chat"));
+  loadSurface(win, "chat");
 }
 
 function showChatNow() {
@@ -697,8 +719,9 @@ function showChatNow() {
 }
 
 function openChat() {
+  if (!connected()) return deps.openConsole();
   if (!alive(chat)) return createChat();
-  if (!chat.webContents.isLoading() && !presentable(chat, "chat")) chat.loadURL(surfaceUrl("chat"));
+  if (!chat.webContents.isLoading() && !presentable(chat, "chat")) loadSurface(chat, "chat");
   if (chat.webContents.isLoading()) chat.webContents.once("did-finish-load", showChatNow);
   else showChatNow();
 }
@@ -720,9 +743,27 @@ function setChatOnTop(on) {
 // ── mate / server switches ─────────────────────────────────────
 
 function reloadSurfaces() {
-  if (alive(avatar)) avatar.loadURL(surfaceUrl("overlay"));
-  if (alive(quick)) quick.loadURL(surfaceUrl("quick"));
-  if (alive(chat)) chat.loadURL(surfaceUrl("chat"));
+  loadSurface(avatar, "overlay");
+  loadSurface(quick, "quick");
+  loadSurface(chat, "chat");
+}
+
+/** Signed out / switching servers: the Mate windows of the old server go
+ *  (mateVisible stays, so the avatar returns once connected again). */
+function disconnect() {
+  setMoveMode(false);
+  clearTimeout(failTimer);
+  failDelay = 0;
+  alive(bar) && bar.hide();
+  if (alive(avatar)) {
+    writeSettings({ mateBounds: avatar.getBounds() });
+    avatar.destroy();
+  }
+  avatar = null;
+  for (const w of [quick, chat]) if (alive(w)) w.destroy();
+  quick = null;
+  chat = null;
+  broadcast();
 }
 
 function setMate(id) {
@@ -740,7 +781,7 @@ function setMate(id) {
 function retry(sender) {
   for (const [w, kind] of [[avatar, "overlay"], [quick, "quick"], [chat, "chat"]]) {
     if (alive(w) && w.webContents === sender) {
-      w.loadURL(surfaceUrl(kind));
+      loadSurface(w, kind);
       return true;
     }
   }
@@ -941,7 +982,8 @@ function buildTray() {
     { label: "Keep Mate chat on top", type: "checkbox", checked: !!S().mateChatOnTop, click: (i) => setChatOnTop(i.checked) },
     { label: "Start at login", type: "checkbox", checked: autostartOn(), click: (i) => setAutostart(i.checked) },
     { type: "separator" },
-    { label: "Change server…", click: () => deps.changeServer() },
+    { label: "Switch server…", click: () => deps.switchServer() },
+    { label: "Sign out", enabled: connected(), click: () => deps.signOut() },
     { label: "Quit", click: () => deps.quit() },
   ]));
 }
@@ -1015,7 +1057,7 @@ function start() {
   } else if (acc && !registerHotkey(acc)) {
     notify("Quick chat shortcut unavailable", `${prettyAccel(acc)} is used by another program. Change it in Mate settings.`);
   }
-  if (S().mateVisible) createAvatar();
+  if (S().mateVisible && connected()) createAvatar();
   setInterval(tick, 120);
   const reclamp = () => {
     if (!alive(avatar) || moveRect) return;
@@ -1043,6 +1085,8 @@ module.exports = {
   retry,
   consoleNavigated,
   reloadSurfaces,
+  disconnect,
+  refresh: () => buildTray(),
   isShown: () => wanted() && alive(avatar) && (avatar.isVisible() || avatar.webContents.isLoading() || (!overlayFailed && onSurface(avatar, "overlay"))),
   mateWindows: () => [avatar, bar, quick, chat].filter(alive),
   showAvatar,

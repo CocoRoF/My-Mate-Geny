@@ -26,7 +26,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  VERSION: 0.3.${{ github.run_number }}
+  VERSION: 0.4.${{ github.run_number }}
   GH_TOKEN: ${{ github.token }}
 
 jobs:
@@ -65,6 +65,9 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
       - run: npm ci
+      - name: Unit tests (server address + sign-in)
+        if: matrix.name == 'linux'
+        run: npm test
       - name: Build (linux)
         if: matrix.name == 'linux'
         run: npx electron-builder --linux AppImage deb --publish never -c.extraMetadata.version=$VERSION
@@ -106,6 +109,7 @@ jobs:
       # The runner image ships the Android SDK (ANDROID_HOME, licenses
       # accepted); Gradle fetches the exact platform/build-tools it needs.
       - run: npm ci
+      - run: npm test
       - run: npx cap sync android
       - name: Release keystore
         run: echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
