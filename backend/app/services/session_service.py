@@ -280,10 +280,19 @@ class SessionService:
             FROM sessions s ORDER BY s.updated_at DESC
             """
         )
+        # Background tasks still running (subagents, background shells): the
+        # chat is still working even when no turn is (the sidebar shows it).
+        bg = {
+            r["session_id"]: r["n"]
+            for r in self._db.query(
+                "SELECT session_id, COUNT(*) AS n FROM bg_tasks WHERE status IN ('running', 'pending') GROUP BY session_id"
+            )
+        }
         out = []
         for r in rows:
             d = self._row(r)
             d.pop("cli_info", None)  # large; fetched per session
+            d["background"] = bg.get(d["id"], 0)
             out.append(d)
         return out
 
@@ -1445,6 +1454,8 @@ class SessionService:
             self._publish(sid, {"type": "run.state", "data": {"running": False}})
 
     def _on_task(self, sid: str, task: dict[str, Any]) -> None:
+        prev = self._db.query_one("SELECT status FROM bg_tasks WHERE session_id = ? AND task_id = ?",
+                                  (sid, task.get("task_id")))
         try:
             self._db.execute(
                 """
@@ -1470,6 +1481,11 @@ class SessionService:
             return
         row = self._db.query_one("SELECT * FROM bg_tasks WHERE session_id = ? AND task_id = ?", (sid, task.get("task_id")))
         if row is not None:
+            # Started or ended: the sidebar's "working" covers background work too.
+            active = ("running", "pending")
+            was = prev is not None and prev["status"] in active
+            if prev is None or was != (row["status"] in active):
+                self.list_changed("background", sid)
             # Subagent progress (activity, tool count) is shown live, not stored.
             live = {k: task[k] for k in _LIVE_TASK_FIELDS if task.get(k) is not None}
             self._publish(sid, {"type": "task.state", "data": {**self._task_out(row), **live}})
@@ -1553,6 +1569,8 @@ class SessionService:
             row = self._db.query_one("SELECT * FROM bg_tasks WHERE session_id = ? AND task_id = ?", (sid, r["task_id"]))
             if row is not None:
                 self._publish(sid, {"type": "task.state", "data": self._task_out(row)})
+        if rows:
+            self.list_changed("background", sid)
         if reason == "exited":
             self._log("warning", "provider", "Claude engine process exited", code="engine.exited", session_id=sid)
 

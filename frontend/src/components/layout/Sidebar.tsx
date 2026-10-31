@@ -174,9 +174,17 @@ export default function Sidebar() {
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px] text-content/90">{s.title}</div>
                   <div className="flex items-center gap-1.5 truncate text-[10.5px] text-content-faint">
-                    {s.running && (
-                      <span className="inline-flex items-center gap-1 text-accent" title="Agent is working">
-                        <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" /> working ·
+                    {(s.running || (s.background ?? 0) > 0) && (
+                      <span
+                        className="inline-flex items-center gap-1 text-accent"
+                        title={
+                          s.running
+                            ? "Agent is working"
+                            : `${s.background} background task${s.background === 1 ? "" : "s"} running (subagents / background commands)`
+                        }
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" /> working
+                        {!s.running && <span className="text-accent/70">({s.background} bg)</span>} ·
                       </span>
                     )}
                     {s.connection_id ? "remote" : "local"} · {s.provider}

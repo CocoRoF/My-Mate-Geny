@@ -77,3 +77,24 @@ def test_changes_from_a_worker_thread_reach_the_loop(db, tmp_path):
         svc.unsubscribe_list(q)
 
     asyncio.run(main())
+
+
+def test_background_tasks_count_as_working(db, tmp_path):
+    svc = _services(db)
+    s = svc.create(provider="claude", workspace_path=str(tmp_path))
+
+    async def main():
+        q = svc.subscribe_list()
+        svc._on_task(s["id"], {"task_id": "t1", "status": "running", "task_type": "local_agent", "is_backgrounded": True})
+        assert (await asyncio.wait_for(q.get(), 2))["data"]["reason"] == "background"
+        row = next(x for x in svc.list_all() if x["id"] == s["id"])
+        assert row["running"] is False and row["background"] == 1
+        # progress updates of a running task don't move the list
+        svc._on_task(s["id"], {"task_id": "t1", "status": "running"})
+        assert q.empty()
+        svc._on_task(s["id"], {"task_id": "t1", "status": "completed"})
+        assert (await asyncio.wait_for(q.get(), 2))["data"]["reason"] == "background"
+        assert next(x for x in svc.list_all() if x["id"] == s["id"])["background"] == 0
+        svc.unsubscribe_list(q)
+
+    asyncio.run(main())

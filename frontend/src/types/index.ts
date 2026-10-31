@@ -31,6 +31,7 @@ export interface Session {
   extra_dirs: string[];
   cli_info?: CliInfo;
   running?: boolean;
+  background?: number; // background tasks still running (subagents, background shells)
   auto_compact_window?: number | null; // Claude: this chat's auto-compact window (null = global default, 0 = CLI default)
   accounts?: Record<string, { id?: string; label?: string; manual?: boolean; at?: string }>; // account it ran on last
   created_at: string;
