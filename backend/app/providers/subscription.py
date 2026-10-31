@@ -33,12 +33,14 @@ def _get_json(url: str, headers: dict[str, str]) -> Any:
         return json.loads(resp.read().decode())
 
 
-def _window(label: str, percent: Any, resets_at: str | None) -> dict:
+def _window(label: str, percent: Any, resets_at: str | None, kind: str = "") -> dict:
+    """One usage window. ``kind`` lets the UI find the 5-hour / 7-day ones
+    without parsing labels: five_hour | seven_day | model_weekly | daily | other."""
     try:
         pct = round(float(percent), 0)
     except (TypeError, ValueError):
         pct = 0.0
-    return {"label": label, "percent": pct, "resets_at": resets_at}
+    return {"label": label, "percent": pct, "resets_at": resets_at, "kind": kind or "other"}
 
 
 def _window_label_from_seconds(sec: int | None) -> str:
@@ -51,6 +53,44 @@ def _window_label_from_seconds(sec: int | None) -> str:
     if sec <= 8 * 86400:
         return "Weekly (7 day)"
     return f"{sec // 86400}-day"
+
+
+def _window_kind_from_seconds(sec: int | None) -> str:
+    if not sec:
+        return "other"
+    if sec <= 5 * 3600 + 60:
+        return "five_hour"
+    if sec <= 26 * 3600:
+        return "daily"
+    if sec <= 8 * 86400:
+        return "seven_day"
+    return "other"
+
+
+# Older per-model weekly fields of /api/oauth/usage (newer responses list them
+# under ``limits`` with a model scope; either may be present).
+_CLAUDE_MODEL_FIELDS = (("seven_day_opus", "Opus"), ("seven_day_sonnet", "Sonnet"))
+
+
+def _claude_windows(usage: dict) -> tuple[list[dict], list[dict]]:
+    """(windows, model_windows) from an /api/oauth/usage response."""
+    five = usage.get("five_hour") or {}
+    seven = usage.get("seven_day") or {}
+    windows = [
+        _window("Session (5hr)", five.get("utilization"), five.get("resets_at"), "five_hour"),
+        _window("Weekly (7 day)", seven.get("utilization"), seven.get("resets_at"), "seven_day"),
+    ]
+    model_windows = [
+        _window(l["scope"]["model"]["display_name"], l.get("percent"), l.get("resets_at"), "model_weekly")
+        for l in (usage.get("limits") or [])
+        if isinstance(l, dict) and ((l.get("scope") or {}).get("model") or {}).get("display_name")
+    ]
+    named = {w["label"].lower() for w in model_windows}
+    for key, name in _CLAUDE_MODEL_FIELDS:
+        w = usage.get(key)
+        if isinstance(w, dict) and w.get("utilization") is not None and name.lower() not in named:
+            model_windows.append(_window(name, w.get("utilization"), w.get("resets_at"), "model_weekly"))
+    return windows, model_windows
 
 
 # ---------------------------------------------------------------- claude
@@ -93,16 +133,8 @@ def claude_usage_from_token(token: str) -> dict[str, Any]:
         "Authorization": f"Bearer {token}",
     }
     usage = _get_json(f"{_ANTHROPIC}/api/oauth/usage", headers)
-    five = usage.get("five_hour") or {}
-    seven = usage.get("seven_day") or {}
-    return {
-        "provider": "claude",
-        "available": True,
-        "windows": [
-            _window("Session (5hr)", five.get("utilization"), five.get("resets_at")),
-            _window("Weekly (7 day)", seven.get("utilization"), seven.get("resets_at")),
-        ],
-    }
+    windows, model_windows = _claude_windows(usage)
+    return {"provider": "claude", "available": True, "windows": windows, "model_windows": model_windows}
 
 
 def claude_subscription(cred_dir: str) -> dict[str, Any]:
@@ -125,17 +157,7 @@ def claude_subscription(cred_dir: str) -> dict[str, Any]:
     except urllib.error.HTTPError:
         pass
 
-    five = usage.get("five_hour") or {}
-    seven = usage.get("seven_day") or {}
-    windows = [
-        _window("Session (5hr)", five.get("utilization"), five.get("resets_at")),
-        _window("Weekly (7 day)", seven.get("utilization"), seven.get("resets_at")),
-    ]
-    model_windows = [
-        _window(l["scope"]["model"]["display_name"], l.get("percent"), l.get("resets_at"))
-        for l in (usage.get("limits") or [])
-        if (l.get("scope") or {}).get("model", {}).get("display_name")
-    ]
+    windows, model_windows = _claude_windows(usage)
     acc = profile.get("account", {})
     org = profile.get("organization", {})
     return {
@@ -202,18 +224,29 @@ def codex_subscription(cred_dir: str) -> dict[str, Any]:
             raise UsageError("token expired — re-authenticate this account") from exc
         raise UsageError(f"usage request failed ({exc.code})") from exc
 
-    rl = data.get("rate_limit") or {}
-    windows = []
-    for key in ("primary_window", "secondary_window"):
-        w = rl.get(key)
-        if w:
-            windows.append(
-                _window(
-                    _window_label_from_seconds(w.get("limit_window_seconds")),
+    def windows_of(rl: dict, name: str = "") -> list[dict]:
+        out = []
+        for key in ("primary_window", "secondary_window"):
+            w = rl.get(key)
+            if isinstance(w, dict):
+                label = _window_label_from_seconds(w.get("limit_window_seconds"))
+                out.append(_window(
+                    f"{name} · {label}" if name else label,
                     w.get("used_percent"),
                     _iso_from_epoch(w.get("reset_at")),
-                )
-            )
+                    "model_weekly" if name else _window_kind_from_seconds(w.get("limit_window_seconds")),
+                ))
+        return out
+
+    # Codex plans may have only a weekly window (no 5-hour one).
+    windows = windows_of(data.get("rate_limit") or {})
+    # Per-model / per-feature limits, when the plan has any (shape seen as
+    # [{limit_name, rate_limit: {primary_window, …}}]; anything else is skipped).
+    model_windows: list[dict] = []
+    for extra in data.get("additional_rate_limits") or []:
+        if isinstance(extra, dict) and isinstance(extra.get("rate_limit"), dict):
+            name = str(extra.get("limit_name") or extra.get("metered_feature") or extra.get("model") or "Limit")
+            model_windows += windows_of(extra["rate_limit"], name)
     plan = (data.get("plan_type") or "").replace("_", " ").title() or "ChatGPT"
     return {
         "provider": "codex",
@@ -225,7 +258,7 @@ def codex_subscription(cred_dir: str) -> dict[str, Any]:
             "plan": f"ChatGPT {plan}" if not plan.lower().startswith("chatgpt") else plan,
         },
         "windows": windows,
-        "model_windows": [],
+        "model_windows": model_windows,
         "manage_url": "https://chatgpt.com/#settings",
     }
 

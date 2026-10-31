@@ -32,6 +32,7 @@ from app.providers.base import (
     SteerMessage,
     TurnRequest,
 )
+from app.providers.catalog import DEFAULT_CLAUDE_MODEL
 
 _PERMISSION_MODE = {"agent": "bypassPermissions", "plan": "plan"}
 
@@ -75,7 +76,7 @@ class ClaudeCodeProvider(Provider):
     # ---- argv ----
 
     def _build_argv(self, req: TurnRequest) -> list[str]:
-        model = req.model or "sonnet"
+        model = req.model or DEFAULT_CLAUDE_MODEL
         argv = [
             "--print",
             "--verbose",
@@ -192,7 +193,7 @@ class ClaudeCodeProvider(Provider):
 
         yield ProviderEvent(
             type="session.start",
-            data={"provider": self.name, "model": req.model or "sonnet", "workspace": req.cwd},
+            data={"provider": self.name, "model": req.model or DEFAULT_CLAUDE_MODEL, "workspace": req.cwd},
         )
 
         # Steering: stdin stays open while the turn runs; extra instructions are
@@ -259,7 +260,7 @@ class ClaudeCodeProvider(Provider):
                         "text": accum.final_text,
                         "model": accum.model,
                         "usage": accum.usage,
-                        "cost_usd": accum.cost_usd,
+                        **accum.cost_fields(),
                         "stop_reason": accum.stop_reason or "end_turn",
                         "cli_session_id": accum.session_id,
                     },

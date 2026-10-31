@@ -24,12 +24,23 @@ from app.providers.base import ProviderEvent
 
 
 class StreamJsonAccumulator:
-    def __init__(self) -> None:
+    """One turn's worth of stream-json.
+
+    ``total_cost_usd`` on a result line is the cost the CLI *process* has run up
+    since it started (a ``--resume``d process starts from 0 again). A one-shot
+    turn is its own process, so that is the turn's cost; the persistent engine
+    serves many turns from one process and passes ``cost_base`` (the process
+    total after the previous turn) so ``cost_usd`` is still this turn's share.
+    """
+
+    def __init__(self, *, cost_base: float = 0.0) -> None:
         self._seq = 0
         self.session_id: str | None = None
         self.final_text: str = ""
         self.usage: dict[str, Any] = {}
-        self.cost_usd: float = 0.0
+        self.cost_base = cost_base
+        self.cost_total: float = cost_base  # process total as of the last result
+        self.cost_usd: float = 0.0          # this turn's API-equivalent cost
         self.stop_reason: str = ""
         self.model: str = ""
         self._seen_tool_ids: set[str] = set()
@@ -175,7 +186,15 @@ class StreamJsonAccumulator:
         if isinstance(obj.get("result"), str) and obj["result"]:
             self.final_text = obj["result"]
         self.usage = obj.get("usage", {}) or {}
-        self.cost_usd = float(obj.get("total_cost_usd", 0.0) or 0.0)
+        try:
+            total = float(obj.get("total_cost_usd", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            total = self.cost_base
+        # A total below the base means the counter restarted: all of it is new.
+        self.cost_usd = round(total - self.cost_base if total >= self.cost_base else total, 6)
+        self.cost_total = total
+        # Failed / stopped turns still used tokens: their cost travels on the error.
+        spent = {"usage": self.usage, **self.cost_fields()}
 
         if obj.get("subtype") not in (None, "success"):
             reasons = {
@@ -186,7 +205,7 @@ class StreamJsonAccumulator:
             errs = [str(e) for e in (obj.get("errors") or []) if e]
             yield self._ev(
                 "error",
-                {"code": f"exec.cli.{sub}", "message": "; ".join(errs) or reasons.get(sub, sub)},
+                {"code": f"exec.cli.{sub}", "message": "; ".join(errs) or reasons.get(sub, sub), **spent},
             )
             return
         if obj.get("is_error"):
@@ -194,7 +213,7 @@ class StreamJsonAccumulator:
             # as a "success" result flagged is_error, with the reason as text.
             yield self._ev(
                 "error",
-                {"code": "exec.cli.api_error", "message": str(obj.get("result") or "API error")},
+                {"code": "exec.cli.api_error", "message": str(obj.get("result") or "API error"), **spent},
             )
             return
 
@@ -204,10 +223,16 @@ class StreamJsonAccumulator:
                 "text": self.final_text,
                 "model": self.model,
                 "usage": self.usage,
-                "cost_usd": self.cost_usd,
+                **self.cost_fields(),
                 "stop_reason": self.stop_reason,
                 "cli_session_id": self.session_id,
                 "duration_ms": obj.get("duration_ms"),
                 "num_turns": obj.get("num_turns"),
             },
         )
+
+    def cost_fields(self) -> dict[str, Any]:
+        """Cost keys of a terminal event. ``cost_kind: "turn"`` marks a value
+        that is already per turn (events from before it may be cumulative —
+        see ``app.services.turn_cost``)."""
+        return {"cost_usd": self.cost_usd, "cost_kind": "turn", "process_cost_usd": round(self.cost_total, 6)}

@@ -28,5 +28,9 @@ async def get_history(sid: str, svc: SessionService = Depends(session_service)) 
         "session": session,
         "running": svc.is_running(sid),
         "messages": svc.messages(sid),
-        "events": svc.events(sid),
+        "events": svc.events(sid),  # turn costs normalized to per turn
+        # Which account this chat runs on + the plan usage its engine last
+        # reported (this chat's only; None until known).
+        "account": svc.session_account(sid),
+        "live_usage": svc.live_usage_for(sid),
     }

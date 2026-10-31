@@ -13,7 +13,13 @@ export default function NewSessionPanel() {
   const firstConnected = providers.find((p) => p.connected)?.provider || "claude";
   const [provider, setProvider] = useState(firstConnected);
   const entry = catalog[provider];
-  const [model, setModel] = useState(entry?.default_model || "sonnet");
+  const models = entry?.models || [];
+  // The user's explicit pick; until then (or when it isn't offered) the
+  // provider's default — Opus 5.5 for Claude. The catalog may arrive after
+  // this screen mounts, so the default is derived, not captured once.
+  const [picked, setPicked] = useState<string | null>(null);
+  const model =
+    picked && (!models.length || models.some((m) => m.id === picked)) ? picked : entry?.default_model || "";
   const [effort, setEffort] = useState("default");
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [path, setPath] = useState<string | null>(null);
@@ -22,7 +28,7 @@ export default function NewSessionPanel() {
 
   const pickProvider = (id: string) => {
     setProvider(id);
-    setModel(catalog[id]?.default_model || "");
+    setPicked(null);
     setEffort("default");
   };
 
@@ -49,7 +55,6 @@ export default function NewSessionPanel() {
     }
   };
 
-  const models = catalog[provider]?.models || [];
   const efforts = catalog[provider]?.effort || ["default"];
 
   return (
@@ -98,7 +103,7 @@ export default function NewSessionPanel() {
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div>
             <label className="text-[11px] font-medium uppercase tracking-wider text-content-faint">Model</label>
-            <select value={model} onChange={(e) => setModel(e.target.value)} className="field mt-1.5">
+            <select value={model} onChange={(e) => setPicked(e.target.value)} className="field mt-1.5">
               {models.length ? (
                 models.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -106,7 +111,7 @@ export default function NewSessionPanel() {
                   </option>
                 ))
               ) : (
-                <option value={model}>{model}</option>
+                <option value={model}>{model || "Default"}</option>
               )}
             </select>
           </div>

@@ -526,6 +526,8 @@ class Lease:
 
 
 PRIMARY_PREFIX = "__primary__"
+PRIMARY_LABEL = "Primary · this machine"
+PLAN_TTL_S = 60.0  # plan usage is fetched over HTTPS: at most once a minute per account
 
 
 class AccountPool:
@@ -537,8 +539,9 @@ class AccountPool:
         # In-memory health for the synthetic "primary" (host) account per provider.
         self._primary_health: dict[str, dict] = {}
         self._primary_last_used: dict[str, float] = {}
-        # Plan-utilization cache for usage-based balancing: id -> (percent, fetched_at).
-        self._util_cache: dict[str, tuple[float, float]] = {}
+        # Plan usage per account: id -> (plan | None, fetched_at). A plan is
+        # {windows, model_windows, fetched_at, error?}; None = can't be known.
+        self._plan_cache: dict[str, tuple[dict | None, float]] = {}
 
     # ---- primary (host) account: the subscription already on this machine ----
 
@@ -590,30 +593,61 @@ class AccountPool:
             consecutive_failures=acc["consecutive_failures"],
         )
 
-    def _utilization(self, provider: str, acc_id: str, *, primary: bool = False, account: dict | None = None) -> float | None:
-        """Plan utilization % for an account, cached 60s (usage-based balancing).
-        None when it can't be known (API-key account, no credentials, fetch failed)."""
+    def plan_usage(self, provider: str, acc_id: str, *, primary: bool = False, account: dict | None = None) -> dict | None:
+        """Plan usage windows (5h, 7d, per-model weekly) for an account, cached
+        60s. None when it can't be known (API-key account). A failed fetch
+        keeps the last good windows and says why in ``error``."""
         now = time.time()
-        cached = self._util_cache.get(acc_id)
-        if cached and now - cached[1] < 60:
+        cached = self._plan_cache.get(acc_id)
+        if cached and now - cached[1] < PLAN_TTL_S:
             return cached[0]
         if account is not None and account.get("auth_mode") == "api_key":
-            self._util_cache[acc_id] = (None, now)
+            self._plan_cache[acc_id] = (None, now)
             return None
-        util = cached[0] if cached else None
+        prev = cached[0] if cached else None
+        plan: dict | None = prev
         try:
             from app.providers import subscription as sub
 
-            if provider == "claude":
-                cdir = self._host_cred_dir(provider) if primary else str(account_config_dir(provider, acc_id))
-                util = sub.max_utilization(sub.claude_subscription(cdir))
-            elif provider == "codex":
-                cdir = self._host_cred_dir(provider) if primary else str(account_config_dir(provider, acc_id))
-                util = sub.max_utilization(sub.codex_subscription(cdir))
-        except Exception:
-            pass
-        self._util_cache[acc_id] = (util, now)
-        return util
+            cdir = self._host_cred_dir(provider) if primary else str(account_config_dir(provider, acc_id))
+            got = sub.subscription_usage(provider, cdir)
+            plan = {
+                "windows": got.get("windows") or [],
+                "model_windows": got.get("model_windows") or [],
+                "fetched_at": _iso(now),
+            }
+        except Exception as exc:  # noqa: BLE001 - shown on the card, never breaks balancing
+            base = {k: v for k, v in (prev or {"windows": [], "model_windows": [], "fetched_at": None}).items()
+                    if k != "error"}
+            plan = {**base, "error": str(exc)[:200] or type(exc).__name__}
+        self._plan_cache[acc_id] = (plan, now)
+        return plan
+
+    def _utilization(self, provider: str, acc_id: str, *, primary: bool = False, account: dict | None = None) -> float | None:
+        """Highest plan window % for an account (usage-based balancing). None
+        when it can't be known (API-key account, no credentials, fetch failed)."""
+        plan = self.plan_usage(provider, acc_id, primary=primary, account=account)
+        if plan is None or (plan.get("error") and not plan.get("windows")):
+            return None
+        from app.providers.subscription import max_utilization
+
+        return max_utilization({"available": True, **plan})
+
+    def _plan_fields(self, provider: str, acc_id: str, *, primary: bool = False,
+                     account: dict | None = None, usable: bool = True) -> dict:
+        """The account-card view of :meth:`plan_usage` (+ the balancer's max)."""
+        if not usable:
+            plan, util = None, None
+        else:
+            plan = self.plan_usage(provider, acc_id, primary=primary, account=account)
+            util = self._utilization(provider, acc_id, primary=primary, account=account)  # cached: no refetch
+        return {
+            "utilization": util,
+            "windows": (plan or {}).get("windows") or [],
+            "model_windows": (plan or {}).get("model_windows") or [],
+            "plan_fetched_at": (plan or {}).get("fetched_at"),
+            "plan_error": (plan or {}).get("error"),
+        }
 
     def acquire(self, provider: str) -> Lease | None:
         cfg = self._store.pool(provider)
@@ -657,7 +691,7 @@ class AccountPool:
             self._primary_last_used[pid] = now
             return Lease(
                 account_id=pid,
-                label="Primary · this machine",
+                label=PRIMARY_LABEL,
                 provider=provider,
                 auth_mode="oauth",
                 home=os.path.expanduser("~"),
@@ -738,7 +772,7 @@ class AccountPool:
             reason = ineligible_reason(snap, now=now)
             out.append({
                 "id": snap.id,
-                "label": "Primary · this machine",
+                "label": PRIMARY_LABEL,
                 "primary": True,
                 "auth_mode": "oauth",
                 "enabled": True,
@@ -749,12 +783,12 @@ class AccountPool:
                 "in_flight": snap.in_flight,
                 "eligible": reason is None,
                 "ineligible_reason": reason,
-                "utilization": self._utilization(provider, snap.id, primary=True),
+                **self._plan_fields(provider, snap.id, primary=True),
                 "total_leases": 0,
                 "total_failures": 0,
                 "consecutive_failures": snap.consecutive_failures,
-                "cooldown_until": None,
-                "last_used_at": None,
+                "cooldown_until": _iso(snap.cooldown_until) if snap.cooldown_until > now else None,
+                "last_used_at": _iso(snap.last_used) if snap.last_used else None,
                 "last_ok_at": None,
                 "last_error": None,
             })
@@ -774,7 +808,7 @@ class AccountPool:
                 "in_flight": snap.in_flight,
                 "eligible": reason is None,
                 "ineligible_reason": reason,
-                "utilization": self._utilization(provider, a["id"], account=a) if snap.usable else None,
+                **self._plan_fields(provider, a["id"], account=a, usable=snap.usable),
                 "total_leases": a["total_leases"],
                 "total_failures": a["total_failures"],
                 "consecutive_failures": a["consecutive_failures"],

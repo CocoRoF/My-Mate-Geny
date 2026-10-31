@@ -4,7 +4,8 @@ import { getHistory } from "../api/sessions";
 import { useChatStore } from "../stores/chatStore";
 import { useSessionStore } from "../stores/sessionStore";
 import { useTaskStore } from "../stores/taskStore";
-import type { Attachment, ProviderEvent } from "../types";
+import { useUsageStore } from "../stores/usageStore";
+import type { Attachment, PlanUsage, ProviderEvent } from "../types";
 
 declare global {
   interface Window {
@@ -59,6 +60,8 @@ export function useChatSocket(sessionId: string | null) {
         const h = await getHistory(sessionId);
         if (!alive) return;
         loadHistory(h);
+        useUsageStore.getState().setAccount(sessionId, h.account);
+        useUsageStore.getState().setLive(sessionId, h.live_usage);
         useSessionStore.getState().patchLocal(sessionId, { ...h.session });
         useTaskStore.getState().loadSession(sessionId).catch(() => {});
       } catch {
@@ -84,8 +87,17 @@ export function useChatSocket(sessionId: string | null) {
           return;
         }
         if (ev.type === "usage.update") {
-          useTaskStore.getState().setUsage(ev.data as any);
+          // Tagged with its chat by the backend; ignore anything else's.
+          const u = ev.data as PlanUsage;
+          if (!u.session_id || u.session_id === sessionId) useUsageStore.getState().setLive(sessionId, u);
           return;
+        }
+        if (ev.type === "session.start" && ev.data.account) {
+          useUsageStore.getState().setAccount(sessionId, {
+            account: String(ev.data.account),
+            account_id: (ev.data.account_id as string) ?? null,
+            provider: (ev.data.provider as string) ?? null,
+          });
         }
         applyEvent(ev);
         if (ev.type === "run.state") {

@@ -15,7 +15,8 @@ router = APIRouter(prefix="/api/usage")
 
 @router.get("")
 async def usage(request: Request, days: int = 14) -> dict:
-    """Local token/cost aggregation (secondary; mainly for API-key users)."""
+    """Local token aggregation + API-equivalent cost (what the tokens would
+    cost on the API; informational on a subscription), per turn."""
     svc = UsageService(request.app.state.db)
     return svc.summary(days=days)
 

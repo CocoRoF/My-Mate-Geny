@@ -14,8 +14,10 @@ import {
   type Account,
   type PoolConfig,
 } from "../../api/accounts";
+import { fromAccount } from "../../lib/usage";
 import Icon from "../ui/Icon";
 import ProviderOAuthModal from "./ProviderOAuthModal";
+import PlanWindowBars from "../usage/PlanWindowBars";
 import UsageModal from "../usage/UsageModal";
 
 const STRATEGIES = [
@@ -189,24 +191,22 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
                 {a.usable && !a.eligible && (
                   <span className="pill bg-surface-3 text-content-faint">{a.ineligible_reason}</span>
                 )}
-                {a.utilization != null && a.usable && (
-                  <span
-                    className={`ml-auto pill ${
-                      a.utilization >= 90
-                        ? "bg-danger/15 text-danger"
-                        : a.utilization >= 70
-                          ? "bg-warning/15 text-warning"
-                          : "bg-success/12 text-success"
-                    }`}
-                    title="Plan usage"
-                  >
-                    {Math.round(a.utilization)}% used
-                  </span>
-                )}
                 {a.in_flight > 0 && (
-                  <span className="text-[11px] text-accent">{a.in_flight} active</span>
+                  <span className="ml-auto text-[11px] text-accent">{a.in_flight} active</span>
                 )}
               </div>
+
+              {/* Plan usage: both windows with their reset times (server-cached ~60s). */}
+              {a.usable && a.auth_mode !== "api_key" && (
+                <div className="mt-2.5">
+                  <PlanWindowBars windows={fromAccount(a)} />
+                  {a.plan_error && (
+                    <p className="mt-1 truncate text-[11px] text-warning/90" title={a.plan_error}>
+                      Couldn't refresh plan usage: {a.plan_error}
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="flex items-center gap-2 mt-2.5 flex-wrap text-[12px]">
                 {a.usable && (

@@ -30,7 +30,9 @@ EVENT_TYPES = (
     "thinking.delta",  # streaming reasoning; data: {text}
     "tool.use",        # agent invoked a tool; data: {id, name, input}
     "tool.result",     # tool returned; data: {id, name, output, is_error}
-    "turn.complete",   # terminal success; data: {text, model, usage, cost_usd, stop_reason, cli_session_id}
+    "turn.complete",   # terminal success; data: {text, model, usage, cost_usd, cost_kind, stop_reason, cli_session_id}
+                       #   cost_usd = this turn's API-equivalent cost when cost_kind == "turn"
+                       #   ("none": the engine reports no cost; unmarked = legacy, see services.turn_cost)
     "error",           # terminal failure; data: {code, message}  (code "turn.interrupted" = user pressed Stop)
     "notice",          # NON-terminal warning/info shown inline; data: {level, message, code}
     "session.info",    # CLI capabilities (tools, slash commands, skills, MCP servers…); not persisted as an event

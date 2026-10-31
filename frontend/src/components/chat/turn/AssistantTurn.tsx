@@ -10,6 +10,7 @@ import { fmtMs } from "./toolMeta";
 import TurnChangesCard from "../../changes/TurnChangesCard";
 import { relTime, absTime } from "../../admin/format";
 import { useChatStore } from "../../../stores/chatStore";
+import TurnCost from "../TurnCost";
 
 type Segment =
   | { kind: "text"; text: string }
@@ -89,12 +90,12 @@ function Footer({ turn }: { turn: Turn }) {
     dur && `worked ${dur}`,
     turn.tools.length ? `${turn.tools.length} tool${turn.tools.length > 1 ? "s" : ""}${failed ? ` (${failed} failed)` : ""}` : null,
     tk,
-    turn.costUsd ? `$${turn.costUsd.toFixed(4)}` : null,
   ].filter(Boolean);
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-[10.5px] text-content-faint">
       {turn.status === "interrupted" && <span className="pill bg-surface-3 text-content-dim">Stopped</span>}
       <span className="font-mono">{parts.join(" · ")}</span>
+      <TurnCost turn={turn} />
       {turn.endedAt ? (
         <span title={absTime(new Date(turn.endedAt).toISOString())}>· {relTime(new Date(turn.endedAt).toISOString())}</span>
       ) : null}

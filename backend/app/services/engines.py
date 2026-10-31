@@ -73,6 +73,8 @@ class EngineManager:
                 "running_tasks": len(s.engine.running_tasks),
                 "idle_s": int(now - s.engine.last_activity),
                 "account": getattr(s.lease, "label", None),
+                "account_id": getattr(s.lease, "account_id", None),
+                "cost_total_usd": round(s.engine.cost_total, 4),
             }
             for sid, s in self._slots.items()
             if s.engine.alive
@@ -164,7 +166,8 @@ class EngineManager:
                 })
                 return
             if ev.type == "error" and engine.interrupt_requested:
-                ev = ProviderEvent(type="error", data={"code": "turn.interrupted", "message": "Stopped by user"})
+                # (keeps the stopped turn's usage / cost)
+                ev = ProviderEvent(type="error", data={**ev.data, "code": "turn.interrupted", "message": "Stopped by user"})
             if ev.type in _TERMINAL and inbox is not None:
                 inbox.close()  # later instructions become the next turn
             yield ev

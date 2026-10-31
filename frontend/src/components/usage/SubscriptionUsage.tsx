@@ -1,17 +1,7 @@
 import { useEffect, useState } from "react";
 import { getSubscription, type SubscriptionUsage as Sub } from "../../api/usage";
+import { resetsIn, resetsOn, toMs } from "../../lib/usage";
 import Icon from "../ui/Icon";
-
-function resetIn(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const ms = new Date(iso).getTime() - Date.now();
-  if (ms <= 0) return "soon";
-  const m = Math.floor(ms / 60000);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
-}
 
 function barColor(pct: number): string {
   if (pct >= 90) return "from-danger to-danger";
@@ -28,7 +18,9 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Meter({ label, percent, resets }: { label: string; percent: number; resets: string | null | undefined }) {
+function Meter({ label, percent, resets, kind }: { label: string; percent: number; resets: string | null | undefined; kind?: string }) {
+  // 5-hour: a countdown; weekly windows: the weekday + time they reset.
+  const reset = kind === "five_hour" ? resetsIn(toMs(resets)) : resetsOn(toMs(resets));
   return (
     <div className="py-2">
       <div className="flex items-center justify-between mb-1.5">
@@ -41,7 +33,7 @@ function Meter({ label, percent, resets }: { label: string; percent: number; res
           style={{ width: `${Math.min(100, Math.max(2, percent))}%` }}
         />
       </div>
-      {resets && <div className="mt-1 text-[11px] text-content-faint">Resets in {resetIn(resets)}</div>}
+      {reset && <div className="mt-1 text-[11px] text-content-faint">{reset[0].toUpperCase() + reset.slice(1)}</div>}
     </div>
   );
 }
@@ -88,7 +80,7 @@ export default function SubscriptionUsage({ provider, accountId }: { provider: s
       <div>
         <div className="text-[11px] uppercase tracking-wider text-content-faint mb-1">Usage</div>
         {(sub.windows || []).map((w, i) => (
-          <Meter key={i} label={w.label} percent={w.percent} resets={w.resets_at} />
+          <Meter key={i} label={w.label} percent={w.percent} resets={w.resets_at} kind={w.kind} />
         ))}
         {(sub.windows || []).length === 0 && (
           <p className="text-sm text-content-faint py-2">No active limits.</p>

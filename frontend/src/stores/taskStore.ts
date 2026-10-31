@@ -1,17 +1,14 @@
 import { create } from "zustand";
 import { allTasks, listTasks } from "../api/sessions";
-import type { PlanUsage, TaskInfo } from "../types";
+import type { TaskInfo } from "../types";
 
-// Background tasks (live from task.state messages + loaded per session) and
-// the latest plan usage the engine reported.
+// Background tasks (live from task.state messages + loaded per session).
 interface TaskState {
   bySession: Record<string, TaskInfo[]>;
   all: TaskInfo[];
-  usage: PlanUsage | null;
   loadSession: (sid: string) => Promise<void>;
   loadAll: () => Promise<void>;
   upsert: (sid: string, t: TaskInfo) => void;
-  setUsage: (u: PlanUsage) => void;
 }
 
 const merge = (list: TaskInfo[], t: TaskInfo) => {
@@ -25,7 +22,6 @@ const merge = (list: TaskInfo[], t: TaskInfo) => {
 export const useTaskStore = create<TaskState>((set) => ({
   bySession: {},
   all: [],
-  usage: null,
   loadSession: async (sid) => {
     const tasks = await listTasks(sid);
     set((s) => ({ bySession: { ...s.bySession, [sid]: tasks } }));
@@ -36,7 +32,6 @@ export const useTaskStore = create<TaskState>((set) => ({
       bySession: { ...s.bySession, [sid]: merge(s.bySession[sid] || [], { ...t, session_id: sid }) },
       all: merge(s.all, { ...t, session_id: sid }),
     })),
-  setUsage: (u) => set({ usage: u }),
 }));
 
 export const isRunning = (t?: TaskInfo | null) => !!t && (t.status === "running" || t.status === "pending");
