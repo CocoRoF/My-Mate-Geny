@@ -2,11 +2,14 @@
  * The Mate view (sidebar → Mate): switcher, avatar stage, conversation, composer, settings.
  * Desktop: like Geny's VTuber tab — the avatar gets half the width (big, bottom-anchored, scaled to the height), the
  * conversation the other half; Mate settings / Global settings open over the conversation half.
- * Phone: a compact (collapsible) stage on top, the conversation below, settings full screen.
+ * Phone: a compact (collapsible) stage on top, the conversation below, settings full screen. While the on-screen
+ * keyboard is up the stage steps aside (the header keeps her picture, name and mood) so the conversation gets the
+ * room; it comes back when the keyboard goes.
  */
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { importLocal } from "../../api/mates";
 import { usePhone } from "../../lib/device";
+import { useKeyboardOpen } from "../../lib/keyboard";
 import { useBackHandler } from "../../lib/back";
 import { useMateStore } from "../../stores/mateStore";
 import { useMateConversation } from "../../mate/useMateConversation";
@@ -14,7 +17,7 @@ import { OPEN_GLOBAL_SETTINGS_EVENT } from "../../mate/live2dCore";
 import { MenuButton } from "../layout/MobileTopBar";
 import Icon from "../ui/Icon";
 import { DropOverlay, useFileDrop } from "../composer/useFileDrop";
-import MateComposer from "./MateComposer";
+import MateComposer, { ReadAloudToggle } from "./MateComposer";
 import MateMessages from "./MateMessages";
 import MateStage, { BuiltinBadge, MateThumb, MOOD_LABEL } from "./MateStage";
 
@@ -36,6 +39,7 @@ export default function MateView() {
   // drop files on the conversation, or paste them anywhere on the page: they go to the composer
   const { dragging, dropProps } = useFileDrop(conv.sessionId);
   const phone = usePhone();
+  const keyboard = useKeyboardOpen();
   // one panel slot: Mate settings (local) or Global settings (the store's: Mate settings and anything else open it
   // with openGlobal(section); inside Mate settings it swaps itself for Global settings)
   const [mateOpen, setMateOpen] = useState(false);
@@ -85,6 +89,8 @@ export default function MateView() {
   }, [switcher]);
   const [newMate, setNewMate] = useState(false);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === "1");
+  // phones: the stage is out of the way (hidden by the user, or the keyboard is up)
+  const stageAway = collapsed || keyboard;
   const [resetting, setResetting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -201,9 +207,14 @@ export default function MateView() {
             </>
           )}
         </div>
-        {phone && collapsed && MOOD_LABEL[conv.mood] && <span className="truncate text-[11.5px] text-content-faint">{MOOD_LABEL[conv.mood]}</span>}
-        <div className="ml-auto flex items-center gap-0.5">
-          {phone && (
+        {phone && stageAway && MOOD_LABEL[conv.mood] && (
+          <span className="min-w-0 truncate text-[11.5px] text-content-faint" data-testid="mate-header-mood">
+            {MOOD_LABEL[conv.mood]}
+          </span>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          {phone && <ReadAloudToggle mate={mate} conv={conv} className="btn-ghost !px-2.5" size={16} />}
+          {phone && !keyboard && (
             <button onClick={toggleCollapsed} className="btn-ghost !px-2.5" title={collapsed ? "Show the avatar" : "Hide the avatar"}>
               <Icon name={collapsed ? "chevron-down" : "chevron-up"} size={16} />
             </button>
@@ -264,8 +275,9 @@ export default function MateView() {
       {dragging && <DropOverlay hint={`${mate.name} sees images and reads documents — and can pass them on to a chat`} />}
       {banners}
       <MateMessages turns={conv.turns} emptyText={conv.connection === "open" ? `Say hi to ${mate.name}.` : "Loading…"} />
-      <div className="shrink-0 px-3 pb-3 pt-1 sm:px-4">
-        <MateComposer mate={mate} conv={conv} />
+      <div className={`shrink-0 px-3 pt-1 sm:px-4 ${keyboard ? "pb-2" : "pb-3"}`}>
+        {/* phones: read-aloud lives in the header, the composer row is + · text · mic · send */}
+        <MateComposer mate={mate} conv={conv} showVoiceToggle={!phone} />
       </div>
     </div>
   );
@@ -289,6 +301,7 @@ export default function MateView() {
           <div className="min-h-0 flex-1">{settingsPanel}</div>
         ) : (
           <>
+            {/* (the keyboard only hides it: her body stays loaded for when it goes) */}
             {!collapsed && (
               <MateStage
                 mate={mate}
@@ -296,7 +309,7 @@ export default function MateView() {
                 react={conv.react}
                 caption={conv.caption}
                 size="sm"
-                className="h-[36dvh] shrink-0 border-b border-border/60 bg-gradient-to-b from-surface-2/40 to-transparent pt-1"
+                className={`h-[36dvh] shrink-0 border-b border-border/60 bg-gradient-to-b from-surface-2/40 to-transparent pt-1 ${keyboard ? "!hidden" : ""}`}
                 onTap={() => conv.poke("greet")}
               />
             )}

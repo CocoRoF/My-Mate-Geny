@@ -302,3 +302,6 @@ html.mate-transparent body,
 html.mate-transparent #root {
   background: transparent !important;
 }
+
+/* the on-screen keyboard is up (lib/keyboard.ts): it covers the home indicator, no inset needed above it */
+html[data-keyboard="open"] .pb-safe { padding-bottom: 0; }

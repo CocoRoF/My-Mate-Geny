@@ -1,7 +1,8 @@
 /**
  * The mate's composer: the Chat composer's machinery (components/composer: drafts + files + queue per conversation,
  * paste / + menu / drop, steer while she answers, Queue, IME-safe Enter, Escape stops, auto-grow, `/` commands) in
- * the mate's chrome, plus push-to-talk and the read-aloud toggle. Drafts are keyed by the mate's session id.
+ * the mate's chrome, plus push-to-talk and the read-aloud toggle (phones: in the Mate view's header, so the row is
+ * just + · text · mic · send). Drafts are keyed by the mate's session id.
  */
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { Mate } from "../../api/mates";
@@ -71,8 +72,6 @@ function Composer({
   escapeStops,
   attachDirect = false,
 }: Props & { sid: string }) {
-  const muted = useMateStore((s) => s.muted);
-  const reading = mate.voice.auto_read && !muted && mate.voice.tts.engine !== "off";
   const { send, steer, stop, setListening } = conv;
 
   // a draft written before drafts were per conversation ("mate:<id>") moves over once
@@ -146,14 +145,6 @@ function Composer({
     pressAt.current = 0;
   };
 
-  const toggleRead = () => {
-    const st = useMateStore.getState();
-    if (reading) st.setMuted(true);
-    else if (muted) st.setMuted(false);
-    else void st.patch(mate.id, { voice: { auto_read: true } }).catch(() => {});
-    if (reading) conv.stopVoice();
-  };
-
   const btn = `grid shrink-0 place-items-center rounded-full transition ${compact ? "h-8 w-8" : "h-9 w-9 touch:h-10 touch:w-10"}`;
   const micTitle = mic.unavailable
     ? mic.unavailable
@@ -225,17 +216,7 @@ function Composer({
             </button>
             {c.attachOpen && <AttachMenu onPick={c.pickFile} onClose={() => c.setAttachOpen(false)} />}
           </div>
-          {showVoiceToggle && (
-            <button
-              onClick={toggleRead}
-              className={`${btn} ${reading ? "text-accent hover:bg-accent/10" : "text-content-faint hover:text-content hover:bg-surface-3"}`}
-              title={reading ? "Reading replies aloud — click to mute" : "Read replies aloud"}
-              aria-pressed={reading}
-              data-testid="mate-read-toggle"
-            >
-              <Icon name={reading ? "volume" : "volume-off"} size={compact ? 15 : 17} />
-            </button>
-          )}
+          {showVoiceToggle && <ReadAloudToggle mate={mate} conv={conv} className={btn} size={compact ? 15 : 17} />}
           <textarea
             {...c.textareaProps}
             value={recording && mic.interim ? mic.interim : input}
@@ -243,7 +224,7 @@ function Composer({
             onBlur={() => !recording && setListening(false)}
             placeholder={ph}
             className={`min-w-0 flex-1 resize-none bg-transparent px-2 text-content placeholder:text-content-faint outline-none ${
-              compact ? "py-1.5 text-[13.5px]" : "py-2 text-sm"
+              compact ? "py-1.5 text-[13.5px]" : "py-2 text-sm touch:py-2.5"
             }`}
             data-testid="mate-input"
           />
@@ -303,7 +284,7 @@ function Composer({
             </button>
           )}
         </div>
-        <FileInputs photoRef={c.photoRef} fileRef={c.fileRef} onFiles={c.addFiles} />
+        <FileInputs photoRef={c.photoRef} cameraRef={c.cameraRef} fileRef={c.fileRef} onFiles={c.addFiles} />
       </div>
       {(notice || failed > 0 || !compact) && (
         <div className="mx-auto flex max-w-2xl items-center gap-2 px-2 pt-1 text-[10.5px] text-content-faint" data-testid="mate-composer-hint">
@@ -323,5 +304,30 @@ function Composer({
         </div>
       )}
     </div>
+  );
+}
+
+/** Read replies aloud on/off (the composer's row on wide screens; the Mate view's header on phones). */
+export function ReadAloudToggle({ mate, conv, className, size = 17 }: { mate: Mate; conv: MateConversation; className: string; size?: number }) {
+  const muted = useMateStore((s) => s.muted);
+  const reading = mate.voice.auto_read && !muted && mate.voice.tts.engine !== "off";
+  const toggle = () => {
+    const st = useMateStore.getState();
+    if (reading) st.setMuted(true);
+    else if (muted) st.setMuted(false);
+    else void st.patch(mate.id, { voice: { auto_read: true } }).catch(() => {});
+    if (reading) conv.stopVoice();
+  };
+  return (
+    <button
+      onClick={toggle}
+      className={`${className} ${reading ? "text-accent hover:bg-accent/10" : "text-content-faint hover:text-content hover:bg-surface-3"}`}
+      title={reading ? "Reading replies aloud — click to mute" : "Read replies aloud"}
+      aria-label={reading ? "Reading replies aloud — tap to mute" : "Read replies aloud"}
+      aria-pressed={reading}
+      data-testid="mate-read-toggle"
+    >
+      <Icon name={reading ? "volume" : "volume-off"} size={size} />
+    </button>
   );
 }

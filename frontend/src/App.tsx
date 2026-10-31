@@ -61,7 +61,8 @@ export default function App() {
   };
 
   return (
-    <div className="h-[100dvh] flex overflow-hidden text-content">
+    // the visible height: 100dvh, or what the keyboard leaves where the layout viewport doesn't shrink (lib/keyboard.ts)
+    <div className="h-[var(--app-h,100dvh)] flex overflow-hidden text-content">
       <div className="hidden md:flex">
         <Sidebar />
       </div>

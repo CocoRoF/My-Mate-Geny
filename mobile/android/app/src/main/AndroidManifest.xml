@@ -37,6 +37,19 @@
         </provider>
     </application>
 
+    <!-- The attach menu's Camera (<input capture>): Capacitor's BridgeWebChromeClient
+         only launches the camera when resolveActivity(IMAGE_CAPTURE) finds an app,
+         and since Android 11 package visibility hides every camera app unless the
+         intent is declared here — without this it silently opens the photo picker. -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.VIDEO_CAPTURE" />
+        </intent>
+    </queries>
+
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />

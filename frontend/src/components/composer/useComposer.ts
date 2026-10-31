@@ -3,7 +3,7 @@
  *
  * - text, attached files and queued messages belong to the conversation (draftStore / composerStore, keyed by its
  *   session id): switching views or reloading keeps them;
- * - files: the + menu pickers, paste (Ctrl/⌘+V, named like `pasted-<stamp>.png`), drops — each uploads at once;
+ * - files: the + menu pickers (Photos, Camera on touch screens, Files), paste (Ctrl/⌘+V, named like `pasted-<stamp>.png`), drops — each uploads at once;
  * - sending: idle → a new turn; while a turn runs Enter steers it ("Add now"), Queue holds it for after the turn;
  *   a steer the turn could no longer take comes back (bounced) and is queued; queued messages go one per turn end;
  * - keys: Enter sends on a desktop, Shift+Enter is a newline; on touch screens Enter is a newline (lib/device.ts)
@@ -18,6 +18,7 @@ import { useComposerStore } from "../../stores/composerStore";
 import { useDraftStore, type QueuedMessage } from "../../stores/draftStore";
 import type { Attachment } from "../../types";
 import { triggerAt, type MenuItem } from "../chat/ComposerMenu";
+import type { PickKind } from "./ComposerParts";
 import { filesFromClipboard } from "./files";
 
 export type ComposerAction = NonNullable<MenuItem["action"]>;
@@ -75,6 +76,7 @@ export function useComposer(o: ComposerOptions) {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const photoRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const touch = useTouchFirst();
   const sendsOnEnter = o.enterSends ?? !touch;
@@ -109,10 +111,11 @@ export function useComposer(o: ComposerOptions) {
     ta.style.height = Math.min(ta.scrollHeight, maxHeight, Math.round(window.innerHeight * 0.4)) + "px";
   }, [maxHeight]);
 
-  // A saved draft is back (or the text changed from elsewhere): size the box to it.
+  // A saved draft is back (or the text changed from elsewhere): size the box to it. The placeholder (which the
+  // box's height also follows while it is empty) changes with streaming and attachments.
   useEffect(() => {
     requestAnimationFrame(grow);
-  }, [input, grow]);
+  }, [input, grow, isStreaming, items.length]);
   useEffect(() => {
     if (input) setCaret(input.length);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -139,9 +142,10 @@ export function useComposer(o: ComposerOptions) {
       if (!files.length) return;
       add(sid, files);
       setNotice("");
-      taRef.current?.focus();
+      // (a touch screen: no keyboard popping up over the conversation — the tray and ↑ are right there)
+      if (!touch) taRef.current?.focus();
     },
-    [add, sid],
+    [add, sid, touch],
   );
 
   const runAction = useCallback(
@@ -267,9 +271,9 @@ export function useComposer(o: ComposerOptions) {
     }
   };
 
-  const pickFile = (kind: "photo" | "file") => {
+  const pickFile = (kind: PickKind) => {
     setAttachOpen(false);
-    (kind === "photo" ? photoRef : fileRef).current?.click();
+    (kind === "photo" ? photoRef : kind === "camera" ? cameraRef : fileRef).current?.click();
   };
 
   /** spread on the <textarea> */
@@ -302,6 +306,7 @@ export function useComposer(o: ComposerOptions) {
     setText,
     taRef,
     photoRef,
+    cameraRef,
     fileRef,
     items,
     ready,

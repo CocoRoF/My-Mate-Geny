@@ -4,10 +4,12 @@ import App from "./App";
 import { installClientErrorReporter } from "./api/admin";
 import { disableLoginRedirect } from "./api/client";
 import { installNativeBridge } from "./native";
+import { watchKeyboard } from "./lib/keyboard";
 import "./index.css";
 
 installClientErrorReporter();
 installNativeBridge();
+watchKeyboard(); // the on-screen keyboard: <html data-keyboard>, --app-h (lib/keyboard.ts)
 
 // Full-page surfaces without the console:
 //   /?surface=avatar-lab                          avatar renderer lab (lazy chunk)
