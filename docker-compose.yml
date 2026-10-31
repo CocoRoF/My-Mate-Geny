@@ -38,7 +38,7 @@ services:
       # GENY_WORKSPACES=/path/on/host (owned by GENY_UID) to use host folders.
       - ${GENY_WORKSPACES:-geny-workspaces}:/workspaces
       # Optional: reuse the Claude / Codex CLI logins of your host user
-      # instead of logging in from the console (Providers / Accounts).
+      # instead of logging in from the console (Providers).
       # Run `claude` / `codex login` on the host first so these exist.
       # - ${HOME}/.claude:/home/geny/.claude
       # - ${HOME}/.claude.json:/home/geny/.claude.json

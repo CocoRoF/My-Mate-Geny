@@ -15,7 +15,7 @@ the lockfiles / installed package metadata; re-check before each release.
 | Built-in mates **Estelle, Chaerin, Seoa** — persona text, cover/still images (`.webp`), idle/reaction video clips (`.mp4`), rig files | `backend/app/mate/builtin/mates/{estelle,chaerin,seoa}.json`, `backend/app/mate/builtin/assets/{estelle,chaerin,seoa}/` (~39 MB) | CocoRoF / Ailism — **all rights reserved**, no licence granted by this repository | Produced for the Ailism mate apps. Images/videos/voices were AI-generated with third-party services (e.g. Higgsfield); their output terms apply to the owner, not to downstream users. Forks must not reuse these characters without the owner's permission. |
 | Chaerin's reference voice clip | `backend/app/mate/builtin/voices/chaerin/ref.wav` | CocoRoF / Ailism — all rights reserved | Synthetic voice (Higgsfield Seed Audio, per `voice.json`), not a recording of a real person. Estelle/Seoa only carry OmniVoice voice-design prompts. |
 | Live2D sample model **Niziiro Mao (PRO)** | `backend/app/mate/builtin/assets/mao/` (`runtime/*.moc3`, textures, motions, expressions, `ReadMe.txt`) | Live2D Inc. — [Free Material License Agreement](https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html) + [Terms of Use for Live2D Cubism Sample Data](https://www.live2d.com/eula/live2d-sample-model-terms_en.html) | See section 1.1. |
-| App icons | `assets/`, `frontend/public/`, `mobile/`, `desktop/` icons | CocoRoF | Project branding; covered by the Apache licence of the repo only insofar as the owner says so. Forks should replace them. |
+| **Geny logo** (hooded girl with headphones + "Geny" lettering) and every icon generated from it — favicons, PWA/maskable icons, in-app logo, desktop and Android app icons | master `assets/geny-logo.png`; generated into `assets/`, `frontend/public/`, `desktop/build/`, `mobile/assets/` (+ Android `mipmap-*`) by `scripts/make-icons.py` | CocoRoF — project artwork, **all rights reserved** unless the owner states otherwise | Same owner decision as the characters. Forks should rebrand: replace the master (square, transparent PNG) and run `python3 scripts/make-icons.py`. |
 
 ### 1.1 Live2D sample model (Mao) — obligations
 
@@ -118,5 +118,7 @@ Gradle (Apache-2.0).
    credit line visible in the UI/README), or drop the files and let users
    download the model from Live2D and import it (Mate settings > Avatar >
    import zip / server folder).
-3. Never commit `live2dcubismcore*.js`, OmniVoice weights, or a Docker image
+3. Decide the licence of the Geny logo/icons (all rights reserved = forks
+   must rebrand; or a permissive licence / trademark-style usage policy).
+4. Never commit `live2dcubismcore*.js`, OmniVoice weights, or a Docker image
    containing Claude Code to a public registry without checking their terms.

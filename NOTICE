@@ -14,6 +14,8 @@ License, among them:
     Software License; NOT bundled, downloaded only after the user accepts it)
   - Built-in mate characters Estelle / Chaerin / Seoa (artwork, video, voice)
     (CocoRoF / Ailism - all rights reserved unless stated otherwise)
+  - The Geny logo (assets/geny-logo.png) and every icon generated from it
+    (CocoRoF - project artwork, all rights reserved unless stated otherwise)
   - Claude Code CLI                          (Anthropic - commercial terms;
     installed into the Docker image at build time, not distributed here)
   - OpenAI Codex CLI                         (OpenAI - Apache-2.0)
