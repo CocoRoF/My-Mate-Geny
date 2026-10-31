@@ -12,6 +12,8 @@ Sources that write here:
 * ``auth``      — failed logins, IP bans, manual unbans
 * ``client``    — uncaught errors reported by the browser
 * ``system``    — WARNING+ records from Python logging (uvicorn, asyncssh, …)
+* ``monitor``   — system monitor alerts: memory / swap / disk / CPU / GPU
+  thresholds crossed and recovered, OOM kills, backend restarts (sysmon)
 
 Writes never raise: logging must not be able to break the request it is
 describing. Rows beyond ``settings.log_max_rows`` are pruned oldest-first.
@@ -33,7 +35,7 @@ from app.services._ids import now_iso
 LEVELS = ("error", "warning", "info")
 SOURCES = (
     "provider", "tool", "workspace", "account", "upload",
-    "http", "ws", "auth", "client", "system",
+    "http", "ws", "auth", "client", "system", "monitor",
 )
 
 _MAX_MESSAGE = 4000

@@ -96,6 +96,34 @@ class Settings(BaseSettings):
     # Directory of the built frontend (served as the SPA). Empty -> disabled.
     static_dir: str = ""
 
+    # ---- system monitor (Admin -> System, docs/monitoring.md) ----
+    monitor_enabled: bool = True
+    monitor_interval_s: float = 2.0
+    monitor_ring_minutes: float = 30          # live view buffer at full resolution
+    monitor_keep_1m_days: float = 7           # 1-minute aggregates
+    monitor_keep_15m_days: float = 90         # 15-minute aggregates
+    monitor_disk_paths: str = ""              # extra mounts to watch (comma-separated); /home + data dirs always
+    monitor_gpu: str = "auto"                 # auto | nvidia | amd | off
+    # Alert thresholds (logged to the admin log with hysteresis).
+    monitor_mem_warn_pct: float = 85
+    monitor_mem_crit_pct: float = 95
+    monitor_swap_warn_pct: float = 80          # some swap use is normal (idle pages); growth matters more
+    monitor_swap_growth_mb: int = 256         # swap grew this much within 5 minutes
+    monitor_psi_full_warn: float = 5          # PSI memory "full" avg10 %
+    monitor_disk_warn_pct: float = 90
+    monitor_disk_crit_pct: float = 97
+    monitor_engine_rss_gb: float = 2.0        # one engine (incl. its child processes)
+    monitor_cpu_sat_pct: float = 95
+    monitor_cpu_sat_s: float = 60
+    monitor_gpu_temp_c: float = 85
+    monitor_zombie_warn: int = 50
+    # Host memory guard (e.g. ~/server-hardening memguard): drawn on the charts.
+    monitor_guard: str = "auto"               # auto (detect memguard) | on | off
+    monitor_guard_avail: str = ""             # memguard --sys-avail (default 1.5G)
+    monitor_guard_avail_hard: str = ""        # memguard --sys-avail-hard (default 600M)
+    monitor_guard_psi_full: float = 40        # memguard --psi-full
+    monitor_user_ceiling: str = ""            # user-slice memory ceiling to show (e.g. 22G)
+
     # ---- derived helpers ----
 
     @property
