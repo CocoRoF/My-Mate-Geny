@@ -20,8 +20,9 @@ access and deploy accordingly:
 
 - Change the default login (`admin` / `geny-admin`) immediately; see
   [docs/auth.md](docs/auth.md).
-- Serve it over HTTPS (`COOKIE_SECURE=true`) or keep it on localhost / a
-  private network. The quick-start compose binds to 127.0.0.1.
+- Serve it over HTTPS (the login cookie is then `Secure`; `COOKIE_SECURE=true`
+  forces that) or keep it on localhost / a private network. The quick-start
+  compose binds to 127.0.0.1.
 - Run it as an unprivileged user (the Docker image does) and mount only the
   folders the agents need.
 - Back up and protect `~/.hr-harnessor/vault.key` and `session.key`; anyone

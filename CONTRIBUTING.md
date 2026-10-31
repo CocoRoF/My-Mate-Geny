@@ -17,7 +17,7 @@ See [README.md → Development](README.md#development). In short:
 
 ```bash
 cd backend && python3 -m venv .venv && . .venv/bin/activate && pip install -e '.[dev]'
-cp .env.example .env            # COOKIE_SECURE=false for http://localhost
+cp .env.example .env            # optional: every setting has a default
 uvicorn app.main:app --reload --port 8080
 
 cd frontend && npm ci && npm run dev

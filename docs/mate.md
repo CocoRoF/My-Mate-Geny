@@ -14,9 +14,9 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
 ## 0. Naming
 
 - Product name shown everywhere: **My Mate Geny** (short: "Geny").
-- Internal identifiers stay (appId `me.hrletsgo.harnessor`, Android package,
-  repo/dir names, cookie/localStorage keys, domain) so existing installs update
-  in place and logins survive.
+- Internal identifiers stay (the desktop/Android app id and Java package, the
+  `~/.hr-harnessor` state directory, cookie/localStorage keys) so existing
+  installs update in place and logins survive.
 
 ## 1. Mate model (backend, JSON over `/api/mates`)
 
@@ -253,12 +253,13 @@ Asset upload / import:
 
 ### Built-in mates (shipped with the app)
 
-The ailism characters — **Chaerin** (한채린, the default on a new install),
-**Estelle**, **Seoa** — are bundled in `backend/app/mate/builtin/`
-(`mates/<key>.json` = the authors' original ailism content, `assets/<key>/`
-video clips + stills + `rig.json`, `voices/<key>/voice.json`). Order:
-`files.BUILTIN_ORDER` (chaerin, estelle, seoa, mao); the first one created on a
-new install is the default — an existing install keeps the user's default.
+Three characters are bundled in `backend/app/mate/builtin/`: **Han Chaerin**
+(한채린, the default on a new install), **Estelle** and **Seoa** — all video
+mates (`mates/<key>.json` = the authors' original ailism content,
+`assets/<key>/` video clips + stills + `rig.json`, `voices/<key>/voice.json`).
+Order: `files.BUILTIN_ORDER` (chaerin, estelle, seoa, then the optional `mao`,
+see below); the first one created on a new install is the default — an
+existing install keeps the user's default.
 
 **Personas are English** (`personas/<key>.json`): everything the authors wrote
 (tagline, profile, appearance, background, relationship, knowledge, world,
@@ -305,22 +306,50 @@ hash recorded — only when the persona is still the bundled one (for the mate's
 language); a mate whose persona the user edited keeps `customized`. The
 avatar-less "Geny" mate is only created when there is no mate at all.
 
-**Mao** (key `mao`, after the three) is a built-in **Live2D** mate: Live2D's
-free sample model *Niziiro Mao (PRO)* (Free Material License — its
-`ReadMe.txt` ships next to it in `assets/mao/`), a friendly secretary persona
-(`personas/mao.json`, English, names Mao/마오; `mates/mao.json` is our original
-Korean `{name, persona}` doc, kept as the pre-English baseline). `assets/<key>/live2d.json` makes a bundle Live2D: the fields of
-the Live2D avatar with `model` relative to the folder (validated: the model and
-its `.moc3` exist; motion groups named in `idle_group` / `emotion_motions` /
-`tap_motions` must exist). Our copy of `mao_pro.model3.json` names the sample's
-unnamed motion group (`Tap` = mtn_02–04, `Special` = the magic-effect
-special_01–03); taps on `HitAreaHead`/`HitAreaBody` play `Tap`; emotions map to
-the expressions by what they show (exp_01 neutral, exp_02 smile/laugh/agree/
-greet, exp_03 sleepy, exp_04 joy, exp_05 sad, exp_06 shy, exp_07 surprised,
-exp_08 angry — Geny's registry indexes pointed anger at the closed-eyes one).
-Files (nested folders too) are served from `/api/mates/builtin/mao/runtime/…`;
-the body renders once the Cubism Core is installed. The bundle hash covers
-nested files.
+**Mao (optional, not in the repository).** Live2D's sample model *Niziiro
+Mao (PRO)* may not be redistributed (Live2D Free Material License, art. 4.1.1),
+so the repository does not ship it. The built-in machinery still supports a
+bundled **Live2D** character: an install that adds `assets/mao/` (the model
+under `runtime/` plus Live2D's `ReadMe.txt`), `mates/mao.json` and
+`personas/mao.json` locally (all three are gitignored) gets Mao as a fourth
+built-in after the three. `assets/<key>/live2d.json` makes a bundle Live2D: the
+fields of the Live2D avatar with `model` relative to the folder (validated:
+the model and its `.moc3` exist; motion groups named in `idle_group` /
+`emotion_motions` / `tap_motions` must exist). Files (nested folders too) are
+served from `/api/mates/builtin/<key>/runtime/…`; the body renders once the
+Cubism Core is installed. The bundle hash covers nested files. Tests for Mao
+run only where it is present. Everyone else imports the sample like any other
+Live2D model (next section).
+
+### Using Live2D's free sample models
+
+Live2D publishes free sample models (Mao, Hiyori, Haru, …) that work as mate
+bodies. They are not part of My Mate Geny — download them yourself:
+
+1. Open Live2D's sample page, <https://www.live2d.com/en/learn/sample/>, pick
+   a model and download it, accepting Live2D's terms (the Free Material
+   License Agreement and the Terms of Use for Live2D Cubism Sample Data).
+   Read who may use them commercially — larger companies may use them only
+   internally.
+2. Install the **Live2D runtime** once: Mate → **Global settings → Live2D**,
+   accept the Cubism Core licence (the server downloads it from live2d.com).
+3. Mate → **Mate settings → Avatar → Import → Upload a zip** with the
+   downloaded zip (the importer finds the `*.model3.json` inside), or unpack
+   it on the server and enter the folder that contains `*.model3.json` under
+   **Folder on the server** (`POST /api/mates/import-local`). To create a new
+   mate from it instead: **New mate → Import from the server**.
+4. Tune it in the same tab (**Live2D model**): scale and shift, idle motion
+   group, and which expression / motion plays for each emotion. Without tap
+   settings every hit area plays the first non-idle motion group; a motion
+   group with an empty name (Mao has one) is renamed `Idle` / `Motion` on
+   import.
+
+**Credit line.** Works that use Live2D sample data must show *"This content
+uses sample data owned and copyrighted by Live2D Inc."* — put it wherever you
+publish or show the mate (a README, a stream overlay, an app's about page),
+keep the model's `ReadMe.txt`, and don't present your work as official
+Live2D content. The originals are authoritative; see
+[THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
 
 ## 3. Conversation = a session of kind "mate"
 

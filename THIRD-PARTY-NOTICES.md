@@ -14,14 +14,24 @@ the lockfiles / installed package metadata; re-check before each release.
 |---|---|---|---|
 | Built-in mates **Estelle, Chaerin, Seoa** — persona text, cover/still images (`.webp`), idle/reaction video clips (`.mp4`), rig files | `backend/app/mate/builtin/mates/{estelle,chaerin,seoa}.json`, `backend/app/mate/builtin/assets/{estelle,chaerin,seoa}/` (~39 MB) | CocoRoF / Ailism — **all rights reserved**, no licence granted by this repository | Produced for the Ailism mate apps. Images/videos/voices were AI-generated with third-party services (e.g. Higgsfield); their output terms apply to the owner, not to downstream users. Forks must not reuse these characters without the owner's permission. |
 | Chaerin's reference voice clip | `backend/app/mate/builtin/voices/chaerin/ref.wav` | CocoRoF / Ailism — all rights reserved | Synthetic voice (Higgsfield Seed Audio, per `voice.json`), not a recording of a real person. Estelle/Seoa only carry OmniVoice voice-design prompts. |
-| Live2D sample model **Niziiro Mao (PRO)** | `backend/app/mate/builtin/assets/mao/` (`runtime/*.moc3`, textures, motions, expressions, `ReadMe.txt`) | Live2D Inc. — [Free Material License Agreement](https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html) + [Terms of Use for Live2D Cubism Sample Data](https://www.live2d.com/eula/live2d-sample-model-terms_en.html) | See section 1.1. |
 | **Geny logo** (hooded girl with headphones + "Geny" lettering) and every icon generated from it — favicons, PWA/maskable icons, in-app logo, desktop and Android app icons | master `assets/geny-logo.png`; generated into `assets/`, `frontend/public/`, `desktop/build/`, `mobile/assets/` (+ Android `mipmap-*`) by `scripts/make-icons.py` | CocoRoF — project artwork, **all rights reserved** unless the owner states otherwise | Same owner decision as the characters. Forks should rebrand: replace the master (square, transparent PNG) and run `python3 scripts/make-icons.py`. |
 
-### 1.1 Live2D sample model (Mao) — obligations
+### 1.1 Live2D sample models (e.g. Mao) — not bundled, obligations when you import one
 
-Mao is a *Live2D Original Character*. Using it requires accepting both the Free
-Material License Agreement and the Sample Data Terms of Use. In summary (read
-the originals; the Japanese text prevails):
+The repository does **not** contain any Live2D sample model: the Free Material
+License forbids redistributing "all or part of the Material to third parties"
+(art. 4.1.1; "Redistribute" includes putting copies on an internet-accessible
+server). Earlier development snapshots carried *Niziiro Mao (PRO)*; it is no
+longer part of the source tree, and its paths stay gitignored
+(`backend/app/mate/builtin/assets/mao/`, `mates/mao.json`, `personas/mao.json`)
+for installs that keep a local copy.
+
+Users who download a sample model from
+[Live2D's sample page](https://www.live2d.com/en/learn/sample/) and import it
+(Mate settings → Avatar → Import, see [docs/mate.md](docs/mate.md#using-live2ds-free-sample-models))
+accept the [Free Material License Agreement](https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html)
+and the [Terms of Use for Live2D Cubism Sample Data](https://www.live2d.com/eula/live2d-sample-model-terms_en.html)
+themselves. In summary (read the originals; the Japanese text prevails):
 
 - **Who may use it commercially:** "General Users" (individuals, groups) and
   "Small-Scale Enterprises" (latest annual sales under 10 million JPY, not
@@ -33,23 +43,18 @@ the originals; the Japanese text prevails):
   conditions set by Live2D Inc."* and *"This content itself is created at the
   author's sole discretion."*). Do not remove or change `ReadMe.txt` or other
   copyright notices.
-- **Redistribution:** the agreement forbids redistributing "all or part of the
-  Material to third parties" (art. 4.1.1; "Redistribute" includes putting
-  copies on an internet-accessible server), while allowing use, alteration and
-  distribution of *works* made with Original Characters. Shipping the raw
-  model files inside a public repository is therefore at best a grey zone.
+- **Redistribution:** don't redistribute the model files (e.g. by committing
+  them to a public fork or shipping them inside an app); use, alteration and
+  distribution of *works* made with Original Characters are allowed.
 - **Prohibited:** use with middleware competing with Live2D, content Live2D
   deems sexual/violent/discriminatory/political, implying the work is official
   Live2D content, selling/distributing models derived from the material.
-
-The model was taken from the owner's Geny project
-(`backend/static/live2d-models/mao_pro`); `live2d.json` and our copy of
-`mao_pro.model3.json` add motion-group names (an alteration).
 
 ### 1.2 Not bundled (downloaded or installed separately)
 
 | Component | How it gets there | Licence |
 |---|---|---|
+| **Live2D sample models** (Mao, Hiyori, …) | Downloaded by the user from [live2d.com](https://www.live2d.com/en/learn/sample/) and imported into a mate (stored under `~/.hr-harnessor/mates/<id>/assets/`) | Live2D Free Material License + Sample Data Terms (section 1.1) — never commit them |
 | **Live2D Cubism Core** (`live2dcubismcore.min.js`) | Downloaded by the server from `cubism.live2d.com` only after the user ticks the licence checkbox in Mate settings; stored under `~/.hr-harnessor/mates/_runtime/` | Live2D Proprietary Software License Agreement — never commit it |
 | **Claude Code CLI** (`@anthropic-ai/claude-code`) | `npm install -g` in the Dockerfile, or installed by the user | Anthropic commercial terms. Building an image is fine; **publishing a prebuilt image** redistributes it — check Anthropic's terms first |
 | **OpenAI Codex CLI** (`@openai/codex`) | `npm install -g` in the Dockerfile | Apache-2.0 |
@@ -107,18 +112,15 @@ Capacitor 8 (MIT). Transitive: MIT / ISC / Apache-2.0 / BlueOak / BSD / 0BSD
 @capacitor/assets). The Android project pulls AndroidX / Google libraries via
 Gradle (Apache-2.0).
 
-## 4. Publishing checklist (content)
+## 4. Notes for forks and redistributors
 
-1. Decide whether Estelle / Chaerin / Seoa ship in the public repo at all.
-   If yes, state their licence explicitly (e.g. "all rights reserved, for use
-   with My Mate Geny only" or a CC licence) in this file and in
-   `backend/app/mate/builtin/`. If no, remove them before the first public
-   commit (they are also in git history, see the release notes of the audit).
-2. Decide on Mao: keep it (accepting the redistribution grey zone, keeping the
-   credit line visible in the UI/README), or drop the files and let users
-   download the model from Live2D and import it (Mate settings > Avatar >
-   import zip / server folder).
-3. Decide the licence of the Geny logo/icons (all rights reserved = forks
-   must rebrand; or a permissive licence / trademark-style usage policy).
-4. Never commit `live2dcubismcore*.js`, OmniVoice weights, or a Docker image
-   containing Claude Code to a public registry without checking their terms.
+1. The built-in characters (Han Chaerin, Estelle, Seoa) and the Geny logo are
+   **all rights reserved**: they are in this repository so My Mate Geny works
+   out of the box, not under the Apache License. A fork that publishes its own
+   builds should remove or replace them (`backend/app/mate/builtin/`,
+   `assets/geny-logo.png` + `python3 scripts/make-icons.py`) unless the owner
+   agreed.
+2. Never commit `live2dcubismcore*.js`, Live2D sample models, OmniVoice
+   weights, or push a Docker image containing Claude Code to a public registry
+   without checking their terms.
+3. Re-check the dependency licences (section 3) before each release.
