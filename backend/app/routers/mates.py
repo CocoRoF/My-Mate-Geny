@@ -244,6 +244,16 @@ async def update_mate(mate_id: str, request: Request) -> dict:
         raise _http(exc) from exc
 
 
+@router.post("/{mate_id}/avatar/reset")
+async def reset_avatar(mate_id: str, request: Request) -> dict:
+    """A built-in mate: put the bundled avatar back (clip/trigger edits undone).
+    ``customized`` turns off again only if the persona is still the bundled one."""
+    try:
+        return _svc(request).reset_builtin_avatar(mate_id)
+    except (KeyError, MateError) as exc:
+        raise _http(exc) from exc
+
+
 @router.delete("/{mate_id}")
 async def delete_mate(mate_id: str, request: Request) -> dict:
     try:

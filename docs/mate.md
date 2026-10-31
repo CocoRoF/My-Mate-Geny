@@ -39,6 +39,7 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
   "llm":   { "provider": "claude", "model": "claude-sonnet-5-5", "effort": "low" },   // new mates talk on Sonnet ("" falls back to it too)
   "voice": {
     "auto_read": true,
+    "volume": 1.0,          // 0.0 – 3.0 (300 %); see §5 "Volume"
     "tts": { "engine": "browser", "voice": "", "model": "", "speed": 1.0, "profile": "", "language": "" },
     "stt": { "engine": "browser", "model": "", "language": "" }
   },
@@ -91,8 +92,11 @@ interface Rig {
   stills: Record<string, string>;            // neutral, smile, laugh, shy, surprised, sad, thinking, sleepy,
                                              // + mechanics: blink, mouth_half, mouth_open, mouth_o
   clips: { id: string; kind: "idle"|"talk"|"listen"|"think"|"react"|"away";
-           emotion?: string; src: string; small?: string; loop?: boolean }[];
-  emotions?: Record<string, string[]>;       // emotion -> clip ids (react)
+           emotion?: string; src: string; small?: string; loop?: boolean;
+           disabled?: boolean }[];           // disabled: never played, picked or preloaded
+  emotions?: Record<string, string[]>;       // emotion -> clip ids (react); several = one at random,
+                                             // [] = no clip for that emotion (aliases not tried)
+  emotion_stills?: Record<string, string>;   // emotion -> still name ("" = none); never blink/mouth_*
 }
 
 interface Live2D {
@@ -134,9 +138,34 @@ as in Geny).
   blends two poses with alpha (the see-through "overlapping frames" look), so it
   is only a fallback, ≥ 1.2 s apart, and a switch asked for during one waits
   for it to finish.
+- **Clip choice** (`src/mate/avatar/shared.ts`, used by the video body *and*
+  the clip editor's trigger preview, so the preview is exactly the stage):
+  disabled clips never count. A mood plays a random clip of its kind
+  (`moodPool`: talking → talk, listening → listen, thinking → think, away →
+  away, idle → idle; none of that kind switched on → the idle clips), not the
+  same one twice in a row. An emotion (`clipsFor`): the `emotions` map under the
+  emotion, then under the words rigs use for it (emotion.ts aliases, e.g. smile →
+  happy); a key with `[]` stops there (no reaction); a key whose clips are all
+  disabled is passed over; then the react clips whose `emotion` or id names it.
+  Several clips → one at random. The body exposes the clip on screen as
+  `data-mate-clip` on its layer.
 - **Photo**: ailism-mate `StillBody` (blink 2.5–6 s; mouth stills driven by the
   voice level instead of a random timer); a single photo gets a gentle
-  breathing/sway and a level-driven pulse.
+  breathing/sway and a level-driven pulse. The still for an emotion (and for the
+  moods thinking → "thinking", away → "sleepy"): `emotion_stills` under the
+  emotion or an alias ("" = none), else the still named like it.
+- **Clip / trigger editor** (Mate settings → Avatar, video/photo): a clip library
+  (a card per clip: a thumbnail, hover/tap plays it with the stage's own
+  player, its triggers in plain words — "while idle", "while talking", "while
+  you type", "while thinking", "when she feels ‹emotion›", "after a long
+  silence"); the selected clip's editor (on/off = `disabled`, situation = kind,
+  the feelings that play it = membership in `emotions`, its own `emotion`,
+  loop, rename/replace/remove); "What plays when" (a button per mood and per
+  emotion → the clip(s) the renderer would pick, played in a preview stage, and
+  for an emotion: add/remove clips, "No clip", "Automatic" = drop the key);
+  "Stills for feelings" (`emotion_stills`). Nothing is stored until Save (PATCH
+  avatar; for a built-in that marks it `customized`). Built-ins also get
+  **Reset to the bundled version** → `POST /api/mates/{id}/avatar/reset` (below).
 - **Live2D**: pixi.js 7 + pixi-live2d-display 0.5 (cubism4) as in Geny's
   `Live2DCanvas`; idle group, expressions/emotion motions, auto-blink, tap
   motions (hit area → group from `tap_motions`, fixing Geny's hard-coded
@@ -232,7 +261,12 @@ like the import above, body served from `GET /api/mates/builtin/<key>/<file>`
 (no copy). A new bundle version refreshes persona + body of built-ins the user
 hasn't edited (`customized` turns on with the user's first persona/avatar
 edit); voice/model choices are never overwritten. A deleted built-in stays
-deleted; `POST /api/mates/builtin/restore` brings them back. The avatar-less
+deleted; `POST /api/mates/builtin/restore` brings them back.
+`POST /api/mates/{id}/avatar/reset` (built-ins only, else 400) re-applies the
+bundled avatar of that key (clip/trigger/still edits undone; voice/model kept)
+and turns `customized` off again — with the current bundle hash recorded — only
+when the persona is still the bundled one; a mate whose persona the user
+edited keeps `customized` (app updates still leave it alone). The avatar-less
 "Geny" mate is only created when there is no mate at all.
 
 **Mao** (key `mao`, after the three) is a built-in **Live2D** mate: Live2D's
@@ -370,6 +404,18 @@ user's cookie (404 / 401 otherwise). `find_folders` searches
   `X-Speech-Fallback: browser`** + `X-Speech-Fallback-Reason` (the page speaks
   with the browser voice); a configured engine that fails is still 502.
   API bases: `MATE_OPENAI_BASE`, `MATE_ELEVENLABS_BASE` (tests / proxies).
+- Volume: `voice.volume` 0.0 – 3.0 (default 1.0; normalized/clamped by the
+  backend, non-numbers → 1.0, booleans → 400). The page plays the voice queue's
+  audio element through Web Audio: source → AnalyserNode (lip-sync level, taken
+  *before* the gain, so the mouth doesn't depend on volume) → GainNode (the
+  volume) → DynamicsCompressorNode (transparent at ≤ 100 %; a limiter above:
+  threshold −6 dB, ratio 12) → speakers. Until the AudioContext runs (no gesture
+  yet) the element plays directly at min(volume, 100 %). The browser engine
+  (speechSynthesis) can only do 0–100 % (`utterance.volume`, clamped; the Voice
+  tab says so). The Voice tab's slider (0–300 %, 100 % marked) is live for
+  previews and the voice queue; leaving the tab puts the saved value back.
+  `window.__hrhMateAudio` (the page's voice queue) offers `getVolume()` /
+  `outputGain()` for checks.
 - Settings UI: **Global settings** (voice services, Live2D runtime, desktop app
   per computer, defaults) vs **Mate settings** (Profile · Avatar · Language
   model · Voice · Memory · Danger zone); a mate's Voice tab offers only Off,

@@ -29,7 +29,7 @@ from typing import Any
 from app.config import settings
 from app.mate import files
 from app.mate.prompt import prompt_key, system_prompt
-from app.mate.store import MateError, MateStore
+from app.mate.store import MateError, MateStore, normalize_persona
 from app.providers import get_provider
 from app.providers.catalog import DEFAULT_MATE_MODEL
 from app.providers.base import TurnRequest
@@ -122,6 +122,23 @@ class MateService:
         self.store.restore_builtins()
         self.sync_builtins()
         return self.store.list()
+
+    def reset_builtin_avatar(self, mate_id: str) -> dict[str, Any]:
+        """Put the bundled body back on a built-in mate (undoes clip/trigger edits).
+        It counts as unedited again (app updates refresh it) only when its
+        persona is still the bundled one; voice/model choices are untouched."""
+        mate = self.store.get(mate_id)
+        key = mate.get("builtin")
+        if not key or key not in files.builtin_keys():
+            raise MateError("only a built-in mate has a bundled avatar to go back to")
+        doc = files.builtin_doc(key)
+        _name, persona = files.builtin_persona(doc)
+        avatar = files.builtin_avatar(key, doc) or {"kind": "none"}
+        mate, _changed = self.store.update(mate_id, {"avatar": avatar, "_sync": True})
+        if mate["customized"] and normalize_persona(persona, mate["persona"]) == mate["persona"]:
+            self.store.set_customized(mate_id, False)
+            self.store.mark_builtin(mate_id, key, files.builtin_hash(key))
+        return self.store.get(mate_id)
 
     def get(self, mate_id: str) -> dict[str, Any]:
         return self.store.get(mate_id)

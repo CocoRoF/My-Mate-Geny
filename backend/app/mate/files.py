@@ -361,6 +361,8 @@ def rig_avatar(raw: Any, base: Path, url_for: Any) -> dict[str, Any]:
             clip["small"] = small
         if c.get("loop"):
             clip["loop"] = True
+        if c.get("disabled"):
+            clip["disabled"] = True
         clips.append(clip)
     ids = {c["id"] for c in clips}
     emotions = {}
@@ -377,6 +379,11 @@ def rig_avatar(raw: Any, base: Path, url_for: Any) -> dict[str, Any]:
     rig: dict[str, Any] = {"aspect": aspect, "home": home or "", "stills": stills, "clips": clips}
     if emotions:
         rig["emotions"] = emotions
+    es = raw.get("emotion_stills")
+    if isinstance(es, dict):
+        es = {str(k): v for k, v in es.items() if isinstance(v, str) and (v == "" or v in stills)}
+        if es:
+            rig["emotion_stills"] = es
     if clips:
         rig["packing"] = raw.get("packing") if raw.get("packing") in ("stacked-alpha", "plain") else "plain"
         return {"kind": "video", "rig": rig}

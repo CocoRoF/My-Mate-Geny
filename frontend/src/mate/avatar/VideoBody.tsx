@@ -18,7 +18,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { BodyMood, MateReact, Rig, RigClip } from "../types";
 import { subscribe as subscribeVoice, voiceBridge } from "../voiceBridge";
 import { PlainPlayer, StackedPlayer, type ClipPlayer } from "./player";
-import { clipFor, clipUrl } from "./shared";
+import { clipFor, clipUrl, enabledClips, moodPool } from "./shared";
 
 export interface VideoBodyProps {
   rig: Rig;
@@ -43,9 +43,6 @@ const HURRY_MAX_RATE = 4;
 const FADE_MS = 220;
 
 const RANK: Record<string, number> = { idle: 0, talk: 1, think: 2, listen: 3, react: 4, away: 5 };
-
-const kindOf = (m: BodyMood) =>
-  m === "talking" ? "talk" : m === "thinking" ? "think" : m === "listening" ? "listen" : m === "away" ? "away" : "idle";
 
 type State = {
   /** the mood that counts (held for MOOD_SETTLE_MS) */
@@ -80,11 +77,8 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
   const clips = useMemo<RigClip[]>(() => JSON.parse(clipsKey), [clipsKey]);
   const emotionsKey = JSON.stringify(rig.emotions ?? {});
   const emotions = useMemo<Record<string, string[]>>(() => JSON.parse(emotionsKey), [emotionsKey]);
-  const byKind = useMemo(() => {
-    const m: Record<string, RigClip[]> = {};
-    for (const c of clips) (m[c.kind] ??= []).push(c);
-    return m;
-  }, [clips]);
+  // clips switched off in the clip editor are never played nor preloaded
+  const active = useMemo(() => enabledClips(clips), [clips]);
   // what the next clip should be is read when a clip ends: refs, not state (no re-render per clip)
   const st = useRef<State | null>(null);
 
@@ -145,7 +139,7 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
     const memory = new Map<string, string>();
     const srcOf = (c: RigClip) => memory.get(clipUrl(c, size)) ?? clipUrl(c, size);
     void (async () => {
-      for (const c of [...clips].sort((a, b) => (RANK[a.kind] ?? 9) - (RANK[b.kind] ?? 9))) {
+      for (const c of [...active].sort((a, b) => (RANK[a.kind] ?? 9) - (RANK[b.kind] ?? 9))) {
         const url = clipUrl(c, size);
         if (!url || memory.has(url) || url.startsWith("blob:")) continue;
         try {
@@ -161,14 +155,14 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
       }
     })();
     /** the kind of clip a mood plays (breathing when the rig has none of that kind) */
-    const wanted = (m: BodyMood) => (byKind[kindOf(m)]?.length ? kindOf(m) : "idle");
+    const wanted = (m: BodyMood) => moodPool(active, m).kind;
     const pickFrom = (list: RigClip[] | undefined) => {
       if (!list?.length) return null;
       const others = list.filter((c) => c.id !== s.last);
       const pool = others.length ? others : list;
       return pool[Math.floor(Math.random() * pool.length)];
     };
-    const forMood = (m: BodyMood): RigClip | null => pickFrom(byKind[wanted(m)]) ?? clips[0] ?? null;
+    const forMood = (m: BodyMood): RigClip | null => pickFrom(moodPool(active, m).clips);
     const moodNow = (): BodyMood => (s.voice ? "talking" : s.mood);
     /** the first frame is on the canvas (before that, a switch is instant: nothing to fade from) */
     const shownRef = { current: false };
@@ -196,6 +190,8 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
       if (!c) return;
       s.playing = c;
       s.last = c.id;
+      // which clip is on (tests, the clip editor's checks); a DOM attribute, not state: no re-render per clip
+      box.dataset.mateClip = c.id;
       const fade = urgent && shownRef.current;
       if (fade) s.lastFade = performance.now();
       // a clip marked loop (e.g. dozing) loops
@@ -285,9 +281,10 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
       changeRef.current = null;
       reactRef.current = null;
       if (st.current === s) st.current = null;
+      delete box.dataset.mateClip;
       setShown(false);
     };
-  }, [byKind, clips, size, packing, aspectW, aspectH]);
+  }, [active, size, packing, aspectW, aspectH]);
 
   // a new mood counts once it held MOOD_SETTLE_MS: talking cuts in (and so does leaving a looping clip, e.g. waking
   // from a doze); thinking, listening, idle and away wait for the clip on screen to end
