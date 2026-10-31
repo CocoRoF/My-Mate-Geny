@@ -478,3 +478,26 @@ def test_login_page_assets_are_public(client):
     for path in ("/logo.png", "/favicon.ico", "/favicon-32.png", "/apple-touch-icon.png",
                  "/icon-192.png", "/manifest.webmanifest"):
         assert client.get(path).status_code != 401, path  # 404 here: no STATIC_DIR in tests
+
+
+def test_cookie_secure_is_automatic_by_default(monkeypatch):
+    """Unset = Secure exactly on https requests (plain-http LAN servers work);
+    true / false force it; an empty value (unset compose variable) = auto."""
+    from starlette.requests import Request
+
+    from app import auth as auth_mod
+    from app.config import Settings, settings
+
+    def req(scheme: str, headers: dict | None = None) -> Request:
+        hdrs = [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()]
+        return Request({"type": "http", "scheme": scheme, "headers": hdrs, "client": ("127.0.0.1", 1),
+                        "server": ("x", 80), "path": "/", "method": "GET", "query_string": b""})
+
+    assert Settings(cookie_secure="").cookie_secure is None
+    assert Settings(cookie_secure="auto").cookie_secure is None
+    mgr = auth_mod.AuthManager.__new__(auth_mod.AuthManager)
+    for value, http, https in ((None, False, True), (True, True, True), (False, False, True)):
+        monkeypatch.setattr(settings, "cookie_secure", value)
+        assert mgr.cookie_kwargs(req("http"))["secure"] is http
+        assert mgr.cookie_kwargs(req("https"))["secure"] is https
+    monkeypatch.setattr(settings, "cookie_secure", None)

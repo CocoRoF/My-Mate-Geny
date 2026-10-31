@@ -11,6 +11,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -86,10 +87,17 @@ class Settings(BaseSettings):
     session_secret: str = ""
     # Browser session lifetime after a successful login.
     session_ttl_days: int = 7
-    # Always set the session cookie's Secure flag (True behind HTTPS; False for
-    # plain-http setups). When False it is still set for requests that arrived
-    # over https (directly, X-Forwarded-Proto or Cloudflare's CF-Visitor).
-    cookie_secure: bool = True
+    # The session cookie's Secure flag. Unset/auto/false (default) = Secure
+    # exactly when the request arrived over https (directly, X-Forwarded-Proto
+    # or Cloudflare's CF-Visitor), so plain-http LAN servers work too; true
+    # forces it on every response.
+    cookie_secure: bool | None = None
+
+    @field_validator("cookie_secure", mode="before")
+    @classmethod
+    def _cookie_secure_auto(cls, v: object) -> object:
+        # "" / "auto" (e.g. an unset compose variable) = automatic
+        return None if isinstance(v, str) and v.strip().lower() in ("", "auto") else v
     # Block an IP after this many failed logins, for this many hours.
     max_login_fails: int = 3
     ban_hours: int = 24

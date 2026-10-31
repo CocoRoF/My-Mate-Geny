@@ -25,9 +25,9 @@ services:
       - path: backend/.env
         required: false
     environment:
-      # Plain http on localhost by default. Behind HTTPS (reverse proxy /
-      # tunnel) set COOKIE_SECURE=true in .env.
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # auto: the login cookie is Secure exactly when the request came over
+      # https (reverse proxy / tunnel), so plain-http LAN access works too.
+      COOKIE_SECURE: ${COOKIE_SECURE:-auto}
     ports:
       # Bound to localhost by default. Set GENY_BIND=0.0.0.0 to reach it from
       # your LAN (then prefer HTTPS in front of it, see docs/deploy.md).

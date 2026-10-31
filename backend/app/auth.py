@@ -490,9 +490,10 @@ class AuthManager:
         return {
             "key": COOKIE_NAME,
             "httponly": True,
-            # COOKIE_SECURE forces it; otherwise Secure whenever the browser
-            # reached us over https (directly or via a TLS proxy / Cloudflare).
-            "secure": settings.cookie_secure or (request is not None and request_is_https(request)),
+            # COOKIE_SECURE=true forces it; otherwise (auto/false) Secure whenever
+            # the browser reached us over https (directly, TLS proxy, Cloudflare)
+            # — never on plain http, so LAN servers work.
+            "secure": settings.cookie_secure is True or (request is not None and request_is_https(request)),
             "samesite": "lax",
             "max_age": settings.session_ttl_days * 86400,
             "path": "/",

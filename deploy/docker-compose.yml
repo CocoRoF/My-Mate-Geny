@@ -29,7 +29,7 @@ services:
       - path: ../backend/.env
         required: false
     environment:
-      COOKIE_SECURE: ${COOKIE_SECURE:-true}     # served over HTTPS
+      COOKIE_SECURE: ${COOKIE_SECURE:-auto}     # auto = Secure on https requests
     ports:
       - "127.0.0.1:${GENY_PORT:-8080}:8080"
     volumes:
