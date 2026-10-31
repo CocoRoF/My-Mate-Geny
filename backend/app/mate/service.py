@@ -31,7 +31,7 @@ from app.mate import files
 from app.mate.prompt import prompt_key, system_prompt
 from app.mate.store import MateError, MateStore
 from app.providers import get_provider
-from app.providers.catalog import DEFAULT_CLAUDE_MODEL
+from app.providers.catalog import DEFAULT_MATE_MODEL
 from app.providers.base import TurnRequest
 from app.services._ids import now_iso
 from app.services.session_service import SessionService, TurnBusyError
@@ -102,7 +102,7 @@ class MateService:
         if sid and changed & {"llm", "name"}:
             # (the engine itself picks persona/llm changes up at the next turn:
             # see configure_engine; the row keeps the UI's view in sync)
-            self._svc.update(sid, model=mate["llm"]["model"] or DEFAULT_CLAUDE_MODEL,
+            self._svc.update(sid, model=mate["llm"]["model"] or DEFAULT_MATE_MODEL,
                              effort=mate["llm"]["effort"], title=mate["name"])
         if "avatar" in changed and files.import_dirs_of(before["avatar"], mate_id):
             # an imported pack/model the avatar no longer uses
@@ -203,7 +203,7 @@ class MateService:
         req.sealed = True
         req.mode = "agent"
         req.extra_dirs = []
-        req.model = mate["llm"].get("model") or DEFAULT_CLAUDE_MODEL
+        req.model = mate["llm"].get("model") or DEFAULT_MATE_MODEL
         req.effort = mate["llm"].get("effort") or "default"
         req.mcp_config = {"mcpServers": {"mate": {
             "type": "stdio",

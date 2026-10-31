@@ -216,6 +216,9 @@ class VoiceService:
                     body["ref_text"] = ref_text
             if not body["language"] and prof.get("language"):
                 body["language"] = prof["language"]
+        elif tts.get("instruct"):
+            # voice design (no reference clip on the OmniVoice server)
+            body.update(mode="design", instruct=tts["instruct"])
         resp = await netio.request("POST", f"{url}/tts", json_body=body, timeout=180)
         return _audio(resp, "OmniVoice", "audio/wav")
 

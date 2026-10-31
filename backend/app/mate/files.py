@@ -550,16 +550,21 @@ def classify_local(path: str) -> dict[str, Any]:
             if isinstance(data, dict) and isinstance(data.get("doc"), dict) and data["doc"].get("character"):
                 key = str(data.get("key") or p.stem)
                 assets = p.parent.parent / "assets" / key
-                return {"kind": "ailism", "doc": data, "key": key, "assets": assets if assets.is_dir() else None}
+                return {"kind": "ailism", "doc": data, "key": key, "assets": assets if assets.is_dir() else None,
+                        "voice_dir": ailism_voice_dir(p.parent.parent, key)}
         raise MateError(f"{p.name}: not an ailism mate (.json), rig.json or *.model3.json")
     if (p / "rig.json").is_file():
         return {"kind": "pack", "folder": p}
     model = _find_model3(p)
     if model is not None:
         return {"kind": "live2d", "model": model}
-    cands = sorted(x.name for x in (p / "mates").glob("*.json")) if (p / "mates").is_dir() else []
-    if cands:
-        raise MateError(f"pick one mate file in {p / 'mates'}: {', '.join(cands)}")
+    # an ailism content folder (or its mates/ folder): every character in it
+    mates_dir = p / "mates" if (p / "mates").is_dir() else (p if p.name == "mates" else None)
+    if mates_dir is not None:
+        many = [classify_local(str(x)) for x in sorted(mates_dir.glob("*.json"))]
+        many = [m for m in many if m["kind"] == "ailism"]
+        if many:
+            return {"kind": "ailism_many", "items": many}
     raise MateError(f"{p}: no rig.json, *.model3.json or ailism mate found")
 
 
@@ -590,38 +595,107 @@ def import_folder_live2d(mate_id: str, model: Path) -> dict[str, Any]:
 
 
 def ailism_persona(doc: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    """An ailism MateDoc -> (name, persona)."""
+    """An ailism MateDoc -> (name, persona), keeping everything the author
+    wrote: profile, appearance, background, relationship, knowledge, world,
+    personality, speech + every example exchange, the opening lines, the
+    greeting and return lines, interests and the author's note."""
     d = doc.get("doc") or {}
     ch = d.get("character") or {}
     mate = d.get("mate") or {}
     lang = str(d.get("language") or "ko")
     address = str(mate.get("address") or "")
     user = address or ("사용자" if lang == "ko" else "the user")
+    char = str(ch.get("name") or "")
 
     def fill(text: Any) -> str:
-        return str(text or "").replace("{{user}}", user).replace("{{char}}", str(ch.get("name") or "")).strip()
+        return str(text or "").replace("{{user}}", user).replace("{{char}}", char).strip()
 
-    description = "\n\n".join(x for x in (fill(ch.get("profile")), fill(ch.get("background")),
-                                          fill(ch.get("relationship"))) if x)
+    def said(line: Any) -> str:
+        # ailism lines are "Name | text"
+        t = fill(line)
+        return t.split("|", 1)[1].strip() if "|" in t else t
+
+    sections = [
+        ("", fill(ch.get("tagline") or d.get("tagline"))),
+        ("", fill(ch.get("profile"))),
+        ("Appearance", fill(ch.get("appearance"))),
+        ("Background", fill(ch.get("background"))),
+        ("Your relationship with the user", fill(ch.get("relationship"))),
+        ("What you know", fill(ch.get("knowledge"))),
+        ("Your world", fill(d.get("world"))),
+    ]
+    description = "\n\n".join(f"{title}:\n{text}" if title else text for title, text in sections if text)
     speech = fill(ch.get("speech"))
     examples = [e for e in ch.get("examples") or [] if isinstance(e, dict) and e.get("content")]
     if examples:
         lines = []
-        for e in examples[:8]:
+        for e in examples[:40]:
             who = "user" if e.get("speaker") == "user" else "you"
             lines.append(f"{who}: " + fill(e["content"]).replace("\n", " / "))
         speech += ("\n\n" if speech else "") + "Example exchanges:\n" + "\n".join(lines)
+    opening = [said(x) for x in str(d.get("opening") or "").splitlines() if x.strip()]
+    greeting = fill(mate.get("greeting")) or " ".join(opening[:3])
+    notes = []
+    if fill(d.get("instructions")):
+        notes.append(fill(d.get("instructions")))
+    if opening:
+        notes.append("When you first meet the user you open like this:\n" + "\n".join(opening))
+    returning = [fill(x) for x in mate.get("returning") or [] if str(x).strip()]
+    if returning:
+        notes.append("When the user comes back after a while, you greet them in this spirit:\n"
+                     + "\n".join(f"- {x}" for x in returning))
+    interests = [str(x).strip() for x in mate.get("interests") or [] if str(x).strip()]
+    if interests:
+        notes.append("Things you like to talk about: " + ", ".join(interests))
     persona = {
         "description": description,
         "personality": fill(ch.get("personality")),
         "speech": speech,
-        "greeting": fill(mate.get("greeting")),
+        "greeting": greeting,
         "address": address,
         "language": lang,
-        "instructions": "",
+        "instructions": "\n\n".join(notes),
     }
     name = str(ch.get("name") or d.get("title") or doc.get("key") or "Mate").strip()
     return name, persona
+
+
+def ailism_voice_dir(content: Path, key: str) -> Path | None:
+    """The character's voice folder (ailism-desktop-mate ``voices/<key>/voice.json``)
+    next to the content folder or a parent of it."""
+    for base in [content, *list(content.parents)[:3]]:
+        v = base / "voices" / key
+        if (v / "voice.json").is_file():
+            return v
+    return None
+
+
+def ailism_voice(doc: dict[str, Any], voice_dir: Path | None, mate_id: str) -> dict[str, Any] | None:
+    """The character's voice -> a voice patch: an ElevenLabs voice id from the
+    service content, or the desktop app's OmniVoice voice (a reference clip
+    + its line, or a voice-design instruction). The engine stays as it is
+    (the browser voice) until the user picks one in Mate settings."""
+    d = doc.get("doc") or {}
+    tts: dict[str, Any] = {}
+    el = (d.get("character") or {}).get("voice") or {}
+    if isinstance(el, dict) and el.get("id"):
+        tts.update(voice=str(el["id"]), model=str(el.get("model") or ""))
+    if voice_dir is not None:
+        try:
+            spec = json.loads((voice_dir / "voice.json").read_text("utf-8"))
+        except (OSError, ValueError):
+            spec = {}
+        if spec.get("instruct"):
+            tts["instruct"] = str(spec["instruct"])
+        ref = voice_dir / str(spec.get("ref") or "")
+        if spec.get("ref") and ref.is_file() and ref.stat().st_size <= 20 * 1024 * 1024:
+            dest = assets_dir(mate_id) / "voice" / ref.name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ref, dest)
+            tts.update(ref=f"voice/{ref.name}", ref_text=str(spec.get("text") or ""))
+        if spec.get("language"):
+            tts["language"] = str(spec["language"])
+    return {"tts": tts} if tts else None
 
 
 # ---- Live2D Cubism Core ----

@@ -207,9 +207,15 @@ def test_import_local_ailism_content_mate(client, tmp_path):
     assert m["avatar"]["kind"] == "video" and len(rig["clips"]) == 13 and len(rig["stills"]) == 12
     assert "asset:" not in json.dumps(m["avatar"])
     assert client.get(rig["home"]).status_code == 200
-    # a content folder without picking the file: tells which files there are
+    # everything the author wrote comes along
+    assert "Your world:" in p["description"] and "Appearance:" in p["description"]
+    assert "Things you like to talk about" in p["instructions"] and "comes back" in p["instructions"]
+    # the whole content folder: every character; one already imported is updated, not duplicated
+    before = len(client.get("/api/mates").json())
     r = client.post("/api/mates/import-local", json={"path": str(content)})
-    assert r.status_code == 400 and "estelle.json" in r.json()["detail"]
+    assert r.status_code == 200, r.text
+    assert [x["name"] for x in r.json()["mates"]] == ["에스텔 루미나르"]
+    assert len(client.get("/api/mates").json()) == before
     assert client.post("/api/mates/import-local", json={"path": str(tmp_path / "nope")}).status_code == 404
 
 
@@ -315,3 +321,26 @@ def test_internal_api_gate(tmp_path):
         assert [x["text"] for x in svc.store.memories(m["id"])] == ["likes tea"]
         r = lc.post("/api/internal/mate/call", json={"name": "rm_rf", "arguments": {}}, headers={"X-Mate-Token": token})
         assert r.json()["is_error"] is True
+
+
+DESKTOP_CONTENT = Path("/home/workspace_app/ailism-desktop-mate/content")
+
+
+@pytest.mark.skipif(not (DESKTOP_CONTENT / "mates").is_dir(), reason="ailism-desktop-mate not on this machine")
+def test_import_all_ailism_desktop_mates_with_voices(client, tmp_path):
+    root = tmp_path / "desktop-mate"
+    shutil.copytree(DESKTOP_CONTENT, root / "content")
+    shutil.copytree(DESKTOP_CONTENT.parent / "voices", root / "voices")
+    r = client.post("/api/mates/import-local", json={"path": str(root / "content")})
+    assert r.status_code == 200, r.text
+    mates = {m["name"]: m for m in r.json()["mates"]}
+    assert len(mates) == 3
+    for m in mates.values():
+        assert m["avatar"]["kind"] == "video"
+    # a new mate talks on Sonnet by default
+    assert _new(client, "Fresh")["llm"]["model"] == "claude-sonnet-5-5"
+    tts = {name: m["voice"]["tts"] for name, m in mates.items()}
+    cloned = [t for t in tts.values() if t["ref"]]
+    designed = [t for t in tts.values() if t["instruct"]]
+    assert len(cloned) == 1 and cloned[0]["ref_text"] and len(designed) == 2
+    assert all(t["engine"] == "browser" for t in tts.values())  # engine untouched until the user picks one

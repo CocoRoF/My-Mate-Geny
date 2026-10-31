@@ -38,12 +38,16 @@ _EFFORT_CODEX = ["default", "low", "medium", "high", "xhigh"]
 # What a new Claude chat runs on unless the user picks something else (also
 # the fallback when a session has no model stored).
 DEFAULT_CLAUDE_MODEL = "claude-opus-5-5"
+# A Mate talks more than it works (it hands work to the chats): Sonnet answers
+# faster and costs less for conversation. Used when a mate has no model set.
+DEFAULT_MATE_MODEL = "claude-sonnet-5-5"
 
 _STATIC: dict[str, dict] = {
     "claude": {
         "label": "Claude Code",
         "models": [
             {"id": DEFAULT_CLAUDE_MODEL, "label": "Claude Opus 5.5"},
+            {"id": DEFAULT_MATE_MODEL, "label": "Claude Sonnet 5.5"},
             {"id": "opus", "label": "Opus (latest)"},
             {"id": "sonnet", "label": "Sonnet (latest)"},
             {"id": "haiku", "label": "Haiku (latest)"},

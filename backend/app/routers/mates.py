@@ -135,42 +135,59 @@ async def core_js() -> FileResponse:
 @router.post("/import-local")
 async def import_local(request: Request) -> dict:
     """Import from a folder/file on this server: an ailism content mate
-    (``mates/<key>.json`` + ``assets/<key>/``), a rig pack folder or a Live2D
-    model folder. Creates a new mate unless ``mate_id`` is given (then only
-    the avatar of that mate is replaced)."""
+    (``mates/<key>.json`` + ``assets/<key>/`` + an optional ``voices/<key>/``),
+    a whole ailism content folder (every character in it), a rig pack folder
+    or a Live2D model folder. Creates a new mate unless ``mate_id`` is given
+    (then only the avatar of that mate is replaced); an ailism character
+    already imported (same name) is updated in place."""
     body = await _json(request)
     svc = _svc(request)
     try:
         info = await asyncio.to_thread(files.classify_local, str(body.get("path") or ""))
-        target = body.get("mate_id")
-        if target:
-            mate = svc.get(str(target))
-        elif info["kind"] == "ailism":
-            name, persona = files.ailism_persona(info["doc"])
-            mate = svc.create({"name": name, "persona": persona})
-        else:
-            base = info["folder"] if info["kind"] == "pack" else info["model"].parent
-            label = base.name if base.name not in ("runtime", "model", "assets") else base.parent.name
-            mate = svc.create({"name": body.get("name") or label or "Mate"})
-        try:
-            if info["kind"] == "live2d":
-                avatar = await asyncio.to_thread(files.import_folder_live2d, mate["id"], info["model"])
-            elif info["kind"] == "pack":
-                avatar = await asyncio.to_thread(files.import_folder_pack, mate["id"], info["folder"])
-            elif info["assets"] is not None:
-                fallback = ((info["doc"].get("doc") or {}).get("mate") or {}).get("body")
-                avatar = await asyncio.to_thread(files.import_folder_pack, mate["id"], info["assets"], fallback)
-            else:
-                avatar = None  # persona only (no assets folder next to it)
-        except Exception:
-            if not target:
-                svc.delete(mate["id"])
-            raise
-        if avatar is not None:
-            mate = svc.update(mate["id"], {"avatar": avatar})
-        return {"mate": mate, "imported": info["kind"]}
+        if info["kind"] == "ailism_many":
+            mates = [await _import_one(svc, item, None, None) for item in info["items"]]
+            return {"mate": mates[0], "mates": mates, "imported": "ailism"}
+        mate = await _import_one(svc, info, body.get("mate_id"), body.get("name"))
+        return {"mate": mate, "mates": [mate], "imported": info["kind"]}
     except (KeyError, MateError) as exc:
         raise _http(exc) from exc
+
+
+async def _import_one(svc: Any, info: dict[str, Any], target: Any, name: Any) -> dict[str, Any]:
+    created = False
+    if target:
+        mate = svc.get(str(target))
+    elif info["kind"] == "ailism":
+        mate_name, persona = files.ailism_persona(info["doc"])
+        same = next((m for m in svc.list() if m["name"] == mate_name), None)
+        if same is not None:
+            mate = svc.update(same["id"], {"persona": persona})
+        else:
+            mate, created = svc.create({"name": mate_name, "persona": persona}), True
+        voice = await asyncio.to_thread(files.ailism_voice, info["doc"], info.get("voice_dir"), mate["id"])
+        if voice:
+            mate = svc.update(mate["id"], {"voice": voice})
+    else:
+        base = info["folder"] if info["kind"] == "pack" else info["model"].parent
+        label = base.name if base.name not in ("runtime", "model", "assets") else base.parent.name
+        mate, created = svc.create({"name": name or label or "Mate"}), True
+    try:
+        if info["kind"] == "live2d":
+            avatar = await asyncio.to_thread(files.import_folder_live2d, mate["id"], info["model"])
+        elif info["kind"] == "pack":
+            avatar = await asyncio.to_thread(files.import_folder_pack, mate["id"], info["folder"])
+        elif info.get("assets") is not None:
+            fallback = ((info["doc"].get("doc") or {}).get("mate") or {}).get("body")
+            avatar = await asyncio.to_thread(files.import_folder_pack, mate["id"], info["assets"], fallback)
+        else:
+            avatar = None  # persona only (no assets folder next to it)
+    except Exception:
+        if created:
+            svc.delete(mate["id"])
+        raise
+    if avatar is not None:
+        mate = svc.update(mate["id"], {"avatar": avatar})
+    return mate
 
 
 # ---- one mate ----

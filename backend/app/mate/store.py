@@ -14,6 +14,7 @@ import threading
 from typing import Any
 
 from app.db import Database
+from app.providers.catalog import DEFAULT_MATE_MODEL
 from app.services._ids import new_id, now_iso
 from app.vault import SecretVault
 
@@ -82,7 +83,7 @@ def normalize_persona(patch: Any, base: dict[str, Any] | None = None) -> dict[st
 
 
 def normalize_llm(patch: Any, base: dict[str, Any] | None = None) -> dict[str, Any]:
-    out = {"provider": "claude", "model": "", "effort": "low", **(base or {})}
+    out = {"provider": "claude", "model": DEFAULT_MATE_MODEL, "effort": "low", **(base or {})}
     if patch is None:
         return out
     if not isinstance(patch, dict):
@@ -115,7 +116,10 @@ def _num(v: Any, lo: float, hi: float, default: float) -> float:
 
 def normalize_voice(patch: Any, base: dict[str, Any] | None = None) -> dict[str, Any]:
     base = base or {}
+    # instruct: OmniVoice voice design ("female, young adult, low pitch");
+    # ref/ref_text: a reference clip (mate asset path) + its transcript.
     tts = {"engine": "browser", "voice": "", "model": "", "speed": 1.0, "profile": "", "language": "",
+           "instruct": "", "ref": "", "ref_text": "",
            **(base.get("tts") or {})}
     stt = {"engine": "browser", "model": "", "language": "", **(base.get("stt") or {})}
     out = {"auto_read": bool(base.get("auto_read", True)), "tts": tts, "stt": stt}
@@ -134,9 +138,12 @@ def normalize_voice(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
             if eng not in TTS_ENGINES:
                 raise MateError(f"unknown tts engine: {eng}")
             tts["engine"] = eng
-        for k in ("voice", "model", "profile", "language"):
+        for k in ("voice", "model", "profile", "language", "ref"):
             if k in pt:
                 tts[k] = _s(pt[k], 200).strip()
+        for k in ("instruct", "ref_text"):
+            if k in pt:
+                tts[k] = _s(pt[k], 1000).strip()
         if "speed" in pt:
             tts["speed"] = _num(pt["speed"], 0.25, 4.0, 1.0)
     ps = patch.get("stt")

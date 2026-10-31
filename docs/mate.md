@@ -36,7 +36,7 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
     "instructions": ""      // extra standing instructions
   },
   "avatar": Avatar,         // §2
-  "llm":   { "provider": "claude", "model": "", "effort": "low" },   // model "" = catalog default
+  "llm":   { "provider": "claude", "model": "claude-sonnet-5-5", "effort": "low" },   // new mates talk on Sonnet ("" falls back to it too)
   "voice": {
     "auto_read": true,
     "tts": { "engine": "browser", "voice": "", "model": "", "speed": 1.0, "profile": "", "language": "" },
@@ -165,13 +165,26 @@ Asset upload / import:
   lands in a fresh `pack-<id>/` or `l2d-<id>/` folder; the one the previous
   avatar used is removed.
 - `POST /api/mates/import-local` `{ path, mate_id?, name? }` (file/folder on this
-  server) → `{mate, imported: "ailism"|"pack"|"live2d"}`: an ailism content mate
-  (the `mates/<key>.json` file; persona from `character.*` + `mate.greeting /
-  address`, `{{user}}` filled in, example lines appended to `speech`; body from
-  `../assets/<key>/rig.json`, else `doc.mate.body`), a folder with `rig.json`, or
-  a Live2D model folder (`*.model3.json` up to 3 levels down; a Geny
-  `model_registry.json` entry is used for tuning when there is no sidecar).
+  server) → `{mate, mates, imported: "ailism"|"pack"|"live2d"}`:
+  - an ailism content mate (`mates/<key>.json`) **or a whole content folder**
+    (every character in it). Everything the author wrote comes along: tagline,
+    profile, appearance, background, relationship, knowledge and world →
+    `description`; personality; speech + all example exchanges → `speech`;
+    greeting (or the opening lines) → `greeting`; the author's note, the opening
+    lines, return lines and interests → `instructions`; `{{user}}` filled in.
+    Body from `../assets/<key>/rig.json`, else `doc.mate.body`. Voice: an
+    ElevenLabs id from `character.voice`, and ailism-desktop-mate's
+    `voices/<key>/voice.json` when found next to the content folder (OmniVoice
+    `instruct` voice design, or a `ref` clip copied into the mate's assets +
+    `ref_text`); the TTS engine itself is left for the user to pick. An ailism
+    character already imported (same name) is updated in place.
+  - a folder with `rig.json`, or a Live2D model folder (`*.model3.json` up to 3
+    levels down; a Geny `model_registry.json` entry is used for tuning when
+    there is no sidecar).
   Creates a new mate unless `mate_id` is given (then only its avatar changes).
+  The world/character text may say the mate can't touch the user's computer:
+  the contract keeps that (it never acts itself) and states that asking the
+  chats through its tools is how it helps.
 
 ## 3. Conversation = a session of kind "mate"
 
