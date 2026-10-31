@@ -165,6 +165,7 @@ async def system(request: Request, providers: ProviderService = Depends(provider
             "disk_used": disk.used if disk else None,
             "disk_free": disk.free if disk else None,
         },
+        "monitor": state.system_monitor.sampler_stats() if getattr(state, "system_monitor", None) else None,
         "limits": {
             "upload_max_mb": settings.upload_max_mb,
             "upload_max_files": settings.upload_max_files,
@@ -172,6 +173,39 @@ async def system(request: Request, providers: ProviderService = Depends(provider
             "log_max_rows": settings.log_max_rows,
         },
     }
+
+
+# ---- system monitor (docs/monitoring.md) --------------------------------------
+
+
+def _monitor(request: Request):
+    mon = getattr(request.app.state, "system_monitor", None)
+    if mon is None:
+        raise HTTPException(status_code=503, detail="system monitor is disabled (MONITOR_ENABLED=false)")
+    return mon
+
+
+@router.get("/system/now")
+async def system_now(request: Request) -> dict:
+    """The latest sample: metrics, per-core CPU, processes, GPUs, alerts."""
+    mon = _monitor(request)
+    if mon.latest is None:
+        raise HTTPException(status_code=503, detail="system monitor is warming up")
+    return {k: v for k, v in mon.latest.items() if k != "new_events"}
+
+
+@router.get("/system/metrics")
+async def system_metrics(
+    request: Request,
+    range: str = Query("1h", pattern="^(15m|30m|1h|6h|24h|7d|30d|90d)$"),  # noqa: A002
+) -> dict:
+    """Time series for a range, columnar: ``t`` (epoch s) + ``series[metric]
+    = {avg, min?, max?}``; 15m/30m come from the live ring (2 s), the rest
+    from the 1-min / 15-min history. Includes the monitor events in range."""
+    mon = _monitor(request)
+    out = await asyncio.to_thread(mon.series, range)
+    out["thresholds"] = mon.thresholds()
+    return out
 
 
 # ---- security ---------------------------------------------------------------

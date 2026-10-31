@@ -7,6 +7,7 @@ startup, stash them on ``app.state``, tear down on shutdown.
 from __future__ import annotations
 
 import asyncio
+import logging
 import traceback
 from contextlib import asynccontextmanager
 
@@ -53,9 +54,11 @@ from app.services.log_service import LogService, install_log_bridge
 from app.services.git_service import GitService
 from app.services.provider_service import ProviderService
 from app.services.session_service import SessionService
+from app.services.sysmon import SystemMonitor
 from app.services.workspace_service import WorkspaceService
 from app.vault import SecretVault
 from app.ws import sessions as sessions_ws
+from app.ws import system as system_ws
 from app.ws import stream
 
 
@@ -107,9 +110,22 @@ async def lifespan(app: FastAPI):
 
     housekeeper = asyncio.create_task(housekeeping())
 
+    # Host / container metrics, history and alerts (Admin -> System).
+    system_monitor = None
+    if settings.monitor_enabled:
+        try:
+            system_monitor = SystemMonitor(db, logs, session_service)
+            await system_monitor.start()
+        except Exception:  # noqa: BLE001 - monitoring must never block the app
+            logging.getLogger(__name__).exception("system monitor failed to start")
+            system_monitor = None
+    app.state.system_monitor = system_monitor
+
     yield
 
     housekeeper.cancel()
+    if system_monitor is not None:
+        await system_monitor.stop()  # flushes the partial minute, marks a clean shutdown
     await session_service.shutdown()  # end engines (and their background tasks) cleanly
     db.close()
 
@@ -182,6 +198,7 @@ for r in (
 
 app.include_router(stream.router)
 app.include_router(sessions_ws.router)
+app.include_router(system_ws.router)
 
 # Serve the built frontend (single origin => the auth gate covers the UI too).
 _static = settings.static_path

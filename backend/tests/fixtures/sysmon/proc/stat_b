@@ -1,0 +1,10 @@
+cpu  1600 0 700 8100 200 0 0 0 0 0
+cpu0 1050 0 350 4050 50 0 0 0 0 0
+cpu1 550 0 350 4050 150 0 0 0 0 0
+intr 1 2 3
+ctxt 123999
+btime 1793400000
+processes 10010
+procs_running 5
+procs_blocked 0
+softirq 1 2 3
