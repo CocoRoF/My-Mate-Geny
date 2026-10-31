@@ -537,3 +537,29 @@ async def test_auto_turn_right_after_a_turn_is_not_dropped(db, tmp_path, monkeyp
         assert svc.messages(sid)[-1]["content"] == "auto done"
     finally:
         await svc.shutdown()
+
+
+def test_plan_usage_backs_off_after_429(monkeypatch):
+    from app.providers import accounts as acc_mod
+    from app.providers import subscription as sub
+
+    calls = []
+
+    def throttled(provider, cdir):
+        calls.append(cdir)
+        raise sub.UsageError("usage request failed (429)")
+
+    monkeypatch.setattr(sub, "subscription_usage", throttled)
+    pool = acc_mod.AccountPool.__new__(acc_mod.AccountPool)
+    pool._plan_cache = {}
+    clock = [1000.0]
+    monkeypatch.setattr(acc_mod.time, "time", lambda: clock[0])
+    acct = {"id": "a1", "auth_mode": "oauth"}
+    first = pool.plan_usage("claude", "a1", account=acct)
+    assert "429" in first["error"] and len(calls) == 1
+    clock[0] += acc_mod.PLAN_TTL_S + 1  # a normal TTL later: still backing off
+    pool.plan_usage("claude", "a1", account=acct)
+    assert len(calls) == 1
+    clock[0] += acc_mod.PLAN_BACKOFF_S  # past the backoff: asks again
+    pool.plan_usage("claude", "a1", account=acct)
+    assert len(calls) == 2

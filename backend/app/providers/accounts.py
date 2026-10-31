@@ -753,6 +753,7 @@ class AccountUnavailable(RuntimeError):
 PRIMARY_PREFIX = "__primary__"
 PRIMARY_LABEL = "Primary · this machine"
 PLAN_TTL_S = 60.0  # plan usage is fetched over HTTPS: at most once a minute per account
+PLAN_BACKOFF_S = 300.0  # after the usage endpoint answers 429, wait this long before asking again
 
 
 def _num(v: Any) -> float | None:
@@ -862,6 +863,11 @@ class AccountPool:
             base = {k: v for k, v in (prev or {"windows": [], "model_windows": [], "fetched_at": None}).items()
                     if k != "error"}
             plan = {**base, "error": str(exc)[:200] or type(exc).__name__}
+            if "(429)" in str(exc):
+                # The endpoint is throttling us: polling every minute would keep
+                # it that way. Live rate_limit_event numbers still flow meanwhile.
+                self._plan_cache[acc_id] = (plan, now + PLAN_BACKOFF_S - PLAN_TTL_S)
+                return plan
         self._plan_cache[acc_id] = (plan, now)
         return plan
 

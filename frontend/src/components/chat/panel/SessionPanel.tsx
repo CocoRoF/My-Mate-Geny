@@ -127,6 +127,8 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
   const ctxTokens = ctxMeter?.tokens || 0;
   const ctxWindow = ctxMeter?.window || catalog[session.provider]?.models.find((m) => m.id === session.model)?.context_window || null;
   const live = info || session.cli_info;
+  // The account this chat's engine leased (same source as the composer footer).
+  const account = useUsageStore((s) => s.account[session.id] ?? null);
 
   const setDirs = async (next: string[]) => {
     setError("");
@@ -243,7 +245,7 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
             {[
               ["Mode", session.mode === "plan" ? "Plan (read-only)" : "Agent (full access)"],
               ["Model", live?.model || session.model || "default"],
-              ["Account", live?.account || "primary"],
+              ["Account", account?.account || live?.account],
               ["Permissions", live?.permissionMode],
               ["CLI", live?.claude_code_version ? `Claude Code ${live.claude_code_version}` : session.provider],
             ]
