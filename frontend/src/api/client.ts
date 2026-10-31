@@ -28,7 +28,14 @@ export function wsUrl(path: string): string {
 }
 
 let redirecting = false;
+let loginRedirect = true;
+/** A transparent desktop surface (the Mate overlay) must never turn into the
+ * login page: it just shows nothing until signed in again. */
+export function disableLoginRedirect() {
+  loginRedirect = false;
+}
 export function toLogin() {
+  if (!loginRedirect) return;
   if (redirecting || window.location.pathname === "/login") return;
   redirecting = true;
   window.location.href = "/login";

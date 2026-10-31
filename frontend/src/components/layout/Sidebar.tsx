@@ -9,6 +9,7 @@ import { APP_VERSION } from "../../version";
 import Icon, { type IconName } from "../ui/Icon";
 
 const NAV: { id: View; label: string; icon: IconName }[] = [
+  { id: "mate", label: "Mate", icon: "sparkles" },
   { id: "chat", label: "Chat", icon: "chat" },
   { id: "providers", label: "Providers", icon: "plug" },
   { id: "connections", label: "Connections", icon: "server" },
@@ -82,9 +83,9 @@ export default function Sidebar() {
         </div>
         <div className="leading-tight">
           <div className="text-[15px] font-semibold tracking-tight">
-            hr<span className="text-gradient">·</span>harnessor
+            My Mate <span className="text-gradient">Geny</span>
           </div>
-          <div className="text-[10px] text-content-faint">agent console</div>
+          <div className="text-[10px] text-content-faint">your mate + agent console</div>
         </div>
         <button
           onClick={refresh}

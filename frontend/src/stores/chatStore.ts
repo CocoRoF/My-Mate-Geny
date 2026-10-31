@@ -47,7 +47,27 @@ export type FlowItem =
   | { kind: "notice"; level: "info" | "warning"; message: string; code?: string; data?: Record<string, any> }
   // Instructions the user added while the agent was working (pending until
   // the runtime confirms delivery into the running turn).
-  | { kind: "steer"; text: string; attachments: Attachment[]; clientMsgId?: string; pending: boolean };
+  | { kind: "steer"; text: string; attachments: Attachment[]; clientMsgId?: string; pending: boolean; meta?: MessageMeta };
+
+/** What the backend says about a message beyond its text (docs/mate.md §3):
+ * who sent it (`via` a mate) and internal messages (a mate's greeting,
+ * delegation results). */
+export interface MessageMeta {
+  via?: { kind: string; mate_id?: string; name?: string };
+  internal?: boolean;
+  kind?: string; // greeting | delegation_result
+  delegations?: { session_id: string; title: string; status: string }[];
+  [k: string]: unknown;
+}
+
+const META_KEYS = ["via", "internal", "kind", "delegations"] as const;
+
+/** The meta keys a live user.message / user.steer event carries in `data`. */
+function metaOf(data: Record<string, any>): MessageMeta | undefined {
+  let out: MessageMeta | undefined;
+  for (const k of META_KEYS) if (data[k] !== undefined && data[k] !== null) (out ??= {})[k] = data[k];
+  return out;
+}
 
 export interface Bounced {
   clientMsgId: string;
@@ -78,6 +98,7 @@ export interface Turn {
   data?: Record<string, any>; // system turns: the notice's data
   trigger?: string; // "background": Claude started this turn itself
   changes?: TurnChanges; // files the turn changed (git snapshots)
+  meta?: MessageMeta; // user turns: via a mate, internal messages
 }
 
 interface ChatState {
@@ -393,15 +414,19 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
         attachments: (data.attachments as Attachment[]) || [],
         clientMsgId: cid || undefined,
         pending: false,
+        meta: metaOf(data),
       };
       if (!hasLiveTurn(turns)) {
         // Nothing running here (e.g. delivered just as the turn closed): plain user bubble.
-        turns.push({ key: newKey("u"), role: "user", text: item.text, flow: [], tools: [], complete: true, attachments: item.attachments });
+        turns.push({ key: newKey("u"), role: "user", text: item.text, flow: [], tools: [], complete: true, attachments: item.attachments, meta: item.meta });
         break;
       }
       const t = liveTurn(turns, at);
       const mine = cid ? t.flow.find((f) => f.kind === "steer" && f.clientMsgId === cid) : undefined;
-      if (mine && mine.kind === "steer") mine.pending = false;
+      if (mine && mine.kind === "steer") {
+        mine.pending = false;
+        if (item.meta) mine.meta = item.meta;
+      }
       else {
         closeThinking(t, at);
         t.flow.push(item);
@@ -438,6 +463,7 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
         tools: [],
         complete: true,
         attachments: (data.attachments as Attachment[]) || [],
+        meta: metaOf(data),
       });
       break;
     }
@@ -451,14 +477,26 @@ function reconstruct(messages: ChatMessage[], events: ProviderEvent[]): Turn[] {
   type Item = { at: string; order: number; eid: number; user?: ChatMessage; ev?: ProviderEvent };
   const items: Item[] = [
     ...messages
-      .filter((m) => m.role === "user")
+      // (+ a mate's greeting: an assistant message with no turn behind it)
+      .filter((m) => m.role === "user" || (m.role === "assistant" && m.meta?.kind === "greeting"))
       .map((m) => ({ at: m.created_at || "", order: 0, eid: 0, user: m })),
     ...events.map((e) => ({ at: e.timestamp, order: 1, eid: e.eid || 0, ev: e })),
   ];
   items.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.order - b.order || a.eid - b.eid));
   const turns: Turn[] = [];
   for (const it of items) {
-    if (it.user) {
+    if (it.user && it.user.role === "assistant") {
+      turns.push({
+        key: newKey("g"),
+        role: "assistant",
+        text: it.user.content,
+        flow: [{ kind: "text", text: it.user.content }],
+        tools: [],
+        complete: true,
+        status: "done",
+        meta: it.user.meta || undefined,
+      });
+    } else if (it.user) {
       if (hasLiveTurn(turns)) {
         const t = liveTurn(turns, Date.parse(it.at));
         finish(t, t.startedAt || Date.parse(it.at));
@@ -472,6 +510,7 @@ function reconstruct(messages: ChatMessage[], events: ProviderEvent[]): Turn[] {
         tools: [],
         complete: true,
         attachments: it.user.attachments || [],
+        meta: it.user.meta || undefined,
       });
     } else if (it.ev) {
       reduce(turns, it.ev);
@@ -491,7 +530,10 @@ function turnCost(data: Record<string, any>): number | undefined {
 /** API-equivalent cost of the whole chat (turns that reported one). */
 const totalCost = (turns: Turn[]) => turns.reduce((n, t) => n + (t.costUsd || 0), 0);
 
-export const useChatStore = create<ChatState>((set, get) => ({
+/** A conversation store: the Chat view's (useChatStore) and, separately, the
+ * Mate's (so both can be live at once). Same reducer, same turn model. */
+export function createChatStore() {
+  return create<ChatState>((set, get) => ({
   turns: [],
   isStreaming: false,
   runningCostUsd: 0,
@@ -568,4 +610,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         runningCostUsd: ev.type === "turn.complete" || ev.type === "error" ? totalCost(turns) : s.runningCostUsd,
       };
     }),
-}));
+  }));
+}
+
+export type ChatStoreApi = ReturnType<typeof createChatStore>;
+export type { ChatState };
+
+export const useChatStore = createChatStore();

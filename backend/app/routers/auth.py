@@ -23,7 +23,7 @@ _LOGIN_HTML = """<!doctype html>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
-<title>hr·harnessor — 로그인</title>
+<title>My Mate Geny — 로그인</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -59,7 +59,7 @@ _LOGIN_HTML = """<!doctype html>
   <form class="card" id="f">
     <div class="brand">
       <div class="logo"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg></div>
-      <div><h1>hr<span class="grad">·</span>harnessor</h1><div class="sub">agent console</div></div>
+      <div><h1>My Mate <span class="grad">Geny</span></h1><div class="sub">your mate + agent console</div></div>
     </div>
     <label>ID</label>
     <input id="u" autocomplete="username" value="admin" autofocus>

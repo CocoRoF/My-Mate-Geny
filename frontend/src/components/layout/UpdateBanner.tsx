@@ -30,7 +30,7 @@ export default function UpdateBanner() {
       <div className="flex items-center gap-2 px-4 py-1.5 text-[12.5px] text-accent">
         <Icon name="download" size={14} />
         <span className="min-w-0 flex-1 truncate">
-          hr-harnessor {latest} is available (you have {native.version}).
+          My Mate Geny {latest} is available (you have {native.version}).
         </span>
         <button onClick={() => setView("downloads")} className="rounded-md px-2 py-0.5 font-medium hover:bg-accent/15">
           Update
