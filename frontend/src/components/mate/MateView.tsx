@@ -13,6 +13,7 @@ import { useMateConversation } from "../../mate/useMateConversation";
 import { OPEN_GLOBAL_SETTINGS_EVENT } from "../../mate/live2dCore";
 import { MenuButton } from "../layout/MobileTopBar";
 import Icon from "../ui/Icon";
+import { DropOverlay, useFileDrop } from "../composer/useFileDrop";
 import MateComposer from "./MateComposer";
 import MateMessages from "./MateMessages";
 import MateStage, { BuiltinBadge, MateThumb, MOOD_LABEL } from "./MateStage";
@@ -32,6 +33,8 @@ export default function MateView() {
   const load = useMateStore((s) => s.load);
   const mate = mates.find((m) => m.id === activeId) ?? mates[0] ?? null;
   const conv = useMateConversation(mate);
+  // drop files on the conversation, or paste them anywhere on the page: they go to the composer
+  const { dragging, dropProps } = useFileDrop(conv.sessionId);
   const phone = usePhone();
   // one panel slot: Mate settings (local) or Global settings (the store's: Mate settings and anything else open it
   // with openGlobal(section); inside Mate settings it swaps itself for Global settings)
@@ -257,7 +260,8 @@ export default function MateView() {
   );
 
   const conversation = (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" {...dropProps} data-testid="mate-conversation">
+      {dragging && <DropOverlay hint={`${mate.name} sees images and reads documents — and can pass them on to a chat`} />}
       {banners}
       <MateMessages turns={conv.turns} emptyText={conv.connection === "open" ? `Say hi to ${mate.name}.` : "Loading…"} />
       <div className="shrink-0 px-3 pb-3 pt-1 sm:px-4">
