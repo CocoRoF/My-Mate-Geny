@@ -1,10 +1,10 @@
 /**
  * Avatar: kind (none / video / photo / Live2D), imports (zip, a folder on the server), simple asset upload for photo
- * stills and video clips, Live2D Cubism Core install (licence first) and emotion → expression / motion mapping, with
+ * stills and video clips, a note when the Live2D runtime is missing (installed in Global settings) and emotion → expression / motion mapping, with
  * a live preview and test buttons.
  */
 import { useEffect, useRef, useState } from "react";
-import { coreStatus, importAvatarZip, importLocal, installCore, uploadAsset, type Mate } from "../../../api/mates";
+import { coreStatus, importAvatarZip, importLocal, uploadAsset, type Mate } from "../../../api/mates";
 import { MateAvatar } from "../../../mate/avatar/MateAvatar";
 import { EMOTIONS } from "../../../mate/emotion";
 import type { Avatar, BodyMood, ClipKind, Live2D, MateReact, Rig, RigClip } from "../../../mate/types";
@@ -12,12 +12,11 @@ import type { MateConversation } from "../../../mate/useMateConversation";
 import { end as voiceEnd, fakeLevel, level as voiceLevel, start as voiceStart } from "../../../mate/voiceBridge";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
-import { ErrorLine, Field, SaveBar, Section, useSaver } from "./ui";
+import { Banner, ErrorLine, Field, SaveBar, Section, useSaver } from "./ui";
 
 const MOODS: BodyMood[] = ["idle", "listening", "thinking", "talking", "away"];
 const STILLS = ["neutral", "smile", "laugh", "shy", "surprised", "sad", "thinking", "sleepy", "blink", "mouth_half", "mouth_open", "mouth_o"];
 const CLIP_KINDS: ClipKind[] = ["idle", "talk", "listen", "think", "react", "away"];
-const LICENCE_URL = "https://www.live2d.com/en/sdk/license/";
 
 const emptyRig = (): Rig => ({ aspect: [3, 4], home: "", stills: {}, clips: [] });
 const rigOf = (a: Avatar): Rig => (a.kind === "video" || a.kind === "photo" ? a.rig : emptyRig());
@@ -86,7 +85,7 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
       )}
       {avatar.kind === "live2d" && (
         <>
-          <CoreSection />
+          <CoreNotice />
           <Live2DEditor live2d={avatar.live2d} onChange={(live2d) => setAvatar({ kind: "live2d", live2d })} />
         </>
       )}
@@ -344,57 +343,36 @@ function ClipsEditor({ mate, rig, onChange }: { mate: Mate; rig: Rig; onChange: 
   );
 }
 
-function CoreSection() {
-  const [st, setSt] = useState<{ installed: boolean } | null>(null);
-  const [accepted, setAccepted] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+/** Live2D needs the Cubism Core, installed once in Global settings: say so here while it's missing. */
+function CoreNotice() {
+  const [installed, setInstalled] = useState<boolean | null>(null);
   useEffect(() => {
-    coreStatus()
-      .then(setSt)
-      .catch((e) => setErr((e as Error).message));
+    let alive = true;
+    const check = () => {
+      coreStatus()
+        .then((s) => alive && setInstalled(s.installed))
+        .catch(() => alive && setInstalled(null));
+    };
+    check();
+    window.addEventListener("hrh:live2d-core-installed", check);
+    return () => {
+      alive = false;
+      window.removeEventListener("hrh:live2d-core-installed", check);
+    };
   }, []);
-  const install = async () => {
-    setBusy(true);
-    setErr(null);
-    try {
-      setSt(await installCore());
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+  if (installed !== false) return null;
   return (
-    <Section title="Live2D runtime" hint="Live2D models need Live2D's Cubism Core. It isn't shipped with the app (Live2D licence): the server downloads it from Live2D once you accept the licence.">
-      {st === null ? (
-        <p className="text-[12px] text-content-faint">Checking…</p>
-      ) : st.installed ? (
-        <p className="inline-flex items-center gap-1.5 text-[12.5px] text-success" data-testid="mate-core-status">
-          <Icon name="check" size={13} /> Cubism Core installed
-        </p>
-      ) : (
-        <>
-          <p className="text-[12.5px] text-warning" data-testid="mate-core-status">
-            Runtime not installed — Live2D avatars can't be shown yet.
-          </p>
-          <label className="flex items-start gap-2 text-[12.5px] text-content-dim">
-            <input type="checkbox" className="mt-0.5" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} data-testid="mate-core-accept" />
-            <span>
-              I have read and accept the{" "}
-              <a href={LICENCE_URL} target="_blank" rel="noreferrer" className="text-accent underline">
-                Live2D Proprietary Software License
-              </a>{" "}
-              for the Cubism Core.
-            </span>
-          </label>
-          <button className="btn-soft" disabled={!accepted || busy} onClick={install} data-testid="mate-core-install">
-            {busy ? <Icon name="spinner" size={14} spin /> : <Icon name="download" size={14} />} Install Cubism Core
-          </button>
-        </>
-      )}
-      <ErrorLine text={err} />
-    </Section>
+    <Banner
+      tone="warn"
+      testId="mate-core-missing"
+      action={
+        <button className="btn-soft !px-2.5 !py-1 text-[12px]" onClick={() => useMateStore.getState().openGlobal("live2d")} data-testid="mate-core-open-global">
+          <Icon name="download" size={12} /> Install in Global settings
+        </button>
+      }
+    >
+      The Live2D runtime (Cubism Core) isn't installed yet — Live2D avatars can't be shown until it is. It's installed once, for every mate.
+    </Banner>
   );
 }
 

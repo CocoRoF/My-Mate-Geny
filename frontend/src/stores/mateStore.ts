@@ -1,9 +1,40 @@
 import { create } from "zustand";
-import { createMate, deleteMate, listMates, restoreBuiltins, updateMate, type Mate, type MatePatch } from "../api/mates";
+import {
+  createMate,
+  deleteMate,
+  getProviders,
+  listMates,
+  restoreBuiltins,
+  updateMate,
+  verifyProvider,
+  type Mate,
+  type MatePatch,
+  type Providers,
+  type ProviderStatus,
+} from "../api/mates";
+
+/** Sections of the Global (app-wide) Mate settings. */
+export type GlobalSection = "voice" | "live2d" | "desktop" | "defaults";
 
 /** The mates (default first) and which one the Mate view shows. Per-device
- * prefs (the chosen mate, mute) live in localStorage. */
+ * prefs (the chosen mate, mute) live in localStorage. Also: the voice
+ * providers set up in Global settings (shared by every mate) and whether the
+ * Global settings panel is open. */
 interface MateState {
+  /** voice providers (GET /api/mates/providers); null until loaded */
+  providers: Providers | null;
+  providersError: string | null;
+  providersLoading: boolean;
+  /** load (configured ones are verified server-side when stale; `refresh`: all re-checked now) */
+  loadProviders: (refresh?: boolean) => Promise<Providers | null>;
+  setProviders: (p: Providers) => void;
+  /** re-check one provider now */
+  verifyProvider: (engine: string) => Promise<ProviderStatus>;
+  /** Global settings: open (on a section) / closed. The Mate view and Mate settings both open it. */
+  globalOpen: boolean;
+  globalSection: GlobalSection;
+  openGlobal: (section?: GlobalSection) => void;
+  closeGlobal: () => void;
   mates: Mate[];
   loaded: boolean;
   error: string | null;
@@ -45,6 +76,36 @@ export const useMateStore = create<MateState>((set, get) => ({
   error: null,
   activeId: read(ACTIVE_KEY),
   muted: read(MUTE_KEY) === "1",
+
+  providers: null,
+  providersError: null,
+  providersLoading: false,
+  loadProviders: async (refresh = false) => {
+    set({ providersLoading: true });
+    try {
+      const providers = await getProviders(refresh);
+      set({ providers, providersError: null, providersLoading: false });
+      return providers;
+    } catch (e) {
+      set({ providersError: (e as Error).message, providersLoading: false });
+      return null;
+    }
+  },
+  setProviders: (providers) => set({ providers, providersError: null }),
+  verifyProvider: async (engine) => {
+    const st = await verifyProvider(engine);
+    set((s) => {
+      if (!s.providers) return {};
+      // one provider can serve both kinds (OpenAI: TTS + STT)
+      const put = (xs: ProviderStatus[]) => xs.map((p) => (p.engine === st.engine ? { ...st, kind: p.kind } : p));
+      return { providers: { tts: put(s.providers.tts), stt: put(s.providers.stt) } };
+    });
+    return st;
+  },
+  globalOpen: false,
+  globalSection: "voice",
+  openGlobal: (section) => set((s) => ({ globalOpen: true, globalSection: section ?? s.globalSection })),
+  closeGlobal: () => set({ globalOpen: false }),
 
   load: async () => {
     try {

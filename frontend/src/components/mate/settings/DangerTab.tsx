@@ -4,11 +4,19 @@ import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
 import { ErrorLine, Section } from "./ui";
 
+/** the characters bundled with the app (backend/app/mate/builtin) */
+const BUILTINS: Record<string, string> = { estelle: "Estelle", chaerin: "Chaerin", seoa: "Seoa" };
+
 export default function DangerTab({ mate, onDeleted }: { mate: Mate; onDeleted: () => void }) {
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [restored, setRestored] = useState<string | null>(null);
+  const mates = useMateStore((s) => s.mates);
+  const present = new Set(mates.map((m) => m.builtin).filter(Boolean));
+  const missing = Object.entries(BUILTINS)
+    .filter(([k]) => !present.has(k))
+    .map(([, n]) => n);
   const del = async () => {
     setBusy(true);
     setErr(null);
@@ -62,9 +70,11 @@ export default function DangerTab({ mate, onDeleted }: { mate: Mate; onDeleted: 
           </button>
         </div>
       </Section>
-      <Section title="Built-in mates" hint="Estelle, Chaerin and Seoa ship with the app. Bring back any you deleted.">
-        <div className="flex items-center justify-end gap-3">
-          {restored && <span className="text-[12px] text-success">{restored}</span>}
+      <Section title="Built-in mates" hint="Estelle, Chaerin and Seoa ship with the app. Bring back any you deleted (fresh, as shipped).">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <span className="min-w-0 flex-1 text-[12px] text-content-faint" data-testid="mate-builtins-missing">
+            {restored ? <span className="text-success">{restored}</span> : missing.length ? `Missing: ${missing.join(", ")}` : "All of them are here."}
+          </span>
           <button className="btn-soft" onClick={restore} data-testid="mate-restore-builtins-settings">
             <Icon name="rotate" size={13} /> Restore built-in mates
           </button>
