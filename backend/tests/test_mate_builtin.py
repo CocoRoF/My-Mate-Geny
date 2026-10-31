@@ -56,7 +56,7 @@ def test_sync_is_idempotent_respects_deletes_and_edits(db):
     est = mates.store.by_builtin("estelle")
     # a restart (new service on the same DB) creates nothing new
     _service(db)
-    assert len(mates.store.list()) == 4
+    assert len(mates.store.list()) == len(KEYS)
     # the user edits Estelle: a newer bundle no longer overwrites her
     mates.update(est["id"], {"persona": {"greeting": "mine"}})
     mates.store.mark_builtin(est["id"], "estelle", "old-version")
