@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "aspect": [
+    1020,
+    1298
+  ],
+  "anchor": [
+    0.5,
+    1.0
+  ],
+  "home": "asset:mate-estelle/neutral.webp",
+  "stills": {
+    "neutral": "asset:mate-estelle/neutral.webp",
+    "smile": "asset:mate-estelle/smile.webp",
+    "laugh": "asset:mate-estelle/laugh.webp",
+    "shy": "asset:mate-estelle/shy.webp",
+    "surprised": "asset:mate-estelle/surprised.webp",
+    "sad": "asset:mate-estelle/sad.webp",
+    "thinking": "asset:mate-estelle/thinking.webp",
+    "sleepy": "asset:mate-estelle/sleepy.webp",
+    "blink": "asset:mate-estelle/blink.webp",
+    "mouth_half": "asset:mate-estelle/mouth_half.webp",
+    "mouth_open": "asset:mate-estelle/mouth_open.webp",
+    "mouth_o": "asset:mate-estelle/mouth_o.webp"
+  },
+  "clips": [
+    {
+      "id": "idle_a",
+      "kind": "idle",
+      "src": "asset:mate-estelle/idle_a.lg.mp4",
+      "small": "asset:mate-estelle/idle_a.sm.mp4"
+    },
+    {
+      "id": "idle_b",
+      "kind": "idle",
+      "src": "asset:mate-estelle/idle_b.lg.mp4",
+      "small": "asset:mate-estelle/idle_b.sm.mp4"
+    },
+    {
+      "id": "idle_c",
+      "kind": "idle",
+      "src": "asset:mate-estelle/idle_c.lg.mp4",
+      "small": "asset:mate-estelle/idle_c.sm.mp4"
+    },
+    {
+      "id": "talk_a",
+      "kind": "talk",
+      "src": "asset:mate-estelle/talk_a.lg.mp4",
+      "small": "asset:mate-estelle/talk_a.sm.mp4"
+    },
+    {
+      "id": "talk_b",
+      "kind": "talk",
+      "src": "asset:mate-estelle/talk_b.lg.mp4",
+      "small": "asset:mate-estelle/talk_b.sm.mp4"
+    },
+    {
+      "id": "listen",
+      "kind": "listen",
+      "src": "asset:mate-estelle/listen.lg.mp4",
+      "small": "asset:mate-estelle/listen.sm.mp4"
+    },
+    {
+      "id": "laugh",
+      "kind": "react",
+      "src": "asset:mate-estelle/laugh.lg.mp4",
+      "small": "asset:mate-estelle/laugh.sm.mp4",
+      "emotion": "joy"
+    },
+    {
+      "id": "smile",
+      "kind": "react",
+      "src": "asset:mate-estelle/smile.lg.mp4",
+      "small": "asset:mate-estelle/smile.sm.mp4",
+      "emotion": "happy"
+    },
+    {
+      "id": "shy",
+      "kind": "react",
+      "src": "asset:mate-estelle/shy.lg.mp4",
+      "small": "asset:mate-estelle/shy.sm.mp4",
+      "emotion": "shy"
+    },
+    {
+      "id": "surprised",
+      "kind": "react",
+      "src": "asset:mate-estelle/surprised.lg.mp4",
+      "small": "asset:mate-estelle/surprised.sm.mp4",
+      "emotion": "surprise"
+    },
+    {
+      "id": "nod",
+      "kind": "react",
+      "src": "asset:mate-estelle/nod.lg.mp4",
+      "small": "asset:mate-estelle/nod.sm.mp4",
+      "emotion": "agree"
+    },
+    {
+      "id": "wave",
+      "kind": "react",
+      "src": "asset:mate-estelle/wave.lg.mp4",
+      "small": "asset:mate-estelle/wave.sm.mp4",
+      "emotion": "greet"
+    },
+    {
+      "id": "doze",
+      "kind": "away",
+      "src": "asset:mate-estelle/doze.lg.mp4",
+      "small": "asset:mate-estelle/doze.sm.mp4",
+      "loop": true
+    }
+  ],
+  "emotions": {
+    "joy": [
+      "laugh"
+    ],
+    "happy": [
+      "smile"
+    ],
+    "shy": [
+      "shy"
+    ],
+    "surprise": [
+      "surprised"
+    ],
+    "sad": [
+      "sad"
+    ],
+    "pout": [
+      "pout"
+    ],
+    "agree": [
+      "nod"
+    ],
+    "greet": [
+      "wave"
+    ]
+  },
+  "packing": "stacked-alpha"
+}

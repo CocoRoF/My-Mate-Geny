@@ -76,6 +76,7 @@ class MateService:
         self._depth: dict[str, int] = {}                  # mate sid -> chain depth of its running turn
         sessions.mate_engine = self.configure_engine
         sessions.add_turn_end_listener(self._on_turn_end)
+        self.sync_builtins()
 
     def _log(self, level: str, message: str, **kw: Any) -> None:
         if self._logs is not None:
@@ -84,7 +85,42 @@ class MateService:
     # ---- mates ----
 
     def list(self) -> list[dict[str, Any]]:
-        self.store.ensure_default()
+        self.store.ensure_default()  # (only when there is no mate at all, built-ins included)
+        return self.store.list()
+
+    # ---- built-in mates: the bundled ailism characters (app/mate/builtin) ----
+
+    def sync_builtins(self) -> None:
+        """Every bundled character exists as a mate (unless the user deleted
+        it). A new bundle version updates persona + body of the mates the
+        user hasn't edited; their voice/model choices are never overwritten."""
+        removed = self.store.builtin_removed()
+        for key in files.builtin_keys():
+            try:
+                version = files.builtin_hash(key)
+                cur = self.store.by_builtin(key)
+                if cur is not None and (cur["customized"] or cur["builtin_hash"] == version):
+                    continue
+                if cur is None and key in removed:
+                    continue
+                doc = files.builtin_doc(key)
+                name, persona = files.ailism_persona(doc)
+                avatar = files.builtin_avatar(key, doc) or {"kind": "none"}
+                if cur is None:
+                    mate = self.store.create(name=name, persona=persona, avatar=avatar)
+                    self.store.mark_builtin(mate["id"], key, version)
+                    voice = files.ailism_voice(doc, files.builtin_voice_dir(key), mate["id"])
+                    if voice:
+                        self.store.update(mate["id"], {"voice": voice, "_sync": True})
+                else:
+                    self.store.update(cur["id"], {"persona": persona, "avatar": avatar, "_sync": True})
+                    self.store.mark_builtin(cur["id"], key, version)
+            except Exception as exc:  # noqa: BLE001 - one broken bundle must not stop the app
+                self._log("warning", f"built-in mate {key}: {exc}")
+
+    def restore_builtins(self) -> list[dict[str, Any]]:
+        self.store.restore_builtins()
+        self.sync_builtins()
         return self.store.list()
 
     def get(self, mate_id: str) -> dict[str, Any]:

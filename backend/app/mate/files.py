@@ -18,6 +18,7 @@ members are refused.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
 import os
@@ -327,12 +328,18 @@ def build_rig_avatar(mate_id: str, raw: Any, base: Path) -> dict[str, Any]:
     if base != a_root and a_root not in base.parents:
         raise MateError("rig folder outside the mate's assets")
     prefix = str(base.relative_to(a_root)).replace(os.sep, "/")
+    return rig_avatar(raw, base, lambda rel: asset_url(mate_id, f"{prefix}/{rel}" if prefix and prefix != "." else rel))
+
+
+def rig_avatar(raw: Any, base: Path, url_for: Any) -> dict[str, Any]:
+    """Rig refs (relative to ``base``, files that exist) -> Avatar, with
+    ``url_for(rel)`` turning a file into its served URL."""
+    if not isinstance(raw, dict):
+        raise MateError("rig.json must be an object")
 
     def url(ref: Any) -> str | None:
         rel = _ref_rel(ref, base)
-        if rel is None:
-            return None
-        return asset_url(mate_id, f"{prefix}/{rel}" if prefix and prefix != "." else rel)
+        return None if rel is None else url_for(rel)
 
     stills = {}
     for k, v in (raw.get("stills") or {}).items():
@@ -696,6 +703,59 @@ def ailism_voice(doc: dict[str, Any], voice_dir: Path | None, mate_id: str) -> d
         if spec.get("language"):
             tts["language"] = str(spec["language"])
     return {"tts": tts} if tts else None
+
+
+# ---- built-in mates (bundled ailism content: mates/, assets/, voices/) ----
+
+BUILTIN_DIR = Path(__file__).resolve().parent / "builtin"
+BUILTIN_ORDER = ("estelle", "chaerin", "seoa")  # the first is the default mate
+
+
+def builtin_keys() -> list[str]:
+    keys = [x.stem for x in (BUILTIN_DIR / "mates").glob("*.json")] if (BUILTIN_DIR / "mates").is_dir() else []
+    return sorted(keys, key=lambda k: (BUILTIN_ORDER.index(k) if k in BUILTIN_ORDER else len(BUILTIN_ORDER), k))
+
+
+def builtin_doc(key: str) -> dict[str, Any]:
+    return _read_json(BUILTIN_DIR / "mates" / f"{key}.json")
+
+
+def builtin_url(key: str, rel: str) -> str:
+    return f"/api/mates/builtin/{quote(key)}/{quote(rel)}"
+
+
+def builtin_avatar(key: str, doc: dict[str, Any]) -> dict[str, Any] | None:
+    folder = BUILTIN_DIR / "assets" / key
+    raw = _read_json(folder / "rig.json") if (folder / "rig.json").is_file() else ((doc.get("doc") or {}).get("mate") or {}).get("body")
+    if not folder.is_dir() or not raw:
+        return None
+    return rig_avatar(raw, folder.resolve(), lambda rel: builtin_url(key, rel))
+
+
+def builtin_voice_dir(key: str) -> Path | None:
+    v = BUILTIN_DIR / "voices" / key
+    return v if (v / "voice.json").is_file() else None
+
+
+def builtin_hash(key: str) -> str:
+    """Changes when the bundled character changes (persona, rig, files)."""
+    h = hashlib.sha256()
+    for f in sorted([BUILTIN_DIR / "mates" / f"{key}.json", *(BUILTIN_DIR / "assets" / key).glob("*"),
+                     *(BUILTIN_DIR / "voices" / key).glob("*")]):
+        if f.is_file():
+            st = f.stat()
+            h.update(f"{f.name}:{st.st_size}".encode())
+            if f.suffix == ".json":
+                h.update(f.read_bytes())
+    return h.hexdigest()[:16]
+
+
+def resolve_builtin(key: str, rel: str) -> Path:
+    root_dir = (BUILTIN_DIR / "assets" / key).resolve()
+    p = (root_dir / rel).resolve()
+    if root_dir not in p.parents or not p.is_file():
+        raise MateError("asset not found", status=404)
+    return p
 
 
 # ---- Live2D Cubism Core ----

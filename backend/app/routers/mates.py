@@ -273,6 +273,23 @@ async def upload_asset(mate_id: str, request: Request, file: UploadFile = File(.
         raise _http(exc) from exc
 
 
+@router.get("/builtin/{key}/{rel:path}")
+async def get_builtin_asset(key: str, rel: str) -> FileResponse:
+    """Files of the bundled characters (shipped with the app, immutable per release)."""
+    try:
+        p = files.resolve_builtin(key, rel)
+    except MateError as exc:
+        raise HTTPException(status_code=404, detail="asset not found") from exc
+    return FileResponse(p, media_type=files.content_type(p), headers={
+        **_ASSET_HEADERS, "Cache-Control": "private, max-age=86400"})
+
+
+@router.post("/builtin/restore")
+async def restore_builtins(request: Request) -> list[dict]:
+    """Bring back the bundled characters the user deleted."""
+    return _svc(request).restore_builtins()
+
+
 @router.get("/{mate_id}/assets/{rel:path}")
 async def get_asset(mate_id: str, rel: str, request: Request, v: str | None = None) -> FileResponse:
     try:

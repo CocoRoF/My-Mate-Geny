@@ -222,6 +222,8 @@ class MateStore:
             "voice": normalize_voice(None, _loads(row["voice"], {})),
             "session_id": row["session_id"],
             "memory_rev": row["memory_rev"],
+            "builtin": row["builtin"] if "builtin" in row.keys() else None,
+            "customized": bool(row["customized"]) if "customized" in row.keys() else False,
         }
 
     def list(self) -> list[dict[str, Any]]:
@@ -305,6 +307,8 @@ class MateStore:
                 sets.append("avatar = ?")
                 params.append(json.dumps(new, ensure_ascii=False))
                 changed.add("avatar")
+        if cur.get("builtin") and changed & {"persona", "avatar"} and not patch.get("_sync"):
+            sets.append("customized = 1")  # the user's own version now: content updates leave it alone
         with self._lock:
             if patch.get("is_default") and not cur["is_default"]:
                 self._db.execute("UPDATE mates SET is_default = 0")
@@ -316,14 +320,32 @@ class MateStore:
                 self._db.execute(f"UPDATE mates SET {', '.join(sets)} WHERE id = ?", params)
         return self.get(mate_id), changed
 
+    # ---- built-in mates ----
+
+    def by_builtin(self, key: str) -> dict[str, Any] | None:
+        row = self._db.query_one("SELECT * FROM mates WHERE builtin = ?", (key,))
+        return None if row is None else {**self._out(row), "builtin_hash": row["builtin_hash"]}
+
+    def builtin_removed(self) -> set[str]:
+        return {r["key"] for r in self._db.query("SELECT key FROM mate_builtin_removed")}
+
+    def restore_builtins(self) -> None:
+        self._db.execute("DELETE FROM mate_builtin_removed")
+
+    def mark_builtin(self, mate_id: str, key: str, version: str) -> None:
+        self._db.execute("UPDATE mates SET builtin = ?, builtin_hash = ? WHERE id = ?", (key, version, mate_id))
+
     def set_session(self, mate_id: str, sid: str | None) -> None:
         self._db.execute("UPDATE mates SET session_id = ? WHERE id = ?", (sid, mate_id))
 
     def delete(self, mate_id: str) -> None:
         with self._lock:
-            row = self._db.query_one("SELECT is_default FROM mates WHERE id = ?", (mate_id,))
+            row = self._db.query_one("SELECT is_default, builtin FROM mates WHERE id = ?", (mate_id,))
             if row is None:
                 raise KeyError(f"mate not found: {mate_id}")
+            if row["builtin"]:  # a deleted built-in stays deleted (until restored)
+                self._db.execute("INSERT OR REPLACE INTO mate_builtin_removed (key, removed_at) VALUES (?, ?)",
+                                 (row["builtin"], now_iso()))
             self._db.execute("DELETE FROM mate_memories WHERE mate_id = ?", (mate_id,))
             self._db.execute("DELETE FROM mates WHERE id = ?", (mate_id,))
             if row["is_default"]:  # someone else becomes the default

@@ -1,0 +1,153 @@
+{
+  "version": 1,
+  "aspect": [
+    1130,
+    1294
+  ],
+  "anchor": [
+    0.5,
+    1.0
+  ],
+  "home": "asset:mate-chaerin/neutral.webp",
+  "stills": {
+    "neutral": "asset:mate-chaerin/neutral.webp",
+    "smile": "asset:mate-chaerin/smile.webp",
+    "laugh": "asset:mate-chaerin/laugh.webp",
+    "shy": "asset:mate-chaerin/shy.webp",
+    "surprised": "asset:mate-chaerin/surprised.webp",
+    "sad": "asset:mate-chaerin/sad.webp",
+    "thinking": "asset:mate-chaerin/thinking.webp",
+    "sleepy": "asset:mate-chaerin/sleepy.webp",
+    "blink": "asset:mate-chaerin/blink.webp",
+    "mouth_half": "asset:mate-chaerin/mouth_half.webp",
+    "mouth_open": "asset:mate-chaerin/mouth_open.webp",
+    "mouth_o": "asset:mate-chaerin/mouth_o.webp"
+  },
+  "clips": [
+    {
+      "id": "idle_a",
+      "kind": "idle",
+      "src": "asset:mate-chaerin/idle_a.lg.mp4",
+      "small": "asset:mate-chaerin/idle_a.sm.mp4"
+    },
+    {
+      "id": "idle_b",
+      "kind": "idle",
+      "src": "asset:mate-chaerin/idle_b.lg.mp4",
+      "small": "asset:mate-chaerin/idle_b.sm.mp4"
+    },
+    {
+      "id": "idle_c",
+      "kind": "idle",
+      "src": "asset:mate-chaerin/idle_c.lg.mp4",
+      "small": "asset:mate-chaerin/idle_c.sm.mp4"
+    },
+    {
+      "id": "talk_a",
+      "kind": "talk",
+      "src": "asset:mate-chaerin/talk_a.lg.mp4",
+      "small": "asset:mate-chaerin/talk_a.sm.mp4"
+    },
+    {
+      "id": "talk_b",
+      "kind": "talk",
+      "src": "asset:mate-chaerin/talk_b.lg.mp4",
+      "small": "asset:mate-chaerin/talk_b.sm.mp4"
+    },
+    {
+      "id": "listen",
+      "kind": "listen",
+      "src": "asset:mate-chaerin/listen.lg.mp4",
+      "small": "asset:mate-chaerin/listen.sm.mp4"
+    },
+    {
+      "id": "think",
+      "kind": "think",
+      "src": "asset:mate-chaerin/think.lg.mp4",
+      "small": "asset:mate-chaerin/think.sm.mp4"
+    },
+    {
+      "id": "laugh",
+      "kind": "react",
+      "src": "asset:mate-chaerin/laugh.lg.mp4",
+      "small": "asset:mate-chaerin/laugh.sm.mp4",
+      "emotion": "joy"
+    },
+    {
+      "id": "smile",
+      "kind": "react",
+      "src": "asset:mate-chaerin/smile.lg.mp4",
+      "small": "asset:mate-chaerin/smile.sm.mp4",
+      "emotion": "happy"
+    },
+    {
+      "id": "shy",
+      "kind": "react",
+      "src": "asset:mate-chaerin/shy.lg.mp4",
+      "small": "asset:mate-chaerin/shy.sm.mp4",
+      "emotion": "shy"
+    },
+    {
+      "id": "surprised",
+      "kind": "react",
+      "src": "asset:mate-chaerin/surprised.lg.mp4",
+      "small": "asset:mate-chaerin/surprised.sm.mp4",
+      "emotion": "surprise"
+    },
+    {
+      "id": "sad",
+      "kind": "react",
+      "src": "asset:mate-chaerin/sad.lg.mp4",
+      "small": "asset:mate-chaerin/sad.sm.mp4",
+      "emotion": "sad"
+    },
+    {
+      "id": "nod",
+      "kind": "react",
+      "src": "asset:mate-chaerin/nod.lg.mp4",
+      "small": "asset:mate-chaerin/nod.sm.mp4",
+      "emotion": "agree"
+    },
+    {
+      "id": "wave",
+      "kind": "react",
+      "src": "asset:mate-chaerin/wave.lg.mp4",
+      "small": "asset:mate-chaerin/wave.sm.mp4",
+      "emotion": "greet"
+    },
+    {
+      "id": "doze",
+      "kind": "away",
+      "src": "asset:mate-chaerin/doze.lg.mp4",
+      "small": "asset:mate-chaerin/doze.sm.mp4",
+      "loop": true
+    }
+  ],
+  "emotions": {
+    "joy": [
+      "laugh"
+    ],
+    "happy": [
+      "smile"
+    ],
+    "shy": [
+      "shy"
+    ],
+    "surprise": [
+      "surprised"
+    ],
+    "sad": [
+      "sad"
+    ],
+    "pout": [
+      "pout"
+    ],
+    "agree": [
+      "nod"
+    ],
+    "greet": [
+      "wave"
+    ]
+  },
+  "packing": "stacked-alpha"
+}

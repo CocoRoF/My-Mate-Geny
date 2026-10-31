@@ -186,6 +186,19 @@ Asset upload / import:
   the contract keeps that (it never acts itself) and states that asking the
   chats through its tools is how it helps.
 
+### Built-in mates (shipped with the app)
+
+The ailism characters — **Estelle** (default), **Chaerin**, **Seoa** — are
+bundled in `backend/app/mate/builtin/` (`mates/<key>.json`, `assets/<key>/`
+video clips + stills + `rig.json`, `voices/<key>/voice.json`). On startup every
+bundled character exists as a mate (`builtin: "<key>"`), persona mapped exactly
+like the import above, body served from `GET /api/mates/builtin/<key>/<file>`
+(no copy). A new bundle version refreshes persona + body of built-ins the user
+hasn't edited (`customized` turns on with the user's first persona/avatar
+edit); voice/model choices are never overwritten. A deleted built-in stays
+deleted; `POST /api/mates/builtin/restore` brings them back. The avatar-less
+"Geny" mate is only created when there is no mate at all.
+
 ## 3. Conversation = a session of kind "mate"
 
 - Each mate has one conversation: a `sessions` row with `kind="mate"`,

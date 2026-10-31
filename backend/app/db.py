@@ -200,6 +200,9 @@ CREATE TABLE IF NOT EXISTS mates (
     voice       TEXT NOT NULL DEFAULT '{}',
     session_id  TEXT,
     memory_rev  INTEGER NOT NULL DEFAULT 0,   -- bumped by user edits of the memory (the engine reloads it)
+    builtin     TEXT,                         -- bundled character key (estelle, …) for built-in mates
+    builtin_hash TEXT,                        -- the bundled version it was last synced from
+    customized  INTEGER NOT NULL DEFAULT 0,   -- the user edited its persona/avatar: no more content syncs
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -281,6 +284,12 @@ class Database:
             ):
                 if pcols and col not in pcols:
                     self._conn.execute(f"ALTER TABLE provider_pool ADD COLUMN {col} {ddl}")
+            matecols = {r["name"] for r in self._conn.execute("PRAGMA table_info(mates)")}
+            for col, ddl in (("builtin", "TEXT"), ("builtin_hash", "TEXT"), ("customized", "INTEGER NOT NULL DEFAULT 0")):
+                if matecols and col not in matecols:
+                    self._conn.execute(f"ALTER TABLE mates ADD COLUMN {col} {ddl}")
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS mate_builtin_removed (key TEXT PRIMARY KEY, removed_at TEXT NOT NULL)")
             mcols = {r["name"] for r in self._conn.execute("PRAGMA table_info(messages)")}
             for col in ("provider", "model", "meta"):
                 if col not in mcols:
