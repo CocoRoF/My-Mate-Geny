@@ -27,12 +27,27 @@ export default function Sidebar() {
   const activeId = useSessionStore((s) => s.activeId);
   const setActive = useSessionStore((s) => s.setActive);
   const remove = useSessionStore((s) => s.remove);
+  const updateSession = useSessionStore((s) => s.update);
   const providers = useProviderStore((s) => s.providers);
   const reset = useChatStore((s) => s.reset);
 
   const [query, setQuery] = useState("");
   const [showSessions, setShowSessions] = useState(true);
   const [menuId, setMenuId] = useState<string | null>(null);
+  // Inline rename: the row's title becomes a field (Enter / blur saves, Esc cancels).
+  const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null);
+  const startRename = (id: string, title: string) => {
+    setMenuId(null);
+    setRenaming({ id, title });
+  };
+  const saveRename = () => {
+    const r = renaming;
+    setRenaming(null);
+    if (!r) return;
+    const title = r.title.trim();
+    const cur = sessions.find((x) => x.id === r.id);
+    if (title && cur && title !== cur.title) updateSession(r.id, { title }).catch(() => {});
+  };
 
   const filtered = useMemo(
     () => sessions.filter((s) => s.title.toLowerCase().includes(query.toLowerCase())),
@@ -173,7 +188,40 @@ export default function Sidebar() {
                   <span className="absolute left-0 top-2 bottom-2 w-[2.5px] rounded-full bg-gradient-to-b from-accent to-cyan" />
                 )}
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] text-content/90">{s.title}</div>
+                  {renaming?.id === s.id ? (
+                    <input
+                      autoFocus
+                      value={renaming.title}
+                      maxLength={200}
+                      onFocus={(e) => e.currentTarget.select()}
+                      onChange={(e) => setRenaming({ id: s.id, title: e.target.value })}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.nativeEvent.isComposing || e.keyCode === 229) return; // IME (Korean…)
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          saveRename();
+                        } else if (e.key === "Escape") {
+                          e.preventDefault();
+                          setRenaming(null);
+                        }
+                      }}
+                      onBlur={saveRename}
+                      aria-label="Chat name"
+                      className="w-full rounded-md border border-accent/50 bg-surface px-1.5 py-0.5 text-[13px] text-content outline-none"
+                    />
+                  ) : (
+                    <div
+                      className="truncate text-[13px] text-content/90"
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        startRename(s.id, s.title);
+                      }}
+                      title="Double-click to rename"
+                    >
+                      {s.title}
+                    </div>
+                  )}
                   <div className="flex items-center gap-1.5 truncate text-[10.5px] text-content-faint">
                     {(s.running || (s.background ?? 0) > 0) && (
                       <span
@@ -206,6 +254,12 @@ export default function Sidebar() {
                     className="absolute right-2 top-9 touch:top-12 z-20 w-32 overflow-hidden rounded-lg border border-border bg-surface-2 shadow-float animate-fade-in"
                     onClick={(e) => e.stopPropagation()}
                   >
+                    <button
+                      onClick={() => startRename(s.id, s.title)}
+                      className="flex w-full items-center gap-2 px-3 py-2 touch:py-3 text-[13px] text-content-dim hover:bg-surface-3 hover:text-content"
+                    >
+                      <Icon name="pencil" size={14} /> Rename
+                    </button>
                     <button
                       onClick={() => {
                         remove(s.id);
