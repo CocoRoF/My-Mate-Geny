@@ -98,10 +98,11 @@ export interface Attachment {
 
 export interface ChatMessage {
   id?: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "steer";
   content: string;
   created_at?: string;
   attachments?: Attachment[];
+  meta?: import("../stores/chatStore").MessageMeta | null;
 }
 
 export type EventType =

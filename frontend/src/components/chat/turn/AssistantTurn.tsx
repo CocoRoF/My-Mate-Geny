@@ -14,6 +14,7 @@ import { relTime, absTime } from "../../admin/format";
 import { useChatStore } from "../../../stores/chatStore";
 import TurnCost from "../TurnCost";
 import CompactionDivider from "../CompactionDivider";
+import ViaBadge from "../ViaBadge";
 
 type Segment =
   | { kind: "text"; text: string }
@@ -168,6 +169,7 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
               return (
                 <div key={i} className="flex flex-col items-end gap-1 py-0.5">
                   <span className="inline-flex items-center gap-1.5 text-[10.5px] text-content-faint">
+                    <ViaBadge meta={s.item.meta} />
                     {s.item.pending ? (
                       <>
                         <Icon name="spinner" size={10} spin /> sending to the agent…

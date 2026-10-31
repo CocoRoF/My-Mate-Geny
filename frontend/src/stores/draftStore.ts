@@ -63,7 +63,10 @@ export const useDraftStore = create<DraftState>()(
       prune: (liveIds) =>
         set((s) => {
           const now = Date.now();
-          const keep = Object.entries(s.drafts).filter(([sid, d]) => liveIds.has(sid) && now - d.at < MAX_AGE_MS);
+          // ("mate:<id>": a mate's composer — mates aren't in the chat list)
+          const keep = Object.entries(s.drafts).filter(
+            ([sid, d]) => (liveIds.has(sid) || sid.startsWith("mate:")) && now - d.at < MAX_AGE_MS,
+          );
           if (keep.length === Object.keys(s.drafts).length) return s;
           return { drafts: Object.fromEntries(keep) };
         }),

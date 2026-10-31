@@ -283,3 +283,10 @@ html, body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: no
   /* 16px+ inputs: iOS/Android (tablets too) don't zoom the page on focus */
   textarea, input, select { font-size: 16px !important; }
 }
+
+/* Desktop Mate surfaces drawn over the user's screen (overlay, quick card): a see-through page */
+html.mate-transparent,
+html.mate-transparent body,
+html.mate-transparent #root {
+  background: transparent !important;
+}

@@ -16,6 +16,10 @@ declare global {
       version: string;
       notify?: (title: string, body: string) => void;
       openExternal?: (url: string) => void;
+      /** desktop: which window this page is in (console | mate-overlay | mate-quick | mate-chat | bar) */
+      surface?: string;
+      /** desktop: the Mate windows (docs/mate.md §7) */
+      mate?: import("../mate/desktop").MateBridge;
     };
   }
 }
@@ -114,7 +118,7 @@ export function useChatSocket(sessionId: string | null) {
             // (titles / order: the session feed refetches the list)
             const turns = store.getState().turns;
             const last = turns[turns.length - 1];
-            const title = useSessionStore.getState().sessions.find((x) => x.id === sessionId)?.title || "hr·harnessor";
+            const title = useSessionStore.getState().sessions.find((x) => x.id === sessionId)?.title || "My Mate Geny";
             if (last?.role === "assistant") {
               const body =
                 last.status === "error" ? `Failed: ${last.error?.message || ""}` :

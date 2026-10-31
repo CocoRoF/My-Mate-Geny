@@ -12,23 +12,29 @@ const PLATFORMS = [
   { id: "android", name: "Android", sub: "Android 7.0+ · phone & tablet" },
 ] as const;
 
-const NOTES: Record<string, string[]> = {
+/** Install hints. Builds since 0.3 are `my-mate-geny-*` ("My Mate Geny.app");
+ * a release still carrying the old `hr-harnessor-*` files gets the old names. */
+const notes = (legacy: boolean): Record<string, string[]> => {
+  const file = legacy ? "hr-harnessor" : "my-mate-geny";
+  const app = legacy ? "hr-harnessor" : "My Mate Geny";
+  return {
   windows: [
     "Run the installer. Windows SmartScreen may warn about an unrecognised app (the build isn't code-signed): choose “More info” → “Run anyway”.",
     "Updates: download and run the newer installer — settings and login are kept.",
   ],
   macos: [
-    "Open the .dmg and drag hr-harnessor into Applications.",
-    "First launch: the app isn't notarised by Apple, so right-click it → Open → Open. If macOS says it's “damaged”, run: xattr -dr com.apple.quarantine /Applications/hr-harnessor.app",
+    `Open the .dmg and drag ${app} into Applications.`,
+    `First launch: the app isn't notarised by Apple, so right-click it → Open → Open. If macOS says it's “damaged”, run: xattr -dr com.apple.quarantine "/Applications/${app}.app"`,
   ],
   linux: [
-    "AppImage: chmod +x hr-harnessor-*.AppImage and run it (works on any distro).",
-    "Debian/Ubuntu: sudo apt install ./hr-harnessor-*.deb — adds it to your app menu.",
+    `AppImage: chmod +x ${file}-*.AppImage and run it (works on any distro).`,
+    `Debian/Ubuntu: sudo apt install ./${file}-*.deb — adds it to your app menu.`,
   ],
   android: [
     "Open the APK on the phone. Android asks to allow installs from your browser/files app once — allow it, then install.",
     "Updates install over the previous version (same signing key), keeping your login.",
   ],
+  };
 };
 
 function Qr({ text }: { text: string }) {
@@ -89,6 +95,8 @@ export default function DownloadsView() {
   const primary = platform === "macos" ? mine.find((a) => a.arch === "arm64") || mine[0] : mine[0];
   const outdated = native && rel?.version && compareVersions(rel.version, native.version) > 0;
   const pageUrl = `${window.location.origin}/?view=downloads`;
+  const legacy = assets.some((a) => a.name.startsWith("hr-harnessor")) && !assets.some((a) => a.name.startsWith("my-mate-geny"));
+  const NOTES = notes(legacy);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -97,9 +105,9 @@ export default function DownloadsView() {
           <div className="flex items-start gap-4">
             <img src="/icon-192.png" alt="" className="h-14 w-14 shrink-0 rounded-2xl shadow-glow" />
             <div className="min-w-0 flex-1">
-              <h1 className="text-xl font-semibold tracking-tight">Get hr·harnessor</h1>
+              <h1 className="text-xl font-semibold tracking-tight">Get My Mate Geny</h1>
               <p className="mt-1 text-sm text-content-dim">
-                The same console as a native app for desktop and Android — notifications, its own window, and your login kept.
+                The same console as a native app for desktop and Android — notifications, its own window, your login kept, and on the desktop your mate on top of your screen with a quick-chat shortcut.
                 The apps load this console live, so UI updates reach them instantly; new app builds are published here
                 automatically from every push.
               </p>

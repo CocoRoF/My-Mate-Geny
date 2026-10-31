@@ -17,6 +17,7 @@ const ConnectionsView = lazy(() => import("./components/connections/ConnectionsV
 const UsageView = lazy(() => import("./components/usage/UsageView"));
 const AdminView = lazy(() => import("./components/admin/AdminView"));
 const DownloadsView = lazy(() => import("./components/downloads/DownloadsView"));
+const MateView = lazy(() => import("./components/mate/MateView"));
 
 export default function App() {
   const view = useUIStore((s) => s.view);
@@ -33,13 +34,17 @@ export default function App() {
   const loadConfig = useConfigStore((s) => s.load);
   useSessionSync(); // every device's session list follows server-pushed changes
 
-  // Deep link: /?view=downloads (desktop menu, update banners).
+  // Deep link: /?view=downloads (desktop menu, update banners), /?view=mate,
+  // /?view=chat&session=<id> (a mate's activity chip opened from a desktop window).
   useEffect(() => {
-    const v = new URLSearchParams(window.location.search).get("view");
-    if (v && ["chat", "providers", "connections", "usage", "admin", "downloads"].includes(v)) {
+    const q = new URLSearchParams(window.location.search);
+    const v = q.get("view");
+    const sid = q.get("session");
+    if (sid) useSessionStore.getState().setActive(sid);
+    if (v && ["mate", "chat", "providers", "connections", "usage", "admin", "downloads"].includes(v)) {
       useUIStore.getState().setView(v as any);
-      window.history.replaceState(null, "", window.location.pathname);
-    }
+    } else if (sid) useUIStore.getState().setView("chat");
+    if (v || sid) window.history.replaceState(null, "", window.location.pathname);
   }, []);
 
   useEffect(() => {
@@ -50,6 +55,7 @@ export default function App() {
   }, [loadProviders, loadConnections, loadSessions, loadConfig]);
 
   const titles: Record<string, string> = {
+    mate: "Mate",
     chat: "New chat", providers: "Providers", connections: "Connections", usage: "Usage", admin: "Admin", downloads: "Download",
   };
 
@@ -69,9 +75,11 @@ export default function App() {
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
         <UpdateBanner />
         {/* chat with an open session has its own header */}
-        {!(view === "chat" && activeId) && <MobileTopBar title={titles[view] || ""} />}
+        {/* chat with an open session and the Mate have their own header */}
+        {!(view === "chat" && activeId) && view !== "mate" && <MobileTopBar title={titles[view] || ""} />}
         <div className="flex-1 min-h-0">
           <Suspense fallback={<div className="grid h-full place-items-center text-sm text-content-faint">Loading…</div>}>
+          {view === "mate" && <MateView />}
           {view === "chat" && <ChatView />}
           {view === "providers" && <ProvidersView />}
           {view === "connections" && <ConnectionsView />}

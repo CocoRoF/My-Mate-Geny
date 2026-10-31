@@ -1,7 +1,7 @@
 {
-  "name": "hr·harnessor",
-  "short_name": "harnessor",
-  "description": "Agent console — Claude Code & Codex on your own servers",
+  "name": "My Mate Geny",
+  "short_name": "Geny",
+  "description": "Your mate on your own server — and the agent console behind it (Claude Code & Codex)",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

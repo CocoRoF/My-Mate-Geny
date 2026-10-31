@@ -3,12 +3,14 @@ import Icon from "../ui/Icon";
 import MessageAttachments from "../attachments/MessageAttachments";
 import AssistantTurn from "./turn/AssistantTurn";
 import CompactionDivider from "./CompactionDivider";
+import ViaBadge from "./ViaBadge";
 
 export default function MessageItem({ turn }: { turn: Turn }) {
   if (turn.role === "user") {
     const atts = turn.attachments || [];
     return (
       <div className="flex flex-col items-end gap-1.5 animate-fade-in">
+        <ViaBadge meta={turn.meta} />
         {atts.length > 0 && <MessageAttachments attachments={atts} />}
         {turn.text && (
           <div className="max-w-[85%] sm:max-w-[78%] rounded-2xl rounded-br-md bg-accent-soft border border-accent/25 px-3.5 py-2 text-sm text-content whitespace-pre-wrap break-words">
