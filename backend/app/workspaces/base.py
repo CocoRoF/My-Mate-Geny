@@ -3,12 +3,12 @@
 A *workspace* answers "where does the agent run and operate files?". Two
 implementations:
 
-* :class:`~app.workspaces.local.LocalConnector` — a path on the 2223 runtime.
+* :class:`~app.workspaces.local.LocalConnector` — a path on the runtime host.
 * :class:`~app.workspaces.remote_ssh.RemoteSshConnector` — a path on a remote
-  SSH host (2222 / 2224), surfaced to the agent via an sshfs mount on 2223
+  SSH host, surfaced to the agent via an sshfs mount on the runtime host
   plus a remote-bash MCP bridge.
 
-The runtime always stays on 2223; the connector's job is to produce a local
+The runtime always stays on the server host; the connector's job is to produce a local
 ``cwd`` the provider CLI can use, and optionally an ``mcp_config`` that routes
 command execution to the right host.
 """
@@ -36,7 +36,7 @@ class WorkspaceConnector(abc.ABC):
 
     @abc.abstractmethod
     async def resolve_cwd(self, path: str, extra_dirs: list[str] | None = None) -> str:
-        """Return a path on the 2223 filesystem the provider CLI can cd into.
+        """Return a path on the runtime filesystem the provider CLI can cd into.
 
         For local this is the path itself; for remote it is the sshfs mount
         point (mounting on demand)."""
@@ -52,7 +52,7 @@ class WorkspaceConnector(abc.ABC):
     async def mcp_config(self, path: str) -> dict[str, Any] | None:
         """Optional MCP config to attach so tool calls hit the right host.
 
-        Local returns ``None`` (the CLI's built-in tools run on 2223 directly)."""
+        Local returns ``None`` (the CLI's built-in tools run on the runtime host directly)."""
         return None
 
     async def upload_files(self, session_id: str, files: list[tuple[str, str, str]]) -> dict[str, str]:

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Start the whole hr-harnessor deployment (backend + tunnel). Idempotent:
-# each sub-script restarts its own process. Used by @reboot and for manual
-# redeploys after a code change.
+# Non-Docker host run: start (or restart) the backend and, if a tunnel config
+# exists, the Cloudflare tunnel. Idempotent; each sub-script restarts its own
+# process. Docker (deploy/docker-compose.yml) is the recommended path.
 set -euo pipefail
-ROOT=/home/hr-harnessor
-bash "$ROOT/deploy/start-backend.sh"
-sleep 3
-bash "$ROOT/deploy/start-tunnel.sh"
-echo "hr-harnessor: backend + tunnel up -> https://agent.hrletsgo.me"
+HERE="$(dirname "$(readlink -f "$0")")"
+bash "$HERE/start-backend.sh"
+if [ -f "${GENY_TUNNEL_CONFIG:-$HERE/cloudflared/config.yml}" ]; then
+  sleep 3
+  bash "$HERE/start-tunnel.sh"
+fi
+echo "My Mate Geny: backend on http://${GENY_BIND:-127.0.0.1}:${GENY_PORT:-8099}"

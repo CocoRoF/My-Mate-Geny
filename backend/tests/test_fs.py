@@ -1,5 +1,7 @@
 """File explorer endpoints (/api/fs/*) — local host."""
 
+import os
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -98,6 +100,8 @@ def test_is_secret_patterns():
     assert is_secret("/home/u/.git-credentials")
     assert is_secret("/srv/app/deploy/cloudflared/04f3.json")
     assert is_secret("/home/hr-harnessor/backend/.env")
+    from app.routers import fs as fs_mod  # this checkout's env file, whatever the clone is called
+    assert is_secret(os.path.realpath(os.path.join(fs_mod._BACKEND_DIR, ".env")))
     assert not is_secret("/home/u/.ssh/known_hosts")
     assert not is_secret("/home/u/proj/.env")
     assert not is_secret("/home/u/proj/auth.json")

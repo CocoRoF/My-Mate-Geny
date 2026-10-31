@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Remote SSH MCP bridge.
 
-A stdio MCP server exposing tools that operate on a remote SSH host (2222 /
-2224). Attached to the agent CLI via ``--mcp-config``, it lets the agent run
-on the 2223 runtime while reading/writing/executing on the remote host — no
+A stdio MCP server exposing tools that operate on a remote SSH host.
+Attached to the agent CLI via ``--mcp-config``, it lets the agent run
+on the runtime host while reading/writing/executing on the remote host — no
 sshfs/fuse required (which is brittle inside containers).
 
 Tools (all resolve relative paths against ``HRH_SSH_CWD``):

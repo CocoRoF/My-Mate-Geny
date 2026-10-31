@@ -1,0 +1,16 @@
+# Caddy in front of My Mate Geny (automatic HTTPS). Replace the hostname.
+# Caddy keeps the original Host header and sets X-Forwarded-For, which the
+# backend needs (same-origin checks, per-IP login bans).
+geny.example.com {
+	reverse_proxy 127.0.0.1:8080 {
+		# Long agent turns stream over WebSockets.
+		flush_interval -1
+		transport http {
+			read_timeout 1h
+		}
+	}
+	request_body {
+		# Chat attachments / mate imports (UPLOAD_MAX_MB, MATE_IMPORT_MAX_MB).
+		max_size 600MB
+	}
+}
