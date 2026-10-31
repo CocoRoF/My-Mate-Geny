@@ -1,9 +1,10 @@
 """Mate conversations, the mate engine, its tools and delegation results.
 
 * A mate's conversation is a ``sessions`` row (``kind='mate'``) streamed with
-  the normal history/ws endpoints. Its Claude engine is configured here
-  (:meth:`MateService.configure_engine`): our own system prompt, no built-in
-  tools, only the ``mate`` MCP bridge, model/effort from ``mate.llm``.
+  the normal history/ws endpoints. Its engine (Claude Code or Codex, from
+  ``mate.llm.provider``) is configured here (:meth:`MateService.configure_engine`):
+  our own system prompt, no built-in tools, only the ``mate`` MCP bridge,
+  none of the user's CLI settings, model/effort from ``mate.llm``.
 * The bridge calls :meth:`call_tool` through the internal API with a
   per-conversation token (``X-Mate-Token``; loopback only, see app.auth).
 * ``send_to_session`` / ``create_session`` act exactly like the user typing
@@ -31,7 +32,7 @@ from app.mate import files
 from app.mate.prompt import prompt_key, settings_change_note, system_prompt
 from app.mate.store import MateError, MateStore, normalize_persona
 from app.providers import get_provider
-from app.providers.catalog import DEFAULT_MATE_MODEL
+from app.providers.catalog import default_mate_model
 from app.providers.base import TurnRequest
 from app.services._ids import now_iso
 from app.services.session_service import SessionService, TurnBusyError
@@ -162,9 +163,11 @@ class MateService:
         sid = self._live_session(mate)
         if sid and changed & {"llm", "name"}:
             # (the engine itself picks persona/llm changes up at the next turn:
-            # see configure_engine; the row keeps the UI's view in sync)
-            self._svc.update(sid, model=mate["llm"]["model"] or DEFAULT_MATE_MODEL,
-                             effort=mate["llm"]["effort"], title=mate["name"])
+            # see configure_engine; the row keeps the UI's view in sync). A new
+            # engine (Claude <-> Codex) switches the session's provider exactly
+            # like a chat's engine switch: each engine keeps its own CLI
+            # session, the other one is handed the conversation so far.
+            self._svc.update(sid, **self._engine_fields(mate), title=mate["name"])
         if "avatar" in changed and files.import_dirs_of(before["avatar"], mate_id):
             # an imported pack/model the avatar no longer uses
             files.drop_import_dirs(mate_id, keep=files.import_dirs_of(mate["avatar"], mate_id))
@@ -201,22 +204,32 @@ class MateService:
 
     # ---- conversation (a kind="mate" session) ----
 
+    @staticmethod
+    def _engine_fields(mate: dict[str, Any]) -> dict[str, str]:
+        """The session columns that follow ``mate.llm``."""
+        llm = mate["llm"]
+        provider = llm.get("provider") or "claude"
+        return {"provider": provider, "model": llm.get("model") or default_mate_model(provider),
+                "effort": llm.get("effort") or "default"}
+
     def conversation(self, mate_id: str) -> dict[str, Any]:
         mate = self.store.get(mate_id)
         sid = self._live_session(mate)
         if sid is None:
             home = files.home_dir(mate_id)
-            s = self._svc.create(
-                provider="claude", model=mate["llm"]["model"], effort=mate["llm"]["effort"],
-                workspace_path=str(home), title=mate["name"], kind="mate", mate_id=mate_id,
-            )
+            fields = self._engine_fields(mate)
+            s = self._svc.create(**fields, workspace_path=str(home), title=mate["name"], kind="mate",
+                                 mate_id=mate_id)
             sid = s["id"]
             greeting = mate["persona"].get("greeting")
             if greeting:
-                self._svc.seed_message(sid, "assistant", greeting, provider="claude",
+                self._svc.seed_message(sid, "assistant", greeting, provider=fields["provider"],
                                        meta={"internal": True, "kind": "greeting"})
             self.store.set_session(mate_id, sid)
             mate = self.store.get(mate_id)
+        elif (self._svc.get(sid).get("provider") or "claude") != (mate["llm"].get("provider") or "claude") \
+                and not self._svc.is_running(sid):
+            self._svc.update(sid, **self._engine_fields(mate))  # (a switch that didn't reach the row)
         return {"mate": mate, "session_id": sid, "session": self._svc.get(sid), "running": self._svc.is_running(sid)}
 
     def reset(self, mate_id: str) -> dict[str, Any]:
@@ -245,30 +258,44 @@ class MateService:
 
     def configure_engine(self, session: dict[str, Any], req: TurnRequest) -> None:
         """SessionService hook for a kind="mate" turn: everything that makes
-        the engine a mate. Persona/memory edits change the prompt key and
-        effort is a launch setting, so either restarts the engine at the next
-        turn (``--resume``: same conversation); the model switches live."""
+        the engine a mate, on either engine (``session.provider``, kept equal
+        to ``mate.llm.provider``).
+
+        * Claude: persona/memory edits change the prompt key and effort is a
+          launch setting, so either restarts the engine at the next turn
+          (``--resume``: same conversation); the model switches live.
+        * Codex: one process per turn in its own sealed CODEX_HOME
+          (``req.engine_home``, see app.providers._codex_sealed), resuming the
+          thread; the instructions file is read again every turn."""
         mate_id = session.get("mate_id") or ""
+        engine = session.get("provider") or "claude"
         try:
             mate = self.store.get(mate_id)
         except KeyError:
             mate = {"id": mate_id, "name": session.get("title") or "Mate", "persona": {}, "memory_rev": 0,
-                    "llm": {"model": session.get("model") or "", "effort": session.get("effort") or "low"}}
+                    "llm": {"provider": engine, "model": session.get("model") or "",
+                            "effort": session.get("effort") or "low"}}
         memories = self.store.memories(mate_id) if mate_id else []
         prompt = system_prompt(mate["name"], mate["persona"], memories)
         note = self._settings_note(mate_id, mate)
         if note:  # persona edited since the conversation last ran: say so in this message
             req.preamble = f"{note}\n\n{req.preamble}" if req.preamble else note
+        req.prompt_key = prompt_key(mate["name"], mate["persona"], int(mate.get("memory_rev") or 0))
+        if engine == "codex" and mate_id:
+            prompt = self._codex_prompt(mate_id, prompt, req.prompt_key, resuming=bool(req.cli_session_id))
+            req.engine_home = str(files.mate_dir(mate_id) / "codex")
         # (a file: persona + 200 memories can outgrow one argv string)
         req.system_prompt_file = files.engine_file(mate_id, "prompt", "md", prompt)
-        req.prompt_key = prompt_key(mate["name"], mate["persona"], int(mate.get("memory_rev") or 0))
         req.tools = []                     # no Bash/Read/Edit/WebFetch… — it can't do the work itself
         req.allowed_tools = ["mcp__mate"]  # all mate bridge tools
         req.sealed = True
         req.mode = "agent"
         req.extra_dirs = []
-        req.model = mate["llm"].get("model") or DEFAULT_MATE_MODEL
-        req.effort = mate["llm"].get("effort") or "default"
+        llm = mate["llm"]
+        # (a mate whose engine was just switched: that engine's default until the row catches up)
+        same = (llm.get("provider") or "claude") == engine
+        req.model = (llm.get("model") if same else "") or default_mate_model(engine)
+        req.effort = llm.get("effort") or "default"
         req.mcp_config = {"mcpServers": {"mate": {
             "type": "stdio",
             "command": sys.executable,
@@ -280,10 +307,33 @@ class MateService:
                 "HRH_MATE_SESSION": session["id"],
             },
         }}}
-        # (a 0600 file, so the token isn't in the process list)
-        req.mcp_config_file = files.engine_file(mate_id, "mcp", "json", json.dumps(req.mcp_config, indent=1))
+        # (a 0600 file, so the token isn't in the process list; Codex: in its
+        # sealed home's 0600 config.toml instead)
+        if engine != "codex":
+            req.mcp_config_file = files.engine_file(mate_id, "mcp", "json", json.dumps(req.mcp_config, indent=1))
         if session.get("model") != req.model or (session.get("effort") or "default") != req.effort:
             self._svc.update(session["id"], model=req.model, effort=req.effort)
+
+    @staticmethod
+    def _codex_prompt(mate_id: str, prompt: str, key: str, *, resuming: bool) -> str:
+        """The instructions a Codex turn gets. A resumed thread whose
+        instructions file changed gets the whole new prompt appended as a
+        "replaces the base instructions" message — so keep the previous text
+        while only memories the mate saved itself changed (they are in the
+        conversation already), exactly when the Claude engine keeps running
+        (same prompt key). A fresh thread always gets the current prompt."""
+        path = files.home_dir(mate_id) / ".codex-prompt.json"
+        try:
+            prev = json.loads(path.read_text("utf-8"))
+        except (OSError, ValueError):
+            prev = None
+        if resuming and isinstance(prev, dict) and prev.get("key") == key and isinstance(prev.get("prompt"), str):
+            return prev["prompt"]
+        try:
+            path.write_text(json.dumps({"key": key, "prompt": prompt}, ensure_ascii=False), "utf-8")
+        except OSError:
+            pass
+        return prompt
 
     def _settings_note(self, mate_id: str, mate: dict[str, Any]) -> str:
         """Compare the persona with the one the conversation last ran with

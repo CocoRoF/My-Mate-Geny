@@ -15,7 +15,7 @@ import threading
 from typing import Any
 
 from app.db import Database
-from app.providers.catalog import DEFAULT_MATE_MODEL
+from app.providers.catalog import DEFAULT_MATE_MODEL, default_mate_model
 from app.services._ids import new_id, now_iso
 from app.vault import SecretVault
 
@@ -29,7 +29,7 @@ MECHANIC_STILLS = ("blink", "mouth_half", "mouth_open", "mouth_o")
 MAX_CLIPS = 200
 MAX_VOLUME = 3.0          # voice.volume: 0.0 – 3.0 (300 %), 1.0 = as synthesized
 EFFORTS = ("default", "low", "medium", "high", "xhigh", "max")
-LLM_PROVIDERS = ("claude",)  # the mate engine needs --system-prompt / --tools / MCP (Claude Code)
+LLM_PROVIDERS = ("claude", "codex")  # engines that can run sealed (own prompt, only the mate MCP bridge)
 
 MAX_FIELD = 8000          # one persona field
 MAX_AVATAR_JSON = 256 * 1024
@@ -111,7 +111,9 @@ def normalize_llm(patch: Any, base: dict[str, Any] | None = None) -> dict[str, A
     if "provider" in patch:
         prov = _s(patch["provider"], 32) or "claude"
         if prov not in LLM_PROVIDERS:
-            raise MateError(f"unsupported mate provider: {prov} (only claude can run a mate)")
+            raise MateError(f"unsupported mate provider: {prov} (a mate runs on {' or '.join(LLM_PROVIDERS)})")
+        if prov != out["provider"] and "model" not in patch:
+            out["model"] = default_mate_model(prov)  # (the other engine's model id means nothing here)
         out["provider"] = prov
     if "model" in patch:
         model = _s(patch["model"], 200).strip()

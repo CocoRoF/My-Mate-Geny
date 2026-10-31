@@ -41,6 +41,16 @@ DEFAULT_CLAUDE_MODEL = "claude-opus-5-5"
 # A Mate talks more than it works (it hands work to the chats): Sonnet answers
 # faster and costs less for conversation. Used when a mate has no model set.
 DEFAULT_MATE_MODEL = "claude-sonnet-5-5"
+# What a new Codex chat (and a Codex mate) runs on unless the user picks
+# something else: OpenAI's current workhorse model.
+DEFAULT_CODEX_MODEL = "gpt-6.1-sol"
+DEFAULT_CODEX_LABEL = "GPT-6.1-Sol"
+# A mate's default model per engine (the mate engines: app.mate.service).
+DEFAULT_MATE_MODELS = {"claude": DEFAULT_MATE_MODEL, "codex": DEFAULT_CODEX_MODEL}
+
+
+def default_mate_model(provider: str) -> str:
+    return DEFAULT_MATE_MODELS.get(provider, DEFAULT_MATE_MODEL)
 
 _STATIC: dict[str, dict] = {
     "claude": {
@@ -59,9 +69,15 @@ _STATIC: dict[str, dict] = {
     },
     "codex": {
         "label": "Codex",
-        # Fallback only: "default" lets the CLI pick the account's own default.
-        "models": [{"id": "default", "label": "Codex default"}],
-        "default_model": "default",
+        # Fallback only (the live list replaces it): our default, and "default"
+        # to let the CLI pick the account's own default.
+        "models": [
+            {"id": DEFAULT_CODEX_MODEL, "label": DEFAULT_CODEX_LABEL,
+             "description": "Latest workhorse model for coding and everyday work.",
+             "effort": ["default", "low", "medium", "high", "xhigh", "max"], "default_effort": "low"},
+            {"id": "default", "label": "Codex default"},
+        ],
+        "default_model": DEFAULT_CODEX_MODEL,
         "effort": _EFFORT_CODEX,
         "default_effort": "default",
         "models_source": "static",
@@ -247,7 +263,10 @@ def _codex_catalog(cred_dir: str) -> dict:
     return {
         "label": "Codex",
         "models": models,
-        "default_model": models[0]["id"],  # priority 1 = the account's default
+        # GPT-6.1-Sol when the account offers it, else priority 1 (the
+        # account's own default).
+        "default_model": DEFAULT_CODEX_MODEL if any(m["id"] == DEFAULT_CODEX_MODEL for m in models)
+        else models[0]["id"],
         "effort": _EFFORT_CODEX,
         "default_effort": "default",
         "models_source": "live",

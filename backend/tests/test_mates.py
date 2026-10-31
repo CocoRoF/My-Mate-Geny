@@ -64,7 +64,12 @@ def test_default_mate_and_crud(client):
     assert m2["persona"] == {**m["persona"], "speech": "drawls"}  # merged, not replaced
     assert m2["voice"]["tts"]["engine"] == "openai" and m2["voice"]["stt"]["engine"] == "browser"
     assert client.patch(f"/api/mates/{m['id']}", json={"voice": {"tts": {"engine": "nope"}}}).status_code == 400
-    assert client.patch(f"/api/mates/{m['id']}", json={"llm": {"provider": "codex"}}).status_code == 400
+    # Codex can run a mate too; switching engine without a model picks that engine's default
+    r = client.patch(f"/api/mates/{m['id']}", json={"llm": {"provider": "codex"}})
+    assert r.status_code == 200 and r.json()["llm"] == {"provider": "codex", "model": "gpt-6.1-sol", "effort": "low"}
+    r = client.patch(f"/api/mates/{m['id']}", json={"llm": {"provider": "claude"}})
+    assert r.json()["llm"] == {"provider": "claude", "model": "claude-sonnet-5-5", "effort": "low"}
+    assert client.patch(f"/api/mates/{m['id']}", json={"llm": {"provider": "gemini"}}).status_code == 400
     assert client.patch(f"/api/mates/{m['id']}", json={"avatar": {"kind": "live2d"}}).status_code == 400
     assert client.post("/api/mates", json={"name": " "}).status_code == 400
 

@@ -61,7 +61,8 @@ chat, keeps an eye on it and tells you how it went.
 - **Two engines, one chat.** Claude Code (`claude`) and Codex (`codex`); switch engines
   mid-chat and the conversation is handed over. Claude runs as a persistent engine per chat
   (follow-up turns, background tasks, live interrupt and model / permission changes);
-  Codex runs one `exec` per turn. Both stream into one event format.
+  Codex runs one `exec` per turn. Both stream into one event format. New chats start on
+  Claude Opus 5.5 or GPT-6.1-Sol.
 - **Readable agent work.** Prose and tool activity kept apart: folded tool groups, inline
   diffs, nested **subagents** with their own steps, steering a running turn, a message
   queue, `/` commands and `@` files, photo / file / clipboard attachments, notifications.
@@ -96,6 +97,10 @@ chat, keeps an eye on it and tells you how it went.
 - **Delegation**: she can list and read your chats, start a chat in the right folder, send
   instructions to a running one, and gets each result back to report on.
 - **Memory**: things she should remember (she can add them herself; you can edit them).
+- **Her own engine**: she thinks with Claude Code (Sonnet 5.5 by default) or Codex
+  (GPT-6.1-Sol by default), sealed either way: her persona and memory, only her delegation
+  tools, no shell or file access, none of your CLI settings. Switch engines mid-conversation
+  and she keeps the conversation.
 - **Global vs Mate settings**: voice services, the Live2D runtime and desktop options are
   set up once in **Global settings**; each mate has its own profile, avatar, language
   model, voice and memory in **Mate settings**.

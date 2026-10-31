@@ -1,8 +1,9 @@
 """The mate engine's system prompt: persona + the mate contract + memories.
 
-The prompt replaces Claude Code's own system prompt (``--system-prompt``):
-the mate is a conversational secretary with no built-in tools, only the
-``mate`` MCP tools (delegation to the chat sessions, memory).
+The prompt replaces the engine's own system prompt (Claude Code
+``--system-prompt-file``, Codex ``model_instructions_file``): the mate is a
+conversational secretary with no built-in tools, only the ``mate`` MCP tools
+(delegation to the chat sessions, memory).
 """
 
 from __future__ import annotations

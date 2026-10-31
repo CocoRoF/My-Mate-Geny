@@ -5,6 +5,10 @@ Spawns ``codex exec --json`` and normalizes its JSONL event stream (see
 ``--dangerously-bypass-approvals-and-sandbox`` because the harness is the
 sandbox boundary (same spirit as the Claude provider's permission allow-list).
 
+A *sealed* request (a Mate) runs differently: in its own CODEX_HOME with only
+its instructions and MCP bridge, none of Codex's tools, read-only sandbox and
+no approvals (see :mod:`app.providers._codex_sealed`).
+
 Auth: ``codex login`` (ChatGPT OAuth, stored under ``~/.codex``) or an
 ``OPENAI_API_KEY`` passed through. Execution requires one of these — the
 provider surfaces a clear error otherwise.
@@ -20,6 +24,7 @@ import shutil
 from typing import AsyncIterator
 
 from app.config import settings
+from app.providers import _codex_sealed
 from app.providers._attachments import compose_text
 from app.providers._cli_runtime import CLIProcessRunner
 from app.providers._codex_json import CodexJsonAccumulator
@@ -89,7 +94,9 @@ class CodexProvider(Provider):
             if a.is_image:
                 argv += ["--image", a.inline_path]
         argv.append("--skip-git-repo-check")
-        if req.mode == "plan":
+        if req.sealed:
+            pass  # sandbox, approvals, tools and MCP servers: the sealed home's config.toml
+        elif req.mode == "plan":
             argv += ["-c", 'sandbox_mode="read-only"']
         else:
             argv.append("--dangerously-bypass-approvals-and-sandbox")
@@ -100,7 +107,8 @@ class CodexProvider(Provider):
             argv += ["-m", model]
         if req.effort and req.effort != "default":
             argv += ["-c", f"model_reasoning_effort={req.effort}"]
-        argv += self._mcp_overrides(req)
+        if not req.sealed:  # (sealed: in its config file — the bridge token stays out of the process list)
+            argv += self._mcp_overrides(req)
         # Prompt comes from stdin (`-`): safe for any text, including text that
         # starts with "-" or is very long.
         argv.append("-")
@@ -130,7 +138,7 @@ class CodexProvider(Provider):
         has_images = any(a.is_image for a in req.attachments)
         if req.preamble:
             last_user = f"{req.preamble}\n\n{last_user}"
-        text = compose_text(last_user, req.attachments, inline_images=has_images)
+        text = compose_text(last_user, req.attachments, inline_images=has_images, inline_files=req.inline_files)
         if req.extra_dirs:
             text += "\n\n<additional_folders>\nYou may also read and edit these folders:\n" + "\n".join(
                 f"- {d}" for d in req.extra_dirs
@@ -149,6 +157,7 @@ class CodexProvider(Provider):
             "and continue the task:\n\n" + body,
             atts,
             inline_images=any(a.is_image for a in atts),
+            inline_files=req.inline_files or any(m.inline_files for m in msgs),
         )
         return ((_PLAN_PREFIX if req.mode == "plan" else "") + text).encode()
 
@@ -156,6 +165,22 @@ class CodexProvider(Provider):
         env_extras = dict(req.extra_env)
         if req.api_key:
             env_extras["OPENAI_API_KEY"] = req.api_key
+        warnings: list[str] = []
+        if req.sealed:
+            # A Mate: its own CODEX_HOME with only its instructions + MCP
+            # bridge; the login of this turn's account linked in.
+            if not req.engine_home:
+                yield ProviderEvent(type="error", data={
+                    "code": "exec.cli.sealed_home", "message": "sealed Codex engine without a home directory"})
+                return
+            source = env_extras.get("CODEX_HOME") or os.path.expanduser("~/.codex")
+            try:
+                env, warnings = await asyncio.to_thread(_codex_sealed.prepare, req, source)
+            except OSError as exc:
+                yield ProviderEvent(type="error", data={
+                    "code": "exec.cli.sealed_home", "message": f"could not prepare the Codex engine: {exc}"})
+                return
+            env_extras.update(env)
 
         accum = CodexJsonAccumulator()
         model = self._model(req)
@@ -164,6 +189,8 @@ class CodexProvider(Provider):
             type="session.start",
             data={"provider": self.name, "model": model or "default", "workspace": req.cwd},
         )
+        for w in warnings:
+            yield ProviderEvent(type="notice", data={"level": "warning", "code": "codex.sealed", "message": w})
         if req.model and req.model not in _NOT_CODEX and model is None:
             yield ProviderEvent(
                 type="notice",
