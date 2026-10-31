@@ -202,7 +202,8 @@ CREATE TABLE IF NOT EXISTS mates (
     memory_rev  INTEGER NOT NULL DEFAULT 0,   -- bumped by user edits of the memory (the engine reloads it)
     builtin     TEXT,                         -- bundled character key (estelle, …) for built-in mates
     builtin_hash TEXT,                        -- the bundled version it was last synced from
-    customized  INTEGER NOT NULL DEFAULT 0,   -- the user edited its persona/avatar: no more content syncs
+    builtin_snapshot TEXT,                    -- JSON: that bundle (names, greetings, persona, avatar) for field merges
+    customized  INTEGER NOT NULL DEFAULT 0,   -- the user edited its persona/avatar (updates keep the edited fields)
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -285,7 +286,8 @@ class Database:
                 if pcols and col not in pcols:
                     self._conn.execute(f"ALTER TABLE provider_pool ADD COLUMN {col} {ddl}")
             matecols = {r["name"] for r in self._conn.execute("PRAGMA table_info(mates)")}
-            for col, ddl in (("builtin", "TEXT"), ("builtin_hash", "TEXT"), ("customized", "INTEGER NOT NULL DEFAULT 0")):
+            for col, ddl in (("builtin", "TEXT"), ("builtin_hash", "TEXT"), ("builtin_snapshot", "TEXT"),
+                             ("customized", "INTEGER NOT NULL DEFAULT 0")):
                 if matecols and col not in matecols:
                     self._conn.execute(f"ALTER TABLE mates ADD COLUMN {col} {ddl}")
             self._conn.execute(

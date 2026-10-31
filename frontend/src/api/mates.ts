@@ -56,7 +56,7 @@ export interface Mate {
   session_id: string | null;
   /** a mate shipped with the app (estelle | chaerin | seoa), else null */
   builtin?: string | null;
-  /** a built-in the user edited (bundle updates leave it alone) */
+  /** a built-in the user edited (bundle updates keep the fields the user changed) */
   customized?: boolean;
 }
 
