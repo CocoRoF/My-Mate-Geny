@@ -93,7 +93,7 @@ Status legend: [ ] todo · [~] in progress · [x] done (verified)
 
 - [x] Independent code review of existing backend/frontend; fix findings.
 - [x] Live E2E: auth/ban, providers + usage, account pool, SSH workspaces
-      (2223/2222/2224), attachments, steering, stop, background tasks, auto
+      (local + two remote hosts), attachments, steering, stop, background tasks, auto
       turns, engine switch context, admin logs, downloads.
 - [x] Screenshots desktop (1440) + mobile (390) of every view.
 - [x] Build each app (Docker locally + CI) and smoke-test the artifacts.
@@ -103,7 +103,7 @@ Status legend: [ ] todo · [~] in progress · [x] done (verified)
 * Backend tests: 68 (engine with a fake persistent CLI, steering through real
   providers against fake CLIs, git-snapshot changes on a real repo, context
   handoff, auth/git security, downloads).
-* Live (real Claude/Codex on agent.hrletsgo.me): background task → Claude's
+* Live (real Claude/Codex on the maintainer's deployment): background task → Claude's
   own auto turn; Stop = interrupt with the same engine pid; changes card,
   diff, undo; engine switch handoff/catch-up; steering (both engines); remote
   SSH workspace with Claude and Codex (remote tools, changes over SSH, SFTP
@@ -111,7 +111,7 @@ Status legend: [ ] todo · [~] in progress · [x] done (verified)
 * UI screenshots desktop 1440 + mobile 390 (drawer, chat, diff, tasks, panel).
 * Desktop Linux AppImage built in Docker and launched headless: loads the
   console, `window.hrhNative` present.
-* Remote E2E repeated on a second machine (2222): Claude then Codex edit a
+* Remote E2E repeated on a second machine: Claude then Codex edit a
   repo there through the SSH bridge; changes card over SSH, SFTP preview, and
   the edits confirmed on the host itself. All three connections reachable.
 * Release pipeline (CI run 4, `apps-v0.2.4`): all six builds published to

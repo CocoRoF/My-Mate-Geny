@@ -39,6 +39,7 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
   "llm":   { "provider": "claude", "model": "claude-sonnet-5-5", "effort": "low" },   // new mates talk on Sonnet ("" falls back to it too)
   "voice": {
     "auto_read": true,
+    "volume": 1.0,          // 0.0 – 3.0 (300 %); see §5 "Volume"
     "tts": { "engine": "browser", "voice": "", "model": "", "speed": 1.0, "profile": "", "language": "" },
     "stt": { "engine": "browser", "model": "", "language": "" }
   },
@@ -91,8 +92,11 @@ interface Rig {
   stills: Record<string, string>;            // neutral, smile, laugh, shy, surprised, sad, thinking, sleepy,
                                              // + mechanics: blink, mouth_half, mouth_open, mouth_o
   clips: { id: string; kind: "idle"|"talk"|"listen"|"think"|"react"|"away";
-           emotion?: string; src: string; small?: string; loop?: boolean }[];
-  emotions?: Record<string, string[]>;       // emotion -> clip ids (react)
+           emotion?: string; src: string; small?: string; loop?: boolean;
+           disabled?: boolean }[];           // disabled: never played, picked or preloaded
+  emotions?: Record<string, string[]>;       // emotion -> clip ids (react); several = one at random,
+                                             // [] = no clip for that emotion (aliases not tried)
+  emotion_stills?: Record<string, string>;   // emotion -> still name ("" = none); never blink/mouth_*
 }
 
 interface Live2D {
@@ -134,9 +138,34 @@ as in Geny).
   blends two poses with alpha (the see-through "overlapping frames" look), so it
   is only a fallback, ≥ 1.2 s apart, and a switch asked for during one waits
   for it to finish.
+- **Clip choice** (`src/mate/avatar/shared.ts`, used by the video body *and*
+  the clip editor's trigger preview, so the preview is exactly the stage):
+  disabled clips never count. A mood plays a random clip of its kind
+  (`moodPool`: talking → talk, listening → listen, thinking → think, away →
+  away, idle → idle; none of that kind switched on → the idle clips), not the
+  same one twice in a row. An emotion (`clipsFor`): the `emotions` map under the
+  emotion, then under the words rigs use for it (emotion.ts aliases, e.g. smile →
+  happy); a key with `[]` stops there (no reaction); a key whose clips are all
+  disabled is passed over; then the react clips whose `emotion` or id names it.
+  Several clips → one at random. The body exposes the clip on screen as
+  `data-mate-clip` on its layer.
 - **Photo**: ailism-mate `StillBody` (blink 2.5–6 s; mouth stills driven by the
   voice level instead of a random timer); a single photo gets a gentle
-  breathing/sway and a level-driven pulse.
+  breathing/sway and a level-driven pulse. The still for an emotion (and for the
+  moods thinking → "thinking", away → "sleepy"): `emotion_stills` under the
+  emotion or an alias ("" = none), else the still named like it.
+- **Clip / trigger editor** (Mate settings → Avatar, video/photo): a clip library
+  (a card per clip: a thumbnail, hover/tap plays it with the stage's own
+  player, its triggers in plain words — "while idle", "while talking", "while
+  you type", "while thinking", "when she feels ‹emotion›", "after a long
+  silence"); the selected clip's editor (on/off = `disabled`, situation = kind,
+  the feelings that play it = membership in `emotions`, its own `emotion`,
+  loop, rename/replace/remove); "What plays when" (a button per mood and per
+  emotion → the clip(s) the renderer would pick, played in a preview stage, and
+  for an emotion: add/remove clips, "No clip", "Automatic" = drop the key);
+  "Stills for feelings" (`emotion_stills`). Nothing is stored until Save (PATCH
+  avatar; for a built-in that marks it `customized`). Built-ins also get
+  **Reset to the bundled version** → `POST /api/mates/{id}/avatar/reset` (below).
 - **Live2D**: pixi.js 7 + pixi-live2d-display 0.5 (cubism4) as in Geny's
   `Live2DCanvas`; idle group, expressions/emotion motions, auto-blink, tap
   motions (hit area → group from `tap_motions`, fixing Geny's hard-coded
@@ -224,22 +253,63 @@ Asset upload / import:
 
 ### Built-in mates (shipped with the app)
 
-The ailism characters — **Estelle** (default), **Chaerin**, **Seoa** — are
-bundled in `backend/app/mate/builtin/` (`mates/<key>.json`, `assets/<key>/`
-video clips + stills + `rig.json`, `voices/<key>/voice.json`). On startup every
-bundled character exists as a mate (`builtin: "<key>"`), persona mapped exactly
-like the import above, body served from `GET /api/mates/builtin/<key>/<file>`
-(no copy). A new bundle version refreshes persona + body of built-ins the user
-hasn't edited (`customized` turns on with the user's first persona/avatar
-edit); voice/model choices are never overwritten. A deleted built-in stays
-deleted; `POST /api/mates/builtin/restore` brings them back. The avatar-less
-"Geny" mate is only created when there is no mate at all.
+The ailism characters — **Chaerin** (한채린, the default on a new install),
+**Estelle**, **Seoa** — are bundled in `backend/app/mate/builtin/`
+(`mates/<key>.json` = the authors' original ailism content, `assets/<key>/`
+video clips + stills + `rig.json`, `voices/<key>/voice.json`). Order:
+`files.BUILTIN_ORDER` (chaerin, estelle, seoa, mao); the first one created on a
+new install is the default — an existing install keeps the user's default.
+
+**Personas are English** (`personas/<key>.json`): everything the authors wrote
+(tagline, profile, appearance, background, relationship, knowledge, world,
+personality, speech, all example exchanges, opening and return lines,
+interests, author's note) written in English, with the character's Korean
+speech habits spelled out ("When you speak Korean: … / When you speak
+English: …") and the Korean example exchanges / opening / return lines kept
+verbatim. They are composed (`files.compose_persona`) into the same fields as
+an ailism import. Per language the file has `names` and `greetings`
+(`{en, ko}`; the Korean greeting is the author's line) and a `language` (the
+bundled reply language: `ko`, as before). The mate contract says "Always reply
+in ‹language›, whatever language your instructions are written in". The
+default "Geny" persona is English too (`store.DEFAULT_PERSONA`, greeting per
+language in `DEFAULT_GREETINGS`).
+
+On startup every bundled character exists as a mate (`builtin: "<key>"`), body
+served from `GET /api/mates/builtin/<key>/<file>` (no copy). Name and greeting
+follow the mate's reply language (`files.localized`). **Updates merge field by
+field** (`files.merge_builtin`): each built-in keeps a snapshot of the bundle it
+was last synced from (`mates.builtin_snapshot`: names, greetings, persona
+fields, avatar); on a new bundle version (`builtin_hash`, covering
+`personas/<key>.json` too) every persona field, the name, the greeting and the
+avatar that still equal the snapshot get the new version, anything the user
+changed stays. The reply language, voice, model, memories and default flag are
+never touched. Mates synced before snapshots existed: an unedited one
+(`customized` off) counts as entirely bundled; an edited one is compared with
+the old bundled persona (`files.legacy_persona` of `mates/<key>.json`) — so the
+owner's address/greeting edits stay and the untouched fields become English,
+while a Korean-replying mate keeps its Korean name and greeting. The changed
+persona restarts the engine (prompt key) and the next message carries the
+settings note. `customized` still turns on with the user's first persona/avatar
+edit (the profile notice shows only while it's off).
+
+Switching the reply language (PATCH `persona.language`) swaps the name and
+greeting for that language's bundled version when they still are bundled ones
+(any language's; for a non-built-in, the default Geny greeting) —
+`files.localize_patch`; user-written ones stay.
+
+A deleted built-in stays deleted; `POST /api/mates/builtin/restore` brings
+them back. `POST /api/mates/{id}/avatar/reset` (built-ins only, else 400)
+re-applies the bundled avatar of that key (clip/trigger/still edits undone;
+voice/model kept) and turns `customized` off again — with the current bundle
+hash recorded — only when the persona is still the bundled one (for the mate's
+language); a mate whose persona the user edited keeps `customized`. The
+avatar-less "Geny" mate is only created when there is no mate at all.
 
 **Mao** (key `mao`, after the three) is a built-in **Live2D** mate: Live2D's
 free sample model *Niziiro Mao (PRO)* (Free Material License — its
-`ReadMe.txt` ships next to it in `assets/mao/`), a Korean-speaking friendly
-secretary persona (`mates/mao.json`: our own `{name, persona}` doc instead of
-an ailism one). `assets/<key>/live2d.json` makes a bundle Live2D: the fields of
+`ReadMe.txt` ships next to it in `assets/mao/`), a friendly secretary persona
+(`personas/mao.json`, English, names Mao/마오; `mates/mao.json` is our original
+Korean `{name, persona}` doc, kept as the pre-English baseline). `assets/<key>/live2d.json` makes a bundle Live2D: the fields of
 the Live2D avatar with `model` relative to the folder (validated: the model and
 its `.moc3` exist; motion groups named in `idle_group` / `emotion_motions` /
 `tap_motions` must exist). Our copy of `mao_pro.model3.json` names the sample's
@@ -280,6 +350,20 @@ nested files.
   `mate.llm`. Editing name/persona/effort or the memory list (by the user)
   restarts the engine at the next turn (`--resume`, same conversation); a model
   change is applied live; what the mate `remember`s itself doesn't restart it.
+- **Attachments** work like in a chat: uploads go to
+  `POST /api/sessions/{mate sid}/attachments`, the ws `chat` / `steer` messages
+  carry their ids, history and live `user.message` / `user.steer` events carry
+  them, and the Mate views show them (thumbnails, file cards). The mate can't
+  open files (`--tools ""`), so for a mate session the text block of the
+  envelope (`inline_files`, `app/providers/_inline_files.py`) holds, instead of
+  paths, an `<attachments>` list with each file's id —
+  `- [att_…] name — mime, size — image, shown to you | <how it was read>, included below | <what it is> — not available to you; forward it…`
+  — followed by `<file id="att_…" name="…">…</file>` blocks with the readable
+  text: text/code/markdown/CSV/JSON… as is (first 256 KB read), docx/pptx/xlsx/
+  odt text from their XML (stdlib), PDF text via `pdftotext` (poppler, ≤ 40
+  pages) when the server has it; ≤ 20 000 characters per file and 60 000 per
+  message, cut with `…[truncated]` and a note. Images still go as inline image
+  blocks; anything else (archives, binaries, a scanned PDF) is only described.
 - Reply format the prompt asks for: short conversational text in the mate's
   language, no heavy markdown; optional inline emotion tags at the start of a
   sentence: `[neutral] [joy] [smile] [laugh] [shy] [surprised] [sad] [angry]
@@ -294,8 +378,21 @@ Tools the mate gets (all others are disabled):
 |---|---|
 | `list_sessions()` | chat sessions (not mates): id, title, workspace, provider/model, running, updated_at, last user + assistant snippet |
 | `read_session(session_id, limit=10)` | recent messages, running state, current activity |
-| `send_to_session(session_id, message)` | exactly like the user typing in that chat: idle → starts a turn; running → steers the running turn. Marked `via: {kind:"mate", mate_id, name}` (the chat shows "via <name>") |
-| `create_session(workspace_path, message?, title?, provider?, model?)` | new chat for a folder (+ first message) |
+| `send_to_session(session_id, message, attachments?)` | exactly like the user typing in that chat: idle → starts a turn; running → steers the running turn. Marked `via: {kind:"mate", mate_id, name}` (the chat shows "via <name>") |
+| `create_session(workspace_path, message?, title?, provider?, model?, attachments?)` | new chat for a folder (+ first message) |
+
+`attachments` = ids (`att_…`, `[att_…]` accepted) of files **from the mate's
+own conversation** (listed in its messages, §3). Each is copied into the
+worker session (`<UPLOADS_ROOT>/<worker sid>/<new id>/<name>` + its
+model-sized image variant) as a pending upload and sent with the message —
+the same envelope as a user message with attachments (image blocks + the
+`<attachments>` note with paths for the worker's tools; remote sessions get
+their copy on the remote host as usual), shown on the "via ‹mate›" message.
+Unknown ids, ids of another session, a missing file or more than
+`UPLOAD_MAX_FILES` → a tool error, nothing sent; with `create_session` they
+need a `message`. Copies are removed again if the delivery fails. The tool
+result says what went (`… with 2 files (shot.png, bug.md)`). `read_session`
+lists each message's `files` (names).
 | `find_folders(query)` | candidate project folders: workspaces of existing chats, then a bounded search of `/home` (depth ≤ 3, names/git repos) |
 | `remember(text)` / `forget(id)` | the mate's memory (shown in Mate settings, injected into its system prompt) |
 
@@ -370,6 +467,18 @@ user's cookie (404 / 401 otherwise). `find_folders` searches
   `X-Speech-Fallback: browser`** + `X-Speech-Fallback-Reason` (the page speaks
   with the browser voice); a configured engine that fails is still 502.
   API bases: `MATE_OPENAI_BASE`, `MATE_ELEVENLABS_BASE` (tests / proxies).
+- Volume: `voice.volume` 0.0 – 3.0 (default 1.0; normalized/clamped by the
+  backend, non-numbers → 1.0, booleans → 400). The page plays the voice queue's
+  audio element through Web Audio: source → AnalyserNode (lip-sync level, taken
+  *before* the gain, so the mouth doesn't depend on volume) → GainNode (the
+  volume) → DynamicsCompressorNode (transparent at ≤ 100 %; a limiter above:
+  threshold −6 dB, ratio 12) → speakers. Until the AudioContext runs (no gesture
+  yet) the element plays directly at min(volume, 100 %). The browser engine
+  (speechSynthesis) can only do 0–100 % (`utterance.volume`, clamped; the Voice
+  tab says so). The Voice tab's slider (0–300 %, 100 % marked) is live for
+  previews and the voice queue; leaving the tab puts the saved value back.
+  `window.__hrhMateAudio` (the page's voice queue) offers `getVolume()` /
+  `outputGain()` for checks.
 - Settings UI: **Global settings** (voice services, Live2D runtime, desktop app
   per computer, defaults) vs **Mate settings** (Profile · Avatar · Language
   model · Voice · Memory · Danger zone); a mate's Voice tab offers only Off,
@@ -388,6 +497,25 @@ conversation the other half; Mate settings / Global settings (header buttons:
 sliders = Global, gear = this mate) open over the conversation half, so the
 stage never moves or overflows (1280 / 1440 / 1600 px alike). Phones: the stage
 on top (36 dvh, collapsible), the conversation below, settings full screen.
+**Mate composer** = the Chat composer's machinery
+(`src/components/composer/`: `useComposer`, `ComposerParts` (`AttachMenu`,
+`QueuedList`, `FileInputs`), `useFileDrop` + `DropOverlay`, `files.ts`
+(`filesFromClipboard`)) — the Chat view's `InputBar` uses the same hook — in
+the mate's chrome (`MateComposer`): + menu (Photos / Files), paste anywhere on
+the page (clipboard images named `pasted-<stamp>.png`), drag & drop over the
+conversation, the attachment tray (upload progress, retry, remove,
+thumbnails), per-conversation drafts incl. uploaded files (draftStore /
+composerStore keyed by the mate's **session id**; `pin(sid)` keeps them from
+the chat-list prune; an old `mate:<id>` text draft moves over once), queued
+messages, steer while she answers (Enter / ↑ = add to her running turn, Queue
+= after it; a bounced steer is queued), Enter / Shift+Enter / touch rules
+(`lib/device.ts`), IME-safe Enter, Escape stops her reply (not in the quick
+card, where Escape closes it), auto-grow, `/clear` (new conversation) and
+`/stop` in a `/` menu (no `@` mentions: a mate has no workspace), plus
+push-to-talk (the transcript goes out with the attached files) and the
+read-aloud toggle. The quick card's + opens the file picker directly. The
+console Mate view, the quick card and the chat window all have it.
+
 Extra full-page surfaces (no sidebar), used by the desktop app:
 
 - `/?surface=mate-overlay&mate=<id>` — transparent page: avatar + caption

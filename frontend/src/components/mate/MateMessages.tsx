@@ -10,6 +10,8 @@ import { parseEmotionText } from "../../mate/emotion";
 import { currentSurface, desktopMate } from "../../mate/desktop";
 import Icon, { type IconName } from "../ui/Icon";
 import MiniMarkdown from "./MiniMarkdown";
+import MessageAttachments from "../attachments/MessageAttachments";
+import type { Attachment } from "../../types";
 import { useMateChat } from "../../mate/useMateConversation";
 import { useHistoryScroll } from "../../hooks/useHistoryScroll";
 import HistoryEdge from "../chat/HistoryEdge";
@@ -30,6 +32,11 @@ export function openWorkerChat(sid: string) {
 
 const short = (s: string, n = 48) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 const base = (p: string) => p.replace(/\/+$/, "").split("/").pop() || p;
+/** "2 files " for a tool call that forwarded attachments ("" without) */
+const files = (a: unknown) => {
+  const n = Array.isArray(a) ? a.length : 0;
+  return n ? `${n} file${n === 1 ? "" : "s"} ` : "";
+};
 
 function parseJson(s: string | undefined): any {
   if (!s) return null;
@@ -56,13 +63,15 @@ export function describeTool(t: ToolActivity): { icon: IconName; label: string; 
     case "send_to_session":
       return {
         icon: "send",
-        label: `Sent to ${quoted ? `“${short(quoted[1])}”` : "a chat"}`,
+        label: `Sent ${files(input.attachments)}to ${quoted ? `“${short(quoted[1])}”` : "a chat"}`,
         sessionId: String(input.session_id || "") || undefined,
       };
     case "create_session":
       return {
         icon: "folder-plus",
-        label: `Started a chat in ${input.workspace_path ? base(String(input.workspace_path)) : "a folder"}`,
+        label: `Started a chat in ${input.workspace_path ? base(String(input.workspace_path)) : "a folder"}${
+          Array.isArray(input.attachments) && input.attachments.length ? ` (${files(input.attachments).trim()})` : ""
+        }`,
         sessionId: quoted?.[2],
       };
     case "find_folders":
@@ -128,17 +137,25 @@ function Bubble({ text, compact }: { text: string; compact?: boolean }) {
   );
 }
 
-function UserBubble({ text, pending }: { text: string; pending?: boolean }) {
+/** what the user said: the files they attached (thumbnails / file cards, like the Chat view), then the text */
+function UserBubble({ text, attachments, pending }: { text: string; attachments?: Attachment[]; pending?: boolean }) {
   return (
-    <div className="flex justify-end">
-      <div
-        className={`max-w-[85%] rounded-2xl rounded-br-md border px-3.5 py-2 text-sm text-content whitespace-pre-wrap break-words ${
-          pending ? "border-border bg-surface-2/60 opacity-70" : "border-accent/25 bg-accent-soft"
-        }`}
-        data-testid="mate-user-bubble"
-      >
-        {text}
-      </div>
+    <div className={`flex flex-col items-end gap-1.5 ${pending ? "opacity-70" : ""}`} data-testid="mate-user-message">
+      {!!attachments?.length && (
+        <div className="max-w-[85%]" data-testid="mate-user-attachments">
+          <MessageAttachments attachments={attachments} />
+        </div>
+      )}
+      {text.trim() && (
+        <div
+          className={`max-w-[85%] rounded-2xl rounded-br-md border px-3.5 py-2 text-sm text-content whitespace-pre-wrap break-words ${
+            pending ? "border-border bg-surface-2/60" : "border-accent/25 bg-accent-soft"
+          }`}
+          data-testid="mate-user-bubble"
+        >
+          {text}
+        </div>
+      )}
     </div>
   );
 }
@@ -199,7 +216,7 @@ const AssistantBubbles = memo(function AssistantBubbles({ turn, compact }: { tur
       const t = toolsById.get(f.toolId);
       if (t) items.push(<ActivityChip key={i} tool={t} />);
     } else if (f.kind === "steer") {
-      items.push(<UserBubble key={i} text={f.text} pending={f.pending} />);
+      items.push(<UserBubble key={i} text={f.text} attachments={f.attachments} pending={f.pending} />);
     } else if (f.kind === "notice") {
       items.push(
         <div key={i} className={`text-[11.5px] ${f.level === "warning" ? "text-warning" : "text-content-faint"}`}>
@@ -249,7 +266,7 @@ export default function MateMessages({
             if (t.role === "user") {
               if (t.meta?.internal && t.meta.kind === "delegation_result") return <DelegationCards key={t.key} turn={t} />;
               if (t.meta?.internal) return null;
-              return <UserBubble key={t.key} text={t.text} />;
+              return <UserBubble key={t.key} text={t.text} attachments={t.attachments} />;
             }
             if (t.role === "system") {
               const reset = t.code === "context.reset";

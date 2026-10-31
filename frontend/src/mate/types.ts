@@ -24,6 +24,8 @@ export interface RigClip {
   /** the small clip (size "sm"; falls back to `src`) */
   small?: string;
   loop?: boolean;
+  /** switched off in the clip editor: the renderer never plays (or preloads) it */
+  disabled?: boolean;
 }
 
 export interface Rig {
@@ -39,8 +41,16 @@ export interface Rig {
    */
   stills: Record<string, string>;
   clips: RigClip[];
-  /** emotion -> clip ids (react) */
+  /**
+   * emotion -> clip ids (react). Several ids: one of them, at random. An empty list: no clip for that emotion (the
+   * aliases are not tried). A missing key: the clips whose `emotion` / id names it (with the aliases in emotion.ts).
+   */
   emotions?: Record<string, string[]>;
+  /**
+   * emotion (or the moods "thinking" / "away") -> the name of a still in `stills`; "" = no still for it. A missing key:
+   * the still named like the emotion (or one of its aliases). Mechanic stills (blink, mouth_*) are never used here.
+   */
+  emotion_stills?: Record<string, string>;
 }
 
 export interface Live2D {

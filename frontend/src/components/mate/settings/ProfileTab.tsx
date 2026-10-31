@@ -29,13 +29,17 @@ export default function ProfileTab({ mate }: { mate: Mate }) {
   const known = LANGS.some(([c]) => c === p.language);
 
   const save = () =>
-    saver.run(() =>
-      useMateStore.getState().patch(mate.id, {
+    saver.run(async () => {
+      const m = await useMateStore.getState().patch(mate.id, {
         name: name.trim(),
         persona: p,
         ...(isDefault && !mate.is_default ? { is_default: true } : {}),
-      }),
-    );
+      });
+      // the server may adjust what was sent (a new reply language swaps a bundled name/greeting)
+      setName(m.name);
+      setP(m.persona);
+      setDefault(m.is_default);
+    });
   const reset = () => {
     setName(mate.name);
     setP(mate.persona);
@@ -50,7 +54,7 @@ export default function ProfileTab({ mate }: { mate: Mate }) {
     <>
       {mate.builtin && !mate.customized && (
         <p className="rounded-lg border border-border bg-surface-2/40 px-3 py-2 text-[11.5px] leading-relaxed text-content-faint">
-          {mate.name} ships with the app and gets updated with it. Once you edit the profile or avatar, it's yours — updates leave it alone.
+          {mate.name} ships with the app and gets updated with it. Whatever you edit stays yours — updates only refresh what you haven't changed.
         </p>
       )}
       <Section title="Identity">

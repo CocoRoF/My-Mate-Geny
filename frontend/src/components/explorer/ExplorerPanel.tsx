@@ -58,7 +58,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
   const gotoRef = useRef<HTMLInputElement>(null);
 
   const conn_ = connections.find((c) => c.id === conn);
-  const host = conn_ ? `${conn_.name} · ${conn_.username}@${conn_.host}` : "this server (2223)";
+  const host = conn_ ? `${conn_.name} · ${conn_.username}@${conn_.host}` : "this server";
   const activePath = tabs.find((t) => t.id === active)?.path;
 
   // Roots load on open; expanded folders (persisted) reload with them.

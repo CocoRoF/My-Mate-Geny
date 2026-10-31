@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from "react";
 import type { Providers, ProviderStatus, SttEngine, TtsEngine } from "../../../api/mates";
 import { webSpeechRecognition } from "../../../mate/desktop";
+import { routeOutput, setOutputVolume } from "../../../mate/voiceBridge";
 
 export interface EngineInfo<T extends string> {
   id: T;
@@ -61,16 +62,29 @@ export const usable = (a: Availability) => a.state === "ready" || a.state === "c
 
 // ── preview player (one sound at a time across the settings) ──
 
+/** synthesized previews (Blob / same-origin): routed through Web Audio, so a volume over 100 % really amplifies */
 let audio: HTMLAudioElement | null = null;
+/** provider preview URLs on another origin: played as they are (Web Audio would get silence from them) */
+let plainAudio: HTMLAudioElement | null = null;
 let objectUrl: string | null = null;
 let playing: string | null = null;
+/** the volume previews play at (the Voice tab's unsaved slider), 0..3 */
+let previewVolume = 1;
 const subs = new Set<() => void>();
 const emit = () => subs.forEach((f) => f());
 
+/** the volume of voice previews (0..3; the Voice tab sets its slider's value) — applies to the one playing too */
+export function setPreviewVolume(v: number): void {
+  previewVolume = Number.isFinite(v) ? Math.max(0, Math.min(3, v)) : 1;
+  if (audio) setOutputVolume(audio, previewVolume);
+  if (plainAudio) plainAudio.volume = Math.min(1, previewVolume);
+}
+
 export function stopPreview(): void {
-  if (audio) {
-    audio.pause();
-    audio.src = "";
+  for (const a of [audio, plainAudio]) {
+    if (!a) continue;
+    a.pause();
+    a.removeAttribute("src");
   }
   if (objectUrl) URL.revokeObjectURL(objectUrl);
   objectUrl = null;
@@ -81,14 +95,34 @@ export function stopPreview(): void {
   }
 }
 
+const sameOrigin = (url: string) => {
+  try {
+    return new URL(url, location.href).origin === location.origin;
+  } catch {
+    return false;
+  }
+};
+
 /** play a URL / Blob as preview `key` (a second click on the same key stops it) */
 export async function playPreview(key: string, src: string | Blob): Promise<void> {
   const again = playing === key;
   stopPreview();
   if (again) return;
-  audio ??= new Audio();
+  const routed = typeof src !== "string" || src.startsWith("blob:") || sameOrigin(src);
+  let el: HTMLAudioElement;
+  if (routed) {
+    audio ??= new Audio();
+    el = audio;
+    // (a click: the context may resume) — over 100 % needs the element in the Web Audio graph
+    await routeOutput(el);
+    setOutputVolume(el, previewVolume);
+  } else {
+    plainAudio ??= new Audio();
+    el = plainAudio;
+    el.volume = Math.min(1, previewVolume);
+  }
   const url = typeof src === "string" ? src : (objectUrl = URL.createObjectURL(src));
-  audio.src = url;
+  el.src = url;
   playing = key;
   emit();
   const ended = () => {
@@ -97,10 +131,10 @@ export async function playPreview(key: string, src: string | Blob): Promise<void
       emit();
     }
   };
-  audio.onended = ended;
-  audio.onerror = ended;
+  el.onended = ended;
+  el.onerror = ended;
   try {
-    await audio.play();
+    await el.play();
   } catch (e) {
     if (playing === key) {
       playing = null;
@@ -118,6 +152,7 @@ export function speakPreview(key: string, text: string, opts: { voice?: string; 
   const u = new SpeechSynthesisUtterance(text);
   if (opts.lang) u.lang = opts.lang;
   if (opts.rate) u.rate = opts.rate;
+  u.volume = Math.min(1, previewVolume); // speechSynthesis stops at 100 %
   const v = opts.voice ? speechSynthesis.getVoices().find((x) => x.voiceURI === opts.voice || x.name === opts.voice) : undefined;
   if (v) u.voice = v;
   const ended = () => {

@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
-# @reboot entrypoint — ensure the Docker stack is up. docker's restart policy
-# already restarts containers on daemon start; this is a belt-and-braces net.
-/usr/bin/docker compose -f /home/hr-harnessor/deploy/docker-compose.yml up -d
+# @reboot entrypoint (crontab: `@reboot /path/to/repo/deploy/boot.sh`) — make
+# sure the Docker stack is up. Docker's restart policy already restarts the
+# containers when the daemon starts; this is a belt-and-braces net.
+# GENY_COMPOSE_FILE picks another compose file (default: docker-compose.yml
+# next to this script); extra arguments (e.g. `--profile tunnel`) pass through.
+set -euo pipefail
+cd "$(dirname "$(readlink -f "$0")")"
+exec docker compose -f "${GENY_COMPOSE_FILE:-docker-compose.yml}" "$@" up -d

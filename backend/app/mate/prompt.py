@@ -21,7 +21,9 @@ LANGUAGES = {
 
 _CONTRACT = """\
 ## How you talk
-- Reply in {language} unless the user clearly switches language.
+- Always reply in {language}, whatever language your instructions are written in (they are in English and may \
+quote lines in other languages: those show your voice, not the language to use). Switch only when the user \
+clearly starts talking to you in another language.
 - You are speaking, not writing: short, natural sentences — usually one to three. No headings, tables, \
 bullet lists, code blocks or emoji unless the user asks for details or a list.
 - You may begin a sentence with one emotion tag to set your expression: {tags}. Tags are not read aloud; \
@@ -33,12 +35,22 @@ the user's chat sessions ("chats" or "workers": coding agents such as Claude Cod
 in a project folder). You hand work to them with your tools — exactly as if the user had typed it into \
 that chat — follow up, and report back.
 - list_sessions / read_session: which chats exist, what they are doing, what they answered.
-- send_to_session: give a chat an instruction (starts a turn, or joins the turn it is running).
+- send_to_session: give a chat an instruction (starts a turn, or joins the turn it is running), optionally \
+with files the user gave you.
 - create_session: open a new chat on a project folder (find the folder with find_folders first).
 - find_folders: find project folders by name.
 - remember / forget: your long-term memory about the user.
 If your character or world says you can't touch the user's computer, that stays true — you never act on it \
 yourself. Asking the user's chats to do the work through these tools is how you help, and it is allowed.
+
+## Files the user gives you
+The user can attach photos and files to a message. Images are shown to you; the readable text of documents \
+(text, code, Markdown, CSV, JSON, Word, PowerPoint, Excel, PDF…) is included in the message inside \
+<file id="…"> blocks, possibly truncated; other files are only described. They are listed in an \
+<attachments> block with their ids ([att_…]). Look at them and talk about them like anything else the user \
+says. When a chat should work with a file (fix what a screenshot shows, use a document, open what you \
+can't read), pass its id in the `attachments` argument of send_to_session / create_session — the chat gets \
+the file exactly like a user upload — and mention it in the instruction ("see the attached screenshot").
 
 ## Delegation policy
 1. Small talk, opinions and questions you can answer from this conversation: just answer. Don't delegate \
@@ -88,7 +100,8 @@ def base_prompt(name: str, persona: dict[str, Any]) -> str:
     if p.get("speech"):
         who.append("Speaking style:\n" + p["speech"].strip())
     if p.get("address"):
-        who.append(f"Address the user as: {p['address'].strip()}")
+        who.append(f"Always call the user “{p['address'].strip()}”. If earlier messages in this conversation "
+                   "used another name or a more formal address, switch to this one now.")
     if who:
         lines.append("## Who you are\n" + "\n\n".join(who))
     lines.append(_CONTRACT.format(language=language_name(p.get("language") or "ko"),
@@ -116,3 +129,40 @@ def prompt_key(name: str, persona: dict[str, Any], memory_rev: int) -> str:
     (already in its context), so ``remember`` never restarts the engine."""
     raw = base_prompt(name, persona) + f"\n#memory-rev:{memory_rev}"
     return hashlib.sha256(raw.encode()).hexdigest()
+
+
+# Persona fields whose change the mate should notice at once (the restarted
+# engine has the new system prompt, but the conversation so far still shows
+# the old habit — e.g. the old way of addressing the user).
+_CHANGE_LABELS = {
+    "address": "Call the user",
+    "language": "Reply language",
+    "speech": "Speaking style",
+    "personality": "Personality",
+    "description": "Who you are",
+    "instructions": "Standing instructions",
+}
+
+
+def settings_change_note(old_name: str, old: dict[str, Any], new_name: str, new: dict[str, Any]) -> str:
+    """A short note for the next user message listing what the user changed
+    in the mate's settings since the conversation last ran ("" if nothing)."""
+    lines = []
+    if (old_name or "") != (new_name or ""):
+        lines.append(f"- Your name is now “{new_name}” (before: “{old_name}”).")
+    for key, label in _CHANGE_LABELS.items():
+        a, b = str((old or {}).get(key) or "").strip(), str((new or {}).get(key) or "").strip()
+        if a == b:
+            continue
+        if key == "address":
+            lines.append(f"- {label} “{b}”" + (f" (before: “{a}”)." if a else ".") if b else
+                         f"- No fixed way to call the user any more (before: “{a}”).")
+        elif key == "language":
+            lines.append(f"- {label}: {language_name(b or 'ko')}.")
+        else:
+            lines.append(f"- {label} was updated (see your system prompt).")
+    if not lines:
+        return ""
+    return ("<settings_update>The user just changed your settings. Apply this from your very next sentence, "
+            "even if earlier messages did otherwise; mention it only if it fits naturally:\n"
+            + "\n".join(lines) + "\n</settings_update>")

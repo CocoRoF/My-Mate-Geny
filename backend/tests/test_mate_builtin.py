@@ -26,13 +26,15 @@ def _service(db):
 
 
 def test_bundled_characters_are_mates_out_of_the_box(db):
-    assert files.builtin_keys() == ["estelle", "chaerin", "seoa", "mao"]
+    assert files.builtin_keys() == ["chaerin", "estelle", "seoa", "mao"]
     mates = _service(db).list()
     by_key = {m["builtin"]: m for m in mates}
     assert set(by_key) == {"estelle", "chaerin", "seoa", "mao"} and len(mates) == 4  # no extra "Geny"
-    assert mates[0]["builtin"] == "estelle" and [m["is_default"] for m in mates].count(True) == 1
+    # a new install: Chaerin first and the default
+    assert mates[0]["builtin"] == "chaerin" and [m["is_default"] for m in mates].count(True) == 1
+    assert by_key["chaerin"]["is_default"] and by_key["chaerin"]["name"] == "한채린"
     est = by_key["estelle"]
-    assert est["is_default"] and est["name"] == "에스텔 루미나르"
+    assert not est["is_default"] and est["name"] == "에스텔 루미나르"
     assert est["avatar"]["kind"] == "video" and len(est["avatar"]["rig"]["clips"]) >= 10
     assert est["avatar"]["rig"]["home"].startswith("/api/mates/builtin/estelle/")
     assert est["llm"]["model"] == "claude-sonnet-5-5"
@@ -80,9 +82,10 @@ def test_builtin_files_are_served_and_confined():
 
 def test_mao_is_a_builtin_live2d_mate(db):
     mao = _service(db).store.by_builtin("mao")
-    assert mao["name"] == "Mao" and not mao["is_default"]
+    assert mao["name"] == "마오" and not mao["is_default"]  # (a Korean-replying mate: the Korean name)
     p = mao["persona"]
-    assert p["language"] == "ko" and "마오" in p["greeting"] and "비서" in p["description"]
+    assert p["language"] == "ko" and "마오" in p["greeting"] and "secretary" in p["description"]
+    assert "[greet]" in p["instructions"]
     assert mao["avatar"]["kind"] == "live2d"
     l2d = mao["avatar"]["live2d"]
     assert l2d["model"] == "/api/mates/builtin/mao/runtime/mao_pro.model3.json"

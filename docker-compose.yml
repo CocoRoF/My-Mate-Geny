@@ -1,52 +1,52 @@
+# My Mate Geny — quick start on any machine with Docker:
+#
+#   cp .env.example .env                    # optional: compose-level knobs
+#   cp backend/.env.example backend/.env    # optional: app settings
+#   docker compose up -d
+#   open http://localhost:8080              # first login: admin / geny-admin
+#
+# Everything the server keeps (database, vault + session keys, CLI logins of
+# pooled accounts, mates, uploads, cloned repos) lives in the `geny-home`
+# volume, mounted as the container user's home (/home/geny). Back it up; delete
+# it to start over. Production / reverse proxy / tunnel: docs/deploy.md.
+
+name: my-mate-geny
+
 services:
-  backend:
+  geny:
     build:
-      context: ./backend
+      context: .
+      args:
+        GENY_UID: ${GENY_UID:-1000}
+        GENY_GID: ${GENY_GID:-1000}
+    image: my-mate-geny:local
+    init: true
     env_file:
-      - .env
+      - path: backend/.env
+        required: false
     environment:
-      - HOST=0.0.0.0
-      - PORT=8080
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:58080}
-      - DB_PATH=/data/harnessor.db
-      - MOUNT_ROOT=/data/mounts
-    volumes:
-      - hrh-data:/data
-      # Share the host's Claude subscription auth into the container so the
-      # claude CLI runs under your existing login (GAPT SHARE_HOST_CLAUDE_AUTH
-      # pattern). Point this at the user that ran `claude setup-token`.
-      - ${HOST_CLAUDE_DIR:-~/.claude}:/root/.claude
-      # Mount host folders you want to use as LOCAL workspaces (read-write).
-      - /home:/home
-    # sshfs/fuse need these to mount remote workspaces from inside the container.
-    cap_add:
-      - SYS_ADMIN
-    devices:
-      - /dev/fuse
-    security_opt:
-      - apparmor:unconfined
-    restart: unless-stopped
-    networks: [internal]
-
-  frontend:
-    build:
-      context: ./frontend
-    restart: unless-stopped
-    networks: [internal]
-
-  nginx:
-    image: nginx:1.27-alpine
+      # Plain http on localhost by default. Behind HTTPS (reverse proxy /
+      # tunnel) set COOKIE_SECURE=true in .env.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
     ports:
-      - "58080:58080"
+      # Bound to localhost by default. Set GENY_BIND=0.0.0.0 to reach it from
+      # your LAN (then prefer HTTPS in front of it, see docs/deploy.md).
+      - "${GENY_BIND:-127.0.0.1}:${GENY_PORT:-8080}:8080"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on: [backend, frontend]
+      - geny-home:/home/geny
+      # Folders the agents work in. Unset = a docker volume; set
+      # GENY_WORKSPACES=/path/on/host (owned by GENY_UID) to use host folders.
+      - ${GENY_WORKSPACES:-geny-workspaces}:/workspaces
+      # Optional: reuse the Claude / Codex CLI logins of your host user
+      # instead of logging in from the console (Providers).
+      # Run `claude` / `codex login` on the host first so these exist.
+      # - ${HOME}/.claude:/home/geny/.claude
+      # - ${HOME}/.claude.json:/home/geny/.claude.json
+      # - ${HOME}/.codex:/home/geny/.codex
+      # Optional: an SSH key for remote workspaces / private git remotes.
+      # - ${HOME}/.ssh:/home/geny/.ssh:ro
     restart: unless-stopped
-    networks: [internal]
-
-networks:
-  internal:
-    driver: bridge
 
 volumes:
-  hrh-data:
+  geny-home:
+  geny-workspaces:

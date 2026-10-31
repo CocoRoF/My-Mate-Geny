@@ -15,6 +15,7 @@ import { useMateConversation } from "../../../mate/useMateConversation";
 import { parseEmotionText } from "../../../mate/emotion";
 import { MateAvatar } from "../../../mate/avatar/MateAvatar";
 import Icon from "../../ui/Icon";
+import { DropOverlay, useFileDrop } from "../../composer/useFileDrop";
 import MateComposer from "../MateComposer";
 import MateMessages from "../MateMessages";
 import { MateThumb, MOOD_LABEL, useFadingCaption } from "../MateStage";
@@ -116,19 +117,21 @@ function useLiveLine(conv: ReturnType<typeof useMateConversation>): string | nul
 
 function Quick() {
   const [focusKey, setFocusKey] = useState(1);
-  const mateRef = useRef<Mate | null>(null);
+  const sidRef = useRef<string | null>(null);
   const onCommand = useCallback((cmd: DesktopCommand) => {
     if (cmd.type === "quick-open") {
-      if (mateRef.current) useDraftStore.getState().setText(`mate:${mateRef.current.id}`, "");
+      // a fresh line each time (files the user attached stay until sent or removed)
+      if (sidRef.current) useDraftStore.getState().setText(sidRef.current, "");
       setFocusKey((k) => k + 1);
     } else if (cmd.type === "quick-close") {
       (document.activeElement as HTMLElement | null)?.blur?.();
     }
   }, []);
   const { mate, loaded } = useSurfaceMate(onCommand);
-  mateRef.current = mate;
   const desk = useDesktopMate();
   const conv = useMateConversation(mate, { voice: false });
+  sidRef.current = conv.sessionId;
+  const { dragging, dropProps } = useFileDrop(conv.sessionId);
   const card = useRef<HTMLDivElement>(null);
   const [sentAt, setSentAt] = useState(0);
 
@@ -164,7 +167,8 @@ function Quick() {
 
   return (
     <div className="flex justify-center p-2" data-testid="mate-quick">
-      <div ref={card} className="w-[624px] max-w-full rounded-2xl border border-border bg-[#11141b]/95 p-2 shadow-float backdrop-blur-xl">
+      <div ref={card} className="relative w-[624px] max-w-full rounded-2xl border border-border bg-[#11141b]/95 p-2 shadow-float backdrop-blur-xl" {...dropProps}>
+        {dragging && <DropOverlay compact hint={`for ${mate.name}`} />}
         <div className="flex items-center gap-2">
           <MateThumb mate={mate} className="h-8 w-8" />
           <div className="min-w-0 flex-1">
@@ -176,6 +180,8 @@ function Quick() {
               autoFocus
               focusKey={focusKey}
               showVoiceToggle={false}
+              escapeStops={false}
+              attachDirect
               placeholder={`Ask ${mate.name}…`}
               onSent={() => {
                 setSentAt(Date.now());
@@ -200,6 +206,7 @@ function ChatWindow() {
   const { mate, loaded } = useSurfaceMate();
   const desk = useDesktopMate();
   const conv = useMateConversation(mate);
+  const { dragging, dropProps } = useFileDrop(conv.sessionId);
   const loadConfig = useConfigStore((s) => s.load);
   useEffect(() => {
     loadConfig().catch(() => {});
@@ -207,7 +214,8 @@ function ChatWindow() {
   if (!mate) return <div className="grid h-full place-items-center text-sm text-content-faint">{loaded ? "No mate." : "Loading…"}</div>;
   const onTop = !!desk?.chatOnTop;
   return (
-    <div className="flex h-full flex-col bg-bg" data-testid="mate-chat-window">
+    <div className="relative flex h-full flex-col bg-bg" data-testid="mate-chat-window" {...dropProps}>
+      {dragging && <DropOverlay compact hint={`${mate.name} sees images and reads documents`} />}
       <div className="flex shrink-0 items-center gap-2 border-b border-border/70 bg-surface/80 px-3 py-2">
         <div className="relative h-10 w-8 shrink-0">
           <MateAvatar key={mate.id} avatar={mate.avatar} name={mate.name} size="sm" mood={conv.mood} react={conv.react} interactive={false} />

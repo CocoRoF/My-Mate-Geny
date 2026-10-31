@@ -3,6 +3,7 @@ import Sidebar from "./components/layout/Sidebar";
 import ChatView from "./components/chat/ChatView";
 import MobileTopBar from "./components/layout/MobileTopBar";
 import UpdateBanner from "./components/layout/UpdateBanner";
+import DefaultPasswordBanner from "./components/admin/DefaultPasswordBanner";
 import { useBackHandler } from "./lib/back";
 import { useSessionSync } from "./hooks/useSessionSync";
 import { useUIStore } from "./stores/uiStore";
@@ -74,6 +75,7 @@ export default function App() {
       )}
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
         <UpdateBanner />
+        <DefaultPasswordBanner />
         {/* chat with an open session has its own header */}
         {/* chat with an open session and the Mate have their own header */}
         {!(view === "chat" && activeId) && view !== "mate" && <MobileTopBar title={titles[view] || ""} />}
