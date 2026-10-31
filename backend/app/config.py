@@ -49,6 +49,14 @@ class Settings(BaseSettings):
     upload_max_mb: int = 50          # per file
     upload_max_files: int = 20       # per message
 
+    # Mates: per-mate files (assets/, home/ = the mate engine's cwd), the
+    # Live2D Cubism Core runtime and the speech cache live under this root.
+    mates_root: str = "~/.hr-harnessor/mates"
+    mate_asset_max_mb: int = 200     # one uploaded asset / one imported zip
+    mate_import_max_mb: int = 600    # everything an import unpacks/copies
+    # Where the mate's find_folders tool looks for project folders (comma-separated).
+    mate_search_roots: str = "/home"
+
     # Admin error log retention (rows beyond this are pruned, oldest first).
     log_max_rows: int = 20000
 
@@ -102,6 +110,10 @@ class Settings(BaseSettings):
     @property
     def uploads_root_path(self) -> Path:
         return Path(os.path.expanduser(self.uploads_root)).resolve()
+
+    @property
+    def mates_root_path(self) -> Path:
+        return Path(os.path.expanduser(self.mates_root)).resolve()
 
     @property
     def home_dir(self) -> Path:

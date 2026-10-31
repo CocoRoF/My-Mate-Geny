@@ -111,9 +111,22 @@ class ClaudeCodeProvider(Provider):
             model,
             "--permission-mode",
             _PERMISSION_MODE.get(req.mode, "bypassPermissions"),
-            "--append-system-prompt",
-            WAIT_GUIDE,
         ]
+        if req.system_prompt_file or req.system_prompt is not None:
+            # A prompt of our own (Mate). Snapshot off: the CLI would otherwise
+            # keep the first launch's prompt on every --resume, so an edited
+            # persona would never reach the model.
+            argv += (["--system-prompt-file", req.system_prompt_file] if req.system_prompt_file
+                     else ["--system-prompt", req.system_prompt or ""])
+            argv += ["--system-prompt-snapshot", "off"]
+        else:
+            argv += ["--append-system-prompt", WAIT_GUIDE]
+        if req.tools is not None:
+            argv += ["--tools", ",".join(req.tools)]  # "" = no built-in tools at all
+        if req.allowed_tools:
+            argv += ["--allowedTools", ",".join(req.allowed_tools)]
+        if req.sealed:
+            argv += ["--disable-slash-commands", "--setting-sources", "local"]
         # Extra folders + the per-session uploads dir (attachments live outside
         # the workspace) become additional working directories.
         upload_dirs = {os.path.dirname(os.path.dirname(a.path)) for a in req.attachments}
@@ -136,7 +149,9 @@ class ClaudeCodeProvider(Provider):
         if req.cli_session_id:
             argv += ["--resume", req.cli_session_id]
 
-        if req.mcp_config:
+        if req.mcp_config_file:
+            argv += ["--mcp-config", req.mcp_config_file, "--strict-mcp-config"]
+        elif req.mcp_config:
             argv += ["--mcp-config", json.dumps(req.mcp_config), "--strict-mcp-config"]
 
         return argv
@@ -172,6 +187,13 @@ class ClaudeCodeProvider(Provider):
             "api_key": hashlib.sha256((req.api_key or "").encode()).hexdigest()[:12],
             "allow": sorted(req.allow_tools or []),
             "auto_compact": req.auto_compact_window or 0,
+            "prompt": req.prompt_key or (
+                hashlib.sha256(req.system_prompt.encode()).hexdigest() if req.system_prompt is not None
+                else (req.system_prompt_file or "")
+            ),
+            "tools": req.tools,
+            "allowed": sorted(req.allowed_tools or []),
+            "sealed": req.sealed,
         }, sort_keys=True)
         return hashlib.sha256(key.encode()).hexdigest()
 

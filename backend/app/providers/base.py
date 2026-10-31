@@ -173,6 +173,25 @@ class TurnRequest:
     uploads_dir: str | None = None
     # Claude: CLAUDE_CODE_AUTO_COMPACT_WINDOW (tokens); 0 = the CLI's default.
     auto_compact_window: int = 0
+    # Claude: replace the default system prompt (Mate engines). None = the
+    # CLI's own prompt + the harness's wait guide.
+    system_prompt: str | None = None
+    # ... or that prompt in a file (``--system-prompt-file``: no argv size
+    # limit). Likewise the MCP config as a file: it may carry a token that
+    # must not show up in the process list.
+    system_prompt_file: str | None = None
+    mcp_config_file: str | None = None
+    # Identity of the launch prompt for the engine fingerprint ("" = hash of
+    # system_prompt). Lets parts of the prompt (e.g. memories the model wrote
+    # itself) change without restarting the engine.
+    prompt_key: str = ""
+    # Claude: built-in tool set (``--tools``); None = default, [] = none.
+    tools: list[str] | None = None
+    # Claude: tools allowed without a prompt (``--allowedTools``).
+    allowed_tools: list[str] = field(default_factory=list)
+    # Claude: no skills / slash commands, no user/project settings files
+    # (hooks, plugins) — a sealed engine (Mate).
+    sealed: bool = False
 
 
 class ProviderTurnError(RuntimeError):

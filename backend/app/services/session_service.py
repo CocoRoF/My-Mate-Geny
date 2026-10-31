@@ -112,6 +112,12 @@ class SessionService:
         self._list_subs: set[asyncio.Queue] = set()
         self._list_loop: asyncio.AbstractEventLoop | None = None
         self._inboxes: dict[str, TurnInbox] = {}  # running turns that accept steering
+        # Mate conversations (sessions.kind = 'mate'): hidden from the chat
+        # list and its change feed. The Mate layer configures their engine
+        # (``mate_engine(session, req)``) and listens for turn ends.
+        self._mate_sids: set[str] = set()
+        self.mate_engine: Any = None
+        self._turn_end_listeners: list[Any] = []
         self.persistent_engines = True  # Claude: one long-lived CLI process per chat
         # Latest plan usage an engine reported (rate_limit_event), per account
         # (admin view) and per chat (the composer shows only its own chat's).
@@ -126,6 +132,10 @@ class SessionService:
             on_closed=self._on_engine_closed,
             on_subagent=self._on_subagent,
         )
+        try:
+            self._mate_sids = {r["id"] for r in self._db.query("SELECT id FROM sessions WHERE kind = 'mate'")}
+        except Exception:  # noqa: BLE001 - very old test DBs
+            pass
         # Engines don't survive a restart: tasks still marked running are gone.
         try:
             self._db.execute(
@@ -152,6 +162,8 @@ class SessionService:
         title: str = "New chat",
         mode: str = "agent",
         extra_dirs: list[str] | None = None,
+        kind: str = "chat",
+        mate_id: str | None = None,
     ) -> dict[str, Any]:
         get_provider(provider)  # validate
         model = _default_model(provider, model)
@@ -162,12 +174,15 @@ class SessionService:
             """
             INSERT INTO sessions
                 (id, title, provider, model, effort, connection_id, workspace_path,
-                 cli_session_id, mode, extra_dirs, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
+                 cli_session_id, mode, extra_dirs, kind, mate_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
             """,
             (sid, title, provider, model, effort, connection_id, workspace_path,
-             mode if mode in MODES else "agent", json.dumps(dirs), now, now),
+             mode if mode in MODES else "agent", json.dumps(dirs), "mate" if kind == "mate" else "chat",
+             mate_id, now, now),
         )
+        if kind == "mate":
+            self._mate_sids.add(sid)
         self.list_changed("created", sid)
         return self.get(sid)
 
@@ -277,7 +292,7 @@ class SessionService:
         rows = self._db.query(
             """
             SELECT s.*, (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
-            FROM sessions s ORDER BY s.updated_at DESC
+            FROM sessions s WHERE COALESCE(s.kind, 'chat') != 'mate' ORDER BY s.updated_at DESC
             """
         )
         out = []
@@ -297,14 +312,16 @@ class SessionService:
         if self._attachments is not None:
             self._attachments.purge_session(sid)
         self.list_changed("deleted", sid)
+        self._mate_sids.discard(sid)
 
     def messages(self, sid: str) -> list[dict[str, Any]]:
         rows = self._db.query(
-            "SELECT id, role, content, provider, model, created_at FROM messages WHERE session_id = ? ORDER BY created_at",
+            "SELECT id, role, content, provider, model, meta, created_at FROM messages WHERE session_id = ? "
+            "ORDER BY created_at",
             (sid,),
         )
         by_msg = self._attachments.by_message(sid) if self._attachments is not None else {}
-        return [{**dict(r), "attachments": by_msg.get(r["id"], [])} for r in rows]
+        return [{**dict(r), "meta": _json_or_none(r["meta"]), "attachments": by_msg.get(r["id"], [])} for r in rows]
 
     def events(self, sid: str, after: int = 0) -> list[dict[str, Any]]:
         # Insertion order (row id), NOT seq: seq restarts at 1 every turn.
@@ -350,15 +367,27 @@ class SessionService:
         self._publish(sid, ev.to_dict())
         return ev.to_dict()
 
+    def seed_message(self, sid: str, role: str, content: str, *, meta: dict[str, Any] | None = None,
+                     provider: str | None = None, model: str | None = None) -> str:
+        """A message no engine has to be told about (e.g. a mate's scripted
+        greeting, which its system prompt already mentions): kept in history,
+        left out of context handoffs."""
+        mid = self._add_message(sid, role, content, provider, model, meta)
+        row = self._db.query_one("SELECT created_at FROM messages WHERE id = ?", (mid,))
+        self._db.execute("UPDATE sessions SET context_floor = ? WHERE id = ?", (row["created_at"], sid))
+        return mid
+
     # ---- persistence helpers ----
 
     def _add_message(
-        self, sid: str, role: str, content: str, provider: str | None = None, model: str | None = None
+        self, sid: str, role: str, content: str, provider: str | None = None, model: str | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> str:
         mid = new_id("msg_")
         self._db.execute(
-            "INSERT INTO messages (id, session_id, role, content, provider, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (mid, sid, role, content, provider, model, now_iso()),
+            "INSERT INTO messages (id, session_id, role, content, provider, model, meta, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (mid, sid, role, content, provider, model, json.dumps(meta) if meta else None, now_iso()),
         )
         self._db.execute("UPDATE sessions SET updated_at = ? WHERE id = ?", (now_iso(), sid))
         return mid
@@ -481,7 +510,10 @@ class SessionService:
     def list_changed(self, reason: str, sid: str | None = None) -> None:
         """The session list changed (created / renamed / deleted / a turn
         started or ended / account moved): tell every open sidebar. Only a
-        version is sent — clients coalesce bursts and refetch once."""
+        version is sent — clients coalesce bursts and refetch once.
+        Mate conversations aren't in that list: their changes aren't announced."""
+        if sid is not None and sid in self._mate_sids:
+            return
         self._list_version += 1
         msg = {"type": "sessions.changed", "data": {"version": self._list_version, "reason": reason, "sid": sid}}
         loop = self._list_loop
@@ -506,6 +538,34 @@ class SessionService:
     def is_running(self, sid: str) -> bool:
         return sid in self._tasks
 
+    def is_mate_session(self, sid: str) -> bool:
+        return sid in self._mate_sids
+
+    def running_task_count(self, sid: str) -> int:
+        """Background tasks the chat's live engine is still running."""
+        slot = self._engines.slot(sid)
+        return len(slot.engine.running_tasks) if slot is not None else 0
+
+    def add_turn_end_listener(self, cb: Any) -> None:
+        """``cb(sid, outcome)`` after every turn (user, mate or auto) ends;
+        outcome = {status: ok|error|stopped, text, error, trigger: turn|auto}."""
+        self._turn_end_listeners.append(cb)
+
+    def _turn_ended(self, sid: str, outcome: dict[str, Any]) -> None:
+        for cb in list(self._turn_end_listeners):
+            try:
+                cb(sid, outcome)
+            except Exception as exc:  # noqa: BLE001 - a listener must never break the turn loop
+                self._log("error", "system", f"turn-end listener failed: {exc}", code="turn.listener_failed",
+                          detail={"traceback": traceback.format_exc()}, session_id=sid)
+
+    def add_notice(self, sid: str, code: str, message: str, level: str = "info", **extra: Any) -> dict[str, Any]:
+        """Persist + publish an inline notice in a session."""
+        ev = ProviderEvent(type="notice", data={"level": level, "code": code, "message": message, **extra})
+        self._add_event(sid, ev)
+        self._publish(sid, ev.to_dict())
+        return ev.to_dict()
+
     # ---- background turns ----
 
     def start_turn(
@@ -514,9 +574,13 @@ class SessionService:
         user_input: str,
         attachment_ids: list[str] | None = None,
         client_msg_id: str | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> None:
         """Validate and launch a turn in the background. Raises
-        ``TurnBusyError`` / ``AttachmentError`` / ``KeyError`` synchronously."""
+        ``TurnBusyError`` / ``AttachmentError`` / ``KeyError`` synchronously.
+        ``meta`` is kept with the user message (and sent on its
+        ``user.message`` event): ``via`` = sent by a mate, ``internal`` =
+        made by the system, not typed."""
         if sid in self._tasks:
             raise TurnBusyError("a turn is already running in this session")
         self.get(sid)
@@ -525,7 +589,7 @@ class SessionService:
             if attachment_ids and self._attachments is not None
             else []
         )
-        task = asyncio.create_task(self._drive(sid, user_input, rows, client_msg_id))
+        task = asyncio.create_task(self._drive(sid, user_input, rows, client_msg_id, meta))
         self._tasks[sid] = task
 
     async def steer(
@@ -534,6 +598,7 @@ class SessionService:
         text: str,
         attachment_ids: list[str] | None = None,
         client_msg_id: str | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> bool:
         """Deliver extra instructions into the RUNNING turn. Returns False when
         the turn can't take input any more (caller sends it as the next turn).
@@ -561,7 +626,7 @@ class SessionService:
         def record() -> None:
             # Kept as its own role so history pairing (user -> assistant turn)
             # is untouched; the event places it inside the running turn.
-            mid = self._add_message(sid, "steer", text)
+            mid = self._add_message(sid, "steer", text, meta=meta)
             if rows and self._attachments is not None:
                 self._attachments.link([r["id"] for r in rows], mid)
             ev = ProviderEvent(type="user.steer", data={
@@ -569,6 +634,7 @@ class SessionService:
                 "client_msg_id": client_msg_id,
                 "message_id": mid,
                 "attachments": [self._attachments.out(r) for r in rows] if self._attachments else [],
+                **(meta or {}),
             })
             self._add_event(sid, ev)
             self._publish(sid, ev.to_dict())
@@ -613,14 +679,18 @@ class SessionService:
         await self._engines.shutdown(sid, reason="stop timeout")
 
     async def _drive(
-        self, sid: str, user_input: str, rows: list[dict[str, Any]], client_msg_id: str | None
+        self, sid: str, user_input: str, rows: list[dict[str, Any]], client_msg_id: str | None,
+        meta: dict[str, Any] | None = None,
     ) -> None:
         self._publish(sid, {"type": "run.state", "data": {"running": True}})
+        outcome: dict[str, Any] = {"status": "error", "text": "", "error": None, "trigger": "turn"}
         try:
-            async for ev in self.run_turn(sid, user_input, rows=rows, client_msg_id=client_msg_id):
+            async for ev in self.run_turn(sid, user_input, rows=rows, client_msg_id=client_msg_id, meta=meta):
+                _note_outcome(outcome, ev)
                 self._publish(sid, ev.to_dict())
         except asyncio.CancelledError:
             ev = ProviderEvent(type="error", data={"code": "turn.interrupted", "message": "Stopped by user"})
+            _note_outcome(outcome, ev)
             self._add_event(sid, ev)
             self._publish(sid, ev.to_dict())
         except Exception as exc:  # noqa: BLE001 - surface + log, never crash the loop
@@ -631,11 +701,13 @@ class SessionService:
                 session_id=sid,
             )
             ev = ProviderEvent(type="error", data={"code": "exec.turn.crashed", "message": str(exc)[:1000]})
+            _note_outcome(outcome, ev)
             self._add_event(sid, ev)
             self._publish(sid, ev.to_dict())
         finally:
             self._tasks.pop(sid, None)
             self._publish(sid, {"type": "run.state", "data": {"running": False}})
+            self._turn_ended(sid, outcome)
 
     async def run_turn(
         self,
@@ -645,6 +717,7 @@ class SessionService:
         *,
         rows: list[dict[str, Any]] | None = None,
         client_msg_id: str | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> AsyncIterator[ProviderEvent]:
         """Run one turn, yielding events. Raises ``AttachmentError`` (before
         anything is persisted) when the referenced attachments are invalid."""
@@ -655,7 +728,7 @@ class SessionService:
                 if attachment_ids and self._attachments is not None
                 else []
             )
-        msg_id = self._add_message(sid, "user", user_input)
+        msg_id = self._add_message(sid, "user", user_input, meta=meta)
         if rows and self._attachments is not None:
             self._attachments.link([r["id"] for r in rows], msg_id)
         attachments = [self._attachments.to_provider(r) for r in rows] if self._attachments else []
@@ -663,6 +736,7 @@ class SessionService:
         self._publish(sid, {"type": "user.message", "data": {
             "message_id": msg_id, "client_msg_id": client_msg_id, "text": user_input,
             "attachments": [self._attachments.out(r) for r in rows] if self._attachments else [],
+            **(meta or {}),
         }})
         if session["title"] in ("", "New chat") or session["title"] == os.path.basename(
             session["workspace_path"].rstrip("/")
@@ -824,6 +898,10 @@ class SessionService:
             uploads_dir=uploads_dir,
             auto_compact_window=self.auto_compact_window(session) if provider_name == "claude" else 0,
         )
+        if session.get("kind") == "mate" and self.mate_engine is not None:
+            # A Mate's engine: its own system prompt, no built-in tools, only
+            # the mate MCP bridge (see app.mate.service).
+            self.mate_engine(session, req)
         self._inboxes[sid] = req.inbox
 
         def context_notice() -> ProviderEvent | None:
@@ -1412,6 +1490,7 @@ class SessionService:
         if self._pool is not None and slot is not None:
             self._pool.begin_turn(slot.lease)  # an active turn on the engine's account
         self._publish(sid, {"type": "run.state", "data": {"running": True}})
+        outcome: dict[str, Any] = {"status": "error", "text": "", "error": None, "trigger": "auto"}
         try:
             with contextlib.suppress(Exception):
                 st["changes"] = await self._snapshot_before(
@@ -1426,9 +1505,11 @@ class SessionService:
                         await self._record_event(sid, changed, st)
                         self._publish(sid, changed.to_dict())
                 await self._record_event(sid, ev, st)
+                _note_outcome(outcome, ev)
                 self._publish(sid, ev.to_dict())
         except asyncio.CancelledError:
             ev = ProviderEvent(type="error", data={"code": "turn.interrupted", "message": "Stopped by user"})
+            _note_outcome(outcome, ev)
             self._add_event(sid, ev)
             self._publish(sid, ev.to_dict())
         except Exception as exc:  # noqa: BLE001
@@ -1443,6 +1524,7 @@ class SessionService:
             if self._pool is not None and slot is not None:
                 self._pool.end_turn(slot.lease)
             self._publish(sid, {"type": "run.state", "data": {"running": False}})
+            self._turn_ended(sid, outcome)
 
     def _on_task(self, sid: str, task: dict[str, Any]) -> None:
         try:
@@ -1596,6 +1678,26 @@ class SessionService:
 
     async def shutdown(self) -> None:
         await self._engines.shutdown_all()
+
+
+def _note_outcome(outcome: dict[str, Any], ev: ProviderEvent) -> None:
+    """Track how a turn ended (its last terminal event) for turn-end listeners."""
+    if ev.type == "turn.complete":
+        if ev.data.get("superseded"):
+            return
+        outcome.update(status="ok", text=ev.data.get("text") or "", error=None)
+    elif ev.type == "error":
+        stopped = ev.data.get("code") == "turn.interrupted"
+        outcome.update(status="stopped" if stopped else "error", error=ev.data.get("message") or ev.data.get("code"))
+
+
+def _json_or_none(raw: Any) -> Any:
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 async def _drain_quietly(stream: AsyncIterator[ProviderEvent]) -> None:
