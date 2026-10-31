@@ -67,6 +67,9 @@ export default function SubscriptionUsage({ provider, accountId }: { provider: s
 
   return (
     <div className="space-y-5">
+      {sub.stale && (
+        <p className="text-[11px] text-warning">Couldn't refresh ({sub.stale}) — showing the last numbers.</p>
+      )}
       {sub.account && (
         <div>
           <div className="text-[11px] uppercase tracking-wider text-content-faint mb-1">Account</div>

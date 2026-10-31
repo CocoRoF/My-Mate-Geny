@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { resetContext } from "../../api/sessions";
 import { useChatStore } from "../../stores/chatStore";
 import { nameClipboardFiles, useComposerStore } from "../../stores/composerStore";
+import { useDraftStore, type QueuedMessage } from "../../stores/draftStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import type { Attachment, Session } from "../../types";
 import AttachmentTray from "../attachments/AttachmentTray";
@@ -74,11 +75,7 @@ function AttachMenu({ onPick, onClose }: { onPick: (kind: "photo" | "file") => v
   );
 }
 
-interface Queued {
-  id: string;
-  text: string;
-  attachments: Attachment[];
-}
+const NO_QUEUE: QueuedMessage[] = [];
 
 export default function InputBar({
   onSend,
@@ -91,10 +88,27 @@ export default function InputBar({
   onStop: () => void;
   session: Session;
 }) {
-  const [input, setInput] = useState("");
+  const sid = session.id;
+  // Text, files and queued messages belong to the chat (draftStore), not to
+  // this component: switching chats or views, or reloading, keeps them.
+  const input = useDraftStore((s) => s.drafts[sid]?.text ?? "");
+  const queue = useDraftStore((s) => s.queues[sid] ?? NO_QUEUE);
+  const setInput = useCallback(
+    (v: string | ((prev: string) => string)) => {
+      const st = useDraftStore.getState();
+      st.setText(sid, typeof v === "function" ? v(st.drafts[sid]?.text ?? "") : v);
+    },
+    [sid],
+  );
+  const setQueue = useCallback(
+    (v: QueuedMessage[] | ((prev: QueuedMessage[]) => QueuedMessage[])) => {
+      const st = useDraftStore.getState();
+      st.setQueue(sid, typeof v === "function" ? v(st.queues[sid] ?? NO_QUEUE) : v);
+    },
+    [sid],
+  );
   const [menu, setMenu] = useState(false);
   const [notice, setNotice] = useState("");
-  const [queue, setQueue] = useState<Queued[]>([]);
   const [caret, setCaret] = useState(0);
   const [menuClosedFor, setMenuClosedFor] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -117,7 +131,6 @@ export default function InputBar({
   const clearSent = useComposerStore((s) => s.clearSent);
   const updateSession = useSessionStore((s) => s.update);
 
-  const sid = session.id;
   // "Mention in chat" from the explorer appends `@path ` here.
   const insert = useWorkbench((s) => s.insert);
   useEffect(() => {
@@ -150,6 +163,14 @@ export default function InputBar({
     // a short (keyboard-up) phone screen keeps room for the conversation
     ta.style.height = Math.min(ta.scrollHeight, 240, Math.round(window.innerHeight * 0.4)) + "px";
   };
+
+  // A saved draft is back: size the box to it and put the caret at its end.
+  useEffect(() => {
+    if (!input) return;
+    setCaret(input.length);
+    requestAnimationFrame(grow);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const setText = (text: string, pos?: number) => {
     setInput(text);

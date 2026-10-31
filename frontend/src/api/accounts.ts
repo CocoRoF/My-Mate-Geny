@@ -34,6 +34,10 @@ export interface Account {
 
 export type PrimaryMode = "normal" | "fallback" | "off";
 
+/** balanced = whichever window is fuller; seven_day = spread the weekly budget
+ *  first (5-hour breaks ties); five_hour = the reverse. */
+export type LimitPriority = "balanced" | "seven_day" | "five_hour";
+
 export interface PoolSettings {
   provider: string;
   enabled: boolean;
@@ -41,6 +45,7 @@ export interface PoolSettings {
   primary_mode: PrimaryMode;
   near_5h: number; // avoid an account at/above this 5-hour %
   near_7d: number; // ... and this 7-day %
+  limit_priority: LimitPriority; // which window decides between accounts
   auto_compact_window: number; // Claude: default auto-compact window (0 = CLI default)
 }
 

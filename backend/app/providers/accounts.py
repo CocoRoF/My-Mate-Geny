@@ -220,10 +220,18 @@ class AccountSnapshot:
         return None if self.utilization is None else max(0.0, 100.0 - self.utilization)
 
 
+# Which plan window decides between accounts: "balanced" = whichever window
+# is fuller; "seven_day" spreads the weekly budget first (keeps every account
+# alive until its 7-day reset), with the 5-hour window as the tiebreak;
+# "five_hour" the reverse.
+LIMIT_PRIORITIES = ("balanced", "seven_day", "five_hour")
+
+
 @dataclass(frozen=True)
 class LimitPolicy:
     five_hour: float = NEAR_LIMIT_5H
     seven_day: float = NEAR_LIMIT_7D
+    priority: str = "balanced"
 
 
 @dataclass
@@ -248,12 +256,13 @@ def ineligible_reason(a: AccountSnapshot, *, now: float) -> str | None:
 
 
 def near_limit_reason(a: AccountSnapshot, limits: LimitPolicy) -> str | None:
-    """Soft reason: the account works but is close to a plan limit."""
-    if a.five is not None and a.five >= limits.five_hour:
-        return "near_5h"
-    if a.seven is not None and a.seven >= limits.seven_day:
+    """Soft reason: the account works but is close to a plan limit (the
+    prioritized window is reported first when both are)."""
+    near5 = a.five is not None and a.five >= limits.five_hour
+    near7 = a.seven is not None and a.seven >= limits.seven_day
+    if near7 and (limits.priority == "seven_day" or not near5):
         return "near_7d"
-    return None
+    return "near_5h" if near5 else None
 
 
 def _round_robin(cands: list[AccountSnapshot], state: BalancerState) -> AccountSnapshot:
@@ -287,16 +296,32 @@ def _lru(cands: list[AccountSnapshot]) -> AccountSnapshot:
     return min(cands, key=lambda a: (a.last_used, a.total_leases, a.id))
 
 
-def _most_remaining(cands: list[AccountSnapshot]) -> AccountSnapshot:
-    # Pick the account with the most plan headroom (lowest utilization), then
-    # the least busy. Unknown usage (API-key accounts, failed fetch) sorts
-    # LAST — it must not look like an empty plan and soak up every turn.
+def _usage_key(a: AccountSnapshot, priority: str) -> tuple[float, float]:
+    """(deciding %, tiebreak %) for an account under a window priority. A
+    missing window falls back to the overall utilization."""
+    util = a.utilization or 0.0
+    seven = a.seven if a.seven is not None else util
+    five = a.five if a.five is not None else util
+    if priority == "seven_day":
+        return round(seven, 2), round(five, 2)
+    if priority == "five_hour":
+        return round(five, 2), round(seven, 2)
+    return round(util, 2), round(min(seven, five), 2)  # the fuller window decides, the other breaks ties
+
+
+def _most_remaining(cands: list[AccountSnapshot], priority: str = "balanced") -> AccountSnapshot:
+    # Pick the account with the most plan headroom in the prioritized window,
+    # then the least busy. Unknown usage (API-key accounts, failed fetch)
+    # sorts LAST — it must not look like an empty plan and soak up every turn.
     return min(cands, key=lambda a: (
-        a.utilization is None, round(a.utilization or 0.0, 2), round(a.load, 6), a.last_used, a.id,
+        a.utilization is None and a.five is None and a.seven is None,
+        *_usage_key(a, priority), round(a.load, 6), a.last_used, a.id,
     ))
 
 
-def _by_strategy(cands: list[AccountSnapshot], strategy: str, state: BalancerState) -> AccountSnapshot:
+def _by_strategy(
+    cands: list[AccountSnapshot], strategy: str, state: BalancerState, priority: str = "balanced",
+) -> AccountSnapshot:
     if strategy == "round_robin":
         return _round_robin(cands, state)
     if strategy == "weighted":
@@ -304,7 +329,7 @@ def _by_strategy(cands: list[AccountSnapshot], strategy: str, state: BalancerSta
     if strategy == "least_recently_used":
         return _lru(cands)
     if strategy == "most_remaining":
-        return _most_remaining(cands)
+        return _most_remaining(cands, priority)
     return _least_busy(cands)
 
 
@@ -324,13 +349,21 @@ def candidates(
     ]
     fresh = [a for a in usable if near_limit_reason(a, limits) is None]
     near = [a for a in usable if near_limit_reason(a, limits) is not None]
-    if primary_mode == "fallback":
-        tiers = [
-            [a for a in fresh if not a.is_primary], [a for a in fresh if a.is_primary],
-            [a for a in near if not a.is_primary], [a for a in near if a.is_primary],
-        ]
+    # With a prioritized window, an account near only the OTHER window beats
+    # one near the prioritized window (7-day first: a full 5-hour window
+    # resets within hours; a full week doesn't).
+    if limits.priority in ("seven_day", "five_hour"):
+        worst = "near_7d" if limits.priority == "seven_day" else "near_5h"
+        near_groups = [[a for a in near if near_limit_reason(a, limits) != worst],
+                       [a for a in near if near_limit_reason(a, limits) == worst]]
     else:
-        tiers = [fresh, near]
+        near_groups = [near]
+    tiers: list[list[AccountSnapshot]] = []
+    for group in [fresh, *near_groups]:
+        if primary_mode == "fallback":
+            tiers += [[a for a in group if not a.is_primary], [a for a in group if a.is_primary]]
+        else:
+            tiers.append(group)
     return [t for t in tiers if t]
 
 
@@ -342,9 +375,11 @@ def choose(
     tiers = candidates(accounts, now=now, limits=limits, primary_mode=primary_mode, avoid=avoid)
     if not tiers:
         return None
-    if tiers[0] and near_limit_reason(tiers[0][0], limits or LimitPolicy()) is not None:
-        return _most_remaining(tiers[0])  # every option is near a limit: the one furthest from it
-    return _by_strategy(tiers[0], strategy, state)
+    limits = limits or LimitPolicy()
+    if tiers[0] and near_limit_reason(tiers[0][0], limits) is not None:
+        # every option is near a limit: the one furthest from it
+        return _most_remaining(tiers[0], limits.priority)
+    return _by_strategy(tiers[0], strategy, state, limits.priority)
 
 
 def sticky_reason(
@@ -558,7 +593,7 @@ class AccountStore:
     # pool config (+ the provider's engine settings that live with it)
     _POOL_DEFAULTS: dict[str, Any] = {
         "enabled": False, "strategy": "least_busy", "primary_mode": "normal",
-        "near_5h": NEAR_LIMIT_5H, "near_7d": NEAR_LIMIT_7D,
+        "near_5h": NEAR_LIMIT_5H, "near_7d": NEAR_LIMIT_7D, "limit_priority": "balanced",
         # Claude: CLAUDE_CODE_AUTO_COMPACT_WINDOW for every chat without its
         # own value; 0 = the CLI's default (the model's full window).
         "auto_compact_window": 0,
@@ -574,6 +609,8 @@ class AccountStore:
         out["strategy"] = row["strategy"]
         if "primary_mode" in keys and row["primary_mode"] in PRIMARY_MODES:
             out["primary_mode"] = row["primary_mode"]
+        if "limit_priority" in keys and row["limit_priority"] in LIMIT_PRIORITIES:
+            out["limit_priority"] = row["limit_priority"]
         for k in ("near_5h", "near_7d"):
             if k in keys and row[k] is not None:
                 out[k] = float(row[k])
@@ -588,20 +625,23 @@ class AccountStore:
                 cur[k] = v
         if cur["primary_mode"] not in PRIMARY_MODES:
             raise ValueError(f"unknown primary mode: {cur['primary_mode']}")
+        if cur["limit_priority"] not in LIMIT_PRIORITIES:
+            raise ValueError(f"unknown limit priority: {cur['limit_priority']}")
         for k in ("near_5h", "near_7d"):
             cur[k] = min(100.0, max(50.0, float(cur[k])))
         cur["auto_compact_window"] = max(0, int(cur["auto_compact_window"] or 0))
         self._db.execute(
             """
             INSERT INTO provider_pool (provider, enabled, strategy, primary_mode, near_5h, near_7d,
-                                       auto_compact_window, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                       limit_priority, auto_compact_window, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(provider) DO UPDATE SET enabled=excluded.enabled, strategy=excluded.strategy,
                 primary_mode=excluded.primary_mode, near_5h=excluded.near_5h, near_7d=excluded.near_7d,
+                limit_priority=excluded.limit_priority,
                 auto_compact_window=excluded.auto_compact_window, updated_at=excluded.updated_at
             """,
             (provider, 1 if cur["enabled"] else 0, cur["strategy"], cur["primary_mode"], cur["near_5h"],
-             cur["near_7d"], cur["auto_compact_window"], now_iso()),
+             cur["near_7d"], cur["limit_priority"], cur["auto_compact_window"], now_iso()),
         )
         return self.pool(provider)
 
@@ -1036,7 +1076,8 @@ class AccountPool:
         if not cfg["enabled"]:
             return None
         snaps_all, by_id = self._snapshots(provider, cfg)
-        limits = LimitPolicy(cfg.get("near_5h", NEAR_LIMIT_5H), cfg.get("near_7d", NEAR_LIMIT_7D))
+        limits = LimitPolicy(cfg.get("near_5h", NEAR_LIMIT_5H), cfg.get("near_7d", NEAR_LIMIT_7D),
+                             cfg.get("limit_priority") or "balanced")
         mode = cfg.get("primary_mode") or "normal"
         pid = self._primary_id(provider)
         with self._lock:

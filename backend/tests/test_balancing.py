@@ -563,3 +563,41 @@ def test_plan_usage_backs_off_after_429(monkeypatch):
     clock[0] += acc_mod.PLAN_BACKOFF_S  # past the backoff: asks again
     pool.plan_usage("claude", "a1", account=acct)
     assert len(calls) == 2
+
+
+def test_seven_day_priority_spreads_the_weekly_budget():
+    # primary: 5h 43% / 7d 56%; hrjang: 5h 60% / 7d 8% (the screenshot case, 5h flipped)
+    a = snap("primary", five=43.0, seven=56.0, utilization=56.0)
+    b = snap("hrjang", five=60.0, seven=8.0, utilization=60.0)
+    st = BalancerState()
+    # balanced: the fuller window decides -> primary (56) beats hrjang (60)
+    assert choose([a, b], strategy="most_remaining", now=0, state=st, limits=LimitPolicy()).id == "primary"
+    # 7-day first: the account with the most weekly headroom wins
+    assert choose([a, b], strategy="most_remaining", now=0, state=st,
+                  limits=LimitPolicy(priority="seven_day")).id == "hrjang"
+    # 5-hour first
+    assert choose([a, b], strategy="most_remaining", now=0, state=st,
+                  limits=LimitPolicy(priority="five_hour")).id == "primary"
+
+
+def test_seven_day_priority_prefers_near_5h_over_near_7d():
+    # both near a limit: a full 5-hour window resets in hours, a full week doesn't
+    full_5h = snap("a", five=95.0, seven=20.0, utilization=95.0)
+    full_7d = snap("b", five=10.0, seven=97.0, utilization=97.0)
+    st = BalancerState()
+    seven_first = LimitPolicy(priority="seven_day")
+    assert choose([full_5h, full_7d], strategy="least_busy", now=0, state=st, limits=seven_first).id == "a"
+    five_first = LimitPolicy(priority="five_hour")
+    assert choose([full_5h, full_7d], strategy="least_busy", now=0, state=st, limits=five_first).id == "b"
+    from app.providers.accounts import near_limit_reason
+    both = snap("c", five=95.0, seven=97.0, utilization=97.0)
+    assert near_limit_reason(both, seven_first) == "near_7d"
+    assert near_limit_reason(both, LimitPolicy()) == "near_5h"
+
+
+def test_limit_priority_setting_round_trips(db):
+    store = AccountStore(db, SecretVault(db))
+    assert store.pool("claude")["limit_priority"] == "balanced"
+    assert store.set_pool("claude", limit_priority="seven_day")["limit_priority"] == "seven_day"
+    with pytest.raises(ValueError):
+        store.set_pool("claude", limit_priority="monthly")

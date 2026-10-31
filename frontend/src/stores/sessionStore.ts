@@ -8,6 +8,7 @@ import {
   type SessionInput,
   type SessionPatch,
 } from "../api/sessions";
+import { useDraftStore } from "./draftStore";
 
 interface SessionState {
   sessions: Session[];
@@ -90,6 +91,7 @@ type StoreSet = (partial: Partial<SessionState>) => void;
 async function fetchList(set: StoreSet, get: () => SessionState) {
   const { sessions, version } = await listSessionsVersioned();
   set({ sessions, version });
+  useDraftStore.getState().prune(new Set(sessions.map((x) => x.id))); // unsent drafts of deleted chats
   // The app opens on a chat, not on "New chat": the last one opened here,
   // else the most recent (the list is newest first). Only an empty history
   // (or the New chat button) shows the new-chat screen.

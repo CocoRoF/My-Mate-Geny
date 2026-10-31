@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS provider_pool (
     primary_mode TEXT NOT NULL DEFAULT 'normal',  -- host login: normal | fallback | off
     near_5h   REAL,                           -- avoid an account at/above this 5-hour % (default 90)
     near_7d   REAL,                           -- ... and this 7-day % (default 95)
+    limit_priority TEXT NOT NULL DEFAULT 'balanced',  -- which window decides: balanced | seven_day | five_hour
     auto_compact_window INTEGER NOT NULL DEFAULT 0,  -- Claude: default auto-compact window (0 = CLI default)
     updated_at TEXT NOT NULL
 );
@@ -240,6 +241,7 @@ class Database:
                 ("near_5h", "REAL"),
                 ("near_7d", "REAL"),
                 ("auto_compact_window", "INTEGER NOT NULL DEFAULT 0"),
+                ("limit_priority", "TEXT NOT NULL DEFAULT 'balanced'"),
             ):
                 if pcols and col not in pcols:
                     self._conn.execute(f"ALTER TABLE provider_pool ADD COLUMN {col} {ddl}")

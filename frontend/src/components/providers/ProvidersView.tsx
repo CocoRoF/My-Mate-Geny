@@ -14,6 +14,7 @@ import {
   type Account,
   type PoolConfig,
   type PrimaryMode,
+  type LimitPriority,
 } from "../../api/accounts";
 import { fromAccount } from "../../lib/usage";
 import { COMPACT_BUFFER, DEFAULT_PRESETS, WINDOW_HINT, fmtWindow } from "../../lib/context";
@@ -230,6 +231,25 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
                       </option>
                     ))}
                   </select>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] text-content-faint w-16">Decide by</span>
+                  <select
+                    value={pool.limit_priority || "balanced"}
+                    onChange={(e) => setPool(provider, { limit_priority: e.target.value as LimitPriority }).then(load)}
+                    className="field py-1 text-xs w-44"
+                  >
+                    <option value="balanced">Fuller window</option>
+                    <option value="seven_day">7-day usage first</option>
+                    <option value="five_hour">5-hour usage first</option>
+                  </select>
+                  <span className="text-[11px] text-content-faint basis-full sm:basis-auto">
+                    {pool.limit_priority === "seven_day"
+                      ? "Spreads the weekly budget so every account lasts to its 7-day reset; the 5-hour window breaks ties."
+                      : pool.limit_priority === "five_hour"
+                        ? "Picks by the 5-hour window first; the 7-day window breaks ties."
+                        : "Picks by whichever window is fuller on each account."}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap text-[11px] text-content-faint">
                   <span className="w-16">Move at</span>

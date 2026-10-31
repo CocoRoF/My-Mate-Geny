@@ -1,13 +1,14 @@
 import { create } from "zustand";
 import { deleteAttachment, getUploadLimits, uploadAttachment } from "../api/attachments";
 import type { Attachment } from "../types";
+import { useDraftStore } from "./draftStore";
 
 // Files waiting in the composer. Each one starts uploading the moment it is
 // added (claude.ai-style), so sending is instant once the bar turns green.
 export interface PendingFile {
   localId: string;
   sessionId: string;
-  file: File;
+  file?: File; // absent for a file restored from a saved draft (already uploaded)
   name: string;
   size: number;
   mime: string;
@@ -57,6 +58,7 @@ export const useComposerStore = create<ComposerState>((set, get) => {
     set((s) => ({ items: s.items.map((it) => (it.localId === localId ? { ...it, ...p } : it)) }));
 
   const start = (item: PendingFile) => {
+    if (!item.file) return;
     const { promise, abort } = uploadAttachment(item.sessionId, item.file, (f) =>
       patch(item.localId, { progress: f }),
     );
@@ -74,7 +76,7 @@ export const useComposerStore = create<ComposerState>((set, get) => {
   };
 
   return {
-    items: [],
+    items: restoreDrafts(),
     limits: { max_mb: 50, max_files: 20 },
 
     add: (sessionId, files) => {
@@ -122,7 +124,7 @@ export const useComposerStore = create<ComposerState>((set, get) => {
 
     retry: (localId) => {
       const it = get().items.find((x) => x.localId === localId);
-      if (it && it.status === "error" && it.size <= get().limits.max_mb * 1024 * 1024) start(it);
+      if (it && it.file && it.status === "error" && it.size <= get().limits.max_mb * 1024 * 1024) start(it);
     },
 
     clearSent: (sessionId) => {
@@ -132,4 +134,34 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       set((s) => ({ items: s.items.filter((i) => i.sessionId !== sessionId) }));
     },
   };
+});
+
+/** Uploaded files of unsent drafts come back after a reload (thumbnails from the server). */
+function restoreDrafts(): PendingFile[] {
+  return Object.entries(useDraftStore.getState().drafts).flatMap(([sessionId, d]) =>
+    d.attachments.map((att) => ({
+      localId: `p${++seq}`,
+      sessionId,
+      name: att.name,
+      size: att.size,
+      mime: att.mime,
+      kind: att.kind,
+      progress: 1,
+      status: "done" as const,
+      attachment: att,
+    })),
+  );
+}
+
+// Keep each chat's saved draft in step with its uploaded files.
+useComposerStore.subscribe((s, prev) => {
+  if (s.items === prev.items) return;
+  const sids = new Set([...s.items, ...prev.items].map((i) => i.sessionId));
+  const { setAttachments } = useDraftStore.getState();
+  for (const sid of sids) {
+    setAttachments(
+      sid,
+      s.items.filter((i) => i.sessionId === sid && i.status === "done" && i.attachment).map((i) => i.attachment!),
+    );
+  }
 });

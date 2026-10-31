@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getUsage, type UsageSummary } from "../../api/usage";
+import { getPool, type Account } from "../../api/accounts";
 import { useProviderStore } from "../../stores/providerStore";
 import { API_COST_HINT, fmtUsd } from "../../lib/usage";
 import Icon from "../ui/Icon";
@@ -26,6 +27,20 @@ export default function UsageView() {
     if (showLocal && !local) getUsage(14).then(setLocal).catch(() => {});
   }, [showLocal, local]);
 
+  // Every connected account of the provider (the host login + added ones).
+  const [accounts, setAccounts] = useState<Account[] | null>(null);
+  useEffect(() => {
+    if (!tab) return;
+    let alive = true;
+    setAccounts(null);
+    getPool(tab)
+      .then((p) => alive && setAccounts(p.accounts.filter((a) => a.primary || a.usable)))
+      .catch(() => alive && setAccounts([]));
+    return () => {
+      alive = false;
+    };
+  }, [tab]);
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-2xl px-4 sm:px-6 py-5 sm:py-8">
@@ -51,9 +66,36 @@ export default function UsageView() {
           </div>
         )}
 
-        {tab && (
+        {tab && accounts === null && (
+          <div className="card p-5 flex items-center justify-center gap-2 text-sm text-content-faint">
+            <Icon name="spinner" size={15} spin /> Loading accounts…
+          </div>
+        )}
+        {/* no account list (older server / error): the host login alone */}
+        {tab && accounts !== null && accounts.length === 0 && (
           <div className="card p-5">
             <SubscriptionUsage provider={tab} />
+          </div>
+        )}
+        {tab && accounts && accounts.length > 0 && (
+          <div className="space-y-4">
+            {accounts.map((a) => (
+              <div key={a.id} className="card p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-sm font-semibold text-content">{a.label}</span>
+                  {a.primary && <span className="pill bg-accent/15 text-accent">this machine</span>}
+                  {!a.enabled && <span className="pill bg-surface-3 text-content-faint">disabled</span>}
+                  {a.status && a.status !== "ready" && (
+                    <span className="pill bg-warning/15 text-warning">{a.status.replace(/_/g, " ")}</span>
+                  )}
+                </div>
+                {a.auth_mode === "api_key" ? (
+                  <p className="text-sm text-content-faint">API key — billed per token, no plan limits.</p>
+                ) : (
+                  <SubscriptionUsage provider={tab} accountId={a.primary ? undefined : a.id} />
+                )}
+              </div>
+            ))}
           </div>
         )}
         {connected.length === 0 && (

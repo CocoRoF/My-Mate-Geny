@@ -27,6 +27,7 @@ export interface SubscriptionUsage {
   windows?: UsageWindow[];
   model_windows?: UsageWindow[];
   manage_url?: string;
+  stale?: string; // a refresh failed: these are the last good numbers, and why
 }
 
 export const getSubscription = (provider: string, accountId?: string) => {

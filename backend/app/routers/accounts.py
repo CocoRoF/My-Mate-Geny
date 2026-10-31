@@ -36,6 +36,7 @@ class PoolUpdate(BaseModel):
     primary_mode: str | None = None       # host login: normal | fallback | off
     near_5h: float | None = None          # avoid accounts at/above this 5-hour %
     near_7d: float | None = None          # ... and this 7-day %
+    limit_priority: str | None = None     # which window decides: balanced | seven_day | five_hour
     auto_compact_window: int | None = None  # Claude: default auto-compact window (0 = CLI default)
 
 
