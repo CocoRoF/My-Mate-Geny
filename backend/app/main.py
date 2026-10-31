@@ -36,11 +36,16 @@ from app.routers import (
     git,
     health,
     history,
+    mate_internal,
+    mates,
     providers,
     sessions,
     usage,
     workspaces,
 )
+from app.mate.service import MateService
+from app.mate.store import MateStore
+from app.mate.voice import VoiceService
 from app.services.attachment_service import AttachmentService
 from app.services.downloads import DownloadService
 from app.services.connection_service import ConnectionService
@@ -88,6 +93,9 @@ async def lifespan(app: FastAPI):
     app.state.connection_service = connection_service
     app.state.workspace_service = workspace_service
     app.state.session_service = session_service
+    mate_store = MateStore(db, vault)
+    app.state.mate_service = MateService(session_service, mate_store, logs=logs)
+    app.state.voice_service = VoiceService(mate_store)
 
     async def housekeeping() -> None:
         while True:
@@ -167,6 +175,8 @@ for r in (
     fs.router,
     downloads.router,
     admin.router,
+    mates.router,
+    mate_internal.router,
 ):
     app.include_router(r)
 

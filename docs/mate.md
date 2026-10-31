@@ -55,7 +55,23 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
   `/v1/audio/transcriptions` server such as geny-audio-services).
 - Global voice settings (shared by all mates) — `GET/PUT /api/mates/settings`:
   `{ openai_key_set, elevenlabs_key_set, omnivoice_url, whisper_url, http_tts_url, http_tts_key_set }`
-  (keys are write-only, stored in the vault).
+  (keys are write-only, stored in the vault). `PUT` body: any of
+  `openai_key | elevenlabs_key | http_tts_key` (non-empty string sets, `""`/`null`
+  removes, absent keeps) and `omnivoice_url | whisper_url | http_tts_url`
+  (`""` clears); returns the GET shape.
+- CRUD: `GET /api/mates` (default first; with none yet the backend creates
+  **Geny**: no avatar, browser voice, Korean secretary persona),
+  `POST /api/mates {name, persona?, avatar?, llm?, voice?, is_default?}`,
+  `GET /api/mates/{id}`, `PATCH` (or `PUT`) `/api/mates/{id}`, partial:
+  `persona` / `llm` / `voice` (incl. `tts`/`stt`) merge field by field,
+  `avatar` is replaced, `is_default: true` moves the default;
+  `DELETE /api/mates/{id}` (its conversation and files go too). Validation
+  errors are 400 with `detail`. `llm.provider` is `claude` only (the mate engine
+  needs Claude Code's `--system-prompt` / `--tools` / MCP). `llm.effort`:
+  `default|low|medium|high|xhigh|max` (default `low`).
+- Memory: `GET /api/mates/{id}/memories` → `[{id, text, created_at}]`,
+  `POST {text}` → the memory, `DELETE /api/mates/{id}/memories/{mid}`.
+  (The mate edits the same list with its `remember` / `forget` tools.)
 
 ## 2. Avatar (three kinds + none)
 
@@ -117,33 +133,74 @@ as in Geny).
   `TapBody`), pointer focus inside the canvas.
 - **Cubism Core is not bundled** (Live2D licence, see project-geny-app
   `live2d-runtime.ts`): `GET /api/mates/live2d/core` → `{installed}`;
-  `POST /api/mates/live2d/core/install` (user accepted the licence in the UI)
-  downloads `https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js`
-  to the data dir; served at `GET /api/mates/live2d/core.js`.
+  `POST /api/mates/live2d/core/install` (user accepted the licence in the UI;
+  optional body `{accept_license: true}`) downloads
+  `https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js`
+  to the data dir (`<MATES_ROOT>/_runtime/`; checked to be the Core script, else
+  502) → `{installed, size, source}`; served at `GET /api/mates/live2d/core.js`
+  (404 until installed).
 
 Asset upload / import:
-- `POST /api/mates/{id}/assets` (multipart `file`, `path`) → `{path, url}`.
-- `POST /api/mates/{id}/avatar/import` (multipart zip): an ailism-style pack
-  (`rig.json` + files → video/photo) or a Live2D zip (finds `*.model3.json`;
-  reads a geny-avatar `avatar-editor.json` sidecar: `emotionMap`,
-  `idleMotionGroupName`, `tapMotions`, `display.kScale/initialXshift/initialYshift`).
-- `POST /api/mates/import-local` `{ path }` (folder on this server): an ailism
-  content mate (`mates/<key>.json` persona + `assets/<key>/` body) or a Live2D
-  model folder.
+- `POST /api/mates/{id}/assets` (multipart `file`, `path`) → `{path, url, size}`;
+  `url` carries `?v=<mtime>`. `path` is relative (no `..`, no hidden parts);
+  `pack-*` / `l2d-*` top folders are reserved for imports. Max
+  `MATE_ASSET_MAX_MB` (200).
+- `GET /api/mates/{id}/assets/<path>`: Range requests (video seeking),
+  ETag/Last-Modified; `Cache-Control: immutable` for imported files and URLs
+  with `?v=`, `no-cache` otherwise. Only media/JSON types are served as such;
+  anything else (HTML, SVG, JS…) is `application/octet-stream`.
+- `POST /api/mates/{id}/avatar/import` (multipart `file` = zip) → `{mate, avatar}`
+  (the avatar is applied): an ailism-style pack (`rig.json` + files →
+  video/photo; `asset:<pack>/<file>` refs are rewritten to asset URLs, refs to
+  missing files are dropped; `video` when it has clips) or a Live2D zip (finds
+  `*.model3.json`; reads a geny-avatar `avatar-editor.json` sidecar:
+  `emotionMap`, `idleMotionGroupName`, `tapMotions`,
+  `display.kScale/initialXshift/initialYshift`, top level or under
+  `animationConfig`). Emotion names are mapped to the mate tags (`anger`→`angry`,
+  `sadness`→`sad`, `surprise`→`surprised`, `happy`/`smirk`→`smile`). A motion
+  group named `""` (pixi-live2d-display can't play it) is renamed (`Idle`, else
+  `Motion`) in the stored model3.json. Without tap config every hit area gets
+  the first non-idle group. Zips are bounded (5000 entries, `MATE_IMPORT_MAX_MB`
+  unpacked); `..`/absolute/hidden names and symlinks are refused. Each import
+  lands in a fresh `pack-<id>/` or `l2d-<id>/` folder; the one the previous
+  avatar used is removed.
+- `POST /api/mates/import-local` `{ path, mate_id?, name? }` (file/folder on this
+  server) → `{mate, imported: "ailism"|"pack"|"live2d"}`: an ailism content mate
+  (the `mates/<key>.json` file; persona from `character.*` + `mate.greeting /
+  address`, `{{user}}` filled in, example lines appended to `speech`; body from
+  `../assets/<key>/rig.json`, else `doc.mate.body`), a folder with `rig.json`, or
+  a Live2D model folder (`*.model3.json` up to 3 levels down; a Geny
+  `model_registry.json` entry is used for tuning when there is no sidecar).
+  Creates a new mate unless `mate_id` is given (then only its avatar changes).
 
 ## 3. Conversation = a session of kind "mate"
 
 - Each mate has one conversation: a `sessions` row with `kind="mate"`,
   `mate_id`, workspace `~/.hr-harnessor/mates/<id>/home` (local).
-  `POST /api/mates/{id}/conversation` returns it (creating it), `…/reset`
-  starts a fresh context. The client streams it with the existing
-  `/api/history/{sid}` + `/ws/chat/{sid}`, exactly like a chat.
+  `POST /api/mates/{id}/conversation` returns it (creating it) as
+  `{mate, session_id, session, running}`; a new conversation starts with the
+  persona's greeting as an assistant message (`meta: {internal: true, kind:
+  "greeting"}`; the engine knows it from its prompt). `…/conversation/reset`
+  starts a fresh context like `/clear` in a chat (history stays, a
+  `context.reset` notice marks the cut; 409 while the mate is talking). The
+  client streams it with the existing `/api/history/{sid}` + `/ws/chat/{sid}`,
+  exactly like a chat.
 - `GET /api/sessions` (the Chat sidebar) and every delegation listing **exclude**
-  mate sessions.
+  mate sessions; their changes are not announced on `/ws/sessions`.
+- Session rows carry `kind` (`chat|mate`) and `mate_id`; history `messages[]`
+  carry `meta` (null, or e.g. `{via: {kind: "mate", mate_id, name}}` /
+  `{internal: true, kind: "delegation_result", delegations: [...]}`). The live
+  `user.message` / `user.steer` events carry the same keys in `data`.
 - Engine (Claude Code, persistent like chats, same account pool):
-  `--system-prompt <persona + mate contract>`, `--tools ""` (no built-in
-  tools: it can't run code or edit files), `--mcp-config <mate bridge>
-  --strict-mcp-config`, model/effort from `mate.llm`.
+  `--system-prompt-file <persona + mate contract + memories>` with
+  `--system-prompt-snapshot off` (so an edited persona reaches the model on
+  resume), `--tools ""` (no built-in tools: it can't run code or edit files),
+  `--allowedTools mcp__mate`, `--mcp-config <0600 file: mate bridge>
+  --strict-mcp-config`, `--disable-slash-commands --setting-sources local` (no
+  user CLAUDE.md / hooks / plugins), no wait guide, model/effort from
+  `mate.llm`. Editing name/persona/effort or the memory list (by the user)
+  restarts the engine at the next turn (`--resume`, same conversation); a model
+  change is applied live; what the mate `remember`s itself doesn't restart it.
 - Reply format the prompt asks for: short conversational text in the mate's
   language, no heavy markdown; optional inline emotion tags at the start of a
   sentence: `[neutral] [joy] [smile] [laugh] [shy] [surprised] [sad] [angry]
@@ -169,19 +226,49 @@ ambiguous, **ask the user**. Never pretend work was done.
 
 Results: when a turn the mate started/steered finishes, the backend starts a
 mate turn with an internal message
-`<delegation_result session_id=… title=… status=ok|error|stopped>…final answer (trimmed)…</delegation_result>`
-(event flag `internal: true`, rendered as a small card, not a user bubble); the
-mate tells the user in its own words. Queued if the mate is busy; never loops.
+`<delegation_result session_id="…" title="…" status="ok|error|stopped">…final answer (trimmed to ~4000 chars)…</delegation_result>`
+(several finished chats → several blocks in one message; event/message flag
+`internal: true`, `kind: "delegation_result"`, `delegations: [{session_id,
+title, status}]`, rendered as a small card, not a user bubble); the mate tells
+the user in its own words. Queued while the mate is talking (delivered when its
+turn ends). If the chat ended its turn with background tasks still running,
+the block says so (`background_tasks="n"`) and the chat's own follow-up turn is
+reported once more. Never loops: a mate conversation can't be a target, each
+chat reports once per delegation, and after 3 automatic result turns in a row
+(no user message in between) further results only appear as a
+`mate.delegation_held` notice.
+
+Bridge transport: `app/mate/mcp_bridge.py` (stdio JSON-RPC: `initialize`,
+`tools/list`, `tools/call`, `ping`) → `POST /api/internal/mate/call {name,
+arguments}` → `{text, is_error}` with header `X-Mate-Token` (random per mate
+conversation and backend process). `/api/internal/*` is accepted only from a
+loopback peer without proxy headers and with a valid token, never with the
+user's cookie (404 / 401 otherwise). `find_folders` searches
+`MATE_SEARCH_ROOTS` (default `/home`).
 
 ## 5. Voice
 
 - `POST /api/mates/{id}/speech` `{text, emotion?}` → audio (cached by content
-  hash on disk); engines openai / elevenlabs / omnivoice (`/tts`, profile +
-  emotion → `ref_audio_path`/`ref_text` like Geny's `_resolve_emotion_ref`) /
-  http (OpenAI-shaped `/audio/speech`). `browser`/`off` → 204 (the page speaks).
-- `POST /api/mates/{id}/transcribe` (multipart audio, webm/opus from
-  MediaRecorder) → `{text}` via openai / whisper.
-- `GET /api/mates/voices?engine=…` → available voices.
+  hash on disk; header `X-Speech-Cache: hit|miss`); engines openai
+  (`gpt-4o-mini-tts` default, voice default `alloy`; emotion → `instructions`) /
+  elevenlabs (`voice` required, `eleven_multilingual_v2` default) / omnivoice
+  (`/tts`; profile = `tts.profile` or `tts.voice`; emotion →
+  `ref_audio_path`/`ref_text` of that emotion's clip, else neutral, else the
+  first, resolved through the service's `GET /voices` like Geny's
+  `_resolve_emotion_ref`; mate tags map to OmniVoice `joy / sadness / anger /
+  surprise / neutral`) / http (OpenAI-shaped `<http_tts_url>/audio/speech`,
+  Bearer `http_tts_key` if set). `browser`/`off` → 204 (the page speaks).
+  Missing key/URL/voice → 400 with a readable `detail`; the service failing →
+  502 with its message. Text ≤ 4000 chars.
+- `POST /api/mates/{id}/transcribe` (multipart `file`, webm/opus from
+  MediaRecorder, ≤ 25 MB) → `{text, language?}` via openai
+  (`gpt-4o-mini-transcribe` default) / whisper
+  (`<whisper_url>/v1/audio/transcriptions`, `whisper-1` default); `stt.language`
+  (or the persona's) is sent. `browser`/`off` → 400.
+- `GET /api/mates/voices?engine=…` → `{engine, voices: [{id, name, language?, …}]}`:
+  openai fixed list; elevenlabs via its API (key needed; `preview_url`);
+  omnivoice via `/voices` (`emotions` = the profile's reference clips);
+  `browser`/`http` → `[]` (the page lists its own).
 - Client: replies are split into sentences/bubbles, synthesized in order with
   one-ahead prefetch, played through the voice bridge (level → avatar). Mic:
   push-to-talk button (and hands-free later).
@@ -221,3 +308,12 @@ mate?: {
 ```
 
 Android (Capacitor): the Mate view runs in-page; microphone permission added.
+
+## 8. Backend notes
+
+- Files under `MATES_ROOT` (default `~/.hr-harnessor/mates`): `<id>/assets/…`,
+  `<id>/home/` (engine cwd), `<id>/engine/` (prompt + MCP config files),
+  `_runtime/live2dcubismcore.min.js`, `_cache/tts/`.
+- Code: `backend/app/mate/` (`store`, `files`, `prompt`, `service`,
+  `mcp_bridge`, `voice`, `netio`: stdlib HTTP, no new dependencies); routers
+  `app/routers/mates.py`, `app/routers/mate_internal.py`.

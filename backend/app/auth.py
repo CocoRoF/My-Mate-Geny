@@ -266,6 +266,22 @@ def origin_allowed(origin: str | None, host: str | None) -> bool:
     return origin.rstrip("/") in {x.rstrip("/") for x in settings.cors_origin_list}
 
 
+INTERNAL_PREFIX = "/api/internal/"
+_PROXY_HEADERS = ("x-forwarded-for", "x-real-ip", "cf-connecting-ip", "forwarded")
+
+
+def internal_caller_ok(request: Request) -> bool:
+    """A request straight from this host (the TCP peer itself is loopback and
+    nothing forwarded it — a proxy/tunnel on localhost adds its headers)."""
+    peer = request.client.host if request.client else ""
+    try:
+        if not ipaddress.ip_address(peer).is_loopback:
+            return False
+    except ValueError:
+        return False
+    return not any(h in request.headers for h in _PROXY_HEADERS)
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """Gate every request: banned IPs are blocked; everyone else needs a session."""
 
@@ -282,6 +298,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
 
         if path in _PUBLIC_PATHS:
+            return await call_next(request)
+
+        if path.startswith(INTERNAL_PREFIX):
+            # The mate MCP bridge (a child of the backend): loopback only, no
+            # proxy hop, and a live per-conversation token — never the cookie.
+            if not internal_caller_ok(request):
+                return JSONResponse({"detail": "not found"}, status_code=404)
+            mates = getattr(request.app.state, "mate_service", None)
+            if mates is None or mates.token_info(request.headers.get("x-mate-token")) is None:
+                return JSONResponse({"detail": "invalid mate token"}, status_code=401)
             return await call_next(request)
 
         if auth.verify_token(auth.token_from_request(request)):

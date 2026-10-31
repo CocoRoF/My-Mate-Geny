@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     context_floor TEXT,                             -- /clear: handoffs only include messages after this
     auto_compact_window INTEGER,                    -- Claude: this chat's auto-compact window (NULL = default, 0 = CLI default)
     accounts      TEXT NOT NULL DEFAULT '{}',       -- per provider: the account it ran on last (sticky balancing)
+    kind          TEXT NOT NULL DEFAULT 'chat',     -- chat | mate (a Mate's conversation, hidden from the chat list)
+    mate_id       TEXT,                             -- kind = mate: which mate
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL
 );
@@ -67,6 +69,7 @@ CREATE TABLE IF NOT EXISTS messages (
     content    TEXT NOT NULL DEFAULT '',
     provider   TEXT,                -- assistant: which engine answered (claude | codex)
     model      TEXT,
+    meta       TEXT,                -- JSON: {"via": {...}} sent by a mate; {"internal": true, ...} system-made
     created_at TEXT NOT NULL,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
@@ -185,6 +188,37 @@ CREATE TABLE IF NOT EXISTS bg_tasks (
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
+-- Mates (avatar secretaries). Persona/avatar/llm/voice are JSON documents
+-- (docs/mate.md); the conversation is a sessions row with kind = 'mate'.
+CREATE TABLE IF NOT EXISTS mates (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    is_default  INTEGER NOT NULL DEFAULT 0,
+    persona     TEXT NOT NULL DEFAULT '{}',
+    avatar      TEXT NOT NULL DEFAULT '{"kind": "none"}',
+    llm         TEXT NOT NULL DEFAULT '{}',
+    voice       TEXT NOT NULL DEFAULT '{}',
+    session_id  TEXT,
+    memory_rev  INTEGER NOT NULL DEFAULT 0,   -- bumped by user edits of the memory (the engine reloads it)
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mate_memories (
+    id         TEXT PRIMARY KEY,
+    mate_id    TEXT NOT NULL,
+    text       TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (mate_id) REFERENCES mates(id) ON DELETE CASCADE
+);
+
+-- Global Mate settings (voice service URLs); API keys live in the vault.
+CREATE TABLE IF NOT EXISTS mate_settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_mate_memories ON mate_memories(mate_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_attachments_session ON attachments(session_id, message_id);
 CREATE INDEX IF NOT EXISTS idx_error_logs_ts ON error_logs(ts);
@@ -232,6 +266,8 @@ class Database:
                 ("context_floor", "TEXT"),
                 ("auto_compact_window", "INTEGER"),
                 ("accounts", "TEXT NOT NULL DEFAULT '{}'"),
+                ("kind", "TEXT NOT NULL DEFAULT 'chat'"),
+                ("mate_id", "TEXT"),
             ):
                 if col not in cols:
                     self._conn.execute(f"ALTER TABLE sessions ADD COLUMN {col} {ddl}")
@@ -246,7 +282,7 @@ class Database:
                 if pcols and col not in pcols:
                     self._conn.execute(f"ALTER TABLE provider_pool ADD COLUMN {col} {ddl}")
             mcols = {r["name"] for r in self._conn.execute("PRAGMA table_info(messages)")}
-            for col in ("provider", "model"):
+            for col in ("provider", "model", "meta"):
                 if col not in mcols:
                     self._conn.execute(f"ALTER TABLE messages ADD COLUMN {col} TEXT")
             gcols = {r["name"] for r in self._conn.execute("PRAGMA table_info(git_accounts)")}
