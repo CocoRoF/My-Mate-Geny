@@ -12,7 +12,7 @@ import InputBar, { filesFromClipboard } from "./InputBar";
 import { useComposerStore } from "../../stores/composerStore";
 import NewSessionPanel from "./NewSessionPanel";
 import UsageModal from "../usage/UsageModal";
-import Icon from "../ui/Icon";
+import Icon, { type IconName } from "../ui/Icon";
 import ExplorerPanel from "../explorer/ExplorerPanel";
 import TabBar from "../viewer/TabBar";
 import { useChatStore } from "../../stores/chatStore";
@@ -45,6 +45,55 @@ function Toast() {
   );
 }
 
+/** Phones: the header's secondary buttons (tasks, usage, session panel) live here. */
+function MoreMenu({
+  items,
+  onClose,
+}: {
+  items: { icon: IconName; label: string; badge?: string; spin?: boolean; onClick: () => void }[];
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useBackHandler(true, onClose);
+  useEffect(() => {
+    const h = (e: MouseEvent | TouchEvent) => {
+      const t = e.target as HTMLElement;
+      if (ref.current?.contains(t) || t.closest?.("[data-more-toggle]")) return;
+      onClose();
+    };
+    const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("mousedown", h);
+    window.addEventListener("touchstart", h);
+    window.addEventListener("keydown", k);
+    return () => {
+      window.removeEventListener("mousedown", h);
+      window.removeEventListener("touchstart", h);
+      window.removeEventListener("keydown", k);
+    };
+  }, [onClose]);
+  return (
+    <div
+      ref={ref}
+      className="absolute right-2 top-[calc(100%+4px)] z-50 w-56 overflow-hidden rounded-xl border border-border bg-surface-2 py-1 shadow-float animate-fade-in"
+    >
+      {items.map((it) => (
+        <button
+          key={it.label}
+          onClick={() => {
+            onClose();
+            it.onClick();
+          }}
+          className="flex h-11 w-full items-center gap-3 px-3.5 text-[14px] text-content hover:bg-surface-3"
+        >
+          <Icon name={it.icon} size={16} spin={it.spin} className="text-content-dim" />
+          {it.label}
+          {it.badge && <span className="ml-auto pill bg-accent-soft text-accent">{it.badge}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function ChatView() {
   const activeId = useSessionStore((s) => s.activeId);
   const sessions = useSessionStore((s) => s.sessions);
@@ -52,6 +101,7 @@ export default function ChatView() {
   const { send, steer, stop: stopWs } = useChatSocket(activeId);
   const [showUsage, setShowUsage] = useState(false);
   const [showTasks, setShowTasks] = useState(false);
+  const [more, setMore] = useState(false);
   const runningTasks = useTaskStore((s) => (activeId ? (s.bySession[activeId] || []).filter(isRunning).length : 0));
   const [panel, setPanel] = useState(() => {
     try {
@@ -175,7 +225,7 @@ export default function ChatView() {
         </div>
       )}
       {active && (
-        <div className="pt-safe shrink-0 border-b border-border/70 bg-surface/40 backdrop-blur-sm">
+        <div className={`relative pt-safe shrink-0 border-b border-border/70 bg-surface/40 backdrop-blur-sm ${more ? "z-30" : ""}`}>
         <div className="flex items-center gap-2 px-3 sm:px-5 h-12 md:h-14">
           <MenuButton />
           <Icon
@@ -186,7 +236,7 @@ export default function ChatView() {
           <span className="text-[14px] md:text-sm font-medium text-content truncate min-w-0">{active.title}</span>
           <span className="pill bg-surface-3 text-content-dim shrink-0 hidden sm:inline-flex">{active.provider}</span>
           {active.mode === "plan" && <span className="pill bg-violet/15 text-violet shrink-0">plan</span>}
-          <div className="ml-auto flex items-center gap-2 min-w-0 shrink-0">
+          <div className="ml-auto flex items-center gap-0.5 sm:gap-2 min-w-0 shrink-0">
             <button
               onClick={() => setExplorer(true)}
               className={`${compact ? "hidden 2xl:inline" : "hidden lg:inline"} text-[11px] text-content-faint font-mono truncate max-w-[220px] hover:text-content`}
@@ -196,19 +246,21 @@ export default function ChatView() {
             </button>
             <button
               onClick={() => setShowTasks(true)}
-              className={`btn-ghost py-1 px-2 shrink-0 ${runningTasks ? "text-accent" : ""}`}
+              className={`btn-ghost h-10 w-10 p-0 sm:h-auto sm:w-auto sm:py-1 sm:px-2 shrink-0 ${
+                runningTasks ? "text-accent" : "hidden sm:inline-flex"
+              }`}
               title="Background tasks"
             >
               {runningTasks ? <Icon name="spinner" size={14} spin /> : <Icon name="activity" size={14} />}
               <span className="hidden sm:inline">Tasks</span>
-              {runningTasks > 0 && <span className="pill bg-accent-soft text-accent">{runningTasks}</span>}
+              {runningTasks > 0 && <span className="pill bg-accent-soft text-accent hidden sm:inline-flex">{runningTasks}</span>}
             </button>
-            <button onClick={() => setShowUsage(true)} className="btn-ghost py-1 px-2 shrink-0" title="Account & usage">
+            <button onClick={() => setShowUsage(true)} className="btn-ghost hidden sm:inline-flex py-1 px-2 shrink-0" title="Account & usage">
               <Icon name="cpu" size={14} /> <span className="hidden sm:inline">Usage</span>
             </button>
             <button
               onClick={() => setExplorer(!explorer)}
-              className={`btn-ghost py-1 px-2 shrink-0 ${explorer ? "bg-surface-3 text-content" : ""}`}
+              className={`btn-ghost h-10 w-10 p-0 sm:h-auto sm:w-auto sm:py-1 sm:px-2 shrink-0 ${explorer ? "bg-surface-3 text-content" : ""}`}
               title="Explorer — browse and open the workspace's files"
             >
               <Icon name="files" size={14} />
@@ -216,7 +268,7 @@ export default function ChatView() {
             </button>
             <button
               onClick={togglePanel}
-              className={`btn-ghost py-1 px-2 shrink-0 ${panel ? "bg-surface-3 text-content" : ""}`}
+              className={`btn-ghost hidden sm:inline-flex py-1 px-2 shrink-0 ${panel ? "bg-surface-3 text-content" : ""}`}
               title="Session panel — folders, tasks, changes, agent"
             >
               <Icon name="folder" size={14} />
@@ -225,8 +277,38 @@ export default function ChatView() {
                 <span className="pill bg-accent-soft text-accent">+{active.extra_dirs.length}</span>
               )}
             </button>
+            <button
+              data-more-toggle
+              onClick={() => setMore((v) => !v)}
+              className={`btn-ghost sm:hidden h-10 w-10 p-0 shrink-0 ${more ? "bg-surface-3 text-content" : ""}`}
+              aria-label="More"
+              title="Tasks, usage, session panel"
+            >
+              <Icon name="more" size={18} />
+            </button>
           </div>
         </div>
+        {more && (
+          <MoreMenu
+            onClose={() => setMore(false)}
+            items={[
+              {
+                icon: runningTasks ? "spinner" : "activity",
+                spin: runningTasks > 0,
+                label: "Background tasks",
+                badge: runningTasks ? String(runningTasks) : undefined,
+                onClick: () => setShowTasks(true),
+              },
+              { icon: "cpu", label: "Account & usage", onClick: () => setShowUsage(true) },
+              {
+                icon: "folder",
+                label: "Session panel",
+                badge: active.extra_dirs?.length ? `+${active.extra_dirs.length}` : undefined,
+                onClick: () => !panel && togglePanel(),
+              },
+            ]}
+          />
+        )}
         </div>
       )}
       {active && tabs.length > 0 && <TabBar sid={active.id} />}

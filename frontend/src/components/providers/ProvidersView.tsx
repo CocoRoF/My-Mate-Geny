@@ -263,7 +263,7 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
             <input
               value={newLabel}
               onChange={(e) => setNewLabel(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addAccount()}
+              onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && addAccount()}
               placeholder="Account label (e.g. work, personal)"
               className="field flex-1"
               autoFocus

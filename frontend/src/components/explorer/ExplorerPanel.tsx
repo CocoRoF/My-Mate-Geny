@@ -160,7 +160,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
                   setMenu({ x: ev.clientX, y: ev.clientY, entry: e });
                 }}
                 title={`${e.path}${e.is_dir ? "" : `\n${formatBytes(e.size)}${e.mtime ? ` · ${formatTime(e.mtime)}` : ""}`}`}
-                className={`tree-row group relative flex h-[26px] cursor-pointer select-none items-center gap-1.5 pr-2 text-[12.5px] transition-colors ${
+                className={`tree-row group relative flex h-[26px] touch:h-9 cursor-pointer select-none items-center gap-1.5 pr-2 text-[12.5px] transition-colors ${
                   isActive ? "bg-surface-3 text-content" : "text-content/80 hover:bg-surface-2"
                 } ${NOISE.has(e.name) || e.name.startsWith(".") ? "opacity-70" : ""}`}
                 style={{ paddingLeft: depth * INDENT + 6 }}
@@ -250,16 +250,16 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
           <span className="block text-[13px] font-semibold leading-tight">Explorer</span>
           <span className="block truncate text-[10.5px] leading-tight text-content-faint">{host}</span>
         </span>
-        <button onClick={() => wb.toggleHidden()} className={`rounded-md p-1.5 hover:bg-surface-3 ${showHidden ? "text-accent" : "text-content-faint hover:text-content"}`} title={showHidden ? "Hide .git and caches" : "Show all files (.git, caches)"}>
+        <button onClick={() => wb.toggleHidden()} className={`rounded-md p-1.5 touch:p-2.5 hover:bg-surface-3 ${showHidden ? "text-accent" : "text-content-faint hover:text-content"}`} title={showHidden ? "Hide .git and caches" : "Show all files (.git, caches)"}>
           <Icon name={showHidden ? "eye" : "eye-off"} size={14} />
         </button>
-        <button onClick={() => wb.collapseAll(sid)} className="rounded-md p-1.5 text-content-faint hover:bg-surface-3 hover:text-content" title="Collapse folders">
+        <button onClick={() => wb.collapseAll(sid)} className="rounded-md p-1.5 touch:p-2.5 text-content-faint hover:bg-surface-3 hover:text-content" title="Collapse folders">
           <Icon name="collapse" size={14} />
         </button>
-        <button onClick={refresh} className="rounded-md p-1.5 text-content-faint hover:bg-surface-3 hover:text-content" title="Refresh">
+        <button onClick={refresh} className="rounded-md p-1.5 touch:p-2.5 text-content-faint hover:bg-surface-3 hover:text-content" title="Refresh">
           <Icon name="refresh" size={14} />
         </button>
-        <button onClick={onClose} className="rounded-md p-1.5 text-content-faint hover:bg-surface-3 hover:text-content" title="Close explorer">
+        <button onClick={onClose} className="rounded-md p-1.5 touch:p-2.5 text-content-faint hover:bg-surface-3 hover:text-content" title="Close explorer">
           <Icon name="x" size={16} />
         </button>
       </div>
@@ -273,7 +273,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
           openPath(session, p, { preview: false }).then(() => onOpened?.());
           setGoto("");
         }}
-        className="flex shrink-0 items-center gap-1.5 border-b border-border/60 px-3 py-1.5"
+        className="flex shrink-0 items-center gap-1.5 border-b border-border/60 px-3 py-1.5 touch:py-1"
       >
         <Icon name="search" size={12} className="text-content-faint" />
         <input
@@ -283,7 +283,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
           placeholder="Go to path…  (relative, /abs, ~/…)"
           className="min-w-0 flex-1 bg-transparent font-mono text-[12px] text-content placeholder:font-sans placeholder:text-content-faint outline-none"
         />
-        <button type="submit" className="rounded p-0.5 text-content-faint hover:text-content" title="Open">
+        <button type="submit" className="rounded p-0.5 touch:p-2.5 touch:-mr-2 text-content-faint hover:text-content" title="Open">
           <Icon name="arrow-up" size={12} className="rotate-90" />
         </button>
       </form>
@@ -295,7 +295,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
           return (
             <section key={r} className="border-b border-border/50">
               <div
-                className="group sticky top-0 z-[5] flex h-7 cursor-pointer select-none items-center gap-1.5 bg-surface/95 px-2 text-[11px] font-semibold uppercase tracking-wide text-content-dim backdrop-blur hover:text-content"
+                className="group sticky top-0 z-[5] flex h-7 touch:h-10 cursor-pointer select-none items-center gap-1.5 bg-surface/95 px-2 text-[11px] font-semibold uppercase tracking-wide text-content-dim backdrop-blur hover:text-content"
                 onClick={() => {
                   setOpenRoots((s) => ({ ...s, [r]: !open }));
                   if (!open) load(conn, r);
@@ -315,7 +315,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
                       ev.stopPropagation();
                       wb.removeRoot(sid, r);
                     }}
-                    className="ml-auto shrink-0 rounded p-0.5 text-content-faint opacity-0 hover:text-content group-hover:opacity-100"
+                    className="ml-auto shrink-0 rounded p-0.5 touch:p-2 text-content-faint can-hover:opacity-0 hover:text-content group-hover:opacity-100"
                     title="Remove from explorer"
                   >
                     <Icon name="x" size={12} />
@@ -332,7 +332,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
             setGoto(session.workspace_path.replace(/\/[^/]*$/, "/") || "/");
             gotoRef.current?.focus();
           }}
-          className="mx-3 mt-3 flex items-center gap-1.5 text-[12px] text-content-faint hover:text-content"
+          className="mx-3 mt-3 flex items-center gap-1.5 touch:py-2 text-[12px] text-content-faint hover:text-content"
         >
           <Icon name="folder-plus" size={13} /> Open another folder…
         </button>
