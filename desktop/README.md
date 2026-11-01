@@ -108,6 +108,20 @@ notifications and installer identity), package name `hr-harnessor-desktop`
 productName). On macOS the bundle is now `My Mate Geny.app`; an old
 `hr-harnessor.app` can be deleted.
 
+## Updates
+
+The Download page of the console updates the app in place (`src/updater.js`,
+electron-updater): check → download with progress (percent, speed, time left,
+Cancel) → *Restart & install*; errors say why, with Retry. The state lives in
+the main process, so a reloaded page shows the running download. The feed is
+the connected server's `/api/downloads/update/` (it serves `latest.yml` /
+`latest-linux.yml` and the installers from the `apps-latest` release, which CI
+uploads alongside the installers). Windows (NSIS) and Linux AppImage replace
+themselves, a .deb installs through a password prompt; unsigned macOS builds
+cannot (the page offers the .dmg). A background check runs 30 s after start
+and every 6 h (it only tells; downloading is the user's call). Help → *Check
+for updates…*.
+
 ## Build and test
 
 - Dev: `npm install && npm start`

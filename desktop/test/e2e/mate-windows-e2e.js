@@ -123,6 +123,8 @@ class App {
   }
   start() {
     const env = { ...process.env, HOME: this.home, XDG_CONFIG_HOME: path.join(this.home, ".config"), APPIMAGE_EXTRACT_AND_RUN: "1" };
+    // the in-app updater against the test feed (development runs only: desktop/src/main.js), as an AppImage would
+    if (FEED.url) Object.assign(env, { HRH_UPDATER_DEV: "1", HRH_UPDATE_FEED: FEED.url, APPIMAGE: path.join(this.home, "my-mate-geny.AppImage") });
     delete env.XDG_SESSION_TYPE;
     delete env.WAYLAND_DISPLAY;
     const args = ["--no-sandbox", `--remote-debugging-port=${this.port}`, `--inspect=${this.iport}`, "--disable-gpu"];
@@ -180,6 +182,8 @@ class App {
       const settings = require(${JSON.stringify(path.join(SRC, "settings.js"))});
       const mateModule = () => require(${JSON.stringify(path.join(SRC, "mate.js"))});
       const win = (part) => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.webContents.getURL().includes(part));
+      // the console window (no Mate surface; on its retry page too)
+      const cwin = () => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !w.webContents.getURL().includes("surface=") && !w.webContents.getURL().includes("bar.html"));
       ${body}
     })()`,
     });
@@ -267,14 +271,402 @@ async function clearInput(p) {
   await p.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 });
 }
 
+// ── app-like window chrome (desktop/src/chrome.js, components/layout/TitleBar.tsx) ──
+
+const REGIONS = `(() => {
+  const region = (el) => { for (; el; el = el.parentElement) { const v = getComputedStyle(el).getPropertyValue("-webkit-app-region"); if (v && v !== "none") return v; } return "none"; };
+  const at = (sel) => { const el = document.querySelector(sel); return el ? region(el) : null; };
+  return {
+    claimed: document.documentElement.dataset.hrhChrome || "",
+    fallback: !!document.getElementById("hrh-native-bar"),
+    bar: at('[data-testid="title-bar"]') ?? at('[data-testid="mate-chat-header"]'),
+    min: at('[data-testid="window-min"]'), max: at('[data-testid="window-max"]'), close: at('[data-testid="window-close"]'),
+    pin: at('[data-testid="mate-chat-pin"]'), input: at('[data-testid="mate-input"]'),
+    maximized: document.querySelector('[data-testid="window-max"]')?.dataset.maximized,
+    barH: document.querySelector('[data-testid="title-bar"],[data-testid="mate-chat-header"]')?.getBoundingClientRect().height,
+  };
+})()`;
+
+const clickTestId = (p, id) => p.eval(`(() => { const b = document.querySelector('[data-testid="${id}"]'); if (!b) return false; b.click(); return true; })()`);
+
+/** best effort: a real X drag on the title bar with xdotool (moves the window only where the X server has a window manager) */
+async function xdrag(app, part, from, to) {
+  const { execFileSync } = require("child_process");
+  try {
+    const pick = part ? `win(${JSON.stringify(part)})` : "cwin()";
+    const b0 = await app.main(`return ${pick}.getBounds()`);
+    const run = (...a) => execFileSync("xdotool", a, { env: process.env, timeout: 4000 });
+    run("mousemove", String(b0.x + from.x), String(b0.y + from.y));
+    run("mousedown", "1");
+    for (let i = 1; i <= 6; i++) run("mousemove", String(b0.x + from.x + ((to.x - from.x) * i) / 6), String(b0.y + from.y + ((to.y - from.y) * i) / 6));
+    run("mouseup", "1");
+    await sleep(500);
+    const b1 = await app.main(`return ${pick}.getBounds()`);
+    return { before: b0, after: b1 };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+async function windowChrome(app, con, consoleRe, server) {
+  step("console: no system title bar — the page draws one (drag area, window buttons out of it)");
+  const r = await until("the console's title bar", async () => {
+    const x = await con.eval(REGIONS);
+    return x.bar ? x : null;
+  });
+  console.log(`  console chrome: ${JSON.stringify(r)}`);
+  assert.equal(r.claimed, "custom", "the page claimed the chrome");
+  assert.equal(r.fallback, false, "no fallback bar on a page that draws its own");
+  assert.equal(r.bar, "drag", "the title bar moves the window (double-click: the OS maximizes)");
+  for (const k of ["min", "max", "close"]) assert.equal(r[k], "no-drag", `${k} is a button, not a drag area`);
+  const frame = await app.main(`const w = cwin(); return { resizable: w.isResizable(), maximizable: w.isMaximizable() }`);
+  assert.deepEqual(frame, { resizable: true, maximizable: true }, "still resizable from its edges");
+  await con.shot("chrome-1-console.png");
+
+  step("console: maximize / restore / minimize / close through the buttons (IPC); the button follows the state");
+  // (Xvfb has no window manager to maximize: the calls are recorded, the state pushed as the OS would)
+  await app.main(`const w = cwin(); global.__calls = []; let max = false;
+    for (const m of ["minimize", "maximize", "unmaximize", "close"]) { const orig = w[m].bind(w); w[m] = () => { global.__calls.push(m); if (m === "maximize") { max = true; w.emit("maximize"); } else if (m === "unmaximize") { max = false; w.emit("unmaximize"); } else if (m !== "close") orig(); }; }
+    w.isMaximized = () => max; return true`);
+  await clickTestId(con, "window-max");
+  await until("restore icon", async () => (await con.eval(REGIONS)).maximized === "true", 4000);
+  await clickTestId(con, "window-max");
+  await until("maximize icon", async () => (await con.eval(REGIONS)).maximized === "false", 4000);
+  await clickTestId(con, "window-min");
+  await clickTestId(con, "window-close");
+  await sleep(300);
+  assert.deepEqual(await app.main(`return global.__calls`), ["maximize", "unmaximize", "minimize", "close"]);
+  await app.main(`const w = cwin(); for (const m of ["minimize", "maximize", "unmaximize", "close", "isMaximized"]) delete w[m]; w.restore(); w.show(); return true`);
+
+  step("console: keyboard shortcuts still work without a menu bar (Ctrl+- zooms out, Ctrl+0 resets)");
+  // (input as the OS delivers it — through the browser, where the menu's accelerators live; CDP key events skip them)
+  const key = (k) => app.main(`const wc = cwin().webContents; wc.focus(); wc.sendInputEvent({ type: "keyDown", keyCode: ${JSON.stringify(k)}, modifiers: ["control"] }); wc.sendInputEvent({ type: "keyUp", keyCode: ${JSON.stringify(k)}, modifiers: ["control"] }); return true`);
+  await key("-");
+  await sleep(400);
+  const zoomed = await app.main(`return cwin().webContents.getZoomLevel()`);
+  await key("0");
+  await sleep(400);
+  const reset = await app.main(`return cwin().webContents.getZoomLevel()`);
+  console.log(`  zoom: ${zoomed} → ${reset}`);
+  assert.ok(zoomed < 0, "Ctrl+- zoomed out");
+  assert.equal(reset, 0, "Ctrl+0 reset");
+
+  const drag = await xdrag(app, null, { x: 600, y: 18 }, { x: 760, y: 118 });
+  console.log(`  (real X drag of the title bar: ${JSON.stringify(drag)} — moves only under a window manager)`);
+
+  step("mate chat window: its header is the title bar — pin, console, minimize / maximize / close");
+  await con.eval(`window.hrhNative.mate.openChat().then(() => true)`);
+  const chatw = await app.page(/surface=mate-chat/);
+  const c = await until("the chat header", async () => {
+    const x = await chatw.eval(REGIONS);
+    return x.bar && x.input ? x : null;
+  });
+  console.log(`  chat chrome: ${JSON.stringify(c)}`);
+  assert.equal(c.claimed, "custom");
+  assert.equal(c.fallback, false);
+  assert.equal(c.bar, "drag");
+  for (const k of ["min", "max", "close", "pin"]) assert.equal(c[k], "no-drag", `${k} is a button`);
+  assert.equal(c.input, "none", "the composer is not a drag area");
+  await sleep(600);
+  await chatw.shot("chrome-2-mate-chat.png");
+  await clickTestId(chatw, "mate-chat-pin");
+  await until("kept on top", () => app.main(`return win("surface=mate-chat").isAlwaysOnTop()`), 4000);
+  await until("the pin shows it", () => chatw.eval(`document.querySelector('[data-testid="mate-chat-pin"]').getAttribute("aria-pressed") === "true"`), 4000);
+  await clickTestId(chatw, "mate-chat-pin");
+  await until("not on top", async () => !(await app.main(`return win("surface=mate-chat").isAlwaysOnTop()`)), 4000);
+  await clickTestId(chatw, "window-close");
+  await until("✕ hides the chat window", async () => !(await app.main(`return win("surface=mate-chat").isVisible()`)), 4000);
+  return app.page(consoleRe);
+}
+
+// ── never a black window (frontend/src/lib/recover.ts, desktop/src/recovery.js) ──
+// HRH_E2E_DIST = the server's STATIC_DIR, HRH_E2E_NEXT = another build of the same frontend (different hashes).
+
+async function blankScreenRecovery(app, con, consoleRe) {
+  const dist = process.env.HRH_E2E_DIST;
+  const next = process.env.HRH_E2E_NEXT;
+  const { execFileSync } = require("child_process");
+  const swapOldWay = () => {
+    // the old deploy: the live build replaced, its files deleted at once
+    const nextCopy = `${dist}.next`;
+    fs.rmSync(nextCopy, { recursive: true, force: true });
+    execFileSync("cp", ["-r", fs.existsSync(`${dist}.alt`) ? `${dist}.alt` : next, nextCopy]);
+    fs.renameSync(dist, `${dist}.prev`);
+    fs.renameSync(nextCopy, dist);
+    fs.rmSync(`${dist}.alt`, { recursive: true, force: true });
+    fs.renameSync(`${dist}.prev`, `${dist}.alt`); // (the next swap goes back to it)
+  };
+  const state = (p) => p.eval(`({ root: document.getElementById("root")?.childElementCount ?? -1, nav: performance.getEntriesByType("navigation")[0]?.type,
+    error: !!document.querySelector('[data-testid="error-screen"]'), boot: document.getElementById("hrh-boot")?.dataset.state || "", url: location.href })`);
+  const openView = (p, label) => p.eval(`(() => { const b = [...document.querySelectorAll("nav button")].find((x) => x.textContent.trim().startsWith(${JSON.stringify(label)})); b && b.click(); return !!b; })()`);
+
+  if (dist && next) {
+    step("a deploy while the console is open (old files deleted), then a lazy view: the page reloads itself once — never blank");
+    swapOldWay();
+    await openView(con, "Download");
+    await sleep(4000);
+    con = await app.page(consoleRe);
+    const s1 = await until("the console drawn again", async () => {
+      const s = await state(con);
+      return s.root > 0 && s.nav === "reload" ? s : null;
+    }, 15000);
+    console.log(`  after the swap: ${JSON.stringify(s1)}`);
+    assert.equal(s1.error, false);
+    await sleep(800);
+    await con.shot("recover-1-reloaded.png");
+
+    step("…and again within 30 s (no reload loop): the 'page was updated' screen with Reload");
+    swapOldWay();
+    await openView(con, "Usage");
+    const s2 = await until("the error screen", async () => {
+      const s = await state(con);
+      return s.error ? s : null;
+    }, 10000);
+    console.log(`  second failure: ${JSON.stringify(s2)}`);
+    await sleep(500);
+    await con.shot("recover-2-error-screen.png");
+    await clickTestId(con, "error-reload");
+    await sleep(2500);
+    con = await app.page(consoleRe);
+    await until("the console back", async () => (await state(con)).root > 0 && !(await state(con)).error, 15000);
+  } else console.log("  (HRH_E2E_DIST / HRH_E2E_NEXT not set: the deploy-swap steps are skipped)");
+
+  step("the console's renderer crashes → the retry page, then back by itself");
+  await app.main(`cwin().webContents.forcefullyCrashRenderer(); return true`);
+  const retry = await app.page(/offline\.html/);
+  const rq = await until("the retry page", () => retry.eval(`document.readyState === "complete" && new URLSearchParams(location.search).get("reason")`), 10000);
+  assert.equal(rq, "crashed");
+  await sleep(300);
+  await retry.shot("recover-3-retry-crashed.png");
+  con = await app.page(consoleRe);
+  await until("the console back after the automatic retry", async () => (await state(con)).root > 0, 20000);
+
+  step("the server cannot be reached → the retry page (with the fallback title bar), Retry brings the console back");
+  await app.main(`cwin().loadURL("http://127.0.0.1:9/").catch(() => {}); return true`);
+  const off = await app.page(/offline\.html/);
+  await until("offline retry page", () => off.eval(`document.readyState === "complete" && new URLSearchParams(location.search).get("reason") === "offline"`), 10000);
+  await sleep(500);
+  const offBar = await off.eval(`!!document.getElementById("hrh-native-bar")`);
+  assert.ok(offBar, "the local retry page gets a title bar (window buttons) from the preload");
+  await off.shot("recover-4-retry-offline.png");
+  await off.eval(`document.getElementById("retry").click(), true`);
+  con = await app.page(consoleRe);
+  await until("the console back", async () => (await state(con)).root > 0, 20000);
+
+  step("the mate chat window loaded but drew nothing (an old page whose React unmounted) → noticed, reloaded");
+  await con.eval(`window.hrhNative.mate.openChat().then(() => true)`);
+  let chatw = await app.page(/surface=mate-chat/);
+  await until("the chat window", () => chatw.eval(`!!document.querySelector('[data-testid="mate-chat-window"]')`));
+  await chatw.eval(`document.getElementById("root").replaceChildren(), true`);
+  const blank = await app.page(/offline\.html/);
+  await until("the blank retry page", () => blank.eval(`new URLSearchParams(location.search).get("reason") === "blank"`), 20000);
+  chatw = await app.page(/surface=mate-chat/);
+  await until("the chat window back", () => chatw.eval(`!!document.querySelector('[data-testid="mate-chat-window"]')`), 20000);
+
+  if (dist) {
+    step("the app's code cannot be loaded at all (index.html names a chunk the server lacks): boot screen → one reload → Reload, never black");
+    // (an existing chunk would come from the HTTP cache — assets are immutable — so the page names a missing one)
+    const indexFile = path.join(dist, "index.html");
+    const good = fs.readFileSync(indexFile, "utf8");
+    fs.writeFileSync(indexFile, good.replace(/\/assets\/index-[\w-]+\.js/, "/assets/index-gone0000.js"));
+    try {
+      await chatw.eval(`sessionStorage.clear(), location.reload(), true`).catch(() => {});
+      await sleep(1500);
+      chatw = await app.page(/surface=mate-chat/);
+      const b = await until("the boot screen says it failed", async () => {
+        const s = await state(chatw);
+        return s.boot === "failed" ? s : null;
+      }, 20000);
+      console.log(`  ${JSON.stringify(b)}`);
+      assert.ok(await chatw.eval(`!!document.getElementById("hrh-native-bar")`), "the fallback title bar is there (the page never ran)");
+      await chatw.shot("recover-5-boot-failed.png");
+    } finally {
+      fs.writeFileSync(indexFile, good);
+    }
+    await chatw.eval(`document.querySelector("#hrh-boot button").click(), true`).catch(() => {});
+    await sleep(1500);
+    chatw = await app.page(/surface=mate-chat/);
+    await until("the chat window back after Reload", () => chatw.eval(`!!document.querySelector('[data-testid="mate-chat-window"]')`), 20000);
+  }
+  await con.eval(`window.hrhNative.mate.closeChat().then(() => true)`);
+  return app.page(consoleRe);
+}
+
+// ── in-app update (desktop/src/updater.js, frontend/src/components/downloads/UpdateCard.tsx) ──
+// A local feed as the console's /api/downloads/update/ would serve it: latest-linux.yml + a 16 MB "AppImage",
+// sent slowly enough (~2.5 MB/s) to watch the progress; `FEED.fail` makes it answer 500.
+
+const FEED = { url: "", fail: false, server: null };
+
+async function startFeed() {
+  const http = require("http");
+  const crypto = require("crypto");
+  const body = crypto.randomBytes(16 * 1024 * 1024);
+  const name = "my-mate-geny-0.4.99-linux-x86_64.AppImage";
+  const sha512 = crypto.createHash("sha512").update(body).digest("base64");
+  const yml = `version: 0.4.99\nfiles:\n  - url: ${name}\n    sha512: ${sha512}\n    size: ${body.length}\npath: ${name}\nsha512: ${sha512}\nreleaseDate: '2026-11-01T00:00:00.000Z'\n`;
+  FEED.server = http.createServer((req, res) => {
+    if (FEED.fail) {
+      res.writeHead(500);
+      return res.end("feed down");
+    }
+    const file = decodeURIComponent((req.url || "").split("?")[0].split("/").pop());
+    if (file === "latest-linux.yml") {
+      res.writeHead(200, { "content-type": "text/yaml" });
+      return res.end(yml);
+    }
+    if (file !== name) {
+      res.writeHead(404);
+      return res.end();
+    }
+    res.writeHead(200, { "content-type": "application/octet-stream", "content-length": body.length });
+    let at = 0;
+    const t = setInterval(() => {
+      if (res.destroyed) return clearInterval(t);
+      const next = Math.min(body.length, at + 64 * 1024);
+      res.write(body.subarray(at, next));
+      at = next;
+      if (at >= body.length) {
+        clearInterval(t);
+        res.end();
+      }
+    }, 25);
+    req.on("close", () => clearInterval(t));
+  });
+  await new Promise((r) => FEED.server.listen(0, "127.0.0.1", r));
+  FEED.server.unref();
+  FEED.url = `http://127.0.0.1:${FEED.server.address().port}`;
+}
+
+async function inAppUpdate(app, con, consoleRe) {
+  const card = () => con.eval(`(() => { const c = document.querySelector('[data-testid="update-card"]'); return c ? { status: c.dataset.status, text: c.innerText, pct: document.querySelector('[data-testid="update-percent"]')?.textContent || "" } : null; })()`);
+  step("Download page in the app: a newer build is found (the app's updater — a background check may have found it already)");
+  await con.eval(`[...document.querySelectorAll("nav button")].find((b) => b.textContent.trim().startsWith("Download")).click(), true`);
+  const c1 = await until("update available", async () => {
+    const c = await card();
+    return c && c.status === "available" ? c : null;
+  }, 40000);
+  console.log(`  ${c1.text.replace(/\s+/g, " ").trim()}`);
+  assert.match(c1.text, /0\.4\.99/);
+
+  step("the update server failing mid-way: a clear error with Retry");
+  FEED.fail = true;
+  await clickTestId(con, "update-download");
+  const e1 = await until("the error", async () => {
+    const c = await card();
+    return c && c.status === "error" ? c : null;
+  }, 20000);
+  console.log(`  ${e1.text.replace(/\s+/g, " ").trim()}`);
+  assert.match(e1.text, /could not be downloaded/);
+  await sleep(300);
+  await con.shot("update-0-error.png");
+  FEED.fail = false;
+
+  step("Retry (server back) → downloading again");
+  await clickTestId(con, "update-retry");
+  step("progress (percent, size, speed, time left) — and it survives a page reload");
+  const d1 = await until("downloading with bytes", async () => {
+    const c = await card();
+    return c && c.status === "downloading" && /MB of/.test(c.text) && parseInt(c.pct) >= 10 ? c : null;
+  }, 20000);
+  console.log(`  ${d1.text.replace(/\s+/g, " ").trim()}`);
+  assert.match(d1.text, /\/s/, "a speed");
+  assert.match(d1.text, /left|almost/, "time left");
+  await con.shot("update-1-downloading.png");
+  await con.eval(`location.reload(), true`).catch(() => {});
+  await sleep(1500);
+  con = await app.page(consoleRe);
+  const d2 = await until("still downloading after the reload", async () => {
+    const c = await card();
+    return c && c.status === "downloading" && parseInt(c.pct) >= parseInt(d1.pct) ? c : null;
+  }, 15000);
+  console.log(`  after reload: ${d2.pct}`);
+
+  step("Cancel → back to 'available' (Download again); then the whole way to 'ready' with Restart & install");
+  await clickTestId(con, "update-cancel");
+  const c2 = await until("cancelled", async () => {
+    const c = await card();
+    return c && c.status === "available" ? c : null;
+  }, 10000);
+  assert.match(c2.text, /cancelled/i);
+  await clickTestId(con, "update-download");
+  await until("ready", async () => (await card())?.status === "ready", 60000);
+  assert.ok(await con.eval(`!!document.querySelector('[data-testid="update-install"]')`), "Restart & install offered");
+  await sleep(300);
+  await con.shot("update-2-ready.png");
+
+  return con;
+}
+
+// ── back / forward like an app (frontend/src/lib/nav.ts) ──
+
+async function backNavigation(app, con, consoleRe) {
+  const where = () => con.eval(`({ search: location.search, path: location.pathname, active: [...document.querySelectorAll("nav button")].find((b) => b.dataset.active === "true")?.textContent.trim() })`);
+  const open = (label) => con.eval(`(() => { const b = [...document.querySelectorAll("nav button")].find((x) => x.textContent.trim().startsWith(${JSON.stringify(label)})); b.click(); return true; })()`);
+  const at = (search) => until(`at ${search}`, async () => (await where()).search === search, 6000);
+
+  step("screens are history entries: Mate → Usage → Admin");
+  await open("Mate");
+  await at("?view=mate");
+  await open("Usage");
+  await at("?view=usage");
+  await open("Admin");
+  await at("?view=admin");
+
+  step("the mouse's back button (Windows app-command) → the previous screen");
+  await app.main(`cwin().emit("app-command", {}, "browser-backward"); return true`);
+  await at("?view=usage");
+  assert.equal((await where()).active, "Usage");
+
+  await sleep(400); // (one press reported twice within 250 ms counts once: separate presses here)
+  step("Alt+← → back again; the mouse's forward button (button 4) → forward");
+  await con.send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "ArrowLeft", code: "ArrowLeft", windowsVirtualKeyCode: 37, modifiers: 1 });
+  await con.send("Input.dispatchKeyEvent", { type: "keyUp", key: "ArrowLeft", code: "ArrowLeft", windowsVirtualKeyCode: 37, modifiers: 1 });
+  await at("?view=mate");
+  await sleep(400);
+  await con.send("Input.dispatchMouseEvent", { type: "mousePressed", x: 600, y: 400, button: "forward", buttons: 16, clickCount: 1 });
+  await con.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: 600, y: 400, button: "forward", buttons: 0, clickCount: 1 });
+  await at("?view=usage");
+
+  step("a reload stays on the screen");
+  await con.eval(`location.reload(), true`).catch(() => {});
+  await sleep(2000);
+  con = await app.page(consoleRe);
+  await until("Usage after reload", async () => (await where()).active === "Usage", 15000);
+
+  step("back past the first screen stays in the app (never the login page or the connect screen)");
+  for (let i = 0; i < 6; i++) {
+    await con.eval(`history.back(), true`).catch(() => {});
+    await sleep(400);
+  }
+  await sleep(800);
+  con = await app.page(consoleRe);
+  const w = await where();
+  const url = await app.main(`return cwin().webContents.getURL()`);
+  console.log(`  after 6× back: ${url} (${w.active})`);
+  assert.ok(url.startsWith(SERVER.replace(/\/+$/, "") + "/") && !/\/login|connect\.html/.test(url), `still in the app: ${url}`);
+  assert.ok(w.active, "a screen is shown");
+
+  step("signed in, /login itself leads into the app");
+  await con.eval(`location.href = "/login", true`).catch(() => {});
+  await sleep(1500);
+  con = await app.page(consoleRe);
+  assert.ok(!/\/login/.test(await app.main(`return cwin().webContents.getURL()`)));
+  await until("the app", () => con.eval(`!!document.querySelector("nav button")`), 15000);
+  return con;
+}
+
 async function main() {
   const server = SERVER.replace(/\/+$/, "");
   if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
   const home = fs.mkdtempSync(path.join(os.homedir(), ".cache", "hrh-mate-e2e-"));
   const port = 9300 + Math.floor(Math.random() * 400);
   const iport = port + 500;
+  await startFeed();
+  fs.writeFileSync(path.join(home, "my-mate-geny.AppImage"), "old build");
   let app = new App(home, port, iport);
-  const consoleRe = new RegExp(`^${server.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/(\\?view=mate)?$`);
+  // the console: any screen (/?view=…, /?view=chat&session=…), never a Mate surface
+  const consoleRe = new RegExp(`^${server.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/(?!login|\\?surface)`);
   try {
     app.start();
     const connect = await app.page(/connect\.html/);
@@ -283,6 +675,10 @@ async function main() {
     await connect.eval(fill(server, "admin", PASSWORD));
     let con = await app.page(consoleRe);
     await until("the console app", () => con.eval(`!!document.querySelector("#root > *")`));
+    con = await windowChrome(app, con, consoleRe, server);
+    con = await blankScreenRecovery(app, con, consoleRe);
+    con = await backNavigation(app, con, consoleRe);
+    con = await inAppUpdate(app, con, consoleRe);
 
     // a built-in mate with a body (video / photo), its voice on the browser engine so the Voice tab shows the volume
     const mates = await con.eval(`fetch("/api/mates").then((r) => r.json())`);

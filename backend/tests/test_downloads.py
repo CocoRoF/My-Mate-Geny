@@ -88,3 +88,33 @@ def test_latest_mid_rename_swap(monkeypatch):
     by_platform = {a["platform"]: a["name"] for a in out["assets"]}
     assert by_platform == {"android": "my-mate-geny-0.3.40-android.apk",
                            "windows": "hr-harnessor-0.2.39-windows-x64-setup.exe"}
+
+
+def test_update_feed_files_by_name(monkeypatch, tmp_path):
+    """The desktop updater's feed: latest*.yml and the installers they name, by exact name, newest upload wins;
+    nothing else (no path tricks, no other release files)."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "github_token", "t")
+    monkeypatch.setattr(settings, "apps_repo", "o/r")
+
+    def asset(i, name, at):
+        return {"id": i, "name": name, "size": 3, "updated_at": at, "state": "uploaded"}
+
+    rel = {"tag_name": "apps-latest", "body": "", "assets": [
+        asset(1, "latest.yml", "2026-10-30T10:00:00Z"),
+        asset(2, "latest.yml", "2026-10-31T10:00:00Z"),
+        asset(3, "my-mate-geny-0.4.12-windows-x64-setup.exe", "2026-10-31T10:00:00Z"),
+        asset(4, "latest-linux.yml", "2026-10-31T10:00:00Z"),
+        asset(5, "notes.txt", "2026-10-31T10:00:00Z"),
+    ]}
+    svc = DownloadService()
+    monkeypatch.setattr(svc, "_get", lambda url: rel)
+    got = []
+    monkeypatch.setattr(svc, "_cached", lambda a: (got.append(a["id"]) or tmp_path / a["name"], a["name"]))
+    assert svc.update_path("latest.yml")[1] == "latest.yml" and got[-1] == 2
+    assert svc.update_path("my-mate-geny-0.4.12-windows-x64-setup.exe")[1].endswith(".exe") and got[-1] == 3
+    assert svc.update_path("latest-linux.yml") and got[-1] == 4
+    import pytest
+    for bad in ("notes.txt", "../latest.yml", "latest-mac.yml", "x/../../etc/passwd", ""):
+        with pytest.raises(KeyError):
+            svc.update_path(bad)

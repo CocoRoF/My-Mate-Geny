@@ -1,27 +1,82 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>My Mate Geny — offline</title>
+<html><head><meta charset="utf-8"><title>My Mate Geny</title>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- The local retry page (src/recovery.js): the server could not be reached, the page crashed, hung or drew nothing.
+     It retries by itself after ?delay= ms (growing with each attempt) and has Retry / Switch server. -->
 <style>
-  body{margin:0;height:100vh;display:grid;place-items:center;background:#0a0c10;color:#e6e9f0;font:14px Inter,system-ui,sans-serif}
-  .card{width:380px;padding:28px;border:1px solid #232936;border-radius:16px;background:#161a22;text-align:center}
-  .logo{width:56px;height:56px;margin:0 auto 12px;border-radius:14px;display:block}
-  h1{font-size:16px;margin:0 0 6px} p{color:#9aa3b4;margin:0 0 6px;line-height:1.5} code{color:#5e6676;font-size:12px;word-break:break-all}
+  :root{color-scheme:dark}
+  html,body{margin:0;height:100%}
+  body{display:flex;flex-direction:column;background:radial-gradient(1200px 600px at 80% -10%,#15213a 0%,transparent 55%),#0a0c10;color:#e6e9f0;font:14px Inter,"Noto Sans KR",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  main{flex:1;min-height:0;display:grid;place-items:center;padding:20px;overflow:auto}
+  .card{width:min(380px,100%);box-sizing:border-box;padding:28px;border:1px solid #232936;border-radius:18px;background:#161a22cc;text-align:center;box-shadow:0 12px 40px -12px rgba(0,0,0,.7);animation:in .35s ease-out}
+  .logo{width:52px;height:52px;margin:0 auto 10px;display:block}
+  .brand{font-size:12px;color:#9aa3b4;margin:0 0 6px}
+  h1{font-size:16px;margin:0 0 6px;font-weight:600} p{color:#9aa3b4;margin:0 0 6px;line-height:1.5;font-size:13px}
+  code{display:block;color:#5e6676;font:11.5px "JetBrains Mono",ui-monospace,monospace;word-break:break-all;margin-top:8px}
   .row{display:flex;gap:8px;justify-content:center;margin-top:18px}
-  button{padding:9px 14px;border-radius:10px;border:0;font:inherit;font-weight:600;cursor:pointer}
-  .primary{background:linear-gradient(135deg,#6e8bff,#5b7cff);color:#fff} .ghost{background:#1c212c;color:#9aa3b4}
+  button{padding:9px 14px;border-radius:10px;border:0;font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:filter .15s,background .15s}
+  .primary{background:linear-gradient(135deg,#6e8bff,#5b7cff);color:#fff;box-shadow:0 6px 20px -8px #6e8bffaa} .primary:hover{filter:brightness(1.1)}
+  .ghost{background:#1c212c;color:#9aa3b4} .ghost:hover{background:#232936;color:#e6e9f0}
+  .count{font-size:12px;color:#5e6676;margin-top:12px;min-height:16px}
+  .spin{display:inline-block;width:11px;height:11px;margin-right:6px;vertical-align:-1px;border-radius:50%;border:2px solid #6e8bff40;border-top-color:#6e8bff;animation:r .8s linear infinite}
+  @keyframes r{to{transform:rotate(360deg)}} @keyframes in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  /* the quick card (a 640×76 transparent window): one line */
+  html.quick body{background:transparent}
+  html.quick main{padding:8px;place-items:stretch}
+  html.quick .card{width:auto;display:flex;align-items:center;gap:10px;padding:8px 10px 8px 14px;text-align:left;border-radius:16px;background:#11141bf2}
+  html.quick .logo,html.quick .brand,html.quick p,html.quick code,html.quick .count{display:none}
+  html.quick h1{flex:1;margin:0;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  html.quick .row{margin:0} html.quick button{padding:6px 12px;font-size:12px} html.quick #change{display:none}
+  @media (max-height:260px){.logo,.brand,code{display:none}.card{padding:16px}}
 </style></head>
-<body><div class="card">
+<body><main><div class="card" data-testid="retry-page">
   <img class="logo" src="logo.png" alt="">
-  <div style="font-size:12px;color:#9aa3b4;margin:0 0 6px">My Mate Geny</div>
-  <h1>Can't reach the server</h1>
-  <p>Check your connection — the console will load as soon as it's reachable.</p>
+  <div class="brand">My Mate Geny</div>
+  <h1 id="title">Can't reach the server</h1>
+  <p id="msg">Check your connection — the app will load as soon as the server answers.</p>
   <code id="srv"></code>
-  <div class="row"><button class="primary" id="retry">Retry</button><button class="ghost" id="change">Switch server</button></div>
-</div>
+  <div class="row"><button class="primary" id="retry">Retry now</button><button class="ghost" id="change">Switch server</button></div>
+  <div class="count" id="count"></div>
+</div></main>
 <script>
   const q = new URLSearchParams(location.search);
+  const kind = q.get("kind") || "console";
+  const reason = q.get("reason") || "offline";
+  if (kind === "quick") document.documentElement.classList.add("quick");
+  const TEXT = {
+    offline: ["Can't reach the server", "Check your connection — the app will load as soon as the server answers."],
+    crashed: ["This window stopped working", "Its page crashed. It is being reopened."],
+    unresponsive: ["This window stopped responding", "Its page hung and was closed. It is being reopened."],
+    blank: ["This window drew nothing", "Its page did not start (it may have just been updated). It is being reloaded."],
+  };
+  const [title, msg] = TEXT[reason] || TEXT.offline;
+  document.getElementById("title").textContent = kind === "quick" ? title + " — retrying…" : title;
+  document.getElementById("msg").textContent = msg;
   document.getElementById("srv").textContent = (q.get("server") || "") + (q.get("error") ? "  ·  " + q.get("error") : "");
-  document.getElementById("retry").onclick = () => window.hrhNative.retry();
-  document.getElementById("change").onclick = () => window.hrhNative.switchServer();
-  setInterval(() => navigator.onLine && window.hrhNative.retry(), 15000);
+  if (kind !== "console" || reason !== "offline") document.getElementById("change").style.display = "none";
+  const retry = () => window.hrhNative && window.hrhNative.retry();
+  document.getElementById("retry").onclick = retry;
+  document.getElementById("change").onclick = () => window.hrhNative && window.hrhNative.switchServer();
+  // automatic retry: after ?delay= (src/recovery.js grows it with each attempt); offline waits for the network
+  const delay = Math.max(1000, Math.min(60000, Number(q.get("delay")) || 15000));
+  const at = Date.now() + delay;
+  const count = document.getElementById("count");
+  const tick = () => {
+    const left = Math.ceil((at - Date.now()) / 1000);
+    if (left <= 0) {
+      if (reason === "offline" && navigator.onLine === false) {
+        count.textContent = "Waiting for the network…";
+        return;
+      }
+      count.innerHTML = '<span class="spin"></span>Retrying…';
+      clearInterval(timer);
+      retry();
+      return;
+    }
+    count.textContent = "Retrying in " + left + " s";
+  };
+  const timer = setInterval(tick, 250);
+  tick();
+  window.addEventListener("online", () => retry());
 </script></body></html>

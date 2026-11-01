@@ -13,13 +13,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app import __version__
 from app.auth import AuthManager, AuthMiddleware, OpenCORSMiddleware
 from app.config import settings
+from app.static_files import ConsoleStaticFiles, index_response
 from app.providers.oauth import OAuthManager
 from app.providers.accounts import AccountPool, AccountStore
 from app.db import Database
@@ -206,11 +206,13 @@ app.include_router(system_ws.router)
 # Serve the built frontend (single origin => the auth gate covers the UI too).
 _static = settings.static_path
 if _static is not None:
+    # index.html never cached without revalidation, hashed assets immutable (app/static_files.py: a page cached from
+    # the previous build would load code a deploy removed — a blank window)
     @app.get("/")
-    async def _index() -> FileResponse:
-        return FileResponse(_static / "index.html")
+    async def _index():
+        return index_response(_static)
 
-    app.mount("/", StaticFiles(directory=str(_static), html=True), name="static")
+    app.mount("/", ConsoleStaticFiles(directory=str(_static), html=True), name="static")
 
 
 def main() -> None:  # pragma: no cover - manual entry

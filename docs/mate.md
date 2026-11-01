@@ -653,6 +653,19 @@ the size is kept per mate (`settings.json` `mateSizes`; it wins over the page's
 suggested size); the quick card opens where it was last dropped
 (`mateQuickPos`, pulled onto a live display), else centred under the pointer.
 Tray → *Reset Mate position & size* forgets both and the avatar's pan/zoom.
+
+**Never a black window** (`desktop/src/recovery.js`, unit-tested). The console,
+the chat window and the quick card show the local retry page (`offline.html`:
+reason, Retry, automatic retry after 2 s, 4 s, 8 s … 60 s) when their page
+fails to load, its renderer crashes, hangs for 8 s, or — console and chat —
+it loaded but `#root` stays empty (an older web build whose code chunk
+vanished). The avatar window retries quietly (hidden, backoff; reloaded when
+hung). In the page: `index.html` shows a boot screen until React mounts
+(reloads once if `/assets/` code fails to load, then offers Reload; the
+transparent overlay / quick card show nothing and retry quietly), a root error
+boundary (`components/ui/ErrorBoundary.tsx`; per console view too) and
+`lib/recover.ts` (a failed dynamic import / `vite:preloadError` reloads once,
+guarded by sessionStorage for 30 s, then the Reload screen).
 SIGTERM/SIGINT quit properly and DOM storage is flushed on quit and every 15 s.
 
 Bridge (preload → `window.hrhNative.mate`):
@@ -669,6 +682,43 @@ mate?: {
   onCommand(cb: (cmd: { type: string; [k: string]: unknown }) => void): () => void;
 }
 ```
+
+**Window chrome** (`desktop/src/chrome.js`). The console and the mate chat
+window have no system title bar (Windows / Linux: `frame: false`, still
+resizable from the edges, Windows 11 rounds the corners and draws the shadow;
+macOS: `titleBarStyle: "hidden"` with the traffic lights). The page draws it —
+the console a slim bar (logo · what is open · minimize / maximize-restore /
+close, `components/layout/TitleBar.tsx`), the chat window its header (avatar,
+status, pin, console, window buttons) — as a `-webkit-app-region: drag` area
+(double-click maximizes: the OS does it) and marks `<html data-hrh-chrome>`.
+A page that does not (an older web build, the login page, the local connect
+/ retry pages, a page still loading) gets a plain bar from the preload until it
+does. `HRH_NATIVE_FRAME=1` or settings `"nativeFrame": true` keeps the system
+frame. Bridge, present only in those two windows:
+
+```ts
+window?: {
+  chrome: "custom" | "mac"; kind: "console" | "chat"; initial: { maximized; fullscreen; focused };
+  minimize(): void; toggleMaximize(): void; close(): void;
+  getState(): Promise<{ maximized: boolean; fullscreen: boolean; focused: boolean }>;
+  onState(cb): () => void;
+}
+```
+
+**Updates** (`desktop/src/updater.js`, desktop/README.md): `hrhNative.updates`
+(`getState`, `check`, `download`, `cancel`, `install`, `retry`, `onState`) —
+the Download page's update card; the state lives in the app.
+
+**Back / forward** (`frontend/src/lib/nav.ts`, all shells). Every screen
+change (sidebar views, opening a chat) is a history entry with its URL
+(`/?view=usage`, `/?view=chat&session=<id>`, `/`), so back goes to the
+previous screen and a reload stays on it; overlays (`lib/back.ts`) close first.
+A guard entry below the first screen keeps back inside the app — never the
+login page or the connect screen. `/login` while signed in redirects to `/`,
+and a successful sign-in replaces the login page in history. Desktop: the
+mouse's back / forward buttons (Windows app-commands → `hrhNative.onNav`),
+Alt+← / Alt+→. Android: back = the previous screen; at the first one a second
+press within 2 s leaves the app (to the background).
 
 Android (Capacitor): the Mate view runs in-page; microphone permission added.
 

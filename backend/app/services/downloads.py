@@ -55,9 +55,18 @@ class _NoAuthRedirect(urllib.request.HTTPRedirectHandler):
         return new
 
 
+# The desktop app's in-app updater (electron-updater, generic provider) reads its feed from this server
+# (/api/downloads/update/<name>): the update descriptions electron-builder writes next to the installers, and the
+# files they name. Never macOS (unsigned builds cannot self-update: the app offers the .dmg instead).
+UPDATE_FEEDS = {"windows": "latest.yml", "linux": "latest-linux.yml"}
+_UPDATE_FILE = re.compile(r"^(latest(-linux)?\.yml|[\w.+-]+\.(exe|AppImage|deb)(\.blockmap)?)$")
+
+
 class DownloadService:
     def __init__(self) -> None:
         self._meta: tuple[float, dict[str, Any]] | None = None
+        # every uploaded file of the release by name (the update feed asks by name)
+        self._files: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
         self._fetching: dict[int, threading.Lock] = {}
 
@@ -109,6 +118,12 @@ class DownloadService:
                 meta = json.loads(m.group(1))
             except ValueError:
                 meta = {}
+        files: dict[str, dict[str, Any]] = {}
+        for a in rel.get("assets") or []:
+            if a.get("state", "uploaded") == "uploaded" and a.get("name"):
+                prev = files.get(a["name"])
+                if prev is None or (a.get("updated_at") or "") > (prev.get("updated_at") or ""):
+                    files[a["name"]] = {"id": a["id"], "name": a["name"], "size": a["size"], "updated_at": a.get("updated_at")}
         # The rolling release is updated in place: for a moment it holds both
         # the old and the new file of a platform. Offer only the newest.
         newest: dict[str, dict] = {}
@@ -141,6 +156,7 @@ class DownloadService:
         }
         with self._lock:
             self._meta = (time.monotonic(), out)
+            self._files = files
         return out
 
     def asset_path(self, asset_id: int) -> tuple[Path, str]:
@@ -149,6 +165,20 @@ class DownloadService:
         asset = next((a for a in info.get("assets", []) if a["id"] == asset_id), None)
         if asset is None:
             raise KeyError("asset not found")
+        return self._cached(asset)
+
+    def update_path(self, name: str) -> tuple[Path, str]:
+        """A file of the desktop update feed (latest.yml, latest-linux.yml, an installer it names), by name."""
+        if not _UPDATE_FILE.match(name or ""):
+            raise KeyError("not an update file")
+        self.latest(force=name.endswith(".yml"))  # the description is read fresh (it changes under the same name)
+        asset = self._files.get(name)
+        if asset is None:
+            raise KeyError("not in the latest release")
+        return self._cached(asset)
+
+    def _cached(self, asset: dict[str, Any]) -> tuple[Path, str]:
+        asset_id = asset["id"]
         cache = settings.home_dir / "downloads" / str(asset_id)
         dest = cache / asset["name"]
         if dest.exists() and dest.stat().st_size == asset["size"]:
@@ -177,6 +207,7 @@ class DownloadService:
     def _prune(self, keep: int) -> None:
         """Drop cached assets that are no longer in the latest release."""
         live = {a["id"] for a in (self._meta[1] if self._meta else {}).get("assets", [])} | {keep}
+        live |= {a["id"] for a in self._files.values()}
         root = settings.home_dir / "downloads"
         for d in root.iterdir() if root.exists() else []:
             if d.is_dir() and d.name.isdigit() and int(d.name) not in live:

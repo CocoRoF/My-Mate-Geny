@@ -91,6 +91,34 @@ This runs as your user, so the CLIs use your own `~/.claude` / `~/.codex`.
 Server state goes to `~/.hr-harnessor/` and `DB_PATH` (default
 `backend/data/harnessor.db`).
 
+### Updating the web console in place
+
+Never delete the live `frontend/dist` while pages are open: a page (the
+console, a desktop Mate window, a phone) that loaded the previous build keeps
+importing that build's code-split files (`dist/assets/<View>-<hash>.js`) when
+a view is opened, and if they are gone the page went black. Use:
+
+```bash
+deploy/swap-frontend.sh --build              # vite build → dist-next, then swap
+# or, after building dist-next yourself:
+(cd frontend && npx vite build --outDir dist-next --emptyOutDir)
+deploy/swap-frontend.sh [--keep-days 7] [frontend/]
+```
+
+It checks `dist-next/` (index.html present, every `/assets/` file it names
+exists), copies the live `dist/assets/*` that the new build does not have into
+`dist-next/assets/` and keeps them for `--keep-days` (default 7) after the
+deploy that retired them (ledger `frontend/.dist-retired.tsv`), then swaps the
+directories atomically (`mv --exchange`; two renames on older coreutils) and
+removes the old one. `dist/` keeps its path, so `STATIC_DIR` needs no restart.
+
+The backend serves `index.html` with `Cache-Control: no-cache` (always
+revalidated) and `assets/*` as `immutable`; a missing file is `no-store`, and
+while `index.html` is briefly absent `/` answers a small page that retries
+(`backend/app/static_files.py`). The web app itself reloads once when a code
+chunk fails to load and otherwise shows a Reload screen; the desktop app shows
+its retry page for a window whose page failed, crashed, hung or drew nothing.
+
 ## 5. Configuration
 
 All settings: [backend/.env.example](../backend/.env.example). The ones you

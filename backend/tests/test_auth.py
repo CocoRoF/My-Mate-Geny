@@ -501,3 +501,16 @@ def test_cookie_secure_is_automatic_by_default(monkeypatch):
         assert mgr.cookie_kwargs(req("http"))["secure"] is http
         assert mgr.cookie_kwargs(req("https"))["secure"] is https
     monkeypatch.setattr(settings, "cookie_secure", None)
+
+
+def test_login_page_when_signed_in_goes_into_the_app(client):
+    """Back (or a stale link) onto /login while signed in: into the app, never a second sign-in screen."""
+    client.cookies.clear()
+    page = client.get("/login")
+    assert page.status_code == 200 and "location.replace('/')" in page.text  # the login page is not kept in history
+    assert _login(client).status_code == 200
+    r = client.get("/login", follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/"
+    assert r.headers["cache-control"] == "no-store"
+    client.cookies.clear()
+    assert client.get("/login", follow_redirects=False).status_code == 200

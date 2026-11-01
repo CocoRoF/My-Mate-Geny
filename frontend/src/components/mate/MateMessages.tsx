@@ -127,8 +127,8 @@ function linesOf(text: string, streaming: boolean): string[] {
 function Bubble({ text, compact }: { text: string; compact?: boolean }) {
   return (
     <div
-      className={`max-w-[88%] w-fit rounded-2xl rounded-bl-md border border-border bg-surface-2 text-content break-words whitespace-pre-wrap ${
-        compact ? "px-3 py-1.5 text-[13px]" : "px-3.5 py-2 text-sm"
+      className={`max-w-[88%] w-fit rounded-2xl rounded-bl-md border border-border/80 bg-surface-2 text-content shadow-[0_1px_2px_rgba(0,0,0,0.25)] break-words whitespace-pre-wrap ${
+        compact ? "px-3 py-[7px] text-[13px] leading-[1.55]" : "px-3.5 py-2 text-sm leading-relaxed"
       }`}
       data-testid="mate-bubble"
     >
@@ -138,7 +138,7 @@ function Bubble({ text, compact }: { text: string; compact?: boolean }) {
 }
 
 /** what the user said: the files they attached (thumbnails / file cards, like the Chat view), then the text */
-function UserBubble({ text, attachments, pending }: { text: string; attachments?: Attachment[]; pending?: boolean }) {
+function UserBubble({ text, attachments, pending, compact }: { text: string; attachments?: Attachment[]; pending?: boolean; compact?: boolean }) {
   return (
     <div className={`flex flex-col items-end gap-1.5 ${pending ? "opacity-70" : ""}`} data-testid="mate-user-message">
       {!!attachments?.length && (
@@ -149,9 +149,9 @@ function UserBubble({ text, attachments, pending }: { text: string; attachments?
       )}
       {text.trim() && (
         <div
-          className={`max-w-[85%] rounded-2xl rounded-br-md border px-3.5 py-2 text-sm text-content whitespace-pre-wrap break-words ${
-            pending ? "border-border bg-surface-2/60" : "border-accent/25 bg-accent-soft"
-          }`}
+          className={`max-w-[85%] rounded-2xl rounded-br-md border text-content whitespace-pre-wrap break-words shadow-[0_1px_2px_rgba(0,0,0,0.25)] ${
+            compact ? "px-3 py-[7px] text-[13px] leading-[1.55]" : "px-3.5 py-2 text-sm leading-relaxed"
+          } ${pending ? "border-border bg-surface-2/60" : "border-accent/30 bg-gradient-to-br from-accent/[0.22] to-accent/[0.12]"}`}
           data-testid="mate-user-bubble"
         >
           {text}
@@ -217,7 +217,7 @@ const AssistantBubbles = memo(function AssistantBubbles({ turn, compact }: { tur
       const t = toolsById.get(f.toolId);
       if (t) items.push(<ActivityChip key={i} tool={t} />);
     } else if (f.kind === "steer") {
-      items.push(<UserBubble key={i} text={f.text} attachments={f.attachments} pending={f.pending} />);
+      items.push(<UserBubble key={i} text={f.text} attachments={f.attachments} pending={f.pending} compact={compact} />);
     } else if (f.kind === "notice") {
       items.push(
         <div key={i} className={`text-[11.5px] ${f.level === "warning" ? "text-warning" : "text-content-faint"}`}>
@@ -267,7 +267,7 @@ export default function MateMessages({
             if (t.role === "user") {
               if (t.meta?.internal && t.meta.kind === "delegation_result") return <DelegationCards key={t.key} turn={t} />;
               if (t.meta?.internal) return null;
-              return <UserBubble key={t.key} text={t.text} attachments={t.attachments} />;
+              return <UserBubble key={t.key} text={t.text} attachments={t.attachments} compact={compact} />;
             }
             if (t.role === "system") {
               const reset = t.code === "context.reset";

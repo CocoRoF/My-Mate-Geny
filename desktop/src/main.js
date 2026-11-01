@@ -22,6 +22,11 @@ app.setPath("userData", path.join(app.getPath("appData"), "hr-harnessor"));
 const { LEGACY_SERVER, readSettings, writeSettings, settingsExisted, serverUrl, sameOrigin } = require("./settings");
 const core = require("./connect-core");
 const mate = require("./mate");
+const recovery = require("./recovery");
+const chrome = require("./chrome");
+const { createUpdater } = require("./updater");
+
+const RETRY_PAGE = path.join(__dirname, "offline.html");
 
 const PRODUCT = "My Mate Geny";
 const mac = process.platform === "darwin";
@@ -93,6 +98,8 @@ function createWindow(url) {
     icon: path.join(__dirname, "..", "build", "icon.png"),
     autoHideMenuBar: process.platform !== "darwin",
     show: false,
+    // no system title bar: the page draws an app-styled one (chrome.js; macOS keeps its traffic lights)
+    ...chrome.frameOptions("console"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -103,6 +110,7 @@ function createWindow(url) {
     },
   });
   const w = win;
+  chrome.register(w, "console");
   if (s.maximized) w.maximize();
   w.once("ready-to-show", () => w.show());
 
@@ -133,6 +141,10 @@ function createWindow(url) {
   });
 
   const wc = w.webContents;
+  // the mouse's back / forward buttons (Windows: app-commands): in-app back / forward (the page's lib/nav.ts)
+  w.on("app-command", (_e, cmd) => {
+    if (cmd === "browser-backward" || cmd === "browser-forward") wc.send("nav:command", cmd === "browser-forward" ? "forward" : "back");
+  });
   // External links open in the user's browser; our own pages stay in-app.
   wc.setWindowOpenHandler(({ url }) => {
     if (sameOrigin(url) && !/[?&]download=1/.test(url)) {
@@ -157,10 +169,9 @@ function createWindow(url) {
     }
     mate.consoleNavigated(url);
   });
-  wc.on("did-fail-load", (_e, code, desc, _url, isMainFrame) => {
-    if (!isMainFrame || code === -3) return; // -3: aborted (navigation replaced)
-    w.loadFile(path.join(__dirname, "offline.html"), { query: { server: serverUrl(), error: desc || String(code) } });
-  });
+  // never a black window: a load failure, a crashed / hung renderer or a page that drew nothing → the local retry
+  // page, which retries by itself with a growing delay (recovery.js)
+  recovery.attach(w, { kind: "console", isAppUrl: sameOrigin, retryPage: RETRY_PAGE, server: serverUrl, watchBlank: true });
   wc.on("context-menu", (_e, p) => {
     const items = [];
     if (p.linkURL) items.push({ label: "Open link in browser", click: () => shell.openExternal(p.linkURL) },
@@ -347,6 +358,8 @@ ipcMain.handle("connect:cancel", (e) => {
   return true;
 });
 
+chrome.registerIpc();
+
 // Every hrh:* call comes from a top-level page in one of our windows.
 const ours = (e) => {
   const w = BrowserWindow.fromWebContents(e.sender);
@@ -385,6 +398,54 @@ ipcMain.handle("hrh:signOut", async (e) => {
   await signOut();
   return true;
 });
+
+// ── in-app updates (updater.js): state here, every window follows it (the Download page shows it) ──
+let notifiedUpdate = "";
+const updater = createUpdater({
+  autoUpdater: async () => require("electron-updater").autoUpdater,
+  cancelToken: () => new (require("electron-updater").CancellationToken)(),
+  version: app.getVersion(),
+  platform: process.platform,
+  isPackaged: app.isPackaged,
+  env: process.env,
+  server: () => serverUrl(),
+  // (development runs only: tests point the feed elsewhere and give electron-updater a config file)
+  feedUrl: () => (!app.isPackaged && env.HRH_UPDATE_FEED) || `${serverUrl()}/api/downloads/update`,
+  devConfigPath: () => {
+    const f = path.join(app.getPath("userData"), "dev-app-update.yml");
+    require("fs").writeFileSync(f, "provider: generic\nurl: https://updates.invalid/\nupdaterCacheDirName: my-mate-geny-updater-dev\n");
+    return f;
+  },
+  cookieHeader: async () => {
+    const base = serverUrl();
+    if (!base) return "";
+    const list = await session.defaultSession.cookies.get({ url: `${base}/` });
+    return list.map((c) => `${c.name}=${c.value}`).join("; ");
+  },
+  beforeInstall: () => {
+    quitting = true;
+    mate.setQuitting(true);
+  },
+  onState: (st) => {
+    for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("update:state", st);
+    // a background check found one: say so once per version
+    if (st.status === "available" && st.version && notifiedUpdate !== st.version && !(win && !win.isDestroyed() && win.isFocused())) {
+      notifiedUpdate = st.version;
+      if (Notification.isSupported()) {
+        const n = new Notification({ title: `${PRODUCT} ${st.version} is available`, body: "Open Download to update — it installs and restarts in one go." });
+        n.on("click", () => serverUrl() && openConsole(`${serverUrl()}/?view=downloads`));
+        n.show();
+      }
+    }
+  },
+});
+const fromAppPage = (e) => ours(e) && fileOrServer(e);
+ipcMain.handle("update:state", (e) => (fromAppPage(e) ? updater.state : null));
+ipcMain.handle("update:check", (e) => (fromAppPage(e) ? updater.check() : null));
+ipcMain.handle("update:download", (e) => (fromAppPage(e) ? updater.download() : null));
+ipcMain.handle("update:cancel", (e) => (fromAppPage(e) ? updater.cancel() : null));
+ipcMain.handle("update:install", (e) => (fromAppPage(e) ? updater.install() : null));
+ipcMain.handle("update:retry", (e) => (fromAppPage(e) ? updater.retry() : null));
 
 // Microphone for push-to-talk (getUserMedia audio) on the server's pages, plus
 // what the console already uses (clipboard writes, fullscreen video);
@@ -462,6 +523,10 @@ function buildMenu() {
       label: "Help",
       submenu: [
         { label: `${PRODUCT} ${app.getVersion()}`, enabled: false },
+        { label: "Check for updates…", enabled: !!serverUrl(), click: () => {
+          openConsole(`${serverUrl()}/?view=downloads`);
+          void updater.check();
+        } },
       ],
     },
   ];
@@ -503,6 +568,9 @@ if (restartOnX11 && relaunchOnX11()) {
     const startedHidden = hiddenStart || loginHidden;
     if (!startedHidden) createWindow();
     mate.start();
+    // updates: a quiet look 30 s after the start and every 6 hours (downloading is the user's call)
+    setTimeout(() => void updater.check(), 30_000).unref?.();
+    setInterval(() => void updater.check(), 6 * 3600_000).unref?.();
     // macOS: a Dock click opens the console (but not the launch-time
     // activate of a start at login)
     const readyAt = Date.now();

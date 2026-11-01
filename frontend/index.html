@@ -2,6 +2,59 @@
 <html lang="ko" class="dark">
   <head>
     <meta charset="UTF-8" />
+    <!-- Boot guard (before anything else loads): until the app draws itself the page shows a loading screen, never a
+         blank window; if the app's code cannot be loaded (a deploy removed it, the network dropped) it reloads once,
+         then offers Reload. The desktop app's transparent Mate windows (avatar, quick card) show nothing and retry
+         quietly. src/lib/recover.ts takes over once the app runs. -->
+    <script>
+      (function () {
+        var q = /[?&]surface=(mate-overlay|mate-quick)\b/.test(location.search);
+        var html = document.documentElement;
+        if (q) html.className += " hrh-quiet";
+        var KEY = "hrh.recover.reloadAt", QK = "hrh.recover.quiet", failed = false;
+        function ss(k, v) { try { if (v === undefined) return sessionStorage.getItem(k); sessionStorage.setItem(k, v); } catch (e) {} }
+        function show(state) { var b = document.getElementById("hrh-boot"); if (b) b.setAttribute("data-state", state); }
+        window.__hrhBootReload = function () { try { sessionStorage.removeItem(KEY); } catch (e) {} location.reload(); };
+        function fail() {
+          if (failed || window.__hrhBooted) return;
+          failed = true;
+          if (q) {
+            var n = Number(ss(QK)) || 0;
+            ss(QK, String(n + 1));
+            return setTimeout(function () { location.reload(); }, Math.min(300000, 5000 * Math.pow(3, n)));
+          }
+          if (Date.now() - (Number(ss(KEY)) || 0) > 30000) {
+            ss(KEY, String(Date.now()));
+            show("reloading");
+            return location.reload();
+          }
+          show("failed");
+        }
+        // the app's own code or styles (/assets/…) failed to load
+        window.addEventListener("error", function (e) {
+          var t = e.target;
+          if (t && t !== window && (t.tagName === "SCRIPT" || t.tagName === "LINK") && /\/assets\//.test(t.src || t.href || "")) fail();
+        }, true);
+        // still the boot screen after a while: say so, with Reload
+        setTimeout(function () { if (!window.__hrhBooted && !failed) show("slow"); }, 12000);
+      })();
+    </script>
+    <style>
+      html:not(.hrh-quiet) { background: #0a0c10; color: #e6e9f0; }
+      #hrh-boot { position: fixed; inset: 0; display: grid; place-items: center; font: 13px Inter, "Noto Sans KR", system-ui, sans-serif; color: #9aa3b4; background: radial-gradient(1200px 600px at 80% -10%, #15213a 0%, transparent 55%), #0a0c10; }
+      html.hrh-quiet #hrh-boot { display: none; }
+      #hrh-boot .b { display: flex; flex-direction: column; align-items: center; gap: 14px; animation: hrh-in 0.4s ease-out 0.15s both; }
+      #hrh-boot img { width: 52px; height: 52px; }
+      #hrh-boot .s { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #6e8bff40; border-top-color: #6e8bff; animation: hrh-spin 0.8s linear infinite; }
+      #hrh-boot .m, #hrh-boot button { display: none; }
+      #hrh-boot[data-state="slow"] .m.slow, #hrh-boot[data-state="failed"] .m.failed, #hrh-boot[data-state="reloading"] .m.reloading { display: block; }
+      #hrh-boot[data-state="slow"] button, #hrh-boot[data-state="failed"] button { display: inline-block; }
+      #hrh-boot[data-state="failed"] .s { display: none; }
+      #hrh-boot .m { max-width: 300px; text-align: center; line-height: 1.5; }
+      #hrh-boot button { padding: 8px 16px; border: 0; border-radius: 10px; font: 600 13px Inter, system-ui, sans-serif; color: #fff; background: linear-gradient(135deg, #6e8bff, #5b7cff); cursor: pointer; }
+      @keyframes hrh-spin { to { transform: rotate(360deg); } }
+      @keyframes hrh-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    </style>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#0a0c10" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -20,7 +73,14 @@
     />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div id="hrh-boot" data-state="loading" data-testid="boot"><div class="b">
+      <img src="/logo.png" alt="" />
+      <div class="s"></div>
+      <div class="m slow">Still loading… check your connection, or reload.</div>
+      <div class="m failed">My Mate Geny could not be loaded. It may have just been updated — reload to continue.</div>
+      <div class="m reloading">Updating to the latest version…</div>
+      <button type="button" onclick="window.__hrhBootReload()">Reload</button>
+    </div></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

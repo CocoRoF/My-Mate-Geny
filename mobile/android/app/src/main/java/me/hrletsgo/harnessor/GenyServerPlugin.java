@@ -1,6 +1,12 @@
 package me.hrletsgo.harnessor;
 
 import android.app.Activity;
+import android.app.DownloadManager;
+import android.content.Intent;
+import android.database.Cursor;
+import android.os.Build;
+import android.os.Environment;
+import android.provider.Settings;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
@@ -298,4 +304,99 @@ public class GenyServerPlugin extends Plugin {
     private static String nz(String s) {
         return s == null ? "" : s;
     }
+
+    // ── the Download page: a new APK with progress, then the system installer ──
+    // (frontend/src/lib/downloadProgress.ts; older apps lack these methods and the page falls back to the plain
+    // link, which MainActivity's DownloadListener hands to DownloadManager)
+
+    private DownloadManager downloads() {
+        return (DownloadManager) getContext().getSystemService(Context.DOWNLOAD_SERVICE);
+    }
+
+    /** Only APKs from the connected server (sameOrigin above). */
+    @PluginMethod
+    public void downloadApk(PluginCall call) {
+        String url = call.getString("url");
+        String base = cleanBase(prefs(getContext()).getString(K_SERVER, null));
+        if (url == null || base == null || !sameOrigin(url, base)) {
+            call.reject("not a download of this server");
+            return;
+        }
+        String name = call.getString("name", "my-mate-geny.apk");
+        if (name == null || !name.matches("[\\w.+-]{1,120}\\.apk")) name = "my-mate-geny.apk";
+        try {
+            DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
+            String cookies = CookieManager.getInstance().getCookie(url);
+            if (cookies != null) req.addRequestHeader("Cookie", cookies);
+            req.setMimeType("application/vnd.android.package-archive");
+            req.setTitle(name);
+            req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            // the app's own Downloads folder: no storage permission, and the installer reads it through DownloadManager
+            req.setDestinationInExternalFilesDir(getContext(), Environment.DIRECTORY_DOWNLOADS, name);
+            long id = downloads().enqueue(req);
+            JSObject r = new JSObject();
+            r.put("id", id);
+            call.resolve(r);
+        } catch (Exception e) {
+            call.reject("download failed: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void downloadStatus(PluginCall call) {
+        long id = call.getLong("id", -1L);
+        JSObject r = new JSObject();
+        try (Cursor c = downloads().query(new DownloadManager.Query().setFilterById(id))) {
+            if (id < 0 || c == null || !c.moveToFirst()) {
+                r.put("status", "gone");
+                call.resolve(r);
+                return;
+            }
+            int status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
+            r.put("transferred", c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)));
+            r.put("total", Math.max(0L, c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))));
+            if (status == DownloadManager.STATUS_SUCCESSFUL) r.put("status", "done");
+            else if (status == DownloadManager.STATUS_FAILED) {
+                r.put("status", "failed");
+                r.put("reason", "The download failed (" + c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)) + ").");
+            } else r.put("status", status == DownloadManager.STATUS_PAUSED ? "paused" : "running");
+            call.resolve(r);
+        } catch (Exception e) {
+            call.reject("status failed: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void cancelDownload(PluginCall call) {
+        long id = call.getLong("id", -1L);
+        if (id >= 0) downloads().remove(id);
+        call.resolve();
+    }
+
+    /** Open the system installer for a finished APK download (first asks to allow installs from this app). */
+    @PluginMethod
+    public void installApk(PluginCall call) {
+        long id = call.getLong("id", -1L);
+        Uri uri = id < 0 ? null : downloads().getUriForDownloadedFile(id);
+        if (uri == null) {
+            call.reject("the download is not finished");
+            return;
+        }
+        Context ctx = getContext();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !ctx.getPackageManager().canRequestPackageInstalls()) {
+            Intent allow = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + ctx.getPackageName()));
+            allow.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(allow);
+            JSObject r = new JSObject();
+            r.put("needsPermission", true);
+            call.resolve(r);
+            return;
+        }
+        Intent i = new Intent(Intent.ACTION_VIEW);
+        i.setDataAndType(uri, "application/vnd.android.package-archive");
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+        ctx.startActivity(i);
+        call.resolve();
+    }
+
 }

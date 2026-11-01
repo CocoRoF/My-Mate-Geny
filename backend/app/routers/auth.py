@@ -123,7 +123,7 @@ _LOGIN_HTML = """<!doctype html>
     try{
       const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({username:document.getElementById('u').value.trim(),password:document.getElementById('p').value})});
-      if(r.ok){location.href='/';return;}
+      if(r.ok){location.replace('/');return;}
       const d=await r.json().catch(()=>({detail:'Sign-in failed'}));
       e.textContent=d.detail||'Sign-in failed';
     }catch(x){e.textContent='Network error';}
@@ -145,6 +145,9 @@ _PAGE_ERRORS = {
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, error: str | None = None) -> HTMLResponse:
     auth: AuthManager = request.app.state.auth
+    # Already signed in (back / a stale link landed here): into the app, never a second sign-in.
+    if auth.verify_token(auth.token_from_request(request)):
+        return RedirectResponse("/", status_code=302, headers={"Cache-Control": "no-store"})
     default = auth.using_default_password
     page = (
         _LOGIN_HTML.replace("__WARNING__", _DEFAULT_WARNING if default else "")
