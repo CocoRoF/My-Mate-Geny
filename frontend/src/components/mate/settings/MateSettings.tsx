@@ -1,5 +1,5 @@
 /**
- * Mate settings (this mate only): Profile · Avatar · Language model · Voice · Memory · Danger zone.
+ * Mate settings (this mate only): Profile · Conversation style · Avatar · Language model · Voice · Memory · Danger zone.
  * App-wide things (voice service keys / URLs, the Live2D runtime, the desktop app, the default mate) are in Global
  * settings — opened from here ("Global settings", "Set up in Global settings") in place of this panel.
  */
@@ -11,6 +11,7 @@ import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
 import { BuiltinBadge } from "../MateStage";
 import ProfileTab from "./ProfileTab";
+import StyleTab from "./StyleTab";
 import AvatarTab from "./AvatarTab";
 import ModelTab from "./ModelTab";
 import VoiceTab from "./VoiceTab";
@@ -19,10 +20,11 @@ import DangerTab from "./DangerTab";
 import GlobalSettings from "./GlobalSettings";
 import { useT, type MsgKey } from "../../../i18n";
 
-type Tab = "profile" | "avatar" | "model" | "voice" | "memory" | "danger";
+type Tab = "profile" | "style" | "avatar" | "model" | "voice" | "memory" | "danger";
 
 const TABS: { id: Tab; label: MsgKey }[] = [
   { id: "profile", label: "mateSettings.tabProfile" },
+  { id: "style", label: "mateSettings.tabStyle" },
   { id: "avatar", label: "mateSettings.tabAvatar" },
   { id: "model", label: "mateSettings.modelTitle" },
   { id: "voice", label: "mateSettings.voiceVoice" },
@@ -87,6 +89,7 @@ export default function MateSettings({ mate, conv, onClose }: { mate: Mate; conv
         <div className="mx-auto max-w-xl space-y-4 pb-6">
           {/* key: a different mate starts from its own values */}
           {tab === "profile" && <ProfileTab key={mate.id} mate={mate} />}
+          {tab === "style" && <StyleTab key={mate.id} mate={mate} conv={conv} />}
           {tab === "avatar" && <AvatarTab key={mate.id} mate={mate} conv={conv} />}
           {tab === "model" && <ModelTab key={mate.id} mate={mate} />}
           {tab === "voice" && <VoiceTab key={mate.id} mate={mate} conv={conv} />}

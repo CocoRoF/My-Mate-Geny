@@ -201,6 +201,91 @@ def normalize_voice(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
     return out
 
 
+# Conversation settings (docs/mate-memory-affinity.md §3): each one changes a
+# prompt line (prompt.py) and/or what the client does (emotion level).
+FORMALITIES = ("auto", "haeyo", "hapsyo", "banmal")
+LENGTHS = ("short", "normal", "long")
+TONE_KEYS = ("warmth", "humor", "initiative")
+TONE_LEVELS = ("auto", "low", "high")
+RECALL_LEVELS = ("off", "light", "normal", "rich")
+MAX_AVOID = 500
+
+
+def default_prefs() -> dict[str, Any]:
+    return {"user_name": "", "self_ref": "", "formality": "auto", "length": "normal", "emotion": 2,
+            "tone": {k: "auto" for k in TONE_KEYS}, "avoid": "",
+            "memory": {"recall": "normal", "self_save": True}}
+
+
+def _enum(v: Any, allowed: tuple[str, ...], what: str) -> str:
+    v = _s(v, 32).strip() or allowed[0]
+    if v not in allowed:
+        raise MateError(f"unknown {what}: {v} (one of {', '.join(allowed)})")
+    return v
+
+
+def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str, Any]:
+    """``mate.prefs``: merged field by field (``tone`` / ``memory`` too); unknown keys dropped."""
+    out = default_prefs()
+    b = base if isinstance(base, dict) else {}
+    for k in ("user_name", "self_ref", "formality", "length", "emotion", "avoid"):
+        if k in b:
+            out[k] = b[k]
+    if isinstance(b.get("tone"), dict):
+        out["tone"].update({k: v for k, v in b["tone"].items() if k in TONE_KEYS and v in TONE_LEVELS})
+    if isinstance(b.get("memory"), dict):
+        out["memory"].update({k: v for k, v in b["memory"].items() if k in ("recall", "self_save")})
+    if patch is not None:
+        if not isinstance(patch, dict):
+            raise MateError("prefs must be an object")
+        if "user_name" in patch:
+            out["user_name"] = " ".join(_s(patch["user_name"], 80).split())
+        if "self_ref" in patch:
+            out["self_ref"] = " ".join(_s(patch["self_ref"], 40).split())
+        if "formality" in patch:
+            out["formality"] = _enum(patch["formality"], FORMALITIES, "speech level")
+        if "length" in patch:
+            out["length"] = _enum(patch["length"], LENGTHS, "reply length")
+        if "emotion" in patch:
+            if isinstance(patch["emotion"], bool):
+                raise MateError("prefs.emotion must be 0 – 3")
+            try:
+                out["emotion"] = int(patch["emotion"])
+            except (TypeError, ValueError) as exc:
+                raise MateError("prefs.emotion must be 0 – 3") from exc
+        if "avoid" in patch:
+            out["avoid"] = _s(patch["avoid"], MAX_AVOID).strip()
+        tone = patch.get("tone")
+        if tone is not None:
+            if not isinstance(tone, dict):
+                raise MateError("prefs.tone must be an object")
+            for k in TONE_KEYS:
+                if k in tone:
+                    out["tone"][k] = _enum(tone[k], TONE_LEVELS, f"tone.{k}")
+        mem = patch.get("memory")
+        if mem is not None:
+            if not isinstance(mem, dict):
+                raise MateError("prefs.memory must be an object")
+            if "recall" in mem:
+                out["memory"]["recall"] = _enum(mem["recall"], RECALL_LEVELS, "recall level")
+            if "self_save" in mem:
+                out["memory"]["self_save"] = bool(mem["self_save"])
+    # (a stored document from an older/newer version: keep it well-typed)
+    try:
+        out["emotion"] = max(0, min(3, int(out["emotion"])))
+    except (TypeError, ValueError):
+        out["emotion"] = 2
+    for k, allowed in (("formality", FORMALITIES), ("length", LENGTHS)):
+        if out[k] not in allowed:
+            out[k] = allowed[0] if k == "formality" else "normal"
+    if out["memory"].get("recall") not in RECALL_LEVELS:
+        out["memory"]["recall"] = "normal"
+    out["memory"]["self_save"] = bool(out["memory"].get("self_save", True))
+    for k in ("user_name", "self_ref", "avoid"):
+        out[k] = str(out[k] or "")
+    return out
+
+
 def _name(v: Any, what: str, limit: int = 64) -> str:
     if not isinstance(v, str) or not v.strip():
         raise MateError(f"{what} must be a non-empty string")
@@ -354,6 +439,7 @@ class MateStore:
             "avatar": _loads(row["avatar"], {}) or {"kind": "none"},
             "llm": normalize_llm(None, _loads(row["llm"], {})),
             "voice": normalize_voice(None, _loads(row["voice"], {})),
+            "prefs": normalize_prefs(None, _loads(row["prefs"], {}) if "prefs" in row.keys() else {}),
             "session_id": row["session_id"],
             "memory_rev": row["memory_rev"],
             "builtin": row["builtin"] if "builtin" in row.keys() else None,
@@ -378,12 +464,14 @@ class MateStore:
         avatar: Any = None,
         llm: Any = None,
         voice: Any = None,
+        prefs: Any = None,
         is_default: bool = False,
     ) -> dict[str, Any]:
         name = _s(name, 80).strip()
         if not name:
             raise MateError("a mate needs a name")
-        doc = (normalize_persona(persona), normalize_avatar(avatar), normalize_llm(llm), normalize_voice(voice))
+        doc = (normalize_persona(persona), normalize_avatar(avatar), normalize_llm(llm), normalize_voice(voice),
+               normalize_prefs(prefs))
         mid = new_id("mate_")
         now = now_iso()
         with self._lock:
@@ -391,8 +479,8 @@ class MateStore:
             if is_default or first:
                 self._db.execute("UPDATE mates SET is_default = 0")
             self._db.execute(
-                "INSERT INTO mates (id, name, is_default, persona, avatar, llm, voice, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO mates (id, name, is_default, persona, avatar, llm, voice, prefs, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (mid, name, 1 if (is_default or first) else 0, *(json.dumps(d, ensure_ascii=False) for d in doc),
                  now, now),
             )
@@ -415,7 +503,7 @@ class MateStore:
             return True
 
     def update(self, mate_id: str, patch: dict[str, Any]) -> tuple[dict[str, Any], set[str]]:
-        """Partial update: persona/llm/voice are merged field by field, the
+        """Partial update: persona/llm/voice/prefs are merged field by field, the
         avatar is replaced. Returns (mate, names of the parts that changed)."""
         cur = self.get(mate_id)
         sets: list[str] = []
@@ -429,7 +517,8 @@ class MateStore:
                 sets.append("name = ?")
                 params.append(name)
                 changed.add("name")
-        for key, fn in (("persona", normalize_persona), ("llm", normalize_llm), ("voice", normalize_voice)):
+        for key, fn in (("persona", normalize_persona), ("llm", normalize_llm), ("voice", normalize_voice),
+                        ("prefs", normalize_prefs)):
             if key in patch and patch[key] is not None:
                 new = fn(patch[key], cur[key])
                 if new != cur[key]:

@@ -157,7 +157,7 @@ class MateService:
     def create(self, body: dict[str, Any]) -> dict[str, Any]:
         return self.store.create(name=body.get("name") or "", persona=body.get("persona"),
                                  avatar=body.get("avatar"), llm=body.get("llm"), voice=body.get("voice"),
-                                 is_default=bool(body.get("is_default")))
+                                 prefs=body.get("prefs"), is_default=bool(body.get("is_default")))
 
     def update(self, mate_id: str, patch: dict[str, Any]) -> dict[str, Any]:
         before = self.store.get(mate_id)
@@ -279,11 +279,12 @@ class MateService:
                     "llm": {"provider": engine, "model": session.get("model") or "",
                             "effort": session.get("effort") or "low"}}
         memories = self.store.memories(mate_id) if mate_id else []
-        prompt = system_prompt(mate["name"], mate["persona"], memories)
+        prefs = mate.get("prefs") or {}
+        prompt = system_prompt(mate["name"], mate["persona"], memories, prefs)
         note = self._settings_note(mate_id, mate)
         if note:  # persona edited since the conversation last ran: say so in this message
             req.preamble = f"{note}\n\n{req.preamble}" if req.preamble else note
-        req.prompt_key = prompt_key(mate["name"], mate["persona"], int(mate.get("memory_rev") or 0))
+        req.prompt_key = prompt_key(mate["name"], mate["persona"], int(mate.get("memory_rev") or 0), prefs)
         if engine == "codex" and mate_id:
             prompt = self._codex_prompt(mate_id, prompt, req.prompt_key, resuming=bool(req.cli_session_id))
             req.engine_home = str(files.mate_dir(mate_id) / "codex")
@@ -344,7 +345,7 @@ class MateService:
         if not mate_id:
             return ""
         path = files.home_dir(mate_id) / ".applied-persona.json"
-        now = {"name": mate.get("name") or "", "persona": mate.get("persona") or {}}
+        now = {"name": mate.get("name") or "", "persona": mate.get("persona") or {}, "prefs": mate.get("prefs") or {}}
         try:
             before = json.loads(path.read_text("utf-8"))
         except (OSError, ValueError):
@@ -357,7 +358,9 @@ class MateService:
         if not isinstance(before, dict):
             return ""  # first turn ever: the system prompt says it all
         return settings_change_note(str(before.get("name") or ""), before.get("persona") or {},
-                                    now["name"], now["persona"])
+                                    now["name"], now["persona"],
+                                    before.get("prefs") if isinstance(before.get("prefs"), dict) else None,
+                                    now["prefs"])
 
     # ---- tools (called by the bridge through the internal API) ----
 

@@ -47,6 +47,36 @@ export interface MateLlm {
   effort: string; // default|low|medium|high|xhigh|max
 }
 
+export type Formality = "auto" | "haeyo" | "hapsyo" | "banmal";
+export type ReplyLength = "short" | "normal" | "long";
+export type ToneLevel = "auto" | "low" | "high";
+export type RecallLevel = "off" | "light" | "normal" | "rich";
+/** 0 off · 1 subtle · 2 normal · 3 expressive */
+export type EmotionLevel = 0 | 1 | 2 | 3;
+
+/** Conversation settings (docs/mate-memory-affinity.md §3) */
+export interface MatePrefs {
+  user_name: string;
+  self_ref: string;
+  formality: Formality;
+  length: ReplyLength;
+  emotion: EmotionLevel;
+  tone: { warmth: ToneLevel; humor: ToneLevel; initiative: ToneLevel };
+  avoid: string;
+  memory: { recall: RecallLevel; self_save: boolean };
+}
+
+export const DEFAULT_PREFS: MatePrefs = {
+  user_name: "",
+  self_ref: "",
+  formality: "auto",
+  length: "normal",
+  emotion: 2,
+  tone: { warmth: "auto", humor: "auto", initiative: "auto" },
+  avoid: "",
+  memory: { recall: "normal", self_save: true },
+};
+
 export interface Mate {
   id: string;
   name: string;
@@ -57,6 +87,8 @@ export interface Mate {
   avatar: Avatar;
   llm: MateLlm;
   voice: MateVoice;
+  /** missing on documents from an older server: DEFAULT_PREFS */
+  prefs?: MatePrefs;
   session_id: string | null;
   /** a mate shipped with the app (estelle | chaerin | seoa), else null */
   builtin?: string | null;
@@ -71,7 +103,16 @@ export interface MatePatch {
   avatar?: Avatar;
   llm?: Partial<MateLlm>;
   voice?: { auto_read?: boolean; volume?: number; tts?: Partial<MateVoice["tts"]>; stt?: Partial<MateVoice["stt"]> };
+  prefs?: Partial<Omit<MatePrefs, "tone" | "memory">> & { tone?: Partial<MatePrefs["tone"]>; memory?: Partial<MatePrefs["memory"]> };
 }
+
+/** the mate's conversation settings, complete (an older server sends none) */
+export const prefsOf = (m: Pick<Mate, "prefs"> | null | undefined): MatePrefs => ({
+  ...DEFAULT_PREFS,
+  ...(m?.prefs ?? {}),
+  tone: { ...DEFAULT_PREFS.tone, ...(m?.prefs?.tone ?? {}) },
+  memory: { ...DEFAULT_PREFS.memory, ...(m?.prefs?.memory ?? {}) },
+});
 
 export interface Conversation {
   mate: Mate;

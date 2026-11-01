@@ -15,7 +15,8 @@ const KO = ko as unknown as Cat;
 
 const forms = (m: Msg): string[] => (typeof m === "string" ? [m] : [m.one, m.other]);
 const tokens = (m: Msg, re: RegExp) => new Set(forms(m).flatMap((s) => [...s.matchAll(re)].map((x) => x[1])));
-const PLACE = /\{(\w+)\}/g;
+// {name} or {name:이} (a Korean particle after the value, src/lib/josa.ts)
+const PLACE = /\{(\w+)(?::[^{}\s]+)?\}/g;
 const TAG = /<(\w+)>/g;
 
 test("ko has the same namespaces and keys as en", () => {

@@ -18,6 +18,7 @@
 import { cloneElement, isValidElement, type ReactNode } from "react";
 import { create } from "zustand";
 import type { Catalog } from "./en";
+import { fillPlaceholders, particle } from "../lib/josa";
 
 export type Lang = "en" | "ko";
 export const LANGS: { id: Lang; label: string; english: string }[] = [
@@ -174,10 +175,14 @@ function pick(lang: Lang, key: string, vars?: Vars): string {
   return pluralOf(lang, n) === "one" ? m.one : m.other;
 }
 
+/** `{name}` or `{name:이}` — the value followed by the Korean particle that fits it (이/가, 은/는, 을/를, 과/와, 아/야,
+ * (으)로 …: src/lib/josa.ts); English messages never carry a particle, and in English it is ignored anyway. */
+const withParticle = (lang: Lang, value: string, p: string | undefined) => (p && lang === "ko" ? value + particle(value, p) : value);
+
 export function translate(lang: Lang, key: MsgKey, vars?: Vars): string {
   const s = pick(lang, key, vars);
   if (!vars) return s;
-  return s.replace(/\{(\w+)\}/g, (all, name: string) => (name in vars ? fmtVar(lang, vars[name]) : all));
+  return fillPlaceholders(s, (name) => (name in vars ? fmtVar(lang, vars[name]) : undefined), lang === "ko");
 }
 
 export type RichVars = Record<string, ReactNode | ((inner: string) => ReactNode)>;
@@ -186,7 +191,7 @@ export type RichVars = Record<string, ReactNode | ((inner: string) => ReactNode)
 export function translateRich(lang: Lang, key: MsgKey, vars: RichVars): ReactNode[] {
   const s = pick(lang, key, Object.fromEntries(Object.entries(vars).filter(([, v]) => typeof v === "number")) as Vars);
   const out: ReactNode[] = [];
-  const re = /<(\w+)>([\s\S]*?)<\/\1>|\{(\w+)\}/g;
+  const re = /<(\w+)>([\s\S]*?)<\/\1>|\{(\w+)(?::([^{}\s]+))?\}/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let i = 0;
@@ -196,7 +201,9 @@ export function translateRich(lang: Lang, key: MsgKey, vars: RichVars): ReactNod
     const v = vars[name];
     let node: ReactNode;
     if (m[1] !== undefined) node = typeof v === "function" ? v(m[2]) : m[2];
-    else node = typeof v === "function" ? v("") : typeof v === "number" ? fmtVar(lang, v) : v === undefined ? m[0] : v;
+    else if (typeof v === "function") node = v("");
+    else if (typeof v === "number" || typeof v === "string") node = withParticle(lang, fmtVar(lang, v), m[4]);
+    else node = v === undefined ? m[0] : m[4] && lang === "ko" ? [v, particle("", m[4])] : v;
     // keyed so React doesn't warn about a list
     out.push(typeof node === "object" && node !== null ? withKey(node, i++) : node);
     last = re.lastIndex;

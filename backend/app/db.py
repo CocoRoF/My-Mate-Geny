@@ -199,6 +199,7 @@ CREATE TABLE IF NOT EXISTS mates (
     avatar      TEXT NOT NULL DEFAULT '{"kind": "none"}',
     llm         TEXT NOT NULL DEFAULT '{}',
     voice       TEXT NOT NULL DEFAULT '{}',
+    prefs       TEXT NOT NULL DEFAULT '{}',   -- conversation settings (docs/mate-memory-affinity.md §3)
     session_id  TEXT,
     memory_rev  INTEGER NOT NULL DEFAULT 0,   -- bumped by user edits of the memory (the engine reloads it)
     builtin     TEXT,                         -- bundled character key (estelle, …) for built-in mates
@@ -297,7 +298,7 @@ class Database:
                     self._conn.execute(f"ALTER TABLE provider_pool ADD COLUMN {col} {ddl}")
             matecols = {r["name"] for r in self._conn.execute("PRAGMA table_info(mates)")}
             for col, ddl in (("builtin", "TEXT"), ("builtin_hash", "TEXT"), ("builtin_snapshot", "TEXT"),
-                             ("customized", "INTEGER NOT NULL DEFAULT 0")):
+                             ("customized", "INTEGER NOT NULL DEFAULT 0"), ("prefs", "TEXT NOT NULL DEFAULT '{}'")):
                 if matecols and col not in matecols:
                     self._conn.execute(f"ALTER TABLE mates ADD COLUMN {col} {ddl}")
             self._conn.execute(

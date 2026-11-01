@@ -10,14 +10,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toLogin, wsUrl } from "../api/client";
 import { getHistoryPage } from "../api/sessions";
-import { openConversation, resetConversation, speech, SpeechFallbackError, type Mate } from "../api/mates";
+import { openConversation, prefsOf, resetConversation, speech, SpeechFallbackError, type Mate } from "../api/mates";
 import { onResync } from "../lib/sync";
 import { createChatStore, FIRST_TURNS, type Turn } from "../stores/chatStore";
 import { useMateStore } from "../stores/mateStore";
 import type { Attachment, ProviderEvent } from "../types";
 import { getMateAudioQueue, useMateAudio } from "./audioQueue";
-import { usePreviewVolume } from "./livePreview";
-import { EmotionTracker } from "./emotion";
+import { usePreviewFlags, usePreviewVolume } from "./livePreview";
+import { EmotionTracker, reactsAt, voiceEmotionAt } from "./emotion";
 import { SentenceStream } from "./sentences";
 import { withoutCode } from "./markdown";
 import type { BodyMood, MateReact } from "./types";
@@ -77,6 +77,8 @@ interface Follow {
   vid: string;
   stream: SentenceStream;
   emo: EmotionTracker;
+  /** avatar reactions this reply had (the "subtle" emotion level reacts once) */
+  reacted: number;
   quiet: boolean;
   /** the device the turn answers (null: unknown — read here) */
   origin: string | null;
@@ -202,6 +204,12 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
   // the mate's volume (0–300 %): clips through a GainNode + limiter, the browser voice up to 100 %. The settings'
   // unsaved slider (this window or another one of this browser: mate/livePreview) wins while it moves; the saved
   // value comes from the store, which follows the server's pushes (no stale copy in an overlay opened hours ago)
+  // the emotion level (prefs.emotion): how readily tags in her replies move the avatar and colour the voice. The
+  // Conversation style tab's unsaved level previews in every window; the saved one follows the server's pushes.
+  const flags = usePreviewFlags(mateId);
+  const emotionLevel = useRef(2);
+  emotionLevel.current = flags?.emotion ?? prefsOf(mate).emotion;
+
   const preview = usePreviewVolume(mateId);
   const volume = preview ?? mate?.voice.volume ?? 1;
   useEffect(() => {
@@ -230,7 +238,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
   const readHere = useCallback(
     (f: Follow, s: Follow["sentences"][number]) => {
       if (s.idx <= startedUpTo(f.vid)) return false;
-      queue.enqueue({ text: s.speech, emotion: s.emotion ?? undefined, meta: { display: s.text, turn: f.vid, idx: s.idx } });
+      queue.enqueue({ text: s.speech, emotion: voiceEmotionAt(emotionLevel.current, s.emotion), meta: { display: s.text, turn: f.vid, idx: s.idx } });
       setSpeakingTurn(f.key);
       return true;
     },
@@ -283,6 +291,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
           vid: t.startedAt ? `t${t.startedAt}` : t.key,
           stream: new SentenceStream({ minChars: 8 }),
           emo: new EmotionTracker(),
+          reacted: 0,
           quiet: !fresh,
           origin: lastSender.current,
           sentences: [],
@@ -291,8 +300,11 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
         followRef.current = follow;
       }
       const f = follow;
-      const e = f.emo.push(withoutCode(t.text)); // ([ok] in a code block is no feeling)
-      if (e && !f.quiet) setReact({ name: e, at: Date.now() });
+      const e = f.emo.pushTag(withoutCode(t.text)); // ([ok] in a code block is no feeling)
+      if (e && !f.quiet && reactsAt(emotionLevel.current, e.intensity, f.reacted)) {
+        f.reacted++;
+        setReact({ name: e.emotion, at: Date.now() });
+      }
       const done = t.complete;
       const sentences = done ? f.stream.flush(t.text) : f.stream.push(t.text);
       // a sentence's index is its place in the whole reply (the same in every window, also one that joined late)
