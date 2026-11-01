@@ -259,7 +259,134 @@ async function main() {
   }
 }
 
-async function status() {}
+/** a chat's row in the sidebar: its result badge ("ok" | "error" | "stopped" | null) and text */
+const rowBadge = (page, title) =>
+  page.evaluate((t) => {
+    const rows = [...document.querySelectorAll("aside .cursor-pointer")].filter((r) => r.offsetParent);
+    const row = rows.find((r) => r.querySelector(".truncate")?.textContent.trim() === t);
+    if (!row) return { found: false };
+    const b = row.querySelector('[data-testid="session-result"]');
+    return { found: true, result: b ? b.getAttribute("data-result") : null, text: b ? b.textContent.trim() : "" };
+  }, title);
+
+async function waitBadge(page, title, want, ms = 20000) {
+  const t0 = Date.now();
+  let last;
+  while (Date.now() - t0 < ms) {
+    last = await rowBadge(page, title);
+    if (last.found && last.result === want) return last;
+    await sleep(150);
+  }
+  throw new Error(`${title}: badge ${JSON.stringify(last)}, wanted ${want}`);
+}
+
+async function openChat(ctx, sid) {
+  await ctx.addInitScript((id) => {
+    if (!sessionStorage.getItem("hrh_e2e_once")) {
+      sessionStorage.setItem("hrh_e2e_once", "1");
+      localStorage.setItem("hrh_last_session", id);
+    }
+  }, sid);
+  const page = await ctx.newPage();
+  page.on("pageerror", (e) => console.log("  [pageerror]", e.message));
+  await page.goto(SERVER + "/");
+  await page.waitForSelector("textarea", { timeout: 20000 });
+  await sleep(2700); // (past the start)
+  return page;
+}
+
+async function send(page, text) {
+  await page.fill("textarea", text);
+  await page.click('button[title="Send"], button[title="Send (Enter)"], button[title="보내기"], button[title="보내기 (Enter)"]');
+}
+
+async function status(browser) {
+  const ws = path.join(process.env.HOME || "/tmp", ".cache", "hrh-st-run", "ws");
+  require("fs").mkdirSync(ws, { recursive: true });
+  const one = await newContext(browser); // device 1 (desktop, English)
+  const two = await newContext(browser, { lang: "ko" }); // device 2 (desktop, Korean)
+  const stamp = Date.now().toString(36);
+  const A = await api(one, "POST", "/api/sessions", { provider: "claude", model: "", connection_id: null, workspace_path: ws, title: `Alpha ${stamp}` });
+  const B = await api(one, "POST", "/api/sessions", { provider: "claude", model: "", connection_id: null, workspace_path: ws, title: `Beta ${stamp}` });
+  const ta = `Alpha ${stamp}`;
+  const tb = `Beta ${stamp}`;
+
+  step("status: a run in Alpha; the user moves to Beta before it ends → Alpha shows a green Complete");
+  const p1 = await openChat(one, A.id);
+  await send(p1, "first job");
+  await p1.waitForFunction(() => document.body.innerText.includes("Reply 1 sentence number 1"), null, { timeout: 30000 }).catch(() => {});
+  assert.equal((await rowBadge(p1, ta)).result, null, "no badge while working");
+  await p1.click(`aside .cursor-pointer:has-text("${tb}")`);
+  const done = await waitBadge(p1, ta, "ok", 30000);
+  assert.equal(done.text, "Complete");
+  const pill = await p1.textContent('[data-testid="sessions-unseen"]');
+  assert.match(pill, /1 complete/);
+  await shot(p1, "status-1-complete-device1.png");
+
+  step("status: the other device (Korean) shows it too — 완료");
+  const p2 = await openChat(two, B.id);
+  const k = await waitBadge(p2, ta, "ok");
+  assert.equal(k.text, "완료");
+  await shot(p2, "status-2-complete-device2-ko.png");
+
+  step("status: the filter shows only the finished chats");
+  await p1.click('[data-testid="sessions-unseen"]');
+  assert.equal((await rowBadge(p1, tb)).found, false, "Beta hidden by the filter");
+  assert.equal((await rowBadge(p1, ta)).result, "ok");
+  await shot(p1, "status-3-filter.png");
+  await p1.click('[data-testid="sessions-unseen"]');
+  assert.equal((await rowBadge(p1, tb)).found, true);
+
+  step("status: still there after a reload");
+  await p1.reload();
+  await p1.waitForSelector("textarea", { timeout: 20000 });
+  await waitBadge(p1, ta, "ok");
+
+  step("status: opening Alpha clears it — here and on the other device");
+  await p1.click(`aside .cursor-pointer:has-text("${ta}")`);
+  await waitBadge(p1, ta, null, 3000);
+  await waitBadge(p2, ta, null, 10000);
+  assert.equal(await p1.locator('[data-testid="sessions-unseen"]').count(), 0);
+  await sleep(300);
+  await shot(p2, "status-4-cleared-device2-ko.png");
+  const row = (await api(one, "GET", "/api/sessions")).find((x) => x.id === A.id);
+  assert.equal(row.result_unseen, false);
+  assert.equal(row.last_result, "ok");
+
+  step("status: a run that ends in the chat on screen leaves no badge (on either device)");
+  await send(p1, "second job");
+  let row2;
+  for (let i = 0; i < 200; i++) {
+    row2 = (await api(one, "GET", "/api/sessions")).find((x) => x.id === A.id);
+    if (!row2.running && row2.last_result_at !== row.last_result_at) break;
+    await sleep(150);
+  }
+  assert.notEqual(row2.last_result_at, row.last_result_at, "the second run ended");
+  assert.equal(row2.result_unseen, false, "seen as it ended");
+  await sleep(800);
+  assert.equal((await rowBadge(p1, ta)).result, null);
+  assert.equal((await rowBadge(p2, ta)).result, null);
+
+  step("status: phone (Korean): the drawer shows 완료 for a chat that finished elsewhere");
+  const phone = await newContext(browser, { phone: true, lang: "ko" });
+  const p3 = await openChat(phone, B.id);
+  await send(p1, "third job"); // device 1 runs Alpha…
+  await p1.waitForFunction(() => document.body.innerText.includes("sentence number 1"), null, { timeout: 30000 }).catch(() => {});
+  await p1.click(`aside .cursor-pointer:has-text("${tb}")`); // …and looks away
+  await waitBadge(p1, ta, "ok", 30000);
+  await p3.click('button[aria-label="메뉴 열기"]');
+  await p3.waitForSelector('.fixed [data-testid="nav-settings"]');
+  const onPhone = await waitBadge(p3, ta, "ok", 10000);
+  assert.equal(onPhone.text, "완료");
+  await sleep(400);
+  await shot(p3, "status-5-phone-drawer-ko.png");
+  step("status: opening it from the phone's drawer clears it on device 1 too");
+  await p3.click(`.fixed aside .cursor-pointer:has-text("${ta}")`);
+  await waitBadge(p1, ta, null, 10000);
+  await phone.close();
+  await one.close();
+  await two.close();
+}
 
 main().catch((e) => {
   console.error(e);

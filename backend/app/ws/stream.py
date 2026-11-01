@@ -5,7 +5,10 @@ viewer + remote control, so closing the tab never kills the agent.
 
 Protocol::
 
-    client -> {"type": "attach", "after": <last eid seen>}   # on every (re)connect
+    client -> {"type": "attach", "after": <last eid seen>, "visible": bool}   # on every (re)connect
+    client -> {"type": "view", "visible": bool}                # the chat went off / on screen (tab hidden…)
+              # visible: the chat is on screen — its last run's result is seen now, and a run ending while it
+              # stays on screen is seen as it ends (no "Complete" badge in the sidebar for the chat in view)
     client -> {"type": "chat", "input": "<text>", "attachments": ["att_…"], "client_msg_id": "…"}
     client -> {"type": "steer", "input": "<text>", "attachments": [...], "client_msg_id": "…"}
               # extra instructions for the RUNNING turn (Claude: injected at its next
@@ -101,6 +104,9 @@ async def chat_stream(websocket: WebSocket, sid: str) -> None:
                 continue
             kind = msg.get("type")
 
+            if kind == "view" or (kind == "attach" and isinstance(msg.get("visible"), bool)):
+                svc.set_viewing(sid, websocket, bool(msg.get("visible")))
+
             if kind == "attach":
                 after = int(msg.get("after") or 0)
                 # Subscribed before reading the backlog, so nothing falls in the
@@ -150,6 +156,7 @@ async def chat_stream(websocket: WebSocket, sid: str) -> None:
     except WebSocketDisconnect:
         pass
     finally:
+        svc.set_viewing(sid, websocket, False)
         svc.unsubscribe(sid, queue)
         for t in steer_tasks:
             t.cancel()

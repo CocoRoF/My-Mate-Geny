@@ -33,6 +33,11 @@ export interface Session {
   cli_info?: CliInfo;
   running?: boolean;
   background?: number; // background tasks still running (subagents, background shells)
+  /** how the last run ended (null: none yet) — the sidebar's Complete / Failed / Stopped while unseen */
+  last_result?: "ok" | "error" | "stopped" | null;
+  last_result_at?: string | null;
+  /** that result came after anyone last had this chat open (cleared by opening it, on every device) */
+  result_unseen?: boolean;
   auto_compact_window?: number | null; // Claude: this chat's auto-compact window (null = global default, 0 = CLI default)
   accounts?: Record<string, { id?: string; label?: string; manual?: boolean; at?: string }>; // account it ran on last
   created_at: string;

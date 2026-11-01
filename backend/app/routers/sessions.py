@@ -105,6 +105,18 @@ async def stop_turn(sid: str, svc: SessionService = Depends(session_service)) ->
     return {"id": sid, "stopped": svc.stop(sid)}
 
 
+@router.post("/{sid}/seen")
+async def mark_seen(sid: str, svc: SessionService = Depends(session_service)) -> dict:
+    """The chat was opened: its last run's result ("Complete" / "Failed" / "Stopped" in the sidebar) is seen —
+    on every device (announced on /ws/sessions when it changed). A chat socket that says it is on screen
+    (``attach`` with ``visible: true``) does the same."""
+    try:
+        changed = svc.mark_seen(sid)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"id": sid, "result_unseen": False, "changed": changed}
+
+
 @router.post("/{sid}/reset-context")
 async def reset_context(sid: str, svc: SessionService = Depends(session_service)) -> dict:
     """``/clear`` — the next turn starts a fresh provider conversation."""

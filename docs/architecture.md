@@ -48,6 +48,17 @@ A **session** = `provider × workspace × conversation`.
 Events are persisted, so reloading a session replays its history
 (`/api/history/{sid}`).
 
+When a run ends (a turn, or one Claude starts by itself after background work),
+the session keeps how (`last_result`: ok | error | stopped) and when
+(`last_result_at`); `last_seen_at` is when someone last had the chat open, and
+the list reports `result_unseen` while the result is newer. The sidebar shows
+Complete / Failed / Stopped for those (working — a turn or background tasks —
+wins). Seen = a chat socket says the chat is on screen (`attach` with
+`visible: true`; `{"type": "view", "visible": false}` when the page is hidden),
+or `POST /api/sessions/{sid}/seen`; a run that ends while its chat is on screen
+is seen as it ends. Every change moves the list version on `/ws/sessions`, so
+every device follows without polling. Mate conversations keep none.
+
 ## Event schema
 
 ```json

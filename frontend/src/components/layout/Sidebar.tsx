@@ -9,8 +9,16 @@ import { APP_VERSION } from "../../version";
 import Icon, { type IconName } from "../ui/Icon";
 import { useAuthStatus } from "../admin/useAuthStatus";
 import { useT, type MsgKey } from "../../i18n";
+import { sessionBadge, unseenCount } from "../../lib/sessionStatus";
 
 // Mate and Chat; everything else (Providers, Connections, Usage, Admin, Download…) is a Settings tab, below
+// a finished run's badge, until the chat is opened (lib/sessionStatus.ts)
+const RESULT: Record<"ok" | "error" | "stopped", { label: MsgKey; title: MsgKey; icon: IconName; cls: string }> = {
+  ok: { label: "nav.resultOk", title: "nav.resultOkTitle", icon: "check", cls: "bg-success/15 text-success" },
+  error: { label: "nav.resultError", title: "nav.resultErrorTitle", icon: "warning", cls: "bg-danger/15 text-danger" },
+  stopped: { label: "nav.resultStopped", title: "nav.resultStoppedTitle", icon: "stop", cls: "bg-surface-3 text-content-dim" },
+};
+
 const NAV: { id: View; label: MsgKey; icon: IconName }[] = [
   { id: "mate", label: "nav.mate", icon: "sparkles" },
   { id: "chat", label: "nav.chat", icon: "chat" },
@@ -26,6 +34,7 @@ export default function Sidebar() {
   const setActive = useSessionStore((s) => s.setActive);
   const remove = useSessionStore((s) => s.remove);
   const updateSession = useSessionStore((s) => s.update);
+  const patchLocal = useSessionStore((s) => s.patchLocal);
   const providers = useProviderStore((s) => s.providers);
   const reset = useChatStore((s) => s.reset);
 
@@ -51,9 +60,23 @@ export default function Sidebar() {
     () => sessions.filter((s) => s.title.toLowerCase().includes(query.toLowerCase())),
     [sessions, query],
   );
+  // The chat on screen shows no result (opening it is seeing it); the rest: Complete / Failed / Stopped until opened
+  const onScreen = view === "chat";
+  const onScreenId = onScreen ? activeId : null;
+  const unseen = unseenCount(filtered, onScreenId);
+  const [onlyUnseen, setOnlyUnseen] = useState(false);
+  const filterUnseen = onlyUnseen && unseen > 0;
+  const shown = filterUnseen
+    ? filtered.filter((s) => {
+        const b = sessionBadge(s, s.id === onScreenId);
+        return b !== null && b !== "working";
+      })
+    : filtered;
 
-  // History loading + live attach is owned by useChatSocket (ChatView).
+  // History loading + live attach is owned by useChatSocket (ChatView); its socket tells the server the chat is on
+  // screen, which marks its result seen on every device. Here: at once, so the badge doesn't wait for that.
   const openSession = (id: string) => {
+    if (sessions.find((x) => x.id === id)?.result_unseen) patchLocal(id, { result_unseen: false });
     setActive(id);
     setView("chat"); // also closes the mobile drawer
   };
@@ -152,15 +175,34 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Sessions section */}
-      <button
-        onClick={() => setShowSessions((v) => !v)}
-        className="flex items-center gap-1.5 px-3 pb-1 touch:py-2 text-[10px] font-semibold uppercase tracking-wider text-content-faint hover:text-content-dim"
-      >
-        <Icon name={showSessions ? "chevron-down" : "chevron"} size={12} />
-        {t("nav.sessions")}
-        <span className="ml-1 text-content-faint/70">{filtered.length}</span>
-      </button>
+      {/* Sessions section (+ how many finished unseen: a filter for them) */}
+      <div className="flex items-center gap-2 px-3 pb-1 touch:py-1">
+        <button
+          onClick={() => setShowSessions((v) => !v)}
+          aria-expanded={showSessions}
+          className="flex items-center gap-1.5 touch:py-1 text-[10px] font-semibold uppercase tracking-wider text-content-faint hover:text-content-dim"
+        >
+          <Icon name={showSessions ? "chevron-down" : "chevron"} size={12} />
+          {t("nav.sessions")}
+          <span className="ml-1 text-content-faint/70">{filtered.length}</span>
+        </button>
+        {unseen > 0 && (
+          <button
+            onClick={() => {
+              setOnlyUnseen((v) => !v);
+              setShowSessions(true);
+            }}
+            aria-pressed={filterUnseen}
+            title={filterUnseen ? t("nav.unseenShowAll") : t("nav.unseenOnly")}
+            data-testid="sessions-unseen"
+            className={`ml-auto pill !py-0.5 text-[10.5px] font-medium transition ${
+              filterUnseen ? "bg-success text-white" : "bg-success/15 text-success hover:bg-success/25"
+            }`}
+          >
+            <Icon name="check" size={10} /> {t("nav.unseenCount", { count: unseen })}
+          </button>
+        )}
+      </div>
 
       {showSessions && (
         <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5" onMouseLeave={() => setMenuId(null)}>
@@ -169,8 +211,9 @@ export default function Sidebar() {
               {sessions.length === 0 ? t("nav.noSessions") : t("common.noMatches")}
             </p>
           )}
-          {filtered.map((s) => {
+          {shown.map((s) => {
             const active = activeId === s.id;
+            const badge = sessionBadge(s, active && onScreen);
             return (
               <div
                 key={s.id}
@@ -218,7 +261,17 @@ export default function Sidebar() {
                     </div>
                   )}
                   <div className="flex items-center gap-1.5 truncate text-[10.5px] text-content-faint">
-                    {(s.running || (s.background ?? 0) > 0) && (
+                    {badge && badge !== "working" && (
+                      <span
+                        className={`pill shrink-0 !px-1.5 !py-0 text-[10px] font-semibold ${RESULT[badge].cls}`}
+                        title={t(RESULT[badge].title)}
+                        data-testid="session-result"
+                        data-result={badge}
+                      >
+                        <Icon name={RESULT[badge].icon} size={10} /> {t(RESULT[badge].label)}
+                      </span>
+                    )}
+                    {badge === "working" && (
                       <span
                         className="inline-flex items-center gap-1 text-accent"
                         title={

@@ -123,6 +123,9 @@ class SessionService:
         # mates (persona / avatar / voice / memories) changed: same feed, own version
         self._mates_version = int(time.time() * 1000)
         self._inboxes: dict[str, TurnInbox] = {}  # running turns that accept steering
+        # Chat sockets showing their chat on screen right now (sid -> socket keys): a run ending there is seen at
+        # once — no "Complete" badge for the chat the user is looking at (docs/architecture.md).
+        self._viewers: dict[str, set[Any]] = {}
         # Mate conversations (sessions.kind = 'mate'): hidden from the chat
         # list and its change feed. The Mate layer configures their engine
         # (``mate_engine(session, req)``) and listens for turn ends.
@@ -305,6 +308,7 @@ class SessionService:
             except ValueError:
                 d[key] = empty
         d["running"] = d["id"] in self._tasks
+        d["result_unseen"] = _unseen(d.get("last_result"), d.get("last_result_at"), d.get("last_seen_at"))
         return d
 
     def get(self, sid: str) -> dict[str, Any]:
@@ -342,6 +346,7 @@ class SessionService:
             task.cancel()
         self._retire_engine(sid, "session deleted")
         self._live_usage_by_session.pop(sid, None)
+        self._viewers.pop(sid, None)
         self._db.execute("DELETE FROM sessions WHERE id = ?", (sid,))
         if self._attachments is not None:
             self._attachments.purge_session(sid)
@@ -623,6 +628,57 @@ class SessionService:
                 self._log("error", "system", f"turn-end listener failed: {exc}", code="turn.listener_failed",
                           detail={"traceback": traceback.format_exc()}, session_id=sid)
 
+    # ---- "Complete" until seen: how the last run ended, and whether anyone has looked since ----
+
+    def set_viewing(self, sid: str, key: Any, visible: bool) -> None:
+        """A chat socket says whether its chat is on screen (``key``: the socket). Shown → what ended there is
+        seen now; a run ending while it stays shown is seen as it ends."""
+        if visible:
+            self._viewers.setdefault(sid, set()).add(key)
+            with contextlib.suppress(KeyError):  # (deleted meanwhile)
+                self.mark_seen(sid)
+        else:
+            keys = self._viewers.get(sid)
+            if keys is not None:
+                keys.discard(key)
+                if not keys:
+                    self._viewers.pop(sid, None)
+
+    def is_viewed(self, sid: str) -> bool:
+        return bool(self._viewers.get(sid))
+
+    def mark_seen(self, sid: str) -> bool:
+        """The chat was opened: its last result is no longer new (announced on the list feed when it was)."""
+        row = self._db.query_one("SELECT last_result, last_result_at, last_seen_at FROM sessions WHERE id = ?", (sid,))
+        if row is None:
+            raise KeyError(f"session not found: {sid}")
+        if not _unseen(row["last_result"], row["last_result_at"], row["last_seen_at"]):
+            return False
+        self._db.execute("UPDATE sessions SET last_seen_at = ? WHERE id = ?", (now_iso(), sid))
+        self.list_changed("seen", sid)
+        return True
+
+    def _record_result(self, sid: str, outcome: dict[str, Any]) -> None:
+        """A run ended (a turn, or one Claude started on its own after background work): how, and when — the
+        sidebar shows it until the chat is opened (seen at once when it is on screen now). Before the run's
+        idle state is announced, so that list fetch already has it. Mate conversations aren't listed: skipped."""
+        if sid in self._mate_sids:
+            return
+        status = outcome.get("status")
+        if outcome.get("trigger") == "auto" and status == "error" and not outcome.get("error"):
+            return  # an auto turn with no ending of its own (a user turn took over): that turn's result counts
+        result = status if status in ("ok", "error", "stopped") else "error"
+        at = now_iso()
+        try:
+            if self.is_viewed(sid):
+                self._db.execute("UPDATE sessions SET last_result = ?, last_result_at = ?, last_seen_at = ? WHERE id = ?",
+                                 (result, at, at, sid))
+            else:
+                self._db.execute("UPDATE sessions SET last_result = ?, last_result_at = ? WHERE id = ?",
+                                 (result, at, sid))
+        except Exception:  # noqa: BLE001 - e.g. the session was just deleted; never breaks the turn loop
+            pass
+
     def add_notice(self, sid: str, code: str, message: str, level: str = "info", **extra: Any) -> dict[str, Any]:
         """Persist + publish an inline notice in a session."""
         ev = ProviderEvent(type="notice", data={"level": level, "code": code, "message": message, **extra})
@@ -774,6 +830,7 @@ class SessionService:
             self._publish(sid, ev.to_dict())
         finally:
             self._tasks.pop(sid, None)
+            self._record_result(sid, outcome)
             self._publish(sid, {"type": "run.state", "data": {"running": False}})
             self._turn_ended(sid, outcome)
 
@@ -1597,6 +1654,7 @@ class SessionService:
         except Exception as exc:  # noqa: BLE001
             self._log("error", "ws", f"auto turn crashed: {exc}", code="exec.autoturn.crashed",
                       detail={"traceback": traceback.format_exc()}, session_id=sid)
+            outcome.update(status="error", error=str(exc)[:1000])
         finally:
             if self._inboxes.get(sid) is inbox:
                 self._inboxes.pop(sid, None)
@@ -1605,6 +1663,7 @@ class SessionService:
             self._report_outcome("claude", slot.lease if slot else None, st, ctx, sid, release=False)
             if self._pool is not None and slot is not None:
                 self._pool.end_turn(slot.lease)
+            self._record_result(sid, outcome)
             self._publish(sid, {"type": "run.state", "data": {"running": False}})
             self._turn_ended(sid, outcome)
 
@@ -1773,6 +1832,11 @@ class SessionService:
 
     async def shutdown(self) -> None:
         await self._engines.shutdown_all()
+
+
+def _unseen(result: Any, result_at: Any, seen_at: Any) -> bool:
+    """A run ended after the chat was last open (ISO UTC times compare as strings)."""
+    return bool(result and result_at and (not seen_at or str(seen_at) < str(result_at)))
 
 
 def _note_outcome(outcome: dict[str, Any], ev: ProviderEvent) -> None:

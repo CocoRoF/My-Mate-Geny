@@ -31,6 +31,9 @@ declare global {
 }
 
 /** Tell the user a turn finished while they were looking elsewhere. */
+/** this chat is on screen (the page is shown): told to the server on attach, so what ends here counts as seen */
+const onScreen = () => document.visibilityState === "visible";
+
 function notifyDone(title: string, body: string) {
   if (!document.hidden) return;
   if (window.hrhNative?.notify) return window.hrhNative.notify(title, body);
@@ -96,7 +99,7 @@ export function useChatSocket(sessionId: string | null) {
       ws.onopen = () => {
         retry = 0;
         setConnection("open");
-        ws.send(JSON.stringify({ type: "attach", after: store.getState().lastEid }));
+        ws.send(JSON.stringify({ type: "attach", after: store.getState().lastEid, visible: onScreen() }));
       };
       ws.onmessage = (e) => {
         clearTimeout(probe);
@@ -174,12 +177,18 @@ export function useChatSocket(sessionId: string | null) {
     // Back from sleep / background: re-attach on the open socket — it replays
     // what was missed and answers at once; silence means the socket is dead.
     const onVisible = () => {
-      if (document.visibilityState !== "visible" || !alive) return;
+      if (!alive) return;
+      if (document.visibilityState !== "visible") {
+        // off screen: a run ending now isn't seen here (the sidebar shows "Complete" until the chat is opened)
+        const ws = wsRef.current;
+        if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "view", visible: false }));
+        return;
+      }
       const ws = wsRef.current;
       if (!ws) return reconnectNow();
       if (ws.readyState !== WebSocket.OPEN) return; // connecting
       try {
-        ws.send(JSON.stringify({ type: "attach", after: store.getState().lastEid }));
+        ws.send(JSON.stringify({ type: "attach", after: store.getState().lastEid, visible: true }));
       } catch {
         return reconnectNow();
       }
