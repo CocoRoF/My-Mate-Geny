@@ -33,6 +33,11 @@ My Mate Geny는 **Claude Code**와 **Codex** CLI를 내 컴퓨터나 서버에�
 프로젝트를 찾아 채팅에 일을 맡기고, 진행 상황을 챙기고, 결과를 알려줍니다.
 
 <p align="center">
+  <a href="https://github.com/CocoRoF/My-Mate-Geny/releases/download/demo-video/my-mate-geny-demo-ko.mp4"><img src="docs/images/demo-preview.webp" alt="데모 영상 미리보기: 메이트 한채린에게 말을 걸고, 오늘 한 일을 정리받고, 세션을 열어 새 작업공간을 맡깁니다" width="100%"></a><br>
+  <sub>▶ <a href="https://github.com/CocoRoF/My-Mate-Geny/releases/download/demo-video/my-mate-geny-demo-ko.mp4">소리 있는 전체 영상</a> (45초, mp4): 한채린과 대화하고, 오늘 한 일을 정리받고, 세션을 열어 새 작업공간을 맡깁니다</sub>
+</p>
+
+<p align="center">
   <img src="docs/images/console.webp" alt="채팅 콘솔: 도구 호출, 서브에이전트, 변경된 파일, 세션 패널이 보이는 Claude Code 채팅" width="100%">
 </p>
 
