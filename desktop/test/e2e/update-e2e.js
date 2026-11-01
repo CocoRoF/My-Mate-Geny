@@ -127,6 +127,28 @@ class App {
     this.mainCdp = null;
   }
   async stop() {
+    if (!this.proc) {
+      // an app the updater restarted (not our child): its main process by PID, asked to quit, then ended
+      const pid = this.pid || (await this.main("return process.pid").catch(() => 0));
+      this.detach();
+      if (!pid) return;
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {}
+      await until("the restarted app to quit", async () => {
+        try {
+          process.kill(pid, 0);
+          return false;
+        } catch {
+          return true;
+        }
+      }, 8000).catch(() => {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {}
+      });
+      return;
+    }
     this.detach();
     try {
       process.kill(this.proc.pid, "SIGTERM");
@@ -220,7 +242,8 @@ async function main() {
   const server = SERVER.replace(/\/+$/, "");
   fs.mkdirSync(SHOTS, { recursive: true });
   const home = fs.mkdtempSync(path.join(os.homedir(), ".cache", "hrh-update-e2e-"));
-  const installed = path.join(home, "Applications", "my-mate-geny.AppImage");
+  // (as a user keeps it: the downloaded file name, with its version)
+  const installed = path.join(home, "Applications", path.basename(APPIMAGE));
   fs.mkdirSync(path.dirname(installed), { recursive: true });
   fs.copyFileSync(APPIMAGE, installed);
   fs.chmodSync(installed, 0o755);
@@ -372,6 +395,18 @@ async function main() {
       for (const ev of ["before-quit", "will-quit", "quit", "window-all-closed"]) electron.app.on(ev, () => log("app " + ev));
       const q = electron.app.quit.bind(electron.app);
       electron.app.quit = () => { log("app.quit()"); return q(); };
+      // the restart (desktop/src/main.js restartAfter): what it starts, and its output into restart.log
+      const cp = req("child_process");
+      const spawn = cp.spawn;
+      cp.spawn = (cmd, args, opts = {}) => {
+        if (cmd === "/bin/sh" || /\.AppImage$/.test(cmd)) {
+          log("restart: " + (cmd === "/bin/sh" ? JSON.stringify(args.slice(2)) : cmd + " " + JSON.stringify(args)));
+          const fd = fs.openSync(${JSON.stringify(path.join(home, "restart.log"))}, "a");
+          opts = { ...opts, stdio: ["ignore", fd, fd] };
+        }
+        return spawn(cmd, args, opts);
+      };
+      log("env: " + ["DISPLAY", "APPIMAGE", "APPDIR", "APPIMAGE_EXTRACT_AND_RUN", "TMPDIR"].map((k) => k + "=" + process.env[k]).join(" "));
       return true;`);
     // (a Node inspector still attached keeps a quitting app waiting for it to disconnect)
     app.mainCdp.close();
@@ -393,40 +428,59 @@ async function main() {
       await app.stop();
     }
     app.detach();
-    await until("the AppImage to be replaced", async () => fs.existsSync(installed) && sha512(installed) !== before, 30000).catch(() => failures.push("the AppImage was not replaced"));
-    console.log(`  installed file: ${fs.statSync(installed).size} bytes (was ${fs.statSync(APPIMAGE).size}), sha512 changed: ${sha512(installed) !== before}`);
-    // the updater relaunches the new file itself (a detached process): find its pages on the same debug ports? No —
-    // the relaunch gets the old command line minus our flags, so start it the way a user would and check it.
-    await sleep(3000);
-    const relaunched = await killRelaunched(installed, oldPid, home);
-    if (!relaunched) failures.push("the updater did not start the new version");
-    app = new App(home, installed);
-    app.start();
-    await app.main(RECORD);
-    const after = await app.main(`return { version: electron.app.getVersion(), packaged: electron.app.isPackaged }`);
-    console.log(`  after the install: ${JSON.stringify(after)}`);
+    // electron-updater puts the new file in place (a versioned name is replaced by the new version's name)
+    const nowInstalled = () => fs.readdirSync(path.dirname(installed)).filter((f) => f.endsWith(".AppImage")).map((f) => path.join(path.dirname(installed), f));
+    const swapped = await until("the AppImage to be replaced", async () => {
+      const files = nowInstalled();
+      return files.length === 1 && sha512(files[0]) !== before ? files[0] : null;
+    }, 30000).catch(() => (failures.push(`the AppImage was not replaced: ${nowInstalled().join(", ")}`), null));
+    if (swapped) console.log(`  installed: ${path.basename(swapped)} (${fs.statSync(swapped).size} bytes), was ${path.basename(installed)}`);
+
+    step("the updater restarts the app by itself — the new version, with the app's arguments");
+    // (found through its main-process inspector: the same --inspect port; its DevTools port may still be held for a
+    // moment by the old app's leftovers, so the page is driven from the main process)
+    const restarted = new App(home, swapped || installed);
+    Object.assign(restarted, { port: app.port, iport: app.iport, proc: null });
+    const after = await until("the restarted app", async () => {
+      const r = await restarted.main(`return { version: electron.app.getVersion(), packaged: electron.app.isPackaged, pid: process.pid, argv: process.argv.slice(1), appimage: process.env.APPIMAGE }`);
+      return r && r.pid ? r : null;
+    }, 90000).catch(() => null);
+    const restartLog = () => {
+      const rl = path.join(home, "restart.log");
+      return fs.existsSync(rl) ? fs.readFileSync(rl, "utf8").split("\n").map((l) => l.replace(/^\/\S*appimage_extracted_\S*?(?=\[\d+:)/, "")).filter((l) => l && !/^\/\S*appimage_extracted_\S*$/.test(l)).slice(-12).map((l) => `    ${l}`).join("\n") : "    (none)";
+    };
+    if (!after) {
+      failures.push("the updater did not bring the app back (no restarted app within 90 s)");
+      console.log(`  processes now: ${procs(home).join(" | ") || "(none)"}\n  the restarted app's output:\n${restartLog()}`);
+      await killRelaunched(swapped || installed, 0, home);
+      return finish(failures);
+    }
+    app = restarted;
+    app.pid = after.pid;
+    console.log(`  restarted: ${JSON.stringify(after)}`);
     if (after.version !== newVersion) failures.push(`after the install the app is ${after.version}, not ${newVersion}`);
-    con = await app.page(consoleRe, 40000).catch(async () => {
-      await signIn(app, server);
-      return app.page(consoleRe);
-    });
-    await until("the console app", () => con.eval(`!!document.querySelector("nav button")`), 30000);
-    await openView(con, "Settings");
+    if (!after.argv.includes("--no-sandbox")) failures.push("the restarted app lost its arguments");
+    const inPage = (expr) => app.main(`const w = electron.BrowserWindow.getAllWindows().find((x) => !x.isDestroyed() && /^http/.test(x.webContents.getURL()) && !x.webContents.getURL().includes("surface="));
+      return w ? w.webContents.executeJavaScript(${JSON.stringify(expr)}) : null;`);
+    await until("the restarted app's console (signed in: the session was kept)", () => inPage(`!!document.querySelector("nav button")`), 60000);
+    await inPage(`document.querySelector('[data-testid="nav-settings"]').click(), true`);
     const c9 = await until("the check's result", async () => {
-      const c = await con.eval(CARD);
+      const c = await inPage(CARD);
       return c && c.status !== "checking" && c.status !== "idle" ? c : null;
     }, 60000);
     console.log(`  card: ${c9.status} — ${c9.text}`);
     if (c9.status !== "latest") failures.push(`after the install: ${c9.status} (${c9.text})`);
-    await con.eval(`document.querySelector('[data-testid="settings-desktop-update"]')?.scrollIntoView({ block: "center" }), true`);
-    await sleep(400);
-    await con.shot(`${after.version}-settings-after-install.png`);
-    await requests(app);
+    await inPage(`document.querySelector('[data-testid="settings-desktop-update"]')?.scrollIntoView({ block: "center" }), true`);
+    await sleep(500);
+    const png = await app.main(`const w = electron.BrowserWindow.getAllWindows().find((x) => !x.isDestroyed() && /^http/.test(x.webContents.getURL()) && !x.webContents.getURL().includes("surface="));
+      return (await w.webContents.capturePage()).toPNG().toString("base64");`);
+    fs.writeFileSync(path.join(SHOTS, `${after.version}-settings-after-install.png`), Buffer.from(png, "base64"));
+    console.log(`  shot: ${path.join(SHOTS, `${after.version}-settings-after-install.png`)}\n  the restarted app's output:\n${restartLog()}`);
     return finish(failures);
   } finally {
     await app.stop();
     await killRelaunched(installed, 0, home);
-    console.log(`  app output (tail):\n${app.out.split("\n").filter((l) => !l.includes("appimage_extracted")).slice(-15).join("\n")}`);
+    console.log(`  app output (tail):\n${(app.out || "(the restarted app: not our child)").split("\n").filter((l) => !l.includes("appimage_extracted")).slice(-15).join("\n")}`);
   }
 }
 
@@ -458,7 +512,7 @@ async function killRelaunched(installed, skipPid, home) {
     const m = line.trim().match(/^(\d+)\s+(.*)$/);
     if (!m || Number(m[1]) === skipPid || Number(m[1]) === process.pid) continue;
     // (the AppImage runtime, or the app it unpacked into this HOME's TMPDIR)
-    if (m[2].startsWith(installed) || m[2].startsWith(path.join(home, "tmp") + "/")) {
+    if (m[2].startsWith(path.dirname(installed) + "/") || m[2].startsWith(path.join(home, "tmp") + "/")) {
       found++;
       console.log(`  stopping the relaunched app (pid ${m[1]}): ${m[2].slice(0, 120)}`);
       try {

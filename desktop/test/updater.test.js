@@ -196,6 +196,8 @@ test("a 404 mid-download (the build was replaced): one more look, then the newer
   const e = await p;
   assert.equal(e.status, "error");
   assert.match(e.error, /no longer has that build/);
+  assert.equal(e.errorCode, "replaced", "a code for the console to word in its language");
+  assert.equal((await up.check()).errorCode, undefined, "a later success clears it");
 });
 
 test("the feed declines (not an AppImage / .deb / installer it knows): an error, never 'up to date'", async () => {
