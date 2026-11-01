@@ -42,6 +42,41 @@ _TYPE = {v: k for k, v in _EXT.items() if k not in ("audio/mp3", "audio/x-wav", 
 _voices_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
 
+# ── what reaches a TTS engine ──
+# The page sends clean sentences (frontend/src/mate/markdown.ts speechText). This is the cheap safety net for any
+# other caller (or an older page): fenced code, tables, HTML, images, URLs and markdown symbols are not read aloud.
+_FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[ \t]*$|\Z)", re.M)
+_TABLE_ROW = re.compile(r"^[ \t]*\|.*$", re.M)
+_HTML_BLOCK = re.compile(r"<(script|style|iframe|object|template)\b[\s\S]*?(?:</\1\s*>|$)", re.I)
+_TAG = re.compile(r"</?[A-Za-z][\w:-]*(?:\s[^<>]*)?/?>")
+_IMAGE = re.compile(r"!\[[^\]\n]*\]\([^)\n]*\)?")
+_LINK = re.compile(r"\[([^\[\]\n]*)\]\([^)\n]*\)?")
+_URL = re.compile(r"<?\b(?:https?://|www\.)[^\s<>]+>?", re.I)
+_CODE = re.compile(r"(`+)(.+?)\1")
+_LINE_MARK = re.compile(r"^[ \t]*(?:#{1,6}[ \t]+|(?:>[ \t]?)+|(?:[-*+]|\d{1,3}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)", re.M)
+_RULE = re.compile(r"^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$", re.M)
+_SYMBOLS = re.compile(r"[*_#>|`\[\]]")
+
+
+def speakable_text(text: str) -> str:
+    """Text for a TTS engine without markdown: what a person would say."""
+    s = (text or "").replace("\r\n", "\n")
+    if not re.search(r"[`~|<>\[\]*_#]|https?://|www\.|-{3}|^[ \t]*(?:[-+]|\d{1,3}[.)])[ \t]", s, re.M):
+        return s.strip()
+    s = _FENCE.sub(" ", s)
+    s = _TABLE_ROW.sub(" ", s)
+    s = _HTML_BLOCK.sub(" ", s)
+    s = _TAG.sub(" ", s)
+    s = _IMAGE.sub(" ", s)
+    s = _LINK.sub(r"\1", s)
+    s = _URL.sub(" ", s)
+    s = _CODE.sub(lambda m: m.group(2).strip(), s)
+    s = _RULE.sub(" ", s)
+    s = _LINE_MARK.sub("", s)
+    s = _SYMBOLS.sub(" ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
 class Speech:
     """Audio for one utterance. ``fallback`` (no audio): the engine isn't set
     up in Global settings — the page speaks with the browser voice instead."""
@@ -157,8 +192,8 @@ class VoiceService:
             return None
         if not self.providers.configured(engine):
             return Speech(b"", "", False, fallback=self.providers.missing_reason(engine))
-        text = (text or "").strip()
-        if not text:
+        text = speakable_text(text)
+        if not re.search(r"\w", text):
             raise MateError("nothing to say")
         if len(text) > MAX_TEXT:
             raise MateError(f"text is longer than {MAX_TEXT} characters")
