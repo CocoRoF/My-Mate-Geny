@@ -8,6 +8,7 @@ import { fmtEta, fmtSpeed } from "../../lib/downloadProgress";
 import { formatBytes } from "../attachments/fileMeta";
 import Icon from "../ui/Icon";
 import { tr, useT } from "../../i18n";
+import { updateErrorText, type UpdateErrorCode } from "../../lib/updateError";
 
 export interface UpdateState {
   status: "idle" | "checking" | "latest" | "available" | "downloading" | "ready" | "installing" | "unsupported" | "error";
@@ -19,6 +20,10 @@ export interface UpdateState {
   bytesPerSecond?: number;
   eta?: number | null;
   error?: string;
+  /** why, as a code the console words in its language (older apps send only `error`, in English) */
+  errorCode?: UpdateErrorCode;
+  errorDetail?: string;
+  during?: "check" | "download" | "install";
   cancelled?: boolean;
   supported?: boolean;
   reason?: string;
@@ -156,7 +161,7 @@ export default function UpdateCard({ s }: { s: UpdateState }) {
         <div className="flex flex-wrap items-center gap-2 text-danger">
           <Icon name="warning" size={14} />
           <span className="min-w-0 flex-1 break-words" data-testid="update-error">
-            {(s as any).during === "download" ? t("downloads.errorDownload", { error: s.error }) : t("downloads.errorCheck", { error: s.error })}
+            {updateErrorText(t, s)}
           </span>
           <button className="btn-ghost !py-1.5" onClick={() => void b.retry()} data-testid="update-retry">
             <Icon name="refresh" size={13} /> {t("common.retry")}

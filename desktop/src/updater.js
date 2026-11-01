@@ -109,7 +109,7 @@ function createUpdater(deps) {
     u.on("error", (e) => {
       if (state.status !== "installing") return;
       deps.installFailed?.(); // (the app stays: closing its window behaves as before again)
-      set({ status: "error", error: describe(e, "install"), during: "install" });
+      set({ status: "error", ...failure(e, "install"), during: "install" });
     });
   }
 
@@ -128,16 +128,25 @@ function createUpdater(deps) {
     return u;
   }
 
-  const describe = (e, during) => {
+  // what went wrong: `error` in English (logs, older consoles), `errorCode` + `errorDetail` for the console to say it
+  // in the UI's language (downloads.updErr.<code> in frontend/src/i18n)
+  const failure = (e, during) => {
     const m = String(e?.message || e || "unknown error");
-    if (/\b401\b|authentication required/i.test(m)) return "The server asked to sign in again.";
-    if (/\b404\b/.test(m) && during === "download") return "The server no longer has that build (a newer one replaced it) — check again.";
-    if (/\b404\b/.test(m)) return "The server has no update for this system yet.";
-    if (/\b5\d\d\b/.test(m)) return `The server could not provide the update (${(m.match(/\b5\d\d\b[^"\n]*/) || [""])[0].trim()}).`;
-    if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ERR_INTERNET|net::/i.test(m)) return `Can't reach the server (${m.split("\n")[0].slice(0, 120)}).`;
-    if (/sha512|checksum/i.test(m)) return "The download was damaged (checksum mismatch) — try again.";
-    return m.split("\n")[0].slice(0, 200);
+    const first = m.split("\n")[0];
+    const out = (errorCode, error, errorDetail = "") => ({ errorCode, error, errorDetail });
+    if (/\b401\b|authentication required/i.test(m)) return out("signIn", "The server asked to sign in again.");
+    if (/\b404\b/.test(m) && during === "download") return out("replaced", "The server no longer has that build (a newer one replaced it) — check again.");
+    if (/\b404\b/.test(m)) return out("noUpdate", "The server has no update for this system yet.");
+    if (/\b5\d\d\b/.test(m)) {
+      const d = (m.match(/\b5\d\d\b[^"\n]*/) || [""])[0].trim();
+      return out("server", `The server could not provide the update (${d}).`, d);
+    }
+    if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ERR_INTERNET|net::/i.test(m)) return out("unreachable", `Can't reach the server (${first.slice(0, 120)}).`, first.slice(0, 120));
+    if (/sha512|checksum/i.test(m)) return out("damaged", "The download was damaged (checksum mismatch) — try again.");
+    return out("other", first.slice(0, 200), first.slice(0, 200));
   };
+  const SELF = { errorCode: "cannotSelfUpdate", error: "This copy of the app cannot replace itself — install the new version from the Download page.", errorDetail: "" };
+  const NO_ERROR = { error: undefined, errorCode: undefined, errorDetail: undefined };
 
   async function check() {
     const s = view();
@@ -147,12 +156,12 @@ function createUpdater(deps) {
     }
     if (["checking", "downloading", "installing"].includes(state.status)) return view();
     if (state.status === "ready") return view();
-    set({ status: "checking", error: undefined });
+    set({ status: "checking", ...NO_ERROR });
     try {
       const found = await look();
       if (found) set({ status: "available", ...found, checkedAt: now() });
     } catch (e) {
-      set({ status: "error", error: describe(e, "check"), during: "check", checkedAt: now() });
+      set({ status: "error", ...failure(e, "check"), during: "check", checkedAt: now() });
     }
     return view();
   }
@@ -164,7 +173,7 @@ function createUpdater(deps) {
     const r = await u.checkForUpdates();
     if (r == null) {
       // electron-updater declined (not an AppImage / .deb / installer it knows — e.g. an unpacked folder)
-      set({ status: "error", error: "This copy of the app cannot replace itself — install the new version from the Download page.", during: "check", checkedAt: now() });
+      set({ status: "error", ...SELF, during: "check", checkedAt: now() });
       return null;
     }
     const version = r.updateInfo?.version;
@@ -185,7 +194,7 @@ function createUpdater(deps) {
     token = deps.cancelToken();
     const mine = token;
     speedSamples = [];
-    set({ status: "downloading", percent: 0, transferred: 0, bytesPerSecond: 0, eta: null, error: undefined, cancelled: false });
+    set({ status: "downloading", percent: 0, transferred: 0, bytesPerSecond: 0, eta: null, ...NO_ERROR, cancelled: false });
     // the release is rolling: what an earlier check found may be gone — look at the feed again first, and once more
     // if the server no longer has the file (404) by the time it is asked for
     for (let attempt = 0; ; attempt++) {
@@ -204,7 +213,7 @@ function createUpdater(deps) {
         if (!cancelled && attempt === 0 && /\b404\b/.test(String(e?.message || e))) continue;
         token = null;
         if (cancelled) set({ status: "available", cancelled: true, percent: 0, bytesPerSecond: 0, eta: null });
-        else set({ status: "error", error: describe(e, "download"), during: "download" });
+        else set({ status: "error", ...failure(e, "download"), during: "download" });
         return view();
       }
     }
@@ -217,7 +226,7 @@ function createUpdater(deps) {
 
   async function install() {
     if (state.status !== "ready") return view();
-    set({ status: "installing", error: undefined });
+    set({ status: "installing", ...NO_ERROR });
     try {
       const u = await deps.autoUpdater();
       deps.beforeInstall?.();
@@ -241,7 +250,7 @@ function createUpdater(deps) {
         if (spawn) u.spawnLog = spawn;
       }
     } catch (e) {
-      set({ status: "error", error: describe(e, "install"), during: "install" });
+      set({ status: "error", ...failure(e, "install"), during: "install" });
     }
     return view();
   }
@@ -250,10 +259,10 @@ function createUpdater(deps) {
   async function retry() {
     const during = state.during;
     if (during === "install") {
-      set({ status: "ready", error: undefined });
+      set({ status: "ready", ...NO_ERROR });
       return install();
     }
-    set({ status: "idle", error: undefined });
+    set({ status: "idle", ...NO_ERROR });
     return during === "download" ? download() : check();
   }
 
