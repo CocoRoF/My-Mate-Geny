@@ -11,7 +11,7 @@ import { useProviderStore } from "../../../stores/providerStore";
 import { useUIStore } from "../../../stores/uiStore";
 import type { CatalogModel } from "../../../types";
 import Icon from "../../ui/Icon";
-import { Banner, Field, LinkButton, SaveBar, Section, Segmented, useSaver } from "./ui";
+import { Banner, Field, LinkButton, SaveBar, Section, Segmented, useFollowSaved, useSaver } from "./ui";
 
 const ENGINES: { id: MateEngine; label: string; hint: string; fallback: string }[] = [
   {
@@ -117,6 +117,7 @@ export default function ModelTab({ mate }: { mate: Mate }) {
     setModel(storedModel);
     setEffort(storedEffort);
   };
+  useFollowSaved([storedEngine, storedModel, storedEffort], dirty, reset);
 
   return (
     <>

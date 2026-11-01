@@ -77,6 +77,9 @@ class MateService:
         self._depth: dict[str, int] = {}                  # mate sid -> chain depth of its running turn
         sessions.mate_engine = self.configure_engine
         sessions.add_turn_end_listener(self._on_turn_end)
+        # every mate write is announced on /ws/sessions (mates.changed): open
+        # windows and other devices refetch instead of keeping a stale copy
+        store.on_change = sessions.mates_changed
         self.sync_builtins()
 
     def _log(self, level: str, message: str, **kw: Any) -> None:

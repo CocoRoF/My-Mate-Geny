@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { addMemory, deleteMemory, listMemories, type Mate, type Memory } from "../../../api/mates";
+import { useMateStore } from "../../../stores/mateStore";
 import { relTime } from "../../admin/format";
 import Icon from "../../ui/Icon";
 import { ErrorLine, Section } from "./ui";
@@ -14,10 +15,12 @@ export default function MemoryTab({ mate }: { mate: Mate }) {
     listMemories(mate.id)
       .then(setItems)
       .catch((e) => setErr((e as Error).message));
+  // (its memories changed in another window / on another device, or the mate remembered something: server push)
+  const rev = useMateStore((s) => s.memoryRev[mate.id] ?? 0);
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mate.id]);
+  }, [mate.id, rev]);
 
   const add = async () => {
     if (!text.trim()) return;

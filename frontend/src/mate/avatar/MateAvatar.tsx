@@ -14,6 +14,7 @@ import type { MateAvatarProps } from "../types";
 import { StackedPlayer } from "./player";
 import { reducedMotion } from "./shared";
 import VideoBody from "./VideoBody";
+import { viewTransform, type AvatarViewT } from "./view";
 import PhotoBody from "./PhotoBody";
 import "./mateAvatar.css";
 
@@ -34,6 +35,8 @@ export interface MateAvatarExtraProps {
   onTap?: (area: string | null) => void;
   /** Live2D: pointer focus + tap motions (default true) */
   interactive?: boolean;
+  /** the user's pan / zoom inside the box (mate/avatar/view.ts; the desktop overlay) */
+  view?: AvatarViewT;
 }
 
 export const MateAvatar = memo(function MateAvatar({
@@ -47,6 +50,7 @@ export const MateAvatar = memo(function MateAvatar({
   live2dCoreUrl,
   onTap,
   interactive,
+  view,
 }: MateAvatarProps & MateAvatarExtraProps) {
   const webgl = useSyncExternalStore(noSubscribe, canVideo, () => false);
   const plainOk = useSyncExternalStore(noSubscribe, canPlainVideo, () => false);
@@ -68,6 +72,7 @@ export const MateAvatar = memo(function MateAvatar({
             coreUrl={live2dCoreUrl}
             onTap={onTap}
             interactive={interactive}
+            view={view}
           />
         </Suspense>
       </div>
@@ -87,6 +92,8 @@ export const MateAvatar = memo(function MateAvatar({
       (packing === "plain" ? plainOk : webgl);
     return (
       <div className={cls} style={style} data-mate-kind={avatar.kind}>
+        {/* (always this layer: adding it later would restart the body's player) */}
+        <div className="mate-layer" style={{ transform: view && viewTransform(view), transformOrigin: "0 0" }} data-mate-view="">
         {video ? (
           <VideoBody
             // one player per rig and size: another avatar never reuses this one's player, canvas, videos or clips
@@ -104,6 +111,7 @@ export const MateAvatar = memo(function MateAvatar({
         ) : (
           <Initial name={name} />
         )}
+        </div>
       </div>
     );
   }

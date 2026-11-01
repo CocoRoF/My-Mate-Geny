@@ -115,6 +115,8 @@ class SessionService:
         self._list_version = int(time.time() * 1000)
         self._list_subs: set[asyncio.Queue] = set()
         self._list_loop: asyncio.AbstractEventLoop | None = None
+        # mates (persona / avatar / voice / memories) changed: same feed, own version
+        self._mates_version = int(time.time() * 1000)
         self._inboxes: dict[str, TurnInbox] = {}  # running turns that accept steering
         # Mate conversations (sessions.kind = 'mate'): hidden from the chat
         # list and its change feed. The Mate layer configures their engine
@@ -541,7 +543,23 @@ class SessionService:
         if sid is not None and sid in self._mate_sids:
             return
         self._list_version += 1
-        msg = {"type": "sessions.changed", "data": {"version": self._list_version, "reason": reason, "sid": sid}}
+        self._publish_list({"type": "sessions.changed",
+                            "data": {"version": self._list_version, "reason": reason, "sid": sid}})
+
+    @property
+    def mates_version(self) -> int:
+        return self._mates_version
+
+    def mates_changed(self, reason: str, mate_id: str | None = None) -> None:
+        """A mate was created / changed / deleted (or its memories, or the
+        global voice settings): every open window (overlay, quick chat, other
+        devices) refetches GET /api/mates — otherwise a window keeps the mate it
+        loaded at startup (e.g. the old voice volume). Only a version is sent."""
+        self._mates_version += 1
+        self._publish_list({"type": "mates.changed",
+                            "data": {"version": self._mates_version, "reason": reason, "mate_id": mate_id}})
+
+    def _publish_list(self, msg: dict[str, Any]) -> None:
         loop = self._list_loop
         if loop is None or loop.is_closed():
             return

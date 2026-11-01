@@ -2,7 +2,7 @@
 import { useState } from "react";
 import type { Mate, Persona } from "../../../api/mates";
 import { useMateStore } from "../../../stores/mateStore";
-import { Field, SaveBar, Section, Toggle, useSaver } from "./ui";
+import { Field, SaveBar, Section, Toggle, useFollowSaved, useSaver } from "./ui";
 
 const LANGS = [
   ["ko", "한국어"],
@@ -45,6 +45,8 @@ export default function ProfileTab({ mate }: { mate: Mate }) {
     setP(mate.persona);
     setDefault(mate.is_default);
   };
+
+  useFollowSaved([mate.name, mate.persona, mate.is_default], dirty, reset);
 
   const area = (k: keyof Persona, rows = 3, placeholder = "") => (
     <textarea className="field resize-y leading-relaxed" rows={rows} value={p[k]} onChange={set(k)} placeholder={placeholder} data-testid={`mate-persona-${k}`} />

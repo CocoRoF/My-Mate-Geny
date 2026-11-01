@@ -20,6 +20,9 @@ const MateSurface = lazy(() => import("./components/mate/surfaces/MateSurfaces")
 const mateSurface = surface === "mate-overlay" || surface === "mate-quick" || surface === "mate-chat" ? surface : null;
 
 if (mateSurface === "mate-overlay" || mateSurface === "mate-quick") document.documentElement.classList.add("mate-transparent");
+if (mateSurface === "mate-quick") document.documentElement.classList.add("mate-quick-page");
+// a window of the desktop app (not a phone, whatever its width)
+if (mateSurface && /^desktop-/.test(window.hrhNative?.platform ?? "")) document.documentElement.classList.add("desktop-surface");
 if (mateSurface === "mate-overlay") disableLoginRedirect(); // a see-through window never turns into the login page
 if (mateSurface) document.title = mateSurface === "mate-chat" ? "Mate — My Mate Geny" : "Mate";
 

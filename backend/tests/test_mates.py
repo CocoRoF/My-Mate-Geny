@@ -369,6 +369,9 @@ def test_mate_conversation_is_hidden_from_chat_list(client, tmp_path):
         # a real chat still announces itself
         s = client.post("/api/sessions", json={"provider": "claude", "workspace_path": str(tmp_path), "title": "w"}).json()
         ev = ws.receive_json()
+        while ev["type"] == "mates.changed":  # (the mate's own changes come on the same feed)
+            ev = ws.receive_json()
+        assert ev["type"] == "sessions.changed"
         assert ev["data"]["sid"] == s["id"] and ev["data"]["version"] > v0
         assert client.post(f"/api/mates/{m['id']}/conversation/reset").status_code == 200
         client.delete(f"/api/mates/{m['id']}")

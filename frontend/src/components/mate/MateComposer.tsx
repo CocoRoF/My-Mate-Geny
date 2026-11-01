@@ -39,6 +39,10 @@ interface Props {
   attachDirect?: boolean;
   /** Escape stops the reply (the quick card uses Escape to close itself) */
   escapeStops?: boolean;
+  /** the window grows with the box (desktop quick card): no "40 % of the window" cap */
+  growsWindow?: boolean;
+  /** told whether the box holds something (text or files) — the quick card stays open then */
+  onContentChange?: (has: boolean) => void;
 }
 
 export default function MateComposer(props: Props) {
@@ -71,6 +75,8 @@ function Composer({
   placeholder,
   escapeStops,
   attachDirect = false,
+  growsWindow = false,
+  onContentChange,
 }: Props & { sid: string }) {
   const { send, steer, stop, setListening } = conv;
 
@@ -111,8 +117,15 @@ function Composer({
     maxHeight: compact ? 120 : 180,
     onSent,
     escapeStops,
+    viewportCap: !growsWindow,
   });
   const { input, items, uploading, failed, hasContent, notice, isStreaming: streaming, touch, sendsOnEnter, trigger } = c;
+
+  const contentRef = useRef(onContentChange);
+  contentRef.current = onContentChange;
+  useEffect(() => {
+    contentRef.current?.(hasContent);
+  }, [hasContent]);
 
   const mic = useMic(mate, (heard) => {
     c.submit("auto", heard);
@@ -223,8 +236,10 @@ function Composer({
             onFocus={() => input.trim() && setListening(true)}
             onBlur={() => !recording && setListening(false)}
             placeholder={ph}
-            className={`min-w-0 flex-1 resize-none bg-transparent px-2 text-content placeholder:text-content-faint outline-none ${
-              compact ? "py-1.5 text-[13.5px]" : "py-2 text-sm touch:py-2.5"
+            // one line is exactly a button's height (h-8: 6 + 20 + 6, h-9: 8 + 20 + 8) with the text centred in it; more
+            // lines grow upwards from the row's bottom (items-end) while +, mic and send stay level with the last line
+            className={`mate-input min-w-0 flex-1 resize-none bg-transparent px-2 text-content placeholder:text-content-faint outline-none ${
+              compact ? "py-1.5 text-[13.5px] leading-5" : "py-2 text-sm leading-5 touch:py-2.5"
             }`}
             data-testid="mate-input"
           />

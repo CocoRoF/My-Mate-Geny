@@ -292,8 +292,9 @@
 .no-scrollbar::-webkit-scrollbar { display: none; }
 html, body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
 @media (max-width: 767px), (hover: none) and (pointer: coarse) {
-  /* 16px+ inputs: iOS/Android (tablets too) don't zoom the page on focus */
-  textarea, input, select { font-size: 16px !important; }
+  /* 16px+ inputs: iOS/Android (tablets too) don't zoom the page on focus. (Not in the desktop app's small Mate
+     windows: a 640 px quick card is not a phone, and 16 px text in its 13.5 px row sat low in the box.) */
+  html:not(.desktop-surface) :is(textarea, input, select) { font-size: 16px !important; }
 }
 
 /* Desktop Mate surfaces drawn over the user's screen (overlay, quick card): a see-through page */
@@ -301,6 +302,11 @@ html.mate-transparent,
 html.mate-transparent body,
 html.mate-transparent #root {
   background: transparent !important;
+}
+/* the quick card's window follows the card's height: the page itself never scrolls (a scrollbar would narrow it) */
+html.mate-quick-page,
+html.mate-quick-page body {
+  overflow: hidden;
 }
 
 /* the on-screen keyboard is up (lib/keyboard.ts): it covers the home indicator, no inset needed above it */

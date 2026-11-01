@@ -31,10 +31,15 @@ const mate = {
   getState: () => ipcRenderer.invoke("mate:state"),
   moveBy: (dx, dy) => ipcRenderer.send("mate:moveBy", num(dx), num(dy)),
   moveEnd: () => ipcRenderer.send("mate:moveEnd"),
-  // overlay: the avatar window's size (bottom-right corner fixed);
-  // quick: the card's size (top edge fixed, centred)
+  // overlay, move mode: resize from an edge/corner ("n", "se", …) by a pointer delta (Geny's resize-by)
+  resizeBy: (edge, dx, dy) => ipcRenderer.send("mate:resizeBy", String(edge || ""), num(dx), num(dy)),
+  resizeEnd: () => ipcRenderer.send("mate:resizeEnd"),
+  // overlay: the avatar window's suggested size (bottom-right corner fixed; a size the user set wins);
+  // quick: the card's height (fixed width, top edge fixed)
   setAvatarSize: (w, h) => ipcRenderer.send("mate:size", num(w), num(h)),
   setSize: (w, h) => ipcRenderer.send("mate:size", num(w), num(h)),
+  // quick: the card holds a draft — a click elsewhere does not close it
+  setQuickPinned: (on) => ipcRenderer.send("mate:quickPinned", !!on),
   setMoveMode: (on) => ipcRenderer.invoke("mate:moveMode", !!on),
   openQuick: () => ipcRenderer.invoke("mate:openQuick"),
   closeQuick: () => ipcRenderer.invoke("mate:closeQuick"),

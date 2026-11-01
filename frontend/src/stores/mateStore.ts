@@ -49,6 +49,16 @@ interface MateState {
   setMuted: (on: boolean) => void;
   /** bring back deleted built-in mates; returns how many came back */
   restoreBuiltins: () => Promise<number>;
+  /**
+   * The server says mates changed (/ws/sessions `mates.changed`, or `mates_version` in hello/pong): refetch, coalesced.
+   * Without it a window keeps the mates it loaded at startup — the desktop overlay would go on speaking at the old
+   * volume after Settings → Voice → Save.
+   */
+  remoteChanged: (version: unknown, reason?: string, mateId?: string) => void;
+  /** the newest mates version the server announced (null: none yet) */
+  syncVersion: number | null;
+  /** per mate: bumped when its memories changed elsewhere (the Memory tab refetches) */
+  memoryRev: Record<string, number>;
 }
 
 const ACTIVE_KEY = "hrh_mate_active";
@@ -70,7 +80,38 @@ const write = (k: string, v: string | null) => {
   }
 };
 
+/** Keep the objects of mates that did not change: a refetch must not re-render (or restart) every avatar. */
+function share(prev: Mate[], next: Mate[]): Mate[] {
+  const old = new Map(prev.map((m) => [m.id, m]));
+  return next.map((m) => {
+    const o = old.get(m.id);
+    return o && JSON.stringify(o) === JSON.stringify(m) ? o : m;
+  });
+}
+
+// Same-browser windows (the desktop app's console, overlay, quick card and chat window; other tabs): a save here is
+// announced at once, without waiting for the server's push.
+const storeChannel: BroadcastChannel | null = (() => {
+  try {
+    return typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("hrh-mate-store") : null;
+  } catch {
+    return null;
+  }
+})();
+const announce = (mateId?: string) => {
+  try {
+    storeChannel?.postMessage({ type: "changed", mateId: mateId ?? null });
+  } catch {
+    /* closed */
+  }
+};
+
+const RELOAD_MS = 150;
+let reloadTimer: ReturnType<typeof setTimeout> | undefined;
+
 export const useMateStore = create<MateState>((set, get) => ({
+  syncVersion: null,
+  memoryRev: {},
   mates: [],
   loaded: false,
   error: null,
@@ -112,7 +153,7 @@ export const useMateStore = create<MateState>((set, get) => ({
       const mates = await listMates();
       const { activeId } = get();
       const keep = activeId && mates.some((m) => m.id === activeId) ? activeId : mates[0]?.id ?? null;
-      set({ mates, loaded: true, error: null, activeId: keep });
+      set((s) => ({ mates: share(s.mates, mates), loaded: true, error: null, activeId: keep }));
     } catch (e) {
       set({ loaded: true, error: (e as Error).message });
     }
@@ -134,18 +175,21 @@ export const useMateStore = create<MateState>((set, get) => ({
   patch: async (id, patch) => {
     const m = await updateMate(id, patch);
     get().upsert(m);
+    announce(id);
     return m;
   },
 
   create: async (name) => {
     const m = await createMate({ name });
     get().upsert(m);
+    announce(m.id);
     get().setActive(m.id);
     return m;
   },
 
   remove: async (id) => {
     await deleteMate(id);
+    announce(id);
     set((s) => ({ mates: s.mates.filter((m) => m.id !== id) }));
     if (get().activeId === id) {
       const next = get().mates[0]?.id ?? null;
@@ -162,10 +206,32 @@ export const useMateStore = create<MateState>((set, get) => ({
   restoreBuiltins: async () => {
     const before = new Set(get().mates.map((m) => m.id));
     const mates = await restoreBuiltins();
-    set({ mates });
+    announce();
+    set((s) => ({ mates: share(s.mates, mates) }));
     return mates.filter((m) => !before.has(m.id)).length;
   },
+
+  remoteChanged: (version, reason, mateId) => {
+    if (typeof version !== "number") return;
+    const seen = get().syncVersion;
+    if (seen === version) return;
+    set({ syncVersion: version });
+    // the first hello only tells where the server is (this window just loaded its mates)
+    if (seen === null && !reason) return;
+    if (reason === "memory" && mateId) {
+      set((s) => ({ memoryRev: { ...s.memoryRev, [mateId]: (s.memoryRev[mateId] ?? 0) + 1 } }));
+    }
+    if (reason === "settings" && get().providers) void get().loadProviders();
+    scheduleReload();
+  },
 }));
+
+function scheduleReload() {
+  clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(() => {
+    if (useMateStore.getState().loaded) void useMateStore.getState().load();
+  }, RELOAD_MS);
+}
 
 // Another window of this browser (the desktop overlay / chat windows share
 // localStorage) muted or picked a mate: follow it.
@@ -173,4 +239,10 @@ if (typeof window !== "undefined") {
   window.addEventListener("storage", (e) => {
     if (e.key === MUTE_KEY) useMateStore.setState({ muted: e.newValue === "1" });
   });
+  if (storeChannel) {
+    storeChannel.onmessage = (e: MessageEvent) => {
+      const d = e.data as { type?: string } | null;
+      if (d?.type === "changed") scheduleReload();
+    };
+  }
 }

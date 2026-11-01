@@ -16,6 +16,7 @@ import { createChatStore, FIRST_TURNS, type Turn } from "../stores/chatStore";
 import { useMateStore } from "../stores/mateStore";
 import type { Attachment, ProviderEvent } from "../types";
 import { getMateAudioQueue, useMateAudio } from "./audioQueue";
+import { usePreviewVolume } from "./livePreview";
 import { EmotionTracker } from "./emotion";
 import { SentenceStream } from "./sentences";
 import type { BodyMood, MateReact } from "./types";
@@ -78,6 +79,8 @@ export interface MateConversation {
   caption: Caption | null;
   voiceError: string | null;
   speaks: boolean; // this page is the one reading aloud
+  /** the volume the voice plays at now (0..3): the saved one, or a settings slider's live preview */
+  volume: number;
   /** a new turn (text and/or files) */
   send: (text: string, attachments?: Attachment[]) => boolean;
   /** add to her running turn */
@@ -162,8 +165,11 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
     };
   }, [queue, mateId, engine, lang, tts?.voice, tts?.speed]);
 
-  // the mate's volume (0–300 %): clips through a GainNode + limiter, the browser voice up to 100 %
-  const volume = mate?.voice.volume ?? 1;
+  // the mate's volume (0–300 %): clips through a GainNode + limiter, the browser voice up to 100 %. The settings'
+  // unsaved slider (this window or another one of this browser: mate/livePreview) wins while it moves; the saved
+  // value comes from the store, which follows the server's pushes (no stale copy in an overlay opened hours ago)
+  const preview = usePreviewVolume(mateId);
+  const volume = preview ?? mate?.voice.volume ?? 1;
   useEffect(() => {
     queue.setVolume(volume);
   }, [queue, volume]);
@@ -444,6 +450,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
     caption,
     voiceError,
     speaks,
+    volume,
     send,
     steer,
     stop,

@@ -5,8 +5,12 @@ Protocol::
 
     server -> {"type": "hello", "data": {"version": <int>}}            # on connect
     server -> {"type": "sessions.changed", "data": {"version", "reason", "sid"}}
+    server -> {"type": "mates.changed", "data": {"version", "reason", "mate_id"}}   # GET /api/mates again
     client -> {"type": "sync"}                                        # "are you there?" (back from background)
-    server -> {"type": "pong", "data": {"version": <int>}}
+    server -> {"type": "pong", "data": {"version": <int>, "mates_version": <int>}}
+
+``hello`` carries ``mates_version`` too, so a window that reconnects after
+missing a mate change (sleep, network) still notices it.
 
 The client refetches ``GET /api/sessions`` (which reports its version in the
 ``X-Sessions-Version`` header) only when a version newer than the list it has
@@ -46,7 +50,7 @@ async def sessions_feed(websocket: WebSocket) -> None:
 
     pump_task = asyncio.create_task(pump())
     try:
-        await send({"type": "hello", "data": {"version": svc.list_version}})
+        await send({"type": "hello", "data": {"version": svc.list_version, "mates_version": svc.mates_version}})
         while True:
             raw = await websocket.receive_text()
             try:
@@ -54,7 +58,7 @@ async def sessions_feed(websocket: WebSocket) -> None:
             except json.JSONDecodeError:
                 continue
             if msg.get("type") == "sync":
-                await send({"type": "pong", "data": {"version": svc.list_version}})
+                await send({"type": "pong", "data": {"version": svc.list_version, "mates_version": svc.mates_version}})
     except WebSocketDisconnect:
         pass
     finally:

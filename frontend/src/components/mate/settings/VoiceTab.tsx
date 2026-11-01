@@ -4,7 +4,7 @@
  * models are fetched from the provider (ElevenLabs account voices + TTS models, OpenAI's catalogue, OmniVoice
  * profiles, a self-hosted server's /models), with previews of the unsaved choice.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   assetUrl,
   listModels,
@@ -18,12 +18,12 @@ import {
   type TtsEngine,
   type VoiceOption,
 } from "../../../api/mates";
-import { getMateAudioQueue } from "../../../mate/audioQueue";
+import { previewMateVolume } from "../../../mate/livePreview";
 import { bcp47, type MateConversation } from "../../../mate/useMateConversation";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
 import { availability, playPreview, setPreviewVolume, speakPreview, stopPreview, STT_ENGINES, TTS_ENGINES, usable, usePreviewPlaying, type Availability, type EngineInfo } from "./engines";
-import { Banner, ErrorLine, Field, LinkButton, SaveBar, SearchSelect, Section, Segmented, Toggle, useSaver, type PickOption } from "./ui";
+import { Banner, ErrorLine, Field, LinkButton, SaveBar, SearchSelect, Section, Segmented, Toggle, useFollowSaved, useSaver, type PickOption } from "./ui";
 
 type Tts = MateVoice["tts"];
 type Stt = MateVoice["stt"];
@@ -130,22 +130,23 @@ export default function VoiceTab({ mate, conv }: { mate: Mate; conv: MateConvers
   const tts = (patch: Partial<Tts>) => setV((x) => ({ ...x, tts: { ...x.tts, ...patch } }));
   const stt = (patch: Partial<Stt>) => setV((x) => ({ ...x, stt: { ...x.stt, ...patch } }));
   const save = () => saver.run(() => useMateStore.getState().patch(mate.id, { voice: v }));
+  useFollowSaved(mate.voice, dirty, () => setV(mate.voice));
   useEffect(() => () => stopPreview(), []);
   // the volume slider is live: previews and the mate's voice (also a sentence playing now) follow the unsaved value;
   // leaving the tab puts the saved one back
   const volume = v.volume ?? 1;
-  const savedVolume = useRef(mate.voice.volume ?? 1);
-  savedVolume.current = mate.voice.volume ?? 1;
+  // (every window of this browser follows the preview: the overlay speaking right now too — mate/livePreview)
+  const previewing = volume !== (mate.voice.volume ?? 1);
   useEffect(() => {
     setPreviewVolume(volume);
-    getMateAudioQueue().setVolume(volume);
-  }, [volume]);
+    previewMateVolume(mate.id, previewing ? volume : null);
+  }, [volume, previewing, mate.id]);
   useEffect(
     () => () => {
       setPreviewVolume(1);
-      getMateAudioQueue().setVolume(savedVolume.current);
+      previewMateVolume(mate.id, null);
     },
-    [],
+    [mate.id],
   );
 
   const ttsAvail = (id: string) => availability(providers, "tts", id);

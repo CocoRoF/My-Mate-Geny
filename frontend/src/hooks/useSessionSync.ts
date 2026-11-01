@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { toLogin, wsUrl } from "../api/client";
 import { onResync } from "../lib/sync";
+import { useMateStore } from "../stores/mateStore";
 import { useSessionStore } from "../stores/sessionStore";
 
 const SETTLE_MS = 250; // a turn start = message + title + run state: one fetch
@@ -13,8 +14,13 @@ const PROBE_MS = 5000; // no answer to "sync" this long → the socket is dead
  * refetched only when that version is newer than the one it has. Back from
  * the background (phones suspend sockets), one "sync" message checks the
  * socket is alive and the list current; a dead socket reconnects.
+ *
+ * The same feed announces mate changes (`mates.changed`, and `mates_version` in
+ * hello/pong): every window refetches its mates, so the desktop overlay, the
+ * quick card or another device never keeps a stale copy (e.g. the old voice
+ * volume). The Mate surfaces use it with `{ sessions: false }`.
  */
-export function useSessionSync() {
+export function useSessionSync({ sessions = true }: { sessions?: boolean } = {}) {
   useEffect(() => {
     let alive = true;
     let ws: WebSocket | null = null;
@@ -49,13 +55,19 @@ export function useSessionSync() {
       };
       sock.onmessage = (e) => {
         clearTimeout(probeTimer);
-        let msg: { type?: string; data?: { version?: unknown } };
+        let msg: { type?: string; data?: { version?: unknown; mates_version?: unknown; reason?: unknown; mate_id?: unknown } };
         try {
           msg = JSON.parse(e.data);
         } catch {
           return;
         }
-        if (msg.type === "hello" || msg.type === "pong" || msg.type === "sessions.changed") announce(msg.data?.version);
+        if (msg.type === "mates.changed") {
+          const d = msg.data ?? {};
+          useMateStore.getState().remoteChanged(d.version, typeof d.reason === "string" ? d.reason : undefined, typeof d.mate_id === "string" ? d.mate_id : undefined);
+          return;
+        }
+        if (msg.type === "hello" || msg.type === "pong") useMateStore.getState().remoteChanged(msg.data?.mates_version);
+        if (sessions && (msg.type === "hello" || msg.type === "pong" || msg.type === "sessions.changed")) announce(msg.data?.version);
       };
       sock.onclose = (e) => {
         if (ws !== sock) return; // replaced
@@ -105,5 +117,5 @@ export function useSessionSync() {
       ws = null;
       old?.close();
     };
-  }, []);
+  }, [sessions]);
 }
