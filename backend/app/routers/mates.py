@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from app.config import settings
 from app.mate import files, live2d_core, netio
+from app.mate import memory as M
 from app.mate.service import MateService
 from app.mate.store import SETTING_PROVIDERS, MateError
 from app.mate.voice import VoiceService
@@ -96,7 +97,7 @@ async def put_settings(request: Request, verify: bool = False) -> dict:
         raise _http(exc) from exc
     if verify:
         providers = _voice(request).providers
-        changed = {SETTING_PROVIDERS[k] for k in store.last_changed}
+        changed = {SETTING_PROVIDERS[k] for k in store.last_changed if k in SETTING_PROVIDERS}
         await asyncio.gather(*(providers.verify(p) for p in sorted(changed)))
         out = {**out, "providers": await providers.status()}
     return out
@@ -285,16 +286,67 @@ async def conversation_reset(mate_id: str, request: Request) -> dict:
 # ---- memory ----
 
 @router.get("/{mate_id}/memories")
-async def list_memories(mate_id: str, request: Request) -> list[dict]:
+async def list_memories(mate_id: str, request: Request, q: str | None = None, kind: str | None = None,
+                        status: str = "active", sort: str = "created") -> list[dict]:
+    """``status`` active | done | archived | all; ``sort`` created | recent | importance | due; each memory
+    says whether it is in the core (always in the system prompt)."""
     _mate(request, mate_id)
-    return _svc(request).store.memories(mate_id)
+    store = _svc(request).store
+    if status not in ("active", "done", "archived", "all"):
+        raise HTTPException(status_code=400, detail="status: active | done | archived | all")
+    core = {m["id"] for m in M.core(store.memories(mate_id))}
+    return [{**m, "core": m["id"] in core} for m in store.memories(mate_id, status=status, kind=kind or None, q=q,
+                                                                  sort=sort)]
+
+
+@router.get("/{mate_id}/memories/stats")
+async def memory_stats(mate_id: str, request: Request) -> dict:
+    _mate(request, mate_id)
+    return _svc(request).store.memory_counts(mate_id)
 
 
 @router.post("/{mate_id}/memories")
 async def add_memory(mate_id: str, request: Request) -> dict:
+    """``{text, kind?, importance?, pinned?, due_at?}`` → the memory (+ ``merged``: an active one of that kind
+    said the same and was updated instead; ``similar``: close ones)."""
     body = await _json(request)
     try:
-        return _svc(request).store.add_memory(mate_id, str(body.get("text") or ""), by_user=True)
+        return _svc(request).store.add_memory(mate_id, str(body.get("text") or ""), kind=body.get("kind"),
+                                              importance=body.get("importance"), pinned=bool(body.get("pinned")),
+                                              due_at=body.get("due_at"), by_user=True)
+    except (KeyError, MateError) as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/{mate_id}/memories/bulk")
+async def bulk_memories(mate_id: str, request: Request) -> dict:
+    body = await _json(request)
+    _mate(request, mate_id)
+    ids = body.get("ids")
+    if not isinstance(ids, list):
+        raise HTTPException(status_code=400, detail="ids must be a list")
+    try:
+        return {"changed": _svc(request).store.bulk_memories(mate_id, ids, str(body.get("action") or ""))}
+    except MateError as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/{mate_id}/memories/preview")
+async def preview_memories(mate_id: str, request: Request) -> dict:
+    """What the mate would get for this message: the core and the recalled memories, and the context block."""
+    body = await _json(request)
+    try:
+        return _svc(request).preview_context(mate_id, str(body.get("text") or "")[:2000])
+    except KeyError as exc:
+        raise _http(exc) from exc
+
+
+@router.patch("/{mate_id}/memories/{mem_id}")
+async def update_memory(mate_id: str, mem_id: str, request: Request) -> dict:
+    body = await _json(request)
+    _mate(request, mate_id)
+    try:
+        return _svc(request).store.update_memory(mate_id, mem_id, body, by_user=True)
     except (KeyError, MateError) as exc:
         raise _http(exc) from exc
 

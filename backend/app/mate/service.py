@@ -24,12 +24,14 @@ import re
 import secrets
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from app.config import settings
 from app.mate import files
-from app.mate.prompt import prompt_key, settings_change_note, system_prompt
+from app.mate import memory as M
+from app.mate.prompt import context_block, prompt_key, settings_change_note, system_prompt
 from app.mate.store import MateError, MateStore, normalize_persona
 from app.providers import get_provider
 from app.providers.catalog import default_mate_model
@@ -80,6 +82,11 @@ class MateService:
         # every mate write is announced on /ws/sessions (mates.changed): open
         # windows and other devices refetch instead of keeping a stale copy
         store.on_change = sessions.mates_changed
+        self._housekept: dict[str, str] = {}               # mate id -> the local day its memory was tidied
+        try:
+            store.migrate_memories()  # (memories saved before kinds existed; idempotent)
+        except Exception as exc:  # noqa: BLE001 - never stops the app
+            self._log("warning", f"memory migration: {exc}")
         self.sync_builtins()
 
     def _log(self, level: str, message: str, **kw: Any) -> None:
@@ -278,12 +285,21 @@ class MateService:
             mate = {"id": mate_id, "name": session.get("title") or "Mate", "persona": {}, "memory_rev": 0,
                     "llm": {"provider": engine, "model": session.get("model") or "",
                             "effort": session.get("effort") or "low"}}
+        now_utc = datetime.now(timezone.utc)
+        tz = self.store.tz()
+        now_local = now_utc.astimezone(tz).replace(tzinfo=None)
+        if mate_id:
+            self._housekeep(mate_id, now_utc, now_local)
         memories = self.store.memories(mate_id) if mate_id else []
+        core = M.core(memories)
         prefs = mate.get("prefs") or {}
-        prompt = system_prompt(mate["name"], mate["persona"], memories, prefs)
+        prompt = system_prompt(mate["name"], mate["persona"], core, prefs, more=len(memories) - len(core))
+        # the per-turn context (docs/mate-memory-affinity.md §2): settings note (persona edited since the
+        # conversation last ran), then the clock, recalled memories, the user's memory edits — prepended to
+        # this message, never stored, never a restart
         note = self._settings_note(mate_id, mate)
-        if note:  # persona edited since the conversation last ran: say so in this message
-            req.preamble = f"{note}\n\n{req.preamble}" if req.preamble else note
+        ctx = self._context(mate, req, engine, memories, core, prefs, now_utc, now_local, tz) if mate_id else ""
+        req.preamble = "\n\n".join(x for x in (note, ctx, req.preamble) if x)
         req.prompt_key = prompt_key(mate["name"], mate["persona"], int(mate.get("memory_rev") or 0), prefs)
         if engine == "codex" and mate_id:
             prompt = self._codex_prompt(mate_id, prompt, req.prompt_key, resuming=bool(req.cli_session_id))
@@ -338,6 +354,71 @@ class MateService:
         except OSError:
             pass
         return prompt
+
+    def _housekeep(self, mate_id: str, now_utc: datetime, now_local: datetime) -> None:
+        day = now_local.date().isoformat()
+        if self._housekept.get(mate_id) == day:
+            return
+        self._housekept[mate_id] = day
+        try:
+            self.store.housekeep(mate_id, now_utc, now_local)
+        except Exception as exc:  # noqa: BLE001
+            self._log("warning", f"memory housekeeping: {exc}")
+
+    @staticmethod
+    def _tz_name(tz: Any, now_utc: datetime) -> str:
+        return str(getattr(tz, "key", "") or now_utc.astimezone(tz).tzname() or "")
+
+    def _context_state(self, mate_id: str, engine: str, cli: str | None) -> dict[str, Any]:
+        """What this engine session was already told (recalled memory ids by turn, the last relationship and
+        mood lines). A fresh context (no session to resume, another engine, a different session) starts
+        over, so a new context is told everything again."""
+        path = files.home_dir(mate_id) / ".context-state.json"
+        try:
+            st = json.loads(path.read_text("utf-8"))
+        except (OSError, ValueError):
+            st = None
+        fresh = {"engine": engine, "cli": cli, "turn": 0, "injected": {}, "rel": None, "mood": None, "mood_at": 0}
+        if not isinstance(st, dict) or not cli:
+            return fresh
+        if st.get("engine") != engine or (st.get("cli") and st.get("cli") != cli):
+            return fresh
+        return {**fresh, **st, "cli": cli}
+
+    def _save_context_state(self, mate_id: str, st: dict[str, Any]) -> None:
+        path = files.home_dir(mate_id) / ".context-state.json"
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(st, ensure_ascii=False), "utf-8")
+        except OSError:
+            pass
+
+    def _context(self, mate: dict[str, Any], req: TurnRequest, engine: str, memories: list[dict[str, Any]],
+                 core: list[dict[str, Any]], prefs: dict[str, Any], now_utc: datetime, now_local: datetime,
+                 tz: Any) -> str:
+        mate_id = mate["id"]
+        st = self._context_state(mate_id, engine, req.cli_session_id)
+        turn = int(st.get("turn") or 0) + 1
+        injected = {k: int(v) for k, v in (st.get("injected") or {}).items() if turn - int(v) < M.INJECT_TTL_TURNS}
+        query = next((str(m.get("content") or "") for m in reversed(req.messages) if m.get("role") == "user"), "")
+        if query.lstrip().startswith("<delegation_result"):
+            query = query[:600]
+        core_ids = {m["id"] for m in core}
+        level = (prefs.get("memory") or {}).get("recall") or "normal"
+        recalled = M.recall([m for m in memories if m["id"] not in core_ids], query, now_utc=now_utc,
+                            now_local=now_local, level=level, skip=set(injected))
+        for m in recalled:
+            injected[m["id"]] = turn
+        changes = self.store.take_memory_changes(mate_id)
+        relation = self._relation_lines(mate, st, now_utc, turn)
+        self._save_context_state(mate_id, {**st, "turn": turn, "injected": injected})
+        if recalled:
+            self.store.mark_used(mate_id, [m["id"] for m in recalled])
+        return context_block(now_local, self._tz_name(tz, now_utc), recalled=recalled, changes=changes,
+                             relation=relation)
+
+    def _relation_lines(self, mate: dict[str, Any], st: dict[str, Any], now_utc: datetime, turn: int) -> list[str]:
+        return []  # (the relationship and mood lines: app/mate/affinity.py)
 
     def _settings_note(self, mate_id: str, mate: dict[str, Any]) -> str:
         """Compare the persona with the one the conversation last ran with
@@ -599,14 +680,67 @@ class MateService:
         return found or f"No folder matching {q!r} found. Ask the user for the path."
 
     async def _tool_remember(self, mate: dict[str, Any], _sid: str, args: dict[str, Any]) -> str:
-        mem = self.store.add_memory(mate["id"], str(args.get("text") or ""))
-        return f"Remembered [{mem['id']}]: {mem['text']}"
+        mem = self.store.add_memory(mate["id"], str(args.get("text") or ""), kind=args.get("kind"),
+                                    importance=args.get("importance"), due_at=args.get("due"))
+        if mem["merged"]:
+            return f"Already known as {M.line(mem)} — updated it."
+        out = f"Remembered {M.line(mem)}"
+        if mem["similar"]:
+            out += ("\nSimilar memories: " + "; ".join(M.line(m) for m in mem["similar"])
+                    + " — if the new one replaces one of them, update_memory that one and forget the duplicate.")
+        return out
+
+    async def _tool_update_memory(self, mate: dict[str, Any], _sid: str, args: dict[str, Any]) -> str:
+        mid = str(args.get("id") or "").strip().strip("[]")
+        patch = {k: args[k] for k in ("text", "kind", "importance", "status") if args.get(k) not in (None, "")}
+        if "due" in args:
+            patch["due_at"] = args.get("due")
+        if not patch:
+            raise MateError("nothing to change: give text, kind, importance, due or status")
+        try:
+            mem = self.store.update_memory(mate["id"], mid, patch)
+        except KeyError as exc:
+            raise MateError(f"no memory with id {mid!r}") from exc
+        return f"Updated {M.line(mem)}" + (f" (status {mem['status']})" if mem["status"] != "active" else "")
 
     async def _tool_forget(self, mate: dict[str, Any], _sid: str, args: dict[str, Any]) -> str:
         mid = str(args.get("id") or "").strip().strip("[]")
         if not self.store.delete_memory(mate["id"], mid):
             raise MateError(f"no memory with id {mid!r}")
         return f"Forgot [{mid}]."
+
+    async def _tool_recall(self, mate: dict[str, Any], _sid: str, args: dict[str, Any]) -> str:
+        q = str(args.get("query") or "").strip()
+        if not q:
+            raise MateError("query is required")
+        try:
+            limit = max(1, min(10, int(args.get("limit") or 6)))
+        except (TypeError, ValueError):
+            limit = 6
+        kind = str(args.get("kind") or "").strip() or None
+        rows = self.store.memories(mate["id"], status="all" if args.get("include_done") else "active", kind=kind)
+        now_utc = datetime.now(timezone.utc)
+        now_local = now_utc.astimezone(self.store.tz()).replace(tzinfo=None)
+        found = M.recall(rows, q, now_utc=now_utc, now_local=now_local, limit=limit, chars=6000, due_soon=False)
+        if not found:
+            return f"Nothing in your memory matches {q!r}."
+        return "\n".join(M.line(m) + (f" (status {m['status']})" if m.get("status") != "active" else "")
+                         for m in found)
+
+    def preview_context(self, mate_id: str, text: str) -> dict[str, Any]:
+        """The Memory tab's "Test recall": what the mate would get for this message (nothing is recorded)."""
+        mate = self.store.get(mate_id)
+        now_utc = datetime.now(timezone.utc)
+        tz = self.store.tz()
+        now_local = now_utc.astimezone(tz).replace(tzinfo=None)
+        memories = self.store.memories(mate_id)
+        core = M.core(memories)
+        ids = {m["id"] for m in core}
+        level = ((mate.get("prefs") or {}).get("memory") or {}).get("recall") or "normal"
+        recalled = M.recall([m for m in memories if m["id"] not in ids], text or "", now_utc=now_utc,
+                            now_local=now_local, level=level)
+        return {"core": core, "recalled": recalled, "level": level,
+                "block": context_block(now_local, self._tz_name(tz, now_utc), recalled=recalled)}
 
     # ---- delegation results ----
 

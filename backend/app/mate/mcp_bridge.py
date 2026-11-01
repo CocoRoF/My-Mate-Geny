@@ -126,23 +126,72 @@ TOOLS = [
     {
         "name": "remember",
         "description": (
-            "Save one lasting fact or preference about the user to your long-term memory (e.g. their name, "
-            "what a project is for, how they like reports). Memories are shown to you in every conversation. "
+            "Save one memory about the user: who they are (profile), what they like or how they want things "
+            "done (preference), a lasting fact (fact), an appointment / promise / reminder with its date (plan), "
+            "or what is going on these days (context — fades after a few weeks). If you already remember the "
+            "same thing it is updated instead of duplicated; similar memories are listed so you can merge them. "
             "Returns the memory id."
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {"text": {"type": "string", "description": "One short, self-contained fact."}},
+            "properties": {
+                "text": {"type": "string", "description": "One short, self-contained memory in the user's language."},
+                "kind": {"type": "string", "enum": ["profile", "preference", "fact", "plan", "context"],
+                         "description": "Default fact."},
+                "importance": {"type": "integer", "minimum": 1, "maximum": 5,
+                               "description": "1 – 5 (default 3); 4–5 only for what really matters to them."},
+                "due": {"type": "string",
+                        "description": "plan: when — YYYY-MM-DD or YYYY-MM-DDTHH:MM, the user's local time."},
+            },
             "required": ["text"],
         },
     },
     {
-        "name": "forget",
-        "description": "Delete one memory by its id (the [id] shown in your memory list).",
+        "name": "update_memory",
+        "description": (
+            "Change a memory in place (same id): correct or merge its text, change its kind, importance or date, "
+            "or mark a plan done (status done). Use it instead of adding a near-duplicate."
+        ),
         "inputSchema": {
             "type": "object",
-            "properties": {"id": {"type": "string", "description": "The memory id."}},
+            "properties": {
+                "id": {"type": "string", "description": "The memory id ([mem_…])."},
+                "text": {"type": "string", "description": "The corrected text."},
+                "kind": {"type": "string", "enum": ["profile", "preference", "fact", "plan", "context"]},
+                "importance": {"type": "integer", "minimum": 1, "maximum": 5},
+                "due": {"type": "string", "description": "YYYY-MM-DD or YYYY-MM-DDTHH:MM; empty clears it."},
+                "status": {"type": "string", "enum": ["active", "done", "archived"]},
+            },
             "required": ["id"],
+        },
+    },
+    {
+        "name": "forget",
+        "description": "Delete one memory by its id (it was wrong, or the user asked you to drop it).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "description": "The memory id."},
+                "reason": {"type": "string", "description": "Optional: why (wrong, outdated, the user asked)."},
+            },
+            "required": ["id"],
+        },
+    },
+    {
+        "name": "recall",
+        "description": (
+            "Search your memory of the user (everything, not only what the <context> block brought) — e.g. "
+            "\"what did they say about the trip\", \"their plans this week\"."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Words to look for."},
+                "kind": {"type": "string", "enum": ["profile", "preference", "fact", "plan", "context"]},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Default 6."},
+                "include_done": {"type": "boolean", "description": "Also done plans and archived memories."},
+            },
+            "required": ["query"],
         },
     },
 ]

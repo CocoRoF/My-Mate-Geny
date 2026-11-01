@@ -62,7 +62,7 @@ def test_bridge_protocol_and_forwarding():
         tools = _rpc(proc, {"jsonrpc": "2.0", "id": 3, "method": "tools/list"})["result"]["tools"]
         names = [t["name"] for t in tools]
         assert names == ["list_sessions", "read_session", "send_to_session", "create_session", "find_folders",
-                         "remember", "forget"]
+                         "remember", "update_memory", "forget", "recall"]
         assert all(len(t["description"]) > 60 and t["inputSchema"]["type"] == "object" for t in tools)
         r = _rpc(proc, {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
                         "params": {"name": "send_to_session", "arguments": {"session_id": "s", "message": "hi"}}})
