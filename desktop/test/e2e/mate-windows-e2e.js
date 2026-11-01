@@ -138,10 +138,11 @@ class App {
     this.pages.clear();
     this.mainCdp?.close();
     this.mainCdp = null;
+    // a quit request (SIGTERM to the app: it quits properly, storage written), then whatever is left
     try {
-      process.kill(-this.proc.pid, "SIGTERM");
+      process.kill(this.proc.pid, "SIGTERM");
     } catch {}
-    await Promise.race([this.exited, sleep(6000)]);
+    await Promise.race([this.exited, sleep(8000)]);
     try {
       process.kill(-this.proc.pid, "SIGKILL");
     } catch {}
@@ -196,6 +197,34 @@ const fill = (server, username, password) => `(() => {
   document.getElementById("go").click();
   return true;
 })()`;
+
+// a recording speechSynthesis (window.__spoken: the texts, 400 ms each; cancel() ends the current one)
+const FAKE_TTS = function () {
+  window.__spoken = [];
+  let cur = null;
+  let timer = null;
+  const end = () => {
+    clearTimeout(timer);
+    const u = cur;
+    cur = null;
+    if (u && u.onend) u.onend(new Event("end"));
+  };
+  const fake = {
+    speaking: false, pending: false, paused: false,
+    getVoices: () => [], addEventListener() {}, removeEventListener() {}, pause() {}, resume() {},
+    speak(u) {
+      if (cur) end();
+      cur = u;
+      window.__spoken.push(u.text);
+      setTimeout(() => u.onstart && u.onstart(new Event("start")), 0);
+      timer = setTimeout(end, 400);
+    },
+    cancel() {
+      if (cur) end();
+    },
+  };
+  Object.defineProperty(window, "speechSynthesis", { value: fake, configurable: true });
+};
 
 // in a page: rects of the quick card's row
 const QUICK_GEOM = `(() => {
@@ -464,6 +493,59 @@ async function main() {
     await con.eval(`document.querySelector('[data-testid="mate-settings-close"]').click(), true`);
     await until("back on the saved 0.3", async () => (await ov.eval(`document.querySelector('[data-testid="mate-overlay"]').dataset.voiceVolume`)) === "0.3", 2000);
 
+    // ── one voice: overlay + mate chat window + console Mate view (needs a server whose mate answers: fake-claude.py) ──
+    step("one voice: the overlay, the mate chat window and the console's Mate view — a reply is read once, by the overlay");
+    await con.eval(`window.hrhNative.mate.openChat().then(() => true)`);
+    let chatw = await app.page(/surface=mate-chat/);
+    await until("the chat window", () => chatw.eval(`!!document.querySelector('[data-testid="mate-input"]')`));
+    // the browser voice recorded instead of spoken (each page reloads with the stub)
+    for (const [re, ready] of [[/surface=mate-overlay/, "mate-overlay"], [/surface=mate-chat/, "mate-input"], [consoleRe, "mate-settings-open"]]) {
+      const p = await app.page(re);
+      await p.send("Page.enable");
+      await p.send("Page.addScriptToEvaluateOnNewDocument", { source: `(${FAKE_TTS})()` });
+      // (the console drops ?view= from its URL once read: back to the Mate view explicitly)
+      await p.eval(ready === "mate-settings-open" ? `location.href = "/?view=mate", true` : `location.reload(), true`).catch(() => {});
+      await sleep(500);
+      const q = await app.page(re);
+      await until(`${ready} after reload`, () => q.eval(`!!document.querySelector('[data-testid="${ready}"]') && !!window.__spoken`), 20000);
+    }
+    ov = await app.page(/surface=mate-overlay/);
+    chatw = await app.page(/surface=mate-chat/);
+    con = await app.page(consoleRe);
+    await sleep(1500);
+    const spokenIn = async (p, n) => (await p.eval(`window.__spoken`).catch(() => [])).filter((t) => t.startsWith(`Reply ${n} `)).map((t) => Number(/number (\d)/.exec(t)[1]));
+    const ask = async (text) => {
+      await chatw.eval(`document.querySelector('[data-testid="mate-input"]').focus(), true`);
+      await chatw.send("Input.insertText", { text });
+      await chatw.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
+      await chatw.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    };
+    await ask("q1 hello there");
+    const n1 = 1;
+    await until("the reply read by the overlay", async () => (await spokenIn(ov, n1)).length >= 5, 20000);
+    await sleep(1000);
+    const r1 = { overlay: await spokenIn(ov, n1), chat: await spokenIn(chatw, n1), console: await spokenIn(con, n1) };
+    console.log(`  read per window: ${JSON.stringify(r1)}`);
+    assert.deepEqual(r1, { overlay: [1, 2, 3, 4, 5], chat: [], console: [] });
+
+    step("one voice: the avatar hidden mid-reply → the mate chat window (used last) goes on from the next sentence");
+    await ask("q2 and again");
+    await until("2 sentences read by the overlay", async () => (await spokenIn(ov, 2)).length >= 2, 20000);
+    const first = await spokenIn(ov, 2);
+    await con.eval(`window.hrhNative.mate.hideAvatar().then(() => true)`);
+    await until("the rest read", async () => (await spokenIn(chatw, 2)).includes(5), 20000);
+    await sleep(800);
+    const rest = await spokenIn(chatw, 2);
+    console.log(`  overlay read ${JSON.stringify(first)}, then the chat window ${JSON.stringify(rest)}, the console ${JSON.stringify(await spokenIn(con, 2))}`);
+    assert.ok(rest[0] > first[first.length - 1], "went on after the last sentence started");
+    assert.equal(new Set([...first, ...rest]).size, first.length + rest.length, "no sentence twice");
+    assert.deepEqual(await spokenIn(con, 2), []);
+    await con.eval(`window.hrhNative.mate.closeChat().then(() => window.hrhNative.mate.showAvatar(${JSON.stringify(mate.id)})).then(() => true)`);
+    ov = await app.page(/surface=mate-overlay/);
+    await until("the overlay back", () => ov.eval(`!!document.querySelector('[data-testid="mate-overlay"]')`), 20000);
+    await until("the avatar window shown", () => app.main(`return win("surface=mate-overlay")?.isVisible()`));
+    console.log(`  shown again: view ${await ov.eval(`document.querySelector('[data-testid="mate-overlay"]').dataset.view`)}, stored ${await ov.eval(`localStorage.getItem("hrh.mate.view.${mate.id}")`)}`);
+
     // ── a restart keeps the avatar's size and view ──
     step("restart: the avatar window keeps the size the user gave it, and the avatar its pan / zoom");
     await app.stop();
@@ -477,6 +559,7 @@ async function main() {
     assert.equal(a3.width, a2.width, "width kept (the page's suggested size does not win)");
     assert.equal(a3.height, a2.height, "height kept");
     const v3 = (await ov.eval(`document.querySelector('[data-testid="mate-overlay"]').dataset.view`)).split(",").map(Number);
+    console.log(`  after restart: view ${v3}, stored ${await ov.eval(`localStorage.getItem("hrh.mate.view.${mate.id}")`)}, active ${await ov.eval(`localStorage.getItem("hrh_mate_active")`)}, keys ${await ov.eval(`Object.keys(localStorage).join(",")`)}`);
     near(v3[2], view[2], 0.001, "zoom kept");
     near(v3[0], view[0], 0.001, "pan kept");
     await app.main(`BrowserWindow.getAllWindows().forEach((w) => { if (!w.webContents.getURL().includes("surface=")) w.hide(); }); return true`);
