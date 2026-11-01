@@ -12,7 +12,7 @@ interface Props {
 
 const RECENTS_KEY = "hrh_recent_folders";
 
-function loadRecents(conn: string | null): string[] {
+export function loadRecents(conn: string | null): string[] {
   try {
     const all = JSON.parse(localStorage.getItem(RECENTS_KEY) || "{}");
     return (all[conn || "local"] || []).slice(0, 6);
@@ -20,7 +20,7 @@ function loadRecents(conn: string | null): string[] {
     return [];
   }
 }
-function pushRecent(conn: string | null, path: string) {
+export function pushRecent(conn: string | null, path: string) {
   try {
     const all = JSON.parse(localStorage.getItem(RECENTS_KEY) || "{}");
     const key = conn || "local";

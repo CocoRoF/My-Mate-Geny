@@ -339,6 +339,42 @@ class RemoteSshConnector(WorkspaceConnector):
             await conn.wait_closed()
         return out
 
+    async def upload_tree(self, local_dir: str, base: str, rel_target: str) -> str:
+        """Copy a local folder to ``<base>/<rel_target>`` on the remote host
+        over SFTP (``-2``, ``-3``… when that name is taken). The parent of the
+        target gets a ``.gitignore`` of ``*`` (copies never show as untracked
+        files in the workspace's repo). Returns the remote path."""
+        conn = await self._asyncssh_connect()
+        try:
+            async with conn.start_sftp_client() as sftp:
+                b = base or self._spec.default_path or "."
+                if b == "~" or b.startswith("~/"):
+                    b = "." + b[1:]
+                b = await sftp.realpath(b)
+                target = posixpath.join(b, rel_target)
+                parent = posixpath.dirname(target)
+                await sftp.makedirs(parent, exist_ok=True)
+                gi = posixpath.join(parent, ".gitignore")
+                if not await sftp.exists(gi):
+                    async with sftp.open(gi, "w") as fh:
+                        await fh.write("# uploaded copies of folders from your computer (My Mate Geny)\n*\n")
+                dest, n = target, 2
+                while await sftp.exists(dest):
+                    dest = f"{target}-{n}"
+                    n += 1
+                await sftp.makedirs(dest, exist_ok=False)
+                for root, dirs, files in os.walk(local_dir):
+                    rel = os.path.relpath(root, local_dir)
+                    rdir = dest if rel == "." else posixpath.join(dest, *rel.split(os.sep))
+                    for d in dirs:
+                        await sftp.makedirs(posixpath.join(rdir, d), exist_ok=True)
+                    for f in files:
+                        await sftp.put(os.path.join(root, f), posixpath.join(rdir, f))
+                return dest
+        finally:
+            conn.close()
+            await conn.wait_closed()
+
     async def teardown(self) -> None:
         for remote_path, mount_point in list(self._mounts.items()):
             try:

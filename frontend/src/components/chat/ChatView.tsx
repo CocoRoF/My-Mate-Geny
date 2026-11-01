@@ -15,6 +15,7 @@ import UsageModal from "../usage/UsageModal";
 import Icon, { type IconName } from "../ui/Icon";
 import ExplorerPanel from "../explorer/ExplorerPanel";
 import TabBar from "../viewer/TabBar";
+import FolderButton from "./topbar/FolderButton";
 import { useChatStore } from "../../stores/chatStore";
 import { useSessionTabs, useWorkbench } from "../../stores/workbenchStore";
 
@@ -172,26 +173,29 @@ export default function ChatView() {
       {dragging && <DropOverlay hint="Images are shown to the agent · other files are saved for its tools" />}
       {active && (
         <div className={`relative pt-safe shrink-0 border-b border-border/70 bg-surface/40 backdrop-blur-sm ${more ? "z-30" : ""}`}>
-        <div className="flex items-center gap-2 px-3 sm:px-5 h-12 md:h-14">
+        <div data-testid="topbar" className="flex items-center gap-2 px-3 sm:px-5 h-12 md:h-14">
           <MenuButton />
           <Icon
             name={active.connection_id ? "server" : "cpu"}
             size={16}
             className={`shrink-0 ${active.connection_id ? "text-cyan" : "text-accent"}`}
           />
-          <span className="text-[14px] md:text-sm font-medium text-content truncate min-w-0">{active.title}</span>
+          <span data-topbar-item="title" className="text-[14px] md:text-sm font-medium text-content truncate min-w-0">{active.title}</span>
           <span className="pill bg-surface-3 text-content-dim shrink-0 hidden sm:inline-flex">{active.provider}</span>
           {active.mode === "plan" && <span className="pill bg-violet/15 text-violet shrink-0">plan</span>}
           <div className="ml-auto flex items-center gap-0.5 sm:gap-2 min-w-0 shrink-0">
             <button
               onClick={() => setExplorer(true)}
+              data-topbar-item="workspace"
               className={`${compact ? "hidden 2xl:inline" : "hidden lg:inline"} text-[11px] text-content-faint font-mono truncate max-w-[220px] hover:text-content`}
               title="Show in explorer"
             >
               {active.connection_id ? "remote" : "local"} · {active.workspace_path}
             </button>
+            <FolderButton session={active} />
             <button
               onClick={() => setShowTasks(true)}
+              data-topbar-item="tasks"
               className={`btn-ghost h-10 w-10 p-0 sm:h-auto sm:w-auto sm:py-1 sm:px-2 shrink-0 ${
                 runningTasks ? "text-accent" : "hidden sm:inline-flex"
               }`}
@@ -201,11 +205,12 @@ export default function ChatView() {
               <span className="hidden sm:inline">Tasks</span>
               {runningTasks > 0 && <span className="pill bg-accent-soft text-accent hidden sm:inline-flex">{runningTasks}</span>}
             </button>
-            <button onClick={() => setShowUsage(true)} className="btn-ghost hidden sm:inline-flex py-1 px-2 shrink-0" title="Account & usage">
+            <button onClick={() => setShowUsage(true)} data-topbar-item="usage" className="btn-ghost hidden sm:inline-flex py-1 px-2 shrink-0" title="Account & usage">
               <Icon name="cpu" size={14} /> <span className="hidden sm:inline">Usage</span>
             </button>
             <button
               onClick={() => setExplorer(!explorer)}
+              data-topbar-item="explorer"
               className={`btn-ghost h-10 w-10 p-0 sm:h-auto sm:w-auto sm:py-1 sm:px-2 shrink-0 ${explorer ? "bg-surface-3 text-content" : ""}`}
               title="Explorer — browse and open the workspace's files"
             >
@@ -214,17 +219,16 @@ export default function ChatView() {
             </button>
             <button
               onClick={togglePanel}
+              data-topbar-item="panel"
               className={`btn-ghost hidden sm:inline-flex py-1 px-2 shrink-0 ${panel ? "bg-surface-3 text-content" : ""}`}
-              title="Session panel — folders, tasks, changes, agent"
+              title="Session panel — workspace, tasks, changed files, agent, usage"
             >
-              <Icon name="folder" size={14} />
+              <Icon name="sliders" size={14} />
               <span className="hidden sm:inline">Panel</span>
-              {(active.extra_dirs?.length || 0) > 0 && (
-                <span className="pill bg-accent-soft text-accent">+{active.extra_dirs.length}</span>
-              )}
             </button>
             <button
               data-more-toggle
+              data-topbar-item="more"
               onClick={() => setMore((v) => !v)}
               className={`btn-ghost sm:hidden h-10 w-10 p-0 shrink-0 ${more ? "bg-surface-3 text-content" : ""}`}
               aria-label="More"
@@ -246,12 +250,7 @@ export default function ChatView() {
                 onClick: () => setShowTasks(true),
               },
               { icon: "cpu", label: "Account & usage", onClick: () => setShowUsage(true) },
-              {
-                icon: "folder",
-                label: "Session panel",
-                badge: active.extra_dirs?.length ? `+${active.extra_dirs.length}` : undefined,
-                onClick: () => !panel && togglePanel(),
-              },
+              { icon: "sliders", label: "Session panel", onClick: () => !panel && togglePanel() },
             ]}
           />
         )}

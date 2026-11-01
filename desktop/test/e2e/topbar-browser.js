@@ -1,0 +1,262 @@
+// The chat's top bar — Folder and Git buttons — checked in a browser against a real server on THIS machine (backend
+// with CLAUDE_BINARY=desktop/test/e2e/fake-claude.py, frontend build as STATIC_DIR):
+//
+//   NODE_PATH=<dir with playwright-core> CHROME=<chromium binary> \
+//     node test/e2e/topbar-browser.js <server url> <password> <fixtures dir> [shots dir] [folder|git|layout]
+//
+// The fixtures dir is (re)created: a workspace repo with changes, an origin, a second branch, sibling folders and a
+// "computer" folder to upload. Desktop (1440×900) and phone (390×844, touch) widths.
+"use strict";
+const assert = require("assert/strict");
+const { execFileSync } = require("child_process");
+const fs = require("fs");
+const path = require("path");
+const { chromium } = require("playwright-core");
+
+const [SERVER, PASSWORD, FIX, SHOTS, ONLY] = process.argv.slice(2);
+if (!SERVER || !PASSWORD || !FIX) {
+  console.error("usage: node test/e2e/topbar-browser.js <server url> <password> <fixtures dir> [shots dir] [folder|git|layout]");
+  process.exit(2);
+}
+const WS = path.join(FIX, "ws");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const step = (s) => console.log(`• ${s}`);
+
+function fixtures() {
+  fs.rmSync(FIX, { recursive: true, force: true });
+  const sh = (cwd, ...args) => execFileSync("git", args, { cwd, stdio: "pipe", env: { ...process.env, GIT_AUTHOR_NAME: "Dev", GIT_AUTHOR_EMAIL: "dev@example.com", GIT_COMMITTER_NAME: "Dev", GIT_COMMITTER_EMAIL: "dev@example.com" } });
+  const w = (f, data) => (fs.mkdirSync(path.dirname(f), { recursive: true }), fs.writeFileSync(f, data));
+  for (const d of ["shared-lib/src", "docs", "notebooks", "plain-folder"]) fs.mkdirSync(path.join(WS, d), { recursive: true });
+  // demo-app: main ahead of its origin by one commit, a modified + two untracked files, a feature branch on the origin
+  fs.mkdirSync(FIX, { recursive: true });
+  execFileSync("git", ["init", "-q", "--bare", "-b", "main", path.join(FIX, "origin.git")]);
+  const app = path.join(WS, "demo-app");
+  execFileSync("git", ["clone", "-q", path.join(FIX, "origin.git"), app], { stdio: "pipe" });
+  w(path.join(app, "README.md"), "# Demo app\n");
+  w(path.join(app, "src/app.py"), "print(1)\n");
+  sh(app, "add", "-A");
+  sh(app, "commit", "-qm", "Initial commit");
+  sh(app, "push", "-q", "origin", "main");
+  sh(app, "checkout", "-qb", "feature/topbar");
+  w(path.join(app, "src/feature.py"), "x\n");
+  sh(app, "add", "-A");
+  sh(app, "commit", "-qm", "Add the topbar feature");
+  sh(app, "push", "-q", "origin", "feature/topbar");
+  sh(app, "checkout", "-q", "main");
+  sh(app, "branch", "-qD", "feature/topbar"); // only on the origin now: switching to it creates the tracking branch
+  fs.appendFileSync(path.join(app, "src/app.py"), "print(2)\n");
+  sh(app, "commit", "-qam", "Tune the app entry point");
+  fs.appendFileSync(path.join(app, "README.md"), "more\n");
+  w(path.join(app, "src/new_file.py"), "new\n");
+  w(path.join(app, "notes.txt"), "y\n");
+  // shared-lib: a repo too (detected when connected as a folder)
+  w(path.join(WS, "shared-lib/src/lib.py"), "lib\n");
+  sh(path.join(WS, "shared-lib"), "init", "-q", "-b", "develop");
+  sh(path.join(WS, "shared-lib"), "add", "-A");
+  sh(path.join(WS, "shared-lib"), "commit", "-qm", "lib");
+  // plain-folder/tools: a repo one level down
+  w(path.join(WS, "plain-folder/tools/run.sh"), "echo\n");
+  sh(path.join(WS, "plain-folder/tools"), "init", "-q", "-b", "main");
+  sh(path.join(WS, "plain-folder/tools"), "add", "-A");
+  sh(path.join(WS, "plain-folder/tools"), "commit", "-qm", "tools");
+  // "my computer": a folder to upload (node_modules / .git are skipped)
+  const pc = path.join(FIX, "localpc", "my-notes");
+  w(path.join(pc, "todo.md"), "# notes\n");
+  w(path.join(pc, "sub/data.csv"), "a,b\n");
+  w(path.join(pc, "sub/blob.bin"), Buffer.alloc(3 << 20, 7)); // two of these: more than one batch (4 MB)
+  w(path.join(pc, "sub/blob2.bin"), Buffer.alloc(3 << 20, 8));
+  w(path.join(pc, "node_modules/pkg/index.js"), "junk");
+  w(path.join(pc, ".git/HEAD"), "ref");
+}
+
+async function api(ctx, method, url, body) {
+  const r = await ctx.request.fetch(SERVER + url, { method, data: body, headers: { "Content-Type": "application/json" } });
+  const t = await r.text();
+  if (!r.ok()) throw new Error(`${method} ${url}: ${r.status()} ${t}`);
+  return t ? JSON.parse(t) : null;
+}
+
+async function newContext(browser, phone) {
+  const ctx = await browser.newContext(
+    phone
+      ? {
+          viewport: { width: 390, height: 844 },
+          deviceScaleFactor: 2,
+          isMobile: true,
+          hasTouch: true,
+          userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+        }
+      : { viewport: { width: 1440, height: 900 } },
+  );
+  const r = await ctx.request.post(SERVER + "/api/auth/login", { data: { username: "admin", password: PASSWORD } });
+  assert.ok(r.ok(), "login");
+  return ctx;
+}
+
+async function openSession(ctx, sid, { width } = {}) {
+  await ctx.addInitScript((id) => {
+    localStorage.setItem("hrh_last_session", id);
+    localStorage.setItem("hrh_session_panel", "0");
+  }, sid);
+  const page = await ctx.newPage();
+  page.on("pageerror", (e) => console.log("  [pageerror]", e.message));
+  if (width) await page.setViewportSize({ width, height: 900 });
+  await page.goto(SERVER + "/");
+  await page.waitForSelector('[data-testid="topbar-folders"]', { timeout: 20000 });
+  await sleep(700);
+  return page;
+}
+
+async function shot(page, name, top = false) {
+  if (!SHOTS) return;
+  const file = path.join(SHOTS, name);
+  const v = page.viewportSize();
+  await page.screenshot({ path: file, ...(top ? { clip: { x: 0, y: 0, width: v.width, height: Math.min(v.height, 520) } } : {}) });
+  console.log(`  shot: ${file}`);
+}
+
+/** Nothing in the top bar off screen, nothing overlapping, no sideways page scroll. */
+async function barFits(page, label) {
+  const r = await page.evaluate(() => {
+    const bar = document.querySelector('[data-testid="topbar"]');
+    const items = [...bar.querySelectorAll("[data-topbar-item]")].filter((el) => el.getBoundingClientRect().width > 0);
+    const rects = items.map((el) => ({ name: el.getAttribute("data-topbar-item"), ...el.getBoundingClientRect().toJSON() }));
+    const off = rects.filter((b) => b.right > window.innerWidth + 0.5 || b.left < -0.5).map((b) => b.name);
+    const overlap = [];
+    for (let i = 1; i < rects.length; i++) if (rects[i].left < rects[i - 1].right - 0.5) overlap.push(`${rects[i - 1].name}/${rects[i].name}`);
+    const ws = bar.querySelector('[data-topbar-item="workspace"]');
+    return {
+      off,
+      overlap,
+      docW: document.documentElement.scrollWidth,
+      vw: window.innerWidth,
+      shown: rects.map((b) => b.name),
+      wsTruncated: ws && ws.getBoundingClientRect().width > 0 ? ws.scrollWidth > ws.clientWidth : null,
+    };
+  });
+  console.log(`  ${label}: ${JSON.stringify({ shown: r.shown, wsTruncated: r.wsTruncated })}`);
+  assert.deepEqual(r.off, [], `${label}: off screen`);
+  assert.deepEqual(r.overlap, [], `${label}: overlapping`);
+  assert.ok(r.docW <= r.vw + 1, `${label}: page scrolls sideways (${r.docW} > ${r.vw})`);
+  return r;
+}
+
+const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).length, sel);
+
+// ── Folder ──
+async function folderFlow(browser, phone) {
+  const tag = phone ? "phone" : "desktop";
+  const ctx = await newContext(browser, phone);
+  const s = await api(ctx, "POST", "/api/sessions", { provider: "claude", model: "", connection_id: null, workspace_path: path.join(WS, "demo-app"), title: `Folders (${tag})` });
+  const page = await openSession(ctx, s.id);
+
+  step(`${tag}: Folder button, empty state`);
+  await barFits(page, `${tag} empty`);
+  await shot(page, `folder-1-empty-${tag}.png`, true);
+
+  step(`${tag}: popover — suggestions next to the workspace`);
+  await page.click('[data-testid="topbar-folders"]');
+  await page.waitForSelector('[data-testid="folders-popover"]');
+  await page.waitForSelector('[data-testid="folders-suggestions"] button');
+  await sleep(300);
+  await shot(page, `folder-2-popover-empty-${tag}.png`);
+
+  step(`${tag}: filter, connect two folders`);
+  await page.fill('[data-testid="folders-popover"] input', "shared");
+  assert.equal(await count(page, '[data-testid="folders-suggestions"] button'), 1, "the filter narrows the list");
+  await page.click('[data-testid="folders-suggestions"] button');
+  await page.waitForSelector('[data-testid="folders-connected"] li');
+  await page.fill('[data-testid="folders-popover"] input', "");
+  await page.click(`[data-testid="folders-suggestions"] button[title="Connect ${path.join(WS, "docs")}"]`);
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="folders-connected"] li').length === 2);
+  assert.deepEqual((await api(ctx, "GET", `/api/sessions/${s.id}`)).extra_dirs, [path.join(WS, "shared-lib"), path.join(WS, "docs")]);
+  await shot(page, `folder-3-popover-with-folders-${tag}.png`);
+
+  step(`${tag}: Esc closes${phone ? "" : " (focus back on the button)"}`);
+  await page.keyboard.press("Escape");
+  await page.waitForSelector('[data-testid="folders-popover"]', { state: "detached" });
+  if (!phone) assert.equal(await page.evaluate(() => document.activeElement?.dataset.testid), "topbar-folders");
+  await barFits(page, `${tag} with folders`);
+  await shot(page, `folder-4-button-with-folders-${tag}.png`, true);
+
+  step(`${tag}: a click elsewhere closes`);
+  await page.click('[data-testid="topbar-folders"]');
+  await page.waitForSelector('[data-testid="folders-popover"]');
+  await page.mouse.click(phone ? 200 : 700, phone ? 660 : 600);
+  await page.waitForSelector('[data-testid="folders-popover"]', { state: "detached" });
+
+  if (!phone) {
+    step(`${tag}: keyboard — Enter opens, Tab reaches the rows`);
+    await page.focus('[data-testid="topbar-folders"]');
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[data-testid="folders-popover"]');
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Filter folders or type a path");
+    await page.keyboard.press("Escape");
+  }
+
+  step(`${tag}: a folder from this computer → ${phone ? "not on phones (no folder picker)" : "uploaded as a copy (webkitdirectory)"}`);
+  await page.click('[data-testid="topbar-folders"]');
+  await page.click('[data-testid="folders-tab-local"]');
+  await page.waitForSelector('[data-testid="local-folder"], [data-testid="local-folder-unavailable"]');
+  await sleep(200);
+  await shot(page, `folder-5-local-tab-${tag}.png`);
+  if (phone) {
+    assert.equal(await count(page, '[data-testid="local-folder-unavailable"]'), 1, "phones say why");
+    await page.click('[data-testid="folders-tab-host"]');
+  } else {
+    await page.setInputFiles('[data-testid="local-folder-input"]', path.join(FIX, "localpc", "my-notes"));
+    await page.waitForSelector('[data-testid="local-folder-summary"]');
+    await sleep(200);
+    await shot(page, `folder-6-local-summary-${tag}.png`);
+    await page.route("**/folder-uploads/*/files", async (route) => {
+      await sleep(1500); // slow enough to see the progress
+      await route.continue();
+    });
+    await page.click('[data-testid="local-folder-upload"]');
+    await page.waitForFunction(() => /^[1-9]/.test(document.querySelector('[data-testid="local-folder-progress"]')?.textContent || ""), null, { timeout: 15000 });
+    await shot(page, `folder-7-local-uploading-${tag}.png`);
+    step(`${tag}: closing the popover doesn't stop the upload; the button shows it`);
+    await page.keyboard.press("Escape");
+    await shot(page, `folder-7b-uploading-button-${tag}.png`, true);
+    await page.waitForFunction(() => document.querySelector('[data-testid="topbar-folders"]')?.textContent?.includes("3"), null, { timeout: 30000 });
+    await page.unroute("**/folder-uploads/*/files");
+    await page.click('[data-testid="topbar-folders"]');
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="folders-connected"] li').length === 3);
+    await sleep(300);
+    await shot(page, `folder-8-local-copied-${tag}.png`);
+    const copy = (await api(ctx, "GET", `/api/sessions/${s.id}`)).extra_dirs[2];
+    assert.equal(copy, path.join(WS, "demo-app", ".geny-uploads", "my-notes"));
+    assert.equal(fs.readFileSync(path.join(copy, "sub", "blob2.bin")).length, 3 << 20);
+    assert.ok(!fs.existsSync(path.join(copy, "node_modules")) && !fs.existsSync(path.join(copy, ".git")), "skipped folders stay out");
+    assert.ok(fs.existsSync(path.join(copy, "todo.md")));
+  }
+
+  step(`${tag}: disconnect; show in Explorer`);
+  const before = await count(page, '[data-testid="folders-connected"] li');
+  await page.click('[data-testid="folders-connected"] button[aria-label="Disconnect docs"]');
+  await page.waitForFunction((n) => document.querySelectorAll('[data-testid="folders-connected"] li').length === n - 1, before);
+  await page.click('[data-testid="folders-connected"] button[aria-label="Show shared-lib in Explorer"]');
+  await page.waitForSelector('[data-testid="folders-popover"]', { state: "detached" });
+  await sleep(900);
+  await shot(page, `folder-9-explorer-${tag}.png`);
+  fs.rmSync(path.join(WS, "demo-app", ".geny-uploads"), { recursive: true, force: true });
+  await ctx.close();
+}
+
+(async () => {
+  fixtures();
+  if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
+  const browser = await chromium.launch({ executablePath: process.env.CHROME, args: ["--no-sandbox"] });
+  try {
+    if (!ONLY || ONLY === "folder") {
+      await folderFlow(browser, false);
+      await folderFlow(browser, true);
+    }
+    console.log("OK");
+  } finally {
+    await browser.close();
+  }
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

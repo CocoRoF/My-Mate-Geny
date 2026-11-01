@@ -6,12 +6,10 @@ import { useChatStore, type ToolActivity, type Turn } from "../../../stores/chat
 import type { HistoryBefore } from "../../../api/sessions";
 import { useConfigStore } from "../../../stores/configStore";
 import { useConnectionStore } from "../../../stores/connectionStore";
-import { useSessionStore } from "../../../stores/sessionStore";
 import type { Session } from "../../../types";
 import Icon, { type IconName } from "../../ui/Icon";
 import GitContext from "../GitContext";
 import TodoCard, { todosOf, type Todo } from "../turn/TodoCard";
-import FolderPicker from "./FolderPicker";
 import { relPath } from "../turn/toolMeta";
 import { openPath } from "../../../stores/workbenchStore";
 
@@ -117,16 +115,12 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
   const pinned = useChatStore((s) => s.pinnedTools);
   const info = useChatStore((s) => s.info);
   const cost = useChatStore((s) => s.runningCostUsd);
-  const update = useSessionStore((s) => s.update);
   const connections = useConnectionStore((s) => s.connections);
   const catalog = useConfigStore((s) => s.catalog);
-  const [picker, setPicker] = useState(false);
-  const [error, setError] = useState("");
   const [showSkills, setShowSkills] = useState(false);
 
   const conn = connections.find((c) => c.id === session.connection_id);
   const hostLabel = conn ? `${conn.name} (${conn.username}@${conn.host})` : "this server";
-  const dirs = session.extra_dirs || [];
   // (pinned calls precede the loaded range: the server's count has them)
   const changes = useMemo(
     () => changesOf(turns, older, (detached?.tools || []).filter((t) => !pinned.has(t.id))),
@@ -145,16 +139,6 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
   // The account this chat's engine leased (same source as the composer footer).
   const account = useUsageStore((s) => s.account[session.id] ?? null);
 
-  const setDirs = async (next: string[]) => {
-    setError("");
-    try {
-      await update(session.id, { extra_dirs: next });
-    } catch (e: any) {
-      setError(String(e.message || e));
-      throw e;
-    }
-  };
-
   return (
     <aside className="flex h-full w-[340px] max-w-[92vw] shrink-0 flex-col border-l border-border bg-surface/95 backdrop-blur-xl">
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 px-4">
@@ -172,44 +156,6 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
           <div className="mt-2">
             <GitContext path={session.workspace_path} connectionId={session.connection_id} />
           </div>
-        </Section>
-
-        <Section
-          title="Additional folders"
-          icon="folder"
-          count={dirs.length}
-          action={
-            <button onClick={() => setPicker(true)} className="btn-soft py-1 px-2 text-[11.5px]" title="Connect another folder">
-              <Icon name="plus" size={12} /> Add
-            </button>
-          }
-        >
-          {dirs.length === 0 ? (
-            <p className="text-[12px] text-content-faint">
-              Give the agent access to more folders on {conn ? conn.name : "this server"} — e.g. a shared library or a
-              second repo. Applies from the next message.
-            </p>
-          ) : (
-            <ul className="space-y-1">
-              {dirs.map((d) => (
-                <li key={d} className="group flex items-center gap-2 rounded-lg bg-surface-2/70 px-2.5 py-1.5">
-                  <Icon name="folder" size={13} className="shrink-0 text-content-faint" />
-                  <span className="min-w-0 flex-1" title={d}>
-                    <span className="block truncate text-[12.5px] text-content">{base(d)}</span>
-                    <span className="block truncate font-mono text-[10.5px] text-content-faint">{d}</span>
-                  </span>
-                  <button
-                    onClick={() => setDirs(dirs.filter((x) => x !== d)).catch(() => {})}
-                    className="shrink-0 rounded p-1 text-content-faint hover:text-danger sm:opacity-0 group-hover:opacity-100 transition"
-                    title="Disconnect folder"
-                  >
-                    <Icon name="x" size={13} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {error && <p className="mt-1.5 text-[11.5px] text-danger">{error}</p>}
         </Section>
 
         {todos.length > 0 && (
@@ -363,16 +309,6 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
         </Section>
       </div>
 
-      {picker && (
-        <FolderPicker
-          connectionId={session.connection_id}
-          hostLabel={hostLabel}
-          initialPath={session.workspace_path}
-          exclude={[session.workspace_path, ...dirs]}
-          onAdd={(p) => setDirs([...dirs, p.replace(/\/+$/, "")])}
-          onClose={() => setPicker(false)}
-        />
-      )}
     </aside>
   );
 }
