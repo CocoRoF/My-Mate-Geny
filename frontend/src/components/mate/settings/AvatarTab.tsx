@@ -13,6 +13,7 @@ import type { MateConversation } from "../../../mate/useMateConversation";
 import { end as voiceEnd, fakeLevel, level as voiceLevel, start as voiceStart } from "../../../mate/voiceBridge";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
+import { previewMateAvatar } from "../../../mate/livePreview";
 import { BundledReset, ClipLibrary, StillTriggers, TriggerPreview, type TriggerPick } from "./ClipLibrary";
 import { Banner, ErrorLine, Field, SaveBar, Section, useSaver } from "./ui";
 
@@ -48,6 +49,13 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
   const serverAvatar = JSON.stringify(mate.avatar);
   useEffect(() => setAvatar(JSON.parse(serverAvatar)), [serverAvatar]);
   const save = () => saver.run(() => useMateStore.getState().patch(mate.id, { avatar }));
+  // the draft is live: every avatar of this browser (overlay, chat window, quick card, other tabs) shows it while it
+  // differs from the saved one; saving or leaving the tab puts the saved one back (mate/livePreview)
+  const draftKey = dirty ? JSON.stringify(avatar) : "";
+  useEffect(() => {
+    previewMateAvatar(mate.id, draftKey ? (JSON.parse(draftKey) as Avatar) : null);
+  }, [draftKey, mate.id]);
+  useEffect(() => () => previewMateAvatar(mate.id, null), [mate.id]);
   // the clip editor's "show it on the avatar preview"
   const [poke, setPoke] = useState<{ pick: TriggerPick; at: number } | null>(null);
   const onPoke = (pick: TriggerPick) => setPoke({ pick, at: Date.now() });

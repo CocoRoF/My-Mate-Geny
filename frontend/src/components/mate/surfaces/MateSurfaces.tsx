@@ -15,7 +15,7 @@ import { useMateStore } from "../../../stores/mateStore";
 import { desktopMate, useDesktopMate, type DesktopCommand, type DesktopMateState } from "../../../mate/desktop";
 import { useMateConversation } from "../../../mate/useMateConversation";
 import { parseEmotionText } from "../../../mate/emotion";
-import { MateAvatar } from "../../../mate/avatar/MateAvatar";
+import { LiveMateAvatar } from "../../../mate/avatar/MateAvatar";
 import { isHome, useAvatarView } from "../../../mate/avatar/view";
 import Icon from "../../ui/Icon";
 import { DropOverlay, useFileDrop } from "../../composer/useFileDrop";
@@ -144,7 +144,7 @@ function Overlay() {
         style={interactive ? { cursor: dragging ? "grabbing" : "grab", touchAction: "none" } : undefined}
         data-testid="mate-avatar-area"
       >
-        <MateAvatar key={mate.id} avatar={mate.avatar} name={mate.name} mood={conv.mood} react={conv.react} onTap={() => conv.poke("greet")} view={view} />
+        <LiveMateAvatar key={mate.id} mate={mate} mood={conv.mood} react={conv.react} onTap={() => conv.poke("greet")} view={view} />
       </div>
       {interactive && !moveMode && !isHome(view) && (
         <button
@@ -406,7 +406,7 @@ function ChatWindow() {
       {dragging && <DropOverlay compact hint={`${mate.name} sees images and reads documents`} />}
       <div className="flex shrink-0 items-center gap-2 border-b border-border/70 bg-surface/80 px-3 py-2">
         <div className="relative h-10 w-8 shrink-0">
-          <MateAvatar key={mate.id} avatar={mate.avatar} name={mate.name} size="sm" mood={conv.mood} react={conv.react} interactive={false} />
+          <LiveMateAvatar key={mate.id} mate={mate} size="sm" mood={conv.mood} react={conv.react} interactive={false} />
         </div>
         <div className="min-w-0 flex-1 leading-tight">
           <div className="truncate text-[13.5px] font-semibold">{mate.name}</div>

@@ -623,6 +623,13 @@ index), so a window that takes over mid-reply goes on from the next sentence
 and nothing is read twice. Mute (localStorage) and the volume apply wherever
 it plays.
 
+**Avatar edits show at once** (`mate/livePreview.ts`). While Settings → Avatar
+has unsaved changes (a clip switched off, a trigger, a still), the draft is
+broadcast to every window of the browser and every avatar (`LiveMateAvatar`:
+console stage, mate chat window, overlay, quick card) plays from it — a clip
+switched off is cut and never picked again. Saving (or leaving the tab) ends
+the preview; the saved avatar then reaches other devices by `mates.changed`.
+
 **Mates stay current in every window.** Every mate write (create / update /
 delete / memories / global voice settings) is announced on `/ws/sessions` as
 `{"type": "mates.changed", "data": {"version", "reason", "mate_id"}}` (and

@@ -10,7 +10,8 @@
  * The speaking level comes from the shared voice bridge (src/mate/voiceBridge.ts), not from props.
  */
 import { lazy, memo, Suspense, useState, useSyncExternalStore } from "react";
-import type { MateAvatarProps } from "../types";
+import { useLiveAvatar } from "../livePreview";
+import type { Avatar, MateAvatarProps } from "../types";
 import { StackedPlayer } from "./player";
 import { reducedMotion } from "./shared";
 import VideoBody from "./VideoBody";
@@ -134,6 +135,19 @@ function Initial({ name }: { name: string }) {
       <span>{ch}</span>
     </div>
   );
+}
+
+/**
+ * A mate's avatar as it is now: the saved one, or the Settings → Avatar draft being edited in any window of this
+ * browser (clips switched on/off show at once — mate/livePreview). Saved changes reach every window by the server's
+ * `mates.changed` push (stores/mateStore).
+ */
+export function LiveMateAvatar({
+  mate,
+  ...rest
+}: Omit<MateAvatarProps, "avatar" | "name"> & MateAvatarExtraProps & { mate: { id: string; name: string; avatar: Avatar } }) {
+  const avatar = useLiveAvatar(mate) ?? mate.avatar;
+  return <MateAvatar avatar={avatar} name={mate.name} {...rest} />;
 }
 
 export default MateAvatar;

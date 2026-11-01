@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Mate } from "../../api/mates";
-import { MateAvatar } from "../../mate/avatar/MateAvatar";
+import { LiveMateAvatar } from "../../mate/avatar/MateAvatar";
 import type { BodyMood, MateReact } from "../../mate/types";
 import type { Caption } from "../../mate/useMateConversation";
 
@@ -92,7 +92,7 @@ export default function MateStage({
       )}
       <div className="relative min-h-0 w-full flex-1">
         {/* keyed by the mate: switching mates never shows (or keeps playing) the previous mate's body */}
-        <MateAvatar key={mate.id} avatar={mate.avatar} name={mate.name} size={size} mood={mood} react={react} onTap={onTap} />
+        <LiveMateAvatar key={mate.id} mate={mate} size={size} mood={mood} react={react} onTap={onTap} />
       </div>
       {showName && (
         <div className="flex shrink-0 items-center gap-2 pb-2 pt-1 text-[12.5px]">
