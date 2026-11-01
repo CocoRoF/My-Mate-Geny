@@ -17,6 +17,9 @@ const os = require("os");
 const path = require("path");
 const { readSettings, writeSettings, serverUrl, sameOrigin } = require("./settings");
 const geo = require("./geometry");
+const recovery = require("./recovery");
+
+const RETRY_PAGE = path.join(__dirname, "offline.html");
 
 const mac = process.platform === "darwin";
 const linux = process.platform === "linux";
@@ -109,10 +112,10 @@ function loadSurface(win, kind) {
  *  redirected to the server's login page, which must never sit in a
  *  transparent always-on-top window. */
 function onSurface(win, kind) {
-  if (!alive(win)) return false;
-  const url = win.webContents.getURL();
-  return sameOrigin(url) && url.includes(`surface=mate-${kind}`);
+  return alive(win) && onSurfaceUrl(win.webContents.getURL(), kind);
 }
+
+const onSurfaceUrl = (url, kind) => sameOrigin(url) && String(url).includes(`surface=mate-${kind}`);
 
 /** The surface, or the local offline page (which has Retry). */
 const presentable = (win, kind) => onSurface(win, kind) || (alive(win) && win.webContents.getURL().startsWith("file:"));
@@ -199,7 +202,7 @@ function guard(win, kind) {
       alive(bar) && bar.hide();
       return retryOverlaySoon();
     }
-    win.loadFile(path.join(__dirname, "offline.html"), { query: { server: serverUrl(), error: desc || String(code) } });
+    // (the chat window and the quick card: recovery.attach → the retry page)
   });
   // Signed out: the server answered with its login page instead of the
   // surface. Hide the Mate window and sign in in the console; the surface
@@ -339,6 +342,14 @@ function createAvatar() {
     if (moveMode) injectDrag(true);
     command(win, { type: "state", ...getState() });
   });
+  // a hung avatar page: reload it quietly (no retry card in a see-through corner window)
+  let hang = null;
+  win.on("unresponsive", () => {
+    clearTimeout(hang);
+    hang = setTimeout(() => alive(win) && loadSurface(win, "overlay"), recovery.UNRESPONSIVE_GRACE);
+  });
+  win.on("responsive", () => clearTimeout(hang));
+  win.on("closed", () => clearTimeout(hang));
   wc.on("render-process-gone", (_e, d) => {
     if (d.reason === "clean-exit") return;
     // crash-loop breaker (Geny): a page that dies on load (GPU/WebGL) must not
@@ -699,9 +710,7 @@ function createQuick() {
   win.webContents.on("before-input-event", (_e, input) => {
     if (input.type === "keyDown" && input.key === "Escape") hideQuick();
   });
-  win.webContents.on("render-process-gone", (_e, d) => {
-    if (d.reason !== "clean-exit") setTimeout(() => loadSurface(win, "quick"), 3000);
-  });
+  recovery.attach(win, { kind: "quick", isAppUrl: (u) => onSurfaceUrl(u, "quick"), retryPage: RETRY_PAGE, server: serverUrl });
   win.on("closed", () => {
     if (quick === win) quick = null;
   });
@@ -816,9 +825,8 @@ function createChat() {
     e.preventDefault();
     hideChat();
   });
-  win.webContents.on("render-process-gone", (_e, d) => {
-    if (d.reason !== "clean-exit") setTimeout(() => loadSurface(win, "chat"), 3000);
-  });
+  // never black: load failure / crash / hang / a page that drew nothing → the retry page (recovery.js)
+  recovery.attach(win, { kind: "chat", isAppUrl: (u) => onSurfaceUrl(u, "chat"), retryPage: RETRY_PAGE, server: serverUrl, watchBlank: true });
   win.on("closed", () => {
     if (chat === win) chat = null;
   });

@@ -11,6 +11,7 @@ import { useProviderStore } from "./stores/providerStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useSessionStore } from "./stores/sessionStore";
 import { useConfigStore } from "./stores/configStore";
+import ErrorBoundary from "./components/ui/ErrorBoundary";
 
 // Secondary views load on demand: the chat (first screen) stays light.
 const ProvidersView = lazy(() => import("./components/providers/ProvidersView"));
@@ -81,7 +82,9 @@ export default function App() {
         {/* chat with an open session and the Mate have their own header */}
         {!(view === "chat" && activeId) && view !== "mate" && <MobileTopBar title={titles[view] || ""} />}
         <div className="flex-1 min-h-0">
-          <Suspense fallback={<div className="grid h-full place-items-center text-sm text-content-faint">Loading…</div>}>
+          {/* one view failing (or its code gone after a deploy) never takes the sidebar with it */}
+          <ErrorBoundary variant="view" resetKey={view}>
+          <Suspense fallback={<ViewLoading />}>
           {view === "mate" && <MateView />}
           {view === "chat" && <ChatView />}
           {view === "providers" && <ProvidersView />}
@@ -90,8 +93,20 @@ export default function App() {
           {view === "admin" && <AdminView />}
           {view === "downloads" && <DownloadsView />}
           </Suspense>
+          </ErrorBoundary>
         </div>
       </main>
+    </div>
+  );
+}
+
+function ViewLoading() {
+  return (
+    <div className="grid h-full place-items-center" data-testid="view-loading">
+      <div className="flex items-center gap-2.5 text-[13px] text-content-faint animate-fade-in">
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent/25 border-t-accent" />
+        Loading…
+      </div>
     </div>
   );
 }

@@ -22,6 +22,9 @@ app.setPath("userData", path.join(app.getPath("appData"), "hr-harnessor"));
 const { LEGACY_SERVER, readSettings, writeSettings, settingsExisted, serverUrl, sameOrigin } = require("./settings");
 const core = require("./connect-core");
 const mate = require("./mate");
+const recovery = require("./recovery");
+
+const RETRY_PAGE = path.join(__dirname, "offline.html");
 
 const PRODUCT = "My Mate Geny";
 const mac = process.platform === "darwin";
@@ -157,10 +160,9 @@ function createWindow(url) {
     }
     mate.consoleNavigated(url);
   });
-  wc.on("did-fail-load", (_e, code, desc, _url, isMainFrame) => {
-    if (!isMainFrame || code === -3) return; // -3: aborted (navigation replaced)
-    w.loadFile(path.join(__dirname, "offline.html"), { query: { server: serverUrl(), error: desc || String(code) } });
-  });
+  // never a black window: a load failure, a crashed / hung renderer or a page that drew nothing → the local retry
+  // page, which retries by itself with a growing delay (recovery.js)
+  recovery.attach(w, { kind: "console", isAppUrl: sameOrigin, retryPage: RETRY_PAGE, server: serverUrl, watchBlank: true });
   wc.on("context-menu", (_e, p) => {
     const items = [];
     if (p.linkURL) items.push({ label: "Open link in browser", click: () => shell.openExternal(p.linkURL) },

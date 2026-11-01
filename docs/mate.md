@@ -653,6 +653,19 @@ the size is kept per mate (`settings.json` `mateSizes`; it wins over the page's
 suggested size); the quick card opens where it was last dropped
 (`mateQuickPos`, pulled onto a live display), else centred under the pointer.
 Tray → *Reset Mate position & size* forgets both and the avatar's pan/zoom.
+
+**Never a black window** (`desktop/src/recovery.js`, unit-tested). The console,
+the chat window and the quick card show the local retry page (`offline.html`:
+reason, Retry, automatic retry after 2 s, 4 s, 8 s … 60 s) when their page
+fails to load, its renderer crashes, hangs for 8 s, or — console and chat —
+it loaded but `#root` stays empty (an older web build whose code chunk
+vanished). The avatar window retries quietly (hidden, backoff; reloaded when
+hung). In the page: `index.html` shows a boot screen until React mounts
+(reloads once if `/assets/` code fails to load, then offers Reload; the
+transparent overlay / quick card show nothing and retry quietly), a root error
+boundary (`components/ui/ErrorBoundary.tsx`; per console view too) and
+`lib/recover.ts` (a failed dynamic import / `vite:preloadError` reloads once,
+guarded by sessionStorage for 30 s, then the Reload screen).
 SIGTERM/SIGINT quit properly and DOM storage is flushed on quit and every 15 s.
 
 Bridge (preload → `window.hrhNative.mate`):
