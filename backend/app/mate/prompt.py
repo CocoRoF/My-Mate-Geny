@@ -11,6 +11,8 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
+from app.mate.josa import address_forms, final_sound, josa
+
 EMOTION_TAGS = ("neutral", "joy", "smile", "laugh", "shy", "surprised", "sad", "angry", "thinking", "agree",
                 "greet", "sleepy")
 
@@ -87,6 +89,30 @@ def language_name(code: str) -> str:
     return LANGUAGES.get(code.lower().split("-")[0], code)
 
 
+# a title already in the address ("하렴님", "선배", "주인님"): the address is used as it is
+_TITLES = ("님", "씨", "선배", "선생", "쌤", "형", "오빠", "언니", "누나", "주인", "군", "양")
+
+
+def address_line(address: str, *, korean: bool) -> str:
+    """How the mate calls the user. In Korean the particles after a name depend on its last sound (하렴아 /
+    하렴이가 but 지수야 / 지수가) — a model told only "call the user 하렴" writes the bare name; the forms are
+    worked out here (app/mate/josa.py), both speech levels, and the mate picks the one it speaks in."""
+    a = " ".join(address.split())
+    line = f"Call the user “{a}” (if earlier messages did otherwise, switch now)."
+    if not korean or final_sound(a) is None:
+        return line
+    bare = 1 <= len(a) <= 4 and all("가" <= c <= "힣" for c in a) and not a.endswith(_TITLES)
+    if bare:
+        casual = address_forms(a, casual=True)
+        polite = address_forms(f"{a} 님", casual=False)
+        return (line + f" In Korean the particles follow the name: in 반말 “{casual['call']}” when calling, "
+                f"{casual['subject']} · {casual['topic']} · {casual['object']} · {casual['with']}; in 존댓말 "
+                f"“{a} 님” ({polite['subject']} · {polite['topic']} · {polite['object']}) or the title your "
+                "speaking style uses.")
+    f = address_forms(a, casual=False)
+    return line + f" In Korean: {f['subject']} · {f['topic']} · {f['object']}."
+
+
 def base_prompt(name: str, persona: dict[str, Any]) -> str:
     """Everything except the memories (persona + contract)."""
     p = persona or {}
@@ -101,8 +127,7 @@ def base_prompt(name: str, persona: dict[str, Any]) -> str:
     if p.get("speech"):
         who.append("Speaking style:\n" + p["speech"].strip())
     if p.get("address"):
-        who.append(f"Always call the user “{p['address'].strip()}”. If earlier messages in this conversation "
-                   "used another name or a more formal address, switch to this one now.")
+        who.append(address_line(p["address"], korean=(p.get("language") or "ko").lower().startswith("ko")))
     if who:
         lines.append("## Who you are\n" + "\n\n".join(who))
     lines.append(_CONTRACT.format(language=language_name(p.get("language") or "ko"),
