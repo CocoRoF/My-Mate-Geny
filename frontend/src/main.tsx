@@ -10,6 +10,7 @@ import ErrorBoundary from "./components/ui/ErrorBoundary";
 import TitleBar from "./components/layout/TitleBar";
 import { Spinner } from "./components/ui/Loading";
 import { claimWindowChrome } from "./lib/nativeWindow";
+import { i18nReady, tr, useI18n } from "./i18n";
 import "./index.css";
 
 installClientErrorReporter();
@@ -30,7 +31,10 @@ if (mateSurface === "mate-quick") document.documentElement.classList.add("mate-q
 // a window of the desktop app (not a phone, whatever its width)
 if (mateSurface && /^desktop-/.test(window.hrhNative?.platform ?? "")) document.documentElement.classList.add("desktop-surface");
 if (mateSurface === "mate-overlay") disableLoginRedirect(); // a see-through window never turns into the login page
-if (mateSurface) document.title = mateSurface === "mate-chat" ? "Mate — My Mate Geny" : "Mate";
+// (the window title follows the language: set once the messages are loaded, below)
+const setSurfaceTitle = () => {
+  if (mateSurface) document.title = mateSurface === "mate-chat" ? tr("nav.mateWindowTitle") : tr("nav.mateShortTitle");
+};
 
 // The root boundary: a render error or a chunk that failed to load shows a Reload screen instead of a black window.
 // (The transparent avatar window stays empty and reloads itself; the quick card shows a one-line notice.)
@@ -38,7 +42,8 @@ const variant = mateSurface === "mate-overlay" ? "quiet" : mateSurface === "mate
 // the desktop console / chat window without a system title bar: this page draws it (TitleBar, the chat's header)
 const chromed = (!surface || mateSurface === "mate-chat") && claimWindowChrome();
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
+const render = () =>
+  ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary variant={variant} chrome={chromed ? <TitleBar /> : undefined}>
     {surface === "avatar-lab" ? (
@@ -54,7 +59,14 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     )}
     </ErrorBoundary>
   </React.StrictMode>,
-);
+  );
+
+// the UI's language (i18n/): its messages load before the first render (a small chunk; no English flash)
+void i18nReady().finally(() => {
+  setSurfaceTitle();
+  useI18n.subscribe((st, prev) => st.lang !== prev.lang && setSurfaceTitle());
+  render();
+});
 
 /** while the chat window's code loads: the same spinner as index.html's boot screen (no black window) */
 function BootSpinner() {

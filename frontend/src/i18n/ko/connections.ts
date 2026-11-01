@@ -1,0 +1,35 @@
+import type { Messages } from "..";
+
+const ko: Messages<"connections"> = {
+  title: "연결",
+  intro: "작업할 원격 SSH 호스트와, 저장소를 클론하고 푸시할 Git 계정이에요.",
+  tabSsh: "SSH 호스트",
+  tabGit: "Git",
+  checking: "확인 중…",
+  reachable: "연결 가능",
+  unreachable: "연결 안 됨",
+  sshIntro: "에이전트는 이 서버에서 실행되고, 이 원격 폴더들을 SSH로 다뤄요. 키는 보관함에 암호화해서 저장해요.",
+  noConnections: "아직 연결이 없어요.",
+  hasKey: "🔑 키 있음",
+  noKey: "키 없음",
+  test: "테스트",
+  deleteConnection: "연결 삭제",
+  addHost: "원격 SSH 호스트 추가",
+  namePlaceholder: "이름 (예: build-box)",
+  defaultPathPlaceholder: "기본 경로",
+  hostPlaceholder: "호스트 (예: 192.168.1.20 또는 build.example.com)",
+  portPlaceholder: "포트",
+  usernamePlaceholder: "사용자 이름",
+  keyPlaceholder: "개인 키 (PEM) — 보관함에 암호화해서 저장해요",
+  added: "연결을 추가했어요.",
+  addConnection: "연결 추가",
+  gitIntro:
+    "개인 액세스 토큰으로 연결하세요. 할 수 있는 일은 토큰 자체의 권한 범위가 정해요 — 전체 권한 토큰(GitHub는 {repo}, GitLab은 {api})이면 에이전트가 비공개 저장소를 클론하고 커밋 & 푸시할 수 있어요.",
+  gitlabHostPlaceholder: "GitLab 호스트 (선택, 예: gitlab.company.com)",
+  tokenPlaceholder: "{vendor} 개인 액세스 토큰",
+  readWrite: "읽기 + 쓰기",
+  readOnly: "읽기 전용",
+  removeAccount: "계정 제거",
+  noGitAccounts: "연결된 Git 계정이 없어요.",
+};
+export default ko;
