@@ -8,7 +8,6 @@ import { useConfigStore } from "../../../stores/configStore";
 import { useConnectionStore } from "../../../stores/connectionStore";
 import type { Session } from "../../../types";
 import Icon, { type IconName } from "../../ui/Icon";
-import GitContext from "../GitContext";
 import TodoCard, { todosOf, type Todo } from "../turn/TodoCard";
 import { relPath } from "../turn/toolMeta";
 import { openPath } from "../../../stores/workbenchStore";
@@ -153,9 +152,6 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
         <Section title="Workspace" icon={session.connection_id ? "server" : "folder"}>
           <div className="text-[11px] text-content-faint">{hostLabel}</div>
           <div className="mt-0.5 break-all font-mono text-[12px] text-content">{session.workspace_path}</div>
-          <div className="mt-2">
-            <GitContext path={session.workspace_path} connectionId={session.connection_id} />
-          </div>
         </Section>
 
         {todos.length > 0 && (

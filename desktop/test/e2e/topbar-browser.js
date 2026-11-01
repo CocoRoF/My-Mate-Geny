@@ -243,6 +243,109 @@ async function folderFlow(browser, phone) {
   await ctx.close();
 }
 
+// ── Git ──
+const gitText = (page) => page.evaluate(() => document.querySelector('[data-testid="topbar-git"]').innerText.replace(/\s+/g, " ").trim());
+
+async function gitFlow(browser, phone) {
+  const tag = phone ? "phone" : "desktop";
+  fixtures(); // a fresh repo state for each run
+  const app = path.join(WS, "demo-app");
+  const ctx = await newContext(browser, phone);
+  const a = await api(ctx, "POST", "/api/sessions", { provider: "claude", model: "", connection_id: null, workspace_path: app, title: `Git (${tag})` });
+  const page = await openSession(ctx, a.id);
+
+  step(`${tag}: the workspace is a repo → connected: branch, changes, ahead on the button`);
+  await page.waitForSelector('[data-testid="topbar-git"][data-connected="true"]');
+  if (!phone) {
+    const t = await gitText(page);
+    assert.match(t, /main/);
+    assert.match(t, /• 3/);
+    assert.match(t, /↑1/);
+  } else {
+    assert.equal(await count(page, '[data-testid="topbar-git"] span.bg-warning'), 1, "a dot for changes on phones");
+  }
+  await barFits(page, `${tag} git connected`);
+  await shot(page, `git-1-connected-button-${tag}.png`, true);
+
+  step(`${tag}: popover — repo, remote, branch, changes, ahead/behind, last commit`);
+  await page.click('[data-testid="topbar-git"]');
+  await page.waitForSelector('[data-testid="git-popover"] [data-testid="git-files"]');
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="git-branch-select"] option').length >= 2); // branches loaded
+  const pop = await page.evaluate(() => document.querySelector('[data-testid="git-popover"]').innerText);
+  for (const want of ["demo-app", "origin.git", "README.md", "notes.txt", "Tune the app entry point", "origin/main"]) assert.ok(pop.includes(want), `popover shows ${want}`);
+  await sleep(200);
+  await shot(page, `git-2-connected-popover-${tag}.png`);
+
+  step(`${tag}: switch to a branch that's only on the origin`);
+  await page.selectOption('[data-testid="git-branch-select"]', "remote:origin/feature/topbar");
+  await page.waitForFunction(() => document.querySelector('[data-testid="git-branch-select"]').value === "feature/topbar", null, { timeout: 15000 });
+  assert.equal(execFileSync("git", ["branch", "--show-current"], { cwd: app }).toString().trim(), "feature/topbar");
+  if (!phone) assert.match(await gitText(page), /feature\/topbar/);
+  await sleep(200);
+  await shot(page, `git-3-switched-${tag}.png`);
+  await page.selectOption('[data-testid="git-branch-select"]', "main");
+  await page.waitForFunction(() => document.querySelector('[data-testid="git-branch-select"]').value === "main", null, { timeout: 15000 });
+
+  step(`${tag}: a refused switch shows git's reason`);
+  fs.writeFileSync(path.join(app, "src", "app.py"), "local edit\n"); // differs on feature/topbar
+  await page.click('[data-testid="git-refresh"]');
+  await page.waitForFunction(() => document.querySelector('[data-testid="git-branch-select"]').options.length >= 2);
+  await page.selectOption('[data-testid="git-branch-select"]', "feature/topbar");
+  await page.waitForSelector('[data-testid="git-error"]', { timeout: 15000 });
+  assert.match(await page.textContent('[data-testid="git-error"]'), /would be overwritten/);
+  await shot(page, `git-4-switch-refused-${tag}.png`);
+  execFileSync("git", ["checkout", "--", "src/app.py"], { cwd: app });
+  await page.click('[data-testid="git-refresh"]');
+  await page.waitForFunction(() => document.querySelector('[data-testid="topbar-git"]').title.includes("3 changed"));
+  await page.keyboard.press("Escape");
+
+  step(`${tag}: a turn ends → the status is read again (no polling)`);
+  let reads = 0;
+  page.on("request", (r) => /\/api\/sessions\/[^/]+\/git$/.test(new URL(r.url()).pathname) && r.method() === "GET" && reads++);
+  await sleep(1500);
+  assert.equal(reads, 0, "nothing reads the status while idle");
+  fs.writeFileSync(path.join(app, "agent_wrote_this.txt"), "x\n"); // as if the agent did
+  await sleep(1000);
+  assert.ok((await page.getAttribute('[data-testid="topbar-git"]', "title")).includes("3 changed"), "not picked up without a turn end");
+  await page.fill("textarea", "q1 hello");
+  await page.click('button[title="Send"], button[title="Send (Enter)"]');
+  await page.waitForFunction(() => document.body.innerText.includes("Reply 1 sentence number 5"), null, { timeout: 30000 });
+  await page.waitForFunction(() => document.querySelector('[data-testid="topbar-git"]').title.includes("4 changed"), null, { timeout: 15000 });
+  assert.ok(reads >= 1 && reads <= 2, `status read once at the turn's end (${reads})`);
+  await sleep(300);
+  await shot(page, `git-5-after-turn-${tag}.png`, true);
+
+  step(`${tag}: disconnect → not connected (muted "Git")`);
+  await page.click('[data-testid="topbar-git"]');
+  await page.click('[data-testid="git-disconnect"]');
+  await page.waitForSelector('[data-testid="topbar-git"][data-connected="false"]');
+  await page.waitForSelector('[data-testid="git-found"] li');
+  await sleep(300);
+  await shot(page, `git-6-disconnected-popover-${tag}.png`);
+  assert.equal((await api(ctx, "GET", `/api/sessions/${a.id}`)).git_repo, "");
+  await page.keyboard.press("Escape");
+  await shot(page, `git-7-not-connected-button-${tag}.png`, true);
+
+  step(`${tag}: a workspace that isn't a repo: detect repos in the chat's folders, connect one`);
+  const b = await api(ctx, "POST", "/api/sessions", {
+    provider: "claude", model: "", connection_id: null, workspace_path: path.join(WS, "plain-folder"), title: `Git, not a repo (${tag})`,
+    extra_dirs: [path.join(WS, "shared-lib")],
+  });
+  const page2 = await openSession(ctx, b.id);
+  await page2.waitForSelector('[data-testid="topbar-git"][data-connected="false"]');
+  await page2.click('[data-testid="topbar-git"]');
+  await page2.waitForFunction(() => document.querySelectorAll('[data-testid="git-found"] li').length === 2);
+  await sleep(300);
+  await shot(page2, `git-8-not-connected-popover-${tag}.png`);
+  await page2.click('[data-testid="git-found"] button[aria-label="Connect shared-lib"]');
+  await page2.waitForSelector('[data-testid="topbar-git"][data-connected="true"]');
+  await page2.waitForSelector('[data-testid="git-branch-select"]');
+  assert.equal(await page2.inputValue('[data-testid="git-branch-select"]'), "develop");
+  await sleep(300);
+  await shot(page2, `git-9-connected-found-${tag}.png`);
+  await ctx.close();
+}
+
 (async () => {
   fixtures();
   if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
@@ -251,6 +354,10 @@ async function folderFlow(browser, phone) {
     if (!ONLY || ONLY === "folder") {
       await folderFlow(browser, false);
       await folderFlow(browser, true);
+    }
+    if (!ONLY || ONLY === "git") {
+      await gitFlow(browser, false);
+      await gitFlow(browser, true);
     }
     console.log("OK");
   } finally {

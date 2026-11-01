@@ -16,6 +16,7 @@ import Icon, { type IconName } from "../ui/Icon";
 import ExplorerPanel from "../explorer/ExplorerPanel";
 import TabBar from "../viewer/TabBar";
 import FolderButton from "./topbar/FolderButton";
+import GitButton from "./topbar/GitButton";
 import { useChatStore } from "../../stores/chatStore";
 import { useSessionTabs, useWorkbench } from "../../stores/workbenchStore";
 
@@ -193,6 +194,7 @@ export default function ChatView() {
               {active.connection_id ? "remote" : "local"} · {active.workspace_path}
             </button>
             <FolderButton session={active} />
+            <GitButton session={active} />
             <button
               onClick={() => setShowTasks(true)}
               data-topbar-item="tasks"

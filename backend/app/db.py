@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     accounts      TEXT NOT NULL DEFAULT '{}',       -- per provider: the account it ran on last (sticky balancing)
     kind          TEXT NOT NULL DEFAULT 'chat',     -- chat | mate (a Mate's conversation, hidden from the chat list)
     mate_id       TEXT,                             -- kind = mate: which mate
+    git_repo      TEXT,                             -- the top bar's Git repo: NULL = the workspace's (auto), '' = none
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL
 );
@@ -280,6 +281,7 @@ class Database:
                 ("accounts", "TEXT NOT NULL DEFAULT '{}'"),
                 ("kind", "TEXT NOT NULL DEFAULT 'chat'"),
                 ("mate_id", "TEXT"),
+                ("git_repo", "TEXT"),
             ):
                 if col not in cols:
                     self._conn.execute(f"ALTER TABLE sessions ADD COLUMN {col} {ddl}")
