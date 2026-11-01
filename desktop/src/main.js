@@ -24,6 +24,7 @@ const core = require("./connect-core");
 const mate = require("./mate");
 const recovery = require("./recovery");
 const chrome = require("./chrome");
+const { createUpdater } = require("./updater");
 
 const RETRY_PAGE = path.join(__dirname, "offline.html");
 
@@ -398,6 +399,54 @@ ipcMain.handle("hrh:signOut", async (e) => {
   return true;
 });
 
+// ── in-app updates (updater.js): state here, every window follows it (the Download page shows it) ──
+let notifiedUpdate = "";
+const updater = createUpdater({
+  autoUpdater: async () => require("electron-updater").autoUpdater,
+  cancelToken: () => new (require("electron-updater").CancellationToken)(),
+  version: app.getVersion(),
+  platform: process.platform,
+  isPackaged: app.isPackaged,
+  env: process.env,
+  server: () => serverUrl(),
+  // (development runs only: tests point the feed elsewhere and give electron-updater a config file)
+  feedUrl: () => (!app.isPackaged && env.HRH_UPDATE_FEED) || `${serverUrl()}/api/downloads/update`,
+  devConfigPath: () => {
+    const f = path.join(app.getPath("userData"), "dev-app-update.yml");
+    require("fs").writeFileSync(f, "provider: generic\nurl: https://updates.invalid/\nupdaterCacheDirName: my-mate-geny-updater-dev\n");
+    return f;
+  },
+  cookieHeader: async () => {
+    const base = serverUrl();
+    if (!base) return "";
+    const list = await session.defaultSession.cookies.get({ url: `${base}/` });
+    return list.map((c) => `${c.name}=${c.value}`).join("; ");
+  },
+  beforeInstall: () => {
+    quitting = true;
+    mate.setQuitting(true);
+  },
+  onState: (st) => {
+    for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("update:state", st);
+    // a background check found one: say so once per version
+    if (st.status === "available" && st.version && notifiedUpdate !== st.version && !(win && !win.isDestroyed() && win.isFocused())) {
+      notifiedUpdate = st.version;
+      if (Notification.isSupported()) {
+        const n = new Notification({ title: `${PRODUCT} ${st.version} is available`, body: "Open Download to update — it installs and restarts in one go." });
+        n.on("click", () => serverUrl() && openConsole(`${serverUrl()}/?view=downloads`));
+        n.show();
+      }
+    }
+  },
+});
+const fromAppPage = (e) => ours(e) && fileOrServer(e);
+ipcMain.handle("update:state", (e) => (fromAppPage(e) ? updater.state : null));
+ipcMain.handle("update:check", (e) => (fromAppPage(e) ? updater.check() : null));
+ipcMain.handle("update:download", (e) => (fromAppPage(e) ? updater.download() : null));
+ipcMain.handle("update:cancel", (e) => (fromAppPage(e) ? updater.cancel() : null));
+ipcMain.handle("update:install", (e) => (fromAppPage(e) ? updater.install() : null));
+ipcMain.handle("update:retry", (e) => (fromAppPage(e) ? updater.retry() : null));
+
 // Microphone for push-to-talk (getUserMedia audio) on the server's pages, plus
 // what the console already uses (clipboard writes, fullscreen video);
 // everything else, and anything from another origin, is refused.
@@ -474,6 +523,10 @@ function buildMenu() {
       label: "Help",
       submenu: [
         { label: `${PRODUCT} ${app.getVersion()}`, enabled: false },
+        { label: "Check for updates…", enabled: !!serverUrl(), click: () => {
+          openConsole(`${serverUrl()}/?view=downloads`);
+          void updater.check();
+        } },
       ],
     },
   ];
@@ -515,6 +568,9 @@ if (restartOnX11 && relaunchOnX11()) {
     const startedHidden = hiddenStart || loginHidden;
     if (!startedHidden) createWindow();
     mate.start();
+    // updates: a quiet look 30 s after the start and every 6 hours (downloading is the user's call)
+    setTimeout(() => void updater.check(), 30_000).unref?.();
+    setInterval(() => void updater.check(), 6 * 3600_000).unref?.();
     // macOS: a Dock click opens the console (but not the launch-time
     // activate of a start at login)
     const readyAt = Date.now();

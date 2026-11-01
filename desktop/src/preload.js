@@ -93,6 +93,16 @@ contextBridge.exposeInMainWorld("hrhNative", {
   window: windowBridge,
   // the mouse's back / forward buttons as the OS reports them (Windows app-commands); the page goes back in-app
   onNav: (cb) => listen("nav:command", (dir) => cb(dir === "forward" ? "forward" : "back")),
+  // in-app updates (updater.js): the state lives in the app, a page (re)reads it and follows it
+  updates: {
+    getState: () => ipcRenderer.invoke("update:state"),
+    check: () => ipcRenderer.invoke("update:check"),
+    download: () => ipcRenderer.invoke("update:download"),
+    cancel: () => ipcRenderer.invoke("update:cancel"),
+    install: () => ipcRenderer.invoke("update:install"),
+    retry: () => ipcRenderer.invoke("update:retry"),
+    onState: (cb) => listen("update:state", cb),
+  },
 });
 
 // A page that draws no title bar of its own in a window without the system one (an older web console, the login

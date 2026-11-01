@@ -4,6 +4,8 @@ import { compareVersions, detectPlatform, getDownloads, type AppAsset, type AppR
 import { formatBytes } from "../attachments/fileMeta";
 import { absTime, relTime } from "../admin/format";
 import Icon from "../ui/Icon";
+import UpdateCard, { ProgressBar, progressLine, useUpdateState } from "./UpdateCard";
+import { isAndroidApp, useAndroidDownload, useBrowserDownload, type Progress } from "../../lib/downloadProgress";
 
 const PLATFORMS = [
   { id: "windows", name: "Windows", sub: "Windows 10 / 11 · x64" },
@@ -20,7 +22,7 @@ const notes = (legacy: boolean): Record<string, string[]> => {
   return {
   windows: [
     "Run the installer. Windows SmartScreen may warn about an unrecognised app (the build isn't code-signed): choose “More info” → “Run anyway”.",
-    "Updates: download and run the newer installer — settings and login are kept.",
+    "Updates: the app updates itself from this page (Download & install, then Restart) — settings and login are kept.",
   ],
   macos: [
     `Open the .dmg and drag ${app} into Applications.`,
@@ -32,7 +34,7 @@ const notes = (legacy: boolean): Record<string, string[]> => {
   ],
   android: [
     "Open the APK on the phone. Android asks to allow installs from your browser/files app once — allow it, then install.",
-    "Updates install over the previous version (same signing key), keeping your login.",
+    "Updates: in the app, Download shows the progress and then opens the installer; it installs over the previous version (same signing key), keeping your login.",
   ],
   };
 };
@@ -47,10 +49,12 @@ function Qr({ text }: { text: string }) {
   return <div className="w-32 h-32 rounded-lg bg-white p-1.5 [&>svg]:h-full [&>svg]:w-full" dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
-function AssetButton({ a, primary }: { a: AppAsset; primary?: boolean }) {
+function AssetButton({ a, primary, onPick }: { a: AppAsset; primary?: boolean; onPick?: (a: AppAsset, e: React.MouseEvent) => void }) {
   return (
     <a
       href={a.url}
+      onClick={onPick ? (e) => onPick(a, e) : undefined}
+      data-testid={`asset-${a.platform}-${a.kind}`}
       className={`flex items-center gap-3 rounded-xl border px-3.5 py-2.5 transition ${
         primary
           ? "border-transparent text-white shadow-glow"
@@ -71,11 +75,104 @@ function AssetButton({ a, primary }: { a: AppAsset; primary?: boolean }) {
   );
 }
 
+/** a download in progress on this page (browser: fetched as a stream; Android app: the system's DownloadManager) */
+function DownloadProgress({
+  name,
+  p,
+  onCancel,
+  onInstall,
+  onClose,
+  href,
+}: {
+  name: string;
+  p: Progress;
+  onCancel: () => void;
+  onInstall?: () => void;
+  onClose: () => void;
+  href?: string;
+}) {
+  const pct = p.total ? Math.round((p.transferred / p.total) * 100) : 0;
+  return (
+    <div className="mt-4 rounded-xl border border-border bg-surface-2/70 px-4 py-3 text-[13px] animate-fade-in" data-testid="download-progress" data-status={p.status}>
+      <div className="flex items-center gap-2">
+        <Icon
+          name={p.status === "done" ? "check" : p.status === "error" ? "warning" : "download"}
+          size={14}
+          className={p.status === "done" ? "text-success" : p.status === "error" ? "text-danger" : "text-accent"}
+        />
+        <span className="min-w-0 flex-1 truncate font-medium text-content">
+          {p.status === "done" ? (onInstall ? "Downloaded — ready to install" : "Saved") : p.status === "error" ? "Download failed" : p.status === "cancelled" ? "Cancelled" : "Downloading"}{" "}
+          <span className="font-normal text-content-faint">{name}</span>
+        </span>
+        {p.status === "downloading" && (
+          <span className="font-mono text-[12px] text-accent" data-testid="download-percent">
+            {p.total ? `${pct}%` : ""}
+          </span>
+        )}
+        {p.status === "downloading" ? (
+          <button className="btn-ghost !px-2.5 !py-1 text-[12px]" onClick={onCancel} data-testid="download-cancel">
+            Cancel
+          </button>
+        ) : p.status === "done" && onInstall ? (
+          <button className="btn-primary !py-1.5" onClick={onInstall} data-testid="download-install">
+            Install
+          </button>
+        ) : (
+          <button className="rounded-md p-1 text-content-faint hover:bg-surface-3 hover:text-content" onClick={onClose} aria-label="Close">
+            <Icon name="x" size={13} />
+          </button>
+        )}
+      </div>
+      {p.status === "downloading" && (
+        <>
+          <div className="mt-2.5">
+            <ProgressBar percent={pct} indeterminate={!p.total} />
+          </div>
+          <div className="mt-1.5 text-[11.5px] text-content-faint">{progressLine(p.transferred, p.total, p.bytesPerSecond, p.eta) || "Starting…"}</div>
+        </>
+      )}
+      {p.status === "error" && (
+        <p className="mt-1.5 text-[12px] text-danger">
+          {p.error}
+          {href && (
+            <>
+              {" "}
+              <a className="underline" href={href}>
+                Try the direct link
+              </a>
+            </>
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function DownloadsView() {
   const [rel, setRel] = useState<AppRelease | null>(null);
   const [error, setError] = useState("");
   const platform = detectPlatform();
   const native = window.hrhNative;
+  const upd = useUpdateState(); // the desktop app's own updater (desktop/src/updater.js)
+  const browserDl = useBrowserDownload();
+  const androidDl = useAndroidDownload();
+  const androidApp = isAndroidApp();
+  const [picked, setPicked] = useState<AppAsset | null>(null);
+  // a browser downloads with progress on the page; the Android app hands the APK to the system with progress here and
+  // opens the installer; the desktop app's own platform is updated by the card above (other files: the plain link)
+  const onPick = (a: AppAsset, e: React.MouseEvent) => {
+    if (androidApp && a.platform === "android") {
+      e.preventDefault();
+      setPicked(a);
+      void androidDl.start(a.url, a.name).then((ok) => {
+        if (!ok) window.location.href = a.url; // an older app: its download listener takes the plain link
+      });
+    } else if (!native) {
+      e.preventDefault();
+      setPicked(a);
+      void browserDl.start(a.url, a.name, a.size);
+    }
+  };
 
   const load = (refresh = false) =>
     getDownloads(refresh)
@@ -114,7 +211,8 @@ export default function DownloadsView() {
             </div>
           </div>
 
-          {native && (
+          {upd && <UpdateCard s={upd} />}
+          {native && !upd && (
             <div className={`mt-4 flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-[13px] ${outdated ? "bg-warning/12 text-warning" : "bg-success/10 text-success"}`}>
               <Icon name={outdated ? "warning" : "check"} size={14} />
               {outdated
@@ -127,7 +225,7 @@ export default function DownloadsView() {
             {rel === null && !error && <Icon name="spinner" size={18} spin className="text-content-faint" />}
             {primary && (
               <div className="w-full sm:w-auto sm:min-w-[320px]">
-                <AssetButton a={primary} primary />
+                <AssetButton a={primary} primary onPick={onPick} />
               </div>
             )}
             {platform === "macos" &&
@@ -135,7 +233,7 @@ export default function DownloadsView() {
                 .filter((a) => a !== primary)
                 .map((a) => (
                   <div key={a.id} className="w-full sm:w-auto sm:min-w-[260px]">
-                    <AssetButton a={a} />
+                    <AssetButton a={a} onPick={onPick} />
                   </div>
                 ))}
             {platform === "ios" && (
@@ -145,6 +243,19 @@ export default function DownloadsView() {
             )}
           </div>
 
+          {androidDl.active || (androidApp && androidDl.progress.status !== "idle") ? (
+            <DownloadProgress
+              name={picked?.name || "the Android app"}
+              p={androidDl.progress}
+              onCancel={() => void androidDl.cancel()}
+              onInstall={() => void androidDl.install()}
+              onClose={androidDl.reset}
+            />
+          ) : (
+            browserDl.progress.status !== "idle" && (
+              <DownloadProgress name={browserDl.name} p={browserDl.progress} onCancel={browserDl.cancel} onClose={browserDl.reset} href={picked?.url} />
+            )
+          )}
           {rel?.available && (
             <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-content-faint">
               <span>
@@ -192,7 +303,7 @@ export default function DownloadsView() {
                 </div>
                 <div className="mt-3 space-y-2">
                   {list.length ? (
-                    list.map((a) => <AssetButton key={a.id} a={a} />)
+                    list.map((a) => <AssetButton key={a.id} a={a} onPick={onPick} />)
                   ) : (
                     <p className="text-[12px] text-content-faint">{rel?.available ? "No build for this platform in the latest release." : "—"}</p>
                   )}

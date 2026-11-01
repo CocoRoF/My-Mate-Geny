@@ -81,10 +81,13 @@ jobs:
           # One arch at a time, each with its own volume name (they collide otherwise).
           npx electron-builder --mac dmg --arm64 --publish never -c.extraMetadata.version=$VERSION -c.dmg.title="my-mate-geny-arm64"
           npx electron-builder --mac dmg --x64 --publish never -c.extraMetadata.version=$VERSION -c.dmg.title="my-mate-geny-x64"
+      # + the in-app updater's descriptions (electron-updater, generic provider — desktop/src/updater.js): latest.yml
+      # (Windows) and latest-linux.yml, served to the app by the console's /api/downloads/update/. No latest-mac.yml:
+      # unsigned macOS builds cannot replace themselves (the app offers the .dmg).
       - name: Upload to release
         run: |
           shopt -s nullglob
-          files=(dist/*.exe dist/*.dmg dist/*.AppImage dist/*.deb)
+          files=(dist/*.exe dist/*.dmg dist/*.AppImage dist/*.deb dist/latest.yml dist/latest-linux.yml)
           ls -la "${files[@]}"
           gh release upload "apps-v$VERSION" "${files[@]}" --clobber
 

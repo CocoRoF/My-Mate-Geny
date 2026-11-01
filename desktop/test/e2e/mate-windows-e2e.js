@@ -123,6 +123,8 @@ class App {
   }
   start() {
     const env = { ...process.env, HOME: this.home, XDG_CONFIG_HOME: path.join(this.home, ".config"), APPIMAGE_EXTRACT_AND_RUN: "1" };
+    // the in-app updater against the test feed (development runs only: desktop/src/main.js), as an AppImage would
+    if (FEED.url) Object.assign(env, { HRH_UPDATER_DEV: "1", HRH_UPDATE_FEED: FEED.url, APPIMAGE: path.join(this.home, "my-mate-geny.AppImage") });
     delete env.XDG_SESSION_TYPE;
     delete env.WAYLAND_DISPLAY;
     const args = ["--no-sandbox", `--remote-debugging-port=${this.port}`, `--inspect=${this.iport}`, "--disable-gpu"];
@@ -490,6 +492,112 @@ async function blankScreenRecovery(app, con, consoleRe) {
   return app.page(consoleRe);
 }
 
+// ── in-app update (desktop/src/updater.js, frontend/src/components/downloads/UpdateCard.tsx) ──
+// A local feed as the console's /api/downloads/update/ would serve it: latest-linux.yml + a 16 MB "AppImage",
+// sent slowly enough (~2.5 MB/s) to watch the progress; `FEED.fail` makes it answer 500.
+
+const FEED = { url: "", fail: false, server: null };
+
+async function startFeed() {
+  const http = require("http");
+  const crypto = require("crypto");
+  const body = crypto.randomBytes(16 * 1024 * 1024);
+  const name = "my-mate-geny-0.4.99-linux-x86_64.AppImage";
+  const sha512 = crypto.createHash("sha512").update(body).digest("base64");
+  const yml = `version: 0.4.99\nfiles:\n  - url: ${name}\n    sha512: ${sha512}\n    size: ${body.length}\npath: ${name}\nsha512: ${sha512}\nreleaseDate: '2026-11-01T00:00:00.000Z'\n`;
+  FEED.server = http.createServer((req, res) => {
+    if (FEED.fail) {
+      res.writeHead(500);
+      return res.end("feed down");
+    }
+    const file = decodeURIComponent((req.url || "").split("?")[0].split("/").pop());
+    if (file === "latest-linux.yml") {
+      res.writeHead(200, { "content-type": "text/yaml" });
+      return res.end(yml);
+    }
+    if (file !== name) {
+      res.writeHead(404);
+      return res.end();
+    }
+    res.writeHead(200, { "content-type": "application/octet-stream", "content-length": body.length });
+    let at = 0;
+    const t = setInterval(() => {
+      if (res.destroyed) return clearInterval(t);
+      const next = Math.min(body.length, at + 64 * 1024);
+      res.write(body.subarray(at, next));
+      at = next;
+      if (at >= body.length) {
+        clearInterval(t);
+        res.end();
+      }
+    }, 25);
+    req.on("close", () => clearInterval(t));
+  });
+  await new Promise((r) => FEED.server.listen(0, "127.0.0.1", r));
+  FEED.server.unref();
+  FEED.url = `http://127.0.0.1:${FEED.server.address().port}`;
+}
+
+async function inAppUpdate(app, con, consoleRe) {
+  const card = () => con.eval(`(() => { const c = document.querySelector('[data-testid="update-card"]'); return c ? { status: c.dataset.status, text: c.innerText, pct: document.querySelector('[data-testid="update-percent"]')?.textContent || "" } : null; })()`);
+  step("Download page in the app: a newer build is found (the app's updater — a background check may have found it already)");
+  await con.eval(`[...document.querySelectorAll("nav button")].find((b) => b.textContent.trim().startsWith("Download")).click(), true`);
+  const c1 = await until("update available", async () => {
+    const c = await card();
+    return c && c.status === "available" ? c : null;
+  }, 40000);
+  console.log(`  ${c1.text.replace(/\s+/g, " ").trim()}`);
+  assert.match(c1.text, /0\.4\.99/);
+
+  step("the update server failing mid-way: a clear error with Retry");
+  FEED.fail = true;
+  await clickTestId(con, "update-download");
+  const e1 = await until("the error", async () => {
+    const c = await card();
+    return c && c.status === "error" ? c : null;
+  }, 20000);
+  console.log(`  ${e1.text.replace(/\s+/g, " ").trim()}`);
+  assert.match(e1.text, /could not be downloaded/);
+  await sleep(300);
+  await con.shot("update-0-error.png");
+  FEED.fail = false;
+
+  step("Retry (server back) → downloading again");
+  await clickTestId(con, "update-retry");
+  step("progress (percent, size, speed, time left) — and it survives a page reload");
+  const d1 = await until("downloading with bytes", async () => {
+    const c = await card();
+    return c && c.status === "downloading" && /MB of/.test(c.text) && parseInt(c.pct) >= 10 ? c : null;
+  }, 20000);
+  console.log(`  ${d1.text.replace(/\s+/g, " ").trim()}`);
+  assert.match(d1.text, /\/s/, "a speed");
+  assert.match(d1.text, /left|almost/, "time left");
+  await con.shot("update-1-downloading.png");
+  await con.eval(`location.reload(), true`).catch(() => {});
+  await sleep(1500);
+  con = await app.page(consoleRe);
+  const d2 = await until("still downloading after the reload", async () => {
+    const c = await card();
+    return c && c.status === "downloading" && parseInt(c.pct) >= parseInt(d1.pct) ? c : null;
+  }, 15000);
+  console.log(`  after reload: ${d2.pct}`);
+
+  step("Cancel → back to 'available' (Download again); then the whole way to 'ready' with Restart & install");
+  await clickTestId(con, "update-cancel");
+  const c2 = await until("cancelled", async () => {
+    const c = await card();
+    return c && c.status === "available" ? c : null;
+  }, 10000);
+  assert.match(c2.text, /cancelled/i);
+  await clickTestId(con, "update-download");
+  await until("ready", async () => (await card())?.status === "ready", 60000);
+  assert.ok(await con.eval(`!!document.querySelector('[data-testid="update-install"]')`), "Restart & install offered");
+  await sleep(300);
+  await con.shot("update-2-ready.png");
+
+  return con;
+}
+
 // ── back / forward like an app (frontend/src/lib/nav.ts) ──
 
 async function backNavigation(app, con, consoleRe) {
@@ -554,6 +662,8 @@ async function main() {
   const home = fs.mkdtempSync(path.join(os.homedir(), ".cache", "hrh-mate-e2e-"));
   const port = 9300 + Math.floor(Math.random() * 400);
   const iport = port + 500;
+  await startFeed();
+  fs.writeFileSync(path.join(home, "my-mate-geny.AppImage"), "old build");
   let app = new App(home, port, iport);
   // the console: any screen (/?view=…, /?view=chat&session=…), never a Mate surface
   const consoleRe = new RegExp(`^${server.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/(?!login|\\?surface)`);
@@ -568,6 +678,7 @@ async function main() {
     con = await windowChrome(app, con, consoleRe, server);
     con = await blankScreenRecovery(app, con, consoleRe);
     con = await backNavigation(app, con, consoleRe);
+    con = await inAppUpdate(app, con, consoleRe);
 
     // a built-in mate with a body (video / photo), its voice on the browser engine so the Voice tab shows the volume
     const mates = await con.eval(`fetch("/api/mates").then((r) => r.json())`);

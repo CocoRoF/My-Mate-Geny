@@ -705,6 +705,10 @@ window?: {
 }
 ```
 
+**Updates** (`desktop/src/updater.js`, desktop/README.md): `hrhNative.updates`
+(`getState`, `check`, `download`, `cancel`, `install`, `retry`, `onState`) —
+the Download page's update card; the state lives in the app.
+
 **Back / forward** (`frontend/src/lib/nav.ts`, all shells). Every screen
 change (sidebar views, opening a chat) is a history entry with its URL
 (`/?view=usage`, `/?view=chat&session=<id>`, `/`), so back goes to the

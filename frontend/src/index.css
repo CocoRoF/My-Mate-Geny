@@ -311,3 +311,9 @@ html.mate-quick-page body {
 
 /* the on-screen keyboard is up (lib/keyboard.ts): it covers the home indicator, no inset needed above it */
 html[data-keyboard="open"] .pb-safe { padding-bottom: 0; }
+
+/* an indeterminate progress bar (Download page) */
+@keyframes hrh-indeterminate {
+  0% { left: -33%; }
+  100% { left: 100%; }
+}
