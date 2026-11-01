@@ -67,6 +67,11 @@ if TYPE_CHECKING:
 MODES = ("agent", "plan")
 MAX_EXTRA_DIRS = 20
 
+
+def _inside(p: str, root: str) -> bool:
+    p, root = p.rstrip("/") or "/", root.rstrip("/") or "/"
+    return p == root or root == "/" or p.startswith(root + "/")
+
 # A stored provider session that no longer exists (deleted transcript, other
 # machine…): retry once from a full handoff instead of failing the turn.
 _STOPPED = re.compile(r"doesn't want to proceed|tool use was rejected|interrupted to apply", re.I)
@@ -265,8 +270,15 @@ class SessionService:
             sets.append("mode = ?")
             params.append(mode)
         if extra_dirs is not None:
+            dirs = self._clean_dirs(session["connection_id"], extra_dirs)
             sets.append("extra_dirs = ?")
-            params.append(json.dumps(self._clean_dirs(session["connection_id"], extra_dirs)))
+            params.append(json.dumps(dirs))
+            # the Git button's repo was in a folder that's gone: back to the workspace's own
+            # (only where the paths compare as written: absolute ones — remote "~/x" folders are left alone)
+            repo = session.get("git_repo")
+            roots = [session["workspace_path"], *dirs]
+            if repo and all(r.startswith("/") for r in roots) and not any(_inside(repo, r) for r in roots):
+                sets.append("git_repo = NULL")
         if title is not None and title.strip():
             sets.append("title = ?")
             params.append(title.strip()[:200])
@@ -276,6 +288,13 @@ class SessionService:
             params.append(sid)
             self._db.execute(f"UPDATE sessions SET {', '.join(sets)} WHERE id = ?", params)
             self.list_changed("updated", sid)
+        return self.get(sid)
+
+    def set_git_repo(self, sid: str, path: str | None) -> dict[str, Any]:
+        """The top bar's Git repo: a path, ``""`` = none (disconnected), None = the workspace's (auto)."""
+        self.get(sid)
+        self._db.execute("UPDATE sessions SET git_repo = ?, updated_at = ? WHERE id = ?", (path, now_iso(), sid))
+        self.list_changed("updated", sid)
         return self.get(sid)
 
     def _row(self, row: Any) -> dict[str, Any]:

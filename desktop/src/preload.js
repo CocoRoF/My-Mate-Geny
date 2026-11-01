@@ -93,6 +93,13 @@ contextBridge.exposeInMainWorld("hrhNative", {
   window: windowBridge,
   // the mouse's back / forward buttons as the OS reports them (Windows app-commands); the page goes back in-app
   onNav: (cb) => listen("nav:command", (dir) => cb(dir === "forward" ? "forward" : "back")),
+  // a folder on this computer for a chat (folders.js): pick (native dialog) → scan / read inside it → release
+  folders: {
+    pick: () => ipcRenderer.invoke("folders:pick"),
+    scan: (root, o = {}) => ipcRenderer.invoke("folders:scan", String(root || ""), { maxFiles: num(o.maxFiles), maxBytes: num(o.maxBytes) }),
+    read: (root, rel, maxBytes) => ipcRenderer.invoke("folders:read", String(root || ""), String(rel || ""), num(maxBytes)),
+    release: (root) => ipcRenderer.invoke("folders:release", String(root || "")),
+  },
   // in-app updates (updater.js): the state lives in the app, a page (re)reads it and follows it
   updates: {
     getState: () => ipcRenderer.invoke("update:state"),

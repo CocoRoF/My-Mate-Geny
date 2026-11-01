@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     uploads_root: str = "~/.hr-harnessor/uploads"
     upload_max_mb: int = 50          # per file
     upload_max_files: int = 20       # per message
+    # "Local folder → upload a copy" (a folder from the user's own computer,
+    # copied into <workspace>/.geny-uploads/<name>): limits per uploaded folder.
+    folder_upload_max_mb: int = 500
+    folder_upload_max_files: int = 10000
+    folder_upload_max_file_mb: int = 100
 
     # Mates: per-mate files (assets/, home/ = the mate engine's cwd), the
     # Live2D Cubism Core runtime and the speech cache live under this root.

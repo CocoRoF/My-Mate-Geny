@@ -30,6 +30,7 @@ from app.routers import (
     auth as auth_router,
     downloads,
     files,
+    folder_uploads,
     fs,
     config as config_router,
     connections,
@@ -40,6 +41,7 @@ from app.routers import (
     mate_internal,
     mates,
     providers,
+    session_git,
     sessions,
     usage,
     workspaces,
@@ -49,10 +51,12 @@ from app.mate.store import MateStore
 from app.mate.voice import VoiceService
 from app.services.attachment_service import AttachmentService
 from app.services.downloads import DownloadService
+from app.services.folder_upload import FolderUploadService
 from app.services.connection_service import ConnectionService
 from app.services.log_service import LogService, install_log_bridge
 from app.services.git_service import GitService
 from app.services.provider_service import ProviderService
+from app.services.session_git import SessionGit
 from app.services.session_service import SessionService
 from app.services.sysmon import SystemMonitor
 from app.services.workspace_service import WorkspaceService
@@ -97,6 +101,8 @@ async def lifespan(app: FastAPI):
     app.state.connection_service = connection_service
     app.state.workspace_service = workspace_service
     app.state.session_service = session_service
+    app.state.folder_uploads = FolderUploadService(session_service, workspace_service)
+    app.state.session_git = SessionGit(session_service, workspace_service)
     mate_store = MateStore(db, vault)
     app.state.mate_service = MateService(session_service, mate_store, logs=logs)
     app.state.voice_service = VoiceService(mate_store)
@@ -183,6 +189,7 @@ for r in (
     accounts.router,
     connections.router,
     workspaces.router,
+    session_git.router,
     sessions.router,
     execute.router,
     history.router,
@@ -191,6 +198,7 @@ for r in (
     git.router,
     attachments.router,
     files.router,
+    folder_uploads.router,
     fs.router,
     downloads.router,
     admin.router,

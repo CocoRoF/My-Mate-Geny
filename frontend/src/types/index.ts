@@ -29,6 +29,7 @@ export interface Session {
   cli_session_id: string | null;
   mode: "agent" | "plan";
   extra_dirs: string[];
+  git_repo?: string | null; // the top bar's Git repo: null = the workspace's own (auto), "" = none, else a path
   cli_info?: CliInfo;
   running?: boolean;
   background?: number; // background tasks still running (subagents, background shells)

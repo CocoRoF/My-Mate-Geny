@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { stopTurn } from "../../api/sessions";
 import SessionPanel from "./panel/SessionPanel";
 import { MenuButton } from "../layout/MobileTopBar";
@@ -15,12 +15,27 @@ import UsageModal from "../usage/UsageModal";
 import Icon, { type IconName } from "../ui/Icon";
 import ExplorerPanel from "../explorer/ExplorerPanel";
 import TabBar from "../viewer/TabBar";
+import FolderButton from "./topbar/FolderButton";
+import GitButton from "./topbar/GitButton";
 import { useChatStore } from "../../stores/chatStore";
 import { useSessionTabs, useWorkbench } from "../../stores/workbenchStore";
 
 // Viewers (and their format libraries) load when a file is first opened.
 const FileViewer = lazy(() => import("../viewer/FileViewer"));
 const WIDE = 1280; // below this the side panels are drawers
+
+/** An element's width, kept current by a ResizeObserver (no polling). */
+function useWidth(el: HTMLElement | null): number {
+  const [w, setW] = useState(0);
+  useLayoutEffect(() => {
+    if (!el) return;
+    setW(el.getBoundingClientRect().width);
+    const ro = new ResizeObserver((entries) => setW(entries[0].contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [el]);
+  return w;
+}
 
 function Toast() {
   const toast = useWorkbench((s) => s.toast);
@@ -125,8 +140,14 @@ export default function ChatView() {
   const setExplorer = useWorkbench((s) => s.setExplorer);
   const { tabs, active: activeTab } = useSessionTabs(activeId);
   const activate = useWorkbench((s) => s.activate);
-  // A side panel takes width: the workspace path in the header waits for a very wide screen.
-  const compact = explorer || panel;
+  // The top bar's density follows its own width (sidebar, explorer, panel and window all take from it): "full" shows
+  // every label (and, given room to spare, the workspace path), "medium" drops the view buttons' labels, "tight" also
+  // shrinks Folder / Git to their icons. (Phones: the sm: classes below, plus the More menu.)
+  const [barEl, setBarEl] = useState<HTMLDivElement | null>(null);
+  const barW = useWidth(barEl);
+  const density: "full" | "medium" | "tight" = !barW || barW >= 900 ? "full" : barW >= 560 ? "medium" : "tight";
+  const showWorkspace = barW >= 1100;
+  const labels = density === "full" ? "hidden sm:inline" : "hidden";
   // Narrow screens open on the chat: a drawer left open last time stays closed.
   useEffect(() => {
     if (window.innerWidth < WIDE) setExplorer(false);
@@ -172,59 +193,92 @@ export default function ChatView() {
       {dragging && <DropOverlay hint="Images are shown to the agent · other files are saved for its tools" />}
       {active && (
         <div className={`relative pt-safe shrink-0 border-b border-border/70 bg-surface/40 backdrop-blur-sm ${more ? "z-30" : ""}`}>
-        <div className="flex items-center gap-2 px-3 sm:px-5 h-12 md:h-14">
+        <div ref={setBarEl} data-testid="topbar" data-density={density} className="flex items-center gap-2 px-3 sm:px-5 h-12 md:h-14">
           <MenuButton />
           <Icon
             name={active.connection_id ? "server" : "cpu"}
             size={16}
             className={`shrink-0 ${active.connection_id ? "text-cyan" : "text-accent"}`}
           />
-          <span className="text-[14px] md:text-sm font-medium text-content truncate min-w-0">{active.title}</span>
-          <span className="pill bg-surface-3 text-content-dim shrink-0 hidden sm:inline-flex">{active.provider}</span>
+          <span
+            data-topbar-item="title"
+            className={`text-[14px] md:text-sm font-medium text-content truncate ${density === "full" ? "min-w-[5rem]" : "min-w-0"}`}
+            title={active.title}
+          >
+            {active.title}
+          </span>
+          {density === "full" && (
+            <span className="pill bg-surface-3 text-content-dim shrink-0 hidden sm:inline-flex">{active.provider}</span>
+          )}
           {active.mode === "plan" && <span className="pill bg-violet/15 text-violet shrink-0">plan</span>}
-          <div className="ml-auto flex items-center gap-0.5 sm:gap-2 min-w-0 shrink-0">
+          <span className="min-w-0 flex-1" aria-hidden />
+          {/* the workspace path gives way first (shrinks 6× faster than the title, down to 4rem), then the title; the
+              buttons never shrink */}
+          {showWorkspace && (
             <button
               onClick={() => setExplorer(true)}
-              className={`${compact ? "hidden 2xl:inline" : "hidden lg:inline"} text-[11px] text-content-faint font-mono truncate max-w-[220px] hover:text-content`}
-              title="Show in explorer"
+              data-topbar-item="workspace"
+              className="hidden min-w-[7rem] max-w-[260px] shrink-[6] items-center gap-1 font-mono text-[11px] text-content-faint hover:text-content sm:flex"
+              title={`${active.connection_id ? "Remote" : "Local"} workspace: ${active.workspace_path} — show in Explorer`}
             >
-              {active.connection_id ? "remote" : "local"} · {active.workspace_path}
+              <span className="shrink-0">{active.connection_id ? "remote" : "local"} ·</span>
+              {/* cut at the start: the folder's own name (the end of the path) stays readable */}
+              <span className="min-w-0 truncate text-left [direction:rtl]">
+                <bdi>{active.workspace_path}</bdi>
+              </span>
             </button>
+          )}
+          <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5">
+            <FolderButton session={active} compact={density !== "full"} />
+            <GitButton session={active} compact={density === "tight"} />
+            <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-border sm:block" aria-hidden />
             <button
               onClick={() => setShowTasks(true)}
+              data-topbar-item="tasks"
               className={`btn-ghost h-10 w-10 p-0 sm:h-auto sm:w-auto sm:py-1 sm:px-2 shrink-0 ${
                 runningTasks ? "text-accent" : "hidden sm:inline-flex"
               }`}
               title="Background tasks"
+              aria-label="Background tasks"
             >
               {runningTasks ? <Icon name="spinner" size={14} spin /> : <Icon name="activity" size={14} />}
-              <span className="hidden sm:inline">Tasks</span>
+              <span className={labels}>Tasks</span>
               {runningTasks > 0 && <span className="pill bg-accent-soft text-accent hidden sm:inline-flex">{runningTasks}</span>}
             </button>
-            <button onClick={() => setShowUsage(true)} className="btn-ghost hidden sm:inline-flex py-1 px-2 shrink-0" title="Account & usage">
-              <Icon name="cpu" size={14} /> <span className="hidden sm:inline">Usage</span>
+            <button
+              onClick={() => setShowUsage(true)}
+              data-topbar-item="usage"
+              className="btn-ghost hidden sm:inline-flex py-1 px-2 shrink-0"
+              title="Account & usage"
+              aria-label="Account & usage"
+            >
+              <Icon name="cpu" size={14} /> <span className={labels}>Usage</span>
             </button>
             <button
               onClick={() => setExplorer(!explorer)}
+              data-topbar-item="explorer"
               className={`btn-ghost h-10 w-10 p-0 sm:h-auto sm:w-auto sm:py-1 sm:px-2 shrink-0 ${explorer ? "bg-surface-3 text-content" : ""}`}
               title="Explorer — browse and open the workspace's files"
+              aria-label="Explorer"
+              aria-pressed={explorer}
             >
               <Icon name="files" size={14} />
-              <span className="hidden sm:inline">Explorer</span>
+              <span className={labels}>Explorer</span>
             </button>
             <button
               onClick={togglePanel}
+              data-topbar-item="panel"
               className={`btn-ghost hidden sm:inline-flex py-1 px-2 shrink-0 ${panel ? "bg-surface-3 text-content" : ""}`}
-              title="Session panel — folders, tasks, changes, agent"
+              title="Session panel — workspace, tasks, changed files, agent, usage"
+              aria-label="Session panel"
+              aria-pressed={panel}
             >
-              <Icon name="folder" size={14} />
-              <span className="hidden sm:inline">Panel</span>
-              {(active.extra_dirs?.length || 0) > 0 && (
-                <span className="pill bg-accent-soft text-accent">+{active.extra_dirs.length}</span>
-              )}
+              <Icon name="sliders" size={14} />
+              <span className={labels}>Panel</span>
             </button>
             <button
               data-more-toggle
+              data-topbar-item="more"
               onClick={() => setMore((v) => !v)}
               className={`btn-ghost sm:hidden h-10 w-10 p-0 shrink-0 ${more ? "bg-surface-3 text-content" : ""}`}
               aria-label="More"
@@ -246,12 +300,7 @@ export default function ChatView() {
                 onClick: () => setShowTasks(true),
               },
               { icon: "cpu", label: "Account & usage", onClick: () => setShowUsage(true) },
-              {
-                icon: "folder",
-                label: "Session panel",
-                badge: active.extra_dirs?.length ? `+${active.extra_dirs.length}` : undefined,
-                onClick: () => !panel && togglePanel(),
-              },
+              { icon: "sliders", label: "Session panel", onClick: () => !panel && togglePanel() },
             ]}
           />
         )}

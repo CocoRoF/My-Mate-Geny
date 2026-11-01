@@ -13,7 +13,7 @@
 // installer GUID, in-place updates) and the userData folder `hr-harnessor`
 // (settings.json, the login cookie), pinned below because Electron would
 // otherwise derive it from the new productName and log everyone out.
-const { app, BrowserWindow, Menu, Notification, ipcMain, shell, clipboard, session, systemPreferences, net } = require("electron");
+const { app, BrowserWindow, Menu, Notification, ipcMain, shell, clipboard, session, systemPreferences, net, dialog } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 
@@ -24,6 +24,7 @@ const core = require("./connect-core");
 const mate = require("./mate");
 const recovery = require("./recovery");
 const chrome = require("./chrome");
+const folders = require("./folders");
 const { createUpdater } = require("./updater");
 
 const RETRY_PAGE = path.join(__dirname, "offline.html");
@@ -446,6 +447,9 @@ ipcMain.handle("update:download", (e) => (fromAppPage(e) ? updater.download() : 
 ipcMain.handle("update:cancel", (e) => (fromAppPage(e) ? updater.cancel() : null));
 ipcMain.handle("update:install", (e) => (fromAppPage(e) ? updater.install() : null));
 ipcMain.handle("update:retry", (e) => (fromAppPage(e) ? updater.retry() : null));
+
+// a folder on this computer for a chat (folders.js): native dialog, same-machine probe, its files for a copy
+folders.registerIpc({ ipcMain, dialog, BrowserWindow, app, allowed: (e) => fromAppPage(e) && sameOrigin((e.senderFrame && e.senderFrame.url) || "") });
 
 // Microphone for push-to-talk (getUserMedia audio) on the server's pages, plus
 // what the console already uses (clipboard writes, fullscreen video);
