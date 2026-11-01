@@ -8,6 +8,7 @@ import { watchKeyboard } from "./lib/keyboard";
 import { installChunkRecovery } from "./lib/recover";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import TitleBar from "./components/layout/TitleBar";
+import { Spinner } from "./components/ui/Loading";
 import { claimWindowChrome } from "./lib/nativeWindow";
 import "./index.css";
 
@@ -59,7 +60,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 function BootSpinner() {
   return (
     <div className="grid h-full place-items-center" data-testid="surface-loading">
-      <span className="h-6 w-6 animate-spin rounded-full border-2 border-accent/25 border-t-accent" />
+      <Spinner size={24} />
     </div>
   );
 }

@@ -14,6 +14,7 @@ import { useSessionStore } from "./stores/sessionStore";
 import { useConfigStore } from "./stores/configStore";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import TitleBar from "./components/layout/TitleBar";
+import PageLoading from "./components/ui/Loading";
 import { nativeWindow } from "./lib/nativeWindow";
 
 // Secondary views load on demand: the chat (first screen) stays light.
@@ -80,10 +81,11 @@ export default function App() {
         {/* chat with an open session has its own header */}
         {/* chat with an open session and the Mate have their own header */}
         {!(view === "chat" && activeId) && view !== "mate" && <MobileTopBar title={titles[view] || ""} />}
-        <div className="flex-1 min-h-0">
+        {/* (a new screen fades in: keyed by the screen) */}
+        <div key={view} className="flex-1 min-h-0 animate-fade-in">
           {/* one view failing (or its code gone after a deploy) never takes the sidebar with it */}
           <ErrorBoundary variant="view" resetKey={view}>
-          <Suspense fallback={<ViewLoading />}>
+          <Suspense fallback={<PageLoading />}>
           {view === "mate" && <MateView />}
           {view === "chat" && <ChatView />}
           {view === "providers" && <ProvidersView />}
@@ -106,13 +108,3 @@ export default function App() {
   );
 }
 
-function ViewLoading() {
-  return (
-    <div className="grid h-full place-items-center" data-testid="view-loading">
-      <div className="flex items-center gap-2.5 text-[13px] text-content-faint animate-fade-in">
-        <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent/25 border-t-accent" />
-        Loading…
-      </div>
-    </div>
-  );
-}

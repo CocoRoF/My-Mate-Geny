@@ -6,6 +6,7 @@
  * keyboard is up the stage steps aside (the header keeps her picture, name and mood) so the conversation gets the
  * room; it comes back when the keyboard goes.
  */
+import PageLoading from "../ui/Loading";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { importLocal } from "../../api/mates";
 import { usePhone } from "../../lib/device";
@@ -129,7 +130,7 @@ export default function MateView() {
     }
   };
 
-  if (!loaded) return <div className="grid h-full place-items-center text-sm text-content-faint">Loading…</div>;
+  if (!loaded) return <PageLoading />;
   if (!mate)
     return (
       <div className="grid h-full place-items-center p-6 text-center text-sm text-content-dim">
@@ -283,7 +284,7 @@ export default function MateView() {
   );
 
   const settingsPanel = settings && (
-    <Suspense fallback={<div className="grid h-full place-items-center text-sm text-content-faint">Loading…</div>}>
+    <Suspense fallback={<PageLoading />}>
       {mateOpen ? (
         // shows Global settings itself while those are open (and closes them when it goes)
         <MateSettings mate={mate} conv={conv} onClose={closePanels} />
