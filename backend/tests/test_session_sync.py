@@ -45,7 +45,8 @@ def test_feed_announces_changes_and_list_reports_its_version(tmp_path):
 
             ws.send_json({"type": "sync"})  # back from the background: "are you there?"
             pong = ws.receive_json()
-            assert pong == {"type": "pong", "data": {"version": ev2["data"]["version"]}}
+            assert pong["type"] == "pong" and pong["data"]["version"] == ev2["data"]["version"]
+            assert pong["data"]["mates_version"] == hello["data"]["mates_version"]
 
             client.delete(f"/api/sessions/{s['id']}")
             ev3 = ws.receive_json()

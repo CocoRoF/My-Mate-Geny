@@ -519,6 +519,24 @@ if (restartOnX11 && relaunchOnX11()) {
   app.on("before-quit", () => {
     quitting = true;
     mate.setQuitting(true);
+    // what the pages keep in localStorage (the avatar's pan / zoom, drafts, the chosen mate) is written lazily:
+    // write it now, or a quit right after a change forgets it
+    try {
+      session.defaultSession.flushStorageData();
+    } catch {
+      /* gone */
+    }
   });
   app.on("will-quit", () => mate.stop());
+  // A desktop logout / shutdown (and `kill`) ends the app with SIGTERM: quit properly (windows saved, storage
+  // flushed) instead of dying with unwritten state.
+  for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => quit());
+  // (a logout signals every process of the app at once — the storage process too: never sit on much unwritten)
+  setInterval(() => {
+    try {
+      session.defaultSession.flushStorageData();
+    } catch {
+      /* not ready / gone */
+    }
+  }, 15_000).unref();
 }

@@ -16,11 +16,13 @@ import { createChatStore, FIRST_TURNS, type Turn } from "../stores/chatStore";
 import { useMateStore } from "../stores/mateStore";
 import type { Attachment, ProviderEvent } from "../types";
 import { getMateAudioQueue, useMateAudio } from "./audioQueue";
+import { usePreviewVolume } from "./livePreview";
 import { EmotionTracker } from "./emotion";
 import { SentenceStream } from "./sentences";
 import type { BodyMood, MateReact } from "./types";
 import { currentSurface, useDesktopMate, type DesktopMateState } from "./desktop";
 import { useVoiceSpeaking } from "./voiceBridge";
+import { announceStarted, clientMsgId, deviceId, deviceOf, RANK_OVERLAY, RANK_SURFACE, RANK_SURFACE_HIDDEN, startedUpTo, useVoiceElection } from "./voiceOwner";
 
 /** the page's mate conversation (one mate at a time per page) */
 export const useMateChat = createChatStore();
@@ -45,18 +47,41 @@ export const bcp47 = (lang: string | undefined) => {
 };
 
 /**
- * Who reads aloud: one voice. The desktop overlay speaks whenever it is out (for its mate); otherwise the mate chat
- * window if it is open; otherwise the console's Mate view. A browser (no desktop bridge) always speaks for itself.
+ * Who reads aloud — one voice (mate/voiceOwner.ts): on the device that sent the message (a turn the mate starts: where
+ * the user last talked from), and there in ONE window: the one already reading a reply keeps it, else the avatar
+ * overlay while it is on screen, else the most recently focused Mate surface (mate chat window / console Mate view).
+ * The quick card is never a candidate. This is a page's rank in that election (0: not a candidate).
  */
-export function isVoiceOwner(surface: string, desk: DesktopMateState | null, mateId: string, defaultId: string | null): boolean {
-  if (surface === "mate-quick") return false; // it closes after sending; the overlay answers
-  if (!desk) return true;
-  const overlayMate = desk.mateId || defaultId;
-  const overlayOut = desk.visible && overlayMate === mateId;
-  if (surface === "mate-overlay") return true;
-  if (overlayOut) return false;
-  if (surface === "mate-chat") return true;
-  return !desk.chatOpen;
+export function voiceRank(surface: string, desk: DesktopMateState | null, pageVisible: boolean): number {
+  if (surface === "mate-quick") return 0; // it closes after sending; whoever is elected answers
+  if (surface === "mate-overlay") return pageVisible && (desk ? desk.visible : true) ? RANK_OVERLAY : 0;
+  // a page on screen before one in the background (a hidden tab's throttled beats must not make two speakers)
+  return pageVisible ? RANK_SURFACE : RANK_SURFACE_HIDDEN;
+}
+
+function usePageVisible(): boolean {
+  const [v, setV] = useState(() => typeof document === "undefined" || document.visibilityState === "visible");
+  useEffect(() => {
+    const on = () => setV(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", on);
+    return () => document.removeEventListener("visibilitychange", on);
+  }, []);
+  return v;
+}
+
+/** a turn being followed: its sentences (all windows keep them, so a window taking over goes on from the next one) */
+interface Follow {
+  key: string;
+  /** the turn as every window knows it (its start on the server), for "this sentence is said" between windows */
+  vid: string;
+  stream: SentenceStream;
+  emo: EmotionTracker;
+  quiet: boolean;
+  /** the device the turn answers (null: unknown — read here) */
+  origin: string | null;
+  sentences: { idx: number; speech: string; emotion: string | null | undefined; text: string }[];
+  /** sentences seen so far (the next one's index) */
+  n: number;
 }
 
 function lastAssistant(turns: Turn[]): { turn: Turn; index: number } | null {
@@ -78,6 +103,8 @@ export interface MateConversation {
   caption: Caption | null;
   voiceError: string | null;
   speaks: boolean; // this page is the one reading aloud
+  /** the volume the voice plays at now (0..3): the saved one, or a settings slider's live preview */
+  volume: number;
   /** a new turn (text and/or files) */
   send: (text: string, attachments?: Attachment[]) => boolean;
   /** add to her running turn */
@@ -112,12 +139,18 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
   const surface = useMemo(currentSurface, []);
   const desk = useDesktopMate();
   const muted = useMateStore((s) => s.muted);
-  const defaultId = useMateStore((s) => s.mates.find((m) => m.is_default)?.id ?? s.mates[0]?.id ?? null);
   const engine = mate?.voice.tts.engine ?? "off";
-  const owner = mateId ? isVoiceOwner(surface, desk, mateId, defaultId) : false;
+  const pageVisible = usePageVisible();
+  // the turn this window is reading now (it keeps the voice until that reply is done)
+  const [speakingTurn, setSpeakingTurn] = useState<string | null>(null);
+  const rank = opts.voice === false ? 0 : voiceRank(surface, desk, pageVisible);
+  const owner = useVoiceElection(mateId, rank, speakingTurn);
   const speaks = opts.voice !== false && owner && !muted && !!mate?.voice.auto_read && engine !== "off";
   const speaksRef = useRef(speaks);
   speaksRef.current = speaks;
+  /** the device the latest user message came from (mate/voiceOwner: a reply is read on the device that asked) */
+  const lastSender = useRef<string | null>(null);
+  const followRef = useRef<Follow | null>(null);
 
   const touch = useCallback(() => {
     activity.current = Date.now();
@@ -154,6 +187,9 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
     queue.onItemStart = (item) => {
       if (item.text) setCaption({ text: String((item.meta as any)?.display ?? item.text), at: Date.now() });
       setVoiceError(fallbackWhy);
+      // the other windows of this device: this sentence (and all before it) is said — never again, never twice
+      const m = item.meta as { turn?: string; idx?: number } | undefined;
+      if (m?.turn && typeof m.idx === "number") announceStarted(mateId, m.turn, m.idx);
     };
     queue.onError = (_item, err) => setVoiceError((err as Error)?.message || String(err));
     return () => {
@@ -162,8 +198,11 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
     };
   }, [queue, mateId, engine, lang, tts?.voice, tts?.speed]);
 
-  // the mate's volume (0–300 %): clips through a GainNode + limiter, the browser voice up to 100 %
-  const volume = mate?.voice.volume ?? 1;
+  // the mate's volume (0–300 %): clips through a GainNode + limiter, the browser voice up to 100 %. The settings'
+  // unsaved slider (this window or another one of this browser: mate/livePreview) wins while it moves; the saved
+  // value comes from the store, which follows the server's pushes (no stale copy in an overlay opened hours ago)
+  const preview = usePreviewVolume(mateId);
+  const volume = preview ?? mate?.voice.volume ?? 1;
   useEffect(() => {
     queue.setVolume(volume);
   }, [queue, volume]);
@@ -172,8 +211,43 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
   useEffect(() => () => queue.stop(), [queue, mateId]);
   // muted / no longer the owner: stop at once
   useEffect(() => {
-    if (!speaks) queue.stop();
+    if (!speaks) {
+      queue.stop();
+      setSpeakingTurn(null);
+    }
   }, [speaks, queue]);
+
+  // The reply this window reads stays here until it is written AND said; then the voice is free for the next reply.
+  const busy = !!qstate.current || qstate.pending > 0;
+  useEffect(() => {
+    if (!speakingTurn || busy) return;
+    const t = store.getState().turns.find((x) => x.key === speakingTurn);
+    if (!t || t.complete) setSpeakingTurn(null);
+  }, [speakingTurn, busy, turns, store]);
+
+  /** read one sentence of a followed turn here, unless a window of this device already started it (or a later one) */
+  const readHere = useCallback(
+    (f: Follow, s: Follow["sentences"][number]) => {
+      if (s.idx <= startedUpTo(f.vid)) return false;
+      queue.enqueue({ text: s.speech, emotion: s.emotion ?? undefined, meta: { display: s.text, turn: f.vid, idx: s.idx } });
+      setSpeakingTurn(f.key);
+      return true;
+    },
+    [queue],
+  );
+  const readHereRef = useRef(readHere);
+  readHereRef.current = readHere;
+
+  // Taking over in the middle of a reply (the window reading it closed / crashed): go on from the next sentence.
+  useEffect(() => {
+    if (!speaks) return;
+    const f = followRef.current;
+    if (!f || f.quiet || (f.origin !== null && f.origin !== deviceId)) return;
+    const t = store.getState().turns.find((x) => x.key === f.key);
+    const said = startedUpTo(f.vid);
+    if (!t || (t.complete && said < 0)) return; // (a reply nobody was reading is not read later)
+    for (const s of f.sentences) if (s.idx > said) readHere(f, s);
+  }, [speaks, readHere, store]);
 
   // ── open the conversation + stream it ──
   useEffect(() => {
@@ -190,7 +264,9 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
     setError(null);
 
     // follow the reply being written: sentences → voice/caption, tags → react
-    let follow: { key: string; stream: SentenceStream; emo: EmotionTracker; quiet: boolean } | null = null;
+    let follow: Follow | null = null;
+    followRef.current = null;
+    lastSender.current = null;
     // Turns that came with the history are not read aloud (by key: older
     // pages prepended later shift the indexes).
     let quiet = new Set<string>();
@@ -200,21 +276,34 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
       if (!la || quiet.has(la.turn.key)) return;
       const t = la.turn;
       if (!follow || follow.key !== t.key) {
-        follow = { key: t.key, stream: new SentenceStream({ minChars: 8 }), emo: new EmotionTracker(), quiet: !fresh };
+        // (the device a reply is read on is fixed when it starts: a message added meanwhile does not move it)
+        follow = {
+          key: t.key,
+          vid: t.startedAt ? `t${t.startedAt}` : t.key,
+          stream: new SentenceStream({ minChars: 8 }),
+          emo: new EmotionTracker(),
+          quiet: !fresh,
+          origin: lastSender.current,
+          sentences: [],
+          n: 0,
+        };
+        followRef.current = follow;
       }
       const f = follow;
       const e = f.emo.push(t.text);
       if (e && !f.quiet) setReact({ name: e, at: Date.now() });
       const done = t.complete;
       const sentences = done ? f.stream.flush(t.text) : f.stream.push(t.text);
+      // a sentence's index is its place in the whole reply (the same in every window, also one that joined late)
+      const first = f.n;
+      f.n += sentences.length;
       if (f.quiet) return;
-      for (const s of sentences) {
-        if (speaksRef.current && s.speech) {
-          queue.enqueue({ text: s.speech, emotion: s.emotion, meta: { display: s.text } });
-        } else {
-          setCaption({ text: s.text, at: Date.now() });
-        }
-      }
+      const mine = f.origin === null || f.origin === deviceId;
+      sentences.forEach((s, i) => {
+        const item = { idx: first + i, speech: s.speech, emotion: s.emotion, text: s.text };
+        if (s.speech) f.sentences.push(item);
+        if (!(speaksRef.current && mine && s.speech && readHereRef.current(f, item))) setCaption({ text: s.text, at: Date.now() });
+      });
     };
 
     const connect = async () => {
@@ -240,6 +329,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
         const turns = store.getState().turns;
         quiet = new Set(turns.map((t) => t.key));
         follow = null;
+        followRef.current = null;
         const la = lastAssistant(turns);
         if (h.running && la && !la.turn.complete) {
           // a reply already being written: follow it from here on (what was said before stays unsaid)
@@ -270,6 +360,17 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
           return;
         }
         if (ev.type === "task.state" || ev.type === "usage.update") return;
+        if (ev.type === "user.message" || ev.type === "user.steer") {
+          // where the user is talking from: replies are read on that device (internal messages — a delegated task
+          // reporting back — do not move it; a message without a device came from another / older client)
+          const d = (ev.data ?? {}) as { client_msg_id?: unknown; internal?: unknown };
+          if (!d.internal) {
+            lastSender.current = deviceOf(d.client_msg_id) ?? (d.client_msg_id ? "?" : lastSender.current);
+            // a new question / an addition: she stops talking — in whichever window was reading (not only the
+            // one it was typed in: the quick card's question stops the overlay)
+            queue.stop();
+          }
+        }
         applyEvent(ev);
         if (ev.type === "text.delta" || ev.type === "turn.complete" || ev.type === "error" || ev.type === "session.start") {
           const at = Date.parse(ev.timestamp) || Date.now();
@@ -348,10 +449,11 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
       if (!ws || ws.readyState !== WebSocket.OPEN) return false;
       touch();
       queue.stop(); // a new question: she stops talking
-      const clientMsgId = `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-      store.getState().pushUser(text, attachments, clientMsgId);
+      const cid = clientMsgId("m"); // (names this device: the reply is read here — mate/voiceOwner)
+      lastSender.current = deviceId;
+      store.getState().pushUser(text, attachments, cid);
       store.getState().setStreaming(true);
-      ws.send(JSON.stringify({ type: "chat", input: text, attachments: attachments.map((a) => a.id), client_msg_id: clientMsgId }));
+      ws.send(JSON.stringify({ type: "chat", input: text, attachments: attachments.map((a) => a.id), client_msg_id: cid }));
       return true;
     },
     [store, queue, touch],
@@ -366,9 +468,10 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
       if (!ws || ws.readyState !== WebSocket.OPEN) return false;
       touch();
       queue.stop();
-      const clientMsgId = `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-      store.getState().pushSteer(text, attachments, clientMsgId);
-      ws.send(JSON.stringify({ type: "steer", input: text, attachments: attachments.map((a) => a.id), client_msg_id: clientMsgId }));
+      const cid = clientMsgId("s"); // (names this device: the reply is read here — mate/voiceOwner)
+      lastSender.current = deviceId;
+      store.getState().pushSteer(text, attachments, cid);
+      ws.send(JSON.stringify({ type: "steer", input: text, attachments: attachments.map((a) => a.id), client_msg_id: cid }));
       return true;
     },
     [store, queue, touch],
@@ -444,6 +547,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
     caption,
     voiceError,
     speaks,
+    volume,
     send,
     steer,
     stop,

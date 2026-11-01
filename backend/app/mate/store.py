@@ -12,7 +12,7 @@ import json
 import math
 import re
 import threading
-from typing import Any
+from typing import Any, Callable
 
 from app.db import Database
 from app.providers.catalog import DEFAULT_MATE_MODEL, default_mate_model
@@ -330,6 +330,16 @@ class MateStore:
         self._vault = vault
         self._lock = threading.Lock()
         self.last_changed: set[str] = set()  # the settings the last update_settings() changed
+        # told (reason, mate_id) after every write a client can see: MateService
+        # wires it to the /ws/sessions feed so every window refetches its mates
+        self.on_change: Callable[[str, str | None], None] | None = None
+
+    def _changed(self, reason: str, mate_id: str | None = None) -> None:
+        if self.on_change is not None:
+            try:
+                self.on_change(reason, mate_id)
+            except Exception:  # noqa: BLE001 - a notification never fails a write
+                pass
 
     # ---- mates ----
 
@@ -386,6 +396,7 @@ class MateStore:
                 (mid, name, 1 if (is_default or first) else 0, *(json.dumps(d, ensure_ascii=False) for d in doc),
                  now, now),
             )
+        self._changed("created", mid)
         return self.get(mid)
 
     def ensure_default(self) -> bool:
@@ -442,6 +453,8 @@ class MateStore:
                 sets.append("updated_at = ?")
                 params += [now_iso(), mate_id]
                 self._db.execute(f"UPDATE mates SET {', '.join(sets)} WHERE id = ?", params)
+        if sets:
+            self._changed("updated", mate_id)
         return self.get(mate_id), changed
 
     # ---- built-in mates ----
@@ -458,9 +471,11 @@ class MateStore:
 
     def restore_builtins(self) -> None:
         self._db.execute("DELETE FROM mate_builtin_removed")
+        self._changed("restored")
 
     def set_customized(self, mate_id: str, on: bool) -> None:
         self._db.execute("UPDATE mates SET customized = ? WHERE id = ?", (1 if on else 0, mate_id))
+        self._changed("updated", mate_id)
 
     def mark_builtin(self, mate_id: str, key: str, version: str, snapshot: dict[str, Any] | None = None) -> None:
         """Record the bundle version a built-in was synced from (and, given, that
@@ -473,6 +488,7 @@ class MateStore:
 
     def set_session(self, mate_id: str, sid: str | None) -> None:
         self._db.execute("UPDATE mates SET session_id = ? WHERE id = ?", (sid, mate_id))
+        self._changed("session", mate_id)
 
     def delete(self, mate_id: str) -> None:
         with self._lock:
@@ -488,6 +504,7 @@ class MateStore:
                 nxt = self._db.query_one("SELECT id FROM mates ORDER BY created_at LIMIT 1")
                 if nxt is not None:
                     self._db.execute("UPDATE mates SET is_default = 1 WHERE id = ?", (nxt["id"],))
+        self._changed("deleted", mate_id)
 
     # ---- memories ----
 
@@ -509,6 +526,7 @@ class MateStore:
                          (mem["id"], mate_id, text, mem["created_at"]))
         if by_user:
             self._bump_memory(mate_id)
+        self._changed("memory", mate_id)
         return mem
 
     def delete_memory(self, mate_id: str, mem_id: str, *, by_user: bool = False) -> bool:
@@ -518,6 +536,7 @@ class MateStore:
         self._db.execute("DELETE FROM mate_memories WHERE id = ? AND mate_id = ?", (mem_id, mate_id))
         if by_user:
             self._bump_memory(mate_id)
+        self._changed("memory", mate_id)
         return True
 
     def _bump_memory(self, mate_id: str) -> None:
@@ -584,6 +603,8 @@ class MateStore:
         for provider in {SETTING_PROVIDERS[k] for k in changed}:
             self.set_verification(provider, None)
         self.last_changed = changed
+        if changed:
+            self._changed("settings")
         return self.settings()
 
     # ---- voice provider verification results (kept across restarts) ----

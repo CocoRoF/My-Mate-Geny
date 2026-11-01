@@ -50,6 +50,29 @@ export function Toggle({ on, onChange, label, hint, disabled, testId }: { on: bo
 }
 
 /** Save button + status line: "Saved" for a moment, or the error. */
+/**
+ * A tab's unsaved form follows the saved mate while the user has not touched it: the mate changed in another window
+ * or on another device (the store refetches on the server's push) — an untouched form must not show the old values,
+ * nor save them back over the new ones. A form with edits keeps them.
+ */
+export function useFollowSaved(saved: unknown, dirty: boolean, reset: () => void) {
+  const key = JSON.stringify(saved);
+  const prev = useRef(key);
+  const clean = useRef(!dirty);
+  const resetRef = useRef(reset);
+  resetRef.current = reset;
+  useEffect(() => {
+    if (prev.current !== key) {
+      prev.current = key;
+      if (clean.current) {
+        resetRef.current();
+        return; // (the next render, with the form reset, records clean again)
+      }
+    }
+    clean.current = !dirty;
+  });
+}
+
 export function useSaver() {
   const [state, setState] = useState<{ busy: boolean; ok: boolean; err: string | null }>({ busy: false, ok: false, err: null });
   const run = async (fn: () => Promise<unknown>) => {

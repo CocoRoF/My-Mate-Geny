@@ -591,9 +591,45 @@ console Mate view, the quick card and the chat window all have it.
 Extra full-page surfaces (no sidebar), used by the desktop app:
 
 - `/?surface=mate-overlay&mate=<id>` — transparent page: avatar + caption
-  bubble only; plays the voice.
-- `/?surface=mate-quick&mate=<id>` — one-line quick chat card.
+  bubble only; plays the voice. When the window takes the mouse (click-through
+  off, or move mode) a drag pans the avatar inside it and the wheel zooms
+  (around the pointer), kept per mate in localStorage `hrh.mate.view.<id>`
+  (`mate/avatar/view.ts`; video/photo: a CSS transform, Live2D: in its
+  renderer). Move mode: a move bar on top (drag = move the window, Reset view,
+  Done) and a resize frame (8 handles → `resizeBy`); the page marks
+  `<html data-hrh-own-move>` so the desktop app does not make the whole page a
+  drag area.
+- `/?surface=mate-quick&mate=<id>` — one-line quick chat card: a fixed width;
+  the page reports its height only and the window grows downwards (top edge
+  fixed) up to 640 px, then the box scrolls; the card is the drag handle
+  (`-webkit-app-region`); a draft (text or files) keeps it open when focus
+  leaves, with an ✕ in its corner (`setQuickPinned`).
 - `/?surface=mate-chat&mate=<id>` — compact mate chat window.
+
+**One voice** (`mate/voiceOwner.ts`). A reply is read aloud on the device
+(browser profile; the desktop app's windows are one) that sent the message it
+answers — the device id rides in the message's `client_msg_id`
+(`…~<device>`), which the server echoes on `user.message`; a turn the mate
+starts itself is read where the user last talked from (unknown: here). On that
+device the windows showing the mate elect one reader over a BroadcastChannel
+(heartbeats 300 ms, gone after 1 s — 75 s for a hidden page, whose timers the
+browser throttles — `bye` on close): the window reading a reply keeps it until
+it is done; else the overlay while on screen; else the most recently focused
+Mate surface on screen (chat window / console Mate view); else one in the
+background (hidden tab, minimised window). The quick card
+never reads. Every window follows every sentence; the reader announces each
+sentence it starts (keyed by the turn's server start time + the sentence's
+index), so a window that takes over mid-reply goes on from the next sentence
+and nothing is read twice. Mute (localStorage) and the volume apply wherever
+it plays.
+
+**Mates stay current in every window.** Every mate write (create / update /
+delete / memories / global voice settings) is announced on `/ws/sessions` as
+`{"type": "mates.changed", "data": {"version", "reason", "mate_id"}}` (and
+`mates_version` in hello/pong); every window refetches `GET /api/mates`
+(coalesced). The Voice tab's unsaved volume previews in every window of the
+browser (BroadcastChannel `hrh-mate-preview`) and is dropped when the tab
+closes.
 
 ## 7. Desktop app (Electron) — Mate only
 
@@ -604,6 +640,14 @@ bar, the quick chat card on a global shortcut (**Ctrl/Cmd+Shift+G**), the mate
 chat window, start at login, Linux forced to X11/XWayland. The renderer surface
 is the web app (§6), so features update without reinstalling.
 
+Geometry (`desktop/src/geometry.js`, unit-tested): the avatar's resize keeps
+an authoritative rect like move-by, the dragged edge stops at the work area,
+the size is kept per mate (`settings.json` `mateSizes`; it wins over the page's
+suggested size); the quick card opens where it was last dropped
+(`mateQuickPos`, pulled onto a live display), else centred under the pointer.
+Tray → *Reset Mate position & size* forgets both and the avatar's pan/zoom.
+SIGTERM/SIGINT quit properly and DOM storage is flushed on quit and every 15 s.
+
 Bridge (preload → `window.hrhNative.mate`):
 
 ```ts
@@ -611,6 +655,8 @@ mate?: {
   showAvatar(mateId?: string): Promise<void>; hideAvatar(): Promise<void>;
   setClickThrough(on: boolean): Promise<void>; getState(): Promise<{ visible: boolean; clickThrough: boolean; mateId: string | null; hotkey: string; autostart: boolean }>;
   moveBy(dx: number, dy: number): void; moveEnd(): void; setAvatarSize(w: number, h: number): void;
+  resizeBy?(edge: string, dx: number, dy: number): void; resizeEnd?(): void;   // 0.4.1+: move mode's resize frame
+  setSize(w: number, h: number): void; setQuickPinned?(on: boolean): void;      // quick card: its height; a draft keeps it open
   openQuick(): Promise<void>; closeQuick(): Promise<void>; openChat(): Promise<void>; openConsole(): Promise<void>;
   setMate(mateId: string): Promise<void>; setHotkey(accel: string): Promise<boolean>; setAutostart(on: boolean): Promise<void>;
   onCommand(cb: (cmd: { type: string; [k: string]: unknown }) => void): () => void;

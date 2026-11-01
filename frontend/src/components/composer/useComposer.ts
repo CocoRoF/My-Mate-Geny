@@ -40,8 +40,11 @@ export interface ComposerOptions {
   mentions?: boolean;
   /** Enter sends (default: on a desktop, not on touch screens) */
   enterSends?: boolean;
-  /** auto-grow cap in px (also ≤ 40 % of the window) */
+  /** auto-grow cap in px (also ≤ 40 % of the window, unless viewportCap is false) */
   maxHeight?: number;
+  /** cap the box at 40 % of the window (default true; a phone keeps room for the conversation). Off for a window
+   *  that grows with its box — the desktop quick card: 40 % of a one-line window clipped the line itself */
+  viewportCap?: boolean;
   /** after a message went out (sent, steered or queued) */
   onSent?: () => void;
   /** Escape stops the running turn (default true) */
@@ -81,6 +84,7 @@ export function useComposer(o: ComposerOptions) {
   const touch = useTouchFirst();
   const sendsOnEnter = o.enterSends ?? !touch;
   const maxHeight = o.maxHeight ?? 240;
+  const viewportCap = o.viewportCap ?? true;
 
   const isStreaming = store((s) => s.isStreaming);
   const connection = store((s) => s.connection);
@@ -108,8 +112,8 @@ export function useComposer(o: ComposerOptions) {
     if (!ta) return;
     ta.style.height = "auto";
     // a short (keyboard-up) phone screen keeps room for the conversation
-    ta.style.height = Math.min(ta.scrollHeight, maxHeight, Math.round(window.innerHeight * 0.4)) + "px";
-  }, [maxHeight]);
+    ta.style.height = Math.min(ta.scrollHeight, maxHeight, viewportCap ? Math.round(window.innerHeight * 0.4) : Infinity) + "px";
+  }, [maxHeight, viewportCap]);
 
   // A saved draft is back (or the text changed from elsewhere): size the box to it. The placeholder (which the
   // box's height also follows while it is empty) changes with streaming and attachments.

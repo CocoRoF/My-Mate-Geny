@@ -16,6 +16,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { readSettings, writeSettings, serverUrl, sameOrigin } = require("./settings");
+const geo = require("./geometry");
 
 const mac = process.platform === "darwin";
 const linux = process.platform === "linux";
@@ -31,11 +32,21 @@ const AVATAR_DEFAULT = { width: 300, height: 400 };
 // The bar window keeps room above the buttons for a label (clicks there pass
 // through on Windows/macOS). Linux has no forwarding, so no label room there.
 const BAR = { w: 262, h: linux ? 46 : 84, strip: 46 };
-const QUICK = { w: 640, h: 168, minW: 320, maxW: 960, minH: 64, maxH: 640 };
+// The quick card: a FIXED width (project-geny-app / Geny: the strip never changes
+// width); the page reports its height and the window grows downwards from a
+// fixed top edge, up to maxH (then the text scrolls inside the card).
+const QUICK = { w: 640, h: 76, minH: 56, maxH: 640 };
+// The avatar window: what a resize handle can make of it
+const AVATAR_MIN = { width: 120, height: 140 };
 const CHAT = { w: 420, h: 640 };
-const DRAG_CSS = `html,body{-webkit-app-region:drag!important;cursor:move!important}
-html{outline:2px dashed rgba(110,139,255,.95)!important;outline-offset:-2px;background:rgba(110,139,255,.10)!important}
-button,a,input,textarea,select,[data-no-drag]{-webkit-app-region:no-drag!important}`;
+// Move mode for pages that draw no move UI of their own (servers older than
+// the overlay's own move bar / resize frame / pan-zoom): the whole page drags
+// the window. A page that does (html[data-hrh-own-move]) is left alone — its
+// avatar area pans and zooms the avatar, its bar moves the window and its
+// edges resize it (Geny's overlay: bar = move, avatar = pan/zoom).
+const DRAG_CSS = `html:not([data-hrh-own-move]),html:not([data-hrh-own-move]) body{-webkit-app-region:drag!important;cursor:move!important}
+html:not([data-hrh-own-move]){outline:2px dashed rgba(110,139,255,.95)!important;outline-offset:-2px;background:rgba(110,139,255,.10)!important}
+html:not([data-hrh-own-move]) :is(button,a,input,textarea,select,[data-no-drag]){-webkit-app-region:no-drag!important}`;
 
 let deps = { openConsole: () => {}, consoleWindow: () => null, switchServer: () => {}, signOut: () => {}, quit: () => app.quit() };
 let avatar = null;
@@ -52,6 +63,11 @@ let quickShownAt = 0;
 let quickKeyAt = 0;
 let moveRect = null;
 let moveIdle = null;
+let resizeRect = null;
+let resizeIdle = null;
+let quickPinned = false; // the quick card holds a draft: a click elsewhere leaves it open
+let quickProgAt = 0; // when we last placed / sized the quick card ourselves (not a user drag)
+let quickSaveTimer = null;
 let saveTimer = null;
 let crashes = [];
 let gaveUp = false;
@@ -284,7 +300,7 @@ function broadcast() {
 function saveAvatarSoon() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    if (alive(avatar) && !moveRect) writeSettings({ mateBounds: avatar.getBounds() });
+    if (alive(avatar) && !moveRect && !resizeRect) writeSettings({ mateBounds: avatar.getBounds() });
   }, 400);
 }
 
@@ -341,7 +357,7 @@ function createAvatar() {
   });
   win.on("move", () => {
     placeBar();
-    if (!moveRect) saveAvatarSoon();
+    if (!moveRect && !resizeRect) saveAvatarSoon();
   });
   win.on("closed", () => {
     if (avatar === win) avatar = null;
@@ -462,17 +478,86 @@ function moveEnd() {
   placeBar();
 }
 
-/** The page decides its size; the bottom-right corner stays where it is. */
+/** The size the user gave this mate's window with the resize handles (wins over the page's suggestion). */
+function userSize(id = mateId()) {
+  const s = id && S().mateSizes?.[id];
+  return s && Number.isFinite(s.width) && Number.isFinite(s.height) ? s : null;
+}
+
+/** setBounds on a window the user cannot resize (macOS ignores the size otherwise) */
+function setBoundsSized(win, b) {
+  if (mac && !win.isResizable()) {
+    win.setResizable(true);
+    win.setBounds(b);
+    win.setResizable(false);
+  } else win.setBounds(b);
+}
+
+/** The page suggests a size for the avatar's shape; the bottom-right corner stays where it is.
+ *  A size the user chose with the resize handles (per mate) wins. */
 function setAvatarSize(w, h) {
-  if (!alive(avatar) || moveRect || !Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return;
+  if (!alive(avatar) || moveRect || resizeRect || !Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return;
+  const own = userSize();
+  if (own) [w, h] = [own.width, own.height];
   const b = avatar.getBounds();
-  const width = clamp(Math.round(w), 60, 2400);
-  const height = clamp(Math.round(h), 60, 2400);
+  const width = clamp(Math.round(w), AVATAR_MIN.width, 2400);
+  const height = clamp(Math.round(h), AVATAR_MIN.height, 2400);
   const next = clampAvatar({ x: b.x + b.width - width, y: b.y + b.height - height, width, height });
   if (next.x === b.x && next.y === b.y && next.width === b.width && next.height === b.height) return;
-  avatar.setBounds(next);
+  setBoundsSized(avatar, next);
   writeSettings({ mateBounds: next });
   placeBar();
+}
+
+// Geny's overlay:resize-by (edge = n/s/e/w or a corner, pointer deltas), with
+// an authoritative rect like moveBy: never read getBounds() mid-drag. West /
+// north edges move the origin; the size stays between AVATAR_MIN and the
+// display's work area.
+function resizeBy(edge, dx, dy) {
+  if (!alive(avatar) || !Number.isFinite(dx) || !Number.isFinite(dy) || !/^[nsew]{1,2}$/.test(edge)) return;
+  if (!resizeRect) {
+    const b = avatar.getBounds();
+    resizeRect = { x: b.x, y: b.y, w: b.width, h: b.height };
+  }
+  const cur = resizeRect;
+  const a = screen.getDisplayMatching({ x: Math.round(cur.x), y: Math.round(cur.y), width: Math.round(cur.w), height: Math.round(cur.h) }).workArea;
+  const r = (resizeRect = geo.resizeRect(cur, edge, dx, dy, AVATAR_MIN, a));
+  setBoundsSized(avatar, { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.w), height: Math.round(r.h) });
+  placeBar();
+  clearTimeout(resizeIdle);
+  resizeIdle = setTimeout(resizeEnd, 400); // fallback when resizeEnd never comes
+}
+
+function resizeEnd() {
+  clearTimeout(resizeIdle);
+  resizeIdle = null;
+  if (!resizeRect) return;
+  resizeRect = null;
+  if (!alive(avatar)) return;
+  const b = clampAvatar(avatar.getBounds());
+  setBoundsSized(avatar, b);
+  const id = mateId();
+  writeSettings({ mateBounds: b, ...(id ? { mateSizes: { ...(S().mateSizes || {}), [id]: { width: b.width, height: b.height } } } : {}) });
+  placeBar();
+  broadcast();
+}
+
+/** Tray → Reset: the avatar back in its corner at the page's size, its pan/zoom and the quick card's place
+ *  forgotten — the way out of "I cannot find it / it is huge". */
+function resetPlacement() {
+  const id = mateId();
+  const sizes = { ...(S().mateSizes || {}) };
+  if (id) delete sizes[id];
+  writeSettings({ mateSizes: sizes, mateQuickPos: undefined });
+  if (alive(avatar)) {
+    const cur = avatar.getBounds();
+    const b = clampAvatar(defaultAvatarBounds({ width: cur.width, height: cur.height }));
+    setBoundsSized(avatar, b);
+    writeSettings({ mateBounds: b });
+    command(avatar, { type: "reset-view" }); // the page forgets its pan/zoom and suggests its size again
+    placeBar();
+  } else writeSettings({ mateBounds: undefined });
+  broadcast();
 }
 
 // ── the hover action bar (desktop/src/bar.html) ────────────────
@@ -587,8 +672,25 @@ function createQuick() {
   const win = quick;
   floating(win);
   guard(win, "quick");
-  // a launcher, not a window to clean up after: gone when focus leaves
-  win.on("blur", () => Date.now() - quickShownAt > 400 && hideQuick());
+  // a launcher, not a window to clean up after: gone when focus leaves — unless
+  // the user has started writing (a draft or files): then it stays, with an ✕
+  // on the card, until ✕ / Esc / sending
+  win.on("blur", () => Date.now() - quickShownAt > 400 && !quickPinned && hideQuick());
+  // where the user drags it is where it opens next time (the card's drag area:
+  // -webkit-app-region on the page). 'move' streams on every platform; our own
+  // placement and growth are not a user's choice.
+  win.on("move", () => {
+    if (Date.now() - quickProgAt < 250) return;
+    clearTimeout(quickSaveTimer);
+    quickSaveTimer = setTimeout(() => {
+      if (!alive(win) || !win.isVisible()) return;
+      const b = win.getBounds();
+      writeSettings({ mateQuickPos: { x: b.x, y: b.y } });
+    }, 300);
+  });
+  win.webContents.on("did-start-loading", () => {
+    quickPinned = false;
+  });
   win.on("close", (e) => {
     if (quitting) return;
     e.preventDefault();
@@ -606,10 +708,18 @@ function createQuick() {
   loadSurface(win, "quick");
 }
 
+/** Where the quick card opens: the place the user last dragged it to, kept on a
+ *  display that still exists (and inside it); else centred near the top of the
+ *  display under the pointer (Geny's positionQuickChat). */
+function quickPlacement(h) {
+  const areas = screen.getAllDisplays().map((d) => d.workArea);
+  const under = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  return geo.quickPlacement(S().mateQuickPos, QUICK.w, h, areas, under);
+}
+
 function placeQuick() {
-  const [w, h] = quick.getSize();
-  const a = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
-  quick.setBounds({ x: Math.round(a.x + (a.width - w) / 2), y: Math.round(a.y + a.height * 0.16), width: w, height: h });
+  quickProgAt = Date.now();
+  quick.setBounds(quickPlacement(quick.getBounds().height));
 }
 
 function openQuick() {
@@ -648,14 +758,21 @@ function quickKey() {
   toggleQuick();
 }
 
-/** From the quick card: width/height of the card; the top edge stays put. */
-function setQuickSize(w, h) {
-  if (!alive(quick) || !Number.isFinite(w) || !Number.isFinite(h)) return;
+/** From the quick card: its height. The width is fixed (pages up to 0.4 sent a
+ *  width measured inside a page that had grown a scrollbar, so every new line
+ *  made the window narrower); the top edge stays put — unless the card would
+ *  run off the bottom of its display, then it moves up just enough. */
+function setQuickSize(_w, h) {
+  if (!alive(quick) || !Number.isFinite(h)) return;
   const b = quick.getBounds();
-  const width = clamp(Math.round(w) || b.width, QUICK.minW, QUICK.maxW);
-  const height = clamp(Math.round(h) || b.height, QUICK.minH, QUICK.maxH);
-  if (Math.abs(width - b.width) < 2 && Math.abs(height - b.height) < 2) return;
-  quick.setBounds({ x: Math.round(b.x + (b.width - width) / 2), y: b.y, width, height }, false);
+  const next = geo.quickGrow(b, h, QUICK.w, screen.getDisplayMatching(b).workArea, QUICK.minH, QUICK.maxH);
+  if (Math.abs(next.height - b.height) < 2 && b.width === QUICK.w && next.y === b.y) return;
+  quickProgAt = Date.now();
+  quick.setBounds(next, false);
+}
+
+function setQuickPinned(on) {
+  quickPinned = !!on;
 }
 
 // ── the mate chat window ───────────────────────────────────────
@@ -978,7 +1095,8 @@ function buildTray() {
     { label: "Mate chat", click: openChat },
     { type: "separator" },
     { label: "Click-through", type: "checkbox", checked: clickThrough(), click: (i) => setClickThrough(i.checked) },
-    { label: "Move Mate", type: "checkbox", checked: moveMode, enabled: shown(), click: (i) => setMoveMode(i.checked) },
+    { label: "Move / resize Mate", type: "checkbox", checked: moveMode, enabled: shown(), click: (i) => setMoveMode(i.checked) },
+    { label: "Reset Mate position & size", click: resetPlacement },
     { label: "Keep Mate chat on top", type: "checkbox", checked: !!S().mateChatOnTop, click: (i) => setChatOnTop(i.checked) },
     { label: "Start at login", type: "checkbox", checked: autostartOn(), click: (i) => setAutostart(i.checked) },
     { type: "separator" },
@@ -1026,6 +1144,9 @@ function registerIpc() {
   handle("mate:setAutostart", (_e, on) => setAutostart(!!on));
   ipcMain.on("mate:moveBy", (e, dx, dy) => fromWeb(e, [avatar]) && moveBy(Number(dx), Number(dy)));
   ipcMain.on("mate:moveEnd", (e) => fromWeb(e, [avatar]) && moveEnd());
+  ipcMain.on("mate:resizeBy", (e, edge, dx, dy) => fromWeb(e, [avatar]) && resizeBy(String(edge), Number(dx), Number(dy)));
+  ipcMain.on("mate:resizeEnd", (e) => fromWeb(e, [avatar]) && resizeEnd());
+  ipcMain.on("mate:quickPinned", (e, on) => fromWeb(e, [quick]) && setQuickPinned(!!on));
   ipcMain.on("mate:size", (e, w, h) => {
     if (fromWeb(e, [avatar])) setAvatarSize(Number(w), Number(h));
     else if (fromWeb(e, [quick])) setQuickSize(Number(w), Number(h));
@@ -1097,6 +1218,7 @@ module.exports = {
   openChat,
   setClickThrough,
   setMoveMode,
+  resetPlacement,
   clickThrough,
   isMoveMode: () => moveMode,
   broadcast,

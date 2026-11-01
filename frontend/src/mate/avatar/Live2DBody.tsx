@@ -16,6 +16,7 @@ import { emotionCandidates, lookupEmotion } from "../emotion";
 import type { BodyMood, Live2D, MateReact } from "../types";
 import { subscribe as subscribeVoice, voiceBridge } from "../voiceBridge";
 import { getLive2DCoreUrl, loadCubismCore, openGlobalSettings, useLive2DCoreInstalls } from "../live2dCore";
+import { VIEW_HOME, type AvatarViewT } from "./view";
 
 export interface Live2DBodyProps {
   live2d: Live2D;
@@ -29,6 +30,8 @@ export interface Live2DBodyProps {
   onTap?: (area: string | null) => void;
   /** pointer focus + taps (default true) */
   interactive?: boolean;
+  /** the user's pan / zoom (mate/avatar/view.ts), applied in the renderer so the model stays crisp */
+  view?: AvatarViewT;
 }
 
 type Status = { kind: "loading" } | { kind: "ready" } | { kind: "no-runtime" } | { kind: "error"; message: string };
@@ -73,8 +76,10 @@ function saccadeInterval(): number {
   return SACCADE_P[SACCADE_P.length - 1][1] + Math.random() * SACCADE_STEP;
 }
 
-export default function Live2DBody({ live2d, mood, react, name, coreUrl, onTap, interactive = true }: Live2DBodyProps) {
+export default function Live2DBody({ live2d, mood, react, name, coreUrl, onTap, interactive = true, view }: Live2DBodyProps) {
   const box = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<AvatarViewT>(view ?? VIEW_HOME);
+  viewRef.current = view ?? VIEW_HOME;
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const [retry, setRetry] = useState(0);
   // the core was just installed (settings, another window): load now, no reload needed
@@ -179,9 +184,11 @@ export default function Live2DBody({ live2d, mood, react, name, coreUrl, onTap, 
         const sw = app.screen.width;
         const sh = app.screen.height;
         const c = cfg.current;
-        model.scale.set(Math.min(sw / natW, sh / natH) * (c.scale ?? 0.85));
-        model.x = sw / 2 + (c.x ?? 0);
-        model.y = sh / 2 + (c.y ?? 0);
+        // the view maps a point q of the box to t + z·q (the same as the other bodies' CSS transform)
+        const v = viewRef.current;
+        model.scale.set(Math.min(sw / natW, sh / natH) * (c.scale ?? 0.85) * v.z);
+        model.x = v.x * sw + v.z * (sw / 2 + (c.x ?? 0));
+        model.y = v.y * sh + v.z * (sh / 2 + (c.y ?? 0));
       };
       layout();
       app.stage.addChild(model);
@@ -403,7 +410,7 @@ export default function Live2DBody({ live2d, mood, react, name, coreUrl, onTap, 
   // framing changes without a reload
   useEffect(() => {
     api.current?.layout();
-  }, [live2d.scale, live2d.x, live2d.y, status.kind]);
+  }, [live2d.scale, live2d.x, live2d.y, status.kind, view?.x, view?.y, view?.z]);
 
   // ── mood face (thinking / away) when no reaction holds ──
   const applyMood = () => {

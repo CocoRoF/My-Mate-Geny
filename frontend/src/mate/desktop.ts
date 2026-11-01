@@ -27,6 +27,11 @@ export interface MateBridge {
   moveEnd(): void;
   setAvatarSize(w: number, h: number): void;
   setSize(w: number, h: number): void;
+  /** move mode: resize the avatar window from an edge / corner ("n", "se", …) — desktop 0.4.1+ */
+  resizeBy?(edge: string, dx: number, dy: number): void;
+  resizeEnd?(): void;
+  /** the quick card holds a draft: a click elsewhere leaves it open — desktop 0.4.1+ */
+  setQuickPinned?(on: boolean): void;
   setMoveMode(on: boolean): Promise<void>;
   openQuick(): Promise<void>;
   closeQuick(): Promise<void>;

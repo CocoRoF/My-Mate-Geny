@@ -1,19 +1,22 @@
 /**
  * Full-page Mate surfaces for the desktop app's windows (docs/mate.md §6–7), no console chrome:
- *   ?surface=mate-overlay&mate=<id>  the avatar + caption bubble on a transparent page; plays the voice; move mode
- *   ?surface=mate-quick&mate=<id>    a one-line card: Enter sends, then it closes (the reply shows by the avatar)
+ *   ?surface=mate-overlay&mate=<id>  the avatar + caption bubble on a transparent page; plays the voice; pan / zoom
+ *                                    the avatar when it takes the mouse; move mode: move bar + resize frame
+ *   ?surface=mate-quick&mate=<id>    a one-line card (draggable, fixed width, grows downwards): Enter sends, then it
+ *                                    closes (the reply shows by the avatar); a draft keeps it open (✕ closes)
  *   ?surface=mate-chat&mate=<id>     a compact conversation window
  * They all attach to the same mate session (useMateConversation), so every window stays in sync.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Mate } from "../../../api/mates";
+import { useSessionSync } from "../../../hooks/useSessionSync";
 import { useConfigStore } from "../../../stores/configStore";
-import { useDraftStore } from "../../../stores/draftStore";
 import { useMateStore } from "../../../stores/mateStore";
-import { desktopMate, useDesktopMate, type DesktopCommand } from "../../../mate/desktop";
+import { desktopMate, useDesktopMate, type DesktopCommand, type DesktopMateState } from "../../../mate/desktop";
 import { useMateConversation } from "../../../mate/useMateConversation";
 import { parseEmotionText } from "../../../mate/emotion";
 import { MateAvatar } from "../../../mate/avatar/MateAvatar";
+import { isHome, useAvatarView } from "../../../mate/avatar/view";
 import Icon from "../../ui/Icon";
 import { DropOverlay, useFileDrop } from "../../composer/useFileDrop";
 import MateComposer from "../MateComposer";
@@ -23,7 +26,7 @@ import { MateThumb, MOOD_LABEL, useFadingCaption } from "../MateStage";
 type Kind = "mate-overlay" | "mate-quick" | "mate-chat";
 
 /** the mate this window shows: ?mate=, then the desktop's choice, then the default */
-function useSurfaceMate(onCommand?: (cmd: DesktopCommand) => void): { mate: Mate | null; loaded: boolean } {
+function useSurfaceMate(onCommand?: (cmd: DesktopCommand) => void): { mate: Mate | null; loaded: boolean; desk: DesktopMateState | null } {
   const mates = useMateStore((s) => s.mates);
   const loaded = useMateStore((s) => s.loaded);
   const [wanted] = useState(() => new URLSearchParams(window.location.search).get("mate"));
@@ -33,10 +36,37 @@ function useSurfaceMate(onCommand?: (cmd: DesktopCommand) => void): { mate: Mate
   }, []);
   const id = desk?.mateId || wanted;
   const mate = mates.find((m) => m.id === id) ?? mates.find((m) => m.is_default) ?? mates[0] ?? null;
-  return { mate, loaded };
+  return { mate, loaded, desk };
+}
+
+/** the change in screen position since the last event of a press (screen-based: the window moving under the pointer
+ *  while it drags / resizes that window does not feed back) */
+function pressDeltas(e: { screenX: number; screenY: number }, onDelta: (dx: number, dy: number) => void, onEnd: () => void) {
+  let lx = e.screenX;
+  let ly = e.screenY;
+  const move = (ev: PointerEvent | MouseEvent) => {
+    const dx = ev.screenX - lx;
+    const dy = ev.screenY - ly;
+    lx = ev.screenX;
+    ly = ev.screenY;
+    if (dx || dy) onDelta(dx, dy);
+  };
+  const up = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", up);
+    window.removeEventListener("blur", up);
+    onEnd();
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", up);
+  window.addEventListener("blur", up);
 }
 
 export default function MateSurface({ kind }: { kind: Kind }) {
+  // mates changed elsewhere (settings in the console, another device): this window follows (no stale volume, avatar…)
+  useSessionSync({ sessions: false });
   if (kind === "mate-overlay") return <Overlay />;
   if (kind === "mate-quick") return <Quick />;
   return <ChatWindow />;
@@ -46,30 +76,59 @@ export default function MateSurface({ kind }: { kind: Kind }) {
 
 function Overlay() {
   const [moveMode, setMoveMode] = useState(false);
+  const [sizeKey, setSizeKey] = useState(0);
+  const resetRef = useRef<() => void>(() => {});
   const onCommand = useCallback((cmd: DesktopCommand) => {
     if (cmd.type === "move-mode") setMoveMode(!!cmd.on);
     if (cmd.type === "state" && typeof cmd.moveMode === "boolean") setMoveMode(cmd.moveMode);
+    if (cmd.type === "reset-view") resetRef.current(); // tray → Reset Mate position & size
   }, []);
-  const { mate } = useSurfaceMate(onCommand);
+  const { mate, desk } = useSurfaceMate(onCommand);
   const conv = useMateConversation(mate);
   const caption = useFadingCaption(conv.caption, 7000);
   const live = useLiveLine(conv);
   const line = caption || live;
+  const bridge = desktopMate();
 
-  // the window's size follows the avatar's shape (bottom-right corner stays put)
+  // This page draws its own move UI (bar = move the window, avatar = pan / zoom, edges = resize), so the desktop app
+  // must not turn the whole page into a drag area in move mode (desktop/src/mate.js DRAG_CSS).
+  useEffect(() => {
+    document.documentElement.dataset.hrhOwnMove = "1";
+  }, []);
+
+  // The avatar takes the mouse when the window does: click-through off, or move mode (Geny: unlocked). Then a drag
+  // pans her inside the window, the wheel zooms, a tap still pokes her — per mate, remembered (Geny's viewStorageKey).
+  const interactive = moveMode || (desk ? !desk.clickThrough : true);
+  const area = useRef<HTMLDivElement>(null);
+  const { view, reset, dragging } = useAvatarView(area, mate ? `hrh.mate.view.${mate.id}` : null, interactive);
+  resetRef.current = () => {
+    reset();
+    setSizeKey((k) => k + 1);
+  };
+
+  // the window's size follows the avatar's shape (bottom-right corner stays put); a size the user set wins (desktop)
   const aspect = mate ? aspectOf(mate) : 0.75;
   useEffect(() => {
     if (!mate) return;
     const h = 400;
     const w = Math.max(220, Math.min(420, Math.round((h - 40) * aspect)));
     desktopMate()?.setAvatarSize(w, h);
-  }, [mate?.id, aspect]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mate?.id, aspect, sizeKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!mate) return null; // signed out / not loaded: nothing on the screen
+  const canResize = !!bridge?.resizeBy;
   return (
-    <div className="relative h-full w-full select-none overflow-hidden" data-testid="mate-overlay" data-mood={conv.mood}>
+    <div
+      className="group relative h-full w-full select-none overflow-hidden"
+      data-testid="mate-overlay"
+      data-mood={conv.mood}
+      data-interactive={interactive ? "true" : "false"}
+      data-voice-volume={conv.volume}
+      data-speaks={conv.speaks ? "true" : "false"}
+      data-view={`${view.x.toFixed(4)},${view.y.toFixed(4)},${view.z.toFixed(4)}`}
+    >
       {line && (
-        <div className="absolute inset-x-2 top-2 z-10 flex justify-center">
+        <div className="pointer-events-none absolute inset-x-2 top-2 z-10 flex justify-center">
           <div
             key={line}
             className="max-h-[38%] max-w-full overflow-hidden rounded-2xl border border-white/10 bg-[#161a22]/90 px-3 py-1.5 text-center text-[13px] leading-snug text-content shadow-float animate-fade-in"
@@ -79,19 +138,114 @@ function Overlay() {
           </div>
         </div>
       )}
-      <div className="absolute inset-x-0 bottom-0 top-10">
-        <MateAvatar key={mate.id} avatar={mate.avatar} name={mate.name} mood={conv.mood} react={conv.react} onTap={() => conv.poke("greet")} />
+      <div
+        ref={area}
+        className="absolute inset-x-0 bottom-0 top-10"
+        style={interactive ? { cursor: dragging ? "grabbing" : "grab", touchAction: "none" } : undefined}
+        data-testid="mate-avatar-area"
+      >
+        <MateAvatar key={mate.id} avatar={mate.avatar} name={mate.name} mood={conv.mood} react={conv.react} onTap={() => conv.poke("greet")} view={view} />
       </div>
-      {moveMode && (
-        <div className="absolute inset-x-0 bottom-2 z-20 flex justify-center">
-          <div className="flex items-center gap-2 rounded-full border border-accent/40 bg-[#161a22]/95 px-3 py-1.5 text-[12px] text-content shadow-float" data-no-drag>
-            <Icon name="move" size={13} className="text-accent" /> Drag to move
-            <button className="rounded-full bg-accent px-2.5 py-0.5 font-medium text-white" onClick={() => desktopMate()?.setMoveMode(false)} data-testid="mate-move-done">
-              Done
-            </button>
-          </div>
-        </div>
+      {interactive && !moveMode && !isHome(view) && (
+        <button
+          className="absolute right-1.5 top-1.5 z-20 grid h-6 w-6 place-items-center rounded-full border border-white/10 bg-[#161a22]/85 text-content-dim opacity-0 shadow-float transition hover:text-content group-hover:opacity-100"
+          onClick={reset}
+          title="Reset the view (pan / zoom)"
+          data-no-drag
+          data-testid="mate-view-reset"
+        >
+          <Icon name="refresh" size={12} />
+        </button>
       )}
+      {moveMode && canResize && <ResizeFrame />}
+      {moveMode && <MoveBar onReset={reset} canReset={!isHome(view)} />}
+    </div>
+  );
+}
+
+/** Move mode's bar (top of the window: the desktop's action bar sits at the bottom). Its background is the window's
+ *  move handle (moveBy, like Geny's dock bar); the avatar below pans, the edges resize. */
+function MoveBar({ onReset, canReset }: { onReset: () => void; canReset: boolean }) {
+  const onDown = (e: React.PointerEvent) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
+    e.preventDefault();
+    const m = desktopMate();
+    if (!m) return;
+    pressDeltas(e, (dx, dy) => m.moveBy(dx, dy), () => m.moveEnd());
+  };
+  return (
+    // (the full-width row lets the pointer through: the frame's top corners / edge are under it)
+    <div className="pointer-events-none absolute inset-x-0 top-2 z-30 flex justify-center px-5">
+      <div
+        className="pointer-events-auto flex max-w-full cursor-move items-center gap-1.5 rounded-full border border-accent/40 bg-[#161a22]/95 py-1 pl-2.5 pr-1 text-[12px] text-content shadow-float"
+        onPointerDown={onDown}
+        data-no-drag
+        data-no-pan
+        title="Drag to move the window · drag the avatar to pan, wheel to zoom · drag the edges to resize"
+        data-testid="mate-move-bar"
+      >
+        <Icon name="move" size={13} className="shrink-0 text-accent" />
+        <span className="truncate">Move</span>
+        <button
+          className="rounded-full px-2 py-0.5 text-content-dim hover:bg-surface-3 hover:text-content disabled:opacity-40"
+          onClick={onReset}
+          disabled={!canReset}
+          title="Back to the fitted view"
+          data-testid="mate-view-reset-move"
+        >
+          Reset view
+        </button>
+        <button className="rounded-full bg-accent px-2.5 py-0.5 font-medium text-white" onClick={() => desktopMate()?.setMoveMode(false)} data-testid="mate-move-done">
+          Done
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Geny's overlay resize frame: a dashed outline + 8 edge / corner handles; a handle's drag resizes the window from
+// that edge (desktop/src/mate.js resizeBy), the size is kept per mate. Only the handles take the pointer.
+const RESIZE_HANDLES: { edge: string; cls: string; cursor: string }[] = [
+  { edge: "n", cls: "left-4 right-4 top-0 h-2", cursor: "ns-resize" },
+  { edge: "s", cls: "bottom-0 left-4 right-4 h-2", cursor: "ns-resize" },
+  { edge: "w", cls: "bottom-4 left-0 top-4 w-2", cursor: "ew-resize" },
+  { edge: "e", cls: "bottom-4 right-0 top-4 w-2", cursor: "ew-resize" },
+  { edge: "nw", cls: "left-0 top-0 h-4 w-4", cursor: "nwse-resize" },
+  { edge: "ne", cls: "right-0 top-0 h-4 w-4", cursor: "nesw-resize" },
+  { edge: "sw", cls: "bottom-0 left-0 h-4 w-4", cursor: "nesw-resize" },
+  { edge: "se", cls: "bottom-0 right-0 h-4 w-4", cursor: "nwse-resize" },
+];
+
+function ResizeFrame() {
+  const start = (edge: string) => (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const m = desktopMate();
+    if (!m?.resizeBy) return;
+    const el = e.currentTarget;
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch {
+      /* optional */
+    }
+    pressDeltas(e, (dx, dy) => m.resizeBy!(edge, dx, dy), () => m.resizeEnd?.());
+  };
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20 rounded-md border-2 border-dashed border-accent/80 bg-accent/5" data-testid="mate-resize-frame">
+      {RESIZE_HANDLES.map((h) => (
+        <div
+          key={h.edge}
+          className={`pointer-events-auto absolute ${h.cls}`}
+          style={{ cursor: h.cursor }}
+          onPointerDown={start(h.edge)}
+          data-no-drag
+          data-no-pan
+          data-edge={h.edge}
+          data-testid={`mate-resize-${h.edge}`}
+        />
+      ))}
+      <span className="absolute bottom-0.5 right-0.5 h-2.5 w-2.5 rounded-br-sm border-b-2 border-r-2 border-accent" />
     </div>
   );
 }
@@ -115,34 +269,43 @@ function useLiveLine(conv: ReturnType<typeof useMateConversation>): string | nul
 
 // ── quick card ──────────────────────────────────────────────────────────
 
+const NO_DRAG = { WebkitAppRegion: "no-drag" } as React.CSSProperties;
+const DRAG = { WebkitAppRegion: "drag" } as React.CSSProperties;
+
 function Quick() {
   const [focusKey, setFocusKey] = useState(1);
-  const sidRef = useRef<string | null>(null);
   const onCommand = useCallback((cmd: DesktopCommand) => {
-    if (cmd.type === "quick-open") {
-      // a fresh line each time (files the user attached stay until sent or removed)
-      if (sidRef.current) useDraftStore.getState().setText(sidRef.current, "");
-      setFocusKey((k) => k + 1);
-    } else if (cmd.type === "quick-close") {
-      (document.activeElement as HTMLElement | null)?.blur?.();
-    }
+    // (the draft stays: what was typed before a click elsewhere / Esc is there again)
+    if (cmd.type === "quick-open") setFocusKey((k) => k + 1);
+    else if (cmd.type === "quick-close") (document.activeElement as HTMLElement | null)?.blur?.();
   }, []);
-  const { mate, loaded } = useSurfaceMate(onCommand);
-  const desk = useDesktopMate();
+  const { mate, loaded, desk } = useSurfaceMate(onCommand);
   const conv = useMateConversation(mate, { voice: false });
-  sidRef.current = conv.sessionId;
   const { dragging, dropProps } = useFileDrop(conv.sessionId);
   const card = useRef<HTMLDivElement>(null);
   const [sentAt, setSentAt] = useState(0);
 
-  // the window hugs the card (top edge fixed)
+  // Something written (text or files): a click elsewhere must not close the card and lose the user's place — it
+  // stays, with an ✕ in its corner; ✕, Esc or sending closes it. Empty: it goes when focus leaves (a launcher).
+  const [hasDraft, setHasDraft] = useState(false);
+  const onContentChange = useCallback((has: boolean) => {
+    setHasDraft(has);
+    desktopMate()?.setQuickPinned?.(has);
+  }, []);
+
+  // The window follows the card's HEIGHT only (project-geny-app / Geny): a fixed width, the top edge fixed, the box
+  // grows line by line up to its cap, then scrolls inside. (Reporting the width too fed back: a page that grew a
+  // scrollbar measured a narrower card, the window shrank to it, and every new line made the card narrower.)
   useLayoutEffect(() => {
     const el = card.current;
     const m = desktopMate();
     if (!el || !m) return;
+    let last = 0;
     const fit = () => {
-      const r = el.getBoundingClientRect();
-      m.setSize(Math.max(320, Math.min(960, Math.ceil(r.width) + 16)), Math.max(64, Math.min(640, Math.ceil(r.height) + 16)));
+      const h = Math.max(56, Math.min(640, Math.ceil(el.getBoundingClientRect().height) + 16)); // + the page's p-2
+      if (h === last) return;
+      last = h;
+      m.setSize(window.innerWidth, h);
     };
     fit();
     const ro = new ResizeObserver(fit);
@@ -166,13 +329,38 @@ function Quick() {
       : "";
 
   return (
-    <div className="flex justify-center p-2" data-testid="mate-quick">
-      <div ref={card} className="relative w-[624px] max-w-full rounded-2xl border border-border bg-[#11141b]/95 p-2 shadow-float backdrop-blur-xl" {...dropProps}>
+    <div className="p-2" data-testid="mate-quick" data-pinned={hasDraft ? "true" : "false"}>
+      {/* The card is the window's drag handle (frameless window: -webkit-app-region, like Geny's quick bar); the
+          composer, the reply and the ✕ are not. Where it is dropped is where it opens next time. */}
+      <div
+        ref={card}
+        className="relative w-full rounded-2xl border border-border bg-[#11141b]/95 p-2 shadow-float backdrop-blur-xl"
+        style={DRAG}
+        data-testid="mate-quick-card"
+        {...dropProps}
+      >
         {dragging && <DropOverlay compact hint={`for ${mate.name}`} />}
-        <div className="flex items-center gap-2">
-          <MateThumb mate={mate} className="h-8 w-8" />
-          <div className="min-w-0 flex-1">
+        {hasDraft && desktopMate() && (
+          <button
+            className="absolute -right-1.5 -top-1.5 z-10 grid h-5 w-5 place-items-center rounded-full border border-border bg-surface-3 text-content-dim shadow-float transition hover:bg-border-strong hover:text-content"
+            style={NO_DRAG}
+            onClick={() => void desktopMate()?.closeQuick()}
+            title="Close (the draft stays)"
+            aria-label="Close"
+            data-testid="mate-quick-close"
+          >
+            <Icon name="x" size={11} />
+          </button>
+        )}
+        <div className="flex items-end gap-2">
+          {/* as tall as the one-line composer (42 px), so she sits level with the input row */}
+          <div className="flex h-[42px] shrink-0 cursor-move items-center" title="Drag to move" data-testid="mate-quick-handle">
+            <MateThumb mate={mate} className="h-8 w-8" />
+          </div>
+          <div className="min-w-0 flex-1" style={NO_DRAG}>
             <MateComposer
+              growsWindow
+              onContentChange={onContentChange}
               mate={mate}
               conv={conv}
               compact
@@ -191,7 +379,7 @@ function Quick() {
           </div>
         </div>
         {(reply || (sentAt > 0 && !overlayOut && conv.streaming)) && (
-          <div className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-surface-2/80 px-3 py-2 text-[13px] text-content" data-testid="mate-quick-reply">
+          <div className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-surface-2/80 px-3 py-2 text-[13px] text-content" style={NO_DRAG} data-testid="mate-quick-reply">
             {reply || <span className="text-content-faint">{MOOD_LABEL.thinking}</span>}
           </div>
         )}
