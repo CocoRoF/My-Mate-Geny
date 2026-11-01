@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useConnectionStore } from "../../stores/connectionStore";
 import Icon from "../ui/Icon";
+import { useT } from "../../i18n";
 
 export default function ConnectionForm() {
+  const t = useT();
   const create = useConnectionStore((s) => s.create);
   const [form, setForm] = useState({
     name: "",
@@ -36,27 +38,27 @@ export default function ConnectionForm() {
   return (
     <div className="card p-4">
       <h3 className="flex items-center gap-2 text-sm font-medium mb-3">
-        <Icon name="plus" size={15} className="text-accent" /> Add remote SSH host
+        <Icon name="plus" size={15} className="text-accent" /> {t("connections.addHost")}
       </h3>
       <div className="grid grid-cols-2 gap-2">
-        <input placeholder="Name (e.g. build-box)" value={form.name} onChange={(e) => set("name", e.target.value)} className="field" />
-        <input placeholder="Default path" value={form.default_path} onChange={(e) => set("default_path", e.target.value)} className="field font-mono" />
-        <input placeholder="Host (e.g. 192.168.1.20 or build.example.com)" value={form.host} onChange={(e) => set("host", e.target.value)} className="field font-mono" />
-        <input type="number" placeholder="Port" value={form.port} onChange={(e) => set("port", Number(e.target.value))} className="field font-mono" />
-        <input placeholder="Username" value={form.username} onChange={(e) => set("username", e.target.value)} className="field col-span-2 font-mono" />
+        <input placeholder={t("connections.namePlaceholder")} value={form.name} onChange={(e) => set("name", e.target.value)} className="field" />
+        <input placeholder={t("connections.defaultPathPlaceholder")} value={form.default_path} onChange={(e) => set("default_path", e.target.value)} className="field font-mono" />
+        <input placeholder={t("connections.hostPlaceholder")} value={form.host} onChange={(e) => set("host", e.target.value)} className="field font-mono" />
+        <input type="number" placeholder={t("connections.portPlaceholder")} value={form.port} onChange={(e) => set("port", Number(e.target.value))} className="field font-mono" />
+        <input placeholder={t("connections.usernamePlaceholder")} value={form.username} onChange={(e) => set("username", e.target.value)} className="field col-span-2 font-mono" />
       </div>
       <textarea
-        placeholder="Private key (PEM) — stored encrypted in the vault"
+        placeholder={t("connections.keyPlaceholder")}
         value={form.private_key_pem}
         onChange={(e) => set("private_key_pem", e.target.value)}
         rows={3}
         className="field mt-2 font-mono text-[11px]"
       />
       {error && <p className="mt-2 text-xs text-danger flex items-center gap-1.5"><Icon name="x" size={13} /> {error}</p>}
-      {ok && <p className="mt-2 text-xs text-success flex items-center gap-1.5"><Icon name="check" size={13} /> Connection added.</p>}
+      {ok && <p className="mt-2 text-xs text-success flex items-center gap-1.5"><Icon name="check" size={13} /> {t("connections.added")}</p>}
       <button onClick={submit} disabled={busy || !form.name || !form.host} className="btn-primary mt-3">
         {busy ? <Icon name="spinner" size={15} spin /> : <Icon name="server" size={15} />}
-        Add connection
+        {t("connections.addConnection")}
       </button>
     </div>
   );

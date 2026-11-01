@@ -26,6 +26,8 @@ const recovery = require("./recovery");
 const chrome = require("./chrome");
 const folders = require("./folders");
 const { createUpdater } = require("./updater");
+const { isLang } = require("./i18n");
+const { t, language, pageText } = require("./lang");
 
 const RETRY_PAGE = path.join(__dirname, "offline.html");
 
@@ -175,9 +177,9 @@ function createWindow(url) {
   recovery.attach(w, { kind: "console", isAppUrl: sameOrigin, retryPage: RETRY_PAGE, server: serverUrl, watchBlank: true });
   wc.on("context-menu", (_e, p) => {
     const items = [];
-    if (p.linkURL) items.push({ label: "Open link in browser", click: () => shell.openExternal(p.linkURL) },
-      { label: "Copy link", click: () => clipboard.writeText(p.linkURL) }, { type: "separator" });
-    if (p.mediaType === "image") items.push({ label: "Copy image", click: () => wc.copyImageAt(p.x, p.y) }, { type: "separator" });
+    if (p.linkURL) items.push({ label: t("ctxOpenLink"), click: () => shell.openExternal(p.linkURL) },
+      { label: t("ctxCopyLink"), click: () => clipboard.writeText(p.linkURL) }, { type: "separator" });
+    if (p.mediaType === "image") items.push({ label: t("ctxCopyImage"), click: () => wc.copyImageAt(p.x, p.y) }, { type: "separator" });
     if (p.isEditable) items.push({ role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" });
     else if (p.selectionText) items.push({ role: "copy" });
     if (p.misspelledWord) {
@@ -400,6 +402,18 @@ ipcMain.handle("hrh:signOut", async (e) => {
   return true;
 });
 
+// ── the language (i18n.js): the console tells it; the menus, tray, bar and local pages follow ──
+// (sync: the preload reads it while the page starts — the local pages and the fallback title bar need it at once)
+ipcMain.on("hrh:i18n", (e) => {
+  e.returnValue = { lang: language(), text: pageText() };
+});
+ipcMain.on("hrh:setLanguage", (e, lang) => {
+  if (!ours(e) || !fileOrServer(e) || !isLang(lang) || readSettings().language === lang) return;
+  writeSettings({ language: lang });
+  refreshMenus();
+  updater.refresh(); // its "can't update here" reason is in words
+});
+
 // ── in-app updates (updater.js): state here, every window follows it (the Download page shows it) ──
 let notifiedUpdate = "";
 const updater = createUpdater({
@@ -412,6 +426,7 @@ const updater = createUpdater({
   server: () => serverUrl(),
   // (development runs only: tests point the feed elsewhere and give electron-updater a config file)
   feedUrl: () => (!app.isPackaged && env.HRH_UPDATE_FEED) || `${serverUrl()}/api/downloads/update`,
+  reasonText: (code) => t(code),
   devConfigPath: () => {
     const f = path.join(app.getPath("userData"), "dev-app-update.yml");
     require("fs").writeFileSync(f, "provider: generic\nurl: https://updates.invalid/\nupdaterCacheDirName: my-mate-geny-updater-dev\n");
@@ -433,7 +448,7 @@ const updater = createUpdater({
     if (st.status === "available" && st.version && notifiedUpdate !== st.version && !(win && !win.isDestroyed() && win.isFocused())) {
       notifiedUpdate = st.version;
       if (Notification.isSupported()) {
-        const n = new Notification({ title: `${PRODUCT} ${st.version} is available`, body: "Open Download to update — it installs and restarts in one go." });
+        const n = new Notification({ title: t("updateTitle", { version: st.version }), body: t("updateBody") });
         n.on("click", () => serverUrl() && openConsole(`${serverUrl()}/?view=downloads`));
         n.show();
       }
@@ -484,7 +499,7 @@ app.on("child-process-gone", (_e, d) => {
   if (gpuCrashes.length >= 3) {
     writeSettings({ softwareRendering: true });
     if (Notification.isSupported()) {
-      new Notification({ title: PRODUCT, body: "The graphics process keeps crashing — software rendering will be used from the next start." }).show();
+      new Notification({ title: PRODUCT, body: t("gpuBody") }).show();
     }
   }
 });
@@ -494,7 +509,7 @@ function buildMenu() {
     ...(mac ? [{ role: "appMenu" }] : []),
     { role: "editMenu" },
     {
-      label: "View",
+      label: t("menuView"),
       submenu: [
         { role: "reload" }, { role: "forceReload" }, { type: "separator" },
         { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { type: "separator" },
@@ -502,32 +517,33 @@ function buildMenu() {
       ],
     },
     {
-      label: "Mate",
+      label: t("menuMate"),
       submenu: [
-        { label: "Show / Hide Mate", click: () => mate.toggleAvatar() },
-        { label: "Quick chat", click: () => mate.toggleQuick() },
-        { label: "Mate chat", click: () => mate.openChat() },
-        { label: "Move Mate", click: () => mate.setMoveMode(!mate.isMoveMode()) },
-        { label: "Toggle click-through", click: () => mate.setClickThrough(!mate.clickThrough()) },
+        { label: t("menuShowHide"), click: () => mate.toggleAvatar() },
+        { label: t("menuQuick"), click: () => mate.toggleQuick() },
+        { label: t("menuMateChat"), click: () => mate.openChat() },
+        { label: t("menuMove"), click: () => mate.setMoveMode(!mate.isMoveMode()) },
+        { label: t("menuClickThrough"), click: () => mate.setClickThrough(!mate.clickThrough()) },
       ],
     },
     { role: "windowMenu" },
     {
-      label: "Server",
+      label: t("menuServer"),
       submenu: [
-        { label: "Switch server…", click: () => showConnect() },
-        { label: "Sign out", enabled: !!serverUrl(), click: () => signOut() },
+        { label: t("menuSwitch"), click: () => showConnect() },
+        { label: t("menuSignOut"), enabled: !!serverUrl(), click: () => signOut() },
         { type: "separator" },
-        { label: serverUrl() ? `Connected to ${serverUrl()}` : "Not connected", enabled: false },
-        { label: "Open in browser", enabled: !!serverUrl(), click: () => shell.openExternal(`${serverUrl()}/`) },
-        { label: "Downloads page", enabled: !!serverUrl(), click: () => openConsole(`${serverUrl()}/?view=downloads`) },
+        { label: serverUrl() ? t("menuConnectedTo", { server: serverUrl() }) : t("menuNotConnected"), enabled: false },
+        { label: t("menuOpenBrowser"), enabled: !!serverUrl(), click: () => shell.openExternal(`${serverUrl()}/`) },
+        { label: t("menuSettings"), enabled: !!serverUrl(), click: () => openConsole(`${serverUrl()}/?view=settings`) },
+        { label: t("menuDownloads"), enabled: !!serverUrl(), click: () => openConsole(`${serverUrl()}/?view=downloads`) },
       ],
     },
     {
-      label: "Help",
+      label: t("menuHelp"),
       submenu: [
         { label: `${PRODUCT} ${app.getVersion()}`, enabled: false },
-        { label: "Check for updates…", enabled: !!serverUrl(), click: () => {
+        { label: t("menuCheckUpdates"), enabled: !!serverUrl(), click: () => {
           openConsole(`${serverUrl()}/?view=downloads`);
           void updater.check();
         } },

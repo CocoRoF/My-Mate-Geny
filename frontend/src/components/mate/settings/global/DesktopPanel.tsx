@@ -8,6 +8,7 @@ import { useMateStore } from "../../../../stores/mateStore";
 import { useUIStore } from "../../../../stores/uiStore";
 import Icon from "../../../ui/Icon";
 import { Banner, ErrorLine, Field, Section, Toggle } from "../ui";
+import { useT } from "../../../../i18n";
 
 const DEFAULT_HOTKEY = "CommandOrControl+Shift+G";
 
@@ -34,6 +35,7 @@ const pretty = (accel: string) =>
     .join(" + ");
 
 export default function DesktopPanel() {
+  const t = useT();
   const m = desktopMate();
   const state = useDesktopMate();
   const mates = useMateStore((s) => s.mates);
@@ -47,22 +49,21 @@ export default function DesktopPanel() {
 
   if (!m) {
     return (
-      <Section title="Desktop app" hint="These settings live in the desktop app, per computer.">
+      <Section title={t("mateSettings.deskTitle")} hint={t("mateSettings.deskHint")}>
         <Banner
           tone="info"
           action={
             <button className="btn-soft !px-2.5 !py-1 text-[12px]" onClick={() => useUIStore.getState().setView("downloads")}>
-              <Icon name="download" size={12} /> Get the app
+              <Icon name="download" size={12} /> {t("mateSettings.deskGetApp")}
             </button>
           }
         >
-          Open My Mate Geny's desktop app to put a mate on your desktop: an always-on-top avatar, a quick-chat shortcut and start at login. These settings are
-          per computer.
+          {t("mateSettings.deskNoApp")}
         </Banner>
       </Section>
     );
   }
-  if (!state) return <p className="text-[12px] text-content-faint">Loading…</p>;
+  if (!state) return <p className="text-[12px] text-content-faint">{t("common.loading")}</p>;
   const desktopMateId = state.mateId || mates.find((x) => x.is_default)?.id || mates[0]?.id || null;
   const act = (p: Promise<unknown>) => p.then(() => setErr(null)).catch((e) => setErr((e as Error).message));
 
@@ -72,8 +73,8 @@ export default function DesktopPanel() {
       const ok = await m.setHotkey(accel);
       setHkMsg(
         ok
-          ? { ok: true, text: accel ? `Quick chat opens with ${pretty(accel)}` : "Shortcut turned off" }
-          : { ok: false, text: `${pretty(accel)} is already used by another app or by the system — pick another.` },
+          ? { ok: true, text: accel ? t("mateSettings.deskHotkeyOk", { key: pretty(accel) }) : t("mateSettings.deskHotkeyOff") }
+          : { ok: false, text: t("mateSettings.deskHotkeyTaken", { key: pretty(accel) }) },
       );
     } catch (e) {
       setHkMsg({ ok: false, text: (e as Error).message });
@@ -82,34 +83,34 @@ export default function DesktopPanel() {
 
   return (
     <>
-      <Section title="On your desktop" hint="This computer only. The mate sits on top of your windows; clicks pass through it unless you turn that off.">
-        <Toggle on={state.visible} onChange={(on) => act(on ? m.showAvatar(desktopMateId || undefined) : m.hideAvatar())} label="Show the avatar" testId="mate-desktop-visible" />
-        <Toggle on={state.clickThrough} onChange={(on) => act(m.setClickThrough(on))} label="Clicks pass through" hint="Off: you can click and drag the avatar." />
-        <Field label="Mate on the desktop" hint="The avatar window, quick chat and the mate chat window use this mate.">
+      <Section title={t("mateSettings.deskOnDesktop")} hint={t("mateSettings.deskOnDesktopHint")}>
+        <Toggle on={state.visible} onChange={(on) => act(on ? m.showAvatar(desktopMateId || undefined) : m.hideAvatar())} label={t("mateSettings.deskShowAvatar")} testId="mate-desktop-visible" />
+        <Toggle on={state.clickThrough} onChange={(on) => act(m.setClickThrough(on))} label={t("mateSettings.deskClickThrough")} hint={t("mateSettings.deskClickThroughHint")} />
+        <Field label={t("mateSettings.deskMate")} hint={t("mateSettings.deskMateHint")}>
           <select className="field" value={desktopMateId || ""} onChange={(e) => act(m.setMate(e.target.value))} data-testid="mate-desktop-mate">
             {mates.map((x) => (
               <option key={x.id} value={x.id}>
                 {x.name}
-                {x.is_default ? " (default)" : ""}
+                {x.is_default ? ` ${t("mateSettings.defaultSuffix")}` : ""}
               </option>
             ))}
           </select>
         </Field>
         <div className="flex flex-wrap gap-2">
           <button className="btn-ghost border border-border" onClick={() => act(m.setMoveMode(true))}>
-            <Icon name="move" size={14} /> Move the avatar
+            <Icon name="move" size={14} /> {t("mateSettings.deskMove")}
           </button>
           <button className="btn-ghost border border-border" onClick={() => act(m.openChat())}>
-            <Icon name="chat" size={14} /> Open the chat window
+            <Icon name="chat" size={14} /> {t("mateSettings.deskOpenChat")}
           </button>
         </div>
       </Section>
-      <Section title="Quick chat" hint="A one-line card over everything: press the shortcut, type, Enter.">
-        <Field label="Shortcut" hint={recording ? "Press the keys now (with Ctrl/⌘, Alt or Shift). Esc cancels." : "Click the field, then press the keys."} as="div">
+      <Section title={t("mateSettings.deskQuick")} hint={t("mateSettings.deskQuickHint")}>
+        <Field label={t("mateSettings.deskShortcut")} hint={recording ? t("mateSettings.deskRecording") : t("mateSettings.deskClickField")} as="div">
           <div className="flex flex-wrap gap-2">
             <input
               className={`field min-w-0 flex-1 font-mono ${recording ? "!border-accent/70 ring-2 ring-accent/20" : ""}`}
-              value={recording && hotkey === state.hotkey ? "press keys…" : hotkey ? pretty(hotkey) : "off"}
+              value={recording && hotkey === state.hotkey ? t("mateSettings.deskPressKeys") : hotkey ? pretty(hotkey) : t("mateSettings.deskOffValue")}
               readOnly
               onFocus={() => setRecording(true)}
               onBlur={() => setRecording(false)}
@@ -126,23 +127,23 @@ export default function DesktopPanel() {
               data-testid="mate-desktop-hotkey"
             />
             <button className="btn-soft shrink-0" onClick={() => saveHotkey(hotkey)} disabled={hotkey === state.hotkey && state.hotkeyBound !== false}>
-              Save
+              {t("common.save")}
             </button>
             {hotkey !== DEFAULT_HOTKEY && (
               <button className="btn-ghost shrink-0" onClick={() => (setHotkey(DEFAULT_HOTKEY), saveHotkey(DEFAULT_HOTKEY))} title={pretty(DEFAULT_HOTKEY)}>
-                Default
+                {t("common.default")}
               </button>
             )}
-            <button className="btn-ghost shrink-0" onClick={() => (setHotkey(""), saveHotkey(""))} title="No shortcut">
-              Off
+            <button className="btn-ghost shrink-0" onClick={() => (setHotkey(""), saveHotkey(""))} title={t("mateSettings.deskNoShortcut")}>
+              {t("mateSettings.deskOffBtn")}
             </button>
           </div>
         </Field>
-        {state.hotkeyBound === false && !hkMsg && <Banner tone="warn">{pretty(state.hotkey)} couldn't be registered — another app or the system uses it. Pick another.</Banner>}
+        {state.hotkeyBound === false && !hkMsg && <Banner tone="warn">{t("mateSettings.deskHotkeyUnbound", { key: pretty(state.hotkey) })}</Banner>}
         {hkMsg && <Banner tone={hkMsg.ok ? "ok" : "error"}>{hkMsg.text}</Banner>}
       </Section>
-      <Section title="Start">
-        <Toggle on={state.autostart} onChange={(on) => act(m.setAutostart(on))} label="Start at login" hint="The desktop app starts with your computer (with the avatar, if it was shown)." />
+      <Section title={t("mateSettings.deskStart")}>
+        <Toggle on={state.autostart} onChange={(on) => act(m.setAutostart(on))} label={t("mateSettings.deskAutostart")} hint={t("mateSettings.deskAutostartHint")} />
       </Section>
       <ErrorLine text={err} />
     </>

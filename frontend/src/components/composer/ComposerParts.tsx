@@ -3,6 +3,7 @@ import { useEffect, useRef, type RefObject } from "react";
 import { useTouchFirst } from "../../lib/device";
 import type { QueuedMessage } from "../../stores/draftStore";
 import Icon from "../ui/Icon";
+import { useT } from "../../i18n";
 
 export type PickKind = "photo" | "camera" | "file";
 
@@ -16,6 +17,7 @@ export function AttachMenu({
   onClose: () => void;
   className?: string;
 }) {
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   const touch = useTouchFirst();
   useEffect(() => {
@@ -39,8 +41,8 @@ export function AttachMenu({
           <Icon name="image" size={15} />
         </span>
         <span className="text-left">
-          <span className="block font-medium">Photos</span>
-          <span className="block text-[11px] text-content-faint">PNG, JPG, GIF, WebP…</span>
+          <span className="block font-medium">{t("composer.photos")}</span>
+          <span className="block text-[11px] text-content-faint">{t("composer.photosHint")}</span>
         </span>
       </button>
       {touch && (
@@ -49,8 +51,8 @@ export function AttachMenu({
             <Icon name="camera" size={15} />
           </span>
           <span className="text-left">
-            <span className="block font-medium">Camera</span>
-            <span className="block text-[11px] text-content-faint">Take a photo now</span>
+            <span className="block font-medium">{t("composer.camera")}</span>
+            <span className="block text-[11px] text-content-faint">{t("composer.cameraHint")}</span>
           </span>
         </button>
       )}
@@ -59,13 +61,13 @@ export function AttachMenu({
           <Icon name="paperclip" size={15} />
         </span>
         <span className="text-left">
-          <span className="block font-medium">Files</span>
-          <span className="block text-[11px] text-content-faint">PDF, code, docs, archives…</span>
+          <span className="block font-medium">{t("composer.files")}</span>
+          <span className="block text-[11px] text-content-faint">{t("composer.filesHint")}</span>
         </span>
       </button>
       {!touch && (
         <div className="border-t border-border/70 px-3 py-2 text-[11px] text-content-faint">
-          You can also paste (Ctrl/⌘+V) or drag & drop.
+          {t("composer.pasteHint")}
         </div>
       )}
     </div>
@@ -74,18 +76,19 @@ export function AttachMenu({
 
 /** Messages waiting for the running turn to finish. */
 export function QueuedList({ queue, onRemove, className = "mb-2" }: { queue: QueuedMessage[]; onRemove: (id: string) => void; className?: string }) {
+  const t = useT();
   if (!queue.length) return null;
   return (
     <div className={`space-y-1 ${className}`} data-testid="composer-queue">
       {queue.map((q) => (
         <div key={q.id} className="flex items-center gap-2 rounded-lg border border-border bg-surface-2/60 px-3 py-1.5 text-[12px]">
           <Icon name="clock" size={12} className="shrink-0 text-content-faint" />
-          <span className="text-content-faint shrink-0">Queued</span>
+          <span className="text-content-faint shrink-0">{t("composer.queued")}</span>
           <span className="truncate text-content-dim">
-            {q.text || `${q.attachments.length} attachment(s)`}
-            {q.text && q.attachments.length ? ` · +${q.attachments.length} file(s)` : ""}
+            {q.text || t("composer.nAttachments", { count: q.attachments.length })}
+            {q.text && q.attachments.length ? ` · ${t("composer.plusFiles", { count: q.attachments.length })}` : ""}
           </span>
-          <button onClick={() => onRemove(q.id)} className="ml-auto shrink-0 text-content-faint hover:text-danger touch:-m-2 touch:p-2" title="Remove from queue">
+          <button onClick={() => onRemove(q.id)} className="ml-auto shrink-0 text-content-faint hover:text-danger touch:-m-2 touch:p-2" title={t("composer.removeFromQueue")}>
             <Icon name="x" size={13} />
           </button>
         </div>

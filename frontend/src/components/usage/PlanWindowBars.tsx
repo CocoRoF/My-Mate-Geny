@@ -1,6 +1,8 @@
 import { barTone, fmtPct, pctTone, resetLabel, resetsOn, type PlanWindow, type PlanWindows } from "../../lib/usage";
+import { useT } from "../../i18n";
 
 function Bar({ name, w, kind }: { name: string; w?: PlanWindow; kind: "five" | "seven" }) {
+  const t = useT();
   const pct = w?.percent ?? null;
   return (
     <div className="min-w-0">
@@ -14,7 +16,7 @@ function Bar({ name, w, kind }: { name: string; w?: PlanWindow; kind: "five" | "
         )}
       </div>
       <div className="mt-0.5 truncate text-[10.5px] text-content-faint">
-        {w ? resetLabel(kind, w.resetsAt) || " " : "not reported"}
+        {w ? resetLabel(kind, w.resetsAt) || " " : t("usage.notReported")}
       </div>
     </div>
   );
@@ -22,17 +24,18 @@ function Bar({ name, w, kind }: { name: string; w?: PlanWindow; kind: "five" | "
 
 /** 5-hour and 7-day usage side by side (+ per-model weekly limits). */
 export default function PlanWindowBars({ windows, showModels = true }: { windows: PlanWindows; showModels?: boolean }) {
+  const t = useT();
   return (
     <div>
       <div className="grid grid-cols-2 gap-3">
-        <Bar name="5-hour" w={windows.five} kind="five" />
-        <Bar name="7-day" w={windows.seven} kind="seven" />
+        <Bar name={t("usage.fiveHour")} w={windows.five} kind="five" />
+        <Bar name={t("usage.sevenDay")} w={windows.seven} kind="seven" />
       </div>
       {showModels && windows.models.length > 0 && (
         <div className="mt-1.5 space-y-0.5">
           {windows.models.map((m) => (
             <div key={m.label} className="flex items-baseline gap-2 text-[10.5px] text-content-faint">
-              <span className="truncate">{/week/i.test(m.label) ? m.label : `${m.label} · weekly`}</span>
+              <span className="truncate">{/week/i.test(m.label) ? m.label : t("usage.weekly", { label: m.label })}</span>
               <span className={`font-mono tabular-nums ${pctTone(m.percent)}`}>{fmtPct(m.percent)}</span>
               <span className="ml-auto shrink-0">{resetsOn(m.resetsAt)}</span>
             </div>

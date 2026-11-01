@@ -2,6 +2,7 @@ import type { ToolActivity, Turn } from "../../../stores/chatStore";
 import { isRunning } from "../../../stores/taskStore";
 import type { TaskInfo } from "../../../types";
 import { toolMeta } from "./toolMeta";
+import { tr } from "../../../i18n";
 
 // What a subagent (Agent / Task tool call) is up to, derived from its call,
 // the steps it streamed and — for background ones — the engine's task state.
@@ -114,12 +115,12 @@ export function agentView(tool: ToolActivity, allTools: ToolActivity[], task: Ta
         activity = c.durationMs === undefined ? m.running : [m.label, m.target].filter(Boolean).join(" · ");
       }
     } else if (last?.kind === "text") activity = firstLine(last.text);
-    else if (last?.kind === "thinking") activity = "Thinking…";
-    activity = activity || task?.activity || "Starting…";
+    else if (last?.kind === "thinking") activity = tr("turn.thinking");
+    activity = activity || task?.activity || tr("turn.startingDots");
   } else if (status === "failed" || status === "stopped") {
-    activity = firstLine(tool.isError ? tool.output || "" : "") || (status === "stopped" ? "Stopped" : "Failed");
+    activity = firstLine(tool.isError ? tool.output || "" : "") || (status === "stopped" ? tr("turn.stopped") : tr("turn.failed"));
   } else {
-    activity = firstLine(result) || "Done";
+    activity = firstLine(result) || tr("common.done");
   }
 
   return {
@@ -127,7 +128,7 @@ export function agentView(tool: ToolActivity, allTools: ToolActivity[], task: Ta
     task,
     status,
     background,
-    title: String(i.description || task?.description || i.subagent_type || "Subagent"),
+    title: String(i.description || task?.description || i.subagent_type || tr("turn.toolSubagent")),
     type: String(i.subagent_type || task?.subagent_type || tool.agent?.agent_type || ""),
     prompt: String(i.prompt || ""),
     startedAt,

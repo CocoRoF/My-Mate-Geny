@@ -1,6 +1,7 @@
 // Small pieces: sparkline, meter, per-core heat strip.
 import { useEffect, useRef, useState } from "react";
 import { C1, GRID } from "./fmt";
+import { useT } from "../../../i18n";
 
 /** Trend line for a tile / table row (no axes; the number beside it is the value). */
 export function Sparkline({ values, color = C1, max, height = 28, className = "" }: {
@@ -55,6 +56,7 @@ const hex = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))
 
 /** Per-core CPU heat map: one row per core, one column per sample (canvas). */
 export function CoreHeat({ cols, cores, height, interval = 2 }: { cols: number[][]; cores: number; height?: number; interval?: number }) {
+  const t = useT();
   const ref = useRef<HTMLCanvasElement>(null);
   const [tip, setTip] = useState<{ x: number; y: number; r: number; j: number } | null>(null);
   const rows = Math.max(1, cores);
@@ -94,14 +96,14 @@ export function CoreHeat({ cols, cores, height, interval = 2 }: { cols: number[]
   return (
     <div className="relative">
       <canvas ref={ref} className="block w-full rounded-md" style={{ height: h }} role="img"
-        aria-label={`Per-core CPU, last ${Math.round((cols.length * interval) / 60)} minutes`}
+        aria-label={t("admin.perCoreAria", { min: Math.round((cols.length * interval) / 60) })}
         onPointerMove={onMove} onPointerLeave={() => setTip(null)} />
       {tip && v !== undefined && (
         <div className="pointer-events-none absolute z-20 whitespace-nowrap rounded-md border border-border bg-surface-2/95 px-2 py-1 text-[11px] shadow-float"
           style={{ left: Math.min(tip.x + 10, (ref.current?.clientWidth || 300) - 130), top: tip.y + 12 }}>
           <span className="font-medium text-content tabular-nums">{v}%</span>
-          <span className="text-content-dim"> · core {tip.r} · </span>
-          <span className="text-content-faint tabular-nums">{Math.round((cols.length - 1 - tip.j) * interval)}s ago</span>
+          <span className="text-content-dim">{t("admin.coreTip", { r: String(tip.r) })}</span>
+          <span className="text-content-faint tabular-nums">{t("admin.secondsAgo", { s: Math.round((cols.length - 1 - tip.j) * interval) })}</span>
         </div>
       )}
     </div>

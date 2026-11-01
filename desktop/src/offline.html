@@ -40,18 +40,24 @@
   <div class="count" id="count"></div>
 </div></main>
 <script>
+  // the app's language (i18n.js through the preload); the English in the markup is the fallback
+  const W = (window.hrhNative && window.hrhNative.text) || {};
+  const say = (k, en, vars) => String(typeof W[k] === "string" ? W[k] : en).replace(/\{(\w+)\}/g, (a, n) => (vars && n in vars ? vars[n] : a));
+  if (window.hrhNative && window.hrhNative.language) document.documentElement.lang = window.hrhNative.language;
   const q = new URLSearchParams(location.search);
   const kind = q.get("kind") || "console";
   const reason = q.get("reason") || "offline";
   if (kind === "quick") document.documentElement.classList.add("quick");
   const TEXT = {
-    offline: ["Can't reach the server", "Check your connection — the app will load as soon as the server answers."],
-    crashed: ["This window stopped working", "Its page crashed. It is being reopened."],
-    unresponsive: ["This window stopped responding", "Its page hung and was closed. It is being reopened."],
-    blank: ["This window drew nothing", "Its page did not start (it may have just been updated). It is being reloaded."],
+    offline: [say("offlineTitle", "Can't reach the server"), say("offlineMsg", "Check your connection — the app will load as soon as the server answers.")],
+    crashed: [say("crashedTitle", "This window stopped working"), say("crashedMsg", "Its page crashed. It is being reopened.")],
+    unresponsive: [say("unresponsiveTitle", "This window stopped responding"), say("unresponsiveMsg", "Its page hung and was closed. It is being reopened.")],
+    blank: [say("blankTitle", "This window drew nothing"), say("blankMsg", "Its page did not start (it may have just been updated). It is being reloaded.")],
   };
   const [title, msg] = TEXT[reason] || TEXT.offline;
-  document.getElementById("title").textContent = kind === "quick" ? title + " — retrying…" : title;
+  document.getElementById("title").textContent = kind === "quick" ? title + say("retryingSuffix", " — retrying…") : title;
+  document.getElementById("retry").textContent = say("retryNow", "Retry now");
+  document.getElementById("change").textContent = say("switchServer", "Switch server");
   document.getElementById("msg").textContent = msg;
   document.getElementById("srv").textContent = (q.get("server") || "") + (q.get("error") ? "  ·  " + q.get("error") : "");
   if (kind !== "console" || reason !== "offline") document.getElementById("change").style.display = "none";
@@ -66,15 +72,16 @@
     const left = Math.ceil((at - Date.now()) / 1000);
     if (left <= 0) {
       if (reason === "offline" && navigator.onLine === false) {
-        count.textContent = "Waiting for the network…";
+        count.textContent = say("waitingNetwork", "Waiting for the network…");
         return;
       }
-      count.innerHTML = '<span class="spin"></span>Retrying…';
+      count.innerHTML = '<span class="spin"></span>';
+      count.appendChild(document.createTextNode(say("retrying", "Retrying…")));
       clearInterval(timer);
       retry();
       return;
     }
-    count.textContent = "Retrying in " + left + " s";
+    count.textContent = say("retryingIn", "Retrying in {n} s", { n: left });
   };
   const timer = setInterval(tick, 250);
   tick();

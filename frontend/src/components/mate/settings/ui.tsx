@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Icon, { type IconName } from "../../ui/Icon";
+import { useT } from "../../../i18n";
 
 export function Section({ title, hint, children, right, testId }: { title: ReactNode; hint?: ReactNode; children: ReactNode; right?: ReactNode; testId?: string }) {
   return (
@@ -90,23 +91,24 @@ export function useSaver() {
   return { ...state, run };
 }
 
-export function SaveBar({ saver, onSave, dirty, label = "Save", onReset }: { saver: ReturnType<typeof useSaver>; onSave: () => void; dirty: boolean; label?: string; onReset?: () => void }) {
+export function SaveBar({ saver, onSave, dirty, label, onReset }: { saver: ReturnType<typeof useSaver>; onSave: () => void; dirty: boolean; label?: string; onReset?: () => void }) {
+  const t = useT();
   return (
     <div className="sticky bottom-0 z-10 -mx-1 flex items-center justify-end gap-3 rounded-xl bg-surface/90 px-1 py-2 backdrop-blur">
       {saver.err && <span className="min-w-0 flex-1 text-[12px] text-danger break-words">{saver.err}</span>}
-      {!saver.err && dirty && <span className="min-w-0 flex-1 text-[11.5px] text-content-faint">Unsaved changes</span>}
+      {!saver.err && dirty && <span className="min-w-0 flex-1 text-[11.5px] text-content-faint">{t("mateSettings.uiUnsaved")}</span>}
       {saver.ok && (
         <span className="inline-flex items-center gap-1 text-[12px] text-success">
-          <Icon name="check" size={12} /> Saved
+          <Icon name="check" size={12} /> {t("common.saved")}
         </span>
       )}
       {onReset && dirty && (
         <button className="btn-ghost" onClick={onReset} disabled={saver.busy}>
-          Discard
+          {t("mateSettings.uiDiscard")}
         </button>
       )}
       <button className="btn-primary" onClick={onSave} disabled={saver.busy || !dirty} data-testid="mate-settings-save">
-        {saver.busy && <Icon name="spinner" size={14} spin />} {label}
+        {saver.busy && <Icon name="spinner" size={14} spin />} {label ?? t("common.save")}
       </button>
     </div>
   );
@@ -197,7 +199,7 @@ export function ProgressBar({ value, indeterminate, testId }: { value?: number; 
       ) : (
         <div className="h-full rounded-full bg-gradient-to-r from-accent to-cyan transition-[width] duration-200" style={{ width: `${Math.max(0, Math.min(1, value ?? 0)) * 100}%` }} />
       )}
-      <style>{"@keyframes mate-indeterminate{0%{left:-35%}100%{left:100%}}"}</style>
+      <style>{"@keyframes mate-indeterminate{0%{left:-35%}100%{left:100%}}"}</style>{/* i18n-ignore */}
     </div>
   );
 }
@@ -223,8 +225,8 @@ export function SearchSelect({
   value,
   options,
   onChange,
-  placeholder = "Choose…",
-  empty = "Nothing found.",
+  placeholder,
+  empty,
   right,
   allowCustom,
   loading,
@@ -243,6 +245,9 @@ export function SearchSelect({
   /** an extra first row that picks "" (e.g. "Default (alloy)") */
   noneLabel?: string;
 }) {
+  const t = useT();
+  placeholder ??= t("mateSettings.uiChoose");
+  empty ??= t("mateSettings.uiNothingFound");
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const box = useRef<HTMLDivElement>(null);
@@ -262,9 +267,9 @@ export function SearchSelect({
     };
   }, [open, searchable]);
   const shown = useMemo(() => {
-    const t = q.trim().toLowerCase();
-    if (!t) return options;
-    return options.filter((o) => `${o.label} ${o.value} ${o.sub ?? ""} ${o.keywords ?? ""} ${(o.badges ?? []).join(" ")}`.toLowerCase().includes(t));
+    const needle = q.trim().toLowerCase();
+    if (!needle) return options;
+    return options.filter((o) => `${o.label} ${o.value} ${o.sub ?? ""} ${o.keywords ?? ""} ${(o.badges ?? []).join(" ")}`.toLowerCase().includes(needle));
   }, [options, q]);
   const cur = options.find((o) => o.value === value);
   const pick = (v: string) => {
@@ -321,7 +326,7 @@ export function SearchSelect({
                     else if (allowCustom && q.trim()) pick(q.trim());
                   }
                 }}
-                placeholder={`Search ${options.length} …`}
+                placeholder={t("mateSettings.uiSearchN", { n: options.length })}
                 data-testid={testId ? `${testId}-search` : undefined}
               />
             </div>
@@ -338,9 +343,9 @@ export function SearchSelect({
                 ))}
               </div>
             ))}
-            {!shown.length && !(allowCustom && q.trim()) && <p className="px-3 py-2 text-[12px] text-content-faint">{loading ? "Loading…" : empty}</p>}
+            {!shown.length && !(allowCustom && q.trim()) && <p className="px-3 py-2 text-[12px] text-content-faint">{loading ? t("common.loading") : empty}</p>}
             {allowCustom && q.trim() && !options.some((o) => o.value === q.trim()) && (
-              <Row selected={false} onPick={() => pick(q.trim())} label={`Use “${q.trim()}”`} sub="An id that isn't listed" />
+              <Row selected={false} onPick={() => pick(q.trim())} label={t("mateSettings.uiUseCustom", { q: q.trim() })} sub={t("mateSettings.uiUnlistedId")} />
             )}
           </div>
         </div>

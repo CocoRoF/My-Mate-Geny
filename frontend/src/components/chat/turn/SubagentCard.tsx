@@ -6,6 +6,7 @@ import Icon from "../../ui/Icon";
 import { useNow } from "./ToolGroup";
 import { agentStatus, agentView, taskFor, type AgentStatus, type AgentView } from "./subagent";
 import { fmtMs } from "./toolMeta";
+import { useT, type MsgKey } from "../../../i18n";
 
 /** A subagent's live view: its call + streamed steps + the engine's task state. */
 export function useAgentView(tool: ToolActivity, allTools: ToolActivity[]): AgentView {
@@ -36,12 +37,21 @@ const PILL: Record<AgentStatus, string> = {
   stopped: "bg-surface-3 text-content-dim",
 };
 
+const STATUS_LABEL: Record<AgentStatus, MsgKey> = {
+  running: "turn.stRunning",
+  done: "turn.stDone",
+  failed: "turn.stFailed",
+  stopped: "turn.stStopped",
+};
+
 export function StatusPill({ status }: { status: AgentStatus }) {
-  return <span className={`pill ${PILL[status]}`}>{status}</span>;
+  const t = useT();
+  return <span className={`pill ${PILL[status]}`}>{t(STATUS_LABEL[status])}</span>;
 }
 
 /** An Agent/Task call in the chat: what it is, how it's going; opens the full detail. */
 export default function SubagentCard({ tool, allTools }: { tool: ToolActivity; allTools: ToolActivity[] }) {
+  const t = useT();
   const v = useAgentView(tool, allTools);
   const open = useSubagentUi((s) => s.open);
   const running = v.status === "running";
@@ -51,7 +61,7 @@ export default function SubagentCard({ tool, allTools }: { tool: ToolActivity; a
       className={`group block w-full rounded-xl border bg-surface/50 px-3 py-2.5 text-left transition hover:bg-surface-2/50 ${
         running ? "border-violet/35" : "border-border/80"
       }`}
-      title="Show what this subagent did"
+      title={t("turn.showSubagent")}
     >
       <div className="flex items-center gap-2.5">
         <span className="grid place-items-center w-6 h-6 shrink-0 rounded-lg bg-violet/12 text-violet">
@@ -60,7 +70,7 @@ export default function SubagentCard({ tool, allTools }: { tool: ToolActivity; a
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-content">{v.title}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-1">
           {v.type && <span className="pill hidden bg-surface-3 text-content-dim sm:inline-flex">{v.type}</span>}
-          {v.background && <span className="pill hidden bg-violet/12 text-violet sm:inline-flex">background</span>}
+          {v.background && <span className="pill hidden bg-violet/12 text-violet sm:inline-flex">{t("turn.background")}</span>}
           <StatusPill status={v.status} />
           <span className="font-mono text-[10.5px] tabular-nums text-content-faint">{fmtMs(v.elapsedMs)}</span>
           <Icon name="chevron" size={13} className="text-content-faint transition group-hover:text-content-dim" />
@@ -68,11 +78,11 @@ export default function SubagentCard({ tool, allTools }: { tool: ToolActivity; a
       </div>
       <div className="mt-1 flex items-center gap-1.5 pl-[34px] text-[12px] text-content-faint">
         {running && <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-accent animate-pulse-dot" />}
-        {v.background && <span className="shrink-0 text-violet sm:hidden">background ·</span>}
+        {v.background && <span className="shrink-0 text-violet sm:hidden">{t("turn.background")} ·</span>}
         <span className={`min-w-0 truncate ${running ? "text-content-dim" : ""}`}>{v.activity}</span>
         {v.toolCount > 0 && (
           <span className="shrink-0">
-            · {v.toolCount} tool{v.toolCount > 1 ? "s" : ""}
+            · {t("turn.toolsN", { count: v.toolCount })}
           </span>
         )}
       </div>

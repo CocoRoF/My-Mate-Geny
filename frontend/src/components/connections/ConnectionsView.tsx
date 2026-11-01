@@ -4,8 +4,10 @@ import { connectionStatus } from "../../api/connections";
 import ConnectionForm from "./ConnectionForm";
 import GitAccounts from "./GitAccounts";
 import Icon from "../ui/Icon";
+import { tr, useT } from "../../i18n";
 
 export default function ConnectionsView() {
+  const t = useT();
   const [tab, setTab] = useState<"ssh" | "git">("ssh");
 
   return (
@@ -13,26 +15,26 @@ export default function ConnectionsView() {
       <div className="mx-auto max-w-2xl px-4 sm:px-6 py-5 sm:py-8">
         <div className="flex items-center gap-2.5 mb-1">
           <Icon name="server" size={20} className="text-cyan" />
-          <h1 className="text-lg font-semibold">Connections</h1>
+          <h1 className="text-lg font-semibold">{t("connections.title")}</h1>
         </div>
         <p className="text-sm text-content-dim mb-5">
-          Remote SSH hosts to work on, and Git accounts to clone & push repos.
+          {t("connections.intro")}
         </p>
 
         <div className="flex gap-1.5 mb-5 border-b border-border">
           {([
-            { id: "ssh", label: "SSH hosts", icon: "server" },
-            { id: "git", label: "Git", icon: "file" },
-          ] as const).map((t) => (
+            { id: "ssh", label: "connections.tabSsh", icon: "server" },
+            { id: "git", label: "connections.tabGit", icon: "file" },
+          ] as const).map((x) => (
             <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
+              key={x.id}
+              onClick={() => setTab(x.id)}
               className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition inline-flex items-center gap-2 ${
-                tab === t.id ? "border-accent text-content" : "border-transparent text-content-dim hover:text-content"
+                tab === x.id ? "border-accent text-content" : "border-transparent text-content-dim hover:text-content"
               }`}
             >
-              <Icon name={t.icon} size={15} className={tab === t.id ? "text-accent" : "text-content-faint"} />
-              {t.label}
+              <Icon name={x.icon} size={15} className={tab === x.id ? "text-accent" : "text-content-faint"} />
+              {t(x.label)}
             </button>
           ))}
         </div>
@@ -44,15 +46,16 @@ export default function ConnectionsView() {
 }
 
 function SshTab() {
+  const t = useT();
   const connections = useConnectionStore((s) => s.connections);
   const remove = useConnectionStore((s) => s.remove);
   const [status, setStatus] = useState<Record<string, { ok?: boolean; text: string }>>({});
 
   const check = async (id: string) => {
-    setStatus((s) => ({ ...s, [id]: { text: "checking…" } }));
+    setStatus((s) => ({ ...s, [id]: { text: tr("connections.checking") } }));
     try {
       const r = await connectionStatus(id);
-      setStatus((s) => ({ ...s, [id]: { ok: !!r.reachable, text: r.reachable ? "reachable" : `${r.error || "unreachable"}` } }));
+      setStatus((s) => ({ ...s, [id]: { ok: !!r.reachable, text: r.reachable ? tr("connections.reachable") : `${r.error || tr("connections.unreachable")}` } }));
     } catch (e: any) {
       setStatus((s) => ({ ...s, [id]: { ok: false, text: String(e.message) } }));
     }
@@ -61,11 +64,11 @@ function SshTab() {
   return (
     <div>
       <p className="text-sm text-content-dim mb-3">
-        The agent runs on this server and operates these remote folders over SSH. Keys are stored encrypted in the vault.
+        {t("connections.sshIntro")}
       </p>
       <ConnectionForm />
       <div className="mt-4 space-y-2">
-        {connections.length === 0 && <p className="text-xs text-content-faint">No connections yet.</p>}
+        {connections.length === 0 && <p className="text-xs text-content-faint">{t("connections.noConnections")}</p>}
         {connections.map((c) => {
           const st = status[c.id];
           return (
@@ -76,7 +79,7 @@ function SshTab() {
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium flex items-center gap-2">
                   {c.name}
-                  <span className="pill bg-surface-3 text-content-faint">{c.has_key ? "🔑 key" : "no key"}</span>
+                  <span className="pill bg-surface-3 text-content-faint">{c.has_key ? t("connections.hasKey") : t("connections.noKey")}</span>
                 </div>
                 <div className="text-xs text-content-faint font-mono truncate">
                   {c.username}@{c.host}:{c.port} · {c.default_path}
@@ -89,8 +92,8 @@ function SshTab() {
                   </div>
                 )}
               </div>
-              <button onClick={() => check(c.id)} className="btn-ghost">Test</button>
-              <button onClick={() => remove(c.id)} className="btn-ghost text-danger hover:text-danger" title="Delete">
+              <button onClick={() => check(c.id)} className="btn-ghost">{t("connections.test")}</button>
+              <button onClick={() => remove(c.id)} className="btn-ghost text-danger hover:text-danger" title={t("connections.deleteConnection")} aria-label={t("connections.deleteConnection")}>
                 <Icon name="trash" size={15} />
               </button>
             </div>

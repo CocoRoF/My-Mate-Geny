@@ -1,9 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { renderAsync } from "docx-preview";
+import { useT } from "../../i18n";
 
 /** .docx — docx-preview lays the document out as pages (styles, tables,
  * images, headers/footers). Pages are scaled down to fit narrow screens. */
 export default function DocxView({ data }: { data: ArrayBuffer }) {
+  const t = useT();
   const outer = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const zoomRef = useRef(1);
@@ -54,10 +56,10 @@ export default function DocxView({ data }: { data: ArrayBuffer }) {
     return () => ro.disconnect();
   }, [done]);
 
-  if (error) return <p className="p-6 text-sm text-danger">Could not render this document: {error}</p>;
+  if (error) return <p className="p-6 text-sm text-danger">{t("files.docxError", { error })}</p>;
   return (
     <div ref={outer} className="docx-host h-full overflow-auto">
-      {!done && <p className="p-6 text-sm text-content-faint">Rendering document…</p>}
+      {!done && <p className="p-6 text-sm text-content-faint">{t("files.docxRendering")}</p>}
       <div ref={host} style={{ zoom } as React.CSSProperties} />
     </div>
   );

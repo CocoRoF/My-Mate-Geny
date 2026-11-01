@@ -7,6 +7,7 @@ import { useSessionStore } from "../stores/sessionStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useUsageStore } from "../stores/usageStore";
 import type { Attachment, PlanUsage, ProviderEvent } from "../types";
+import { tr } from "../i18n";
 
 declare global {
   interface Window {
@@ -131,9 +132,9 @@ export function useChatSocket(sessionId: string | null) {
             const title = useSessionStore.getState().sessions.find((x) => x.id === sessionId)?.title || "My Mate Geny";
             if (last?.role === "assistant") {
               const body =
-                last.status === "error" ? `Failed: ${last.error?.message || ""}` :
-                last.status === "interrupted" ? "Stopped" :
-                (last.text.trim().split("\n").find((l) => l.trim()) || "Done").slice(0, 160);
+                last.status === "error" ? tr("chat.notifyFailed", { error: last.error?.code === "turn.lost" ? tr("turn.runLost") : last.error?.message || "" }) :
+                last.status === "interrupted" ? tr("turn.stopped") :
+                (last.text.trim().split("\n").find((l) => l.trim()) || tr("common.done")).slice(0, 160);
               notifyDone(title, body);
             }
           }

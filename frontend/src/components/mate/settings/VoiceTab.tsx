@@ -22,6 +22,7 @@ import { previewMateVolume } from "../../../mate/livePreview";
 import { bcp47, type MateConversation } from "../../../mate/useMateConversation";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
+import { useT, type MsgKey } from "../../../i18n";
 import { availability, playPreview, setPreviewVolume, speakPreview, stopPreview, STT_ENGINES, TTS_ENGINES, usable, usePreviewPlaying, type Availability, type EngineInfo } from "./engines";
 import { Banner, ErrorLine, Field, LinkButton, SaveBar, SearchSelect, Section, Segmented, Toggle, useFollowSaved, useSaver, type PickOption } from "./ui";
 
@@ -66,15 +67,15 @@ const SPEED: Record<string, [number, number]> = {
   browser: [0.5, 2],
 };
 
-const ELEVEN_GROUP: Record<string, string> = {
-  cloned: "Your voices",
-  generated: "Your voices",
-  professional: "Voice Library & professional",
-  famous: "Voice Library & professional",
-  high_quality: "Voice Library & professional",
-  premade: "ElevenLabs default voices",
+const ELEVEN_GROUP: Record<string, MsgKey> = {
+  cloned: "mateSettings.voiceGrpYours",
+  generated: "mateSettings.voiceGrpYours",
+  professional: "mateSettings.voiceGrpLibrary",
+  famous: "mateSettings.voiceGrpLibrary",
+  high_quality: "mateSettings.voiceGrpLibrary",
+  premade: "mateSettings.voiceGrpDefault",
 };
-const GROUP_ORDER = ["Your voices", "Voice Library & professional", "ElevenLabs default voices", "Other"];
+const GROUP_ORDER: MsgKey[] = ["mateSettings.voiceGrpYours", "mateSettings.voiceGrpLibrary", "mateSettings.voiceGrpDefault", "mateSettings.voiceGrpOther"];
 
 // fetched lists, kept while the app runs (switching mates / tabs doesn't refetch)
 const cache = new Map<string, Promise<unknown>>();
@@ -122,6 +123,7 @@ function useBrowserVoices(): SpeechSynthesisVoice[] {
 }
 
 export default function VoiceTab({ mate, conv }: { mate: Mate; conv: MateConversation }) {
+  const t = useT();
   const [v, setV] = useState<MateVoice>(mate.voice);
   const saver = useSaver();
   const providers = useMateStore((s) => s.providers);
@@ -168,8 +170,8 @@ export default function VoiceTab({ mate, conv }: { mate: Mate; conv: MateConvers
 
   return (
     <>
-      {providersError && <Banner tone="error">Couldn't read Global settings' voice services: {providersError}</Banner>}
-      <Section title="Speaking" hint="How this mate's replies sound.">
+      {providersError && <Banner tone="error">{t("mateSettings.voiceProvidersErr", { error: providersError })}</Banner>}
+      <Section title={t("mateSettings.voiceSpeaking")} hint={t("mateSettings.voiceSpeakingHint")}>
         {!usable(savedTts) && (
           <FallbackNote kind="tts" engine={mate.voice.tts.engine} avail={savedTts} />
         )}
@@ -186,22 +188,22 @@ export default function VoiceTab({ mate, conv }: { mate: Mate; conv: MateConvers
         <Toggle
           on={v.auto_read}
           onChange={(on) => setV((x) => ({ ...x, auto_read: on }))}
-          label="Read replies aloud"
-          hint="Sentence by sentence while the reply is written. The speaker button by the message box mutes this device."
+          label={t("mateSettings.voiceReadAloud")}
+          hint={t("mateSettings.voiceReadAloudHint")}
           disabled={v.tts.engine === "off"}
         />
         <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
-          <button className="btn-soft" onClick={test} disabled={v.tts.engine === "off" || saver.busy} data-testid="mate-voice-test" title="Saves, then the mate says hello with its avatar">
-            <Icon name="volume" size={14} /> {dirty ? "Save & say hello" : "Say hello"}
+          <button className="btn-soft" onClick={test} disabled={v.tts.engine === "off" || saver.busy} data-testid="mate-voice-test" title={t("mateSettings.voiceTestTitle")}>
+            <Icon name="volume" size={14} /> {dirty ? t("mateSettings.voiceSaveHello") : t("mateSettings.voiceSayHello")}
           </button>
           <button className="btn-ghost" onClick={conv.stopVoice}>
-            <Icon name="stop" size={12} /> Stop
+            <Icon name="stop" size={12} /> {t("common.stop")}
           </button>
           {conv.voiceError && <span className="min-w-0 flex-1 text-[12px] text-danger break-words">{conv.voiceError}</span>}
         </div>
       </Section>
 
-      <Section title="Listening (mic)" hint="How the mic button turns your speech into text.">
+      <Section title={t("mateSettings.voiceListening")} hint={t("mateSettings.voiceListeningHint")}>
         {!usable(savedStt) && <FallbackNote kind="stt" engine={mate.voice.stt.engine} avail={savedStt} />}
         <EnginePicker kind="stt" engines={STT_ENGINES} value={v.stt.engine} avail={sttAvail} onChange={(engine: SttEngine) => stt({ engine, model: "" })} testId="mate-stt-engine" />
         {v.stt.engine !== "off" && <SttDetails key={v.stt.engine} mate={mate} stt={v.stt} set={stt} ready={sttAvail(v.stt.engine).state === "ready"} />}
@@ -213,13 +215,14 @@ export default function VoiceTab({ mate, conv }: { mate: Mate; conv: MateConvers
 
 /** 0–300 % in 5 % steps, 100 % marked; the browser voice stops at 100 % */
 function VolumeField({ value, engine, onChange }: { value: number; engine: TtsEngine; onChange: (v: number) => void }) {
+  const t = useT();
   const pct = Math.round(value * 100);
   const capped = engine === "browser" && pct > 100;
   return (
     <div className="space-y-1.5 rounded-lg border border-border/70 bg-surface/40 p-3" data-testid="mate-volume">
       <div className="flex items-center gap-2">
         <Icon name="volume" size={14} className="text-content-faint" />
-        <span className="text-[12px] font-medium text-content-dim">Volume</span>
+        <span className="text-[12px] font-medium text-content-dim">{t("mateSettings.voiceVolume")}</span>
         <span className={`ml-auto font-mono text-[12.5px] tabular-nums ${pct > 100 ? "text-warning" : "text-content"}`} data-testid="mate-volume-value">
           {pct} %
         </span>
@@ -238,8 +241,8 @@ function VolumeField({ value, engine, onChange }: { value: number; engine: TtsEn
           value={pct}
           onChange={(e) => onChange(Number(e.target.value) / 100)}
           className="relative z-[1] w-full accent-accent"
-          aria-label="Volume"
-          aria-valuetext={`${pct} percent`}
+          aria-label={t("mateSettings.voiceVolume")}
+          aria-valuetext={t("mateSettings.voicePercent", { n: pct })}
           list="mate-volume-marks"
           data-testid="mate-volume-slider"
         />
@@ -264,37 +267,39 @@ function VolumeField({ value, engine, onChange }: { value: number; engine: TtsEn
       <p className="text-[11px] leading-relaxed text-content-faint">
         {capped ? (
           <span className="text-warning" data-testid="mate-volume-browser-note">
-            The browser voice can't go above 100 % — it plays at 100 % until you pick a provider voice (OpenAI, ElevenLabs, …).
+            {t("mateSettings.voiceBrowserCap")}
           </span>
         ) : engine === "browser" ? (
-          "The browser voice goes from 0 to 100 %."
+          t("mateSettings.voiceBrowserRange")
         ) : (
-          "Above 100 % the voice is amplified on this device, with a limiter so it doesn't distort. Try it with Preview or Say hello."
+          t("mateSettings.voiceAmplified")
         )}
       </p>
     </div>
   );
 }
 
-const ENGINE_LABEL = (kind: "tts" | "stt", id: string) => (kind === "tts" ? TTS_ENGINES : STT_ENGINES).find((e) => e.id === id)?.label ?? id;
+const ENGINE_LABEL = (kind: "tts" | "stt", id: string): MsgKey | null => (kind === "tts" ? TTS_ENGINES : STT_ENGINES).find((e) => e.id === id)?.label ?? null;
 
 /** the saved engine doesn't work (any more): say what happens instead */
 function FallbackNote({ kind, engine, avail }: { kind: "tts" | "stt"; engine: string; avail: Availability }) {
-  const label = ENGINE_LABEL(kind, engine);
+  const t = useT();
+  const key = ENGINE_LABEL(kind, engine);
+  const label = key ? t(key) : engine;
   const why =
     avail.state === "missing"
-      ? "it isn't set up in Global settings"
+      ? t("mateSettings.fbMissing")
       : avail.state === "error"
-        ? `it fails its check in Global settings (${avail.error})`
+        ? t("mateSettings.fbError", { error: avail.error })
         : avail.state === "unsupported"
-          ? `it's ${avail.why.toLowerCase()}`
+          ? t("mateSettings.fbUnsupported", { why: avail.why })
           : "";
   const what =
     kind === "stt"
-      ? " — the mic can't transcribe with it. Pick another engine or fix it."
+      ? t("mateSettings.fbSttWhat")
       : avail.state === "missing"
-        ? " — until it is, this mate speaks with the browser voice."
-        : " — speaking fails until it works again (pick another engine, or fix it).";
+        ? t("mateSettings.fbTtsMissingWhat")
+        : t("mateSettings.fbTtsFailWhat");
   return (
     <Banner
       tone="warn"
@@ -302,18 +307,18 @@ function FallbackNote({ kind, engine, avail }: { kind: "tts" | "stt"; engine: st
       action={
         avail.state !== "unsupported" ? (
           <button className="btn-soft !px-2.5 !py-1 text-[12px]" onClick={() => useMateStore.getState().openGlobal("voice")}>
-            Set up
+            {t("mateSettings.voiceSetUp")}
           </button>
         ) : undefined
       }
     >
-      This mate is set to <b>{label}</b>, but {why}
-      {what}
+      {t.rich("mateSettings.fbIntro", { b: (s) => <b>{s}</b>, engine: label, why, what })}
     </Banner>
   );
 }
 
 function EnginePicker<T extends string>({ kind, engines, value, avail, onChange, testId }: { kind: "tts" | "stt"; engines: EngineInfo<T>[]; value: T; avail: (id: string) => Availability; onChange: (id: T) => void; testId: string }) {
+  const t = useT();
   return (
     <div className="grid gap-1.5 sm:grid-cols-2" role="radiogroup" data-testid={testId}>
       {engines.map((e) => {
@@ -339,27 +344,27 @@ function EnginePicker<T extends string>({ kind, engines, value, avail, onChange,
               <span className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border ${selected ? "border-accent" : "border-border-strong"}`}>
                 {selected && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
               </span>
-              <span className={`min-w-0 flex-1 truncate text-[13px] font-medium ${ok ? "text-content" : "text-content-faint"}`}>{e.label}</span>
+              <span className={`min-w-0 flex-1 truncate text-[13px] font-medium ${ok ? "text-content" : "text-content-faint"}`}>{t(e.label)}</span>
               {e.provider && a.state === "ready" && <Icon name="check" size={12} className="shrink-0 text-success" />}
               {a.state === "checking" && <Icon name="spinner" size={12} spin className="shrink-0 text-content-faint" />}
             </div>
             <div className="mt-0.5 pl-[22px] text-[11px] leading-snug text-content-faint">
               {a.state === "missing" ? (
                 <>
-                  Not set up ·{" "}
+                  {t("mateSettings.voiceNotSetUp")} ·{" "}
                   <LinkButton onClick={() => useMateStore.getState().openGlobal("voice")} testId={`mate-${kind}-setup-${e.id}`}>
-                    Set up in Global settings
+                    {t("mateSettings.voiceSetUpGlobal")}
                   </LinkButton>
                 </>
               ) : a.state === "error" ? (
                 <>
-                  <span className="text-danger">Not working</span> ·{" "}
-                  <LinkButton onClick={() => useMateStore.getState().openGlobal("voice")}>Fix in Global settings</LinkButton>
+                  <span className="text-danger">{t("mateSettings.voiceNotWorking")}</span> ·{" "}
+                  <LinkButton onClick={() => useMateStore.getState().openGlobal("voice")}>{t("mateSettings.voiceFixGlobal")}</LinkButton>
                 </>
               ) : a.state === "unsupported" ? (
                 a.why
               ) : (
-                e.hint
+                t(e.hint)
               )}
             </div>
           </div>
@@ -369,7 +374,9 @@ function EnginePicker<T extends string>({ kind, engines, value, avail, onChange,
   );
 }
 
-function PreviewButton({ id, label = "Preview", onPlay, disabled, testId }: { id: string; label?: string; onPlay: () => Promise<void> | void; disabled?: boolean; testId?: string }) {
+function PreviewButton({ id, label, onPlay, disabled, testId }: { id: string; label?: string; onPlay: () => Promise<void> | void; disabled?: boolean; testId?: string }) {
+  const t = useT();
+  label ??= t("mateSettings.voicePreview");
   const playing = usePreviewPlaying();
   const [busy, setBusy] = useState(false);
   const on = playing === id;
@@ -388,16 +395,17 @@ function PreviewButton({ id, label = "Preview", onPlay, disabled, testId }: { id
         }
       }}
       data-testid={testId}
-      title={on ? "Stop" : label}
+      title={on ? t("common.stop") : label}
     >
       {busy ? <Icon name="spinner" size={12} spin /> : <Icon name={on ? "stop" : "play"} size={12} />}
-      {label && <span>{on ? "Stop" : label}</span>}
+      {label && <span>{on ? t("common.stop") : label}</span>}
     </button>
   );
 }
 
 /** a list row's play button (ElevenLabs preview URL) */
 function RowPreview({ id, url }: { id: string; url: string }) {
+  const t = useT();
   const playing = usePreviewPlaying();
   const on = playing === id;
   return (
@@ -405,8 +413,8 @@ function RowPreview({ id, url }: { id: string; url: string }) {
       type="button"
       className={`grid h-7 w-7 place-items-center rounded-md border ${on ? "border-accent/60 text-accent" : "border-border text-content-dim hover:text-content"}`}
       onClick={() => (on ? stopPreview() : void playPreview(id, url).catch(() => {}))}
-      aria-label={on ? "Stop the preview" : "Play the preview"}
-      title="Play the preview"
+      aria-label={on ? t("mateSettings.voiceStopPreview") : t("mateSettings.voicePlayPreview")}
+      title={t("mateSettings.voicePlayPreview")}
     >
       <Icon name={on ? "stop" : "play"} size={11} />
     </button>
@@ -414,18 +422,20 @@ function RowPreview({ id, url }: { id: string; url: string }) {
 }
 
 function LanguageField({ value, onChange, mate, extra, hint }: { value: string; onChange: (v: string) => void; mate: Mate; extra?: string[]; hint?: string }) {
+  const t = useT();
   const opts: PickOption[] = [
-    ...LANGS.map(([c, n]) => ({ value: c, label: n, sub: c, group: "Common" })),
-    ...(extra ?? []).filter((x) => !LANGS.some(([c, n]) => c === x || n.toLowerCase() === x.toLowerCase())).map((x) => ({ value: x, label: x, group: "This server" })),
+    ...LANGS.map(([c, n]) => ({ value: c, label: n, sub: c, group: t("mateSettings.voiceLangCommon") })),
+    ...(extra ?? []).filter((x) => !LANGS.some(([c, n]) => c === x || n.toLowerCase() === x.toLowerCase())).map((x) => ({ value: x, label: x, group: t("mateSettings.voiceLangServer") })),
   ];
   return (
-    <Field label="Language" hint={hint ?? "Empty = the reply language."} as="div">
-      <SearchSelect value={value} options={opts} onChange={onChange} noneLabel={`Same as replies (${langName(mate.persona.language || "ko")})`} allowCustom testId="mate-voice-language" />
+    <Field label={t("mateSettings.voiceLanguage")} hint={hint ?? t("mateSettings.voiceLanguageHint")} as="div">
+      <SearchSelect value={value} options={opts} onChange={onChange} noneLabel={t("mateSettings.voiceSameAsReplies", { lang: langName(mate.persona.language || "ko") })} allowCustom testId="mate-voice-language" />
     </Field>
   );
 }
 
 function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: Partial<Tts>) => void; ready: boolean }) {
+  const t = useT();
   const engine = tts.engine;
   const lang = (tts.language || mate.persona.language || "ko").toLowerCase();
   const sample = SAMPLE[lang.slice(0, 2)] || SAMPLE.en;
@@ -444,7 +454,7 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
       const blob = await speech(mate.id, sample, "joy", undefined, override);
       if (blob) await playPreview(previewKey, blob);
     } catch (e) {
-      setPreviewErr(e instanceof SpeechFallbackError ? e.message : `Preview failed: ${(e as Error).message}`);
+      setPreviewErr(e instanceof SpeechFallbackError ? e.message : t("mateSettings.voicePreviewFailed", { error: (e as Error).message }));
     }
   };
 
@@ -454,30 +464,30 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
 
       {engine === "openai" && (
         <>
-          <Field label="Model" as="div">
+          <Field label={t("mateSettings.voiceModel")} as="div">
             <SearchSelect
               value={tts.model}
               onChange={(model) => set({ model })}
               options={(models.data?.models ?? []).map((m) => ({ value: m.id, label: m.name, sub: m.description ?? m.id }))}
-              noneLabel={`Default (${models.data?.default || "gpt-4o-mini-tts"})`}
+              noneLabel={t("mateSettings.voiceDefaultX", { x: models.data?.default || "gpt-4o-mini-tts" })}
               loading={models.busy}
               testId="mate-tts-model"
             />
           </Field>
           <VoicePicker
-            label="Voice"
+            label={t("mateSettings.voiceVoice")}
             value={tts.voice}
             onChange={(voice) => set({ voice })}
-            noneLabel="Default (Alloy)"
+            noneLabel={t("mateSettings.voiceDefaultX", { x: "Alloy" })}
             voices={voices}
             toOption={(x) => {
               const model = tts.model || models.data?.default || "gpt-4o-mini-tts";
               const can = !x.models || x.models.includes(model);
-              return { value: x.id, label: x.name, sub: can ? x.description : `${x.description ?? ""} · only on GPT-4o mini TTS`, disabled: !can };
+              return { value: x.id, label: x.name, sub: can ? x.description : `${x.description ?? ""} · ${t("mateSettings.voiceOnlyMini")}`, disabled: !can };
             }}
           />
           {tts.voice && voices.data?.find((x) => x.id === tts.voice)?.models?.includes(tts.model || "gpt-4o-mini-tts") === false && (
-            <p className="text-[12px] text-warning">This voice doesn't speak on {tts.model} — pick another voice or GPT-4o mini TTS.</p>
+            <p className="text-[12px] text-warning">{t("mateSettings.voiceNotOnModel", { model: tts.model })}</p>
           )}
         </>
       )}
@@ -485,11 +495,11 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
       {engine === "elevenlabs" && (
         <>
           <VoicePicker
-            label="Voice"
+            label={t("mateSettings.voiceVoice")}
             value={tts.voice}
             onChange={(voice) => set({ voice })}
             voices={voices}
-            noneLabel="Choose a voice…"
+            noneLabel={t("mateSettings.voiceChoose")}
             sort
             toOption={(x) => {
               const l = x.labels ?? {};
@@ -499,7 +509,7 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
                 value: x.id,
                 label: x.name,
                 sub: [bits.join(" · "), langs].filter(Boolean).join(" — ") || x.description,
-                group: ELEVEN_GROUP[x.category ?? ""] ?? "Other",
+                group: t(ELEVEN_GROUP[x.category ?? ""] ?? "mateSettings.voiceGrpOther"),
                 badges: x.category && x.category !== "premade" ? [x.category] : undefined,
                 keywords: `${Object.values(l).join(" ")} ${x.description ?? ""} ${(x.languages ?? []).join(" ")}`,
               };
@@ -511,17 +521,17 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
             }}
             required
           />
-          <Field label="Model" as="div">
+          <Field label={t("mateSettings.voiceModel")} as="div">
             <SearchSelect
               value={tts.model}
               onChange={(model) => set({ model })}
               options={(models.data?.models ?? []).map((m) => ({
                 value: m.id,
                 label: m.name,
-                sub: [m.description?.split(/(?<=\.)\s/)[0], m.languages?.length ? `${m.languages.length} languages` : ""].filter(Boolean).join(" · "),
+                sub: [m.description?.split(/(?<=\.)\s/)[0], m.languages?.length ? t("mateSettings.voiceNLanguages", { count: m.languages.length }) : ""].filter(Boolean).join(" · "),
                 keywords: (m.languages ?? []).join(" "),
               }))}
-              noneLabel={`Default (${models.data?.models.find((m) => m.id === models.data?.default)?.name || "Multilingual v2"})`}
+              noneLabel={t("mateSettings.voiceDefaultX", { x: models.data?.models.find((m) => m.id === models.data?.default)?.name || "Multilingual v2" })}
               loading={models.busy}
               testId="mate-tts-model"
             />
@@ -531,7 +541,7 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
             const m = models.data?.models.find((x) => x.id === (tts.model || models.data?.default));
             const code = lang.slice(0, 2);
             return m?.languages?.length && !m.languages.some((x) => x.toLowerCase().startsWith(code)) ? (
-              <p className="text-[12px] text-warning">{m.name} doesn't list {langName(code)} — pick a multilingual model.</p>
+              <p className="text-[12px] text-warning">{t("mateSettings.voiceModelNoLang", { model: m.name, lang: langName(code) })}</p>
             ) : null;
           })()}
         </>
@@ -541,26 +551,26 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
 
       {engine === "http" && (
         <>
-          <Field label="Model" as="div" hint={models.data && !models.data.models.length ? "The server lists no models — type the one it expects, or leave the default." : undefined}>
+          <Field label={t("mateSettings.voiceModel")} as="div" hint={models.data && !models.data.models.length ? t("mateSettings.voiceNoModelsTts") : undefined}>
             <SearchSelect
               value={tts.model}
               onChange={(model) => set({ model })}
               options={(models.data?.models ?? []).map((m) => ({ value: m.id, label: m.name }))}
-              noneLabel={`Default (${models.data?.default || "tts-1"})`}
+              noneLabel={t("mateSettings.voiceDefaultX", { x: models.data?.default || "tts-1" })}
               allowCustom
               loading={models.busy}
               testId="mate-tts-model"
             />
             <ErrorLine text={models.err} />
           </Field>
-          <Field label="Voice" hint="The voice name the server knows (empty = its default).">
-            <input className="field" value={tts.voice} onChange={(e) => set({ voice: e.target.value })} placeholder="default" data-testid="mate-tts-voice-text" />
+          <Field label={t("mateSettings.voiceVoice")} hint={t("mateSettings.voiceHttpVoiceHint")}>
+            <input className="field" value={tts.voice} onChange={(e) => set({ voice: e.target.value })} placeholder={t("mateSettings.voiceDefaultPh")} data-testid="mate-tts-voice-text" />
           </Field>
         </>
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label={`Speed ${tts.speed.toFixed(2)}×`} hint={engine === "elevenlabs" ? "ElevenLabs allows 0.7–1.2×." : undefined}>
+        <Field label={t("mateSettings.voiceSpeed", { x: tts.speed.toFixed(2) })} hint={engine === "elevenlabs" ? t("mateSettings.voiceElevenSpeed") : undefined}>
           <input
             type="range"
             min={lo}
@@ -577,14 +587,14 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
           onChange={(language) => set({ language })}
           mate={mate}
           extra={engine === "omnivoice" ? models.data?.languages : undefined}
-          hint={engine === "elevenlabs" ? "Picks the matching voice preview; the model detects the language itself." : undefined}
+          hint={engine === "elevenlabs" ? t("mateSettings.voiceElevenLangHint") : undefined}
         />
       </div>
 
       {engine !== "browser" && (
         <div className="flex flex-wrap items-center gap-2">
-          <PreviewButton id={previewKey} label="Preview" onPlay={synth} disabled={engine === "elevenlabs" && !tts.voice} testId="mate-tts-preview" />
-          <span className="min-w-0 flex-1 text-[11.5px] text-content-faint">“{sample}” — with the settings above, before saving.</span>
+          <PreviewButton id={previewKey} onPlay={synth} disabled={engine === "elevenlabs" && !tts.voice} testId="mate-tts-preview" />
+          <span className="min-w-0 flex-1 text-[11.5px] text-content-faint">{t("mateSettings.voiceSampleNote", { sample })}</span>
           {previewErr && <p className="w-full text-[12px] text-danger break-words">{previewErr}</p>}
         </div>
       )}
@@ -613,19 +623,22 @@ function VoicePicker({
   sort?: boolean;
   required?: boolean;
 }) {
+  const t = useT();
   const options = useMemo(() => {
     const xs = (voices.data ?? []).map(toOption);
-    if (sort) xs.sort((a, b) => GROUP_ORDER.indexOf(a.group ?? "Other") - GROUP_ORDER.indexOf(b.group ?? "Other") || a.label.localeCompare(b.label));
+    const order = GROUP_ORDER.map((k) => t(k));
+    const rank = (g?: string) => order.indexOf(g ?? order[order.length - 1]);
+    if (sort) xs.sort((a, b) => rank(a.group) - rank(b.group) || a.label.localeCompare(b.label));
     return xs;
-  }, [voices.data, toOption, sort]);
+  }, [voices.data, toOption, sort, t]);
   const missing = value && voices.data && !voices.data.some((x) => x.id === value);
   return (
     <Field
       label={
         <span className="flex items-center gap-2">
           {label}
-          {voices.data && <span className="text-[10.5px] font-normal text-content-faint">{voices.data.length} available</span>}
-          <button type="button" className="ml-auto text-content-faint hover:text-content" onClick={voices.reload} title="Reload the list" aria-label="Reload the list">
+          {voices.data && <span className="text-[10.5px] font-normal text-content-faint">{t("mateSettings.voiceNAvailable", { count: voices.data.length })}</span>}
+          <button type="button" className="ml-auto text-content-faint hover:text-content" onClick={voices.reload} title={t("mateSettings.voiceReloadList")} aria-label={t("mateSettings.voiceReloadList")}>
             <Icon name="refresh" size={12} spin={voices.busy} />
           </button>
         </span>
@@ -643,33 +656,33 @@ function VoicePicker({
         testId="mate-tts-voice"
       />
       <ErrorLine text={voices.err} />
-      {missing && <p className="mt-1 text-[12px] text-warning">“{value}” isn't in the list any more — pick another voice.</p>}
-      {required && !value && voices.data && <p className="mt-1 text-[12px] text-warning">Pick a voice — this engine needs one.</p>}
+      {missing && <p className="mt-1 text-[12px] text-warning">{t("mateSettings.voiceGone", { value })}</p>}
+      {required && !value && voices.data && <p className="mt-1 text-[12px] text-warning">{t("mateSettings.voiceRequired")}</p>}
     </Field>
   );
 }
 
 function BrowserVoice({ mate, tts, set, sample }: { mate: Mate; tts: Tts; set: (p: Partial<Tts>) => void; sample: string }) {
+  const t = useT();
   const all = useBrowserVoices();
   const lang = bcp47(tts.language || mate.persona.language).toLowerCase();
   const base = lang.split("-")[0];
-  const options: PickOption[] = useMemo(
-    () =>
-      [...all]
-        .map((x) => ({
-          value: x.voiceURI,
-          label: x.name,
-          sub: `${x.lang}${x.localService ? "" : " · online"}`,
-          group: x.lang.toLowerCase().startsWith(base) ? `For ${langName(base)}` : "Other languages",
-          keywords: x.lang,
-        }))
-        .sort((a, b) => Number(b.group.startsWith("For")) - Number(a.group.startsWith("For")) || a.label.localeCompare(b.label)),
-    [all, base],
-  );
+  const options: PickOption[] = useMemo(() => {
+    const mine = t("mateSettings.voiceForLang", { lang: langName(base) });
+    return [...all]
+      .map((x) => ({
+        value: x.voiceURI,
+        label: x.name,
+        sub: `${x.lang}${x.localService ? "" : ` · ${t("mateSettings.voiceOnline")}`}`,
+        group: x.lang.toLowerCase().startsWith(base) ? mine : t("mateSettings.voiceOtherLangs"),
+        keywords: x.lang,
+      }))
+      .sort((a, b) => Number(b.group === mine) - Number(a.group === mine) || a.label.localeCompare(b.label));
+  }, [all, base, t]);
   return (
     <>
-      <Field label="Voice" as="div" hint={all.length ? `${all.length} voices on this device — each device has its own.` : "This device lists no voices: the system default is used, if any."}>
-        <SearchSelect value={tts.voice} options={options} onChange={(voice) => set({ voice })} noneLabel={`Default for ${langName(base)}`} testId="mate-tts-voice" />
+      <Field label={t("mateSettings.voiceVoice")} as="div" hint={all.length ? t("mateSettings.voiceDeviceVoices", { count: all.length }) : t("mateSettings.voiceNoDeviceVoices")}>
+        <SearchSelect value={tts.voice} options={options} onChange={(voice) => set({ voice })} noneLabel={t("mateSettings.voiceDefaultFor", { lang: langName(base) })} testId="mate-tts-voice" />
       </Field>
       <div className="flex items-center gap-2">
         <PreviewButton
@@ -687,11 +700,12 @@ function BrowserVoice({ mate, tts, set, sample }: { mate: Mate; tts: Tts; set: (
 const INSTRUCT_EXAMPLES = ["female, young adult, high pitch", "male, middle-aged, low pitch, calm", "female, warm, soft, korean accent"];
 
 function OmniVoice({ mate, tts, set, voices }: { mate: Mate; tts: Tts; set: (p: Partial<Tts>) => void; voices: ReturnType<typeof useFetched<VoiceOption[]>> }) {
+  const t = useT();
   const current = tts.profile || tts.voice;
   const [mode, setMode] = useState<"profile" | "design">(current || !tts.instruct ? "profile" : "design");
   return (
     <>
-      <Field label="Voice" as="div">
+      <Field label={t("mateSettings.voiceVoice")} as="div">
         <Segmented
           value={mode}
           onChange={(m) => {
@@ -699,31 +713,32 @@ function OmniVoice({ mate, tts, set, voices }: { mate: Mate; tts: Tts; set: (p: 
             if (m === "design") set({ voice: "", profile: "" });
           }}
           options={[
-            { id: "profile", label: "Voice profile", title: "A cloned voice on the OmniVoice server (reference clips per emotion)" },
-            { id: "design", label: "Voice design", title: "Describe the voice; no reference clip" },
+            { id: "profile", label: t("mateSettings.omniProfile"), title: t("mateSettings.omniProfileTitle") },
+            { id: "design", label: t("mateSettings.omniDesign"), title: t("mateSettings.omniDesignTitle") },
           ]}
           testId="mate-omni-mode"
         />
       </Field>
       {mode === "profile" ? (
         <VoicePicker
-          label="Profile"
+          label={t("mateSettings.omniProfileLabel")}
           value={current}
           onChange={(id) => set({ voice: id, profile: "" })}
           voices={voices}
-          noneLabel="Choose a profile…"
+          noneLabel={t("mateSettings.omniChooseProfile")}
           toOption={(x) => ({
             value: x.id,
             label: x.name,
-            sub: [x.language, x.emotions?.length ? `emotions: ${x.emotions.join(", ")}` : "no reference clips"].filter(Boolean).join(" · "),
-            badges: x.category === "template" ? ["template"] : undefined,
+            sub: [x.language, x.emotions?.length ? t("mateSettings.omniEmotions", { list: x.emotions.join(", ") }) : t("mateSettings.omniNoClips")].filter(Boolean).join(" · "),
+            badges: x.category === "template" ? [t("mateSettings.omniTemplate")] : undefined,
             keywords: (x.emotions ?? []).join(" "),
           })}
           required
         />
       ) : (
-        <Field label="Voice design" hint="Speaker attributes OmniVoice designs the voice from (no reference clip needed)." as="div">
-          <input className="field" value={tts.instruct ?? ""} onChange={(e) => set({ instruct: e.target.value })} placeholder="female, young adult, low pitch" data-testid="mate-tts-instruct" />
+        <Field label={t("mateSettings.omniDesign")} hint={t("mateSettings.omniDesignHint")} as="div">
+          {/* OmniVoice reads English speaker attributes: the example stays English */}
+          <input className="field" value={tts.instruct ?? ""} onChange={(e) => set({ instruct: e.target.value })} placeholder="female, young adult, low pitch" data-testid="mate-tts-instruct" />{/* i18n-ignore */}
           <div className="mt-1.5 flex flex-wrap gap-1">
             {INSTRUCT_EXAMPLES.map((x) => (
               <button key={x} type="button" className="pill border border-border text-content-faint hover:text-content" onClick={() => set({ instruct: x })}>
@@ -734,11 +749,11 @@ function OmniVoice({ mate, tts, set, voices }: { mate: Mate; tts: Tts; set: (p: 
         </Field>
       )}
       {!!tts.ref && (
-        <Field label="Reference clip (imported with the mate)" hint="OmniVoice clones only from clips on its own server — add this one there as a voice profile to use it." as="div">
+        <Field label={t("mateSettings.omniRefClip")} hint={t("mateSettings.omniRefClipHint")} as="div">
           <div className="space-y-1.5 rounded-lg border border-border bg-surface/60 p-2" data-testid="mate-tts-ref">
             <audio controls preload="none" src={assetUrl(mate.id, tts.ref)} className="h-8 w-full" />
             <div className="font-mono text-[11px] text-content-faint">{tts.ref}</div>
-            <textarea className="field resize-y text-[12.5px]" rows={2} value={tts.ref_text ?? ""} onChange={(e) => set({ ref_text: e.target.value })} placeholder="What the clip says" />
+            <textarea className="field resize-y text-[12.5px]" rows={2} value={tts.ref_text ?? ""} onChange={(e) => set({ ref_text: e.target.value })} placeholder={t("mateSettings.omniClipSays")} />
           </div>
         </Field>
       )}
@@ -747,17 +762,18 @@ function OmniVoice({ mate, tts, set, voices }: { mate: Mate; tts: Tts; set: (p: 
 }
 
 function SttDetails({ mate, stt, set, ready }: { mate: Mate; stt: Stt; set: (p: Partial<Stt>) => void; ready: boolean }) {
+  const t = useT();
   const engine = stt.engine;
   const models = useFetched<ModelList>(ready && (engine === "openai" || engine === "whisper") ? `models:${engine}:stt` : null, () => listModels(engine, "stt"));
   return (
     <div className="space-y-3 rounded-lg border border-border/70 bg-surface/40 p-3" data-testid={`mate-stt-details-${engine}`}>
       {(engine === "openai" || engine === "whisper") && (
-        <Field label="Model" as="div" hint={engine === "whisper" && models.data && !models.data.models.length ? "The server lists no models — type the one it serves, or leave the default." : undefined}>
+        <Field label={t("mateSettings.voiceModel")} as="div" hint={engine === "whisper" && models.data && !models.data.models.length ? t("mateSettings.voiceNoModelsStt") : undefined}>
           <SearchSelect
             value={stt.model}
             onChange={(model) => set({ model })}
             options={(models.data?.models ?? []).map((m) => ({ value: m.id, label: m.name, sub: m.description ?? (m.id !== m.name ? m.id : undefined) }))}
-            noneLabel={`Default (${models.data?.default || (engine === "openai" ? "gpt-4o-mini-transcribe" : "server's first model")})`}
+            noneLabel={t("mateSettings.voiceDefaultX", { x: models.data?.default || (engine === "openai" ? "gpt-4o-mini-transcribe" : t("mateSettings.voiceServerFirstModel")) })}
             allowCustom={engine === "whisper"}
             loading={models.busy}
             testId="mate-stt-model"
@@ -765,8 +781,8 @@ function SttDetails({ mate, stt, set, ready }: { mate: Mate; stt: Stt; set: (p: 
           <ErrorLine text={models.err} />
         </Field>
       )}
-      {engine === "browser" && <p className="text-[12px] text-content-faint">Recognized by this browser (Google / Apple servers in Chrome / Safari). Not in the desktop or Android app.</p>}
-      <LanguageField value={stt.language} onChange={(language) => set({ language })} mate={mate} hint="The language you speak. Empty = the reply language." />
+      {engine === "browser" && <p className="text-[12px] text-content-faint">{t("mateSettings.voiceBrowserStt")}</p>}
+      <LanguageField value={stt.language} onChange={(language) => set({ language })} mate={mate} hint={t("mateSettings.voiceSttLangHint")} />
     </div>
   );
 }

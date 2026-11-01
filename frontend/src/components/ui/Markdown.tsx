@@ -31,6 +31,7 @@ import { BARE_PATH, isBarePathCandidate, looksLikePath, parsePathRef, resolvePat
 import { useSessionStore } from "../../stores/sessionStore";
 import { openPath } from "../../stores/workbenchStore";
 import Icon from "./Icon";
+import { useT } from "../../i18n";
 
 function textOf(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -40,6 +41,7 @@ function textOf(node: ReactNode): string {
 }
 
 function CodeBlock({ children, lang }: { children: ReactNode; lang?: string }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   return (
     <div className="group relative my-2 overflow-hidden rounded-lg border border-border bg-bg/80">
@@ -54,7 +56,7 @@ function CodeBlock({ children, lang }: { children: ReactNode; lang?: string }) {
           }
           className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-surface-3 hover:text-content-dim"
         >
-          <Icon name={copied ? "check" : "copy"} size={11} /> {copied ? "Copied" : "Copy"}
+          <Icon name={copied ? "check" : "copy"} size={11} /> {copied ? t("common.copied") : t("common.copy")}
         </button>
       </div>
       <pre className="!m-0 overflow-x-auto !rounded-none !border-0 !bg-transparent p-3 text-[12px] leading-relaxed">{children}</pre>
@@ -134,6 +136,7 @@ const keepFileUrls = (url: string) => (url.startsWith("file:") ? url : defaultUr
  * relative links and images resolve against its own folder.
  */
 export default function Markdown({ children, baseDir, doc = false }: { children: string; baseDir?: string; doc?: boolean }) {
+  const t = useT();
   const session = useSessionStore((s) => s.sessions.find((x) => x.id === s.activeId));
 
   // Images the agent references by workspace path render through the
@@ -161,7 +164,7 @@ export default function Markdown({ children, baseDir, doc = false }: { children:
                 {...props}
                 href={href}
                 className="md-path"
-                title={`Open ${parsePathRef(href).path}`}
+                title={t("files.openName", { name: parsePathRef(href).path })}
                 onClick={(e) => {
                   e.preventDefault();
                   open(href);
@@ -179,7 +182,7 @@ export default function Markdown({ children, baseDir, doc = false }: { children:
                   role="link"
                   tabIndex={0}
                   className="md-path"
-                  title={`Open ${parsePathRef(text).path}`}
+                  title={t("files.openName", { name: parsePathRef(text).path })}
                   onClick={() => open(text)}
                   onKeyDown={(e) => e.key === "Enter" && open(text)}
                 >

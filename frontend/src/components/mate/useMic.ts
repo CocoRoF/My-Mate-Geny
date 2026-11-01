@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { transcribe, type Mate } from "../../api/mates";
 import { webSpeechRecognition } from "../../mate/desktop";
 import { bcp47 } from "../../mate/useMateConversation";
+import { tr, useLang } from "../../i18n";
 
 export type MicState = "idle" | "starting" | "recording" | "transcribing";
 
@@ -38,16 +39,15 @@ function recorderMime(): string {
 }
 
 export function micUnavailable(mate: Mate | null): string | null {
-  if (!mate) return "No mate";
+  if (!mate) return tr("mate.micNoMate");
   const engine = mate.voice.stt.engine;
-  if (engine === "off") return "Voice input is off — choose a speech-to-text engine in Mate settings → Voice.";
+  if (engine === "off") return tr("mate.micOff");
   if (engine === "browser") {
-    if (!webSpeechRecognition())
-      return "This app has no built-in speech recognition — choose OpenAI or Whisper in Mate settings → Voice.";
+    if (!webSpeechRecognition()) return tr("mate.micNoBrowserStt");
     return null;
   }
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined")
-    return "This browser can't record audio here (a secure https page is needed).";
+    return tr("mate.micNoRecorder");
   return null;
 }
 
@@ -58,6 +58,7 @@ export function useMic(mate: Mate | null, onText: (text: string) => void): Mic {
   const onTextRef = useRef(onText);
   onTextRef.current = onText;
   const rec = useRef<{ stop: () => void; cancel: () => void } | null>(null);
+  useLang(); // (the reason below is in the UI's language)
   const unavailable = micUnavailable(mate);
 
   const finish = useCallback(() => {
@@ -96,9 +97,7 @@ export function useMic(mate: Mate | null, onText: (text: string) => void): Mic {
       r.onerror = (e: any) => {
         if (e?.error === "no-speech" || e?.error === "aborted") return;
         setError(
-          e?.error === "not-allowed"
-            ? "Microphone access was refused."
-            : `Speech recognition failed (${e?.error || "unknown"}).`,
+          e?.error === "not-allowed" ? tr("mate.micRefused") : tr("mate.sttFailed", { reason: e?.error || tr("common.unknown") }),
         );
       };
       r.onend = () => {
@@ -118,7 +117,7 @@ export function useMic(mate: Mate | null, onText: (text: string) => void): Mic {
         r.start();
       } catch (e) {
         finish();
-        setError(`Speech recognition failed (${(e as Error).message}).`);
+        setError(tr("mate.sttFailed", { reason: (e as Error).message }));
       }
       return;
     }
@@ -155,10 +154,10 @@ export function useMic(mate: Mate | null, onText: (text: string) => void): Mic {
             const r = await transcribe(mate.id, blob);
             finish();
             if (r.text?.trim()) onTextRef.current(r.text.trim());
-            else setError("Didn't catch that — nothing was heard.");
+            else setError(tr("mate.nothingHeard"));
           } catch (e) {
             finish();
-            setError(`Transcription failed: ${(e as Error).message}`);
+            setError(tr("mate.transcribeFailed", { error: (e as Error).message }));
           }
         };
         const cap = setTimeout(() => mr.state === "recording" && mr.stop(), MAX_MS);
@@ -176,7 +175,7 @@ export function useMic(mate: Mate | null, onText: (text: string) => void): Mic {
       .catch((e: DOMException) => {
         finish();
         if (!cancelled)
-          setError(e?.name === "NotAllowedError" ? "Microphone access was refused." : `No microphone (${e?.message || e}).`);
+          setError(e?.name === "NotAllowedError" ? tr("mate.micRefused") : tr("mate.noMic", { reason: String(e?.message || e) }));
       });
   }, [mate, unavailable, finish]);
 

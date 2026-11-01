@@ -248,7 +248,7 @@ def _login(c, username="admin", password="test-pass", **extra):
 def test_defaults_login_and_warnings(default_client):
     c = default_client
     page = c.get("/login").text
-    assert "Default password" in page and "Admin &rarr; Security" in page
+    assert "Default password" in page and "Settings &rarr; Account" in page
     r = _login(c, "admin", "geny-admin")
     assert r.status_code == 200 and r.json()["default_password"] is True
     st = c.get("/api/auth/status").json()

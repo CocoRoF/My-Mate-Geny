@@ -1,5 +1,6 @@
 /** /api/mates (docs/mate.md §1–5). */
 import { apiFetch, apiResponse, toLogin } from "./client";
+import { tr } from "../i18n";
 import type { Avatar } from "../mate/types";
 import type { Session } from "../types";
 
@@ -240,11 +241,11 @@ export async function installCore(onEvent: (e: CoreEvent) => void, signal?: Abor
       signal,
     });
   } catch (e) {
-    return fail(`Couldn't reach the server: ${(e as Error).message}`);
+    return fail(tr("mate.installUnreachable", { error: (e as Error).message }));
   }
   if (res.status === 401) {
     toLogin();
-    return fail("authentication required");
+    return fail("authentication required"); // i18n-ignore (the page goes to the login page)
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -289,12 +290,12 @@ export async function installCore(onEvent: (e: CoreEvent) => void, signal?: Abor
       line(buf);
     } catch (e) {
       if (signal?.aborted) throw e;
-      return fail(`The connection dropped during the install: ${(e as Error).message}`);
+      return fail(tr("mate.installDropped", { error: (e as Error).message }));
     }
   }
   const end = last as CoreEvent | null;
   if (end && (end.phase === "done" || end.phase === "error")) return end;
-  return fail("The install stopped before it finished — try again.");
+  return fail(tr("mate.installStopped"));
 }
 
 function toCoreEvent(raw: unknown): CoreEvent | null {
@@ -342,7 +343,7 @@ async function upload<T>(path: string, form: FormData): Promise<T> {
   const res = await fetch(path, { method: "POST", body: form });
   if (res.status === 401) {
     toLogin();
-    throw new Error("authentication required");
+    throw new Error("authentication required"); // i18n-ignore (the page goes to the login page)
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -396,7 +397,7 @@ export async function speech(
   if (res.status === 204) {
     if (res.headers.get("X-Speech-Fallback")) {
       throw new SpeechFallbackError(
-        `${res.headers.get("X-Speech-Fallback-Reason") || "This voice engine isn't set up"} (the browser voice speaks instead)`,
+        tr("mate.speechFallback", { reason: res.headers.get("X-Speech-Fallback-Reason") || tr("mate.engineNotSetUp") }),
       );
     }
     return null;

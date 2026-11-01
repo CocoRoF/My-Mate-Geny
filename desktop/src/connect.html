@@ -35,26 +35,26 @@
 <form class="card" id="form" novalidate autocomplete="on">
   <div class="head">
     <img src="logo.png" alt="">
-    <div><h1>Connect to your server</h1><p class="sub">My Mate Geny <span id="ver"></span></p></div>
+    <div><h1 id="heading">Connect to your server</h1><p class="sub">My Mate Geny <span id="ver"></span></p></div>
   </div>
   <div class="notice" id="notice" hidden></div>
   <div class="field">
-    <label for="server">Server address</label>
+    <label for="server" id="serverLabel">Server address</label>
     <input id="server" name="server" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="example.com or 192.168.0.10:58080" autocomplete="url">
-    <div class="hint">The address of your My Mate Geny server — https:// is tried first.</div>
+    <div class="hint" id="serverHint">The address of your My Mate Geny server — https:// is tried first.</div>
   </div>
   <div class="field">
-    <label for="username">Username</label>
+    <label for="username" id="usernameLabel">Username</label>
     <input id="username" name="username" type="text" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="username">
   </div>
   <div class="field">
-    <label for="password">Password</label>
+    <label for="password" id="passwordLabel">Password</label>
     <div class="pw">
       <input id="password" name="password" type="password" autocomplete="current-password">
       <button type="button" id="show" aria-pressed="false">Show</button>
     </div>
   </div>
-  <label class="check"><input type="checkbox" id="remember" checked> Remember the server and username (never the password)</label>
+  <label class="check"><input type="checkbox" id="remember" checked> <span id="rememberText">Remember the server and username (never the password)</span></label>
   <div class="row">
     <button type="button" class="ghost" id="cancel" hidden>Back</button>
     <button type="submit" class="primary" id="go">Connect</button>
@@ -64,6 +64,18 @@
 <script>
   const $ = (id) => document.getElementById(id);
   const api = window.hrhConnect;
+  // the app's language (i18n.js through the preload); the English in the markup is the fallback
+  const W = (window.hrhNative && window.hrhNative.text) || {};
+  const say = (k, en, vars) => String(typeof W[k] === "string" ? W[k] : en).replace(/\{(\w+)\}/g, (a, n) => (vars && n in vars ? vars[n] : a));
+  // connect-core.js's failures: the headline in this language by kind (the technical detail stays as it is)
+  const why = (r) => (r && r.kind ? say("err_" + r.kind, r.message) : say("wrong", "Something went wrong"));
+  if (window.hrhNative && window.hrhNative.language) document.documentElement.lang = window.hrhNative.language;
+  if (W.connectTitle) document.title = W.connectTitle;
+  for (const [id, key] of [["heading", "connectHeading"], ["serverLabel", "serverLabel"], ["serverHint", "serverHint"], ["usernameLabel", "usernameLabel"],
+    ["passwordLabel", "passwordLabel"], ["rememberText", "remember"], ["show", "show"], ["cancel", "back"], ["go", "connect"]]) {
+    if (typeof W[key] === "string") $(id).textContent = W[key];
+  }
+  if (typeof W.serverPlaceholder === "string") $("server").placeholder = W.serverPlaceholder;
   const q = new URLSearchParams(location.search);
   let busy = false;
 
@@ -102,7 +114,7 @@
     const p = $("password");
     const show = p.type === "password";
     p.type = show ? "text" : "password";
-    $("show").textContent = show ? "Hide" : "Show";
+    $("show").textContent = show ? say("hide", "Hide") : say("show", "Show");
     $("show").setAttribute("aria-pressed", String(show));
     p.focus();
   };
@@ -114,37 +126,37 @@
     const input = $("server").value.trim();
     const username = $("username").value.trim();
     const password = $("password").value;
-    if (!input) return status("err", "Enter your server's address"), mark("server");
-    if (!username) return status("err", "Enter your username"), mark("username");
-    if (!password) return status("err", "Enter your password"), mark("password");
+    if (!input) return status("err", say("enterServer", "Enter your server's address")), mark("server");
+    if (!username) return status("err", say("enterUsername", "Enter your username")), mark("username");
+    if (!password) return status("err", say("enterPassword", "Enter your password")), mark("password");
     mark(null);
     setBusy(true);
     try {
-      status("busy", "Looking for the server…");
+      status("busy", say("looking", "Looking for the server…"));
       const found = await api.findServer(input);
       if (!found || !found.ok) {
-        status("err", found ? found.message : "Something went wrong", found && found.detail);
+        status("err", why(found), found && found.detail);
         return mark(found && found.kind === "rate" ? null : "server");
       }
       $("server").value = found.server;
-      status("busy", "Signing in to " + found.server + "…");
+      status("busy", say("signingIn", "Signing in to {server}…", { server: found.server }));
       const r = await api.signIn({ server: found.server, username, password, remember: $("remember").checked });
       if (!r || !r.ok) {
-        status("err", r ? r.message : "Something went wrong", r && r.detail);
+        status("err", why(r), r && r.detail);
         return mark(r && (r.kind === "credentials" || r.kind === "missing_password") ? "password" : null);
       }
       $("password").value = "";
-      status("busy", "Opening the console…");
+      status("busy", say("opening", "Opening the console…"));
       return; // the window navigates to the server
     } catch (e) {
-      status("err", "Something went wrong", String((e && e.message) || e));
+      status("err", say("wrong", "Something went wrong"), String((e && e.message) || e));
     } finally {
       setBusy(false);
     }
   };
 
   (async () => {
-    if (!api) return status("err", "This page only works inside the My Mate Geny app.");
+    if (!api) return status("err", say("onlyInApp", "This page only works inside the My Mate Geny app."));
     const s = (await api.state()) || {};
     $("ver").textContent = s.version ? "· " + s.version : "";
     $("server").value = s.server || s.lastServer || "";
@@ -153,7 +165,7 @@
     $("cancel").hidden = !s.server;
     const notice = q.get("notice");
     if (notice === "signed-out") {
-      $("notice").textContent = "You're signed out.";
+      $("notice").textContent = say("signedOut", "You're signed out.");
       $("notice").hidden = false;
     }
     ($("server").value ? ($("username").value ? $("password") : $("username")) : $("server")).focus();

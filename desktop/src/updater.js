@@ -28,12 +28,12 @@ function compareVersions(a, b) {
   return 0;
 }
 
-/** what this install can do */
+/** what this install can do (`code`: the reason's message in i18n.js — the console shows it in the UI's language) */
 function support({ isPackaged, platform, env = {}, server }) {
-  if (!isPackaged && env.HRH_UPDATER_DEV !== "1") return { ok: false, reason: "A development build does not update itself." };
-  if (platform === "darwin") return { ok: false, reason: "macOS builds are not signed, so they cannot replace themselves — download the new .dmg below." };
-  if (platform !== "win32" && platform !== "linux") return { ok: false, reason: "Updates are not available on this system." };
-  if (!server) return { ok: false, reason: "Not connected to a server." };
+  if (!isPackaged && env.HRH_UPDATER_DEV !== "1") return { ok: false, code: "updDev", reason: "A development build does not update itself." };
+  if (platform === "darwin") return { ok: false, code: "updMac", reason: "macOS builds are not signed, so they cannot replace themselves — download the new .dmg below." };
+  if (platform !== "win32" && platform !== "linux") return { ok: false, code: "updOs", reason: "Updates are not available on this system." };
+  if (!server) return { ok: false, code: "updServer", reason: "Not connected to a server." };
   return { ok: true, how: platform === "win32" ? "installer" : env.APPIMAGE ? "appimage" : "deb" };
 }
 
@@ -41,7 +41,7 @@ function support({ isPackaged, platform, env = {}, server }) {
  * deps: {
  *   autoUpdater()   → electron-updater's autoUpdater (lazy), CancellationToken class via cancelToken()
  *   version, platform, isPackaged, env, server(), cookieHeader(): Promise<string>,
- *   onState(state), beforeInstall(), now()
+ *   onState(state), beforeInstall(), now(), reasonText(code)? (the "can't update here" reason in the UI's language)
  * }
  */
 function createUpdater(deps) {
@@ -53,7 +53,8 @@ function createUpdater(deps) {
 
   const view = () => {
     const s = support({ isPackaged: deps.isPackaged, platform: deps.platform, env: deps.env || {}, server: deps.server() });
-    return { ...state, current: deps.version, supported: s.ok, how: s.how || null, reason: s.ok ? undefined : s.reason };
+    const reason = s.ok ? undefined : (deps.reasonText && deps.reasonText(s.code)) || s.reason;
+    return { ...state, current: deps.version, supported: s.ok, how: s.how || null, reason };
   };
   const set = (patch, replace = false) => {
     state = replace ? { ...patch } : { ...state, ...patch };
@@ -190,7 +191,9 @@ function createUpdater(deps) {
     return during === "download" ? download() : check();
   }
 
-  return { get state() { return view(); }, check, download, cancel, install, retry, STATUS };
+  // refresh: say the state again (the language changed: the reason's words did)
+  const refresh = () => deps.onState(view());
+  return { get state() { return view(); }, check, download, cancel, install, retry, refresh, STATUS };
 }
 
 function sizeOf(info) {

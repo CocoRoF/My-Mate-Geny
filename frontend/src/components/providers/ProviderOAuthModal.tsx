@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { oauthStart, oauthStatus, oauthComplete, type OAuthStart } from "../../api/providers";
 import Icon from "../ui/Icon";
+import { tr, useT } from "../../i18n";
 
 type Phase = "starting" | "device" | "paste" | "verifying" | "done" | "error";
 
@@ -25,6 +26,7 @@ export default function ProviderOAuthModal({
   onClose: () => void;
   onConnected: () => void;
 }) {
+  const t = useT();
   const call: OAuthApi = api || {
     start: () => oauthStart(provider),
     status: () => oauthStatus(provider),
@@ -83,7 +85,7 @@ export default function ProviderOAuthModal({
           }, 900);
         } else if (st.status === "failed") {
           if (pollRef.current) clearInterval(pollRef.current);
-          setError(st.error || "login failed");
+          setError(st.error || tr("providers.loginFailed"));
           setPhase("error");
         }
       } catch {
@@ -111,7 +113,7 @@ export default function ProviderOAuthModal({
           onClose();
         }, 900);
       } else {
-        setError(r.error || "verification failed");
+        setError(r.error || tr("providers.verificationFailed"));
         setPhase("paste");
       }
     } catch (e: any) {
@@ -120,8 +122,8 @@ export default function ProviderOAuthModal({
     }
   };
 
-  const title = titleProp || (provider === "codex" ? "Connect Codex" : "Connect Claude");
-  const sub = subProp || (provider === "codex" ? "ChatGPT account (device code)" : "Claude subscription (token)");
+  const title = titleProp || (provider === "codex" ? t("providers.connectCodex") : t("providers.connectClaude"));
+  const sub = subProp || (provider === "codex" ? t("providers.subCodex") : t("providers.subClaude"));
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
@@ -134,54 +136,54 @@ export default function ProviderOAuthModal({
             <h3 className="text-base font-semibold">{title}</h3>
             <p className="text-[11px] text-content-faint">{sub}</p>
           </div>
-          <button onClick={onClose} className="text-content-faint hover:text-content">
+          <button onClick={onClose} className="text-content-faint hover:text-content" aria-label={t("common.close")}>
             <Icon name="x" size={18} />
           </button>
         </div>
 
         {phase === "starting" && (
           <div className="flex items-center gap-2 text-sm text-content-dim py-6 justify-center">
-            <Icon name="spinner" size={16} spin /> Preparing sign-in…
+            <Icon name="spinner" size={16} spin /> {t("providers.preparing")}
           </div>
         )}
 
         {phase === "device" && data && (
           <div className="space-y-4">
-            <Step n={1} text="Open this link and sign in:" />
+            <Step n={1} text={t("providers.stepOpenSignIn")} />
             <LinkRow url={data.url!} copied={copied === "url"} onCopy={() => copy(data.url!, "url")} />
-            <Step n={2} text="Enter this one-time code:" />
+            <Step n={2} text={t("providers.stepEnterCode")} />
             <div className="flex items-center gap-2">
               <code className="flex-1 rounded-lg border border-border bg-surface px-3 py-2.5 text-center text-lg font-mono tracking-[0.3em] text-accent">
                 {data.user_code}
               </code>
-              <button onClick={() => copy(data.user_code!, "code")} className="btn-ghost">
+              <button onClick={() => copy(data.user_code!, "code")} className="btn-ghost" title={t("providers.copyCode")} aria-label={t("providers.copyCode")}>
                 <Icon name={copied === "code" ? "check" : "copy"} size={16} />
               </button>
             </div>
             <div className="flex items-center gap-2 text-xs text-content-dim pt-1">
               <Icon name="spinner" size={14} spin className="text-accent" />
-              Waiting for authorization…
+              {t("providers.waitingAuth")}
             </div>
           </div>
         )}
 
         {(phase === "paste" || phase === "verifying") && data && (
           <div className="space-y-4">
-            <Step n={1} text="Open this link, sign in, and authorize:" />
+            <Step n={1} text={t("providers.stepOpenAuthorize")} />
             <LinkRow url={data.url!} copied={copied === "url"} onCopy={() => copy(data.url!, "url")} />
-            <Step n={2} text="Paste the code you receive:" />
+            <Step n={2} text={t("providers.stepPasteCode")} />
             <div className="flex items-center gap-2">
               <input
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && submitCode()}
-                placeholder="Paste code here"
+                placeholder={t("providers.pasteCodePlaceholder")}
                 disabled={phase === "verifying"}
                 className="field font-mono"
                 autoFocus
               />
               <button onClick={submitCode} disabled={phase === "verifying" || !code.trim()} className="btn-primary">
-                {phase === "verifying" ? <Icon name="spinner" size={15} spin /> : "Verify"}
+                {phase === "verifying" ? <Icon name="spinner" size={15} spin /> : t("providers.verify")}
               </button>
             </div>
           </div>
@@ -189,7 +191,7 @@ export default function ProviderOAuthModal({
 
         {phase === "done" && (
           <div className="flex items-center gap-2 text-sm text-success py-6 justify-center">
-            <Icon name="check" size={18} /> Connected!
+            <Icon name="check" size={18} /> {t("providers.connectedBang")}
           </div>
         )}
 
@@ -200,7 +202,7 @@ export default function ProviderOAuthModal({
               <span className="break-words">{error}</span>
             </p>
             <button onClick={onClose} className="btn-ghost w-full">
-              Close
+              {t("common.close")}
             </button>
           </div>
         )}
@@ -221,6 +223,7 @@ function Step({ n, text }: { n: number; text: string }) {
 }
 
 function LinkRow({ url, copied, onCopy }: { url: string; copied: boolean; onCopy: () => void }) {
+  const t = useT();
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
       <a
@@ -231,10 +234,10 @@ function LinkRow({ url, copied, onCopy }: { url: string; copied: boolean; onCopy
       >
         {url}
       </a>
-      <a href={url} target="_blank" rel="noreferrer" className="text-content-faint hover:text-content" title="Open">
+      <a href={url} target="_blank" rel="noreferrer" className="text-content-faint hover:text-content" title={t("providers.openLink")} aria-label={t("providers.openLink")}>
         <Icon name="external" size={15} />
       </a>
-      <button onClick={onCopy} className="text-content-faint hover:text-content" title="Copy">
+      <button onClick={onCopy} className="text-content-faint hover:text-content" title={t("common.copy")} aria-label={t("common.copy")}>
         <Icon name={copied ? "check" : "copy"} size={15} />
       </button>
     </div>

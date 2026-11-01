@@ -9,6 +9,7 @@ import { axisBytes, bytes, C1, C2, C3, C4, niceBytes, niceMax, pct, rate } from 
 import { CoreHeat, rampColor } from "./Spark";
 import TimeChart, { type ChartSeries, type RefLine } from "./TimeChart";
 import type { Ser, View } from "./view";
+import { useT } from "../../../i18n";
 
 function Legend({ items }: { items: { label: string; color: string; value?: string; kind?: "area" | "line" }[] }) {
   return (
@@ -74,6 +75,7 @@ function ratio(v: View, a: string, b: string): Ser {
 const H = typeof window !== "undefined" && window.innerWidth < 640 ? 132 : 150;
 
 export default function Charts({ v, now, th }: { v: View; now: Snapshot | null; th: Thresholds | null }) {
+  const t = useT();
   const cores = useFeed((s) => s.cores);
   const common = { t: v.t, domain: v.domain, step: v.step, live: v.live, markers: v.markers, height: H };
   const total = now?.mem.total || last(v.get("mem_total")) || 1;
@@ -82,48 +84,48 @@ export default function Charts({ v, now, th }: { v: View; now: Snapshot | null; 
 
   // ---- CPU
   const cpuSeries: ChartSeries[] = [
-    ser(v, "cpu_user", "User", C1, { kind: "area", stack: true, fmt: (x) => pct(x, 1) }),
-    ser(v, "cpu_system", "System", C2, { kind: "area", stack: true, fmt: (x) => pct(x, 1) }),
-    ser(v, "cpu_iowait", "IO wait", C3, { kind: "area", stack: true, fmt: (x) => pct(x, 1) }),
-    ...(steal ? [ser(v, "cpu_steal", "Steal", C4, { kind: "area", stack: true, fmt: (x) => pct(x, 1) })] : []),
+    ser(v, "cpu_user", t("admin.cpuUser"), C1, { kind: "area", stack: true, fmt: (x) => pct(x, 1) }),
+    ser(v, "cpu_system", t("admin.cpuSystem"), C2, { kind: "area", stack: true, fmt: (x) => pct(x, 1) }),
+    ser(v, "cpu_iowait", t("admin.cpuIowait"), C3, { kind: "area", stack: true, fmt: (x) => pct(x, 1) }),
+    ...(steal ? [ser(v, "cpu_steal", t("admin.cpuSteal"), C4, { kind: "area", stack: true, fmt: (x) => pct(x, 1) })] : []),
   ];
 
   // ---- memory
   const memRefs: RefLine[] = [];
-  if (guard?.avail_min) memRefs.push({ value: total - guard.avail_min, label: `memguard (avail < ${bytes(guard.avail_min)})`, tone: "danger" });
+  if (guard?.avail_min) memRefs.push({ value: total - guard.avail_min, label: t("admin.memguardAvail", { min: bytes(guard.avail_min) }), tone: "danger" });
   const cgLimit = now?.cgroup?.max;
-  if (cgLimit) memRefs.push({ value: cgLimit, label: "container limit", tone: "warn" });
+  if (cgLimit) memRefs.push({ value: cgLimit, label: t("admin.containerLimit"), tone: "warn" });
   const memSeries: ChartSeries[] = [
-    ser(v, "mem_used", "Used", C1, { kind: "area", stack: true, fmt: (x) => bytes(x) }),
-    { key: "cache", label: "Cache", color: C2, values: v.get("mem_cache").avg, kind: "area", stack: true, fmt: (x) => bytes(x) },
-    ser(v, "cg_mem", "Geny container", C3, { fmt: (x) => bytes(x) }),
-    ser(v, "swap_used", "Swap", C4, { fmt: (x) => bytes(x) }),
+    ser(v, "mem_used", t("admin.memUsed"), C1, { kind: "area", stack: true, fmt: (x) => bytes(x) }),
+    { key: "cache", label: t("admin.memCache"), color: C2, values: v.get("mem_cache").avg, kind: "area", stack: true, fmt: (x) => bytes(x) },
+    ser(v, "cg_mem", t("admin.genyContainer"), C3, { fmt: (x) => bytes(x) }),
+    ser(v, "swap_used", t("admin.swap"), C4, { fmt: (x) => bytes(x) }),
   ];
 
   // ---- Geny processes
   const procSeries: ChartSeries[] = [
-    ser(v, "be_rss", "Backend", C1, { kind: "area", stack: true, fmt: (x) => bytes(x) }),
-    ser(v, "eng_rss", "Engines", C2, { kind: "area", stack: true, fmt: (x) => bytes(x) }),
-    { key: "other", label: "Other children", color: C3, values: minus(v, "tree_rss", "be_rss", "eng_rss").avg, kind: "area", stack: true, fmt: (x) => bytes(x) },
+    ser(v, "be_rss", t("admin.backend"), C1, { kind: "area", stack: true, fmt: (x) => bytes(x) }),
+    ser(v, "eng_rss", t("admin.engines"), C2, { kind: "area", stack: true, fmt: (x) => bytes(x) }),
+    { key: "other", label: t("admin.otherChildren"), color: C3, values: minus(v, "tree_rss", "be_rss", "eng_rss").avg, kind: "area", stack: true, fmt: (x) => bytes(x) },
   ];
-  const procRefs: RefLine[] = th ? [{ value: th.engine_rss, label: "1 engine alert line", tone: "muted" }] : [];
+  const procRefs: RefLine[] = th ? [{ value: th.engine_rss, label: t("admin.engineAlertLine"), tone: "muted" }] : [];
 
   // ---- network / disk (mirrored: in above, out below)
   const netSeries: ChartSeries[] = [
-    ser(v, "net_rx", "In", C1, { kind: "area", fmt: rate }),
-    ser(v, "net_tx", "Out", C2, { kind: "area", below: true, fmt: rate }),
+    ser(v, "net_rx", t("admin.netIn"), C1, { kind: "area", fmt: rate }),
+    ser(v, "net_tx", t("admin.netOut"), C2, { kind: "area", below: true, fmt: rate }),
   ];
   const ioSeries: ChartSeries[] = [
-    ser(v, "disk_read", "Read", C1, { kind: "area", fmt: rate }),
-    ser(v, "disk_write", "Write", C2, { kind: "area", below: true, fmt: rate }),
+    ser(v, "disk_read", t("admin.diskRead"), C1, { kind: "area", fmt: rate }),
+    ser(v, "disk_write", t("admin.diskWrite"), C2, { kind: "area", below: true, fmt: rate }),
   ];
 
   // ---- pressure
   const psiSeries: ChartSeries[] = [
-    ser(v, "psi_mem", "Memory some", C1, { fmt: (x) => pct(x, 1) }),
-    ser(v, "psi_mem_full", "Memory full", C2, { fmt: (x) => pct(x, 1) }),
-    ser(v, "psi_cpu", "CPU some", C3, { fmt: (x) => pct(x, 1) }),
-    ser(v, "psi_io", "IO some", C4, { fmt: (x) => pct(x, 1) }),
+    ser(v, "psi_mem", t("admin.psiMemSome"), C1, { fmt: (x) => pct(x, 1) }),
+    ser(v, "psi_mem_full", t("admin.psiMemFull"), C2, { fmt: (x) => pct(x, 1) }),
+    ser(v, "psi_cpu", t("admin.psiCpuSome"), C3, { fmt: (x) => pct(x, 1) }),
+    ser(v, "psi_io", t("admin.psiIoSome"), C4, { fmt: (x) => pct(x, 1) }),
   ];
   const hasPsi = v.get("psi_cpu").avg.length > 0;
 
@@ -133,7 +135,7 @@ export default function Charts({ v, now, th }: { v: View; now: Snapshot | null; 
     const x = cur(k);
     return x === null ? "–" : f(x);
   };
-  const busyLabel = v.live ? "now" : "latest";
+  const busyLabel = v.live ? t("admin.busyNow") : t("admin.busyLatest");
   // An odd number of cards: the last one spans both columns (no hole in the grid).
   const nCards = 5 + (hasPsi ? 1 : 0) + gpus.length;
   const lastWide = nCards % 2 === 1;
@@ -141,16 +143,16 @@ export default function Charts({ v, now, th }: { v: View; now: Snapshot | null; 
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
       <ChartCard title="CPU" icon="cpu" dim={v.loading}
-        right={now ? `${now.cpu.count} cores · load ${now.m.load1?.toFixed(2)} / ${now.m.load5?.toFixed(2)} / ${now.m.load15?.toFixed(2)}` : undefined}
+        right={now ? t("admin.cpuRight", { cores: now.cpu.count, l1: now.m.load1?.toFixed(2), l5: now.m.load5?.toFixed(2), l15: now.m.load15?.toFixed(2) }) : undefined}
         legend={<Legend items={cpuSeries.map((s) => ({ label: s.label, color: s.color, value: lv(s.key, (x) => pct(x, 0)) }))} />}>
-        <TimeChart {...common} label="CPU usage by state, percent" series={cpuSeries} yMax={100} yFmt={(x) => `${Math.round(x)}%`}
+        <TimeChart {...common} label={t("admin.cpuChart")} series={cpuSeries} yMax={100} yFmt={(x) => `${Math.round(x)}%`}
           extra={(i) => [
-            { label: "Busy", value: pct(v.get("cpu").avg[i], 1) },
-            { label: "Load 1m", value: v.get("load1").avg[i]?.toFixed(2) ?? "–" },
+            { label: t("admin.busy"), value: pct(v.get("cpu").avg[i], 1) },
+            { label: t("admin.load1m"), value: v.get("load1").avg[i]?.toFixed(2) ?? "–" },
           ]} />
         <div className="mt-3">
           <div className="mb-1 flex items-center gap-2 text-[11px] text-content-faint">
-            <span>Per core · last 5 min</span>
+            <span>{t("admin.perCore5min")}</span>
             <span className="ml-auto inline-flex items-center gap-1">
               0%
               <span className="inline-block h-2 w-16 rounded-sm" style={{ background: `linear-gradient(90deg, ${[0, 25, 50, 75, 100].map(rampColor).join(",")})` }} />
@@ -161,55 +163,55 @@ export default function Charts({ v, now, th }: { v: View; now: Snapshot | null; 
         </div>
       </ChartCard>
 
-      <ChartCard title="Memory" icon="server" dim={v.loading}
-        right={now ? `${bytes(now.mem.used)} used of ${bytes(total)} · ${bytes(now.mem.available)} available` : undefined}
+      <ChartCard title={t("admin.memory")} icon="server" dim={v.loading}
+        right={now ? t("admin.memRight", { used: bytes(now.mem.used), total: bytes(total), avail: bytes(now.mem.available) }) : undefined}
         legend={<Legend items={memSeries.map((s) => ({ label: s.label, color: s.color, kind: s.kind === "area" ? "area" : "line", value: lv(s.key === "cache" ? "mem_cache" : s.key, (x) => bytes(x)) }))} />}>
-        <TimeChart {...common} label="Host memory: used, cache, Geny container, swap" series={memSeries} refs={memRefs}
+        <TimeChart {...common} label={t("admin.memChart")} series={memSeries} refs={memRefs}
           yMax={total} yFmt={axisBytes}
           extra={(i) => [
-            { label: "Available", value: bytes(v.get("mem_avail").avg[i]) },
-            { label: "Used", value: pct(((v.get("mem_used").avg[i] ?? 0) * 100) / total, 1) },
+            { label: t("admin.available"), value: bytes(v.get("mem_avail").avg[i]) },
+            { label: t("admin.memUsed"), value: pct(((v.get("mem_used").avg[i] ?? 0) * 100) / total, 1) },
           ]} />
       </ChartCard>
 
-      <ChartCard title="Geny processes" icon="activity" dim={v.loading}
-        right={now ? `${now.m.eng_n ?? 0} engine${now.m.eng_n === 1 ? "" : "s"} · ${bytes(now.m.tree_rss)} RSS total` : undefined}
+      <ChartCard title={t("admin.genyProcesses")} icon="activity" dim={v.loading}
+        right={now ? t("admin.procRight", { count: now.m.eng_n ?? 0, rss: bytes(now.m.tree_rss) }) : undefined}
         legend={<Legend items={procSeries.map((s) => ({ label: s.label, color: s.color, value: s.key === "other" ? bytes(last({ avg: s.values })) : lv(s.key, (x) => bytes(x)) }))} />}>
-        <TimeChart {...common} label="Memory of the backend, its engines and other child processes" series={procSeries}
+        <TimeChart {...common} label={t("admin.procChart")} series={procSeries}
           refs={procRefs} autoMax={(m) => niceBytes(m, 256 * 1048576)} yFmt={axisBytes}
           extra={(i) => [
-            { label: "Engines", value: String(v.get("eng_n").avg[i] ?? "–") },
-            { label: "Engine CPU", value: pct(v.get("eng_cpu").avg[i], 0) },
+            { label: t("admin.engines"), value: String(v.get("eng_n").avg[i] ?? "–") },
+            { label: t("admin.engineCpu"), value: pct(v.get("eng_cpu").avg[i], 0) },
           ]} />
       </ChartCard>
 
-      <ChartCard title="Network" icon="activity" dim={v.loading}
-        right={now ? `${now.net.ifaces.join(", ") || "–"}${now.host.in_container ? " · container" : ""}` : undefined}
+      <ChartCard title={t("admin.network")} icon="activity" dim={v.loading}
+        right={now ? `${now.net.ifaces.join(", ") || "–"}${now.host.in_container ? t("admin.container") : ""}` : undefined}
         legend={<Legend items={[
-          { label: "In ↓", color: C1, value: lv("net_rx", rate) },
-          { label: "Out ↑", color: C2, value: lv("net_tx", rate) },
+          { label: t("admin.netInArrow"), color: C1, value: lv("net_rx", rate) },
+          { label: t("admin.netOutArrow"), color: C2, value: lv("net_tx", rate) },
         ]} />}>
-        <TimeChart {...common} label="Network throughput, in above and out below the baseline" series={netSeries} mirrored
+        <TimeChart {...common} label={t("admin.netChart")} series={netSeries} mirrored
           autoMax={(m) => niceBytes(m, 16 * 1024)} yFmt={(x) => `${axisBytes(x)}/s`} />
       </ChartCard>
 
-      <ChartCard title="Disk IO" icon="disk" dim={v.loading}
-        right={`busy ${lv("disk_busy", (x) => pct(x, 0))} ${busyLabel}`}
+      <ChartCard title={t("admin.diskIo")} icon="disk" dim={v.loading}
+        right={t("admin.diskRight", { pct: lv("disk_busy", (x) => pct(x, 0)), when: busyLabel })}
         legend={<Legend items={[
-          { label: "Read", color: C1, value: lv("disk_read", rate) },
-          { label: "Write", color: C2, value: lv("disk_write", rate) },
+          { label: t("admin.diskRead"), color: C1, value: lv("disk_read", rate) },
+          { label: t("admin.diskWrite"), color: C2, value: lv("disk_write", rate) },
         ]} />}>
-        <TimeChart {...common} label="Disk throughput, read above and write below the baseline" series={ioSeries} mirrored
+        <TimeChart {...common} label={t("admin.diskChart")} series={ioSeries} mirrored
           autoMax={(m) => niceBytes(m, 64 * 1024)} yFmt={(x) => `${axisBytes(x)}/s`}
-          extra={(i) => [{ label: "Busy", value: pct(v.get("disk_busy").avg[i], 0) }]} />
+          extra={(i) => [{ label: t("admin.busy"), value: pct(v.get("disk_busy").avg[i], 0) }]} />
       </ChartCard>
 
       {hasPsi && (
-        <ChartCard title="Pressure (PSI)" icon="clock" dim={v.loading} wide={lastWide && gpus.length === 0}
-          right="share of time tasks stalled · 10 s avg"
+        <ChartCard title={t("admin.pressure")} icon="clock" dim={v.loading} wide={lastWide && gpus.length === 0}
+          right={t("admin.pressureRight")}
           legend={<Legend items={psiSeries.map((s) => ({ label: s.label, color: s.color, kind: "line", value: lv(s.key, (x) => pct(x, 1)) }))} />}>
-          <TimeChart {...common} label="Pressure stall information: memory, CPU and IO" series={psiSeries}
-            refs={guard ? [{ value: guard.psi_full, label: "memguard (memory full)", tone: "danger" }] : []}
+          <TimeChart {...common} label={t("admin.pressureChart")} series={psiSeries}
+            refs={guard ? [{ value: guard.psi_full, label: t("admin.memguardFull"), tone: "danger" }] : []}
             autoMax={(m) => niceMax(m, 10)} yFmt={(x) => `${Math.round(x)}%`} />
         </ChartCard>
       )}
@@ -218,24 +220,24 @@ export default function Charts({ v, now, th }: { v: View; now: Snapshot | null; 
         const i = g.index;
         const memPct = ratio(v, `g${i}_mem`, `g${i}_memt`);
         return (
-          <ChartCard key={i} title={`GPU ${i} · ${g.name}`} icon="monitor" dim={v.loading} wide={lastWide && gi === gpus.length - 1}
-            right={g.power !== null ? `${g.power.toFixed(0)} W${g.power_limit ? ` of ${g.power_limit.toFixed(0)} W` : ""}` : undefined}
+          <ChartCard key={i} title={t("admin.gpuTitle", { i: String(i), name: g.name })} icon="monitor" dim={v.loading} wide={lastWide && gi === gpus.length - 1}
+            right={g.power !== null ? (g.power_limit ? t("admin.powerOf", { w: g.power.toFixed(0), max: g.power_limit.toFixed(0) }) : `${g.power.toFixed(0)} W`) : undefined}
             legend={<Legend items={[
-              { label: "Utilization", color: C1, kind: "line", value: lv(`g${i}_util`, (x) => pct(x, 0)) },
-              { label: "Memory", color: C2, kind: "line", value: g.mem_used !== null ? `${bytes(g.mem_used)} / ${bytes(g.mem_total)}` : "–" },
-              { label: "Temperature", color: C3, kind: "line", value: lv(`g${i}_temp`, (x) => `${x.toFixed(0)}°C`) },
+              { label: t("admin.utilization"), color: C1, kind: "line", value: lv(`g${i}_util`, (x) => pct(x, 0)) },
+              { label: t("admin.memory"), color: C2, kind: "line", value: g.mem_used !== null ? `${bytes(g.mem_used)} / ${bytes(g.mem_total)}` : "–" },
+              { label: t("admin.temperature"), color: C3, kind: "line", value: lv(`g${i}_temp`, (x) => `${x.toFixed(0)}°C`) },
             ]} />}>
-            <TimeChart {...common} height={H - 30} label={`GPU ${i} utilization and memory, percent`}
+            <TimeChart {...common} height={H - 30} label={t("admin.gpuChart", { i: String(i) })}
               series={[
-                ser(v, `g${i}_util`, "Utilization", C1, { fmt: (x) => pct(x, 0) }),
-                { key: `g${i}_memp`, label: "Memory", color: C2, values: memPct.avg, min: memPct.min, max: memPct.max, fmt: (x) => pct(x, 1) },
+                ser(v, `g${i}_util`, t("admin.utilization"), C1, { fmt: (x) => pct(x, 0) }),
+                { key: `g${i}_memp`, label: t("admin.memory"), color: C2, values: memPct.avg, min: memPct.min, max: memPct.max, fmt: (x) => pct(x, 1) },
               ]}
               yMax={100} yFmt={(x) => `${Math.round(x)}%`}
-              extra={(idx) => [{ label: "Power", value: v.get(`g${i}_pwr`).avg[idx] != null ? `${(v.get(`g${i}_pwr`).avg[idx] as number).toFixed(0)} W` : "–" }]} />
+              extra={(idx) => [{ label: t("admin.power"), value: v.get(`g${i}_pwr`).avg[idx] != null ? `${(v.get(`g${i}_pwr`).avg[idx] as number).toFixed(0)} W` : "–" }]} />
             <div className="mt-2">
-              <TimeChart {...common} height={96} label={`GPU ${i} temperature, °C`}
-                series={[ser(v, `g${i}_temp`, "Temperature", C3, { fmt: (x) => `${x.toFixed(0)}°C` })]}
-                refs={th ? [{ value: th.gpu_temp, label: `alert ${th.gpu_temp}°C`, tone: "warn" }] : []}
+              <TimeChart {...common} height={96} label={t("admin.gpuTempChart", { i: String(i) })}
+                series={[ser(v, `g${i}_temp`, t("admin.temperature"), C3, { fmt: (x) => `${x.toFixed(0)}°C` })]}
+                refs={th ? [{ value: th.gpu_temp, label: t("admin.alertTemp", { temp: String(th.gpu_temp) }), tone: "warn" }] : []}
                 autoMax={(m) => niceMax(Math.max(m, th?.gpu_temp ?? 90) + 5)} yFmt={(x) => `${Math.round(x)}°`} />
             </div>
           </ChartCard>

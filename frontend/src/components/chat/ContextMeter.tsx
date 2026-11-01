@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   COMPACT_BUFFER,
   DEFAULT_PRESETS,
-  WINDOW_HINT,
   ctxBar,
   ctxTone,
   fmtCtx,
@@ -10,6 +9,7 @@ import {
   limitsFor,
   meterOf,
   presetLabel,
+  windowHint,
   type Meter,
 } from "../../lib/context";
 import { useChatStore } from "../../stores/chatStore";
@@ -19,11 +19,13 @@ import { useUsageStore } from "../../stores/usageStore";
 import type { Compaction, ContextInfo, Session } from "../../types";
 import HoverPopover from "../ui/HoverPopover";
 import Icon from "../ui/Icon";
+import { useT } from "../../i18n";
+import { fmtNum, fmtTime } from "../../i18n/format";
 
-const clock = (iso?: string) =>
-  iso ? new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
+const clock = (iso?: string) => (iso ? fmtTime(iso) : "");
 
 function Bar({ m }: { m: Meter }) {
+  const t = useT();
   const fill = m.pct ?? 0;
   const mark = m.threshold ? Math.min(100, (m.threshold / m.window) * 100) : null;
   return (
@@ -33,7 +35,7 @@ function Bar({ m }: { m: Meter }) {
         <span
           className="absolute -top-0.5 h-3 w-0.5 rounded bg-content-dim"
           style={{ left: `calc(${mark}% - 1px)` }}
-          title={`Auto-compacts at ${fmtCtx(m.threshold)}`}
+          title={t("chat.autoCompactsAtTitle", { n: fmtCtx(m.threshold) })}
         />
       )}
     </div>
@@ -57,6 +59,7 @@ function Panel({
   globalDefault: number;
   onCompact: () => void;
 }) {
+  const t = useT();
   const isStreaming = useChatStore((s) => s.isStreaming);
   const update = useSessionStore((s) => s.update);
   const presets = useConfigStore((s) => s.catalog.claude?.auto_compact_presets) || DEFAULT_PRESETS;
@@ -79,70 +82,69 @@ function Panel({
 
   const left = m.threshold && m.tokens !== null ? Math.max(0, m.threshold - m.tokens) : null;
   const source =
-    ctx?.source === "cli" ? "the engine's own count after the last reply" : ctx?.source === "call" ? "the latest model call" : "";
+    ctx?.source === "cli" ? t("chat.ctxSourceCli") : ctx?.source === "call" ? t("chat.ctxSourceCall") : "";
 
   return (
     <div className="w-[330px] p-3 text-[12px]">
       <div className="flex items-center gap-2">
         <Icon name="activity" size={13} className="text-accent" />
-        <span className="font-medium text-content">Context window</span>
+        <span className="font-medium text-content">{t("chat.contextWindow")}</span>
         {m.pct !== null && <span className={`ml-auto font-mono ${ctxTone(m.toCompact)}`}>{Math.round(m.pct)}%</span>}
       </div>
       <Bar m={m} />
       <dl className="mt-2.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11.5px]">
-        <dt className="text-content-faint">In context</dt>
+        <dt className="text-content-faint">{t("chat.inContext")}</dt>
         <dd className="text-right font-mono text-content-dim">
-          {m.tokens === null ? "after the first reply" : `${m.tokens.toLocaleString("en-US")} tokens`}
+          {m.tokens === null ? t("chat.afterFirstReply") : t("chat.tokensN", { n: fmtNum(m.tokens) })}
         </dd>
-        <dt className="text-content-faint">Window</dt>
+        <dt className="text-content-faint">{t("chat.window")}</dt>
         <dd className="text-right font-mono text-content-dim">
           {fmtWindow(m.window)}
-          {ctx?.model_window && ctx.model_window !== m.window ? ` (model ${fmtWindow(ctx.model_window)})` : ""}
+          {ctx?.model_window && ctx.model_window !== m.window ? ` (${t("chat.modelWindow", { n: fmtWindow(ctx.model_window) })})` : ""}
         </dd>
-        <dt className="text-content-faint">Auto-compacts at</dt>
+        <dt className="text-content-faint">{t("chat.autoCompactsAt")}</dt>
         <dd className="text-right font-mono text-content-dim">
-          {m.threshold === null ? "off" : `${fmtCtx(m.threshold)}${left !== null ? ` · ${fmtCtx(left)} to go` : ""}`}
+          {m.threshold === null ? t("common.off") : `${fmtCtx(m.threshold)}${left !== null ? ` · ${t("chat.toGo", { n: fmtCtx(left) })}` : ""}`}
         </dd>
-        <dt className="text-content-faint">Last compaction</dt>
+        <dt className="text-content-faint">{t("chat.lastCompaction")}</dt>
         <dd className="text-right font-mono text-content-dim">
           {last
-            ? `${last.trigger || ""} ${clock(last.at)}${
+            ? `${last.trigger === "auto" ? t("chat.triggerAuto") : last.trigger === "manual" ? t("chat.triggerManual") : last.trigger || ""} ${clock(last.at)}${
                 typeof last.pre_tokens === "number" && typeof last.post_tokens === "number"
                   ? ` · ${fmtCtx(last.pre_tokens)} → ${fmtCtx(last.post_tokens)}`
                   : ""
               }`.trim()
-            : "none in this chat"}
+            : t("chat.noneInChat")}
         </dd>
       </dl>
       {source && (
         <p className="mt-1.5 text-[10.5px] text-content-faint">
-          From {source}
-          {ctx?.at ? `, ${clock(ctx.at)}` : ""}. Size = the last model call's input + cache read + cache write tokens.
+          {t("chat.ctxFrom", { source: ctx?.at ? `${source}, ${clock(ctx.at)}` : source })}
         </p>
       )}
       {m.estimated && m.tokens !== null && (
-        <p className="mt-1 text-[10.5px] text-content-faint">Window estimated from the model until the engine reports it.</p>
+        <p className="mt-1 text-[10.5px] text-content-faint">{t("chat.windowEstimated")}</p>
       )}
 
       <button
         onClick={onCompact}
         disabled={isStreaming || m.tokens === null}
         className="btn-soft mt-2.5 w-full justify-center py-1.5 text-[12px] disabled:opacity-50"
-        title={isStreaming ? "Wait for the current turn to finish" : "Summarise the conversation now (/compact)"}
+        title={isStreaming ? t("chat.waitTurn") : t("chat.compactNowTitle")}
       >
-        <Icon name="file-text" size={13} /> Compact now
+        <Icon name="file-text" size={13} /> {t("chat.compactNow")}
       </button>
 
       <div className="mt-3 border-t border-border/70 pt-2.5">
-        <div className="text-[11px] font-medium text-content">Auto-compact window · this chat</div>
+        <div className="text-[11px] font-medium text-content">{t("chat.autoCompactWindowChat")}</div>
         <div className="mt-1.5 flex flex-wrap gap-1">
           <button
             disabled={busy}
             onClick={() => choose(-1)}
             className={`pill ${own === null ? "bg-accent-soft text-accent" : "bg-surface-3 text-content-dim hover:text-content"}`}
-            title="Use the default from the Providers page"
+            title={t("chat.useProvidersDefault")}
           >
-            Default ({presetLabel(globalDefault)})
+            {t("common.default")} ({presetLabel(globalDefault)})
           </button>
           {presets.map((p) => (
             <button
@@ -150,16 +152,16 @@ function Panel({
               disabled={busy}
               onClick={() => choose(p)}
               className={`pill ${own === p ? "bg-accent-soft text-accent" : "bg-surface-3 text-content-dim hover:text-content"}`}
-              title={p === 0 ? "The model's full window — same as Claude Code" : `Compact at about ${fmtWindow(p - COMPACT_BUFFER)}`}
+              title={p === 0 ? t("chat.fullWindowTitle") : t("chat.compactAtAbout", { n: fmtWindow(p - COMPACT_BUFFER) })}
             >
               {presetLabel(p)}
             </button>
           ))}
         </div>
         <p className="mt-1.5 text-[10.5px] leading-snug text-content-faint">
-          {WINDOW_HINT} Applies from the next message (the engine restarts; running background tasks stop).
+          {windowHint()} {t("chat.appliesNext")}
         </p>
-        {pending && <p className="mt-1 text-[10.5px] text-warning">Changed — takes effect with the next message.</p>}
+        {pending && <p className="mt-1 text-[10.5px] text-warning">{t("chat.changedNext")}</p>}
         {error && <p className="mt-1 text-[10.5px] text-danger">{error}</p>}
       </div>
     </div>
@@ -169,6 +171,7 @@ function Panel({
 /** Composer footer: how full the agent's context is, against the window the
  * CLI uses and its auto-compact point (Claude). */
 export default function ContextMeter({ session, onCompact }: { session: Session; onCompact: () => void }) {
+  const t = useT();
   const ctx = useChatStore((s) => s.context);
   const last = useChatStore((s) => s.lastCompaction);
   const globalDefault = useUsageStore((s) => s.accounts[session.provider]?.pool?.auto_compact_window) ?? 0;
@@ -180,7 +183,7 @@ export default function ContextMeter({ session, onCompact }: { session: Session;
 
   return (
     <HoverPopover
-      label="Context window"
+      label={t("chat.contextWindow")}
       triggerClassName={`inline-flex items-center gap-1 rounded px-1 -mx-1 py-0.5 hover:bg-surface-3 transition ${ctxTone(m.toCompact)}`}
       trigger={
         <>

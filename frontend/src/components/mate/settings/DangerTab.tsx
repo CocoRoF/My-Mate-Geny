@@ -3,11 +3,13 @@ import type { Mate } from "../../../api/mates";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
 import { ErrorLine, Section } from "./ui";
+import { useT } from "../../../i18n";
 
 /** the characters bundled with the app (backend/app/mate/builtin) */
 const BUILTINS: Record<string, string> = { estelle: "Estelle", chaerin: "Chaerin", seoa: "Seoa" };
 
 export default function DangerTab({ mate, onDeleted }: { mate: Mate; onDeleted: () => void }) {
+  const t = useT();
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -32,7 +34,7 @@ export default function DangerTab({ mate, onDeleted }: { mate: Mate; onDeleted: 
     setErr(null);
     try {
       const n = await useMateStore.getState().restoreBuiltins();
-      setRestored(n ? `Restored ${n} built-in mate${n === 1 ? "" : "s"}.` : "All built-in mates are already here.");
+      setRestored(n ? t("mateSettings.dangerRestored", { count: n }) : t("mateSettings.dangerAllHere"));
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -40,22 +42,21 @@ export default function DangerTab({ mate, onDeleted }: { mate: Mate; onDeleted: 
   return (
     <>
       <Section
-        title={`Delete ${mate.name}`}
+        title={t("mateSettings.dangerDeleteTitle", { name: mate.name })}
         hint={
           <>
-            Removes the mate, its conversation, memories and avatar files. Your chats (and anything it sent to them) stay.
+            {t("mateSettings.dangerDeleteHint")}
             {mate.builtin && (
               <>
                 {" "}
-                <b className="text-content-dim">{mate.name} ships with the app:</b> “Restore built-in mates” brings it back
-                (fresh — without this conversation and memories).
+                {t.rich("mateSettings.dangerBuiltinHint", { b: (s) => <b className="text-content-dim">{s}</b>, name: mate.name })}
               </>
             )}
           </>
         }
       >
         <label className="block text-[12px] text-content-dim">
-          Type <b className="text-content">{mate.name}</b> to confirm
+          {t.rich("mateSettings.dangerTypeToConfirm", { b: (s) => <b className="text-content">{s}</b>, name: mate.name })}
           <input className="field mt-1" value={typed} onChange={(e) => setTyped(e.target.value)} data-testid="mate-delete-confirm" />
         </label>
         <ErrorLine text={err} />
@@ -66,17 +67,17 @@ export default function DangerTab({ mate, onDeleted }: { mate: Mate; onDeleted: 
             onClick={del}
             data-testid="mate-delete"
           >
-            {busy ? <Icon name="spinner" size={14} spin /> : <Icon name="trash" size={14} />} Delete mate
+            {busy ? <Icon name="spinner" size={14} spin /> : <Icon name="trash" size={14} />} {t("mateSettings.dangerDeleteBtn")}
           </button>
         </div>
       </Section>
-      <Section title="Built-in mates" hint="Estelle, Chaerin and Seoa ship with the app. Bring back any you deleted (fresh, as shipped).">
+      <Section title={t("mateSettings.dangerBuiltins")} hint={t("mateSettings.dangerBuiltinsHint")}>
         <div className="flex flex-wrap items-center justify-end gap-3">
           <span className="min-w-0 flex-1 text-[12px] text-content-faint" data-testid="mate-builtins-missing">
-            {restored ? <span className="text-success">{restored}</span> : missing.length ? `Missing: ${missing.join(", ")}` : "All of them are here."}
+            {restored ? <span className="text-success">{restored}</span> : missing.length ? t("mateSettings.dangerMissing", { list: missing.join(", ") }) : t("mateSettings.dangerAllOfThem")}
           </span>
           <button className="btn-soft" onClick={restore} data-testid="mate-restore-builtins-settings">
-            <Icon name="rotate" size={13} /> Restore built-in mates
+            <Icon name="rotate" size={13} /> {t("mateSettings.dangerRestoreBtn")}
           </button>
         </div>
       </Section>

@@ -24,6 +24,18 @@ const listen = (channel, cb) => {
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
+// The app's language and the local pages' words (i18n.js; main.js answers synchronously, so a page has them
+// before it draws). An app page (the console) tells the app its language with setLanguage.
+const i18n = (() => {
+  try {
+    return ipcRenderer.sendSync("hrh:i18n") || null;
+  } catch {
+    return null;
+  }
+})();
+const text = (i18n && i18n.text) || {};
+const say = (key, fallback) => (typeof text[key] === "string" ? text[key] : fallback);
+
 const mate = {
   showAvatar: (mateId) => ipcRenderer.invoke("mate:show", typeof mateId === "string" ? mateId : null),
   hideAvatar: () => ipcRenderer.invoke("mate:hide"),
@@ -89,6 +101,10 @@ contextBridge.exposeInMainWorld("hrhNative", {
   switchServer: () => ipcRenderer.invoke("hrh:switchServer"),
   changeServer: () => ipcRenderer.invoke("hrh:switchServer"),
   signOut: () => ipcRenderer.invoke("hrh:signOut"),
+  // the UI's language: the console sets it (tray, menus, notifications, these pages follow); the local pages read it
+  language: (i18n && i18n.lang) || "en",
+  text,
+  setLanguage: (lang) => ipcRenderer.send("hrh:setLanguage", String(lang || "")),
   mate,
   window: windowBridge,
   // the mouse's back / forward buttons as the OS reports them (Windows app-commands); the page goes back in-app
@@ -165,12 +181,12 @@ function installFallbackBar(info) {
         bar.appendChild(b);
         return b;
       };
-      btn("m", "Minimize", ICON.min, () => ipcRenderer.send("window:minimize"));
-      const max = btn("M", "Maximize", ICON.max, () => ipcRenderer.send("window:toggleMaximize"));
-      btn("x", "Close", ICON.close, () => ipcRenderer.send("window:close"));
+      btn("m", say("winMinimize", "Minimize"), ICON.min, () => ipcRenderer.send("window:minimize"));
+      const max = btn("M", say("winMaximize", "Maximize"), ICON.max, () => ipcRenderer.send("window:toggleMaximize"));
+      btn("x", say("winClose", "Close"), ICON.close, () => ipcRenderer.send("window:close"));
       const paint = (st) => {
         max.innerHTML = st && (st.maximized || st.fullscreen) ? ICON.restore : ICON.max;
-        max.title = st && st.maximized ? "Restore" : "Maximize";
+        max.title = st && st.maximized ? say("winRestore", "Restore") : say("winMaximize", "Maximize");
       };
       paint(info);
       ipcRenderer.on("window:state", (_e, st) => paint(st));

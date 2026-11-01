@@ -13,7 +13,7 @@ export async function apiResponse(path: string, init?: RequestInit): Promise<Res
   if (res.status === 401) {
     // Session expired / revoked: back to the login page.
     toLogin();
-    throw new Error("authentication required");
+    throw new Error("authentication required"); // i18n-ignore (the page goes to the login screen)
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));

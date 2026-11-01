@@ -5,6 +5,8 @@
 import type { Account } from "../api/accounts";
 import type { UsageWindow } from "../api/usage";
 import type { PlanUsage } from "../types";
+import { tr } from "../i18n";
+import { fmtTime, fmtWeekday } from "../i18n/format";
 
 /** One limit window: percent used (0..100) and when it resets (epoch ms). */
 export interface PlanWindow {
@@ -90,35 +92,39 @@ export function barTone(p: number | null | undefined): string {
   return "bg-accent";
 }
 
-/** "resets in 2h 10m" (the 5-hour window). */
+/** "resets in 2h 10m" (the 5-hour window), in the UI's language. */
 export function resetsIn(ms: number | null, now = Date.now()): string {
   if (!ms) return "";
   const left = ms - now;
-  if (left <= 60_000) return "resets in <1m";
+  if (left <= 60_000) return tr("usage.resetsInSoon");
   const m = Math.floor(left / 60_000);
   const d = Math.floor(m / 1440);
   const h = Math.floor((m % 1440) / 60);
   const mm = m % 60;
-  if (d) return `resets in ${d}d ${h}h`;
-  if (h) return `resets in ${h}h ${mm}m`;
-  return `resets in ${mm}m`;
+  if (d) return tr("usage.resetsInDH", { d, h });
+  if (h) return tr("usage.resetsInHM", { h, m: mm });
+  return tr("usage.resetsInM", { m: mm });
 }
 
-/** "resets Thu 07:00" (weekly windows), in local time. */
+/** "resets Thu 07:00" (weekly windows), in local time and the UI's language. */
 export function resetsOn(ms: number | null, now = Date.now()): string {
   if (!ms) return "";
-  if (ms <= now) return "resets now";
+  if (ms <= now) return tr("usage.resetsNow");
   const d = new Date(ms);
-  const day = d.toLocaleDateString("en-US", { weekday: "short" });
-  const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-  return ms - now > 6 * 86_400_000 ? `resets ${day} ${d.getMonth() + 1}/${d.getDate()} ${time}` : `resets ${day} ${time}`;
+  const day = fmtWeekday(d);
+  const time = fmtTime(d);
+  return ms - now > 6 * 86_400_000
+    ? tr("usage.resetsOnDate", { day, month: String(d.getMonth() + 1), dom: String(d.getDate()), time })
+    : tr("usage.resetsOnDay", { day, time });
 }
 
 export const resetLabel = (kind: "five" | "seven", ms: number | null) => (kind === "five" ? resetsIn(ms) : resetsOn(ms));
 
 /** "5h 52% · 7d 7%" (only the windows that are known). */
 export function windowsLabel(w: PlanWindows): string {
-  return [w.five && `5h ${fmtPct(w.five.percent)}`, w.seven && `7d ${fmtPct(w.seven.percent)}`].filter(Boolean).join(" · ");
+  return [w.five && `${tr("usage.fiveShort")} ${fmtPct(w.five.percent)}`, w.seven && `${tr("usage.sevenShort")} ${fmtPct(w.seven.percent)}`]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 // ---- API-equivalent cost ------------------------------------------------------
@@ -162,6 +168,10 @@ export function tokenBreakdown(usage?: Record<string, unknown> | null): TokenBre
 export const fmtTokens = (n: number) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k` : String(n);
 
+/** What the API-equivalent cost means (a tooltip / footnote), in the UI's language. */
+export const apiCostHint = () => tr("usage.apiCostHint");
+
+/** @deprecated English only (read once at load) — use `apiCostHint()`; kept for files not translated yet. */
 export const API_COST_HINT =
-  "What these tokens would cost at API prices (input, cache and output tokens of every model call). " +
-  "Informational only — not a charge on your subscription.";
+  "What these tokens would cost at API prices (input, cache and output tokens of every model call). " + // i18n-ignore
+  "Informational only — not a charge on your subscription."; // i18n-ignore

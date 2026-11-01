@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { fmtEta, fmtSpeed } from "../../lib/downloadProgress";
 import { formatBytes } from "../attachments/fileMeta";
 import Icon from "../ui/Icon";
+import { tr, useT } from "../../i18n";
 
 export interface UpdateState {
   status: "idle" | "checking" | "latest" | "available" | "downloading" | "ready" | "installing" | "unsupported" | "error";
@@ -72,12 +73,13 @@ export function ProgressBar({ percent, indeterminate }: { percent: number; indet
 }
 
 export function progressLine(transferred: number, total: number, bps: number, eta: number | null | undefined): string {
-  return [total ? `${formatBytes(transferred)} of ${formatBytes(total)}` : transferred ? formatBytes(transferred) : "", fmtSpeed(bps), fmtEta(eta)]
+  return [total ? tr("downloads.progressOf", { done: formatBytes(transferred), total: formatBytes(total) }) : transferred ? formatBytes(transferred) : "", fmtSpeed(bps), fmtEta(eta)]
     .filter(Boolean)
     .join(" · ");
 }
 
 export default function UpdateCard({ s }: { s: UpdateState }) {
+  const t = useT();
   const b = updatesBridge()!;
   const pct = Math.round(s.percent || 0);
   const box = "mt-4 rounded-xl border px-4 py-3 text-[13px] animate-fade-in";
@@ -87,7 +89,7 @@ export default function UpdateCard({ s }: { s: UpdateState }) {
         <div className="flex items-start gap-2">
           <Icon name="info" size={14} className="mt-0.5 shrink-0 text-content-faint" />
           <span>
-            You're using the app, version <b className="font-mono text-content">{s.current}</b>. {s.reason}
+            {t.rich("downloads.usingAppVersion", { version: <b className="font-mono text-content">{s.current}</b> })} {s.reason}
           </span>
         </div>
       </div>
@@ -99,17 +101,17 @@ export default function UpdateCard({ s }: { s: UpdateState }) {
         <div className="flex items-center gap-2 text-content">
           <Icon name="download" size={14} className="text-accent" />
           <span className="min-w-0 flex-1 font-medium">
-            Downloading {s.version} <span className="font-mono text-accent" data-testid="update-percent">{pct}%</span>
+            {t("downloads.downloadingVersion", { version: s.version })} <span className="font-mono text-accent" data-testid="update-percent">{pct}%</span>
           </span>
           <button className="btn-ghost !px-2.5 !py-1 text-[12px]" onClick={() => void b.cancel()} data-testid="update-cancel">
-            Cancel
+            {t("common.cancel")}
           </button>
         </div>
         <div className="mt-2.5">
           <ProgressBar percent={pct} indeterminate={!s.transferred} />
         </div>
         <div className="mt-1.5 text-[11.5px] text-content-faint" data-testid="update-progress">
-          {s.transferred ? progressLine(s.transferred, s.total || 0, s.bytesPerSecond || 0, s.eta) : "Preparing the download on the server…"}
+          {s.transferred ? progressLine(s.transferred, s.total || 0, s.bytesPerSecond || 0, s.eta) : t("downloads.preparing")}
         </div>
       </div>
     );
@@ -120,15 +122,15 @@ export default function UpdateCard({ s }: { s: UpdateState }) {
         <div className="flex flex-wrap items-center gap-2 text-success">
           <Icon name={s.status === "installing" ? "spinner" : "check"} size={14} spin={s.status === "installing"} />
           <span className="min-w-0 flex-1">
-            {s.status === "installing" ? `Installing ${s.version} — the app restarts by itself…` : `${s.version} is downloaded. Restart to finish the update.`}
+            {s.status === "installing" ? t("downloads.installing", { version: s.version }) : t("downloads.readyToRestart", { version: s.version })}
           </span>
           {s.status === "ready" && (
             <button className="btn-primary !py-1.5" onClick={() => void b.install()} data-testid="update-install">
-              <Icon name="refresh" size={13} /> Restart &amp; install
+              <Icon name="refresh" size={13} /> {t("downloads.restartInstall")}
             </button>
           )}
         </div>
-        {s.status === "ready" && s.how === "deb" && <p className="mt-1.5 text-[11.5px] text-content-faint">Linux .deb: the system asks for your password once to install it.</p>}
+        {s.status === "ready" && s.how === "deb" && <p className="mt-1.5 text-[11.5px] text-content-faint">{t("downloads.debNote")}</p>}
       </div>
     );
   }
@@ -138,11 +140,11 @@ export default function UpdateCard({ s }: { s: UpdateState }) {
         <div className="flex flex-wrap items-center gap-2 text-warning">
           <Icon name="sparkles" size={14} />
           <span className="min-w-0 flex-1">
-            Version <b className="font-mono">{s.version}</b> is available (you have {s.current}){s.total ? ` · ${formatBytes(s.total)}` : ""}.
-            {s.cancelled && <span className="text-content-faint"> Download cancelled.</span>}
+            {t.rich("downloads.versionAvailable", { version: <b className="font-mono">{s.version}</b>, current: s.current, size: s.total ? ` · ${formatBytes(s.total)}` : "" })}
+            {s.cancelled && <span className="text-content-faint">{t("downloads.cancelled")}</span>}
           </span>
           <button className="btn-primary !py-1.5" onClick={() => void b.download()} data-testid="update-download">
-            <Icon name="download" size={13} /> {s.cancelled ? "Download again" : "Download & install"}
+            <Icon name="download" size={13} /> {s.cancelled ? t("downloads.downloadAgain") : t("downloads.downloadInstall")}
           </button>
         </div>
       </div>
@@ -154,10 +156,10 @@ export default function UpdateCard({ s }: { s: UpdateState }) {
         <div className="flex flex-wrap items-center gap-2 text-danger">
           <Icon name="warning" size={14} />
           <span className="min-w-0 flex-1 break-words" data-testid="update-error">
-            The update could not {(s as any).during === "download" ? "be downloaded" : "be checked"}: {s.error}
+            {(s as any).during === "download" ? t("downloads.errorDownload", { error: s.error }) : t("downloads.errorCheck", { error: s.error })}
           </span>
           <button className="btn-ghost !py-1.5" onClick={() => void b.retry()} data-testid="update-retry">
-            <Icon name="refresh" size={13} /> Retry
+            <Icon name="refresh" size={13} /> {t("common.retry")}
           </button>
         </div>
       </div>
@@ -168,11 +170,11 @@ export default function UpdateCard({ s }: { s: UpdateState }) {
       <div className="flex flex-wrap items-center gap-2 text-success">
         <Icon name={s.status === "checking" ? "spinner" : "check"} size={14} spin={s.status === "checking"} />
         <span className="min-w-0 flex-1">
-          {s.status === "checking" ? "Checking for updates…" : `You're using the app, version ${s.current} — up to date.`}
+          {s.status === "checking" ? t("downloads.checking") : t("downloads.upToDateApp", { version: s.current })}
         </span>
         {s.status !== "checking" && (
           <button className="btn-ghost !px-2.5 !py-1 text-[12px]" onClick={() => void b.check()} data-testid="update-check">
-            Check again
+            {t("downloads.checkAgain")}
           </button>
         )}
       </div>

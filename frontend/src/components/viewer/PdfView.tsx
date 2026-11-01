@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from "pdfjs-dist/legacy/build/pdf.mjs";
 import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import Icon from "../ui/Icon";
+import { useT } from "../../i18n";
 
 // pdf.js everywhere (not the browser's viewer): the Android WebView has none,
 // and sandboxed blob iframes break Chrome's. Legacy build = older WebViews too.
@@ -53,6 +54,7 @@ function Page({ doc, n, scale, ratio }: { doc: PDFDocumentProxy; n: number; scal
 }
 
 export default function PdfView({ data }: { data: ArrayBuffer }) {
+  const t = useT();
   const outer = useRef<HTMLDivElement>(null);
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [error, setError] = useState("");
@@ -87,7 +89,7 @@ export default function PdfView({ data }: { data: ArrayBuffer }) {
     return () => ro.disconnect();
   }, []);
 
-  if (error) return <p className="p-6 text-sm text-danger">Could not open this PDF: {error}</p>;
+  if (error) return <p className="p-6 text-sm text-danger">{t("files.pdfError", { error })}</p>;
   const fitScale = base ? Math.min(2, Math.max(0.3, (width - 32) / base.w)) : 1;
   const scale = zoom === "fit" ? fitScale : zoom;
   const step = (d: number) => setZoom(Math.min(4, Math.max(0.25, Math.round((scale + d) * 100) / 100)));
@@ -95,21 +97,21 @@ export default function PdfView({ data }: { data: ArrayBuffer }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-1 border-b border-border/60 px-3 py-1 text-[11.5px] text-content-faint">
-        <span>{doc ? `${doc.numPages} page${doc.numPages === 1 ? "" : "s"}` : "Loading PDF…"}</span>
+        <span>{doc ? t("files.nPages", { count: doc.numPages }) : t("files.pdfLoading")}</span>
         <div className="ml-auto flex items-center gap-1">
-          <button onClick={() => step(-0.1)} className="btn-ghost px-1.5 py-0.5" title="Zoom out">
+          <button onClick={() => step(-0.1)} className="btn-ghost px-1.5 py-0.5" title={t("files.zoomOut")}>
             −
           </button>
           <span className="w-11 text-center font-mono">{Math.round(scale * 100)}%</span>
-          <button onClick={() => step(0.1)} className="btn-ghost px-1.5 py-0.5" title="Zoom in">
+          <button onClick={() => step(0.1)} className="btn-ghost px-1.5 py-0.5" title={t("files.zoomIn")}>
             +
           </button>
           <button
             onClick={() => setZoom("fit")}
             className={`btn-ghost px-1.5 py-0.5 ${zoom === "fit" ? "text-accent" : ""}`}
-            title="Fit width"
+            title={t("files.fitWidth")}
           >
-            <Icon name="arrow-up" size={11} className="rotate-90" /> fit
+            <Icon name="arrow-up" size={11} className="rotate-90" /> {t("files.fit")}
           </button>
         </div>
       </div>

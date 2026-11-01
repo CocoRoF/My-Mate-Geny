@@ -12,18 +12,20 @@ import DefaultsPanel from "./global/DefaultsPanel";
 import DesktopPanel from "./global/DesktopPanel";
 import Live2DPanel from "./global/Live2DPanel";
 import ProvidersPanel from "./global/ProvidersPanel";
+import { useT, type MsgKey } from "../../../i18n";
 
 export default function GlobalSettings({ onClose, section }: { onClose: () => void; section?: GlobalSection }) {
   // the section lives in the store: "Set up in Global settings" (openGlobal(section)) jumps there while open
+  const t = useT();
   const tab = useMateStore((s) => s.globalSection);
   useEffect(() => {
     if (section) useMateStore.setState({ globalSection: section });
   }, [section]);
-  const tabs: { id: GlobalSection; label: string }[] = [
-    { id: "voice", label: "Voice services" },
-    { id: "live2d", label: "Live2D" },
-    { id: "desktop", label: "Desktop app" },
-    { id: "defaults", label: "Defaults" },
+  const tabs: { id: GlobalSection; label: MsgKey }[] = [
+    { id: "voice", label: "mateSettings.provTitle" },
+    { id: "live2d", label: "mateSettings.tabLive2d" },
+    { id: "desktop", label: "mateSettings.deskTitle" },
+    { id: "defaults", label: "mateSettings.tabDefaults" },
   ];
   const pick = (t: GlobalSection) => useMateStore.setState({ globalSection: t });
   return (
@@ -31,25 +33,25 @@ export default function GlobalSettings({ onClose, section }: { onClose: () => vo
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
         <Icon name="settings" size={15} className="text-accent" />
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[14px] font-semibold">Global settings</h2>
-          <p className="truncate text-[11px] text-content-faint">For every mate · set up once</p>
+          <h2 className="truncate text-[14px] font-semibold">{t("mateSettings.globalTitle")}</h2>
+          <p className="truncate text-[11px] text-content-faint">{t("mateSettings.globalSub")}</p>
         </div>
-        <button onClick={onClose} className="btn-ghost !px-2" aria-label="Close global settings" data-testid="mate-global-close">
+        <button onClick={onClose} className="btn-ghost !px-2" aria-label={t("mateSettings.globalClose")} data-testid="mate-global-close">
           <Icon name="x" size={16} />
         </button>
       </div>
       <div className="no-scrollbar flex shrink-0 gap-1 overflow-x-auto border-b border-border/70 px-3 py-2" role="tablist">
-        {tabs.map((t) => (
+        {tabs.map((x) => (
           <button
-            key={t.id}
+            key={x.id}
             role="tab"
-            aria-selected={tab === t.id}
+            aria-selected={tab === x.id}
             className="nav-tab shrink-0 whitespace-nowrap !py-1 !text-[12.5px]"
-            data-active={tab === t.id}
-            onClick={() => pick(t.id)}
-            data-testid={`mate-global-tab-${t.id}`}
+            data-active={tab === x.id}
+            onClick={() => pick(x.id)}
+            data-testid={`mate-global-tab-${x.id}`}
           >
-            {t.label}
+            {t(x.label)}
           </button>
         ))}
       </div>

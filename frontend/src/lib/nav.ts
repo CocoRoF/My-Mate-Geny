@@ -15,7 +15,7 @@ import { useSessionStore } from "../stores/sessionStore";
 import { useUIStore, type View } from "../stores/uiStore";
 import { runBack } from "./back";
 
-const VIEWS: readonly View[] = ["mate", "chat", "providers", "connections", "usage", "admin", "downloads"];
+const VIEWS: readonly View[] = ["mate", "chat", "providers", "connections", "usage", "admin", "downloads", "settings"];
 
 interface Loc {
   view: View;

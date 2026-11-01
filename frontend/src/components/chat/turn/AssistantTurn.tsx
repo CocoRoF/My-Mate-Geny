@@ -10,7 +10,8 @@ import SubagentCard from "./SubagentCard";
 import { isAgentTool } from "./subagent";
 import { fmtMs } from "./toolMeta";
 import TurnChangesCard from "../../changes/TurnChangesCard";
-import { relTime, absTime } from "../../admin/format";
+import { useT } from "../../../i18n";
+import { fmtDateTime, relTime } from "../../../i18n/format";
 import { useChatStore } from "../../../stores/chatStore";
 import TurnCost from "../TurnCost";
 import CompactionDivider from "../CompactionDivider";
@@ -64,7 +65,7 @@ function segment(turn: Turn): Segment[] {
   return out;
 }
 
-function tokens(usage?: Record<string, any>): string | null {
+function tokens(usage: Record<string, any> | undefined, t: ReturnType<typeof useT>): string | null {
   if (!usage) return null;
   // Claude reports cache reads/writes separately; Codex's input_tokens already includes them.
   const inp =
@@ -72,7 +73,7 @@ function tokens(usage?: Record<string, any>): string | null {
   const out = usage.output_tokens || 0;
   if (!inp && !out) return null;
   const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n));
-  return `${k(inp)} in · ${k(out)} out`;
+  return t("turn.tokensInOut", { in: k(inp), out: k(out) });
 }
 
 /** Ask the composer to re-send a message (retry after an error/stop). */
@@ -81,6 +82,7 @@ export function requestResend(text: string, attachments: any[] = []) {
 }
 
 function Footer({ turn }: { turn: Turn }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   // (narrow selectors: a footer re-renders only when it becomes / stops being
   // the last turn — not on every change of a long, paged transcript)
@@ -93,29 +95,29 @@ function Footer({ turn }: { turn: Turn }) {
   const isStreaming = useChatStore((s) => s.isStreaming);
   const canRetry = isLast && !isStreaming && (turn.status === "error" || turn.status === "interrupted") && prevUser;
   const dur = turn.startedAt && turn.endedAt ? fmtMs(turn.endedAt - turn.startedAt) : null;
-  const tk = tokens(turn.usage);
-  const failed = turn.tools.filter((t) => t.isError && !wasStopped(t)).length;
+  const tk = tokens(turn.usage, t);
+  const failed = turn.tools.filter((x) => x.isError && !wasStopped(x)).length;
   const parts = [
     turn.model,
-    dur && `worked ${dur}`,
-    turn.tools.length ? `${turn.tools.length} tool${turn.tools.length > 1 ? "s" : ""}${failed ? ` (${failed} failed)` : ""}` : null,
+    dur && t("turn.worked", { d: dur }),
+    turn.tools.length ? `${t("turn.toolsN", { count: turn.tools.length })}${failed ? ` (${t("turn.failedN", { count: failed })})` : ""}` : null,
     tk,
   ].filter(Boolean);
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-[10.5px] text-content-faint">
-      {turn.status === "interrupted" && <span className="pill bg-surface-3 text-content-dim">Stopped</span>}
+      {turn.status === "interrupted" && <span className="pill bg-surface-3 text-content-dim">{t("turn.stopped")}</span>}
       <span className="font-mono">{parts.join(" · ")}</span>
       <TurnCost turn={turn} />
       {turn.endedAt ? (
-        <span title={absTime(new Date(turn.endedAt).toISOString())}>· {relTime(new Date(turn.endedAt).toISOString())}</span>
+        <span title={fmtDateTime(turn.endedAt)}>· {relTime(turn.endedAt)}</span>
       ) : null}
       {canRetry && (
         <button
           onClick={() => requestResend(prevUser!.text)}
           className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-accent hover:bg-accent-soft transition"
-          title="Send the same message again"
+          title={t("turn.retryTitle")}
         >
-          <Icon name="refresh" size={11} /> Retry
+          <Icon name="refresh" size={11} /> {t("common.retry")}
         </button>
       )}
       {turn.text.trim() && (
@@ -127,9 +129,9 @@ function Footer({ turn }: { turn: Turn }) {
             })
           }
           className="inline-flex items-center gap-1 rounded px-1 py-0.5 hover:text-content-dim hover:bg-surface-3 transition"
-          title="Copy response"
+          title={t("turn.copyResponse")}
         >
-          <Icon name={copied ? "check" : "copy"} size={11} /> {copied ? "Copied" : "Copy"}
+          <Icon name={copied ? "check" : "copy"} size={11} /> {copied ? t("common.copied") : t("common.copy")}
         </button>
       )}
     </div>
@@ -137,6 +139,7 @@ function Footer({ turn }: { turn: Turn }) {
 }
 
 export default function AssistantTurn({ turn }: { turn: Turn }) {
+  const t = useT();
   const segments = useMemo(() => segment(turn), [turn]);
   const live = !turn.complete;
   const empty = segments.length === 0;
@@ -149,7 +152,7 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
       <div className="min-w-0 flex-1 space-y-2.5">
         {turn.trigger === "background" && (
           <div className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-0.5 text-[11.5px] text-accent">
-            <Icon name="activity" size={12} /> Started by Claude after a background task finished
+            <Icon name="activity" size={12} /> {t("turn.startedByBackground")}
           </div>
         )}
         {segments.map((s, i) => {
@@ -173,11 +176,11 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
                     <ViaBadge meta={s.item.meta} />
                     {s.item.pending ? (
                       <>
-                        <Icon name="spinner" size={10} spin /> sending to the agent…
+                        <Icon name="spinner" size={10} spin /> {t("turn.sendingToAgent")}
                       </>
                     ) : (
                       <>
-                        <Icon name="check" size={10} className="text-success" /> added while working
+                        <Icon name="check" size={10} className="text-success" /> {t("turn.addedWhileWorking")}
                       </>
                     )}
                   </span>
@@ -222,7 +225,7 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
           <div className="flex items-start gap-2.5 rounded-xl border border-danger/30 bg-danger/8 px-3.5 py-2.5">
             <Icon name="alert-circle" size={15} className="mt-[2px] shrink-0 text-danger" />
             <div className="min-w-0">
-              <div className="text-[13px] text-content whitespace-pre-wrap break-words">{turn.error.message}</div>
+              <div className="text-[13px] text-content whitespace-pre-wrap break-words">{turn.error.code === "turn.lost" ? t("turn.runLost") : turn.error.message}</div>
               <div className="mt-0.5 font-mono text-[10.5px] text-content-faint">{turn.error.code}</div>
             </div>
           </div>

@@ -13,6 +13,7 @@ import ToolGroup from "./ToolGroup";
 import SubagentCard, { StatusIcon, StatusPill, useAgentView } from "./SubagentCard";
 import { agentStatus, allAgents, isAgentTool, taskFor } from "./subagent";
 import { fmtMs } from "./toolMeta";
+import { useT } from "../../../i18n";
 
 const turnWith = (turns: Turn[], id: string) => {
   for (let i = turns.length - 1; i >= 0; i--) if (turns[i].tools.some((t) => t.id === id)) return turns[i];
@@ -46,6 +47,7 @@ type Seg =
   | { kind: "agent"; tool: ToolActivity };
 
 function StopButton({ sid, taskId }: { sid: string; taskId: string }) {
+  const t = useT();
   const [stopping, setStopping] = useState(false);
   return (
     <button
@@ -59,10 +61,11 @@ function StopButton({ sid, taskId }: { sid: string; taskId: string }) {
       }}
       disabled={stopping}
       className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-[12px] text-content-dim transition hover:border-danger/50 hover:text-danger disabled:opacity-40"
-      title="Stop this subagent"
+      title={t("turn.stopSubagent")}
+      aria-label={t("turn.stopSubagent")}
     >
       {stopping ? <Icon name="spinner" size={12} spin /> : <span className="block w-2.5 h-2.5 rounded-[2px] bg-current" />}
-      <span className="hidden sm:inline">Stop</span>
+      <span className="hidden sm:inline">{t("common.stop")}</span>
     </button>
   );
 }
@@ -74,14 +77,15 @@ const SectionTitle = ({ children }: { children: ReactNode }) => (
 /** Everything one subagent did: prompt, its prose/reasoning and calls in order, its report. */
 function Detail({ id, depth, onBack, onClose }: { id: string; depth: number; onBack: () => void; onClose: () => void }) {
   // (or under background work whose turn isn't loaded yet)
+  const t = useT();
   const turn = useChatStore((s) => turnWith(s.turns, id) || (s.detached ? turnWith([s.detached], id) : null));
-  const tool = turn?.tools.find((t) => t.id === id);
+  const tool = turn?.tools.find((x) => x.id === id);
   if (!turn || !tool) {
     return (
       <Sheet onClose={onClose}>
         <div className="flex h-14 items-center justify-between border-b border-border px-4 text-sm text-content-dim">
-          Subagent not found
-          <button onClick={onClose} className="rounded-md p-1 text-content-faint hover:bg-surface-3 hover:text-content">
+          {t("turn.subagentNotFound")}
+          <button onClick={onClose} className="rounded-md p-1 text-content-faint hover:bg-surface-3 hover:text-content" aria-label={t("common.close")}>
             <Icon name="x" size={17} />
           </button>
         </div>
@@ -104,6 +108,7 @@ function DetailBody({
   onBack: () => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const v = useAgentView(tool, turn.tools);
   const sid = useSessionStore((s) => s.activeId);
   const running = v.status === "running";
@@ -146,10 +151,10 @@ function DetailBody({
 
   const meta = [
     v.type,
-    v.background ? "background" : null,
+    v.background ? t("turn.background") : null,
     tool.agent?.model,
-    v.toolCount ? `${v.toolCount} tool${v.toolCount > 1 ? "s" : ""}` : null,
-    tool.agent?.total_tokens || v.task?.total_tokens ? `${k(tool.agent?.total_tokens || v.task?.total_tokens || 0)} tokens` : null,
+    v.toolCount ? t("turn.toolsN", { count: v.toolCount }) : null,
+    tool.agent?.total_tokens || v.task?.total_tokens ? t("turn.tokensN", { n: k(tool.agent?.total_tokens || v.task?.total_tokens || 0) }) : null,
     fmtMs(v.elapsedMs),
   ].filter(Boolean);
   const failedOutput = v.status === "failed" && tool.isError ? tool.output || "" : "";
@@ -158,7 +163,7 @@ function DetailBody({
     <Sheet onClose={onClose}>
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 sm:px-4">
         {depth > 0 ? (
-          <button onClick={onBack} className="rounded-md p-1 text-content-faint hover:bg-surface-3 hover:text-content" title="Back">
+          <button onClick={onBack} className="rounded-md p-1 text-content-faint hover:bg-surface-3 hover:text-content" title={t("common.back")} aria-label={t("common.back")}>
             <Icon name="chevron-left" size={17} />
           </button>
         ) : (
@@ -174,7 +179,7 @@ function DetailBody({
           <div className="truncate font-mono text-[10.5px] text-content-faint">{meta.join(" · ")}</div>
         </div>
         {running && sid && v.task?.task_id && <StopButton sid={sid} taskId={v.task.task_id} />}
-        <button onClick={onClose} className="rounded-md p-1 text-content-faint hover:bg-surface-3 hover:text-content" title="Close">
+        <button onClick={onClose} className="rounded-md p-1 text-content-faint hover:bg-surface-3 hover:text-content" title={t("common.close")} aria-label={t("common.close")}>
           <Icon name="x" size={17} />
         </button>
       </div>
@@ -189,11 +194,11 @@ function DetailBody({
       >
         {v.prompt && (
           <section>
-            <SectionTitle>Prompt</SectionTitle>
+            <SectionTitle>{t("turn.prompt")}</SectionTitle>
             <details open={v.prompt.length <= 600} className="group rounded-lg border border-border bg-bg/50">
               <summary className="cursor-pointer select-none px-3 py-1.5 text-[11.5px] text-content-faint hover:text-content-dim">
-                <span className="group-open:hidden">{v.prompt.slice(0, 140).replace(/\s+/g, " ")}… show all</span>
-                <span className="hidden group-open:inline">Instructions the main agent gave it</span>
+                <span className="group-open:hidden">{v.prompt.slice(0, 140).replace(/\s+/g, " ")}… {t("turn.showAll")}</span>
+                <span className="hidden group-open:inline">{t("turn.promptHint")}</span>
               </summary>
               <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words border-t border-border/70 px-3 py-2 font-mono text-[11.5px] leading-relaxed text-content-dim">
                 {v.prompt}
@@ -203,12 +208,12 @@ function DetailBody({
         )}
 
         <section className="space-y-2.5">
-          <SectionTitle>Activity</SectionTitle>
+          <SectionTitle>{t("turn.activity")}</SectionTitle>
           {segments.length === 0 && (
             <p className="text-[12.5px] text-content-faint">
               {running
-                ? v.task?.activity || "Waiting for its first step…"
-                : "No step-by-step record for this subagent (it ran before steps were recorded, or the engine didn't stream them)."}
+                ? v.task?.activity || t("turn.waitingFirstStep")
+                : t("turn.noSteps")}
             </p>
           )}
           {segments.map((s, i) => {
@@ -239,7 +244,7 @@ function DetailBody({
 
         {(v.result || failedOutput) && (
           <section>
-            <SectionTitle>{failedOutput ? "Error" : "Result"}</SectionTitle>
+            <SectionTitle>{failedOutput ? t("common.error") : t("turn.result")}</SectionTitle>
             {failedOutput ? (
               <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-danger/30 bg-danger/8 p-2.5 font-mono text-[11.5px] text-danger/90">
                 {failedOutput}
@@ -266,23 +271,24 @@ function AgentList({ onClose }: { onClose: () => void }) {
   const agents = useMemo(() => allAgents(turns), [turns]);
   const running = agents.filter((a) => agentStatus(a.tool, taskFor(a.tool, tasks)) === "running");
   const done = agents.filter((a) => !running.includes(a)).slice(0, 50);
+  const t = useT();
   return (
     <Sheet onClose={onClose}>
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
         <Icon name="bolt" size={16} className="text-violet" />
-        <span className="text-sm font-semibold">Subagents</span>
-        {running.length > 0 && <span className="pill bg-accent-soft text-accent">{running.length} running</span>}
-        <button onClick={onClose} className="ml-auto rounded-md p-1 text-content-faint hover:bg-surface-3 hover:text-content">
+        <span className="text-sm font-semibold">{t("turn.subagents")}</span>
+        {running.length > 0 && <span className="pill bg-accent-soft text-accent">{t("turn.runningN", { n: running.length })}</span>}
+        <button onClick={onClose} className="ml-auto rounded-md p-1 text-content-faint hover:bg-surface-3 hover:text-content" aria-label={t("common.close")}>
           <Icon name="x" size={17} />
         </button>
       </div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
         {agents.length === 0 && (
-          <p className="py-12 text-center text-[13px] text-content-dim">No subagents in this chat yet.</p>
+          <p className="py-12 text-center text-[13px] text-content-dim">{t("turn.noSubagents")}</p>
         )}
         {running.length > 0 && (
           <section>
-            <SectionTitle>Running {running.length}</SectionTitle>
+            <SectionTitle>{t("turn.runningSection", { n: running.length })}</SectionTitle>
             <div className="space-y-1.5">
               {running.map((a) => (
                 <SubagentCard key={a.tool.id} tool={a.tool} allTools={a.turn.tools} />
@@ -292,7 +298,7 @@ function AgentList({ onClose }: { onClose: () => void }) {
         )}
         {done.length > 0 && (
           <section>
-            <SectionTitle>Finished {done.length}</SectionTitle>
+            <SectionTitle>{t("turn.finishedSection", { n: done.length })}</SectionTitle>
             <div className="space-y-1.5">
               {done.map((a) => (
                 <SubagentCard key={a.tool.id} tool={a.tool} allTools={a.turn.tools} />
@@ -349,15 +355,16 @@ export function SubagentPill() {
     () => allAgents(turns).filter((a) => agentStatus(a.tool, taskFor(a.tool, tasks)) === "running").length,
     [turns, tasks],
   );
+  const t = useT();
   if (!running) return null;
   return (
     <button
       onClick={() => setList(true)}
       className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-violet/30 bg-surface-2 px-3 py-1.5 text-[12px] text-content-dim shadow-float transition hover:text-content animate-fade-in"
-      title="Show subagents"
+      title={t("turn.showSubagents")}
     >
       <StatusIcon status="running" size={12} />
-      {running} subagent{running > 1 ? "s" : ""} running
+      {t("turn.subagentsRunning", { count: running })}
     </button>
   );
 }

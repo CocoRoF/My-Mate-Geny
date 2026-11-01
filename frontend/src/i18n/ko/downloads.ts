@@ -1,0 +1,74 @@
+import type { Messages } from "..";
+
+const ko: Messages<"downloads"> = {
+  // ---- download progress (lib/downloadProgress.ts)
+  almostDone: "거의 다 됐어요",
+  secondsLeft: "{s}초 남음",
+  minSecLeft: "{m}분 {s}초 남음",
+  hourMinLeft: "{h}시간 {m}분 남음",
+  buildReplaced: "이 빌드는 새 빌드로 바뀌었어요 — 페이지를 새로고침하세요.",
+  downloadFailed: "다운로드하지 못했어요.",
+  progressOf: "{total} 중 {done}",
+
+  // ---- the desktop app's updater (UpdateCard)
+  usingAppVersion: "앱 버전 {version} 사용 중이에요.",
+  downloadingVersion: "{version} 다운로드 중",
+  preparing: "서버에서 다운로드를 준비하는 중…",
+  installing: "{version} 설치 중 — 앱이 알아서 다시 시작돼요…",
+  readyToRestart: "{version} 다운로드를 마쳤어요. 다시 시작하면 업데이트가 끝나요.",
+  restartInstall: "다시 시작하고 설치",
+  debNote: "Linux .deb: 설치할 때 시스템이 비밀번호를 한 번 물어봐요.",
+  versionAvailable: "{version} 버전을 받을 수 있어요 (현재 {current}){size}.",
+  cancelled: " 다운로드를 취소했어요.",
+  downloadAgain: "다시 다운로드",
+  downloadInstall: "다운로드하고 설치",
+  errorDownload: "업데이트를 다운로드하지 못했어요: {error}",
+  errorCheck: "업데이트를 확인하지 못했어요: {error}",
+  checking: "업데이트 확인 중…",
+  upToDateApp: "앱 버전 {version} 사용 중 — 최신 버전이에요.",
+  checkAgain: "다시 확인",
+
+  // ---- platforms
+  subWindows: "Windows 10 / 11 · x64",
+  subMacos: "Apple Silicon 및 Intel",
+  subLinux: "AppImage · Debian/Ubuntu",
+  subAndroid: "Android 7.0 이상 · 휴대폰 및 태블릿",
+  noteWin1: "설치 프로그램을 실행하세요. 코드 서명이 없는 빌드라서 Windows SmartScreen이 인식할 수 없는 앱이라고 경고할 수 있어요: “추가 정보” → “실행”을 고르세요.",
+  noteWin2: "업데이트: 앱이 이 페이지에서 직접 업데이트해요 (다운로드하고 설치 → 다시 시작) — 설정과 로그인은 그대로예요.",
+  noteMac1: ".dmg를 열고 {app}를 응용 프로그램 폴더로 끌어다 놓으세요.",
+  noteMac2: "처음 실행할 때: Apple 공증을 받지 않은 앱이라서 앱을 오른쪽 클릭 → 열기 → 열기를 고르세요. macOS가 “손상됐다”고 하면 다음을 실행하세요: {cmd}",
+  noteLinux1: "AppImage: {cmd} 후 실행하세요 (모든 배포판에서 동작해요).",
+  noteLinux2: "Debian/Ubuntu: {cmd} — 앱 메뉴에 추가돼요.",
+  noteAndroid1: "휴대폰에서 APK를 여세요. Android가 브라우저/파일 앱의 설치 허용을 한 번 물어보면 허용한 뒤 설치하세요.",
+  noteAndroid2: "업데이트: 앱의 다운로드 화면에서 진행 상황을 보여 준 뒤 설치 프로그램을 열어요. 같은 서명 키라서 이전 버전 위에 설치되고 로그인도 유지돼요.",
+
+  // ---- download progress card
+  readyToInstall: "다운로드 완료 — 설치할 수 있어요",
+  saved: "저장됨",
+  failed: "다운로드 실패",
+  cancelledShort: "취소됨",
+  downloading: "다운로드 중",
+  install: "설치",
+  starting: "시작하는 중…",
+  tryDirect: "직접 링크로 시도",
+  theAndroidApp: "Android 앱",
+
+  // ---- page
+  title: "My Mate Geny 받기",
+  intro: "같은 콘솔을 데스크톱과 Android용 네이티브 앱으로 — 알림, 전용 창, 로그인 유지, 그리고 데스크톱에서는 화면 위에 메이트가 떠 있고 빠른 채팅 단축키도 쓸 수 있어요. 앱은 이 콘솔을 실시간으로 불러오기 때문에 UI 업데이트가 바로 반영되고, 새 앱 빌드는 푸시할 때마다 이곳에 자동으로 올라와요.",
+  newerAvailable: "새 앱 버전이 있어요: {latest} (현재 {current}).",
+  usingApp: "앱 버전 {version} 사용 중이에요.",
+  usingAppLatest: "앱 버전 {version} 사용 중 — 최신 버전이에요.",
+  iosHint: "iPhone/iPad: Safari에서 이 사이트를 열고 공유 → “홈 화면에 추가”를 누르면 앱처럼 쓸 수 있어요.",
+  releaseVersion: "버전 {version}",
+  builtFrom: "{commit}에서 빌드",
+  checkNow: "지금 확인",
+  noRelease: "CI가 첫 앱 빌드를 만드는 중이에요 — 몇 분 뒤에 다시 확인하세요.",
+  notConfigured: "이 서버에는 다운로드가 설정되지 않았어요 (GitHub 토큰 없음).",
+  unavailable: "지금은 빌드를 받을 수 없어요 ({reason}).",
+  thisDevice: "이 기기",
+  noBuild: "최신 릴리스에 이 플랫폼용 빌드가 없어요.",
+  scanHint: "휴대폰으로 스캔하면 이 페이지가 열려요 (로그인한 뒤 다운로드하세요).",
+  whatsNew: "이 빌드의 변경 사항",
+};
+export default ko;

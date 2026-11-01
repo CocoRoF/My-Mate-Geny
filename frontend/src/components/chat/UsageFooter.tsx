@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Account } from "../../api/accounts";
 import {
-  API_COST_HINT,
+  apiCostHint,
   fmtTokens,
   fmtUsd,
   fromAccount,
@@ -20,12 +20,15 @@ import type { AccountRef, PlanUsage, Session } from "../../types";
 import PlanWindowBars from "../usage/PlanWindowBars";
 import HoverPopover from "../ui/HoverPopover";
 import Icon from "../ui/Icon";
+import { useT, type MsgKey } from "../../i18n";
+import { fmtTime, relTime } from "../../i18n/format";
 
 const STATUS_STYLE: Record<string, string> = {
   ready: "bg-success/12 text-success",
   cooldown: "bg-warning/15 text-warning",
   expired: "bg-danger/15 text-danger",
 };
+const STATUS_LABEL: Record<string, MsgKey> = { ready: "chat.stReady", cooldown: "chat.stCooldown", expired: "chat.stExpired" };
 
 /** An account's windows; for the chat's own account, merged with what its
  * engine reported live (whichever is newer per window). */
@@ -45,6 +48,7 @@ function AccountsPanel({
   current: AccountRef | null;
   live?: PlanUsage;
 }) {
+  const t = useT();
   const pool = useUsageStore((s) => s.accounts[provider]);
   const loadAccounts = useUsageStore((s) => s.loadAccounts);
   const update = useSessionStore((s) => s.update);
@@ -74,16 +78,15 @@ function AccountsPanel({
     <div className="w-[340px] p-3 text-[12px]">
       <div className="flex items-center gap-2">
         <Icon name="cpu" size={13} className="text-accent" />
-        <span className="font-medium text-content">{label} accounts</span>
+        <span className="font-medium text-content">{t("chat.accountsOf", { label })}</span>
         {!pool && <Icon name="spinner" size={12} spin className="ml-auto text-content-faint" />}
       </div>
       <p className="mt-1 text-[11px] text-content-faint">
         {current?.account
-          ? <>This chat runs on <span className="text-content-dim">{current.account}</span>{current.live === false ? " (its last turn)" : ""}.</>
-          : "This chat's engine picks an account when it starts."}
-        {pool?.pool && !pool.pool.enabled && " Load balancing is off: chats use the primary account."}
-        {balancing &&
-          " A chat stays on its account (its prompt cache lives there) and moves only when that account is unavailable or near its limit."}
+          ? t.rich(current.live === false ? "chat.runsOnLast" : "chat.runsOn", { account: <span className="text-content-dim">{current.account}</span> })
+          : t("chat.picksAccount")}
+        {pool?.pool && !pool.pool.enabled && ` ${t("chat.balancingOff")}`}
+        {balancing && ` ${t("chat.balancingOn")}`}
       </p>
 
       <div className="mt-2.5 space-y-2">
@@ -96,33 +99,32 @@ function AccountsPanel({
             >
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="truncate font-medium text-content max-w-[11rem]">{a.label}</span>
-                {mine && <span className="pill bg-accent-soft text-accent">this chat</span>}
-                <span className={`pill ${STATUS_STYLE[a.status] || "bg-surface-3 text-content-faint"}`}>{a.status}</span>
-                {!a.enabled && <span className="pill bg-surface-3 text-content-faint">disabled</span>}
-                {a.in_flight > 0 && <span className="ml-auto text-[10.5px] text-accent">{a.in_flight} active</span>}
+                {mine && <span className="pill bg-accent-soft text-accent">{t("chat.thisChat")}</span>}
+                <span className={`pill ${STATUS_STYLE[a.status] || "bg-surface-3 text-content-faint"}`}>{STATUS_LABEL[a.status] ? t(STATUS_LABEL[a.status]) : a.status}</span>
+                {!a.enabled && <span className="pill bg-surface-3 text-content-faint">{t("chat.disabled")}</span>}
+                {a.in_flight > 0 && <span className="ml-auto text-[10.5px] text-accent">{t("chat.activeN", { n: a.in_flight })}</span>}
               </div>
               <div className="mt-2">
                 {!a.usable ? (
-                  <p className="text-[11px] text-danger/80">No credentials — sign in on the Providers page.</p>
+                  <p className="text-[11px] text-danger/80">{t("chat.noCredentials")}</p>
                 ) : a.auth_mode === "api_key" ? (
-                  <p className="text-[11px] text-content-faint">API key — no plan limits.</p>
+                  <p className="text-[11px] text-content-faint">{t("chat.apiKeyNoLimits")}</p>
                 ) : (
                   <PlanWindowBars windows={windowsFor(a, mine, live)} />
                 )}
                 {a.plan_error && a.usable && (
                   <p className="mt-1 truncate text-[10.5px] text-warning/90" title={a.plan_error}>
-                    Couldn't refresh: {a.plan_error}
+                    {t("chat.couldntRefresh", { error: a.plan_error })}
                   </p>
                 )}
                 {a.status === "cooldown" && a.cooldown_until && (
                   <p className="mt-1 text-[10.5px] text-warning/90">
-                    {a.limit ? "Hit its limit — " : ""}cooling down until{" "}
-                    {new Date(a.cooldown_until).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                    {t(a.limit ? "chat.limitCoolingUntil" : "chat.coolingUntil", { time: fmtTime(a.cooldown_until) })}
                   </p>
                 )}
                 {a.primary && balancing && a.primary_mode && a.primary_mode !== "normal" && (
                   <p className="mt-1 text-[10.5px] text-content-faint">
-                    {a.primary_mode === "off" ? "Excluded from load balancing." : "Used only when no other account is available."}
+                    {a.primary_mode === "off" ? t("chat.primaryOff") : t("chat.primaryFallback")}
                   </p>
                 )}
                 {balancing && !mine && a.usable && a.eligible && (
@@ -130,10 +132,10 @@ function AccountsPanel({
                     onClick={() => switchTo(a)}
                     disabled={!!switching}
                     className="btn-ghost mt-1.5 py-0.5 px-1.5 text-[11px]"
-                    title="Run this chat on this account from the next message (its engine restarts there)"
+                    title={t("chat.useForChatTitle")}
                   >
                     {switching === a.id ? <Icon name="spinner" size={11} spin /> : <Icon name="refresh" size={11} />}
-                    {pinned?.manual && pinned.id === a.id ? "Switching at the next message" : "Use for this chat"}
+                    {pinned?.manual && pinned.id === a.id ? t("chat.switchingNext") : t("chat.useForChat")}
                   </button>
                 )}
               </div>
@@ -141,16 +143,16 @@ function AccountsPanel({
           );
         })}
         {error && <p className="text-[11px] text-danger">{error}</p>}
-        {pool && !list.length && <p className="text-[11px] text-content-faint">No accounts connected.</p>}
+        {pool && !list.length && <p className="text-[11px] text-content-faint">{t("chat.noAccounts")}</p>}
         {current?.account && pool && !known && (
           <p className="text-[11px] text-content-faint">
-            {current.account} isn't in the account list (API key or a removed account).
+            {t("chat.notInList", { account: current.account })}
           </p>
         )}
       </div>
       <p className="mt-2.5 text-[10.5px] text-content-faint">
-        Plan usage from the provider, cached about a minute
-        {ago !== null ? ` · updated ${ago < 5 ? "just now" : `${ago}s ago`}` : ""}
+        {t("chat.planUsageFrom")}
+        {ago !== null && pool ? ` · ${t("chat.updated", { when: relTime(pool.at) })}` : ""}
         {pool?.error ? ` · ${pool.error}` : ""}.
       </p>
     </div>
@@ -158,24 +160,25 @@ function AccountsPanel({
 }
 
 function CostPanel({ cost, turns, tokens }: { cost: number; turns: number; tokens: ReturnType<typeof sumTokens> }) {
+  const t = useT();
   return (
     <div className="w-[300px] p-3 text-[12px]">
-      <div className="font-medium text-content">≈ {fmtUsd(cost)} API-equivalent (this chat)</div>
-      <p className="mt-1 text-[11px] text-content-faint">{API_COST_HINT}</p>
+      <div className="font-medium text-content">{t("chat.apiEquivalentChat", { cost: fmtUsd(cost) })}</div>
+      <p className="mt-1 text-[11px] text-content-faint">{apiCostHint()}</p>
       {tokens.total > 0 && (
         <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 font-mono text-[11px]">
-          <dt className="text-content-faint">Input</dt>
+          <dt className="text-content-faint">{t("chat.tokInput")}</dt>
           <dd className="text-right text-content-dim">{fmtTokens(tokens.input)}</dd>
-          <dt className="text-content-faint">Cache read</dt>
+          <dt className="text-content-faint">{t("chat.tokCacheRead")}</dt>
           <dd className="text-right text-content-dim">{fmtTokens(tokens.cacheRead)}</dd>
-          <dt className="text-content-faint">Cache write</dt>
+          <dt className="text-content-faint">{t("chat.tokCacheWrite")}</dt>
           <dd className="text-right text-content-dim">{fmtTokens(tokens.cacheWrite)}</dd>
-          <dt className="text-content-faint">Output</dt>
+          <dt className="text-content-faint">{t("chat.tokOutput")}</dt>
           <dd className="text-right text-content-dim">{fmtTokens(tokens.output)}</dd>
         </dl>
       )}
       <p className="mt-2 text-[10.5px] text-content-faint">
-        {turns} turn{turns === 1 ? "" : "s"} with a reported cost · per-turn amounts are on each reply.
+        {t("chat.costedTurns", { count: turns })}
       </p>
     </div>
   );
@@ -199,6 +202,7 @@ function sumTokens(usages: (Record<string, any> | undefined)[]) {
  * 5-hour / 7-day usage (popover: every account), and the chat's
  * API-equivalent cost. */
 export default function UsageFooter({ session }: { session: Session }) {
+  const t = useT();
   const sid = session.id;
   const provider = session.provider;
   const current = useUsageStore((s) => s.account[sid] ?? null);
@@ -224,20 +228,20 @@ export default function UsageFooter({ session }: { session: Session }) {
 
   // (+ the part of the chat not loaded yet: the server's sums)
   const older = useChatStore((s) => s.older);
-  const costed = useMemo(() => turns.filter((t) => t.costUsd !== undefined), [turns]);
+  const costed = useMemo(() => turns.filter((x) => x.costUsd !== undefined), [turns]);
   const costedCount = costed.length + (older?.costed_turns || 0);
-  const tokens = useMemo(() => sumTokens([...costed.map((t) => t.usage), older?.usage]), [costed, older]);
+  const tokens = useMemo(() => sumTokens([...costed.map((x) => x.usage), older?.usage]), [costed, older]);
 
   return (
     <span className="flex shrink-0 items-center gap-2 font-mono">
       <HoverPopover
-        label="Plan usage by account"
+        label={t("chat.planByAccount")}
         onOpen={() => loadAccounts(provider, 0).catch(() => {})}
         triggerClassName="inline-flex min-w-0 items-center gap-1 rounded px-1 -mx-1 py-0.5 text-content-dim hover:bg-surface-3 hover:text-content transition"
         trigger={
           <>
             <Icon name="cpu" size={10} className="shrink-0 text-content-faint" />
-            <span className="truncate max-w-[6.5rem] sm:max-w-[10rem]">{current?.account || "plan"}</span>
+            <span className="truncate max-w-[6.5rem] sm:max-w-[10rem]">{current?.account || t("chat.planFallback")}</span>
             {wl && <span className={worst >= 70 ? pctTone(worst) : ""}>· {wl}</span>}
           </>
         }
@@ -246,11 +250,11 @@ export default function UsageFooter({ session }: { session: Session }) {
       </HoverPopover>
       {costedCount > 0 && (
         <HoverPopover
-          label="API-equivalent cost of this chat"
+          label={t("chat.chatCostLabel")}
           triggerClassName="rounded px-1 -mx-1 py-0.5 text-content-faint hover:bg-surface-3 hover:text-content-dim transition"
           trigger={
             <>
-              ≈ {fmtUsd(cost)} API<span className="hidden sm:inline"> (this chat)</span>
+              ≈ {fmtUsd(cost)} API<span className="hidden sm:inline"> ({t("chat.thisChat")})</span>
             </>
           }
         >

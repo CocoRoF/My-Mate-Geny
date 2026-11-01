@@ -15,13 +15,14 @@ import { AttachMenu, FileInputs, QueuedList } from "../composer/ComposerParts";
 import { useComposer, type ComposerAction } from "../composer/useComposer";
 import Icon from "../ui/Icon";
 import { useMic } from "./useMic";
+import { useT, type TFunction } from "../../i18n";
 
 const HOLD_MS = 350;
 
 const ACTIONS: readonly ComposerAction[] = ["clear", "stop"];
-const commandsFor = (name: string): MenuItem[] => [
-  { key: "m:clear", label: "/clear", insert: "", hint: `New conversation — ${name} forgets the chat above (memories stay)`, icon: "refresh", action: "clear" },
-  { key: "m:stop", label: "/stop", insert: "", hint: `Stop ${name}'s reply`, icon: "x", action: "stop" },
+const commandsFor = (t: TFunction, name: string): MenuItem[] => [
+  { key: "m:clear", label: "/clear", insert: "", hint: t("mate.cmdClearHint", { name }), icon: "refresh", action: "clear" },
+  { key: "m:stop", label: "/stop", insert: "", hint: t("mate.cmdStopHint", { name }), icon: "x", action: "stop" },
 ];
 
 interface Props {
@@ -53,10 +54,11 @@ export default function MateComposer(props: Props) {
 }
 
 function ComposerPlaceholder({ compact, name }: { compact?: boolean; name: string }) {
+  const t = useT();
   return (
     <div className={compact ? "" : "pb-safe"}>
       <div className={`mx-auto flex max-w-2xl items-center rounded-2xl border border-border bg-surface-2/60 text-content-faint ${compact ? "h-10 px-3 text-[13px]" : "h-12 px-4 text-sm"}`}>
-        Connecting to {name}…
+        {t("mate.connectingTo", { name })}
       </div>
     </div>
   );
@@ -78,6 +80,7 @@ function Composer({
   growsWindow = false,
   onContentChange,
 }: Props & { sid: string }) {
+  const t = useT();
   const { send, steer, stop, setListening } = conv;
 
   // a draft written before drafts were per conversation ("mate:<id>") moves over once
@@ -98,11 +101,11 @@ function Composer({
         return;
       }
       await conv.reset();
-      return `New conversation — ${mate.name} forgets the chat above (memories stay).`;
+      return t("mate.resetDone", { name: mate.name });
     },
-    [stop, conv, mate.name],
+    [stop, conv, mate.name, t],
   );
-  const commands = useMemo(() => commandsFor(mate.name), [mate.name]);
+  const commands = useMemo(() => commandsFor(t, mate.name), [t, mate.name]);
 
   const c = useComposer({
     sid,
@@ -162,21 +165,21 @@ function Composer({
   const micTitle = mic.unavailable
     ? mic.unavailable
     : recording
-      ? "Listening… release (or tap) to send"
+      ? t("mate.micListening")
       : mic.state === "transcribing"
-        ? "Transcribing…"
-        : "Hold to talk (or tap to start, tap to stop)";
+        ? t("mate.transcribing")
+        : t("mate.micHold");
   const connected = conv.connection === "open";
   const ph =
     placeholder && !streaming && !items.length
       ? placeholder
       : streaming
         ? touch || compact
-          ? `Add while ${mate.name} answers…`
-          : `Add while ${mate.name} answers — Enter adds it now…`
+          ? t("mate.phSteerTouch", { name: mate.name })
+          : t("mate.phSteer", { name: mate.name })
         : items.length
-          ? "Add a message (optional)…"
-          : `Talk to ${mate.name}…`;
+          ? t("mate.phWithFiles")
+          : t("mate.phTalk", { name: mate.name });
 
   return (
     <div className={compact ? "" : "pb-safe"}>
@@ -188,9 +191,9 @@ function Composer({
           data-testid="mate-mic-status"
         >
           <Icon name={mic.error ? "warning" : mic.state === "transcribing" ? "spinner" : "mic"} size={12} spin={mic.state === "transcribing"} className="mt-0.5 shrink-0" />
-          <span className="min-w-0 flex-1 break-words">{mic.error || (mic.state === "transcribing" ? "Transcribing…" : mic.interim)}</span>
+          <span className="min-w-0 flex-1 break-words">{mic.error || (mic.state === "transcribing" ? t("mate.transcribing") : mic.interim)}</span>
           {mic.error && (
-            <button onClick={mic.clearError} className="shrink-0 opacity-70 hover:opacity-100" aria-label="Dismiss">
+            <button onClick={mic.clearError} className="shrink-0 opacity-70 hover:opacity-100" aria-label={t("common.dismiss")}>
               <Icon name="x" size={12} />
             </button>
           )}
@@ -221,8 +224,8 @@ function Composer({
               // (a window that hugs its one-line card has no room for the menu: straight to the file picker)
               onClick={() => (attachDirect ? c.pickFile("file") : c.setAttachOpen((v) => !v))}
               className={`${btn} ${c.attachOpen ? "bg-accent-soft text-accent" : "text-content-dim hover:text-content hover:bg-surface-3"}`}
-              title="Attach photos or files"
-              aria-label="Attach photos or files"
+              title={t("mate.attach")}
+              aria-label={t("mate.attach")}
               data-testid="mate-attach"
             >
               <Icon name="plus" size={compact ? 16 : 18} />
@@ -266,14 +269,14 @@ function Composer({
               onClick={() => c.submit("queue")}
               disabled={uploading}
               className={`shrink-0 rounded-full border border-border px-2.5 text-[12px] text-content-dim transition hover:bg-surface-3 hover:text-content disabled:opacity-40 ${compact ? "h-8" : "h-9 touch:h-10"}`}
-              title={`Send after ${mate.name} finishes`}
+              title={t("mate.queueTitle", { name: mate.name })}
               data-testid="mate-queue"
             >
-              Queue
+              {t("mate.queue")}
             </button>
           )}
           {streaming && !hasContent ? (
-            <button onClick={stop} className={`${btn} bg-surface-3 text-content hover:bg-border-strong`} title={touch ? "Stop" : "Stop (Esc)"} data-testid="mate-stop">
+            <button onClick={stop} className={`${btn} bg-surface-3 text-content hover:bg-border-strong`} title={touch ? t("common.stop") : t("mate.stopEsc")} data-testid="mate-stop">
               <Icon name="stop" size={compact ? 12 : 14} />
             </button>
           ) : (
@@ -284,14 +287,16 @@ function Composer({
               style={{ background: "linear-gradient(135deg,#6e8bff,#5b7cff)" }}
               title={
                 !connected
-                  ? "Connecting…"
+                  ? t("mate.connecting")
                   : uploading
-                    ? "Waiting for uploads…"
+                    ? t("mate.waitingUploads")
                     : streaming
-                      ? `Add to ${mate.name}'s reply now${sendsOnEnter ? " (Enter)" : ""}`
+                      ? sendsOnEnter
+                        ? t("mate.steerNowEnter", { name: mate.name })
+                        : t("mate.steerNow", { name: mate.name })
                       : sendsOnEnter
-                        ? "Send (Enter)"
-                        : "Send"
+                        ? t("mate.sendEnter")
+                        : t("common.send")
               }
               data-testid="mate-send"
             >
@@ -306,14 +311,14 @@ function Composer({
           {notice ? (
             <span className="truncate text-warning">{notice}</span>
           ) : failed > 0 ? (
-            <span className="truncate text-danger">{failed} file{failed === 1 ? "" : "s"} failed — click to retry, or remove</span>
+            <span className="truncate text-danger">{t("mate.filesFailed", { count: failed })}</span>
           ) : streaming ? (
             <span className="truncate">
-              {touch ? "↑ adds to the reply now · Queue sends after" : "Enter adds to the reply now · Queue sends after · Esc stops"}
+              {touch ? t("mate.hintSteerTouch") : t("mate.hintSteer")}
             </span>
           ) : (
             <span className="hidden truncate sm:inline">
-              {touch ? "Return adds a line · tap ↑ to send · / commands" : "Enter to send · Shift+Enter newline · / commands · paste or drop files · hold the mic to talk"}
+              {touch ? t("mate.hintTouch") : t("mate.hintKeys")}
             </span>
           )}
         </div>
@@ -324,6 +329,7 @@ function Composer({
 
 /** Read replies aloud on/off (the composer's row on wide screens; the Mate view's header on phones). */
 export function ReadAloudToggle({ mate, conv, className, size = 17 }: { mate: Mate; conv: MateConversation; className: string; size?: number }) {
+  const t = useT();
   const muted = useMateStore((s) => s.muted);
   const reading = mate.voice.auto_read && !muted && mate.voice.tts.engine !== "off";
   const toggle = () => {
@@ -337,8 +343,8 @@ export function ReadAloudToggle({ mate, conv, className, size = 17 }: { mate: Ma
     <button
       onClick={toggle}
       className={`${className} ${reading ? "text-accent hover:bg-accent/10" : "text-content-faint hover:text-content hover:bg-surface-3"}`}
-      title={reading ? "Reading replies aloud — click to mute" : "Read replies aloud"}
-      aria-label={reading ? "Reading replies aloud — tap to mute" : "Read replies aloud"}
+      title={reading ? t("mate.readingAloudClick") : t("mate.readAloud")}
+      aria-label={reading ? t("mate.readingAloudTap") : t("mate.readAloud")}
       aria-pressed={reading}
       data-testid="mate-read-toggle"
     >

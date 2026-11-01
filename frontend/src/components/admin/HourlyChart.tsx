@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { LogStats } from "../../api/admin";
 import Icon from "../ui/Icon";
+import { useT } from "../../i18n";
+import { fmtTime } from "../../i18n/format";
 
 // Status job: error / warning use the app's reserved status tokens and always
 // travel with an icon + label (legend, tooltip) — never color alone.
@@ -10,10 +12,11 @@ const H = 120; // plot height (px)
 const GAP = 2; // surface gap between stacked segments
 
 export default function HourlyChart({ hourly }: { hourly: LogStats["hourly"] }) {
+  const t = useT();
   const [hover, setHover] = useState<number | null>(null);
   const max = Math.max(1, ...hourly.map((b) => b.error + b.warning));
   const top = niceMax(max);
-  const label = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const label = (iso: string) => (iso ? fmtTime(iso) : "");
   const hb = hover !== null ? hourly[hover] : null;
 
   return (
@@ -21,13 +24,13 @@ export default function HourlyChart({ hourly }: { hourly: LogStats["hourly"] }) 
       <div className="flex items-center gap-4 mb-3 text-[11px] text-content-dim">
         <span className="inline-flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-sm" style={{ background: ERR }} />
-          <Icon name="alert-circle" size={11} /> Errors
+          <Icon name="alert-circle" size={11} /> {t("admin.chartErrors")}
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-sm" style={{ background: WARN }} />
-          <Icon name="warning" size={11} /> Warnings
+          <Icon name="warning" size={11} /> {t("admin.chartWarnings")}
         </span>
-        <span className="ml-auto text-content-faint">per hour · last 24h</span>
+        <span className="ml-auto text-content-faint">{t("admin.perHour24h")}</span>
       </div>
 
       <div className="relative flex gap-2">
@@ -75,7 +78,7 @@ export default function HourlyChart({ hourly }: { hourly: LogStats["hourly"] }) 
           <div className="flex justify-between pt-1 text-[10px] text-content-faint tabular-nums">
             <span>{label(hourly[0]?.hour)}</span>
             <span>{label(hourly[12]?.hour)}</span>
-            <span>now</span>
+            <span>{t("admin.now")}</span>
           </div>
 
           {hb && hover !== null && (
@@ -87,11 +90,11 @@ export default function HourlyChart({ hourly }: { hourly: LogStats["hourly"] }) 
                 {label(hb.hour)} – {label(new Date(Date.parse(hb.hour) + 3600_000).toISOString())}
               </div>
               <div className="flex items-center gap-1.5 text-content-dim">
-                <span className="w-2 h-2 rounded-sm" style={{ background: ERR }} /> Errors
+                <span className="w-2 h-2 rounded-sm" style={{ background: ERR }} /> {t("admin.chartErrors")}
                 <span className="ml-auto pl-3 font-mono text-content">{hb.error}</span>
               </div>
               <div className="flex items-center gap-1.5 text-content-dim">
-                <span className="w-2 h-2 rounded-sm" style={{ background: WARN }} /> Warnings
+                <span className="w-2 h-2 rounded-sm" style={{ background: WARN }} /> {t("admin.chartWarnings")}
                 <span className="ml-auto pl-3 font-mono text-content">{hb.warning}</span>
               </div>
             </div>

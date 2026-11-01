@@ -4,11 +4,13 @@ import { useSessionStore } from "../../stores/sessionStore";
 import { useConfigStore } from "../../stores/configStore";
 import WorkspacePicker from "../workspaces/WorkspacePicker";
 import Icon from "../ui/Icon";
+import { useT } from "../../i18n";
 
 /** a new chat's model per engine until the catalog says otherwise (backend catalog defaults) */
 const DEFAULT_CHAT_MODELS: Record<string, string> = { claude: "claude-opus-5-5", codex: "gpt-6.1-sol" };
 
 export default function NewSessionPanel() {
+  const t = useT();
   const providers = useProviderStore((s) => s.providers);
   const catalog = useConfigStore((s) => s.catalog);
   const createSession = useSessionStore((s) => s.create);
@@ -40,7 +42,7 @@ export default function NewSessionPanel() {
 
   const start = async () => {
     if (!path) {
-      setError("Pick a workspace folder first.");
+      setError(t("chat.pickWorkspace"));
       return;
     }
     setBusy(true);
@@ -71,13 +73,13 @@ export default function NewSessionPanel() {
             <Icon name="plus" size={18} className="text-white" />
           </div>
           <div>
-            <h2 className="text-base font-semibold">Start a new chat</h2>
-            <p className="text-xs text-content-faint">Pick an engine, a model, and where it runs.</p>
+            <h2 className="text-base font-semibold">{t("chat.newTitle")}</h2>
+            <p className="text-xs text-content-faint">{t("chat.newSub")}</p>
           </div>
         </div>
 
         {/* Provider */}
-        <label className="text-[11px] font-medium uppercase tracking-wider text-content-faint">Provider</label>
+        <label className="text-[11px] font-medium uppercase tracking-wider text-content-faint">{t("chat.provider")}</label>
         <div className="grid grid-cols-2 gap-2 mt-1.5 mb-4">
           {(Object.keys(catalog).length ? Object.keys(catalog) : ["claude", "codex"]).map((id) => {
             const p = providers.find((x) => x.provider === id);
@@ -96,7 +98,7 @@ export default function NewSessionPanel() {
                 <div className="min-w-0">
                   <div className="text-sm font-medium">{catalog[id]?.label || id}</div>
                   <div className={`text-[10px] ${connected ? "text-success" : "text-content-faint"}`}>
-                    {connected ? "connected" : "not connected"}
+                    {connected ? t("chat.connectedLower") : t("chat.notConnected")}
                   </div>
                 </div>
                 {sel && <Icon name="check" size={15} className="ml-auto text-accent" />}
@@ -108,7 +110,7 @@ export default function NewSessionPanel() {
         {/* Model + Think */}
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div>
-            <label className="text-[11px] font-medium uppercase tracking-wider text-content-faint">Model</label>
+            <label className="text-[11px] font-medium uppercase tracking-wider text-content-faint">{t("chat.groupModel")}</label>
             <select value={model} onChange={(e) => setPicked(e.target.value)} className="field mt-1.5">
               {models.length ? (
                 models.map((m) => (
@@ -117,16 +119,16 @@ export default function NewSessionPanel() {
                   </option>
                 ))
               ) : (
-                <option value={model}>{model || "Default"}</option>
+                <option value={model}>{model || t("common.default")}</option>
               )}
             </select>
           </div>
           <div>
-            <label className="text-[11px] font-medium uppercase tracking-wider text-content-faint">Think</label>
+            <label className="text-[11px] font-medium uppercase tracking-wider text-content-faint">{t("chat.groupThink")}</label>
             <select value={effort} onChange={(e) => setEffort(e.target.value)} className="field mt-1.5">
               {efforts.map((e) => (
                 <option key={e} value={e}>
-                  {e === "default" ? "Default" : e}
+                  {e === "default" ? t("common.default") : e}
                 </option>
               ))}
             </select>
@@ -149,7 +151,7 @@ export default function NewSessionPanel() {
 
         <button onClick={start} disabled={busy} className="btn-primary w-full mt-5">
           {busy ? <Icon name="spinner" size={16} spin /> : <Icon name="bolt" size={16} />}
-          {busy ? "Starting…" : "Start chat"}
+          {busy ? t("chat.starting") : t("chat.startChat")}
         </button>
       </div>
     </div>

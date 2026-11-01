@@ -5,7 +5,8 @@
 import { useEffect, useState } from "react";
 import { getVoiceSettings, putVoiceSettings, type ProviderStatus, type VoiceSettings, type VoiceSettingsPatch } from "../../../../api/mates";
 import { useMateStore } from "../../../../stores/mateStore";
-import { relTime } from "../../../admin/format";
+import { relTime } from "../../../../i18n/format";
+import { tr, useT, type MsgKey } from "../../../../i18n";
 import Icon from "../../../ui/Icon";
 import { ErrorLine, Field, Section, StatusBadge } from "../ui";
 
@@ -14,63 +15,65 @@ type UrlName = "omnivoice_url" | "whisper_url" | "http_tts_url";
 
 interface CardSpec {
   engine: string;
-  title: string;
+  title: MsgKey;
   kinds: ("Speaking" | "Listening")[];
-  hint: string;
-  link?: { href: string; label: string };
-  url?: { name: UrlName; label: string; placeholder: string; hint?: string };
-  key?: { name: KeyName; label: string; optional?: boolean; placeholder?: string };
+  hint: MsgKey;
+  link?: { href: string; label: MsgKey };
+  url?: { name: UrlName; label: MsgKey; placeholder: string; hint?: MsgKey };
+  key?: { name: KeyName; label: MsgKey; optional?: boolean; placeholder?: string; placeholderKey?: MsgKey };
 }
 
 const CARDS: CardSpec[] = [
   {
     engine: "openai",
-    title: "OpenAI",
+    title: "mateSettings.engOpenai",
     kinds: ["Speaking", "Listening"],
-    hint: "Text-to-speech (GPT-4o mini TTS, TTS-1) and transcription (GPT-4o Transcribe, Whisper) with one key.",
-    link: { href: "https://platform.openai.com/api-keys", label: "Get a key" },
-    key: { name: "openai_key", label: "API key", placeholder: "sk-…" },
+    hint: "mateSettings.provOpenaiHint",
+    link: { href: "https://platform.openai.com/api-keys", label: "mateSettings.provGetKey" },
+    key: { name: "openai_key", label: "mateSettings.provApiKey", placeholder: "sk-…" },
   },
   {
     engine: "elevenlabs",
-    title: "ElevenLabs",
+    title: "mateSettings.engElevenlabs",
     kinds: ["Speaking"],
-    hint: "Every voice in your account (premade, cloned, added from the Voice Library) becomes selectable per mate.",
-    link: { href: "https://elevenlabs.io/app/settings/api-keys", label: "Get a key" },
-    key: { name: "elevenlabs_key", label: "API key", placeholder: "xi-… / sk_…" },
+    hint: "mateSettings.provElevenHint",
+    link: { href: "https://elevenlabs.io/app/settings/api-keys", label: "mateSettings.provGetKey" },
+    key: { name: "elevenlabs_key", label: "mateSettings.provApiKey", placeholder: "xi-… / sk_…" }, // i18n-ignore
   },
   {
     engine: "omnivoice",
-    title: "OmniVoice",
+    title: "mateSettings.engOmnivoice",
     kinds: ["Speaking"],
-    hint: "Your own OmniVoice server (geny-audio-services): voice profiles cloned from reference clips, one per emotion, or a designed voice.",
-    url: { name: "omnivoice_url", label: "Server URL", placeholder: "http://host:9880" },
+    hint: "mateSettings.provOmniHint",
+    url: { name: "omnivoice_url", label: "mateSettings.provServerUrl", placeholder: "http://host:9880" },
   },
   {
     engine: "whisper",
-    title: "Whisper server",
+    title: "mateSettings.engWhisper",
     kinds: ["Listening"],
-    hint: "An OpenAI-compatible transcription server (e.g. vLLM with whisper-large-v3). …/v1/audio/transcriptions is added.",
-    url: { name: "whisper_url", label: "Server URL", placeholder: "http://host:8001" },
+    hint: "mateSettings.provWhisperHint",
+    url: { name: "whisper_url", label: "mateSettings.provServerUrl", placeholder: "http://host:8001" },
   },
   {
     engine: "http",
-    title: "OpenAI-compatible TTS server",
+    title: "mateSettings.provHttpTitle",
     kinds: ["Speaking"],
-    hint: "Any server that speaks OpenAI's …/audio/speech (Kokoro, Piper, openedai-speech…).",
-    url: { name: "http_tts_url", label: "Server URL", placeholder: "http://host:8000/v1", hint: "…/audio/speech is added." },
-    key: { name: "http_tts_key", label: "API key", optional: true, placeholder: "only if the server wants one" },
+    hint: "mateSettings.provHttpHint",
+    url: { name: "http_tts_url", label: "mateSettings.provServerUrl", placeholder: "http://host:8000/v1", hint: "mateSettings.provHttpUrlHint" },
+    key: { name: "http_tts_key", label: "mateSettings.provApiKey", optional: true, placeholderKey: "mateSettings.provKeyOptionalPh" },
   },
 ];
 
+/** (the label is in the UI's language at call time — call while rendering) */
 export function statusOf(p: ProviderStatus | undefined, busy = false): { status: "ok" | "error" | "off" | "checking"; label: string } {
-  if (busy) return { status: "checking", label: "Checking…" };
-  if (!p || !p.configured) return { status: "off", label: "Not configured" };
-  if (p.ok === null) return { status: "checking", label: "Not checked yet" };
-  return p.ok ? { status: "ok", label: "Connected" } : { status: "error", label: "Error" };
+  if (busy) return { status: "checking", label: tr("mateSettings.provChecking") };
+  if (!p || !p.configured) return { status: "off", label: tr("mateSettings.provNotConfigured") };
+  if (p.ok === null) return { status: "checking", label: tr("mateSettings.provNotChecked") };
+  return p.ok ? { status: "ok", label: tr("common.connected") } : { status: "error", label: tr("common.error") };
 }
 
 export default function ProvidersPanel() {
+  const t = useT();
   const [s, setS] = useState<VoiceSettings | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const providers = useMateStore((x) => x.providers);
@@ -87,11 +90,11 @@ export default function ProvidersPanel() {
   return (
     <>
       <Section
-        title="Voice services"
-        hint="Set these up once — every mate can then pick the ones that work in its Voice tab. Keys are stored encrypted on the server and never shown again."
+        title={t("mateSettings.provTitle")}
+        hint={t("mateSettings.provHint")}
         right={
-          <button className="btn-ghost !px-2.5 !py-1 text-[12px]" onClick={() => useMateStore.getState().loadProviders(true)} disabled={loading} title="Check every configured service again" data-testid="mate-providers-recheck">
-            <Icon name="refresh" size={13} spin={loading} /> Re-check all
+          <button className="btn-ghost !px-2.5 !py-1 text-[12px]" onClick={() => useMateStore.getState().loadProviders(true)} disabled={loading} title={t("mateSettings.provRecheckTitle")} data-testid="mate-providers-recheck">
+            <Icon name="refresh" size={13} spin={loading} /> {t("mateSettings.provRecheck")}
           </button>
         }
       >
@@ -100,7 +103,7 @@ export default function ProvidersPanel() {
             const st = statusOf(find(c.engine), loading && !providers);
             return (
               <StatusBadge key={c.engine} status={st.status}>
-                {c.title}
+                {t(c.title)}
               </StatusBadge>
             );
           })}
@@ -114,6 +117,7 @@ export default function ProvidersPanel() {
 }
 
 function ProviderCard({ spec, settings, status, onSettings }: { spec: CardSpec; settings: VoiceSettings; status: ProviderStatus | undefined; onSettings: (s: VoiceSettings) => void }) {
+  const t = useT();
   const savedUrl = spec.url ? settings[spec.url.name] || "" : "";
   const keySet = spec.key ? settings[`${spec.key.name}_set` as const] : false;
   const [url, setUrl] = useState(savedUrl);
@@ -171,23 +175,23 @@ function ProviderCard({ spec, settings, status, onSettings }: { spec: CardSpec; 
       testId={`mate-provider-${spec.engine}`}
       title={
         <span className="flex flex-wrap items-center gap-2">
-          {spec.title}
+          {t(spec.title)}
           {spec.kinds.map((k) => (
             <span key={k} className="rounded bg-surface-3 px-1.5 py-px text-[10.5px] font-medium text-content-dim">
               <Icon name={k === "Speaking" ? "volume" : "mic"} size={10} className="-mt-px mr-0.5 inline" />
-              {k}
+              {k === "Speaking" ? t("mateSettings.voiceSpeaking") : t("mateSettings.provListening")}
             </span>
           ))}
         </span>
       }
       hint={
         <>
-          {spec.hint}
+          {t(spec.hint)}
           {spec.link && (
             <>
               {" "}
               <a href={spec.link.href} target="_blank" rel="noreferrer" className="text-accent hover:underline">
-                {spec.link.label} <Icon name="external" size={10} className="inline" />
+                {t(spec.link.label)} <Icon name="external" size={10} className="inline" />
               </a>
             </>
           )}
@@ -200,7 +204,7 @@ function ProviderCard({ spec, settings, status, onSettings }: { spec: CardSpec; 
       }
     >
       {spec.url && (
-        <Field label={spec.url.label} hint={spec.url.hint}>
+        <Field label={t(spec.url.label)} hint={spec.url.hint ? t(spec.url.hint) : undefined}>
           <input
             className="field font-mono text-[12.5px]"
             value={url}
@@ -215,7 +219,7 @@ function ProviderCard({ spec, settings, status, onSettings }: { spec: CardSpec; 
         </Field>
       )}
       {spec.key && (
-        <Field label={`${spec.key.label}${spec.key.optional ? " (optional)" : ""}`}>
+        <Field label={spec.key.optional ? t("mateSettings.provOptional", { label: t(spec.key.label) }) : t(spec.key.label)}>
           <div className="relative">
             <input
               className="field pr-9 font-mono text-[12.5px]"
@@ -225,11 +229,11 @@ function ProviderCard({ spec, settings, status, onSettings }: { spec: CardSpec; 
               value={key}
               onChange={(e) => setKey(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && dirty && save()}
-              placeholder={keySet ? "•••••••• saved — type a new one to replace it" : spec.key.placeholder || "not set"}
+              placeholder={keySet ? t("mateSettings.provKeySaved") : spec.key.placeholderKey ? t(spec.key.placeholderKey) : spec.key.placeholder || t("mateSettings.provNotSet")}
               data-testid={`mate-provider-${spec.engine}-key`}
             />
             {key && (
-              <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-content-faint hover:text-content" onClick={() => setShow((x) => !x)} aria-label={show ? "Hide" : "Show"}>
+              <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-content-faint hover:text-content" onClick={() => setShow((x) => !x)} aria-label={show ? t("mateSettings.provHide") : t("mateSettings.provShow")}>
                 <Icon name={show ? "eye-off" : "eye"} size={14} />
               </button>
             )}
@@ -251,23 +255,23 @@ function ProviderCard({ spec, settings, status, onSettings }: { spec: CardSpec; 
           ) : (
             status.error
           )}
-          {status.checked_at && <span className="ml-1.5 text-content-faint">· checked {relTime(status.checked_at)}</span>}
+          {status.checked_at && <span className="ml-1.5 text-content-faint">· {t("mateSettings.provChecked", { when: relTime(status.checked_at) })}</span>}
         </div>
       )}
       <ErrorLine text={err} />
       <div className="flex flex-wrap items-center justify-end gap-2">
         {configured && (
           <button className="btn-ghost mr-auto !px-2.5 text-[12.5px] text-danger hover:!text-danger" onClick={remove} disabled={!!busy} data-testid={`mate-provider-${spec.engine}-remove`}>
-            {busy === "remove" ? <Icon name="spinner" size={13} spin /> : <Icon name="trash" size={13} />} Remove
+            {busy === "remove" ? <Icon name="spinner" size={13} spin /> : <Icon name="trash" size={13} />} {t("common.remove")}
           </button>
         )}
         {configured && !dirty && (
           <button className="btn-ghost border border-border !py-1.5 text-[12.5px]" onClick={verify} disabled={!!busy} data-testid={`mate-provider-${spec.engine}-verify`}>
-            {busy === "verify" ? <Icon name="spinner" size={13} spin /> : <Icon name="refresh" size={13} />} Test again
+            {busy === "verify" ? <Icon name="spinner" size={13} spin /> : <Icon name="refresh" size={13} />} {t("mateSettings.provTestAgain")}
           </button>
         )}
         <button className="btn-primary !py-1.5 text-[12.5px]" onClick={save} disabled={!dirty || !!busy} data-testid={`mate-provider-${spec.engine}-save`}>
-          {busy === "save" ? <Icon name="spinner" size={13} spin /> : <Icon name="shield" size={13} />} Save &amp; verify
+          {busy === "save" ? <Icon name="spinner" size={13} spin /> : <Icon name="shield" size={13} />} {t("mateSettings.provSaveVerify")}
         </button>
       </div>
     </Section>

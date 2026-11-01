@@ -20,7 +20,8 @@ import Icon from "../ui/Icon";
 import { DropOverlay, useFileDrop } from "../composer/useFileDrop";
 import MateComposer, { ReadAloudToggle } from "./MateComposer";
 import MateMessages from "./MateMessages";
-import MateStage, { BuiltinBadge, MateThumb, MOOD_LABEL } from "./MateStage";
+import MateStage, { BuiltinBadge, MateThumb, moodLabel } from "./MateStage";
+import { useT } from "../../i18n";
 
 const MateSettings = lazy(() => import("./settings/MateSettings"));
 const GlobalSettings = lazy(() => import("./settings/GlobalSettings"));
@@ -30,6 +31,7 @@ type GlobalSection = Parameters<ReturnType<typeof useMateStore.getState>["openGl
 const COLLAPSE_KEY = "hrh_mate_stage_collapsed";
 
 export default function MateView() {
+  const t = useT();
   const mates = useMateStore((s) => s.mates);
   const loaded = useMateStore((s) => s.loaded);
   const loadError = useMateStore((s) => s.error);
@@ -97,8 +99,8 @@ export default function MateView() {
   const [info, setInfo] = useState<string | null>(null);
   useEffect(() => {
     if (!info) return;
-    const t = setTimeout(() => setInfo(null), 8000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setInfo(null), 8000);
+    return () => clearTimeout(timer);
   }, [info]);
   useBackHandler(settings, closePanels);
   useBackHandler(switcher || newMate, () => {
@@ -119,7 +121,7 @@ export default function MateView() {
 
   const reset = async () => {
     if (!mate || resetting) return;
-    if (!window.confirm(`Start a fresh conversation with ${mate.name}? The messages stay here, but ${mate.name} won't remember them (memories are kept).`)) return;
+    if (!window.confirm(t("mate.resetConfirm", { name: mate.name }))) return;
     setResetting(true);
     try {
       await conv.reset();
@@ -135,9 +137,9 @@ export default function MateView() {
     return (
       <div className="grid h-full place-items-center p-6 text-center text-sm text-content-dim">
         <div>
-          <p>{loadError ? `Couldn't load your mates: ${loadError}` : "No mate yet."}</p>
+          <p>{loadError ? t("mate.loadFailed", { error: loadError }) : t("mate.noMateYet")}</p>
           <button className="btn-soft mt-3" onClick={() => load()}>
-            Retry
+            {t("common.retry")}
           </button>
         </div>
       </div>
@@ -174,7 +176,7 @@ export default function MateView() {
                       <MateThumb mate={m} className="h-6 w-6" />
                       <span className="min-w-0 flex-1 truncate">{m.name}</span>
                       <BuiltinBadge mate={m} />
-                      {m.is_default && <span className="pill bg-surface-3 text-content-faint">default</span>}
+                      {m.is_default && <span className="pill bg-surface-3 text-content-faint">{t("mate.defaultPill")}</span>}
                       {m.id === mate.id && <Icon name="check" size={13} className="text-accent" />}
                     </button>
                   ))}
@@ -187,14 +189,14 @@ export default function MateView() {
                   className="flex w-full items-center gap-2 border-t border-border px-3 py-2.5 text-[13px] text-accent hover:bg-surface-3"
                   data-testid="mate-new"
                 >
-                  <Icon name="plus" size={14} /> New mate
+                  <Icon name="plus" size={14} /> {t("mate.newMate")}
                 </button>
                 <button
                   onClick={async () => {
                     setSwitcher(false);
                     try {
                       const n = await useMateStore.getState().restoreBuiltins();
-                      setInfo(n ? `Restored ${n} built-in mate${n === 1 ? "" : "s"}` : "All built-in mates are already here");
+                      setInfo(n ? t("mate.restoredBuiltins", { count: n }) : t("mate.builtinsAllHere"));
                     } catch (e) {
                       setNotice((e as Error).message);
                     }
@@ -202,32 +204,32 @@ export default function MateView() {
                   className="flex w-full items-center gap-2 border-t border-border/60 px-3 py-2 text-[12px] text-content-dim hover:bg-surface-3 hover:text-content"
                   data-testid="mate-restore-builtins"
                 >
-                  <Icon name="rotate" size={13} /> Restore built-in mates
+                  <Icon name="rotate" size={13} /> {t("mate.restoreBuiltins")}
                 </button>
               </div>
             </>
           )}
         </div>
-        {phone && stageAway && MOOD_LABEL[conv.mood] && (
+        {phone && stageAway && moodLabel(t, conv.mood) && (
           <span className="min-w-0 truncate text-[11.5px] text-content-faint" data-testid="mate-header-mood">
-            {MOOD_LABEL[conv.mood]}
+            {moodLabel(t, conv.mood)}
           </span>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {phone && <ReadAloudToggle mate={mate} conv={conv} className="btn-ghost !px-2.5" size={16} />}
           {phone && !keyboard && (
-            <button onClick={toggleCollapsed} className="btn-ghost !px-2.5" title={collapsed ? "Show the avatar" : "Hide the avatar"}>
+            <button onClick={toggleCollapsed} className="btn-ghost !px-2.5" title={collapsed ? t("mate.showAvatar") : t("mate.hideAvatar")}>
               <Icon name={collapsed ? "chevron-down" : "chevron-up"} size={16} />
             </button>
           )}
-          <button onClick={reset} disabled={resetting || conv.streaming} className="btn-ghost !px-2.5" title="New conversation (she forgets the chat above; memories stay)" data-testid="mate-reset">
+          <button onClick={reset} disabled={resetting || conv.streaming} className="btn-ghost !px-2.5" title={t("mate.resetTitle")} data-testid="mate-reset">
             <Icon name="rotate" size={15} spin={resetting} />
           </button>
           <button
             onClick={toggleGlobal}
             className={`btn-ghost !px-2.5 ${globalOpen ? "!bg-surface-3 !text-content" : ""}`}
-            title="Global settings (all mates: voice services, Live2D runtime, desktop app)"
-            aria-label="Global settings"
+            title={t("mate.globalSettingsTitle")}
+            aria-label={t("mate.globalSettings")}
             data-testid="mate-global-settings-open"
           >
             <Icon name="sliders" size={16} />
@@ -235,8 +237,8 @@ export default function MateView() {
           <button
             onClick={toggleMate}
             className={`btn-ghost !px-2.5 ${mateOpen && !globalOpen ? "!bg-surface-3 !text-content" : ""}`}
-            title={`Mate settings (${mate.name})`}
-            aria-label="Mate settings"
+            title={t("mate.mateSettingsTitle", { name: mate.name })}
+            aria-label={t("mate.mateSettings")}
             data-testid="mate-settings-open"
           >
             <Icon name="settings" size={16} />
@@ -256,14 +258,14 @@ export default function MateView() {
       )}
       {(conv.error || conv.connection === "reconnecting") && (
         <div className="mx-auto mt-2 w-fit rounded-full border border-warning/30 bg-surface-2 px-3 py-1 text-[11.5px] text-warning">
-          {conv.error ? `Can't reach ${mate.name}: ${conv.error}` : "Reconnecting…"}
+          {conv.error ? t("mate.cantReach", { name: mate.name, error: conv.error }) : t("mate.reconnecting")}
         </div>
       )}
       {(notice || conv.voiceError) && (
         <div className="mx-auto mt-2 flex w-fit max-w-[92%] items-center gap-2 rounded-lg bg-danger/10 px-3 py-1.5 text-[12px] text-danger">
           <Icon name="warning" size={12} />
-          <span className="break-words">{notice || `Voice: ${conv.voiceError}`}</span>
-          <button onClick={() => setNotice(null)} aria-label="Dismiss" className="opacity-70 hover:opacity-100">
+          <span className="break-words">{notice || t("mate.voiceError", { error: conv.voiceError ?? "" })}</span>
+          <button onClick={() => setNotice(null)} aria-label={t("common.dismiss")} className="opacity-70 hover:opacity-100">
             <Icon name="x" size={12} />
           </button>
         </div>
@@ -273,9 +275,9 @@ export default function MateView() {
 
   const conversation = (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" {...dropProps} data-testid="mate-conversation">
-      {dragging && <DropOverlay hint={`${mate.name} sees images and reads documents — and can pass them on to a chat`} />}
+      {dragging && <DropOverlay hint={t("mate.dropHint", { name: mate.name })} />}
       {banners}
-      <MateMessages turns={conv.turns} emptyText={conv.connection === "open" ? `Say hi to ${mate.name}.` : "Loading…"} />
+      <MateMessages turns={conv.turns} emptyText={conv.connection === "open" ? t("mate.sayHi", { name: mate.name }) : t("common.loading")} />
       <div className={`shrink-0 px-3 pt-1 sm:px-4 ${keyboard ? "pb-2" : "pb-3"}`}>
         {/* phones: read-aloud lives in the header, the composer row is + · text · mic · send */}
         <MateComposer mate={mate} conv={conv} showVoiceToggle={!phone} />
@@ -350,6 +352,7 @@ export default function MateView() {
 }
 
 function NewMateDialog({ open, onClose, onImported }: { open: boolean; onClose: () => void; onImported: (msg: string) => void }) {
+  const t = useT();
   const [tab, setTab] = useState<"blank" | "import">("blank");
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
@@ -369,15 +372,15 @@ function NewMateDialog({ open, onClose, onImported }: { open: boolean; onClose: 
     setErr(null);
     try {
       if (tab === "blank") {
-        if (!name.trim()) throw new Error("Give your mate a name");
+        if (!name.trim()) throw new Error(t("mate.needName"));
         await useMateStore.getState().create(name.trim());
       } else {
-        if (!path.trim()) throw new Error("Enter a folder or file path on the server");
+        if (!path.trim()) throw new Error(t("mate.needPath"));
         const r = await importLocal({ path: path.trim() });
         const all = r.mates?.length ? r.mates : [r.mate];
         for (const m of all) useMateStore.getState().upsert(m);
         useMateStore.getState().setActive(all[0].id);
-        onImported(all.length > 1 ? `Imported ${all.length} mates: ${all.map((m) => m.name).join(", ")}` : `Imported ${all[0].name}`);
+        onImported(all.length > 1 ? t("mate.importedMany", { count: all.length, names: all.map((m) => m.name).join(", ") }) : t("mate.importedOne", { name: all[0].name }));
       }
       setName("");
       setPath("");
@@ -392,14 +395,14 @@ function NewMateDialog({ open, onClose, onImported }: { open: boolean; onClose: 
   return (
     <div className="fixed inset-0 z-[70] grid place-items-center p-4">
       <div className="absolute inset-0 bg-black/55 animate-fade-in" onClick={onClose} />
-      <div className="card relative w-full max-w-md p-5 animate-fade-in" role="dialog" aria-label="New mate">
-        <h2 className="text-[15px] font-semibold">New mate</h2>
+      <div className="card relative w-full max-w-md p-5 animate-fade-in" role="dialog" aria-label={t("mate.newMate")}>
+        <h2 className="text-[15px] font-semibold">{t("mate.newMate")}</h2>
         <div className="mt-3 flex gap-1">
           <button className="nav-tab" data-active={tab === "blank"} onClick={() => setTab("blank")}>
-            Start blank
+            {t("mate.startBlank")}
           </button>
           <button className="nav-tab" data-active={tab === "import"} onClick={() => setTab("import")}>
-            Import from the server
+            {t("mate.importFromServer")}
           </button>
         </div>
         <form
@@ -411,32 +414,32 @@ function NewMateDialog({ open, onClose, onImported }: { open: boolean; onClose: 
         >
           {tab === "blank" ? (
             <label className="block text-[12.5px] text-content-dim">
-              Name
-              <input ref={input} className="field mt-1" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Geny" />
+              {t("mate.name")}
+              <input ref={input} className="field mt-1" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("mate.namePlaceholder")} />
             </label>
           ) : (
             <label className="block text-[12.5px] text-content-dim">
-              Folder or file on this server
+              {t("mate.importPathLabel")}
               <input
                 ref={input}
                 className="field mt-1 font-mono text-[12.5px]"
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
-                placeholder="/path/to/content/mates/estelle.json  or a Live2D model folder"
+                placeholder={t("mate.importPathPlaceholder")}
                 data-testid="mate-import-path"
               />
               <span className="mt-1 block text-[11.5px] text-content-faint">
-                An ailism content folder (every character in it, with voices), one mates/&lt;name&gt;.json, a folder with rig.json, or a Live2D model folder (*.model3.json). Re-importing updates the mate with the same name.
+                {t("mate.importPathHint")}
               </span>
             </label>
           )}
           {err && <p className="text-[12px] text-danger">{err}</p>}
           <div className="flex justify-end gap-2">
             <button type="button" className="btn-ghost" onClick={onClose}>
-              Cancel
+              {t("common.cancel")}
             </button>
             <button type="submit" className="btn-primary" disabled={busy} data-testid="mate-new-submit">
-              {busy && <Icon name="spinner" size={14} spin />} {tab === "blank" ? "Create" : "Import"}
+              {busy && <Icon name="spinner" size={14} spin />} {tab === "blank" ? t("mate.create") : t("mate.import")}
             </button>
           </div>
         </form>

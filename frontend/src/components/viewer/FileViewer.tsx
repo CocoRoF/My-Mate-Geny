@@ -23,6 +23,7 @@ import Markdown from "../ui/Markdown";
 import CodeView from "./CodeView";
 import DataTable from "./DataTable";
 import { fileIcon } from "./fileIcon";
+import { tr, useT } from "../../i18n";
 
 // The heavy format libraries load only when a file of that kind is opened.
 const SheetView = lazy(() => import("./SheetView"));
@@ -58,6 +59,7 @@ function Centered({ children }: { children: React.ReactNode }) {
 
 /** A file tab's body: toolbar + the viewer for its kind. */
 export default function FileViewer({ session, tab }: { session: Session; tab: FileTab }) {
+  const t = useT();
   const conn = session.connection_id;
   const name = baseName(tab.path);
   const ext = extOf(name);
@@ -91,10 +93,10 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
       const st = await fsStat(tab.path, conn);
       if (!alive) return;
       setStat(st);
-      if (st.is_dir) throw new Error("This is a folder — open it in the explorer.");
+      if (st.is_dir) throw new Error(tr("files.isFolder"));
       if (needText) {
-        const t = await fsText(tab.path, conn, textLimit);
-        if (alive) setText(t);
+        const txt = await fsText(tab.path, conn, textLimit);
+        if (alive) setText(txt);
       }
       if (needBytes && (st.size <= SIZE_GATE || allowLarge)) {
         const b = await fsBytes(tab.path, conn);
@@ -139,8 +141,7 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
     [kind, source, text, content, name],
   );
 
-  const copy = (value: string, what: string) =>
-    navigator.clipboard?.writeText(value).then(() => notify(`Copied ${what}`));
+  const copy = (value: string, done: string) => navigator.clipboard?.writeText(value).then(() => notify(done));
 
   const rel = displayPath(tab.path, roots);
   const segs = rel.split("/");
@@ -148,7 +149,7 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
   const meta = [
     stat ? formatBytes(stat.size) : "",
     text && text.encoding !== "utf-8" && !text.binary ? text.encoding : "",
-    stat?.mtime ? `modified ${formatTime(stat.mtime)}` : "",
+    stat?.mtime ? t("files.modified", { time: formatTime(stat.mtime) }) : "",
   ].filter(Boolean);
 
   let body: React.ReactNode;
@@ -160,7 +161,7 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
           <p className="text-sm text-content">{error}</p>
           <p className="mt-1 break-all font-mono text-[11px] text-content-faint">{tab.path}</p>
           <button onClick={() => setReload((r) => r + 1)} className="btn-soft mt-3 py-1 px-2.5 text-[12px]">
-            <Icon name="refresh" size={12} /> Retry
+            <Icon name="refresh" size={12} /> {t("common.retry")}
           </button>
         </div>
       </Centered>
@@ -183,18 +184,16 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
           </p>
           <p className="mt-3 text-[12.5px] text-content-dim">
             {legacy
-              ? `.${ext} is an older format no browser can lay out — download it, or save it as ${
-                  ext === "doc" ? ".docx" : ext === "ppt" ? ".pptx" : "a modern format"
-                } to preview here.`
-              : "No preview for this file type."}
+              ? t("files.legacyFormat", { ext, target: ext === "doc" ? ".docx" : ext === "ppt" ? ".pptx" : t("files.aModernFormat") })
+              : t("files.noPreview")}
           </p>
           <div className="mt-4 flex justify-center gap-2">
             <a href={fsRawUrl(tab.path, conn, true)} download className="btn-primary py-1.5 px-3 text-[12.5px]">
-              <Icon name="download" size={13} /> Download
+              <Icon name="download" size={13} /> {t("common.download")}
             </a>
             {!legacy && (
               <button onClick={() => setForceText(true)} className="btn-soft py-1.5 px-3 text-[12.5px]">
-                Open as text
+                {t("files.openAsText")}
               </button>
             )}
           </div>
@@ -229,7 +228,7 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
       <DataTable rows={csvRows} header wrap={wrap} />
     ) : (
       <Centered>
-        <p className="text-sm text-content-faint">Empty file.</p>
+        <p className="text-sm text-content-faint">{t("files.emptyFile")}</p>
       </Centered>
     );
   } else if (kind === "html") {
@@ -255,14 +254,14 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
       body = (
         <Centered>
           <div>
-            <p className="text-sm text-content">Large file — {formatBytes(stat.size)}</p>
-            <p className="mt-1 text-[12px] text-content-faint">Previewing loads the whole file into this page.</p>
+            <p className="text-sm text-content">{t("files.largeFile", { size: formatBytes(stat.size) })}</p>
+            <p className="mt-1 text-[12px] text-content-faint">{t("files.largeFileHint")}</p>
             <div className="mt-3 flex justify-center gap-2">
               <button onClick={() => setAllowLarge(true)} className="btn-soft py-1.5 px-3 text-[12.5px]">
-                Load preview
+                {t("files.loadPreview")}
               </button>
               <a href={fsRawUrl(tab.path, conn, true)} download className="btn-ghost py-1.5 px-3 text-[12.5px]">
-                <Icon name="download" size={13} /> Download
+                <Icon name="download" size={13} /> {t("common.download")}
               </a>
             </div>
           </div>
@@ -307,34 +306,34 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
                   }`}
                 >
                   <Icon name={src ? "code" : "eye"} size={12} />
-                  <span className="hidden sm:inline">{src ? "Source" : kind === "csv" ? "Table" : "Rendered"}</span>
+                  <span className="hidden sm:inline">{src ? t("files.source") : kind === "csv" ? t("files.table") : t("files.rendered")}</span>
                 </button>
               ))}
             </div>
           )}
           {(showsCode || svgSource || kind === "csv" || kind === "sheet") && (
-            <Btn icon="wrap" label={wrap ? "Don't wrap" : "Wrap lines"} active={wrap} onClick={() => setWrap(!wrap)} />
+            <Btn icon="wrap" label={wrap ? t("files.noWrap") : t("files.wrapLines")} active={wrap} onClick={() => setWrap(!wrap)} />
           )}
-          {text && !text.binary && <Btn icon="copy" label="Copy contents" onClick={() => copy(content, "contents")} />}
-          <Btn icon="at" label="Copy path" onClick={() => copy(tab.path, "path")} />
+          {text && !text.binary && <Btn icon="copy" label={t("files.copyContents")} onClick={() => copy(content, t("files.copiedContents"))} />}
+          <Btn icon="at" label={t("files.copyPath")} onClick={() => copy(tab.path, t("files.copiedPath"))} />
           <Btn
             icon="crosshair"
-            label="Reveal in explorer"
+            label={t("files.revealInExplorer")}
             onClick={() => {
               useWorkbench.getState().setExplorer(true);
               revealInExplorer(session, tab.path).catch(() => {});
             }}
           />
-          <Btn icon="download" label="Download" href={fsRawUrl(tab.path, conn, true)} download />
-          <Btn icon="refresh" label="Reload" onClick={() => setReload((r) => r + 1)} />
+          <Btn icon="download" label={t("common.download")} href={fsRawUrl(tab.path, conn, true)} download />
+          <Btn icon="refresh" label={t("common.reload")} onClick={() => setReload((r) => r + 1)} />
         </div>
       </div>
       {text?.truncated && !error && (
         <div className="flex shrink-0 items-center gap-2 border-b border-warning/20 bg-warning/10 px-3 py-1 text-[11.5px] text-warning">
-          Showing the first {formatBytes(content.length)} of {formatBytes(text.size)}.
+          {t("files.showingFirst", { shown: formatBytes(content.length), total: formatBytes(text.size) })}
           {(textLimit ?? 0) < TEXT_MORE && text.size > (textLimit ?? 0) && (
             <button onClick={() => setTextLimit(TEXT_MORE)} className="underline underline-offset-2 hover:text-content">
-              Load up to {formatBytes(TEXT_MORE)}
+              {t("files.loadUpTo", { size: formatBytes(TEXT_MORE) })}
             </button>
           )}
         </div>
@@ -355,6 +354,7 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
 }
 
 function ImageView({ url, name }: { url: string; name: string }) {
+  const t = useT();
   const [fit, setFit] = useState(true);
   const [dims, setDims] = useState("");
   return (
@@ -377,7 +377,7 @@ function ImageView({ url, name }: { url: string; name: string }) {
         />
       </div>
       <div className="shrink-0 border-t border-border/60 px-3 py-1 text-[11px] text-content-faint">
-        {dims} · {fit ? "fit to window — click for actual size" : "actual size — click to fit"}
+        {dims} · {fit ? t("files.fitToWindow") : t("files.actualSize")}
       </div>
     </div>
   );

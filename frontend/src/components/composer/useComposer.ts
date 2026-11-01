@@ -20,6 +20,7 @@ import type { Attachment } from "../../types";
 import { triggerAt, type MenuItem } from "../chat/ComposerMenu";
 import type { PickKind } from "./ComposerParts";
 import { filesFromClipboard } from "./files";
+import { tr } from "../../i18n";
 
 export type ComposerAction = NonNullable<MenuItem["action"]>;
 
@@ -202,7 +203,7 @@ export function useComposer(o: ComposerOptions) {
       .getState()
       .takeBounced()
       .forEach((b) => enqueue(b.text, b.attachments));
-    setNotice("The turn was finishing — your message will be sent as the next one.");
+    setNotice(tr("composer.bouncedNext"));
   }, [bounced, store, enqueue]);
 
   /** send what is in the box (or `spoken`, e.g. a voice transcript) with the ready files */
@@ -215,13 +216,13 @@ export function useComposer(o: ComposerOptions) {
     }
     if (uploading) {
       if (spoken) setInput((v) => (v ? `${v} ${spoken}` : spoken));
-      setNotice("Waiting for uploads to finish…");
+      setNotice(tr("composer.waitUploads"));
       return false;
     }
     if (!text && !ready.length) return false;
     if (!dispatch(text, ready.map((i) => i.attachment!), how)) {
       if (spoken) setInput((v) => (v ? `${v} ${spoken}` : spoken));
-      setNotice("Not connected — reconnecting. Your message was kept.");
+      setNotice(tr("composer.notConnectedKept"));
       return false;
     }
     if (spoken === undefined) setInput("");

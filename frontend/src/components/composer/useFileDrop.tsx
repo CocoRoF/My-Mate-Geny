@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { useComposerStore } from "../../stores/composerStore";
 import Icon from "../ui/Icon";
+import { useT } from "../../i18n";
 import { dragHasFiles, filesFromClipboard, pastedIntoField } from "./files";
 
 export function useFileDrop(sid: string | null) {
@@ -56,6 +57,7 @@ export function useFileDrop(sid: string | null) {
 }
 
 export function DropOverlay({ hint, compact = false }: { hint: string; compact?: boolean }) {
+  const t = useT();
   return (
     <div
       className={`pointer-events-none absolute z-50 grid place-items-center rounded-2xl border-2 border-dashed border-accent/70 bg-bg/80 backdrop-blur-sm animate-fade-in ${
@@ -67,7 +69,7 @@ export function DropOverlay({ hint, compact = false }: { hint: string; compact?:
         <div className={`mx-auto grid place-items-center rounded-2xl bg-accent-soft text-accent ${compact ? "mb-2 h-10 w-10" : "mb-3 h-14 w-14"}`}>
           <Icon name="upload" size={compact ? 20 : 26} />
         </div>
-        <div className={`${compact ? "text-sm" : "text-base"} font-semibold text-content`}>Drop files to attach</div>
+        <div className={`${compact ? "text-sm" : "text-base"} font-semibold text-content`}>{t("composer.dropToAttach")}</div>
         <div className="mt-1 px-4 text-xs text-content-faint">{hint}</div>
       </div>
     </div>

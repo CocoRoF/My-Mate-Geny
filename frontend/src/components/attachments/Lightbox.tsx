@@ -6,6 +6,7 @@ import { freshImg } from "./fileMeta";
 import Icon from "../ui/Icon";
 import { useBackHandler } from "../../lib/back";
 import { formatBytes } from "./fileMeta";
+import { useT } from "../../i18n";
 
 /** Full-screen image viewer: ←/→ to browse, Esc / backdrop to close. */
 export default function Lightbox({
@@ -17,6 +18,7 @@ export default function Lightbox({
   start: number;
   onClose: () => void;
 }) {
+  const t = useT();
   const [i, setI] = useState(start);
   const [loaded, setLoaded] = useState(false);
   const img = images[i];
@@ -58,13 +60,13 @@ export default function Lightbox({
           {many ? ` · ${i + 1} / ${images.length}` : ""}
         </span>
         <span className="ml-auto flex items-center gap-1">
-          <a href={img.url} target="_blank" rel="noreferrer" className="btn-ghost" title="Open original in a new tab">
+          <a href={img.url} target="_blank" rel="noreferrer" className="btn-ghost" title={t("files.openOriginal")}>
             <Icon name="external" size={16} />
           </a>
-          <a href={downloadUrl(img)} className="btn-ghost" title="Download">
+          <a href={downloadUrl(img)} className="btn-ghost" title={t("common.download")}>
             <Icon name="download" size={16} />
           </a>
-          <button onClick={onClose} className="btn-ghost" title="Close (Esc)">
+          <button onClick={onClose} className="btn-ghost" title={t("files.closeEsc")}>
             <Icon name="x" size={18} />
           </button>
         </span>
@@ -85,14 +87,14 @@ export default function Lightbox({
             <button
               onClick={(e) => (e.stopPropagation(), go(-1))}
               className="absolute left-3 top-1/2 -translate-y-1/2 grid place-items-center w-11 h-11 rounded-full bg-surface-2/80 border border-border text-content hover:bg-surface-3"
-              title="Previous (←)"
+              title={t("files.previous")}
             >
               <Icon name="chevron-left" size={20} />
             </button>
             <button
               onClick={(e) => (e.stopPropagation(), go(1))}
               className="absolute right-3 top-1/2 -translate-y-1/2 grid place-items-center w-11 h-11 rounded-full bg-surface-2/80 border border-border text-content hover:bg-surface-3"
-              title="Next (→)"
+              title={t("files.next")}
             >
               <Icon name="chevron" size={20} />
             </button>

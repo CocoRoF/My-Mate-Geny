@@ -17,6 +17,7 @@ import type { BodyMood, Live2D, MateReact } from "../types";
 import { subscribe as subscribeVoice, voiceBridge } from "../voiceBridge";
 import { getLive2DCoreUrl, loadCubismCore, openGlobalSettings, useLive2DCoreInstalls } from "../live2dCore";
 import { VIEW_HOME, type AvatarViewT } from "./view";
+import { tr, useT } from "../../i18n";
 
 export interface Live2DBodyProps {
   live2d: Live2D;
@@ -77,6 +78,7 @@ function saccadeInterval(): number {
 }
 
 export default function Live2DBody({ live2d, mood, react, name, coreUrl, onTap, interactive = true, view }: Live2DBodyProps) {
+  const t = useT();
   const box = useRef<HTMLDivElement>(null);
   const viewRef = useRef<AvatarViewT>(view ?? VIEW_HOME);
   viewRef.current = view ?? VIEW_HOME;
@@ -127,7 +129,7 @@ export default function Live2DBody({ live2d, mood, react, name, coreUrl, onTap, 
         PIXI = await import("pixi.js");
         L2D = await import("pixi-live2d-display/cubism4");
       } catch (err) {
-        if (alive) setStatus({ kind: "error", message: `could not load the Live2D renderer (${String(err)})` });
+        if (alive) setStatus({ kind: "error", message: tr("mate.l2dNoRenderer", { error: String(err) }) });
         return;
       }
       if (!alive) return;
@@ -147,7 +149,7 @@ export default function Live2DBody({ live2d, mood, react, name, coreUrl, onTap, 
           powerPreference: "default",
         });
       } catch (err) {
-        if (alive) setStatus({ kind: "error", message: `WebGL is not available (${String(err)})` });
+        if (alive) setStatus({ kind: "error", message: tr("mate.l2dNoWebgl", { error: String(err) }) });
         return;
       }
       const canvas = app.view as HTMLCanvasElement;
@@ -163,7 +165,7 @@ export default function Live2DBody({ live2d, mood, react, name, coreUrl, onTap, 
           ticker: app.ticker,
         } as any);
       } catch (err) {
-        if (alive) setStatus({ kind: "error", message: `could not load the model (${String((err as Error)?.message ?? err)})` });
+        if (alive) setStatus({ kind: "error", message: tr("mate.l2dNoModel", { error: String((err as Error)?.message ?? err) }) });
         return;
       }
       if (!alive) {
@@ -450,8 +452,8 @@ export default function Live2DBody({ live2d, mood, react, name, coreUrl, onTap, 
     >
       {status.kind === "no-runtime" ? (
         <div className="mate-status" data-testid="mate-live2d-no-runtime">
-          <b>Live2D runtime not installed</b>
-          <span>This model needs Live2D's Cubism Core. Install it once in Global settings — it shows up here right away.</span>
+          <b>{t("mate.l2dNoRuntime")}</b>
+          <span>{t("mate.l2dNoRuntimeHint")}</span>
           <span className="mt-1 flex flex-wrap justify-center gap-1.5">
             <button
               type="button"
@@ -459,20 +461,20 @@ export default function Live2DBody({ live2d, mood, react, name, coreUrl, onTap, 
               onClick={() => openGlobalSettings("live2d")}
               data-testid="mate-live2d-open-settings"
             >
-              Open Global settings
+              {t("mate.openGlobalSettings")}
             </button>
             <button
               type="button"
               className="rounded-md border border-border-strong px-2 py-1 text-[11.5px] text-content-dim hover:text-content"
               onClick={() => setRetry((n) => n + 1)}
             >
-              Retry
+              {t("common.retry")}
             </button>
           </span>
         </div>
       ) : status.kind === "error" ? (
         <div className="mate-status">
-          <b>Live2D model failed</b>
+          <b>{t("mate.l2dFailed")}</b>
           <span>{status.message}</span>
         </div>
       ) : null}

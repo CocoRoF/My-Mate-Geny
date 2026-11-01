@@ -6,29 +6,31 @@ import { useSyncExternalStore } from "react";
 import type { Providers, ProviderStatus, SttEngine, TtsEngine } from "../../../api/mates";
 import { webSpeechRecognition } from "../../../mate/desktop";
 import { routeOutput, setOutputVolume } from "../../../mate/voiceBridge";
+import { tr, type MsgKey } from "../../../i18n";
 
 export interface EngineInfo<T extends string> {
   id: T;
-  label: string;
-  hint: string;
+  /** message keys (shown with t()) */
+  label: MsgKey;
+  hint: MsgKey;
   /** synthesized / recognized by the backend through a provider of Global settings */
   provider: boolean;
 }
 
 export const TTS_ENGINES: EngineInfo<TtsEngine>[] = [
-  { id: "off", label: "Off", hint: "Never speaks.", provider: false },
-  { id: "browser", label: "Browser voice", hint: "Free, spoken by this device. Some systems (often Linux) have no voices.", provider: false },
-  { id: "openai", label: "OpenAI", hint: "Natural voices; GPT-4o mini TTS follows the reply's emotion.", provider: true },
-  { id: "elevenlabs", label: "ElevenLabs", hint: "Your account's voices — premade, cloned and from the library.", provider: true },
-  { id: "omnivoice", label: "OmniVoice", hint: "Your own server: cloned voice profiles with emotion clips, or a designed voice.", provider: true },
-  { id: "http", label: "OpenAI-compatible server", hint: "Any server with an OpenAI-shaped /audio/speech.", provider: true },
+  { id: "off", label: "common.off", hint: "mateSettings.engTtsOffHint", provider: false },
+  { id: "browser", label: "mateSettings.engTtsBrowser", hint: "mateSettings.engTtsBrowserHint", provider: false },
+  { id: "openai", label: "mateSettings.engOpenai", hint: "mateSettings.engTtsOpenaiHint", provider: true },
+  { id: "elevenlabs", label: "mateSettings.engElevenlabs", hint: "mateSettings.engTtsElevenHint", provider: true },
+  { id: "omnivoice", label: "mateSettings.engOmnivoice", hint: "mateSettings.engTtsOmniHint", provider: true },
+  { id: "http", label: "mateSettings.engHttp", hint: "mateSettings.engTtsHttpHint", provider: true },
 ];
 
 export const STT_ENGINES: EngineInfo<SttEngine>[] = [
-  { id: "off", label: "Off", hint: "No mic button.", provider: false },
-  { id: "browser", label: "Browser recognition", hint: "Web Speech in Chrome, Edge and Safari.", provider: false },
-  { id: "openai", label: "OpenAI", hint: "GPT-4o (mini) Transcribe or Whisper.", provider: true },
-  { id: "whisper", label: "Whisper server", hint: "Your own OpenAI-compatible transcription server.", provider: true },
+  { id: "off", label: "common.off", hint: "mateSettings.engSttOffHint", provider: false },
+  { id: "browser", label: "mateSettings.engSttBrowser", hint: "mateSettings.engSttBrowserHint", provider: false },
+  { id: "openai", label: "mateSettings.engOpenai", hint: "mateSettings.engSttOpenaiHint", provider: true },
+  { id: "whisper", label: "mateSettings.engWhisper", hint: "mateSettings.engSttWhisperHint", provider: true },
 ];
 
 export type Availability =
@@ -42,19 +44,20 @@ export function providerOf(providers: Providers | null, kind: "tts" | "stt", eng
   return providers?.[kind].find((p) => p.engine === engine);
 }
 
-/** can a mate use this engine now? (Off/Browser always; providers only once Global settings verified them) */
+/** can a mate use this engine now? (Off/Browser always; providers only once Global settings verified them)
+ * (`why` / `error` are in the UI's language at call time — call it while rendering) */
 export function availability(providers: Providers | null, kind: "tts" | "stt", engine: string): Availability {
   if (engine === "off") return { state: "ready" };
   if (engine === "browser") {
-    if (kind === "stt" && !webSpeechRecognition()) return { state: "unsupported", why: "Not available in this app or browser" };
-    if (kind === "tts" && typeof speechSynthesis === "undefined") return { state: "unsupported", why: "This browser can't speak" };
+    if (kind === "stt" && !webSpeechRecognition()) return { state: "unsupported", why: tr("mateSettings.engNoRecognition") };
+    if (kind === "tts" && typeof speechSynthesis === "undefined") return { state: "unsupported", why: tr("mateSettings.engNoSpeech") };
     return { state: "ready" };
   }
   if (!providers) return { state: "checking" };
   const p = providerOf(providers, kind, engine);
   if (!p || !p.configured) return { state: "missing" };
   if (p.ok === null) return { state: "checking" };
-  if (!p.ok) return { state: "error", error: p.error || "verification failed" };
+  if (!p.ok) return { state: "error", error: p.error || tr("mateSettings.engVerifyFailed") };
   return { state: "ready", detail: p.detail };
 }
 

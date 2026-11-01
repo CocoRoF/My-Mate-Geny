@@ -6,6 +6,7 @@ import Icon from "../ui/Icon";
 import { useBackHandler } from "../../lib/back";
 import { parsePatch, type PatchFile } from "./parsePatch";
 import PatchView from "./PatchView";
+import { useT } from "../../i18n";
 
 export const STATUS: Record<string, { label: string; cls: string }> = {
   A: { label: "A", cls: "text-success" },
@@ -36,6 +37,7 @@ export default function ChangesModal({
   onClose: () => void;
   onReverted?: () => void;
 }) {
+  const t = useT();
   const first: Sel | undefined = initial || (changes.repos[0]?.files[0] ? { repo: 0, file: changes.repos[0].files[0] } : undefined);
   const [sel, setSel] = useState<Sel | undefined>(first);
   const [patch, setPatch] = useState<PatchFile | null>(null);
@@ -76,14 +78,16 @@ export default function ChangesModal({
     if (mode !== "file" || !sel || whole !== null) return;
     const root = changes.repos[sel.repo].root;
     fileText(sid, `${root}/${sel.file.path}`)
-      .then((r) => setWhole(r.content + (r.truncated ? "\n… (truncated)" : "")))
+      .then((r) => setWhole(r.content + (r.truncated ? `\n… (${t("files.truncated")})` : "")))
       .catch((e) => setWhole(`(${e.message || e})`));
   }, [mode, sel, whole, sid, changes.repos]);
 
   const revert = async (repo?: number, paths?: string[]) => {
     if (changes.eid === undefined) return;
-    const what = paths ? paths.map(base).join(", ") : `all ${changes.files} files`;
-    if (!window.confirm(`Put ${what} back to how ${paths && paths.length === 1 ? "it was" : "they were"} before this turn?`)) return;
+    const ask = paths
+      ? t("files.revertConfirmPaths", { what: paths.map(base).join(", "), count: paths.length })
+      : t("files.revertConfirmAll", { count: changes.files });
+    if (!window.confirm(ask)) return;
     setBusy(paths ? paths[0] : "all");
     try {
       const r = await revertChanges(sid, changes.eid, { repo, paths });
@@ -103,16 +107,16 @@ export default function ChangesModal({
       <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
         <Icon name="pencil" size={16} className="text-accent" />
         <span className="text-sm font-semibold">
-          {changes.files} file{changes.files === 1 ? "" : "s"} changed
+          {t("files.filesChanged", { count: changes.files })}
         </span>
         <span className="font-mono text-[12px]">
           <span className="text-success">+{total.add}</span> <span className="text-danger">−{total.del}</span>
         </span>
         <span className="ml-auto flex items-center gap-1.5">
           <button onClick={() => revert()} disabled={!!busy} className="btn-ghost py-1 px-2.5 text-[12px] text-danger hover:text-danger">
-            {busy === "all" ? <Icon name="spinner" size={13} spin /> : <Icon name="refresh" size={13} />} Undo turn
+            {busy === "all" ? <Icon name="spinner" size={13} spin /> : <Icon name="refresh" size={13} />} {t("files.undoTurn")}
           </button>
-          <button onClick={onClose} className="btn-ghost py-1 px-2" title="Close (Esc)">
+          <button onClick={onClose} className="btn-ghost py-1 px-2" title={t("files.closeEsc")}>
             <Icon name="x" size={18} />
           </button>
         </span>
@@ -153,7 +157,7 @@ export default function ChangesModal({
                   </button>
                 );
               })}
-              {r.truncated && <p className="px-3 py-1 text-[11px] text-content-faint">… more files not shown</p>}
+              {r.truncated && <p className="px-3 py-1 text-[11px] text-content-faint">{t("files.moreNotShown")}</p>}
             </div>
           ))}
         </div>
@@ -173,7 +177,7 @@ export default function ChangesModal({
                       disabled={m === "file" && sel.file.status === "D"}
                       className={`rounded-md px-2 py-0.5 text-[11.5px] ${mode === m ? "bg-surface-3 text-content" : "text-content-faint"} disabled:opacity-40`}
                     >
-                      {m === "diff" ? "Changes" : "Whole file"}
+                      {m === "diff" ? t("files.changes") : t("files.wholeFile")}
                     </button>
                   ))}
                 </div>
@@ -181,9 +185,9 @@ export default function ChangesModal({
                   onClick={() => revert(sel.repo, [sel.file.path])}
                   disabled={!!busy || reverted.has(sel.file.path)}
                   className="btn-ghost py-1 px-2 text-[11.5px]"
-                  title="Put this file back to how it was before this turn"
+                  title={t("files.undoFileTitle")}
                 >
-                  {busy === sel.file.path ? <Icon name="spinner" size={12} spin /> : <Icon name="refresh" size={12} />} Undo file
+                  {busy === sel.file.path ? <Icon name="spinner" size={12} spin /> : <Icon name="refresh" size={12} />} {t("files.undoFile")}
                 </button>
               </span>
             </div>
@@ -193,7 +197,7 @@ export default function ChangesModal({
             {!error && mode === "diff" && (patch ? <PatchView file={patch} /> : <Icon name="spinner" size={18} spin className="m-4 text-content-faint" />)}
             {!error && mode === "file" && (
               <pre className="whitespace-pre p-4 font-mono text-[12px] leading-[1.6] text-content-dim">
-                {whole === null ? "Loading…" : whole}
+                {whole === null ? t("common.loading") : whole}
               </pre>
             )}
           </div>

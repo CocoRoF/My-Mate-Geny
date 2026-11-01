@@ -1,8 +1,10 @@
 import type { PatchFile } from "./parsePatch";
+import { useT } from "../../i18n";
 
 export default function PatchView({ file }: { file: PatchFile }) {
-  if (file.binary) return <p className="p-4 text-[12px] text-content-faint">Binary file — no text diff.</p>;
-  if (!file.lines.length) return <p className="p-4 text-[12px] text-content-faint">No textual changes (mode or rename only).</p>;
+  const t = useT();
+  if (file.binary) return <p className="p-4 text-[12px] text-content-faint">{t("files.binaryNoDiff")}</p>;
+  if (!file.lines.length) return <p className="p-4 text-[12px] text-content-faint">{t("files.noTextChanges")}</p>;
   return (
     <div className="overflow-auto font-mono text-[12px] leading-[1.6]">
       <table className="w-full border-collapse">

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useComposerStore, type PendingFile } from "../../stores/composerStore";
 import Icon from "../ui/Icon";
 import Lightbox from "./Lightbox";
+import { useT } from "../../i18n";
 import { extOf, fileVisual, formatBytes } from "./fileMeta";
 
 function Ring({ value }: { value: number }) {
@@ -20,10 +21,12 @@ function Ring({ value }: { value: number }) {
 }
 
 function RemoveButton({ onClick }: { onClick: () => void }) {
+  const t = useT();
   return (
     <button
       onClick={onClick}
-      title="Remove"
+      title={t("common.remove")}
+      aria-label={t("common.remove")}
       className="absolute -right-1.5 -top-1.5 z-10 grid place-items-center w-5 h-5 rounded-full bg-surface-3 border border-border-strong text-content-dim hover:text-content hover:bg-danger/80 transition sm:opacity-0 group-hover:opacity-100 focus:opacity-100"
     >
       <Icon name="x" size={11} />
@@ -72,6 +75,7 @@ function ImageTile({ it, onOpen }: { it: PendingFile; onOpen: () => void }) {
 function FileChip({ it }: { it: PendingFile }) {
   const remove = useComposerStore((s) => s.remove);
   const retry = useComposerStore((s) => s.retry);
+  const t = useT();
   const { icon, tone } = fileVisual(it.name, it.mime);
   return (
     <div className="group relative shrink-0" title={it.error ? `${it.name} — ${it.error}` : it.name}>
@@ -92,7 +96,7 @@ function FileChip({ it }: { it: PendingFile }) {
           ) : (
             <div className="text-[11px] text-content-faint">
               {it.status === "uploading"
-                ? `Uploading ${Math.round(it.progress * 100)}%`
+                ? t("files.uploadingPct", { pct: Math.round(it.progress * 100) })
                 : [extOf(it.name), formatBytes(it.size)].filter(Boolean).join(" · ")}
             </div>
           )}

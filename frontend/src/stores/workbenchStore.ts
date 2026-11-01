@@ -4,6 +4,7 @@ import { fsList, fsResolve, fsStat, type FsEntry } from "../api/fs";
 import { dirName } from "../lib/fileView";
 import { parsePathRef, resolvePath } from "../lib/paths";
 import type { Session } from "../types";
+import { tr } from "../i18n";
 
 /**
  * Workbench = the VS Code-like layer around a chat: file tabs in the main
@@ -285,5 +286,5 @@ export async function openPath(session: Session, raw: string, opts: { base?: str
       lastErr = String(e.message || e);
     }
   }
-  wb.notify(lastErr === "not found" ? `Not found: ${ref.path}` : `${ref.path}: ${lastErr}`, "error");
+  wb.notify(lastErr === "not found" ? tr("files.notFound", { path: ref.path }) : `${ref.path}: ${lastErr}`, "error");
 }

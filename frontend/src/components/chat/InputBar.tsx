@@ -13,6 +13,7 @@ import UsageFooter from "./UsageFooter";
 import ContextMeter from "./ContextMeter";
 import { useWorkbench } from "../../stores/workbenchStore";
 import { usePhone } from "../../lib/device";
+import { tr, useT } from "../../i18n";
 
 export { filesFromClipboard } from "../composer/files";
 
@@ -30,6 +31,7 @@ export default function InputBar({
   onStop: () => void;
   session: Session;
 }) {
+  const t = useT();
   const sid = session.id;
   // Phones: the mode/engine/model/think chips fold into one button in the composer.
   const phone = usePhone();
@@ -40,11 +42,11 @@ export default function InputBar({
     async (action: ComposerAction) => {
       if (action === "clear") {
         await resetContext(sid);
-        return "Context cleared — the next message starts a fresh agent conversation.";
+        return tr("chat.noticeCleared");
       }
       if (action === "plan" || action === "agent") {
         await updateSession(sid, { mode: action });
-        return action === "plan" ? "Plan mode: read-only, the agent will propose a plan." : "Agent mode: full autonomy.";
+        return action === "plan" ? tr("chat.noticePlan") : tr("chat.noticeAgent");
       }
       onStop();
     },
@@ -107,13 +109,13 @@ export default function InputBar({
             placeholder={
               isStreaming
                 ? touch
-                  ? "Add instructions while it works…"
-                  : "Add instructions while it works — Enter adds them to this turn…"
+                  ? t("chat.phSteerTouch")
+                  : t("chat.phSteer")
                 : items.length
-                  ? "Add a message (optional)…"
+                  ? t("chat.phOptional")
                   : window.innerWidth < 640
-                    ? "Message the agent…"
-                    : "Message the agent…   / for commands · @ for files"
+                    ? t("chat.phMessage")
+                    : t("chat.phMessageKeys")
             }
             className="block w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm text-content placeholder:text-content-faint outline-none max-h-[240px]"
           />
@@ -124,7 +126,8 @@ export default function InputBar({
                 className={`grid place-items-center w-10 h-10 sm:w-8 sm:h-8 rounded-lg transition ${
                   c.attachOpen ? "bg-accent-soft text-accent" : "text-content-dim hover:text-content hover:bg-surface-3"
                 }`}
-                title="Attach photos or files"
+                title={t("chat.attachTitle")}
+                aria-label={t("chat.attachTitle")}
               >
                 <Icon name="plus" size={18} />
               </button>
@@ -134,9 +137,9 @@ export default function InputBar({
             {phone && !(isStreaming && hasContent) && <ChatControls session={session} compact />}
             {items.length > 0 && (
               <span className="shrink-0 text-[11px] text-content-faint">
-                {items.length} attached
-                {uploading && " · uploading…"}
-                {failed > 0 && <span className="text-danger"> · {failed} failed</span>}
+                {t("chat.attachedN", { count: items.length })}
+                {uploading && ` · ${t("chat.uploading")}`}
+                {failed > 0 && <span className="text-danger"> · {t("chat.failedN", { count: failed })}</span>}
               </span>
             )}
             <div className="ml-auto flex shrink-0 items-center gap-1.5">
@@ -146,22 +149,20 @@ export default function InputBar({
                     onClick={() => c.submit("queue")}
                     disabled={uploading}
                     className="h-10 sm:h-9 rounded-xl border border-border px-3 text-[12px] text-content-dim hover:text-content hover:bg-surface-3 transition disabled:opacity-40"
-                    title="Send after the current turn finishes"
+                    title={t("chat.queueTitle")}
                   >
-                    Queue
+                    {t("chat.queue")}
                   </button>
                   <button
                     onClick={() => c.submit()}
                     disabled={uploading}
                     className="h-10 sm:h-9 inline-flex items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium text-white transition disabled:opacity-40"
                     style={{ background: "linear-gradient(135deg,#6e8bff,#5b7cff)" }}
-                    title={`Add to the running turn now${touch ? "" : " (Enter)"} — ${
-                      session.provider === "codex"
-                        ? "Codex pauses its current step and continues with this"
-                        : "the agent picks it up at its next step"
+                    title={`${t("chat.addNowTitle")}${touch ? "" : " (Enter)"} — ${
+                      session.provider === "codex" ? t("chat.addNowCodex") : t("chat.addNowAgent")
                     }`}
                   >
-                    <Icon name="arrow-up" size={14} /> Add now
+                    <Icon name="arrow-up" size={14} /> {t("chat.addNow")}
                   </button>
                 </>
               )}
@@ -169,7 +170,8 @@ export default function InputBar({
                 <button
                   onClick={onStop}
                   className="grid place-items-center w-10 h-10 sm:w-9 sm:h-9 rounded-xl bg-content text-bg hover:bg-white transition"
-                  title="Stop (Esc)"
+                  title={t("chat.stopEsc")}
+                  aria-label={t("common.stop")}
                 >
                   <span className="block w-3 h-3 rounded-[3px] bg-bg" />
                 </button>
@@ -179,7 +181,8 @@ export default function InputBar({
                   disabled={!hasContent || uploading}
                   className="grid place-items-center w-10 h-10 sm:w-9 sm:h-9 rounded-xl text-white transition disabled:opacity-30"
                   style={{ background: "linear-gradient(135deg,#6e8bff,#5b7cff)" }}
-                  title={uploading ? "Waiting for uploads…" : touch ? "Send" : "Send (Enter)"}
+                  title={uploading ? t("chat.waitingUploads") : touch ? t("common.send") : t("chat.sendEnter")}
+                  aria-label={t("common.send")}
                 >
                   {uploading ? <Icon name="spinner" size={16} spin /> : <Icon name="arrow-up" size={17} />}
                 </button>
@@ -195,21 +198,19 @@ export default function InputBar({
             ) : isStreaming ? (
               <span className="inline-flex items-center gap-1.5 text-accent">
                 <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" />
-                {touch
-                  ? "working… · Add now joins this turn · Queue sends after · keeps running if you close the app"
-                  : "working… · Enter adds to this turn · Queue sends after · Esc stops · keeps running if you close this tab"}
+                {touch ? t("chat.workingTouch") : t("chat.workingKeys")}
               </span>
             ) : touch ? (
-              <span className="hidden sm:inline">Return adds a line · tap ↑ to send · / commands · @ files</span>
+              <span className="hidden sm:inline">{t("chat.hintTouch")}</span>
             ) : (
-              <span className="hidden sm:inline">Enter to send · Shift+Enter newline · / commands · @ files · paste or drop files</span>
+              <span className="hidden sm:inline">{t("chat.hintKeys")}</span>
             )}
           </span>
           <span className="flex shrink-0 items-center gap-2 font-mono">
             <ContextMeter
               session={session}
               onCompact={() => {
-                if (!onSend("/compact", [])) setNotice("Not connected — try again in a moment.");
+                if (!onSend("/compact", [])) setNotice(t("chat.notConnectedRetry"));
               }}
             />
             <UsageFooter session={session} />
