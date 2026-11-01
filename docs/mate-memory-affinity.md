@@ -1,7 +1,10 @@
 # Mate settings, memory and affinity — design (phase 1)
 
-Status: **design only**, nothing implemented yet. It extends [mate.md](mate.md) (the
-contract); each stage below updates mate.md when it ships. Base: `main` at 1f8f79f.
+Status: **implemented** (stages A–D; mate.md carries the contract). Where the implementation differs from
+the plan below: the address forms live in main's `prompt.address_line` (both speech levels, or only the
+one set in Conversation style); the relationship settings live in its own document (`mate_relation`), not
+in `prefs.affinity`; the mood follows the time of day and exchanges and is only described to the model in
+words; "Tidy up" and semantic recall (B2) are not built.
 
 Goals: (1) a few more per-mate conversation settings that actually change behaviour, (2)
 memory that has kinds, importance and dates and is *recalled* per turn instead of dumped

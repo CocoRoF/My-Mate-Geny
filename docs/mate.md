@@ -43,6 +43,16 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
     "tts": { "engine": "browser", "voice": "", "model": "", "speed": 1.0, "profile": "", "language": "" },
     "stt": { "engine": "browser", "model": "", "language": "" }
   },
+  "prefs": {                // conversation settings (docs/mate-memory-affinity.md §3)
+    "user_name": "", "self_ref": "",
+    "formality": "auto",    // auto | haeyo | hapsyo | banmal (speech level; wins over the persona's speech text)
+    "length": "normal",     // short | normal | long
+    "emotion": 2,           // 0 off · 1 subtle · 2 normal · 3 expressive (prompt + avatar reactions / voice emotion)
+    "tone": { "warmth": "auto", "humor": "auto", "initiative": "auto" },   // auto | low | high
+    "avoid": "",            // topics to avoid
+    "memory": { "recall": "normal", "self_save": true }   // recall: off | light | normal | rich
+  },
+  "relation": { "enabled", "paused", "stage", "affinity", "mood", "show_indicator", "avatar_mood" },  // read-only summary (§5 below)
   "session_id": "sess_…"   // its conversation (sessions row kind="mate"), null until first opened
 }
 ```
@@ -72,9 +82,23 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
   engine's mate default (`claude-sonnet-5-5` / `gpt-6.1-sol`; `""` falls back to
   it too). `llm.effort`: `default|low|medium|high|xhigh|max` (default `low`;
   for Codex the model's reasoning level).
-- Memory: `GET /api/mates/{id}/memories` → `[{id, text, created_at}]`,
-  `POST {text}` → the memory, `DELETE /api/mates/{id}/memories/{mid}`.
-  (The mate edits the same list with its `remember` / `forget` tools.)
+- `prefs` merge field by field like `persona` (unknown keys dropped, enums checked → 400); built-in updates
+  never touch them. Every option changes a prompt line (the address forms follow the speech level), and the
+  next message carries a `<settings_update>` note; the recall level is per turn (no restart).
+- Memory (docs/mate-memory-affinity.md §4): `GET /api/mates/{id}/memories?q=&kind=&status=active|done|archived|all&sort=created|recent|importance|due`
+  → `[{id, text, kind, importance, pinned, due_at, expires_at, status, source, created_at, updated_at,
+  last_used_at, use_count, core}]` (`kind`: profile | preference | fact | plan | context; `core`: always in
+  the system prompt), `POST {text, kind?, importance?, pinned?, due_at?}` → the memory + `merged` (an
+  active one of that kind said the same: updated instead) + `similar`, `PATCH …/memories/{mid}`,
+  `DELETE …/memories/{mid}`, `POST …/memories/bulk {ids, action: delete|archive|restore|pin|unpin}`,
+  `GET …/memories/stats`, `POST …/memories/preview {text}` → `{core, recalled, level, block}` (the
+  Memory tab's Test recall). The mate edits the same memories with its tools (§4).
+- Relationship (docs/mate-memory-affinity.md §5): `GET /api/mates/{id}/relation` → stage, affinity,
+  earned/warmth stage, next stage needs, stats, mood, milestones, log; `PATCH {enabled?, paused?,
+  sensitivity? (0.5–1.5), show_indicator?, avatar_mood?, affinity? (0–100)}`; `POST …/relation/reset
+  {mode: zero|recompute}`.
+- Global settings also hold `timezone` (IANA; the console fills it from the browser once; "" = the
+  server's): the mate's clock (`Now:` line), plan dates and relationship days.
 
 ## 2. Avatar (three kinds + none)
 
@@ -373,7 +397,12 @@ Live2D content. The originals are authoritative; see
   `user.message` / `user.steer` events carry the same keys in `data`.
 - **Engines.** The session's `provider` follows `mate.llm.provider`; both are
   the same sealed secretary (same prompt, same `mate` tools, same events), the
-  system prompt being persona + mate contract + memories (`app/mate/prompt.py`).
+  system prompt being persona + conversation settings + mate contract + the relationship guide (while it
+  is on) + the **core** memories (`app/mate/prompt.py`). Each message is prefixed with a `<context>` block
+  (never stored, never a restart): the time now, memories recalled for this message (BM25 over Korean stems /
+  bigrams and English words + importance, recency, plans due soon; not repeated within 20 turns of the same
+  engine session), the user's memory edits since the last message, and the relationship / mood lines when
+  they changed.
   Switching engine (PATCH `llm.provider`) is a chat's engine switch: each engine
   keeps its own CLI session, at the next message the new one gets the
   conversation so far as a handoff (`context.handoff` notice), and going back
@@ -385,9 +414,10 @@ Live2D content. The originals are authoritative; see
   `--allowedTools mcp__mate`, `--mcp-config <0600 file: mate bridge>
   --strict-mcp-config`, `--disable-slash-commands --setting-sources local` (no
   user CLAUDE.md / hooks / plugins), no wait guide, model/effort from
-  `mate.llm`. Editing name/persona/effort or the memory list (by the user)
-  restarts the engine at the next turn (`--resume`, same conversation); a model
-  change is applied live; what the mate `remember`s itself doesn't restart it.
+  `mate.llm`. Editing name/persona/prefs/effort, the user's edits of core memories, or turning the
+  relationship on/off restarts the engine at the next turn (`--resume`, same conversation); a model
+  change is applied live; what the mate `remember`s itself, the user's edits of other memories (told
+  in the next `<context>` block) and affinity / mood changes don't restart it.
 - Engine **Codex** (`codex exec --json` per turn like Codex chats, resuming the
   thread; same account pool; default model `gpt-6.1-sol`), sealed by
   `app/providers/_codex_sealed.py` (verified against codex 0.166):
@@ -512,7 +542,9 @@ need a `message`. Copies are removed again if the delivery fails. The tool
 result says what went (`… with 2 files (shot.png, bug.md)`). `read_session`
 lists each message's `files` (names).
 | `find_folders(query)` | candidate project folders: workspaces of existing chats, then a bounded search of `/home` (depth ≤ 3, names/git repos) |
-| `remember(text)` / `forget(id)` | the mate's memory (shown in Mate settings, injected into its system prompt) |
+| `remember(text, kind?, importance?, due?)` | save a memory (a duplicate of the same kind updates the old one; similar ones are listed) |
+| `update_memory(id, text?, kind?, importance?, due?, status?)` | correct / merge / mark a plan done |
+| `forget(id, reason?)` / `recall(query, kind?, limit?, include_done?)` | delete one; search all memories |
 
 Policy in the prompt: find the chat already working on that project and send
 there; if none, find the folder and create a chat; if the folder is unknown or
@@ -598,8 +630,8 @@ user's cookie (404 / 401 otherwise). `find_folders` searches
   `window.__hrhMateAudio` (the page's voice queue) offers `getVolume()` /
   `outputGain()` for checks.
 - Settings UI: **Global settings** (voice services, Live2D runtime, desktop app
-  per computer, defaults) vs **Mate settings** (Profile · Avatar · Language
-  model · Voice · Memory · Danger zone); a mate's Voice tab offers only Off,
+  per computer, defaults incl. the timezone) vs **Mate settings** (Profile · Conversation style · Avatar ·
+  Language model · Voice · Memory · Relationship · Danger zone); a mate's Voice tab offers only Off,
   the browser and verified providers.
 - Client: replies are split into sentences/bubbles (§3 "Replies"), synthesized in order with
   one-ahead prefetch, played through the voice bridge (level → avatar). Mic:
@@ -677,12 +709,14 @@ switched off is cut and never picked again. Saving (or leaving the tab) ends
 the preview; the saved avatar then reaches other devices by `mates.changed`.
 
 **Mates stay current in every window.** Every mate write (create / update /
-delete / memories / global voice settings) is announced on `/ws/sessions` as
+delete / memories / relationship / global voice settings) is announced on `/ws/sessions` as
 `{"type": "mates.changed", "data": {"version", "reason", "mate_id"}}` (and
 `mates_version` in hello/pong); every window refetches `GET /api/mates`
 (coalesced). The Voice tab's unsaved volume previews in every window of the
 browser (BroadcastChannel `hrh-mate-preview`) and is dropped when the tab
-closes.
+closes; so does the Conversation style tab's unsaved emotion level (avatar reactions). The relationship
+indicator (a ring + the stage next to the name) follows `mates.changed` (reason `relation`, sent only
+when the mate document's summary changed).
 
 ## 7. Desktop app (Electron) — Mate only
 

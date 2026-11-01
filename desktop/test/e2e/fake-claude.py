@@ -32,6 +32,51 @@ def reader() -> None:
 
 threading.Thread(target=reader, daemon=True).start()
 
+# What the engine received, for desktop/test/e2e/mate-affinity-browser.js: every turn appends {"argv",
+# "system_prompt", "text"} (the system prompt file and the whole message, incl. the mate's per-turn <context>
+# block) to FAKE_CLAUDE_LOG — or, since the backend passes the CLI only a few variables (HOME, PATH…), to
+# ~/fake-claude-turns.jsonl when that file exists (the test creates it in the throwaway HOME).
+_HOME_LOG = os.path.join(os.path.expanduser("~"), "fake-claude-turns.jsonl")
+LOG = os.environ.get("FAKE_CLAUDE_LOG") or (_HOME_LOG if os.path.exists(_HOME_LOG) else None)
+
+
+def log_turn(text: str) -> None:
+    if not LOG:
+        return
+    prompt = ""
+    if "--system-prompt-file" in args:
+        try:
+            prompt = open(args[args.index("--system-prompt-file") + 1], encoding="utf-8").read()
+        except OSError:
+            pass
+    with open(LOG, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"argv": args, "system_prompt": prompt, "text": text, "at": time.time()}, ensure_ascii=False) + "\n")
+
+
+def call_tool(name: str, arguments: dict) -> str:
+    """A tool call through the real mate MCP bridge (the server named "mate" in --mcp-config), like the CLI does:
+    a message whose last line is `tool:<name> <json args>` makes the fake run it and answer with the result."""
+    import subprocess
+
+    cfg_arg = args[args.index("--mcp-config") + 1]
+    cfg = json.load(open(cfg_arg)) if os.path.exists(cfg_arg) else json.loads(cfg_arg)
+    srv = cfg["mcpServers"]["mate"]
+    proc = subprocess.Popen([srv["command"], *srv["args"]], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            env={**os.environ, **srv.get("env", {})}, text=True)
+
+    def rpc(o: dict) -> dict | None:
+        proc.stdin.write(json.dumps(o) + "\n")
+        proc.stdin.flush()
+        return json.loads(proc.stdout.readline()) if "id" in o else None
+
+    rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}})
+    rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
+    out = rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": name, "arguments": arguments}})
+    proc.stdin.close()
+    proc.wait(timeout=10)
+    res = (out or {}).get("result") or {}
+    return " ".join(c.get("text", "") for c in res.get("content", []))
+
 
 def emit(o: dict) -> None:
     sys.stdout.write(json.dumps(o) + "\n")
@@ -123,6 +168,17 @@ while True:
     k = int(tag.group(1)) if tag else n
     emit({"type": "system", "subtype": "init", "session_id": "fake-sid", "model": model, "permissionMode": "bypassPermissions"})
     last = text.strip().splitlines()[-1] if text.strip() else ""
+    log_turn(text)
+    tool = re.match(r"^tool:(\w+)\s*(\{.*\})?\s*$", last)
+    if tool:
+        result = call_tool(tool.group(1), json.loads(tool.group(2) or "{}"))
+        full = f"[smile] Tool {tool.group(1)}: {result}"
+        emit({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0,
+                                                "delta": {"type": "text_delta", "text": full}}})
+        emit({"type": "assistant", "message": {"model": model, "content": [{"type": "text", "text": full}]}})
+        emit({"type": "result", "subtype": "success", "is_error": False, "result": full, "session_id": "fake-sid",
+              "total_cost_usd": 0.01, "usage": {"input_tokens": 1, "output_tokens": 1}})
+        continue
     md = MD1 if re.search(r"\bmd1\b", last) else MD2 if re.search(r"\bmd2\b", last) else None
     full = ""
     for i in range(1, 6 if md is None else 1):
