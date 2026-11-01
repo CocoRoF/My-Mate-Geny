@@ -29,18 +29,28 @@ const EXPECT_LATEST = flags.includes("--expect-latest");
 // embedded block map can't be read and electron-updater falls back from the differential download. The app then
 // talks to the server through a proxy that sends the installer at ~8 MB/s (progress to watch) and can fail it.
 const FULL = flags.includes("--full");
+// --readonly-install: the first Restart & install meets a read-only folder (as an AppImage kept where the user cannot
+// write): the error must be said, with Retry
+const READONLY = flags.includes("--readonly-install");
 
 /** a proxy in front of the server: the update's installer slowed down; `fail` answers it with 500 */
 async function startProxy(target) {
   const http = require("http");
   const net = require("net");
   const t = new URL(target);
-  const P = { fail: false, url: "" };
+  // gone: that many installer requests answered 404, as the server does once the rolling release replaced the build
+  const P = { fail: false, gone: 0, url: "" };
   const slow = (req) => /\/api\/downloads\/update\/[^/?]+\.(AppImage|exe|deb)/.test(req.url || "");
   P.server = http.createServer((req, res) => {
     if (P.fail && slow(req)) {
       res.writeHead(500, { "content-type": "text/plain" });
       return res.end("update feed down (test)");
+    }
+    if (P.gone > 0 && slow(req)) {
+      P.gone--;
+      P.served404 = (P.served404 || 0) + 1;
+      res.writeHead(404, { "content-type": "application/json" });
+      return res.end('{"detail":"not in the latest release"}');
     }
     const up = http.request({ host: t.hostname, port: t.port, path: req.url, method: req.method, headers: { ...req.headers, host: t.host } }, (r) => {
       res.writeHead(r.statusCode, r.headers);
@@ -390,7 +400,10 @@ async function main() {
       await sleep(300);
       await con.shot(`${facts.version}-settings-2-error.png`);
       proxy.fail = false;
-      step("Retry → downloading again: progress (percent, size, speed, time left)");
+      // (and the build "replaced" once more: the first request for it is a 404 — the app looks again by itself)
+      // (2: electron-updater first asks for the end of the file for a differential download, then the whole file)
+      proxy.gone = 2;
+      step("Retry (its first request a 404: replaced build) → downloading again: progress (percent, size, speed, time left)");
       await click(con, "update-retry");
     } else {
       step("Download & install: progress (percent, size, speed, time left)");
@@ -404,6 +417,7 @@ async function main() {
       return c && ((c.status === "downloading" && /MB of/.test(c.text) && parseInt(c.pct) >= 3) || c.status === "ready" || c.status === "error") ? c : null;
     }, 300000);
     for (const s of seen) console.log(`  seen: ${s}`);
+    if (proxy) console.log(`  404s served for a "replaced" build: ${proxy.served404 || 0}`);
     await con.shot(`${facts.version}-settings-2-${d1.status}.png`);
     if (d1.status === "error") {
       failures.push(`download: ${d1.text}`);
@@ -497,7 +511,27 @@ async function main() {
     // (a Node inspector still attached keeps a quitting app waiting for it to disconnect)
     app.mainCdp.close();
     app.mainCdp = null;
-    await click(con, "update-install");
+    let installButton = "update-install";
+    if (READONLY) {
+      step("an install that cannot happen (the AppImage's folder is read-only): an error with Retry — the app stays");
+      fs.chmodSync(path.dirname(installed), 0o555);
+      await click(con, "update-install");
+      const e = await until("the install error", async () => {
+        const c = await con.eval(CARD);
+        return c && c.status === "error" ? c : null;
+      }, 20000).catch(() => null);
+      const c = e || (await con.eval(CARD));
+      console.log(`  ${c ? `${c.status} — ${c.text}` : "(no card)"}`);
+      if (!e) failures.push(`a failed install: ${c ? c.status : "no card"} (expected an error)`);
+      else if (!/could not be installed/.test(e.text)) failures.push(`a failed install says: ${e.text}`);
+      await sleep(300);
+      await con.shot(`${facts.version}-install-error.png`);
+      fs.chmodSync(path.dirname(installed), 0o755);
+      if (!e) return finish(failures);
+      step("the folder writable again: Retry → installs");
+      installButton = "update-retry";
+    }
+    await click(con, installButton);
     let lastSeen = "";
     const quit = await until("the old app to quit", async () => {
       const now = procs(home).join(" | ");
