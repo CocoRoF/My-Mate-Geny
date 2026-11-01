@@ -4,7 +4,12 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
-const { createUpdater, compareVersions, support } = require("../src/updater");
+const { createUpdater, compareVersions, support, restartArgs, restartCommand } = require("../src/updater");
+
+// (a few turns of the event loop: the updater awaits the cookie, electron-updater and a fresh look at the feed)
+const settle = async () => {
+  for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+};
 
 class FakeToken {
   constructor() {
@@ -57,6 +62,7 @@ function make(opts = {}) {
     beforeInstall: () => states.push("before-install"),
     onState: (s) => states.push(s),
     now: () => t,
+    ...(opts.deps || {}),
   });
   return { up, u, states, tick: (ms) => (t += ms) };
 }
@@ -85,7 +91,7 @@ test("check → available → download with progress (speed, ETA) → ready → 
   assert.deepEqual(u.calls[0], ["feed", "https://srv/api/downloads/update"]);
   assert.deepEqual(u.calls[1], ["check", { Cookie: "hrh_session=abc" }], "the session cookie goes along");
   const p = up.download();
-  await new Promise((r) => setImmediate(r));
+  await settle();
   assert.equal(up.state.status, "downloading");
   u.emit("download-progress", { percent: 25, transferred: 250, total: 1000, bytesPerSecond: 50 });
   tick(1000);
@@ -108,7 +114,7 @@ test("cancel → back to available (retry downloads again); the state survives f
   const { up, u } = make();
   await up.check();
   const p = up.download();
-  await new Promise((r) => setImmediate(r));
+  await settle();
   u.emit("download-progress", { percent: 10, transferred: 100, total: 1000, bytesPerSecond: 100 });
   up.cancel();
   const s = await p;
@@ -117,7 +123,7 @@ test("cancel → back to available (retry downloads again); the state survives f
   // a page that reloads reads the same state
   assert.equal(up.state.status, "available");
   const again = up.download();
-  await new Promise((r) => setImmediate(r));
+  await settle();
   assert.equal(up.state.status, "downloading");
   u.pending.resolve();
   assert.equal((await again).status, "ready");
@@ -132,14 +138,14 @@ test("errors say what happened, and Retry repeats what failed", async () => {
   Object.assign(u, { checkForUpdates: u2.checkForUpdates });
   assert.equal((await up.retry()).status, "available");
   const p = up.download();
-  await new Promise((r) => setImmediate(r));
+  await settle();
   u.pending.reject(new Error("sha512 checksum mismatch"));
   const e = await p;
   assert.equal(e.status, "error");
   assert.equal(e.during, "download");
   assert.match(e.error, /damaged/);
   const r = up.retry();
-  await new Promise((r2) => setImmediate(r2));
+  await settle();
   assert.equal(up.state.status, "downloading", "retry goes straight back to downloading");
   u.pending.resolve();
   assert.equal((await r).status, "ready");
@@ -156,9 +162,112 @@ test("up to date; unsupported platforms never touch electron-updater; Linux .deb
   const d = make({ platform: "linux", env: {} });
   await d.up.check();
   const p = d.up.download();
-  await new Promise((r) => setImmediate(r));
+  await settle();
   d.u.pending.resolve();
   await p;
   await d.up.install();
   assert.deepEqual(d.u.calls.at(-1), ["install", false, false]);
+});
+
+test("a download looks at the feed again first: an hour-old 'available' takes the build the server has now", async () => {
+  const { up, u } = make({ latest: "0.4.14" });
+  assert.equal((await up.check()).version, "0.4.14");
+  // the rolling release moved on meanwhile (the live log: 0.4.14's file → 404 while the page still offered it)
+  const later = fakeUpdater({ latest: "0.4.15" });
+  u.checkForUpdates = later.checkForUpdates;
+  const p = up.download();
+  await settle();
+  assert.equal(up.state.status, "downloading");
+  assert.equal(up.state.version, "0.4.15", "the download is the current build");
+  u.pending.resolve();
+  assert.equal((await p).status, "ready");
+});
+
+test("a 404 mid-download (the build was replaced): one more look, then the newer build; twice: a clear error", async () => {
+  const { up, u } = make();
+  await up.check();
+  const p = up.download();
+  await settle();
+  u.pending.reject(new Error("HttpError: 404 Not Found"));
+  await settle();
+  assert.equal(up.state.status, "downloading", "looked again and downloads anew");
+  assert.equal(u.calls.filter((c) => c[0] === "download").length, 2);
+  u.pending.reject(new Error("HttpError: 404 Not Found"));
+  const e = await p;
+  assert.equal(e.status, "error");
+  assert.match(e.error, /no longer has that build/);
+});
+
+test("the feed declines (not an AppImage / .deb / installer it knows): an error, never 'up to date'", async () => {
+  const { up, u } = make();
+  u.checkForUpdates = async () => null;
+  const s = await up.check();
+  assert.equal(s.status, "error");
+  assert.match(s.error, /cannot replace itself/);
+});
+
+// electron-updater 6.3.9's BaseUpdater.quitAndInstall / AppImageUpdater.doInstall, as far as the updater sees them
+function installingUpdater(fail) {
+  const u = fakeUpdater();
+  u.spawned = [];
+  u.spawnLog = async (cmd, args) => u.spawned.push([cmd, args]);
+  u.quitAndInstall = (silent, run) => {
+    u.calls.push(["install", silent, run]);
+    if (fail) return u.emit("error", new Error(fail)); // install() → dispatchError, returns false: no quit
+    u.spawnLog("/home/me/Apps/my-mate-geny-0.4.16-linux-x86_64.AppImage", [], {});
+  };
+  return u;
+}
+
+async function readyToInstall(opts) {
+  const m = make(opts);
+  await m.up.check();
+  const p = m.up.download();
+  await settle();
+  m.u.pending.resolve();
+  await p;
+  return m;
+}
+
+test("AppImage: the restart is ours — the new file with this app's arguments, after this process exits", async () => {
+  const restarted = [];
+  const { up, u } = await readyToInstall({ u: installingUpdater(), platform: "linux", env: { APPIMAGE: "/home/me/Apps/my-mate-geny-0.4.14-linux-x86_64.AppImage" }, deps: { restartAfter: (f) => restarted.push(f) } });
+  const own = u.spawnLog;
+  await up.install();
+  assert.deepEqual(u.calls.at(-1), ["install", true, true]);
+  assert.deepEqual(restarted, ["/home/me/Apps/my-mate-geny-0.4.16-linux-x86_64.AppImage"], "the file electron-updater put in place");
+  assert.deepEqual(u.spawned, [], "electron-updater's own argument-less start did not happen");
+  assert.equal(u.spawnLog, own, "electron-updater is left as it was");
+  assert.equal(up.state.status, "installing");
+});
+
+test("Windows keeps electron-updater's own restart (the NSIS installer's --force-run)", async () => {
+  const restarted = [];
+  const { up, u } = await readyToInstall({ u: installingUpdater(), platform: "win32", deps: { restartAfter: (f) => restarted.push(f) } });
+  await up.install();
+  assert.deepEqual(u.calls.at(-1), ["install", true, true]);
+  assert.deepEqual(restarted, []);
+  assert.equal(u.spawned.length, 1);
+});
+
+test("an install that fails says so (not 'Installing…' forever); Retry installs again", async () => {
+  const undone = [];
+  const u = installingUpdater("EACCES: permission denied, unlink '/opt/my-mate-geny.AppImage'");
+  const { up } = await readyToInstall({ u, platform: "linux", env: { APPIMAGE: "/opt/my-mate-geny.AppImage" }, deps: { restartAfter: () => {}, installFailed: () => undone.push(1) } });
+  const s = await up.install();
+  assert.equal(s.status, "error");
+  assert.equal(s.during, "install");
+  assert.match(s.error, /EACCES/);
+  assert.equal(undone.length, 1, "the app is no longer 'quitting'");
+  const r = await up.retry();
+  assert.equal(u.calls.filter((c) => c[0] === "install").length, 2, "Retry installs again");
+  assert.equal(r.status, "error");
+});
+
+test("restart arguments: this app's own, never a hidden start; the command waits for this process", () => {
+  assert.deepEqual(restartArgs(["/tmp/.mount_x/hr-harnessor-desktop", "--no-sandbox", "--ozone-platform=x11", "--hidden"]), ["--no-sandbox", "--ozone-platform=x11"]);
+  const [cmd, args] = restartCommand(4242, "/a/b c.AppImage", ["--no-sandbox"]);
+  assert.equal(cmd, "/bin/sh");
+  assert.deepEqual(args.slice(2), ["sh", "4242", "/a/b c.AppImage", "--no-sandbox"]);
+  assert.match(args[1], /kill -0 "\$1".*exec "\$@"/);
 });
