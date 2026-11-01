@@ -2,7 +2,12 @@
 # A fake Claude CLI for the Mate e2e runs (desktop/test/e2e/mate-windows-e2e.js): run the throwaway backend with
 # CLAUDE_BINARY=<this file> (executable, `python3 -P` shebang). Every message gets a reply of 5 sentences, one every
 # 0.7 s, so a reply is still being written while the windows elect who reads it.
+# A message with "md1" gets a markdown-heavy reply instead (every element, unsafe links / HTML, long lines), streamed
+# a few characters at a time with pauses in the middle of a bold word, the code block and the table (FAKE_MD_PAUSE
+# seconds, default 2.5) so a test can look at the half-written state; "md2" gets a short one
+# (desktop/test/e2e/mate-markdown-browser.js).
 import json
+import os
 import queue
 import re
 import sys
@@ -33,6 +38,75 @@ def emit(o: dict) -> None:
     sys.stdout.flush()
 
 
+FENCE = "`" * 3
+MD1 = "\n".join([
+    "[smile] 좋아요! **마크다운 예시**를 보여 드릴게요. 설치는 `npm ci` 로 해요.",
+    "자세한 건 [공식 문서](https://example.com/docs) 와 https://example.org/very/long/path/that/keeps/going/and/going/"
+    "without/any/break/at/all/0123456789abcdefghijklmnopqrstuvwxyz0123456789 를 보세요 😀",
+    "위험한 [링크](javascript:window.__xss=1) 는 링크가 아니에요. <script>window.__xss=2</script> "
+    "<img src=x onerror=\"window.__xss=3\"> 태그는 글자 그대로예요.",
+    "",
+    "## 설치 방법",
+    "",
+    "1. 저장소를 받아요.",
+    "2. 의존성을 설치해요:",
+    "   - `npm ci`",
+    "   - [ ] 테스트 실행",
+    "   - [x] 빌드 확인",
+    "     - 아주",
+    "       - 깊은",
+    "         - 중첩",
+    "           - 목록",
+    "",
+    FENCE + "bash",
+    "npm ci && npm run build   # 이건 읽으면 안 돼요.",
+    "echo \"a very long line " + "." * 160 + " end\"",
+    FENCE,
+    "",
+    "| 이름 | 값 | 비고 |",
+    "|:---|---:|---|",
+    "| Mr. Kim | 3.5 | 테이블은 읽지 않아요. |",
+    "| **B** | `4` | [링크](https://example.com/b) |",
+    "| very-long-cell-content-without-spaces-0123456789-0123456789-0123456789 | 5 | 6 |",
+    "",
+    "> 인용문이에요. 두 번째 문장.",
+    "> > 중첩된 인용",
+    "",
+    "---",
+    "",
+    "![고양이 사진](https://images.example.net/cat.png)",
+    "",
+    "[thinking] 마지막으로, 질문 있으면 말씀해 주세요~",
+])
+MD1_PAUSES = ["**마크다운 예", "npm ci && npm run", "| Mr. Kim | 3.5 | 테이"]
+MD2 = "\n".join([
+    "[smile] 네! **요약**이에요:",
+    "- 첫째: `make test` 를 돌려요",
+    "- 둘째: [문서](https://example.com) 확인",
+    FENCE + "sh",
+    "make test",
+    FENCE,
+    "끝이에요~",
+])
+PAUSE = float(os.environ.get("FAKE_MD_PAUSE", "2.5"))
+
+
+def stream_markdown(text: str, pauses: list[str]) -> str:
+    """the reply a few characters at a time, stopping a while where `pauses` end"""
+    stops = sorted(text.index(p) + len(p) for p in pauses)
+    i = 0
+    while i < len(text):
+        j = min(len(text), i + 5)
+        for s in stops:
+            if i < s <= j:
+                j = s
+        emit({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0,
+                                                "delta": {"type": "text_delta", "text": text[i:j]}}})
+        time.sleep(PAUSE if j in stops else 0.03)
+        i = j
+    return text
+
+
 n = 0
 while True:
     msg = q.get()
@@ -48,14 +122,18 @@ while True:
     tag = re.search(r"\bq(\d+)\b", text.strip().splitlines()[-1] if text.strip() else "")
     k = int(tag.group(1)) if tag else n
     emit({"type": "system", "subtype": "init", "session_id": "fake-sid", "model": model, "permissionMode": "bypassPermissions"})
+    last = text.strip().splitlines()[-1] if text.strip() else ""
+    md = MD1 if re.search(r"\bmd1\b", last) else MD2 if re.search(r"\bmd2\b", last) else None
     full = ""
-    for i in range(1, 6):
+    for i in range(1, 6 if md is None else 1):
         time.sleep(0.7)
         part = f"Reply {k} sentence number {i} is here. "
         full += part
         # (like the real CLI with partial messages: text deltas, then the complete message)
         emit({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0,
                                                 "delta": {"type": "text_delta", "text": part}}})
+    if md is not None:
+        full = stream_markdown(md, MD1_PAUSES if md is MD1 else [])
     emit({"type": "assistant", "message": {"model": model, "content": [{"type": "text", "text": full.strip()}]}})
     emit({"type": "result", "subtype": "success", "is_error": False, "result": full.strip(), "session_id": "fake-sid",
           "total_cost_usd": 0.01, "usage": {"input_tokens": 1, "output_tokens": 1}})

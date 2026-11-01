@@ -114,6 +114,11 @@ const ko: Messages<"mate"> = {
   chatReportedBack: "채팅에서 결과를 알려 왔어요",
   stopped: "중지됨",
   latest: "최신",
+  // her replies: images in markdown
+  mdImage: "이미지",
+  mdShowImage: "이미지 보기",
+  mdImageFrom: "{host}의 이미지 — 요청할 때만 불러와요 (그 사이트가 이 글을 읽었다는 걸 알 수 있어서)",
+  mdImageFailed: "이미지를 불러오지 못했어요",
 
   resetViewTitle: "보기 초기화 (이동 / 확대)",
   moveBarTitle: "끌어서 창 이동 · 아바타를 끌어서 이동, 휠로 확대 · 가장자리를 끌어서 크기 조절",

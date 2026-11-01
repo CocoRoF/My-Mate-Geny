@@ -41,6 +41,8 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npx tsc -p . --noEmit
+      # the mate's reply rendering + speech preprocessing (node's test runner, TS types stripped)
+      - run: npm run test:unit
       - run: npm run build
 
   compose:

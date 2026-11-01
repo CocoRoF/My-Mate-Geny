@@ -8,6 +8,7 @@ import { useTaskStore } from "../stores/taskStore";
 import { useUsageStore } from "../stores/usageStore";
 import type { Attachment, PlanUsage, ProviderEvent } from "../types";
 import { tr } from "../i18n";
+import { plainPreview } from "../mate/markdown";
 
 declare global {
   interface Window {
@@ -134,7 +135,7 @@ export function useChatSocket(sessionId: string | null) {
               const body =
                 last.status === "error" ? tr("chat.notifyFailed", { error: last.error?.code === "turn.lost" ? tr("turn.runLost") : last.error?.message || "" }) :
                 last.status === "interrupted" ? tr("turn.stopped") :
-                (last.text.trim().split("\n").find((l) => l.trim()) || tr("common.done")).slice(0, 160);
+                (plainPreview(last.text) || tr("common.done")); // (the first line of words: no markdown symbols)
               notifyDone(title, body);
             }
           }

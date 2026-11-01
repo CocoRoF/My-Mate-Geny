@@ -119,6 +119,11 @@ export default {
   chatReportedBack: "A chat reported back",
   stopped: "stopped",
   latest: "Latest",
+  // her replies: images in markdown
+  mdImage: "Image",
+  mdShowImage: "Show image",
+  mdImageFrom: "An image from {host} — it loads only when you ask (the site would see that you read this)",
+  mdImageFailed: "Couldn't load the image",
 
   // desktop windows (avatar overlay, quick card, chat window)
   resetViewTitle: "Reset the view (pan / zoom)",

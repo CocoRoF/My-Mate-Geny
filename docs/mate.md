@@ -441,6 +441,52 @@ Live2D content. The originals are authoritative; see
   sentence: `[neutral] [joy] [smile] [laugh] [shy] [surprised] [sad] [angry]
   [thinking] [agree] [greet] [sleepy]`. The client strips tags for display and
   speech, and turns the latest one into the avatar's `react`.
+- **Replies: bubbles, captions, speech** (the model may still write markdown,
+  and a delegated chat's answer often has some). One reply text, three views:
+  - *Bubbles* (`frontend/src/mate/markdown.ts` `segmentReply` →
+    `components/mate/MateReply.tsx`, the same in the console Mate view, the mate
+    chat window, the quick card's reply box and on phones — compact there): a
+    conversational line is its own bubble with inline markdown (bold, italic,
+    `code`, links); a block construct — fenced code (language label, copy
+    button, lowlight highlighting shared with the agent chat), a list (nested,
+    ordered, tasks; indentation capped from the 4th level), a table, a quote,
+    a heading, an image on its own line — is one bubble rendered as markdown
+    (react-markdown + GFM; `~~` is left as written, Korean writes 좋아~~), a
+    `---` a thin divider. Emotion tags (not inside code) and stage-direction
+    lines go. Keys = the block's first line, so bubbles never remount while the
+    reply streams. Streaming: an unclosed fence is a code block in progress
+    (its opening line shows once complete), `**bo` / `*it` / `` `co `` are
+    closed for now, a half-typed `[link](…` shows its label, a marker just typed
+    is hidden, a table shows complete rows only (its header once the delimiter
+    row is there). Code and tables scroll sideways inside their bubble; long
+    words / URLs wrap; the page never widens. Raw HTML is shown as text (never
+    parsed). Links: absolute `http(s)` / `mailto` only (`safeHref`; anything
+    else — `javascript:`, `data:`, relative… — is just its label), opened with
+    `target=_blank rel="noopener noreferrer"` (the desktop app sends them to the
+    system browser). Images: `http(s)` only, lazy, `max-h-72`, no referrer;
+    this server's own files (`/api/mates/*/assets/`,
+    `/api/sessions/*/attachments/`) load at once, any other URL only after a
+    click ("Show image" — a remote image tells its host the reply was read, a
+    prompt-injected reply could leak data through its URL); a broken image
+    shows its alt text.
+  - *Captions* (stage / overlay) and notifications: plain words (`plainText`,
+    `plainPreview`): no markdown symbols, no code, no tables.
+  - *Speech* (`mate/sentences.ts` `SentenceStream`, `markdown.ts`
+    `speechText`): the scanner runs over the whole reply as it grows. A fenced
+    code block or a table (a line starting with `|` + its delimiter row) is
+    one silent piece — **never read, no placeholder** (language-neutral; what
+    came before it is said at once); nothing else waits for it. No sentence
+    ends inside a `code span` or a `[link](…)`. What is said: list marks,
+    checkboxes, quote marks, heading marks, emphasis, backticks, HTML tags,
+    images, URLs (bare or in links: the label only), emoji, stage directions
+    (`*smiles*`, `(웃음)`) and emotion tags removed. Deterministic: sentences
+    and their indices depend only on the text, never on how it was chunked
+    (an over-long run is cut exactly where char-by-char streaming cuts it,
+    never inside a URL that would then be read) — every window numbers them
+    the same for the one voice. Plain conversational text is split and said
+    exactly as before (regression tests against the previous version). The
+    server strips markdown from `…/speech` text too (`voice.speakable_text`;
+    nothing left → 400).
 
 ## 4. Delegation (MCP server `mate`, stdio bridge → backend internal API)
 
@@ -555,7 +601,7 @@ user's cookie (404 / 401 otherwise). `find_folders` searches
   per computer, defaults) vs **Mate settings** (Profile · Avatar · Language
   model · Voice · Memory · Danger zone); a mate's Voice tab offers only Off,
   the browser and verified providers.
-- Client: replies are split into sentences/bubbles, synthesized in order with
+- Client: replies are split into sentences/bubbles (§3 "Replies"), synthesized in order with
   one-ahead prefetch, played through the voice bridge (level → avatar). Mic:
   push-to-talk button (and hands-free later).
 
