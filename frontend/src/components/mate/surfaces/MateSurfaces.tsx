@@ -18,6 +18,8 @@ import { parseEmotionText } from "../../../mate/emotion";
 import { LiveMateAvatar } from "../../../mate/avatar/MateAvatar";
 import { isHome, useAvatarView } from "../../../mate/avatar/view";
 import Icon from "../../ui/Icon";
+import { WindowControls } from "../../layout/TitleBar";
+import { nativeWindow } from "../../../lib/nativeWindow";
 import { DropOverlay, useFileDrop } from "../../composer/useFileDrop";
 import MateComposer from "../MateComposer";
 import MateMessages from "../MateMessages";
@@ -399,36 +401,82 @@ function ChatWindow() {
   useEffect(() => {
     loadConfig().catch(() => {});
   }, [loadConfig]);
-  if (!mate) return <div className="grid h-full place-items-center text-sm text-content-faint">{loaded ? "No mate." : "Loading…"}</div>;
+  // the desktop app without a system title bar: this header is the window's title bar (drag, min / max / close)
+  const win = nativeWindow();
+  const mac = win?.chrome === "mac";
+  if (!mate) {
+    return (
+      <div className="relative flex h-full flex-col bg-bg">
+        {win && <div className="h-[52px] shrink-0 border-b border-border/60 bg-surface/90" style={DRAG} />}
+        <div className="grid flex-1 place-items-center" data-testid="surface-loading">
+          {loaded ? (
+            <span className="text-sm text-content-faint">No mate.</span>
+          ) : (
+            <span className="h-6 w-6 animate-spin rounded-full border-2 border-accent/25 border-t-accent" />
+          )}
+        </div>
+        {win && <WindowControls w={win} height={51} className="absolute right-0 top-0" />}
+      </div>
+    );
+  }
   const onTop = !!desk?.chatOnTop;
+  const online = conv.connection === "open";
+  const status = MOOD_LABEL[conv.mood] || (online ? "here" : "connecting…");
+  const iconBtn = "grid h-8 w-8 place-items-center rounded-lg text-content-dim transition hover:bg-surface-3 hover:text-content";
   return (
-    <div className="relative flex h-full flex-col bg-bg" data-testid="mate-chat-window" {...dropProps}>
+    <div className="relative flex h-full flex-col bg-bg" data-testid="mate-chat-window" data-chrome={win ? win.chrome : "none"} {...dropProps}>
       {dragging && <DropOverlay compact hint={`${mate.name} sees images and reads documents`} />}
-      <div className="flex shrink-0 items-center gap-2 border-b border-border/70 bg-surface/80 px-3 py-2">
-        <div className="relative h-10 w-8 shrink-0">
+      <header
+        className={`flex h-[52px] shrink-0 select-none items-center gap-2.5 border-b border-border/60 bg-surface/90 backdrop-blur-xl ${
+          mac ? "pl-[78px]" : "pl-3"
+        } ${win && !mac ? "pr-0" : "pr-2"}`}
+        style={win ? DRAG : undefined}
+        data-testid="mate-chat-header"
+      >
+        <div className="relative h-10 w-9 shrink-0 overflow-hidden rounded-xl bg-surface-2 ring-1 ring-border/80">
           <LiveMateAvatar key={mate.id} mate={mate} size="sm" mood={conv.mood} react={conv.react} interactive={false} />
         </div>
         <div className="min-w-0 flex-1 leading-tight">
-          <div className="truncate text-[13.5px] font-semibold">{mate.name}</div>
-          <div className="text-[11px] text-content-faint">{MOOD_LABEL[conv.mood] || (conv.connection === "open" ? "here" : "connecting…")}</div>
+          <div className="truncate text-[13.5px] font-semibold text-content">{mate.name}</div>
+          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-content-faint" data-testid="mate-chat-status">
+            <span
+              className={`h-1.5 w-1.5 shrink-0 rounded-full ${online ? (conv.mood === "idle" ? "bg-success" : "bg-accent animate-pulse-dot") : "bg-content-faint"}`}
+            />
+            <span className="truncate">{status}</span>
+          </div>
         </div>
         {desktopMate() && (
-          <>
-            <button className="btn-ghost !px-2" onClick={() => desktopMate()!.setChatOnTop(!onTop)} title={onTop ? "Stop keeping on top" : "Keep on top"}>
-              <Icon name={onTop ? "pin-off" : "pin"} size={14} />
+          <div className="flex shrink-0 items-center gap-0.5" style={win ? NO_DRAG : undefined}>
+            <button
+              className={`${iconBtn} ${onTop ? "bg-accent-soft !text-accent hover:!bg-accent/20" : ""}`}
+              onClick={() => desktopMate()!.setChatOnTop(!onTop)}
+              title={onTop ? "Stop keeping on top" : "Keep on top"}
+              aria-pressed={onTop}
+              data-testid="mate-chat-pin"
+            >
+              <Icon name="pin" size={14} />
             </button>
-            <button className="btn-ghost !px-2" onClick={() => desktopMate()!.openConsole()} title="Open the console">
+            <button className={iconBtn} onClick={() => desktopMate()!.openConsole()} title="Open the console" data-testid="mate-chat-console">
               <Icon name="monitor" size={14} />
             </button>
-            <button className="btn-ghost !px-2" onClick={() => desktopMate()!.closeChat()} title="Close">
-              <Icon name="x" size={15} />
-            </button>
+            {/* (with our own title bar the window buttons below close it; on macOS the traffic lights) */}
+            {!win && (
+              <button className={iconBtn} onClick={() => desktopMate()!.closeChat()} title="Close">
+                <Icon name="x" size={15} />
+              </button>
+            )}
+          </div>
+        )}
+        {win && !mac && (
+          <>
+            <span className="mx-1 h-5 w-px shrink-0 bg-border" />
+            <WindowControls w={win} height={51} />
           </>
         )}
-      </div>
+      </header>
       {conv.voiceError && <div className="px-3 pt-1 text-[11.5px] text-danger">Voice: {conv.voiceError}</div>}
       <MateMessages turns={conv.turns} compact emptyText={`Say hi to ${mate.name}.`} />
-      <div className="shrink-0 px-2 pb-2">
+      <div className="shrink-0 px-2.5 pb-2.5">
         <MateComposer mate={mate} conv={conv} compact autoFocus />
       </div>
     </div>

@@ -20,6 +20,8 @@ declare global {
       surface?: string;
       /** desktop: the Mate windows (docs/mate.md §7) */
       mate?: import("../mate/desktop").MateBridge;
+      /** desktop: the window draws its own title bar (lib/nativeWindow.ts) */
+      window?: import("../lib/nativeWindow").WindowBridge;
     };
   }
 }

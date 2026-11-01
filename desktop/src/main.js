@@ -23,6 +23,7 @@ const { LEGACY_SERVER, readSettings, writeSettings, settingsExisted, serverUrl, 
 const core = require("./connect-core");
 const mate = require("./mate");
 const recovery = require("./recovery");
+const chrome = require("./chrome");
 
 const RETRY_PAGE = path.join(__dirname, "offline.html");
 
@@ -96,6 +97,8 @@ function createWindow(url) {
     icon: path.join(__dirname, "..", "build", "icon.png"),
     autoHideMenuBar: process.platform !== "darwin",
     show: false,
+    // no system title bar: the page draws an app-styled one (chrome.js; macOS keeps its traffic lights)
+    ...chrome.frameOptions("console"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -106,6 +109,7 @@ function createWindow(url) {
     },
   });
   const w = win;
+  chrome.register(w, "console");
   if (s.maximized) w.maximize();
   w.once("ready-to-show", () => w.show());
 
@@ -348,6 +352,8 @@ ipcMain.handle("connect:cancel", (e) => {
   win.loadURL(`${serverUrl()}/`);
   return true;
 });
+
+chrome.registerIpc();
 
 // Every hrh:* call comes from a top-level page in one of our windows.
 const ours = (e) => {

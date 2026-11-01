@@ -683,6 +683,28 @@ mate?: {
 }
 ```
 
+**Window chrome** (`desktop/src/chrome.js`). The console and the mate chat
+window have no system title bar (Windows / Linux: `frame: false`, still
+resizable from the edges, Windows 11 rounds the corners and draws the shadow;
+macOS: `titleBarStyle: "hidden"` with the traffic lights). The page draws it —
+the console a slim bar (logo · what is open · minimize / maximize-restore /
+close, `components/layout/TitleBar.tsx`), the chat window its header (avatar,
+status, pin, console, window buttons) — as a `-webkit-app-region: drag` area
+(double-click maximizes: the OS does it) and marks `<html data-hrh-chrome>`.
+A page that does not (an older web build, the login page, the local connect
+/ retry pages, a page still loading) gets a plain bar from the preload until it
+does. `HRH_NATIVE_FRAME=1` or settings `"nativeFrame": true` keeps the system
+frame. Bridge, present only in those two windows:
+
+```ts
+window?: {
+  chrome: "custom" | "mac"; kind: "console" | "chat"; initial: { maximized; fullscreen; focused };
+  minimize(): void; toggleMaximize(): void; close(): void;
+  getState(): Promise<{ maximized: boolean; fullscreen: boolean; focused: boolean }>;
+  onState(cb): () => void;
+}
+```
+
 Android (Capacitor): the Mate view runs in-page; microphone permission added.
 
 ## 8. Backend notes

@@ -7,6 +7,8 @@ import { installNativeBridge } from "./native";
 import { watchKeyboard } from "./lib/keyboard";
 import { installChunkRecovery } from "./lib/recover";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
+import TitleBar from "./components/layout/TitleBar";
+import { claimWindowChrome } from "./lib/nativeWindow";
 import "./index.css";
 
 installClientErrorReporter();
@@ -32,10 +34,12 @@ if (mateSurface) document.title = mateSurface === "mate-chat" ? "Mate — My Mat
 // The root boundary: a render error or a chunk that failed to load shows a Reload screen instead of a black window.
 // (The transparent avatar window stays empty and reloads itself; the quick card shows a one-line notice.)
 const variant = mateSurface === "mate-overlay" ? "quiet" : mateSurface === "mate-quick" ? "card" : "page";
+// the desktop console / chat window without a system title bar: this page draws it (TitleBar, the chat's header)
+const chromed = (!surface || mateSurface === "mate-chat") && claimWindowChrome();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ErrorBoundary variant={variant}>
+    <ErrorBoundary variant={variant} chrome={chromed ? <TitleBar /> : undefined}>
     {surface === "avatar-lab" ? (
       <Suspense fallback={null}>
         <AvatarLab />

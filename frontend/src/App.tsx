@@ -12,6 +12,8 @@ import { useConnectionStore } from "./stores/connectionStore";
 import { useSessionStore } from "./stores/sessionStore";
 import { useConfigStore } from "./stores/configStore";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
+import TitleBar from "./components/layout/TitleBar";
+import { nativeWindow } from "./lib/nativeWindow";
 
 // Secondary views load on demand: the chat (first screen) stays light.
 const ProvidersView = lazy(() => import("./components/providers/ProvidersView"));
@@ -61,9 +63,13 @@ export default function App() {
     chat: "New chat", providers: "Providers", connections: "Connections", usage: "Usage", admin: "Admin", downloads: "Download",
   };
 
-  return (
+  const sessionTitle = useSessionStore((s) => (s.activeId ? s.sessions.find((x) => x.id === s.activeId)?.title : undefined));
+  const chrome = !!nativeWindow(); // the desktop app without a system title bar: ours on top (TitleBar)
+  const context = view === "chat" ? sessionTitle || "New chat" : titles[view] || "";
+
+  const shell = (
     // the visible height: 100dvh, or what the keyboard leaves where the layout viewport doesn't shrink (lib/keyboard.ts)
-    <div className="h-[var(--app-h,100dvh)] flex overflow-hidden text-content">
+    <div className={`${chrome ? "min-h-0 flex-1" : "h-[var(--app-h,100dvh)]"} flex overflow-hidden text-content`}>
       <div className="hidden md:flex">
         <Sidebar />
       </div>
@@ -96,6 +102,13 @@ export default function App() {
           </ErrorBoundary>
         </div>
       </main>
+    </div>
+  );
+  if (!chrome) return shell;
+  return (
+    <div className="flex h-[100dvh] flex-col overflow-hidden" data-testid="app-window">
+      <TitleBar context={context} />
+      {shell}
     </div>
   );
 }

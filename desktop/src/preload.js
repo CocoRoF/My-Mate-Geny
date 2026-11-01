@@ -53,6 +53,29 @@ const mate = {
   onCommand: (cb) => listen("mate:command", cb),
 };
 
+// App-like window chrome (chrome.js): only in the console and the mate chat window, and only when the app draws no
+// system title bar there. The page draws its own title bar with these; absent → the page draws none (older apps).
+const chromeInfo = (() => {
+  try {
+    return ipcRenderer.sendSync("window:info");
+  } catch {
+    return null;
+  }
+})();
+const windowBridge = chromeInfo
+  ? {
+      chrome: chromeInfo.chrome, // "custom" (draw min / max / close) | "mac" (the traffic lights are there)
+      kind: chromeInfo.kind, // console | chat
+      platform: process.platform,
+      initial: { maximized: !!chromeInfo.maximized, fullscreen: !!chromeInfo.fullscreen, focused: chromeInfo.focused !== false },
+      minimize: () => ipcRenderer.send("window:minimize"),
+      toggleMaximize: () => ipcRenderer.send("window:toggleMaximize"),
+      close: () => ipcRenderer.send("window:close"),
+      getState: () => ipcRenderer.invoke("window:state"),
+      onState: (cb) => listen("window:state", cb),
+    }
+  : undefined;
+
 contextBridge.exposeInMainWorld("hrhNative", {
   platform: `desktop-${process.platform}`,
   version: arg("hrh-version") || "0.0.0",
@@ -67,7 +90,93 @@ contextBridge.exposeInMainWorld("hrhNative", {
   changeServer: () => ipcRenderer.invoke("hrh:switchServer"),
   signOut: () => ipcRenderer.invoke("hrh:signOut"),
   mate,
+  window: windowBridge,
 });
+
+// A page that draws no title bar of its own in a window without the system one (an older web console, the login
+// page, the local connect / retry pages, a page still loading or one that failed to): a plain bar from here, so the
+// window can always be moved, maximized and closed. A page that draws its own sets <html data-hrh-chrome>; the bar
+// goes away then.
+if (chromeInfo) installFallbackBar(chromeInfo);
+
+function installFallbackBar(info) {
+  const H = 32;
+  const mac = info.chrome === "mac";
+  let bar = null;
+  let style = null;
+  const claimed = () => !!document.documentElement && document.documentElement.hasAttribute("data-hrh-chrome");
+  const svg = (d) => `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1">${d}</svg>`;
+  const ICON = {
+    min: svg('<path d="M0 5.5h10"/>'),
+    max: svg('<rect x="0.5" y="0.5" width="9" height="9" rx="1"/>'),
+    restore: svg('<rect x="0.5" y="2.5" width="7" height="7" rx="1"/><path d="M2.5 2.5V1.5a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-1"/>'),
+    close: svg('<path d="M0.5 0.5l9 9M9.5 0.5l-9 9"/>'),
+  };
+  const add = () => {
+    if (bar || claimed() || !document.documentElement || !document.body) return;
+    style = document.createElement("style");
+    style.textContent = `
+      html:not([data-hrh-chrome]) { --app-h: calc(100dvh - ${H}px) !important; }
+      html:not([data-hrh-chrome]) body { padding-top: ${H}px !important; box-sizing: border-box !important; }
+      #hrh-native-bar { position: fixed; top: 0; left: 0; right: 0; height: ${H}px; z-index: 2147483647; display: flex; align-items: center;
+        background: #0f1218; border-bottom: 1px solid #232936; color: #9aa3b4; font: 12px Inter, "Noto Sans KR", system-ui, sans-serif;
+        -webkit-app-region: drag; user-select: none; padding-left: ${mac ? 78 : 12}px; box-sizing: border-box; }
+      #hrh-native-bar .t { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; letter-spacing: .01em; }
+      #hrh-native-bar button { -webkit-app-region: no-drag; width: 44px; height: ${H}px; border: 0; padding: 0; background: transparent; color: #9aa3b4;
+        display: grid; place-items: center; cursor: default; transition: background .12s, color .12s; }
+      #hrh-native-bar button:hover { background: #1c212c; color: #e6e9f0; }
+      #hrh-native-bar button.x:hover { background: #e5484d; color: #fff; }
+      #hrh-boot { top: ${H}px !important; }`;
+    (document.head || document.documentElement).appendChild(style);
+    bar = document.createElement("div");
+    bar.id = "hrh-native-bar";
+    bar.setAttribute("data-testid", "native-fallback-bar");
+    const title = document.createElement("div");
+    title.className = "t";
+    title.textContent = document.title || "My Mate Geny";
+    bar.appendChild(title);
+    if (!mac) {
+      const btn = (cls, label, icon, fn) => {
+        const b = document.createElement("button");
+        b.className = cls;
+        b.title = label;
+        b.setAttribute("aria-label", label);
+        b.innerHTML = icon;
+        b.addEventListener("click", fn);
+        bar.appendChild(b);
+        return b;
+      };
+      btn("m", "Minimize", ICON.min, () => ipcRenderer.send("window:minimize"));
+      const max = btn("M", "Maximize", ICON.max, () => ipcRenderer.send("window:toggleMaximize"));
+      btn("x", "Close", ICON.close, () => ipcRenderer.send("window:close"));
+      const paint = (st) => {
+        max.innerHTML = st && (st.maximized || st.fullscreen) ? ICON.restore : ICON.max;
+        max.title = st && st.maximized ? "Restore" : "Maximize";
+      };
+      paint(info);
+      ipcRenderer.on("window:state", (_e, st) => paint(st));
+    }
+    document.documentElement.appendChild(bar);
+    new MutationObserver(() => (title.textContent = document.title || "My Mate Geny")).observe(document.querySelector("title") || document.head || document.documentElement, { childList: true, subtree: true, characterData: true });
+  };
+  const remove = () => {
+    bar && bar.remove();
+    style && style.remove();
+    bar = null;
+    style = null;
+  };
+  // as soon as there is a body (a page that loads slowly is still movable / closable), and whenever the page claims
+  const tick = () => (claimed() ? remove() : add());
+  const watch = new MutationObserver(tick);
+  const start = () => {
+    if (!document.documentElement) return;
+    watch.observe(document.documentElement, { attributes: true, attributeFilter: ["data-hrh-chrome"], childList: true });
+    tick();
+  };
+  if (document.documentElement) start();
+  else document.addEventListener("readystatechange", start, { once: true });
+  document.addEventListener("DOMContentLoaded", tick);
+}
 
 // The local connect screen (src/connect.html) only.
 const onConnectPage = (() => {

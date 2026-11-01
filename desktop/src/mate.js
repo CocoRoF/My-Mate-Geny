@@ -18,6 +18,7 @@ const path = require("path");
 const { readSettings, writeSettings, serverUrl, sameOrigin } = require("./settings");
 const geo = require("./geometry");
 const recovery = require("./recovery");
+const chrome = require("./chrome");
 
 const RETRY_PAGE = path.join(__dirname, "offline.html");
 
@@ -800,9 +801,12 @@ function createChat() {
     title: `Mate — ${PRODUCT}`,
     icon: ICON,
     autoHideMenuBar: true,
+    // no system title bar: the page's header is the title bar (chrome.js)
+    ...chrome.frameOptions("chat"),
     webPreferences: webPrefs("mate-chat", { spellcheck: true }),
   });
   const win = chat;
+  chrome.register(win, "chat");
   if (!place) {
     // next to the avatar if it is out, else bottom-right
     const m = alive(avatar) ? avatar.getBounds() : null;
