@@ -122,6 +122,20 @@ cannot (the page offers the .dmg). A background check runs 30 s after start
 and every 6 h (it only tells; downloading is the user's call). Help → *Check
 for updates…*.
 
+- A download first reads the feed again (the release is rolling: an hour-old
+  "available" may name a build the server no longer has) and, on a 404 mid-way,
+  once more.
+- AppImage: electron-updater swaps the file (a versioned file name becomes the
+  new version's name) and the restart is the app's own — the new file with the
+  arguments the app was started with (`--no-sandbox`, which Ubuntu 24.04+ needs
+  for AppImages), once the old process has exited. (electron-updater's own
+  restart passed no arguments, so on those systems the new version aborted at
+  start and the app did not come back — apps up to 0.4.16 do that once: start
+  the app again by hand, it is already the new version.)
+- A failed install (e.g. an AppImage in a folder you cannot write to) is an
+  error with Retry, not a stuck "Installing…".
+- Errors carry a code (`errorCode`) the console words in its language.
+
 ## Build and test
 
 - Dev: `npm install && npm start`
@@ -133,6 +147,17 @@ for updates…*.
   `xvfb-run -a node test/e2e/electron-e2e.js dist/my-mate-geny-<v>-linux-x86_64.AppImage`
   (connect, errors, exchange + cookie, Mate window, relaunch, expired session,
   switch server, sign out, 0.3 migration; uses a throwaway HOME).
+- In-app update of a packaged app (no `HRH_UPDATER_DEV`) against a server whose
+  Download service reads the real `apps-latest`:
+  `xvfb-run -a node test/e2e/update-e2e.js <server> <password> <shots dir> -- <older AppImage> [--full] [--readonly-install]`
+  (Settings → Updates and the Download page; each updater request with its
+  status and whether the session went along; Restart & install and the app the
+  updater restarts; `--full`: a whole-file download through a slow proxy with a
+  500 → Retry, a 404 → automatic re-check, reload and Cancel;
+  `--readonly-install`: the install error and Retry). `-- <newest AppImage>
+  --expect-latest`: the "up to date" state.
+- The Android app's update flow in a browser (stand-in Capacitor bridge):
+  `node test/e2e/apk-update-browser.js <server> <password> <app version>`.
 - Builds: CI (`.github/workflows/apps.yml`) on every push touching `desktop/`,
   published to the `apps-latest` release and the console's Download page
   (`my-mate-geny-<version>-…`).

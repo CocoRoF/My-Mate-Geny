@@ -1,5 +1,6 @@
 import { goBack } from "./lib/nav";
 import { tr } from "./i18n";
+import { NATIVE_VERSION_EVENT } from "./lib/nativeVersion";
 
 /** a short notice at the bottom of the screen (no app UI needed) */
 function toast(text: string) {
@@ -40,7 +41,13 @@ export function installNativeBridge(): void {
   window.hrhNative = bridge;
   document.documentElement.classList.add("native-android");
 
-  call("App", "getInfo").then((info) => (bridge.version = info?.version || bridge.version)).catch(() => {});
+  // (it may answer after the first render: what shows the version listens — lib/nativeVersion.ts)
+  call("App", "getInfo")
+    .then((info) => {
+      bridge.version = info?.version || bridge.version;
+      window.dispatchEvent(new Event(NATIVE_VERSION_EVENT));
+    })
+    .catch(() => {});
   call("LocalNotifications", "requestPermissions").catch(() => {});
 
   // Back: close the top overlay, else the previous screen (lib/nav.ts); at the first screen a second press

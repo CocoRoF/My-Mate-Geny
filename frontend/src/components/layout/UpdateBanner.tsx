@@ -3,6 +3,7 @@ import { compareVersions, getDownloads } from "../../api/downloads";
 import { useUIStore } from "../../stores/uiStore";
 import Icon from "../ui/Icon";
 import { useT } from "../../i18n";
+import { useNativeVersion } from "../../lib/nativeVersion";
 
 /** Inside the desktop/Android app: tell the user when a newer app build exists. */
 export default function UpdateBanner() {
@@ -17,6 +18,7 @@ export default function UpdateBanner() {
   const setView = useUIStore((s) => s.setView);
   const t = useT();
   const native = window.hrhNative;
+  const version = useNativeVersion(); // ("" until the Android bridge knows it)
 
   useEffect(() => {
     if (!native) return;
@@ -26,13 +28,13 @@ export default function UpdateBanner() {
     return () => clearInterval(t);
   }, [native]);
 
-  if (!native || !latest || compareVersions(latest, native.version) <= 0 || dismissed === latest) return null;
+  if (!native || !version || !latest || compareVersions(latest, version) <= 0 || dismissed === latest) return null;
   return (
     <div className="pt-safe shrink-0 bg-accent-soft border-b border-accent/30">
       <div className="flex items-center gap-2 px-4 py-1.5 text-[12.5px] text-accent">
         <Icon name="download" size={14} />
         <span className="min-w-0 flex-1 truncate">
-          {t("nav.updateAvailable", { latest, current: native.version })}
+          {t("nav.updateAvailable", { latest, current: version })}
         </span>
         <button onClick={() => setView("downloads")} className="rounded-md px-2 py-0.5 font-medium hover:bg-accent/15">
           {t("nav.update")}
