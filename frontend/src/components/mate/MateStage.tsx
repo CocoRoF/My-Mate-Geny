@@ -3,13 +3,20 @@ import type { Mate } from "../../api/mates";
 import { LiveMateAvatar } from "../../mate/avatar/MateAvatar";
 import type { BodyMood, MateReact } from "../../mate/types";
 import type { Caption } from "../../mate/useMateConversation";
+import { useT, type MsgKey, type TFunction } from "../../i18n";
 
-export const MOOD_LABEL: Record<BodyMood, string> = {
-  idle: "",
-  listening: "listening…",
-  thinking: "thinking…",
-  talking: "talking",
-  away: "away",
+const MOOD_KEY: Record<BodyMood, MsgKey | null> = {
+  idle: null,
+  listening: "mate.moodListening",
+  thinking: "mate.moodThinking",
+  talking: "mate.moodTalking",
+  away: "mate.moodAway",
+};
+
+/** "listening…", "thinking…" … ("" while idle) */
+export const moodLabel = (t: TFunction, mood: BodyMood): string => {
+  const k = MOOD_KEY[mood];
+  return k ? t(k) : "";
 };
 
 /** a caption that fades `ms` after it last changed */
@@ -26,15 +33,16 @@ export function useFadingCaption(caption: Caption | null, ms = 6500): string | n
 
 /** "Built-in" (shipped with the app) + "Edited" once the user changed its persona/avatar */
 export function BuiltinBadge({ mate }: { mate: Mate }) {
+  const t = useT();
   if (!mate.builtin) return null;
   return (
     <span className="inline-flex shrink-0 items-center gap-1" data-testid="mate-builtin-badge">
-      <span className="pill bg-violet/12 text-violet" title="Ships with My Mate Geny">
-        Built-in
+      <span className="pill bg-violet/12 text-violet" title={t("mate.builtinTitle")}>
+        {t("mate.builtin")}
       </span>
       {mate.customized && (
-        <span className="pill bg-surface-3 text-content-faint" title="You edited it — app updates leave it as it is">
-          Edited
+        <span className="pill bg-surface-3 text-content-faint" title={t("mate.editedTitle")}>
+          {t("mate.edited")}
         </span>
       )}
     </span>
@@ -76,7 +84,9 @@ export default function MateStage({
   showName?: boolean;
   className?: string;
 }) {
+  const t = useT();
   const line = useFadingCaption(caption ?? null);
+  const ml = moodLabel(t, mood);
   return (
     <div className={`relative flex min-h-0 flex-col items-center ${className}`} data-testid="mate-stage" data-mood={mood}>
       {line && (
@@ -97,14 +107,14 @@ export default function MateStage({
       {showName && (
         <div className="flex shrink-0 items-center gap-2 pb-2 pt-1 text-[12.5px]">
           <span className="font-semibold text-content">{mate.name}</span>
-          {MOOD_LABEL[mood] && (
+          {ml && (
             <span className="inline-flex items-center gap-1 text-content-faint" data-testid="mate-mood">
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
                   mood === "talking" ? "bg-success" : mood === "thinking" ? "bg-accent animate-pulse-dot" : mood === "listening" ? "bg-cyan" : "bg-content-faint"
                 }`}
               />
-              {MOOD_LABEL[mood]}
+              {ml}
             </span>
           )}
         </div>

@@ -17,19 +17,21 @@ import VoiceTab from "./VoiceTab";
 import MemoryTab from "./MemoryTab";
 import DangerTab from "./DangerTab";
 import GlobalSettings from "./GlobalSettings";
+import { useT, type MsgKey } from "../../../i18n";
 
 type Tab = "profile" | "avatar" | "model" | "voice" | "memory" | "danger";
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "profile", label: "Profile" },
-  { id: "avatar", label: "Avatar" },
-  { id: "model", label: "Language model" },
-  { id: "voice", label: "Voice" },
-  { id: "memory", label: "Memory" },
-  { id: "danger", label: "Danger zone" },
+const TABS: { id: Tab; label: MsgKey }[] = [
+  { id: "profile", label: "mateSettings.tabProfile" },
+  { id: "avatar", label: "mateSettings.tabAvatar" },
+  { id: "model", label: "mateSettings.modelTitle" },
+  { id: "voice", label: "mateSettings.voiceVoice" },
+  { id: "memory", label: "mateSettings.memTitle" },
+  { id: "danger", label: "mateSettings.tabDanger" },
 ];
 
 export default function MateSettings({ mate, conv, onClose }: { mate: Mate; conv: MateConversation; onClose: () => void }) {
+  const t = useT();
   const [tab, setTab] = useState<Tab>("profile");
   const globalOpen = useMateStore((s) => s.globalOpen);
   const closeGlobal = useMateStore((s) => s.closeGlobal);
@@ -52,32 +54,32 @@ export default function MateSettings({ mate, conv, onClose }: { mate: Mate; conv
             <span className="truncate">{mate.name}</span>
             <BuiltinBadge mate={mate} />
           </h2>
-          <p className="truncate text-[11px] text-content-faint">Mate settings · this mate only</p>
+          <p className="truncate text-[11px] text-content-faint">{t("mateSettings.settingsSub")}</p>
         </div>
         <button
           onClick={() => useMateStore.getState().openGlobal()}
           className="btn-ghost shrink-0 !px-2.5 !py-1 text-[12px]"
-          title="Voice services, Live2D runtime, desktop app, defaults — for every mate"
+          title={t("mateSettings.globalTitleHint")}
           data-testid="mate-open-global"
         >
-          <Icon name="sparkles" size={13} /> <span className="hidden min-[400px]:inline">Global settings</span>
+          <Icon name="sparkles" size={13} /> <span className="hidden min-[400px]:inline">{t("mateSettings.globalTitle")}</span>
         </button>
-        <button onClick={onClose} className="btn-ghost !px-2" aria-label="Close settings" data-testid="mate-settings-close">
+        <button onClick={onClose} className="btn-ghost !px-2" aria-label={t("mateSettings.closeSettings")} data-testid="mate-settings-close">
           <Icon name="x" size={16} />
         </button>
       </div>
       <div className="no-scrollbar flex shrink-0 gap-1 overflow-x-auto border-b border-border/70 px-3 py-2" role="tablist">
-        {TABS.map((t) => (
+        {TABS.map((x) => (
           <button
-            key={t.id}
+            key={x.id}
             role="tab"
-            aria-selected={tab === t.id}
-            className={`nav-tab shrink-0 whitespace-nowrap !py-1 !text-[12.5px] ${t.id === "danger" ? "data-[active=true]:!text-danger" : ""}`}
-            data-active={tab === t.id}
-            onClick={() => setTab(t.id)}
-            data-testid={`mate-tab-${t.id}`}
+            aria-selected={tab === x.id}
+            className={`nav-tab shrink-0 whitespace-nowrap !py-1 !text-[12.5px] ${x.id === "danger" ? "data-[active=true]:!text-danger" : ""}`}
+            data-active={tab === x.id}
+            onClick={() => setTab(x.id)}
+            data-testid={`mate-tab-${x.id}`}
           >
-            {t.label}
+            {t(x.label)}
           </button>
         ))}
       </div>

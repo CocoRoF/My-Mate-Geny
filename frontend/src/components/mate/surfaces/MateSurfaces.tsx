@@ -23,7 +23,8 @@ import { nativeWindow } from "../../../lib/nativeWindow";
 import { DropOverlay, useFileDrop } from "../../composer/useFileDrop";
 import MateComposer from "../MateComposer";
 import MateMessages from "../MateMessages";
-import { MateThumb, MOOD_LABEL, useFadingCaption } from "../MateStage";
+import { MateThumb, moodLabel, useFadingCaption } from "../MateStage";
+import { useT } from "../../../i18n";
 
 type Kind = "mate-overlay" | "mate-quick" | "mate-chat";
 
@@ -77,6 +78,7 @@ export default function MateSurface({ kind }: { kind: Kind }) {
 // ── overlay ─────────────────────────────────────────────────────────────
 
 function Overlay() {
+  const t = useT();
   const [moveMode, setMoveMode] = useState(false);
   const [sizeKey, setSizeKey] = useState(0);
   const resetRef = useRef<() => void>(() => {});
@@ -152,7 +154,7 @@ function Overlay() {
         <button
           className="absolute right-1.5 top-1.5 z-20 grid h-6 w-6 place-items-center rounded-full border border-white/10 bg-[#161a22]/85 text-content-dim opacity-0 shadow-float transition hover:text-content group-hover:opacity-100"
           onClick={reset}
-          title="Reset the view (pan / zoom)"
+          title={t("mate.resetViewTitle")}
           data-no-drag
           data-testid="mate-view-reset"
         >
@@ -168,6 +170,7 @@ function Overlay() {
 /** Move mode's bar (top of the window: the desktop's action bar sits at the bottom). Its background is the window's
  *  move handle (moveBy, like Geny's dock bar); the avatar below pans, the edges resize. */
 function MoveBar({ onReset, canReset }: { onReset: () => void; canReset: boolean }) {
+  const t = useT();
   const onDown = (e: React.PointerEvent) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
     e.preventDefault();
@@ -183,22 +186,22 @@ function MoveBar({ onReset, canReset }: { onReset: () => void; canReset: boolean
         onPointerDown={onDown}
         data-no-drag
         data-no-pan
-        title="Drag to move the window · drag the avatar to pan, wheel to zoom · drag the edges to resize"
+        title={t("mate.moveBarTitle")}
         data-testid="mate-move-bar"
       >
         <Icon name="move" size={13} className="shrink-0 text-accent" />
-        <span className="truncate">Move</span>
+        <span className="truncate">{t("mate.move")}</span>
         <button
           className="rounded-full px-2 py-0.5 text-content-dim hover:bg-surface-3 hover:text-content disabled:opacity-40"
           onClick={onReset}
           disabled={!canReset}
-          title="Back to the fitted view"
+          title={t("mate.resetViewBack")}
           data-testid="mate-view-reset-move"
         >
-          Reset view
+          {t("mate.resetView")}
         </button>
         <button className="rounded-full bg-accent px-2.5 py-0.5 font-medium text-white" onClick={() => desktopMate()?.setMoveMode(false)} data-testid="mate-move-done">
-          Done
+          {t("common.done")}
         </button>
       </div>
     </div>
@@ -275,6 +278,7 @@ const NO_DRAG = { WebkitAppRegion: "no-drag" } as React.CSSProperties;
 const DRAG = { WebkitAppRegion: "drag" } as React.CSSProperties;
 
 function Quick() {
+  const t = useT();
   const [focusKey, setFocusKey] = useState(1);
   const onCommand = useCallback((cmd: DesktopCommand) => {
     // (the draft stays: what was typed before a click elsewhere / Esc is there again)
@@ -321,7 +325,7 @@ function Quick() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  if (!mate) return loaded ? <div className="p-3 text-[12px] text-content-faint">No mate.</div> : null;
+  if (!mate) return loaded ? <div className="p-3 text-[12px] text-content-faint">{t("mate.noMate")}</div> : null;
   // the overlay shows the reply; without it (or in a browser), the card shows it itself
   const overlayOut = !!desk?.visible;
   const last = conv.turns[conv.turns.length - 1];
@@ -341,14 +345,14 @@ function Quick() {
         data-testid="mate-quick-card"
         {...dropProps}
       >
-        {dragging && <DropOverlay compact hint={`for ${mate.name}`} />}
+        {dragging && <DropOverlay compact hint={t("mate.dropFor", { name: mate.name })} />}
         {hasDraft && desktopMate() && (
           <button
             className="absolute -right-1.5 -top-1.5 z-10 grid h-5 w-5 place-items-center rounded-full border border-border bg-surface-3 text-content-dim shadow-float transition hover:bg-border-strong hover:text-content"
             style={NO_DRAG}
             onClick={() => void desktopMate()?.closeQuick()}
-            title="Close (the draft stays)"
-            aria-label="Close"
+            title={t("mate.closeDraftStays")}
+            aria-label={t("common.close")}
             data-testid="mate-quick-close"
           >
             <Icon name="x" size={11} />
@@ -356,7 +360,7 @@ function Quick() {
         )}
         <div className="flex items-end gap-2">
           {/* as tall as the one-line composer (42 px), so she sits level with the input row */}
-          <div className="flex h-[42px] shrink-0 cursor-move items-center" title="Drag to move" data-testid="mate-quick-handle">
+          <div className="flex h-[42px] shrink-0 cursor-move items-center" title={t("mate.dragToMove")} data-testid="mate-quick-handle">
             <MateThumb mate={mate} className="h-8 w-8" />
           </div>
           <div className="min-w-0 flex-1" style={NO_DRAG}>
@@ -372,7 +376,7 @@ function Quick() {
               showVoiceToggle={false}
               escapeStops={false}
               attachDirect
-              placeholder={`Ask ${mate.name}…`}
+              placeholder={t("mate.askPlaceholder", { name: mate.name })}
               onSent={() => {
                 setSentAt(Date.now());
                 if (desktopMate() && overlayOut) void desktopMate()!.closeQuick();
@@ -382,7 +386,7 @@ function Quick() {
         </div>
         {(reply || (sentAt > 0 && !overlayOut && conv.streaming)) && (
           <div className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-surface-2/80 px-3 py-2 text-[13px] text-content" style={NO_DRAG} data-testid="mate-quick-reply">
-            {reply || <span className="text-content-faint">{MOOD_LABEL.thinking}</span>}
+            {reply || <span className="text-content-faint">{moodLabel(t, "thinking")}</span>}
           </div>
         )}
       </div>
@@ -393,6 +397,7 @@ function Quick() {
 // ── chat window ─────────────────────────────────────────────────────────
 
 function ChatWindow() {
+  const t = useT();
   const { mate, loaded } = useSurfaceMate();
   const desk = useDesktopMate();
   const conv = useMateConversation(mate);
@@ -410,7 +415,7 @@ function ChatWindow() {
         {win && <div className="h-[52px] shrink-0 border-b border-border/60 bg-surface/90" style={DRAG} />}
         <div className="grid flex-1 place-items-center" data-testid="surface-loading">
           {loaded ? (
-            <span className="text-sm text-content-faint">No mate.</span>
+            <span className="text-sm text-content-faint">{t("mate.noMate")}</span>
           ) : (
             <span className="h-6 w-6 animate-spin rounded-full border-2 border-accent/25 border-t-accent" />
           )}
@@ -421,11 +426,11 @@ function ChatWindow() {
   }
   const onTop = !!desk?.chatOnTop;
   const online = conv.connection === "open";
-  const status = MOOD_LABEL[conv.mood] || (online ? "here" : "connecting…");
+  const status = moodLabel(t, conv.mood) || (online ? t("mate.statusHere") : t("mate.statusConnecting"));
   const iconBtn = "grid h-8 w-8 place-items-center rounded-lg text-content-dim transition hover:bg-surface-3 hover:text-content";
   return (
     <div className="relative flex h-full flex-col bg-bg" data-testid="mate-chat-window" data-chrome={win ? win.chrome : "none"} {...dropProps}>
-      {dragging && <DropOverlay compact hint={`${mate.name} sees images and reads documents`} />}
+      {dragging && <DropOverlay compact hint={t("mate.dropHintShort", { name: mate.name })} />}
       <header
         className={`flex h-[52px] shrink-0 select-none items-center gap-2.5 border-b border-border/60 bg-surface/90 backdrop-blur-xl ${
           mac ? "pl-[78px]" : "pl-3"
@@ -450,18 +455,18 @@ function ChatWindow() {
             <button
               className={`${iconBtn} ${onTop ? "bg-accent-soft !text-accent hover:!bg-accent/20" : ""}`}
               onClick={() => desktopMate()!.setChatOnTop(!onTop)}
-              title={onTop ? "Stop keeping on top" : "Keep on top"}
+              title={onTop ? t("mate.unpinTop") : t("mate.pinTop")}
               aria-pressed={onTop}
               data-testid="mate-chat-pin"
             >
               <Icon name="pin" size={14} />
             </button>
-            <button className={iconBtn} onClick={() => desktopMate()!.openConsole()} title="Open the console" data-testid="mate-chat-console">
+            <button className={iconBtn} onClick={() => desktopMate()!.openConsole()} title={t("mate.openConsole")} data-testid="mate-chat-console">
               <Icon name="monitor" size={14} />
             </button>
             {/* (with our own title bar the window buttons below close it; on macOS the traffic lights) */}
             {!win && (
-              <button className={iconBtn} onClick={() => desktopMate()!.closeChat()} title="Close">
+              <button className={iconBtn} onClick={() => desktopMate()!.closeChat()} title={t("common.close")} aria-label={t("common.close")}>
                 <Icon name="x" size={15} />
               </button>
             )}
@@ -474,8 +479,8 @@ function ChatWindow() {
           </>
         )}
       </header>
-      {conv.voiceError && <div className="px-3 pt-1 text-[11.5px] text-danger">Voice: {conv.voiceError}</div>}
-      <MateMessages turns={conv.turns} compact emptyText={`Say hi to ${mate.name}.`} />
+      {conv.voiceError && <div className="px-3 pt-1 text-[11.5px] text-danger">{t("mate.voiceError", { error: conv.voiceError })}</div>}
+      <MateMessages turns={conv.turns} compact emptyText={t("mate.sayHi", { name: mate.name })} />
       <div className="shrink-0 px-2.5 pb-2.5">
         <MateComposer mate={mate} conv={conv} compact autoFocus />
       </div>

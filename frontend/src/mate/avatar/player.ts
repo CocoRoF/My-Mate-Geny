@@ -101,7 +101,7 @@ export class StackedPlayer implements ClipPlayer {
 
   constructor(private canvas: HTMLCanvasElement) {
     const gl = canvas.getContext("webgl", { premultipliedAlpha: true, alpha: true, antialias: false });
-    if (!gl) throw new Error("no webgl");
+    if (!gl) throw new Error("no webgl"); // i18n-ignore (a technical reason, shown inside a translated message)
     this.gl = gl;
     const prog = gl.createProgram()!;
     for (const [type, src] of [

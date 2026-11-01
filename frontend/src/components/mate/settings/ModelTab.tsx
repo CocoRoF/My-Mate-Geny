@@ -11,40 +11,49 @@ import { useProviderStore } from "../../../stores/providerStore";
 import { useUIStore } from "../../../stores/uiStore";
 import type { CatalogModel } from "../../../types";
 import Icon from "../../ui/Icon";
+import { tr, useT, type MsgKey } from "../../../i18n";
 import { Banner, Field, LinkButton, SaveBar, Section, Segmented, useFollowSaved, useSaver } from "./ui";
 
-const ENGINES: { id: MateEngine; label: string; hint: string; fallback: string }[] = [
+const ENGINES: { id: MateEngine; label: string; hint: MsgKey; fallback: string }[] = [
   {
     id: "claude",
     label: "Claude Code",
-    hint: "Anthropic's Claude, on the Claude accounts of your chats.",
+    hint: "mateSettings.modelClaudeHint",
     fallback: "Claude Sonnet 5.5",
   },
   {
     id: "codex",
     label: "Codex",
-    hint: "OpenAI's GPT models, on your Codex (ChatGPT) login.",
+    hint: "mateSettings.modelCodexHint",
     fallback: "GPT-6.1-Sol",
   },
 ];
 
-const EFFORT_HINT: Record<string, string> = {
-  default: "The engine's own default for the model.",
-  low: "Quick replies — best for conversation (recommended).",
-  medium: "A little more thought before answering.",
-  high: "Thinks things through; slower replies.",
-  xhigh: "Deep reasoning; noticeably slower.",
-  max: "As much reasoning as it takes; slowest.",
+const EFFORT_HINT: Record<string, MsgKey> = {
+  default: "mateSettings.effortDefaultHint",
+  low: "mateSettings.effortLowHint",
+  medium: "mateSettings.effortMediumHint",
+  high: "mateSettings.effortHighHint",
+  xhigh: "mateSettings.effortXhighHint",
+  max: "mateSettings.effortMaxHint",
+};
+const EFFORT_LABEL: Record<string, MsgKey> = {
+  default: "common.default",
+  low: "mateSettings.effortLow",
+  medium: "mateSettings.effortMedium",
+  high: "mateSettings.effortHigh",
+  xhigh: "mateSettings.effortXhigh",
+  max: "mateSettings.effortMax",
 };
 
-/** a line about what a model is like for a mate (when the catalog has no description) */
+/** a line about what a model is like for a mate (when the catalog has no description; call while rendering) */
 function blurb(id: string, label: string): string {
   const s = `${id} ${label}`.toLowerCase();
-  if (s.includes("sonnet")) return "Fast, natural conversation — the right balance for a mate.";
-  if (s.includes("haiku")) return "The fastest and lightest; fine for short chats.";
-  if (s.includes("opus")) return "Thinks deepest, answers slower and costs more.";
-  if (s.includes("fable")) return "Creative, story-like replies.";
-  if (s.includes("sol")) return "Fast, capable everyday model — the right balance for a mate.";
+  if (s.includes("sonnet")) return tr("mateSettings.blurbSonnet");
+  if (s.includes("haiku")) return tr("mateSettings.blurbHaiku");
+  if (s.includes("opus")) return tr("mateSettings.blurbOpus");
+  if (s.includes("fable")) return tr("mateSettings.blurbFable");
+  if (s.includes("sol")) return tr("mateSettings.blurbSol");
   return "";
 }
 
@@ -62,6 +71,7 @@ function openProviders() {
 }
 
 export default function ModelTab({ mate }: { mate: Mate }) {
+  const t = useT();
   const catalog = useConfigStore((s) => s.catalog);
   const providers = useProviderStore((s) => s.providers);
   useEffect(() => {
@@ -122,10 +132,10 @@ export default function ModelTab({ mate }: { mate: Mate }) {
   return (
     <>
       <Section
-        title="Language model"
-        hint="The engine and model the mate thinks with. Either way it is the same secretary: its own persona and memory, no shell, no file access — it hands work to your chats, which use their own engine and model."
+        title={t("mateSettings.modelTitle")}
+        hint={t("mateSettings.modelHint")}
       >
-        <Field label="Engine" as="div">
+        <Field label={t("mateSettings.modelEngine")} as="div">
           <div className="grid gap-1.5 sm:grid-cols-2" role="radiogroup" data-testid="mate-engine">
             {ENGINES.map((e) => {
               const on = engine === e.id;
@@ -146,9 +156,9 @@ export default function ModelTab({ mate }: { mate: Mate }) {
                   <span className="min-w-0 flex-1">
                     <span className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium text-content">
                       <Icon name={e.id === "codex" ? "terminal" : "brain"} size={13} className="text-accent" /> {e.label}
-                      {st && !st.connected && <span className="rounded bg-warning/15 px-1.5 py-px text-[10px] font-medium text-warning">not connected</span>}
+                      {st && !st.connected && <span className="rounded bg-warning/15 px-1.5 py-px text-[10px] font-medium text-warning">{t("mateSettings.modelNotConnected")}</span>}
                     </span>
-                    <span className="block text-[11.5px] text-content-faint">{e.hint}</span>
+                    <span className="block text-[11.5px] text-content-faint">{t(e.hint)}</span>
                   </span>
                 </button>
               );
@@ -158,20 +168,17 @@ export default function ModelTab({ mate }: { mate: Mate }) {
         {!connected && (
           <Banner
             testId="mate-engine-disconnected"
-            action={<LinkButton onClick={openProviders} testId="mate-engine-providers">Open Providers</LinkButton>}
+            action={<LinkButton onClick={openProviders} testId="mate-engine-providers">{t("mateSettings.modelOpenProviders")}</LinkButton>}
           >
-            {engine === "codex" ? "Codex" : "Claude Code"} isn't connected{status?.detail ? ` (${status.detail})` : ""}. Sign
-            in under Providers — until then the mate can't answer on this engine.
+            {t(status?.detail ? "mateSettings.modelDisconnectedDetail" : "mateSettings.modelDisconnected", { engine: engine === "codex" ? "Codex" : "Claude Code", detail: status?.detail ?? "" })}
           </Banner>
         )}
         {engine !== storedEngine && (
           <Banner tone="info" testId="mate-engine-switch">
-            The conversation stays. From your next message {engine === "codex" ? "Codex" : "Claude Code"} is handed the
-            conversation so far (like switching engine in a chat); switching back later catches the previous engine up on
-            what it missed. Persona and memories are the same on both.
+            {t("mateSettings.modelSwitchNote", { engine: engine === "codex" ? "Codex" : "Claude Code" })}
           </Banner>
         )}
-        <Field label="Model" as="div">
+        <Field label={t("mateSettings.voiceModel")} as="div">
           <div className="space-y-1.5" role="radiogroup" data-testid="mate-model">
             {models.map((m) => {
               const on = model === m.id;
@@ -192,7 +199,7 @@ export default function ModelTab({ mate }: { mate: Mate }) {
                   <span className="min-w-0 flex-1">
                     <span className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium text-content">
                       {m.label}
-                      {m.id === def && <span className="rounded bg-success/15 px-1.5 py-px text-[10px] font-medium text-success">Recommended · default</span>}
+                      {m.id === def && <span className="rounded bg-success/15 px-1.5 py-px text-[10px] font-medium text-success">{t("mateSettings.modelRecommended")}</span>}
                     </span>
                     {desc && <span className="block text-[11.5px] text-content-faint">{desc}</span>}
                     <span className="block font-mono text-[10.5px] text-content-faint/80">{m.id}</span>
@@ -203,19 +210,17 @@ export default function ModelTab({ mate }: { mate: Mate }) {
           </div>
         </Field>
         {efforts.length > 1 && (
-          <Field label={engine === "codex" ? "Reasoning" : "Effort"} hint={EFFORT_HINT[effort] ?? "How much it reasons before answering."} as="div">
+          <Field label={engine === "codex" ? t("mateSettings.modelReasoning") : t("mateSettings.modelEffort")} hint={EFFORT_HINT[effort] ? t(EFFORT_HINT[effort]) : t("mateSettings.effortHint")} as="div">
             <Segmented
               value={effort}
               onChange={setEffort}
-              options={efforts.map((e) => ({ id: e, label: e === "default" ? "Default" : e === "xhigh" ? "X-High" : e[0].toUpperCase() + e.slice(1) }))}
+              options={efforts.map((e) => ({ id: e, label: EFFORT_LABEL[e] ? t(EFFORT_LABEL[e]) : e[0].toUpperCase() + e.slice(1) }))}
               testId="mate-effort"
             />
           </Field>
         )}
         <p className="text-[11.5px] text-content-faint">
-          {engine === "codex"
-            ? "Model and reasoning changes apply from the next message (Codex runs each message on its own, resuming the same conversation)."
-            : "A model change applies from the next message; an effort change restarts the mate's engine (same conversation)."}
+          {engine === "codex" ? t("mateSettings.modelApplyCodex") : t("mateSettings.modelApplyClaude")}
         </p>
       </Section>
       <SaveBar saver={saver} onSave={save} dirty={dirty} onReset={reset} />

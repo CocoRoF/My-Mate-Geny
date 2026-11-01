@@ -13,11 +13,19 @@ import type { MateConversation } from "../../../mate/useMateConversation";
 import { end as voiceEnd, fakeLevel, level as voiceLevel, start as voiceStart } from "../../../mate/voiceBridge";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
+import { tr, useT, type MsgKey } from "../../../i18n";
 import { previewMateAvatar } from "../../../mate/livePreview";
 import { BundledReset, ClipLibrary, StillTriggers, TriggerPreview, type TriggerPick } from "./ClipLibrary";
 import { Banner, ErrorLine, Field, SaveBar, Section, useSaver } from "./ui";
 
 const MOODS: BodyMood[] = ["idle", "listening", "thinking", "talking", "away"];
+const MOOD_LABEL: Record<BodyMood, MsgKey> = {
+  idle: "mateSettings.clipMoodIdle",
+  listening: "mateSettings.clipMoodListening",
+  thinking: "mateSettings.clipMoodThinking",
+  talking: "mateSettings.clipMoodTalking",
+  away: "mateSettings.clipMoodAway",
+};
 const STILLS = ["neutral", "smile", "laugh", "shy", "surprised", "sad", "thinking", "sleepy", "blink", "mouth_half", "mouth_open", "mouth_o"];
 
 const emptyRig = (): Rig => ({ aspect: [3, 4], home: "", stills: {}, clips: [] });
@@ -42,6 +50,7 @@ function imageSize(file: Blob): Promise<[number, number] | null> {
 const extOf = (f: File, fallback: string) => (f.name.match(/\.([a-z0-9]{2,5})$/i)?.[1] || fallback).toLowerCase();
 
 export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConversation }) {
+  const t = useT();
   const [avatar, setAvatar] = useState<Avatar>(mate.avatar);
   const saver = useSaver();
   const dirty = JSON.stringify(avatar) !== JSON.stringify(mate.avatar);
@@ -71,7 +80,7 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
   return (
     <>
       <Preview mate={mate} avatar={avatar} conv={conv} poke={poke} />
-      <Section title="Kind">
+      <Section title={t("mateSettings.avKind")}>
         <div className="grid grid-cols-4 gap-1.5">
           {(["none", "photo", "video", "live2d"] as const).map((k) => (
             <button
@@ -82,7 +91,7 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
               }`}
               data-testid={`mate-avatar-kind-${k}`}
             >
-              {k === "none" ? "None" : k === "photo" ? "Photo" : k === "video" ? "Video" : "Live2D"}
+              {k === "none" ? t("common.none") : k === "photo" ? t("mateSettings.avPhoto") : k === "video" ? t("mateSettings.avVideo") : "Live2D"}
             </button>
           ))}
         </div>
@@ -115,6 +124,7 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
 }
 
 function Preview({ mate, avatar, conv, poke }: { mate: Mate; avatar: Avatar; conv: MateConversation; poke: { pick: TriggerPick; at: number } | null }) {
+  const t = useT();
   const [mood, setMood] = useState<BodyMood>("idle");
   const [react, setReact] = useState<MateReact>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -145,21 +155,21 @@ function Preview({ mate, avatar, conv, poke }: { mate: Mate; avatar: Avatar; con
     if (talkTimer.current) cancelAnimationFrame(talkTimer.current);
   }, []);
   return (
-    <Section title="Preview" hint="Unsaved changes show here first.">
+    <Section title={t("mateSettings.avPreview")} hint={t("mateSettings.avPreviewHint")}>
       <div ref={box} className="mx-auto h-64 w-full max-w-xs overflow-hidden rounded-xl border border-border bg-[repeating-conic-gradient(#161a22_0%_25%,#11141b_0%_50%)] [background-size:24px_24px]" data-testid="mate-avatar-preview">
         <MateAvatar avatar={avatar} name={mate.name} mood={mood} react={react} />
       </div>
       <div className="flex flex-wrap gap-1">
         {MOODS.map((m) => (
           <button key={m} onClick={() => setMood(m)} data-testid={`mate-preview-mood-${m}`} className={`pill border ${mood === m ? "border-accent/50 bg-accent-soft text-accent" : "border-border text-content-dim hover:text-content"}`}>
-            {m}
+            {t(MOOD_LABEL[m])}
           </button>
         ))}
         <button onClick={fakeTalk} className="pill border border-border text-content-dim hover:text-content">
-          <Icon name="volume" size={11} /> speak
+          <Icon name="volume" size={11} /> {t("mateSettings.avSpeak")}
         </button>
-        <button onClick={() => conv.say(mate.persona.greeting || `Hi, I'm ${mate.name}.`)} className="pill border border-border text-content-dim hover:text-content" title="Say the greeting with this mate's voice">
-          <Icon name="play" size={11} /> say greeting
+        <button onClick={() => conv.say(mate.persona.greeting || `Hi, I'm ${mate.name}.`)} className="pill border border-border text-content-dim hover:text-content" title={t("mateSettings.avGreetingTitle")}>
+          <Icon name="play" size={11} /> {t("mateSettings.avGreeting")}
         </button>
       </div>
       <div className="flex flex-wrap gap-1">
@@ -174,6 +184,7 @@ function Preview({ mate, avatar, conv, poke }: { mate: Mate; avatar: Avatar; con
 }
 
 function ImportSection({ mate }: { mate: Mate }) {
+  const t = useT();
   const [path, setPath] = useState("");
   const [busy, setBusy] = useState<"zip" | "local" | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -181,7 +192,7 @@ function ImportSection({ mate }: { mate: Mate }) {
   const file = useRef<HTMLInputElement>(null);
   const done = (m: Mate, what: string) => {
     useMateStore.getState().upsert(m);
-    setOk(`Imported (${what}) and applied.`);
+    setOk(t("mateSettings.avImported", { what }));
   };
   const zip = async (f: File) => {
     setBusy("zip");
@@ -208,7 +219,7 @@ function ImportSection({ mate }: { mate: Mate }) {
       if (all.length > 1) {
         // a whole content folder: every character came in as its own mate
         for (const m of all) useMateStore.getState().upsert(m);
-        setOk(`Imported ${all.length} mates: ${all.map((m) => m.name).join(", ")} (pick them in the switcher).`);
+        setOk(t("mateSettings.avImportedMany", { count: all.length, names: all.map((m) => m.name).join(", ") }));
       } else done(r.mate, r.imported);
     } catch (e) {
       setErr((e as Error).message);
@@ -217,18 +228,18 @@ function ImportSection({ mate }: { mate: Mate }) {
     }
   };
   return (
-    <Section title="Import" hint="A zip (an ailism-style pack with rig.json, or a Live2D model) or a folder on the server. Replaces this mate's avatar right away.">
+    <Section title={t("mateSettings.avImport")} hint={t("mateSettings.avImportHint")}>
       <div className="flex flex-wrap gap-2">
         <input ref={file} type="file" accept=".zip,application/zip" hidden onChange={(e) => e.target.files?.[0] && zip(e.target.files[0])} />
         <button className="btn-soft" onClick={() => file.current?.click()} disabled={!!busy}>
-          {busy === "zip" ? <Icon name="spinner" size={14} spin /> : <Icon name="upload" size={14} />} Upload a zip
+          {busy === "zip" ? <Icon name="spinner" size={14} spin /> : <Icon name="upload" size={14} />} {t("mateSettings.avUploadZip")}
         </button>
       </div>
-      <Field label="Folder on the server" hint="A Live2D model folder (*.model3.json), a folder with rig.json, or an ailism mates/<name>.json (avatar only here).">
+      <Field label={t("mateSettings.avServerFolder")} hint={t("mateSettings.avServerFolderHint")}>
         <div className="flex gap-2">
           <input className="field font-mono text-[12.5px]" value={path} onChange={(e) => setPath(e.target.value)} placeholder="/path/to/model/runtime" data-testid="mate-avatar-import-path" />
           <button className="btn-soft shrink-0" onClick={local} disabled={!!busy || !path.trim()} data-testid="mate-avatar-import">
-            {busy === "local" && <Icon name="spinner" size={14} spin />} Import
+            {busy === "local" && <Icon name="spinner" size={14} spin />} {t("mateSettings.avImportBtn")}
           </button>
         </div>
       </Field>
@@ -239,6 +250,7 @@ function ImportSection({ mate }: { mate: Mate }) {
 }
 
 function StillsEditor({ mate, rig, onChange }: { mate: Mate; rig: Rig; onChange: (r: Rig) => void }) {
+  const t = useT();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const up = async (name: string, f: File) => {
@@ -266,7 +278,7 @@ function StillsEditor({ mate, rig, onChange }: { mate: Mate; rig: Rig; onChange:
     onChange({ ...rig, stills, home: rig.home === url ? stills.neutral || Object.values(stills)[0] || "" : rig.home });
   };
   return (
-    <Section title="Stills" hint="Pictures of the same frame: neutral is the home picture; the others show for emotions. blink / mouth_* make it blink and talk.">
+    <Section title={t("mateSettings.avStills")} hint={t("mateSettings.avStillsHint")}>
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
         {STILLS.map((n) => {
           const url = rig.stills[n];
@@ -285,11 +297,11 @@ function StillsEditor({ mate, rig, onChange }: { mate: Mate; rig: Rig; onChange:
                 </div>
                 <div className="truncate border-t border-border px-1.5 py-0.5 text-center text-[10.5px] text-content-dim">
                   {n}
-                  {rig.home === url && url ? " · home" : ""}
+                  {rig.home === url && url ? ` · ${t("mateSettings.avHome")}` : ""}
                 </div>
               </label>
               {url && (
-                <button onClick={() => remove(n)} className="absolute right-1 top-1 hidden rounded bg-black/60 p-0.5 text-white group-hover:block" aria-label={`Remove ${n}`}>
+                <button onClick={() => remove(n)} className="absolute right-1 top-1 hidden rounded bg-black/60 p-0.5 text-white group-hover:block" aria-label={t("mateSettings.avRemoveStill", { name: n })}>
                   <Icon name="x" size={11} />
                 </button>
               )}
@@ -304,6 +316,7 @@ function StillsEditor({ mate, rig, onChange }: { mate: Mate; rig: Rig; onChange:
 
 /** Live2D needs the Cubism Core, installed once in Global settings: say so here while it's missing. */
 function CoreNotice() {
+  const t = useT();
   const [installed, setInstalled] = useState<boolean | null>(null);
   useEffect(() => {
     let alive = true;
@@ -326,11 +339,11 @@ function CoreNotice() {
       testId="mate-core-missing"
       action={
         <button className="btn-soft !px-2.5 !py-1 text-[12px]" onClick={() => useMateStore.getState().openGlobal("live2d")} data-testid="mate-core-open-global">
-          <Icon name="download" size={12} /> Install in Global settings
+          <Icon name="download" size={12} /> {t("mateSettings.avInstallGlobal")}
         </button>
       }
     >
-      The Live2D runtime (Cubism Core) isn't installed yet — Live2D avatars can't be shown until it is. It's installed once, for every mate.
+      {t("mateSettings.avCoreMissing")}
     </Banner>
   );
 }
@@ -360,7 +373,7 @@ function useModelInfo(url: string): { info: ModelInfo | null; err: string | null
           hitAreas: (j?.HitAreas || []).map((h: any) => String(h.Name || h.Id || "")).filter(Boolean),
         });
       })
-      .catch((e) => alive && setErr(`Couldn't read the model: ${(e as Error).message}`));
+      .catch((e) => alive && setErr(tr("mateSettings.avModelErr", { error: (e as Error).message })));
     return () => {
       alive = false;
     };
@@ -369,6 +382,7 @@ function useModelInfo(url: string): { info: ModelInfo | null; err: string | null
 }
 
 function Live2DEditor({ live2d, onChange }: { live2d: Live2D; onChange: (l: Live2D) => void }) {
+  const t = useT();
   const { info, err } = useModelInfo(live2d.model);
   const set = (patch: Partial<Live2D>) => onChange({ ...live2d, ...patch });
   const setMap = (k: "emotions" | "emotion_motions", emotion: string, value: string) => {
@@ -379,25 +393,25 @@ function Live2DEditor({ live2d, onChange }: { live2d: Live2D; onChange: (l: Live
   };
   const num = (v: string) => (v === "" ? undefined : Number(v));
   return (
-    <Section title="Live2D model">
-      <Field label="Model (*.model3.json URL)" hint="Set by an import; an asset URL of this mate.">
+    <Section title={t("mateSettings.avL2dModel")}>
+      <Field label={t("mateSettings.avL2dModelUrl")} hint={t("mateSettings.avL2dModelUrlHint")}>
         <input className="field font-mono text-[12px]" value={live2d.model} onChange={(e) => set({ model: e.target.value })} />
       </Field>
       <ErrorLine text={err} />
       <div className="grid grid-cols-3 gap-2">
-        <Field label="Scale">
+        <Field label={t("mateSettings.avScale")}>
           <input className="field" type="number" step="0.05" value={live2d.scale ?? ""} placeholder="0.85" onChange={(e) => set({ scale: num(e.target.value) })} />
         </Field>
-        <Field label="Shift x">
+        <Field label={t("mateSettings.avShiftX")}>
           <input className="field" type="number" value={live2d.x ?? ""} placeholder="0" onChange={(e) => set({ x: num(e.target.value) })} />
         </Field>
-        <Field label="Shift y">
+        <Field label={t("mateSettings.avShiftY")}>
           <input className="field" type="number" value={live2d.y ?? ""} placeholder="0" onChange={(e) => set({ y: num(e.target.value) })} />
         </Field>
       </div>
-      <Field label="Idle motion group">
+      <Field label={t("mateSettings.avIdleGroup")}>
         <select className="field" value={live2d.idle_group || ""} onChange={(e) => set({ idle_group: e.target.value || undefined })}>
-          <option value="">Idle (default)</option>
+          <option value="">{t("mateSettings.avIdleDefault")}</option>
           {(info?.motions || []).map((m) => (
             <option key={m} value={m}>
               {m}
@@ -407,16 +421,16 @@ function Live2DEditor({ live2d, onChange }: { live2d: Live2D; onChange: (l: Live
       </Field>
       <div>
         <div className="mb-1 grid grid-cols-[90px_1fr_1fr] gap-2 text-[11px] font-medium text-content-faint">
-          <span>emotion</span>
-          <span>expression</span>
-          <span>motion</span>
+          <span>{t("mateSettings.avColEmotion")}</span>
+          <span>{t("mateSettings.avColExpression")}</span>
+          <span>{t("mateSettings.avColMotion")}</span>
         </div>
         <div className="space-y-1" data-testid="mate-l2d-map">
           {EMOTIONS.map((e) => (
             <div key={e} className="grid grid-cols-[90px_1fr_1fr] items-center gap-2">
               <span className="text-[12px] text-content-dim">{e}</span>
               <select className="field !py-1 text-[12px]" value={String(live2d.emotions?.[e] ?? "")} onChange={(ev) => setMap("emotions", e, ev.target.value)}>
-                <option value="">{info?.expressions.length ? "— by name —" : "—"}</option>
+                <option value="">{info?.expressions.length ? t("mateSettings.avByName") : "—"}</option>
                 {(info?.expressions || []).map((x) => (
                   <option key={x} value={x}>
                     {x}
@@ -437,7 +451,7 @@ function Live2DEditor({ live2d, onChange }: { live2d: Live2D; onChange: (l: Live
             </div>
           ))}
         </div>
-        {info && !info.expressions.length && <p className="mt-1 text-[11.5px] text-content-faint">This model lists no expressions.</p>}
+        {info && !info.expressions.length && <p className="mt-1 text-[11.5px] text-content-faint">{t("mateSettings.avNoExpressions")}</p>}
       </div>
     </Section>
   );

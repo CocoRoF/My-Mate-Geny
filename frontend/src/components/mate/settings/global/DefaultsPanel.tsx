@@ -2,8 +2,10 @@
 import { useState } from "react";
 import { useMateStore } from "../../../../stores/mateStore";
 import { ErrorLine, Field, Section, Toggle } from "../ui";
+import { useT } from "../../../../i18n";
 
 export default function DefaultsPanel() {
+  const t = useT();
   const mates = useMateStore((s) => s.mates);
   const muted = useMateStore((s) => s.muted);
   const [busy, setBusy] = useState(false);
@@ -18,7 +20,7 @@ export default function DefaultsPanel() {
     setOk(null);
     try {
       const m = await useMateStore.getState().patch(id, { is_default: true });
-      setOk(`${m.name} is now the default mate.`);
+      setOk(t("mateSettings.defNowDefault", { name: m.name }));
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -28,13 +30,13 @@ export default function DefaultsPanel() {
 
   return (
     <>
-      <Section title="Default mate" hint="Shown first in the switcher, on a new device and in the desktop app until you pick another there.">
-        <Field label="Default mate">
+      <Section title={t("mateSettings.defTitle")} hint={t("mateSettings.defHint")}>
+        <Field label={t("mateSettings.defTitle")}>
           <select className="field" value={def?.id ?? ""} disabled={busy || !mates.length} onChange={(e) => setDefault(e.target.value)} data-testid="mate-default-select">
             {mates.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}
-                {m.builtin ? " · built-in" : ""}
+                {m.builtin ? ` · ${t("mateSettings.defBuiltin")}` : ""}
               </option>
             ))}
           </select>
@@ -42,12 +44,12 @@ export default function DefaultsPanel() {
         <ErrorLine text={err} />
         {ok && <p className="text-[12px] text-success">{ok}</p>}
       </Section>
-      <Section title="This device" hint="Stored in this browser / app only.">
+      <Section title={t("mateSettings.defDevice")} hint={t("mateSettings.defDeviceHint")}>
         <Toggle
           on={!muted}
           onChange={(on) => useMateStore.getState().setMuted(!on)}
-          label="Read replies aloud here"
-          hint="Off mutes every mate on this device (each mate's own “Read replies aloud” still applies elsewhere). Same as the speaker button by the message box."
+          label={t("mateSettings.defReadHere")}
+          hint={t("mateSettings.defReadHereHint")}
           testId="mate-device-voice"
         />
       </Section>

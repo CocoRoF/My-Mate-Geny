@@ -24,6 +24,7 @@ import {
   unlockAudio,
 } from "./voiceBridge";
 import { useSyncExternalStore } from "react";
+import { tr } from "../i18n";
 
 export type ClipSource = string | Blob;
 
@@ -281,7 +282,7 @@ export class MateAudioQueue {
         else resolve();
       };
       const ok = () => finish();
-      const bad = () => finish(el.error ?? new Error("audio error"));
+      const bad = () => finish(el.error ?? new Error(tr("mate.audioError")));
       this.finishCurrent = () => finish();
       el.addEventListener("ended", ok);
       el.addEventListener("error", bad);

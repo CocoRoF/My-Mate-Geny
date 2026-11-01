@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { coreStatus, installCore, type CoreEvent, type CoreStatus } from "../../../../api/mates";
 import Icon from "../../../ui/Icon";
 import { Banner, bytes, ProgressBar, Section, StatusBadge } from "../ui";
+import { useT } from "../../../../i18n";
 
 export const LIVE2D_LICENCE_URL = "https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html";
 
@@ -38,6 +39,7 @@ type Run =
   | { phase: "error"; error: string };
 
 export default function Live2DPanel() {
+  const t = useT();
   const [st, setSt] = useState<CoreStatus | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [accepted, setAccepted] = useState(false);
@@ -115,31 +117,31 @@ export default function Live2DPanel() {
   const installed = !!st?.installed;
   const busy = run.phase === "downloading" || run.phase === "verifying";
   const status = busy
-    ? { s: "checking" as const, l: run.phase === "verifying" ? "Verifying…" : "Installing…" }
+    ? { s: "checking" as const, l: run.phase === "verifying" ? t("mateSettings.l2dVerifying") : t("mateSettings.l2dInstalling") }
     : run.phase === "error"
-      ? { s: "error" as const, l: "Install failed" }
+      ? { s: "error" as const, l: t("mateSettings.l2dInstallFailed") }
       : installed
-        ? { s: "ok" as const, l: "Installed" }
+        ? { s: "ok" as const, l: t("mateSettings.l2dInstalled") }
         : st === null
-          ? { s: "checking" as const, l: "Checking…" }
-          : { s: "off" as const, l: "Not installed" };
+          ? { s: "checking" as const, l: t("mateSettings.provChecking") }
+          : { s: "off" as const, l: t("mateSettings.l2dNotInstalled") };
 
   return (
     <Section
       testId="mate-core"
-      title="Live2D runtime (Cubism Core)"
-      hint="Live2D avatars need Live2D's Cubism Core. It isn't shipped with the app (Live2D licence): the server downloads it from Live2D once you accept the licence — once, for every mate and device."
+      title={t("mateSettings.l2dTitle")}
+      hint={t("mateSettings.l2dHint")}
       right={
         <StatusBadge status={status.s} testId="mate-core-status">
           {status.l}
         </StatusBadge>
       }
     >
-      {loadErr && <Banner tone="error">Couldn't read the runtime state: {loadErr}</Banner>}
+      {loadErr && <Banner tone="error">{t("mateSettings.l2dStateErr", { error: loadErr })}</Banner>}
       {busy && <Progress run={run} />}
       {run.phase === "done" && (
         <Banner tone="ok" testId="mate-core-done">
-          Cubism Core installed{run.size ? ` (${bytes(run.size)})` : ""} — Live2D avatars work now, no reload needed.
+          {t(run.size ? "mateSettings.l2dDoneSize" : "mateSettings.l2dDone", { size: run.size ? bytes(run.size) : "" })}
         </Banner>
       )}
       {run.phase === "error" && (
@@ -150,10 +152,10 @@ export default function Live2DPanel() {
       {installed && run.phase === "idle" && (
         <p className="flex items-center gap-1.5 text-[12.5px] text-content-dim">
           <Icon name="check" size={13} className="text-success" />
-          Installed{st?.size ? ` · ${bytes(st.size)}` : ""}
+          {t("mateSettings.l2dInstalled")}{st?.size ? ` · ${bytes(st.size)}` : ""}
           {st?.source && (
             <span className="min-w-0 truncate text-[11px] text-content-faint" title={st.source}>
-              · from {new URL(st.source, location.href).host}
+              · {t("mateSettings.l2dFrom", { host: new URL(st.source, location.href).host })}
             </span>
           )}
         </p>
@@ -164,22 +166,24 @@ export default function Live2DPanel() {
             <label className="flex items-start gap-2 text-[12.5px] text-content-dim">
               <input type="checkbox" className="mt-0.5 accent-[#6e8bff]" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} data-testid="mate-core-accept" />
               <span>
-                I have read and accept the{" "}
-                <a href={LIVE2D_LICENCE_URL} target="_blank" rel="noreferrer" className="text-accent underline">
-                  Live2D Proprietary Software License Agreement
-                </a>{" "}
-                for the Cubism Core.
+                {t.rich("mateSettings.l2dAccept", {
+                  a: (s) => (
+                    <a href={LIVE2D_LICENCE_URL} target="_blank" rel="noreferrer" className="text-accent underline">
+                      {s}
+                    </a>
+                  ),
+                })}
               </span>
             </label>
           )}
           <div className="flex justify-end gap-2">
             {installed ? (
-              <button className="btn-ghost border border-border" onClick={install} data-testid="mate-core-reinstall" title="Download it again (e.g. a newer Core)">
-                <Icon name="rotate" size={13} /> Reinstall
+              <button className="btn-ghost border border-border" onClick={install} data-testid="mate-core-reinstall" title={t("mateSettings.l2dReinstallTitle")}>
+                <Icon name="rotate" size={13} /> {t("mateSettings.l2dReinstall")}
               </button>
             ) : (
               <button className="btn-primary" disabled={!accepted || st === null} onClick={install} data-testid="mate-core-install">
-                <Icon name="download" size={14} /> {run.phase === "error" ? "Try again" : "Install Cubism Core"}
+                <Icon name="download" size={14} /> {run.phase === "error" ? t("common.tryAgain") : t("mateSettings.l2dInstall")}
               </button>
             )}
           </div>
@@ -190,11 +194,12 @@ export default function Live2DPanel() {
 }
 
 function Progress({ run }: { run: Run }) {
+  const t = useT();
   if (run.phase === "verifying") {
     return (
       <div className="space-y-1.5" data-testid="mate-core-progress" data-phase="verifying">
         <ProgressBar indeterminate />
-        <p className="text-[12px] text-content-dim">Verifying the download…</p>
+        <p className="text-[12px] text-content-dim">{t("mateSettings.l2dVerifyingDownload")}</p>
       </div>
     );
   }
@@ -205,8 +210,9 @@ function Progress({ run }: { run: Run }) {
       <ProgressBar value={pct ?? undefined} indeterminate={pct === null} />
       <p className="flex justify-between gap-2 text-[12px] tabular-nums text-content-dim">
         <span>
-          Downloading… {bytes(run.received)}
-          {run.total ? ` of ${bytes(run.total)}` : ""}
+          {run.total
+            ? t("mateSettings.l2dDownloadingOf", { got: bytes(run.received), total: bytes(run.total) })
+            : t("mateSettings.l2dDownloading", { got: bytes(run.received) })}
         </span>
         {pct !== null && <span>{Math.round(pct * 100)}%</span>}
       </p>
