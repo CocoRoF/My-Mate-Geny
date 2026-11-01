@@ -283,6 +283,36 @@ async def conversation_reset(mate_id: str, request: Request) -> dict:
         raise _http(exc) from exc
 
 
+# ---- the relationship (docs/mate-memory-affinity.md §5) ----
+
+@router.get("/{mate_id}/relation")
+async def get_relation(mate_id: str, request: Request) -> dict:
+    try:
+        return _svc(request).relation_view(mate_id)
+    except KeyError as exc:
+        raise _http(exc) from exc
+
+
+@router.patch("/{mate_id}/relation")
+async def patch_relation(mate_id: str, request: Request) -> dict:
+    """``{enabled?, paused?, sensitivity? (0.5 – 1.5), show_indicator?, avatar_mood?, affinity? (0 – 100)}``"""
+    body = await _json(request)
+    try:
+        return _svc(request).relation_update(mate_id, body)
+    except (KeyError, MateError) as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/{mate_id}/relation/reset")
+async def reset_relation(mate_id: str, request: Request) -> dict:
+    """``{mode: "zero" | "recompute"}`` — a fresh start, or rebuilt from the conversation's real history."""
+    body = await _json(request)
+    try:
+        return _svc(request).relation_reset(mate_id, str(body.get("mode") or ""))
+    except (KeyError, MateError) as exc:
+        raise _http(exc) from exc
+
+
 # ---- memory ----
 
 @router.get("/{mate_id}/memories")

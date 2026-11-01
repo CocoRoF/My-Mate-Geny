@@ -17,6 +17,7 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.db import Database
+from app.mate import affinity as A
 from app.mate import memory as M
 from app.providers.catalog import DEFAULT_MATE_MODEL, default_mate_model
 from app.services._ids import new_id, now_iso
@@ -421,6 +422,8 @@ class MateStore:
         # told (reason, mate_id) after every write a client can see: MateService
         # wires it to the /ws/sessions feed so every window refetches its mates
         self.on_change: Callable[[str, str | None], None] | None = None
+        # told (mate_id) when a memory was added (not merged): the relationship counts it
+        self.on_memory_added: Callable[[str], None] | None = None
 
     def _changed(self, reason: str, mate_id: str | None = None) -> None:
         if self.on_change is not None:
@@ -447,6 +450,7 @@ class MateStore:
             "memory_rev": row["memory_rev"],
             "builtin": row["builtin"] if "builtin" in row.keys() else None,
             "customized": bool(row["customized"]) if "customized" in row.keys() else False,
+            "relation": self.relation_summary(row["id"]),
         }
 
     def list(self) -> list[dict[str, Any]]:
@@ -591,6 +595,8 @@ class MateStore:
                 self._db.execute("INSERT OR REPLACE INTO mate_builtin_removed (key, removed_at) VALUES (?, ?)",
                                  (row["builtin"], now_iso()))
             self._db.execute("DELETE FROM mate_memories WHERE mate_id = ?", (mate_id,))
+            self._db.execute("DELETE FROM mate_relation WHERE mate_id = ?", (mate_id,))
+            self._db.execute("DELETE FROM mate_settings WHERE key = ?", (f"memchg:{mate_id}",))
             self._db.execute("DELETE FROM mates WHERE id = ?", (mate_id,))
             if row["is_default"]:  # someone else becomes the default
                 nxt = self._db.query_one("SELECT id FROM mates ORDER BY created_at LIMIT 1")
@@ -775,6 +781,11 @@ class MateStore:
             if by_user:
                 self._user_edit(mate_id, before, {"id": mid, "op": "added", "text": text, "kind": kind})
         self._changed("memory", mate_id)
+        if self.on_memory_added is not None:
+            try:
+                self.on_memory_added(mate_id)
+            except Exception:  # noqa: BLE001 - counting never fails a write
+                pass
         return mem
 
     def update_memory(self, mate_id: str, mem_id: str, patch: dict[str, Any], *, by_user: bool = False) -> dict[str, Any]:
@@ -890,6 +901,22 @@ class MateStore:
         # The user edited what the system prompt always carries: the engine
         # reloads its prompt at the next turn.
         self._db.execute("UPDATE mates SET memory_rev = memory_rev + 1 WHERE id = ?", (mate_id,))
+
+    # ---- the relationship (app/mate/affinity.py; the rules run in app/mate/service.py) ----
+
+    def relation_doc(self, mate_id: str) -> dict[str, Any] | None:
+        row = self._db.query_one("SELECT doc FROM mate_relation WHERE mate_id = ?", (mate_id,))
+        return A.normalized(_loads(row["doc"], {})) if row is not None else None
+
+    def save_relation(self, mate_id: str, doc: dict[str, Any]) -> None:
+        self._db.execute(
+            "INSERT INTO mate_relation (mate_id, doc, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(mate_id) DO UPDATE SET doc = excluded.doc, updated_at = excluded.updated_at",
+            (mate_id, json.dumps(doc, ensure_ascii=False), now_iso()))
+
+    def relation_summary(self, mate_id: str) -> dict[str, Any]:
+        doc = self.relation_doc(mate_id) or A.new()
+        return A.summary(doc, datetime.now(timezone.utc), self.tz())
 
     # ---- global settings ----
 

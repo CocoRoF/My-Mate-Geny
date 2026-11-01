@@ -229,6 +229,13 @@ CREATE TABLE IF NOT EXISTS mate_memories (
     FOREIGN KEY (mate_id) REFERENCES mates(id) ON DELETE CASCADE
 );
 
+-- How close the user and a mate are, and its mood (app/mate/affinity.py): one JSON document per mate.
+CREATE TABLE IF NOT EXISTS mate_relation (
+    mate_id    TEXT PRIMARY KEY,
+    doc        TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 -- Global Mate settings (voice service URLs); API keys live in the vault.
 CREATE TABLE IF NOT EXISTS mate_settings (
     key   TEXT PRIMARY KEY,

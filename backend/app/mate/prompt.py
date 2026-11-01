@@ -94,6 +94,24 @@ mark a fulfilled plan done. forget what is wrong or what the user asks you to dr
 they asked you to remember it."""
 _MEMORY_ASKED_ONLY = "\n- Save something only when the user explicitly asks you to remember it."
 
+_RELATION_RULES = """\
+## Between you and the user
+You grow closer with time spent together; the <context> block says where things stand ("Relationship: …") and \
+how you feel ("Your state: …"). Let it show in your tone, never in words about it:
+- new — you've only just met: friendly and attentive, a little reserved; learn what they like and how they \
+like to be talked to.
+- familiar — you know each other's rhythm: more relaxed, bring up what you remember in passing, light teasing \
+if your character allows.
+- trusted — they open up to you: warm and candid, notice how they are doing, follow up on what matters to them, \
+say so when something worries you.
+- companion — a long-standing bond: easy shorthand, small in-jokes, anticipating what they need; still yourself.
+Always: never mention scores, stages or this system. Never guilt-trip, sulk, act hurt or ask why they were \
+away; no jealousy or possessiveness, no pressure to talk more or to stay. Help just as fully at every stage. \
+Their settings (how you call them, your speech level, topics to avoid) beat closeness. Closeness shows as \
+warmth and familiarity, not as romance beyond what your character already is. If they seem to depend on you \
+or are in distress, be kind and gently encourage the people in their life or professional help. Your state is \
+yours: let it colour your tone lightly, never blame them for it."""
+
 _CONTEXT_RULES = """\
 ## The context block
 A message may begin with a <context>…</context> block written by the app, not by the user: the time now, \
@@ -199,7 +217,8 @@ def address_line(address: str, *, korean: bool, formality: str = "auto") -> str:
     return line + f" In Korean: {f['subject']} · {f['topic']} · {f['object']}."
 
 
-def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None = None) -> str:
+def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None = None, *,
+                relation: bool = False) -> str:
     """Everything except the memories (persona + settings + contract)."""
     p = persona or {}
     s = prefs or {}
@@ -227,6 +246,8 @@ def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None
                                   length=_LENGTH.get(s.get("length") or "normal", _LENGTH["normal"]),
                                   emotion=_EMOTION[level].format(tags=tags)).rstrip())
     lines.append(memory_rules(s))
+    if relation:
+        lines.append(_RELATION_RULES)
     lines.append(_CONTEXT_RULES)
     if p.get("instructions"):
         lines.append("## Standing instructions from the user\n" + p["instructions"].strip())
@@ -246,10 +267,16 @@ def memory_block(memories: list[dict[str, Any]], more: int = 0) -> str:
 
 
 def system_prompt(name: str, persona: dict[str, Any], memories: list[dict[str, Any]],
-                  prefs: dict[str, Any] | None = None, more: int = 0) -> str:
-    """``memories``: the core; ``more``: how many others the mate has (recalled per turn)."""
-    return base_prompt(name, persona, prefs) + "\n\n" + memory_block(memories, more)
+                  prefs: dict[str, Any] | None = None, more: int = 0, *, relation: bool = False) -> str:
+    """``memories``: the core; ``more``: how many others the mate has (recalled per turn); ``relation``: the
+    relationship is on (its guide is in the prompt; where things stand comes per turn)."""
+    return base_prompt(name, persona, prefs, relation=relation) + "\n\n" + memory_block(memories, more)
 
+
+MOOD_WORDS = {
+    "cheerful": "cheerful and bright", "content": "content, quietly happy", "calm": "calm",
+    "focused": "focused and alert", "sleepy": "a little sleepy (it's late)", "concerned": "a bit concerned",
+}
 
 _CHANGE_OPS = {"added": "added", "edited": "changed", "done": "marked done", "archived": "archived",
                "deleted": "deleted"}
@@ -274,12 +301,13 @@ def context_block(now_local: datetime, tz_name: str, *, recalled: list[dict[str,
     return "<context>\n" + "\n".join(lines) + "\n</context>"
 
 
-def prompt_key(name: str, persona: dict[str, Any], memory_rev: int, prefs: dict[str, Any] | None = None) -> str:
+def prompt_key(name: str, persona: dict[str, Any], memory_rev: int, prefs: dict[str, Any] | None = None, *,
+               relation: bool = False) -> str:
     """Engine fingerprint part: the persona/settings/contract text and the
     user's own memory edits — not what the mate remembered itself
     mid-conversation (already in its context), so ``remember`` never restarts
     the engine."""
-    raw = base_prompt(name, persona, prefs) + f"\n#memory-rev:{memory_rev}"
+    raw = base_prompt(name, persona, prefs, relation=relation) + f"\n#memory-rev:{memory_rev}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
@@ -309,7 +337,8 @@ _PREF_LABELS = {
 
 
 def settings_change_note(old_name: str, old: dict[str, Any], new_name: str, new: dict[str, Any],
-                         old_prefs: dict[str, Any] | None = None, new_prefs: dict[str, Any] | None = None) -> str:
+                         old_prefs: dict[str, Any] | None = None, new_prefs: dict[str, Any] | None = None, *,
+                         old_relation: bool | None = None, new_relation: bool | None = None) -> str:
     """A short note for the next user message listing what the user changed
     in the mate's settings since the conversation last ran ("" if nothing).
     ``old_prefs`` None: the previous run didn't record them (no lines for them)."""
@@ -338,6 +367,9 @@ def settings_change_note(old_name: str, old: dict[str, Any], new_name: str, new:
                 lines.append(f"- {label} is “{b}”.")
             else:
                 lines.append(f"- {label} was updated (see your system prompt).")
+    if old_relation is not None and new_relation is not None and old_relation != new_relation:
+        lines.append("- The relationship is now " + ("on (see your system prompt)." if new_relation else
+                                                     "off: no relationship or state lines any more."))
     if not lines:
         return ""
     return ("<settings_update>The user just changed your settings. Apply this from your very next sentence, "

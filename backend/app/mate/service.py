@@ -29,9 +29,10 @@ from pathlib import Path
 from typing import Any
 
 from app.config import settings
+from app.mate import affinity as A
 from app.mate import files
 from app.mate import memory as M
-from app.mate.prompt import context_block, prompt_key, settings_change_note, system_prompt
+from app.mate.prompt import MOOD_WORDS, context_block, prompt_key, settings_change_note, system_prompt
 from app.mate.store import MateError, MateStore, normalize_persona
 from app.providers import get_provider
 from app.providers.catalog import default_mate_model
@@ -83,11 +84,17 @@ class MateService:
         # windows and other devices refetch instead of keeping a stale copy
         store.on_change = sessions.mates_changed
         self._housekept: dict[str, str] = {}               # mate id -> the local day its memory was tidied
+        store.on_memory_added = self._memory_added
         try:
             store.migrate_memories()  # (memories saved before kinds existed; idempotent)
         except Exception as exc:  # noqa: BLE001 - never stops the app
             self._log("warning", f"memory migration: {exc}")
         self.sync_builtins()
+        for m in store.list():
+            try:
+                self.relation_doc(m["id"])  # (a mate from before relationships: seeded from its real history)
+            except Exception as exc:  # noqa: BLE001
+                self._log("warning", f"relationship seed for {m['id']}: {exc}")
 
     def _log(self, level: str, message: str, **kw: Any) -> None:
         if self._logs is not None:
@@ -293,14 +300,18 @@ class MateService:
         memories = self.store.memories(mate_id) if mate_id else []
         core = M.core(memories)
         prefs = mate.get("prefs") or {}
-        prompt = system_prompt(mate["name"], mate["persona"], core, prefs, more=len(memories) - len(core))
+        rel = self._advanced(mate_id, now_utc, tz) if mate_id else None
+        relation = bool(rel and rel["enabled"])
+        prompt = system_prompt(mate["name"], mate["persona"], core, prefs, more=len(memories) - len(core),
+                               relation=relation)
         # the per-turn context (docs/mate-memory-affinity.md §2): settings note (persona edited since the
         # conversation last ran), then the clock, recalled memories, the user's memory edits — prepended to
         # this message, never stored, never a restart
-        note = self._settings_note(mate_id, mate)
-        ctx = self._context(mate, req, engine, memories, core, prefs, now_utc, now_local, tz) if mate_id else ""
+        note = self._settings_note(mate_id, mate, relation)
+        ctx = self._context(mate, req, engine, memories, core, prefs, now_utc, now_local, tz, rel) if mate_id else ""
         req.preamble = "\n\n".join(x for x in (note, ctx, req.preamble) if x)
-        req.prompt_key = prompt_key(mate["name"], mate["persona"], int(mate.get("memory_rev") or 0), prefs)
+        req.prompt_key = prompt_key(mate["name"], mate["persona"], int(mate.get("memory_rev") or 0), prefs,
+                                    relation=relation)
         if engine == "codex" and mate_id:
             prompt = self._codex_prompt(mate_id, prompt, req.prompt_key, resuming=bool(req.cli_session_id))
             req.engine_home = str(files.mate_dir(mate_id) / "codex")
@@ -395,7 +406,7 @@ class MateService:
 
     def _context(self, mate: dict[str, Any], req: TurnRequest, engine: str, memories: list[dict[str, Any]],
                  core: list[dict[str, Any]], prefs: dict[str, Any], now_utc: datetime, now_local: datetime,
-                 tz: Any) -> str:
+                 tz: Any, rel: dict[str, Any] | None = None) -> str:
         mate_id = mate["id"]
         st = self._context_state(mate_id, engine, req.cli_session_id)
         turn = int(st.get("turn") or 0) + 1
@@ -410,23 +421,188 @@ class MateService:
         for m in recalled:
             injected[m["id"]] = turn
         changes = self.store.take_memory_changes(mate_id)
-        relation = self._relation_lines(mate, st, now_utc, turn)
+        relation = self._relation_lines(rel, st, now_utc, tz, turn)
         self._save_context_state(mate_id, {**st, "turn": turn, "injected": injected})
         if recalled:
             self.store.mark_used(mate_id, [m["id"] for m in recalled])
         return context_block(now_local, self._tz_name(tz, now_utc), recalled=recalled, changes=changes,
                              relation=relation)
 
-    def _relation_lines(self, mate: dict[str, Any], st: dict[str, Any], now_utc: datetime, turn: int) -> list[str]:
-        return []  # (the relationship and mood lines: app/mate/affinity.py)
+    @staticmethod
+    def _relation_lines(rel: dict[str, Any] | None, st: dict[str, Any], now_utc: datetime, tz: Any,
+                        turn: int) -> list[str]:
+        """Where things stand and how the mate feels — only when it changed since this engine session was last
+        told (or every 30 turns), so most messages carry no such line (docs/mate-memory-affinity.md §5.5)."""
+        if not rel or not rel["enabled"] or rel["paused"]:
+            return []
+        lines: list[str] = []
+        today = now_utc.astimezone(tz).date()
+        streak = int(rel["streak_days"] or 0)
+        distant = A.STAGES.index(A.STAGES[int(rel.get("warm") or 0)]) < A.STAGES.index(A.earned_stage(rel))
+        sig = [rel["stage"], 0 if streak < 2 else 1 if streak < 7 else 2, distant]
+        if rel["started_at"] and (st.get("rel") != sig or turn - int(st.get("rel_turn") or 0) >= 30):
+            line = f"Relationship: {rel['stage']} — day {A.days_together(rel, today, tz)} together"
+            if streak >= 2:
+                line += f", talking {streak} days in a row"
+            lines.append(line + ".")
+            if distant:
+                lines.append("It has been a while since you two talked: you still know them — be a little more "
+                             "reserved for now and let it close naturally as you talk. Never mention the gap.")
+            st["rel"], st["rel_turn"] = sig, turn
+        mood = A.mood(rel, now_utc, tz)["label"]
+        last = float(st.get("mood_at") or 0)
+        if mood != st.get("mood") and (st.get("mood") is None or now_utc.timestamp() - last >= 20 * 60):
+            lines.append(f"Your state: {MOOD_WORDS.get(mood, mood)}.")
+            st["mood"], st["mood_at"] = mood, now_utc.timestamp()
+        return lines
 
-    def _settings_note(self, mate_id: str, mate: dict[str, Any]) -> str:
+    # ---- the relationship (app/mate/affinity.py) ----
+
+    def _history_events(self, mate: dict[str, Any]) -> list[tuple[datetime, str, Any]]:
+        """The real history the relationship is rebuilt from: the user's messages in the mate's conversation
+        (not the internal ones — delegation results, greetings) with the reply that followed, and memories."""
+        events: list[tuple[datetime, str, Any]] = []
+        sid = mate.get("session_id")
+        if sid:
+            rows = self._svc._db.query(
+                "SELECT role, content, meta, created_at FROM messages WHERE session_id = ? AND role IN "
+                "('user', 'assistant') ORDER BY created_at, rowid", (sid,))
+            pending: tuple[datetime, str] | None = None
+            for r in rows:
+                try:
+                    meta = json.loads(r["meta"] or "null") or {}
+                except ValueError:
+                    meta = {}
+                at = A._t(r["created_at"])
+                if at is None:
+                    continue
+                if r["role"] == "user":
+                    if pending:
+                        events.append((pending[0], "turn", (pending[1], "")))
+                    pending = None if meta.get("internal") else (at, r["content"] or "")
+                elif pending:
+                    events.append((pending[0], "turn", (pending[1], r["content"] or "")))
+                    pending = None
+            if pending:
+                events.append((pending[0], "turn", (pending[1], "")))
+        for r in self.store._db.query("SELECT created_at FROM mate_memories WHERE mate_id = ?", (mate["id"],)):
+            at = A._t(r["created_at"])
+            if at is not None:
+                events.append((at, "memory", None))
+        return events
+
+    def _recompute(self, mate_id: str, settings: dict[str, Any] | None = None) -> dict[str, Any]:
+        mate = self.store.get(mate_id)
+        return A.replay(self._history_events(mate), datetime.now(timezone.utc), self.store.tz(), settings)
+
+    def relation_doc(self, mate_id: str) -> dict[str, Any]:
+        """The mate's relationship; a mate without one (from before, or new) starts from its real history."""
+        doc = self.store.relation_doc(mate_id)
+        if doc is None:
+            doc = self._recompute(mate_id)
+            self.store.save_relation(mate_id, doc)
+        return doc
+
+    def _save_relation(self, mate_id: str, doc: dict[str, Any], before: dict[str, Any] | None,
+                       force: bool = False) -> None:
+        self.store.save_relation(mate_id, doc)
+        tz = self.store.tz()
+        now = datetime.now(timezone.utc)
+        if force or before is None or A.summary(before, now, tz) != A.summary(doc, now, tz):
+            self.store._changed("relation", mate_id)  # (the indicator / Relationship tab refetch)
+
+    def _advanced(self, mate_id: str, now: datetime, tz: Any) -> dict[str, Any]:
+        doc = self.relation_doc(mate_id)
+        before = A.clone(doc)
+        A.advance(doc, now, tz)
+        if doc != before:
+            self._save_relation(mate_id, doc, before)
+        return doc
+
+    def relation_view(self, mate_id: str) -> dict[str, Any]:
+        self.store.get(mate_id)
+        now, tz = datetime.now(timezone.utc), self.store.tz()
+        return A.view(self._advanced(mate_id, now, tz), now, tz)
+
+    def relation_update(self, mate_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+        """The Relationship tab: on/off, pause, sensitivity, the indicator, the avatar following the mood, a value
+        set by hand. Time up to now is settled first, under the old settings (a pause covers what it covered)."""
+        self.store.get(mate_id)
+        now, tz = datetime.now(timezone.utc), self.store.tz()
+        doc = self._advanced(mate_id, now, tz)
+        before = A.clone(doc)
+        for k in ("enabled", "paused"):
+            if k in patch and patch[k] is not None:
+                A.set_switch(doc, k, bool(patch[k]), now, tz)
+        for k in ("show_indicator", "avatar_mood"):
+            if k in patch and patch[k] is not None:
+                doc[k] = bool(patch[k])
+        if patch.get("sensitivity") is not None:
+            try:
+                doc["sensitivity"] = max(A.SENSITIVITY[0], min(A.SENSITIVITY[1], float(patch["sensitivity"])))
+            except (TypeError, ValueError) as exc:
+                raise MateError("sensitivity must be a number (0.5 – 1.5)") from exc
+        if patch.get("affinity") is not None:
+            if isinstance(patch["affinity"], bool):
+                raise MateError("affinity must be a number (0 – 100)")
+            try:
+                A.set_value(doc, float(patch["affinity"]), now, tz)
+            except (TypeError, ValueError) as exc:
+                raise MateError("affinity must be a number (0 – 100)") from exc
+        self._save_relation(mate_id, doc, before, force=True)
+        return A.view(doc, now, tz)
+
+    def relation_reset(self, mate_id: str, mode: str) -> dict[str, Any]:
+        """``zero``: a fresh start (settings kept); ``recompute``: rebuilt from the real history."""
+        self.store.get(mate_id)
+        now, tz = datetime.now(timezone.utc), self.store.tz()
+        cur = self.relation_doc(mate_id)
+        if mode == "zero":
+            doc = A.reset(cur, now, tz)
+        elif mode == "recompute":
+            doc = self._recompute(mate_id, {k: cur[k] for k in ("enabled", "sensitivity", "show_indicator",
+                                                                "avatar_mood")})
+            doc["paused"] = cur["paused"]
+        else:
+            raise MateError("mode: zero | recompute")
+        self._save_relation(mate_id, doc, cur, force=True)
+        return A.view(doc, now, tz)
+
+    def _memory_added(self, mate_id: str) -> None:
+        now, tz = datetime.now(timezone.utc), self.store.tz()
+        if self.store.relation_doc(mate_id) is None:
+            self.relation_doc(mate_id)  # (seeded from history now — this memory is already in it)
+            return
+        doc = self.relation_doc(mate_id)
+        before = A.clone(doc)
+        A.advance(doc, now, tz)
+        A.credit_memory(doc, now, tz)
+        self._save_relation(mate_id, doc, before)
+
+    def _relation_turn(self, mate_id: str, outcome: dict[str, Any]) -> None:
+        """A mate turn ended: the user's own message counts (an internal one — a delegation result — only
+        moves the mood a little)."""
+        now, tz = datetime.now(timezone.utc), self.store.tz()
+        doc = self.relation_doc(mate_id)
+        before = A.clone(doc)
+        A.advance(doc, now, tz)
+        meta = outcome.get("meta") or {}
+        if meta.get("internal"):
+            if meta.get("kind") == "delegation_result":
+                ok = all((d.get("status") == "ok") for d in (meta.get("delegations") or []))
+                A.mood_result(doc, now, ok)
+        else:
+            A.credit_turn(doc, now, tz, str(outcome.get("input") or ""), str(outcome.get("text") or ""))
+        self._save_relation(mate_id, doc, before)
+
+    def _settings_note(self, mate_id: str, mate: dict[str, Any], relation: bool | None = None) -> str:
         """Compare the persona with the one the conversation last ran with
         (kept next to the mate's engine files) and remember the new one."""
         if not mate_id:
             return ""
         path = files.home_dir(mate_id) / ".applied-persona.json"
-        now = {"name": mate.get("name") or "", "persona": mate.get("persona") or {}, "prefs": mate.get("prefs") or {}}
+        now = {"name": mate.get("name") or "", "persona": mate.get("persona") or {}, "prefs": mate.get("prefs") or {},
+               "relation": relation}
         try:
             before = json.loads(path.read_text("utf-8"))
         except (OSError, ValueError):
@@ -441,7 +617,9 @@ class MateService:
         return settings_change_note(str(before.get("name") or ""), before.get("persona") or {},
                                     now["name"], now["persona"],
                                     before.get("prefs") if isinstance(before.get("prefs"), dict) else None,
-                                    now["prefs"])
+                                    now["prefs"],
+                                    old_relation=before.get("relation") if isinstance(before.get("relation"), bool)
+                                    else None, new_relation=relation)
 
     # ---- tools (called by the bridge through the internal API) ----
 
@@ -764,6 +942,13 @@ class MateService:
                 self._pending.setdefault(d["mate_sid"], []).append(entry)
                 asyncio.get_running_loop().call_soon(self._flush, d["mate_sid"])
         if self._svc.is_mate_session(sid):
+            if outcome.get("trigger") == "turn" and "meta" in outcome:
+                try:
+                    mate_id = (self._svc.get(sid).get("mate_id") or "")
+                    if mate_id:
+                        self._relation_turn(mate_id, outcome)
+                except Exception as exc:  # noqa: BLE001 - never breaks the turn loop
+                    self._log("warning", f"relationship: {exc}")
             self._depth.pop(sid, None)  # the next turn is the user's unless a result starts it
             if self._pending.get(sid):
                 asyncio.get_running_loop().call_soon(self._flush, sid)
