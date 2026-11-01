@@ -8,18 +8,20 @@ import { requestResync } from "../../lib/sync";
 import { APP_VERSION } from "../../version";
 import Icon, { type IconName } from "../ui/Icon";
 import { useAuthStatus } from "../admin/useAuthStatus";
+import { useT, type MsgKey } from "../../i18n";
 
-const NAV: { id: View; label: string; icon: IconName }[] = [
-  { id: "mate", label: "Mate", icon: "sparkles" },
-  { id: "chat", label: "Chat", icon: "chat" },
-  { id: "providers", label: "Providers", icon: "plug" },
-  { id: "connections", label: "Connections", icon: "server" },
-  { id: "usage", label: "Usage", icon: "cpu" },
-  { id: "admin", label: "Admin", icon: "shield" },
-  { id: "downloads", label: "Download", icon: "download" },
+const NAV: { id: View; label: MsgKey; icon: IconName }[] = [
+  { id: "mate", label: "nav.mate", icon: "sparkles" },
+  { id: "chat", label: "nav.chat", icon: "chat" },
+  { id: "providers", label: "nav.providers", icon: "plug" },
+  { id: "connections", label: "nav.connections", icon: "server" },
+  { id: "usage", label: "nav.usage", icon: "cpu" },
+  { id: "admin", label: "nav.admin", icon: "shield" },
+  { id: "downloads", label: "nav.downloads", icon: "download" },
 ];
 
 export default function Sidebar() {
+  const t = useT();
   const view = useUIStore((s) => s.view);
   const setView = useUIStore((s) => s.setView);
   const user = useAuthStatus()?.username ?? "";
@@ -100,13 +102,13 @@ export default function Sidebar() {
           <div className="text-[15px] font-semibold tracking-tight">
             My Mate <span className="text-gradient">Geny</span>
           </div>
-          <div className="text-[10px] text-content-faint">your mate + agent console</div>
+          <div className="text-[10px] text-content-faint">{t("nav.tagline")}</div>
         </div>
         <button
           onClick={refresh}
           disabled={refreshing}
-          title="Refresh — reload chats and resync this one"
-          aria-label="Refresh"
+          title={t("nav.refreshTitle")}
+          aria-label={t("common.refresh")}
           className="ml-auto grid place-items-center w-8 h-8 touch:w-10 touch:h-10 rounded-lg text-content-faint transition hover:text-content hover:bg-surface-2 disabled:opacity-70"
         >
           <Icon name="refresh" size={15} spin={refreshing} />
@@ -116,7 +118,7 @@ export default function Sidebar() {
       {/* New chat */}
       <div className="px-3 pb-2">
         <button onClick={newChat} className="btn-primary w-full">
-          <Icon name="plus" size={16} /> New chat
+          <Icon name="plus" size={16} /> {t("nav.newChat")}
         </button>
       </div>
 
@@ -134,7 +136,7 @@ export default function Sidebar() {
               size={16}
               className="text-content-faint group-hover:text-content-dim group-data-[active=true]:text-accent"
             />
-            {n.label}
+            {t(n.label)}
             {n.id === "providers" && connectedCount > 0 && (
               <span className="ml-auto pill bg-success/15 text-success">{connectedCount}</span>
             )}
@@ -151,7 +153,7 @@ export default function Sidebar() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search sessions"
+            placeholder={t("nav.searchSessions")}
             className="w-full bg-transparent text-[13px] text-content placeholder:text-content-faint outline-none"
           />
         </div>
@@ -163,7 +165,7 @@ export default function Sidebar() {
         className="flex items-center gap-1.5 px-3 pb-1 touch:py-2 text-[10px] font-semibold uppercase tracking-wider text-content-faint hover:text-content-dim"
       >
         <Icon name={showSessions ? "chevron-down" : "chevron"} size={12} />
-        Sessions
+        {t("nav.sessions")}
         <span className="ml-1 text-content-faint/70">{filtered.length}</span>
       </button>
 
@@ -171,7 +173,7 @@ export default function Sidebar() {
         <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5" onMouseLeave={() => setMenuId(null)}>
           {filtered.length === 0 && (
             <p className="px-2 py-3 text-xs text-content-faint">
-              {sessions.length === 0 ? "No sessions yet." : "No matches."}
+              {sessions.length === 0 ? t("nav.noSessions") : t("common.noMatches")}
             </p>
           )}
           {filtered.map((s) => {
@@ -207,7 +209,7 @@ export default function Sidebar() {
                         }
                       }}
                       onBlur={saveRename}
-                      aria-label="Chat name"
+                      aria-label={t("nav.chatName")}
                       className="w-full rounded-md border border-accent/50 bg-surface px-1.5 py-0.5 text-[13px] text-content outline-none"
                     />
                   ) : (
@@ -217,7 +219,7 @@ export default function Sidebar() {
                         e.stopPropagation();
                         startRename(s.id, s.title);
                       }}
-                      title="Double-click to rename"
+                      title={t("nav.doubleClickRename")}
                     >
                       {s.title}
                     </div>
@@ -227,17 +229,15 @@ export default function Sidebar() {
                       <span
                         className="inline-flex items-center gap-1 text-accent"
                         title={
-                          s.running
-                            ? "Agent is working"
-                            : `${s.background} background task${s.background === 1 ? "" : "s"} running (subagents / background commands)`
+                          s.running ? t("nav.agentWorking") : t("nav.bgTasksRunning", { count: s.background ?? 0 })
                         }
                       >
-                        <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" /> working
-                        {!s.running && <span className="text-accent/70">({s.background} bg)</span>} ·
+                        <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" /> {t("nav.working")}
+                        {!s.running && <span className="text-accent/70">({t("nav.bgShort", { n: s.background ?? 0 })})</span>} ·
                       </span>
                     )}
-                    {s.connection_id ? "remote" : "local"} · {s.provider}
-                    {s.mode === "plan" && " · plan"}
+                    {s.connection_id ? t("nav.remote") : t("nav.local")} · {s.provider}
+                    {s.mode === "plan" && ` · ${t("nav.plan")}`}
                   </div>
                 </div>
                 <button
@@ -245,6 +245,7 @@ export default function Sidebar() {
                     e.stopPropagation();
                     setMenuId(menuId === s.id ? null : s.id);
                   }}
+                  aria-label={t("nav.chatActions")}
                   className="md:can-hover:opacity-0 group-hover:opacity-100 rounded-md p-1.5 md:can-hover:p-1 touch:p-3 text-content-faint hover:text-content hover:bg-surface-3 transition"
                 >
                   <Icon name="more" size={15} />
@@ -258,7 +259,7 @@ export default function Sidebar() {
                       onClick={() => startRename(s.id, s.title)}
                       className="flex w-full items-center gap-2 px-3 py-2 touch:py-3 text-[13px] text-content-dim hover:bg-surface-3 hover:text-content"
                     >
-                      <Icon name="pencil" size={14} /> Rename
+                      <Icon name="pencil" size={14} /> {t("common.rename")}
                     </button>
                     <button
                       onClick={() => {
@@ -267,7 +268,7 @@ export default function Sidebar() {
                       }}
                       className="flex w-full items-center gap-2 px-3 py-2 touch:py-3 text-[13px] text-danger hover:bg-surface-3"
                     >
-                      <Icon name="trash" size={14} /> Delete
+                      <Icon name="trash" size={14} /> {t("common.delete")}
                     </button>
                   </div>
                 )}
@@ -278,14 +279,27 @@ export default function Sidebar() {
       )}
       {!showSessions && <div className="flex-1" />}
 
+      {/* Settings: always at the bottom, right above the account row */}
+      <div className="px-2 pb-1.5 pt-1.5 border-t border-border/60">
+        <button
+          onClick={() => setView("settings")}
+          data-active={view === "settings"}
+          data-testid="nav-settings"
+          className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 touch:py-2.5 text-[13px] font-medium text-content-dim transition hover:text-content hover:bg-surface-2 data-[active=true]:bg-surface-3 data-[active=true]:text-content"
+        >
+          <Icon name="settings" size={16} className="text-content-faint group-hover:text-content-dim group-data-[active=true]:text-accent" />
+          {t("nav.settings")}
+        </button>
+      </div>
+
       {/* Footer */}
       <div className="flex items-center gap-2 px-3 h-12 border-t border-border/70 text-content-faint">
         <div className="grid place-items-center w-6 h-6 rounded-full bg-surface-3 text-[11px] font-semibold text-content-dim">
           {(user || "?").slice(0, 1).toUpperCase()}
         </div>
-        <span className="min-w-0 truncate text-xs" title="Signed in as">{user}</span>
+        <span className="min-w-0 truncate text-xs" title={t("nav.signedInAs", { user })}>{user}</span>
         <span className="ml-auto text-[10px]">v{APP_VERSION}</span>
-        <button onClick={logout} className="rounded-md p-1 touch:p-2.5 touch:-mr-1.5 hover:text-danger hover:bg-surface-3 transition" title="Log out">
+        <button onClick={logout} className="rounded-md p-1 touch:p-2.5 touch:-mr-1.5 hover:text-danger hover:bg-surface-3 transition" title={t("nav.logOut")} aria-label={t("nav.logOut")}>
           <Icon name="logout" size={15} />
         </button>
       </div>

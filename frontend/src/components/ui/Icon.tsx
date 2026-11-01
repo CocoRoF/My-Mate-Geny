@@ -82,6 +82,8 @@ import {
   LuSend,
   LuChevronUp,
   LuKeyboard,
+  LuBell,
+  LuLanguages,
 } from "react-icons/lu";
 
 const MAP = {
@@ -165,6 +167,8 @@ const MAP = {
   send: LuSend,
   "chevron-up": LuChevronUp,
   keyboard: LuKeyboard,
+  bell: LuBell,
+  languages: LuLanguages,
 } satisfies Record<string, IconType>;
 
 export type IconName = keyof typeof MAP;
