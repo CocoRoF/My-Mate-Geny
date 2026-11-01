@@ -612,9 +612,11 @@ answers — the device id rides in the message's `client_msg_id`
 (`…~<device>`), which the server echoes on `user.message`; a turn the mate
 starts itself is read where the user last talked from (unknown: here). On that
 device the windows showing the mate elect one reader over a BroadcastChannel
-(heartbeats 300 ms, gone after 1 s, `bye` on close): the window reading a reply
-keeps it until it is done; else the overlay while on screen; else the most
-recently focused Mate surface (chat window / console Mate view). The quick card
+(heartbeats 300 ms, gone after 1 s — 75 s for a hidden page, whose timers the
+browser throttles — `bye` on close): the window reading a reply keeps it until
+it is done; else the overlay while on screen; else the most recently focused
+Mate surface on screen (chat window / console Mate view); else one in the
+background (hidden tab, minimised window). The quick card
 never reads. Every window follows every sentence; the reader announces each
 sentence it starts (keyed by the turn's server start time + the sentence's
 index), so a window that takes over mid-reply goes on from the next sentence

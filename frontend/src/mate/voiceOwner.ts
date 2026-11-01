@@ -12,7 +12,8 @@
  * 300 ms, a peer silent for 1 s is gone, a closing page says bye):
  *   1. a window in the middle of reading a reply keeps it until that reply is done (no cut, no double start);
  *   2. else the desktop avatar overlay while it is on screen;
- *   3. else the most recently focused Mate surface (the mate chat window or the console's Mate view).
+ *   3. else the most recently focused Mate surface on screen (the mate chat window or the console's Mate view);
+ *   4. else one in the background (a hidden tab / minimised window — its throttled beats are given 75 s).
  * The quick card never speaks (its replies go to whoever is elected). Every window follows every reply's sentences,
  * and the speaker announces each sentence it starts — a window that takes over mid-reply (the speaker closed or
  * crashed) goes on from the next sentence, and a sentence another window started is never played again.
@@ -23,8 +24,13 @@ const DEVICE_KEY = "hrh_device_id";
 const HEARTBEAT_MS = 300;
 const GONE_MS = 1000;
 
+/** a page in the background (hidden tab, minimised window): its timers are throttled, so its beats may come a minute
+ * apart — peers keep it this long, and it only speaks when no page on screen is a candidate */
+const GONE_HIDDEN_MS = 75_000;
+
 export const RANK_OVERLAY = 3;
-export const RANK_SURFACE = 1;
+export const RANK_SURFACE = 2;
+export const RANK_SURFACE_HIDDEN = 1;
 
 function makeId(n: number): string {
   const a = new Uint8Array(n);
@@ -63,6 +69,7 @@ interface Beat {
   mateId: string;
   rank?: number;
   focusAt?: number;
+  hidden?: boolean;
   /** the turn this candidate is reading now (it keeps the voice until it is done) */
   speaking?: string | null;
   /** "started": a sentence began playing */
@@ -76,6 +83,7 @@ interface Peer {
   rank: number;
   focusAt: number;
   speaking: string | null;
+  hidden: boolean;
   seen: number;
 }
 
@@ -125,20 +133,20 @@ if (channel) {
     }
     if (b.type !== "hb") return;
     const prev = peers.get(b.id);
-    const next: Peer = { id: b.id, mateId: b.mateId, rank: b.rank ?? 0, focusAt: b.focusAt ?? 0, speaking: b.speaking ?? null, seen: Date.now() };
+    const next: Peer = { id: b.id, mateId: b.mateId, rank: b.rank ?? 0, focusAt: b.focusAt ?? 0, speaking: b.speaking ?? null, hidden: !!b.hidden, seen: Date.now() };
     peers.set(b.id, next);
-    if (!prev || prev.rank !== next.rank || prev.focusAt !== next.focusAt || prev.speaking !== next.speaking || prev.mateId !== next.mateId) emit();
+    if (!prev || prev.rank !== next.rank || prev.focusAt !== next.focusAt || prev.speaking !== next.speaking || prev.mateId !== next.mateId || prev.hidden !== next.hidden) emit();
   };
   setInterval(() => {
     const t = Date.now();
     let gone = false;
-    for (const [id, p] of peers) if (t - p.seen > GONE_MS) gone = peers.delete(id) || gone;
+    for (const [id, p] of peers) if (t - p.seen > (p.hidden ? GONE_HIDDEN_MS : GONE_MS)) gone = peers.delete(id) || gone;
     if (gone) emit();
   }, 250);
 }
 
 /** the order of candidates: reading now > rank > most recently focused > id (the same answer in every window) */
-function better(a: Omit<Peer, "seen">, b: Omit<Peer, "seen">): boolean {
+function better(a: Omit<Peer, "seen" | "hidden">, b: Omit<Peer, "seen" | "hidden">): boolean {
   if (!!a.speaking !== !!b.speaking) return !!a.speaking;
   if (a.rank !== b.rank) return a.rank > b.rank;
   if (a.focusAt !== b.focusAt) return a.focusAt > b.focusAt;
@@ -197,7 +205,7 @@ export function useVoiceElection(mateId: string | null, rank: number, speaking: 
     const beat = () => {
       const m = me.current;
       if (!m.mateId || m.rank <= 0) return;
-      post({ type: "hb", id, mateId: m.mateId, rank: m.rank, focusAt: m.focusAt, speaking: m.speaking });
+      post({ type: "hb", id, mateId: m.mateId, rank: m.rank, focusAt: m.focusAt, speaking: m.speaking, hidden: document.visibilityState === "hidden" });
     };
     beat();
     const t = setInterval(beat, HEARTBEAT_MS);
@@ -211,7 +219,8 @@ export function useVoiceElection(mateId: string | null, rank: number, speaking: 
   }, [id]);
   // a change is announced at once (not at the next beat)
   useEffect(() => {
-    if (channel && mateId && rank > 0) post({ type: "hb", id, mateId, rank, focusAt, speaking });
+    if (channel && mateId && rank > 0)
+      post({ type: "hb", id, mateId, rank, focusAt, speaking, hidden: document.visibilityState === "hidden" });
     else if (channel && mateId) post({ type: "bye", id, mateId });
   }, [id, mateId, rank, focusAt, speaking]);
 

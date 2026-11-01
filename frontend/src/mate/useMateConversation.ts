@@ -22,7 +22,7 @@ import { SentenceStream } from "./sentences";
 import type { BodyMood, MateReact } from "./types";
 import { currentSurface, useDesktopMate, type DesktopMateState } from "./desktop";
 import { useVoiceSpeaking } from "./voiceBridge";
-import { announceStarted, clientMsgId, deviceId, deviceOf, RANK_OVERLAY, RANK_SURFACE, startedUpTo, useVoiceElection } from "./voiceOwner";
+import { announceStarted, clientMsgId, deviceId, deviceOf, RANK_OVERLAY, RANK_SURFACE, RANK_SURFACE_HIDDEN, startedUpTo, useVoiceElection } from "./voiceOwner";
 
 /** the page's mate conversation (one mate at a time per page) */
 export const useMateChat = createChatStore();
@@ -55,7 +55,8 @@ export const bcp47 = (lang: string | undefined) => {
 export function voiceRank(surface: string, desk: DesktopMateState | null, pageVisible: boolean): number {
   if (surface === "mate-quick") return 0; // it closes after sending; whoever is elected answers
   if (surface === "mate-overlay") return pageVisible && (desk ? desk.visible : true) ? RANK_OVERLAY : 0;
-  return RANK_SURFACE;
+  // a page on screen before one in the background (a hidden tab's throttled beats must not make two speakers)
+  return pageVisible ? RANK_SURFACE : RANK_SURFACE_HIDDEN;
 }
 
 function usePageVisible(): boolean {
