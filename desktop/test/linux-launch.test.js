@@ -66,6 +66,30 @@ test("user namespaces work (Ubuntu 22.04, Fedora…): the sandbox stays", { skip
   assert.equal(r.stderr, "");
 });
 
+/** chrome-sandbox as the .deb's postinst leaves it: setuid and (per a stand-in `stat`) owned by root */
+function suidRoot(app, mountOptions) {
+  const helper = path.join(app.dir, "chrome-sandbox");
+  fs.chmodSync(helper, 0o4755);
+  fs.writeFileSync(path.join(app.bin, "stat"), "#!/bin/sh\necho 0\n");
+  fs.writeFileSync(path.join(app.bin, "findmnt"), `#!/bin/sh\necho ${mountOptions}\n`);
+  for (const f of ["stat", "findmnt"]) fs.chmodSync(path.join(app.bin, f), 0o755);
+}
+
+test("an installed .deb (chrome-sandbox root SUID) keeps the sandbox even where user namespaces are restricted", { skip: !linux }, () => {
+  const app = fakeApp();
+  suidRoot(app, "rw,relatime");
+  const r = run(app, { userns: false });
+  assert.equal(r.args, "");
+  assert.equal(r.state, "on:suid-helper");
+});
+
+test("a SUID helper on a nosuid mount does not count", { skip: !linux }, () => {
+  const app = fakeApp();
+  suidRoot(app, "ro,nosuid,nodev,relatime");
+  const r = run(app, { userns: false });
+  assert.equal(r.args, "--no-sandbox");
+});
+
 test("arguments pass through unchanged; an explicit --no-sandbox is not doubled", { skip: !linux }, () => {
   const r = run(fakeApp(), { userns: false, args: ["--no-sandbox", "--hidden"] });
   assert.equal(r.args, "--no-sandbox --hidden");

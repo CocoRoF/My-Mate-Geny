@@ -10,7 +10,7 @@
 # Writes <out dir>/<label>.log (the app's stdout/stderr, the X windows, alive or not) and <out dir>/<label>.png (the
 # screen; needs ImageMagick's `import`). Only the process group it started is killed. Extra env for the app can be
 # passed as usual (`HRH_FOO=1 launch-check.sh …`); SECOND=1 also starts a second instance after <secs>/2 (it must
-# hand over to the first and exit).
+# hand over to the first and exit); FIRST_EXTRA="--hidden" starts the first one in the tray only.
 out=$1; label=$2; secs=$3; shift 3
 [ -n "$out" ] && [ -n "$label" ] && [ -n "$secs" ] && [ $# -gt 0 ] || { echo "usage: $0 <out dir> <label> <secs> <command...>" >&2; exit 2; }
 mkdir -p "$out"
@@ -24,20 +24,27 @@ unset APPIMAGE APPDIR OWD ARGV0 WAYLAND_DISPLAY XDG_SESSION_TYPE ELECTRON_OZONE_
 cd "$H" || exit 1
 timeout -k 5 $((secs * 2 + 30)) xvfb-run -a -s "-screen 0 1400x900x24" bash -c '
   secs=$1; shift
-  setsid "$@" &
+  setsid "$@" $FIRST_EXTRA &
   pid=$!
   if [ -n "$SECOND" ]; then
     sleep $((secs / 2))
+    echo "--- windows before the second launch:"
+    xwininfo -root -tree | grep -iE "geny|harness" | grep -v "\.bin" | head -20
     echo "--- second instance:"
     timeout 20 "$@"; echo "--- second instance exit: $?"
   fi
   sleep "$secs"
   echo "--- windows:"
   xwininfo -root -tree | grep -iE "geny|harness" | head -20
-  import -window root "$OUT/$LABEL.png" 2>/dev/null || true
+  import -window root "$OUT/$LABEL.png" 2>/dev/null ||
+    ffmpeg -loglevel error -y -f x11grab -video_size 1400x900 -i "$DISPLAY" -frames:v 1 "$OUT/$LABEL.png" 2>/dev/null || true
   echo "--- alive after ${secs}s: $(kill -0 $pid 2>/dev/null && echo yes || echo no)"
+  # quit like a desktop logout: SIGTERM to the app'"'"'s main process (the one without --type=), then the rest
+  main=$(ps -o pid=,args= -g "$pid" | awk '"'"'!/--type=/ && /\.bin|electron/ {print $1; exit}'"'"')
+  [ -n "$main" ] && kill -TERM "$main" 2>/dev/null
+  for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
   kill -TERM -- -$pid 2>/dev/null
-  sleep 3
+  sleep 1
   kill -KILL -- -$pid 2>/dev/null
   wait $pid
   echo "--- exit: $?"

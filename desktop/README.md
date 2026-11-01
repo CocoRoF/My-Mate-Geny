@@ -136,6 +136,48 @@ for updates…*.
   error with Retry, not a stuck "Installing…".
 - Errors carry a code (`errorCode`) the console words in its language.
 
+## Linux start-up (sandbox, .deb, logs)
+
+Chromium sandboxes its renderers with unprivileged user namespaces, or else
+with the SUID-root helper `chrome-sandbox`. With neither it aborts before any
+app code runs (`FATAL:setuid_sandbox_host … The SUID sandbox helper binary was
+found, but is not configured correctly`), so a launcher click showed nothing.
+On Ubuntu 23.10+ (`kernel.apparmor_restrict_unprivileged_userns=1`) that hit:
+
+- **every AppImage** started without `--no-sandbox` (a double-click passes no
+  arguments; its chrome-sandbox is in a user-owned `nosuid` FUSE mount);
+- **the .deb up to 0.4.18**: electron-builder's stock postinst made
+  chrome-sandbox SUID only if `unshare --user true` failed — under AppArmor's
+  restriction it succeeds (the namespace just gets no capabilities), so the
+  helper stayed `0755` and every start aborted.
+
+Now:
+
+- `build/after-pack.js` renames the Electron binary to
+  `hr-harnessor-desktop.bin` and puts `build/linux-launcher.sh` in its place,
+  so the .deb's menu entry, `/usr/bin/hr-harnessor-desktop`, the AppImage's
+  AppRun, start at login and the app's own restarts all go through it. It keeps
+  the sandbox when chrome-sandbox is root-owned SUID (on a suid mount, no
+  `no_new_privs`) or `unshare --user --map-root-user` works, or the .deb's
+  AppArmor profile is there; otherwise it adds `--no-sandbox` (and says so on
+  stderr). `HRH_SANDBOX=off|on` forces either way. Trade-off: without the
+  sandbox the renderers run without the OS sandbox — acceptable here (only our
+  local pages and the user's own server are loaded, with context isolation),
+  and an app that starts beats one that silently doesn't.
+- The .deb's postinst (`build/deb-postinst.tpl`) always makes chrome-sandbox
+  `root:root 4755`, and on AppArmor 4 (Ubuntu 24.04+) installs
+  `/etc/apparmor.d/hr-harnessor-desktop` (unconfined + `userns`, like the
+  profiles Ubuntu ships for other Electron apps) for the real binary, so the
+  installed app keeps its sandbox. `build/deb-postrm.tpl` removes the profile.
+- The .deb depends on the 24.04 (`t64`) names with the old ones as
+  alternatives (`libgtk-3-0t64 | libgtk-3-0`, `libasound2t64 | libasound2`, …).
+- `<userData>/logs/main.log` (`~/.config/hr-harnessor/logs/main.log`) has each
+  start (version, arguments, the launcher's sandbox decision), second launches
+  and uncaught errors; a start that throws shows a dialog with the error and the
+  log's path instead of exiting silently (`HRH_TEST_START_FAIL=1` makes one on
+  purpose).
+- A second launch while the app sits in the tray shows the console window.
+
 ## Build and test
 
 - Dev: `npm install && npm start`
@@ -147,6 +189,11 @@ for updates…*.
   `xvfb-run -a node test/e2e/electron-e2e.js dist/my-mate-geny-<v>-linux-x86_64.AppImage`
   (connect, errors, exchange + cookie, Mate window, relaunch, expired session,
   switch server, sign out, 0.3 migration; uses a throwaway HOME).
+- A built Linux app started the way a desktop launcher does (no flags), on a
+  throwaway X server and HOME: `test/e2e/launch-check.sh <out dir> <label>
+  <secs> <AppImage | extracted deb's /opt/My Mate Geny/hr-harnessor-desktop>`
+  (its output, the mapped windows, a screenshot; `SECOND=1
+  FIRST_EXTRA=--hidden` also checks a second launch over a tray-only instance).
 - In-app update of a packaged app (no `HRH_UPDATER_DEV`) against a server whose
   Download service reads the real `apps-latest`:
   `xvfb-run -a node test/e2e/update-e2e.js <server> <password> <shots dir> -- <older AppImage> [--full] [--readonly-install]`
