@@ -87,7 +87,7 @@ jobs:
       - name: Upload to release
         run: |
           shopt -s nullglob
-          files=(dist/*.exe dist/*.dmg dist/*.AppImage dist/*.deb dist/latest.yml dist/latest-linux.yml)
+          files=(dist/*.exe dist/*.dmg dist/*.AppImage dist/*.deb dist/latest*.yml)
           ls -la "${files[@]}"
           gh release upload "apps-v$VERSION" "${files[@]}" --clobber
 
