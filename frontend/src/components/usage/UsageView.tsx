@@ -50,12 +50,9 @@ export default function UsageView() {
   }, [tab]);
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-2xl px-4 sm:px-6 py-5 sm:py-8">
-        <div className="flex items-center gap-2.5 mb-6">
-          <Icon name="cpu" size={20} className="text-accent" />
-          <h1 className="text-lg font-semibold">{t("usage.title")}</h1>
-        </div>
+    // (Settings → Usage: the tab's title is Settings')
+    <div className="max-w-2xl">
+      <div>
 
         {/* provider tabs */}
         {connected.length > 1 && (

@@ -11,16 +11,9 @@ export default function ConnectionsView() {
   const [tab, setTab] = useState<"ssh" | "git">("ssh");
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-2xl px-4 sm:px-6 py-5 sm:py-8">
-        <div className="flex items-center gap-2.5 mb-1">
-          <Icon name="server" size={20} className="text-cyan" />
-          <h1 className="text-lg font-semibold">{t("connections.title")}</h1>
-        </div>
-        <p className="text-sm text-content-dim mb-5">
-          {t("connections.intro")}
-        </p>
-
+    // (Settings → Connections: the tab's title and intro are Settings')
+    <div className="max-w-2xl">
+      <div>
         <div className="flex gap-1.5 mb-5 border-b border-border">
           {([
             { id: "ssh", label: "connections.tabSsh", icon: "server" },

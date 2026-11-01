@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useSessionStore } from "../../stores/sessionStore";
-import { useUIStore, type View } from "../../stores/uiStore";
+import { openSettings, useUIStore, type View } from "../../stores/uiStore";
 import { useProviderStore } from "../../stores/providerStore";
 import { useChatStore } from "../../stores/chatStore";
 import { apiFetch } from "../../api/client";
@@ -10,14 +10,10 @@ import Icon, { type IconName } from "../ui/Icon";
 import { useAuthStatus } from "../admin/useAuthStatus";
 import { useT, type MsgKey } from "../../i18n";
 
+// Mate and Chat; everything else (Providers, Connections, Usage, Admin, Download…) is a Settings tab, below
 const NAV: { id: View; label: MsgKey; icon: IconName }[] = [
   { id: "mate", label: "nav.mate", icon: "sparkles" },
   { id: "chat", label: "nav.chat", icon: "chat" },
-  { id: "providers", label: "nav.providers", icon: "plug" },
-  { id: "connections", label: "nav.connections", icon: "server" },
-  { id: "usage", label: "nav.usage", icon: "cpu" },
-  { id: "admin", label: "nav.admin", icon: "shield" },
-  { id: "downloads", label: "nav.downloads", icon: "download" },
 ];
 
 export default function Sidebar() {
@@ -137,9 +133,6 @@ export default function Sidebar() {
               className="text-content-faint group-hover:text-content-dim group-data-[active=true]:text-accent"
             />
             {t(n.label)}
-            {n.id === "providers" && connectedCount > 0 && (
-              <span className="ml-auto pill bg-success/15 text-success">{connectedCount}</span>
-            )}
           </button>
         ))}
       </nav>
@@ -282,13 +275,19 @@ export default function Sidebar() {
       {/* Settings: always at the bottom, right above the account row */}
       <div className="px-2 pb-1.5 pt-1.5 border-t border-border/60">
         <button
-          onClick={() => setView("settings")}
+          onClick={() => openSettings(null)}
           data-active={view === "settings"}
           data-testid="nav-settings"
           className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 touch:py-2.5 text-[13px] font-medium text-content-dim transition hover:text-content hover:bg-surface-2 data-[active=true]:bg-surface-3 data-[active=true]:text-content"
         >
           <Icon name="settings" size={16} className="text-content-faint group-hover:text-content-dim group-data-[active=true]:text-accent" />
           {t("nav.settings")}
+          {/* (what the Providers tab counts: the connected providers) */}
+          {connectedCount > 0 && (
+            <span className="ml-auto pill bg-success/15 text-success" title={t("nav.providersConnected", { count: connectedCount })} data-testid="nav-settings-badge">
+              {connectedCount}
+            </span>
+          )}
         </button>
       </div>
 

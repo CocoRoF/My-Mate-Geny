@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { desktopMate, useDesktopMate } from "../../../../mate/desktop";
 import { useMateStore } from "../../../../stores/mateStore";
-import { useUIStore } from "../../../../stores/uiStore";
+import { openSettings } from "../../../../stores/uiStore";
 import Icon from "../../../ui/Icon";
 import { Banner, ErrorLine, Field, Section, Toggle } from "../ui";
 import { useT } from "../../../../i18n";
@@ -53,7 +53,7 @@ export default function DesktopPanel() {
         <Banner
           tone="info"
           action={
-            <button className="btn-soft !px-2.5 !py-1 text-[12px]" onClick={() => useUIStore.getState().setView("downloads")}>
+            <button className="btn-soft !px-2.5 !py-1 text-[12px]" onClick={() => openSettings("updates", "downloads")}>
               <Icon name="download" size={12} /> {t("mateSettings.deskGetApp")}
             </button>
           }

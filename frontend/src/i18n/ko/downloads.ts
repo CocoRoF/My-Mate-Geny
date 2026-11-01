@@ -64,9 +64,6 @@ const ko: Messages<"downloads"> = {
   // ---- page
   title: "My Mate Geny 받기",
   intro: "같은 콘솔을 데스크톱과 Android용 네이티브 앱으로 — 알림, 전용 창, 로그인 유지, 그리고 데스크톱에서는 화면 위에 메이트가 떠 있고 빠른 채팅 단축키도 쓸 수 있어요. 앱은 이 콘솔을 실시간으로 불러오기 때문에 UI 업데이트가 바로 반영되고, 새 앱 빌드는 푸시할 때마다 이곳에 자동으로 올라와요.",
-  newerAvailable: "새 앱 버전이 있어요: {latest} (현재 {current}).",
-  usingApp: "앱 버전 {version} 사용 중이에요.",
-  usingAppLatest: "앱 버전 {version} 사용 중 — 최신 버전이에요.",
   iosHint: "iPhone/iPad: Safari에서 이 사이트를 열고 공유 → “홈 화면에 추가”를 누르면 앱처럼 쓸 수 있어요.",
   releaseVersion: "버전 {version}",
   builtFrom: "{commit}에서 빌드",

@@ -273,7 +273,20 @@ const RECORD = `
 
 const CARD = `(() => { const c = document.querySelector('[data-testid="update-card"]'); return c ? { status: c.dataset.status, text: c.innerText.replace(/\\s+/g, " ").trim(), pct: document.querySelector('[data-testid="update-percent"]')?.textContent || "" } : null; })()`;
 const click = (p, id) => p.eval(`(() => { const b = document.querySelector('[data-testid="${id}"]'); if (!b) return false; b.click(); return true; })()`);
-const openView = (p, label) => p.eval(`(() => { const b = [...document.querySelectorAll('nav button, [data-testid="nav-settings"]')].find((x) => x.textContent.trim().startsWith(${JSON.stringify(label)})); if (!b) return false; b.click(); return true; })()`);
+// the sidebar has Mate / Chat / Settings; Download (Updates & Download), Usage, Admin… are Settings tabs
+const SETTINGS_TAB = { Download: "updates", Updates: "updates", Usage: "usage", Admin: "admin", Providers: "providers", Connections: "connections" };
+const openView = (p, label) => p.eval(`(async () => {
+  const label = ${JSON.stringify(label)}, tab = ${JSON.stringify(SETTINGS_TAB)}[label];
+  const b = [...document.querySelectorAll('aside nav button, [data-testid="nav-settings"]')].find((x) => x.textContent.trim().startsWith(label));
+  if (b) { b.click(); return true; }
+  if (!tab) return false;
+  if (!document.querySelector('[data-testid="settings-tabs"]')) document.querySelector('[data-testid="nav-settings"]')?.click();
+  for (let i = 0; i < 50 && !document.querySelector('[data-testid="settings-tab-' + tab + '"]'); i++) await new Promise((r) => setTimeout(r, 100));
+  const t = document.querySelector('[data-testid="settings-tab-' + tab + '"]');
+  if (!t) return false;
+  t.click();
+  return true;
+})()`);
 const sha512 = (f) => crypto.createHash("sha512").update(fs.readFileSync(f)).digest("base64");
 
 async function signIn(app, server) {

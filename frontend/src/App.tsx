@@ -18,24 +18,16 @@ import PageLoading from "./components/ui/Loading";
 import { nativeWindow } from "./lib/nativeWindow";
 import { useT, type MsgKey } from "./i18n";
 import { installLanguageSync } from "./i18n/sync";
+import { tabMeta } from "./components/settings/tabs";
 
 // Secondary views load on demand: the chat (first screen) stays light.
-const ProvidersView = lazy(() => import("./components/providers/ProvidersView"));
-const ConnectionsView = lazy(() => import("./components/connections/ConnectionsView"));
-const UsageView = lazy(() => import("./components/usage/UsageView"));
-const AdminView = lazy(() => import("./components/admin/AdminView"));
-const DownloadsView = lazy(() => import("./components/downloads/DownloadsView"));
+// (Providers, Connections, Usage, Admin and Download are Settings tabs, loaded with their tab — settings/SettingsView)
 const MateView = lazy(() => import("./components/mate/MateView"));
 const SettingsView = lazy(() => import("./components/settings/SettingsView"));
 
 const TITLES: Record<string, MsgKey> = {
   mate: "nav.mate",
   chat: "nav.newChat",
-  providers: "nav.providers",
-  connections: "nav.connections",
-  usage: "nav.usage",
-  admin: "nav.admin",
-  downloads: "nav.downloads",
   settings: "nav.settings",
 };
 
@@ -53,9 +45,9 @@ export default function App() {
   const loadConfig = useConfigStore((s) => s.load);
   useSessionSync(); // every device's session list follows server-pushed changes
 
-  // Screens ↔ URL + history (lib/nav.ts): deep links (/?view=downloads from the desktop menu and update banners,
-  // /?view=mate, /?view=chat&session=<id> from a mate's activity chip) open their screen; back / forward move
-  // between screens and never fall through to the login page.
+  // Screens ↔ URL + history (lib/nav.ts): deep links (/?view=settings&tab=… — and the old /?view=downloads from
+  // the desktop menu and update banners —, /?view=mate, /?view=chat&session=<id> from a mate's activity chip) open
+  // their screen; back / forward move between screens and Settings tabs and never fall through to the login page.
   useEffect(() => {
     installNav();
     installLanguageSync(); // the account's language (every device follows a switch) — i18n/sync.ts
@@ -69,10 +61,11 @@ export default function App() {
   }, [loadProviders, loadConnections, loadSessions, loadConfig]);
 
   const title = TITLES[view] ? t(TITLES[view]) : "";
+  const tab = tabMeta(useUIStore((s) => (s.view === "settings" ? s.settingsTab : null)));
 
   const sessionTitle = useSessionStore((s) => (s.activeId ? s.sessions.find((x) => x.id === s.activeId)?.title : undefined));
   const chrome = !!nativeWindow(); // the desktop app without a system title bar: ours on top (TitleBar)
-  const context = view === "chat" ? sessionTitle || t("nav.newChat") : title;
+  const context = view === "chat" ? sessionTitle || t("nav.newChat") : tab ? `${title} · ${t(tab.label)}` : title;
 
   const shell = (
     // the visible height: 100dvh, or what the keyboard leaves where the layout viewport doesn't shrink (lib/keyboard.ts)
@@ -91,9 +84,8 @@ export default function App() {
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
         <UpdateBanner />
         <DefaultPasswordBanner />
-        {/* chat with an open session has its own header */}
-        {/* chat with an open session and the Mate have their own header */}
-        {!(view === "chat" && activeId) && view !== "mate" && <MobileTopBar title={title} />}
+        {/* chat with an open session, the Mate and Settings (its list / a tab with a back button) have their own header */}
+        {!(view === "chat" && activeId) && view !== "mate" && view !== "settings" && <MobileTopBar title={title} />}
         {/* (a new screen fades in: keyed by the screen) */}
         <div key={view} className="flex-1 min-h-0 animate-fade-in">
           {/* one view failing (or its code gone after a deploy) never takes the sidebar with it */}
@@ -101,11 +93,6 @@ export default function App() {
           <Suspense fallback={<PageLoading />}>
           {view === "mate" && <MateView />}
           {view === "chat" && <ChatView />}
-          {view === "providers" && <ProvidersView />}
-          {view === "connections" && <ConnectionsView />}
-          {view === "usage" && <UsageView />}
-          {view === "admin" && <AdminView />}
-          {view === "downloads" && <DownloadsView />}
           {view === "settings" && <SettingsView />}
           </Suspense>
           </ErrorBoundary>

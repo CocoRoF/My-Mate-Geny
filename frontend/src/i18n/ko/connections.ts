@@ -1,7 +1,6 @@
 import type { Messages } from "..";
 
 const ko: Messages<"connections"> = {
-  title: "연결",
   intro: "작업할 원격 SSH 호스트와, 저장소를 클론하고 푸시할 Git 계정이에요.",
   tabSsh: "SSH 호스트",
   tabGit: "Git",

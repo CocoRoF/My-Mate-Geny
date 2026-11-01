@@ -787,12 +787,25 @@ window?: {
 
 **Updates** (`desktop/src/updater.js`, desktop/README.md): `hrhNative.updates`
 (`getState`, `check`, `download`, `cancel`, `install`, `retry`, `onState`) —
-the Download page's update card; the state lives in the app.
+Settings → Updates & Download's update card; the state lives in the app.
 
-**Back / forward** (`frontend/src/lib/nav.ts`, all shells). Every screen
-change (sidebar views, opening a chat) is a history entry with its URL
-(`/?view=usage`, `/?view=chat&session=<id>`, `/`), so back goes to the
-previous screen and a reload stays on it; overlays (`lib/back.ts`) close first.
+**Screens.** The sidebar has **Mate** and **Chat** (+ the chats, and Settings
+at the bottom). Everything else is a **Settings tab** (`components/settings/`):
+General — Updates & Download, Account, Language, Notifications, Mate & voice,
+Desktop app (in the desktop app); Agents & system — Providers, Connections,
+Usage, Admin. A wide screen shows the tab list beside the chosen tab; a phone
+shows the list, and a tab with a back button. The Settings item (and the
+Providers tab) carry the connected-providers count.
+
+**Back / forward** (`frontend/src/lib/nav.ts`, URLs in `lib/navUrl.ts`, all
+shells). Every screen change (Mate, a chat, a Settings tab) is a history entry
+with its URL (`/?view=settings&tab=usage`, `/?view=chat&session=<id>`, `/`), so
+back goes to the previous screen and a reload stays on it; overlays
+(`lib/back.ts`) close first — a screen opened from the phone drawer takes over
+the drawer's entry. The old screens' URLs (`/?view=usage`, `providers`,
+`connections`, `admin`, `downloads` — bookmarks, the desktop app's menu,
+notifications, older apps) open their tab (`downloads`: Updates & Download,
+scrolled to the downloads).
 A guard entry below the first screen keeps back inside the app — never the
 login page or the connect screen. `/login` while signed in redirects to `/`,
 and a successful sign-in replaces the login page in history. Desktop: the

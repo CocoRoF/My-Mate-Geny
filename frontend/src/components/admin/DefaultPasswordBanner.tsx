@@ -1,22 +1,17 @@
-import { useUIStore } from "../../stores/uiStore";
+import { openSettings } from "../../stores/uiStore";
 import Icon from "../ui/Icon";
 import { useAuthStatus } from "./useAuthStatus";
 import { useT } from "../../i18n";
-import { requestSettingsSection } from "../settings/section";
 
 /** Shown on every view while the public default password (admin / geny-admin)
  * still signs in to this server. Not dismissible: it goes away once the
  * credentials are changed in Settings -> Account / Admin -> Security (or AUTH_PASSWORD is set). */
 export default function DefaultPasswordBanner() {
   const st = useAuthStatus();
-  const setView = useUIStore((s) => s.setView);
   const t = useT();
 
   if (!st?.default_password) return null;
-  const open = () => {
-    requestSettingsSection("account");
-    setView("settings");
-  };
+  const open = () => openSettings("account");
   return (
     <div className="pt-safe shrink-0 border-b border-warning/30 bg-warning/10" role="alert">
       <div className="flex items-center gap-2 px-4 py-1.5 text-[12.5px] text-warning">

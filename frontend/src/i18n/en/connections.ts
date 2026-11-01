@@ -1,6 +1,5 @@
 // Connections: remote SSH hosts and Git accounts.
 export default {
-  title: "Connections",
   intro: "Remote SSH hosts to work on, and Git accounts to clone & push repos.",
   tabSsh: "SSH hosts",
   tabGit: "Git",

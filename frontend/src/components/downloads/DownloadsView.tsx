@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import qrcode from "qrcode-generator";
-import { compareVersions, detectPlatform, getDownloads, type AppAsset, type AppRelease } from "../../api/downloads";
+import { detectPlatform, getDownloads, type AppAsset, type AppRelease } from "../../api/downloads";
 import { formatBytes } from "../attachments/fileMeta";
 import { absTime, relTime } from "../admin/format";
 import Icon from "../ui/Icon";
-import UpdateCard, { ProgressBar, progressLine, useUpdateState } from "./UpdateCard";
-import { useNativeVersion } from "../../lib/nativeVersion";
+import { ProgressBar, progressLine, useUpdateState } from "./UpdateCard";
 import { isAndroidApp, useAndroidDownload, useBrowserDownload, type Progress } from "../../lib/downloadProgress";
 import { tr, useT, type MsgKey } from "../../i18n";
 
@@ -151,7 +150,6 @@ export default function DownloadsView() {
   const [error, setError] = useState("");
   const platform = detectPlatform();
   const native = window.hrhNative;
-  const nativeVersion = useNativeVersion(); // ("" until the Android bridge knows it)
   const upd = useUpdateState(); // the desktop app's own updater (desktop/src/updater.js)
   const browserDl = useBrowserDownload();
   const androidDl = useAndroidDownload();
@@ -191,36 +189,25 @@ export default function DownloadsView() {
   // (inside the desktop app: the kind it runs as — an AppImage is offered the AppImage, not the .deb)
   const sameKind = upd?.how === "appimage" || upd?.how === "deb" ? mine.find((a) => a.kind === upd.how) : undefined;
   const primary = platform === "macos" ? mine.find((a) => a.arch === "arm64") || mine[0] : sameKind || mine[0];
-  const outdated = native && nativeVersion && rel?.version && compareVersions(rel.version, nativeVersion) > 0;
   const pageUrl = `${window.location.origin}/?view=downloads`;
   const legacy = assets.some((a) => a.name.startsWith("hr-harnessor")) && !assets.some((a) => a.name.startsWith("my-mate-geny"));
   const NOTES = notes(legacy);
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-4xl px-4 sm:px-6 py-5 sm:py-8">
+    // Settings → Updates & Download, under the Updates card (which has this app's version and its own updater —
+    // downloads/UpdateCard.tsx — so they aren't repeated here); `/?view=downloads` scrolls here.
+    <div id="settings-downloads" data-testid="settings-downloads" className="scroll-mt-4">
+      <div>
         <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-accent/15 via-surface to-cyan/10 p-5 sm:p-7">
           <div className="flex items-start gap-4">
             <img src="/icon-192.png" alt="" className="h-14 w-14 shrink-0 rounded-2xl shadow-glow" />
             <div className="min-w-0 flex-1">
-              <h1 className="text-xl font-semibold tracking-tight">{t("downloads.title")}</h1>
+              <h2 className="text-xl font-semibold tracking-tight">{t("downloads.title")}</h2>
               <p className="mt-1 text-sm text-content-dim">
                 {t("downloads.intro")}
               </p>
             </div>
           </div>
-
-          {upd && <UpdateCard s={upd} />}
-          {native && !upd && (
-            <div className={`mt-4 flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-[13px] ${outdated ? "bg-warning/12 text-warning" : "bg-success/10 text-success"}`}>
-              <Icon name={outdated ? "warning" : "check"} size={14} />
-              {outdated
-                ? t("downloads.newerAvailable", { latest: rel?.version, current: nativeVersion })
-                : rel?.version
-                  ? t("downloads.usingAppLatest", { version: nativeVersion || "…" })
-                  : t("downloads.usingApp", { version: nativeVersion || "…" })}
-            </div>
-          )}
 
           <div className="mt-5 flex flex-wrap items-center gap-2.5">
             {rel === null && !error && <Icon name="spinner" size={18} spin className="text-content-faint" />}

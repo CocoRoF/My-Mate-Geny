@@ -2,13 +2,17 @@ import type { Messages } from "..";
 
 const ko: Messages<"settings"> = {
   title: "설정",
-  subtitle: "업데이트, 계정, 언어, 이 기기 설정을 한곳에서 관리해요.",
-  secUpdates: "업데이트",
+  subtitle: "업데이트, 계정, 언어, 이 기기 설정과 에이전트(공급자, 연결, 사용량, 관리자)를 한곳에서 관리해요.",
   secAccount: "계정",
   secLanguage: "언어",
   secNotifications: "알림",
   secMate: "메이트 & 음성",
   secDesktop: "데스크톱 앱",
+  tabUpdates: "업데이트 & 다운로드",
+  groupGeneral: "일반",
+  groupSystem: "에이전트 & 시스템",
+  usageHint: "연결된 계정마다 요금제가 얼마나 남았는지, 이 서버가 센 토큰은 얼마인지 보여 줘요.",
+  backToList: "설정으로 돌아가기",
 
   updatesHint: "콘솔은 서버가 업데이트되면 함께 업데이트돼요. 데스크톱·Android 앱은 콘솔을 실시간으로 불러오므로 가끔 새 빌드만 설치하면 돼요.",
   webConsole: "웹 콘솔",
@@ -29,8 +33,8 @@ const ko: Messages<"settings"> = {
   appLatest: "최신 버전이에요.",
   appAvailable: "{version} 버전을 받을 수 있어요.",
   appNoRelease: "이 서버에는 아직 앱 빌드가 없어요.",
-  openDownloads: "다운로드 열기",
-  updateOnDownload: "다운로드 페이지에서 업데이트",
+  openDownloads: "다운로드 보기",
+  updateOnDownload: "아래에서 업데이트 받기",
   getApps: "데스크톱 · Android 앱",
   getAppsHint: "알림, 전용 창, 데스크톱 위의 메이트까지 갖춘 네이티브 앱이에요.",
 

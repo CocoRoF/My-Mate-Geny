@@ -64,9 +64,6 @@ export default {
   // ---- page
   title: "Get My Mate Geny",
   intro: "The same console as a native app for desktop and Android — notifications, its own window, your login kept, and on the desktop your mate on top of your screen with a quick-chat shortcut. The apps load this console live, so UI updates reach them instantly; new app builds are published here automatically from every push.",
-  newerAvailable: "A newer app version is available: {latest} (you have {current}).",
-  usingApp: "You're using the app, version {version}.",
-  usingAppLatest: "You're using the app, version {version} — up to date.",
   iosHint: "iPhone/iPad: open this site in Safari → Share → “Add to Home Screen” for an app-like console.",
   releaseVersion: "Version {version}",
   builtFrom: "built from {commit}",
