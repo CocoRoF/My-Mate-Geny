@@ -52,7 +52,7 @@ missing=0
 while IFS= read -r ref; do
   [ -n "$ref" ] || continue
   if [ ! -f "$NEXT/$ref" ]; then echo "dist-next/index.html names $ref, which the build does not have" >&2; missing=1; fi
-done < <(grep -oE '/assets/[^"'"'"' >?#]+' "$NEXT/index.html" | sed 's#^/##' | sort -u)
+done < <(grep -oE '/assets/[A-Za-z0-9._@+-]+\.[A-Za-z0-9]+' "$NEXT/index.html" | sed 's#^/##' | sort -u)
 [ "$missing" = 0 ] || { echo "incomplete build — nothing swapped" >&2; exit 1; }
 mkdir -p "$NEXT/assets"
 

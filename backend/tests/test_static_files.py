@@ -88,7 +88,8 @@ def test_swap_keeps_previous_assets_and_prunes_old_ones(tmp_path: Path):
     fe = tmp_path / "frontend"
     fe.mkdir()
     make_build(fe, "dist", {"index.html": "A", "assets/index-a.js": "a", "assets/View-a.js": "va", "assets/shared-s.js": "s"})
-    make_build(fe, "dist-next", {"index.html": "B <script src=/assets/index-b.js>", "assets/index-b.js": "b",
+    # (the boot screen's comment mentions "/assets/…" — prose, not a file the build must have)
+    make_build(fe, "dist-next", {"index.html": "B <!-- /assets/… failed --> <script src=/assets/index-b.js>", "assets/index-b.js": "b",
                                  "assets/View-b.js": "vb", "assets/shared-s.js": "s2"})
     r = run_swap(fe)
     assert r.returncode == 0, r.stderr + r.stdout
