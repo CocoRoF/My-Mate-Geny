@@ -188,13 +188,32 @@ export function stripEmotionTags(input: string, opts: { streaming?: boolean } = 
 export class EmotionTracker {
   private seen = 0;
   push(full: string): Emotion | null {
+    return this.pushTag(full)?.emotion ?? null;
+  }
+  /** the same, with the tag's intensity */
+  pushTag(full: string): EmotionTag | null {
     const { tags } = parseEmotionText(full, { streaming: true });
     if (tags.length < this.seen) this.seen = 0; // the text was replaced
     if (tags.length === this.seen) return null;
     this.seen = tags.length;
-    return tags[tags.length - 1].emotion;
+    return tags[tags.length - 1];
   }
   reset(): void {
     this.seen = 0;
   }
 }
+
+/**
+ * Whether a tag in a reply makes the avatar react at this emotion level (mate prefs.emotion, docs/mate-memory-affinity.md
+ * §3): 0 off — never; 1 subtle — only a clear feeling (intensity ≥ 0.5), once per reply; 2 / 3 — every tag.
+ * `reacted` = reactions this reply already had.
+ */
+export function reactsAt(level: number, intensity: number, reacted: number): boolean {
+  if (level <= 0) return false;
+  if (level === 1) return intensity >= 0.5 && reacted === 0;
+  return true;
+}
+
+/** the emotion a sentence is spoken with at this level (off: neutral voice) */
+export const voiceEmotionAt = (level: number, emotion: string | null | undefined): string | undefined =>
+  level <= 0 ? undefined : emotion ?? undefined;

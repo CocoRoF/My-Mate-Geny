@@ -21,6 +21,7 @@ import { DropOverlay, useFileDrop } from "../composer/useFileDrop";
 import MateComposer, { ReadAloudToggle } from "./MateComposer";
 import MateMessages from "./MateMessages";
 import MateStage, { BuiltinBadge, MateThumb, moodLabel } from "./MateStage";
+import RelationBadge from "./RelationBadge";
 import { useT } from "../../i18n";
 
 const MateSettings = lazy(() => import("./settings/MateSettings"));
@@ -210,6 +211,7 @@ export default function MateView() {
             </>
           )}
         </div>
+        <RelationBadge mate={mate} compact={phone} />
         {phone && stageAway && moodLabel(t, conv.mood) && (
           <span className="min-w-0 truncate text-[11.5px] text-content-faint" data-testid="mate-header-mood">
             {moodLabel(t, conv.mood)}

@@ -229,6 +229,8 @@ async def test_mate_sees_contents_and_forwards_files_to_a_worker(db, tmp_path, m
         sent = _stdin(tmp_path)[-1]
         assert sent["message"]["content"][0]["type"] == "image"
         body = _text_of(sent)
+        assert body.startswith("<context>\nNow: ")  # (the per-turn context block, then the message)
+        body = body.split("</context>\n\n", 1)[1]
         assert body.startswith("please look") and f"[{img['id']}]" in body and f"[{md['id']}]" in body
         assert f'<file id="{md["id"]}" name="bug.md">\n# Bug\nThe caret blinks' in body
         assert str(atts.session_dir(msid)) not in body  # ids, not paths

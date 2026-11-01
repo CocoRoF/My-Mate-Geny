@@ -47,6 +47,74 @@ export interface MateLlm {
   effort: string; // default|low|medium|high|xhigh|max
 }
 
+export type Formality = "auto" | "haeyo" | "hapsyo" | "banmal";
+export type ReplyLength = "short" | "normal" | "long";
+export type ToneLevel = "auto" | "low" | "high";
+export type RecallLevel = "off" | "light" | "normal" | "rich";
+/** 0 off · 1 subtle · 2 normal · 3 expressive */
+export type EmotionLevel = 0 | 1 | 2 | 3;
+
+/** Conversation settings (docs/mate-memory-affinity.md §3) */
+export interface MatePrefs {
+  user_name: string;
+  self_ref: string;
+  formality: Formality;
+  length: ReplyLength;
+  emotion: EmotionLevel;
+  tone: { warmth: ToneLevel; humor: ToneLevel; initiative: ToneLevel };
+  avoid: string;
+  memory: { recall: RecallLevel; self_save: boolean };
+}
+
+export const DEFAULT_PREFS: MatePrefs = {
+  user_name: "",
+  self_ref: "",
+  formality: "auto",
+  length: "normal",
+  emotion: 2,
+  tone: { warmth: "auto", humor: "auto", initiative: "auto" },
+  avoid: "",
+  memory: { recall: "normal", self_save: true },
+};
+
+export type RelationStage = "new" | "familiar" | "trusted" | "companion";
+export const RELATION_STAGES: RelationStage[] = ["new", "familiar", "trusted", "companion"];
+export type MoodLabel = "cheerful" | "content" | "calm" | "focused" | "sleepy" | "concerned";
+
+/** what the mate document carries about the relationship (the indicator) */
+export interface RelationSummary {
+  enabled: boolean;
+  paused: boolean;
+  stage: RelationStage;
+  /** 0 – 100, rounded */
+  affinity: number;
+  mood: MoodLabel | null;
+  show_indicator: boolean;
+  avatar_mood: boolean;
+}
+
+/** GET /api/mates/{id}/relation (docs/mate-memory-affinity.md §5) */
+export interface RelationView {
+  enabled: boolean;
+  paused: boolean;
+  /** 0.5 – 1.5 */
+  sensitivity: number;
+  show_indicator: boolean;
+  avatar_mood: boolean;
+  affinity: number;
+  stage: RelationStage;
+  earned_stage: RelationStage;
+  warmth_stage: RelationStage;
+  next: { stage: RelationStage; ratio: number; needs: { days: number; turns: number; memories: number } } | null;
+  stats: { days_together: number; turns: number; active_days: number; streak_days: number; memories: number; idle_days: number | null; grace_days: number };
+  mood: { label: MoodLabel; valence: number; energy: number };
+  milestones: { key: string; at: string }[];
+  /** newest first: d = the change, v = the value after it */
+  log: { at: string; d: number; why: string; v: number }[];
+  started_at: string | null;
+}
+export type RelationPatch = Partial<Pick<RelationView, "enabled" | "paused" | "sensitivity" | "show_indicator" | "avatar_mood" | "affinity">>;
+
 export interface Mate {
   id: string;
   name: string;
@@ -57,6 +125,10 @@ export interface Mate {
   avatar: Avatar;
   llm: MateLlm;
   voice: MateVoice;
+  /** missing on documents from an older server: DEFAULT_PREFS */
+  prefs?: MatePrefs;
+  /** missing on documents from an older server */
+  relation?: RelationSummary;
   session_id: string | null;
   /** a mate shipped with the app (estelle | chaerin | seoa), else null */
   builtin?: string | null;
@@ -71,7 +143,16 @@ export interface MatePatch {
   avatar?: Avatar;
   llm?: Partial<MateLlm>;
   voice?: { auto_read?: boolean; volume?: number; tts?: Partial<MateVoice["tts"]>; stt?: Partial<MateVoice["stt"]> };
+  prefs?: Partial<Omit<MatePrefs, "tone" | "memory">> & { tone?: Partial<MatePrefs["tone"]>; memory?: Partial<MatePrefs["memory"]> };
 }
+
+/** the mate's conversation settings, complete (an older server sends none) */
+export const prefsOf = (m: Pick<Mate, "prefs"> | null | undefined): MatePrefs => ({
+  ...DEFAULT_PREFS,
+  ...(m?.prefs ?? {}),
+  tone: { ...DEFAULT_PREFS.tone, ...(m?.prefs?.tone ?? {}) },
+  memory: { ...DEFAULT_PREFS.memory, ...(m?.prefs?.memory ?? {}) },
+});
 
 export interface Conversation {
   mate: Mate;
@@ -80,10 +161,56 @@ export interface Conversation {
   running: boolean;
 }
 
+export type MemoryKind = "profile" | "preference" | "fact" | "plan" | "context";
+export const MEMORY_KINDS: MemoryKind[] = ["profile", "preference", "fact", "plan", "context"];
+export type MemoryStatus = "active" | "done" | "archived";
+
+/** one memory (docs/mate-memory-affinity.md §4) */
 export interface Memory {
   id: string;
   text: string;
   created_at: string;
+  kind: MemoryKind;
+  /** 1 – 5 */
+  importance: number;
+  /** the user's: always in the system prompt */
+  pinned: boolean;
+  /** plan: YYYY-MM-DD or YYYY-MM-DDTHH:MM (the user's local time) */
+  due_at: string | null;
+  expires_at: string | null;
+  status: MemoryStatus;
+  source: "mate" | "user" | "import" | "merge";
+  updated_at: string;
+  last_used_at: string | null;
+  use_count: number;
+  /** in the core: what she always knows (the rest is recalled when relevant) */
+  core?: boolean;
+}
+
+export interface MemoryAdded extends Memory {
+  /** an active memory of that kind said the same: it was updated instead */
+  merged: boolean;
+  similar: Memory[];
+}
+
+export type MemoryPatch = Partial<Pick<Memory, "text" | "kind" | "importance" | "pinned" | "due_at" | "status">>;
+export interface MemoryQuery {
+  q?: string;
+  kind?: MemoryKind | "";
+  status?: MemoryStatus | "all";
+  sort?: "created" | "recent" | "importance" | "due";
+}
+export interface MemoryStats {
+  active: number;
+  done: number;
+  archived: number;
+  core: number;
+}
+export interface RecallPreview {
+  core: Memory[];
+  recalled: Memory[];
+  level: RecallLevel;
+  block: string;
 }
 
 export interface VoiceSettings {
@@ -93,9 +220,12 @@ export interface VoiceSettings {
   whisper_url: string;
   http_tts_url: string;
   http_tts_key_set: boolean;
+  /** the user's IANA timezone ("" = the server's): the mate's clock, plan dates, relationship days */
+  timezone?: string;
 }
 
 export type VoiceSettingsPatch = Partial<{
+  timezone: string;
   openai_key: string | null;
   elevenlabs_key: string | null;
   http_tts_key: string | null;
@@ -197,9 +327,24 @@ export const openConversation = (id: string) =>
 export const resetConversation = (id: string) =>
   apiFetch<Conversation>(`/api/mates/${enc(id)}/conversation/reset`, { method: "POST" });
 
-export const listMemories = (id: string) => apiFetch<Memory[]>(`/api/mates/${enc(id)}/memories`);
-export const addMemory = (id: string, text: string) =>
-  apiFetch<Memory>(`/api/mates/${enc(id)}/memories`, { method: "POST", ...j({ text }) });
+export const listMemories = (id: string, q: MemoryQuery = {}) => {
+  const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]).toString();
+  return apiFetch<Memory[]>(`/api/mates/${enc(id)}/memories${qs ? `?${qs}` : ""}`);
+};
+export const memoryStats = (id: string) => apiFetch<MemoryStats>(`/api/mates/${enc(id)}/memories/stats`);
+export const addMemory = (id: string, body: string | (MemoryPatch & { text: string })) =>
+  apiFetch<MemoryAdded>(`/api/mates/${enc(id)}/memories`, { method: "POST", ...j(typeof body === "string" ? { text: body } : body) });
+export const updateMemory = (id: string, mid: string, patch: MemoryPatch) =>
+  apiFetch<Memory>(`/api/mates/${enc(id)}/memories/${enc(mid)}`, { method: "PATCH", ...j(patch) });
+export const bulkMemories = (id: string, ids: string[], action: "delete" | "archive" | "restore" | "pin" | "unpin") =>
+  apiFetch<{ changed: number }>(`/api/mates/${enc(id)}/memories/bulk`, { method: "POST", ...j({ ids, action }) });
+export const getRelation = (id: string) => apiFetch<RelationView>(`/api/mates/${enc(id)}/relation`);
+export const patchRelation = (id: string, patch: RelationPatch) =>
+  apiFetch<RelationView>(`/api/mates/${enc(id)}/relation`, { method: "PATCH", ...j(patch) });
+export const resetRelation = (id: string, mode: "zero" | "recompute") =>
+  apiFetch<RelationView>(`/api/mates/${enc(id)}/relation/reset`, { method: "POST", ...j({ mode }) });
+export const previewRecall = (id: string, text: string) =>
+  apiFetch<RecallPreview>(`/api/mates/${enc(id)}/memories/preview`, { method: "POST", ...j({ text }) });
 export const deleteMemory = (id: string, mid: string) =>
   apiFetch<{ deleted: boolean }>(`/api/mates/${enc(id)}/memories/${enc(mid)}`, { method: "DELETE" });
 

@@ -199,6 +199,7 @@ CREATE TABLE IF NOT EXISTS mates (
     avatar      TEXT NOT NULL DEFAULT '{"kind": "none"}',
     llm         TEXT NOT NULL DEFAULT '{}',
     voice       TEXT NOT NULL DEFAULT '{}',
+    prefs       TEXT NOT NULL DEFAULT '{}',   -- conversation settings (docs/mate-memory-affinity.md §3)
     session_id  TEXT,
     memory_rev  INTEGER NOT NULL DEFAULT 0,   -- bumped by user edits of the memory (the engine reloads it)
     builtin     TEXT,                         -- bundled character key (estelle, …) for built-in mates
@@ -214,7 +215,25 @@ CREATE TABLE IF NOT EXISTS mate_memories (
     mate_id    TEXT NOT NULL,
     text       TEXT NOT NULL,
     created_at TEXT NOT NULL,
+    kind       TEXT NOT NULL DEFAULT 'fact',    -- profile | preference | fact | plan | context (app/mate/memory.py)
+    importance INTEGER NOT NULL DEFAULT 3,      -- 1 – 5
+    pinned     INTEGER NOT NULL DEFAULT 0,      -- the user's: always in the system prompt
+    due_at     TEXT,                            -- plan: YYYY-MM-DD[THH:MM], the user's local time
+    expires_at TEXT,                            -- context: archived after this
+    status     TEXT NOT NULL DEFAULT 'active',  -- active | done | archived
+    source     TEXT NOT NULL DEFAULT 'mate',    -- mate | user | import | merge
+    updated_at TEXT,                            -- NULL = saved before kinds existed (migrated once)
+    last_used_at TEXT,
+    use_count  INTEGER NOT NULL DEFAULT 0,
+    supersedes TEXT,
     FOREIGN KEY (mate_id) REFERENCES mates(id) ON DELETE CASCADE
+);
+
+-- How close the user and a mate are, and its mood (app/mate/affinity.py): one JSON document per mate.
+CREATE TABLE IF NOT EXISTS mate_relation (
+    mate_id    TEXT PRIMARY KEY,
+    doc        TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 
 -- Global Mate settings (voice service URLs); API keys live in the vault.
@@ -297,11 +316,21 @@ class Database:
                     self._conn.execute(f"ALTER TABLE provider_pool ADD COLUMN {col} {ddl}")
             matecols = {r["name"] for r in self._conn.execute("PRAGMA table_info(mates)")}
             for col, ddl in (("builtin", "TEXT"), ("builtin_hash", "TEXT"), ("builtin_snapshot", "TEXT"),
-                             ("customized", "INTEGER NOT NULL DEFAULT 0")):
+                             ("customized", "INTEGER NOT NULL DEFAULT 0"), ("prefs", "TEXT NOT NULL DEFAULT '{}'")):
                 if matecols and col not in matecols:
                     self._conn.execute(f"ALTER TABLE mates ADD COLUMN {col} {ddl}")
             self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS mate_builtin_removed (key TEXT PRIMARY KEY, removed_at TEXT NOT NULL)")
+            memcols = {r["name"] for r in self._conn.execute("PRAGMA table_info(mate_memories)")}
+            for col, ddl in (("kind", "TEXT NOT NULL DEFAULT 'fact'"), ("importance", "INTEGER NOT NULL DEFAULT 3"),
+                             ("pinned", "INTEGER NOT NULL DEFAULT 0"), ("due_at", "TEXT"), ("expires_at", "TEXT"),
+                             ("status", "TEXT NOT NULL DEFAULT 'active'"), ("source", "TEXT NOT NULL DEFAULT 'mate'"),
+                             ("updated_at", "TEXT"), ("last_used_at", "TEXT"),
+                             ("use_count", "INTEGER NOT NULL DEFAULT 0"), ("supersedes", "TEXT")):
+                if memcols and col not in memcols:
+                    self._conn.execute(f"ALTER TABLE mate_memories ADD COLUMN {col} {ddl}")
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_mate_memories_status ON mate_memories(mate_id, status, kind)")
             mcols = {r["name"] for r in self._conn.execute("PRAGMA table_info(messages)")}
             for col in ("provider", "model", "meta"):
                 if col not in mcols:

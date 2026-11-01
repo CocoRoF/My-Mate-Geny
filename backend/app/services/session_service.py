@@ -611,7 +611,8 @@ class SessionService:
 
     def add_turn_end_listener(self, cb: Any) -> None:
         """``cb(sid, outcome)`` after every turn (user, mate or auto) ends;
-        outcome = {status: ok|error|stopped, text, error, trigger: turn|auto}."""
+        outcome = {status: ok|error|stopped, text, error, trigger: turn|auto,
+        input + meta (a turn started by a message: what was sent, and its meta)}."""
         self._turn_end_listeners.append(cb)
 
     def _turn_ended(self, sid: str, outcome: dict[str, Any]) -> None:
@@ -749,7 +750,8 @@ class SessionService:
         meta: dict[str, Any] | None = None,
     ) -> None:
         self._publish(sid, {"type": "run.state", "data": {"running": True}})
-        outcome: dict[str, Any] = {"status": "error", "text": "", "error": None, "trigger": "turn"}
+        outcome: dict[str, Any] = {"status": "error", "text": "", "error": None, "trigger": "turn",
+                                   "input": (user_input or "")[:4000], "meta": meta}
         try:
             async for ev in self.run_turn(sid, user_input, rows=rows, client_msg_id=client_msg_id, meta=meta):
                 _note_outcome(outcome, ev)

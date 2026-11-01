@@ -105,7 +105,7 @@ const ko: Messages<"chat"> = {
   tokOutput: "출력",
   tokTotal: "합계",
   turnTokensHint: "이 턴의 모든 모델 호출(도구, 서브에이전트 포함)에서 쓴 토큰의 합이에요.",
-  viaTitle: "메이트 {name}이(가) 보냈어요",
+  viaTitle: "메이트 {name:이} 보냈어요",
   via: "{name} 경유",
   mateFallback: "메이트",
   stReady: "사용 가능",

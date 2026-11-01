@@ -249,7 +249,8 @@ async def test_codex_mate_turns_resume_reset_and_delegation(db, tmp_path, monkey
 
         await _turn(svc, qm, msid, "second")
         call = _codex_calls(tmp_path)[-1]
-        assert call["argv"][:3] == ["exec", "resume", "th-1"] and call["prompt"].strip() == "second"
+        assert call["argv"][:3] == ["exec", "resume", "th-1"] and call["prompt"].startswith("<context>\nNow: ") \
+            and call["prompt"].split("</context>", 1)[1].strip() == "second"
 
         # a delegation: the worker's answer comes back as an internal turn of the Codex mate
         ctx = mates.token_info(mates._token(m["id"], msid))
