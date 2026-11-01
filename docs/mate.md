@@ -705,6 +705,17 @@ window?: {
 }
 ```
 
+**Back / forward** (`frontend/src/lib/nav.ts`, all shells). Every screen
+change (sidebar views, opening a chat) is a history entry with its URL
+(`/?view=usage`, `/?view=chat&session=<id>`, `/`), so back goes to the
+previous screen and a reload stays on it; overlays (`lib/back.ts`) close first.
+A guard entry below the first screen keeps back inside the app — never the
+login page or the connect screen. `/login` while signed in redirects to `/`,
+and a successful sign-in replaces the login page in history. Desktop: the
+mouse's back / forward buttons (Windows app-commands → `hrhNative.onNav`),
+Alt+← / Alt+→. Android: back = the previous screen; at the first one a second
+press within 2 s leaves the app (to the background).
+
 Android (Capacitor): the Mate view runs in-page; microphone permission added.
 
 ## 8. Backend notes

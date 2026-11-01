@@ -490,6 +490,64 @@ async function blankScreenRecovery(app, con, consoleRe) {
   return app.page(consoleRe);
 }
 
+// ── back / forward like an app (frontend/src/lib/nav.ts) ──
+
+async function backNavigation(app, con, consoleRe) {
+  const where = () => con.eval(`({ search: location.search, path: location.pathname, active: [...document.querySelectorAll("nav button")].find((b) => b.dataset.active === "true")?.textContent.trim() })`);
+  const open = (label) => con.eval(`(() => { const b = [...document.querySelectorAll("nav button")].find((x) => x.textContent.trim().startsWith(${JSON.stringify(label)})); b.click(); return true; })()`);
+  const at = (search) => until(`at ${search}`, async () => (await where()).search === search, 6000);
+
+  step("screens are history entries: Mate → Usage → Admin");
+  await open("Mate");
+  await at("?view=mate");
+  await open("Usage");
+  await at("?view=usage");
+  await open("Admin");
+  await at("?view=admin");
+
+  step("the mouse's back button (Windows app-command) → the previous screen");
+  await app.main(`cwin().emit("app-command", {}, "browser-backward"); return true`);
+  await at("?view=usage");
+  assert.equal((await where()).active, "Usage");
+
+  await sleep(400); // (one press reported twice within 250 ms counts once: separate presses here)
+  step("Alt+← → back again; the mouse's forward button (button 4) → forward");
+  await con.send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "ArrowLeft", code: "ArrowLeft", windowsVirtualKeyCode: 37, modifiers: 1 });
+  await con.send("Input.dispatchKeyEvent", { type: "keyUp", key: "ArrowLeft", code: "ArrowLeft", windowsVirtualKeyCode: 37, modifiers: 1 });
+  await at("?view=mate");
+  await sleep(400);
+  await con.send("Input.dispatchMouseEvent", { type: "mousePressed", x: 600, y: 400, button: "forward", buttons: 16, clickCount: 1 });
+  await con.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: 600, y: 400, button: "forward", buttons: 0, clickCount: 1 });
+  await at("?view=usage");
+
+  step("a reload stays on the screen");
+  await con.eval(`location.reload(), true`).catch(() => {});
+  await sleep(2000);
+  con = await app.page(consoleRe);
+  await until("Usage after reload", async () => (await where()).active === "Usage", 15000);
+
+  step("back past the first screen stays in the app (never the login page or the connect screen)");
+  for (let i = 0; i < 6; i++) {
+    await con.eval(`history.back(), true`).catch(() => {});
+    await sleep(400);
+  }
+  await sleep(800);
+  con = await app.page(consoleRe);
+  const w = await where();
+  const url = await app.main(`return cwin().webContents.getURL()`);
+  console.log(`  after 6× back: ${url} (${w.active})`);
+  assert.ok(url.startsWith(SERVER.replace(/\/+$/, "") + "/") && !/\/login|connect\.html/.test(url), `still in the app: ${url}`);
+  assert.ok(w.active, "a screen is shown");
+
+  step("signed in, /login itself leads into the app");
+  await con.eval(`location.href = "/login", true`).catch(() => {});
+  await sleep(1500);
+  con = await app.page(consoleRe);
+  assert.ok(!/\/login/.test(await app.main(`return cwin().webContents.getURL()`)));
+  await until("the app", () => con.eval(`!!document.querySelector("nav button")`), 15000);
+  return con;
+}
+
 async function main() {
   const server = SERVER.replace(/\/+$/, "");
   if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
@@ -497,7 +555,8 @@ async function main() {
   const port = 9300 + Math.floor(Math.random() * 400);
   const iport = port + 500;
   let app = new App(home, port, iport);
-  const consoleRe = new RegExp(`^${server.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/(\\?view=mate)?$`);
+  // the console: any screen (/?view=…, /?view=chat&session=…), never a Mate surface
+  const consoleRe = new RegExp(`^${server.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/(?!login|\\?surface)`);
   try {
     app.start();
     const connect = await app.page(/connect\.html/);
@@ -508,6 +567,7 @@ async function main() {
     await until("the console app", () => con.eval(`!!document.querySelector("#root > *")`));
     con = await windowChrome(app, con, consoleRe, server);
     con = await blankScreenRecovery(app, con, consoleRe);
+    con = await backNavigation(app, con, consoleRe);
 
     // a built-in mate with a body (video / photo), its voice on the browser engine so the Voice tab shows the volume
     const mates = await con.eval(`fetch("/api/mates").then((r) => r.json())`);

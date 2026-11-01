@@ -22,6 +22,8 @@ declare global {
       mate?: import("../mate/desktop").MateBridge;
       /** desktop: the window draws its own title bar (lib/nativeWindow.ts) */
       window?: import("../lib/nativeWindow").WindowBridge;
+      /** desktop: the mouse's back / forward buttons as the OS reports them (Windows app-commands) */
+      onNav?: (cb: (dir: "back" | "forward") => void) => () => void;
     };
   }
 }

@@ -140,6 +140,10 @@ function createWindow(url) {
   });
 
   const wc = w.webContents;
+  // the mouse's back / forward buttons (Windows: app-commands): in-app back / forward (the page's lib/nav.ts)
+  w.on("app-command", (_e, cmd) => {
+    if (cmd === "browser-backward" || cmd === "browser-forward") wc.send("nav:command", cmd === "browser-forward" ? "forward" : "back");
+  });
   // External links open in the user's browser; our own pages stay in-app.
   wc.setWindowOpenHandler(({ url }) => {
     if (sameOrigin(url) && !/[?&]download=1/.test(url)) {

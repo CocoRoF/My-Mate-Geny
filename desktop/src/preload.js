@@ -91,6 +91,8 @@ contextBridge.exposeInMainWorld("hrhNative", {
   signOut: () => ipcRenderer.invoke("hrh:signOut"),
   mate,
   window: windowBridge,
+  // the mouse's back / forward buttons as the OS reports them (Windows app-commands); the page goes back in-app
+  onNav: (cb) => listen("nav:command", (dir) => cb(dir === "forward" ? "forward" : "back")),
 });
 
 // A page that draws no title bar of its own in a window without the system one (an older web console, the login
