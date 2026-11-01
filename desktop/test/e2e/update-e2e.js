@@ -25,6 +25,53 @@ const dash = argv.indexOf("--");
 const [SERVER, PASSWORD, SHOTS] = argv.slice(0, dash);
 const [APPIMAGE, ...flags] = argv.slice(dash + 1);
 const EXPECT_LATEST = flags.includes("--expect-latest");
+// --full: the whole file is downloaded (as on Windows): the installed AppImage gets a few bytes appended, so its
+// embedded block map can't be read and electron-updater falls back from the differential download. The app then
+// talks to the server through a proxy that sends the installer at ~8 MB/s (progress to watch) and can fail it.
+const FULL = flags.includes("--full");
+
+/** a proxy in front of the server: the update's installer slowed down; `fail` answers it with 500 */
+async function startProxy(target) {
+  const http = require("http");
+  const net = require("net");
+  const t = new URL(target);
+  const P = { fail: false, url: "" };
+  const slow = (req) => /\/api\/downloads\/update\/[^/?]+\.(AppImage|exe|deb)/.test(req.url || "");
+  P.server = http.createServer((req, res) => {
+    if (P.fail && slow(req)) {
+      res.writeHead(500, { "content-type": "text/plain" });
+      return res.end("update feed down (test)");
+    }
+    const up = http.request({ host: t.hostname, port: t.port, path: req.url, method: req.method, headers: { ...req.headers, host: t.host } }, (r) => {
+      res.writeHead(r.statusCode, r.headers);
+      if (!slow(req)) return r.pipe(res);
+      // ~8 MB/s in 128 KiB steps
+      r.on("data", (chunk) => {
+        r.pause();
+        res.write(chunk);
+        setTimeout(() => r.resume(), Math.ceil((chunk.length / (8 * 1024 * 1024)) * 1000));
+      });
+      r.on("end", () => res.end());
+    });
+    up.on("error", () => res.destroy());
+    req.pipe(up);
+    res.on("close", () => up.destroy());
+  });
+  // the console's WebSockets: passed through as they are
+  P.server.on("upgrade", (req, sock, head) => {
+    const s = net.connect(Number(t.port), t.hostname, () => {
+      s.write(`${req.method} ${req.url} HTTP/1.1\r\n${Object.entries({ ...req.headers, host: t.host }).map(([k, v]) => `${k}: ${v}`).join("\r\n")}\r\n\r\n`);
+      if (head?.length) s.write(head);
+      sock.pipe(s).pipe(sock);
+    });
+    s.on("error", () => sock.destroy());
+    sock.on("error", () => s.destroy());
+  });
+  await new Promise((r) => P.server.listen(0, "127.0.0.1", r));
+  P.server.unref();
+  P.url = `http://127.0.0.1:${P.server.address().port}`;
+  return P;
+}
 if (dash < 0 || !SERVER || !PASSWORD || !SHOTS || !APPIMAGE) {
   console.error("usage: node test/e2e/update-e2e.js <server url> <password> <shots dir> -- <AppImage> [--expect-latest]");
   process.exit(2);
@@ -239,13 +286,15 @@ async function requests(app, since = 0) {
 }
 
 async function main() {
-  const server = SERVER.replace(/\/+$/, "");
+  const proxy = FULL ? await startProxy(SERVER) : null;
+  const server = (proxy ? proxy.url : SERVER).replace(/\/+$/, "");
   fs.mkdirSync(SHOTS, { recursive: true });
   const home = fs.mkdtempSync(path.join(os.homedir(), ".cache", "hrh-update-e2e-"));
   // (as a user keeps it: the downloaded file name, with its version)
   const installed = path.join(home, "Applications", path.basename(APPIMAGE));
   fs.mkdirSync(path.dirname(installed), { recursive: true });
   fs.copyFileSync(APPIMAGE, installed);
+  if (FULL) fs.appendFileSync(installed, Buffer.alloc(4096)); // (no readable block map: a full download)
   fs.chmodSync(installed, 0o755);
   const before = sha512(installed);
   const consoleRe = new RegExp(`^${server.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/(?!login|\\?surface)`);
@@ -294,7 +343,7 @@ async function main() {
       if (c2) console.log(`  card: ${c2.text}`);
       step("Download page: the same state");
       await openView(con, "Download");
-      const c3 = await until("the Download page's card", () => con.eval(CARD), 15000);
+      const c3 = await until("the Download page's card", async () => { const c = await con.eval(CARD); return c && c.status !== "checking" ? c : null; }, 30000); // (a page view looks again)
       console.log(`  Download page: ${c3.status} — ${c3.text}`);
       if (c3.status !== "latest") failures.push(`Download page: ${c3.status}`);
       await sleep(400);
@@ -327,9 +376,26 @@ async function main() {
     const newVersion = (c1.text.match(/\b(\d+\.\d+\.\d+)\b/g) || []).find((v) => v !== facts.version);
     console.log(`  offered: ${newVersion}`);
 
-    step("Download & install: progress (percent, size, speed, time left)");
     const t2 = Date.now();
-    await click(con, "update-download");
+    if (FULL) {
+      step("the server failing the download (500): a clear error with Retry");
+      proxy.fail = true;
+      await click(con, "update-download");
+      const e1 = await until("the error", async () => {
+        const c = await con.eval(CARD);
+        return c && c.status === "error" ? c : null;
+      }, 60000);
+      console.log(`  ${e1.text}`);
+      if (!/could not be downloaded/.test(e1.text)) failures.push(`the download error: ${e1.text}`);
+      await sleep(300);
+      await con.shot(`${facts.version}-settings-2-error.png`);
+      proxy.fail = false;
+      step("Retry → downloading again: progress (percent, size, speed, time left)");
+      await click(con, "update-retry");
+    } else {
+      step("Download & install: progress (percent, size, speed, time left)");
+      await click(con, "update-download");
+    }
     // (an AppImage downloads differentially when it can: only the changed blocks, so it may be quick)
     const seen = [];
     const d1 = await until("downloading with bytes (or done / failed)", async () => {
@@ -345,6 +411,8 @@ async function main() {
       return finish(failures);
     }
     if (d1.status === "downloading") assert.match(d1.text, /\/s/, "a speed");
+    if (FULL && d1.status !== "downloading") failures.push(`a full download showed no progress (${d1.status})`);
+    if (FULL && d1.status === "downloading" && !/left|almost/.test(d1.text)) failures.push(`no time left: ${d1.text}`);
 
     step("a page reload in the middle: the download is still shown");
     await con.eval(`location.reload(), true`).catch(() => {});
@@ -364,6 +432,24 @@ async function main() {
     }, 15000);
     console.log(`  Download page: ${d3.status} — ${d3.text}`);
     await con.shot(`${facts.version}-downloads-2-${d3.status}.png`);
+
+    if (FULL && d3.status === "downloading") {
+      step("Cancel → 'available' again (cancelled); Download again → the whole way");
+      await click(con, "update-cancel");
+      const c2 = await until("cancelled", async () => {
+        const c = await con.eval(CARD);
+        return c && c.status === "available" ? c : null;
+      }, 15000).catch((e) => (failures.push(e.message), null));
+      if (c2) console.log(`  ${c2.text}`);
+      if (c2 && !/cancelled/i.test(c2.text)) failures.push(`cancel: ${c2.text}`);
+      await con.shot(`${facts.version}-downloads-2-cancelled.png`);
+      await click(con, "update-download");
+      const d4 = await until("downloading again", async () => {
+        const c = await con.eval(CARD);
+        return c && c.status === "downloading" && /MB of/.test(c.text) ? c : null;
+      }, 60000);
+      console.log(`  ${d4.text}`);
+    }
 
     const r1 = await until("ready", async () => {
       const c = await con.eval(CARD);

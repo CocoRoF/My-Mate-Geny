@@ -186,7 +186,9 @@ export default function DownloadsView() {
   const assets = rel?.assets || [];
   const forPlatform = (p: string) => assets.filter((a) => a.platform === p);
   const mine = forPlatform(platform === "ios" ? "" : platform);
-  const primary = platform === "macos" ? mine.find((a) => a.arch === "arm64") || mine[0] : mine[0];
+  // (inside the desktop app: the kind it runs as — an AppImage is offered the AppImage, not the .deb)
+  const sameKind = upd?.how === "appimage" || upd?.how === "deb" ? mine.find((a) => a.kind === upd.how) : undefined;
+  const primary = platform === "macos" ? mine.find((a) => a.arch === "arm64") || mine[0] : sameKind || mine[0];
   const outdated = native && rel?.version && compareVersions(rel.version, native.version) > 0;
   const pageUrl = `${window.location.origin}/?view=downloads`;
   const legacy = assets.some((a) => a.name.startsWith("hr-harnessor")) && !assets.some((a) => a.name.startsWith("my-mate-geny"));
