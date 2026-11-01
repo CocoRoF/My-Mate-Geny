@@ -35,8 +35,8 @@ Live2D body and a voice. Tell her what you need. She finds the project, gives th
 chat, keeps an eye on it and tells you how it went.
 
 <p align="center">
-  <a href="https://github.com/CocoRoF/My-Mate-Geny/releases/download/demo-video/my-mate-geny-demo-ko.mp4"><img src="docs/images/demo-preview.webp" alt="Demo preview: talking to the Mate Han Chaerin, getting today's work summed up, and having her open a session for a new workspace" width="100%"></a><br>
-  <sub>▶ <a href="https://github.com/CocoRoF/My-Mate-Geny/releases/download/demo-video/my-mate-geny-demo-ko.mp4">Full video with sound</a> (45 s, mp4, in Korean): chatting with Han Chaerin, a summary of today's work, and a new workspace handed to a chat</sub>
+  <a href="https://cdn.jsdelivr.net/gh/CocoRoF/My-Mate-Geny@b94517a2f67ff981dbc38c5bde63f551697ef845/my-mate-geny-demo-ko.mp4"><img src="docs/images/demo-preview.webp" alt="Demo preview: talking to the Mate Han Chaerin, getting today's work summed up, and having her open a session for a new workspace" width="100%"></a><br>
+  <sub>▶ <a href="https://cdn.jsdelivr.net/gh/CocoRoF/My-Mate-Geny@b94517a2f67ff981dbc38c5bde63f551697ef845/my-mate-geny-demo-ko.mp4">Full video with sound</a> (45 s, in Korean, plays in the browser): chatting with Han Chaerin, a summary of today's work, and a new workspace handed to a chat</sub>
 </p>
 
 <p align="center">
