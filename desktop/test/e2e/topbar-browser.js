@@ -131,10 +131,12 @@ async function barFits(page, label) {
       docW: document.documentElement.scrollWidth,
       vw: window.innerWidth,
       shown: rects.map((b) => b.name),
-      wsTruncated: ws && ws.getBoundingClientRect().width > 0 ? ws.scrollWidth > ws.clientWidth : null,
+      wsTruncated: ws && ws.getBoundingClientRect().width > 0 ? ws.lastElementChild.scrollWidth > ws.lastElementChild.clientWidth : null,
+      titleW: Math.round(bar.querySelector('[data-topbar-item="title"]').getBoundingClientRect().width),
     };
   });
-  console.log(`  ${label}: ${JSON.stringify({ shown: r.shown, wsTruncated: r.wsTruncated })}`);
+  console.log(`  ${label}: ${JSON.stringify({ shown: r.shown, titleW: r.titleW, wsTruncated: r.wsTruncated })}`);
+  assert.ok(r.titleW >= 40, `${label}: the title keeps some room (${r.titleW}px)`);
   assert.deepEqual(r.off, [], `${label}: off screen`);
   assert.deepEqual(r.overlap, [], `${label}: overlapping`);
   assert.ok(r.docW <= r.vw + 1, `${label}: page scrolls sideways (${r.docW} > ${r.vw})`);
@@ -346,6 +348,52 @@ async function gitFlow(browser, phone) {
   await ctx.close();
 }
 
+// ── Layout: the bar at many widths, with a long title / branch, side panels open or not ──
+async function layoutFlow(browser) {
+  fixtures();
+  const app = path.join(WS, "demo-app");
+  execFileSync("git", ["checkout", "-qb", "feature/a-really-long-branch-name-for-the-top-bar"], { cwd: app });
+  const ctx = await newContext(browser, false);
+  const s = await api(ctx, "POST", "/api/sessions", {
+    provider: "claude", model: "", connection_id: null, workspace_path: app,
+    title: "A long chat title that keeps on going so the top bar has to make room for everything",
+    extra_dirs: [path.join(WS, "shared-lib"), path.join(WS, "docs")],
+  });
+  const page = await openSession(ctx, s.id);
+  await page.waitForSelector('[data-testid="topbar-git"][data-connected="true"]');
+  const density = () => page.getAttribute('[data-testid="topbar"]', "data-density");
+  for (const w of [1920, 1440, 1280, 1100, 1024, 900, 820, 768, 700, 640, 600, 480, 390, 360, 320]) {
+    await page.setViewportSize({ width: w, height: 800 });
+    await sleep(350);
+    step(`width ${w}: ${await density()}`);
+    const r = await barFits(page, `w${w}`);
+    assert.ok(r.shown.includes("folders") && r.shown.includes("git") && r.shown.includes("explorer"), `${w}: folder, git, explorer always there`);
+    if ([1920, 1440, 1024, 768, 390, 360].includes(w)) await shot(page, `layout-${w}.png`, true);
+  }
+  step("1440 with the explorer open, then the panel");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.click('[data-topbar-item="explorer"]');
+  await sleep(500);
+  await barFits(page, "1440 + explorer");
+  await shot(page, "layout-1440-explorer.png", true);
+  await page.click('[data-topbar-item="panel"]');
+  await sleep(500);
+  await barFits(page, "1440 + panel");
+  const panelText = await page.evaluate(() => [...document.querySelectorAll("aside")].map((a) => a.innerText).join("\n"));
+  assert.ok(!panelText.includes("Additional folders"), "the panel no longer has the folders section");
+  assert.ok(panelText.includes("Changed files") && panelText.includes("Agent"), "the panel keeps its other sections");
+  await shot(page, "layout-1440-panel.png", true);
+  step("tasks / usage / panel still open from the bar");
+  await page.click('[data-topbar-item="panel"]');
+  await page.click('[data-topbar-item="usage"]');
+  await sleep(500);
+  await page.keyboard.press("Escape");
+  await page.click('[data-topbar-item="tasks"]');
+  await sleep(500);
+  await page.keyboard.press("Escape");
+  await ctx.close();
+}
+
 (async () => {
   fixtures();
   if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
@@ -359,6 +407,7 @@ async function gitFlow(browser, phone) {
       await gitFlow(browser, false);
       await gitFlow(browser, true);
     }
+    if (!ONLY || ONLY === "layout") await layoutFlow(browser);
     console.log("OK");
   } finally {
     await browser.close();
