@@ -313,7 +313,7 @@ public class GenyServerPlugin extends Plugin {
         return (DownloadManager) getContext().getSystemService(Context.DOWNLOAD_SERVICE);
     }
 
-    /** Only APKs from the connected server. */
+    /** Only APKs from the connected server (sameOrigin above). */
     @PluginMethod
     public void downloadApk(PluginCall call) {
         String url = call.getString("url");
@@ -399,14 +399,4 @@ public class GenyServerPlugin extends Plugin {
         call.resolve();
     }
 
-    private static boolean sameOrigin(String url, String base) {
-        try {
-            Uri a = Uri.parse(url);
-            Uri b = Uri.parse(base);
-            return a.getScheme() != null && a.getScheme().equalsIgnoreCase(b.getScheme())
-                && a.getHost() != null && a.getHost().equalsIgnoreCase(b.getHost()) && a.getPort() == b.getPort();
-        } catch (Exception e) {
-            return false;
-        }
-    }
 }
