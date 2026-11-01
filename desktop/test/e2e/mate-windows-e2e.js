@@ -127,7 +127,9 @@ class App {
     if (FEED.url) Object.assign(env, { HRH_UPDATER_DEV: "1", HRH_UPDATE_FEED: FEED.url, APPIMAGE: path.join(this.home, "my-mate-geny.AppImage") });
     delete env.XDG_SESSION_TYPE;
     delete env.WAYLAND_DISPLAY;
-    const args = ["--no-sandbox", `--remote-debugging-port=${this.port}`, `--inspect=${this.iport}`, "--disable-gpu"];
+    // the steps find buttons by their English labels: the UI follows the system language (i18n), so pin English
+    Object.assign(env, { LANG: "en_US.UTF-8", LANGUAGE: "en_US", LC_ALL: "en_US.UTF-8" });
+    const args = ["--no-sandbox", `--remote-debugging-port=${this.port}`, `--inspect=${this.iport}`, "--disable-gpu", "--lang=en-US"];
     const [cmd, all] = APP ? [APP, args] : [path.join(__dirname, "..", "..", "node_modules", ".bin", "electron"), [path.join(__dirname, "..", ".."), ...args]];
     this.proc = spawn(cmd, all, { env, stdio: ["ignore", "pipe", "pipe"], detached: true });
     this.out = "";
