@@ -3,6 +3,7 @@ import { baseName } from "../../lib/fileView";
 import { useSessionTabs, useWorkbench } from "../../stores/workbenchStore";
 import Icon from "../ui/Icon";
 import { fileIcon } from "./fileIcon";
+import { useT } from "../../i18n";
 
 /**
  * [Chat] [file tabs…] — the chat is always the first, fixed tab. Preview tabs
@@ -10,6 +11,7 @@ import { fileIcon } from "./fileIcon";
  * Middle-click closes; drag reorders.
  */
 export default function TabBar({ sid }: { sid: string }) {
+  const t = useT();
   const { tabs, active } = useSessionTabs(sid);
   const { activate, closeTab, pinTab, moveTab, closeOthers } = useWorkbench.getState();
   const [drag, setDrag] = useState<number | null>(null);
@@ -41,16 +43,16 @@ export default function TabBar({ sid }: { sid: string }) {
         }`}
       >
         {active === null && <span className="absolute inset-x-0 top-0 h-[2px] bg-accent" />}
-        <Icon name="chat" size={13} /> Chat
+        <Icon name="chat" size={13} /> {t("files.chatTab")}
       </button>
-      {tabs.map((t, i) => {
-        const name = baseName(t.path);
-        const parent = dup(name) ? t.path.split("/").slice(-2, -1)[0] : "";
-        const on = active === t.id;
+      {tabs.map((tb, i) => {
+        const name = baseName(tb.path);
+        const parent = dup(name) ? tb.path.split("/").slice(-2, -1)[0] : "";
+        const on = active === tb.id;
         const { icon, tone } = fileIcon(name);
         return (
           <div
-            key={t.id}
+            key={tb.id}
             data-active={on}
             draggable
             onDragStart={() => setDrag(i)}
@@ -59,31 +61,32 @@ export default function TabBar({ sid }: { sid: string }) {
               if (drag !== null && drag !== i) moveTab(sid, drag, i);
               setDrag(null);
             }}
-            onClick={() => activate(sid, t.id)}
-            onDoubleClick={() => pinTab(sid, t.id)}
-            onAuxClick={(e) => e.button === 1 && closeTab(sid, t.id)}
+            onClick={() => activate(sid, tb.id)}
+            onDoubleClick={() => pinTab(sid, tb.id)}
+            onAuxClick={(e) => e.button === 1 && closeTab(sid, tb.id)}
             onContextMenu={(e) => {
               e.preventDefault();
-              setMenu({ id: t.id, x: e.clientX, y: e.clientY });
+              setMenu({ id: tb.id, x: e.clientX, y: e.clientY });
             }}
-            title={`${t.path}${t.preview ? " — preview (double-click to keep open)" : ""}`}
+            title={`${tb.path}${tb.preview ? ` — ${t("files.previewTabHint")}` : ""}`}
             className={`group relative flex max-w-[220px] shrink-0 cursor-pointer select-none items-center gap-1.5 border-r border-border/60 pl-3 pr-1.5 text-[12.5px] transition ${
               on ? "bg-bg text-content" : "text-content-faint hover:bg-surface-2/60 hover:text-content-dim"
             }`}
           >
             {on && <span className="absolute inset-x-0 top-0 h-[2px] bg-accent" />}
             <Icon name={icon} size={13} className={`shrink-0 ${tone}`} />
-            <span className={`truncate ${t.preview ? "italic" : ""}`}>{name}</span>
+            <span className={`truncate ${tb.preview ? "italic" : ""}`}>{name}</span>
             {parent && <span className="truncate text-[11px] text-content-faint">{parent}</span>}
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                closeTab(sid, t.id);
+                closeTab(sid, tb.id);
               }}
               className={`ml-0.5 shrink-0 rounded p-0.5 touch:p-2 hover:bg-surface-3 hover:text-content ${
                 on ? "opacity-100" : "opacity-60 sm:can-hover:opacity-0 group-hover:opacity-100"
               }`}
-              title="Close"
+              title={t("common.close")}
+              aria-label={t("common.close")}
             >
               <Icon name="x" size={12} />
             </button>
@@ -96,11 +99,11 @@ export default function TabBar({ sid }: { sid: string }) {
           style={{ left: Math.min(menu.x, window.innerWidth - 180), top: menu.y }}
         >
           {[
-            ["Close", () => closeTab(sid, menu.id)],
-            ["Close others", () => closeOthers(sid, menu.id)],
-            ["Close all", () => closeOthers(sid, null)],
-            ["Keep open", () => pinTab(sid, menu.id)],
-            ["Copy path", () => navigator.clipboard?.writeText(menu.id)],
+            [t("common.close"), () => closeTab(sid, menu.id)],
+            [t("files.closeOthers"), () => closeOthers(sid, menu.id)],
+            [t("files.closeAll"), () => closeOthers(sid, null)],
+            [t("files.keepOpen"), () => pinTab(sid, menu.id)],
+            [t("files.copyPath"), () => navigator.clipboard?.writeText(menu.id)],
           ].map(([label, fn]) => (
             <button
               key={label as string}

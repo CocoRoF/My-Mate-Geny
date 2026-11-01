@@ -6,12 +6,11 @@ import { useProviderStore } from "../../stores/providerStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import type { Session } from "../../types";
 import Icon, { type IconName } from "../ui/Icon";
+import { useT, type MsgKey } from "../../i18n";
 
-const effortLabel = (e: string) => `Think: ${e}`;
-
-const MODES = [
-  { id: "agent", label: "Agent", hint: "Full autonomy — edits files, runs commands" },
-  { id: "plan", label: "Plan", hint: "Read-only — investigates and proposes a plan" },
+const MODES: { id: string; label: MsgKey; hint: MsgKey }[] = [
+  { id: "agent", label: "chat.modeAgent", hint: "chat.modeAgentHint" },
+  { id: "plan", label: "chat.modePlan", hint: "chat.modePlanHint" },
 ];
 
 function Chip({
@@ -139,6 +138,7 @@ function SettingsSheet({
   groups: { title: string; items: Option[]; current: string; onPick: (id: string) => void; list?: boolean }[];
   onClose: () => void;
 }) {
+  const t = useT();
   useBackHandler(true, onClose);
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -153,9 +153,9 @@ function SettingsSheet({
       <div className="w-full max-h-[80vh] overflow-y-auto rounded-t-2xl border-t border-border bg-surface-2 pb-safe pt-1.5 shadow-float">
         <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-border-strong" />
         <div className="flex items-center px-4 pt-1">
-          <span className="text-[13px] font-semibold text-content">Chat settings</span>
+          <span className="text-[13px] font-semibold text-content">{t("chat.chatSettings")}</span>
           <button onClick={onClose} className="ml-auto h-10 rounded-lg px-3 text-[13px] font-medium text-accent hover:bg-surface-3">
-            Done
+            {t("common.done")}
           </button>
         </div>
         {groups.map((g) => (
@@ -203,6 +203,8 @@ function SettingsSheet({
 }
 
 export default function ChatControls({ session, compact = false }: { session: Session; compact?: boolean }) {
+  const t = useT();
+  const modes = MODES.map((m) => ({ id: m.id, label: t(m.label), hint: t(m.hint) }));
   const catalog = useConfigStore((s) => s.catalog);
   const providers = useProviderStore((s) => s.providers);
   const update = useSessionStore((s) => s.update);
@@ -213,8 +215,8 @@ export default function ChatControls({ session, compact = false }: { session: Se
 
   const providerItems = Object.entries(catalog).map(([id, c]) => ({
     id,
-    label: c.label + (connectedProviders.includes(id) ? "" : " (not connected)"),
-    hint: id === session.provider ? undefined : "Switch engine — the conversation so far carries over",
+    label: c.label + (connectedProviders.includes(id) ? "" : ` (${t("chat.notConnected")})`),
+    hint: id === session.provider ? undefined : t("chat.switchEngineHint"),
   }));
   const modelItems = entry?.models.map((m) => ({ id: m.id, label: m.label, hint: m.description })) ?? [];
   const curModel = entry?.models.find((m) => m.id === session.model);
@@ -222,12 +224,12 @@ export default function ChatControls({ session, compact = false }: { session: Se
   const efforts = curModel?.effort?.length ? curModel.effort : entry?.effort ?? ["default"];
   const effortItems = efforts.map((e) => ({
     id: e,
-    label: e === "default" ? `Default${curModel?.default_effort && curModel.default_effort !== "default" ? ` (${curModel.default_effort})` : ""}` : e,
+    label: e === "default" ? `${t("common.default")}${curModel?.default_effort && curModel.default_effort !== "default" ? ` (${curModel.default_effort})` : ""}` : e,
   }));
   const mode = session.mode || "agent";
 
   const curModelLabel =
-    entry?.models.find((m) => m.id === session.model)?.label || session.model || "model";
+    entry?.models.find((m) => m.id === session.model)?.label || session.model || t("chat.modelFallback");
 
   const pickMode = (id: string) => update(session.id, { mode: id as "agent" | "plan" });
   const pickProvider = (id: string) => {
@@ -244,7 +246,7 @@ export default function ChatControls({ session, compact = false }: { session: Se
   if (compact) {
     const effort = session.effort && session.effort !== "default" ? session.effort : "";
     const summary = [
-      mode === "plan" ? "Plan" : "Agent",
+      mode === "plan" ? t("chat.modePlan") : t("chat.modeAgent"),
       curModel?.label || session.model || entry?.label || session.provider,
       effort,
     ]
@@ -257,7 +259,7 @@ export default function ChatControls({ session, compact = false }: { session: Se
           className={`flex h-10 max-w-full items-center gap-1.5 rounded-lg px-2 text-[13px] font-medium transition ${
             openMenu === "all" ? "bg-accent-soft text-accent" : "text-content-dim hover:bg-surface-3 hover:text-content"
           }`}
-          title="Mode, engine, model and think level"
+          title={t("chat.controlsTitle")}
         >
           <Icon name={mode === "plan" ? "file-text" : "bolt"} size={14} className={`shrink-0 ${mode === "plan" ? "text-violet" : "text-accent"}`} />
           <span className="truncate">{summary}</span>
@@ -267,10 +269,10 @@ export default function ChatControls({ session, compact = false }: { session: Se
           <SettingsSheet
             onClose={() => setOpenMenu(null)}
             groups={[
-              { title: "Mode", items: MODES, current: mode, onPick: pickMode, list: true },
-              { title: "Engine", items: providerItems.map((p) => ({ ...p, hint: undefined })), current: session.provider, onPick: pickProvider },
-              ...(modelItems.length ? [{ title: "Model", items: modelItems, current: session.model, onPick: pickModel, list: true }] : []),
-              ...(effortItems.length > 1 ? [{ title: "Think", items: effortItems, current: session.effort, onPick: pickEffort }] : []),
+              { title: t("chat.groupMode"), items: modes, current: mode, onPick: pickMode, list: true },
+              { title: t("chat.groupEngine"), items: providerItems.map((p) => ({ ...p, hint: undefined })), current: session.provider, onPick: pickProvider },
+              ...(modelItems.length ? [{ title: t("chat.groupModel"), items: modelItems, current: session.model, onPick: pickModel, list: true }] : []),
+              ...(effortItems.length > 1 ? [{ title: t("chat.groupThink"), items: effortItems, current: session.effort, onPick: pickEffort }] : []),
             ]}
           />
         )}
@@ -284,13 +286,13 @@ export default function ChatControls({ session, compact = false }: { session: Se
       <div className="relative">
         <Chip
           icon={mode === "plan" ? "file-text" : "bolt"}
-          label={mode === "plan" ? "Plan" : "Agent"}
+          label={mode === "plan" ? t("chat.modePlan") : t("chat.modeAgent")}
           open={openMenu === "mode"}
           onClick={() => setOpenMenu(openMenu === "mode" ? null : "mode")}
         />
         {openMenu === "mode" && (
           <Menu
-            items={MODES}
+            items={modes}
             current={mode}
             onClose={() => setOpenMenu(null)}
             onPick={pickMode}
@@ -341,7 +343,7 @@ export default function ChatControls({ session, compact = false }: { session: Se
         <div className="relative">
           <Chip
             icon="terminal"
-            label={effortLabel(session.effort || "default")}
+            label={t("chat.thinkChip", { level: !session.effort || session.effort === "default" ? t("common.default") : session.effort })}
             open={openMenu === "effort"}
             onClick={() => setOpenMenu(openMenu === "effort" ? null : "effort")}
           />

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { deleteAttachment, getUploadLimits, uploadAttachment } from "../api/attachments";
 import type { Attachment } from "../types";
 import { useDraftStore } from "./draftStore";
+import { tr } from "../i18n";
 
 // Files waiting in the composer. Each one starts uploading the moment it is
 // added (claude.ai-style), so sending is instant once the bar turns green.
@@ -103,9 +104,9 @@ export const useComposerStore = create<ComposerState>((set, get) => {
           progress: 0,
           status: tooBig || overCount ? "error" : "uploading",
           error: tooBig
-            ? `Larger than the ${limits.max_mb} MB limit`
+            ? tr("composer.tooBig", { mb: limits.max_mb })
             : overCount
-              ? `At most ${limits.max_files} files per message`
+              ? tr("composer.tooMany", { count: limits.max_files })
               : undefined,
         };
       });

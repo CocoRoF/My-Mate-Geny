@@ -9,6 +9,7 @@ import Lightbox from "../../attachments/Lightbox";
 import Icon from "../../ui/Icon";
 import ToolDetail from "./ToolDetail";
 import { fmtMs, summarize, toolMeta } from "./toolMeta";
+import { useT, type MsgKey, type TFunction } from "../../../i18n";
 
 const useActive = () => useSessionStore((s) => s.sessions.find((x) => x.id === s.activeId));
 
@@ -87,23 +88,37 @@ function MediaStrip({ images }: { images: Attachment[] }) {
   );
 }
 
+const TASK_STATUS: Record<string, MsgKey> = {
+  completed: "turn.taskCompleted",
+  failed: "turn.taskFailed",
+  killed: "turn.taskKilled",
+  stopped: "turn.taskStopped",
+  cancelled: "turn.taskCancelled",
+  running: "turn.stRunning",
+  pending: "turn.taskPending",
+};
+/** a background task's status word in the UI's language (unknown ones as the engine says them) */
+export const taskStatusLabel = (t: TFunction, status: string) => (TASK_STATUS[status] ? t(TASK_STATUS[status]) : status);
+
 function TaskPill({ task, now }: { task: TaskInfo; now: number }) {
+  const t = useT();
   if (isRunning(task)) {
     const since = task.started_at ? now - task.started_at * 1000 : 0;
     return (
       <span className="pill whitespace-nowrap bg-accent-soft text-accent" title={task.description || ""}>
         <span className="w-2 h-2 shrink-0 rounded-full border-[1.5px] border-accent border-t-transparent animate-spin" />
         {/* the word goes on narrow screens: the spinner already says it, the time matters */}
-        <span className="hidden sm:inline">{task.is_backgrounded ? "background" : "running"}</span>
+        <span className="hidden sm:inline">{task.is_backgrounded ? t("turn.background") : t("turn.stRunning")}</span>
         {since > 0 ? fmtMs(since) : ""}
       </span>
     );
   }
   const tone = task.status === "completed" ? "bg-success/12 text-success" : "bg-surface-3 text-content-faint";
-  return <span className={`pill whitespace-nowrap ${tone}`}>{task.is_backgrounded ? `background · ${task.status}` : task.status}</span>;
+  return <span className={`pill whitespace-nowrap ${tone}`}>{task.is_backgrounded ? `${t("turn.background")} · ${taskStatusLabel(t, task.status)}` : taskStatusLabel(t, task.status)}</span>;
 }
 
 function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; children: ToolActivity[] }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const session = useActive();
   const m = toolMeta(tool.name, tool.input, session?.workspace_path);
@@ -139,12 +154,12 @@ function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; chi
                 openPath(session, filePath);
               }}
               className="underline decoration-dotted decoration-content-faint/60 underline-offset-[3px] hover:text-accent hover:decoration-accent"
-              title={`Open ${filePath}`}
+              title={t("turn.openPath", { path: filePath })}
             >
               {m.target}
             </span>
           ) : children.length ? (
-            `${children.length} tool${children.length > 1 ? "s" : ""}`
+            t("turn.toolsN", { count: children.length })
           ) : (
             m.target
           )}
@@ -152,9 +167,9 @@ function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; chi
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-1 sm:pl-2">
           {tool.isError && (wasStopped(tool) ? (
-            <span className="pill bg-surface-3 text-content-dim">stopped</span>
+            <span className="pill bg-surface-3 text-content-dim">{t("turn.stStopped")}</span>
           ) : (
-            <span className="pill bg-danger/15 text-danger">failed</span>
+            <span className="pill bg-danger/15 text-danger">{t("turn.stFailed")}</span>
           ))}
           {task && (background || isRunning(task)) && <TaskPill task={task} now={now} />}
           {running && !(task && isRunning(task)) ? (
@@ -172,7 +187,7 @@ function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; chi
       {open && (
         <div className="space-y-2 px-2 pb-2 pt-0.5">
           {m.descriptive && m.category === "command" && (
-            <div className="text-[11px] text-content-faint">{tool.name === "shell" ? "Codex shell" : "Command"}</div>
+            <div className="text-[11px] text-content-faint">{tool.name === "shell" ? t("turn.codexShell") : t("turn.command")}</div>
           )}
           <ToolDetail tool={tool} root={session?.workspace_path} />
           {children.length > 0 && (
@@ -200,23 +215,25 @@ export default function ToolGroup({
   allTools?: ToolActivity[];
   defaultOpen?: boolean; // list every call from the start (subagent detail)
 }) {
+  const t = useT();
   const session = useActive();
   const kids = useMemo(() => {
     const map = new Map<string, ToolActivity[]>();
     for (const t of allTools || []) if (t.parent) map.set(t.parent, [...(map.get(t.parent) || []), t]);
     return map;
   }, [allTools]);
-  const everything = useMemo(() => [...tools, ...tools.flatMap((t) => kids.get(t.id) || [])], [tools, kids]);
-  const running = tools.find((t) => t.durationMs === undefined);
-  const now = useNow(!!running || everything.some((t) => t.task && isRunning(t.task)));
+  const everything = useMemo(() => [...tools, ...tools.flatMap((x) => kids.get(x.id) || [])], [tools, kids]);
+  const running = tools.find((x) => x.durationMs === undefined);
+  const now = useNow(!!running || everything.some((x) => x.task && isRunning(x.task)));
   const [open, setOpen] = useState<boolean | null>(defaultOpen ? true : null);
-  const metas = useMemo(() => tools.map((t) => toolMeta(t.name, t.input, session?.workspace_path)), [tools, session?.workspace_path]);
-  const failed = tools.filter((t) => t.isError && !wasStopped(t)).length;
+  // (t: the labels follow the UI's language)
+  const metas = useMemo(() => tools.map((x) => toolMeta(x.name, x.input, session?.workspace_path)), [tools, session?.workspace_path, t]); // eslint-disable-line react-hooks/exhaustive-deps
+  const failed = tools.filter((x) => x.isError && !wasStopped(x)).length;
   const stopped = tools.filter(wasStopped).length;
-  const start = Math.min(...tools.map((t) => t.startedAt));
-  const end = running ? now : Math.max(...tools.map((t) => t.startedAt + (t.durationMs || 0)));
+  const start = Math.min(...tools.map((x) => x.startedAt));
+  const end = running ? now : Math.max(...tools.map((x) => x.startedAt + (x.durationMs || 0)));
   const images = useMemo(() => imagesOf(everything, session?.id), [everything, session?.id]);
-  const bgRunning = everything.filter((t) => t.task && isRunning(t.task) && t.task.is_backgrounded).length;
+  const bgRunning = everything.filter((x) => x.task && isRunning(x.task) && x.task.is_backgrounded).length;
   // While a call is running the group shows its latest calls; once done it
   // folds to one summary line (expand for everything).
   const live = !!running;
@@ -250,8 +267,8 @@ export default function ToolGroup({
           )}
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">
-          {bgRunning > 0 && <span className="pill whitespace-nowrap bg-accent-soft text-accent">{bgRunning}<span className="hidden sm:inline">&nbsp;in background</span><span className="sm:hidden">&nbsp;bg</span></span>}
-          {failed > 0 && <span className="pill whitespace-nowrap bg-warning/15 text-warning">{failed} failed</span>}
+          {bgRunning > 0 && <span className="pill whitespace-nowrap bg-accent-soft text-accent">{bgRunning}<span className="hidden sm:inline">&nbsp;{t("turn.inBackground")}</span><span className="sm:hidden">&nbsp;{t("turn.bg")}</span></span>}{/* i18n-ignore: &nbsp; */}
+          {failed > 0 && <span className="pill whitespace-nowrap bg-warning/15 text-warning">{t("turn.failedN", { count: failed })}</span>}
           <span className="font-mono text-[10.5px] text-content-faint tabular-nums">{fmtMs(end - start)}</span>
           <Icon name={expanded ? "chevron-down" : "chevron"} size={13} className="text-content-faint" />
         </span>
@@ -261,11 +278,11 @@ export default function ToolGroup({
         <div className="space-y-0.5 border-t border-border/60 p-1">
           {!expanded && hidden > 0 && (
             <button onClick={() => setOpen(true)} className="px-2 py-1 text-[11px] text-content-faint hover:text-content-dim">
-              + {hidden} earlier
+              + {t("turn.earlierN", { count: hidden })}
             </button>
           )}
-          {visible.map((t) => (
-            <ToolRow key={t.id} tool={t} now={now} children={kids.get(t.id) || []} />
+          {visible.map((x) => (
+            <ToolRow key={x.id} tool={x} now={now} children={kids.get(x.id) || []} />
           ))}
         </div>
       )}

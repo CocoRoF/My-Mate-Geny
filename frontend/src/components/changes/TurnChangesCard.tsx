@@ -3,11 +3,13 @@ import type { TurnChanges } from "../../types";
 import { useSessionStore } from "../../stores/sessionStore";
 import Icon from "../ui/Icon";
 import ChangesModal, { STATUS } from "./ChangesModal";
+import { useT } from "../../i18n";
 
 const MAX = 5;
 
 /** "3 files changed +173 −1" at the end of a turn (Claude Code style). */
 export default function TurnChangesCard({ changes }: { changes: TurnChanges }) {
+  const t = useT();
   const sid = useSessionStore((s) => s.activeId);
   const [open, setOpen] = useState<{ repo: number; path: string } | null | "all">(null);
   if (!sid || !changes.files) return null;
@@ -17,7 +19,7 @@ export default function TurnChangesCard({ changes }: { changes: TurnChanges }) {
     <div className="overflow-hidden rounded-xl border border-border bg-surface/60">
       <div className="flex items-center gap-2 border-b border-border/70 px-3.5 py-2">
         <span className="text-[13px] font-medium text-content">
-          {changes.files} file{changes.files === 1 ? "" : "s"} changed
+          {t("files.filesChanged", { count: changes.files })}
         </span>
         <span className="ml-auto font-mono text-[11.5px]">
           <span className="text-success">+{changes.added}</span> <span className="text-danger">−{changes.removed}</span>
@@ -55,7 +57,7 @@ export default function TurnChangesCard({ changes }: { changes: TurnChanges }) {
         onClick={() => setOpen("all")}
         className="flex w-full items-center gap-2 border-t border-border/70 px-3.5 py-2 text-left text-[12.5px] text-content-dim hover:bg-surface-2/70 hover:text-content"
       >
-        {flat.length > MAX ? `View all ${flat.length} files` : "View all changes"}
+        {flat.length > MAX ? t("files.viewAllFiles", { count: flat.length }) : t("files.viewAllChanges")}
         <Icon name="chevron" size={12} />
       </button>
       {open && (

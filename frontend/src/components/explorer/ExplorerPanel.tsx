@@ -14,10 +14,12 @@ import {
 import type { Session } from "../../types";
 import Icon from "../ui/Icon";
 import { fileIcon } from "../viewer/fileIcon";
+import { useT, type MsgKey } from "../../i18n";
 
 // Noise hidden unless "show all" is on (dotfiles like .env / .github stay visible).
 const NOISE = new Set([".git", ".DS_Store", "Thumbs.db", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".hg", ".svn"]);
 const INDENT = 12;
+const ROOT_KIND: Record<"workspace" | "folder" | "opened", MsgKey> = { workspace: "files.rootWorkspace", folder: "files.rootFolder", opened: "files.rootOpened" };
 
 interface Menu {
   x: number;
@@ -35,6 +37,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
   onClose: () => void;
   onOpened?: () => void; // a file was opened (mobile: close the drawer)
 }) {
+  const t = useT();
   const sid = session.id;
   const conn = session.connection_id;
   const connections = useConnectionStore((s) => s.connections);
@@ -58,7 +61,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
   const gotoRef = useRef<HTMLInputElement>(null);
 
   const conn_ = connections.find((c) => c.id === conn);
-  const host = conn_ ? `${conn_.name} · ${conn_.username}@${conn_.host}` : "this server";
+  const host = conn_ ? `${conn_.name} · ${conn_.username}@${conn_.host}` : t("files.thisServer");
   const activePath = tabs.find((t) => t.id === active)?.path;
 
   // Roots load on open; expanded folders (persisted) reload with them.
@@ -124,7 +127,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
     if (!st || (!st.entries && st.loading))
       return (
         <div className="py-1 text-[11.5px] text-content-faint" style={{ paddingLeft: depth * INDENT + 22 }}>
-          Loading…
+          {t("common.loading")}
         </div>
       );
     if (st.error)
@@ -187,7 +190,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
         })}
         {st.truncated && (
           <div className="py-1 text-[11px] text-warning" style={{ paddingLeft: depth * INDENT + 22 }}>
-            first 5,000 entries only
+            {t("files.first5000")}
           </div>
         )}
       </>
@@ -197,19 +200,19 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
   const menuItems = (e: FsEntry): [string, () => void][] => {
     const rel = displayPath(e.path, [session.workspace_path]);
     const items: [string, () => void][] = [];
-    if (!e.is_dir) items.push(["Open", () => openFile(e.path, true)]);
-    else items.push(["Open as root folder", () => wb.addRoot(sid, e.path)], ["Refresh", () => load(conn, e.path, true)]);
+    if (!e.is_dir) items.push([t("common.open"), () => openFile(e.path, true)]);
+    else items.push([t("files.openAsRoot"), () => wb.addRoot(sid, e.path)], [t("common.refresh"), () => load(conn, e.path, true)]);
     items.push(
-      ["Mention in chat", () => {
+      [t("files.mentionInChat"), () => {
         wb.insertText(sid, `@${rel.includes(" ") ? `"${rel}"` : rel} `);
         wb.activate(sid, null);
         onOpened?.();
       }],
-      ["Copy path", () => navigator.clipboard?.writeText(e.path)],
-      ["Copy relative path", () => navigator.clipboard?.writeText(rel)],
+      [t("files.copyPath"), () => navigator.clipboard?.writeText(e.path)],
+      [t("files.copyRelPath"), () => navigator.clipboard?.writeText(rel)],
     );
     if (!e.is_dir)
-      items.push(["Download", () => {
+      items.push([t("common.download"), () => {
         const a = document.createElement("a");
         a.href = fsRawUrl(e.path, conn, true);
         a.download = e.name;
@@ -242,24 +245,24 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
       <div
         onPointerDown={startResize}
         className="absolute inset-y-0 -left-1 z-10 hidden w-2 cursor-col-resize hover:bg-accent/30 xl:block"
-        title="Drag to resize"
+        title={t("files.dragResize")}
       />
       <div className="flex h-14 shrink-0 items-center gap-1 border-b border-border/70 pl-4 pr-2">
         <Icon name="files" size={15} className="text-accent" />
         <span className="min-w-0 flex-1">
-          <span className="block text-[13px] font-semibold leading-tight">Explorer</span>
+          <span className="block text-[13px] font-semibold leading-tight">{t("files.explorer")}</span>
           <span className="block truncate text-[10.5px] leading-tight text-content-faint">{host}</span>
         </span>
-        <button onClick={() => wb.toggleHidden()} className={`rounded-md p-1.5 touch:p-2.5 hover:bg-surface-3 ${showHidden ? "text-accent" : "text-content-faint hover:text-content"}`} title={showHidden ? "Hide .git and caches" : "Show all files (.git, caches)"}>
+        <button onClick={() => wb.toggleHidden()} className={`rounded-md p-1.5 touch:p-2.5 hover:bg-surface-3 ${showHidden ? "text-accent" : "text-content-faint hover:text-content"}`} title={showHidden ? t("files.hideNoise") : t("files.showAll")}>
           <Icon name={showHidden ? "eye" : "eye-off"} size={14} />
         </button>
-        <button onClick={() => wb.collapseAll(sid)} className="rounded-md p-1.5 touch:p-2.5 text-content-faint hover:bg-surface-3 hover:text-content" title="Collapse folders">
+        <button onClick={() => wb.collapseAll(sid)} className="rounded-md p-1.5 touch:p-2.5 text-content-faint hover:bg-surface-3 hover:text-content" title={t("files.collapseFolders")}>
           <Icon name="collapse" size={14} />
         </button>
-        <button onClick={refresh} className="rounded-md p-1.5 touch:p-2.5 text-content-faint hover:bg-surface-3 hover:text-content" title="Refresh">
+        <button onClick={refresh} className="rounded-md p-1.5 touch:p-2.5 text-content-faint hover:bg-surface-3 hover:text-content" title={t("common.refresh")}>
           <Icon name="refresh" size={14} />
         </button>
-        <button onClick={onClose} className="rounded-md p-1.5 touch:p-2.5 text-content-faint hover:bg-surface-3 hover:text-content" title="Close explorer">
+        <button onClick={onClose} className="rounded-md p-1.5 touch:p-2.5 text-content-faint hover:bg-surface-3 hover:text-content" title={t("files.closeExplorer")}>
           <Icon name="x" size={16} />
         </button>
       </div>
@@ -280,10 +283,10 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
           ref={gotoRef}
           value={goto}
           onChange={(e) => setGoto(e.target.value)}
-          placeholder="Go to path…  (relative, /abs, ~/…)"
+          placeholder={t("files.gotoPlaceholder")}
           className="min-w-0 flex-1 bg-transparent font-mono text-[12px] text-content placeholder:font-sans placeholder:text-content-faint outline-none"
         />
-        <button type="submit" className="rounded p-0.5 touch:p-2.5 touch:-mr-2 text-content-faint hover:text-content" title="Open">
+        <button type="submit" className="rounded p-0.5 touch:p-2.5 touch:-mr-2 text-content-faint hover:text-content" title={t("common.open")}>
           <Icon name="arrow-up" size={12} className="rotate-90" />
         </button>
       </form>
@@ -308,7 +311,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
               >
                 <Icon name={open ? "chevron-down" : "chevron"} size={12} className="shrink-0" />
                 <span className="truncate">{baseName(r) || "/"}</span>
-                <span className="shrink-0 font-normal normal-case tracking-normal text-content-faint">{kind}</span>
+                <span className="shrink-0 font-normal normal-case tracking-normal text-content-faint">{t(ROOT_KIND[kind])}</span>
                 {kind === "opened" && (
                   <button
                     onClick={(ev) => {
@@ -316,7 +319,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
                       wb.removeRoot(sid, r);
                     }}
                     className="ml-auto shrink-0 rounded p-0.5 touch:p-2 text-content-faint can-hover:opacity-0 hover:text-content group-hover:opacity-100"
-                    title="Remove from explorer"
+                    title={t("files.removeFromExplorer")}
                   >
                     <Icon name="x" size={12} />
                   </button>
@@ -334,7 +337,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
           }}
           className="mx-3 mt-3 flex items-center gap-1.5 touch:py-2 text-[12px] text-content-faint hover:text-content"
         >
-          <Icon name="folder-plus" size={13} /> Open another folder…
+          <Icon name="folder-plus" size={13} /> {t("files.openAnotherFolder")}
         </button>
       </div>
 

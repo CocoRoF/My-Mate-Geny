@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { diffStats, lineDiff, type DiffLine } from "./diff";
+import { useT } from "../../../i18n";
 
 const CONTEXT = 3;
 
@@ -37,6 +38,7 @@ export default function DiffView({
   newText: string;
   maxRows?: number;
 }) {
+  const t = useT();
   const lines = useMemo(() => lineDiff(oldText, newText), [oldText, newText]);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [all, setAll] = useState(false);
@@ -65,7 +67,7 @@ export default function DiffView({
                 onClick={() => setExpanded(new Set(expanded).add(r.from))}
                 className="block w-full bg-surface-2/60 px-3 py-0.5 text-left text-[10.5px] text-content-faint hover:text-content-dim"
               >
-                ⋯ {r.count} unchanged line{r.count > 1 ? "s" : ""}
+                ⋯ {t("turn.unchangedLines", { count: r.count })}
               </button>
             )
           ) : (
@@ -74,7 +76,7 @@ export default function DiffView({
         )}
         {!all && rows.length > maxRows && (
           <button onClick={() => setAll(true)} className="block w-full px-3 py-1 text-left text-[11px] text-accent hover:underline">
-            Show {rows.length - maxRows} more lines
+            {t("turn.showMoreLines", { count: rows.length - maxRows })}
           </button>
         )}
       </div>

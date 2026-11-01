@@ -17,6 +17,7 @@
  *   binary   → info panel (download); unknown extensions are promoted to
  *              code when the content sniffs as text
  */
+import { fmtDate, fmtTime } from "../i18n/format";
 
 export type ViewerKind =
   | "code"
@@ -244,8 +245,8 @@ export function formatTime(epochSec: number | null | undefined): string {
   const now = new Date();
   const same = d.toDateString() === now.toDateString();
   return same
-    ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : d.toLocaleDateString([], { year: d.getFullYear() === now.getFullYear() ? undefined : "numeric", month: "short", day: "numeric" });
+    ? fmtTime(d)
+    : fmtDate(d, { year: d.getFullYear() === now.getFullYear() ? undefined : "numeric", month: "short", day: "numeric" });
 }
 
 export function escapeHtml(s: string): string {

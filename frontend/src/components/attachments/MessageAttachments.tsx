@@ -3,10 +3,12 @@ import type { Attachment } from "../../types";
 import { downloadUrl } from "../../api/attachments";
 import Icon from "../ui/Icon";
 import Lightbox from "./Lightbox";
+import { useT } from "../../i18n";
 import { extOf, fileVisual, formatBytes, freshImg, opensInline } from "./fileMeta";
 
 /** An image that can't load (lost on the server): a clear tile instead of a broken icon. */
 function Unavailable({ name, big }: { name: string; big?: boolean }) {
+  const t = useT();
   return (
     <span
       className={`flex flex-col items-center justify-center gap-1 px-2 text-center text-[10.5px] text-content-faint ${
@@ -15,7 +17,7 @@ function Unavailable({ name, big }: { name: string; big?: boolean }) {
     >
       <Icon name="image" size={18} />
       <span className="line-clamp-2 break-all">{name}</span>
-      <span className="text-content-faint/70">image unavailable</span>
+      <span className="text-content-faint/70">{t("files.imageUnavailable")}</span>
     </span>
   );
 }
@@ -28,6 +30,7 @@ export default function MessageAttachments({
   attachments: Attachment[];
   align?: "start" | "end";
 }) {
+  const t = useT();
   const [viewing, setViewing] = useState<number | null>(null);
   const [broken, setBroken] = useState<Record<string, true>>({});
   const fail = (id: string) => setBroken((b) => (b[id] ? b : { ...b, [id]: true }));
@@ -105,14 +108,14 @@ export default function MessageAttachments({
               target={inline ? "_blank" : undefined}
               rel="noreferrer"
               className="min-w-0 flex-1 text-left"
-              title={inline ? `Open ${f.name}` : `Download ${f.name}`}
+              title={inline ? t("files.openName", { name: f.name }) : t("files.downloadName", { name: f.name })}
             >
               <div className="truncate text-[13px] font-medium text-content hover:underline">{f.name}</div>
               <div className="text-[11px] text-content-faint">
                 {[extOf(f.name), formatBytes(f.size)].filter(Boolean).join(" · ")}
               </div>
             </a>
-            <a href={downloadUrl(f)} className="btn-ghost px-2 py-1.5 shrink-0" title="Download">
+            <a href={downloadUrl(f)} className="btn-ghost px-2 py-1.5 shrink-0" title={t("common.download")}>
               <Icon name="download" size={15} />
             </a>
           </div>

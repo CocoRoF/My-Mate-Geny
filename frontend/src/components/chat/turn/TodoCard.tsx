@@ -1,4 +1,5 @@
 import Icon from "../../ui/Icon";
+import { useT } from "../../../i18n";
 
 export interface Todo {
   content: string;
@@ -13,13 +14,14 @@ export function todosOf(input: unknown): Todo[] {
 
 /** Claude-Code-style task checklist (TodoWrite / Codex todo_list). */
 export default function TodoCard({ todos, compact = false }: { todos: Todo[]; compact?: boolean }) {
+  const tt = useT();
   if (!todos.length) return null;
   const done = todos.filter((t) => t.status === "completed").length;
   return (
     <div className={compact ? "" : "rounded-xl border border-border bg-surface/60 px-3 py-2.5"}>
       {!compact && (
         <div className="mb-1.5 flex items-center gap-2 text-[12px] font-medium text-content-dim">
-          <Icon name="check" size={13} className="text-accent" /> Tasks
+          <Icon name="check" size={13} className="text-accent" /> {tt("turn.toolTasks")}
           <span className="font-mono text-[11px] text-content-faint">
             {done}/{todos.length}
           </span>

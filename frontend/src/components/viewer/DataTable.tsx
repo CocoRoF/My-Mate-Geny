@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { colLabel, nextTableSort, sortedRowOrder, TABLE_PAGE, type TableSort } from "../../lib/fileView";
 import Icon from "../ui/Icon";
+import { useT } from "../../i18n";
 
 /**
  * Sortable, filterable grid for csv and sheets. Rows never move: sorting
@@ -18,6 +19,7 @@ export default function DataTable({
   wrap: boolean;
   rowBase?: number; // number shown for the first data row
 }) {
+  const t = useT();
   const [sort, setSort] = useState<TableSort>(null);
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(TABLE_PAGE);
@@ -39,12 +41,12 @@ export default function DataTable({
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-1.5 text-[11.5px] text-content-faint">
         <span>
-          {body.length.toLocaleString()} rows × {cols} columns
-          {query && ` · ${order.length.toLocaleString()} match`}
+          {t("files.rowsCols", { count: body.length, cols })}
+          {query && ` · ${t("files.nMatch", { count: order.length })}`}
         </span>
         {sort && (
           <button onClick={() => setSort(null)} className="pill bg-surface-3 text-content-dim hover:text-content">
-            sorted by {head?.[sort.col] || colLabel(sort.col)} {sort.dir === "asc" ? "↑" : "↓"} <Icon name="x" size={10} />
+            {t("files.sortedBy", { col: head?.[sort.col] || colLabel(sort.col) })} {sort.dir === "asc" ? "↑" : "↓"} <Icon name="x" size={10} />
           </button>
         )}
         <div className="ml-auto flex items-center gap-1.5 rounded-md bg-surface-2 px-2 py-0.5">
@@ -52,7 +54,7 @@ export default function DataTable({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter rows"
+            placeholder={t("files.filterRows")}
             className="w-28 bg-transparent text-[11.5px] text-content placeholder:text-content-faint outline-none"
           />
         </div>
@@ -73,7 +75,7 @@ export default function DataTable({
                     className={`cursor-pointer select-none border-b border-r border-border bg-surface-2 px-2.5 py-1.5 text-left font-semibold hover:bg-surface-3 ${
                       head ? "text-content max-w-[24rem] truncate" : "text-center font-mono text-[11px] font-normal text-content-faint"
                     }`}
-                    title={head ? `${label} — click to sort` : "click to sort"}
+                    title={head ? `${label} — ${t("files.clickToSort")}` : t("files.clickToSort")}
                   >
                     {label}
                     {sort?.col === c && <span className="ml-1 text-accent">{sort.dir === "asc" ? "↑" : "↓"}</span>}
@@ -102,9 +104,9 @@ export default function DataTable({
         </table>
         {order.length > shown.length && (
           <div className="flex items-center gap-3 px-3 py-3 text-[12px] text-content-faint">
-            Showing {shown.length.toLocaleString()} of {order.length.toLocaleString()} rows
+            {t("files.showingRows", { shown: shown.length, count: order.length })}
             <button onClick={() => setLimit((l) => l + TABLE_PAGE)} className="btn-soft py-1 px-2 text-[11.5px]">
-              Show {Math.min(TABLE_PAGE, order.length - shown.length).toLocaleString()} more
+              {t("files.showNMore", { n: Math.min(TABLE_PAGE, order.length - shown.length) })}
             </button>
           </div>
         )}

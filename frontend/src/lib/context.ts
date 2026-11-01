@@ -3,6 +3,7 @@
 
 import type { ContextInfo } from "../types";
 import { fmtTokens } from "./usage";
+import { tr } from "../i18n";
 
 /** The CLI auto-compacts at window - this (measured on Claude Code 2.1.314;
  * the backend sends the catalog's value, this is the fallback). */
@@ -35,7 +36,7 @@ export function fmtWindow(n: number | null | undefined): string {
 
 export const fmtCtx = (n: number | null | undefined) => (n === null || n === undefined ? "—" : fmtTokens(n));
 
-export const presetLabel = (n: number) => (n === 0 ? "Full" : fmtWindow(n));
+export const presetLabel = (n: number) => (n === 0 ? tr("chat.presetFull") : fmtWindow(n));
 
 export interface Meter {
   tokens: number | null;
@@ -75,6 +76,5 @@ export function ctxBar(toCompact: number | null): string {
   return "bg-accent";
 }
 
-export const WINDOW_HINT =
-  "Claude re-reads the whole context on every model call (mostly from cache, which still counts toward your plan). " +
-  "A smaller window compacts sooner: fewer tokens per call, at the cost of older turns being kept only as a summary.";
+/** the auto-compact window's explanation, in the UI's language (call while rendering) */
+export const windowHint = () => tr("chat.windowHint");

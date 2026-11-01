@@ -9,6 +9,7 @@ import type { TaskInfo } from "../../types";
 import Icon from "../ui/Icon";
 import { useBackHandler } from "../../lib/back";
 import { fmtMs } from "../chat/turn/toolMeta";
+import { useT, type MsgKey } from "../../i18n";
 
 function useNow(active: boolean) {
   const [now, setNow] = useState(() => Date.now());
@@ -20,9 +21,19 @@ function useNow(active: boolean) {
   return now;
 }
 
-const TYPE: Record<string, string> = { local_bash: "command", local_agent: "subagent", remote_agent: "agent" };
+const TYPE: Record<string, MsgKey> = { local_bash: "tasks.typeCommand", local_agent: "tasks.typeSubagent", remote_agent: "tasks.typeAgent" };
+const STATUS: Record<string, MsgKey> = {
+  running: "tasks.stRunning",
+  pending: "tasks.stPending",
+  completed: "tasks.stCompleted",
+  failed: "tasks.stFailed",
+  stopped: "tasks.stStopped",
+  killed: "tasks.stKilled",
+  lost: "tasks.stLost",
+};
 
 function Output({ sid, task }: { sid: string; task: TaskInfo }) {
+  const t = useT();
   const [text, setText] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
   const ref = useRef<HTMLPreElement>(null);
@@ -50,12 +61,13 @@ function Output({ sid, task }: { sid: string; task: TaskInfo }) {
       ref={ref}
       className="mx-3 mb-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-bg/80 p-2.5 font-mono text-[11px] leading-relaxed text-content-dim"
     >
-      {text === null ? "Loading…" : text ? (truncated ? "… (earlier output trimmed)\n" : "") + text : "(no output captured)"}
+      {text === null ? t("common.loading") : text ? (truncated ? `${t("tasks.earlierTrimmed")}\n` : "") + text : t("tasks.noOutput")}
     </pre>
   );
 }
 
 function Row({ task, now, showChat }: { task: TaskInfo; now: number; showChat: boolean }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [stopping, setStopping] = useState(false);
   const sessions = useSessionStore((s) => s.sessions);
@@ -87,9 +99,9 @@ function Row({ task, now, showChat }: { task: TaskInfo; now: number; showChat: b
           <span className="min-w-0">
             <span className="block truncate text-[13px] text-content">{task.description || task.task_id}</span>
             <span className="block truncate text-[11px] text-content-faint">
-              {TYPE[task.task_type || ""] || task.task_type || "task"}
-              {task.is_backgrounded ? " · background" : ""}
-              {!running ? ` · ${task.status}` : ""}
+              {TYPE[task.task_type || ""] ? t(TYPE[task.task_type || ""]) : task.task_type || t("tasks.typeTask")}
+              {task.is_backgrounded ? ` · ${t("tasks.background")}` : ""}
+              {!running ? ` · ${STATUS[task.status] ? t(STATUS[task.status]) : task.status}` : ""}
               {chat ? ` · ${chat}` : ""}
             </span>
           </span>
@@ -99,9 +111,9 @@ function Row({ task, now, showChat }: { task: TaskInfo; now: number; showChat: b
           <button
             onClick={() => openAgent(task.tool_use_id!)}
             className="shrink-0 rounded-lg border border-border px-2 py-1 text-[11.5px] text-content-dim transition hover:border-violet/50 hover:text-violet"
-            title="Show what this subagent did"
+            title={t("tasks.showSubagent")}
           >
-            Details
+            {t("common.details")}
           </button>
         )}
         {running && task.session_id && (
@@ -116,7 +128,8 @@ function Row({ task, now, showChat }: { task: TaskInfo; now: number; showChat: b
             }}
             disabled={stopping}
             className="grid place-items-center w-7 h-7 shrink-0 rounded-lg border border-border text-content-dim hover:text-danger hover:border-danger/50 transition disabled:opacity-40"
-            title="Stop this task"
+            title={t("tasks.stopTask")}
+            aria-label={t("tasks.stopTask")}
           >
             {stopping ? <Icon name="spinner" size={12} spin /> : <span className="block w-2.5 h-2.5 rounded-[2px] bg-current" />}
           </button>
@@ -130,6 +143,7 @@ function Row({ task, now, showChat }: { task: TaskInfo; now: number; showChat: b
 
 /** Claude Code-style background tasks: running + completed, live output, stop. */
 export default function TasksPanel({ sid, onClose }: { sid: string; onClose: () => void }) {
+  const t = useT();
   const [scope, setScope] = useState<"chat" | "all">("chat");
   const bySession = useTaskStore((s) => s.bySession[sid]);
   const all = useTaskStore((s) => s.all);
@@ -164,7 +178,7 @@ export default function TasksPanel({ sid, onClose }: { sid: string; onClose: () 
       >
         <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
           <Icon name="activity" size={16} className="text-accent" />
-          <span className="text-sm font-semibold">Background tasks</span>
+          <span className="text-sm font-semibold">{t("tasks.title")}</span>
           <div className="ml-3 flex rounded-lg border border-border p-0.5">
             {(["chat", "all"] as const).map((s) => (
               <button
@@ -172,11 +186,11 @@ export default function TasksPanel({ sid, onClose }: { sid: string; onClose: () 
                 onClick={() => setScope(s)}
                 className={`rounded-md px-2 py-0.5 text-[11.5px] ${scope === s ? "bg-surface-3 text-content" : "text-content-faint"}`}
               >
-                {s === "chat" ? "This chat" : "All chats"}
+                {s === "chat" ? t("tasks.thisChat") : t("tasks.allChats")}
               </button>
             ))}
           </div>
-          <button onClick={onClose} className="ml-auto rounded-md p-1 text-content-faint hover:bg-surface-3 hover:text-content">
+          <button onClick={onClose} className="ml-auto rounded-md p-1 text-content-faint hover:bg-surface-3 hover:text-content" aria-label={t("common.close")}>
             <Icon name="x" size={17} />
           </button>
         </div>
@@ -185,14 +199,13 @@ export default function TasksPanel({ sid, onClose }: { sid: string; onClose: () 
             <div className="grid place-items-center py-16 text-center">
               <Icon name="activity" size={24} className="mb-3 text-content-faint" />
               <p className="max-w-xs text-[13px] text-content-dim">
-                Commands and subagents the agent runs in the background show up here — e.g. ask it to start a dev
-                server or a long build “in the background”.
+                {t("tasks.empty")}
               </p>
             </div>
           )}
           {running.length > 0 && (
             <section>
-              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-content-faint">Running {running.length}</div>
+              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-content-faint">{t("tasks.runningN", { n: running.length })}</div>
               <div className="space-y-1.5">
                 {running.map((t) => (
                   <Row key={`${t.session_id}:${t.task_id}`} task={t} now={now} showChat={scope === "all"} />
@@ -202,7 +215,7 @@ export default function TasksPanel({ sid, onClose }: { sid: string; onClose: () 
           )}
           {done.length > 0 && (
             <section>
-              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-content-faint">Finished {done.length}</div>
+              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-content-faint">{t("tasks.finishedN", { n: done.length })}</div>
               <div className="space-y-1.5">
                 {done.map((t) => (
                   <Row key={`${t.session_id}:${t.task_id}`} task={t} now={now} showChat={scope === "all"} />

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import JSZip from "jszip";
+import { tr, useT } from "../../i18n";
 
 interface Slide {
   n: number;
@@ -64,6 +65,7 @@ function textOf(doc: Document): { title: string; paragraphs: { text: string; lev
 /** .pptx — no browser renders slides, so: an outline per slide (title, text,
  * tables, pictures, speaker notes) read straight from the package. */
 export default function PptxView({ data }: { data: ArrayBuffer }) {
+  const t = useT();
   const [slides, setSlides] = useState<Slide[] | null>(null);
   const [error, setError] = useState("");
 
@@ -73,7 +75,7 @@ export default function PptxView({ data }: { data: ArrayBuffer }) {
     (async () => {
       const zip = await JSZip.loadAsync(data);
       const pres = zip.file("ppt/presentation.xml");
-      if (!pres) throw new Error("not a PowerPoint package");
+      if (!pres) throw new Error(tr("files.notPptx"));
       const presRels = await rels(zip, "ppt/presentation.xml");
       const order = Array.from(xml(await pres.async("string")).getElementsByTagNameNS(P, "sldId"))
         .map((s) => presRels.get(s.getAttributeNS(R, "id") || "")?.target)
@@ -113,19 +115,19 @@ export default function PptxView({ data }: { data: ArrayBuffer }) {
     };
   }, [data]);
 
-  if (error) return <p className="p-6 text-sm text-danger">Could not read this presentation: {error}</p>;
-  if (!slides) return <p className="p-6 text-sm text-content-faint">Reading slides…</p>;
+  if (error) return <p className="p-6 text-sm text-danger">{t("files.pptxError", { error })}</p>;
+  if (!slides) return <p className="p-6 text-sm text-content-faint">{t("files.pptxReading")}</p>;
   return (
     <div className="h-full overflow-auto">
       <div className="mx-auto max-w-3xl space-y-4 px-4 py-5">
         <p className="text-[11.5px] text-content-faint">
-          {slides.length} slides · outline view (text, tables, pictures and notes — not the slide layout)
+          {t("files.slidesOutline", { count: slides.length })}
         </p>
         {slides.map((s) => (
           <section key={s.n} className="rounded-xl border border-border bg-surface/60 p-4 shadow-card">
             <div className="mb-2 flex items-baseline gap-2">
               <span className="pill bg-surface-3 font-mono text-content-faint">{s.n}</span>
-              <h3 className="text-[15px] font-semibold text-content">{s.title || <span className="text-content-faint">Untitled</span>}</h3>
+              <h3 className="text-[15px] font-semibold text-content">{s.title || <span className="text-content-faint">{t("files.untitled")}</span>}</h3>
             </div>
             {s.paragraphs.length > 0 && (
               <ul className="space-y-1 text-[13px] text-content/85">
@@ -146,7 +148,7 @@ export default function PptxView({ data }: { data: ArrayBuffer }) {
             )}
             {s.notes && (
               <p className="mt-3 whitespace-pre-wrap border-t border-border/60 pt-2 text-[12px] text-content-faint">
-                <span className="font-medium text-content-dim">Notes · </span>
+                <span className="font-medium text-content-dim">{t("files.notes")} · </span>
                 {s.notes}
               </p>
             )}

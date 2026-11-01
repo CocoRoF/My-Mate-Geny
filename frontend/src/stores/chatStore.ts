@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { tr } from "../i18n";
 import { getOlderPage, type History, type HistoryBefore, type HistoryPage, type OlderPage } from "../api/sessions";
 import type { Attachment, ChatMessage, CliInfo, Compaction, ContextInfo, ProviderEvent, TaskInfo, TurnChanges } from "../types";
 
@@ -433,7 +434,7 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
         const t = liveTurn(turns, Date.now());
         finish(t, t.endedAt || Date.now());
         t.status = "interrupted";
-        t.error = t.error || { code: "turn.lost", message: "The run ended unexpectedly" };
+        t.error = t.error || { code: "turn.lost", message: tr("turn.runLost") };
       }
       return { isStreaming: running };
     }
@@ -699,7 +700,7 @@ export function createChatStore() {
       const t = liveTurn(turns, Date.now());
       finish(t, t.endedAt || t.startedAt || Date.now());
       t.status = "interrupted";
-      t.error = { code: "turn.lost", message: "The run ended unexpectedly" };
+      t.error = { code: "turn.lost", message: tr("turn.runLost") };
     }
     const lastEid = Math.max(h.events.reduce((m, e) => Math.max(m, e.eid || 0), 0), page?.page.last_eid || 0);
     const pinned = page?.summary?.pinned || [];

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import Markdown from "../ui/Markdown";
 import CodeView from "./CodeView";
+import { useT } from "../../i18n";
 
 type Src = string | string[] | undefined;
 const src = (s: Src) => (Array.isArray(s) ? s.join("") : s || "");
@@ -54,6 +55,7 @@ function OutputView({ o }: { o: Output }) {
 
 /** .ipynb — markdown cells rendered, code cells highlighted, outputs (text, images, tables). */
 export default function NotebookView({ text, baseDir }: { text: string; baseDir: string }) {
+  const t = useT();
   const nb = useMemo(() => {
     try {
       return { ok: true as const, v: JSON.parse(text) };
@@ -61,7 +63,7 @@ export default function NotebookView({ text, baseDir }: { text: string; baseDir:
       return { ok: false as const, err: String(e.message || e) };
     }
   }, [text]);
-  if (!nb.ok) return <p className="p-6 text-sm text-danger">Not a valid notebook: {nb.err}</p>;
+  if (!nb.ok) return <p className="p-6 text-sm text-danger">{t("files.notebookInvalid", { error: nb.err })}</p>;
   const lang = nb.v.metadata?.kernelspec?.language || nb.v.metadata?.language_info?.name || "python";
   const cells: any[] = nb.v.cells || nb.v.worksheets?.[0]?.cells || [];
 

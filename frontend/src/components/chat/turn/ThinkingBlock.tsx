@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Icon from "../../ui/Icon";
 import { fmtMs } from "./toolMeta";
+import { useT } from "../../../i18n";
 
 export default function ThinkingBlock({
   text,
@@ -13,9 +14,10 @@ export default function ThinkingBlock({
   endedAt?: number;
   live: boolean;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const thinking = live && !endedAt;
-  const label = thinking ? "Thinking…" : endedAt ? `Thought for ${fmtMs(endedAt - startedAt)}` : "Thought";
+  const label = thinking ? t("turn.thinking") : endedAt ? t("turn.thoughtFor", { d: fmtMs(endedAt - startedAt) }) : t("turn.thought");
   return (
     <div>
       <button

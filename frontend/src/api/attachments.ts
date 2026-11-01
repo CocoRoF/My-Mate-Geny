@@ -1,5 +1,6 @@
 import type { Attachment } from "../types";
 import { apiFetch, toLogin } from "./client";
+import { tr } from "../i18n";
 
 export const getUploadLimits = () =>
   apiFetch<{ max_mb: number; max_files: number }>("/api/attachments/limits");
@@ -23,10 +24,10 @@ export function uploadAttachment(
       }
       if (xhr.status === 401) toLogin();
       if (xhr.status >= 200 && xhr.status < 300 && Array.isArray(body)) resolve(body[0]);
-      else reject(new Error(body?.detail || `upload failed (HTTP ${xhr.status})`));
+      else reject(new Error(body?.detail || tr("files.uploadFailed", { status: String(xhr.status) })));
     };
-    xhr.onerror = () => reject(new Error("network error during upload"));
-    xhr.onabort = () => reject(new Error("upload cancelled"));
+    xhr.onerror = () => reject(new Error(tr("files.uploadNetwork")));
+    xhr.onabort = () => reject(new Error(tr("files.uploadCancelled")));
     const form = new FormData();
     form.append("files", file, file.name);
     xhr.send(form);
