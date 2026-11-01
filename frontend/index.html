@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko" class="dark">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <!-- Boot guard (before anything else loads): until the app draws itself the page shows a loading screen, never a
@@ -81,6 +81,26 @@
       <div class="m reloading">Updating to the latest version…</div>
       <button type="button" onclick="window.__hrhBootReload()">Reload</button>
     </div></div></div>
+    <script>
+      // the boot screen in the UI's language (src/i18n: localStorage hrh_lang, else the browser's)
+      (function () {
+        var l = null;
+        try { l = localStorage.getItem("hrh_lang"); } catch (e) {}
+        if (l !== "ko" && l !== "en") l = /^ko\b/i.test((navigator.languages && navigator.languages[0]) || navigator.language || "") ? "ko" : "en";
+        document.documentElement.lang = l;
+        if (l !== "ko") return;
+        var T = {
+          slow: "아직 불러오는 중이에요… 연결을 확인하거나 새로고침해 주세요.",
+          failed: "My Mate Geny를 불러오지 못했어요. 방금 업데이트됐을 수 있어요 — 새로고침해서 계속하세요.",
+          reloading: "최신 버전으로 업데이트하는 중…",
+        };
+        var b = document.getElementById("hrh-boot");
+        if (!b) return;
+        for (var k in T) { var el = b.querySelector(".m." + k); if (el) el.textContent = T[k]; }
+        var btn = b.querySelector("button");
+        if (btn) btn.textContent = "새로고침";
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

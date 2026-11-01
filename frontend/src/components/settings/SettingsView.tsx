@@ -19,7 +19,7 @@ import {
 } from "../../api/admin";
 import { apiFetch } from "../../api/client";
 import { compareVersions, getDownloads, type AppRelease } from "../../api/downloads";
-import { LANGS, useLang, useT, type Lang, type MsgKey, type TFunction } from "../../i18n";
+import { LANGS, useLang, useT, type Lang, type MsgKey, type TFunction, type Vars } from "../../i18n";
 import { relTime } from "../../i18n/format";
 import { chooseLanguage } from "../../i18n/sync";
 import { useConfigStore } from "../../stores/configStore";
@@ -58,7 +58,7 @@ function Card({ id, icon, title, hint, children }: { id: SettingsSection; icon: 
 function Row({ label, children, right }: { label: ReactNode; children?: ReactNode; right?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-surface-2/50 px-3.5 py-3">
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 basis-[15rem]">
         <div className="text-[13px] font-medium text-content">{label}</div>
         {children && <div className="mt-0.5 text-[12px] text-content-faint">{children}</div>}
       </div>
@@ -212,8 +212,11 @@ function AndroidAppUpdates() {
 
 // ---- Account ---------------------------------------------------------------------------------------------------
 
+/** a result line; a message by key re-renders in the language of the moment (raw: the server's own words) */
+type Msg = { ok: boolean; key?: MsgKey; vars?: Vars; raw?: string } | null;
+
 /** the server's validation messages (app/auth.py, routers/auth.py) in the UI's language; anything else as sent */
-function serverError(t: TFunction, msg: string, min: number): string {
+function serverError(msg: string, min: number): Msg {
   const known: [RegExp, MsgKey][] = [
     [/current password is incorrect/i, "settings.errWrongCurrent"],
     [/too many wrong passwords/i, "settings.errTooMany"],
@@ -226,7 +229,7 @@ function serverError(t: TFunction, msg: string, min: number): string {
     [/set a new password/i, "settings.errNeedNewPw"],
   ];
   const hit = known.find(([re]) => re.test(msg));
-  return hit ? t(hit[1], { min }) : msg || t("common.couldNotSave");
+  return hit ? { ok: false, key: hit[1], vars: { min } } : msg ? { ok: false, raw: msg } : { ok: false, key: "common.couldNotSave" };
 }
 
 function strength(t: TFunction, pw: string): { score: 0 | 1 | 2 | 3; label: string } {
@@ -253,8 +256,6 @@ function PasswordInput({ label, value, onChange, autoComplete, invalid, testId }
     </label>
   );
 }
-
-type Msg = { ok: boolean; text: string } | null;
 
 function AccountSection() {
   const t = useT();
@@ -309,9 +310,9 @@ function AccountSection() {
     try {
       saved(await changeCredentials({ current_password: namePw, username: name.trim(), new_password: "" }));
       setNamePw("");
-      setNameMsg({ ok: true, text: t("settings.usernameSaved") });
+      setNameMsg({ ok: true, key: "settings.usernameSaved" });
     } catch (err) {
-      setNameMsg({ ok: false, text: serverError(t, (err as Error).message, min) });
+      setNameMsg(serverError((err as Error).message, min));
     } finally {
       setNameBusy(false);
     }
@@ -327,9 +328,9 @@ function AccountSection() {
       setCur("");
       setPw("");
       setPw2("");
-      setPwMsg({ ok: true, text: t("settings.passwordSaved") });
+      setPwMsg({ ok: true, key: "settings.passwordSaved" });
     } catch (err) {
-      setPwMsg({ ok: false, text: serverError(t, (err as Error).message, min) });
+      setPwMsg(serverError((err as Error).message, min));
     } finally {
       setPwBusy(false);
     }
@@ -341,9 +342,9 @@ function AccountSection() {
     setRevokeMsg(null);
     try {
       await revokeAllSessions();
-      setRevokeMsg({ ok: true, text: t("settings.signedOutOthers") });
+      setRevokeMsg({ ok: true, key: "settings.signedOutOthers" });
     } catch (err) {
-      setRevokeMsg({ ok: false, text: (err as Error).message || t("common.somethingWrong") });
+      setRevokeMsg((err as Error).message ? { ok: false, raw: (err as Error).message } : { ok: false, key: "common.somethingWrong" });
     } finally {
       setRevokeBusy(false);
     }
@@ -354,19 +355,20 @@ function AccountSection() {
     window.location.href = "/login";
   };
 
-  const msg = (m: Msg, testId: string) => m && <Status tone={m.ok ? "ok" : "error"} testId={testId}>{m.text}</Status>;
+  const msg = (m: Msg, testId: string) =>
+    m && <Status tone={m.ok ? "ok" : "error"} testId={testId}>{m.key ? t(m.key, m.vars) : m.raw}</Status>;
 
   return (
     <Card id="account" icon="user" title={t("settings.secAccount")} hint={t("settings.accountHint")}>
-      <div className="flex items-center gap-3 rounded-xl border border-border bg-surface-2/50 px-3.5 py-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-border bg-surface-2/50 px-3.5 py-3">
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-surface-3 text-[14px] font-semibold text-content-dim">
           {(st.username || "?").slice(0, 1).toUpperCase()}
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-[8rem] flex-1">
           <div className="text-[11.5px] text-content-faint">{t("settings.signedInAs")}</div>
           <div className="truncate font-mono text-[14px] text-content" data-testid="settings-username">{st.username}</div>
         </div>
-        <div className="text-right text-[11.5px] text-content-faint">
+        <div className="w-full pl-12 text-[11.5px] text-content-faint sm:w-auto sm:pl-0 sm:text-right">
           <div className={st.source === "default" ? "text-warning" : ""}>{source}</div>
           {st.updated_at && <div>{t("settings.changedAgo", { when: relTime(st.updated_at) })}</div>}
         </div>
