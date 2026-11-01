@@ -33,8 +33,8 @@ My Mate Geny는 **Claude Code**와 **Codex** CLI를 내 컴퓨터나 서버에�
 프로젝트를 찾아 채팅에 일을 맡기고, 진행 상황을 챙기고, 결과를 알려줍니다.
 
 <p align="center">
-  <a href="https://cdn.jsdelivr.net/gh/CocoRoF/My-Mate-Geny@164301f0060264b38fbd71eb4d0b69ee1d896feb/my-mate-geny-demo-ko.mp4"><img src="docs/images/demo-preview.webp" alt="데모 영상 미리보기: 메이트 한채린에게 말을 걸고, 오늘 한 일을 정리받고, 세션을 열어 새 작업공간을 맡깁니다" width="100%"></a><br>
-  <sub>▶ <a href="https://cdn.jsdelivr.net/gh/CocoRoF/My-Mate-Geny@164301f0060264b38fbd71eb4d0b69ee1d896feb/my-mate-geny-demo-ko.mp4">소리 있는 전체 영상</a> (45초, 누르면 바로 재생): 한채린과 대화하고, 오늘 한 일을 정리받고, 세션을 열어 새 작업공간을 맡깁니다</sub>
+  <a href="https://cdn.jsdelivr.net/gh/CocoRoF/My-Mate-Geny@021033074ae15539c1d165ed17c3b7968a3d50e7/my-mate-geny-demo-ko.mp4"><img src="docs/images/demo-preview.webp" alt="데모 영상 미리보기: 메이트 한채린에게 말을 걸고, 오늘 한 일을 정리받고, 세션을 열어 새 작업공간을 맡깁니다" width="100%"></a><br>
+  <sub>▶ <a href="https://cdn.jsdelivr.net/gh/CocoRoF/My-Mate-Geny@021033074ae15539c1d165ed17c3b7968a3d50e7/my-mate-geny-demo-ko.mp4">소리 있는 전체 영상</a> (45초, 누르면 바로 재생): 한채린과 대화하고, 오늘 한 일을 정리받고, 세션을 열어 새 작업공간을 맡깁니다</sub>
 </p>
 
 <p align="center">
