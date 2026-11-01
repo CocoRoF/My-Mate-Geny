@@ -10,6 +10,7 @@
  *   save it; without stream support (or on any error before the first byte) the plain link.
  */
 import { useEffect, useRef, useState } from "react";
+import { tr } from "../i18n";
 
 export interface Progress {
   status: "idle" | "downloading" | "done" | "error" | "cancelled";
@@ -64,7 +65,7 @@ export function useBrowserDownload() {
     let got = 0;
     try {
       const r = await fetch(url, { signal: c.signal, credentials: "same-origin" });
-      if (!r.ok || !r.body) throw new Error(r.status === 404 ? "This build was replaced by a newer one — refresh the page." : `HTTP ${r.status}`);
+      if (!r.ok || !r.body) throw new Error(r.status === 404 ? tr("downloads.buildReplaced") : `HTTP ${r.status}`);
       const total = Number(r.headers.get("content-length")) || size || 0;
       const reader = r.body.getReader();
       const chunks: Uint8Array[] = [];
@@ -124,7 +125,7 @@ export function useAndroidDownload() {
         const total = s.total || 0;
         if (s.status === "done") setP({ status: "done", transferred: total, total, bytesPerSecond: 0, eta: 0 });
         else if (s.status === "failed" || s.status === "gone") {
-          setP({ ...IDLE, status: s.status === "gone" ? "idle" : "error", error: s.reason || "The download failed." });
+          setP({ ...IDLE, status: s.status === "gone" ? "idle" : "error", error: s.reason || tr("downloads.downloadFailed") });
           if (s.status === "gone") forget();
         } else setP({ status: "downloading", transferred: s.transferred || 0, total, bytesPerSecond: bps, eta: bps > 0 && total ? (total - s.transferred) / bps : null });
       } catch {
@@ -183,8 +184,8 @@ export function fmtSpeed(bps: number): string {
 
 export function fmtEta(s: number | null | undefined): string {
   if (s == null || !isFinite(s)) return "";
-  if (s < 1) return "almost done";
-  if (s < 60) return `${Math.ceil(s)} s left`;
+  if (s < 1) return tr("downloads.almostDone");
+  if (s < 60) return tr("downloads.secondsLeft", { s: Math.ceil(s) });
   const m = Math.floor(s / 60);
-  return m < 60 ? `${m} min ${Math.round(s % 60)} s left` : `${Math.floor(m / 60)} h ${m % 60} min left`;
+  return m < 60 ? tr("downloads.minSecLeft", { m, s: Math.round(s % 60) }) : tr("downloads.hourMinLeft", { h: Math.floor(m / 60), m: m % 60 });
 }

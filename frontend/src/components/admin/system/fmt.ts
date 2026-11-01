@@ -1,4 +1,5 @@
 // Number formatting + chart colors for the System tab.
+import { currentLocale, tr } from "../../../i18n";
 
 // Categorical slots, fixed order (validated for the dark surface #161a22:
 // adjacent CVD ΔE >= 8.4, normal-vision ΔE >= 19.8, all >= 3:1 contrast).
@@ -41,10 +42,10 @@ export function dur(sec: number | null | undefined): string {
   const d = Math.floor(s / 86400);
   const h = Math.floor((s % 86400) / 3600);
   const m = Math.floor((s % 3600) / 60);
-  if (d) return `${d}d ${h}h`;
-  if (h) return `${h}h ${m}m`;
-  if (m) return `${m}m`;
-  return `${s}s`;
+  if (d) return tr("common.durDH", { d, h });
+  if (h) return tr("common.durHM", { h, m });
+  if (m) return tr("admin.durM", { m });
+  return tr("common.durS", { s });
 }
 
 /** A round axis maximum >= n (1, 2, 2.5, 5 × 10^k). */
@@ -79,15 +80,17 @@ export function axisBytes(n: number): string {
 
 export function clockLabel(ts: number, span: number): string {
   const d = new Date(ts * 1000);
-  if (span > 3 * 86400) return d.toLocaleDateString([], { month: "short", day: "numeric" });
-  if (span > 86400) return `${d.toLocaleDateString([], { weekday: "short" })} ${d.getHours().toString().padStart(2, "0")}h`;
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const loc = currentLocale();
+  if (span > 3 * 86400) return d.toLocaleDateString(loc, { month: "short", day: "numeric" });
+  if (span > 86400) return `${d.toLocaleDateString(loc, { weekday: "short" })} ${d.getHours().toString().padStart(2, "0")}h`;
+  return d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 }
 
 export function tooltipTime(ts: number, span: number): string {
   const d = new Date(ts * 1000);
-  if (span > 86400) return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: span <= 3600 ? "2-digit" : undefined });
+  const loc = currentLocale();
+  if (span > 86400) return d.toLocaleString(loc, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  return d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit", second: span <= 3600 ? "2-digit" : undefined, hourCycle: "h23" });
 }
 
 export type Tone = "ok" | "warn" | "danger";

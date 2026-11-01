@@ -6,16 +6,18 @@ import Icon, { type IconName } from "../../ui/Icon";
 import type { LiveCols } from "./feed";
 import { bytes, C1, C2, pct, rate, toneColor, toneOf, type Tone } from "./fmt";
 import { Meter, Sparkline } from "./Spark";
+import { useT, type MsgKey } from "../../../i18n";
 
-const STATUS: Record<Tone, { icon: IconName; label: string }> = {
-  ok: { icon: "check", label: "OK" },
-  warn: { icon: "warning", label: "High" },
-  danger: { icon: "alert-circle", label: "Critical" },
+const STATUS: Record<Tone, { icon: IconName; label: MsgKey }> = {
+  ok: { icon: "check", label: "admin.statusOk" },
+  warn: { icon: "warning", label: "admin.statusHigh" },
+  danger: { icon: "alert-circle", label: "admin.statusCritical" },
 };
 
 function Tile({ label, icon, value, sub, tone, children, spark }: {
   label: string; icon: IconName; value: ReactNode; sub?: ReactNode; tone?: Tone; children?: ReactNode; spark?: ReactNode;
 }) {
+  const t = useT();
   const st = tone ? STATUS[tone] : null;
   return (
     <div className="card relative overflow-hidden p-3 sm:p-3.5 min-w-0">
@@ -24,9 +26,9 @@ function Tile({ label, icon, value, sub, tone, children, spark }: {
         <Icon name={icon} size={12} className="text-accent" />
         <span className="truncate">{label}</span>
         {st && (
-          <span className="ml-auto inline-flex items-center gap-1 text-content-dim" title={`Status: ${st.label}`}>
+          <span className="ml-auto inline-flex items-center gap-1 text-content-dim" title={t("admin.statusTitle", { label: t(st.label) })}>
             <span className="inline-flex" style={{ color: toneColor(tone!) }}><Icon name={st.icon} size={11} /></span>
-            <span className="hidden sm:inline">{st.label}</span>
+            <span className="hidden sm:inline">{t(st.label)}</span>
           </span>
         )}
       </div>
@@ -39,6 +41,7 @@ function Tile({ label, icon, value, sub, tone, children, spark }: {
 }
 
 export default function Tiles({ now, live, th }: { now: Snapshot | null; live: LiveCols; th: Thresholds | null }) {
+  const t = useT();
   if (!now) {
     return (
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
@@ -65,34 +68,34 @@ export default function Tiles({ now, live, th }: { now: Snapshot | null; live: L
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
       <Tile label="CPU" icon="cpu" tone={cpuTone} value={pct(m.cpu)}
-        sub={`load ${m.load1?.toFixed(2)} · ${now.cpu.count} cores`}
+        sub={t("admin.cpuSub", { load: m.load1?.toFixed(2), cores: now.cpu.count })}
         spark={<Sparkline values={s("cpu")} max={100} />} />
-      <Tile label="Memory" icon="server" tone={memTone}
+      <Tile label={t("admin.memory")} icon="server" tone={memTone}
         value={<>{bytes(now.mem.used)} <span className="text-[13px] font-normal text-content-faint">/ {bytes(now.mem.total, 0)}</span></>}
-        sub={`${pct(memPct)} used · ${bytes(now.mem.available)} free`}
+        sub={t("admin.memSub", { pct: pct(memPct), free: bytes(now.mem.available) })}
         spark={<Sparkline values={s("mem_used")} max={now.mem.total} />} />
-      <Tile label="Swap" icon="rotate" tone={swapTone}
-        value={now.mem.swap_total ? bytes(now.mem.swap_used) : "off"}
-        sub={now.mem.swap_total ? `${pct(swapPct)} of ${bytes(now.mem.swap_total, 0)}` : "no swap configured"}
+      <Tile label={t("admin.swap")} icon="rotate" tone={swapTone}
+        value={now.mem.swap_total ? bytes(now.mem.swap_used) : t("admin.swapOff")}
+        sub={now.mem.swap_total ? t("admin.swapSub", { pct: pct(swapPct), total: bytes(now.mem.swap_total, 0) }) : t("admin.noSwap")}
         spark={<Sparkline values={s("swap_used")} max={now.mem.swap_total || undefined} color={C2} />} />
-      <Tile label={disk ? `Disk ${disk.label}` : "Disk"} icon="disk" tone={diskTone}
+      <Tile label={disk ? t("admin.diskLabel", { label: disk.label }) : t("admin.disk")} icon="disk" tone={diskTone}
         value={disk ? pct(disk.pct) : "–"}
-        sub={disk ? `${bytes(disk.free)} free · IO ${rate(now.io.read + now.io.write)}` : undefined}
+        sub={disk ? t("admin.diskSub", { free: bytes(disk.free), io: rate(now.io.read + now.io.write) }) : undefined}
         spark={<Sparkline values={ioSum} color={C2} />}>
-        {disk && <Meter value={disk.pct} color={diskTone === "ok" ? C1 : toneColor(diskTone)} label={`Disk ${disk.label} used`} />}
+        {disk && <Meter value={disk.pct} color={diskTone === "ok" ? C1 : toneColor(diskTone)} label={t("admin.diskUsedAria", { label: disk.label })} />}
       </Tile>
-      <Tile label="Network" icon="activity" value={<span className="text-[17px] sm:text-[19px]">↓ {rate(m.net_rx)}</span>}
+      <Tile label={t("admin.network")} icon="activity" value={<span className="text-[17px] sm:text-[19px]">↓ {rate(m.net_rx)}</span>}
         sub={`↑ ${rate(m.net_tx)}`}
         spark={<Sparkline values={netSum} />} />
       {gpu ? (
-        <Tile label={now.gpus.length > 1 ? `GPU ×${now.gpus.length}` : "GPU"} icon="monitor" tone={gpuTone}
+        <Tile label={now.gpus.length > 1 ? `GPU ×${now.gpus.length}` : "GPU"} icon="monitor" tone={gpuTone} /* i18n-ignore */
           value={pct(gpu.util)}
           sub={[gpu.temp != null ? `${gpu.temp.toFixed(0)}°C` : null, gpu.mem_used != null ? `${bytes(gpu.mem_used)} VRAM` : null,
             gpu.power != null ? `${gpu.power.toFixed(0)} W` : null].filter(Boolean).join(" · ")}
           spark={<Sparkline values={s(`g${gpu.index}_util`)} max={100} />} />
       ) : (
-        <Tile label="GPU" icon="monitor" value={<span className="text-[15px] font-medium text-content-dim">No GPU detected</span>}
-          sub={now.gpu_error || (now.gpu_source === "off" ? "GPU sampling is off" : "no nvidia-smi / amdgpu")} />
+        <Tile label="GPU" icon="monitor" value={<span className="text-[15px] font-medium text-content-dim">{t("admin.noGpu")}</span>}
+          sub={now.gpu_error || (now.gpu_source === "off" ? t("admin.gpuOff") : t("admin.noGpuTool"))} />
       )}
     </div>
   );

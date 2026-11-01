@@ -6,13 +6,14 @@ import { absTime, relTime } from "../admin/format";
 import Icon from "../ui/Icon";
 import UpdateCard, { ProgressBar, progressLine, useUpdateState } from "./UpdateCard";
 import { isAndroidApp, useAndroidDownload, useBrowserDownload, type Progress } from "../../lib/downloadProgress";
+import { tr, useT, type MsgKey } from "../../i18n";
 
-const PLATFORMS = [
-  { id: "windows", name: "Windows", sub: "Windows 10 / 11 · x64" },
-  { id: "macos", name: "macOS", sub: "Apple Silicon & Intel" },
-  { id: "linux", name: "Linux", sub: "AppImage · Debian/Ubuntu" },
-  { id: "android", name: "Android", sub: "Android 7.0+ · phone & tablet" },
-] as const;
+const PLATFORMS: readonly { id: "windows" | "macos" | "linux" | "android"; name: string; sub: MsgKey }[] = [
+  { id: "windows", name: "Windows", sub: "downloads.subWindows" },
+  { id: "macos", name: "macOS", sub: "downloads.subMacos" },
+  { id: "linux", name: "Linux", sub: "downloads.subLinux" },
+  { id: "android", name: "Android", sub: "downloads.subAndroid" },
+];
 
 /** Install hints. Builds since 0.3 are `my-mate-geny-*` ("My Mate Geny.app");
  * a release still carrying the old `hr-harnessor-*` files gets the old names. */
@@ -20,22 +21,16 @@ const notes = (legacy: boolean): Record<string, string[]> => {
   const file = legacy ? "hr-harnessor" : "my-mate-geny";
   const app = legacy ? "hr-harnessor" : "My Mate Geny";
   return {
-  windows: [
-    "Run the installer. Windows SmartScreen may warn about an unrecognised app (the build isn't code-signed): choose “More info” → “Run anyway”.",
-    "Updates: the app updates itself from this page (Download & install, then Restart) — settings and login are kept.",
-  ],
+  windows: [tr("downloads.noteWin1"), tr("downloads.noteWin2")],
   macos: [
-    `Open the .dmg and drag ${app} into Applications.`,
-    `First launch: the app isn't notarised by Apple, so right-click it → Open → Open. If macOS says it's “damaged”, run: xattr -dr com.apple.quarantine "/Applications/${app}.app"`,
+    tr("downloads.noteMac1", { app }),
+    tr("downloads.noteMac2", { cmd: `xattr -dr com.apple.quarantine "/Applications/${app}.app"` }),
   ],
   linux: [
-    `AppImage: chmod +x ${file}-*.AppImage and run it (works on any distro).`,
-    `Debian/Ubuntu: sudo apt install ./${file}-*.deb — adds it to your app menu.`,
+    tr("downloads.noteLinux1", { cmd: `chmod +x ${file}-*.AppImage` }),
+    tr("downloads.noteLinux2", { cmd: `sudo apt install ./${file}-*.deb` }),
   ],
-  android: [
-    "Open the APK on the phone. Android asks to allow installs from your browser/files app once — allow it, then install.",
-    "Updates: in the app, Download shows the progress and then opens the installer; it installs over the previous version (same signing key), keeping your login.",
-  ],
+  android: [tr("downloads.noteAndroid1"), tr("downloads.noteAndroid2")],
   };
 };
 
@@ -91,6 +86,7 @@ function DownloadProgress({
   onClose: () => void;
   href?: string;
 }) {
+  const t = useT();
   const pct = p.total ? Math.round((p.transferred / p.total) * 100) : 0;
   return (
     <div className="mt-4 rounded-xl border border-border bg-surface-2/70 px-4 py-3 text-[13px] animate-fade-in" data-testid="download-progress" data-status={p.status}>
@@ -101,7 +97,7 @@ function DownloadProgress({
           className={p.status === "done" ? "text-success" : p.status === "error" ? "text-danger" : "text-accent"}
         />
         <span className="min-w-0 flex-1 truncate font-medium text-content">
-          {p.status === "done" ? (onInstall ? "Downloaded — ready to install" : "Saved") : p.status === "error" ? "Download failed" : p.status === "cancelled" ? "Cancelled" : "Downloading"}{" "}
+          {p.status === "done" ? (onInstall ? t("downloads.readyToInstall") : t("downloads.saved")) : p.status === "error" ? t("downloads.failed") : p.status === "cancelled" ? t("downloads.cancelledShort") : t("downloads.downloading")}{" "}
           <span className="font-normal text-content-faint">{name}</span>
         </span>
         {p.status === "downloading" && (
@@ -111,14 +107,14 @@ function DownloadProgress({
         )}
         {p.status === "downloading" ? (
           <button className="btn-ghost !px-2.5 !py-1 text-[12px]" onClick={onCancel} data-testid="download-cancel">
-            Cancel
+            {t("common.cancel")}
           </button>
         ) : p.status === "done" && onInstall ? (
           <button className="btn-primary !py-1.5" onClick={onInstall} data-testid="download-install">
-            Install
+            {t("downloads.install")}
           </button>
         ) : (
-          <button className="rounded-md p-1 text-content-faint hover:bg-surface-3 hover:text-content" onClick={onClose} aria-label="Close">
+          <button className="rounded-md p-1 text-content-faint hover:bg-surface-3 hover:text-content" onClick={onClose} aria-label={t("common.close")}>
             <Icon name="x" size={13} />
           </button>
         )}
@@ -128,7 +124,7 @@ function DownloadProgress({
           <div className="mt-2.5">
             <ProgressBar percent={pct} indeterminate={!p.total} />
           </div>
-          <div className="mt-1.5 text-[11.5px] text-content-faint">{progressLine(p.transferred, p.total, p.bytesPerSecond, p.eta) || "Starting…"}</div>
+          <div className="mt-1.5 text-[11.5px] text-content-faint">{progressLine(p.transferred, p.total, p.bytesPerSecond, p.eta) || t("downloads.starting")}</div>
         </>
       )}
       {p.status === "error" && (
@@ -138,7 +134,7 @@ function DownloadProgress({
             <>
               {" "}
               <a className="underline" href={href}>
-                Try the direct link
+                {t("downloads.tryDirect")}
               </a>
             </>
           )}
@@ -149,6 +145,7 @@ function DownloadProgress({
 }
 
 export default function DownloadsView() {
+  const t = useT();
   const [rel, setRel] = useState<AppRelease | null>(null);
   const [error, setError] = useState("");
   const platform = detectPlatform();
@@ -202,11 +199,9 @@ export default function DownloadsView() {
           <div className="flex items-start gap-4">
             <img src="/icon-192.png" alt="" className="h-14 w-14 shrink-0 rounded-2xl shadow-glow" />
             <div className="min-w-0 flex-1">
-              <h1 className="text-xl font-semibold tracking-tight">Get My Mate Geny</h1>
+              <h1 className="text-xl font-semibold tracking-tight">{t("downloads.title")}</h1>
               <p className="mt-1 text-sm text-content-dim">
-                The same console as a native app for desktop and Android — notifications, its own window, your login kept, and on the desktop your mate on top of your screen with a quick-chat shortcut.
-                The apps load this console live, so UI updates reach them instantly; new app builds are published here
-                automatically from every push.
+                {t("downloads.intro")}
               </p>
             </div>
           </div>
@@ -216,8 +211,10 @@ export default function DownloadsView() {
             <div className={`mt-4 flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-[13px] ${outdated ? "bg-warning/12 text-warning" : "bg-success/10 text-success"}`}>
               <Icon name={outdated ? "warning" : "check"} size={14} />
               {outdated
-                ? `A newer app version is available: ${rel?.version} (you have ${native.version}).`
-                : `You're using the app, version ${native.version}${rel?.version ? " — up to date" : ""}.`}
+                ? t("downloads.newerAvailable", { latest: rel?.version, current: native.version })
+                : rel?.version
+                  ? t("downloads.usingAppLatest", { version: native.version })
+                  : t("downloads.usingApp", { version: native.version })}
             </div>
           )}
 
@@ -238,14 +235,14 @@ export default function DownloadsView() {
                 ))}
             {platform === "ios" && (
               <p className="text-[13px] text-content-dim">
-                iPhone/iPad: open this site in Safari → Share → “Add to Home Screen” for an app-like console.
+                {t("downloads.iosHint")}
               </p>
             )}
           </div>
 
           {androidDl.active || (androidApp && androidDl.progress.status !== "idle") ? (
             <DownloadProgress
-              name={picked?.name || "the Android app"}
+              name={picked?.name || t("downloads.theAndroidApp")}
               p={androidDl.progress}
               onCancel={() => void androidDl.cancel()}
               onInstall={() => void androidDl.install()}
@@ -259,27 +256,27 @@ export default function DownloadsView() {
           {rel?.available && (
             <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-content-faint">
               <span>
-                Version <b className="font-mono text-content-dim">{rel.version}</b>
+                {t.rich("downloads.releaseVersion", { version: <b className="font-mono text-content-dim">{rel.version}</b> })}
               </span>
               {rel.commit && (
                 <span title={rel.commit_message || ""}>
-                  built from <span className="font-mono text-content-dim">{rel.commit.slice(0, 7)}</span>
+                  {t.rich("downloads.builtFrom", { commit: <span className="font-mono text-content-dim">{rel.commit.slice(0, 7)}</span> })}
                   {rel.commit_message ? ` · ${rel.commit_message.split("\n")[0].slice(0, 80)}` : ""}
                 </span>
               )}
               {rel.built_at && <span title={absTime(rel.built_at)}>{relTime(rel.built_at)}</span>}
               <button onClick={() => load(true)} className="inline-flex items-center gap-1 hover:text-content-dim">
-                <Icon name="refresh" size={11} /> check now
+                <Icon name="refresh" size={11} /> {t("downloads.checkNow")}
               </button>
             </div>
           )}
           {rel && !rel.available && (
             <p className="mt-3 text-[13px] text-content-dim">
               {rel.reason === "no_release"
-                ? "The first app builds are being produced by CI — check back in a few minutes."
+                ? t("downloads.noRelease")
                 : rel.reason === "not_configured"
-                  ? "Downloads aren't configured on this server (missing GitHub token)."
-                  : `Builds unavailable right now (${rel.reason}).`}
+                  ? t("downloads.notConfigured")
+                  : t("downloads.unavailable", { reason: rel.reason })}
             </p>
           )}
           {error && <p className="mt-3 text-xs text-danger">{error}</p>}
@@ -295,9 +292,9 @@ export default function DownloadsView() {
                   <div className="min-w-0 flex-1">
                     <h2 className="flex items-center gap-2 text-[15px] font-semibold">
                       {p.name}
-                      {isMine && <span className="pill bg-accent-soft text-accent">this device</span>}
+                      {isMine && <span className="pill bg-accent-soft text-accent">{t("downloads.thisDevice")}</span>}
                     </h2>
-                    <p className="text-[12px] text-content-faint">{p.sub}</p>
+                    <p className="text-[12px] text-content-faint">{t(p.sub)}</p>
                   </div>
                   {p.id === "android" && list.length > 0 && platform !== "android" && <Qr text={pageUrl} />}
                 </div>
@@ -305,7 +302,7 @@ export default function DownloadsView() {
                   {list.length ? (
                     list.map((a) => <AssetButton key={a.id} a={a} onPick={onPick} />)
                   ) : (
-                    <p className="text-[12px] text-content-faint">{rel?.available ? "No build for this platform in the latest release." : "—"}</p>
+                    <p className="text-[12px] text-content-faint">{rel?.available ? t("downloads.noBuild") : "—"}</p>
                   )}
                 </div>
                 <ul className="mt-3 space-y-1.5 border-t border-border/60 pt-3 text-[12px] leading-relaxed text-content-dim">
@@ -317,7 +314,7 @@ export default function DownloadsView() {
                   ))}
                 </ul>
                 {p.id === "android" && list.length > 0 && platform !== "android" && (
-                  <p className="mt-2 text-[11px] text-content-faint">Scan with your phone to open this page there (log in, then download).</p>
+                  <p className="mt-2 text-[11px] text-content-faint">{t("downloads.scanHint")}</p>
                 )}
               </section>
             );
@@ -326,7 +323,7 @@ export default function DownloadsView() {
 
         {rel?.notes && (
           <section className="card mt-3 p-4">
-            <h2 className="mb-2 text-[14px] font-semibold">What's in this build</h2>
+            <h2 className="mb-2 text-[14px] font-semibold">{t("downloads.whatsNew")}</h2>
             <pre className="whitespace-pre-wrap break-words font-sans text-[12.5px] leading-relaxed text-content-dim">{rel.notes}</pre>
           </section>
         )}

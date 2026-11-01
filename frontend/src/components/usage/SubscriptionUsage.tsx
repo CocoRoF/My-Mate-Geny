@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getSubscription, type SubscriptionUsage as Sub } from "../../api/usage";
 import { resetsIn, resetsOn, toMs } from "../../lib/usage";
 import Icon from "../ui/Icon";
+import { useT } from "../../i18n";
 
 function barColor(pct: number): string {
   if (pct >= 90) return "from-danger to-danger";
@@ -39,6 +40,7 @@ function Meter({ label, percent, resets, kind }: { label: string; percent: numbe
 }
 
 export default function SubscriptionUsage({ provider, accountId }: { provider: string; accountId?: string }) {
+  const t = useT();
   const [sub, setSub] = useState<Sub | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -53,14 +55,14 @@ export default function SubscriptionUsage({ provider, accountId }: { provider: s
   if (loading)
     return (
       <div className="flex items-center gap-2 text-sm text-content-faint py-6 justify-center">
-        <Icon name="spinner" size={15} spin /> Loading usage…
+        <Icon name="spinner" size={15} spin /> {t("usage.loadingUsage")}
       </div>
     );
 
   if (!sub?.available) {
     return (
       <div className="text-sm text-content-faint py-4 text-center">
-        {sub?.detail || sub?.error || "Usage not available."}
+        {sub?.detail || sub?.error || t("usage.notAvailable")}
       </div>
     );
   }
@@ -68,31 +70,31 @@ export default function SubscriptionUsage({ provider, accountId }: { provider: s
   return (
     <div className="space-y-5">
       {sub.stale && (
-        <p className="text-[11px] text-warning">Couldn't refresh ({sub.stale}) — showing the last numbers.</p>
+        <p className="text-[11px] text-warning">{t("usage.stale", { reason: String(sub.stale) })}</p>
       )}
       {sub.account && (
         <div>
-          <div className="text-[11px] uppercase tracking-wider text-content-faint mb-1">Account</div>
-          <Row label="Auth method" value={sub.account.auth_method} />
-          {sub.account.email && <Row label="Email" value={sub.account.email} />}
-          {sub.account.organization && <Row label="Organization" value={sub.account.organization} />}
-          <Row label="Plan" value={sub.account.plan} />
+          <div className="text-[11px] uppercase tracking-wider text-content-faint mb-1">{t("usage.account")}</div>
+          <Row label={t("usage.authMethod")} value={sub.account.auth_method} />
+          {sub.account.email && <Row label={t("usage.email")} value={sub.account.email} />}
+          {sub.account.organization && <Row label={t("usage.organization")} value={sub.account.organization} />}
+          <Row label={t("usage.plan")} value={sub.account.plan} />
         </div>
       )}
 
       <div>
-        <div className="text-[11px] uppercase tracking-wider text-content-faint mb-1">Usage</div>
+        <div className="text-[11px] uppercase tracking-wider text-content-faint mb-1">{t("usage.usage")}</div>
         {(sub.windows || []).map((w, i) => (
           <Meter key={i} label={w.label} percent={w.percent} resets={w.resets_at} kind={w.kind} />
         ))}
         {(sub.windows || []).length === 0 && (
-          <p className="text-sm text-content-faint py-2">No active limits.</p>
+          <p className="text-sm text-content-faint py-2">{t("usage.noActiveLimits")}</p>
         )}
       </div>
 
       {sub.model_windows && sub.model_windows.length > 0 && (
         <div>
-          <div className="text-[11px] uppercase tracking-wider text-content-faint mb-1">By model (weekly)</div>
+          <div className="text-[11px] uppercase tracking-wider text-content-faint mb-1">{t("usage.byModelWeekly")}</div>
           {sub.model_windows.map((w, i) => (
             <Meter key={i} label={w.label} percent={w.percent} resets={w.resets_at} />
           ))}
@@ -106,7 +108,7 @@ export default function SubscriptionUsage({ provider, accountId }: { provider: s
           rel="noreferrer"
           className="inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
         >
-          <Icon name="external" size={14} /> Manage usage
+          <Icon name="external" size={14} /> {t("usage.manageUsage")}
         </a>
       )}
     </div>

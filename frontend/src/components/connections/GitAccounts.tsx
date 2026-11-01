@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { useGitStore } from "../../stores/gitStore";
 import Icon from "../ui/Icon";
+import { useT } from "../../i18n";
 
 export default function GitAccounts() {
+  const t = useT();
   const accounts = useGitStore((s) => s.accounts);
   const load = useGitStore((s) => s.load);
   const connect = useGitStore((s) => s.connect);
@@ -35,21 +37,21 @@ export default function GitAccounts() {
   return (
     <div>
       <p className="text-sm text-content-dim mb-3">
-        Connect with a personal access token. The token's own scopes decide what's possible — a
-        full-scope token (<code className="text-xs bg-surface-3 px-1 rounded">repo</code> on GitHub,{" "}
-        <code className="text-xs bg-surface-3 px-1 rounded">api</code> on GitLab) lets the agent clone
-        private repos and commit &amp; push.
+        {t.rich("connections.gitIntro", {
+          repo: <code className="text-xs bg-surface-3 px-1 rounded">repo</code>,
+          api: <code className="text-xs bg-surface-3 px-1 rounded">api</code>,
+        })}
       </p>
 
       <div className="card p-4">
         <div className="flex gap-2 mb-2">
           <select value={provider} onChange={(e) => setProvider(e.target.value)} className="field w-32">
             <option value="github">GitHub</option>
-            <option value="gitlab">GitLab</option>
+            <option value="gitlab">GitLab</option> {/* i18n-ignore: product name */}
           </select>
           {provider === "gitlab" && (
             <input
-              placeholder="gitlab host (optional, e.g. gitlab.company.com)"
+              placeholder={t("connections.gitlabHostPlaceholder")}
               value={host}
               onChange={(e) => setHost(e.target.value)}
               className="field flex-1 font-mono text-xs"
@@ -59,14 +61,14 @@ export default function GitAccounts() {
         <div className="flex gap-2">
           <input
             type="password"
-            placeholder={`${provider === "github" ? "GitHub" : "GitLab"} personal access token`}
+            placeholder={t("connections.tokenPlaceholder", { vendor: provider === "github" ? "GitHub" : "GitLab" })}
             value={token}
             onChange={(e) => setToken(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && submit()}
             className="field flex-1 font-mono text-xs"
           />
           <button onClick={submit} disabled={busy} className="btn-primary">
-            {busy ? <Icon name="spinner" size={15} spin /> : "Connect"}
+            {busy ? <Icon name="spinner" size={15} spin /> : t("common.connect")}
           </button>
         </div>
         {error && <p className="mt-2 text-xs text-danger flex items-center gap-1.5"><Icon name="x" size={13} /> {error}</p>}
@@ -84,7 +86,7 @@ export default function GitAccounts() {
                   {a.label}
                   <span className="pill bg-surface-3 text-content-faint">{a.provider}</span>
                   <span className={`pill ${a.can_push ? "bg-success/12 text-success" : "bg-warning/15 text-warning"}`}>
-                    {a.can_push ? "read + write" : "read-only"}
+                    {a.can_push ? t("connections.readWrite") : t("connections.readOnly")}
                   </span>
                 </div>
                 <div className="text-xs text-content-faint font-mono truncate">
@@ -92,7 +94,7 @@ export default function GitAccounts() {
                   {a.host ? ` · ${a.host}` : ""}
                 </div>
               </div>
-              <button onClick={() => remove(a.id)} className="btn-ghost text-danger hover:text-danger" title="Remove">
+              <button onClick={() => remove(a.id)} className="btn-ghost text-danger hover:text-danger" title={t("connections.removeAccount")} aria-label={t("connections.removeAccount")}>
                 <Icon name="trash" size={15} />
               </button>
             </div>
@@ -105,7 +107,7 @@ export default function GitAccounts() {
             )}
           </div>
         ))}
-        {accounts.length === 0 && <p className="text-xs text-content-faint">No Git accounts connected.</p>}
+        {accounts.length === 0 && <p className="text-xs text-content-faint">{t("connections.noGitAccounts")}</p>}
       </div>
     </div>
   );

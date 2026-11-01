@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import Icon from "../ui/Icon";
 import SubscriptionUsage from "./SubscriptionUsage";
+import { useT } from "../../i18n";
 
 export default function UsageModal({
   provider,
@@ -13,6 +14,7 @@ export default function UsageModal({
   title?: string;
   onClose: () => void;
 }) {
+  const t = useT();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -26,8 +28,8 @@ export default function UsageModal({
           <div className="grid place-items-center w-9 h-9 rounded-lg bg-gradient-to-br from-accent to-cyan shadow-glow">
             <Icon name="cpu" size={17} className="text-white" />
           </div>
-          <h3 className="text-base font-semibold flex-1">{title || "Account & Usage"}</h3>
-          <button onClick={onClose} className="text-content-faint hover:text-content">
+          <h3 className="text-base font-semibold flex-1">{title || t("usage.title")}</h3>
+          <button onClick={onClose} className="text-content-faint hover:text-content" aria-label={t("common.close")}>
             <Icon name="x" size={18} />
           </button>
         </div>

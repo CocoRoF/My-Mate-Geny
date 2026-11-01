@@ -5,13 +5,14 @@ import { useUIStore } from "../../stores/uiStore";
 import Icon, { type IconName } from "../ui/Icon";
 import HourlyChart from "./HourlyChart";
 import { absTime, compact, relTime } from "./format";
+import { useT, type MsgKey } from "../../i18n";
 
 const SOURCES = ["provider", "tool", "workspace", "account", "upload", "http", "ws", "auth", "client", "system", "monitor"];
 
-const LEVEL: Record<string, { icon: IconName; cls: string; label: string }> = {
-  error: { icon: "alert-circle", cls: "text-danger bg-danger/12", label: "Error" },
-  warning: { icon: "warning", cls: "text-warning bg-warning/12", label: "Warning" },
-  info: { icon: "info", cls: "text-accent bg-accent/12", label: "Info" },
+const LEVEL: Record<string, { icon: IconName; cls: string; label: MsgKey }> = {
+  error: { icon: "alert-circle", cls: "text-danger bg-danger/12", label: "admin.levelError" },
+  warning: { icon: "warning", cls: "text-warning bg-warning/12", label: "admin.levelWarning" },
+  info: { icon: "info", cls: "text-accent bg-accent/12", label: "admin.levelInfo" },
 };
 
 function useOpenSession() {
@@ -51,15 +52,16 @@ function Pre({ title, text }: { title: string; text: string }) {
 }
 
 function Detail({ e }: { e: LogEntry }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const sess = useOpenSession();
   const { traceback, input, output, stack, ...rest } = e.detail || {};
   const meta: [string, string | null][] = [
-    ["Time", absTime(e.ts)],
-    ["Code", e.code || null],
-    ["Session", e.session_id],
-    ["Path", e.path],
-    ["IP", e.ip],
+    [t("admin.metaTime"), absTime(e.ts)],
+    [t("admin.metaCode"), e.code || null],
+    [t("admin.metaSession"), e.session_id],
+    [t("admin.metaPath"), e.path],
+    [t("admin.metaIp"), e.ip],
   ];
   const fmt = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v, null, 2));
   return (
@@ -73,7 +75,7 @@ function Detail({ e }: { e: LogEntry }) {
         <span className="ml-auto flex gap-1.5">
           {e.session_id && sess.exists(e.session_id) && (
             <button onClick={() => sess.open(e.session_id!)} className="btn-soft py-1 px-2 text-[11px]">
-              <Icon name="chat" size={12} /> Open session
+              <Icon name="chat" size={12} /> {t("admin.openSession")}
             </button>
           )}
           <button
@@ -85,21 +87,22 @@ function Detail({ e }: { e: LogEntry }) {
             }}
             className="btn-soft py-1 px-2 text-[11px]"
           >
-            <Icon name={copied ? "check" : "copy"} size={12} /> {copied ? "Copied" : "Copy JSON"}
+            <Icon name={copied ? "check" : "copy"} size={12} /> {copied ? t("common.copied") : t("admin.copyJson")}
           </button>
         </span>
       </div>
-      <Pre title="Message" text={e.message} />
-      {traceback && <Pre title="Traceback" text={String(traceback)} />}
-      {stack && <Pre title="Stack" text={String(stack)} />}
-      {input !== undefined && <Pre title="Tool input" text={fmt(input)} />}
-      {output !== undefined && <Pre title="Tool output" text={fmt(output)} />}
-      {Object.keys(rest).length > 0 && <Pre title="Context" text={JSON.stringify(rest, null, 2)} />}
+      <Pre title={t("admin.preMessage")} text={e.message} />
+      {traceback && <Pre title={t("admin.preTraceback")} text={String(traceback)} />}
+      {stack && <Pre title={t("admin.preStack")} text={String(stack)} />}
+      {input !== undefined && <Pre title={t("admin.preToolInput")} text={fmt(input)} />}
+      {output !== undefined && <Pre title={t("admin.preToolOutput")} text={fmt(output)} />}
+      {Object.keys(rest).length > 0 && <Pre title={t("admin.preContext")} text={JSON.stringify(rest, null, 2)} />}
     </div>
   );
 }
 
 function Row({ e }: { e: LogEntry }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const lv = LEVEL[e.level] || LEVEL.error;
   const sess = useOpenSession();
@@ -107,7 +110,7 @@ function Row({ e }: { e: LogEntry }) {
   return (
     <div className={`rounded-xl border bg-surface/60 transition ${open ? "border-border-strong" : "border-border"}`}>
       <button onClick={() => setOpen(!open)} className="flex w-full items-start gap-3 px-3.5 py-2.5 text-left">
-        <span className={`mt-0.5 grid place-items-center w-6 h-6 shrink-0 rounded-md ${lv.cls}`} title={lv.label}>
+        <span className={`mt-0.5 grid place-items-center w-6 h-6 shrink-0 rounded-md ${lv.cls}`} title={t(lv.label)}>
           <Icon name={lv.icon} size={13} />
         </span>
         <div className="min-w-0 flex-1">
@@ -131,6 +134,7 @@ function Row({ e }: { e: LogEntry }) {
 }
 
 export default function LogsPanel() {
+  const t = useT();
   const [stats, setStats] = useState<LogStats | null>(null);
   const [items, setItems] = useState<LogEntry[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -144,8 +148,8 @@ export default function LogsPanel() {
   const reqId = useRef(0);
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedQ(q.trim()), 300);
-    return () => clearTimeout(t);
+    const tm = setTimeout(() => setDebouncedQ(q.trim()), 300);
+    return () => clearTimeout(tm);
   }, [q]);
 
   const filter: LogFilter = useMemo(
@@ -176,8 +180,8 @@ export default function LogsPanel() {
 
   useEffect(() => {
     if (!live) return;
-    const t = setInterval(load, 10_000);
-    return () => clearInterval(t);
+    const tm = setInterval(load, 10_000);
+    return () => clearInterval(tm);
   }, [live, load]);
 
   const more = async () => {
@@ -189,28 +193,28 @@ export default function LogsPanel() {
   };
 
   const clearAll = async () => {
-    if (!window.confirm("Delete all stored logs? This cannot be undone.")) return;
+    if (!window.confirm(t("admin.confirmClearLogs"))) return;
     await clearLogs();
     load();
   };
 
-  const levels: [string, string][] = [["", "All"], ["error", "Errors"], ["warning", "Warnings"], ["info", "Info"]];
+  const levels: [string, string][] = [["", t("admin.filterAll")], ["error", t("admin.filterErrors")], ["warning", t("admin.filterWarnings")], ["info", t("admin.filterInfo")]];
 
   return (
     <div className="space-y-4">
       {stats && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <Tile label="Errors · 24h" value={stats.last_24h.error} icon="alert-circle" tone="text-danger" />
-            <Tile label="Warnings · 24h" value={stats.last_24h.warning} icon="warning" tone="text-warning" />
-            <Tile label="Errors · 7 days" value={stats.last_7d.error} icon="clock" tone="text-content-faint" />
-            <Tile label="Stored entries" value={stats.total} icon="disk" tone="text-content-faint" />
+            <Tile label={t("admin.tileErrors24h")} value={stats.last_24h.error} icon="alert-circle" tone="text-danger" />
+            <Tile label={t("admin.tileWarnings24h")} value={stats.last_24h.warning} icon="warning" tone="text-warning" />
+            <Tile label={t("admin.tileErrors7d")} value={stats.last_7d.error} icon="clock" tone="text-content-faint" />
+            <Tile label={t("admin.tileStored")} value={stats.total} icon="disk" tone="text-content-faint" />
           </div>
           <div className="card p-4">
             <HourlyChart hourly={stats.hourly} />
             {Object.keys(stats.by_source_24h).length > 0 && (
               <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-3">
-                <span className="text-[11px] text-content-faint mr-1">By source · 24h</span>
+                <span className="text-[11px] text-content-faint mr-1">{t("admin.bySource24h")}</span>
                 {Object.entries(stats.by_source_24h).map(([s, n]) => (
                   <button
                     key={s}
@@ -242,7 +246,7 @@ export default function LogsPanel() {
           ))}
         </div>
         <select value={source} onChange={(e) => setSource(e.target.value)} className="field w-auto py-1.5 text-[12px]">
-          <option value="">All sources</option>
+          <option value="">{t("admin.allSources")}</option>
           {SOURCES.map((s) => (
             <option key={s} value={s}>
               {s}
@@ -254,21 +258,21 @@ export default function LogsPanel() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search message, code, details…"
+            placeholder={t("admin.searchLogs")}
             className="w-full bg-transparent text-[12.5px] text-content placeholder:text-content-faint outline-none"
           />
         </div>
         <button
           onClick={() => setLive((v) => !v)}
           className={`btn-ghost py-1.5 px-2.5 text-[12px] ${live ? "text-success" : ""}`}
-          title={live ? "Auto-refreshing every 10s — click to pause" : "Paused — click to auto-refresh"}
+          title={live ? t("admin.liveTitle") : t("admin.pausedTitle")}
         >
-          <Icon name={live ? "pause" : "play"} size={13} /> {live ? "Live" : "Paused"}
+          <Icon name={live ? "pause" : "play"} size={13} /> {live ? t("admin.live") : t("admin.paused")}
         </button>
-        <button onClick={load} className="btn-ghost py-1.5 px-2" title="Refresh now">
+        <button onClick={load} className="btn-ghost py-1.5 px-2" title={t("admin.refreshNow")}>
           <Icon name="refresh" size={14} spin={loading} />
         </button>
-        <button onClick={clearAll} className="btn-ghost py-1.5 px-2 text-danger hover:text-danger" title="Delete all logs">
+        <button onClick={clearAll} className="btn-ghost py-1.5 px-2 text-danger hover:text-danger" title={t("admin.deleteAllLogs")}>
           <Icon name="trash" size={14} />
         </button>
       </div>
@@ -287,13 +291,13 @@ export default function LogsPanel() {
           <div className="card grid place-items-center py-12 text-center">
             <Icon name="check" size={22} className="text-success mb-2" />
             <p className="text-sm text-content-dim">
-              {level || source || debouncedQ ? "Nothing matches these filters." : "No problems recorded."}
+              {level || source || debouncedQ ? t("admin.nothingMatches") : t("admin.noProblems")}
             </p>
           </div>
         )}
         {hasMore && (
           <button onClick={more} className="btn-ghost w-full justify-center py-2 text-[12px]">
-            Load older entries
+            {t("admin.loadOlder")}
           </button>
         )}
       </div>
