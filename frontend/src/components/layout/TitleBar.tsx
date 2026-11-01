@@ -6,6 +6,7 @@
  */
 import type { ReactNode } from "react";
 import { DRAG, NO_DRAG, nativeWindow, useWindowState, type WindowBridge } from "../../lib/nativeWindow";
+import { useT } from "../../i18n";
 
 const Glyph = {
   min: <path d="M0 5.5h10" />,
@@ -30,26 +31,27 @@ function G({ children }: { children: ReactNode }) {
 /** minimize · maximize/restore · close — Windows / Linux (macOS: the traffic lights) */
 export function WindowControls({ w, height = 36, className = "" }: { w: WindowBridge; height?: number; className?: string }) {
   const st = useWindowState();
+  const t = useT();
   if (w.chrome === "mac") return null;
   const big = st.maximized || st.fullscreen;
   const base = "grid w-[46px] place-items-center text-content-dim transition-colors duration-100 focus-visible:outline-none focus-visible:bg-surface-3";
   return (
     <div className={`flex shrink-0 self-stretch ${className}`} style={NO_DRAG} data-testid="window-controls">
-      <button className={`${base} hover:bg-surface-3 hover:text-content`} style={{ height }} onClick={() => w.minimize()} title="Minimize" aria-label="Minimize" data-testid="window-min">
+      <button className={`${base} hover:bg-surface-3 hover:text-content`} style={{ height }} onClick={() => w.minimize()} title={t("nav.minimize")} aria-label={t("nav.minimize")} data-testid="window-min">
         <G>{Glyph.min}</G>
       </button>
       <button
         className={`${base} hover:bg-surface-3 hover:text-content`}
         style={{ height }}
         onClick={() => w.toggleMaximize()}
-        title={big ? "Restore" : "Maximize"}
-        aria-label={big ? "Restore" : "Maximize"}
+        title={big ? t("nav.restore") : t("nav.maximize")}
+        aria-label={big ? t("nav.restore") : t("nav.maximize")}
         data-testid="window-max"
         data-maximized={big ? "true" : "false"}
       >
         <G>{big ? Glyph.restore : Glyph.max}</G>
       </button>
-      <button className={`${base} hover:bg-[#e5484d] hover:text-white`} style={{ height }} onClick={() => w.close()} title="Close" aria-label="Close" data-testid="window-close">
+      <button className={`${base} hover:bg-[#e5484d] hover:text-white`} style={{ height }} onClick={() => w.close()} title={t("nav.close")} aria-label={t("nav.close")} data-testid="window-close">
         <G>{Glyph.close}</G>
       </button>
     </div>

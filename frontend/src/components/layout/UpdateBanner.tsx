@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { compareVersions, getDownloads } from "../../api/downloads";
 import { useUIStore } from "../../stores/uiStore";
 import Icon from "../ui/Icon";
+import { useT } from "../../i18n";
 
 /** Inside the desktop/Android app: tell the user when a newer app build exists. */
 export default function UpdateBanner() {
@@ -14,6 +15,7 @@ export default function UpdateBanner() {
     }
   });
   const setView = useUIStore((s) => s.setView);
+  const t = useT();
   const native = window.hrhNative;
 
   useEffect(() => {
@@ -30,10 +32,10 @@ export default function UpdateBanner() {
       <div className="flex items-center gap-2 px-4 py-1.5 text-[12.5px] text-accent">
         <Icon name="download" size={14} />
         <span className="min-w-0 flex-1 truncate">
-          My Mate Geny {latest} is available (you have {native.version}).
+          {t("nav.updateAvailable", { latest, current: native.version })}
         </span>
         <button onClick={() => setView("downloads")} className="rounded-md px-2 py-0.5 font-medium hover:bg-accent/15">
-          Update
+          {t("nav.update")}
         </button>
         <button
           onClick={() => {
@@ -45,7 +47,7 @@ export default function UpdateBanner() {
             }
           }}
           className="rounded-md p-1 hover:bg-accent/15"
-          title="Dismiss"
+          title={t("common.dismiss")} aria-label={t("common.dismiss")}
         >
           <Icon name="x" size={13} />
         </button>

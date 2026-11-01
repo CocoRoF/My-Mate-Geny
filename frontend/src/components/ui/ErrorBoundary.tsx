@@ -10,6 +10,7 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import { reportClientError } from "../../api/admin";
 import { canAutoReload, isChunkError, reloadNow, reloadOnce } from "../../lib/recover";
 import Icon from "./Icon";
+import { tr } from "../../i18n";
 
 type Variant = "page" | "view" | "card" | "quiet";
 
@@ -81,9 +82,9 @@ export default class ErrorBoundary extends Component<Props, State> {
         <div className="p-2" data-testid="error-card">
           <div className="flex items-center gap-2 rounded-2xl border border-border bg-[#11141b]/95 px-3 py-2.5 text-[13px] text-content shadow-float">
             <Icon name="warning" size={14} className="shrink-0 text-warning" />
-            <span className="min-w-0 flex-1 truncate">{chunk ? "The app was updated — reload to continue." : "Something went wrong."}</span>
+            <span className="min-w-0 flex-1 truncate">{chunk ? tr("nav.errUpdatedCard") : tr("common.somethingWrong")}</span>
             <button className="btn-primary !px-3 !py-1 text-[12px]" onClick={reloadNow}>
-              Reload
+              {tr("common.reload")}
             </button>
           </div>
         </div>
@@ -93,11 +94,9 @@ export default class ErrorBoundary extends Component<Props, State> {
       <ErrorScreen
         variant={variant}
         chrome={variant === "page" ? this.props.chrome : undefined}
-        title={chunk ? "This page was updated" : "Something went wrong"}
+        title={chunk ? tr("nav.errPageUpdated") : tr("nav.errSomethingWrong")}
         message={
-          chunk
-            ? "A newer version of My Mate Geny was installed on the server while this page was open. Reload to continue."
-            : "This part of the app stopped working. Reloading usually fixes it — what you wrote is kept."
+          chunk ? tr("nav.errPageUpdatedMsg") : tr("nav.errStoppedMsg")
         }
         detail={chunk ? undefined : String((error as any)?.message || error)}
         onRetry={variant === "view" && !chunk ? () => this.setState({ error: null }) : undefined}
@@ -111,7 +110,7 @@ function Updating({ variant }: { variant: Variant }) {
     <div className={`grid place-items-center ${variant === "page" ? "h-full min-h-[100dvh]" : "h-full"} text-sm text-content-dim`} data-testid="error-reloading">
       <div className="flex items-center gap-2.5">
         <Icon name="spinner" size={16} spin className="text-accent" />
-        Updating to the latest version…
+        {tr("nav.errUpdating")}
       </div>
     </div>
   );
@@ -149,7 +148,7 @@ export function ErrorScreen({
           <p className="mt-1.5 text-[13px] leading-relaxed text-content-dim">{message}</p>
           {detail && (
             <details className="mt-3 text-left">
-              <summary className="cursor-pointer text-[11.5px] text-content-faint hover:text-content-dim">Details</summary>
+              <summary className="cursor-pointer text-[11.5px] text-content-faint hover:text-content-dim">{tr("common.details")}</summary>
               <pre className="mt-1.5 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-bg/60 p-2 font-mono text-[11px] text-content-faint">
                 {detail}
               </pre>
@@ -158,11 +157,11 @@ export function ErrorScreen({
           <div className="mt-5 flex justify-center gap-2">
             {onRetry && (
               <button className="btn-ghost" onClick={onRetry}>
-                Try again
+                {tr("common.tryAgain")}
               </button>
             )}
             <button className="btn-primary" onClick={reloadNow} data-testid="error-reload">
-              <Icon name="refresh" size={14} /> Reload
+              <Icon name="refresh" size={14} /> {tr("common.reload")}
             </button>
           </div>
         </div>

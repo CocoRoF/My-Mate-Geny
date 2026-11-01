@@ -1,13 +1,15 @@
 import { useUIStore } from "../../stores/uiStore";
+import { useT } from "../../i18n";
 
 /** Phone-only header: opens the sidebar drawer. */
 export function MenuButton({ className = "" }: { className?: string }) {
   const setSidebar = useUIStore((s) => s.setSidebar);
+  const t = useT();
   return (
     <button
       onClick={() => setSidebar(true)}
       className={`md:hidden grid shrink-0 place-items-center w-10 h-10 -ml-2 rounded-lg text-content-dim hover:text-content hover:bg-surface-3 ${className}`}
-      aria-label="Open menu"
+      aria-label={t("nav.openMenu")}
     >
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
         <path d="M4 7h16M4 12h16M4 17h16" />

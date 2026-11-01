@@ -1,4 +1,5 @@
 import { goBack } from "./lib/nav";
+import { tr } from "./i18n";
 
 /** a short notice at the bottom of the screen (no app UI needed) */
 function toast(text: string) {
@@ -53,6 +54,6 @@ export function installNativeBridge(): void {
       return;
     }
     armedAt = Date.now();
-    toast("Press back again to leave My Mate Geny");
+    toast(tr("nav.pressBackAgain"));
   });
 }
