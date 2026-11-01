@@ -97,8 +97,11 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
   earned/warmth stage, next stage needs, stats, mood, milestones, log; `PATCH {enabled?, paused?,
   sensitivity? (0.5–1.5), show_indicator?, avatar_mood?, affinity? (0–100)}`; `POST …/relation/reset
   {mode: zero|recompute}`.
-- Global settings also hold `timezone` (IANA; the console fills it from the browser once; "" = the
-  server's): the mate's clock (`Now:` line), plan dates and relationship days.
+- Global settings also hold `timezone` (IANA; the console — any screen — fills it from the browser when
+  empty; "" = the server's own zone): the mate's clock (`Now:` line), plan dates and relationship days.
+  A relationship remembers the zone its days were counted in; when that is no longer the user's (set,
+  changed, or first reported — a container counts in UTC until then) it is counted again from the history,
+  the user's own value / fresh start and switches kept, and announced.
 
 ## 2. Avatar (three kinds + none)
 

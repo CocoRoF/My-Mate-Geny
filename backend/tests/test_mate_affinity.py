@@ -299,3 +299,125 @@ def test_relation_routes(client):
     v = client.post(f"{base}/reset", json={"mode": "recompute"}).json()
     assert v["log"][0]["why"] == "recomputed"
     assert client.get("/api/mates/mate_nope/relation").status_code == 404
+
+
+# ---- the timezone: days counted where the user's midnight is ----
+
+def test_replay_keeps_the_users_own_changes():
+    """A value set by hand and a fresh start, replayed when they happened, give what real time gave."""
+    real = A.new()
+    ev = sorted(_history(), key=lambda e: (e[0], 0 if e[1] == "turn" else 1))
+
+    def until(t):
+        for at, what, arg in [e for e in ev if e[0] < t]:
+            ev.remove((at, what, arg))
+            A.advance(real, at, TZ)
+            A.credit_turn(real, at, TZ, *arg) if what == "turn" else A.credit_memory(real, at, TZ)
+        A.advance(real, t, TZ)
+
+    until(day(4, 15))
+    A.set_value(real, 80, day(4, 15), TZ)
+    until(day(12, 15))
+    real = A.reset(real, day(12, 15), TZ)
+    until(day(30))
+    assert [m["kind"] for m in real["marks"]] == ["set", "reset"]
+    again = A.replay(_history(), day(30), TZ, marks=A.marks_of(real))
+    assert (again["affinity"], again["stage"], again["turns"]) == (real["affinity"], real["stage"], real["turns"])
+    # a document from before marks: read from its log
+    old = A.replay(_history(), day(8), TZ)
+    A.set_value(old, 70, day(8), TZ)
+    old["marks"] = []
+    assert A.marks_of(old) == [{"at": A._iso(day(8)), "kind": "set", "v": 70.0}]
+
+
+def _talks_across_midnight(db, sid, base):
+    """Talks at 23:30 and 08:30 Seoul time on consecutive days: one UTC day (14:30, 23:30 UTC), two Seoul days."""
+    rows = []
+    for n in range(3):
+        d = (base + timedelta(days=2 * n)).astimezone(ZoneInfo("Asia/Seoul")).replace(hour=23, minute=30)
+        rows += [d, d + timedelta(hours=9)]
+    for i, at in enumerate(rows):
+        for role, text in (("user", "hi there"), ("assistant", "[smile] hello")):
+            db.execute("INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+                       (f"msg_tz_{i}_{role}", sid, role, text,
+                        (at + timedelta(seconds=1 if role == "assistant" else 0)).astimezone(timezone.utc).isoformat()))
+
+
+def test_the_fallback_zone_is_named_and_a_reported_timezone_recounts_the_relationship(db):
+    svc, store, mates = _svc(db)
+    m = store.create(name="Chae")
+    sid = mates.conversation(m["id"])["session_id"]
+    tz, key = store.tz_and_key()
+    assert store._setting("timezone") == "" and key.startswith("local:") and tz is not None
+    _talks_across_midnight(db, sid, datetime.now(timezone.utc) - timedelta(days=8))
+
+    # the server counted in UTC (a container) before any browser said the user's zone
+    store.update_settings({"timezone": "UTC"})
+    db.execute("DELETE FROM mate_relation WHERE mate_id = ?", (m["id"],))
+    utc = mates.relation_view(m["id"])
+    assert store.relation_doc(m["id"])["tz"] == "UTC"
+    assert utc["stats"]["active_days"] == 3 and utc["stats"]["turns"] == 6
+
+    changes: list[str] = []
+    store.on_change = lambda reason, mate_id=None: changes.append(reason)
+    store.update_settings({"timezone": "Asia/Seoul"})  # the console fills it from the browser
+    mates.timezone_changed()
+    doc = store.relation_doc(m["id"])
+    seoul = mates.relation_view(m["id"])
+    assert doc["tz"] == "Asia/Seoul" and "relation" in changes  # announced: indicators move without a reload
+    assert seoul["stats"]["active_days"] == 6 and seoul["stats"]["turns"] == 6
+    assert seoul["affinity"] > utc["affinity"]
+    expected = A.replay(mates._history_events(store.get(m["id"])), datetime.now(timezone.utc), ZoneInfo("Asia/Seoul"))
+    assert seoul["affinity"] == round(expected["affinity"], 1) and seoul["stage"] == expected["stage"]
+    assert any(e["why"].startswith("timezone UTC → Asia/Seoul") for e in seoul["log"])
+    # the same zone again: nothing recounted
+    before = store.relation_doc(m["id"])
+    mates.timezone_changed()
+    assert store.relation_doc(m["id"]) == before
+
+
+def test_a_recount_keeps_a_value_set_by_hand_and_the_switches(db):
+    svc, store, mates = _svc(db)
+    store.update_settings({"timezone": "UTC"})
+    m = store.create(name="Hand")
+    sid = mates.conversation(m["id"])["session_id"]
+    _talks_across_midnight(db, sid, datetime.now(timezone.utc) - timedelta(days=8))
+    db.execute("DELETE FROM mate_relation WHERE mate_id = ?", (m["id"],))
+    mates.relation_view(m["id"])
+    mates.relation_update(m["id"], {"affinity": 66, "sensitivity": 1.2, "show_indicator": False})
+    mates.relation_update(m["id"], {"paused": True})
+    store.update_settings({"timezone": "Asia/Seoul"})
+    mates.timezone_changed()
+    v = mates.relation_view(m["id"])
+    assert v["affinity"] == 66 and v["paused"] is True and v["sensitivity"] == 1.2 and v["show_indicator"] is False
+    assert v["stats"]["active_days"] == 6  # …and the days counted in Seoul
+
+
+def test_a_doc_from_before_zones_is_recounted_once(db):
+    svc, store, mates = _svc(db)
+    store.update_settings({"timezone": "Asia/Seoul"})
+    m = store.create(name="Legacy")
+    sid = mates.conversation(m["id"])["session_id"]
+    _talks_across_midnight(db, sid, datetime.now(timezone.utc) - timedelta(days=8))
+    utc = A.replay(mates._history_events(store.get(m["id"])), datetime.now(timezone.utc), timezone.utc)
+    utc.pop("tz")
+    utc.pop("marks")
+    store.save_relation(m["id"], utc)  # as the last deploy seeded it: in the container's UTC, no zone recorded
+    assert store.relation_doc(m["id"])["active_days"] == 3
+    v = MateService(svc, store).relation_view(m["id"])  # (a restart)
+    assert v["stats"]["active_days"] == 6 and store.relation_doc(m["id"])["tz"] == "Asia/Seoul"
+
+
+def test_setting_the_timezone_over_http_recounts(client):
+    m = client.post("/api/mates", json={"name": "TzRoute"}).json()
+    mates = app.state.mate_service
+    sid = mates.conversation(m["id"])["session_id"]
+    _talks_across_midnight(app.state.db, sid, datetime.now(timezone.utc) - timedelta(days=8))
+    assert client.put("/api/mates/settings", json={"timezone": "UTC"}).status_code == 200
+    client.post(f"/api/mates/{m['id']}/relation/reset", json={"mode": "recompute"})
+    assert client.get(f"/api/mates/{m['id']}/relation").json()["stats"]["active_days"] == 3
+    assert client.put("/api/mates/settings", json={"timezone": "Asia/Seoul"}).status_code == 200
+    got = next(x for x in client.get("/api/mates").json() if x["id"] == m["id"])  # (the list's indicator too)
+    v = client.get(f"/api/mates/{m['id']}/relation").json()
+    assert v["stats"]["active_days"] == 6 and got["relation"]["affinity"] == round(v["affinity"])
+    client.delete(f"/api/mates/{m['id']}")

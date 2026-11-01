@@ -932,13 +932,21 @@ class MateStore:
     def tz(self) -> Any:
         """The user's timezone (Global settings → Defaults; the console fills it from the browser), else the
         server's local zone."""
+        return self.tz_and_key()[0]
+
+    def tz_and_key(self) -> tuple[Any, str]:
+        """The zone and a name for it: the user's IANA name, or ``local:<abbr><±hhmm>`` for the server's own zone
+        (a stand-in until a browser reports the user's — a container usually runs in UTC). The relationship
+        remembers the name it was computed in and is computed again from the history when it changes
+        (app/mate/service.py ``relation_doc``): days counted in the wrong zone don't stay."""
         name = self._setting("timezone")
         if name:
             try:
-                return ZoneInfo(name)
+                return ZoneInfo(name), name
             except (ZoneInfoNotFoundError, ValueError):
                 pass
-        return datetime.now().astimezone().tzinfo
+        local = datetime.now().astimezone()
+        return local.tzinfo, f"local:{local.tzname()}{local.strftime('%z')}"
 
     def secret(self, name: str) -> str:
         """A voice-service key (server side only); "" when not set."""

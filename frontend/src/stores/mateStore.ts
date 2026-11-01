@@ -120,9 +120,10 @@ export const browserTimezone = (): string => {
 };
 
 // The mates' clock (the "Now" line, plan dates, relationship days) runs in the user's timezone: when none is set
-// yet, the first console that loads the mates sets this browser's (Global settings → Defaults changes it).
+// yet, the first console (any screen — App.tsx) or Mate window to start sets this browser's (Global settings →
+// Defaults changes it). Until then the server counts in its own zone; setting it recounts the relationships.
 let tzChecked = false;
-function fillTimezone() {
+export function fillTimezone() {
   if (tzChecked) return;
   tzChecked = true;
   const tz = browserTimezone();

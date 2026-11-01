@@ -19,6 +19,7 @@ import { nativeWindow } from "./lib/nativeWindow";
 import { useT, type MsgKey } from "./i18n";
 import { installLanguageSync } from "./i18n/sync";
 import { tabMeta } from "./components/settings/tabs";
+import { fillTimezone } from "./stores/mateStore";
 
 // Secondary views load on demand: the chat (first screen) stays light.
 // (Providers, Connections, Usage, Admin and Download are Settings tabs, loaded with their tab — settings/SettingsView)
@@ -51,6 +52,7 @@ export default function App() {
   useEffect(() => {
     installNav();
     installLanguageSync(); // the account's language (every device follows a switch) — i18n/sync.ts
+    fillTimezone(); // the mates' timezone from this browser, when none is set yet (not only once Mate is opened)
   }, []);
 
   useEffect(() => {
