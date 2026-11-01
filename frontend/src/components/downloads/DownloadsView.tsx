@@ -5,6 +5,7 @@ import { formatBytes } from "../attachments/fileMeta";
 import { absTime, relTime } from "../admin/format";
 import Icon from "../ui/Icon";
 import UpdateCard, { ProgressBar, progressLine, useUpdateState } from "./UpdateCard";
+import { useNativeVersion } from "../../lib/nativeVersion";
 import { isAndroidApp, useAndroidDownload, useBrowserDownload, type Progress } from "../../lib/downloadProgress";
 import { tr, useT, type MsgKey } from "../../i18n";
 
@@ -150,6 +151,7 @@ export default function DownloadsView() {
   const [error, setError] = useState("");
   const platform = detectPlatform();
   const native = window.hrhNative;
+  const nativeVersion = useNativeVersion(); // ("" until the Android bridge knows it)
   const upd = useUpdateState(); // the desktop app's own updater (desktop/src/updater.js)
   const browserDl = useBrowserDownload();
   const androidDl = useAndroidDownload();
@@ -189,7 +191,7 @@ export default function DownloadsView() {
   // (inside the desktop app: the kind it runs as — an AppImage is offered the AppImage, not the .deb)
   const sameKind = upd?.how === "appimage" || upd?.how === "deb" ? mine.find((a) => a.kind === upd.how) : undefined;
   const primary = platform === "macos" ? mine.find((a) => a.arch === "arm64") || mine[0] : sameKind || mine[0];
-  const outdated = native && rel?.version && compareVersions(rel.version, native.version) > 0;
+  const outdated = native && nativeVersion && rel?.version && compareVersions(rel.version, nativeVersion) > 0;
   const pageUrl = `${window.location.origin}/?view=downloads`;
   const legacy = assets.some((a) => a.name.startsWith("hr-harnessor")) && !assets.some((a) => a.name.startsWith("my-mate-geny"));
   const NOTES = notes(legacy);
@@ -213,10 +215,10 @@ export default function DownloadsView() {
             <div className={`mt-4 flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-[13px] ${outdated ? "bg-warning/12 text-warning" : "bg-success/10 text-success"}`}>
               <Icon name={outdated ? "warning" : "check"} size={14} />
               {outdated
-                ? t("downloads.newerAvailable", { latest: rel?.version, current: native.version })
+                ? t("downloads.newerAvailable", { latest: rel?.version, current: nativeVersion })
                 : rel?.version
-                  ? t("downloads.usingAppLatest", { version: native.version })
-                  : t("downloads.usingApp", { version: native.version })}
+                  ? t("downloads.usingAppLatest", { version: nativeVersion || "…" })
+                  : t("downloads.usingApp", { version: nativeVersion || "…" })}
             </div>
           )}
 
