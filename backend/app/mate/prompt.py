@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-from app.mate.josa import address_forms, is_bare_korean_name
+from app.mate.josa import address_forms, final_sound
 
 EMOTION_TAGS = ("neutral", "joy", "smile", "laugh", "shy", "surprised", "sad", "angry", "thinking", "agree",
                 "greet", "sleepy")
@@ -132,17 +132,10 @@ _TONE = {
 def settings_block(persona: dict[str, Any], prefs: dict[str, Any] | None) -> str:
     """The conversation settings (docs/mate-memory-affinity.md §3) as prompt lines ("" when all default)."""
     p, s = persona or {}, prefs or {}
-    korean = (p.get("language") or "ko").lower().startswith("ko")
     lines: list[str] = []
     user = str(s.get("user_name") or "").strip()
     if user:
         lines.append(f"The user's name is {user}.")
-    address = str(p.get("address") or "").strip()
-    if address and korean:
-        casual = s.get("formality") == "banmal" and is_bare_korean_name(address, user)
-        f = address_forms(address, casual=casual)
-        forms = " · ".join(f[k] for k in ("subject", "topic", "object", "with", "to") if k in f)
-        lines.append(f"In Korean, use these forms for the user: {forms}; when calling them: “{f['call']}”.")
     if s.get("self_ref"):
         lines.append(f"In Korean, refer to yourself as “{s['self_ref']}”.")
     if s.get("formality") in _FORMALITY:
@@ -160,6 +153,37 @@ def settings_block(persona: dict[str, Any], prefs: dict[str, Any] | None) -> str
         f"- {x}" for x in lines)
 
 
+# a title already in the address ("하렴님", "선배", "주인님"): the address is used as it is
+_TITLES = ("님", "씨", "선배", "선생", "쌤", "형", "오빠", "언니", "누나", "주인", "군", "양")
+
+
+def address_line(address: str, *, korean: bool, formality: str = "auto") -> str:
+    """How the mate calls the user. In Korean the particles after a name depend on its last sound (하렴아 /
+    하렴이가 but 지수야 / 지수가) — a model told only "call the user 하렴" writes the bare name; the forms are
+    worked out here (app/mate/josa.py), both speech levels, and the mate picks the one it speaks in. A speech
+    level set in the mate's settings (``formality``) shows only that level's forms."""
+    a = " ".join(address.split())
+    line = f"Call the user “{a}” (if earlier messages did otherwise, switch now)."
+    if not korean or final_sound(a) is None:
+        return line
+    bare = 1 <= len(a) <= 4 and all("가" <= c <= "힣" for c in a) and not a.endswith(_TITLES)
+    if bare:
+        casual = address_forms(a, casual=True)
+        polite = address_forms(f"{a} 님", casual=False)
+        if formality == "banmal":
+            return (line + f" In Korean (반말) the particles follow the name: “{casual['call']}” when calling, "
+                    f"{casual['subject']} · {casual['topic']} · {casual['object']} · {casual['with']}.")
+        if formality in ("haeyo", "hapsyo"):
+            return (line + f" In Korean (존댓말): “{a} 님” ({polite['subject']} · {polite['topic']} · "
+                    f"{polite['object']}) or the title your speaking style uses.")
+        return (line + f" In Korean the particles follow the name: in 반말 “{casual['call']}” when calling, "
+                f"{casual['subject']} · {casual['topic']} · {casual['object']} · {casual['with']}; in 존댓말 "
+                f"“{a} 님” ({polite['subject']} · {polite['topic']} · {polite['object']}) or the title your "
+                "speaking style uses.")
+    f = address_forms(a, casual=False)
+    return line + f" In Korean: {f['subject']} · {f['topic']} · {f['object']}."
+
+
 def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None = None) -> str:
     """Everything except the memories (persona + settings + contract)."""
     p = persona or {}
@@ -175,8 +199,8 @@ def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None
     if p.get("speech"):
         who.append("Speaking style:\n" + p["speech"].strip())
     if p.get("address"):
-        who.append(f"Always call the user “{p['address'].strip()}”. If earlier messages in this conversation "
-                   "used another name or a more formal address, switch to this one now.")
+        who.append(address_line(p["address"], korean=(p.get("language") or "ko").lower().startswith("ko"),
+                                formality=str(s.get("formality") or "auto")))
     if who:
         lines.append("## Who you are\n" + "\n\n".join(who))
     conv = settings_block(p, s)

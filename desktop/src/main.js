@@ -25,7 +25,7 @@ const mate = require("./mate");
 const recovery = require("./recovery");
 const chrome = require("./chrome");
 const folders = require("./folders");
-const { createUpdater } = require("./updater");
+const { createUpdater, restartArgs, restartCommand } = require("./updater");
 const { isLang } = require("./i18n");
 const { t, language, pageText } = require("./lang");
 
@@ -441,6 +441,16 @@ const updater = createUpdater({
   beforeInstall: () => {
     quitting = true;
     mate.setQuitting(true);
+  },
+  installFailed: () => {
+    quitting = false;
+    mate.setQuitting(false);
+  },
+  // an AppImage's restart after the update: the new file with this app's arguments (`--no-sandbox` on Ubuntu 24.04+),
+  // once this process — and its single-instance lock — is gone
+  restartAfter: (file) => {
+    const [cmd, args] = restartCommand(process.pid, file, restartArgs(process.argv));
+    require("child_process").spawn(cmd, args, { detached: true, stdio: "ignore", env: process.env }).unref();
   },
   onState: (st) => {
     for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("update:state", st);

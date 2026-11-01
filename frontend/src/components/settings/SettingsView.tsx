@@ -32,6 +32,7 @@ import DefaultsPanel from "../mate/settings/global/DefaultsPanel";
 import DesktopPanel from "../mate/settings/global/DesktopPanel";
 import Icon, { type IconName } from "../ui/Icon";
 import { checkConsoleUpdate, type ConsoleUpdate } from "./consoleUpdate";
+import { useNativeVersion } from "../../lib/nativeVersion";
 import { onSettingsSection, takeSettingsSection, type SettingsSection } from "./section";
 
 const platform = () => window.hrhNative?.platform ?? "";
@@ -162,7 +163,8 @@ function useRelease(): [AppRelease | null, boolean, () => void] {
 
 function AppRow({ label, version, rel, busy, onCheck }: { label: string; version: string; rel: AppRelease | null; busy: boolean; onCheck: () => void }) {
   const t = useT();
-  const newer = !!rel?.version && compareVersions(rel.version, version) > 0;
+  // (version "" while the app has not said it yet: nothing to compare)
+  const newer = !!version && !!rel?.version && compareVersions(rel.version, version) > 0;
   const open = () => useUIStore.getState().setView("downloads");
   return (
     <div className="space-y-2" data-testid="settings-app-update">
@@ -179,9 +181,9 @@ function AppRow({ label, version, rel, busy, onCheck }: { label: string; version
           </div>
         }
       >
-        <span className="font-mono">{t("settings.appVersion", { version })}</span>
+        <span className="font-mono" data-testid="settings-app-version">{t("settings.appVersion", { version: version || "…" })}</span>
       </Row>
-      {rel && !busy && (newer ? <Status tone="warn">{t("settings.appAvailable", { version: rel.version! })}</Status> : rel.version ? <Status tone="ok">{t("settings.appLatest")}</Status> : <Status tone="info">{t("settings.appNoRelease")}</Status>)}
+      {rel && !busy && version && (newer ? <Status tone="warn">{t("settings.appAvailable", { version: rel.version! })}</Status> : rel.version ? <Status tone="ok">{t("settings.appLatest")}</Status> : <Status tone="info">{t("settings.appNoRelease")}</Status>)}
     </div>
   );
 }
@@ -190,7 +192,7 @@ function DesktopAppUpdates() {
   const t = useT();
   const upd = useUpdateState(); // the app's own updater: check, download with progress, restart & install
   const [rel, busy, recheck] = useRelease();
-  const version = window.hrhNative?.version || "";
+  const version = useNativeVersion();
   if (upd) {
     return (
       <div data-testid="settings-desktop-update">
@@ -206,8 +208,9 @@ function DesktopAppUpdates() {
 function AndroidAppUpdates() {
   const t = useT();
   const [rel, busy, recheck] = useRelease();
+  const version = useNativeVersion(); // (the bridge may learn it after the first render)
   // (the APK download with progress and the installer live on the Download page)
-  return <AppRow label={t("settings.androidApp")} version={window.hrhNative?.version || ""} rel={rel} busy={busy} onCheck={recheck} />;
+  return <AppRow label={t("settings.androidApp")} version={version} rel={rel} busy={busy} onCheck={recheck} />;
 }
 
 // ---- Account ---------------------------------------------------------------------------------------------------

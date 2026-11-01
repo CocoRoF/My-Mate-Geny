@@ -271,7 +271,7 @@ def test_persona_edit_reaches_the_next_message(db, tmp_path, monkeypatch):
     note = settings_change_note("한채린", {"address": ""}, "한채린", {"address": "하렴"})
     assert "하렴" in note and note.startswith("<settings_update>")
     assert settings_change_note("A", {"address": "x"}, "A", {"address": "x"}) == ""
-    assert "Always call the user “하렴”" in system_prompt("한채린", {"address": "하렴"}, [])
+    assert "Call the user “하렴”" in system_prompt("한채린", {"address": "하렴"}, [])
 
     svc, store, mates = _setup(db, tmp_path, monkeypatch)
     m = store.create(name="Rin", persona={"address": "사용자"})

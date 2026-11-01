@@ -13,6 +13,16 @@
 // Platforms: Windows (NSIS) and Linux AppImage replace themselves; Linux .deb installs through a privilege prompt
 // (electron-updater's DebUpdater); macOS builds are unsigned, which Squirrel.Mac refuses — there the page offers the
 // new .dmg instead. A development run (`electron .`) does not update unless HRH_UPDATER_DEV=1 (tests).
+//
+// What the real packaged apps taught (test/e2e/update-e2e.js, the server's access log):
+// - the release is rolling: a check that found 0.4.14 an hour ago names a file the server no longer has (404) —
+//   a download therefore looks at the feed again first, and a 404 mid-way looks once more and takes the newer build;
+// - an AppImage restarted by electron-updater gets NO arguments, so the `--no-sandbox` it needs on Ubuntu 24.04+
+//   (AppArmor restricts the user namespaces Chromium's sandbox wants) is gone and the new version aborts at start;
+//   it also starts while the old app still holds the single-instance lock. The restart is ours instead (relaunch):
+//   the same arguments, after this process has exited;
+// - an install that fails (e.g. an AppImage in a folder the user cannot write to) is reported by an "error" event,
+//   not by quitAndInstall: without listening the page sat on "Installing…" forever.
 "use strict";
 
 const STATUS = ["idle", "checking", "latest", "available", "downloading", "ready", "installing", "unsupported", "error"];
@@ -42,6 +52,8 @@ function support({ isPackaged, platform, env = {}, server }) {
  *   autoUpdater()   → electron-updater's autoUpdater (lazy), CancellationToken class via cancelToken()
  *   version, platform, isPackaged, env, server(), cookieHeader(): Promise<string>,
  *   onState(state), beforeInstall(), now(), reasonText(code)? (the "can't update here" reason in the UI's language)
+ *   restartAfter(file)? an AppImage's restart: start `file` with this app's arguments once this process has exited
+ *   installFailed()? the install did not happen after all (beforeInstall undone)
  * }
  */
 function createUpdater(deps) {
@@ -93,6 +105,12 @@ function createUpdater(deps) {
       token = null;
       set({ status: "ready", version: info?.version || state.version, percent: 100, eta: 0 });
     });
+    // an install that went wrong is only said here (quitAndInstall returns nothing; NSIS reports a failed start later)
+    u.on("error", (e) => {
+      if (state.status !== "installing") return;
+      deps.installFailed?.(); // (the app stays: closing its window behaves as before again)
+      set({ status: "error", ...failure(e, "install"), during: "install" });
+    });
   }
 
   let feedSet = "";
@@ -110,15 +128,25 @@ function createUpdater(deps) {
     return u;
   }
 
-  const describe = (e) => {
+  // what went wrong: `error` in English (logs, older consoles), `errorCode` + `errorDetail` for the console to say it
+  // in the UI's language (downloads.updErr.<code> in frontend/src/i18n)
+  const failure = (e, during) => {
     const m = String(e?.message || e || "unknown error");
-    if (/\b401\b|authentication required/i.test(m)) return "The server asked to sign in again.";
-    if (/\b404\b/.test(m)) return "The server has no update for this system yet.";
-    if (/\b5\d\d\b/.test(m)) return `The server could not provide the update (${(m.match(/\b5\d\d\b[^"\n]*/) || [""])[0].trim()}).`;
-    if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ERR_INTERNET|net::/i.test(m)) return `Can't reach the server (${m.split("\n")[0].slice(0, 120)}).`;
-    if (/sha512|checksum/i.test(m)) return "The download was damaged (checksum mismatch) — try again.";
-    return m.split("\n")[0].slice(0, 200);
+    const first = m.split("\n")[0];
+    const out = (errorCode, error, errorDetail = "") => ({ errorCode, error, errorDetail });
+    if (/\b401\b|authentication required/i.test(m)) return out("signIn", "The server asked to sign in again.");
+    if (/\b404\b/.test(m) && during === "download") return out("replaced", "The server no longer has that build (a newer one replaced it) — check again.");
+    if (/\b404\b/.test(m)) return out("noUpdate", "The server has no update for this system yet.");
+    if (/\b5\d\d\b/.test(m)) {
+      const d = (m.match(/\b5\d\d\b[^"\n]*/) || [""])[0].trim();
+      return out("server", `The server could not provide the update (${d}).`, d);
+    }
+    if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ERR_INTERNET|net::/i.test(m)) return out("unreachable", `Can't reach the server (${first.slice(0, 120)}).`, first.slice(0, 120));
+    if (/sha512|checksum/i.test(m)) return out("damaged", "The download was damaged (checksum mismatch) — try again.");
+    return out("other", first.slice(0, 200), first.slice(0, 200));
   };
+  const SELF = { errorCode: "cannotSelfUpdate", error: "This copy of the app cannot replace itself — install the new version from the Download page.", errorDetail: "" };
+  const NO_ERROR = { error: undefined, errorCode: undefined, errorDetail: undefined };
 
   async function check() {
     const s = view();
@@ -128,18 +156,33 @@ function createUpdater(deps) {
     }
     if (["checking", "downloading", "installing"].includes(state.status)) return view();
     if (state.status === "ready") return view();
-    set({ status: "checking", error: undefined });
+    set({ status: "checking", ...NO_ERROR });
     try {
-      const u = await feed();
-      const r = await u.checkForUpdates();
-      const version = r?.updateInfo?.version;
-      // (electron-updater keeps the update for downloadUpdate only when it says so itself)
-      if (!version || r.isUpdateAvailable === false || compareVersions(version, deps.version) <= 0) set({ status: "latest", version: version || deps.version, checkedAt: now() });
-      else set({ status: "available", version, total: sizeOf(r.updateInfo), checkedAt: now() });
+      const found = await look();
+      if (found) set({ status: "available", ...found, checkedAt: now() });
     } catch (e) {
-      set({ status: "error", error: describe(e), during: "check", checkedAt: now() });
+      set({ status: "error", ...failure(e, "check"), during: "check", checkedAt: now() });
     }
     return view();
+  }
+
+  /** the feed, now: {version, total} when a newer build is there (electron-updater then holds it for download);
+   *  otherwise the state says why (up to date, or this copy of the app cannot update itself) and null */
+  async function look() {
+    const u = await feed();
+    const r = await u.checkForUpdates();
+    if (r == null) {
+      // electron-updater declined (not an AppImage / .deb / installer it knows — e.g. an unpacked folder)
+      set({ status: "error", ...SELF, during: "check", checkedAt: now() });
+      return null;
+    }
+    const version = r.updateInfo?.version;
+    // (electron-updater keeps the update for downloadUpdate only when it says so itself)
+    if (!version || r.isUpdateAvailable === false || compareVersions(version, deps.version) <= 0) {
+      set({ status: "latest", version: version || deps.version, checkedAt: now() });
+      return null;
+    }
+    return { version, total: sizeOf(r.updateInfo) };
   }
 
   async function download() {
@@ -148,20 +191,32 @@ function createUpdater(deps) {
       await check();
       if (state.status !== "available") return view();
     }
-    try {
-      const u = await feed();
-      token = deps.cancelToken();
-      speedSamples = [];
-      set({ status: "downloading", percent: 0, transferred: 0, bytesPerSecond: 0, eta: null, error: undefined, cancelled: false });
-      await u.downloadUpdate(token);
-      if (state.status === "downloading") set({ status: "ready", percent: 100, eta: 0 }); // (no event on some paths)
-    } catch (e) {
-      const cancelled = !!token?.cancelled || /cancel/i.test(String(e?.message || e));
-      token = null;
-      if (cancelled) set({ status: "available", cancelled: true, percent: 0, bytesPerSecond: 0, eta: null });
-      else set({ status: "error", error: describe(e), during: "download" });
+    token = deps.cancelToken();
+    const mine = token;
+    speedSamples = [];
+    set({ status: "downloading", percent: 0, transferred: 0, bytesPerSecond: 0, eta: null, ...NO_ERROR, cancelled: false });
+    // the release is rolling: what an earlier check found may be gone — look at the feed again first, and once more
+    // if the server no longer has the file (404) by the time it is asked for
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const found = await look();
+        if (!found) return view(); // up to date after all (or cannot update): the state says so
+        if (mine.cancelled) throw new Error("cancelled");
+        set({ version: found.version, total: found.total || state.total });
+        const u = await feed();
+        await u.downloadUpdate(mine);
+        if (state.status === "downloading") set({ status: "ready", percent: 100, eta: 0 }); // (no event on some paths)
+        token = null;
+        return view();
+      } catch (e) {
+        const cancelled = !!mine.cancelled || /cancel/i.test(String(e?.message || e));
+        if (!cancelled && attempt === 0 && /\b404\b/.test(String(e?.message || e))) continue;
+        token = null;
+        if (cancelled) set({ status: "available", cancelled: true, percent: 0, bytesPerSecond: 0, eta: null });
+        else set({ status: "error", ...failure(e, "download"), during: "download" });
+        return view();
+      }
     }
-    return view();
   }
 
   function cancel() {
@@ -171,15 +226,31 @@ function createUpdater(deps) {
 
   async function install() {
     if (state.status !== "ready") return view();
-    set({ status: "installing" });
+    set({ status: "installing", ...NO_ERROR });
     try {
       const u = await deps.autoUpdater();
       deps.beforeInstall?.();
+      const env = deps.env || {};
+      const appImage = deps.platform === "linux" && !!env.APPIMAGE;
       // Linux .deb: no silent / force-run (the relauncher's NoNewPrivs breaks the SUID sandbox — Project-Geny)
-      const pkg = deps.platform === "linux" && !(deps.env || {}).APPIMAGE;
-      u.quitAndInstall(!pkg, !pkg);
+      const pkg = deps.platform === "linux" && !appImage;
+      // AppImage: electron-updater swaps the file, then would start the new one itself — with no arguments and while
+      // this app still runs; the restart is ours (the new file, this app's arguments, after this process exits)
+      let spawn = null;
+      if (appImage && deps.restartAfter && typeof u.spawnLog === "function") {
+        spawn = u.spawnLog;
+        u.spawnLog = async (file) => {
+          deps.restartAfter(file);
+          return true;
+        };
+      }
+      try {
+        u.quitAndInstall(!pkg, !pkg);
+      } finally {
+        if (spawn) u.spawnLog = spawn;
+      }
     } catch (e) {
-      set({ status: "error", error: describe(e), during: "install" });
+      set({ status: "error", ...failure(e, "install"), during: "install" });
     }
     return view();
   }
@@ -187,7 +258,11 @@ function createUpdater(deps) {
   /** a retry from the error state: whatever was attempted, again */
   async function retry() {
     const during = state.during;
-    set({ status: "idle", error: undefined });
+    if (during === "install") {
+      set({ status: "ready", ...NO_ERROR });
+      return install();
+    }
+    set({ status: "idle", ...NO_ERROR });
     return during === "download" ? download() : check();
   }
 
@@ -196,9 +271,22 @@ function createUpdater(deps) {
   return { get state() { return view(); }, check, download, cancel, install, retry, refresh, STATUS };
 }
 
+/** the arguments the restarted app gets: this one's own (`--no-sandbox`, `--ozone-platform=x11`, …) — never a hidden
+ *  start (the user just pressed Restart & install) */
+function restartArgs(argv) {
+  return (argv || []).slice(1).filter((a) => a !== "--hidden");
+}
+
+/** a detached `sh` that waits for `pid` to end (the single-instance lock goes with it; at most ~30 s), then starts
+ *  `file` with `args` */
+function restartCommand(pid, file, args) {
+  const script = 'n=0; while kill -0 "$1" 2>/dev/null && [ $n -lt 150 ]; do sleep 0.2; n=$((n+1)); done; shift; exec "$@"';
+  return ["/bin/sh", ["-c", script, "sh", String(pid), file, ...args]];
+}
+
 function sizeOf(info) {
   const f = info?.files?.[0];
   return Number(f?.size) || 0;
 }
 
-module.exports = { createUpdater, compareVersions, support, STATUS };
+module.exports = { createUpdater, compareVersions, support, restartArgs, restartCommand, STATUS };
