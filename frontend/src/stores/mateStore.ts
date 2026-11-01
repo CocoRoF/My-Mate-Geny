@@ -3,7 +3,9 @@ import {
   createMate,
   deleteMate,
   getProviders,
+  getVoiceSettings,
   listMates,
+  putVoiceSettings,
   restoreBuiltins,
   updateMate,
   verifyProvider,
@@ -106,6 +108,30 @@ const announce = (mateId?: string) => {
   }
 };
 
+/** this browser's IANA timezone ("" when it can't tell) */
+export const browserTimezone = (): string => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch {
+    return "";
+  }
+};
+
+// The mates' clock (the "Now" line, plan dates, relationship days) runs in the user's timezone: when none is set
+// yet, the first console that loads the mates sets this browser's (Global settings → Defaults changes it).
+let tzChecked = false;
+function fillTimezone() {
+  if (tzChecked) return;
+  tzChecked = true;
+  const tz = browserTimezone();
+  if (!tz) return;
+  getVoiceSettings()
+    .then((s) => (s.timezone ? null : putVoiceSettings({ timezone: tz })))
+    .catch(() => {
+      /* an older server, or offline: next load */
+    });
+}
+
 const RELOAD_MS = 150;
 let reloadTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -154,6 +180,7 @@ export const useMateStore = create<MateState>((set, get) => ({
       const { activeId } = get();
       const keep = activeId && mates.some((m) => m.id === activeId) ? activeId : mates[0]?.id ?? null;
       set((s) => ({ mates: share(s.mates, mates), loaded: true, error: null, activeId: keep }));
+      fillTimezone();
     } catch (e) {
       set({ loaded: true, error: (e as Error).message });
     }

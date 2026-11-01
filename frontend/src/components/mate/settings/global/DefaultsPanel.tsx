@@ -1,6 +1,7 @@
-/** Defaults (Global settings): the default mate (app-wide) and this device's voice preference. */
-import { useState } from "react";
-import { useMateStore } from "../../../../stores/mateStore";
+/** Defaults (Global settings): the default mate (app-wide), the mates' timezone and this device's voice preference. */
+import { useEffect, useState } from "react";
+import { getVoiceSettings, putVoiceSettings } from "../../../../api/mates";
+import { browserTimezone, useMateStore } from "../../../../stores/mateStore";
 import { ErrorLine, Field, Section, Toggle } from "../ui";
 import { useT } from "../../../../i18n";
 
@@ -12,6 +13,31 @@ export default function DefaultsPanel() {
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const def = mates.find((m) => m.is_default) ?? mates[0];
+  const [tz, setTz] = useState<string | null>(null);
+  const [tzDraft, setTzDraft] = useState("");
+  const [tzErr, setTzErr] = useState<string | null>(null);
+  const [tzOk, setTzOk] = useState(false);
+  useEffect(() => {
+    getVoiceSettings()
+      .then((s) => {
+        setTz(s.timezone ?? "");
+        setTzDraft(s.timezone ?? "");
+      })
+      .catch((e) => setTzErr((e as Error).message));
+  }, []);
+  const saveTz = async (value: string) => {
+    setTzErr(null);
+    setTzOk(false);
+    try {
+      const s = await putVoiceSettings({ timezone: value.trim() });
+      setTz(s.timezone ?? "");
+      setTzDraft(s.timezone ?? "");
+      setTzOk(true);
+    } catch (e) {
+      setTzErr((e as Error).message);
+    }
+  };
+  const here = browserTimezone();
 
   const setDefault = async (id: string) => {
     if (!id || id === def?.id) return;
@@ -43,6 +69,27 @@ export default function DefaultsPanel() {
         </Field>
         <ErrorLine text={err} />
         {ok && <p className="text-[12px] text-success">{ok}</p>}
+      </Section>
+      <Section title={t("mateSettings.defTimezone")} hint={t("mateSettings.defTimezoneHint")} testId="mate-timezone">
+        <form
+          className="flex flex-wrap gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void saveTz(tzDraft);
+          }}
+        >
+          <input className="field min-w-[12rem] flex-1" value={tzDraft} onChange={(e) => setTzDraft(e.target.value)} placeholder={here || "Asia/Seoul"} disabled={tz === null} data-testid="mate-timezone-input" />
+          <button className="btn-soft shrink-0" disabled={tz === null || tzDraft.trim() === tz}>
+            {t("common.save")}
+          </button>
+          {here && here !== tz && (
+            <button type="button" className="btn-ghost shrink-0" onClick={() => void saveTz(here)}>
+              {t("mateSettings.defTimezoneUse", { tz: here })}
+            </button>
+          )}
+        </form>
+        <ErrorLine text={tzErr} />
+        {tzOk && <p className="text-[12px] text-success">{t("mateSettings.defTimezoneSaved")}</p>}
       </Section>
       <Section title={t("mateSettings.defDevice")} hint={t("mateSettings.defDeviceHint")}>
         <Toggle

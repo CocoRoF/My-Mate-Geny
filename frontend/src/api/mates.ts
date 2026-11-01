@@ -121,10 +121,56 @@ export interface Conversation {
   running: boolean;
 }
 
+export type MemoryKind = "profile" | "preference" | "fact" | "plan" | "context";
+export const MEMORY_KINDS: MemoryKind[] = ["profile", "preference", "fact", "plan", "context"];
+export type MemoryStatus = "active" | "done" | "archived";
+
+/** one memory (docs/mate-memory-affinity.md §4) */
 export interface Memory {
   id: string;
   text: string;
   created_at: string;
+  kind: MemoryKind;
+  /** 1 – 5 */
+  importance: number;
+  /** the user's: always in the system prompt */
+  pinned: boolean;
+  /** plan: YYYY-MM-DD or YYYY-MM-DDTHH:MM (the user's local time) */
+  due_at: string | null;
+  expires_at: string | null;
+  status: MemoryStatus;
+  source: "mate" | "user" | "import" | "merge";
+  updated_at: string;
+  last_used_at: string | null;
+  use_count: number;
+  /** in the core: what she always knows (the rest is recalled when relevant) */
+  core?: boolean;
+}
+
+export interface MemoryAdded extends Memory {
+  /** an active memory of that kind said the same: it was updated instead */
+  merged: boolean;
+  similar: Memory[];
+}
+
+export type MemoryPatch = Partial<Pick<Memory, "text" | "kind" | "importance" | "pinned" | "due_at" | "status">>;
+export interface MemoryQuery {
+  q?: string;
+  kind?: MemoryKind | "";
+  status?: MemoryStatus | "all";
+  sort?: "created" | "recent" | "importance" | "due";
+}
+export interface MemoryStats {
+  active: number;
+  done: number;
+  archived: number;
+  core: number;
+}
+export interface RecallPreview {
+  core: Memory[];
+  recalled: Memory[];
+  level: RecallLevel;
+  block: string;
 }
 
 export interface VoiceSettings {
@@ -134,9 +180,12 @@ export interface VoiceSettings {
   whisper_url: string;
   http_tts_url: string;
   http_tts_key_set: boolean;
+  /** the user's IANA timezone ("" = the server's): the mate's clock, plan dates, relationship days */
+  timezone?: string;
 }
 
 export type VoiceSettingsPatch = Partial<{
+  timezone: string;
   openai_key: string | null;
   elevenlabs_key: string | null;
   http_tts_key: string | null;
@@ -238,9 +287,19 @@ export const openConversation = (id: string) =>
 export const resetConversation = (id: string) =>
   apiFetch<Conversation>(`/api/mates/${enc(id)}/conversation/reset`, { method: "POST" });
 
-export const listMemories = (id: string) => apiFetch<Memory[]>(`/api/mates/${enc(id)}/memories`);
-export const addMemory = (id: string, text: string) =>
-  apiFetch<Memory>(`/api/mates/${enc(id)}/memories`, { method: "POST", ...j({ text }) });
+export const listMemories = (id: string, q: MemoryQuery = {}) => {
+  const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]).toString();
+  return apiFetch<Memory[]>(`/api/mates/${enc(id)}/memories${qs ? `?${qs}` : ""}`);
+};
+export const memoryStats = (id: string) => apiFetch<MemoryStats>(`/api/mates/${enc(id)}/memories/stats`);
+export const addMemory = (id: string, body: string | (MemoryPatch & { text: string })) =>
+  apiFetch<MemoryAdded>(`/api/mates/${enc(id)}/memories`, { method: "POST", ...j(typeof body === "string" ? { text: body } : body) });
+export const updateMemory = (id: string, mid: string, patch: MemoryPatch) =>
+  apiFetch<Memory>(`/api/mates/${enc(id)}/memories/${enc(mid)}`, { method: "PATCH", ...j(patch) });
+export const bulkMemories = (id: string, ids: string[], action: "delete" | "archive" | "restore" | "pin" | "unpin") =>
+  apiFetch<{ changed: number }>(`/api/mates/${enc(id)}/memories/bulk`, { method: "POST", ...j({ ids, action }) });
+export const previewRecall = (id: string, text: string) =>
+  apiFetch<RecallPreview>(`/api/mates/${enc(id)}/memories/preview`, { method: "POST", ...j({ text }) });
 export const deleteMemory = (id: string, mid: string) =>
   apiFetch<{ deleted: boolean }>(`/api/mates/${enc(id)}/memories/${enc(mid)}`, { method: "DELETE" });
 
