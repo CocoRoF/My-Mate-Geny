@@ -10,11 +10,14 @@ import mate from "./mate.ts";
 import mateSettings from "./mateSettings.ts";
 import nav from "./nav.ts";
 import providers from "./providers.ts";
+import session from "./session.ts";
 import settings from "./settings.ts";
 import tasks from "./tasks.ts";
+import topbar from "./topbar.ts";
 import turn from "./turn.ts";
 import usage from "./usage.ts";
+import workspace from "./workspace.ts";
 
-const en = { admin, chat, common, composer, connections, downloads, files, mate, mateSettings, nav, providers, settings, tasks, turn, usage };
+const en = { admin, chat, common, composer, connections, downloads, files, mate, mateSettings, nav, providers, session, settings, tasks, topbar, turn, usage, workspace };
 export type Catalog = typeof en;
 export default en;

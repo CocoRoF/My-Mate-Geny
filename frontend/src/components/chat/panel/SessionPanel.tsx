@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { API_COST_HINT, fmtUsd } from "../../../lib/usage";
+import { apiCostHint, fmtUsd } from "../../../lib/usage";
 import { ctxBar, fmtCtx, fmtWindow, limitsFor, meterOf } from "../../../lib/context";
 import { useUsageStore } from "../../../stores/usageStore";
 import { useChatStore, type ToolActivity, type Turn } from "../../../stores/chatStore";
@@ -11,6 +11,7 @@ import Icon, { type IconName } from "../../ui/Icon";
 import TodoCard, { todosOf, type Todo } from "../turn/TodoCard";
 import { relPath } from "../turn/toolMeta";
 import { openPath } from "../../../stores/workbenchStore";
+import { useT } from "../../../i18n";
 
 function Section({
   title,
@@ -108,6 +109,7 @@ function latestTodos(turns: Turn[], older: HistoryBefore | null): Todo[] {
 }
 
 export default function SessionPanel({ session, onClose }: { session: Session; onClose: () => void }) {
+  const t = useT();
   const turns = useChatStore((s) => s.turns);
   const older = useChatStore((s) => s.older);
   const detached = useChatStore((s) => s.detached);
@@ -119,7 +121,7 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
   const [showSkills, setShowSkills] = useState(false);
 
   const conn = connections.find((c) => c.id === session.connection_id);
-  const hostLabel = conn ? `${conn.name} (${conn.username}@${conn.host})` : "this server";
+  const hostLabel = conn ? `${conn.name} (${conn.username}@${conn.host})` : t("session.thisServer");
   // (pinned calls precede the loaded range: the server's count has them)
   const changes = useMemo(
     () => changesOf(turns, older, (detached?.tools || []).filter((t) => !pinned.has(t.id))),
@@ -142,27 +144,32 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
     <aside className="flex h-full w-[340px] max-w-[92vw] shrink-0 flex-col border-l border-border bg-surface/95 backdrop-blur-xl">
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 px-4">
         <Icon name="activity" size={15} className="text-accent" />
-        <span className="text-[13px] font-semibold">Session</span>
-        <button onClick={onClose} className="ml-auto rounded-md p-1 text-content-faint hover:text-content hover:bg-surface-3" title="Close panel">
+        <span className="text-[13px] font-semibold">{t("session.session")}</span>
+        <button
+          onClick={onClose}
+          className="ml-auto rounded-md p-1 text-content-faint hover:text-content hover:bg-surface-3"
+          title={t("session.closePanel")}
+          aria-label={t("session.closePanel")}
+        >
           <Icon name="x" size={16} />
         </button>
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <Section title="Workspace" icon={session.connection_id ? "server" : "folder"}>
+        <Section title={t("session.workspace")} icon={session.connection_id ? "server" : "folder"}>
           <div className="text-[11px] text-content-faint">{hostLabel}</div>
           <div className="mt-0.5 break-all font-mono text-[12px] text-content">{session.workspace_path}</div>
         </Section>
 
         {todos.length > 0 && (
-          <Section title="Tasks" icon="check" count={todos.length}>
+          <Section title={t("session.tasks")} icon="check" count={todos.length}>
             <TodoCard todos={todos} compact />
           </Section>
         )}
 
-        <Section title="Changed files" icon="pencil" count={changes.length}>
+        <Section title={t("session.changedFiles")} icon="pencil" count={changes.length}>
           {changes.length === 0 ? (
-            <p className="text-[12px] text-content-faint">Files the agent edits or creates show up here.</p>
+            <p className="text-[12px] text-content-faint">{t("session.noChanges")}</p>
           ) : (
             <ul className="space-y-0.5">
               {changes.map((c) => (
@@ -173,7 +180,7 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
                     if (window.innerWidth < 1280) onClose(); // drawer: show the file
                   }}
                   className="-mx-1.5 flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-0.5 hover:bg-surface-3"
-                  title={`Open ${c.path}`}
+                  title={t("session.openPath", { path: c.path })}
                 >
                   <span
                     className={`w-4 shrink-0 text-center font-mono text-[11px] ${
@@ -197,13 +204,13 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
           )}
         </Section>
 
-        <Section title="Agent" icon="bolt">
+        <Section title={t("session.agent")} icon="bolt">
           <dl className="space-y-1 text-[12px]">
             {[
-              ["Mode", session.mode === "plan" ? "Plan (read-only)" : "Agent (full access)"],
-              ["Model", live?.model || session.model || "default"],
-              ["Account", account?.account || live?.account],
-              ["Permissions", live?.permissionMode],
+              [t("session.mode"), session.mode === "plan" ? t("session.modePlan") : t("session.modeAgent")],
+              [t("session.model"), live?.model || session.model || t("common.default")],
+              [t("session.account"), account?.account || live?.account],
+              [t("session.permissions"), live?.permissionMode],
               ["CLI", live?.claude_code_version ? `Claude Code ${live.claude_code_version}` : session.provider],
             ]
               .filter(([, v]) => v)
@@ -216,7 +223,7 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
           </dl>
           {live?.mcp_servers && live.mcp_servers.length > 0 && (
             <div className="mt-2.5">
-              <div className="mb-1 text-[10.5px] uppercase tracking-wide text-content-faint">MCP servers</div>
+              <div className="mb-1 text-[10.5px] uppercase tracking-wide text-content-faint">{t("session.mcpServers")}</div>
               {live.mcp_servers.map((m) => (
                 <div key={m.name} className="flex items-center gap-2 py-0.5 text-[12px]">
                   <span
@@ -232,7 +239,7 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
           )}
           {live?.agents && live.agents.length > 0 && (
             <div className="mt-2.5">
-              <div className="mb-1 text-[10.5px] uppercase tracking-wide text-content-faint">Subagents</div>
+              <div className="mb-1 text-[10.5px] uppercase tracking-wide text-content-faint">{t("session.subagents")}</div>
               <div className="flex flex-wrap gap-1">
                 {live.agents.map((a) => (
                   <span key={a} className="pill bg-surface-3 text-content-dim">
@@ -248,7 +255,7 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
                 onClick={() => setShowSkills(!showSkills)}
                 className="mb-1 flex items-center gap-1 text-[10.5px] uppercase tracking-wide text-content-faint hover:text-content-dim"
               >
-                Skills {live.skills.length} <Icon name={showSkills ? "chevron-down" : "chevron"} size={10} />
+                {t("session.skills")} {live.skills.length} <Icon name={showSkills ? "chevron-down" : "chevron"} size={10} />
               </button>
               {showSkills && (
                 <div className="flex flex-wrap gap-1">
@@ -262,20 +269,20 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
             </div>
           )}
           {live?.tools && (
-            <div className="mt-2 text-[11px] text-content-faint">{live.tools.length} tools available · type / in the composer</div>
+            <div className="mt-2 text-[11px] text-content-faint">{t("session.toolsAvailable", { count: live.tools.length })}</div>
           )}
-          {!live && <p className="mt-1 text-[11.5px] text-content-faint">Details appear after the first message.</p>}
+          {!live && <p className="mt-1 text-[11.5px] text-content-faint">{t("session.detailsLater")}</p>}
         </Section>
 
-        <Section title="Usage" icon="cpu">
+        <Section title={t("nav.usage")} icon="cpu">
           <dl className="space-y-1 text-[12px]">
             <div className="flex justify-between">
-              <dt className="text-content-faint" title={API_COST_HINT}>API-equivalent cost</dt>
-              <dd className="font-mono text-content-dim" title={API_COST_HINT}>≈ {fmtUsd(cost)}</dd>
+              <dt className="text-content-faint" title={apiCostHint()}>{t("session.apiCost")}</dt>
+              <dd className="font-mono text-content-dim" title={apiCostHint()}>≈ {fmtUsd(cost)}</dd>
             </div>
             {ctxTokens > 0 && (
               <div className="flex justify-between">
-                <dt className="text-content-faint" title="The last model call's input + cache tokens">Context now</dt>
+                <dt className="text-content-faint" title={t("session.contextNowTitle")}>{t("session.contextNow")}</dt>
                 <dd className="font-mono text-content-dim">
                   {fmtCtx(ctxTokens)}
                   {ctxWindow ? ` / ${fmtWindow(ctxWindow)}` : ""}
@@ -284,8 +291,8 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
             )}
             {ctxMeter && ctxTokens > 0 && (
               <div className="flex justify-between">
-                <dt className="text-content-faint">Auto-compacts at</dt>
-                <dd className="font-mono text-content-dim">{ctxMeter.threshold ? fmtCtx(ctxMeter.threshold) : "off"}</dd>
+                <dt className="text-content-faint">{t("chat.autoCompactsAt")}</dt>
+                <dd className="font-mono text-content-dim">{ctxMeter.threshold ? fmtCtx(ctxMeter.threshold) : t("common.off")}</dd>
               </div>
             )}
           </dl>
@@ -299,7 +306,7 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
           )}
           {ctxMeter && (ctxMeter.toCompact ?? 0) >= 0.75 && (
             <p className="mt-1 text-[11px] text-warning">
-              Context is filling up — it auto-compacts at {fmtCtx(ctxMeter.threshold)}; /compact now or /clear to start fresh.
+              {t("session.contextFilling", { n: fmtCtx(ctxMeter.threshold) })}
             </p>
           )}
         </Section>

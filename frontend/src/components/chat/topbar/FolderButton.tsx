@@ -7,6 +7,7 @@ import { useSessionStore } from "../../../stores/sessionStore";
 import { revealInExplorer, useWorkbench } from "../../../stores/workbenchStore";
 import type { Session } from "../../../types";
 import Icon from "../../ui/Icon";
+import { useT } from "../../../i18n";
 import Popover from "../../ui/Popover";
 import FolderPicker from "../panel/FolderPicker";
 import { loadRecents, pushRecent } from "../../workspaces/FileTree";
@@ -26,6 +27,7 @@ const parentOf = (p: string) => {
  * nearby, typed, or browsed), or one from this computer (LocalFolderSection).
  */
 export default function FolderButton({ session, compact }: { session: Session; compact?: boolean }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"host" | "local">("host");
   const [query, setQuery] = useState("");
@@ -42,8 +44,8 @@ export default function FolderButton({ session, compact }: { session: Session; c
 
   const conn = connections.find((c) => c.id === session.connection_id);
   const remote = !!session.connection_id;
-  const hostName = conn ? conn.name : "the server";
-  const hostLabel = conn ? `${conn.name} (${conn.username}@${conn.host})` : "this server";
+  const hostName = conn ? conn.name : t("topbar.theServer");
+  const hostLabel = conn ? `${conn.name} (${conn.username}@${conn.host})` : t("topbar.thisServer");
   const dirs = session.extra_dirs || [];
   const taken = useMemo(() => new Set([strip(session.workspace_path), ...dirs.map(strip)]), [session.workspace_path, dirs]);
   const uploading = job?.phase === "uploading";
@@ -86,7 +88,7 @@ export default function FolderButton({ session, compact }: { session: Session; c
   const add = async (p: string) => {
     const path = strip(p);
     setError("");
-    if (taken.has(path)) return setError("Already connected.");
+    if (taken.has(path)) return setError(t("topbar.alreadyConnected"));
     setBusy(path);
     try {
       await update(session.id, { extra_dirs: [...dirs, path] });
@@ -120,11 +122,11 @@ export default function FolderButton({ session, compact }: { session: Session; c
         onClick={() => add(p).catch(() => {})}
         disabled={busy !== null}
         className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-surface-3 focus-visible:bg-surface-3 outline-none"
-        title={`Connect ${p}`}
+        title={t("topbar.connectX", { name: p })}
       >
         <Icon name={kind === "typed" ? "plus" : "folder"} size={13} className="shrink-0 text-content-faint" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[12.5px] text-content">{kind === "typed" ? `Connect ${p}` : base(p)}</span>
+          <span className="block truncate text-[12.5px] text-content">{kind === "typed" ? t("topbar.connectX", { name: p }) : base(p)}</span>
           {kind !== "typed" && <span className="block truncate font-mono text-[10.5px] text-content-faint">{p}</span>}
         </span>
         {busy === p ? (
@@ -145,7 +147,7 @@ export default function FolderButton({ session, compact }: { session: Session; c
         aria-expanded={open}
         data-testid="topbar-folders"
         data-topbar-item="folders"
-        title={n ? `${n} additional folder${n === 1 ? "" : "s"} — the agent can use them too` : "Connect more folders to this chat"}
+        title={n ? t("topbar.foldersTitle", { count: n }) : t("topbar.foldersTitleNone")}
         className={`btn-ghost relative h-10 w-10 shrink-0 p-0 sm:h-auto sm:w-auto sm:px-2 sm:py-1 ${open ? "bg-surface-3 text-content" : ""} ${
           n || uploading ? "" : "text-content-faint"
         }`}
@@ -160,19 +162,19 @@ export default function FolderButton({ session, compact }: { session: Session; c
             {n}
           </span>
         ) : (
-          <span className={compact ? "hidden" : "hidden sm:inline"}>Folder</span>
+          <span className={compact ? "hidden" : "hidden sm:inline"}>{t("topbar.folder")}</span>
         )}
       </button>
 
-      <Popover open={open} onClose={() => setOpen(false)} anchor={btn} label="Folders" width={400} testId="folders-popover">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={btn} label={t("topbar.folders")} width={400} testId="folders-popover">
         <div className="flex items-center gap-2 border-b border-border/70 px-3.5 py-2.5">
           <Icon name="folder" size={14} className="text-accent" />
-          <span className="text-[13px] font-semibold text-content">Folders</span>
-          <span className="truncate text-[11px] text-content-faint">on {hostLabel}</span>
+          <span className="text-[13px] font-semibold text-content">{t("topbar.folders")}</span>
+          <span className="truncate text-[11px] text-content-faint">{t("topbar.onHost", { host: hostLabel })}</span>
           <button
             onClick={() => setOpen(false)}
             className="ml-auto rounded p-1 text-content-faint hover:bg-surface-3 hover:text-content"
-            aria-label="Close"
+            aria-label={t("common.close")}
           >
             <Icon name="x" size={14} />
           </button>
@@ -180,11 +182,12 @@ export default function FolderButton({ session, compact }: { session: Session; c
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="px-3.5 pt-2.5">
-            <div className="mb-1.5 text-[10.5px] uppercase tracking-wide text-content-faint">Connected {n ? `· ${n}` : ""}</div>
+            <div className="mb-1.5 text-[10.5px] uppercase tracking-wide text-content-faint">
+              {t("common.connected")} {n ? `· ${n}` : ""}
+            </div>
             {n === 0 ? (
               <p className="pb-1 text-[12px] text-content-faint">
-                None yet. The agent works in <span className="font-mono text-content-dim">{base(session.workspace_path)}</span>; connect more
-                folders it should read and edit too. Applies from the next message.
+                {t.rich("topbar.noneYet", { ws: <span className="font-mono text-content-dim">{base(session.workspace_path)}</span> })}
               </p>
             ) : (
               <ul className="space-y-1" data-testid="folders-connected">
@@ -198,16 +201,16 @@ export default function FolderButton({ session, compact }: { session: Session; c
                           <span className="truncate text-[12.5px] text-content">{base(d)}</span>
                           <span
                             className={`pill shrink-0 px-1.5 py-0 text-[10px] ${remote ? "bg-cyan/10 text-cyan" : "bg-surface-3 text-content-dim"}`}
-                            title={remote ? `On ${hostLabel}` : "On the server"}
+                            title={remote ? t("topbar.onHostTitle", { host: hostLabel }) : t("topbar.onServer")}
                           >
-                            {remote ? "remote" : "local"}
+                            {remote ? t("topbar.remote") : t("topbar.local")}
                           </span>
                           {copy && (
                             <span
                               className="pill shrink-0 bg-warning/15 px-1.5 py-0 text-[10px] text-warning"
-                              title="Uploaded copy of a folder from your computer: changes here don't sync back"
+                              title={t("topbar.copyTitle")}
                             >
-                              copy
+                              {t("topbar.copy")}
                             </span>
                           )}
                         </span>
@@ -216,16 +219,16 @@ export default function FolderButton({ session, compact }: { session: Session; c
                       <button
                         onClick={() => reveal(d)}
                         className="shrink-0 rounded p-1 text-content-faint hover:bg-surface-3 hover:text-content"
-                        title="Show in Explorer"
-                        aria-label={`Show ${base(d)} in Explorer`}
+                        title={t("topbar.showInExplorer")}
+                        aria-label={t("topbar.showXInExplorer", { name: base(d) })}
                       >
                         <Icon name="folder-open" size={13} />
                       </button>
                       <button
                         onClick={() => remove(d)}
                         className="shrink-0 rounded p-1 text-content-faint hover:bg-surface-3 hover:text-danger"
-                        title={copy ? "Disconnect (the copy stays in the workspace)" : "Disconnect folder"}
-                        aria-label={`Disconnect ${base(d)}`}
+                        title={copy ? t("topbar.disconnectCopy") : t("topbar.disconnectFolder")}
+                        aria-label={t("topbar.disconnectX", { name: base(d) })}
                       >
                         <Icon name="x" size={13} />
                       </button>
@@ -238,12 +241,12 @@ export default function FolderButton({ session, compact }: { session: Session; c
 
           <div className="mt-2.5 border-t border-border/70 px-3.5 pb-3 pt-2.5">
             <div className="mb-2 flex items-center gap-2">
-              <span className="text-[10.5px] uppercase tracking-wide text-content-faint">Add folder</span>
-              <div className="ml-auto flex rounded-lg bg-surface p-0.5 text-[11.5px]" role="tablist" aria-label="Where the folder is">
+              <span className="text-[10.5px] uppercase tracking-wide text-content-faint">{t("topbar.addFolder")}</span>
+              <div className="ml-auto flex rounded-lg bg-surface p-0.5 text-[11.5px]" role="tablist" aria-label={t("topbar.whereFolder")}>
                 {(
                   [
-                    ["host", remote ? hostName : "Server", "server"],
-                    ["local", "This computer", "monitor"],
+                    ["host", remote ? hostName : t("topbar.server"), "server"],
+                    ["local", t("topbar.thisComputer"), "monitor"],
                   ] as const
                 ).map(([k, label, icon]) => (
                   <button
@@ -275,8 +278,8 @@ export default function FolderButton({ session, compact }: { session: Session; c
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.nativeEvent.isComposing && typed) add(typed).catch(() => {});
                     }}
-                    placeholder="Filter, or type a path (/srv/lib)…"
-                    aria-label="Filter folders or type a path"
+                    placeholder={t("topbar.filterPlaceholder")}
+                    aria-label={t("topbar.filterAria")}
                     className="min-w-0 flex-1 bg-transparent text-[12.5px] text-content placeholder:text-content-faint outline-none"
                   />
                 </div>
@@ -284,19 +287,19 @@ export default function FolderButton({ session, compact }: { session: Session; c
                   {typed && !taken.has(typed) && row(typed, "typed")}
                   {shownRecent.length > 0 && (
                     <li className="px-2 pb-0.5 pt-1.5 text-[10.5px] text-content-faint" aria-hidden>
-                      Recent
+                      {t("topbar.recent")}
                     </li>
                   )}
                   {shownRecent.map((p) => row(p, "recent"))}
                   {shownNearby.length > 0 && (
                     <li className="px-2 pb-0.5 pt-1.5 text-[10.5px] text-content-faint" aria-hidden>
-                      Next to the workspace
+                      {t("topbar.nextToWorkspace")}
                     </li>
                   )}
                   {shownNearby.map((p) => row(p, "nearby"))}
                   {!typed && shownRecent.length === 0 && shownNearby.length === 0 && (
                     <li className="px-2 py-2 text-[12px] text-content-faint">
-                      {nearby || !open ? (q ? "No folder matches." : "No suggestions.") : "Looking around…"}
+                      {nearby || !open ? (q ? t("topbar.noFolderMatches") : t("topbar.noSuggestions")) : t("topbar.lookingAround")}
                     </li>
                   )}
                 </ul>
@@ -308,13 +311,13 @@ export default function FolderButton({ session, compact }: { session: Session; c
                   className="btn-ghost mt-1.5 w-full justify-center py-1.5 text-[12.5px]"
                   data-testid="folders-browse"
                 >
-                  <Icon name="folder-open" size={13} /> Browse {hostName}…
+                  <Icon name="folder-open" size={13} /> {t("topbar.browseHost", { host: hostName })}
                 </button>
               </>
             ) : (
               <LocalFolderSection
                 session={session}
-                onLinked={(p) => notify(`Linked ${p} — the server runs on this computer, so no copy was needed`)}
+                onLinked={(p) => notify(t("topbar.linkedNotice", { path: p }))}
               />
             )}
             {error && <p className="mt-1.5 text-[11.5px] text-danger">{error}</p>}

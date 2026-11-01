@@ -3,6 +3,7 @@ import { uploadCopy, type LocalFolder } from "../lib/localFolder";
 import type { Session } from "../types";
 import { useSessionStore } from "./sessionStore";
 import { useWorkbench } from "./workbenchStore";
+import { tr } from "../i18n";
 
 /** A folder from the user's computer on its way into a chat (lib/localFolder.ts), per chat. Lives here, not in the
  * popover: closing the popover doesn't stop an upload, and the Folder button shows its progress. */
@@ -48,7 +49,7 @@ export const useLocalFolders = create<LocalFolderState>((set, get) => ({
       const out = await uploadCopy(session, folder, (sent, _t, files) => put({ sent, files }), ctl.signal);
       useSessionStore.getState().patchLocal(sid, out.session);
       get().set(sid, undefined);
-      useWorkbench.getState().notify(`Copied ${out.files} file${out.files === 1 ? "" : "s"} to ${out.path}`);
+      useWorkbench.getState().notify(tr("workspace.copied", { count: out.files, path: out.path }));
     } catch (e: any) {
       if (e?.name === "AbortError") get().set(sid, undefined);
       else put({ phase: "ready", ctl: undefined, error: String(e.message || e) });

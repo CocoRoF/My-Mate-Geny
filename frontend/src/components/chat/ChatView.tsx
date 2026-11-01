@@ -19,6 +19,7 @@ import FolderButton from "./topbar/FolderButton";
 import GitButton from "./topbar/GitButton";
 import { useChatStore } from "../../stores/chatStore";
 import { useSessionTabs, useWorkbench } from "../../stores/workbenchStore";
+import { useT } from "../../i18n";
 
 // Viewers (and their format libraries) load when a file is first opened.
 const FileViewer = lazy(() => import("../viewer/FileViewer"));
@@ -110,6 +111,7 @@ function MoreMenu({
 }
 
 export default function ChatView() {
+  const t = useT();
   const activeId = useSessionStore((s) => s.activeId);
   const sessions = useSessionStore((s) => s.sessions);
   const active = sessions.find((s) => s.id === activeId) || null;
@@ -190,7 +192,7 @@ export default function ChatView() {
   return (
     <div className="h-full flex">
     <div className="relative h-full flex flex-1 min-w-0 flex-col" {...dropProps}>
-      {dragging && <DropOverlay hint="Images are shown to the agent · other files are saved for its tools" />}
+      {dragging && <DropOverlay hint={t("session.dropHint")} />}
       {active && (
         <div className={`relative pt-safe shrink-0 border-b border-border/70 bg-surface/40 backdrop-blur-sm ${more ? "z-30" : ""}`}>
         <div ref={setBarEl} data-testid="topbar" data-density={density} className="flex items-center gap-2 px-3 sm:px-5 h-12 md:h-14">
@@ -210,7 +212,7 @@ export default function ChatView() {
           {density === "full" && (
             <span className="pill bg-surface-3 text-content-dim shrink-0 hidden sm:inline-flex">{active.provider}</span>
           )}
-          {active.mode === "plan" && <span className="pill bg-violet/15 text-violet shrink-0">plan</span>}
+          {active.mode === "plan" && <span className="pill bg-violet/15 text-violet shrink-0">{t("nav.plan")}</span>}
           <span className="min-w-0 flex-1" aria-hidden />
           {/* the workspace path gives way first (shrinks 6× faster than the title, down to 4rem), then the title; the
               buttons never shrink */}
@@ -219,9 +221,9 @@ export default function ChatView() {
               onClick={() => setExplorer(true)}
               data-topbar-item="workspace"
               className="hidden min-w-[7rem] max-w-[260px] shrink-[6] items-center gap-1 font-mono text-[11px] text-content-faint hover:text-content sm:flex"
-              title={`${active.connection_id ? "Remote" : "Local"} workspace: ${active.workspace_path} — show in Explorer`}
+              title={t(active.connection_id ? "session.remoteWorkspaceTitle" : "session.localWorkspaceTitle", { path: active.workspace_path })}
             >
-              <span className="shrink-0">{active.connection_id ? "remote" : "local"} ·</span>
+              <span className="shrink-0">{active.connection_id ? t("nav.remote") : t("nav.local")} ·</span>
               {/* cut at the start: the folder's own name (the end of the path) stays readable */}
               <span className="min-w-0 truncate text-left [direction:rtl]">
                 <bdi>{active.workspace_path}</bdi>
@@ -238,51 +240,51 @@ export default function ChatView() {
               className={`btn-ghost h-10 w-10 p-0 sm:h-auto sm:w-auto sm:py-1 sm:px-2 shrink-0 ${
                 runningTasks ? "text-accent" : "hidden sm:inline-flex"
               }`}
-              title="Background tasks"
-              aria-label="Background tasks"
+              title={t("tasks.title")}
+              aria-label={t("tasks.title")}
             >
               {runningTasks ? <Icon name="spinner" size={14} spin /> : <Icon name="activity" size={14} />}
-              <span className={labels}>Tasks</span>
+              <span className={labels}>{t("session.tasks")}</span>
               {runningTasks > 0 && <span className="pill bg-accent-soft text-accent hidden sm:inline-flex">{runningTasks}</span>}
             </button>
             <button
               onClick={() => setShowUsage(true)}
               data-topbar-item="usage"
               className="btn-ghost hidden sm:inline-flex py-1 px-2 shrink-0"
-              title="Account & usage"
-              aria-label="Account & usage"
+              title={t("session.accountUsage")}
+              aria-label={t("session.accountUsage")}
             >
-              <Icon name="cpu" size={14} /> <span className={labels}>Usage</span>
+              <Icon name="cpu" size={14} /> <span className={labels}>{t("nav.usage")}</span>
             </button>
             <button
               onClick={() => setExplorer(!explorer)}
               data-topbar-item="explorer"
               className={`btn-ghost h-10 w-10 p-0 sm:h-auto sm:w-auto sm:py-1 sm:px-2 shrink-0 ${explorer ? "bg-surface-3 text-content" : ""}`}
-              title="Explorer — browse and open the workspace's files"
-              aria-label="Explorer"
+              title={t("session.explorerTitle")}
+              aria-label={t("files.explorer")}
               aria-pressed={explorer}
             >
               <Icon name="files" size={14} />
-              <span className={labels}>Explorer</span>
+              <span className={labels}>{t("files.explorer")}</span>
             </button>
             <button
               onClick={togglePanel}
               data-topbar-item="panel"
               className={`btn-ghost hidden sm:inline-flex py-1 px-2 shrink-0 ${panel ? "bg-surface-3 text-content" : ""}`}
-              title="Session panel — workspace, tasks, changed files, agent, usage"
-              aria-label="Session panel"
+              title={t("session.panelTitle")}
+              aria-label={t("session.sessionPanel")}
               aria-pressed={panel}
             >
               <Icon name="sliders" size={14} />
-              <span className={labels}>Panel</span>
+              <span className={labels}>{t("session.panel")}</span>
             </button>
             <button
               data-more-toggle
               data-topbar-item="more"
               onClick={() => setMore((v) => !v)}
               className={`btn-ghost sm:hidden h-10 w-10 p-0 shrink-0 ${more ? "bg-surface-3 text-content" : ""}`}
-              aria-label="More"
-              title="Tasks, usage, session panel"
+              aria-label={t("session.more")}
+              title={t("session.moreTitle")}
             >
               <Icon name="more" size={18} />
             </button>
@@ -295,12 +297,12 @@ export default function ChatView() {
               {
                 icon: runningTasks ? "spinner" : "activity",
                 spin: runningTasks > 0,
-                label: "Background tasks",
+                label: t("tasks.title"),
                 badge: runningTasks ? String(runningTasks) : undefined,
                 onClick: () => setShowTasks(true),
               },
-              { icon: "cpu", label: "Account & usage", onClick: () => setShowUsage(true) },
-              { icon: "sliders", label: "Session panel", onClick: () => !panel && togglePanel() },
+              { icon: "cpu", label: t("session.accountUsage"), onClick: () => setShowUsage(true) },
+              { icon: "sliders", label: t("session.sessionPanel"), onClick: () => !panel && togglePanel() },
             ]}
           />
         )}

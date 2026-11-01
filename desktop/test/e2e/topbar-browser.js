@@ -90,6 +90,14 @@ async function newContext(browser, phone) {
   );
   const r = await ctx.request.post(SERVER + "/api/auth/login", { data: { username: "admin", password: PASSWORD } });
   assert.ok(r.ok(), "login");
+  // the checks read English labels: pin the UI language (docs/i18n.md — the machine's own locale may be Korean, and the
+  // account's choice would win over the browser's)
+  await ctx.addInitScript(() => {
+    try {
+      localStorage.setItem("hrh_lang", "en");
+    } catch {}
+  });
+  await ctx.request.put(SERVER + "/api/preferences", { data: { language: null } }).catch(() => {});
   return ctx;
 }
 

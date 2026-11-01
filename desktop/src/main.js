@@ -464,7 +464,7 @@ ipcMain.handle("update:install", (e) => (fromAppPage(e) ? updater.install() : nu
 ipcMain.handle("update:retry", (e) => (fromAppPage(e) ? updater.retry() : null));
 
 // a folder on this computer for a chat (folders.js): native dialog, same-machine probe, its files for a copy
-folders.registerIpc({ ipcMain, dialog, BrowserWindow, app, allowed: (e) => fromAppPage(e) && sameOrigin((e.senderFrame && e.senderFrame.url) || "") });
+folders.registerIpc({ ipcMain, dialog, BrowserWindow, app, allowed: (e) => fromAppPage(e) && sameOrigin((e.senderFrame && e.senderFrame.url) || ""), pickTitle: () => t("pickFolder") });
 
 // Microphone for push-to-talk (getUserMedia audio) on the server's pages, plus
 // what the console already uses (clipboard writes, fullscreen video);

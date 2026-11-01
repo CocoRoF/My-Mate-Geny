@@ -170,8 +170,3 @@ export const fmtTokens = (n: number) =>
 
 /** What the API-equivalent cost means (a tooltip / footnote), in the UI's language. */
 export const apiCostHint = () => tr("usage.apiCostHint");
-
-/** @deprecated English only (read once at load) — use `apiCostHint()`; kept for files not translated yet. */
-export const API_COST_HINT =
-  "What these tokens would cost at API prices (input, cache and output tokens of every model call). " + // i18n-ignore
-  "Informational only — not a charge on your subscription."; // i18n-ignore

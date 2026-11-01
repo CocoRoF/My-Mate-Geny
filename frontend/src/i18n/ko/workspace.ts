@@ -1,0 +1,31 @@
+import type { Messages } from "..";
+
+const ko: Messages<"workspace"> = {
+  workspace: "워크스페이스",
+  localThisServer: "로컬 — 이 서버",
+  gitRepos: "Git 저장소",
+  editPath: "경로 편집",
+  pathPlaceholder: "/절대/경로",
+  selected: "선택됨",
+  useThis: "이 폴더 사용",
+  use: "사용",
+  filter: "필터",
+  noSubfolders: "하위 폴더가 없어요.",
+  noSubfoldersMatch: "일치하는 하위 폴더가 없어요.",
+  searchRepos: "저장소 검색…",
+  loadingRepos: "저장소를 불러오는 중…",
+  private: "비공개",
+  cloning: "복제 중",
+  noRepos: "저장소가 없어요.",
+  noReposMatch: "일치하는 저장소가 없어요.",
+  addFolderTitle: "폴더 추가",
+  addFolderHint: "에이전트가 워크스페이스와 함께 이 폴더도 읽고 편집할 수 있어요. <b>{host}</b>을(를) 둘러보는 중이에요.",
+  navigateHint: "폴더로 이동한 뒤 “이 폴더 사용”을 누르세요.",
+  alreadyAdded: "이미 추가됨",
+  addFolder: "폴더 추가",
+  appCouldNotRead: "앱이 이 폴더를 읽지 못했어요",
+  couldNotRead: "{file}을(를) 읽지 못했어요",
+  copied: "파일 {count}개를 {path}에 복사했어요",
+  uploadFailed: "업로드 실패 ({status})",
+};
+export default ko;

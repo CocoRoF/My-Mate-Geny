@@ -16,6 +16,7 @@ import {
   type FolderUploadLimits,
 } from "../api/folderUploads";
 import type { Session } from "../types";
+import { tr } from "../i18n";
 
 export interface FolderBridge {
   pick(): Promise<{ path: string; name: string; probe: { path: string; nonce: string } } | null>;
@@ -96,7 +97,7 @@ export async function fromDesktop(
     maxFiles: limits?.max_files,
     maxBytes: limits?.max_bytes,
   });
-  if (!s) throw new Error("the app could not read this folder");
+  if (!s) throw new Error(tr("workspace.appCouldNotRead"));
   return {
     name: picked.name,
     files: s.files.map((f) => ({
@@ -104,7 +105,7 @@ export async function fromDesktop(
       size: f.size,
       blob: async () => {
         const data = await bridge.read(picked.path, f.rel, limits?.max_file_bytes);
-        if (!data) throw new Error(`could not read ${f.rel}`);
+        if (!data) throw new Error(tr("workspace.couldNotRead", { file: f.rel }));
         return new Blob([data as BlobPart]);
       },
     })),

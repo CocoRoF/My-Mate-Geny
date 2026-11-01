@@ -56,6 +56,7 @@ const MESSAGES = {
     ctxOpenLink: "Open link in browser",
     ctxCopyLink: "Copy link",
     ctxCopyImage: "Copy image",
+    pickFolder: "Choose a folder",
     // updater.js: why this install can't update itself
     updDev: "A development build does not update itself.",
     updMac: "macOS builds are not signed, so they cannot replace themselves — download the new .dmg below.",
@@ -177,6 +178,7 @@ const MESSAGES = {
     ctxOpenLink: "브라우저에서 링크 열기",
     ctxCopyLink: "링크 복사",
     ctxCopyImage: "이미지 복사",
+    pickFolder: "폴더 선택",
     updDev: "개발용 빌드는 스스로 업데이트하지 않아요.",
     updMac: "macOS 빌드는 서명되지 않아 스스로 교체할 수 없어요 — 아래에서 새 .dmg를 받아 주세요.",
     updOs: "이 시스템에서는 업데이트를 쓸 수 없어요.",

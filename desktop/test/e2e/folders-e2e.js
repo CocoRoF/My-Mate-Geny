@@ -171,7 +171,7 @@ async function main() {
     step("a chat on a local workspace; the bridge is there");
     const s = await con.eval(`fetch("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ provider: "claude", model: "", connection_id: null, workspace_path: ${JSON.stringify(ws)}, title: "Desktop folders" }) }).then((r) => r.json())`);
-    await con.eval(`localStorage.setItem("hrh_last_session", ${JSON.stringify(s.id)}); localStorage.setItem("hrh_session_panel", "0"); location.reload(); true`);
+    await con.eval(`localStorage.setItem("hrh_last_session", ${JSON.stringify(s.id)}); localStorage.setItem("hrh_session_panel", "0"); localStorage.setItem("hrh_lang", "en"); location.reload(); true`);
     con.close();
     con = await app.page(consoleRe);
     await until("the Folder button", () => con.eval(`!!document.querySelector('[data-testid="topbar-folders"]')`));

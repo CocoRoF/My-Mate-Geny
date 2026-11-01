@@ -1,5 +1,6 @@
 import { apiFetch, toLogin } from "./client";
 import type { Session } from "../types";
+import { tr } from "../i18n";
 
 /** backend/app/services/folder_upload.py: a folder from the user's computer, uploaded as a copy. */
 export interface FolderUploadLimits {
@@ -54,7 +55,7 @@ export function sendFolderBatch(
     xhr.onload = () => {
       if (xhr.status === 401) {
         toLogin();
-        return reject(new Error("authentication required"));
+        return reject(new Error("authentication required")); // i18n-ignore (the page goes to the login screen)
       }
       let body: any = null;
       try {
@@ -63,9 +64,9 @@ export function sendFolderBatch(
         /* not json */
       }
       if (xhr.status >= 200 && xhr.status < 300) resolve(body);
-      else reject(new Error(body?.detail || xhr.statusText || `upload failed (${xhr.status})`));
+      else reject(new Error(body?.detail || xhr.statusText || tr("workspace.uploadFailed", { status: String(xhr.status) })));
     };
-    xhr.onerror = () => reject(new Error("network error during upload"));
+    xhr.onerror = () => reject(new Error(tr("files.uploadNetwork")));
     xhr.onabort = () => reject(new DOMException("aborted", "AbortError"));
     signal?.addEventListener("abort", () => xhr.abort(), { once: true });
     xhr.send(form);

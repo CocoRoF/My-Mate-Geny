@@ -4,6 +4,7 @@ import { useGitStore } from "../../stores/gitStore";
 import FileTree from "./FileTree";
 import RepoPicker from "./RepoPicker";
 import Icon from "../ui/Icon";
+import { useT } from "../../i18n";
 
 interface Props {
   connectionId: string | null;
@@ -14,6 +15,7 @@ interface Props {
 
 // Source encoding in the <select>: "" = local, "ssh:<id>" = remote host, "git:<id>" = git repo.
 export default function WorkspacePicker({ connectionId, setConnectionId, path, setPath }: Props) {
+  const t = useT();
   const connections = useConnectionStore((s) => s.connections);
   const gitAccounts = useGitStore((s) => s.accounts);
   const loadGit = useGitStore((s) => s.load);
@@ -42,16 +44,16 @@ export default function WorkspacePicker({ connectionId, setConnectionId, path, s
 
   return (
     <div>
-      <label className="text-[11px] font-medium uppercase tracking-wider text-content-faint">Workspace</label>
+      <label className="text-[11px] font-medium uppercase tracking-wider text-content-faint">{t("workspace.workspace")}</label>
       <select value={source} onChange={(e) => onSource(e.target.value)} className="field mt-1.5 mb-2">
-        <option value="">💻  Local — this server</option>
+        <option value="">💻  {t("workspace.localThisServer")}</option>
         {connections.map((c) => (
           <option key={c.id} value={`ssh:${c.id}`}>
             🌐  {c.name} — {c.username}@{c.host}:{c.port}
           </option>
         ))}
         {gitAccounts.length > 0 && (
-          <optgroup label="Git repositories">
+          <optgroup label={t("workspace.gitRepos")}>
             {gitAccounts.map((g) => (
               <option key={g.id} value={`git:${g.id}`}>
                 🔗  {g.label} ({g.provider})

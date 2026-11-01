@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { listDir } from "../../api/workspaces";
 import type { DirEntry } from "../../types";
 import Icon from "../ui/Icon";
+import { useT } from "../../i18n";
 
 interface Props {
   connectionId: string | null;
@@ -33,6 +34,7 @@ export function pushRecent(conn: string | null, path: string) {
 }
 
 export default function FileTree({ connectionId, initialPath, onPick, selected }: Props) {
+  const t = useT();
   const [path, setPath] = useState(initialPath);
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [error, setError] = useState("");
@@ -96,7 +98,7 @@ export default function FileTree({ connectionId, initialPath, onPick, selected }
               if (e.key === "Escape") setEditing(false);
             }}
             onBlur={() => setEditing(false)}
-            placeholder="/absolute/path"
+            placeholder={t("workspace.pathPlaceholder")}
             className="flex-1 bg-transparent font-mono text-[12px] text-content outline-none"
           />
         ) : (
@@ -126,7 +128,8 @@ export default function FileTree({ connectionId, initialPath, onPick, selected }
             setEditing((v) => !v);
           }}
           className="text-content-faint hover:text-content p-1 shrink-0"
-          title="Edit path"
+          title={t("workspace.editPath")}
+          aria-label={t("workspace.editPath")}
         >
           <Icon name="pencil" size={13} />
         </button>
@@ -138,10 +141,10 @@ export default function FileTree({ connectionId, initialPath, onPick, selected }
         >
           {isSelected ? (
             <>
-              <Icon name="check" size={11} /> selected
+              <Icon name="check" size={11} /> {t("workspace.selected")}
             </>
           ) : (
-            "use this"
+            t("workspace.useThis")
           )}
         </button>
       </div>
@@ -168,7 +171,7 @@ export default function FileTree({ connectionId, initialPath, onPick, selected }
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="filter"
+            placeholder={t("workspace.filter")}
             className="w-20 bg-transparent text-[12px] text-content placeholder:text-content-faint outline-none"
           />
         </div>
@@ -184,14 +187,14 @@ export default function FileTree({ connectionId, initialPath, onPick, selected }
             <Icon name="arrow-up" size={14} /> ..
           </button>
         )}
-        {loading && <p className="px-2 py-3 text-xs text-content-faint">Loading…</p>}
+        {loading && <p className="px-2 py-3 text-xs text-content-faint">{t("common.loading")}</p>}
         {error && (
           <p className="px-2 py-3 text-xs text-danger flex items-center gap-1.5">
             <Icon name="x" size={13} /> {error}
           </p>
         )}
         {!loading && !error && dirs.length === 0 && (
-          <p className="px-2 py-3 text-xs text-content-faint">No subfolders{query ? " match" : ""}.</p>
+          <p className="px-2 py-3 text-xs text-content-faint">{query ? t("workspace.noSubfoldersMatch") : t("workspace.noSubfolders")}</p>
         )}
         {!error &&
           dirs.map((e) => (
@@ -210,7 +213,7 @@ export default function FileTree({ connectionId, initialPath, onPick, selected }
                 }}
                 className="ml-auto pill bg-accent-soft text-accent opacity-0 group-hover:opacity-100 transition"
               >
-                use
+                {t("workspace.use")}
               </button>
             </div>
           ))}

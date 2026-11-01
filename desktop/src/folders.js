@@ -149,13 +149,15 @@ function createFolders({ tmpdir = os.tmpdir(), now = () => Date.now() } = {}) {
 }
 
 /** IPC for the console page (main.js). `allowed(e)`: the sender is our app page. */
-function registerIpc({ ipcMain, dialog, BrowserWindow, app, allowed }) {
+function registerIpc({ ipcMain, dialog, BrowserWindow, app, allowed, pickTitle }) {
   const folders = createFolders();
   const owner = (e) => e.sender.id;
   ipcMain.handle("folders:pick", async (e) => {
     if (!allowed(e)) return null;
     const w = BrowserWindow.fromWebContents(e.sender);
-    const r = await dialog.showOpenDialog(w, { title: "Choose a folder", properties: ["openDirectory", "dontAddToRecent"] });
+    // (pickTitle: the dialog title in the app's language — main.js / i18n.js)
+    const title = (typeof pickTitle === "function" && pickTitle()) || "Choose a folder";
+    const r = await dialog.showOpenDialog(w, { title, properties: ["openDirectory", "dontAddToRecent"] });
     if (r.canceled || !r.filePaths || !r.filePaths[0]) return null;
     return folders.grant(owner(e), r.filePaths[0]);
   });

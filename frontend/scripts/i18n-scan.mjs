@@ -21,13 +21,8 @@ const strict = args.includes("--strict");
 const all = args.includes("--all");
 const given = args.filter((a) => !a.startsWith("--"));
 
-// Not translated yet (reworked in parallel; a follow-up translates them) — see docs/i18n.md.
-const PENDING = [
-  "src/components/chat/ChatView.tsx",
-  "src/components/chat/GitContext.tsx",
-  "src/components/chat/panel/",
-  "src/components/workspaces/",
-];
+// Files not translated yet (skipped unless --all) — none today; see docs/i18n.md.
+const PENDING = [];
 // Never UI text: the message catalogs themselves, dev-only surfaces, type declarations.
 const SKIP = ["src/i18n/", "src/vite-env.d.ts", "src/mate/AvatarLab.tsx"];
 
