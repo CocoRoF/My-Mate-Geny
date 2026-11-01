@@ -19,6 +19,7 @@ const { readSettings, writeSettings, serverUrl, sameOrigin } = require("./settin
 const geo = require("./geometry");
 const recovery = require("./recovery");
 const chrome = require("./chrome");
+const { t, language } = require("./lang");
 
 const RETRY_PAGE = path.join(__dirname, "offline.html");
 
@@ -323,7 +324,7 @@ function createAvatar() {
     fullscreenable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
-    title: `Mate — ${PRODUCT}`,
+    title: t("titleMate"),
     icon: ICON,
     webPreferences: webPrefs("mate-overlay", { backgroundThrottling: false }),
   });
@@ -361,7 +362,7 @@ function createAvatar() {
       gaveUp = true;
       win.hide();
       alive(bar) && bar.hide();
-      notify("The Mate keeps crashing", "Its window was hidden. Use the tray menu → Show Mate to try again.");
+      notify(t("mateCrashTitle"), t("mateCrashBody"));
       broadcast();
       return;
     }
@@ -631,6 +632,19 @@ function barState() {
     chatOpen: alive(chat) && chat.isVisible(),
     quickKey: hotkeyBound ? prettyAccel(hotkeyBound) : "",
     linux,
+    lang: language(),
+    // the buttons' labels in the app's language (bar.js falls back to English)
+    labels: {
+      chat: t("page.barChat"),
+      quick: t("page.barQuick"),
+      quickKey: t("page.barQuickKey"),
+      throughOn: t("page.barThroughOn"),
+      throughOff: t("page.barThroughOff"),
+      move: t("page.barMove"),
+      doneMoving: t("page.barDoneMoving"),
+      hide: t("page.barHide"),
+      console: t("page.barConsole"),
+    },
   });
 }
 
@@ -677,7 +691,7 @@ function createQuick() {
     fullscreenable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
-    title: `Quick chat — ${PRODUCT}`,
+    title: t("titleQuick"),
     icon: ICON,
     webPreferences: webPrefs("mate-quick", { spellcheck: true }),
   });
@@ -798,7 +812,7 @@ function createChat() {
     minHeight: 380,
     show: false,
     backgroundColor: "#0a0c10",
-    title: `Mate — ${PRODUCT}`,
+    title: t("titleMate"),
     icon: ICON,
     autoHideMenuBar: true,
     // no system title bar: the page's header is the title bar (chrome.js)
@@ -1099,22 +1113,22 @@ function buildTray() {
     }
   }
   const acc = hotkey();
-  const key = hotkeyBound ? prettyAccel(hotkeyBound) : acc ? `${prettyAccel(acc)} — unavailable` : "";
+  const key = hotkeyBound ? prettyAccel(hotkeyBound) : acc ? t("trayKeyUnavailable", { key: prettyAccel(acc) }) : "";
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: `Open ${PRODUCT}`, click: () => deps.openConsole() },
-    wanted() ? { label: "Hide Mate", click: hideAvatar } : { label: "Show Mate", click: () => showAvatar() },
-    { label: key ? `Quick chat (${key})` : "Quick chat", click: openQuick },
-    { label: "Mate chat", click: openChat },
+    { label: t("trayOpen"), click: () => deps.openConsole() },
+    wanted() ? { label: t("trayHideMate"), click: hideAvatar } : { label: t("trayShowMate"), click: () => showAvatar() },
+    { label: key ? t("trayQuickKey", { key }) : t("trayQuick"), click: openQuick },
+    { label: t("trayMateChat"), click: openChat },
     { type: "separator" },
-    { label: "Click-through", type: "checkbox", checked: clickThrough(), click: (i) => setClickThrough(i.checked) },
-    { label: "Move / resize Mate", type: "checkbox", checked: moveMode, enabled: shown(), click: (i) => setMoveMode(i.checked) },
-    { label: "Reset Mate position & size", click: resetPlacement },
-    { label: "Keep Mate chat on top", type: "checkbox", checked: !!S().mateChatOnTop, click: (i) => setChatOnTop(i.checked) },
-    { label: "Start at login", type: "checkbox", checked: autostartOn(), click: (i) => setAutostart(i.checked) },
+    { label: t("trayClickThrough"), type: "checkbox", checked: clickThrough(), click: (i) => setClickThrough(i.checked) },
+    { label: t("trayMove"), type: "checkbox", checked: moveMode, enabled: shown(), click: (i) => setMoveMode(i.checked) },
+    { label: t("trayReset"), click: resetPlacement },
+    { label: t("trayChatOnTop"), type: "checkbox", checked: !!S().mateChatOnTop, click: (i) => setChatOnTop(i.checked) },
+    { label: t("trayAutostart"), type: "checkbox", checked: autostartOn(), click: (i) => setAutostart(i.checked) },
     { type: "separator" },
-    { label: "Switch server…", click: () => deps.switchServer() },
-    { label: "Sign out", enabled: connected(), click: () => deps.signOut() },
-    { label: "Quit", click: () => deps.quit() },
+    { label: t("traySwitch"), click: () => deps.switchServer() },
+    { label: t("traySignOut"), enabled: connected(), click: () => deps.signOut() },
+    { label: t("trayQuit"), click: () => deps.quit() },
   ]));
 }
 
@@ -1188,7 +1202,7 @@ function start() {
       broadcast();
     });
   } else if (acc && !registerHotkey(acc)) {
-    notify("Quick chat shortcut unavailable", `${prettyAccel(acc)} is used by another program. Change it in Mate settings.`);
+    notify(t("hotkeyTitle"), t("hotkeyBody", { key: prettyAccel(acc) }));
   }
   if (S().mateVisible && connected()) createAvatar();
   setInterval(tick, 120);
@@ -1219,7 +1233,13 @@ module.exports = {
   consoleNavigated,
   reloadSurfaces,
   disconnect,
-  refresh: () => buildTray(),
+  // the server or the language changed: the tray's items, the bar's labels and the windows' titles follow
+  refresh: () => {
+    buildTray();
+    barState();
+    if (alive(avatar)) avatar.setTitle(t("titleMate"));
+    if (alive(quick)) quick.setTitle(t("titleQuick"));
+  },
   isShown: () => wanted() && alive(avatar) && (avatar.isVisible() || avatar.webContents.isLoading() || (!overlayFailed && onSurface(avatar, "overlay"))),
   mateWindows: () => [avatar, bar, quick, chat].filter(alive),
   showAvatar,

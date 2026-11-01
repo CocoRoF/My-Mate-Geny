@@ -51,15 +51,23 @@ function set(name, paths, on, label, dashed) {
   labels[name] = label;
 }
 
+// the labels come in the app's language with the state (mate.js → i18n.js); these are the fallback
+const EN = {
+  chat: "Chat", quick: "Quick chat", quickKey: "Quick chat ({key})", throughOn: "Click-through: on",
+  throughOff: "Click-through: off", move: "Move", doneMoving: "Done moving", hide: "Hide Mate", console: "Open console",
+};
+
 function render(s) {
   linux = !!s.linux;
-  set("chat", ICONS.chat, s.chatOpen, "Chat");
-  set("quick", ICONS.quick, false, s.quickKey ? `Quick chat (${s.quickKey})` : "Quick chat");
+  const L = { ...EN, ...(s.labels || {}) };
+  set("chat", ICONS.chat, s.chatOpen, L.chat);
+  set("quick", ICONS.quick, false, s.quickKey ? L.quickKey.replace("{key}", s.quickKey) : L.quick);
   set("through", s.clickThrough ? ICONS.throughOn : ICONS.throughOff, s.clickThrough,
-    `Click-through: ${s.clickThrough ? "on" : "off"}`, s.clickThrough);
-  set("move", s.moveMode ? ICONS.done : ICONS.move, s.moveMode, s.moveMode ? "Done moving" : "Move");
-  set("hide", ICONS.hide, false, "Hide Mate");
-  set("console", ICONS.console, false, "Open console");
+    s.clickThrough ? L.throughOn : L.throughOff, s.clickThrough);
+  set("move", s.moveMode ? ICONS.done : ICONS.move, s.moveMode, s.moveMode ? L.doneMoving : L.move);
+  set("hide", ICONS.hide, false, L.hide);
+  set("console", ICONS.console, false, L.console);
+  document.documentElement.lang = s.lang || document.documentElement.lang || "en";
 }
 
 render({ clickThrough: true, moveMode: false, chatOpen: false, quickKey: "" });

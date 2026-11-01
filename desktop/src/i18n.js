@@ -1,0 +1,279 @@
+// The desktop app's own words (tray, app menu, notifications, the action bar, window titles, the local connect and
+// retry pages) in English or Korean — docs/i18n.md. The language is the console's (the page calls
+// hrhNative.setLanguage → settings.json `language`); before any choice, the system's (app.getLocale()).
+// The local pages get their part (`page`) through the preload (`hrhNative.text`): one place for every string.
+"use strict";
+
+const LANGS = ["en", "ko"];
+
+const MESSAGES = {
+  en: {
+    // tray (mate.js)
+    trayOpen: "Open {product}",
+    trayShowMate: "Show Mate",
+    trayHideMate: "Hide Mate",
+    trayQuick: "Quick chat",
+    trayQuickKey: "Quick chat ({key})",
+    trayKeyUnavailable: "{key} — unavailable",
+    trayMateChat: "Mate chat",
+    trayClickThrough: "Click-through",
+    trayMove: "Move / resize Mate",
+    trayReset: "Reset Mate position & size",
+    trayChatOnTop: "Keep Mate chat on top",
+    trayAutostart: "Start at login",
+    traySwitch: "Switch server…",
+    traySignOut: "Sign out",
+    trayQuit: "Quit",
+    // window titles
+    titleMate: "Mate — {product}",
+    titleQuick: "Quick chat — {product}",
+    // notifications
+    mateCrashTitle: "The Mate keeps crashing",
+    mateCrashBody: "Its window was hidden. Use the tray menu → Show Mate to try again.",
+    hotkeyTitle: "Quick chat shortcut unavailable",
+    hotkeyBody: "{key} is used by another program. Change it in Settings → Desktop app.",
+    updateTitle: "{product} {version} is available",
+    updateBody: "Open Settings or Download to update — it installs and restarts in one go.",
+    gpuBody: "The graphics process keeps crashing — software rendering will be used from the next start.",
+    // app menu (main.js)
+    menuView: "View",
+    menuMate: "Mate",
+    menuShowHide: "Show / Hide Mate",
+    menuQuick: "Quick chat",
+    menuMateChat: "Mate chat",
+    menuMove: "Move Mate",
+    menuClickThrough: "Toggle click-through",
+    menuServer: "Server",
+    menuSwitch: "Switch server…",
+    menuSignOut: "Sign out",
+    menuConnectedTo: "Connected to {server}",
+    menuNotConnected: "Not connected",
+    menuOpenBrowser: "Open in browser",
+    menuDownloads: "Downloads page",
+    menuSettings: "Settings",
+    menuHelp: "Help",
+    menuCheckUpdates: "Check for updates…",
+    ctxOpenLink: "Open link in browser",
+    ctxCopyLink: "Copy link",
+    ctxCopyImage: "Copy image",
+    // updater.js: why this install can't update itself
+    updDev: "A development build does not update itself.",
+    updMac: "macOS builds are not signed, so they cannot replace themselves — download the new .dmg below.",
+    updOs: "Updates are not available on this system.",
+    updServer: "Not connected to a server.",
+    // the local pages (preload → hrhNative.text)
+    page: {
+      // the action bar (bar.js)
+      barChat: "Chat",
+      barQuick: "Quick chat",
+      barQuickKey: "Quick chat ({key})",
+      barThroughOn: "Click-through: on",
+      barThroughOff: "Click-through: off",
+      barMove: "Move",
+      barDoneMoving: "Done moving",
+      barHide: "Hide Mate",
+      barConsole: "Open console",
+      // the fallback title bar (preload.js)
+      winMinimize: "Minimize",
+      winMaximize: "Maximize",
+      winRestore: "Restore",
+      winClose: "Close",
+      // offline.html
+      offlineTitle: "Can't reach the server",
+      offlineMsg: "Check your connection — the app will load as soon as the server answers.",
+      crashedTitle: "This window stopped working",
+      crashedMsg: "Its page crashed. It is being reopened.",
+      unresponsiveTitle: "This window stopped responding",
+      unresponsiveMsg: "Its page hung and was closed. It is being reopened.",
+      blankTitle: "This window drew nothing",
+      blankMsg: "Its page did not start (it may have just been updated). It is being reloaded.",
+      retryNow: "Retry now",
+      switchServer: "Switch server",
+      retryingSuffix: " — retrying…",
+      waitingNetwork: "Waiting for the network…",
+      retrying: "Retrying…",
+      retryingIn: "Retrying in {n} s",
+      // connect.html
+      connectTitle: "Connect — {product}",
+      connectHeading: "Connect to your server",
+      serverLabel: "Server address",
+      serverPlaceholder: "example.com or 192.168.0.10:58080",
+      serverHint: "The address of your My Mate Geny server — https:// is tried first.",
+      usernameLabel: "Username",
+      passwordLabel: "Password",
+      show: "Show",
+      hide: "Hide",
+      remember: "Remember the server and username (never the password)",
+      back: "Back",
+      connect: "Connect",
+      enterServer: "Enter your server's address",
+      enterUsername: "Enter your username",
+      enterPassword: "Enter your password",
+      looking: "Looking for the server…",
+      signingIn: "Signing in to {server}…",
+      opening: "Opening the console…",
+      wrong: "Something went wrong",
+      onlyInApp: "This page only works inside the My Mate Geny app.",
+      signedOut: "You're signed out.",
+      // connect-core.js failure kinds (the technical detail under it stays as is)
+      err_empty: "Enter your server's address",
+      err_invalid: "That doesn't look like a server address",
+      err_scheme: "Only http:// and https:// addresses work",
+      err_unreachable: "Can't reach the server",
+      err_timeout: "Can't reach the server",
+      err_tls: "Can't connect securely — the server's certificate isn't trusted",
+      err_cleartext: "This device refused a plain http:// connection",
+      err_not_geny: "Not a My Mate Geny server",
+      err_missing_username: "Enter your username",
+      err_missing_password: "Enter your password",
+      err_credentials: "Wrong username or password",
+      err_rate: "Too many attempts — try later",
+      err_old_server: "This server is too old for the app — update My Mate Geny on the server",
+      err_server_error: "The server had a problem — try again",
+    },
+  },
+  ko: {
+    trayOpen: "{product} 열기",
+    trayShowMate: "메이트 보이기",
+    trayHideMate: "메이트 숨기기",
+    trayQuick: "빠른 채팅",
+    trayQuickKey: "빠른 채팅 ({key})",
+    trayKeyUnavailable: "{key} — 사용할 수 없음",
+    trayMateChat: "메이트 채팅",
+    trayClickThrough: "클릭 통과",
+    trayMove: "메이트 이동 / 크기 조절",
+    trayReset: "메이트 위치와 크기 초기화",
+    trayChatOnTop: "메이트 채팅 항상 위에",
+    trayAutostart: "로그인 시 시작",
+    traySwitch: "서버 바꾸기…",
+    traySignOut: "로그아웃",
+    trayQuit: "종료",
+    titleMate: "메이트 — {product}",
+    titleQuick: "빠른 채팅 — {product}",
+    mateCrashTitle: "메이트가 계속 멈춰요",
+    mateCrashBody: "메이트 창을 숨겼어요. 트레이 메뉴 → 메이트 보이기로 다시 시도해 보세요.",
+    hotkeyTitle: "빠른 채팅 단축키를 쓸 수 없어요",
+    hotkeyBody: "{key}는 다른 프로그램이 쓰고 있어요. 설정 → 데스크톱 앱에서 바꿔 주세요.",
+    updateTitle: "{product} {version} 버전을 받을 수 있어요",
+    updateBody: "설정이나 다운로드에서 업데이트하세요 — 설치와 재시작이 한 번에 진행돼요.",
+    gpuBody: "그래픽 프로세스가 계속 멈춰요 — 다음 실행부터 소프트웨어 렌더링을 사용해요.",
+    menuView: "보기",
+    menuMate: "메이트",
+    menuShowHide: "메이트 보이기 / 숨기기",
+    menuQuick: "빠른 채팅",
+    menuMateChat: "메이트 채팅",
+    menuMove: "메이트 이동",
+    menuClickThrough: "클릭 통과 전환",
+    menuServer: "서버",
+    menuSwitch: "서버 바꾸기…",
+    menuSignOut: "로그아웃",
+    menuConnectedTo: "{server}에 연결됨",
+    menuNotConnected: "연결 안 됨",
+    menuOpenBrowser: "브라우저에서 열기",
+    menuDownloads: "다운로드 페이지",
+    menuSettings: "설정",
+    menuHelp: "도움말",
+    menuCheckUpdates: "업데이트 확인…",
+    ctxOpenLink: "브라우저에서 링크 열기",
+    ctxCopyLink: "링크 복사",
+    ctxCopyImage: "이미지 복사",
+    updDev: "개발용 빌드는 스스로 업데이트하지 않아요.",
+    updMac: "macOS 빌드는 서명되지 않아 스스로 교체할 수 없어요 — 아래에서 새 .dmg를 받아 주세요.",
+    updOs: "이 시스템에서는 업데이트를 쓸 수 없어요.",
+    updServer: "서버에 연결되어 있지 않아요.",
+    page: {
+      barChat: "채팅",
+      barQuick: "빠른 채팅",
+      barQuickKey: "빠른 채팅 ({key})",
+      barThroughOn: "클릭 통과: 켜짐",
+      barThroughOff: "클릭 통과: 꺼짐",
+      barMove: "이동",
+      barDoneMoving: "이동 완료",
+      barHide: "메이트 숨기기",
+      barConsole: "콘솔 열기",
+      winMinimize: "최소화",
+      winMaximize: "최대화",
+      winRestore: "이전 크기로",
+      winClose: "닫기",
+      offlineTitle: "서버에 연결할 수 없어요",
+      offlineMsg: "연결을 확인해 주세요 — 서버가 응답하면 바로 앱을 불러와요.",
+      crashedTitle: "이 창이 작동을 멈췄어요",
+      crashedMsg: "페이지가 멈춰서 다시 여는 중이에요.",
+      unresponsiveTitle: "이 창이 응답하지 않아요",
+      unresponsiveMsg: "페이지가 멈춰서 닫았어요. 다시 여는 중이에요.",
+      blankTitle: "이 창에 아무것도 표시되지 않았어요",
+      blankMsg: "페이지가 시작되지 않았어요 (방금 업데이트됐을 수 있어요). 다시 불러오는 중이에요.",
+      retryNow: "지금 다시 시도",
+      switchServer: "서버 바꾸기",
+      retryingSuffix: " — 다시 시도하는 중…",
+      waitingNetwork: "네트워크를 기다리는 중…",
+      retrying: "다시 시도하는 중…",
+      retryingIn: "{n}초 뒤에 다시 시도해요",
+      connectTitle: "연결 — {product}",
+      connectHeading: "서버에 연결하기",
+      serverLabel: "서버 주소",
+      serverPlaceholder: "example.com 또는 192.168.0.10:58080",
+      serverHint: "My Mate Geny 서버의 주소예요 — https://를 먼저 시도해요.",
+      usernameLabel: "사용자 이름",
+      passwordLabel: "비밀번호",
+      show: "보기",
+      hide: "숨기기",
+      remember: "서버와 사용자 이름 기억하기 (비밀번호는 저장하지 않아요)",
+      back: "뒤로",
+      connect: "연결",
+      enterServer: "서버 주소를 입력해 주세요",
+      enterUsername: "사용자 이름을 입력해 주세요",
+      enterPassword: "비밀번호를 입력해 주세요",
+      looking: "서버를 찾는 중…",
+      signingIn: "{server}에 로그인하는 중…",
+      opening: "콘솔을 여는 중…",
+      wrong: "문제가 생겼어요",
+      onlyInApp: "이 페이지는 My Mate Geny 앱 안에서만 작동해요.",
+      signedOut: "로그아웃했어요.",
+      err_empty: "서버 주소를 입력해 주세요",
+      err_invalid: "서버 주소 형식이 아니에요",
+      err_scheme: "http:// 또는 https:// 주소만 쓸 수 있어요",
+      err_unreachable: "서버에 연결할 수 없어요",
+      err_timeout: "서버에 연결할 수 없어요",
+      err_tls: "안전하게 연결할 수 없어요 — 서버 인증서를 신뢰할 수 없어요",
+      err_cleartext: "이 기기가 암호화되지 않은 http:// 연결을 거부했어요",
+      err_not_geny: "My Mate Geny 서버가 아니에요",
+      err_missing_username: "사용자 이름을 입력해 주세요",
+      err_missing_password: "비밀번호를 입력해 주세요",
+      err_credentials: "사용자 이름 또는 비밀번호가 틀렸어요",
+      err_rate: "시도가 너무 많아요 — 잠시 뒤에 다시 해 주세요",
+      err_old_server: "앱에 비해 서버가 너무 오래됐어요 — 서버의 My Mate Geny를 업데이트해 주세요",
+      err_server_error: "서버에 문제가 생겼어요 — 다시 시도해 주세요",
+    },
+  },
+};
+
+const isLang = (v) => LANGS.includes(v);
+
+/** the language for a stored choice and the system locale ("ko-KR" → ko) */
+function pickLanguage(stored, locale) {
+  if (isLang(stored)) return stored;
+  return /^ko\b/i.test(String(locale || "")) ? "ko" : "en";
+}
+
+function fill(s, vars) {
+  return vars ? String(s).replace(/\{(\w+)\}/g, (all, k) => (k in vars ? String(vars[k]) : all)) : String(s);
+}
+
+/** t for a language: t("trayQuit"), t("page.retryingIn", { n: 5 }) */
+function translator(lang) {
+  const cat = MESSAGES[isLang(lang) ? lang : "en"];
+  return (key, vars) => {
+    const [a, b] = key.split(".");
+    const m = b ? (cat[a] || {})[b] ?? (MESSAGES.en[a] || {})[b] : cat[a] ?? MESSAGES.en[a];
+    return m === undefined ? key : fill(m, vars);
+  };
+}
+
+/** what a local page gets (with {product} filled in) */
+function pageText(lang) {
+  const t = translator(lang);
+  return Object.fromEntries(Object.keys(MESSAGES.en.page).map((k) => [k, t(`page.${k}`, { product: "My Mate Geny" })]));
+}
+
+module.exports = { LANGS, MESSAGES, isLang, pickLanguage, translator, pageText };
