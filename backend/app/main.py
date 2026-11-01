@@ -39,6 +39,7 @@ from app.routers import (
     history,
     mate_internal,
     mates,
+    preferences as preferences_router,
     providers,
     sessions,
     usage,
@@ -196,6 +197,7 @@ for r in (
     admin.router,
     mates.router,
     mate_internal.router,
+    preferences_router.router,
 ):
     app.include_router(r)
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import json
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -32,6 +33,7 @@ from app.auth import (
     safe_next,
     username_problem,
 )
+from app.preferences import LANG_COOKIE, request_language
 
 router = APIRouter()
 
@@ -58,14 +60,14 @@ class CredentialsBody(BaseModel):
 # without it). It posts to /api/auth/login on the same origin; native apps use
 # their own connect screen + the exchange flow described at the top.
 _LOGIN_HTML = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+<html lang="__LANG__"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0a0c10">
 <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
 <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
-<title>My Mate Geny — Sign in</title>
+<title>My Mate Geny — __T_TITLE__</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -99,47 +101,87 @@ _LOGIN_HTML = """<!doctype html>
   .warn { display:flex; gap:8px; align-items:flex-start; margin:0 0 18px; padding:10px 12px; border-radius:10px;
     background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.35); color:#fbbf24; font-size:12px; line-height:1.45; }
   .warn b { color:#fcd34d; }
+  .lang { margin-top:16px; text-align:center; font-size:11.5px; }
+  .lang a { color:#5e6676; text-decoration:none; cursor:pointer; }
+  .lang a:hover { color:#9aa3b4; }
 </style></head>
 <body>
   <form class="card" id="f">
     <div class="brand">
       <img class="logo" src="/logo.png" alt="Geny" width="104" height="104" draggable="false">
-      <h1>My Mate <span class="grad">Geny</span></h1><div class="sub">your mate + agent console</div>
+      <h1>My Mate <span class="grad">Geny</span></h1><div class="sub">__T_TAGLINE__</div>
     </div>
     __WARNING__
-    <label for="u">Username</label>
+    <label for="u">__T_USERNAME__</label>
     <input id="u" autocomplete="username" autocapitalize="none" spellcheck="false" value="__USERNAME__" autofocus>
-    <label for="p">Password</label>
+    <label for="p">__T_PASSWORD__</label>
     <input id="p" type="password" autocomplete="current-password">
-    <button id="b" type="submit">Sign in</button>
+    <button id="b" type="submit">__T_SIGNIN__</button>
     <div class="err" id="e">__ERROR__</div>
+    <div class="lang"><a id="l" href="?lang=__OTHER_LANG__" data-lang="__OTHER_LANG__" data-testid="login-lang">__OTHER_LANG_NAME__</a></div>
   </form>
 <script>
   // Same-origin login: the cookie set by /api/auth/login is all the web UI needs.
   // Native apps use their own connect screen + POST /api/auth/login {exchange:true}
   // -> GET /auth/exchange (docs/auth.md).
+  const T=__T_JSON__;
   const f=document.getElementById('f'),e=document.getElementById('e'),b=document.getElementById('b');
+  // the other language: remembered for this site (the console reads the same cookie / localStorage)
+  document.getElementById('l').onclick=(ev)=>{ev.preventDefault();const l=ev.currentTarget.dataset.lang;
+    document.cookie='__LANG_COOKIE__='+l+'; path=/; max-age=31536000; SameSite=Lax';
+    try{localStorage.setItem('hrh_lang',l);}catch(x){}
+    location.replace(location.pathname+'?lang='+l);};
   f.onsubmit=async(ev)=>{ev.preventDefault();e.textContent='';b.disabled=true;
     try{
       const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({username:document.getElementById('u').value.trim(),password:document.getElementById('p').value})});
       if(r.ok){location.replace('/');return;}
-      const d=await r.json().catch(()=>({detail:'Sign-in failed'}));
-      e.textContent=d.detail||'Sign-in failed';
-    }catch(x){e.textContent='Network error';}
+      const d=await r.json().catch(()=>({}));
+      e.textContent=(d.code&&T[d.code])||d.detail||T.failed;
+    }catch(x){e.textContent=T.network;}
     b.disabled=false;
   };
 </script>
 </body></html>"""
 
-_DEFAULT_WARNING = (
-    '<div class="warn" role="alert"><span>&#9888;</span><span><b>Default password</b> — change it in '
-    "<b>Admin &rarr; Security</b> after signing in. Anyone who can reach this server can sign in until you do."
-    "</span></div>"
-)
-_PAGE_ERRORS = {
-    "expired": "That sign-in link expired or was already used. Please sign in again.",
+# The page's words (docs/i18n.md): ?lang= -> the hrh_lang cookie -> the account's choice -> Accept-Language.
+_LOGIN_TEXT = {
+    "en": {
+        "title": "Sign in",
+        "tagline": "your mate + agent console",
+        "username": "Username",
+        "password": "Password",
+        "signin": "Sign in",
+        "name": "English",
+        "warning": "<b>Default password</b> — change it in <b>Settings &rarr; Account</b> after signing in. "
+                   "Anyone who can reach this server can sign in until you do.",
+        "expired": "That sign-in link expired or was already used. Please sign in again.",
+        "js": {"failed": "Sign-in failed", "network": "Network error",
+               "bad_credentials": "Wrong username or password.",
+               "banned": "Too many failed attempts — this IP is temporarily blocked."},
+    },
+    "ko": {
+        "title": "로그인",
+        "tagline": "나의 메이트 + 에이전트 콘솔",
+        "username": "사용자 이름",
+        "password": "비밀번호",
+        "signin": "로그인",
+        "name": "한국어",
+        "warning": "<b>기본 비밀번호 사용 중</b> — 로그인한 뒤 <b>설정 &rarr; 계정</b>에서 바꿔 주세요. "
+                   "바꾸기 전까지는 이 서버에 접속할 수 있는 누구나 로그인할 수 있어요.",
+        "expired": "로그인 링크가 만료됐거나 이미 사용됐어요. 다시 로그인해 주세요.",
+        "js": {"failed": "로그인하지 못했어요", "network": "네트워크 오류",
+               "bad_credentials": "사용자 이름 또는 비밀번호가 틀렸어요.",
+               "banned": "실패한 시도가 너무 많아요 — 이 IP는 잠시 차단됐어요."},
+    },
 }
+
+
+def _warning(lang: str) -> str:
+    return f'<div class="warn" role="alert"><span>&#9888;</span><span>{_LOGIN_TEXT[lang]["warning"]}</span></div>'
+
+
+_PAGE_ERRORS = ("expired",)
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -149,11 +191,25 @@ async def login_page(request: Request, error: str | None = None) -> HTMLResponse
     if auth.verify_token(auth.token_from_request(request)):
         return RedirectResponse("/", status_code=302, headers={"Cache-Control": "no-store"})
     default = auth.using_default_password
+    lang = request_language(request, getattr(request.app.state, "db", None))
+    tx = _LOGIN_TEXT[lang]
+    other = "ko" if lang == "en" else "en"
     page = (
-        _LOGIN_HTML.replace("__WARNING__", _DEFAULT_WARNING if default else "")
+        _LOGIN_HTML.replace("__WARNING__", _warning(lang) if default else "")
         # Prefill only the (public) default username, never a custom one.
         .replace("__USERNAME__", html.escape(auth.username) if default else "")
-        .replace("__ERROR__", html.escape(_PAGE_ERRORS.get(error or "", "")))
+        .replace("__ERROR__", html.escape(tx[error] if error in _PAGE_ERRORS else ""))
+        .replace("__LANG__", lang)
+        .replace("__T_TITLE__", tx["title"])
+        .replace("__T_TAGLINE__", tx["tagline"])
+        .replace("__T_USERNAME__", tx["username"])
+        .replace("__T_PASSWORD__", tx["password"])
+        .replace("__T_SIGNIN__", tx["signin"])
+        .replace("__OTHER_LANG_NAME__", _LOGIN_TEXT[other]["name"])
+        .replace("__OTHER_LANG__", other)
+        .replace("__LANG_COOKIE__", LANG_COOKIE)
+        # (inside <script>: nothing may close it early)
+        .replace("__T_JSON__", json.dumps(tx["js"], ensure_ascii=False).replace("</", "<\\/"))
     )
     return HTMLResponse(page, headers={"Cache-Control": "no-store"})
 
@@ -164,7 +220,7 @@ async def login(body: LoginBody, request: Request):
     ip = AuthManager.client_ip(request)
 
     if auth.is_banned(ip):
-        return JSONResponse({"detail": _BANNED_MSG}, status_code=403)
+        return JSONResponse({"detail": _BANNED_MSG, "code": "banned"}, status_code=403)
 
     await auth.tarpit()  # slows distributed guessing; never locks the owner out
     if not await auth.check_credentials_async(body.username, body.password):
@@ -181,7 +237,9 @@ async def login(body: LoginBody, request: Request):
                 "error", "auth", f"IP {ip} blocked after repeated failed logins",
                 code="auth.ip_banned", ip=ip, path=request.url.path, detail=detail,
             )
-        return JSONResponse({"detail": _BANNED_MSG if banned else _BAD_CREDS_MSG},
+        # `code`: the login / connect pages show it in their own language (detail stays English for old clients)
+        return JSONResponse({"detail": _BANNED_MSG if banned else _BAD_CREDS_MSG,
+                             "code": "banned" if banned else "bad_credentials"},
                             status_code=403 if banned else 401)
 
     auth.clear_failures(ip)
