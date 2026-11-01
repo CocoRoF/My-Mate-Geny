@@ -19,6 +19,30 @@ const path = require("path");
 
 app.setPath("userData", path.join(app.getPath("appData"), "hr-harnessor"));
 
+// ── a failed start is visible: <userData>/logs/main.log, and a dialog instead of a silent exit ──
+const startupLog = require("./startup-log");
+const mainLog = startupLog.createLog(path.join(app.getPath("userData"), "logs", "main.log"));
+const startup = startupLog.createFailureHandler({
+  log: mainLog,
+  isReady: () => app.isReady(),
+  whenReady: () => app.whenReady(),
+  showErrorBox: (title, body) => dialog.showErrorBox(title, body),
+  exit: (code) => app.exit(code),
+  print: (s) => console.error(s),
+  text: (err, file) => {
+    const vars = { error: startupLog.errorHeadline(err), log: file };
+    try {
+      const { t } = require("./lang");
+      return [t("startFailedTitle"), t("startFailedBody", vars)];
+    } catch {
+      return ["My Mate Geny could not start", `${vars.error}\n\nDetails: ${vars.log}`];
+    }
+  },
+});
+process.on("uncaughtException", (e) => startup.fail(e, "uncaught exception"));
+process.on("unhandledRejection", (e) => startup.fail(e, "unhandled rejection"));
+mainLog.info(startupLog.startLine({ version: app.getVersion(), argv: process.argv, env: process.env, platform: process.platform }));
+
 const { LEGACY_SERVER, readSettings, writeSettings, settingsExisted, serverUrl, sameOrigin } = require("./settings");
 const core = require("./connect-core");
 const mate = require("./mate");
@@ -28,6 +52,7 @@ const folders = require("./folders");
 const { createUpdater, restartArgs, restartCommand } = require("./updater");
 const { isLang } = require("./i18n");
 const { t, language, pageText } = require("./lang");
+const { launchCommand } = require("./launch");
 
 const RETRY_PAGE = path.join(__dirname, "offline.html");
 
@@ -61,7 +86,7 @@ function linuxSwitches() {
 }
 
 function relaunchOnX11() {
-  const exe = env.APPIMAGE || process.execPath;
+  const exe = launchCommand(env, process.execPath);
   const args = process.argv.slice(1).filter((a) => !/^--ozone-platform(-hint)?=/.test(a));
   const childEnv = { ...env, HRH_RELAUNCHED: "1" };
   for (const k of ["ELECTRON_OZONE_PLATFORM_HINT", "APPDIR", "APPIMAGE", "ARGV0", "OWD"]) delete childEnv[k];
@@ -503,6 +528,7 @@ function setupPermissions() {
 // GPU process crash loop → software rendering from the next start.
 let gpuCrashes = [];
 app.on("child-process-gone", (_e, d) => {
+  if (d.reason !== "clean-exit") mainLog.warn(`${d.type} process gone: ${d.reason} (exit ${d.exitCode})`);
   if (d.type !== "GPU" || d.reason === "clean-exit" || readSettings().softwareRendering) return;
   const t = Date.now();
   gpuCrashes = [...gpuCrashes.filter((x) => t - x < 120_000), t];
@@ -567,9 +593,12 @@ function buildMenu() {
 if (restartOnX11 && relaunchOnX11()) {
   app.exit(0);
 } else if (!app.requestSingleInstanceLock()) {
+  // another instance runs (perhaps only in the tray): it got "second-instance" and shows its console
+  mainLog.info("another instance is running: handed over to it");
   app.quit();
 } else {
   app.on("second-instance", (_e, argv) => {
+    mainLog.info(`second launch${argv.includes("--hidden") ? " (hidden: ignored)" : ": showing the console"}`);
     if (argv.includes("--hidden")) return;
     openConsole();
   });
@@ -596,8 +625,11 @@ if (restartOnX11 && relaunchOnX11()) {
     // first run and normal starts open the console as before; a start at
     // login (--hidden) goes straight to the tray (and the Mate, if it was out)
     const startedHidden = hiddenStart || loginHidden;
+    if (env.HRH_TEST_START_FAIL === "1") throw new Error("HRH_TEST_START_FAIL: a start that fails on purpose");
     if (!startedHidden) createWindow();
     mate.start();
+    startup.started();
+    mainLog.info(`ready${startedHidden ? " (hidden start)" : ""}`);
     // updates: a quiet look 30 s after the start and every 6 hours (downloading is the user's call)
     setTimeout(() => void updater.check(), 30_000).unref?.();
     setInterval(() => void updater.check(), 6 * 3600_000).unref?.();
@@ -608,7 +640,7 @@ if (restartOnX11 && relaunchOnX11()) {
       if (startedHidden && Date.now() - readyAt < 2000) return;
       openConsole();
     });
-  });
+  }).catch((e) => startup.fail(e, "start"));
   // the tray (and the Mate) keep the app; closing the console quits it when
   // the Mate is not out (see createWindow), Quit quits from anywhere
   app.on("window-all-closed", () => {

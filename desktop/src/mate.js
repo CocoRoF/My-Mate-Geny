@@ -20,6 +20,7 @@ const geo = require("./geometry");
 const recovery = require("./recovery");
 const chrome = require("./chrome");
 const { t, language } = require("./lang");
+const { launchCommand } = require("./launch");
 
 const RETRY_PAGE = path.join(__dirname, "offline.html");
 
@@ -1073,7 +1074,7 @@ function setAutostart(on) {
     if (linux) {
       if (!on) fs.rmSync(AUTOSTART_FILE, { force: true });
       else {
-        const exec = env.APPIMAGE || process.execPath;
+        const exec = launchCommand(env, process.execPath);
         const appArg = process.defaultApp && process.argv[1] ? ` ${desktopQuote(path.resolve(process.argv[1]))}` : "";
         fs.mkdirSync(path.dirname(AUTOSTART_FILE), { recursive: true });
         fs.writeFileSync(AUTOSTART_FILE, [
