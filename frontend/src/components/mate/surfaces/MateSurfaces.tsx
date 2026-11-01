@@ -26,6 +26,7 @@ import { DropOverlay, useFileDrop } from "../../composer/useFileDrop";
 import MateComposer from "../MateComposer";
 import MateMessages from "../MateMessages";
 import { MateThumb, moodLabel, useFadingCaption } from "../MateStage";
+import RelationBadge from "../RelationBadge";
 import { useT } from "../../../i18n";
 
 type Kind = "mate-overlay" | "mate-quick" | "mate-chat";
@@ -447,7 +448,10 @@ function ChatWindow() {
           <LiveMateAvatar key={mate.id} mate={mate} size="sm" mood={conv.mood} react={conv.react} interactive={false} />
         </div>
         <div className="min-w-0 flex-1 leading-tight">
-          <div className="truncate text-[13.5px] font-semibold text-content">{mate.name}</div>
+          <div className="flex min-w-0 items-center gap-1">
+            <span className="truncate text-[13.5px] font-semibold text-content">{mate.name}</span>
+            <RelationBadge mate={mate} compact />
+          </div>
           <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-content-faint" data-testid="mate-chat-status">
             <span
               className={`h-1.5 w-1.5 shrink-0 rounded-full ${online ? (conv.mood === "idle" ? "bg-success" : "bg-accent animate-pulse-dot") : "bg-content-faint"}`}

@@ -77,6 +77,44 @@ export const DEFAULT_PREFS: MatePrefs = {
   memory: { recall: "normal", self_save: true },
 };
 
+export type RelationStage = "new" | "familiar" | "trusted" | "companion";
+export const RELATION_STAGES: RelationStage[] = ["new", "familiar", "trusted", "companion"];
+export type MoodLabel = "cheerful" | "content" | "calm" | "focused" | "sleepy" | "concerned";
+
+/** what the mate document carries about the relationship (the indicator) */
+export interface RelationSummary {
+  enabled: boolean;
+  paused: boolean;
+  stage: RelationStage;
+  /** 0 – 100, rounded */
+  affinity: number;
+  mood: MoodLabel | null;
+  show_indicator: boolean;
+  avatar_mood: boolean;
+}
+
+/** GET /api/mates/{id}/relation (docs/mate-memory-affinity.md §5) */
+export interface RelationView {
+  enabled: boolean;
+  paused: boolean;
+  /** 0.5 – 1.5 */
+  sensitivity: number;
+  show_indicator: boolean;
+  avatar_mood: boolean;
+  affinity: number;
+  stage: RelationStage;
+  earned_stage: RelationStage;
+  warmth_stage: RelationStage;
+  next: { stage: RelationStage; ratio: number; needs: { days: number; turns: number; memories: number } } | null;
+  stats: { days_together: number; turns: number; active_days: number; streak_days: number; memories: number; idle_days: number | null; grace_days: number };
+  mood: { label: MoodLabel; valence: number; energy: number };
+  milestones: { key: string; at: string }[];
+  /** newest first: d = the change, v = the value after it */
+  log: { at: string; d: number; why: string; v: number }[];
+  started_at: string | null;
+}
+export type RelationPatch = Partial<Pick<RelationView, "enabled" | "paused" | "sensitivity" | "show_indicator" | "avatar_mood" | "affinity">>;
+
 export interface Mate {
   id: string;
   name: string;
@@ -89,6 +127,8 @@ export interface Mate {
   voice: MateVoice;
   /** missing on documents from an older server: DEFAULT_PREFS */
   prefs?: MatePrefs;
+  /** missing on documents from an older server */
+  relation?: RelationSummary;
   session_id: string | null;
   /** a mate shipped with the app (estelle | chaerin | seoa), else null */
   builtin?: string | null;
@@ -298,6 +338,11 @@ export const updateMemory = (id: string, mid: string, patch: MemoryPatch) =>
   apiFetch<Memory>(`/api/mates/${enc(id)}/memories/${enc(mid)}`, { method: "PATCH", ...j(patch) });
 export const bulkMemories = (id: string, ids: string[], action: "delete" | "archive" | "restore" | "pin" | "unpin") =>
   apiFetch<{ changed: number }>(`/api/mates/${enc(id)}/memories/bulk`, { method: "POST", ...j({ ids, action }) });
+export const getRelation = (id: string) => apiFetch<RelationView>(`/api/mates/${enc(id)}/relation`);
+export const patchRelation = (id: string, patch: RelationPatch) =>
+  apiFetch<RelationView>(`/api/mates/${enc(id)}/relation`, { method: "PATCH", ...j(patch) });
+export const resetRelation = (id: string, mode: "zero" | "recompute") =>
+  apiFetch<RelationView>(`/api/mates/${enc(id)}/relation/reset`, { method: "POST", ...j({ mode }) });
 export const previewRecall = (id: string, text: string) =>
   apiFetch<RecallPreview>(`/api/mates/${enc(id)}/memories/preview`, { method: "POST", ...j({ text }) });
 export const deleteMemory = (id: string, mid: string) =>

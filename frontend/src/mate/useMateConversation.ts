@@ -71,6 +71,10 @@ function usePageVisible(): boolean {
 }
 
 /** a turn being followed: its sentences (all windows keep them, so a window taking over goes on from the next one) */
+/** her mood (relation.mood) → the look the idle avatar shows now and then (none for calm / focused) */
+const MOOD_LOOK: Partial<Record<string, string>> = { cheerful: "smile", content: "smile", sleepy: "sleepy", concerned: "sad" };
+const MOOD_LOOK_EVERY_MS = 75_000;
+
 interface Follow {
   key: string;
   /** the turn as every window knows it (its start on the server), for "this sentence is said" between windows */
@@ -548,6 +552,20 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
         : away
           ? "away"
           : "idle";
+
+  // Relationship → "the avatar's idle look follows her mood" (opt-in): while she is idle, a gentle look for her mood
+  // (cheerful / content → smile, sleepy → sleepy, concerned → sad) now and then; reactions from her replies win.
+  const rel = mate?.relation;
+  const moodLook = rel?.enabled && !rel.paused && (flags?.avatarMood ?? rel.avatar_mood) && rel.mood ? MOOD_LOOK[rel.mood] : undefined;
+  useEffect(() => {
+    if (!moodLook || mood !== "idle") return;
+    const first = setTimeout(() => setReact({ name: moodLook, at: Date.now() }), 4000);
+    const every = setInterval(() => setReact({ name: moodLook, at: Date.now() }), MOOD_LOOK_EVERY_MS);
+    return () => {
+      clearTimeout(first);
+      clearInterval(every);
+    };
+  }, [moodLook, mood]);
 
   return {
     sessionId,

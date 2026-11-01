@@ -61,6 +61,8 @@ interface MateState {
   syncVersion: number | null;
   /** per mate: bumped when its memories changed elsewhere (the Memory tab refetches) */
   memoryRev: Record<string, number>;
+  /** per mate: bumped when its relationship changed elsewhere (the Relationship tab refetches) */
+  relationRev: Record<string, number>;
 }
 
 const ACTIVE_KEY = "hrh_mate_active";
@@ -138,6 +140,7 @@ let reloadTimer: ReturnType<typeof setTimeout> | undefined;
 export const useMateStore = create<MateState>((set, get) => ({
   syncVersion: null,
   memoryRev: {},
+  relationRev: {},
   mates: [],
   loaded: false,
   error: null,
@@ -247,6 +250,9 @@ export const useMateStore = create<MateState>((set, get) => ({
     if (seen === null && !reason) return;
     if (reason === "memory" && mateId) {
       set((s) => ({ memoryRev: { ...s.memoryRev, [mateId]: (s.memoryRev[mateId] ?? 0) + 1 } }));
+    }
+    if (reason === "relation" && mateId) {
+      set((s) => ({ relationRev: { ...s.relationRev, [mateId]: (s.relationRev[mateId] ?? 0) + 1 } }));
     }
     if (reason === "settings" && get().providers) void get().loadProviders();
     scheduleReload();
