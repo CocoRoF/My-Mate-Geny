@@ -19,6 +19,7 @@ import { getMateAudioQueue, useMateAudio } from "./audioQueue";
 import { usePreviewVolume } from "./livePreview";
 import { EmotionTracker } from "./emotion";
 import { SentenceStream } from "./sentences";
+import { withoutCode } from "./markdown";
 import type { BodyMood, MateReact } from "./types";
 import { currentSurface, useDesktopMate, type DesktopMateState } from "./desktop";
 import { useVoiceSpeaking } from "./voiceBridge";
@@ -290,7 +291,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
         followRef.current = follow;
       }
       const f = follow;
-      const e = f.emo.push(t.text);
+      const e = f.emo.push(withoutCode(t.text)); // ([ok] in a code block is no feeling)
       if (e && !f.quiet) setReact({ name: e, at: Date.now() });
       const done = t.complete;
       const sentences = done ? f.stream.flush(t.text) : f.stream.push(t.text);

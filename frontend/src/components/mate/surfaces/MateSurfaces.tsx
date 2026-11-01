@@ -15,6 +15,8 @@ import { useMateStore } from "../../../stores/mateStore";
 import { desktopMate, useDesktopMate, type DesktopCommand, type DesktopMateState } from "../../../mate/desktop";
 import { useMateConversation } from "../../../mate/useMateConversation";
 import { parseEmotionText } from "../../../mate/emotion";
+import { plainText } from "../../../mate/markdown";
+import MateReply from "../MateReply";
 import { LiveMateAvatar } from "../../../mate/avatar/MateAvatar";
 import { isHome, useAvatarView } from "../../../mate/avatar/view";
 import Icon from "../../ui/Icon";
@@ -261,12 +263,13 @@ function aspectOf(mate: Mate): number {
   return 0.75;
 }
 
-/** while she writes and nothing is spoken yet: the sentence being written (tags hidden), short */
+/** while she writes and nothing is spoken yet: the sentence being written (tags and markdown hidden), short */
 function useLiveLine(conv: ReturnType<typeof useMateConversation>): string | null {
   if (conv.speaks || !conv.streaming) return null;
   const last = conv.turns[conv.turns.length - 1];
   if (!last || last.role !== "assistant" || last.complete) return null;
-  const text = parseEmotionText(last.text, { streaming: true }).text.trim();
+  // (plain words: no markdown symbols, no code)
+  const text = plainText(parseEmotionText(last.text, { streaming: true }).text).trim();
   const lines = text.split("\n").filter((l) => l.trim());
   const l = lines[lines.length - 1] || "";
   return l ? (l.length > 140 ? "…" + l.slice(-139) : l) : null;
@@ -329,10 +332,8 @@ function Quick() {
   // the overlay shows the reply; without it (or in a browser), the card shows it itself
   const overlayOut = !!desk?.visible;
   const last = conv.turns[conv.turns.length - 1];
-  const reply =
-    !overlayOut && sentAt && last?.role === "assistant"
-      ? parseEmotionText(last.text, { streaming: !last.complete }).text.trim()
-      : "";
+  const replying = !overlayOut && !!sentAt && last?.role === "assistant";
+  const reply = replying ? parseEmotionText(last.text, { streaming: !last.complete }).text.trim() : "";
 
   return (
     <div className="p-2" data-testid="mate-quick" data-pinned={hasDraft ? "true" : "false"}>
@@ -385,8 +386,12 @@ function Quick() {
           </div>
         </div>
         {(reply || (sentAt > 0 && !overlayOut && conv.streaming)) && (
-          <div className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-surface-2/80 px-3 py-2 text-[13px] text-content" style={NO_DRAG} data-testid="mate-quick-reply">
-            {reply || <span className="text-content-faint">{moodLabel(t, "thinking")}</span>}
+          <div className="mt-2 flex max-h-48 flex-col gap-1.5 overflow-y-auto overflow-x-hidden rounded-xl bg-surface-2/80 px-3 py-2 text-[13px] text-content" style={NO_DRAG} data-testid="mate-quick-reply">
+            {reply ? (
+              <MateReply text={last!.text} streaming={!last!.complete} compact bare />
+            ) : (
+              <span className="text-content-faint">{moodLabel(t, "thinking")}</span>
+            )}
           </div>
         )}
       </div>

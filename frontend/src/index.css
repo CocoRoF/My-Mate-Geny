@@ -180,6 +180,108 @@
   padding: 0.35rem 0.6rem;
 }
 
+/* A mate's bubbles (components/mate/MateReply.tsx): conversational, compact; nothing inside widens the page. */
+.mate-md {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.mate-md :where(p, ul, ol, pre, blockquote, table, .mate-md-table) {
+  margin: 0.35rem 0;
+}
+.mate-md > :first-child,
+.mate-md > :first-child > :first-child {
+  margin-top: 0;
+}
+.mate-md > :last-child,
+.mate-md > :last-child > :last-child {
+  margin-bottom: 0;
+}
+.mate-md ul,
+.mate-md ol {
+  padding-left: 1.15rem;
+}
+.mate-md li + li,
+.mate-md li > :is(ul, ol) {
+  margin-top: 0.15rem;
+}
+.mate-md li > :is(ul, ol) {
+  margin-bottom: 0;
+}
+/* deep nesting: from the 4th level on, barely any more indent (a long chain never squeezes the text away) */
+.mate-md :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) {
+  padding-left: 0.5rem;
+}
+.mate-md blockquote blockquote blockquote {
+  padding-left: 0.35rem;
+}
+.mate-md ul ul {
+  list-style: circle;
+}
+.mate-md ul ul ul {
+  list-style: square;
+}
+.mate-md li.task-list-item {
+  list-style: none;
+  margin-left: -1.05rem;
+}
+.mate-md .mate-md-check {
+  margin: 0 0.4em 0 0;
+  vertical-align: -1px;
+  accent-color: #6e8bff;
+}
+.mate-md h1,
+.mate-md h2,
+.mate-md h3 {
+  margin: 0.15rem 0;
+}
+.mate-md :is(h4, h5, h6) {
+  font-weight: 600;
+  margin: 0.15rem 0;
+}
+.mate-md hr {
+  border-color: #2f3647;
+  margin: 0.5rem 0;
+}
+.mate-md a.mate-md-link {
+  overflow-wrap: anywhere;
+}
+.mate-md code {
+  overflow-wrap: anywhere;
+}
+.mate-md pre code {
+  overflow-wrap: normal;
+  white-space: pre;
+}
+.mate-md .mate-md-table {
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 8px;
+}
+.mate-md .mate-md-table table {
+  margin: 0;
+  font-size: 0.82rem;
+}
+.mate-md .mate-md-table :is(th, td) {
+  overflow-wrap: normal;
+  min-width: 3.5rem;
+  max-width: 22rem;
+  vertical-align: top;
+}
+.mate-md th {
+  background: #1a1f2a;
+  font-weight: 600;
+  text-align: left;
+}
+.mate-md-compact :is(ul, ol) {
+  padding-left: 1rem;
+}
+.mate-md-compact .mate-md-table table {
+  font-size: 0.78rem;
+}
+.mate-md-compact .mate-md-table :is(th, td) {
+  padding: 0.25rem 0.45rem;
+}
+
 /* Paths the agent printed: open in the workbench (file tab / explorer). */
 .md .md-path {
   cursor: pointer;

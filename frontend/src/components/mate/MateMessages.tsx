@@ -1,6 +1,7 @@
 /**
- * The mate conversation as bubbles: her lines (emotion tags stripped, light markdown, streaming), what she did with
- * her tools as small activity chips, delegation results as compact cards linking to the worker chat.
+ * The mate conversation as bubbles: her lines (MateReply: a bubble per line or markdown block, emotion tags stripped,
+ * streaming-safe), what she did with her tools as small activity chips, delegation results as compact cards linking to
+ * the worker chat.
  */
 import { memo } from "react";
 import type { FlowItem, ToolActivity, Turn } from "../../stores/chatStore";
@@ -9,7 +10,7 @@ import { useUIStore } from "../../stores/uiStore";
 import { parseEmotionText } from "../../mate/emotion";
 import { currentSurface, desktopMate } from "../../mate/desktop";
 import Icon, { type IconName } from "../ui/Icon";
-import MiniMarkdown from "./MiniMarkdown";
+import MateReply from "./MateReply";
 import MessageAttachments from "../attachments/MessageAttachments";
 import type { Attachment } from "../../types";
 import { useMateChat } from "../../mate/useMateConversation";
@@ -126,26 +127,6 @@ function ActivityChip({ tool }: { tool: ToolActivity }) {
   );
 }
 
-function linesOf(text: string, streaming: boolean): string[] {
-  return parseEmotionText(text, { streaming })
-    .text.split(/\n+/)
-    .map((l) => l.trim())
-    .filter((l) => l && !/^(?:\([^()]*\)|\*[^*]+\*)$/.test(l));
-}
-
-function Bubble({ text, compact }: { text: string; compact?: boolean }) {
-  return (
-    <div
-      className={`max-w-[88%] w-fit rounded-2xl rounded-bl-md border border-border/80 bg-surface-2 text-content shadow-[0_1px_2px_rgba(0,0,0,0.25)] break-words whitespace-pre-wrap ${
-        compact ? "px-3 py-[7px] text-[13px] leading-[1.55]" : "px-3.5 py-2 text-sm leading-relaxed"
-      }`}
-      data-testid="mate-bubble"
-    >
-      <MiniMarkdown text={text} />
-    </div>
-  );
-}
-
 /** what the user said: the files they attached (thumbnails / file cards, like the Chat view), then the text */
 function UserBubble({ text, attachments, pending, compact }: { text: string; attachments?: Attachment[]; pending?: boolean; compact?: boolean }) {
   return (
@@ -224,7 +205,7 @@ const AssistantBubbles = memo(function AssistantBubbles({ turn, compact }: { tur
   const items: JSX.Element[] = [];
   turn.flow.forEach((f: FlowItem, i) => {
     if (f.kind === "text") {
-      for (const [j, l] of linesOf(f.text, running && i === lastText).entries()) items.push(<Bubble key={`${i}.${j}`} text={l} compact={compact} />);
+      items.push(<MateReply key={i} keyPrefix={`${i}.`} text={f.text} streaming={running && i === lastText} compact={compact} />);
     } else if (f.kind === "tool") {
       const t = toolsById.get(f.toolId);
       if (t) items.push(<ActivityChip key={i} tool={t} />);

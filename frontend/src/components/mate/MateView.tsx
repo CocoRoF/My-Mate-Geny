@@ -277,7 +277,7 @@ export default function MateView() {
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" {...dropProps} data-testid="mate-conversation">
       {dragging && <DropOverlay hint={t("mate.dropHint", { name: mate.name })} />}
       {banners}
-      <MateMessages turns={conv.turns} emptyText={conv.connection === "open" ? t("mate.sayHi", { name: mate.name }) : t("common.loading")} />
+      <MateMessages turns={conv.turns} compact={phone} emptyText={conv.connection === "open" ? t("mate.sayHi", { name: mate.name }) : t("common.loading")} />
       <div className={`shrink-0 px-3 pt-1 sm:px-4 ${keyboard ? "pb-2" : "pb-3"}`}>
         {/* phones: read-aloud lives in the header, the composer row is + · text · mic · send */}
         <MateComposer mate={mate} conv={conv} showVoiceToggle={!phone} />
