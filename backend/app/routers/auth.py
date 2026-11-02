@@ -33,7 +33,7 @@ from app.auth import (
     safe_next,
     username_problem,
 )
-from app.preferences import LANG_COOKIE, request_language
+from app.preferences import LANG_COOKIE, request_language, request_theme
 
 router = APIRouter()
 
@@ -60,9 +60,9 @@ class CredentialsBody(BaseModel):
 # without it). It posts to /api/auth/login on the same origin; native apps use
 # their own connect screen + the exchange flow described at the top.
 _LOGIN_HTML = """<!doctype html>
-<html lang="__LANG__"><head><meta charset="utf-8">
+<html lang="__LANG__" class="__THEME_CLASS__"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0a0c10">
+<meta name="theme-color" content="__THEME_COLOR__">
 <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
 <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -71,39 +71,70 @@ _LOGIN_HTML = """<!doctype html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+  // light / dark before the first paint: this browser's choice (the console's localStorage), else the server's
+  // (the class on <html>: the cookie / the account's), else the system's (the media query below)
+  (function(){var h=document.documentElement,m=null;try{m=localStorage.getItem('hrh_theme');}catch(e){}
+    if(m==='light'||m==='dark'){h.classList.remove('light','dark');h.classList.add(m);}
+    else if(m==='system'){h.classList.remove('light','dark');}
+    var l=h.classList.contains('light')||(!h.classList.contains('dark')&&window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches);
+    var t=document.querySelector('meta[name="theme-color"]');if(t)t.setAttribute('content',l?'#f1f3f7':'#0a0c10');})();
+</script>
 <style>
-  :root { color-scheme: dark; --mint:#8ee6c0; --mint-2:#5fd4a4; }
+  :root { color-scheme: dark; --mint:#8ee6c0; --mint-2:#5fd4a4; --ink:#e6e9f0; --dim:#9aa3b4; --faint:#5e6676;
+    --page:radial-gradient(1000px 520px at 50% -12%, rgba(95,212,164,.10) 0%, transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, #141a2e 0%, transparent 50%), #0a0c10;
+    --card:rgba(20,24,31,.78); --card-line:#222a33; --card-shadow:0 0 0 1px rgba(142,230,192,.05), 0 24px 70px -24px rgba(0,0,0,.8);
+    --field:rgba(13,16,21,.85); --field-line:#232b35; --focus:rgba(142,230,192,.55); --focus-ring:rgba(142,230,192,.13);
+    --btn-ink:#06140f; --btn-from:var(--mint); --btn-to:var(--mint-2); --btn-shadow:0 8px 22px -10px rgba(95,212,164,.7);
+    --grad-from:var(--mint); --grad-to:#22d3ee; --logo-glow:rgba(95,212,164,.22); --err:#f87171;
+    --warn-bg:rgba(245,158,11,.12); --warn-line:rgba(245,158,11,.35); --warn:#fbbf24; --warn-b:#fcd34d; }
+  /* the light theme: chosen (class), or the system's when nothing was chosen */
+  html.light { color-scheme: light; --ink:#161a23; --dim:#474f5f; --faint:#5f6779;
+    --page:radial-gradient(1000px 520px at 50% -12%, rgba(31,170,120,.12) 0%, transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, #e6ebff 0%, transparent 50%), #f1f3f7;
+    --card:rgba(255,255,255,.92); --card-line:#dce0e8; --card-shadow:0 1px 3px rgba(16,24,40,.06), 0 24px 60px -28px rgba(16,24,40,.28);
+    --field:#f8f9fb; --field-line:#c2c8d4; --focus:#1f9e72; --focus-ring:rgba(31,158,114,.18);
+    --btn-ink:#04140d; --btn-from:#6fdcb0; --btn-to:#3fc792; --btn-shadow:0 8px 20px -12px rgba(20,140,95,.6);
+    --grad-from:#0a7f58; --grad-to:#07748c; --logo-glow:rgba(20,140,95,.18); --err:#be1e24;
+    --warn-bg:rgba(150,90,0,.07); --warn-line:rgba(150,90,0,.3); --warn:#7a4a00; --warn-b:#5c3800; }
+  @media (prefers-color-scheme: light) {
+    html:not(.dark):not(.light) { color-scheme: light; --ink:#161a23; --dim:#474f5f; --faint:#5f6779;
+      --page:radial-gradient(1000px 520px at 50% -12%, rgba(31,170,120,.12) 0%, transparent 60%),
+        radial-gradient(900px 500px at -10% 110%, #e6ebff 0%, transparent 50%), #f1f3f7;
+      --card:rgba(255,255,255,.92); --card-line:#dce0e8; --card-shadow:0 1px 3px rgba(16,24,40,.06), 0 24px 60px -28px rgba(16,24,40,.28);
+      --field:#f8f9fb; --field-line:#c2c8d4; --focus:#1f9e72; --focus-ring:rgba(31,158,114,.18);
+      --btn-ink:#04140d; --btn-from:#6fdcb0; --btn-to:#3fc792; --btn-shadow:0 8px 20px -12px rgba(20,140,95,.6);
+      --grad-from:#0a7f58; --grad-to:#07748c; --logo-glow:rgba(20,140,95,.18); --err:#be1e24;
+      --warn-bg:rgba(150,90,0,.07); --warn-line:rgba(150,90,0,.3); --warn:#7a4a00; --warn-b:#5c3800; }
+  }
   * { box-sizing: border-box; }
   body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px 16px;
-    font-family:Inter,"Noto Sans KR",ui-sans-serif,system-ui,sans-serif; color:#e6e9f0;
-    background:
-      radial-gradient(1000px 520px at 50% -12%, rgba(95,212,164,.10) 0%, transparent 60%),
-      radial-gradient(900px 500px at -10% 110%, #141a2e 0%, transparent 50%), #0a0c10; }
-  .card { width:352px; max-width:100%; background:rgba(20,24,31,.78); border:1px solid #222a33; border-radius:18px;
-    padding:30px 30px 26px; box-shadow:0 0 0 1px rgba(142,230,192,.05), 0 24px 70px -24px rgba(0,0,0,.8);
-    backdrop-filter:blur(12px); }
+    font-family:Inter,"Noto Sans KR",ui-sans-serif,system-ui,sans-serif; color:var(--ink); background:var(--page); }
+  .card { width:352px; max-width:100%; background:var(--card); border:1px solid var(--card-line); border-radius:18px;
+    padding:30px 30px 26px; box-shadow:var(--card-shadow); backdrop-filter:blur(12px); }
   .brand { display:flex; flex-direction:column; align-items:center; text-align:center; margin-bottom:22px; }
   .logo { width:104px; height:104px; margin:-4px 0 10px; user-select:none;
-    filter:drop-shadow(0 10px 26px rgba(95,212,164,.22)); }
+    filter:drop-shadow(0 10px 26px var(--logo-glow)); }
   h1 { font-size:18px; font-weight:600; margin:0; letter-spacing:-.01em; }
-  .sub { color:#5e6676; font-size:11.5px; margin-top:3px; }
-  .grad { background:linear-gradient(135deg,var(--mint),#22d3ee); -webkit-background-clip:text; background-clip:text; color:transparent; }
-  label { display:block; font-size:11px; color:#9aa3b4; text-transform:uppercase; letter-spacing:.06em; font-weight:500; }
-  input { width:100%; margin:6px 0 14px; padding:11px 12px; background:rgba(13,16,21,.85); border:1px solid #232b35;
-    border-radius:10px; color:#e6e9f0; font-size:14px; font-family:inherit; transition:.15s; }
-  input:focus { outline:none; border-color:rgba(142,230,192,.55); box-shadow:0 0 0 3px rgba(142,230,192,.13); }
-  button { width:100%; padding:11px; color:#06140f; border:0; border-radius:10px; font-weight:600; cursor:pointer;
-    font-size:14px; font-family:inherit; background:linear-gradient(135deg,var(--mint),var(--mint-2));
-    box-shadow:0 8px 22px -10px rgba(95,212,164,.7); transition:.15s; }
+  .sub { color:var(--faint); font-size:11.5px; margin-top:3px; }
+  .grad { background:linear-gradient(135deg,var(--grad-from),var(--grad-to)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  label { display:block; font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; font-weight:500; }
+  input { width:100%; margin:6px 0 14px; padding:11px 12px; background:var(--field); border:1px solid var(--field-line);
+    border-radius:10px; color:var(--ink); font-size:14px; font-family:inherit; transition:.15s; }
+  input:focus { outline:none; border-color:var(--focus); box-shadow:0 0 0 3px var(--focus-ring); }
+  button { width:100%; padding:11px; color:var(--btn-ink); border:0; border-radius:10px; font-weight:600; cursor:pointer;
+    font-size:14px; font-family:inherit; background:linear-gradient(135deg,var(--btn-from),var(--btn-to));
+    box-shadow:var(--btn-shadow); transition:.15s; }
   button:hover:not(:disabled){ filter:brightness(1.06); }
   button:disabled { opacity:.5; cursor:default; }
-  .err { color:#f87171; font-size:12px; min-height:16px; margin-top:10px; text-align:center; }
+  .err { color:var(--err); font-size:12px; min-height:16px; margin-top:10px; text-align:center; }
   .warn { display:flex; gap:8px; align-items:flex-start; margin:0 0 18px; padding:10px 12px; border-radius:10px;
-    background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.35); color:#fbbf24; font-size:12px; line-height:1.45; }
-  .warn b { color:#fcd34d; }
+    background:var(--warn-bg); border:1px solid var(--warn-line); color:var(--warn); font-size:12px; line-height:1.45; }
+  .warn b { color:var(--warn-b); }
   .lang { margin-top:16px; text-align:center; font-size:11.5px; }
-  .lang a { color:#5e6676; text-decoration:none; cursor:pointer; }
-  .lang a:hover { color:#9aa3b4; }
+  .lang a { color:var(--faint); text-decoration:none; cursor:pointer; }
+  .lang a:hover { color:var(--dim); }
 </style></head>
 <body>
   <form class="card" id="f">
@@ -194,12 +225,16 @@ async def login_page(request: Request, error: str | None = None) -> HTMLResponse
     lang = request_language(request, getattr(request.app.state, "db", None))
     tx = _LOGIN_TEXT[lang]
     other = "ko" if lang == "en" else "en"
+    # light / dark: the console's choice (cookie) or the account's; "system" leaves it to prefers-color-scheme
+    theme = request_theme(request, getattr(request.app.state, "db", None))
     page = (
         _LOGIN_HTML.replace("__WARNING__", _warning(lang) if default else "")
         # Prefill only the (public) default username, never a custom one.
         .replace("__USERNAME__", html.escape(auth.username) if default else "")
         .replace("__ERROR__", html.escape(tx[error] if error in _PAGE_ERRORS else ""))
         .replace("__LANG__", lang)
+        .replace("__THEME_CLASS__", theme if theme in ("light", "dark") else "")
+        .replace("__THEME_COLOR__", "#f1f3f7" if theme == "light" else "#0a0c10")
         .replace("__T_TITLE__", tx["title"])
         .replace("__T_TAGLINE__", tx["tagline"])
         .replace("__T_USERNAME__", tx["username"])
