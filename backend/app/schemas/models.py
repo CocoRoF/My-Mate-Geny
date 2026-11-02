@@ -65,6 +65,7 @@ class SessionUpdate(BaseModel):
     title: str | None = None
     auto_compact_window: int | None = None  # tokens; 0 = CLI default; -1 = back to the global default
     account_id: str | None = None           # run on this account from the next turn (load balancing on)
+    higgsfield: dict | None = None          # {enabled?, max_credits?}: this chat's Higgsfield (docs/higgsfield.md)
 
 
 class SessionOut(BaseModel):

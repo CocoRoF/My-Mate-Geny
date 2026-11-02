@@ -85,6 +85,10 @@ My Mate Geny는 **Claude Code**와 **Codex** CLI를 내 컴퓨터나 서버에�
   한도에 막힌 턴은 다른 계정에서 이어서 진행합니다.
 - **사용량.** 계정별 플랜 사용량(5시간, 주간, 모델별 주간), 턴·채팅마다의 API 환산 비용, 서버 전체
   토큰 합계를 보여줍니다.
+- **Higgsfield.** Higgsfield 계정을 연결하면(설정 → 공급자 → Higgsfield) 모든 채팅의 에이전트가 공식
+  `higgsfield` CLI와 스킬로 이미지·영상·오디오·3D를 만들 수 있습니다. 로그인과 갱신은 서버가 하고 채팅에는
+  액세스 토큰만 건네며, 채팅마다 끄거나 비싼 작업 전에 묻게 할 수 있고, 턴마다 쓴 크레딧이 표시됩니다
+  ([docs/higgsfield.md](docs/higgsfield.md)).
 
 **메이트**
 
@@ -267,7 +271,7 @@ npx tsc -p . --noEmit                  # 타입 체크
 ```
 
 채팅은 **엔진 × workspace × 대화**로 이루어집니다. 자세한 내용:
-[구조](docs/architecture.md) · [프로바이더](docs/providers.md) · [원격 workspace](docs/remote.md) ·
+[구조](docs/architecture.md) · [프로바이더](docs/providers.md) · [원격 workspace](docs/remote.md) · [Higgsfield](docs/higgsfield.md) ·
 [메이트](docs/mate.md) · [인증](docs/auth.md) · [모니터링](docs/monitoring.md) · [배포](docs/deploy.md)
 (문서는 영어)
 
@@ -284,7 +288,7 @@ npx tsc -p . --noEmit                  # 타입 체크
   투명 PNG)를 바꾸고 `python3 scripts/make-icons.py` 를 실행하면 됩니다. 자세한 내용과 모든 서드파티
   라이선스는 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)에 있습니다.
 
-My Mate Geny는 Anthropic, OpenAI, Live2D와 관계가 없습니다. Claude Code, Codex와 연결한 계정의 사용은 각
+My Mate Geny는 Anthropic, OpenAI, Higgsfield, Live2D와 관계가 없습니다. Claude Code, Codex, Higgsfield와 연결한 계정의 사용은 각
 제공자의 약관을 따릅니다.
 
 ## 감사의 말

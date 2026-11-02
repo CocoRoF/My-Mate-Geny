@@ -204,6 +204,16 @@ class TurnRequest:
     # tools (an engine without file tools: Mate). The contents are filled in
     # beforehand (``_inline_files.prepare_inline``).
     inline_files: bool = False
+    # Environment for the agent's own tools (e.g. Higgsfield: PATH with the CLI
+    # first, its credentials file) — part of a persistent engine's launch.
+    tool_env: dict[str, str] = field(default_factory=dict)
+    # A short note about this chat's environment (e.g. "Higgsfield is
+    # connected"). Claude: appended to the system prompt; Codex: put before the
+    # message when ``note_in_prompt`` (a new thread, or the note changed).
+    system_append: str = ""
+    note_in_prompt: bool = False
+    # Claude: plugins for this session only (``--plugin-dir``), e.g. skills.
+    plugin_dirs: list[str] = field(default_factory=list)
 
 
 class ProviderTurnError(RuntimeError):

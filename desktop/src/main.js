@@ -57,6 +57,7 @@ const theme = require("./theme");
 const { t, language, pageText } = require("./lang");
 const { launchCommand } = require("./launch");
 const rename = require("./rename");
+const oauthCatch = require("./oauth-catch");
 
 const RETRY_PAGE = path.join(__dirname, "offline.html");
 
@@ -516,6 +517,33 @@ ipcMain.handle("update:download", (e) => (fromAppPage(e) ? updater.download() : 
 ipcMain.handle("update:cancel", (e) => (fromAppPage(e) ? updater.cancel() : null));
 ipcMain.handle("update:install", (e) => (fromAppPage(e) ? updater.install() : null));
 ipcMain.handle("update:retry", (e) => (fromAppPage(e) ? updater.retry() : null));
+
+// Higgsfield's sign-in lands on http://localhost:8765/callback (its CLI's OAuth client): while the console's connect
+// dialog waits, catch it here and hand the address to the page, which sends it to the server (oauth-catch.js)
+let hfCatch = null;
+ipcMain.handle("higgsfield:catch", async (e, o = {}) => {
+  if (!fromAppPage(e)) return { error: "denied" };
+  if (hfCatch) hfCatch.cancel();
+  const mine = oauthCatch.catchRedirect({
+    port: 8765,
+    path: "/callback",
+    timeoutMs: Math.min(Math.max(Number(o && o.timeoutMs) || 15 * 60 * 1000, 10 * 1000), 30 * 60 * 1000),
+    page: (ok) => oauthCatch.callbackPage({ ok, title: t(ok ? "hfCaughtTitle" : "hfRefusedTitle"), body: t("hfCaughtBody") }),
+  });
+  hfCatch = mine;
+  const result = await mine.done;
+  if (hfCatch === mine) hfCatch = null;
+  const w = BrowserWindow.fromWebContents(e.sender);
+  if (result.url && w && !w.isDestroyed()) {
+    if (w.isMinimized()) w.restore();
+    w.show();
+    w.focus();
+  }
+  return result;
+});
+ipcMain.handle("higgsfield:cancel", (e) => {
+  if (fromAppPage(e) && hfCatch) hfCatch.cancel();
+});
 
 // a folder on this computer for a chat (folders.js): native dialog, same-machine probe, its files for a copy
 folders.registerIpc({ ipcMain, dialog, BrowserWindow, app, allowed: (e) => fromAppPage(e) && sameOrigin((e.senderFrame && e.senderFrame.url) || ""), pickTitle: () => t("pickFolder") });

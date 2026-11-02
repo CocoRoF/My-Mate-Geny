@@ -57,6 +57,12 @@ Verified: unauthenticated turns stream a clean `error` event (no hang); auth
 status reports installed/not-logged-in correctly. The `item.*` field names
 should be reconfirmed on the first authenticated run (the parser is defensive).
 
+## Higgsfield — `app/higgsfield/` (a provider of tools, not an engine)
+
+Not an agent engine: a Higgsfield account (Settings → Providers → Higgsfield) gives every chat's agent, on either
+engine, the official `higgsfield` CLI already signed in with an access token the server controls. See
+[higgsfield.md](higgsfield.md).
+
 ## Adding a provider
 
 1. Subclass `Provider`, implement `auth_status` + `run_turn_stream`.

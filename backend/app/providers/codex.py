@@ -143,6 +143,10 @@ class CodexProvider(Provider):
             text += "\n\n<additional_folders>\nYou may also read and edit these folders:\n" + "\n".join(
                 f"- {d}" for d in req.extra_dirs
             ) + "\n</additional_folders>"
+        if req.system_append and req.note_in_prompt:
+            # (Codex's developer_instructions would replace the user's own: the note rides in the message,
+            # once per thread / when it changes)
+            text = f"<environment_note>\n{req.system_append}\n</environment_note>\n\n{text}"
         if req.mode == "plan":
             text = _PLAN_PREFIX + text
         return text.encode()
@@ -162,7 +166,7 @@ class CodexProvider(Provider):
         return ((_PLAN_PREFIX if req.mode == "plan" else "") + text).encode()
 
     async def run_turn_stream(self, req: TurnRequest) -> AsyncIterator[ProviderEvent]:
-        env_extras = dict(req.extra_env)
+        env_extras = {**({} if req.sealed else req.tool_env), **req.extra_env}
         if req.api_key:
             env_extras["OPENAI_API_KEY"] = req.api_key
         warnings: list[str] = []

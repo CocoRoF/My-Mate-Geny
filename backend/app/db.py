@@ -307,6 +307,7 @@ class Database:
                 ("last_result", "TEXT"),
                 ("last_result_at", "TEXT"),
                 ("last_seen_at", "TEXT"),
+                ("higgsfield", "TEXT"),  # the chat's Higgsfield settings (JSON; NULL = defaults)
             ):
                 if col not in cols:
                     self._conn.execute(f"ALTER TABLE sessions ADD COLUMN {col} {ddl}")

@@ -90,6 +90,11 @@ chat, keeps an eye on it and tells you how it went.
   limit continues on another account.
 - **Usage.** Plan usage per account (5-hour, weekly, per-model weekly), the
   API-equivalent cost of every turn and chat, and the server's token totals.
+- **Higgsfield.** Connect a Higgsfield account (Settings → Providers → Higgsfield) and every
+  chat's agent can generate images, video, audio and 3D with the official `higgsfield` CLI and
+  skills: the server signs in, refreshes and hands chats an access token only; each chat can
+  turn it off or ask before costly jobs, and sees the credits a turn spent
+  ([docs/higgsfield.md](docs/higgsfield.md)).
 
 **The Mate**
 
@@ -291,7 +296,7 @@ Real turns need `claude` and/or `codex` on `PATH`
 
 A chat is **engine × workspace × conversation**. More:
 [architecture](docs/architecture.md) · [providers](docs/providers.md) ·
-[remote workspaces](docs/remote.md) · [Mate](docs/mate.md) · [auth](docs/auth.md) ·
+[remote workspaces](docs/remote.md) · [Higgsfield](docs/higgsfield.md) · [Mate](docs/mate.md) · [auth](docs/auth.md) ·
 [monitoring](docs/monitoring.md) · [deployment](docs/deploy.md)
 
 *(Formerly "hr-harnessor": some internal identifiers, such as the `~/.hr-harnessor` state
@@ -309,8 +314,8 @@ update in place.)*
   `python3 scripts/make-icons.py`. Details and every third-party licence:
   [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
-My Mate Geny is not affiliated with Anthropic, OpenAI or Live2D. Use of Claude Code, Codex
-and connected accounts is subject to their providers' terms.
+My Mate Geny is not affiliated with Anthropic, OpenAI, Higgsfield or Live2D. Use of Claude Code,
+Codex, Higgsfield and connected accounts is subject to their providers' terms.
 
 ## Acknowledgements
 

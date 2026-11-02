@@ -120,7 +120,10 @@ class ClaudeCodeProvider(Provider):
                      else ["--system-prompt", req.system_prompt or ""])
             argv += ["--system-prompt-snapshot", "off"]
         else:
-            argv += ["--append-system-prompt", WAIT_GUIDE]
+            argv += ["--append-system-prompt", WAIT_GUIDE + (f"\n\n{req.system_append}" if req.system_append else "")]
+        if not req.sealed:
+            for d in req.plugin_dirs:
+                argv += ["--plugin-dir", d]
         if req.tools is not None:
             argv += ["--tools", ",".join(req.tools)]  # "" = no built-in tools at all
         if req.allowed_tools:
@@ -199,6 +202,10 @@ class ClaudeCodeProvider(Provider):
             "tools": req.tools,
             "allowed": sorted(req.allowed_tools or []),
             "sealed": req.sealed,
+            # (only when set: chats from before keep their engine's fingerprint)
+            **({"tool_env": req.tool_env} if req.tool_env else {}),
+            **({"append": req.system_append} if req.system_append else {}),
+            **({"plugins": req.plugin_dirs} if req.plugin_dirs else {}),
         }, sort_keys=True)
         return hashlib.sha256(key.encode()).hexdigest()
 
@@ -208,7 +215,7 @@ class ClaudeCodeProvider(Provider):
     @staticmethod
     def engine_env(req: TurnRequest) -> dict[str, str]:
         """Launch environment from the turn's settings (on top of CLI_ENV)."""
-        env: dict[str, str] = {}
+        env: dict[str, str] = dict(req.tool_env)
         if req.auto_compact_window and req.auto_compact_window > 0:
             env[AUTO_COMPACT_ENV] = str(int(req.auto_compact_window))
         return env

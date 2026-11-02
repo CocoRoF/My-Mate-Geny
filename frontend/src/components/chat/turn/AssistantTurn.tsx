@@ -16,6 +16,7 @@ import { useChatStore } from "../../../stores/chatStore";
 import TurnCost from "../TurnCost";
 import CompactionDivider from "../CompactionDivider";
 import ViaBadge from "../ViaBadge";
+import HiggsfieldSpend from "./HiggsfieldSpend";
 
 type Segment =
   | { kind: "text"; text: string }
@@ -199,6 +200,7 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
             case "notice":
               if (s.item.code === "context.compacted")
                 return <CompactionDivider key={i} data={s.item.data} message={s.item.message} />;
+              if (s.item.code === "higgsfield.spend") return <HiggsfieldSpend key={i} data={s.item.data} />;
               return (
                 <div
                   key={i}

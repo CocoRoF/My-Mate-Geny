@@ -23,6 +23,7 @@ import Icon from "../ui/Icon";
 import ProviderOAuthModal from "./ProviderOAuthModal";
 import PlanWindowBars from "../usage/PlanWindowBars";
 import UsageModal from "../usage/UsageModal";
+import HiggsfieldPanel, { HIGGSFIELD, HiggsfieldTab } from "./HiggsfieldPanel";
 
 const STRATEGIES: { id: string; label: MsgKey }[] = [
   { id: "most_remaining", label: "providers.stratMostRemaining" },
@@ -81,9 +82,14 @@ export default function ProvidersView() {
               </button>
             );
           })}
+          <HiggsfieldTab selected={tab === HIGGSFIELD} onPick={() => setTab(HIGGSFIELD)} />
         </div>
 
-        {tab && <ProviderPanel key={tab} provider={tab} label={catalog[tab]?.label || tab} />}
+        {tab === HIGGSFIELD ? (
+          <HiggsfieldPanel />
+        ) : (
+          tab && <ProviderPanel key={tab} provider={tab} label={catalog[tab]?.label || tab} />
+        )}
       </div>
     </div>
   );

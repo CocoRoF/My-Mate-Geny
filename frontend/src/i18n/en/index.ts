@@ -6,6 +6,7 @@ import composer from "./composer.ts";
 import connections from "./connections.ts";
 import downloads from "./downloads.ts";
 import files from "./files.ts";
+import higgsfield from "./higgsfield.ts";
 import mate from "./mate.ts";
 import mateSettings from "./mateSettings.ts";
 import nav from "./nav.ts";
@@ -18,6 +19,6 @@ import turn from "./turn.ts";
 import usage from "./usage.ts";
 import workspace from "./workspace.ts";
 
-const en = { admin, chat, common, composer, connections, downloads, files, mate, mateSettings, nav, providers, session, settings, tasks, topbar, turn, usage, workspace };
+const en = { admin, chat, common, composer, connections, downloads, files, higgsfield, mate, mateSettings, nav, providers, session, settings, tasks, topbar, turn, usage, workspace };
 export type Catalog = typeof en;
 export default en;

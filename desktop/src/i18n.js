@@ -37,6 +37,10 @@ const MESSAGES = {
     gpuBody: "The graphics process keeps crashing — software rendering will be used from the next start.",
     startFailedTitle: "{product} could not start",
     startFailedBody: "{error}\n\nDetails are in the log:\n{log}\n\nPlease try again; if it keeps failing, send the log with your report.",
+    // the page the browser shows after Higgsfield's sign-in (oauth-catch.js)
+    hfCaughtTitle: "Signed in to Higgsfield",
+    hfRefusedTitle: "The Higgsfield sign-in didn't finish",
+    hfCaughtBody: "You can close this tab and go back to My Mate Geny.",
     // app menu (main.js)
     menuView: "View",
     menuMate: "Mate",
@@ -162,6 +166,9 @@ const MESSAGES = {
     gpuBody: "그래픽 프로세스가 계속 멈춰요 — 다음 실행부터 소프트웨어 렌더링을 사용해요.",
     startFailedTitle: "{product}을(를) 시작하지 못했어요",
     startFailedBody: "{error}\n\n자세한 내용은 로그에 있어요:\n{log}\n\n다시 실행해 보시고, 계속 안 되면 이 로그를 함께 알려 주세요.",
+    hfCaughtTitle: "Higgsfield 에 로그인했어요",
+    hfRefusedTitle: "Higgsfield 로그인이 끝나지 않았어요",
+    hfCaughtBody: "이 탭을 닫고 My Mate Geny 로 돌아가세요.",
     menuView: "보기",
     menuMate: "메이트",
     menuShowHide: "메이트 보이기 / 숨기기",

@@ -10,6 +10,7 @@ export type SessionPatch = {
   title?: string;
   auto_compact_window?: number; // tokens; 0 = CLI default; -1 = back to the global default
   account_id?: string; // run on this account from the next turn
+  higgsfield?: { enabled?: boolean; max_credits?: number | null }; // this chat's Higgsfield
 };
 
 export const listSessions = () => apiFetch<Session[]>("/api/sessions");

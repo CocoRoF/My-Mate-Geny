@@ -129,6 +129,11 @@ contextBridge.exposeInMainWorld("hrhNative", {
     retry: () => ipcRenderer.invoke("update:retry"),
     onState: (cb) => listen("update:state", cb),
   },
+  // Higgsfield's sign-in redirect to localhost:8765 caught by the app (oauth-catch.js) → {url} | {error}
+  higgsfield: {
+    catchCallback: (o = {}) => ipcRenderer.invoke("higgsfield:catch", { timeoutMs: num(o.timeoutMs) }),
+    cancelCatch: () => ipcRenderer.invoke("higgsfield:cancel"),
+  },
 });
 
 // A page that draws no title bar of its own in a window without the system one (an older web console, the login

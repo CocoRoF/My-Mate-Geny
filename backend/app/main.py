@@ -37,6 +37,7 @@ from app.routers import (
     execute,
     git,
     health,
+    higgsfield as higgsfield_router,
     history,
     mate_internal,
     mates,
@@ -47,6 +48,8 @@ from app.routers import (
     usage,
     workspaces,
 )
+from app.higgsfield.agent import HiggsfieldAgent
+from app.higgsfield.service import HiggsfieldService
 from app.mate.service import MateService
 from app.mate.store import MateStore
 from app.mate.voice import VoiceService
@@ -107,6 +110,13 @@ async def lifespan(app: FastAPI):
     mate_store = MateStore(db, vault)
     app.state.mate_service = MateService(session_service, mate_store, logs=logs)
     app.state.voice_service = VoiceService(mate_store)
+    # Higgsfield: accounts + what the chats' agents get (docs/higgsfield.md)
+    higgsfield = HiggsfieldService(db, vault)
+    app.state.higgsfield = higgsfield
+    app.state.higgsfield_agent = HiggsfieldAgent(
+        higgsfield, is_live=session_service.is_live, session_exists=session_service.exists)
+    session_service.higgsfield = app.state.higgsfield_agent
+    higgsfield_keeper = asyncio.create_task(app.state.higgsfield_agent.run_keeper())
 
     async def housekeeping() -> None:
         while True:
@@ -132,6 +142,7 @@ async def lifespan(app: FastAPI):
     yield
 
     housekeeper.cancel()
+    higgsfield_keeper.cancel()
     if system_monitor is not None:
         await system_monitor.stop()  # flushes the partial minute, marks a clean shutdown
     await session_service.shutdown()  # end engines (and their background tasks) cleanly
@@ -188,6 +199,7 @@ for r in (
     config_router.router,
     providers.router,
     accounts.router,
+    higgsfield_router.router,
     connections.router,
     workspaces.router,
     session_git.router,
