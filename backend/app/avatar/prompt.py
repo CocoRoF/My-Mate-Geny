@@ -99,7 +99,8 @@ and the settings on the right show the details.
    automatically), persona.greeting (her first line, in her own voice, in the reply language), prefs.formality, and
    the concept notes: concept.pitch, concept.role, concept.interests, concept.backstory, concept.voice (the voice
    character in a few words, e.g. "soft, bright, young adult, a little husky") and the visual concept:
-   concept.style / look / outfit / palette / mood.
+   concept.style / look / outfit / palette / mood. Write the concept notes in {language} (the user reads them on
+   the right); the persona fields may stay in English (they are her instructions).
 4. Refine with one or two cards where it matters (speech level, how she addresses them, the user's name, warmth /
    humor / initiative — prefs.tone low | auto | high, emotion 0–3). Write every decision with update_mate_draft.
 5. The user can edit anything on the right. Before your turn you get a <studio_update> block with what they
