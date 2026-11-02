@@ -8,11 +8,13 @@
 // {server}/auth/exchange?code=… so the session cookie is set first-party.
 // Later starts go straight to the saved server.
 //
-// Naming (docs/mate.md §0): the product is shown as "My Mate Geny", but the
-// internal ids stay — appId `me.hrletsgo.harnessor` (Windows notifications,
-// installer GUID, in-place updates) and the userData folder `hr-harnessor`
-// (settings.json, the login cookie), pinned below because Electron would
-// otherwise derive it from the new productName and log everyone out.
+// Naming (docs/mate.md §0, README "Naming"): the product is shown as "My Mate
+// Geny" and the Linux package / launcher is `my-mate-geny` (src/rename.js
+// carries over start at login and a dock pin), but the internal ids stay —
+// appId `me.hrletsgo.harnessor` (Windows notifications, installer GUID,
+// in-place updates) and the userData folder `hr-harnessor` (settings.json,
+// the login cookie, logs), pinned below because Electron would otherwise
+// derive it from the productName and log everyone out.
 const { app, BrowserWindow, Menu, Notification, ipcMain, shell, clipboard, session, systemPreferences, net, dialog } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
@@ -53,6 +55,7 @@ const { createUpdater, restartArgs, restartCommand } = require("./updater");
 const { isLang } = require("./i18n");
 const { t, language, pageText } = require("./lang");
 const { launchCommand } = require("./launch");
+const rename = require("./rename");
 
 const RETRY_PAGE = path.join(__dirname, "offline.html");
 
@@ -630,6 +633,16 @@ if (restartOnX11 && relaunchOnX11()) {
     mate.start();
     startup.started();
     mainLog.info(`ready${startedHidden ? " (hidden start)" : ""}`);
+    // the .deb's menu entry was hr-harnessor-desktop.desktop up to 0.4.19: a GNOME dock pin of it follows the rename
+    if (linux && !env.APPIMAGE) {
+      rename.migrateDockPin({
+        execFile: require("child_process").execFile,
+        desktopFileExists: () => require("fs").existsSync(`/usr/share/applications/${rename.DESKTOP_ID}`),
+        done: () => !!readSettings().dockPinRenamed,
+        markDone: () => writeSettings({ dockPinRenamed: true }),
+        log: (m) => mainLog.info(m),
+      });
+    }
     // updates: a quiet look 30 s after the start and every 6 hours (downloading is the user's call)
     setTimeout(() => void updater.check(), 30_000).unref?.();
     setInterval(() => void updater.check(), 6 * 3600_000).unref?.();

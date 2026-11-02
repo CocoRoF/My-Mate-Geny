@@ -21,6 +21,29 @@ else
     ln -sf "$APP_DIR/${executable}" '/usr/bin/${executable}'
 fi
 
+# The package was hr-harnessor-desktop up to 0.4.19 (launcher /opt/.../hr-harnessor-desktop, AppArmor profile
+# /etc/apparmor.d/hr-harnessor-desktop). This one Replaces + Conflicts it, so dpkg has just removed it, but its postrm
+# left /usr/bin/hr-harnessor-desktop behind (it gave update-alternatives the wrong path) and, when dpkg counts the old
+# package as replaced ("disappear") rather than removed, skips its AppArmor clean-up. Both are done here.
+OLD_EXECUTABLE='hr-harnessor-desktop'
+if [ "$OLD_EXECUTABLE" != '${executable}' ]; then
+    if type update-alternatives >/dev/null 2>&1; then
+        update-alternatives --remove-all "$OLD_EXECUTABLE" >/dev/null 2>&1 || true
+    fi
+    if [ -L "/usr/bin/$OLD_EXECUTABLE" ]; then
+        rm -f "/usr/bin/$OLD_EXECUTABLE"
+    fi
+    if [ -e "/etc/apparmor.d/$OLD_EXECUTABLE" ]; then
+        if command -v apparmor_parser >/dev/null 2>&1; then
+            apparmor_parser --remove "/etc/apparmor.d/$OLD_EXECUTABLE" >/dev/null 2>&1 || true
+        fi
+        rm -f "/etc/apparmor.d/$OLD_EXECUTABLE"
+    fi
+    for f in /var/cache/apparmor/*/"$OLD_EXECUTABLE"; do
+        if [ -f "$f" ]; then rm -f "$f"; fi
+    done
+fi
+
 # Chromium's SUID sandbox helper: root-owned, setuid
 chown root:root "$APP_DIR/chrome-sandbox" 2>/dev/null || true
 chmod 4755 "$APP_DIR/chrome-sandbox" || true

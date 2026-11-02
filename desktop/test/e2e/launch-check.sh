@@ -5,7 +5,7 @@
 #   launch-check.sh <out dir> <label> <secs> <command...>
 #
 # e.g. launch-check.sh ~/.cache/launch appimage 20 ./my-mate-geny-0.4.99-linux-x86_64.AppImage
-#      launch-check.sh ~/.cache/launch deb 20 "/path/to/extracted/opt/My Mate Geny/hr-harnessor-desktop" --ozone-platform=x11
+#      launch-check.sh ~/.cache/launch deb 20 "/path/to/extracted/opt/My Mate Geny/my-mate-geny" --ozone-platform=x11
 #
 # Writes <out dir>/<label>.log (the app's stdout/stderr, the X windows, alive or not) and <out dir>/<label>.png (the
 # screen; needs ImageMagick's `import`). Only the process group it started is killed. Extra env for the app can be

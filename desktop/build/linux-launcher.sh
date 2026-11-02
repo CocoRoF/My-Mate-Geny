@@ -51,8 +51,8 @@ userns_ok() {
 }
 
 apparmor_profile_ok() {
-  # the .deb's profile (hr-harnessor-desktop) grants `userns` to exactly this path
-  f=/etc/apparmor.d/hr-harnessor-desktop
+  # the .deb's profile (/etc/apparmor.d/<package's executable>, my-mate-geny) grants `userns` to exactly this path
+  f="/etc/apparmor.d/$(basename "$self")"
   [ -r "$f" ] && grep -qF "\"$bin\"" "$f" 2>/dev/null
 }
 

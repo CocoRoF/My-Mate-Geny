@@ -100,13 +100,43 @@ Settings (`serverUrl`, `lastServer`, `username`, `rememberConnect`, `mateId`, `m
 
 ## Naming
 
-Shown as **My Mate Geny**; internal ids are unchanged so existing installs
-update in place and stay logged in: `appId` in `package.json` (Windows
-notifications and installer identity), package name `hr-harnessor-desktop`
-(Debian package), and the data folder (`…/hr-harnessor`, pinned in
-`src/main.js` because Electron would otherwise derive it from the new
-productName). On macOS the bundle is now `My Mate Geny.app`; an old
-`hr-harnessor.app` can be deleted.
+Shown as **My Mate Geny** everywhere a user looks: window titles, tray,
+notifications, menus, installers and their file names
+(`my-mate-geny-<version>-…`), Windows Start menu / Apps & features, the macOS
+app (`My Mate Geny.app`; an old `hr-harnessor.app` can be deleted), the
+Android launcher. On Linux the package, launcher and menu entry are
+`my-mate-geny` (up to 0.4.19 they were `hr-harnessor-desktop`):
+
+- the .deb is `Package: my-mate-geny` with `Replaces`, `Conflicts` and
+  `Provides: hr-harnessor-desktop` (`build.deb.fpm`), so `dpkg -i`, App Center
+  and the in-app updater install it over the old package, which dpkg removes
+  in the same step (`dpkg -l` may keep a line `ic hr-harnessor-desktop`
+  until `sudo dpkg --purge hr-harnessor-desktop`; it holds no files);
+- the old postrm takes its own `/etc/apparmor.d/hr-harnessor-desktop`, the
+  new package has `/etc/apparmor.d/my-mate-geny`; the new postinst also drops
+  what the old package leaves behind (its `/usr/bin` link and alternative, an
+  AppArmor profile or cache that a "disappear" skipped);
+- `/opt/My Mate Geny/hr-harnessor-desktop` stays as a link to the new
+  launcher for a start-at-login entry written by an old version, and the app
+  rewrites such an entry (and a GNOME dock pin of
+  `hr-harnessor-desktop.desktop`) at its next start (`src/rename.js`);
+- App Center / GNOME Software show the installed app from its AppStream
+  metadata (`build/metainfo.xml` → `/usr/share/metainfo/me.hrletsgo.MyMateGeny.metainfo.xml`,
+  version and date filled in by `build/after-pack.js`) and the icon from
+  `build/icons/` (hicolor 16–512 px). Ubuntu App Center's page for a
+  *downloaded* .deb only knows the package fields: it titles it with the
+  package name (`my-mate-geny`), shows the synopsis (which starts with
+  "My Mate Geny"), and always shows a generic icon and "unknown publisher"
+  for any local .deb.
+
+Unchanged on purpose, so installs update in place and stay signed in:
+`appId` `me.hrletsgo.harnessor` (Windows installer GUID, so an update
+replaces the old install and renames its Start menu shortcut instead of
+adding one; Windows notifications; macOS bundle id), `name` in `package.json`
+(`hr-harnessor-desktop`: the updater's cache folder, Windows' internal
+package name) and the data folder (`~/.config/hr-harnessor`,
+`%APPDATA%\hr-harnessor`, …, pinned in `src/main.js` because Electron would
+otherwise derive it from the productName: settings, the login cookie, logs).
 
 ## Updates
 
@@ -154,8 +184,8 @@ On Ubuntu 23.10+ (`kernel.apparmor_restrict_unprivileged_userns=1`) that hit:
 Now:
 
 - `build/after-pack.js` renames the Electron binary to
-  `hr-harnessor-desktop.bin` and puts `build/linux-launcher.sh` in its place,
-  so the .deb's menu entry, `/usr/bin/hr-harnessor-desktop`, the AppImage's
+  `my-mate-geny.bin` and puts `build/linux-launcher.sh` in its place,
+  so the .deb's menu entry, `/usr/bin/my-mate-geny`, the AppImage's
   AppRun, start at login and the app's own restarts all go through it. It keeps
   the sandbox when chrome-sandbox is root-owned SUID (on a suid mount, no
   `no_new_privs`) or `unshare --user --map-root-user` works, or the .deb's
@@ -166,7 +196,7 @@ Now:
   and an app that starts beats one that silently doesn't.
 - The .deb's postinst (`build/deb-postinst.tpl`) always makes chrome-sandbox
   `root:root 4755`, and on AppArmor 4 (Ubuntu 24.04+) installs
-  `/etc/apparmor.d/hr-harnessor-desktop` (unconfined + `userns`, like the
+  `/etc/apparmor.d/my-mate-geny` (unconfined + `userns`, like the
   profiles Ubuntu ships for other Electron apps) for the real binary, so the
   installed app keeps its sandbox. `build/deb-postrm.tpl` removes the profile.
 - The .deb depends on the 24.04 (`t64`) names with the old ones as
@@ -191,7 +221,7 @@ Now:
   switch server, sign out, 0.3 migration; uses a throwaway HOME).
 - A built Linux app started the way a desktop launcher does (no flags), on a
   throwaway X server and HOME: `test/e2e/launch-check.sh <out dir> <label>
-  <secs> <AppImage | extracted deb's /opt/My Mate Geny/hr-harnessor-desktop>`
+  <secs> <AppImage | extracted deb's /opt/My Mate Geny/my-mate-geny>`
   (its output, the mapped windows, a screenshot; `SECOND=1
   FIRST_EXTRA=--hidden` also checks a second launch over a tray-only instance).
 - In-app update of a packaged app (no `HRH_UPDATER_DEV`) against a server whose

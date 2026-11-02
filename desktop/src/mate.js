@@ -21,6 +21,7 @@ const recovery = require("./recovery");
 const chrome = require("./chrome");
 const { t, language } = require("./lang");
 const { launchCommand } = require("./launch");
+const { autostartStale } = require("./rename");
 
 const RETRY_PAGE = path.join(__dirname, "offline.html");
 
@@ -1093,6 +1094,19 @@ function setAutostart(on) {
   broadcast();
 }
 
+/** Linux: a start-at-login entry naming a launcher that is gone (the .deb's old hr-harnessor-desktop, an AppImage
+ *  replaced by an update under a new file name) or this one by another path is rewritten to this app (src/rename.js) */
+function refreshAutostart() {
+  if (!linux) return;
+  let text;
+  try {
+    text = fs.readFileSync(AUTOSTART_FILE, "utf8");
+  } catch {
+    return; // no entry: start at login is off
+  }
+  if (autostartStale(text, launchCommand(env, process.execPath))) setAutostart(true);
+}
+
 // ── tray ───────────────────────────────────────────────────────
 
 function notify(title, body) {
@@ -1194,6 +1208,7 @@ function init(d) {
 }
 
 function start() {
+  refreshAutostart();
   buildTray();
   const acc = hotkey();
   if (gnomeWayland && watchQuickFile()) {
