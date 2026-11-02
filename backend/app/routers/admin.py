@@ -20,6 +20,7 @@ from app import __version__
 from app.auth import AuthManager
 from app.config import settings
 from app.routers._deps import provider_service
+from app.services.cli_tools.tools import effective_binary
 from app.services.log_service import LogService
 from app.services.provider_service import ProviderService
 
@@ -135,8 +136,8 @@ async def system(request: Request, providers: ProviderService = Depends(provider
     uploads_size = await asyncio.to_thread(state.attachment_service.disk_usage)
     disk = shutil.disk_usage("/home") if os.path.exists("/home") else None
     claude_v, codex_v = await asyncio.gather(
-        asyncio.to_thread(_cli_version, settings.claude_binary),
-        asyncio.to_thread(_cli_version, settings.codex_binary),
+        asyncio.to_thread(_cli_version, effective_binary("claude")),
+        asyncio.to_thread(_cli_version, effective_binary("codex")),
     )
     return {
         "version": __version__,

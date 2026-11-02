@@ -142,8 +142,10 @@ class OAuthManager:
         except Exception:
             pass
         try:
+            from app.services.cli_tools.tools import effective_binary
+
             proc = subprocess.Popen(
-                ["codex", "login", "--device-auth"],
+                [effective_binary("codex"), "login", "--device-auth"],
                 stdin=slave,
                 stdout=slave,
                 stderr=slave,

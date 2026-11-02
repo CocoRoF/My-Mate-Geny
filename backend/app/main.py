@@ -28,6 +28,7 @@ from app.routers import (
     admin,
     attachments,
     auth as auth_router,
+    cli_tools as cli_tools_router,
     downloads,
     files,
     folder_uploads,
@@ -51,6 +52,7 @@ from app.mate.service import MateService
 from app.mate.store import MateStore
 from app.mate.voice import VoiceService
 from app.services.attachment_service import AttachmentService
+from app.services.cli_tools.service import CliToolsService
 from app.services.downloads import DownloadService
 from app.services.folder_upload import FolderUploadService
 from app.services.connection_service import ConnectionService
@@ -107,6 +109,10 @@ async def lifespan(app: FastAPI):
     mate_store = MateStore(db, vault)
     app.state.mate_service = MateService(session_service, mate_store, logs=logs)
     app.state.voice_service = VoiceService(mate_store)
+    # Settings -> Providers -> CLI versions: installed vs latest, upgrades (services/cli_tools)
+    cli_tools = CliToolsService(session_service, logs)
+    app.state.cli_tools = cli_tools
+    await cli_tools.start()
 
     async def housekeeping() -> None:
         while True:
@@ -132,6 +138,7 @@ async def lifespan(app: FastAPI):
     yield
 
     housekeeper.cancel()
+    await cli_tools.stop()
     if system_monitor is not None:
         await system_monitor.stop()  # flushes the partial minute, marks a clean shutdown
     await session_service.shutdown()  # end engines (and their background tasks) cleanly
@@ -206,6 +213,7 @@ for r in (
     mates.router,
     mate_internal.router,
     preferences_router.router,
+    cli_tools_router.router,
 ):
     app.include_router(r)
 

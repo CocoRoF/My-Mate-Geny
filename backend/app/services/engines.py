@@ -87,6 +87,7 @@ class EngineManager:
                 "account": getattr(s.lease, "label", None),
                 "account_id": getattr(s.lease, "account_id", None),
                 "cost_total_usd": round(s.engine.cost_total, 4),
+                "stale": bool(s.meta.get("stale_binary")),  # started before a CLI upgrade (retire_stale)
             }
             for sid, s in self._slots.items()
             if s.engine.alive
@@ -110,6 +111,9 @@ class EngineManager:
         async with self._lock:
             note = None
             slot = self.slot(sid)
+            if slot is not None and slot.meta.get("stale_binary") and not slot.engine.running_tasks:
+                await self.shutdown(sid, reason="cli upgraded")  # the CLI was upgraded: start the new binary
+                slot = None
             if slot is not None and slot.engine.fingerprint == fingerprint:
                 try:
                     await slot.engine.set_model(model)
@@ -316,6 +320,24 @@ class EngineManager:
         for sid in list(self._slots):
             await self.shutdown(sid, reason="server shutdown")
 
+    async def retire_stale(self, reason: str = "cli upgraded") -> dict[str, int]:
+        """The CLI binary changed: shut down idle engines now (the next turn starts the new one); busy ones (a
+        turn or background tasks running) are marked and retired once idle — never cut off mid-work."""
+        restarted = deferred = 0
+        for sid, slot in list(self._slots.items()):
+            e = slot.engine
+            if not e.alive:
+                continue
+            if e.turn_active or e.running_tasks:
+                slot.meta["stale_binary"] = True
+                deferred += 1
+            else:
+                await self.shutdown(sid, reason=reason)
+                restarted += 1
+        if deferred:
+            self._ensure_reaper()
+        return {"restarted": restarted, "deferred": deferred}
+
     # ---- idle reaper ----
 
     def _ensure_reaper(self) -> None:
@@ -331,5 +353,7 @@ class EngineManager:
                 if e.turn_active:
                     continue
                 idle = now - e.last_activity
-                if (not e.running_tasks and idle > IDLE_TIMEOUT_S) or idle > MAX_TASK_HOLD_S:
+                if slot.meta.get("stale_binary") and not e.running_tasks:
+                    await self.shutdown(sid, reason="cli upgraded")
+                elif (not e.running_tasks and idle > IDLE_TIMEOUT_S) or idle > MAX_TASK_HOLD_S:
                     await self.shutdown(sid, reason="idle")

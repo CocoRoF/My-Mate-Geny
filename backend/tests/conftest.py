@@ -19,6 +19,8 @@ os.environ.setdefault("STATIC_DIR", "")
 os.environ.setdefault("DB_PATH", os.path.join(tempfile.mkdtemp(prefix="hrh_test_db_"), "hrh_test_app.db"))
 os.environ.setdefault("UPLOADS_ROOT", tempfile.mkdtemp(prefix="hrh_test_uploads_"))
 os.environ.setdefault("MATES_ROOT", tempfile.mkdtemp(prefix="hrh_test_mates_"))
+# no registry / GitHub lookups from the CLI-versions service (tests/test_cli_tools.py fakes them)
+os.environ.setdefault("CLI_UPDATE_CHECK", "false")
 
 from app.db import Database  # noqa: E402
 

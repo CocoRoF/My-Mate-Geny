@@ -137,6 +137,18 @@ class Settings(BaseSettings):
     monitor_guard_psi_full: float = 40        # memguard --psi-full
     monitor_user_ceiling: str = ""            # user-slice memory ceiling to show (e.g. 22G)
 
+    # ---- CLI versions (Settings -> Providers -> CLI versions; app/services/cli_tools) ----
+    # Look up the newest Claude Code / Codex / Higgsfield CLI on the npm registry
+    # (and their release notes on GitHub). false = no outbound checks.
+    cli_update_check: bool = True
+    cli_check_ttl_h: float = 6.0
+    cli_npm_registry: str = "https://registry.npmjs.org"
+    # The app's own npm prefix: where an upgrade installs a CLI whose copy in use
+    # can't be written (e.g. the image's /usr/lib/node_modules in Docker).
+    cli_managed_prefix: str = "~/.hr-harnessor/cli"
+    cli_upgrade_timeout_s: float = 900.0
+    cli_upgrade_mem: str = "3G"      # memory cap for an upgrade (via `capped`, when available)
+
     # ---- derived helpers ----
 
     @property

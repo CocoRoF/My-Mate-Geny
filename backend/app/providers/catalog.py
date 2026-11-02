@@ -190,11 +190,11 @@ def _codex_client_version() -> str:
     import re
     import subprocess
 
-    from app.config import settings
+    from app.services.cli_tools.tools import effective_binary
 
     version = "0.166.0"
     try:
-        out = subprocess.run([settings.codex_binary, "--version"], capture_output=True, text=True, timeout=8)
+        out = subprocess.run([effective_binary("codex"), "--version"], capture_output=True, text=True, timeout=8)
         m = re.search(r"(\d+\.\d+\.\d+)", out.stdout or out.stderr or "")
         if m:
             version = m.group(1)
