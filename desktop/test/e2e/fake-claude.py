@@ -87,6 +87,51 @@ def call_tool(name: str, arguments: dict) -> str:
     return " ".join(c.get("text", "") for c in res.get("content", []))
 
 
+def avatar_turn(lines: list[str]) -> str:
+    """Avatar Create (desktop/test/e2e/avatar-create-browser.js): every `atool:<name> <json>` line is one call of the
+    agent's tools through the real avatar MCP bridge, written out like the real CLI (tool_use, tool_result with its
+    images); the answer lists what came back."""
+    import subprocess
+
+    cfg_arg = args[args.index("--mcp-config") + 1]
+    cfg = json.load(open(cfg_arg)) if os.path.exists(cfg_arg) else json.loads(cfg_arg)
+    srv = cfg["mcpServers"]["avatar"]
+    proc = subprocess.Popen([srv["command"], *srv["args"]], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            env={**os.environ, **srv.get("env", {})}, text=True)
+
+    def rpc(o: dict) -> dict | None:
+        proc.stdin.write(json.dumps(o) + "\n")
+        proc.stdin.flush()
+        return json.loads(proc.stdout.readline()) if "id" in o else None
+
+    said = []
+    try:
+        rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}})
+        rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        for k, line in enumerate(lines):
+            m = re.match(r"^atool:(\w+)\s*(\{.*\})?\s*$", line.strip())
+            if not m:
+                continue
+            name, arguments = m.group(1), json.loads(m.group(2) or "{}")
+            tid = f"av{k}"
+            emit({"type": "assistant", "message": {"model": model, "content": [
+                {"type": "tool_use", "id": tid, "name": f"mcp__avatar__{name}", "input": arguments}]}})
+            out = rpc({"jsonrpc": "2.0", "id": 10 + k, "method": "tools/call", "params": {"name": name, "arguments": arguments}})
+            res = (out or {}).get("result") or {}
+            text = " ".join(c.get("text", "") for c in res.get("content", []) if c.get("type") == "text")
+            blocks = [{"type": "text", "text": text}] + [
+                {"type": "image", "source": {"type": "base64", "media_type": c.get("mimeType"), "data": c.get("data")}}
+                for c in res.get("content", []) if c.get("type") == "image"]
+            emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": tid, "content": blocks,
+                                                           "is_error": bool(res.get("isError"))}]}})
+            said.append(f"{name}={'error' if res.get('isError') else 'ok'}")
+            time.sleep(0.1)
+    finally:
+        proc.stdin.close()
+        proc.wait(timeout=10)
+    return "AVATAR " + " ".join(said)
+
+
 def see_screen_turn() -> str:
     """"look at my screen" (desktop/test/e2e/screen-capture-e2e.js): like the real CLI — the mate's tools from the real
     MCP bridge (tools/list), then a see_screen call through it; the tool_use / tool_result go out on stdout as the CLI
@@ -325,6 +370,15 @@ while True:
     emit({"type": "system", "subtype": "init", "session_id": "fake-sid", "model": model, "permissionMode": "bypassPermissions"})
     last = text.strip().splitlines()[-1] if text.strip() else ""
     log_turn(text)
+    atools = [ln for ln in text.strip().splitlines() if ln.strip().startswith("atool:")]
+    if atools:
+        full = avatar_turn(atools)
+        emit({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0,
+                                                "delta": {"type": "text_delta", "text": full}}})
+        emit({"type": "assistant", "message": {"model": model, "content": [{"type": "text", "text": full}]}})
+        emit({"type": "result", "subtype": "success", "is_error": False, "result": full, "session_id": "fake-sid",
+              "total_cost_usd": 0.01, "usage": {"input_tokens": 1, "output_tokens": 1}})
+        continue
     tool = re.match(r"^tool:(\w+)\s*(\{.*\})?\s*$", last)
     if tool:
         result = call_tool(tool.group(1), json.loads(tool.group(2) or "{}"))

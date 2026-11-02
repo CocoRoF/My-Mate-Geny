@@ -24,10 +24,12 @@ import MateStage, { BuiltinBadge, MateThumb, moodLabel } from "./MateStage";
 import RelationBadge from "./RelationBadge";
 import { takeMatePanelLink } from "../../lib/nav";
 import { useT } from "../../i18n";
+import { useAvatarCreate } from "../../stores/avatarCreateStore";
 
 const MateSettings = lazy(() => import("./settings/MateSettings"));
 const GlobalSettings = lazy(() => import("./settings/GlobalSettings"));
 const RelationPanel = lazy(() => import("./RelationPanel"));
+const AvatarCreate = lazy(() => import("./avatar/AvatarCreate"));
 
 type SettingsTab = "relation" | "memory" | undefined;
 
@@ -44,6 +46,8 @@ export default function MateView() {
   const load = useMateStore((s) => s.load);
   const mate = mates.find((m) => m.id === activeId) ?? mates[0] ?? null;
   const conv = useMateConversation(mate);
+  // Avatar Create (docs/avatar-create.md): its own conversation over the whole view
+  const avatarCreate = useAvatarCreate((s) => s.open);
   // drop files on the conversation, or paste them anywhere on the page: they go to the composer
   const { dragging, dropProps } = useFileDrop(conv.sessionId);
   const phone = usePhone();
@@ -171,6 +175,12 @@ export default function MateView() {
   };
 
   if (!loaded) return <PageLoading />;
+  if (avatarCreate)
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <AvatarCreate mate={mate} />
+      </Suspense>
+    );
   if (!mate)
     return (
       <div className="grid h-full place-items-center p-6 text-center text-sm text-content-dim">
@@ -263,6 +273,16 @@ export default function MateView() {
               <Icon name={collapsed ? "chevron-down" : "chevron-up"} size={16} />
             </button>
           )}
+          <button
+            onClick={() => useAvatarCreate.getState().show(mate.id)}
+            className="btn-ghost !px-2.5"
+            title={t("avatar.openTitle", { name: mate.name })}
+            aria-label={t("avatar.title")}
+            data-testid="mate-avatar-create"
+          >
+            <Icon name="sparkles" size={15} />
+            {!phone && <span className="ml-1 text-[12.5px]">{t("avatar.title")}</span>}
+          </button>
           <button onClick={reset} disabled={resetting || conv.streaming} className="btn-ghost !px-2.5" title={t("mate.resetTitle")} data-testid="mate-reset">
             <Icon name="rotate" size={15} spin={resetting} />
           </button>

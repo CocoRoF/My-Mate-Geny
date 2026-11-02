@@ -32,7 +32,7 @@ def _svc(request: Request) -> Any:
 
 def _http(exc: Exception) -> HTTPException:
     if isinstance(exc, GateError):
-        return HTTPException(status_code=409, detail={"code": exc.code, "message": str(exc)})
+        return HTTPException(status_code=409, detail=str(exc), headers={"X-Avatar-Gate": exc.code})
     if isinstance(exc, AvatarError):
         return HTTPException(status_code=exc.status, detail=str(exc))
     if isinstance(exc, (BriefError, HiggsfieldError)):

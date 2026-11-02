@@ -235,7 +235,8 @@ class AvatarService:
             it = doc["items"].get(f"clip:{c['id']}") or {}
             mt = doc["items"].get(f"matte:{c['id']}") or {}
             web = d / "web" / f"{c['id']}.sm.mp4"
-            clips.append({"id": c["id"], "kind": c["kind"], "emotion": c.get("emotion"), "action": c["action"],
+            clips.append({"id": c["id"], "kind": c["kind"], "emotion": c.get("emotion"),
+                          "action": P.fill(c["action"], doc["brief"].get("pronoun")),
                           "status": it.get("status") or "pending", "matte": mt.get("status"),
                           "processed": bool(mt.get("processed")), "error": it.get("error") or mt.get("error"),
                           "raw": self._url(doc, f"clips/{c['id']}.mp4") if (d / "clips" / f"{c['id']}.mp4").is_file()
@@ -776,7 +777,7 @@ class AvatarService:
             doc["status"] = "running"
             self._history(doc, f"checkpoint.{action}", stage=stage, candidate=candidate)
             self.save(doc)
-        self._event(pid, f"checkpoint_{action}", msg)
+        self._event(pid, f"decision_{action}", msg)
         self._kick(pid)
         return self.view(pid)
 

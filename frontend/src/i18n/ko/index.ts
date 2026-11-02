@@ -1,6 +1,7 @@
 // 한국어 messages: every en key (typed against en — a missing or extra key does not compile). Glossary: docs/i18n.md.
 import type { Locale } from "..";
 import admin from "./admin.ts";
+import avatar from "./avatar.ts";
 import chat from "./chat.ts";
 import cliTools from "./cliTools.ts";
 import common from "./common.ts";
@@ -21,5 +22,5 @@ import turn from "./turn.ts";
 import usage from "./usage.ts";
 import workspace from "./workspace.ts";
 
-const ko: Locale = { admin, chat, cliTools, common, composer, connections, downloads, files, higgsfield, mate, mateSettings, nav, providers, session, settings, tasks, topbar, turn, usage, workspace };
+const ko: Locale = { admin, avatar, chat, cliTools, common, composer, connections, downloads, files, higgsfield, mate, mateSettings, nav, providers, session, settings, tasks, topbar, turn, usage, workspace };
 export default ko;

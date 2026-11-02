@@ -294,6 +294,18 @@ Asset upload / import:
   the contract keeps that (it never acts itself) and states that asking the
   chats through its tools is how it helps.
 
+### Avatar Create (making a video avatar with AI)
+
+**Mate view → Avatar Create** (or Mate settings → Avatar → **Create with AI**) opens a conversation with the avatar
+agent, separate from the mate's chat: it interviews the user (reference picture, look, 1:1 / 9:16, studio / light,
+how many motions — presets minimal 6 / standard 15 (한채린's set) / rich 21 clips, or custom), prices every Higgsfield
+job (free quotes) and, only after the user's **Confirm** (enforced by the server, with a hard cap), makes the avatar
+exactly the way the built-in mates were made: candidates → the picked one cut out as the base picture → stills that
+change only the face → Kling clips that start and end on the base picture → alpha recovered from the known gray →
+stacked-alpha encode → loop / alpha checks → an ailism-style pack. The finished avatar plays in the panel; **Apply**
+puts it on a mate (the old avatar is backed up and can be restored) or **New mate** creates one. Full contract:
+[docs/avatar-create.md](avatar-create.md).
+
 ### Built-in mates (shipped with the app)
 
 Three characters are bundled in `backend/app/mate/builtin/`: **Han Chaerin**

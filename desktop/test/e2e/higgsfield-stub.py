@@ -11,7 +11,11 @@ desktop/test/e2e/higgsfield-browser.js. Run the throwaway backend with
 http://localhost:8765/callback?code=…&state=… (the address a user pastes back). The code is accepted once, with the
 PKCE verifier matching that authorize request's challenge. Refresh tokens rotate. Never a real network call.
 
-usage: higgsfield-stub.py <port>
+Avatar Create (desktop/test/e2e/avatar-create-browser.js): `/jobs/<job type>/cost` prices per job type (the
+credits fake-higgsfield.py uses), `/account/billing/plans` (ULTRA: $99 / 3000 credits), and with a files folder
+`/fake-files/<name>` serves the results fake-higgsfield.py writes there. `/e2e/quotes` lists the quotes asked for.
+
+usage: higgsfield-stub.py <port> [files folder]
 """
 import base64
 import hashlib
@@ -31,6 +35,9 @@ CODES: dict[str, str] = {}  # code -> challenge
 ACCESS: set[str] = set()
 REFRESH: set[str] = set()
 STATE = {"credits": 250.5, "n": 0}
+FILES = sys.argv[2] if len(sys.argv) > 2 else None
+COSTS = {"nano_banana_pro": 2.0, "image_background_remover": 0.5, "kling_o3_flf": 9.0, "video_background_remover": 1.0}
+QUOTES: list = []
 
 
 def issue() -> dict:
@@ -84,6 +91,17 @@ class H(BaseHTTPRequestHandler):
             return self._send(302, b"", "text/plain", {"Location": loc})
         if u.path == "/e2e/access":  # (the test compares the chat's token with the ones handed out)
             return self._send(200, sorted(ACCESS))
+        if u.path == "/e2e/quotes":
+            return self._send(200, QUOTES)
+        if u.path.startswith("/fake-files/") and FILES:
+            import os
+            name = os.path.basename(u.path)
+            p = os.path.join(FILES, name)
+            if not os.path.isfile(p):
+                return self._send(404, {"detail": "not found"})
+            with open(p, "rb") as fh:
+                data = fh.read()
+            return self._send(200, data, "video/mp4" if name.endswith(".mp4") else "image/png")
         if u.path == "/skills.tar.gz":
             return self._send(200, skills_tar(), "application/gzip")
         if not u.path.startswith(API):
@@ -104,6 +122,10 @@ class H(BaseHTTPRequestHandler):
                 {"action": "spend", "created_at": "2026-10-30T09:00:00Z", "credits": -1.5, "display_name": "Nano Banana 2"},
                 {"action": "refund", "created_at": "2026-10-29T09:00:00Z", "credits": 1.5, "display_name": "Seedance 2.5"},
             ]})
+        if path == "/account/billing/plans":
+            return self._send(200, {"items": [{"type": "ultra", "final_price_cents": 9900, "credits": 3000},
+                                              {"type": "credits_500", "price_cents": 2941, "credits": 500,
+                                               "dollar_to_credits_ratio": 17}]})
         if path == "/job_types":
             return self._send(200, [{"job_type": "gpt_image_2_5", "display_name": "GPT Image 2.5", "type": "image"}])
         return self._send(404, {"detail": "not found"})
@@ -128,7 +150,11 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, issue()) if ok else self._send(400, {"error": "invalid_grant"})
             return self._send(400, {"error": "unsupported_grant_type"})
         if u.path.startswith(API) and u.path.endswith("/cost"):
-            return self._send(200, {"credits": 2.5}) if self._authed() else self._send(401, {"detail": "no"})
+            if not self._authed():
+                return self._send(401, {"detail": "no"})
+            jt = u.path[len(API) + len("/jobs/"):-len("/cost")]
+            QUOTES.append({"job_type": jt, "params": (json.loads(raw or "{}") or {}).get("params")})
+            return self._send(200, {"credits": COSTS.get(jt, 2.5)})
         return self._send(404, {"detail": "not found"})
 
     def log_message(self, *a):

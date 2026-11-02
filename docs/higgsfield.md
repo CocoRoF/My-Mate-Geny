@@ -80,7 +80,9 @@ The official CLI is the tool the Higgsfield skills drive (`higgsfield generate c
   the note tells it to put results into the remote workspace with `remote_bash` + `curl` (the remote host needs
   `curl` and internet access). Input media must be on the server for the CLI to upload them.
 
-Mate conversations don't get Higgsfield (their engines are sealed).
+Mate conversations don't get Higgsfield (their engines are sealed). Avatar Create (docs/avatar-create.md) doesn't
+give its agent the CLI either: the SERVER quotes (`/jobs/{jt}/cost`) and runs the jobs itself with the same CLI and an
+access-only credentials file per call, and only after the user confirmed the plan.
 
 ### Per chat (the session panel's **Higgsfield** section)
 
