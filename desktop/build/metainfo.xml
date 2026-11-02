@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata of the Linux app: GNOME Software / Ubuntu App Center / KDE Discover show the installed app with
+     this name, summary, developer and icon. build/after-pack.js fills in the release's version and date and puts the result
+     into the .deb as /usr/share/metainfo/me.hrletsgo.MyMateGeny.metainfo.xml.
+     No <url type="homepage"> while the repository is private (a link users cannot open; appstreamcli rejects it). -->
+<component type="desktop-application">
+  <id>me.hrletsgo.MyMateGeny</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <name>My Mate Geny</name>
+  <summary>Agent console for Claude Code and Codex, with a desktop Mate</summary>
+  <description>
+    <p>
+      My Mate Geny is the desktop app for your own My Mate Geny server. Its agent console runs Claude Code and Codex
+      sessions in a native window, with notifications and a remembered sign-in.
+    </p>
+    <p>
+      The Mate, your companion character, lives on the desktop next to it: always on top, with a quick chat on a
+      keyboard shortcut, a tray menu and start at login.
+    </p>
+  </description>
+  <developer id="me.hrletsgo">
+    <name>My Mate Geny contributors</name>
+  </developer>
+  <launchable type="desktop-id">my-mate-geny.desktop</launchable>
+  <icon type="stock">my-mate-geny</icon>
+  <categories>
+    <category>Development</category>
+  </categories>
+  <keywords>
+    <keyword>agent</keyword>
+    <keyword>Claude Code</keyword>
+    <keyword>Codex</keyword>
+    <keyword>mate</keyword>
+    <keyword>Geny</keyword>
+  </keywords>
+  <provides>
+    <binary>my-mate-geny</binary>
+  </provides>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="${version}" date="${date}"/>
+  </releases>
+</component>
