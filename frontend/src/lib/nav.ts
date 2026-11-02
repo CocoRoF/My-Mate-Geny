@@ -15,7 +15,7 @@
 import { useSessionStore } from "../stores/sessionStore";
 import { useUIStore } from "../stores/uiStore";
 import { runBack, takeOverlayEntry } from "./back";
-import { fromSearch, urlOf, type Loc } from "./navUrl";
+import { fromSearch, matePanelOf, urlOf, type Loc } from "./navUrl";
 
 export { urlOf } from "./navUrl";
 
@@ -23,6 +23,16 @@ export { urlOf } from "./navUrl";
 type NavState = { hrhNav: number; guard?: boolean; from?: string };
 
 const fromUrl = (search = window.location.search): Loc | null => fromSearch(search);
+
+// (read before installNav makes the address canonical: `/?view=mate&mate=…&panel=…` → `/?view=mate`)
+let matePanelLink = typeof window !== "undefined" ? matePanelOf(window.location.search) : null;
+
+/** the Mate view's panel this page was opened for (once) */
+export function takeMatePanelLink(): ReturnType<typeof matePanelOf> {
+  const l = matePanelLink;
+  matePanelLink = null;
+  return l;
+}
 
 function current(): Loc {
   const { view, settingsTab } = useUIStore.getState();

@@ -56,7 +56,7 @@ export function whyText(t: TFunction, why: string): string {
   }
 }
 
-function milestoneText(t: TFunction, key: string): string {
+export function milestoneText(t: TFunction, key: string): string {
   const days = /^days_(\d+)$/.exec(key);
   if (days) return t("mateSettings.relMsDays", { days: Number(days[1]) });
   const stage = /^stage_(\w+)$/.exec(key);

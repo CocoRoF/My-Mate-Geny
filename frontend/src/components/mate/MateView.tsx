@@ -22,10 +22,14 @@ import MateComposer, { ReadAloudToggle } from "./MateComposer";
 import MateMessages from "./MateMessages";
 import MateStage, { BuiltinBadge, MateThumb, moodLabel } from "./MateStage";
 import RelationBadge from "./RelationBadge";
+import { takeMatePanelLink } from "../../lib/nav";
 import { useT } from "../../i18n";
 
 const MateSettings = lazy(() => import("./settings/MateSettings"));
 const GlobalSettings = lazy(() => import("./settings/GlobalSettings"));
+const RelationPanel = lazy(() => import("./RelationPanel"));
+
+type SettingsTab = "relation" | "memory" | undefined;
 
 type GlobalSection = Parameters<ReturnType<typeof useMateStore.getState>["openGlobal"]>[0];
 
@@ -44,13 +48,16 @@ export default function MateView() {
   const { dragging, dropProps } = useFileDrop(conv.sessionId);
   const phone = usePhone();
   const keyboard = useKeyboardOpen();
-  // one panel slot: Mate settings (local) or Global settings (the store's: Mate settings and anything else open it
-  // with openGlobal(section); inside Mate settings it swaps itself for Global settings)
-  const [mateOpen, setMateOpen] = useState(false);
+  // one panel slot: Mate settings or the Relationship panel (local), or Global settings (the store's: Mate settings
+  // and anything else open it with openGlobal(section); inside Mate settings it swaps itself for Global settings)
+  const [panel, setPanel] = useState<"mate" | "relation" | null>(null);
+  const [mateTab, setMateTab] = useState<SettingsTab>(undefined);
+  const mateOpen = panel === "mate";
   const globalOpen = useMateStore((s) => s.globalOpen);
-  const settings = mateOpen || globalOpen;
+  const relationOpen = panel === "relation" && !globalOpen;
+  const settings = panel !== null || globalOpen;
   const closePanels = () => {
-    setMateOpen(false);
+    setPanel(null);
     useMateStore.getState().closeGlobal();
   };
   const toggleGlobal = () => {
@@ -58,11 +65,41 @@ export default function MateView() {
     if (st.globalOpen) st.closeGlobal();
     else st.openGlobal();
   };
-  const toggleMate = () => {
-    if (mateOpen && !globalOpen) return setMateOpen(false);
+  const openMate = (tab?: SettingsTab) => {
     useMateStore.getState().closeGlobal();
-    setMateOpen(true);
+    setMateTab(tab);
+    setPanel("mate");
   };
+  const toggleMate = () => {
+    if (mateOpen && !globalOpen) return setPanel(null);
+    openMate();
+  };
+  const toggleRelation = () => {
+    if (relationOpen) return setPanel(null);
+    useMateStore.getState().closeGlobal();
+    setPanel("relation");
+  };
+  // opened for one of these panels (the desktop Mate chat window's "Adjust in settings": /?view=mate&panel=…)
+  useEffect(() => {
+    const link = takeMatePanelLink();
+    if (!link) return;
+    if (link.mate) useMateStore.getState().setActive(link.mate);
+    if (link.panel === "relation") setPanel("relation");
+    else openMate(link.panel === "settings-memory" ? "memory" : "relation");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Esc closes the open panel (not while typing in a field: those use Esc themselves)
+  useEffect(() => {
+    if (!settings) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      closePanels();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [settings]);
   // leaving the Mate view closes Global settings (it isn't shown anywhere else)
   useEffect(() => () => useMateStore.getState().closeGlobal(), []);
   // a Live2D body without its runtime (or anything else) asks for Global settings
@@ -211,7 +248,7 @@ export default function MateView() {
             </>
           )}
         </div>
-        <RelationBadge mate={mate} compact={phone} />
+        <RelationBadge mate={mate} compact={phone} onClick={toggleRelation} active={relationOpen} />
         {phone && stageAway && moodLabel(t, conv.mood) && (
           <span className="min-w-0 truncate text-[11.5px] text-content-faint" data-testid="mate-header-mood">
             {moodLabel(t, conv.mood)}
@@ -226,6 +263,16 @@ export default function MateView() {
           )}
           <button onClick={reset} disabled={resetting || conv.streaming} className="btn-ghost !px-2.5" title={t("mate.resetTitle")} data-testid="mate-reset">
             <Icon name="rotate" size={15} spin={resetting} />
+          </button>
+          <button
+            onClick={toggleRelation}
+            className={`btn-ghost !px-2.5 ${relationOpen ? "!bg-surface-3 !text-content" : ""}`}
+            title={t("mate.relPanelOpenTitle", { name: mate.name })}
+            aria-label={t("mate.relPanelOpen")}
+            aria-pressed={relationOpen}
+            data-testid="mate-relation-open"
+          >
+            <Icon name="heart" size={16} />
           </button>
           <button
             onClick={toggleGlobal}
@@ -291,7 +338,9 @@ export default function MateView() {
     <Suspense fallback={<PageLoading />}>
       {mateOpen ? (
         // shows Global settings itself while those are open (and closes them when it goes)
-        <MateSettings mate={mate} conv={conv} onClose={closePanels} />
+        <MateSettings key={mateTab ?? ""} mate={mate} conv={conv} onClose={closePanels} initialTab={mateTab} />
+      ) : relationOpen ? (
+        <RelationPanel mate={mate} onClose={closePanels} onOpenSettings={(tab) => openMate(tab)} />
       ) : (
         <GlobalSettings onClose={() => useMateStore.getState().closeGlobal()} />
       )}

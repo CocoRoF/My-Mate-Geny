@@ -3,7 +3,7 @@
 // Run: npm run test:unit
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fromSearch, settingsUrl, urlOf, SETTINGS_TABS } from "../src/lib/navUrl.ts";
+import { fromSearch, matePanelOf, matePanelUrl, settingsUrl, urlOf, SETTINGS_TABS } from "../src/lib/navUrl.ts";
 
 test("every Settings tab round-trips through its URL", () => {
   for (const tab of SETTINGS_TABS) {
@@ -39,4 +39,15 @@ test("unknown tabs fall back to Settings itself; chats, the Mate and surfaces as
   assert.equal(urlOf({ view: "chat", session: "a b", tab: null }), "/?view=chat&session=a%20b");
   assert.equal(urlOf({ view: "chat", session: null, tab: null }), "/");
   assert.equal(urlOf({ view: "mate", session: null, tab: null }), "/?view=mate");
+});
+
+test("a Mate view panel link (the desktop Mate chat window → the console's Mate settings)", () => {
+  const url = matePanelUrl("mate_a b", "settings-relation");
+  assert.equal(url, "/?view=mate&mate=mate_a%20b&panel=settings-relation");
+  assert.deepEqual(matePanelOf(url.slice(1)), { mate: "mate_a b", panel: "settings-relation" });
+  assert.deepEqual(fromSearch(url.slice(1)), { view: "mate", session: null, tab: null });
+  assert.deepEqual(matePanelOf("?view=mate&panel=relation"), { mate: null, panel: "relation" });
+  assert.equal(matePanelOf("?view=mate&panel=bogus"), null);
+  assert.equal(matePanelOf("?view=chat&panel=relation"), null);
+  assert.equal(matePanelOf("?view=mate"), null);
 });

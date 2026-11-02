@@ -7,7 +7,7 @@
  *   ?surface=mate-chat&mate=<id>     a compact conversation window
  * They all attach to the same mate session (useMateConversation), so every window stays in sync.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Mate } from "../../../api/mates";
 import { useSessionSync } from "../../../hooks/useSessionSync";
 import { useConfigStore } from "../../../stores/configStore";
@@ -27,7 +27,18 @@ import MateComposer from "../MateComposer";
 import MateMessages from "../MateMessages";
 import { MateThumb, moodLabel, useFadingCaption } from "../MateStage";
 import RelationBadge from "../RelationBadge";
+import type { RelationLink } from "../RelationPanel";
+import { matePanelUrl } from "../../../lib/navUrl";
 import { useT } from "../../../i18n";
+
+const RelationPanel = lazy(() => import("../RelationPanel"));
+
+/** the console's Mate settings at that tab: the desktop app's console window, or (a browser) a new tab */
+function openMateSettings(mateId: string, tab: RelationLink) {
+  const url = matePanelUrl(mateId, tab === "memory" ? "settings-memory" : "settings-relation");
+  if (desktopMate()) void desktopMate()!.openConsole(`${window.location.origin}${url}`);
+  else window.open(url, "_blank");
+}
 
 type Kind = "mate-overlay" | "mate-quick" | "mate-chat";
 
@@ -408,6 +419,18 @@ function ChatWindow() {
   const desk = useDesktopMate();
   const conv = useMateConversation(mate);
   const { dragging, dropProps } = useFileDrop(conv.sessionId);
+  // the Relationship panel, over the conversation (♥ in the title bar, or the indicator); Esc closes it
+  const [relOpen, setRelOpen] = useState(false);
+  useEffect(() => {
+    if (!relOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (e.key !== "Escape" || e.defaultPrevented || (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      setRelOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [relOpen]);
   const loadConfig = useConfigStore((s) => s.load);
   useEffect(() => {
     loadConfig().catch(() => {});
@@ -450,7 +473,7 @@ function ChatWindow() {
         <div className="min-w-0 flex-1 leading-tight">
           <div className="flex min-w-0 items-center gap-1">
             <span className="truncate text-[13.5px] font-semibold text-content">{mate.name}</span>
-            <RelationBadge mate={mate} compact />
+            <RelationBadge mate={mate} compact onClick={() => setRelOpen((v) => !v)} active={relOpen} />
           </div>
           <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-content-faint" data-testid="mate-chat-status">
             <span
@@ -459,8 +482,19 @@ function ChatWindow() {
             <span className="truncate">{status}</span>
           </div>
         </div>
+        <button
+          className={`${iconBtn} shrink-0 ${relOpen ? "bg-surface-3 !text-content" : ""}`}
+          style={win ? NO_DRAG : undefined}
+          onClick={() => setRelOpen((v) => !v)}
+          title={t("mate.relPanelOpenTitle", { name: mate.name })}
+          aria-label={t("mate.relPanelOpen")}
+          aria-pressed={relOpen}
+          data-testid="mate-chat-relation"
+        >
+          <Icon name="heart" size={14} />
+        </button>
         {desktopMate() && (
-          <div className="flex shrink-0 items-center gap-0.5" style={win ? NO_DRAG : undefined}>
+          <div className="-ml-2 flex shrink-0 items-center gap-0.5" style={win ? NO_DRAG : undefined}>
             <button
               className={`${iconBtn} ${onTop ? "bg-accent-soft !text-accent hover:!bg-accent/20" : ""}`}
               onClick={() => desktopMate()!.setChatOnTop(!onTop)}
@@ -489,9 +523,18 @@ function ChatWindow() {
         )}
       </header>
       {conv.voiceError && <div className="px-3 pt-1 text-[11.5px] text-danger">{t("mate.voiceError", { error: conv.voiceError })}</div>}
-      <MateMessages turns={conv.turns} compact emptyText={t("mate.sayHi", { name: mate.name })} />
-      <div className="shrink-0 px-2.5 pb-2.5">
-        <MateComposer mate={mate} conv={conv} compact autoFocus />
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <MateMessages turns={conv.turns} compact emptyText={t("mate.sayHi", { name: mate.name })} />
+        <div className="shrink-0 px-2.5 pb-2.5">
+          <MateComposer mate={mate} conv={conv} compact autoFocus />
+        </div>
+        {relOpen && (
+          <div className="absolute inset-0 z-20 bg-surface animate-fade-in" data-testid="mate-chat-relation-panel">
+            <Suspense fallback={null}>
+              <RelationPanel mate={mate} onClose={() => setRelOpen(false)} onOpenSettings={(tab) => openMateSettings(mate.id, tab)} />
+            </Suspense>
+          </div>
+        )}
       </div>
     </div>
   );

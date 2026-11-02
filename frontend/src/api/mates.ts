@@ -115,6 +115,49 @@ export interface RelationView {
 }
 export type RelationPatch = Partial<Pick<RelationView, "enabled" | "paused" | "sensitivity" | "show_indicator" | "avatar_mood" | "affinity">>;
 
+/** a change in the Relationship panel's journal: `kind` sorts it (the user's own changes are `manual`) */
+export interface RelationChange {
+  at: string;
+  d: number;
+  why: string;
+  /** the value after it (stage events: null) */
+  v: number | null;
+  kind: "gain" | "loss" | "manual" | "stage";
+  /** stage events: the stage reached (`stage_up`) or now (`stage_now`) */
+  stage?: RelationStage;
+}
+
+/** GET /api/mates/{id}/relation/journal (the Relationship panel; reads only) */
+export interface RelationJournal {
+  days: number;
+  /** the user's local day (their timezone) */
+  today: string;
+  /** oldest first; v = the value at the end of that day (null: before the start) */
+  series: { day: string; v: number | null; up: number; down: number; talks: number }[];
+  series_source: "log" | "log+replay";
+  relation: RelationView;
+  /** what the next stage still needs; null at the last stage */
+  requirements: {
+    stage: RelationStage;
+    earned: {
+      stage: RelationStage;
+      met: boolean;
+      have: { days: number; turns: number; memories: number };
+      need: { days: number; turns: number; memories: number };
+      left: { days: number; turns: number; memories: number };
+      ratio: number;
+    };
+    warmth: { stage: RelationStage; met: boolean; value: number; target: number; left: number; ratio: number };
+  } | null;
+  stats: RelationView["stats"] & { longest_streak: number; memories_active: number; first_talk_at: string | null; last_talk_at: string | null };
+  milestones: { key: string; at: string }[];
+  anniversaries: { days: number; day: string; reached: boolean; in_days: number }[];
+  /** newest first */
+  changes: RelationChange[];
+  /** the latest memories she saved (newest first) */
+  memories: { id: string; text: string; kind: string; created_at: string; source: string | null }[];
+}
+
 export interface Mate {
   id: string;
   name: string;
@@ -339,6 +382,8 @@ export const updateMemory = (id: string, mid: string, patch: MemoryPatch) =>
 export const bulkMemories = (id: string, ids: string[], action: "delete" | "archive" | "restore" | "pin" | "unpin") =>
   apiFetch<{ changed: number }>(`/api/mates/${enc(id)}/memories/bulk`, { method: "POST", ...j({ ids, action }) });
 export const getRelation = (id: string) => apiFetch<RelationView>(`/api/mates/${enc(id)}/relation`);
+export const getRelationJournal = (id: string, days = 30) =>
+  apiFetch<RelationJournal>(`/api/mates/${enc(id)}/relation/journal?days=${days}`);
 export const patchRelation = (id: string, patch: RelationPatch) =>
   apiFetch<RelationView>(`/api/mates/${enc(id)}/relation`, { method: "PATCH", ...j(patch) });
 export const resetRelation = (id: string, mode: "zero" | "recompute") =>

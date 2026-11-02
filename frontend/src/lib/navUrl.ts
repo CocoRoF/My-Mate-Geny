@@ -91,3 +91,19 @@ export function urlOf(loc: Loc): string {
 
 /** the URL of a Settings tab (links that open another window: the desktop Mate's "Open Providers") */
 export const settingsUrl = (tab: SettingsTab | null): string => urlOf({ view: "settings", session: null, tab });
+
+/** a panel of the Mate view to open on arrival (the desktop Mate chat window's "Adjust in settings"):
+ *  `relation` (the Relationship panel) or a Mate settings tab */
+export type MatePanel = "relation" | "settings-relation" | "settings-memory";
+const MATE_PANELS: readonly string[] = ["relation", "settings-relation", "settings-memory"];
+
+/** `/?view=mate&mate=<id>&panel=<panel>` — the console's URL becomes `/?view=mate` once it is read */
+export const matePanelUrl = (mateId: string, panel: MatePanel): string =>
+  `/?view=mate&mate=${encodeURIComponent(mateId)}&panel=${panel}`;
+
+export function matePanelOf(search: string): { mate: string | null; panel: MatePanel } | null {
+  const q = new URLSearchParams(search);
+  const panel = q.get("panel");
+  if (q.get("view") !== "mate" || !panel || !MATE_PANELS.includes(panel)) return null;
+  return { mate: q.get("mate"), panel: panel as MatePanel };
+}
