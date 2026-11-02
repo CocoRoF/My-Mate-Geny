@@ -481,6 +481,17 @@ async def test_upgrade_when_idle_waits_for_running_chats(env):
     assert st["job"]["log"][0].startswith("waiting for 2 running chat")
 
 
+async def test_two_upgrades_at_once_make_one_job(env):
+    mp, tmp, svc = env["monkeypatch"], env["tmp"], env["svc"]
+    _use(mp, "codex", _npm_cli(tmp / "p", "@openai/codex", "codex", "codex-cli 0.160.0"))
+    mp.setenv("FAKE_NAME", "codex-cli")
+    mp.setenv("FAKE_BIN", "codex")
+    res = await asyncio.gather(svc.upgrade("codex"), svc.upgrade("codex"), return_exceptions=True)
+    assert sum(isinstance(r, dict) for r in res) == 1
+    assert [r.code for r in res if isinstance(r, S.UpgradeError)] == ["busy"]
+    await _done(svc)
+
+
 async def test_cancel_a_waiting_upgrade_and_input_checks(env):
     mp, tmp, svc, sessions = env["monkeypatch"], env["tmp"], env["svc"], env["sessions"]
     _use(mp, "codex", _npm_cli(tmp / "p", "@openai/codex", "codex", "codex-cli 0.166.0"))

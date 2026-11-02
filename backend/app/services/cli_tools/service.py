@@ -210,6 +210,7 @@ class CliToolsService:
         self._idle_evt: asyncio.Event | None = None
         self._flush_task: asyncio.Task | None = None
         self._proc: asyncio.subprocess.Process | None = None
+        self._start_lock = asyncio.Lock()  # two "Upgrade" clicks at once: one job
         self.version = int(time.time() * 1000)
         if sessions is not None and hasattr(sessions, "add_turn_end_listener"):
             sessions.add_turn_end_listener(self._on_turn_end)
@@ -550,6 +551,10 @@ class CliToolsService:
 
     async def upgrade(self, tool: str, *, version: str | None = None, when: str = "now",
                       reason: str = "manual") -> dict[str, Any]:
+        async with self._start_lock:
+            return await self._start(tool, version=version, when=when, reason=reason)
+
+    async def _start(self, tool: str, *, version: str | None, when: str, reason: str) -> dict[str, Any]:
         if tool not in T.TOOLS:
             raise UpgradeError("unknown_tool", tool, 404)
         if when not in ("now", "idle"):
