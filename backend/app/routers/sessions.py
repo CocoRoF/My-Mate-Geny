@@ -45,6 +45,7 @@ async def update_session(
             sid, provider=body.provider, model=body.model, effort=body.effort,
             mode=body.mode, extra_dirs=body.extra_dirs, title=body.title,
             auto_compact_window=body.auto_compact_window, account_id=body.account_id,
+            higgsfield=body.higgsfield,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

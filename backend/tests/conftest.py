@@ -19,6 +19,7 @@ os.environ.setdefault("STATIC_DIR", "")
 os.environ.setdefault("DB_PATH", os.path.join(tempfile.mkdtemp(prefix="hrh_test_db_"), "hrh_test_app.db"))
 os.environ.setdefault("UPLOADS_ROOT", tempfile.mkdtemp(prefix="hrh_test_uploads_"))
 os.environ.setdefault("MATES_ROOT", tempfile.mkdtemp(prefix="hrh_test_mates_"))
+os.environ.setdefault("HIGGSFIELD_ROOT", tempfile.mkdtemp(prefix="hrh_test_higgsfield_"))
 
 from app.db import Database  # noqa: E402
 

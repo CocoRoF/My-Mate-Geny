@@ -51,6 +51,7 @@ from app.providers.catalog import (
 from app.providers.claude_code import CLI_ENV as CLAUDE_ENV
 from app.providers.claude_code import ClaudeCodeProvider
 from app.providers.claude_engine import ClaudeEngine
+from app.higgsfield.agent import HiggsfieldAgent, clean_settings, session_settings
 from app.services._ids import new_id, now_iso
 from app.services.turn_cost import needs_normalizing, normalize_events
 from app.services.history_page import HistoryPager
@@ -133,6 +134,9 @@ class SessionService:
         self.mate_engine: Any = None
         self._turn_end_listeners: list[Any] = []
         self.persistent_engines = True  # Claude: one long-lived CLI process per chat
+        # Higgsfield for the chats' agents (app.higgsfield.agent; main.py sets it). None = not wired.
+        self.higgsfield: HiggsfieldAgent | None = None
+        self._hf_note: dict[str, str] = {}  # sid -> the Higgsfield note Codex was last told (in its message)
         # Latest plan usage an engine reported (rate_limit_event), per account
         # (admin view) and per chat (the composer shows only its own chat's).
         self.live_usage: dict[str, dict[str, Any]] = {}
@@ -229,6 +233,7 @@ class SessionService:
         title: str | None = None,
         auto_compact_window: int | None = None,
         account_id: str | None = None,
+        higgsfield: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Change engine/model/think level/mode/folders mid-conversation.
         Switching provider resets the provider-side session id.
@@ -236,10 +241,18 @@ class SessionService:
         ``auto_compact_window``: tokens, 0 = the CLI's default, -1 = back to
         the global default (applies at the next turn: the engine restarts).
         ``account_id``: run this chat on that account from the next turn
-        (a manual switch; the balancer keeps it there while it's usable)."""
+        (a manual switch; the balancer keeps it there while it's usable).
+        ``higgsfield``: {enabled?, max_credits?} — off takes the chat's
+        Higgsfield credentials away at once (a running engine included)."""
         session = self.get(sid)
         sets: list[str] = []
         params: list[Any] = []
+        if higgsfield is not None:
+            hf = clean_settings(higgsfield, session.get("higgsfield"))
+            sets.append("higgsfield = ?")
+            params.append(json.dumps(hf))
+            if not hf["enabled"] and self.higgsfield is not None:
+                self.higgsfield.revoke(sid)
         if auto_compact_window is not None:
             sets.append("auto_compact_window = ?")
             params.append(None if auto_compact_window < 0 else clean_auto_compact_window(auto_compact_window))
@@ -307,6 +320,7 @@ class SessionService:
                 d[key] = json.loads(d.get(key) or json.dumps(empty))
             except ValueError:
                 d[key] = empty
+        d["higgsfield"] = session_settings(d)
         d["running"] = d["id"] in self._tasks
         d["result_unseen"] = _unseen(d.get("last_result"), d.get("last_result_at"), d.get("last_seen_at"))
         return d
@@ -347,6 +361,9 @@ class SessionService:
         self._retire_engine(sid, "session deleted")
         self._live_usage_by_session.pop(sid, None)
         self._viewers.pop(sid, None)
+        self._hf_note.pop(sid, None)
+        if self.higgsfield is not None:
+            self.higgsfield.forget(sid)
         self._db.execute("DELETE FROM sessions WHERE id = ?", (sid,))
         if self._attachments is not None:
             self._attachments.purge_session(sid)
@@ -1009,6 +1026,10 @@ class SessionService:
             d.mkdir(parents=True, exist_ok=True)
             uploads_dir = str(d)
 
+        hf = await self._higgsfield_launch(sid, session, provider_name)
+        for note in (hf.notices if hf is not None else []):
+            holder["notices"].append(ProviderEvent(type="notice", data=note))
+
         req = TurnRequest(
             messages=[{"role": m["role"], "content": m["content"]} for m in history],
             model=session["model"],
@@ -1026,7 +1047,14 @@ class SessionService:
             uploads_dir=uploads_dir,
             inline_files=session.get("kind") == "mate",
             auto_compact_window=self.auto_compact_window(session) if provider_name == "claude" else 0,
+            tool_env=dict(hf.env) if hf is not None else {},
+            system_append=hf.prompt if hf is not None else "",
+            plugin_dirs=list(hf.plugin_dirs) if hf is not None else [],
         )
+        if provider_name == "codex" and req.system_append:
+            # Codex hears the note in its message: in a new thread, or when it changed since it was told
+            req.note_in_prompt = not resume_id or self._hf_note.get(sid) != req.system_append
+            self._hf_note[sid] = req.system_append
         if session.get("kind") == "mate" and self.mate_engine is not None:
             # A Mate's engine: its own system prompt, no built-in tools, only
             # the mate MCP bridge (see app.mate.service).
@@ -1045,6 +1073,8 @@ class SessionService:
             return ProviderEvent(type="notice", data={"level": "info", "code": f"context.{ctx_kind}", "message": msg})
 
         st = self._turn_state(ctx, provider_name, session["model"])
+        if hf is not None and hf.enabled:
+            st["hf"] = {"account": hf.account_id, "since": hf.started_at}
         st["changes"] = await self._snapshot_before(session, connector)
         noted = False
         stale_retried = failed_over = False
@@ -1117,6 +1147,10 @@ class SessionService:
                         if changed is not None:
                             await self._record_event(sid, changed, st)
                             yield changed
+                        spent = await self._higgsfield_spent(st)
+                        if spent is not None:
+                            await self._record_event(sid, spent, st)
+                            yield spent
                     await self._record_event(sid, ev, st)
                     yield ev
                 if not retry:
@@ -1134,6 +1168,51 @@ class SessionService:
             self._report_outcome(provider_name, outcome_lease, st, ctx, sid, release=not persistent)
             if self._pool is not None and outcome_lease is not None:
                 self._pool.end_turn(outcome_lease)  # the engine keeps its lease; the turn is over
+
+    # ---- Higgsfield (app.higgsfield.agent) ----
+
+    def is_live(self, sid: str) -> bool:
+        """A turn runs or the chat's engine is up: its agent may still call a CLI."""
+        return sid in self._tasks or self._engines.slot(sid) is not None
+
+    def exists(self, sid: str) -> bool:
+        return self._db.query_one("SELECT 1 FROM sessions WHERE id = ?", (sid,)) is not None
+
+    async def _higgsfield_launch(self, sid: str, session: dict[str, Any], provider: str) -> Any:
+        """What this turn's engine gets from Higgsfield (None: not connected, a Mate, or not wired). Never fails
+        the turn."""
+        if self.higgsfield is None or session.get("kind") == "mate":
+            return None
+        try:
+            return await self.higgsfield.launch(sid, session, provider=provider)
+        except Exception as exc:  # noqa: BLE001
+            self._log("warning", "higgsfield", f"could not prepare Higgsfield for the chat: {type(exc).__name__}",
+                      code="higgsfield.launch_failed", session_id=sid)
+            return None
+
+    def _higgsfield_account(self, session: dict[str, Any]) -> str | None:
+        if self.higgsfield is None or session.get("kind") == "mate" or not session_settings(session)["enabled"]:
+            return None
+        return self.higgsfield.service.default_id()
+
+    async def _higgsfield_spent(self, st: dict[str, Any]) -> ProviderEvent | None:
+        """After a turn that ran the higgsfield CLI: what it spent (from the account's transactions), as a notice.
+        Once per turn."""
+        hf = st.get("hf")
+        if not hf or not hf.get("used") or hf.get("reported") or self.higgsfield is None:
+            return None
+        hf["reported"] = True
+        try:
+            spent = await asyncio.wait_for(self.higgsfield.spent_since(hf["account"], hf["since"]), timeout=20)
+        except Exception:  # noqa: BLE001 - (a timeout too) it's only a notice
+            return None
+        if spent is None:
+            return None
+        used, bal = spent["credits_used"], spent["balance"]
+        msg = f"Higgsfield: {used:g} credits used this turn"
+        if isinstance(bal, (int, float)):
+            msg += f" · {bal:,.2f} left"
+        return ProviderEvent(type="notice", data={"level": "info", "code": "higgsfield.spend", "message": msg, **spent})
 
     # ---- shared turn bookkeeping (user turns and auto turns) ----
 
@@ -1187,6 +1266,8 @@ class SessionService:
             self._set_cli_session(sid, ev.data.get("cli_session_id"), st["provider"])
         elif ev.type == "tool.use":
             st["tool_calls"][str(ev.data.get("id"))] = {"name": ev.data.get("name"), "input": ev.data.get("input")}
+            if "hf" in st and HiggsfieldAgent.ran_cli(ev.data.get("input")):
+                st["hf"]["used"] = True
             run = self.active_runs.get(sid)
             if run is not None:
                 run["tools"] += 1
@@ -1626,6 +1707,9 @@ class SessionService:
         self.active_runs[sid] = {**ctx, "session_id": sid, "title": session["title"], "started_at": now_iso(),
                                  "tools": 0, "attachments": 0}
         st = self._turn_state(ctx, "claude", session["model"])
+        hf_account = self._higgsfield_account(session)
+        if hf_account:
+            st["hf"] = {"account": hf_account, "since": now_iso()}
         if self._pool is not None and slot is not None:
             self._pool.begin_turn(slot.lease)  # an active turn on the engine's account
         self._publish(sid, {"type": "run.state", "data": {"running": True}})
@@ -1643,6 +1727,10 @@ class SessionService:
                     if changed is not None:
                         await self._record_event(sid, changed, st)
                         self._publish(sid, changed.to_dict())
+                    spent = await self._higgsfield_spent(st)
+                    if spent is not None:
+                        await self._record_event(sid, spent, st)
+                        self._publish(sid, spent.to_dict())
                 await self._record_event(sid, ev, st)
                 _note_outcome(outcome, ev)
                 self._publish(sid, ev.to_dict())

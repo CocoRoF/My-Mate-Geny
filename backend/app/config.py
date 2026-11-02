@@ -82,6 +82,18 @@ class Settings(BaseSettings):
     # Single agent turn wall-clock timeout (seconds)
     turn_timeout_s: float = 600.0
 
+    # ---- Higgsfield (docs/higgsfield.md) ----
+    # Accounts, session credentials, the CLI shim and the skills live under this root.
+    higgsfield_root: str = "~/.hr-harnessor/higgsfield"
+    # The `higgsfield` CLI the chats get; empty = found on PATH / in ~/.local/bin / the npm global prefix.
+    higgsfield_binary: str = ""
+    # Higgsfield's endpoints (tests and the e2e stub point these at a local server).
+    higgsfield_authorize_url: str = "https://clerk.higgsfield.ai/oauth/authorize"
+    higgsfield_token_url: str = "https://clerk.higgsfield.ai/oauth/token"
+    higgsfield_api_base: str = "https://fnf-api-gw.higgsfield.ai/fnf/developer/v2alpha"
+    # Where "Install skills" downloads the official skills from (a .tar.gz of github.com/higgsfield-ai/skills).
+    higgsfield_skills_url: str = "https://codeload.github.com/higgsfield-ai/skills/tar.gz/refs/heads/main"
+
     # ---- auth (docs/auth.md) ----
     # Login credentials, precedence: set in Admin -> Security (stored hashed in
     # the DB) > these env values > the built-in default admin / geny-admin
@@ -162,6 +174,10 @@ class Settings(BaseSettings):
     @property
     def mates_root_path(self) -> Path:
         return Path(os.path.expanduser(self.mates_root)).resolve()
+
+    @property
+    def higgsfield_root_path(self) -> Path:
+        return Path(os.path.expanduser(self.higgsfield_root)).resolve()
 
     @property
     def home_dir(self) -> Path:
