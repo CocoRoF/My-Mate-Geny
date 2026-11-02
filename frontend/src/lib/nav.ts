@@ -13,6 +13,7 @@
  * asks for a second press before leaving the app.
  */
 import { useSessionStore } from "../stores/sessionStore";
+import { useStudio } from "../stores/studioStore";
 import { useUIStore } from "../stores/uiStore";
 import { runBack, takeOverlayEntry } from "./back";
 import { fromSearch, matePanelOf, urlOf, type Loc } from "./navUrl";
@@ -36,10 +37,15 @@ export function takeMatePanelLink(): ReturnType<typeof matePanelOf> {
 
 function current(): Loc {
   const { view, settingsTab } = useUIStore.getState();
+  const st = useStudio.getState();
   return {
     view,
     session: view === "chat" ? useSessionStore.getState().activeId : null,
     tab: view === "settings" ? settingsTab : null,
+    // the Mate Create studio: its own screen in the Mate view (a draft, or an existing mate's avatar)
+    ...(view === "mate" && st.open && st.mateId
+      ? { studio: { kind: st.kind, mate: st.mateId, ...(st.kind === "avatar" && st.projectId ? { project: st.projectId } : {}) } }
+      : {}),
   };
 }
 
@@ -60,6 +66,8 @@ let installed = false;
 let lastScreen: NavState = { hrhNav: 1 };
 let applying = false;
 let lastAction = 0;
+/** `create=new` (a deep link: make a draft): the draft's address replaces that entry — back never makes another */
+let replaceNext = false;
 
 function apply(loc: Loc) {
   applying = true;
@@ -70,6 +78,24 @@ function apply(loc: Loc) {
     if (loc.view === "settings") {
       if (ui.view !== "settings" || ui.settingsTab !== loc.tab || loc.anchor) ui.openSettings(loc.tab, loc.anchor ?? null);
     } else if (ui.view !== loc.view) ui.setView(loc.view);
+    if (loc.view === "mate") {
+      const st = useStudio.getState();
+      const s = loc.studio;
+      if (!s) {
+        if (st.open) st.close();
+      } else if (s.kind === "create") {
+        if (s.mate === "new") {
+          if (!st.starting) {
+            replaceNext = true;
+            void st.startNew().finally(() => {
+              replaceNext = false;
+            });
+          }
+        } else if (!st.open || st.kind !== "create" || st.mateId !== s.mate) st.openCreate(s.mate);
+      } else if (!st.open || st.kind !== "avatar" || st.mateId !== s.mate || (s.project ?? null) !== (st.projectId ?? null)) {
+        st.openAvatar(s.mate, s.project ?? null);
+      }
+    }
   } finally {
     applying = false;
   }
@@ -121,12 +147,16 @@ export function installNav(): void {
   // in-app changes → history entries (what the app picks by itself while starting — the last open chat — replaces
   // the first screen instead of adding one)
   const bootUntil = Date.now() + 2500;
-  const onChange = () => {
+  // (`user`: a change the user made — never mistaken for the app settling on its first screen while starting)
+  const onChange = (user = false) => {
     if (applying) return;
     const next = urlOf(current());
     if (next === here()) return;
     const s = navState();
-    if (Date.now() < bootUntil && navDepth() === 0 && s && !s.guard) window.history.replaceState(s, "", next);
+    if (replaceNext) {
+      replaceNext = false;
+      window.history.replaceState(window.history.state, "", next);
+    } else if (!user && Date.now() < bootUntil && navDepth() === 0 && s && !s.guard) window.history.replaceState(s, "", next);
     else if (!s && takeOverlayEntry()) {
       // opened from the phone drawer: its entry (on top) becomes this screen's — closing the drawer then has
       // nothing to step back over (lib/back.ts)
@@ -139,6 +169,13 @@ export function installNav(): void {
   };
   useUIStore.subscribe((s, prev) => (s.view !== prev.view || s.settingsTab !== prev.settingsTab) && onChange());
   useSessionStore.subscribe((s, prev) => s.activeId !== prev.activeId && useUIStore.getState().view === "chat" && onChange());
+  // the studio opening / closing / switching drafts or projects (in the Mate view)
+  useStudio.subscribe(
+    (s, prev) =>
+      (s.open !== prev.open || s.kind !== prev.kind || s.mateId !== prev.mateId || s.projectId !== prev.projectId) &&
+      useUIStore.getState().view === "mate" &&
+      onChange(true),
+  );
 
   // history → the app
   window.addEventListener("popstate", (ev) => {

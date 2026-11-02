@@ -1,8 +1,9 @@
 /**
- * The Avatar Create project panel (docs/avatar-create.md §4–6): what the server knows about the project — the steps,
- * the estimate card (the ONLY place a run starts: Confirm), the checkpoints (pick a candidate, approve the base
- * picture, approve the stills), progress and credits, redo / extra requests, the clips with their checks, and at the
- * end the avatar playing with Apply / Create a new mate / Restore.
+ * The avatar project (docs/avatar-create.md §4–6) — the Mate Create studio's Avatar section: what the server knows
+ * about the project — the steps, the estimate card (the ONLY place a run starts: Confirm), the checkpoints (pick a
+ * candidate, approve the base picture, approve the stills), progress and credits, redo / extra requests, what was
+ * made so far (candidates, stills, clips with their checks), and at the end the avatar playing with Apply / Restore
+ * (a new mate's avatar goes on her by itself).
  */
 import { useEffect, useRef, useState } from "react";
 import {
@@ -60,11 +61,11 @@ function stepOf(p: AvatarProject): string {
   return p.confirmation ? "design" : "estimate";
 }
 
-export function StepBar({ project }: { project: AvatarProject }) {
+export function StepBar({ project, nowrap = false }: { project: AvatarProject; nowrap?: boolean }) {
   const t = useT();
   const cur = STEPS.findIndex((s) => s.id === stepOf(project));
   return (
-    <ol className="flex flex-wrap gap-1" data-testid="avatar-steps">
+    <ol className={`flex gap-1 ${nowrap ? "" : "flex-wrap"}`} data-testid="avatar-steps">
       {STEPS.map((s, i) => (
         <li
           key={s.id}
@@ -483,7 +484,13 @@ function Clips({ project, act }: { project: AvatarProject; act: Act }) {
 
 const TRY_MOODS: BodyMood[] = ["idle", "listening", "thinking", "talking", "away"];
 
-function Finish({ project, act }: { project: AvatarProject; act: Act }) {
+export interface PanelStudio {
+  kind: "new" | "existing";
+  mateId: string;
+  mateName: string;
+}
+
+function Finish({ project, act, studio }: { project: AvatarProject; act: Act; studio?: PanelStudio }) {
   const t = useT();
   const mates = useMateStore((s) => s.mates);
   const target = project.brief.target;
@@ -518,9 +525,33 @@ function Finish({ project, act }: { project: AvatarProject; act: Act }) {
       )}
       {applied && !applied.restored_at && (
         <p className="mt-2 rounded-lg bg-success/10 px-2.5 py-1.5 text-center text-[12px] text-success" data-testid="avatar-applied">
-          {t("avatar.appliedTo", { name: applied.name })}
+          {studio?.kind === "new" ? t("studio.avatarOnHer") : t("avatar.appliedTo", { name: applied.name })}
         </p>
       )}
+      {studio?.kind === "new" ? (
+        !applied && (
+          <p className="mt-2 flex items-center justify-center gap-1.5 text-[12px] text-content-faint">
+            <Icon name="spinner" size={12} spin /> {t("studio.avatarApplying")}
+          </p>
+        )
+      ) : studio ? (
+        <div className="mt-3 flex flex-wrap justify-end gap-2">
+          {!!applied?.backup && !applied.restored_at && applied.mate_id === studio.mateId && (
+            <button className="btn-ghost text-[12px]" onClick={() => window.confirm(t("avatar.restoreConfirm", { name: applied.name })) && act(() => restoreAvatar(project.id))} data-testid="avatar-restore">
+              <Icon name="rotate" size={12} /> {t("avatar.restore", { name: applied.name })}
+            </button>
+          )}
+          {!(applied && !applied.restored_at && applied.mate_id === studio.mateId) && (
+            <button
+              className="btn-primary"
+              onClick={() => window.confirm(t("avatar.applyConfirm", { name: studio.mateName })) && act(() => applyAvatar(project.id, { mate_id: studio.mateId }))}
+              data-testid="avatar-apply"
+            >
+              <Icon name="check" size={14} /> {t("studio.applyTo", { name: studio.mateName })}
+            </button>
+          )}
+        </div>
+      ) : (
       <div className="mt-3 space-y-2">
         <div className="flex gap-2">
           <select className="field min-w-0 flex-1 text-[12.5px]" value={mateId} onChange={(e) => setMateId(e.target.value)} data-testid="avatar-apply-mate">
@@ -552,11 +583,58 @@ function Finish({ project, act }: { project: AvatarProject; act: Act }) {
           </button>
         ) : null}
       </div>
+      )}
     </Card>
   );
 }
 
-export default function AvatarPanel({ project, env, act, reloadEnv }: { project: AvatarProject; env: AvatarEnv | null; act: Act; reloadEnv: () => void }) {
+/** what was made so far (outside the checkpoints that show it): the candidates (the picked one marked), the base
+ *  picture and the stills — fixed-ratio tiles, so nothing jumps when a picture arrives */
+function Gallery({ project }: { project: AvatarProject }) {
+  const t = useT();
+  const f = project.files;
+  const cp = project.checkpoint?.stage;
+  const cands = cp === "pick" ? [] : f.candidates;
+  const stills = cp === "stills" ? [] : f.stills.filter((x) => x.url || x.status === "running");
+  const home = cp === "home" ? null : f.home;
+  if (!cands.length && !stills.length && !home) return null;
+  return (
+    <Card title={t("studio.galleryTitle")} icon="image" testId="avatar-gallery">
+      {cands.length > 0 && (
+        <>
+          <p className="mb-1.5 text-[11.5px] text-content-faint">{t("avatar.lineCandidates")}</p>
+          <div className="grid grid-cols-4 gap-1.5">
+            {cands.map((c) => (
+              <Thumb key={c.id} src={c.url} label={c.id} selected={project.picked === c.id} testId="avatar-gallery-candidate" />
+            ))}
+          </div>
+        </>
+      )}
+      {(home || stills.length > 0) && (
+        <>
+          <p className="mb-1.5 mt-2.5 text-[11.5px] text-content-faint">{t("avatar.lineStills")}</p>
+          <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">
+            {home && <Thumb src={home} label={t("avatar.neutral")} />}
+            {stills.map((x) => (
+              <Thumb key={x.name} src={x.url} label={x.name} testId="avatar-gallery-still" />
+            ))}
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+export default function AvatarPanel({ project, env, act, reloadEnv, studio, hideSteps = false }: {
+  project: AvatarProject;
+  env: AvatarEnv | null;
+  act: Act;
+  reloadEnv: () => void;
+  /** in the Mate Create studio: whose avatar (a new mate's goes on her by itself) */
+  studio?: PanelStudio;
+  /** the steps are shown elsewhere (the studio's header) */
+  hideSteps?: boolean;
+}) {
   const t = useT();
   const top = useRef<HTMLDivElement>(null);
   const cp = project.checkpoint?.stage;
@@ -566,8 +644,8 @@ export default function AvatarPanel({ project, env, act, reloadEnv }: { project:
   const pending = project.extras.filter((x) => x.status === "pending");
   const b = project.brief;
   return (
-    <div className="flex flex-col gap-3 p-3 sm:p-4" ref={top} data-testid="avatar-panel">
-      <StepBar project={project} />
+    <div className={`flex flex-col gap-3 ${studio ? "" : "p-3 sm:p-4"}`} ref={top} data-testid="avatar-panel">
+      {!hideSteps && <StepBar project={project} />}
       {env && (!env.higgsfield.connected || !env.higgsfield.cli) && (
         <div className="rounded-lg border border-warning/30 bg-warning/[0.07] px-3 py-2 text-[12px] text-warning" data-testid="avatar-no-higgsfield">
           {!env.higgsfield.connected ? t("avatar.connectHiggsfield") : t("avatar.noCli")}
@@ -579,8 +657,9 @@ export default function AvatarPanel({ project, env, act, reloadEnv }: { project:
       ))}
       {project.status === "estimate" && project.plan && !project.confirmation && <EstimateCard project={project} env={env} act={act} />}
       <Checkpoint project={project} act={act} />
-      {project.preview && (project.status === "ready" || project.status === "applied") && <Finish project={project} act={act} />}
+      {project.preview && (project.status === "ready" || project.status === "applied") && <Finish project={project} act={act} studio={studio} />}
       {project.confirmation && <Progress project={project} act={act} />}
+      {project.confirmation && <Gallery project={project} />}
       <Clips project={project} act={act} />
       <Card title={t("avatar.briefTitle")} icon="file-text" testId="avatar-brief">
         <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-[12px]">
@@ -598,8 +677,12 @@ export default function AvatarPanel({ project, env, act, reloadEnv }: { project:
           </dd>
           <dt className="text-content-faint">{t("avatar.briefMotions")}</dt>
           <dd className="text-content-dim">{t("avatar.briefMotionsValue", { preset: t(`avatar.preset_${b.preset}` as MsgKey), clips: b.clips.length, stills: b.stills.length })}</dd>
-          <dt className="text-content-faint">{t("avatar.briefTarget")}</dt>
-          <dd className="text-content-dim">{b.target.mode === "existing" ? b.target.name : t("avatar.newMateNamed", { name: b.target.name || "—" })}</dd>
+          {!studio && (
+            <>
+              <dt className="text-content-faint">{t("avatar.briefTarget")}</dt>
+              <dd className="text-content-dim">{b.target.mode === "existing" ? b.target.name : t("avatar.newMateNamed", { name: b.target.name || "—" })}</dd>
+            </>
+          )}
         </dl>
         {project.files.refs.length > 0 && (
           <div className="mt-2 flex gap-1.5">

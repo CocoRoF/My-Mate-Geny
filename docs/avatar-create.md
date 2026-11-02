@@ -1,13 +1,18 @@
-# Avatar Create (아바타 만들기)
+# Mate Create studio (메이트 만들기) and Avatar Create (아바타 만들기)
 
-An agent in the Mate window that designs a **video avatar** for a mate with Higgsfield — the way the bundled mates
-(한채린, 서아, 에스텔) were made by hand with Claude Code + Higgsfield (ailism-mate `original_content/tools/mate.py`).
-It is used only for avatar design: a conversation of its own, separate from the mate's chat.
+The **Mate Create studio** is where a mate is made: the creation agent on the left helps define who she is (concept,
+personality, speech, how she calls the user, voice character, visual concept) and fills her settings on the right as
+it goes; then it designs her **video avatar** with Higgsfield — the way the bundled mates (한채린, 서아, 에스텔) were
+made by hand with Claude Code + Higgsfield (ailism-mate `original_content/tools/mate.py`). The same studio makes a new
+avatar for an existing mate. The agent has a conversation of its own, separate from the mate's chat. §11 is the
+studio; §1–§10 the avatar part (unchanged since Avatar Create).
 
-Code: `backend/app/avatar/` (presets, plan, generator, pipeline, deps, store, service, prompt, mcp_bridge),
-`backend/app/routers/avatar.py`, `frontend/src/components/mate/avatar/*`, `frontend/src/api/avatar.ts`,
-`frontend/src/stores/avatarCreateStore.ts`. Tests: `backend/tests/test_avatar.py`,
-`desktop/test/e2e/avatar-create-browser.js` (+ `fake-higgsfield.py`, `higgsfield-stub.py`, `fake-claude.py`).
+Code: `backend/app/avatar/` (presets, plan, generator, pipeline, deps, store, service, prompt, mcp_bridge, studio),
+`backend/app/routers/avatar.py`, `frontend/src/components/mate/studio/*` (MateStudio, StudioSettings, fields),
+`frontend/src/components/mate/avatar/*` (AvatarChat, AvatarPanel), `frontend/src/api/avatar.ts`,
+`frontend/src/stores/studioStore.ts`. Tests: `backend/tests/test_avatar.py`, `backend/tests/test_mate_studio.py`,
+`desktop/test/e2e/mate-studio-browser.js`, `desktop/test/e2e/avatar-create-browser.js` (+ `fake-higgsfield.py`,
+`higgsfield-stub.py`, `fake-claude.py`).
 
 ## 1. What it makes
 
@@ -50,11 +55,10 @@ Exactly the official mates' body (docs/mate.md §2 `video`, packing `stacked-alp
 
 ## 2. Where
 
-- Mate view header: **Avatar Create** (✨) — opens it for the mate on screen.
-- Mate settings → Avatar → **Create with AI**.
-- First screen: what it does, **Start designing**, the earlier projects (open / delete). Inside: the project panel
-  (left on a desktop, where the avatar stands) and the agent's conversation (right); on a phone two tabs, the project
-  tab marked when it waits for you.
+- The mate picker → **New mate**: the studio for a new mate (§11).
+- Mate view header: **Avatar Create** (✨) and Mate settings → Avatar → **Create with AI**: the studio for the mate on
+  screen — the same layout (the agent left, her settings right, the Avatar section open), her latest avatar project
+  (Projects ▾: the others, a new one, delete).
 
 ## 3. The agent
 
@@ -176,3 +180,80 @@ reserve); the light tier saves 2.75 per clip. The estimate card always shows Hig
 - `desktop/test/e2e/avatar-create-browser.js`: the browser flow with the real processing on the official mates'
   masters (no credits): cards, estimate, the gate, checkpoints, the avatar playing, apply / restore; en / ko,
   light / dark, desktop / phone.
+
+## 11. The Mate Create studio
+
+**Where.** The mate picker's **New mate** (a fresh draft and its studio at once; the picker also lists the drafts to
+resume), the desktop app's mate chat window (**+** → the console at `/?view=mate&create=new`), ✨ / Create with AI for
+an existing mate. A screen of its own: `/?view=mate&create=<draft id>` or `/?view=mate&avatar=<mate id>[&project=<id>]`
+(frontend `lib/navUrl.ts`; `create=new` makes a draft and replaces that entry) — back returns to the Mate, forward and a
+reload come back to the same draft.
+
+**Layout.** Header: back (= Save draft & exit), the title (새 메이트 만들기 / ‹name›의 아바타), the draft's name, the
+credits (≈ estimate, then spent / cap), Drafts ▾ or Projects ▾, ⋯ (Start from a mate…, Import a mate pack…, Quick
+create (name only)…, Discard draft), **Save draft & exit**, **Create mate** (enabled with a name and a description or
+personality; its tooltip says what is missing). Below it the steps — Concept → Personality → Look → Avatar → Voice →
+Done (done ✓ / current / to do; a click shows that section) — or, for an existing mate, the avatar's own steps.
+Desktop: two columns, the agent ~47 % on the left and the settings on the right, a splitter (drag, ←/→, double-click
+or Home resets) remembered in localStorage `hrh_studio_split`. Phone: two tabs, **Agent | Settings**; Settings carries
+the number of fields the agent filled since you last looked (or a dot when an estimate / checkpoint waits). Both stay
+mounted (no lost scroll or typing).
+
+**Left — the creation agent** (`AvatarChat`): its lines, its cards (distinct from plain messages: an accent frame and a
+label) — **concept directions** (`ask_user` kind `concepts`: 2–4 big cards with a name, a one-line pitch and a palette
+strip; "describe your own"), choices, sliders, uploads, text, the estimate with Confirm — **filled-in cards** for each
+`update_mate_draft` (which settings, Show), tool chips, the run's events as dividers, and above the conversation the
+run status (what is being made, done / total with a smooth bar, "Waiting for you: …" with Show).
+
+**Right — the mate's settings, live** (`StudioSettings`): collapsible sections — **Concept** (pitch, her role for
+you, interests, backstory, the look: art style, mood, look, outfit, palette with swatches, voice character),
+**Profile** (name, reply language, who she is, personality, how she talks, your name, what she calls herself, what she
+calls you with the chips and the Korean particle preview, greeting, standing instructions), **Conversation style**
+(speech level, length, emotion, warmth / humor / initiative, topics to avoid), **Avatar** (her avatar now or an empty
+stage of the same size, Skip the avatar for now, then the project: estimate, checkpoints, progress, what was made so
+far — fixed-ratio tiles, nothing jumps — clips, the player when ready), **Voice** (the Voice tab itself: engine, voice,
+test — with the agent's voice character as a hint) and **Language model** (the Model tab). Every field saves itself
+(0.65 s after the last key or on leaving it; "Changes save automatically"). A field the agent filled glows for a moment
+and carries **Filled by the agent · Undo** (back to the value before it wrote); a section closed when the agent fills
+it opens; editing a field removes its badge.
+
+**The draft.** A draft is a real mate row with `draft = 1` (the cleaner option than a second settings model: every
+settings tab works on it unchanged): hidden from `GET /api/mates` and the picker, never the default, no conversation
+(`POST …/conversation` → 409), may have an empty name. Its studio project (`avatar_projects.doc.studio`:
+`{kind: new|existing, mate_id, concept, filled, seen, avatar_skipped, voice_ok, finished_at}`) targets it. **Create
+mate** (`finish`) turns it into a mate (`draft = 0`; the first real mate becomes the default) — she is in the picker
+and the Mate view opens on her; an avatar still being made goes on her when ready (a new mate's avatar is applied by
+itself whenever the project gets ready, again after a redo). **Discard draft** cancels a run, deletes the project
+(pictures, conversation) and the draft. Opening a new draft drops untouched ones (nothing written, nothing answered,
+nothing estimated).
+
+**The agent and the settings stay in sync.** The agent writes with `update_mate_draft {fields: {name, persona
+{description, personality, speech, address, greeting, instructions, language}, prefs {user_name, self_ref, formality,
+length, emotion, tone {warmth, humor, initiative}, avoid}, concept {pitch, role, interests, backstory, voice, style,
+look, outfit, palette, mood}}}` — checked strictly by the server (`app/avatar/studio.py`: unknown fields, enums,
+lengths → an error it sees; nothing half-applied), and never the voice, the model, the avatar, the default flag or any
+key. Each written field is recorded in `filled` (when, the value before) and in `seen` (what the agent knows). The
+user's edits go through `PATCH /api/avatar/studio/{pid}/fields` (any mate setting + the concept) or the Voice / Model
+tabs; before the agent's next turn the server compares the draft with `seen` and prepends one `<studio_update>` block
+listing only what changed (`path: old → new`, clipped) — never stored, the system prompt unchanged (no restart, no
+prompt bloat). `get_project` adds `studio: {kind, mate (the fields that are set), missing_to_create, avatar_skipped}`.
+The system prompt for a new mate (`prompt.py` STUDIO_NEW) starts with the concept (offer 3 directions, write them, refine
+speech level / address / tone), then the avatar part as in §3 (no "which mate"); for an existing mate the avatar part
+with a note that her profile changes only when the user asks. The brief's target is always the studio's mate.
+
+**Credits.** Unchanged (§4): nothing that spends runs before the user's Confirm; `update_mate_draft`, Create mate and
+the concept never touch the plan or the gate.
+
+**API** (`/api/avatar/studio`): `POST {mate_id?, language, fresh?}` → the project (a new draft without `mate_id`; a
+draft's own project; an existing mate's latest — `fresh`: a new one), `GET /drafts`, `PATCH /{pid}/fields`,
+`POST /{pid}/undo {field}`, `POST /{pid}/finish` → `{mate, project}`, `POST /{pid}/skip-avatar {skip}`,
+`POST /{pid}/template {mate_id}` (copy that mate's profile, style, voice and model — not the name or the avatar),
+`POST /{pid}/voice-ok`, `DELETE /{pid}` (discard). The project view carries `studio` (+ the mate).
+
+**Tests.** `backend/tests/test_mate_studio.py`: the draft's lifecycle (hidden, no conversation, finish → in the list,
+the first one the default), the agent's fields validated and never voice / model / avatar, the user's edits reaching
+the agent once, undo, template, discard and dropping untouched drafts, the gate unchanged and the avatar landing on the
+new mate, an existing mate's studio. `desktop/test/e2e/mate-studio-browser.js`: the whole flow in a browser with the
+scripted fake agent (concepts → filled settings → the user's edit seen next turn → estimate → gate → Confirm → real
+processing → the avatar on her → Create mate), back / forward / reload, ✨ for an existing mate, drafts, discard, the
+splitter; en / ko, light / dark, desktop / phone.

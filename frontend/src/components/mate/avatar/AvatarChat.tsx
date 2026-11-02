@@ -1,7 +1,9 @@
 /**
- * The Avatar Create conversation: the agent's lines (MateReply bubbles), its tools as small chips, its question cards
- * (choices / slider / upload / text / mate picker — the answer goes back as the user's message), the estimate card
- * where it priced the plan, and the run's events as dividers. A plain composer (text + pictures).
+ * The creation agent's conversation (the Mate Create studio's left side, docs/avatar-create.md §11): the agent's lines
+ * (MateReply bubbles), its tools as small chips, its cards — questions (choices / concept directions / slider /
+ * upload / text / mate picker — the answer goes back as the user's message), "filled in" cards for the settings it
+ * wrote on the right, the estimate card where it priced the plan — and the run's events as dividers. A plain composer
+ * (text + pictures).
  */
 import { memo, useMemo, useRef, useState } from "react";
 import { answered, uploadReference, type AvatarEnv, type AvatarProject, type Question } from "../../../api/avatar";
@@ -20,6 +22,7 @@ import { tr, useT, type MsgKey } from "../../../i18n";
 
 const TOOL: Record<string, { icon: IconName; label: MsgKey }> = {
   get_project: { icon: "eye", label: "avatar.toolGetProject" },
+  update_mate_draft: { icon: "pencil", label: "studio.toolDraft" },
   ask_user: { icon: "chat", label: "avatar.toolAsk" },
   update_brief: { icon: "pencil", label: "avatar.toolBrief" },
   use_reference: { icon: "image", label: "avatar.toolReference" },
@@ -33,6 +36,86 @@ const TOOL: Record<string, { icon: IconName; label: MsgKey }> = {
 };
 
 const toolName = (t: ToolActivity) => t.name.replace(/^mcp__avatar__/, "");
+
+/** the settings section a field path lives in (the studio scrolls there) */
+export const sectionOf = (path: string): string =>
+  path.startsWith("concept.") ? "concept" : path.startsWith("prefs.") && !/^prefs\.(user_name|self_ref)$/.test(path) ? "style" : "profile";
+
+/** update_mate_draft's arguments → the field paths it wrote (like the server's studio.paths_of) */
+export function draftPaths(input: unknown): string[] {
+  const a = (input || {}) as Record<string, any>;
+  const f = (a.fields && typeof a.fields === "object" ? a.fields : a) as Record<string, any>;
+  const out: string[] = [];
+  if (typeof f.name === "string") out.push("name");
+  for (const k of Object.keys(f.persona || {})) out.push(`persona.${k}`);
+  for (const [k, v] of Object.entries(f.prefs || {})) {
+    if (k === "tone" && v && typeof v === "object") out.push(...Object.keys(v as object).map((x) => `prefs.tone.${x}`));
+    else out.push(`prefs.${k}`);
+  }
+  for (const k of Object.keys(f.concept || {})) out.push(`concept.${k}`);
+  return out;
+}
+
+/** a field path's label (the same words as the settings on the right) */
+export function fieldLabel(t: ReturnType<typeof useT>, path: string): string {
+  const key = `studio.f_${path.replace(/\./g, "_")}` as MsgKey;
+  const v = t(key);
+  return v === key ? path : v;
+}
+
+/** the agent wrote settings on the right: which ones, and a way there */
+function FilledCard({ tool, onShow }: { tool: ToolActivity; onShow?: (section: string) => void }) {
+  const t = useT();
+  const paths = draftPaths(tool.input);
+  const running = tool.durationMs === undefined;
+  if (tool.isError) return <Chip tool={tool} />;
+  return (
+    <div className="w-full max-w-[92%] rounded-xl border border-success/30 bg-success/[0.06] px-3 py-2.5" data-testid="studio-filled-card">
+      <div className="flex items-center gap-2 text-[12.5px] font-medium text-content">
+        <Icon name={running ? "spinner" : "sparkles"} size={13} spin={running} className="text-success" />
+        <span className="min-w-0 flex-1">{t("studio.filledCard", { count: paths.length })}</span>
+        {onShow && paths.length > 0 && (
+          <button className="rounded-md px-1.5 py-0.5 text-[11.5px] text-accent hover:bg-accent-soft" onClick={() => onShow(sectionOf(paths[0]))} data-testid="studio-filled-show">
+            {t("studio.filledShow")}
+          </button>
+        )}
+      </div>
+      {paths.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {paths.slice(0, 14).map((p) => (
+            <span key={p} className="rounded-full bg-surface/80 px-2 py-0.5 text-[11px] text-content-dim">
+              {fieldLabel(t, p)}
+            </span>
+          ))}
+          {paths.length > 14 && <span className="px-1 text-[11px] text-content-faint">+{paths.length - 14}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** a concept direction: name, one-line pitch, colours */
+function ConceptOption({ o, live, onPick }: { o: { value: string; label: string; description?: string | null; palette?: string[] }; live: boolean; onPick: () => void }) {
+  return (
+    <button
+      disabled={!live}
+      onClick={onPick}
+      className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-surface text-left transition hover:-translate-y-0.5 hover:border-accent/60 hover:shadow-card focus-visible:border-accent disabled:cursor-default disabled:opacity-60 disabled:hover:translate-y-0"
+      data-testid="studio-concept-option"
+      data-value={o.value}
+    >
+      <div className="flex h-9 w-full" aria-hidden>
+        {(o.palette?.length ? o.palette : ["rgb(var(--c-surface-3))"]).map((c, i) => (
+          <span key={i} className="h-full flex-1" style={{ background: c }} />
+        ))}
+      </div>
+      <div className="flex flex-1 flex-col gap-1 px-3 py-2.5">
+        <span className="text-[13.5px] font-semibold text-content">{o.label}</span>
+        {o.description && <span className="text-[12px] leading-relaxed text-content-dim">{o.description}</span>}
+      </div>
+    </button>
+  );
+}
 
 function Chip({ tool }: { tool: ToolActivity }) {
   const t = useT();
@@ -110,9 +193,33 @@ function QuestionCard({ q, live, project, send }: { q: Question; live: boolean; 
     }
   };
   return (
-    <div className={`w-full max-w-[92%] rounded-xl border p-3 ${live ? "border-accent/40 bg-accent-soft/30" : "border-border bg-surface-2/40"}`} data-testid="avatar-question" data-live={live ? "1" : "0"} data-kind={q.kind}>
+    <div
+      className={`w-full rounded-xl border p-3 ${q.kind === "concepts" ? "max-w-full" : "max-w-[92%]"} ${live ? "border-accent/40 bg-accent-soft/30 shadow-card" : "border-border bg-surface-2/40"}`}
+      data-testid="avatar-question"
+      data-live={live ? "1" : "0"}
+      data-kind={q.kind}
+    >
+      <div className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-accent">
+        <Icon name={q.kind === "concepts" ? "sparkles" : "chat"} size={11} /> {q.kind === "concepts" ? t("studio.cardConcepts") : t("studio.cardQuestion")}
+      </div>
       <p className="mb-2 text-[13px] font-medium text-content">{q.question}</p>
-      {q.kind === "slider" ? (
+      {q.kind === "concepts" ? (
+        <>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {q.options.map((o) => (
+              <ConceptOption key={o.value} o={o} live={live} onPick={() => reply(o.description ? `${o.label} — ${o.description}` : o.label)} />
+            ))}
+          </div>
+          {q.allow_other && live && (
+            <div className="mt-2 flex gap-2">
+              <input className="field flex-1 text-[12.5px]" value={other} onChange={(e) => setOther(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && other.trim() && reply(other.trim())} placeholder={t("studio.conceptOwn")} data-testid="avatar-q-other" />
+              <button className="btn-soft !py-1" disabled={!other.trim()} onClick={() => reply(other.trim())}>
+                {t("avatar.answer")}
+              </button>
+            </div>
+          )}
+        </>
+      ) : q.kind === "slider" ? (
         <div className="flex items-center gap-3">
           <input type="range" min={q.min ?? 0} max={q.max ?? 10} step={q.step ?? 1} value={num} disabled={!live} onChange={(e) => setNum(Number(e.target.value))} className="flex-1" data-testid="avatar-q-slider" />
           <span className="w-16 text-right text-[13px] text-content">
@@ -193,6 +300,9 @@ const EVENT_LABEL: Record<string, MsgKey> = {
   cap: "avatar.evCap",
   applied: "avatar.evApplied",
   extra_confirmed: "avatar.evExtra",
+  mate_created: "studio.evCreated",
+  avatar_skipped: "studio.evSkipped",
+  avatar_back: "studio.evAvatarBack",
 };
 
 function EventDivider({ text }: { text: string }) {
@@ -208,8 +318,9 @@ function EventDivider({ text }: { text: string }) {
   );
 }
 
-const AgentTurn = memo(function AgentTurn({ turn, project, env, act, send, lastAsk, lastEstimate }: {
+const AgentTurn = memo(function AgentTurn({ turn, project, env, act, send, lastAsk, lastEstimate, onShow }: {
   turn: Turn; project: AvatarProject; env: AvatarEnv | null; act: Act; send: (s: string) => void; lastAsk: string | null; lastEstimate: string | null;
+  onShow?: (section: string) => void;
 }) {
   const tt = useT();
   const running = !turn.complete;
@@ -224,8 +335,10 @@ const AgentTurn = memo(function AgentTurn({ turn, project, env, act, send, lastA
       const name = toolName(tool);
       const input = (tool.input || {}) as Partial<Question> & Record<string, unknown>;
       if (name === "ask_user" && !tool.isError && input.question) {
-        const q: Question = { id: tool.id, kind: (input.kind as Question["kind"]) || "choice", question: String(input.question), options: (input.options || []).map((o: any) => (typeof o === "string" ? { value: o, label: o } : { value: String(o.value ?? o.label), label: String(o.label ?? o.value), description: o.description })), allow_other: input.allow_other ?? (input.kind === "choice" || input.kind === "multi"), min: input.min, max: input.max, step: input.step, default: input.default, unit: input.unit };
+        const q: Question = { id: tool.id, kind: (input.kind as Question["kind"]) || "choice", question: String(input.question), options: (input.options || []).map((o: any) => (typeof o === "string" ? { value: o, label: o } : { value: String(o.value ?? o.label), label: String(o.label ?? o.value), description: o.description, palette: Array.isArray(o.palette) ? o.palette.filter((c: unknown) => typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c.trim())).slice(0, 5) : undefined })), allow_other: input.allow_other ?? (input.kind === "choice" || input.kind === "multi" || input.kind === "concepts"), min: input.min, max: input.max, step: input.step, default: input.default, unit: input.unit };
         items.push(<QuestionCard key={i} q={q} live={lastAsk === tool.id && !!project.question} project={project} send={send} />);
+      } else if (name === "update_mate_draft") {
+        items.push(<FilledCard key={i} tool={tool} onShow={onShow} />);
       } else if (name === "estimate" && !tool.isError && lastEstimate === tool.id && project.plan && !project.confirmation && project.status === "estimate") {
         items.push(
           <div key={i} className="w-full max-w-[92%]">
@@ -274,7 +387,7 @@ function UserBubble({ text, attachments }: { text: string; attachments?: Attachm
   );
 }
 
-function Composer({ sid, chat }: { sid: string; chat: AgentChat }) {
+function Composer({ sid, chat, placeholder }: { sid: string; chat: AgentChat; placeholder?: string }) {
   const t = useT();
   const [text, setText] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
@@ -332,7 +445,7 @@ function Composer({ sid, chat }: { sid: string; chat: AgentChat }) {
               submit();
             }
           }}
-          placeholder={t("avatar.composerPlaceholder")}
+          placeholder={placeholder ?? t("avatar.composerPlaceholder")}
           className="max-h-40 min-h-[36px] flex-1 resize-none bg-transparent py-2 text-sm outline-none"
           data-testid="avatar-input"
         />
@@ -350,7 +463,17 @@ function Composer({ sid, chat }: { sid: string; chat: AgentChat }) {
   );
 }
 
-export default function AvatarChat({ project, env, act, chat }: { project: AvatarProject; env: AvatarEnv | null; act: Act; chat: AgentChat }) {
+export default function AvatarChat({ project, env, act, chat, onShow, placeholder, top }: {
+  project: AvatarProject;
+  env: AvatarEnv | null;
+  act: Act;
+  chat: AgentChat;
+  /** the studio: show a settings section (a "filled in" card's Show) */
+  onShow?: (section: string) => void;
+  placeholder?: string;
+  /** above the conversation (the studio's run status) */
+  top?: React.ReactNode;
+}) {
   const t = useT();
   const turns = useAvatarChat((s) => s.turns);
   const { ref, onScroll, paging, loadOlder } = useHistoryScroll(useAvatarChat, 100);
@@ -375,10 +498,20 @@ export default function AvatarChat({ project, env, act, chat }: { project: Avata
       {(chat.error || chat.connection === "reconnecting") && (
         <div className="mx-auto mt-2 w-fit rounded-full border border-warning/30 bg-surface-2 px-3 py-1 text-[11.5px] text-warning">{chat.error || t("mate.reconnecting")}</div>
       )}
+      {top}
       <div ref={ref} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="mx-auto flex max-w-2xl flex-col gap-3 px-4 py-4">
           <HistoryEdge paging={paging} empty={turns.length === 0} onRetry={loadOlder} />
-          {turns.length === 0 && <p className="pt-10 text-center text-sm text-content-faint">{t("avatar.chatEmpty")}</p>}
+          {turns.length === 0 && (
+            <div className="flex flex-col items-center gap-3 pt-12 text-center" data-testid="avatar-chat-empty">
+              <span className="grid h-11 w-11 place-items-center rounded-2xl bg-accent-soft text-accent">
+                <Icon name="sparkles" size={18} />
+              </span>
+              <p className="flex items-center gap-1.5 text-sm text-content-faint">
+                <Icon name="spinner" size={13} spin /> {t("avatar.chatEmpty")}
+              </p>
+            </div>
+          )}
           {turns.map((turn) => {
             if (turn.role === "user") {
               if (turn.meta?.internal) return turn.meta.kind === "avatar_event" ? <EventDivider key={turn.key} text={turn.text} /> : null;
@@ -391,11 +524,11 @@ export default function AvatarChat({ project, env, act, chat }: { project: Avata
                 </div>
               );
             }
-            return <AgentTurn key={turn.key} turn={turn} project={project} env={env} act={act} send={send} lastAsk={lastAsk} lastEstimate={lastEstimate} />;
+            return <AgentTurn key={turn.key} turn={turn} project={project} env={env} act={act} send={send} lastAsk={lastAsk} lastEstimate={lastEstimate} onShow={onShow} />;
           })}
         </div>
       </div>
-      <Composer sid={project.session_id} chat={chat} />
+      <Composer sid={project.session_id} chat={chat} placeholder={placeholder} />
     </div>
   );
 }

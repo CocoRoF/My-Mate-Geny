@@ -5,10 +5,11 @@
  * Phone: a compact (collapsible) stage on top, the conversation below, settings full screen. While the on-screen
  * keyboard is up the stage steps aside (the header keeps her picture, name and mood) so the conversation gets the
  * room; it comes back when the keyboard goes.
+ * The picker's New mate (and ✨ Avatar Create) open the Mate Create studio over the whole view (studio/MateStudio).
  */
 import PageLoading from "../ui/Loading";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { importLocal } from "../../api/mates";
+import { listDrafts, type DraftSummary } from "../../api/avatar";
 import { usePhone } from "../../lib/device";
 import { useKeyboardOpen } from "../../lib/keyboard";
 import { useBackHandler } from "../../lib/back";
@@ -24,12 +25,12 @@ import MateStage, { BuiltinBadge, MateThumb, moodLabel } from "./MateStage";
 import RelationBadge from "./RelationBadge";
 import { takeMatePanelLink } from "../../lib/nav";
 import { useT } from "../../i18n";
-import { useAvatarCreate } from "../../stores/avatarCreateStore";
+import { useStudio } from "../../stores/studioStore";
 
 const MateSettings = lazy(() => import("./settings/MateSettings"));
 const GlobalSettings = lazy(() => import("./settings/GlobalSettings"));
 const RelationPanel = lazy(() => import("./RelationPanel"));
-const AvatarCreate = lazy(() => import("./avatar/AvatarCreate"));
+const MateStudio = lazy(() => import("./studio/MateStudio"));
 
 type SettingsTab = "relation" | "memory" | undefined;
 
@@ -45,9 +46,11 @@ export default function MateView() {
   const activeId = useMateStore((s) => s.activeId);
   const load = useMateStore((s) => s.load);
   const mate = mates.find((m) => m.id === activeId) ?? mates[0] ?? null;
-  const conv = useMateConversation(mate);
-  // Avatar Create (docs/avatar-create.md): its own conversation over the whole view
-  const avatarCreate = useAvatarCreate((s) => s.open);
+  // the Mate Create studio (docs/avatar-create.md §11): its own screen over the whole view — her conversation rests
+  const studioOpen = useStudio((s) => s.open);
+  const studioStarting = useStudio((s) => s.starting);
+  const studio = studioOpen || studioStarting;
+  const conv = useMateConversation(studio ? null : mate);
   // drop files on the conversation, or paste them anywhere on the page: they go to the composer
   const { dragging, dropProps } = useFileDrop(conv.sessionId);
   const phone = usePhone();
@@ -132,7 +135,10 @@ export default function MateView() {
       document.removeEventListener("keydown", onKey);
     };
   }, [switcher]);
-  const [newMate, setNewMate] = useState(false);
+  const [drafts, setDrafts] = useState<DraftSummary[]>([]);
+  useEffect(() => {
+    if (switcher) listDrafts().then(setDrafts).catch(() => setDrafts([]));
+  }, [switcher]);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === "1");
   // phones: the stage is out of the way (hidden by the user, or the keyboard is up)
   const stageAway = collapsed || keyboard;
@@ -145,10 +151,15 @@ export default function MateView() {
     return () => clearTimeout(timer);
   }, [info]);
   useBackHandler(settings, closePanels);
-  useBackHandler(switcher || newMate, () => {
-    setSwitcher(false);
-    setNewMate(false);
-  });
+  useBackHandler(switcher, () => setSwitcher(false));
+  // the studio closed with something to say (created, discarded, imported)
+  const studioNotice = useStudio((s) => s.notice);
+  useEffect(() => {
+    if (!studioNotice || studio) return;
+    setInfo(studioNotice);
+    useStudio.getState().note(null);
+  }, [studioNotice, studio]);
+  const startError = useStudio((s) => s.startError);
 
   useEffect(() => {
     load();
@@ -175,10 +186,10 @@ export default function MateView() {
   };
 
   if (!loaded) return <PageLoading />;
-  if (avatarCreate)
+  if (studio)
     return (
       <Suspense fallback={<PageLoading />}>
-        <AvatarCreate mate={mate} />
+        <MateStudio />
       </Suspense>
     );
   if (!mate)
@@ -231,15 +242,37 @@ export default function MateView() {
                     </button>
                   ))}
                 </div>
+                {drafts.length > 0 && (
+                  <div className="border-t border-border/70 py-1" data-testid="mate-drafts">
+                    <div className="px-3 pb-0.5 pt-1 text-[10.5px] font-semibold uppercase tracking-wide text-content-faint">{t("studio.draftsTitle")}</div>
+                    {drafts.slice(0, 4).map((d) => (
+                      <button
+                        key={d.project_id}
+                        onClick={() => {
+                          setSwitcher(false);
+                          useStudio.getState().openCreate(d.mate_id);
+                        }}
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] text-content-dim hover:bg-surface-3 hover:text-content"
+                        data-testid="mate-draft-item"
+                      >
+                        <Icon name="pencil" size={12} className="shrink-0 text-content-faint" />
+                        <span className="min-w-0 flex-1 truncate">{d.name || t("studio.untitled")}</span>
+                        <span className="pill bg-surface-3 text-content-faint">{t("studio.draftPill")}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <button
                   onClick={() => {
                     setSwitcher(false);
-                    setNewMate(true);
+                    void useStudio.getState().startNew();
                   }}
                   className="flex w-full items-center gap-2 border-t border-border px-3 py-2.5 text-[13px] text-accent hover:bg-surface-3"
                   data-testid="mate-new"
                 >
-                  <Icon name="plus" size={14} /> {t("mate.newMate")}
+                  <Icon name="plus" size={14} />
+                  <span className="min-w-0 flex-1 text-left">{t("mate.newMate")}</span>
+                  <span className="text-[11px] text-content-faint">{t("studio.newMateHint")}</span>
                 </button>
                 <button
                   onClick={async () => {
@@ -274,7 +307,7 @@ export default function MateView() {
             </button>
           )}
           <button
-            onClick={() => useAvatarCreate.getState().show(mate.id)}
+            onClick={() => useStudio.getState().openAvatar(mate.id)}
             className="btn-ghost !px-2.5"
             title={t("avatar.openTitle", { name: mate.name })}
             aria-label={t("avatar.title")}
@@ -333,6 +366,12 @@ export default function MateView() {
       {(conv.error || conv.connection === "reconnecting") && (
         <div className="mx-auto mt-2 w-fit rounded-full border border-warning/30 bg-surface-2 px-3 py-1 text-[11.5px] text-warning">
           {conv.error ? t("mate.cantReach", { name: mate.name, error: conv.error }) : t("mate.reconnecting")}
+        </div>
+      )}
+      {startError && (
+        <div className="mx-auto mt-2 flex w-fit max-w-[92%] items-center gap-2 rounded-lg bg-danger/10 px-3 py-1.5 text-[12px] text-danger" data-testid="mate-studio-error">
+          <Icon name="warning" size={12} />
+          <span className="break-words">{t("studio.startFailedWith", { error: startError })}</span>
         </div>
       )}
       {(notice || conv.voiceError) && (
@@ -395,7 +434,6 @@ export default function MateView() {
             {conversation}
           </>
         )}
-        <NewMateDialog open={newMate} onClose={() => setNewMate(false)} onImported={setInfo} />
       </div>
     );
   }
@@ -421,104 +459,6 @@ export default function MateView() {
             </div>
           )}
         </div>
-      </div>
-      <NewMateDialog open={newMate} onClose={() => setNewMate(false)} onImported={setInfo} />
-    </div>
-  );
-}
-
-function NewMateDialog({ open, onClose, onImported }: { open: boolean; onClose: () => void; onImported: (msg: string) => void }) {
-  const t = useT();
-  const [tab, setTab] = useState<"blank" | "import">("blank");
-  const [name, setName] = useState("");
-  const [path, setPath] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const input = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (open) {
-      setErr(null);
-      setTimeout(() => input.current?.focus(), 30);
-    }
-  }, [open, tab]);
-  if (!open) return null;
-
-  const submit = async () => {
-    setBusy(true);
-    setErr(null);
-    try {
-      if (tab === "blank") {
-        if (!name.trim()) throw new Error(t("mate.needName"));
-        await useMateStore.getState().create(name.trim());
-      } else {
-        if (!path.trim()) throw new Error(t("mate.needPath"));
-        const r = await importLocal({ path: path.trim() });
-        const all = r.mates?.length ? r.mates : [r.mate];
-        for (const m of all) useMateStore.getState().upsert(m);
-        useMateStore.getState().setActive(all[0].id);
-        onImported(all.length > 1 ? t("mate.importedMany", { count: all.length, names: all.map((m) => m.name).join(", ") }) : t("mate.importedOne", { name: all[0].name }));
-      }
-      setName("");
-      setPath("");
-      onClose();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[70] grid place-items-center p-4">
-      <div className="absolute inset-0 bg-scrim/55 animate-fade-in" onClick={onClose} />
-      <div className="card relative w-full max-w-md p-5 animate-fade-in" role="dialog" aria-label={t("mate.newMate")}>
-        <h2 className="text-[15px] font-semibold">{t("mate.newMate")}</h2>
-        <div className="mt-3 flex gap-1">
-          <button className="nav-tab" data-active={tab === "blank"} onClick={() => setTab("blank")}>
-            {t("mate.startBlank")}
-          </button>
-          <button className="nav-tab" data-active={tab === "import"} onClick={() => setTab("import")}>
-            {t("mate.importFromServer")}
-          </button>
-        </div>
-        <form
-          className="mt-4 space-y-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void submit();
-          }}
-        >
-          {tab === "blank" ? (
-            <label className="block text-[12.5px] text-content-dim">
-              {t("mate.name")}
-              <input ref={input} className="field mt-1" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("mate.namePlaceholder")} />
-            </label>
-          ) : (
-            <label className="block text-[12.5px] text-content-dim">
-              {t("mate.importPathLabel")}
-              <input
-                ref={input}
-                className="field mt-1 font-mono text-[12.5px]"
-                value={path}
-                onChange={(e) => setPath(e.target.value)}
-                placeholder={t("mate.importPathPlaceholder")}
-                data-testid="mate-import-path"
-              />
-              <span className="mt-1 block text-[11.5px] text-content-faint">
-                {t("mate.importPathHint")}
-              </span>
-            </label>
-          )}
-          {err && <p className="text-[12px] text-danger">{err}</p>}
-          <div className="flex justify-end gap-2">
-            <button type="button" className="btn-ghost" onClick={onClose}>
-              {t("common.cancel")}
-            </button>
-            <button type="submit" className="btn-primary" disabled={busy} data-testid="mate-new-submit">
-              {busy && <Icon name="spinner" size={14} spin />} {tab === "blank" ? t("mate.create") : t("mate.import")}
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   );

@@ -499,7 +499,7 @@ def test_bridge_lists_the_avatar_tools():
         init = rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}})
         assert init["result"]["serverInfo"]["name"] == "avatar"
         names = [t["name"] for t in rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]]
-        assert names == ["get_project", "ask_user", "update_brief", "use_reference", "estimate", "look",
+        assert names == ["get_project", "ask_user", "update_brief", "update_mate_draft", "use_reference", "estimate", "look",
                          "regenerate", "extend", "pause", "resume", "cancel"]
         r = rpc({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "get_project", "arguments": {}}})
         assert r["result"]["isError"] is True and "unreachable" in r["result"]["content"][0]["text"]

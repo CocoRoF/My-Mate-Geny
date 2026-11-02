@@ -3,7 +3,7 @@
 // Run: npm run test:unit
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fromSearch, matePanelOf, matePanelUrl, settingsUrl, urlOf, SETTINGS_TABS } from "../src/lib/navUrl.ts";
+import { fromSearch, matePanelOf, matePanelUrl, settingsUrl, studioUrl, urlOf, SETTINGS_TABS } from "../src/lib/navUrl.ts";
 
 test("every Settings tab round-trips through its URL", () => {
   for (const tab of SETTINGS_TABS) {
@@ -50,4 +50,17 @@ test("a Mate view panel link (the desktop Mate chat window → the console's Mat
   assert.equal(matePanelOf("?view=mate&panel=bogus"), null);
   assert.equal(matePanelOf("?view=chat&panel=relation"), null);
   assert.equal(matePanelOf("?view=mate"), null);
+});
+
+test("the Mate Create studio is a screen of its own (a draft, or an existing mate's avatar)", () => {
+  const draft = fromSearch("?view=mate&create=mate_a1");
+  assert.deepEqual(draft, { view: "mate", session: null, tab: null, studio: { kind: "create", mate: "mate_a1" } });
+  assert.equal(urlOf(draft!), "/?view=mate&create=mate_a1");
+  assert.deepEqual(fromSearch("?view=mate&create=new")?.studio, { kind: "create", mate: "new" });
+  const av = fromSearch("?view=mate&avatar=mate_b&project=av_0123456789ab");
+  assert.deepEqual(av?.studio, { kind: "avatar", mate: "mate_b", project: "av_0123456789ab" });
+  assert.equal(urlOf(av!), "/?view=mate&avatar=mate_b&project=av_0123456789ab");
+  assert.equal(studioUrl({ kind: "avatar", mate: "a b" }), "/?view=mate&avatar=a%20b");
+  // (closing it: the Mate's own address)
+  assert.equal(urlOf({ view: "mate", session: null, tab: null }), "/?view=mate");
 });

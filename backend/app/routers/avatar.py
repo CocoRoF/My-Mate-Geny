@@ -153,6 +153,63 @@ for _a in ("answer", "estimate", "confirm", "change", "discard", "pause", "resum
     router.add_api_route(f"/projects/{{pid}}/{_a}", _route, methods=["POST"], name=f"avatar_{_a}")
 
 
+# ---- the Mate Create studio (docs/avatar-create.md §11) ----
+
+@router.post("/studio")
+async def studio_open(request: Request) -> dict:
+    """``{mate_id?, language, fresh?}`` → the studio's project: a new draft mate (no ``mate_id``), a draft's own
+    project, or an existing mate's latest project (``fresh``: a new one)."""
+    b = await _body(request)
+    try:
+        return _svc(request).studio_open(mate_id=b.get("mate_id") or None, language=str(b.get("language") or "en"),
+                                         provider=str(b.get("provider") or "claude"), fresh=bool(b.get("fresh")))
+    except Exception as exc:  # noqa: BLE001
+        raise _http(exc) from None
+
+
+@router.get("/studio/drafts")
+async def studio_drafts(request: Request) -> list[dict]:
+    return _svc(request).drafts()
+
+
+@router.patch("/studio/{pid}/fields")
+async def studio_fields(pid: str, request: Request) -> dict:
+    """The user's edits on the right: ``{name?, persona?, prefs?, voice?, llm?, concept?}`` (merged)."""
+    try:
+        return await _svc(request).studio_fields(pid, await _body(request))
+    except Exception as exc:  # noqa: BLE001
+        raise _http(exc) from None
+
+
+@router.post("/studio/{pid}/{action}")
+async def studio_action(pid: str, action: str, request: Request) -> dict:
+    svc = _svc(request)
+    b = await _body(request)
+    try:
+        if action == "undo":
+            return await svc.studio_undo(pid, str(b.get("field") or ""))
+        if action == "finish":
+            return await svc.studio_finish(pid)
+        if action == "skip-avatar":
+            return await svc.studio_skip_avatar(pid, b.get("skip", True) is not False)
+        if action == "template":
+            return await svc.studio_template(pid, str(b.get("mate_id") or ""))
+        if action == "voice-ok":
+            return await svc.studio_voice_ok(pid)
+    except Exception as exc:  # noqa: BLE001
+        raise _http(exc) from None
+    raise HTTPException(status_code=404, detail="unknown action")
+
+
+@router.delete("/studio/{pid}")
+async def studio_discard(pid: str, request: Request) -> dict:
+    try:
+        _svc(request).studio_discard(pid)
+    except Exception as exc:  # noqa: BLE001
+        raise _http(exc) from None
+    return {"ok": True}
+
+
 @router.post("/projects/{pid}/extras/{xid}/confirm")
 async def confirm_extra(pid: str, xid: str, request: Request) -> dict:
     b = await _body(request)

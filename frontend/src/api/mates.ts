@@ -207,6 +207,8 @@ export interface Mate {
   builtin?: string | null;
   /** a built-in the user edited (bundle updates keep the fields the user changed) */
   customized?: boolean;
+  /** still being made in the Mate Create studio (hidden from the mate list until Create mate) */
+  draft?: boolean;
 }
 
 export interface MatePatch {

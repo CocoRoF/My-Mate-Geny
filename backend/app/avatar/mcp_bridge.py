@@ -45,13 +45,17 @@ TOOLS = [
      "description": "Show the user a question card and wait for the answer (it arrives as their next message). "
                     "kind: choice (one option), multi (several), slider (a number: min/max/step/default/unit), "
                     "upload (a reference picture; include an option like 'no reference'), text (free text), "
-                    "mate (pick one of their mates, or a new mate). Write the question and labels in the user's "
-                    "language; option values may be short English words. One topic per card; end your turn after.",
+                    "mate (pick one of their mates, or a new mate), concepts (2-4 concept directions for a new mate "
+                    "as big cards: label = a short name, description = a one-line pitch, palette = 3-4 hex colours "
+                    "like #F4C7D0). Write the question and labels in the user's language; option values may be "
+                    "short English words. One topic per card; end your turn after.",
      "inputSchema": {"type": "object", "properties": {
          "question": {"type": "string"},
-         "kind": {"type": "string", "enum": ["choice", "multi", "slider", "upload", "text", "mate"]},
+         "kind": {"type": "string", "enum": ["choice", "multi", "slider", "upload", "text", "mate", "concepts"]},
          "options": {"type": "array", "items": {"type": "object", "properties": {
-             "value": {"type": "string"}, "label": {"type": "string"}, "description": {"type": "string"}}}},
+             "value": {"type": "string"}, "label": {"type": "string"}, "description": {"type": "string"},
+             "palette": {"type": "array", "items": {"type": "string"},
+                         "description": "concepts: 3-4 colours (#RRGGBB)"}}}},
          "allow_other": {"type": "boolean", "description": "offer a free-text 'other' answer (choice/multi)"},
          "min": {"type": "number"}, "max": {"type": "number"}, "step": {"type": "number"},
          "default": {"type": "number"}, "unit": {"type": "string"}},
@@ -69,6 +73,33 @@ TOOLS = [
          "preset": {"type": "string"}, "clips": {"type": "array", "items": _CLIP},
          "stills": {"type": "array", "items": _STILL}, "target": {"type": "object"}}}},
          "required": ["patch"]}},
+    {"name": "update_mate_draft",
+     "description": "Mate Create studio: write the settings of the mate on the right of the user's screen (merged "
+                    "field by field, checked; the user sees each field you filled highlighted and can edit or undo "
+                    "it). name (a first name, at most 40 characters); persona {description (who she is, role and "
+                    "relationship to the user, background, interests — second person 'You are …'), personality, "
+                    "speech (how she talks; for Korean the speech level), address (how she calls the user; Korean: "
+                    "the bare form, particles are added), greeting (her first line, in the reply language), "
+                    "instructions, language (ko|en|ja|zh|es|fr|de|it|pt|vi)}; prefs {user_name, self_ref, formality "
+                    "(auto|haeyo|hapsyo|banmal), length (short|normal|long), emotion (0-3), tone {warmth, humor, "
+                    "initiative: low|auto|high}, avoid}; concept {pitch, role, interests, backstory, voice (the "
+                    "voice character), style, look, outfit, palette, mood}. Never the voice, the model or the "
+                    "avatar. Returns what was written and what the mate still needs before the user can create her.",
+     "inputSchema": {"type": "object", "properties": {"fields": {"type": "object", "properties": {
+         "name": {"type": "string"},
+         "persona": {"type": "object", "properties": {k: {"type": "string"} for k in (
+             "description", "personality", "speech", "address", "greeting", "instructions", "language")}},
+         "prefs": {"type": "object", "properties": {
+             "user_name": {"type": "string"}, "self_ref": {"type": "string"},
+             "formality": {"type": "string", "enum": ["auto", "haeyo", "hapsyo", "banmal"]},
+             "length": {"type": "string", "enum": ["short", "normal", "long"]},
+             "emotion": {"type": "integer", "minimum": 0, "maximum": 3},
+             "tone": {"type": "object", "properties": {k: {"type": "string", "enum": ["low", "auto", "high"]}
+                                                       for k in ("warmth", "humor", "initiative")}},
+             "avoid": {"type": "string"}}},
+         "concept": {"type": "object", "properties": {k: {"type": "string"} for k in (
+             "pitch", "role", "interests", "backstory", "voice", "style", "look", "outfit", "palette", "mood")}}}}},
+         "required": ["fields"]}},
     {"name": "use_reference",
      "description": "Make a picture the user attached in this chat (its [att_…] id) the character reference.",
      "inputSchema": {"type": "object", "properties": {"attachment_id": {"type": "string"}},

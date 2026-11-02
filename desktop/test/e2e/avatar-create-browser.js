@@ -16,7 +16,8 @@
 // 409; Confirm runs the plan: candidates → pick → base picture → approve → stills → approve → clips → real
 // processing → check → export; the finished avatar plays in the panel (talking picks a talk clip); Apply puts it on
 // the mate (the Mate view plays it), Restore puts the old one back. Screenshots: en / ko, light / dark, desktop /
-// phone.
+// phone. (Since the Mate Create studio, ✨ opens the studio for the mate: the agent on the left, her settings on the
+// right with the Avatar section open — desktop/test/e2e/mate-studio-browser.js covers the new-mate side.)
 "use strict";
 const assert = require("assert/strict");
 const fs = require("fs");
@@ -112,13 +113,18 @@ async function openAvatarCreate(page, { pick = null } = {}) {
   await page.goto(`${SERVER}/?view=mate`);
   await page.waitForSelector('[data-testid="mate-avatar-create"]', { timeout: 30000 });
   await page.click('[data-testid="mate-avatar-create"]');
-  await page.waitForSelector('[data-testid="avatar-create"]');
-  if (pick !== null) {
-    await page.waitForSelector('[data-testid="avatar-project-item"]');
-    await page.locator('[data-testid="avatar-project-item"]').nth(pick).click();
-    await page.waitForSelector('[data-testid="avatar-panel"], [data-testid="avatar-tab-chat"]');
-    await sleep(1200);
-  }
+  await page.waitForSelector('[data-testid="mate-studio"][data-kind="avatar"]');
+  if (pick !== null) await pickProject(page, pick);
+}
+
+/** the studio's Projects menu: one of this mate's projects (newest first) */
+async function pickProject(page, n) {
+  await page.waitForSelector('[data-testid="studio-projects"]');
+  await page.click('[data-testid="studio-projects"]');
+  await page.waitForSelector('[data-testid="studio-project-item"]');
+  await page.locator('[data-testid="studio-project-item"]').nth(n).click();
+  await page.waitForSelector('[data-testid="studio-agent"], [data-testid="studio-tab-agent"]');
+  await sleep(1500);
 }
 
 const Q_UPLOAD = { question: "Do you have a picture of the character?", kind: "upload", options: [{ value: "none", label: "No reference — design from a description" }] };
@@ -154,12 +160,11 @@ async function main() {
   await page.waitForSelector('[data-testid="mate-avatar-create"]', { timeout: 30000 });
   await shot(page, "00-mate-view-button-dark-en");
   await page.click('[data-testid="mate-avatar-create"]');
-  await page.waitForSelector('[data-testid="avatar-intro"]');
-  await shot(page, "01-intro-dark-en");
-  await page.click('[data-testid="avatar-start"]');
-  await page.waitForSelector('[data-testid="avatar-panel"]');
+  await page.waitForSelector('[data-testid="mate-studio"][data-kind="avatar"][data-layout="split"]');
+  await page.waitForSelector('[data-testid="studio-section-avatar"][data-open="1"] [data-testid="avatar-panel"]');
   await until("the agent's first turn", async () => (await page.locator('[data-testid="avatar-turn"]').count()) > 0, 30000);
   await idle(page);
+  await shot(page, "01-studio-dark-en");
 
   step("interview: upload card → no reference");
   await say(page, `atool:ask_user ${JSON.stringify(Q_UPLOAD)}`);
@@ -263,14 +268,13 @@ async function main() {
   await shot(page, "11b-ready-talking-dark-en", '[data-testid="avatar-finish"]');
 
   step("apply to the mate, then restore");
-  await page.selectOption('[data-testid="avatar-apply-mate"]', chaerin.id);
   await page.click('[data-testid="avatar-apply"]');
   await page.waitForSelector('[data-testid="avatar-applied"]');
   let m = (await api(ctx, "GET", `/api/mates/${chaerin.id}`)).body;
   assert.equal(m.avatar.kind, "video");
   assert.ok(m.avatar.rig.clips.every((c) => c.src.includes(`/api/mates/${chaerin.id}/assets/pack-`)), "the new clips");
   assert.equal(m.avatar.rig.clips.length, 6);
-  await page.click('[data-testid="avatar-close"]');
+  await page.click('[data-testid="studio-back"]');
   await page.waitForSelector('[data-testid="mate-split"]');
   await until("the mate plays the new avatar", async () => {
     const src = await page.evaluate(() => document.querySelector("[data-mate-clip]")?.getAttribute("data-mate-clip"));
@@ -279,17 +283,16 @@ async function main() {
   await sleep(2000);
   await shot(page, "12-mate-with-new-avatar-dark-en");
   await page.click('[data-testid="mate-avatar-create"]');
-  await page.locator('[data-testid="avatar-project-item"]').first().click();
   await page.waitForSelector('[data-testid="avatar-restore"]');
   await page.click('[data-testid="avatar-restore"]');
   await until("restored", async () => JSON.stringify((await api(ctx, "GET", `/api/mates/${chaerin.id}`)).body.avatar) === oldAvatar, 20000);
-  await page.selectOption('[data-testid="avatar-apply-mate"]', chaerin.id);
   await page.click('[data-testid="avatar-apply"]');
   await page.waitForSelector('[data-testid="avatar-applied"]');
 
   step("a second project, left at the estimate (for the other screenshots)");
-  await page.click('[data-testid="avatar-projects"]');
-  await page.click('[data-testid="avatar-start"]');
+  await page.click('[data-testid="studio-projects"]');
+  await page.click('[data-testid="studio-project-new"]');
+  await until("a new project", async () => /&project=av_/.test(page.url()));
   await page.waitForSelector('[data-testid="avatar-panel"]');
   await until("first turn", async () => (await page.locator('[data-testid="avatar-turn"]').count()) > 0, 30000);
   await say(page, `atool:update_brief ${JSON.stringify({ patch: { ...brief.patch, preset: "standard", candidates: 4 } })}\natool:estimate {}\natool:ask_user ${JSON.stringify(Q_MOTIONS)}`);
@@ -312,18 +315,19 @@ async function main() {
         await openAvatarCreate(pg, { pick: 0 });
         if (phone) {
           await shot(pg, `20-estimate-chat-${tag}`);
-          await pg.click('[data-testid="avatar-tab-project"]');
+          await pg.click('[data-testid="studio-tab-settings"]');
           await sleep(500);
           await shot(pg, `21-estimate-panel-${tag}`);
         } else {
           await shot(pg, `20-estimate-${tag}`);
         }
         // the finished project
-        await pg.click('[data-testid="avatar-projects"]');
-        await pg.waitForSelector('[data-testid="avatar-project-item"]');
+        await pg.click('[data-testid="studio-projects"]');
+        await pg.waitForSelector('[data-testid="studio-project-item"]');
         await shot(pg, `22-projects-${tag}`);
-        await pg.locator('[data-testid="avatar-project-item"]').nth(1).click();
-        if (phone) await pg.click('[data-testid="avatar-tab-project"]');
+        await pg.locator('[data-testid="studio-project-item"]').nth(1).click();
+        await sleep(1000);
+        if (phone) await pg.click('[data-testid="studio-tab-settings"]');
         await pg.waitForSelector('[data-testid="avatar-finish"]');
         await until("preview clip", async () => pg.locator('[data-testid="avatar-preview"] [data-mate-clip]').count(), 30000);
         await sleep(1500);

@@ -296,8 +296,10 @@ Asset upload / import:
 
 ### Avatar Create (making a video avatar with AI)
 
-**Mate view → Avatar Create** (or Mate settings → Avatar → **Create with AI**) opens a conversation with the avatar
-agent, separate from the mate's chat: it interviews the user (reference picture, look, 1:1 / 9:16, studio / light,
+**New mate** in the mate picker opens the **Mate Create studio** — the creation agent on the left helps define her
+concept and fills her settings on the right (highlighted, undo per field; drafts are hidden mates until **Create
+mate**), then makes her avatar. **Mate view → Avatar Create** (or Mate settings → Avatar → **Create with AI**) opens
+the same studio for an existing mate, with a conversation with the avatar agent separate from the mate's chat: it interviews the user (reference picture, look, 1:1 / 9:16, studio / light,
 how many motions — presets minimal 6 / standard 15 (한채린's set) / rich 21 clips, or custom), prices every Higgsfield
 job (free quotes) and, only after the user's **Confirm** (enforced by the server, with a hard cap), makes the avatar
 exactly the way the built-in mates were made: candidates → the picked one cut out as the base picture → stills that

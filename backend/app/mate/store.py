@@ -525,12 +525,35 @@ class MateStore:
             "memory_rev": row["memory_rev"],
             "builtin": row["builtin"] if "builtin" in row.keys() else None,
             "customized": bool(row["customized"]) if "customized" in row.keys() else False,
+            "draft": bool(row["draft"]) if "draft" in row.keys() else False,
             "relation": self.relation_summary(row["id"]),
         }
 
     def list(self) -> list[dict[str, Any]]:
-        rows = self._db.query("SELECT * FROM mates ORDER BY is_default DESC, created_at")
+        """The mates (default first) — not the drafts being made in the Mate Create studio."""
+        rows = self._db.query("SELECT * FROM mates WHERE draft = 0 ORDER BY is_default DESC, created_at")
         return [self._out(r) for r in rows]
+
+    def drafts(self) -> list[dict[str, Any]]:
+        """Mates still being made in the Mate Create studio (docs/avatar-create.md §11), newest first."""
+        rows = self._db.query("SELECT * FROM mates WHERE draft = 1 ORDER BY updated_at DESC")
+        return [self._out(r) for r in rows]
+
+    def finish_draft(self, mate_id: str) -> dict[str, Any]:
+        """A draft becomes a mate (it shows in the picker); the first real mate becomes the default."""
+        cur = self.get(mate_id)
+        if not cur["draft"]:
+            return cur
+        if not cur["name"].strip():
+            raise MateError("a mate needs a name")
+        with self._lock:
+            first = self._db.query_one("SELECT COUNT(*) AS c FROM mates WHERE draft = 0")["c"] == 0
+            if first:
+                self._db.execute("UPDATE mates SET is_default = 0")
+            self._db.execute("UPDATE mates SET draft = 0, is_default = ?, created_at = ?, updated_at = ? WHERE id = ?",
+                             (1 if first else 0, now_iso(), now_iso(), mate_id))
+        self._changed("created", mate_id)
+        return self.get(mate_id)
 
     def get(self, mate_id: str) -> dict[str, Any]:
         row = self._db.query_one("SELECT * FROM mates WHERE id = ?", (mate_id,))
@@ -548,31 +571,34 @@ class MateStore:
         voice: Any = None,
         prefs: Any = None,
         is_default: bool = False,
+        draft: bool = False,
     ) -> dict[str, Any]:
         name = _s(name, 80).strip()
-        if not name:
+        if not name and not draft:  # (a draft gets its name in the studio)
             raise MateError("a mate needs a name")
         doc = (normalize_persona(persona), normalize_avatar(avatar), normalize_llm(llm), normalize_voice(voice),
                normalize_prefs(prefs))
         mid = new_id("mate_")
         now = now_iso()
         with self._lock:
-            first = self._db.query_one("SELECT COUNT(*) AS c FROM mates")["c"] == 0
-            if is_default or first:
+            # (a draft is never the default: it isn't a mate yet)
+            first = not draft and self._db.query_one("SELECT COUNT(*) AS c FROM mates WHERE draft = 0")["c"] == 0
+            default = not draft and (is_default or first)
+            if default:
                 self._db.execute("UPDATE mates SET is_default = 0")
             self._db.execute(
-                "INSERT INTO mates (id, name, is_default, persona, avatar, llm, voice, prefs, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (mid, name, 1 if (is_default or first) else 0, *(json.dumps(d, ensure_ascii=False) for d in doc),
-                 now, now),
+                "INSERT INTO mates (id, name, is_default, persona, avatar, llm, voice, prefs, draft, created_at, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (mid, name, 1 if default else 0, *(json.dumps(d, ensure_ascii=False) for d in doc),
+                 1 if draft else 0, now, now),
             )
-        self._changed("created", mid)
+        self._changed("draft" if draft else "created", mid)
         return self.get(mid)
 
     def ensure_default(self) -> bool:
         """No mates yet: create "Geny" (no avatar, browser voice). True if created."""
         with self._lock:
-            if self._db.query_one("SELECT COUNT(*) AS c FROM mates")["c"]:
+            if self._db.query_one("SELECT COUNT(*) AS c FROM mates WHERE draft = 0")["c"]:
                 return False
             now = now_iso()
             self._db.execute(
@@ -593,7 +619,7 @@ class MateStore:
         changed: set[str] = set()
         if "name" in patch and patch["name"] is not None:
             name = _s(patch["name"], 80).strip()
-            if not name:
+            if not name and not cur.get("draft"):
                 raise MateError("a mate needs a name")
             if name != cur["name"]:
                 sets.append("name = ?")
@@ -616,7 +642,7 @@ class MateStore:
         if cur.get("builtin") and changed & {"persona", "avatar"} and not patch.get("_sync"):
             sets.append("customized = 1")  # the user's own version now: content updates leave it alone
         with self._lock:
-            if patch.get("is_default") and not cur["is_default"]:
+            if patch.get("is_default") and not cur["is_default"] and not cur.get("draft"):
                 self._db.execute("UPDATE mates SET is_default = 0")
                 sets.append("is_default = 1")
                 changed.add("is_default")
@@ -625,7 +651,7 @@ class MateStore:
                 params += [now_iso(), mate_id]
                 self._db.execute(f"UPDATE mates SET {', '.join(sets)} WHERE id = ?", params)
         if sets:
-            self._changed("updated", mate_id)
+            self._changed("draft" if cur.get("draft") else "updated", mate_id)
         return self.get(mate_id), changed
 
     # ---- built-in mates ----
@@ -674,7 +700,7 @@ class MateStore:
             self._db.execute("DELETE FROM mate_settings WHERE key = ?", (f"memchg:{mate_id}",))
             self._db.execute("DELETE FROM mates WHERE id = ?", (mate_id,))
             if row["is_default"]:  # someone else becomes the default
-                nxt = self._db.query_one("SELECT id FROM mates ORDER BY created_at LIMIT 1")
+                nxt = self._db.query_one("SELECT id FROM mates WHERE draft = 0 ORDER BY created_at LIMIT 1")
                 if nxt is not None:
                     self._db.execute("UPDATE mates SET is_default = 1 WHERE id = ?", (nxt["id"],))
         self._changed("deleted", mate_id)

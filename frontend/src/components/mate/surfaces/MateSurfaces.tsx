@@ -504,6 +504,16 @@ function ChatWindow() {
             >
               <Icon name="pin" size={14} />
             </button>
+            {/* New mate: the console's Mate Create studio (a fresh draft) */}
+            <button
+              className={iconBtn}
+              onClick={() => void desktopMate()!.openConsole(`${window.location.origin}/?view=mate&create=new`)}
+              title={t("studio.newInConsole")}
+              aria-label={t("mate.newMate")}
+              data-testid="mate-chat-new"
+            >
+              <Icon name="plus" size={14} />
+            </button>
             <button className={iconBtn} onClick={() => desktopMate()!.openConsole()} title={t("mate.openConsole")} data-testid="mate-chat-console">
               <Icon name="monitor" size={14} />
             </button>

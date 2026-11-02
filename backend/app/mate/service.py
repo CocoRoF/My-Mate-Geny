@@ -243,6 +243,8 @@ class MateService:
 
     def conversation(self, mate_id: str) -> dict[str, Any]:
         mate = self.store.get(mate_id)
+        if mate.get("draft"):
+            raise MateError("this mate is still being made in the studio: create it first", status=409)
         sid = self._live_session(mate)
         if sid is None:
             home = files.home_dir(mate_id)
