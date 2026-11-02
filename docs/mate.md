@@ -26,13 +26,11 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
   "name": "Estelle",
   "is_default": true,
   "created_at": "…", "updated_at": "…",
-  "persona": {
+  "persona": {              // who she is — the character only (§1a)
     "description": "",      // who she is (free text)
     "personality": "",
-    "speech": "",           // speaking style, honorifics, catchphrases
     "greeting": "",         // first line when a conversation starts
-    "address": "",          // how she calls the user
-    "language": "ko",       // reply language
+    "language": "ko",       // reply language (edited in Conversation style; also picks the localized name/greeting)
     "instructions": ""      // extra standing instructions
   },
   "avatar": Avatar,         // §2
@@ -44,14 +42,19 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
     "stt": { "engine": "browser", "model": "", "language": "",
              "auto_send": false, "barge_in": true, "silence": 1.2 }   // the last three: realtime engines (§5)
   },
-  "prefs": {                // conversation settings (docs/mate-memory-affinity.md §3)
-    "user_name": "", "self_ref": "",
-    "formality": "auto",    // auto | haeyo | hapsyo | banmal (speech level; wins over the persona's speech text)
+  "prefs": {                // the conversation style: the only source of how she talks (§1a)
+    "user_name": "",
+    "address": "",          // what she calls the user ("" = her character's way: defaults.address)
+    "self_ref": "",         // how she refers to herself ("" = her character's way)
+    "formality": "auto",    // auto (her character's own: defaults.formality) | haeyo | hapsyo | banmal
+    "speech_style": "",     // speech habits: rhythm, catchphrases, sample lines
     "length": "normal",     // short | normal | long
     "emotion": 2,           // 0 off · 1 subtle · 2 normal · 3 expressive (prompt + avatar reactions / voice emotion)
     "tone": { "warmth": "auto", "humor": "auto", "initiative": "auto" },   // auto | low | high
     "avoid": "",            // topics to avoid
-    "memory": { "recall": "normal", "self_save": true }   // recall: off | light | normal | rich
+    "memory": { "recall": "normal", "self_save": true },  // recall: off | light | normal | rich
+    "self_edit": "auto",    // may she change it herself: auto | ask (a proposal the user applies) | off
+    "defaults": { "formality": "", "address": "", "self_ref": "" }   // her character's own way (bundle data)
   },
   "relation": { "enabled", "paused", "stage", "affinity", "mood", "show_indicator", "avatar_mood" },  // read-only summary (§5 below)
   "screen": {               // may she look at the screen (§4 "Seeing the screen")
@@ -95,8 +98,11 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
   it too). `llm.effort`: `default|low|medium|high|xhigh|max` (default `low`;
   for Codex the model's reasoning level).
 - `prefs` merge field by field like `persona` (unknown keys dropped, enums checked → 400); built-in updates
-  never touch them. Every option changes a prompt line (the address forms follow the speech level), and the
-  next message carries a `<settings_update>` note; the recall level is per turn (no restart).
+  touch only the bundled speech habits still as bundled and `defaults` (§1a). Every option changes a line of the
+  prompt's How you talk section, and the next message carries a `<settings_update>` note with the new value; the
+  recall level is per turn (no restart). A `persona.speech` / `persona.address` sent by an older client or an import
+  lands in `prefs.speech_style` / `prefs.address`. The mate's own changes: `GET /api/mates/{id}/style-changes`,
+  `POST …/style-changes/{cid}/undo|apply|dismiss` (§1a).
 - Memory (docs/mate-memory-affinity.md §4): `GET /api/mates/{id}/memories?q=&kind=&status=active|done|archived|all&sort=created|recent|importance|due`
   → `[{id, text, kind, importance, pinned, due_at, expires_at, status, source, created_at, updated_at,
   last_used_at, use_count, core}]` (`kind`: profile | preference | fact | plan | context; `core`: always in
@@ -116,6 +122,118 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
   A relationship remembers the zone its days were counted in; when that is no longer the user's (set,
   changed, or first reported — a container counts in UTC until then) it is counted again from the history,
   the user's own value / fresh start and switches kept, and announced.
+
+## 1a. Prompt composition — who she is vs how she talks
+
+The rule (the user's, 2026-11): **how the mate talks and how she addresses the user is decided only in the
+conversation style** (대화 방식, `mate.prefs`); the persona is purely the character. She edits her own style the way
+she edits her memories, and every source that could fight it is either gone or explicitly ranked below it.
+
+### Audit (what fed the prompt before, and who could write it) — 2026-11-03
+
+| Input | Where | Written by | Conflict found |
+|---|---|---|---|
+| `persona.description`, `personality` | Who you are | user (Profile), built-in sync, ailism import, studio agent | none (character) |
+| `persona.speech` | "Speaking style:" in Who you are | user, built-in sync (all three bundles), import (`speech` + examples), studio (`update_mate_draft`) | **the bundles' speech fixed the speech level and the address in free text** — 한채린: "short 존댓말 (해요체) with the user — never 반말 … Call the user “<이름> 님”", "Your catchphrases are *exactly* …" (all 해요체); 에스텔/서아: "반말 throughout — never 존댓말". A `formality` setting had to fight it ("This wins over the speaking style above") and a self-change had nowhere to go |
+| `persona.address` | "Call the user …" in Who you are | user (Profile chips), import, studio | a second address source next to the speech text's "<이름> 님" and `prefs.user_name` |
+| `persona.instructions` | Standing instructions | user, built-in sync (opening + return lines, interests), import, studio | the bundles' opening / return lines are in her default speech level (해요체 / 반말) under "standing instructions from the user" |
+| `persona.greeting` | Greeting (+ the first message) | user, built-in sync / language switch, studio | the line already said; stays at the level it was written in |
+| `persona.language` | "Always reply in …" | user (Profile), language switch, studio | none (now shown in Conversation style) |
+| `prefs` (user_name, self_ref, formality, length, emotion, tone, avoid, memory) | "## Conversation settings (from the user; they win over your character text)" + the contract's "## How you talk" | user (Style / Profile tabs), studio | two "how you talk" places; `formality: auto` meant "whatever the free text says"; `self_ref` was "In Korean, …" only |
+| core memories / recalled memories | What you always know / `<context>` | the mate (`remember`…), user (Memory tab), housekeeping | **a memory could hold a style rule** ("반말로 해 달라고 함") and nothing said which wins; the memory tool descriptions didn't steer style requests away |
+| relationship guide | Between you and the user | — (fixed text, on/off) | "familiar → more relaxed…" with nothing pinning the speech level; "their settings beat closeness" only |
+| mood / relationship lines | `<context>` | engine | none (tone only) |
+| screen line | Seeing the screen | Screen tab | none |
+| `<settings_update>` note | next message | diff of `.applied-persona.json` | said "Speech level was updated (see your system prompt)" — no value, while 50 turns of history show the old level |
+| prompt key | engine fingerprint | `base_prompt` + `memory_rev` | — (restart rule unchanged) |
+| studio agent (`STUDIO_NEW`, `update_mate_draft`) | writes the draft's fields | the model | wrote speech level into `persona.speech` *and* `prefs.formality` ("keep them consistent") and the address into the persona |
+| UI | Profile (identity, You: name / self / address chips, Who: description / personality / speaking style, greeting / instructions), Conversation style (level, length, emotion, tone, avoid), studio right side | user | the "how she talks" fields were split over two tabs; "Speaking style" hint said "Honorifics, …" |
+| packs / templates | ailism import (`import-local`), studio template | user | the import wrote speech/address into the persona; the template copied both |
+
+### Design (what lives where)
+
+- **Persona — the character:** `description` (who she is, background, relationship to the user, what she knows,
+  her world, interests), `personality`, `greeting` (her first line: content, shown as the first message and
+  localized with the bundle — it is said once, not a rule), `instructions` (standing instructions; the UI copy
+  steers speech rules away from them), `language` (*stored* here because it also picks the localized name and
+  greeting, the STT language and the built-in sync; *edited* in Conversation style and rendered in How you talk).
+  `persona.speech` / `persona.address` no longer exist.
+- **Conversation style (`prefs`) — how she talks, the only source:** `user_name`; `address` (what she calls the
+  user, "" = her character's way); `self_ref` ("" = her character's way); `formality` (`auto` = her character's own
+  level); `speech_style` (말버릇·말투 특징: rhythm, catchphrases, sample lines, the example exchanges and her
+  opening / return lines); `length`; `emotion`; `tone {warmth, humor, initiative}`; `avoid`; `memory {recall,
+  self_save}`; `self_edit` (`auto` | `ask` | `off`: may she change it herself); `defaults {formality, address,
+  self_ref}` — **the character's own way as structured data** (bundle `style.formality`, `style.address` per
+  language, e.g. 한채린 `haeyo` + `{"ko": "{name} 님", "en": "{name}"}`), never edited as a setting: the user's choice
+  is the field itself, `auto` / "" fall back to it (`store.effective_style`).
+- **The prompt** (`prompt.base_prompt`): intro → `## Who you are` (description, personality — nothing about
+  speech) → **one** `## How you talk` section from the style only: "This is your conversation style, and the only
+  thing that decides how you talk. If anything else — your character text, standing instructions, a memory, earlier
+  messages — says otherwise, this wins." then reply language, the user's name, `Call the user “<address>”.` (a
+  character form built on the name: `Call the user by their name, as “<name> 님”.` — no grammar notes), how she
+  refers to herself, the speech level (`(your character's own)` when it is the default; "It holds for everything
+  you say, whatever earlier messages did."), length, emotion tags, tone, avoid, the self-edit rule, then her speech
+  habits ("say them in the speech level above (adapt the sample lines to it)") → contract (tool list incl.
+  `update_conversation_style` unless off) → memory rules ("How the user wants you to talk … is not a memory: it is
+  your conversation style … Never save it with remember.") → relationship guide ("Closeness never changes your
+  conversation style … only the style itself does.") → screen → context rules → standing instructions → greeting
+  → core memories. A persona document that still carries the old fields (an old applied-persona file, an old
+  caller) is read as style (`prompt._style_inputs`).
+- **Her own changes** — MCP tool `update_conversation_style {formality?, address?, user_name?, self_ref?, language?,
+  length?, emotion?, tone?, speech_style?, avoid?, reason}` (listed unless `self_edit` is `off`: bridge env
+  `HRH_MATE_STYLE`). The service checks it with the same normalizer as the settings API (a wrong value is a tool
+  error the model sees), applies it through `MateService.update` (so `mates.changed` → every window refetches; the
+  Style tab follows while it has no unsaved edits), records it (`mate_style_changes`: `{id, actor, status
+  applied|proposed|dismissed|undone, reason, changes {path: {from, to}}, session_id}`), logs it (`mate.style_changed`
+  in the admin log) and answers with the change id and the style as it is now. `ask` mode records a **proposal**
+  instead (nothing changes until the user presses Apply). The conversation shows a chip — "대화 방식 변경: 말투
+  높낮이 → 반말" — with Undo (applied) or Apply / Dismiss (proposed); the Conversation style tab lists her changes with
+  the same buttons. Undo puts each field back unless it was changed again since (`skipped`). API: `GET
+  /api/mates/{id}/style-changes`, `POST …/style-changes/{cid}/undo|apply|dismiss`.
+- **When it takes effect.** In the very reply where she called the tool (its result says "Talk this way from this
+  reply on"), and from her next message in the **system prompt**: a style change changes the prompt key, so the
+  Claude engine restarts at the next message with `--resume` (same conversation) and the `<settings_update>` note
+  spells out the new value ("- Speech level: 반말 in Korean, like a close friend …", "- Call the user “하렴”.");
+  Codex reads the changed instructions file at its next turn. Why not a per-turn context line instead: a style
+  *overrides* what the conversation did so far — it must sit where a long or compacted history can't outweigh it,
+  and repeating it in every message would grow the CLI transcript each turn (the `<context>` block is stored in the
+  CLI session). Style changes are rare; the restart happens between turns (no lost context) and costs one process
+  start and one uncached prompt. The mate's own `remember` still never restarts anything.
+- **One-off requests** ("이번엔 짧게 말해줘") are not settings: the prompt says so and the model just does it.
+- **Memories.** The memory tools' descriptions and rules send style preferences to the style. A **read-only hint**
+  (`style.memory_flags`, `GET …/memories` → `style_flag {reason: formality|address|speech, conflict, level}`) marks
+  active memories that look like style rules (words that name a speech level or a form of address — a small
+  bilingual vocabulary next to the settings it describes, used only for this hint; `conflict` = it names another
+  level than the style's). The Memory tab offers **Move to Conversation style** (`POST …/memories/{mid}/to-style`:
+  the text joins the speech habits, the memory is archived — restorable) or **Keep as a memory** (`…/style-ok`:
+  no hint any more). Nothing is moved or deleted automatically.
+- **Studio.** `update_mate_draft` writes who she is into `persona` and how she talks into `prefs` (`address`,
+  `speech_style`, `formality`…); `persona.speech` / `persona.address` are refused with where they live now. The studio
+  prompt says so; its right side has the same split (Profile / Conversation style).
+- **Migration** (`MateStore.migrate_style`, at startup before the built-in sync; idempotent; logged as
+  `mate.style_migrated`): per mate (drafts too) `persona.address` → `prefs.address` and `persona.speech` →
+  `prefs.speech_style`, each only where the style has no such field yet — a value the style already has (an
+  address the user cleared included) stays exactly as it is; the old persona document is kept whole in
+  `mates.persona_legacy`. Built-ins: `files.upgrade_snapshot` reads an old snapshot's `persona.speech/address` as
+  its `style`, so a speech text still as bundled is recognised and replaced by today's bundle text (habits only),
+  a user-edited one stays; `prefs.defaults` always follows the bundle (data, not a user setting). The bundle format
+  is part of `builtin_hash` (`BUNDLE_FORMAT`), so every built-in is merged once. A page still open from before the
+  update sends the old `persona.speech/address` with every save: values equal to the backup are ignored; anything
+  else in those old fields (an older client, an ailism import, `POST /api/mates`) is routed into the style
+  (`store.split_persona`). The ailism import uses today's layout (`files.ailism_persona(styled=True)`: opening /
+  return lines into the speech habits, interests into the description).
+
+### Checked (2026-11-03)
+
+- A copy of the live database (sqlite backup API): 5 mates migrated — the speech text and the (empty or
+  “주인님”) address moved into each style, the old persona kept in `persona_legacy`; 한채린 keeps the user's own
+  settings exactly (name 장하렴, speech level "auto", no address of her own) and her prompt goes from three places
+  naming a speech level (the speech bullets, the Korean line, the settings override) to one; a second start
+  changes nothing.
+- The real model (claude-sonnet-5-5, this prompt, the real MCP bridge, one `--resume`'d CLI per turn):
+  "앞으로 반말로 해" → `update_conversation_style {formality: banmal}`, then 반말 from that reply on; "나를 하렴이라고
+  불러" → `{address: 하렴}`, then "하렴"; "이번엔 짧게 말해줘" → a short answer and no tool call.
+- Tests: `backend/tests/test_mate_style.py`; browser: `desktop/test/e2e/mate-style-browser.js`.
 
 ## 2. Avatar (three kinds + none)
 
@@ -324,8 +442,12 @@ personality, speech, all example exchanges, opening and return lines,
 interests, author's note) written in English, with the character's Korean
 speech habits spelled out ("When you speak Korean: … / When you speak
 English: …") and the Korean example exchanges / opening / return lines kept
-verbatim. They are composed (`files.compose_persona`) into the same fields as
-an ailism import. Per language the file has `names` and `greetings`
+verbatim. Her own speech level and address are structured (`style:
+{formality, address: {ko, en}}`), never sentences in the free text (§1a).
+`files.compose_persona` makes the persona (who she is: the profile sections +
+interests → description, personality, the note → instructions) and
+`files.compose_style` the conversation style (speech habits + examples +
+opening / return lines → `speech_style`, `style` → `prefs.defaults`). Per language the file has `names` and `greetings`
 (`{en, ko}`; the Korean greeting is the author's line) and a `language` (the
 bundled reply language: `ko`, as before). The mate contract says "Always reply
 in ‹language›, whatever language your instructions are written in". The
@@ -337,10 +459,10 @@ served from `GET /api/mates/builtin/<key>/<file>` (no copy). Name and greeting
 follow the mate's reply language (`files.localized`). **Updates merge field by
 field** (`files.merge_builtin`): each built-in keeps a snapshot of the bundle it
 was last synced from (`mates.builtin_snapshot`: names, greetings, persona
-fields, avatar); on a new bundle version (`builtin_hash`, covering
-`personas/<key>.json` too) every persona field, the name, the greeting and the
-avatar that still equal the snapshot get the new version, anything the user
-changed stays. The reply language, voice, model, memories and default flag are
+fields, style, avatar); on a new bundle version (`builtin_hash`, covering
+`personas/<key>.json` and the bundle format) every persona field, the bundled speech
+habits, the name, the greeting and the avatar that still equal the snapshot get the
+new version, anything the user changed stays; `prefs.defaults` follows the bundle. The reply language, voice, model, memories and default flag are
 never touched. Mates synced before snapshots existed: an unedited one
 (`customized` off) counts as entirely bundled; an edited one is compared with
 the old bundled persona (`files.legacy_persona` of `mates/<key>.json`) — so the
@@ -438,6 +560,7 @@ Live2D content. The originals are authoritative; see
   keeps its own CLI session, at the next message the new one gets the
   conversation so far as a handoff (`context.handoff` notice), and going back
   catches the previous one up (`context.catchup`). Reset clears both.
+- The system prompt's parts and their single sources: §1a.
 - Engine **Claude Code** (persistent like chats, same account pool):
   `--system-prompt-file <persona + mate contract + memories>` with
   `--system-prompt-snapshot off` (so an edited persona reaches the model on
@@ -445,8 +568,8 @@ Live2D content. The originals are authoritative; see
   `--allowedTools mcp__mate`, `--mcp-config <0600 file: mate bridge>
   --strict-mcp-config`, `--disable-slash-commands --setting-sources local` (no
   user CLAUDE.md / hooks / plugins), no wait guide, model/effort from
-  `mate.llm`. Editing name/persona/prefs/effort, the user's edits of core memories, or turning the
-  relationship on/off restarts the engine at the next turn (`--resume`, same conversation); a model
+  `mate.llm`. Editing name/persona/prefs/effort (the mate's own `update_conversation_style` too, §1a), the user's
+  edits of core memories, or turning the relationship on/off restarts the engine at the next turn (`--resume`, same conversation); a model
   change is applied live; what the mate `remember`s itself, the user's edits of other memories (told
   in the next `<context>` block) and affinity / mood changes don't restart it.
 - Engine **Codex** (`codex exec --json` per turn like Codex chats, resuming the
@@ -573,9 +696,10 @@ need a `message`. Copies are removed again if the delivery fails. The tool
 result says what went (`… with 2 files (shot.png, bug.md)`). `read_session`
 lists each message's `files` (names).
 | `find_folders(query)` | candidate project folders: workspaces of existing chats, then a bounded search of `/home` (depth ≤ 3, names/git repos) |
-| `remember(text, kind?, importance?, due?)` | save a memory (a duplicate of the same kind updates the old one; similar ones are listed) |
+| `remember(text, kind?, importance?, due?)` | save a memory (a duplicate of the same kind updates the old one; similar ones are listed); never how she should talk |
 | `update_memory(id, text?, kind?, importance?, due?, status?)` | correct / merge / mark a plan done |
 | `forget(id, reason?)` / `recall(query, kind?, limit?, include_done?)` | delete one; search all memories |
+| `update_conversation_style(formality?, address?, user_name?, self_ref?, language?, length?, emotion?, tone?, speech_style?, avoid?, reason)` | unless `prefs.self_edit` is off: change her own conversation style when the user asks for a lasting change (applied, or proposed with "ask me first"; recorded, undoable — §1a) |
 | `see_screen(reason?)` | only while `mate.screen.enabled`: a picture of the user's screen from their desktop app (below) |
 
 Policy in the prompt: find the chat already working on that project and send
