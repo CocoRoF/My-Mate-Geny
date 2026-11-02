@@ -66,19 +66,14 @@ def test_recall_level_is_per_turn_not_in_the_prompt():
     assert prompt_key("Geny", KO, 0, prefs) == prompt_key("Geny", KO, 0, default_prefs())
 
 
-def test_address_forms_follow_the_speech_level():
-    """address_line (test_mate_address.py) shows both levels' forms; a set speech level shows only its own."""
+def test_address_is_just_the_name_at_every_speech_level():
+    """No grammar notes in the prompt (the user's decision): the same plain line whatever the speech level."""
     ko = {"language": "ko", "address": "현석"}
-    both = base_prompt("Geny", ko, default_prefs())
-    assert "“현석아”" in both and "현석 님이" in both
-    casual = base_prompt("Geny", ko, normalize_prefs({"formality": "banmal"}))
-    assert "“현석아”" in casual and "현석이가 · 현석이는 · 현석이를 · 현석이랑" in casual and "현석 님" not in casual
-    polite = base_prompt("Geny", ko, normalize_prefs({"formality": "haeyo"}))
-    assert "“현석 님” (현석 님이 · 현석 님은)" in polite and "현석아" not in polite
-    titled = base_prompt("Geny", {"language": "ko", "address": "현석님"}, normalize_prefs({"formality": "banmal"}))
-    assert "현석님이 · 현석님은 · 현석님을" in titled and "현석님아" not in titled
+    for f in ("auto", "banmal", "haeyo"):
+        p = base_prompt("Geny", ko, normalize_prefs({"formality": f}))
+        assert "Call the user “현석”." in p and "현석아" not in p and "현석이가" not in p and "현석 님이" not in p
     en = base_prompt("Geny", {"language": "en", "address": "boss"}, default_prefs())
-    assert "particles" not in en and "Call the user “boss”" in en
+    assert "Call the user “boss”." in en
 
 
 def test_settings_note_lists_pref_changes():

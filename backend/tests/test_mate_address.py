@@ -30,43 +30,12 @@ def test_casual_forms_add_the_friendly_i_after_a_final_consonant():
     assert address_forms("지수", casual=True)["subject"] == "지수가"
 
 
-@pytest.mark.parametrize("address,must,must_not", [
-    ("하렴", ["“하렴아”", "하렴이가", "하렴이는", "“하렴 님”", "하렴 님이"], ["하렴야", "하렴가"]),
-    ("지수", ["“지수야”", "지수가", "지수를", "지수 님은"], ["지수아", "지수이가"]),
-    ("주인님", ["주인님이", "주인님은", "주인님을"], ["주인님아", "반말"]),
-    ("선배", ["선배가", "선배는"], ["선배야"]),
-])
-def test_address_line_korean(address, must, must_not):
-    line = address_line(address, korean=True)
-    assert line.startswith(f"Call the user “{address}”")
-    for m in must:
-        assert m in line, (m, line)
-    for m in must_not:
-        assert m not in line, (m, line)
-
-
-def test_address_line_is_one_line_and_plain_outside_korean():
-    assert "\n" not in address_line("하렴", korean=True)
-    assert address_line("하렴", korean=False) == "Call the user “하렴” (if earlier messages did otherwise, switch now)."
-    assert "particles" not in address_line("Sam", korean=False)
-
-
-def test_system_prompt_carries_the_forms_and_changes_the_engine_key():
-    p = {"address": "하렴", "language": "ko"}
-    sp = system_prompt("한채린", p, [])
-    assert "“하렴아”" in sp and "하렴이가" in sp
-    assert "“하렴아”" not in system_prompt("한채린", {**p, "language": "en"}, [])
-    assert prompt_key("한채린", p, 0) != prompt_key("한채린", {**p, "address": "지수"}, 0)
-
-
-def test_banmal_line_says_the_calling_form_takes_no_particle():
-    """Tested with the real model: a list of forms alone let it treat 하렴아 as the name (하렴아가, 하렴아랑); one plain
-    sentence — 하렴아 only to call out, particles after 하렴이 — kept 10/10 replies right."""
-    line = address_line("하렴", korean=True, formality="banmal")
-    assert "“하렴아” is only how you call out to them" in line and "“하렴이” with the particle after it" in line
-    for f in ("하렴이가", "하렴이는", "하렴이를", "하렴이랑", "하렴이도", "하렴이한테"):
-        assert f in line
-    assert "하렴아가" not in line and "하렴아랑" not in line  # wrong forms are never spelled out (they get copied)
-    vowel = address_line("지수", korean=True, formality="banmal")
-    assert "“지수야” is only how you call out" in vowel and "지수가 · 지수는 · 지수를 · 지수랑 · 지수도" in vowel
-    assert "존댓말" not in line and "반말" not in address_line("하렴", korean=True, formality="haeyo")
+def test_the_prompt_carries_only_the_name_no_grammar_notes():
+    """The user's decision: the settings' name (and how to call them) is all the mate gets — no particle lists,
+    no grammar rules; the model uses a Korean name naturally."""
+    sp = system_prompt("한채린", {"address": "하렴", "language": "ko"}, [], {"user_name": "장하렴", "formality": "banmal"})
+    assert "Call the user “하렴”." in sp and "The user's name is 장하렴." in sp
+    for grammar in ("하렴아", "하렴이가", "하렴이는", "particle", "calling form", "call out"):
+        assert grammar not in sp, grammar
+    assert address_line("주인님") == "Call the user “주인님”."
+    assert prompt_key("한채린", {"address": "하렴"}, 0) != prompt_key("한채린", {"address": "지수"}, 0)
