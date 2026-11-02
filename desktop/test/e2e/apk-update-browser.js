@@ -102,7 +102,7 @@ const FAKE_CAPACITOR = (version) => {
     console.log(`  the server offers ${rel.version}: ${apk && apk.name}`);
 
     step("Settings → Updates: the Android app's own version and the newer build");
-    await page.goto(`${SERVER}/?view=settings`);
+    await page.goto(`${SERVER}/?view=settings&tab=updates`); // (a phone: Settings opens on its list — the tab itself)
     const row = page.locator('[data-testid="settings-app-update"]');
     await row.waitFor({ timeout: 20000 });
     const text = await until("the version and the release", async () => {
@@ -116,7 +116,7 @@ const FAKE_CAPACITOR = (version) => {
     await row.scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(SHOTS, "android-settings.png") });
 
-    step("Update on the Download page → the APK through the app's DownloadManager, with progress");
+    step("Get the update below (Download, same tab) → the APK through the app's DownloadManager, with progress");
     await page.locator('[data-testid="settings-open-downloads"]').click();
     const btn = page.locator('[data-testid="asset-android-apk"]').first();
     await btn.waitFor({ timeout: 20000 });

@@ -1,6 +1,5 @@
 // Providers: engines, accounts, load balancing, the sign-in dialog.
 export default {
-  title: "Providers",
   intro: "Pick an engine, connect one or more accounts, and load-balance across them.",
   stratMostRemaining: "Most remaining usage",
   stratLeastBusy: "Least busy",

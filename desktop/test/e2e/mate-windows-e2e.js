@@ -36,6 +36,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const step = (s) => console.log(`• ${s}`);
 const near = (a, b, tol, msg) => assert.ok(Math.abs(a - b) <= tol, `${msg}: ${a} vs ${b} (±${tol})`);
 
+// the sidebar has Mate / Chat / Settings; Download (Updates & Download), Usage, Admin… are Settings tabs
+const SETTINGS_TAB = { Download: "updates", Updates: "updates", Usage: "usage", Admin: "admin", Providers: "providers", Connections: "connections" };
+const openView = (p, label) => p.eval(`(async () => {
+  const label = ${JSON.stringify(label)}, tab = ${JSON.stringify(SETTINGS_TAB)}[label];
+  const b = [...document.querySelectorAll('aside nav button, [data-testid="nav-settings"]')].find((x) => x.textContent.trim().startsWith(label));
+  if (b) { b.click(); return true; }
+  if (!tab) return false;
+  if (!document.querySelector('[data-testid="settings-tabs"]')) document.querySelector('[data-testid="nav-settings"]')?.click();
+  for (let i = 0; i < 50 && !document.querySelector('[data-testid="settings-tab-' + tab + '"]'); i++) await new Promise((r) => setTimeout(r, 100));
+  const t = document.querySelector('[data-testid="settings-tab-' + tab + '"]');
+  if (!t) return false;
+  t.click();
+  return true;
+})()`);
+
 async function until(what, fn, ms = 20000) {
   const t0 = Date.now();
   let last;
@@ -400,7 +415,6 @@ async function blankScreenRecovery(app, con, consoleRe) {
   };
   const state = (p) => p.eval(`({ root: document.getElementById("root")?.childElementCount ?? -1, nav: performance.getEntriesByType("navigation")[0]?.type,
     error: !!document.querySelector('[data-testid="error-screen"]'), boot: document.getElementById("hrh-boot")?.dataset.state || "", url: location.href })`);
-  const openView = (p, label) => p.eval(`(() => { const b = [...document.querySelectorAll("nav button")].find((x) => x.textContent.trim().startsWith(${JSON.stringify(label)})); b && b.click(); return !!b; })()`);
 
   if (dist && next) {
     step("a deploy while the console is open (old files deleted), then a lazy view: the page reloads itself once — never blank");
@@ -543,7 +557,7 @@ async function startFeed() {
 async function inAppUpdate(app, con, consoleRe) {
   const card = () => con.eval(`(() => { const c = document.querySelector('[data-testid="update-card"]'); return c ? { status: c.dataset.status, text: c.innerText, pct: document.querySelector('[data-testid="update-percent"]')?.textContent || "" } : null; })()`);
   step("Download page in the app: a newer build is found (the app's updater — a background check may have found it already)");
-  await con.eval(`[...document.querySelectorAll("nav button")].find((b) => b.textContent.trim().startsWith("Download")).click(), true`);
+  assert.ok(await openView(con, "Download"), "Settings → Updates & Download");
   const c1 = await until("update available", async () => {
     const c = await card();
     return c && c.status === "available" ? c : null;
@@ -603,32 +617,33 @@ async function inAppUpdate(app, con, consoleRe) {
 // ── back / forward like an app (frontend/src/lib/nav.ts) ──
 
 async function backNavigation(app, con, consoleRe) {
-  const where = () => con.eval(`({ search: location.search, path: location.pathname, active: [...document.querySelectorAll("nav button")].find((b) => b.dataset.active === "true")?.textContent.trim() })`);
-  const open = (label) => con.eval(`(() => { const b = [...document.querySelectorAll("nav button")].find((x) => x.textContent.trim().startsWith(${JSON.stringify(label)})); b.click(); return true; })()`);
+  // (the active sidebar item, or the Settings tab on screen)
+  const where = () => con.eval(`({ search: location.search, path: location.pathname, active: (document.querySelector('[role="tab"][aria-selected="true"]') || [...document.querySelectorAll("aside nav button")].find((b) => b.dataset.active === "true"))?.textContent.trim() })`);
+  const open = (label) => openView(con, label);
   const at = (search) => until(`at ${search}`, async () => (await where()).search === search, 6000);
 
-  step("screens are history entries: Mate → Usage → Admin");
+  step("screens are history entries: Mate → Settings → Usage → Admin");
   await open("Mate");
   await at("?view=mate");
   await open("Usage");
-  await at("?view=usage");
+  await at("?view=settings&tab=usage");
   await open("Admin");
-  await at("?view=admin");
+  await at("?view=settings&tab=admin");
 
   step("the mouse's back button (Windows app-command) → the previous screen");
   await app.main(`cwin().emit("app-command", {}, "browser-backward"); return true`);
-  await at("?view=usage");
+  await at("?view=settings&tab=usage");
   assert.equal((await where()).active, "Usage");
 
   await sleep(400); // (one press reported twice within 250 ms counts once: separate presses here)
   step("Alt+← → back again; the mouse's forward button (button 4) → forward");
   await con.send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "ArrowLeft", code: "ArrowLeft", windowsVirtualKeyCode: 37, modifiers: 1 });
   await con.send("Input.dispatchKeyEvent", { type: "keyUp", key: "ArrowLeft", code: "ArrowLeft", windowsVirtualKeyCode: 37, modifiers: 1 });
-  await at("?view=mate");
+  await at("?view=settings"); // (Usage was opened through Settings: its first entry)
   await sleep(400);
   await con.send("Input.dispatchMouseEvent", { type: "mousePressed", x: 600, y: 400, button: "forward", buttons: 16, clickCount: 1 });
   await con.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: 600, y: 400, button: "forward", buttons: 0, clickCount: 1 });
-  await at("?view=usage");
+  await at("?view=settings&tab=usage");
 
   step("a reload stays on the screen");
   await con.eval(`location.reload(), true`).catch(() => {});

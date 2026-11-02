@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { compareVersions, getDownloads } from "../../api/downloads";
-import { useUIStore } from "../../stores/uiStore";
+import { openSettings } from "../../stores/uiStore";
 import Icon from "../ui/Icon";
 import { useT } from "../../i18n";
 import { useNativeVersion } from "../../lib/nativeVersion";
@@ -15,7 +15,6 @@ export default function UpdateBanner() {
       return "";
     }
   });
-  const setView = useUIStore((s) => s.setView);
   const t = useT();
   const native = window.hrhNative;
   const version = useNativeVersion(); // ("" until the Android bridge knows it)
@@ -36,7 +35,7 @@ export default function UpdateBanner() {
         <span className="min-w-0 flex-1 truncate">
           {t("nav.updateAvailable", { latest, current: version })}
         </span>
-        <button onClick={() => setView("downloads")} className="rounded-md px-2 py-0.5 font-medium hover:bg-accent/15">
+        <button onClick={() => openSettings("updates", "downloads")} className="rounded-md px-2 py-0.5 font-medium hover:bg-accent/15">
           {t("nav.update")}
         </button>
         <button

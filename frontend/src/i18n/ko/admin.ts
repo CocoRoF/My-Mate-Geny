@@ -1,7 +1,6 @@
 import type { Messages } from "..";
 
 const ko: Messages<"admin"> = {
-  title: "관리자",
   intro: "문제가 생긴 모든 것 — 공급자 오류, 실패한 도구, 충돌, 거부된 업로드, 브라우저 오류, 로그인 시도 — 과 실시간 시스템 상태를 한곳에서 봐요.",
   tabLogs: "오류 로그",
   tabSystem: "시스템",

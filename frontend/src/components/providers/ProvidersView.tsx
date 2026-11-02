@@ -47,7 +47,6 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 export default function ProvidersView() {
-  const t = useT();
   const providers = useProviderStore((s) => s.providers);
   const catalog = useConfigStore((s) => s.catalog);
   const [tab, setTab] = useState("");
@@ -58,16 +57,9 @@ export default function ProvidersView() {
   }, [providerIds, tab]);
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-2xl px-4 sm:px-6 py-5 sm:py-8">
-        <div className="flex items-center gap-2.5 mb-1">
-          <Icon name="plug" size={20} className="text-accent" />
-          <h1 className="text-lg font-semibold">{t("providers.title")}</h1>
-        </div>
-        <p className="text-sm text-content-dim mb-5">
-          {t("providers.intro")}
-        </p>
-
+    // (Settings → Providers: the tab's title and intro are Settings' — settings/SettingsView.tsx)
+    <div className="max-w-2xl">
+      <div>
         {/* Provider tabs */}
         <div className="flex gap-1.5 mb-5 border-b border-border">
           {providerIds.map((id) => {

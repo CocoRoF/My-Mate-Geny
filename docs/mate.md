@@ -97,8 +97,11 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
   earned/warmth stage, next stage needs, stats, mood, milestones, log; `PATCH {enabled?, paused?,
   sensitivity? (0.5–1.5), show_indicator?, avatar_mood?, affinity? (0–100)}`; `POST …/relation/reset
   {mode: zero|recompute}`.
-- Global settings also hold `timezone` (IANA; the console fills it from the browser once; "" = the
-  server's): the mate's clock (`Now:` line), plan dates and relationship days.
+- Global settings also hold `timezone` (IANA; the console — any screen — fills it from the browser when
+  empty; "" = the server's own zone): the mate's clock (`Now:` line), plan dates and relationship days.
+  A relationship remembers the zone its days were counted in; when that is no longer the user's (set,
+  changed, or first reported — a container counts in UTC until then) it is counted again from the history,
+  the user's own value / fresh start and switches kept, and announced.
 
 ## 2. Avatar (three kinds + none)
 
@@ -787,12 +790,25 @@ window?: {
 
 **Updates** (`desktop/src/updater.js`, desktop/README.md): `hrhNative.updates`
 (`getState`, `check`, `download`, `cancel`, `install`, `retry`, `onState`) —
-the Download page's update card; the state lives in the app.
+Settings → Updates & Download's update card; the state lives in the app.
 
-**Back / forward** (`frontend/src/lib/nav.ts`, all shells). Every screen
-change (sidebar views, opening a chat) is a history entry with its URL
-(`/?view=usage`, `/?view=chat&session=<id>`, `/`), so back goes to the
-previous screen and a reload stays on it; overlays (`lib/back.ts`) close first.
+**Screens.** The sidebar has **Mate** and **Chat** (+ the chats, and Settings
+at the bottom). Everything else is a **Settings tab** (`components/settings/`):
+General — Updates & Download, Account, Language, Notifications, Mate & voice,
+Desktop app (in the desktop app); Agents & system — Providers, Connections,
+Usage, Admin. A wide screen shows the tab list beside the chosen tab; a phone
+shows the list, and a tab with a back button. The Settings item (and the
+Providers tab) carry the connected-providers count.
+
+**Back / forward** (`frontend/src/lib/nav.ts`, URLs in `lib/navUrl.ts`, all
+shells). Every screen change (Mate, a chat, a Settings tab) is a history entry
+with its URL (`/?view=settings&tab=usage`, `/?view=chat&session=<id>`, `/`), so
+back goes to the previous screen and a reload stays on it; overlays
+(`lib/back.ts`) close first — a screen opened from the phone drawer takes over
+the drawer's entry. The old screens' URLs (`/?view=usage`, `providers`,
+`connections`, `admin`, `downloads` — bookmarks, the desktop app's menu,
+notifications, older apps) open their tab (`downloads`: Updates & Download,
+scrolled to the downloads).
 A guard entry below the first screen keeps back inside the app — never the
 login page or the connect screen. `/login` while signed in redirects to `/`,
 and a successful sign-in replaces the login page in history. Desktop: the

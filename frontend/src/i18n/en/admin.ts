@@ -1,6 +1,5 @@
 // Admin: error logs, live system monitoring, security (sign-in credentials, blocked IPs).
 export default {
-  title: "Admin",
   intro: "Everything that went wrong — provider failures, failed tools, crashes, rejected uploads, browser errors, login attempts — plus live system health.",
   tabLogs: "Error logs",
   tabSystem: "System",

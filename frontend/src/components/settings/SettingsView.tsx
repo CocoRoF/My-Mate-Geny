@@ -1,15 +1,20 @@
 /**
- * Settings (sidebar → Settings, `/?view=settings`): what used to be scattered, in one place —
- *   Updates        this web console's build (+ a check for a newer one on the server), the desktop app's in-app
- *                  updater (downloads/UpdateCard.tsx ↔ desktop/src/updater.js), the Android app's version → Download
- *   Account        the single admin account: username, password, sign out other devices (/api/auth/*)
- *   Language       English / 한국어, applied at once and saved for every device (i18n/, /api/preferences)
- *   Notifications  this browser's permission (the apps notify natively)
- *   Mate & voice   the default mate and reading aloud on this device (Mate's Global settings → Defaults)
- *   Desktop app    the mate on the desktop, quick-chat shortcut, start at login (Global settings → Desktop app)
- * Each section embeds the existing component where there is one, so the logic lives once.
+ * Settings (sidebar → Settings): a tab list (left on a wide screen; on a phone a list that opens one tab) and only
+ * the chosen tab. Every tab is its own address and history entry, `/?view=settings&tab=<tab>` (lib/navUrl.ts).
+ *   General
+ *     Updates & Download  this web console's build (+ a check for a newer one on the server), the desktop app's
+ *                         in-app updater (downloads/UpdateCard.tsx ↔ desktop/src/updater.js), the Android app's
+ *                         version, then the apps to download (downloads/DownloadsView.tsx; `/?view=downloads`)
+ *     Account             the single admin account: username, password, sign out other devices (/api/auth/*)
+ *     Language            English / 한국어, applied at once and saved for every device (i18n/, /api/preferences)
+ *     Notifications       this browser's permission (the apps notify natively)
+ *     Mate & voice        the default mate and reading aloud on this device (Mate's Global settings → Defaults)
+ *     Desktop app         (in the desktop app) the mate on the desktop, quick-chat shortcut, start at login
+ *   Agents & system
+ *     Providers · Connections · Usage · Admin — what used to be sidebar screens (`/?view=usage` … open these)
+ * Each tab embeds the existing component, so the logic lives once.
  */
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import {
   AUTH_CHANGED_EVENT,
   authStatus,
@@ -24,37 +29,40 @@ import { relTime } from "../../i18n/format";
 import { chooseLanguage } from "../../i18n/sync";
 import { useConfigStore } from "../../stores/configStore";
 import { useMateStore } from "../../stores/mateStore";
-import { useUIStore } from "../../stores/uiStore";
+import { useProviderStore } from "../../stores/providerStore";
+import { openSettings, useUIStore, type SettingsTab } from "../../stores/uiStore";
 import { APP_VERSION, BUILD_COMMIT, BUILD_TIME } from "../../version";
 import { requestAdminTab } from "../admin/adminTab";
 import UpdateCard, { useUpdateState } from "../downloads/UpdateCard";
 import DefaultsPanel from "../mate/settings/global/DefaultsPanel";
 import DesktopPanel from "../mate/settings/global/DesktopPanel";
 import Icon, { type IconName } from "../ui/Icon";
+import PageLoading from "../ui/Loading";
+import MobileTopBar from "../layout/MobileTopBar";
 import { checkConsoleUpdate, type ConsoleUpdate } from "./consoleUpdate";
 import { useNativeVersion } from "../../lib/nativeVersion";
-import { onSettingsSection, takeSettingsSection, type SettingsSection } from "./section";
+import { cameFrom, goBack } from "../../lib/nav";
+import { settingsUrl } from "../../lib/navUrl";
+import { GROUPS, isAndroidApp, isDesktopApp, visibleTabs, type TabMeta } from "./tabs";
 
-const platform = () => window.hrhNative?.platform ?? "";
-const isDesktopApp = () => /^desktop-/.test(platform());
-const isAndroidApp = () => platform() === "android";
+// the tabs that were screens of their own: loaded with their tab
+const DownloadsView = lazy(() => import("../downloads/DownloadsView"));
+const ProvidersView = lazy(() => import("../providers/ProvidersView"));
+const ConnectionsView = lazy(() => import("../connections/ConnectionsView"));
+const UsageView = lazy(() => import("../usage/UsageView"));
+const AdminView = lazy(() => import("../admin/AdminView"));
 
-function Card({ id, icon, title, hint, children }: { id: SettingsSection; icon: IconName; title: string; hint?: ReactNode; children: ReactNode }) {
+/** a tab's card (the tab's title is the page's — SettingsView) */
+function Card({ id, children }: { id: string; children: ReactNode }) {
   return (
-    <section id={`settings-${id}`} data-testid={`settings-${id}`} className="card scroll-mt-4 p-4 sm:p-5">
-      <div className="mb-4 flex items-start gap-3">
-        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
-          <Icon name={icon} size={16} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-[15px] font-semibold text-content">{title}</h2>
-          {hint && <p className="mt-0.5 text-[12.5px] leading-relaxed text-content-dim">{hint}</p>}
-        </div>
-      </div>
-      <div className="space-y-4">{children}</div>
+    <section id={`settings-${id}`} data-testid={`settings-${id}`} className="card scroll-mt-4 space-y-4 p-4 sm:p-5">
+      {children}
     </section>
   );
 }
+
+/** "Open Download" from the Updates card: the Download part below it, in the same tab */
+const openDownloads = () => openSettings("updates", "downloads");
 
 function Row({ label, children, right }: { label: ReactNode; children?: ReactNode; right?: ReactNode }) {
   return (
@@ -104,7 +112,7 @@ function UpdatesSection() {
   ].filter(Boolean);
 
   return (
-    <Card id="updates" icon="download" title={t("settings.secUpdates")} hint={t("settings.updatesHint")}>
+    <Card id="updates">
       <div className="space-y-2">
         <Row
           label={t("settings.webConsole")}
@@ -134,7 +142,7 @@ function UpdatesSection() {
         <Row
           label={t("settings.getApps")}
           right={
-            <button className="btn-ghost border border-border !py-1.5 text-[12.5px]" onClick={() => useUIStore.getState().setView("downloads")}>
+            <button className="btn-ghost border border-border !py-1.5 text-[12.5px]" onClick={openDownloads}>
               <Icon name="download" size={13} /> {t("settings.openDownloads")}
             </button>
           }
@@ -165,7 +173,7 @@ function AppRow({ label, version, rel, busy, onCheck }: { label: string; version
   const t = useT();
   // (version "" while the app has not said it yet: nothing to compare)
   const newer = !!version && !!rel?.version && compareVersions(rel.version, version) > 0;
-  const open = () => useUIStore.getState().setView("downloads");
+  const open = openDownloads;
   return (
     <div className="space-y-2" data-testid="settings-app-update">
       <Row
@@ -291,7 +299,7 @@ function AccountSection() {
   const [revokeBusy, setRevokeBusy] = useState(false);
   const [revokeMsg, setRevokeMsg] = useState<Msg>(null);
 
-  if (!st) return <Card id="account" icon="user" title={t("settings.secAccount")}><Icon name="spinner" size={16} spin className="text-content-faint" /></Card>;
+  if (!st) return <Card id="account"><Icon name="spinner" size={16} spin className="text-content-faint" /></Card>;
 
   const min = st.min_password_length;
   const source = { default: t("settings.sourceDefault"), env: t("settings.sourceEnv"), db: t("settings.sourceDb") }[st.source];
@@ -362,7 +370,7 @@ function AccountSection() {
     m && <Status tone={m.ok ? "ok" : "error"} testId={testId}>{m.key ? t(m.key, m.vars) : m.raw}</Status>;
 
   return (
-    <Card id="account" icon="user" title={t("settings.secAccount")} hint={t("settings.accountHint")}>
+    <Card id="account">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-border bg-surface-2/50 px-3.5 py-3">
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-surface-3 text-[14px] font-semibold text-content-dim">
           {(st.username || "?").slice(0, 1).toUpperCase()}
@@ -459,7 +467,7 @@ function AccountSection() {
             className="btn-ghost text-content-faint"
             onClick={() => {
               requestAdminTab("security");
-              useUIStore.getState().setView("admin");
+              openSettings("admin");
             }}
           >
             <Icon name="external" size={13} /> {t("settings.moreSecurity")}
@@ -482,7 +490,7 @@ function LanguageSection() {
     setState((await chooseLanguage(l)) ? "saved" : "local");
   };
   return (
-    <Card id="language" icon="languages" title={t("settings.secLanguage")} hint={t("settings.languageHint")}>
+    <Card id="language">
       <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label={t("settings.secLanguage")}>
         {LANGS.map((l) => (
           <button
@@ -545,7 +553,7 @@ function NotificationsSection() {
   else body = <Status tone="info">{t("settings.notifAsk")}</Status>;
 
   return (
-    <Card id="notifications" icon="bell" title={t("settings.secNotifications")} hint={t("settings.notifHint")}>
+    <Card id="notifications">
       <div data-testid="settings-notif-state" data-permission={app ? "app" : perm}>{body}</div>
       <div className="flex flex-wrap gap-2">
         {!app && perm === "default" && (
@@ -576,7 +584,7 @@ function MateSection() {
     useUIStore.getState().setView("mate");
   };
   return (
-    <Card id="mate" icon="volume" title={t("settings.secMate")} hint={t("settings.mateHint")}>
+    <Card id="mate">
       <div className="space-y-3">
         <DefaultsPanel />
       </div>
@@ -593,9 +601,8 @@ function MateSection() {
 }
 
 function DesktopSection() {
-  const t = useT();
   return (
-    <Card id="desktop" icon="monitor" title={t("settings.secDesktop")} hint={t("settings.desktopHint")}>
+    <Card id="desktop">
       <div className="space-y-3">
         <DesktopPanel />
       </div>
@@ -605,53 +612,245 @@ function DesktopSection() {
 
 // ---- the view ----------------------------------------------------------------------------------------------------
 
-export default function SettingsView() {
-  const t = useT();
-  const scroller = useRef<HTMLDivElement>(null);
-  const android = isAndroidApp();
-  const sections: { id: SettingsSection; label: MsgKey }[] = [
-    { id: "updates", label: "settings.secUpdates" },
-    { id: "account", label: "settings.secAccount" },
-    { id: "language", label: "settings.secLanguage" },
-    { id: "notifications", label: "settings.secNotifications" },
-    { id: "mate", label: "settings.secMate" },
-    ...(android ? [] : [{ id: "desktop" as const, label: "settings.secDesktop" as const }]),
-  ];
-  const jump = (id: SettingsSection, smooth = true) => {
-    const el = document.getElementById(`settings-${id}`);
-    if (el) el.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
-  };
-  // a deep link (the default-password banner → Account): once the view is drawn
-  useEffect(() => {
-    const first = takeSettingsSection();
-    if (first) requestAnimationFrame(() => jump(first, false));
-    return onSettingsSection((s) => jump(s));
-  }, []);
+const WIDE = "(min-width: 768px)"; // Tailwind's md: the sidebar is on screen, so is the tab list
 
-  return (
-    <div ref={scroller} className="h-full overflow-y-auto" data-testid="settings-view">
-      <div className="mx-auto max-w-3xl px-3 sm:px-6 py-5 sm:py-8 pb-safe">
-        <div className="mb-1 flex items-center gap-2.5">
-          <Icon name="settings" size={20} className="text-accent" />
-          <h1 className="text-lg font-semibold">{t("settings.title")}</h1>
-        </div>
-        <p className="mb-4 text-sm text-content-dim">{t("settings.subtitle")}</p>
-        <nav className="no-scrollbar -mx-3 mb-4 flex gap-1.5 overflow-x-auto px-3 sm:mx-0 sm:px-0" aria-label={t("settings.title")}>
-          {sections.map((s) => (
-            <button key={s.id} onClick={() => jump(s.id)} className="pill shrink-0 whitespace-nowrap border border-border bg-surface-2/60 px-3 py-1.5 text-[12.5px] text-content-dim transition hover:text-content hover:border-border-strong">
-              {t(s.label)}
-            </button>
-          ))}
-        </nav>
+function useWide(): boolean {
+  const [wide, setWide] = useState(() => typeof window === "undefined" || window.matchMedia(WIDE).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(WIDE);
+    const on = () => setWide(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return wide;
+}
+
+function TabContent({ id }: { id: SettingsTab }) {
+  switch (id) {
+    case "updates":
+      return (
         <div className="space-y-4">
           <UpdatesSection />
-          <AccountSection />
-          <LanguageSection />
-          <NotificationsSection />
-          <MateSection />
-          {!android && <DesktopSection />}
+          <DownloadsView />
         </div>
+      );
+    case "account":
+      return <AccountSection />;
+    case "language":
+      return <LanguageSection />;
+    case "notifications":
+      return <NotificationsSection />;
+    case "mate":
+      return <MateSection />;
+    case "desktop":
+      return <DesktopSection />;
+    case "providers":
+      return <ProvidersView />;
+    case "connections":
+      return <ConnectionsView />;
+    case "usage":
+      return <UsageView />;
+    case "admin":
+      return <AdminView />;
+  }
+}
+
+function Badge({ n }: { n: number }) {
+  return n > 0 ? <span className="pill ml-auto bg-success/15 text-success" data-testid="settings-tab-badge">{n}</span> : null;
+}
+
+function TabButton({ tab, selected, list, onPick }: { tab: TabMeta; selected: boolean; list: boolean; onPick: () => void }) {
+  const t = useT();
+  // Providers: how many are connected (the sidebar's Settings item shows it too — layout/Sidebar.tsx)
+  const connected = useProviderStore((s) => s.providers.filter((p) => p.connected).length);
+  const badge = tab.id === "providers" ? connected : 0;
+  return (
+    <button
+      id={`settings-tab-${tab.id}`}
+      data-testid={`settings-tab-${tab.id}`}
+      data-active={selected}
+      {...(list ? {} : { role: "tab", "aria-selected": selected, "aria-controls": "settings-panel", tabIndex: selected ? 0 : -1 })}
+      onClick={onPick}
+      className={`group flex w-full items-center gap-3 rounded-lg px-3 text-left font-medium text-content-dim transition hover:bg-surface-2 hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/70 data-[active=true]:bg-surface-3 data-[active=true]:text-content ${
+        list ? "py-3 text-[14px]" : "py-2 text-[13px]"
+      }`}
+    >
+      <Icon name={tab.icon} size={16} className="shrink-0 text-content-faint group-hover:text-content-dim group-data-[active=true]:text-accent" />
+      <span className="min-w-0 flex-1 truncate">{t(tab.label)}</span>
+      <Badge n={badge} />
+      {list && <Icon name="chevron" size={14} className="shrink-0 text-content-faint" />}
+    </button>
+  );
+}
+
+/** the tabs, by group: a vertical tab list beside the tab (wide), or the list a phone opens a tab from */
+function TabList({ tabs, selected, list }: { tabs: TabMeta[]; selected: SettingsTab | null; list: boolean }) {
+  const t = useT();
+  const ref = useRef<HTMLDivElement>(null);
+  // arrows / Home / End move between the tabs; Enter or Space opens one (each tab is a history entry)
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (list || !["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+    const btns = [...(ref.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [])];
+    const i = btns.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      e.key === "Home" ? 0 : e.key === "End" ? btns.length - 1 : (i + (e.key === "ArrowDown" ? 1 : -1) + btns.length) % btns.length;
+    e.preventDefault();
+    btns[next]?.focus();
+  };
+  const pres = list ? {} : { role: "presentation" };
+  return (
+    <div
+      ref={ref}
+      {...(list ? {} : { role: "tablist", "aria-orientation": "vertical" as const })}
+      aria-label={t("settings.title")}
+      onKeyDown={onKeyDown}
+      className="space-y-4"
+      data-testid="settings-tabs"
+    >
+      {GROUPS.map((g) => {
+        const mine = tabs.filter((x) => x.group === g.id);
+        if (!mine.length) return null;
+        return (
+          <div key={g.id} {...pres}>
+            <div className="px-3 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-content-faint" {...pres}>
+              {t(g.label)}
+            </div>
+            <div className={list ? "card divide-y divide-border/60 overflow-hidden p-1" : "space-y-0.5"} {...pres}>
+              {mine.map((x) => (
+                <TabButton key={x.id} tab={x} selected={selected === x.id} list={list} onPick={() => openSettings(x.id)} />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function SettingsView() {
+  const t = useT();
+  const wide = useWide();
+  const asked = useUIStore((s) => s.settingsTab);
+  const anchor = useUIStore((s) => s.settingsAnchor);
+  const tabs = visibleTabs();
+  // no tab (or one not offered here, e.g. Desktop app in a browser): the list on a phone, the first tab beside it
+  const known = asked && tabs.some((x) => x.id === asked) ? asked : null;
+  const shown: SettingsTab | null = known ?? (wide ? tabs[0].id : null);
+  const meta = tabs.find((x) => x.id === shown);
+
+  // a part of the tab to show (`/?view=downloads` → Updates & Download, at Download): once it is drawn
+  useEffect(() => {
+    if (!anchor || !shown) return;
+    let n = 0;
+    let raf = 0;
+    let stop = () => {};
+    const find = () => {
+      const el = document.getElementById(`settings-${anchor}`);
+      if (!el) {
+        if (n++ < 180) raf = requestAnimationFrame(find); // (a lazy tab still loading: ~3 s)
+        return;
+      }
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      const done = () => useUIStore.setState({ settingsAnchor: null });
+      // what is above it may still be loading (versions, the release): keep it in place for a moment, until the
+      // user scrolls themselves
+      const panel = el.closest("#settings-panel");
+      const body = panel?.firstElementChild;
+      if (!panel || !body || typeof ResizeObserver === "undefined") return done();
+      const ro = new ResizeObserver(() => el.scrollIntoView({ block: "start" }));
+      ro.observe(body);
+      const quit = () => {
+        stop();
+        done();
+      };
+      const timer = setTimeout(quit, 2500);
+      for (const ev of ["wheel", "touchstart", "keydown", "pointerdown"]) panel.addEventListener(ev, quit, { once: true, passive: true });
+      stop = () => {
+        ro.disconnect();
+        clearTimeout(timer);
+        for (const ev of ["wheel", "touchstart", "keydown", "pointerdown"]) panel.removeEventListener(ev, quit);
+      };
+    };
+    raf = requestAnimationFrame(find);
+    return () => {
+      cancelAnimationFrame(raf);
+      stop();
+    };
+  }, [anchor, shown]);
+
+  // a phone's tab: back to the list (the entry it came from, when it came from there)
+  const backToList = () => (cameFrom(settingsUrl(null)) ? goBack() : openSettings(null));
+
+  return (
+    <div className="flex h-full flex-col" data-testid="settings-view" data-tab={shown ?? ""}>
+      {/* phone: the app's top bar over the list, a back bar over a tab */}
+      {!wide &&
+        (shown && meta ? (
+          <div className="pt-safe shrink-0 border-b border-border/70 bg-surface/80 backdrop-blur-xl">
+            <div className="flex h-12 items-center gap-1 px-2">
+              <button
+                onClick={backToList}
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-content-dim hover:bg-surface-3 hover:text-content"
+                aria-label={t("settings.backToList")}
+                title={t("settings.backToList")}
+                data-testid="settings-back"
+              >
+                <Icon name="chevron-left" size={20} />
+              </button>
+              <Icon name={meta.icon} size={16} className="shrink-0 text-accent" />
+              <h1 className="ml-1 truncate text-[15px] font-semibold">{t(meta.label)}</h1>
+            </div>
+          </div>
+        ) : (
+          <MobileTopBar title={t("nav.settings")} />
+        ))}
+
+      <div className="flex min-h-0 flex-1">
+        {(wide || !shown) && (
+          <nav
+            className={wide ? "w-60 shrink-0 overflow-y-auto border-r border-border/70 px-2 py-5" : "flex-1 overflow-y-auto px-3 py-4 pb-safe"}
+            aria-label={t("settings.title")}
+          >
+            {wide && (
+              <div className="mb-4 flex items-center gap-2.5 px-3">
+                <Icon name="settings" size={18} className="text-accent" />
+                <h1 className="text-base font-semibold">{t("settings.title")}</h1>
+              </div>
+            )}
+            {!wide && <p className="mb-4 px-1 text-[13px] text-content-dim">{t("settings.subtitle")}</p>}
+            <TabList tabs={tabs} selected={shown} list={!wide} />
+          </nav>
+        )}
+
+        {shown && meta && (
+          <div
+            key={shown}
+            id="settings-panel"
+            role={wide ? "tabpanel" : "region"}
+            aria-labelledby={wide ? `settings-tab-${shown}` : undefined}
+            aria-label={wide ? undefined : t(meta.label)}
+            className="min-w-0 flex-1 overflow-y-auto animate-fade-in"
+            data-testid={`settings-panel-${shown}`}
+          >
+            <div className={`mx-auto ${meta.wide ? "max-w-6xl" : "max-w-3xl"} px-3 py-5 pb-safe sm:px-6 sm:py-8`}>
+              {wide && (
+                <div className="mb-5">
+                  <div className="flex items-center gap-2.5">
+                    <Icon name={meta.icon} size={20} className="text-accent" />
+                    <h2 className="text-lg font-semibold">{t(meta.label)}</h2>
+                  </div>
+                  {meta.hint && <p className="mt-1 text-sm text-content-dim">{t(meta.hint)}</p>}
+                </div>
+              )}
+              {!wide && meta.hint && <p className="mb-4 text-[13px] text-content-dim">{t(meta.hint)}</p>}
+              <Suspense fallback={<PageLoading />}>
+                <TabContent id={shown} />
+              </Suspense>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+

@@ -491,17 +491,49 @@ class MateService:
                 events.append((at, "memory", None))
         return events
 
-    def _recompute(self, mate_id: str, settings: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _recompute(self, mate_id: str, settings: dict[str, Any] | None = None,
+                   marks: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         mate = self.store.get(mate_id)
-        return A.replay(self._history_events(mate), datetime.now(timezone.utc), self.store.tz(), settings)
+        tz, key = self.store.tz_and_key()
+        doc = A.replay(self._history_events(mate), datetime.now(timezone.utc), tz, settings, marks)
+        doc["tz"] = key
+        return doc
 
     def relation_doc(self, mate_id: str) -> dict[str, Any]:
-        """The mate's relationship; a mate without one (from before, or new) starts from its real history."""
+        """The mate's relationship; a mate without one (from before, or new) starts from its real history. One
+        whose days were counted in another zone than the user's now — the server's own while no browser had
+        said the user's (a container runs in UTC), or the user changed it — is counted again from the history
+        (the same rules as in real time; the user's own changes and switches kept): a day's talk, streaks and
+        the quiet days between them depend on where midnight is."""
         doc = self.store.relation_doc(mate_id)
         if doc is None:
             doc = self._recompute(mate_id)
             self.store.save_relation(mate_id, doc)
+        elif doc.get("tz") != self.store.tz_and_key()[1]:
+            doc = self._retimed(mate_id, doc)
         return doc
+
+    def _retimed(self, mate_id: str, cur: dict[str, Any]) -> dict[str, Any]:
+        doc = self._recompute(mate_id, {k: cur[k] for k in ("enabled", "sensitivity", "show_indicator", "avatar_mood")},
+                              A.marks_of(cur))
+        doc["paused"] = cur["paused"]
+        if cur.get("paused") or not cur.get("enabled", True):
+            doc["quiet_from"] = cur.get("quiet_from")
+        A._log(doc, 0.0, f"timezone {cur.get('tz') or '?'} → {doc['tz']}", datetime.now(timezone.utc))
+        self._log("info", f"relationship of {mate_id} counted again in {doc['tz']} (was {cur.get('tz') or 'unknown'}): "
+                          f"{cur.get('stage')} {round(float(cur.get('affinity') or 0))} → {doc['stage']} "
+                          f"{round(float(doc['affinity']))}", code="mate.relation_retimed")
+        self._save_relation(mate_id, doc, cur)
+        return doc
+
+    def timezone_changed(self) -> None:
+        """The user's timezone was set or changed (Global settings → Defaults, or the console filling it from the
+        browser): every relationship is counted in it now — announced, so indicators move without a reload."""
+        for m in self.store.list():
+            try:
+                self.relation_doc(m["id"])
+            except Exception as exc:  # noqa: BLE001 - one mate's history never stops the others
+                self._log("warning", f"relationship recount for {m['id']}: {exc}")
 
     def _save_relation(self, mate_id: str, doc: dict[str, Any], before: dict[str, Any] | None,
                        force: bool = False) -> None:
@@ -559,6 +591,7 @@ class MateService:
         cur = self.relation_doc(mate_id)
         if mode == "zero":
             doc = A.reset(cur, now, tz)
+            doc["tz"] = self.store.tz_and_key()[1]
         elif mode == "recompute":
             doc = self._recompute(mate_id, {k: cur[k] for k in ("enabled", "sensitivity", "show_indicator",
                                                                 "avatar_mood")})

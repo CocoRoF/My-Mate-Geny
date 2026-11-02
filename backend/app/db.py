@@ -59,6 +59,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     kind          TEXT NOT NULL DEFAULT 'chat',     -- chat | mate (a Mate's conversation, hidden from the chat list)
     mate_id       TEXT,                             -- kind = mate: which mate
     git_repo      TEXT,                             -- the top bar's Git repo: NULL = the workspace's (auto), '' = none
+    last_result   TEXT,                             -- how the last run ended: ok | error | stopped (NULL: none yet)
+    last_result_at TEXT,                            -- when it ended
+    last_seen_at  TEXT,                             -- when someone last had the chat open (a newer result = unseen)
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL
 );
@@ -301,6 +304,9 @@ class Database:
                 ("kind", "TEXT NOT NULL DEFAULT 'chat'"),
                 ("mate_id", "TEXT"),
                 ("git_repo", "TEXT"),
+                ("last_result", "TEXT"),
+                ("last_result_at", "TEXT"),
+                ("last_seen_at", "TEXT"),
             ):
                 if col not in cols:
                     self._conn.execute(f"ALTER TABLE sessions ADD COLUMN {col} {ddl}")

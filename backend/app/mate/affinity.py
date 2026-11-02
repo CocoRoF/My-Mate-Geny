@@ -76,6 +76,8 @@ def new() -> dict[str, Any]:
         "stage": "new", "stage_changed_at": None, "milestones": [], "log": [],
         "mood": {"valence": None, "at": None, "concern_until": None, "turns": []},
         "quiet_from": None,
+        "tz": None,  # the zone its days were counted in (store.tz_and_key); another → computed again from history
+        "marks": [],  # what the user did by hand ({at, kind: set | reset, v}): a recompute in another zone keeps them
     }
 
 
@@ -324,16 +326,36 @@ def set_value(r: dict[str, Any], value: float, at: datetime, tz: Any, why: str =
     r["affinity"] = round(max(0.0, min(100.0, float(value))), 2)
     r["warm"] = _raw_band(r["affinity"])
     _log(r, r["affinity"] - before, why, at)
+    if why == "manual":
+        _mark(r, at, "set", r["affinity"])
     refresh(r, at, tz)
+
+
+def _mark(r: dict[str, Any], at: datetime, kind: str, v: float | None = None) -> None:
+    r["marks"] = [*(r.get("marks") or []), {"at": _iso(at), "kind": kind, **({} if v is None else {"v": v})}][-50:]
 
 
 def reset(r: dict[str, Any], at: datetime, tz: Any) -> dict[str, Any]:
     """A fresh start: counters, affinity, mood, milestones gone; the user's settings kept."""
     out = new()
-    for k in ("enabled", "paused", "sensitivity", "show_indicator", "avatar_mood"):
+    for k in ("enabled", "paused", "sensitivity", "show_indicator", "avatar_mood", "tz", "marks"):
         out[k] = r[k]
     out["settled_day"] = (at.astimezone(tz).date() - timedelta(days=1)).isoformat()
     _log(out, 0.0, "reset", at)
+    _mark(out, at, "reset")
+    return out
+
+
+def marks_of(r: dict[str, Any]) -> list[dict[str, Any]]:
+    """The user's own changes, for a recompute: kept ones, else (a document from before marks) read from its log."""
+    if r.get("marks"):
+        return list(r["marks"])
+    out = []
+    for e in r.get("log") or []:
+        if e.get("why") == "manual" and e.get("at"):
+            out.append({"at": e["at"], "kind": "set", "v": e.get("v")})
+        elif e.get("why") == "reset" and e.get("at"):
+            out.append({"at": e["at"], "kind": "reset"})
     return out
 
 
@@ -435,9 +457,10 @@ def summary(r: dict[str, Any], now: datetime, tz: Any) -> dict[str, Any]:
 # ---- recompute: the same engine over the real history ----
 
 def replay(events: list[tuple[datetime, str, Any]], now: datetime, tz: Any,
-           settings: dict[str, Any] | None = None) -> dict[str, Any]:
+           settings: dict[str, Any] | None = None, marks: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """``events``: (time, "turn", (user_text, reply_text)) | (time, "memory", None) — rebuilt from scratch with the
-    current settings (enabled / sensitivity …; pauses in the past aren't known, so none)."""
+    current settings (enabled / sensitivity …; pauses in the past aren't known, so none). ``marks``: the user's
+    own changes (a value set by hand, a fresh start — ``marks_of``), applied when they happened."""
     r = new()
     for k, v in (settings or {}).items():
         if k in ("enabled", "sensitivity", "show_indicator", "avatar_mood"):
@@ -445,16 +468,27 @@ def replay(events: list[tuple[datetime, str, Any]], now: datetime, tz: Any,
     r = normalized(r)
     enabled = r["enabled"]
     r["enabled"] = True
-    for at, what, arg in sorted(events, key=lambda e: (e[0], 0 if e[1] == "turn" else 1)):
+    timeline = list(events)
+    for m in marks or []:
+        at = _t(m.get("at"))
+        if at is not None and m.get("kind") in ("set", "reset"):
+            timeline.append((at, m["kind"], m.get("v")))
+    order = {"turn": 0, "memory": 1, "set": 2, "reset": 2}
+    for at, what, arg in sorted(timeline, key=lambda e: (e[0], order.get(e[1], 3))):
         advance(r, at, tz)
         if what == "turn":
             u, a = arg or ("", "")
             credit_turn(r, at, tz, u, a)
         elif what == "memory":
             credit_memory(r, at, tz)
+        elif what == "set" and arg is not None:
+            set_value(r, float(arg), at, tz)
+        elif what == "reset":
+            r = reset(r, at, tz)
     advance(r, now, tz)
     _log(r, 0.0, "recomputed", now)
     r["enabled"] = enabled
+    r["marks"] = list(marks or [])[-50:]
     return r
 
 

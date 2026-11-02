@@ -375,8 +375,19 @@ Table `mate_relation` (one row per mate, deleted with it):
 | `log` JSON | last 200 changes `{at, d, why, v}` |
 
 The timezone is a global setting `mate_settings.timezone` (IANA). The console fills it once from
-`Intl.DateTimeFormat().resolvedOptions().timeZone` when it is empty; it is editable in Global
-settings → Defaults; the fallback is the server's local zone. It is also used for the `Now:` line.
+`Intl.DateTimeFormat().resolvedOptions().timeZone` when it is empty (on any screen, at start —
+`App.tsx` → `fillTimezone`; Mate windows too); it is editable in Global settings → Defaults; the
+fallback is the server's local zone (a container: UTC). It is also used for the `Now:` line.
+
+Days depend on where midnight is, so the document records the zone it was counted in (`tz`: the
+IANA name, or `local:<abbr><±hhmm>` for the server's). Whenever that differs from the zone now
+(`store.tz_and_key`) — the browser reported the user's zone, the user changed it, the server moved,
+or a document from before `tz` — `service.relation_doc` counts it again from the history (`replay`,
+the same rules as real time). What the user did by hand is kept: `marks` (a value set by hand, a
+fresh start — read from the log for older documents) are replayed when they happened; the switches
+(on/off, paused, sensitivity, indicator) are kept. `PUT /api/mates/settings` with a new timezone
+recounts every mate at once and announces it (`mates.changed`), so indicators follow without a
+reload. Quiet days counted in a stand-in zone therefore never stay.
 
 ### 5.2 Stages
 

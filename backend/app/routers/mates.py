@@ -95,6 +95,9 @@ async def put_settings(request: Request, verify: bool = False) -> dict:
         out = store.update_settings(await _json(request))
     except MateError as exc:
         raise _http(exc) from exc
+    if "timezone" in store.last_changed:
+        # (the relationships' days are counted in it: again from the history — app/mate/service.py)
+        _svc(request).timezone_changed()
     if verify:
         providers = _voice(request).providers
         changed = {SETTING_PROVIDERS[k] for k in store.last_changed if k in SETTING_PROVIDERS}

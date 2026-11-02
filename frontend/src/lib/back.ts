@@ -66,6 +66,15 @@ function sync() {
   }
 }
 
+/** A screen opens from an overlay (the phone drawer's Settings / a chat): the overlay's history entry — on top right
+ * now — becomes the new screen's (lib/nav.ts replaces it), so closing the overlay must not step back over it (that
+ * would land on the screen below). True when it was ours to give. */
+export function takeOverlayEntry(): boolean {
+  if (!mirrored || ownPops || !(window.history.state as { hrhOverlay?: boolean } | null)?.hrhOverlay) return false;
+  mirrored -= 1;
+  return true;
+}
+
 function syncHistory() {
   if (scheduled || !mirrorsHistory()) return;
   if (!listening) {

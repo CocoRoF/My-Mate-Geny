@@ -1,13 +1,17 @@
 // Settings (components/settings/SettingsView.tsx).
 export default {
   title: "Settings",
-  subtitle: "Updates, your account, language and this device — in one place.",
-  secUpdates: "Updates",
+  subtitle: "Updates, your account, language and this device — and the agents: providers, connections, usage, admin.",
   secAccount: "Account",
   secLanguage: "Language",
   secNotifications: "Notifications",
   secMate: "Mate & voice",
   secDesktop: "Desktop app",
+  tabUpdates: "Updates & Download",
+  groupGeneral: "General",
+  groupSystem: "Agents & system",
+  usageHint: "What each connected account's plan has left, and the tokens this server counted.",
+  backToList: "Back to Settings",
 
   // updates
   updatesHint: "The console updates itself when the server is updated; the desktop and Android apps load it live and only need a new build now and then.",
@@ -29,8 +33,8 @@ export default {
   appLatest: "Up to date.",
   appAvailable: "Version {version} is available.",
   appNoRelease: "No app build is published on this server yet.",
-  openDownloads: "Open Download",
-  updateOnDownload: "Update on the Download page",
+  openDownloads: "Show downloads",
+  updateOnDownload: "Get the update below",
   getApps: "Desktop and Android apps",
   getAppsHint: "Native apps with notifications, their own window and your mate on the desktop.",
 
