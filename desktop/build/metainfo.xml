@@ -2,7 +2,8 @@
 <!-- AppStream metadata of the Linux app: GNOME Software / Ubuntu App Center / KDE Discover show the installed app with
      this name, summary, developer and icon. build/after-pack.js fills in the release's version and date and puts the result
      into the .deb as /usr/share/metainfo/me.hrletsgo.MyMateGeny.metainfo.xml.
-     No <url type="homepage"> while the repository is private (a link users cannot open; appstreamcli rejects it). -->
+     The homepage is the project's repository, as in the .deb's Homepage field (while it is private, appstreamcli
+     validate warns that it cannot reach it; validate offline, with its no-net option). -->
 <component type="desktop-application">
   <id>me.hrletsgo.MyMateGeny</id>
   <metadata_license>CC0-1.0</metadata_license>
@@ -23,6 +24,7 @@
   </developer>
   <launchable type="desktop-id">my-mate-geny.desktop</launchable>
   <icon type="stock">my-mate-geny</icon>
+  <url type="homepage">https://github.com/CocoRoF/My-Mate-Geny</url>
   <categories>
     <category>Development</category>
   </categories>

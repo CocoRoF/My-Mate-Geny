@@ -251,6 +251,7 @@ test("metainfo: version and date filled in, valid ids; addMetainfo hands it to t
   const x = metainfo("0.4.99", "2026-11-02");
   assert.match(x, /<release version="0\.4\.99" date="2026-11-02"\/>/);
   assert.doesNotMatch(x, /\$\{/);
+  for (const m of x.matchAll(/<!--([^]*?)-->/g)) assert.ok(!m[1].includes("--"), "no -- inside an XML comment");
   assert.match(x, new RegExp(`<id>${METAINFO_ID.replace(/\./g, "\\.")}</id>`));
   assert.match(x, /<launchable type="desktop-id">my-mate-geny\.desktop<\/launchable>/);
   assert.match(x, /<name>My Mate Geny<\/name>/);
