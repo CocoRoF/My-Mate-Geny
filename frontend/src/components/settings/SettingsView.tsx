@@ -743,15 +743,39 @@ export default function SettingsView() {
     if (!anchor || !shown) return;
     let n = 0;
     let raf = 0;
+    let stop = () => {};
     const find = () => {
       const el = document.getElementById(`settings-${anchor}`);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
-        useUIStore.setState({ settingsAnchor: null });
-      } else if (n++ < 180) raf = requestAnimationFrame(find); // (a lazy tab still loading: ~3 s)
+      if (!el) {
+        if (n++ < 180) raf = requestAnimationFrame(find); // (a lazy tab still loading: ~3 s)
+        return;
+      }
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      const done = () => useUIStore.setState({ settingsAnchor: null });
+      // what is above it may still be loading (versions, the release): keep it in place for a moment, until the
+      // user scrolls themselves
+      const panel = el.closest("#settings-panel");
+      const body = panel?.firstElementChild;
+      if (!panel || !body || typeof ResizeObserver === "undefined") return done();
+      const ro = new ResizeObserver(() => el.scrollIntoView({ block: "start" }));
+      ro.observe(body);
+      const quit = () => {
+        stop();
+        done();
+      };
+      const timer = setTimeout(quit, 2500);
+      for (const ev of ["wheel", "touchstart", "keydown", "pointerdown"]) panel.addEventListener(ev, quit, { once: true, passive: true });
+      stop = () => {
+        ro.disconnect();
+        clearTimeout(timer);
+        for (const ev of ["wheel", "touchstart", "keydown", "pointerdown"]) panel.removeEventListener(ev, quit);
+      };
     };
     raf = requestAnimationFrame(find);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      stop();
+    };
   }, [anchor, shown]);
 
   // a phone's tab: back to the list (the entry it came from, when it came from there)
