@@ -78,9 +78,9 @@ jobs:
         if: matrix.name == 'macos'
         run: |
           sudo mdutil -a -i off || true   # Spotlight indexing breaks dmg detach on runners
-          # One arch at a time, each with its own volume name (they collide otherwise).
-          npx electron-builder --mac dmg --arm64 --publish never -c.extraMetadata.version=$VERSION -c.dmg.title="my-mate-geny-arm64"
-          npx electron-builder --mac dmg --x64 --publish never -c.extraMetadata.version=$VERSION -c.dmg.title="my-mate-geny-x64"
+          # One arch at a time, each with its own volume name (they collide otherwise); the name is what Finder shows.
+          npx electron-builder --mac dmg --arm64 --publish never -c.extraMetadata.version=$VERSION -c.dmg.title="My Mate Geny (Apple Silicon)"
+          npx electron-builder --mac dmg --x64 --publish never -c.extraMetadata.version=$VERSION -c.dmg.title="My Mate Geny (Intel)"
       # + the in-app updater's descriptions (electron-updater, generic provider — desktop/src/updater.js): latest.yml
       # (Windows) and latest-linux.yml, served to the app by the console's /api/downloads/update/. No latest-mac.yml:
       # unsigned macOS builds cannot replace themselves (the app offers the .dmg).
