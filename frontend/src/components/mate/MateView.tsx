@@ -196,7 +196,8 @@ export default function MateView() {
           >
             <MateThumb mate={mate} />
             <span className="truncate text-[14.5px] font-semibold">{mate.name}</span>
-            <Icon name="chevron-down" size={14} className="shrink-0 text-content-faint" />
+            {/* (phones: no room for it next to the indicator — her picture and name open the switcher) */}
+            {!phone && <Icon name="chevron-down" size={14} className="shrink-0 text-content-faint" />}
           </button>
           {switcher && (
             <>
