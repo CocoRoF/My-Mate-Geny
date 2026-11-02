@@ -10,11 +10,13 @@ export interface QuestionOption {
   value: string;
   label: string;
   description?: string | null;
+  /** concepts: the direction's colours (#RRGGBB) */
+  palette?: string[];
 }
 
 export interface Question {
   id: string;
-  kind: "choice" | "multi" | "slider" | "upload" | "text" | "mate";
+  kind: "choice" | "multi" | "slider" | "upload" | "text" | "mate" | "concepts";
   question: string;
   options: QuestionOption[];
   allow_other: boolean;
@@ -147,9 +149,50 @@ export interface AvatarProject {
   files: ProjectFiles;
   preview: Avatar | null;
   agent_running: boolean;
+  /** the Mate Create studio's part (docs/avatar-create.md §11): absent on a plain Avatar Create project */
+  studio?: StudioInfo;
   log: { at: string; what: string }[];
   updated_at: string;
   version: number;
+}
+
+/** the concept notes of a mate being made (shown on the right; the persona and the avatar are made from them) */
+export const CONCEPT_KEYS = ["pitch", "role", "interests", "backstory", "voice", "style", "look", "outfit", "palette", "mood"] as const;
+export type ConceptKey = (typeof CONCEPT_KEYS)[number];
+
+export interface StudioInfo {
+  /** new: a draft mate being made · existing: the studio for an existing mate's avatar */
+  kind: "new" | "existing";
+  mate_id: string;
+  concept: Partial<Record<ConceptKey, string>>;
+  /** field path (name, persona.description, prefs.tone.warmth, concept.pitch, …) → the agent wrote it: when, and
+   *  what was there before (per-field undo) */
+  filled: Record<string, { at: string; prev: unknown }>;
+  avatar_skipped: boolean;
+  voice_ok: boolean;
+  finished_at: string | null;
+  /** what Create mate still needs */
+  missing: string[];
+  mate: Mate | null;
+}
+
+export interface DraftSummary {
+  mate_id: string;
+  name: string;
+  project_id: string;
+  status: ProjectStatus;
+  pitch: string;
+  updated_at: string;
+  thumb: string | null;
+}
+
+export interface StudioFieldsPatch {
+  name?: string;
+  persona?: Partial<Mate["persona"]>;
+  prefs?: Record<string, unknown>;
+  voice?: Mate["voice"];
+  llm?: Partial<Mate["llm"]>;
+  concept?: Partial<Record<ConceptKey, string>>;
 }
 
 export interface ProjectSummary {
@@ -159,6 +202,7 @@ export interface ProjectSummary {
   phase: string | null;
   mate_id: string | null;
   updated_at: string;
+  created_at: string;
   thumb: string | null;
 }
 
@@ -194,6 +238,20 @@ export const declineExtra = (pid: string, x: Extra) => post<AvatarProject>(`${P(
 export const applyAvatar = (pid: string, body: { mate_id?: string; new?: boolean; new_name?: string }) =>
   post<{ project: AvatarProject; mate: Mate }>(`${P(pid)}/apply`, body);
 export const restoreAvatar = (pid: string) => post<{ project: AvatarProject; mate: Mate }>(`${P(pid)}/restore`);
+
+// ── the Mate Create studio ──
+const SP = (pid: string) => `/api/avatar/studio/${pid}`;
+/** a new draft (no mate_id), a draft's project, or an existing mate's latest project (fresh: a new one) */
+export const openStudio = (body: { mate_id?: string | null; language: string; fresh?: boolean }) => post<AvatarProject>("/api/avatar/studio", body);
+export const listDrafts = () => apiFetch<DraftSummary[]>("/api/avatar/studio/drafts");
+export const patchStudioFields = (pid: string, patch: StudioFieldsPatch) =>
+  apiFetch<AvatarProject>(`${SP(pid)}/fields`, { method: "PATCH", body: JSON.stringify(patch) });
+export const undoStudioField = (pid: string, field: string) => post<AvatarProject>(`${SP(pid)}/undo`, { field });
+export const finishStudio = (pid: string) => post<{ mate: Mate; project: AvatarProject }>(`${SP(pid)}/finish`);
+export const skipAvatar = (pid: string, skip: boolean) => post<AvatarProject>(`${SP(pid)}/skip-avatar`, { skip });
+export const studioTemplate = (pid: string, mateId: string) => post<AvatarProject>(`${SP(pid)}/template`, { mate_id: mateId });
+export const studioVoiceOk = (pid: string) => post<AvatarProject>(`${SP(pid)}/voice-ok`);
+export const discardDraft = (pid: string) => apiFetch<{ ok: boolean }>(SP(pid), { method: "DELETE" });
 
 /** the 409 the gate answers with: {code, message} */
 export function gateMessage(e: unknown): string {

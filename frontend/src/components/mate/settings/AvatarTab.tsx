@@ -15,7 +15,7 @@ import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
 import { tr, useT, type MsgKey } from "../../../i18n";
 import { previewMateAvatar } from "../../../mate/livePreview";
-import { useAvatarCreate } from "../../../stores/avatarCreateStore";
+import { useStudio } from "../../../stores/studioStore";
 import { BundledReset, ClipLibrary, StillTriggers, TriggerPreview, type TriggerPick } from "./ClipLibrary";
 import { Banner, ErrorLine, Field, SaveBar, Section, useSaver } from "./ui";
 
@@ -98,7 +98,7 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
         </div>
       </Section>
       <Section title={t("avatar.createWithAi")} hint={t("avatar.createWithAiHint")} testId="mate-avatar-ai">
-        <button className="btn-primary" onClick={() => useAvatarCreate.getState().show(mate.id)} data-testid="mate-avatar-ai-open">
+        <button className="btn-primary" onClick={() => useStudio.getState().openAvatar(mate.id)} data-testid="mate-avatar-ai-open">
           <Icon name="sparkles" size={14} /> {t("avatar.createWithAiBtn")}
         </button>
       </Section>

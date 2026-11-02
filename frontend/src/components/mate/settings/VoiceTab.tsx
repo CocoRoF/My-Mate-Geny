@@ -122,7 +122,7 @@ function useBrowserVoices(): SpeechSynthesisVoice[] {
   return voices;
 }
 
-export default function VoiceTab({ mate, conv }: { mate: Mate; conv: MateConversation }) {
+export default function VoiceTab({ mate, conv, onTest }: { mate: Mate; conv: MateConversation; onTest?: () => void }) {
   const t = useT();
   const [v, setV] = useState<MateVoice>(mate.voice);
   const saver = useSaver();
@@ -173,6 +173,7 @@ export default function VoiceTab({ mate, conv }: { mate: Mate; conv: MateConvers
 
   const test = async () => {
     if (dirty && !(await saver.run(() => useMateStore.getState().patch(mate.id, { voice: v })))) return;
+    onTest?.();
     conv.say(`[greet] ${SAMPLE[(mate.persona.language || "ko").slice(0, 2)] || SAMPLE.en}`);
   };
 

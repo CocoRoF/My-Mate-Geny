@@ -129,7 +129,8 @@ export interface MateConversation {
   stopVoice: () => void;
 }
 
-export function useMateConversation(mate: Mate | null, opts: { voice?: boolean } = {}): MateConversation {
+/** ``connect: false`` — no conversation (the Mate Create studio: a draft has none yet; only the voice test) */
+export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; connect?: boolean } = {}): MateConversation {
   const store = useMateChat;
   const turns = store((s) => s.turns);
   const streaming = store((s) => s.isStreaming);
@@ -289,8 +290,9 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
   }, [speaks, readHere, store]);
 
   // ── open the conversation + stream it ──
+  const connectOn = opts.connect !== false;
   useEffect(() => {
-    if (!mateId) return;
+    if (!mateId || !connectOn) return;
     let alive = true;
     let retry = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -481,7 +483,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
       old?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mateId, store]);
+  }, [mateId, store, connectOn]);
 
   /** a new turn with these files; false when not connected (the caller keeps the draft) */
   const send = useCallback(

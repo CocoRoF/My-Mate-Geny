@@ -15,12 +15,13 @@ import nav from "./nav.ts";
 import providers from "./providers.ts";
 import session from "./session.ts";
 import settings from "./settings.ts";
+import studio from "./studio.ts";
 import tasks from "./tasks.ts";
 import topbar from "./topbar.ts";
 import turn from "./turn.ts";
 import usage from "./usage.ts";
 import workspace from "./workspace.ts";
 
-const en = { admin, avatar, chat, cliTools, common, composer, connections, downloads, files, higgsfield, mate, mateSettings, nav, providers, session, settings, tasks, topbar, turn, usage, workspace };
+const en = { admin, avatar, chat, cliTools, common, composer, connections, downloads, files, higgsfield, mate, mateSettings, nav, providers, session, settings, studio, tasks, topbar, turn, usage, workspace };
 export type Catalog = typeof en;
 export default en;

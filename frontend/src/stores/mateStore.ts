@@ -38,6 +38,9 @@ interface MateState {
   openGlobal: (section?: GlobalSection) => void;
   closeGlobal: () => void;
   mates: Mate[];
+  /** mates being made in the Mate Create studio (never in `mates`: hidden from the picker until Create mate), the
+   *  latest copy a settings tab saved */
+  drafts: Record<string, Mate>;
   loaded: boolean;
   error: string | null;
   activeId: string | null;
@@ -143,6 +146,7 @@ export const useMateStore = create<MateState>((set, get) => ({
   memoryRev: {},
   relationRev: {},
   mates: [],
+  drafts: {},
   loaded: false,
   error: null,
   activeId: read(ACTIVE_KEY),
@@ -197,6 +201,7 @@ export const useMateStore = create<MateState>((set, get) => ({
 
   upsert: (m) =>
     set((s) => {
+      if (m.draft) return { drafts: { ...s.drafts, [m.id]: m }, mates: s.mates.filter((x) => x.id !== m.id) };
       const i = s.mates.findIndex((x) => x.id === m.id);
       let mates = i >= 0 ? s.mates.map((x) => (x.id === m.id ? m : x)) : [...s.mates, m];
       if (m.is_default) mates = mates.map((x) => (x.id === m.id ? x : { ...x, is_default: false }));
