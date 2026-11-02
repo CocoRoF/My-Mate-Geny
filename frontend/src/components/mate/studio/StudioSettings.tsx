@@ -316,7 +316,7 @@ function AvatarStage({ project, mate, kind, onSkip }: { project: AvatarProject; 
         <p className="font-medium text-content">
           {skipped ? t("studio.avatarSkipped") : live ? t("studio.avatarMaking") : has ? t("studio.avatarCurrent") : t("studio.avatarNone")}
         </p>
-        <p className="mt-0.5 text-[11.5px] text-content-faint">{skipped ? t("studio.avatarSkippedHint") : live ? t("studio.avatarMakingHint") : t("studio.avatarNoneHint")}</p>
+        <p className="mt-0.5 text-[11.5px] text-content-faint">{skipped ? t("studio.avatarSkippedHint") : live ? t("studio.avatarMakingHint") : kind === "existing" ? t("studio.avatarCurrentHint") : t("studio.avatarNoneHint")}</p>
         {kind === "new" && onSkip && !project.confirmation && (
           <button type="button" className="btn-ghost mt-1.5 !px-2 !py-1 text-[12px]" onClick={() => onSkip(!skipped)} data-testid="studio-skip-avatar">
             <Icon name={skipped ? "sparkles" : "x"} size={12} /> {skipped ? t("studio.avatarUnskip") : t("studio.avatarSkip")}
@@ -405,7 +405,7 @@ export default function StudioSettings({ project, mate, env, act, reloadEnv, con
               <Icon name="check" size={11} className="text-success" /> {t("studio.savedAuto")}
             </span>
           )}
-          <span className="ml-auto">{kind === "new" ? t("studio.rightHintNew") : t("studio.rightHintExisting", { name: mate.name })}</span>
+          <span className="ml-auto hidden truncate sm:inline">{kind === "new" ? t("studio.rightHintNew") : t("studio.rightHintExisting", { name: mate.name })}</span>
         </div>
         <Section id="concept" title={t("studio.secConcept")} icon="sparkles" open={open.concept} onToggle={() => toggle("concept")} filled={filledBy.concept} summary={studio.concept.pitch || (conceptN ? t("studio.conceptN", { count: conceptN }) : t("studio.conceptEmpty"))}>
           <ConceptSection studio={studio} />

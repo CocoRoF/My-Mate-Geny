@@ -61,11 +61,11 @@ function stepOf(p: AvatarProject): string {
   return p.confirmation ? "design" : "estimate";
 }
 
-export function StepBar({ project }: { project: AvatarProject }) {
+export function StepBar({ project, nowrap = false }: { project: AvatarProject; nowrap?: boolean }) {
   const t = useT();
   const cur = STEPS.findIndex((s) => s.id === stepOf(project));
   return (
-    <ol className="flex flex-wrap gap-1" data-testid="avatar-steps">
+    <ol className={`flex gap-1 ${nowrap ? "" : "flex-wrap"}`} data-testid="avatar-steps">
       {STEPS.map((s, i) => (
         <li
           key={s.id}

@@ -441,6 +441,7 @@ class AvatarService:
             except MateError as exc:
                 raise AvatarError(str(exc)) from None
             st["finished_at"] = now_iso()
+            st["filled"] = {}  # (she is the user's now: no more "filled by the agent" badges)
             self._history(doc, "mate_created", mate=mate["id"])
             self.save(doc)
         self._event(pid, "mate_created", f"The user created the mate “{mate['name']}” — she is in their mate list now."

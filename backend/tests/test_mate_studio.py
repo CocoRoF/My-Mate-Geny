@@ -64,7 +64,7 @@ async def test_draft_lifecycle_hidden_until_finished(db, tmp_path, monkeypatch):
     out = await av.studio_finish(pid)
     assert out["mate"]["draft"] is False and out["mate"]["name"] == "하린"
     assert out["mate"]["id"] in [m["id"] for m in mates.list()] and av.drafts() == []
-    assert out["project"]["studio"]["finished_at"]
+    assert out["project"]["studio"]["finished_at"] and out["project"]["studio"]["filled"] == {}
     assert events[-1][0] == "mate_created"
     with pytest.raises(Exception):
         av.studio_discard(pid)  # (a mate now, not a draft)

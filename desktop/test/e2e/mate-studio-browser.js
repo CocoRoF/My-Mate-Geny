@@ -308,8 +308,11 @@ async function main() {
   assert.ok(saved > 0.2 && saved < 0.47, `split ${saved}`);
   await page.reload();
   await page.waitForSelector('[data-testid="studio-agent"]');
-  const w = (await page.locator('[data-testid="studio-agent"]').boundingBox()).width;
-  assert.ok(Math.abs(w - saved * 1440) < 30, `width ${w} vs ${saved * 1440}`);
+  const [w, total] = await page.evaluate(() => {
+    const el = document.querySelector('[data-testid="studio-agent"]');
+    return [el.getBoundingClientRect().width, el.parentElement.getBoundingClientRect().width];
+  });
+  assert.ok(Math.abs(w - saved * total) < 4, `width ${w} vs ${saved} × ${total}`);
   await page.evaluate(() => localStorage.removeItem("hrh_studio_split"));
 
   step("drafts: listed in the picker, discarded");

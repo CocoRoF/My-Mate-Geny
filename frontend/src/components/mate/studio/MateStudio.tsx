@@ -683,7 +683,7 @@ export default function MateStudio() {
       </div>
       {project && mate && (
         <div className={`border-t border-border/50 px-3 ${phone ? "py-1.5" : "py-2"}`}>
-          {isNew ? <Steps project={project} mate={mate} onPick={show} compact={phone} /> : <div className={phone ? "no-scrollbar overflow-x-auto" : "flex justify-center"}><StepBar project={project} /></div>}
+          {isNew ? <Steps project={project} mate={mate} onPick={show} compact={phone} /> : <div className={phone ? "no-scrollbar overflow-x-auto" : "flex justify-center"}><StepBar project={project} nowrap={phone} /></div>}
           {phone && credits && <div className="mt-1.5 flex">{credits}</div>}
         </div>
       )}
@@ -819,11 +819,11 @@ export default function MateStudio() {
       <div className="flex h-full flex-col" data-testid="mate-studio" data-kind={kind} data-layout="tabs">
         {header}
         <div className="flex shrink-0 gap-1 border-b border-border/60 px-3 py-1.5" role="tablist">
-          <button role="tab" aria-selected={tab === "agent"} className="nav-tab flex-1" data-active={tab === "agent"} onClick={() => setTab("agent")} data-testid="studio-tab-agent">
+          <button role="tab" aria-selected={tab === "agent"} className="nav-tab inline-flex flex-1 items-center justify-center gap-1.5" data-active={tab === "agent"} onClick={() => setTab("agent")} data-testid="studio-tab-agent">
             <Icon name="sparkles" size={13} /> {t("studio.tabAgent")}
             {chat.streaming && <span className="ml-1 inline-block h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent" />}
           </button>
-          <button role="tab" aria-selected={tab === "settings"} className="nav-tab flex-1" data-active={tab === "settings"} onClick={() => setTab("settings")} data-testid="studio-tab-settings">
+          <button role="tab" aria-selected={tab === "settings"} className="nav-tab inline-flex flex-1 items-center justify-center gap-1.5" data-active={tab === "settings"} onClick={() => setTab("settings")} data-testid="studio-tab-settings">
             <Icon name="settings" size={13} /> {t("studio.tabSettings")}
             {tab !== "settings" && unseen > 0 ? (
               <span className="ml-1 rounded-full bg-success px-1.5 text-[10px] font-semibold leading-4 text-white" data-testid="studio-settings-badge">

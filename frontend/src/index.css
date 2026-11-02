@@ -660,7 +660,7 @@ html[data-keyboard="open"] .pb-safe { padding-bottom: 0; }
 /* the Mate Create studio: a field the agent just filled glows for a moment (components/mate/studio/fields.tsx) */
 @keyframes studio-glow {
   0% { box-shadow: 0 0 0 0 rgb(var(--c-success) / 0); background-color: transparent; }
-  12% { box-shadow: 0 0 0 4px rgb(var(--c-success) / 0.28); background-color: rgb(var(--c-success) / 0.06); }
+  12% { box-shadow: 0 0 0 2px rgb(var(--c-success) / 0.35); background-color: rgb(var(--c-success) / 0.07); }
   100% { box-shadow: 0 0 0 0 rgb(var(--c-success) / 0); background-color: transparent; }
 }
 .studio-glow { animation: studio-glow 2.6s ease-out; }

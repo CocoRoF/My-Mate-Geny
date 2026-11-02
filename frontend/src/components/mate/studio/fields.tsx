@@ -69,7 +69,7 @@ export function FieldFrame({ path, label, hint, children, as = "label" }: { path
   const { glow } = useFilled(path);
   const Tag = as;
   return (
-    <Tag className={`block rounded-lg transition-shadow duration-700 ${glow ? "studio-glow" : ""}`} data-field={path}>
+    <Tag className={`-m-1.5 block rounded-xl p-1.5 transition-shadow duration-700 ${glow ? "studio-glow" : ""}`} data-field={path}>
       <span className="flex min-h-[22px] items-center gap-2">
         <span className="text-[12px] font-medium text-content-dim">{label}</span>
         <FilledBadge path={path} />
