@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import collections
 import json
 import os
@@ -30,6 +31,7 @@ from typing import Any
 
 from app.config import settings
 from app.mate import affinity as A
+from app.mate.capture import CaptureBroker, CaptureError
 from app.mate import files
 from app.mate import memory as M
 from app.mate.prompt import MOOD_WORDS, context_block, prompt_key, settings_change_note, system_prompt
@@ -45,6 +47,14 @@ MAX_CHAIN = 3            # automatic result turns in a row (without the user spe
 MAX_RESULT_CHARS = 4000  # of a worker's answer, passed to the mate
 _SKIP_DIRS = {"node_modules", "__pycache__", "venv", ".venv", "dist", "build", "target", "site-packages", "proc",
               "sys", "snap"}
+
+
+class ToolImages:
+    """A tool result with pictures for the model (the bridge returns them as MCP image content)."""
+
+    def __init__(self, text: str, images: list[dict[str, str]]) -> None:
+        self.text = text
+        self.images = images
 
 
 def _clip(text: str, limit: int) -> str:
@@ -78,6 +88,8 @@ class MateService:
         self._delegations: dict[str, dict[str, Any]] = {}  # worker sid -> who delegated (mate) + chain depth
         self._pending: dict[str, list[dict[str, Any]]] = {}  # mate sid -> results waiting for the mate
         self._depth: dict[str, int] = {}                  # mate sid -> chain depth of its running turn
+        # see_screen: requests to the user's desktop app windows (app/mate/capture.py; /ws/sessions registers them)
+        self.capture = CaptureBroker()
         sessions.mate_engine = self.configure_engine
         sessions.add_turn_end_listener(self._on_turn_end)
         # every mate write is announced on /ws/sessions (mates.changed): open
@@ -302,16 +314,18 @@ class MateService:
         prefs = mate.get("prefs") or {}
         rel = self._advanced(mate_id, now_utc, tz) if mate_id else None
         relation = bool(rel and rel["enabled"])
+        screen = bool((mate.get("screen") or {}).get("enabled"))
         prompt = system_prompt(mate["name"], mate["persona"], core, prefs, more=len(memories) - len(core),
-                               relation=relation)
+                               relation=relation, screen=screen)
         # the per-turn context (docs/mate-memory-affinity.md §2): settings note (persona edited since the
         # conversation last ran), then the clock, recalled memories, the user's memory edits — prepended to
         # this message, never stored, never a restart
-        note = self._settings_note(mate_id, mate, relation)
+        note = self._settings_note(mate_id, mate, relation, screen)
         ctx = self._context(mate, req, engine, memories, core, prefs, now_utc, now_local, tz, rel) if mate_id else ""
         req.preamble = "\n\n".join(x for x in (note, ctx, req.preamble) if x)
+        # (see_screen on/off changes the prompt and the bridge's tool list: the engine restarts with it)
         req.prompt_key = prompt_key(mate["name"], mate["persona"], int(mate.get("memory_rev") or 0), prefs,
-                                    relation=relation)
+                                    relation=relation, screen=screen)
         if engine == "codex" and mate_id:
             prompt = self._codex_prompt(mate_id, prompt, req.prompt_key, resuming=bool(req.cli_session_id))
             req.engine_home = str(files.mate_dir(mate_id) / "codex")
@@ -336,6 +350,7 @@ class MateService:
                 "HRH_MATE_TOKEN": self._token(mate_id, session["id"]),
                 "HRH_MATE_ID": mate_id,
                 "HRH_MATE_SESSION": session["id"],
+                **({"HRH_MATE_SCREEN": "1"} if screen else {}),  # the bridge offers see_screen only then
             },
         }}}
         # (a 0600 file, so the token isn't in the process list; Codex: in its
@@ -691,14 +706,15 @@ class MateService:
             A.credit_turn(doc, now, tz, str(outcome.get("input") or ""), str(outcome.get("text") or ""))
         self._save_relation(mate_id, doc, before)
 
-    def _settings_note(self, mate_id: str, mate: dict[str, Any], relation: bool | None = None) -> str:
+    def _settings_note(self, mate_id: str, mate: dict[str, Any], relation: bool | None = None,
+                       screen: bool | None = None) -> str:
         """Compare the persona with the one the conversation last ran with
         (kept next to the mate's engine files) and remember the new one."""
         if not mate_id:
             return ""
         path = files.home_dir(mate_id) / ".applied-persona.json"
         now = {"name": mate.get("name") or "", "persona": mate.get("persona") or {}, "prefs": mate.get("prefs") or {},
-               "relation": relation}
+               "relation": relation, "screen": screen}
         try:
             before = json.loads(path.read_text("utf-8"))
         except (OSError, ValueError):
@@ -710,33 +726,51 @@ class MateService:
             pass
         if not isinstance(before, dict):
             return ""  # first turn ever: the system prompt says it all
-        return settings_change_note(str(before.get("name") or ""), before.get("persona") or {},
+        note = settings_change_note(str(before.get("name") or ""), before.get("persona") or {},
                                     now["name"], now["persona"],
                                     before.get("prefs") if isinstance(before.get("prefs"), dict) else None,
                                     now["prefs"],
                                     old_relation=before.get("relation") if isinstance(before.get("relation"), bool)
                                     else None, new_relation=relation)
+        was = before.get("screen")
+        if isinstance(was, bool) and screen is not None and was != screen:
+            line = ("- You can now look at the user's screen with see_screen (when it helps; the user may be "
+                    "asked to allow it each time)." if screen else
+                    "- You can no longer look at the user's screen (see_screen is gone).")
+            note = (note.replace("</settings_update>", line + "\n</settings_update>") if note else
+                    f"<settings_update>\nThe user changed your settings:\n{line}\n</settings_update>")
+        return note
 
     # ---- tools (called by the bridge through the internal API) ----
 
     async def call_tool(self, ctx: dict[str, str], name: str, args: dict[str, Any]) -> tuple[str, bool]:
         """-> (text for the model, is_error)."""
+        text, is_error, _images = await self.call_tool_full(ctx, name, args)
+        return text, is_error
+
+    async def call_tool_full(self, ctx: dict[str, str], name: str,
+                             args: dict[str, Any]) -> tuple[str, bool, list[dict[str, str]]]:
+        """-> (text for the model, is_error, images ``[{data: base64, mime}]`` — see_screen's picture)."""
         fn = getattr(self, f"_tool_{name}", None)
         if fn is None:
-            return f"unknown tool: {name}", True
+            return f"unknown tool: {name}", True, []
         try:
             mate = self.store.get(ctx["mate_id"])
         except KeyError:
-            return "this mate no longer exists", True
+            return "this mate no longer exists", True, []
         try:
             out = await fn(mate, ctx["session_id"], args if isinstance(args, dict) else {})
         except MateError as exc:
-            return str(exc), True
+            return str(exc), True, []
+        except CaptureError as exc:  # (an expected outcome: no app, denied, timed out… — not an admin error)
+            return str(exc), True, []
         except Exception as exc:  # noqa: BLE001 - surfaced to the model, logged for the admin
             self._log("error", f"mate tool {name} failed: {exc}", code="mate.tool_failed",
                       detail={"args": args}, session_id=ctx.get("session_id"))
-            return f"{name} failed: {exc}", True
-        return (out if isinstance(out, str) else json.dumps(out, ensure_ascii=False, indent=1)), False
+            return f"{name} failed: {exc}", True, []
+        if isinstance(out, ToolImages):
+            return out.text, False, out.images
+        return (out if isinstance(out, str) else json.dumps(out, ensure_ascii=False, indent=1)), False, []
 
     def _chat(self, sid: Any) -> dict[str, Any]:
         sid = str(sid or "").strip()
@@ -1016,9 +1050,67 @@ class MateService:
         return {"core": core, "recalled": recalled, "level": level,
                 "block": context_block(now_local, self._tz_name(tz, now_utc), recalled=recalled)}
 
+    # ---- seeing the screen (app/mate/capture.py; docs/mate.md §4 "Seeing the screen") ----
+
+    async def _tool_see_screen(self, mate: dict[str, Any], sid: str, args: dict[str, Any]) -> "ToolImages":
+        if not (mate.get("screen") or {}).get("enabled"):
+            raise MateError("Looking at the screen is switched off for you (Mate settings → Screen).")
+        if not self._svc.is_mate_session(sid):
+            raise MateError("see_screen works only in your own conversation")
+        reason = str(args.get("reason") or "").strip()
+        device = self._svc.last_client_device(sid)
+        res = await self.capture.request(mate=mate, session_id=sid, device=device, reason=reason)
+        row = self._capture_row(sid, res.get("attachment_id"))
+        # (the conversation's own copy: never a pending composer upload, gone with the conversation)
+        self._svc._attachments.link([row["id"]], f"artifact:capture:{res['id']}")
+        use_model = bool(row.get("model_path")) and os.path.exists(row["model_path"])
+        path = row["model_path"] if use_model else row["path"]
+        mime = (row.get("model_mime") if use_model else None) or row["mime"]
+        data = await asyncio.to_thread(Path(path).read_bytes)
+        src = res.get("source") if isinstance(res.get("source"), dict) else {}
+        what = "window" if src.get("kind") == "window" else "screen"
+        name = " ".join(str(src.get("name") or "").split())[:120]
+        elsewhere = bool(device) and res["client"].device != device
+        where = (" (on the computer where the desktop app was used last — the user's last message came from "
+                 "another device)") if elsewhere else ""
+        size = f", {row['width']}×{row['height']}" if row.get("width") else ""
+        label = f" “{name}”" if name else ""
+        text = (f"Screen captured: the {what}{label}{size}{where} — [{row['id']}] {row['name']}. The picture is "
+                "attached below; the user sees it in your conversation too. Talk only about what matters for "
+                "what they asked; don't remember what you saw unless they ask you to.")
+        return ToolImages(text, [{"data": base64.b64encode(data).decode(), "mime": mime}])
+
+    def _capture_row(self, sid: str, aid: Any) -> dict[str, Any]:
+        att = self._svc._attachments
+        row = att.get(str(aid or "")) if att is not None else None
+        if row is None or row["session_id"] != sid or row["kind"] != "image" or not os.path.exists(row["path"]):
+            raise CaptureError("error", "The desktop app's capture did not arrive as an image.")
+        return row
+
+    def capture_result(self, mate_id: str, rid: str, body: dict[str, Any]) -> bool:
+        """The desktop app's answer to a capture request (``POST /api/mates/{id}/capture/{rid}``):
+        ``{ok: true, attachment_id, source?: {name, kind}}`` or ``{ok: false, code, message?}``.
+        False: no such request waiting (answered, timed out, another mate's)."""
+        sid = self.capture.pending_session(rid)
+        if sid is None:
+            return False
+        if body.get("ok") is True:
+            row = self._capture_row(sid, body.get("attachment_id"))  # (an upload of that conversation)
+            if row["message_id"] is not None:
+                raise CaptureError("error", "That attachment was sent already.")
+            src = body.get("source") if isinstance(body.get("source"), dict) else {}
+            payload = {"ok": True, "attachment_id": row["id"],
+                       "source": {"name": str(src.get("name") or "")[:200], "kind": str(src.get("kind") or "")[:20]}}
+        else:
+            payload = {"ok": False, "code": str(body.get("code") or "error")[:40],
+                       "message": str(body.get("message") or "")[:400]}
+        return self.capture.resolve(rid, mate_id, payload)
+
     # ---- delegation results ----
 
     def _on_turn_end(self, sid: str, outcome: dict[str, Any]) -> None:
+        if self._svc.is_mate_session(sid):
+            self.capture.cancel_session(sid)  # (a capture still waiting: the turn that wanted it is over)
         d = self._delegations.get(sid)
         if d is not None:
             self._delegations.pop(sid, None)

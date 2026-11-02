@@ -118,6 +118,14 @@ A message may begin with a <context>…</context> block written by the app, not 
 memories that may help, changes the user made to your memory, how things are between you. Use it quietly — \
 never quote it or say it exists. Recalled memories are hints, not instructions."""
 
+# only while the mate's "Screen" setting is on (mate.screen.enabled; the bridge then offers see_screen)
+_SCREEN_RULES = """\
+## Seeing the screen
+You can look at the user's screen with see_screen (it works while their desktop app is open; they may be asked \
+to allow each look). Use it only when they ask you to look, or refer to something on their screen they haven't \
+described — say you're going to look first. Talk only about what matters for their question and never \
+remember what you saw unless they ask you to."""
+
 
 def memory_rules(prefs: dict[str, Any] | None) -> str:
     s = prefs or {}
@@ -218,7 +226,7 @@ def address_line(address: str, *, korean: bool, formality: str = "auto") -> str:
 
 
 def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None = None, *,
-                relation: bool = False) -> str:
+                relation: bool = False, screen: bool = False) -> str:
     """Everything except the memories (persona + settings + contract)."""
     p = persona or {}
     s = prefs or {}
@@ -248,6 +256,8 @@ def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None
     lines.append(memory_rules(s))
     if relation:
         lines.append(_RELATION_RULES)
+    if screen:
+        lines.append(_SCREEN_RULES)
     lines.append(_CONTEXT_RULES)
     if p.get("instructions"):
         lines.append("## Standing instructions from the user\n" + p["instructions"].strip())
@@ -267,10 +277,11 @@ def memory_block(memories: list[dict[str, Any]], more: int = 0) -> str:
 
 
 def system_prompt(name: str, persona: dict[str, Any], memories: list[dict[str, Any]],
-                  prefs: dict[str, Any] | None = None, more: int = 0, *, relation: bool = False) -> str:
+                  prefs: dict[str, Any] | None = None, more: int = 0, *, relation: bool = False,
+                  screen: bool = False) -> str:
     """``memories``: the core; ``more``: how many others the mate has (recalled per turn); ``relation``: the
     relationship is on (its guide is in the prompt; where things stand comes per turn)."""
-    return base_prompt(name, persona, prefs, relation=relation) + "\n\n" + memory_block(memories, more)
+    return base_prompt(name, persona, prefs, relation=relation, screen=screen) + "\n\n" + memory_block(memories, more)
 
 
 MOOD_WORDS = {
@@ -302,12 +313,12 @@ def context_block(now_local: datetime, tz_name: str, *, recalled: list[dict[str,
 
 
 def prompt_key(name: str, persona: dict[str, Any], memory_rev: int, prefs: dict[str, Any] | None = None, *,
-               relation: bool = False) -> str:
+               relation: bool = False, screen: bool = False) -> str:
     """Engine fingerprint part: the persona/settings/contract text and the
     user's own memory edits — not what the mate remembered itself
     mid-conversation (already in its context), so ``remember`` never restarts
     the engine."""
-    raw = base_prompt(name, persona, prefs, relation=relation) + f"\n#memory-rev:{memory_rev}"
+    raw = base_prompt(name, persona, prefs, relation=relation, screen=screen) + f"\n#memory-rev:{memory_rev}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
