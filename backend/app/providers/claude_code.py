@@ -135,8 +135,13 @@ class ClaudeCodeProvider(Provider):
         dirs = list(dict.fromkeys([*req.extra_dirs, *sorted(upload_dirs)]))
         if dirs:
             argv += ["--add-dir", *dirs]
+        # Flag settings (highest-priority layer, every account's config dir alike): this app IS the remote
+        # access to these sessions, so Claude Code's own Remote Control (claude.ai) never starts with them —
+        # the pooled accounts' config dirs don't carry the user's ``remoteControlAtStartup: false``.
+        flag_settings: dict = {"remoteControlAtStartup": False}
         if req.allow_tools:
-            argv += ["--settings", json.dumps({"permissions": {"allow": list(req.allow_tools)}})]
+            flag_settings["permissions"] = {"allow": list(req.allow_tools)}
+        argv += ["--settings", json.dumps(flag_settings)]
 
         # Reasoning/think level -> --effort (omit for "default").
         if req.effort and req.effort != "default":
