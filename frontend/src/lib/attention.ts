@@ -8,3 +8,20 @@ import type { ProviderStatus } from "../types";
 export function providersNeedAttention(providers: ProviderStatus[]): boolean {
   return providers.length > 0 && !providers.some((p) => p.connected);
 }
+
+/** the part of a CLI's status (api/cliTools.ts) the badge looks at */
+export interface CliToolAttention {
+  update_available: boolean;
+  upgrade: { possible: boolean };
+  auto_upgrade: boolean;
+  job: { active: boolean } | null;
+}
+
+/**
+ * Settings → Providers → CLI versions: a CLI has a really newer version (the server compares versions — never "a
+ * check ran", "latest unknown" or a channel behind the installed copy) that the user can install here, and nothing
+ * is taking care of it already (an upgrade in progress / waiting, or automatic upgrades on).
+ */
+export function cliUpdatesNeedAttention(tools: CliToolAttention[] | null | undefined): boolean {
+  return !!tools?.some((t) => t.update_available && t.upgrade.possible && !t.auto_upgrade && !t.job?.active);
+}

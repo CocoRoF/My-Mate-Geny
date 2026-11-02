@@ -17,7 +17,9 @@ import time
 
 args = sys.argv[1:]
 if "--version" in args:
-    print("2.0.0 (Claude Code)")
+    # FAKE_CLAUDE_VERSION: e.g. the registry's latest, so Settings → Providers → CLI versions has nothing to offer for
+    # Claude (desktop/test/e2e/cli-versions-browser.js); the backend runs `--version` with its own environment
+    print(f"{os.environ.get('FAKE_CLAUDE_VERSION', '2.0.0')} (Claude Code)")
     sys.exit(0)
 model = args[args.index("--model") + 1] if "--model" in args else "fake"
 q: "queue.Queue[dict | None]" = queue.Queue()

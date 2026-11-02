@@ -12,6 +12,7 @@ import { useProviderStore } from "./stores/providerStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useSessionStore } from "./stores/sessionStore";
 import { useConfigStore } from "./stores/configStore";
+import { useCliToolsStore } from "./stores/cliToolsStore";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import TitleBar from "./components/layout/TitleBar";
 import PageLoading from "./components/ui/Loading";
@@ -60,6 +61,7 @@ export default function App() {
     loadConnections();
     loadSessions();
     loadConfig();
+    useCliToolsStore.getState().load(); // the Settings badge when a CLI update can be installed (lib/attention.ts)
   }, [loadProviders, loadConnections, loadSessions, loadConfig]);
 
   const title = TITLES[view] ? t(TITLES[view]) : "";

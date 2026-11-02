@@ -1,6 +1,7 @@
 // The English messages — the source of every key (docs/i18n.md). One file per namespace.
 import admin from "./admin.ts";
 import chat from "./chat.ts";
+import cliTools from "./cliTools.ts";
 import common from "./common.ts";
 import composer from "./composer.ts";
 import connections from "./connections.ts";
@@ -18,6 +19,6 @@ import turn from "./turn.ts";
 import usage from "./usage.ts";
 import workspace from "./workspace.ts";
 
-const en = { admin, chat, common, composer, connections, downloads, files, mate, mateSettings, nav, providers, session, settings, tasks, topbar, turn, usage, workspace };
+const en = { admin, chat, cliTools, common, composer, connections, downloads, files, mate, mateSettings, nav, providers, session, settings, tasks, topbar, turn, usage, workspace };
 export type Catalog = typeof en;
 export default en;

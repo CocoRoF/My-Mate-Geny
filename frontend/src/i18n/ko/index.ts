@@ -2,6 +2,7 @@
 import type { Locale } from "..";
 import admin from "./admin.ts";
 import chat from "./chat.ts";
+import cliTools from "./cliTools.ts";
 import common from "./common.ts";
 import composer from "./composer.ts";
 import connections from "./connections.ts";
@@ -19,5 +20,5 @@ import turn from "./turn.ts";
 import usage from "./usage.ts";
 import workspace from "./workspace.ts";
 
-const ko: Locale = { admin, chat, common, composer, connections, downloads, files, mate, mateSettings, nav, providers, session, settings, tasks, topbar, turn, usage, workspace };
+const ko: Locale = { admin, chat, cliTools, common, composer, connections, downloads, files, mate, mateSettings, nav, providers, session, settings, tasks, topbar, turn, usage, workspace };
 export default ko;
