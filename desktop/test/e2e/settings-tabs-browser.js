@@ -98,10 +98,11 @@ async function tabsDesktop(browser, lang) {
   await page.goto(SERVER + "/");
   await page.waitForSelector('[data-testid="nav-settings"]', { timeout: 20000 });
 
-  step(`${lang} desktop: the sidebar has Mate and Chat only; Settings carries the Providers count`);
+  step(`${lang} desktop: the sidebar has Mate and Chat only; no badge on Settings while a provider is connected`);
   assert.deepEqual(await sidebarNav(page), [L.mate, L.chat]);
-  await page.waitForSelector('[data-testid="nav-settings-badge"]', { timeout: 10000 });
-  assert.equal((await page.textContent('[data-testid="nav-settings-badge"]')).trim(), "1");
+  await page.waitForTimeout(1500);
+  // (a badge only means "act on this" — lib/attention.ts; a connected provider is nothing to act on)
+  assert.equal(await page.locator('[data-testid="nav-settings-badge"]').count(), 0, "no badge for plain information");
   await shot(page, `${lang}-desktop-sidebar.png`);
 
   step(`${lang} desktop: Settings → the first tab beside the tab list`);
@@ -110,7 +111,7 @@ async function tabsDesktop(browser, lang) {
   await showing(page, "updates");
   const tabIds = await page.$$eval('[role="tab"]', (xs) => xs.map((x) => x.id.replace("settings-tab-", "")));
   assert.deepEqual(tabIds, TABS, "the tabs (Desktop app only in the desktop app)");
-  assert.equal((await page.textContent('[data-testid="settings-tab-providers"] [data-testid="settings-tab-badge"]')).trim(), "1");
+  assert.equal(await page.locator('[data-testid="settings-tab-providers"] [data-testid="settings-tab-badge"]').count(), 0);
 
   step(`${lang} desktop: every tab shows only its own content`);
   for (const tab of TABS) {

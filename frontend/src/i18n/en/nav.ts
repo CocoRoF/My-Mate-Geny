@@ -7,7 +7,7 @@ export default {
   usage: "Usage",
   admin: "Admin",
   settings: "Settings",
-  providersConnected: { one: "{count} provider connected", other: "{count} providers connected" },
+  providersNone: "No provider is connected — connect one to start chatting",
   newChat: "New chat",
   tagline: "your mate + agent console",
   refreshTitle: "Refresh — reload chats and resync this one",

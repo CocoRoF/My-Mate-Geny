@@ -14,6 +14,7 @@
  *     Providers · Connections · Usage · Admin — what used to be sidebar screens (`/?view=usage` … open these)
  * Each tab embeds the existing component, so the logic lives once.
  */
+import { providersNeedAttention } from "../../lib/attention";
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import {
   AUTH_CHANGED_EVENT,
@@ -655,15 +656,19 @@ function TabContent({ id }: { id: SettingsTab }) {
   }
 }
 
-function Badge({ n }: { n: number }) {
-  return n > 0 ? <span className="pill ml-auto bg-success/15 text-success" data-testid="settings-tab-badge">{n}</span> : null;
+function Badge({ on, title }: { on: boolean; title: string }) {
+  return on ? (
+    <span className="pill ml-auto bg-warning/15 text-warning" title={title} aria-label={title} data-testid="settings-tab-badge">
+      !
+    </span>
+  ) : null;
 }
 
 function TabButton({ tab, selected, list, onPick }: { tab: TabMeta; selected: boolean; list: boolean; onPick: () => void }) {
   const t = useT();
-  // Providers: how many are connected (the sidebar's Settings item shows it too — layout/Sidebar.tsx)
-  const connected = useProviderStore((s) => s.providers.filter((p) => p.connected).length);
-  const badge = tab.id === "providers" ? connected : 0;
+  // Providers: only when none is connected (lib/attention.ts; the sidebar's Settings item shows it too)
+  const needsProvider = useProviderStore((s) => providersNeedAttention(s.providers));
+  const badge = tab.id === "providers" && needsProvider;
   return (
     <button
       id={`settings-tab-${tab.id}`}
@@ -677,7 +682,7 @@ function TabButton({ tab, selected, list, onPick }: { tab: TabMeta; selected: bo
     >
       <Icon name={tab.icon} size={16} className="shrink-0 text-content-faint group-hover:text-content-dim group-data-[active=true]:text-accent" />
       <span className="min-w-0 flex-1 truncate">{t(tab.label)}</span>
-      <Badge n={badge} />
+      <Badge on={badge} title={t("nav.providersNone")} />
       {list && <Icon name="chevron" size={14} className="shrink-0 text-content-faint" />}
     </button>
   );

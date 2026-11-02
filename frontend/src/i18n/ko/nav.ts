@@ -8,7 +8,7 @@ const ko: Messages<"nav"> = {
   usage: "사용량",
   admin: "관리자",
   settings: "설정",
-  providersConnected: { one: "공급자 {count}개 연결됨", other: "공급자 {count}개 연결됨" },
+  providersNone: "연결된 공급자가 없어요 — 채팅하려면 하나를 연결하세요",
   newChat: "새 채팅",
   tagline: "나의 메이트 + 에이전트 콘솔",
   refreshTitle: "새로고침 — 채팅 목록을 다시 불러오고 이 채팅을 다시 동기화해요",
