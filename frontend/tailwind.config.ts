@@ -1,29 +1,43 @@
 import type { Config } from "tailwindcss";
 import plugin from "tailwindcss/plugin";
 
+/** a theme colour (src/index.css `--c-<name>: r g b`) that takes Tailwind's opacity modifiers (bg-accent/15) */
+const token = (name: string) => `rgb(var(--c-${name}) / <alpha-value>)`;
+
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   darkMode: "class",
   theme: {
     extend: {
+      // the theme's tokens (src/index.css: dark and light values as CSS variables, src/lib/theme.ts picks one)
       colors: {
-        bg: "#0a0c10",
-        surface: "#0f1218",
-        "surface-2": "#161a22",
-        "surface-3": "#1c212c",
-        border: "#232936",
-        "border-strong": "#2f3647",
-        content: "#e6e9f0",
-        "content-dim": "#9aa3b4",
-        "content-faint": "#5e6676",
-        accent: "#6e8bff",
-        "accent-hover": "#8098ff",
-        "accent-soft": "#6e8bff22",
-        cyan: "#22d3ee",
-        violet: "#a78bfa",
-        success: "#34d399",
-        danger: "#f87171",
-        warning: "#fbbf24",
+        bg: token("bg"),
+        surface: token("surface"),
+        "surface-2": token("surface-2"),
+        "surface-3": token("surface-3"),
+        border: token("border"),
+        "border-strong": token("border-strong"),
+        content: token("content"),
+        "content-dim": token("content-dim"),
+        "content-faint": token("content-faint"),
+        accent: token("accent"),
+        "accent-hover": token("accent-hover"),
+        // the accent at the theme's soft strength (a further /N multiplies it)
+        "accent-soft": "rgb(var(--c-accent) / calc(<alpha-value> * var(--accent-soft-a)))",
+        link: token("link"),
+        cyan: token("cyan"),
+        violet: token("violet"),
+        pink: token("pink"),
+        success: token("success"),
+        danger: token("danger"),
+        warning: token("warning"),
+        "file-blue": token("file-blue"),
+        "file-orange": token("file-orange"),
+        glass: token("glass"),
+        "glass-deep": token("glass-deep"),
+        "code-bg": token("code-bg"),
+        // modal backdrops: black on dark, a softer ink on light (bg-scrim/50 → 50 % there, ~31 % here)
+        scrim: "rgb(var(--c-scrim) / calc(<alpha-value> * var(--scrim-k)))",
       },
       fontFamily: {
         // Noto Sans KR: identical Korean rendering in browsers and the apps.
@@ -36,9 +50,10 @@ export default {
         "2xl": "1.25rem",
       },
       boxShadow: {
-        card: "0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5)",
-        glow: "0 0 0 1px #6e8bff40, 0 8px 32px -8px #6e8bff40",
-        float: "0 12px 40px -12px rgba(0,0,0,0.7)",
+        card: "var(--shadow-card)",
+        glow: "var(--shadow-glow)",
+        float: "var(--shadow-float)",
+        bubble: "var(--shadow-bubble)",
       },
       keyframes: {
         "fade-in": {
