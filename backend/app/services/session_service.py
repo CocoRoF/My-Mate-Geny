@@ -1266,6 +1266,12 @@ class SessionService:
             parts = parsed.get("content") if isinstance(parsed, dict) else parsed
             text = "\n".join(str(p.get("text") or "") for p in (parts if isinstance(parts, list) else [])
                              if isinstance(p, dict) and p.get("type") == "text")
+        elif text.lstrip().startswith(("{", "[")):  # (a dump cut short: its first text part)
+            m = re.search(r'"text":\s*"((?:[^"\\]|\\.)*)"', text)
+            try:
+                text = json.loads(f'"{m.group(1)}"') if m else ""
+            except ValueError:
+                text = ""
         text = re.sub(r"[A-Za-z0-9+/=]{2000,}", "…", text)[:4000]  # (never a stray base64 run)
         images = []
         if self._attachments is not None:

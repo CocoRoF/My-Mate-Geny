@@ -54,6 +54,13 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
     "memory": { "recall": "normal", "self_save": true }   // recall: off | light | normal | rich
   },
   "relation": { "enabled", "paused", "stage", "affinity", "mood", "show_indicator", "avatar_mood" },  // read-only summary (§5 below)
+  "screen": {               // may she look at the screen (§4 "Seeing the screen")
+    "enabled": false,       // off: see_screen does not exist for her
+    "approval": "ask",      // ask (every time, in the desktop app) | allow (without asking)
+    "hide_avatar": true,    // the mate windows hide while the picture is taken
+    "max_edge": 1920,       // 1280 | 1920 | 2560 | 0 (as captured): the picture's long side at most
+    "format": "png", "quality": 85   // png | jpeg (quality 40 – 100)
+  },
   "session_id": "sess_…"   // its conversation (sessions row kind="mate"), null until first opened
 }
 ```
@@ -555,6 +562,7 @@ lists each message's `files` (names).
 | `remember(text, kind?, importance?, due?)` | save a memory (a duplicate of the same kind updates the old one; similar ones are listed) |
 | `update_memory(id, text?, kind?, importance?, due?, status?)` | correct / merge / mark a plan done |
 | `forget(id, reason?)` / `recall(query, kind?, limit?, include_done?)` | delete one; search all memories |
+| `see_screen(reason?)` | only while `mate.screen.enabled`: a picture of the user's screen from their desktop app (below) |
 
 Policy in the prompt: find the chat already working on that project and send
 there; if none, find the folder and create a chat; if the folder is unknown or
@@ -581,6 +589,60 @@ conversation and backend process). `/api/internal/*` is accepted only from a
 loopback peer without proxy headers and with a valid token, never with the
 user's cookie (404 / 401 otherwise). `find_folders` searches
 `MATE_SEARCH_ROOTS` (default `/home`).
+
+### Seeing the screen (`see_screen`)
+
+The mate runs on the server; the screen is the user's computer's. Off by default; Mate settings → **Screen**
+switches it on (`PATCH {screen: {...}}`, field by field, wrong values → 400, pushed as `mates.changed`). While it is
+off the bridge does not list the tool (`HRH_MATE_SCREEN=1` in its environment only when on), the prompt has no line
+about it, and a call anyway is refused. Switching it changes the prompt key (the Claude engine restarts with
+`--resume`, so its tool list is fresh) and the next message's `<settings_update>` says so.
+
+- **Who is asked** (`app/mate/capture.py`): every window keeps `/ws/sessions` open and says who it is —
+  `{"type": "client", "device", "surface", "desktop", "capture", "active"}` (`device` = the browser profile's id from
+  `mate/voiceOwner.ts`, `desktop` = the desktop app's version or null, `capture` = its capture bridge version, 1 now;
+  sent on connect and on every window focus). A request goes to one capture-capable window: of the device the user's
+  latest typed message came from (`…~<device>` of its `client_msg_id`), else the most recently used one; mate chat /
+  console over the quick card over the avatar window. None → the tool says no desktop app is connected (a browser or
+  phone can still share a picture itself); only desktop apps without the bridge → "update the desktop app".
+- **The request**: `{"type": "capture.request", "data": {id, mate_id, mate_name, session_id, ask, hide_avatar,
+  max_edge, format, quality, timeout_ms: 45000, reason}}`. The page (`mate/screenCapture.ts`) hands it to the app
+  (`hrhNative.capture.request`): with `ask` a small always-on-top prompt (`desktop/src/capture-ask.html`: "‹mate›
+  wants to see your screen", her reason, what would be shared — screen or window and its name — a preview, Allow once
+  / Deny, Escape = Deny, a countdown that ends in Deny); then the mate windows hide for a moment (`hide_avatar`), the
+  source is captured, they come back. The page uploads the picture as a normal attachment of the mate's
+  conversation (`POST /api/sessions/{sid}/attachments`) and answers `POST /api/mates/{id}/capture/{rid}` `{ok: true,
+  attachment_id, source: {name, kind}}` or `{ok: false, code: denied|timeout|stopped|busy|permission|empty|
+  source_gone|error}` (404: nothing waiting under that id; 400: not an image of that conversation).
+- **Every call ends**: an answer; no answer in ask timeout + 30 s (+ slack) → "timeout" and `capture.cancel {id}` so
+  the prompt goes away; the window closing; the mate's turn ending (stopped); one request per mate at a time (busy).
+  Failures are tool errors in words the model can pass on, never admin-log errors.
+- **What the model gets**: the bridge returns MCP content `[{type: "text"}, {type: "image", data, mimeType}]` — the
+  attachment's model-sized copy (≤ 1568 px, the same one a user upload gives the model). Checked with the real
+  Claude CLI: it receives the pixels (it read the text and colour of a captured window). The attachment is linked
+  to `artifact:capture:<rid>` (never a pending upload; gone with the conversation). The engine's echo of the image
+  in its tool result (Claude: an image block; Codex: the MCP result as JSON) is **not stored again**: the event keeps
+  the text and refers to that attachment (`SessionService._screen_result`), so the conversation shows the picture
+  under the "Looked at your screen" chip and no base64 lands in events, history or logs.
+- **What to capture** is chosen per mate on each computer (desktop `settings.json` `captureSources`; the Screen
+  tab's "On this computer", with a test capture that stays in the page): the main screen (default), another screen
+  (found again by its display when its id changes) or one window (found again by its exact title when its app
+  restarted). A chosen window that is gone is never silently replaced by the whole screen: asked, the prompt says
+  so; allowed without asking, nothing is captured (`source_gone`).
+- **Size**: the screen at its device pixels fitted into `max_edge`; a window's picture keeps the window's shape
+  but Electron scales window thumbnails to fit the box (it does not report a window's own size).
+- **Seen**: while the picture is taken the tray tooltip says "Screen shared with ‹mate›" (8 s) and every app
+  window (not the avatar) shows that as a toast; the conversation shows the picture.
+- **The user's own Share screen** (composer + menu): the desktop app's picker (screens and windows with thumbnails,
+  the last one preselected on this device) or, in a desktop browser, `getDisplayMedia` (the browser's dialog, one
+  frame); hidden on phones / the Android app and in the quick card (its + opens the file picker).
+- **Platforms**: Windows works as is. macOS needs Screen Recording permission (`systemPreferences
+  .getMediaAccessStatus("screen")`; denied → the tool / Screen tab say where to allow it, with a button to open
+  that pane). Linux X11 works (checked under Xvfb). On a Wayland session the app enables Chromium's
+  `WebRTCPipeWireCapturer` so captures go through the desktop portal — the system's share dialog asks each time,
+  "allow without asking" included; an empty capture says so. The overlay is never in a picture while
+  `hide_avatar` is on (it is hidden, not `setContentProtection`-ed: that does nothing on Linux and is ignored by
+  macOS 15's ScreenCaptureKit); with it off it is in the picture as it is on screen.
 
 ## 5. Voice
 
@@ -655,7 +717,7 @@ user's cookie (404 / 401 otherwise). `find_folders` searches
   `outputGain()` for checks.
 - Settings UI: **Global settings** (voice services, Live2D runtime, desktop app
   per computer, defaults incl. the timezone) vs **Mate settings** (Profile · Conversation style · Avatar ·
-  Language model · Voice · Memory · Relationship · Danger zone); a mate's Voice tab offers only Off,
+  Language model · Voice · Screen · Memory · Relationship · Danger zone); a mate's Voice tab offers only Off,
   the browser and verified providers.
 - Client: replies are split into sentences/bubbles (§3 "Replies"), synthesized in order with
   one-ahead prefetch, played through the voice bridge (level → avatar). Mic:
@@ -866,6 +928,21 @@ window?: {
   getState(): Promise<{ maximized: boolean; fullscreen: boolean; focused: boolean }>;
   onState(cb): () => void;
 }
+```
+
+**Screen capture** (`desktop/src/capture.js`, §4 "Seeing the screen") — `hrhNative.capture` in the server's pages:
+
+```ts
+capture?: {
+  version: 1;
+  info(): Promise<{ version; platform; wayland: boolean; permission: string }>;
+  sources(o?: { thumbnails?: boolean; size?: number }): Promise<{ id; name; kind: "screen" | "window"; display_id?; primary?; thumbnail? }[]>;
+  getChoice(mateId): Promise<Source | null>; setChoice(mateId, src | null): Promise<boolean>;   // per mate, this computer
+  grab(o: { mateId?; sourceId?; maxEdge?; format?; quality?; hideAvatar? }): Promise<Shot>;      // Share screen / test
+  request(req: CaptureRequest): Promise<Shot>;   // the mate's see_screen: prompt (unless allowed) → capture
+  cancel(id): Promise<void>; openPrivacySettings(): Promise<void>;   // macOS Screen Recording pane
+}
+// Shot = { ok: true, data: Uint8Array, mime, width, height, source } | { ok: false, code, message? }
 ```
 
 **Updates** (`desktop/src/updater.js`, desktop/README.md): `hrhNative.updates`

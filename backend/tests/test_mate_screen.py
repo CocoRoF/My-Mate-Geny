@@ -395,6 +395,10 @@ async def test_the_engines_echo_is_not_stored_again(db, tmp_path):
     ev = ProviderEvent(type="tool.result", data={"id": "t1", "output": raw, "is_error": False})
     assert svc._screen_result(msid, ev, st) is True
     assert ev.data["output"] == text and b64[:100] not in json.dumps(ev.data) and ev.data["images"][0]["id"] == att["id"]
+    # … or that dump cut short (Codex trims long tool output): still only the text
+    ev = ProviderEvent(type="tool.result", data={"id": "t1", "output": raw[:3000] + "\n… (truncated)", "is_error": False})
+    assert svc._screen_result(msid, ev, st) is True
+    assert ev.data["output"] == text and ev.data["images"][0]["id"] == att["id"]
     # through the real event path: stored as an event without the base64, no second attachment
     await svc._record_event(msid, ProviderEvent(type="tool.result", data={
         "id": "t1", "output": text, "is_error": False, "images": [{"media_type": "image/png", "data": b64}]}),
