@@ -63,7 +63,7 @@ export default function RelationBadge({ mate, compact = false, onClick, active =
         type="button"
         onClick={onClick}
         aria-pressed={active}
-        className={`inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] text-content-dim transition hover:bg-surface-3 hover:text-content ${active ? "bg-surface-3 text-content" : ""}`}
+        className={`inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] text-content-dim transition hover:bg-surface-3 hover:text-content ${compact ? "min-h-8" : ""} ${active ? "bg-surface-3 text-content" : ""}`}
         title={tip}
         aria-label={tip}
         data-testid="mate-relation-badge"

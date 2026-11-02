@@ -187,7 +187,8 @@ export default function MateView() {
     <div className={`relative z-30 flex shrink-0 items-center gap-1.5 border-b border-border/70 bg-surface/80 backdrop-blur-xl px-3 ${phone ? "pt-safe" : ""}`}>
       <div className="flex h-12 w-full items-center gap-1.5">
         <MenuButton />
-        <div className="relative min-w-0" ref={switcherRef}>
+        {/* (flex: a long name truncates instead of running under the indicator) */}
+        <div className="relative flex min-w-0" ref={switcherRef}>
           <button
             onClick={() => setSwitcher((v) => !v)}
             className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-surface-2"
@@ -264,16 +265,19 @@ export default function MateView() {
           <button onClick={reset} disabled={resetting || conv.streaming} className="btn-ghost !px-2.5" title={t("mate.resetTitle")} data-testid="mate-reset">
             <Icon name="rotate" size={15} spin={resetting} />
           </button>
-          <button
-            onClick={toggleRelation}
-            className={`btn-ghost !px-2.5 ${relationOpen ? "!bg-surface-3 !text-content" : ""}`}
-            title={t("mate.relPanelOpenTitle", { name: mate.name })}
-            aria-label={t("mate.relPanelOpen")}
-            aria-pressed={relationOpen}
-            data-testid="mate-relation-open"
-          >
-            <Icon name="heart" size={16} />
-          </button>
+          {/* (phones: the header is full — the indicator next to her name opens it; ♥ only while that is hidden) */}
+          {(!phone || !(mate.relation?.enabled && mate.relation?.show_indicator)) && (
+            <button
+              onClick={toggleRelation}
+              className={`btn-ghost !px-2.5 ${relationOpen ? "!bg-surface-3 !text-content" : ""}`}
+              title={t("mate.relPanelOpenTitle", { name: mate.name })}
+              aria-label={t("mate.relPanelOpen")}
+              aria-pressed={relationOpen}
+              data-testid="mate-relation-open"
+            >
+              <Icon name="heart" size={16} />
+            </button>
+          )}
           <button
             onClick={toggleGlobal}
             className={`btn-ghost !px-2.5 ${globalOpen ? "!bg-surface-3 !text-content" : ""}`}

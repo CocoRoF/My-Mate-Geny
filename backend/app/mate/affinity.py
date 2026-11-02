@@ -563,8 +563,10 @@ def changes(r: dict[str, Any]) -> list[dict[str, Any]]:
     if r.get("stage_changed_at") and ups.get(r["stage"]) != r["stage_changed_at"]:
         out.append({"at": r["stage_changed_at"], "d": 0.0, "why": "stage_now", "v": None, "kind": "stage",
                     "stage": r["stage"]})
-    out.sort(key=lambda e: _t(e.get("at")) or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
-    return out
+    # newest first; at the same moment the later entry first (a talk and the streak it started)
+    order = sorted(range(len(out)), key=lambda i: (_t(out[i].get("at")) or datetime.min.replace(tzinfo=timezone.utc), i),
+                   reverse=True)
+    return [out[i] for i in order]
 
 
 # ---- recompute: the same engine over the real history ----

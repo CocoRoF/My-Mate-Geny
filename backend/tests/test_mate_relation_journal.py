@@ -80,13 +80,16 @@ def test_a_set_value_is_not_a_gain_and_kinds_of_changes():
     s = A.daily(r["log"], day(30).date(), TZ, 7)
     assert s[-1]["v"] == 90.0 and s[-1]["up"] == 0  # (a value set by hand moves it, but it isn't "earned")
     ch = A.changes(r)
-    assert ch[0]["why"] == "manual" and ch[0]["kind"] == "manual"
+    # the value set by hand, and the stage it moved to at that moment (shown first: it followed from it)
+    assert [(c["why"], c["kind"]) for c in ch[:2]] == [("stage_now", "stage"), ("manual", "manual")]
     kinds = {c["kind"] for c in ch}
     assert {"gain", "loss", "manual", "stage"} <= kinds
     ups = [c for c in ch if c["why"] == "stage_up"]
     assert {c["stage"] for c in ups} >= {"familiar"}
     assert all(c["kind"] == "gain" for c in ch if c["why"] in ("talk", "memory", "lively"))
     assert all(c["kind"] == "loss" for c in ch if c["why"].startswith("quiet_"))
+    # newest first, also within one moment (day 1's first talk: the talk, its streak, a warm word — shown reversed)
+    assert [c["why"] for c in ch if c["at"] == A._iso(day(1, 9, 0))] == ["warm", "streak", "talk"]
 
 
 def test_requirements_show_both_parts_and_the_stage_is_the_lower():

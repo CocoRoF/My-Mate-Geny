@@ -84,7 +84,13 @@ export default function RelationPanel({ mate, onClose, onOpenSettings }: { mate:
           <h2 className="truncate text-[14px] font-semibold">{t("mate.relPanelOpen")}</h2>
           <p className="truncate text-[11px] text-content-faint">{t("mate.relPanelSub", { name: mate.name })}</p>
         </div>
-        <button onClick={() => onOpenSettings("relation")} className="btn-ghost shrink-0 !px-2.5 !py-1 text-[12px]" data-testid="mate-relation-panel-adjust">
+        <button
+          onClick={() => onOpenSettings("relation")}
+          className="btn-ghost shrink-0 !px-2.5 !py-1 text-[12px]"
+          title={t("mate.relPanelAdjust")}
+          aria-label={t("mate.relPanelAdjust")}
+          data-testid="mate-relation-panel-adjust"
+        >
           <Icon name="sliders" size={13} /> <span className="hidden min-[400px]:inline">{t("mate.relPanelAdjust")}</span>
         </button>
         <button onClick={onClose} className="btn-ghost !px-2" aria-label={t("common.close")} data-testid="mate-relation-panel-close">
@@ -289,7 +295,7 @@ function NextStage({ j, mate }: { j: RelationJournal; mate: Mate }) {
               .map(([key, k]) => (
                 <li key={k} className={e.left[k] ? "text-content-dim" : "text-content-faint"}>
                   {e.left[k] ? "" : "✓ "}
-                  {t(key, { have: Math.min(e.have[k], e.need[k]), need: e.need[k] })}
+                  {t(key, { have: e.have[k], need: e.need[k] })}
                 </li>
               ))}
           </ul>
@@ -313,16 +319,16 @@ function NextStage({ j, mate }: { j: RelationJournal; mate: Mate }) {
 function PartHead({ label, hint, met }: { label: string; hint: string; met: boolean }) {
   const t = useT();
   return (
-    <div className="mb-1.5 flex items-baseline gap-2">
-      <span className="text-[12.5px] font-medium text-content">{label}</span>
-      <span className="min-w-0 flex-1 truncate text-[11px] text-content-faint" title={hint}>
-        {hint}
-      </span>
-      {met && (
-        <span className="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-success">
-          <Icon name="check" size={11} /> {t("mate.relPanelMet")}
-        </span>
-      )}
+    <div className="mb-1.5">
+      <div className="flex items-baseline gap-2">
+        <span className="min-w-0 flex-1 text-[12.5px] font-medium text-content">{label}</span>
+        {met && (
+          <span className="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-success">
+            <Icon name="check" size={11} /> {t("mate.relPanelMet")}
+          </span>
+        )}
+      </div>
+      <p className="text-[11px] leading-snug text-content-faint">{hint}</p>
     </div>
   );
 }
