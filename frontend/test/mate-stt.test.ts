@@ -118,6 +118,10 @@ test("echo: her words are recognised and dropped, the user's stay", () => {
   assert.equal(meaningful("잠깐만요"), true);
   assert.equal(meaningful("no wait"), true);
   assert.equal(echoScore("anything", []), 0);
+  // numbers come back spelled another way: still her
+  assert.ok(echoScore("Reply one, sentence number one is here.", ["Reply 1 sentence number 1 is here."]) > 0.95);
+  assert.ok(echoScore("오늘 오후 3시에 만나요", ["오늘 오후 세 시에 만나요"]) > 0.8);
+  assert.equal(stripEcho("Reply one, sentence number two. wait stop", ["Reply 1 sentence number 2."]), "wait stop");
 });
 
 test("gate: barge-in off mutes the mic while she speaks (+ a tail)", () => {
@@ -335,13 +339,24 @@ test("session: a dropped socket reconnects with a fresh token, keeping the words
   const second = h.ws;
   assert.notEqual(second, first);
   assert.match(second.url, /token=t2/);
+  assert.equal(h.ev.partials.at(-1), "안녕하세요 저는"); // (still on screen)
   second.server({ message_type: "session_started", session_id: "b" });
-  assert.equal(second.sent.length, 1, "the buffered audio goes to the new session");
+  // the new session hears the utterance again: the chunk the old one got + the one captured meanwhile
+  assert.equal(second.sent.length, 2, "the utterance's audio goes to the new session");
   assert.deepEqual(h.ev.notices, [{ kind: "reconnected" }]);
-  second.server({ message_type: "partial_transcript", text: "민수예요" });
-  assert.equal(h.ev.partials.at(-1), "안녕하세요 저는 민수예요");
-  second.server({ message_type: "committed_transcript", text: "민수예요." });
-  assert.deepEqual(h.ev.segments, [["안녕하세요 저는 민수예요.", "realtime"]]);
+  second.server({ message_type: "partial_transcript", text: "안녕하세요 저는 민수" });
+  assert.equal(h.ev.partials.at(-1), "안녕하세요 저는 민수");
+  second.server({ message_type: "committed_transcript", text: "안녕하세요, 저는 민수예요." });
+  assert.deepEqual(h.ev.segments, [["안녕하세요, 저는 민수예요.", "realtime"]]);
+  // a committed text that came back empty keeps what was on screen
+  h.speak();
+  second.server({ message_type: "partial_transcript", text: "그리고" });
+  second.drop(1006);
+  h.advance(400);
+  await h.tick();
+  h.ws.server({ message_type: "session_started", session_id: "c" });
+  h.ws.server({ message_type: "committed_transcript", text: "" });
+  assert.deepEqual(h.ev.segments.at(-1), ["그리고", "realtime"]);
 });
 
 test("session: no token (key rejected) → the server's recording fallback, or an error", async () => {

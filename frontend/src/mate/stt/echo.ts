@@ -10,9 +10,19 @@
  * Pure (tested in test/mate-stt.test.ts).
  */
 
-/** letters and digits only, lower case (what is compared) */
+/** numbers come back spelled differently ("1" said, "one" heard; "세 시" said, "3시" heard): left out of the comparison */
+const NUM_WORDS = new Set(
+  "zero one two three four five six seven eight nine ten eleven twelve twenty thirty forty fifty hundred thousand first second third".split(" "),
+);
+
+/** letters only, lower case, without numbers (what is compared) */
 export function normalizeForEcho(s: string): string {
-  return (s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  return (s || "")
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w && !NUM_WORDS.has(w))
+    .map((w) => w.replace(/\p{N}+/gu, ""))
+    .join("");
 }
 
 function grams(s: string): string[] {

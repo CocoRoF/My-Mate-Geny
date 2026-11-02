@@ -102,7 +102,8 @@ chat, keeps an eye on it and tells you how it went.
   clips), photo (stills with blinking and mouth shapes) or **Live2D** (Cubism 4/5),
   driven by emotion tags in her replies and lip-synced to her voice.
 - **Voice in and out**: browser speech (free), OpenAI, ElevenLabs, OmniVoice
-  (self-hosted voice cloning) or any HTTP TTS; Whisper-compatible or OpenAI speech-to-text.
+  (self-hosted voice cloning) or any HTTP TTS; Whisper-compatible, OpenAI or ElevenLabs realtime
+  speech-to-text (the words appear while you speak; optional hands-free auto-send and talking over her).
   Hold the mic to talk.
 - **Delegation**: she can list and read your chats, start a chat in the right folder, send
   instructions to a running one, and gets each result back to report on.

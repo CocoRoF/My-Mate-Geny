@@ -7,7 +7,8 @@
  *
  * - The socket opens while the mic does; audio captured before ElevenLabs says `session_started` is sent then.
  * - A dropped socket (network, their transcriber, the session's time limit) reconnects with a fresh token — the live
- *   text so far is kept, the audio meanwhile is buffered (15 s) and sent to the new session. After 3 failed tries,
+ *   text stays on screen meanwhile, and the new session gets the utterance's audio again (since the last committed
+ *   text, ≤ 30 s, incl. what was captured while reconnecting), so nothing said is lost. After 3 failed tries,
  *   or when the key / credits fail mid-way, the session turns into a recording: on stop, the audio since the last
  *   committed text goes to the server's fallback engine (a WAV via /transcribe).
  * - The token can't be had at the start: the same recording fallback when the server has an engine for it;
@@ -19,7 +20,7 @@
  */
 import { EchoGate } from "./echo.ts";
 import { Chunker, pcmToBase64, Resampler, STT_RATE, wavFromPcm } from "./pcm.ts";
-import { audioFrame, closeFailure, joinText, parseScribeMessage, type SttFailure } from "./scribe.ts";
+import { audioFrame, closeFailure, parseScribeMessage, type SttFailure } from "./scribe.ts";
 import type { MicHandle } from "./capture.ts";
 
 export interface RealtimeToken {
@@ -94,6 +95,7 @@ const MAX_RETRIES = 3;
 const MAX_BUFFERED = 150; // chunks (15 s) kept while (re)connecting
 const MAX_FALLBACK_S = 120; // what the recording fallback keeps (since the last committed text)
 const FINAL_WAIT_MS = 2500;
+const RESEND_S = 30; // after a drop, at most this much of the utterance is sent again
 
 export class RealtimeStt {
   readonly gate: EchoGate;
@@ -124,6 +126,7 @@ export class RealtimeStt {
   private idleTimer: unknown = null;
   private wasVoicing = false;
   private connectGen = 0;
+  private resend = false; // the next session_started: send the utterance since the last commit again
 
   constructor(deps: RealtimeDeps, cb: RealtimeCallbacks, opts: { idleMs?: number } = {}) {
     this.d = {
@@ -252,14 +255,27 @@ export class RealtimeStt {
       case "started":
         this.started = true;
         if (this.retries) this.cb.onNotice?.({ kind: "reconnected" });
-        this.flushPending();
+        if (this.resend) {
+          // a new session after a drop: the whole utterance so far again (what the old one heard but never
+          // committed is gone with it), the audio buffered meanwhile included
+          this.resend = false;
+          this.pending = [];
+          let n = 0;
+          const keep: Int16Array[] = [];
+          for (let i = this.since.length - 1; i >= 0 && n < RESEND_S * STT_RATE; i--) {
+            keep.unshift(this.since[i]);
+            n += this.since[i].length;
+          }
+          for (const c of keep) this.send(c);
+        } else this.flushPending();
         if (this.stopping) this.finishLive();
         else this.set("listening");
         return;
       case "partial": {
         const r = this.gate.partial(ev.text, this.d.spoken(), now);
         if (r.barge) this.cb.onBargeIn?.();
-        const shown = r.show ? joinText(this.carry, r.show) : this.carry;
+        // (after a drop the new session hears the utterance from its start: its text replaces the old live text)
+        const shown = r.show || this.carry;
         if (r.show) this.lastSpeech = now;
         if (shown !== this.partialText) {
           this.partialText = shown;
@@ -269,7 +285,7 @@ export class RealtimeStt {
       }
       case "committed": {
         const mine = this.gate.committed(ev.text, this.d.spoken(), now);
-        const text = joinText(this.carry, mine ?? "");
+        const text = mine?.trim() || this.carry;
         this.carry = "";
         this.partialText = "";
         this.cb.onPartial?.("");
@@ -317,8 +333,9 @@ export class RealtimeStt {
         /* gone */
       }
     }
-    // the words heard so far stay; the audio from here on goes to the next session
+    // the words heard so far stay on screen; the next session gets the utterance's audio again (since the last commit)
     if (this.partialText) this.carry = this.partialText;
+    this.resend = true;
     if (this.stopping) {
       // stopping anyway: what was heard is the text
       return this.finishWith(this.carry);
@@ -425,7 +442,7 @@ export class RealtimeStt {
       const wav = wavFromPcm(chunks, STT_RATE);
       const r = await this.d.transcribe(new Blob([wav as BlobPart], { type: "audio/wav" }), engine);
       if (this.cancelled) return;
-      const text = joinText(carry, (r.text || "").trim());
+      const text = (r.text || "").trim() || carry; // (the recording holds the live text's audio too)
       this.done = true;
       this.set("closed");
       if (text) this.cb.onSegment?.(text, "fallback");
