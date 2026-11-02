@@ -148,8 +148,15 @@ def parse_changelog(md: str, after: str | None, upto: str, *, limit: int = 12) -
 
 
 def release_bullets(body: str | None, *, limit: int = 8) -> tuple[list[str], int]:
-    """A GitHub release body → (its first ``limit`` bullet points, how many there are)."""
-    items = [b for b in (_bullet(x) for x in (body or "").splitlines()) if b]
+    """A GitHub release body → (its first ``limit`` bullet points, how many there are) — the summary
+    part only: a trailing "Changelog" / "Full changelog" / "Commits" list of every PR is not counted."""
+    items: list[str] = []
+    for line in (body or "").splitlines():
+        if line.startswith("#") and re.search(r"change\s*log|commits|pull requests|contributors", line, re.I):
+            break
+        b = _bullet(line)
+        if b:
+            items.append(b)
     return items[:limit], len(items)
 
 
@@ -227,10 +234,12 @@ class PlanError(Exception):
 
 
 def npm_install_argv(npm: str, prefix: str, pkg: str, version: str) -> list[str]:
+    # --allow-scripts: newer npm (11.x) gates install scripts per package; these CLIs need theirs
+    # (Claude links its native binary, Higgsfield downloads its own). Older npm ignores the flag.
     return [
         npm, "install", "--global", "--prefix", prefix,
         "--no-audit", "--no-fund", "--foreground-scripts", "--loglevel=http",
-        f"{pkg}@{version}",
+        f"--allow-scripts={pkg}", f"{pkg}@{version}",
     ]
 
 

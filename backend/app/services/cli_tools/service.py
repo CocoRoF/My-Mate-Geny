@@ -1,5 +1,5 @@
 """CLI versions: installed vs latest for Claude Code, Codex and Higgsfield, and
-their upgrade (Settings → Providers → CLI versions; docs/cli-versions.md).
+their upgrade (Settings → Providers → CLI versions; docs/providers.md, "CLI versions").
 
 * installed: ``<binary> --version`` of the binary sessions actually launch
   (:func:`tools.effective_binary`, resolved on this process's PATH — inside the
@@ -445,7 +445,10 @@ class CliToolsService:
         glob = _read_json(os.path.expanduser("~/.claude.json"))
         env = cfg.get("env") if isinstance(cfg.get("env"), dict) else {}
         channel = cfg.get("autoUpdatesChannel") or "latest"
-        if info["method"] not in ("native",) and not info["writable"]:
+        if info["method"] == "managed":
+            # its own updater would go through npm's global prefix, not this one: the app upgrades it
+            return {"enabled": False, "source": "app_managed", "channel": channel}
+        if info["method"] != "native" and not info["writable"]:
             return {"enabled": False, "source": "read_only", "channel": channel}
         if str(env.get("DISABLE_AUTOUPDATER", "")).strip() not in ("", "0", "false"):
             return {"enabled": False, "source": "settings_env", "channel": channel}
@@ -490,6 +493,7 @@ class CliToolsService:
             "installed": {k: info[k] for k in ("binary", "path", "realpath", "version", "raw", "error",
                                                "method", "prefix", "writable", "checked_at")},
             "using_managed": managed, "managed_path": T.managed_binary(tool), "bundled": bundled,
+            "managed_installed": os.path.exists(T.managed_binary(tool)),
             "channel": channel, "channels": list(spec.channels),
             "latest": {"version": target, "tags": {c: tags.get(c) for c in spec.channels if tags.get(c)},
                        "checked_at": lat.get("checked_at"), "error": lat.get("error")},
@@ -596,7 +600,7 @@ class CliToolsService:
         return job.to_dict()
 
     async def _run(self, job: Job, plan: Any, before: dict[str, Any]) -> None:
-        loop_started = time.monotonic()
+        loop_started = time.monotonic()  # (reset once it actually starts: waiting for idle not counted)
         prev_managed = T.tool_state(job.tool).get("use_managed")
         try:
             if job.when == "idle" and self.running_chats() > 0:
@@ -616,10 +620,12 @@ class CliToolsService:
                 job.waiting_for = 0
                 job.add("no chat is running — starting")
             job.state = "running"
+            loop_started = time.monotonic()
             job.started_at = _iso()
             cap = capped_path()
             argv = capped_argv(plan.argv, cap, settings.cli_upgrade_mem)
-            job.mem_cap = settings.cli_upgrade_mem if cap else None
+            # (inside an existing cap, capped runs it in that one: the outer size applies)
+            job.mem_cap = (os.environ.get("CAPPED_MEM") or settings.cli_upgrade_mem) if cap else None
             if plan.switch_to_managed:
                 job.add(f"the copy in use ({before['path'] or T.configured_binary(job.tool)}) can't be replaced "
                         f"here ({plan.reason}) — installing the app's own copy in {plan.prefix}")

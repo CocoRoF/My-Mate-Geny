@@ -1,6 +1,6 @@
 """Settings -> Providers -> CLI versions (app/services/cli_tools): version parsing and comparison, the registries'
 answers, install-method detection and upgrade-command selection, "when idle", and whole upgrades against fake CLIs
-and a fake npm (real npm installs are exercised by hand against a temp prefix: docs/cli-versions.md)."""
+and a fake npm (real npm installs are exercised by hand against a temp prefix: docs/providers.md, "CLI versions")."""
 
 from __future__ import annotations
 
@@ -119,6 +119,9 @@ def test_release_bullets_drop_pr_refs():
         "Rendered Markdown consistently in async questions.",
     ]
     assert release_bullets(None) == ([], 0)
+    # codex appends every PR under "## Changelog": not part of the summary
+    body = rel["body"] + "\n## Changelog\n\n- #57221 transcript selection\n- #57222 search\n"
+    assert release_bullets(body)[1] == 4
 
 
 # ---- installs and upgrade commands ------------------------------------------------------------------------------
