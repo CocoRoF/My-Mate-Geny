@@ -46,7 +46,8 @@ const STATUS_LABEL: Record<AgentStatus, MsgKey> = {
 
 export function StatusPill({ status }: { status: AgentStatus }) {
   const t = useT();
-  return <span className={`pill ${PILL[status]}`}>{t(STATUS_LABEL[status])}</span>;
+  // never squeezed: in a narrow header the label wrapped one syllable per line and pushed the header open
+  return <span className={`pill shrink-0 whitespace-nowrap ${PILL[status]}`}>{t(STATUS_LABEL[status])}</span>;
 }
 
 /** An Agent/Task call in the chat: what it is, how it's going; opens the full detail. */

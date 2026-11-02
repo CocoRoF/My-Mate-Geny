@@ -174,8 +174,8 @@ function DetailBody({
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-semibold text-content">{v.title}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate text-sm font-semibold text-content">{v.title}</span>
             <StatusPill status={v.status} />
           </div>
           <div className="truncate font-mono text-[10.5px] text-content-faint">{meta.join(" · ")}</div>
