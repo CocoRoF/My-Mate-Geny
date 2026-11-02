@@ -6,14 +6,17 @@
 import { useEffect, useState } from "react";
 import {
   disconnectHiggsfieldAccount,
+  higgsfieldJobTypes,
+  higgsfieldQuote,
   installHiggsfieldSkills,
   refreshHiggsfieldAccount,
   removeHiggsfieldSkills,
   updateHiggsfieldAccount,
   type HiggsfieldAccount,
+  type HiggsfieldJobType,
 } from "../../api/higgsfield";
 import { useHiggsfieldStore } from "../../stores/higgsfieldStore";
-import { useT } from "../../i18n";
+import { useT, type MsgKey } from "../../i18n";
 import { fmtDateTime, relTime } from "../../i18n/format";
 import Icon from "../ui/Icon";
 import HiggsfieldConnectDialog from "./HiggsfieldConnectDialog";
@@ -130,7 +133,7 @@ export default function HiggsfieldPanel() {
             </div>
             <div className="flex items-center gap-2 text-[12px]" data-testid="higgsfield-cli">
               <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${status?.cli.available ? "bg-success" : "bg-warning"}`} />
-              <span className="text-content-dim">
+              <span className={`text-content-dim ${status?.cli.available ? "shrink-0 whitespace-nowrap" : ""}`}>
                 {status?.cli.available ? t("higgsfield.cliFound") : t("higgsfield.cliMissing")}
               </span>
               {status?.cli.path && <code className="min-w-0 truncate font-mono text-[11px] text-content-faint">{status.cli.path}</code>}
@@ -179,6 +182,8 @@ export default function HiggsfieldPanel() {
         </div>
       </div>
 
+      {accounts.some((a) => a.is_default && a.status === "ok") && <QuoteCard />}
+
       {connectFor && (
         <HiggsfieldConnectDialog
           accountId={connectFor.accountId}
@@ -186,6 +191,115 @@ export default function HiggsfieldPanel() {
           onConnected={() => load()}
         />
       )}
+    </div>
+  );
+}
+
+const TYPE_LABEL: Record<string, MsgKey> = {
+  image: "higgsfield.typeImage",
+  video: "higgsfield.typeVideo",
+  audio: "higgsfield.typeAudio",
+  "3d": "higgsfield.type3d",
+  text: "higgsfield.typeText",
+  data: "higgsfield.typeData",
+  other: "higgsfield.typeOther",
+};
+
+/** What a job costs on this account — Higgsfield's own estimate (nothing is created or spent). */
+function QuoteCard() {
+  const t = useT();
+  const [types, setTypes] = useState<HiggsfieldJobType[] | null>(null);
+  const [jobType, setJobType] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ jobType: string; credits: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadTypes = () => {
+    setError(null);
+    higgsfieldJobTypes()
+      .then((d) => {
+        setTypes(d.job_types);
+        if (!jobType && d.job_types.length) setJobType(d.job_types.find((x) => x.type === "image")?.job_type || d.job_types[0].job_type);
+      })
+      .catch((e) => setError(hfErrorText(e).text));
+  };
+
+  const quote = async () => {
+    if (!jobType) return;
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const q = await higgsfieldQuote(jobType, prompt.trim() ? { prompt: prompt.trim() } : {});
+      setResult({ jobType, credits: q.credits });
+    } catch (e) {
+      const { text, detail } = hfErrorText(e);
+      setError(detail ? `${text} (${detail})` : text);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const groups = (types || []).reduce<Record<string, HiggsfieldJobType[]>>((acc, x) => {
+    (acc[x.type || "other"] ||= []).push(x);
+    return acc;
+  }, {});
+
+  return (
+    <div className="card p-4" data-testid="higgsfield-quote">
+      <div className="flex items-start gap-3">
+        <div className="grid place-items-center w-9 h-9 rounded-lg bg-accent-soft shrink-0">
+          <Icon name="search" size={17} className="text-accent" />
+        </div>
+        <div className="flex-1 min-w-0 space-y-2.5">
+          <div>
+            <div className="font-medium">{t("higgsfield.quoteTitle")}</div>
+            <p className="text-xs text-content-faint mt-0.5">{t("higgsfield.quoteHint")}</p>
+          </div>
+          {types === null ? (
+            <button onClick={loadTypes} className="btn-soft py-1.5 text-[12px]" data-testid="higgsfield-quote-load">
+              {t("higgsfield.quoteLoad")}
+            </button>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={jobType}
+                onChange={(e) => setJobType(e.target.value)}
+                className="field py-1 text-xs w-52"
+                aria-label={t("higgsfield.quoteModel")}
+                data-testid="higgsfield-quote-model"
+              >
+                {Object.entries(groups).map(([g, list]) => (
+                  <optgroup key={g} label={TYPE_LABEL[g] ? t(TYPE_LABEL[g]) : g}>
+                    {list.map((x) => (
+                      <option key={x.job_type} value={x.job_type}>
+                        {x.display_name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              <input
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && quote()}
+                placeholder={t("higgsfield.quotePrompt")}
+                className="field flex-1 min-w-[8rem] py-1 text-xs"
+              />
+              <button onClick={quote} disabled={busy || !jobType} className="btn-soft py-1.5 text-[12px]" data-testid="higgsfield-quote-go">
+                {busy ? <Icon name="spinner" size={12} spin /> : t("higgsfield.quoteGo")}
+              </button>
+            </div>
+          )}
+          {result && (
+            <p className="text-[12.5px] text-content" data-testid="higgsfield-quote-result">
+              {t("higgsfield.quoteResult", { n: fmtCredits(result.credits) })}
+            </p>
+          )}
+          {error && <p className="text-[11.5px] text-danger">{error}</p>}
+        </div>
+      </div>
     </div>
   );
 }

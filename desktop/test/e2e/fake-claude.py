@@ -7,6 +7,9 @@
 # seconds, default 2.5) so a test can look at the half-written state; "md2" gets a short one
 # (desktop/test/e2e/mate-markdown-browser.js). A message ending in "tools1" gets an agent turn with tool calls (Bash,
 # Read, Edit with a diff, a failed command, TodoWrite) and then a markdown answer with code (the theme screenshots).
+# "hfcheck" runs the higgsfield CLI like an agent's Bash tool would and reports what it found (HFCHECK …); "hfdump"
+# answers with the launch it got — argv, MCP config, the HIGGSFIELD_* / PATH environment (docs/higgsfield.md;
+# desktop/test/e2e/higgsfield-browser.js, backend/tests/test_higgsfield.py).
 import json
 import os
 import queue
@@ -201,6 +204,57 @@ def tool_turn() -> None:
           "total_cost_usd": 0.02, "usage": {"input_tokens": 1200, "output_tokens": 300}})
 
 
+def launch_info() -> dict:
+    """What this engine was started with (docs/higgsfield.md checks): argv, the MCP config and the environment the
+    agent's tools see — values of credential-ish variables are left out, only whether they are set."""
+    mcp = None
+    if "--mcp-config" in args:
+        raw = args[args.index("--mcp-config") + 1]
+        try:
+            mcp = json.load(open(raw)) if os.path.exists(raw) else json.loads(raw)
+        except (OSError, ValueError):
+            mcp = raw
+    env = {k: os.environ[k] for k in sorted(os.environ) if k.startswith("HIGGSFIELD_") or k in ("PATH", "HOME")}
+    return {"argv": args, "mcp": mcp, "env": env}
+
+
+def hf_check(live_call: bool = False) -> str:
+    """A turn that uses Higgsfield like an agent's Bash tool would: is `higgsfield` on PATH, which credentials file
+    does it get, and what does the CLI itself say (`higgsfield auth token`, which reads the file without any network
+    call; only a hash of the token is reported)."""
+    import hashlib
+    import shutil
+    import subprocess
+
+    exe = shutil.which("higgsfield")
+    creds = os.environ.get("HIGGSFIELD_CREDENTIALS_PATH")
+    keys = "-"
+    if creds and os.path.exists(creds):
+        try:
+            keys = ",".join(sorted(json.load(open(creds))))
+        except (OSError, ValueError):
+            keys = "unreadable"
+    token = "-"
+    if exe:
+        r = subprocess.run([exe, "auth", "token"], capture_output=True, text=True, timeout=20)
+        out = (r.stdout or "").strip()
+        token = hashlib.sha256(out.encode()).hexdigest()[:12] if r.returncode == 0 and out else f"rc{r.returncode}"
+    live = ""
+    if exe and live_call:
+        # a READ-ONLY call to Higgsfield itself with the server-written credentials (the account's balance)
+        r = subprocess.run([exe, "account", "status", "--json"], capture_output=True, text=True, timeout=40)
+        try:
+            data = json.loads(r.stdout)
+            live = f" live=rc{r.returncode} credits={'yes' if isinstance(data.get('credits'), (int, float)) else 'no'} " \
+                   f"plan={'yes' if data.get('subscription_plan_type') else 'no'}"
+        except ValueError:
+            live = f" live=rc{r.returncode} not-json"
+    real = os.path.expanduser("~/.config/higgsfield/credentials.json")
+    return (f"HFCHECK cli={'yes' if exe else 'no'} creds={'yes' if creds and os.path.exists(creds) else 'no'} "
+            f"keys={keys} token={token} user_file={'used' if creds == real else 'untouched'} "
+            f"note={'yes' if 'is connected for this chat' in ' '.join(args) else 'off' if 'switched off for this chat' in ' '.join(args) else 'no'}{live}")
+
+
 n = 0
 while True:
     msg = q.get()
@@ -230,6 +284,17 @@ while True:
         continue
     if re.search(r"\btools1\b", last):
         tool_turn()
+        continue
+    if re.search(r"\bhf(check|live|dump)\b", last):
+        # hfcheck: run the higgsfield CLI like a Bash tool call would; hfdump: the launch (argv / MCP / env) as JSON
+        full = "HFDUMP " + json.dumps(launch_info()) if "hfdump" in last else hf_check(live_call="hflive" in last)
+        emit({"type": "assistant", "message": {"model": model, "content": [{"type": "tool_use", "id": "hf1", "name": "Bash",
+                                                                            "input": {"command": "higgsfield auth token"}}]}})
+        emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "hf1", "content": "(token)", "is_error": False}]}})
+        emit({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": full}}})
+        emit({"type": "assistant", "message": {"model": model, "content": [{"type": "text", "text": full}]}})
+        emit({"type": "result", "subtype": "success", "is_error": False, "result": full, "session_id": "fake-sid",
+              "total_cost_usd": 0.01, "usage": {"input_tokens": 1, "output_tokens": 1}})
         continue
     md = MD1 if re.search(r"\bmd1\b", last) else MD2 if re.search(r"\bmd2\b", last) else None
     full = ""

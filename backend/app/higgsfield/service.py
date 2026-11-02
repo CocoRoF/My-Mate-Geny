@@ -411,6 +411,8 @@ class HiggsfieldService:
 
     @staticmethod
     def _check(status: int, raw: bytes, path: str, *secrets_: str) -> Any:
+        if status == 404 and path.startswith(("/jobs/", "/job_types/")):
+            raise HiggsfieldError("unknown_job_type", redact(_said(raw), *secrets_))
         if status in (400, 422):
             raise HiggsfieldError("invalid_params", redact(_said(raw), *secrets_))
         if status >= 400:

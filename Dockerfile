@@ -36,6 +36,11 @@ RUN apt-get update \
 # Provider CLIs. Logins are made from the console (Providers / Accounts) or by
 # mounting an existing ~/.claude / ~/.codex — nothing is baked into the image.
 RUN npm install -g @anthropic-ai/claude-code @openai/codex && npm cache clean --force
+# Higgsfield's CLI (docs/higgsfield.md): the chats' agents generate images / videos with it once an account is
+# connected in Settings → Providers → Higgsfield (the server signs it in). Optional: a failed download only means
+# chats can't use Higgsfield until it is installed (or HIGGSFIELD_BINARY names one).
+RUN (npm install -g @higgsfield/cli && npm cache clean --force) \
+    || echo "warning: @higgsfield/cli was not installed; chats can't use Higgsfield until it is"
 
 WORKDIR /app
 RUN pip install --no-cache-dir uv

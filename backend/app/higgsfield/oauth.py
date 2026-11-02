@@ -34,6 +34,7 @@ class HiggsfieldError(Exception):
     STATUS = {
         "not_connected": 404, "reauth_required": 409, "invalid_callback": 400, "oauth_denied": 400,
         "login_expired": 400, "import_failed": 400, "unknown_workspace": 400, "invalid_params": 400,
+        "unknown_job_type": 404,
         "token_exchange_failed": 502, "network": 502, "api_error": 502, "bad_json": 502, "skills_failed": 502,
     }
 

@@ -1173,7 +1173,7 @@ class SessionService:
 
     def is_live(self, sid: str) -> bool:
         """A turn runs or the chat's engine is up: its agent may still call a CLI."""
-        return sid in self._tasks or self._engines.slot(sid) is not None
+        return sid in self._tasks or sid in self.active_runs or self._engines.slot(sid) is not None
 
     def exists(self, sid: str) -> bool:
         return self._db.query_one("SELECT 1 FROM sessions WHERE id = ?", (sid,)) is not None
@@ -1203,7 +1203,8 @@ class SessionService:
             return None
         hf["reported"] = True
         try:
-            spent = await asyncio.wait_for(self.higgsfield.spent_since(hf["account"], hf["since"]), timeout=20)
+            # (the turn's answer waits for this: kept short)
+            spent = await asyncio.wait_for(self.higgsfield.spent_since(hf["account"], hf["since"]), timeout=8)
         except Exception:  # noqa: BLE001 - (a timeout too) it's only a notice
             return None
         if spent is None:

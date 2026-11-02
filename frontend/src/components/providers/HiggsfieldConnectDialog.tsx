@@ -231,7 +231,7 @@ export default function HiggsfieldConnectDialog({
                   <button
                     onClick={() => submitCallback(pasted)}
                     disabled={busy || !pasted.trim()}
-                    className="btn-primary"
+                    className="btn-primary shrink-0 whitespace-nowrap"
                     data-testid="higgsfield-callback-submit"
                   >
                     {busy ? <Icon name="spinner" size={15} spin /> : t("higgsfield.connect")}
@@ -264,7 +264,7 @@ export default function HiggsfieldConnectDialog({
                   <button
                     onClick={submitCreds}
                     disabled={busy || !creds.trim()}
-                    className="btn-primary ml-auto"
+                    className="btn-primary ml-auto shrink-0 whitespace-nowrap"
                     data-testid="higgsfield-credentials-submit"
                   >
                     {busy ? <Icon name="spinner" size={15} spin /> : t("higgsfield.import")}

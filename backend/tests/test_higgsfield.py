@@ -88,6 +88,8 @@ class FakeHiggsfield:
         if path == "/job_types":
             return 200, json.dumps([{"job_type": "z_image", "display_name": "Z Image", "type": "image"},
                                     {"job_type": "seedance_2_5", "display_name": "Seedance 2.5", "type": "video"}]).encode()
+        if path == "/jobs/bogus/cost":
+            return 404, b'{"error_type": "unknown_job_type", "text": "no job_type \'bogus\'"}'
         if path.startswith("/jobs/") and path.endswith("/cost") and method == "POST":
             return 200, b'{"credits": 7}'
         return 404, b'{"detail": "no such path"}'
@@ -327,6 +329,9 @@ async def test_account_api_pieces(svc, fake):
     jts = await svc.job_types(acc["id"])
     assert [j["type"] for j in jts] == ["image", "video"]
     assert (await svc.quote(acc["id"], "z_image", {"prompt": "x"}))["credits"] == 7
+    with pytest.raises(HiggsfieldError) as e:
+        await svc.quote(acc["id"], "bogus", {})
+    assert e.value.code == "unknown_job_type" and e.value.status == 404
     with pytest.raises(HiggsfieldError):
         await svc.quote(acc["id"], "../purchase", {})
     # never a purchase endpoint
@@ -603,3 +608,59 @@ async def test_session_turns_get_higgsfield_only_when_connected_and_enabled(db, 
         sessions.update(s["id"], higgsfield={"max_credits": "lots"})
     sessions.delete(s["id"])
     assert not agent.session_dir(s["id"]).exists()
+
+
+# ---- a real engine process (the fake Claude CLI) ----
+
+FAKE_CLAUDE = Path(__file__).resolve().parents[2] / "desktop" / "test" / "e2e" / "fake-claude.py"
+
+
+@pytest.mark.skipif(not os.access(FAKE_CLAUDE, os.X_OK), reason="needs desktop/test/e2e/fake-claude.py")
+async def test_engine_process_gets_higgsfield_only_when_enabled(db, svc, fake, tmp_path, monkeypatch):
+    """A persistent Claude engine (the fake CLI) runs `higgsfield auth token` the way an agent's Bash tool would:
+    with Higgsfield on it finds the CLI on PATH and the server's access-only credentials; off, neither."""
+    cli = tmp_path / "bin" / "higgsfield"
+    cli.parent.mkdir()
+    cli.write_text("#!/usr/bin/env -S python3 -P\nimport json, os, sys\n"
+                   "if sys.argv[1:3] != ['auth', 'token']:\n    sys.exit(2)\n"
+                   "print(json.load(open(os.environ['HIGGSFIELD_CREDENTIALS_PATH']))['access_token'])\n")
+    cli.chmod(0o755)
+    monkeypatch.setattr(settings, "higgsfield_binary", str(cli))
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("PATH", "/usr/local/bin:/usr/bin:/bin")  # (no real higgsfield CLI from ~/.local/bin)
+    agent = HiggsfieldAgent(svc, root=tmp_path / "hf-root")
+    provider = ClaudeCodeProvider(binary=str(FAKE_CLAUDE))
+    monkeypatch.setattr(ss_mod, "get_provider", lambda name: provider)
+    vault = SecretVault(db)
+    sessions = SessionService(db, ProviderService(db, vault), WorkspaceService(ConnectionService(db, vault)))
+    sessions.higgsfield = agent
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    s = sessions.create(provider="claude", workspace_path=str(ws))
+
+    async def answer(text):
+        events = [e async for e in sessions.run_turn(s["id"], text)]
+        done = [e for e in events if e.type == "turn.complete"]
+        assert done, [e.to_dict() for e in events]
+        return done[-1].data["text"], events
+
+    try:
+        acc = await _connect(svc, fake)
+        text, events = await answer("hfcheck")
+        token = hashlib.sha256(svc.tokens_of(acc["id"])["access"].encode()).hexdigest()[:12]
+        assert f"cli=yes creds=yes keys=access_token,auth_version,scope,token_type token={token}" in text
+        assert "user_file=untouched" in text and "note=yes" in text
+        assert any(e.type == "notice" and e.data.get("code") == "higgsfield.spend" for e in events)
+        dump, _ = await answer("hfdump")
+        launch = json.loads(dump.removeprefix("HFDUMP "))
+        assert launch["env"]["PATH"].split(os.pathsep)[0] == str(tmp_path / "hf-root" / "bin")
+        assert launch["env"]["HIGGSFIELD_CREDENTIALS_PATH"].startswith(str(tmp_path / "hf-root" / "sessions"))
+        assert launch["mcp"] is None  # (a local chat: no MCP bridge; Higgsfield comes as the CLI)
+
+        sessions.update(s["id"], higgsfield={"enabled": False})
+        text, _ = await answer("hfcheck")  # the engine restarts: new prompt and environment
+        assert "cli=no creds=no" in text and "note=off" in text and token not in text
+    finally:
+        await sessions.shutdown()

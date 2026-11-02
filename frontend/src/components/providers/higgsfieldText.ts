@@ -16,6 +16,8 @@ const ERRORS: Record<string, MsgKey> = {
   api_error: "higgsfield.errApi",
   bad_json: "higgsfield.errApi",
   skills_failed: "higgsfield.errSkills",
+  unknown_job_type: "higgsfield.errUnknownJobType",
+  invalid_params: "higgsfield.errInvalidParams",
 };
 
 /** a translated sentence for an error, plus the server's own detail (already redacted) when there is one */
