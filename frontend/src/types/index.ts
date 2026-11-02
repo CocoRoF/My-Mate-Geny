@@ -141,6 +141,11 @@ export interface ProviderEvent {
   eid?: number; // events-table id (resume cursor); absent for live-only messages
   timestamp: string;
   data: Record<string, unknown>;
+  /** lite history pages (backend services/history_lite.py): this tool event's
+   * input / output is a preview; the original comes from the events endpoint */
+  lazy?: { input?: { size: number; cut: string[] }; output?: { size: number; lines: number } };
+  /** a folded task.update: the eids of the updates it stands for */
+  covers?: number[];
 }
 
 /** A background / long-running task the Claude engine reported. */

@@ -8,6 +8,7 @@ import type { Attachment, TaskInfo } from "../../../types";
 import Lightbox from "../../attachments/Lightbox";
 import Icon from "../../ui/Icon";
 import ToolDetail from "./ToolDetail";
+import { FullToolNote, useFullTools } from "./useFullTool";
 import { fmtMs, summarize, toolMeta } from "./toolMeta";
 import { useT, type MsgKey, type TFunction } from "../../../i18n";
 
@@ -120,6 +121,7 @@ function TaskPill({ task, now }: { task: TaskInfo; now: number }) {
 function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; children: ToolActivity[] }) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const full = useFullTools([tool], open); // (a lite page's preview: the original comes on open)
   const session = useActive();
   const m = toolMeta(tool.name, tool.input, session?.workspace_path);
   const task = useTask(tool);
@@ -134,9 +136,10 @@ function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; chi
       ? String(inp.file_path || inp.path || inp.notebook_path || "")
       : "";
   return (
-    <div className={`min-w-0 rounded-lg ${open ? "bg-surface-2/60" : ""}`}>
+    <div className={`min-w-0 rounded-lg ${open ? "bg-surface-2/60" : ""}`} data-tool-id={tool.id}>
       <button
         onClick={() => setOpen(!open)}
+        data-testid="tool-row"
         className="flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-surface-2/70 transition"
       >
         <span className={`grid place-items-center w-5 h-5 shrink-0 rounded-md ${m.tone}`}>
@@ -189,7 +192,7 @@ function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; chi
           {m.descriptive && m.category === "command" && (
             <div className="text-[11px] text-content-faint">{tool.name === "shell" ? t("turn.codexShell") : t("turn.command")}</div>
           )}
-          <ToolDetail tool={tool} root={session?.workspace_path} />
+          {tool.lazy ? <FullToolNote failed={full.failed} retry={full.retry} /> : <ToolDetail tool={tool} root={session?.workspace_path} />}
           {children.length > 0 && (
             <div className="rounded-lg border border-border/70 bg-surface/60 p-1">
               {children.map((c) => (
@@ -245,6 +248,7 @@ export default function ToolGroup({
     <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-border/80 bg-surface/50">
       <button
         onClick={() => setOpen(!expanded)}
+        data-testid="tool-group"
         className="flex w-full min-w-0 items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-2/50 rounded-xl transition"
       >
         {running ? (
