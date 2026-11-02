@@ -4,7 +4,7 @@
  * the mate's chrome, plus push-to-talk and the read-aloud toggle (phones: in the Mate view's header, so the row is
  * just + · text · mic · send). Drafts are keyed by the mate's session id.
  */
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Mate } from "../../api/mates";
 import { useDraftStore } from "../../stores/draftStore";
 import { useMateStore } from "../../stores/mateStore";
@@ -16,6 +16,9 @@ import { useComposer, type ComposerAction } from "../composer/useComposer";
 import Icon from "../ui/Icon";
 import { useMic, type Mic } from "./useMic";
 import { joinText } from "../../mate/stt/scribe";
+import { canShareScreen, captureBridge, grabWithBrowser } from "../../mate/screenCapture";
+import { screenOf } from "../../api/mates";
+import ScreenSharePicker from "./ScreenSharePicker";
 import { useT, type TFunction } from "../../i18n";
 
 const HOLD_MS = 350;
@@ -124,6 +127,23 @@ function Composer({
     viewportCap: !growsWindow,
   });
   const { input, items, uploading, failed, hasContent, notice, isStreaming: streaming, touch, sendsOnEnter, trigger } = c;
+
+  // Share screen (+ menu): the desktop app's picker of screens / windows, or the browser's own dialog
+  const [picking, setPicking] = useState(false);
+  const [shareError, setShareError] = useState("");
+  const shareScreen = useMemo(() => {
+    if (!canShareScreen()) return undefined;
+    return () => {
+      setShareError("");
+      if (captureBridge()) return setPicking(true);
+      grabWithBrowser(screenOf(mate).max_edge || 0)
+        .then((f) => c.addFiles([f]))
+        .catch((e: unknown) => {
+          // (the user closing the browser's dialog is not an error)
+          if ((e as DOMException)?.name !== "NotAllowedError" && (e as DOMException)?.name !== "AbortError") setShareError(t("mate.shareFailed"));
+        });
+    };
+  }, [mate, c.addFiles, t]);
 
   const contentRef = useRef(onContentChange);
   contentRef.current = onContentChange;
@@ -240,6 +260,25 @@ function Composer({
           )}
         </div>
       )}
+      {picking && (
+        <ScreenSharePicker
+          mate={mate}
+          onClose={() => setPicking(false)}
+          onShot={(f) => {
+            setPicking(false);
+            c.addFiles([f]);
+          }}
+        />
+      )}
+      {shareError && (
+        <div className="mx-auto mb-1.5 flex max-w-2xl items-start gap-2 rounded-lg bg-danger/10 px-3 py-1.5 text-[12px] text-danger" data-testid="mate-share-error">
+          <Icon name="warning" size={12} className="mt-0.5 shrink-0" />
+          <span className="min-w-0 flex-1 break-words">{shareError}</span>
+          <button onClick={() => setShareError("")} className="shrink-0 opacity-70 hover:opacity-100" aria-label={t("common.dismiss")}>
+            <Icon name="x" size={12} />
+          </button>
+        </div>
+      )}
       <QueuedList queue={c.queue} onRemove={c.unqueue} className="mx-auto mb-1.5 max-w-2xl" />
       <div
         className={`relative mx-auto max-w-2xl rounded-2xl border bg-surface-2/90 shadow-card transition ${
@@ -271,7 +310,7 @@ function Composer({
             >
               <Icon name="plus" size={compact ? 16 : 18} />
             </button>
-            {c.attachOpen && <AttachMenu onPick={c.pickFile} onClose={() => c.setAttachOpen(false)} />}
+            {c.attachOpen && <AttachMenu onPick={c.pickFile} onClose={() => c.setAttachOpen(false)} onShareScreen={shareScreen} />}
           </div>
           {showVoiceToggle && <ReadAloudToggle mate={mate} conv={conv} className={btn} size={compact ? 15 : 17} />}
           <textarea

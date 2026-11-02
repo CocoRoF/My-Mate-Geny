@@ -4,6 +4,7 @@ import App from "./App";
 import { installClientErrorReporter } from "./api/admin";
 import { disableLoginRedirect } from "./api/client";
 import { installNativeBridge } from "./native";
+import { installCaptureIndicator } from "./mate/screenCapture";
 import { watchKeyboard } from "./lib/keyboard";
 import { installChunkRecovery } from "./lib/recover";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
@@ -17,6 +18,7 @@ import "./index.css";
 installClientErrorReporter();
 installChunkRecovery(); // a code chunk gone after a deploy: reload once, never a blank page (lib/recover.ts)
 installNativeBridge();
+installCaptureIndicator(); // desktop: "Screen shared with ‹mate›" while the mate looks (mate/screenCapture.ts)
 installTheme(); // light / dark: index.html drew the saved one already; this follows changes (lib/theme.ts)
 watchKeyboard(); // the on-screen keyboard: <html data-keyboard>, --app-h (lib/keyboard.ts)
 

@@ -7,14 +7,17 @@ import { useT } from "../../i18n";
 
 export type PickKind = "photo" | "camera" | "file";
 
-/** The + menu: Photos / Camera (touch screens) / Files. */
+/** The + menu: Photos / Camera (touch screens) / Files, and Share screen where the page can (the Mate composer). */
 export function AttachMenu({
   onPick,
   onClose,
+  onShareScreen,
   className = "bottom-[calc(100%+8px)] left-0",
 }: {
   onPick: (kind: PickKind) => void;
   onClose: () => void;
+  /** offered only when given (mate/screenCapture.ts canShareScreen: the desktop app or a desktop browser) */
+  onShareScreen?: () => void;
   className?: string;
 }) {
   const t = useT();
@@ -65,6 +68,24 @@ export function AttachMenu({
           <span className="block text-[11px] text-content-faint">{t("composer.filesHint")}</span>
         </span>
       </button>
+      {onShareScreen && (
+        <button
+          onClick={() => {
+            onClose();
+            onShareScreen();
+          }}
+          className="flex w-full items-center gap-3 px-3 py-2.5 text-[13px] text-content hover:bg-surface-3"
+          data-testid="attach-share-screen"
+        >
+          <span className="grid place-items-center w-7 h-7 rounded-lg bg-danger/12 text-danger">
+            <Icon name="monitor" size={15} />
+          </span>
+          <span className="text-left">
+            <span className="block font-medium">{t("composer.shareScreen")}</span>
+            <span className="block text-[11px] text-content-faint">{t("composer.shareScreenHint")}</span>
+          </span>
+        </button>
+      )}
       {!touch && (
         <div className="border-t border-border/70 px-3 py-2 text-[11px] text-content-faint">
           {t("composer.pasteHint")}

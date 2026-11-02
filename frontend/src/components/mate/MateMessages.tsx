@@ -89,6 +89,12 @@ export function describeTool(t: ToolActivity): { icon: IconName; label: string; 
       return { icon: "brain", label: tr("mate.toolRemembered", { text: short(String(input.text || ""), 60) }) };
     case "forget":
       return { icon: "brain", label: tr("mate.toolForgot") };
+    case "see_screen":
+      // (docs/mate.md §4 "Seeing the screen": the picture shows under the chip)
+      return {
+        icon: "monitor",
+        label: t.durationMs === undefined ? tr("mate.toolSeeingScreen") : t.isError ? tr("mate.toolScreenNotShared") : tr("mate.toolSawScreen"),
+      };
     default:
       return { icon: "bolt", label: name };
   }
@@ -108,8 +114,9 @@ function ActivityChip({ tool }: { tool: ToolActivity }) {
       {d.sessionId && !tool.isError && <Icon name="external" size={10} className="shrink-0 opacity-60" />}
     </>
   );
+  const shot = !!tool.images?.length && tool.name.endsWith("see_screen");
   return (
-    <div className="flex" data-testid="mate-activity">
+    <div className={shot ? "flex flex-col items-start gap-1.5" : "flex"} data-testid="mate-activity">
       {d.sessionId && !tool.isError ? (
         <button
           className={`${cls} hover:text-content hover:border-border-strong transition`}
@@ -122,6 +129,11 @@ function ActivityChip({ tool }: { tool: ToolActivity }) {
         <span className={cls} title={tool.isError ? tool.output : undefined}>
           {body}
         </span>
+      )}
+      {shot && (
+        <div className="max-w-full" data-testid="mate-screen-shot">
+          <MessageAttachments attachments={tool.images!} />
+        </div>
       )}
     </div>
   );

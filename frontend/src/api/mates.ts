@@ -169,6 +169,23 @@ export interface RelationJournal {
   memories: { id: string; text: string; kind: string; created_at: string; source: string | null }[];
 }
 
+/** may the mate look at the screen (see_screen; docs/mate.md §4 "Seeing the screen") — what to capture is chosen in
+ * the desktop app on each computer */
+export interface MateScreen {
+  enabled: boolean;
+  approval: "ask" | "allow";
+  hide_avatar: boolean;
+  /** the picture's long side at most (0: as captured) */
+  max_edge: 0 | 1280 | 1920 | 2560;
+  format: "png" | "jpeg";
+  quality: number;
+}
+
+export const DEFAULT_SCREEN: MateScreen = { enabled: false, approval: "ask", hide_avatar: true, max_edge: 1920, format: "png", quality: 85 };
+
+/** the mate's screen settings, complete (an older server sends none) */
+export const screenOf = (m: Pick<Mate, "screen"> | null | undefined): MateScreen => ({ ...DEFAULT_SCREEN, ...(m?.screen ?? {}) });
+
 export interface Mate {
   id: string;
   name: string;
@@ -183,6 +200,8 @@ export interface Mate {
   prefs?: MatePrefs;
   /** missing on documents from an older server */
   relation?: RelationSummary;
+  /** missing on documents from an older server: DEFAULT_SCREEN */
+  screen?: MateScreen;
   session_id: string | null;
   /** a mate shipped with the app (estelle | chaerin | seoa), else null */
   builtin?: string | null;
@@ -198,6 +217,7 @@ export interface MatePatch {
   llm?: Partial<MateLlm>;
   voice?: { auto_read?: boolean; volume?: number; tts?: Partial<MateVoice["tts"]>; stt?: Partial<MateVoice["stt"]> };
   prefs?: Partial<Omit<MatePrefs, "tone" | "memory">> & { tone?: Partial<MatePrefs["tone"]>; memory?: Partial<MatePrefs["memory"]> };
+  screen?: Partial<MateScreen>;
 }
 
 /** the mate's conversation settings, complete (an older server sends none) */
