@@ -645,3 +645,23 @@ def test_cli_create_answer_with_a_bare_job_id_is_a_job():
     assert job_id(_first({"id": "x1", "status": "queued"})) == "x1"
     assert job_id(_first([{"job_id": "x2"}])) == "x2"
     assert _first([]) == {} and _first(["  "]) == {}
+
+
+def test_resume_rejoins_jobs_higgsfield_ran_and_retries_the_rest(db, tmp_path, monkeypatch):
+    """Resume = try again: a candidate whose job Higgsfield did run (its id in the old "no job id: [\\"<uuid>\\"]"
+    error) is only waited for (no new submission, no credits); another failed item gets fresh tries; a refused one
+    stays failed."""
+    _svc, _mates, av = _services(db, tmp_path, monkeypatch)
+    uid = "b4affccc-8938-4135-9683-f498043abc43"
+    doc = {"id": "av_0123456789ab", "items": {
+        "design:c1": {"status": "failed", "tries": 3, "job_id": None, "error": f'Higgsfield gave no job id: ["{uid}"]'},
+        "design:c2": {"status": "failed", "tries": 3, "job_id": None, "error": "the job took too long"},
+        "design:c3": {"status": "failed", "tries": 1, "job_id": None, "error": "nsfw", "refused": True},
+        "design:c4": {"status": "done", "tries": 1, "job_id": "x"},
+    }}
+    av._revive_failed(doc)
+    it = doc["items"]
+    assert it["design:c1"]["status"] == "running" and it["design:c1"]["job_id"] == uid and it["design:c1"]["tries"] == 3
+    assert it["design:c2"]["status"] == "pending" and it["design:c2"]["tries"] == 0
+    assert it["design:c3"]["status"] == "failed"
+    assert it["design:c4"]["status"] == "done"

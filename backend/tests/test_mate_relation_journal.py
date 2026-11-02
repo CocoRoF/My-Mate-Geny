@@ -197,7 +197,9 @@ def test_journal_fills_days_the_log_lost_from_the_history(db, monkeypatch):
     A.replay(mates._history_events(store.get(m["id"])), now, tz, trace=trace)
     full = A.daily(trace, now.astimezone(tz).date(), tz, 30)
     assert [x["v"] for x in j["series"]] == [x["v"] for x in full]  # every day, as if the log had kept them all
-    assert sum(1 for x in j["series"] if x["v"] is not None) == 21
+    # from the first talk's day (in the user's zone — near midnight "20 days and an hour ago" is 21 days back) to today
+    first_day = (now - timedelta(days=20, hours=1)).astimezone(tz).date()
+    assert sum(1 for x in j["series"] if x["v"] is not None) == (now.astimezone(tz).date() - first_day).days + 1
 
 
 @pytest.fixture

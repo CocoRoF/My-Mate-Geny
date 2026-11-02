@@ -52,6 +52,8 @@ PHASES = ("design", "pick", "home", "approve_home", "stills", "approve_stills", 
 CHECKPOINTS = {"pick": "pick", "approve_home": "home", "approve_stills": "stills"}
 PARALLEL = {"design": 4, "home": 1, "stills": 3, "clips": 2, "matte": 1}
 MAX_TRIES = 3
+#: a job id Higgsfield gave back inside an error message (["<uuid>"])
+_JOB_ID_IN_ERROR = re.compile(r'\[\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"\s*\]')
 IMAGE_EXT = (".png", ".jpg", ".jpeg", ".webp")
 SERVE_EXT = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
              ".mp4": "video/mp4", ".json": "application/json"}
@@ -1085,10 +1087,29 @@ class AvatarService:
         doc["error"] = None
         if doc["status"] in ("paused", "failed"):
             doc["status"] = "running"
+        self._revive_failed(doc)
         self._history(doc, "resumed")
         self.save(doc)
         if doc["status"] == "running":
             self._kick(pid)
+
+    def _revive_failed(self, doc: dict[str, Any]) -> None:
+        """Resume means "try again": a failed item whose job Higgsfield did run (its id is in the error — e.g. the
+        old "no job id: [\"<uuid>\"]" misread) is waited for again — nothing new is submitted; any other failed item
+        that wasn't refused gets a fresh set of tries (each new submission still passes the gate and the cap)."""
+        revived = []
+        for key, it in doc["items"].items():
+            if it.get("status") != "failed":
+                continue
+            m = _JOB_ID_IN_ERROR.search(str(it.get("error") or ""))
+            if m and not it.get("job_id"):
+                it.update(status="running", job_id=m.group(1), error=None)
+                revived.append((key, "rejoined"))
+            elif not it.get("refused"):
+                it.update(status="pending", tries=0, error=None, job_id=None)
+                revived.append((key, "retry"))
+        if revived:
+            self._history(doc, "revived", items=[f"{k}:{how}" for k, how in revived])
 
     def cancel(self, pid: str) -> None:
         doc = self.doc(pid)
@@ -1515,6 +1536,7 @@ class AvatarService:
         it["error"] = _clip(str(exc), 300)
         it["job_id"] = None
         refused = not exc.retry
+        it["refused"] = refused
         it["status"] = "failed" if refused or it["tries"] >= MAX_TRIES else "pending"
         self._history(doc, "job.failed", item=key, error=it["error"], code=exc.code)
         self.save(doc)
