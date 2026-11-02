@@ -62,6 +62,8 @@ export default {
   background: "background",
   moreChars: "{n} more chars",
   noOutput: "no output",
+  loadingFull: "Loading the full details…",
+  loadFullFailed: "Couldn't load the full details",
   patchDelete: "delete",
   patchAdd: "add",
   patchUpdate: "update",

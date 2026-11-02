@@ -82,9 +82,11 @@ export function useChatSocket(sessionId: string | null) {
         // First the newest turns; a reconnect reloads what is shown (from the
         // oldest loaded turn on), so pages already scrolled through stay.
         const s = store.getState();
+        // (lite: big tool payloads come when a row opens — ToolActivity.lazy)
         const h = await getHistoryPage(
           sessionId,
           s.opened && s.sid === sessionId && s.paging.paged ? { since: s.paging.cursor ?? "" } : { turns: FIRST_TURNS },
+          true,
         );
         if (!alive || mine !== gen) return;
         loadHistory(h);

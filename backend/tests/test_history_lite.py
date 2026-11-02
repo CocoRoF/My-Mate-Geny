@@ -91,13 +91,13 @@ def build(c: Chat, turns: int = 9, big: str = BIG) -> dict:
             ids["bg_started"] = c.t.timestamp()
         if k >= 2:
             c.ev("task.update", {"task_id": "tbg", "tool_use_id": "toolu_bg", "status": "running",
-                                 "is_backgrounded": True, "tool_uses": k})
+                                 "is_backgrounded": True, "tool_uses": k, **({"phase": "start"} if k == 2 else {})})
             c.ev("subagent.text", {"parent": "toolu_bg", "text": f"still digging {k}"})
             c.ev("tool.use", {"id": f"toolu_bgsub{k}", "name": "Bash", "parent": "toolu_bg",
                               "input": {"command": "grep -r " + "w" * 400}})
             c.ev("tool.result", {"id": f"toolu_bgsub{k}", "output": big, "is_error": False, "parent": "toolu_bg"})
             c.ev("task.update", {"task_id": "tbg", "tool_use_id": "toolu_bg", "status": "running",
-                                 "activity": f"grep {k}"})
+                                 "activity": f"grep {k}", **({"phase": "dig"} if k == 2 else {})})
         if k == 4:
             c.ev("notice", {"level": "info", "code": "context.compacted", "message": "Context compacted",
                             "trigger": "auto", "pre_tokens": 150000, "post_tokens": 20000})
@@ -207,7 +207,16 @@ def test_lite_pages_reexpand_to_the_full_ones(chat):
 def test_per_tool_rules(chat):
     svc, c = chat
     build(c, turns=3)
+    deep = "/w/" + "very/deep/" * 40 + "file.py"  # a path longer than any preview: never cut
+    c.ev("tool.use", {"id": "toolu_deep", "name": "Edit", "input": {"file_path": deep, "old_string": "a" * 999,
+                                                                   "new_string": "b"}})
+    c.ev("tool.use", {"id": "toolu_deeppatch", "name": "apply_patch",
+                      "input": {"changes": [{"path": deep, "kind": "add", "diff": "+x\n" * 300}]}})
     page = svc.history_page(c.sid, turns=1, lite=True)
+    deep_ev = [e for e in page["events"] if e["data"].get("id") in ("toolu_deep", "toolu_deeppatch")]
+    assert deep_ev[0]["data"]["input"] == {"file_path": deep} and deep_ev[0]["lazy"]
+    assert deep_ev[1]["data"]["input"] == {"changes": [{"path": deep, "kind": "add"}]}
+    assert page["before"]["changes"]["files"]  # (the panel's list keeps working)
     ev = {(e["type"], e["data"].get("id")): e for e in page["events"] if e["type"] in ("tool.use", "tool.result")}
     use = lambda s: ev[("tool.use", f"toolu_2_{s}")]  # noqa: E731
     res = lambda s: ev[("tool.result", f"toolu_2_{s}")]  # noqa: E731

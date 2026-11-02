@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { tr } from "../i18n";
 import { getOlderPage, type History, type HistoryBefore, type HistoryPage, type OlderPage } from "../api/sessions";
+import { fullEvents } from "../lib/lazyEvents";
 import type { Attachment, ChatMessage, CliInfo, Compaction, ContextInfo, ProviderEvent, TaskInfo, TurnChanges } from "../types";
 
 export interface ToolActivity {
@@ -18,6 +19,10 @@ export interface ToolActivity {
   sub?: SubItem[];
   lastAt?: number; // the subagent's latest step
   agent?: AgentReport;
+  /** From a lite history page: `input` (event `use`) / `output` (event
+   * `result`) are previews until `hydrate` fetches those events. Everything a
+   * collapsed row shows is exact meanwhile. */
+  lazy?: { use?: number; result?: number };
 }
 
 /** One step of a subagent's work (its tool calls live in `Turn.tools`). */
@@ -151,6 +156,9 @@ interface ChatState {
   setStreaming: (v: boolean) => void;
   setConnection: (c: ChatState["connection"]) => void;
   applyEvent: (ev: ProviderEvent) => void;
+  /** Fetch the full input / output of these tool calls (`ToolActivity.lazy`)
+   * and put them in place. Rejects when the server can't be reached. */
+  hydrate: (toolIds: string[]) => Promise<void>;
 }
 
 // ---- reducer (shared by history replay and live events) ---------------------
@@ -296,6 +304,59 @@ function pushSub(turn: Turn, parent: string, item: SubItem, at: number) {
   p.lastAt = at;
 }
 
+// ---- lite history pages: previews, then the originals --------------------------
+
+/** A tool call from a lite page whose input is a preview (`lazy.use` = its eid). */
+const lazyUse = (ev: ProviderEvent): Pick<ToolActivity, "lazy"> =>
+  ev.lazy?.input && ev.eid ? { lazy: { use: ev.eid } } : {};
+
+/** A result applied to `tool`: a preview (lite page) or the whole output. */
+function markResult(tool: ToolActivity, ev: ProviderEvent) {
+  const left = { ...tool.lazy };
+  if (ev.lazy?.output && ev.eid) left.result = ev.eid;
+  else delete left.result;
+  if (left.use || left.result) tool.lazy = left;
+  else delete tool.lazy;
+}
+
+/** `tool` with the originals of its previewed events put in, the way the
+ * reducer applies them; null when none of them is in `full`. */
+function unlazy(tool: ToolActivity, full: Map<number, ProviderEvent>): ToolActivity | null {
+  const l = tool.lazy;
+  if (!l) return null;
+  const use = l.use ? full.get(l.use) : undefined;
+  const res = l.result ? full.get(l.result) : undefined;
+  if (!use && !res) return null;
+  const out: ToolActivity = { ...tool };
+  const left = { ...l };
+  if (use) {
+    out.input = (use.data as Record<string, any>).input;
+    delete left.use;
+  }
+  if (res) {
+    const d = res.data as Record<string, any>;
+    out.output = String(d.output ?? "");
+    if (Array.isArray(d.images) && d.images.length) out.images = d.images as Attachment[];
+    if (d.agent && typeof d.agent === "object") out.agent = d.agent as AgentReport;
+    delete left.result;
+  }
+  if (left.use || left.result) out.lazy = left;
+  else delete out.lazy;
+  return out;
+}
+
+/** Copy-on-write: `turn` with every tool `unlazy` could fill (or itself). */
+function unlazyTurn(turn: Turn, ids: Set<string>, full: Map<number, ProviderEvent>): Turn {
+  let tools: ToolActivity[] | null = null;
+  turn.tools.forEach((t, i) => {
+    const u = ids.has(t.id) ? unlazy(t, full) : null;
+    if (!u) return;
+    tools ??= [...turn.tools];
+    tools[i] = u;
+  });
+  return tools ? { ...turn, tools } : turn;
+}
+
 /** Apply one event to `turns` (a fresh array the caller owns). Returns extra
  * state changes for the store. */
 function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
@@ -330,14 +391,14 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
         const t = turnWith(turns, parent, at) || (hasLiveTurn(turns) ? liveTurn(turns, at) : null);
         if (!t) break;
         const id = String(data.id || `t${t.tools.length}`);
-        t.tools.push({ id, name: String(data.name || ""), input: data.input, startedAt: at, parent });
+        t.tools.push({ id, name: String(data.name || ""), input: data.input, startedAt: at, parent, ...lazyUse(ev) });
         pushSub(t, parent, { kind: "tool", toolId: id }, at);
         break;
       }
       const t = liveTurn(turns, at);
       closeThinking(t, at);
       const id = String(data.id || `t${t.tools.length}`);
-      t.tools.push({ id, name: String(data.name || ""), input: data.input, startedAt: at });
+      t.tools.push({ id, name: String(data.name || ""), input: data.input, startedAt: at, ...lazyUse(ev) });
       t.flow.push({ kind: "tool", toolId: id });
       break;
     }
@@ -351,6 +412,7 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
         tool.durationMs = Math.max(0, at - tool.startedAt);
         if (Array.isArray(data.images) && data.images.length) tool.images = data.images as Attachment[];
         if (data.agent && typeof data.agent === "object") tool.agent = data.agent as AgentReport;
+        markResult(tool, ev);
         if (tool.parent) {
           const p = t.tools.find((x) => x.id === tool.parent);
           if (p) p.lastAt = at;
@@ -649,7 +711,10 @@ function parker(on: boolean, parked: ProviderEvent[]) {
   };
 }
 
-export function createChatStore() {
+/** `lite`: this store's history pages are asked for lite (`?lite=1`; the
+ * chat view, which fetches the full tool payloads on demand: `hydrate`). */
+export function createChatStore(opts: { lite?: boolean } = {}) {
+  const lite = !!opts.lite;
   return create<ChatState>((set, get) => ({
   sid: null,
   turns: [],
@@ -734,7 +799,7 @@ export function createChatStore() {
     set({ paging: { ...s0.paging, loading: true, error: null } });
     let page: OlderPage;
     try {
-      page = await getOlderPage(sid, cursor, OLDER_TURNS);
+      page = await getOlderPage(sid, cursor, OLDER_TURNS, lite);
     } catch (e) {
       if (get().gen === gen) set((s) => ({ paging: { ...s.paging, loading: false, error: String((e as Error)?.message || e) } }));
       return;
@@ -744,7 +809,8 @@ export function createChatStore() {
     set((s) => {
       // (an event newer than the last reload already came live)
       const events = page.events.filter((e) => !(e.eid && e.eid > s.paging.baseEid));
-      const inPage = new Set(page.events.map((e) => e.eid || 0));
+      // (a folded task.update stands for several: `covers`)
+      const inPage = new Set(page.events.flatMap((e) => [e.eid || 0, ...(e.covers || [])]));
       const parked: ProviderEvent[] = [];
       const prev = reconstruct(page.messages, events, parker(page.page.has_more, parked));
       closeTrailing(prev, s.turns[0]);
@@ -820,10 +886,27 @@ export function createChatStore() {
           ev.type === "turn.complete" || ev.type === "error" ? (s.older?.cost_usd || 0) + totalCost(turns) : s.runningCostUsd,
       };
     }),
+
+  hydrate: async (toolIds) => {
+    const { sid, turns, detached } = get();
+    if (!sid) return;
+    const ids = new Set(toolIds);
+    const eids: number[] = [];
+    for (const t of withDetached(turns, detached))
+      for (const x of t.tools)
+        if (x.lazy && ids.has(x.id)) eids.push(...[x.lazy.use, x.lazy.result].filter((e): e is number => !!e));
+    if (!eids.length) return;
+    const full = await fullEvents(sid, eids);
+    if (get().sid !== sid) return;
+    set((s) => ({
+      turns: s.turns.map((t) => unlazyTurn(t, ids, full)),
+      detached: s.detached ? unlazyTurn(s.detached, ids, full) : null,
+    }));
+  },
   }));
 }
 
 export type ChatStoreApi = ReturnType<typeof createChatStore>;
 export type { ChatState };
 
-export const useChatStore = createChatStore();
+export const useChatStore = createChatStore({ lite: true });

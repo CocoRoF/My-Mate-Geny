@@ -10,6 +10,7 @@ import Icon from "../../ui/Icon";
 import Markdown from "../../ui/Markdown";
 import ThinkingBlock from "./ThinkingBlock";
 import ToolGroup from "./ToolGroup";
+import { FullToolNote, useFullTools } from "./useFullTool";
 import SubagentCard, { StatusIcon, StatusPill, useAgentView } from "./SubagentCard";
 import { agentStatus, allAgents, isAgentTool, taskFor } from "./subagent";
 import { fmtMs } from "./toolMeta";
@@ -110,6 +111,7 @@ function DetailBody({
 }) {
   const t = useT();
   const v = useAgentView(tool, turn.tools);
+  const full = useFullTools([tool], true); // its prompt / report in full (a lite page has previews)
   const sid = useSessionStore((s) => s.activeId);
   const running = v.status === "running";
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -192,7 +194,8 @@ function DetailBody({
         }}
         className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4"
       >
-        {v.prompt && (
+        {tool.lazy && <FullToolNote failed={full.failed} retry={full.retry} />}
+        {v.prompt && !tool.lazy && (
           <section>
             <SectionTitle>{t("turn.prompt")}</SectionTitle>
             <details open={v.prompt.length <= 600} className="group rounded-lg border border-border bg-bg/50">

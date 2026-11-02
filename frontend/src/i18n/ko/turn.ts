@@ -63,6 +63,8 @@ const ko: Messages<"turn"> = {
   background: "백그라운드",
   moreChars: "{n}자 더 있음",
   noOutput: "출력 없음",
+  loadingFull: "전체 내용을 불러오는 중…",
+  loadFullFailed: "전체 내용을 불러오지 못했어요",
   patchDelete: "삭제",
   patchAdd: "추가",
   patchUpdate: "수정",

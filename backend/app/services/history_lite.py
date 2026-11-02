@@ -16,11 +16,13 @@ that asks (``?lite=1``, only the new frontend does) gets:
 
    * inputs up to about ``INPUT_KEEP`` chars of JSON, TodoWrite (the todo panel) and
      the mate's tools travel whole;
+   * what a call acts on (``file_path``, ``path``, ``url``, ``pattern``,
+     ``description``, … : ``_ADDRESS_KEYS``) is never cut;
    * Edit / MultiEdit / Write / NotebookEdit: the file content (old/new
      strings, edits, content, new source) is left out as a unit — never cut
      into — the path and flags stay;
-   * apply_patch: each change keeps its small fields (path, kind, move path);
-     big ones (the diff text) are left out;
+   * apply_patch: each change keeps its path / kind / move path and small
+     fields; big ones (the diff text) are left out;
    * anything else (Bash command, an Agent's prompt, MCP arguments): strings
      longer than ``STR_PREVIEW`` are cut to their start (a row shows one
      truncated line), other values over it are left out; key order stays (a
@@ -78,6 +80,10 @@ _CONTENT_KEYS = {
     "notebookedit": ("new_source",),
 }
 _WHOLE_INPUT = ("todowrite",)
+# Input fields that name what a call acts on: never cut (a row links the path,
+# the changed-files panel lists it, an image read shows from it, …).
+_ADDRESS_KEYS = {"file_path", "path", "notebook_path", "move_path", "kind", "url", "description",
+                 "subagent_type", "skill", "pattern", "query", "session_id", "workspace_path"}
 _WHOLE_RESULT = ("task", "agent")
 # Events whose reduction can read a call's task state (finishing a turn) or
 # opens a new turn: a task.update never folds across one.
@@ -126,11 +132,14 @@ def _lite_input(name: Any, inp: Any) -> tuple[Any, dict[str, Any]] | None:
         if k in content:
             cut.append(k)
             continue
+        if k in _ADDRESS_KEYS and isinstance(v, str):
+            out[k] = v  # (whole, however long: rows link it, panels list it)
+            continue
         if n == "apply_patch" and k == "changes" and isinstance(v, list):
             changes = []
             for c in v:
                 if isinstance(c, dict):
-                    small = {ck: cv for ck, cv in c.items() if _vsize(cv) <= SMALL_VALUE}
+                    small = {ck: cv for ck, cv in c.items() if ck in _ADDRESS_KEYS or _vsize(cv) <= SMALL_VALUE}
                     if len(small) != len(c):
                         cut.append(k)
                     changes.append(small)

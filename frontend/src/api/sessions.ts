@@ -107,15 +107,28 @@ export interface HistoryPage extends History {
 /** An older page: the slice + what precedes it. */
 export type OlderPage = Pick<HistoryPage, "session_id" | "messages" | "events" | "page" | "before">;
 
-export const getHistoryPage = (id: string, q: { turns?: number; since?: string }) => {
+/** `lite`: ask for the slimmer page (big tool payloads as previews with
+ * `event.lazy`, deltas merged; backend services/history_lite.py). A backend
+ * that doesn't know it sends the full page — the store handles both. */
+export const getHistoryPage = (id: string, q: { turns?: number; since?: string }, lite = false) => {
   const p = new URLSearchParams();
   if (q.turns) p.set("turns", String(q.turns));
   if (q.since !== undefined) p.set("since", q.since);
+  if (lite) p.set("lite", "1");
   return apiFetch<HistoryPage>(`/api/history/${id}?${p}`);
 };
 
-export const getOlderPage = (id: string, before: string, turns: number) =>
-  apiFetch<OlderPage>(`/api/history/${id}?${new URLSearchParams({ turns: String(turns), before })}`);
+export const getOlderPage = (id: string, before: string, turns: number, lite = false) =>
+  apiFetch<OlderPage>(
+    `/api/history/${id}?${new URLSearchParams({ turns: String(turns), before, ...(lite ? { lite: "1" } : {}) })}`,
+  );
+
+/** The stored events `eids` of a chat, in full (what a lite page previewed). */
+export const getEvents = (id: string, eids: number[]) =>
+  apiFetch<{ events: ProviderEvent[] }>(`/api/history/${id}/events`, {
+    method: "POST",
+    body: JSON.stringify({ eids }),
+  });
 
 // ---- background tasks ----
 export const listTasks = (sid: string) => apiFetch<TaskInfo[]>(`/api/sessions/${sid}/tasks`);

@@ -8,6 +8,7 @@ import type { Attachment, TaskInfo } from "../../../types";
 import Lightbox from "../../attachments/Lightbox";
 import Icon from "../../ui/Icon";
 import ToolDetail from "./ToolDetail";
+import { FullToolNote, useFullTools } from "./useFullTool";
 import { fmtMs, summarize, toolMeta } from "./toolMeta";
 import { useT, type MsgKey, type TFunction } from "../../../i18n";
 
@@ -120,6 +121,7 @@ function TaskPill({ task, now }: { task: TaskInfo; now: number }) {
 function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; children: ToolActivity[] }) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const full = useFullTools([tool], open); // (a lite page's preview: the original comes on open)
   const session = useActive();
   const m = toolMeta(tool.name, tool.input, session?.workspace_path);
   const task = useTask(tool);
@@ -189,7 +191,7 @@ function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; chi
           {m.descriptive && m.category === "command" && (
             <div className="text-[11px] text-content-faint">{tool.name === "shell" ? t("turn.codexShell") : t("turn.command")}</div>
           )}
-          <ToolDetail tool={tool} root={session?.workspace_path} />
+          {tool.lazy ? <FullToolNote failed={full.failed} retry={full.retry} /> : <ToolDetail tool={tool} root={session?.workspace_path} />}
           {children.length > 0 && (
             <div className="rounded-lg border border-border/70 bg-surface/60 p-1">
               {children.map((c) => (
