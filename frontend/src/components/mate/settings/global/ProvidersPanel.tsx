@@ -35,7 +35,7 @@ const CARDS: CardSpec[] = [
   {
     engine: "elevenlabs",
     title: "mateSettings.engElevenlabs",
-    kinds: ["Speaking"],
+    kinds: ["Speaking", "Listening"],
     hint: "mateSettings.provElevenHint",
     link: { href: "https://elevenlabs.io/app/settings/api-keys", label: "mateSettings.provGetKey" },
     key: { name: "elevenlabs_key", label: "mateSettings.provApiKey", placeholder: "xi-… / sk_…" }, // i18n-ignore

@@ -15,7 +15,8 @@ export interface Persona {
 }
 
 export type TtsEngine = "off" | "browser" | "openai" | "elevenlabs" | "omnivoice" | "http";
-export type SttEngine = "off" | "browser" | "openai" | "whisper";
+/** elevenlabs = Scribe v2 Realtime (live transcript while speaking; the page streams with a server-minted token) */
+export type SttEngine = "off" | "browser" | "openai" | "whisper" | "elevenlabs";
 
 export interface MateVoice {
   auto_read: boolean;
@@ -35,7 +36,17 @@ export interface MateVoice {
     /** the reference clip's transcript */
     ref_text?: string;
   };
-  stt: { engine: SttEngine; model: string; language: string };
+  stt: {
+    engine: SttEngine;
+    model: string;
+    language: string;
+    /** realtime: a finished utterance is sent by itself (default off: it waits in the box) */
+    auto_send?: boolean;
+    /** realtime: talking while she speaks stops her voice (default on, with echo protection) */
+    barge_in?: boolean;
+    /** realtime: the pause (s) that ends an utterance, 0.3 – 3 (default 1.2) */
+    silence?: number;
+  };
 }
 
 /** the engines that can run a mate (sealed: own prompt, only the mate tools) */
@@ -555,11 +566,54 @@ export function importAvatarZip(id: string, file: File) {
   return upload<{ mate: Mate; avatar: Avatar }>(`/api/mates/${enc(id)}/avatar/import`, f);
 }
 
-export function transcribe(id: string, audio: Blob) {
+/** a recording → text. `engine`: another provider than the mate's (the realtime mic's fallback; "auto" = the server's pick) */
+export function transcribe(id: string, audio: Blob, engine?: string) {
   const f = new FormData();
-  const ext = audio.type.includes("ogg") ? "ogg" : audio.type.includes("mp4") ? "m4a" : "webm";
+  const ext = audio.type.includes("wav") ? "wav" : audio.type.includes("ogg") ? "ogg" : audio.type.includes("mp4") ? "m4a" : "webm";
   f.append("file", audio, `speech.${ext}`);
-  return upload<{ text: string; language?: string }>(`/api/mates/${enc(id)}/transcribe`, f);
+  const q = engine ? `?engine=${encodeURIComponent(engine)}` : "";
+  return upload<{ text: string; language?: string; engine?: string }>(`/api/mates/${enc(id)}/transcribe${q}`, f);
+}
+
+export interface RealtimeSttToken {
+  /** wss URL to stream to (the single-use token inside — consumed on connect, 15 min to use it) */
+  url: string;
+  model: string;
+  sample_rate: number;
+  language: string;
+  commit_strategy: string;
+  silence: number;
+  expires_in: number;
+  /** what transcribes a recording when the stream fails (whisper | openai | elevenlabs | null) */
+  fallback: string | null;
+}
+
+/** why the realtime mic can't start (the server's `code`) and what can transcribe instead */
+export class RealtimeTokenError extends Error {
+  readonly code: string;
+  readonly fallback: string | null;
+  constructor(message: string, code: string, fallback: string | null) {
+    super(message);
+    this.code = code;
+    this.fallback = fallback;
+  }
+}
+
+/** a single-use ElevenLabs realtime token for this mate's mic (the key never leaves the server) */
+export async function realtimeSttToken(id: string): Promise<RealtimeSttToken> {
+  let res: Response;
+  try {
+    res = await fetch(`/api/mates/${enc(id)}/stt/realtime`, { method: "POST", cache: "no-store" });
+  } catch (e) {
+    throw new RealtimeTokenError((e as Error).message || String(e), "network", null);
+  }
+  if (res.status === 401) {
+    toLogin();
+    throw new RealtimeTokenError("authentication required", "network", null); // i18n-ignore (the page goes to the login page)
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new RealtimeTokenError(String(body.detail || res.statusText), String(body.code || "upstream"), body.fallback ?? null);
+  return body as RealtimeSttToken;
 }
 
 /** The mate's engine isn't set up in Global settings (any more): the browser voice should speak instead. */

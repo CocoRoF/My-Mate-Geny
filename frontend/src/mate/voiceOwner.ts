@@ -64,7 +64,7 @@ export function deviceOf(cid: unknown): string | null {
 // ── the election ─────────────────────────────────────────────────────────
 
 interface Beat {
-  type: "hb" | "bye" | "started";
+  type: "hb" | "bye" | "started" | "voicing" | "hush";
   id: string;
   mateId: string;
   rank?: number;
@@ -75,6 +75,10 @@ interface Beat {
   /** "started": a sentence began playing */
   turn?: string;
   idx?: number;
+  /** "started": what it says (the mic's echo filter compares with it) */
+  text?: string;
+  /** hb / "voicing": audio of hers is playing in that window right now */
+  voicing?: boolean;
 }
 
 interface Peer {
@@ -85,6 +89,75 @@ interface Peer {
   speaking: string | null;
   hidden: boolean;
   seen: number;
+}
+
+// ── "she is speaking on this device" (the mic: mate/stt/echo.ts) ─────────
+//
+// Any window may be the one playing her voice; the mic may be in another (the quick card, the chat window while the
+// overlay reads). Each window says when its audio starts / stops ("voicing", also in every heartbeat), every
+// sentence started comes with its text, and a barge-in hushes her wherever she plays on this device.
+
+/** this page (voicing is per page: one audio queue per page) */
+const pageId = makeId(12);
+/** mates whose voice plays in this page now */
+const localVoicing = new Set<string>();
+/** other pages of this device: mate id per page id → voicing, last heard */
+const peerVoicing = new Map<string, { mateId: string; on: boolean; seen: number }>();
+const spokenLog: { mateId: string; text: string; at: number }[] = [];
+const hushListeners = new Set<(mateId: string) => void>();
+const SPOKEN_KEEP_MS = 30_000;
+
+function noteSpoken(mateId: string, text: string | undefined) {
+  if (!text) return;
+  const now = Date.now();
+  spokenLog.push({ mateId, text: text.slice(0, 600), at: now });
+  while (spokenLog.length && (spokenLog.length > 40 || now - spokenLog[0].at > SPOKEN_KEEP_MS)) spokenLog.shift();
+}
+
+/** this page plays (or stopped playing) the mate's voice: every window of the device is told at once */
+export function setLocalVoicing(mateId: string, on: boolean): void {
+  if (localVoicing.has(mateId) === on) return;
+  if (on) localVoicing.add(mateId);
+  else localVoicing.delete(mateId);
+  post({ type: "voicing", id: pageId, mateId, voicing: on });
+}
+
+/** the mate's voice plays somewhere on this device now (this page or another window of this browser profile) */
+export function deviceVoicing(mateId: string): boolean {
+  if (localVoicing.has(mateId)) return true;
+  const now = Date.now();
+  for (const p of peerVoicing.values()) if (p.mateId === mateId && p.on && now - p.seen < VOICING_GONE_MS) return true;
+  return false;
+}
+
+/** a page playing her voice says so again every second (a page playing audio isn't throttled); silent 3 s = stopped */
+const VOICING_EVERY_MS = 1000;
+const VOICING_GONE_MS = 3000;
+if (typeof window !== "undefined") {
+  setInterval(() => {
+    for (const mateId of localVoicing) post({ type: "voicing", id: pageId, mateId, voicing: true });
+  }, VOICING_EVERY_MS);
+  window.addEventListener("pagehide", () => {
+    for (const mateId of localVoicing) post({ type: "voicing", id: pageId, mateId, voicing: false });
+  });
+}
+
+/** what she said on this device lately (newest last) */
+export function recentSpoken(mateId: string, ms = 20_000): string[] {
+  const now = Date.now();
+  return spokenLog.filter((s) => s.mateId === mateId && now - s.at <= ms).map((s) => s.text);
+}
+
+/** stop her voice wherever it plays on this device (a barge-in): every window's queue for the mate stops */
+export function hushDevice(mateId: string): void {
+  post({ type: "hush", id: pageId, mateId });
+  hushListeners.forEach((l) => l(mateId));
+}
+
+/** a barge-in hushed the mate (here or in another window of this device) */
+export function onHush(cb: (mateId: string) => void): () => void {
+  hushListeners.add(cb);
+  return () => hushListeners.delete(cb);
 }
 
 const channel: BroadcastChannel | null = (() => {
@@ -129,6 +202,15 @@ if (channel) {
     }
     if (b.type === "started" && typeof b.turn === "string" && typeof b.idx === "number") {
       noteStarted(b.turn, b.idx);
+      noteSpoken(b.mateId, typeof b.text === "string" ? b.text : undefined);
+      return;
+    }
+    if (b.type === "voicing") {
+      peerVoicing.set(`${b.id}:${b.mateId}`, { mateId: b.mateId, on: !!b.voicing, seen: Date.now() });
+      return;
+    }
+    if (b.type === "hush") {
+      hushListeners.forEach((l) => l(b.mateId));
       return;
     }
     if (b.type !== "hb") return;
@@ -157,9 +239,16 @@ function better(a: Omit<Peer, "seen" | "hidden">, b: Omit<Peer, "seen" | "hidden
 export const startedUpTo = (turn: string) => started.get(turn) ?? -1;
 
 /** a sentence of `turn` began playing in this window: tell the others (they never play it, nor anything before it) */
-export function announceStarted(mateId: string, turn: string, idx: number) {
+export function announceStarted(mateId: string, turn: string, idx: number, text?: string) {
   noteStarted(turn, idx);
-  post({ type: "started", id: "-", mateId, turn, idx });
+  noteSpoken(mateId, text);
+  post({ type: "started", id: "-", mateId, turn, idx, text: text?.slice(0, 600) });
+}
+
+/** a line said without a turn (a settings test): only remembered for the mic's echo filter */
+export function noteSaid(mateId: string, text: string): void {
+  noteSpoken(mateId, text);
+  post({ type: "started", id: "-", mateId, turn: "-", idx: -1, text: text.slice(0, 600) });
 }
 
 const subscribe = (cb: () => void) => {

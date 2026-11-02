@@ -21,6 +21,9 @@ export interface PreviewFlags {
   emotion?: number;
   /** relation.avatar_mood */
   avatarMood?: boolean;
+  /** voice.stt.auto_send / barge_in (Settings → Voice, unsaved: a mic listening in another window follows at once) */
+  sttAutoSend?: boolean;
+  sttBargeIn?: boolean;
 }
 
 const volumes = new Map<string, number>();

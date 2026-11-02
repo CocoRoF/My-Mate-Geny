@@ -14,7 +14,8 @@ import ComposerMenu, { type MenuItem } from "../chat/ComposerMenu";
 import { AttachMenu, FileInputs, QueuedList } from "../composer/ComposerParts";
 import { useComposer, type ComposerAction } from "../composer/useComposer";
 import Icon from "../ui/Icon";
-import { useMic } from "./useMic";
+import { useMic, type Mic } from "./useMic";
+import { joinText } from "../../mate/stt/scribe";
 import { useT, type TFunction } from "../../i18n";
 
 const HOLD_MS = 350;
@@ -130,10 +131,43 @@ function Composer({
     contentRef.current?.(hasContent);
   }, [hasContent]);
 
-  const mic = useMic(mate, (heard) => {
-    c.submit("auto", heard);
-  });
+  const mic = useMic(
+    mate,
+    (heard) => {
+      c.submit("auto", heard);
+    },
+    {
+      // realtime (ElevenLabs): a finished utterance joins the box — or, auto-send on, goes out with the box's text
+      onSegment: (heard) => {
+        const box = useDraftStore.getState().drafts[sid]?.text ?? "";
+        const all = joinText(box, heard);
+        if (micRef.current?.autoSend) {
+          // (the box's text goes with it; not sent — not connected, uploads running — submit puts it back)
+          c.setInput("");
+          c.submit("auto", all);
+          return;
+        }
+        c.setInput(all);
+      },
+    },
+  );
+  const micRef = useRef(mic);
+  micRef.current = mic;
   const recording = mic.state === "recording" || mic.state === "starting";
+  /** the realtime mic is on: the box shows the live text after what was there */
+  const live = mic.realtime && mic.state !== "idle";
+
+  // her answer streaming in is activity: the mic doesn't stop for a "quiet stretch" while she replies
+  const micTouch = mic.touch;
+  useEffect(() => {
+    if (live && streaming) micTouch();
+  }, [live, streaming, micTouch]);
+  // the mic stopped with the text in the box (auto-send off): ready to edit / send (not on a phone: no keyboard pop-up)
+  const wasLive = useRef(false);
+  useEffect(() => {
+    if (wasLive.current && !live && !touch && useDraftStore.getState().drafts[sid]?.text) c.taRef.current?.focus();
+    wasLive.current = live;
+  }, [live, touch, sid, c.taRef]);
 
   useEffect(() => {
     setListening(recording || (!!input.trim() && document.activeElement === c.taRef.current));
@@ -164,11 +198,17 @@ function Composer({
   const btn = `grid shrink-0 place-items-center rounded-full transition ${compact ? "h-8 w-8" : "h-9 w-9 touch:h-10 touch:w-10"}`;
   const micTitle = mic.unavailable
     ? mic.unavailable
-    : recording
-      ? t("mate.micListening")
-      : mic.state === "transcribing"
-        ? t("mate.transcribing")
-        : t("mate.micHold");
+    : mic.realtime
+      ? recording
+        ? t("mate.micRtStop")
+        : mic.state === "transcribing"
+          ? t("mate.transcribing")
+          : t("mate.micRtStart")
+      : recording
+        ? t("mate.micListening")
+        : mic.state === "transcribing"
+          ? t("mate.transcribing")
+          : t("mate.micHold");
   const connected = conv.connection === "open";
   const ph =
     placeholder && !streaming && !items.length
@@ -183,7 +223,8 @@ function Composer({
 
   return (
     <div className={compact ? "" : "pb-safe"}>
-      {(mic.error || (recording && mic.interim) || mic.state === "transcribing") && (
+      {mic.realtime && (live || mic.notice) && !mic.error && <RealtimeStatus mic={mic} name={mate.name} compact={compact} />}
+      {(mic.error || (!live && recording && mic.interim) || (!mic.realtime && mic.state === "transcribing")) && (
         <div
           className={`mx-auto mb-1.5 flex max-w-2xl items-start gap-2 rounded-lg px-3 py-1.5 text-[12px] ${
             mic.error ? "bg-danger/10 text-danger" : "bg-surface-2 text-content-dim"
@@ -235,7 +276,12 @@ function Composer({
           {showVoiceToggle && <ReadAloudToggle mate={mate} conv={conv} className={btn} size={compact ? 15 : 17} />}
           <textarea
             {...c.textareaProps}
-            value={recording && mic.interim ? mic.interim : input}
+            // realtime: what is in the box + the words being heard (the committed text replaces them as it comes);
+            // Web Speech: what it heard so far
+            value={live ? joinText(input, mic.interim) : recording && mic.interim ? mic.interim : input}
+            readOnly={live}
+            aria-live={live ? "polite" : undefined}
+            data-live={live ? (mic.interim ? "partial" : "listening") : undefined}
             onFocus={() => input.trim() && setListening(true)}
             onBlur={() => !recording && setListening(false)}
             placeholder={ph}
@@ -321,6 +367,70 @@ function Composer({
             </span>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** The realtime mic's line above the box: connecting / listening (auto-send?) / she speaks (muted or barge-in) /
+ * reconnecting / a fallback or another notice, with the mic level. */
+function RealtimeStatus({ mic, name, compact }: { mic: Mic; name: string; compact?: boolean }) {
+  const t = useT();
+  const p = mic.phase;
+  const text =
+    p === "connecting"
+      ? t("mate.sttRtConnecting")
+      : p === "reconnecting"
+        ? t("mate.sttRtReconnecting")
+        : p === "finishing"
+          ? t("mate.sttRtFinishing")
+          : p === "transcribing"
+            ? t("mate.transcribing")
+            : p === "listening" || p === "recording"
+              ? mic.gated
+                ? mic.bargeIn
+                  ? t("mate.sttRtGatedBarge", { name })
+                  : t("mate.sttRtGatedMuted", { name })
+                : p === "recording"
+                  ? t("mate.sttRtRecording")
+                  : mic.autoSend
+                    ? t("mate.sttRtListeningAuto")
+                    : t("mate.sttRtListening")
+              : "";
+  const busy = p === "connecting" || p === "reconnecting" || p === "finishing" || p === "transcribing";
+  return (
+    <div
+      className={`mx-auto mb-1.5 flex max-w-2xl items-center gap-2 rounded-lg px-3 py-1.5 ${compact ? "text-[11.5px]" : "text-[12px]"} ${
+        mic.notice && !text ? "bg-warning/10 text-warning" : "bg-surface-2 text-content-dim"
+      }`}
+      data-testid="mate-mic-status"
+      data-phase={p ?? "idle"}
+      data-gated={mic.gated ? "1" : undefined}
+    >
+      {text ? (
+        <>
+          {busy ? (
+            <Icon name="spinner" size={12} spin className="shrink-0" />
+          ) : (
+            <span className="relative grid h-3 w-3 shrink-0 place-items-center" aria-hidden>
+              <span
+                className={`absolute inset-0 rounded-full ${mic.gated && !mic.bargeIn ? "bg-content-faint/40" : "bg-danger/30"}`}
+                style={{ transform: `scale(${0.6 + Math.min(1, mic.level * 2.5) * 0.9})`, transition: "transform 90ms linear" }}
+              />
+              <span className={`relative h-1.5 w-1.5 rounded-full ${mic.gated && !mic.bargeIn ? "bg-content-faint" : "bg-danger"}`} />
+            </span>
+          )}
+          <span className="min-w-0 flex-1 truncate">{text}</span>
+          {mic.notice && <span className="hidden min-w-0 max-w-[50%] truncate text-warning sm:inline" title={mic.notice}>{mic.notice}</span>}
+        </>
+      ) : (
+        <>
+          <Icon name="warning" size={12} className="shrink-0" />
+          <span className="min-w-0 flex-1 break-words">{mic.notice}</span>
+          <button onClick={mic.clearError} className="shrink-0 opacity-70 hover:opacity-100" aria-label={t("common.dismiss")}>
+            <Icon name="x" size={12} />
+          </button>
+        </>
       )}
     </div>
   );
