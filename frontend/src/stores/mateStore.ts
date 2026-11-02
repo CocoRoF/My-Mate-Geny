@@ -66,6 +66,9 @@ interface MateState {
   memoryRev: Record<string, number>;
   /** per mate: bumped when its relationship changed elsewhere (the Relationship tab refetches) */
   relationRev: Record<string, number>;
+  /** per mate: bumped when her own conversation-style changes changed (chips and the style tab's history refetch) */
+  styleRev: Record<string, number>;
+  bumpStyle: (mateId: string) => void;
 }
 
 const ACTIVE_KEY = "hrh_mate_active";
@@ -145,6 +148,8 @@ export const useMateStore = create<MateState>((set, get) => ({
   syncVersion: null,
   memoryRev: {},
   relationRev: {},
+  styleRev: {},
+  bumpStyle: (mateId) => set((s) => ({ styleRev: { ...s.styleRev, [mateId]: (s.styleRev[mateId] ?? 0) + 1 } })),
   mates: [],
   drafts: {},
   loaded: false,
@@ -260,6 +265,7 @@ export const useMateStore = create<MateState>((set, get) => ({
     if (reason === "relation" && mateId) {
       set((s) => ({ relationRev: { ...s.relationRev, [mateId]: (s.relationRev[mateId] ?? 0) + 1 } }));
     }
+    if (reason === "style" && mateId) get().bumpStyle(mateId);
     if (reason === "settings" && get().providers) void get().loadProviders();
     scheduleReload();
   },

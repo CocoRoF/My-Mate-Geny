@@ -15,7 +15,7 @@ export interface FilledEntry {
 /** what the fields need from the studio */
 export interface FieldsApi {
   filled: Record<string, FilledEntry>;
-  /** save one field (a flat path: name, persona.speech, prefs.tone.humor, concept.pitch, …) */
+  /** save one field (a flat path: name, persona.description, prefs.speech_style, prefs.tone.humor, concept.pitch, …) */
   save: (path: string, value: unknown) => Promise<void>;
   undo: (path: string) => Promise<void>;
   /** when the studio opened: fills older than this don't glow (they were there before) */

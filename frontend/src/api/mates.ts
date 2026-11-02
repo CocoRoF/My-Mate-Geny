@@ -4,12 +4,12 @@ import { tr } from "../i18n";
 import type { Avatar } from "../mate/types";
 import type { Session } from "../types";
 
+/** who she is — the character only (how she talks is the conversation style: MatePrefs) */
 export interface Persona {
   description: string;
   personality: string;
-  speech: string;
   greeting: string;
-  address: string;
+  /** the reply language (stored here: it also picks the localized name/greeting); edited in Conversation style */
   language: string;
   instructions: string;
 }
@@ -65,28 +65,66 @@ export type RecallLevel = "off" | "light" | "normal" | "rich";
 /** 0 off · 1 subtle · 2 normal · 3 expressive */
 export type EmotionLevel = 0 | 1 | 2 | 3;
 
-/** Conversation settings (docs/mate-memory-affinity.md §3) */
+/** may she change her own conversation style: yes | as a proposal the user applies | no */
+export type SelfEdit = "auto" | "ask" | "off";
+
+/** the character's own way of talking (bundled characters / imports — data, not a setting) */
+export interface StyleDefaults {
+  /** "" = none */
+  formality: "" | Exclude<Formality, "auto">;
+  /** may contain {name} (the user's name) */
+  address: string;
+  self_ref: string;
+}
+
+/** The conversation style (대화 방식): the one place that decides how she talks (docs/mate.md "Prompt composition") */
 export interface MatePrefs {
   user_name: string;
+  /** what she calls the user ("" = her character's way: defaults.address) */
+  address: string;
+  /** how she refers to herself ("" = her character's way) */
   self_ref: string;
+  /** auto = her character's own level (defaults.formality) */
   formality: Formality;
+  /** speech habits: rhythm, catchphrases, sample lines */
+  speech_style: string;
   length: ReplyLength;
   emotion: EmotionLevel;
   tone: { warmth: ToneLevel; humor: ToneLevel; initiative: ToneLevel };
   avoid: string;
   memory: { recall: RecallLevel; self_save: boolean };
+  self_edit: SelfEdit;
+  defaults: StyleDefaults;
 }
 
 export const DEFAULT_PREFS: MatePrefs = {
   user_name: "",
+  address: "",
   self_ref: "",
   formality: "auto",
+  speech_style: "",
   length: "normal",
   emotion: 2,
   tone: { warmth: "auto", humor: "auto", initiative: "auto" },
   avoid: "",
   memory: { recall: "normal", self_save: true },
+  self_edit: "auto",
+  defaults: { formality: "", address: "", self_ref: "" },
 };
+
+/** a change of the conversation style she made herself (update_conversation_style) */
+export interface StyleChange {
+  id: string;
+  mate_id: string;
+  created_at: string;
+  actor: "mate" | "user";
+  status: "applied" | "proposed" | "dismissed" | "undone";
+  reason: string;
+  /** flat paths: formality, address, user_name, self_ref, language, length, emotion, tone.warmth, …, speech_style, avoid */
+  changes: Record<string, { from: unknown; to: unknown }>;
+  session_id: string | null;
+  resolved_at: string | null;
+}
 
 export type RelationStage = "new" | "familiar" | "trusted" | "companion";
 export const RELATION_STAGES: RelationStage[] = ["new", "familiar", "trusted", "companion"];
@@ -218,7 +256,7 @@ export interface MatePatch {
   avatar?: Avatar;
   llm?: Partial<MateLlm>;
   voice?: { auto_read?: boolean; volume?: number; tts?: Partial<MateVoice["tts"]>; stt?: Partial<MateVoice["stt"]> };
-  prefs?: Partial<Omit<MatePrefs, "tone" | "memory">> & { tone?: Partial<MatePrefs["tone"]>; memory?: Partial<MatePrefs["memory"]> };
+  prefs?: Partial<Omit<MatePrefs, "tone" | "memory" | "defaults">> & { tone?: Partial<MatePrefs["tone"]>; memory?: Partial<MatePrefs["memory"]> };
   screen?: Partial<MateScreen>;
 }
 
@@ -228,7 +266,19 @@ export const prefsOf = (m: Pick<Mate, "prefs"> | null | undefined): MatePrefs =>
   ...(m?.prefs ?? {}),
   tone: { ...DEFAULT_PREFS.tone, ...(m?.prefs?.tone ?? {}) },
   memory: { ...DEFAULT_PREFS.memory, ...(m?.prefs?.memory ?? {}) },
+  defaults: { ...DEFAULT_PREFS.defaults, ...(m?.prefs?.defaults ?? {}) },
 });
+
+/** what the style comes to: her own choice, else her character's (the settings show it as the "auto" value) */
+export const effectiveStyle = (p: MatePrefs) => ({
+  formality: (p.formality !== "auto" ? p.formality : p.defaults.formality) || "",
+  address: p.address || p.defaults.address,
+  selfRef: p.self_ref || p.defaults.self_ref,
+});
+
+/** an address the character builds on the user's name ({name} 님), shown with the name (or a placeholder) */
+export const fillAddress = (address: string, userName: string, placeholder: string) =>
+  address.split("{name}").join(userName.trim() || placeholder);
 
 export interface Conversation {
   mate: Mate;
@@ -261,6 +311,8 @@ export interface Memory {
   use_count: number;
   /** in the core: what she always knows (the rest is recalled when relevant) */
   core?: boolean;
+  /** looks like a rule about how she talks (it belongs in the conversation style); a hint, read-only */
+  style_flag?: { reason: "formality" | "address" | "speech"; conflict: boolean; level?: Formality | null } | null;
 }
 
 export interface MemoryAdded extends Memory {
@@ -423,6 +475,13 @@ export const resetRelation = (id: string, mode: "zero" | "recompute") =>
   apiFetch<RelationView>(`/api/mates/${enc(id)}/relation/reset`, { method: "POST", ...j({ mode }) });
 export const previewRecall = (id: string, text: string) =>
   apiFetch<RecallPreview>(`/api/mates/${enc(id)}/memories/preview`, { method: "POST", ...j({ text }) });
+export const memoryToStyle = (id: string, mid: string) =>
+  apiFetch<{ mate: Mate; memory: Memory }>(`/api/mates/${enc(id)}/memories/${enc(mid)}/to-style`, { method: "POST" });
+export const memoryStyleOk = (id: string, mid: string) =>
+  apiFetch<{ dismissed: boolean }>(`/api/mates/${enc(id)}/memories/${enc(mid)}/style-ok`, { method: "POST" });
+export const listStyleChanges = (id: string) => apiFetch<StyleChange[]>(`/api/mates/${enc(id)}/style-changes`);
+export const resolveStyleChange = (id: string, cid: string, action: "undo" | "apply" | "dismiss") =>
+  apiFetch<{ change: StyleChange; mate: Mate; skipped: string[] }>(`/api/mates/${enc(id)}/style-changes/${enc(cid)}/${action}`, { method: "POST" });
 export const deleteMemory = (id: string, mid: string) =>
   apiFetch<{ deleted: boolean }>(`/api/mates/${enc(id)}/memories/${enc(mid)}`, { method: "DELETE" });
 

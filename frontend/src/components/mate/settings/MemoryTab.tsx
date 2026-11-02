@@ -12,6 +12,8 @@ import {
   deleteMemory,
   listMemories,
   memoryStats,
+  memoryStyleOk,
+  memoryToStyle,
   MEMORY_KINDS,
   prefsOf,
   previewRecall,
@@ -79,7 +81,7 @@ function KindBadge({ kind }: { kind: MemoryKind }) {
   return <span className={`shrink-0 rounded px-1.5 py-px text-[10.5px] font-medium ${KIND_TONE[kind]}`}>{t(KIND_LABEL[kind])}</span>;
 }
 
-export default function MemoryTab({ mate }: { mate: Mate }) {
+export default function MemoryTab({ mate, onOpenStyle }: { mate: Mate; onOpenStyle?: () => void }) {
   const t = useT();
   const [items, setItems] = useState<Memory[] | null>(null);
   const [stats, setStats] = useState<MemoryStats | null>(null);
@@ -97,6 +99,7 @@ export default function MemoryTab({ mate }: { mate: Mate }) {
   const [pin, setPin] = useState(false);
   const [busy, setBusy] = useState(false);
   const [added, setAdded] = useState<MemoryAdded | null>(null);
+  const [moved, setMoved] = useState(false);
 
   // search as you type (debounced)
   useEffect(() => {
@@ -161,6 +164,15 @@ export default function MemoryTab({ mate }: { mate: Mate }) {
       await deleteMemory(mate.id, added.id);
       setAdded(null);
     });
+
+  // a memory that is really a rule about how she talks: the user moves it into the conversation style or keeps it
+  const toStyle = (m: Memory) =>
+    run(async () => {
+      const out = await memoryToStyle(mate.id, m.id);
+      useMateStore.getState().upsert(out.mate);
+      setMoved(true);
+    });
+  const keepMemory = (m: Memory) => run(() => memoryStyleOk(mate.id, m.id));
 
   const saveEdit = () =>
     editing &&
@@ -295,6 +307,21 @@ export default function MemoryTab({ mate }: { mate: Mate }) {
           ))}
         </div>
         <ErrorLine text={err} />
+        {moved && (
+          <Banner
+            tone="info"
+            testId="mate-memory-moved"
+            action={
+              onOpenStyle && (
+                <button className="btn-soft !px-2 !py-0.5 text-[12px]" onClick={onOpenStyle}>
+                  {t("mateSettings.profToStyle")}
+                </button>
+              )
+            }
+          >
+            {t("mateSettings.memMovedToStyle")}
+          </Banner>
+        )}
         {sel.size > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-surface-2/50 px-2.5 py-1.5 text-[12px]" data-testid="mate-memory-bulk">
             <span className="text-content-dim">{t("mateSettings.memSelected", { count: sel.size })}</span>
@@ -356,6 +383,21 @@ export default function MemoryTab({ mate }: { mate: Mate }) {
                     <p className="cursor-text text-[13px] text-content break-words" onClick={() => setEditing({ id: m.id, text: m.text })} title={t("mateSettings.memEdit")} data-testid="mate-memory-text">
                       {m.text}
                     </p>
+                  )}
+                  {m.style_flag && m.status === "active" && (
+                    <div className="flex flex-wrap items-center gap-1.5 rounded-md bg-warning/10 px-2 py-1 text-[11px] text-content-dim" data-testid="mate-memory-style-flag" data-reason={m.style_flag.reason}>
+                      <Icon name="sliders" size={11} className="shrink-0 text-warning" />
+                      <span className="min-w-0 flex-1">
+                        {t("mateSettings.memStyleFlag")}
+                        {m.style_flag.conflict && <> {t("mateSettings.memStyleConflict")}</>}
+                      </span>
+                      <button type="button" className="btn-soft !px-2 !py-0.5 text-[11px]" onClick={() => void toStyle(m)} data-testid="mate-memory-to-style">
+                        {t("mateSettings.memToStyle")}
+                      </button>
+                      <button type="button" className="btn-ghost !px-2 !py-0.5 text-[11px]" onClick={() => void keepMemory(m)} data-testid="mate-memory-style-ok">
+                        {t("mateSettings.memStyleOk")}
+                      </button>
+                    </div>
                   )}
                   <div className="flex flex-wrap items-center gap-2 text-[10.5px] text-content-faint">
                     <Importance value={m.importance} onChange={(n) => void run(() => updateMemory(mate.id, m.id, { importance: n }))} testId="mate-memory-item-importance" />

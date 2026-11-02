@@ -93,13 +93,13 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
         <div className="mx-auto max-w-xl space-y-4 pb-6">
           {/* key: a different mate starts from its own values */}
-          {tab === "profile" && <ProfileTab key={mate.id} mate={mate} />}
+          {tab === "profile" && <ProfileTab key={mate.id} mate={mate} onOpenStyle={() => setTab("style")} />}
           {tab === "style" && <StyleTab key={mate.id} mate={mate} conv={conv} />}
           {tab === "avatar" && <AvatarTab key={mate.id} mate={mate} conv={conv} />}
           {tab === "model" && <ModelTab key={mate.id} mate={mate} />}
           {tab === "voice" && <VoiceTab key={mate.id} mate={mate} conv={conv} />}
           {tab === "screen" && <ScreenTab key={mate.id} mate={mate} />}
-          {tab === "memory" && <MemoryTab key={mate.id} mate={mate} />}
+          {tab === "memory" && <MemoryTab key={mate.id} mate={mate} onOpenStyle={() => setTab("style")} />}
           {tab === "relation" && <RelationshipTab key={mate.id} mate={mate} />}
           {tab === "danger" && <DangerTab key={mate.id} mate={mate} onDeleted={onClose} />}
         </div>

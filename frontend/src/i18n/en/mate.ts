@@ -284,4 +284,10 @@ export default {
   shareMainScreen: "{name} (main)",
   shareNote: "One picture, attached to your message — nothing is recorded.",
   shareGo: "Share",
+  // the conversation style (docs/mate.md "Prompt composition")
+  toolStyleChanging: "Changing how she talks…",
+  toolStyleFailed: "Couldn't change her conversation style",
+  toolStyleChanged: "Conversation style: {what}",
+  toolStyleProposed: "Proposed: {what}",
+  toolStyleSame: "Conversation style: already like that",
 };
