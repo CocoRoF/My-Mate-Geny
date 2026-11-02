@@ -28,7 +28,54 @@
   .status small{display:block;color:#7c8597;margin-top:3px;word-break:break-word}
   .spin{width:15px;height:15px;margin-top:2px;border-radius:50%;border:2px solid #39415a;border-top-color:#6e8bff;animation:r .8s linear infinite;flex:none}
   @keyframes r{to{transform:rotate(360deg)}}
-</style></head>
+  /* light: the console's Appearance (html.light), or the phone's light theme when nothing was chosen */
+  html.light{color-scheme:light}
+  html.light,html.light body{background:#f1f3f7}
+  html.light body{color:#161a23}
+  html.light .sub,html.light label,html.light .check,html.light .status{color:#474f5f}
+  html.light input[type=text],html.light input[type=password],html.light input[type=url]{background:#fff;border-color:#c2c8d4;color:#161a23}
+  html.light input:focus{border-color:#3d5ae6}
+  html.light input[aria-invalid=true]{border-color:#b41a22}
+  html.light .hint{color:#606879}
+  html.light .pw button{background:#ebeef3;color:#474f5f}
+  html.light .check input{accent-color:#3d5ae6}
+  html.light .go{background:linear-gradient(135deg,#4c68f0,#3a56de)}
+  html.light .status.err{color:#b41a22}
+  html.light .status small{color:#606879}
+  html.light .spin{border-color:#c2c8d4;border-top-color:#3d5ae6}
+  @media (prefers-color-scheme: light) {
+    html:not(.dark){color-scheme:light}
+  html:not(.dark),html:not(.dark) body{background:#f1f3f7}
+  html:not(.dark) body{color:#161a23}
+  html:not(.dark) .sub,html:not(.dark) label,html:not(.dark) .check,html:not(.dark) .status{color:#474f5f}
+  html:not(.dark) input[type=text],html:not(.dark) input[type=password],html:not(.dark) input[type=url]{background:#fff;border-color:#c2c8d4;color:#161a23}
+  html:not(.dark) input:focus{border-color:#3d5ae6}
+  html:not(.dark) input[aria-invalid=true]{border-color:#b41a22}
+  html:not(.dark) .hint{color:#606879}
+  html:not(.dark) .pw button{background:#ebeef3;color:#474f5f}
+  html:not(.dark) .check input{accent-color:#3d5ae6}
+  html:not(.dark) .go{background:linear-gradient(135deg,#4c68f0,#3a56de)}
+  html:not(.dark) .status.err{color:#b41a22}
+  html:not(.dark) .status small{color:#606879}
+  html:not(.dark) .spin{border-color:#c2c8d4;border-top-color:#3d5ae6}
+  }
+</style>
+<script>
+  // light / dark as the console last chose (GenyServer.getState → theme; ThemeBars.java), remembered here for the
+  // next first paint; before any choice the phone's own (the media query below)
+  (function () {
+    var h = document.documentElement;
+    var set = function (t) { if (t === "light" || t === "dark") { h.classList.remove("light", "dark"); h.classList.add(t); } };
+    try { set(localStorage.getItem("geny.theme")); } catch (e) {}
+    try {
+      var cap = window.Capacitor;
+      if (cap && cap.nativePromise) cap.nativePromise("GenyServer", "getState", {}).then(function (s) {
+        if (s && s.theme) { set(s.theme); try { localStorage.setItem("geny.theme", s.theme); } catch (e) {} }
+      }).catch(function () {});
+    } catch (e) {}
+  })();
+</script>
+</head>
 <body>
 <form class="card" id="form" novalidate autocomplete="on">
   <div class="head">
