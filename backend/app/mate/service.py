@@ -24,7 +24,7 @@ import re
 import secrets
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -555,6 +555,69 @@ class MateService:
         self.store.get(mate_id)
         now, tz = datetime.now(timezone.utc), self.store.tz()
         return A.view(self._advanced(mate_id, now, tz), now, tz)
+
+    def _talk_times(self, mate: dict[str, Any]) -> list[datetime]:
+        """When the user wrote to the mate (not the internal messages — delegation results), oldest first."""
+        sid = mate.get("session_id")
+        if not sid:
+            return []
+        out = []
+        for r in self._svc._db.query("SELECT meta, created_at FROM messages WHERE session_id = ? AND role = 'user' "
+                                     "ORDER BY created_at, rowid", (sid,)):
+            try:
+                meta = json.loads(r["meta"] or "null") or {}
+            except ValueError:
+                meta = {}
+            at = A._t(r["created_at"])
+            if at is not None and not (isinstance(meta, dict) and meta.get("internal")):
+                out.append(at)
+        return out
+
+    def relation_journal(self, mate_id: str, days: int = 30) -> dict[str, Any]:
+        """The Relationship panel (docs/mate-memory-affinity.md §6.1) — reads only: the value at the end of each of
+        the last ``days`` days, what the next stage still needs (earned and warmth), stats, milestones and
+        anniversaries, the change log with kinds, the latest memories. The daily values come from the change log;
+        days older than what it still keeps (the last 200 changes) from a replay of the real history through the
+        same engine (``A.replay`` — real time and recompute agree)."""
+        mate = self.store.get(mate_id)
+        days = max(7, min(90, int(days)))
+        now, tz = datetime.now(timezone.utc), self.store.tz()
+        doc = self._advanced(mate_id, now, tz)
+        today = now.astimezone(tz).date()
+        series = A.daily(doc["log"], today, tz, days)
+        source = "log"
+        first = next((d for d in (A.log_day(e, tz) for e in doc["log"]) if d), None)
+        if len(doc["log"]) >= A.LOG_MAX and first and first >= today - timedelta(days=days - 1):
+            # the log lost older changes: those days (and its first, partial one) from the whole history
+            trace: list[dict[str, Any]] = []
+            A.replay(self._history_events(mate), now, tz,
+                     {k: doc[k] for k in ("enabled", "sensitivity", "show_indicator", "avatar_mood")},
+                     A.marks_of(doc), trace=trace)
+            old = {x["day"]: x for x in A.daily(trace, today, tz, days)}
+            series = [old[x["day"]] if x["day"] <= first.isoformat() else x for x in series]
+            source = "log+replay"
+        talks = self._talk_times(mate)
+        per_day: dict[str, int] = {}
+        for at in talks:
+            k = at.astimezone(tz).date().isoformat()
+            per_day[k] = per_day.get(k, 0) + 1
+        for x in series:
+            x["talks"] = per_day.get(x["day"], 0)
+        talk_days = {date.fromisoformat(k) for k in per_day}
+        view = A.view(doc, now, tz)
+        stats = {**view["stats"],
+                 "longest_streak": max(A.longest_run(talk_days), int(doc["streak_days"] or 0)),
+                 "memories_active": self.store.memory_counts(mate_id).get("active", 0),
+                 "first_talk_at": A._iso(talks[0]) if talks else doc.get("started_at"),
+                 "last_talk_at": A._iso(talks[-1]) if talks else None}
+        recent = sorted(self.store.memories(mate_id), key=lambda m: m.get("created_at") or "", reverse=True)[:5]
+        return {
+            "days": days, "today": today.isoformat(), "series": series, "series_source": source,
+            "relation": view, "requirements": A.requirements(doc), "stats": stats,
+            "milestones": view["milestones"], "anniversaries": A.anniversaries(doc, today, tz),
+            "changes": A.changes(doc),
+            "memories": [{k: m.get(k) for k in ("id", "text", "kind", "created_at", "source")} for m in recent],
+        }
 
     def relation_update(self, mate_id: str, patch: dict[str, Any]) -> dict[str, Any]:
         """The Relationship tab: on/off, pause, sensitivity, the indicator, the avatar following the mood, a value
