@@ -8,14 +8,27 @@ them, whole turns at a time (services/history_page.py):
   oldest page the client has;
 * ``?since=<cursor>`` — everything from that cursor on (a reconnect reloading
   what it had; ``since=`` = from the beginning).
+
+``&lite=1`` (paged requests; only clients that understand it ask): the same
+pages with big tool payloads as previews + ``event.lazy``, deltas merged, task
+snapshots folded (services/history_lite.py). The originals of previewed
+events: ``POST /api/history/{sid}/events`` ``{"eids": [...]}`` (or
+``GET /api/history/{sid}/events/{eid}``).
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from app.routers._deps import session_service
 from app.services.session_service import SessionService
+
+MAX_EIDS = 500
+
+
+class EventsBody(BaseModel):
+    eids: list[int] = Field(default_factory=list, max_length=MAX_EIDS)
 
 router = APIRouter(prefix="/api/history")
 tasks_router = APIRouter(prefix="/api/tasks")
@@ -33,6 +46,7 @@ async def get_history(
     turns: int | None = Query(None, ge=1, le=200),
     before: str | None = Query(None, max_length=64),
     since: str | None = Query(None, max_length=64),
+    lite: int = Query(0, ge=0, le=1),
     svc: SessionService = Depends(session_service),
 ) -> dict:
     try:
@@ -53,7 +67,7 @@ async def get_history(
             "account": svc.session_account(sid),
             "live_usage": svc.live_usage_for(sid),
         }
-    page = svc.history_page(sid, turns=turns, before=before, since=since)
+    page = svc.history_page(sid, turns=turns, before=before, since=since, lite=bool(lite))
     if before is not None:  # an older page: the slice + what precedes it
         return {"session_id": sid, **page}
     return {
@@ -64,3 +78,27 @@ async def get_history(
         "account": svc.session_account(sid),
         "live_usage": svc.live_usage_for(sid),
     }
+
+
+def _chat(svc: SessionService, sid: str) -> None:
+    try:
+        svc.get(sid)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{sid}/events")
+async def get_events(sid: str, body: EventsBody, svc: SessionService = Depends(session_service)) -> dict:
+    """The stored events ``eids`` of this chat (ids of other chats are not
+    found): what a lite page sent as previews (``event.lazy``), in full."""
+    _chat(svc, sid)
+    return {"events": svc.events_by_id(sid, body.eids)}
+
+
+@router.get("/{sid}/events/{eid}")
+async def get_event(sid: str, eid: int, svc: SessionService = Depends(session_service)) -> dict:
+    _chat(svc, sid)
+    found = svc.events_by_id(sid, [eid])
+    if not found:
+        raise HTTPException(status_code=404, detail="event not found")
+    return found[0]

@@ -54,6 +54,7 @@ from app.providers.claude_engine import ClaudeEngine
 from app.higgsfield.agent import HiggsfieldAgent, clean_settings, session_settings
 from app.services._ids import new_id, now_iso
 from app.services.turn_cost import needs_normalizing, normalize_events
+from app.services.history_aggregates import SessionAggregates
 from app.services.history_page import HistoryPager
 from app.services.context_handoff import build_blocks, catchup_preamble, handoff_preamble, ENGINE_LABEL
 from app.services.engines import EngineManager
@@ -111,6 +112,9 @@ class SessionService:
         self._pool = pool
         self._attachments = attachments
         self._logs = logs
+        # History pages' session-wide numbers, folded once per chat and extended
+        # as events arrive (services/history_aggregates.py).
+        self.history_aggregates = SessionAggregates()
         # Turns currently executing (sid -> info), surfaced on the admin page.
         self.active_runs: dict[str, dict[str, Any]] = {}
         self._tasks: dict[str, asyncio.Task] = {}
@@ -371,6 +375,7 @@ class SessionService:
         self._retire_engine(sid, "session deleted")
         self._live_usage_by_session.pop(sid, None)
         self._viewers.pop(sid, None)
+        self.history_aggregates.drop(sid)
         self._hf_note.pop(sid, None)
         if self.higgsfield is not None:
             self.higgsfield.forget(sid)
@@ -416,9 +421,11 @@ class SessionService:
         return out
 
     def history_page(self, sid: str, *, turns: int | None = None, before: str | None = None,
-                     since: str | None = None) -> dict[str, Any]:
-        """A slice of the history, whole turns at a time (services/history_page.py)."""
-        pager = HistoryPager(self._db, self._attachments.by_message if self._attachments is not None else None)
+                     since: str | None = None, lite: bool = False) -> dict[str, Any]:
+        """A slice of the history, whole turns at a time (services/history_page.py);
+        ``lite``: big tool payloads as previews etc. (services/history_lite.py)."""
+        pager = HistoryPager(self._db, self._attachments.by_message if self._attachments is not None else None,
+                             self.history_aggregates)
         running = [] if before is not None else [
             dict(r) for r in self._db.query(
                 "SELECT tool_use_id, started_at FROM bg_tasks WHERE session_id = ? "
@@ -426,7 +433,30 @@ class SessionService:
                 (sid,),
             )
         ]
-        return pager.page(sid, turns=turns, before=before, since=since, running_tasks=running)
+        return pager.page(sid, turns=turns, before=before, since=since, running_tasks=running,
+                          lite=lite, running=self.is_running(sid))
+
+    def events_by_id(self, sid: str, eids: list[int]) -> list[dict[str, Any]]:
+        """These events of this chat as stored (what a lite page previewed),
+        terminal events normalized per turn like every history read."""
+        out: list[dict[str, Any]] = []
+        want = sorted({int(e) for e in eids})
+        terminal: dict[int, dict[str, Any]] | None = None
+        for k in range(0, len(want), 500):
+            chunk = want[k:k + 500]
+            for r in self._db.query(
+                "SELECT id, seq, type, data, created_at FROM events "
+                f"WHERE session_id = ? AND id IN ({','.join('?' * len(chunk))}) ORDER BY id",
+                (sid, *chunk),
+            ):
+                data = json.loads(r["data"])
+                if r["type"] in ("turn.complete", "error"):
+                    if terminal is None:
+                        terminal = self.history_aggregates.get(self._db, sid).terminal_by_eid
+                    data = dict(terminal.get(r["id"], data))
+                out.append({"eid": r["id"], "seq": r["seq"], "type": r["type"], "data": data,
+                            "timestamp": r["created_at"]})
+        return out
 
     def reset_context(self, sid: str) -> dict[str, Any]:
         """``/clear``: the next turn starts a fresh provider conversation."""

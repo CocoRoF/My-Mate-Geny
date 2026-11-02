@@ -40,6 +40,16 @@ All queries are indexed (see ``db.py``): ``events(session_id, created_at)`` for
 slices, ``events(session_id, type, id)`` for "latest X" lookups, and a partial
 index for failed tool results. Big tool outputs are only read for the page
 itself.
+
+Session-wide numbers (costs, changed files and todos before the cursor) come
+from services/history_aggregates.py: folded once per session and extended with
+the events added since, instead of rescanning the chat on every page.
+
+Lite pages (``?lite=1``, services/history_lite.py) carry the same information
+in fewer bytes: big tool inputs / outputs as previews with a handle the client
+fetches on expand (``POST /api/history/{sid}/events``), streamed text deltas
+merged, task-state snapshots folded, context reports (the summary has the
+latest) left out.
 """
 
 from __future__ import annotations
@@ -49,14 +59,13 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from app.db import Database
-from app.services.turn_cost import COST_EVENTS, TurnCostNormalizer, turn_cost
+from app.services.history_aggregates import SessionAggregates
+from app.services.history_lite import LITE_VERSION, lite_events, lite_payloads
+from app.services.turn_cost import COST_EVENTS, turn_cost
 
 # Text json.dumps writes (default separators) — matched with instr(), which
 # never fails on a value that isn't valid JSON, unlike json_extract.
 _AUTO_START = '"trigger": "background"'
-_TODO_NAME = '"name": "TodoWrite"'
-# Tool calls the "Changed files" list counts (SessionPanel.changesOf):
-_EDIT_NAMES = ("edit", "multiedit", "notebookedit", "write", "remote_write", "apply_patch")
 _CTX_KEYS = ("window", "model_window", "threshold", "window_source")
 
 MAX_TURNS = 200
@@ -64,13 +73,6 @@ MAX_TURNS = 200
 
 def _iso(ts: float) -> str:
     return datetime.fromtimestamp(ts, timezone.utc).isoformat()
-
-
-def _tool_norm(name: Any) -> str:
-    n = str(name or "")
-    if n.startswith("mcp__remote__"):
-        n = n[len("mcp__remote__"):]
-    return n.lower()
 
 
 def _usage_add(acc: dict[str, int], usage: Any) -> None:
@@ -96,14 +98,18 @@ def _usage_add(acc: dict[str, int], usage: Any) -> None:
 
 
 class HistoryPager:
-    def __init__(self, db: Database, attachments_by_message: Callable[[str], dict[str, list]] | None = None) -> None:
+    def __init__(self, db: Database, attachments_by_message: Callable[[str], dict[str, list]] | None = None,
+                 aggregates: SessionAggregates | None = None) -> None:
         self._db = db
         self._atts = attachments_by_message
+        # (without a shared cache: folded from scratch for this request)
+        self._aggregates = aggregates if aggregates is not None else SessionAggregates(max_sessions=1)
 
     # ---- the page ----
 
     def page(self, sid: str, *, turns: int | None = None, before: str | None = None,
-             since: str | None = None, running_tasks: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+             since: str | None = None, running_tasks: list[dict[str, Any]] | None = None,
+             lite: bool = False, running: bool = False) -> dict[str, Any]:
         """One slice of a session's history.
 
         * ``turns=N``: the newest N turns (``before`` unset) or the N turns
@@ -112,6 +118,10 @@ class HistoryPager:
 
         ``running_tasks``: the session's running background tasks (bg_tasks
         rows) — for ``summary.pinned`` on newest / since pages.
+
+        ``lite``: the slimmer page (services/history_lite.py) — only for
+        clients that ask (``?lite=1``); ``running``: a turn is running (its
+        events stay whole).
         """
         newest = before is None
         # Highest event id first: the slice holds nothing newer, so the client's
@@ -128,11 +138,11 @@ class HistoryPager:
 
         messages = self._messages(sid, start, until)
         events = self._events(sid, start, until, last_eid)
-        terminal = self._terminal(sid)  # normalized, in id order
-        by_eid = {t["eid"]: t["data"] for t in terminal}
+        agg = self._aggregates.get(self._db, sid)  # session-wide records, extended to now
+        by_eid = agg.terminal_by_eid  # terminal events normalized per turn
         for e in events:
             if e["type"] in COST_EVENTS and e["eid"] in by_eid:
-                e["data"] = by_eid[e["eid"]]
+                e["data"] = dict(by_eid[e["eid"]])
 
         out: dict[str, Any] = {
             "messages": messages,
@@ -146,14 +156,24 @@ class HistoryPager:
             },
         }
         pinned = self._pinned(sid, start, running_tasks or []) if newest and start else []
-        out["before"] = self._before(sid, start, terminal, {e["eid"] for e in pinned})
+        out["before"] = self._before(agg, start, {e["eid"] for e in pinned})
         if newest:
             out["page"]["last_eid"] = last_eid
             out["summary"] = {
-                **self._cost(terminal, None),
+                **self._cost(agg.terminal, None),
                 **self._context(sid),
                 "pinned": pinned,
             }
+        if lite:
+            # The running turn streams on in full; everything before it goes lite.
+            live_from = None
+            if newest and running:
+                latest = self._anchors_desc(sid, None, 1)
+                live_from = latest[0] if latest else ""
+            out["events"] = lite_events(messages, events, agg.names, live_from=live_from)
+            if newest:
+                out["summary"]["pinned"] = lite_payloads(pinned, agg.names)
+            out["page"]["lite"] = LITE_VERSION
         return out
 
     # ---- boundaries ----
@@ -217,21 +237,6 @@ class HistoryPager:
 
     # ---- cost (turn_cost needs the session's terminal events from the start) ----
 
-    def _terminal(self, sid: str) -> list[dict[str, Any]]:
-        rows = self._db.query(
-            "SELECT id, type, data, created_at FROM events INDEXED BY idx_events_sid_type "
-            "WHERE session_id = ? AND type IN ('turn.complete', 'error') ORDER BY id",
-            (sid,),
-        )
-        norm = TurnCostNormalizer()
-        out = []
-        for r in rows:
-            data = json.loads(r["data"])
-            if isinstance(data, dict):
-                data = norm.feed(data)
-            out.append({"eid": r["id"], "type": r["type"], "at": r["created_at"], "data": data})
-        return out
-
     @staticmethod
     def _cost(terminal: list[dict[str, Any]], start: str | None) -> dict[str, Any]:
         """What ``chatStore`` sums over turns: a turn.complete's cost, or a
@@ -254,100 +259,12 @@ class HistoryPager:
 
     # ---- what precedes the cursor ----
 
-    def _before(self, sid: str, start: str | None, terminal: list[dict[str, Any]],
-                skip: set[int]) -> dict[str, Any]:
+    def _before(self, agg: Any, start: str | None, skip: set[int]) -> dict[str, Any]:
         if start is None:
             return {"cost_usd": 0.0, "costed_turns": 0, "usage": {}, "changes": {"git": False, "files": []},
                     "todos": None}
-        return {**self._cost(terminal, start), "changes": self._changes(sid, start, skip),
-                "todos": self._todos(sid, start)}
-
-    def _todos(self, sid: str, start: str) -> Any:
-        """Input of the latest TodoWrite before ``start`` (SessionPanel's task list)."""
-        for r in self._db.query(
-            "SELECT data FROM events INDEXED BY idx_events_sid_type "
-            "WHERE session_id = ? AND type = 'tool.use' AND created_at < ? AND instr(data, ?) > 0 "
-            "ORDER BY created_at DESC LIMIT 5",
-            (sid, start, _TODO_NAME),
-        ):
-            d = json.loads(r["data"])
-            if _tool_norm(d.get("name")) == "todowrite":
-                return d.get("input")
-        return None
-
-    def _changes(self, sid: str, start: str, skip: set[int]) -> dict[str, Any]:
-        """SessionPanel's "Changed files" for the events before ``start``:
-        git-based turn changes when the chat has any, else the files
-        Edit/Write/apply_patch touched (most recent last)."""
-        files: dict[str, dict[str, Any]] = {}
-
-        def touch(path: Any, created: bool, failed: bool) -> None:
-            if not path:
-                return
-            path = str(path)
-            c = files.pop(path, None) or {"path": path, "ops": 0, "created": False, "failed": False}
-            c["ops"] += 1
-            c["created"] = c["created"] or created
-            c["failed"] = c["failed"] or failed
-            files[path] = c
-
-        git = self._db.query(
-            "SELECT id, data FROM events INDEXED BY idx_events_sid_type "
-            "WHERE session_id = ? AND type = 'turn.changes' AND created_at < ? ORDER BY id",
-            (sid, start),
-        )
-        if git:
-            for r in git:
-                d = json.loads(r["data"])
-                for repo in d.get("repos") or []:
-                    for f in repo.get("files") or []:
-                        touch(f"{repo.get('root')}/{f.get('path')}", f.get("status") == "A", False)
-            return {"git": True, "files": list(files.values())}
-
-        failed = set()
-        for r in self._db.query(
-            "SELECT data FROM events INDEXED BY idx_events_tool_err "
-            "WHERE session_id = ? AND type = 'tool.result' AND instr(data, '\"is_error\": true') > 0",
-            (sid,),
-        ):
-            d = json.loads(r["data"])
-            if d.get("is_error"):
-                failed.add(str(d.get("id")))
-        # The call's name sits right after its id ({"id": …, "name": …}): read
-        # just that much of every call, then the edits in full.
-        names = ",".join("?" * len(_EDIT_NAMES))
-        hits = [
-            r["id"] for r in self._db.query(
-                "SELECT id FROM (SELECT id, substr(data, instr(data, '\"name\": \"') + 9, 64) AS head "
-                "  FROM events INDEXED BY idx_events_sid_type"
-                "  WHERE session_id = ? AND type = 'tool.use' AND created_at < ?) "
-                f"WHERE lower(substr(head, 1, instr(head, '\"') - 1)) IN ({names}) "
-                "OR head LIKE 'mcp\\_\\_remote\\_\\_%' ESCAPE '\\' ORDER BY id",
-                (sid, start, *_EDIT_NAMES),
-            )
-            if r["id"] not in skip
-        ]
-        rows: list[Any] = []
-        for k in range(0, len(hits), 500):
-            chunk = hits[k:k + 500]
-            rows += self._db.query(
-                f"SELECT id, data FROM events WHERE id IN ({','.join('?' * len(chunk))}) ORDER BY id", chunk)
-        for r in rows:
-            d = json.loads(r["data"])
-            n = _tool_norm(d.get("name"))
-            if n not in _EDIT_NAMES:
-                continue
-            i = d.get("input") if isinstance(d.get("input"), dict) else {}
-            err = str(d.get("id")) in failed
-            if n in ("edit", "multiedit", "notebookedit"):
-                touch(i.get("file_path") or i.get("notebook_path"), False, err)
-            elif n in ("write", "remote_write"):
-                touch(i.get("file_path") or i.get("path"), True, err)
-            elif n == "apply_patch" and isinstance(i.get("changes"), list):
-                for c in i["changes"]:
-                    if isinstance(c, dict):
-                        touch(c.get("path"), c.get("kind") == "add", err)
-        return {"git": False, "files": list(files.values())}
+        return {**self._cost(agg.terminal, start), "changes": SessionAggregates.changes(agg, start, skip),
+                "todos": SessionAggregates.todos(agg, start)}
 
     # ---- session-wide state (the newest page) ----
 
