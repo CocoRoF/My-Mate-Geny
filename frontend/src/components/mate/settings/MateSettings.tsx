@@ -1,5 +1,6 @@
 /**
- * Mate settings (this mate only): Profile · Conversation style · Avatar · Language model · Voice · Memory · Relationship · Danger zone.
+ * Mate settings (this mate only): Profile · Conversation style · Avatar · Language model · Voice · Screen · Memory · Relationship ·
+ * Danger zone.
  * App-wide things (voice service keys / URLs, the Live2D runtime, the desktop app, the default mate) are in Global
  * settings — opened from here ("Global settings", "Set up in Global settings") in place of this panel.
  */
@@ -15,13 +16,14 @@ import StyleTab from "./StyleTab";
 import AvatarTab from "./AvatarTab";
 import ModelTab from "./ModelTab";
 import VoiceTab from "./VoiceTab";
+import ScreenTab from "./ScreenTab";
 import MemoryTab from "./MemoryTab";
 import RelationshipTab from "./RelationshipTab";
 import DangerTab from "./DangerTab";
 import GlobalSettings from "./GlobalSettings";
 import { useT, type MsgKey } from "../../../i18n";
 
-export type Tab = "profile" | "style" | "avatar" | "model" | "voice" | "memory" | "relation" | "danger";
+export type Tab = "profile" | "style" | "avatar" | "model" | "voice" | "screen" | "memory" | "relation" | "danger";
 
 const TABS: { id: Tab; label: MsgKey }[] = [
   { id: "profile", label: "mateSettings.tabProfile" },
@@ -29,6 +31,7 @@ const TABS: { id: Tab; label: MsgKey }[] = [
   { id: "avatar", label: "mateSettings.tabAvatar" },
   { id: "model", label: "mateSettings.modelTitle" },
   { id: "voice", label: "mateSettings.voiceVoice" },
+  { id: "screen", label: "mateSettings.tabScreen" },
   { id: "memory", label: "mateSettings.memTitle" },
   { id: "relation", label: "mateSettings.relTitle" },
   { id: "danger", label: "mateSettings.tabDanger" },
@@ -95,6 +98,7 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
           {tab === "avatar" && <AvatarTab key={mate.id} mate={mate} conv={conv} />}
           {tab === "model" && <ModelTab key={mate.id} mate={mate} />}
           {tab === "voice" && <VoiceTab key={mate.id} mate={mate} conv={conv} />}
+          {tab === "screen" && <ScreenTab key={mate.id} mate={mate} />}
           {tab === "memory" && <MemoryTab key={mate.id} mate={mate} />}
           {tab === "relation" && <RelationshipTab key={mate.id} mate={mate} />}
           {tab === "danger" && <DangerTab key={mate.id} mate={mate} onDeleted={onClose} />}

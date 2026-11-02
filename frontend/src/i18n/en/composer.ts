@@ -17,4 +17,7 @@ export default {
   notConnectedKept: "Not connected — reconnecting. Your message was kept.",
   tooBig: "Larger than the {mb} MB limit",
   tooMany: { one: "At most {count} file per message", other: "At most {count} files per message" },
+  // screen capture (docs/mate.md §4 "Seeing the screen")
+  shareScreen: "Share screen",
+  shareScreenHint: "A picture of a screen or a window",
 };

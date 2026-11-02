@@ -131,6 +131,9 @@ class SessionService:
         # list and its change feed. The Mate layer configures their engine
         # (``mate_engine(session, req)``) and listens for turn ends.
         self._mate_sids: set[str] = set()
+        # the client_msg_id of the last message a person sent (sid -> id; ``…~<device>``, frontend
+        # mate/voiceOwner.ts): where the user talks from — the mate's screen capture asks that device first
+        self._last_client: dict[str, str] = {}
         self.mate_engine: Any = None
         self._turn_end_listeners: list[Any] = []
         self.persistent_engines = True  # Claude: one long-lived CLI process per chat
@@ -732,6 +735,17 @@ class SessionService:
         )
         task = asyncio.create_task(self._drive(sid, user_input, rows, client_msg_id, meta))
         self._tasks[sid] = task
+        self._note_client(sid, client_msg_id)
+
+    def _note_client(self, sid: str, client_msg_id: Any) -> None:
+        if isinstance(client_msg_id, str) and client_msg_id:
+            self._last_client[sid] = client_msg_id[:200]
+
+    def last_client_device(self, sid: str) -> str | None:
+        """The device (``…~<device>`` of its client_msg_id) the latest typed message came from; None: unknown."""
+        cid = self._last_client.get(sid) or ""
+        dev = cid.rsplit("~", 1)[1] if "~" in cid else ""
+        return dev if dev and len(dev) <= 80 else None
 
     async def steer(
         self,
@@ -748,6 +762,7 @@ class SessionService:
         if inbox is None or not inbox.open:
             return False
         session = self.get(sid)
+        self._note_client(sid, client_msg_id)
         rows = (
             self._attachments.pending(sid, attachment_ids)
             if attachment_ids and self._attachments is not None
@@ -1231,6 +1246,46 @@ class SessionService:
         self._db.execute("UPDATE sessions SET cli_info = ? WHERE id = ?", (json.dumps(info), sid))
         return ProviderEvent(type="session.info", data=info, seq=ev.seq, timestamp=ev.timestamp)
 
+    def _screen_result(self, sid: str, ev: ProviderEvent, st: dict[str, Any]) -> bool:
+        """A mate's ``see_screen`` result (docs/mate.md §4 "Seeing the screen"): the picture is already the
+        conversation's attachment (the desktop app uploaded it) — the engine's echo of it (base64 in the tool
+        result; Codex: inside a JSON dump) is never stored again: the event keeps the text and refers to that
+        attachment, so the conversation shows it and no second copy lands on disk, in the events or in logs."""
+        if ev.type != "tool.result" or sid not in self._mate_sids:
+            return False
+        call = st["tool_calls"].get(str(ev.data.get("id"))) or {}
+        if not str(call.get("name") or "").endswith("__see_screen"):
+            return False
+        out = ev.data.get("output")
+        text = out if isinstance(out, str) else ""
+        try:  # (Codex: the MCP result as JSON — keep only its text parts)
+            parsed = json.loads(text) if text.lstrip().startswith(("{", "[")) else None
+        except ValueError:
+            parsed = None
+        if parsed is not None:
+            parts = parsed.get("content") if isinstance(parsed, dict) else parsed
+            text = "\n".join(str(p.get("text") or "") for p in (parts if isinstance(parts, list) else [])
+                             if isinstance(p, dict) and p.get("type") == "text")
+        elif text.lstrip().startswith(("{", "[")):  # (a dump cut short: its first text part)
+            m = re.search(r'"text":\s*"((?:[^"\\]|\\.)*)"', text)
+            try:
+                text = json.loads(f'"{m.group(1)}"') if m else ""
+            except ValueError:
+                text = ""
+        text = re.sub(r"[A-Za-z0-9+/=]{2000,}", "…", text)[:4000]  # (never a stray base64 run)
+        images = []
+        if self._attachments is not None:
+            for aid in dict.fromkeys(re.findall(r"\b(att_[A-Za-z0-9_-]+)", text)):
+                row = self._attachments.get(aid)
+                if row is not None and row["session_id"] == sid and row["kind"] == "image":
+                    images.append(self._attachments.out(row))
+        data = {k: v for k, v in ev.data.items() if k != "images"}
+        data["output"] = text
+        if images:
+            data["images"] = images
+        ev.data = data
+        return True
+
     async def _store_images(self, sid: str, ev: ProviderEvent) -> None:
         """Images a tool returned become artifacts (the event keeps references)."""
         if ev.type != "tool.result" or not ev.data.get("images") or self._attachments is None:
@@ -1254,7 +1309,8 @@ class SessionService:
         ctx = st["ctx"]
         if ev.type == "context.update":
             ev.data = self._context_data(sid, ev.data, st["model"])
-        await self._store_images(sid, ev)
+        if not self._screen_result(sid, ev, st):
+            await self._store_images(sid, ev)
         if ev.type in ("turn.complete", "error"):
             ev.data = {**ev.data, "provider": st["provider"]}  # usage is attributed per turn
         elif ev.type == "session.start":

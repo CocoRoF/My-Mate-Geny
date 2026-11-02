@@ -306,6 +306,64 @@ def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
     return out
 
 
+SCREEN_APPROVALS = ("ask", "allow")   # ask every time (default) | allow without asking
+SCREEN_FORMATS = ("png", "jpeg")
+SCREEN_EDGES = (1280, 1920, 2560, 0)  # the long side at most (0 = as captured)
+
+
+def default_screen() -> dict[str, Any]:
+    return {"enabled": False, "approval": "ask", "hide_avatar": True, "max_edge": 1920, "format": "png",
+            "quality": 85}
+
+
+def normalize_screen(patch: Any, base: dict[str, Any] | None = None) -> dict[str, Any]:
+    """``mate.screen`` (docs/mate.md §4 "Seeing the screen"): may the mate look at the user's screen
+    (``see_screen``, off by default), ask first or not, hide the avatar windows while capturing, the size and
+    format of the picture. What to capture (a screen / a window) is chosen on each computer in the desktop app.
+    Merged field by field; unknown keys dropped; wrong types / values → 400."""
+    out = default_screen()
+    b = base if isinstance(base, dict) else {}
+    for k in out:
+        if k in b:
+            out[k] = b[k]
+    if patch is not None:
+        if not isinstance(patch, dict):
+            raise MateError("screen must be an object")
+        for k in ("enabled", "hide_avatar"):
+            if k in patch:
+                if not isinstance(patch[k], bool):
+                    raise MateError(f"screen.{k} must be true or false")
+                out[k] = patch[k]
+        if "approval" in patch:
+            out["approval"] = _enum(patch["approval"], SCREEN_APPROVALS, "screen.approval")
+        if "format" in patch:
+            out["format"] = _enum(patch["format"], SCREEN_FORMATS, "screen.format")
+        if "max_edge" in patch:
+            v = patch["max_edge"]
+            if isinstance(v, bool) or not isinstance(v, int) or v not in SCREEN_EDGES:
+                raise MateError(f"screen.max_edge must be one of {', '.join(map(str, SCREEN_EDGES))}")
+            out["max_edge"] = v
+        if "quality" in patch:
+            v = patch["quality"]
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                raise MateError("screen.quality must be a number (40 – 100)")
+            out["quality"] = int(max(40, min(100, round(v))))
+    # (a stored document from an older/newer version: keep it well-typed)
+    out["enabled"] = out["enabled"] is True
+    out["hide_avatar"] = out["hide_avatar"] is not False
+    if out["approval"] not in SCREEN_APPROVALS:
+        out["approval"] = "ask"
+    if out["format"] not in SCREEN_FORMATS:
+        out["format"] = "png"
+    if out["max_edge"] not in SCREEN_EDGES:
+        out["max_edge"] = 1920
+    try:
+        out["quality"] = int(max(40, min(100, int(out["quality"]))))
+    except (TypeError, ValueError):
+        out["quality"] = 85
+    return out
+
+
 def _name(v: Any, what: str, limit: int = 64) -> str:
     if not isinstance(v, str) or not v.strip():
         raise MateError(f"{what} must be a non-empty string")
@@ -462,6 +520,7 @@ class MateStore:
             "llm": normalize_llm(None, _loads(row["llm"], {})),
             "voice": normalize_voice(None, _loads(row["voice"], {})),
             "prefs": normalize_prefs(None, _loads(row["prefs"], {}) if "prefs" in row.keys() else {}),
+            "screen": normalize_screen(None, _loads(row["screen"], {}) if "screen" in row.keys() else {}),
             "session_id": row["session_id"],
             "memory_rev": row["memory_rev"],
             "builtin": row["builtin"] if "builtin" in row.keys() else None,
@@ -541,7 +600,7 @@ class MateStore:
                 params.append(name)
                 changed.add("name")
         for key, fn in (("persona", normalize_persona), ("llm", normalize_llm), ("voice", normalize_voice),
-                        ("prefs", normalize_prefs)):
+                        ("prefs", normalize_prefs), ("screen", normalize_screen)):
             if key in patch and patch[key] is not None:
                 new = fn(patch[key], cur[key])
                 if new != cur[key]:

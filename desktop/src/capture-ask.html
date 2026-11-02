@@ -1,0 +1,102 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>My Mate Geny</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- "‹mate› wants to see your screen" (src/capture.js createAsker): what would be shared, a preview, Allow once /
+     Deny, and a countdown that ends in Deny. Nothing is captured for the mate until Allow. -->
+<style>
+  :root{color-scheme:dark}
+  html,body{margin:0;height:100%;overflow:hidden}
+  body{background:#0f1218;color:#e6e9f0;font:13px Inter,"Noto Sans KR",system-ui,sans-serif;-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none}
+  .card{box-sizing:border-box;height:100%;display:flex;flex-direction:column;gap:10px;padding:16px 18px;border:1px solid #232936;border-radius:10px}
+  .head{display:flex;align-items:center;gap:10px;-webkit-app-region:drag}
+  .dot{width:9px;height:9px;border-radius:50%;background:#e5484d;box-shadow:0 0 0 4px #e5484d33;flex:none}
+  h1{margin:0;font-size:14.5px;font-weight:600;line-height:1.35}
+  .reason{margin:0;color:#c3c9d5;font-size:12.5px;line-height:1.45;font-style:italic}
+  .reason:empty{display:none}
+  .src{display:flex;align-items:center;gap:6px;color:#9aa3b4;font-size:12px}
+  .src b{color:#e6e9f0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .shot{flex:1;min-height:0;display:grid;place-items:center;border-radius:8px;background:#0a0c10;border:1px solid #1c212c;overflow:hidden}
+  .shot img{max-width:100%;max-height:100%;display:block}
+  .shot span{color:#5e6676;font-size:12px}
+  .warn{margin:0;padding:7px 9px;border-radius:8px;background:#3a2a0f;color:#f5c26b;font-size:12px;line-height:1.4}
+  .warn:empty{display:none}
+  .note{margin:0;color:#7d8697;font-size:11.5px;line-height:1.4}
+  .row{display:flex;gap:8px;align-items:center}
+  .count{flex:1;color:#7d8697;font-size:11.5px}
+  button{padding:8px 14px;border-radius:9px;border:0;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+  .allow{background:linear-gradient(135deg,#6e8bff,#5b7cff);color:#fff} .allow:hover{filter:brightness(1.1)}
+  .deny{background:#1c212c;color:#c3c9d5} .deny:hover{background:#232936;color:#fff}
+  button:focus-visible{outline:2px solid #6e8bff;outline-offset:2px}
+  @media (prefers-color-scheme: light) {
+    :root{color-scheme:light}
+    body{background:#fff;color:#161a23}
+    .card{border-color:#dce0e8}
+    .reason{color:#474f5f} .src{color:#606879} .src b{color:#161a23}
+    .shot{background:#f1f3f7;border-color:#dce0e8}
+    .warn{background:#fff4dc;color:#8a5a00}
+    .note,.count{color:#606879}
+    .deny{background:#ebeef3;color:#474f5f} .deny:hover{background:#dce0e8;color:#161a23}
+  }
+</style></head>
+<body><div class="card" data-testid="capture-ask">
+  <div class="head"><span class="dot"></span><h1 id="title">Your mate wants to see your screen</h1></div>
+  <p class="reason" id="reason"></p>
+  <div class="src"><span id="what">What would be shared:</span> <b id="source" data-testid="capture-ask-source"></b></div>
+  <p class="warn" id="missing"></p>
+  <div class="shot" id="shot"><span id="nopreview">No preview</span></div>
+  <p class="note" id="note"></p>
+  <div class="row">
+    <span class="count" id="count"></span>
+    <button class="deny" id="deny" data-testid="capture-deny">Deny</button>
+    <button class="allow" id="allow" data-testid="capture-allow">Allow once</button>
+  </div>
+</div>
+<script>
+  // the app's language (i18n.js through the preload); the English in the markup is the fallback
+  const W = (window.hrhNative && window.hrhNative.text) || {};
+  const say = (k, en, vars) => String(typeof W[k] === "string" ? W[k] : en).replace(/\{(\w+)\}/g, (a, n) => (vars && n in vars ? vars[n] : a));
+  if (window.hrhNative && window.hrhNative.language) document.documentElement.lang = window.hrhNative.language;
+  const $ = (id) => document.getElementById(id);
+  const api = window.hrhCaptureAsk;
+  const answer = (allow) => api && api.answer(allow);
+  $("allow").textContent = say("captureAllow", "Allow once");
+  $("deny").textContent = say("captureDeny", "Deny");
+  $("what").textContent = say("captureWhat", "What would be shared:");
+  $("nopreview").textContent = say("captureNoPreview", "No preview");
+  $("allow").onclick = () => answer(true);
+  $("deny").onclick = () => answer(false);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") answer(false);
+  });
+  (api ? api.info() : Promise.resolve(null)).then((info) => {
+    if (!info) return;
+    const name = info.mateName || "Mate";
+    $("title").textContent = say("captureAskTitle", "{name} wants to see your screen", { name });
+    document.title = $("title").textContent;
+    $("reason").textContent = info.reason ? "“" + info.reason + "”" : "";
+    const src = info.source || {};
+    const kind = src.kind === "window" ? say("captureKindWindow", "Window") : say("captureKindScreen", "Screen");
+    $("source").textContent = kind + (src.name ? " — " + src.name : "");
+    $("source").title = $("source").textContent;
+    if (info.missing) $("missing").textContent = say("captureMissing", "The window chosen for {name} ({window}) is closed — this would share the whole screen instead.", { name, window: info.missing.name || "?" });
+    $("note").textContent = info.hideAvatar
+      ? say("captureNoteHide", "The picture goes only into your conversation with {name}. The avatar windows hide while it is taken.", { name })
+      : say("captureNote", "The picture goes only into your conversation with {name}.", { name });
+    if (info.preview) {
+      const img = document.createElement("img");
+      img.src = info.preview;
+      img.alt = "";
+      img.setAttribute("data-testid", "capture-ask-preview");
+      $("shot").replaceChildren(img);
+    }
+    const tick = () => {
+      const n = Math.max(0, Math.ceil((info.deadline - Date.now()) / 1000));
+      $("count").textContent = say("captureCountdown", "Denied in {n} s", { n });
+    };
+    tick();
+    setInterval(tick, 500);
+    $("deny").focus();
+  });
+</script>
+</body></html>

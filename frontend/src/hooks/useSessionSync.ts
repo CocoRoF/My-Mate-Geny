@@ -3,6 +3,7 @@ import { toLogin, wsUrl } from "../api/client";
 import { onResync } from "../lib/sync";
 import { useCliToolsStore } from "../stores/cliToolsStore";
 import { useMateStore } from "../stores/mateStore";
+import { cancelCaptureRequest, clientHello, handleCaptureRequest } from "../mate/screenCapture";
 import { useSessionStore } from "../stores/sessionStore";
 
 const SETTLE_MS = 250; // a turn start = message + title + run state: one fetch
@@ -53,6 +54,8 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
       ws = sock;
       sock.onopen = () => {
         retry = 0;
+        // who this window is (the device, the desktop app and its screen capture): the mate's see_screen asks here
+        hello(sock, document.hasFocus());
       };
       sock.onmessage = (e) => {
         clearTimeout(probeTimer);
@@ -60,6 +63,14 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
         try {
           msg = JSON.parse(e.data);
         } catch {
+          return;
+        }
+        if (msg.type === "capture.request") {
+          void handleCaptureRequest(msg.data);
+          return;
+        }
+        if (msg.type === "capture.cancel") {
+          cancelCaptureRequest(msg.data);
           return;
         }
         if (msg.type === "cli.changed" || msg.type === "cli.log") {
@@ -85,6 +96,16 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
       };
     };
 
+    const hello = (sock: WebSocket | null, active: boolean) => {
+      if (!sock || sock.readyState !== WebSocket.OPEN) return;
+      try {
+        sock.send(JSON.stringify(clientHello(active)));
+      } catch {
+        /* closing */
+      }
+    };
+    const focused = () => hello(ws, true);
+
     const restart = () => {
       const old = ws;
       ws = null;
@@ -109,6 +130,7 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
 
     document.addEventListener("visibilitychange", check);
     window.addEventListener("online", check);
+    window.addEventListener("focus", focused);
     const offResync = onResync(check);
     connect();
     return () => {
@@ -118,6 +140,7 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
       clearTimeout(probeTimer);
       document.removeEventListener("visibilitychange", check);
       window.removeEventListener("online", check);
+      window.removeEventListener("focus", focused);
       offResync();
       const old = ws;
       ws = null;

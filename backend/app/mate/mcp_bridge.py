@@ -9,7 +9,8 @@ backend does the work (list/read/steer chats, create chats, find folders,
 memory) and returns the text the model sees.
 
 Env: HRH_MATE_API (e.g. http://127.0.0.1:8080), HRH_MATE_TOKEN, HRH_MATE_ID,
-HRH_MATE_SESSION.
+HRH_MATE_SESSION; HRH_MATE_SCREEN=1 when the mate may look at the user's screen
+(``see_screen`` is listed only then; its picture comes back as MCP image content).
 """
 
 from __future__ import annotations
@@ -197,6 +198,31 @@ TOOLS = [
 ]
 
 
+# offered only while the mate's Screen setting is on (HRH_MATE_SCREEN=1, app/mate/service.configure_engine)
+SEE_SCREEN = {
+    "name": "see_screen",
+    "description": (
+        "Look at the user's screen: their desktop app captures it (the screen or the window they chose in your "
+        "settings) and the picture comes back to you; it also appears in your conversation. They may be asked to "
+        "allow it first — if they say no, or don't answer, you get no picture. Use it when they ask you to look, "
+        "or talk about something on their screen they haven't described. Works only while the desktop app is "
+        "open on their computer."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "reason": {"type": "string",
+                       "description": "One short line shown to the user with the request: why you want to look."},
+        },
+    },
+}
+_SLOW = {"see_screen": 150}  # (waits for the user's answer + the capture; the backend always answers sooner)
+
+
+def tools() -> list[dict]:
+    return TOOLS + ([SEE_SCREEN] if os.environ.get("HRH_MATE_SCREEN") == "1" else [])
+
+
 def _call(name: str, args: dict) -> dict:
     api = os.environ.get("HRH_MATE_API", "http://127.0.0.1:8080").rstrip("/")
     body = json.dumps({"name": name, "arguments": args if isinstance(args, dict) else {}}).encode()
@@ -205,7 +231,7 @@ def _call(name: str, args: dict) -> dict:
         headers={"Content-Type": "application/json", "X-Mate-Token": os.environ.get("HRH_MATE_TOKEN", "")},
     )
     try:
-        with urllib.request.urlopen(req, timeout=90) as resp:
+        with urllib.request.urlopen(req, timeout=_SLOW.get(name, 90)) as resp:
             out = json.loads(resp.read().decode() or "{}")
     except urllib.error.HTTPError as exc:
         detail = exc.read(2000).decode(errors="replace")
@@ -216,7 +242,11 @@ def _call(name: str, args: dict) -> dict:
         return {"content": [{"type": "text", "text": f"{name} failed (HTTP {exc.code}): {detail}"}], "isError": True}
     except Exception as exc:  # noqa: BLE001 - backend unreachable
         return {"content": [{"type": "text", "text": f"{name} failed: backend unreachable ({exc})"}], "isError": True}
-    return {"content": [{"type": "text", "text": str(out.get("text") or "")}], "isError": bool(out.get("is_error"))}
+    content = [{"type": "text", "text": str(out.get("text") or "")}]
+    for img in out.get("images") or []:
+        if isinstance(img, dict) and img.get("data"):
+            content.append({"type": "image", "data": str(img["data"]), "mimeType": str(img.get("mime") or "image/png")})
+    return {"content": content, "isError": bool(out.get("is_error"))}
 
 
 def _reply(msg_id, result=None, error=None) -> None:
@@ -248,7 +278,7 @@ def main() -> None:
         elif method == "ping":
             _reply(msg_id, {})
         elif method == "tools/list":
-            _reply(msg_id, {"tools": TOOLS})
+            _reply(msg_id, {"tools": tools()})
         elif method == "tools/call":
             params = req.get("params") or {}
             _reply(msg_id, _call(str(params.get("name") or ""), params.get("arguments") or {}))

@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from app.config import settings
 from app.mate import files, live2d_core, netio
+from app.mate.capture import CaptureError
 from app.mate import memory as M
 from app.mate.service import MateService
 from app.mate.store import SETTING_PROVIDERS, MateError
@@ -275,6 +276,22 @@ async def conversation(mate_id: str, request: Request) -> dict:
         return _svc(request).conversation(mate_id)
     except (KeyError, MateError) as exc:
         raise _http(exc) from exc
+
+
+@router.post("/{mate_id}/capture/{rid}")
+async def capture_result(mate_id: str, rid: str, request: Request) -> dict:
+    """The desktop app's answer to the mate's screen-capture request (docs/mate.md §4 "Seeing the screen"):
+    ``{ok: true, attachment_id, source?}`` (the picture was uploaded to the mate's conversation first) or
+    ``{ok: false, code, message?}``. 404: no such request is waiting (answered, timed out, cancelled)."""
+    _mate(request, mate_id)
+    body = await _json(request)
+    try:
+        ok = _svc(request).capture_result(mate_id, rid, body)
+    except CaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not ok:
+        raise HTTPException(status_code=404, detail="no capture request is waiting under that id")
+    return {"id": rid, "ok": True}
 
 
 @router.post("/{mate_id}/conversation/reset")

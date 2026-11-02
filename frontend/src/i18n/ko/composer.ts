@@ -18,5 +18,8 @@ const ko: Messages<"composer"> = {
   notConnectedKept: "연결 안 됨 — 다시 연결하는 중이에요. 메시지는 그대로 남아 있어요.",
   tooBig: "{mb} MB 제한보다 커요",
   tooMany: "메시지 하나에 파일은 최대 {count}개까지예요",
+  // screen capture (docs/mate.md §4 "Seeing the screen")
+  shareScreen: "화면 공유",
+  shareScreenHint: "화면이나 창 하나를 사진으로",
 };
 export default ko;

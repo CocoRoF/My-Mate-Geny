@@ -82,6 +82,7 @@ let gaveUp = false;
 let failDelay = 0;
 let failTimer = null;
 let overlayFailed = false;
+let capturing = false; // the windows are hidden for a screen capture (capture.js)
 
 // ── settings ───────────────────────────────────────────────────
 
@@ -663,7 +664,7 @@ function barAct(name) {
 // cursor polling (ailism): show the bar while the pointer is on the avatar or
 // the bar, hide it 450 ms after it leaves
 function tick() {
-  if (!alive(avatar) || !avatar.isVisible()) {
+  if (capturing || !alive(avatar) || !avatar.isVisible()) {
     if (alive(bar) && bar.isVisible()) bar.hide();
     return;
   }
@@ -1148,6 +1149,51 @@ function buildTray() {
   ]));
 }
 
+// ── screen capture (capture.js): out of the picture, and a visible sign that it happened ──
+
+/** hide the mate's windows (avatar, its bar, the quick card, the chat window) for a capture; → show them again */
+function hideForCapture() {
+  const was = [avatar, bar, quick, chat].filter((w) => alive(w) && w.isVisible()).map((w) => ({ w, focused: w.isFocused() }));
+  capturing = true;
+  for (const { w } of was) w.hide();
+  return () => {
+    capturing = false;
+    for (const { w, focused } of was) {
+      if (!alive(w) || w === bar) continue; // (the bar comes back with the pointer: tick)
+      if (focused) w.show();
+      else w.showInactive();
+    }
+  };
+}
+
+/** the media source ids of our see-through windows (not offered as something to share) */
+function ownSourceIds() {
+  return [avatar, bar, quick].filter(alive).map((w) => {
+    try {
+      return w.getMediaSourceId();
+    } catch {
+      return "";
+    }
+  }).filter(Boolean);
+}
+
+let captureTipTimer = null;
+/** start / done / error of a capture for a mate: the tray says so for a while, every window gets a `capture` command */
+function captureIndicator(state, info = {}) {
+  const name = String(info.mateName || "Mate");
+  if (tray && state === "done") {
+    try {
+      tray.setToolTip(`${PRODUCT} — ${t("captureTray", { name })}`);
+    } catch {
+      /* gone */
+    }
+    clearTimeout(captureTipTimer);
+    captureTipTimer = setTimeout(() => tray && tray.setToolTip(PRODUCT), 8000);
+  }
+  const cmd = { type: "capture", state, mateName: name, source: info.source || null };
+  for (const w of [avatar, quick, chat, deps.consoleWindow()]) command(w, cmd);
+}
+
 // ── the bridge (IPC with sender checks) ────────────────────────
 
 function frameUrl(e) {
@@ -1273,4 +1319,7 @@ module.exports = {
   clickThrough,
   isMoveMode: () => moveMode,
   broadcast,
+  hideForCapture,
+  ownSourceIds,
+  captureIndicator,
 };

@@ -10,6 +10,9 @@
 # "hfcheck" runs the higgsfield CLI like an agent's Bash tool would and reports what it found (HFCHECK …); "hfdump"
 # answers with the launch it got — argv, MCP config, the HIGGSFIELD_* / PATH environment (docs/higgsfield.md;
 # desktop/test/e2e/higgsfield-browser.js, backend/tests/test_higgsfield.py).
+# "look at my screen" lists the mate's tools through the real MCP bridge and, when see_screen is there, calls it
+# (tool_use / tool_result with the image on stdout, like the real CLI) and answers SEESCREEN … with what came back
+# (desktop/test/e2e/screen-capture-e2e.js).
 import json
 import os
 import queue
@@ -82,6 +85,54 @@ def call_tool(name: str, arguments: dict) -> str:
     proc.wait(timeout=10)
     res = (out or {}).get("result") or {}
     return " ".join(c.get("text", "") for c in res.get("content", []))
+
+
+def see_screen_turn() -> str:
+    """"look at my screen" (desktop/test/e2e/screen-capture-e2e.js): like the real CLI — the mate's tools from the real
+    MCP bridge (tools/list), then a see_screen call through it; the tool_use / tool_result go out on stdout as the CLI
+    writes them (the image as a base64 block, which the backend must not store a second time). The answer says what
+    came back: SEESCREEN listed=yes|no error=yes|no mime=… bytes=… sha=… (sha256 of the image the model got) text=…"""
+    import base64
+    import hashlib
+    import subprocess
+
+    cfg_arg = args[args.index("--mcp-config") + 1]
+    cfg = json.load(open(cfg_arg)) if os.path.exists(cfg_arg) else json.loads(cfg_arg)
+    srv = cfg["mcpServers"]["mate"]
+    proc = subprocess.Popen([srv["command"], *srv["args"]], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            env={**os.environ, **srv.get("env", {})}, text=True)
+
+    def rpc(o: dict) -> dict | None:
+        proc.stdin.write(json.dumps(o) + "\n")
+        proc.stdin.flush()
+        return json.loads(proc.stdout.readline()) if "id" in o else None
+
+    try:
+        rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}})
+        rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        names = [t["name"] for t in (rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}) or {})["result"]["tools"]]
+        if "see_screen" not in names:
+            return "SEESCREEN listed=no"
+        emit({"type": "assistant", "message": {"model": model, "content": [
+            {"type": "tool_use", "id": "ss1", "name": "mcp__mate__see_screen", "input": {"reason": "you asked me to look"}}]}})
+        out = rpc({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                   "params": {"name": "see_screen", "arguments": {"reason": "you asked me to look"}}})
+    finally:
+        proc.stdin.close()
+        proc.wait(timeout=10)
+    res = (out or {}).get("result") or {}
+    text = " ".join(c.get("text", "") for c in res.get("content", []) if c.get("type") == "text")
+    imgs = [c for c in res.get("content", []) if c.get("type") == "image"]
+    blocks = [{"type": "text", "text": text}] + [
+        {"type": "image", "source": {"type": "base64", "media_type": c.get("mimeType"), "data": c.get("data")}} for c in imgs]
+    emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "ss1", "content": blocks,
+                                                   "is_error": bool(res.get("isError"))}]}})
+    info = ""
+    if imgs:
+        raw = base64.b64decode(imgs[0].get("data") or "")
+        info = f" mime={imgs[0].get('mimeType')} bytes={len(raw)} sha={hashlib.sha256(raw).hexdigest()}"
+    flat = " ".join(text.split())
+    return f"SEESCREEN listed=yes error={'yes' if res.get('isError') else 'no'} images={len(imgs)}{info} text={flat}"
 
 
 def emit(o: dict) -> None:
@@ -278,6 +329,14 @@ while True:
     if tool:
         result = call_tool(tool.group(1), json.loads(tool.group(2) or "{}"))
         full = f"[smile] Tool {tool.group(1)}: {result}"
+        emit({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0,
+                                                "delta": {"type": "text_delta", "text": full}}})
+        emit({"type": "assistant", "message": {"model": model, "content": [{"type": "text", "text": full}]}})
+        emit({"type": "result", "subtype": "success", "is_error": False, "result": full, "session_id": "fake-sid",
+              "total_cost_usd": 0.01, "usage": {"input_tokens": 1, "output_tokens": 1}})
+        continue
+    if re.search(r"look at my screen", last, re.I):
+        full = see_screen_turn()
         emit({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0,
                                                 "delta": {"type": "text_delta", "text": full}}})
         emit({"type": "assistant", "message": {"model": model, "content": [{"type": "text", "text": full}]}})

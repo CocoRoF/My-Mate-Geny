@@ -8,6 +8,9 @@ Protocol::
     server -> {"type": "mates.changed", "data": {"version", "reason", "mate_id"}}   # GET /api/mates again
     client -> {"type": "sync"}                                        # "are you there?" (back from background)
     server -> {"type": "pong", "data": {"version": <int>, "mates_version": <int>}}
+    client -> {"type": "client", "device", "surface", "desktop", "capture", "active"}   # who this window is
+    server -> {"type": "capture.request", "data": {...}} / {"type": "capture.cancel", "data": {"id"}}
+                                                                      # the mate wants to see the screen (app/mate/capture.py)
 
 ``hello`` carries ``mates_version`` too, so a window that reconnects after
 missing a mate change (sleep, network) still notices it.
@@ -49,6 +52,9 @@ async def sessions_feed(websocket: WebSocket) -> None:
             await send(await queue.get())
 
     pump_task = asyncio.create_task(pump())
+    mates = getattr(websocket.app.state, "mate_service", None)
+    broker = getattr(mates, "capture", None)
+    conn = broker.connect(queue.put_nowait) if broker is not None else None
     try:
         await send({"type": "hello", "data": {"version": svc.list_version, "mates_version": svc.mates_version}})
         while True:
@@ -57,11 +63,17 @@ async def sessions_feed(websocket: WebSocket) -> None:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
                 continue
-            if msg.get("type") == "sync":
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("type") == "client" and conn is not None:
+                broker.hello(conn, msg)
+            elif msg.get("type") == "sync":
                 await send({"type": "pong", "data": {"version": svc.list_version, "mates_version": svc.mates_version}})
     except WebSocketDisconnect:
         pass
     finally:
+        if conn is not None:
+            broker.disconnect(conn)
         svc.unsubscribe_list(queue)
         pump_task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):

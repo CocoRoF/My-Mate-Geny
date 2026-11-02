@@ -15,7 +15,7 @@
 // in-place updates) and the userData folder `hr-harnessor` (settings.json,
 // the login cookie, logs), pinned below because Electron would otherwise
 // derive it from the productName and log everyone out.
-const { app, BrowserWindow, Menu, Notification, ipcMain, shell, clipboard, session, systemPreferences, net, dialog, nativeTheme } = require("electron");
+const { app, BrowserWindow, Menu, Notification, ipcMain, shell, clipboard, session, systemPreferences, net, dialog, nativeTheme, desktopCapturer } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 
@@ -58,6 +58,7 @@ const { t, language, pageText } = require("./lang");
 const { launchCommand } = require("./launch");
 const rename = require("./rename");
 const oauthCatch = require("./oauth-catch");
+const capture = require("./capture");
 
 const RETRY_PAGE = path.join(__dirname, "offline.html");
 
@@ -75,6 +76,9 @@ function linuxSwitches() {
   app.commandLine.appendSwitch("enable-transparent-visuals");
   app.commandLine.appendSwitch("disable-gpu-watchdog"); // fall back instead of taking the renderer down
   app.commandLine.appendSwitch("enable-unsafe-swiftshader"); // WebGL (Live2D) needs a software path
+  // a Wayland desktop: screen capture (capture.js) goes through the desktop portal (PipeWire) — the system's own
+  // share dialog asks each time; X11 / XWayland's own capture would only see other X11 windows
+  if (String(env.XDG_SESSION_TYPE || "").toLowerCase() === "wayland") app.commandLine.appendSwitch("enable-features", "WebRTCPipeWireCapturer");
   const chosen = String(env.HRH_OZONE_PLATFORM || "").trim().toLowerCase();
   if (chosen === "wayland" || chosen === "auto") return false;
   const flag = (name) => (process.argv.find((a) => a.startsWith(`--${name}=`)) || "").split("=")[1] || "";
@@ -547,6 +551,38 @@ ipcMain.handle("higgsfield:cancel", (e) => {
 
 // a folder on this computer for a chat (folders.js): native dialog, same-machine probe, its files for a copy
 folders.registerIpc({ ipcMain, dialog, BrowserWindow, app, allowed: (e) => fromAppPage(e) && sameOrigin((e.senderFrame && e.senderFrame.url) || ""), pickTitle: () => t("pickFolder") });
+
+// Screen capture (capture.js, docs/mate.md §4 "Seeing the screen"): the mate's see_screen (asked through a page:
+// prompt → capture → the page uploads it) and the user's Share screen. Only the server's own pages may call it.
+const asker = capture.createAsker({
+  BrowserWindow, screen: require("electron").screen, ipcMain, t,
+  preload: path.join(__dirname, "preload.js"), file: path.join(__dirname, "capture-ask.html"), version: app.getVersion(),
+});
+const captures = capture.createCapture({
+  desktopCapturer, screen: require("electron").screen, systemPreferences, readSettings, writeSettings,
+  hideWindows: async () => mate.hideForCapture(),
+  ownSourceIds: () => mate.ownSourceIds(),
+  ask: (info) => asker.ask(info),
+  cancelAsk: (id) => asker.cancel(id),
+  indicate: (state, info) => {
+    mate.captureIndicator(state, info);
+    if (state === "done") mainLog.info(`screen shared with a mate (${(info.source && info.source.kind) || "screen"})`);
+  },
+});
+const fromServerPage = (e) => ours(e) && sameOrigin((e.senderFrame && e.senderFrame.url) || "");
+ipcMain.handle("capture:info", (e) => (fromServerPage(e) ? captures.info() : null));
+ipcMain.handle("capture:sources", (e, o = {}) => (fromServerPage(e) ? captures.sources({ thumbnails: !!(o && o.thumbnails), size: Number(o && o.size) || 320 }) : []));
+ipcMain.handle("capture:getChoice", (e, mateId) => (fromServerPage(e) ? captures.getChoice(String(mateId || "")) : null));
+ipcMain.handle("capture:setChoice", (e, mateId, src) => (fromServerPage(e) ? captures.setChoice(String(mateId || ""), src && typeof src === "object" ? src : null) : false));
+ipcMain.handle("capture:grab", (e, o = {}) => (fromServerPage(e) ? captures.grab(o && typeof o === "object" ? o : {}) : { ok: false, code: "denied" }));
+ipcMain.handle("capture:request", (e, req = {}) => (fromServerPage(e) ? captures.request(req && typeof req === "object" ? req : {}) : { ok: false, code: "denied" }));
+ipcMain.handle("capture:cancel", (e, id) => {
+  if (fromServerPage(e)) captures.cancel(String(id || ""));
+});
+// macOS: Screen Recording is granted in System Settings (the app cannot ask twice)
+ipcMain.handle("capture:openPrivacy", (e) => {
+  if (fromServerPage(e) && mac) shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
+});
 
 // Microphone for push-to-talk (getUserMedia audio) on the server's pages, plus
 // what the console already uses (clipboard writes, fullscreen video);
