@@ -387,7 +387,7 @@ export default function MemoryTab({ mate, onOpenStyle }: { mate: Mate; onOpenSty
                   {m.style_flag && m.status === "active" && (
                     <div className="flex flex-wrap items-center gap-1.5 rounded-md bg-warning/10 px-2 py-1 text-[11px] text-content-dim" data-testid="mate-memory-style-flag" data-reason={m.style_flag.reason}>
                       <Icon name="sliders" size={11} className="shrink-0 text-warning" />
-                      <span className="min-w-0 flex-1">
+                      <span className="min-w-[12rem] flex-1 basis-[12rem]">
                         {t("mateSettings.memStyleFlag")}
                         {m.style_flag.conflict && <> {t("mateSettings.memStyleConflict")}</>}
                       </span>

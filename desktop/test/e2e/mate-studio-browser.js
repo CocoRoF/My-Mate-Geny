@@ -176,7 +176,7 @@ async function main() {
   await sleep(250);
   await shot(page, "02-filled-by-agent-dark-en");
   assert.match(await page.locator('[data-testid="studio-draft-name"]').innerText(), /Harin/);
-  assert.equal(await page.inputValue('[data-testid="studio-persona-address"]'), "boss");
+  assert.equal(await page.inputValue('[data-testid="studio-address"]'), "boss");
   await page.waitForSelector(liveCard("choice"));
   await idle(page);
   let p = await projectOf(ctx, pid);

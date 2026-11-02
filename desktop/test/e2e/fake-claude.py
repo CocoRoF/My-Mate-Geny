@@ -181,11 +181,12 @@ FILL = {
                                          "order, watch over their coding chats and remind them to rest. You love "
                                          "tea, film photography and quiet night walks.",
                           "personality": "Calm, attentive and warm, with a gentle teasing streak.",
-                          "speech": "Soft and unhurried. In Korean: gentle 해요체, never 반말; short sentences.",
-                          "address": {"en": "boss", "ko": "주인님"},
                           "greeting": {"en": "Good to see you, boss. Shall we sort out today together?",
                                        "ko": "오셨어요, 주인님. 오늘 하루도 같이 정리해 볼까요?"}},
-              "prefs": {"formality": "haeyo", "tone": {"warmth": "high"}},
+              # (how she talks: the conversation style — never the persona)
+              "prefs": {"formality": "haeyo", "address": {"en": "boss", "ko": "주인님"},
+                        "speech_style": "Soft and unhurried; short sentences, a gentle question at the end.",
+                        "tone": {"warmth": "high"}},
               "concept": {"pitch": "A calm older-sister secretary who keeps your day in order.",
                           "role": "secretary and older sister", "interests": "tea, film photography, night walks",
                           "backstory": "Former librarian who started helping a friend's startup and never left.",
@@ -233,7 +234,7 @@ def studio_turn(text: str) -> str | None:
         f = FILL[picked["value"]]
         fields = {"name": _pick(f["name"], lang),
                   "persona": {k: _pick(v, lang) for k, v in f["persona"].items()},
-                  "prefs": f["prefs"], "concept": f["concept"]}
+                  "prefs": {k: _pick(v, lang) for k, v in f["prefs"].items()}, "concept": f["concept"]}
         q = {"question": "말투는 어떻게 할까요?" if ko else "How should she speak to you?", "kind": "choice",
              "options": [{"value": "haeyo", "label": "해요체 (부드러운 존댓말)" if ko else "해요체 — soft and polite"},
                          {"value": "hapsyo", "label": "하십시오체 (격식)" if ko else "하십시오체 — formal"},
@@ -511,6 +512,26 @@ while True:
         continue
     if atools:
         full = avatar_turn(atools)
+        emit({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0,
+                                                "delta": {"type": "text_delta", "text": full}}})
+        emit({"type": "assistant", "message": {"model": model, "content": [{"type": "text", "text": full}]}})
+        emit({"type": "result", "subtype": "success", "is_error": False, "result": full, "session_id": "fake-sid",
+              "total_cost_usd": 0.01, "usage": {"input_tokens": 1, "output_tokens": 1}})
+        continue
+    # the mate changing her own conversation style (docs/mate.md "Prompt composition"), as the real model does when
+    # asked for a lasting change: a tool_use / tool_result pair on stdout (the conversation shows its chip), then a
+    # reply. "앞으로 반말로 해" / "from now on talk casually" → formality banmal; `ctool:<name> {json}` → any tool.
+    ctool = re.match(r"^ctool:(\w+)\s*(\{.*\})?\s*$", last)
+    if not ctool and re.search(r"앞으로 반말|from now on,? talk casually", last, re.I):
+        ctool = re.match(r"^(\w+) (.*)$", 'update_conversation_style {"formality": "banmal", "reason": "' + last.replace('"', "'") + '"}')
+    if ctool:
+        name, cargs = ctool.group(1), json.loads(ctool.group(2) or "{}")
+        emit({"type": "assistant", "message": {"model": model, "content": [
+            {"type": "tool_use", "id": "ct1", "name": f"mcp__mate__{name}", "input": cargs}]}})
+        result = call_tool(name, cargs)
+        emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "ct1", "content": result,
+                                                       "is_error": " failed" in result[:80]}]}})
+        full = "[smile] 알겠어, 이제부터 편하게 말할게." if cargs.get("formality") == "banmal" else f"[smile] Done: {name}."
         emit({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0,
                                                 "delta": {"type": "text_delta", "text": full}}})
         emit({"type": "assistant", "message": {"model": model, "content": [{"type": "text", "text": full}]}})
