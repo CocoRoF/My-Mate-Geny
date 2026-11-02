@@ -3,8 +3,8 @@ made (``update_mate_draft``), what the user changed on the right that the agent 
 ``<studio_update>`` before its next message — never stored, never a restart), and when a draft is complete enough
 to become a mate.
 
-Pure helpers; the service (app/avatar/service.py) owns the documents. The agent can write the profile, the
-conversation style and the concept — never the voice, the language model, the avatar, the default flag or any key.
+Pure helpers; the service (app/avatar/service.py) owns the documents. The agent can write the profile (the character:
+who she is), the conversation style (how she talks: speech level, address, speech habits …) and the concept — never the voice, the language model, the avatar, the default flag or any key.
 """
 
 from __future__ import annotations
@@ -14,10 +14,12 @@ from typing import Any
 from app.mate.store import FORMALITIES, LENGTHS, TONE_KEYS, TONE_LEVELS, MateError, normalize_persona, \
     normalize_prefs
 
-# persona fields the agent may write, with their length limits (a mate's own limit is 8000 per field)
-PERSONA = {"description": 4000, "personality": 1500, "speech": 2000, "greeting": 600, "address": 40,
-           "instructions": 2000, "language": 8}
-PREFS_TEXT = {"user_name": 40, "self_ref": 40, "avoid": 500}
+# persona fields the agent may write — the character only — with their length limits (a mate's own limit is 8000 per
+# field); how she talks goes into prefs (the conversation style): the speech level, the address, the speech habits
+PERSONA = {"description": 4000, "personality": 1500, "greeting": 600, "instructions": 2000, "language": 8}
+PREFS_TEXT = {"user_name": 40, "address": 40, "self_ref": 40, "speech_style": 2000, "avoid": 500}
+# where the fields the persona had before live now
+_MOVED = {"speech": "prefs.speech_style", "address": "prefs.address"}
 # the concept: the studio's notes the settings don't hold (shown on the right; the avatar and the persona are made
 # from them)
 CONCEPT = ("pitch", "role", "interests", "backstory", "voice", "style", "look", "outfit", "palette", "mood")
@@ -51,7 +53,7 @@ def agent_patch(args: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
     unknown = sorted(set(f) - allowed)
     if unknown:
         raise StudioError(f"unknown field(s): {', '.join(unknown)} — you may write name, persona {{{', '.join(PERSONA)}}}, "
-                          f"prefs {{user_name, self_ref, formality, length, emotion, tone, avoid}}, concept "
+                          f"prefs {{{', '.join(PREFS_TEXT)}, formality, length, emotion, tone}}, concept "
                           f"{{{', '.join(CONCEPT)}}}. The voice, the language model and the avatar are the user's.")
     patch: dict[str, Any] = {}
     if "name" in f:
@@ -63,6 +65,10 @@ def agent_patch(args: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
         p = f["persona"]
         if not isinstance(p, dict):
             raise StudioError("persona must be an object")
+        moved = [f"persona.{k} is now {_MOVED[k]}" for k in p if k in _MOVED]
+        if moved:
+            raise StudioError("how she talks is her conversation style, not her persona: " + "; ".join(moved)
+                              + " — write it there (nothing was written)")
         bad = sorted(set(p) - set(PERSONA))
         if bad:
             raise StudioError(f"unknown persona field(s): {', '.join(bad)} (one of {', '.join(PERSONA)})")
@@ -143,7 +149,7 @@ def snapshot(mate: dict[str, Any], concept: dict[str, Any] | None) -> dict[str, 
     out: dict[str, Any] = {"name": mate.get("name") or ""}
     for k in PERSONA:
         out[f"persona.{k}"] = p.get(k) or ""
-    for k in ("user_name", "self_ref", "formality", "length", "emotion", "avoid"):
+    for k in ("user_name", "address", "self_ref", "formality", "speech_style", "length", "emotion", "avoid"):
         out[f"prefs.{k}"] = pr.get(k, "")
     for k in TONE_KEYS:
         out[f"prefs.tone.{k}"] = (pr.get("tone") or {}).get(k, "auto")

@@ -199,7 +199,7 @@ async def _import_one(svc: Any, info: dict[str, Any], target: Any, name: Any) ->
     if target:
         mate = svc.get(str(target))
     elif info["kind"] == "ailism":
-        mate_name, persona = files.ailism_persona(info["doc"])
+        mate_name, persona = files.ailism_persona(info["doc"], styled=True)  # (its speech/address: the style)
         same = next((m for m in svc.list() if m["name"] == mate_name), None)
         if same is not None:
             mate = svc.update(same["id"], {"persona": persona})
@@ -355,8 +355,49 @@ async def list_memories(mate_id: str, request: Request, q: str | None = None, ki
     if status not in ("active", "done", "archived", "all"):
         raise HTTPException(status_code=400, detail="status: active | done | archived | all")
     core = {m["id"] for m in M.core(store.memories(mate_id))}
-    return [{**m, "core": m["id"] in core} for m in store.memories(mate_id, status=status, kind=kind or None, q=q,
-                                                                  sort=sort)]
+    flags = _svc(request).memory_style_flags(mate_id)  # (looks like a rule about how she talks: a hint, read-only)
+    return [{**m, "core": m["id"] in core, "style_flag": flags.get(m["id"])}
+            for m in store.memories(mate_id, status=status, kind=kind or None, q=q, sort=sort)]
+
+
+@router.post("/{mate_id}/memories/{mem_id}/to-style")
+async def memory_to_style(mate_id: str, mem_id: str, request: Request) -> dict:
+    """The user moves a memory into the conversation style (its text joins the speech habits; the memory is
+    archived, not deleted) → {mate, memory}."""
+    try:
+        return _svc(request).memory_to_style(mate_id, mem_id)
+    except (KeyError, MateError) as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/{mate_id}/memories/{mem_id}/style-ok")
+async def memory_style_ok(mate_id: str, mem_id: str, request: Request) -> dict:
+    """The user says a flagged memory is fine where it is: no more "conversation style?" hint on it."""
+    _mate(request, mate_id)
+    _svc(request).store.dismiss_style_flag(mate_id, mem_id)
+    return {"id": mem_id, "dismissed": True}
+
+
+# ---- the mate's own conversation-style changes ----
+
+@router.get("/{mate_id}/style-changes")
+async def list_style_changes(mate_id: str, request: Request) -> list[dict]:
+    """Her own changes of the conversation style, newest first: {id, created_at, actor, status (applied | proposed |
+    dismissed | undone), reason, changes: {path: {from, to}}, session_id, resolved_at}."""
+    try:
+        return _svc(request).style_changes(mate_id)
+    except KeyError as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/{mate_id}/style-changes/{cid}/{action}")
+async def resolve_style_change(mate_id: str, cid: str, action: str, request: Request) -> dict:
+    """``undo`` an applied change (fields changed again since stay), ``apply`` / ``dismiss`` a proposed one →
+    {change, mate, skipped}."""
+    try:
+        return _svc(request).resolve_style_change(mate_id, cid, action)
+    except (KeyError, MateError) as exc:
+        raise _http(exc) from exc
 
 
 @router.get("/{mate_id}/memories/stats")

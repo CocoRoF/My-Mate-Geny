@@ -11,7 +11,7 @@ from app.mate.store import MateError, MateStore, default_prefs, normalize_prefs
 from app.providers.base import TurnRequest
 from app.vault import SecretVault
 
-KO = {"language": "ko", "address": ""}
+KO = {"language": "ko"}
 
 
 def test_normalize_merges_and_validates():
@@ -28,14 +28,26 @@ def test_normalize_merges_and_validates():
     assert normalize_prefs(None, {"junk": 1, "formality": "zzz"}) == default_prefs()  # stored garbage → defaults
 
 
-def test_defaults_add_no_settings_block():
-    assert settings_block(KO, default_prefs()) == ""
-    assert "## Conversation settings" not in base_prompt("Geny", KO, default_prefs())
+def test_defaults_give_one_plain_how_you_talk_section():
+    """Defaults: the section is still there (language, length, emotion tags, the self-edit rule) — never a speech
+    level, an address or a habit nobody set."""
+    block = settings_block(KO, default_prefs())
+    assert block.startswith("## How you talk") and "Always reply in Korean" in block and "usually one to three" in block
+    for absent in ("Speech level", "Call the user", "Refer to yourself", "speech habits", "The user's name"):
+        assert absent not in block, absent
+    text = base_prompt("Geny", KO, default_prefs())
+    assert text.count("## How you talk") == 1 and "## Conversation settings" not in text
 
 
 @pytest.mark.parametrize("patch,needle", [
     ({"user_name": "현석"}, "The user's name is 현석."),
-    ({"self_ref": "저"}, "refer to yourself as “저”"),
+    ({"self_ref": "저"}, "Refer to yourself as “저”"),
+    ({"address": "하렴"}, "Call the user “하렴”."),
+    ({"speech_style": "Ends lines with ~"}, "Ends lines with ~"),
+    ({"defaults": {"formality": "haeyo"}}, "Speech level (your character's own): In Korean always use polite 해요체"),
+    ({"defaults": {"address": "{name} 님"}}, "Call the user by their name, as “<name> 님”."),
+    ({"self_edit": "off"}, "you cannot change it"),
+    ({"self_edit": "ask"}, "propose it with update_conversation_style"),
     ({"formality": "haeyo"}, "해요체"),
     ({"formality": "hapsyo"}, "합쇼체"),
     ({"formality": "banmal"}, "반말"),
@@ -68,18 +80,27 @@ def test_recall_level_is_per_turn_not_in_the_prompt():
 
 def test_address_is_just_the_name_at_every_speech_level():
     """No grammar notes in the prompt (the user's decision): the same plain line whatever the speech level."""
-    ko = {"language": "ko", "address": "현석"}
     for f in ("auto", "banmal", "haeyo"):
-        p = base_prompt("Geny", ko, normalize_prefs({"formality": f}))
+        p = base_prompt("Geny", KO, normalize_prefs({"formality": f, "address": "현석"}))
         assert "Call the user “현석”." in p and "현석아" not in p and "현석이가" not in p and "현석 님이" not in p
-    en = base_prompt("Geny", {"language": "en", "address": "boss"}, default_prefs())
+    en = base_prompt("Geny", {"language": "en"}, normalize_prefs({"address": "boss"}))
     assert "Call the user “boss”." in en
+
+
+def test_the_users_choice_wins_over_the_characters_default():
+    d = {"defaults": {"formality": "haeyo", "address": "{name} 님"}}
+    p = base_prompt("G", KO, normalize_prefs({**d, "formality": "banmal", "address": "하렴"}))
+    assert "Speech level: In Korean always use 반말" in p and "해요체" not in p
+    assert "Call the user “하렴”." in p and "<name> 님" not in p
+    # "auto" and an empty address: the character's own
+    q = base_prompt("G", KO, normalize_prefs(d))
+    assert "Speech level (your character's own)" in q and "<name> 님" in q
 
 
 def test_settings_note_lists_pref_changes():
     a, b = default_prefs(), normalize_prefs({"formality": "banmal", "user_name": "현석", "length": "short"})
     note = settings_change_note("G", KO, "G", KO, a, b)
-    assert "Speech level was updated" in note and "The user's name is “현석”" in note and "Reply length" in note
+    assert "Speech level: 반말 in Korean" in note and "The user's name is “현석”" in note and "Reply length: one or two" in note
     assert settings_change_note("G", KO, "G", KO, None, b) == ""  # the previous run didn't record prefs
     assert settings_change_note("G", KO, "G", KO, a, normalize_prefs({"memory": {"recall": "off"}})) == ""
 
@@ -105,5 +126,5 @@ def test_store_api_roundtrip_and_settings_note(db, tmp_path):
     assert m2["prefs"]["formality"] == "banmal" and m2["prefs"]["length"] == "short"
     req2 = TurnRequest(messages=[{"role": "user", "content": "hi"}], model="", cwd=str(tmp_path))
     mates.configure_engine(session, req2)
-    assert "Speech level was updated" in req2.preamble and req2.prompt_key != key1
+    assert "Speech level: 반말" in req2.preamble and req2.prompt_key != key1
     assert "반말" in open(req2.system_prompt_file, encoding="utf-8").read()

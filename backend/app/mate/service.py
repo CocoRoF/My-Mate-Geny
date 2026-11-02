@@ -34,8 +34,9 @@ from app.mate import affinity as A
 from app.mate.capture import CaptureBroker, CaptureError
 from app.mate import files
 from app.mate import memory as M
-from app.mate.prompt import MOOD_WORDS, context_block, prompt_key, settings_change_note, system_prompt
-from app.mate.store import MateError, MateStore, normalize_persona
+from app.mate import style as STY
+from app.mate.prompt import LANGUAGES, MOOD_WORDS, context_block, prompt_key, settings_change_note, system_prompt
+from app.mate.store import MateError, MateStore, normalize_persona, normalize_prefs
 from app.providers import get_provider
 from app.providers.catalog import default_mate_model
 from app.providers.base import TurnRequest
@@ -101,6 +102,17 @@ class MateService:
             store.migrate_memories()  # (memories saved before kinds existed; idempotent)
         except Exception as exc:  # noqa: BLE001 - never stops the app
             self._log("warning", f"memory migration: {exc}")
+        try:
+            # (how she talks moves out of the persona into the conversation style; idempotent; before the sync,
+            # so a built-in's bundled speech text is still recognised as bundled)
+            for r in store.migrate_style():
+                moved = ", ".join(f"{k} ({len(v)} chars)" if k == "speech_style" else f"{k} “{v}”"
+                                  for k, v in r["moved"].items()) or "nothing"
+                self._log("info", f"conversation style of “{r['name']}” ({r['id']}): moved {moved} from the persona"
+                          + (f"; kept the style's own {', '.join(r['kept'])}" if r["kept"] else "")
+                          + "; the old persona is kept in persona_legacy", code="mate.style_migrated", detail=r)
+        except Exception as exc:  # noqa: BLE001 - never stops the app
+            self._log("warning", f"conversation style migration: {exc}")
         self.sync_builtins()
         for m in store.list():
             try:
@@ -139,7 +151,8 @@ class MateService:
                 snapshot = files.builtin_snapshot(key, doc)
                 if cur is None:
                     name, persona = files.localized(snapshot)
-                    mate = self.store.create(name=name, persona=persona, avatar=snapshot["avatar"])
+                    mate = self.store.create(name=name, persona=persona, avatar=snapshot["avatar"],
+                                             prefs=files.bundle_prefs(snapshot, persona["language"]))
                     self.store.mark_builtin(mate["id"], key, version, snapshot)
                     voice = files.ailism_voice(doc, files.builtin_voice_dir(key), mate["id"])
                     if voice:
@@ -150,7 +163,8 @@ class MateService:
                 if patch:
                     self.store.update(cur["id"], {**patch, "_sync": True})
                     self._log("info", f"built-in mate {key} updated: {', '.join(sorted(patch))}"
-                              + (f" ({', '.join(sorted(patch['persona']))})" if "persona" in patch else ""))
+                              + (f" (persona: {', '.join(sorted(patch['persona']))})" if "persona" in patch else "")
+                              + (f" (style: {', '.join(sorted(patch['prefs']))})" if "prefs" in patch else ""))
                 self.store.mark_builtin(cur["id"], key, version, snapshot)
             except Exception as exc:  # noqa: BLE001 - one broken bundle must not stop the app
                 self._log("warning", f"built-in mate {key}: {exc}")
@@ -353,6 +367,9 @@ class MateService:
                 "HRH_MATE_ID": mate_id,
                 "HRH_MATE_SESSION": session["id"],
                 **({"HRH_MATE_SCREEN": "1"} if screen else {}),  # the bridge offers see_screen only then
+                # update_conversation_style — unless she may not change her own style
+                **({"HRH_MATE_STYLE": prefs.get("self_edit") or "auto"}
+                   if (prefs.get("self_edit") or "auto") != "off" else {}),
             },
         }}}
         # (a 0600 file, so the token isn't in the process list; Codex: in its
@@ -1036,6 +1053,110 @@ class MateService:
             return f"Nothing in your memory matches {q!r}."
         return "\n".join(M.line(m) + (f" (status {m['status']})" if m.get("status") != "active" else "")
                          for m in found)
+
+    # ---- her own conversation style (docs/mate.md "Prompt composition": update_conversation_style) ----
+
+    async def _tool_update_conversation_style(self, mate: dict[str, Any], sid: str, args: dict[str, Any]) -> str:
+        """The mate changes how she talks because the user asked for a lasting change. Checked by the same
+        normalizer as the settings API; applied at once (or, with "ask me first", proposed); recorded with what it
+        was before (the conversation's chip, the style tab's history, undo) and logged. It takes effect in this very
+        reply (she has the result) and in the system prompt from her next message (a new prompt key: the engine
+        resumes the same conversation with it, told what changed)."""
+        mode = (mate.get("prefs") or {}).get("self_edit") or "auto"
+        if mode == "off":
+            raise MateError("Changing your conversation style yourself is switched off: the user sets it in your "
+                            "settings (Conversation style). Tell them so if they want a lasting change.")
+        flat = STY.flat_args(args)
+        if not flat:
+            raise MateError("nothing to change: give the fields that change (formality, address, user_name, "
+                            "self_ref, language, length, emotion, tone, speech_style, avoid) and a reason")
+        if "language" in flat:
+            lang = str(flat["language"] or "").strip().lower()
+            if lang not in LANGUAGES:
+                raise MateError(f"unknown language {lang!r}: one of {', '.join(LANGUAGES)}")
+            flat["language"] = lang
+        patch = STY.patch_of(flat)
+        normalize_prefs(patch.get("prefs"), mate["prefs"])  # (the settings API's checks: a wrong value is an error)
+        before = STY.values(mate)
+        after = STY.values({**mate, "prefs": normalize_prefs(patch.get("prefs"), mate["prefs"]),
+                            "persona": {**mate["persona"], **(patch.get("persona") or {})}})
+        changes = STY.diff(before, after)
+        if not changes:
+            return "Nothing to change: your conversation style already is like that. Now: " + STY.summary(mate)
+        reason = str(args.get("reason") or "").strip()
+        if mode == "ask":
+            rec = self.store.add_style_change(mate["id"], changes, actor="mate", status="proposed", reason=reason,
+                                              session_id=sid)
+            self._log("info", f"“{mate['name']}” proposed a change of her conversation style: {STY.describe(changes)}"
+                      + (f" — {reason}" if reason else ""), code="mate.style_proposed", detail=rec, session_id=sid)
+            return (f"Proposed [{rec['id']}]: {STY.describe(changes)}. The user confirms it in the app (Apply / "
+                    "Dismiss on your change in the conversation); it holds only once they apply it. Tell them "
+                    "briefly that it's waiting for their OK.")
+        mate = self.update(mate["id"], patch)
+        rec = self.store.add_style_change(mate["id"], changes, actor="mate", status="applied", reason=reason,
+                                          session_id=sid)
+        self._log("info", f"“{mate['name']}” changed her conversation style: {STY.describe(changes)}"
+                  + (f" — {reason}" if reason else ""), code="mate.style_changed", detail=rec, session_id=sid)
+        return (f"Conversation style updated [{rec['id']}]: {STY.describe(changes)}. Talk this way from this reply "
+                f"on; the user sees the change and can undo it. Now: {STY.summary(mate)}")
+
+    def style_changes(self, mate_id: str) -> list[dict[str, Any]]:
+        self.store.get(mate_id)  # (KeyError → 404)
+        return self.store.style_changes(mate_id)
+
+    def resolve_style_change(self, mate_id: str, cid: str, action: str) -> dict[str, Any]:
+        """The user on one of her changes: ``undo`` an applied one (each field goes back unless it was changed again
+        since), ``apply`` / ``dismiss`` a proposed one. → {change, mate, skipped: [paths left as they are]}."""
+        rec = self.store.style_change(mate_id, cid)  # KeyError → 404
+        mate = self.store.get(mate_id)
+        want = {"undo": "applied", "apply": "proposed", "dismiss": "proposed"}.get(action)
+        if want is None:
+            raise MateError("action: undo, apply or dismiss")
+        if rec["status"] != want:
+            raise MateError(f"this change is {rec['status']}: it can't be {action}ed", status=409)
+        skipped: list[str] = []
+        if action == "dismiss":
+            rec = self.store.set_style_change(mate_id, cid, "dismissed")
+            return {"change": rec, "mate": mate, "skipped": skipped}
+        now = STY.values(mate)
+        flat: dict[str, Any] = {}
+        for path, c in rec["changes"].items():
+            if path not in STY.PATHS:
+                continue
+            if action == "undo":
+                if now.get(path) != c.get("to"):
+                    skipped.append(path)  # (changed again since: the newer value stays)
+                    continue
+                flat[path] = c.get("from")
+            else:
+                flat[path] = c.get("to")
+        if flat:
+            mate = self.update(mate_id, STY.patch_of(flat))
+        rec = self.store.set_style_change(mate_id, cid, "undone" if action == "undo" else "applied")
+        self._log("info", f"the user {'undid' if action == 'undo' else 'applied'} “{mate['name']}”'s conversation "
+                  f"style change {cid}: {STY.describe(rec['changes'])}" + (f" (kept: {', '.join(skipped)})" if skipped
+                                                                          else ""),
+                  code=f"mate.style_{'undone' if action == 'undo' else 'applied'}", detail=rec)
+        return {"change": rec, "mate": mate, "skipped": skipped}
+
+    def memory_style_flags(self, mate_id: str) -> dict[str, dict[str, Any]]:
+        """The Memory tab's hint: active memories that look like rules about how she talks (read-only)."""
+        mate = self.store.get(mate_id)
+        return STY.memory_flags(self.store.memories(mate_id), mate, self.store.style_ok_memories(mate_id))
+
+    def memory_to_style(self, mate_id: str, mem_id: str) -> dict[str, Any]:
+        """The user moves a memory into the conversation style: its text joins the speech habits (the user can
+        then shape it in the Conversation style tab) and the memory is archived — restorable, never deleted."""
+        mate = self.store.get(mate_id)
+        mem = self.store.memory(mate_id, mem_id)
+        if mem is None:
+            raise KeyError(f"no memory {mem_id}")
+        habits = (mate["prefs"].get("speech_style") or "").rstrip()
+        line = "- " + " ".join(str(mem["text"]).split())
+        if line not in habits.splitlines():
+            mate = self.update(mate_id, {"prefs": {"speech_style": (habits + "\n" if habits else "") + line}})
+        self.store.update_memory(mate_id, mem_id, {"status": "archived"}, by_user=True)
+        return {"mate": self.store.get(mate_id), "memory": self.store.memory(mate_id, mem_id)}
 
     def preview_context(self, mate_id: str, text: str) -> dict[str, Any]:
         """The Memory tab's "Test recall": what the mate would get for this message (nothing is recorded)."""

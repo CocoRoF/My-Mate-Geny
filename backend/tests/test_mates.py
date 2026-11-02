@@ -56,12 +56,13 @@ def test_default_mate_and_crud(client):
     assert mates and [m["is_default"] for m in mates].count(True) == 1  # the built-ins exist out of the box
 
     m = _new(client, "Estelle", persona={"personality": "lazy"}, llm={"model": "haiku"})
-    assert m["persona"]["personality"] == "lazy" and m["persona"]["speech"] == ""
+    assert m["persona"]["personality"] == "lazy" and "speech" not in m["persona"] and m["prefs"]["speech_style"] == ""
     assert m["llm"] == {"provider": "claude", "model": "haiku", "effort": "low"}
     assert m["session_id"] is None
     r = client.patch(f"/api/mates/{m['id']}", json={"persona": {"speech": "drawls"}, "voice": {"tts": {"engine": "openai", "voice": "nova"}}})
     m2 = r.json()
-    assert m2["persona"] == {**m["persona"], "speech": "drawls"}  # merged, not replaced
+    # (an older client's persona.speech: how she talks is the conversation style now)
+    assert m2["persona"] == m["persona"] and m2["prefs"]["speech_style"] == "drawls"
     assert m2["voice"]["tts"]["engine"] == "openai" and m2["voice"]["stt"]["engine"] == "browser"
     assert client.patch(f"/api/mates/{m['id']}", json={"voice": {"tts": {"engine": "nope"}}}).status_code == 400
     # Codex can run a mate too; switching engine without a model picks that engine's default
@@ -215,14 +216,16 @@ def test_import_local_ailism_content_mate(client, tmp_path):
     assert m["name"] == "에스텔 루미나르" and r.json()["imported"] == "ailism"
     p = m["persona"]
     assert p["language"] == "ko" and p["greeting"].startswith("음~") and "게으르다" in p["personality"]
-    assert "{{user}}" not in json.dumps(p, ensure_ascii=False) and "Example exchanges" in p["speech"]
+    assert "{{user}}" not in json.dumps(p, ensure_ascii=False) and "Example exchanges" in m["prefs"]["speech_style"]
+    assert "speech" not in p and "address" not in p
     rig = m["avatar"]["rig"]
     assert m["avatar"]["kind"] == "video" and len(rig["clips"]) == 13 and len(rig["stills"]) == 12
     assert "asset:" not in json.dumps(m["avatar"])
     assert client.get(rig["home"]).status_code == 200
     # everything the author wrote comes along
     assert "Your world:" in p["description"] and "Appearance:" in p["description"]
-    assert "Things you like to talk about" in p["instructions"] and "comes back" in p["instructions"]
+    assert "Things you like to talk about" in p["description"] and "comes back" in m["prefs"]["speech_style"]
+    assert "comes back" not in p["instructions"] and "Things you like" not in p["instructions"]
     # the whole content folder: every character; one already imported is updated, not duplicated
     before = len(client.get("/api/mates").json())
     r = client.post("/api/mates/import-local", json={"path": str(content)})

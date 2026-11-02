@@ -17,9 +17,9 @@ from tests.test_avatar import _services, _settle
 CONCEPT = {"fields": {
     "name": "하린",
     "persona": {"description": "You are Harin, the user's calm older-sister secretary.",
-                "personality": "Calm, attentive, a little teasing.", "speech": "Gentle 해요체.",
-                "address": "주인님", "greeting": "오늘도 같이 해 봐요, 주인님."},
-    "prefs": {"formality": "haeyo", "tone": {"warmth": "high"}},
+                "personality": "Calm, attentive, a little teasing.", "greeting": "오늘도 같이 해 봐요, 주인님."},
+    "prefs": {"formality": "haeyo", "address": "주인님", "speech_style": "Gentle, unhurried; ends with a soft question.",
+              "tone": {"warmth": "high"}},
     "concept": {"pitch": "A calm older-sister secretary who keeps your day in order.", "voice": "soft, warm, low",
                 "palette": "#2B2D42, #F4C7D0, #EDF2F4"},
 }}
@@ -97,6 +97,9 @@ async def test_agent_fields_are_validated_and_never_touch_voice_model_or_avatar(
                      ({"fields": {"prefs": {"memory": {"recall": "off"}}}}, "unknown prefs"),
                      ({"fields": {"persona": {"description": "x" * 5000}}}, "too long"),
                      ({"fields": {"persona": {"mood": "x"}}}, "unknown persona"),
+                     # how she talks is her conversation style: the old persona fields say where they went
+                     ({"fields": {"persona": {"speech": "Gentle 해요체."}}}, "prefs.speech_style"),
+                     ({"fields": {"persona": {"address": "주인님"}}}, "prefs.address"),
                      ({"fields": {"name": ""}}, "empty"),
                      ({"fields": {}}, "nothing to write")):
         text, err, _ = await av.call_tool(ctx, "update_mate_draft", bad)
@@ -107,15 +110,16 @@ async def test_agent_fields_are_validated_and_never_touch_voice_model_or_avatar(
     text, err, _ = await av.call_tool(ctx, "update_mate_draft", CONCEPT)
     assert not err and "missing_to_create" in text
     m = mates.get(mid)
-    assert m["name"] == "하린" and m["persona"]["address"] == "주인님" and m["prefs"]["formality"] == "haeyo"
+    assert m["name"] == "하린" and m["prefs"]["address"] == "주인님" and m["prefs"]["formality"] == "haeyo"
+    assert m["prefs"]["speech_style"].startswith("Gentle") and "speech" not in m["persona"] and "address" not in m["persona"]
     assert m["prefs"]["tone"]["warmth"] == "high" and m["prefs"]["tone"]["humor"] == "auto"
     assert m["voice"] == voice
     doc = av.doc(pid)
     assert doc["studio"]["concept"]["voice"] == "soft, warm, low"
     assert doc["title"] == "하린" and doc["brief"]["target"]["name"] == "하린"
     filled = doc["studio"]["filled"]
-    assert {"name", "persona.description", "persona.address", "prefs.formality", "prefs.tone.warmth",
-            "concept.pitch"} <= set(filled)
+    assert {"name", "persona.description", "prefs.address", "prefs.speech_style", "prefs.formality",
+            "prefs.tone.warmth", "concept.pitch"} <= set(filled)
     assert filled["name"]["prev"] == ""
     # get_project tells the agent the draft and what is still missing
     text, err, _ = await av.call_tool(ctx, "get_project", {})
@@ -151,10 +155,12 @@ async def test_user_edits_reach_the_agent_once_and_undo(db, tmp_path, monkeypatc
     await av.studio_undo(pid, "concept.voice")
     assert "voice" not in av.view(pid)["studio"]["concept"]
     # a template: another mate's profile/style/voice (not its name or avatar)
-    src = mates.create({"name": "Src", "persona": {"description": "Template mate.", "speech": "Dry."}})
+    src = mates.create({"name": "Src", "persona": {"description": "Template mate."},
+                        "prefs": {"speech_style": "Dry.", "defaults": {"formality": "banmal"}}})
     view = await av.studio_template(pid, src["id"])
     m = view["studio"]["mate"]
     assert m["persona"]["description"] == "Template mate." and m["name"] == ""
+    assert m["prefs"]["speech_style"] == "Dry." and m["prefs"]["defaults"]["formality"] == "banmal"
 
 
 async def test_discard_removes_the_draft_and_untouched_drafts_are_dropped(db, tmp_path, monkeypatch):
@@ -204,7 +210,7 @@ async def test_the_gate_is_unchanged_in_the_studio_and_the_avatar_lands_on_the_n
     assert err and "not_confirmed" in text
     with pytest.raises(PL.GateError):
         await av.confirm(pid, doc["plan"]["id"], doc["plan"]["total"] - 1)
-    await av.call_tool(ctx, "update_mate_draft", {"fields": {"persona": {"speech": "Soft."}}})
+    await av.call_tool(ctx, "update_mate_draft", {"fields": {"prefs": {"speech_style": "Soft."}}})
     assert av.gen.created == [] and av.doc(pid)["confirmation"] is None
     assert av.doc(pid)["status"] == "estimate"  # (the mate's fields don't touch the plan)
     # finishing the mate while the avatar waits for Confirm: still nothing spent
@@ -271,8 +277,8 @@ def test_the_new_mate_prompt_starts_with_the_concept():
 
 
 def test_studio_helpers():
-    seen = ST.snapshot({"name": "A", "persona": {"speech": "x"}, "prefs": {}}, {})
-    now = ST.snapshot({"name": "B", "persona": {"speech": "x"}, "prefs": {}}, {"pitch": "p"})
+    seen = ST.snapshot({"name": "A", "persona": {}, "prefs": {"speech_style": "x"}}, {})
+    now = ST.snapshot({"name": "B", "persona": {}, "prefs": {"speech_style": "x"}}, {"pitch": "p"})
     note = ST.update_note(seen, now)
     assert "- name: A → B" in note and "- concept.pitch: (empty) → p" in note and "speech" not in note
     assert ST.update_note(None, now) == "" and ST.update_note(now, now) == ""

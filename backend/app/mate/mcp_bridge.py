@@ -10,7 +10,9 @@ memory) and returns the text the model sees.
 
 Env: HRH_MATE_API (e.g. http://127.0.0.1:8080), HRH_MATE_TOKEN, HRH_MATE_ID,
 HRH_MATE_SESSION; HRH_MATE_SCREEN=1 when the mate may look at the user's screen
-(``see_screen`` is listed only then; its picture comes back as MCP image content).
+(``see_screen`` is listed only then; its picture comes back as MCP image content);
+HRH_MATE_STYLE=auto|ask when she may change her own conversation style
+(``update_conversation_style``; absent = not listed).
 """
 
 from __future__ import annotations
@@ -131,7 +133,8 @@ TOOLS = [
             "done (preference), a lasting fact (fact), an appointment / promise / reminder with its date (plan), "
             "or what is going on these days (context — fades after a few weeks). If you already remember the "
             "same thing it is updated instead of duplicated; similar memories are listed so you can merge them. "
-            "Returns the memory id."
+            "Not for how they want you to talk (speech level, what to call them, language, length, tone): that "
+            "is your conversation style. Returns the memory id."
         ),
         "inputSchema": {
             "type": "object",
@@ -198,6 +201,48 @@ TOOLS = [
 ]
 
 
+# offered unless the mate's "may change her own conversation style" setting is off (HRH_MATE_STYLE=auto|ask)
+_LEVEL = {"type": "string", "enum": ["low", "auto", "high"]}
+UPDATE_STYLE = {
+    "name": "update_conversation_style",
+    "description": (
+        "Change your own conversation style (how you talk to the user — the settings the user sees as "
+        "\"Conversation style\") when they ask for a lasting change: e.g. talk casually / politely from now on, "
+        "call them something else, refer to yourself differently, answer in another language, keep replies "
+        "shorter, drop or adopt a habit, more or less humor, a topic to avoid. Give only the fields that change. "
+        "Not for a one-off request (\"answer briefly this time\") — just do that — and never store such "
+        "preferences with remember. The user sees every change in the conversation and can undo it. "
+        "Returns the style as it is now."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "formality": {"type": "string", "enum": ["auto", "haeyo", "hapsyo", "banmal"],
+                          "description": ("Speech level: haeyo (polite 해요체 / warm and friendly), hapsyo (formal "
+                                          "합쇼체 / formal), banmal (반말 / casual), auto (your character's own).")},
+            "address": {"type": "string",
+                        "description": "What you call the user, exactly as you would say it (\"\" = your character's way)."},
+            "user_name": {"type": "string", "description": "The user's name."},
+            "self_ref": {"type": "string",
+                         "description": "How you refer to yourself (\"\" = as your character does)."},
+            "language": {"type": "string",
+                         "description": "Reply language code: ko, en, ja, zh, es, fr, de, it, pt, vi."},
+            "length": {"type": "string", "enum": ["short", "normal", "long"], "description": "Reply length."},
+            "emotion": {"type": "integer", "minimum": 0, "maximum": 3,
+                        "description": "Emotion tags: 0 none, 1 subtle, 2 normal, 3 expressive."},
+            "tone": {"type": "object", "properties": {"warmth": _LEVEL, "humor": _LEVEL, "initiative": _LEVEL},
+                     "description": "low | auto (your character's) | high, per key."},
+            "speech_style": {"type": "string", "description": (
+                "Your speech habits (rhythm, catchphrases, sample lines): the WHOLE new text, replacing the old — "
+                "start from your current habits and change only what the user asked.")},
+            "avoid": {"type": "string", "description": "Topics to avoid: the whole new list, replacing the old."},
+            "reason": {"type": "string",
+                       "description": "One short line: what the user asked (shown to them with the change)."},
+        },
+        "required": ["reason"],
+    },
+}
+
 # offered only while the mate's Screen setting is on (HRH_MATE_SCREEN=1, app/mate/service.configure_engine)
 SEE_SCREEN = {
     "name": "see_screen",
@@ -220,7 +265,8 @@ _SLOW = {"see_screen": 150}  # (waits for the user's answer + the capture; the b
 
 
 def tools() -> list[dict]:
-    return TOOLS + ([SEE_SCREEN] if os.environ.get("HRH_MATE_SCREEN") == "1" else [])
+    return (TOOLS + ([UPDATE_STYLE] if os.environ.get("HRH_MATE_STYLE") in ("auto", "ask") else [])
+            + ([SEE_SCREEN] if os.environ.get("HRH_MATE_SCREEN") == "1" else []))
 
 
 def _call(name: str, args: dict) -> dict:

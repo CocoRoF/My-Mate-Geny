@@ -608,11 +608,16 @@ def import_folder_live2d(mate_id: str, model: Path) -> dict[str, Any]:
         raise
 
 
-def ailism_persona(doc: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+def ailism_persona(doc: dict[str, Any], *, styled: bool = False) -> tuple[str, dict[str, Any]]:
     """An ailism MateDoc -> (name, persona), keeping everything the author
     wrote: profile, appearance, background, relationship, knowledge, world,
     personality, speech + every example exchange, the opening lines, the
-    greeting and return lines, interests and the author's note."""
+    greeting and return lines, interests and the author's note. The persona
+    still has ``speech`` / ``address`` (the store moves them into the
+    conversation style). ``styled``: today's layout (an import) — the opening
+    and return lines join the speech (they are her voice), the interests the
+    description, the instructions keep only the author's note; without it, the
+    layout bundles had before (legacy_persona compares against that)."""
     d = doc.get("doc") or {}
     ch = d.get("character") or {}
     mate = d.get("mate") or {}
@@ -652,15 +657,22 @@ def ailism_persona(doc: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     notes = []
     if fill(d.get("instructions")):
         notes.append(fill(d.get("instructions")))
+    voice = []  # (lines in her voice)
     if opening:
-        notes.append("When you first meet the user you open like this:\n" + "\n".join(opening))
+        voice.append("When you first meet the user you open like this:\n" + "\n".join(opening))
     returning = [fill(x) for x in mate.get("returning") or [] if str(x).strip()]
     if returning:
-        notes.append("When the user comes back after a while, you greet them in this spirit:\n"
+        voice.append("When the user comes back after a while, you greet them in this spirit:\n"
                      + "\n".join(f"- {x}" for x in returning))
     interests = [str(x).strip() for x in mate.get("interests") or [] if str(x).strip()]
-    if interests:
-        notes.append("Things you like to talk about: " + ", ".join(interests))
+    if styled:
+        speech = "\n\n".join(x for x in (speech, *voice) if x)
+        if interests:
+            description += ("\n\n" if description else "") + "Things you like to talk about:\n" + ", ".join(interests)
+    else:
+        notes += voice
+        if interests:
+            notes.append("Things you like to talk about: " + ", ".join(interests))
     persona = {
         "description": description,
         "personality": fill(ch.get("personality")),
@@ -722,8 +734,13 @@ def ailism_voice(doc: dict[str, Any], voice_dir: Path | None, mate_id: str) -> d
 
 BUILTIN_DIR = Path(__file__).resolve().parent / "builtin"
 BUILTIN_ORDER = ("chaerin", "estelle", "seoa", "mao")  # the first is the default mate on a new install
-# persona fields a bundle sets for every language (greeting and name are per language)
-BUNDLE_FIELDS = ("description", "personality", "speech", "address", "instructions")
+# persona fields a bundle sets for every language (greeting and name are per language) — the character only
+BUNDLE_FIELDS = ("description", "personality", "instructions")
+# conversation-style fields (prefs) a bundle sets and later updates merge field by field like the persona's; the
+# character's own speech level / address (``prefs.defaults``) are bundle data and always follow the bundle
+BUNDLE_STYLE_FIELDS = ("speech_style", "address")
+# bumped when the way bundles are composed changes (part of builtin_hash: every built-in is merged again once)
+BUNDLE_FORMAT = "2"
 
 
 def builtin_keys() -> list[str]:
@@ -737,7 +754,8 @@ def builtin_doc(key: str) -> dict[str, Any]:
 
 def legacy_persona(doc: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     """(name, persona) as bundled before personas/: the ailism MateDoc mapped by
-    ailism_persona(), or our own ``{name, persona}`` doc (Mao)."""
+    ailism_persona(), or our own ``{name, persona}`` doc (Mao). (The old shape: it
+    still has ``speech`` / ``address``.)"""
     if isinstance(doc.get("persona"), dict):
         name = str(doc.get("name") or doc.get("key") or "Mate").strip()
         return name, {k: str(v) for k, v in doc["persona"].items() if isinstance(v, (str, int, float))}
@@ -749,27 +767,38 @@ def _lines(v: Any) -> list[str]:
     return [str(x).strip() for x in items if str(x).strip()]
 
 
-def compose_persona(src: dict[str, Any]) -> dict[str, str]:
-    """A personas/<key>.json document -> the persona fields all languages share.
-    Same layout as an ailism import: tagline/profile/appearance/background/
-    relationship/knowledge/world -> description; speech + the example exchanges
-    -> speech; the author's note, opening and return lines, interests ->
-    instructions. A value may be a string or a list of lines."""
-    def text(k: str) -> str:  # (a list keeps its blank lines: paragraph breaks)
-        v = src.get(k)
-        return "\n".join(str(x).rstrip() for x in v).strip() if isinstance(v, list) else str(v or "").strip()
+def _text(src: dict[str, Any], k: str) -> str:
+    v = src.get(k)  # (a list keeps its blank lines: paragraph breaks)
+    return "\n".join(str(x).rstrip() for x in v).strip() if isinstance(v, list) else str(v or "").strip()
 
+
+def compose_persona(src: dict[str, Any]) -> dict[str, str]:
+    """A personas/<key>.json document -> the persona fields all languages share: who she is.
+    tagline/profile/appearance/background/relationship/knowledge/world (+ interests) -> description;
+    personality; the author's note -> instructions. How she talks is compose_style()."""
     sections = [
-        ("", text("tagline")),
-        ("", text("profile")),
-        ("Appearance", text("appearance")),
-        ("Background", text("background")),
-        ("Your relationship with the user", text("relationship")),
-        ("What you know", text("knowledge")),
-        ("Your world", text("world")),
+        ("", _text(src, "tagline")),
+        ("", _text(src, "profile")),
+        ("Appearance", _text(src, "appearance")),
+        ("Background", _text(src, "background")),
+        ("Your relationship with the user", _text(src, "relationship")),
+        ("What you know", _text(src, "knowledge")),
+        ("Your world", _text(src, "world")),
+        ("Things you like to talk about", ", ".join(_lines(src.get("interests")))),
     ]
-    description = "\n\n".join(f"{t}:\n{x}" if t else x for t, x in sections if x)
-    speech = [text("speech")]
+    return {
+        "description": "\n\n".join(f"{t}:\n{x}" if t else x for t, x in sections if x),
+        "personality": _text(src, "personality"),
+        "instructions": _text(src, "note"),
+    }
+
+
+def compose_style(src: dict[str, Any]) -> dict[str, Any]:
+    """A personas/<key>.json document -> how she talks: ``speech_style`` (speech habits + the example exchanges +
+    her opening and return lines — all in her voice) and ``defaults`` (her own speech level and how she calls the
+    user, from the document's structured ``style``: ``formality``, ``address`` per language, ``self_ref``).
+    ``address``: a literal address the bundle sets as the user's setting (older bundles; normally empty)."""
+    speech = [_text(src, "speech")]
     for k, title in (("examples", "Example exchanges"),
                      ("examples_ko", "The same exchanges as they go in Korean (your own words)")):
         ex = [e for e in src.get(k) or [] if isinstance(e, dict) and str(e.get("content") or "").strip()]
@@ -777,7 +806,6 @@ def compose_persona(src: dict[str, Any]) -> dict[str, str]:
             speech.append(title + ":\n" + "\n".join(
                 ("user: " if e.get("speaker") == "user" else "you: ") + str(e["content"]).strip().replace("\n", " / ")
                 for e in ex))
-    notes = [text("note")]
     for k, title in (("opening", "When you first meet the user you open like this:"),
                      ("opening_ko", "In Korean:"),
                      ("returning", "When the user comes back after a while, you greet them in this spirit:"),
@@ -785,16 +813,18 @@ def compose_persona(src: dict[str, Any]) -> dict[str, str]:
         lines = _lines(src.get(k))
         if lines:
             bullet = "- " if k.startswith("returning") else ""
-            notes.append(title + "\n" + "\n".join(bullet + x for x in lines))
-    interests = _lines(src.get("interests"))
-    if interests:
-        notes.append("Things you like to talk about: " + ", ".join(interests))
+            speech.append(title + "\n" + "\n".join(bullet + x for x in lines))
+    st = src.get("style") if isinstance(src.get("style"), dict) else {}
+    address = st.get("address")
     return {
-        "description": description,
-        "personality": text("personality"),
-        "speech": "\n\n".join(x for x in speech if x),
+        "speech_style": "\n\n".join(x for x in speech if x),
         "address": str(src.get("address") or ""),
-        "instructions": "\n\n".join(x for x in notes if x),
+        "defaults": {"formality": str(st.get("formality") or ""),
+                     "address": _per_lang(address) if isinstance(address, dict) else
+                     ({"": str(address)} if isinstance(address, str) and address.strip() else {}),
+                     "self_ref": _per_lang(st.get("self_ref")) if isinstance(st.get("self_ref"), dict) else
+                     ({"": str(st["self_ref"])} if isinstance(st.get("self_ref"), str) and st["self_ref"].strip()
+                      else {})},
     }
 
 
@@ -805,8 +835,8 @@ def _per_lang(v: Any) -> dict[str, str]:
 
 
 def builtin_bundle(key: str, doc: dict[str, Any] | None = None) -> dict[str, Any]:
-    """What a built-in is bundled with: ``{language, names, greetings, persona}``
-    (names/greetings per language code, persona = the BUNDLE_FIELDS). It is also
+    """What a built-in is bundled with: ``{language, names, greetings, persona, style}``
+    (names/greetings per language code, persona = the BUNDLE_FIELDS, style = compose_style). It is also
     the snapshot kept per built-in mate, so the next update can tell the fields
     the user edited from the ones still as bundled."""
     path = BUILTIN_DIR / "personas" / f"{key}.json"
@@ -817,7 +847,7 @@ def builtin_bundle(key: str, doc: dict[str, Any] | None = None) -> dict[str, Any
         raise MateError(f"built-in {key}: personas/{key}.json must be an object")
     names = _per_lang(src.get("names")) or {"en": key}
     return {"language": str(src.get("language") or "ko"), "names": names,
-            "greetings": _per_lang(src.get("greetings")), "persona": compose_persona(src)}
+            "greetings": _per_lang(src.get("greetings")), "persona": compose_persona(src), "style": compose_style(src)}
 
 
 def legacy_bundle(doc: dict[str, Any]) -> dict[str, Any]:
@@ -826,13 +856,15 @@ def legacy_bundle(doc: dict[str, Any]) -> dict[str, Any]:
     lang = str(p.get("language") or "ko")
     return {"language": lang, "names": {lang: name},
             "greetings": {lang: str(p["greeting"])} if p.get("greeting") else {},
-            "persona": {k: str(p.get(k) or "") for k in BUNDLE_FIELDS}}
+            "persona": {k: str(p.get(k) or "") for k in BUNDLE_FIELDS},
+            "style": {"speech_style": str(p.get("speech") or "").strip(), "address": str(p.get("address") or ""),
+                      "defaults": {"formality": "", "address": {}, "self_ref": {}}}}
 
 
 def pick_lang(texts: dict[str, str], language: str) -> str:
     """The text for ``language`` ("ko-KR" -> "ko"), else the English one, else any."""
     lang = (language or "").strip().lower().split("-")[0]
-    return texts.get(lang) or texts.get("en") or next(iter(texts.values()), "")
+    return texts.get(lang) or texts.get("en") or texts.get("") or next(iter(texts.values()), "")
 
 
 def localized(bundle: dict[str, Any], language: str | None = None) -> tuple[str, dict[str, str]]:
@@ -842,9 +874,37 @@ def localized(bundle: dict[str, Any], language: str | None = None) -> tuple[str,
     return pick_lang(bundle.get("names") or {}, lang), persona
 
 
+def style_defaults(bundle: dict[str, Any], language: str | None = None) -> dict[str, str]:
+    """``prefs.defaults`` of a bundle for a reply language: the character's own speech level and address."""
+    d = ((upgrade_snapshot(bundle).get("style") or {}).get("defaults")) or {}
+    lang = language or str(bundle.get("language") or "ko")
+    return {"formality": str(d.get("formality") or ""), "address": pick_lang(d.get("address") or {}, lang),
+            "self_ref": pick_lang(d.get("self_ref") or {}, lang)}
+
+
+def bundle_prefs(bundle: dict[str, Any], language: str | None = None) -> dict[str, Any]:
+    """The conversation style a fresh built-in mate starts with (the user's own fields stay at their defaults)."""
+    st = upgrade_snapshot(bundle)["style"]
+    out: dict[str, Any] = {"speech_style": st.get("speech_style") or "", "defaults": style_defaults(bundle, language)}
+    if st.get("address"):
+        out["address"] = st["address"]
+    return out
+
+
 def builtin_snapshot(key: str, doc: dict[str, Any]) -> dict[str, Any]:
     """The current bundle of a built-in with its (normalized) avatar."""
     return {**builtin_bundle(key, doc), "avatar": normalize_avatar(builtin_avatar(key, doc) or {"kind": "none"})}
+
+
+def upgrade_snapshot(snap: dict[str, Any]) -> dict[str, Any]:
+    """A snapshot recorded before the conversation style existed kept ``speech`` / ``address`` in its persona: the
+    same values, in today's shape (``style``). Today's snapshots come back as they are."""
+    if isinstance(snap.get("style"), dict):
+        return snap
+    persona = dict(snap.get("persona") or {})
+    style = {"speech_style": str(persona.pop("speech", "") or "").strip(), "address": str(persona.pop("address", "") or ""),
+             "defaults": {"formality": "", "address": {}, "self_ref": {}}}
+    return {**snap, "persona": persona, "style": style}
 
 
 def legacy_snapshot(mate: dict[str, Any], doc: dict[str, Any], avatar: dict[str, Any]) -> dict[str, Any]:
@@ -853,18 +913,26 @@ def legacy_snapshot(mate: dict[str, Any], doc: dict[str, Any], avatar: dict[str,
     by legacy_persona()) had, and the bundled avatar (its files are unchanged)."""
     if not mate.get("customized"):
         p = mate["persona"]
+        s = mate.get("prefs") or {}
         return {"names": {"": mate["name"]}, "greetings": {"": p.get("greeting") or ""},
-                "persona": {k: p.get(k) or "" for k in BUNDLE_FIELDS}, "avatar": mate["avatar"]}
+                "persona": {k: p.get(k) or "" for k in BUNDLE_FIELDS},
+                "style": {k: s.get(k) or "" for k in BUNDLE_STYLE_FIELDS}, "avatar": mate["avatar"]}
     return {**legacy_bundle(doc), "avatar": avatar}
 
 
 def merge_builtin(mate: dict[str, Any], prev: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
     """The update a new bundle makes to a built-in mate, field by field: what
     still equals the previous bundle (``prev``: a snapshot) becomes the new
-    bundle's, what the user changed stays. Name and greeting follow the mate's
-    reply language; the language itself (and voice, model, memories, default)
-    is never touched. Returns a store patch ({} = nothing to change)."""
+    bundle's, what the user changed stays — persona fields and the bundled
+    conversation-style fields (speech habits) alike. The character's own speech
+    level / address (``prefs.defaults``) always follow the bundle: they are its
+    data, the user's choice is the setting itself (``formality``, ``address``).
+    Name and greeting follow the mate's reply language; the language itself (and
+    voice, model, memories, default, the user's style settings) is never
+    touched. Returns a store patch ({} = nothing to change)."""
+    prev, new = upgrade_snapshot(prev), upgrade_snapshot(new)
     p = mate["persona"]
+    s = mate.get("prefs") or {}
     lang = p.get("language") or str(new.get("language") or "ko")
     patch: dict[str, Any] = {}
     name = pick_lang(new.get("names") or {}, lang)
@@ -881,6 +949,16 @@ def merge_builtin(mate: dict[str, Any], prev: dict[str, Any], new: dict[str, Any
             persona[k] = now
     if persona:
         patch["persona"] = persona
+    prefs: dict[str, Any] = {}
+    for k in BUNDLE_STYLE_FIELDS:
+        cur, was, now = s.get(k) or "", (prev.get("style") or {}).get(k) or "", new["style"].get(k) or ""
+        if cur == was and now != cur:
+            prefs[k] = now
+    defaults = style_defaults(new, lang)
+    if defaults != {**{"formality": "", "address": "", "self_ref": ""}, **(s.get("defaults") or {})}:
+        prefs["defaults"] = defaults
+    if prefs:
+        patch["prefs"] = prefs
     if "avatar" in new and prev.get("avatar") is not None and mate["avatar"] == prev["avatar"] \
             and new["avatar"] != mate["avatar"]:
         patch["avatar"] = new["avatar"]
@@ -915,6 +993,9 @@ def localize_patch(mate: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any
     greeting = p["greeting"] if isinstance(p.get("greeting"), str) else mate["persona"].get("greeting") or ""
     if greetings and greeting.strip() in greetings.values() and pick_lang(greetings, lang):
         out["persona"]["greeting"] = pick_lang(greetings, lang)
+    if key and b:  # the character's own address is per language too (e.g. “<name> 님” in Korean, the name in English)
+        out["prefs"] = {**(patch["prefs"] if isinstance(patch.get("prefs"), dict) else {}),
+                        "defaults": style_defaults(b, lang)}
     return out
 
 
@@ -981,7 +1062,7 @@ def builtin_voice_dir(key: str) -> Path | None:
 
 def builtin_hash(key: str) -> str:
     """Changes when the bundled character changes (persona, body, files)."""
-    h = hashlib.sha256()
+    h = hashlib.sha256(f"format:{BUNDLE_FORMAT}".encode())
     assets = BUILTIN_DIR / "assets" / key
     for f in sorted([BUILTIN_DIR / "mates" / f"{key}.json", BUILTIN_DIR / "personas" / f"{key}.json",
                      *assets.rglob("*"), *(BUILTIN_DIR / "voices" / key).glob("*")]):
