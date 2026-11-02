@@ -578,3 +578,51 @@ def test_router_lists_three_clis(monkeypatch):
         assert r.status_code == 404
         r = c.put("/api/cli-tools/claude", json={"channel": "nightly"})
         assert r.status_code == 400 and r.json()["code"] == "invalid_channel"
+
+
+async def test_engines_retire_once_idle_after_a_claude_upgrade():
+    """Idle engines end right away; a busy one (turn or background task) is marked and ends once idle — at its next
+    turn start (ensure) or by the reaper — never mid-work."""
+    from app.services.engines import EngineManager, EngineSlot
+
+    class E:
+        def __init__(self, turn=False, tasks=0):
+            self.alive, self.turn_active, self.running_tasks = True, turn, [{}] * tasks
+            self.closed = False
+            self.fingerprint, self.model, self.mode, self._proc = "fp", "m", "default", None
+            self.last_activity, self.cost_total = 0.0, 0.0
+
+        async def close(self):
+            self.closed, self.alive = True, False
+
+        async def start(self):
+            pass
+
+    closed: list[tuple[str, str]] = []
+    mgr = EngineManager(on_task=lambda *a: None, on_usage=lambda *a: None, on_auto_turn=lambda *a: None,
+                        on_closed=lambda sid, lease, why: closed.append((sid, why)))
+    idle, turn, tasks = E(), E(turn=True), E(tasks=1)
+    mgr._slots = {"idle": EngineSlot(engine=idle), "turn": EngineSlot(engine=turn), "tasks": EngineSlot(engine=tasks)}
+    out = await mgr.retire_stale()
+    assert out == {"restarted": 1, "deferred": 2} and idle.closed and closed == [("idle", "cli upgraded")]
+    assert [e["session_id"] for e in mgr.describe() if e["stale"]] == ["turn", "tasks"]
+    # the turn ended: its next turn starts the new binary instead of reusing the stale engine
+    turn.turn_active = False
+    started: list[str] = []
+
+    async def make(lease):
+        started.append("new")
+        return E()
+
+    try:
+        slot, fresh, note = await mgr.ensure("turn", make_engine=make, fingerprint="fp", model="m", mode="default",
+                                             permission_mode="default", acquire_lease=lambda: None,
+                                             release_lease=lambda lease: None)
+        assert fresh and turn.closed and started == ["new"] and note is None
+        assert not tasks.closed  # background tasks keep running until they're done
+    finally:
+        if mgr._reaper:
+            mgr._reaper.cancel()
+        for s in list(mgr._slots.values()):
+            if s.dispatcher:
+                s.dispatcher.cancel()
