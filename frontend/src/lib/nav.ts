@@ -147,7 +147,8 @@ export function installNav(): void {
   // in-app changes → history entries (what the app picks by itself while starting — the last open chat — replaces
   // the first screen instead of adding one)
   const bootUntil = Date.now() + 2500;
-  const onChange = () => {
+  // (`user`: a change the user made — never mistaken for the app settling on its first screen while starting)
+  const onChange = (user = false) => {
     if (applying) return;
     const next = urlOf(current());
     if (next === here()) return;
@@ -155,7 +156,7 @@ export function installNav(): void {
     if (replaceNext) {
       replaceNext = false;
       window.history.replaceState(window.history.state, "", next);
-    } else if (Date.now() < bootUntil && navDepth() === 0 && s && !s.guard) window.history.replaceState(s, "", next);
+    } else if (!user && Date.now() < bootUntil && navDepth() === 0 && s && !s.guard) window.history.replaceState(s, "", next);
     else if (!s && takeOverlayEntry()) {
       // opened from the phone drawer: its entry (on top) becomes this screen's — closing the drawer then has
       // nothing to step back over (lib/back.ts)
@@ -173,7 +174,7 @@ export function installNav(): void {
     (s, prev) =>
       (s.open !== prev.open || s.kind !== prev.kind || s.mateId !== prev.mateId || s.projectId !== prev.projectId) &&
       useUIStore.getState().view === "mate" &&
-      onChange(),
+      onChange(true),
   );
 
   // history → the app

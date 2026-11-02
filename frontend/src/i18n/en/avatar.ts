@@ -36,7 +36,7 @@ export default {
   toolResume: "Resumed",
   toolCancel: "Canceled",
   toolOther: "Used a tool",
-  evStart: "Avatar Create opened",
+  evStart: "Studio opened",
   evConfirmed: "You confirmed the plan — generation started",
   evDeclined: "Plan changed",
   evCandidates: "Candidates ready",

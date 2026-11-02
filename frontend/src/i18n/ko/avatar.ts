@@ -37,7 +37,7 @@ const avatar: Messages<"avatar"> = {
   toolResume: "다시 시작했어요",
   toolCancel: "취소했어요",
   toolOther: "도구를 썼어요",
-  evStart: "아바타 만들기를 열었어요",
+  evStart: "스튜디오를 열었어요",
   evConfirmed: "계획을 확인했어요 — 생성 시작",
   evDeclined: "계획 변경",
   evCandidates: "후보가 준비됐어요",

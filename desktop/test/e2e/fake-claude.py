@@ -13,6 +13,11 @@
 # "look at my screen" lists the mate's tools through the real MCP bridge and, when see_screen is there, calls it
 # (tool_use / tool_result with the image on stdout, like the real CLI) and answers SEESCREEN … with what came back
 # (desktop/test/e2e/screen-capture-e2e.js).
+# The Mate Create studio (desktop/test/e2e/mate-studio-browser.js): the studio's start event gets a greeting and a
+# "concepts" card (three directions); picking one makes it fill the mate's settings (update_mate_draft) and ask for
+# the speech level; answering that writes it and asks for a reference picture — all through the real avatar MCP
+# bridge. A <studio_update> before a message (what the user changed on the right) is answered with
+# "SAW studio_update: <fields>". Korean when the system prompt says so.
 import json
 import os
 import queue
@@ -87,7 +92,7 @@ def call_tool(name: str, arguments: dict) -> str:
     return " ".join(c.get("text", "") for c in res.get("content", []))
 
 
-def avatar_turn(lines: list[str]) -> str:
+def avatar_turn(lines: list[str], intro: str | None = None) -> str:
     """Avatar Create (desktop/test/e2e/avatar-create-browser.js): every `atool:<name> <json>` line is one call of the
     agent's tools through the real avatar MCP bridge, written out like the real CLI (tool_use, tool_result with its
     images); the answer lists what came back."""
@@ -105,6 +110,11 @@ def avatar_turn(lines: list[str]) -> str:
         return json.loads(proc.stdout.readline()) if "id" in o else None
 
     said = []
+    if intro:
+        # (the agent's line before its cards, like a real turn: text, then the tool calls)
+        emit({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0,
+                                                "delta": {"type": "text_delta", "text": intro}}})
+        emit({"type": "assistant", "message": {"model": model, "content": [{"type": "text", "text": intro}]}})
     try:
         rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}})
         rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
@@ -129,7 +139,130 @@ def avatar_turn(lines: list[str]) -> str:
     finally:
         proc.stdin.close()
         proc.wait(timeout=10)
-    return "AVATAR " + " ".join(said)
+    return intro if intro else "AVATAR " + " ".join(said)
+
+
+def _korean() -> bool:
+    if "--system-prompt-file" not in args:
+        return False
+    try:
+        return "Always reply in Korean" in open(args[args.index("--system-prompt-file") + 1], encoding="utf-8").read()
+    except OSError:
+        return False
+
+
+CONCEPTS = {
+    "en": [
+        {"value": "harin", "label": "Harin — the calm older sister",
+         "description": "A composed secretary who keeps your day in order and teases you gently when you overwork.",
+         "palette": ["#2B2D42", "#8D99AE", "#F4C7D0", "#EDF2F4"]},
+        {"value": "bomi", "label": "Bomi — the bright junior",
+         "description": "An energetic junior who cheers on every commit and turns bugs into small adventures.",
+         "palette": ["#FFB703", "#FB8500", "#8ECAE6", "#FFF3E0"]},
+        {"value": "yuna", "label": "Yuna — the night-owl hacker",
+         "description": "A dry-witted hacker who lives in the terminal and reports with deadpan precision.",
+         "palette": ["#0B132B", "#3A506B", "#5BC0BE", "#C3F0CA"]},
+    ],
+    "ko": [
+        {"value": "harin", "label": "하린 — 차분한 누나",
+         "description": "하루를 정리해 주고, 무리하면 살짝 놀리며 챙겨 주는 침착한 비서.",
+         "palette": ["#2B2D42", "#8D99AE", "#F4C7D0", "#EDF2F4"]},
+        {"value": "bomi", "label": "보미 — 밝은 후배",
+         "description": "커밋마다 응원하고 버그도 작은 모험으로 만드는 에너지 넘치는 후배.",
+         "palette": ["#FFB703", "#FB8500", "#8ECAE6", "#FFF3E0"]},
+        {"value": "yuna", "label": "유나 — 올빼미 해커",
+         "description": "터미널에 사는, 무심한 듯 정확하게 보고하는 건조한 유머의 해커.",
+         "palette": ["#0B132B", "#3A506B", "#5BC0BE", "#C3F0CA"]},
+    ],
+}
+FILL = {
+    "harin": {"name": {"en": "Harin", "ko": "하린"},
+              "persona": {"description": "You are Harin, the user's calm older-sister secretary. You keep their day in "
+                                         "order, watch over their coding chats and remind them to rest. You love "
+                                         "tea, film photography and quiet night walks.",
+                          "personality": "Calm, attentive and warm, with a gentle teasing streak.",
+                          "speech": "Soft and unhurried. In Korean: gentle 해요체, never 반말; short sentences.",
+                          "address": {"en": "boss", "ko": "주인님"},
+                          "greeting": {"en": "Good to see you, boss. Shall we sort out today together?",
+                                       "ko": "오셨어요, 주인님. 오늘 하루도 같이 정리해 볼까요?"}},
+              "prefs": {"formality": "haeyo", "tone": {"warmth": "high"}},
+              "concept": {"pitch": "A calm older-sister secretary who keeps your day in order.",
+                          "role": "secretary and older sister", "interests": "tea, film photography, night walks",
+                          "backstory": "Former librarian who started helping a friend's startup and never left.",
+                          "voice": "soft, warm, a little low", "style": "anime illustration",
+                          "look": "long dark hair in a low ponytail, gentle eyes, small silver earrings",
+                          "outfit": "navy cardigan over a white blouse", "palette": "#2B2D42, #8D99AE, #F4C7D0",
+                          "mood": "calm, warm"}},
+}
+FILL["bomi"] = {**FILL["harin"], "name": {"en": "Bomi", "ko": "보미"},
+                "concept": {**FILL["harin"]["concept"], "pitch": "A bright junior who cheers on every commit.",
+                            "palette": "#FFB703, #FB8500, #8ECAE6", "mood": "bright, energetic"}}
+FILL["yuna"] = {**FILL["harin"], "name": {"en": "Yuna", "ko": "유나"},
+                "concept": {**FILL["harin"]["concept"], "pitch": "A night-owl hacker with a deadpan wit.",
+                            "palette": "#0B132B, #3A506B, #5BC0BE", "mood": "cool, dry"}}
+
+
+def _pick(v, lang: str):
+    return v.get(lang, v.get("en")) if isinstance(v, dict) and ("en" in v or "ko" in v) else v
+
+
+def studio_turn(text: str) -> str | None:
+    """The Mate Create studio's scripted agent (see the header). None: not a studio moment."""
+    lang = "ko" if _korean() else "en"
+    ko = lang == "ko"
+    saw = ""
+    m = re.search(r"<studio_update>(.*?)</studio_update>", text, re.S)
+    if m:
+        fields = re.findall(r"^- ([\w.]+):", m.group(1), re.M)
+        saw = "SAW studio_update: " + ", ".join(fields) + ". "
+    if '<avatar_event kind="start">' in text and "Mate Create studio" in text:
+        q = {"question": "어떤 메이트를 만들까요? 세 가지 방향을 골라 봤어요." if ko else
+             "What kind of mate would you like? Here are three directions.", "kind": "concepts",
+             "options": CONCEPTS[lang], "allow_other": True}
+        intro = ("안녕하세요! 함께 새 메이트를 만들어 봐요. 먼저 콘셉트부터 — 마음에 드는 방향을 골라 주세요." if ko else
+                 "Hi! Let's make your new mate together. Concept first — pick a direction, or describe your own.")
+        return avatar_turn([f"atool:ask_user {json.dumps(q, ensure_ascii=False)}"], intro=intro)
+    if '<avatar_event kind="start">' in text and "opened the studio for the mate" in text:
+        q = {"question": "캐릭터 그림이 있나요?" if ko else "Do you have a picture of the character?", "kind": "upload",
+             "options": [{"value": "none", "label": "참고 그림 없이 — 설명으로 디자인" if ko else
+                          "No reference — design from a description"}]}
+        intro = "새 아바타를 만들어 볼게요. 먼저 참고 그림부터요." if ko else "Let's make her a new avatar. First, a reference picture."
+        return avatar_turn([f"atool:ask_user {json.dumps(q, ensure_ascii=False)}"], intro=intro)
+    picked = next((c for c in CONCEPTS[lang] if f"→ {c['label']}" in text), None)
+    if picked:
+        f = FILL[picked["value"]]
+        fields = {"name": _pick(f["name"], lang),
+                  "persona": {k: _pick(v, lang) for k, v in f["persona"].items()},
+                  "prefs": f["prefs"], "concept": f["concept"]}
+        q = {"question": "말투는 어떻게 할까요?" if ko else "How should she speak to you?", "kind": "choice",
+             "options": [{"value": "haeyo", "label": "해요체 (부드러운 존댓말)" if ko else "해요체 — soft and polite"},
+                         {"value": "hapsyo", "label": "하십시오체 (격식)" if ko else "하십시오체 — formal"},
+                         {"value": "banmal", "label": "반말 (친근하게)" if ko else "반말 — casual"}]}
+        intro = saw + (f"좋아요, {fields['name']}(으)로 갈게요! 오른쪽에 프로필을 채웠어요. 말투도 정해 볼까요?" if ko else
+                       f"Lovely — {fields['name']} it is! I filled in her profile on the right. How should she talk?")
+        return avatar_turn([f"atool:update_mate_draft {json.dumps({'fields': fields}, ensure_ascii=False)}",
+                            f"atool:ask_user {json.dumps(q, ensure_ascii=False)}"], intro=intro)
+    sp = re.search(r"→ (해요체|하십시오체|반말)", text)
+    if sp:
+        level = {"해요체": "haeyo", "하십시오체": "hapsyo", "반말": "banmal"}[sp.group(1)]
+        q = {"question": "이제 외모예요. 캐릭터 그림이 있나요?" if ko else "Now her look. Do you have a picture of her?",
+             "kind": "upload", "options": [{"value": "none", "label": "참고 그림 없이 — 콘셉트로 디자인" if ko else
+                                             "No reference — design from the concept"}]}
+        intro = saw + ("말투를 정했어요. 이제 아바타를 만들어 봐요." if ko else "Speech level set. Now let's make her avatar.")
+        return avatar_turn([f"atool:update_mate_draft {json.dumps({'fields': {'prefs': {'formality': level}}})}",
+                            f"atool:ask_user {json.dumps(q, ensure_ascii=False)}"], intro=intro)
+    if saw:
+        return avatar_turn([ln for ln in text.strip().splitlines() if ln.strip().startswith("atool:")],
+                           intro=saw.strip())
+    return None
+
+
+def open_mcp() -> str:
+    a = args[args.index("--mcp-config") + 1]
+    try:
+        return open(a).read() if os.path.exists(a) else a
+    except OSError:
+        return ""
 
 
 def see_screen_turn() -> str:
@@ -371,6 +504,11 @@ while True:
     last = text.strip().splitlines()[-1] if text.strip() else ""
     log_turn(text)
     atools = [ln for ln in text.strip().splitlines() if ln.strip().startswith("atool:")]
+    studio = studio_turn(text) if "--mcp-config" in args and '"avatar"' in open_mcp() else None
+    if studio is not None:
+        emit({"type": "result", "subtype": "success", "is_error": False, "result": studio, "session_id": "fake-sid",
+              "total_cost_usd": 0.01, "usage": {"input_tokens": 1, "output_tokens": 1}})
+        continue
     if atools:
         full = avatar_turn(atools)
         emit({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0,

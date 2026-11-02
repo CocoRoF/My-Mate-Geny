@@ -418,7 +418,10 @@ export default function MateStudio() {
     else useStudio.getState().close();
   };
   const created = !!project?.studio?.finished_at;
-  const isNew = project?.studio?.kind === "new";
+  /** still making a new mate (once created, her project is an avatar studio like any mate's) */
+  const isNew = project?.studio?.kind === "new" && !created;
+  /** a forward / reload onto a draft that was created meanwhile */
+  const createdHere = kind === "create" && created;
   const missing = project?.studio?.missing ?? [];
   const finish = async () => {
     if (!pid || busy) return;
@@ -458,11 +461,12 @@ export default function MateStudio() {
   const loadProjects = () => listProjects().then(setProjects).catch(() => setProjects([]));
   useEffect(() => {
     if (kind === "create") void loadDrafts();
-    else void loadProjects();
-  }, [kind, pid]);
+    if (!isNew) void loadProjects();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, pid, isNew]);
   const mates = useMateStore((s) => s.mates);
 
-  const title = isNew || kind === "create" ? t("studio.titleNew") : t("studio.titleAvatar", { name: mate?.name || "" });
+  const title = isNew || (kind === "create" && !created) ? t("studio.titleNew") : t("studio.titleAvatar", { name: mate?.name || "" });
   const name = mate ? mate.name || t("studio.untitled") : "";
   const credits = project?.confirmation ? (
     <span className="pill bg-surface-3 tabular-nums text-content-dim" title={t("avatar.creditsCounted")} data-testid="studio-credits">
@@ -517,7 +521,7 @@ export default function MateStudio() {
     </Menu>
   );
 
-  const projectsMenu = kind === "avatar" && mate && (
+  const projectsMenu = !isNew && !!project && mate && (
     <Menu label={t("avatar.projects")} icon="files" testId="studio-projects" compact={phone}>
       {(close) => (
         <>
@@ -572,7 +576,7 @@ export default function MateStudio() {
     </Menu>
   );
 
-  const moreMenu = kind === "create" && isNew && !created && (
+  const moreMenu = isNew && (
     <Menu label={t("studio.more")} icon="more" testId="studio-more" compact>
       {(close) => (
         <>
@@ -623,7 +627,7 @@ export default function MateStudio() {
     </Menu>
   );
 
-  const createBtn = isNew && !created && (
+  const createBtn = isNew && (
     <button
       className={`btn-primary ${phone ? "!px-2.5 !py-1.5 text-[12.5px]" : ""}`}
       onClick={finish}
@@ -638,7 +642,7 @@ export default function MateStudio() {
   const header = (
     <div className={`shrink-0 border-b border-border/70 bg-surface/80 backdrop-blur-xl ${phone ? "pt-safe" : ""}`} data-testid="studio-header">
       <div className={`flex items-center gap-2 px-2 sm:px-3 ${phone ? "h-12" : "h-14"}`}>
-        <button className="btn-ghost !px-2" onClick={exit} aria-label={isNew && !created ? t("studio.saveExit") : t("avatar.close")} title={isNew && !created ? t("studio.saveExit") : t("avatar.close")} data-testid="studio-back">
+        <button className="btn-ghost !px-2" onClick={exit} aria-label={isNew ? t("studio.saveExit") : t("avatar.close")} title={isNew ? t("studio.saveExit") : t("avatar.close")} data-testid="studio-back">
           <Icon name="chevron-left" size={17} />
         </button>
         {mate && !phone && <MateThumb mate={mate} className="h-8 w-8" />}
@@ -648,9 +652,9 @@ export default function MateStudio() {
             <h1 className="truncate text-[14px] font-semibold" data-testid="studio-title">
               {title}
             </h1>
-            {!phone && project && kind === "avatar" && <StatusPill project={project} />}
+            {!phone && project && !isNew && <StatusPill project={project} />}
           </div>
-          {(isNew || kind === "create") && (
+          {(isNew || createdHere) && (
             <div className="truncate text-[11.5px] text-content-faint" data-testid="studio-draft-name">
               {created ? t("studio.createdLine", { name }) : t("studio.draftLine", { name })}
             </div>
@@ -660,17 +664,17 @@ export default function MateStudio() {
         {draftsMenu}
         {projectsMenu}
         {moreMenu}
-        {!phone && isNew && !created && (
+        {!phone && isNew && (
           <button className="btn-ghost text-[12.5px]" onClick={exit} data-testid="studio-save-exit">
             {t("studio.saveExit")}
           </button>
         )}
-        {created && (
+        {createdHere && (
           <button className="btn-primary" onClick={openHer} data-testid="studio-open-her">
             {t("studio.openHer", { name })}
           </button>
         )}
-        {kind === "avatar" && !isNew && !phone && (
+        {!isNew && !createdHere && !phone && (
           <button className="btn-soft" onClick={exit} data-testid="studio-done">
             {t("studio.done")}
           </button>
@@ -803,6 +807,7 @@ export default function MateStudio() {
       conv={conv}
       api={api}
       focus={focus}
+      creating={isNew}
       onVoiceTested={() => pid && void studioVoiceOk(pid).then(take).catch(() => {})}
       onSkip={(skip) => pid && void act(() => skipAvatar(pid, skip))}
       saving={{ busy: saving.n > 0, error: saving.error }}

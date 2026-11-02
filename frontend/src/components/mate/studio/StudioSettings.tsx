@@ -327,8 +327,10 @@ function AvatarStage({ project, mate, kind, onSkip }: { project: AvatarProject; 
   );
 }
 
-export default function StudioSettings({ project, mate, env, act, reloadEnv, conv, api, focus, onVoiceTested, onSkip, saving }: {
+export default function StudioSettings({ project, mate, env, act, reloadEnv, conv, api, focus, creating, onVoiceTested, onSkip, saving }: {
   project: AvatarProject;
+  /** a new mate still being made (else: an existing mate's avatar — or a created one's) */
+  creating: boolean;
   mate: Mate;
   env: AvatarEnv | null;
   act: Act;
@@ -343,7 +345,7 @@ export default function StudioSettings({ project, mate, env, act, reloadEnv, con
 }) {
   const t = useT();
   const studio = project.studio as StudioInfo;
-  const kind = studio.kind;
+  const kind = creating ? "new" : "existing";
   const [open, setOpen] = useState<Record<SectionId, boolean>>(() =>
     kind === "new"
       ? { concept: true, profile: true, style: false, avatar: project.status !== "interview", voice: false, model: false }
@@ -417,7 +419,7 @@ export default function StudioSettings({ project, mate, env, act, reloadEnv, con
         <Section id="avatar" title={t("studio.secAvatar")} icon="image" open={open.avatar} onToggle={() => toggle("avatar")} filled={0} summary={avatarSummary}>
           <AvatarStage project={project} mate={mate} kind={kind} onSkip={onSkip} />
           {!(kind === "new" && studio.avatar_skipped && !project.confirmation) && (
-            <AvatarPanel project={project} env={env} act={act} reloadEnv={reloadEnv} studio={{ kind, mateId: mate.id, mateName: mate.name || t("studio.untitled") }} hideSteps={kind === "existing"} />
+            <AvatarPanel project={project} env={env} act={act} reloadEnv={reloadEnv} studio={{ kind: studio.kind, mateId: mate.id, mateName: mate.name || t("studio.untitled") }} hideSteps={kind === "existing"} />
           )}
         </Section>
         <Section id="voice" title={t("studio.secVoice")} icon="volume" open={open.voice} onToggle={() => toggle("voice")} filled={0} summary={studio.concept.voice ? t("studio.voiceSuggest", { voice: studio.concept.voice }) : mate.voice.tts.engine}>
