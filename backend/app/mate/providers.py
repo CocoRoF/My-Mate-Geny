@@ -7,7 +7,8 @@ kept in ``mate_settings`` (``verify:<provider>``), dropped when that
 provider's key/URL changes, and re-checked when older than :data:`TTL` or on
 demand.
 
-Providers: ``openai`` (TTS + STT, one key), ``elevenlabs`` (TTS),
+Providers: ``openai`` (TTS + STT, one key), ``elevenlabs`` (TTS + realtime
+STT, one key: Scribe v2 Realtime streamed from the page with a single-use token),
 ``omnivoice`` (TTS, geny-audio-services), ``http`` (any OpenAI-shaped
 ``/audio/speech`` server), ``whisper`` (an OpenAI-compatible
 ``/v1/audio/transcriptions`` server, e.g. vLLM's whisper).
@@ -29,13 +30,20 @@ VERIFY_TIMEOUT = 10.0       # one verification request
 
 PROVIDERS: dict[str, dict[str, Any]] = {
     "openai": {"label": "OpenAI", "kinds": ("tts", "stt"), "needs": ("openai_key",)},
-    "elevenlabs": {"label": "ElevenLabs", "kinds": ("tts",), "needs": ("elevenlabs_key",)},
+    "elevenlabs": {"label": "ElevenLabs", "kinds": ("tts", "stt"), "needs": ("elevenlabs_key",)},
     "omnivoice": {"label": "OmniVoice", "kinds": ("tts",), "needs": ("omnivoice_url",)},
     "http": {"label": "OpenAI-compatible TTS server", "kinds": ("tts",), "needs": ("http_tts_url",)},
     "whisper": {"label": "Whisper server", "kinds": ("stt",), "needs": ("whisper_url",)},
 }
 TTS_ORDER = ("openai", "elevenlabs", "omnivoice", "http")
-STT_ORDER = ("openai", "whisper")
+STT_ORDER = ("openai", "whisper", "elevenlabs")
+# The realtime model a mate's mic streams to (ElevenLabs …/speech-to-text/realtime) and the batch model the same
+# key transcribes a recording with when the stream can't be used (docs/mate.md §5).
+ELEVEN_REALTIME_MODELS = [
+    {"id": "scribe_v2_realtime", "name": "Scribe v2 Realtime",
+     "description": "Live transcript while you speak (~150 ms), 90+ languages"},
+]
+ELEVEN_BATCH_STT = "scribe_v2"
 
 # Fixed OpenAI catalogues (no listing API tells TTS models / voices apart).
 OPENAI_TTS_MODELS = [
@@ -296,6 +304,10 @@ class Providers:
             return out
         if not self.configured(engine):
             raise MateError(self.missing_reason(engine))
+        if engine == "elevenlabs" and kind == "stt":
+            out["models"] = ELEVEN_REALTIME_MODELS
+            out["default"] = ELEVEN_REALTIME_MODELS[0]["id"]
+            return out
         if engine == "elevenlabs":
             key = self.value("elevenlabs_key")
 
