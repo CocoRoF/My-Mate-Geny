@@ -91,7 +91,7 @@ test("cookie for the login page; Android bar styles; page colours match index.cs
   const css = readFileSync(new URL("../src/index.css", import.meta.url), "utf8");
   const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(" ");
   assert.ok(css.includes(`--c-bg: ${rgb(THEME_BG.dark)};`), "dark --c-bg");
-  assert.ok(css.includes(`html.light {`) && css.includes(`--c-bg: ${rgb(THEME_BG.light)};`), "light --c-bg");
+  assert.ok(css.includes("html.light,\n.theme-light {") && css.includes(`--c-bg: ${rgb(THEME_BG.light)};`), "light --c-bg");
 });
 
 test("index.html draws the saved theme before the app loads, by the same rules", () => {

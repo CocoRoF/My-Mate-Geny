@@ -15,6 +15,7 @@ export type SettingsTab =
   | "updates"
   | "account"
   | "language"
+  | "appearance"
   | "notifications"
   | "mate"
   | "desktop"
@@ -27,6 +28,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   "updates",
   "account",
   "language",
+  "appearance",
   "notifications",
   "mate",
   "desktop",

@@ -23,6 +23,7 @@ export const TABS: readonly TabMeta[] = [
   { id: "updates", label: "settings.tabUpdates", icon: "download", hint: "settings.updatesHint", group: "general" },
   { id: "account", label: "settings.secAccount", icon: "user", hint: "settings.accountHint", group: "general" },
   { id: "language", label: "settings.secLanguage", icon: "languages", hint: "settings.languageHint", group: "general" },
+  { id: "appearance", label: "settings.secAppearance", icon: "appearance", hint: "settings.appearanceHint", group: "general" },
   { id: "notifications", label: "settings.secNotifications", icon: "bell", hint: "settings.notifHint", group: "general" },
   { id: "mate", label: "settings.secMate", icon: "volume", hint: "settings.mateHint", group: "general" },
   { id: "desktop", label: "settings.secDesktop", icon: "monitor", hint: "settings.desktopHint", group: "general", when: isDesktopApp },

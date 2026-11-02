@@ -2,9 +2,10 @@ import type { Messages } from "..";
 
 const ko: Messages<"settings"> = {
   title: "설정",
-  subtitle: "업데이트, 계정, 언어, 이 기기 설정과 에이전트(공급자, 연결, 사용량, 관리자)를 한곳에서 관리해요.",
+  subtitle: "업데이트, 계정, 언어, 화면, 이 기기 설정과 에이전트(공급자, 연결, 사용량, 관리자)를 한곳에서 관리해요.",
   secAccount: "계정",
   secLanguage: "언어",
+  secAppearance: "화면",
   secNotifications: "알림",
   secMate: "메이트 & 음성",
   secDesktop: "데스크톱 앱",
@@ -83,6 +84,21 @@ const ko: Messages<"settings"> = {
   langSaved: "저장했어요 — 다른 기기도 따라가요.",
   langLocal: "이 기기에서만 바뀌었어요. 서버가 응답하지 않아 계정에 저장하지 못했어요.",
   mateLangNote: "메이트의 답장은 메이트마다 정한 언어를 그대로 써요 (메이트 설정 → 프로필).",
+
+  // 화면 (라이트 / 다크)
+  appearanceHint: "라이트, 다크, 또는 이 기기 설정을 따라가요 — 열린 모든 창에 바로 적용돼요.",
+  themeSystem: "시스템",
+  themeSystemSub: "이 기기 설정을 따라가요 — 지금은 {now}",
+  themeLight: "라이트",
+  themeLightSub: "밝은 바탕, 어두운 글자",
+  themeDark: "다크",
+  themeDarkSub: "어두운 바탕, 밝은 글자",
+  themeSaving: "저장 중…",
+  themeSaved: "계정에 저장했어요 — 다른 기기도 따라가요.",
+  themeLocal: "이 기기에서만 바뀌었어요. 서버가 응답하지 않아 계정에 저장하지 못했어요.",
+  themeDevice: "이 기기에서만 바꿨어요.",
+  themeDeviceOnly: "이 기기에서만",
+  themeDeviceOnlyHint: "이 기기의 선택을 따로 둬요. 다른 기기에서 바꿔도 여기는 그대로고, 여기서 바꿔도 여기만 바뀌어요.",
 
   notifHint: "다른 곳을 보고 있을 때 답장이 끝나면 알려 드려요.",
   notifApp: "백그라운드에서 작업이 끝나면 앱이 시스템 알림을 보여 줘요. 끄려면 시스템의 알림 설정을 이용하세요.",

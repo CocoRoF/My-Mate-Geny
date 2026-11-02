@@ -1,9 +1,10 @@
 /**
  * The language across devices (docs/i18n.md): the account's choice lives on the server (`/api/preferences`). The
  * console applies it after loading and again when it comes back to the foreground, so a switch on one device
- * reaches the others; a choice made here is saved there too.
+ * reaches the others; a choice made here is saved there too. The same fetch carries the theme (lib/themeSync.ts).
  */
 import { getPreferences, putPreferences } from "../api/preferences";
+import { applyAccountTheme } from "../lib/themeSync";
 import { tellNative, useI18n, type Lang } from ".";
 
 let lastPull = 0;
@@ -13,6 +14,7 @@ export async function pullLanguage(): Promise<void> {
   lastPull = Date.now();
   try {
     const p = await getPreferences();
+    applyAccountTheme(p);
     if (p.language && p.language !== useI18n.getState().lang) await useI18n.getState().setLang(p.language);
   } catch {
     /* offline / an older server without preferences: this device's choice stands */

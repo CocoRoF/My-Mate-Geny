@@ -8,7 +8,9 @@
    scripts/theme-contrast.mjs — WCAG AA for text). <html class="light|dark"> picks one (index.html sets it before the
    first paint, from the saved choice or the system's preference). */
 /* theme: dark */
-:root {
+/* (.theme-dark / .theme-light: a part drawn in one theme whatever the page's, e.g. the previews in Settings → Appearance) */
+:root,
+.theme-dark {
   color-scheme: dark;
   --c-bg: 10 12 16;
   --c-surface: 15 18 24;
@@ -71,7 +73,8 @@
   --hl-deletion-bg: #67060c;
 }
 /* theme: light */
-html.light {
+html.light,
+.theme-light {
   color-scheme: light;
   --c-bg: 241 243 247;
   --c-surface: 248 249 251;
