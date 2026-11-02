@@ -640,7 +640,7 @@ export default function MateStudio() {
   );
 
   const header = (
-    <div className={`shrink-0 border-b border-border/70 bg-surface/80 backdrop-blur-xl ${phone ? "pt-safe" : ""}`} data-testid="studio-header">
+    <div className={`relative z-30 shrink-0 border-b border-border/70 bg-surface/80 backdrop-blur-xl ${phone ? "pt-safe" : ""}`} data-testid="studio-header">
       <div className={`flex items-center gap-2 px-2 sm:px-3 ${phone ? "h-12" : "h-14"}`}>
         <button className="btn-ghost !px-2" onClick={exit} aria-label={isNew ? t("studio.saveExit") : t("avatar.close")} title={isNew ? t("studio.saveExit") : t("avatar.close")} data-testid="studio-back">
           <Icon name="chevron-left" size={17} />
