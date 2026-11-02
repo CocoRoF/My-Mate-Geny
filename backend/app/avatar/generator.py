@@ -82,6 +82,9 @@ def status_of(job: dict[str, Any]) -> str:
 def _first(data: Any) -> dict[str, Any]:
     if isinstance(data, list):
         data = data[0] if data else {}
+    # `higgsfield generate create --json` answers with just the new job's id: ["<uuid>"]
+    if isinstance(data, str) and data.strip():
+        return {"id": data.strip()}
     if isinstance(data, dict) and isinstance(data.get("jobs"), list) and data["jobs"]:
         inner = data["jobs"][0]
         if isinstance(inner, dict):

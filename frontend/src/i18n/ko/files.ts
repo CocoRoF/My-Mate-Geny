@@ -20,7 +20,7 @@ const ko: Messages<"files"> = {
   undoTurn: "이번 턴 되돌리기",
   undoFile: "파일 되돌리기",
   undoFileTitle: "이 파일을 이번 턴 이전 상태로 되돌려요",
-  revertConfirmPaths: "{what}을(를) 이번 턴 이전 상태로 되돌릴까요?",
+  revertConfirmPaths: "{what:을} 이번 턴 이전 상태로 되돌릴까요?",
   revertConfirmAll: "파일 {count}개를 모두 이번 턴 이전 상태로 되돌릴까요?",
   moreNotShown: "… 표시되지 않은 파일이 더 있어요",
   changes: "변경 사항",
@@ -57,7 +57,7 @@ const ko: Messages<"files"> = {
   // file viewer
   isFolder: "폴더예요 — 탐색기에서 열어 주세요.",
   modified: "{time} 수정",
-  legacyFormat: ".{ext}은(는) 브라우저가 표시할 수 없는 예전 형식이에요 — 다운로드하거나, {target}(으)로 저장하면 여기서 미리 볼 수 있어요.",
+  legacyFormat: ".{ext:은} 브라우저가 표시할 수 없는 예전 형식이에요 — 다운로드하거나, {target:으로} 저장하면 여기서 미리 볼 수 있어요.",
   aModernFormat: "최신 형식",
   noPreview: "이 파일 형식은 미리 보기를 지원하지 않아요.",
   openAsText: "텍스트로 열기",

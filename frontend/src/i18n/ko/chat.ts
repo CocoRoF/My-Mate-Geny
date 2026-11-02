@@ -131,7 +131,7 @@ const ko: Messages<"chat"> = {
   switchingNext: "다음 메시지에서 전환돼요",
   useForChat: "이 채팅에 사용",
   noAccounts: "연결된 계정이 없어요.",
-  notInList: "{account}은(는) 계정 목록에 없어요 (API 키이거나 삭제된 계정이에요).",
+  notInList: "{account:은} 계정 목록에 없어요 (API 키이거나 삭제된 계정이에요).",
   planUsageFrom: "공급자가 알려 준 요금제 사용량, 약 1분간 캐시됨",
   updated: "{when} 업데이트됨",
   apiEquivalentChat: "≈ {cost} API 환산 (이 채팅)",

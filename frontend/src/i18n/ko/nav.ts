@@ -34,7 +34,7 @@ const ko: Messages<"nav"> = {
   remote: "원격",
   local: "로컬",
   plan: "계획",
-  signedInAs: "{user}(으)로 로그인됨",
+  signedInAs: "{user:으로} 로그인됨",
   logOut: "로그아웃",
   openMenu: "메뉴 열기",
   minimize: "최소화",

@@ -200,7 +200,14 @@ export function translateRich(lang: Lang, key: MsgKey, vars: RichVars): ReactNod
     const name = m[1] ?? m[3];
     const v = vars[name];
     let node: ReactNode;
-    if (m[1] !== undefined) node = typeof v === "function" ? v(m[2]) : m[2];
+    if (m[1] !== undefined) {
+      // a tag's text may hold placeholders too ("<b>{name}</b>"): fill the plain ones (particles included) first
+      const inner = m[2].replace(/\{(\w+)(?::([^{}\s]+))?\}/g, (all, n: string, p?: string) => {
+        const x = vars[n];
+        return typeof x === "number" || typeof x === "string" ? withParticle(lang, fmtVar(lang, x), p) : all;
+      });
+      node = typeof v === "function" ? v(inner) : inner;
+    }
     else if (typeof v === "function") node = v("");
     else if (typeof v === "number" || typeof v === "string") node = withParticle(lang, fmtVar(lang, v), m[4]);
     else node = v === undefined ? m[0] : m[4] && lang === "ko" ? [v, particle("", m[4])] : v;

@@ -102,7 +102,7 @@ const avatar: Messages<"avatar"> = {
   extraBody: "{reason}: 확인한 것보다 {n} 크레딧 더 들어요.",
   decline: "아니요",
   redo: "다시",
-  redoConfirm: "{item}을(를) {n} 크레딧으로 다시 만들까요?",
+  redoConfirm: "{item:을} {n} 크레딧으로 다시 만들까요?",
   reroll: "새 후보",
   pickTitle: "후보 고르기",
   pickHint: "손, 구도, 얼굴을 잘 보세요. 고른 그림이 모든 표정과 영상이 시작하는 기준 그림이 돼요.",

@@ -634,3 +634,14 @@ async def test_pipeline_end_to_end_on_a_synthetic_clip_loads_as_a_video_avatar(t
     assert avatar["kind"] == "video" and avatar["rig"]["packing"] == "stacked-alpha"
     assert set(avatar["rig"]["stills"]) == {"neutral", "smile"} and avatar["rig"]["home"] == "/x/neutral.webp"
     assert res["clips"] == 1
+
+
+def test_cli_create_answer_with_a_bare_job_id_is_a_job():
+    """`higgsfield generate create --json` answers ["<uuid>"]: that is the new job's id, not "no job id"
+    (taking it for a failure retried — and paid — every candidate three times)."""
+    from app.avatar.generator import _first, job_id
+
+    assert job_id(_first(["bed76c68-013a-4764-a697-a4f17065862e"])) == "bed76c68-013a-4764-a697-a4f17065862e"
+    assert job_id(_first({"id": "x1", "status": "queued"})) == "x1"
+    assert job_id(_first([{"job_id": "x2"}])) == "x2"
+    assert _first([]) == {} and _first(["  "]) == {}
