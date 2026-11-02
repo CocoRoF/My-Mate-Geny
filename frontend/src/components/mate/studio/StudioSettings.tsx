@@ -7,7 +7,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CONCEPT_KEYS, type AvatarEnv, type AvatarProject, type ConceptKey, type StudioInfo } from "../../../api/avatar";
-import { prefsOf, type Mate } from "../../../api/mates";
+import { fillAddress, prefsOf, type Mate } from "../../../api/mates";
 import { addressForms, isBareKoreanName } from "../../../lib/josa";
 import { MateAvatar } from "../../../mate/avatar/MateAvatar";
 import type { MateConversation } from "../../../mate/useMateConversation";
@@ -33,8 +33,9 @@ const LANGS: [string, string][] = [
   ["vi", "Tiếng Việt"],
 ];
 
+// (who she is → Profile; how she talks — the conversation style, the reply language with it → Conversation style)
 const SECTION_OF_PATH = (path: string): SectionId =>
-  path.startsWith("concept.") ? "concept" : path.startsWith("prefs.") && !/^prefs\.(user_name|self_ref)$/.test(path) ? "style" : "profile";
+  path.startsWith("concept.") ? "concept" : path.startsWith("prefs.") || path === "persona.language" ? "style" : "profile";
 
 function Section({ id, title, icon, open, onToggle, summary, filled, children, right }: {
   id: SectionId;
@@ -127,93 +128,31 @@ function ConceptSection({ studio }: { studio: StudioInfo }) {
 function ProfileSection({ mate }: { mate: Mate }) {
   const t = useT();
   const p = mate.persona;
-  const prefs = prefsOf(mate);
-  const [address, setAddress] = useState(p.address);
-  const [userName, setUserName] = useState(prefs.user_name);
-  useEffect(() => setAddress(p.address), [p.address]);
-  useEffect(() => setUserName(prefs.user_name), [prefs.user_name]);
-  const korean = (p.language || "ko").toLowerCase().startsWith("ko");
-  const nm = userName.trim();
-  const chips = nm ? (korean ? [`${nm}님`, `${nm} 씨`, nm, "주인님"] : [nm, "boss"]) : korean ? ["주인님", "사장님", "선배"] : ["boss"];
-  const forms = korean ? addressForms(address, prefs.formality === "banmal" && isBareKoreanName(address, nm)) : null;
-  const known = LANGS.some(([c]) => c === p.language);
   const [more, setMore] = useState(!!p.instructions);
   return (
-    <FieldsSave>
-      {(save) => (
-        <>
-          <div className="grid gap-3 sm:grid-cols-[1fr_170px]">
-            <FieldFrame path="name" label={t("mateSettings.profName")}>
-              <AutoText path="name" value={mate.name} maxLength={40} placeholder={t("studio.namePh")} testId="studio-name" />
-            </FieldFrame>
-            <FieldFrame path="persona.language" label={t("mateSettings.profReplyLang")}>
-              <select className="field" value={known ? p.language : "__other"} onChange={(e) => e.target.value !== "__other" && void save("persona.language", e.target.value)} data-testid="studio-language">
-                {LANGS.map(([c, l]) => (
-                  <option key={c} value={c}>
-                    {l}
-                  </option>
-                ))}
-                {!known && <option value="__other">{p.language || "—"}</option>}
-              </select>
-            </FieldFrame>
-          </div>
-          <FieldFrame path="persona.description" label={t("mateSettings.profDescription")} hint={t("studio.descriptionHint")}>
-            <AutoText path="persona.description" value={p.description} multiline rows={4} placeholder={t("mateSettings.profDescriptionPh")} testId="studio-persona-description" />
-          </FieldFrame>
-          <FieldFrame path="persona.personality" label={t("mateSettings.profPersonality")}>
-            <AutoText path="persona.personality" value={p.personality} multiline rows={2} placeholder={t("mateSettings.profPersonalityPh")} testId="studio-persona-personality" />
-          </FieldFrame>
-          <FieldFrame path="persona.speech" label={t("mateSettings.profSpeech")} hint={t("mateSettings.profSpeechHint")}>
-            <AutoText path="persona.speech" value={p.speech} multiline rows={3} placeholder={t("mateSettings.profSpeechPh")} testId="studio-persona-speech" />
-          </FieldFrame>
-          <Group title={t("studio.youAndHer")}>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <FieldFrame path="prefs.user_name" label={t("mateSettings.profUserName")}>
-                <AutoText path="prefs.user_name" value={prefs.user_name} maxLength={40} placeholder={t("mateSettings.profUserNamePh")} testId="studio-user-name" onLocal={setUserName} />
-              </FieldFrame>
-              <FieldFrame path="prefs.self_ref" label={t("mateSettings.profSelfRef")}>
-                <AutoText path="prefs.self_ref" value={prefs.self_ref} maxLength={40} placeholder={t("mateSettings.profSelfRefPh")} testId="studio-self-ref" />
-              </FieldFrame>
-            </div>
-            <FieldFrame path="persona.address" label={t("mateSettings.profCallsYou")} hint={t("mateSettings.profCallsYouHint")}>
-              <AutoText path="persona.address" value={p.address} maxLength={40} placeholder={t("mateSettings.profCallsYouPh")} testId="studio-persona-address" onLocal={setAddress} />
-            </FieldFrame>
-            <div className="flex flex-wrap gap-1.5" data-testid="studio-address-chips">
-              {chips.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  className={`rounded-full border px-2.5 py-0.5 text-[12px] ${address === c ? "border-accent bg-accent-soft text-content" : "border-border text-content-dim hover:bg-surface-3"}`}
-                  onClick={() => {
-                    setAddress(c);
-                    void save("persona.address", c);
-                  }}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-            {forms && (
-              <p className="rounded-lg bg-surface/70 px-2.5 py-1.5 text-[11.5px] text-content-faint" data-testid="studio-address-forms">
-                {t("mateSettings.profForms", { forms: [forms.subject, forms.topic, forms.object, forms.with, forms.to].filter(Boolean).join(" · "), call: forms.call })}
-              </p>
-            )}
-          </Group>
-          <FieldFrame path="persona.greeting" label={t("mateSettings.profGreeting")} hint={t("mateSettings.profGreetingHint")}>
-            <AutoText path="persona.greeting" value={p.greeting} multiline rows={2} testId="studio-persona-greeting" />
-          </FieldFrame>
-          {more ? (
-            <FieldFrame path="persona.instructions" label={t("mateSettings.profInstructions")} hint={t("mateSettings.profInstructionsHint")}>
-              <AutoText path="persona.instructions" value={p.instructions} multiline rows={3} placeholder={t("mateSettings.profInstructionsPh")} testId="studio-persona-instructions" />
-            </FieldFrame>
-          ) : (
-            <button type="button" className="btn-ghost !px-2 text-[12px]" onClick={() => setMore(true)}>
-              <Icon name="plus" size={12} /> {t("mateSettings.profInstructions")}
-            </button>
-          )}
-        </>
+    <>
+      <FieldFrame path="name" label={t("mateSettings.profName")}>
+        <AutoText path="name" value={mate.name} maxLength={40} placeholder={t("studio.namePh")} testId="studio-name" />
+      </FieldFrame>
+      <FieldFrame path="persona.description" label={t("mateSettings.profDescription")} hint={t("studio.descriptionHint")}>
+        <AutoText path="persona.description" value={p.description} multiline rows={4} placeholder={t("mateSettings.profDescriptionPh")} testId="studio-persona-description" />
+      </FieldFrame>
+      <FieldFrame path="persona.personality" label={t("mateSettings.profPersonality")}>
+        <AutoText path="persona.personality" value={p.personality} multiline rows={2} placeholder={t("mateSettings.profPersonalityPh")} testId="studio-persona-personality" />
+      </FieldFrame>
+      <FieldFrame path="persona.greeting" label={t("mateSettings.profGreeting")} hint={t("mateSettings.profGreetingHint")}>
+        <AutoText path="persona.greeting" value={p.greeting} multiline rows={2} testId="studio-persona-greeting" />
+      </FieldFrame>
+      {more ? (
+        <FieldFrame path="persona.instructions" label={t("mateSettings.profInstructions")} hint={t("mateSettings.profInstructionsHint")}>
+          <AutoText path="persona.instructions" value={p.instructions} multiline rows={3} placeholder={t("mateSettings.profInstructionsPh")} testId="studio-persona-instructions" />
+        </FieldFrame>
+      ) : (
+        <button type="button" className="btn-ghost !px-2 text-[12px]" onClick={() => setMore(true)}>
+          <Icon name="plus" size={12} /> {t("mateSettings.profInstructions")}
+        </button>
       )}
-    </FieldsSave>
+    </>
   );
 }
 
@@ -225,6 +164,19 @@ function FieldsSave({ children }: { children: (save: FieldsApi["save"]) => React
 function StyleSection({ mate }: { mate: Mate }) {
   const t = useT();
   const p = prefsOf(mate);
+  const lang = mate.persona.language;
+  const [address, setAddress] = useState(p.address);
+  const [userName, setUserName] = useState(p.user_name);
+  useEffect(() => setAddress(p.address), [p.address]);
+  useEffect(() => setUserName(p.user_name), [p.user_name]);
+  const korean = (lang || "ko").toLowerCase().startsWith("ko");
+  const nm = userName.trim();
+  const chips = nm ? (korean ? [`${nm}님`, `${nm} 씨`, nm, "주인님"] : [nm, "boss"]) : korean ? ["주인님", "사장님", "선배"] : ["boss"];
+  const level = (p.formality !== "auto" ? p.formality : p.defaults.formality) || "";
+  const forms = korean ? addressForms(address, level === "banmal" && isBareKoreanName(address, nm)) : null;
+  const known = LANGS.some(([c]) => c === lang);
+  const charAddress = p.defaults.address ? fillAddress(p.defaults.address, userName, t("mateSettings.styleNamePh")) : "";
+  const charLevel = ({ haeyo: "mateSettings.styleHaeyo", hapsyo: "mateSettings.styleHapsyo", banmal: "mateSettings.styleBanmal" } as Record<string, MsgKey>)[p.defaults.formality];
   const tone = (k: "warmth" | "humor" | "initiative", low: MsgKey, high: MsgKey) => (
     <FieldFrame as="div" path={`prefs.tone.${k}`} label={t(`mateSettings.style${k[0].toUpperCase()}${k.slice(1)}` as MsgKey)}>
       <Choice
@@ -240,19 +192,67 @@ function StyleSection({ mate }: { mate: Mate }) {
     </FieldFrame>
   );
   return (
+    <FieldsSave>
+      {(save) => (
     <>
+      <Group title={t("mateSettings.styleCallGroup")}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FieldFrame path="prefs.user_name" label={t("mateSettings.profUserName")}>
+            <AutoText path="prefs.user_name" value={p.user_name} maxLength={40} placeholder={t("mateSettings.profUserNamePh")} testId="studio-user-name" onLocal={setUserName} />
+          </FieldFrame>
+          <FieldFrame path="prefs.self_ref" label={t("mateSettings.profSelfRef")}>
+            <AutoText path="prefs.self_ref" value={p.self_ref} maxLength={40} placeholder={t("mateSettings.profSelfRefPh")} testId="studio-self-ref" />
+          </FieldFrame>
+        </div>
+        <FieldFrame path="prefs.address" label={t("mateSettings.profCallsYou")} hint={charAddress ? t("mateSettings.styleCallsYouHint", { value: charAddress }) : t("mateSettings.profCallsYouHint")}>
+          <AutoText path="prefs.address" value={p.address} maxLength={40} placeholder={charAddress || t("mateSettings.profCallsYouPh")} testId="studio-address" onLocal={setAddress} />
+        </FieldFrame>
+        <div className="flex flex-wrap gap-1.5" data-testid="studio-address-chips">
+          {chips.map((c) => (
+            <button
+              key={c}
+              type="button"
+              className={`rounded-full border px-2.5 py-0.5 text-[12px] ${address === c ? "border-accent bg-accent-soft text-content" : "border-border text-content-dim hover:bg-surface-3"}`}
+              onClick={() => {
+                setAddress(c);
+                void save("prefs.address", c);
+              }}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+        {forms && (
+          <p className="rounded-lg bg-surface/70 px-2.5 py-1.5 text-[11.5px] text-content-faint" data-testid="studio-address-forms">
+            {t("mateSettings.profForms", { forms: [forms.subject, forms.topic, forms.object, forms.with, forms.to].filter(Boolean).join(" · "), call: forms.call })}
+          </p>
+        )}
+      </Group>
+      <FieldFrame path="persona.language" label={t("mateSettings.profReplyLang")}>
+        <select className="field" value={known ? lang : "__other"} onChange={(e) => e.target.value !== "__other" && void save("persona.language", e.target.value)} data-testid="studio-language">
+          {LANGS.map(([c, l]) => (
+            <option key={c} value={c}>
+              {l}
+            </option>
+          ))}
+          {!known && <option value="__other">{lang || "—"}</option>}
+        </select>
+      </FieldFrame>
       <FieldFrame as="div" path="prefs.formality" label={t("mateSettings.styleFormality")} hint={t("mateSettings.styleFormalityHint")}>
         <Choice
           path="prefs.formality"
           value={p.formality}
           options={[
-            { id: "auto", label: t("mateSettings.styleAsWritten") },
+            { id: "auto", label: charLevel ? t("mateSettings.styleAsCharacter", { level: t(charLevel) }) : t("mateSettings.styleAsWritten") },
             { id: "haeyo", label: t("mateSettings.styleHaeyo") },
             { id: "hapsyo", label: t("mateSettings.styleHapsyo") },
             { id: "banmal", label: t("mateSettings.styleBanmal") },
           ]}
           testId="studio-formality"
         />
+      </FieldFrame>
+      <FieldFrame path="prefs.speech_style" label={t("mateSettings.styleHabits")} hint={t("mateSettings.styleHabitsHint")}>
+        <AutoText path="prefs.speech_style" value={p.speech_style} multiline rows={3} maxLength={2000} placeholder={t("mateSettings.styleHabitsPh")} testId="studio-speech-style" />
       </FieldFrame>
       <div className="grid gap-3 sm:grid-cols-2">
         <FieldFrame as="div" path="prefs.length" label={t("mateSettings.styleLength")}>
@@ -288,6 +288,8 @@ function StyleSection({ mate }: { mate: Mate }) {
         <AutoText path="prefs.avoid" value={p.avoid} multiline rows={2} maxLength={500} placeholder={t("mateSettings.styleAvoidPh")} testId="studio-avoid" />
       </FieldFrame>
     </>
+      )}
+    </FieldsSave>
   );
 }
 

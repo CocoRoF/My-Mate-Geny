@@ -207,9 +207,10 @@ run status (what is being made, done / total with a smooth bar, "Waiting for you
 
 **Right — the mate's settings, live** (`StudioSettings`): collapsible sections — **Concept** (pitch, her role for
 you, interests, backstory, the look: art style, mood, look, outfit, palette with swatches, voice character),
-**Profile** (name, reply language, who she is, personality, how she talks, your name, what she calls herself, what she
-calls you with the chips and the Korean particle preview, greeting, standing instructions), **Conversation style**
-(speech level, length, emotion, warmth / humor / initiative, topics to avoid), **Avatar** (her avatar now or an empty
+**Profile** — who she is, the character only (name, who she is, personality, greeting, standing instructions),
+**Conversation style** — how she talks (your name, what she calls you with the chips and the Korean particle preview,
+what she calls herself, reply language, speech level — "As her character" when she has one —, speech habits, length,
+emotion, warmth / humor / initiative, topics to avoid; docs/mate.md "Prompt composition"), **Avatar** (her avatar now or an empty
 stage of the same size, Skip the avatar for now, then the project: estimate, checkpoints, progress, what was made so
 far — fixed-ratio tiles, nothing jumps — clips, the player when ready), **Voice** (the Voice tab itself: engine, voice,
 test — with the agent's voice character as a hint) and **Language model** (the Model tab). Every field saves itself
@@ -228,10 +229,11 @@ itself whenever the project gets ready, again after a redo). **Discard draft** c
 nothing estimated).
 
 **The agent and the settings stay in sync.** The agent writes with `update_mate_draft {fields: {name, persona
-{description, personality, speech, address, greeting, instructions, language}, prefs {user_name, self_ref, formality,
-length, emotion, tone {warmth, humor, initiative}, avoid}, concept {pitch, role, interests, backstory, voice, style,
+{description, personality, greeting, instructions, language}, prefs {user_name, address, self_ref, formality,
+speech_style, length, emotion, tone {warmth, humor, initiative}, avoid}, concept {pitch, role, interests, backstory, voice, style,
 look, outfit, palette, mood}}}` — checked strictly by the server (`app/avatar/studio.py`: unknown fields, enums,
-lengths → an error it sees; nothing half-applied), and never the voice, the model, the avatar, the default flag or any
+lengths → an error it sees; nothing half-applied; the old `persona.speech` / `persona.address` are refused with
+where they live now — `prefs.speech_style` / `prefs.address` — so who she is and how she talks never mix), and never the voice, the model, the avatar, the default flag or any
 key. Each written field is recorded in `filled` (when, the value before) and in `seen` (what the agent knows). The
 user's edits go through `PATCH /api/avatar/studio/{pid}/fields` (any mate setting + the concept) or the Voice / Model
 tabs; before the agent's next turn the server compares the draft with `seen` and prepends one `<studio_update>` block

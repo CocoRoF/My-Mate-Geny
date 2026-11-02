@@ -23,7 +23,11 @@ from app.providers.catalog import DEFAULT_MATE_MODEL, default_mate_model
 from app.services._ids import new_id, now_iso
 from app.vault import SecretVault
 
-PERSONA_FIELDS = ("description", "personality", "speech", "greeting", "address", "language", "instructions")
+# The persona is the character only — who she is (docs/mate.md §1 "Prompt composition"). How she talks (speech level,
+# how she calls the user, speech habits …) lives in the conversation style (``prefs``) and nowhere else.
+PERSONA_FIELDS = ("description", "personality", "greeting", "language", "instructions")
+# persona fields of older documents / clients / imports and where they live now (prefs): moved, never dropped
+LEGACY_STYLE_FIELDS = {"speech": "speech_style", "address": "address"}
 TTS_ENGINES = ("off", "browser", "openai", "elevenlabs", "omnivoice", "http")
 # elevenlabs = Scribe v2 Realtime: the page streams the mic straight to ElevenLabs with a single-use token the
 # backend mints (app/mate/voice.py realtime_token); the key never leaves the server.
@@ -70,12 +74,14 @@ DEFAULT_PERSONA = {
     ),
     "personality": ("Bright, warm and quick to pick up on things. Thorough without being chatty. "
                     "You honestly ask about what you don't know."),
-    "speech": ("Soft and polite; short and natural, one or two sentences at a time. In Korean: gentle 존댓말 "
-               "(해요체), never 반말. In English: warm and friendly, never stiff."),
     "greeting": DEFAULT_GREETINGS["ko"],
-    "address": "",
     "language": "ko",
     "instructions": "",
+}
+# … and how Geny talks: her conversation style (the speech level as structured data, not as a sentence)
+DEFAULT_STYLE = {
+    "speech_style": "Soft; short and natural, one or two sentences at a time. In English: warm and friendly, never stiff.",
+    "defaults": {"formality": "haeyo"},
 }
 
 
@@ -93,6 +99,16 @@ def _s(v: Any, limit: int = MAX_FIELD) -> str:
     if not isinstance(v, (str, int, float)):
         raise MateError("expected a string")
     return str(v)[:limit]
+
+
+def split_persona(persona: Any) -> tuple[Any, dict[str, Any]]:
+    """A persona document/patch that may still carry the old speech fields → (the persona without them, the prefs
+    patch they become: ``speech`` → ``speech_style``, ``address`` → ``address``). Anything that is not an object is
+    returned as is (normalize_persona refuses it)."""
+    if not isinstance(persona, dict) or not any(k in persona for k in LEGACY_STYLE_FIELDS):
+        return persona, {}
+    rest = {k: v for k, v in persona.items() if k not in LEGACY_STYLE_FIELDS}
+    return rest, {new: persona[old] for old, new in LEGACY_STYLE_FIELDS.items() if old in persona}
 
 
 def normalize_persona(patch: Any, base: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -221,20 +237,36 @@ def normalize_voice(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
     return out
 
 
-# Conversation settings (docs/mate-memory-affinity.md §3): each one changes a
-# prompt line (prompt.py) and/or what the client does (emotion level).
-FORMALITIES = ("auto", "haeyo", "hapsyo", "banmal")
+# The conversation style (대화 방식; docs/mate.md "Prompt composition", docs/mate-memory-affinity.md §3): the single
+# source of how the mate talks — each field changes a line of the prompt's "How you talk" section (prompt.py) and/or
+# what the client does (emotion level). The user edits it in Mate settings, the mate with its own
+# update_conversation_style tool (when ``self_edit`` allows it), the studio agent while a mate is being made.
+FORMALITIES = ("auto", "haeyo", "hapsyo", "banmal")   # auto = the character's own level (``defaults.formality``)
 LENGTHS = ("short", "normal", "long")
 TONE_KEYS = ("warmth", "humor", "initiative")
 TONE_LEVELS = ("auto", "low", "high")
 RECALL_LEVELS = ("off", "light", "normal", "rich")
+SELF_EDIT = ("auto", "ask", "off")   # may the mate change her own style: yes | as a proposal the user applies | no
 MAX_AVOID = 500
+MAX_ADDRESS = 80
+MAX_SELF_REF = 40
+MAX_SPEECH_STYLE = 8000
+# what the mate's own tool may change (+ ``language``: stored as persona.language — it also picks the localized
+# name and greeting, the speech-to-text language and the built-in sync, so it stays there)
+STYLE_FIELDS = ("user_name", "address", "self_ref", "formality", "speech_style", "length", "emotion", "tone", "avoid")
+
+
+def default_style_defaults() -> dict[str, str]:
+    """The character's own way of talking (bundled characters / imports — data, not a setting): what ``formality``
+    "auto", an empty ``address`` and an empty ``self_ref`` mean. ``address`` may contain ``{name}`` (the user's)."""
+    return {"formality": "", "address": "", "self_ref": ""}
 
 
 def default_prefs() -> dict[str, Any]:
-    return {"user_name": "", "self_ref": "", "formality": "auto", "length": "normal", "emotion": 2,
-            "tone": {k: "auto" for k in TONE_KEYS}, "avoid": "",
-            "memory": {"recall": "normal", "self_save": True}}
+    return {"user_name": "", "address": "", "self_ref": "", "formality": "auto", "speech_style": "",
+            "length": "normal", "emotion": 2, "tone": {k: "auto" for k in TONE_KEYS}, "avoid": "",
+            "memory": {"recall": "normal", "self_save": True}, "self_edit": "auto",
+            "defaults": default_style_defaults()}
 
 
 def _enum(v: Any, allowed: tuple[str, ...], what: str) -> str:
@@ -244,26 +276,58 @@ def _enum(v: Any, allowed: tuple[str, ...], what: str) -> str:
     return v
 
 
+def _one_line(v: Any, limit: int) -> str:
+    return " ".join(_s(v, limit).split())
+
+
+def normalize_style_defaults(v: Any, base: dict[str, Any] | None = None) -> dict[str, str]:
+    out = default_style_defaults()
+    if isinstance(base, dict):
+        out.update({k: x for k, x in base.items() if k in out and isinstance(x, str)})
+        if out["formality"] not in FORMALITIES[1:]:
+            out["formality"] = ""
+    if v is None:
+        return out
+    if not isinstance(v, dict):
+        raise MateError("prefs.defaults must be an object")
+    if "formality" in v:
+        f = _s(v["formality"], 32).strip()
+        if f and f not in FORMALITIES[1:]:
+            raise MateError(f"unknown default speech level: {f} (one of {', '.join(FORMALITIES[1:])})")
+        out["formality"] = f
+    if "address" in v:
+        out["address"] = _one_line(v["address"], MAX_ADDRESS)
+    if "self_ref" in v:
+        out["self_ref"] = _one_line(v["self_ref"], MAX_SELF_REF)
+    return out
+
+
 def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str, Any]:
-    """``mate.prefs``: merged field by field (``tone`` / ``memory`` too); unknown keys dropped."""
+    """``mate.prefs``: merged field by field (``tone`` / ``memory`` / ``defaults`` too); unknown keys dropped."""
     out = default_prefs()
     b = base if isinstance(base, dict) else {}
-    for k in ("user_name", "self_ref", "formality", "length", "emotion", "avoid"):
+    for k in ("user_name", "address", "self_ref", "formality", "speech_style", "length", "emotion", "avoid",
+              "self_edit"):
         if k in b:
             out[k] = b[k]
     if isinstance(b.get("tone"), dict):
         out["tone"].update({k: v for k, v in b["tone"].items() if k in TONE_KEYS and v in TONE_LEVELS})
     if isinstance(b.get("memory"), dict):
         out["memory"].update({k: v for k, v in b["memory"].items() if k in ("recall", "self_save")})
+    out["defaults"] = normalize_style_defaults(None, b.get("defaults") if isinstance(b.get("defaults"), dict) else None)
     if patch is not None:
         if not isinstance(patch, dict):
             raise MateError("prefs must be an object")
         if "user_name" in patch:
-            out["user_name"] = " ".join(_s(patch["user_name"], 80).split())
+            out["user_name"] = _one_line(patch["user_name"], 80)
+        if "address" in patch:
+            out["address"] = _one_line(patch["address"], MAX_ADDRESS)
         if "self_ref" in patch:
-            out["self_ref"] = " ".join(_s(patch["self_ref"], 40).split())
+            out["self_ref"] = _one_line(patch["self_ref"], MAX_SELF_REF)
         if "formality" in patch:
             out["formality"] = _enum(patch["formality"], FORMALITIES, "speech level")
+        if "speech_style" in patch:
+            out["speech_style"] = _s(patch["speech_style"], MAX_SPEECH_STYLE).strip()
         if "length" in patch:
             out["length"] = _enum(patch["length"], LENGTHS, "reply length")
         if "emotion" in patch:
@@ -275,6 +339,8 @@ def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
                 raise MateError("prefs.emotion must be 0 – 3") from exc
         if "avoid" in patch:
             out["avoid"] = _s(patch["avoid"], MAX_AVOID).strip()
+        if "self_edit" in patch:
+            out["self_edit"] = _enum(patch["self_edit"], SELF_EDIT, "self-edit setting")
         tone = patch.get("tone")
         if tone is not None:
             if not isinstance(tone, dict):
@@ -290,20 +356,34 @@ def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
                 out["memory"]["recall"] = _enum(mem["recall"], RECALL_LEVELS, "recall level")
             if "self_save" in mem:
                 out["memory"]["self_save"] = bool(mem["self_save"])
+        if patch.get("defaults") is not None:
+            out["defaults"] = normalize_style_defaults(patch["defaults"], out["defaults"])
     # (a stored document from an older/newer version: keep it well-typed)
     try:
         out["emotion"] = max(0, min(3, int(out["emotion"])))
     except (TypeError, ValueError):
         out["emotion"] = 2
-    for k, allowed in (("formality", FORMALITIES), ("length", LENGTHS)):
+    for k, allowed in (("formality", FORMALITIES), ("length", LENGTHS), ("self_edit", SELF_EDIT)):
         if out[k] not in allowed:
-            out[k] = allowed[0] if k == "formality" else "normal"
+            out[k] = "normal" if k == "length" else allowed[0]
     if out["memory"].get("recall") not in RECALL_LEVELS:
         out["memory"]["recall"] = "normal"
     out["memory"]["self_save"] = bool(out["memory"].get("self_save", True))
-    for k in ("user_name", "self_ref", "avoid"):
+    for k in ("user_name", "address", "self_ref", "avoid", "speech_style"):
         out[k] = str(out[k] or "")
     return out
+
+
+def effective_style(prefs: dict[str, Any] | None) -> dict[str, Any]:
+    """What the conversation style comes to: the user's (or the mate's own) choice, else the character's default
+    (``defaults``) → {formality ("" = no level set anywhere), formality_default (it is the character's), address,
+    address_default, self_ref}."""
+    s = normalize_prefs(None, prefs)
+    d = s["defaults"]
+    chosen = s["formality"] if s["formality"] != "auto" else ""
+    return {"formality": chosen or d["formality"], "formality_default": not chosen and bool(d["formality"]),
+            "address": s["address"] or d["address"], "address_default": not s["address"] and bool(d["address"]),
+            "self_ref": s["self_ref"] or d["self_ref"]}
 
 
 SCREEN_APPROVALS = ("ask", "allow")   # ask every time (default) | allow without asking
@@ -576,6 +656,9 @@ class MateStore:
         name = _s(name, 80).strip()
         if not name and not draft:  # (a draft gets its name in the studio)
             raise MateError("a mate needs a name")
+        persona, moved = split_persona(persona)  # (an import / older client: its speech fields are style now)
+        if moved:
+            prefs = {**moved, **(prefs if isinstance(prefs, dict) else {})}
         doc = (normalize_persona(persona), normalize_avatar(avatar), normalize_llm(llm), normalize_voice(voice),
                normalize_prefs(prefs))
         mid = new_id("mate_")
@@ -602,11 +685,11 @@ class MateStore:
                 return False
             now = now_iso()
             self._db.execute(
-                "INSERT INTO mates (id, name, is_default, persona, avatar, llm, voice, created_at, updated_at) "
-                "VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO mates (id, name, is_default, persona, avatar, llm, voice, prefs, created_at, updated_at) "
+                "VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?)",
                 (new_id("mate_"), "Geny", json.dumps(normalize_persona(DEFAULT_PERSONA), ensure_ascii=False),
                  json.dumps({"kind": "none"}), json.dumps(normalize_llm(None)), json.dumps(normalize_voice(None)),
-                 now, now),
+                 json.dumps(normalize_prefs(DEFAULT_STYLE), ensure_ascii=False), now, now),
             )
             return True
 
@@ -617,6 +700,16 @@ class MateStore:
         sets: list[str] = []
         params: list[Any] = []
         changed: set[str] = set()
+        if isinstance(patch.get("persona"), dict):  # (an older client / import: its speech fields are style now)
+            persona, moved = split_persona(patch["persona"])
+            if moved:
+                # (a page still open from before the move sends the old values back with every save: what the
+                # migration already moved is not a change)
+                legacy = self.persona_legacy(mate_id) or {}
+                old = {new: k for k, new in LEGACY_STYLE_FIELDS.items()}
+                moved = {k: v for k, v in moved.items() if old[k] not in legacy or v != legacy[old[k]]}
+                patch = {**patch, "persona": persona,
+                         "prefs": {**moved, **(patch["prefs"] if isinstance(patch.get("prefs"), dict) else {})}}
         if "name" in patch and patch["name"] is not None:
             name = _s(patch["name"], 80).strip()
             if not name and not cur.get("draft"):
@@ -697,6 +790,8 @@ class MateStore:
                                  (row["builtin"], now_iso()))
             self._db.execute("DELETE FROM mate_memories WHERE mate_id = ?", (mate_id,))
             self._db.execute("DELETE FROM mate_relation WHERE mate_id = ?", (mate_id,))
+            self._db.execute("DELETE FROM mate_style_changes WHERE mate_id = ?", (mate_id,))
+            self._db.execute("DELETE FROM mate_settings WHERE key = ?", (f"styleok:{mate_id}",))
             self._db.execute("DELETE FROM mate_settings WHERE key = ?", (f"memchg:{mate_id}",))
             self._db.execute("DELETE FROM mates WHERE id = ?", (mate_id,))
             if row["is_default"]:  # someone else becomes the default
@@ -704,6 +799,85 @@ class MateStore:
                 if nxt is not None:
                     self._db.execute("UPDATE mates SET is_default = 1 WHERE id = ?", (nxt["id"],))
         self._changed("deleted", mate_id)
+
+    # ---- the conversation style: the one-time move out of the persona, and the mate's own changes ----
+
+    def migrate_style(self) -> list[dict[str, Any]]:
+        """Once per mate, idempotent: how she talks moves out of the persona into the conversation style —
+        ``persona.address`` → ``prefs.address`` and ``persona.speech`` → ``prefs.speech_style``, each only where the
+        style has no such field yet (so a value already there, or an address the user cleared, stays exactly as it
+        is). The whole old persona document is kept in ``persona_legacy``. Drafts too. → what moved, per mate."""
+        report: list[dict[str, Any]] = []
+        for r in self._db.query("SELECT id, name, persona, prefs, persona_legacy FROM mates"):
+            raw = _loads(r["persona"], {})
+            if not any(k in raw for k in LEGACY_STYLE_FIELDS):
+                continue
+            prefs = _loads(r["prefs"], {})
+            moved: dict[str, Any] = {}
+            for old, new in LEGACY_STYLE_FIELDS.items():
+                if old in raw and new not in prefs:
+                    prefs[new] = str(raw.get(old) or "")
+                    moved[new] = prefs[new]
+            persona = {k: v for k, v in raw.items() if k not in LEGACY_STYLE_FIELDS}
+            legacy = r["persona_legacy"] or json.dumps(raw, ensure_ascii=False)  # (the first backup is the one kept)
+            self._db.execute("UPDATE mates SET persona = ?, prefs = ?, persona_legacy = ? WHERE id = ?",
+                             (json.dumps(normalize_persona(persona), ensure_ascii=False),
+                              json.dumps(normalize_prefs(None, prefs), ensure_ascii=False), legacy, r["id"]))
+            report.append({"id": r["id"], "name": r["name"], "moved": moved,
+                           "kept": [new for old, new in LEGACY_STYLE_FIELDS.items() if old in raw and new not in moved]})
+        return report
+
+    def persona_legacy(self, mate_id: str) -> dict[str, Any] | None:
+        row = self._db.query_one("SELECT persona_legacy FROM mates WHERE id = ?", (mate_id,))
+        return _loads(row["persona_legacy"], {}) or None if row is not None else None
+
+    @staticmethod
+    def _style_change(row: Any) -> dict[str, Any]:
+        return {"id": row["id"], "mate_id": row["mate_id"], "created_at": row["created_at"], "actor": row["actor"],
+                "status": row["status"], "reason": row["reason"], "changes": _loads(row["changes"], {}),
+                "session_id": row["session_id"], "resolved_at": row["resolved_at"]}
+
+    def add_style_change(self, mate_id: str, changes: dict[str, Any], *, actor: str, status: str, reason: str = "",
+                         session_id: str | None = None) -> dict[str, Any]:
+        """Record a change of the conversation style (``changes``: {path: {"from", "to"}}) — the mate's own (applied
+        or proposed) — for the conversation's chip, the Conversation style tab's history and undo."""
+        cid = new_id("stc_")
+        self._db.execute(
+            "INSERT INTO mate_style_changes (id, mate_id, created_at, actor, status, reason, changes, session_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (cid, mate_id, now_iso(), actor, status, _s(reason, 300).strip(), json.dumps(changes, ensure_ascii=False),
+             session_id))
+        # keep the last 200 per mate
+        self._db.execute("DELETE FROM mate_style_changes WHERE mate_id = ? AND id NOT IN (SELECT id FROM "
+                         "mate_style_changes WHERE mate_id = ? ORDER BY created_at DESC LIMIT 200)", (mate_id, mate_id))
+        self._changed("style", mate_id)
+        return self.style_change(mate_id, cid)
+
+    def style_changes(self, mate_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        rows = self._db.query("SELECT * FROM mate_style_changes WHERE mate_id = ? ORDER BY created_at DESC, id DESC "
+                              "LIMIT ?", (mate_id, max(1, min(200, int(limit)))))
+        return [self._style_change(r) for r in rows]
+
+    def style_change(self, mate_id: str, cid: str) -> dict[str, Any]:
+        row = self._db.query_one("SELECT * FROM mate_style_changes WHERE id = ? AND mate_id = ?", (cid, mate_id))
+        if row is None:
+            raise KeyError(f"no such style change: {cid}")
+        return self._style_change(row)
+
+    def set_style_change(self, mate_id: str, cid: str, status: str) -> dict[str, Any]:
+        self._db.execute("UPDATE mate_style_changes SET status = ?, resolved_at = ? WHERE id = ? AND mate_id = ?",
+                         (status, now_iso(), cid, mate_id))
+        self._changed("style", mate_id)
+        return self.style_change(mate_id, cid)
+
+    def style_ok_memories(self, mate_id: str) -> set[str]:
+        """Memories the user said are fine where they are (the Memory tab's "conversation style?" flag dismissed)."""
+        return set(_loads(self._setting(f"styleok:{mate_id}"), []))
+
+    def dismiss_style_flag(self, mate_id: str, mem_id: str) -> None:
+        ids = sorted(self.style_ok_memories(mate_id) | {mem_id})[-500:]
+        self._put_setting(f"styleok:{mate_id}", json.dumps(ids))
+        self._changed("memory", mate_id)
 
     # ---- memories (docs/mate-memory-affinity.md §4; ranking and the core: app/mate/memory.py) ----
 

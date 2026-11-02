@@ -277,5 +277,11 @@ const ko: Messages<"mate"> = {
   shareMainScreen: "{name} (주 화면)",
   shareNote: "사진 한 장이 메시지에 첨부돼요 — 녹화하지 않아요.",
   shareGo: "공유",
+  // the conversation style (docs/mate.md "Prompt composition")
+  toolStyleChanging: "대화 방식을 바꾸는 중…",
+  toolStyleFailed: "대화 방식을 바꾸지 못했어요",
+  toolStyleChanged: "대화 방식 변경: {what}",
+  toolStyleProposed: "대화 방식 변경 제안: {what}",
+  toolStyleSame: "대화 방식: 이미 그렇게 돼 있어요",
 };
 export default ko;

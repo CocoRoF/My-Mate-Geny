@@ -268,19 +268,21 @@ def test_persona_edit_reaches_the_next_message(db, tmp_path, monkeypatch):
     new system prompt and an explicit settings note in that message."""
     from app.mate.prompt import settings_change_note, system_prompt
 
-    note = settings_change_note("한채린", {"address": ""}, "한채린", {"address": "하렴"})
-    assert "하렴" in note and note.startswith("<settings_update>")
-    assert settings_change_note("A", {"address": "x"}, "A", {"address": "x"}) == ""
+    note = settings_change_note("한채린", {}, "한채린", {}, {"address": ""}, {"address": "하렴"})
+    assert "Call the user “하렴”" in note and note.startswith("<settings_update>")
+    assert settings_change_note("A", {}, "A", {}, {"address": "x"}, {"address": "x"}) == ""
+    assert "Call the user “하렴”" in system_prompt("한채린", {}, [], {"address": "하렴"})
+    # (an old persona document that still has its address: read as the style's)
     assert "Call the user “하렴”" in system_prompt("한채린", {"address": "하렴"}, [])
 
     svc, store, mates = _setup(db, tmp_path, monkeypatch)
-    m = store.create(name="Rin", persona={"address": "사용자"})
+    m = store.create(name="Rin", prefs={"address": "사용자"})
     session = {"id": "sess_x", "mate_id": m["id"], "title": "Rin", "model": m["llm"]["model"], "effort": m["llm"]["effort"]}
     from app.providers.base import TurnRequest
     req = TurnRequest(messages=[{"role": "user", "content": "hi"}], model="", cwd=str(tmp_path))
     mates.configure_engine(session, req)
     assert "settings_update" not in req.preamble  # first turn: nothing to announce
-    mates.update(m["id"], {"persona": {"address": "하렴"}})
+    mates.update(m["id"], {"prefs": {"address": "하렴"}})
     req2 = TurnRequest(messages=[{"role": "user", "content": "hi"}], model="", cwd=str(tmp_path))
     mates.configure_engine(session, req2)
     assert "settings_update" in req2.preamble and "하렴" in req2.preamble

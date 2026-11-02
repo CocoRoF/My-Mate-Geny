@@ -105,9 +105,9 @@ async function main() {
     const a = await openMate(en);
     const b = await openMate(en); // a second window of the same browser (and the server's push for other devices)
 
-    step("Profile → You: your name, an address chip, the Korean forms preview; saved and kept");
+    step("Conversation style → How she calls you: your name, an address chip, the Korean forms preview; saved and kept");
     await a.bringToFront();
-    await settingsTab(a, "profile");
+    await settingsTab(a, "style");
     await a.fill('[data-testid="mate-user-name"]', "현석");
     await a.locator('[data-testid="mate-address-chips"] button', { hasText: /^현석$/ }).click();
     const forms = await a.textContent('[data-testid="mate-address-forms"]');
@@ -130,7 +130,6 @@ async function main() {
     await a.waitForSelector('[data-testid="mate-settings-open"]');
     await settingsTab(a, "style");
     assert.equal(await a.getAttribute('[data-testid="mate-style-formality"] [data-value="banmal"]', "aria-checked"), "true", "kept after a reload");
-    await settingsTab(a, "profile");
     assert.match(await a.textContent('[data-testid="mate-address-forms"]'), /현석이가 · 현석이는 · 현석이를/);
 
     step("Memory: add with kinds, importance and a date; similar → merge banner; edit in place; search; pin");
@@ -189,7 +188,9 @@ async function main() {
     assert.match(t1.system_prompt, /반말/);
     assert.match(t1.system_prompt, /one or two at most/);
     assert.match(t1.system_prompt, /Humor: playful/);
-    assert.match(t1.system_prompt, /현석이가 · 현석이는/);
+    assert.match(t1.system_prompt, /Call the user “현석”\./); // (no grammar notes: the user's decision)
+    assert.doesNotMatch(t1.system_prompt, /현석이가|현석아/);
+    assert.equal((t1.system_prompt.match(/## How you talk/g) || []).length, 1, "one How-you-talk section");
     assert.match(t1.system_prompt, /## Between you and the user/);
     assert.match(t1.text, /^<context>\nNow: /);
     console.log(`  context block: ${JSON.stringify(t1.text.split("</context>")[0])}`);
@@ -259,9 +260,9 @@ async function main() {
         await shot(p, `${tag}-${tab}`);
       }
       if (lang === "ko") {
-        await settingsTab(p, "profile");
-        const ko = await p.textContent('[data-testid="mate-profile-you"]');
-        assert.match(ko, /나를 어떻게 알고 부르는지/, "Korean UI");
+        await settingsTab(p, "style");
+        const ko = await p.textContent('[data-testid="mate-style-call"]');
+        assert.match(ko, /부르는 법/, "Korean UI");
       }
       await ctx.close();
     }

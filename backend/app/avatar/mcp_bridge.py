@@ -76,21 +76,23 @@ TOOLS = [
     {"name": "update_mate_draft",
      "description": "Mate Create studio: write the settings of the mate on the right of the user's screen (merged "
                     "field by field, checked; the user sees each field you filled highlighted and can edit or undo "
-                    "it). name (a first name, at most 40 characters); persona {description (who she is, role and "
-                    "relationship to the user, background, interests — second person 'You are …'), personality, "
-                    "speech (how she talks; for Korean the speech level), address (how she calls the user; Korean: "
-                    "the bare form, particles are added), greeting (her first line, in the reply language), "
-                    "instructions, language (ko|en|ja|zh|es|fr|de|it|pt|vi)}; prefs {user_name, self_ref, formality "
-                    "(auto|haeyo|hapsyo|banmal), length (short|normal|long), emotion (0-3), tone {warmth, humor, "
+                    "it). name (a first name, at most 40 characters); persona = who she is, never how she talks "
+                    "{description (role and relationship to the user, background, interests — second person 'You are "
+                    "…'), personality, greeting (her first line, in the reply language), instructions, language "
+                    "(ko|en|ja|zh|es|fr|de|it|pt|vi)}; prefs = how she talks (her conversation style) {user_name, "
+                    "address (what she calls the user, exactly as she says it), self_ref, formality "
+                    "(auto|haeyo|hapsyo|banmal: her speech level), speech_style (speech habits: rhythm, catchphrases, "
+                    "sample lines), length (short|normal|long), emotion (0-3), tone {warmth, humor, "
                     "initiative: low|auto|high}, avoid}; concept {pitch, role, interests, backstory, voice (the "
                     "voice character), style, look, outfit, palette, mood}. Never the voice, the model or the "
                     "avatar. Returns what was written and what the mate still needs before the user can create her.",
      "inputSchema": {"type": "object", "properties": {"fields": {"type": "object", "properties": {
          "name": {"type": "string"},
          "persona": {"type": "object", "properties": {k: {"type": "string"} for k in (
-             "description", "personality", "speech", "address", "greeting", "instructions", "language")}},
+             "description", "personality", "greeting", "instructions", "language")}},
          "prefs": {"type": "object", "properties": {
-             "user_name": {"type": "string"}, "self_ref": {"type": "string"},
+             "user_name": {"type": "string"}, "address": {"type": "string"}, "self_ref": {"type": "string"},
+             "speech_style": {"type": "string"},
              "formality": {"type": "string", "enum": ["auto", "haeyo", "hapsyo", "banmal"]},
              "length": {"type": "string", "enum": ["short", "normal", "long"]},
              "emotion": {"type": "integer", "minimum": 0, "maximum": 3},

@@ -34,7 +34,7 @@ import {
   type ProjectSummary,
   type StudioFieldsPatch,
 } from "../../../api/avatar";
-import type { Mate } from "../../../api/mates";
+import { prefsOf, type Mate } from "../../../api/mates";
 import { usePhone } from "../../../lib/device";
 import { cameFrom, goBack } from "../../../lib/nav";
 import { useMateConversation } from "../../../mate/useMateConversation";
@@ -84,7 +84,7 @@ function stepsDone(p: AvatarProject, m: Mate): Record<StepId, boolean> {
   const skipped = st.avatar_skipped;
   return {
     concept: !!(st.concept.pitch || (m.name.trim() && m.persona.description.trim())),
-    personality: !!(m.persona.personality.trim() && m.persona.speech.trim()),
+    personality: !!(m.persona.personality.trim() && prefsOf(m).speech_style.trim()),
     look: skipped || !!p.brief.design.prompt || p.brief.reference.files.length > 0 || p.status !== "interview",
     avatar: skipped || p.status === "ready" || p.status === "applied",
     voice: st.voice_ok,

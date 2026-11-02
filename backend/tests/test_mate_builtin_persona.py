@@ -18,7 +18,7 @@ from app.services.workspace_service import WorkspaceService
 from app.vault import SecretVault
 
 HANGUL = re.compile(r"[가-힣]")
-TEXT_FIELDS = ("description", "personality", "speech", "instructions")
+TEXT_FIELDS = ("description", "personality", "instructions")
 
 
 def _service(db):
@@ -51,20 +51,37 @@ def test_fresh_install_chaerin_default_with_english_persona(db):
     listed = mates.list()
     cha = listed[0]
     assert cha["builtin"] == "chaerin" and cha["is_default"]
-    p = cha["persona"]
+    p, s = cha["persona"], cha["prefs"]
     # the bundled reply language is unchanged (Korean), so are her name and greeting
     assert p["language"] == "ko" and cha["name"] == "한채린"
     assert p["greeting"] == "...안녕하세요. 한채린이에요. 말은 잘 못하는데, 메시지는 괜찮아요. 오늘 어땠어요?"
     assert "QA (quality assurance) engineer" in p["description"] and "Your relationship with the user:" in p["description"]
-    assert "What are the repro steps?" in p["speech"] and "재현 경로가 어떻게 돼요?" in p["speech"]
-    assert "Example exchanges:" in p["speech"] and "When you first meet the user" in p["instructions"]
+    assert "Things you like to talk about" in p["description"]
+    # how she talks is her conversation style: habits in speech_style, her speech level and address as data
+    assert "speech" not in p and "address" not in p
+    assert "What are the repro steps?" in s["speech_style"] and "재현 경로가 어떻게 돼요?" in s["speech_style"]
+    assert "Example exchanges:" in s["speech_style"] and "When you first meet the user" in s["speech_style"]
+    assert s["defaults"] == {"formality": "haeyo", "address": "{name} 님", "self_ref": ""}
+    assert s["formality"] == "auto" and s["address"] == ""  # the user's own fields: untouched (= her way)
     for m in listed:
         for k in TEXT_FIELDS:
-            assert _mostly_english(m["persona"][k]), (m["builtin"], k)
+            assert not m["persona"][k] or _mostly_english(m["persona"][k]), (m["builtin"], k)
             assert len(m["persona"][k]) < MAX_FIELD
+        assert _mostly_english(m["prefs"]["speech_style"]), m["builtin"]
         assert mates.store.by_builtin(m["builtin"])["builtin_snapshot"]["names"]["en"]
-    prompt = system_prompt(cha["name"], p, [])
-    assert "Always reply in Korean, whatever language your instructions are written in" in prompt
+    prompt = system_prompt(cha["name"], p, [], s)
+    assert "Always reply in Korean, whatever language the rest of this prompt is written in" in prompt
+
+
+def test_bundles_keep_speech_level_and_address_out_of_the_free_text():
+    """The bundles' free text keeps habits only: the speech level and the address are structured data."""
+    for key in ("chaerin", "estelle", "seoa"):
+        st = files.builtin_bundle(key)["style"]
+        assert st["defaults"]["formality"] in ("haeyo", "banmal") and st["defaults"]["address"]
+        text = st["speech_style"]
+        for rule in ("반말", "존댓말", "-nim", "calls the user", "Call the user", "politely by name", "by their name"):
+            assert rule not in text, (key, rule)
+    assert files.style_defaults(files.builtin_bundle("chaerin"), "en")["address"] == "{name}"
 
 
 def test_every_bundle_has_both_languages():
@@ -80,8 +97,9 @@ def test_every_bundle_has_both_languages():
 
 
 def test_default_geny_persona_is_english():
-    for k in ("description", "personality", "speech"):
+    for k in ("description", "personality"):
         assert _mostly_english(DEFAULT_PERSONA[k])
+    assert "speech" not in DEFAULT_PERSONA and "address" not in DEFAULT_PERSONA
     assert DEFAULT_PERSONA["greeting"] == DEFAULT_GREETINGS["ko"] and DEFAULT_PERSONA["language"] == "ko"
 
 
@@ -94,7 +112,10 @@ def test_migration_of_an_unedited_builtin(db):
     est = mates.get(ids["estelle"])
     new = files.builtin_bundle("estelle")
     for k in TEXT_FIELDS:
-        assert est["persona"][k] == new["persona"][k] and est["persona"][k] != before["persona"][k]
+        assert est["persona"][k] == new["persona"][k]
+    assert est["persona"]["description"] != before["persona"]["description"]
+    assert est["prefs"]["speech_style"] == new["style"]["speech_style"] != before["prefs"]["speech_style"]
+    assert est["prefs"]["defaults"]["formality"] == "banmal"
     assert "archmage" in est["persona"]["description"] and "Your world:" in est["persona"]["description"]
     # language, name and greeting stay Korean; voice, memories, default untouched
     assert est["persona"]["language"] == "ko" and est["name"] == "에스텔 루미나르"
@@ -115,30 +136,35 @@ def test_migration_of_an_edited_builtin_keeps_the_users_fields(db):
     store, ids = _seed_legacy(db)
     cid = ids["chaerin"]
     legacy = store.get(cid)
-    store.update(cid, {"persona": {"address": "하렴", "personality": "my own words"},
+    store.update(cid, {"prefs": {"address": "하렴"}, "persona": {"personality": "my own words"},
                        "voice": {"tts": {"engine": "elevenlabs", "voice": "Mi0l"}}, "is_default": True})
     assert store.get(cid)["customized"]
-    # the conversation last ran with the Korean persona
+    # the conversation last ran with the old Korean persona (speech and address still in it)
     applied = files.home_dir(cid) / ".applied-persona.json"
     applied.parent.mkdir(parents=True, exist_ok=True)
     old = store.get(cid)
-    applied.write_text(json.dumps({"name": old["name"], "persona": old["persona"]}, ensure_ascii=False), "utf-8")
+    _n, old_persona = files.legacy_persona(files.builtin_doc("chaerin"))
+    old_persona = {**old_persona, "address": "하렴", "personality": "my own words"}
+    applied.write_text(json.dumps({"name": old["name"], "persona": old_persona, "prefs": {}}, ensure_ascii=False),
+                       "utf-8")
 
     mates = _service(db)
     cha = mates.get(cid)
-    new = files.builtin_bundle("chaerin")["persona"]
-    p = cha["persona"]
-    assert p["address"] == "하렴" and p["personality"] == "my own words"       # the user's
-    assert p["description"] == new["description"] and p["speech"] == new["speech"]  # untouched -> English
-    assert p["instructions"] == new["instructions"]
+    new = files.builtin_bundle("chaerin")
+    p, s = cha["persona"], cha["prefs"]
+    assert s["address"] == "하렴" and p["personality"] == "my own words"       # the user's
+    assert p["description"] == new["persona"]["description"]                     # untouched -> English
+    assert s["speech_style"] == new["style"]["speech_style"]
+    assert p["instructions"] == new["persona"]["instructions"]
     assert p["greeting"] == legacy["persona"]["greeting"] and p["language"] == "ko" and cha["name"] == "한채린"
     assert cha["is_default"] and cha["customized"] and cha["voice"]["tts"]["voice"] == "Mi0l"
     assert not mates.get(ids["estelle"])["is_default"]
     # the engine restarts (new prompt key) and the next message carries a settings note
-    assert prompt_key(cha["name"], p, 0) != prompt_key(old["name"], old["persona"], 0)
+    assert prompt_key(cha["name"], p, 0, s) != prompt_key(old["name"], old_persona, 0, {})
     note = mates._settings_note(cid, cha)
-    assert "Who you are was updated" in note and "Speaking style was updated" in note
-    assert "Reply language" not in note and "Call the user" not in note
+    assert "Who you are was updated" in note and "Your speech habits were updated" in note
+    assert "Speech level: polite 해요체" in note                                 # her own level, now as data
+    assert "Reply language" not in note and "Call the user" not in note        # (the address didn't change)
     assert mates._settings_note(cid, cha) == ""  # only once
 
 
@@ -146,16 +172,42 @@ def test_later_bundle_updates_merge_against_the_snapshot(db):
     mates = _service(db)
     seoa = mates.store.by_builtin("seoa")
     snap = seoa["builtin_snapshot"]
-    old_snap = {**snap, "persona": {**snap["persona"], "description": "old bundled text", "speech": "old speech"},
+    old_snap = {**snap, "persona": {**snap["persona"], "description": "old bundled text"},
+                "style": {**snap["style"], "speech_style": "old speech", "address": "",
+                          "defaults": {"formality": "haeyo", "address": {"ko": "{name} 님"}, "self_ref": {}}},
                 "greetings": {"en": "old hi", "ko": "옛 인사"}}
-    mates.store.update(seoa["id"], {"persona": {"description": "old bundled text", "speech": "user speech",
-                                                "greeting": "옛 인사"}, "_sync": True})
+    mates.store.update(seoa["id"], {"persona": {"description": "old bundled text", "greeting": "옛 인사"},
+                                    "prefs": {"speech_style": "user speech", "formality": "hapsyo",
+                                              "defaults": {"formality": "haeyo", "address": "{name} 님"}},
+                       "_sync": True})
     mates.store.mark_builtin(seoa["id"], "seoa", "older", old_snap)
     mates.sync_builtins()
-    p = mates.get(seoa["id"])["persona"]
+    m = mates.get(seoa["id"])
+    p, s = m["persona"], m["prefs"]
     assert p["description"] == snap["persona"]["description"]   # was bundled -> refreshed
-    assert p["speech"] == "user speech"                          # the user's -> kept
+    assert s["speech_style"] == "user speech"                    # the user's -> kept
+    assert s["formality"] == "hapsyo"                            # the user's speech level -> kept
+    assert s["defaults"] == {"formality": "banmal", "address": "{name}", "self_ref": ""}  # bundle data -> follows
     assert p["greeting"] == snap["greetings"]["ko"]              # an old bundled greeting -> today's (ko)
+    # a bundled speech text (still as bundled) follows the bundle
+    mates.store.update(seoa["id"], {"prefs": {"speech_style": "old speech"}, "_sync": True})
+    mates.store.mark_builtin(seoa["id"], "seoa", "older", old_snap)
+    mates.sync_builtins()
+    assert mates.get(seoa["id"])["prefs"]["speech_style"] == snap["style"]["speech_style"]
+
+
+def test_old_snapshot_shape_is_read_as_today(db):
+    """A snapshot from before the conversation style (speech/address in its persona) still tells the user's
+    edits from bundled text."""
+    mates = _service(db)
+    cha = mates.store.by_builtin("chaerin")
+    snap = cha["builtin_snapshot"]
+    old_shape = {**{k: v for k, v in snap.items() if k != "style"},
+                 "persona": {**snap["persona"], "speech": "bundled long ago", "address": ""}}
+    mates.store.update(cha["id"], {"prefs": {"speech_style": "bundled long ago"}, "_sync": True})
+    mates.store.mark_builtin(cha["id"], "chaerin", "older", old_shape)
+    mates.sync_builtins()
+    assert mates.get(cha["id"])["prefs"]["speech_style"] == snap["style"]["speech_style"]
 
 
 def test_language_switch_swaps_bundled_name_and_greeting(db):

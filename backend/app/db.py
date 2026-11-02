@@ -211,6 +211,7 @@ CREATE TABLE IF NOT EXISTS mates (
     builtin_snapshot TEXT,                    -- JSON: that bundle (names, greetings, persona, avatar) for field merges
     customized  INTEGER NOT NULL DEFAULT 0,   -- the user edited its persona/avatar (updates keep the edited fields)
     draft       INTEGER NOT NULL DEFAULT 0,   -- being made in the Mate Create studio: hidden until finished
+    persona_legacy TEXT,                      -- JSON: the persona before speech/address moved into prefs (backup)
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -240,6 +241,21 @@ CREATE TABLE IF NOT EXISTS mate_relation (
     doc        TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+-- Changes of a mate's conversation style made by the mate herself (update_conversation_style): applied or proposed,
+-- undone / applied / dismissed by the user (docs/mate.md "Prompt composition").
+CREATE TABLE IF NOT EXISTS mate_style_changes (
+    id          TEXT PRIMARY KEY,
+    mate_id     TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    actor       TEXT NOT NULL,                -- mate | user
+    status      TEXT NOT NULL,                -- applied | proposed | dismissed | undone
+    reason      TEXT NOT NULL DEFAULT '',
+    changes     TEXT NOT NULL,                -- JSON {path: {from, to}}
+    session_id  TEXT,
+    resolved_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_mate_style_changes ON mate_style_changes(mate_id, created_at);
 
 -- Global Mate settings (voice service URLs); API keys live in the vault.
 CREATE TABLE IF NOT EXISTS mate_settings (
@@ -326,7 +342,8 @@ class Database:
             matecols = {r["name"] for r in self._conn.execute("PRAGMA table_info(mates)")}
             for col, ddl in (("builtin", "TEXT"), ("builtin_hash", "TEXT"), ("builtin_snapshot", "TEXT"),
                              ("customized", "INTEGER NOT NULL DEFAULT 0"), ("prefs", "TEXT NOT NULL DEFAULT '{}'"),
-                             ("screen", "TEXT NOT NULL DEFAULT '{}'"), ("draft", "INTEGER NOT NULL DEFAULT 0")):
+                             ("screen", "TEXT NOT NULL DEFAULT '{}'"), ("draft", "INTEGER NOT NULL DEFAULT 0"),
+                             ("persona_legacy", "TEXT")):
                 if matecols and col not in matecols:
                     self._conn.execute(f"ALTER TABLE mates ADD COLUMN {col} {ddl}")
             self._conn.execute(

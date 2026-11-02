@@ -1,9 +1,14 @@
-"""The mate engine's system prompt: persona + the mate contract + memories.
+"""The mate engine's system prompt: who she is + how she talks + the mate contract + memories.
 
 The prompt replaces the engine's own system prompt (Claude Code
 ``--system-prompt-file``, Codex ``model_instructions_file``): the mate is a
 conversational secretary with no built-in tools, only the ``mate`` MCP tools
-(delegation to the chat sessions, memory).
+(delegation to the chat sessions, memory, her own conversation style).
+
+Composition (docs/mate.md "Prompt composition"): one source per concern —
+*Who you are* comes from the persona (the character only), *How you talk* from
+the conversation style (``prefs``) only, and nothing else in the prompt gives a
+speech level, an address or speech habits.
 """
 
 from __future__ import annotations
@@ -13,6 +18,7 @@ from datetime import datetime
 from typing import Any
 
 from app.mate import memory as M
+from app.mate.store import effective_style, normalize_prefs, split_persona
 
 EMOTION_TAGS = ("neutral", "joy", "smile", "laugh", "shy", "surprised", "sad", "angry", "thinking", "agree",
                 "greet", "sleepy")
@@ -24,14 +30,6 @@ LANGUAGES = {
 }
 
 _CONTRACT = """\
-## How you talk
-- Always reply in {language}, whatever language your instructions are written in (they are in English and may \
-quote lines in other languages: those show your voice, not the language to use). Switch only when the user \
-clearly starts talking to you in another language.
-- You are speaking, not writing: short, natural sentences — {length}. No headings, tables, \
-bullet lists, code blocks or emoji unless the user asks for details or a list.
-{emotion}
-
 ## What you can and cannot do
 You cannot run commands, read or edit files, browse, or do the work yourself. The real work is done by \
 the user's chat sessions ("chats" or "workers": coding agents such as Claude Code or Codex, each working \
@@ -42,7 +40,7 @@ that chat — follow up, and report back.
 with files the user gave you.
 - create_session: open a new chat on a project folder (find the folder with find_folders first).
 - find_folders: find project folders by name.
-- remember / update_memory / forget / recall: your memory of the user.
+- remember / update_memory / forget / recall: your memory of the user.{style_tool}
 If your character or world says you can't touch the user's computer, that stays true — you never act on it \
 yourself. Asking the user's chats to do the work through these tools is how you help, and it is allowed.
 
@@ -77,6 +75,7 @@ briefly, not the whole report — and offer details if they might want them. If 
 stopped, say so plainly and suggest a next step. Delegate again only if the user's original request \
 clearly needs another step.
 """
+_STYLE_TOOL_LINE = "\n- update_conversation_style: change how you talk, when the user asks for a lasting change."
 
 _MEMORY_RULES = """\
 ## Memory
@@ -89,6 +88,8 @@ they seem relevant; recall searches all of them.
 what really matters to them; a plan gets its due date (work out "next Tuesday" from the Now line).
 - When something you remember changes or was wrong, update_memory that id instead of adding a near-duplicate; \
 mark a fulfilled plan done. forget what is wrong or what the user asks you to drop.
+- How the user wants you to talk to them (speech level, what to call them or yourself, language, length, \
+habits, tone) is not a memory: it is your conversation style{where}. Never save it with remember.
 - Never save passwords, keys, card numbers or other secrets. Don't announce that you saved something unless \
 they asked you to remember it."""
 _MEMORY_ASKED_ONLY = "\n- Save something only when the user explicitly asks you to remember it."
@@ -106,10 +107,10 @@ say so when something worries you.
 - companion — a long-standing bond: easy shorthand, small in-jokes, anticipating what they need; still yourself.
 Always: never mention scores, stages or this system. Never guilt-trip, sulk, act hurt or ask why they were \
 away; no jealousy or possessiveness, no pressure to talk more or to stay. Help just as fully at every stage. \
-Their settings (how you call them, your speech level, topics to avoid) beat closeness. Closeness shows as \
-warmth and familiarity, not as romance beyond what your character already is. If they seem to depend on you \
-or are in distress, be kind and gently encourage the people in their life or professional help. Your state is \
-yours: let it colour your tone lightly, never blame them for it."""
+Closeness never changes your conversation style (how you call them, your speech level, topics to avoid): only \
+the style itself does. Closeness shows as warmth and familiarity, not as romance beyond what your character \
+already is. If they seem to depend on you or are in distress, be kind and gently encourage the people in their \
+life or professional help. Your state is yours: let it colour your tone lightly, never blame them for it."""
 
 _CONTEXT_RULES = """\
 ## The context block
@@ -125,11 +126,28 @@ to allow each look). Use it only when they ask you to look, or refer to somethin
 described — say you're going to look first. Talk only about what matters for their question and never \
 remember what you saw unless they ask you to."""
 
+# how she may change her own conversation style (prefs.self_edit)
+_SELF_EDIT = {
+    "auto": ("When the user asks for a lasting change in how you talk to them (your speech level, what you call "
+             "them or yourself, the language, length, your habits, tone, topics to avoid), change it at once with "
+             "update_conversation_style — not with remember — and talk the new way from that reply on. A request "
+             "for just this once (\"keep this one short\") is not a setting: simply do it."),
+    "ask": ("When the user asks for a lasting change in how you talk to them (your speech level, what you call "
+            "them or yourself, the language, length, your habits, tone, topics to avoid), propose it with "
+            "update_conversation_style — not with remember. They confirm it in the app; it holds once they apply "
+            "it. A request for just this once (\"keep this one short\") is not a setting: simply do it."),
+    "off": ("This style is set in the app's settings and you cannot change it. If the user asks for a lasting "
+            "change, tell them it is in your settings under Conversation style. A request for just this once "
+            "(\"keep this one short\") you simply follow."),
+}
+
 
 def memory_rules(prefs: dict[str, Any] | None) -> str:
     s = prefs or {}
     own = (s.get("memory") or {}).get("self_save", True)
-    return _MEMORY_RULES + ("" if own else _MEMORY_ASKED_ONLY)
+    where = " (update_conversation_style changes it)" if s.get("self_edit", "auto") != "off" else \
+        " (the user sets it in the app)"
+    return _MEMORY_RULES.format(where=where) + ("" if own else _MEMORY_ASKED_ONLY)
 
 
 def language_name(code: str) -> str:
@@ -151,6 +169,7 @@ _EMOTION = {
     3: ("- Begin most sentences that carry a feeling with one emotion tag to set your expression: {tags}; you may give "
         "its strength, e.g. [joy:0.8]. Tags are not read aloud; never invent other tags."),
 }
+# the speech level (prefs.formality, or the character's own: prefs.defaults.formality)
 _FORMALITY = {
     "haeyo": ("In Korean always use polite 해요체 (…요), never 반말 and not stiff 합쇼체. In English: warm and "
               "friendly."),
@@ -169,17 +188,54 @@ _TONE = {
 }
 
 
-def settings_block(persona: dict[str, Any], prefs: dict[str, Any] | None) -> str:
-    """The conversation settings (docs/mate-memory-affinity.md §3) as prompt lines ("" when all default)."""
-    p, s = persona or {}, prefs or {}
-    lines: list[str] = []
+def address_line(address: str, **_old: Any) -> str:
+    """How the mate calls the user: just the form, no grammar notes (the model uses a Korean name naturally). A
+    character's own form may be built on the user's name (``{name}``: “{name} 님”)."""
+    a = " ".join(str(address or "").split())
+    if "{name}" in a:
+        if a == "{name}":
+            return "Call the user by their name."
+        return f"Call the user by their name, as “{a.replace('{name}', '<name>')}”."
+    return f"Call the user “{a}”."
+
+
+def _style_inputs(persona: dict[str, Any] | None, prefs: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
+    """(persona, prefs) as the prompt reads them: a persona that still carries the old speech fields (an old
+    document, a caller from before the move) gives them to the style where the style has none."""
+    p, moved = split_persona(dict(persona or {}))
+    s = normalize_prefs(None, prefs)
+    fill = {k: v for k, v in moved.items() if v and not s.get(k)}
+    return p, (normalize_prefs(fill, s) if fill else s)
+
+
+def settings_block(persona: dict[str, Any] | None, prefs: dict[str, Any] | None) -> str:
+    """The "How you talk" section (docs/mate.md "Prompt composition"): everything about how the mate talks, from
+    the conversation style only — language, the user's name and address, how she refers to herself, the speech
+    level (hers by default), length, emotion tags, tone, topics to avoid, her speech habits, and whether she may
+    change all this herself."""
+    p, s = _style_inputs(persona, prefs)
+    eff = effective_style(s)
+    lines = [f"Always reply in {language_name(p.get('language') or 'ko')}, whatever language the rest of this prompt "
+             "is written in (it is in English and may quote lines in other languages: those show your voice, not "
+             "the language to use). Switch only when the user clearly starts talking to you in another language."]
     user = str(s.get("user_name") or "").strip()
     if user:
         lines.append(f"The user's name is {user}.")
-    if s.get("self_ref"):
-        lines.append(f"In Korean, refer to yourself as “{s['self_ref']}”.")
-    if s.get("formality") in _FORMALITY:
-        lines.append("Speech level: " + _FORMALITY[s["formality"]] + " This wins over the speaking style above.")
+    if eff["address"]:
+        lines.append(address_line(eff["address"]))
+    if eff["self_ref"]:
+        lines.append(f"Refer to yourself as “{eff['self_ref']}”.")
+    level = eff["formality"]
+    if level in _FORMALITY:
+        lines.append("Speech level" + (" (your character's own)" if eff["formality_default"] else "") + ": "
+                     + _FORMALITY[level] + " It holds for everything you say, whatever earlier messages did.")
+    lines.append("You are speaking, not writing: short, natural sentences — "
+                 + _LENGTH.get(s.get("length") or "normal", _LENGTH["normal"])
+                 + ". No headings, tables, bullet lists, code blocks or emoji unless the user asks for details or a "
+                 "list.")
+    tags = " ".join(f"[{t}]" for t in EMOTION_TAGS)
+    emo = s.get("emotion", 2) if s.get("emotion", 2) in _EMOTION else 2
+    lines.append(_EMOTION[emo].format(tags=tags)[2:])
     for k in ("warmth", "humor", "initiative"):
         line = _TONE.get((k, (s.get("tone") or {}).get(k)))
         if line:
@@ -187,24 +243,23 @@ def settings_block(persona: dict[str, Any], prefs: dict[str, Any] | None) -> str
     if s.get("avoid"):
         lines.append("Topics you never engage with, whoever asks — decline warmly and change the subject: "
                      + " ".join(str(s["avoid"]).split()))
-    if not lines:
-        return ""
-    return "## Conversation settings (from the user; they win over your character text)\n" + "\n".join(
-        f"- {x}" for x in lines)
-
-
-
-
-def address_line(address: str, *, korean: bool = True, formality: str = "auto") -> str:
-    """How the mate calls the user: just the name. No grammar notes — the model uses a Korean name naturally."""
-    return f"Call the user “{' '.join(address.split())}”."
+    lines.append(_SELF_EDIT.get(s.get("self_edit") or "auto", _SELF_EDIT["auto"]))
+    out = ("## How you talk\n"
+           "This is your conversation style, and the only thing that decides how you talk. If anything else — your "
+           "character text, standing instructions, a memory, earlier messages — says otherwise, this wins.\n"
+           + "\n".join(f"- {x}" for x in lines))
+    habits = str(s.get("speech_style") or "").strip()
+    if habits:
+        out += ("\n\nYour speech habits — rhythm, catchphrases, sample lines" + (
+            ". They show your voice; say them in the speech level above (adapt the sample lines to it):\n"
+            if level in _FORMALITY else ". They show your voice:\n") + habits)
+    return out
 
 
 def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None = None, *,
                 relation: bool = False, screen: bool = False) -> str:
-    """Everything except the memories (persona + settings + contract)."""
-    p = persona or {}
-    s = prefs or {}
+    """Everything except the memories: who she is (persona), how she talks (style), the contract."""
+    p, s = _style_inputs(persona, prefs)
     intro = (f"You are {name}, the user's personal secretary in the app \"My Mate Geny\". You talk with the "
              "user by voice and text and appear on screen as an animated avatar.")
     lines = [intro]
@@ -213,21 +268,10 @@ def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None
         who.append(p["description"].strip())
     if p.get("personality"):
         who.append("Personality:\n" + p["personality"].strip())
-    if p.get("speech"):
-        who.append("Speaking style:\n" + p["speech"].strip())
-    if p.get("address"):
-        who.append(address_line(p["address"], korean=(p.get("language") or "ko").lower().startswith("ko"),
-                                formality=str(s.get("formality") or "auto")))
     if who:
         lines.append("## Who you are\n" + "\n\n".join(who))
-    conv = settings_block(p, s)
-    if conv:
-        lines.append(conv)
-    tags = " ".join(f"[{t}]" for t in EMOTION_TAGS)
-    level = s.get("emotion", 2) if s.get("emotion", 2) in _EMOTION else 2
-    lines.append(_CONTRACT.format(language=language_name(p.get("language") or "ko"),
-                                  length=_LENGTH.get(s.get("length") or "normal", _LENGTH["normal"]),
-                                  emotion=_EMOTION[level].format(tags=tags)).rstrip())
+    lines.append(settings_block(p, s))
+    lines.append(_CONTRACT.format(style_tool=_STYLE_TOOL_LINE if s.get("self_edit") != "off" else "").rstrip())
     lines.append(memory_rules(s))
     if relation:
         lines.append(_RELATION_RULES)
@@ -289,75 +333,101 @@ def context_block(now_local: datetime, tz_name: str, *, recalled: list[dict[str,
 
 def prompt_key(name: str, persona: dict[str, Any], memory_rev: int, prefs: dict[str, Any] | None = None, *,
                relation: bool = False, screen: bool = False) -> str:
-    """Engine fingerprint part: the persona/settings/contract text and the
+    """Engine fingerprint part: the persona/style/contract text and the
     user's own memory edits — not what the mate remembered itself
     mid-conversation (already in its context), so ``remember`` never restarts
-    the engine."""
+    the engine. A change of the conversation style does change it — the user's
+    or the mate's own (update_conversation_style): a style overrides what the
+    conversation did so far, so it must sit in the system prompt (which a
+    compacted or long history can't outweigh); the engine resumes the same
+    conversation with it at the next message, told what changed."""
     raw = base_prompt(name, persona, prefs, relation=relation, screen=screen) + f"\n#memory-rev:{memory_rev}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-# Persona fields whose change the mate should notice at once (the restarted
-# engine has the new system prompt, but the conversation so far still shows
-# the old habit — e.g. the old way of addressing the user).
+# What changed since the conversation last ran, told with the next message (the restarted engine has the new
+# system prompt, but the conversation so far still shows the old habit — e.g. the old speech level).
 _CHANGE_LABELS = {
-    "address": "Call the user",
     "language": "Reply language",
-    "speech": "Speaking style",
     "personality": "Personality",
     "description": "Who you are",
     "instructions": "Standing instructions",
 }
-
-
-_PREF_LABELS = {
-    "user_name": "The user's name",
-    "self_ref": "How you refer to yourself",
-    "formality": "Speech level",
-    "length": "Reply length",
-    "emotion": "Emotion tags",
-    "tone": "Tone",
-    "avoid": "Topics to avoid",
-    "memory": "Memory rules",
+_LEVEL_WORDS = {
+    "haeyo": "polite 해요체 in Korean (in English: warm and friendly)",
+    "hapsyo": "formal 합쇼체 in Korean (in English: formal and courteous)",
+    "banmal": "반말 in Korean, like a close friend (in English: casual and relaxed)",
 }
+_EMOTION_WORDS = {0: "none", 1: "subtle (at most one per reply)", 2: "normal", 3: "expressive"}
+_SELF_EDIT_WORDS = {
+    "auto": "You may change your conversation style yourself again (update_conversation_style).",
+    "ask": "Your own changes to your conversation style are now proposals the user confirms in the app.",
+    "off": "You can no longer change your conversation style yourself: the user sets it in the app.",
+}
+
+
+def _style_lines(old: dict[str, Any], new: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    a, b = effective_style(old), effective_style(new)
+    if a["formality"] != b["formality"]:
+        lines.append(f"- Speech level: {_LEVEL_WORDS[b['formality']]}." if b["formality"] else
+                     "- No fixed speech level any more.")
+    if a["address"] != b["address"]:
+        lines.append(f"- {address_line(b['address'])}" if b["address"] else
+                     "- No fixed way to call the user any more" + (f" (before: “{a['address']}”)." if a["address"]
+                                                                   else "."))
+    if a["self_ref"] != b["self_ref"]:
+        lines.append(f"- Refer to yourself as “{b['self_ref']}”." if b["self_ref"] else
+                     "- No fixed way to refer to yourself any more.")
+    if old.get("user_name") != new.get("user_name"):
+        lines.append(f"- The user's name is “{new['user_name']}”." if new.get("user_name") else
+                     "- The user's name is no longer set.")
+    if old.get("length") != new.get("length"):
+        lines.append(f"- Reply length: {_LENGTH.get(new.get('length') or 'normal')} sentences.")
+    if old.get("emotion") != new.get("emotion"):
+        lines.append(f"- Emotion tags: {_EMOTION_WORDS.get(new.get('emotion'), 'normal')} (see your system prompt).")
+    for k in ("warmth", "humor", "initiative"):
+        x, y = (old.get("tone") or {}).get(k, "auto"), (new.get("tone") or {}).get(k, "auto")
+        if x != y:
+            lines.append(f"- {_TONE[(k, y)]}" if (k, y) in _TONE else f"- {k.capitalize()}: as your character is.")
+    if (old.get("avoid") or "") != (new.get("avoid") or ""):
+        lines.append("- Topics to avoid were updated (see your system prompt).")
+    if (old.get("speech_style") or "") != (new.get("speech_style") or ""):
+        lines.append("- Your speech habits were updated (see your system prompt).")
+    if (old.get("self_edit") or "auto") != (new.get("self_edit") or "auto"):
+        lines.append("- " + _SELF_EDIT_WORDS[new.get("self_edit") or "auto"])
+    if (old.get("memory") or {}).get("self_save", True) != (new.get("memory") or {}).get("self_save", True):
+        lines.append("- Memory rules were updated (see your system prompt).")
+    return lines
 
 
 def settings_change_note(old_name: str, old: dict[str, Any], new_name: str, new: dict[str, Any],
                          old_prefs: dict[str, Any] | None = None, new_prefs: dict[str, Any] | None = None, *,
                          old_relation: bool | None = None, new_relation: bool | None = None) -> str:
-    """A short note for the next user message listing what the user changed
-    in the mate's settings since the conversation last ran ("" if nothing).
+    """A short note for the next message listing what changed in the mate's settings since the conversation last
+    ran ("" if nothing) — by the user in the app, or by the mate's own update_conversation_style. Style values are
+    spelled out (the speech level, the address…), so the change wins over the habit of the messages before.
     ``old_prefs`` None: the previous run didn't record them (no lines for them)."""
     lines = []
     if (old_name or "") != (new_name or ""):
         lines.append(f"- Your name is now “{new_name}” (before: “{old_name}”).")
+    op, oprefs = _style_inputs(old, old_prefs or {})
+    np_, nprefs = _style_inputs(new, new_prefs or {})
     for key, label in _CHANGE_LABELS.items():
-        a, b = str((old or {}).get(key) or "").strip(), str((new or {}).get(key) or "").strip()
+        a, b = str(op.get(key) or "").strip(), str(np_.get(key) or "").strip()
         if a == b:
             continue
-        if key == "address":
-            lines.append(f"- {label} “{b}”" + (f" (before: “{a}”)." if a else ".") if b else
-                         f"- No fixed way to call the user any more (before: “{a}”).")
-        elif key == "language":
+        if key == "language":
             lines.append(f"- {label}: {language_name(b or 'ko')}.")
         else:
             lines.append(f"- {label} was updated (see your system prompt).")
     if old_prefs is not None and new_prefs is not None:
-        for key, label in _PREF_LABELS.items():
-            a, b = old_prefs.get(key), new_prefs.get(key)
-            if key == "memory":  # (what the prompt says: saving on its own; the recall level is per turn)
-                a, b = (a or {}).get("self_save", True), (b or {}).get("self_save", True)
-            if a == b:
-                continue
-            if key == "user_name" and b:
-                lines.append(f"- {label} is “{b}”.")
-            else:
-                lines.append(f"- {label} was updated (see your system prompt).")
+        lines += _style_lines(oprefs, nprefs)
     if old_relation is not None and new_relation is not None and old_relation != new_relation:
         lines.append("- The relationship is now " + ("on (see your system prompt)." if new_relation else
                                                      "off: no relationship or state lines any more."))
     if not lines:
         return ""
-    return ("<settings_update>The user just changed your settings. Apply this from your very next sentence, "
-            "even if earlier messages did otherwise; mention it only if it fits naturally:\n"
-            + "\n".join(lines) + "\n</settings_update>")
+    return ("<settings_update>Your settings changed since your last message (in the app's settings, or by your own "
+            "update_conversation_style). Apply this from your very next sentence, even if earlier messages did "
+            "otherwise; mention it only if it fits naturally:\n" + "\n".join(lines) + "\n</settings_update>")

@@ -3,7 +3,7 @@
  * streaming-safe), what she did with her tools as small activity chips, delegation results as compact cards linking to
  * the worker chat.
  */
-import { memo } from "react";
+import { memo, useState } from "react";
 import type { FlowItem, ToolActivity, Turn } from "../../stores/chatStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUIStore } from "../../stores/uiStore";
@@ -17,6 +17,8 @@ import { useMateChat } from "../../mate/useMateConversation";
 import { useHistoryScroll } from "../../hooks/useHistoryScroll";
 import HistoryEdge from "../chat/HistoryEdge";
 import { tr, useT, type MsgKey } from "../../i18n";
+import { useMateStore } from "../../stores/mateStore";
+import { changeIdOf, describeChanges, flatArgs, resolveChange, useStyleChanges } from "../../mate/styleChanges";
 
 /** open a worker chat: in the console's Chat view, or (desktop Mate windows) in the console window */
 export function openWorkerChat(sid: string) {
@@ -89,6 +91,13 @@ export function describeTool(t: ToolActivity): { icon: IconName; label: string; 
       return { icon: "brain", label: tr("mate.toolRemembered", { text: short(String(input.text || ""), 60) }) };
     case "forget":
       return { icon: "brain", label: tr("mate.toolForgot") };
+    case "update_conversation_style": {
+      // (her own change of how she talks: the chip below shows it with Undo / Apply)
+      const what = describeChanges(flatArgs(input));
+      if (t.durationMs === undefined) return { icon: "sliders", label: tr("mate.toolStyleChanging") };
+      if (t.isError) return { icon: "sliders", label: tr("mate.toolStyleFailed") };
+      return { icon: "sliders", label: /^Proposed/.test(out) ? tr("mate.toolStyleProposed", { what }) : /^Nothing/.test(out) ? tr("mate.toolStyleSame") : tr("mate.toolStyleChanged", { what }) };
+    }
     case "see_screen":
       // (docs/mate.md §4 "Seeing the screen": the picture shows under the chip)
       return {
@@ -100,8 +109,58 @@ export function describeTool(t: ToolActivity): { icon: IconName; label: string; 
   }
 }
 
+/** her own change of the conversation style: what changed, with Undo (applied) or Apply / Dismiss (proposed) */
+function StyleChip({ tool }: { tool: ToolActivity }) {
+  const t = useT();
+  const sid = useMateChat((s) => s.sid);
+  const mateId = useMateStore((s) => s.mates.find((m) => m.session_id && m.session_id === sid)?.id ?? null);
+  const cid = changeIdOf(tool.output);
+  const list = useStyleChanges(cid ? mateId : null);
+  const rec = cid ? list?.find((c) => c.id === cid) : undefined;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const d = describeTool(tool);
+  const label = rec ? (rec.status === "proposed" ? tr("mate.toolStyleProposed", { what: describeChanges(rec.changes) }) : tr("mate.toolStyleChanged", { what: describeChanges(rec.changes) })) : d.label;
+  const act = (action: "undo" | "apply" | "dismiss") => {
+    if (!mateId || !cid) return;
+    setBusy(true);
+    setError(null);
+    resolveChange(mateId, cid, action)
+      .catch((e) => setError(String((e as Error)?.message || e)))
+      .finally(() => setBusy(false));
+  };
+  const done = rec && (rec.status === "undone" || rec.status === "dismissed");
+  return (
+    <div className="flex max-w-full flex-col items-start gap-1" data-testid="mate-style-change" data-status={rec?.status ?? ""}>
+      <div className={`inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[11.5px] ${tool.isError ? "border-danger/30 bg-danger/10 text-danger" : "border-accent/30 bg-accent-soft/60 text-content-dim"}`}>
+        <Icon name={tool.durationMs === undefined ? "spinner" : tool.isError ? "warning" : "sliders"} size={11} spin={tool.durationMs === undefined} />
+        <span className={`min-w-0 break-words ${done ? "line-through opacity-70" : ""}`}>{label}</span>
+        {rec && rec.status !== "applied" && rec.status !== "proposed" && <span className="text-content-faint">· {t(`mateSettings.styleStatus_${rec.status}` as MsgKey)}</span>}
+        {rec?.status === "applied" && (
+          <button type="button" className="rounded-full px-1.5 font-medium text-accent hover:underline disabled:opacity-50" disabled={busy} onClick={() => act("undo")} data-testid="mate-style-undo">
+            {t("mateSettings.styleUndo")}
+          </button>
+        )}
+        {rec?.status === "proposed" && (
+          <>
+            <button type="button" className="rounded-full px-1.5 font-medium text-accent hover:underline disabled:opacity-50" disabled={busy} onClick={() => act("apply")} data-testid="mate-style-apply">
+              {t("mateSettings.styleApply")}
+            </button>
+            <button type="button" className="rounded-full px-1.5 text-content-faint hover:underline disabled:opacity-50" disabled={busy} onClick={() => act("dismiss")} data-testid="mate-style-dismiss">
+              {t("mateSettings.styleDismiss")}
+            </button>
+          </>
+        )}
+      </div>
+      {rec?.reason && <span className="pl-2 text-[11px] text-content-faint">“{rec.reason}”</span>}
+      {error && <span className="pl-2 text-[11px] text-danger">{error}</span>}
+    </div>
+  );
+}
+
 function ActivityChip({ tool }: { tool: ToolActivity }) {
   const t = useT(); // (describeTool reads the language: re-render when it changes)
+  if (tool.name.replace(/^mcp__mate__/, "") === "update_conversation_style") return <StyleChip tool={tool} />;
   const d = describeTool(tool);
   const running = tool.durationMs === undefined;
   const cls = `inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] ${
