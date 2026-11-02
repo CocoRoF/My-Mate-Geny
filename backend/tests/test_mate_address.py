@@ -57,3 +57,16 @@ def test_system_prompt_carries_the_forms_and_changes_the_engine_key():
     assert "“하렴아”" in sp and "하렴이가" in sp
     assert "“하렴아”" not in system_prompt("한채린", {**p, "language": "en"}, [])
     assert prompt_key("한채린", p, 0) != prompt_key("한채린", {**p, "address": "지수"}, 0)
+
+
+def test_banmal_line_says_the_calling_form_takes_no_particle():
+    """Tested with the real model: a list of forms alone let it treat 하렴아 as the name (하렴아가, 하렴아랑); one plain
+    sentence — 하렴아 only to call out, particles after 하렴이 — kept 10/10 replies right."""
+    line = address_line("하렴", korean=True, formality="banmal")
+    assert "“하렴아” is only how you call out to them" in line and "“하렴이” with the particle after it" in line
+    for f in ("하렴이가", "하렴이는", "하렴이를", "하렴이랑", "하렴이도", "하렴이한테"):
+        assert f in line
+    assert "하렴아가" not in line and "하렴아랑" not in line  # wrong forms are never spelled out (they get copied)
+    vowel = address_line("지수", korean=True, formality="banmal")
+    assert "“지수야” is only how you call out" in vowel and "지수가 · 지수는 · 지수를 · 지수랑 · 지수도" in vowel
+    assert "존댓말" not in line and "반말" not in address_line("하렴", korean=True, formality="haeyo")

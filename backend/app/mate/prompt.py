@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Any
 
 from app.mate import memory as M
-from app.mate.josa import address_forms, final_sound
+from app.mate.josa import address_forms, final_sound, josa
 
 EMOTION_TAGS = ("neutral", "joy", "smile", "laugh", "shy", "surprised", "sad", "angry", "thinking", "agree",
                 "greet", "sleepy")
@@ -199,30 +199,34 @@ _TITLES = ("님", "씨", "선배", "선생", "쌤", "형", "오빠", "언니", "
 
 
 def address_line(address: str, *, korean: bool, formality: str = "auto") -> str:
-    """How the mate calls the user. In Korean the particles after a name depend on its last sound (하렴아 /
-    하렴이가 but 지수야 / 지수가) — a model told only "call the user 하렴" writes the bare name; the forms are
-    worked out here (app/mate/josa.py), both speech levels, and the mate picks the one it speaks in. A speech
-    level set in the mate's settings (``formality``) shows only that level's forms."""
+    """How the mate calls the user. Korean names are one plain sentence of explanation, not a list of rules: a model
+    that only sees "call the user 하렴" (or a list of forms) mistakes the calling form 하렴아 for the name and goes on
+    with 하렴아가 / 하렴아랑 — tested with the real model. The forms come from the name's last sound (app/mate/josa.py);
+    a speech level set in the settings (``formality``) shows only its own forms."""
     a = " ".join(address.split())
     line = f"Call the user “{a}” (if earlier messages did otherwise, switch now)."
     if not korean or final_sound(a) is None:
         return line
     bare = 1 <= len(a) <= 4 and all("가" <= c <= "힣" for c in a) and not a.endswith(_TITLES)
-    if bare:
-        casual = address_forms(a, casual=True)
-        polite = address_forms(f"{a} 님", casual=False)
-        if formality == "banmal":
-            return (line + f" In Korean (반말) the particles follow the name: “{casual['call']}” when calling, "
-                    f"{casual['subject']} · {casual['topic']} · {casual['object']} · {casual['with']}.")
-        if formality in ("haeyo", "hapsyo"):
-            return (line + f" In Korean (존댓말): “{a} 님” ({polite['subject']} · {polite['topic']} · "
-                    f"{polite['object']}) or the title your speaking style uses.")
-        return (line + f" In Korean the particles follow the name: in 반말 “{casual['call']}” when calling, "
-                f"{casual['subject']} · {casual['topic']} · {casual['object']} · {casual['with']}; in 존댓말 "
-                f"“{a} 님” ({polite['subject']} · {polite['topic']} · {polite['object']}) or the title your "
-                "speaking style uses.")
-    f = address_forms(a, casual=False)
-    return line + f" In Korean: {f['subject']} · {f['topic']} · {f['object']}."
+    if not bare:  # a title (주인님, 선배, 하렴님): used as it is, with its particles
+        f = address_forms(a, casual=False)
+        return line + f" In Korean: {f['subject']} · {f['topic']} · {f['object']}."
+    c = address_forms(a, casual=True)
+    stem = c["subject"][:-1]  # 하렴이 / 지수 — what particles follow in 반말
+    if stem != a:
+        casual = (f"In Korean 반말 a name ending in a consonant takes 이: “{c['call']}” is only how you call out to them "
+                  f"(like “hey, {a}”); everywhere else the name is “{stem}” with the particle after it — "
+                  f"{c['subject']} · {c['topic']} · {c['object']} · {c['with']} · {stem}도 · {stem}한테.")
+    else:
+        casual = (f"In Korean 반말: “{c['call']}” is only how you call out to them (like “hey, {a}”); everywhere else "
+                  f"the particle goes right after the name — {c['subject']} · {c['topic']} · {c['object']} · "
+                  f"{c['with']} · {a}도 · {a}한테.")
+    polite = f"In Korean 존댓말: “{a} 님” ({josa(a + ' 님', '이')} · {josa(a + ' 님', '은')}) or the title your speaking style uses."
+    if formality == "banmal":
+        return f"{line} {casual}"
+    if formality in ("haeyo", "hapsyo"):
+        return f"{line} {polite}"
+    return f"{line} {casual} {polite}"
 
 
 def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None = None, *,

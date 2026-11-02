@@ -74,7 +74,7 @@ def test_address_forms_follow_the_speech_level():
     casual = base_prompt("Geny", ko, normalize_prefs({"formality": "banmal"}))
     assert "“현석아”" in casual and "현석이가 · 현석이는 · 현석이를 · 현석이랑" in casual and "현석 님" not in casual
     polite = base_prompt("Geny", ko, normalize_prefs({"formality": "haeyo"}))
-    assert "“현석 님” (현석 님이 · 현석 님은 · 현석 님을)" in polite and "현석아" not in polite
+    assert "“현석 님” (현석 님이 · 현석 님은)" in polite and "현석아" not in polite
     titled = base_prompt("Geny", {"language": "ko", "address": "현석님"}, normalize_prefs({"formality": "banmal"}))
     assert "현석님이 · 현석님은 · 현석님을" in titled and "현석님아" not in titled
     en = base_prompt("Geny", {"language": "en", "address": "boss"}, default_prefs())
