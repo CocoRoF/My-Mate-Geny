@@ -20,6 +20,7 @@ from app import __version__
 from app.auth import AuthManager
 from app.config import settings
 from app.routers._deps import provider_service
+from app.services.cli_tools.tools import effective_binary
 from app.services.log_service import LogService
 from app.services.provider_service import ProviderService
 
@@ -107,7 +108,13 @@ _cli_cache: dict[str, tuple[float, str]] = {}
 
 
 def _cli_version(binary: str) -> str:
-    hit = _cli_cache.get(binary)
+    # keyed by the file it resolves to, so an upgrade (Providers -> CLI versions) shows at once
+    real = os.path.realpath(shutil.which(binary) or binary)
+    try:
+        key = f"{real}:{os.stat(real).st_mtime_ns}"
+    except OSError:
+        key = real
+    hit = _cli_cache.get(key)
     if hit and time.time() - hit[0] < 600:
         return hit[1]
     try:
@@ -115,7 +122,7 @@ def _cli_version(binary: str) -> str:
         v = (p.stdout or p.stderr).strip().splitlines()[0] if (p.stdout or p.stderr) else "?"
     except (OSError, subprocess.TimeoutExpired) as exc:
         v = f"unavailable ({type(exc).__name__})"
-    _cli_cache[binary] = (time.time(), v)
+    _cli_cache[key] = (time.time(), v)
     return v
 
 
@@ -135,8 +142,8 @@ async def system(request: Request, providers: ProviderService = Depends(provider
     uploads_size = await asyncio.to_thread(state.attachment_service.disk_usage)
     disk = shutil.disk_usage("/home") if os.path.exists("/home") else None
     claude_v, codex_v = await asyncio.gather(
-        asyncio.to_thread(_cli_version, settings.claude_binary),
-        asyncio.to_thread(_cli_version, settings.codex_binary),
+        asyncio.to_thread(_cli_version, effective_binary("claude")),
+        asyncio.to_thread(_cli_version, effective_binary("codex")),
     )
     return {
         "version": __version__,

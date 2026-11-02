@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { toLogin, wsUrl } from "../api/client";
 import { onResync } from "../lib/sync";
+import { useCliToolsStore } from "../stores/cliToolsStore";
 import { useMateStore } from "../stores/mateStore";
 import { useSessionStore } from "../stores/sessionStore";
 
@@ -59,6 +60,11 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
         try {
           msg = JSON.parse(e.data);
         } catch {
+          return;
+        }
+        if (msg.type === "cli.changed" || msg.type === "cli.log") {
+          // Settings → Providers → CLI versions: a status change / an upgrade's new log lines (stores/cliToolsStore.ts)
+          useCliToolsStore.getState().remote(msg as { type: string; data?: Record<string, unknown> });
           return;
         }
         if (msg.type === "mates.changed") {

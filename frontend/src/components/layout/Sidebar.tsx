@@ -1,4 +1,5 @@
-import { providersNeedAttention } from "../../lib/attention";
+import { cliUpdatesNeedAttention, providersNeedAttention } from "../../lib/attention";
+import { useCliToolsStore } from "../../stores/cliToolsStore";
 import { useMemo, useState } from "react";
 import { useSessionStore } from "../../stores/sessionStore";
 import { openSettings, useUIStore, type View } from "../../stores/uiStore";
@@ -94,6 +95,7 @@ export default function Sidebar() {
   };
 
   const needsProvider = providersNeedAttention(providers);
+  const needsCli = useCliToolsStore((s) => cliUpdatesNeedAttention(s.status?.tools));
 
   // The list follows server-pushed changes (useSessionSync); this is the
   // manual "make sure": reload the list + providers and resync the open chat.
@@ -337,8 +339,8 @@ export default function Sidebar() {
           <Icon name="settings" size={16} className="text-content-faint group-hover:text-content-dim group-data-[active=true]:text-accent" />
           {t("nav.settings")}
           {/* only what needs the user (lib/attention.ts) — never a plain count */}
-          {needsProvider && (
-            <span className="ml-auto pill bg-warning/15 text-warning" title={t("nav.providersNone")} aria-label={t("nav.providersNone")} data-testid="nav-settings-badge">
+          {(needsProvider || needsCli) && (
+            <span className="ml-auto pill bg-warning/15 text-warning" title={t(needsProvider ? "nav.providersNone" : "cliTools.badge")} aria-label={t(needsProvider ? "nav.providersNone" : "cliTools.badge")} data-testid="nav-settings-badge">
               !
             </span>
           )}

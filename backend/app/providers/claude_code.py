@@ -33,6 +33,7 @@ from app.providers.base import (
     TurnRequest,
 )
 from app.providers.catalog import DEFAULT_CLAUDE_MODEL
+from app.services.cli_tools.tools import effective_binary
 
 _PERMISSION_MODE = {"agent": "bypassPermissions", "plan": "plan"}
 
@@ -63,7 +64,12 @@ class ClaudeCodeProvider(Provider):
     name = "claude"
 
     def __init__(self, binary: str | None = None) -> None:
-        self._binary = binary or settings.claude_binary
+        self._binary_arg = binary
+
+    @property
+    def _binary(self) -> str:
+        """CLAUDE_BINARY — or the app's own copy after an upgrade switched to it (services/cli_tools)."""
+        return self._binary_arg or effective_binary("claude")
 
     # ---- auth ----
 

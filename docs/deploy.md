@@ -73,6 +73,11 @@ Machine-specific tweaks (extra mounts, a host home directory, ...) go in a
 | `/home/geny/.claude`, `/home/geny/.claude.json`, `/home/geny/.codex` | not mounted | Optional: reuse the host user's CLI logins and settings instead of signing in from **Providers**. Run `claude` / `codex login` on the host first (a missing file would be created as a directory). |
 | `/home/geny/.ssh` (ro) | not mounted | Optional: SSH key for private git remotes / remote workspaces (remote hosts can also get their own key in **Connections**). |
 
+The Claude Code / Codex CLIs baked into the image are read-only for the
+container user: **Settings → Providers → CLI versions** upgrades them by
+installing the app's own copy under `~/.hr-harnessor/cli` on the home volume,
+used from then on ([providers.md](providers.md#cli-versions--appservicescli_tools-settings--providers--cli-versions)).
+
 The container runs as uid/gid `GENY_UID`/`GENY_GID` (default 1000), not root —
 the Claude CLI refuses its permissive modes as root. Host directories you
 mount must be writable by that uid; rebuild (`--build`) after changing it.

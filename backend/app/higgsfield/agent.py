@@ -97,6 +97,14 @@ def find_cli() -> str | None:
     """The `higgsfield` executable: HIGGSFIELD_BINARY, else PATH, ~/.local/bin, the npm global prefixes. The npm
     package's native binary (vendor/hf) is preferred over its node wrapper (no node needed to run it)."""
     candidates: list[str] = []
+    # first: the copy Settings → Providers → CLI versions shows and upgrades (its app-owned copy after an upgrade)
+    try:
+        from app.services.cli_tools.tools import effective_binary
+
+        chosen = effective_binary("higgsfield")
+        candidates.append(chosen if os.sep in chosen else (shutil.which(chosen) or ""))
+    except Exception:  # noqa: BLE001 - the CLI-versions module is optional here
+        pass
     if settings.higgsfield_binary:
         candidates.append(os.path.expanduser(settings.higgsfield_binary))
     found = shutil.which("higgsfield")

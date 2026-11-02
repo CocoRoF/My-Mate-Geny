@@ -21,6 +21,7 @@ import { COMPACT_BUFFER, DEFAULT_PRESETS, fmtWindow } from "../../lib/context";
 import { useT, type MsgKey } from "../../i18n";
 import Icon from "../ui/Icon";
 import ProviderOAuthModal from "./ProviderOAuthModal";
+import CliVersionsSection from "./CliVersionsSection";
 import PlanWindowBars from "../usage/PlanWindowBars";
 import UsageModal from "../usage/UsageModal";
 import HiggsfieldPanel, { HIGGSFIELD, HiggsfieldTab } from "./HiggsfieldPanel";
@@ -91,6 +92,8 @@ export default function ProvidersView() {
           tab && <ProviderPanel key={tab} provider={tab} label={catalog[tab]?.label || tab} />
         )}
       </div>
+      {/* every CLI the chats run (Claude Code, Codex, Higgsfield): installed vs latest, upgrades */}
+      <CliVersionsSection />
     </div>
   );
 }

@@ -30,6 +30,7 @@ from app.providers._cli_runtime import CLIProcessRunner
 from app.providers._codex_json import CodexJsonAccumulator
 from app.providers.catalog import codex_model_known
 from app.providers.base import AuthStatus, Provider, ProviderEvent, SteerMessage, TurnRequest
+from app.services.cli_tools.tools import effective_binary
 
 # Model ids that belong to Claude (or mean "no preference") — never pass to Codex.
 _NOT_CODEX = {"", "default", "sonnet", "opus", "haiku"}
@@ -45,7 +46,12 @@ class CodexProvider(Provider):
     name = "codex"
 
     def __init__(self, binary: str | None = None) -> None:
-        self._binary = binary or settings.codex_binary
+        self._binary_arg = binary
+
+    @property
+    def _binary(self) -> str:
+        """CODEX_BINARY — or the app's own copy after an upgrade switched to it (services/cli_tools)."""
+        return self._binary_arg or effective_binary("codex")
 
     async def auth_status(self, *, api_key: str | None = None) -> AuthStatus:
         resolved = shutil.which(self._binary) or (

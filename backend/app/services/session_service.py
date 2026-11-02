@@ -600,6 +600,10 @@ class SessionService:
         self._publish_list({"type": "mates.changed",
                             "data": {"version": self._mates_version, "reason": reason, "mate_id": mate_id}})
 
+    def broadcast_list(self, msg: dict[str, Any]) -> None:
+        """Push another message type on this feed (e.g. ``cli.changed`` / ``cli.log``, services/cli_tools)."""
+        self._publish_list(msg)
+
     def _publish_list(self, msg: dict[str, Any]) -> None:
         loop = self._list_loop
         if loop is None or loop.is_closed():
@@ -1918,6 +1922,11 @@ class SessionService:
 
     def engines(self) -> list[dict[str, Any]]:
         return self._engines.describe()
+
+    async def retire_engines(self, reason: str = "cli upgraded") -> dict[str, int]:
+        """The Claude CLI binary changed: end every idle engine now and the busy ones as soon as they're idle,
+        so each chat's next turn starts the new binary (``--resume`` keeps the conversation)."""
+        return await self._engines.retire_stale(reason)
 
     async def shutdown(self) -> None:
         await self._engines.shutdown_all()
