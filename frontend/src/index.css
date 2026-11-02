@@ -94,14 +94,14 @@ html.light,
   --c-content: 22 26 35;
   --c-content-dim: 71 79 95;
   --c-content-faint: 96 104 121;
-  --c-accent: 61 90 230;
-  --c-accent-hover: 46 74 205;
+  --c-accent: 52 80 220;
+  --c-accent-hover: 42 66 196;
   --c-accent-grad-from: 76 104 240;
   --c-accent-grad-to: 58 86 222;
   --c-accent-grad-hover-from: 61 90 230;
   --c-accent-grad-hover-to: 46 74 205;
   --accent-soft-a: 0.1;
-  --c-link: 46 74 205;
+  --c-link: 42 66 196;
   --c-cyan: 5 108 132;
   --c-violet: 112 72 214;
   --c-success: 4 102 68;
@@ -115,7 +115,7 @@ html.light,
   --glass-line: rgba(16, 24, 40, 0.1);
   --checker: #e3e7ee;
   --c-stage-new: 100 116 139;
-  --c-stage-familiar: 61 90 230;
+  --c-stage-familiar: 52 80 220;
   --c-stage-trusted: 112 72 214;
   --c-stage-companion: 190 40 116;
   --c-stage-ink: 255 255 255;

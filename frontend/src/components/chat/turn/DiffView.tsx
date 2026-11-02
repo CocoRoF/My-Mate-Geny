@@ -89,7 +89,7 @@ function Line({ l }: { l: DiffLine }) {
     l.op === "+" ? "bg-success/10 text-success/95 light:text-success" : l.op === "-" ? "bg-danger/10 text-danger/90 light:text-danger" : "text-content-dim";
   return (
     <div className={`flex whitespace-pre ${cls}`}>
-      <span className="w-10 shrink-0 select-none pr-2 text-right text-content-faint/60 light:text-content-faint">{l.op === "+" ? l.b : l.a}</span>
+      <span className="w-10 shrink-0 select-none pr-2 text-right text-content-faint/60 light:text-content-dim">{l.op === "+" ? l.b : l.a}</span>
       <span className="w-4 shrink-0 select-none text-center opacity-70">{l.op === " " ? "" : l.op}</span>
       <span className="pr-3">{l.text || " "}</span>
     </div>

@@ -27,10 +27,10 @@ export default function PatchView({ file }: { file: PatchFile }) {
                 key={i}
                 className={l.kind === "add" ? "bg-success/10" : l.kind === "del" ? "bg-danger/10" : ""}
               >
-                <td className="w-12 select-none border-r border-border/50 pr-2 text-right align-top text-content-faint/60 light:text-content-faint">
+                <td className="w-12 select-none border-r border-border/50 pr-2 text-right align-top text-content-faint/60 light:text-content-dim">
                   {l.a ?? ""}
                 </td>
-                <td className="w-12 select-none border-r border-border/50 pr-2 text-right align-top text-content-faint/60 light:text-content-faint">
+                <td className="w-12 select-none border-r border-border/50 pr-2 text-right align-top text-content-faint/60 light:text-content-dim">
                   {l.b ?? ""}
                 </td>
                 <td

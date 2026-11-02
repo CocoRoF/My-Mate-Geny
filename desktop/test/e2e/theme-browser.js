@@ -103,7 +103,7 @@ function auditContrast() {
     const layers = [];
     for (let e = el; e; e = e.parentElement) {
       const cs = getComputedStyle(e);
-      if (cs.backgroundImage && cs.backgroundImage !== "none" && !/^radial-gradient|^linear-gradient\(45deg/.test(cs.backgroundImage)) {
+      if (cs.backgroundImage && cs.backgroundImage !== "none" && !/^linear-gradient\(45deg/.test(cs.backgroundImage)) {
         if (e === document.body) break; // the page's soft gradient: its base colour below
         return null;
       }
@@ -178,22 +178,27 @@ async function seed(browser) {
   fs.writeFileSync(path.join(ws, "src", "app.py"), "def greet(name: str) -> str:\n    # a friendly hello\n    return f\"hello, {name}!\"\n\nprint(greet('world'))\n");
   fs.writeFileSync(path.join(ws, "README.md"), "# Demo\n\nA **small** project.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```js\nconst x = 1; // one\n```\n");
   const sessions = await api(setup, "GET", "/api/sessions");
-  let chat = sessions.find((s) => s.title === "Theme demo");
-  if (!chat) {
-    chat = await api(setup, "POST", "/api/sessions", { provider: "claude", model: "", connection_id: null, workspace_path: ws, title: "Theme demo" });
+  /** a chat with these messages sent (made once per server) */
+  const chatWith = async (title, msgs) => {
+    let c = sessions.find((s) => s.title === title);
+    if (c) return c;
+    c = await api(setup, "POST", "/api/sessions", { provider: "claude", model: "", connection_id: null, workspace_path: ws, title });
     const page = await setup.newPage();
-    await page.addInitScript((id) => localStorage.setItem("hrh_last_session", id), chat.id);
+    await page.addInitScript((id) => localStorage.setItem("hrh_last_session", id), c.id);
     await page.goto(SERVER + "/");
     await page.waitForSelector("textarea", { timeout: 20000 });
     await sleep(2500);
-    for (const msg of ["Please fix the greeting in src/app.py tools1", "md1 show me the formatting"]) {
+    for (const [msg, done] of msgs) {
       await page.fill("textarea", msg);
       await page.keyboard.press("Enter");
-      await until("reply", async () => !(await page.locator('[data-testid="stop"], button[title="Stop"]').count()) && (await page.evaluate((m) => document.body.innerText.includes(m.includes("md1") ? "마지막으로" : "What changed"), msg)), 60000);
+      await until("reply", async () => !(await page.locator('[data-testid="stop"], button[title="Stop"]').count()) && (await page.evaluate((d) => document.body.innerText.includes(d), done)), 60000);
       await sleep(800);
     }
     await page.close();
-  }
+    return c;
+  };
+  const tools = await chatWith("Theme tools", [["Please fix the greeting in src/app.py tools1", "What changed"]]);
+  const chat = await chatWith("Theme demo", [["Please fix the greeting in src/app.py tools1", "What changed"], ["md1 show me the formatting", "마지막으로"]]);
   let mates = await api(setup, "GET", "/api/mates");
   let mate = mates.find((m) => m.name === "Geny Theme");
   if (!mate) {
@@ -213,7 +218,7 @@ async function seed(browser) {
     await page.close();
   }
   await setup.close();
-  return { chat, mate, ws };
+  return { chat, tools, mate, ws };
 }
 
 // ── shots ────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -236,18 +241,39 @@ async function shots(browser, data) {
       await page.waitForSelector("textarea", { timeout: 20000 });
       await sleep(1500);
       await shot(page, `chat-markdown-desktop-${T}`);
-      // scroll up to the tool turn and open the Edit row
+      // the tool turn (its own chat: the last turn is on screen): open its group (history shows it folded), then the
+      // Edit row (its diff) and the failed command
+      await page.goto(`${SERVER}/?view=chat&session=${data.tools.id}`);
+      await page.waitForSelector("textarea", { timeout: 20000 });
+      await sleep(1500);
       await page.evaluate(() => {
-        const el = [...document.querySelectorAll("*")].find((e) => e.scrollHeight > e.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(e).overflowY) && e.clientHeight > 300);
-        if (el) el.scrollTop = 0;
+        const head = [...document.querySelectorAll("div.overflow-hidden.rounded-xl > button")].find((b) => /\d+ms/.test(b.textContent || ""));
+        if (head) {
+          head.scrollIntoView({ block: "start" });
+          head.click();
+        }
+      });
+      await sleep(500);
+      await page.evaluate(() => {
+        const rows = [...document.querySelectorAll("button")].filter((b) => /app\.py|pytset/.test(b.textContent || ""));
+        const edit = rows.filter((b) => b.textContent.includes("/work/demo/src/app.py")).pop();
+        const fail = rows.find((b) => b.textContent.includes("pytset"));
+        for (const b of [edit, fail]) b && b.click();
+      });
+      await sleep(700);
+      // the Edit row's diff at the top of the view
+      await page.evaluate(() => {
+        const line = [...document.querySelectorAll("span, div")].find((e) => e.children.length === 0 && (e.textContent || "").includes("print('world')"));
+        (line?.closest(".rounded-lg") || line)?.scrollIntoView({ block: "start" });
       });
       await sleep(400);
-      for (const label of ["Edit", "Run the tests", "실행", "편집"]) {
-        const row = page.locator(`button:has(span:text-is("${label}"))`).first();
-        if (await row.count()) await row.click().catch(() => {});
-      }
-      await sleep(400);
       await shot(page, `chat-tools-desktop-${T}`);
+      // the whole turn (rows, the Edit diff, the failed command): a tall window
+      await page.setViewportSize({ width: 1440, height: 1900 });
+      await sleep(600);
+      await shot(page, `chat-tools-tall-desktop-${T}`);
+      await page.setViewportSize(DESK.viewport);
+      await sleep(300);
       // a menu (the model / mode chips above the composer)
       const chip = page.locator('button:has-text("Claude Opus"), button:has-text("Agent")').first();
       if (await chip.count()) {
@@ -339,7 +365,8 @@ async function shots(browser, data) {
           await sleep(700);
           await shot(p, `chat-sheet-phone-${T}`);
           await p.keyboard.press("Escape").catch(() => {});
-          await p.goto(`${SERVER}/?view=chat&session=${data.chat.id}`);
+          await sleep(500);
+          await p.goto(`${SERVER}/?view=chat&session=${data.chat.id}`).catch(() => p.goto(`${SERVER}/?view=chat&session=${data.chat.id}`));
           await p.waitForSelector("textarea", { timeout: 20000 });
           await sleep(800);
         }
@@ -421,11 +448,20 @@ async function checks(browser) {
   assert.equal((await htmlTheme(a)).mode, "system");
 
   step("pick Light: applied at once here and in the other window, saved to the account");
-  const t0 = Date.now();
+  const watch = (p) => p.evaluate(() => {
+    window.__lightAt = 0;
+    new MutationObserver(() => {
+      if (!window.__lightAt && document.documentElement.classList.contains("light")) window.__lightAt = Date.now();
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+  });
+  await watch(a);
+  await watch(b);
   await a.click('[data-testid="settings-theme-light"]');
   await until("light here", async () => (await htmlTheme(a)).theme === "light", 2000);
   await until("light in the other window", async () => (await htmlTheme(b)).theme === "light", 2000);
-  console.log(`  other window followed in ${Date.now() - t0} ms`);
+  const lag = (await b.evaluate(() => window.__lightAt)) - (await a.evaluate(() => window.__lightAt));
+  console.log(`  the other window followed ${lag} ms after this one`);
+  assert.ok(lag < 500, "at once");
   assert.equal((await htmlTheme(b)).bg, "rgb(241, 243, 247)");
   await until("saved", async () => (await api(ctx, "GET", "/api/preferences")).theme === "light");
   assert.match(await a.textContent('[data-testid="settings-theme-msg"]'), /Saved/);
