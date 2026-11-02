@@ -9,8 +9,8 @@ function toast(text: string) {
   el.setAttribute("role", "status");
   el.style.cssText =
     "position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:2147483647;" +
-    "padding:9px 16px;border-radius:999px;background:#1c212cf2;border:1px solid #2f3647;color:#e6e9f0;font:13px Inter,system-ui,sans-serif;" +
-    "box-shadow:0 12px 40px -12px rgba(0,0,0,.7);transition:opacity .25s;pointer-events:none";
+    "padding:9px 16px;border-radius:999px;background:rgb(var(--c-surface-3) / .95);border:1px solid rgb(var(--c-border-strong));" +
+    "color:rgb(var(--c-content));font:13px Inter,system-ui,sans-serif;box-shadow:var(--shadow-float);transition:opacity .25s;pointer-events:none";
   document.body.appendChild(el);
   setTimeout(() => (el.style.opacity = "0"), 1700);
   setTimeout(() => el.remove(), 2000);

@@ -80,7 +80,7 @@ export default class ErrorBoundary extends Component<Props, State> {
     if (variant === "card") {
       return (
         <div className="p-2" data-testid="error-card">
-          <div className="flex items-center gap-2 rounded-2xl border border-border bg-[#11141b]/95 px-3 py-2.5 text-[13px] text-content shadow-float">
+          <div className="flex items-center gap-2 rounded-2xl border border-border bg-glass-deep/95 px-3 py-2.5 text-[13px] text-content shadow-float">
             <Icon name="warning" size={14} className="shrink-0 text-warning" />
             <span className="min-w-0 flex-1 truncate">{chunk ? tr("nav.errUpdatedCard") : tr("common.somethingWrong")}</span>
             <button className="btn-primary !px-3 !py-1 text-[12px]" onClick={reloadNow}>

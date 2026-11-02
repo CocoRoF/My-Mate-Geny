@@ -204,7 +204,7 @@ export default function ModelTab({ mate }: { mate: Mate }) {
                       {m.id === def && <span className="rounded bg-success/15 px-1.5 py-px text-[10px] font-medium text-success">{t("mateSettings.modelRecommended")}</span>}
                     </span>
                     {desc && <span className="block text-[11.5px] text-content-faint">{desc}</span>}
-                    <span className="block font-mono text-[10.5px] text-content-faint/80">{m.id}</span>
+                    <span className="block font-mono text-[10.5px] text-content-faint/80 light:text-content-faint">{m.id}</span>
                   </span>
                 </button>
               );

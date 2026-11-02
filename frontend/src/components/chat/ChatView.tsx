@@ -331,7 +331,7 @@ export default function ChatView() {
     </div>
     {explorer && active && (
       <>
-        <div className="fixed inset-0 z-30 bg-black/45 xl:hidden animate-fade-in" onClick={() => setExplorer(false)} />
+        <div className="fixed inset-0 z-30 bg-scrim/45 xl:hidden animate-fade-in" onClick={() => setExplorer(false)} />
         <div className="fixed inset-y-0 right-0 z-40 pt-safe xl:pt-0 bg-surface xl:static xl:z-auto shadow-float xl:shadow-none">
           <ExplorerPanel
             session={active}
@@ -343,7 +343,7 @@ export default function ChatView() {
     )}
     {panel && active && (
       <>
-        <div className="fixed inset-0 z-30 bg-black/45 xl:hidden animate-fade-in" onClick={togglePanel} />
+        <div className="fixed inset-0 z-30 bg-scrim/45 xl:hidden animate-fade-in" onClick={togglePanel} />
         <div className="fixed inset-y-0 right-0 z-40 pt-safe xl:pt-0 bg-surface xl:static xl:z-auto shadow-float xl:shadow-none">
           <SessionPanel session={active} onClose={togglePanel} />
         </div>

@@ -26,7 +26,7 @@ const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}
 function Sheet({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return createPortal(
     <div
-      className="fixed inset-0 z-[80] flex items-stretch justify-center bg-black/50 backdrop-blur-[2px] sm:items-center sm:p-6"
+      className="fixed inset-0 z-[80] flex items-stretch justify-center bg-scrim/50 backdrop-blur-[2px] sm:items-center sm:p-6"
       onClick={onClose}
     >
       <div
@@ -246,7 +246,7 @@ function DetailBody({
           <section>
             <SectionTitle>{failedOutput ? t("common.error") : t("turn.result")}</SectionTitle>
             {failedOutput ? (
-              <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-danger/30 bg-danger/8 p-2.5 font-mono text-[11.5px] text-danger/90">
+              <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-danger/30 bg-danger/8 p-2.5 font-mono text-[11.5px] text-danger/90 light:text-danger">
                 {failedOutput}
               </pre>
             ) : (

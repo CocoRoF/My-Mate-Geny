@@ -35,6 +35,8 @@ export default {
         "file-orange": token("file-orange"),
         glass: token("glass"),
         "glass-deep": token("glass-deep"),
+        "glass-line": "var(--glass-line)",
+        "stage-ink": token("stage-ink"),
         "code-bg": token("code-bg"),
         // modal backdrops: black on dark, a softer ink on light (bg-scrim/50 → 50 % there, ~31 % here)
         scrim: "rgb(var(--c-scrim) / calc(<alpha-value> * var(--scrim-k)))",
@@ -80,6 +82,8 @@ export default {
       // affordances that touch screens must still show.
       addVariant("touch", "@media (hover: none) and (pointer: coarse)");
       addVariant("can-hover", "@media (hover: hover)");
+      // `light:` a light-theme-only adjustment (the dark look stays exactly as it was)
+      addVariant("light", ":is(.light, .theme-light) &");
     }),
   ],
 } satisfies Config;

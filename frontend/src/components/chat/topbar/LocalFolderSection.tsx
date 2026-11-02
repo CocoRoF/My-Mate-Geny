@@ -115,7 +115,7 @@ export default function LocalFolderSection({ session, onLinked }: { session: Ses
       {f && job && (
         <div className="rounded-lg border border-border bg-surface/60 p-2.5" data-testid="local-folder-summary">
           <div className="flex items-center gap-2">
-            <Icon name="folder" size={14} className="shrink-0 text-warning/80" />
+            <Icon name="folder" size={14} className="shrink-0 text-warning/80 light:text-warning" />
             <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-content">{f.name}</span>
             <span className="pill shrink-0 bg-warning/15 text-warning" title={t("topbar.copyEditsTitle")}>
               {t("topbar.copy")}

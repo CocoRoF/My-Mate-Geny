@@ -13,7 +13,8 @@ import { absTime, duration } from "./format";
 import Charts, { ChartCard } from "./system/Charts";
 import EventsTimeline, { AlertBanner } from "./system/Events";
 import { useFeed, useSystemFeed, type FeedStatus } from "./system/feed";
-import { bytes, C1, DANGER, OK, pct, WARN } from "./system/fmt";
+import { bytes, C1, DANGER, MUTED, OK, pct, WARN } from "./system/fmt";
+import { useResolvedTheme } from "../../lib/theme";
 import Processes from "./system/Processes";
 import { Meter } from "./system/Spark";
 import Tiles from "./system/Tiles";
@@ -61,7 +62,7 @@ function StatusPill({ status, paused, lastAt }: { status: FeedStatus; paused: bo
     : status === "live" && !stale
       ? [OK, t("admin.statusLive"), true]
       : status === "hidden"
-        ? ["#5e6676", t("admin.statusHidden"), false]
+        ? [MUTED, t("admin.statusHidden"), false]
         : status === "connecting"
           ? [C1, t("admin.statusConnecting"), true]
           : [DANGER, stale ? t("admin.statusNoData") : t("admin.statusReconnecting"), false];
@@ -263,6 +264,7 @@ function StaticCards({ info, error, reload, loading }: { info: SystemInfo | null
 
 export default function SystemPanel() {
   useSystemFeed();
+  useResolvedTheme(); // the charts' colours follow the theme (system/fmt.ts): re-render them on a switch
   const [range, setRange] = useState<ViewRange>("live");
   const now = useFeed((s) => s.now);
   const live = useFeed((s) => s.live);

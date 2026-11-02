@@ -17,7 +17,7 @@ function Unavailable({ name, big }: { name: string; big?: boolean }) {
     >
       <Icon name="image" size={18} />
       <span className="line-clamp-2 break-all">{name}</span>
-      <span className="text-content-faint/70">{t("files.imageUnavailable")}</span>
+      <span className="text-content-faint/70 light:text-content-faint">{t("files.imageUnavailable")}</span>
     </span>
   );
 }

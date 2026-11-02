@@ -40,6 +40,14 @@
   /* glass panels over the user's desktop or the mate's stage (mate surfaces, the error notice) */
   --c-glass: 22 26 34;
   --c-glass-deep: 17 20 27;
+  --glass-line: rgba(255, 255, 255, 0.1);
+  --checker: #161a22;
+  /* the mate's relationship stages (rings, bars, pills: --c-stage-ink is the text on a stage's fill) */
+  --c-stage-new: 148 163 184;
+  --c-stage-familiar: 110 139 255;
+  --c-stage-trusted: 167 139 250;
+  --c-stage-companion: 244 114 182;
+  --c-stage-ink: 11 13 18;
   --c-code-bg: 11 14 20;
   --c-table-head: 26 31 42;
   --c-doc: 213 218 228;
@@ -57,6 +65,7 @@
   --scroll-thumb: #2f3647;
   --scroll-thumb-hover: #3b445a;
   /* highlight.js (GitHub Dark) */
+  --hl-bg: #0d1117;
   --hl-text: #c9d1d9;
   --hl-keyword: #ff7b72;
   --hl-entity: #d2a8ff;
@@ -95,14 +104,21 @@ html.light,
   --c-link: 46 74 205;
   --c-cyan: 5 108 132;
   --c-violet: 112 72 214;
-  --c-success: 6 112 74;
-  --c-danger: 190 30 36;
-  --c-warning: 150 90 0;
+  --c-success: 4 102 68;
+  --c-danger: 180 26 34;
+  --c-warning: 136 80 0;
   --c-pink: 196 44 120;
   --c-file-blue: 30 100 210;
   --c-file-orange: 190 82 10;
   --c-glass: 255 255 255;
   --c-glass-deep: 250 251 253;
+  --glass-line: rgba(16, 24, 40, 0.1);
+  --checker: #e3e7ee;
+  --c-stage-new: 100 116 139;
+  --c-stage-familiar: 61 90 230;
+  --c-stage-trusted: 112 72 214;
+  --c-stage-companion: 190 40 116;
+  --c-stage-ink: 255 255 255;
   --c-code-bg: 246 248 250;
   --c-table-head: 243 245 248;
   --c-doc: 36 41 51;
@@ -120,6 +136,7 @@ html.light,
   --scroll-thumb: #c4cad5;
   --scroll-thumb-hover: #a6aebc;
   /* highlight.js (GitHub light, Primer's current steps) */
+  --hl-bg: #f6f8fa;
   --hl-text: #1f2328;
   --hl-keyword: #cf222e;
   --hl-entity: #8250df;
@@ -492,10 +509,18 @@ html.light,
   vertical-align: middle;
 }
 
-/* highlight.js tokens (GitHub Dark / GitHub light by the theme: --hl-* above) */
+/* highlight.js tokens (GitHub Dark / GitHub light by the theme: --hl-* above; the box rules as in its stylesheets) */
+pre code.hljs {
+  display: block;
+  overflow-x: auto;
+  padding: 1em;
+}
+code.hljs {
+  padding: 3px 5px;
+}
 .hljs {
   color: var(--hl-text);
-  background: rgb(var(--c-code-bg));
+  background: var(--hl-bg);
 }
 .hljs-doctag,
 .hljs-keyword,

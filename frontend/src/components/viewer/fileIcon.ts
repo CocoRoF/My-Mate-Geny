@@ -11,9 +11,9 @@ export function fileIcon(name: string): { icon: IconName; tone: string } {
     case "sheet":
       return { icon: "file-sheet", tone: "text-success" };
     case "docx":
-      return { icon: "file-text", tone: "text-[#5b9bff]" };
+      return { icon: "file-text", tone: "text-file-blue" };
     case "pptx":
-      return { icon: "file-slides", tone: "text-[#f0883e]" };
+      return { icon: "file-slides", tone: "text-file-orange" };
     case "pdf":
       return { icon: "file-text", tone: "text-danger" };
     case "notebook":
@@ -25,7 +25,7 @@ export function fileIcon(name: string): { icon: IconName; tone: string } {
     case "video":
       return { icon: "file-video", tone: "text-cyan" };
     case "html":
-      return { icon: "file-code", tone: "text-[#f0883e]" };
+      return { icon: "file-code", tone: "text-file-orange" };
     case "code":
       if (["json", "jsonc", "jsonl", "ndjson", "geojson"].includes(ext)) return { icon: "file-json", tone: "text-warning" };
       if (["txt", "log", "out", "text", "lock", "rst"].includes(ext)) return { icon: "file-text", tone: "text-content-dim" };

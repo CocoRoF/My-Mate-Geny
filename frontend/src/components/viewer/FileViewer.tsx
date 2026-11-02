@@ -363,7 +363,7 @@ function ImageView({ url, name }: { url: string; name: string }) {
         className={`min-h-0 flex-1 overflow-auto ${fit ? "grid place-items-center" : ""} p-4`}
         style={{
           backgroundImage:
-            "linear-gradient(45deg,#161a22 25%,transparent 25%),linear-gradient(-45deg,#161a22 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#161a22 75%),linear-gradient(-45deg,transparent 75%,#161a22 75%)",
+            "linear-gradient(45deg,var(--checker) 25%,transparent 25%),linear-gradient(-45deg,var(--checker) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,var(--checker) 75%),linear-gradient(-45deg,transparent 75%,var(--checker) 75%)",
           backgroundSize: "20px 20px",
           backgroundPosition: "0 0,0 10px,10px -10px,-10px 0",
         }}

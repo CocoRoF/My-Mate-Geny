@@ -149,7 +149,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
           const open = e.is_dir && expanded.has(e.path);
           const isSel = selected === e.path;
           const isActive = !e.is_dir && activePath === e.path;
-          const { icon, tone } = e.is_dir ? { icon: open ? "folder-open" : "folder", tone: "text-warning/80" } : fileIcon(e.name);
+          const { icon, tone } = e.is_dir ? { icon: open ? "folder-open" : "folder", tone: "text-warning/80 light:text-warning" } : fileIcon(e.name);
           return (
             <div key={e.path}>
               <div

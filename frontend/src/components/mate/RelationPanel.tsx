@@ -172,7 +172,7 @@ function StageRing({ value, stage, size = 104 }: { value: number; stage: Relatio
           cy={size / 2}
           r={r}
           fill="none"
-          stroke={STAGE_COLOR[stage]}
+          style={{ stroke: STAGE_COLOR[stage] }}
           strokeWidth={sw}
           strokeLinecap="round"
           strokeDasharray={`${c * Math.max(0.005, f)} ${c}`}
@@ -234,7 +234,7 @@ function Hero({ j, mate }: { j: RelationJournal; mate: Mate }) {
         {RELATION_STAGES.map((s, i) => (
           <li key={s} className="flex min-w-0 flex-1 items-center gap-1">
             <span
-              className={`min-w-0 flex-1 truncate rounded-full px-2 py-1 text-center text-[11px] font-medium ${i <= idx ? "text-[#0b0d12]" : "bg-surface-3 text-content-faint"}`}
+              className={`min-w-0 flex-1 truncate rounded-full px-2 py-1 text-center text-[11px] font-medium ${i <= idx ? "text-stage-ink" : "bg-surface-3 text-content-faint"}`}
               style={i <= idx ? { background: STAGE_COLOR[s] } : undefined}
               aria-current={i === idx ? "step" : undefined}
             >
@@ -478,7 +478,7 @@ function Milestones({ j }: { j: RelationJournal }) {
         <ol className="relative space-y-2 border-l border-border pl-4">
           {items.map((m) => (
             <li key={m.key} className="relative text-[12.5px]" data-testid="mate-relation-panel-milestone" data-key={m.key}>
-              <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full ring-4 ring-surface-2" style={{ background: m.color ?? "#8b93a7" }} />
+              <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full ring-4 ring-surface-2" style={{ background: m.color ?? "rgb(var(--c-content-faint))" }} />
               <span className="text-content">{m.text}</span> <span className="text-[11px] text-content-faint">· {fmtDate(m.at)}</span>
             </li>
           ))}

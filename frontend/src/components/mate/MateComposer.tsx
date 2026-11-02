@@ -255,7 +255,7 @@ function Composer({
               recording
                 ? "bg-danger text-white animate-pulse"
                 : mic.unavailable
-                  ? "text-content-faint/50 hover:text-content-faint"
+                  ? "text-content-faint/50 light:text-content-faint hover:text-content-faint"
                   : "text-content-dim hover:text-content hover:bg-surface-3"
             }`}
             title={micTitle}
@@ -283,8 +283,7 @@ function Composer({
             <button
               onClick={() => c.submit()}
               disabled={!hasContent || uploading || !connected}
-              className={`${btn} text-white disabled:opacity-40`}
-              style={{ background: "linear-gradient(135deg,#6e8bff,#5b7cff)" }}
+              className={`${btn} bg-accent-grad text-white disabled:opacity-40`}
               title={
                 !connected
                   ? t("mate.connecting")

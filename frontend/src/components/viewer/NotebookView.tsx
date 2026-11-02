@@ -21,12 +21,12 @@ interface Output {
 function OutputView({ o }: { o: Output }) {
   if (o.output_type === "stream")
     return (
-      <pre className={`whitespace-pre-wrap break-words text-[12px] ${o.name === "stderr" ? "text-danger/90" : "text-content/85"}`}>
+      <pre className={`whitespace-pre-wrap break-words text-[12px] ${o.name === "stderr" ? "text-danger/90 light:text-danger" : "text-content/85"}`}>
         {stripAnsi(src(o.text))}
       </pre>
     );
   if (o.output_type === "error")
-    return <pre className="whitespace-pre-wrap break-words text-[12px] text-danger/90">{stripAnsi((o.traceback || [`${o.ename}: ${o.evalue}`]).join("\n"))}</pre>;
+    return <pre className="whitespace-pre-wrap break-words text-[12px] text-danger/90 light:text-danger">{stripAnsi((o.traceback || [`${o.ename}: ${o.evalue}`]).join("\n"))}</pre>;
   const d = o.data || {};
   for (const t of ["image/png", "image/jpeg", "image/gif"])
     if (d[t]) return <img src={`data:${t};base64,${src(d[t]).replace(/\s/g, "")}`} alt="" className="max-w-full rounded bg-white" />;

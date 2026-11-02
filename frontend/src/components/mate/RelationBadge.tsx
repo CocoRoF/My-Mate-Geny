@@ -21,10 +21,10 @@ export const MOOD_LABEL: Record<MoodLabel, MsgKey> = {
   concerned: "mate.moodConcerned",
 };
 export const STAGE_COLOR: Record<RelationStage, string> = {
-  new: "#94a3b8",
-  familiar: "#6e8bff",
-  trusted: "#a78bfa",
-  companion: "#f472b6",
+  new: "rgb(var(--c-stage-new))",
+  familiar: "rgb(var(--c-stage-familiar))",
+  trusted: "rgb(var(--c-stage-trusted))",
+  companion: "rgb(var(--c-stage-companion))",
 };
 
 export function RelationRing({ value, stage, size = 16 }: { value: number; stage: RelationStage; size?: number }) {
@@ -34,7 +34,7 @@ export function RelationRing({ value, stage, size = 16 }: { value: number; stage
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0 -rotate-90" aria-hidden>
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeOpacity={0.18} strokeWidth={2.5} />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={STAGE_COLOR[stage]} strokeWidth={2.5} strokeLinecap="round" strokeDasharray={`${c * v} ${c}`} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" style={{ stroke: STAGE_COLOR[stage] }} strokeWidth={2.5} strokeLinecap="round" strokeDasharray={`${c * v} ${c}`} />
     </svg>
   );
 }

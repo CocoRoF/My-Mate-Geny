@@ -47,7 +47,7 @@ export default function CodeView({
               <div key={n} data-ln={n} className={`flex ${hit(n) ? "bg-warning/10" : ""}`}>
                 <span
                   className={`sticky left-0 shrink-0 select-none bg-bg pl-3 pr-4 text-right ${
-                    hit(n) ? "text-warning" : "text-content-faint/70"
+                    hit(n) ? "text-warning" : "text-content-faint/70 light:text-content-faint"
                   }`}
                   style={{ width: `${gutter + 3}ch` }}
                 >

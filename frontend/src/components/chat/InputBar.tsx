@@ -156,8 +156,7 @@ export default function InputBar({
                   <button
                     onClick={() => c.submit()}
                     disabled={uploading}
-                    className="h-10 sm:h-9 inline-flex items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium text-white transition disabled:opacity-40"
-                    style={{ background: "linear-gradient(135deg,#6e8bff,#5b7cff)" }}
+                    className="h-10 sm:h-9 inline-flex items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium text-white transition disabled:opacity-40 bg-accent-grad"
                     title={`${t("chat.addNowTitle")}${touch ? "" : " (Enter)"} — ${
                       session.provider === "codex" ? t("chat.addNowCodex") : t("chat.addNowAgent")
                     }`}
@@ -169,7 +168,7 @@ export default function InputBar({
               {isStreaming ? (
                 <button
                   onClick={onStop}
-                  className="grid place-items-center w-10 h-10 sm:w-9 sm:h-9 rounded-xl bg-content text-bg hover:bg-white transition"
+                  className="grid place-items-center w-10 h-10 sm:w-9 sm:h-9 rounded-xl bg-content text-bg hover:bg-content/85 transition"
                   title={t("chat.stopEsc")}
                   aria-label={t("common.stop")}
                 >
@@ -179,8 +178,7 @@ export default function InputBar({
                 <button
                   onClick={() => c.submit()}
                   disabled={!hasContent || uploading}
-                  className="grid place-items-center w-10 h-10 sm:w-9 sm:h-9 rounded-xl text-white transition disabled:opacity-30"
-                  style={{ background: "linear-gradient(135deg,#6e8bff,#5b7cff)" }}
+                  className="grid place-items-center w-10 h-10 sm:w-9 sm:h-9 rounded-xl text-white transition disabled:opacity-30 bg-accent-grad"
                   title={uploading ? t("chat.waitingUploads") : touch ? t("common.send") : t("chat.sendEnter")}
                   aria-label={t("common.send")}
                 >

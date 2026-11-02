@@ -1,6 +1,7 @@
 // Small pieces: sparkline, meter, per-core heat strip.
 import { useEffect, useRef, useState } from "react";
-import { C1, GRID } from "./fmt";
+import { C1, CHART_THEME, GRID } from "./fmt";
+import { useResolvedTheme } from "../../../lib/theme";
 import { useT } from "../../../i18n";
 
 /** Trend line for a tile / table row (no axes; the number beside it is the value). */
@@ -39,10 +40,15 @@ export function Meter({ value, color, track, label }: { value: number; color: st
   );
 }
 
-// Sequential single-hue ramp (blue) for the dark surface: near-zero recedes.
-const RAMP = ["#1a2232", "#13305a", "#104281", "#1c5cab", "#2a78d6", "#5598e7", "#86b6ef", "#cde2fb"];
+// Sequential single-hue ramp (blue), each theme its own direction: near-zero recedes into the surface (dark: dark
+// steps up to the lightest; light: the lightest steps down to the darkest).
+const RAMPS = {
+  dark: ["#1a2232", "#13305a", "#104281", "#1c5cab", "#2a78d6", "#5598e7", "#86b6ef", "#cde2fb"],
+  light: ["#eef3fa", "#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"],
+};
 
 export function rampColor(pct: number): string {
+  const RAMP = RAMPS[CHART_THEME];
   const x = Math.max(0, Math.min(1, pct / 100)) * (RAMP.length - 1);
   const i = Math.floor(x);
   const f = x - i;
@@ -61,6 +67,7 @@ export function CoreHeat({ cols, cores, height, interval = 2 }: { cols: number[]
   const [tip, setTip] = useState<{ x: number; y: number; r: number; j: number } | null>(null);
   const rows = Math.max(1, cores);
   const h = height ?? Math.min(96, Math.max(32, rows * 5));
+  const theme = useResolvedTheme(); // redraw in the new colours on a switch
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
@@ -83,7 +90,7 @@ export function CoreHeat({ cols, cores, height, interval = 2 }: { cols: number[]
         ctx.fillRect((start + j) * cw, r * rh, Math.ceil(cw) + 0.5, Math.max(1, rh - (rh > 4 ? 1 : 0)));
       }
     });
-  }, [cols, rows, h]);
+  }, [cols, rows, h, theme]);
   const onMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;

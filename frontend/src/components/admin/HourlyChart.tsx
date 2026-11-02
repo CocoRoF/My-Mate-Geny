@@ -3,16 +3,17 @@ import type { LogStats } from "../../api/admin";
 import Icon from "../ui/Icon";
 import { useT } from "../../i18n";
 import { fmtTime } from "../../i18n/format";
+import { useResolvedTheme } from "../../lib/theme";
+import { DANGER as ERR, WARN } from "./system/fmt";
 
-// Status job: error / warning use the app's reserved status tokens and always
+// Status job: error / warning use the app's reserved status colours (the theme's: system/fmt.ts) and always
 // travel with an icon + label (legend, tooltip) — never color alone.
-const ERR = "#f87171";
-const WARN = "#fbbf24";
 const H = 120; // plot height (px)
 const GAP = 2; // surface gap between stacked segments
 
 export default function HourlyChart({ hourly }: { hourly: LogStats["hourly"] }) {
   const t = useT();
+  useResolvedTheme(); // re-render in the new colours on a switch
   const [hover, setHover] = useState<number | null>(null);
   const max = Math.max(1, ...hourly.map((b) => b.error + b.warning));
   const top = niceMax(max);

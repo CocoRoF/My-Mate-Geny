@@ -38,7 +38,7 @@ export function Toggle({ on, onChange, label, hint, disabled, testId }: { on: bo
         disabled={disabled}
         onClick={() => onChange(!on)}
         data-testid={testId}
-        className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition ${on ? "bg-accent" : "bg-surface-3 border border-border-strong"}`}
+        className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition ${on ? "bg-accent" : "bg-surface-3 border border-border-strong light:bg-border-strong"}`}
       >
         <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${on ? "left-[18px]" : "left-0.5"}`} />
       </button>
@@ -181,7 +181,7 @@ export function Segmented<T extends string>({ value, options, onChange, testId }
           onClick={() => onChange(o.id)}
           data-value={o.id}
           className={`rounded-md px-2.5 py-1 text-[12.5px] transition disabled:cursor-not-allowed disabled:opacity-40 ${
-            value === o.id ? "bg-accent-soft text-content shadow-[inset_0_0_0_1px_#6e8bff66]" : "text-content-dim hover:bg-surface-3 hover:text-content"
+            value === o.id ? "bg-accent-soft text-content shadow-[inset_0_0_0_1px_rgb(var(--c-accent)/0.4)]" : "text-content-dim hover:bg-surface-3 hover:text-content"
           }`}
         >
           {o.label}

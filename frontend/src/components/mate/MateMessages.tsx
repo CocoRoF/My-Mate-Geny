@@ -139,7 +139,7 @@ function UserBubble({ text, attachments, pending, compact }: { text: string; att
       )}
       {text.trim() && (
         <div
-          className={`max-w-[85%] rounded-2xl rounded-br-md border text-content whitespace-pre-wrap break-words shadow-[0_1px_2px_rgba(0,0,0,0.25)] ${
+          className={`max-w-[85%] rounded-2xl rounded-br-md border text-content whitespace-pre-wrap break-words shadow-bubble ${
             compact ? "px-3 py-[7px] text-[13px] leading-[1.55]" : "px-3.5 py-2 text-sm leading-relaxed"
           } ${pending ? "border-border bg-surface-2/60" : "border-accent/30 bg-gradient-to-br from-accent/[0.22] to-accent/[0.12]"}`}
           data-testid="mate-user-bubble"

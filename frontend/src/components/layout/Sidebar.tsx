@@ -184,7 +184,7 @@ export default function Sidebar() {
         >
           <Icon name={showSessions ? "chevron-down" : "chevron"} size={12} />
           {t("nav.sessions")}
-          <span className="ml-1 text-content-faint/70">{filtered.length}</span>
+          <span className="ml-1 text-content-faint/70 light:text-content-faint">{filtered.length}</span>
         </button>
         {unseen > 0 && (
           <button
@@ -279,7 +279,7 @@ export default function Sidebar() {
                         }
                       >
                         <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" /> {t("nav.working")}
-                        {!s.running && <span className="text-accent/70">({t("nav.bgShort", { n: s.background ?? 0 })})</span>} ·
+                        {!s.running && <span className="text-accent/70 light:text-accent">({t("nav.bgShort", { n: s.background ?? 0 })})</span>} ·
                       </span>
                     )}
                     {s.connection_id ? t("nav.remote") : t("nav.local")} · {s.provider}

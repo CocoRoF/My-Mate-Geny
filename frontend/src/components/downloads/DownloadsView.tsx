@@ -52,10 +52,9 @@ function AssetButton({ a, primary, onPick }: { a: AppAsset; primary?: boolean; o
       data-testid={`asset-${a.platform}-${a.kind}`}
       className={`flex items-center gap-3 rounded-xl border px-3.5 py-2.5 transition ${
         primary
-          ? "border-transparent text-white shadow-glow"
+          ? "border-transparent bg-accent-grad text-white shadow-glow"
           : "border-border bg-surface-2/60 text-content hover:border-border-strong hover:bg-surface-3"
       }`}
-      style={primary ? { background: "linear-gradient(135deg,#6e8bff,#5b7cff)" } : undefined}
     >
       <Icon name="download" size={16} />
       <span className="min-w-0 flex-1">

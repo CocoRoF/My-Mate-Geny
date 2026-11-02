@@ -66,6 +66,12 @@ for (const s of ["success", "warning", "danger", "violet", "cyan"]) {
 }
 PAIRS.push(["white on danger (solid)", "white", "danger", 4.5]);
 PAIRS.push(["white on success (solid)", "white", "success", 3]);
+for (const st of ["new", "familiar", "trusted", "companion"]) {
+  PAIRS.push([`stage ${st} text on surface-2`, `stage-${st}`, "surface-2", 4.5]);
+  PAIRS.push([`stage-ink on the ${st} pill`, "stage-ink", `stage-${st}`, 4.5]);
+}
+PAIRS.push(["file-blue icon on surface", "file-blue", "surface", 3]);
+PAIRS.push(["file-orange icon on surface", "file-orange", "surface", 3]);
 PAIRS.push(["border-strong vs surface-2 (UI edge)", "border-strong", "surface-2", 1.5]);
 PAIRS.push(["accent focus ring vs surface-2", "accent", "surface-2", 3]);
 PAIRS.push(["content-faint icon vs surface-3 (UI)", "content-faint", "surface-3", 3]);

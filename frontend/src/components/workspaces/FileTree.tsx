@@ -204,7 +204,7 @@ export default function FileTree({ connectionId, initialPath, onPick, selected }
               onDoubleClick={() => pick(e.path)}
               className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer hover:bg-surface-3 transition"
             >
-              <Icon name="folder" size={15} className="text-warning/80" />
+              <Icon name="folder" size={15} className="text-warning/80 light:text-warning" />
               <span className="truncate text-content/85">{e.name}</span>
               <button
                 onClick={(ev) => {
