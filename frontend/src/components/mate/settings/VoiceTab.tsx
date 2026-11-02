@@ -578,7 +578,7 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
             step={0.05}
             value={Math.min(hi, Math.max(lo, tts.speed))}
             onChange={(e) => set({ speed: Number(e.target.value) })}
-            className="w-full accent-[#6e8bff]"
+            className="w-full accent-accent"
             data-testid="mate-tts-speed"
           />
         </Field>

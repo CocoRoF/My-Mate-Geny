@@ -77,7 +77,7 @@ export default function App() {
       </div>
       {sidebarOpen && (
         <div className="md:hidden fixed inset-0 z-[60] flex">
-          <div className="absolute inset-0 bg-black/55 animate-fade-in" onClick={() => setSidebar(false)} />
+          <div className="absolute inset-0 bg-scrim/55 animate-fade-in" onClick={() => setSidebar(false)} />
           <div className="relative h-full w-[min(86vw,300px)] shadow-float animate-fade-in">
             <Sidebar />
           </div>

@@ -149,7 +149,7 @@ function Overlay() {
         <div className="pointer-events-none absolute inset-x-2 top-2 z-10 flex justify-center">
           <div
             key={line}
-            className="max-h-[38%] max-w-full overflow-hidden rounded-2xl border border-white/10 bg-[#161a22]/90 px-3 py-1.5 text-center text-[13px] leading-snug text-content shadow-float animate-fade-in"
+            className="max-h-[38%] max-w-full overflow-hidden rounded-2xl border border-glass-line bg-glass/90 px-3 py-1.5 text-center text-[13px] leading-snug text-content shadow-float animate-fade-in"
             data-testid="mate-caption"
           >
             {line}
@@ -166,7 +166,7 @@ function Overlay() {
       </div>
       {interactive && !moveMode && !isHome(view) && (
         <button
-          className="absolute right-1.5 top-1.5 z-20 grid h-6 w-6 place-items-center rounded-full border border-white/10 bg-[#161a22]/85 text-content-dim opacity-0 shadow-float transition hover:text-content group-hover:opacity-100"
+          className="absolute right-1.5 top-1.5 z-20 grid h-6 w-6 place-items-center rounded-full border border-glass-line bg-glass/85 text-content-dim opacity-0 shadow-float transition hover:text-content group-hover:opacity-100"
           onClick={reset}
           title={t("mate.resetViewTitle")}
           data-no-drag
@@ -196,7 +196,7 @@ function MoveBar({ onReset, canReset }: { onReset: () => void; canReset: boolean
     // (the full-width row lets the pointer through: the frame's top corners / edge are under it)
     <div className="pointer-events-none absolute inset-x-0 top-2 z-30 flex justify-center px-5">
       <div
-        className="pointer-events-auto flex max-w-full cursor-move items-center gap-1.5 rounded-full border border-accent/40 bg-[#161a22]/95 py-1 pl-2.5 pr-1 text-[12px] text-content shadow-float"
+        className="pointer-events-auto flex max-w-full cursor-move items-center gap-1.5 rounded-full border border-accent/40 bg-glass/95 py-1 pl-2.5 pr-1 text-[12px] text-content shadow-float"
         onPointerDown={onDown}
         data-no-drag
         data-no-pan
@@ -353,7 +353,7 @@ function Quick() {
           composer, the reply and the ✕ are not. Where it is dropped is where it opens next time. */}
       <div
         ref={card}
-        className="relative w-full rounded-2xl border border-border bg-[#11141b]/95 p-2 shadow-float backdrop-blur-xl"
+        className="relative w-full rounded-2xl border border-border bg-glass-deep/95 p-2 shadow-float backdrop-blur-xl"
         style={DRAG}
         data-testid="mate-quick-card"
         {...dropProps}

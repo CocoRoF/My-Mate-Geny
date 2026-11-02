@@ -15,6 +15,8 @@ router = APIRouter(prefix="/api")
 class PreferencesBody(BaseModel):
     # None clears the choice (each device follows its own system language again)
     language: Literal["en", "ko"] | None = None
+    # None clears it too (each device keeps its own theme)
+    theme: Literal["system", "light", "dark"] | None = None
 
 
 @router.get("/preferences")

@@ -107,7 +107,7 @@ function Menu({
       <span ref={anchor} className="hidden" />
       {createPortal(
         mobile ? (
-          <div className="fixed inset-0 z-[70] flex items-end bg-black/45 animate-fade-in">
+          <div className="fixed inset-0 z-[70] flex items-end bg-scrim/45 animate-fade-in">
             <div ref={ref} className="w-full max-h-[70vh] overflow-y-auto rounded-t-2xl border-t border-border bg-surface-2 pb-safe pt-1.5 shadow-float">
               <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-border-strong" />
               {list}
@@ -147,7 +147,7 @@ function SettingsSheet({
   }, [onClose]);
   return createPortal(
     <div
-      className="fixed inset-0 z-[70] flex items-end bg-black/45 animate-fade-in"
+      className="fixed inset-0 z-[70] flex items-end bg-scrim/45 animate-fade-in"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="w-full max-h-[80vh] overflow-y-auto rounded-t-2xl border-t border-border bg-surface-2 pb-safe pt-1.5 shadow-float">

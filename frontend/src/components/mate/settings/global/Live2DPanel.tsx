@@ -164,7 +164,7 @@ export default function Live2DPanel() {
         <>
           {!installed && (
             <label className="flex items-start gap-2 text-[12.5px] text-content-dim">
-              <input type="checkbox" className="mt-0.5 accent-[#6e8bff]" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} data-testid="mate-core-accept" />
+              <input type="checkbox" className="mt-0.5 accent-accent" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} data-testid="mate-core-accept" />
               <span>
                 {t.rich("mateSettings.l2dAccept", {
                   a: (s) => (

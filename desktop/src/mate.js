@@ -10,7 +10,8 @@
 // cursor-polled action bar, quick card, GNOME Wayland shortcut fallback,
 // autostart) and Geny / project-geny-app (always-on-top re-assertion, move-by
 // with an authoritative rect, clamping to a live display, crash-loop breaker).
-const { app, BrowserWindow, Menu, Notification, Tray, globalShortcut, ipcMain, nativeImage, screen, shell } = require("electron");
+const { app, BrowserWindow, Menu, Notification, Tray, globalShortcut, ipcMain, nativeImage, nativeTheme, screen, shell } = require("electron");
+const theme = require("./theme");
 const { execFile } = require("child_process");
 const fs = require("fs");
 const os = require("os");
@@ -813,7 +814,7 @@ function createChat() {
     minWidth: 320,
     minHeight: 380,
     show: false,
-    backgroundColor: "#0a0c10",
+    backgroundColor: theme.backgroundFor(nativeTheme.shouldUseDarkColors), // (light / dark: theme.js)
     title: t("titleMate"),
     icon: ICON,
     autoHideMenuBar: true,
@@ -1258,6 +1259,8 @@ module.exports = {
   },
   isShown: () => wanted() && alive(avatar) && (avatar.isVisible() || avatar.webContents.isLoading() || (!overlayFailed && onSurface(avatar, "overlay"))),
   mateWindows: () => [avatar, bar, quick, chat].filter(alive),
+  // the see-through ones (they keep a transparent background whatever the theme)
+  transparentWindows: () => [avatar, bar, quick].filter(alive),
   showAvatar,
   hideAvatar,
   toggleAvatar: () => (wanted() ? hideAvatar() : showAvatar()),

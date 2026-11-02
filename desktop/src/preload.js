@@ -105,6 +105,9 @@ contextBridge.exposeInMainWorld("hrhNative", {
   language: (i18n && i18n.lang) || "en",
   text,
   setLanguage: (lang) => ipcRenderer.send("hrh:setLanguage", String(lang || "")),
+  // light / dark: the console tells its mode (system | light | dark); native menus, dialogs, the window colour and
+  // the local pages follow (theme.js)
+  setTheme: (mode) => ipcRenderer.send("hrh:setTheme", String(mode || "")),
   mate,
   window: windowBridge,
   // the mouse's back / forward buttons as the OS reports them (Windows app-commands); the page goes back in-app
@@ -161,6 +164,12 @@ function installFallbackBar(info) {
         display: grid; place-items: center; cursor: default; transition: background .12s, color .12s; }
       #hrh-native-bar button:hover { background: #1c212c; color: #e6e9f0; }
       #hrh-native-bar button.x:hover { background: #e5484d; color: #fff; }
+      @media (prefers-color-scheme: light) {
+        #hrh-native-bar { background: #f8f9fb; border-bottom-color: #dce0e8; color: #474f5f; }
+        #hrh-native-bar button { color: #474f5f; }
+        #hrh-native-bar button:hover { background: #ebeef3; color: #161a23; }
+        #hrh-native-bar button.x:hover { background: #e5484d; color: #fff; }
+      }
       #hrh-boot { top: ${H}px !important; }`;
     (document.head || document.documentElement).appendChild(style);
     bar = document.createElement("div");

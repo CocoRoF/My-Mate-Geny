@@ -11,11 +11,13 @@ import TitleBar from "./components/layout/TitleBar";
 import { Spinner } from "./components/ui/Loading";
 import { claimWindowChrome } from "./lib/nativeWindow";
 import { i18nReady, tr, useI18n } from "./i18n";
+import { installTheme } from "./lib/theme";
 import "./index.css";
 
 installClientErrorReporter();
 installChunkRecovery(); // a code chunk gone after a deploy: reload once, never a blank page (lib/recover.ts)
 installNativeBridge();
+installTheme(); // light / dark: index.html drew the saved one already; this follows changes (lib/theme.ts)
 watchKeyboard(); // the on-screen keyboard: <html data-keyboard>, --app-h (lib/keyboard.ts)
 
 // Full-page surfaces without the console:

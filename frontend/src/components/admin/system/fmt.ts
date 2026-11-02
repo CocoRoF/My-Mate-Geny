@@ -1,18 +1,44 @@
 // Number formatting + chart colors for the System tab.
 import { currentLocale, tr } from "../../../i18n";
+import { useTheme, type Theme } from "../../../lib/theme";
 
-// Categorical slots, fixed order (validated for the dark surface #161a22:
-// adjacent CVD ΔE >= 8.4, normal-vision ΔE >= 19.8, all >= 3:1 contrast).
-export const C1 = "#3987e5"; // blue
-export const C2 = "#d95926"; // orange
-export const C3 = "#199e70"; // aqua
-export const C4 = "#c98500"; // yellow
-// Status (reserved: never a series color; always with an icon + label).
-export const OK = "#34d399";
-export const WARN = "#fbbf24";
-export const DANGER = "#f87171";
-export const MUTED = "#5e6676";
-export const GRID = "#232936";
+// The colours follow the theme (lib/theme.ts): each is a live binding re-assigned on a switch, so a chart that
+// re-renders (the System tab watches the theme) draws in the new set; `${DANGER}55` hex-alpha suffixes keep working.
+//
+// Categorical slots, fixed order, each mode its own steps of the same hues (validated with the dataviz skill's
+// validate_palette.js — dark on #161a22: adjacent CVD ΔE >= 8.4, normal-vision ΔE >= 19.8, all >= 3:1; light on
+// #ffffff: adjacent CVD ΔE >= 9.1, normal-vision ΔE >= 22.9, aqua / yellow under 3:1 → every chart carries a legend
+// with its live values, the relief the method asks for).
+// Status (reserved: never a series color; always with an icon + label) = the theme's success / warning / danger.
+const SETS = {
+  dark: { C1: "#3987e5", C2: "#d95926", C3: "#199e70", C4: "#c98500", OK: "#34d399", WARN: "#fbbf24", DANGER: "#f87171", MUTED: "#5e6676", GRID: "#232936", AXIS: "#2f3647", RING: "#161a22", CURSOR: "#9aa3b4" },
+  light: { C1: "#2a78d6", C2: "#eb6834", C3: "#1baf7a", C4: "#eda100", OK: "#046644", WARN: "#885000", DANGER: "#b41a22", MUTED: "#606879", GRID: "#e3e7ee", AXIS: "#c2c8d4", RING: "#ffffff", CURSOR: "#474f5f" },
+} as const;
+export let C1: string = SETS.dark.C1; // blue
+export let C2: string = SETS.dark.C2; // orange
+export let C3: string = SETS.dark.C3; // aqua
+export let C4: string = SETS.dark.C4; // yellow
+export let OK: string = SETS.dark.OK;
+export let WARN: string = SETS.dark.WARN;
+export let DANGER: string = SETS.dark.DANGER;
+export let MUTED: string = SETS.dark.MUTED;
+export let GRID: string = SETS.dark.GRID;
+/** a stronger grid line (the zero line / the threshold) */
+export let AXIS: string = SETS.dark.AXIS;
+/** the ring around a point (the chart's surface) */
+export let RING: string = SETS.dark.RING;
+/** the hover cursor line */
+export let CURSOR: string = SETS.dark.CURSOR;
+/** which set is drawn ("dark" | "light") */
+export let CHART_THEME: Theme = "dark";
+
+function useSet(theme: Theme) {
+  const c = SETS[theme];
+  ({ C1, C2, C3, C4, OK, WARN, DANGER, MUTED, GRID, AXIS, RING, CURSOR } = c);
+  CHART_THEME = theme;
+}
+useSet(useTheme.getState().theme);
+useTheme.subscribe((s) => s.theme !== CHART_THEME && useSet(s.theme));
 
 const KB = 1024;
 const MB = KB * 1024;

@@ -1,9 +1,10 @@
 // Settings (components/settings/SettingsView.tsx).
 export default {
   title: "Settings",
-  subtitle: "Updates, your account, language and this device — and the agents: providers, connections, usage, admin.",
+  subtitle: "Updates, your account, language, appearance and this device — and the agents: providers, connections, usage, admin.",
   secAccount: "Account",
   secLanguage: "Language",
+  secAppearance: "Appearance",
   secNotifications: "Notifications",
   secMate: "Mate & voice",
   secDesktop: "Desktop app",
@@ -85,6 +86,21 @@ export default {
   langSaved: "Saved — your other devices follow.",
   langLocal: "Changed on this device. It couldn't be saved to your account (the server didn't answer).",
   mateLangNote: "A mate's replies keep the mate's own language (Mate settings → Profile).",
+
+  // appearance (light / dark)
+  appearanceHint: "Light, dark, or this device's setting — applied at once in every open window.",
+  themeSystem: "System",
+  themeSystemSub: "Follows this device — {now} now",
+  themeLight: "Light",
+  themeLightSub: "Bright surfaces, dark text",
+  themeDark: "Dark",
+  themeDarkSub: "Dark surfaces, light text",
+  themeSaving: "Saving…",
+  themeSaved: "Saved to your account — your other devices follow.",
+  themeLocal: "Changed on this device. It couldn't be saved to your account (the server didn't answer).",
+  themeDevice: "Changed on this device only.",
+  themeDeviceOnly: "This device only",
+  themeDeviceOnlyHint: "Keep this device's own choice: a change on another device won't switch it here, and a change here stays here.",
 
   // notifications
   notifHint: "A note when a reply finishes while you're looking elsewhere.",

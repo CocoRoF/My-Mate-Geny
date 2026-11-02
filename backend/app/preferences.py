@@ -1,9 +1,10 @@
 """The account's UI preferences (single admin account), shared by every device.
 
 Kept as JSON in ``app_kv['ui_preferences']`` (the table AuthManager creates).
-Today only ``language`` (``"en"`` | ``"ko"``; docs/i18n.md): the console
-applies it after loading, so every signed-in device follows; the login page
-uses it as a fallback before anyone is signed in.
+``language`` (``"en"`` | ``"ko"``; docs/i18n.md) and ``theme`` (``"system"`` |
+``"light"`` | ``"dark"``; frontend/src/lib/theme.ts): the console applies them
+after loading, so every signed-in device follows (a device may keep its own
+theme); the login page uses them as a fallback before anyone is signed in.
 """
 
 from __future__ import annotations
@@ -16,8 +17,10 @@ from fastapi import Request
 from app.db import Database
 
 LANGUAGES = ("en", "ko")
+THEMES = ("system", "light", "dark")
 _KEY = "ui_preferences"
 LANG_COOKIE = "hrh_lang"
+THEME_COOKIE = "hrh_theme"
 
 
 def _ensure(db: Database) -> None:
@@ -34,7 +37,8 @@ def get_preferences(db: Database) -> dict[str, Any]:
     if not isinstance(data, dict):
         data = {}
     lang = data.get("language")
-    return {"language": lang if lang in LANGUAGES else None}
+    theme = data.get("theme")
+    return {"language": lang if lang in LANGUAGES else None, "theme": theme if theme in THEMES else None}
 
 
 def set_preferences(db: Database, patch: dict[str, Any]) -> dict[str, Any]:
@@ -79,3 +83,20 @@ def request_language(request: Request, db: Database | None = None) -> str:
         if stored:
             return stored
     return _from_accept_language(request.headers.get("accept-language", "")) or "en"
+
+
+def request_theme(request: Request, db: Database | None = None) -> str:
+    """The theme mode for a page rendered before sign-in: the hrh_theme cookie
+    (set by the console) -> the account's stored choice -> "system" (the
+    browser's prefers-color-scheme decides)."""
+    v = request.cookies.get(THEME_COOKIE)
+    if v in THEMES:
+        return v
+    if db is not None:
+        try:
+            stored = get_preferences(db)["theme"]
+        except Exception:  # noqa: BLE001 - a page must render even if the DB hiccups
+            stored = None
+        if stored:
+            return stored
+    return "system"

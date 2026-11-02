@@ -340,6 +340,43 @@ async function windowChrome(app, con, consoleRe, server) {
   assert.deepEqual(frame, { resizable: true, maximizable: true }, "still resizable from its edges");
   await con.shot("chrome-1-console.png");
 
+  step("light mode: Settings → Appearance → Light — the page, its title bar, the window colour and native menus follow");
+  await con.eval(`(location.assign("/?view=settings&tab=appearance"), true)`);
+  con = await app.page(consoleRe);
+  await until("the Appearance tab", () => con.eval(`!!document.querySelector('[data-testid="settings-theme-light"]')`));
+  await clickTestId(con, "settings-theme-light");
+  await until("the page in light", () => con.eval(`document.documentElement.classList.contains("light")`), 4000);
+  const lum = `((c) => { const m = c.match(/\\d+(\\.\\d+)?/g).map(Number); return (0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) / 255; })`;
+  const look = () => con.eval(`(() => { const L = ${lum}; const bar = document.querySelector('[data-testid="title-bar"]'); const b = getComputedStyle(bar);
+    let bg = b.backgroundColor; for (let e = bar; e && /rgba\\(0, 0, 0, 0\\)|transparent/.test(bg); e = e.parentElement) bg = getComputedStyle(e).backgroundColor;
+    return { bar: L(bg), barText: L(getComputedStyle(bar.querySelector("button, span, div") || bar).color), page: L(getComputedStyle(document.body).backgroundColor) }; })()`);
+  const light = await until("the title bar's colour settled", async () => { const l = await look(); return l.bar > 0.85 ? l : null; }, 4000);
+  console.log(`  light: ${JSON.stringify(light)}`);
+  assert.ok(light.bar > 0.85 && light.page > 0.85, "a light title bar and page");
+  assert.ok(light.barText < 0.6, "dark text on it");
+  const nat = await until("the app followed", async () => {
+    const r = await app.main(`const { nativeTheme } = require("electron"); return { source: nativeTheme.themeSource, dark: nativeTheme.shouldUseDarkColors, bg: cwin().getBackgroundColor() }`);
+    return r.source === "light" ? r : null;
+  }, 4000);
+  assert.equal(nat.dark, false);
+  assert.equal(nat.bg.toLowerCase().slice(0, 7), "#f1f3f7", "the window's background matches the light page");
+  assert.equal(app.settings().theme, "light", "kept for the next start (settings.json)");
+  await con.shot("chrome-1b-console-light.png");
+  await clickTestId(con, "settings-theme-dark");
+  await until("dark again", () => con.eval(`document.documentElement.classList.contains("dark")`), 4000);
+  const back = await until("the window dark again", async () => {
+    const r = await app.main(`return cwin().getBackgroundColor()`);
+    return r.toLowerCase().startsWith("#0a0c10") ? r : null;
+  }, 4000);
+  assert.ok(back);
+  await until("a dark title bar again (after its colour transition)", async () => (await look()).bar < 0.15, 4000);
+  // (the rest of this run: the default again — the account forgets the choice)
+  await clickTestId(con, "settings-theme-system");
+  await con.eval(`fetch("/api/preferences", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme: null }) }).then((r) => r.ok)`);
+  await con.eval(`(location.assign("/"), true)`);
+  con = await app.page(consoleRe);
+  await until("the console app", () => con.eval(`!!document.querySelector("#root > *")`));
+
   step("console: maximize / restore / minimize / close through the buttons (IPC); the button follows the state");
   // (Xvfb has no window manager to maximize: the calls are recorded, the state pushed as the OS would)
   await app.main(`const w = cwin(); global.__calls = []; let max = false;

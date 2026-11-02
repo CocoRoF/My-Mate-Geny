@@ -5,7 +5,8 @@
 # A message with "md1" gets a markdown-heavy reply instead (every element, unsafe links / HTML, long lines), streamed
 # a few characters at a time with pauses in the middle of a bold word, the code block and the table (FAKE_MD_PAUSE
 # seconds, default 2.5) so a test can look at the half-written state; "md2" gets a short one
-# (desktop/test/e2e/mate-markdown-browser.js).
+# (desktop/test/e2e/mate-markdown-browser.js). A message ending in "tools1" gets an agent turn with tool calls (Bash,
+# Read, Edit with a diff, a failed command, TodoWrite) and then a markdown answer with code (the theme screenshots).
 import json
 import os
 import queue
@@ -152,6 +153,54 @@ def stream_markdown(text: str, pauses: list[str]) -> str:
     return text
 
 
+TOOLS_ANSWER = "\n".join([
+    "Done — the greeting now says **hello** and **world**.",
+    "",
+    "## What changed",
+    "",
+    "| File | Change |",
+    "|---|---|",
+    "| `src/app.py` | the greeting, split in two lines |",
+    "",
+    "> Tests still pass; `make lint` found nothing.",
+    "",
+    FENCE + "python",
+    "def greet(name: str) -> str:",
+    "    # a friendly hello",
+    "    return f\"hello, {name}!\"  # 42",
+    "",
+    "class Greeter:",
+    "    count = 3",
+    FENCE,
+])
+
+
+def tool_turn() -> None:
+    """an agent turn with tool calls and their results, then the answer"""
+    calls = [
+        ("t1", "Bash", {"command": "ls -la src", "description": "List the source files"},
+         "total 16\n-rw-r--r-- 1 me me  120 app.py\n-rw-r--r-- 1 me me   48 util.py", False),
+        ("t2", "Read", {"file_path": "/work/demo/src/app.py"}, "     1\tprint('hi')\n     2\t", False),
+        ("t3", "Edit", {"file_path": "/work/demo/src/app.py", "old_string": "print('hi')",
+                        "new_string": "print('hello')\nprint('world')"},
+         "The file /work/demo/src/app.py has been updated.", False),
+        ("t4", "Bash", {"command": "pytset -q", "description": "Run the tests"}, "bash: pytset: command not found", True),
+        ("t5", "TodoWrite", {"todos": [{"content": "Change the greeting", "status": "completed", "activeForm": "Changing"},
+                                       {"content": "Run the tests", "status": "in_progress", "activeForm": "Running the tests"},
+                                       {"content": "Update the docs", "status": "pending", "activeForm": "Updating"}]},
+         "Todos have been modified successfully.", False),
+    ]
+    emit({"type": "assistant", "message": {"model": model, "content": [{"type": "text", "text": "Let me look at the code first."}]}})
+    for tid, name, inp, out, err in calls:
+        emit({"type": "assistant", "message": {"model": model, "content": [{"type": "tool_use", "id": tid, "name": name, "input": inp}]}})
+        time.sleep(0.15)
+        emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": tid, "content": out, "is_error": err}]}})
+    emit({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": TOOLS_ANSWER}}})
+    emit({"type": "assistant", "message": {"model": model, "content": [{"type": "text", "text": TOOLS_ANSWER}]}})
+    emit({"type": "result", "subtype": "success", "is_error": False, "result": TOOLS_ANSWER, "session_id": "fake-sid",
+          "total_cost_usd": 0.02, "usage": {"input_tokens": 1200, "output_tokens": 300}})
+
+
 n = 0
 while True:
     msg = q.get()
@@ -178,6 +227,9 @@ while True:
         emit({"type": "assistant", "message": {"model": model, "content": [{"type": "text", "text": full}]}})
         emit({"type": "result", "subtype": "success", "is_error": False, "result": full, "session_id": "fake-sid",
               "total_cost_usd": 0.01, "usage": {"input_tokens": 1, "output_tokens": 1}})
+        continue
+    if re.search(r"\btools1\b", last):
+        tool_turn()
         continue
     md = MD1 if re.search(r"\bmd1\b", last) else MD2 if re.search(r"\bmd2\b", last) else None
     full = ""

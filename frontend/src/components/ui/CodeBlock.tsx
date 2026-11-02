@@ -1,5 +1,4 @@
 import { useState, type ReactNode } from "react";
-import "highlight.js/styles/github-dark.css";
 import Icon from "./Icon";
 import { textOf } from "./codeHighlight";
 import { useT } from "../../i18n";

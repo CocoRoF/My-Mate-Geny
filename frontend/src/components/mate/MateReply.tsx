@@ -107,7 +107,7 @@ function Markdown({ md, inline, compact }: { md: string; inline: boolean; compac
 }
 
 const shell = (compact: boolean, wide: boolean) =>
-  `md mate-md ${compact ? "mate-md-compact" : ""} min-w-0 max-w-[88%] ${wide ? "w-full" : "w-fit"} rounded-2xl rounded-bl-md border border-border/80 bg-surface-2 text-content shadow-[0_1px_2px_rgba(0,0,0,0.25)] ${
+  `md mate-md ${compact ? "mate-md-compact" : ""} min-w-0 max-w-[88%] ${wide ? "w-full" : "w-fit"} rounded-2xl rounded-bl-md border border-border/80 bg-surface-2 text-content shadow-bubble ${
     compact ? "px-3 py-[7px] text-[13px] leading-[1.55]" : "px-3.5 py-2 text-sm leading-relaxed"
   }`;
 

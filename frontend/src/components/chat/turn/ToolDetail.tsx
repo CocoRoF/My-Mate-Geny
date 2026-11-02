@@ -24,7 +24,7 @@ export default function ToolDetail({ tool, root }: { tool: ToolActivity; root?: 
   const lower = name.toLowerCase();
   const i = (tool.input && typeof tool.input === "object" ? tool.input : {}) as Record<string, any>;
   const out = tool.output ?? "";
-  const errTone = tool.isError ? "text-danger/90" : "";
+  const errTone = tool.isError ? "text-danger/90 light:text-danger" : "";
 
   if (["bash", "shell", "remote_bash"].includes(lower)) {
     const cmd = typeof i.command === "string" ? i.command : JSON.stringify(i.command ?? tool.input);

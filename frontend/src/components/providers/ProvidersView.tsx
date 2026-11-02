@@ -203,10 +203,10 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
                 onClick={() => pool && setPool(provider, { enabled: !pool.enabled }).then(load)}
                 aria-label={t("providers.toggleLoadBalancing")}
                 aria-pressed={!!pool?.enabled}
-                className={`relative w-10 h-5 rounded-full transition ${pool?.enabled ? "bg-accent" : "bg-surface-3"}`}
+                className={`relative w-10 h-5 rounded-full transition ${pool?.enabled ? "bg-accent" : "bg-surface-3 light:bg-border-strong"}`}
               >
                 <span
-                  className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+                  className={`absolute top-0.5 w-4 h-4 rounded-full bg-white light:shadow transition-all ${
                     pool?.enabled ? "left-[22px]" : "left-0.5"
                   }`}
                 />
@@ -293,7 +293,7 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
                 <div className="mt-2.5">
                   <PlanWindowBars windows={fromAccount(a)} />
                   {a.plan_error && (
-                    <p className="mt-1 truncate text-[11px] text-warning/90" title={a.plan_error}>
+                    <p className="mt-1 truncate text-[11px] text-warning/90 light:text-warning" title={a.plan_error}>
                       {t("providers.planRefreshFailed", { error: a.plan_error })}
                     </p>
                   )}
@@ -358,7 +358,7 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
                 )}
               </div>
               {a.last_error && (
-                <p className="mt-1.5 text-[11px] text-danger/80 font-mono truncate">{a.last_error}</p>
+                <p className="mt-1.5 text-[11px] text-danger/80 light:text-danger font-mono truncate">{a.last_error}</p>
               )}
             </div>
           ))}

@@ -2,6 +2,25 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
+    <meta name="theme-color" content="#0a0c10" />
+    <!-- Light / dark before the first paint (src/lib/theme.ts takes over; the same rules as lib/themeCore.ts): the
+         mode saved on this browser (localStorage hrh_theme: system | light | dark), "system" → the OS's preference. -->
+    <script>
+      (function () {
+        var m = null;
+        try { m = localStorage.getItem("hrh_theme"); } catch (e) {}
+        if (m !== "light" && m !== "dark") m = "system";
+        var t = m !== "system" ? m : window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        var h = document.documentElement;
+        h.classList.remove("dark", "light");
+        h.classList.add(t);
+        h.setAttribute("data-theme", t);
+        h.setAttribute("data-theme-mode", m);
+        h.style.colorScheme = t;
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute("content", t === "light" ? "#f1f3f7" : "#0a0c10");
+      })();
+    </script>
     <!-- Boot guard (before anything else loads): until the app draws itself the page shows a loading screen, never a
          blank window; if the app's code cannot be loaded (a deploy removed it, the network dropped) it reloads once,
          then offers Reload. The desktop app's transparent Mate windows (avatar, quick card) show nothing and retry
@@ -52,11 +71,15 @@
       #hrh-boot[data-state="failed"] .s { display: none; }
       #hrh-boot .m { max-width: 300px; text-align: center; line-height: 1.5; }
       #hrh-boot button { padding: 8px 16px; border: 0; border-radius: 10px; font: 600 13px Inter, system-ui, sans-serif; color: #fff; background: linear-gradient(135deg, #6e8bff, #5b7cff); cursor: pointer; }
+      /* the light theme's boot screen (index.css's light tokens) */
+      html.light:not(.hrh-quiet) { background: #f1f3f7; color: #161a23; }
+      html.light #hrh-boot { color: #474f5f; background: radial-gradient(1200px 600px at 80% -10%, #e4eaff 0%, transparent 55%), #f1f3f7; }
+      html.light #hrh-boot .s { border-color: rgba(61, 90, 230, 0.25); border-top-color: #3d5ae6; }
+      html.light #hrh-boot button { background: linear-gradient(135deg, #4c68f0, #3a56de); }
       @keyframes hrh-spin { to { transform: rotate(360deg); } }
       @keyframes hrh-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
     </style>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
-    <meta name="theme-color" content="#0a0c10" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />

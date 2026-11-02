@@ -7,6 +7,8 @@
  *                         version, then the apps to download (downloads/DownloadsView.tsx; `/?view=downloads`)
  *     Account             the single admin account: username, password, sign out other devices (/api/auth/*)
  *     Language            English / 한국어, applied at once and saved for every device (i18n/, /api/preferences)
+ *     Appearance          System / Light / Dark, applied at once in every window, saved for every device unless
+ *                         "This device only" (lib/theme.ts, lib/themeSync.ts)
  *     Notifications       this browser's permission (the apps notify natively)
  *     Mate & voice        the default mate and reading aloud on this device (Mate's Global settings → Defaults)
  *     Desktop app         (in the desktop app) the mate on the desktop, quick-chat shortcut, start at login
@@ -28,6 +30,9 @@ import { compareVersions, getDownloads, type AppRelease } from "../../api/downlo
 import { LANGS, useLang, useT, type Lang, type MsgKey, type TFunction, type Vars } from "../../i18n";
 import { relTime } from "../../i18n/format";
 import { chooseLanguage } from "../../i18n/sync";
+import { useTheme, type Theme, type ThemeMode } from "../../lib/theme";
+import { chooseTheme, setThemeDeviceOnly, type ThemeSaved } from "../../lib/themeSync";
+import { Toggle } from "../mate/settings/ui";
 import { useConfigStore } from "../../stores/configStore";
 import { useMateStore } from "../../stores/mateStore";
 import { useProviderStore } from "../../stores/providerStore";
@@ -522,6 +527,106 @@ function LanguageSection() {
   );
 }
 
+// ---- Appearance ------------------------------------------------------------------------------------------------
+
+/** a small picture of the console in one theme (its own token set: .theme-light / .theme-dark, index.css) */
+function ThemeSketch({ theme, className = "" }: { theme: Theme; className?: string }) {
+  return (
+    <span className={`theme-${theme} absolute inset-0 flex overflow-hidden bg-bg ${className}`} aria-hidden>
+      <span className="flex w-[28%] flex-col gap-1 border-r border-border bg-surface p-1.5">
+        <span className="h-1.5 w-4/5 rounded-full bg-content-dim/45" />
+        <span className="h-1.5 w-full rounded-full bg-accent/70" />
+        <span className="h-1.5 w-3/5 rounded-full bg-content-faint/40" />
+        <span className="h-1.5 w-4/5 rounded-full bg-content-faint/40" />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-1.5 p-2">
+        <span className="h-1.5 w-2/5 rounded-full bg-content/75" />
+        <span className="flex flex-col gap-1 rounded-md border border-border bg-surface-2 p-1.5 shadow-card">
+          <span className="h-1 w-full rounded-full bg-content-dim/45" />
+          <span className="h-1 w-4/5 rounded-full bg-content-dim/45" />
+          <span className="h-1 w-3/5 rounded-full bg-content-dim/45" />
+        </span>
+        <span className="mt-auto flex items-center gap-1 rounded-md border border-border bg-surface-2 p-1">
+          <span className="h-1 flex-1 rounded-full bg-content-faint/35" />
+          <span className="h-2.5 w-4 rounded bg-accent" />
+        </span>
+      </span>
+    </span>
+  );
+}
+
+function AppearanceSection() {
+  const t = useT();
+  const mode = useTheme((s) => s.mode);
+  const theme = useTheme((s) => s.theme);
+  const deviceOnly = useTheme((s) => s.deviceOnly);
+  const [state, setState] = useState<ThemeSaved | "saving" | null>(null);
+  const pick = async (m: ThemeMode) => {
+    setState("saving");
+    setState(await chooseTheme(m));
+  };
+  const toggleDevice = async (on: boolean) => {
+    setState("saving");
+    const r = await setThemeDeviceOnly(on);
+    setState(on ? null : r);
+  };
+  const options: { id: ThemeMode; label: MsgKey; sub: string; icon: IconName }[] = [
+    { id: "system", label: "settings.themeSystem", sub: t("settings.themeSystemSub", { now: t(theme === "light" ? "settings.themeLight" : "settings.themeDark") }), icon: "monitor" },
+    { id: "light", label: "settings.themeLight", sub: t("settings.themeLightSub"), icon: "sun" },
+    { id: "dark", label: "settings.themeDark", sub: t("settings.themeDarkSub"), icon: "moon" },
+  ];
+  return (
+    <Card id="appearance">
+      <div className="grid gap-2.5 sm:grid-cols-3" role="radiogroup" aria-label={t("settings.secAppearance")}>
+        {options.map((o) => {
+          const on = mode === o.id;
+          return (
+            <button
+              key={o.id}
+              role="radio"
+              aria-checked={on}
+              data-active={on}
+              onClick={() => !on && pick(o.id)}
+              data-testid={`settings-theme-${o.id}`}
+              className="group flex flex-col overflow-hidden rounded-xl border border-border bg-surface-2/50 text-left transition hover:border-border-strong data-[active=true]:border-accent/70 data-[active=true]:ring-2 data-[active=true]:ring-accent/20"
+            >
+              <span className="relative block aspect-[16/9] w-full border-b border-border">
+                {o.id === "system" ? (
+                  <>
+                    <ThemeSketch theme="light" />
+                    <ThemeSketch theme="dark" className="[clip-path:polygon(100%_0,100%_100%,0_100%)]" />
+                  </>
+                ) : (
+                  <ThemeSketch theme={o.id} />
+                )}
+              </span>
+              <span className="flex items-start gap-2.5 px-3 py-2.5">
+                <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border ${on ? "border-accent" : "border-border-strong"}`}>
+                  {on && <span className="h-2 w-2 rounded-full bg-accent" />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5 text-[14px] font-medium text-content">
+                    <Icon name={o.icon} size={14} className="text-content-dim" />
+                    {t(o.label)}
+                  </span>
+                  <span className="mt-0.5 block text-[11.5px] leading-snug text-content-faint">{o.sub}</span>
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {state === "saving" && <Status tone="info">{t("settings.themeSaving")}</Status>}
+      {state === "saved" && <Status tone="ok" testId="settings-theme-msg">{t("settings.themeSaved")}</Status>}
+      {state === "device" && <Status tone="info" testId="settings-theme-msg">{t("settings.themeDevice")}</Status>}
+      {state === "local" && <Status tone="error" testId="settings-theme-msg">{t("settings.themeLocal")}</Status>}
+      <div className="rounded-xl border border-border bg-surface-2/50 px-3.5 py-3">
+        <Toggle on={deviceOnly} onChange={(v) => void toggleDevice(v)} label={t("settings.themeDeviceOnly")} hint={t("settings.themeDeviceOnlyHint")} testId="settings-theme-device" />
+      </div>
+    </Card>
+  );
+}
+
 // ---- Notifications ---------------------------------------------------------------------------------------------
 
 function NotificationsSection() {
@@ -639,6 +744,8 @@ function TabContent({ id }: { id: SettingsTab }) {
       return <AccountSection />;
     case "language":
       return <LanguageSection />;
+    case "appearance":
+      return <AppearanceSection />;
     case "notifications":
       return <NotificationsSection />;
     case "mate":

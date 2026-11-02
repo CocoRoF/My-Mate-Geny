@@ -390,7 +390,7 @@ export default function MateView() {
           mood={conv.mood}
           react={conv.react}
           caption={conv.caption}
-          className="min-w-[300px] flex-1 basis-0 border-r border-border/60 bg-[radial-gradient(ellipse_at_50%_100%,rgba(22,26,34,0.9),transparent_70%)] px-4 pt-4"
+          className="min-w-[300px] flex-1 basis-0 border-r border-border/60 bg-[radial-gradient(ellipse_at_50%_100%,rgb(var(--c-surface-2)/0.9),transparent_70%)] px-4 pt-4"
           onTap={() => conv.poke("greet")}
         />
         <div className="relative flex min-h-0 min-w-[360px] flex-1 basis-0" data-testid="mate-chat-half">
@@ -450,7 +450,7 @@ function NewMateDialog({ open, onClose, onImported }: { open: boolean; onClose: 
 
   return (
     <div className="fixed inset-0 z-[70] grid place-items-center p-4">
-      <div className="absolute inset-0 bg-black/55 animate-fade-in" onClick={onClose} />
+      <div className="absolute inset-0 bg-scrim/55 animate-fade-in" onClick={onClose} />
       <div className="card relative w-full max-w-md p-5 animate-fade-in" role="dialog" aria-label={t("mate.newMate")}>
         <h2 className="text-[15px] font-semibold">{t("mate.newMate")}</h2>
         <div className="mt-3 flex gap-1">

@@ -106,19 +106,19 @@ function AccountsPanel({
               </div>
               <div className="mt-2">
                 {!a.usable ? (
-                  <p className="text-[11px] text-danger/80">{t("chat.noCredentials")}</p>
+                  <p className="text-[11px] text-danger/80 light:text-danger">{t("chat.noCredentials")}</p>
                 ) : a.auth_mode === "api_key" ? (
                   <p className="text-[11px] text-content-faint">{t("chat.apiKeyNoLimits")}</p>
                 ) : (
                   <PlanWindowBars windows={windowsFor(a, mine, live)} />
                 )}
                 {a.plan_error && a.usable && (
-                  <p className="mt-1 truncate text-[10.5px] text-warning/90" title={a.plan_error}>
+                  <p className="mt-1 truncate text-[10.5px] text-warning/90 light:text-warning" title={a.plan_error}>
                     {t("chat.couldntRefresh", { error: a.plan_error })}
                   </p>
                 )}
                 {a.status === "cooldown" && a.cooldown_until && (
-                  <p className="mt-1 text-[10.5px] text-warning/90">
+                  <p className="mt-1 text-[10.5px] text-warning/90 light:text-warning">
                     {t(a.limit ? "chat.limitCoolingUntil" : "chat.coolingUntil", { time: fmtTime(a.cooldown_until) })}
                   </p>
                 )}

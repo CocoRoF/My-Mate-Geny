@@ -29,6 +29,19 @@
   html.quick h1{flex:1;margin:0;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   html.quick .row{margin:0} html.quick button{padding:6px 12px;font-size:12px} html.quick #change{display:none}
   @media (max-height:260px){.logo,.brand,code{display:none}.card{padding:16px}}
+  /* light: the console's Appearance (theme.js sets nativeTheme, which this media query follows) */
+  @media (prefers-color-scheme: light) {
+    :root{color-scheme:light}
+    body{background:radial-gradient(1200px 600px at 80% -10%,#e4eaff 0%,transparent 55%),#f1f3f7;color:#161a23}
+    .card{background:#ffffffeb;border-color:#dce0e8;box-shadow:0 1px 3px rgba(16,24,40,.06),0 14px 36px -12px rgba(16,24,40,.24)}
+    .brand,p{color:#474f5f}
+    code,.count{color:#606879}
+    .primary{background:linear-gradient(135deg,#4c68f0,#3a56de);box-shadow:0 6px 16px -8px rgba(61,90,230,.55)}
+    .ghost{background:#ebeef3;color:#474f5f} .ghost:hover{background:#dce0e8;color:#161a23}
+    .spin{border-color:rgba(61,90,230,.25);border-top-color:#3d5ae6}
+    html.quick body{background:transparent}
+    html.quick .card{background:#fffffff2}
+  }
 </style></head>
 <body><main><div class="card" data-testid="retry-page">
   <img class="logo" src="logo.png" alt="">

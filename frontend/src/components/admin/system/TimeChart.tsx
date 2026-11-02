@@ -6,7 +6,7 @@
 // per sample still reads as continuous motion.
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
-import { clockLabel, GRID, MUTED, tooltipTime, WARN, DANGER } from "./fmt";
+import { AXIS, clockLabel, CURSOR, GRID, MUTED, RING, tooltipTime, WARN, DANGER } from "./fmt";
 
 export interface ChartSeries {
   key: string;
@@ -242,7 +242,7 @@ export default function TimeChart(p: Props) {
               const y = mirrored ? (i === 0 ? 0 : i === 1 ? mid : plotH) : plotH - (v / yMax) * plotH;
               return (
                 <g key={i}>
-                  <line x1={0} x2={plotW} y1={y} y2={y} stroke={i === (mirrored ? 1 : 2) ? "#2f3647" : GRID} strokeWidth={1} />
+                  <line x1={0} x2={plotW} y1={y} y2={y} stroke={i === (mirrored ? 1 : 2) ? AXIS : GRID} strokeWidth={1} />
                   <text x={-6} y={y} dy="0.32em" textAnchor="end" className="fill-content-faint text-[10px] tabular-nums">
                     {mirrored && i === 1 ? "0" : yFmt(v)}
                   </text>
@@ -269,7 +269,7 @@ export default function TimeChart(p: Props) {
                   const c = m.level === "error" ? DANGER : m.level === "warning" ? WARN : MUTED;
                   return (
                     <g key={`${m.ts}-${i}`} transform={`translate(${mx},${plotH - 1})`}>
-                      <circle r={4} fill={c} stroke="#161a22" strokeWidth={2} />
+                      <circle r={4} fill={c} stroke={RING} strokeWidth={2} />
                     </g>
                   );
                 })}
@@ -290,10 +290,10 @@ export default function TimeChart(p: Props) {
             })}
             {showHover && (
               <g pointerEvents="none">
-                <line x1={hx} x2={hx} y1={0} y2={plotH} stroke="#9aa3b4" strokeWidth={1} opacity={0.6} />
+                <line x1={hx} x2={hx} y1={0} y2={plotH} stroke={CURSOR} strokeWidth={1} opacity={0.6} />
                 {geo.stacks.map(({ s, hi }) =>
                   hi[idx] === null ? null : (
-                    <circle key={s.key} cx={hx} cy={Y(hi[idx] as number, s.below)} r={4} fill={s.color} stroke="#161a22" strokeWidth={2} />
+                    <circle key={s.key} cx={hx} cy={Y(hi[idx] as number, s.below)} r={4} fill={s.color} stroke={RING} strokeWidth={2} />
                   ),
                 )}
               </g>

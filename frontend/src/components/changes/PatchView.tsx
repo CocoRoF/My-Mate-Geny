@@ -11,7 +11,7 @@ export default function PatchView({ file }: { file: PatchFile }) {
         <tbody>
           {file.lines.map((l, i) =>
             l.kind === "hunk" ? (
-              <tr key={i} className="bg-accent/8 text-accent/80">
+              <tr key={i} className="bg-accent/8 text-accent/80 light:text-accent">
                 <td colSpan={3} className="px-3 py-0.5 text-[11px]">
                   {l.text}
                 </td>
@@ -27,15 +27,15 @@ export default function PatchView({ file }: { file: PatchFile }) {
                 key={i}
                 className={l.kind === "add" ? "bg-success/10" : l.kind === "del" ? "bg-danger/10" : ""}
               >
-                <td className="w-12 select-none border-r border-border/50 pr-2 text-right align-top text-content-faint/60">
+                <td className="w-12 select-none border-r border-border/50 pr-2 text-right align-top text-content-faint/60 light:text-content-dim">
                   {l.a ?? ""}
                 </td>
-                <td className="w-12 select-none border-r border-border/50 pr-2 text-right align-top text-content-faint/60">
+                <td className="w-12 select-none border-r border-border/50 pr-2 text-right align-top text-content-faint/60 light:text-content-dim">
                   {l.b ?? ""}
                 </td>
                 <td
                   className={`whitespace-pre pl-3 pr-4 align-top ${
-                    l.kind === "add" ? "text-success/95" : l.kind === "del" ? "text-danger/90" : "text-content-dim"
+                    l.kind === "add" ? "text-success/95 light:text-success" : l.kind === "del" ? "text-danger/90 light:text-danger" : "text-content-dim"
                   }`}
                 >
                   <span className="mr-2 select-none opacity-60">{l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}</span>

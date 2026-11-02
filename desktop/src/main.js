@@ -15,7 +15,7 @@
 // in-place updates) and the userData folder `hr-harnessor` (settings.json,
 // the login cookie, logs), pinned below because Electron would otherwise
 // derive it from the productName and log everyone out.
-const { app, BrowserWindow, Menu, Notification, ipcMain, shell, clipboard, session, systemPreferences, net, dialog } = require("electron");
+const { app, BrowserWindow, Menu, Notification, ipcMain, shell, clipboard, session, systemPreferences, net, dialog, nativeTheme } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 
@@ -53,6 +53,7 @@ const chrome = require("./chrome");
 const folders = require("./folders");
 const { createUpdater, restartArgs, restartCommand } = require("./updater");
 const { isLang } = require("./i18n");
+const theme = require("./theme");
 const { t, language, pageText } = require("./lang");
 const { launchCommand } = require("./launch");
 const rename = require("./rename");
@@ -124,7 +125,7 @@ function createWindow(url) {
     ...bounds,
     minWidth: 380,
     minHeight: 520,
-    backgroundColor: "#0a0c10",
+    backgroundColor: theme.backgroundFor(nativeTheme.shouldUseDarkColors), // (light / dark: theme.js)
     title: PRODUCT,
     icon: path.join(__dirname, "..", "build", "icon.png"),
     autoHideMenuBar: process.platform !== "darwin",
@@ -179,7 +180,7 @@ function createWindow(url) {
   // External links open in the user's browser; our own pages stay in-app.
   wc.setWindowOpenHandler(({ url }) => {
     if (sameOrigin(url) && !/[?&]download=1/.test(url)) {
-      return { action: "allow", overrideBrowserWindowOptions: { backgroundColor: "#0a0c10", autoHideMenuBar: true } };
+      return { action: "allow", overrideBrowserWindowOptions: { backgroundColor: theme.backgroundFor(nativeTheme.shouldUseDarkColors), autoHideMenuBar: true } };
     }
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: "deny" };
@@ -442,6 +443,21 @@ ipcMain.on("hrh:setLanguage", (e, lang) => {
   updater.refresh(); // its "can't update here" reason is in words
 });
 
+// ── light / dark (theme.js): the console tells its mode; native menus / dialogs, the windows' background and the
+// local pages (prefers-color-scheme follows nativeTheme) follow ──
+/** the windows that paint a background (not the Mate's see-through avatar, quick card and action bar) */
+const opaqueWindows = () => {
+  const clear = new Set(mate.transparentWindows ? mate.transparentWindows() : []);
+  return BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed() && !clear.has(w));
+};
+ipcMain.on("hrh:setTheme", (e, mode) => {
+  if (!ours(e) || !fileOrServer(e) || !theme.isThemeMode(mode)) return;
+  if (readSettings().theme !== mode) writeSettings({ theme: mode });
+  theme.applyTheme(nativeTheme, mode, opaqueWindows());
+});
+// the OS switched while the mode is "system": the windows' background follows
+nativeTheme.on("updated", () => theme.applyTheme(nativeTheme, readSettings().theme, opaqueWindows()));
+
 // ── in-app updates (updater.js): state here, every window follows it (the Download page shows it) ──
 let notifiedUpdate = "";
 const updater = createUpdater({
@@ -607,6 +623,7 @@ if (restartOnX11 && relaunchOnX11()) {
   });
   app.setAppUserModelId("me.hrletsgo.harnessor"); // Windows notifications (unchanged id)
   app.whenReady().then(async () => {
+    theme.applyTheme(nativeTheme, readSettings().theme); // before any window: its background and menus match
     await forgetIfAsked();
     await migrateLegacy();
     setupPermissions();

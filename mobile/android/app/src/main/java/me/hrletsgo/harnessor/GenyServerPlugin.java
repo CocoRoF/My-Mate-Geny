@@ -229,6 +229,25 @@ public class GenyServerPlugin extends Plugin {
             // unknown
         }
         r.put("version", nz(version));
+        // light / dark (ThemeBars): the console's mode, and what it draws now — the local pages use it
+        String mode = ThemeBars.mode(getContext());
+        r.put("themeMode", mode);
+        r.put("theme", ThemeBars.dark(getContext(), mode) ? "dark" : "light");
+        call.resolve(r);
+    }
+
+    /** {mode: system | light | dark}: the console's Appearance — kept, and the window / bars follow now. */
+    @PluginMethod
+    public void setTheme(PluginCall call) {
+        String mode = call.getString("mode", "system");
+        if (!"light".equals(mode) && !"dark".equals(mode)) mode = "system";
+        ThemeBars.save(getContext(), mode);
+        final String m = mode;
+        Activity a = getActivity();
+        if (a != null) a.runOnUiThread(() -> ThemeBars.apply(a, getBridge() != null ? getBridge().getWebView() : null, m));
+        JSObject r = new JSObject();
+        r.put("themeMode", m);
+        r.put("theme", ThemeBars.dark(getContext(), m) ? "dark" : "light");
         call.resolve(r);
     }
 

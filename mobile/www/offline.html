@@ -4,14 +4,46 @@
 <style>
   body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a0c10;color:#e6e9f0;font:15px system-ui,sans-serif;padding:24px;box-sizing:border-box}
   .card{max-width:340px;width:100%;text-align:center}
+  .brand{color:#9aa3b4}
   .logo{width:72px;height:72px;margin:0 auto 14px;border-radius:18px;display:block}
   h1{font-size:17px;margin:0 0 8px} p{color:#9aa3b4;line-height:1.5;margin:0} code{color:#5e6676;font-size:12px;word-break:break-all;display:block;margin-top:8px}
   button{margin-top:12px;width:100%;padding:13px;border:0;border-radius:12px;font:inherit;font-weight:600}
   .primary{margin-top:22px;background:linear-gradient(135deg,#6e8bff,#5b7cff);color:#fff} .ghost{background:#1c212c;color:#9aa3b4}
-</style></head>
+  /* light: the console's Appearance (html.light), or the phone's light theme when nothing was chosen */
+  html.light{color-scheme:light}
+  html.light body{background:#f1f3f7;color:#161a23}
+  html.light p,html.light .brand{color:#474f5f}
+  html.light code{color:#606879}
+  html.light .primary{background:linear-gradient(135deg,#4c68f0,#3a56de)}
+  html.light .ghost{background:#ebeef3;color:#474f5f}
+  @media (prefers-color-scheme: light) {
+    html:not(.dark){color-scheme:light}
+  html:not(.dark) body{background:#f1f3f7;color:#161a23}
+  html:not(.dark) p,html:not(.dark) .brand{color:#474f5f}
+  html:not(.dark) code{color:#606879}
+  html:not(.dark) .primary{background:linear-gradient(135deg,#4c68f0,#3a56de)}
+  html:not(.dark) .ghost{background:#ebeef3;color:#474f5f}
+  }
+</style>
+<script>
+  // light / dark as the console last chose (GenyServer.getState → theme; ThemeBars.java), remembered here for the
+  // next first paint; before any choice the phone's own (the media query below)
+  (function () {
+    var h = document.documentElement;
+    var set = function (t) { if (t === "light" || t === "dark") { h.classList.remove("light", "dark"); h.classList.add(t); } };
+    try { set(localStorage.getItem("geny.theme")); } catch (e) {}
+    try {
+      var cap = window.Capacitor;
+      if (cap && cap.nativePromise) cap.nativePromise("GenyServer", "getState", {}).then(function (s) {
+        if (s && s.theme) { set(s.theme); try { localStorage.setItem("geny.theme", s.theme); } catch (e) {} }
+      }).catch(function () {});
+    } catch (e) {}
+  })();
+</script>
+</head>
 <body><div class="card">
   <img class="logo" src="logo.png" alt="">
-  <div style="font-size:12px;color:#9aa3b4;margin:0 0 6px">My Mate Geny</div>
+  <div class="brand" style="font-size:12px;margin:0 0 6px">My Mate Geny</div>
   <h1>Can't reach the server</h1>
   <p>Check your connection. The app reconnects automatically.</p>
   <code id="srv"></code>

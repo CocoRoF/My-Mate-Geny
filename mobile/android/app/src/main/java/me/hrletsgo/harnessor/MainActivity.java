@@ -3,6 +3,7 @@ package me.hrletsgo.harnessor;
 import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -41,6 +42,9 @@ public class MainActivity extends BridgeActivity {
         // media may start without a user gesture. Microphone requests are
         // handled by Capacitor's BridgeWebChromeClient (runtime permission).
         getBridge().getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
+        // light / dark as the console last chose (ThemeBars): the window, the WebView behind the page and the bars,
+        // before the page draws (the console says it again once loaded: GenyServer.setTheme)
+        ThemeBars.apply(this, getBridge().getWebView(), ThemeBars.mode(this));
         // Capacitor's WebView has no DownloadListener: without this, download
         // links (file viewer, explorer, attachments, Download page) do nothing.
         // The download runs in DownloadManager with the console's login cookie.
@@ -66,6 +70,13 @@ public class MainActivity extends BridgeActivity {
                 Toast.makeText(this, "Download failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
             }
         });
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // the phone's dark theme switched (uiMode is handled here, no restart): "system" follows it
+        if (getBridge() != null) ThemeBars.apply(this, getBridge().getWebView(), ThemeBars.mode(this));
     }
 
     @Override
