@@ -136,9 +136,10 @@ function ToolRow({ tool, now, children }: { tool: ToolActivity; now: number; chi
       ? String(inp.file_path || inp.path || inp.notebook_path || "")
       : "";
   return (
-    <div className={`min-w-0 rounded-lg ${open ? "bg-surface-2/60" : ""}`}>
+    <div className={`min-w-0 rounded-lg ${open ? "bg-surface-2/60" : ""}`} data-tool-id={tool.id}>
       <button
         onClick={() => setOpen(!open)}
+        data-testid="tool-row"
         className="flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-surface-2/70 transition"
       >
         <span className={`grid place-items-center w-5 h-5 shrink-0 rounded-md ${m.tone}`}>
@@ -247,6 +248,7 @@ export default function ToolGroup({
     <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-border/80 bg-surface/50">
       <button
         onClick={() => setOpen(!expanded)}
+        data-testid="tool-group"
         className="flex w-full min-w-0 items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-2/50 rounded-xl transition"
       >
         {running ? (

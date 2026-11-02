@@ -58,6 +58,7 @@ export default function SubagentCard({ tool, allTools }: { tool: ToolActivity; a
   return (
     <button
       onClick={() => open(tool.id)}
+      data-agent-id={tool.id}
       className={`group block w-full rounded-xl border bg-surface/50 px-3 py-2.5 text-left transition hover:bg-surface-2/50 ${
         running ? "border-violet/35" : "border-border/80"
       }`}
