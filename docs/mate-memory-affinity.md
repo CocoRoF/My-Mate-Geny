@@ -527,6 +527,34 @@ moves. Router shapes and push throttling.
   `warm`, `memory`, `rude`, `quiet_n`, `manual`, `reset`, `recomputed`), and stage and mood labels
   from `relation` codes. Korean strings use `{name:이}`.
 
+### 6.1 Relationship panel (memora's relationship page, as a side panel)
+
+Opened from the Mate view's header (♥ next to reset / Global settings / Mate settings, or a click on the
+indicator; on phones the indicator, ♥ only while it is hidden) and from the desktop Mate chat window's
+title bar (♥ or the indicator; the panel covers its conversation). Same slot as the settings panels: one
+at a time, Esc closes, full height on phones. View-first — adjusting stays in Mate settings → Relationship
+("Adjust in settings"; from the chat window the console opens at `/?view=mate&mate=<id>&panel=settings-relation`).
+
+- **Hero**: a ring (affinity in the stage colour), stage, affinity, mood (word + emoji), days together,
+  streak, the four stages.
+- **To the next stage**: the earned part (days talked · talks · memories against `EARNED`) and the warmth
+  part (affinity against the band floor + 2), each with a bar; one line says the stage is the lower of the two.
+- **So far**: talks, days talked, memories (+ kept now), longest streak (from the user's message days),
+  last talked.
+- **Affinity, last 30 days**: one bar per day (the value at its end), a dot under talk days, hover / focus
+  names the day; the text alternative is the chart's `aria-label` and a table.
+- **Milestones**: first conversation, first memory, stage-ups, 7 / 30 / 100 / 365 days; the next anniversary.
+- **Recent changes**: the log by day with filters (all · gains · losses · stage changes · manual), 25 at a
+  time. Stage-ups come from the milestones; of stage downs only the last change of stage is known.
+- **Recent memories** (5) → Settings → Memory. Off / paused: said plainly, with Turn it on / Resume.
+
+`GET /api/mates/{id}/relation/journal?days=30` (reads only; `service.relation_journal`). Daily values come
+from the log (each entry carries the value after it; a quiet day's loss is booked on that day). When the log
+(the last 200 changes) no longer reaches the first day, those days come from a replay of the real history
+through the same engine (`A.replay(…, trace=…)` collects every change), so they match real time. The panel
+refetches on `mates.changed` (reasons `relation` and `memory`) and when the mate document's summary changes;
+no polling.
+
 ---
 
 ## 7. Implementation plan (each stage ships on its own)

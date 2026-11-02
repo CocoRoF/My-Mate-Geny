@@ -296,6 +296,16 @@ async def get_relation(mate_id: str, request: Request) -> dict:
         raise _http(exc) from exc
 
 
+@router.get("/{mate_id}/relation/journal")
+async def relation_journal(mate_id: str, request: Request, days: int = 30) -> dict:
+    """The Relationship panel: ``days`` (7 – 90) daily values, the next stage's needs (earned and warmth), stats,
+    milestones and anniversaries, the change log with kinds, the latest memories — reads only."""
+    try:
+        return _svc(request).relation_journal(mate_id, days)
+    except KeyError as exc:
+        raise _http(exc) from exc
+
+
 @router.patch("/{mate_id}/relation")
 async def patch_relation(mate_id: str, request: Request) -> dict:
     """``{enabled?, paused?, sensitivity? (0.5 – 1.5), show_indicator?, avatar_mood?, affinity? (0 – 100)}``"""

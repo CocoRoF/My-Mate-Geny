@@ -22,6 +22,7 @@ const SENS: { id: string; v: number; label: "mateSettings.relSensGentle" | "mate
 export function whyText(t: TFunction, why: string): string {
   const quiet = /^quiet_(\d+)$/.exec(why);
   if (quiet) return t("mateSettings.relWhyQuiet", { days: Number(quiet[1]) });
+  if (why.startsWith("timezone ")) return t("mateSettings.relWhyTimezone"); // (the days counted again in the user's zone)
   switch (why) {
     case "talk":
       return t("mateSettings.relWhyTalk");
@@ -56,7 +57,7 @@ export function whyText(t: TFunction, why: string): string {
   }
 }
 
-function milestoneText(t: TFunction, key: string): string {
+export function milestoneText(t: TFunction, key: string): string {
   const days = /^days_(\d+)$/.exec(key);
   if (days) return t("mateSettings.relMsDays", { days: Number(days[1]) });
   const stage = /^stage_(\w+)$/.exec(key);

@@ -427,6 +427,7 @@ const ko: Messages<"mateSettings"> = {
   relWhyPausedOff: "다시 시작",
   relWhyEnabledOn: "켬",
   relWhyEnabledOff: "끔",
+  relWhyTimezone: "내 시간대로 다시 계산",
   relMsDays: "함께한 지 {days}일",
   relMsStage: "{stage} 단계가 됨",
   relMsFirstMemory: "첫 기억",

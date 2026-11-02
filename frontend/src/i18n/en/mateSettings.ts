@@ -426,6 +426,7 @@ export default {
   relWhyPausedOff: "Resumed",
   relWhyEnabledOn: "Turned on",
   relWhyEnabledOff: "Turned off",
+  relWhyTimezone: "Counted again in your timezone",
   relMsDays: "{days} days together",
   relMsStage: "Became {stage}",
   relMsFirstMemory: "The first memory",

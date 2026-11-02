@@ -21,7 +21,7 @@ import DangerTab from "./DangerTab";
 import GlobalSettings from "./GlobalSettings";
 import { useT, type MsgKey } from "../../../i18n";
 
-type Tab = "profile" | "style" | "avatar" | "model" | "voice" | "memory" | "relation" | "danger";
+export type Tab = "profile" | "style" | "avatar" | "model" | "voice" | "memory" | "relation" | "danger";
 
 const TABS: { id: Tab; label: MsgKey }[] = [
   { id: "profile", label: "mateSettings.tabProfile" },
@@ -34,9 +34,9 @@ const TABS: { id: Tab; label: MsgKey }[] = [
   { id: "danger", label: "mateSettings.tabDanger" },
 ];
 
-export default function MateSettings({ mate, conv, onClose }: { mate: Mate; conv: MateConversation; onClose: () => void }) {
+export default function MateSettings({ mate, conv, onClose, initialTab = "profile" }: { mate: Mate; conv: MateConversation; onClose: () => void; initialTab?: Tab }) {
   const t = useT();
-  const [tab, setTab] = useState<Tab>("profile");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const globalOpen = useMateStore((s) => s.globalOpen);
   const closeGlobal = useMateStore((s) => s.closeGlobal);
   useBackHandler(globalOpen, closeGlobal);

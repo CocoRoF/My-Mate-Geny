@@ -96,7 +96,9 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
 - Relationship (docs/mate-memory-affinity.md §5): `GET /api/mates/{id}/relation` → stage, affinity,
   earned/warmth stage, next stage needs, stats, mood, milestones, log; `PATCH {enabled?, paused?,
   sensitivity? (0.5–1.5), show_indicator?, avatar_mood?, affinity? (0–100)}`; `POST …/relation/reset
-  {mode: zero|recompute}`.
+  {mode: zero|recompute}`; `GET …/relation/journal?days=30` (7–90; reads only) → the Relationship panel's
+  data: daily end-of-day values, the next stage's needs (earned and warmth), stats, milestones,
+  anniversaries, the change log with kinds, the latest memories (docs/mate-memory-affinity.md §6.1).
 - Global settings also hold `timezone` (IANA; the console — any screen — fills it from the browser when
   empty; "" = the server's own zone): the mate's clock (`Now:` line), plan dates and relationship days.
   A relationship remembers the zone its days were counted in; when that is no longer the user's (set,
@@ -719,7 +721,7 @@ delete / memories / relationship / global voice settings) is announced on `/ws/s
 browser (BroadcastChannel `hrh-mate-preview`) and is dropped when the tab
 closes; so does the Conversation style tab's unsaved emotion level (avatar reactions). The relationship
 indicator (a ring + the stage next to the name) follows `mates.changed` (reason `relation`, sent only
-when the mate document's summary changed).
+when the mate document's summary changed); so does the Relationship panel (also on reason `memory`).
 
 ## 7. Desktop app (Electron) — Mate only
 

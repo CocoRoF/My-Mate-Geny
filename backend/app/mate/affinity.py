@@ -454,13 +454,141 @@ def summary(r: dict[str, Any], now: datetime, tz: Any) -> dict[str, Any]:
             "show_indicator": r["show_indicator"], "avatar_mood": r["avatar_mood"]}
 
 
+# ---- the Relationship panel (docs/mate-memory-affinity.md §6.1): reads only ----
+
+USER_WHYS = ("manual", "reset", "recomputed", "paused_on", "paused_off", "enabled_on", "enabled_off")
+
+
+def log_day(e: dict[str, Any], tz: Any) -> date | None:
+    """The local day a change belongs to: a quiet day is settled at the next midnight, so it is that day's."""
+    at = _t(e.get("at"))
+    if at is None:
+        return None
+    if str(e.get("why") or "").startswith("quiet_"):
+        at -= timedelta(seconds=1)
+    return at.astimezone(tz).date()
+
+
+def daily(log: list[dict[str, Any]], today: date, tz: Any, days: int) -> list[dict[str, Any]]:
+    """The value at the end of each of the last ``days`` local days (oldest first) and the day's gains and losses,
+    from a change log in time order (each entry carries the value after it). A day before the log's first entry is
+    ``None``: nothing happened yet — or, for a log that lost its oldest entries, not known from it."""
+    start = today - timedelta(days=days - 1)
+    value: float | None = None
+    by_day: dict[date, list[dict[str, Any]]] = {}
+    for e in log:
+        d = log_day(e, tz)
+        if d is None:
+            continue
+        if d < start:
+            value = float(e.get("v") or 0.0)
+        elif d <= today:
+            by_day.setdefault(d, []).append(e)
+    out = []
+    for i in range(days):
+        d = start + timedelta(days=i)
+        es = by_day.get(d, [])
+        if es:
+            value = float(es[-1].get("v") or 0.0)
+        out.append({"day": d.isoformat(), "v": None if value is None else round(value, 1),
+                    "up": round(sum(float(e.get("d") or 0) for e in es if float(e.get("d") or 0) > 0
+                                    and e.get("why") not in USER_WHYS), 2),
+                    "down": round(sum(float(e.get("d") or 0) for e in es if float(e.get("d") or 0) < 0
+                                      and e.get("why") not in USER_WHYS), 2)})
+    return out
+
+
+def requirements(r: dict[str, Any]) -> dict[str, Any] | None:
+    """What the next stage still needs, in both parts: the **earned** part (days talked, talks, memories — it never
+    goes down) and the **warmth** part (the value now must reach the band; it cools when you're away). The stage
+    is the lower of the two. ``None`` at the last stage."""
+    i = STAGES.index(r["stage"]) if r["stage"] in STAGES else 0
+    if i >= len(STAGES) - 1:
+        return None
+    nxt = STAGES[i + 1]
+    d, t, m = EARNED[nxt]
+    have = {"days": r["active_days"], "turns": r["turns"], "memories": r["memories"]}
+    need = {"days": d, "turns": t, "memories": m}
+    earned = earned_stage(r)
+    warm = int(r.get("warm") or 0)
+    target = BAND_FLOORS[i + 1] + HYST_UP
+    ratios = [1.0 if need[k] == 0 else min(1.0, have[k] / need[k]) for k in need]
+    return {
+        "stage": nxt,
+        "earned": {"stage": earned, "met": STAGES.index(earned) > i, "have": have, "need": need,
+                   "left": {k: max(0, need[k] - have[k]) for k in need}, "ratio": round(min(ratios), 3)},
+        "warmth": {"stage": STAGES[warm], "met": warm > i, "value": round(r["affinity"], 1), "target": target,
+                   "left": 0.0 if warm > i else round(max(0.0, target - r["affinity"]), 1),
+                   "ratio": 1.0 if warm > i else round(min(1.0, r["affinity"] / target), 3)},
+    }
+
+
+def anniversaries(r: dict[str, Any], today: date, tz: Any) -> list[dict[str, Any]]:
+    """7 / 30 / 100 / 365 days together: the date of each (day 1 is the first talk's), reached or how far off."""
+    start = _t(r.get("started_at"))
+    if start is None:
+        return []
+    first = start.astimezone(tz).date()
+    n_days = days_together(r, today, tz)
+    out = []
+    for n in ANNIVERSARIES:
+        d = first + timedelta(days=n - 1)
+        out.append({"days": n, "day": d.isoformat(), "reached": n_days >= n, "in_days": max(0, (d - today).days)})
+    return out
+
+
+def longest_run(days: set[date] | list[date]) -> int:
+    """The most days in a row in a set of days."""
+    best = run = 0
+    prev: date | None = None
+    for d in sorted(set(days)):
+        run = run + 1 if prev is not None and d == prev + timedelta(days=1) else 1
+        best, prev = max(best, run), d
+    return best
+
+
+def changes(r: dict[str, Any]) -> list[dict[str, Any]]:
+    """The change log (newest first) with a kind each — ``gain`` / ``loss`` / ``manual`` (what the user did: a
+    value set by hand, a fresh start, a recount, pause, on/off) / ``stage`` (stage-ups from the milestones; the
+    last change of stage, when it was not one, as a plain change)."""
+    out = []
+    for e in r["log"]:
+        why, d = str(e.get("why") or ""), float(e.get("d") or 0.0)
+        kind = ("manual" if why in USER_WHYS or why.startswith("timezone") or d == 0
+                else "gain" if d > 0 else "loss")
+        out.append({"at": e.get("at"), "d": d, "why": why, "v": e.get("v"), "kind": kind})
+    ups = {str(m.get("key"))[6:]: m.get("at") for m in r["milestones"] if str(m.get("key") or "").startswith("stage_")}
+    for stage, at in ups.items():
+        out.append({"at": at, "d": 0.0, "why": "stage_up", "v": None, "kind": "stage", "stage": stage})
+    if r.get("stage_changed_at") and ups.get(r["stage"]) != r["stage_changed_at"]:
+        out.append({"at": r["stage_changed_at"], "d": 0.0, "why": "stage_now", "v": None, "kind": "stage",
+                    "stage": r["stage"]})
+    # newest first; at the same moment the later entry first (a talk and the streak it started)
+    order = sorted(range(len(out)), key=lambda i: (_t(out[i].get("at")) or datetime.min.replace(tzinfo=timezone.utc), i),
+                   reverse=True)
+    return [out[i] for i in order]
+
+
 # ---- recompute: the same engine over the real history ----
 
+def _traced(trace: list[dict[str, Any]] | None, r: dict[str, Any], seen: Any) -> Any:
+    """Copy the log entries added since ``seen`` (the last one already copied, by identity) to ``trace``: the
+    whole history of changes, which the document's log (the last 200) can't keep. A fresh start replaces the
+    document: then everything in its log is new."""
+    log = r["log"]
+    if trace is not None:
+        i = next((k for k in range(len(log) - 1, -1, -1) if log[k] is seen), -1) if seen is not None else -1
+        trace.extend(log[i + 1:])
+    return log[-1] if log else None
+
+
 def replay(events: list[tuple[datetime, str, Any]], now: datetime, tz: Any,
-           settings: dict[str, Any] | None = None, marks: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+           settings: dict[str, Any] | None = None, marks: list[dict[str, Any]] | None = None,
+           trace: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """``events``: (time, "turn", (user_text, reply_text)) | (time, "memory", None) — rebuilt from scratch with the
     current settings (enabled / sensitivity …; pauses in the past aren't known, so none). ``marks``: the user's
-    own changes (a value set by hand, a fresh start — ``marks_of``), applied when they happened."""
+    own changes (a value set by hand, a fresh start — ``marks_of``), applied when they happened. ``trace``: gets
+    every change in order (the log without its 200-entry limit; the Relationship panel's daily values)."""
     r = new()
     for k, v in (settings or {}).items():
         if k in ("enabled", "sensitivity", "show_indicator", "avatar_mood"):
@@ -474,6 +602,7 @@ def replay(events: list[tuple[datetime, str, Any]], now: datetime, tz: Any,
         if at is not None and m.get("kind") in ("set", "reset"):
             timeline.append((at, m["kind"], m.get("v")))
     order = {"turn": 0, "memory": 1, "set": 2, "reset": 2}
+    seen = None
     for at, what, arg in sorted(timeline, key=lambda e: (e[0], order.get(e[1], 3))):
         advance(r, at, tz)
         if what == "turn":
@@ -485,8 +614,10 @@ def replay(events: list[tuple[datetime, str, Any]], now: datetime, tz: Any,
             set_value(r, float(arg), at, tz)
         elif what == "reset":
             r = reset(r, at, tz)
+        seen = _traced(trace, r, seen)
     advance(r, now, tz)
     _log(r, 0.0, "recomputed", now)
+    _traced(trace, r, seen)
     r["enabled"] = enabled
     r["marks"] = list(marks or [])[-50:]
     return r

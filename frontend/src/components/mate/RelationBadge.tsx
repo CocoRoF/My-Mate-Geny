@@ -39,7 +39,7 @@ export function RelationRing({ value, stage, size = 16 }: { value: number; stage
   );
 }
 
-export default function RelationBadge({ mate, compact = false }: { mate: Mate; compact?: boolean }) {
+export default function RelationBadge({ mate, compact = false, onClick, active = false }: { mate: Mate; compact?: boolean; onClick?: () => void; active?: boolean }) {
   const t = useT();
   const rel = mate.relation;
   if (!rel || !rel.enabled || !rel.show_indicator) return null;
@@ -50,10 +50,33 @@ export default function RelationBadge({ mate, compact = false }: { mate: Mate; c
   ]
     .filter(Boolean)
     .join(" · ");
-  return (
-    <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] text-content-dim" title={tip} aria-label={tip} data-testid="mate-relation-badge" data-stage={rel.stage} data-value={rel.affinity}>
+  const inner = (
+    <>
       <RelationRing value={rel.affinity} stage={rel.stage} />
       {!compact && <span className={rel.paused ? "opacity-60" : ""}>{stage}</span>}
+    </>
+  );
+  // (clickable: opens the Relationship panel)
+  if (onClick)
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={active}
+        className={`inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] text-content-dim transition hover:bg-surface-3 hover:text-content ${compact ? "min-h-8" : ""} ${active ? "bg-surface-3 text-content" : ""}`}
+        title={tip}
+        aria-label={tip}
+        data-testid="mate-relation-badge"
+        data-stage={rel.stage}
+        data-value={rel.affinity}
+        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+      >
+        {inner}
+      </button>
+    );
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] text-content-dim" title={tip} aria-label={tip} data-testid="mate-relation-badge" data-stage={rel.stage} data-value={rel.affinity}>
+      {inner}
     </span>
   );
 }
