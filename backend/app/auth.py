@@ -557,6 +557,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # proxy hop, and a live per-conversation token — never the cookie.
             if not internal_caller_ok(request):
                 return JSONResponse({"detail": "not found"}, status_code=404)
+            if path.startswith(INTERNAL_PREFIX + "avatar/"):
+                # the Avatar Create agent's bridge (app/avatar/mcp_bridge.py): its own per-conversation token
+                avatars = getattr(request.app.state, "avatar_service", None)
+                if avatars is None or avatars.token_info(request.headers.get("x-avatar-token")) is None:
+                    return JSONResponse({"detail": "invalid avatar token"}, status_code=401)
+                return await call_next(request)
             mates = getattr(request.app.state, "mate_service", None)
             if mates is None or mates.token_info(request.headers.get("x-mate-token")) is None:
                 return JSONResponse({"detail": "invalid mate token"}, status_code=401)

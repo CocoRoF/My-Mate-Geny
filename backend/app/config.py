@@ -94,6 +94,14 @@ class Settings(BaseSettings):
     # Where "Install skills" downloads the official skills from (a .tar.gz of github.com/higgsfield-ai/skills).
     higgsfield_skills_url: str = "https://codeload.github.com/higgsfield-ai/skills/tar.gz/refs/heads/main"
 
+    # ---- Avatar Create (docs/avatar-create.md) ----
+    # Projects (pictures, clips, the export) live under this root.
+    avatar_root: str = "~/.hr-harnessor/avatars"
+    # The processing venv (numpy/scipy/OpenCV/Pillow/imageio-ffmpeg); empty = ~/.hr-harnessor/avatar-venv/<python>.
+    avatar_venv: str = ""
+    # Memory cap of one processing step (capped / an address-space limit).
+    avatar_mem: str = "3G"
+
     # ---- auth (docs/auth.md) ----
     # Login credentials, precedence: set in Admin -> Security (stored hashed in
     # the DB) > these env values > the built-in default admin / geny-admin
@@ -190,6 +198,10 @@ class Settings(BaseSettings):
     @property
     def higgsfield_root_path(self) -> Path:
         return Path(os.path.expanduser(self.higgsfield_root)).resolve()
+
+    @property
+    def avatar_root_path(self) -> Path:
+        return Path(os.path.expanduser(self.avatar_root)).resolve()
 
     @property
     def home_dir(self) -> Path:

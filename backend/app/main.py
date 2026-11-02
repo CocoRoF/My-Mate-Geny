@@ -28,6 +28,7 @@ from app.routers import (
     admin,
     attachments,
     auth as auth_router,
+    avatar as avatar_router,
     cli_tools as cli_tools_router,
     downloads,
     files,
@@ -49,6 +50,7 @@ from app.routers import (
     usage,
     workspaces,
 )
+from app.avatar.service import AvatarService
 from app.higgsfield.agent import HiggsfieldAgent
 from app.higgsfield.service import HiggsfieldService
 from app.mate.service import MateService
@@ -119,6 +121,9 @@ async def lifespan(app: FastAPI):
         higgsfield, is_live=session_service.is_live, session_exists=session_service.exists)
     session_service.higgsfield = app.state.higgsfield_agent
     higgsfield_keeper = asyncio.create_task(app.state.higgsfield_agent.run_keeper())
+    # Avatar Create (docs/avatar-create.md): the agent in the Mate window that makes video avatars
+    app.state.avatar_service = AvatarService(session_service, app.state.mate_service, higgsfield, logs=logs)
+    await app.state.avatar_service.start()  # (projects that were running go on)
     # Settings -> Providers -> CLI versions: installed vs latest, upgrades (services/cli_tools)
     cli_tools = CliToolsService(session_service, logs)
     app.state.cli_tools = cli_tools
@@ -149,6 +154,7 @@ async def lifespan(app: FastAPI):
 
     housekeeper.cancel()
     higgsfield_keeper.cancel()
+    await app.state.avatar_service.stop()
     await cli_tools.stop()
     if system_monitor is not None:
         await system_monitor.stop()  # flushes the partial minute, marks a clean shutdown
@@ -224,6 +230,8 @@ for r in (
     admin.router,
     mates.router,
     mate_internal.router,
+    avatar_router.router,
+    avatar_router.internal,
     preferences_router.router,
     cli_tools_router.router,
 ):

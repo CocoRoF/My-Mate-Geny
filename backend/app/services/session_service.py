@@ -131,6 +131,10 @@ class SessionService:
         # list and its change feed. The Mate layer configures their engine
         # (``mate_engine(session, req)``) and listens for turn ends.
         self._mate_sids: set[str] = set()
+        # Avatar Create conversations (kind = 'avatar', docs/avatar-create.md): hidden like mates; their engine is
+        # configured by ``engine_hooks["avatar"]`` (app.avatar.service).
+        self._avatar_sids: set[str] = set()
+        self.engine_hooks: dict[str, Any] = {}
         # the client_msg_id of the last message a person sent (sid -> id; ``…~<device>``, frontend
         # mate/voiceOwner.ts): where the user talks from — the mate's screen capture asks that device first
         self._last_client: dict[str, str] = {}
@@ -155,6 +159,7 @@ class SessionService:
         )
         try:
             self._mate_sids = {r["id"] for r in self._db.query("SELECT id FROM sessions WHERE kind = 'mate'")}
+            self._avatar_sids = {r["id"] for r in self._db.query("SELECT id FROM sessions WHERE kind = 'avatar'")}
         except Exception:  # noqa: BLE001 - very old test DBs
             pass
         # Engines don't survive a restart: tasks still marked running are gone.
@@ -199,11 +204,13 @@ class SessionService:
             VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
             """,
             (sid, title, provider, model, effort, connection_id, workspace_path,
-             mode if mode in MODES else "agent", json.dumps(dirs), "mate" if kind == "mate" else "chat",
+             mode if mode in MODES else "agent", json.dumps(dirs), kind if kind in ("mate", "avatar") else "chat",
              mate_id, now, now),
         )
         if kind == "mate":
             self._mate_sids.add(sid)
+        elif kind == "avatar":
+            self._avatar_sids.add(sid)
         self.list_changed("created", sid)
         return self.get(sid)
 
@@ -338,7 +345,7 @@ class SessionService:
         rows = self._db.query(
             """
             SELECT s.*, (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
-            FROM sessions s WHERE COALESCE(s.kind, 'chat') != 'mate' ORDER BY s.updated_at DESC
+            FROM sessions s WHERE COALESCE(s.kind, 'chat') NOT IN ('mate', 'avatar') ORDER BY s.updated_at DESC
             """
         )
         # Background tasks still running (subagents, background shells): the
@@ -372,6 +379,7 @@ class SessionService:
             self._attachments.purge_session(sid)
         self.list_changed("deleted", sid)
         self._mate_sids.discard(sid)
+        self._avatar_sids.discard(sid)
 
     def messages(self, sid: str) -> list[dict[str, Any]]:
         rows = self._db.query(
@@ -584,7 +592,7 @@ class SessionService:
         started or ended / account moved): tell every open sidebar. Only a
         version is sent — clients coalesce bursts and refetch once.
         Mate conversations aren't in that list: their changes aren't announced."""
-        if sid is not None and sid in self._mate_sids:
+        if sid is not None and self.is_hidden(sid):
             return
         self._list_version += 1
         self._publish_list({"type": "sessions.changed",
@@ -632,6 +640,10 @@ class SessionService:
 
     def is_mate_session(self, sid: str) -> bool:
         return sid in self._mate_sids
+
+    def is_hidden(self, sid: str) -> bool:
+        """Not a chat (a mate's or an Avatar Create conversation): never in the chat list or its feed."""
+        return sid in self._mate_sids or sid in self._avatar_sids
 
     def running_task_count(self, sid: str) -> int:
         """Background tasks the chat's live engine is still running."""
@@ -686,7 +698,7 @@ class SessionService:
         """A run ended (a turn, or one Claude started on its own after background work): how, and when — the
         sidebar shows it until the chat is opened (seen at once when it is on screen now). Before the run's
         idle state is announced, so that list fetch already has it. Mate conversations aren't listed: skipped."""
-        if sid in self._mate_sids:
+        if self.is_hidden(sid):
             return
         status = outcome.get("status")
         if outcome.get("trigger") == "auto" and status == "error" and not outcome.get("error"):
@@ -769,7 +781,7 @@ class SessionService:
             else []
         )
         atts = [self._attachments.to_provider(r) for r in rows] if self._attachments else []
-        inline = session.get("kind") == "mate"  # no file tools: contents go into the message
+        inline = session.get("kind") in ("mate", "avatar")  # no file tools: contents go into the message
         if atts and inline:
             await asyncio.to_thread(prepare_inline, atts)
         if atts and session["connection_id"]:
@@ -893,7 +905,7 @@ class SessionService:
         if rows and self._attachments is not None:
             self._attachments.link([r["id"] for r in rows], msg_id)
         attachments = [self._attachments.to_provider(r) for r in rows] if self._attachments else []
-        if attachments and session.get("kind") == "mate":
+        if attachments and session.get("kind") in ("mate", "avatar"):
             # A mate can't open files: their readable text goes into the message.
             await asyncio.to_thread(prepare_inline, attachments)
         # Other tabs/devices watching this session render the user's bubble.
@@ -1064,7 +1076,7 @@ class SessionService:
             inbox=TurnInbox(),
             preamble=preamble,
             uploads_dir=uploads_dir,
-            inline_files=session.get("kind") == "mate",
+            inline_files=session.get("kind") in ("mate", "avatar"),
             auto_compact_window=self.auto_compact_window(session) if provider_name == "claude" else 0,
             tool_env=dict(hf.env) if hf is not None else {},
             system_append=hf.prompt if hf is not None else "",
@@ -1078,6 +1090,9 @@ class SessionService:
             # A Mate's engine: its own system prompt, no built-in tools, only
             # the mate MCP bridge (see app.mate.service).
             self.mate_engine(session, req)
+        elif session.get("kind") in self.engine_hooks:
+            # Avatar Create: its own prompt and only its own tools (app.avatar.service)
+            self.engine_hooks[session["kind"]](session, req)
         self._inboxes[sid] = req.inbox
 
         def context_notice() -> ProviderEvent | None:
@@ -1200,7 +1215,7 @@ class SessionService:
     async def _higgsfield_launch(self, sid: str, session: dict[str, Any], provider: str) -> Any:
         """What this turn's engine gets from Higgsfield (None: not connected, a Mate, or not wired). Never fails
         the turn."""
-        if self.higgsfield is None or session.get("kind") == "mate":
+        if self.higgsfield is None or session.get("kind") in ("mate", "avatar"):
             return None
         try:
             return await self.higgsfield.launch(sid, session, provider=provider)
@@ -1210,7 +1225,7 @@ class SessionService:
             return None
 
     def _higgsfield_account(self, session: dict[str, Any]) -> str | None:
-        if self.higgsfield is None or session.get("kind") == "mate" or not session_settings(session)["enabled"]:
+        if self.higgsfield is None or session.get("kind") in ("mate", "avatar") or not session_settings(session)["enabled"]:
             return None
         return self.higgsfield.service.default_id()
 
