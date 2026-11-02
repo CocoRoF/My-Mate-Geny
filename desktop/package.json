@@ -7,7 +7,7 @@
   "desktopName": "my-mate-geny.desktop",
   "author": "My Mate Geny contributors",
   "homepage": "https://github.com/CocoRoF/My-Mate-Geny",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "private": true,
   "scripts": {
     "start": "electron .",

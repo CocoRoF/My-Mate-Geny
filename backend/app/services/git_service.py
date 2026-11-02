@@ -92,7 +92,7 @@ def _api_base(provider: str, host: str | None) -> str:
 
 
 def _headers(token: str, provider: str) -> dict[str, str]:
-    h = {"User-Agent": "hr-harnessor", "Accept": "application/json"}
+    h = {"User-Agent": "my-mate-geny", "Accept": "application/json"}
     if provider == "github":
         h["Authorization"] = f"Bearer {token}"
         h["Accept"] = "application/vnd.github+json"
@@ -312,7 +312,7 @@ class GitService:
         for args in (
             ["config", "--local", "--replace-all", "credential.helper", ""],
             ["config", "--local", "--add", "credential.helper", helper],
-            ["config", "user.name", acc["username"] or "hr-harnessor"],
+            ["config", "user.name", acc["username"] or "My Mate Geny"],
             ["config", "user.email", f"{acc['username']}@users.noreply.{acc['provider']}.com"],
         ):
             subprocess.run(["git", "-C", str(dest), *args], check=False, capture_output=True)

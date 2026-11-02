@@ -138,7 +138,7 @@ async def lifespan(app: FastAPI):
     db.close()
 
 
-app = FastAPI(title="hr-harnessor", version=__version__, lifespan=lifespan)
+app = FastAPI(title="My Mate Geny", version=__version__, lifespan=lifespan)
 
 
 class ErrorLogMiddleware(BaseHTTPMiddleware):
