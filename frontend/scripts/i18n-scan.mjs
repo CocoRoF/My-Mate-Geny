@@ -33,7 +33,7 @@ const CALLS = /^(set(Error|Err|Msg|Message|Ok|Done|Notice|Status|Hint|Info|Warni
 
 // Words that stay as they are in every language (product / model names, units, code).
 const KEEP = [
-  /^My Mate Geny$/, /^My Mate$/, /^Geny$/, /^Claude( Code)?$/, /^Codex$/, /^Live2D$/, /^GitHub$/, /^Git$/, /^OpenAI$/, /^Anthropic$/,
+  /^My Mate Geny$/, /^My Mate$/, /^Geny$/, /^Claude( Code)?$/, /^Codex$/, /^Higgsfield$/, /^Live2D$/, /^GitHub$/, /^Git$/, /^OpenAI$/, /^Anthropic$/,
   /^API$/, /^CLI$/, /^MCP$/, /^URL$/, /^ID$/, /^OK$/, /^JSON$/, /^PDF$/, /^CSV$/, /^HTTP(S)?$/, /^SSH$/, /^IP$/, /^PID$/,
   /^(KB|MB|GB|TB|ms|s|px|%)$/, /^v\d/, /^[A-Z]{2,5}$/,
 ];

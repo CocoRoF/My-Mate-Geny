@@ -6,6 +6,7 @@ import { apiCostHint, fmtUsd } from "../../lib/usage";
 import { useT, type MsgKey } from "../../i18n";
 import Icon from "../ui/Icon";
 import SubscriptionUsage from "./SubscriptionUsage";
+import HiggsfieldUsage from "./HiggsfieldUsage";
 
 function fmtNum(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + "M";
@@ -106,6 +107,8 @@ export default function UsageView() {
         {connected.length === 0 && (
           <p className="text-sm text-content-faint">{t("usage.connectProvider")}</p>
         )}
+
+        <HiggsfieldUsage />
 
         {/* secondary: local token activity */}
         <button

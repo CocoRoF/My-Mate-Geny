@@ -12,6 +12,7 @@ import TodoCard, { todosOf, type Todo } from "../turn/TodoCard";
 import { relPath } from "../turn/toolMeta";
 import { openPath } from "../../../stores/workbenchStore";
 import { useT } from "../../../i18n";
+import HiggsfieldControls, { useHiggsfieldConnected } from "./HiggsfieldControls";
 
 function Section({
   title,
@@ -139,6 +140,7 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
   const live = info || session.cli_info;
   // The account this chat's engine leased (same source as the composer footer).
   const account = useUsageStore((s) => s.account[session.id] ?? null);
+  const hfConnected = useHiggsfieldConnected();
 
   return (
     <aside className="flex h-full w-[340px] max-w-[92vw] shrink-0 flex-col border-l border-border bg-surface/95 backdrop-blur-xl">
@@ -273,6 +275,12 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
           )}
           {!live && <p className="mt-1 text-[11.5px] text-content-faint">{t("session.detailsLater")}</p>}
         </Section>
+
+        {hfConnected && (
+          <Section title="Higgsfield" icon="sparkles">
+            <HiggsfieldControls session={session} />
+          </Section>
+        )}
 
         <Section title={t("nav.usage")} icon="cpu">
           <dl className="space-y-1 text-[12px]">

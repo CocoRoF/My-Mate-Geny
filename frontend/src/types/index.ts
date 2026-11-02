@@ -40,6 +40,8 @@ export interface Session {
   result_unseen?: boolean;
   auto_compact_window?: number | null; // Claude: this chat's auto-compact window (null = global default, 0 = CLI default)
   accounts?: Record<string, { id?: string; label?: string; manual?: boolean; at?: string }>; // account it ran on last
+  /** this chat's Higgsfield (docs/higgsfield.md): on unless turned off; max_credits = ask before jobs above it */
+  higgsfield?: { enabled: boolean; max_credits: number | null };
   created_at: string;
   updated_at: string;
   message_count?: number;
