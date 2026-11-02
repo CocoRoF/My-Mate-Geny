@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import re
 import secrets
 import shutil
 import sys
@@ -31,6 +32,7 @@ from typing import Any
 
 from app.avatar import plan as PL
 from app.avatar import presets as P
+from app.avatar import studio as ST
 from app.avatar.deps import Deps
 from app.avatar.generator import Generator, JobError, job_id, result_url
 from app.avatar.prompt import system_prompt
@@ -38,6 +40,7 @@ from app.avatar.store import AvatarError, AvatarStore, project_dir, safe_rel
 from app.config import settings
 from app.higgsfield.oauth import HiggsfieldError
 from app.mate import files as mate_files
+from app.mate.store import MateError
 from app.providers.base import TurnRequest
 from app.providers.catalog import default_mate_model
 from app.services._ids import now_iso
@@ -153,13 +156,16 @@ class AvatarService:
                         else None})
         return out
 
-    def create(self, *, mate_id: str | None = None, language: str = "en", provider: str = "claude") -> dict[str, Any]:
+    def create(self, *, mate_id: str | None = None, language: str = "en", provider: str = "claude",
+               studio: str | None = None) -> dict[str, Any]:
+        """A project. ``studio``: "new" (the Mate Create studio making the draft mate ``mate_id``) or "existing"
+        (the studio for that mate's avatar); None: a plain Avatar Create project."""
         brief = P.default_brief()
         title = "New avatar"
         if mate_id:
             mate = self.mates.get(mate_id)  # KeyError → 404
             brief["target"] = {"mode": "existing", "mate_id": mate_id, "name": mate["name"]}
-            title = mate["name"]
+            title = mate["name"] or ("New mate" if studio == "new" else title)
         provider = provider if provider in ("claude", "codex") else "claude"
         doc = self.store.create({
             "title": title, "status": "interview", "phase": None, "language": language if language in ("ko", "en")
@@ -167,16 +173,313 @@ class AvatarService:
             "brief": brief, "question": None, "plan": None, "confirmation": None, "extras": [], "items": {},
             "done": {}, "ledger": {"committed": 0.0, "jobs": 0}, "paused": False, "picked": None, "check": None,
             "result": None, "applied": None, "error": None, "log": [],
+            **({"studio": self._new_studio(studio, mate_id)} if studio and mate_id else {}),
         })
         pid = doc["id"]
+        label = "Mate studio" if studio == "new" else "Avatar"
         s = self._svc.create(provider=provider, model=doc["engine"]["model"], effort=doc["engine"]["effort"],
-                             workspace_path=str(self.dir(pid)), title=f"Avatar · {title}", kind="avatar")
+                             workspace_path=str(self.dir(pid)), title=f"{label} · {title}", kind="avatar")
         doc["session_id"] = s["id"]
         self.save(doc)
-        self._event(pid, "start", "The user opened Avatar Create"
-                    + (f" for the mate “{title}”" if mate_id else " (the avatar may go to a new mate or an existing one)")
-                    + ". Greet them in one sentence and start the interview with the first question card.")
+        if studio == "new":
+            self._event(pid, "start", "The user opened the Mate Create studio to make a new mate: you are on the left, "
+                        "her settings (still empty) are on the right. Greet them in one sentence and start with the "
+                        "concept — ask what kind of mate they want, or offer 3 concept directions (ask_user kind "
+                        "\"concepts\").")
+        elif studio == "existing":
+            self._event(pid, "start", f"The user opened the studio for the mate “{title}” to make her a new moving "
+                        "avatar; her settings are on the right. Greet them in one sentence and start the avatar "
+                        "interview with the first question card.")
+        else:
+            self._event(pid, "start", "The user opened Avatar Create"
+                        + (f" for the mate “{title}”" if mate_id else
+                           " (the avatar may go to a new mate or an existing one)")
+                        + ". Greet them in one sentence and start the interview with the first question card.")
         return self.view(pid)
+
+    # ---------------------------------------------------------------- the Mate Create studio (§11)
+
+    def _new_studio(self, kind: str, mate_id: str) -> dict[str, Any]:
+        mate = self.mates.get(mate_id)
+        return {"kind": "new" if kind == "new" else "existing", "mate_id": mate_id, "concept": {}, "filled": {},
+                "seen": ST.snapshot(mate, {}), "avatar_skipped": False, "voice_ok": False, "finished_at": None}
+
+    def _studio(self, doc: dict[str, Any]) -> dict[str, Any] | None:
+        """The project's studio part (a plain Avatar Create project for one mate opened in the studio gets one)."""
+        st = doc.get("studio")
+        if st is None:
+            t = doc["brief"]["target"]
+            if t.get("mode") == "existing" and t.get("mate_id"):
+                try:
+                    st = doc["studio"] = self._new_studio("existing", t["mate_id"])
+                except KeyError:
+                    return None
+        return st
+
+    def _studio_mate(self, doc: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+        st = self._studio(doc)
+        if st is None:
+            raise AvatarError("this project is not in the studio", 409)
+        try:
+            return st, self.mates.get(st["mate_id"])
+        except KeyError:
+            raise AvatarError("the mate of this project no longer exists", 410, "gone") from None
+
+    def studio_open(self, *, mate_id: str | None = None, language: str = "en", provider: str = "claude",
+                    fresh: bool = False) -> dict[str, Any]:
+        """The studio for a mate: a new draft (no ``mate_id``), a draft's own project, or an existing mate's latest
+        project (``fresh``: a new one)."""
+        if not mate_id:
+            self._drop_untouched_drafts()
+            mate = self.mates.store.create(name="", persona={"language": language if language in ST.LANGS else "en"},
+                                           draft=True)
+            return self.create(mate_id=mate["id"], language=language, provider=provider, studio="new")
+        mate = self.mates.get(mate_id)  # KeyError → 404
+        mine = [pid for pid in self.store.ids() if self._target_of(pid) == mate_id]
+        if mate.get("draft"):
+            for pid in mine:
+                if (self.doc(pid).get("studio") or {}).get("kind") == "new":
+                    return self.view(pid)
+            return self.create(mate_id=mate_id, language=language, provider=provider, studio="new")
+        if not fresh:
+            for pid in mine:  # (newest first)
+                if self.doc(pid).get("status") != "canceled":
+                    doc = self.doc(pid)
+                    if "studio" not in doc and self._studio(doc) is not None:
+                        self.save(doc)
+                    return self.view(pid)
+        return self.create(mate_id=mate_id, language=language, provider=provider, studio="existing")
+
+    def _target_of(self, pid: str) -> str | None:
+        try:
+            doc = self.doc(pid)
+        except AvatarError:
+            return None
+        return (doc.get("studio") or {}).get("mate_id") or doc["brief"]["target"].get("mate_id")
+
+    def _pristine(self, doc: dict[str, Any], mate: dict[str, Any]) -> bool:
+        """A draft nobody worked on: nothing written, no question answered, nothing estimated."""
+        if doc.get("status") != "interview" or doc.get("plan") or doc.get("brief", {}).get("reference", {}).get("files"):
+            return False
+        st = doc.get("studio") or {}
+        if st.get("concept") or (mate.get("name") or "").strip() or any((mate.get("persona") or {}).get(k)
+                                                                        for k in ("description", "personality")):
+            return False
+        sid = doc.get("session_id")
+        try:
+            msgs = self._svc.messages(sid) if sid else []
+        except KeyError:
+            msgs = []
+        return not any(m.get("role") == "user" and not _meta(m).get("internal") for m in msgs)
+
+    def _drop_untouched_drafts(self) -> None:
+        for mate in self.mates.store.drafts():
+            for pid in [p for p in self.store.ids() if self._target_of(p) == mate["id"]]:
+                doc = self.doc(pid)
+                if (doc.get("studio") or {}).get("kind") == "new" and self._pristine(doc, mate) \
+                        and not (doc.get("session_id") and self._svc.is_running(doc["session_id"])):
+                    self.studio_discard(pid)
+
+    def drafts(self) -> list[dict[str, Any]]:
+        """The drafts being made (newest first), each with its studio project."""
+        out = []
+        ids = self.store.ids()
+        for mate in self.mates.store.drafts():
+            pid = next((p for p in ids if self._target_of(p) == mate["id"]
+                        and (self.doc(p).get("studio") or {}).get("kind") == "new"), None)
+            if pid is None:
+                continue
+            doc = self.doc(pid)
+            out.append({"mate_id": mate["id"], "name": mate["name"], "project_id": pid, "status": doc["status"],
+                        "pitch": ((doc.get("studio") or {}).get("concept") or {}).get("pitch") or "",
+                        "updated_at": max(doc.get("updated_at") or "", mate.get("updated_at") or ""),
+                        "thumb": self._url(doc, "thumbs/home.jpg") if (self.dir(pid) / "thumbs/home.jpg").is_file()
+                        else None})
+        return sorted(out, key=lambda d: d["updated_at"], reverse=True)
+
+    def _write_fields(self, doc: dict[str, Any], st: dict[str, Any], patch: dict[str, Any],
+                      concept: dict[str, str]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        """Apply a patch to the studio's mate (+ the concept). → (mate, before snapshot, after snapshot)."""
+        mate = self.mates.get(st["mate_id"])
+        before = ST.snapshot(mate, st.get("concept"))
+        if patch:
+            try:
+                mate = self.mates.update(st["mate_id"], patch)
+            except MateError as exc:
+                raise AvatarError(str(exc)) from None
+        if concept:
+            st["concept"] = {**(st.get("concept") or {}), **concept}
+            st["concept"] = {k: v for k, v in st["concept"].items() if v}
+        after = ST.snapshot(mate, st.get("concept"))
+        if mate.get("name") and doc["brief"]["target"].get("mate_id") == st["mate_id"]:
+            doc["brief"]["target"]["name"] = mate["name"]
+            doc["title"] = mate["name"]
+        return mate, before, after
+
+    async def _tool_update_mate_draft(self, pid: str, args: dict[str, Any]) -> Any:
+        doc = self.doc(pid)
+        st, _mate = self._studio_mate(doc)
+        try:
+            patch, concept = ST.agent_patch(args)
+        except ST.StudioError as exc:
+            raise AvatarError(str(exc)) from None
+        mate, before, after = self._write_fields(doc, st, patch, concept)
+        changed = [k for k in ST.paths_of(patch, concept) if before.get(k) != after.get(k)]
+        at = now_iso()
+        filled = st.setdefault("filled", {})
+        for k in changed:
+            filled[k] = {"at": at, "prev": before.get(k)}
+        seen = st.setdefault("seen", {})
+        for k in ST.paths_of(patch, concept):
+            seen[k] = after.get(k)  # (the agent knows what it wrote)
+        self._history(doc, "draft_fields", fields=changed)
+        self.save(doc)
+        return {"written": changed or "nothing new (the values were already set)",
+                "missing_to_create": ST.missing(mate),
+                "note": "The user sees these fields highlighted on the right and can edit or undo each."}
+
+    def _studio_view(self, doc: dict[str, Any]) -> dict[str, Any] | None:
+        st = self._studio(doc)
+        if st is None:
+            return None
+        try:
+            mate = self.mates.get(st["mate_id"])
+        except KeyError:
+            mate = None
+        return {"kind": st["kind"], "mate_id": st["mate_id"], "concept": st.get("concept") or {},
+                "filled": st.get("filled") or {}, "avatar_skipped": bool(st.get("avatar_skipped")),
+                "voice_ok": bool(st.get("voice_ok")), "finished_at": st.get("finished_at"),
+                "missing": ST.missing(mate) if mate else ["mate"], "mate": mate}
+
+    async def studio_fields(self, pid: str, body: dict[str, Any]) -> dict[str, Any]:
+        """The user edited fields on the right (any mate setting the Mate settings tabs edit, + the concept)."""
+        async with self._lock(pid):
+            doc = self.doc(pid)
+            st, _mate = self._studio_mate(doc)
+            patch = {k: body[k] for k in ("name", "persona", "prefs", "voice", "llm") if body.get(k) is not None}
+            try:
+                concept = ST.user_concept(body["concept"]) if body.get("concept") is not None else {}
+            except ST.StudioError as exc:
+                raise AvatarError(str(exc)) from None
+            if "name" in patch and not str(patch["name"] or "").strip() and st["kind"] == "existing":
+                raise AvatarError("a mate needs a name")
+            _mate, before, after = self._write_fields(doc, st, patch, concept)
+            filled = st.setdefault("filled", {})
+            for k in ST.paths_of(patch, concept):
+                filled.pop(k, None)  # (the user's value now: no "filled by the agent" badge)
+            if "voice" in patch:
+                st["voice_ok"] = True
+            self.save(doc)
+        return self.view(pid)
+
+    async def studio_undo(self, pid: str, path: str) -> dict[str, Any]:
+        """Undo the agent's write of one field (back to the value before it)."""
+        async with self._lock(pid):
+            doc = self.doc(pid)
+            st, _mate = self._studio_mate(doc)
+            entry = (st.get("filled") or {}).get(path)
+            if entry is None:
+                raise AvatarError("the agent did not fill that field", 409)
+            try:
+                patch, concept = ST.patch_for(path, entry.get("prev"))
+            except ST.StudioError as exc:
+                raise AvatarError(str(exc)) from None
+            if path == "name" and not str(entry.get("prev") or "").strip() and st["kind"] == "existing":
+                raise AvatarError("a mate needs a name")
+            if concept:
+                st["concept"] = {**(st.get("concept") or {}), **concept}
+            self._write_fields(doc, st, patch, concept)
+            st["filled"].pop(path, None)
+            self._history(doc, "draft_undo", field=path)
+            self.save(doc)
+        return self.view(pid)
+
+    async def studio_voice_ok(self, pid: str) -> dict[str, Any]:
+        """The user tried a voice in the studio (the step indicator's Voice)."""
+        async with self._lock(pid):
+            doc = self.doc(pid)
+            st, _mate = self._studio_mate(doc)
+            if not st.get("voice_ok"):
+                st["voice_ok"] = True
+                self.save(doc)
+        return self.view(pid)
+
+    async def studio_skip_avatar(self, pid: str, skip: bool) -> dict[str, Any]:
+        async with self._lock(pid):
+            doc = self.doc(pid)
+            st, mate = self._studio_mate(doc)
+            if doc.get("confirmation") and skip:
+                raise AvatarError("the avatar is being made: cancel the run first", 409)
+            st["avatar_skipped"] = bool(skip)
+            self.save(doc)
+        self._event(pid, "avatar_skipped" if skip else "avatar_back",
+                    "The user skipped the avatar for now: she gets the plain default avatar. Don't push it; they can "
+                    "come back to it." if skip else "The user wants to make the avatar after all: continue with it.")
+        return self.view(pid)
+
+    async def studio_template(self, pid: str, source_id: str) -> dict[str, Any]:
+        """Start the draft from another mate's settings (profile, style, voice, model — not the avatar or name)."""
+        src = self.mates.get(source_id)  # KeyError → 404
+        body = {"persona": {k: v for k, v in src["persona"].items()},
+                "prefs": {k: v for k, v in (src.get("prefs") or {}).items() if k != "memory"},
+                "voice": src["voice"], "llm": src["llm"]}
+        return await self.studio_fields(pid, body)
+
+    async def studio_finish(self, pid: str) -> dict[str, Any]:
+        """Create mate: the draft becomes a mate (the avatar, when ready, is already on her; one still being made
+        lands on her when it is ready)."""
+        async with self._lock(pid):
+            doc = self.doc(pid)
+            st, mate = self._studio_mate(doc)
+            if st["kind"] != "new":
+                raise AvatarError("this mate exists already", 409)
+            need = ST.missing(mate)
+            if need:
+                raise AvatarError("first: " + ", ".join(need), 400, "incomplete")
+            try:
+                mate = self.mates.store.finish_draft(mate["id"])
+            except MateError as exc:
+                raise AvatarError(str(exc)) from None
+            st["finished_at"] = now_iso()
+            self._history(doc, "mate_created", mate=mate["id"])
+            self.save(doc)
+        self._event(pid, "mate_created", f"The user created the mate “{mate['name']}” — she is in their mate list now."
+                    + (" Her avatar is still being made and goes on her when it is ready." if doc["status"] in
+                       ("running", "waiting", "paused") else "")
+                    + " Congratulate them in one sentence.")
+        return {"mate": mate, "project": self.view(pid)}
+
+    def studio_discard(self, pid: str) -> None:
+        """Discard a draft: the draft mate, its project, pictures and conversation go (a run is canceled first)."""
+        doc = self.doc(pid)
+        st = doc.get("studio") or {}
+        if st.get("kind") != "new" or st.get("finished_at"):
+            raise AvatarError("only a draft can be discarded", 409)
+        if doc["status"] in ("running", "waiting", "paused"):
+            self.cancel(pid)
+            doc = self.doc(pid)
+            doc["status"] = "canceled"
+            self.save(doc)
+        t = self._runners.pop(pid, None)
+        if t is not None:
+            t.cancel()
+        self.delete(pid)
+        try:
+            mate = self.mates.get(st["mate_id"])
+        except KeyError:
+            return
+        if mate.get("draft"):
+            self.mates.delete(mate["id"])
+
+    async def _auto_apply(self, pid: str) -> None:
+        """A new mate's avatar goes on her as soon as it is ready (and again after a redo)."""
+        try:
+            doc = self.doc(pid)
+            st = doc.get("studio") or {}
+            if st.get("kind") == "new" and doc.get("status") == "ready":
+                await self.apply(pid, mate_id=st["mate_id"], auto=True)
+        except (AvatarError, KeyError) as exc:
+            self._log("warning", f"avatar {pid}: auto-apply: {exc}")
 
     def delete(self, pid: str) -> None:
         doc = self.doc(pid)
@@ -251,6 +554,10 @@ class AvatarService:
                           "confirmed": (doc.get("confirmation") or {}).get("total"),
                           "reserve": (doc.get("plan") or {}).get("reserve")}
         out["agent_running"] = bool(doc.get("session_id") and self._svc.is_running(doc["session_id"]))
+        out.pop("studio", None)
+        studio = self._studio_view(doc) if doc.get("studio") else None
+        if studio is not None:
+            out["studio"] = studio
         return out
 
     def preview(self, doc: dict[str, Any]) -> dict[str, Any] | None:
@@ -317,9 +624,20 @@ class AvatarService:
         except AvatarError:
             doc = {"id": pid, "language": "en", "brief": P.default_brief(), "engine": {}}
         t = doc["brief"]["target"]
-        state = f"Project {pid}. " + (f"Target: the existing mate “{t.get('name')}”." if t["mode"] == "existing"
-                                     else "Target: a new mate" + (f" named “{t['name']}”." if t.get("name") else "."))
-        prompt = system_prompt(language=doc.get("language") or "en", state=state, emotions=list(P.EMOTIONS))
+        st = doc.get("studio")
+        if st and st.get("kind") == "new":
+            state = f"Project {pid}: the new mate being made in this studio (draft {st['mate_id']})."
+        else:
+            state = f"Project {pid}. " + (f"Target: the existing mate “{t.get('name')}”." if t["mode"] == "existing"
+                                         else "Target: a new mate" + (f" named “{t['name']}”." if t.get("name")
+                                                                      else "."))
+        # (the system prompt stays the same for the whole project — the engine is not restarted; what changes goes
+        # into the message: the studio's <studio_update>)
+        prompt = system_prompt(language=doc.get("language") or "en", state=state, emotions=list(P.EMOTIONS),
+                               studio=(st or {}).get("kind"), mate=t.get("name") or "")
+        note = self._studio_note(doc) if st else ""
+        if note:
+            req.preamble = "\n\n".join(x for x in (note, req.preamble) if x)
         engine = session.get("provider") or "claude"
         req.system_prompt_file = self._engine_file(pid, "prompt", "md", prompt)
         req.prompt_key = ""
@@ -339,6 +657,23 @@ class AvatarService:
         }}}
         if engine != "codex":
             req.mcp_config_file = self._engine_file(pid, "mcp", "json", json.dumps(req.mcp_config, indent=1))
+
+    def _studio_note(self, doc: dict[str, Any]) -> str:
+        """What the user changed on the right since the agent's last turn (then it counts as seen)."""
+        st = doc.get("studio") or {}
+        try:
+            mate = self.mates.get(st["mate_id"])
+        except KeyError:
+            return ""
+        now = ST.snapshot(mate, st.get("concept"))
+        note = ST.update_note(st.get("seen"), now)
+        if st.get("seen") != now:
+            st["seen"] = now
+            try:
+                self.save(doc)
+            except Exception:  # noqa: BLE001 - the note still goes out
+                pass
+        return note
 
     # ---------------------------------------------------------------- telling the agent
 
@@ -425,15 +760,27 @@ class AvatarService:
             "failed": [{"item": k, "error": it.get("error")} for k, it in items.items() if it.get("status") == "failed"],
             "picked": doc.get("picked"), "check": doc.get("check"),
             "ready": bool(doc.get("result")), "applied": doc.get("applied"),
+            **({"studio": self._studio_summary(doc)} if doc.get("studio") else {}),
         }
+
+    def _studio_summary(self, doc: dict[str, Any]) -> dict[str, Any]:
+        st = doc["studio"]
+        try:
+            mate = self.mates.get(st["mate_id"])
+        except KeyError:
+            return {"kind": st["kind"], "error": "the mate no longer exists"}
+        return {"kind": st["kind"], "mate": ST.compact(mate, st.get("concept")),
+                "missing_to_create": ST.missing(mate) if st["kind"] == "new" else [],
+                "avatar_skipped": bool(st.get("avatar_skipped")),
+                "created": bool(st.get("finished_at")) or st["kind"] == "existing"}
 
     async def _tool_get_project(self, pid: str, args: dict[str, Any]) -> Any:
         return self._summary(self.doc(pid))
 
     async def _tool_ask_user(self, pid: str, args: dict[str, Any]) -> str:
         kind = args.get("kind") or "choice"
-        if kind not in ("choice", "multi", "slider", "upload", "text", "mate"):
-            raise AvatarError("kind must be choice, multi, slider, upload, text or mate")
+        if kind not in ("choice", "multi", "slider", "upload", "text", "mate", "concepts"):
+            raise AvatarError("kind must be choice, multi, slider, upload, text, mate or concepts")
         q = str(args.get("question") or "").strip()
         if not q:
             raise AvatarError("question is required")
@@ -442,13 +789,20 @@ class AvatarService:
             if isinstance(o, str):
                 o = {"value": o, "label": o}
             if isinstance(o, dict) and (o.get("value") or o.get("label")):
-                opts.append({"value": str(o.get("value") or o.get("label"))[:80],
-                             "label": str(o.get("label") or o.get("value"))[:120],
-                             "description": str(o.get("description") or "")[:240] or None})
-        if kind in ("choice", "multi") and not opts:
-            raise AvatarError("choice / multi cards need options")
+                opt = {"value": str(o.get("value") or o.get("label"))[:80],
+                       "label": str(o.get("label") or o.get("value"))[:120],
+                       "description": str(o.get("description") or "")[:240] or None}
+                pal = [c.strip() for c in (o.get("palette") or []) if isinstance(c, str) and _HEX.match(c.strip())]
+                if pal:
+                    opt["palette"] = pal[:5]
+                opts.append(opt)
+        if kind in ("choice", "multi", "concepts") and not opts:
+            raise AvatarError("choice / multi / concepts cards need options")
+        if kind == "concepts" and not 2 <= len(opts) <= 4:
+            raise AvatarError("a concepts card offers 2 to 4 directions")
         card = {"id": "q_" + secrets.token_hex(4), "kind": kind, "question": q[:400], "options": opts,
-                "allow_other": bool(args.get("allow_other", kind in ("choice", "multi"))), "at": now_iso()}
+                "allow_other": bool(args.get("allow_other", kind in ("choice", "multi", "concepts"))),
+                "at": now_iso()}
         if kind == "slider":
             card.update({k: args.get(k) for k in ("min", "max", "step", "default", "unit")
                          if isinstance(args.get(k), (int, float, str))})
@@ -463,6 +817,8 @@ class AvatarService:
             raise AvatarError("the plan is confirmed and running: the brief is locked (use extend to add clips or "
                               "stills, regenerate to redo one)")
         patch = args.get("patch") if isinstance(args.get("patch"), dict) else {k: v for k, v in args.items()}
+        if doc.get("studio"):
+            patch = {k: v for k, v in patch.items() if k != "target"}  # (the studio's mate gets it)
         t = patch.get("target")
         if isinstance(t, dict) and t.get("mode") == "existing" and t.get("mate_id"):
             try:
@@ -1055,7 +1411,11 @@ class AvatarService:
                     + (f"These clips failed the automatic check: {', '.join(bad)} — explain and offer redos. "
                        if bad else "Every clip passed the automatic check. ")
                     + (f"These items failed and were left out: {', '.join(failed)}. " if failed else "")
-                    + "Tell the user they can press Apply (to the target mate) or create a new mate with it.")
+                    + ("It goes on the new mate by itself; tell the user they can preview it on the right."
+                       if (doc.get("studio") or {}).get("kind") == "new" else
+                       "Tell the user they can press Apply (to the target mate) or create a new mate with it."))
+        if (doc.get("studio") or {}).get("kind") == "new":
+            asyncio.get_running_loop().create_task(self._auto_apply(pid))
 
     # ---- jobs ----
 
@@ -1343,7 +1703,8 @@ class AvatarService:
 
     # ---------------------------------------------------------------- apply / restore
 
-    async def apply(self, pid: str, *, mate_id: str | None = None, new_name: str | None = None) -> dict[str, Any]:
+    async def apply(self, pid: str, *, mate_id: str | None = None, new_name: str | None = None,
+                    auto: bool = False) -> dict[str, Any]:
         """Put the made avatar on a mate (its current avatar is kept as a backup) or on a new mate."""
         async with self._lock(pid):
             doc = self.doc(pid)
@@ -1368,7 +1729,9 @@ class AvatarService:
             doc["status"] = "applied"
             self._history(doc, "applied", mate=mate_id)
             self.save(doc)
-        self._event(pid, "applied", f"The user put the avatar on “{mate['name']}”. Congratulate them in one sentence.")
+        if not auto:
+            self._event(pid, "applied", f"The user put the avatar on “{mate['name']}”. Congratulate them in one "
+                        "sentence.")
         return {"project": self.view(pid), "mate": mate}
 
     def _backup(self, pid: str, mate: dict[str, Any]) -> dict[str, Any]:
@@ -1410,6 +1773,19 @@ class AvatarService:
 
 
 # ---------------------------------------------------------------- small helpers (no numpy here)
+
+_HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _meta(m: dict[str, Any]) -> dict[str, Any]:
+    meta = m.get("meta")
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta or "{}")
+        except ValueError:
+            meta = {}
+    return meta if isinstance(meta, dict) else {}
+
 
 def _gray_png(w: int, h: int) -> bytes:
     import struct
