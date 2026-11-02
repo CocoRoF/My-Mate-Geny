@@ -41,7 +41,8 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
     "auto_read": true,
     "volume": 1.0,          // 0.0 – 3.0 (300 %); see §5 "Volume"
     "tts": { "engine": "browser", "voice": "", "model": "", "speed": 1.0, "profile": "", "language": "" },
-    "stt": { "engine": "browser", "model": "", "language": "" }
+    "stt": { "engine": "browser", "model": "", "language": "",
+             "auto_send": false, "barge_in": true, "silence": 1.2 }   // the last three: realtime engines (§5)
   },
   "prefs": {                // conversation settings (docs/mate-memory-affinity.md §3)
     "user_name": "", "self_ref": "",
@@ -61,9 +62,13 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
   (`browser` = Web Speech `speechSynthesis`, synthesized in the page; the rest
   are synthesized by the backend). `voice` = provider voice id / OmniVoice
   profile id.
-- `stt.engine`: `off | browser | openai | whisper` (`browser` = Web Speech
+- `stt.engine`: `off | browser | openai | whisper | elevenlabs` (`browser` = Web Speech
   recognition where available; `whisper` = an OpenAI-compatible
-  `/v1/audio/transcriptions` server such as geny-audio-services).
+  `/v1/audio/transcriptions` server such as geny-audio-services; `elevenlabs` =
+  Scribe v2 Realtime, a live transcript while speaking, with the ElevenLabs key of
+  Global settings — §5 "Realtime mic"). `stt.auto_send` (default false),
+  `stt.barge_in` (default true), `stt.silence` (0.3 – 3 s, default 1.2) shape the
+  realtime mic; booleans are checked (400), the pause is clamped.
 - Global voice settings (shared by all mates) — `GET/PUT /api/mates/settings`:
   `{ openai_key_set, elevenlabs_key_set, omnivoice_url, whisper_url, http_tts_url, http_tts_key_set }`
   (keys are write-only, stored in the vault). `PUT` body: any of
@@ -591,18 +596,32 @@ user's cookie (404 / 401 otherwise). `find_folders` searches
   Bearer `http_tts_key` if set). `browser`/`off` → 204 (the page speaks).
   Missing key/URL/voice → 400 with a readable `detail`; the service failing →
   502 with its message. Text ≤ 4000 chars.
-- `POST /api/mates/{id}/transcribe` (multipart `file`, webm/opus from
-  MediaRecorder, ≤ 25 MB) → `{text, language?}` via openai
+- `POST /api/mates/{id}/transcribe[?engine=auto|whisper|openai|elevenlabs]` (multipart `file`, webm/opus from
+  MediaRecorder or a WAV, ≤ 25 MB) → `{text, language?, engine}` via openai
   (`gpt-4o-mini-transcribe` default) / whisper
-  (`<whisper_url>/v1/audio/transcriptions`, `whisper-1` default); `stt.language`
-  (or the persona's) is sent. `browser`/`off` → 400.
+  (`<whisper_url>/v1/audio/transcriptions`, `whisper-1` default) / elevenlabs
+  (batch `scribe_v2`, `POST /v1/speech-to-text`); `stt.language`
+  (or the persona's) is sent. `browser`/`off` → 400. A mate on ElevenLabs realtime
+  (and `?engine=auto`) uses the recording fallback: Whisper → OpenAI → ElevenLabs batch.
+- `POST /api/mates/{id}/stt/realtime` → `{url, model, sample_rate: 16000, language,
+  commit_strategy: "vad", silence, expires_in: 900, fallback}`: a **single-use token**
+  (`POST /v1/single-use-token/realtime_scribe` with the key, server side) inside the
+  `wss://…/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&token=…&audio_format=pcm_16000&commit_strategy=vad&vad_silence_threshold_secs=<silence>&language_code=<lang>`
+  URL the page opens itself. The key never leaves the server and is never logged
+  (an upstream error that quotes it is redacted); every (re)connect asks for a new
+  token (consumed on connect, 15 min to use it; ≤ 20 per mate and minute → 429).
+  Failing: 400 / 429 / 502 `{detail, code, fallback}` — `code`: `missing` (no key) ·
+  `auth` (rejected / no speech-to-text permission) · `quota` (credits; ElevenLabs
+  answers 401 `quota_exceeded`) · `busy` · `network` · `upstream`; `fallback`: the
+  engine that can transcribe a recording instead (ElevenLabs batch is not offered
+  for `auth` / `quota` / `missing`).
 - `GET /api/mates/voices?engine=…` → `{engine, voices: [{id, name, language?, …}]}`:
   openai fixed list; elevenlabs via its API (key needed; `preview_url`);
   omnivoice via `/voices` (`emotions` = the profile's reference clips);
   `browser`/`http` → `[]` (the page lists its own).
 - Providers (Global settings): `GET /api/mates/providers[?refresh=1]` →
   `{tts: [...], stt: [...]}`, each `{engine, label, kind, configured, ok, error,
-  detail, checked_at}` (engines `openai` (TTS+STT, one key) / `elevenlabs` /
+  detail, checked_at}` (engines `openai` (TTS+STT, one key) / `elevenlabs` (TTS + realtime STT, one key) /
   `omnivoice` / `http` / `whisper`). A verification uses only free read calls
   (OpenAI `/models`, ElevenLabs `/voices`, OmniVoice `/health` + `/voices`, an
   OpenAI-compatible server's `/models`, Whisper `/v1/models` else `/health`);
@@ -640,7 +659,66 @@ user's cookie (404 / 401 otherwise). `find_folders` searches
   the browser and verified providers.
 - Client: replies are split into sentences/bubbles (§3 "Replies"), synthesized in order with
   one-ahead prefetch, played through the voice bridge (level → avatar). Mic:
-  push-to-talk button (and hands-free later).
+  push-to-talk button (tap to start / tap to stop, or hold); with the realtime engine and
+  auto-send also hands-free.
+
+### Realtime mic (ElevenLabs Scribe v2 Realtime)
+
+API facts (ElevenLabs docs, checked 2026-11): `wss://api.elevenlabs.io/v1/speech-to-text/realtime`,
+`model_id=scribe_v2_realtime`, auth by `xi-api-key` header or a `token` query parameter from
+`POST /v1/single-use-token/realtime_scribe` (15 min, consumed on use); client frames
+`{"message_type":"input_audio_chunk","audio_base_64","commit","sample_rate"}` (16-bit LE mono PCM, 0.1 – 1 s
+chunks recommended, 16 kHz recommended); server `session_started` · `partial_transcript` · `committed_transcript`
+(+ `_with_timestamps` when asked) and errors (`auth_error`, `quota_exceeded`, `rate_limited`, `queue_overflow`,
+`resource_exhausted`, `session_time_limit_exceeded`, `input_error`, `chunk_size_exceeded`, `transcriber_error`,
+`commit_throttled`, `insufficient_audio_activity`…); `commit_strategy` `manual` (default) or `vad`
+(`vad_silence_threshold_secs` 0.192 – 3); a manual commit (`commit: true`, empty audio) also works in VAD mode;
+processing starts after ~2 s of audio; the server closes after 15 s without a message; $0.39 per hour of audio
+sent (silence included); realtime concurrency 6 (free) … 45.
+
+Page (`frontend/src/mate/stt/`, used by `components/mate/useMic.ts` → `MateComposer`, so the console Mate view,
+the mate chat window and the quick card — the overlay has no mic):
+
+- `capture.ts`: `getUserMedia({audio: {echoCancellation, noiseSuppression, autoGainControl, channelCount: 1}})`
+  (the same constraints for the recorder engines) → an AudioWorklet tap (from a blob: module; ScriptProcessor
+  where worklets are missing) at the device rate; close() stops the tracks, disconnects, closes the context.
+- `pcm.ts`: a streaming resampler (box-filter decimation / linear interpolation) → 16 kHz int16, 100 ms chunks,
+  base64; a WAV writer for the fallback.
+- `realtime.ts` (`RealtimeStt`): token (POST …/stt/realtime) and mic in parallel; audio before
+  `session_started` is buffered; partials → the box (after what was typed: `joinText`), committed text → the
+  draft (auto-send off) or sent with the box's text (auto-send on, the mic keeps listening). Stop = a manual
+  commit, the committed text within 2.5 s (else the last live text). A dropped socket / a retryable error
+  (`transcriber_error`, `rate_limited`, the session limit, a close) reconnects with a **fresh token** (400 ms,
+  800 ms, 1.6 s), the live text stays on screen and the new session gets the utterance's audio again (since the
+  last commit, ≤ 30 s, incl. what was captured meanwhile). After 3 failed tries, or `auth` / `quota` / an input
+  error, or no token at the start: the **recording fallback** — the session keeps recording and on stop sends a
+  WAV of the audio since the last commit to `/transcribe?engine=<fallback>` (with a notice "Live text unavailable
+  (why) — Whisper transcribes when you stop"); no server fallback → Web Speech where the browser has it (a
+  notice), else the error in words (key rejected / out of credits / not set up / can't reach). Nothing heard for
+  40 s (90 s with auto-send; her speaking and her reply streaming don't count) or ElevenLabs'
+  `insufficient_audio_activity` → it stops by itself (billing). The page going to the background (tab hidden,
+  Android app sent home, `pagehide`) finishes the utterance and releases the mic.
+- **Listening while she speaks** (`echo.ts`, `mate/voiceOwner.ts`): every window says when her audio plays
+  (`voicing`, on each start/stop and every second) and what each started sentence says; the mic in any window of
+  the device (quick card, chat window, console) knows "she speaks here" (`deviceVoicing`) and what she said
+  lately (`recentSpoken`, 20 s). Barge-in **off**: while she speaks (+ a 700 ms tail) the mic sends silence —
+  nothing of hers can reach the recognizer. Barge-in **on** (default): audio goes out (echo cancellation removes
+  most of her), a transcript that is her words (character-pair overlap ≥ 0.6 with what she said, numbers ignored
+  — "1" said / "one" heard) is dropped, and once the user's own words (≥ 4 letters / 2 words, not her) show up
+  while she speaks, `hushDevice` stops her voice in whichever window of the device plays it (BroadcastChannel
+  `hush`); the rest of that reply is shown, not read. Committed text keeps only the user's words. Why on by
+  default: the mic is only open then because the user opened it (or chose hands-free), the user's speech is what
+  should win, and the text check means her own voice can't interrupt her even where echo cancellation can't help
+  (the browser voice is the OS speaking — no echo reference — and loud phone speakers). A message sent from any
+  device still stops her everywhere (as before).
+- Settings → Voice: engine "ElevenLabs realtime" (offered once the ElevenLabs provider is verified), language
+  (empty = the reply language; sent as `language_code`), auto-send, the pause, barge-in, a cost note. The toggles
+  are live-previewed in every window (`livePreview` flags `sttAutoSend` / `sttBargeIn`); saved values reach other
+  devices with `mates.changed`. Global settings → Voice services: ElevenLabs is Speaking + Listening.
+- Platforms: the desktop app allows audio capture for the server's pages (`setPermissionRequestHandler`, macOS
+  `NSMicrophoneUsageDescription`); the Android app's WebView asks through Capacitor's
+  `BridgeWebChromeClient.onPermissionRequest` (RECORD_AUDIO + MODIFY_AUDIO_SETTINGS in the manifest — no native
+  change); getUserMedia needs a secure page (https, or localhost) everywhere.
 
 ## 6. Surfaces
 

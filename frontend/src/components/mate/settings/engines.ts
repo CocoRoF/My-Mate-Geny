@@ -31,6 +31,7 @@ export const STT_ENGINES: EngineInfo<SttEngine>[] = [
   { id: "browser", label: "mateSettings.engSttBrowser", hint: "mateSettings.engSttBrowserHint", provider: false },
   { id: "openai", label: "mateSettings.engOpenai", hint: "mateSettings.engSttOpenaiHint", provider: true },
   { id: "whisper", label: "mateSettings.engWhisper", hint: "mateSettings.engSttWhisperHint", provider: true },
+  { id: "elevenlabs", label: "mateSettings.engElevenRealtime", hint: "mateSettings.engSttElevenHint", provider: true },
 ];
 
 export type Availability =

@@ -18,7 +18,7 @@ import {
   type TtsEngine,
   type VoiceOption,
 } from "../../../api/mates";
-import { previewMateVolume } from "../../../mate/livePreview";
+import { previewMateFlags, previewMateVolume } from "../../../mate/livePreview";
 import { bcp47, type MateConversation } from "../../../mate/useMateConversation";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
@@ -150,6 +150,14 @@ export default function VoiceTab({ mate, conv }: { mate: Mate; conv: MateConvers
     },
     [mate.id],
   );
+  // the realtime mic's unsaved toggles apply at once to a mic listening in any window (mate/livePreview)
+  const sttAutoSend = !!v.stt.auto_send;
+  const sttBargeIn = v.stt.barge_in !== false;
+  const sttFlagsDirty = sttAutoSend !== !!mate.voice.stt.auto_send || sttBargeIn !== (mate.voice.stt.barge_in !== false);
+  useEffect(() => {
+    previewMateFlags(mate.id, sttFlagsDirty ? { sttAutoSend, sttBargeIn } : null);
+  }, [mate.id, sttFlagsDirty, sttAutoSend, sttBargeIn]);
+  useEffect(() => () => previewMateFlags(mate.id, null), [mate.id]);
 
   const ttsAvail = (id: string) => availability(providers, "tts", id);
   const sttAvail = (id: string) => availability(providers, "stt", id);
@@ -782,7 +790,50 @@ function SttDetails({ mate, stt, set, ready }: { mate: Mate; stt: Stt; set: (p: 
         </Field>
       )}
       {engine === "browser" && <p className="text-[12px] text-content-faint">{t("mateSettings.voiceBrowserStt")}</p>}
+      {engine === "elevenlabs" && (
+        <p className="text-[12px] leading-relaxed text-content-faint" data-testid="mate-stt-eleven-about">
+          {t("mateSettings.sttElevenAbout")}
+        </p>
+      )}
       <LanguageField value={stt.language} onChange={(language) => set({ language })} mate={mate} hint={t("mateSettings.voiceSttLangHint")} />
+      {engine === "elevenlabs" && <RealtimeOptions stt={stt} set={set} name={mate.name} />}
+    </div>
+  );
+}
+
+/** the realtime mic: auto-send (+ the pause that ends an utterance), barge-in */
+function RealtimeOptions({ stt, set, name }: { stt: Stt; set: (p: Partial<Stt>) => void; name: string }) {
+  const t = useT();
+  const silence = stt.silence ?? 1.2;
+  return (
+    <div className="space-y-3 border-t border-border/60 pt-3" data-testid="mate-stt-realtime">
+      <Toggle
+        on={!!stt.auto_send}
+        onChange={(on) => set({ auto_send: on })}
+        label={t("mateSettings.sttAutoSend")}
+        hint={t("mateSettings.sttAutoSendHint")}
+        testId="mate-stt-autosend"
+      />
+      <Field label={t("mateSettings.sttPause", { x: silence.toFixed(1) })} hint={t("mateSettings.sttPauseHint")}>
+        <input
+          type="range"
+          min={0.5}
+          max={3}
+          step={0.1}
+          value={silence}
+          onChange={(e) => set({ silence: Number(e.target.value) })}
+          className="w-full accent-accent"
+          data-testid="mate-stt-silence"
+        />
+      </Field>
+      <Toggle
+        on={stt.barge_in !== false}
+        onChange={(on) => set({ barge_in: on })}
+        label={t("mateSettings.sttBargeIn")}
+        hint={stt.barge_in !== false ? t("mateSettings.sttBargeInOnHint", { name }) : t("mateSettings.sttBargeInOffHint", { name })}
+        testId="mate-stt-bargein"
+      />
+      <p className="text-[11px] leading-relaxed text-content-faint">{t("mateSettings.sttElevenCost")}</p>
     </div>
   );
 }

@@ -9,14 +9,14 @@ import tempfile
 from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from app.config import settings
 from app.mate import files, live2d_core, netio
 from app.mate import memory as M
 from app.mate.service import MateService
 from app.mate.store import SETTING_PROVIDERS, MateError
-from app.mate.voice import VoiceService
+from app.mate.voice import RealtimeError, VoiceService
 from app.services.session_service import TurnBusyError
 
 router = APIRouter(prefix="/api/mates")
@@ -499,11 +499,29 @@ async def speech(mate_id: str, request: Request) -> Response:
 
 
 @router.post("/{mate_id}/transcribe")
-async def transcribe(mate_id: str, request: Request, file: UploadFile = File(...)) -> dict:
+async def transcribe(mate_id: str, request: Request, file: UploadFile = File(...), engine: str | None = None) -> dict:
+    """A recording → ``{text, language?, engine}``. ``?engine=auto|whisper|openai|elevenlabs``: another
+    provider (the realtime mic's fallback); a mate on ElevenLabs realtime uses the fallback by itself."""
     mate = _mate(request, mate_id)
     audio = await file.read(26 * 1024 * 1024)
     try:
         return await _voice(request).transcribe(mate, audio, file.filename or "speech.webm",
-                                                file.content_type or "audio/webm")
+                                                file.content_type or "audio/webm", engine=engine)
     except (MateError, netio.UpstreamError) as exc:
         raise _http(exc) from exc
+
+
+@router.post("/{mate_id}/stt/realtime")
+async def realtime_stt(mate_id: str, request: Request) -> Response:
+    """A single-use ElevenLabs token for this mate's mic: ``{url, model, sample_rate, language,
+    commit_strategy, silence, expires_in, fallback}`` — the page opens ``url`` (wss, the token inside) itself;
+    the API key stays here. Failing: 4xx/502 ``{detail, code, fallback}`` (docs/mate.md §5)."""
+    mate = _mate(request, mate_id)
+    try:
+        out = await _voice(request).realtime_token(mate)
+    except RealtimeError as exc:
+        return JSONResponse({"detail": str(exc), "code": exc.code, "fallback": exc.fallback}, status_code=exc.status,
+                            headers={"Cache-Control": "no-store"})
+    except MateError as exc:
+        raise _http(exc) from exc
+    return JSONResponse(out, headers={"Cache-Control": "no-store"})

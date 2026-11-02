@@ -70,7 +70,7 @@ def _by(doc, kind, engine):
 def test_nothing_configured(client, http):
     doc = client.get("/api/mates/providers").json()
     assert [p["engine"] for p in doc["tts"]] == ["openai", "elevenlabs", "omnivoice", "http"]
-    assert [p["engine"] for p in doc["stt"]] == ["openai", "whisper"]
+    assert [p["engine"] for p in doc["stt"]] == ["openai", "whisper", "elevenlabs"]
     for p in doc["tts"] + doc["stt"]:
         assert p["configured"] is False and p["ok"] is False and p["error"] is None and p["checked_at"] is None
     assert http.calls == []

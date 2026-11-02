@@ -25,7 +25,11 @@ from app.vault import SecretVault
 
 PERSONA_FIELDS = ("description", "personality", "speech", "greeting", "address", "language", "instructions")
 TTS_ENGINES = ("off", "browser", "openai", "elevenlabs", "omnivoice", "http")
-STT_ENGINES = ("off", "browser", "openai", "whisper")
+# elevenlabs = Scribe v2 Realtime: the page streams the mic straight to ElevenLabs with a single-use token the
+# backend mints (app/mate/voice.py realtime_token); the key never leaves the server.
+STT_ENGINES = ("off", "browser", "openai", "whisper", "elevenlabs")
+# voice.stt.silence: how long a pause ends an utterance (ElevenLabs VAD, seconds; its API takes 0.192 – 3.0)
+STT_SILENCE = (0.3, 3.0, 1.2)
 AVATAR_KINDS = ("none", "video", "photo", "live2d")
 CLIP_KINDS = ("idle", "talk", "listen", "think", "react", "away")
 # stills that make her blink / talk: mechanics, never shown for an emotion
@@ -160,7 +164,10 @@ def normalize_voice(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
     tts = {"engine": "browser", "voice": "", "model": "", "speed": 1.0, "profile": "", "language": "",
            "instruct": "", "ref": "", "ref_text": "",
            **(base.get("tts") or {})}
-    stt = {"engine": "browser", "model": "", "language": "", **(base.get("stt") or {})}
+    # auto_send: a finished utterance goes out by itself (realtime engines; default off: it waits in the box);
+    # barge_in: talking while she speaks stops her voice (default on, with echo protection — docs/mate.md §5)
+    stt = {"engine": "browser", "model": "", "language": "", "auto_send": False, "barge_in": True,
+           "silence": STT_SILENCE[2], **(base.get("stt") or {})}
     out = {"auto_read": bool(base.get("auto_read", True)), "volume": _volume(base.get("volume", 1.0)),
            "tts": tts, "stt": stt}
     if patch is None:
@@ -202,6 +209,15 @@ def normalize_voice(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
         for k in ("model", "language"):
             if k in ps:
                 stt[k] = _s(ps[k], 200).strip()
+        for k in ("auto_send", "barge_in"):
+            if k in ps:
+                if not isinstance(ps[k], (bool, int)) or ps[k] not in (True, False, 0, 1):
+                    raise MateError(f"voice.stt.{k} must be true or false")
+                stt[k] = bool(ps[k])
+        if "silence" in ps:
+            if isinstance(ps["silence"], bool):
+                raise MateError("voice.stt.silence must be a number of seconds")
+            stt["silence"] = round(_num(ps["silence"], *STT_SILENCE), 2)
     return out
 
 

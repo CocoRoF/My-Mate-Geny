@@ -7,7 +7,10 @@ through the service's own ``GET /voices``), ``http`` (any OpenAI-shaped
 ``/audio/speech``). ``browser`` / ``off`` are spoken (or not) by the page.
 
 STT engines: ``openai`` and ``whisper`` (an OpenAI-compatible
-``/v1/audio/transcriptions`` server such as geny-audio-services' whisper).
+``/v1/audio/transcriptions`` server such as geny-audio-services' whisper)
+transcribe a recording; ``elevenlabs`` is realtime (Scribe v2 Realtime): the
+page streams the mic to ElevenLabs itself with a single-use token minted here
+(:meth:`VoiceService.realtime_token`), so the key never reaches a browser.
 
 Synthesized audio is cached on disk by a hash of everything that shapes it.
 """
@@ -16,21 +19,26 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from app.mate import files, netio
-from app.mate.providers import Providers, elevenlabs_api, openai_api, openai_voices
+from app.mate.providers import (ELEVEN_BATCH_STT, ELEVEN_REALTIME_MODELS, Providers, elevenlabs_api, openai_api,
+                                openai_voices)
 from app.mate.store import MateError, MateStore, normalize_voice
+
+log = logging.getLogger(__name__)
 
 # API bases: app.mate.providers.openai_api() / elevenlabs_api() (settings.mate_*_base)
 OPENAI_TTS_DEFAULT = "gpt-4o-mini-tts"
 OPENAI_STT_DEFAULT = "gpt-4o-mini-transcribe"
 ELEVEN_DEFAULT_MODEL = "eleven_multilingual_v2"
+MINT_PER_MINUTE = 20      # realtime STT tokens per mate and minute (a client stuck reconnecting can't loop)
 MAX_TEXT = 4000
 MAX_AUDIO_IN = 25 * 1024 * 1024   # the OpenAI transcription limit
 CACHE_MAX_BYTES = 300 * 1024 * 1024
@@ -75,6 +83,46 @@ def speakable_text(text: str) -> str:
     s = _LINE_MARK.sub("", s)
     s = _SYMBOLS.sub(" ", s)
     return re.sub(r"\s+", " ", s).strip()
+
+
+class RealtimeError(MateError):
+    """The realtime mic can't start: ``code`` says why (``missing`` · ``auth`` · ``quota`` · ``busy`` ·
+    ``network`` · ``upstream``), ``fallback`` what transcribes a recording instead (None: nothing here)."""
+
+    def __init__(self, message: str, code: str, fallback: str | None, status: int = 502) -> None:
+        super().__init__(message, status=status)
+        self.code, self.fallback = code, fallback
+
+
+def _no_secret(text: str, *secrets_: str) -> str:
+    """Never echo a key back (an upstream error quoting the request, a proxy's page…)."""
+    for s in secrets_:
+        if s and len(s) >= 6:
+            text = text.replace(s, "[redacted]")
+    return text
+
+
+def _eleven_failure(resp: netio.Response) -> tuple[str, str]:
+    """(code, readable message) of a failed ElevenLabs call. Its 401s also mean "out of credits"
+    (``detail.status: quota_exceeded``) or "this key may not use speech to text" (``missing_permissions``)."""
+    status = ""
+    try:
+        j = resp.json()
+        d = j.get("detail") if isinstance(j, dict) else None
+        if isinstance(d, dict):
+            status = str(d.get("status") or d.get("code") or "")
+    except ValueError:
+        pass
+    msg = netio.error_text(resp)
+    if "quota" in status or "credit" in status or resp.status == 402:
+        return "quota", f"ElevenLabs: out of credits or quota — {msg}"
+    if resp.status in (401, 403):
+        if "permission" in status:
+            return "auth", f"ElevenLabs: this API key may not use speech to text — {msg}"
+        return "auth", f"ElevenLabs rejected the key (HTTP {resp.status}): {msg}"
+    if resp.status == 429:
+        return "busy", f"ElevenLabs is busy (too many sessions) — {msg}"
+    return "upstream", f"ElevenLabs: {msg} (HTTP {resp.status})"
 
 
 class Speech:
@@ -167,6 +215,7 @@ class VoiceService:
     def __init__(self, store: MateStore) -> None:
         self.store = store
         self.providers = Providers(store)
+        self._minted: dict[str, list[float]] = {}   # realtime STT tokens per mate (monotonic times)
 
     # ---- TTS ----
 
@@ -286,9 +335,82 @@ class VoiceService:
 
     # ---- STT ----
 
-    async def transcribe(self, mate: dict[str, Any], audio: bytes, filename: str, content_type: str) -> dict[str, Any]:
+    def stt_fallback(self, *, eleven: bool = True) -> str | None:
+        """The engine that transcribes a *recording* when the realtime stream can't be used: a Whisper server,
+        else OpenAI, else ElevenLabs' batch model with the same key (``eleven=False``: not that one — the key or
+        the credits are the problem); None = nothing on the server (the page may still have Web Speech)."""
+        for engine in ("whisper", "openai"):
+            if self.providers.configured(engine):
+                return engine
+        if eleven and self.providers.configured("elevenlabs"):
+            return "elevenlabs"
+        return None
+
+    async def realtime_token(self, mate: dict[str, Any]) -> dict[str, Any]:
+        """A single-use ElevenLabs token for the mate's mic (Scribe v2 Realtime, docs/mate.md §5).
+
+        The page connects to ElevenLabs itself with the returned ``url`` (the token rides in it; it is consumed
+        on use and expires after 15 minutes): the API key never leaves this server, and is never logged. Every
+        (re)connect asks for a fresh token. Failure → :class:`RealtimeError` with a ``code`` (``missing`` /
+        ``auth`` / ``quota`` / ``busy`` / ``network`` / ``upstream``) and the ``fallback`` engine to use."""
         stt = mate["voice"]["stt"]
-        engine = stt.get("engine") or "browser"
+        if (stt.get("engine") or "browser") != "elevenlabs":
+            raise MateError("this mate's speech recognition is not ElevenLabs realtime")
+        if not self.providers.configured("elevenlabs"):
+            raise RealtimeError(self.providers.missing_reason("elevenlabs"), "missing", self.stt_fallback(), 400)
+        now = time.monotonic()
+        recent = [t for t in self._minted.get(mate["id"], []) if now - t < 60]
+        if len(recent) >= MINT_PER_MINUTE:
+            raise RealtimeError("Too many microphone sessions in a minute — wait a moment", "busy",
+                                self.stt_fallback(), 429)
+        key = self.store.secret("elevenlabs_key")
+        try:
+            resp = await netio.request("POST", f"{elevenlabs_api()}/single-use-token/realtime_scribe", data=b"",
+                                       timeout=15, headers={"xi-api-key": key})
+        except netio.UpstreamError as exc:
+            raise RealtimeError(f"ElevenLabs can't be reached: {_no_secret(str(exc), key)}", "network",
+                                self.stt_fallback(), 502) from None
+        if resp.status >= 400:
+            code, msg = _eleven_failure(resp)
+            raise RealtimeError(_no_secret(msg, key), code, self.stt_fallback(eleven=code not in ("auth", "quota")), 502)
+        try:
+            token = str((resp.json() or {}).get("token") or "")
+        except (ValueError, AttributeError):
+            token = ""
+        if not token:
+            raise RealtimeError("ElevenLabs gave no token", "upstream", self.stt_fallback(), 502)
+        recent.append(now)
+        self._minted[mate["id"]] = recent
+        language = (stt.get("language") or mate["persona"].get("language") or "").split("-")[0].lower()
+        silence = float(stt.get("silence") or 1.2)
+        query = {"model_id": ELEVEN_REALTIME_MODELS[0]["id"], "token": token, "audio_format": "pcm_16000",
+                 "commit_strategy": "vad", "vad_silence_threshold_secs": f"{silence:g}"}
+        if language:
+            query["language_code"] = language
+        ws = re.sub(r"^http", "ws", elevenlabs_api()) + "/speech-to-text/realtime?" + urlencode(query)
+        log.info("mate %s: realtime speech-to-text token issued (lang=%s)", mate["id"], language or "auto")
+        return {"url": ws, "model": query["model_id"], "sample_rate": 16000, "language": language,
+                "commit_strategy": "vad", "silence": silence, "expires_in": 900,
+                "fallback": self.stt_fallback()}
+
+    async def transcribe(self, mate: dict[str, Any], audio: bytes, filename: str, content_type: str,
+                         engine: str | None = None) -> dict[str, Any]:
+        """A recording → ``{text, language?, engine}``. ``engine``: transcribe with this provider instead (the
+        realtime mic's fallback, "auto" = :meth:`stt_fallback`); a mate on ElevenLabs realtime uses the fallback."""
+        stt = mate["voice"]["stt"]
+        mine = stt.get("engine") or "browser"
+        if engine in (None, "") and mine == "elevenlabs":
+            engine = "auto"
+        if engine == "auto":
+            engine = self.stt_fallback()
+            if engine is None:
+                raise MateError("no speech-to-text service on the server can transcribe a recording "
+                                "(set up Whisper, OpenAI or ElevenLabs in Global settings → Voice services)")
+        elif engine:
+            if engine not in ("openai", "whisper", "elevenlabs"):
+                raise MateError(f"unknown stt engine: {engine}")
+        else:
+            engine = mine
         if engine in ("browser", "off"):
             raise MateError(f"speech recognition for this mate is '{engine}' (done in the page, not here)")
         if not audio:
@@ -299,14 +421,30 @@ class VoiceService:
             raise MateError(self.providers.missing_reason(engine))
         cfg = self.store.settings()
         language = (stt.get("language") or mate["persona"].get("language") or "").split("-")[0]
+        if engine == "elevenlabs":
+            key = self.store.secret("elevenlabs_key")
+            fields = {"model_id": ELEVEN_BATCH_STT}
+            if language:
+                fields["language_code"] = language
+            body, ctype = netio.multipart(fields, {"file": (filename or "speech.wav", audio, content_type or "audio/wav")})
+            resp = await netio.request("POST", f"{elevenlabs_api()}/speech-to-text", data=body, timeout=120,
+                                       headers={"xi-api-key": key, "Content-Type": ctype})
+            if resp.status >= 400:
+                raise netio.UpstreamError(_no_secret(_eleven_failure(resp)[1], key), status=resp.status)
+            try:
+                data = resp.json() or {}
+            except ValueError:
+                data = {}
+            return {"text": str(data.get("text") or "").strip(), "language": data.get("language_code"),
+                    "engine": "elevenlabs"}
         if engine == "openai":
             url = f"{openai_api()}/audio/transcriptions"
             headers = {"Authorization": f"Bearer {_need(self.store.secret('openai_key'), 'The OpenAI API key')}"}
-            model = stt.get("model") or OPENAI_STT_DEFAULT
+            model = (stt.get("model") if engine == mine else "") or OPENAI_STT_DEFAULT
         else:  # whisper
             url = _transcription_url(_need(cfg.get("whisper_url") or "", "The Whisper server URL"))
             headers = {}
-            model = stt.get("model") or self.providers.default_model("whisper")
+            model = (stt.get("model") if engine == mine else "") or self.providers.default_model("whisper")
         fields = {"model": model, "response_format": "json"}
         if language:
             fields["language"] = language
@@ -318,8 +456,9 @@ class VoiceService:
         try:
             data = resp.json()
         except ValueError:
-            return {"text": resp.body.decode("utf-8", errors="replace").strip()}
-        return {"text": str((data or {}).get("text") or "").strip(), "language": (data or {}).get("language")}
+            return {"text": resp.body.decode("utf-8", errors="replace").strip(), "engine": engine}
+        return {"text": str((data or {}).get("text") or "").strip(), "language": (data or {}).get("language"),
+                "engine": engine}
 
     # ---- voices ----
 

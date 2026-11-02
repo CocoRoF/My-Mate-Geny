@@ -23,7 +23,7 @@ import { withoutCode } from "./markdown";
 import type { BodyMood, MateReact } from "./types";
 import { currentSurface, useDesktopMate, type DesktopMateState } from "./desktop";
 import { useVoiceSpeaking } from "./voiceBridge";
-import { announceStarted, clientMsgId, deviceId, deviceOf, RANK_OVERLAY, RANK_SURFACE, RANK_SURFACE_HIDDEN, startedUpTo, useVoiceElection } from "./voiceOwner";
+import { announceStarted, clientMsgId, deviceId, deviceOf, noteSaid, onHush, RANK_OVERLAY, RANK_SURFACE, RANK_SURFACE_HIDDEN, setLocalVoicing, startedUpTo, useVoiceElection } from "./voiceOwner";
 
 /** the page's mate conversation (one mate at a time per page) */
 export const useMateChat = createChatStore();
@@ -84,6 +84,8 @@ interface Follow {
   /** avatar reactions this reply had (the "subtle" emotion level reacts once) */
   reacted: number;
   quiet: boolean;
+  /** a barge-in stopped her voice: the rest of this reply is shown, not read */
+  hushed?: boolean;
   /** the device the turn answers (null: unknown — read here) */
   origin: string | null;
   sentences: { idx: number; speech: string; emotion: string | null | undefined; text: string }[];
@@ -196,12 +198,18 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
       setVoiceError(fallbackWhy);
       // the other windows of this device: this sentence (and all before it) is said — never again, never twice
       const m = item.meta as { turn?: string; idx?: number } | undefined;
-      if (m?.turn && typeof m.idx === "number") announceStarted(mateId, m.turn, m.idx);
+      if (m?.turn && typeof m.idx === "number") announceStarted(mateId, m.turn, m.idx, item.text);
+      else if (item.text) noteSaid(mateId, item.text);
+      // (the mic in any window of this device: she is speaking — mate/stt/echo.ts)
+      setLocalVoicing(mateId, true);
     };
+    queue.onItemEnd = () => setLocalVoicing(mateId, false);
     queue.onError = (_item, err) => setVoiceError((err as Error)?.message || String(err));
     return () => {
       queue.onItemStart = null;
+      queue.onItemEnd = null;
       queue.onError = null;
+      setLocalVoicing(mateId, false);
     };
   }, [queue, mateId, engine, lang, tts?.voice, tts?.speed]);
 
@@ -230,6 +238,24 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
     }
   }, [speaks, queue]);
 
+  // nothing playing (stopped, done): not voicing
+  useEffect(() => {
+    if (mateId && !qstate.current) setLocalVoicing(mateId, false);
+  }, [mateId, qstate.current]);
+
+  // A barge-in (the user started talking over her, in any window of this device — mate/stt/realtime.ts): she stops
+  // here, and the rest of that reply is not read either (it stays written).
+  useEffect(() => {
+    if (!mateId) return;
+    return onHush((id) => {
+      if (id !== mateId) return;
+      const f = followRef.current;
+      if (f) f.hushed = true;
+      queue.stop();
+      setSpeakingTurn(null);
+    });
+  }, [mateId, queue]);
+
   // The reply this window reads stays here until it is written AND said; then the voice is free for the next reply.
   const busy = !!qstate.current || qstate.pending > 0;
   useEffect(() => {
@@ -255,7 +281,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
   useEffect(() => {
     if (!speaks) return;
     const f = followRef.current;
-    if (!f || f.quiet || (f.origin !== null && f.origin !== deviceId)) return;
+    if (!f || f.quiet || f.hushed || (f.origin !== null && f.origin !== deviceId)) return;
     const t = store.getState().turns.find((x) => x.key === f.key);
     const said = startedUpTo(f.vid);
     if (!t || (t.complete && said < 0)) return; // (a reply nobody was reading is not read later)
@@ -319,7 +345,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean }
       sentences.forEach((s, i) => {
         const item = { idx: first + i, speech: s.speech, emotion: s.emotion, text: s.text };
         if (s.speech) f.sentences.push(item);
-        if (!(speaksRef.current && mine && s.speech && readHereRef.current(f, item))) setCaption({ text: s.text, at: Date.now() });
+        if (!(speaksRef.current && mine && !f.hushed && s.speech && readHereRef.current(f, item))) setCaption({ text: s.text, at: Date.now() });
       });
     };
 
