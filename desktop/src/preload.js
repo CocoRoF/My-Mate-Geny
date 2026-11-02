@@ -65,6 +65,25 @@ const mate = {
   onCommand: (cb) => listen("mate:command", cb),
 };
 
+// Screen capture (capture.js, docs/mate.md §4 "Seeing the screen"): what to capture for a mate on this computer, the
+// user's own Share screen, and the mate's see_screen requests (the page hands them over from the server). The
+// picture comes back as bytes (Uint8Array) — the page uploads it; nothing is saved on this computer.
+const capture = {
+  version: 1,
+  info: () => ipcRenderer.invoke("capture:info"),
+  sources: (o = {}) => ipcRenderer.invoke("capture:sources", { thumbnails: !!(o && o.thumbnails), size: num(o && o.size) }),
+  getChoice: (mateId) => ipcRenderer.invoke("capture:getChoice", String(mateId || "")),
+  setChoice: (mateId, src) => ipcRenderer.invoke("capture:setChoice", String(mateId || ""), src && typeof src === "object"
+    ? { id: String(src.id || ""), name: String(src.name || ""), kind: String(src.kind || ""), display_id: String(src.display_id || "") } : null),
+  grab: (o = {}) => ipcRenderer.invoke("capture:grab", {
+    mateId: String((o && o.mateId) || ""), sourceId: String((o && o.sourceId) || ""), maxEdge: num(o && o.maxEdge),
+    format: (o && o.format) === "jpeg" ? "jpeg" : "png", quality: num(o && o.quality) || 85, hideAvatar: !(o && o.hideAvatar === false),
+  }),
+  request: (req = {}) => ipcRenderer.invoke("capture:request", JSON.parse(JSON.stringify(req || {}))),
+  cancel: (id) => ipcRenderer.invoke("capture:cancel", String(id || "")),
+  openPrivacySettings: () => ipcRenderer.invoke("capture:openPrivacy"),
+};
+
 // App-like window chrome (chrome.js): only in the console and the mate chat window, and only when the app draws no
 // system title bar there. The page draws its own title bar with these; absent → the page draws none (older apps).
 const chromeInfo = (() => {
@@ -109,6 +128,7 @@ contextBridge.exposeInMainWorld("hrhNative", {
   // the local pages follow (theme.js)
   setTheme: (mode) => ipcRenderer.send("hrh:setTheme", String(mode || "")),
   mate,
+  capture,
   window: windowBridge,
   // the mouse's back / forward buttons as the OS reports them (Windows app-commands); the page goes back in-app
   onNav: (cb) => listen("nav:command", (dir) => cb(dir === "forward" ? "forward" : "back")),
@@ -244,6 +264,14 @@ if (onConnectPage) {
       server: str(o.server), username: str(o.username), password: str(o.password), remember: o.remember !== false,
     }),
     cancel: () => ipcRenderer.invoke("connect:cancel"),
+  });
+}
+
+// the screen-capture prompt (src/capture-ask.html) only
+if (surface === "capture-ask") {
+  contextBridge.exposeInMainWorld("hrhCaptureAsk", {
+    info: () => ipcRenderer.invoke("capture:askInfo"),
+    answer: (allow) => ipcRenderer.send("capture:askAnswer", allow === true),
   });
 }
 

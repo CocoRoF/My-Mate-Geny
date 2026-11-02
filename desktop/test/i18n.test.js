@@ -27,7 +27,7 @@ test("every key the app uses exists", () => {
   const en = new Map(flat(MESSAGES.en));
   for (const k of used) assert.ok(en.has(k), `missing message ${k}`);
   // the local pages read hrhNative.text: say("key", …)
-  for (const f of ["offline.html", "connect.html"]) {
+  for (const f of ["offline.html", "connect.html", "capture-ask.html"]) {
     const html = fs.readFileSync(path.join(__dirname, "..", "src", f), "utf8");
     for (const m of html.matchAll(/say\("(\w+)"\s*[,)]/g)) assert.ok(en.has(`page.${m[1]}`), `${f}: missing page.${m[1]}`);
   }

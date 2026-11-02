@@ -57,7 +57,7 @@ test("the app's colours match the console's (frontend/src/lib/themeCore.ts)", ()
 });
 
 test("the local pages and the fallback title bar have a light theme (prefers-color-scheme follows nativeTheme)", () => {
-  for (const f of ["connect.html", "offline.html", "preload.js"]) {
+  for (const f of ["connect.html", "offline.html", "capture-ask.html", "preload.js"]) {
     const s = fs.readFileSync(path.join(__dirname, "..", "src", f), "utf8");
     assert.match(s, /prefers-color-scheme:\s*light/, f);
   }
