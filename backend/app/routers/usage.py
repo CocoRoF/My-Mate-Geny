@@ -1,13 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import time
 
 from fastapi import APIRouter, HTTPException, Request
 
-from app.providers.accounts import account_config_dir
-from app.providers.subscription import UsageError, subscription_usage
 from app.services.usage_service import UsageService
 
 router = APIRouter(prefix="/api/usage")
@@ -21,35 +17,17 @@ async def usage(request: Request, days: int = 14) -> dict:
     return svc.summary(days=days)
 
 
-def _cred_dir(provider: str, account_id: str | None) -> str:
-    if account_id:
-        return str(account_config_dir(provider, account_id))
-    # default: the host credentials dir the CLI uses (HOME/.claude or HOME/.codex)
-    sub = ".codex" if provider == "codex" else ".claude"
-    return os.path.join(os.path.expanduser("~"), sub)
-
-
-# Plan usage per (provider, account): the provider throttles its usage
-# endpoint (429), and the Usage page asks for every account at once.
-_SUB_TTL_S = 60.0
-_sub_cache: dict[tuple[str, str | None], tuple[float, dict]] = {}
-
-
 @router.get("/subscription")
-async def subscription(request: Request, provider: str = "claude", account_id: str | None = None) -> dict:
-    """The real plan usage (session 5h / weekly 7d), like the CLI's /usage."""
-    key = (provider, account_id)
-    hit = _sub_cache.get(key)
-    if hit and time.time() - hit[0] < _SUB_TTL_S:
-        return hit[1]
-    try:
-        # HTTPS call to the provider: off the event loop.
-        out = await asyncio.to_thread(subscription_usage, provider, _cred_dir(provider, account_id))
-    except UsageError as exc:
-        if hit:  # keep showing the last good numbers, and say why they're old
-            return {**hit[1], "stale": str(exc)}
-        return {"provider": provider, "available": False, "error": str(exc)}
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"usage fetch failed: {exc}") from exc
-    _sub_cache[key] = (time.time(), out)
-    return out
+async def subscription(request: Request, provider: str = "claude", account_id: str | None = None,
+                       refresh: bool = False) -> dict:
+    """The real plan usage (session 5h / weekly 7d), like the CLI's /usage.
+
+    The same per-account fetcher as the Providers cards and the balancer
+    (providers/plan_fetch.py): one request per account per couple of
+    minutes, Retry-After / backoff on errors, the last numbers served with
+    ``fetched_at`` + ``stale_reason`` / ``retry_at`` when they're old.
+    ``refresh`` asks now unless that account is backing off."""
+    if provider not in ("claude", "codex"):
+        raise HTTPException(status_code=400, detail=f"unsupported provider: {provider}")
+    pool = request.app.state.account_pool
+    return await asyncio.to_thread(pool.subscription, provider, account_id, force=refresh)

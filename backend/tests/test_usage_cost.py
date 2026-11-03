@@ -173,7 +173,7 @@ def test_public_accounts_carry_both_windows(db, monkeypatch, tmp_path):
 
     calls = []
 
-    def fake_usage(provider, cdir):
+    def fake_usage(provider, cdir, **kw):
         calls.append(cdir)
         return {"windows": [{"label": "Session (5hr)", "percent": 52.0, "resets_at": "r5", "kind": "five_hour"},
                             {"label": "Weekly (7 day)", "percent": 7.0, "resets_at": "r7", "kind": "seven_day"}],
@@ -182,19 +182,24 @@ def test_public_accounts_carry_both_windows(db, monkeypatch, tmp_path):
     monkeypatch.setattr(sub, "subscription_usage", fake_usage)
     pool = acc_mod.AccountPool(acc_mod.AccountStore(db, SecretVault(db)))
     monkeypatch.setattr(pool, "_host_usable", lambda provider: True)
+    from app.providers import login_session
+
+    monkeypatch.setattr(pool, "_session_facts", lambda *a, **k: login_session.stored_key_facts("oauth"))
     (primary,) = pool.public_accounts("claude")
     assert primary["label"] == acc_mod.PRIMARY_LABEL
     assert primary["utilization"] == 52.0  # the balancer's max, unchanged
     assert [w["kind"] for w in primary["windows"]] == ["five_hour", "seven_day"]
     assert primary["model_windows"][0]["label"] == "Fable" and primary["plan_fetched_at"]
     pool.public_accounts("claude")
-    assert len(calls) == 1  # cached (~60s)
+    assert len(calls) == 1  # cached (one request per account per ~2 min)
+    assert primary["session"]["health"] == "valid"
 
     # a failed refresh keeps the last windows and says why
-    pool._plan_cache[primary["id"]] = (pool._plan_cache[primary["id"]][0], 0.0)
-    monkeypatch.setattr(sub, "subscription_usage", lambda p, c: (_ for _ in ()).throw(RuntimeError("boom")))
+    pool._plans.entry(primary["id"]).next_at = 0.0
+    monkeypatch.setattr(sub, "subscription_usage", lambda p, c, **kw: (_ for _ in ()).throw(RuntimeError("boom")))
     (again,) = pool.public_accounts("claude")
     assert again["plan_error"] == "boom" and again["windows"][0]["percent"] == 52.0 and again["utilization"] == 52.0
+    assert again["plan_stale_reason"] == "network" and again["plan_fetched_at"] == primary["plan_fetched_at"]
 
 
 # ---- default model ----------------------------------------------------------------

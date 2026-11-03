@@ -12,6 +12,7 @@ import time
 import pytest
 
 from app.providers import accounts as acc_mod
+from app.providers import login_session
 from app.providers import subscription as sub_mod
 from app.providers.accounts import (
     AccountPool,
@@ -35,6 +36,8 @@ from app.services.workspace_service import WorkspaceService
 from app.vault import SecretVault
 
 PID = "__primary__claude"
+# a signed-in login with nothing to say about it (tests never read the real ~/.claude)
+VALID_LOGIN = login_session.stored_key_facts("oauth")
 
 
 def snap(id, **kw):
@@ -138,7 +141,8 @@ def pool(db, monkeypatch):
     p = AccountPool(store)
     monkeypatch.setattr(p, "_host_usable", lambda provider: True)
     monkeypatch.setattr(store, "usable", lambda account: True)
-    monkeypatch.setattr(sub_mod, "subscription_usage", lambda provider, cdir: {
+    monkeypatch.setattr(p, "_session_facts", lambda *a, **k: VALID_LOGIN)
+    monkeypatch.setattr(sub_mod, "subscription_usage", lambda provider, cdir, **kw: {
         "windows": [{"label": "5h", "percent": 10.0, "resets_at": None, "kind": "five_hour"},
                     {"label": "7d", "percent": 10.0, "resets_at": None, "kind": "seven_day"}],
         "model_windows": []})
@@ -414,7 +418,8 @@ def _service(db, tmp_path, monkeypatch, *, pool_on=True, accounts=("work",)):
     pool = AccountPool(store)
     monkeypatch.setattr(pool, "_host_usable", lambda provider: True)
     monkeypatch.setattr(store, "usable", lambda account: True)
-    monkeypatch.setattr(sub_mod, "subscription_usage", lambda provider, cdir: (_ for _ in ()).throw(RuntimeError("offline")))
+    monkeypatch.setattr(pool, "_session_facts", lambda *a, **k: VALID_LOGIN)
+    monkeypatch.setattr(sub_mod, "subscription_usage", lambda provider, cdir, **kw: (_ for _ in ()).throw(RuntimeError("offline")))
     made = [store.create("claude", label=name) for name in accounts]
     store.set_pool("claude", enabled=pool_on, strategy="round_robin")
     svc = SessionService(db, ProviderService(db, vault), WorkspaceService(ConnectionService(db, vault)), pool=pool)
@@ -539,28 +544,30 @@ async def test_auto_turn_right_after_a_turn_is_not_dropped(db, tmp_path, monkeyp
         await svc.shutdown()
 
 
-def test_plan_usage_backs_off_after_429(monkeypatch):
-    from app.providers import accounts as acc_mod
+def test_plan_usage_honours_retry_after_on_429(db, monkeypatch):
     from app.providers import subscription as sub
 
     calls = []
 
-    def throttled(provider, cdir):
+    def throttled(provider, cdir, **kw):
         calls.append(cdir)
-        raise sub.UsageError("usage request failed (429)")
+        raise sub.UsageError("usage request failed (429)", kind="rate_limited", status=429, retry_after=3600)
 
     monkeypatch.setattr(sub, "subscription_usage", throttled)
-    pool = acc_mod.AccountPool.__new__(acc_mod.AccountPool)
-    pool._plan_cache = {}
+    pool = acc_mod.AccountPool(AccountStore(db, SecretVault(db)))
+    monkeypatch.setattr(pool, "_session_facts", lambda *a, **k: VALID_LOGIN)
     clock = [1000.0]
-    monkeypatch.setattr(acc_mod.time, "time", lambda: clock[0])
+    pool._plans._clock = lambda: clock[0]
+    pool._plans._jitter = lambda: 0.0
     acct = {"id": "a1", "auth_mode": "oauth"}
     first = pool.plan_usage("claude", "a1", account=acct)
-    assert "429" in first["error"] and len(calls) == 1
-    clock[0] += acc_mod.PLAN_TTL_S + 1  # a normal TTL later: still backing off
+    assert "429" in first["error"] and first["stale_reason"] == "rate_limited" and len(calls) == 1
+    assert first["retry_at"] is not None
+    clock[0] += 300  # the old fixed 5-minute backoff: still waiting (the server said an hour)
     pool.plan_usage("claude", "a1", account=acct)
+    pool.plan_usage("claude", "a1", account=acct, force=True)  # a manual refresh doesn't skip a backoff
     assert len(calls) == 1
-    clock[0] += acc_mod.PLAN_BACKOFF_S  # past the backoff: asks again
+    clock[0] += 3600  # past Retry-After: asks again
     pool.plan_usage("claude", "a1", account=acct)
     assert len(calls) == 2
 

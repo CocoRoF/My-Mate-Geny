@@ -122,6 +122,15 @@ CREATE TABLE IF NOT EXISTS provider_accounts (
     updated_at    TEXT NOT NULL
 );
 
+-- Plan usage per account: the last numbers + the request backoff (Retry-After),
+-- so a restart neither forgets them nor asks a throttled endpoint again
+-- (providers/plan_fetch.py). No secrets: windows, timestamps, error text.
+CREATE TABLE IF NOT EXISTS provider_plan_cache (
+    account_id TEXT PRIMARY KEY,            -- provider_accounts.id or __primary__<provider>
+    data       TEXT NOT NULL,               -- JSON (PlanEntry)
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS provider_pool (
     provider  TEXT PRIMARY KEY,               -- claude | codex
     enabled   INTEGER NOT NULL DEFAULT 0,      -- use the pool for this provider?

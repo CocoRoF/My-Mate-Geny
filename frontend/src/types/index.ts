@@ -3,6 +3,8 @@ export interface ProviderStatus {
   connected: boolean;
   auth_mode: string;
   detail: string;
+  /** enabled accounts whose login needs the user (needs a sign-in / renewal failed) — the Settings badge */
+  session_attention?: { account_id: string; label: string; health: string; detail: string }[];
 }
 
 export interface Connection {

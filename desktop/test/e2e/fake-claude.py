@@ -35,6 +35,32 @@ if "--version" in args:
     # Claude (desktop/test/e2e/cli-versions-browser.js); the backend runs `--version` with its own environment
     print(f"{os.environ.get('FAKE_CLAUDE_VERSION', '2.0.0')} (Claude Code)")
     sys.exit(0)
+if args[:2] == ["auth", "status"]:
+    # Like Claude Code: `auth status` renews a token that is due (within 5 min of expiring) in the config dir it runs
+    # with — Settings → Providers → "Renew session" (backend providers/session_renew.py,
+    # desktop/test/e2e/login-sessions-browser.js). A refresh token containing "REVOKED" isn't renewed (the provider
+    # refused it), so the backend goes on to ask the token endpoint itself.
+    cfg = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    path = os.path.join(cfg, ".credentials.json")
+    try:
+        with open(path) as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError):
+        print(json.dumps({"loggedIn": False}))
+        sys.exit(1)
+    o = doc.get("claudeAiOauth") or {}
+    due = (o.get("expiresAt") or 0) <= (time.time() + 300) * 1000
+    if due and o.get("refreshToken") and "REVOKED" not in o["refreshToken"]:
+        o["accessToken"] = f"fake-access-renewed-{int(time.time())}"
+        o["refreshToken"] = f"fake-refresh-rotated-{int(time.time())}"
+        o["expiresAt"] = int((time.time() + 8 * 3600) * 1000)
+        doc["claudeAiOauth"] = o
+        tmp = path + ".fake.tmp"
+        with open(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as fh:
+            json.dump(doc, fh)
+        os.replace(tmp, path)
+    print(json.dumps({"loggedIn": True, "authMethod": "claude.ai", "configDirectory": cfg}))
+    sys.exit(0)
 model = args[args.index("--model") + 1] if "--model" in args else "fake"
 q: "queue.Queue[dict | None]" = queue.Queue()
 

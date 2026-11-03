@@ -9,6 +9,15 @@ export function providersNeedAttention(providers: ProviderStatus[]): boolean {
   return providers.length > 0 && !providers.some((p) => p.connected);
 }
 
+/**
+ * Settings → Providers → an account's login session can't work without the user: it needs a sign-in (no / expired /
+ * revoked refresh token, refused) or its renewal failed with the access token gone. Never for plain information —
+ * an access token that ran out but renews on the next use, one expiring soon, a valid one.
+ */
+export function sessionsNeedAttention(providers: ProviderStatus[]): boolean {
+  return providers.some((p) => (p.session_attention || []).some((i) => i.health === "needs_login" || i.health === "refresh_failed"));
+}
+
 /** the part of a CLI's status (api/cliTools.ts) the badge looks at */
 export interface CliToolAttention {
   update_available: boolean;

@@ -28,10 +28,15 @@ export interface SubscriptionUsage {
   model_windows?: UsageWindow[];
   manage_url?: string;
   stale?: string; // a refresh failed: these are the last good numbers, and why
+  fetched_at?: string | null; // when these numbers were fetched
+  stale_reason?: string | null; // rate_limited | token_expired | needs_login | auth | network | http | no_credentials
+  retry_at?: string | null; // when the server asks again (while backing off)
 }
 
-export const getSubscription = (provider: string, accountId?: string) => {
+/** `refresh`: ask now unless that account is backing off (Retry-After) — the same per-account fetcher as the cards */
+export const getSubscription = (provider: string, accountId?: string, refresh = false) => {
   const q = new URLSearchParams({ provider });
   if (accountId) q.set("account_id", accountId);
+  if (refresh) q.set("refresh", "true");
   return apiFetch<SubscriptionUsage>(`/api/usage/subscription?${q}`);
 };

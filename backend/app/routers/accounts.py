@@ -7,7 +7,12 @@ import asyncio
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from app.providers.accounts import account_config_dir, ensure_account_dirs, write_claude_credentials
+from app.providers.accounts import (
+    PRIMARY_PREFIX,
+    account_config_dir,
+    ensure_account_dirs,
+    write_claude_credentials,
+)
 from app.providers.catalog import clean_auto_compact_window
 
 router = APIRouter(prefix="/api/providers")
@@ -111,6 +116,35 @@ async def clear_cooldown(provider: str, account_id: str, request: Request) -> di
     return {"ok": True}
 
 
+# ---- login session (docs/providers.md → Login sessions) ----
+
+def _known_account(request: Request, provider: str, account_id: str) -> None:
+    if account_id == f"{PRIMARY_PREFIX}{provider}":
+        return
+    acc = request.app.state.account_store.get(account_id)
+    if acc is None or acc["provider"] != provider:
+        raise HTTPException(status_code=404, detail="no such account")
+
+
+@router.get("/{provider}/accounts/{account_id}/session")
+async def account_session(provider: str, account_id: str, request: Request) -> dict:
+    """The account's login (method, who, expiry, refresh token yes/no,
+    health) — read from its credentials file; no token is ever returned."""
+    _check(provider)
+    _known_account(request, provider, account_id)
+    return request.app.state.account_pool.session_info(provider, account_id)
+
+
+@router.post("/{provider}/accounts/{account_id}/session/renew")
+async def renew_account_session(provider: str, account_id: str, request: Request) -> dict:
+    """Renew the login the CLI's way (Claude: the CLI itself when due, else
+    the token endpoint under the CLI's own locks; Codex: the CLI). The
+    answer: ok, how, an error code/message, and the session afterwards."""
+    _check(provider)
+    _known_account(request, provider, account_id)
+    return await asyncio.to_thread(request.app.state.account_pool.renew_session, provider, account_id)
+
+
 # ---- per-account OAuth ----
 
 @router.post("/{provider}/accounts/{account_id}/oauth/start")
@@ -140,6 +174,7 @@ async def account_oauth_status(provider: str, account_id: str, request: Request)
         fresh = any(os.path.exists(f) and os.path.getmtime(f) >= st["started_at"] - 1 for f in files)
         if fresh or st["ok"]:
             request.app.state.account_store.update(account_id, status="ready")
+            request.app.state.account_pool.note_signed_in(account_id)
             return {"status": "connected"}
         if st["done"]:
             return {"status": "failed", "error": st["error"] or "sign-in did not complete"}
@@ -161,4 +196,5 @@ async def account_oauth_complete(
         # Write OAuth creds to the account's isolated dir; the CLI refreshes them.
         write_claude_credentials(account_id, res["credentials"])
         store.update(account_id, status="ready")
+        request.app.state.account_pool.note_signed_in(account_id)
     return {"ok": res.get("ok", False), "error": res.get("error", "")}

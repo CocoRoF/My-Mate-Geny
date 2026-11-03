@@ -3,6 +3,7 @@ import { getSubscription, type SubscriptionUsage as Sub } from "../../api/usage"
 import { resetsIn, resetsOn, toMs } from "../../lib/usage";
 import Icon from "../ui/Icon";
 import { useT } from "../../i18n";
+import { fmtTime, relTime } from "../../i18n/format";
 
 function barColor(pct: number): string {
   if (pct >= 90) return "from-danger to-danger";
@@ -46,7 +47,8 @@ export default function SubscriptionUsage({ provider, accountId }: { provider: s
 
   useEffect(() => {
     setLoading(true);
-    getSubscription(provider, accountId)
+    // opened on purpose: a fresh look, unless the account is backing off (the server decides)
+    getSubscription(provider, accountId, true)
       .then(setSub)
       .catch((e) => setSub({ provider, available: false, error: String(e.message || e) }))
       .finally(() => setLoading(false));
@@ -70,7 +72,11 @@ export default function SubscriptionUsage({ provider, accountId }: { provider: s
   return (
     <div className="space-y-5">
       {sub.stale && (
-        <p className="text-[11px] text-warning">{t("usage.stale", { reason: String(sub.stale) })}</p>
+        <p className="text-[11px] text-warning" title={String(sub.stale)}>
+          {t("usage.stale", { reason: String(sub.stale) })}
+          {sub.fetched_at ? ` ${t("providers.planLastChecked", { ago: relTime(sub.fetched_at) })}` : ""}
+          {sub.retry_at ? ` · ${t("providers.planStaleRateLimited", { when: t("providers.planWhenAt", { time: fmtTime(sub.retry_at) }) })}` : ""}
+        </p>
       )}
       {sub.account && (
         <div>

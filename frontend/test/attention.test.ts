@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cliUpdatesNeedAttention, providersNeedAttention } from "../src/lib/attention.ts";
+import { cliUpdatesNeedAttention, providersNeedAttention, sessionsNeedAttention } from "../src/lib/attention.ts";
 
 const p = (connected: boolean) => ({ provider: "x", connected, auth_mode: "", detail: "" });
 
@@ -28,4 +28,18 @@ test("CLI versions raise the badge only for a really newer version the user can 
   assert.equal(cliUpdatesNeedAttention([cli({ active: false })]), true); // the last one finished (or failed)
   assert.equal(cliUpdatesNeedAttention(null), false); // still loading
   assert.equal(cliUpdatesNeedAttention([]), false);
+});
+
+const ps = (...health: string[]) => ({
+  ...p(true),
+  session_attention: health.map((h, i) => ({ account_id: `a${i}`, label: `a${i}`, health: h, detail: "" })),
+});
+
+test("login sessions raise the badge only when the user has to act", () => {
+  assert.equal(sessionsNeedAttention([ps("needs_login")]), true);
+  assert.equal(sessionsNeedAttention([ps(), ps("refresh_failed")]), true);
+  // information only: an access token that renews on the next use, one expiring soon, a valid one
+  assert.equal(sessionsNeedAttention([ps("expired", "expiring", "valid")]), false);
+  assert.equal(sessionsNeedAttention([p(true)]), false); // an older backend without the field
+  assert.equal(sessionsNeedAttention([]), false);
 });

@@ -21,6 +21,7 @@ import { COMPACT_BUFFER, DEFAULT_PRESETS, fmtWindow } from "../../lib/context";
 import { useT, type MsgKey } from "../../i18n";
 import Icon from "../ui/Icon";
 import ProviderOAuthModal from "./ProviderOAuthModal";
+import AccountSession, { PlanStaleNote } from "./AccountSession";
 import CliVersionsSection from "./CliVersionsSection";
 import PlanWindowBars from "../usage/PlanWindowBars";
 import UsageModal from "../usage/UsageModal";
@@ -39,6 +40,17 @@ const STATUS_LABEL: Record<string, MsgKey> = {
   cooldown: "providers.statusCooldown",
   expired: "providers.statusExpired",
   unknown: "providers.statusUnknown",
+};
+
+// why an account can't take a turn now (backend accounts.ineligible_reason)
+const INELIGIBLE_LABEL: Record<string, MsgKey> = {
+  disabled: "providers.ineligible_disabled",
+  no_credentials: "providers.ineligible_no_credentials",
+  expired: "providers.ineligible_expired",
+  session_expired: "providers.ineligible_session_expired",
+  cooling_down: "providers.ineligible_cooling_down",
+  at_capacity: "providers.ineligible_at_capacity",
+  excluded: "providers.ineligible_excluded",
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -169,8 +181,16 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
   const [newLabel, setNewLabel] = useState("");
   const [oauthFor, setOauthFor] = useState<Account | null>(null);
   const [usageFor, setUsageFor] = useState<Account | null>(null);
+  const [primaryLogin, setPrimaryLogin] = useState<Account | null>(null); // "Sign in again" for this machine's login
 
-  const load = () => getPool(provider).then(setData).catch(() => {});
+  // (the providers list too: it carries the Settings badge's login-session problems)
+  const load = () =>
+    getPool(provider)
+      .then((d) => {
+        setData(d);
+        reloadProviders().catch(() => {});
+      })
+      .catch(() => {});
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -290,23 +310,32 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
                 {!a.usable && <span className="pill bg-danger/10 text-danger">{t("providers.noCredentials")}</span>}
                 {a.usable && a.eligible && <span className="pill bg-success/10 text-success">{t("providers.eligible")}</span>}
                 {a.usable && !a.eligible && (
-                  <span className="pill bg-surface-3 text-content-faint">{a.ineligible_reason}</span>
+                  <span className="pill bg-surface-3 text-content-faint" data-testid="ineligible-reason">
+                    {INELIGIBLE_LABEL[a.ineligible_reason || ""] ? t(INELIGIBLE_LABEL[a.ineligible_reason || ""]) : a.ineligible_reason}
+                  </span>
                 )}
                 {a.in_flight > 0 && (
                   <span className="ml-auto text-[11px] text-accent">{t("providers.activeCount", { n: a.in_flight })}</span>
                 )}
               </div>
 
-              {/* Plan usage: both windows with their reset times (server-cached ~60s). */}
+              {/* Plan usage: both windows with their reset times (one request per account per ~2 min; when the
+                  latest one failed / was skipped: the last numbers, when they're from and when it asks again). */}
               {a.usable && a.auth_mode !== "api_key" && (
                 <div className="mt-2.5">
                   <PlanWindowBars windows={fromAccount(a)} />
-                  {a.plan_error && (
-                    <p className="mt-1 truncate text-[11px] text-warning/90 light:text-warning" title={a.plan_error}>
-                      {t("providers.planRefreshFailed", { error: a.plan_error })}
-                    </p>
-                  )}
+                  <PlanStaleNote account={a} />
                 </div>
+              )}
+
+              {/* Login session: health, expiry, renew / sign in again (read from the CLI's credentials file) */}
+              {a.session && (a.primary || a.usable) && (
+                <AccountSession
+                  provider={provider}
+                  account={a}
+                  onChanged={load}
+                  onRelogin={() => (a.primary ? setPrimaryLogin(a) : setOauthFor(a))}
+                />
               )}
 
               {a.primary && pool?.enabled && (
@@ -438,6 +467,15 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
             complete: (code: string) => accountOAuthComplete(provider, oauthFor.id, code),
           }}
           onClose={() => setOauthFor(null)}
+          onConnected={load}
+        />
+      )}
+      {primaryLogin && (
+        <ProviderOAuthModal
+          provider={provider}
+          title={t("providers.signInTitle", { label: primaryLogin.label })}
+          sub={provider === "codex" ? t("providers.subCodex") : t("providers.subClaude")}
+          onClose={() => setPrimaryLogin(null)}
           onConnected={load}
         />
       )}
