@@ -101,9 +101,9 @@ class GenyPolicy:
             self, session_id: str, is_executing_fn
         ) -> Optional[Tuple[str, TriggerCategory]]:
             """Pick a category, then a prompt within it, then render.
-    
+
             Resolution path:
-    
+
             1. Pull the active manifest (preset or default fallback).
             2. Snapshot session state (consec, sub-worker, time window,
                screen-active).
@@ -115,17 +115,17 @@ class GenyPolicy:
                the chosen category.
             6. Render via :func:`schemas.render_prompt` to the canonical
                ``[KIND_TRIGGER:id] [autonomous_signal: …] {content}`` form.
-    
+
             Returns ``(rendered_prompt, chosen_category)``, or ``None`` when the
             manifest is disabled or no category passes the filter.
             """
             manifest = self._resolve_manifest(session_id)
             if not manifest.enabled:
                 return None
-    
+
             locale = self._get_locale()
             count = self._consecutive_triggers.get(session_id, 0)
-    
+
             linked_id, sub_worker_busy = self._probe_sub_worker_state(
                 session_id, is_executing_fn
             )
@@ -133,12 +133,12 @@ class GenyPolicy:
             screen_active = self._screen_active_for(session_id)
             now = self.clock()
             last_fires = self._last_category_fire.setdefault(session_id, {})
-    
+
             # Build a prompt-id index once for stage-2 lookups.
             prompt_index: Dict[str, TriggerPrompt] = {
                 p.id: p for p in manifest.prompts
             }
-    
+
             eligible: List[Tuple[float, TriggerCategory]] = []
             for cat in manifest.categories:
                 if not _category_eligible(
@@ -164,12 +164,12 @@ class GenyPolicy:
                 if not usable_refs:
                     continue
                 eligible.append((cat.weight, cat))
-    
+
             chosen_category = _weighted_pick(eligible)
             if chosen_category is None:
                 return None
             assert isinstance(chosen_category, TriggerCategory)
-    
+
             # Stage 2: roulette across the chosen category's prompt_refs.
             ref_pool: List[Tuple[float, PromptRef]] = [
                 (r.weight, r)
@@ -187,11 +187,11 @@ class GenyPolicy:
             if chosen_ref is None:
                 return None
             assert isinstance(chosen_ref, PromptRef)
-    
+
             prompt = prompt_index.get(chosen_ref.prompt_id)
             if prompt is None:
                 return None
-    
+
             content = (
                 prompt.content.get(locale)
                 or prompt.content.get("en")
@@ -199,12 +199,12 @@ class GenyPolicy:
             )
             if not content.strip():
                 return None
-    
+
             # Mark cooldown so the next tick filters this category until the
             # window elapses.
             if chosen_category.cooldown_seconds and chosen_category.cooldown_seconds > 0:
                 last_fires[chosen_category.id] = now
-    
+
             # Explicit current-time anchor (configured tz) so idle/lonely prompts —
             # which carry no time of their own — never make the persona guess the
             # time of day (e.g. calling a 09:51 morning "evening").
