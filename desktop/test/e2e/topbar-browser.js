@@ -173,8 +173,11 @@ async function folderFlow(browser, phone) {
 
   step(`${tag}: filter, connect two folders`);
   await page.fill('[data-testid="folders-popover"] input', "shared");
-  assert.equal(await count(page, '[data-testid="folders-suggestions"] button'), 1, "the filter narrows the list");
-  await page.click('[data-testid="folders-suggestions"] button');
+  // (each row: a tick for picking several — on several hosts — and the folder itself, which connects it at once)
+  await sleep(200);
+  const narrowed = await page.$$eval('[data-testid="folders-suggestions"] button[title^="Connect "]', (els) => els.map((e) => e.title));
+  assert.equal(narrowed.length, 1, `the filter narrows the list: ${narrowed}`);
+  await page.click('[data-testid="folders-suggestions"] button[title^="Connect "]');
   await page.waitForSelector('[data-testid="folders-connected"] li');
   await page.fill('[data-testid="folders-popover"] input', "");
   await page.click(`[data-testid="folders-suggestions"] button[title="Connect ${path.join(WS, "docs")}"]`);
