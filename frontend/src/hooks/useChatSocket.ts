@@ -9,6 +9,7 @@ import { useUsageStore } from "../stores/usageStore";
 import type { Attachment, PlanUsage, ProviderEvent } from "../types";
 import { tr } from "../i18n";
 import { plainPreview } from "../mate/markdown";
+import { rememberConversation } from "../lib/lastConversation";
 
 declare global {
   interface Window {
@@ -239,9 +240,10 @@ export function useChatSocket(sessionId: string | null) {
           client_msg_id: clientMsgId,
         }),
       );
+      if (sessionId) rememberConversation({ kind: "chat", id: sessionId });
       return true;
     },
-    [store],
+    [store, sessionId],
   );
 
   /** Add instructions to the RUNNING turn. False when not connected. */
@@ -259,9 +261,10 @@ export function useChatSocket(sessionId: string | null) {
           client_msg_id: clientMsgId,
         }),
       );
+      if (sessionId) rememberConversation({ kind: "chat", id: sessionId });
       return true;
     },
-    [store],
+    [store, sessionId],
   );
 
   const stop = useCallback(() => {

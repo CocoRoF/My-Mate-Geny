@@ -15,6 +15,8 @@
 import { useSessionStore } from "../stores/sessionStore";
 import { useStudio } from "../stores/studioStore";
 import { useUIStore } from "../stores/uiStore";
+import { useMateStore } from "../stores/mateStore";
+import { conversationLocation, readLastConversation, rememberConversation, startupConversation } from "./lastConversation";
 import { runBack, takeOverlayEntry } from "./back";
 import { fromSearch, matePanelOf, urlOf, type Loc } from "./navUrl";
 
@@ -47,6 +49,15 @@ function current(): Loc {
       ? { studio: { kind: st.kind, mate: st.mateId, ...(st.kind === "avatar" && st.projectId ? { project: st.projectId } : {}) } }
       : {}),
   };
+}
+
+function rememberCurrentConversation() {
+  const loc = current();
+  if (loc.view === "chat" && loc.session) rememberConversation({ kind: "chat", id: loc.session });
+  if (loc.view === "mate" && !loc.studio) {
+    const id = useMateStore.getState().activeId;
+    if (id) rememberConversation({ kind: "mate", id });
+  }
 }
 
 const here = () => window.location.pathname + window.location.search;
@@ -132,8 +143,11 @@ export function installNav(): void {
   if (installed || typeof window === "undefined") return;
   installed = true;
   // a deep link (/?view=…, a desktop "open that chat") applies first
-  const start = fromUrl();
+  const saved = startupConversation(window.location.search, readLastConversation());
+  if (saved?.kind === "mate") useMateStore.getState().setActive(saved.id);
+  const start = saved ? conversationLocation(saved) : fromUrl();
   if (start) apply(start);
+  rememberCurrentConversation();
   const url = urlOf(current());
   if (!navState()) {
     // fresh page: the guard below the first screen, then the first screen
@@ -150,6 +164,7 @@ export function installNav(): void {
   // (`user`: a change the user made — never mistaken for the app settling on its first screen while starting)
   const onChange = (user = false) => {
     if (applying) return;
+    rememberCurrentConversation();
     const next = urlOf(current());
     if (next === here()) return;
     const s = navState();
@@ -169,6 +184,8 @@ export function installNav(): void {
   };
   useUIStore.subscribe((s, prev) => (s.view !== prev.view || s.settingsTab !== prev.settingsTab) && onChange());
   useSessionStore.subscribe((s, prev) => s.activeId !== prev.activeId && useUIStore.getState().view === "chat" && onChange());
+  // Selecting a different mate does not change the view's URL, but must restore that mate next time.
+  useMateStore.subscribe((s, prev) => s.activeId !== prev.activeId && useUIStore.getState().view === "mate" && onChange());
   // the studio opening / closing / switching drafts or projects (in the Mate view)
   useStudio.subscribe(
     (s, prev) =>
@@ -190,6 +207,7 @@ export function installNav(): void {
     const loc = fromUrl();
     if (!loc) return;
     apply(loc);
+    rememberCurrentConversation();
     // (an entry from before the screens became Settings tabs, `/?view=usage`: it shows the tab's address now)
     const canonical = urlOf(current());
     if (canonical !== here()) window.history.replaceState(window.history.state, "", canonical);

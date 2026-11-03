@@ -2,6 +2,7 @@ import { saveSpeech, pendingSpeech, ackSpeech } from "./stt/outbox";
 import type {SpeechPacket} from "./stt/draft";
 import {useDraftStore} from "../stores/draftStore";
 import {tr} from "../i18n";
+import { rememberConversation } from "../lib/lastConversation";
 import { useDevicePreferences, devicePreferencesLoaded } from "../stores/devicePreferences";
 /**
  * A mate's conversation, live (docs/mate.md §3): POST /api/mates/{id}/conversation → its session, then the same
@@ -526,9 +527,10 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
       store.getState().pushUser(text, attachments, cid);
       store.getState().setStreaming(true);
       ws.send(JSON.stringify({ type: "chat", input: text, attachments: attachments.map((a) => a.id), client_msg_id: cid }));
+      if (mateId) rememberConversation({ kind: "mate", id: mateId });
       return true;
     },
-    [store, queue, touch],
+    [store, queue, touch, mateId],
   );
 
   /** add to her running turn (like a chat's steer); false when not connected */
@@ -544,9 +546,10 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
       lastSender.current = deviceId;
       store.getState().pushSteer(text, attachments, cid);
       ws.send(JSON.stringify({ type: "steer", input: text, attachments: attachments.map((a) => a.id), client_msg_id: cid }));
+      if (mateId) rememberConversation({ kind: "mate", id: mateId });
       return true;
     },
-    [store, queue, touch],
+    [store, queue, touch, mateId],
   );
 
   const speech = useCallback((packet:Record<string,unknown>,attachments:Attachment[]=[]) => {
@@ -557,8 +560,9 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
     if(!saveSpeech(store.getState().sid!,packet as unknown as SpeechPacket,ids)){setError(tr("mate.speechSaveFailed"));return false;}
     const kept=pendingSpeech(store.getState().sid!).find(p=>p.packet.group_id===packet.group_id);
     ws.send(JSON.stringify({type:'speech',...packet,attachments:kept?.attachments??ids}));
+    if (mateId && packet.op !== "touch") rememberConversation({ kind: "mate", id: mateId });
     return true;
-  },[speechReady,touch,queue]);
+  },[speechReady,touch,queue,mateId]);
 
   const stop = useCallback(() => {
     wsRef.current?.send(JSON.stringify({ type: "stop" }));

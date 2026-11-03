@@ -1082,6 +1082,17 @@ mouse's back / forward buttons (Windows app-commands → `hrhNative.onNav`),
 Alt+← / Alt+→. Android: back = the previous screen; at the first one a second
 press within 2 s leaves the app (to the background).
 
+**Startup conversation** (`lib/lastConversation.ts`). A fresh launch at `/`
+restores the device's last conversation kind and ID: either the selected Mate
+or a coding session. Navigation and successful sends (including the desktop
+Mate chat / quick windows and speech) update this local, per-origin record.
+Settings, studios, and passive avatar/runtime windows do not replace it;
+explicit URLs still take precedence. Deleted targets fall back through the
+existing Mate/session list selection. A device with no valid new record keeps
+the legacy last-session startup behavior. No server setting or native shell
+change is needed. `last-conversation.cjs` exercises full Electron restarts
+with the same profile, popup sends, background windows, and deleted targets.
+
 Android (Capacitor): the Mate view runs in-page; microphone permission added.
 
 ## 8. Backend notes
