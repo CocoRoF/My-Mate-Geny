@@ -116,7 +116,7 @@ async def lifespan(app: FastAPI):
     mate_store = MateStore(db, vault)
     app.state.mate_service = MateService(session_service, mate_store, logs=logs)
     from app.services.screen import ScreenService
-    app.state.screen_service = ScreenService(session_service, app.state.mate_service.capture)
+    app.state.screen_service = ScreenService(session_service, app.state.mate_service.capture, mates=mate_store)
     session_service.screen = app.state.screen_service
     app.state.voice_service = VoiceService(mate_store)
     # Higgsfield: accounts + what the chats' agents get (docs/higgsfield.md)

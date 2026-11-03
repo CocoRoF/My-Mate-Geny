@@ -1,4 +1,18 @@
 const screen = {
+  "proactiveUnavailable": "Waiting for the server update. Refresh after the backend restarts to use this setting.",
+  "proactiveActive": "Reach out is on. While sharing, your mate can check the screen every {count} seconds and incur model usage.",
+  "setup": "Set up screen sharing",
+  "whenRequested": "Look when requested",
+  "proactiveSetupHint": "Configure starting conversations in Mate settings → Reach out. This setup closes during sharing.",
+  "apply": "Apply",
+  "proactiveTitle": "Reach out",
+  "proactiveHint": "Let your mate start a conversation about the selected screen. Works only while you share on this device.",
+  "proactiveEnabled": "Start conversations about my screen",
+  "proactiveCost": "This permits automatic observation at the selected interval. Busy conversations and tasks are skipped. Changed screens may incur model usage.",
+  "proactiveGuidance": "When would you like your mate to speak up?",
+  "proactiveExamples": "For example: offer help when I seem stuck, and stay quiet when I am concentrating.",
+  "proactiveSafety": "Similar screens do not trigger repeated comments. Stopping sharing stops observation; reopening the app does not resume sharing.",
+
   "deviceVolume": "Output volume for this device. Applies immediately to all mates and windows, without changing other devices.",
   "deviceSettings": "Screen sharing on this device",
   "deviceSettingsHint": "All windows of this app use these settings. Changing the capture target stops ongoing sharing.",

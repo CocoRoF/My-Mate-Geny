@@ -30,6 +30,19 @@ let stream: MediaStream | null = null;
 let video: HTMLVideoElement | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
 let observing = false;
+const proactive = new Map<string, {enabled:boolean; interval:number}>();
+export function configureProactive(sid:string, enabled:boolean, interval:number) {
+  const previous=proactive.get(sid);
+  if(previous?.enabled===enabled && previous.interval===interval)return;
+  proactive.set(sid,{enabled,interval});
+  if(sharing?.sid===sid && ownsSharing) scheduleObservation();
+}
+function scheduleObservation() {
+  if(timer)clearInterval(timer); timer=null;
+  if(!sharing || !ownsSharing)return;
+  const p=proactive.get(sharing.sid);
+  if(p?.enabled || sharing.mode==="observe") timer=setInterval(()=>void observe(), (p?.enabled ? p.interval : sharing.interval)*1000);
+}
 let generation = 0;
 const cancelled = new Set<string>();
 let approval: { id: string; name: string; source: string } | null = null;
@@ -109,14 +122,11 @@ export function setSharingMode(mode: ScreenMode, interval = 180) {
   if (timer) clearInterval(timer);
   timer = null;
   emit();
-  if (mode === "observe")
-    timer = setInterval(() => {
-      void observe();
-    }, sharing.interval * 1000);
+  scheduleObservation();
 }
 async function observe() {
   const current = sharing;
-  if (!current || current.mode !== "observe" || observing) return;
+  if (!current || !ownsSharing || (current.mode !== "observe" && !proactive.get(current.sid)?.enabled) || observing) return;
   observing = true;
   try {
     await apiFetch(
@@ -194,6 +204,7 @@ export async function beginSharing(
     capturing: false,
   };
   emit();
+  scheduleObservation();
 }
 export function cancelLocalCapture(id: string) {
   cancelled.add(id);
@@ -310,6 +321,9 @@ queueMicrotask(() => {
       }
       ownsSharing = v.owner;
       sharing = v.state;
+      // IPC stop/snapshot replies can arrive after beginSharing scheduled its timer. Recover only
+      // from the authoritative owner snapshot; don't reset a live timer on every capture update.
+      if (ownsSharing && sharing && !timer) scheduleObservation();
       emit(false);
     };
     nativeSharing.onChanged(receive);
@@ -325,4 +339,11 @@ queueMicrotask(() => {
     });
     void nativeSharing.get().then(receive);
   }
+});
+
+// Keep the owner's policy current even when its composer is not mounted (console navigated elsewhere).
+if(typeof window!=="undefined")window.addEventListener("hrh:mate-policies",event=>{
+  const rows=(event as CustomEvent).detail;
+  if(!Array.isArray(rows))return;
+  for(const p of rows)if(p.sid)configureProactive(p.sid,!!p.enabled,p.interval||180);
 });

@@ -11,6 +11,7 @@ import {
   approvalSnapshot,
   answerApproval,
   beginSharing,
+  configureProactive,
   setSharingMode,
   sharingSnapshot,
   stopSharing,
@@ -37,7 +38,7 @@ export function useLocalScreenControls(
     const m = desktopMate();
     if (!m || currentSurface() !== "mate-chat") return;
     const open = () => {
-      setPicker("choose");
+      setOpen(true);
       void m.screenHandled?.();
     };
     void m.getState().then((s) => {
@@ -47,6 +48,20 @@ export function useLocalScreenControls(
       if (cmd.type === "screen.open") open();
     });
   }, []);
+  const [mode, setMode] = useState<ScreenMode>("ask");
+  const [interval, setIntervalValue] = useState(180);
+  const p = mate?.prefs?.proactive;
+  useEffect(() => {
+    configureProactive(sid, !!p?.enabled, p?.interval || 180);
+  }, [sid, p?.enabled, p?.interval]);
+  useEffect(() => {
+    if (!open) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [open]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const supported = canShareScreen();
@@ -63,9 +78,11 @@ export function useLocalScreenControls(
     }
     setBusy(true);
     try {
-      if (ongoing) await beginSharing(sid, name);
-      else addFiles([await grabWithBrowser()]);
-      setOpen(ongoing);
+      if (ongoing) {
+        await beginSharing(sid, name);
+        setSharingMode(mode, interval);
+      } else addFiles([await grabWithBrowser()]);
+      setOpen(false);
     } catch (e) {
       failed(e);
     } finally {
@@ -76,14 +93,14 @@ export function useLocalScreenControls(
     <>
       {(supported || sharing) && (
         <div
-          className="border-b border-border/60 px-3 py-2 text-xs"
-          data-testid="local-screen-controls"
+          className="flex items-center gap-2 border-b border-border/60 px-3 py-2 text-xs"
+          data-screen-proactive={p?.enabled ? p.interval : 0} data-testid="local-screen-controls"
         >
           <button
             type="button"
-            onClick={() => setOpen(!open)}
-            className="flex max-w-full items-center gap-2 text-content-dim"
-            aria-expanded={open}
+            onClick={() => setOpen(true)}
+            className="flex min-w-0 flex-1 items-center gap-2 text-content-dim"
+            data-testid="screen-setup-open"
           >
             <Icon
               name="monitor"
@@ -95,98 +112,157 @@ export function useLocalScreenControls(
                 ? t("screen.sharing", { source: sharing.source })
                 : t("composer.shareScreen")}
             </span>
-            <Icon name={open ? "chevron-down" : "chevron"} size={11} />
           </button>
-          {open && (
-            <div className="mt-2 space-y-2">
+          {active && (
+            <button
+              type="button"
+              onClick={stopSharing}
+              className="shrink-0 text-danger"
+              data-testid="screen-stop"
+            >
+              {t("screen.stop")}
+            </button>
+          )}
+          {(error || (active && sharing.error)) && (
+            <span
+              role="alert"
+              className="text-danger"
+              title={error || sharing?.error}
+            >
+              <Icon name="warning" size={13} />
+            </span>
+          )}
+        </div>
+      )}
+      {open && (
+        <div
+          className="fixed inset-0 z-[105] grid place-items-center bg-black/40 p-3"
+          onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}
+          data-testid="screen-setup"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("screen.setup")}
+            className="flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface-2 shadow-float"
+          >
+            <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+              <Icon name="monitor" size={16} />
+              <h2 className="flex-1 text-sm font-semibold">
+                {t("screen.setup")}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="btn-ghost"
+                aria-label={t("common.cancel")}
+              >
+                <Icon name="x" size={16} />
+              </button>
+            </div>
+            <div className="space-y-3 overflow-y-auto p-4 text-xs">
               <p className="text-content-faint">{t("screen.localHint")}</p>
-              <div className="flex flex-wrap gap-2">
-                {supported && (
+              <label className="flex items-center justify-between gap-2">
+                {t("screen.mode")}
+                <select
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value as ScreenMode)}
+                  className="rounded border border-border bg-surface px-2 py-1"
+                  data-testid="screen-mode"
+                >
+                  <option value="ask">{t("screen.whenRequested")}</option>
+                  <option value="on_turn">{t("screen.onTurn")}</option>
+                  {!mate && (
+                    <option value="observe">{t("screen.observe")}</option>
+                  )}
+                </select>
+              </label>
+              {!mate && mode === "observe" && (
+                <label>
+                  {t("screen.interval")}{" "}
+                  <select
+                    value={interval}
+                    onChange={(e) => setIntervalValue(Number(e.target.value))}
+                    data-testid="screen-interval"
+                  >
+                    {[60, 180, 300, 600].map((n) => (
+                      <option key={n} value={n}>
+                        {t("screen.seconds", { count: n })}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {mate && (
+                <p
+                  className={p?.enabled ? "text-warning" : "text-content-faint"}
+                >
+                  {p?.enabled
+                    ? t("screen.proactiveActive", { count: p.interval })
+                    : t("screen.proactiveSetupHint")}
+                </p>
+              )}
+              <DeviceCaptureSettings />
+              <p className="text-content-faint">{t("screen.retention")}</p>
+              {mode === "observe" && (
+                <p className="text-warning">{t("screen.costHint")}</p>
+              )}
+              {error && (
+                <p role="alert" className="text-danger">
+                  {error}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-border p-3">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="btn-ghost"
+              >
+                {t("common.cancel")}
+              </button>
+              {active ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSharingMode(mode, interval);
+                    setOpen(false);
+                  }}
+                  className="btn-primary"
+                  data-testid="screen-apply"
+                >
+                  {t("screen.apply")}
+                </button>
+              ) : (
+                <>
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => void start(false)}
-                    className="btn-ghost !px-2 !py-1"
+                    onClick={() => {
+                      setOpen(false);
+                      void start(false);
+                    }}
+                    className="btn-ghost"
                     data-testid="screen-once"
                   >
                     {t("screen.once")}
                   </button>
-                )}
-                {supported && !active && (
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => void start(true)}
-                    className="btn-ghost !px-2 !py-1"
+                    onClick={() => {
+                      setOpen(false);
+                      void start(true);
+                    }}
+                    className="btn-primary"
                     data-testid="screen-start"
                   >
                     {t("screen.start")}
                   </button>
-                )}
-                {sharing && (
-                  <button
-                    type="button"
-                    onClick={stopSharing}
-                    className="btn-ghost !px-2 !py-1 text-danger"
-                    data-testid="screen-stop"
-                  >
-                    {t("screen.stop")}
-                  </button>
-                )}
-              </div>
-              {active && (
-                <>
-                  <label className="flex flex-wrap items-center gap-2">
-                    {t("screen.mode")}
-                    <select
-                      value={sharing.mode}
-                      onChange={(e) =>
-                        setSharingMode(
-                          e.target.value as ScreenMode,
-                          sharing.interval,
-                        )
-                      }
-                      className="min-w-0 max-w-full rounded border border-border bg-surface px-2 py-1"
-                      data-testid="screen-mode"
-                    >
-                      <option value="ask">{t("screen.ask")}</option>
-                      <option value="on_turn">{t("screen.onTurn")}</option>
-                      <option value="observe">{t("screen.observe")}</option>
-                    </select>
-                  </label>
-                  {sharing.mode === "observe" && (
-                    <label className="flex flex-wrap items-center gap-2">
-                      {t("screen.interval")}
-                      <select
-                        value={sharing.interval}
-                        onChange={(e) =>
-                          setSharingMode("observe", Number(e.target.value))
-                        }
-                        className="rounded border border-border bg-surface px-2 py-1"
-                        data-testid="screen-interval"
-                      >
-                        {[60, 180, 300, 600].map((n) => (
-                          <option key={n} value={n}>
-                            {t("screen.seconds", { count: n })}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                  <p className="text-content-faint">{t("screen.retention")}</p>
-                  {sharing.mode === "observe" && (
-                    <p className="text-warning">{t("screen.costHint")}</p>
-                  )}
                 </>
               )}
-              <DeviceCaptureSettings />
-              {(error || (active && sharing.error)) && (
-                <p role="alert" className="text-danger">
-                  {error || sharing?.error}
-                </p>
-              )}
             </div>
-          )}
+          </div>
         </div>
       )}
       {picker && (
@@ -208,7 +284,10 @@ export function useLocalScreenControls(
                   setPicker(null);
                   setBusy(true);
                   void beginSharing(sid, name, source)
-                    .then(() => setOpen(true), failed)
+                    .then(() => {
+                      setSharingMode(mode, interval);
+                      setOpen(false);
+                    }, failed)
                     .finally(() => setBusy(false));
                 }
               : undefined
@@ -281,30 +360,32 @@ export function ScreenSharingBanner() {
           </div>
         </div>
       )}
-      <div
-        role="status"
-        data-testid="screen-sharing-banner"
-        className="fixed left-1/2 top-2 z-[100] flex max-w-[94vw] -translate-x-1/2 items-center gap-2 rounded-xl border border-danger/40 bg-surface-2 px-3 py-2 text-xs shadow-float"
-      >
-        <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-danger" />
-        <span
-          className="min-w-0 truncate"
-          title={`${sharing.name}: ${sharing.source}`}
+      {currentSurface() !== "mate-chat" && (
+        <div
+          role="status"
+          data-testid="screen-sharing-banner"
+          className="fixed left-1/2 top-2 z-[100] flex max-w-[94vw] -translate-x-1/2 items-center gap-2 rounded-xl border border-danger/40 bg-surface-2 px-3 py-2 text-xs shadow-float"
         >
-          {sharing.capturing
-            ? t("screen.capturing")
-            : t("screen.sharing", {
-                source: `${sharing.name} · ${sharing.source}`,
-              })}
-        </span>
-        <button
-          type="button"
-          onClick={stopSharing}
-          className="shrink-0 text-danger underline"
-        >
-          {t("screen.stop")}
-        </button>
-      </div>
+          <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-danger" />
+          <span
+            className="min-w-0 truncate"
+            title={`${sharing.name}: ${sharing.source}`}
+          >
+            {sharing.capturing
+              ? t("screen.capturing")
+              : t("screen.sharing", {
+                  source: `${sharing.name} · ${sharing.source}`,
+                })}
+          </span>
+          <button
+            type="button"
+            onClick={stopSharing}
+            className="shrink-0 text-danger underline"
+          >
+            {t("screen.stop")}
+          </button>
+        </div>
+      )}
     </>
   );
 }

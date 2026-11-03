@@ -79,6 +79,7 @@ export interface StyleDefaults {
 
 /** The conversation style (대화 방식): the one place that decides how she talks (docs/mate.md "Prompt composition") */
 export interface MatePrefs {
+  proactive?: { enabled: boolean; interval: number; guidance: string };
   user_name: string;
   /** what she calls the user ("" = her character's way: defaults.address) */
   address: string;
@@ -256,7 +257,7 @@ export interface MatePatch {
   avatar?: Avatar;
   llm?: Partial<MateLlm>;
   voice?: { auto_read?: boolean; volume?: number; tts?: Partial<MateVoice["tts"]>; stt?: Partial<MateVoice["stt"]> };
-  prefs?: Partial<Omit<MatePrefs, "tone" | "memory" | "defaults">> & { tone?: Partial<MatePrefs["tone"]>; memory?: Partial<MatePrefs["memory"]> };
+  prefs?: Partial<Omit<MatePrefs, "tone" | "memory" | "defaults" | "proactive">> & { proactive?: Partial<NonNullable<MatePrefs["proactive"]>>; tone?: Partial<MatePrefs["tone"]>; memory?: Partial<MatePrefs["memory"]> };
   screen?: Partial<MateScreen>;
 }
 

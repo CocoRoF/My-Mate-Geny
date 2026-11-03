@@ -101,3 +101,16 @@ test("app sharing has exactly one owner; any window can stop; closing owner revo
   b.emit("destroyed");
   assert.equal(control.active(), false);
 });
+
+test("sharing keeps a hidden owner's timer alive and restores its previous throttling on release",()=>{
+  const changes=[];
+  const owner=Object.assign(new EventEmitter(),{id:9,isDestroyed:()=>false,send(){},getBackgroundThrottling:()=>true,setBackgroundThrottling:v=>changes.push(v)});
+  const control=createSharing({broadcast(){},cancel(){}});
+  control.publish(owner,{sid:'s',mode:'ask'});
+  assert.deepEqual(changes,[false]);
+  control.publish(owner,null);
+  assert.deepEqual(changes,[false,true]);
+  control.publish(owner,{sid:'s',mode:'observe'});
+  control.stop();
+  assert.deepEqual(changes,[false,true,false,true]);
+});

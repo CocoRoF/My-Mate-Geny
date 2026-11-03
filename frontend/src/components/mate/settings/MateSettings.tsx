@@ -17,13 +17,14 @@ import AvatarTab from "./AvatarTab";
 import ModelTab from "./ModelTab";
 import VoiceTab from "./VoiceTab";
 import ScreenTab from "./ScreenTab";
+import ProactiveTab from "./ProactiveTab";
 import MemoryTab from "./MemoryTab";
 import RelationshipTab from "./RelationshipTab";
 import DangerTab from "./DangerTab";
 import GlobalSettings from "./GlobalSettings";
 import { useT, type MsgKey } from "../../../i18n";
 
-export type Tab = "profile" | "style" | "avatar" | "model" | "voice" | "screen" | "memory" | "relation" | "danger";
+export type Tab = "profile" | "style" | "avatar" | "model" | "voice" | "proactive" | "screen" | "memory" | "relation" | "danger";
 
 const TABS: { id: Tab; label: MsgKey }[] = [
   { id: "profile", label: "mateSettings.tabProfile" },
@@ -31,6 +32,7 @@ const TABS: { id: Tab; label: MsgKey }[] = [
   { id: "avatar", label: "mateSettings.tabAvatar" },
   { id: "model", label: "mateSettings.modelTitle" },
   { id: "voice", label: "mateSettings.voiceVoice" },
+  { id: "proactive", label: "screen.proactiveTitle" },
   { id: "screen", label: "mateSettings.tabScreen" },
   { id: "memory", label: "mateSettings.memTitle" },
   { id: "relation", label: "mateSettings.relTitle" },
@@ -98,6 +100,7 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
           {tab === "avatar" && <AvatarTab key={mate.id} mate={mate} conv={conv} />}
           {tab === "model" && <ModelTab key={mate.id} mate={mate} />}
           {tab === "voice" && <VoiceTab key={mate.id} mate={mate} conv={conv} />}
+          {tab === "proactive" && <ProactiveTab key={mate.id} mate={mate} />}
           {tab === "screen" && <ScreenTab key={mate.id} mate={mate} />}
           {tab === "memory" && <MemoryTab key={mate.id} mate={mate} onOpenStyle={() => setTab("style")} />}
           {tab === "relation" && <RelationshipTab key={mate.id} mate={mate} />}

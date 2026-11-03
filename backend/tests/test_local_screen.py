@@ -253,3 +253,91 @@ async def test_cancel_between_response_and_consumption_revokes_success(db, tmp_p
     broker.cancel_session(sid)
     with pytest.raises(CaptureError): await task
     assert atts.get(row['id']) is None
+
+
+def test_proactive_preferences_are_opt_in_partial_and_validated():
+    from app.mate.store import normalize_prefs, MateError
+    assert normalize_prefs(None)['proactive'] == {'enabled':False,'interval':180,'guidance':''}
+    base=normalize_prefs({'proactive':{'enabled':True,'interval':300,'guidance':'Only offer help'}})
+    assert normalize_prefs({'proactive':{'interval':600}},base)['proactive'] == {'enabled':True,'interval':600,'guidance':'Only offer help'}
+    for bad in ({'enabled':'yes'},{'interval':0},{'interval':True},{'interval':30},'on'):
+        with pytest.raises(MateError): normalize_prefs({'proactive':bad})
+
+
+async def test_mate_proactive_requires_opt_in_and_device_consent_and_respects_interval(db,tmp_path,monkeypatch):
+    svc,atts,broker,screen,sid=setup(db,tmp_path)
+    config={'enabled':False,'interval':300,'guidance':'Offer help without interrupting concentration'}
+    monkeypatch.setattr(screen,'proactive',lambda _: config)
+    assert await screen.observe(sid,'dev-a') == {'status':'disabled'}
+    config['enabled']=True
+    with pytest.raises(CaptureError): await screen.observe(sid,'dev-a')
+    _,queue=client(broker,sid,'ask')
+    started=[]
+    monkeypatch.setattr(svc,'start_turn',lambda *a,**k:started.append((a,k)))
+    task=asyncio.create_task(screen.observe(sid,'dev-a'))
+    req,row=await respond(queue,screen,atts,sid)
+    assert req['automatic'] is True
+    assert await task == {'status':'sent'}
+    assert 'finish without any text' in started[0][0][1]
+    assert config['guidance'] in started[0][0][1]
+    assert await screen.observe(sid,'dev-a') == {'status':'rate_limited'}
+    screen.last_observe.clear()
+    screen.last_proactive.clear()
+    task=asyncio.create_task(screen.observe(sid,'dev-a'))
+    _,duplicate=await respond(queue,screen,atts,sid)
+    assert await task == {'status':'unchanged'}
+    assert atts.get(duplicate['id']) is None
+    assert len(started)==1
+
+
+async def test_disable_proactive_while_capture_pending_discards_image(db,tmp_path,monkeypatch):
+    svc,atts,broker,screen,sid=setup(db,tmp_path)
+    config={'enabled':True,'interval':60}
+    monkeypatch.setattr(screen,'proactive',lambda _:config)
+    _,queue=client(broker,sid,'ask')
+    monkeypatch.setattr(svc,'start_turn',lambda *a,**k:pytest.fail('must not start'))
+    task=asyncio.create_task(screen.observe(sid,'dev-a'))
+    req=(await queue.get())['data']
+    config['enabled']=False
+    row=await _upload(atts,sid,'late.png',_png())
+    screen.resolve(sid,req['id'],{'proof':req['proof'],'ok':True,'attachment_id':row['id']})
+    assert await task == {'status':'stopped'}
+    assert atts.get(row['id']) is None
+
+
+def test_visual_change_gate_ignores_encoding_noise_but_detects_color_change(tmp_path):
+    from PIL import Image
+    a,b,c=[tmp_path/n for n in ('a.png','b.jpg','c.png')]
+    Image.new('RGB',(120,100),(180,40,90)).save(a)
+    Image.new('RGB',(120,100),(180,40,90)).save(b,quality=90)
+    Image.new('RGB',(120,100),(0,200,30)).save(c)
+    x,y,z=[ScreenService.visual(str(p)) for p in (a,b,c)]
+    assert (x[0]^y[0]).bit_count()<10 and max(abs(a-b) for a,b in zip(x[1],y[1]))<20
+    assert max(abs(a-b) for a,b in zip(x[1],z[1]))>=20
+
+
+async def test_proactive_cooldown_survives_connection_change(db,tmp_path,monkeypatch):
+    svc,atts,broker,screen,sid=setup(db,tmp_path)
+    monkeypatch.setattr(screen,'proactive',lambda _: {'enabled':True,'interval':300})
+    conn,queue=client(broker,sid,'ask')
+    monkeypatch.setattr(svc,'start_turn',lambda *a,**k:None)
+    task=asyncio.create_task(screen.observe(sid,'dev-a'))
+    await respond(queue,screen,atts,sid)
+    assert await task == {'status':'sent'}
+    broker.disconnect(conn)
+    _,new_queue=client(broker,sid,'ask')
+    assert await screen.observe(sid,'dev-a') == {'status':'rate_limited'}
+    assert new_queue.empty()
+
+
+async def test_proactive_failed_turn_start_removes_pending_frame(db,tmp_path,monkeypatch):
+    svc,atts,broker,screen,sid=setup(db,tmp_path)
+    monkeypatch.setattr(screen,'proactive',lambda _: {'enabled':True,'interval':60})
+    _,queue=client(broker,sid,'ask')
+    def fail(*a,**k): raise RuntimeError('turn unavailable')
+    monkeypatch.setattr(svc,'start_turn',fail)
+    task=asyncio.create_task(screen.observe(sid,'dev-a'))
+    _,row=await respond(queue,screen,atts,sid)
+    with pytest.raises(RuntimeError,match='turn unavailable'): await task
+    assert atts.get(row['id']) is None
+    assert not screen.hashes and not screen.visuals

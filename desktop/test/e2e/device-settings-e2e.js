@@ -134,6 +134,8 @@ const setRange = (p, selector, value) =>
     await shot(bar, "toolbar-small.png");
     const before = countAttachments();
     await click(bar, "[data-act=screen]");
+    await until("toolbar setup",()=>chat.eval("!!document.querySelector('[data-testid=screen-setup]')"));
+    await click(chat,"[data-testid=screen-start]");
     await until("toolbar picker", () =>
       chat.eval("!!document.querySelector('[data-testid=share-picker]')"),
     );
@@ -149,6 +151,8 @@ const setRange = (p, selector, value) =>
     );
     assert.equal(countAttachments(), before);
     await click(bar, "[data-act=screen]");
+    await until("toolbar setup",()=>chat.eval("!!document.querySelector('[data-testid=screen-setup]')"));
+    await click(chat,"[data-testid=screen-start]");
     await until("picker again", () =>
       chat.eval("!!document.querySelector('[data-testid=share-picker]')"),
     );
@@ -160,11 +164,13 @@ const setRange = (p, selector, value) =>
     );
     assert.equal(countAttachments(), before);
     await click(bar, "[data-act=screen]");
+    await until("toolbar setup",()=>chat.eval("!!document.querySelector('[data-testid=screen-setup]')"));
+    await click(chat,"[data-testid=screen-start]");
     await until("picker for sharing", () =>
-      chat.eval("!!document.querySelector('[data-testid=share-operation]')"),
+      chat.eval("!!document.querySelector('[data-testid=share-source]')"),
     );
     await chat.eval(
-      `document.querySelector('[data-testid=share-operation] button:last-child').click();document.querySelector('[data-testid=share-source]').click();true`,
+      `document.querySelector('[data-testid=share-source]').click();true`,
     );
     await click(chat, "[data-testid=share-go]");
     await until("toolbar active", () =>
@@ -281,6 +287,8 @@ const setRange = (p, selector, value) =>
       `global.__originalCapture=require('electron').desktopCapturer.getSources;global.__captureEntered=false;require('electron').desktopCapturer.getSources=async function(o){const result=await global.__originalCapture.call(this,o);if(o.thumbnailSize.width>640){global.__captureEntered=true;await new Promise(r=>global.__releaseCapture=r);}return result;};return true`,
     );
     await click(bar, "[data-act=screen]");
+    await until("toolbar setup",()=>chat.eval("!!document.querySelector('[data-testid=screen-setup]')"));
+    await click(chat,"[data-testid=screen-once]");
     await until("picker for in-flight cancel", () =>
       chat.eval("!!document.querySelector('[data-testid=share-source]')"),
     );
@@ -363,6 +371,8 @@ const setRange = (p, selector, value) =>
     console.log(
       "PASS browser same-device sync and independent-device isolation",
     );
+    await tab.close();
+    await separate.close();
     // Feed an actual streaming UI and send two additional messages; save old CSS reproduction and repaired layout.
     await page.click("[data-testid=mate-settings-close]");
     await page.goto(server + "/?view=mate");
@@ -418,7 +428,45 @@ const setRange = (p, selector, value) =>
     console.log(
       "PASS actual streamed reply + two steers stay right aligned; before/after and phone screenshots saved",
     );
-    await separate.close();
+    // Opt-in through the actual settings UI; wait for a real automatic native frame, not a manual API trigger.
+    await page.setViewportSize({width:1200,height:900});
+    await page.click('[data-testid=mate-settings-open]');
+    await page.click('[data-testid=mate-tab-proactive]');
+    await page.waitForSelector('[data-testid=proactive-enabled]');
+    assert.equal(await page.getAttribute('[data-testid=proactive-enabled]','aria-checked'),'false');
+    await page.selectOption('[data-testid=proactive-interval]','60');
+    await page.fill('[data-testid=proactive-guidance]','Offer help if I seem stuck. Stay quiet when there is nothing useful to say.');
+    await page.click('[data-testid=mate-proactive] h3');
+    await page.click('[data-testid=proactive-enabled]');
+    await page.waitForFunction(()=>document.querySelector('[data-testid=proactive-enabled]').getAttribute('aria-checked')==='true');
+    await page.evaluate(()=>window.dispatchEvent(new StorageEvent('storage',{key:'hrh_lang',newValue:'ko'})));
+    await page.waitForTimeout(200);
+    await page.screenshot({path:path.join(shots,'proactive-settings.png')});
+    const conversation=await (await context.request.post(server+'/api/mates/'+b.id+'/conversation')).json();
+    await until('previous reply done',async()=>!(await (await context.request.post(server+'/api/mates/'+b.id+'/conversation')).json()).running);
+    await chat.eval("window.dispatchEvent(new StorageEvent('storage',{key:'hrh_lang',newValue:'ko'})),true");
+    await click(chat,'[data-testid=screen-setup-open]');
+    await shot(chat,'sharing-start-setup.png');
+    await click(chat,'[data-testid=screen-start]');
+    await until('automatic source picker',()=>chat.eval("!!document.querySelector('[data-testid=share-source]')"));
+    await click(chat,'[data-testid=share-source]');
+    await click(chat,'[data-testid=share-go]');
+    await until('shared without expanded settings',()=>chat.eval("!!document.querySelector('[data-testid=screen-stop]') && !document.querySelector('[data-testid=screen-setup]')"));
+    await until('native owner sees proactive policy',()=>chat.eval("document.querySelector('[data-testid=local-screen-controls]').dataset.screenProactive === '60'"));
+    await shot(chat,'sharing-compact.png');
+    assert.equal(await app.main("return win('surface=mate-chat').webContents.getBackgroundThrottling()"),false);
+    await app.main("win('surface=mate-chat').hide();return true");
+    await until('automatic mate screen observation',async()=>{
+      const h=await (await context.request.get(server+'/api/history/'+conversation.session_id)).json();
+      return h.messages?.some(m=>m.meta?.kind==='screen_observation' && m.attachments?.length);
+    },85000);
+    await until('automatic reply finished',async()=>!(await (await context.request.post(server+'/api/mates/'+b.id+'/conversation')).json()).running,30000);
+    await app.main("win('surface=mate-chat').show();return true");
+    await shot(chat,'proactive-reply.png');
+    await click(bar,'[data-act=screen]');
+    await until('server consent revoked',async()=>{const stopped=await context.request.post(server+'/api/sessions/'+conversation.session_id+'/screen/observe',{data:{device:await chat.eval("localStorage.getItem('hrh_device_id')")}});return stopped.status()===409;});
+    assert.equal(await app.main("return win('surface=mate-chat').webContents.getBackgroundThrottling()"),true);
+    console.log('PASS actual settings opt-in → 60-second timer → native image → autonomous mate reply; stop revokes access');
     await context.close();
     console.log("DEVICE SETTINGS E2E OK");
   } finally {

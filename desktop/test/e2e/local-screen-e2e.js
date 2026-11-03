@@ -76,8 +76,9 @@ async function finished(page, sid, marker = "") {
     assert.ok(Math.abs(sample.px[0][0]-216)<30 && Math.abs(sample.px[0][2]-156)<30, "captures the chosen pink local window");
     fs.writeFileSync(path.join(shots,"desktop-proof.json"),JSON.stringify({sample,sha}));
     console.log("PASS real Electron source → normal session MCP → model bytes → conversation image");
-    await evalClick(con, '[data-testid="screen-mode"]');
+    await evalClick(con, '[data-testid="screen-setup-open"]');
     await con.eval(`(()=>{const s=document.querySelector('[data-testid=screen-mode]');s.value='on_turn';s.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
+    await evalClick(con,'[data-testid=screen-apply]');
     await sleep(300);
     await send(con, session.id, "auto frame message");
     const h2 = await until("auto-frame user message", async()=>{
@@ -111,7 +112,9 @@ async function finished(page, sid, marker = "") {
     await until("second model screen result",async()=>{const h=await history(browserPage,session.id);return h.events.filter(e=>e.type==='tool.result'&&e.data.images?.length).length>=2});
     assert.equal(await browserPage.eval("window.__captures"),1);
     await until("browser turn finished",async()=>{const h=await history(browserPage,session.id);return h.events.filter(e=>e.type==='turn.complete').length>=3});
+    await evalClick(browserPage,'[data-testid=screen-setup-open]');
     await browserPage.eval(`(()=>{const s=document.querySelector('[data-testid=screen-mode]');s.value='observe';s.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
+    await evalClick(browserPage,'[data-testid=screen-apply]');
     await sleep(300);
     const observed = await browserPage.eval(req(`/api/sessions/${session.id}/screen/observe`, { device: await browserPage.eval("localStorage.getItem('hrh_device_id')") }));
     assert.equal(observed.status, "sent");

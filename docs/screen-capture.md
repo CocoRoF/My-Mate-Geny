@@ -3,6 +3,8 @@
 Screen capture belongs to the user's device, independently of whether the session's workspace lives on this
 server or an SSH host. General agent sessions and Mate conversations share one upload/consent pipeline.
 
+Mate-specific autonomous conversation settings are described in [Reach out](mate-proactive.md).
+
 ## Entry points
 
 The attachment menu's **Share screen** and the screen row above the composer open the controls.
@@ -13,7 +15,8 @@ show the same indicator. Reload, page close, server/socket disconnect, track-end
 consent is persisted. One window shares one conversation at a time. Desktop session sharing requires capture
 bridge v3 for app-wide preferences and cross-window cancellation. See [device preferences](device-preferences.md) for migration, volume and toolbar behavior.
 
-Modes (default: ask):
+Modes are selected in a setup dialog before sharing; the composer only shows compact status/Stop.
+General sessions have these modes (default: ask); Mates configure autonomous observation in Reach out:
 
 - **When requested**: the agent's MCP call asks permission each time (native prompt on desktop; timed application
   dialog for a browser). A browser must already have a user-selected live `getDisplayMedia` stream. A server

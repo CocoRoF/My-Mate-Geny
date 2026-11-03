@@ -266,7 +266,7 @@ def default_prefs() -> dict[str, Any]:
     return {"user_name": "", "address": "", "self_ref": "", "formality": "auto", "speech_style": "",
             "length": "normal", "emotion": 2, "tone": {k: "auto" for k in TONE_KEYS}, "avoid": "",
             "memory": {"recall": "normal", "self_save": True}, "self_edit": "auto",
-            "defaults": default_style_defaults()}
+            "defaults": default_style_defaults(), "proactive": {"enabled": False, "interval": 180, "guidance": ""}}
 
 
 def _enum(v: Any, allowed: tuple[str, ...], what: str) -> str:
@@ -315,6 +315,19 @@ def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
     if isinstance(b.get("memory"), dict):
         out["memory"].update({k: v for k, v in b["memory"].items() if k in ("recall", "self_save")})
     out["defaults"] = normalize_style_defaults(None, b.get("defaults") if isinstance(b.get("defaults"), dict) else None)
+    proactive = {"enabled": False, "interval": 180, "guidance": ""}
+    for source in (b.get("proactive"), patch.get("proactive") if isinstance(patch, dict) else None):
+        if source is None: continue
+        if not isinstance(source, dict): raise MateError("prefs.proactive must be an object")
+        if "enabled" in source:
+            if not isinstance(source["enabled"], bool): raise MateError("proactive.enabled must be boolean")
+            proactive["enabled"] = source["enabled"]
+        if "interval" in source:
+            if isinstance(source["interval"], bool) or source["interval"] not in (60,180,300,600):
+                raise MateError("proactive.interval must be 60, 180, 300 or 600")
+            proactive["interval"] = source["interval"]
+        if "guidance" in source: proactive["guidance"] = _s(source["guidance"], 1000).strip()
+    out["proactive"] = proactive
     if patch is not None:
         if not isinstance(patch, dict):
             raise MateError("prefs must be an object")

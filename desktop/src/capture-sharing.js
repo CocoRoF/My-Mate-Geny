@@ -5,6 +5,12 @@ function createSharing({ broadcast, cancel, changed = () => {} }) {
     state = null,
     revision = 0;
   const watched = new WeakSet();
+  let previousThrottling = null;
+  function releaseTimerOwner() {
+    if (owner && !owner.isDestroyed() && previousThrottling !== null)
+      owner.setBackgroundThrottling?.(previousThrottling);
+    previousThrottling = null;
+  }
   function snapshot(sender) {
     return { revision, state, owner: !!owner && sender?.id === owner.id };
   }
@@ -15,6 +21,7 @@ function createSharing({ broadcast, cancel, changed = () => {} }) {
   }
   function stop() {
     const old = owner;
+    releaseTimerOwner();
     owner = null;
     state = null;
     cancel();
@@ -25,6 +32,7 @@ function createSharing({ broadcast, cancel, changed = () => {} }) {
   function publish(sender, next) {
     if (!next) {
       if (owner?.id === sender.id) {
+        releaseTimerOwner();
         owner = null;
         state = null;
         announce();
@@ -39,6 +47,9 @@ function createSharing({ broadcast, cancel, changed = () => {} }) {
     if (owner && owner.id !== sender.id) stop();
     if (!owner) {
       owner = sender;
+      // A chat can be hidden while its avatar stays visible. Its observation timer must keep running.
+      previousThrottling = sender.getBackgroundThrottling?.() ?? true;
+      sender.setBackgroundThrottling?.(false);
       if (!watched.has(sender)) {
         watched.add(sender);
         sender.once("destroyed", () => {

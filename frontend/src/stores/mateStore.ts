@@ -294,3 +294,10 @@ if (typeof window !== "undefined") {
     };
   }
 }
+
+// Behaviour changes reach a sharing owner even after navigating away from the Mate view.
+if(typeof window!=="undefined"){
+  const publishPolicies=()=>window.dispatchEvent(new CustomEvent("hrh:mate-policies",{detail:useMateStore.getState().mates.map(m=>({sid:m.session_id,enabled:!!m.prefs?.proactive?.enabled,interval:m.prefs?.proactive?.interval||180}))}));
+  useMateStore.subscribe((state,previous)=>{if(state.mates!==previous.mates)publishPolicies();});
+  queueMicrotask(publishPolicies);
+}
