@@ -260,3 +260,15 @@ test("a final correction after the response window is kept for review instead of
   assert.equal(s.sent.length, 1);
   assert.equal(s.box, "수정된 최종 문장");
 });
+
+test("manual code added to a received voice message keeps its fenced markdown and line breaks", () => {
+  const s = setup();
+  s.speech("코드도 확인해");
+  s.tick(1800);
+  s.draft.segment("코드도 확인해");
+  s.edit("```py\nx=1\n```");
+  const expected = "코드도 확인해\n```py\nx=1\n```";
+  assert.equal(s.draft.manual(s.box, ""), expected);
+  assert.equal(s.draft.manualDispatch(), true);
+  assert.equal(s.sent.at(-1)?.text, expected);
+});

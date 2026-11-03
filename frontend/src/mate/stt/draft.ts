@@ -220,7 +220,14 @@ export function createSpeechDraft(deps: {
     manual(text: string, visiblePartial: string) {
       clear();
       expire();
-      manualFull = group ? full() : null;
+      const joinManual = (a: string, b: string) => {
+        if (!a || !b) return a || b;
+        return a.includes("\n") || b.includes("\n") ? `${a}\n${b}` : joinText(a, b);
+      };
+      const manualPart = joinManual(text, remainder(visiblePartial));
+      manualFull = group
+        ? held ? (manualPart.startsWith(group.lastText) ? manualPart : joinManual(group.lastText, manualPart)) : full()
+        : null;
       const result = group ? manualFull! : remainder(visiblePartial) ? joinTranscript(text, remainder(visiblePartial)) : text;
       consumed = clean(visiblePartial);
       partial = "";
