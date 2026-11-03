@@ -111,7 +111,7 @@ export function useLocalScreenControls(
                 type="button"
                 onClick={() => setOpen(false)}
                 className="btn-ghost"
-                aria-label={t("common.cancel")}
+                aria-label={t("common.close")}
               >
                 <Icon name="x" size={16} />
               </button>
@@ -131,13 +131,13 @@ export function useLocalScreenControls(
               )}
             </div>
             <div className="flex flex-wrap justify-end gap-2 border-t border-border p-3">
-              <button
+              {!active && <button
                 type="button"
                 onClick={() => setOpen(false)}
                 className="btn-ghost"
               >
-                {t("common.cancel")}
-              </button>
+                {t("common.close")}
+              </button>}
               {active ? (
                 <button
                   type="button"
