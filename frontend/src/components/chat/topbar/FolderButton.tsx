@@ -69,8 +69,8 @@ export default function FolderButton({ session, compact }: { session: Session; c
   const friendly = useFolderError();
 
   useEffect(() => {
-    if (open) loadHosts().catch(() => {});
-  }, [open, loadHosts]);
+    loadHosts().catch(() => {}); // once per app (cached): which connections are this machine, before the popover opens
+  }, [loadHosts]);
 
   const same = useMemo(() => thisHostIds(hosts), [hosts]);
   // a connection that is this machine counts as this server (no duplicates, no SSH hop)

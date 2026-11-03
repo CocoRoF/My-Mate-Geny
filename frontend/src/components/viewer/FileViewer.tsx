@@ -15,7 +15,8 @@ import {
   TEXT_KINDS,
   type ViewerKind,
 } from "../../lib/fileView";
-import { qualify, sameHost, unqualify } from "../../lib/hosts";
+import { hostName, qualify, sameHost, unqualify } from "../../lib/hosts";
+import { useConnectionStore } from "../../stores/connectionStore";
 import { displayPath } from "../../lib/paths";
 import { explorerRoots, revealInExplorer, useWorkbench, type FileTab } from "../../stores/workbenchStore";
 import type { Session } from "../../types";
@@ -62,6 +63,7 @@ function Centered({ children }: { children: React.ReactNode }) {
 export default function FileViewer({ session, tab }: { session: Session; tab: FileTab }) {
   const t = useT();
   const { conn, path: fpath } = unqualify(session, tab.path); // (a file on another host: `@host:path`)
+  const connections = useConnectionStore((s) => s.connections);
   const name = baseName(fpath);
   const ext = extOf(name);
   const kind0 = kindForFile(name);
@@ -282,6 +284,14 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
       {/* toolbar */}
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border/70 bg-surface/40 px-3">
         <Icon name={icon} size={14} className={`shrink-0 ${tone}`} />
+        {!sameHost(conn, session.connection_id) && (
+          <span
+            className={`pill max-w-[8rem] shrink-0 truncate px-1.5 py-0 text-[10px] ${conn ? "bg-cyan/10 text-cyan" : "bg-surface-3 text-content-dim"}`}
+            data-testid="viewer-host-badge"
+          >
+            {hostName(conn, connections, t("files.thisServer"))}
+          </span>
+        )}
         <div className="flex min-w-0 items-center overflow-hidden text-[12px]" title={[fpath, meta.join(" · ")].filter(Boolean).join("\n")}>
           {segs.map((s, i) => {
             const last = i === segs.length - 1;

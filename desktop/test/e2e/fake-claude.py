@@ -18,6 +18,9 @@
 # the speech level; answering that writes it and asks for a reference picture — all through the real avatar MCP
 # bridge. A <studio_update> before a message (what the user changed on the right) is answered with
 # "SAW studio_update: <fields>". Korean when the system prompt says so.
+# "mhcheck" (a chat's folders on several hosts): reads/writes every --add-dir folder itself and lists/reads/writes/runs
+# in every folder of every SSH host through the real remote bridge (plus a refused read outside them), answering
+# MHCHECK {json} — see multihost_check().
 import json
 import os
 import queue
@@ -319,6 +322,86 @@ def emit(o: dict) -> None:
     sys.stdout.flush()
 
 
+def multihost_check() -> dict:
+    """"mhcheck" (folders on several hosts, backend services/folder_routing.py): like an agent would — every folder
+    this server gave it (--add-dir) read + written with its own file access, every SSH host of the `remote` bridge
+    (its HRH_REMOTE_HOSTS allow-list) listed / read / written through the REAL bridge, as tool_use / tool_result pairs
+    on stdout, plus one read outside the attached folders (must be refused). Returns what happened, per folder."""
+    import subprocess
+
+    out: dict = {"local": {}, "remote": {}, "note": ""}
+    if "--append-system-prompt" in args:
+        out["note"] = args[args.index("--append-system-prompt") + 1].split("# Folders in this chat")[-1][:1500]
+    dirs = []
+    if "--add-dir" in args:
+        for a in args[args.index("--add-dir") + 1:]:
+            if a.startswith("--"):
+                break
+            dirs.append(a)
+    for d in dirs:
+        if ".hr-harnessor/uploads" in d or "/uploads/" in d:
+            continue
+        try:
+            hello = open(os.path.join(d, "hello.txt")).read().strip()
+            with open(os.path.join(d, "written-by-fake.txt"), "w") as fh:
+                fh.write("fake-claude wrote this with its own tools\n")
+            out["local"][d] = {"read": hello, "wrote": True}
+        except OSError as exc:
+            out["local"][d] = {"error": str(exc)}
+    if "--mcp-config" not in args:
+        return out
+    cfg = json.loads(open_mcp())
+    srv = (cfg.get("mcpServers") or {}).get("remote")
+    if not srv:
+        return out
+    hosts = json.loads(srv.get("env", {}).get("HRH_REMOTE_HOSTS", "[]"))
+    proc = subprocess.Popen([srv["command"], *srv["args"]], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            env={**os.environ, **srv.get("env", {})}, text=True)
+    seq = [0]
+
+    def rpc(o: dict) -> dict | None:
+        proc.stdin.write(json.dumps(o) + "\n")
+        proc.stdin.flush()
+        return json.loads(proc.stdout.readline()) if "id" in o else None
+
+    def call(name: str, a: dict) -> tuple[str, bool]:
+        seq[0] += 1
+        tid = f"mh{seq[0]}"
+        emit({"type": "assistant", "message": {"model": model, "content": [
+            {"type": "tool_use", "id": tid, "name": f"mcp__remote__{name}", "input": a}]}})
+        res = rpc({"jsonrpc": "2.0", "id": seq[0] + 10, "method": "tools/call", "params": {"name": name, "arguments": a}})
+        r = (res or {}).get("result") or {}
+        text = "".join(c.get("text", "") for c in r.get("content", []))
+        emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": tid, "content": text,
+                                                       "is_error": bool(r.get("isError"))}]}})
+        return text, bool(r.get("isError"))
+
+    rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+    rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
+    tools = [t["name"] for t in (rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}) or {}).get("result", {}).get("tools", [])]
+    out["tools"] = tools
+    for h in hosts:
+        rep: dict = {"default": bool(h.get("default")), "folders": {}}
+        for root in h.get("roots") or []:
+            if ".hr-harnessor/uploads" in root:
+                continue
+            listing, e1 = call("remote_list", {"path": root, "host": h["name"]})
+            hello, e2 = call("remote_read", {"path": f"{root}/hello.txt", "host": h["name"]})
+            wrote, e3 = call("remote_write", {"path": f"{root}/written-by-fake.txt", "host": h["name"],
+                                              "content": f"fake-claude wrote this through the remote tools on {h['name']}\n"})
+            where, e4 = call("remote_bash", {"command": "hostname; pwd", "host": h["name"], "cwd": root})
+            rep["folders"][root] = {"listed": "hello.txt" in listing and not e1, "read": hello.strip() if not e2 else None,
+                                    "wrote": not e3, "bash": where.strip().splitlines() if not e4 else where[:200]}
+        refused, err = call("remote_read", {"path": "/etc/hostname", "host": h["name"]})
+        rep["outside_refused"] = err and "refused" in refused
+        out["remote"][h["name"]] = rep
+    _, err = call("remote_list", {"path": "/", "host": "not-a-host"})
+    out["unknown_host_refused"] = err
+    proc.stdin.close()
+    proc.wait(timeout=5)
+    return out
+
+
 FENCE = "`" * 3
 MD1 = "\n".join([
     "[smile] 좋아요! **마크다운 예시**를 보여 드릴게요. 설치는 `npm ci` 로 해요.",
@@ -558,6 +641,12 @@ while True:
         continue
     if re.search(r"\btools1\b", last):
         tool_turn()
+        continue
+    if re.search(r"\bmhcheck\b", last):
+        full = "MHCHECK " + json.dumps(multihost_check(), ensure_ascii=False)
+        emit({"type": "assistant", "message": {"model": model, "content": [{"type": "text", "text": full}]}})
+        emit({"type": "result", "subtype": "success", "is_error": False, "result": full, "session_id": "fake-sid",
+              "total_cost_usd": 0.01, "usage": {"input_tokens": 1, "output_tokens": 1}})
         continue
     if re.search(r"\bhf(check|live|dump)\b", last):
         # hfcheck: run the higgsfield CLI like a Bash tool call would; hfdump: the launch (argv / MCP / env) as JSON

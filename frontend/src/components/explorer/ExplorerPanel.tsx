@@ -330,7 +330,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
                 <span className="shrink-0 font-normal normal-case tracking-normal text-content-faint">{t(ROOT_KIND[kind])}</span>
                 {!sameHost(rc, conn) && (
                   <span
-                    className={`pill min-w-0 max-w-[8rem] shrink truncate px-1.5 py-0 text-[10px] font-normal normal-case tracking-normal ${
+                    className={`pill max-w-[7rem] shrink-0 truncate px-1.5 py-0 text-[10px] font-normal normal-case tracking-normal ${
                       rc ? "bg-cyan/10 text-cyan" : "bg-surface-3 text-content-dim"
                     }`}
                     data-testid="explorer-root-host"
