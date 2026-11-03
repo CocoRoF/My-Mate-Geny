@@ -285,7 +285,7 @@ const AssistantBubbles = memo(function AssistantBubbles({ turn, compact }: { tur
     } else if (f.kind === "notice") {
       items.push(
         <div key={i} className={`text-[11.5px] ${f.level === "warning" ? "text-warning" : "text-content-faint"}`}>
-          {f.message}
+          {f.code === "screen.capture_failed" ? tr("screen.messageWithoutScreen") : f.message}
         </div>,
       );
     }

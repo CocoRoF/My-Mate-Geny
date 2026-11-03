@@ -1,0 +1,28 @@
+const screen = {
+  "deny": "거부",
+  "allowOnce": "이번만 허용",
+  "messageWithoutScreen": "화면을 캡처하지 못해 이번 메시지는 이미지 없이 보냈어요.",
+  "updateApp": "로컬 화면 공유를 사용하려면 데스크톱 앱을 최신 버전으로 업데이트하세요.",
+  "selectSource": "먼저 화면이나 창을 선택하세요.",
+  "selectedScreen": "선택한 화면",
+  "notSharing": "화면 공유가 꺼져 있거나 종료됐어요.",
+  "allowRequest": "{name}에 선택한 화면을 지금 캡처해서 보낼까요?",
+  "captured": "이 대화에 화면을 캡처해 보냈어요",
+  "requestFailed": "캡처 또는 업로드하지 못했어요. 연결과 화면 기록 권한을 확인하세요.",
+  "thisConversation": "이 대화",
+  "sharing": "화면 공유 중: {source}",
+  "localHint": "워크스페이스 서버와 관계없이 지금 사용하는 기기의 화면을 캡처해요.",
+  "once": "한 번 캡처하기",
+  "start": "화면 공유 켜기",
+  "stop": "공유 중지",
+  "mode": "캡처 시점",
+  "ask": "에이전트 요청 시 · 매번 확인",
+  "onTurn": "내가 메시지를 보낼 때마다",
+  "observe": "주기적으로 화면 관찰",
+  "interval": "관찰 간격",
+  "seconds": "{count}초",
+  "retention": "전송한 이미지는 대화 첨부로 남아요. 새로고침하면 공유가 종료되며, 이미지 본문은 앱 로그에 복사하지 않아요.",
+  "costHint": "관찰 시 모델이 답하며 토큰이 사용될 수 있어요. 작업 중인 세션과 완전히 동일한 화면은 건너뛰어요.",
+  "capturing": "화면 캡처 중…"
+};
+export default screen;

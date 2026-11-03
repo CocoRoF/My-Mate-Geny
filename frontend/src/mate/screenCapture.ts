@@ -11,6 +11,7 @@
  *   or in a browser `getDisplayMedia` (the browser's picker) → one frame; phones have neither (the item is hidden).
  * - While a picture is taken for the mate, every window shows "Screen shared with ‹mate›" for a moment.
  */
+import { sharedScopes, sharingSnapshot, localFrame, cancelLocalCapture } from "./localScreen";
 import { uploadAttachment } from "../api/attachments";
 import { apiFetch } from "../api/client";
 import { tr } from "../i18n";
@@ -50,7 +51,7 @@ export interface CaptureBridge {
   sources(o?: { thumbnails?: boolean; size?: number }): Promise<CaptureSource[]>;
   getChoice(mateId: string): Promise<CaptureSource | null>;
   setChoice(mateId: string, src: CaptureSource | null): Promise<boolean>;
-  grab(o: { mateId?: string; sourceId?: string; maxEdge?: number; format?: "png" | "jpeg"; quality?: number; hideAvatar?: boolean }): Promise<CaptureShot>;
+  grab(o: { mateId?: string; sourceId?: string; maxEdge?: number; format?: "png" | "jpeg"; quality?: number; hideAvatar?: boolean; hideConsole?: boolean }): Promise<CaptureShot>;
   request(req: CaptureRequest): Promise<CaptureShot>;
   cancel(id: string): Promise<void>;
   openPrivacySettings(): Promise<void>;
@@ -58,6 +59,9 @@ export interface CaptureBridge {
 
 /** what the server sends (app/mate/capture.py) */
 export interface CaptureRequest {
+  scope?: "session" | "mate";
+  proof?: string;
+  source_key?: string;
   id: string;
   mate_id: string;
   mate_name: string;
@@ -92,7 +96,8 @@ export function clientHello(active: boolean): Record<string, unknown> {
     device: deviceId,
     surface: currentSurface(),
     desktop: desktopVersion(),
-    capture: captureBridge()?.version ?? 0,
+    capture: captureBridge()?.version ?? (Object.keys(sharedScopes()).length ? 1 : 0),
+    shares: sharedScopes(),
     active,
   };
 }
@@ -155,6 +160,30 @@ export async function handleCaptureRequest(raw: unknown): Promise<void> {
   const req = (raw && typeof raw === "object" ? raw : {}) as CaptureRequest;
   if (!req.id || !req.mate_id || handled.has(req.id)) return;
   handled.add(req.id);
+  if (handled.size > 256) handled.delete(handled.values().next().value!);
+  if (req.scope === "session") {
+    let body: Record<string, unknown>;
+    try {
+      const source = sharingSnapshot();
+      const file = await localFrame(req.session_id, req.id, req.ask, req);
+      const att = await uploadAttachment(req.session_id, file, () => {}).promise;
+      body = { ok: true, attachment_id: att.id, source: source ? { name: source.source, kind: source.kind } : null };
+      toast(tr("screen.captured"));
+    } catch (e) {
+      body = { ok: false, code: "error", message: String((e as Error).message || e) };
+    }
+    try {
+      await apiFetch(`/api/sessions/${encodeURIComponent(req.session_id)}/screen/${encodeURIComponent(req.id)}/result`, {
+        method: "POST", body: JSON.stringify({ ...body, proof: req.proof }),
+      });
+    } catch {
+      // A cancelled/expired request never leaves an unnecessary upload behind.
+      if (typeof body.attachment_id === "string") {
+        void apiFetch(`/api/attachments/${encodeURIComponent(body.attachment_id)}`, { method: "DELETE" }).catch(() => {});
+      }
+    }
+    return;
+  }
   const bridge = captureBridge();
   if (!bridge) return void answer(req.mate_id, req.id, { ok: false, code: "error" }); // (an older desktop app)
   let shot: CaptureShot;
@@ -174,7 +203,7 @@ export async function handleCaptureRequest(raw: unknown): Promise<void> {
 
 export function cancelCaptureRequest(raw: unknown): void {
   const id = raw && typeof raw === "object" ? String((raw as { id?: unknown }).id || "") : "";
-  if (id) void captureBridge()?.cancel(id);
+  if (id) { cancelLocalCapture(id); void captureBridge()?.cancel(id); }
 }
 
 // ── the user shares (Share screen) ────────────────────────────────────────

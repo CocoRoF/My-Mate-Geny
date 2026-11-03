@@ -24,6 +24,7 @@ from app.providers.oauth import OAuthManager
 from app.providers.accounts import SESSION_CHECK_S, AccountPool, AccountStore
 from app.db import Database
 from app.routers import (
+    screen as screen_router,
     accounts,
     admin,
     attachments,
@@ -114,6 +115,9 @@ async def lifespan(app: FastAPI):
     app.state.session_git = SessionGit(session_service, workspace_service, app.state.git_service)
     mate_store = MateStore(db, vault)
     app.state.mate_service = MateService(session_service, mate_store, logs=logs)
+    from app.services.screen import ScreenService
+    app.state.screen_service = ScreenService(session_service, app.state.mate_service.capture)
+    session_service.screen = app.state.screen_service
     app.state.voice_service = VoiceService(mate_store)
     # Higgsfield: accounts + what the chats' agents get (docs/higgsfield.md)
     higgsfield = HiggsfieldService(db, vault)
@@ -221,6 +225,8 @@ app.add_middleware(
 app.add_middleware(OpenCORSMiddleware)
 
 for r in (
+    screen_router.router,
+    screen_router.internal,
     auth_router.router,
     health.router,
     config_router.router,

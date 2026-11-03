@@ -185,7 +185,7 @@ test("grab (Share screen) and the picker's sources", async () => {
   assert.deepEqual(list.map((s) => s.id), ["screen:1:0", "screen:0:0", "window:77:0", "window:89:0"]); // (not our own windows)
   assert.equal(list.find((s) => s.id === "screen:0:0").primary, true);
   assert.ok(list.every((s) => s.thumbnail.startsWith("data:image/png")));
-  assert.deepEqual(cap.info(), { version: 1, platform: "linux", wayland: false, permission: "granted" });
+  assert.deepEqual(cap.info(), { version: 2, platform: "linux", wayland: false, permission: "granted" });
   assert.equal(rig({ deps: { env: { XDG_SESSION_TYPE: "wayland" } } }).cap.info().wayland, true);
 });
 
@@ -218,7 +218,7 @@ function loadPreload(surface) {
 test("preload: hrhNative.capture sends only clean arguments; hrhCaptureAsk exists only in the prompt window", async () => {
   const { exposed, plain } = loadPreload("mate-chat");
   const cap = exposed.hrhNative.capture;
-  assert.equal(cap.version, 1);
+  assert.equal(cap.version, 2);
   await cap.sources({ thumbnails: 1, size: "320" });
   await cap.grab({ sourceId: 5, maxEdge: "1280", format: "bmp", hideAvatar: false, extra: "x" });
   await cap.setChoice("mate_a", { id: "window:1:0", name: "A", kind: "window", evil: () => 1 });
@@ -226,7 +226,7 @@ test("preload: hrhNative.capture sends only clean arguments; hrhCaptureAsk exist
   await cap.cancel(7);
   const calls = plain();
   assert.deepEqual(calls[0], ["capture:sources", { thumbnails: true, size: 320 }]);
-  assert.deepEqual(calls[1], ["capture:grab", { mateId: "", sourceId: "5", maxEdge: 1280, format: "png", quality: 85, hideAvatar: false }]);
+  assert.deepEqual(calls[1], ["capture:grab", { mateId: "", sourceId: "5", maxEdge: 1280, format: "png", quality: 85, hideAvatar: false, hideConsole: false }]);
   assert.deepEqual(calls[2], ["capture:setChoice", "mate_a", { id: "window:1:0", name: "A", kind: "window", display_id: "" }]);
   assert.deepEqual(calls[3], ["capture:request", { id: "cap_1", ask: true, nested: { a: 1 } }]);
   assert.deepEqual(calls[4], ["capture:cancel", "7"]);
@@ -235,4 +235,15 @@ test("preload: hrhNative.capture sends only clean arguments; hrhCaptureAsk exist
   ask.exposed.hrhCaptureAsk.answer("yes");
   ask.exposed.hrhCaptureAsk.answer(true);
   assert.deepEqual(ask.plain().slice(-2), [["capture:askAnswer", false], ["capture:askAnswer", true]]);
+});
+
+
+test("session sharing never replaces a missing selected screen or window", async () => {
+  const { cap, log } = rig();
+  for (const src of [{ id: "screen:gone:0", kind: "screen", display_id: "gone" }, { id: "window:gone:0", kind: "window", name: "gone" }]) {
+    cap.setChoice("session:sess_test", src);
+    const res = await cap.request({ id: `req-${src.kind}`, mate_id: "session:sess_test", ask: true });
+    assert.equal(res.ok, false);
+    assert.equal(res.code, "source_gone");
+  }
 });

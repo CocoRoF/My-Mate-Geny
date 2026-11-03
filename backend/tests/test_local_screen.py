@@ -1,0 +1,227 @@
+"""Local screens: device/session consent, proof-bound responses, model image pipeline, stop and observation."""
+import asyncio
+import base64
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from app.mate.capture import CaptureError
+from app.providers.base import ProviderEvent
+from app.services.screen import ScreenService, BRIDGE
+from tests.test_mate_screen import _services, _upload, _png
+
+
+def setup(db, tmp_path):
+    svc, atts, store, mates, logs = _services(db)
+    screen = ScreenService(svc, mates.capture)
+    svc.screen = screen
+    sid = svc.create(provider="claude", workspace_path=str(tmp_path))["id"]
+    return svc, atts, mates.capture, screen, sid
+
+
+def client(broker, sid, mode="ask", device="dev-a"):
+    queue = asyncio.Queue()
+    conn = broker.connect(queue.put_nowait)
+    broker.hello(conn, {"device": device, "capture": 2, "shares": {sid: mode}, "active": True})
+    return conn, queue
+
+
+async def respond(queue, screen, atts, sid):
+    msg = await asyncio.wait_for(queue.get(), 2)
+    req = msg["data"]
+    assert req["scope"] == "session"
+    row = await _upload(atts, sid, "local-screen.png", _png())
+    assert screen.resolve(sid, req["id"], {"proof": req["proof"], "ok": True, "attachment_id": row["id"]})
+    return req, row
+
+
+async def test_no_consent_wrong_session_wrong_device_never_capture(db, tmp_path):
+    svc, atts, broker, screen, sid = setup(db, tmp_path)
+    conn, queue = client(broker, "another-session")
+    for device in (None, "dev-a", "dev-b"):
+        with pytest.raises(CaptureError, match="not enabled"):
+            await screen.capture(sid, device=device)
+    assert queue.empty()
+    broker.hello(conn, {"device": "dev-a", "capture": 2, "shares": {sid: "ask"}})
+    with pytest.raises(CaptureError):
+        await screen.capture(sid, device="dev-b")
+    assert queue.empty()
+
+
+async def test_tool_returns_real_image_and_one_attachment_without_base64_in_events(db, tmp_path):
+    svc, atts, broker, screen, sid = setup(db, tmp_path)
+    client_conn, queue = client(broker, sid)
+    svc._note_client(sid, "m~dev-a")
+    task = asyncio.create_task(screen.tool(sid, {}))
+    req, row = await respond(queue, screen, atts, sid)
+    result = await task
+    assert req["ask"] is True
+    assert base64.b64decode(result["images"][0]["data"]) == _png()
+    assert atts.get(row["id"])["message_id"].startswith("artifact:screen:")
+    assert row["id"] in result["text"]
+    assert svc.events(sid) == []
+
+
+async def test_response_proof_and_session_and_attachment_boundaries(db, tmp_path):
+    svc, atts, broker, screen, sid = setup(db, tmp_path)
+    _, queue = client(broker, sid)
+    task = asyncio.create_task(screen.capture(sid, device="dev-a"))
+    req = (await queue.get())["data"]
+    assert not screen.resolve(sid, req["id"], {"proof": "wrong", "ok": False})
+    assert not screen.resolve("wrong", req["id"], {"proof": req["proof"], "ok": False})
+    foreign = svc.create(provider="claude", workspace_path=str(tmp_path))["id"]
+    row = await _upload(atts, foreign, "foreign.png", _png())
+    with pytest.raises(CaptureError):
+        screen.resolve(sid, req["id"], {"proof": req["proof"], "ok": True, "attachment_id": row["id"]})
+    assert screen.resolve(sid, req["id"], {"proof": req["proof"], "ok": False, "code": "denied"})
+    with pytest.raises(CaptureError) as exc:
+        await task
+    assert exc.value.code == "denied"
+    assert not screen.resolve(sid, req["id"], {"proof": req["proof"], "ok": False})
+
+
+@pytest.mark.parametrize("how", ["stop", "disconnect", "cancel"])
+async def test_stopping_connection_or_turn_cancels_pending_request(db, tmp_path, how):
+    svc, atts, broker, screen, sid = setup(db, tmp_path)
+    conn, queue = client(broker, sid)
+    task = asyncio.create_task(screen.capture(sid, device="dev-a"))
+    await queue.get()
+    if how == "stop":
+        broker.hello(conn, {"device": "dev-a", "capture": 2, "shares": {}})
+    elif how == "disconnect":
+        broker.disconnect(conn)
+    else:
+        task.cancel()
+    with pytest.raises((CaptureError, asyncio.CancelledError)):
+        await task
+    assert not broker._pending
+
+
+async def test_on_turn_adds_current_frame_to_user_and_provider_inputs(db, tmp_path, monkeypatch):
+    svc, atts, broker, screen, sid = setup(db, tmp_path)
+    _, queue = client(broker, sid, "on_turn")
+    seen = []
+    async def fake_run(sid, session, attachments, ctx, msg_id):
+        seen.extend(attachments)
+        yield ProviderEvent(type="turn.complete", data={})
+    monkeypatch.setattr(svc, "_run_turn", fake_run)
+    async def run():
+        return [ev async for ev in svc.run_turn(sid, "Read my screen", client_msg_id="m~dev-a")]
+    task = asyncio.create_task(run())
+    req, row = await respond(queue, screen, atts, sid)
+    await task
+    assert req["ask"] is False
+    assert len(seen) == 1 and seen[0].is_image
+    assert Path(seen[0].inline_path).read_bytes() == _png()
+    assert atts.get(row["id"])["message_id"] == svc.messages(sid)[0]["id"]
+    # A delegation/internal/background message must not trigger another screen grab.
+    for meta in ({"internal": True}, {"via": {"kind": "mate"}}):
+        assert await screen.for_turn(sid, "m~dev-a", meta) is None
+    assert await screen.for_turn(sid, None, None) is None
+    assert queue.empty()
+
+
+async def test_failed_auto_capture_keeps_text_and_warns(db, tmp_path, monkeypatch):
+    svc, atts, broker, screen, sid = setup(db, tmp_path)
+    _, queue = client(broker, sid, "on_turn")
+    async def fake_run(*args):
+        assert args[2] == []
+        yield ProviderEvent(type="turn.complete", data={})
+    monkeypatch.setattr(svc, "_run_turn", fake_run)
+    async def run():
+        return [ev async for ev in svc.run_turn(sid, "keep this", client_msg_id="m~dev-a")]
+    task = asyncio.create_task(run())
+    req = (await queue.get())["data"]
+    screen.resolve(sid, req["id"], {"proof": req["proof"], "ok": False, "code": "empty"})
+    events = await task
+    assert events[0].data["code"] == "screen.capture_failed"
+    assert svc.messages(sid)[0]["content"] == "keep this"
+
+
+async def test_observation_skips_busy_rate_limits_and_deduplicates(db, tmp_path, monkeypatch):
+    svc, atts, broker, screen, sid = setup(db, tmp_path)
+    conn, queue = client(broker, sid, "observe")
+    started = []
+    monkeypatch.setattr(svc, "is_running", lambda sid: True)
+    assert await screen.observe(sid, "dev-a") == {"status": "busy"}
+    assert queue.empty()
+    monkeypatch.setattr(svc, "is_running", lambda sid: False)
+    monkeypatch.setattr(svc, "start_turn", lambda *a, **kw: started.append((a, kw)))
+    task = asyncio.create_task(screen.observe(sid, "dev-a"))
+    req, row = await respond(queue, screen, atts, sid)
+    assert await task == {"status": "sent"}
+    assert len(started) == 1 and started[0][1]["meta"]["kind"] == "screen_observation"
+    assert await screen.observe(sid, "dev-a") == {"status": "rate_limited"}
+    screen.last_observe.clear()
+    task = asyncio.create_task(screen.observe(sid, "dev-a"))
+    _, duplicate = await respond(queue, screen, atts, sid)
+    assert await task == {"status": "unchanged"}
+    assert atts.get(duplicate["id"]) is None
+    assert len(started) == 1
+
+
+def test_mcp_config_merges_remote_tools_and_tokens_are_per_session(db, tmp_path):
+    svc, atts, broker, screen, sid = setup(db, tmp_path)
+    req = SimpleNamespace(mcp_config={"mcpServers": {"remote": {"command": "remote"}}}, system_append="existing")
+    # Without sharing, unrelated CLI MCP configuration is untouched.
+    screen.configure(sid, req)
+    assert set(req.mcp_config["mcpServers"]) == {"remote"}
+    q = []
+    conn = broker.connect(q.append)
+    broker.hello(conn, {"device": "dev-a", "capture": 2, "shares": {sid: "ask", "other": "ask"}})
+    svc._note_client(sid, "m~dev-a")
+    svc._note_client("other", "m~dev-a")
+    screen.configure(sid, req)
+    assert set(req.mcp_config["mcpServers"]) == {"remote", "screen"}
+    token = Path(req.mcp_config["mcpServers"]["screen"]["env"]["HRH_SCREEN_TOKEN_FILE"]).read_text()
+    assert screen.token_info(token) == sid and screen.token_info("bad") is None
+    other = SimpleNamespace(mcp_config=None, system_append="")
+    screen.configure("other", other)
+    assert Path(other.mcp_config["mcpServers"]["screen"]["env"]["HRH_SCREEN_TOKEN_FILE"]).read_text() != token
+    assert "SSH" in req.system_append
+
+
+def test_stdio_protocol_lists_only_screen_tool():
+    requests = [{"jsonrpc": "2.0", "id": 1, "method": "initialize"},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}]
+    proc = subprocess.run([sys.executable, "-I", BRIDGE], input="\n".join(map(json.dumps, requests))+"\n",
+                          text=True, capture_output=True, timeout=5)
+    assert proc.returncode == 0 and proc.stderr == ""
+    out = [json.loads(s) for s in proc.stdout.splitlines()]
+    assert out[1]["result"]["tools"][0]["name"] == "capture_screen"
+    assert len(out[1]["result"]["tools"]) == 1
+
+
+@pytest.mark.parametrize("codex_dump", [False, True])
+async def test_general_screen_results_store_only_attachment_references(db, tmp_path, codex_dump):
+    svc, atts, broker, screen, sid = setup(db, tmp_path)
+    row = await _upload(atts, sid, "screen.png", _png())
+    text = f"Screen [{row['id']}]"
+    raw = base64.b64encode(_png()).decode()
+    output = json.dumps({"content": [{"type": "text", "text": text}, {"type": "image", "data": raw}]}) if codex_dump else text
+    ev = ProviderEvent(type="tool.result", data={"id": "tool1", "output": output, "images": [{"data": raw}]})
+    assert svc._screen_result(sid, ev, {"tool_calls": {"tool1": {"name": "mcp__screen__capture_screen"}}})
+    assert ev.data["output"] == text
+    assert ev.data["images"][0]["id"] == row["id"]
+    assert raw not in json.dumps(ev.data)
+
+
+def test_deletion_revokes_consent_and_bridge_credentials(db, tmp_path):
+    svc, atts, broker, screen, sid = setup(db, tmp_path)
+    sent = []
+    conn = broker.connect(sent.append)
+    broker.hello(conn, {"device": "dev-a", "capture": 2, "shares": {sid: "ask"}})
+    svc._note_client(sid, "m~dev-a")
+    req = SimpleNamespace(mcp_config=None, system_append="")
+    screen.configure(sid, req)
+    file = Path(req.mcp_config["mcpServers"]["screen"]["env"]["HRH_SCREEN_TOKEN_FILE"])
+    token = file.read_text()
+    svc.delete(sid)
+    assert not file.exists() and screen.token_info(token) is None
+    assert broker.shared_client(sid, "dev-a") is None
+    assert sent[-1] == {"type": "capture.revoked", "data": {"session_id": sid}}

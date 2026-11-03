@@ -69,7 +69,7 @@ const mate = {
 // user's own Share screen, and the mate's see_screen requests (the page hands them over from the server). The
 // picture comes back as bytes (Uint8Array) — the page uploads it; nothing is saved on this computer.
 const capture = {
-  version: 1,
+  version: 2,
   info: () => ipcRenderer.invoke("capture:info"),
   sources: (o = {}) => ipcRenderer.invoke("capture:sources", { thumbnails: !!(o && o.thumbnails), size: num(o && o.size) }),
   getChoice: (mateId) => ipcRenderer.invoke("capture:getChoice", String(mateId || "")),
@@ -77,7 +77,7 @@ const capture = {
     ? { id: String(src.id || ""), name: String(src.name || ""), kind: String(src.kind || ""), display_id: String(src.display_id || "") } : null),
   grab: (o = {}) => ipcRenderer.invoke("capture:grab", {
     mateId: String((o && o.mateId) || ""), sourceId: String((o && o.sourceId) || ""), maxEdge: num(o && o.maxEdge),
-    format: (o && o.format) === "jpeg" ? "jpeg" : "png", quality: num(o && o.quality) || 85, hideAvatar: !(o && o.hideAvatar === false),
+    format: (o && o.format) === "jpeg" ? "jpeg" : "png", quality: num(o && o.quality) || 85, hideAvatar: !(o && o.hideAvatar === false), hideConsole: !!(o && o.hideConsole),
   }),
   request: (req = {}) => ipcRenderer.invoke("capture:request", JSON.parse(JSON.stringify(req || {}))),
   cancel: (id) => ipcRenderer.invoke("capture:cancel", String(id || "")),

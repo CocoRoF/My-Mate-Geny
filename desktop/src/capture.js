@@ -13,7 +13,7 @@
 // (and asks), and a mate allowed to look without asking gets nothing.
 "use strict";
 
-const CAPTURE_VERSION = 1; // the bridge version the page reports to the server (app/mate/capture.py CAPTURE_BRIDGE)
+const CAPTURE_VERSION = 2; // the bridge version the page reports to the server (app/mate/capture.py CAPTURE_BRIDGE)
 const ASK = { w: 440, h: 430 };
 const HIDE_SETTLE_MS = { linux: 250, darwin: 350, win32: 350 }; // the compositor drops hidden windows
 const MAX_EDGES = new Set([0, 1280, 1920, 2560]);
@@ -188,11 +188,11 @@ function createCapture(d) {
 
   const fail = (code, message = "") => ({ ok: false, code, message });
 
-  async function withHidden(hide, fn) {
+  async function withHidden(hide, fn, source, hideConsole = false) {
     let restore = null;
     if (hide && d.hideWindows) {
       try {
-        restore = await d.hideWindows();
+        restore = await d.hideWindows(source, hideConsole);
         await delay(HIDE_SETTLE_MS[platform] || 300);
       } catch {
         restore = null;
@@ -233,7 +233,7 @@ function createCapture(d) {
       const r = await resolve(o.mateId, typeof o.sourceId === "string" ? o.sourceId : "");
       if (r.error) return r.error;
       if (r.fallback && o.sourceId) return fail("source_gone");
-      const shot = await withHidden(opts.hideAvatar, () => shoot(r.source, opts));
+      const shot = await withHidden(opts.hideAvatar, () => shoot(r.source, opts), r.source, o.hideConsole === true);
       if (!shot) return fail(wayland ? "empty" : platform === "darwin" && permission() !== "granted" ? "permission" : "empty");
       return { ok: true, ...shot };
     } catch (e) {
@@ -258,6 +258,7 @@ function createCapture(d) {
     try {
       const r = await resolve(req.mate_id, "");
       if (r.error) return r.error;
+      if (String(req.mate_id || "").startsWith("session:") && r.fallback && r.missing) return fail("source_gone");
       if (req.ask !== false) {
         let preview = "";
         try {
@@ -278,7 +279,7 @@ function createCapture(d) {
         return fail("source_gone");
       }
       d.indicate && d.indicate("start", { mateName });
-      const shot = await withHidden(opts.hideAvatar, () => shoot(r.source, opts));
+      const shot = await withHidden(opts.hideAvatar, () => shoot(r.source, opts), r.source, String(req.mate_id || "").startsWith("session:"));
       if (!shot) {
         d.indicate && d.indicate("error", { mateName });
         return fail(wayland ? "empty" : platform === "darwin" && permission() !== "granted" ? "permission" : "empty");

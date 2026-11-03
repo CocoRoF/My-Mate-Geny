@@ -1,3 +1,4 @@
+import { useLocalScreenControls } from "../composer/LocalScreenControls";
 import { useCallback, useEffect } from "react";
 import { resetContext } from "../../api/sessions";
 import { useChatStore } from "../../stores/chatStore";
@@ -53,6 +54,7 @@ export default function InputBar({
     [sid, updateSession, onStop],
   );
   const c = useComposer({ sid, store: useChatStore, onSend, onSteer, onStop, actions: ACTIONS, runAction, slash: true, mentions: true });
+  const screen = useLocalScreenControls(sid, session.title, c.addFiles);
   const { items, uploading, failed, hasContent, notice, setNotice, isStreaming, touch, trigger } = c;
 
   // "Mention in chat" from the explorer appends `@path ` here.
@@ -103,6 +105,7 @@ export default function InputBar({
               setItems={c.setMenuItems}
             />
           )}
+          {screen.ui}
           <AttachmentTray items={items} />
           <textarea
             {...c.textareaProps}
@@ -131,7 +134,7 @@ export default function InputBar({
               >
                 <Icon name="plus" size={18} />
               </button>
-              {c.attachOpen && <AttachMenu onPick={c.pickFile} onClose={() => c.setAttachOpen(false)} />}
+              {c.attachOpen && <AttachMenu onPick={c.pickFile} onClose={() => c.setAttachOpen(false)} onShareScreen={screen.open} />}
             </div>
             {/* while a turn runs, Queue / Add now need the room */}
             {phone && !(isStreaming && hasContent) && <ChatControls session={session} compact />}

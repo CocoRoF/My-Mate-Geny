@@ -18,7 +18,7 @@ const path = require("path");
 const assert = require("assert/strict");
 
 const [SERVER, PASSWORD, SHOTS] = process.argv.slice(2);
-if (!SERVER || !PASSWORD) {
+if (require.main === module && (!SERVER || !PASSWORD)) {
   console.error("usage: node test/e2e/screen-capture-e2e.js <server url> <password> [shots dir]");
   process.exit(2);
 }
@@ -401,6 +401,7 @@ async function main() {
     await chatw.eval(`document.querySelector('[data-testid="mate-attach"]').click(), true`);
     await until("the menu item", () => chatw.eval(`!!document.querySelector('[data-testid="attach-share-screen"]')`));
     await chatw.eval(`document.querySelector('[data-testid="attach-share-screen"]').click(), true`);
+    await chatw.eval(`document.querySelector('[data-testid="screen-once"]').click(), true`);
     await until("the picker's sources", () => chatw.eval(`document.querySelectorAll('[data-testid="share-source"] img').length > 0`));
     const tiles = await chatw.eval(`[...document.querySelectorAll('[data-testid="share-source"]')].map((e) => e.dataset.sourceId + " " + e.innerText)`);
     console.log(`  picker: ${JSON.stringify(tiles)}`);
@@ -439,4 +440,5 @@ async function main() {
   }
 }
 
-main();
+module.exports = { App, Cdp, fill, until, sleep, SAMPLE, SHA, B64 };
+if (require.main === module) main();

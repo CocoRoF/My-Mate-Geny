@@ -10,7 +10,7 @@ import { useBackHandler } from "../../lib/back";
 import { useT } from "../../i18n";
 import Icon from "../ui/Icon";
 
-export default function ScreenSharePicker({ mate, onShot, onClose }: { mate: Mate; onShot: (f: File) => void; onClose: () => void }) {
+export default function ScreenSharePicker({ mate, onShot, onSelect, onClose }: { mate?: Mate; onShot?: (f: File) => void; onSelect?: (source: CaptureSource) => void; onClose: () => void }) {
   const t = useT();
   const [list, setList] = useState<CaptureSource[] | null>(null);
   const [info, setInfo] = useState<CaptureInfo | null>(null);
@@ -40,20 +40,22 @@ export default function ScreenSharePicker({ mate, onShot, onClose }: { mate: Mat
     return () => window.removeEventListener("keydown", k);
   }, [onClose]);
 
-  const share = async () => {
+  const share = async (sourceId = pick) => {
     const b = captureBridge();
-    if (!b || !pick) return;
+    if (!b || !sourceId) return;
     setBusy(true);
     setError("");
-    const s = screenOf(mate);
+    const selected = list?.find(s => s.id === sourceId);
+    if (onSelect && selected) { onSelect(selected); return; }
+    const s = mate ? screenOf(mate) : { max_edge: 1920, format: "png" as const, quality: 85, hide_avatar: true };
     try {
-      const shot = await b.grab({ mateId: mate.id, sourceId: pick, maxEdge: s.max_edge, format: s.format, quality: s.quality, hideAvatar: s.hide_avatar });
+      const shot = await b.grab({ mateId: mate?.id, sourceId, maxEdge: s.max_edge, format: s.format, quality: s.quality, hideAvatar: s.hide_avatar, hideConsole: true });
       if (!shot.ok) {
         setError(captureError(shot.code));
         return;
       }
-      rememberShared(pick);
-      onShot(shotFile(shot));
+      rememberShared(sourceId);
+      onShot?.(shotFile(shot));
     } catch {
       setError(t("mate.shareFailed"));
     } finally {
@@ -69,7 +71,7 @@ export default function ScreenSharePicker({ mate, onShot, onClose }: { mate: Mat
       onClick={() => setPick(s.id)}
       onDoubleClick={() => {
         setPick(s.id);
-        void share();
+        void share(s.id);
       }}
       className={`flex min-w-0 flex-col gap-1 rounded-lg border p-1.5 text-left transition ${
         pick === s.id ? "border-accent bg-accent-soft" : "border-border hover:border-border-strong bg-surface"
@@ -92,7 +94,7 @@ export default function ScreenSharePicker({ mate, onShot, onClose }: { mate: Mat
       <div className="flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface-2 shadow-float" role="dialog" aria-label={t("composer.shareScreen")}>
         <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
           <Icon name="monitor" size={15} className="text-danger" />
-          <h2 className="min-w-0 flex-1 truncate text-[14px] font-semibold">{t("mate.shareTitle", { name: mate.name })}</h2>
+          <h2 className="min-w-0 flex-1 truncate text-[14px] font-semibold">{t("mate.shareTitle", { name: mate?.name || t("screen.thisConversation") })}</h2>
           <button onClick={load} className="btn-ghost !px-2" title={t("mate.shareRefresh")} aria-label={t("mate.shareRefresh")}>
             <Icon name="refresh" size={14} />
           </button>

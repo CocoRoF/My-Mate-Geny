@@ -295,7 +295,7 @@ def open_mcp() -> str:
         return ""
 
 
-def see_screen_turn() -> str:
+def see_screen_turn(local=False) -> str:
     """"look at my screen" (desktop/test/e2e/screen-capture-e2e.js): like the real CLI — the mate's tools from the real
     MCP bridge (tools/list), then a see_screen call through it; the tool_use / tool_result go out on stdout as the CLI
     writes them (the image as a base64 block, which the backend must not store a second time). The answer says what
@@ -306,7 +306,8 @@ def see_screen_turn() -> str:
 
     cfg_arg = args[args.index("--mcp-config") + 1]
     cfg = json.load(open(cfg_arg)) if os.path.exists(cfg_arg) else json.loads(cfg_arg)
-    srv = cfg["mcpServers"]["mate"]
+    server_name, tool_name = ("screen", "capture_screen") if local else ("mate", "see_screen")
+    srv = cfg["mcpServers"][server_name]
     proc = subprocess.Popen([srv["command"], *srv["args"]], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             env={**os.environ, **srv.get("env", {})}, text=True)
 
@@ -319,12 +320,12 @@ def see_screen_turn() -> str:
         rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}})
         rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
         names = [t["name"] for t in (rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}) or {})["result"]["tools"]]
-        if "see_screen" not in names:
+        if tool_name not in names:
             return "SEESCREEN listed=no"
         emit({"type": "assistant", "message": {"model": model, "content": [
-            {"type": "tool_use", "id": "ss1", "name": "mcp__mate__see_screen", "input": {"reason": "you asked me to look"}}]}})
+            {"type": "tool_use", "id": "ss1", "name": f"mcp__{server_name}__{tool_name}", "input": {"reason": "you asked me to look"}}]}})
         out = rpc({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
-                   "params": {"name": "see_screen", "arguments": {"reason": "you asked me to look"}}})
+                   "params": {"name": tool_name, "arguments": {"reason": "you asked me to look"}}})
     finally:
         proc.stdin.close()
         proc.wait(timeout=10)
@@ -657,8 +658,8 @@ while True:
         emit({"type": "result", "subtype": "success", "is_error": False, "result": full, "session_id": "fake-sid",
               "total_cost_usd": 0.01, "usage": {"input_tokens": 1, "output_tokens": 1}})
         continue
-    if re.search(r"look at my screen", last, re.I):
-        full = see_screen_turn()
+    if re.search(r"look at my (?:local )?screen", last, re.I):
+        full = see_screen_turn(local=bool(re.search(r"look at my local screen", last, re.I)))
         emit({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0,
                                                 "delta": {"type": "text_delta", "text": full}}})
         emit({"type": "assistant", "message": {"model": model, "content": [{"type": "text", "text": full}]}})

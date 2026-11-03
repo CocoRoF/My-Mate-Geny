@@ -1152,8 +1152,9 @@ function buildTray() {
 // ── screen capture (capture.js): out of the picture, and a visible sign that it happened ──
 
 /** hide the mate's windows (avatar, its bar, the quick card, the chat window) for a capture; → show them again */
-function hideForCapture() {
-  const was = [avatar, bar, quick, chat].filter((w) => alive(w) && w.isVisible()).map((w) => ({ w, focused: w.isFocused() }));
+function hideForCapture(keepSourceId) {
+  const isTarget = (w) => { try { return keepSourceId && w.getMediaSourceId() === keepSourceId; } catch { return false; } };
+  const was = [avatar, bar, quick, chat].filter((w) => alive(w) && w.isVisible() && !isTarget(w)).map((w) => ({ w, focused: w.isFocused() }));
   capturing = true;
   for (const { w } of was) w.hide();
   return () => {

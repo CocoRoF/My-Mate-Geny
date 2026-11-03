@@ -209,7 +209,7 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
                   }`}
                 >
                   <Icon name={s.item.level === "warning" ? "warning" : "info"} size={14} className="mt-[1px] shrink-0" />
-                  <span>{s.item.message}</span>
+                  <span>{s.item.code === "screen.capture_failed" ? t("screen.messageWithoutScreen") : s.item.message}</span>
                 </div>
               );
           }

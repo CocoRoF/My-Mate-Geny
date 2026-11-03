@@ -1,3 +1,4 @@
+import { sharingSnapshot, stopSharing } from "../mate/localScreen";
 import { useEffect } from "react";
 import { toLogin, wsUrl } from "../api/client";
 import { onResync } from "../lib/sync";
@@ -59,10 +60,14 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
       };
       sock.onmessage = (e) => {
         clearTimeout(probeTimer);
-        let msg: { type?: string; data?: { version?: unknown; mates_version?: unknown; reason?: unknown; mate_id?: unknown } };
+        let msg: { type?: string; data?: { version?: unknown; mates_version?: unknown; reason?: unknown; mate_id?: unknown; session_id?: unknown } };
         try {
           msg = JSON.parse(e.data);
         } catch {
+          return;
+        }
+        if (msg.type === "capture.revoked") {
+          if (sharingSnapshot()?.sid === msg.data?.session_id) stopSharing();
           return;
         }
         if (msg.type === "capture.request") {
@@ -89,6 +94,7 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
       sock.onclose = (e) => {
         if (ws !== sock) return; // replaced
         ws = null;
+        stopSharing();
         clearTimeout(probeTimer);
         if (e.code === 4401) return toLogin();
         if (!alive) return;
@@ -131,6 +137,7 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
     document.addEventListener("visibilitychange", check);
     window.addEventListener("online", check);
     window.addEventListener("focus", focused);
+    window.addEventListener("hrh:screen-sharing", focused);
     const offResync = onResync(check);
     connect();
     return () => {
@@ -141,6 +148,7 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
       document.removeEventListener("visibilitychange", check);
       window.removeEventListener("online", check);
       window.removeEventListener("focus", focused);
+      window.removeEventListener("hrh:screen-sharing", focused);
       offResync();
       const old = ws;
       ws = null;

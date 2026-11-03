@@ -1,3 +1,4 @@
+import { ScreenSharingBanner } from "./components/composer/LocalScreenControls";
 import { lazy, Suspense, useEffect } from "react";
 import Sidebar from "./components/layout/Sidebar";
 import ChatView from "./components/chat/ChatView";
@@ -85,6 +86,7 @@ export default function App() {
           </div>
         </div>
       )}
+      <ScreenSharingBanner />
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
         <UpdateBanner />
         <DefaultPasswordBanner />

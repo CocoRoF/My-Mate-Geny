@@ -48,6 +48,7 @@ ERRORS = {
              "macOS the app needs Screen Recording permission.",
     "source_gone": "The window chosen for you to see is not open any more, so nothing was captured. The user "
                    "can pick another one in your settings (Mate settings → Screen).",
+    "not_shared": "Screen sharing is not enabled for this session on the device you are talking from. Ask the user to open Screen capture in the attachment menu and enable sharing.",
     "error": "The screen capture failed on the user's computer.",
 }
 
@@ -69,6 +70,7 @@ class Client:
     desktop: str | None = None   # the desktop app's version (None: a browser / the Android app)
     capture: int = 0             # capture bridge version (0: none)
     active_at: float = 0.0
+    shares: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -78,6 +80,8 @@ class Pending:
     session_id: str
     conn: str
     future: asyncio.Future
+    shared: bool = False
+    proof: str = field(default_factory=lambda: secrets.token_urlsafe(24))
     created_at: float = field(default_factory=time.monotonic)
 
 
@@ -111,6 +115,12 @@ class CaptureBroker:
         c.desktop = _str(d, 40) or None
         cap = msg.get("capture")
         c.capture = cap if isinstance(cap, int) and not isinstance(cap, bool) and 0 <= cap < 1000 else 0
+        shares = msg.get("shares")
+        c.shares = {str(k)[:100]: v for k, v in list(shares.items())[:20]
+                    if isinstance(k, str) and v in ("ask", "on_turn", "observe")} if isinstance(shares, dict) else {}
+        for p in list(self._pending.values()):
+            if p.conn == conn and p.shared and p.session_id not in c.shares and not p.future.done():
+                p.future.set_result({"ok": False, "code": "stopped"})
         if msg.get("active"):
             c.active_at = time.monotonic()
 
@@ -129,11 +139,15 @@ class CaptureBroker:
         """(the window to ask, "") or (None, why: no_app | outdated). The device the user talks from first;
         within it (or overall) the most recently used window, mate chat / console over the quick card over
         the avatar window."""
-        able = [c for c in self._clients.values() if c.capture >= CAPTURE_BRIDGE]
+        able = [c for c in self._clients.values() if c.desktop and c.capture >= CAPTURE_BRIDGE]
         if not able:
             old = any(c.desktop for c in self._clients.values())
             return None, "outdated" if old else "no_app"
         here = [c for c in able if device and c.device == device]
+        if device and not here:
+            return None, "no_app"
+        if not device and len({c.device for c in able}) > 1:
+            return None, "not_shared"
         pool = here or able
         best = max(pool, key=lambda c: (c.active_at, SURFACE_RANK.get(c.surface, 0), c.connected_at))
         # (one device: every window shares the device's last use — prefer the window the user works in)
@@ -141,29 +155,41 @@ class CaptureBroker:
         best = max(same, key=lambda c: (SURFACE_RANK.get(c.surface, 0), c.active_at))
         return best, ""
 
+    def shared_client(self, sid: str, device: str | None) -> Client | None:
+        # Session consent belongs to one connection and device. Never guess a different computer.
+        if not device:
+            return None
+        pool = [c for c in self._clients.values() if c.device == device and sid in c.shares and c.capture >= CAPTURE_BRIDGE]
+        return max(pool, key=lambda c: c.active_at) if pool else None
+
     # ---- one capture ----
 
     def busy(self, mate_id: str) -> bool:
         return any(p.mate_id == mate_id and not p.future.done() for p in self._pending.values())
 
     async def request(self, *, mate: dict[str, Any], session_id: str, device: str | None,
-                      reason: str = "") -> dict[str, Any]:
+                      reason: str = "", shared_only: bool = False, automatic: bool = False) -> dict[str, Any]:
         """Ask a desktop app window for one capture. -> the window's answer: ``{"ok": True, "attachment_id",
         "source"?, "width"?, "height"?, "client": Client}``; raises :class:`CaptureError` otherwise."""
-        if self.busy(mate["id"]):
+        if self.busy(mate["id"]) or any(p.session_id == session_id and not p.future.done() for p in self._pending.values()):
             raise CaptureError("busy")
-        client, why = self.pick(device)
+        shared = self.shared_client(session_id, device)
+        client, why = (shared, "") if shared else (None, "not_shared") if shared_only else self.pick(device)
         if client is None:
             raise CaptureError(why)
         screen = mate.get("screen") or {}
-        ask = screen.get("approval") != "allow"
+        ask = client.shares.get(session_id) == "ask" if shared else screen.get("approval") != "allow"
+        if automatic:
+            ask = False
         rid = "cap_" + secrets.token_urlsafe(12)
         loop = asyncio.get_running_loop()
-        p = Pending(id=rid, mate_id=mate["id"], session_id=session_id, conn=client.conn, future=loop.create_future())
+        p = Pending(id=rid, mate_id=mate["id"], session_id=session_id, conn=client.conn, future=loop.create_future(), shared=bool(shared))
         self._pending[rid] = p
         try:
             client.send({"type": "capture.request", "data": {
+                "scope": "session" if shared else "mate", "proof": p.proof,
                 "id": rid, "mate_id": mate["id"], "mate_name": mate.get("name") or "", "session_id": session_id,
+                "source_key": f"session:{session_id}" if shared else mate["id"],
                 "ask": ask, "hide_avatar": screen.get("hide_avatar") is not False,
                 "max_edge": int(screen.get("max_edge") or 0), "format": screen.get("format") or "png",
                 "quality": int(screen.get("quality") or 85), "timeout_ms": int(self.ask_timeout * 1000),
@@ -177,6 +203,9 @@ class CaptureBroker:
             res = await asyncio.wait_for(asyncio.shield(p.future), timeout=wait)
         except asyncio.TimeoutError:
             res = {"ok": False, "code": "timeout"}
+        except asyncio.CancelledError:
+            self._cancel_on(client, rid)
+            raise
         finally:
             self._pending.pop(rid, None)
         if not res.get("ok"):

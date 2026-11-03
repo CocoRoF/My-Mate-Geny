@@ -249,14 +249,14 @@ def test_routing_to_the_device_the_user_talks_from():
     c_console = _Window(b, device="dev-c", surface="console", desktop="0.4.30", capture=1, active=True)
     # the device of the user's last message wins, its chat window over its avatar window
     assert b.pick("dev-a")[0].conn == a_chat.conn
-    # unknown / not a desktop device: the most recently used desktop window
-    assert b.pick("dev-p")[0].conn == c_console.conn
-    assert b.pick(None)[0].conn == c_console.conn
+    # Unknown devices and ambiguous multi-device callers never fall back to another computer.
+    assert b.pick("dev-p") == (None, "no_app")
+    assert b.pick(None) == (None, "not_shared")
     b.hello(a_overlay.conn, {"type": "client", "device": "dev-a", "surface": "mate-overlay", "capture": 1, "active": True})
-    assert b.pick(None)[0].device == "dev-a"
+    assert b.pick(None) == (None, "not_shared")
     b.disconnect(a_chat.conn)
     b.disconnect(a_overlay.conn)
-    assert b.pick("dev-a")[0].conn == c_console.conn
+    assert b.pick("dev-a") == (None, "no_app")
     assert old.conn in {c.conn for c in b.clients()}
 
 

@@ -30,6 +30,7 @@ import time
 import traceback
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
+from app.mate.capture import CaptureError
 from app.db import Database
 from app.providers import get_provider
 from app.providers.accounts import (
@@ -148,6 +149,7 @@ class SessionService:
         self._turn_end_listeners: list[Any] = []
         self.persistent_engines = True  # Claude: one long-lived CLI process per chat
         # Higgsfield for the chats' agents (app.higgsfield.agent; main.py sets it). None = not wired.
+        self.screen: Any = None
         self.higgsfield: HiggsfieldAgent | None = None
         self._hf_note: dict[str, str] = {}  # sid -> the Higgsfield note Codex was last told (in its message)
         # Latest plan usage an engine reported (rate_limit_event), per account
@@ -421,6 +423,8 @@ class SessionService:
         self._live_usage_by_session.pop(sid, None)
         self._viewers.pop(sid, None)
         self.history_aggregates.drop(sid)
+        if self.screen is not None:
+            self.screen.drop(sid)
         self._hf_note.pop(sid, None)
         if self.higgsfield is not None:
             self.higgsfield.forget(sid)
@@ -855,6 +859,17 @@ class SessionService:
             if attachment_ids and self._attachments is not None
             else []
         )
+        screen_row = None
+        if self.screen is not None:
+            try:
+                screen_row = await self.screen.for_turn(sid, client_msg_id, meta)
+                if screen_row:
+                    rows = [*rows, screen_row]
+            except CaptureError:
+                warning = ProviderEvent(type="notice", data={"level": "warning", "code": "screen.capture_failed",
+                                        "message": "Screen capture failed; this message was sent without a screenshot."})
+                self._add_event(sid, warning)
+                self._publish(sid, warning.to_dict())
         atts = [self._attachments.to_provider(r) for r in rows] if self._attachments else []
         inline = session.get("kind") in ("mate", "avatar")  # no file tools: contents go into the message
         if atts and inline:
@@ -888,6 +903,8 @@ class SessionService:
         fut: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
         msg = SteerMessage(text=text, attachments=atts, delivered=fut, on_delivered=record, inline_files=inline)
         if not inbox.offer(msg):
+            if screen_row is not None:
+                self._attachments.delete_pending(screen_row["id"])
             return False
         try:
             return await asyncio.wait_for(asyncio.shield(fut), timeout=30)
@@ -976,6 +993,15 @@ class SessionService:
                 if attachment_ids and self._attachments is not None
                 else []
             )
+        screen_failed = False
+        if self.screen is not None:
+            self._note_client(sid, client_msg_id)
+            try:
+                screen_row = await self.screen.for_turn(sid, client_msg_id, meta)
+                if screen_row:
+                    rows = [*(rows or []), screen_row]
+            except CaptureError:
+                screen_failed = True
         msg_id = self._add_message(sid, "user", user_input, meta=meta)
         if rows and self._attachments is not None:
             self._attachments.link([r["id"] for r in rows], msg_id)
@@ -989,6 +1015,11 @@ class SessionService:
             "attachments": [self._attachments.out(r) for r in rows] if self._attachments else [],
             **(meta or {}),
         }})
+        if screen_failed:
+            ev = ProviderEvent(type="notice", data={"level": "warning", "code": "screen.capture_failed",
+                               "message": "Screen capture failed; this message was sent without a screenshot."})
+            self._add_event(sid, ev)
+            yield ev
         if session["title"] in ("", "New chat") or session["title"] == os.path.basename(
             session["workspace_path"].rstrip("/")
         ):
@@ -1156,6 +1187,8 @@ class SessionService:
             system_append=hf.prompt if hf is not None else "",
             plugin_dirs=list(hf.plugin_dirs) if hf is not None else [],
         )
+        if self.screen is not None and session.get("kind") not in ("mate", "avatar"):
+            self.screen.configure(sid, req)
         if provider_name == "codex" and req.system_append:
             # Codex hears the note in its message: in a new thread, or when it changed since it was told
             req.note_in_prompt = not resume_id or self._hf_note.get(sid) != req.system_append
@@ -1340,10 +1373,10 @@ class SessionService:
         conversation's attachment (the desktop app uploaded it) — the engine's echo of it (base64 in the tool
         result; Codex: inside a JSON dump) is never stored again: the event keeps the text and refers to that
         attachment, so the conversation shows it and no second copy lands on disk, in the events or in logs."""
-        if ev.type != "tool.result" or sid not in self._mate_sids:
+        if ev.type != "tool.result":
             return False
         call = st["tool_calls"].get(str(ev.data.get("id"))) or {}
-        if not str(call.get("name") or "").endswith("__see_screen"):
+        if not str(call.get("name") or "").endswith(("__see_screen", "__capture_screen")):
             return False
         out = ev.data.get("output")
         text = out if isinstance(out, str) else ""

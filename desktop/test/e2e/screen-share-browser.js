@@ -38,6 +38,7 @@ const [server, password, shots] = process.argv.slice(2);
     await page.waitForSelector('[data-testid="mate-attach"]', { timeout: 30000 });
     await page.click('[data-testid="mate-attach"]');
     await page.click('[data-testid="attach-share-screen"]');
+    await page.click('[data-testid="screen-once"]');
     await page.waitForSelector('[data-testid="mate-composer"] img', { timeout: 30000 });
     const tray = await page.evaluate(async () => {
       const img = document.querySelector('[data-testid="mate-composer"] img');

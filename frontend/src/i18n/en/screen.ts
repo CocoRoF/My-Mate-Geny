@@ -1,0 +1,28 @@
+const screen = {
+  "deny": "Deny",
+  "allowOnce": "Allow once",
+  "messageWithoutScreen": "Screen capture failed; this message was sent without a screenshot.",
+  "updateApp": "Update the desktop app to use local screen sharing.",
+  "selectSource": "Choose a screen or window first.",
+  "selectedScreen": "Selected screen",
+  "notSharing": "Screen sharing is off or ended.",
+  "allowRequest": "Allow {name} to capture your selected screen now?",
+  "captured": "Screen captured for this conversation",
+  "requestFailed": "Screen capture or upload failed. Check your connection and screen permission.",
+  "thisConversation": "this conversation",
+  "sharing": "Sharing: {source}",
+  "localHint": "Capture this device’s screen, regardless of which server hosts your workspace.",
+  "once": "Capture once",
+  "start": "Enable sharing",
+  "stop": "Stop sharing",
+  "mode": "When to capture",
+  "ask": "When requested · ask each time",
+  "onTurn": "With each message I send",
+  "observe": "Periodic screen observation",
+  "interval": "Observation interval",
+  "seconds": "{count} seconds",
+  "retention": "Sent images stay as conversation attachments. Sharing stops on reload; image bytes are not copied into application logs.",
+  "costHint": "Observation can start a model reply and use tokens. Busy sessions are skipped; identical frames are skipped.",
+  "capturing": "Capturing screen…"
+};
+export default screen;
