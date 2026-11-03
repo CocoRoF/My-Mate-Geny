@@ -316,7 +316,7 @@ export async function localFrame(
             hideConsole: false,
           });
       if (!shot.ok) {
-        if (["source_gone","permission"].includes(shot.code || "")) {stopSharing();toast(tr("screen.restoreMissing"));}
+        if (["source_gone","permission"].includes(shot.code || "")) {stopSharing();reportRestoreFailure(tr("screen.restoreMissing"));}
         throw new Error(captureError(shot.code));
       }
       result = shotFile(shot);
@@ -413,6 +413,31 @@ if (typeof window !== "undefined")
       if (p.sid) configureProactive(p.sid, !!p.enabled, p.interval || 180);
   });
 
+// The restore owner can be a hidden console while only an avatar is visible. Route its failure to
+// one visible same-origin window; never show/move the console merely to display a notification.
+const restoreNotices = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("hrh-screen-restore-notices") : null;
+async function showRestoreNotice(id: string, message: string) {
+  if (typeof document === "undefined" || document.hidden) return;
+  const deliver = () => {
+    if (document.hidden) return;
+    let seen: string[] = [];
+    try {const raw=JSON.parse(localStorage.getItem("hrh_restore_notice_ids") || "[]");if(Array.isArray(raw))seen=raw.filter(x=>typeof x==="string").slice(-32);} catch {/* invalid cache */}
+    if (seen.includes(id)) return;
+    try {localStorage.setItem("hrh_restore_notice_ids",JSON.stringify([...seen,id].slice(-32)));} catch {/* blocked storage */}
+    toast(message);
+  };
+  if (navigator.locks) await navigator.locks.request("hrh-screen-restore-notice", deliver);
+  else deliver();
+}
+restoreNotices?.addEventListener("message", e=>{
+  if (typeof e.data?.id === "string" && typeof e.data?.message === "string")
+    void showRestoreNotice(e.data.id.slice(0,100),e.data.message.slice(0,500));
+});
+function reportRestoreFailure(message: string) {
+  const id = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+  restoreNotices?.postMessage({id,message});
+  void showRestoreNotice(id,message);
+}
 let resuming = false;
 /** Restore validates source metadata without uploading an image. Missing sources never fall back. */
 export async function resumeSharing() {
@@ -448,7 +473,7 @@ export async function resumeSharing() {
     await beginSharing(saved.sid,saved.name,source,true);
   } catch(e) {
     stopSharing();
-    toast(String((e as Error).message || tr("screen.restoreMissing")));
+    reportRestoreFailure(String((e as Error).message || tr("screen.restoreMissing")));
   } finally {resuming=false;}
 }
 subscribeDevicePreferences(() => {

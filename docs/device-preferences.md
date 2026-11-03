@@ -80,7 +80,9 @@ app-process lease for the saved server origin; a late restore cannot undo Stop. 
 keep Stop available even while restoration is waiting for a server response. No startup dialog or persistent
 sharing banner is added. A screen id can be recovered by display id; a window by one unambiguous exact title.
 A missing source/conversation, macOS permission denial, or required Wayland portal switches intent off with one
-floating toast, never substituting another screen. Network/authentication errors retain intent for reconnection.
+floating toast, never substituting another screen. A hidden restore owner routes that notice to a visible
+same-origin window via BroadcastChannel, with Web Locks and bounded shared notice ids to deduplicate delivery.
+Network/authentication errors retain intent for reconnection.
 Browser settings persist, but `getDisplayMedia` cannot resume without user activation; one browser owner lock
 prevents a second tab from revoking a live owner, and a reload with no owner disables sharing with a toast.
 
