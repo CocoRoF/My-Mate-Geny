@@ -82,6 +82,7 @@ function createCapture(d) {
   const platform = d.platform || process.platform;
   const env = d.env || process.env;
   const wayland = platform === "linux" && String(env.XDG_SESSION_TYPE || "").toLowerCase() === "wayland";
+  let manualSequence = 0;
   let busy = null; // the request in progress (one at a time)
   const cancelled = new Set();
 
@@ -209,7 +210,7 @@ function createCapture(d) {
   async function grab(o = {}) {
     if (busy) return fail("busy");
     const opts = options(o);
-    const id = String(o.id || "grab");
+    const id = String(o.id || `grab_${++manualSequence}`);
     busy = { id };
     try {
       if(d.preferences && o.sourceId && appPrefs().source?.id !== o.sourceId) return fail("source_gone");
@@ -222,7 +223,7 @@ function createCapture(d) {
       if(cancelled.has(id))return fail("stopped");
       if (!shot) return fail(wayland ? "empty" : platform === "darwin" && permission() !== "granted" ? "permission" : "empty");
       if (cancelled.has(id)) return fail("stopped");
-      d.indicate && d.indicate("done",{mateName:"Geny",source:shot.source});
+      d.indicate && d.indicate("done",{id,mateName:"Geny",source:shot.source});
       return { ok: true, ...shot };
     } catch (e) {
       return fail("error", String((e && e.message) || e));
@@ -278,7 +279,7 @@ function createCapture(d) {
         return fail(wayland ? "empty" : platform === "darwin" && permission() !== "granted" ? "permission" : "empty");
       }
       if (cancelled.has(id)) return fail("stopped");
-      d.indicate && d.indicate("done", { mateName, source: shot.source });
+      d.indicate && d.indicate("done", { id,mateName, source: shot.source });
       return { ok: true, ...shot };
     } catch (e) {
       return fail("error", String((e && e.message) || e));

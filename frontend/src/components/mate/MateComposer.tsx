@@ -1,4 +1,4 @@
-import { ScreenSharingBanner, useLocalScreenControls } from "../composer/LocalScreenControls";
+import { ScreenCaptureApproval, useLocalScreenControls } from "../composer/LocalScreenControls";
 /**
  * The mate's composer: the Chat composer's machinery (components/composer: drafts + files + queue per conversation,
  * paste / + menu / drop, steer while she answers, Queue, IME-safe Enter, Escape stops, auto-grow, `/` commands) in
@@ -242,7 +242,7 @@ function Composer({
           )}
         </div>
       )}
-      {window.location.search.includes("surface=") && <ScreenSharingBanner />}
+      {window.location.search.includes("surface=") && <ScreenCaptureApproval />}
       <QueuedList queue={c.queue} onRemove={c.unqueue} className="mx-auto mb-1.5 max-w-2xl" />
       <div
         className={`relative mx-auto max-w-2xl rounded-2xl border bg-surface-2/90 shadow-card transition ${

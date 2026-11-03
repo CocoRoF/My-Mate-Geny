@@ -62,7 +62,7 @@ const screen = {
   "selectedScreen": "선택한 화면",
   "notSharing": "화면 공유가 꺼져 있거나 종료됐어요.",
   "allowRequest": "{name}에 선택한 화면을 지금 캡처해서 보낼까요?",
-  "captured": "이 대화에 화면을 캡처해 보냈어요",
+  "captured": "화면을 캡처했어요",
   "requestFailed": "캡처 또는 업로드하지 못했어요. 연결과 화면 기록 권한을 확인하세요.",
   "thisConversation": "이 대화",
   "sharing": "화면 공유 중: {source}",

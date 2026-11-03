@@ -101,7 +101,7 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
           {tab === "model" && <ModelTab key={mate.id} mate={mate} />}
           {tab === "voice" && <VoiceTab key={mate.id} mate={mate} conv={conv} />}
           {tab === "proactive" && <ProactiveTab key={mate.id} mate={mate} />}
-          {tab === "screen" && <ScreenTab key={mate.id} mate={mate} />}
+          {tab === "screen" && <ScreenTab key={mate.id} mate={mate} sid={conv.sessionId} />}
           {tab === "memory" && <MemoryTab key={mate.id} mate={mate} onOpenStyle={() => setTab("style")} />}
           {tab === "relation" && <RelationshipTab key={mate.id} mate={mate} />}
           {tab === "danger" && <DangerTab key={mate.id} mate={mate} onDeleted={onClose} />}

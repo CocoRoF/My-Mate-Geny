@@ -274,7 +274,6 @@ export default {
   shareSourceGone: "That window isn't open any more — pick another one.",
   shareBusy: "Another capture is still running.",
   shareFailed: "Couldn't capture the screen.",
-  shareIndicator: "Screen shared with {name}",
   shareTitle: "Share your screen with {name}",
   shareRefresh: "Refresh the list",
   shareLoading: "Looking for screens and windows…",

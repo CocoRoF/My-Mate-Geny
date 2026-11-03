@@ -449,14 +449,14 @@ const setRange = (p, selector, value) =>
     const conversation=await (await context.request.post(server+'/api/mates/'+b.id+'/conversation')).json();
     await until('previous reply done',async()=>!(await (await context.request.post(server+'/api/mates/'+b.id+'/conversation')).json()).running);
     await chat.eval("window.dispatchEvent(new StorageEvent('storage',{key:'hrh_lang',newValue:'ko'})),true");
-    await click(chat,'[data-testid=screen-setup-open]');
+    await click(bar,'[data-act=screen]');
     await shot(chat,'sharing-start-setup.png');
     await click(chat,'[data-testid=screen-start]');
     await until('automatic source picker',()=>chat.eval("!!document.querySelector('[data-testid=share-source]')"));
     await click(chat,'[data-testid=share-source]');
     await click(chat,'[data-testid=share-go]');
-    await until('shared without expanded settings',()=>chat.eval("!!document.querySelector('[data-testid=screen-stop]') && !document.querySelector('[data-testid=screen-setup]')"));
-    await until('native owner sees proactive policy',()=>chat.eval("document.querySelector('[data-testid=local-screen-controls]').dataset.screenProactive === '60'"));
+    await until('shared without expanded settings',()=>chat.eval("!document.querySelector('[data-testid=screen-setup]')"));
+    assert.equal(await chat.eval("document.querySelectorAll('[data-testid=local-screen-controls],[data-testid=screen-sharing-banner]').length"),0);
     await shot(chat,'sharing-compact.png');
     assert.equal(await app.main("return win('surface=mate-chat').webContents.getBackgroundThrottling()"),false);
     await app.main("global.__watchCapture=false;win('surface=mate-chat').hide();return true");

@@ -879,7 +879,7 @@ function openChat() {
   else showChatNow();
 }
 
-function setCaptureSharing(on,busy) { screenSharing=!!on;screenBusy=!!busy;barState();buildTray(); }
+function setCaptureSharing(on,busy) { screenSharing=!!on;screenBusy=!!busy;barState(); }
 function openScreenSharing() {
   screenPicker=true;
   openChat();
@@ -1152,7 +1152,6 @@ function buildTray() {
     wanted() ? { label: t("trayHideMate"), click: hideAvatar } : { label: t("trayShowMate"), click: () => showAvatar() },
     { label: key ? t("trayQuickKey", { key }) : t("trayQuick"), click: openQuick },
     { label: t("trayMateChat"), click: openChat },
-    { label: t("page.barScreen"), type:"checkbox", checked:screenSharing||screenBusy, click:()=>deps.toggleScreenSharing?.() },
     { type: "separator" },
     { label: t("trayClickThrough"), type: "checkbox", checked: clickThrough(), click: (i) => setClickThrough(i.checked) },
     { label: t("trayMove"), type: "checkbox", checked: moveMode, enabled: shown(), click: (i) => setMoveMode(i.checked) },
@@ -1179,22 +1178,15 @@ function ownSourceIds() {
   }).filter(Boolean);
 }
 
-let captureTipTimer = null;
-/** start / done / error of a capture for a mate: the tray says so for a while, every window gets a `capture` command */
+const captureNotifier = require("./capture-notification").createCaptureNotifier({
+  windows: () => [chat,deps.consoleWindow(),avatar,quick],
+  focused: () => {const w=BrowserWindow.getFocusedWindow();return w===quick ? null : w;},
+  send: (w,cmd) => command(w,cmd),
+});
+/** One lightweight toast in one visible app window, never a tray/title suffix or a broadcast. */
 function captureIndicator(state, info = {}) {
-  screenBusy = state === "start";barState();buildTray();
-  const name = String(info.mateName || "Mate");
-  if (tray && state === "done") {
-    try {
-      tray.setToolTip(`${PRODUCT} — ${t("captureTray", { name })}`);
-    } catch {
-      /* gone */
-    }
-    clearTimeout(captureTipTimer);
-    captureTipTimer = setTimeout(() => tray && tray.setToolTip(PRODUCT), 8000);
-  }
-  const cmd = { type: "capture", state, mateName: name, source: info.source || null };
-  for (const w of [avatar, quick, chat, deps.consoleWindow()]) command(w, cmd);
+  screenBusy = state === "start";barState();
+  if(state === "done")captureNotifier.done(info);
 }
 
 // ── the bridge (IPC with sender checks) ────────────────────────

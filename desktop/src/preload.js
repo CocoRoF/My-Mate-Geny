@@ -71,6 +71,7 @@ const mate = {
 // picture comes back as bytes (Uint8Array) — the page uploads it; nothing is saved on this computer.
 const capture = {
   version: 3,
+  notifications: 1,
   info: () => ipcRenderer.invoke("capture:info"),
   sources: (o = {}) => ipcRenderer.invoke("capture:sources", { thumbnails: !!(o && o.thumbnails), size: num(o && o.size) }),
   getChoice: (mateId) => ipcRenderer.invoke("capture:getChoice", String(mateId || "")),

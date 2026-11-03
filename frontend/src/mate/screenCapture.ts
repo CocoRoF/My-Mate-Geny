@@ -68,6 +68,7 @@ export interface CaptureInfo {
 /** window.hrhNative.capture (desktop/src/preload.js) */
 export interface CaptureBridge {
   version: number;
+  notifications?: number;
   sharing?: {
     get(): Promise<{
       revision: number;
@@ -288,7 +289,7 @@ export async function handleCaptureRequest(raw: unknown): Promise<void> {
     if (op.cancelled) throw new Error(captureError("stopped"));
     await respond({ ok: true, attachment_id: aid, source });
     committed = true;
-    if (!op.cancelled) toast(tr("screen.captured"));
+    if (!op.cancelled && !captureBridge()?.notifications) notifyCaptured(req.id);
   } catch (e) {
     try {
       await respond({
@@ -372,9 +373,17 @@ export const rememberShared = (id: string) => {
   }
 };
 
-// ── "Screen shared with ‹mate›" in every window of the desktop app ───────
+// One short floating capture notification; native selects one visible recipient.
 
+const captureNotices=new Set<string>();
+export function notifyCaptured(id: string) {
+  if(captureNotices.has(id))return;
+  captureNotices.add(id);
+  if(captureNotices.size>128)captureNotices.delete(captureNotices.values().next().value!);
+  toast(tr("screen.captured"));
+}
 function toast(text: string) {
+  document.querySelectorAll('[data-testid="capture-toast"]').forEach(el=>el.remove());
   const el = document.createElement("div");
   el.textContent = text;
   el.setAttribute("role", "status");
@@ -389,12 +398,12 @@ function toast(text: string) {
     "width:8px;height:8px;border-radius:50%;background:#e5484d;box-shadow:0 0 0 3px #e5484d40;flex:none";
   el.prepend(dot);
   document.body.appendChild(el);
-  setTimeout(() => (el.style.opacity = "0"), 3600);
-  setTimeout(() => el.remove(), 4000);
+  setTimeout(() => (el.style.opacity = "0"), 1200);
+  setTimeout(() => el.remove(), 1500);
 }
 
 let indicatorOn = false;
-/** once per page: the desktop app's `capture` command → the toast (not in the see-through avatar window) */
+/** Once per page: accept only a targeted native completion notification. */
 export function installCaptureIndicator(): void {
   if (indicatorOn || typeof window === "undefined") return;
   const m = window.hrhNative?.mate;
@@ -402,7 +411,7 @@ export function installCaptureIndicator(): void {
   indicatorOn = true;
   m.onCommand((cmd) => {
     if (cmd.type !== "capture" || cmd.state !== "done") return;
-    if (currentSurface() === "mate-overlay") return;
-    toast(tr("mate.shareIndicator", { name: String(cmd.mateName || "Mate") }));
+    if (!window.hrhNative?.capture?.notifications || typeof cmd.notification_id !== "string") return;
+    notifyCaptured(cmd.notification_id);
   });
 }

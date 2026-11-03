@@ -37,8 +37,10 @@ sharing consent does not. A server switch does not carry sharing into another or
 
 The hover toolbar's screen button opens the selected Mate chat with the same screen/window picker; that picker
 allows a single draft screenshot or persistent sharing. Active sharing has a blue button and red dot; pressing
-again stops it. Toolbar width includes all seven controls, independently of a small avatar's width. The tray
-also exposes screen sharing so capture can be cancelled while app windows are temporarily hidden.
+again stops it. Toolbar width includes all seven controls, independently of a small avatar's width. The Screen settings also expose start/stop. There are no persistent sharing bars in any composer,
+window-title suffixes, or tray sharing entries/tooltips. Native capture completion targets one visible app
+window; one floating toast fades after 1.2 seconds and is removed after 1.5 seconds. Repeated completion ids
+are deduplicated and overlapping toasts are replaced. Older apps use one owner-local fallback toast.
 
 ## Cancellation boundary
 

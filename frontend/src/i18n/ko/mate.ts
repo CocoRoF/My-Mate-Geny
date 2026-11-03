@@ -267,7 +267,6 @@ const ko: Messages<"mate"> = {
   shareSourceGone: "그 창은 이제 열려 있지 않아요 — 다른 창을 골라 주세요.",
   shareBusy: "다른 캡처가 아직 진행 중이에요.",
   shareFailed: "화면을 캡처하지 못했어요.",
-  shareIndicator: "{name}에게 화면을 공유했어요",
   shareTitle: "{name}에게 화면 공유",
   shareRefresh: "목록 새로 고침",
   shareLoading: "화면과 창을 찾는 중…",

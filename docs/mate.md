@@ -769,8 +769,10 @@ about it, and a call anyway is refused. Switching it changes the prompt key (the
   so; allowed without asking, nothing is captured (`source_gone`).
 - **Size**: the screen at its device pixels fitted into `max_edge`; a window's picture keeps the window's shape
   but Electron scales window thumbnails to fit the box (it does not report a window's own size).
-- **Seen**: while the picture is taken the tray tooltip says "Screen shared with ‹mate›" (8 s) and every app
-  window (not the avatar) shows that as a toast; the conversation shows the picture.
+- **Seen**: an actual capture produces one floating 1.5-second toast in one visible app window.
+  No persistent sharing rows, input padding, title suffixes or tray tooltip changes are added.
+  Active state and stop controls live in the avatar toolbar and Screen settings; consent dialogs remain unchanged.
+  The conversation shows the resulting picture.
 - **The user's own Share screen** (composer + menu): the desktop app's picker (screens and windows with thumbnails,
   the last one preselected on this device) or, in a desktop browser, `getDisplayMedia` (the browser's dialog, one
   frame); hidden on phones / the Android app and in the quick card (its + opens the file picker).

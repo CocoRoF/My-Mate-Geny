@@ -14,7 +14,6 @@ import {
   configureProactive,
   setSharingMode,
   sharingSnapshot,
-  stopSharing,
   subscribeSharing,
   type ScreenMode,
 } from "../../mate/localScreen";
@@ -27,6 +26,7 @@ export function useLocalScreenControls(
   name: string,
   addFiles: (files: File[]) => void,
   mate?: Mate,
+  options: {listenToolbar?:boolean;allowOnce?:boolean} = {},
 ) {
   const t = useT();
   const sharing = useSyncExternalStore(subscribeSharing, sharingSnapshot);
@@ -36,7 +36,7 @@ export function useLocalScreenControls(
   );
   useEffect(() => {
     const m = desktopMate();
-    if (!m || currentSurface() !== "mate-chat") return;
+    if (options.listenToolbar === false || !m || currentSurface() !== "mate-chat") return;
     const open = () => {
       setOpen(true);
       void m.screenHandled?.();
@@ -91,49 +91,6 @@ export function useLocalScreenControls(
   };
   const ui = (
     <>
-      {(supported || sharing) && (
-        <div
-          className="flex items-center gap-2 border-b border-border/60 px-3 py-2 text-xs"
-          data-screen-proactive={p?.enabled ? p.interval : 0} data-testid="local-screen-controls"
-        >
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="flex min-w-0 flex-1 items-center gap-2 text-content-dim"
-            data-testid="screen-setup-open"
-          >
-            <Icon
-              name="monitor"
-              size={14}
-              className={active ? "text-danger" : "text-content-faint"}
-            />
-            <span className="truncate">
-              {active
-                ? t("screen.sharing", { source: sharing.source })
-                : t("composer.shareScreen")}
-            </span>
-          </button>
-          {active && (
-            <button
-              type="button"
-              onClick={stopSharing}
-              className="shrink-0 text-danger"
-              data-testid="screen-stop"
-            >
-              {t("screen.stop")}
-            </button>
-          )}
-          {(error || (active && sharing.error)) && (
-            <span
-              role="alert"
-              className="text-danger"
-              title={error || sharing?.error}
-            >
-              <Icon name="warning" size={13} />
-            </span>
-          )}
-        </div>
-      )}
       {open && (
         <div
           className="fixed inset-0 z-[105] grid place-items-center bg-black/40 p-3"
@@ -235,7 +192,7 @@ export function useLocalScreenControls(
                 </button>
               ) : (
                 <>
-                  <button
+                  {options.allowOnce !== false && <button
                     type="button"
                     disabled={busy}
                     onClick={() => {
@@ -246,7 +203,7 @@ export function useLocalScreenControls(
                     data-testid="screen-once"
                   >
                     {t("screen.once")}
-                  </button>
+                  </button>}
                   <button
                     type="button"
                     disabled={busy}
@@ -299,8 +256,8 @@ export function useLocalScreenControls(
   return { open: supported ? () => setOpen(true) : undefined, ui };
 }
 
-/** Always visible even when the user navigates away from the sharing conversation. */
-export function ScreenSharingBanner() {
+/** Render only a pending capture-consent dialog; never reserve composer space. */
+export function ScreenCaptureApproval() {
   const t = useT();
   const sharing = useSyncExternalStore(subscribeSharing, sharingSnapshot);
   const approval = useSyncExternalStore(subscribeSharing, approvalSnapshot);
@@ -320,7 +277,7 @@ export function ScreenSharingBanner() {
         previous.focus();
     };
   }, [approval]);
-  if (!sharing) return null;
+  if (!sharing || !approval) return null;
   return (
     <>
       {approval && (
@@ -360,32 +317,7 @@ export function ScreenSharingBanner() {
           </div>
         </div>
       )}
-      {currentSurface() !== "mate-chat" && (
-        <div
-          role="status"
-          data-testid="screen-sharing-banner"
-          className="fixed left-1/2 top-2 z-[100] flex max-w-[94vw] -translate-x-1/2 items-center gap-2 rounded-xl border border-danger/40 bg-surface-2 px-3 py-2 text-xs shadow-float"
-        >
-          <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-danger" />
-          <span
-            className="min-w-0 truncate"
-            title={`${sharing.name}: ${sharing.source}`}
-          >
-            {sharing.capturing
-              ? t("screen.capturing")
-              : t("screen.sharing", {
-                  source: `${sharing.name} · ${sharing.source}`,
-                })}
-          </span>
-          <button
-            type="button"
-            onClick={stopSharing}
-            className="shrink-0 text-danger underline"
-          >
-            {t("screen.stop")}
-          </button>
-        </div>
-      )}
+
     </>
   );
 }

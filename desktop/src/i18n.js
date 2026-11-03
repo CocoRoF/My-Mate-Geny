@@ -39,7 +39,6 @@ const MESSAGES = {
     startFailedBody: "{error}\n\nDetails are in the log:\n{log}\n\nPlease try again; if it keeps failing, send the log with your report.",
     // screen capture (capture.js): the prompt's window title, the tray while a picture is taken
     captureAskTitle: "{name} wants to see your screen",
-    captureTray: "Screen shared with {name}",
     // the page the browser shows after Higgsfield's sign-in (oauth-catch.js)
     hfCaughtTitle: "Signed in to Higgsfield",
     hfRefusedTitle: "The Higgsfield sign-in didn't finish",
@@ -183,7 +182,6 @@ const MESSAGES = {
     startFailedTitle: "{product}을(를) 시작하지 못했어요",
     startFailedBody: "{error}\n\n자세한 내용은 로그에 있어요:\n{log}\n\n다시 실행해 보시고, 계속 안 되면 이 로그를 함께 알려 주세요.",
     captureAskTitle: "{name}이(가) 화면을 보고 싶어 해요",
-    captureTray: "{name}에게 화면을 공유했어요",
     hfCaughtTitle: "Higgsfield 에 로그인했어요",
     hfRefusedTitle: "Higgsfield 로그인이 끝나지 않았어요",
     hfCaughtBody: "이 탭을 닫고 My Mate Geny 로 돌아가세요.",
