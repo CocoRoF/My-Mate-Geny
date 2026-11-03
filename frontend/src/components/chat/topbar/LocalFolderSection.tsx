@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { folderUploadLimits, probeSameHost, type FolderUploadLimits } from "../../../api/folderUploads";
 import { canPickDirInBrowser, COPY_DIR, fmtBytes, folderBridge, fromDesktop, fromFileList } from "../../../lib/localFolder";
+import { sessionFolders } from "../../../lib/hosts";
 import { useLocalFolders } from "../../../stores/localFolderStore";
 import { useSessionStore } from "../../../stores/sessionStore";
 import type { Session } from "../../../types";
@@ -39,15 +40,17 @@ export default function LocalFolderSection({ session, onLinked }: { session: Ses
       const picked = await bridge.pick();
       if (!picked) return;
       setJob(sid, { phase: "reading", sent: 0, files: 0 });
-      // Same machine (the server reads the app's probe file) → link the folder itself, no copy.
-      if (!remote) {
+      // Same machine (the server reads the app's probe file) → link the folder itself, no copy — a folder of this
+      // server, whatever host the workspace is on (the agent's own tools reach it).
+      {
         const same = await probeSameHost(picked.probe.path, picked.probe.nonce, picked.path).catch(() => null);
         if (same?.same_host && same.is_dir) {
           bridge.release(picked.path).catch(() => {});
           setJob(sid, undefined);
-          const dirs = session.extra_dirs || [];
-          if (same.path === session.workspace_path || dirs.includes(same.path)) return setError(t("topbar.folderAlreadyConnected"));
-          await update(sid, { extra_dirs: [...dirs, same.path] });
+          const folders = sessionFolders(session);
+          if ((!remote && same.path === session.workspace_path) || folders.some((f) => !f.connection_id && f.path === same.path))
+            return setError(t("topbar.folderAlreadyConnected"));
+          await update(sid, { folders: [...folders, { path: same.path, connection_id: null }] });
           onLinked(same.path);
           return;
         }
@@ -80,7 +83,7 @@ export default function LocalFolderSection({ session, onLinked }: { session: Ses
   return (
     <div className="space-y-2" data-testid="local-folder">
       <p className="text-[11.5px] leading-snug text-content-dim">
-        {bridge && !remote ? t("topbar.linkOrCopy") : remote ? t("topbar.copyOnlyRemote") : t("topbar.copyOnly")}
+        {bridge ? t(remote ? "topbar.linkOrCopyRemote" : "topbar.linkOrCopy") : remote ? t("topbar.copyOnlyRemote") : t("topbar.copyOnly")}
       </p>
 
       {!job && (

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listDir } from "../../api/workspaces";
+import { hostName, sameHost, sessionFolders, strip } from "../../lib/hosts";
+import { useConnectionStore } from "../../stores/connectionStore";
 import type { CliInfo, DirEntry, Session } from "../../types";
 import Icon from "../ui/Icon";
 import { tr, useT } from "../../i18n";
@@ -64,42 +66,68 @@ const join = (a: string, b: string) => (a.endsWith("/") ? a + b : `${a}/${b}`);
 
 function useMentionItems(session: Session | undefined, query: string, enabled: boolean): MenuItem[] {
   const [entries, setEntries] = useState<DirEntry[]>([]);
+  const connections = useConnectionStore((s) => s.connections);
   const slash = query.lastIndexOf("/");
   const dir = slash >= 0 ? query.slice(0, slash) : "";
   const leaf = (slash >= 0 ? query.slice(slash + 1) : query).toLowerCase();
   const root = session?.workspace_path ?? "";
-  const connectionId = session?.connection_id ?? null;
+  const folders = useMemo(() => (session ? sessionFolders(session) : []), [session]);
+  // `@/abs/path…` inside an attached folder: list it on that folder's host (folders on other servers too)
+  const absolute = query.startsWith("/");
+  const under = (f: { path: string }) => (dir || "/") === strip(f.path) || (dir || "/").startsWith(strip(f.path) + "/");
+  const inFolder = absolute
+    ? folders.find(under) ?? (root && under({ path: root }) ? { path: root, connection_id: session?.connection_id ?? null } : undefined)
+    : undefined;
+  const connectionId = inFolder ? inFolder.connection_id : (session?.connection_id ?? null);
+  const listPath = absolute ? (inFolder ? dir || "/" : "") : dir ? join(root, dir) : root;
 
   useEffect(() => {
-    if (!enabled || !root) return;
+    if (!enabled || !listPath) {
+      setEntries([]);
+      return;
+    }
     let alive = true;
-    listDir(dir ? join(root, dir) : root, connectionId)
+    listDir(listPath, connectionId)
       .then((r) => alive && setEntries(r.entries))
       .catch(() => alive && setEntries([]));
     return () => {
       alive = false;
     };
-  }, [enabled, dir, root, connectionId]);
+  }, [enabled, listPath, connectionId]);
 
-  return useMemo(
-    () =>
-      entries
-        .filter((e) => !leaf || e.name.toLowerCase().includes(leaf))
-        .sort((a, b) => Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name))
-        .slice(0, 60)
-        .map((e) => {
-          const rel = dir ? `${dir}/${e.name}` : e.name;
-          return {
-            key: `m:${rel}`,
-            label: e.is_dir ? `${e.name}/` : e.name,
-            insert: e.is_dir ? `@${rel}/` : `@${rel} `,
-            hint: dir || undefined,
-            icon: e.is_dir ? ("folder" as const) : ("file" as const),
-            keepOpen: e.is_dir,
-          };
-        }),
-    [entries, leaf, dir],
-  );
+  return useMemo(() => {
+    const items: MenuItem[] = entries
+      .filter((e) => !leaf || e.name.toLowerCase().includes(leaf))
+      .sort((a, b) => Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name))
+      .slice(0, 60)
+      .map((e) => {
+        const rel = absolute || dir ? `${dir}/${e.name}` : e.name;
+        return {
+          key: `m:${rel}`,
+          label: e.is_dir ? `${e.name}/` : e.name,
+          insert: e.is_dir ? `@${rel}/` : `@${rel} `,
+          hint: (inFolder && !sameHost(inFolder.connection_id, session?.connection_id) ? `${hostName(inFolder.connection_id, connections, tr("topbar.thisServer"))} · ` : "") + (dir || "") || undefined,
+          icon: e.is_dir ? ("folder" as const) : ("file" as const),
+          keepOpen: e.is_dir,
+        };
+      });
+    if (!dir && !absolute) {
+      // the chat's other folders (any host): pick one, then its files
+      for (const f of folders) {
+        const name = strip(f.path).split("/").pop() || f.path;
+        if (leaf && !name.toLowerCase().includes(leaf)) continue;
+        items.push({
+          key: `f:${f.connection_id || "local"}:${f.path}`,
+          label: `${name}/`,
+          insert: `@${strip(f.path)}/`,
+          hint: `${hostName(f.connection_id, connections, tr("topbar.thisServer"))} · ${f.path}`,
+          icon: "folder",
+          keepOpen: true,
+        });
+      }
+    }
+    return items;
+  }, [entries, leaf, dir, absolute, folders, inFolder, connections, session?.connection_id]);
 }
 
 /**

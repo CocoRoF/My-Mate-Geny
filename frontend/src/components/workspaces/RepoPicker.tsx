@@ -6,9 +6,12 @@ import { useT } from "../../i18n";
 export default function RepoPicker({
   accountId,
   onCloned,
+  onUse,
 }: {
   accountId: string;
-  onCloned: (localPath: string) => void;
+  onCloned?: (localPath: string) => void;
+  /** do something else with the picked repo than cloning it here (e.g. clone on an SSH host) */
+  onUse?: (repo: GitRepo) => Promise<void>;
 }) {
   const t = useT();
   const [repos, setRepos] = useState<GitRepo[]>([]);
@@ -49,8 +52,8 @@ export default function RepoPicker({
     setCloning(r.full_name);
     setError("");
     try {
-      const res = await cloneRepo(accountId, r.full_name, r.clone_url);
-      onCloned(res.path);
+      if (onUse) await onUse(r);
+      else onCloned?.((await cloneRepo(accountId, r.full_name, r.clone_url)).path);
     } catch (e: any) {
       setError(String(e.message || e));
     } finally {

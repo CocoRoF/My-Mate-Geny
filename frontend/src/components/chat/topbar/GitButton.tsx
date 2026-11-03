@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  cloneSessionRepo,
   connectSessionGit,
   detectSessionRepos,
   disconnectSessionGit,
@@ -9,7 +10,11 @@ import {
   type GitBranches,
   type GitStatus,
 } from "../../../api/sessionGit";
+import type { GitRepo } from "../../../api/git";
+import { folderKey, hostName, LOCAL, qualify, sessionFolders, thisHostIds, useHosts } from "../../../lib/hosts";
+import { useConnectionStore } from "../../../stores/connectionStore";
 import { useGitStore } from "../../../stores/gitStore";
+import type { Connection } from "../../../types";
 import { useSessionGit } from "../../../stores/sessionGitStore";
 import { useSessionStore } from "../../../stores/sessionStore";
 import { openPath, useWorkbench } from "../../../stores/workbenchStore";
@@ -67,7 +72,7 @@ export default function GitButton({ session, compact }: { session: Session; comp
   const connected = !!st?.connected;
 
   // the chat opened / its folders or repo changed / a turn ended (epoch) → read the status again
-  const key = `${sid}|${session.git_repo ?? "auto"}|${(session.extra_dirs || []).join(":")}`;
+  const key = `${sid}|${session.git_repo ?? "auto"}|${session.git_repo_host ?? ""}|${sessionFolders(session).map(folderKey).join(":")}`;
   useEffect(() => {
     refresh(sid);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -149,7 +154,7 @@ export default function GitButton({ session, compact }: { session: Session; comp
             loading={!!entry?.loading && !st}
             onConnected={(s) => {
               setStatus(sid, s);
-              patchLocal(sid, { git_repo: s.root ?? null });
+              patchLocal(sid, { git_repo: s.root ?? null, git_repo_host: s.connection_id ?? null });
             }}
             onClose={() => setOpen(false)}
           />
@@ -237,6 +242,8 @@ function Connected({
   const files = st.files || [];
   const changes = st.changes || 0;
   const root = st.root || st.path || "";
+  const repoHost = st.connection_id === undefined ? session.connection_id : st.connection_id;
+  const connections = useConnectionStore((s) => s.connections);
   const summary = c
     ? [
         c.modified && t("topbar.sumModified", { n: c.modified }),
@@ -335,7 +342,7 @@ function Connected({
                   <button
                     onClick={() => {
                       onClose();
-                      openPath(session, `${root}/${f.path}`).catch(() => {});
+                      openPath(session, qualify(session, repoHost, `${root}/${f.path}`)).catch(() => {});
                     }}
                     className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-surface-3"
                     title={t("topbar.openX", { path: f.path })}
@@ -376,6 +383,7 @@ function Connected({
         {error && <p className="text-[11.5px] text-danger" data-testid="git-error">{error}</p>}
       </div>
       <div className="flex items-center gap-2 border-t border-border/70 px-3.5 py-2">
+        {(repoHost || session.connection_id) && <HostBadge conn={repoHost} connections={connections} />}
         <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-content-faint" title={root}>
           {st.mode === "auto" ? `${t("topbar.workspace")} · ` : ""}
           {root}
@@ -393,6 +401,26 @@ function Connected({
   );
 }
 
+/** Which host a repo is on: this server or an SSH connection (cyan). */
+function HostBadge({ conn, connections }: { conn: string | null | undefined; connections: Connection[] }) {
+  const t = useT();
+  return (
+    <span
+      className={`pill max-w-[8rem] shrink-0 truncate px-1.5 py-0 text-[10px] ${conn ? "bg-cyan/10 text-cyan" : "bg-surface-3 text-content-dim"}`}
+      title={conn ? t("topbar.onHostTitle", { host: hostName(conn, connections, t("topbar.thisServer")) }) : t("topbar.onServer")}
+      data-testid="git-host-badge"
+    >
+      {hostName(conn, connections, t("topbar.thisServer"))}
+    </span>
+  );
+}
+
+function gitError(t: ReturnType<typeof useT>, e: any): string {
+  const detail = String(e?.message || e);
+  const head = e?.status === 502 ? t("topbar.errUnreachable") : e?.status === 403 ? t("topbar.errPermission") : "";
+  return head && !detail.startsWith("can't reach") ? `${head} — ${detail}` : detail;
+}
+
 function NotConnected({
   session,
   st,
@@ -408,41 +436,39 @@ function NotConnected({
 }) {
   const t = useT();
   const sid = session.id;
-  const accounts = useGitStore((s) => s.accounts);
-  const loadAccounts = useGitStore((s) => s.load);
+  const connections = useConnectionStore((s) => s.connections);
   const [found, setFound] = useState<FoundRepo[] | null>(null);
+  const [hostErrors, setHostErrors] = useState<{ connection_id: string | null; error: string }[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [accountId, setAccountId] = useState<string | null>(null);
-  const [addAccount, setAddAccount] = useState(false);
-  const remote = !!session.connection_id;
+  const multiHost = new Set([session.connection_id || null, ...sessionFolders(session).map((f) => f.connection_id || null)]).size > 1;
 
   useEffect(() => {
     let alive = true;
     detectSessionRepos(sid)
-      .then((r) => alive && setFound(r.repos))
+      .then((r) => {
+        if (!alive) return;
+        setFound(r.repos);
+        setHostErrors(r.errors || []);
+      })
       .catch((e) => {
         if (!alive) return;
         setFound([]);
-        setError(String(e.message || e));
+        setError(gitError(t, e));
       });
-    if (!remote) loadAccounts().catch(() => {});
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sid]);
-  useEffect(() => {
-    if (!accountId && accounts.length) setAccountId(accounts[0].id);
-  }, [accounts, accountId]);
 
-  const connect = async (path: string, addFolder = false) => {
-    setBusy(path);
+  const connect = async (r: FoundRepo) => {
+    setBusy(r.path);
     setError("");
     try {
-      onConnected(await connectSessionGit(sid, path, addFolder));
+      onConnected(await connectSessionGit(sid, r.path, false, r.connection_id === undefined ? undefined : r.connection_id));
     } catch (e: any) {
-      setError(String(e.message || e));
+      setError(gitError(t, e));
     } finally {
       setBusy(null);
     }
@@ -471,17 +497,18 @@ function NotConnected({
           ) : (
             <ul className="space-y-1" data-testid="git-found">
               {found.map((r) => (
-                <li key={r.path} className="flex items-center gap-2 rounded-lg bg-surface/70 px-2.5 py-1.5">
+                <li key={`${r.connection_id ?? "ws"}:${r.path}`} className="flex items-center gap-2 rounded-lg bg-surface/70 px-2.5 py-1.5">
                   <Icon name={r.remote.includes("github") ? "github" : "git-branch"} size={13} className="shrink-0 text-violet" />
                   <span className="min-w-0 flex-1" title={r.path}>
                     <span className="flex items-center gap-1.5">
                       <span className="truncate text-[12.5px] text-content">{r.repo}</span>
                       {r.branch && <span className="shrink-0 font-mono text-[10.5px] text-content-dim">{r.branch}</span>}
+                      {(multiHost || r.connection_id) && r.connection_id !== undefined && <HostBadge conn={r.connection_id} connections={connections} />}
                     </span>
                     <span className="block truncate font-mono text-[10.5px] text-content-faint">{r.path}</span>
                   </span>
                   <button
-                    onClick={() => connect(r.path)}
+                    onClick={() => connect(r)}
                     disabled={busy !== null}
                     className="pill shrink-0 bg-accent-soft text-accent hover:bg-accent/20"
                     aria-label={t("topbar.connectX", { name: r.repo })}
@@ -492,56 +519,183 @@ function NotConnected({
               ))}
             </ul>
           )}
+          {hostErrors.map((h) => (
+            <p key={h.connection_id ?? LOCAL} className="mt-1 text-[11.5px] text-danger" data-testid="git-host-error">
+              {t("topbar.cantListHost", { host: hostName(h.connection_id, connections, t("topbar.thisServer")) })}
+              <span className="block truncate font-mono text-[10.5px] text-content-faint" title={h.error}>
+                {h.error}
+              </span>
+            </p>
+          ))}
         </div>
 
-        <div className="border-t border-border/70 pt-2.5">
-          <div className="mb-1.5 text-[10.5px] uppercase tracking-wide text-content-faint">{t("topbar.cloneWithAccount")}</div>
-          {remote ? (
-            <p className="text-[12px] text-content-faint">{t("topbar.cloneRemoteNote")}</p>
-          ) : accounts.length === 0 || addAccount ? (
-            addAccount ? (
-              <div className="text-[12px] [&_.card]:p-3">
-                <GitAccounts />
-                <button onClick={() => setAddAccount(false)} className="btn-ghost mt-2 py-1 px-2 text-[12px]">
-                  {t("common.done")}
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <p className="flex-1 text-[12px] text-content-faint">{t("topbar.noGitAccount")}</p>
-                <button onClick={() => setAddAccount(true)} className="btn-soft shrink-0 py-1 px-2 text-[12px]">
-                  <Icon name="plus" size={12} /> {t("topbar.connectAccount")}
-                </button>
-              </div>
-            )
-          ) : (
-            <>
-              {accounts.length > 1 && (
-                <select
-                  value={accountId || ""}
-                  onChange={(e) => setAccountId(e.target.value)}
-                  className="field mb-1.5 py-1.5 text-[12.5px]"
-                  aria-label={t("topbar.gitAccount")}
-                >
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.label} ({a.provider})
-                    </option>
-                  ))}
-                </select>
-              )}
-              {accountId && (
-                <RepoPicker
-                  accountId={accountId}
-                  onCloned={(path) => connect(path, true)} // the clone's folder joins the chat; then pick its branch
-                />
-              )}
-              <p className="mt-1 text-[11px] text-content-faint">{t("topbar.cloneNote")}</p>
-            </>
-          )}
-        </div>
+        <CloneSection session={session} onConnected={onConnected} />
         {error && <p className="text-[11.5px] text-danger">{error}</p>}
       </div>
     </>
+  );
+}
+
+/**
+ * Clone a repository onto a host — this server or any SSH connection (the workspace's preselected) — with a Git
+ * account's token (picked from its repos) or anonymously by URL (a public repo), then connect it to the chat. On an
+ * SSH host the token is handed to that one git run and is not stored there (backend services/session_git.py).
+ */
+function CloneSection({ session, onConnected }: { session: Session; onConnected: (s: GitStatus) => void }) {
+  const t = useT();
+  const sid = session.id;
+  const accounts = useGitStore((s) => s.accounts);
+  const loadAccounts = useGitStore((s) => s.load);
+  const connections = useConnectionStore((s) => s.connections);
+  const hosts = useHosts((s) => s.hosts);
+  const loadHosts = useHosts((s) => s.load);
+  const same = useMemo(() => thisHostIds(hosts), [hosts]);
+  const wsHost = session.connection_id && !same.has(session.connection_id) ? session.connection_id : LOCAL;
+  const [host, setHost] = useState<string>(wsHost);
+  const [source, setSource] = useState<string | null>(null); // an account id, or "url"
+  const [url, setUrl] = useState("");
+  const [parent, setParent] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [addAccount, setAddAccount] = useState(false);
+  const conn = host === LOCAL ? null : host;
+
+  useEffect(() => {
+    loadAccounts().catch(() => {});
+    loadHosts().catch(() => {});
+  }, [loadAccounts, loadHosts]);
+  useEffect(() => setHost(wsHost), [wsHost]);
+  useEffect(() => {
+    if (!source) setSource(accounts.length ? accounts[0].id : "url");
+  }, [accounts, source]);
+
+  const clone = async (body: { clone_url: string; full_name?: string; account_id?: string | null }) => {
+    setBusy(true);
+    setError("");
+    try {
+      onConnected(await cloneSessionRepo(sid, { ...body, connection_id: conn, ...(parent.trim() ? { parent: parent.trim() } : {}) }));
+    } catch (e: any) {
+      setError(gitError(t, e));
+      throw e;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const hostChoices = [
+    { key: LOCAL, label: t("topbar.thisServer") },
+    ...connections.filter((c) => !same.has(c.id)).map((c) => ({ key: c.id, label: c.name })),
+  ];
+
+  return (
+    <div className="border-t border-border/70 pt-2.5" data-testid="git-clone">
+      <div className="mb-1.5 text-[10.5px] uppercase tracking-wide text-content-faint">{t("topbar.cloneRepo")}</div>
+      <div className="mb-1.5 grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1.5 text-[12px]">
+        <label htmlFor="git-clone-host" className="text-content-faint">
+          {t("topbar.cloneWhere")}
+        </label>
+        <select
+          id="git-clone-host"
+          value={host}
+          onChange={(e) => setHost(e.target.value)}
+          className="field py-1 text-[12.5px]"
+          data-testid="git-clone-host"
+        >
+          {hostChoices.map((h) => (
+            <option key={h.key} value={h.key}>
+              {h.label}
+              {h.key === wsHost ? ` · ${t("topbar.workspaceHost")}` : ""}
+            </option>
+          ))}
+        </select>
+        <label htmlFor="git-clone-source" className="text-content-faint">
+          {t("topbar.cloneFrom")}
+        </label>
+        <select
+          id="git-clone-source"
+          value={source || "url"}
+          onChange={(e) => setSource(e.target.value)}
+          className="field py-1 text-[12.5px]"
+          data-testid="git-clone-source"
+        >
+          {accounts.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.label} ({a.provider})
+            </option>
+          ))}
+          <option value="url">{t("topbar.cloneByUrl")}</option>
+        </select>
+        {(conn || source === "url") && (
+          <>
+            <label htmlFor="git-clone-parent" className="text-content-faint">
+              {t("topbar.cloneInto")}
+            </label>
+            <input
+              id="git-clone-parent"
+              value={parent}
+              onChange={(e) => setParent(e.target.value)}
+              placeholder={conn ? "~/repos" : t("topbar.cloneIntoDefault")}
+              className="field py-1 font-mono text-[12px]"
+              data-testid="git-clone-parent"
+            />
+          </>
+        )}
+      </div>
+
+      {source === "url" ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (url.trim()) clone({ clone_url: url.trim(), account_id: null }).catch(() => {});
+          }}
+          className="flex items-center gap-1.5"
+        >
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://github.com/owner/repo.git"
+            aria-label={t("topbar.cloneUrlAria")}
+            className="field min-w-0 flex-1 py-1.5 font-mono text-[12px]"
+            data-testid="git-clone-url"
+          />
+          <button type="submit" disabled={busy || !url.trim()} className="btn-primary shrink-0 py-1.5 px-2.5 text-[12px]" data-testid="git-clone-go">
+            {busy ? <Icon name="spinner" size={12} spin /> : <Icon name="download" size={12} />} {t("topbar.clone")}
+          </button>
+        </form>
+      ) : source && accounts.some((a) => a.id === source) ? (
+        <RepoPicker
+          accountId={source}
+          onUse={(r: GitRepo) => clone({ clone_url: r.clone_url, full_name: r.full_name, account_id: source })}
+        />
+      ) : null}
+      {accounts.length === 0 &&
+        (addAccount ? (
+          <div className="mt-2 text-[12px] [&_.card]:p-3">
+            <GitAccounts />
+            <button onClick={() => setAddAccount(false)} className="btn-ghost mt-2 py-1 px-2 text-[12px]">
+              {t("common.done")}
+            </button>
+          </div>
+        ) : (
+          <div className="mt-1.5 flex items-center gap-2">
+            <p className="flex-1 text-[11.5px] text-content-faint">{t("topbar.noGitAccountUrl")}</p>
+            <button onClick={() => setAddAccount(true)} className="btn-soft shrink-0 py-1 px-2 text-[12px]">
+              <Icon name="plus" size={12} /> {t("topbar.connectAccount")}
+            </button>
+          </div>
+        ))}
+      <p className="mt-1 text-[11px] leading-snug text-content-faint">
+        {conn ? t("topbar.cloneNoteRemote", { host: hostName(conn, connections, "") }) : source === "url" ? t("topbar.cloneNoteUrl") : t("topbar.cloneNote")}
+      </p>
+      {busy && (
+        <p className="mt-1 flex items-center gap-1.5 text-[11.5px] text-content-dim" data-testid="git-cloning">
+          <Icon name="spinner" size={12} spin /> {t("topbar.cloningOn", { host: hostName(conn, connections, t("topbar.thisServer")) })}
+        </p>
+      )}
+      {error && (
+        <p className="mt-1 break-words text-[11.5px] text-danger" data-testid="git-clone-error">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

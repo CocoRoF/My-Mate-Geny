@@ -17,7 +17,9 @@ export async function apiResponse(path: string, init?: RequestInit): Promise<Res
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || res.statusText);
+    const e = new Error(err.detail || res.statusText) as Error & { status?: number };
+    e.status = res.status; // (callers that word errors themselves: 403 / 404 / 502…)
+    throw e;
   }
   return res;
 }

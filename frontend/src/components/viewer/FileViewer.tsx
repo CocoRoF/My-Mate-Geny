@@ -15,6 +15,7 @@ import {
   TEXT_KINDS,
   type ViewerKind,
 } from "../../lib/fileView";
+import { qualify, sameHost, unqualify } from "../../lib/hosts";
 import { displayPath } from "../../lib/paths";
 import { explorerRoots, revealInExplorer, useWorkbench, type FileTab } from "../../stores/workbenchStore";
 import type { Session } from "../../types";
@@ -60,8 +61,8 @@ function Centered({ children }: { children: React.ReactNode }) {
 /** A file tab's body: toolbar + the viewer for its kind. */
 export default function FileViewer({ session, tab }: { session: Session; tab: FileTab }) {
   const t = useT();
-  const conn = session.connection_id;
-  const name = baseName(tab.path);
+  const { conn, path: fpath } = unqualify(session, tab.path); // (a file on another host: `@host:path`)
+  const name = baseName(fpath);
   const ext = extOf(name);
   const kind0 = kindForFile(name);
   const epoch = useWorkbench((s) => s.epoch);
@@ -90,16 +91,16 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
     setLoading(true);
     setError("");
     (async () => {
-      const st = await fsStat(tab.path, conn);
+      const st = await fsStat(fpath, conn);
       if (!alive) return;
       setStat(st);
       if (st.is_dir) throw new Error(tr("files.isFolder"));
       if (needText) {
-        const txt = await fsText(tab.path, conn, textLimit);
+        const txt = await fsText(fpath, conn, textLimit);
         if (alive) setText(txt);
       }
       if (needBytes && (st.size <= SIZE_GATE || allowLarge)) {
-        const b = await fsBytes(tab.path, conn);
+        const b = await fsBytes(fpath, conn);
         if (alive) setBytes(b);
       }
     })()
@@ -108,7 +109,7 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
     return () => {
       alive = false;
     };
-  }, [tab.path, conn, reload, needText, needBytes, allowLarge, textLimit]);
+  }, [fpath, conn, reload, needText, needBytes, allowLarge, textLimit]);
 
   // After a turn ends, reload if the agent changed this file.
   const first = useRef(true);
@@ -117,7 +118,7 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
       first.current = false;
       return;
     }
-    fsStat(tab.path, conn)
+    fsStat(fpath, conn)
       .then((st) => {
         if (!stat || st.mtime !== stat.mtime || st.size !== stat.size) setReload((r) => r + 1);
       })
@@ -134,7 +135,7 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
   const toggle = hasSourceToggle(name) && kind !== "binary";
   const showsCode = kind === "code" || (toggle && source);
   const content = text?.content ?? "";
-  const baseDir = dirName(tab.path);
+  const baseDir = qualify(session, conn, dirName(fpath)); // (a workbench key: Markdown resolves on its host)
 
   const csvRows = useMemo(
     () => (kind === "csv" && !source && text ? parseCsv(content, sniffDelimiter(name, content)) : null),
@@ -143,7 +144,7 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
 
   const copy = (value: string, done: string) => navigator.clipboard?.writeText(value).then(() => notify(done));
 
-  const rel = displayPath(tab.path, roots);
+  const rel = sameHost(conn, session.connection_id) ? displayPath(fpath, roots) : fpath;
   const segs = rel.split("/");
   const { icon, tone } = fileIcon(name);
   const meta = [
@@ -159,7 +160,7 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
         <div>
           <Icon name="alert-circle" size={28} className="mx-auto mb-2 text-danger" />
           <p className="text-sm text-content">{error}</p>
-          <p className="mt-1 break-all font-mono text-[11px] text-content-faint">{tab.path}</p>
+          <p className="mt-1 break-all font-mono text-[11px] text-content-faint">{fpath}</p>
           <button onClick={() => setReload((r) => r + 1)} className="btn-soft mt-3 py-1 px-2.5 text-[12px]">
             <Icon name="refresh" size={12} /> {t("common.retry")}
           </button>
@@ -188,7 +189,7 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
               : t("files.noPreview")}
           </p>
           <div className="mt-4 flex justify-center gap-2">
-            <a href={fsRawUrl(tab.path, conn, true)} download className="btn-primary py-1.5 px-3 text-[12.5px]">
+            <a href={fsRawUrl(fpath, conn, true)} download className="btn-primary py-1.5 px-3 text-[12.5px]">
               <Icon name="download" size={13} /> {t("common.download")}
             </a>
             {!legacy && (
@@ -237,9 +238,9 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
   } else if (kind === "notebook") {
     body = <NotebookView text={content} baseDir={baseDir} />;
   } else if (kind === "image") {
-    body = <ImageView url={`${fsRawUrl(tab.path, conn)}&v=${stat?.mtime ?? reload}`} name={name} />;
+    body = <ImageView url={`${fsRawUrl(fpath, conn)}&v=${stat?.mtime ?? reload}`} name={name} />;
   } else if (kind === "audio" || kind === "video") {
-    const url = `${fsRawUrl(tab.path, conn)}&v=${stat?.mtime ?? reload}`;
+    const url = `${fsRawUrl(fpath, conn)}&v=${stat?.mtime ?? reload}`;
     body = (
       <Centered>
         {kind === "audio" ? (
@@ -260,7 +261,7 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
               <button onClick={() => setAllowLarge(true)} className="btn-soft py-1.5 px-3 text-[12.5px]">
                 {t("files.loadPreview")}
               </button>
-              <a href={fsRawUrl(tab.path, conn, true)} download className="btn-ghost py-1.5 px-3 text-[12.5px]">
+              <a href={fsRawUrl(fpath, conn, true)} download className="btn-ghost py-1.5 px-3 text-[12.5px]">
                 <Icon name="download" size={13} /> {t("common.download")}
               </a>
             </div>
@@ -281,7 +282,7 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
       {/* toolbar */}
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border/70 bg-surface/40 px-3">
         <Icon name={icon} size={14} className={`shrink-0 ${tone}`} />
-        <div className="flex min-w-0 items-center overflow-hidden text-[12px]" title={[tab.path, meta.join(" · ")].filter(Boolean).join("\n")}>
+        <div className="flex min-w-0 items-center overflow-hidden text-[12px]" title={[fpath, meta.join(" · ")].filter(Boolean).join("\n")}>
           {segs.map((s, i) => {
             const last = i === segs.length - 1;
             return (
@@ -315,7 +316,7 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
             <Btn icon="wrap" label={wrap ? t("files.noWrap") : t("files.wrapLines")} active={wrap} onClick={() => setWrap(!wrap)} />
           )}
           {text && !text.binary && <Btn icon="copy" label={t("files.copyContents")} onClick={() => copy(content, t("files.copiedContents"))} />}
-          <Btn icon="at" label={t("files.copyPath")} onClick={() => copy(tab.path, t("files.copiedPath"))} />
+          <Btn icon="at" label={t("files.copyPath")} onClick={() => copy(fpath, t("files.copiedPath"))} />
           <Btn
             icon="crosshair"
             label={t("files.revealInExplorer")}
@@ -324,7 +325,7 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
               revealInExplorer(session, tab.path).catch(() => {});
             }}
           />
-          <Btn icon="download" label={t("common.download")} href={fsRawUrl(tab.path, conn, true)} download />
+          <Btn icon="download" label={t("common.download")} href={fsRawUrl(fpath, conn, true)} download />
           <Btn icon="refresh" label={t("common.reload")} onClick={() => setReload((r) => r + 1)} />
         </div>
       </div>
