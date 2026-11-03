@@ -43,9 +43,6 @@ export default function AccountSession({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<RenewResult | { ok: false; code: string; error: string; method?: null; session: null } | null>(null);
   const s: LoginSession | null | undefined = account.session;
-  if (!s) return null;
-  const acts = sessionActions(s);
-
   const renew = async () => {
     setBusy(true);
     setResult(null);
@@ -59,6 +56,33 @@ export default function AccountSession({
       setBusy(false);
     }
   };
+  if (!s) {
+    // No session details (an older server, or the credentials couldn't be read): the way out stays visible —
+    // renew and sign in again are always offered on a card that can't tell how its login is doing.
+    return (
+      <div className="mt-2.5 rounded-md border border-border/70 bg-surface-2/40 light:bg-surface-2/60 px-2.5 py-2" data-testid={`session-${account.id}`}>
+        <div className="flex items-center gap-2 flex-wrap text-[11.5px]">
+          <Icon name="key" size={12} className="text-content-faint" />
+          <span className="text-content-dim">{t("providers.sessionTitle")}</span>
+          <span className="pill bg-surface-3 text-content-faint" data-testid="session-health" data-health="unknown">
+            {t("providers.sessUnknown")}
+          </span>
+          <span className="ml-auto flex items-center gap-1">
+            <button onClick={renew} disabled={busy} className="btn-ghost py-0.5 px-2 text-[11px]" data-testid="session-renew">
+              <Icon name={busy ? "spinner" : "refresh"} size={12} spin={busy} /> {busy ? t("providers.renewing") : t("providers.renew")}
+            </button>
+            <button onClick={onRelogin} className="btn-soft py-0.5 px-2 text-[11px]" data-testid="session-relogin">
+              <Icon name="key" size={12} /> {t("providers.relogin")}
+            </button>
+          </span>
+        </div>
+        {result && !result.ok && (
+          <div className="mt-1.5 text-[11px] text-danger">{t("providers.sessUnknownRenewFailed", { error: result.error || result.code })}</div>
+        )}
+      </div>
+    );
+  }
+  const acts = sessionActions(s);
 
   const exp = s.expires_at ? Date.parse(s.expires_at) : null;
   const line =

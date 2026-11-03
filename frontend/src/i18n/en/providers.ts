@@ -94,6 +94,8 @@ export default {
   planStaleNoCredentials: "not signed in",
   planStaleError: "couldn't reach the usage server — trying again {when}",
   // login session (docs/providers.md → Login sessions)
+  sessUnknown: "No details",
+  sessUnknownRenewFailed: "Couldn't renew: {error} — try signing in again.",
   sessionTitle: "Login session",
   sessValid: "valid",
   sessExpiring: "expiring soon",

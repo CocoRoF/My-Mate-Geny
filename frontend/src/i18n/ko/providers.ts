@@ -92,6 +92,8 @@ const ko: Messages<"providers"> = {
   planStaleNeedsLogin: "다시 로그인하면 확인해요",
   planStaleNoCredentials: "로그인하지 않았어요",
   planStaleError: "사용량 서버에 연결하지 못했어요 — {when} 다시 시도해요",
+  sessUnknown: "정보 없음",
+  sessUnknownRenewFailed: "갱신하지 못했어요: {error} — 다시 로그인해 보세요.",
   sessionTitle: "로그인 세션",
   sessValid: "유효",
   sessExpiring: "곧 만료",

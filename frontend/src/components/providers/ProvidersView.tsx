@@ -329,7 +329,7 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
               )}
 
               {/* Login session: health, expiry, renew / sign in again (read from the CLI's credentials file) */}
-              {a.session && (a.primary || a.usable) && (
+              {(a.primary || a.usable) && (
                 <AccountSession
                   provider={provider}
                   account={a}
