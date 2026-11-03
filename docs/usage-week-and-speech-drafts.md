@@ -22,7 +22,9 @@ Defaults are merge on, 1.8 seconds of continuation grace (0.5–5), very-short-f
 separate ElevenLabs setting; its boundary does not decide a chat turn. No language-specific unfinished-sentence
 heuristic is used: an arriving partial blocks finalization, and further speech activity restarts the grace.
 
-Whisper/browser recordings hold pending automatic sends while recording or transcribing. Realtime partials
+Whisper recordings hold pending automatic sends while recording or transcribing. The browser recognizer
+commits new final results while continuing to listen; immutable prior finals are not replayed. Browser speech
+start/end events hold finalization while the user is speaking. Realtime partials
 and fresh non-gated audio postpone automatic sending. Finalized pieces join the persistent conversation draft
 without forced newlines; substantial whole-word overlap is deduplicated conservatively. Existing Japanese/CJK
 joining is retained. No model output/name/grammar correction is involved.

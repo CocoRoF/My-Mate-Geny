@@ -102,7 +102,7 @@ test("manual send is immediate, consumes a visible partial, and its final cannot
   s.edit("");
   s.sent.push(text);
   s.draft.partial("");
-  s.draft.segment("설정을 확인해");
+  s.draft.segment("설정을 확인해.");
   s.tick(3000);
   assert.equal(s.sent.length, 1);
   s.draft.segment("다음 작업도 해 줘");

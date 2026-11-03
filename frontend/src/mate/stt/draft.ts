@@ -84,9 +84,10 @@ export function createSpeechDraft(deps: {
   };
   const remainder = (text: string) => {
     text = clean(text);
-    return consumed && text.startsWith(consumed)
-      ? text.slice(consumed.length).trimStart()
-      : text;
+    if (!consumed || !text.startsWith(consumed)) return text;
+    const tail = text.slice(consumed.length).trimStart();
+    // The final recognizer result can add punctuation to a partial already sent manually.
+    return /^[.,!?;:…，。！？]*$/u.test(tail) ? "" : tail;
   };
   return {
     configure(next: SpeechDraftOptions) {
