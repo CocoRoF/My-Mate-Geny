@@ -13,7 +13,8 @@ const win = new EventTarget() as EventTarget & { hrhNative?: unknown; dispatchEv
 Object.assign(globalThis, { window: win, localStorage: { getItem: () => "testdevice", setItem() {} } });
 const calls: any[] = [];
 const native = {
-  version: 2,
+  version: 3,
+  cancel: async () => {},
   setChoice: async (...args: any[]) => { calls.push(["choice", ...args]); return true; },
   request: async (req: any) => { calls.push(["request", req]); return { ok: true, data: new Uint8Array([1, 2]), mime: "image/png" }; },
   grab: async (req: any) => { calls.push(["grab", req]); return { ok: true, data: new Uint8Array([1, 2]), mime: "image/png" }; },
@@ -63,5 +64,5 @@ test("older native bridge cannot silently substitute an unavailable selected sou
   native.version = 1;
   await assert.rejects(screen.beginSharing("sid", "Test", { id: "screen:1:0", name: "Display", kind: "screen" }));
   assert.deepEqual(screen.sharedScopes(), {});
-  native.version = 2;
+  native.version = 3;
 });

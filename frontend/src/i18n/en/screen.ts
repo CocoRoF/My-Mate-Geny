@@ -1,4 +1,17 @@
 const screen = {
+  "deviceVolume": "Output volume for this device. Applies immediately to all mates and windows, without changing other devices.",
+  "deviceSettings": "Screen sharing on this device",
+  "deviceSettingsHint": "All windows of this app use these settings. Changing the capture target stops ongoing sharing.",
+  "source": "Capture source",
+  "primaryScreen": "Primary screen",
+  "approval": "Request approval",
+  "allow": "Allow without asking",
+  "imageSize": "Image size",
+  "imageFormat": "Image format",
+  "hideAvatar": "Hide avatar windows while capturing",
+  "savedLocally": "Saved on this device immediately. Server settings are unchanged.",
+  "matePermissionHint": "Allow this mate to request screen access. Off by default; independent of screenshots you explicitly attach.",
+
   "deny": "Deny",
   "allowOnce": "Allow once",
   "messageWithoutScreen": "Screen capture failed; this message was sent without a screenshot.",

@@ -23,6 +23,7 @@ declare global {
       /** desktop: the Mate windows (docs/mate.md §7) */
       mate?: import("../mate/desktop").MateBridge;
       /** desktop: screen capture for the Mate (mate/screenCapture.ts, docs/mate.md §4 "Seeing the screen") */
+      device?: import("../stores/devicePreferences").DeviceBridge;
       capture?: import("../mate/screenCapture").CaptureBridge;
       /** desktop: the window draws its own title bar (lib/nativeWindow.ts) */
       window?: import("../lib/nativeWindow").WindowBridge;

@@ -225,3 +225,31 @@ def test_deletion_revokes_consent_and_bridge_credentials(db, tmp_path):
     assert not file.exists() and screen.token_info(token) is None
     assert broker.shared_client(sid, "dev-a") is None
     assert sent[-1] == {"type": "capture.revoked", "data": {"session_id": sid}}
+
+
+async def test_cancel_discards_registered_uploads_and_rejects_late_uploads(db, tmp_path):
+    svc, atts, broker, screen, sid = setup(db, tmp_path)
+    _, queue = client(broker, sid)
+    task = asyncio.create_task(screen.capture(sid, device='dev-a'))
+    req = (await queue.get())['data']
+    assert broker.register_upload(sid, req['id'], req['proof'])
+    row = await _upload(atts, sid, 'cancelled.png', _png())
+    assert broker.register_upload(sid, req['id'], req['proof'], row['id'])
+    path = Path(atts.get(row['id'])['path'])
+    broker.cancel_session(sid)
+    with pytest.raises(CaptureError): await task
+    assert atts.get(row['id']) is None and not path.exists()
+    assert not broker.register_upload(sid, req['id'], req['proof'])
+
+
+async def test_cancel_between_response_and_consumption_revokes_success(db, tmp_path):
+    svc, atts, broker, screen, sid = setup(db, tmp_path)
+    _, queue = client(broker, sid)
+    task = asyncio.create_task(screen.capture(sid, device='dev-a'))
+    req = (await queue.get())['data']
+    row = await _upload(atts, sid, 'raced.png', _png())
+    assert broker.register_upload(sid, req['id'], req['proof'], row['id'])
+    screen.resolve(sid, req['id'], {'ok':True,'proof':req['proof'],'attachment_id':row['id']})
+    broker.cancel_session(sid)
+    with pytest.raises(CaptureError): await task
+    assert atts.get(row['id']) is None

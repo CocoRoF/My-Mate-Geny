@@ -80,6 +80,9 @@ class Pending:
     session_id: str
     conn: str
     future: asyncio.Future
+    uploads: set[str] = field(default_factory=set)
+    revoked: bool = False
+    revoked_code: str = ""
     shared: bool = False
     proof: str = field(default_factory=lambda: secrets.token_urlsafe(24))
     created_at: float = field(default_factory=time.monotonic)
@@ -95,6 +98,7 @@ class CaptureBroker:
         self.grab_timeout = grab_timeout
         self._clients: dict[str, Client] = {}
         self._pending: dict[str, Pending] = {}
+        self.discard_upload = lambda aid: None
 
     # ---- the windows (one per /ws/sessions socket) ----
 
@@ -119,16 +123,16 @@ class CaptureBroker:
         c.shares = {str(k)[:100]: v for k, v in list(shares.items())[:20]
                     if isinstance(k, str) and v in ("ask", "on_turn", "observe")} if isinstance(shares, dict) else {}
         for p in list(self._pending.values()):
-            if p.conn == conn and p.shared and p.session_id not in c.shares and not p.future.done():
-                p.future.set_result({"ok": False, "code": "stopped"})
+            if p.conn == conn and p.shared and p.session_id not in c.shares:
+                self._revoke(p,"stopped")
         if msg.get("active"):
             c.active_at = time.monotonic()
 
     def disconnect(self, conn: str) -> None:
         self._clients.pop(conn, None)
         for p in list(self._pending.values()):
-            if p.conn == conn and not p.future.done():
-                p.future.set_result({"ok": False, "code": "gone"})
+            if p.conn == conn:
+                self._revoke(p,"gone")
 
     def clients(self) -> list[Client]:
         return list(self._clients.values())
@@ -190,7 +194,7 @@ class CaptureBroker:
                 "scope": "session" if shared else "mate", "proof": p.proof,
                 "id": rid, "mate_id": mate["id"], "mate_name": mate.get("name") or "", "session_id": session_id,
                 "source_key": f"session:{session_id}" if shared else mate["id"],
-                "ask": ask, "hide_avatar": screen.get("hide_avatar") is not False,
+                "automatic": automatic, "ask": ask, "hide_avatar": screen.get("hide_avatar") is not False,
                 "max_edge": int(screen.get("max_edge") or 0), "format": screen.get("format") or "png",
                 "quality": int(screen.get("quality") or 85), "timeout_ms": int(self.ask_timeout * 1000),
                 "reason": _str(reason, 300), "same_device": bool(device and client.device == device),
@@ -198,9 +202,11 @@ class CaptureBroker:
         except Exception as exc:  # noqa: BLE001 - the socket just went away
             self._pending.pop(rid, None)
             raise CaptureError("gone") from exc
-        wait = (self.ask_timeout if ask else 0) + self.grab_timeout + min(5.0, self.grab_timeout)
+        wait = (self.ask_timeout if not automatic else 0) + self.grab_timeout + min(5.0, self.grab_timeout)
+        accepted = False
         try:
             res = await asyncio.wait_for(asyncio.shield(p.future), timeout=wait)
+            accepted = bool(res.get("ok")) and not p.revoked
         except asyncio.TimeoutError:
             res = {"ok": False, "code": "timeout"}
         except asyncio.CancelledError:
@@ -208,6 +214,9 @@ class CaptureBroker:
             raise
         finally:
             self._pending.pop(rid, None)
+            if not accepted:
+                for aid in p.uploads: self.discard_upload(aid)
+        if p.revoked: res = {"ok": False,"code":p.revoked_code or "stopped"}
         if not res.get("ok"):
             if res.get("code") in ("timeout", "stopped", "gone"):
                 self._cancel_on(client, rid)
@@ -234,8 +243,24 @@ class CaptureBroker:
         p = self._pending.get(rid)
         return p.session_id if p is not None else None
 
+    def register_upload(self, sid: str, rid: str, proof: str, aid: str | None = None) -> bool:
+        p = self._pending.get(rid)
+        if not p or p.session_id != sid or p.revoked or p.future.done() or not secrets.compare_digest(p.proof, proof):
+            return False
+        if aid: p.uploads.add(aid)
+        return True
+
+    def _revoke(self, p: Pending, code: str) -> None:
+        if p.revoked: return
+        p.revoked = True
+        p.revoked_code = code
+        for aid in p.uploads: self.discard_upload(aid)
+        if not p.future.done(): p.future.set_result({"ok":False,"code":code})
+        client=self._clients.get(p.conn)
+        if client: self._cancel_on(client,p.id)
+
     def cancel_session(self, session_id: str) -> None:
         """The mate's turn ended (stopped, failed): a capture still waiting for it is over."""
         for p in list(self._pending.values()):
-            if p.session_id == session_id and not p.future.done():
-                p.future.set_result({"ok": False, "code": "stopped"})
+            if p.session_id == session_id:
+                self._revoke(p,"stopped")

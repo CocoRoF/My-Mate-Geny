@@ -39,7 +39,7 @@ const MARGIN = 16;
 const AVATAR_DEFAULT = { width: 300, height: 400 };
 // The bar window keeps room above the buttons for a label (clicks there pass
 // through on Windows/macOS). Linux has no forwarding, so no label room there.
-const BAR = { w: 262, h: linux ? 46 : 84, strip: 46 };
+const BAR = { w: 302, h: linux ? 46 : 84, strip: 46 };
 // The quick card: a FIXED width (project-geny-app / Geny: the strip never changes
 // width); the page reports its height and the window grows downwards from a
 // fixed top edge, up to maxH (then the text scrolls inside the card).
@@ -82,6 +82,9 @@ let gaveUp = false;
 let failDelay = 0;
 let failTimer = null;
 let overlayFailed = false;
+let screenPicker = false;
+let screenSharing = false;
+let screenBusy = false;
 let capturing = false; // the windows are hidden for a screen capture (capture.js)
 
 // ── settings ───────────────────────────────────────────────────
@@ -285,6 +288,7 @@ function command(win, cmd) {
 
 function getState() {
   return {
+    screenPicker,
     visible: wanted(),
     clickThrough: clickThrough(),
     mateId: mateId(),
@@ -631,6 +635,7 @@ function raiseBar() {
 function barState() {
   if (!alive(bar)) return;
   bar.webContents.send("bar:state", {
+    screenSharing, screenBusy,
     clickThrough: clickThrough(),
     moveMode,
     chatOpen: alive(chat) && chat.isVisible(),
@@ -639,6 +644,7 @@ function barState() {
     lang: language(),
     // the buttons' labels in the app's language (bar.js falls back to English)
     labels: {
+      screen: t("page.barScreen"),
       chat: t("page.barChat"),
       quick: t("page.barQuick"),
       quickKey: t("page.barQuickKey"),
@@ -653,7 +659,8 @@ function barState() {
 }
 
 function barAct(name) {
-  if (name === "chat") toggleChat();
+  if (name === "screen") deps.toggleScreenSharing?.();
+  else if (name === "chat") toggleChat();
   else if (name === "quick") toggleQuick();
   else if (name === "through") setClickThrough(!clickThrough());
   else if (name === "move") setMoveMode(!moveMode);
@@ -871,6 +878,16 @@ function openChat() {
   if (!chat.webContents.isLoading() && !presentable(chat, "chat")) loadSurface(chat, "chat");
   if (chat.webContents.isLoading()) chat.webContents.once("did-finish-load", showChatNow);
   else showChatNow();
+}
+
+function setCaptureSharing(on,busy) { screenSharing=!!on;screenBusy=!!busy;barState();buildTray(); }
+function openScreenSharing() {
+  screenPicker=true;
+  openChat();
+  if (!alive(chat)) return;
+  const send = () => { if(alive(chat)) {command(chat,{type:"screen.open"});} };
+  if(chat.webContents.isLoading())chat.webContents.once("did-finish-load",()=>setTimeout(send,400));
+  else send();
 }
 
 function hideChat() {
@@ -1136,6 +1153,7 @@ function buildTray() {
     wanted() ? { label: t("trayHideMate"), click: hideAvatar } : { label: t("trayShowMate"), click: () => showAvatar() },
     { label: key ? t("trayQuickKey", { key }) : t("trayQuick"), click: openQuick },
     { label: t("trayMateChat"), click: openChat },
+    { label: t("page.barScreen"), type:"checkbox", checked:screenSharing||screenBusy, click:()=>deps.toggleScreenSharing?.() },
     { type: "separator" },
     { label: t("trayClickThrough"), type: "checkbox", checked: clickThrough(), click: (i) => setClickThrough(i.checked) },
     { label: t("trayMove"), type: "checkbox", checked: moveMode, enabled: shown(), click: (i) => setMoveMode(i.checked) },
@@ -1181,6 +1199,7 @@ function ownSourceIds() {
 let captureTipTimer = null;
 /** start / done / error of a capture for a mate: the tray says so for a while, every window gets a `capture` command */
 function captureIndicator(state, info = {}) {
+  screenBusy = state === "start";barState();buildTray();
   const name = String(info.mateName || "Mate");
   if (tray && state === "done") {
     try {
@@ -1225,6 +1244,7 @@ function registerIpc() {
   handle("mate:openQuick", () => openQuick());
   handle("mate:closeQuick", () => hideQuick());
   handle("mate:openChat", () => openChat());
+  handle("mate:screenHandled", () => {screenPicker=false;});
   handle("mate:closeChat", () => hideChat());
   handle("mate:chatOnTop", (_e, on) => setChatOnTop(!!on));
   handle("mate:openConsole", (_e, url) => deps.openConsole(typeof url === "string" && sameOrigin(url) ? url : undefined));
@@ -1321,6 +1341,8 @@ module.exports = {
   isMoveMode: () => moveMode,
   broadcast,
   hideForCapture,
+  setCaptureSharing,
+  openScreenSharing,
   ownSourceIds,
   captureIndicator,
 };

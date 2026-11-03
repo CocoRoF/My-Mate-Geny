@@ -48,3 +48,9 @@ async def call(request: Request):
     if not isinstance(args, dict):
         raise HTTPException(400, "expected arguments object")
     return await svc.tool(sid, args)
+
+
+@router.post("/{sid}/screen/cancel")
+async def cancel(sid: str, request: Request):
+    request.app.state.screen_service.broker.cancel_session(sid)
+    return {"ok": True}

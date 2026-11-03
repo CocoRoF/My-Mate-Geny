@@ -1,0 +1,432 @@
+// Isolated fake-model server + actual Electron/X11; native app settings, toolbar, cancellation and steering layout.
+const fs = require("fs"),
+  os = require("os"),
+  path = require("path"),
+  assert = require("assert/strict");
+const { execFileSync } = require("child_process");
+const { App, fill, until, sleep } = require("./screen-capture-e2e");
+const [server, password, workspace, shots] = process.argv.slice(2);
+fs.mkdirSync(shots, { recursive: true });
+const { chromium } = require("playwright-core");
+const home = fs.mkdtempSync(path.join(os.tmpdir(), "geny-device-test-"));
+const app = new App(home, 9666, 10166);
+let browser;
+const req = (url, body, method = "POST") =>
+  `fetch(${JSON.stringify(url)},{method:${JSON.stringify(method)},headers:{'Content-Type':'application/json'},body:${JSON.stringify(JSON.stringify(body))}}).then(async r=>{if(!r.ok)throw new Error(r.status+':'+await r.text());return r.json()})`;
+const click = (page, sel) =>
+  page.eval(`document.querySelector(${JSON.stringify(sel)}).click(),true`);
+const shot = async (page, name) => {
+  const r = await page.send("Page.captureScreenshot", { format: "png" });
+  fs.writeFileSync(path.join(shots, name), Buffer.from(r.data, "base64"));
+};
+const countAttachments = () =>
+  Number(
+    execFileSync(
+      "/tmp/hrh-test-venv/bin/python",
+      [
+        "-c",
+        `import sqlite3; c=sqlite3.connect(${JSON.stringify(process.env.SCREEN_TEST_ROOT + "/db.sqlite")}); print(c.execute('SELECT COUNT(*) FROM attachments').fetchone()[0])`,
+      ],
+      { encoding: "utf8" },
+    ).trim(),
+  );
+const setRange = (p, selector, value) =>
+  p.eval(
+    `(()=>{const e=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));return true})()`,
+  );
+(async () => {
+  try {
+    browser = await chromium.launch({
+      executablePath: process.env.CHROME,
+      headless: true,
+      args: ["--no-sandbox", "--disable-gpu"],
+    });
+    const context = await browser.newContext();
+    const login = await context.request.post(server + "/api/auth/login", {
+      data: { username: "admin", password },
+    });
+    assert.ok(login.ok());
+    const mates = await (
+      await context.request.get(server + "/api/mates")
+    ).json();
+    const a = mates[0],
+      b = mates[1] || mates[0];
+    await context.request.patch(server + "/api/mates/" + a.id, {
+      data: { voice: { volume: 0.4 } },
+    });
+    await context.request.patch(server + "/api/mates/" + b.id, {
+      data: {
+        voice: { volume: 2.35, auto_read: false, tts: { engine: "off" } },
+        screen: {
+          enabled: true,
+          approval: "ask",
+          max_edge: 1280,
+          format: "jpeg",
+          quality: 70,
+          hide_avatar: false,
+        },
+      },
+    });
+    const settingsDir = path.join(home, ".config", "hr-harnessor");
+    fs.mkdirSync(settingsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(settingsDir, "settings.json"),
+      JSON.stringify({
+        mateId: b.id,
+        captureSources: {
+          [a.id]: { id: "screen:old-a:0", name: "Old A", kind: "screen" },
+          [b.id]: { id: "screen:old-b:0", name: "Old B", kind: "screen" },
+        },
+      }),
+    );
+    const debugPage = await context.newPage();
+    debugPage.on("pageerror", (e) => console.log("BROWSER ERROR:", e.message));
+    await debugPage.goto(server);
+    await debugPage.waitForTimeout(600);
+    await debugPage.close();
+    app.start();
+    const connect = await app.page(/connect\.html/);
+    await until("connect", () => connect.eval("!!window.hrhConnect"));
+    await connect.eval(fill(server, "admin", password));
+    const con = await app.page(
+      new RegExp(
+        "^" + server.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "/(?!login)",
+      ),
+    );
+    await until(
+      "device migration",
+      async () =>
+        await con.eval(
+          "window.hrhNative.device.get().then(p=>p.migration.imported)",
+        ),
+    ).catch(async (e) => {
+      console.log("APP DOCUMENT:", await con.eval("document.body.innerText"));
+      await shot(con, "load-failed.png");
+      throw e;
+    });
+    const initial = await con.eval("window.hrhNative.device.get()");
+    assert.equal(initial.volume, 2.35);
+    assert.equal(initial.screen.format, "jpeg");
+    assert.equal(initial.screen.hide_avatar, false);
+    assert.equal(initial.migration.sources[a.id].name, "Old A");
+    console.log(
+      "PASS active-mate migration, all alternatives archived, device settings persisted",
+    );
+    await con.eval(
+      `window.hrhNative.mate.setMate(${JSON.stringify(b.id)}).then(()=>window.hrhNative.mate.showAvatar(${JSON.stringify(b.id)})).then(()=>window.hrhNative.mate.openChat()).then(()=>true)`,
+    );
+    const chat = await app.page(/surface=mate-chat/);
+    await until("chat composer", () =>
+      chat.eval("!!document.querySelector('[data-testid=mate-input]')"),
+    );
+    await app.main(
+      `win('surface=mate-overlay').setBounds({x:180,y:60,width:220,height:320});win('surface=mate-chat').setBounds({x:580,y:80,width:540,height:800});cwin().setBounds({x:1140,y:60,width:750,height:950});return true`,
+    );
+    execFileSync("xdotool", ["mousemove", "280", "220"]);
+    const bar = await app.page(/bar\.html/);
+    await until("toolbar screen button", () =>
+      bar.eval("!!document.querySelector('[data-act=screen]')"),
+    );
+    const bounds = await bar.eval(
+      `(()=>{const b=document.querySelector('[data-act=screen]').getBoundingClientRect();return {x:b.left,right:b.right,width:innerWidth}})()`,
+    );
+    assert.ok(bounds.x >= 0 && bounds.right <= bounds.width);
+    await shot(bar, "toolbar-small.png");
+    const before = countAttachments();
+    await click(bar, "[data-act=screen]");
+    await until("toolbar picker", () =>
+      chat.eval("!!document.querySelector('[data-testid=share-picker]')"),
+    );
+    await shot(chat, "toolbar-picker.png");
+    await chat.send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "Escape",
+      code: "Escape",
+      windowsVirtualKeyCode: 27,
+    });
+    await until("escape cancelled", () =>
+      chat.eval("!document.querySelector('[data-testid=share-picker]')"),
+    );
+    assert.equal(countAttachments(), before);
+    await click(bar, "[data-act=screen]");
+    await until("picker again", () =>
+      chat.eval("!!document.querySelector('[data-testid=share-picker]')"),
+    );
+    await chat.eval(
+      `document.querySelector('[data-testid=share-picker]').dispatchEvent(new MouseEvent('mousedown',{bubbles:true})),true`,
+    );
+    await until("outside click cancelled", () =>
+      chat.eval("!document.querySelector('[data-testid=share-picker]')"),
+    );
+    assert.equal(countAttachments(), before);
+    await click(bar, "[data-act=screen]");
+    await until("picker for sharing", () =>
+      chat.eval("!!document.querySelector('[data-testid=share-operation]')"),
+    );
+    await chat.eval(
+      `document.querySelector('[data-testid=share-operation] button:last-child').click();document.querySelector('[data-testid=share-source]').click();true`,
+    );
+    await click(chat, "[data-testid=share-go]");
+    await until("toolbar active", () =>
+      bar.eval(
+        "document.querySelector('[data-act=screen]').classList.contains('sharing')",
+      ),
+    );
+    assert.equal(
+      (await con.eval("window.hrhNative.capture.sharing.get()")).owner,
+      false,
+    );
+    assert.equal(
+      (await chat.eval("window.hrhNative.capture.sharing.get()")).owner,
+      true,
+    );
+    await shot(bar, "toolbar-sharing.png");
+    await con.eval(
+      `window.hrhNative.device.patch({volume:2.75,screen:{format:'png',hide_avatar:true}})`,
+    );
+    await until("settings synced", async () => {
+      const p = await chat.eval("window.hrhNative.device.get()");
+      return (
+        p.volume === 2.75 && p.screen.format === "png" && p.screen.hide_avatar
+      );
+    });
+    const overlay = await app.page(/surface=mate-overlay/);
+    assert.equal(
+      await overlay.eval("window.hrhNative.device.get().then(p=>p.volume)"),
+      2.75,
+    );
+    const serverMate = await con.eval(
+      `fetch('/api/mates/${b.id}').then(r=>r.json())`,
+    );
+    assert.equal(serverMate.voice.volume, 2.35);
+    assert.equal(serverMate.screen.format, "jpeg");
+    await click(bar, "[data-act=screen]");
+    await until("toolbar stop", () =>
+      bar.eval(
+        "!document.querySelector('[data-act=screen]').classList.contains('sharing')",
+      ),
+    );
+    assert.equal(
+      (await con.eval("window.hrhNative.capture.sharing.get()")).state,
+      null,
+    );
+    assert.equal(countAttachments(), before);
+    console.log(
+      "PASS toolbar start/stop, small-width fit, Esc/outside cancel, all-window settings sync; server values unchanged",
+    );
+    await con.eval(`location.href='/?view=mate',true`);
+    await until("console mate settings", () =>
+      con.eval("!!document.querySelector('[data-testid=mate-settings-open]')"),
+    );
+    await click(con, "[data-testid=mate-settings-open]");
+    await until("native settings tabs", () =>
+      con.eval("!!document.querySelector('[data-testid=mate-tab-voice]')"),
+    );
+    await click(con, "[data-testid=mate-tab-voice]");
+    await until("native volume slider", () =>
+      con.eval("!!document.querySelector('[data-testid=mate-volume-slider]')"),
+    );
+    await setRange(con, "[data-testid=mate-volume-slider]", "180");
+    await until(
+      "native slider persisted",
+      async () =>
+        await overlay.eval(
+          "window.hrhNative.device.get().then(p=>p.volume===1.8)",
+        ),
+    );
+    await until("overlay playback volume follows", () =>
+      overlay.eval(
+        "document.querySelector('[data-voice-volume]')?.getAttribute('data-voice-volume') === '1.8'",
+      ),
+    );
+    await con.eval("window.hrhNative.mate.openQuick().then(()=>true)");
+    const quick = await app.page(/surface=mate-quick/);
+    await until("quick device volume", () => quick.eval("window.hrhNative.device.get().then(p=>p.volume===1.8)"));
+    await app.main("win('surface=mate-quick').hide();return true");
+    await shot(con, "app-volume-settings.png");
+    await click(con, "[data-testid=mate-tab-screen]");
+    await sleep(200);
+    await shot(con, "app-screen-settings.png");
+    assert.equal(
+      JSON.parse(fs.readFileSync(path.join(settingsDir, "settings.json")))
+        .devicePreferences.volume,
+      1.8,
+    );
+    console.log(
+      "PASS native volume slider persists locally and updates the avatar window",
+    );
+
+    // Real request and native approval rejection: no upload is created.
+    await con.eval(
+      `window.hrhNative.device.patch({screen:{source:null,approval:'ask'}})`,
+    );
+    await chat.eval(
+      `(()=>{const e=document.querySelector('[data-testid=mate-input]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'look at my screen');e.dispatchEvent(new Event('input',{bubbles:true}));return true})()`,
+    );
+    await click(chat, "[data-testid=mate-send]");
+    const prompt = await app.page(/capture-ask\.html/);
+    await until("approval deny button", () =>
+      prompt.eval("!!document.querySelector('[data-testid=capture-deny]')"),
+    );
+    await prompt.eval("setTimeout(()=>document.querySelector('[data-testid=capture-deny]').click(),50),true");
+    await until("denial result", () =>
+      chat.eval("document.body.innerText.includes('SEESCREEN')"),
+    );
+    assert.equal(countAttachments(), before);
+    console.log(
+      "PASS native agent permission denied without retained attachments",
+    );
+    // Hold an actual native screenshot after the OS returns it, then cancel before it can reach the page.
+    await app.main(
+      `global.__originalCapture=require('electron').desktopCapturer.getSources;global.__captureEntered=false;require('electron').desktopCapturer.getSources=async function(o){const result=await global.__originalCapture.call(this,o);if(o.thumbnailSize.width>640){global.__captureEntered=true;await new Promise(r=>global.__releaseCapture=r);}return result;};return true`,
+    );
+    await click(bar, "[data-act=screen]");
+    await until("picker for in-flight cancel", () =>
+      chat.eval("!!document.querySelector('[data-testid=share-source]')"),
+    );
+    await click(chat, "[data-testid=share-source]");
+    await click(chat, "[data-testid=share-go]");
+    await until("native capture held", () =>
+      app.main("return global.__captureEntered"),
+    );
+    await bar.eval("window.hrhBar.act('screen'),true");
+    await until("cancel restores avatar immediately", () =>
+      app.main("return win('surface=mate-overlay').isVisible()"),
+    );
+    await click(chat, "[data-testid=share-cancel]");
+    await app.main(
+      "global.__releaseCapture();require('electron').desktopCapturer.getSources=global.__originalCapture;return true",
+    );
+    await sleep(500);
+    assert.equal(countAttachments(), before);
+    assert.equal(
+      await chat.eval("!!document.querySelector('[data-testid=share-picker]')"),
+      false,
+    );
+    console.log(
+      "PASS cancel during real native capture restores hidden windows and discards late image",
+    );
+
+    await shot(chat, "request-denied.png");
+    // Local browser contexts have independent volumes. Same-context tabs synchronize.
+    await context.addInitScript((id) => {
+      localStorage.setItem("hrh_mate_active", id);
+      localStorage.setItem("hrh_lang", "en");
+    }, b.id);
+    const page = await context.newPage();
+    await page.goto(server + "/?view=mate");
+    await page.waitForSelector("[data-testid=mate-settings-open]");
+    await page.click("[data-testid=mate-settings-open]");
+    await page.click("[data-testid=mate-tab-voice]");
+    await page.waitForSelector("[data-testid=mate-volume-slider]");
+    await page.evaluate(() => {
+      const e = document.querySelector("[data-testid=mate-volume-slider]");
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      ).set.call(e, "150");
+      e.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.waitForFunction(() =>
+      document
+        .querySelector("[data-testid=mate-volume-value]")
+        ?.textContent.includes("150"),
+    );
+    const tab = await context.newPage();
+    await tab.goto(server + "/?view=mate");
+    await tab.waitForSelector("[data-testid=mate-settings-open]");
+    await tab.click("[data-testid=mate-settings-open]");
+    await tab.click("[data-testid=mate-tab-voice]");
+    await tab.waitForFunction(() =>
+      document
+        .querySelector("[data-testid=mate-volume-value]")
+        ?.textContent.includes("150"),
+    );
+    const separate = await browser.newContext();
+    await separate.request.post(server + "/api/auth/login", {
+      data: { username: "admin", password },
+    });
+    await separate.addInitScript(
+      (id) => localStorage.setItem("hrh_mate_active", id),
+      b.id,
+    );
+    const independent = await separate.newPage();
+    await independent.goto(server + "/?view=mate");
+    await independent.waitForSelector("[data-testid=mate-settings-open]");
+    await independent.click("[data-testid=mate-settings-open]");
+    await independent.click("[data-testid=mate-tab-voice]");
+    await independent.waitForFunction(() =>
+      document
+        .querySelector("[data-testid=mate-volume-value]")
+        ?.textContent.includes("235"),
+    );
+    console.log(
+      "PASS browser same-device sync and independent-device isolation",
+    );
+    // Feed an actual streaming UI and send two additional messages; save old CSS reproduction and repaired layout.
+    await page.click("[data-testid=mate-settings-close]");
+    await page.goto(server + "/?view=mate");
+    await page.waitForSelector("[data-testid=mate-input]");
+    await page.fill("[data-testid=mate-input]", "q88 start streaming");
+    await page.click("[data-testid=mate-send]");
+    await page.waitForFunction(() =>
+      Array.from(document.querySelectorAll("[data-testid=mate-bubble]")).some(
+        (e) => e.textContent.includes("Reply 88"),
+      ),
+    );
+    await page.fill("[data-testid=mate-input]", "Steering one while replying");
+    await page.click("[data-testid=mate-send]");
+    await page.fill("[data-testid=mate-input]", "Steering two while replying");
+    await page.click("[data-testid=mate-send]");
+    await page.waitForFunction(() =>
+      Array.from(
+        document.querySelectorAll("[data-testid=mate-user-bubble]"),
+      ).some((e) => e.textContent.includes("Steering two")),
+    );
+    const old = await page.addStyleTag({
+      content:
+        '[data-testid="mate-turn"] [data-testid="mate-user-message"]{width:auto;min-width:auto}',
+    });
+    await page.screenshot({ path: path.join(shots, "steering-before.png") });
+    await old.evaluate((e) => e.remove());
+    const box = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("[data-testid=mate-user-message]"))
+        .filter((e) => e.textContent.includes("Steering"))
+        .map((e) => {
+          const b = e
+              .querySelector("[data-testid=mate-user-bubble]")
+              .getBoundingClientRect(),
+            r = e.getBoundingClientRect();
+          return {
+            right: b.right,
+            containerRight: r.right,
+            width: r.width,
+            kind: e.parentElement.dataset.testid,
+          };
+        }),
+    );
+    assert.equal(box.length, 2);
+    for (const b of box)
+      assert.ok(
+        Math.abs(b.right - b.containerRight) < 2,
+        "user bubble is right aligned across full row",
+      );
+    await page.screenshot({ path: path.join(shots, "steering-after.png") });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: path.join(shots, "steering-phone.png") });
+    console.log(
+      "PASS actual streamed reply + two steers stay right aligned; before/after and phone screenshots saved",
+    );
+    await separate.close();
+    await context.close();
+    console.log("DEVICE SETTINGS E2E OK");
+  } finally {
+    await browser?.close();
+    await app.stop();
+  }
+})().catch((e) => {
+  console.error(e.stack || e);
+  console.error(app.out?.slice(-1800));
+  process.exitCode = 1;
+});

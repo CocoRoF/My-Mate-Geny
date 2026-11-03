@@ -73,3 +73,5 @@ body {
   text-overflow: ellipsis;
   pointer-events: none;
 }
+
+.bar button{flex-shrink:0;position:relative}.bar button.sharing::after{content:"";position:absolute;right:3px;top:3px;width:5px;height:5px;border-radius:50%;background:#ff5468;box-shadow:0 0 0 1px #161a22}.bar button.capturing::after{animation:capture-pulse .6s infinite alternate}@keyframes capture-pulse{to{opacity:.3}}

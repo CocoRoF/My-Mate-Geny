@@ -185,7 +185,7 @@ test("grab (Share screen) and the picker's sources", async () => {
   assert.deepEqual(list.map((s) => s.id), ["screen:1:0", "screen:0:0", "window:77:0", "window:89:0"]); // (not our own windows)
   assert.equal(list.find((s) => s.id === "screen:0:0").primary, true);
   assert.ok(list.every((s) => s.thumbnail.startsWith("data:image/png")));
-  assert.deepEqual(cap.info(), { version: 2, platform: "linux", wayland: false, permission: "granted" });
+  assert.deepEqual(cap.info(), { version: 3, platform: "linux", wayland: false, permission: "granted" });
   assert.equal(rig({ deps: { env: { XDG_SESSION_TYPE: "wayland" } } }).cap.info().wayland, true);
 });
 
@@ -218,7 +218,7 @@ function loadPreload(surface) {
 test("preload: hrhNative.capture sends only clean arguments; hrhCaptureAsk exists only in the prompt window", async () => {
   const { exposed, plain } = loadPreload("mate-chat");
   const cap = exposed.hrhNative.capture;
-  assert.equal(cap.version, 2);
+  assert.equal(cap.version, 3);
   await cap.sources({ thumbnails: 1, size: "320" });
   await cap.grab({ sourceId: 5, maxEdge: "1280", format: "bmp", hideAvatar: false, extra: "x" });
   await cap.setChoice("mate_a", { id: "window:1:0", name: "A", kind: "window", evil: () => 1 });
@@ -226,7 +226,7 @@ test("preload: hrhNative.capture sends only clean arguments; hrhCaptureAsk exist
   await cap.cancel(7);
   const calls = plain();
   assert.deepEqual(calls[0], ["capture:sources", { thumbnails: true, size: 320 }]);
-  assert.deepEqual(calls[1], ["capture:grab", { mateId: "", sourceId: "5", maxEdge: 1280, format: "png", quality: 85, hideAvatar: false, hideConsole: false }]);
+  assert.deepEqual(calls[1], ["capture:grab", { id:"", mateId: "", sourceId: "5", maxEdge: 1280, format: "png", quality: 85, hideAvatar: false, hideConsole: false }]);
   assert.deepEqual(calls[2], ["capture:setChoice", "mate_a", { id: "window:1:0", name: "A", kind: "window", display_id: "" }]);
   assert.deepEqual(calls[3], ["capture:request", { id: "cap_1", ask: true, nested: { a: 1 } }]);
   assert.deepEqual(calls[4], ["capture:cancel", "7"]);
@@ -246,4 +246,26 @@ test("session sharing never replaces a missing selected screen or window", async
     assert.equal(res.ok, false);
     assert.equal(res.code, "source_gone");
   }
+});
+
+
+test('cancel during native capture restores windows immediately and discards late bytes', async () => {
+  let release, entered;
+  const begun = new Promise(r => entered = r);
+  const { cap, log } = rig({ deps: { desktopCapturer: { getSources: async ({types,thumbnailSize}) => {
+    if(thumbnailSize.width>640){entered();await new Promise(r=>release=r);}
+    return SOURCES.filter(s=>types.includes(kindOf(s.id))).map(s=>({...s,thumbnail:image(thumbnailSize.width,thumbnailSize.height)}));
+  } } } });
+  const request=cap.request({...REQ,id:'cancel-late',ask:false});
+  await begun;cap.cancel('cancel-late');
+  assert.ok(log.some(x=>x[0]==='show'),'hidden windows restored before native API completes');
+  release();const result=await request;assert.equal(result.ok,false);assert.equal(result.code,'stopped');
+});
+
+test('app settings override stale per-mate capture request options', async () => {
+  let screen={source:SOURCES[1],approval:'allow',max_edge:1280,format:'jpeg',quality:70,hide_avatar:false};
+  const {cap,log}=rig({deps:{preferences:{get:()=>({screen}),patch:p=>{screen={...screen,...p.screen};}}}});
+  const shot=await cap.request({...REQ,ask:true,max_edge:2560,format:'png',hide_avatar:true});
+  assert.equal(shot.mime,'image/jpeg');assert.equal(String(shot.data),'JPEG 1280x720 q70');assert.ok(!log.some(x=>x[0]==='ask'));assert.ok(!log.some(x=>x[0]==='hide'));
+  cap.setChoice('different-mate',SOURCES[0]);assert.equal(cap.getChoice('another-mate').id,SOURCES[0].id);
 });

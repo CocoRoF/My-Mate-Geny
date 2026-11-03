@@ -11,7 +11,7 @@ the user sends the draft. **Enable sharing** selects a local source for this con
 conversation and Stop button stay visible while navigating the main console. Standalone Mate chat windows
 show the same indicator. Reload, page close, server/socket disconnect, track-ended and Stop end sharing; no
 consent is persisted. One window shares one conversation at a time. Desktop session sharing requires capture
-bridge v2, to enforce missing-source refusal (apps before v2 can still manually capture and use legacy Mate capture).
+bridge v3 for app-wide preferences and cross-window cancellation. See [device preferences](device-preferences.md) for migration, volume and toolbar behavior.
 
 Modes (default: ask):
 
@@ -40,8 +40,7 @@ Modes (default: ask):
    SSH tools. `capture_screen` returns MCP image content to the model. The bridge calls loopback-only
    `/api/internal/screen/call` with a per-session token; cookie/public callers cannot use that endpoint. Its config
    lives in a private temporary directory and a 0600 file; the token itself is read from a separate 0600 token file, so neither CLI gets it in argv.
-5. Mate `see_screen` uses the same broker while preserving existing per-Mate opt-in settings. Explicit sharing
-   also enables that tool on the next Mate turn; revoking sharing is checked again when the tool executes.
+5. Mate `see_screen` uses the same broker while preserving existing per-Mate opt-in settings. Explicit sharing does not enable that tool: the per-Mate safety switch remains off by default. Revoking sharing is checked again when the tool executes.
 6. Per-message images enter the existing provider attachment envelope before the user message is linked/published.
    Claude receives image blocks; Codex receives image paths. Remote workspace uploads use the same existing SSH
    copy path as other attachments. Screenshots always originate on the client, never in the remote workspace.

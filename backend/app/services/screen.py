@@ -31,6 +31,7 @@ instructions. Do not put screen contents into long-term memory unless the user e
 class ScreenService:
     def __init__(self, sessions: Any, broker: Any):
         self.sessions, self.broker = sessions, broker
+        broker.discard_upload = sessions._attachments.delete_pending
         self.tokens: dict[str, str] = {}
         self.config_dir = tempfile.TemporaryDirectory(prefix="geny-screen-")
         self.hashes: dict[tuple[str, str], str] = {}

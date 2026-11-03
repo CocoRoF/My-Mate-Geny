@@ -11,7 +11,13 @@
  *   or in a browser `getDisplayMedia` (the browser's picker) → one frame; phones have neither (the item is hidden).
  * - While a picture is taken for the mate, every window shows "Screen shared with ‹mate›" for a moment.
  */
-import { sharedScopes, sharingSnapshot, localFrame, cancelLocalCapture } from "./localScreen";
+import {
+  sharedScopes,
+  sharingSnapshot,
+  finishLocalCapture,
+  localFrame,
+  cancelLocalCapture,
+} from "./localScreen";
 import { uploadAttachment } from "../api/attachments";
 import { apiFetch } from "../api/client";
 import { tr } from "../i18n";
@@ -29,10 +35,25 @@ export interface CaptureSource {
   thumbnail?: string;
 }
 
-export type CaptureFailure = "denied" | "timeout" | "busy" | "permission" | "empty" | "source_gone" | "stopped" | "error";
+export type CaptureFailure =
+  | "denied"
+  | "timeout"
+  | "busy"
+  | "permission"
+  | "empty"
+  | "source_gone"
+  | "stopped"
+  | "error";
 
 export type CaptureShot =
-  | { ok: true; data: Uint8Array; mime: string; width: number; height: number; source: CaptureSource | null }
+  | {
+      ok: true;
+      data: Uint8Array;
+      mime: string;
+      width: number;
+      height: number;
+      source: CaptureSource | null;
+    }
   | { ok: false; code: CaptureFailure; message?: string };
 
 export interface CaptureInfo {
@@ -47,11 +68,45 @@ export interface CaptureInfo {
 /** window.hrhNative.capture (desktop/src/preload.js) */
 export interface CaptureBridge {
   version: number;
+  sharing?: {
+    get(): Promise<{
+      revision: number;
+      state: import("./localScreen").LocalSharing | null;
+      owner: boolean;
+    }>;
+    publish(
+      state: import("./localScreen").LocalSharing | null,
+    ): Promise<unknown>;
+    stop(): Promise<void>;
+    mode(mode: string, interval: number): Promise<void>;
+    onChanged(
+      cb: (v: {
+        revision: number;
+        state: import("./localScreen").LocalSharing | null;
+        owner: boolean;
+      }) => void,
+    ): () => void;
+    onControl(
+      cb: (v: { type: string; mode?: string; interval?: number }) => void,
+    ): () => void;
+  };
   info(): Promise<CaptureInfo>;
-  sources(o?: { thumbnails?: boolean; size?: number }): Promise<CaptureSource[]>;
+  sources(o?: {
+    thumbnails?: boolean;
+    size?: number;
+  }): Promise<CaptureSource[]>;
   getChoice(mateId: string): Promise<CaptureSource | null>;
   setChoice(mateId: string, src: CaptureSource | null): Promise<boolean>;
-  grab(o: { mateId?: string; sourceId?: string; maxEdge?: number; format?: "png" | "jpeg"; quality?: number; hideAvatar?: boolean; hideConsole?: boolean }): Promise<CaptureShot>;
+  grab(o: {
+    id?: string;
+    mateId?: string;
+    sourceId?: string;
+    maxEdge?: number;
+    format?: "png" | "jpeg";
+    quality?: number;
+    hideAvatar?: boolean;
+    hideConsole?: boolean;
+  }): Promise<CaptureShot>;
   request(req: CaptureRequest): Promise<CaptureShot>;
   cancel(id: string): Promise<void>;
   openPrivacySettings(): Promise<void>;
@@ -66,6 +121,7 @@ export interface CaptureRequest {
   mate_id: string;
   mate_name: string;
   session_id: string;
+  automatic?: boolean;
   ask: boolean;
   hide_avatar: boolean;
   max_edge: number;
@@ -81,12 +137,18 @@ export const CAPTURE_VERSION = 1;
 export function captureBridge(): CaptureBridge | null {
   if (typeof window === "undefined") return null;
   const c = window.hrhNative?.capture;
-  return c && typeof c.request === "function" && Number(c.version) >= CAPTURE_VERSION ? c : null;
+  return c &&
+    typeof c.request === "function" &&
+    Number(c.version) >= CAPTURE_VERSION
+    ? c
+    : null;
 }
 
 const desktopVersion = (): string | null => {
   const n = typeof window !== "undefined" ? window.hrhNative : undefined;
-  return n && String(n.platform || "").startsWith("desktop") ? n.version || "0.0.0" : null;
+  return n && String(n.platform || "").startsWith("desktop")
+    ? n.version || "0.0.0"
+    : null;
 };
 
 /** the /ws/sessions `client` message: who this window is (`active`: it was just focused / used) */
@@ -96,7 +158,8 @@ export function clientHello(active: boolean): Record<string, unknown> {
     device: deviceId,
     surface: currentSurface(),
     desktop: desktopVersion(),
-    capture: captureBridge()?.version ?? (Object.keys(sharedScopes()).length ? 1 : 0),
+    capture:
+      captureBridge()?.version ?? (Object.keys(sharedScopes()).length ? 1 : 0),
     shares: sharedScopes(),
     active,
   };
@@ -107,7 +170,11 @@ export function canShareScreen(): boolean {
   if (captureBridge()) return true;
   if (typeof window === "undefined" || window.hrhNative) return false; // (an older desktop app, the Android app)
   if (isTouchFirst()) return false; // phones / tablets: no screen to share (mobile browsers have no getDisplayMedia)
-  return typeof navigator !== "undefined" && !!navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === "function";
+  return (
+    typeof navigator !== "undefined" &&
+    !!navigator.mediaDevices &&
+    typeof navigator.mediaDevices.getDisplayMedia === "function"
+  );
 }
 
 const stamp = () => {
@@ -116,10 +183,15 @@ const stamp = () => {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 };
 
-export function shotFile(shot: { data: Uint8Array; mime: string }, prefix = "screen"): File {
+export function shotFile(
+  shot: { data: Uint8Array; mime: string },
+  prefix = "screen",
+): File {
   const ext = shot.mime === "image/jpeg" ? "jpg" : "png";
   // (a copy: the IPC buffer may be a view of a larger one)
-  return new File([new Uint8Array(shot.data)], `${prefix}-${stamp()}.${ext}`, { type: shot.mime });
+  return new File([new Uint8Array(shot.data)], `${prefix}-${stamp()}.${ext}`, {
+    type: shot.mime,
+  });
 }
 
 /** what a failed capture means, in words */
@@ -144,73 +216,115 @@ export function captureError(code: string | undefined): string {
 
 const handled = new Set<string>();
 
-async function answer(mateId: string, rid: string, body: Record<string, unknown>) {
-  try {
-    await apiFetch(`/api/mates/${encodeURIComponent(mateId)}/capture/${encodeURIComponent(rid)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  } catch {
-    /* timed out / cancelled meanwhile: the server has its answer already */
-  }
+const operations = new Map<
+  string,
+  { req: CaptureRequest; cancelled: boolean; abort?: () => void }
+>();
+function cancelOperation(id: string) {
+  const op = operations.get(id);
+  if (!op || op.cancelled) return;
+  op.cancelled = true;
+  op.abort?.();
+  cancelLocalCapture(id);
+  void captureBridge()?.cancel(id);
+  void apiFetch(
+    `/api/sessions/${encodeURIComponent(op.req.session_id)}/screen/cancel`,
+    { method: "POST" },
+  ).catch(() => {});
 }
-
+window.addEventListener("hrh:cancel-captures", () => {
+  for (const id of operations.keys()) cancelOperation(id);
+});
 export async function handleCaptureRequest(raw: unknown): Promise<void> {
   const req = (raw && typeof raw === "object" ? raw : {}) as CaptureRequest;
   if (!req.id || !req.mate_id || handled.has(req.id)) return;
   handled.add(req.id);
   if (handled.size > 256) handled.delete(handled.values().next().value!);
-  if (req.scope === "session") {
-    let body: Record<string, unknown>;
-    try {
-      const source = sharingSnapshot();
-      const file = await localFrame(req.session_id, req.id, req.ask, req);
-      const att = await uploadAttachment(req.session_id, file, () => {}).promise;
-      body = { ok: true, attachment_id: att.id, source: source ? { name: source.source, kind: source.kind } : null };
-      toast(tr("screen.captured"));
-    } catch (e) {
-      body = { ok: false, code: "error", message: String((e as Error).message || e) };
+  const op: { req: CaptureRequest; cancelled: boolean; abort?: () => void } = {
+    req,
+    cancelled: false,
+  };
+  operations.set(req.id, op);
+  let aid: string | undefined,
+    committed = false;
+  const respond = async (body: Record<string, unknown>) => {
+    if (req.scope === "session")
+      return apiFetch(
+        `/api/sessions/${encodeURIComponent(req.session_id)}/screen/${encodeURIComponent(req.id)}/result`,
+        { method: "POST", body: JSON.stringify({ ...body, proof: req.proof }) },
+      );
+    return apiFetch(
+      `/api/mates/${encodeURIComponent(req.mate_id)}/capture/${encodeURIComponent(req.id)}`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+  };
+  try {
+    let file: File,
+      source: CaptureSource | null = null;
+    if (req.scope === "session") {
+      const shared = sharingSnapshot();
+      file = await localFrame(req.session_id, req.id, req.ask, req);
+      if (shared) source = { id: "", name: shared.source, kind: shared.kind };
+    } else {
+      const bridge = captureBridge();
+      if (!bridge) throw new Error(captureError("error"));
+      const shot = await bridge.request(req);
+      if (!shot.ok) throw new Error(captureError(shot.code));
+      file = shotFile(shot);
+      source = shot.source;
     }
+    if (op.cancelled) throw new Error(captureError("stopped"));
+    const upload = uploadAttachment(
+      req.session_id,
+      file,
+      () => {},
+      req.proof ? { id: req.id, proof: req.proof } : undefined,
+    );
+    op.abort = upload.abort;
+    const att = await upload.promise;
+    aid = att.id;
+    op.abort = undefined;
+    if (op.cancelled) throw new Error(captureError("stopped"));
+    await respond({ ok: true, attachment_id: aid, source });
+    committed = true;
+    if (!op.cancelled) toast(tr("screen.captured"));
+  } catch (e) {
     try {
-      await apiFetch(`/api/sessions/${encodeURIComponent(req.session_id)}/screen/${encodeURIComponent(req.id)}/result`, {
-        method: "POST", body: JSON.stringify({ ...body, proof: req.proof }),
+      await respond({
+        ok: false,
+        code: op.cancelled ? "stopped" : "error",
+        message: String((e as Error)?.message || e),
       });
-    } catch {
-      // A cancelled/expired request never leaves an unnecessary upload behind.
-      if (typeof body.attachment_id === "string") {
-        void apiFetch(`/api/attachments/${encodeURIComponent(body.attachment_id)}`, { method: "DELETE" }).catch(() => {});
-      }
-    }
-    return;
-  }
-  const bridge = captureBridge();
-  if (!bridge) return void answer(req.mate_id, req.id, { ok: false, code: "error" }); // (an older desktop app)
-  let shot: CaptureShot;
-  try {
-    shot = await bridge.request(req);
-  } catch (e) {
-    shot = { ok: false, code: "error", message: String((e as Error)?.message || e) };
-  }
-  if (!shot.ok) return void answer(req.mate_id, req.id, { ok: false, code: shot.code, message: shot.message || "" });
-  try {
-    const att = await uploadAttachment(req.session_id, shotFile(shot), () => {}).promise;
-    await answer(req.mate_id, req.id, { ok: true, attachment_id: att.id, source: shot.source ? { name: shot.source.name, kind: shot.source.kind } : null });
-  } catch (e) {
-    await answer(req.mate_id, req.id, { ok: false, code: "error", message: `upload failed: ${String((e as Error)?.message || e)}` });
+    } catch {}
+  } finally {
+    if (aid && !committed)
+      void apiFetch(`/api/attachments/${encodeURIComponent(aid)}`, {
+        method: "DELETE",
+      }).catch(() => {});
+    operations.delete(req.id);
+    finishLocalCapture(req.session_id);
   }
 }
-
 export function cancelCaptureRequest(raw: unknown): void {
-  const id = raw && typeof raw === "object" ? String((raw as { id?: unknown }).id || "") : "";
-  if (id) { cancelLocalCapture(id); void captureBridge()?.cancel(id); }
+  const id =
+    raw && typeof raw === "object"
+      ? String((raw as { id?: unknown }).id || "")
+      : "";
+  if (id) {
+    cancelOperation(id);
+    cancelLocalCapture(id);
+    void captureBridge()?.cancel(id);
+  }
 }
 
 // ── the user shares (Share screen) ────────────────────────────────────────
 
 /** a browser: one frame of what the user picks in the browser's own dialog */
 export async function grabWithBrowser(maxEdge = 1920): Promise<File> {
-  const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+  const stream = await navigator.mediaDevices.getDisplayMedia({
+    video: true,
+    audio: false,
+  });
   try {
     const video = document.createElement("video");
     video.muted = true;
@@ -221,13 +335,18 @@ export async function grabWithBrowser(maxEdge = 1920): Promise<File> {
     await new Promise((r) => setTimeout(r, 250));
     const w = video.videoWidth || 1280;
     const h = video.videoHeight || 720;
-    const k = maxEdge && Math.max(w, h) > maxEdge ? maxEdge / Math.max(w, h) : 1;
+    const k =
+      maxEdge && Math.max(w, h) > maxEdge ? maxEdge / Math.max(w, h) : 1;
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(w * k));
     canvas.height = Math.max(1, Math.round(h * k));
-    canvas.getContext("2d")!.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas
+      .getContext("2d")!
+      .drawImage(video, 0, 0, canvas.width, canvas.height);
     video.srcObject = null;
-    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/png"));
+    const blob = await new Promise<Blob | null>((r) =>
+      canvas.toBlob(r, "image/png"),
+    );
     if (!blob) throw new Error(tr("mate.shareFailed"));
     return new File([blob], `screen-${stamp()}.png`, { type: "image/png" });
   } finally {
@@ -265,7 +384,8 @@ function toast(text: string) {
     "color:rgb(var(--c-content));font:12.5px Inter,system-ui,sans-serif;box-shadow:var(--shadow-float);transition:opacity .3s;" +
     "pointer-events:none;white-space:nowrap;max-width:92vw;overflow:hidden;text-overflow:ellipsis";
   const dot = document.createElement("span");
-  dot.style.cssText = "width:8px;height:8px;border-radius:50%;background:#e5484d;box-shadow:0 0 0 3px #e5484d40;flex:none";
+  dot.style.cssText =
+    "width:8px;height:8px;border-radius:50%;background:#e5484d;box-shadow:0 0 0 3px #e5484d40;flex:none";
   el.prepend(dot);
   document.body.appendChild(el);
   setTimeout(() => (el.style.opacity = "0"), 3600);

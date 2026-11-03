@@ -10,10 +10,12 @@ export function uploadAttachment(
   sessionId: string,
   file: File,
   onProgress: (fraction: number) => void,
+  capture?: {id:string;proof:string},
 ): { promise: Promise<Attachment>; abort: () => void } {
   const xhr = new XMLHttpRequest();
   const promise = new Promise<Attachment>((resolve, reject) => {
     xhr.open("POST", `/api/sessions/${sessionId}/attachments`);
+    if(capture){xhr.setRequestHeader("X-Capture-Request",capture.id);xhr.setRequestHeader("X-Capture-Proof",capture.proof);}
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
     xhr.onload = () => {
       let body: any = null;

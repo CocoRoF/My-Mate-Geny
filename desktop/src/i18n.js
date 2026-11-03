@@ -74,6 +74,7 @@ const MESSAGES = {
     // the local pages (preload → hrhNative.text)
     page: {
       // the action bar (bar.js)
+      barScreen: "Screen sharing",
       barChat: "Chat",
       barQuick: "Quick chat",
       barQuickKey: "Quick chat ({key})",
@@ -212,6 +213,7 @@ const MESSAGES = {
     updOs: "이 시스템에서는 업데이트를 쓸 수 없어요.",
     updServer: "서버에 연결되어 있지 않아요.",
     page: {
+      barScreen: "화면 공유",
       barChat: "채팅",
       barQuick: "빠른 채팅",
       barQuickKey: "빠른 채팅 ({key})",

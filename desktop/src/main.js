@@ -558,8 +558,14 @@ const asker = capture.createAsker({
   BrowserWindow, screen: require("electron").screen, ipcMain, t,
   preload: path.join(__dirname, "preload.js"), file: path.join(__dirname, "capture-ask.html"), version: app.getVersion(),
 });
+const devicePreferences = require("./device-preferences").createDevicePreferences({
+  readSettings, writeSettings,
+  changed: (value,prev) => {
+    if (prev && JSON.stringify(prev.screen.source) !== JSON.stringify(value.screen.source)) captureSharing.stop();
+    for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("device:changed", value); },
+});
 const captures = capture.createCapture({
-  desktopCapturer, screen: require("electron").screen, systemPreferences, readSettings, writeSettings,
+  desktopCapturer, screen: require("electron").screen, systemPreferences, readSettings, writeSettings, preferences: devicePreferences,
   hideWindows: async (source, hideConsole) => {
     const restoreMate = mate.hideForCapture(source && source.id);
     // A general capture also hides the console, unless it is the chosen target.
@@ -586,6 +592,18 @@ const captures = capture.createCapture({
   },
 });
 const fromServerPage = (e) => ours(e) && sameOrigin((e.senderFrame && e.senderFrame.url) || "");
+const captureSharing = require("./capture-sharing").createSharing({
+  cancel: () => { captures.cancel("*"); for(const w of BrowserWindow.getAllWindows()) if(!w.isDestroyed())w.webContents.send("capture:control",{type:"cancel-captures"}); },
+  broadcast: snapshot => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("capture:sharing", snapshot(w.webContents)); },
+  changed: (active,busy) => mate.setCaptureSharing(active,busy),
+});
+ipcMain.handle("capture:sharing:get", e => fromServerPage(e) ? captureSharing.snapshot(e.sender) : null);
+ipcMain.handle("capture:sharing:publish", (e,v) => fromServerPage(e) ? captureSharing.publish(e.sender,v) : null);
+ipcMain.handle("capture:sharing:stop", e => {if(fromServerPage(e))captureSharing.stop();});
+ipcMain.handle("capture:sharing:mode", (e,m,i) => {if(fromServerPage(e))captureSharing.mode(m,i);});
+ipcMain.handle("device:get", e => fromServerPage(e) ? devicePreferences.get() : null);
+ipcMain.handle("device:patch", (e,p) => fromServerPage(e) ? devicePreferences.patch(p || {}) : null);
+ipcMain.handle("device:migrate", (e,p) => fromServerPage(e) ? devicePreferences.migrate(p || {}) : null);
 ipcMain.handle("capture:info", (e) => (fromServerPage(e) ? captures.info() : null));
 ipcMain.handle("capture:sources", (e, o = {}) => (fromServerPage(e) ? captures.sources({ thumbnails: !!(o && o.thumbnails), size: Number(o && o.size) || 320 }) : []));
 ipcMain.handle("capture:getChoice", (e, mateId) => (fromServerPage(e) ? captures.getChoice(String(mateId || "")) : null));
@@ -709,6 +727,7 @@ if (restartOnX11 && relaunchOnX11()) {
     setupPermissions();
     buildMenu();
     mate.init({
+  toggleScreenSharing: () => { if(captureSharing.active() || captures.busy()) captureSharing.stop(); else mate.openScreenSharing(); },
       openConsole,
       consoleWindow: () => (win && !win.isDestroyed() ? win : null),
       switchServer: () => showConnect(),

@@ -6,6 +6,7 @@
 // room lets clicks through; Linux has no room, so it uses title tooltips).
 const S = "http://www.w3.org/2000/svg";
 const ICONS = {
+  screen: ["M3 4h18v13H3z", "M8 21h8M12 17v4"],
   chat: ["M20 11.5a8 8 0 0 1-11.6 7.1L4 20l1.4-4.2A8 8 0 1 1 20 11.5z"],
   quick: ["M13 2 3 14h9l-1 8 10-12h-9l1-8Z"],
   throughOn: ["M7 4l10 9-4.4.6 2.6 5.4-2.2 1-2.6-5.4L7 18z", "M3 21l18-18"],
@@ -53,13 +54,16 @@ function set(name, paths, on, label, dashed) {
 
 // the labels come in the app's language with the state (mate.js → i18n.js); these are the fallback
 const EN = {
-  chat: "Chat", quick: "Quick chat", quickKey: "Quick chat ({key})", throughOn: "Click-through: on",
+  screen: "Screen sharing", chat: "Chat", quick: "Quick chat", quickKey: "Quick chat ({key})", throughOn: "Click-through: on",
   throughOff: "Click-through: off", move: "Move", doneMoving: "Done moving", hide: "Hide Mate", console: "Open console",
 };
 
 function render(s) {
   linux = !!s.linux;
   const L = { ...EN, ...(s.labels || {}) };
+  set("screen", ICONS.screen, s.screenSharing, L.screen);
+  buttons.screen.classList.toggle("sharing", !!s.screenSharing);
+  buttons.screen.classList.toggle("capturing", !!s.screenBusy);
   set("chat", ICONS.chat, s.chatOpen, L.chat);
   set("quick", ICONS.quick, false, s.quickKey ? L.quickKey.replace("{key}", s.quickKey) : L.quick);
   set("through", s.clickThrough ? ICONS.throughOn : ICONS.throughOff, s.clickThrough,

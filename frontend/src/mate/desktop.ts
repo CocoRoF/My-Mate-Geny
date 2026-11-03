@@ -35,6 +35,7 @@ export interface MateBridge {
   setMoveMode(on: boolean): Promise<void>;
   openQuick(): Promise<void>;
   closeQuick(): Promise<void>;
+  screenHandled?(): Promise<void>;
   openChat(): Promise<void>;
   closeChat(): Promise<void>;
   setChatOnTop(on: boolean): Promise<void>;

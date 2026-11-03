@@ -1,3 +1,4 @@
+import { useDevicePreferences, patchDevicePreferences } from "../../../stores/devicePreferences";
 /**
  * Voice (this mate): how it speaks (TTS) and hears (STT). Only engines that work are offered — Off, the browser and
  * the providers Global settings has verified; the rest are listed disabled with a way to set them up. Voices and
@@ -18,7 +19,7 @@ import {
   type TtsEngine,
   type VoiceOption,
 } from "../../../api/mates";
-import { previewMateFlags, previewMateVolume } from "../../../mate/livePreview";
+import { previewMateFlags } from "../../../mate/livePreview";
 import { bcp47, type MateConversation } from "../../../mate/useMateConversation";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
@@ -131,25 +132,11 @@ export default function VoiceTab({ mate, conv, onTest }: { mate: Mate; conv: Mat
   const dirty = JSON.stringify(v) !== JSON.stringify(mate.voice);
   const tts = (patch: Partial<Tts>) => setV((x) => ({ ...x, tts: { ...x.tts, ...patch } }));
   const stt = (patch: Partial<Stt>) => setV((x) => ({ ...x, stt: { ...x.stt, ...patch } }));
-  const save = () => saver.run(() => useMateStore.getState().patch(mate.id, { voice: v }));
+  const save = () => saver.run(() => { const {volume: _legacyVolume, ...voice} = v; return useMateStore.getState().patch(mate.id, { voice }); });
   useFollowSaved(mate.voice, dirty, () => setV(mate.voice));
   useEffect(() => () => stopPreview(), []);
-  // the volume slider is live: previews and the mate's voice (also a sentence playing now) follow the unsaved value;
-  // leaving the tab puts the saved one back
-  const volume = v.volume ?? 1;
-  // (every window of this browser follows the preview: the overlay speaking right now too — mate/livePreview)
-  const previewing = volume !== (mate.voice.volume ?? 1);
-  useEffect(() => {
-    setPreviewVolume(volume);
-    previewMateVolume(mate.id, previewing ? volume : null);
-  }, [volume, previewing, mate.id]);
-  useEffect(
-    () => () => {
-      setPreviewVolume(1);
-      previewMateVolume(mate.id, null);
-    },
-    [mate.id],
-  );
+  const volume = useDevicePreferences().volume;
+  useEffect(() => { setPreviewVolume(volume); }, [volume]);
   // the realtime mic's unsaved toggles apply at once to a mic listening in any window (mate/livePreview)
   const sttAutoSend = !!v.stt.auto_send;
   const sttBargeIn = v.stt.barge_in !== false;
@@ -193,7 +180,8 @@ export default function VoiceTab({ mate, conv, onTest }: { mate: Mate; conv: Mat
           testId="mate-tts-engine"
         />
         {v.tts.engine !== "off" && <TtsDetails key={v.tts.engine} mate={mate} tts={v.tts} set={tts} ready={ttsAvail(v.tts.engine).state === "ready"} />}
-        {v.tts.engine !== "off" && <VolumeField value={volume} engine={v.tts.engine} onChange={(x) => setV((cur) => ({ ...cur, volume: x }))} />}
+        <p className="text-xs text-content-faint">{t("screen.deviceVolume")}</p>
+        <VolumeField value={volume} engine={v.tts.engine} onChange={(x) => { void patchDevicePreferences({ volume: x }); }} />
         <Toggle
           on={v.auto_read}
           onChange={(on) => setV((x) => ({ ...x, auto_read: on }))}

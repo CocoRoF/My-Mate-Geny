@@ -52,11 +52,20 @@ async def upload(
     if len(files) > settings.upload_max_files:
         raise HTTPException(status_code=400, detail=f"at most {settings.upload_max_files} files per upload")
 
+    broker = getattr(getattr(request.app.state,"screen_service",None),"broker",None)
+    rid = request.headers.get("x-capture-request")
+    proof = request.headers.get("x-capture-proof") or ""
+    if rid and (not broker or not broker.register_upload(sid,rid,proof)):
+        raise HTTPException(409,"Capture was cancelled or expired")
     svc = _svc(request)
     out: list[dict] = []
     for f in files:
         try:
-            out.append(await svc.save(sid, f))
+            saved = await svc.save(sid, f)
+            if rid and not broker.register_upload(sid,rid,proof,saved["id"]):
+                svc.delete_pending(saved["id"])
+                raise HTTPException(409,"Capture was cancelled or expired")
+            out.append(saved)
         except AttachmentError as exc:
             request.app.state.logs.record(
                 "warning", "upload", str(exc), code="upload.rejected",

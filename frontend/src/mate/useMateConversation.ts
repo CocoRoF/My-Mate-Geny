@@ -1,3 +1,4 @@
+import { useDevicePreferences, devicePreferencesLoaded } from "../stores/devicePreferences";
 /**
  * A mate's conversation, live (docs/mate.md §3): POST /api/mates/{id}/conversation → its session, then the same
  * /api/history + /ws/chat protocol as a chat — but in its own store (createChatStore), so the Chat view and the Mate
@@ -16,7 +17,7 @@ import { createChatStore, FIRST_TURNS, type Turn } from "../stores/chatStore";
 import { useMateStore } from "../stores/mateStore";
 import type { Attachment, ProviderEvent } from "../types";
 import { getMateAudioQueue, useMateAudio } from "./audioQueue";
-import { usePreviewFlags, usePreviewVolume } from "./livePreview";
+import { usePreviewFlags } from "./livePreview";
 import { EmotionTracker, reactsAt, voiceEmotionAt } from "./emotion";
 import { SentenceStream } from "./sentences";
 import { withoutCode } from "./markdown";
@@ -223,8 +224,8 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
   const emotionLevel = useRef(2);
   emotionLevel.current = flags?.emotion ?? prefsOf(mate).emotion;
 
-  const preview = usePreviewVolume(mateId);
-  const volume = preview ?? mate?.voice.volume ?? 1;
+  const device = useDevicePreferences();
+  const volume = devicePreferencesLoaded() && (device.migration.imported || device.migration.volumeEdited) ? device.volume : 0;
   useEffect(() => {
     queue.setVolume(volume);
   }, [queue, volume]);

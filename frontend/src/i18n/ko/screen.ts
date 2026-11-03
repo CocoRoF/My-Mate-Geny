@@ -1,4 +1,17 @@
 const screen = {
+  "deviceVolume": "이 기기의 앱 음량이에요. 모든 메이트·창에 즉시 적용되며 다른 기기에는 영향을 주지 않아요.",
+  "deviceSettings": "이 앱의 화면 공유 설정",
+  "deviceSettingsHint": "이 앱의 모든 창에서 같은 설정을 사용해요. 캡처 대상을 바꾸면 진행 중인 공유는 중지돼요.",
+  "source": "캡처 대상",
+  "primaryScreen": "주 화면",
+  "approval": "요청 승인",
+  "allow": "묻지 않고 허용",
+  "imageSize": "이미지 크기",
+  "imageFormat": "이미지 형식",
+  "hideAvatar": "캡처하는 동안 아바타 창 숨기기",
+  "savedLocally": "이 기기에 바로 저장돼요. 서버 설정을 바꾸지 않아요.",
+  "matePermissionHint": "메이트가 스스로 화면 보기를 요청할 수 있는지만 정해요. 기본은 꺼짐이며, 직접 보내는 화면 첨부와는 별개예요.",
+
   "deny": "거부",
   "allowOnce": "이번만 허용",
   "messageWithoutScreen": "화면을 캡처하지 못해 이번 메시지는 이미지 없이 보냈어요.",

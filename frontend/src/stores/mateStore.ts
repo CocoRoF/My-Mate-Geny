@@ -1,3 +1,4 @@
+import { migrateDevicePreferences, installDevicePreferences } from "./devicePreferences";
 import { create } from "zustand";
 import {
   createMate,
@@ -193,6 +194,8 @@ export const useMateStore = create<MateState>((set, get) => ({
       const { activeId } = get();
       const keep = activeId && mates.some((m) => m.id === activeId) ? activeId : mates[0]?.id ?? null;
       set((s) => ({ mates: share(s.mates, mates), loaded: true, error: null, activeId: keep }));
+      installDevicePreferences();
+      void migrateDevicePreferences(mates, keep);
       fillTimezone();
     } catch (e) {
       set({ loaded: true, error: (e as Error).message });

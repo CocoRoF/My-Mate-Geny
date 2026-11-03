@@ -201,7 +201,7 @@ function ActivityChip({ tool }: { tool: ToolActivity }) {
 /** what the user said: the files they attached (thumbnails / file cards, like the Chat view), then the text */
 function UserBubble({ text, attachments, pending, compact }: { text: string; attachments?: Attachment[]; pending?: boolean; compact?: boolean }) {
   return (
-    <div className={`flex flex-col items-end gap-1.5 ${pending ? "opacity-70" : ""}`} data-testid="mate-user-message">
+    <div className={`flex w-full min-w-0 flex-col items-end gap-1.5 ${pending ? "opacity-70" : ""}`} data-testid="mate-user-message">
       {!!attachments?.length && (
         // (the full width: three thumbnails in a row don't fit 85 % of a phone)
         <div className="max-w-full" data-testid="mate-user-attachments">
@@ -273,10 +273,11 @@ const AssistantBubbles = memo(function AssistantBubbles({ turn, compact }: { tur
   const running = !turn.complete;
   const toolsById = new Map(turn.tools.map((t) => [t.id, t]));
   const lastText = turn.flow.reduce((n, f, i) => (f.kind === "text" ? i : n), -1);
+  const lastSteer = turn.flow.reduce((n, f, i) => f.kind === "steer" ? i : n, -1);
   const items: JSX.Element[] = [];
   turn.flow.forEach((f: FlowItem, i) => {
     if (f.kind === "text") {
-      items.push(<MateReply key={i} keyPrefix={`${i}.`} text={f.text} streaming={running && i === lastText} compact={compact} />);
+      items.push(<MateReply key={i} keyPrefix={`${i}.`} text={f.text} streaming={running && i === lastText && i > lastSteer} compact={compact} />);
     } else if (f.kind === "tool") {
       const t = toolsById.get(f.toolId);
       if (t) items.push(<ActivityChip key={i} tool={t} />);
@@ -293,7 +294,7 @@ const AssistantBubbles = memo(function AssistantBubbles({ turn, compact }: { tur
   const hasText = lastText >= 0 && !!parseEmotionText(turn.text, { streaming: running }).text.trim();
   const toolRunning = turn.tools.some((t) => t.durationMs === undefined);
   return (
-    <div className="flex flex-col items-start gap-1.5 animate-fade-in" data-testid="mate-turn">
+    <div className="flex w-full min-w-0 flex-col items-start gap-1.5 animate-fade-in" data-testid="mate-turn">
       {items}
       {running && (!hasText || toolRunning) && <Typing />}
       {turn.error && turn.status !== "interrupted" && (

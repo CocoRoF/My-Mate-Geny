@@ -1,3 +1,4 @@
+import { devicePreferences, subscribeDevicePreferences } from "../../../stores/devicePreferences";
 /**
  * Voice engines a mate can pick and whether Global settings has them working; a tiny shared player for voice
  * previews (a preview URL or a synthesized Blob).
@@ -183,3 +184,5 @@ export function usePreviewPlaying(): string | null {
     () => null,
   );
 }
+
+subscribeDevicePreferences(() => setPreviewVolume(devicePreferences().volume));

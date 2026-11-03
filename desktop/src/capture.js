@@ -13,7 +13,7 @@
 // (and asks), and a mate allowed to look without asking gets nothing.
 "use strict";
 
-const CAPTURE_VERSION = 2; // the bridge version the page reports to the server (app/mate/capture.py CAPTURE_BRIDGE)
+const CAPTURE_VERSION = 3; // the bridge version the page reports to the server (app/mate/capture.py CAPTURE_BRIDGE)
 const ASK = { w: 440, h: 430 };
 const HIDE_SETTLE_MS = { linux: 250, darwin: 350, win32: 350 }; // the compositor drops hidden windows
 const MAX_EDGES = new Set([0, 1280, 1920, 2560]);
@@ -84,6 +84,7 @@ function createCapture(d) {
   const env = d.env || process.env;
   const delay = d.delay || ((ms) => new Promise((r) => setTimeout(r, ms)));
   const wayland = platform === "linux" && String(env.XDG_SESSION_TYPE || "").toLowerCase() === "wayland";
+  let restoreCurrent = null;
   let busy = null; // the request in progress (one at a time)
   const cancelled = new Set();
 
@@ -143,6 +144,8 @@ function createCapture(d) {
       }));
   }
 
+  const appPrefs = () => d.preferences ? d.preferences.get().screen : null;
+  const options = o => { const p=appPrefs();return cleanOptions(p ? { ...o, maxEdge:p.max_edge,format:p.format,quality:p.quality,hideAvatar:p.hide_avatar,hide_avatar:p.hide_avatar } : o); };
   const prefs = () => {
     const all = (d.readSettings() || {}).captureSources;
     return all && typeof all === "object" ? all : {};
@@ -151,12 +154,14 @@ function createCapture(d) {
 
   /** the source chosen for a mate on this computer (null: the primary screen) */
   function getChoice(mateId) {
+    if (d.preferences) return appPrefs().source;
     const id = validMate(mateId);
     const p = id ? prefs()[id] : null;
     return p && typeof p === "object" && typeof p.id === "string" ? p : null;
   }
 
   function setChoice(mateId, src) {
+    if (d.preferences) { d.preferences.patch({screen:{source:src}}); return true; }
     const id = validMate(mateId);
     if (!id) return false;
     const next = { ...prefs() };
@@ -190,23 +195,16 @@ function createCapture(d) {
 
   async function withHidden(hide, fn, source, hideConsole = false) {
     let restore = null;
+    const restoreOnce = () => { const f=restore;restore=null;try{f&&f();}catch{} };
     if (hide && d.hideWindows) {
       try {
-        restore = await d.hideWindows(source, hideConsole);
+        restore = await d.hideWindows(source,hideConsole);
+        restoreCurrent = restoreOnce;
         await delay(HIDE_SETTLE_MS[platform] || 300);
-      } catch {
-        restore = null;
-      }
+      } catch { restoreOnce(); }
     }
-    try {
-      return await fn();
-    } finally {
-      try {
-        restore && restore();
-      } catch {
-        /* a window went away meanwhile */
-      }
-    }
+    try { return await fn(); }
+    finally { restoreOnce();if(restoreCurrent===restoreOnce)restoreCurrent=null; }
   }
 
   async function resolve(mateId, sourceId) {
@@ -227,19 +225,27 @@ function createCapture(d) {
   /** the user's own capture (Share screen): {ok, data, mime, width, height, source} | {ok: false, code} */
   async function grab(o = {}) {
     if (busy) return fail("busy");
-    const opts = cleanOptions(o);
-    busy = { id: "grab" };
+    const opts = options(o);
+    const id = String(o.id || "grab");
+    busy = { id };
     try {
+      if(d.preferences && o.sourceId && appPrefs().source?.id !== o.sourceId) return fail("source_gone");
       const r = await resolve(o.mateId, typeof o.sourceId === "string" ? o.sourceId : "");
       if (r.error) return r.error;
+      if(cancelled.has(id))return fail("stopped");
       if (r.fallback && o.sourceId) return fail("source_gone");
-      const shot = await withHidden(opts.hideAvatar, () => shoot(r.source, opts), r.source, o.hideConsole === true);
+      d.indicate && d.indicate("start", {mateName:"Geny"});
+      const shot = await withHidden(opts.hideAvatar, () => cancelled.has(id) ? null : shoot(r.source, opts), r.source, o.hideConsole === true);
+      if(cancelled.has(id))return fail("stopped");
       if (!shot) return fail(wayland ? "empty" : platform === "darwin" && permission() !== "granted" ? "permission" : "empty");
+      if (cancelled.has(id)) return fail("stopped");
+      d.indicate && d.indicate("done",{mateName:"Geny",source:shot.source});
       return { ok: true, ...shot };
     } catch (e) {
       return fail("error", String((e && e.message) || e));
     } finally {
-      busy = null;
+      d.indicate && d.indicate("idle",{});
+      busy = null; cancelled.delete(id);
     }
   }
 
@@ -252,14 +258,16 @@ function createCapture(d) {
     const id = String(req.id || "");
     if (!id) return fail("error", "no request id");
     if (busy) return fail("busy");
-    const opts = cleanOptions(req);
+    let opts = options(req);
     busy = { id };
     const mateName = String(req.mate_name || "").slice(0, 80) || "Mate";
     try {
       const r = await resolve(req.mate_id, "");
       if (r.error) return r.error;
-      if (String(req.mate_id || "").startsWith("session:") && r.fallback && r.missing) return fail("source_gone");
-      if (req.ask !== false) {
+      if(cancelled.has(id))return fail("stopped");
+      if ((d.preferences || String(req.mate_id || "").startsWith("session:")) && r.fallback && r.missing) return fail("source_gone");
+      const ask = appPrefs() ? !req.automatic && appPrefs().approval === "ask" : req.ask !== false;
+      if (ask) {
         let preview = "";
         try {
           const small = await getSources([kindOf(r.source.id)], { width: 360, height: 220 });
@@ -278,17 +286,21 @@ function createCapture(d) {
         // allowed to look without asking — but only at what the user chose: never the whole screen instead
         return fail("source_gone");
       }
+      opts = options(req);
       d.indicate && d.indicate("start", { mateName });
-      const shot = await withHidden(opts.hideAvatar, () => shoot(r.source, opts), r.source, String(req.mate_id || "").startsWith("session:"));
+      const shot = await withHidden(opts.hideAvatar, () => cancelled.has(id) ? null : shoot(r.source, opts), r.source, String(req.mate_id || "").startsWith("session:"));
+      if(cancelled.has(id))return fail("stopped");
       if (!shot) {
         d.indicate && d.indicate("error", { mateName });
         return fail(wayland ? "empty" : platform === "darwin" && permission() !== "granted" ? "permission" : "empty");
       }
+      if (cancelled.has(id)) return fail("stopped");
       d.indicate && d.indicate("done", { mateName, source: shot.source });
       return { ok: true, ...shot };
     } catch (e) {
       return fail("error", String((e && e.message) || e));
     } finally {
+      if(cancelled.has(id)) d.indicate && d.indicate("idle",{});
       busy = null;
       cancelled.delete(id);
     }
@@ -296,13 +308,15 @@ function createCapture(d) {
 
   /** the server gave up on a request (timeout, the turn ended): its prompt goes away, nothing is captured */
   function cancel(id) {
-    if (busy && busy.id === String(id)) {
-      cancelled.add(String(id));
-      d.cancelAsk && d.cancelAsk(String(id));
+    if (busy && (id === "*" || busy.id === String(id))) {
+      cancelled.add(busy.id);
+      d.cancelAsk && d.cancelAsk(busy.id);
+      restoreCurrent && restoreCurrent();
+      d.indicate && d.indicate("idle",{});
     }
   }
 
-  return { info, sources, getChoice, setChoice, grab, request, cancel, permission };
+  return { info, sources, getChoice, setChoice, grab, request, cancel, permission, busy:()=>!!busy };
 }
 
 // ── the approval prompt (a small window of our own: capture-ask.html) ─────────

@@ -1,3 +1,4 @@
+import { useMateStore } from "./stores/mateStore";
 import { ScreenSharingBanner } from "./components/composer/LocalScreenControls";
 import { lazy, Suspense, useEffect } from "react";
 import Sidebar from "./components/layout/Sidebar";
@@ -62,6 +63,7 @@ export default function App() {
     loadConnections();
     loadSessions();
     loadConfig();
+    if(!useMateStore.getState().loaded) void useMateStore.getState().load();
     useCliToolsStore.getState().load(); // the Settings badge when a CLI update can be installed (lib/attention.ts)
   }, [loadProviders, loadConnections, loadSessions, loadConfig]);
 

@@ -1,4 +1,4 @@
-import { sharingSnapshot, stopSharing } from "../mate/localScreen";
+import { sharingSnapshot, stopOwnedSharing, stopSharing } from "../mate/localScreen";
 import { useEffect } from "react";
 import { toLogin, wsUrl } from "../api/client";
 import { onResync } from "../lib/sync";
@@ -94,7 +94,7 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
       sock.onclose = (e) => {
         if (ws !== sock) return; // replaced
         ws = null;
-        stopSharing();
+        stopOwnedSharing();
         clearTimeout(probeTimer);
         if (e.code === 4401) return toLogin();
         if (!alive) return;

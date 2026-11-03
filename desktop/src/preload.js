@@ -55,6 +55,7 @@ const mate = {
   setMoveMode: (on) => ipcRenderer.invoke("mate:moveMode", !!on),
   openQuick: () => ipcRenderer.invoke("mate:openQuick"),
   closeQuick: () => ipcRenderer.invoke("mate:closeQuick"),
+  screenHandled: () => ipcRenderer.invoke("mate:screenHandled"),
   openChat: () => ipcRenderer.invoke("mate:openChat"),
   closeChat: () => ipcRenderer.invoke("mate:closeChat"),
   setChatOnTop: (on) => ipcRenderer.invoke("mate:chatOnTop", !!on),
@@ -69,19 +70,28 @@ const mate = {
 // user's own Share screen, and the mate's see_screen requests (the page hands them over from the server). The
 // picture comes back as bytes (Uint8Array) — the page uploads it; nothing is saved on this computer.
 const capture = {
-  version: 2,
+  version: 3,
   info: () => ipcRenderer.invoke("capture:info"),
   sources: (o = {}) => ipcRenderer.invoke("capture:sources", { thumbnails: !!(o && o.thumbnails), size: num(o && o.size) }),
   getChoice: (mateId) => ipcRenderer.invoke("capture:getChoice", String(mateId || "")),
   setChoice: (mateId, src) => ipcRenderer.invoke("capture:setChoice", String(mateId || ""), src && typeof src === "object"
     ? { id: String(src.id || ""), name: String(src.name || ""), kind: String(src.kind || ""), display_id: String(src.display_id || "") } : null),
   grab: (o = {}) => ipcRenderer.invoke("capture:grab", {
+    id: String((o && o.id) || ""),
     mateId: String((o && o.mateId) || ""), sourceId: String((o && o.sourceId) || ""), maxEdge: num(o && o.maxEdge),
     format: (o && o.format) === "jpeg" ? "jpeg" : "png", quality: num(o && o.quality) || 85, hideAvatar: !(o && o.hideAvatar === false), hideConsole: !!(o && o.hideConsole),
   }),
   request: (req = {}) => ipcRenderer.invoke("capture:request", JSON.parse(JSON.stringify(req || {}))),
   cancel: (id) => ipcRenderer.invoke("capture:cancel", String(id || "")),
   openPrivacySettings: () => ipcRenderer.invoke("capture:openPrivacy"),
+  sharing: {
+    get: () => ipcRenderer.invoke("capture:sharing:get"),
+    publish: v => ipcRenderer.invoke("capture:sharing:publish", v ? JSON.parse(JSON.stringify(v)) : null),
+    stop: () => ipcRenderer.invoke("capture:sharing:stop"),
+    mode: (mode,interval) => ipcRenderer.invoke("capture:sharing:mode",mode,interval),
+    onChanged: cb => listen("capture:sharing",cb),
+    onControl: cb => listen("capture:control",cb),
+  },
 };
 
 // App-like window chrome (chrome.js): only in the console and the mate chat window, and only when the app draws no
@@ -129,6 +139,12 @@ contextBridge.exposeInMainWorld("hrhNative", {
   setTheme: (mode) => ipcRenderer.send("hrh:setTheme", String(mode || "")),
   mate,
   capture,
+  device: {
+    get: () => ipcRenderer.invoke("device:get"),
+    patch: p => ipcRenderer.invoke("device:patch", JSON.parse(JSON.stringify(p || {}))),
+    migrate: p => ipcRenderer.invoke("device:migrate", JSON.parse(JSON.stringify(p || {}))),
+    onChanged: cb => listen("device:changed", cb),
+  },
   window: windowBridge,
   // the mouse's back / forward buttons as the OS reports them (Windows app-commands); the page goes back in-app
   onNav: (cb) => listen("nav:command", (dir) => cb(dir === "forward" ? "forward" : "back")),
