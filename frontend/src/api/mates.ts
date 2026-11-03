@@ -42,6 +42,9 @@ export interface MateVoice {
     language: string;
     /** realtime: a finished utterance is sent by itself (default off: it waits in the box) */
     auto_send?: boolean;
+    merge_fragments?: boolean;
+    continuation_grace?: number;
+    ignore_short_fragments?: boolean;
     /** realtime: talking while she speaks stops her voice (default on, with echo protection) */
     barge_in?: boolean;
     /** realtime: the pause (s) that ends an utterance, 0.3 – 3 (default 1.2) */

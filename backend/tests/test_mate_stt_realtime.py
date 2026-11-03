@@ -75,7 +75,8 @@ def test_settings_defaults_and_persistence(client, http):
                                                                        "barge_in": False, "silence": 0.8}}})
     assert r.status_code == 200, r.text
     got = client.get(f"/api/mates/{m['id']}").json()["voice"]["stt"]
-    assert got == {"engine": "elevenlabs", "model": "", "language": "", "auto_send": True, "barge_in": False, "silence": 0.8}
+    assert got == {"engine": "elevenlabs", "model": "", "language": "", "auto_send": True, "barge_in": False, "silence": 0.8,
+                   "merge_fragments": True, "continuation_grace": 1.8, "ignore_short_fragments": False}
     # a partial update keeps the rest; the pause is clamped to what ElevenLabs takes
     client.patch(f"/api/mates/{m['id']}", json={"voice": {"stt": {"silence": 9}}})
     got = client.get(f"/api/mates/{m['id']}").json()["voice"]["stt"]

@@ -183,7 +183,8 @@ def normalize_voice(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
     # auto_send: a finished utterance goes out by itself (realtime engines; default off: it waits in the box);
     # barge_in: talking while she speaks stops her voice (default on, with echo protection — docs/mate.md §5)
     stt = {"engine": "browser", "model": "", "language": "", "auto_send": False, "barge_in": True,
-           "silence": STT_SILENCE[2], **(base.get("stt") or {})}
+           "silence": STT_SILENCE[2], "merge_fragments": True, "continuation_grace": 1.8,
+           "ignore_short_fragments": False, **(base.get("stt") or {})}
     out = {"auto_read": bool(base.get("auto_read", True)), "volume": _volume(base.get("volume", 1.0)),
            "tts": tts, "stt": stt}
     if patch is None:
@@ -225,11 +226,15 @@ def normalize_voice(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
         for k in ("model", "language"):
             if k in ps:
                 stt[k] = _s(ps[k], 200).strip()
-        for k in ("auto_send", "barge_in"):
+        for k in ("auto_send", "barge_in", "merge_fragments", "ignore_short_fragments"):
             if k in ps:
                 if not isinstance(ps[k], (bool, int)) or ps[k] not in (True, False, 0, 1):
                     raise MateError(f"voice.stt.{k} must be true or false")
                 stt[k] = bool(ps[k])
+        if "continuation_grace" in ps:
+            if isinstance(ps["continuation_grace"], bool):
+                raise MateError("voice.stt.continuation_grace must be a number of seconds")
+            stt["continuation_grace"] = round(_num(ps["continuation_grace"], .5, 5., 1.8), 2)
         if "silence" in ps:
             if isinstance(ps["silence"], bool):
                 raise MateError("voice.stt.silence must be a number of seconds")

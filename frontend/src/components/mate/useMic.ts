@@ -16,6 +16,7 @@ import { deviceVoicing, hushDevice, recentSpoken } from "../../mate/voiceOwner";
 import { MIC_CONSTRAINTS, micErrorKind, micSupported, openMic } from "../../mate/stt/capture";
 import { RealtimeStt, TokenError, type RealtimeNotice, type RealtimeState } from "../../mate/stt/realtime";
 import { fallbackPlan, type SttFailure } from "../../mate/stt/scribe";
+import { browserResults } from "../../mate/stt/browser";
 import { tr, useLang } from "../../i18n";
 
 export type MicState = "idle" | "starting" | "recording" | "transcribing";
@@ -33,6 +34,8 @@ export interface Mic {
   clearError: () => void;
   /** realtime engine (ElevenLabs): the live text belongs in the box, utterances come through onSegment */
   realtime: boolean;
+  /** Browser and realtime engines finalize segments while listening. */
+  segmented: boolean;
   /** the realtime session's phase (null: none / another engine) */
   phase: RealtimeState | null;
   /** something to know that isn't an error (a fallback, reconnected, stopped after a quiet stretch) */
@@ -51,6 +54,9 @@ export interface Mic {
 export interface MicOptions {
   /** realtime: a finished utterance (committed text) */
   onSegment?: (text: string) => void;
+  onPartial?: (text: string) => void;
+  onActivity?: () => void;
+  onSpeaking?: (speaking: boolean) => void;
 }
 
 const MAX_MS = 60_000;
@@ -106,6 +112,7 @@ const shortWhy = (code: SttFailure): string =>
   code === "auth" ? tr("mate.sttWhyAuth") : code === "quota" ? tr("mate.sttWhyQuota") : code === "missing" ? tr("mate.sttWhyMissing") : code === "busy" ? tr("mate.sttWhyBusy") : tr("mate.sttWhyNetwork");
 
 export function useMic(mate: Mate | null, onText: (text: string) => void, opts: MicOptions = {}): Mic {
+  const [browserLive, setBrowserLive] = useState(false);
   const [state, setState] = useState<MicState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -117,6 +124,8 @@ export function useMic(mate: Mate | null, onText: (text: string) => void, opts: 
   onTextRef.current = onText;
   const onSegmentRef = useRef(opts.onSegment);
   onSegmentRef.current = opts.onSegment;
+  const optionsRef = useRef(opts);
+  optionsRef.current = opts;
   const rec = useRef<{ stop: () => void; cancel: () => void; touch?: () => void } | null>(null);
   useLang(); // (the reason below is in the UI's language)
   const unavailable = micUnavailable(mate);
@@ -131,8 +140,11 @@ export function useMic(mate: Mate | null, onText: (text: string) => void, opts: 
 
   const finish = useCallback(() => {
     rec.current = null;
+    setBrowserLive(false);
     setState("idle");
     setInterim("");
+    optionsRef.current.onPartial?.("");
+    optionsRef.current.onSpeaking?.(false);
     setPhase(null);
     setGated(false);
     setLevel(0);
@@ -146,28 +158,34 @@ export function useMic(mate: Mate | null, onText: (text: string) => void, opts: 
       r.lang = lang || "";
       r.interimResults = true;
       r.continuous = true;
-      let finalText = "";
+      let delivered = 0;
+      setBrowserLive(true);
       let cancelled = false;
       r.onresult = (e: any) => {
-        let live = "";
-        finalText = "";
-        for (let i = 0; i < e.results.length; i++) {
-          const res = e.results[i];
-          if (res.isFinal) finalText += res[0].transcript;
-          else live += res[0].transcript;
-        }
-        setInterim((finalText + live).trim());
+        if (cancelled) return;
+        const result = browserResults(e.results, delivered);
+        delivered = result.delivered;
+        // Clear the old partial before committing; a final will replace it in the persistent draft.
+        optionsRef.current.onPartial?.("");
+        for (const text of result.finals)
+          (deliver ?? onSegmentRef.current ?? onTextRef.current)(text);
+        setInterim(result.partial);
+        optionsRef.current.onPartial?.(result.partial);
       };
+      r.onspeechstart = () => optionsRef.current.onSpeaking?.(true);
+      r.onspeechend = () => optionsRef.current.onSpeaking?.(false);
       r.onerror = (e: any) => {
         if (e?.error === "no-speech" || e?.error === "aborted") return;
         setError(
-          e?.error === "not-allowed" ? tr("mate.micRefused") : tr("mate.sttFailed", { reason: e?.error || tr("common.unknown") }),
+          e?.error === "not-allowed"
+            ? tr("mate.micRefused")
+            : tr("mate.sttFailed", {
+                reason: e?.error || tr("common.unknown"),
+              }),
         );
       };
       r.onend = () => {
-        const text = finalText.trim();
         finish();
-        if (!cancelled && text) (deliver ?? onTextRef.current)(text);
       };
       rec.current = {
         stop: () => r.stop(),
@@ -224,7 +242,7 @@ export function useMic(mate: Mate | null, onText: (text: string) => void, opts: 
             if (s === "closed") return finish();
             setState(s === "connecting" ? "starting" : s === "finishing" || s === "transcribing" ? "transcribing" : "recording");
           },
-          onPartial: setInterim,
+          onPartial: (text) => {setInterim(text); optionsRef.current.onPartial?.(text);},
           onSegment: (text) => onSegmentRef.current?.(text),
           onBargeIn: () => hushDevice(mateId),
           onNotice: (n: RealtimeNotice) =>
@@ -252,7 +270,7 @@ export function useMic(mate: Mate | null, onText: (text: string) => void, opts: 
             }
             setError(sttFailureText(code, message));
           },
-          onLevel: setLevel,
+          onLevel: (value) => {setLevel(value); if(value > .025 && !deviceVoicing(mateId)) optionsRef.current.onActivity?.();},
         },
         { idleMs: autoSend ? 90_000 : 40_000 },
       );
@@ -370,5 +388,5 @@ export function useMic(mate: Mate | null, onText: (text: string) => void, opts: 
     return () => clearTimeout(t);
   }, [notice, state]);
 
-  return { state, unavailable, error, interim, start, stop, cancel, clearError, realtime, phase, notice, gated, level, autoSend, bargeIn, touch };
+  return { state, unavailable, error, interim, start, stop, cancel, clearError, realtime, segmented: realtime || browserLive, phase, notice, gated, level, autoSend, bargeIn, touch };
 }

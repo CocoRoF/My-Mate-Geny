@@ -177,3 +177,18 @@ def test_voice_listing(client, http):
     assert next(v for v in vs if v["id"] == "verse")["models"] == ["gpt-4o-mini-tts"]
     assert client.get("/api/mates/voices?engine=browser").json()["voices"] == []
     assert client.get("/api/mates/voices?engine=martian").status_code == 400
+
+
+def test_speech_draft_settings_preserve_existing_voice_and_validate(client):
+    mid = _mate(client, stt={"engine": "whisper", "silence": 1.2})
+    url = f"/api/mates/{mid}"
+    initial = client.get(url).json()["voice"]["stt"]
+    assert initial["merge_fragments"] is True and initial["continuation_grace"] == 1.8
+    assert initial["ignore_short_fragments"] is False
+    r = client.patch(url, json={"voice": {"stt": {"continuation_grace": 2.4, "auto_send": True}}})
+    assert r.status_code == 200
+    stt = r.json()["voice"]["stt"]
+    assert stt["continuation_grace"] == 2.4 and stt["engine"] == "whisper" and stt["silence"] == 1.2
+    for patch in ({"merge_fragments": "yes"}, {"ignore_short_fragments": {}}, {"continuation_grace": True}):
+        assert client.patch(url, json={"voice": {"stt": patch}}).status_code == 400
+    assert client.patch(url, json={"voice": {"stt": {"continuation_grace": 99}}}).json()["voice"]["stt"]["continuation_grace"] == 5

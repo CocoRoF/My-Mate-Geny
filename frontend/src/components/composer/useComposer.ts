@@ -48,6 +48,8 @@ export interface ComposerOptions {
   viewportCap?: boolean;
   /** after a message went out (sent, steered or queued) */
   onSent?: () => void;
+  /** Finalize a live speech draft before manual Enter/send; automatic transcripts are already finalized. */
+  prepareSubmit?: (text: string, automatic: boolean) => string;
   /** Escape stops the running turn (default true) */
   escapeStops?: boolean;
 }
@@ -208,7 +210,8 @@ export function useComposer(o: ComposerOptions) {
 
   /** send what is in the box (or `spoken`, e.g. a voice transcript) with the ready files */
   const submit = (how: "auto" | "queue" = "auto", spoken?: string): boolean => {
-    const text = (spoken ?? input).trim();
+    const raw = spoken ?? useDraftStore.getState().drafts[sid]?.text ?? "";
+    const text = (o.prepareSubmit?.(raw, spoken !== undefined) ?? raw).trim();
     const builtin = spoken === undefined ? /^\/([\w-]+)$/.exec(text) : null;
     if (builtin && o.actions?.includes(builtin[1] as ComposerAction)) {
       void runAction(builtin[1] as ComposerAction);
@@ -340,6 +343,7 @@ export function useComposer(o: ComposerOptions) {
     pickFile,
     runAction,
     textareaProps,
+    grow,
   };
 }
 

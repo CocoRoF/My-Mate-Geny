@@ -140,10 +140,37 @@ export default function VoiceTab({ mate, conv, onTest }: { mate: Mate; conv: Mat
   // the realtime mic's unsaved toggles apply at once to a mic listening in any window (mate/livePreview)
   const sttAutoSend = !!v.stt.auto_send;
   const sttBargeIn = v.stt.barge_in !== false;
-  const sttFlagsDirty = sttAutoSend !== !!mate.voice.stt.auto_send || sttBargeIn !== (mate.voice.stt.barge_in !== false);
+  const sttMergeFragments = v.stt.merge_fragments !== false;
+  const sttContinuationGrace = v.stt.continuation_grace ?? 1.8;
+  const sttIgnoreShort = !!v.stt.ignore_short_fragments;
+  const sttFlagsDirty =
+    sttAutoSend !== !!mate.voice.stt.auto_send ||
+    sttBargeIn !== (mate.voice.stt.barge_in !== false) ||
+    sttMergeFragments !== (mate.voice.stt.merge_fragments !== false) ||
+    sttContinuationGrace !== (mate.voice.stt.continuation_grace ?? 1.8) ||
+    sttIgnoreShort !== !!mate.voice.stt.ignore_short_fragments;
   useEffect(() => {
-    previewMateFlags(mate.id, sttFlagsDirty ? { sttAutoSend, sttBargeIn } : null);
-  }, [mate.id, sttFlagsDirty, sttAutoSend, sttBargeIn]);
+    previewMateFlags(
+      mate.id,
+      sttFlagsDirty
+        ? {
+            sttAutoSend,
+            sttBargeIn,
+            sttMergeFragments,
+            sttContinuationGrace,
+            sttIgnoreShort,
+          }
+        : null,
+    );
+  }, [
+    mate.id,
+    sttFlagsDirty,
+    sttAutoSend,
+    sttBargeIn,
+    sttMergeFragments,
+    sttContinuationGrace,
+    sttIgnoreShort,
+  ]);
   useEffect(() => () => previewMateFlags(mate.id, null), [mate.id]);
 
   const ttsAvail = (id: string) => availability(providers, "tts", id);
@@ -785,6 +812,7 @@ function SttDetails({ mate, stt, set, ready }: { mate: Mate; stt: Stt; set: (p: 
         </p>
       )}
       <LanguageField value={stt.language} onChange={(language) => set({ language })} mate={mate} hint={t("mateSettings.voiceSttLangHint")} />
+      {engine !== "off" && <TranscriptOptions stt={stt} set={set} />}
       {engine === "elevenlabs" && <RealtimeOptions stt={stt} set={set} name={mate.name} />}
     </div>
   );
@@ -796,13 +824,6 @@ function RealtimeOptions({ stt, set, name }: { stt: Stt; set: (p: Partial<Stt>) 
   const silence = stt.silence ?? 1.2;
   return (
     <div className="space-y-3 border-t border-border/60 pt-3" data-testid="mate-stt-realtime">
-      <Toggle
-        on={!!stt.auto_send}
-        onChange={(on) => set({ auto_send: on })}
-        label={t("mateSettings.sttAutoSend")}
-        hint={t("mateSettings.sttAutoSendHint")}
-        testId="mate-stt-autosend"
-      />
       <Field label={t("mateSettings.sttPause", { x: silence.toFixed(1) })} hint={t("mateSettings.sttPauseHint")}>
         <input
           type="range"
@@ -823,6 +844,66 @@ function RealtimeOptions({ stt, set, name }: { stt: Stt; set: (p: Partial<Stt>) 
         testId="mate-stt-bargein"
       />
       <p className="text-[11px] leading-relaxed text-content-faint">{t("mateSettings.sttElevenCost")}</p>
+    </div>
+  );
+}
+
+/** One message finalizer for every recognizer; VAD below remains a recognizer setting. */
+function TranscriptOptions({
+  stt,
+  set,
+}: {
+  stt: Stt;
+  set: (p: Partial<Stt>) => void;
+}) {
+  const t = useT(),
+    grace = stt.continuation_grace ?? 1.8;
+  return (
+    <div
+      className="space-y-3 border-t border-border/60 pt-3"
+      data-testid="mate-stt-draft-options"
+    >
+      <Toggle
+        on={!!stt.auto_send}
+        onChange={(on) => set({ auto_send: on })}
+        label={t("mateSettings.sttAutoSend")}
+        hint={t("mateSettings.sttAutoSendHint")}
+        testId="mate-stt-autosend"
+      />
+      <Toggle
+        on={stt.merge_fragments !== false}
+        onChange={(on) => set({ merge_fragments: on })}
+        label={t("mateSettings.sttMerge")}
+        hint={t("mateSettings.sttMergeHint")}
+        testId="mate-stt-merge"
+      />
+      {stt.merge_fragments !== false && (
+        <Field
+          label={t("mateSettings.sttGrace", { x: grace.toFixed(1) })}
+          hint={t("mateSettings.sttGraceHint")}
+        >
+          <input
+            type="range"
+            min={0.5}
+            max={5}
+            step={0.1}
+            value={grace}
+            onChange={(e) =>
+              set({ continuation_grace: Number(e.target.value) })
+            }
+            className="w-full accent-accent"
+            data-testid="mate-stt-grace"
+            aria-label={t("mateSettings.sttGrace", { x: grace.toFixed(1) })}
+          />
+        </Field>
+      )}
+      <Toggle
+        on={!!stt.ignore_short_fragments}
+        onChange={(on) => set({ ignore_short_fragments: on })}
+        label={t("mateSettings.sttIgnoreShort")}
+        hint={t("mateSettings.sttIgnoreShortHint")}
+        testId="mate-stt-ignore-short"
+      />
     </div>
   );
 }

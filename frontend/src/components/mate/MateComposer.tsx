@@ -5,7 +5,7 @@ import { ScreenCaptureApproval, useLocalScreenControls } from "../composer/Local
  * the mate's chrome, plus push-to-talk and the read-aloud toggle (phones: in the Mate view's header, so the row is
  * just + · text · mic · send). Drafts are keyed by the mate's session id.
  */
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useReducer } from "react";
 import type { Mate } from "../../api/mates";
 import { useDraftStore } from "../../stores/draftStore";
 import { useMateStore } from "../../stores/mateStore";
@@ -16,7 +16,8 @@ import { AttachMenu, FileInputs, QueuedList } from "../composer/ComposerParts";
 import { useComposer, type ComposerAction } from "../composer/useComposer";
 import Icon from "../ui/Icon";
 import { useMic, type Mic } from "./useMic";
-import { joinText } from "../../mate/stt/scribe";
+import { createSpeechDraft, joinTranscript } from "../../mate/stt/draft";
+import { usePreviewFlags } from "../../mate/livePreview";
 import { useT, type TFunction } from "../../i18n";
 
 const HOLD_MS = 350;
@@ -109,6 +110,28 @@ function Composer({
   );
   const commands = useMemo(() => commandsFor(t, mate.name), [t, mate.name]);
 
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  const composerRef = useRef<ReturnType<typeof useComposer> | null>(null);
+  const speechWrite = useRef(false);
+  const speech = useMemo(
+    () =>
+      createSpeechDraft({
+        read: () => useDraftStore.getState().drafts[sid]?.text ?? "",
+        write: (text) => {
+          speechWrite.current = true;
+          useDraftStore.getState().setText(sid, text);
+          speechWrite.current = false;
+        },
+        send: (text) => {
+          speechWrite.current = true;
+          composerRef.current?.submit("auto", text);
+          speechWrite.current = false;
+        },
+        changed: redraw,
+      }),
+    [sid],
+  );
+  const micRef = useRef<Mic | null>(null);
   const c = useComposer({
     sid,
     store: useMateChat,
@@ -123,38 +146,90 @@ function Composer({
     onSent,
     escapeStops,
     viewportCap: !growsWindow,
+    prepareSubmit: (text, automatic) => {
+      if (automatic) return text;
+      const final = speech.manual(text, micRef.current?.interim ?? "");
+      // A failed/disconnected manual send must keep the partial as editable text, too.
+      speechWrite.current = true;
+      useDraftStore.getState().setText(sid, final);
+      speechWrite.current = false;
+      return final;
+    },
   });
-  const { input, items, uploading, failed, hasContent, notice, isStreaming: streaming, touch, sendsOnEnter, trigger } = c;
+  composerRef.current = c;
+  const {
+    input,
+    items,
+    uploading,
+    failed,
+    notice,
+    isStreaming: streaming,
+    touch,
+    sendsOnEnter,
+    trigger,
+  } = c;
 
   const screen = useLocalScreenControls(sid, mate.name, c.addFiles, mate);
   const contentRef = useRef(onContentChange);
   contentRef.current = onContentChange;
+
+  const mic = useMic(mate, (text) => speech.segment(text), {
+    onSegment: (text) => speech.segment(text),
+    onPartial: (text) => speech.partial(text),
+    onActivity: () => speech.activity(),
+    onSpeaking: (value) => speech.busy(value),
+  });
+  micRef.current = mic;
+  const flags = usePreviewFlags(mate.id);
+  const merge =
+    flags?.sttMergeFragments ?? mate.voice.stt.merge_fragments !== false;
+  const grace =
+    flags?.sttContinuationGrace ?? mate.voice.stt.continuation_grace ?? 1.8;
+  const ignoreShort =
+    flags?.sttIgnoreShort ?? !!mate.voice.stt.ignore_short_fragments;
+  useEffect(
+    () =>
+      speech.configure({ autoSend: mic.autoSend, merge, grace, ignoreShort }),
+    [speech, mic.autoSend, merge, grace, ignoreShort],
+  );
+  useEffect(
+    () =>
+      speech.busy(
+        mic.state !== "idle" &&
+          (!mic.segmented ||
+            mic.state === "starting" ||
+            mic.state === "transcribing"),
+      ),
+    [speech, mic.state, mic.segmented],
+  );
+  useEffect(
+    () =>
+      useDraftStore.subscribe((state, previous) => {
+        if (
+          !speechWrite.current &&
+          state.drafts[sid]?.text !== previous.drafts[sid]?.text
+        )
+          speech.edit();
+      }),
+    [sid, speech],
+  );
+  useEffect(() => {
+    speech.resume();
+    const off = window.hrhNative?.onQuitting?.(() => speech.dispose());
+    return () => {
+      off?.();
+      speech.dispose();
+    };
+  }, [speech]);
+  const visiblePartial = speech.visiblePartial(mic.interim);
+  const hasContent = c.hasContent || !!visiblePartial.trim();
   useEffect(() => {
     contentRef.current?.(hasContent);
   }, [hasContent]);
-
-  const mic = useMic(
-    mate,
-    (heard) => {
-      c.submit("auto", heard);
-    },
-    {
-      // realtime (ElevenLabs): a finished utterance joins the box — or, auto-send on, goes out with the box's text
-      onSegment: (heard) => {
-        const box = useDraftStore.getState().drafts[sid]?.text ?? "";
-        const all = joinText(box, heard);
-        if (micRef.current?.autoSend) {
-          // (the box's text goes with it; not sent — not connected, uploads running — submit puts it back)
-          c.setInput("");
-          c.submit("auto", all);
-          return;
-        }
-        c.setInput(all);
-      },
-    },
-  );
-  const micRef = useRef(mic);
-  micRef.current = mic;
+  useEffect(() => {
+    const frame = requestAnimationFrame(c.grow);
+    return () => cancelAnimationFrame(frame);
+  }, [visiblePartial, c.grow]);
   const recording = mic.state === "recording" || mic.state === "starting";
   /** the realtime mic is on: the box shows the live text after what was there */
   const live = mic.realtime && mic.state !== "idle";
@@ -282,8 +357,9 @@ function Composer({
             {...c.textareaProps}
             // realtime: what is in the box + the words being heard (the committed text replaces them as it comes);
             // Web Speech: what it heard so far
-            value={live ? joinText(input, mic.interim) : recording && mic.interim ? mic.interim : input}
-            readOnly={live}
+            value={visiblePartial ? joinTranscript(input, visiblePartial) : input}
+            onChange={e => {speech.edit(mic.interim); c.textareaProps.onChange(e);}}
+            onCompositionStart={() => speech.edit(mic.interim)}
             aria-live={live ? "polite" : undefined}
             data-live={live ? (mic.interim ? "partial" : "listening") : undefined}
             onFocus={() => input.trim() && setListening(true)}
