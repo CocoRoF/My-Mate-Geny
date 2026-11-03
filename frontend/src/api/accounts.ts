@@ -24,12 +24,49 @@ export interface Account {
   model_windows?: UsageWindow[]; // per-model weekly limits, when the plan has them
   plan_fetched_at?: string | null;
   plan_error?: string | null;
+  /** why the numbers are old: rate_limited | token_expired | needs_login | auth | network | http | no_credentials */
+  plan_stale_reason?: string | null;
+  plan_retry_at?: string | null; // when the server will ask again (while something is wrong)
+  plan_checked_at?: string | null;
+  session?: LoginSession | null; // the login, read from the credentials file (never a token)
   total_leases: number;
   total_failures: number;
   consecutive_failures: number;
   cooldown_until: string | null;
   last_used_at: string | null;
   last_error: string | null;
+}
+
+export type SessionHealth = "valid" | "expiring" | "expired" | "refresh_failed" | "needs_login" | "no_credentials";
+
+/** An account's login session (backend providers/login_session.py) — what the CLI's credentials file says. */
+export interface LoginSession {
+  method: "oauth" | "setup_token" | "api_key" | "chatgpt" | "none";
+  email: string;
+  organization: string;
+  plan: string;
+  rate_limit_tier: string;
+  expires_at: string | null; // access token
+  expires_in_s: number | null;
+  has_refresh_token: boolean;
+  refresh_expires_at: string | null;
+  updated_at: string | null; // the file was last written (Claude) / last_refresh (Codex)
+  scopes: string[];
+  /** expired = the access token ran out but renews on the next use (information); needs_login / refresh_failed = act */
+  health: SessionHealth;
+  detail: string;
+  actionable: boolean;
+  renewable: boolean;
+  checked_at: string | null;
+  last_renew?: { at: string | null; ok: boolean; method: string | null; code: string | null; error: string | null };
+}
+
+export interface RenewResult {
+  ok: boolean;
+  method?: "cli" | "direct" | "already" | null; // who renewed it
+  code: string; // why not (invalid_grant, lock_busy, network, …) / not_needed
+  error: string;
+  session: LoginSession | null;
 }
 
 export type PrimaryMode = "normal" | "fallback" | "off";
@@ -77,6 +114,10 @@ export const deleteAccount = (provider: string, id: string) =>
 
 export const clearCooldown = (provider: string, id: string) =>
   apiFetch(`${base(provider)}/accounts/${id}/cooldown/clear`, { method: "POST" });
+
+/** Renew the login the CLI's way (the host login's id is `__primary__<provider>`). */
+export const renewSession = (provider: string, id: string) =>
+  apiFetch<RenewResult>(`${base(provider)}/accounts/${encodeURIComponent(id)}/session/renew`, { method: "POST" });
 
 // account OAuth (same shape as provider OAuth)
 export const accountOAuthStart = (provider: string, id: string) =>

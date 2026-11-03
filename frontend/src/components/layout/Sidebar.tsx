@@ -1,4 +1,4 @@
-import { cliUpdatesNeedAttention, providersNeedAttention } from "../../lib/attention";
+import { cliUpdatesNeedAttention, providersNeedAttention, sessionsNeedAttention } from "../../lib/attention";
 import { useCliToolsStore } from "../../stores/cliToolsStore";
 import { useMemo, useState } from "react";
 import { useSessionStore } from "../../stores/sessionStore";
@@ -95,6 +95,7 @@ export default function Sidebar() {
   };
 
   const needsProvider = providersNeedAttention(providers);
+  const needsSession = sessionsNeedAttention(providers); // an account's login needs a sign-in
   const needsCli = useCliToolsStore((s) => cliUpdatesNeedAttention(s.status?.tools));
 
   // The list follows server-pushed changes (useSessionSync); this is the
@@ -339,8 +340,8 @@ export default function Sidebar() {
           <Icon name="settings" size={16} className="text-content-faint group-hover:text-content-dim group-data-[active=true]:text-accent" />
           {t("nav.settings")}
           {/* only what needs the user (lib/attention.ts) — never a plain count */}
-          {(needsProvider || needsCli) && (
-            <span className="ml-auto pill bg-warning/15 text-warning" title={t(needsProvider ? "nav.providersNone" : "cliTools.badge")} aria-label={t(needsProvider ? "nav.providersNone" : "cliTools.badge")} data-testid="nav-settings-badge">
+          {(needsProvider || needsSession || needsCli) && (
+            <span className="ml-auto pill bg-warning/15 text-warning" title={t(needsProvider ? "nav.providersNone" : needsSession ? "nav.sessionsNeedLogin" : "cliTools.badge")} aria-label={t(needsProvider ? "nav.providersNone" : needsSession ? "nav.sessionsNeedLogin" : "cliTools.badge")} data-testid="nav-settings-badge">
               !
             </span>
           )}
