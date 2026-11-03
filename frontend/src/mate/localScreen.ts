@@ -424,7 +424,7 @@ async function showRestoreNotice(id: string, message: string) {
     try {const raw=JSON.parse(localStorage.getItem("hrh_restore_notice_ids") || "[]");if(Array.isArray(raw))seen=raw.filter(x=>typeof x==="string").slice(-32);} catch {/* invalid cache */}
     if (seen.includes(id)) return;
     try {localStorage.setItem("hrh_restore_notice_ids",JSON.stringify([...seen,id].slice(-32)));} catch {/* blocked storage */}
-    toast(message);
+    toast(message,4000);
   };
   if (navigator.locks) await navigator.locks.request("hrh-screen-restore-notice", deliver);
   else deliver();
