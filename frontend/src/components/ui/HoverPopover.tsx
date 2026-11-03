@@ -1,8 +1,21 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type CSSProperties,
+} from "react";
 import { createPortal } from "react-dom";
 import { useBackHandler } from "../../lib/back";
 
-type Pos = { left?: number; right?: number; top?: number; bottom?: number; maxHeight: number };
+type Pos = {
+  left?: number;
+  right?: number;
+  top?: number;
+  bottom?: number;
+  maxHeight: number;
+};
 
 /**
  * A small info popover: opens on hover with a mouse, on tap with touch.
@@ -17,6 +30,7 @@ export default function HoverPopover({
   triggerClassName = "",
   panelClassName = "",
   label,
+  triggerStyle,
 }: {
   trigger: ReactNode;
   children: ReactNode | (() => ReactNode);
@@ -25,6 +39,7 @@ export default function HoverPopover({
   triggerClassName?: string;
   panelClassName?: string;
   label?: string; // accessible name of the trigger
+  triggerStyle?: CSSProperties;
 }) {
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
@@ -61,7 +76,9 @@ export default function HoverPopover({
     const vh = window.innerHeight;
     if (r.bottom < 0 || r.top > vh) return close();
     const above = r.top > vh - r.bottom;
-    const p: Pos = { maxHeight: Math.max(160, (above ? r.top : vh - r.bottom) - 14) };
+    const p: Pos = {
+      maxHeight: Math.max(48, (above ? r.top : vh - r.bottom) - 14),
+    };
     if (above) p.bottom = vh - r.top + 6;
     else p.top = r.bottom + 6;
     if (align === "end") p.right = Math.max(8, vw - r.right);
@@ -81,9 +98,19 @@ export default function HoverPopover({
       if (panel.current?.contains(t) || btn.current?.contains(t)) return;
       close();
     };
-    const key = (e: KeyboardEvent) => e.key === "Escape" && close();
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        btn.current?.focus();
+        close();
+      }
+    };
     const moved = (e: Event) => {
-      if (panel.current && e.target instanceof Node && panel.current.contains(e.target)) return;
+      if (
+        panel.current &&
+        e.target instanceof Node &&
+        panel.current.contains(e.target)
+      )
+        return;
       place();
     };
     window.addEventListener("mousedown", outside);
@@ -101,6 +128,12 @@ export default function HoverPopover({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  const blur = (e: React.FocusEvent<HTMLElement>) => {
+    const next = e.relatedTarget as Node | null;
+    if (next && (btn.current?.contains(next) || panel.current?.contains(next))) return;
+    close();
+  };
+
   return (
     <>
       <button
@@ -108,7 +141,21 @@ export default function HoverPopover({
         type="button"
         aria-label={label}
         aria-expanded={open}
+        aria-haspopup="dialog"
         className={triggerClassName}
+        style={triggerStyle}
+        onFocus={show}
+        onBlur={blur}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            show();
+            setPinned(true);
+            requestAnimationFrame(() =>
+              panel.current?.querySelector<HTMLElement>("button,a")?.focus(),
+            );
+          }
+        }}
         onPointerEnter={(e) => e.pointerType === "mouse" && show()}
         onPointerLeave={(e) => e.pointerType === "mouse" && hideSoon()}
         onClick={() => {
@@ -124,8 +171,13 @@ export default function HoverPopover({
         createPortal(
           <div
             ref={panel}
+            role="dialog"
+            onBlur={blur}
+            aria-label={label}
             style={pos}
-            onPointerEnter={(e) => e.pointerType === "mouse" && clearTimeout(timer.current)}
+            onPointerEnter={(e) =>
+              e.pointerType === "mouse" && clearTimeout(timer.current)
+            }
             onPointerLeave={(e) => e.pointerType === "mouse" && hideSoon()}
             className={`fixed z-[70] max-w-[calc(100vw-16px)] overflow-y-auto rounded-xl border border-border bg-surface-2 shadow-float animate-fade-in ${panelClassName}`}
           >

@@ -1,18 +1,11 @@
 import { useEffect, useState } from "react";
-import { getUsage, type UsageSummary } from "../../api/usage";
+import UsageWeek from "./UsageWeek";
 import { getPool, type Account } from "../../api/accounts";
 import { useProviderStore } from "../../stores/providerStore";
-import { apiCostHint, fmtUsd } from "../../lib/usage";
 import { useT, type MsgKey } from "../../i18n";
 import Icon from "../ui/Icon";
 import SubscriptionUsage from "./SubscriptionUsage";
 import HiggsfieldUsage from "./HiggsfieldUsage";
-
-function fmtNum(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + "M";
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + "k";
-  return String(n);
-}
 
 const STATUS: Record<string, MsgKey> = {
   cooldown: "usage.status_cooldown",
@@ -25,16 +18,10 @@ export default function UsageView() {
   const providers = useProviderStore((s) => s.providers);
   const connected = providers.filter((p) => p.connected);
   const [tab, setTab] = useState<string>("");
-  const [local, setLocal] = useState<UsageSummary | null>(null);
-  const [showLocal, setShowLocal] = useState(false);
 
   useEffect(() => {
     if (!tab && connected.length) setTab(connected[0].provider);
   }, [connected, tab]);
-
-  useEffect(() => {
-    if (showLocal && !local) getUsage(14).then(setLocal).catch(() => {});
-  }, [showLocal, local]);
 
   // Every connected account of the provider (the host login + added ones).
   const [accounts, setAccounts] = useState<Account[] | null>(null);
@@ -55,6 +42,7 @@ export default function UsageView() {
     <div className="max-w-2xl">
       <div>
 
+        <UsageWeek/>
         {/* provider tabs */}
         {connected.length > 1 && (
           <div className="flex gap-1.5 mb-5">
@@ -110,39 +98,7 @@ export default function UsageView() {
 
         <HiggsfieldUsage />
 
-        {/* secondary: local token activity */}
-        <button
-          onClick={() => setShowLocal((v) => !v)}
-          className="mt-6 flex items-center gap-1.5 text-[11px] text-content-faint hover:text-content-dim"
-        >
-          <Icon name={showLocal ? "chevron-down" : "chevron"} size={12} />
-          {t("usage.localActivity")}
-        </button>
-        {showLocal && local && (
-          <div className="card p-4 mt-2">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-              <div>
-                <div className="text-lg font-semibold tabular-nums">{local.total.turns}</div>
-                <div className="text-[11px] text-content-faint">{t("usage.turns")}</div>
-              </div>
-              <div>
-                <div className="text-lg font-semibold tabular-nums">{fmtNum(local.total.output)}</div>
-                <div className="text-[11px] text-content-faint">{t("usage.outputTokens")}</div>
-              </div>
-              <div>
-                <div className="text-lg font-semibold tabular-nums">{fmtNum(local.total.input + local.total.cache_read)}</div>
-                <div className="text-[11px] text-content-faint">{t("usage.inputInclCache")}</div>
-              </div>
-              <div title={apiCostHint()}>
-                <div className="text-lg font-semibold tabular-nums">≈ {fmtUsd(local.total.cost_usd)}</div>
-                <div className="text-[11px] text-content-faint">{t("usage.apiEquivalent")}</div>
-              </div>
-            </div>
-            <p className="mt-3 text-[11px] text-content-faint text-center">
-              {t("usage.localNote")}
-            </p>
-          </div>
-        )}
+
       </div>
     </div>
   );

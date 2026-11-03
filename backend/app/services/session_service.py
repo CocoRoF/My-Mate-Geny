@@ -1452,7 +1452,8 @@ class SessionService:
         if not self._screen_result(sid, ev, st):
             await self._store_images(sid, ev)
         if ev.type in ("turn.complete", "error"):
-            ev.data = {**ev.data, "provider": st["provider"]}  # usage is attributed per turn
+            source = "mate" if sid in self._mate_sids else "internal" if sid in self._avatar_sids else "chat"
+            ev.data = {**ev.data, "provider": st["provider"], "usage_source": source}  # numbers/enum only; no extra content copy
         elif ev.type == "session.start":
             # Which account ran this turn — kept with the chat, so it's auditable.
             ev.data = {**ev.data, "account": ctx.get("account"), "account_id": ctx.get("account_id")}

@@ -1,6 +1,26 @@
 import type { Messages } from "..";
 
 const ko: Messages<"usage"> = {
+  weekTitle: "어디에 썼나요 · 최근 7일",
+  weekChat: "세션 채팅",
+  weekMate: "메이트 대화",
+  weekInternal: "내부·제작 작업",
+  weekTokens: "토큰 · 입력·출력·캐시 합계",
+  weekHint: "토큰 기준 비중이에요. 구간에 마우스를 올리거나 포커스·탭하면 상세를 볼 수 있어요.",
+  weekTop: "{source} · 7일 Top 5",
+  weekTopHint: "이 분류 안에서의 비중이에요. 대화를 선택하면 이동해요.",
+  weekDetails: "{source} 사용량 상세",
+  weekNoRecords: "기록 없음",
+  weekError: "최근 7일 사용량을 불러오지 못했어요.",
+  weekUnknownCost: "{count}턴은 비용이 보고되지 않았어요. 금액은 기록된 API 환산 비용만 합한 값이며 구독 청구액이 아니에요.",
+  weekUnknownTokens: "{count}턴은 토큰 기록이 없어요. 토큰 합계·비중에는 보고된 사용량만 포함돼요.",
+  weekInput: "입력",
+  weekOutput: "출력",
+  weekCacheRead: "캐시 읽기",
+  weekCacheWrite: "캐시 쓰기",
+  weekDaily: "최근 7일 일자별 토큰",
+  weekInternalNote: "오늘 포함 7일이에요. 메이트 대화 안의 기억·설정 도구는 해당 대화에 포함되며, 독립 내부 호출은 별도 기록이 있는 경우만 집계해요.",
+
   title: "계정 & 사용량",
   loadingAccounts: "계정을 불러오는 중…",
   thisMachine: "이 컴퓨터",

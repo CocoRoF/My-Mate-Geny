@@ -290,6 +290,8 @@ CREATE INDEX IF NOT EXISTS idx_events_session   ON events(session_id, seq);
 CREATE INDEX IF NOT EXISTS idx_events_sid_id    ON events(session_id, id);
 CREATE INDEX IF NOT EXISTS idx_events_sid_ts    ON events(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_events_sid_type  ON events(session_id, type, created_at);
+CREATE INDEX IF NOT EXISTS idx_events_usage_window ON events(created_at,id,session_id)
+    WHERE type IN ('turn.complete','error');
 CREATE INDEX IF NOT EXISTS idx_events_tool_err  ON events(session_id, id)
     WHERE type = 'tool.result' AND instr(data, '"is_error": true') > 0;
 """

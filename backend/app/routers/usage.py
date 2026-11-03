@@ -8,6 +8,15 @@ from app.services.usage_service import UsageService
 
 router = APIRouter(prefix="/api/usage")
 
+@router.get("/week")
+async def usage_week(request: Request, tz: str = "UTC") -> dict:
+    from app.services.usage_week import week
+    from zoneinfo import ZoneInfoNotFoundError
+    try:
+        return await asyncio.to_thread(week, request.app.state.db, tz)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise HTTPException(400, "Invalid timezone") from exc
+
 
 @router.get("")
 async def usage(request: Request, days: int = 14) -> dict:
