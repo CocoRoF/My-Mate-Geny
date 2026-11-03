@@ -55,3 +55,14 @@ test('device mode edits immediately change the live owner without an Apply butto
  assert.deepEqual(screen.sharedScopes(),{sync:'on_turn'});
  screen.stopSharing();
 });
+
+test('changing the saved conversation releases its old grant without turning sharing OFF',async()=>{
+ const prefs=await import('../src/stores/devicePreferences.ts');
+ await screen.beginSharing('previous','Mate',{id:'screen:1:0',kind:'screen',name:'Screen'});
+ assert.deepEqual(screen.sharedScopes(),{previous:prefs.devicePreferences().sharing.mode});
+ await prefs.patchDevicePreferences({sharing:{sid:'recreated'}});
+ assert.deepEqual(screen.sharedScopes(),{});
+ assert.equal(prefs.devicePreferences().sharing.enabled,true);
+ assert.equal(prefs.devicePreferences().sharing.sid,'recreated');
+ screen.stopSharing();
+});

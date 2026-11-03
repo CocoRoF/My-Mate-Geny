@@ -512,6 +512,10 @@ subscribeDevicePreferences(() => {
   if (sourceReady && source!==previousSource && sharing && ownsSharing)
     reportRestoreFailure(tr("screen.sourceChangeStopped"));
   previousSource=source;sourceReady=true;
+  // A recreated/switched conversation invalidates the old grant just like a source change. Keep ON,
+  // then let the sole owner validate and reconnect to the new binding.
+  if(sharing&&ownsSharing&&prefs.sharing.enabled&&
+      (prefs.sharing.sid!==sharing.sid||prefs.sharing.origin!==location.origin))pauseSharing("waiting_session");
   // Persisted mode is authoritative; changing it in either settings UI immediately updates the sole owner.
   if (sharing && ownsSharing && prefs.sharing.enabled &&
       (sharing.mode!==prefs.sharing.mode || sharing.interval!==prefs.sharing.interval)) {
