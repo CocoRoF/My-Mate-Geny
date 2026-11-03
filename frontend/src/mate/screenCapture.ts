@@ -396,7 +396,7 @@ export function toast(text: string, duration = 1500) {
     "position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:8px;" +
     "padding:7px 14px;border-radius:999px;background:rgb(var(--c-surface-3) / .96);border:1px solid rgb(var(--c-border-strong));" +
     "color:rgb(var(--c-content));font:12.5px Inter,system-ui,sans-serif;box-shadow:var(--shadow-float);transition:opacity .3s;" +
-    "pointer-events:none;white-space:normal;max-width:min(92vw,520px);overflow-wrap:anywhere;text-align:center";
+    "pointer-events:none;white-space:normal;width:max-content;max-width:min(92vw,520px);overflow-wrap:anywhere;text-align:center";
   const dot = document.createElement("span");
   dot.style.cssText =
     "width:8px;height:8px;border-radius:50%;background:#e5484d;box-shadow:0 0 0 3px #e5484d40;flex:none";
