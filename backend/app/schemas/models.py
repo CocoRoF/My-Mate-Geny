@@ -45,6 +45,12 @@ class ListDirQuery(BaseModel):
 
 # ---- sessions ----
 
+class FolderIn(BaseModel):
+    """An additional folder: a path on this server (connection_id None) or on an SSH connection's host."""
+    path: str
+    connection_id: str | None = None
+
+
 class SessionCreate(BaseModel):
     provider: str = "claude"
     model: str = ""
@@ -54,6 +60,7 @@ class SessionCreate(BaseModel):
     title: str = "New chat"
     mode: str = "agent"
     extra_dirs: list[str] = []
+    folders: list[FolderIn] | None = None
 
 
 class SessionUpdate(BaseModel):
@@ -61,7 +68,8 @@ class SessionUpdate(BaseModel):
     model: str | None = None
     effort: str | None = None
     mode: str | None = None
-    extra_dirs: list[str] | None = None
+    extra_dirs: list[str] | None = None     # (older clients: paths on the workspace's own host)
+    folders: list[FolderIn] | None = None   # every additional folder, with its host
     title: str | None = None
     auto_compact_window: int | None = None  # tokens; 0 = CLI default; -1 = back to the global default
     account_id: str | None = None           # run on this account from the next turn (load balancing on)

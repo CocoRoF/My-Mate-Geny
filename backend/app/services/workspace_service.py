@@ -14,6 +14,10 @@ class WorkspaceService:
         self._connections = connections
         self._local = LocalConnector()
 
+    def connections(self) -> list[dict[str, Any]]:
+        """The SSH connections the user registered (public fields only)."""
+        return self._connections.list_all()
+
     def connector_for(self, connection_id: str | None) -> WorkspaceConnector:
         if not connection_id:
             return self._local

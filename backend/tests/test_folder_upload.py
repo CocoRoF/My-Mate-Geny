@@ -185,8 +185,8 @@ class _FakeSessions:
     def get(self, sid):
         return dict(self.s)
 
-    def update(self, sid, extra_dirs=None):
-        self.s["extra_dirs"] = extra_dirs
+    def update(self, sid, folders=None):
+        self.s["folders"] = folders
         return dict(self.s)
 
 
@@ -220,7 +220,7 @@ class _Up:
 
 def test_remote_workspace_gets_the_copy_over_ssh(tmp_path):
     remote = _FakeRemote(tmp_path)
-    sessions = _FakeSessions({"id": "s1", "connection_id": "conn_1", "workspace_path": "/srv/app", "extra_dirs": []})
+    sessions = _FakeSessions({"id": "s1", "connection_id": "conn_1", "workspace_path": "/srv/app", "folders": []})
     svc = FolderUploadService(sessions, _FakeWorkspaces(remote), staging_root=tmp_path / "staging")
 
     async def run():
@@ -231,7 +231,7 @@ def test_remote_workspace_gets_the_copy_over_ssh(tmp_path):
     b, out = asyncio.run(run())
     assert remote.calls == [("/srv/app", ".geny-uploads/proj", ["a.txt", "d/b.txt"])]
     assert out["path"] == "/srv/app/.geny-uploads/proj"
-    assert sessions.s["extra_dirs"] == ["/srv/app/.geny-uploads/proj"]
+    assert sessions.s["folders"] == [{"path": "/srv/app/.geny-uploads/proj", "connection_id": "conn_1"}]
     assert not (tmp_path / "staging" / b["id"]).exists()  # staging cleaned up
 
 

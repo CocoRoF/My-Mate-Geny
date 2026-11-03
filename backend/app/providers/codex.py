@@ -145,7 +145,9 @@ class CodexProvider(Provider):
         if req.preamble:
             last_user = f"{req.preamble}\n\n{last_user}"
         text = compose_text(last_user, req.attachments, inline_images=has_images, inline_files=req.inline_files)
-        if req.extra_dirs:
+        if req.folders_note:
+            text += f"\n\n<folders>\n{req.folders_note}\n</folders>"
+        elif req.extra_dirs:
             text += "\n\n<additional_folders>\nYou may also read and edit these folders:\n" + "\n".join(
                 f"- {d}" for d in req.extra_dirs
             ) + "\n</additional_folders>"

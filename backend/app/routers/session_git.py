@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from app.services.session_git import GitOpError, SessionGit
+from app.services.session_git import _WS, GitOpError, SessionGit
 
 router = APIRouter(prefix="/api/sessions/{sid}/git")
 
@@ -17,11 +17,24 @@ def _svc(request: Request) -> SessionGit:
 class ConnectBody(BaseModel):
     path: str
     add_folder: bool = False  # a repo outside the chat's folders (a fresh clone): connect its folder too
+    connection_id: str | None = None  # its host (null = this server; not sent = the workspace's host)
 
 
 class CheckoutBody(BaseModel):
     branch: str
     track: bool = False  # a remote branch: create the local tracking branch
+
+
+class CloneBody(BaseModel):
+    clone_url: str                     # https, no credentials in it
+    connection_id: str | None = None   # where to clone (null = this server; not sent = the workspace's host)
+    account_id: str | None = None      # a Git account's token (else: anonymous, a public repo)
+    full_name: str | None = None       # owner/repo (the account's repo list)
+    parent: str | None = None          # folder to clone into (default: ~/repos on an SSH host)
+
+
+def _host(body: BaseModel):
+    return body.connection_id if "connection_id" in body.model_fields_set else _WS
 
 
 async def _call(coro):
@@ -42,7 +55,7 @@ async def status(sid: str, request: Request) -> dict:
 
 @router.put("")
 async def connect(sid: str, body: ConnectBody, request: Request) -> dict:
-    return await _call(_svc(request).connect(sid, body.path, body.add_folder))
+    return await _call(_svc(request).connect(sid, body.path, body.add_folder, _host(body)))
 
 
 @router.delete("")
@@ -66,3 +79,11 @@ async def checkout(sid: str, body: CheckoutBody, request: Request) -> dict:
 @router.get("/detect")
 async def detect(sid: str, request: Request) -> dict:
     return await _call(_svc(request).detect(sid))
+
+
+@router.post("/clone")
+async def clone(sid: str, body: CloneBody, request: Request) -> dict:
+    """Clone onto this server or an SSH host (the token never stays there), then connect it."""
+    return await _call(_svc(request).clone(
+        sid, clone_url=body.clone_url, connection_id=_host(body), account_id=body.account_id,
+        full_name=body.full_name, parent=body.parent))

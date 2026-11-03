@@ -209,8 +209,9 @@ class _Sessions:
     def get(self, sid):
         return dict(self.s)
 
-    def set_git_repo(self, sid, path):
+    def set_git_repo(self, sid, path, connection_id=None):
         self.s["git_repo"] = path
+        self.s["git_repo_host"] = connection_id
         return dict(self.s)
 
 

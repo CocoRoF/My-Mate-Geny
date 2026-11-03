@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     workspace_path TEXT NOT NULL,             -- absolute path (local or under mount root)
     cli_session_id TEXT,                      -- provider-side resumable session id
     mode          TEXT NOT NULL DEFAULT 'agent',    -- agent | plan
-    extra_dirs    TEXT NOT NULL DEFAULT '[]',       -- additional folders (JSON list of paths)
+    extra_dirs    TEXT NOT NULL DEFAULT '[]',       -- additional folders: JSON [{path, connection_id|null}] (services/folders.py)
     cli_info      TEXT NOT NULL DEFAULT '{}',       -- last CLI capabilities (tools, slash commands, MCP…)
     cli_sessions  TEXT NOT NULL DEFAULT '{}',       -- per provider: {"claude": {"id", "seen"}, "codex": {...}}
     context_floor TEXT,                             -- /clear: handoffs only include messages after this
@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     kind          TEXT NOT NULL DEFAULT 'chat',     -- chat | mate (a Mate's conversation, hidden from the chat list)
     mate_id       TEXT,                             -- kind = mate: which mate
     git_repo      TEXT,                             -- the top bar's Git repo: NULL = the workspace's (auto), '' = none
+    git_repo_conn TEXT,                             -- that repo's host: NULL = the workspace's (older rows), 'local', a connection id
     last_result   TEXT,                             -- how the last run ended: ok | error | stopped (NULL: none yet)
     last_result_at TEXT,                            -- when it ended
     last_seen_at  TEXT,                             -- when someone last had the chat open (a newer result = unseen)
@@ -322,6 +323,7 @@ class Database:
                 ("kind", "TEXT NOT NULL DEFAULT 'chat'"),
                 ("mate_id", "TEXT"),
                 ("git_repo", "TEXT"),
+                ("git_repo_conn", "TEXT"),  # the Git repo's host: NULL = the workspace's (older rows), 'local', a connection id
                 ("last_result", "TEXT"),
                 ("last_result_at", "TEXT"),
                 ("last_seen_at", "TEXT"),
@@ -329,6 +331,7 @@ class Database:
             ):
                 if col not in cols:
                     self._conn.execute(f"ALTER TABLE sessions ADD COLUMN {col} {ddl}")
+            self._migrate_folders()
             pcols = {r["name"] for r in self._conn.execute("PRAGMA table_info(provider_pool)")}
             for col, ddl in (
                 ("primary_mode", "TEXT NOT NULL DEFAULT 'normal'"),
@@ -367,6 +370,22 @@ class Database:
                 self._conn.execute("ALTER TABLE git_accounts ADD COLUMN scopes TEXT NOT NULL DEFAULT ''")
                 self._conn.execute("ALTER TABLE git_accounts ADD COLUMN can_push INTEGER NOT NULL DEFAULT 1")
             self._conn.commit()
+
+    def _migrate_folders(self) -> None:
+        """Additional folders were plain paths on the workspace's host; now (host, path) pairs
+        (app/services/folders.py). Rewrites the old rows once (caller holds the lock)."""
+        import json
+
+        from app.services.folders import normalize
+
+        rows = self._conn.execute(
+            "SELECT id, connection_id, extra_dirs FROM sessions WHERE extra_dirs LIKE '[\"%'").fetchall()
+        for r in rows:
+            try:
+                new = normalize(r["extra_dirs"], r["connection_id"])
+            except Exception:  # noqa: BLE001 - leave an unreadable value alone (read as empty)
+                continue
+            self._conn.execute("UPDATE sessions SET extra_dirs = ? WHERE id = ?", (json.dumps(new), r["id"]))
 
     def close(self) -> None:
         if self._conn is not None:

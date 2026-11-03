@@ -197,6 +197,13 @@ class GitService:
             raise GitError("git account not found")
         return dict(r), self._vault.read(r["token_ref"])
 
+    def account_token(self, aid: str) -> tuple[dict, str]:
+        """(account row, token) — server side only (a clone on another host; never returned by the API)."""
+        return self._token(aid)
+
+    def git_host(self, acc: dict) -> str:
+        return self._git_host(acc)
+
     # ---- repos ----
 
     def repos(self, aid: str, query: str = "") -> list[dict]:

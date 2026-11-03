@@ -2,8 +2,9 @@
 branches, switching branch, finding repos in the chat's folders.
 
 The repo is ``sessions.git_repo``: NULL = automatic (the workspace, when it is
-in a repo), a path = that repo, ``""`` = disconnected. Every git call runs as
-one small shell script — locally, or over SSH on a remote workspace's host —
+in a repo), a path = that repo, ``""`` = disconnected; ``git_repo_conn`` = the
+host it is on (a chat's folders can be on several hosts). Every git call runs as
+one small shell script — locally, or over SSH on that host —
 with ``GIT_OPTIONAL_LOCKS=0`` so a status never takes the index lock from under
 the agent's own git commands. Nothing here polls: the UI asks on open, after a
 turn and after its own actions.
@@ -138,38 +139,103 @@ def parse_status(out: str) -> dict[str, Any]:
     }
 
 
+_WS = object()  # "the workspace's host" (an API call that didn't say)
+
+# Clone onto a host (this server or over SSH), token-free on disk: the token (if any) comes in on stdin,
+# lives in a 0600 file inside a 0700 mktemp dir only while git runs (GIT_ASKPASS reads it), and the dir
+# is removed on exit — never in argv, the environment, the repo's config or a credential helper (an
+# empty ``credential.helper`` also keeps the host's own helpers from storing it).
+_CLONE = r"""
+url=$1; dest=$2; user=$3
+if [ -d "$dest/.git" ]; then echo @@exists; exit 0; fi
+if [ -e "$dest" ] && [ -n "$(ls -A -- "$dest" 2>/dev/null)" ]; then echo @@notempty; exit 3; fi
+existed=; [ -e "$dest" ] && existed=1
+mkdir -p -- "$(dirname -- "$dest")" || { echo @@mkdir; exit 4; }
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/geny-clone.XXXXXXXX") || { echo @@tmp; exit 5; }
+trap 'rm -rf -- "$tmp"' EXIT HUP INT TERM
+IFS= read -r tok || true
+if [ -n "${tok:-}" ]; then
+  ( umask 077; printf '%s' "$tok" > "$tmp/t"; printf '%s' "$user" > "$tmp/u"
+    cat > "$tmp/askpass" <<'EOF'
+#!/bin/sh
+d=$(dirname -- "$0")
+case "$1" in [Uu]sername*) cat "$d/u" ;; *) cat "$d/t" ;; esac
+EOF
+    chmod 700 "$tmp/askpass" )
+  tok=
+  ask="$tmp/askpass"
+else
+  ask=/bin/false
+fi
+GIT_ASKPASS="$ask" SSH_ASKPASS= GIT_TERMINAL_PROMPT=0 git -c credential.helper= -c core.askPass="$ask" \
+  clone --quiet -- "$url" "$dest" 2>&1
+rc=$?
+if [ $rc -ne 0 ]; then
+  [ -z "$existed" ] && rm -rf -- "$dest"
+  echo "@@failed $rc"; exit 6
+fi
+cd -- "$dest" && pwd -P
+"""
+
+
 class SessionGit:
-    def __init__(self, sessions: Any, workspaces: Any) -> None:
+    def __init__(self, sessions: Any, workspaces: Any, git_accounts: Any = None) -> None:
         self._sessions = sessions
         self._workspaces = workspaces
+        self._accounts = git_accounts  # app.services.git_service.GitService (clone with an account)
 
     # ---- plumbing ----
 
-    def _runner(self, session: dict[str, Any]) -> Callable[[str, float], tuple[int, str, str]]:
-        cid = session.get("connection_id")
-        if cid:
-            connector = self._workspaces.connector_for(cid)
-            prefix = getattr(connector, "ssh_prefix", None)
-            if prefix is None:
-                raise GitOpError("no shell access to this workspace")
-            argv0 = list(prefix())
-        else:
-            argv0 = ["sh", "-c"]
+    def _host_name(self, host: str | None) -> str:
+        if not host:
+            return "this server"
+        try:
+            return next((c["name"] for c in self._workspaces.connections() if c["id"] == host), host)
+        except Exception:  # noqa: BLE001
+            return host
 
-        def run(script: str, timeout: float = 20) -> tuple[int, str, str]:
+    def _argv0(self, host: str | None) -> list[str]:
+        if not host:
+            return ["sh", "-c"]
+        try:
+            connector = self._workspaces.connector_for(host)
+        except KeyError as exc:
+            raise GitOpError("that server's connection was removed", 404) from exc
+        prefix = getattr(connector, "ssh_prefix", None)
+        if prefix is None:
+            raise GitOpError("no shell access to this workspace")
+        return list(prefix())
+
+    def _runner(self, session: dict[str, Any], host: Any = _WS) -> Callable[..., tuple[int, str, str]]:
+        if host is _WS:
+            host = session.get("connection_id") or None
+        argv0 = self._argv0(host)
+        name = self._host_name(host)
+
+        def run(script: str, timeout: float = 20, *, args: list[str] | None = None,
+                stdin: str | None = None) -> tuple[int, str, str]:
+            # sh -c '<script>' sh arg1 arg2…  (over ssh the remote shell re-parses: quote everything)
+            if host:
+                full = [*argv0, " ".join(shlex.quote(x) for x in ["sh", "-c", _ENV + script, "sh", *(args or [])])]
+            else:
+                full = [*argv0, _ENV + script, "sh", *(args or [])]
             try:
-                p = subprocess.run([*argv0, _ENV + script], capture_output=True, text=True, timeout=timeout,
+                p = subprocess.run(full, capture_output=True, text=True, timeout=timeout, input=stdin,
                                    env={**os.environ, "LC_ALL": "C"})
             except subprocess.TimeoutExpired as exc:
                 raise GitOpError("git took too long (timed out)", 504) from exc
             except FileNotFoundError as exc:
                 raise GitOpError("git / ssh not available on the server", 500) from exc
+            if host and p.returncode == 255 and not p.stdout:
+                raise GitOpError(f"can't reach {name}: {(p.stderr.strip().splitlines() or ['ssh failed'])[-1][:200]}", 502)
             return p.returncode, p.stdout, p.stderr
 
         return run
 
-    async def _run(self, session: dict[str, Any], script: str, timeout: float = 20) -> tuple[int, str, str]:
-        return await asyncio.to_thread(self._runner(session), script, timeout)
+    async def _run(self, session: dict[str, Any], script: str, timeout: float = 20, host: Any = _WS,
+                   **kw: Any) -> tuple[int, str, str]:
+        run = self._runner(session, host)
+        return await asyncio.to_thread(lambda: run(script, timeout, **kw))
 
     @staticmethod
     def repo_of(session: dict[str, Any]) -> tuple[str, str | None]:
@@ -181,19 +247,41 @@ class SessionGit:
             return "off", None
         return "set", g
 
-    def _roots(self, session: dict[str, Any]) -> list[str]:
-        return [session["workspace_path"], *(session.get("extra_dirs") or [])]
+    @staticmethod
+    def repo_host(session: dict[str, Any]) -> str | None:
+        """The host of the chat's repo: auto = the workspace's; a chosen repo carries its own."""
+        if session.get("git_repo"):
+            return session.get("git_repo_host", session.get("connection_id")) or None
+        return session.get("connection_id") or None
 
-    async def _real_roots(self, session: dict[str, Any]) -> list[str]:
-        """The chat's folders as absolute real paths on their host (remote workspaces may say ``~/proj``),
+    @staticmethod
+    def _folders(session: dict[str, Any]) -> list[dict[str, Any]]:
+        if "folders" in session:
+            return list(session.get("folders") or [])
+        cid = session.get("connection_id") or None  # (a session dict from before hosts)
+        return [{"path": p, "connection_id": cid} for p in session.get("extra_dirs") or []]
+
+    def _roots(self, session: dict[str, Any], host: str | None) -> list[str]:
+        out = [session["workspace_path"]] if (session.get("connection_id") or None) == host else []
+        return out + [f["path"] for f in self._folders(session) if (f.get("connection_id") or None) == host
+                      and f["path"] not in out]
+
+    def _hosts(self, session: dict[str, Any]) -> list[str | None]:
+        return list(dict.fromkeys([session.get("connection_id") or None,
+                                   *[f.get("connection_id") or None for f in self._folders(session)]]))
+
+    async def _real_roots(self, session: dict[str, Any], host: str | None) -> list[str]:
+        """The chat's folders on ``host`` as absolute real paths there (remote workspaces may say ``~/proj``),
         comparable with git's ``--show-toplevel``."""
-        roots = self._roots(session)
+        roots = self._roots(session, host)
+        if not roots:
+            return []
         script = "".join(f"(cd -- {qpath(r)} 2>/dev/null && pwd -P) || echo\n" for r in roots)
-        rc, out, _ = await self._run(session, script)
+        rc, out, _ = await self._run(session, script, host=host)
         real = out.splitlines() if rc == 0 else []
         return [(real[i].strip() if i < len(real) and real[i].strip() else r) for i, r in enumerate(roots)]
 
-    async def _status_at(self, session: dict[str, Any], path: str) -> dict[str, Any]:
+    async def _status_at(self, session: dict[str, Any], path: str, host: Any = _WS) -> dict[str, Any]:
         script = (
             f"cd -- {qpath(path)} 2>/dev/null || {{ echo @@nodir; exit 0; }}\n"
             "git rev-parse --show-toplevel 2>/dev/null || { echo @@norepo; exit 0; }\n"
@@ -201,7 +289,7 @@ class SessionGit:
             "echo @@status; git status --porcelain=v2 --branch 2>/dev/null | head -n 5000\n"
             "echo @@log; git log -1 --format='%h%x1f%s%x1f%an%x1f%cI' 2>/dev/null\n"
         )
-        rc, out, err = await self._run(session, script)
+        rc, out, err = await self._run(session, script, host=host)
         if rc != 0 and not out:
             raise GitOpError((err.strip() or "git status failed")[:300], 502)
         return parse_status(out)
@@ -211,30 +299,44 @@ class SessionGit:
     async def status(self, sid: str) -> dict[str, Any]:
         session = self._sessions.get(sid)
         mode, path = self.repo_of(session)
+        host = self.repo_host(session)
         if path is None:
             return {"mode": mode, "path": None, "connected": False, "is_repo": False}
         try:
-            st = await self._status_at(session, path)
+            st = await self._status_at(session, path, host)
         except GitOpError as exc:
-            return {"mode": mode, "path": path, "connected": False, "is_repo": False, "error": str(exc)}
-        return {"mode": mode, "path": path, "connected": bool(st.get("is_repo")), **st}
+            return {"mode": mode, "path": path, "connection_id": host, "connected": False, "is_repo": False,
+                    "error": str(exc)}
+        return {"mode": mode, "path": path, "connection_id": host, "connected": bool(st.get("is_repo")), **st}
 
-    async def connect(self, sid: str, path: str, add_folder: bool = False) -> dict[str, Any]:
+    async def connect(self, sid: str, path: str, add_folder: bool = False, connection_id: Any = _WS) -> dict[str, Any]:
+        """Connect the repo at ``path`` on ``connection_id``'s host (None = this server; not given = the
+        workspace's). Outside the chat's folders on that host: ``add_folder`` attaches its folder too."""
         session = self._sessions.get(sid)
+        host = (session.get("connection_id") or None) if connection_id is _WS else (connection_id or None)
+        if host and host != (session.get("connection_id") or None) and host not in {c["id"] for c in self._connections()}:
+            raise GitOpError(f"unknown connection: {host}", 404)
         path = (path or "").strip()
         if not path:
             raise GitOpError("which repository?")
-        st = await self._status_at(session, path)
+        st = await self._status_at(session, path, host)
         if not st.get("is_repo"):
             raise GitOpError(st.get("error") or f"not a git repository: {path}")
         root = st["root"]
-        roots = await self._real_roots(session)
+        roots = await self._real_roots(session, host)
         if not any(inside(root, r) for r in roots):
             if not add_folder:
                 raise GitOpError("connect its folder to this chat first (Folder button)")
-            self._sessions.update(sid, extra_dirs=[*(session.get("extra_dirs") or []), root])
-        self._sessions.set_git_repo(sid, root)
+            folders = [*self._folders(session), {"path": root, "connection_id": host}]
+            self._sessions.update(sid, folders=folders)
+        self._sessions.set_git_repo(sid, root, host)
         return await self.status(sid)
+
+    def _connections(self) -> list[dict[str, Any]]:
+        try:
+            return self._workspaces.connections()
+        except Exception:  # noqa: BLE001 - test doubles
+            return []
 
     def disconnect(self, sid: str) -> dict[str, Any]:
         self._sessions.get(sid)
@@ -252,7 +354,7 @@ class SessionGit:
             "echo @@refs; git for-each-ref --sort=-committerdate "
             "--format='%(refname)%09%(upstream:short)' refs/heads refs/remotes 2>/dev/null | head -n 400\n"
         )
-        rc, out, err = await self._run(session, script)
+        rc, out, err = await self._run(session, script, host=self.repo_host(session))
         if rc != 0:
             raise GitOpError((err.strip() or "could not list branches")[:300])
         sec = _sections(out)
@@ -280,16 +382,17 @@ class SessionGit:
         if not _BRANCH.match(branch or ""):
             raise GitOpError("invalid branch name")
         cmd = f"git switch --track {shlex.quote(branch)}" if track else f"git switch {shlex.quote(branch)}"
-        rc, out, err = await self._run(session, f"cd -- {qpath(path)} || exit 3\n{cmd} 2>&1\n", timeout=60)
+        rc, out, err = await self._run(session, f"cd -- {qpath(path)} || exit 3\n{cmd} 2>&1\n", timeout=60,
+                                       host=self.repo_host(session))
         if rc != 0:
             msg = (out + err).strip().splitlines()
             raise GitOpError(" ".join(m.strip() for m in msg if m.strip())[:400] or "git switch failed", 409)
         return await self.status(sid)
 
-    async def detect(self, sid: str) -> dict[str, Any]:
-        """Repos in the chat's folders: each folder's own repo + repos up to two levels down."""
-        session = self._sessions.get(sid)
-        roots = self._roots(session)
+    async def _detect_on(self, session: dict[str, Any], host: str | None) -> list[dict[str, Any]]:
+        roots = self._roots(session, host)
+        if not roots:
+            return []
         dirs = " ".join(qpath(r) for r in roots)
         script = (
             f"for d in {dirs}; do\n"
@@ -302,18 +405,133 @@ class SessionGit:
             ' "$(git -C "$r" remote get-url origin 2>/dev/null)"\n'
             "done\n"
         )
-        rc, out, err = await self._run(session, script, timeout=30)
-        ws_real = (await self._real_roots(session))[0] if out.strip() else session["workspace_path"]
+        rc, out, err = await self._run(session, script, timeout=30, host=host)
+        main = (session.get("connection_id") or None) == host
+        ws_real = ((await self._real_roots(session, host))[0] if out.strip() and main else session["workspace_path"])
         repos = []
         for ln in out.splitlines():
             parts = ln.split("\t")
             if len(parts) != 3 or not parts[0]:
                 continue
             path, branch, remote = parts[0], parts[1], strip_userinfo(parts[2])
-            where = "workspace" if inside(path, ws_real) or inside(path, session["workspace_path"]) else "folder"
+            where = "workspace" if main and (inside(path, ws_real) or inside(path, session["workspace_path"])) else "folder"
             repos.append({
                 "path": path, "branch": branch, "remote": remote, "where": where,
-                "repo": repo_name(remote, path),
+                "repo": repo_name(remote, path), "connection_id": host,
             })
+        return repos
+
+    async def detect(self, sid: str) -> dict[str, Any]:
+        """Repos in the chat's folders on every host they are on: each folder's own repo + repos up to
+        two levels down. A host that can't be reached is reported, the others still answer."""
+        session = self._sessions.get(sid)
+        hosts = self._hosts(session)
+        results = await asyncio.gather(*(self._detect_on(session, h) for h in hosts), return_exceptions=True)
+        repos: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+        for h, res in zip(hosts, results):
+            if isinstance(res, Exception):
+                errors.append({"connection_id": h, "error": str(res)[:300]})
+            else:
+                repos += res
         mode, current = self.repo_of(session)
-        return {"repos": repos, "mode": mode, "current": current}
+        return {"repos": repos, "mode": mode, "current": current, "current_host": self.repo_host(session),
+                "errors": errors}
+
+    # ---- clone onto a host ----
+
+    async def clone(self, sid: str, *, clone_url: str, connection_id: Any = _WS, account_id: str | None = None,
+                    full_name: str | None = None, parent: str | None = None) -> dict[str, Any]:
+        """Clone ``clone_url`` (with a Git account's token, or anonymously for a public repo) onto
+        ``connection_id``'s host (None = this server, not given = the workspace's), then connect it
+        to the chat (its folder attached when outside the chat's folders)."""
+        session = self._sessions.get(sid)
+        host = (session.get("connection_id") or None) if connection_id is _WS else (connection_id or None)
+        if host and host != (session.get("connection_id") or None) and host not in {c["id"] for c in self._connections()}:
+            raise GitOpError(f"unknown connection: {host}", 404)
+        acc, token = None, None
+        if account_id:
+            if self._accounts is None:
+                raise GitOpError("Git accounts are not available", 500)
+            try:
+                acc, token = self._accounts.account_token(account_id)
+            except Exception as exc:  # noqa: BLE001 - unknown account
+                raise GitOpError(str(exc) or "unknown Git account", 404) from exc
+        url, name = clean_clone_url(clone_url, full_name, acc and self._accounts.git_host(acc))
+        if not host and acc is not None:
+            # this server: the account's clone (credentials file outside the repo, so the agent can push)
+            owner_repo = full_name or "/".join(s for s in url.split("://", 1)[1].split("/")[1:] if s).removesuffix(".git")
+            try:
+                res = await asyncio.to_thread(self._accounts.clone, account_id, owner_repo, url)
+            except Exception as exc:  # noqa: BLE001 - GitError: bad name / clone failed
+                raise GitOpError(str(exc)[:400], 502) from exc
+            dest = res["path"]
+        else:
+            if parent is None or not parent.strip():
+                parent = "~/repos" if host else str(_local_repos_parent(url))
+            parent = parent.strip()
+            if not (parent.startswith("/") or parent == "~" or parent.startswith("~/")) or "\n" in parent:
+                raise GitOpError("the destination must be an absolute folder (or ~/…)")
+            dest = (parent.rstrip("/") or "/") + "/" + name
+            user = ("x-access-token" if acc["provider"] == "github" else "oauth2") if acc else ""
+            dest_arg = dest  # "~/…" → the host's home (the script is not a login shell: expand here)
+            script = ('case "$2" in "~") set -- "$1" "$HOME" "$3";; "~/"*) set -- "$1" "$HOME/${2#\\~/}" "$3";; esac\n'
+                      + _CLONE)
+            rc, out, err = await self._run(session, script, timeout=900, host=host, args=[url, dest_arg, user],
+                                           stdin=(token + "\n") if token else "")
+            lines = [ln for ln in out.splitlines() if ln.strip()]
+            if "@@notempty" in lines:
+                raise GitOpError(f"{dest} already exists and is not empty", 409)
+            if "@@mkdir" in lines:
+                raise GitOpError(f"can't create {parent} on {self._host_name(host)} (permission?)", 403)
+            if any(ln.startswith("@@failed") for ln in lines) or rc != 0:
+                why = " ".join(ln for ln in lines if not ln.startswith("@@"))[-300:] or err.strip()[-300:]
+                raise GitOpError(f"clone failed on {self._host_name(host)}: {_scrub(why, token)}", 502)
+            if "@@exists" not in lines and lines:
+                dest = lines[-1].strip()
+            if acc is not None:
+                await self._run(session, (
+                    f"cd -- {qpath(dest)} && git config user.name {shlex.quote(acc.get('username') or 'My Mate Geny')} && "
+                    f"git config user.email {shlex.quote((acc.get('username') or 'geny') + '@users.noreply.' + acc['provider'] + '.com')}"
+                ), host=host)
+        return await self.connect(sid, dest, add_folder=True, connection_id=host)
+
+
+def _scrub(text: str, token: str | None) -> str:
+    return text.replace(token, "***") if token else text
+
+
+def _local_repos_parent(url: str):
+    import urllib.parse
+
+    from app.config import settings
+
+    u = urllib.parse.urlsplit(url)
+    parts = [p for p in u.path.split("/") if p][:-1]
+    return (settings.repos_root_path / "public" / (u.hostname or "git")).joinpath(*parts)
+
+
+_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+
+
+def clean_clone_url(url: str, full_name: str | None, account_host: str | None) -> tuple[str, str]:
+    """(clean https URL, folder name). https only, no credentials in it; with an account, on its host."""
+    import urllib.parse
+
+    u = urllib.parse.urlsplit((url or "").strip())
+    if u.scheme != "https" or not u.hostname or u.username or u.password or u.query or u.fragment:
+        raise GitOpError("use an https clone URL without credentials in it")
+    if account_host and u.hostname.lower() != account_host.lower():
+        raise GitOpError("clone URL must be on this account's host")
+    segs = [s for s in u.path.split("/") if s]
+    if not segs or any(s in (".", "..") for s in segs):
+        raise GitOpError("invalid repository URL")
+    name = (full_name or segs[-1]).rstrip("/").split("/")[-1]
+    if name.endswith(".git"):
+        name = name[:-4]
+    if not _NAME.match(name):
+        raise GitOpError("invalid repository name")
+    port = f":{u.port}" if u.port else ""
+    return urllib.parse.urlunsplit(("https", f"{u.hostname}{port}", u.path, "", "")), name
+
+

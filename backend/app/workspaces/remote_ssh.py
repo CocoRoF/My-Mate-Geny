@@ -1,18 +1,10 @@
-"""Remote SSH workspace connector (scaffold).
+"""Remote SSH workspace connector.
 
-Strategy — the runtime stays on the server host, but the agent operates a folder on a
-remote host:
-
-1. **Files** — the remote folder is mounted onto the runtime host with ``sshfs`` at
-   ``<MOUNT_ROOT>/<connection_id>/<path-hash>``. The provider CLI's cwd is set
-   to that mount, so its built-in Read/Write/Edit/Glob/Grep operate on remote
-   files transparently.
-2. **Commands** — a remote-bash MCP bridge (see
-   :mod:`app.workspaces.mcp_remote_bridge`) is attached to the provider so Bash
-   tool calls execute on the remote host over ``asyncssh``, not on the runtime host.
-
-This is a scaffold: connection validation + mount/unmount are implemented
-defensively (friendly errors when ``sshfs`` or keys are missing).
+The runtime stays on the server host, but the agent operates folders on remote hosts:
+it starts in a small local scratch dir (:meth:`RemoteSshConnector.resolve_cwd`) and reaches
+the remote files through the SSH-backed MCP bridge (:mod:`app.workspaces.mcp_remote_bridge`,
+one ``remote`` server for all of a chat's SSH hosts — :meth:`bridge_host` / :meth:`bridge_config`).
+Browsing, the explorer and uploads use SFTP (asyncssh) directly.
 
 Adapted from GAPT's ``SshConnectionSpec`` / ``RemoteSshTarget`` (asyncssh,
 in-memory keys).
@@ -48,6 +40,10 @@ class RemoteSshConnector(WorkspaceConnector):
     def __init__(self, spec: SshSpec) -> None:
         self._spec = spec
         self._mounts: dict[str, str] = {}
+
+    @property
+    def spec(self) -> SshSpec:
+        return self._spec
 
     # ---- helpers ----
 
@@ -129,8 +125,9 @@ class RemoteSshConnector(WorkspaceConnector):
 
         The agent never cd's into the remote filesystem (sshfs-in-container is
         brittle). Instead all remote I/O goes through the remote_* MCP tools
-        (see :meth:`mcp_config`). A CLAUDE.md in the scratch dir tells the agent
-        the remote target and to use those tools.
+        (see :meth:`bridge_host`). A CLAUDE.md in the scratch dir tells the agent
+        the remote target and to use those tools; the chat's other folders (on
+        this server or other servers) are in its instructions ("Folders in this chat").
         """
         if not self._spec.private_key_pem:
             raise WorkspaceError("no SSH private key configured for this connection")
@@ -143,13 +140,12 @@ class RemoteSshConnector(WorkspaceConnector):
             f"# Remote session\n\n"
             f"This is a LOCAL scratch directory. The real workspace is on a remote host:\n\n"
             f"- Host: `{self._spec.username}@{self._spec.host}:{self._spec.port}`\n"
-            f"- Remote path: `{remote_path}`\n"
-            + "".join(f"- Additional remote folder: `{d}`\n" for d in (extra_dirs or []))
-            + "\n"
+            f"- Remote path: `{remote_path}`\n\n"
             f"Operate the remote host ONLY through the `remote_*` MCP tools "
-            f"(`remote_bash`, `remote_read`, `remote_write`, `remote_list`). "
-            f"Do NOT use your built-in file/Bash tools for the task — they act on "
-            f"this local scratch dir, not the remote host.\n"
+            f"(`remote_bash`, `remote_read`, `remote_write`, `remote_list`); they reach the folders "
+            f"attached to this chat on that host. Do NOT use your built-in file/Bash tools for the "
+            f"remote workspace — they act on this local scratch dir (and on folders of THIS server "
+            f"attached to the chat, if any), not on the remote host.\n"
         )
         # Claude reads CLAUDE.md, Codex reads AGENTS.md: same guide for both.
         for name in ("CLAUDE.md", "AGENTS.md"):
@@ -216,12 +212,30 @@ class RemoteSshConnector(WorkspaceConnector):
             f"{self._spec.username}@{self._spec.host}",
         ]
 
-    async def mcp_config(self, path: str) -> dict[str, Any] | None:
-        """Attach the remote-bash MCP bridge so Bash runs on the remote host."""
+    def bridge_host(self, *, name: str, aliases: list[str], cwd: str, roots: list[str],
+                    default: bool = False) -> dict[str, Any]:
+        """This host's entry for the remote MCP bridge (``HRH_REMOTE_HOSTS``): how to reach it
+        and the folders the agent may touch there (see mcp_remote_bridge.py)."""
+        return {
+            "name": name,
+            "aliases": aliases,
+            "host": self._spec.host,
+            "port": self._spec.port,
+            "user": self._spec.username,
+            "key_file": self._ensure_key_file(),  # 0600 in the connection's runtime dir
+            "known_hosts": self._known_hosts(),
+            "cwd": cwd,
+            "roots": roots,
+            "default": default,
+        }
+
+    @staticmethod
+    def bridge_config(hosts: list[dict[str, Any]]) -> dict[str, Any]:
+        """The MCP config attaching the remote bridge for ``hosts`` (one server, ``host`` argument)."""
+        import json
         import sys
 
         bridge = os.path.join(os.path.dirname(__file__), "mcp_remote_bridge.py")
-        key_path = self._ensure_key_file()
         return {
             "mcpServers": {
                 "remote": {
@@ -233,16 +247,17 @@ class RemoteSshConnector(WorkspaceConnector):
                     "env": {
                         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
                         "HOME": os.environ.get("HOME", "/root"),
-                        "HRH_SSH_HOST": self._spec.host,
-                        "HRH_SSH_PORT": str(self._spec.port),
-                        "HRH_SSH_USER": self._spec.username,
-                        "HRH_SSH_CWD": path or self._spec.default_path,
-                        "HRH_SSH_KEY_FILE": key_path,  # 0600, same key as sshfs
-                        "HRH_SSH_KNOWN_HOSTS": self._known_hosts(),
+                        "HRH_REMOTE_HOSTS": json.dumps(hosts, separators=(",", ":")),
                     },
                 }
             }
         }
+
+    async def mcp_config(self, path: str) -> dict[str, Any] | None:
+        """The bridge for this host alone, confined to ``path`` (a workspace with no other folders)."""
+        p = path or self._spec.default_path
+        return self.bridge_config([self.bridge_host(name="workspace", aliases=[self._spec.connection_id],
+                                                    cwd=p, roots=[p], default=True)])
 
     async def read_file(self, path: str, limit: int) -> bytes:
         """Read up to ``limit`` bytes of a remote file over SFTP."""

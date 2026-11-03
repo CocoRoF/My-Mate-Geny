@@ -164,7 +164,11 @@ class TurnRequest:
     timeout_s: float | None = None
     attachments: list[Attachment] = field(default_factory=list)  # files sent with the latest user message
     mode: str = "agent"                   # agent (full autonomy) | plan (read-only, propose a plan)
-    extra_dirs: list[str] = field(default_factory=list)  # additional folders the agent may use
+    extra_dirs: list[str] = field(default_factory=list)  # additional folders on THIS server (real paths)
+    # What is attached where (this server / SSH hosts) and which tools reach it
+    # (services/folder_routing.py). Claude: appended to the system prompt;
+    # Codex: with every message (instead of the bare folder list).
+    folders_note: str = ""
     inbox: TurnInbox | None = None        # mid-turn steering (None => provider can't be steered)
     # Conversation context this engine hasn't seen (full handoff after a
     # provider switch, or a catch-up on turns another engine ran). Prepended
