@@ -7,15 +7,15 @@ Mate-specific autonomous conversation settings are described in [Reach out](mate
 
 ## Entry points
 
-The attachment menu's **Share screen** and the screen row above the composer open the controls.
-**Capture once** selects a screen/window and adds a normal image attachment to the draft. It is sent only when
-the user sends the draft. **Enable sharing** selects a local source for this conversation. The active source,
-conversation and Stop button stay visible while navigating the main console. Standalone Mate chat windows
-show the same indicator. Reload, page close, server/socket disconnect, track-ended and Stop end sharing; no
-consent is persisted. One window shares one conversation at a time. Desktop session sharing requires capture
-bridge v3 for app-wide preferences and cross-window cancellation. See [device preferences](device-preferences.md) for migration, volume and toolbar behavior.
+The attachment menu and avatar toolbar open the controls. Capture once adds an image to the draft. Enable
+sharing saves device-local ON intent and selects a source/conversation. Only explicit Stop saves OFF; app restart,
+refresh, update or transient failures pause access and automatically reconnect when possible. Unavailable targets
+never silently fall back to another source. See [device preferences](device-preferences.md).
 
-Modes are selected in a setup dialog before sharing; the composer only shows compact status/Stop.
+No persistent sharing banner/chip/row is inserted in any composer or window title/tray. Stop/status live only
+in the avatar toolbar and Screen settings. One short capture toast floats over a visible window.
+
+Modes are selected in a setup dialog before sharing; the composer layout stays unchanged.
 General sessions have these modes (default: ask); Mates configure autonomous observation in Reach out:
 
 - **When requested**: the agent's MCP call asks permission each time (native prompt on desktop; timed application
@@ -43,7 +43,7 @@ General sessions have these modes (default: ask); Mates configure autonomous obs
    SSH tools. `capture_screen` returns MCP image content to the model. The bridge calls loopback-only
    `/api/internal/screen/call` with a per-session token; cookie/public callers cannot use that endpoint. Its config
    lives in a private temporary directory and a 0600 file; the token itself is read from a separate 0600 token file, so neither CLI gets it in argv.
-5. Mate `see_screen` uses the same broker while preserving existing per-Mate opt-in settings. Explicit sharing does not enable that tool: the per-Mate safety switch remains off by default. Revoking sharing is checked again when the tool executes.
+5. Mate `see_screen` uses the same live session/device grant. There is no second per-Mate permission switch. Sharing OFF is checked again when the tool executes.
 6. Per-message images enter the existing provider attachment envelope before the user message is linked/published.
    Claude receives image blocks; Codex receives image paths. Remote workspace uploads use the same existing SSH
    copy path as other attachments. Screenshots always originate on the client, never in the remote workspace.

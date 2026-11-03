@@ -98,12 +98,12 @@ class App {
   constructor(home, port, iport) {
     Object.assign(this, { home, port, iport, pages: new Map() });
   }
-  start() {
+  start(extraArgs = []) {
     const env = { ...process.env, HOME: this.home, XDG_CONFIG_HOME: path.join(this.home, ".config") };
     delete env.XDG_SESSION_TYPE;
     delete env.WAYLAND_DISPLAY;
     Object.assign(env, { LANG: "en_US.UTF-8", LANGUAGE: "en_US", LC_ALL: "en_US.UTF-8" });
-    const args = [path.join(__dirname, "..", ".."), "--no-sandbox", `--remote-debugging-port=${this.port}`, `--inspect=${this.iport}`, "--disable-gpu", "--lang=en-US"];
+    const args = [path.join(__dirname, "..", ".."), "--no-sandbox", `--remote-debugging-port=${this.port}`, `--inspect=${this.iport}`, "--disable-gpu", "--lang=en-US", ...extraArgs];
     this.proc = spawn(path.join(__dirname, "..", "..", "node_modules", ".bin", "electron"), args, { env, stdio: ["ignore", "pipe", "pipe"], detached: true });
     this.out = "";
     this.proc.stdout.on("data", (d) => (this.out += d));

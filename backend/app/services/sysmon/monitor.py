@@ -276,6 +276,7 @@ class SystemMonitor:
                 "cpu_iowait": cpu["iowait"], "cpu_steal": cpu["steal"],
                 "load1": cpu["load1"], "load5": cpu["load5"], "load15": cpu["load15"],
                 "mem_used": mem["used"], "mem_avail": mem["available"], "mem_cache": mem["cache"],
+                "mem_occupied": mem["occupied"], "mem_non_cache": mem["non_cache"], "mem_free": mem["free"],
                 "mem_total": mem["total"], "swap_used": mem["swap_used"], "swap_total": mem["swap_total"],
                 "disk_read": io["read"], "disk_write": io["write"], "disk_busy": io["busy"],
                 "net_rx": net["rx"], "net_tx": net["tx"],
@@ -286,6 +287,8 @@ class SystemMonitor:
                 m["psi_mem_full"] = psi.get("memory", {}).get("full", {}).get("avg10", 0.0)
                 m["psi_io"] = psi.get("io", {}).get("some", {}).get("avg10", 0.0)
             if cg is not None:
+                if cg.current is not None:
+                    m["cg_current"] = cg.current
                 if cg.working_set is not None:
                     m["cg_mem"] = cg.working_set
                 if cg.max is not None:

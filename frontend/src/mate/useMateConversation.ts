@@ -55,6 +55,7 @@ export const bcp47 = (lang: string | undefined) => {
  * The quick card is never a candidate. This is a page's rank in that election (0: not a candidate).
  */
 export function voiceRank(surface: string, desk: DesktopMateState | null, pageVisible: boolean): number {
+  if (surface === "device-runtime") return 0.5;
   if (surface === "mate-quick") return 0; // it closes after sending; whoever is elected answers
   if (surface === "mate-overlay") return pageVisible && (desk ? desk.visible : true) ? RANK_OVERLAY : 0;
   // a page on screen before one in the background (a hidden tab's throttled beats must not make two speakers)

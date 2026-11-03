@@ -41,6 +41,9 @@ class ScreenService:
         self.observing: set[str] = set()
         self.last_proactive: dict[tuple[str,str], float] = {}
         self.last_observe: dict[tuple[str, str], float] = {}
+        from app.services.device_events import DeviceEvents
+        self.device_events=DeviceEvents(self)
+        self.mate_service=None
         sessions.add_turn_end_listener(lambda sid, _: broker.cancel_session(sid))
 
     def drop(self, sid: str) -> None:
@@ -146,7 +149,11 @@ class ScreenService:
         if client is None:
             pool = [c for c in self.broker.clients() if c.device == device and c.screen_policy]
             client = max(pool,key=lambda c:c.active_at,default=None)
-        return {**config, **(client.screen_policy if client else {})}
+        result={**config, **(client.screen_policy if client else {})}
+        if client and client.screen_policy.get('fixed'):
+            result.update(interval=60,scope='all',guidance='',preset=None,fixed=True)
+            if client.screen_policy.get('mate_id') and client.screen_policy['mate_id']!=session['mate_id']:result['enabled']=False
+        return result
 
     @staticmethod
     def visual(path: str) -> tuple:

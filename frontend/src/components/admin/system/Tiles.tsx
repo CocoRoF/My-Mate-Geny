@@ -26,14 +26,14 @@ function Tile({ label, icon, value, sub, tone, children, spark }: {
         <Icon name={icon} size={12} className="text-accent" />
         <span className="truncate">{label}</span>
         {st && (
-          <span className="ml-auto inline-flex items-center gap-1 text-content-dim" title={t("admin.statusTitle", { label: t(st.label) })}>
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-content-dim" title={t("admin.statusTitle", { label: t(st.label) })}>
             <span className="inline-flex" style={{ color: toneColor(tone!) }}><Icon name={st.icon} size={11} /></span>
             <span className="hidden sm:inline">{t(st.label)}</span>
           </span>
         )}
       </div>
-      <div className="mt-1 text-[20px] sm:text-[22px] font-semibold leading-tight text-content truncate">{value}</div>
-      {sub && <div className="mt-0.5 truncate text-[11px] text-content-dim">{sub}</div>}
+      <div className="mt-1 text-[20px] sm:text-[22px] font-semibold leading-tight text-content">{value}</div>
+      {sub && <div className="mt-0.5 text-[11px] text-content-dim">{sub}</div>}
       {children && <div className="mt-2">{children}</div>}
       {spark && <div className="mt-2 -mx-1">{spark}</div>}
     </div>
@@ -44,7 +44,7 @@ export default function Tiles({ now, live, th }: { now: Snapshot | null; live: L
   const t = useT();
   if (!now) {
     return (
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 min-[1800px]:grid-cols-6">
         {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="card h-[118px] animate-pulse" />
         ))}
@@ -53,8 +53,10 @@ export default function Tiles({ now, live, th }: { now: Snapshot | null; live: L
   }
   const m = now.m;
   const s = (k: string) => live.s[k] || [];
-  const memPct = (now.mem.used * 100) / (now.mem.total || 1);
-  const memTone = toneOf(memPct, th?.mem_warn ?? 85, th?.mem_crit ?? 95);
+  const occupied = now.mem.occupied ?? Math.max(0,now.mem.total-now.mem.free);
+  const memPct = (occupied * 100) / (now.mem.total || 1);
+  // Pressure alerts still use OS available memory; a useful file cache alone isn't a shortage.
+  const memTone = toneOf((now.mem.used*100)/(now.mem.total||1), th?.mem_warn ?? 85, th?.mem_crit ?? 95);
   const cpuTone = toneOf(m.cpu, th?.cpu_sat ?? 95, 101);
   const swapPct = now.mem.swap_total ? (now.mem.swap_used * 100) / now.mem.swap_total : 0;
   const swapTone = now.mem.swap_total ? toneOf(swapPct, th?.swap_warn ?? 80, 95) : "ok";
@@ -66,14 +68,17 @@ export default function Tiles({ now, live, th }: { now: Snapshot | null; live: L
   const ioSum = s("disk_read").map((x, i) => (x ?? 0) + (s("disk_write")[i] ?? 0));
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 min-[1800px]:grid-cols-6">
       <Tile label="CPU" icon="cpu" tone={cpuTone} value={pct(m.cpu)}
         sub={t("admin.cpuSub", { load: m.load1?.toFixed(2), cores: now.cpu.count })}
         spark={<Sparkline values={s("cpu")} max={100} />} />
-      <Tile label={t("admin.memory")} icon="server" tone={memTone}
-        value={<>{bytes(now.mem.used)} <span className="text-[13px] font-normal text-content-faint">/ {bytes(now.mem.total, 0)}</span></>}
-        sub={t("admin.memSub", { pct: pct(memPct), free: bytes(now.mem.available) })}
-        spark={<Sparkline values={s("mem_used")} max={now.mem.total} />} />
+      <Tile label={t("admin.serverMemory")} icon="server" tone={memTone}
+        value={<>{bytes(occupied)} <span className="text-[13px] font-normal text-content-faint">/ {bytes(now.mem.total, 0)}</span></>}
+        sub={t("admin.memSub", { pct: pct(memPct), free: bytes(now.mem.free) })}
+        spark={<Sparkline values={s("mem_occupied")} max={now.mem.total} />}>
+        <p className="text-[11px] text-content-dim">{t("admin.memCache")}: {bytes(now.mem.cache)}</p>
+        <p className="text-[11px] text-content-dim">{t(now.host.in_container&&now.cgroup?.current!=null?"admin.genyContainerTotal":"admin.genyRss")}: {bytes(now.host.in_container?now.cgroup?.current??now.m.tree_rss:now.m.tree_rss)}</p>
+      </Tile>
       <Tile label={t("admin.swap")} icon="rotate" tone={swapTone}
         value={now.mem.swap_total ? bytes(now.mem.swap_used) : t("admin.swapOff")}
         sub={now.mem.swap_total ? t("admin.swapSub", { pct: pct(swapPct), total: bytes(now.mem.swap_total, 0) }) : t("admin.noSwap")}

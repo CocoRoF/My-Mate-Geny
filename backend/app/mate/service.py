@@ -330,7 +330,7 @@ class MateService:
         prefs = mate.get("prefs") or {}
         rel = self._advanced(mate_id, now_utc, tz) if mate_id else None
         relation = bool(rel and rel["enabled"])
-        screen = bool((mate.get("screen") or {}).get("enabled"))
+        screen = self.capture.shared_client(session["id"], self._svc.last_client_device(session["id"])) is not None
         prompt = system_prompt(mate["name"], mate["persona"], core, prefs, more=len(memories) - len(core),
                                relation=relation, screen=screen)
         # the per-turn context (docs/mate-memory-affinity.md §2): settings note (persona edited since the
@@ -1178,13 +1178,13 @@ class MateService:
     # ---- seeing the screen (app/mate/capture.py; docs/mate.md §4 "Seeing the screen") ----
 
     async def _tool_see_screen(self, mate: dict[str, Any], sid: str, args: dict[str, Any]) -> "ToolImages":
-        if not (mate.get("screen") or {}).get("enabled"):
-            raise MateError("Looking at the screen is switched off for you (Mate settings → Screen).")
+        if self.capture.shared_client(sid,self._svc.last_client_device(sid)) is None:
+            raise CaptureError("not_shared")
         if not self._svc.is_mate_session(sid):
             raise MateError("see_screen works only in your own conversation")
         reason = str(args.get("reason") or "").strip()
         device = self._svc.last_client_device(sid)
-        res = await self.capture.request(mate=mate, session_id=sid, device=device, reason=reason)
+        res = await self.capture.request(mate=mate, session_id=sid, device=device, reason=reason,shared_only=True)
         row = self._capture_row(sid, res.get("attachment_id"))
         # (the conversation's own copy: never a pending composer upload, gone with the conversation)
         self._svc._attachments.link([row["id"]], f"artifact:capture:{res['id']}")

@@ -305,7 +305,7 @@ class FakeCollector:
                 "load1": 1.0, "load5": 1.0, "load15": 1.0, "runnable": 1, "threads": 100, "first": False}
 
     def memory(self):
-        return {"total": self.total, "available": self.total - self.mem_used, "used": self.mem_used, "free": GB,
+        return {"total": self.total, "available": self.total - self.mem_used, "used": self.mem_used, "free": GB, "occupied": self.total-GB, "non_cache": self.total-3*GB,
                 "cache": 2 * GB, "shmem": 0, "dirty": 0, "swap_total": 2 * GB, "swap_used": self.swap_used,
                 "swap_cached": 0}
 
@@ -498,3 +498,18 @@ def test_api_shapes_and_ws():
         while mon.subscribers and time.time() < deadline:
             time.sleep(0.05)
         assert mon.subscribers == 0
+
+@pytest.mark.parametrize('total,free,available,cache',[(28,6,24,19),(16,1,6,5),(8,0,0,0)])
+def test_host_memory_occupancy_includes_cache_without_adding_available_overlap(total,free,available,cache):
+    s=memory_summary({'MemTotal':total*GB,'MemFree':free*GB,'MemAvailable':available*GB,'Cached':cache*GB})
+    assert s['occupied']==(total-free)*GB
+    assert s['non_cache']+s['cache']+s['free']==s['total']
+    assert s['used']==(total-available)*GB # pressure/guard retains OS-available semantics
+    assert s['available']==available*GB
+
+
+def test_memory_missing_available_and_inconsistent_kernel_fixture_stays_bounded():
+    s=memory_summary({'MemTotal':8*GB,'MemFree':2*GB,'Cached':3*GB,'SReclaimable':GB})
+    assert s['available']==5*GB and s['occupied']==6*GB and s['non_cache']==2*GB
+    s=memory_summary({'MemTotal':8*GB,'MemFree':99*GB,'MemAvailable':100*GB,'Cached':99*GB})
+    assert s['free']==s['available']==s['total'] and s['occupied']==s['cache']==s['non_cache']==0

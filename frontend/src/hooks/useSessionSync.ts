@@ -1,5 +1,6 @@
+import {ackBrowserEvents} from "../mate/deviceEvents";
 import { observeSharingReady } from "../mate/localScreen";
-import { sharingSnapshot, stopOwnedSharing, stopSharing, resumeSharing } from "../mate/localScreen";
+import { sharingSnapshot, stopOwnedSharing, resumeSharing } from "../mate/localScreen";
 import { useEffect } from "react";
 import { toLogin, wsUrl } from "../api/client";
 import { onResync } from "../lib/sync";
@@ -68,8 +69,9 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
         } catch {
           return;
         }
+        if (msg.type === "device.events.ack") {const ids=(msg.data as {ids?:string[]})?.ids||[];if(window.hrhNative)void window.hrhNative.device?.ackEvents?.(ids);else ackBrowserEvents(ids);return;}
         if (msg.type === "capture.revoked") {
-          if (sharingSnapshot()?.sid === msg.data?.session_id) stopSharing();
+          if (sharingSnapshot()?.sid === msg.data?.session_id) stopOwnedSharing();
           return;
         }
         if (msg.type === "capture.request") {
@@ -103,7 +105,7 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
         ws = null;
         stopOwnedSharing();
         clearTimeout(probeTimer);
-        if (e.code === 4401) return toLogin();
+        if (e.code === 4401 && window.hrhNative?.surface!=="device-runtime") return toLogin();
         if (!alive) return;
         reconnectTimer = setTimeout(connect, Math.min(30000, 1000 * 2 ** retry++));
       };
@@ -117,7 +119,10 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
         /* closing */
       }
     };
-    const focused = () => hello(ws, true);
+    const focused = () => hello(ws, document.hasFocus());
+    let inputTimer:ReturnType<typeof setTimeout>|undefined;
+    const input=()=>{clearTimeout(inputTimer);inputTimer=setTimeout(focused,100);};
+    const presence=setInterval(()=>{if(document.hasFocus())focused();},5000);
 
     const restart = () => {
       const old = ws;
@@ -144,6 +149,8 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
     document.addEventListener("visibilitychange", check);
     window.addEventListener("online", check);
     window.addEventListener("focus", focused);
+    window.addEventListener("input",input);
+    window.addEventListener("blur",focused);
     window.addEventListener("hrh:screen-sharing", focused);
     const offResync = onResync(check);
     connect();
@@ -154,6 +161,8 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
       clearTimeout(probeTimer);
       document.removeEventListener("visibilitychange", check);
       window.removeEventListener("online", check);
+      clearInterval(presence);clearTimeout(inputTimer);
+      window.removeEventListener("input",input);window.removeEventListener("blur",focused);
       window.removeEventListener("focus", focused);
       window.removeEventListener("hrh:screen-sharing", focused);
       offResync();

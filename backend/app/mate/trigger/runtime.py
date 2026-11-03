@@ -102,7 +102,9 @@ class GenyTriggers:
         now=datetime.now(self.screen.mates.tz())
         mate=self.screen.mates.get(self.screen.sessions.get(sid)['mate_id'])
         linked,busy=self.worker(sid)
-        p=GenyPolicy(manifest,clock=self.clock,locale=mate.get('persona',{}).get('language') or 'en',hour=now.hour,
+        from .fixed import FixedPolicy
+        cls=FixedPolicy if config.get("fixed") else GenyPolicy
+        p=cls(manifest,clock=self.clock,locale=mate.get('persona',{}).get('language') or 'en',hour=now.hour,
                      screen_active=bool(frame),linked=linked,worker_busy=busy,time_context=now.strftime('%Y-%m-%d %a %H:%M %Z'))
         p._consecutive_triggers=self.consecutive
         p._last_category_fire=self.category_fire
@@ -126,6 +128,7 @@ class GenyTriggers:
         if not device:
             devices={c.device for c in self.screen.broker.clients() if c.device}
             if len(devices)==1:device=next(iter(devices))
+        if any(c.device==device and c.user_busy and time.monotonic()-c.busy_at<10 for c in self.screen.broker.clients()):return {"status":"user_busy"}
         if not device or not any(c.device==device for c in self.screen.broker.clients()):return {'status':'offline'}
         if self.screen.sessions.is_running(sid) or self.screen.sessions.running_task_count(sid)>0 or sid in self.inflight:
             return {'status':'busy'}
@@ -192,6 +195,7 @@ class GenyTriggers:
             if not self.consent(sid,frame):self.expire(sid)
 
     async def scan(self):
+        await self.screen.device_events.drain()
         if self.screen.mates is None:return
         sids=[m['session_id'] for m in self.screen.mates.list() if m.get('session_id')]
         results=await asyncio.gather(*(self.consider(sid) for sid in sids),return_exceptions=True)

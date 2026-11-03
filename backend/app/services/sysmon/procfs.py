@@ -157,20 +157,26 @@ def parse_meminfo(text: str) -> dict[str, int]:
 
 
 def memory_summary(mi: dict[str, int]) -> dict[str, int]:
-    total = mi.get("MemTotal", 0)
-    free = mi.get("MemFree", 0)
+    total = max(0, mi.get("MemTotal", 0))
+    free = max(0, min(total, mi.get("MemFree", 0)))
     avail = mi.get("MemAvailable")
     if avail is None:  # pre-3.14 kernels
         avail = free + mi.get("Buffers", 0) + mi.get("Cached", 0)
-    # Page cache the kernel can drop (htop's definition).
+    avail = max(0, min(total, avail))
+    occupied = total - free
+    # Cache/buffers and reclaimable slab, excluding shared memory. It is a subset of occupied RAM,
+    # not an extra allocation to add to total-MemAvailable (those definitions overlap).
     cache = mi.get("Buffers", 0) + mi.get("Cached", 0) + mi.get("SReclaimable", 0) - mi.get("Shmem", 0)
+    cache = max(0, min(occupied, cache))
     swap_total = mi.get("SwapTotal", 0)
     return {
         "total": total,
         "available": avail,
         "used": max(0, total - avail),
+        "occupied": occupied,
+        "non_cache": occupied - cache,
         "free": free,
-        "cache": max(0, cache),
+        "cache": cache,
         "shmem": mi.get("Shmem", 0),
         "dirty": mi.get("Dirty", 0),
         "swap_total": swap_total,

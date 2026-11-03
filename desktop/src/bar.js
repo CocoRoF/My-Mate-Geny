@@ -61,9 +61,12 @@ const EN = {
 function render(s) {
   linux = !!s.linux;
   const L = { ...EN, ...(s.labels || {}) };
-  set("screen", ICONS.screen, s.screenSharing, L.screen);
+  const waiting=!!s.screenSharing && s.screenStatus && s.screenStatus!=="ready";
+  const waitLabel=s.lang==="ko" ? " · 켜짐 · 연결/대상/권한 대기" : " · Enabled · waiting for connection/source/permission";
+  set("screen", ICONS.screen, s.screenSharing, L.screen+(waiting?waitLabel:""));
   buttons.screen.classList.toggle("sharing", !!s.screenSharing);
   buttons.screen.classList.toggle("capturing", !!s.screenBusy);
+  buttons.screen.classList.toggle("waiting",waiting);
   set("chat", ICONS.chat, s.chatOpen, L.chat);
   set("quick", ICONS.quick, false, s.quickKey ? L.quickKey.replace("{key}", s.quickKey) : L.quick);
   set("through", s.clickThrough ? ICONS.throughOn : ICONS.throughOff, s.clickThrough,

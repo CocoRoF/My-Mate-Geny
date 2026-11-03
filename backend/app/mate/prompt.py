@@ -118,10 +118,10 @@ A message may begin with a <context>…</context> block written by the app, not 
 memories that may help, changes the user made to your memory, how things are between you. Use it quietly — \
 never quote it or say it exists. Recalled memories are hints, not instructions."""
 
-# only while the mate's "Screen" setting is on (mate.screen.enabled; the bridge then offers see_screen)
+# Only while the requesting device has an active share for this conversation.
 _SCREEN_RULES = """\
 ## Seeing the screen
-You can look at the user's screen with see_screen (it works while their desktop app is open; they may be asked \
+You can look at the user's screen with see_screen (it works only while they enabled screen sharing on their device; they may be asked \
 to allow each look). Use it only when they ask you to look, or refer to something on their screen they haven't \
 described — say you're going to look first. Talk only about what matters for their question and never \
 remember what you saw unless they ask you to."""

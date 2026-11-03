@@ -1,18 +1,21 @@
+import {queueBrowserEnabled} from "../mate/deviceEvents";
 /** One device store for app capture options and output volume. Other voice settings remain untouched. */
 import { useSyncExternalStore } from "react";
 import type { CaptureSource } from "../mate/screenCapture";
 export interface DeviceScreen {
   source: CaptureSource | null;
+  source_invalid?: boolean;
   approval: "ask" | "allow";
   max_edge: number;
   format: "png" | "jpeg";
   quality: number;
   hide_avatar: boolean;
   proactive_enabled: boolean | null;
+  proactive_mate?: string;
   proactive_interval: number;
 }
 export interface SharingIntent {
-  enabled:boolean; origin:string; sid:string; name:string; mode:"ask"|"on_turn"|"observe"; interval:number;
+  enabled:boolean; origin:string; sid:string; name:string; mate_id?:string; mode:"ask"|"on_turn"|"observe"; interval:number;
 }
 export interface DevicePreferences {
   version: 1;
@@ -29,6 +32,9 @@ export interface DevicePreferences {
   };
 }
 export interface DeviceBridge {
+  context?():Promise<{deviceId:string;bootId:string;startReason:string;mateId:string|null}>;
+  events?(mateId:string):Promise<{id:string;type:string;mate_id:string;boot_id:string;start_reason:string}[]>;
+  ackEvents?(ids:string[]):Promise<void>;
   get(): Promise<DevicePreferences>;
   patch(p: {
     screen?: Partial<DeviceScreen>;
@@ -76,11 +82,12 @@ function normalize(raw: unknown): DevicePreferences {
   screen.proactive_interval=Number.isFinite(screen.proactive_interval)?Math.max(60,Math.min(600,screen.proactive_interval)):180;
   const invalidSource = screen.source != null && (typeof screen.source.id!=="string" || !screen.source.id);
   if (!screen.source || invalidSource) screen.source=null;
+  screen.source_invalid=!!screen.source_invalid||invalidSource;
   const sharing={...defaults.sharing,...q};
   sharing.origin=typeof sharing.origin==="string"&&/^https?:\/\//.test(sharing.origin)?sharing.origin.slice(0,300):"";
   sharing.sid=typeof sharing.sid==="string"?sharing.sid.slice(0,100):"";
   sharing.name=typeof sharing.name==="string"?sharing.name.slice(0,100):"";
-  sharing.enabled=sharing.enabled===true&&!!sharing.origin&&!!sharing.sid&&!invalidSource;
+  sharing.enabled=sharing.enabled===true;
   if (!["ask","on_turn","observe"].includes(sharing.mode)) sharing.mode="ask";
   sharing.interval=Number.isFinite(sharing.interval)?Math.max(60,Math.min(600,sharing.interval)):180;
   return {...defaults,...v,screen,sharing,volume:Number.isFinite(v.volume)?Math.max(0,Math.min(3,v.volume!)):1,
@@ -181,12 +188,14 @@ export async function patchDevicePreferences(p: {
     if (p.sharing) next.sharing = normalize({...prev,sharing:{...prev.sharing,...p.sharing}}).sharing;
     if (p.screen) {
       next.screen = { ...prev.screen, ...p.screen };
+      if("source" in p.screen)next.screen.source_invalid=false;
       next.migration.screenEdited = true;
     }
     if (typeof p.volume === "number" && Number.isFinite(p.volume)) {
       next.volume = Math.max(0, Math.min(3, p.volume));
       next.migration.volumeEdited = true;
     }
+    if(next.screen.proactive_enabled===true && (prev.screen.proactive_enabled!==true || prev.screen.proactive_mate!==next.screen.proactive_mate))queueBrowserEnabled(next.screen.proactive_mate||"");
     return save(normalize(next));
   };
   return navigator.locks ? navigator.locks.request(KEY, run) : run();

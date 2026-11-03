@@ -169,3 +169,15 @@ surface (adjacent CVD ΔE ≥ 8.4, ≥ 3:1 contrast); status colors are reserved
 for status and always paired with an icon and a label.
 
 Set `MONITOR_ENABLED=false` to turn it all off (the endpoints answer 503).
+
+## Server RAM versus Geny usage
+
+The default RAM headline is host physical occupancy (`MemTotal - MemFree`), including cache. The chart stacks
+`mem_non_cache` and `mem_cache` to that exact occupancy; it does not add cache to `total - MemAvailable`, which
+would overlap. `mem_free` is unused RAM; `mem_avail` is the kernel estimate for new applications including
+reclaimable cache. Both are labelled separately. Pressure alerts and memguard continue using OS availability.
+Historical buckets before these new occupancy metrics have a gap rather than fabricated occupancy.
+
+Geny is shown separately within that host total: container `memory.current` (including its cache) and process
+RSS sum (may count shared pages more than once), not added together. `cg_current` is stored alongside the
+existing `cg_mem` working-set series. Kernel reference: https://docs.kernel.org/filesystems/proc.html#meminfo .

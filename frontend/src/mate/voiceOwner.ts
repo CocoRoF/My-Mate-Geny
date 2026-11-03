@@ -40,6 +40,8 @@ function makeId(n: number): string {
 
 /** this browser profile (the desktop app's windows share it; another device / browser has its own) */
 export const deviceId: string = (() => {
+  const native=typeof window!=="undefined"?window.hrhNative?.deviceIdentity?.deviceId:null;
+  if(native&&/^dev_[a-f0-9]{32}$/.test(native))return native;
   try {
     let id = localStorage.getItem(DEVICE_KEY);
     if (!id || !/^[a-z0-9]{6,16}$/.test(id)) {
@@ -57,7 +59,7 @@ export const clientMsgId = (prefix: string) => `${prefix}${Date.now().toString(3
 
 /** the device a client_msg_id came from (null: an older page / another client / no id) */
 export function deviceOf(cid: unknown): string | null {
-  const m = typeof cid === "string" ? /~([a-z0-9]{6,16})$/.exec(cid) : null;
+  const m = typeof cid === "string" ? /~(dev_[a-f0-9]{32}|[a-z0-9]{6,16})$/.exec(cid) : null;
   return m ? m[1] : null;
 }
 

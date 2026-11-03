@@ -31,17 +31,19 @@ function readSettings() {
   return cache;
 }
 
-function writeSettings(patch) {
+function writeSettings(patch, { strict = false } = {}) {
   const next = { ...readSettings(), ...patch };
   for (const [k, v] of Object.entries(patch)) if (v === undefined) delete next[k];
-  cache = next;
   try {
     fs.mkdirSync(path.dirname(file()), { recursive: true });
     const tmp = `${file()}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(next, null, 2));
     fs.renameSync(tmp, file());
+    cache = next;
   } catch (e) {
     console.warn(`[settings] could not save: ${e.message}`);
+    if (strict) throw e;
+    cache = next;
   }
   return next;
 }

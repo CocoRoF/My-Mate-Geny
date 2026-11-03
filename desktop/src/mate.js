@@ -84,6 +84,7 @@ let failTimer = null;
 let overlayFailed = false;
 let screenPicker = false;
 let screenSharing = false;
+let screenStatus = "off";
 let screenBusy = false;
 
 // ── settings ───────────────────────────────────────────────────
@@ -634,7 +635,7 @@ function raiseBar() {
 function barState() {
   if (!alive(bar)) return;
   bar.webContents.send("bar:state", {
-    screenSharing, screenBusy,
+    screenSharing, screenBusy,screenStatus,
     clickThrough: clickThrough(),
     moveMode,
     chatOpen: alive(chat) && chat.isVisible(),
@@ -879,7 +880,7 @@ function openChat() {
   else showChatNow();
 }
 
-function setCaptureSharing(on,busy) { screenSharing=!!on;screenBusy=!!busy;barState(); }
+function setCaptureSharing(on,busy,status) { screenSharing=!!on;screenBusy=!!busy;screenStatus=status||"off";barState(); }
 function openScreenSharing() {
   screenPicker=true;
   openChat();

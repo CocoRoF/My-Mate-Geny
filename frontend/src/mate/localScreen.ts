@@ -27,6 +27,10 @@ const listeners = new Set<() => void>();
 let sharing: LocalSharing | null = null;
 let ownsSharing = true;
 let nativeRevision = -1;
+let runtimeStatus="off";
+export const sharingStatusSnapshot=()=>runtimeStatus;
+let lastRestoreNotice="";
+let lastRestoreTry=0;
 let stream: MediaStream | null = null;
 let video: HTMLVideoElement | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -38,7 +42,7 @@ export function configureProactive(
   interval: number,
 ) {
   const local = devicePreferences().screen;
-  if (local.proactive_enabled !== null) { enabled=local.proactive_enabled; interval=local.proactive_interval; }
+  if (local.proactive_enabled !== null) { enabled=local.proactive_enabled; interval=60; }
   const previous = proactive.get(sid);
   if (previous?.enabled === enabled && previous.interval === interval) return;
   proactive.set(sid, { enabled, interval });
@@ -125,6 +129,7 @@ export const sharingSnapshot = () => sharing;
 export const sharedScopes = (): Record<string, ScreenMode> =>
   sharing && ownsSharing ? { [sharing.sid]: sharing.mode } : {};
 export function stopSharing(notify: unknown = true) {
+  if (notify !== false) {runtimeStatus="off";lastRestoreNotice="";}
   if (notify !== false) void patchDevicePreferences({sharing:{enabled:false}});
   window.dispatchEvent(new Event("hrh:cancel-captures"));
   if (notify !== false) {
@@ -146,6 +151,12 @@ export function stopSharing(notify: unknown = true) {
   video = null;
   old?.getTracks().forEach((t) => t.stop());
   emit(false);
+}
+export function pauseSharing(reason="waiting_connection") {
+ stopSharing(false);runtimeStatus=reason;
+ const bridge=captureBridge()?.sharing;
+ if(bridge?.pause)void bridge.pause(reason);else void bridge?.publish(null);
+ emit(false);
 }
 export const sharingOwned = () => ownsSharing;
 export function stopOwnedSharing() {
@@ -201,6 +212,7 @@ export async function beginSharing(
   name: string,
   source?: CaptureSource,
   restoring = false,
+  mateId = "",
 ) {
   stopSharing(false);
   ownsSharing = true;
@@ -211,6 +223,10 @@ export async function beginSharing(
     if (native.version < 3) throw new Error(tr("screen.updateApp"));
     if (!source) throw new Error(tr("screen.selectSource"));
     await native.setChoice(`session:${sid}`, source);
+    if(native.runtime && !restoring){
+      await patchDevicePreferences({sharing:{enabled:true,origin:location.origin,sid,name,mate_id:mateId}});
+      return;
+    }
   } else {
     if (!(await claimBrowserOwner())) throw new Error(tr("mate.shareBusy"));
     let selected: MediaStream;
@@ -228,7 +244,7 @@ export async function beginSharing(
     try {
       await video.play();
     } catch (e) {
-      stopSharing();
+      pauseSharing("error");
       throw e;
     }
     const track = stream.getVideoTracks()[0];
@@ -237,7 +253,7 @@ export async function beginSharing(
       : tr("screen.selectedScreen");
     stream
       .getVideoTracks()[0]
-      ?.addEventListener("ended", stopSharing, { once: true });
+      ?.addEventListener("ended", ()=>pauseSharing("waiting_permission"), { once: true });
   }
   if (gen !== generation) return;
   ownsSharing = true;
@@ -260,7 +276,8 @@ export async function beginSharing(
     if (gen !== generation) return;
     if (!(result as {owner?:boolean})?.owner) { stopSharing(false); return; }
   }
-  if (!restoring && (!native || native.resume) && typeof location !== "undefined") await patchDevicePreferences({sharing:{enabled:true,origin:location.origin,sid,name}});
+  if (!restoring && (!native || native.resume) && typeof location !== "undefined") await patchDevicePreferences({sharing:{enabled:true,origin:location.origin,sid,name,mate_id:mateId}});
+  runtimeStatus="ready";lastRestoreNotice="";
   emit();
   scheduleObservation();
 }
@@ -316,7 +333,7 @@ export async function localFrame(
             hideConsole: false,
           });
       if (!shot.ok) {
-        if (["source_gone","permission"].includes(shot.code || "")) {stopSharing();reportRestoreFailure(tr("screen.restoreMissing"));}
+        if (["source_gone","permission"].includes(shot.code || "")) {pauseSharing(shot.code==="permission"?"waiting_permission":"waiting_target");if(lastRestoreNotice!==shot.code){lastRestoreNotice=shot.code||"";reportRestoreFailure(tr("screen.restoreMissing"));}}
         throw new Error(captureError(shot.code));
       }
       result = shotFile(shot);
@@ -372,10 +389,11 @@ queueMicrotask(() => {
     const receive = (v: {
       revision: number;
       state: LocalSharing | null;
-      owner: boolean;
+      owner: boolean; status?:string;
     }) => {
       if (!v || v.revision < nativeRevision) return;
       nativeRevision = v.revision;
+      runtimeStatus=v.status || (v.state?"ready":"off");
       if (!v.owner && ownsSharing && sharing) {
         generation++;
         if (timer) clearInterval(timer);
@@ -393,7 +411,7 @@ queueMicrotask(() => {
     nativeSharing.onControl((cmd) => {
       if (cmd.type === "cancel-captures")
         window.dispatchEvent(new Event("hrh:cancel-captures"));
-      if (cmd.type === "stop") stopSharing(false);
+      if (cmd.type === "stop" || cmd.type === "pause") stopSharing(false);
       if (
         cmd.type === "mode" &&
         ["ask", "on_turn", "observe"].includes(cmd.mode || "")
@@ -442,25 +460,28 @@ let resuming = false;
 /** Restore validates source metadata without uploading an image. Missing sources never fall back. */
 export async function resumeSharing() {
   if (leaving || resuming || sharing) return;
+  if (Date.now()-lastRestoreTry<3000)return;
   const saved = devicePreferences().sharing;
   if (!saved.enabled || saved.origin !== location.origin) return;
   const native = captureBridge();
+  if(native?.runtime && window.hrhNative?.surface!=="device-runtime")return;
   if (native && !native.resume) return; // new app required for the restore lease
-  resuming = true;
+  resuming = true;lastRestoreTry=Date.now();
   try {
     if (native && !(await native.sharing?.claim?.())) return;
     // Authentication/network errors preserve intent for reconnect, not an unwanted logout/reset.
     let response: Response;
-    try {response=await fetch(`/api/sessions/${encodeURIComponent(saved.sid)}`);} catch {return;}
-    if ([401,403].includes(response.status)) return;
+    try {response=await fetch(`/api/sessions/${encodeURIComponent(saved.sid)}`);} catch {pauseSharing("waiting_connection");return;}
+    if ([401,403].includes(response.status)) {pauseSharing("waiting_auth");return;}
     if (response.status === 404) throw new Error(tr("screen.restoreMissing"));
-    if (!response.ok) return;
+    if (!response.ok) {pauseSharing("waiting_connection");return;}
     if (!native) {
       if (!(await claimBrowserOwner())) return; // another tab already owns the live stream
       await loadDevicePreferences();
       if (!devicePreferences().sharing.enabled) {releaseBrowserOwner?.();releaseBrowserOwner=null;return;}
       throw new Error(tr("screen.restoreBrowser"));
     }
+    if(devicePreferences().screen.source_invalid)throw new Error(tr("screen.restoreMissing"));
     const info = await native.info();
     if (info.wayland || info.permission !== "granted") throw new Error(tr("screen.restorePermission"));
     const rows = await native.sources();
@@ -472,8 +493,10 @@ export async function resumeSharing() {
     if (!source) throw new Error(tr("screen.restoreMissing"));
     await beginSharing(saved.sid,saved.name,source,true);
   } catch(e) {
-    stopSharing();
-    reportRestoreFailure(String((e as Error).message || tr("screen.restoreMissing")));
+    const message=String((e as Error).message || tr("screen.restoreMissing"));
+    const reason=message===tr("screen.restorePermission")||message===tr("screen.restoreBrowser")?"waiting_permission":"waiting_target";
+    pauseSharing(reason);
+    if(lastRestoreNotice!==message){lastRestoreNotice=message;reportRestoreFailure(message);}
   } finally {resuming=false;}
 }
 let previousSource = JSON.stringify(devicePreferences().screen.source);

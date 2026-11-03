@@ -852,7 +852,7 @@ class SessionService:
         the turn can't take input any more (caller sends it as the next turn).
         Raises ``AttachmentError`` for invalid attachments."""
         current_meta=self._turn_meta.get(sid) or (self.active_runs.get(sid) or {}).get("meta") or {}
-        if current_meta.get("internal") and current_meta.get("kind") in ("screen_observation","thinking_trigger") and not (meta or {}).get("internal"):
+        if current_meta.get("internal") and current_meta.get("kind") in ("screen_observation","thinking_trigger","device_greeting") and not (meta or {}).get("internal"):
             # Geny: a user message preempts autonomous thinking. The existing rejected-steer protocol
             # returns the optimistic message to the composer's queue for a normal, separate turn.
             if self.screen is not None:self.screen.triggers.activity_now(sid)
@@ -1212,7 +1212,7 @@ class SessionService:
             # Avatar Create: its own prompt and only its own tools (app.avatar.service)
             self.engine_hooks[session["kind"]](session, req)
         turn_meta=(self.active_runs.get(sid) or {}).get("meta") or {}
-        if turn_meta.get("internal") and turn_meta.get("kind") in ("screen_observation","thinking_trigger"):
+        if turn_meta.get("internal") and turn_meta.get("kind") in ("screen_observation","thinking_trigger","device_greeting"):
             req.timeout_s = 600 if turn_meta.get("trigger_kind")=="activity" else 180
         self._inboxes[sid] = req.inbox
 
@@ -1243,7 +1243,7 @@ class SessionService:
                     if persistent else provider.run_turn_stream(req)
                 )
                 turn_meta=(self.active_runs.get(sid) or {}).get("meta") or {}
-                if turn_meta.get("internal") and turn_meta.get("kind") in ("screen_observation","thinking_trigger"):
+                if turn_meta.get("internal") and turn_meta.get("kind") in ("screen_observation","thinking_trigger","device_greeting"):
                     from app.mate.trigger.silence import deliver_autonomous
                     stream=deliver_autonomous(stream)
                 async for ev in stream:

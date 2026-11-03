@@ -1,13 +1,16 @@
 // Device-owned settings and explicit persistent sharing intent; never image data.
 "use strict";
+const {isDeepStrictEqual} = require("node:util");
 const DEFAULT_SCREEN = {
   source: null,
+  source_invalid: false,
   approval: "ask",
   max_edge: 1920,
   format: "png",
   quality: 85,
   hide_avatar: false,
   proactive_enabled: null,
+  proactive_mate: "",
   proactive_interval: 180,
 };
 function cleanSource(v) {
@@ -23,9 +26,11 @@ function cleanSource(v) {
 function cleanScreen(raw, base = DEFAULT_SCREEN) {
   const v = raw && typeof raw === "object" ? raw : {},
     out = { ...base };
+  if(typeof v.proactive_mate === "string") out.proactive_mate=v.proactive_mate.slice(0,100);
   if (typeof v.proactive_enabled === "boolean") out.proactive_enabled = v.proactive_enabled;
   if (Number.isFinite(v.proactive_interval)) out.proactive_interval = Math.max(60, Math.min(600, v.proactive_interval));
-  if ("source" in v) out.source = cleanSource(v.source);
+  if ("source" in v) {out.source = cleanSource(v.source);out.source_invalid=(v.source!=null&&!out.source)||(v.source==null&&v.source_invalid===true);}
+  else if(typeof v.source_invalid === "boolean") out.source_invalid=v.source_invalid;
   if (["ask", "allow"].includes(v.approval)) out.approval = v.approval;
   if ([0, 1280, 1920, 2560].includes(v.max_edge)) out.max_edge = v.max_edge;
   if (["png", "jpeg"].includes(v.format)) out.format = v.format;
@@ -34,12 +39,13 @@ function cleanScreen(raw, base = DEFAULT_SCREEN) {
   if (typeof v.hide_avatar === "boolean") out.hide_avatar = v.hide_avatar;
   return out;
 }
-const DEFAULT_SHARING = {enabled:false,origin:"",sid:"",name:"",mode:"ask",interval:180};
+const DEFAULT_SHARING = {enabled:false,origin:"",sid:"",name:"",mate_id:"",mode:"ask",interval:180};
 function cleanSharing(raw) {
   const v = raw && typeof raw === "object" ? raw : {};
   const origin = typeof v.origin === "string" && /^https?:\/\//.test(v.origin) ? v.origin.slice(0,300) : "";
   const sid = typeof v.sid === "string" ? v.sid.slice(0,100) : "";
-  return {enabled:v.enabled === true && !!origin && !!sid, origin, sid,
+  return {enabled:v.enabled === true, origin, sid,
+    mate_id:typeof v.mate_id === "string" ? v.mate_id.slice(0,100) : "",
     name:typeof v.name === "string" ? v.name.slice(0,100) : "",
     mode:["ask","on_turn","observe"].includes(v.mode) ? v.mode : "ask",
     interval:Number.isFinite(v.interval) ? Math.max(60,Math.min(600,v.interval)) : 180};
@@ -57,8 +63,8 @@ function createDevicePreferences({
         screen: cleanScreen(old.screen), sharing: cleanSharing(old.sharing),
         volume: Number.isFinite(old.volume) ? Math.max(0, Math.min(3, old.volume)) : 1,
         migration: { mates: {}, imported: false, screenEdited: false, volumeEdited: false, ...(old.migration || {}) } };
-      if (old.screen?.source != null && !cleanSource(old.screen.source)) value.sharing.enabled = false;
-      if (JSON.stringify(value) !== JSON.stringify(old)) writeSettings({devicePreferences:value});
+      if (old.screen?.source != null && !cleanSource(old.screen.source)) value.screen.source_invalid = true;
+      if (!isDeepStrictEqual(value,old)) writeSettings({devicePreferences:value});
       return value;
     }
     const old = s.captureSources || {};

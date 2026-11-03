@@ -1,3 +1,4 @@
+import {deviceEventHello} from "./deviceEvents";
 import { devicePreferences } from "../stores/devicePreferences";
 /**
  * Screen capture for the Mate (docs/mate.md §4 "Seeing the screen"), the page's part.
@@ -71,12 +72,14 @@ export interface CaptureBridge {
   version: number;
   notifications?: number;
   resume?: number;
+  runtime?: number;
   sharing?: {
+    pause?(reason:string):Promise<void>;
     claim?(): Promise<boolean>;
     get(): Promise<{
       revision: number;
       state: import("./localScreen").LocalSharing | null;
-      owner: boolean;
+      owner: boolean; status?:string; enabled?:boolean;
     }>;
     publish(
       state: import("./localScreen").LocalSharing | null,
@@ -87,7 +90,7 @@ export interface CaptureBridge {
       cb: (v: {
         revision: number;
         state: import("./localScreen").LocalSharing | null;
-        owner: boolean;
+        owner: boolean; status?:string; enabled?:boolean;
       }) => void,
     ): () => void;
     onControl(
@@ -158,6 +161,8 @@ const desktopVersion = (): string | null => {
 /** the /ws/sessions `client` message: who this window is (`active`: it was just focused / used) */
 export function clientHello(active: boolean): Record<string, unknown> {
   return {
+    ...deviceEventHello(),
+    user_busy: typeof document!=="undefined" && document.hasFocus() && !!((document.activeElement as HTMLInputElement|null)?.value),
     type: "client",
     device: deviceId,
     surface: currentSurface(),
@@ -165,7 +170,7 @@ export function clientHello(active: boolean): Record<string, unknown> {
     capture:
       captureBridge()?.version ?? (Object.keys(sharedScopes()).length ? 1 : 0),
     shares: sharedScopes(),
-    screen_policy: {enabled:devicePreferences().screen.proactive_enabled,interval:devicePreferences().screen.proactive_interval},
+    screen_policy: {enabled:devicePreferences().screen.proactive_enabled,interval:60,mate_id:devicePreferences().screen.proactive_mate||"",fixed:true},
     screen_ready: true,
     active,
   };
@@ -265,6 +270,7 @@ export async function handleCaptureRequest(raw: unknown): Promise<void> {
     );
   };
   try {
+    if(!devicePreferences().sharing.enabled && captureBridge()?.runtime)throw new Error(tr("screen.notSharing"));
     let file: File,
       source: CaptureSource | null = null;
     if (req.scope === "session") {

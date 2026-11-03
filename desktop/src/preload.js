@@ -73,6 +73,7 @@ const capture = {
   version: 3,
   notifications: 1,
   resume: 1,
+  runtime: 1,
   info: () => ipcRenderer.invoke("capture:info"),
   sources: (o = {}) => ipcRenderer.invoke("capture:sources", { thumbnails: !!(o && o.thumbnails), size: num(o && o.size) }),
   getChoice: (mateId) => ipcRenderer.invoke("capture:getChoice", String(mateId || "")),
@@ -87,6 +88,7 @@ const capture = {
   cancel: (id) => ipcRenderer.invoke("capture:cancel", String(id || "")),
   openPrivacySettings: () => ipcRenderer.invoke("capture:openPrivacy"),
   sharing: {
+    pause: reason => ipcRenderer.invoke("capture:sharing:pause",String(reason||"error")),
     claim: () => ipcRenderer.invoke("capture:sharing:claim"),
     get: () => ipcRenderer.invoke("capture:sharing:get"),
     publish: v => ipcRenderer.invoke("capture:sharing:publish", v ? JSON.parse(JSON.stringify(v)) : null),
@@ -125,6 +127,7 @@ contextBridge.exposeInMainWorld("hrhNative", {
   version: arg("hrh-version") || "0.0.0",
   // which window this page is in: console | mate-overlay | mate-quick | mate-chat | bar
   surface,
+  deviceIdentity: i18n?.device || null,
   notify: (title, body) => ipcRenderer.invoke("hrh:notify", { title, body }),
   openExternal: (url) => ipcRenderer.invoke("hrh:openExternal", url),
   retry: () => ipcRenderer.invoke("hrh:retry"),
@@ -143,6 +146,9 @@ contextBridge.exposeInMainWorld("hrhNative", {
   mate,
   capture,
   device: {
+    context: () => ipcRenderer.invoke("device:context"),
+    events: mateId => ipcRenderer.invoke("device:events",String(mateId||"")),
+    ackEvents: ids => ipcRenderer.invoke("device:events:ack",ids),
     get: () => ipcRenderer.invoke("device:get"),
     patch: p => ipcRenderer.invoke("device:patch", JSON.parse(JSON.stringify(p || {}))),
     migrate: p => ipcRenderer.invoke("device:migrate", JSON.parse(JSON.stringify(p || {}))),

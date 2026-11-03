@@ -91,15 +91,10 @@ export default function Charts({ v, now, th }: { v: View; now: Snapshot | null; 
   ];
 
   // ---- memory
-  const memRefs: RefLine[] = [];
-  if (guard?.avail_min) memRefs.push({ value: total - guard.avail_min, label: t("admin.memguardAvail", { min: bytes(guard.avail_min) }), tone: "danger" });
-  const cgLimit = now?.cgroup?.max;
-  if (cgLimit) memRefs.push({ value: cgLimit, label: t("admin.containerLimit"), tone: "warn" });
   const memSeries: ChartSeries[] = [
-    ser(v, "mem_used", t("admin.memUsed"), C1, { kind: "area", stack: true, fmt: (x) => bytes(x) }),
-    { key: "cache", label: t("admin.memCache"), color: C2, values: v.get("mem_cache").avg, kind: "area", stack: true, fmt: (x) => bytes(x) },
-    ser(v, "cg_mem", t("admin.genyContainer"), C3, { fmt: (x) => bytes(x) }),
-    ser(v, "swap_used", t("admin.swap"), C4, { fmt: (x) => bytes(x) }),
+    ser(v, "mem_non_cache", t("admin.memNonCache"), C1, { kind: "area", stack: true, fmt: (x) => bytes(x) }),
+    // Older history has no physical-occupancy sample. Leave a gap rather than inventing one.
+    { key: "mem_cache", label: t("admin.memCache"), color: C2, values: v.get("mem_cache").avg.map((x,i)=>v.get("mem_non_cache").avg[i]==null?null:x), kind: "area", stack: true, fmt: (x) => bytes(x) },
   ];
 
   // ---- Geny processes
@@ -163,20 +158,30 @@ export default function Charts({ v, now, th }: { v: View; now: Snapshot | null; 
         </div>
       </ChartCard>
 
-      <ChartCard title={t("admin.memory")} icon="server" dim={v.loading}
-        right={now ? t("admin.memRight", { used: bytes(now.mem.used), total: bytes(total), avail: bytes(now.mem.available) }) : undefined}
-        legend={<Legend items={memSeries.map((s) => ({ label: s.label, color: s.color, kind: s.kind === "area" ? "area" : "line", value: lv(s.key === "cache" ? "mem_cache" : s.key, (x) => bytes(x)) }))} />}>
-        <TimeChart {...common} label={t("admin.memChart")} series={memSeries} refs={memRefs}
+      <ChartCard title={t("admin.serverMemory")} icon="server" dim={v.loading}
+        right={now ? t("admin.memRight", { used: bytes(now.mem.occupied??now.mem.total-now.mem.free), total: bytes(total), free: bytes(now.mem.free) }) : undefined}
+        legend={<Legend items={memSeries.map((s) => ({ label: s.label, color: s.color, kind: "area", value: lv(s.key, (x) => bytes(x)) }))} />}>
+        <TimeChart {...common} label={t("admin.memChart")} series={memSeries}
           yMax={total} yFmt={axisBytes}
           extra={(i) => [
+            { label: t("admin.memOccupied"), value: bytes(v.get("mem_occupied").avg[i]) },
+            { label: t("admin.memFree"), value: bytes(v.get("mem_free").avg[i]) },
             { label: t("admin.available"), value: bytes(v.get("mem_avail").avg[i]) },
-            { label: t("admin.memUsed"), value: pct(((v.get("mem_used").avg[i] ?? 0) * 100) / total, 1) },
           ]} />
+        {now&&<div className="mt-3 space-y-2 text-[11px] text-content-dim" data-testid="host-memory-summary">
+          <p>{t("admin.memAvailableSummary",{available:bytes(now.mem.available),free:bytes(now.mem.free)})}</p>
+          <p className="text-content-faint">{t("admin.memAvailableHint")}</p>
+        </div>}
       </ChartCard>
 
       <ChartCard title={t("admin.genyProcesses")} icon="activity" dim={v.loading}
         right={now ? t("admin.procRight", { count: now.m.eng_n ?? 0, rss: bytes(now.m.tree_rss) }) : undefined}
         legend={<Legend items={procSeries.map((s) => ({ label: s.label, color: s.color, value: s.key === "other" ? bytes(last({ avg: s.values })) : lv(s.key, (x) => bytes(x)) }))} />}>
+        {now&&<div className="mb-3 text-[11px] text-content-dim" data-testid="geny-memory-summary">
+          {now.host.in_container&&now.cgroup?.current!=null&&<p className="font-medium text-content">{t("admin.genyContainerTotal")}: {bytes(now.cgroup.current)}{now.cgroup.file!=null?` · ${t("admin.memCache")}: ${bytes(now.cgroup.file)}`:""}</p>}
+          <p>{t("admin.genyRss")}: {bytes(now.m.tree_rss)}</p>
+          <p className="text-content-faint">{t("admin.genyMemoryHint")}</p>
+        </div>}
         <TimeChart {...common} label={t("admin.procChart")} series={procSeries}
           refs={procRefs} autoMax={(m) => niceBytes(m, 256 * 1048576)} yFmt={axisBytes}
           extra={(i) => [

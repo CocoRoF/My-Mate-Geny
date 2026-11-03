@@ -67,40 +67,29 @@ Wayland permission and native capture behaviour still need real devices.
 
 ## Persistent sharing on this device
 
-The same version-1 device record now includes `sharing` (enabled, origin, conversation id/name, capture mode,
-interval). Screen target, approval and image options remain in `screen`. `screen.proactive_enabled` and
-`proactive_interval` are initialized once from the active legacy Mate and thereafter edited locally; character
-situation rules, guidance and the per-Mate screen-tool permission remain server-side. Other voice fields do not move.
-The client advertises its effective reach-out policy on its live session-list connection; the backend does not
-persist it or apply another device's override.
+The version-1 native device record includes `sharing` (enabled, origin, conversation ID/name, optional Mate ID,
+mode, interval) and `screen` (source metadata, approval, image options, reach-out ON/OFF and selected Mate).
+Volume shares this store/revision/IPC path; other voice options stay in their existing locations. Device edits
+save atomically before publication and update all app windows immediately. Browser values use localStorage,
+BroadcastChannel/storage events and Web Locks. No server-global screen/volume preference is introduced.
 
-A reload, renderer closure, network disconnect or app shutdown releases runtime ownership and pending requests,
-without forgetting explicit intent. An explicit Stop stores disabled. Each native restore must acquire an
-app-process lease for the saved server origin; a late restore cannot undo Stop. The toolbar and settings
-keep Stop available even while restoration is waiting for a server response. No startup dialog or persistent
-sharing banner is added. A screen id can be recovered by display id; a window by one unambiguous exact title.
-A missing source/conversation, macOS permission denial, or required Wayland portal switches intent off with one
-floating toast, never substituting another screen. A hidden restore owner routes that notice to a visible
-same-origin window via BroadcastChannel, with Web Locks and bounded shared notice ids to deduplicate delivery.
-Network/authentication errors retain intent for reconnection.
-Browser settings persist, but `getDisplayMedia` cannot resume without user activation; one browser owner lock
-prevents a second tab from revoking a live owner, and a reload with no owner disables sharing with a toast.
+A hidden native app-lifetime renderer is the sole restore owner; visible windows only mirror its runtime.
+Autostart without the console, closing all visible windows, app restart/update, page reload and disconnect retain
+ON. Explicit Stop alone writes OFF and cancels pending capture/upload/restore. A late restore cannot undo Stop.
+Source changes cancel old requests then reconnect to the selected source while retaining ON. Missing source,
+permission, authentication or conversation produce waiting state, not implicit OFF or full-screen substitution.
+A source is restored by display ID or a single exact window-title match. Corrupt source metadata is marked
+invalid, not interpreted as the default primary screen. Invalid fields recover defaults without discarding
+other settings. Legacy source/volume alternatives remain in migration archives.
 
-Old saved volume/source/quality values and migration archives are preserved. Old versions never saved sharing
-on/off or capture mode, so a fresh upgrade has no old persistent intent to infer: sharing must be enabled once
-in the new version. Invalid fields recover safe defaults; a corrupt source disables persistent intent.
+Browser ON intent is retained but a lost display stream needs user activation in the browser picker. It is not
+represented as a live screen grant until that succeeds. One browser owner lock prevents two tabs from sharing.
 
-Regression: `desktop/test/e2e/sharing-resume-e2e.js` starts from the real UI, restarts the actual Electron app
-using the same userData, reloads the renderer, stops/restarts, removes a source and checks one-owner handoff.
+Both Screen settings and the start dialog render the same `DeviceCaptureSettings` component/hook. All quality,
+source, approval and capture-mode changes save and apply immediately; Done only closes the dialog. Reach out is
+edited only in its one-switch tab. The obsolete per-Mate `screen.enabled` UI/gate has been removed: device
+sharing grants the selected conversation access and execution checks the same live grant again.
 
-## Capture settings UI and runtime synchronization
-
-The Screen tab and start dialog both render `DeviceCaptureSettings`, including capture mode/interval, Geny
-collection switches and quality. These options save immediately. The start dialog's Done button only closes it;
-it no longer applies a second window-local mode. Device store notifications update the sole live owner's mode
-and timer before advertising updated scopes to the server. Source changes still stop sharing; the owner routes
-one shared source-change notice to a visible window. Refresh/focus reloads available native source metadata.
-
-A Mate's `screen.enabled` is permission to offer its request tool, not device sharing consent. Both UIs show a
-permission summary, and the Screen tab explains why permission can be on while sharing is off. The safety switch
-stays per-Mate and defaults off.
+Regression: `desktop/test/e2e/device-runtime-e2e.js` exercises actual UI, two-window synchronization, native
+capture/MCP image delivery, no hide/show flicker, process/page restart, no visible windows, missing/returning
+target, hidden autostart, ON/startup event dedupe and explicit OFF persistence. Model calls use a fake CLI.

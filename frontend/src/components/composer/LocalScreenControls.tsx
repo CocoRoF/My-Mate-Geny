@@ -79,7 +79,7 @@ export function useLocalScreenControls(
     setBusy(true);
     try {
       if (ongoing) {
-        await beginSharing(sid, name);
+        await beginSharing(sid, name,undefined,false,mate?.id);
       } else addFiles([await grabWithBrowser()]);
       setOpen(false);
     } catch (e) {
@@ -199,7 +199,7 @@ export function useLocalScreenControls(
               ? (source) => {
                   setPicker(null);
                   setBusy(true);
-                  void beginSharing(sid, name, source)
+                  void beginSharing(sid, name, source,false,mate?.id)
                     .then(() => {
                         setOpen(false);
                     }, failed)

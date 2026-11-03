@@ -154,7 +154,13 @@ async def test_see_screen_only_when_enabled(db, tmp_path, monkeypatch):
         argv, env = launch()
         assert "HRH_MATE_SCREEN" not in env and "see_screen" not in _prompt(argv)
         pid = _mate_calls(tmp_path)[-1]["pid"]
+        # A legacy per-Mate flag cannot grant device access. Only an actual device share can.
         mates.update(mate["id"], {"screen": {"enabled": True}})
+        await _turn(svc, q, msid, "still not sharing")
+        assert "HRH_MATE_SCREEN" not in launch()[1]
+        mates.update(mate["id"], {"screen": {"enabled": False}})
+        svc._last_client[msid] = "m1~dev-a"
+        win = _Window(mates.capture, device="dev-a", desktop="0.4.38", capture=1, shares={msid: "ask"})
         seen = await _turn(svc, q, msid, "look")
         argv, env = launch()
         assert env["HRH_MATE_SCREEN"] == "1"
@@ -162,7 +168,7 @@ async def test_see_screen_only_when_enabled(db, tmp_path, monkeypatch):
         assert _mate_calls(tmp_path)[-1]["pid"] != pid  # restarted: the bridge's tool list changed
         sent = next(m for m in seen if m["type"] == "user.message")
         assert sent  # (the settings note goes to the engine, not the history)
-        mates.update(mate["id"], {"screen": {"enabled": False}})
+        mates.capture.disconnect(win.conn)
         await _turn(svc, q, msid, "and now")
         argv, env = launch()
         assert "HRH_MATE_SCREEN" not in env and "see_screen" not in _prompt(argv)
@@ -273,8 +279,8 @@ async def _start(db, tmp_path, *, approval="ask", enabled=True):
 
 
 async def test_allowed_capture_reaches_the_model_and_the_conversation(db, tmp_path):
-    svc, atts, store, mates, logs, m, msid, ctx = await _start(db, tmp_path)
-    win = _Window(mates.capture, device="dev-a", surface="mate-chat", desktop="0.4.30", capture=1)
+    svc, atts, store, mates, logs, m, msid, ctx = await _start(db, tmp_path, enabled=False)
+    win = _Window(mates.capture, device="dev-a", surface="mate-chat", desktop="0.4.30", capture=1, shares={msid:"ask"})
     _Window(mates.capture, device="dev-b", surface="console", desktop="0.4.30", capture=1, active=True)
     task = asyncio.create_task(mates.call_tool_full(ctx, "see_screen", {"reason": "the red error"}))
     await _wait(lambda: win.requests())
@@ -305,12 +311,12 @@ async def test_denied_timeout_disabled_no_app_and_bad_answers(db, tmp_path):
     svc, atts, store, mates, logs, m, msid, ctx = await _start(db, tmp_path)
     # no desktop app at all
     text, err, imgs = await mates.call_tool_full(ctx, "see_screen", {})
-    assert err and text == ERRORS["no_app"] and imgs == []
+    assert err and text == ERRORS["not_shared"] and imgs == []
     old = _Window(mates.capture, device="dev-a", surface="console", desktop="0.4.10", capture=0)
     text, err, _ = await mates.call_tool_full(ctx, "see_screen", {})
-    assert err and "update it" in text
+    assert err and text == ERRORS["not_shared"]
     mates.capture.disconnect(old.conn)
-    win = _Window(mates.capture, device="dev-a", surface="mate-chat", desktop="0.4.30", capture=1)
+    win = _Window(mates.capture, device="dev-a", surface="mate-chat", desktop="0.4.30", capture=1, shares={msid:"ask"})
 
     # denied
     task = asyncio.create_task(mates.call_tool_full(ctx, "see_screen", {}))
@@ -351,7 +357,7 @@ async def test_denied_timeout_disabled_no_app_and_bad_answers(db, tmp_path):
     assert err and text == ERRORS["gone"]
 
     # the turn ends (stopped) while it waits
-    win2 = _Window(mates.capture, device="dev-a", surface="mate-chat", desktop="0.4.30", capture=1)
+    win2 = _Window(mates.capture, device="dev-a", surface="mate-chat", desktop="0.4.30", capture=1, shares={msid:"ask"})
     task = asyncio.create_task(mates.call_tool_full(ctx, "see_screen", {}))
     await _wait(lambda: win2.requests())
     mates._on_turn_end(msid, {"status": "stopped", "trigger": "turn"})
@@ -359,12 +365,13 @@ async def test_denied_timeout_disabled_no_app_and_bad_answers(db, tmp_path):
     assert err and text == ERRORS["stopped"] and win2.sent[-1]["type"] == "capture.cancel"
 
     # switched off: refused before anything is asked
-    store.update(m["id"], {"screen": {"enabled": False}})
+    mates.capture.hello(win2.conn, {"shares":{}})
     n = len(win2.sent)
     text, err, _ = await mates.call_tool_full(ctx, "see_screen", {})
-    assert err and "switched off" in text and len(win2.sent) == n
+    assert err and text == ERRORS["not_shared"] and len(win2.sent) == n
     # "allow without asking" travels with the request
     store.update(m["id"], {"screen": {"enabled": True, "approval": "allow", "format": "jpeg", "hide_avatar": False}})
+    mates.capture.hello(win2.conn, {"device":"dev-a", "desktop":"0.4.38", "capture":1, "shares":{msid:"on_turn"}})
     task = asyncio.create_task(mates.call_tool_full(ctx, "see_screen", {}))
     await _wait(lambda: len(win2.requests()) == 2)
     req = win2.requests()[-1]

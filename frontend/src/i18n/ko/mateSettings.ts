@@ -589,9 +589,6 @@ const ko: Messages<"mateSettings"> = {
   globalClose: "전체 설정 닫기",
   // screen capture (docs/mate.md §4 "Seeing the screen")
   tabScreen: "화면",
-  screenTitle: "화면 보기",
-  screenEnabled: "{name:이} 내 화면을 볼 수 있게 하기",
-  screenEnabledHint: "끄면(기본값) 볼 수 없어요 — 도구 자체가 주어지지 않아요. 바꾸면 다음 메시지부터 적용돼요.",
   screenSizeFull: "찍힌 그대로",
   screenQuality: "품질 {n}",
   screenOpenPrivacy: "시스템 설정 열기",

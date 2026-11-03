@@ -588,9 +588,6 @@ export default {
   globalClose: "Close global settings",
   // screen capture (docs/mate.md §4 "Seeing the screen")
   tabScreen: "Screen",
-  screenTitle: "Seeing your screen",
-  screenEnabled: "Let {name} look at my screen",
-  screenEnabledHint: "Off (the default): she can't — the tool isn't even offered to her. Changing it takes effect at her next message.",
   screenSizeFull: "As captured",
   screenQuality: "Quality {n}",
   screenOpenPrivacy: "Open System Settings",

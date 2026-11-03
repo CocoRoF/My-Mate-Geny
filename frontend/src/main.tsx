@@ -46,11 +46,13 @@ const variant = mateSurface === "mate-overlay" ? "quiet" : mateSurface === "mate
 // the desktop console / chat window without a system title bar: this page draws it (TitleBar, the chat's header)
 const chromed = (!surface || mateSurface === "mate-chat") && claimWindowChrome();
 
+const DeviceRuntime=lazy(()=>import("./components/mate/DeviceRuntime"));
+if(surface==="device-runtime")disableLoginRedirect();
 const render = () =>
   ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary variant={variant} chrome={chromed ? <TitleBar /> : undefined}>
-    {surface === "avatar-lab" ? (
+    {surface === "device-runtime" ? (<Suspense fallback={null}><DeviceRuntime/></Suspense>) : surface === "avatar-lab" ? (
       <Suspense fallback={null}>
         <AvatarLab />
       </Suspense>

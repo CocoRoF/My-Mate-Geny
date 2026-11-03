@@ -700,7 +700,7 @@ lists each message's `files` (names).
 | `update_memory(id, text?, kind?, importance?, due?, status?)` | correct / merge / mark a plan done |
 | `forget(id, reason?)` / `recall(query, kind?, limit?, include_done?)` | delete one; search all memories |
 | `update_conversation_style(formality?, address?, user_name?, self_ref?, language?, length?, emotion?, tone?, speech_style?, avoid?, reason)` | unless `prefs.self_edit` is off: change her own conversation style when the user asks for a lasting change (applied, or proposed with "ask me first"; recorded, undoable — §1a) |
-| `see_screen(reason?)` | only while `mate.screen.enabled`: a picture of the user's screen from their desktop app (below) |
+| `see_screen(reason?)` | only while this device shares the conversation: a picture of the user's screen from their desktop app (below) |
 
 Policy in the prompt: find the chat already working on that project and send
 there; if none, find the folder and create a chat; if the folder is unknown or
@@ -730,59 +730,28 @@ user's cookie (404 / 401 otherwise). `find_folders` searches
 
 ### Seeing the screen (`see_screen`)
 
-The mate runs on the server; the screen is the user's computer's. Off by default; Mate settings → **Screen**
-switches it on (`PATCH {screen: {...}}`, field by field, wrong values → 400, pushed as `mates.changed`). While it is
-off the bridge does not list the tool (`HRH_MATE_SCREEN=1` in its environment only when on), the prompt has no line
-about it, and a call anyway is refused. Switching it changes the prompt key (the Claude engine restarts with
-`--resume`, so its tool list is fresh) and the next message's `<settings_update>` says so.
+The mate runs on the server; pixels come from the user's local device. There is one sharing switch per
+installation/browser profile, off until the user enables it. `mate.screen.enabled` is retained only as legacy
+archived data and is neither a permission gate nor an extra UI control. `see_screen` is offered when
+`CaptureBroker.shared_client(session_id, last_client_device)` grants access to that conversation on that device.
+The bridge environment/prompt key changes on the next turn when the live grant changes. Execution rechecks the
+grant, so a previously offered tool cannot capture after Stop. An unknown/other device never supplies a fallback.
 
-- **Who is asked** (`app/mate/capture.py`): every window keeps `/ws/sessions` open and says who it is —
-  `{"type": "client", "device", "surface", "desktop", "capture", "active"}` (`device` = the browser profile's id from
-  `mate/voiceOwner.ts`, `desktop` = the desktop app's version or null, `capture` = its capture bridge version, 1 now;
-  sent on connect and on every window focus). A request goes to one capture-capable window: of the device the user's
-  latest typed message came from (`…~<device>` of its `client_msg_id`), else the most recently used one; mate chat /
-  console over the quick card over the avatar window. None → the tool says no desktop app is connected (a browser or
-  phone can still share a picture itself); only desktop apps without the bridge → "update the desktop app".
-- **The request**: `{"type": "capture.request", "data": {id, mate_id, mate_name, session_id, ask, hide_avatar,
-  max_edge, format, quality, timeout_ms: 45000, reason}}`. The page (`mate/screenCapture.ts`) hands it to the app
-  (`hrhNative.capture.request`): with `ask` a small always-on-top prompt (`desktop/src/capture-ask.html`: "‹mate›
-  wants to see your screen", her reason, what would be shared — screen or window and its name — a preview, Allow once
-  / Deny, Escape = Deny, a countdown that ends in Deny); then the mate windows hide for a moment (`hide_avatar`), the
-  source is captured, they come back. The page uploads the picture as a normal attachment of the mate's
-  conversation (`POST /api/sessions/{sid}/attachments`) and answers `POST /api/mates/{id}/capture/{rid}` `{ok: true,
-  attachment_id, source: {name, kind}}` or `{ok: false, code: denied|timeout|stopped|busy|permission|empty|
-  source_gone|error}` (404: nothing waiting under that id; 400: not an image of that conversation).
-- **Every call ends**: an answer; no answer in ask timeout + 30 s (+ slack) → "timeout" and `capture.cancel {id}` so
-  the prompt goes away; the window closing; the mate's turn ending (stopped); one request per mate at a time (busy).
-  Failures are tool errors in words the model can pass on, never admin-log errors.
-- **What the model gets**: the bridge returns MCP content `[{type: "text"}, {type: "image", data, mimeType}]` — the
-  attachment's model-sized copy (≤ 1568 px, the same one a user upload gives the model). Checked with the real
-  Claude CLI: it receives the pixels (it read the text and colour of a captured window). The attachment is linked
-  to `artifact:capture:<rid>` (never a pending upload; gone with the conversation). The engine's echo of the image
-  in its tool result (Claude: an image block; Codex: the MCP result as JSON) is **not stored again**: the event keeps
-  the text and refers to that attachment (`SessionService._screen_result`), so the conversation shows the picture
-  under the "Looked at your screen" chip and no base64 lands in events, history or logs.
-- **What to capture** is chosen per mate on each computer (desktop `settings.json` `captureSources`; the Screen
-  tab's "On this computer", with a test capture that stays in the page): the main screen (default), another screen
-  (found again by its display when its id changes) or one window (found again by its exact title when its app
-  restarted). A chosen window that is gone is never silently replaced by the whole screen: asked, the prompt says
-  so; allowed without asking, nothing is captured (`source_gone`).
-- **Size**: the screen at its device pixels fitted into `max_edge`; a window's picture keeps the window's shape
-  but Electron scales window thumbnails to fit the box (it does not report a window's own size).
-- **Seen**: an actual capture produces one floating 1.5-second toast in one visible app window.
-  No persistent sharing rows, input padding, title suffixes or tray tooltip changes are added.
-  Active state and stop controls live in the avatar toolbar and Screen settings; consent dialogs remain unchanged.
-  The conversation shows the resulting picture.
-- **The user's own Share screen** (composer + menu): the desktop app's picker (screens and windows with thumbnails,
-  the last one preselected on this device) or, in a desktop browser, `getDisplayMedia` (the browser's dialog, one
-  frame); hidden on phones / the Android app and in the quick card (its + opens the file picker).
-- **Platforms**: Windows works as is. macOS needs Screen Recording permission (`systemPreferences
-  .getMediaAccessStatus("screen")`; denied → the tool / Screen tab say where to allow it, with a button to open
-  that pane). Linux X11 works (checked under Xvfb). On a Wayland session the app enables Chromium's
-  `WebRTCPipeWireCapturer` so captures go through the desktop portal — the system's share dialog asks each time,
-  "allow without asking" included; an empty capture says so. The overlay is never in a picture while
-  `hide_avatar` is on (it is hidden, not `setContentProtection`-ed: that does nothing on Linux and is ignored by
-  macOS 15's ScreenCaptureKit); with it off it is in the picture as it is on screen.
+The native app-lifetime hidden `device-runtime` renderer owns the live grant, WS connection, frame timer and
+fallback voice listener independently of visible windows. Device intent lives in the same atomic native settings
+record as volume. Closing/reloading windows, app restart/update, disconnect, missing target or permission failure
+releases live access and pending requests but keeps ON intent. Only explicit Stop writes OFF. Restoring validates
+origin, conversation and source without capturing a picture; no missing window is replaced with a whole screen.
+The controller resolves a recreated conversation only for its saved Mate. Unavailable target/permission is a
+waiting state with one floating notice, retried without opening a setup dialog. Browsers retain intent but need a
+new user gesture for `getDisplayMedia` after the stream ends. See [device preferences](device-preferences.md).
+
+Request routing/upload, unpredictable response proof, source selection and approval share the general
+[screen capture pipeline](screen-capture.md). The default per-request approval remains. A capture never hides or
+moves Geny windows. One short floating toast appears in one visible window; no persistent composer rows, title
+suffixes or tray sharing text exist. The avatar toolbar's active/waiting dot and Screen settings expose Stop.
+Sent images remain normal conversation attachments (including model CLI session retention); transient/failed
+captures are deleted and no image bytes are copied into app logs or long-term memory.
 
 ## 5. Voice
 
@@ -1125,13 +1094,8 @@ Android (Capacitor): the Mate view runs in-page; microphone permission added.
   `mcp_bridge`, `voice`, `netio`: stdlib HTTP, no new dependencies); routers
   `app/routers/mates.py`, `app/routers/mate_internal.py`.
 
-### Reach-out editor
+### Reach-out switch
 
-`TriggerRulesEditor` edits the existing numeric category weights directly, without a weight migration or rounding
-on load. The range expands for larger legacy weights and supports decimal values. Preview updates the relative
-100% bar while dragging; release, keyboard completion or blur commits, through one serialized latest-pending
-save queue. All-zero weights explicitly mean no eligible situation. Displayed percentages describe all configured
-weights, not a probability of speaking: runtime first filters by time, silence, worker/screen conditions and cooldown.
-Cooldown buttons provide 0/10/30/60/300 seconds, with custom seconds retained. Collapsed headers summarize weight
-status. The user-facing reset-to-Geny button has been removed; initialization defaults and every original prompt
-remain intact. Existing/user-edited prompt content is not translated or migrated by this UX change.
+Mate settings → Reach out has one local device ON/OFF switch. The selected Mate and opt-in are stored in the
+device record. The fixed situation policy is product-owned; legacy presets/prompts remain archived unchanged
+and are ignored by fixed-policy clients. See [automatic conversation](mate-proactive.md).

@@ -72,6 +72,8 @@ class Client:
     active_at: float = 0.0
     shares: dict[str, str] = field(default_factory=dict)
     screen_policy: dict[str, Any] = field(default_factory=dict)
+    user_busy: bool = False
+    busy_at: float = 0.0
 
 
 @dataclass
@@ -128,6 +130,11 @@ class CaptureBroker:
         c.screen_policy = ({"enabled": policy["enabled"], "interval": max(60,min(600,policy.get("interval",180)))}
                            if isinstance(policy,dict) and isinstance(policy.get("enabled"),bool)
                            and isinstance(policy.get("interval",180),(int,float)) else {})
+        if c.screen_policy:
+            c.screen_policy['mate_id']=_str(policy.get('mate_id'),100)
+            c.screen_policy['fixed']=policy.get('fixed') is True
+        c.user_busy=msg.get('user_busy') is True
+        c.busy_at=time.monotonic()
         for p in list(self._pending.values()):
             if p.conn == conn and p.shared and p.session_id not in c.shares:
                 self._revoke(p,"stopped")

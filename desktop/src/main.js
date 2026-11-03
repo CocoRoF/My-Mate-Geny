@@ -46,6 +46,10 @@ process.on("unhandledRejection", (e) => startup.fail(e, "unhandled rejection"));
 mainLog.info(startupLog.startLine({ version: app.getVersion(), argv: process.argv, env: process.env, platform: process.platform }));
 
 const { LEGACY_SERVER, readSettings, writeSettings, settingsExisted, serverUrl, sameOrigin } = require("./settings");
+const deviceRuntimeModule = require("./device-runtime");
+const deviceLifecycle = deviceRuntimeModule.createDeviceLifecycle({readSettings,writeSettings:p=>writeSettings(p,{strict:true}),autostart:process.argv.includes("--hidden")});
+let deviceEditOrigin = "";
+const deviceRuntime = deviceRuntimeModule.createRuntimeWindow({BrowserWindow,preload:path.join(__dirname,"preload.js"),version:app.getVersion(),serverUrl,allowed:sameOrigin});
 const core = require("./connect-core");
 const mate = require("./mate");
 const recovery = require("./recovery");
@@ -123,6 +127,12 @@ function quit() {
   app.quit();
 }
 
+// Explicit device features outlive user-facing windows. Closing the console isn't an explicit Stop/Quit.
+function keepDeviceRuntime() {
+  const prefs = devicePreferences.get();
+  return prefs.sharing.enabled || prefs.screen.proactive_enabled === true;
+}
+
 function createWindow(url) {
   const s = readSettings();
   const bounds = s.bounds || { width: 1360, height: 880 };
@@ -167,14 +177,14 @@ function createWindow(url) {
     save();
     // while the Mate is out the tray keeps the app: hide instead of closing
     // (turn-finished notifications keep coming). Quit closes for real.
-    if (!quitting && mate.isShown()) {
+    if (!quitting && (mate.isShown() || keepDeviceRuntime())) {
       e.preventDefault();
       w.hide();
     }
   });
   w.on("closed", () => {
     if (win === w) win = null;
-    if (!quitting && !mac && !mate.isShown()) quit();
+    if (!quitting && !mac && !mate.isShown() && !keepDeviceRuntime()) quit();
   });
 
   const wc = w.webContents;
@@ -439,7 +449,7 @@ ipcMain.handle("hrh:signOut", async (e) => {
 // ── the language (i18n.js): the console tells it; the menus, tray, bar and local pages follow ──
 // (sync: the preload reads it while the page starts — the local pages and the fallback title bar need it at once)
 ipcMain.on("hrh:i18n", (e) => {
-  e.returnValue = { lang: language(), text: pageText() };
+  e.returnValue = { lang: language(), text: pageText(), device:deviceLifecycle.info() };
 });
 ipcMain.on("hrh:setLanguage", (e, lang) => {
   if (!ours(e) || !fileOrServer(e) || !isLang(lang) || readSettings().language === lang) return;
@@ -489,11 +499,13 @@ const updater = createUpdater({
   },
   beforeInstall: () => {
     quitting = true;
+    deviceRuntime.destroy();
     mate.setQuitting(true);
   },
   installFailed: () => {
     quitting = false;
     mate.setQuitting(false);
+    deviceRuntime.start();
   },
   // an AppImage's restart after the update: the new file with this app's arguments (`--no-sandbox` on Ubuntu 24.04+),
   // once this process — and its single-instance lock — is gone
@@ -559,10 +571,11 @@ const asker = capture.createAsker({
   preload: path.join(__dirname, "preload.js"), file: path.join(__dirname, "capture-ask.html"), version: app.getVersion(),
 });
 const devicePreferences = require("./device-preferences").createDevicePreferences({
-  readSettings, writeSettings,
+  readSettings, writeSettings:p=>writeSettings(p,{strict:true}),
   changed: (value,prev) => {
-    if (prev && JSON.stringify(prev.screen.source) !== JSON.stringify(value.screen.source) && captureSharing.active()) captureSharing.stop();
-    mate.setCaptureSharing(captureSharing.active() || devicePreferences.get().sharing.enabled, captures.busy());
+    if (prev && JSON.stringify(prev.screen.source) !== JSON.stringify(value.screen.source) && captureSharing.active()) captureSharing.pause("waiting_target");
+    if(value.screen.proactive_enabled === true && (prev?.screen.proactive_enabled !== true || prev?.screen.proactive_mate!==value.screen.proactive_mate) && deviceEditOrigin) deviceLifecycle.add("enabled",deviceEditOrigin,value.screen.proactive_mate || readSettings().mateId);
+    mate.setCaptureSharing(captureSharing.active() || devicePreferences.get().sharing.enabled, captures.busy(),captureSharing.snapshot().status);
     for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("device:changed", value); },
 });
 const captures = capture.createCapture({
@@ -580,14 +593,14 @@ const captureSharing = require("./capture-sharing").createSharing({
   preferences:devicePreferences,
   cancel: () => { captures.cancel("*"); for(const w of BrowserWindow.getAllWindows()) if(!w.isDestroyed())w.webContents.send("capture:control",{type:"cancel-captures"}); },
   broadcast: snapshot => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("capture:sharing", snapshot(w.webContents)); },
-  changed: (active,busy) => mate.setCaptureSharing(active || devicePreferences.get().sharing.enabled,busy),
+  changed: (active,busy,status) => mate.setCaptureSharing(active || devicePreferences.get().sharing.enabled,busy,status),
 });
 ipcMain.handle("capture:sharing:claim", e => {
   if (!fromServerPage(e)) return false;
   const url = new URL(e.senderFrame.url);
   const surface = url.searchParams.get("surface");
   // The console/chat survives closing quick input and avatar overlays; those mirror state, never own restoration.
-  if (surface && surface !== "mate-chat") return false;
+  if (surface !== "device-runtime") return false;
   return captureSharing.claim(e.sender,url.origin);
 });
 ipcMain.handle("capture:sharing:get", e => fromServerPage(e) ? captureSharing.snapshot(e.sender) : null);
@@ -595,7 +608,20 @@ ipcMain.handle("capture:sharing:publish", (e,v) => fromServerPage(e) ? captureSh
 ipcMain.handle("capture:sharing:stop", e => {if(fromServerPage(e))captureSharing.stop();});
 ipcMain.handle("capture:sharing:mode", (e,m,i) => {if(fromServerPage(e))captureSharing.mode(m,i);});
 ipcMain.handle("device:get", e => fromServerPage(e) ? devicePreferences.get() : null);
-ipcMain.handle("device:patch", (e,p) => fromServerPage(e) ? devicePreferences.patch(p || {}) : null);
+ipcMain.handle("device:patch", (e,p) => {
+  if(!fromServerPage(e))return null;
+  deviceEditOrigin=new URL(e.senderFrame.url).origin;
+  try{return devicePreferences.patch(p||{});}finally{deviceEditOrigin="";}
+});
+ipcMain.handle("capture:sharing:pause",(e,reason)=>{if(fromServerPage(e))captureSharing.pause(String(reason||"error"));});
+ipcMain.handle("device:context",e=>fromServerPage(e)?{...deviceLifecycle.info(),mateId:readSettings().mateId||null}:null);
+ipcMain.handle("device:events",(e,mateId)=>{
+  if(!fromServerPage(e)||new URL(e.senderFrame.url).searchParams.get("surface")!=="device-runtime")return [];
+  const origin=new URL(e.senderFrame.url).origin;
+  if(devicePreferences.get().screen.proactive_enabled)deviceLifecycle.add("startup",origin,String(mateId||""));
+  return deviceLifecycle.pending(origin);
+});
+ipcMain.handle("device:events:ack",(e,ids)=>{if(fromServerPage(e)&&Array.isArray(ids))deviceLifecycle.ack(new URL(e.senderFrame.url).origin,ids.filter(x=>typeof x==="string"));});
 ipcMain.handle("device:migrate", (e,p) => fromServerPage(e) ? devicePreferences.migrate(p || {}) : null);
 ipcMain.handle("capture:info", (e) => (fromServerPage(e) ? captures.info() : null));
 ipcMain.handle("capture:sources", (e, o = {}) => (fromServerPage(e) ? captures.sources({ thumbnails: !!(o && o.thumbnails), size: Number(o && o.size) || 320 }) : []));
@@ -737,9 +763,13 @@ if (restartOnX11 && relaunchOnX11()) {
     // first run and normal starts open the console as before; a start at
     // login (--hidden) goes straight to the tray (and the Mate, if it was out)
     const startedHidden = hiddenStart || loginHidden;
+    deviceLifecycle.started(startedHidden);
     if (env.HRH_TEST_START_FAIL === "1") throw new Error("HRH_TEST_START_FAIL: a start that fails on purpose");
     if (!startedHidden) createWindow();
     mate.start();
+    mate.setCaptureSharing(devicePreferences.get().sharing.enabled,false,captureSharing.snapshot().status);
+    deviceRuntime.ensure();
+    setInterval(()=>deviceRuntime.ensure(),5000);
     startup.started();
     mainLog.info(`ready${startedHidden ? " (hidden start)" : ""}`);
     // the .deb's menu entry was hr-harnessor-desktop.desktop up to 0.4.19: a GNOME dock pin of it follows the rename
@@ -766,10 +796,11 @@ if (restartOnX11 && relaunchOnX11()) {
   // the tray (and the Mate) keep the app; closing the console quits it when
   // the Mate is not out (see createWindow), Quit quits from anywhere
   app.on("window-all-closed", () => {
-    if (!mac && !mate.isShown()) quit();
+    if (!mac && !mate.isShown() && !keepDeviceRuntime()) quit();
   });
   app.on("before-quit", () => {
     quitting = true;
+    deviceRuntime.destroy();
     mate.setQuitting(true);
     // what the pages keep in localStorage (the avatar's pan / zoom, drafts, the chosen mate) is written lazily:
     // write it now, or a quit right after a change forgets it

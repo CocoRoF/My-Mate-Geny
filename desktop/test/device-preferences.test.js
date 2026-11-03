@@ -136,7 +136,7 @@ test("persistent intent survives restart and owner destruction; explicit stop ca
 });
 test("malformed device settings recover safe defaults while preserving valid legacy values",()=>{
   const x=store({devicePreferences:{version:1,revision:"bad",screen:{format:"jpeg",quality:NaN,max_edge:-1},volume:2.5,sharing:{enabled:true,sid:42,origin:[]}}});
-  const p=x.prefs.get();assert.equal(p.screen.format,"jpeg");assert.equal(p.screen.max_edge,1920);assert.equal(p.screen.quality,85);assert.equal(p.volume,2.5);assert.equal(p.sharing.enabled,false);assert.equal(p.revision,0);
+  const p=x.prefs.get();assert.equal(p.screen.format,"jpeg");assert.equal(p.screen.max_edge,1920);assert.equal(p.screen.quality,85);assert.equal(p.volume,2.5);assert.equal(p.sharing.enabled,true);assert.equal(p.sharing.sid,"");assert.equal(p.sharing.origin,"");assert.equal(p.revision,0);
   x.prefs.migrate({origin:"https://one",activeId:"a",mates:[{id:"a",proactive:{enabled:true,interval:60}}]});
   assert.equal(x.prefs.get().screen.proactive_enabled,true);assert.equal(x.prefs.get().screen.proactive_interval,60);
 });

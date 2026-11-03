@@ -67,6 +67,12 @@ async def sessions_feed(websocket: WebSocket) -> None:
                 continue
             if msg.get("type") == "client" and conn is not None:
                 broker.hello(conn, msg)
+                screen=getattr(websocket.app.state,'screen_service',None)
+                if screen:
+                    screen.mate_service=mates
+                    ids=screen.device_events.ingest(broker._clients[conn],msg)
+                    if ids:await send({'type':'device.events.ack','data':{'ids':ids}})
+                    asyncio.create_task(screen.device_events.drain())
                 if msg.get("screen_ready") is True:
                     await send({"type":"capture.ready","data":{"shares":list(broker._clients[conn].shares)}})
             elif msg.get("type") == "sync":

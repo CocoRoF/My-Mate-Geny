@@ -1,4 +1,4 @@
-import {screenOf,type Mate} from "../../api/mates";
+import {type Mate} from "../../api/mates";
 import { useEffect, useState } from "react";
 import {
   useDevicePreferences,
@@ -35,7 +35,7 @@ export default function DeviceCaptureSettings({mate}: {mate?:Mate}) {
     >
       <p className="font-medium">{t("screen.deviceSettings")}</p>
       <p className="text-content-faint">{t("screen.deviceSettingsHint")}</p>
-      {mate&&<p className="text-content-dim" data-testid="device-mate-permission" data-enabled={String(screenOf(mate).enabled)}>{t(screenOf(mate).enabled?"screen.permissionOn":"screen.permissionOff",{name:mate.name})}</p>}
+
       <label className="flex flex-wrap items-center gap-2">
         {t("screen.mode")}
         <select value={prefs.sharing.mode} onChange={e=>void patchDevicePreferences({sharing:{mode:e.target.value as typeof prefs.sharing.mode}})} className="rounded border border-border bg-surface px-2 py-1" data-testid="screen-mode">
@@ -49,20 +49,12 @@ export default function DeviceCaptureSettings({mate}: {mate?:Mate}) {
           {[60,180,300,600].map(n=><option key={n} value={n}>{t("screen.seconds",{count:n})}</option>)}
         </select>
       </label>}
-      {mate&&<div className="space-y-2 rounded-lg bg-surface-3 p-2">
-        <label className="flex items-center gap-2"><input type="checkbox" checked={prefs.screen.proactive_enabled ?? !!mate.prefs?.proactive?.enabled} onChange={e=>patch({proactive_enabled:e.target.checked})} data-testid="device-proactive-enabled"/>{t("screen.proactiveTitle")}</label>
-        <label className="flex flex-wrap items-center gap-2">{t("screen.captureInterval")}<select value={prefs.screen.proactive_enabled===null ? mate.prefs?.proactive?.interval||180 : prefs.screen.proactive_interval} onChange={e=>patch({proactive_interval:Number(e.target.value),proactive_enabled:prefs.screen.proactive_enabled ?? !!mate.prefs?.proactive?.enabled})} data-testid="device-proactive-interval" className="rounded border border-border bg-surface px-2 py-1">
-          {[60,180,300,600].map(n=><option key={n} value={n}>{t("screen.seconds",{count:n})}</option>)}
-        </select></label>
-        <p className="text-content-faint">{(prefs.screen.proactive_enabled ?? mate.prefs?.proactive?.enabled) ? t("screen.proactiveActive",{count:prefs.screen.proactive_interval}) : t("screen.proactiveSetupHint")}</p>
-        <p className="text-content-faint">{t("screen.deviceProactiveHint")}</p>
-      </div>}
       {!!captureBridge() && (
         <label className="flex flex-wrap items-center gap-2">
           {t("screen.source")}
           <select
             className="min-w-0 max-w-full rounded border border-border bg-surface px-2 py-1"
-            value={s.source?.id || ""}
+            value={s.source_invalid?"__invalid__":s.source?.id || ""}
             onChange={(e) =>
               patch({
                 source: sources.find((x) => x.id === e.target.value) || null,
@@ -71,6 +63,7 @@ export default function DeviceCaptureSettings({mate}: {mate?:Mate}) {
             data-testid="device-capture-source"
           >
             <option value="">{t("screen.primaryScreen")}</option>
+            {s.source_invalid&&<option value="__invalid__" disabled>{t("screen.targetUnavailable")}</option>}
             {s.source && !sources.some((x) => x.id === s.source?.id) && (
               <option value={s.source.id}>{s.source.name}</option>
             )}

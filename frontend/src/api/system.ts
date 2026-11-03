@@ -123,6 +123,7 @@ export interface Snapshot {
   cpu: { count: number; model: string; runnable: number; threads: number; blocked: number | null; btime: number | null; quota: number | null };
   mem: {
     total: number; available: number; used: number; free: number; cache: number; shmem: number; dirty: number;
+    occupied?: number; non_cache?: number;
     swap_total: number; swap_used: number; swap_cached: number;
   };
   cgroup: {
