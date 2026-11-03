@@ -1124,3 +1124,14 @@ Android (Capacitor): the Mate view runs in-page; microphone permission added.
 - Code: `backend/app/mate/` (`store`, `files`, `prompt`, `service`,
   `mcp_bridge`, `voice`, `netio`: stdlib HTTP, no new dependencies); routers
   `app/routers/mates.py`, `app/routers/mate_internal.py`.
+
+### Reach-out editor
+
+`TriggerRulesEditor` edits the existing numeric category weights directly, without a weight migration or rounding
+on load. The range expands for larger legacy weights and supports decimal values. Preview updates the relative
+100% bar while dragging; release, keyboard completion or blur commits, through one serialized latest-pending
+save queue. All-zero weights explicitly mean no eligible situation. Displayed percentages describe all configured
+weights, not a probability of speaking: runtime first filters by time, silence, worker/screen conditions and cooldown.
+Cooldown buttons provide 0/10/30/60/300 seconds, with custom seconds retained. Collapsed headers summarize weight
+status. The user-facing reset-to-Geny button has been removed; initialization defaults and every original prompt
+remain intact. Existing/user-edited prompt content is not translated or migrated by this UX change.

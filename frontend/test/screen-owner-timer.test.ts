@@ -6,7 +6,7 @@ globalThis.clearInterval=((id:object)=>{intervals.delete(id);}) as any;
 Object.defineProperty(globalThis,'BroadcastChannel',{value:undefined,configurable:true});
 const win=new EventTarget() as any;
 let changed:(s:any)=>void=()=>{};
-win.hrhNative={capture:{version:3,request:async()=>({ok:false}),cancel:async()=>{},setChoice:async()=>true,sharing:{
+win.hrhNative={capture:{version:3,resume:1,request:async()=>({ok:false}),cancel:async()=>{},setChoice:async()=>true,sharing:{
   get:async()=>({revision:0,owner:false,state:null}),publish:async()=>{},stop:async()=>{},mode:async()=>{},
   onChanged:(f:any)=>{changed=f;},onControl:()=>{}
 }}};
@@ -45,4 +45,13 @@ test('store policy events update a sharing owner without a mounted composer and 
   assert.ok(![...intervals.values()].some(t=>t.ms===180000));
   assert.deepEqual(screen.sharedScopes(),{s2:'ask'});
   screen.stopSharing();
+});
+
+test('device mode edits immediately change the live owner without an Apply button',async()=>{
+ const prefs=await import('../src/stores/devicePreferences.ts');
+ await screen.beginSharing('sync','Mate',{id:'screen:1:0',kind:'screen',name:'Screen'});
+ await prefs.patchDevicePreferences({sharing:{mode:'on_turn',interval:300}});
+ assert.equal(screen.sharingSnapshot()?.mode,'on_turn');assert.equal(screen.sharingSnapshot()?.interval,300);
+ assert.deepEqual(screen.sharedScopes(),{sync:'on_turn'});
+ screen.stopSharing();
 });

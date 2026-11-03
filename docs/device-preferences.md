@@ -92,3 +92,15 @@ in the new version. Invalid fields recover safe defaults; a corrupt source disab
 
 Regression: `desktop/test/e2e/sharing-resume-e2e.js` starts from the real UI, restarts the actual Electron app
 using the same userData, reloads the renderer, stops/restarts, removes a source and checks one-owner handoff.
+
+## Capture settings UI and runtime synchronization
+
+The Screen tab and start dialog both render `DeviceCaptureSettings`, including capture mode/interval, Geny
+collection switches and quality. These options save immediately. The start dialog's Done button only closes it;
+it no longer applies a second window-local mode. Device store notifications update the sole live owner's mode
+and timer before advertising updated scopes to the server. Source changes still stop sharing; the owner routes
+one shared source-change notice to a visible window. Refresh/focus reloads available native source metadata.
+
+A Mate's `screen.enabled` is permission to offer its request tool, not device sharing consent. Both UIs show a
+permission summary, and the Screen tab explains why permission can be on while sharing is off. The safety switch
+stays per-Mate and defaults off.

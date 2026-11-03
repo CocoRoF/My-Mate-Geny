@@ -1,4 +1,4 @@
-import {useDevicePreferences,patchDevicePreferences} from "../../stores/devicePreferences";
+import {useDevicePreferences} from "../../stores/devicePreferences";
 import DeviceCaptureSettings from "./DeviceCaptureSettings";
 import { desktopMate, currentSurface } from "../../mate/desktop";
 import type { Mate } from "../../api/mates";
@@ -13,10 +13,8 @@ import {
   answerApproval,
   beginSharing,
   configureProactive,
-  setSharingMode,
   sharingSnapshot,
   subscribeSharing,
-  type ScreenMode,
 } from "../../mate/localScreen";
 import ScreenSharePicker from "../mate/ScreenSharePicker";
 import { useT } from "../../i18n";
@@ -50,11 +48,9 @@ export function useLocalScreenControls(
       if (cmd.type === "screen.open") open();
     });
   }, []);
-  const [mode, setMode] = useState<ScreenMode>(device.sharing.mode);
-  const [interval, setIntervalValue] = useState(device.sharing.interval);
+  const mode = device.sharing.mode;
   const fallback = mate?.prefs?.proactive;
   const p = fallback ? {...fallback,enabled:device.screen.proactive_enabled ?? fallback.enabled,interval:device.screen.proactive_enabled === null ? fallback.interval : device.screen.proactive_interval} : undefined;
-  useEffect(()=>{setMode(device.sharing.mode);setIntervalValue(device.sharing.interval);},[device.sharing.mode,device.sharing.interval]);
   useEffect(() => {
     if (mate) configureProactive(sid, !!p?.enabled, p?.interval || 180);
   }, [sid, p?.enabled, p?.interval]);
@@ -84,7 +80,6 @@ export function useLocalScreenControls(
     try {
       if (ongoing) {
         await beginSharing(sid, name);
-        setSharingMode(mode, interval);
       } else addFiles([await grabWithBrowser()]);
       setOpen(false);
     } catch (e) {
@@ -123,48 +118,8 @@ export function useLocalScreenControls(
             </div>
             <div className="space-y-3 overflow-y-auto p-4 text-xs">
               <p className="text-content-faint">{t("screen.localHint")}</p>
-              <label className="flex items-center justify-between gap-2">
-                {t("screen.mode")}
-                <select
-                  value={mode}
-                  onChange={(e) => {setMode(e.target.value as ScreenMode);void patchDevicePreferences({sharing:{mode:e.target.value as ScreenMode}});}}
-                  className="rounded border border-border bg-surface px-2 py-1"
-                  data-testid="screen-mode"
-                >
-                  <option value="ask">{t("screen.whenRequested")}</option>
-                  <option value="on_turn">{t("screen.onTurn")}</option>
-                  {!mate && (
-                    <option value="observe">{t("screen.observe")}</option>
-                  )}
-                </select>
-              </label>
-              {!mate && mode === "observe" && (
-                <label>
-                  {t("screen.interval")}{" "}
-                  <select
-                    value={interval}
-                    onChange={(e) => {setIntervalValue(Number(e.target.value));void patchDevicePreferences({sharing:{interval:Number(e.target.value)}});}}
-                    data-testid="screen-interval"
-                  >
-                    {[60, 180, 300, 600].map((n) => (
-                      <option key={n} value={n}>
-                        {t("screen.seconds", { count: n })}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              {mate && (
-                <p
-                  className={p?.enabled ? "text-warning" : "text-content-faint"}
-                >
-                  {p?.enabled
-                    ? t("screen.proactiveActive", { count: p.interval })
-                    : t("screen.proactiveSetupHint")}
-                </p>
-              )}
               {captureBridge() && !captureBridge()?.resume && <p className="text-warning">{t("screen.updateApp")}</p>}
-              <DeviceCaptureSettings />
+              <DeviceCaptureSettings mate={mate}/>
               <p className="text-content-faint">{t("screen.retention")}</p>
               {mode === "observe" && (
                 <p className="text-warning">{t("screen.costHint")}</p>
@@ -187,13 +142,12 @@ export function useLocalScreenControls(
                 <button
                   type="button"
                   onClick={() => {
-                    setSharingMode(mode, interval);
                     setOpen(false);
                   }}
                   className="btn-primary"
                   data-testid="screen-apply"
                 >
-                  {t("screen.apply")}
+                  {t("common.done")}
                 </button>
               ) : (
                 <>
@@ -247,8 +201,7 @@ export function useLocalScreenControls(
                   setBusy(true);
                   void beginSharing(sid, name, source)
                     .then(() => {
-                      setSharingMode(mode, interval);
-                      setOpen(false);
+                        setOpen(false);
                     }, failed)
                     .finally(() => setBusy(false));
                 }

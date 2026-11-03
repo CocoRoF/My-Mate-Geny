@@ -1,3 +1,4 @@
+import {screenOf,type Mate} from "../../api/mates";
 import { useEffect, useState } from "react";
 import {
   useDevicePreferences,
@@ -9,19 +10,20 @@ import {
   type CaptureInfo,
 } from "../../mate/screenCapture";
 import { useT } from "../../i18n";
-export default function DeviceCaptureSettings() {
+export default function DeviceCaptureSettings({mate}: {mate?:Mate}) {
   const t = useT(),
     prefs = useDevicePreferences(),
     s = prefs.screen;
   const [info, setInfo] = useState<CaptureInfo | null>(null);
   const [sources, setSources] = useState<CaptureSource[]>([]);
+  const refreshSources = () => {
+    void captureBridge()?.sources().then(setSources,()=>{});
+  };
   useEffect(() => {
-    void captureBridge()
-      ?.info()
-      .then(setInfo, () => {});
-    void captureBridge()
-      ?.sources()
-      .then(setSources, () => {});
+    void captureBridge()?.info().then(setInfo,()=>{});
+    refreshSources();
+    window.addEventListener("focus",refreshSources);
+    return ()=>window.removeEventListener("focus",refreshSources);
   }, []);
   const patch = (p: Partial<typeof s>) => {
     void patchDevicePreferences({ screen: p });
@@ -33,6 +35,28 @@ export default function DeviceCaptureSettings() {
     >
       <p className="font-medium">{t("screen.deviceSettings")}</p>
       <p className="text-content-faint">{t("screen.deviceSettingsHint")}</p>
+      {mate&&<p className="text-content-dim" data-testid="device-mate-permission" data-enabled={String(screenOf(mate).enabled)}>{t(screenOf(mate).enabled?"screen.permissionOn":"screen.permissionOff",{name:mate.name})}</p>}
+      <label className="flex flex-wrap items-center gap-2">
+        {t("screen.mode")}
+        <select value={prefs.sharing.mode} onChange={e=>void patchDevicePreferences({sharing:{mode:e.target.value as typeof prefs.sharing.mode}})} className="rounded border border-border bg-surface px-2 py-1" data-testid="screen-mode">
+          <option value="ask">{t("screen.whenRequested")}</option>
+          <option value="on_turn">{t("screen.onTurn")}</option>
+          {(!mate || prefs.sharing.mode==="observe")&&<option value="observe">{t("screen.observe")}</option>}
+        </select>
+      </label>
+      {prefs.sharing.mode==="observe"&&<label className="flex flex-wrap items-center gap-2">{t("screen.interval")}
+        <select value={prefs.sharing.interval} onChange={e=>void patchDevicePreferences({sharing:{interval:Number(e.target.value)}})} data-testid="screen-interval" className="rounded border border-border bg-surface px-2 py-1">
+          {[60,180,300,600].map(n=><option key={n} value={n}>{t("screen.seconds",{count:n})}</option>)}
+        </select>
+      </label>}
+      {mate&&<div className="space-y-2 rounded-lg bg-surface-3 p-2">
+        <label className="flex items-center gap-2"><input type="checkbox" checked={prefs.screen.proactive_enabled ?? !!mate.prefs?.proactive?.enabled} onChange={e=>patch({proactive_enabled:e.target.checked})} data-testid="device-proactive-enabled"/>{t("screen.proactiveTitle")}</label>
+        <label className="flex flex-wrap items-center gap-2">{t("screen.captureInterval")}<select value={prefs.screen.proactive_enabled===null ? mate.prefs?.proactive?.interval||180 : prefs.screen.proactive_interval} onChange={e=>patch({proactive_interval:Number(e.target.value),proactive_enabled:prefs.screen.proactive_enabled ?? !!mate.prefs?.proactive?.enabled})} data-testid="device-proactive-interval" className="rounded border border-border bg-surface px-2 py-1">
+          {[60,180,300,600].map(n=><option key={n} value={n}>{t("screen.seconds",{count:n})}</option>)}
+        </select></label>
+        <p className="text-content-faint">{(prefs.screen.proactive_enabled ?? mate.prefs?.proactive?.enabled) ? t("screen.proactiveActive",{count:prefs.screen.proactive_interval}) : t("screen.proactiveSetupHint")}</p>
+        <p className="text-content-faint">{t("screen.deviceProactiveHint")}</p>
+      </div>}
       {!!captureBridge() && (
         <label className="flex flex-wrap items-center gap-2">
           {t("screen.source")}
@@ -56,6 +80,7 @@ export default function DeviceCaptureSettings() {
               </option>
             ))}
           </select>
+          <button type="button" className="btn-ghost !px-2" onClick={refreshSources} data-testid="device-capture-refresh">{t("common.refresh")}</button>
         </label>
       )}
       <label className="flex flex-wrap items-center gap-2">

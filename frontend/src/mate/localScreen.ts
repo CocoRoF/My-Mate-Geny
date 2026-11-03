@@ -476,8 +476,20 @@ export async function resumeSharing() {
     reportRestoreFailure(String((e as Error).message || tr("screen.restoreMissing")));
   } finally {resuming=false;}
 }
+let previousSource = JSON.stringify(devicePreferences().screen.source);
+let sourceReady = false;
 subscribeDevicePreferences(() => {
   const prefs=devicePreferences();
+  const source = JSON.stringify(prefs.screen.source);
+  if (sourceReady && source!==previousSource && sharing && ownsSharing)
+    reportRestoreFailure(tr("screen.sourceChangeStopped"));
+  previousSource=source;sourceReady=true;
+  // Persisted mode is authoritative; changing it in either settings UI immediately updates the sole owner.
+  if (sharing && ownsSharing && prefs.sharing.enabled &&
+      (sharing.mode!==prefs.sharing.mode || sharing.interval!==prefs.sharing.interval)) {
+    sharing={...sharing,mode:prefs.sharing.mode,interval:prefs.sharing.interval};
+    scheduleObservation();emit();
+  }
   for(const [sid,p] of proactive)configureProactive(sid,p.enabled,p.interval);
   if (sharing && !prefs.sharing.enabled && (!captureBridge() || captureBridge()?.resume)) stopOwnedSharing();
   window.dispatchEvent(new Event("hrh:screen-sharing"));

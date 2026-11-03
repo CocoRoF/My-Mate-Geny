@@ -1,3 +1,4 @@
+import TriggerRulesEditor from "./TriggerRulesEditor";
 import {useDevicePreferences,patchDevicePreferences} from "../../../stores/devicePreferences";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { Mate, GenyTriggerPreset } from "../../../api/mates";
@@ -19,9 +20,6 @@ export default function ProactiveTab({ mate }: { mate: Mate }) {
   const p={...stored,enabled:device.screen.proactive_enabled ?? stored.enabled,interval:device.screen.proactive_enabled === null ? stored.interval : device.screen.proactive_interval};
   const supported = !!mate.prefs?.proactive && "preset" in mate.prefs.proactive;
   const [defaults, setDefaults] = useState<GenyTriggerPreset | null>(null);
-  const [draft, setDraft] = useState<GenyTriggerPreset | null>(
-    p.preset || null,
-  );
   const [guidance, setGuidance] = useState(p.guidance);
   const [error, setError] = useState("");
   const [status, setStatus] = useState<{
@@ -29,10 +27,6 @@ export default function ProactiveTab({ mate }: { mate: Mate }) {
     last_status: string;
   } | null>(null);
   useEffect(() => setGuidance(p.guidance), [p.guidance]);
-  useEffect(() => {
-    if (p.preset) setDraft(p.preset);
-    else if (defaults) setDraft(defaults);
-  }, [p.preset, defaults]);
   useEffect(() => {
     let alive = true;
     void apiFetch<GenyTriggerPreset>("/api/sessions/screen/geny-preset").then(
@@ -72,23 +66,6 @@ export default function ProactiveTab({ mate }: { mate: Mate }) {
         () => setError(""),
         (e) => setError(String(e.message)),
       );
-  const savePreset = (v: GenyTriggerPreset) => {
-    setDraft(v);
-    void patch({ preset: v });
-  };
-  const category = (id: string, v: Record<string, unknown>) => {
-    if (draft)
-      savePreset({
-        ...draft,
-        categories: draft.categories.map((c) =>
-          c.id === id ? { ...c, ...v } : c,
-        ),
-      });
-  };
-  const timing = (key: keyof GenyTriggerPreset["timing"], value: number) => {
-    if (draft)
-      savePreset({ ...draft, timing: { ...draft.timing, [key]: value } });
-  };
   const language = mate.persona.language || "en";
   const statusKeys: Record<string, MsgKey> = {
     waiting: "screen.proactiveStatus_waiting",
@@ -201,120 +178,13 @@ export default function ProactiveTab({ mate }: { mate: Mate }) {
           {t("screen.genyStatusHint")}
         </p>
       </Section>
-      {draft && (
+      {(p.preset || defaults) && (
         <Section title={t("screen.genyTiming")} hint={t("screen.genySaved")}>
-          <Field label={t("screen.baseIdle")}>
-            <input
-              className="field"
-              type="number"
-              min={5}
-              defaultValue={draft.timing.base_idle_seconds}
-              key={"base" + draft.timing.base_idle_seconds}
-              onBlur={(e) =>
-                timing("base_idle_seconds", Number(e.target.value))
-              }
-            />
-          </Field>
-          <Field label={t("screen.maxIdle")}>
-            <input
-              className="field"
-              type="number"
-              min={5}
-              defaultValue={draft.timing.max_idle_seconds}
-              key={"max" + draft.timing.max_idle_seconds}
-              onBlur={(e) => timing("max_idle_seconds", Number(e.target.value))}
-            />
-          </Field>
-          <Field label={t("screen.adaptiveScale")}>
-            <input
-              className="field"
-              type="number"
-              min={1}
-              defaultValue={draft.timing.adaptive_scale_triggers}
-              key={"scale" + draft.timing.adaptive_scale_triggers}
-              onBlur={(e) =>
-                timing("adaptive_scale_triggers", Number(e.target.value))
-              }
-            />
-          </Field>
-          {draft.categories.map((c) => (
-            <details
-              className="rounded-xl border border-border p-3 text-xs"
-              key={c.id}
-            >
-              <summary className="cursor-pointer font-medium">
-                {c.label}
-              </summary>
-              <div className="mt-3 space-y-3">
-                <Field label={t("screen.weight")}>
-                  <input
-                    type="number"
-                    min={0}
-                    className="field"
-                    defaultValue={c.weight}
-                    key={c.weight}
-                    onBlur={(e) =>
-                      category(c.id, { weight: Number(e.target.value) })
-                    }
-                  />
-                </Field>
-                <Field label={t("screen.cooldown")}>
-                  <input
-                    type="number"
-                    min={0}
-                    className="field"
-                    defaultValue={c.cooldown_seconds}
-                    key={c.cooldown_seconds}
-                    onBlur={(e) =>
-                      category(c.id, {
-                        cooldown_seconds: Number(e.target.value),
-                      })
-                    }
-                  />
-                </Field>
-                <p>{t("screen.genyPrompts")}</p>
-                {c.prompt_refs.map((ref) => {
-                  const prompt = draft.prompts.find(
-                    (x) => x.id === ref.prompt_id,
-                  );
-                  return prompt ? (
-                    <textarea
-                      key={prompt.id}
-                      className="field min-h-28 w-full"
-                      defaultValue={
-                        prompt.content[language] || prompt.content.en || ""
-                      }
-                      onBlur={(e) =>
-                        savePreset({
-                          ...draft,
-                          prompts: draft.prompts.map((x) =>
-                            x.id === prompt.id
-                              ? {
-                                  ...x,
-                                  content: {
-                                    ...x.content,
-                                    [language]: e.target.value,
-                                  },
-                                }
-                              : x,
-                          ),
-                        })
-                      }
-                    />
-                  ) : null;
-                })}
-              </div>
-            </details>
-          ))}
-          <button
-            className="btn-ghost"
-            onClick={() => {
-              if (defaults) setDraft(defaults);
-              void patch({ preset: null });
-            }}
-          >
-            {t("screen.resetGeny")}
-          </button>
+          <TriggerRulesEditor key={mate.id} initial={(p.preset || defaults)!} language={language}
+            onSave={async preset=>{
+              const updated=await useMateStore.getState().patch(mate.id,{prefs:{proactive:{preset}}});
+              return updated.prefs!.proactive!.preset!;
+            }}/>
         </Section>
       )}
       {error && (

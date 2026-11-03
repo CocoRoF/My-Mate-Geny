@@ -33,7 +33,7 @@ export default function ScreenTab({ mate, sid }: { mate: Mate; sid: string | nul
           testId="mate-screen-enabled"
         />
       </Section>
-      <Section title={t("composer.shareScreen")} testId="settings-screen-sharing">
+      <Section title={t("composer.shareScreen")} hint={t("screen.sharingPermissionSeparate")} testId="settings-screen-sharing">
         {sharing && (
           <p className="break-words text-xs text-content-dim">
             {t("screen.sharing", { source: sharing.source })}
@@ -51,7 +51,7 @@ export default function ScreenTab({ mate, sid }: { mate: Mate; sid: string | nul
         )}
         {sharing?.error && <p role="alert" className="text-xs text-danger">{sharing.error}</p>}
       </Section>
-      <DeviceCaptureSettings />
+      <DeviceCaptureSettings mate={mate}/>
       {screen.ui}
     </>
   );
