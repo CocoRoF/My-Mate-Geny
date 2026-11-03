@@ -1,7 +1,7 @@
 const screen = {
   "proactiveStatus_silent": "지금은 말할 필요가 없어 조용히 있어요",
   "genyTitle": "Geny 말걸기 규칙",
-  "genyHint": "Project Geny의 Thinking Trigger 규칙을 사용해요. 수집한 화면은 바로 답변으로 이어지지 않고, 상황·빈도·화면 변화를 검사해요.",
+  "genyHint": "상황과 빈도 규칙에 따라 먼저 말을 걸어요. 화면은 먼저 수집하고, 변화와 상황을 확인한 뒤 반응해요.",
   "scope": "말걸기 범위",
   "scopeAll": "Geny 기본 · 침묵, 시간대, 연결된 작업, 화면",
   "scopeScreen": "화면을 공유하는 동안만",
@@ -17,7 +17,7 @@ const screen = {
   "showNow": "지금 화면 보고 말 걸기",
   "genyStatus": "현재 상태",
   "genyStatusHint": "지금 보기는 공유 중인 화면을 새로 찍어 판단해요. 같은 화면이어도 사용자가 직접 요청하면 다시 판단해요.",
-  "genySilentHint": "화면이 그대로면 화면 말걸기를 건너뛰어요. 모델이 [SILENT]를 선택하면 말풍선과 음성이 나오지 않아요. 화면을 끄더라도 Geny 기본 범위에서는 침묵·시간대 말걸기가 이어질 수 있어요.",
+  "genySilentHint": "화면이 그대로면 화면 말걸기를 건너뛰고, 특별히 할 말이 없으면 조용히 있어요. 화면을 끄더라도 Geny 기본 범위에서는 침묵·시간대 말걸기가 이어질 수 있어요.",
   "genySaved": "변경한 규칙은 바로 저장돼요. 화면은 최근 프레임만 임시 보관하고 자동으로 장기 기억에 넣지 않아요.",
   "proactiveStatus_waiting": "대기 중",
   "proactiveStatus_idle_wait": "조용한 시간이 더 지난 뒤 판단해요",
@@ -38,7 +38,7 @@ const screen = {
   "proactiveSetupHint": "화면을 보고 먼저 말 걸기는 메이트 설정 → 말걸기에서 정해요. 공유 중에는 설정창이 닫혀요.",
   "apply": "적용",
   "proactiveTitle": "말걸기",
-  "proactiveCost": "자동 관찰에 동의하는 설정이에요. 설정한 간격보다 자주 확인하지 않고, 대화나 작업 중에는 건너뛰어요. 화면이 바뀌면 모델 사용량이 발생할 수 있어요.",
+  "proactiveCost": "자동 말걸기는 모델 사용량이 발생할 수 있어요. 화면 수집과 발화 판단은 별도로 동작하며, 진행 중인 대화나 작업에는 끼어들지 않아요.",
   "proactiveGuidance": "어떤 때 말을 걸면 좋을까요?",
 
   "deviceVolume": "이 기기의 앱 음량이에요. 모든 메이트·창에 즉시 적용되며 다른 기기에는 영향을 주지 않아요.",

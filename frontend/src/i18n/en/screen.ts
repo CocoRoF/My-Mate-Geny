@@ -1,7 +1,7 @@
 const screen = {
   "proactiveStatus_silent": "Staying silent: nothing to say right now",
   "genyTitle": "Geny conversation rules",
-  "genyHint": "Uses Project Geny Thinking Trigger rules. Frames are collected separately; situation, timing and screen-change gates decide whether to speak.",
+  "genyHint": "Reach out according to situation and timing rules. Screens are collected first, then changes and context are checked before reacting.",
   "scope": "When to reach out",
   "scopeAll": "Geny default · idle, time, linked work and screen",
   "scopeScreen": "Only while sharing my screen",
@@ -17,7 +17,7 @@ const screen = {
   "showNow": "Look and speak now",
   "genyStatus": "Current status",
   "genyStatusHint": "Look now captures your shared source and asks again, even if unchanged, because you explicitly requested it.",
-  "genySilentHint": "Unchanged screens skip screen commentary. [SILENT] produces no bubble or speech. With Geny default scope, idle/time triggers may continue after screen sharing stops.",
+  "genySilentHint": "Unchanged screens skip screen commentary; your mate stays quiet when there is nothing to say. With Geny default scope, idle/time triggers may continue after sharing stops.",
   "genySaved": "Rule changes save immediately. Only a recent frame is cached temporarily; screen content is not automatically saved to long-term memory.",
   "proactiveStatus_waiting": "Waiting",
   "proactiveStatus_idle_wait": "Waiting for the idle threshold",
@@ -38,7 +38,7 @@ const screen = {
   "proactiveSetupHint": "Configure starting conversations in Mate settings → Reach out. This setup closes during sharing.",
   "apply": "Apply",
   "proactiveTitle": "Reach out",
-  "proactiveCost": "This permits automatic observation at the selected interval. Busy conversations and tasks are skipped. Changed screens may incur model usage.",
+  "proactiveCost": "Automatic conversation starters may incur model usage. Frame collection and speech decisions run separately; active conversations and tasks are not interrupted.",
   "proactiveGuidance": "When would you like your mate to speak up?",
 
   "deviceVolume": "Output volume for this device. Applies immediately to all mates and windows, without changing other devices.",
