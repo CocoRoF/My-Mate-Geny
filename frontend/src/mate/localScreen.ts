@@ -384,6 +384,7 @@ export function finishLocalCapture(sid: string) {
 }
 let leaving = false;
 window.addEventListener("pagehide", () => {leaving=true;stopOwnedSharing();});
+window.hrhNative?.onQuitting?.(()=>{leaving=true;stopOwnedSharing();});
 queueMicrotask(() => {
   const nativeSharing = captureBridge()?.sharing;
   if (nativeSharing) {

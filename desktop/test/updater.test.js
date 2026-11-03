@@ -273,3 +273,17 @@ test("restart arguments: this app's own, never a hidden start; the command waits
   assert.deepEqual(args.slice(2), ["sh", "4242", "/a/b c.AppImage", "--no-sandbox"]);
   assert.match(args[1], /kill -0 "\$1".*exec "\$@"/);
 });
+
+test('Quit cancels active downloads, disables install-on-quit, and ignores late updater events',async()=>{
+ const {up,u,states}=make();await up.check();const download=up.download();await settle();
+ up.shutdown();await download;
+ assert.equal(u.autoInstallOnAppQuit,false);assert.equal(u.autoRunAppAfterInstall,false);
+ const n=states.length;u.emit('update-downloaded',{version:'9.0.0'});u.emit('error',Error('late failure'));
+ await up.install();await up.check();assert.equal(states.length,n);assert.equal(u.calls.some(x=>x[0]==='install'),false);
+});
+test('Quit while updater initialization is pending cannot run an installer later',async()=>{
+ const u=fakeUpdater();let release;
+ const {up}=make({u,deps:{autoUpdater:()=>new Promise(r=>{release=r;})}});
+ const check=up.check();up.shutdown();release(u);await check;
+ assert.equal(u.autoInstallOnAppQuit,false);assert.equal(u.calls.some(x=>x[0]==='check'),false);
+});

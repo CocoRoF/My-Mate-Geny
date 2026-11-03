@@ -233,6 +233,9 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
 
   // a different mate (or leaving the view): stop talking
   useEffect(() => () => queue.stop(), [queue, mateId]);
+  useEffect(()=>window.hrhNative?.onQuitting?.(()=>{
+    speaksRef.current=false;queue.stop();setListeningState(false);wsRef.current?.close();
+  }),[queue]);
   // muted / no longer the owner: stop at once
   useEffect(() => {
     if (!speaks) {

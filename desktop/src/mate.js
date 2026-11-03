@@ -63,6 +63,7 @@ let quick = null;
 let chat = null;
 let tray = null;
 let quitting = false;
+let tickTimer = null;
 let moveMode = false;
 let dragCssKey = null;
 let hotkeyBound = ""; // the accelerator actually registered ("" = none)
@@ -318,6 +319,7 @@ function saveAvatarSoon() {
 }
 
 function createAvatar() {
+  if(quitting)return;
   const b = clampAvatar(S().mateBounds || defaultAvatarBounds(AVATAR_DEFAULT));
   avatar = new BrowserWindow({
     ...b,
@@ -346,6 +348,7 @@ function createAvatar() {
     overlayFailed = false;
   });
   wc.on("did-finish-load", () => {
+    if(quitting)return;
     if (overlayFailed || !onSurface(win, "overlay")) return;
     failDelay = 0;
     if (S().mateVisible && !gaveUp) win.showInactive();
@@ -396,6 +399,7 @@ function applyInput() {
 }
 
 function showAvatar(id) {
+  if(quitting)return;
   const retrying = gaveUp;
   gaveUp = false;
   crashes = [];
@@ -671,6 +675,7 @@ function barAct(name) {
 // cursor polling (ailism): show the bar while the pointer is on the avatar or
 // the bar, hide it 450 ms after it leaves
 function tick() {
+  if(quitting)return;
   if (!alive(avatar) || !avatar.isVisible()) {
     if (alive(bar) && bar.isVisible()) bar.hide();
     return;
@@ -688,6 +693,7 @@ function tick() {
 // ── the quick chat card ────────────────────────────────────────
 
 function createQuick() {
+  if(quitting)return;
   quick = new BrowserWindow({
     width: QUICK.w,
     height: QUICK.h,
@@ -758,6 +764,7 @@ function placeQuick() {
 }
 
 function openQuick() {
+  if(quitting)return;
   if (!connected()) return deps.openConsole();
   if (!alive(quick)) createQuick();
   const win = quick;
@@ -873,6 +880,7 @@ function showChatNow() {
 }
 
 function openChat() {
+  if(quitting)return;
   if (!connected()) return deps.openConsole();
   if (!alive(chat)) return createChat();
   if (!chat.webContents.isLoading() && !presentable(chat, "chat")) loadSurface(chat, "chat");
@@ -1134,6 +1142,7 @@ function notify(title, body) {
 }
 
 function buildTray() {
+  if(quitting)return;
   if (!tray) {
     try {
       let img = nativeImage.createFromPath(ICON);
@@ -1265,7 +1274,7 @@ function start() {
     notify(t("hotkeyTitle"), t("hotkeyBody", { key: prettyAccel(acc) }));
   }
   if (S().mateVisible && connected()) createAvatar();
-  setInterval(tick, 120);
+  tickTimer=setInterval(tick, 120);
   const reclamp = () => {
     if (!alive(avatar) || moveRect) return;
     avatar.setBounds(clampAvatar(avatar.getBounds()));
@@ -1281,7 +1290,10 @@ function setQuitting(on) {
 }
 
 function stop() {
+  clearInterval(tickTimer);tickTimer=null;
+  for(const timer of [failTimer,moveIdle,resizeIdle,quickSaveTimer,saveTimer])clearTimeout(timer);
   globalShortcut.unregisterAll();
+  if(tray){tray.destroy();tray=null;}
 }
 
 module.exports = {

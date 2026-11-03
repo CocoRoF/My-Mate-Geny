@@ -62,6 +62,8 @@ function createUpdater(deps) {
   let wired = false;
   let token = null;
   let speedSamples = [];
+  let shuttingDown = false;
+  let instance = null;
 
   const view = () => {
     const s = support({ isPackaged: deps.isPackaged, platform: deps.platform, env: deps.env || {}, server: deps.server() });
@@ -69,11 +71,14 @@ function createUpdater(deps) {
     return { ...state, current: deps.version, supported: s.ok, how: s.how || null, reason };
   };
   const set = (patch, replace = false) => {
+    if(shuttingDown)return;
     state = replace ? { ...patch } : { ...state, ...patch };
     deps.onState(view());
   };
 
   function wire(u) {
+    instance=u;
+    if(shuttingDown){u.autoInstallOnAppQuit=false;u.autoRunAppAfterInstall=false;return;}
     if (wired) return;
     wired = true;
     u.autoDownload = false;
@@ -107,6 +112,7 @@ function createUpdater(deps) {
     });
     // an install that went wrong is only said here (quitAndInstall returns nothing; NSIS reports a failed start later)
     u.on("error", (e) => {
+      if(shuttingDown)return;
       if (state.status !== "installing") return;
       deps.installFailed?.(); // (the app stays: closing its window behaves as before again)
       set({ status: "error", ...failure(e, "install"), during: "install" });
@@ -115,8 +121,10 @@ function createUpdater(deps) {
 
   let feedSet = "";
   async function feed() {
+    if(shuttingDown)throw Error("App is quitting");
     const u = await deps.autoUpdater();
     wire(u);
+    if(shuttingDown)throw Error("App is quitting");
     // (only when it changes: setFeedURL forgets the update a check found — "Please check update first")
     const url = deps.feedUrl ? deps.feedUrl() : `${deps.server()}/api/downloads/update`;
     if (url !== feedSet) {
@@ -124,6 +132,7 @@ function createUpdater(deps) {
       feedSet = url;
     }
     const cookie = await deps.cookieHeader().catch(() => "");
+    if(shuttingDown)throw Error("App is quitting");
     u.requestHeaders = cookie ? { Cookie: cookie } : {};
     return u;
   }
@@ -149,6 +158,7 @@ function createUpdater(deps) {
   const NO_ERROR = { error: undefined, errorCode: undefined, errorDetail: undefined };
 
   async function check() {
+    if(shuttingDown)return view();
     const s = view();
     if (!s.supported) {
       set({ status: "unsupported" });
@@ -186,6 +196,7 @@ function createUpdater(deps) {
   }
 
   async function download() {
+    if(shuttingDown)return view();
     if (state.status === "downloading" || state.status === "ready" || state.status === "installing") return view();
     if (state.status !== "available") {
       await check();
@@ -225,10 +236,12 @@ function createUpdater(deps) {
   }
 
   async function install() {
+    if(shuttingDown)return view();
     if (state.status !== "ready") return view();
     set({ status: "installing", ...NO_ERROR });
     try {
       const u = await deps.autoUpdater();
+      if(shuttingDown)return view();
       deps.beforeInstall?.();
       const env = deps.env || {};
       const appImage = deps.platform === "linux" && !!env.APPIMAGE;
@@ -268,7 +281,13 @@ function createUpdater(deps) {
 
   // refresh: say the state again (the language changed: the reason's words did)
   const refresh = () => deps.onState(view());
-  return { get state() { return view(); }, check, download, cancel, install, retry, refresh, STATUS };
+  function shutdown(){
+    if(shuttingDown)return;
+    shuttingDown=true;
+    if(instance){instance.autoInstallOnAppQuit=false;instance.autoRunAppAfterInstall=false;}
+    token?.cancel();token=null;
+  }
+  return { get state() { return view(); }, check, download, cancel, install, retry, refresh, shutdown, STATUS };
 }
 
 /** the arguments the restarted app gets: this one's own (`--no-sandbox`, `--ozone-platform=x11`, …) — never a hidden

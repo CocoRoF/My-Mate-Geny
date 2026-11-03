@@ -128,6 +128,7 @@ contextBridge.exposeInMainWorld("hrhNative", {
   // which window this page is in: console | mate-overlay | mate-quick | mate-chat | bar
   surface,
   deviceIdentity: i18n?.device || null,
+  onQuitting:cb=>listen("app:quitting",cb),
   notify: (title, body) => ipcRenderer.invoke("hrh:notify", { title, body }),
   openExternal: (url) => ipcRenderer.invoke("hrh:openExternal", url),
   retry: () => ipcRenderer.invoke("hrh:retry"),

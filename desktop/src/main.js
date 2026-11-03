@@ -119,13 +119,11 @@ if (readSettings().softwareRendering || env.HRH_DISABLE_GPU === "1") app.disable
 
 let win = null;
 let quitting = false;
+let installingUpdate = false;
+let runtimeTimer = null, updateTimer = null, updateInterval = null;
 const hiddenStart = process.argv.includes("--hidden");
 
-function quit() {
-  quitting = true;
-  mate.setQuitting(true);
-  app.quit();
-}
+function quit(source="user") { quitController.request(source); }
 
 // Explicit device features outlive user-facing windows. Closing the console isn't an explicit Stop/Quit.
 function keepDeviceRuntime() {
@@ -134,6 +132,7 @@ function keepDeviceRuntime() {
 }
 
 function createWindow(url) {
+  if(quitting)return null;
   const s = readSettings();
   const bounds = s.bounds || { width: 1360, height: 880 };
   win = new BrowserWindow({
@@ -159,7 +158,7 @@ function createWindow(url) {
   const w = win;
   chrome.register(w, "console");
   if (s.maximized) w.maximize();
-  w.once("ready-to-show", () => w.show());
+  w.once("ready-to-show", () => {if(!quitting&&!w.isDestroyed())w.show();});
 
   let saving = null;
   const save = () => {
@@ -240,6 +239,7 @@ function createWindow(url) {
 
 /** Show (or reopen) the console window, optionally at a same-origin URL. */
 function openConsole(url) {
+  if(quitting)return;
   if (!win || win.isDestroyed()) {
     createWindow(url);
     return;
@@ -264,6 +264,7 @@ function loadConnect(w, query = {}) {
 
 /** The connect screen in the console window (first start, Switch server…). */
 function showConnect(query = {}) {
+  if(quitting)return;
   if (!win || win.isDestroyed()) createWindow(null);
   loadConnect(win, query);
   if (win.isMinimized()) win.restore();
@@ -498,11 +499,14 @@ const updater = createUpdater({
     return list.map((c) => `${c.name}=${c.value}`).join("; ");
   },
   beforeInstall: () => {
+    installingUpdate = true;
     quitting = true;
     deviceRuntime.destroy();
     mate.setQuitting(true);
   },
   installFailed: () => {
+    if(quitController.isQuitting())return;
+    installingUpdate = false;
     quitting = false;
     mate.setQuitting(false);
     deviceRuntime.start();
@@ -510,6 +514,7 @@ const updater = createUpdater({
   // an AppImage's restart after the update: the new file with this app's arguments (`--no-sandbox` on Ubuntu 24.04+),
   // once this process — and its single-instance lock — is gone
   restartAfter: (file) => {
+    if(quitController.isExplicit())return;
     const [cmd, args] = restartCommand(process.pid, file, restartArgs(process.argv));
     require("child_process").spawn(cmd, args, { detached: true, stdio: "ignore", env: process.env }).unref();
   },
@@ -597,6 +602,25 @@ const captureSharing = require("./capture-sharing").createSharing({
   cancel: () => { captures.cancel("*"); for(const w of BrowserWindow.getAllWindows()) if(!w.isDestroyed())w.webContents.send("capture:control",{type:"cancel-captures"}); },
   broadcast: snapshot => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("capture:sharing", snapshot(w.webContents)); },
   changed: (active,busy,status) => mate.setCaptureSharing(active || devicePreferences.get().sharing.enabled,busy,status),
+});
+const quitController=require("./quit").createQuitController({
+  app,windows:()=>BrowserWindow.getAllWindows(),log:m=>mainLog.info(m),
+  prepare:({update})=>{
+    // Set both close-to-tray guards first. Each cleanup is isolated so one failure cannot cancel Quit.
+    quitting=true;mate.setQuitting(true);
+    const clean=(name,fn)=>{try{fn();}catch(e){mainLog.warn(`quit cleanup (${name}): ${e.message}`);}};
+    clearInterval(runtimeTimer);clearTimeout(updateTimer);clearInterval(updateInterval);
+    if(!update)clean("updater",()=>updater.shutdown());
+    for(const w of BrowserWindow.getAllWindows())if(!w.isDestroyed())clean("renderer",()=>w.webContents.send("app:quitting"));
+    clean("capture",()=>captureSharing.pause("waiting_connection"));
+    clean("runtime",()=>deviceRuntime.destroy());
+    clean("mate",()=>mate.stop());
+    clean("storage",()=>session.defaultSession.flushStorageData());
+  },
+});
+app.on("browser-window-created",(_event,w)=>{
+  quitController.bindWindow(w);
+  if(quitting)queueMicrotask(()=>{if(!w.isDestroyed())w.destroy();});
 });
 ipcMain.handle("capture:sharing:claim", e => {
   if (!fromServerPage(e)) return false;
@@ -737,6 +761,7 @@ if (restartOnX11 && relaunchOnX11()) {
   app.quit();
 } else {
   app.on("second-instance", (_e, argv) => {
+    if(quitting)return;
     mainLog.info(`second launch${argv.includes("--hidden") ? " (hidden: ignored)" : ": showing the console"}`);
     if (argv.includes("--hidden")) return;
     openConsole();
@@ -746,6 +771,7 @@ if (restartOnX11 && relaunchOnX11()) {
     theme.applyTheme(nativeTheme, readSettings().theme); // before any window: its background and menus match
     await forgetIfAsked();
     await migrateLegacy();
+    if(quitting)return;
     setupPermissions();
     buildMenu();
     mate.init({
@@ -754,7 +780,7 @@ if (restartOnX11 && relaunchOnX11()) {
       consoleWindow: () => (win && !win.isDestroyed() ? win : null),
       switchServer: () => showConnect(),
       signOut: () => signOut(),
-      quit,
+      quit:()=>quit("tray"),
     });
     const loginHidden = mac && (() => {
       try {
@@ -772,7 +798,7 @@ if (restartOnX11 && relaunchOnX11()) {
     mate.start();
     mate.setCaptureSharing(devicePreferences.get().sharing.enabled,false,captureSharing.snapshot().status);
     deviceRuntime.ensure();
-    setInterval(()=>deviceRuntime.ensure(),5000);
+    runtimeTimer=setInterval(()=>deviceRuntime.ensure(),5000);
     startup.started();
     mainLog.info(`ready${startedHidden ? " (hidden start)" : ""}`);
     // the .deb's menu entry was hr-harnessor-desktop.desktop up to 0.4.19: a GNOME dock pin of it follows the rename
@@ -786,8 +812,8 @@ if (restartOnX11 && relaunchOnX11()) {
       });
     }
     // updates: a quiet look 30 s after the start and every 6 hours (downloading is the user's call)
-    setTimeout(() => void updater.check(), 30_000).unref?.();
-    setInterval(() => void updater.check(), 6 * 3600_000).unref?.();
+    updateTimer=setTimeout(() => void updater.check(), 30_000);updateTimer.unref?.();
+    updateInterval=setInterval(() => void updater.check(), 6 * 3600_000);updateInterval.unref?.();
     // macOS: a Dock click opens the console (but not the launch-time
     // activate of a start at login)
     const readyAt = Date.now();
@@ -802,16 +828,7 @@ if (restartOnX11 && relaunchOnX11()) {
     if (!mac && !mate.isShown() && !keepDeviceRuntime()) quit();
   });
   app.on("before-quit", () => {
-    quitting = true;
-    deviceRuntime.destroy();
-    mate.setQuitting(true);
-    // what the pages keep in localStorage (the avatar's pan / zoom, drafts, the chosen mate) is written lazily:
-    // write it now, or a quit right after a change forgets it
-    try {
-      session.defaultSession.flushStorageData();
-    } catch {
-      /* gone */
-    }
+    quitController.beforeQuit(installingUpdate);
   });
   app.on("will-quit", () => mate.stop());
   // A desktop logout / shutdown (and `kill`) ends the app with SIGTERM: quit properly (windows saved, storage

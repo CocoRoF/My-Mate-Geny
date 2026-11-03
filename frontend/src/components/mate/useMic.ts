@@ -332,6 +332,7 @@ export function useMic(mate: Mate | null, onText: (text: string) => void, opts: 
 
   const stop = useCallback(() => rec.current?.stop(), []);
   const cancel = useCallback(() => rec.current?.cancel(), []);
+  useEffect(()=>window.hrhNative?.onQuitting?.(()=>rec.current?.cancel()),[]);
   const clearError = useCallback(() => {
     setError(null);
     setNotice(null);
