@@ -1,4 +1,5 @@
 const screen = {
+  "restorePending": "Waiting to restore saved sharing. Stop also disables it for future launches.",
   "deviceProactiveHint": "Reach-out on/off and frame interval are saved only on this device. Situation rules remain Mate settings.",
   "restoreMissing": "Screen sharing stopped: the saved source or conversation is unavailable. Please select it again.",
   "restorePermission": "Screen sharing stopped: screen-recording permission or a system picker is required. Enable it again in settings.",

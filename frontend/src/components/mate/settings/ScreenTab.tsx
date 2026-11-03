@@ -1,3 +1,4 @@
+import {useDevicePreferences} from "../../../stores/devicePreferences";
 import { useSyncExternalStore } from "react";
 import { useLocalScreenControls } from "../../composer/LocalScreenControls";
 import { sharingSnapshot, subscribeSharing, stopSharing } from "../../../mate/localScreen";
@@ -8,6 +9,7 @@ import { Section, Toggle } from "./ui";
 import DeviceCaptureSettings from "../../composer/DeviceCaptureSettings";
 export default function ScreenTab({ mate, sid }: { mate: Mate; sid: string | null }) {
   const t = useT();
+  const intent = useDevicePreferences().sharing;
   const sharing = useSyncExternalStore(subscribeSharing, sharingSnapshot);
   const screen = useLocalScreenControls(sid || "", mate.name, () => {}, mate, {
     listenToolbar: false, allowOnce: false,
@@ -37,7 +39,8 @@ export default function ScreenTab({ mate, sid }: { mate: Mate; sid: string | nul
             {t("screen.sharing", { source: sharing.source })}
           </p>
         )}
-        {sharing ? (
+        {!sharing && intent.enabled && <p className="text-xs text-content-dim">{t("screen.restorePending")}</p>}
+        {sharing || intent.enabled ? (
           <button type="button" onClick={stopSharing} className="btn-ghost text-danger" data-testid="settings-screen-stop">
             {t("screen.stop")}
           </button>

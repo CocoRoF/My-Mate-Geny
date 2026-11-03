@@ -76,7 +76,8 @@ persist it or apply another device's override.
 
 A reload, renderer closure, network disconnect or app shutdown releases runtime ownership and pending requests,
 without forgetting explicit intent. An explicit Stop stores disabled. Each native restore must acquire an
-app-process lease for the saved server origin; a late restore cannot undo Stop. No startup dialog or persistent
+app-process lease for the saved server origin; a late restore cannot undo Stop. The toolbar and settings
+keep Stop available even while restoration is waiting for a server response. No startup dialog or persistent
 sharing banner is added. A screen id can be recovered by display id; a window by one unambiguous exact title.
 A missing source/conversation, macOS permission denial, or required Wayland portal switches intent off with one
 floating toast, never substituting another screen. Network/authentication errors retain intent for reconnection.

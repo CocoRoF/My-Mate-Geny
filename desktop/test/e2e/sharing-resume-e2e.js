@@ -57,5 +57,17 @@ const launch=async()=>{
  const chat=await app.page(/surface=mate-chat/);const overlay=await app.page(/surface=mate-overlay/);
  await until('one restored owner after opening windows',async()=>{const owners=await Promise.all([page,chat,overlay].map(p=>p.eval('window.hrhNative.capture.sharing.get().then(s=>Number(s.owner))')));return owners.reduce((a,b)=>a+b,0)===1;});
  await chat.eval('window.hrhNative.capture.sharing.stop()');await until('stop all windows',async()=>!(await page.eval('window.hrhNative.device.get()')).sharing.enabled);console.log('PASS one owner across console/chat/avatar and stop from any window persists');
+ // Stop from the toolbar while restore is waiting for the server; a late response must not re-enable it.
+ await app.main("win('surface=mate-chat')?.destroy();return true");
+ await page.eval("window.__originalFetch=window.fetch;window.fetch=(url,...args)=>String(url).startsWith('/api/sessions/') ? new Promise(resolve=>{window.__releaseRestore=()=>window.__originalFetch(url,...args).then(resolve)}) : window.__originalFetch(url,...args);true");
+ await page.eval("window.hrhNative.device.patch({sharing:{enabled:true}})");
+ await until('restore waiting',()=>page.eval("typeof window.__releaseRestore==='function'"));
+ require('child_process').execFileSync('xdotool',['mousemove','280','220']);
+ const pendingBar=await app.page(/bar\.html/);await until('pending toolbar active',()=>pendingBar.eval("document.querySelector('[data-act=screen]')?.classList.contains('sharing')"));
+ await pendingBar.eval("document.querySelector('[data-act=screen]').click(),true");
+ await until('pending intent stopped',async()=>!(await page.eval('window.hrhNative.device.get()')).sharing.enabled);
+ await page.eval("window.__releaseRestore();window.fetch=window.__originalFetch;true");await sleep(500);
+ assert.equal((await page.eval('window.hrhNative.capture.sharing.get()')).state,null);assert.equal((await page.eval('window.hrhNative.device.get()')).sharing.enabled,false);
+ console.log('PASS toolbar cancels pending restore; late response cannot restart sharing');
  console.log('SHARING RESUME E2E OK');
 }finally{await app?.stop();}})().catch(e=>{console.error(e);process.exitCode=1;});

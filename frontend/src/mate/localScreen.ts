@@ -414,7 +414,7 @@ if (typeof window !== "undefined")
   });
 
 let resuming = false;
-/** No pixels are captured to validate a restore. Missing sources never fall back to another screen. */
+/** Restore validates source metadata without uploading an image. Missing sources never fall back. */
 export async function resumeSharing() {
   if (leaving || resuming || sharing) return;
   const saved = devicePreferences().sharing;

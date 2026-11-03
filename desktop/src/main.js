@@ -562,6 +562,7 @@ const devicePreferences = require("./device-preferences").createDevicePreference
   readSettings, writeSettings,
   changed: (value,prev) => {
     if (prev && JSON.stringify(prev.screen.source) !== JSON.stringify(value.screen.source) && captureSharing.active()) captureSharing.stop();
+    mate.setCaptureSharing(captureSharing.active() || devicePreferences.get().sharing.enabled, captures.busy());
     for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("device:changed", value); },
 });
 const captures = capture.createCapture({
@@ -579,7 +580,7 @@ const captureSharing = require("./capture-sharing").createSharing({
   preferences:devicePreferences,
   cancel: () => { captures.cancel("*"); for(const w of BrowserWindow.getAllWindows()) if(!w.isDestroyed())w.webContents.send("capture:control",{type:"cancel-captures"}); },
   broadcast: snapshot => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("capture:sharing", snapshot(w.webContents)); },
-  changed: (active,busy) => mate.setCaptureSharing(active,busy),
+  changed: (active,busy) => mate.setCaptureSharing(active || devicePreferences.get().sharing.enabled,busy),
 });
 ipcMain.handle("capture:sharing:claim", e => {
   if (!fromServerPage(e)) return false;
@@ -719,7 +720,7 @@ if (restartOnX11 && relaunchOnX11()) {
     setupPermissions();
     buildMenu();
     mate.init({
-  toggleScreenSharing: () => { if(captureSharing.active() || captures.busy()) captureSharing.stop(); else mate.openScreenSharing(); },
+  toggleScreenSharing: () => { if(devicePreferences.get().sharing.enabled || captureSharing.active() || captures.busy()) captureSharing.stop(); else mate.openScreenSharing(); },
       openConsole,
       consoleWindow: () => (win && !win.isDestroyed() ? win : null),
       switchServer: () => showConnect(),
