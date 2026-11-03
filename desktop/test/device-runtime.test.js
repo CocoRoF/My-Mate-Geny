@@ -48,3 +48,18 @@ test('failed persistence cannot publish a successful device-settings revision',(
  fail=true;assert.throws(()=>prefs.patch({sharing:{enabled:false}}),/disk unavailable/);
  assert.equal(prefs.get().sharing.enabled,true);assert.equal(published,1);
 });
+test('an in-flight restore cannot publish a stale conversation or server binding',()=>{
+ const disk=storage(),prefs=createDevicePreferences(disk);
+ prefs.patch({sharing:{enabled:true,origin:'https://one',sid:'old'}});
+ const sender=Object.assign(new EventEmitter(),{id:1,isDestroyed:()=>false,send(){}});
+ const control=createSharing({preferences:prefs,broadcast(){},cancel(){}});
+ assert.equal(control.claim(sender,'https://one'),true);assert.equal(control.pending(),true);
+ prefs.patch({sharing:{sid:'new'}});
+ assert.equal(control.publish(sender,{sid:'old',mode:'ask',restoring:true}).state,null);
+ assert.equal(prefs.get().sharing.enabled,true);
+ prefs.patch({sharing:{origin:'https://two'}});
+ assert.equal(control.publish(sender,{sid:'new',mode:'ask',restoring:true}).state,null);
+ control.pause('waiting_session');assert.equal(control.pending(),false);
+ assert.equal(control.claim(sender,'https://two'),true);
+ assert.equal(control.publish(sender,{sid:'new',mode:'ask',restoring:true}).state.sid,'new');
+});

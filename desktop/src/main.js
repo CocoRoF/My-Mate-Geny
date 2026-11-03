@@ -573,7 +573,10 @@ const asker = capture.createAsker({
 const devicePreferences = require("./device-preferences").createDevicePreferences({
   readSettings, writeSettings:p=>writeSettings(p,{strict:true}),
   changed: (value,prev) => {
-    if (prev && JSON.stringify(prev.screen.source) !== JSON.stringify(value.screen.source) && captureSharing.active()) captureSharing.pause("waiting_target");
+    if (prev && (captureSharing.active()||captureSharing.pending())) {
+      if(JSON.stringify(prev.screen.source)!==JSON.stringify(value.screen.source))captureSharing.pause("waiting_target");
+      else if(prev.sharing.sid!==value.sharing.sid||prev.sharing.origin!==value.sharing.origin)captureSharing.pause("waiting_session");
+    }
     if(value.screen.proactive_enabled === true && (prev?.screen.proactive_enabled !== true || prev?.screen.proactive_mate!==value.screen.proactive_mate) && deviceEditOrigin) deviceLifecycle.add("enabled",deviceEditOrigin,value.screen.proactive_mate || readSettings().mateId);
     mate.setCaptureSharing(captureSharing.active() || devicePreferences.get().sharing.enabled, captures.busy(),captureSharing.snapshot().status);
     for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("device:changed", value); },

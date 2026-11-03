@@ -222,7 +222,8 @@ export async function beginSharing(
   if (native) {
     if (native.version < 3) throw new Error(tr("screen.updateApp"));
     if (!source) throw new Error(tr("screen.selectSource"));
-    await native.setChoice(`session:${sid}`, source);
+    // Restore reads the saved source; it must never overwrite a newer source choice from another window.
+    if(!restoring)await native.setChoice(`session:${sid}`, source);
     if(native.runtime && !restoring){
       await patchDevicePreferences({sharing:{enabled:true,origin:location.origin,sid,name,mate_id:mateId}});
       return;
