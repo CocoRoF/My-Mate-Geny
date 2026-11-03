@@ -1,3 +1,4 @@
+import {useDevicePreferences,patchDevicePreferences} from "../../../stores/devicePreferences";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { Mate, GenyTriggerPreset } from "../../../api/mates";
 import { apiFetch } from "../../../api/client";
@@ -9,11 +10,13 @@ import { Section, Toggle, Field } from "./ui";
 export default function ProactiveTab({ mate }: { mate: Mate }) {
   const t = useT();
   const localShare = useSyncExternalStore(subscribeSharing, sharingSnapshot);
-  const p = mate.prefs?.proactive || {
+  const device=useDevicePreferences();
+  const stored = mate.prefs?.proactive || {
     enabled: false,
     interval: 180,
     guidance: "",
   };
+  const p={...stored,enabled:device.screen.proactive_enabled ?? stored.enabled,interval:device.screen.proactive_enabled === null ? stored.interval : device.screen.proactive_interval};
   const supported = !!mate.prefs?.proactive && "preset" in mate.prefs.proactive;
   const [defaults, setDefaults] = useState<GenyTriggerPreset | null>(null);
   const [draft, setDraft] = useState<GenyTriggerPreset | null>(
@@ -108,10 +111,11 @@ export default function ProactiveTab({ mate }: { mate: Mate }) {
         hint={t("screen.genyHint")}
         testId="mate-proactive"
       >
+        <p className="text-xs text-content-faint">{t("screen.deviceProactiveHint")}</p>
         <Toggle
           on={p.enabled}
           disabled={!supported}
-          onChange={(enabled) => void patch({ enabled })}
+          onChange={(enabled) => void patchDevicePreferences({screen:{proactive_enabled:enabled}})}
           label={t("screen.proactiveTitle")}
           testId="proactive-enabled"
         />
@@ -139,7 +143,7 @@ export default function ProactiveTab({ mate }: { mate: Mate }) {
             className="field"
             value={p.interval}
             disabled={!supported}
-            onChange={(e) => void patch({ interval: Number(e.target.value) })}
+            onChange={(e) => void patchDevicePreferences({screen:{proactive_interval:Number(e.target.value),proactive_enabled:p.enabled}})}
             data-testid="proactive-interval"
           >
             {[60, 180, 300, 600].map((n) => (

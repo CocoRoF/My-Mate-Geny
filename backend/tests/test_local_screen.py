@@ -267,7 +267,7 @@ def test_proactive_preferences_are_opt_in_partial_and_validated():
 async def test_mate_proactive_requires_opt_in_and_device_consent_and_respects_interval(db,tmp_path,monkeypatch):
     svc,atts,broker,screen,sid=setup(db,tmp_path)
     config={'enabled':False,'interval':300,'guidance':'Offer help without interrupting concentration'}
-    monkeypatch.setattr(screen,'proactive',lambda _: config)
+    monkeypatch.setattr(screen,'proactive',lambda _,device=None: config)
     assert await screen.observe(sid,'dev-a') == {'status':'disabled'}
     config['enabled']=True
     with pytest.raises(CaptureError): await screen.observe(sid,'dev-a')
@@ -293,7 +293,7 @@ async def test_mate_proactive_requires_opt_in_and_device_consent_and_respects_in
 async def test_disable_proactive_while_capture_pending_discards_image(db,tmp_path,monkeypatch):
     svc,atts,broker,screen,sid=setup(db,tmp_path)
     config={'enabled':True,'interval':60}
-    monkeypatch.setattr(screen,'proactive',lambda _:config)
+    monkeypatch.setattr(screen,'proactive',lambda _,device=None:config)
     _,queue=client(broker,sid,'ask')
     monkeypatch.setattr(svc,'start_turn',lambda *a,**k:pytest.fail('must not start'))
     task=asyncio.create_task(screen.observe(sid,'dev-a'))
@@ -317,7 +317,7 @@ def test_geny_dhash_ignores_encoding_noise_and_uniform_color_changes(tmp_path):
 
 async def test_proactive_cooldown_survives_connection_change(db,tmp_path,monkeypatch):
     svc,atts,broker,screen,sid=setup(db,tmp_path)
-    monkeypatch.setattr(screen,'proactive',lambda _: {'enabled':True,'interval':300})
+    monkeypatch.setattr(screen,'proactive',lambda _,device=None: {'enabled':True,'interval':300})
     conn,queue=client(broker,sid,'ask')
     monkeypatch.setattr(svc,'start_turn',lambda *a,**k:None)
     task=asyncio.create_task(screen.observe(sid,'dev-a'))
@@ -331,7 +331,7 @@ async def test_proactive_cooldown_survives_connection_change(db,tmp_path,monkeyp
 
 async def test_proactive_failed_turn_start_removes_pending_frame(db,tmp_path,monkeypatch):
     svc,atts,broker,screen,sid=setup(db,tmp_path)
-    monkeypatch.setattr(screen,'proactive',lambda _: {'enabled':True,'interval':60})
+    monkeypatch.setattr(screen,'proactive',lambda _,device=None: {'enabled':True,'interval':60})
     _,queue=client(broker,sid,'ask')
     def fail(*a,**k): raise RuntimeError('turn unavailable')
     monkeypatch.setattr(svc,'start_turn',fail)
@@ -342,3 +342,17 @@ async def test_proactive_failed_turn_start_removes_pending_frame(db,tmp_path,mon
     screen.triggers.expire(sid)
     assert atts.get(row['id']) is None
     assert not screen.hashes
+
+def test_device_proactive_policy_is_connection_scoped_and_never_mutates_the_mate(db,tmp_path):
+    svc,atts,store,mates,logs = _services(db)
+    mate=store.create(name="Device policy",prefs={"proactive":{"enabled":True,"interval":300}})
+    sid=svc.create(provider="claude",workspace_path=str(tmp_path),kind="mate",mate_id=mate["id"])["id"]
+    screen=ScreenService(svc,mates.capture,mates=store)
+    a=screen.broker.connect(lambda _:None);b=screen.broker.connect(lambda _:None)
+    screen.broker.hello(a,{"device":"a","capture":3,"shares":{sid:"ask"},"screen_policy":{"enabled":False,"interval":60}})
+    screen.broker.hello(b,{"device":"b","capture":3,"shares":{sid:"ask"},"screen_policy":{"enabled":True,"interval":180}})
+    assert screen.proactive(sid,"a")["enabled"] is False
+    assert screen.proactive(sid,"b")["interval"] == 180
+    assert store.get(mate["id"])["prefs"]["proactive"]["interval"] == 300
+    screen.broker.hello(b,{"device":"b","capture":3,"shares":{sid:"ask"},"screen_policy":{"enabled":"bad","interval":"bad"}})
+    assert screen.proactive(sid,"b")["interval"] == 300

@@ -446,6 +446,13 @@ const setRange = (p, selector, value) =>
     await page.evaluate(()=>window.dispatchEvent(new StorageEvent('storage',{key:'hrh_lang',newValue:'ko'})));
     await page.waitForTimeout(200);
     await page.screenshot({path:path.join(shots,'proactive-settings.png')});
+    // The browser above is a different device: its local switch must not enable native observation.
+    assert.equal(await con.eval("window.hrhNative.device.get().then(p=>p.screen.proactive_enabled)"),false);
+    await click(con,'[data-testid=mate-tab-proactive]');
+    await until('native proactive settings',()=>con.eval("!!document.querySelector('[data-testid=proactive-enabled]')"));
+    await con.eval("(()=>{const e=document.querySelector('[data-testid=proactive-interval]');e.value='60';e.dispatchEvent(new Event('change',{bubbles:true}));return true})()");
+    await click(con,'[data-testid=proactive-enabled]');
+    await until('native reach-out enabled locally',()=>con.eval("window.hrhNative.device.get().then(p=>p.screen.proactive_enabled && p.screen.proactive_interval===60)"));
     const conversation=await (await context.request.post(server+'/api/mates/'+b.id+'/conversation')).json();
     await until('previous reply done',async()=>!(await (await context.request.post(server+'/api/mates/'+b.id+'/conversation')).json()).running);
     await chat.eval("window.dispatchEvent(new StorageEvent('storage',{key:'hrh_lang',newValue:'ko'})),true");

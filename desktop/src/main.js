@@ -561,7 +561,7 @@ const asker = capture.createAsker({
 const devicePreferences = require("./device-preferences").createDevicePreferences({
   readSettings, writeSettings,
   changed: (value,prev) => {
-    if (prev && JSON.stringify(prev.screen.source) !== JSON.stringify(value.screen.source)) captureSharing.stop();
+    if (prev && JSON.stringify(prev.screen.source) !== JSON.stringify(value.screen.source) && captureSharing.active()) captureSharing.stop();
     for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("device:changed", value); },
 });
 const captures = capture.createCapture({
@@ -576,9 +576,18 @@ const captures = capture.createCapture({
 });
 const fromServerPage = (e) => ours(e) && sameOrigin((e.senderFrame && e.senderFrame.url) || "");
 const captureSharing = require("./capture-sharing").createSharing({
+  preferences:devicePreferences,
   cancel: () => { captures.cancel("*"); for(const w of BrowserWindow.getAllWindows()) if(!w.isDestroyed())w.webContents.send("capture:control",{type:"cancel-captures"}); },
   broadcast: snapshot => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("capture:sharing", snapshot(w.webContents)); },
   changed: (active,busy) => mate.setCaptureSharing(active,busy),
+});
+ipcMain.handle("capture:sharing:claim", e => {
+  if (!fromServerPage(e)) return false;
+  const url = new URL(e.senderFrame.url);
+  const surface = url.searchParams.get("surface");
+  // The console/chat survives closing quick input and avatar overlays; those mirror state, never own restoration.
+  if (surface && surface !== "mate-chat") return false;
+  return captureSharing.claim(e.sender,url.origin);
 });
 ipcMain.handle("capture:sharing:get", e => fromServerPage(e) ? captureSharing.snapshot(e.sender) : null);
 ipcMain.handle("capture:sharing:publish", (e,v) => fromServerPage(e) ? captureSharing.publish(e.sender,v) : null);

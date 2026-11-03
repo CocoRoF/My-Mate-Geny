@@ -1,3 +1,4 @@
+import { devicePreferences } from "../stores/devicePreferences";
 /**
  * Screen capture for the Mate (docs/mate.md §4 "Seeing the screen"), the page's part.
  *
@@ -69,7 +70,9 @@ export interface CaptureInfo {
 export interface CaptureBridge {
   version: number;
   notifications?: number;
+  resume?: number;
   sharing?: {
+    claim?(): Promise<boolean>;
     get(): Promise<{
       revision: number;
       state: import("./localScreen").LocalSharing | null;
@@ -162,6 +165,7 @@ export function clientHello(active: boolean): Record<string, unknown> {
     capture:
       captureBridge()?.version ?? (Object.keys(sharedScopes()).length ? 1 : 0),
     shares: sharedScopes(),
+    screen_policy: {enabled:devicePreferences().screen.proactive_enabled,interval:devicePreferences().screen.proactive_interval},
     screen_ready: true,
     active,
   };
@@ -382,7 +386,7 @@ export function notifyCaptured(id: string) {
   if(captureNotices.size>128)captureNotices.delete(captureNotices.values().next().value!);
   toast(tr("screen.captured"));
 }
-function toast(text: string) {
+export function toast(text: string) {
   document.querySelectorAll('[data-testid="capture-toast"]').forEach(el=>el.remove());
   const el = document.createElement("div");
   el.textContent = text;

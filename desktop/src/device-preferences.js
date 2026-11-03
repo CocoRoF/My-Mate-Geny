@@ -1,4 +1,4 @@
-// Device-owned preferences. No server writes, no sharing consent persisted.
+// Device-owned settings and explicit persistent sharing intent; never image data.
 "use strict";
 const DEFAULT_SCREEN = {
   source: null,
@@ -7,9 +7,11 @@ const DEFAULT_SCREEN = {
   format: "png",
   quality: 85,
   hide_avatar: false,
+  proactive_enabled: null,
+  proactive_interval: 180,
 };
 function cleanSource(v) {
-  return v && typeof v.id === "string"
+  return v && typeof v.id === "string" && !!v.id
     ? {
         id: v.id.slice(0, 200),
         name: String(v.name || "").slice(0, 200),
@@ -19,8 +21,10 @@ function cleanSource(v) {
     : null;
 }
 function cleanScreen(raw, base = DEFAULT_SCREEN) {
-  const v = raw || {},
+  const v = raw && typeof raw === "object" ? raw : {},
     out = { ...base };
+  if (typeof v.proactive_enabled === "boolean") out.proactive_enabled = v.proactive_enabled;
+  if (Number.isFinite(v.proactive_interval)) out.proactive_interval = Math.max(60, Math.min(600, v.proactive_interval));
   if ("source" in v) out.source = cleanSource(v.source);
   if (["ask", "allow"].includes(v.approval)) out.approval = v.approval;
   if ([0, 1280, 1920, 2560].includes(v.max_edge)) out.max_edge = v.max_edge;
@@ -30,6 +34,16 @@ function cleanScreen(raw, base = DEFAULT_SCREEN) {
   if (typeof v.hide_avatar === "boolean") out.hide_avatar = v.hide_avatar;
   return out;
 }
+const DEFAULT_SHARING = {enabled:false,origin:"",sid:"",name:"",mode:"ask",interval:180};
+function cleanSharing(raw) {
+  const v = raw && typeof raw === "object" ? raw : {};
+  const origin = typeof v.origin === "string" && /^https?:\/\//.test(v.origin) ? v.origin.slice(0,300) : "";
+  const sid = typeof v.sid === "string" ? v.sid.slice(0,100) : "";
+  return {enabled:v.enabled === true && !!origin && !!sid, origin, sid,
+    name:typeof v.name === "string" ? v.name.slice(0,100) : "",
+    mode:["ask","on_turn","observe"].includes(v.mode) ? v.mode : "ask",
+    interval:Number.isFinite(v.interval) ? Math.max(60,Math.min(600,v.interval)) : 180};
+}
 function createDevicePreferences({
   readSettings,
   writeSettings,
@@ -37,7 +51,16 @@ function createDevicePreferences({
 }) {
   function get() {
     const s = readSettings();
-    if (s.devicePreferences?.version === 1) return s.devicePreferences;
+    if (s.devicePreferences?.version === 1) {
+      const old = s.devicePreferences;
+      const value = { ...old, revision: Number.isSafeInteger(old.revision) ? old.revision : 0,
+        screen: cleanScreen(old.screen), sharing: cleanSharing(old.sharing),
+        volume: Number.isFinite(old.volume) ? Math.max(0, Math.min(3, old.volume)) : 1,
+        migration: { mates: {}, imported: false, screenEdited: false, volumeEdited: false, ...(old.migration || {}) } };
+      if (old.screen?.source != null && !cleanSource(old.screen.source)) value.sharing.enabled = false;
+      if (JSON.stringify(value) !== JSON.stringify(old)) writeSettings({devicePreferences:value});
+      return value;
+    }
     const old = s.captureSources || {};
     const chosen =
       old[s.mateId] || Object.values(old).find((v) => v?.id) || null;
@@ -45,6 +68,7 @@ function createDevicePreferences({
       version: 1,
       revision: 0,
       screen: cleanScreen({ source: chosen }),
+      sharing: cleanSharing(),
       volume: 1,
       migration: {
         sources: { ...old },
@@ -68,6 +92,7 @@ function createDevicePreferences({
       next.screen = cleanScreen(p.screen, cur.screen);
       next.migration.screenEdited = true;
     }
+    if (p.sharing && typeof p.sharing === "object") next.sharing = cleanSharing({...cur.sharing,...p.sharing});
     if (typeof p.volume === "number" && Number.isFinite(p.volume)) {
       next.volume = Math.max(0, Math.min(3, p.volume));
       next.migration.volumeEdited = true;
@@ -86,6 +111,7 @@ function createDevicePreferences({
       migration.mates[`${String(origin || "").slice(0, 200)}:${m.id}`] = {
         screen: m.screen || null,
         volume: m.volume,
+        proactive: m.proactive,
         updated_at: m.updated_at || null,
       };
     const chosen =
@@ -102,6 +128,7 @@ function createDevicePreferences({
       migration.chosenMate = chosen.id;
       migration.rule = "active-mate-first";
     }
+    if (screen.proactive_enabled === null && chosen?.proactive) screen = cleanScreen({proactive_enabled:!!chosen.proactive.enabled,proactive_interval:chosen.proactive.interval}, screen);
     const next = {
       ...cur,
       screen,
@@ -120,4 +147,5 @@ module.exports = {
   DEFAULT_SCREEN,
   cleanScreen,
   cleanSource,
+  cleanSharing, DEFAULT_SHARING,
 };

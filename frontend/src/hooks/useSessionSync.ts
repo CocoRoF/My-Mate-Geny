@@ -1,5 +1,5 @@
 import { observeSharingReady } from "../mate/localScreen";
-import { sharingSnapshot, stopOwnedSharing, stopSharing } from "../mate/localScreen";
+import { sharingSnapshot, stopOwnedSharing, stopSharing, resumeSharing } from "../mate/localScreen";
 import { useEffect } from "react";
 import { toLogin, wsUrl } from "../api/client";
 import { onResync } from "../lib/sync";
@@ -58,6 +58,7 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
         retry = 0;
         // who this window is (the device, the desktop app and its screen capture): the mate's see_screen asks here
         hello(sock, document.hasFocus());
+        void resumeSharing();
       };
       sock.onmessage = (e) => {
         clearTimeout(probeTimer);

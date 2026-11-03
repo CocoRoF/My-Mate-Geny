@@ -1,6 +1,6 @@
 """Local-device screen access, independent of the workspace's SSH host.
 
-Consent is ephemeral, advertised by the window owning the stream/source; no auto-resume after reload.
+Live consent is advertised by one device window; persistent intent remains on that device.
 Images use the conversation's attachment pipeline. Bridge tokens are session-scoped, loopback only.
 """
 from __future__ import annotations
@@ -39,14 +39,14 @@ class ScreenService:
         self.config_dir = tempfile.TemporaryDirectory(prefix="geny-screen-")
         self.hashes: dict[tuple[str, str], str] = {}
         self.observing: set[str] = set()
-        self.last_proactive: dict[str, float] = {}
+        self.last_proactive: dict[tuple[str,str], float] = {}
         self.last_observe: dict[tuple[str, str], float] = {}
         sessions.add_turn_end_listener(lambda sid, _: broker.cancel_session(sid))
 
     def drop(self, sid: str) -> None:
         self.broker.cancel_session(sid)
         self.triggers.drop(sid)
-        self.last_proactive.pop(sid, None)
+        self.last_proactive = {k:v for k,v in self.last_proactive.items() if k[0] != sid}
         for client in self.broker.clients():
             if sid in client.shares:
                 client.shares.pop(sid, None)
@@ -133,11 +133,20 @@ class ScreenService:
             return None
         return await self.capture(sid, device=device, automatic=True)
 
-    def proactive(self, sid: str) -> dict | None:
+    def proactive(self, sid: str, device: str | None = None) -> dict | None:
         session = self.sessions.get(sid)
         if not session.get("mate_id"): return None
         if self.mates is None: return {"enabled": False}
-        return (self.mates.get(session["mate_id"]).get("prefs") or {}).get("proactive") or {"enabled": False}
+        config = (self.mates.get(session["mate_id"]).get("prefs") or {}).get("proactive") or {"enabled": False}
+        device = device or self.sessions.last_client_device(sid)
+        if not device:
+            devices = {c.device for c in self.broker.clients() if c.device}
+            if len(devices) == 1: device = next(iter(devices))
+        client = self.broker.shared_client(sid,device) if device else None
+        if client is None:
+            pool = [c for c in self.broker.clients() if c.device == device and c.screen_policy]
+            client = max(pool,key=lambda c:c.active_at,default=None)
+        return {**config, **(client.screen_policy if client else {})}
 
     @staticmethod
     def visual(path: str) -> tuple:
@@ -148,22 +157,22 @@ class ScreenService:
         return (bits,)
 
     async def observe(self, sid: str, device: str, *, force: bool = False) -> dict:
-        config = self.proactive(sid)
+        config = self.proactive(sid,device)
         if config is not None:
             if not config.get("enabled"): return {"status":"disabled"}
             client = self.broker.shared_client(sid,device)
             if not client: raise CaptureError("not_shared")
             if self.sessions.is_running(sid) or sid in self.observing:return {"status":"busy"}
             now=time.monotonic()
-            if not force and now-self.last_proactive.get(sid,-1e9)<max(5,config.get("interval",180)-1):return {"status":"rate_limited"}
-            self.last_proactive[sid]=now
+            if not force and now-self.last_proactive.get((sid,device),-1e9)<max(5,config.get("interval",180)-1):return {"status":"rate_limited"}
+            self.last_proactive[(sid,device)]=now
             self.observing.add(sid)
             row=None
             cached=False
             try:
                 row=await self.capture(sid,device=device,automatic=True)
                 visual=await asyncio.to_thread(self.visual,row["path"])
-                if self.broker.shared_client(sid,device) is not client or not (self.proactive(sid) or {}).get("enabled"):return {"status":"stopped"}
+                if self.broker.shared_client(sid,device) is not client or not (self.proactive(sid,device) or {}).get("enabled"):return {"status":"stopped"}
                 result=self.triggers.ingest(sid,device,client,row,visual[0])
                 cached=True
                 if force:return await self.triggers.consider(sid,force=True)

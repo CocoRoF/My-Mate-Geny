@@ -10,7 +10,8 @@ Object.defineProperty(globalThis, "BroadcastChannel", { value: undefined, config
 
 // The source transport is fake here; Electron/browser end-to-end tests exercise the actual upload path.
 const win = new EventTarget() as EventTarget & { hrhNative?: unknown; dispatchEvent: typeof EventTarget.prototype.dispatchEvent };
-Object.assign(globalThis, { window: win, localStorage: { getItem: () => "testdevice", setItem() {} } });
+const storage=new Map<string,string>();
+Object.assign(globalThis, { window: win, location:{origin:"https://test"},localStorage: { getItem:(k:string)=>storage.get(k)||null,setItem:(k:string,v:string)=>storage.set(k,v) } });
 const calls: any[] = [];
 const native = {
   version: 3,
@@ -22,7 +23,7 @@ const native = {
 (win as any).hrhNative = { capture: native };
 const screen = await import("../src/mate/localScreen.ts");
 
-test("sharing is explicit, ephemeral and session scoped; source, mode and stop follow immediately", async () => {
+test("runtime sharing is explicit and session scoped; source, mode and stop follow immediately", async () => {
   assert.deepEqual(screen.sharedScopes(), {});
   await assert.rejects(screen.localFrame("other"));
   await screen.beginSharing("sid", "Test conversation", { id: "screen:1:0", name: "Display 1", kind: "screen" });

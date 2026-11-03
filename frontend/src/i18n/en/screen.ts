@@ -1,4 +1,8 @@
 const screen = {
+  "deviceProactiveHint": "Reach-out on/off and frame interval are saved only on this device. Situation rules remain Mate settings.",
+  "restoreMissing": "Screen sharing stopped: the saved source or conversation is unavailable. Please select it again.",
+  "restorePermission": "Screen sharing stopped: screen-recording permission or a system picker is required. Enable it again in settings.",
+  "restoreBrowser": "Your browser requires selecting a screen again. Sharing stopped; your other settings were retained.",
   "proactiveStatus_silent": "Staying silent: nothing to say right now",
   "genyTitle": "Geny conversation rules",
   "genyHint": "Reach out according to situation and timing rules. Screens are collected first, then changes and context are checked before reacting.",
@@ -76,7 +80,7 @@ const screen = {
   "observe": "Periodic screen observation",
   "interval": "Observation interval",
   "seconds": "{count} seconds",
-  "retention": "Sent images stay as conversation attachments. Sharing stops on reload; image bytes are not copied into application logs.",
+  "retention": "Sharing stays on for this device until you stop it, including after restart. Browsers require selecting a screen again. Sent images stay as conversation attachments; image bytes are not copied into application logs.",
   "costHint": "Observation can start a model reply and use tokens. Busy sessions are skipped; identical frames are skipped.",
   "capturing": "Capturing screen…"
 };

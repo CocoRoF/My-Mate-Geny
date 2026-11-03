@@ -72,6 +72,7 @@ const mate = {
 const capture = {
   version: 3,
   notifications: 1,
+  resume: 1,
   info: () => ipcRenderer.invoke("capture:info"),
   sources: (o = {}) => ipcRenderer.invoke("capture:sources", { thumbnails: !!(o && o.thumbnails), size: num(o && o.size) }),
   getChoice: (mateId) => ipcRenderer.invoke("capture:getChoice", String(mateId || "")),
@@ -86,6 +87,7 @@ const capture = {
   cancel: (id) => ipcRenderer.invoke("capture:cancel", String(id || "")),
   openPrivacySettings: () => ipcRenderer.invoke("capture:openPrivacy"),
   sharing: {
+    claim: () => ipcRenderer.invoke("capture:sharing:claim"),
     get: () => ipcRenderer.invoke("capture:sharing:get"),
     publish: v => ipcRenderer.invoke("capture:sharing:publish", v ? JSON.parse(JSON.stringify(v)) : null),
     stop: () => ipcRenderer.invoke("capture:sharing:stop"),

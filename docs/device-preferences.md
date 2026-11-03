@@ -32,8 +32,8 @@ mode; requested looks follow the app approval setting. Changing the global captu
 
 `desktop/src/capture-sharing.js` owns ephemeral sharing state and one renderer owner. Other windows mirror the
 state but never advertise a second server capture owner. Controls in any window send stop/mode changes to the
-owner. Closing the owning renderer or losing its server connection revokes consent; settings remain on disk,
-sharing consent does not. A server switch does not carry sharing into another origin.
+owner. Closing the owning renderer or losing its server connection revokes live access; explicit sharing intent remains
+on disk for restoration. A server switch never carries live sharing into another origin.
 
 The hover toolbar's screen button opens the selected Mate chat with the same screen/window picker; that picker
 allows a single draft screenshot or persistent sharing. Active sharing has a blue button and red dot; pressing
@@ -64,3 +64,28 @@ Tests: `desktop/test/device-preferences.test.js`, `desktop/test/capture.test.js`
 `desktop/test/e2e/device-settings-e2e.js`. End-to-end tests use an isolated backend and fake model; native capture,
 IPC, persistence and rendering are real. Browser contexts verify per-device volume isolation. Windows/macOS/
 Wayland permission and native capture behaviour still need real devices.
+
+## Persistent sharing on this device
+
+The same version-1 device record now includes `sharing` (enabled, origin, conversation id/name, capture mode,
+interval). Screen target, approval and image options remain in `screen`. `screen.proactive_enabled` and
+`proactive_interval` are initialized once from the active legacy Mate and thereafter edited locally; character
+situation rules, guidance and the per-Mate screen-tool permission remain server-side. Other voice fields do not move.
+The client advertises its effective reach-out policy on its live session-list connection; the backend does not
+persist it or apply another device's override.
+
+A reload, renderer closure, network disconnect or app shutdown releases runtime ownership and pending requests,
+without forgetting explicit intent. An explicit Stop stores disabled. Each native restore must acquire an
+app-process lease for the saved server origin; a late restore cannot undo Stop. No startup dialog or persistent
+sharing banner is added. A screen id can be recovered by display id; a window by one unambiguous exact title.
+A missing source/conversation, macOS permission denial, or required Wayland portal switches intent off with one
+floating toast, never substituting another screen. Network/authentication errors retain intent for reconnection.
+Browser settings persist, but `getDisplayMedia` cannot resume without user activation; one browser owner lock
+prevents a second tab from revoking a live owner, and a reload with no owner disables sharing with a toast.
+
+Old saved volume/source/quality values and migration archives are preserved. Old versions never saved sharing
+on/off or capture mode, so a fresh upgrade has no old persistent intent to infer: sharing must be enabled once
+in the new version. Invalid fields recover safe defaults; a corrupt source disables persistent intent.
+
+Regression: `desktop/test/e2e/sharing-resume-e2e.js` starts from the real UI, restarts the actual Electron app
+using the same userData, reloads the renderer, stops/restarts, removes a source and checks one-owner handoff.

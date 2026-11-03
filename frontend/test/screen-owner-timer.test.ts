@@ -10,7 +10,8 @@ win.hrhNative={capture:{version:3,request:async()=>({ok:false}),cancel:async()=>
   get:async()=>({revision:0,owner:false,state:null}),publish:async()=>{},stop:async()=>{},mode:async()=>{},
   onChanged:(f:any)=>{changed=f;},onControl:()=>{}
 }}};
-Object.assign(globalThis,{window:win,localStorage:{getItem:()=>null,setItem(){}}});
+const storage=new Map<string,string>();
+Object.assign(globalThis,{window:win,location:{origin:"https://test"},localStorage:{getItem:(k:string)=>storage.get(k)||null,setItem:(k:string,v:string)=>storage.set(k,v)}});
 const screen=await import('../src/mate/localScreen.ts');
 await Promise.resolve();
 test('late IPC release snapshot cannot permanently stop the new authoritative owner timer',async()=>{

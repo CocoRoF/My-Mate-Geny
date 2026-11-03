@@ -40,7 +40,7 @@ test("migrate active mate volume, archive all alternatives and legacy sources; n
   assert.equal(p.screen.hide_avatar, false);
   assert.equal(p.migration.mates["https://one:a"].volume, 0);
   assert.equal(p.migration.sources.a.id, "screen:a");
-  assert.equal(p.sharing, undefined);
+  assert.equal(p.sharing.enabled, false);
   const restart = store(x.data());
   assert.equal(restart.prefs.get().volume, 2.65);
   restart.prefs.migrate({
@@ -113,4 +113,30 @@ test("sharing keeps a hidden owner's timer alive and restores its previous throt
   control.publish(owner,{sid:'s',mode:'observe'});
   control.stop();
   assert.deepEqual(changes,[false,true,false,true]);
+});
+
+test("persistent intent survives restart and owner destruction; explicit stop cannot be undone by a late restore", () => {
+  const x=store();x.prefs.patch({sharing:{enabled:true,origin:"https://one",sid:"s",mode:"on_turn",interval:60},screen:{proactive_enabled:true,proactive_interval:60}});
+  const restarted=store(x.data());assert.equal(restarted.prefs.get().sharing.enabled,true);
+  const web=id=>Object.assign(new EventEmitter(),{id,isDestroyed:()=>false,send(){}});
+  const a=web(1),b=web(2);
+  const sharing=createSharing({preferences:restarted.prefs,broadcast(){},cancel(){}});
+  assert.equal(sharing.claim(a,"https://other"),false);
+  assert.equal(sharing.claim(a,"https://one"),true);
+  assert.equal(sharing.claim(b,"https://one"),false);
+  sharing.stop();
+  sharing.publish(a,{sid:"s",mode:"on_turn",restoring:true});
+  assert.equal(sharing.active(),false);assert.equal(restarted.prefs.get().sharing.enabled,false);
+  restarted.prefs.patch({sharing:{enabled:true}});
+  assert.equal(sharing.claim(a,"https://one"),true);
+  sharing.publish(a,{sid:"s",mode:"on_turn",restoring:true});
+  a.emit("destroyed");
+  assert.equal(sharing.active(),false);assert.equal(restarted.prefs.get().sharing.enabled,true);
+  assert.equal(sharing.claim(b,"https://one"),true);
+});
+test("malformed device settings recover safe defaults while preserving valid legacy values",()=>{
+  const x=store({devicePreferences:{version:1,revision:"bad",screen:{format:"jpeg",quality:NaN,max_edge:-1},volume:2.5,sharing:{enabled:true,sid:42,origin:[]}}});
+  const p=x.prefs.get();assert.equal(p.screen.format,"jpeg");assert.equal(p.screen.max_edge,1920);assert.equal(p.screen.quality,85);assert.equal(p.volume,2.5);assert.equal(p.sharing.enabled,false);assert.equal(p.revision,0);
+  x.prefs.migrate({origin:"https://one",activeId:"a",mates:[{id:"a",proactive:{enabled:true,interval:60}}]});
+  assert.equal(x.prefs.get().screen.proactive_enabled,true);assert.equal(x.prefs.get().screen.proactive_interval,60);
 });

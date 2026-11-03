@@ -1,8 +1,9 @@
-import { devicePreferences } from "../stores/devicePreferences";
-/** A window owns its selected local source. Consent never persists across reloads or logout. */
+import { devicePreferences, patchDevicePreferences, loadDevicePreferences, subscribeDevicePreferences } from "../stores/devicePreferences";
+/** One runtime owner restores explicit sharing intent stored only on this device. */
 import {
   captureBridge,
   captureError,
+  toast,
   shotFile,
   type CaptureSource,
   type CaptureRequest,
@@ -36,6 +37,8 @@ export function configureProactive(
   enabled: boolean,
   interval: number,
 ) {
+  const local = devicePreferences().screen;
+  if (local.proactive_enabled !== null) { enabled=local.proactive_enabled; interval=local.proactive_interval; }
   const previous = proactive.get(sid);
   if (previous?.enabled === enabled && previous.interval === interval) return;
   proactive.set(sid, { enabled, interval });
@@ -57,6 +60,17 @@ function scheduleObservation() {
       () => void observe(),
       (p?.enabled ? p.interval : sharing.interval) * 1000,
     );
+}
+let releaseBrowserOwner: (() => void) | null = null;
+async function claimBrowserOwner() {
+  if (!navigator.locks) return true;
+  return new Promise<boolean>((resolve) => {
+    void navigator.locks.request("hrh-screen-owner", {ifAvailable:true}, async lock => {
+      if (!lock) {resolve(false);return;}
+      resolve(true);
+      await new Promise<void>(release => {releaseBrowserOwner=release;});
+    });
+  });
 }
 let generation = 0;
 let primedGeneration = -1;
@@ -111,12 +125,14 @@ export const sharingSnapshot = () => sharing;
 export const sharedScopes = (): Record<string, ScreenMode> =>
   sharing && ownsSharing ? { [sharing.sid]: sharing.mode } : {};
 export function stopSharing(notify: unknown = true) {
+  if (notify !== false) void patchDevicePreferences({sharing:{enabled:false}});
   window.dispatchEvent(new Event("hrh:cancel-captures"));
   if (notify !== false) {
     void captureBridge()?.sharing?.stop();
     void captureBridge()?.cancel("*");
   }
   generation++;
+  releaseBrowserOwner?.();releaseBrowserOwner=null;
   answerApproval(false);
   if (timer) clearInterval(timer);
   timer = null;
@@ -133,9 +149,10 @@ export function stopSharing(notify: unknown = true) {
 }
 export const sharingOwned = () => ownsSharing;
 export function stopOwnedSharing() {
-  if (ownsSharing) stopSharing();
+  if (ownsSharing) { stopSharing(false); void captureBridge()?.sharing?.publish(null); }
 }
 export function setSharingMode(mode: ScreenMode, interval = 180) {
+  void patchDevicePreferences({sharing:{mode,interval}});
   if (!sharing) return;
   if (!ownsSharing && captureBridge()?.sharing) {
     void captureBridge()!.sharing!.mode(mode, interval);
@@ -183,8 +200,9 @@ export async function beginSharing(
   sid: string,
   name: string,
   source?: CaptureSource,
+  restoring = false,
 ) {
-  stopSharing();
+  stopSharing(false);
   ownsSharing = true;
   const gen = generation;
   const native = captureBridge();
@@ -194,10 +212,10 @@ export async function beginSharing(
     if (!source) throw new Error(tr("screen.selectSource"));
     await native.setChoice(`session:${sid}`, source);
   } else {
-    const selected = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
-      audio: false,
-    });
+    if (!(await claimBrowserOwner())) throw new Error(tr("mate.shareBusy"));
+    let selected: MediaStream;
+    try {selected=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});}
+    catch(e) {releaseBrowserOwner?.();releaseBrowserOwner=null;throw e;}
     if (gen !== generation) {
       selected.getTracks().forEach((t) => t.stop());
       return;
@@ -226,17 +244,23 @@ export async function beginSharing(
   sharing = {
     sid,
     name,
-    mode: "ask",
+    mode: devicePreferences().sharing.mode,
     source: label,
     kind:
       source?.kind ||
       (stream?.getVideoTracks()[0]?.getSettings().displaySurface === "window"
         ? "window"
         : "screen"),
-    interval: 180,
+    interval: devicePreferences().sharing.interval,
     error: "",
     capturing: false,
   };
+  if (restoring && native?.sharing) {
+    const result = await native.sharing.publish({...sharing, restoring:true} as LocalSharing);
+    if (gen !== generation) return;
+    if (!(result as {owner?:boolean})?.owner) { stopSharing(false); return; }
+  }
+  if (!restoring && (!native || native.resume) && typeof location !== "undefined") await patchDevicePreferences({sharing:{enabled:true,origin:location.origin,sid,name}});
   emit();
   scheduleObservation();
 }
@@ -291,7 +315,10 @@ export async function localFrame(
             hideAvatar: false,
             hideConsole: false,
           });
-      if (!shot.ok) throw new Error(captureError(shot.code));
+      if (!shot.ok) {
+        if (["source_gone","permission"].includes(shot.code || "")) {stopSharing();toast(tr("screen.restoreMissing"));}
+        throw new Error(captureError(shot.code));
+      }
       result = shotFile(shot);
     } else {
       if (!video || !stream?.active) throw new Error(tr("screen.notSharing"));
@@ -337,7 +364,8 @@ export function finishLocalCapture(sid: string) {
     emit();
   }
 }
-window.addEventListener("pagehide", stopOwnedSharing);
+let leaving = false;
+window.addEventListener("pagehide", () => {leaving=true;stopOwnedSharing();});
 queueMicrotask(() => {
   const nativeSharing = captureBridge()?.sharing;
   if (nativeSharing) {
@@ -359,6 +387,7 @@ queueMicrotask(() => {
       // from the authoritative owner snapshot; don't reset a live timer on every capture update.
       if (ownsSharing && sharing && !timer) scheduleObservation();
       emit(false);
+      if (!sharing && !leaving) void resumeSharing();
     };
     nativeSharing.onChanged(receive);
     nativeSharing.onControl((cmd) => {
@@ -383,3 +412,50 @@ if (typeof window !== "undefined")
     for (const p of rows)
       if (p.sid) configureProactive(p.sid, !!p.enabled, p.interval || 180);
   });
+
+let resuming = false;
+/** No pixels are captured to validate a restore. Missing sources never fall back to another screen. */
+export async function resumeSharing() {
+  if (leaving || resuming || sharing) return;
+  const saved = devicePreferences().sharing;
+  if (!saved.enabled || saved.origin !== location.origin) return;
+  const native = captureBridge();
+  if (native && !native.resume) return; // new app required for the restore lease
+  resuming = true;
+  try {
+    if (native && !(await native.sharing?.claim?.())) return;
+    // Authentication/network errors preserve intent for reconnect, not an unwanted logout/reset.
+    let response: Response;
+    try {response=await fetch(`/api/sessions/${encodeURIComponent(saved.sid)}`);} catch {return;}
+    if ([401,403].includes(response.status)) return;
+    if (response.status === 404) throw new Error(tr("screen.restoreMissing"));
+    if (!response.ok) return;
+    if (!native) {
+      if (!(await claimBrowserOwner())) return; // another tab already owns the live stream
+      await loadDevicePreferences();
+      if (!devicePreferences().sharing.enabled) {releaseBrowserOwner?.();releaseBrowserOwner=null;return;}
+      throw new Error(tr("screen.restoreBrowser"));
+    }
+    const info = await native.info();
+    if (info.wayland || info.permission !== "granted") throw new Error(tr("screen.restorePermission"));
+    const rows = await native.sources();
+    const pref = devicePreferences().screen.source;
+    let source = pref ? rows.find(r=>r.id===pref.id) : rows.find(r=>r.primary) || rows.find(r=>r.kind==="screen");
+    if (source && pref?.kind==="window" && source.name!==pref.name) source=undefined;
+    if (!source && pref?.kind==="screen" && pref.display_id) source=rows.find(r=>r.kind==="screen" && r.display_id===pref.display_id);
+    if (!source && pref?.kind==="window") {const matches=rows.filter(r=>r.kind==="window" && r.name===pref.name);if(matches.length===1)source=matches[0];}
+    if (!source) throw new Error(tr("screen.restoreMissing"));
+    await beginSharing(saved.sid,saved.name,source,true);
+  } catch(e) {
+    stopSharing();
+    toast(String((e as Error).message || tr("screen.restoreMissing")));
+  } finally {resuming=false;}
+}
+subscribeDevicePreferences(() => {
+  const prefs=devicePreferences();
+  for(const [sid,p] of proactive)configureProactive(sid,p.enabled,p.interval);
+  if (sharing && !prefs.sharing.enabled && (!captureBridge() || captureBridge()?.resume)) stopOwnedSharing();
+  window.dispatchEvent(new Event("hrh:screen-sharing"));
+  if (!sharing) void resumeSharing();
+});
+void loadDevicePreferences().then(()=>resumeSharing()).catch(()=>{});
