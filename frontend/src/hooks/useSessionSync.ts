@@ -1,3 +1,4 @@
+import { observeSharingReady } from "../mate/localScreen";
 import { sharingSnapshot, stopOwnedSharing, stopSharing } from "../mate/localScreen";
 import { useEffect } from "react";
 import { toLogin, wsUrl } from "../api/client";
@@ -72,6 +73,11 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
         }
         if (msg.type === "capture.request") {
           void handleCaptureRequest(msg.data);
+          return;
+        }
+        if (msg.type === "capture.ready") {
+          const shares=(msg.data as {shares?:unknown})?.shares;
+          if(Array.isArray(shares))observeSharingReady(shares.filter((s):s is string=>typeof s==="string"));
           return;
         }
         if (msg.type === "capture.cancel") {

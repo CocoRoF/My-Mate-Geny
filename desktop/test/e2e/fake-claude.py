@@ -614,6 +614,12 @@ while True:
     emit({"type": "system", "subtype": "init", "session_id": "fake-sid", "model": model, "permissionMode": "bypassPermissions"})
     last = text.strip().splitlines()[-1] if text.strip() else ""
     log_turn(text)
+    if "GENY_TEST_SILENT" in text:
+        for chunk in ("[SIL", "ENT]"):
+            emit({"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":chunk}}})
+        emit({"type":"assistant","message":{"model":model,"content":[{"type":"text","text":"[SILENT]"}]}})
+        emit({"type":"result","subtype":"success","is_error":False,"result":"[SILENT]","session_id":"fake-sid","total_cost_usd":0.01,"usage":{"input_tokens":1,"output_tokens":1}})
+        continue
     atools = [ln for ln in text.strip().splitlines() if ln.strip().startswith("atool:")]
     studio = studio_turn(text) if "--mcp-config" in args and '"avatar"' in open_mcp() else None
     if studio is not None:

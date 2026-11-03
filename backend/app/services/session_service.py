@@ -121,6 +121,7 @@ class SessionService:
         # Turns currently executing (sid -> info), surfaced on the admin page.
         self.active_runs: dict[str, dict[str, Any]] = {}
         self._tasks: dict[str, asyncio.Task] = {}
+        self._turn_meta: dict[str, dict[str, Any]] = {}
         self._subscribers: dict[str, set[asyncio.Queue]] = {}
         # Session-list change feed (/ws/sessions): every device's sidebar
         # refetches only when this version moves. Seeded from the clock so a
@@ -824,6 +825,7 @@ class SessionService:
             if attachment_ids and self._attachments is not None
             else []
         )
+        self._turn_meta[sid] = meta or {}
         task = asyncio.create_task(self._drive(sid, user_input, rows, client_msg_id, meta))
         self._tasks[sid] = task
         self._note_client(sid, client_msg_id)
@@ -849,6 +851,13 @@ class SessionService:
         """Deliver extra instructions into the RUNNING turn. Returns False when
         the turn can't take input any more (caller sends it as the next turn).
         Raises ``AttachmentError`` for invalid attachments."""
+        current_meta=self._turn_meta.get(sid) or (self.active_runs.get(sid) or {}).get("meta") or {}
+        if current_meta.get("internal") and current_meta.get("kind") in ("screen_observation","thinking_trigger") and not (meta or {}).get("internal"):
+            # Geny: a user message preempts autonomous thinking. The existing rejected-steer protocol
+            # returns the optimistic message to the composer's queue for a normal, separate turn.
+            if self.screen is not None:self.screen.triggers.activity_now(sid)
+            self.stop(sid)
+            return False
         inbox = self._inboxes.get(sid)
         if inbox is None or not inbox.open:
             return False
@@ -970,6 +979,7 @@ class SessionService:
             self._publish(sid, ev.to_dict())
         finally:
             self._tasks.pop(sid, None)
+            self._turn_meta.pop(sid, None)
             self._record_result(sid, outcome)
             self._publish(sid, {"type": "run.state", "data": {"running": False}})
             self._turn_ended(sid, outcome)
@@ -1041,6 +1051,7 @@ class SessionService:
             "started_at": now_iso(),
             "tools": 0,
             "attachments": len(attachments),
+            "meta": meta,
         }
         try:
             async for ev in self._run_turn(sid, session, attachments, ctx, msg_id):
@@ -1200,6 +1211,9 @@ class SessionService:
         elif session.get("kind") in self.engine_hooks:
             # Avatar Create: its own prompt and only its own tools (app.avatar.service)
             self.engine_hooks[session["kind"]](session, req)
+        turn_meta=(self.active_runs.get(sid) or {}).get("meta") or {}
+        if turn_meta.get("internal") and turn_meta.get("kind") in ("screen_observation","thinking_trigger"):
+            req.timeout_s = 600 if turn_meta.get("trigger_kind")=="activity" else 180
         self._inboxes[sid] = req.inbox
 
         def context_notice() -> ProviderEvent | None:
@@ -1228,6 +1242,10 @@ class SessionService:
                     self._engine_turn(sid, provider, req, holder, ctx)
                     if persistent else provider.run_turn_stream(req)
                 )
+                turn_meta=(self.active_runs.get(sid) or {}).get("meta") or {}
+                if turn_meta.get("internal") and turn_meta.get("kind") in ("screen_observation","thinking_trigger"):
+                    from app.mate.trigger.silence import deliver_autonomous
+                    stream=deliver_autonomous(stream)
                 async for ev in stream:
                     if ev.type == "session.info":
                         yield self._session_info(sid, ev, ctx)

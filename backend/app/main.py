@@ -118,6 +118,8 @@ async def lifespan(app: FastAPI):
     from app.services.screen import ScreenService
     app.state.screen_service = ScreenService(session_service, app.state.mate_service.capture, mates=mate_store)
     session_service.screen = app.state.screen_service
+    app.state.screen_service.triggers.mate_runtime = app.state.mate_service
+    app.state.screen_service.triggers.start()
     app.state.voice_service = VoiceService(mate_store)
     # Higgsfield: accounts + what the chats' agents get (docs/higgsfield.md)
     higgsfield = HiggsfieldService(db, vault)
@@ -169,6 +171,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    await app.state.screen_service.triggers.stop()
     housekeeper.cancel()
     session_watcher.cancel()
     higgsfield_keeper.cancel()

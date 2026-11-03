@@ -24,7 +24,7 @@ clients/new devices; new clients never use them after migrating.
 
 The **Mate screen-tool enabled flag remains per Mate, off by default**. It is an independent capability gate.
 Explicit screenshots/sharing are user actions; enabling sharing does not silently enable a Mate's `see_screen` tool.
-Capture target, approval policy, size, format, JPEG quality and avatar hiding are device-wide. Native v3 ignores
+Capture target, approval policy, size, format and JPEG quality are device-wide. The legacy avatar-hiding field is retained only for compatibility and is ignored; capture never hides app windows. Native v3 ignores
 stale per-Mate request quality settings. Automatic per-message/periodic captures use the user's explicit sharing
 mode; requested looks follow the app approval setting. Changing the global capture target stops an existing share.
 
@@ -43,9 +43,7 @@ also exposes screen sharing so capture can be cancelled while app windows are te
 ## Cancellation boundary
 
 Picker Cancel, Escape and backdrop close invalidate its local operation and cancel its native request id. A late
-native result cannot invoke the attachment callback. Native cancel restores hidden windows immediately even if
-the OS capture promise has not returned yet; the result is discarded when it does. A new native capture waits
-for that OS operation to settle, preventing overlapping capture operations.
+native result cannot invoke the attachment callback. Native cancel discards late OS results without changing any app window visibility or focus. A new native capture waits for the prior OS operation to settle.
 
 Requested captures track their upload with a request id and proof. The server validates the pending request both
 before saving and after image preparation, tracks created attachment ids and deletes them on denial, cancellation,

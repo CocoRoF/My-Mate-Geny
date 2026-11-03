@@ -111,15 +111,7 @@ export default function DeviceCaptureSettings() {
           />
         </label>
       )}
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          checked={s.hide_avatar}
-          onChange={(e) => patch({ hide_avatar: e.target.checked })}
-          data-testid="device-capture-hide"
-        />
-        {t("screen.hideAvatar")}
-      </label>
+      <p className="text-content-faint">{t("screen.asVisible")}</p>
       {info?.permission === "denied" && (
         <button
           type="button"

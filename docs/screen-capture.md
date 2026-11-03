@@ -50,9 +50,7 @@ General sessions have these modes (default: ask); Mates configure autonomous obs
 
 ## Privacy and retention
 
-Capture temporarily hides avatar windows on desktop. General shared captures also hide the console to avoid
-occlusion on X11 without a compositor, then restore visibility/focus. A selected app window itself is kept visible. Losing the selected source refuses the capture, rather
-than replacing it with a whole-screen image. Browser capture is confined to the stream selected in the system
+Capture never hides, moves or restores Geny windows. Legacy hiding flags are ignored; the selected visible source is captured directly. Losing the selected source refuses capture instead of substituting a full screen. Browser capture is confined to the stream selected in the system
 picker; it cannot hide other applications' windows. The browser stream has no audio track.
 
 Images intentionally sent to the model remain conversation attachments and may also be retained by the model's

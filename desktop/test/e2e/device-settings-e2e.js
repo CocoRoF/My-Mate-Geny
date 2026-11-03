@@ -193,7 +193,7 @@ const setRange = (p, selector, value) =>
     await until("settings synced", async () => {
       const p = await chat.eval("window.hrhNative.device.get()");
       return (
-        p.volume === 2.75 && p.screen.format === "png" && p.screen.hide_avatar
+        p.volume === 2.75 && p.screen.format === "png" && !p.screen.hide_avatar
       );
     });
     const overlay = await app.page(/surface=mate-overlay/);
@@ -282,6 +282,7 @@ const setRange = (p, selector, value) =>
     console.log(
       "PASS native agent permission denied without retained attachments",
     );
+    await app.main(`global.__captureWindowEvents=[];global.__watchCapture=false;for(const w of require('electron').BrowserWindow.getAllWindows()){const url=w.webContents.getURL();if(url.includes('bar.html')||url.includes('capture-ask.html'))continue;for(const e of ['hide','show','minimize','restore','focus','blur'])w.on(e,()=>{if(global.__watchCapture)global.__captureWindowEvents.push({id:w.id,event:e});});}return true`);
     // Hold an actual native screenshot after the OS returns it, then cancel before it can reach the page.
     await app.main(
       `global.__originalCapture=require('electron').desktopCapturer.getSources;global.__captureEntered=false;require('electron').desktopCapturer.getSources=async function(o){const result=await global.__originalCapture.call(this,o);if(o.thumbnailSize.width>640){global.__captureEntered=true;await new Promise(r=>global.__releaseCapture=r);}return result;};return true`,
@@ -293,12 +294,13 @@ const setRange = (p, selector, value) =>
       chat.eval("!!document.querySelector('[data-testid=share-source]')"),
     );
     await click(chat, "[data-testid=share-source]");
+    await app.main("global.__captureWindowEvents=[];global.__watchCapture=true;return true");
     await click(chat, "[data-testid=share-go]");
     await until("native capture held", () =>
       app.main("return global.__captureEntered"),
     );
     await bar.eval("window.hrhBar.act('screen'),true");
-    await until("cancel restores avatar immediately", () =>
+    await until("cancel leaves avatar continuously visible", () =>
       app.main("return win('surface=mate-overlay').isVisible()"),
     );
     await click(chat, "[data-testid=share-cancel]");
@@ -306,13 +308,14 @@ const setRange = (p, selector, value) =>
       "global.__releaseCapture();require('electron').desktopCapturer.getSources=global.__originalCapture;return true",
     );
     await sleep(500);
+    assert.deepEqual(await app.main("global.__watchCapture=false;return global.__captureWindowEvents"),[],'capture/cancel must never hide/show or refocus app windows');
     assert.equal(countAttachments(), before);
     assert.equal(
       await chat.eval("!!document.querySelector('[data-testid=share-picker]')"),
       false,
     );
     console.log(
-      "PASS cancel during real native capture restores hidden windows and discards late image",
+      "PASS cancel during real native capture keeps windows visible and discards late image",
     );
 
     await shot(chat, "request-denied.png");
@@ -434,6 +437,7 @@ const setRange = (p, selector, value) =>
     await page.click('[data-testid=mate-tab-proactive]');
     await page.waitForSelector('[data-testid=proactive-enabled]');
     assert.equal(await page.getAttribute('[data-testid=proactive-enabled]','aria-checked'),'false');
+    await page.selectOption('[data-testid=proactive-scope]','screen');
     await page.selectOption('[data-testid=proactive-interval]','60');
     await page.fill('[data-testid=proactive-guidance]','Offer help if I seem stuck. Stay quiet when there is nothing useful to say.');
     await page.click('[data-testid=mate-proactive] h3');
@@ -455,14 +459,26 @@ const setRange = (p, selector, value) =>
     await until('native owner sees proactive policy',()=>chat.eval("document.querySelector('[data-testid=local-screen-controls]').dataset.screenProactive === '60'"));
     await shot(chat,'sharing-compact.png');
     assert.equal(await app.main("return win('surface=mate-chat').webContents.getBackgroundThrottling()"),false);
-    await app.main("win('surface=mate-chat').hide();return true");
+    await app.main("global.__watchCapture=false;win('surface=mate-chat').hide();return true");
+    await sleep(250);
+    await app.main("global.__captureWindowEvents=[];global.__watchCapture=true;return true");
     await until('automatic mate screen observation',async()=>{
       const h=await (await context.request.get(server+'/api/history/'+conversation.session_id)).json();
       return h.messages?.some(m=>m.meta?.kind==='screen_observation' && m.attachments?.length);
-    },85000);
+    },110000);
     await until('automatic reply finished',async()=>!(await (await context.request.post(server+'/api/mates/'+b.id+'/conversation')).json()).running,30000);
+    assert.deepEqual(await app.main("global.__watchCapture=false;return global.__captureWindowEvents"),[],'automatic observation must never change app visibility or focus');
     await app.main("win('surface=mate-chat').show();return true");
     await shot(chat,'proactive-reply.png');
+    await context.request.patch(server+'/api/mates/'+b.id,{data:{prefs:{proactive:{guidance:'GENY_TEST_SILENT'}}}});
+    const oldComplete=await chat.eval(`fetch('/api/history/${conversation.session_id}').then(r=>r.json()).then(h=>h.events.filter(e=>e.type==='turn.complete').length)`);
+    const silent=await chat.eval(req('/api/sessions/'+conversation.session_id+'/screen/observe',{device:await chat.eval("localStorage.getItem('hrh_device_id')"),force:true}));
+    assert.equal(silent.status,'sent');
+    await until('silent turn completed',()=>chat.eval(`fetch('/api/history/${conversation.session_id}').then(r=>r.json()).then(h=>h.events.filter(e=>e.type==='turn.complete').length>${oldComplete})`));
+    const silence=await chat.eval(`fetch('/api/history/${conversation.session_id}').then(r=>r.json()).then(h=>({last:h.events.filter(e=>e.type==='turn.complete').at(-1).data,leaked:h.events.some(e=>e.type==='text.delta' && e.data.text.includes('[SILENT]'))}))`);
+    assert.equal(silence.last.silent,true);assert.equal(silence.last.text,'');assert.equal(silence.leaked,false);
+    assert.equal(await chat.eval("document.body.innerText.includes('[SILENT]')"),false);
+    console.log('PASS real native force-show path → fragmented [SILENT] → no text event, bubble or TTS input');
     await click(bar,'[data-act=screen]');
     await until('server consent revoked',async()=>{const stopped=await context.request.post(server+'/api/sessions/'+conversation.session_id+'/screen/observe',{data:{device:await chat.eval("localStorage.getItem('hrh_device_id')")}});return stopped.status()===409;});
     assert.equal(await app.main("return win('surface=mate-chat').webContents.getBackgroundThrottling()"),true);

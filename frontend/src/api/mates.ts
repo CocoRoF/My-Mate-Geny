@@ -79,7 +79,7 @@ export interface StyleDefaults {
 
 /** The conversation style (대화 방식): the one place that decides how she talks (docs/mate.md "Prompt composition") */
 export interface MatePrefs {
-  proactive?: { enabled: boolean; interval: number; guidance: string };
+  proactive?: { enabled: boolean; interval: number; guidance: string; scope?: "all" | "screen"; preset?: GenyTriggerPreset | null };
   user_name: string;
   /** what she calls the user ("" = her character's way: defaults.address) */
   address: string;
@@ -729,4 +729,12 @@ export async function speech(
     return null;
   }
   return res.blob();
+}
+
+export interface GenyTriggerPreset {
+  enabled:boolean;
+  timing:{base_idle_seconds:number;max_idle_seconds:number;tick_interval_seconds:number;sub_worker_working_cooldown_seconds:number;adaptive_scale_triggers:number};
+  categories:{id:string;label:string;weight:number;cooldown_seconds:number;requires_screen_active:boolean;prompt_refs:{prompt_id:string;weight:number}[];[k:string]:unknown}[];
+  prompts:{id:string;label:string;content:Record<string,string>;[k:string]:unknown}[];
+  [k:string]:unknown;
 }

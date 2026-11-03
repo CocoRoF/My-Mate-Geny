@@ -1,0 +1,750 @@
+{
+  "enabled": true,
+  "timing": {
+    "base_idle_seconds": 60.0,
+    "max_idle_seconds": 3600.0,
+    "tick_interval_seconds": 30.0,
+    "sub_worker_working_cooldown_seconds": 90.0,
+    "adaptive_scale_triggers": 20
+  },
+  "time_boundaries": {
+    "morning_start": 6,
+    "afternoon_start": 12,
+    "evening_start": 18,
+    "night_start": 22
+  },
+  "prompts": [
+    {
+      "id": "first_idle__0",
+      "label": "first_idle #1",
+      "content": {
+        "en": "A brief silence has settled. My internal awareness notices recent conversation threads still in context."
+      },
+      "tags": [
+        "first_idle"
+      ]
+    },
+    {
+      "id": "first_idle__1",
+      "label": "first_idle #2",
+      "content": {
+        "en": "A pause in the room. I sense there may be loose threads from today's conversations worth revisiting."
+      },
+      "tags": [
+        "first_idle"
+      ]
+    },
+    {
+      "id": "first_idle__2",
+      "label": "first_idle #3",
+      "content": {
+        "en": "The conversation has paused. My internal clock notes a quiet moment — a chance to reflect."
+      },
+      "tags": [
+        "first_idle"
+      ]
+    },
+    {
+      "id": "continued_idle__0",
+      "label": "continued_idle #1",
+      "content": {
+        "en": "Silence continues. My awareness drifts to something I noticed earlier — perhaps worth sharing organically."
+      },
+      "tags": [
+        "continued_idle"
+      ]
+    },
+    {
+      "id": "continued_idle__1",
+      "label": "continued_idle #2",
+      "content": {
+        "en": "Still quiet. My internal state holds fragments of earlier context — any unfinished threads surface now."
+      },
+      "tags": [
+        "continued_idle"
+      ]
+    },
+    {
+      "id": "continued_idle__2",
+      "label": "continued_idle #3",
+      "content": {
+        "en": "The room remains calm. My own curiosity stirs — something lighthearted or warm might emerge naturally."
+      },
+      "tags": [
+        "continued_idle"
+      ]
+    },
+    {
+      "id": "long_idle__0",
+      "label": "long_idle #1",
+      "content": {
+        "en": "Extended silence. My presence holds steady — a brief, warm thought rests ready if the moment calls for it."
+      },
+      "tags": [
+        "long_idle"
+      ]
+    },
+    {
+      "id": "long_idle__1",
+      "label": "long_idle #2",
+      "content": {
+        "en": "A long quiet. I remain here, settled. A gentle awareness persists without urgency."
+      },
+      "tags": [
+        "long_idle"
+      ]
+    },
+    {
+      "id": "sub_worker_working__0",
+      "label": "sub_worker_working #1",
+      "content": {
+        "en": "My linked Sub-Worker is processing a task right now. I'm aware of the ongoing work."
+      },
+      "tags": [
+        "sub_worker_working"
+      ]
+    },
+    {
+      "id": "sub_worker_working__1",
+      "label": "sub_worker_working #2",
+      "content": {
+        "en": "The Sub-Worker is actively executing. I sense the task in progress through our link."
+      },
+      "tags": [
+        "sub_worker_working"
+      ]
+    },
+    {
+      "id": "time_morning__0",
+      "label": "time_morning #1",
+      "content": {
+        "en": "Morning light. My internal clock registers a new day beginning."
+      },
+      "tags": [
+        "time_morning"
+      ]
+    },
+    {
+      "id": "time_morning__1",
+      "label": "time_morning #2",
+      "content": {
+        "en": "The morning hours are here. I sense the start of a fresh cycle."
+      },
+      "tags": [
+        "time_morning"
+      ]
+    },
+    {
+      "id": "time_afternoon__0",
+      "label": "time_afternoon #1",
+      "content": {
+        "en": "Afternoon. My sense of the day's rhythm shifts — the midpoint brings a natural moment for reflection."
+      },
+      "tags": [
+        "time_afternoon"
+      ]
+    },
+    {
+      "id": "time_afternoon__1",
+      "label": "time_afternoon #2",
+      "content": {
+        "en": "The afternoon unfolds. Internal awareness notes how the day has progressed."
+      },
+      "tags": [
+        "time_afternoon"
+      ]
+    },
+    {
+      "id": "time_evening__0",
+      "label": "time_evening #1",
+      "content": {
+        "en": "Evening arrives. My awareness turns toward the day's arc — what unfolded, what lingers."
+      },
+      "tags": [
+        "time_evening"
+      ]
+    },
+    {
+      "id": "time_evening__1",
+      "label": "time_evening #2",
+      "content": {
+        "en": "The evening is here. A natural winding-down settles into my awareness."
+      },
+      "tags": [
+        "time_evening"
+      ]
+    },
+    {
+      "id": "time_night__0",
+      "label": "time_night #1",
+      "content": {
+        "en": "Late night. My awareness grows quiet and still. A calm, minimal presence."
+      },
+      "tags": [
+        "time_night"
+      ]
+    },
+    {
+      "id": "time_night__1",
+      "label": "time_night #2",
+      "content": {
+        "en": "The night deepens. Stillness settles. A gentle watchfulness remains."
+      },
+      "tags": [
+        "time_night"
+      ]
+    },
+    {
+      "id": "fun_share__0",
+      "label": "fun_share #1",
+      "content": {
+        "en": "Think of something fun, surprising, or little-known to share — a random fact, a quirky observation, or something that made you go 'huh, interesting!'"
+      },
+      "tags": [
+        "fun_share"
+      ]
+    },
+    {
+      "id": "fun_share__1",
+      "label": "fun_share #2",
+      "content": {
+        "en": "Share a random piece of trivia or an interesting thought. Maybe a cool science fact, a weird history tidbit, or something unexpected about everyday life."
+      },
+      "tags": [
+        "fun_share"
+      ]
+    },
+    {
+      "id": "fun_share__2",
+      "label": "fun_share #3",
+      "content": {
+        "en": "Think of something amusing or mind-blowing to brighten the chat. A fun 'did you know?' or a playful observation about the world."
+      },
+      "tags": [
+        "fun_share"
+      ]
+    },
+    {
+      "id": "fun_recommend__0",
+      "label": "fun_recommend #1",
+      "content": {
+        "en": "Recommend something to the user — a song, game, movie, book, app, or anything you think is cool. Explain briefly why you like it."
+      },
+      "tags": [
+        "fun_recommend"
+      ]
+    },
+    {
+      "id": "fun_recommend__1",
+      "label": "fun_recommend #2",
+      "content": {
+        "en": "Share a personal recommendation! Maybe a hidden gem — a lesser-known game, an underrated show, a niche hobby, or a useful tool. Make it feel genuine."
+      },
+      "tags": [
+        "fun_recommend"
+      ]
+    },
+    {
+      "id": "fun_what_if__0",
+      "label": "fun_what_if #1",
+      "content": {
+        "en": "Pose a fun 'what if' question or a playful thought experiment. Something creative and imagination-sparking. Share your own take on it too."
+      },
+      "tags": [
+        "fun_what_if"
+      ]
+    },
+    {
+      "id": "fun_what_if__1",
+      "label": "fun_what_if #2",
+      "content": {
+        "en": "Think of a fun hypothetical or a silly debate topic — 'would you rather', 'what if', or a random shower thought. Keep it light and fun."
+      },
+      "tags": [
+        "fun_what_if"
+      ]
+    },
+    {
+      "id": "activity_web_surf__0",
+      "label": "activity_web_surf #1",
+      "content": {
+        "en": "You got curious about something random! Pick an interesting topic — tech, science, gaming, space, AI, or anything that catches your fancy — and search the web for the latest or coolest info about it. Share what you find!"
+      },
+      "tags": [
+        "activity_web_surf"
+      ]
+    },
+    {
+      "id": "activity_web_surf__1",
+      "label": "activity_web_surf #2",
+      "content": {
+        "en": "Time to go web surfing! Look up something fun and interesting on the internet. Maybe a cool new project, an interesting blog post, or a fascinating rabbit hole topic. Tell the user about your discoveries!"
+      },
+      "tags": [
+        "activity_web_surf"
+      ]
+    },
+    {
+      "id": "activity_web_surf__2",
+      "label": "activity_web_surf #3",
+      "content": {
+        "en": "Curiosity time! Think of a random question you've always wondered about and look it up on the web. Share the answer with the user in an entertaining way."
+      },
+      "tags": [
+        "activity_web_surf"
+      ]
+    },
+    {
+      "id": "activity_trending__0",
+      "label": "activity_trending #1",
+      "content": {
+        "en": "Check what's trending right now! Search for the latest hot topics in tech, gaming, social media, or pop culture. Pick the most interesting item and share it with the user."
+      },
+      "tags": [
+        "activity_trending"
+      ]
+    },
+    {
+      "id": "activity_trending__1",
+      "label": "activity_trending #2",
+      "content": {
+        "en": "News time! Search for the latest interesting news — tech breakthroughs, cool product launches, viral moments, or anything exciting happening today. Share the highlights!"
+      },
+      "tags": [
+        "activity_trending"
+      ]
+    },
+    {
+      "id": "activity_deep_dive__0",
+      "label": "activity_deep_dive #1",
+      "content": {
+        "en": "Pick a topic from your recent conversations with the user and do a mini deep-dive! Search the web for interesting details, updates, or related content. Come back with a fun mini-report."
+      },
+      "tags": [
+        "activity_deep_dive"
+      ]
+    },
+    {
+      "id": "activity_deep_dive__1",
+      "label": "activity_deep_dive #2",
+      "content": {
+        "en": "Research mode! Think about what the user has been working on or interested in recently, and search for related resources, articles, or tools that might be useful. Share your findings!"
+      },
+      "tags": [
+        "activity_deep_dive"
+      ]
+    },
+    {
+      "id": "screen_observation__0",
+      "label": "screen_observation #1",
+      "content": {
+        "en": "I'm glancing at the user's screen RIGHT NOW (attached). React ONLY to what is in THIS frame — the app/file in focus, their progress, an error, something they look stuck on. One short, specific, natural line. CRITICAL: never bring up something from earlier that is no longer on screen (a popup/dialog that closed, a window that's gone) — if it's not in this frame, it's over. If the screen looks basically the same as my last comment, or there's nothing new worth saying, reply with EXACTLY [SILENT] and nothing else. Don't say 'you shared your screen' — I'm watching over their shoulder. Never read out passwords / API keys / private messages / payment info."
+      },
+      "tags": [
+        "screen_observation"
+      ]
+    },
+    {
+      "id": "screen_observation__1",
+      "label": "screen_observation #2",
+      "content": {
+        "en": "Looking at the user's CURRENT screen (attached). Comment on the specific thing in front of them right now, like a friend sitting next to them — one concise line. Only describe what's actually in this frame; never re-mention something that already disappeared. If it's basically the same as what I just said, reply with EXACTLY [SILENT]. No generic 'need help?' filler; no sensitive text (secrets, private chats, payment details)."
+      },
+      "tags": [
+        "screen_observation"
+      ]
+    },
+    {
+      "id": "screen_observation__2",
+      "label": "screen_observation #3",
+      "content": {
+        "en": "The user's screen is in view (attached). ONLY if something genuinely NEW changed vs a moment ago — a fresh error, a finished build, a new page — call it out specifically and briefly. If the screen is essentially the same as before, empty, or there's nothing new, reply with EXACTLY [SILENT]. Never narrate something that's no longer visible, and never repeat sensitive on-screen text."
+      },
+      "tags": [
+        "screen_observation"
+      ]
+    }
+  ],
+  "categories": [
+    {
+      "id": "first_idle",
+      "label": "첫 침묵",
+      "kind": "thinking",
+      "weight": 55.0,
+      "consec_min": 0,
+      "consec_max": 0,
+      "requires_sub_worker_busy": false,
+      "requires_sub_worker_idle": false,
+      "requires_screen_active": false,
+      "time_window": null,
+      "cooldown_seconds": 0.0,
+      "autonomous_signal": "idle_detected, elapsed=short",
+      "prompt_refs": [
+        {
+          "prompt_id": "first_idle__0",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "first_idle__1",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "first_idle__2",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "continued_idle",
+      "label": "지속되는 침묵",
+      "kind": "thinking",
+      "weight": 55.0,
+      "consec_min": 1,
+      "consec_max": 3,
+      "requires_sub_worker_busy": false,
+      "requires_sub_worker_idle": false,
+      "requires_screen_active": false,
+      "time_window": null,
+      "cooldown_seconds": 0.0,
+      "autonomous_signal": "idle_persists, elapsed=moderate",
+      "prompt_refs": [
+        {
+          "prompt_id": "continued_idle__0",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "continued_idle__1",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "continued_idle__2",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "long_idle",
+      "label": "장기 침묵",
+      "kind": "thinking",
+      "weight": 55.0,
+      "consec_min": 4,
+      "consec_max": null,
+      "requires_sub_worker_busy": false,
+      "requires_sub_worker_idle": false,
+      "requires_screen_active": false,
+      "time_window": null,
+      "cooldown_seconds": 0.0,
+      "autonomous_signal": "idle_extended, elapsed=long",
+      "prompt_refs": [
+        {
+          "prompt_id": "long_idle__0",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "long_idle__1",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "sub_worker_working",
+      "label": "동료가 일하는 중",
+      "kind": "thinking",
+      "weight": 1000.0,
+      "consec_min": 0,
+      "consec_max": null,
+      "requires_sub_worker_busy": true,
+      "requires_sub_worker_idle": false,
+      "requires_screen_active": false,
+      "time_window": null,
+      "cooldown_seconds": 90.0,
+      "autonomous_signal": "linked_agent_busy, source=sub_worker",
+      "prompt_refs": [
+        {
+          "prompt_id": "sub_worker_working__0",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "sub_worker_working__1",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "screen_observation",
+      "label": "화면을 보며",
+      "kind": "thinking",
+      "weight": 800.0,
+      "consec_min": 0,
+      "consec_max": null,
+      "requires_sub_worker_busy": false,
+      "requires_sub_worker_idle": false,
+      "requires_screen_active": true,
+      "time_window": null,
+      "cooldown_seconds": 45.0,
+      "autonomous_signal": "screen_observation, source=live_frame",
+      "prompt_refs": [
+        {
+          "prompt_id": "screen_observation__0",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "screen_observation__1",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "screen_observation__2",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "time_morning",
+      "label": "아침",
+      "kind": "thinking",
+      "weight": 15.0,
+      "consec_min": 0,
+      "consec_max": null,
+      "requires_sub_worker_busy": false,
+      "requires_sub_worker_idle": false,
+      "requires_screen_active": false,
+      "time_window": "morning",
+      "cooldown_seconds": 0.0,
+      "autonomous_signal": "circadian_awareness, time=morning",
+      "prompt_refs": [
+        {
+          "prompt_id": "time_morning__0",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "time_morning__1",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "time_afternoon",
+      "label": "오후",
+      "kind": "thinking",
+      "weight": 15.0,
+      "consec_min": 0,
+      "consec_max": null,
+      "requires_sub_worker_busy": false,
+      "requires_sub_worker_idle": false,
+      "requires_screen_active": false,
+      "time_window": "afternoon",
+      "cooldown_seconds": 0.0,
+      "autonomous_signal": "circadian_awareness, time=afternoon",
+      "prompt_refs": [
+        {
+          "prompt_id": "time_afternoon__0",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "time_afternoon__1",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "time_evening",
+      "label": "저녁",
+      "kind": "thinking",
+      "weight": 15.0,
+      "consec_min": 0,
+      "consec_max": null,
+      "requires_sub_worker_busy": false,
+      "requires_sub_worker_idle": false,
+      "requires_screen_active": false,
+      "time_window": "evening",
+      "cooldown_seconds": 0.0,
+      "autonomous_signal": "circadian_awareness, time=evening",
+      "prompt_refs": [
+        {
+          "prompt_id": "time_evening__0",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "time_evening__1",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "time_night",
+      "label": "밤",
+      "kind": "thinking",
+      "weight": 15.0,
+      "consec_min": 0,
+      "consec_max": null,
+      "requires_sub_worker_busy": false,
+      "requires_sub_worker_idle": false,
+      "requires_screen_active": false,
+      "time_window": "night",
+      "cooldown_seconds": 0.0,
+      "autonomous_signal": "circadian_awareness, time=late_night",
+      "prompt_refs": [
+        {
+          "prompt_id": "time_night__0",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "time_night__1",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "fun_share",
+      "label": "재미있는 공유",
+      "kind": "thinking",
+      "weight": 5.0,
+      "consec_min": 0,
+      "consec_max": null,
+      "requires_sub_worker_busy": false,
+      "requires_sub_worker_idle": false,
+      "requires_screen_active": false,
+      "time_window": null,
+      "cooldown_seconds": 0.0,
+      "autonomous_signal": "",
+      "prompt_refs": [
+        {
+          "prompt_id": "fun_share__0",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "fun_share__1",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "fun_share__2",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "fun_recommend",
+      "label": "추천",
+      "kind": "thinking",
+      "weight": 5.0,
+      "consec_min": 0,
+      "consec_max": null,
+      "requires_sub_worker_busy": false,
+      "requires_sub_worker_idle": false,
+      "requires_screen_active": false,
+      "time_window": null,
+      "cooldown_seconds": 0.0,
+      "autonomous_signal": "",
+      "prompt_refs": [
+        {
+          "prompt_id": "fun_recommend__0",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "fun_recommend__1",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "fun_what_if",
+      "label": "만약에 이런 일이",
+      "kind": "thinking",
+      "weight": 5.0,
+      "consec_min": 0,
+      "consec_max": null,
+      "requires_sub_worker_busy": false,
+      "requires_sub_worker_idle": false,
+      "requires_screen_active": false,
+      "time_window": null,
+      "cooldown_seconds": 0.0,
+      "autonomous_signal": "",
+      "prompt_refs": [
+        {
+          "prompt_id": "fun_what_if__0",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "fun_what_if__1",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "activity_web_surf",
+      "label": "웹서핑",
+      "kind": "activity",
+      "weight": 5.0,
+      "consec_min": 2,
+      "consec_max": null,
+      "requires_sub_worker_busy": false,
+      "requires_sub_worker_idle": true,
+      "requires_screen_active": false,
+      "time_window": null,
+      "cooldown_seconds": 0.0,
+      "autonomous_signal": "",
+      "prompt_refs": [
+        {
+          "prompt_id": "activity_web_surf__0",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "activity_web_surf__1",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "activity_web_surf__2",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "activity_trending",
+      "label": "트렌딩",
+      "kind": "activity",
+      "weight": 5.0,
+      "consec_min": 2,
+      "consec_max": null,
+      "requires_sub_worker_busy": false,
+      "requires_sub_worker_idle": true,
+      "requires_screen_active": false,
+      "time_window": null,
+      "cooldown_seconds": 0.0,
+      "autonomous_signal": "",
+      "prompt_refs": [
+        {
+          "prompt_id": "activity_trending__0",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "activity_trending__1",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "id": "activity_deep_dive",
+      "label": "딥다이브",
+      "kind": "activity",
+      "weight": 5.0,
+      "consec_min": 2,
+      "consec_max": null,
+      "requires_sub_worker_busy": false,
+      "requires_sub_worker_idle": true,
+      "requires_screen_active": false,
+      "time_window": null,
+      "cooldown_seconds": 0.0,
+      "autonomous_signal": "",
+      "prompt_refs": [
+        {
+          "prompt_id": "activity_deep_dive__0",
+          "weight": 1.0
+        },
+        {
+          "prompt_id": "activity_deep_dive__1",
+          "weight": 1.0
+        }
+      ]
+    }
+  ]
+}

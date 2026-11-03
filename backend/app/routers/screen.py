@@ -28,7 +28,7 @@ async def observe(sid: str, request: Request):
         body = await request.json()
         if not isinstance(body, dict) or not isinstance(body.get("device"), str):
             raise ValueError("expected device")
-        return await request.app.state.screen_service.observe(sid, body["device"][:80])
+        return await request.app.state.screen_service.observe(sid, body["device"][:80], force=body.get("force") is True)
     except CaptureError as exc:
         raise HTTPException(409, str(exc)) from exc
     except KeyError as exc:
@@ -54,3 +54,14 @@ async def call(request: Request):
 async def cancel(sid: str, request: Request):
     request.app.state.screen_service.broker.cancel_session(sid)
     return {"ok": True}
+
+@router.get("/{sid}/screen/status")
+async def status(sid: str, request: Request):
+    svc=request.app.state.screen_service
+    try: return svc.triggers.current(sid)
+    except KeyError as exc: raise HTTPException(404,"Session not found") from exc
+
+@router.get("/screen/geny-preset")
+async def geny_preset():
+    from app.mate.trigger.defaults import default_manifest
+    return default_manifest().model_dump()

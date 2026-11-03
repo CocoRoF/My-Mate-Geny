@@ -67,6 +67,8 @@ async def sessions_feed(websocket: WebSocket) -> None:
                 continue
             if msg.get("type") == "client" and conn is not None:
                 broker.hello(conn, msg)
+                if msg.get("screen_ready") is True:
+                    await send({"type":"capture.ready","data":{"shares":list(broker._clients[conn].shares)}})
             elif msg.get("type") == "sync":
                 await send({"type": "pong", "data": {"version": svc.list_version, "mates_version": svc.mates_version}})
     except WebSocketDisconnect:

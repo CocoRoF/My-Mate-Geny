@@ -6,7 +6,7 @@ const DEFAULT_SCREEN = {
   max_edge: 1920,
   format: "png",
   quality: 85,
-  hide_avatar: true,
+  hide_avatar: false,
 };
 function cleanSource(v) {
   return v && typeof v.id === "string"

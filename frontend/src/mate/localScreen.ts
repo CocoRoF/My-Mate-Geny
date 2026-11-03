@@ -30,20 +30,48 @@ let stream: MediaStream | null = null;
 let video: HTMLVideoElement | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
 let observing = false;
-const proactive = new Map<string, {enabled:boolean; interval:number}>();
-export function configureProactive(sid:string, enabled:boolean, interval:number) {
-  const previous=proactive.get(sid);
-  if(previous?.enabled===enabled && previous.interval===interval)return;
-  proactive.set(sid,{enabled,interval});
-  if(sharing?.sid===sid && ownsSharing) scheduleObservation();
+const proactive = new Map<string, { enabled: boolean; interval: number }>();
+export function configureProactive(
+  sid: string,
+  enabled: boolean,
+  interval: number,
+) {
+  const previous = proactive.get(sid);
+  if (previous?.enabled === enabled && previous.interval === interval) return;
+  proactive.set(sid, { enabled, interval });
+  if (sharing?.sid === sid && ownsSharing) {
+    scheduleObservation();
+    if (enabled && !previous?.enabled) {
+      primedGeneration = -1;
+      emit();
+    }
+  }
 }
 function scheduleObservation() {
-  if(timer)clearInterval(timer); timer=null;
-  if(!sharing || !ownsSharing)return;
-  const p=proactive.get(sharing.sid);
-  if(p?.enabled || sharing.mode==="observe") timer=setInterval(()=>void observe(), (p?.enabled ? p.interval : sharing.interval)*1000);
+  if (timer) clearInterval(timer);
+  timer = null;
+  if (!sharing || !ownsSharing) return;
+  const p = proactive.get(sharing.sid);
+  if (p?.enabled || sharing.mode === "observe")
+    timer = setInterval(
+      () => void observe(),
+      (p?.enabled ? p.interval : sharing.interval) * 1000,
+    );
 }
 let generation = 0;
+let primedGeneration = -1;
+export function observeSharingReady(shares: string[]) {
+  if (
+    !sharing ||
+    !ownsSharing ||
+    !proactive.get(sharing.sid)?.enabled ||
+    !shares.includes(sharing.sid) ||
+    primedGeneration === generation
+  )
+    return;
+  primedGeneration = generation;
+  void observe();
+}
 const cancelled = new Set<string>();
 let approval: { id: string; name: string; source: string } | null = null;
 let finishApproval: ((allowed: boolean) => void) | null = null;
@@ -126,7 +154,13 @@ export function setSharingMode(mode: ScreenMode, interval = 180) {
 }
 async function observe() {
   const current = sharing;
-  if (!current || !ownsSharing || (current.mode !== "observe" && !proactive.get(current.sid)?.enabled) || observing) return;
+  if (
+    !current ||
+    !ownsSharing ||
+    (current.mode !== "observe" && !proactive.get(current.sid)?.enabled) ||
+    observing
+  )
+    return;
   observing = true;
   try {
     await apiFetch(
@@ -241,7 +275,7 @@ export async function localFrame(
             mate_name: current.name,
             session_id: sid,
             ask,
-            hide_avatar: options.hide_avatar !== false,
+            hide_avatar: false,
             max_edge: options.max_edge ?? 1920,
             format: options.format || "jpeg",
             quality: options.quality || 85,
@@ -254,8 +288,8 @@ export async function localFrame(
             maxEdge: 1920,
             format: "jpeg",
             quality: 85,
-            hideAvatar: true,
-            hideConsole: true,
+            hideAvatar: false,
+            hideConsole: false,
           });
       if (!shot.ok) throw new Error(captureError(shot.code));
       result = shotFile(shot);
@@ -342,8 +376,10 @@ queueMicrotask(() => {
 });
 
 // Keep the owner's policy current even when its composer is not mounted (console navigated elsewhere).
-if(typeof window!=="undefined")window.addEventListener("hrh:mate-policies",event=>{
-  const rows=(event as CustomEvent).detail;
-  if(!Array.isArray(rows))return;
-  for(const p of rows)if(p.sid)configureProactive(p.sid,!!p.enabled,p.interval||180);
-});
+if (typeof window !== "undefined")
+  window.addEventListener("hrh:mate-policies", (event) => {
+    const rows = (event as CustomEvent).detail;
+    if (!Array.isArray(rows)) return;
+    for (const p of rows)
+      if (p.sid) configureProactive(p.sid, !!p.enabled, p.interval || 180);
+  });

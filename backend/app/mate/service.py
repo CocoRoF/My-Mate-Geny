@@ -938,6 +938,8 @@ class MateService:
             await asyncio.sleep(0.4)
 
     def _track(self, worker_sid: str, mate: dict[str, Any], mate_sid: str, title: str) -> None:
+        if self._svc.screen is not None:
+            self._svc.screen.triggers.link(mate_sid,worker_sid)
         self._delegations[worker_sid] = {
             "mate_id": mate["id"], "mate_sid": mate_sid, "name": mate["name"], "title": title,
             "depth": self._depth.get(mate_sid, 0), "at": time.time(), "auto_only": False,

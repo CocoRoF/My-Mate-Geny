@@ -161,6 +161,7 @@ export function clientHello(active: boolean): Record<string, unknown> {
     capture:
       captureBridge()?.version ?? (Object.keys(sharedScopes()).length ? 1 : 0),
     shares: sharedScopes(),
+    screen_ready: true,
     active,
   };
 }
@@ -268,7 +269,7 @@ export async function handleCaptureRequest(raw: unknown): Promise<void> {
     } else {
       const bridge = captureBridge();
       if (!bridge) throw new Error(captureError("error"));
-      const shot = await bridge.request(req);
+      const shot = await bridge.request({...req,hide_avatar:false});
       if (!shot.ok) throw new Error(captureError(shot.code));
       file = shotFile(shot);
       source = shot.source;

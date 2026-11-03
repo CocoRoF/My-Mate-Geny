@@ -4,7 +4,7 @@
 // - the mate asks (its see_screen tool): the server sends a capture request to one of this app's pages over
 //   /ws/sessions, the page calls request(): unless the mate may look without asking, a small prompt asks the user
 //   ("‹mate› wants to see your screen" — the source, a preview, Allow once / Deny, a countdown that ends in Deny);
-//   then the mate windows hide for a moment (an option), the source is captured, the windows come back, and the
+//   then the selected source is captured exactly as visible, without hiding/moving/refocusing app windows, and the
 //   picture goes back to the page (which uploads it to the mate's conversation). Nothing is written to disk here.
 // - the user shares (Share screen in the composer's + menu): sources() for the picker, grab() for the picture.
 //
@@ -15,7 +15,6 @@
 
 const CAPTURE_VERSION = 3; // the bridge version the page reports to the server (app/mate/capture.py CAPTURE_BRIDGE)
 const ASK = { w: 440, h: 430 };
-const HIDE_SETTLE_MS = { linux: 250, darwin: 350, win32: 350 }; // the compositor drops hidden windows
 const MAX_EDGES = new Set([0, 1280, 1920, 2560]);
 
 const kindOf = (id) => (String(id || "").startsWith("screen:") ? "screen" : "window");
@@ -68,7 +67,7 @@ function cleanOptions(o = {}) {
     maxEdge: MAX_EDGES.has(edge) ? edge : 1920,
     format: o.format === "jpeg" ? "jpeg" : "png",
     quality: Number.isFinite(q) ? Math.max(40, Math.min(100, Math.round(q))) : 85,
-    hideAvatar: o.hideAvatar !== false && o.hide_avatar !== false,
+    hideAvatar: false, // legacy flags cannot hide, move or refocus any app window
   };
 }
 
@@ -76,15 +75,13 @@ const describe = (s) => (s ? { id: s.id, name: String(s.name || ""), kind: kindO
 
 /**
  * The capture service. deps: { desktopCapturer, screen, systemPreferences, shell?, readSettings, writeSettings,
- * platform, env, hideWindows: () => Promise<() => void> (hide the mate windows; resolves to "show them again"),
+ * platform, env (captures never change application window visibility),
  * ask: (info) => Promise<"allow"|"deny"|"timeout">, indicate: (state, info) => void, delay?: (ms) => Promise }
  */
 function createCapture(d) {
   const platform = d.platform || process.platform;
   const env = d.env || process.env;
-  const delay = d.delay || ((ms) => new Promise((r) => setTimeout(r, ms)));
   const wayland = platform === "linux" && String(env.XDG_SESSION_TYPE || "").toLowerCase() === "wayland";
-  let restoreCurrent = null;
   let busy = null; // the request in progress (one at a time)
   const cancelled = new Set();
 
@@ -193,20 +190,6 @@ function createCapture(d) {
 
   const fail = (code, message = "") => ({ ok: false, code, message });
 
-  async function withHidden(hide, fn, source, hideConsole = false) {
-    let restore = null;
-    const restoreOnce = () => { const f=restore;restore=null;try{f&&f();}catch{} };
-    if (hide && d.hideWindows) {
-      try {
-        restore = await d.hideWindows(source,hideConsole);
-        restoreCurrent = restoreOnce;
-        await delay(HIDE_SETTLE_MS[platform] || 300);
-      } catch { restoreOnce(); }
-    }
-    try { return await fn(); }
-    finally { restoreOnce();if(restoreCurrent===restoreOnce)restoreCurrent=null; }
-  }
-
   async function resolve(mateId, sourceId) {
     if (platform === "darwin" && permission() === "denied") return { error: fail("permission") };
     let list;
@@ -235,7 +218,7 @@ function createCapture(d) {
       if(cancelled.has(id))return fail("stopped");
       if (r.fallback && o.sourceId) return fail("source_gone");
       d.indicate && d.indicate("start", {mateName:"Geny"});
-      const shot = await withHidden(opts.hideAvatar, () => cancelled.has(id) ? null : shoot(r.source, opts), r.source, o.hideConsole === true);
+      const shot = await shoot(r.source, opts);
       if(cancelled.has(id))return fail("stopped");
       if (!shot) return fail(wayland ? "empty" : platform === "darwin" && permission() !== "granted" ? "permission" : "empty");
       if (cancelled.has(id)) return fail("stopped");
@@ -288,7 +271,7 @@ function createCapture(d) {
       }
       opts = options(req);
       d.indicate && d.indicate("start", { mateName });
-      const shot = await withHidden(opts.hideAvatar, () => cancelled.has(id) ? null : shoot(r.source, opts), r.source, String(req.mate_id || "").startsWith("session:"));
+      const shot = await shoot(r.source, opts);
       if(cancelled.has(id))return fail("stopped");
       if (!shot) {
         d.indicate && d.indicate("error", { mateName });
@@ -311,7 +294,6 @@ function createCapture(d) {
     if (busy && (id === "*" || busy.id === String(id))) {
       cancelled.add(busy.id);
       d.cancelAsk && d.cancelAsk(busy.id);
-      restoreCurrent && restoreCurrent();
       d.indicate && d.indicate("idle",{});
     }
   }

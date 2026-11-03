@@ -41,7 +41,7 @@ const defaults: DevicePreferences = {
     max_edge: 1920,
     format: "png",
     quality: 85,
-    hide_avatar: true,
+    hide_avatar: false,
   },
   volume: 1,
   migration: {
@@ -64,7 +64,12 @@ const read = (): DevicePreferences => {
 let current = read();
 let loaded = false;
 const receive = (v: DevicePreferences) => {
-  current = v;
+  // Legacy app versions also stop hiding windows once the new UI loads. Preserve migration of other options first.
+  current = { ...v, screen: { ...v.screen, hide_avatar: false } };
+  if (v.screen.hide_avatar && v.migration.imported)
+    void native()
+      ?.patch({ screen: { hide_avatar: false } })
+      .catch(() => {});
   loaded = true;
   listeners.forEach((f) => f());
 };

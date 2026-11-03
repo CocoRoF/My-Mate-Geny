@@ -266,7 +266,7 @@ def default_prefs() -> dict[str, Any]:
     return {"user_name": "", "address": "", "self_ref": "", "formality": "auto", "speech_style": "",
             "length": "normal", "emotion": 2, "tone": {k: "auto" for k in TONE_KEYS}, "avoid": "",
             "memory": {"recall": "normal", "self_save": True}, "self_edit": "auto",
-            "defaults": default_style_defaults(), "proactive": {"enabled": False, "interval": 180, "guidance": ""}}
+            "defaults": default_style_defaults(), "proactive": {"enabled": False, "interval": 180, "guidance": "", "scope": "all", "preset": None}}
 
 
 def _enum(v: Any, allowed: tuple[str, ...], what: str) -> str:
@@ -327,6 +327,13 @@ def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
                 raise MateError("proactive.interval must be 60, 180, 300 or 600")
             proactive["interval"] = source["interval"]
         if "guidance" in source: proactive["guidance"] = _s(source["guidance"], 1000).strip()
+        if "scope" in source: proactive["scope"] = _enum(source["scope"], ("all","screen"), "proactive scope")
+        if "preset" in source:
+            from .trigger.schemas import TriggerPresetManifest
+            try: proactive["preset"] = TriggerPresetManifest.model_validate(source["preset"]).model_dump() if source["preset"] else None
+            except ValueError as exc: raise MateError("Invalid Geny trigger preset: " + str(exc)) from exc
+    proactive.setdefault("scope","all")
+    proactive.setdefault("preset",None)
     out["proactive"] = proactive
     if patch is not None:
         if not isinstance(patch, dict):

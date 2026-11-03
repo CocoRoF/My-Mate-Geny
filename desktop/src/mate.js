@@ -85,7 +85,6 @@ let overlayFailed = false;
 let screenPicker = false;
 let screenSharing = false;
 let screenBusy = false;
-let capturing = false; // the windows are hidden for a screen capture (capture.js)
 
 // ── settings ───────────────────────────────────────────────────
 
@@ -671,7 +670,7 @@ function barAct(name) {
 // cursor polling (ailism): show the bar while the pointer is on the avatar or
 // the bar, hide it 450 ms after it leaves
 function tick() {
-  if (capturing || !alive(avatar) || !avatar.isVisible()) {
+  if (!alive(avatar) || !avatar.isVisible()) {
     if (alive(bar) && bar.isVisible()) bar.hide();
     return;
   }
@@ -1169,22 +1168,6 @@ function buildTray() {
 
 // ── screen capture (capture.js): out of the picture, and a visible sign that it happened ──
 
-/** hide the mate's windows (avatar, its bar, the quick card, the chat window) for a capture; → show them again */
-function hideForCapture(keepSourceId) {
-  const isTarget = (w) => { try { return keepSourceId && w.getMediaSourceId() === keepSourceId; } catch { return false; } };
-  const was = [avatar, bar, quick, chat].filter((w) => alive(w) && w.isVisible() && !isTarget(w)).map((w) => ({ w, focused: w.isFocused() }));
-  capturing = true;
-  for (const { w } of was) w.hide();
-  return () => {
-    capturing = false;
-    for (const { w, focused } of was) {
-      if (!alive(w) || w === bar) continue; // (the bar comes back with the pointer: tick)
-      if (focused) w.show();
-      else w.showInactive();
-    }
-  };
-}
-
 /** the media source ids of our see-through windows (not offered as something to share) */
 function ownSourceIds() {
   return [avatar, bar, quick].filter(alive).map((w) => {
@@ -1340,7 +1323,6 @@ module.exports = {
   clickThrough,
   isMoveMode: () => moveMode,
   broadcast,
-  hideForCapture,
   setCaptureSharing,
   openScreenSharing,
   ownSourceIds,

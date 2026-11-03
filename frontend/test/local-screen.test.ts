@@ -33,7 +33,7 @@ test("sharing is explicit, ephemeral and session scoped; source, mode and stop f
   assert.equal(file.type, "image/png");
   assert.equal(calls[1][1].mate_id, "session:sid");
   assert.equal(calls[1][1].ask, true);
-  assert.equal(calls[1][1].hide_avatar, true);
+  assert.equal(calls[1][1].hide_avatar, false);
   assert.equal(screen.sharingSnapshot()?.capturing, false);
   screen.setSharingMode("on_turn");
   assert.deepEqual(screen.sharedScopes(), { sid: "on_turn" });

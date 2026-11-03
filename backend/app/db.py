@@ -226,6 +226,11 @@ CREATE TABLE IF NOT EXISTS mates (
     updated_at  TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS mate_trigger_links (
+    owner_sid TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+    worker_sid TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS mate_memories (
     id         TEXT PRIMARY KEY,
     mate_id    TEXT NOT NULL,

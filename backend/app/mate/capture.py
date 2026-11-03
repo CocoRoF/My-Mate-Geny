@@ -99,6 +99,7 @@ class CaptureBroker:
         self._clients: dict[str, Client] = {}
         self._pending: dict[str, Pending] = {}
         self.discard_upload = lambda aid: None
+        self.on_consent_change = lambda: None
 
     # ---- the windows (one per /ws/sessions socket) ----
 
@@ -125,6 +126,7 @@ class CaptureBroker:
         for p in list(self._pending.values()):
             if p.conn == conn and p.shared and p.session_id not in c.shares:
                 self._revoke(p,"stopped")
+        self.on_consent_change()
         if msg.get("active"):
             c.active_at = time.monotonic()
 
@@ -133,6 +135,8 @@ class CaptureBroker:
         for p in list(self._pending.values()):
             if p.conn == conn:
                 self._revoke(p,"gone")
+
+        self.on_consent_change()
 
     def clients(self) -> list[Client]:
         return list(self._clients.values())

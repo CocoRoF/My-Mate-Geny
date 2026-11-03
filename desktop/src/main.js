@@ -566,23 +566,6 @@ const devicePreferences = require("./device-preferences").createDevicePreference
 });
 const captures = capture.createCapture({
   desktopCapturer, screen: require("electron").screen, systemPreferences, readSettings, writeSettings, preferences: devicePreferences,
-  hideWindows: async (source, hideConsole) => {
-    const restoreMate = mate.hideForCapture(source && source.id);
-    // A general capture also hides the console, unless it is the chosen target.
-    // X11 without a compositor can otherwise return its occlusion instead of the selected window.
-    let chosenConsole = false;
-    try { chosenConsole = !!(source && win && !win.isDestroyed() && source.id === win.getMediaSourceId()); } catch {}
-    const consoleWasVisible = hideConsole && win && !win.isDestroyed() && win.isVisible() && !chosenConsole;
-    const focused = consoleWasVisible && win.isFocused();
-    if (consoleWasVisible) win.hide();
-    return () => {
-      try { restoreMate(); } finally {
-        if (consoleWasVisible && win && !win.isDestroyed()) {
-          if (focused) win.show(); else win.showInactive();
-        }
-      }
-    };
-  },
   ownSourceIds: () => mate.ownSourceIds(),
   ask: (info) => asker.ask(info),
   cancelAsk: (id) => asker.cancel(id),

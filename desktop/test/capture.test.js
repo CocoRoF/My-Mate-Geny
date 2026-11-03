@@ -20,7 +20,7 @@ test("fitWithin: the long side at most maxEdge, never upscaled, 0 = as it is", (
 
 test("cleanOptions: sizes and formats from the page are checked", () => {
   assert.deepEqual(cleanOptions({ max_edge: 2560, format: "jpeg", quality: 12, hide_avatar: false }), { maxEdge: 2560, format: "jpeg", quality: 40, hideAvatar: false });
-  assert.deepEqual(cleanOptions({ maxEdge: 99999, format: "gif" }), { maxEdge: 1920, format: "png", quality: 85, hideAvatar: true });
+  assert.deepEqual(cleanOptions({ maxEdge: 99999, format: "gif" }), { maxEdge: 1920, format: "png", quality: 85, hideAvatar: false });
   assert.equal(cleanOptions({ maxEdge: 0 }).maxEdge, 0);
 });
 
@@ -105,7 +105,7 @@ function rig(over = {}) {
 
 const REQ = { id: "cap_1", mate_id: "mate_a", mate_name: "Estelle", ask: true, hide_avatar: true, max_edge: 1920, format: "png", quality: 85, timeout_ms: 45000 };
 
-test("request: asked and allowed → the avatar windows hide, the primary screen is captured at most 1920 px, shown again", async () => {
+test("request: captures the primary screen without hiding or showing any app window", async () => {
   const { cap, log } = rig();
   const r = await cap.request(REQ);
   assert.equal(r.ok, true);
@@ -114,9 +114,9 @@ test("request: asked and allowed → the avatar windows hide, the primary screen
   assert.equal(String(r.data), "PNG 1920x1080");
   assert.deepEqual(r.source, { id: "screen:0:0", name: "Screen 1", kind: "screen", display_id: "11" });
   const steps = log.map((x) => x[0]);
-  assert.deepEqual(steps, ["getSources", "getSources", "ask", "indicate", "hide", "getSources", "show", "indicate"]);
+  assert.deepEqual(steps, ["getSources", "getSources", "ask", "indicate", "getSources", "indicate"]);
   assert.deepEqual(log.find((x) => x[0] === "ask"), ["ask", "Estelle", "screen:0:0", true, null]);
-  assert.deepEqual(log[5], ["getSources", "screen", "1920x1080"]); // only screens, at the capture size
+  assert.deepEqual(log[4], ["getSources", "screen", "1920x1080"]); // only screens, at the capture size
   assert.deepEqual(log.at(-1), ["indicate", "done", "Estelle"]);
 });
 
@@ -179,7 +179,7 @@ test("grab (Share screen) and the picker's sources", async () => {
   assert.equal(r.ok, true);
   assert.equal(r.source.id, "window:77:0");
   assert.ok(Math.max(r.width, r.height) <= 1280);
-  assert.ok(log.some((x) => x[0] === "hide"));
+  assert.ok(!log.some((x) => ["hide","show"].includes(x[0])));
   assert.equal((await cap.grab({ sourceId: "window:404:0" })).code, "source_gone");
   const list = await cap.sources({ thumbnails: true, size: 320 });
   assert.deepEqual(list.map((s) => s.id), ["screen:1:0", "screen:0:0", "window:77:0", "window:89:0"]); // (not our own windows)
@@ -249,7 +249,7 @@ test("session sharing never replaces a missing selected screen or window", async
 });
 
 
-test('cancel during native capture restores windows immediately and discards late bytes', async () => {
+test('cancel during native capture never changes window visibility and discards late bytes', async () => {
   let release, entered;
   const begun = new Promise(r => entered = r);
   const { cap, log } = rig({ deps: { desktopCapturer: { getSources: async ({types,thumbnailSize}) => {
@@ -258,7 +258,7 @@ test('cancel during native capture restores windows immediately and discards lat
   } } } });
   const request=cap.request({...REQ,id:'cancel-late',ask:false});
   await begun;cap.cancel('cancel-late');
-  assert.ok(log.some(x=>x[0]==='show'),'hidden windows restored before native API completes');
+  assert.ok(!log.some(x=>['hide','show'].includes(x[0])),'no app window should be hidden or restored');
   release();const result=await request;assert.equal(result.ok,false);assert.equal(result.code,'stopped');
 });
 
@@ -268,4 +268,10 @@ test('app settings override stale per-mate capture request options', async () =>
   const shot=await cap.request({...REQ,ask:true,max_edge:2560,format:'png',hide_avatar:true});
   assert.equal(shot.mime,'image/jpeg');assert.equal(String(shot.data),'JPEG 1280x720 q70');assert.ok(!log.some(x=>x[0]==='ask'));assert.ok(!log.some(x=>x[0]==='hide'));
   cap.setChoice('different-mate',SOURCES[0]);assert.equal(cap.getChoice('another-mate').id,SOURCES[0].id);
+});
+
+test("legacy hide options never hide or restore windows across repeated captures",async()=>{
+ const {cap,log}=rig();
+ for(let i=0;i<3;i++)assert.equal((await cap.grab({sourceId:'screen:0:0',hideAvatar:true,hideConsole:true})).ok,true);
+ assert.ok(!log.some(x=>['hide','show'].includes(x[0])));
 });
