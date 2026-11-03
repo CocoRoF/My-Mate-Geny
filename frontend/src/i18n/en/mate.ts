@@ -1,5 +1,10 @@
 // The Mate view, its composer and conversation, the avatar, and the desktop app's Mate windows.
 export default {
+  speechFinalizeNow: "Request the reply now",
+  speechReceived: "Received · continuations update this message",
+  speechLate: "A continuation arrived after its message was finalized. It is kept in the input box for you to review and send.",
+  speechFailed: "Could not deliver the speech message.",
+  speechSaveFailed: "Could not preserve the speech draft on this device. The input remains unsent.",
   // moods (under her name)
   moodListening: "listening…",
   moodThinking: "thinking…",

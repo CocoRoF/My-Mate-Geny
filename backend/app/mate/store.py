@@ -185,6 +185,7 @@ def normalize_voice(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
     stt = {"engine": "browser", "model": "", "language": "", "auto_send": False, "barge_in": True,
            "silence": STT_SILENCE[2], "merge_fragments": True, "continuation_grace": 1.8,
            "ignore_short_fragments": False, **(base.get("stt") or {})}
+    stt["continuation_grace"] = max(float(stt["silence"]), float(stt["continuation_grace"]))
     out = {"auto_read": bool(base.get("auto_read", True)), "volume": _volume(base.get("volume", 1.0)),
            "tts": tts, "stt": stt}
     if patch is None:
@@ -239,6 +240,9 @@ def normalize_voice(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
             if isinstance(ps["silence"], bool):
                 raise MateError("voice.stt.silence must be a number of seconds")
             stt["silence"] = round(_num(ps["silence"], *STT_SILENCE), 2)
+    if ps is not None and "continuation_grace" in ps and stt["continuation_grace"] < stt["silence"]:
+        raise MateError("voice.stt.continuation_grace must be at least voice.stt.silence")
+    stt["continuation_grace"] = max(stt["continuation_grace"], stt["silence"])
     return out
 
 

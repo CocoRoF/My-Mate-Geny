@@ -199,7 +199,8 @@ function ActivityChip({ tool }: { tool: ToolActivity }) {
 }
 
 /** what the user said: the files they attached (thumbnails / file cards, like the Chat view), then the text */
-function UserBubble({ text, attachments, pending, compact }: { text: string; attachments?: Attachment[]; pending?: boolean; compact?: boolean }) {
+function UserBubble({ text, attachments, pending, collecting, compact }: { text: string; attachments?: Attachment[]; pending?: boolean; collecting?: boolean; compact?: boolean }) {
+  const t=useT();
   return (
     <div className={`flex w-full min-w-0 flex-col items-end gap-1.5 ${pending ? "opacity-70" : ""}`} data-testid="mate-user-message">
       {!!attachments?.length && (
@@ -218,6 +219,7 @@ function UserBubble({ text, attachments, pending, compact }: { text: string; att
           {text}
         </div>
       )}
+      {collecting&&<span className="text-[10px] text-content-faint" data-testid="speech-received-label">{t("mate.speechReceived")}</span>}
     </div>
   );
 }
@@ -282,7 +284,7 @@ const AssistantBubbles = memo(function AssistantBubbles({ turn, compact }: { tur
       const t = toolsById.get(f.toolId);
       if (t) items.push(<ActivityChip key={i} tool={t} />);
     } else if (f.kind === "steer") {
-      items.push(<UserBubble key={i} text={f.text} attachments={f.attachments} pending={f.pending} compact={compact} />);
+      items.push(<UserBubble key={i} text={f.text} attachments={f.attachments} pending={f.pending} collecting={!!f.meta?.speech_pending} compact={compact} />);
     } else if (f.kind === "notice") {
       items.push(
         <div key={i} className={`text-[11.5px] ${f.level === "warning" ? "text-warning" : "text-content-faint"}`}>
@@ -333,7 +335,7 @@ export default function MateMessages({
             if (t.role === "user") {
               if (t.meta?.internal && t.meta.kind === "delegation_result") return <DelegationCards key={t.key} turn={t} />;
               if (t.meta?.internal) return null;
-              return <UserBubble key={t.key} text={t.text} attachments={t.attachments} compact={compact} />;
+              return <UserBubble key={t.key} text={t.text} attachments={t.attachments} collecting={!!t.meta?.speech_pending} compact={compact} />;
             }
             if (t.role === "system") {
               const reset = t.code === "context.reset";

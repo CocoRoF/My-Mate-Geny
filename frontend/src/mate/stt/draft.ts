@@ -5,6 +5,7 @@ export interface SpeechDraftOptions {
   autoSend: boolean;
   merge: boolean;
   grace: number;
+  silence?: number;
   ignoreShort: boolean;
 }
 const clean = (s: string) => s.normalize("NFC").replace(/\s+/gu, " ").trim();
@@ -17,146 +18,240 @@ export function joinTranscript(a: string, b: string): string {
   const left = a.split(" "),
     right = b.split(" ");
   for (let n = Math.min(left.length, right.length); n > 0; n--) {
-    if (
-      (n > 1 || right[0].length >= 3) &&
-      left.slice(-n).join(" ") === right.slice(0, n).join(" ")
-    ) {
+    if ((n > 1 || right[0].length >= 3) && left.slice(-n).join(" ") === right.slice(0, n).join(" ")) {
       b = right.slice(n).join(" ");
       break;
     }
   }
-  return b
-    ? /^[,.;:!?，。！？]/u.test(b) || /[([{“‘]$/u.test(a)
-      ? a + b
-      : joinText(a, b)
-    : a;
+  return b ? (/^[,.;:!?，。！？]/u.test(b) || /[([{“‘]$/u.test(a) ? a + b : joinText(a, b)) : a;
 }
+export interface SpeechPacket {
+  group_id: string;
+  client_msg_id: string;
+  revision: number;
+  op: "submit" | "touch";
+  input?: string;
+  window_ms: number;
+  idle_ms: number;
+  activity_at: number;
+}
+/** Parallel deadlines: send at last activity + silence; the SERVER releases at last activity + grace. */
 export function createSpeechDraft(deps: {
   read: () => string;
   write: (text: string) => void;
-  send: (text: string) => void;
+  send: (text: string, packet: SpeechPacket) => boolean | void;
+  touch?: (packet: SpeechPacket) => void;
   changed?: () => void;
+  late?: () => void;
+  id?: () => string;
+  now?: () => number;
   later?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
   cancel?: (id: ReturnType<typeof setTimeout>) => void;
 }) {
-  let options: SpeechDraftOptions = {
-    autoSend: false,
-    merge: true,
-    grace: 1.8,
-    ignoreShort: false,
-  };
+  let options: SpeechDraftOptions = { autoSend: false, merge: true, grace: 4, silence: 1.2, ignoreShort: false };
+  const now = deps.now ?? Date.now;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let pending = false,
-    held = false,
+  let held = false,
     busy = false,
-    partial = "",
+    speaking = false,
+    disposed = false,
+    ready = true,
+    audioSeen = false;
+  let partial = "",
     consumed = "",
-    disposed = false;
-  const cancel = () => {
+    lastActivity = -Infinity,
+    lastTouch = -Infinity;
+  let group: { id: string; accepted: string; partialBase: string | null; sentPartial: string; lastText: string; revision: number } | null = null;
+  let manualFull: string | null = null;
+  const clear = () => {
     if (timer !== undefined) (deps.cancel ?? clearTimeout)(timer);
     timer = undefined;
   };
+  const active = () => !!group && now() - lastActivity <= (options.merge ? options.grace : options.silence!) * 1000;
+  const expire = () => {
+    if (group && !active()) {
+      group = null;
+    }
+  };
+  const packet = (force = false, op: "submit" | "touch" = "submit"): SpeechPacket => ({
+    group_id: group!.id,
+    client_msg_id: group!.id,
+    revision: group!.revision,
+    op,
+    window_ms: force ? 0 : (options.merge ? options.grace : options.silence!) * 1000,
+    idle_ms: Math.max(0, now() - lastActivity),
+    activity_at: lastActivity,
+  });
+  const remainder = (text: string) => {
+    text = clean(text);
+    const prefix = consumed || group?.sentPartial || "";
+    if (!prefix || !text.startsWith(prefix)) return text;
+    const tail = text.slice(prefix.length).trimStart();
+    return /^[.,!?;:…，。！？]*$/u.test(tail) ? "" : tail;
+  };
+  const full = () => joinTranscript(group?.partialBase ?? group?.accepted ?? "", joinTranscript(deps.read(), partial));
+  const ensure = () => {
+    expire();
+    if (!group) {
+      const id = deps.id?.() ?? `speech-${now()}-${Math.random().toString(36).slice(2)}`;
+      group = { id, accepted: "", partialBase: null, sentPartial: "", lastText: "", revision: 0 };
+    }
+  };
+  const deliver = (force = false, override?: string) => {
+    ensure();
+    const text = override ?? full();
+    if (!text.trim()) return false;
+    if (!force && text === group!.lastText) return true;
+    group!.revision++;
+    const accepted = deps.send(text, { ...packet(force), input: text });
+    if (accepted === false) {
+      group!.revision--;
+      return false;
+    }
+    if (partial) {
+      group!.partialBase = joinTranscript(group!.partialBase ?? group!.accepted, deps.read());
+      group!.sentPartial = partial;
+    } else {
+      group!.accepted = text;
+      group!.partialBase = null;
+      group!.sentPartial = "";
+    }
+    group!.lastText = text;
+    deps.write("");
+    deps.changed?.();
+    return true;
+  };
   const schedule = () => {
-    cancel();
-    if (disposed || !pending || held || busy || partial || !options.autoSend)
-      return;
+    clear();
+    if (disposed || !ready || held || busy || speaking || !options.autoSend) return;
+    if (!deps.read().trim() && !partial && (!group || group.accepted === group.lastText)) return;
     timer = (deps.later ?? setTimeout)(
       () => {
         timer = undefined;
-        if (
-          disposed ||
-          !pending ||
-          held ||
-          busy ||
-          partial ||
-          !options.autoSend
-        )
-          return;
-        const text = deps.read().trim();
-        pending = false;
-        if (text) {
-          deps.write("");
-          deps.send(text);
-        }
+        if (!disposed && !held && !busy && !speaking && ready) deliver();
       },
-      options.merge ? options.grace * 1000 : 0,
+      Math.max(0, lastActivity + options.silence! * 1000 - now()),
     );
   };
-  const remainder = (text: string) => {
-    text = clean(text);
-    if (!consumed || !text.startsWith(consumed)) return text;
-    const tail = text.slice(consumed.length).trimStart();
-    // The final recognizer result can add punctuation to a partial already sent manually.
-    return /^[.,!?;:…，。！？]*$/u.test(tail) ? "" : tail;
+  const activity = (audio = true) => {
+    expire();
+    lastActivity = now();
+    if (audio) audioSeen = true;
+    if (group && now() - lastTouch >= 150) {
+      lastTouch = now();
+      deps.touch?.(packet(false, "touch"));
+    }
+    schedule();
   };
   return {
     configure(next: SpeechDraftOptions) {
-      const value = {
-        ...next,
-        grace: Math.min(5, Math.max(0.5, Number(next.grace) || 1.8)),
-      };
-      if (JSON.stringify(options) !== JSON.stringify(value)) {
+      const silence = Math.min(3, Math.max(0.5, Number(next.silence) || 1.2));
+      const value = { ...next, silence, grace: Math.min(5, Math.max(silence, Number(next.grace) || 4)) };
+      if (JSON.stringify(value) !== JSON.stringify(options)) {
         options = value;
         schedule();
       }
     },
     segment(text: string) {
-      const tail = remainder(text);
+      const tail = consumed ? remainder(text) : clean(text);
       consumed = "";
-      partial = "";
       if (options.ignoreShort && /^[\p{L}\p{N}]{1,2}[.!?]?$/u.test(tail)) {
+        partial = "";
         schedule();
         return;
       }
-      if (tail) {
-        if (!deps.read().trim() && !pending) held = false;
-        deps.write(joinTranscript(deps.read(), tail));
-        pending = true;
+      if (!Number.isFinite(lastActivity)) lastActivity = now() - options.silence! * 1000;
+      if (group?.partialBase !== null && group?.partialBase !== undefined && !active()) {
+        const rest = tail.startsWith(group.sentPartial) ? tail.slice(group.sentPartial.length).trim() : tail;
+        group = null;
+        partial = "";
+        if (rest && !/^[.,!?;:…，。！？]*$/u.test(rest)) {
+          deps.write(joinTranscript(deps.read(), rest));
+          held = true;
+          deps.late?.();
+        }
+        deps.changed?.();
+        return;
       }
+      if (group?.partialBase !== null && group?.partialBase !== undefined) {
+        group.accepted = joinTranscript(group.partialBase, tail);
+        group.partialBase = null;
+        group.sentPartial = "";
+      } else if (tail) deps.write(joinTranscript(deps.read(), tail));
+      partial = "";
+      audioSeen = false;
       schedule();
       deps.changed?.();
     },
     partial(text: string) {
-      partial = remainder(text);
+      const next = clean(text);
+      if (next && next !== partial && !audioSeen && !speaking) activity(false);
+      partial = consumed ? remainder(next) : next;
       schedule();
     },
+    activity() {
+      activity();
+    },
+    speaking(value: boolean) {
+      if (value !== speaking) {
+        speaking = value;
+        activity();
+      }
+    },
     busy(value: boolean) {
-      if (busy !== value) {
+      if (value !== busy) {
         busy = value;
         schedule();
       }
     },
-    activity() {
-      if (pending) schedule();
+    ready(value: boolean) {
+      ready = value;
+      schedule();
     },
-    /** Editing (including composition/cross-window draft changes) holds auto-send until an explicit send or clear. */
     edit(visiblePartial = "") {
-      cancel();
-      held = !!deps.read().trim();
-      if (!held) pending = false;
+      clear();
+      held = true;
       if (visiblePartial) consumed = clean(visiblePartial);
       partial = "";
+      if (group) activity(false);
+      if (!deps.read().trim()) held = false;
       deps.changed?.();
     },
     manual(text: string, visiblePartial: string) {
-      const tail = remainder(visiblePartial);
-      const result = tail ? joinTranscript(text, tail) : text;
-      cancel();
-      pending = false;
-      held = false;
-      if (visiblePartial) consumed = clean(visiblePartial);
+      clear();
+      expire();
+      manualFull = group ? full() : null;
+      const result = group ? manualFull! : remainder(visiblePartial) ? joinTranscript(text, remainder(visiblePartial)) : text;
+      consumed = clean(visiblePartial);
       partial = "";
+      held = false;
       deps.changed?.();
       return result;
     },
-    // Read before manual() consumes the current partial.
+    manualDispatch(): boolean | undefined {
+      if (manualFull === null) return undefined;
+      const text = manualFull;
+      manualFull = null;
+      const ok = deliver(true, text);
+      if (ok) {
+        group = null;
+        lastActivity = -Infinity;
+      }
+      return ok;
+    },
+    closed(id: string) {
+      if(group?.id!==id)return;
+      if(group.partialBase!==null)consumed=group.sentPartial;
+      group=null;manualFull=null;clear();deps.changed?.();
+    },
+    canFinalize: () => active() && !!group?.lastText,
     visiblePartial: remainder,
     resume() {
       disposed = false;
     },
     dispose() {
       disposed = true;
-      cancel();
+      clear();
     },
   };
 }

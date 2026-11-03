@@ -169,6 +169,22 @@ CREATE TABLE IF NOT EXISTS attachments (
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
+-- Accepted speech remains durable while its response window is open. Delivered rows retain only identity.
+CREATE TABLE IF NOT EXISTS speech_inputs (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    client_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    text TEXT NOT NULL,
+    attachments TEXT NOT NULL DEFAULT '[]',
+    revision INTEGER NOT NULL,
+    created_at REAL NOT NULL,
+    deadline REAL NOT NULL,
+    state TEXT NOT NULL DEFAULT 'pending'
+);
+CREATE INDEX IF NOT EXISTS idx_speech_pending ON speech_inputs(session_id,state);
+
 -- Admin: everything that went wrong (provider/tool/http/ws/auth/client/...).
 CREATE TABLE IF NOT EXISTS error_logs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

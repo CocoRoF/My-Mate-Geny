@@ -66,7 +66,7 @@ export interface MessageMeta {
   [k: string]: unknown;
 }
 
-const META_KEYS = ["via", "internal", "kind", "delegations"] as const;
+const META_KEYS = ["via", "internal", "kind", "delegations", "speech_group", "speech_pending", "speech_at"] as const;
 
 /** The meta keys a live user.message / user.steer event carries in `data`. */
 function metaOf(data: Record<string, any>): MessageMeta | undefined {
@@ -357,6 +357,17 @@ function unlazyTurn(turn: Turn, ids: Set<string>, full: Map<number, ProviderEven
   return tools ? { ...turn, tools } : turn;
 }
 
+/** Update an accepted speech bubble in place, including a steer inside an earlier reply. */
+function updateSpeech(turns: Turn[], group: string, text: string | undefined, meta: MessageMeta, attachments?: Attachment[]): boolean {
+  for (let i=0;i<turns.length;i++) {
+    const t=turns[i];
+    if(t.meta?.speech_group===group) {turns[i]={...t,...(text!==undefined?{text}:{}),...(attachments?{attachments}:{}),meta:{...t.meta,...meta}};return true;}
+    const index=t.flow.findIndex(f=>f.kind==='steer'&&f.meta?.speech_group===group);
+    if(index>=0) {turns[i]={...t,flow:t.flow.map((f,n)=>n===index&&f.kind==='steer'?{...f,...(text!==undefined?{text}:{}),...(attachments?{attachments}:{}),pending:false,meta:{...f.meta,...meta}}:f)};return true;}
+  }
+  return false;
+}
+
 /** Apply one event to `turns` (a fresh array the caller owns). Returns extra
  * state changes for the store. */
 function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
@@ -500,7 +511,17 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
       }
       return { isStreaming: running };
     }
+    case "speech.pending": {
+      const meta={speech_group:String(data.group_id),speech_pending:true,speech_at:data.at};
+      if(!updateSpeech(turns,String(data.group_id),String(data.text||""),meta,data.attachments)) {
+        reduce(turns,{...ev,type:data.role==='steer'?'user.steer':'user.message',data:{...data,...meta}});
+      }
+      break;
+    }
+    case "speech.closed":
+      updateSpeech(turns,String(data.group_id),data.accepted_text,{speech_pending:false},data.attachments);break;
     case "user.steer": {
+      if(data.speech_group && updateSpeech(turns,String(data.speech_group),String(data.text||""),metaOf(data)||{},data.attachments)) break;
       const cid = data.client_msg_id ? String(data.client_msg_id) : "";
       const item = {
         kind: "steer" as const,
@@ -543,6 +564,7 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
       break;
     }
     case "user.message": {
+      if(data.speech_group && updateSpeech(turns,String(data.speech_group),String(data.text||""),metaOf(data)||{},data.attachments)) break;
       const cid = data.client_msg_id ? String(data.client_msg_id) : "";
       if (cid && ownMessages.has(cid)) {
         ownMessages.delete(cid);
@@ -573,12 +595,17 @@ function reconstruct(
   park?: (turns: Turn[], ev: ProviderEvent) => boolean,
 ): Turn[] {
   type Item = { at: string; order: number; eid: number; user?: ChatMessage; ev?: ProviderEvent };
+  const speechAnchors = new Set(events.filter(e=>e.type==='user.steer'&&e.data?.speech_group).map(e=>String(e.data.speech_group)));
+  const speechMessages = new Map(messages.filter(m=>m.meta?.speech_group).map(m=>[String(m.meta!.speech_group),m]));
   const items: Item[] = [
     ...messages
       // (+ a mate's greeting: an assistant message with no turn behind it)
-      .filter((m) => m.role === "user" || (m.role === "assistant" && m.meta?.kind === "greeting"))
+      .filter((m) => (m.role === "user" && !(m.meta?.speech_group && speechAnchors.has(String(m.meta.speech_group)))) || (m.role === "assistant" && m.meta?.kind === "greeting"))
       .map((m) => ({ at: m.created_at || "", order: 0, eid: 0, user: m })),
-    ...events.map((e) => ({ at: e.timestamp, order: 1, eid: e.eid || 0, ev: e })),
+    ...events.map((e) => {
+      const msg=e.type==='user.steer'&&e.data?.speech_group?speechMessages.get(String(e.data.speech_group)):undefined;
+      return {at:e.timestamp,order:1,eid:e.eid||0,ev:msg?{...e,data:{...e.data,text:msg.content,...msg.meta}}:e};
+    }),
   ];
   items.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.order - b.order || a.eid - b.eid));
   const turns: Turn[] = [];

@@ -26,6 +26,7 @@ export interface PreviewFlags {
   sttBargeIn?: boolean;
   sttMergeFragments?: boolean;
   sttContinuationGrace?: number;
+  sttSilence?: number;
   sttIgnoreShort?: boolean;
 }
 

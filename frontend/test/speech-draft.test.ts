@@ -1,18 +1,26 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createSpeechDraft, joinTranscript } from "../src/mate/stt/draft.ts";
+import { createSpeechDraft, joinTranscript, type SpeechPacket } from "../src/mate/stt/draft.ts";
+import { browserResults } from "../src/mate/stt/browser.ts";
 function setup(options = {}) {
   let box = "",
     now = 0,
-    id = 0;
-  const timers = new Map<number, { at: number; fn: () => void }>(),
-    sent: string[] = [];
+    id = 0,
+    nextGroup = 0;
+  const timers = new Map<number, { at: number; fn: () => void }>();
+  const sent: { at: number; text: string; packet: SpeechPacket }[] = [],
+    touches: SpeechPacket[] = [];
   const draft = createSpeechDraft({
     read: () => box,
     write: (t) => {
       box = t;
     },
-    send: (t) => sent.push(t),
+    send: (text, packet) => {
+      sent.push({ at: now, text, packet });
+    },
+    touch: (p) => touches.push(p),
+    now: () => now,
+    id: () => `voice-${++nextGroup}`,
     later: (fn, ms) => {
       const key = ++id;
       timers.set(key, { at: now + ms, fn });
@@ -22,193 +30,233 @@ function setup(options = {}) {
       timers.delete(key as any);
     },
   });
-  draft.configure({
-    autoSend: true,
-    merge: true,
-    grace: 1.8,
-    ignoreShort: false,
-    ...options,
-  });
+  draft.configure({ autoSend: true, merge: true, silence: 1.8, grace: 4, ignoreShort: false, ...options });
   const tick = (ms: number) => {
     const end = now + ms;
+    let guard = 0;
     for (;;) {
       const entry = [...timers].sort((a, b) => a[1].at - b[1].at)[0];
       if (!entry || entry[1].at > end) break;
+      if (++guard > 100) throw Error("timer loop");
       now = entry[1].at;
       timers.delete(entry[0]);
       entry[1].fn();
     }
     now = end;
   };
+  const speech = (text: string) => {
+    draft.activity();
+    draft.partial(text);
+  };
   return {
     draft,
     sent,
+    touches,
     tick,
+    speech,
     get box() {
       return box;
     },
-    edit: (t: string) => {
-      box = t;
+    get now() {
+      return now;
+    },
+    edit: (text: string) => {
+      box = text;
       draft.edit();
     },
   };
 }
-test("three interrupted fragments form one live draft and one message", () => {
+test("receive at 1.8 seconds, parallel response deadline 4 seconds, never 5.8", () => {
   const s = setup();
-  s.draft.segment("화면 공유를");
-  s.tick(1200);
-  s.draft.segment("켜 둔 상태로");
-  s.tick(1200);
-  s.draft.segment("다시 열어 줘.");
-  assert.equal(s.box, "화면 공유를 켜 둔 상태로 다시 열어 줘.");
+  s.speech("첫 문장");
   s.tick(1799);
-  assert.deepEqual(s.sent, []);
+  assert.equal(s.sent.length, 0);
   s.tick(1);
-  assert.deepEqual(s.sent, ["화면 공유를 켜 둔 상태로 다시 열어 줘."]);
+  assert.equal(s.sent[0].at, 1800);
+  assert.equal(s.sent[0].packet.window_ms, 4000);
+  assert.equal(s.sent[0].packet.idle_ms, 1800);
+  assert.equal(s.sent[0].at + s.sent[0].packet.window_ms - s.sent[0].packet.idle_ms, 4000);
   assert.equal(s.box, "");
+  s.draft.segment("첫 문장.");
+  s.tick(0);
+  assert.equal(new Set(s.sent.map((p) => p.packet.group_id)).size, 1);
+  assert.equal(s.sent.at(-1)?.text, "첫 문장.");
 });
-test("a partial or speech activity postpones sending; waiting has no forced timeout", () => {
+test("three-second pauses update the already received SAME group, not separate steers", () => {
   const s = setup();
-  s.draft.segment("이 설정은");
-  s.tick(1500);
-  s.draft.partial("앱마다");
-  s.tick(15000);
-  assert.equal(s.sent.length, 0);
-  s.draft.partial("");
-  s.draft.segment("앱마다 저장해");
-  s.tick(1700);
-  s.draft.activity();
-  s.tick(1700);
-  assert.equal(s.sent.length, 0);
+  s.speech("첫 조각");
+  s.tick(1800);
+  s.draft.segment("첫 조각");
+  s.tick(1200);
+  s.speech("둘째 조각");
+  s.tick(1800);
+  s.draft.segment("둘째 조각");
+  s.tick(1200);
+  s.speech("셋째 조각");
+  s.tick(1800);
+  s.draft.segment("셋째 조각");
+  s.tick(0);
+  assert.deepEqual(
+    s.sent.map((x) => x.at),
+    [1800, 4800, 7800],
+  );
+  assert.equal(new Set(s.sent.map((x) => x.packet.group_id)).size, 1);
+  assert.equal(s.sent.at(-1)?.text, "첫 조각 둘째 조각 셋째 조각");
+  assert.equal(s.touches.length, 2);
+});
+test("continuation immediately after send remains in the group; after four seconds is a new group", () => {
+  const s = setup();
+  s.speech("처음");
+  s.tick(1800);
+  s.draft.segment("처음");
   s.tick(100);
-  assert.equal(s.sent.length, 1);
+  s.speech("계속");
+  s.tick(1800);
+  s.draft.segment("계속");
+  s.tick(0);
+  assert.equal(new Set(s.sent.map((x) => x.packet.group_id)).size, 1);
+  assert.equal(s.sent.at(-1)?.text, "처음 계속");
+  s.tick(2301);
+  s.speech("새 요청");
+  s.tick(1800);
+  assert.equal(new Set(s.sent.map((x) => x.packet.group_id)).size, 2);
+  assert.equal(s.sent.at(-1)?.text, "새 요청");
 });
-test("typing/composition cancels auto-send; more speech joins the edited draft but does not send it", () => {
+test("a late recognizer final does not start another silence timer or duplicate a sent partial", () => {
   const s = setup();
-  s.draft.segment("여기를");
-  s.tick(1000);
-  s.edit("여기를 직접 수정");
-  s.draft.segment("그리고 확인해 줘");
-  s.tick(20000);
+  s.speech("아직 인식 중");
+  s.tick(1800);
+  s.tick(300);
+  s.draft.segment("인식이 끝난 문장.");
+  s.tick(0);
+  assert.deepEqual(
+    s.sent.map((x) => x.at),
+    [1800, 2100],
+  );
+  assert.equal(s.sent[0].packet.group_id, s.sent[1].packet.group_id);
+  assert.equal(s.sent[1].text, "인식이 끝난 문장.");
+});
+test("new speech postpones the next send without waiting for the final result", () => {
+  const s = setup();
+  s.speech("앞부분");
+  s.tick(1500);
+  s.draft.activity();
+  s.tick(1500);
   assert.equal(s.sent.length, 0);
-  assert.equal(s.box, "여기를 직접 수정 그리고 확인해 줘");
-});
-test("manual send is immediate, consumes a visible partial, and its final cannot duplicate it", () => {
-  const s = setup();
-  s.draft.segment("먼저");
-  s.draft.partial("설정을 확인해");
-  const text = s.draft.manual(s.box, "설정을 확인해");
-  assert.equal(text, "먼저 설정을 확인해");
-  s.edit("");
-  s.sent.push(text);
-  s.draft.partial("");
-  s.draft.segment("설정을 확인해.");
-  s.tick(3000);
+  s.tick(300);
   assert.equal(s.sent.length, 1);
-  s.draft.segment("다음 작업도 해 줘");
-  s.tick(1800);
-  assert.equal(s.sent.length, 2);
 });
-test("follow-up after a sent message is a new send; steering is delegated unchanged", () => {
+test("typing cancels automatic sending and microphone recording/transcription hold the draft", () => {
   const s = setup();
-  s.draft.segment("첫 요청");
-  s.tick(1800);
-  s.draft.segment("이어지는");
+  s.speech("말하다가");
   s.tick(1000);
-  s.draft.segment("추가 요청");
-  s.tick(1800);
-  assert.deepEqual(s.sent, ["첫 요청", "이어지는 추가 요청"]);
-});
-test("all engines hold during recording/transcription; auto-send off waits; enable alone does not send old typed text", () => {
-  const s = setup();
-  s.draft.busy(true);
-  s.draft.segment("Whisper transcript");
+  s.edit("직접 고친 내용");
+  s.draft.segment("계속된 말");
   s.tick(10000);
   assert.equal(s.sent.length, 0);
-  s.draft.busy(false);
-  s.tick(1800);
-  assert.equal(s.sent.length, 1);
-  const manual = setup({ autoSend: false });
-  manual.draft.segment("browser transcript");
-  manual.tick(5000);
-  assert.equal(manual.box, "browser transcript");
-  assert.equal(manual.sent.length, 0);
-  const typed = setup({ autoSend: false });
-  typed.edit("기존 글");
-  typed.draft.configure({
-    autoSend: true,
-    merge: true,
-    grace: 1.8,
-    ignoreShort: false,
-  });
-  typed.tick(10000);
-  assert.equal(typed.sent.length, 0);
+  const w = setup();
+  w.draft.speaking(true);
+  w.draft.busy(true);
+  w.tick(1000);
+  w.draft.speaking(false);
+  w.tick(2000);
+  w.draft.segment("Whisper 확정");
+  w.draft.busy(false);
+  w.tick(0);
+  assert.equal(w.sent.length, 1);
+  assert.equal(w.sent[0].at, 3000);
 });
-test("manual send preserves markdown/newlines; optional noise filter is off by default", () => {
+test("manual send forces an existing accepted group immediately; manual-only mode never autosends", () => {
+  const s = setup();
+  s.speech("이미 보낸 말");
+  s.tick(1800);
+  s.draft.segment("이미 보낸 말");
+  s.edit("직접 추가");
+  const text = s.draft.manual(s.box, "");
+  assert.equal(text, "이미 보낸 말 직접 추가");
+  assert.equal(s.draft.manualDispatch(), true);
+  assert.equal(s.sent.at(-1)?.packet.window_ms, 0);
+  const off = setup({ autoSend: false });
+  off.speech("입력 초안");
+  off.draft.segment("입력 초안");
+  off.tick(10000);
+  assert.equal(off.sent.length, 0);
+  assert.equal(off.box, "입력 초안");
+});
+test("manual sends preserve markdown and later final punctuation cannot create a new message", () => {
   const s = setup();
   assert.equal(s.draft.manual("```\ncode\n```", ""), "```\ncode\n```");
-  s.draft.segment("네");
-  s.tick(1800);
-  assert.deepEqual(s.sent, ["네"]);
-  const filtered = setup({ ignoreShort: true });
-  filtered.draft.segment("음");
-  filtered.tick(1800);
-  assert.equal(filtered.sent.length, 0);
-});
-test("cancel/dispose cannot send; disabling merge preserves immediate mode; changed grace is live", () => {
-  const s = setup();
-  s.draft.segment("전송 금지");
-  s.draft.dispose();
+  assert.equal(s.draft.manualDispatch(), undefined);
+  s.draft.partial("수동 전송 문장");
+  assert.equal(s.draft.manual("", "수동 전송 문장"), "수동 전송 문장");
+  s.draft.segment("수동 전송 문장.");
   s.tick(10000);
   assert.equal(s.sent.length, 0);
-  const old = setup({ merge: false });
-  old.draft.segment("바로 전송");
-  old.tick(0);
-  assert.equal(old.sent.length, 1);
-  const live = setup();
-  live.draft.segment("대기");
-  live.tick(1000);
-  live.draft.configure({
-    autoSend: true,
-    merge: true,
-    grace: 3,
-    ignoreShort: false,
-  });
-  live.tick(2999);
-  assert.equal(live.sent.length, 0);
-  live.tick(1);
-  assert.equal(live.sent.length, 1);
 });
-test("fragment joins normalize spaces, punctuation and substantial overlap without deleting short repetition", () => {
-  assert.equal(
-    joinTranscript("설정을 확인해", "확인해 주세요."),
-    "설정을 확인해 주세요.",
-  );
-  assert.equal(
-    joinTranscript("hello there", "there are things"),
-    "hello there are things",
-  );
+test("short noise filtering optional, disabled merge uses the send pause, dispose cancels timers", () => {
+  const noise = setup({ ignoreShort: true });
+  noise.draft.segment("음");
+  noise.tick(5000);
+  assert.equal(noise.sent.length, 0);
+  const plain = setup({ merge: false });
+  plain.speech("즉시 모드");
+  plain.tick(1800);
+  assert.equal(plain.sent[0].packet.window_ms, 1800);
+  const stopped = setup();
+  stopped.speech("전송 금지");
+  stopped.draft.dispose();
+  stopped.tick(5000);
+  assert.equal(stopped.sent.length, 0);
+});
+test("joins preserve short repetition, substantial overlap, CJK spacing and punctuation", () => {
+  assert.equal(joinTranscript("설정을 확인해", "확인해 주세요."), "설정을 확인해 주세요.");
   assert.equal(joinTranscript("응", "응"), "응 응");
   assert.equal(joinTranscript("좋아", ", 이제 해 줘"), "좋아, 이제 해 줘");
+  assert.equal(joinTranscript("你好", "世界"), "你好世界");
+});
+test("browser cumulative finals are delivered once and partial replacements do not append", () => {
+  const result = (text: string, isFinal: boolean) => Object.assign([{ transcript: text }], { isFinal });
+  const a = browserResults([result("처음", true), result("중간", false)], 0);
+  const b = browserResults([result("처음", true), result("마지막", true)], a.delivered);
+  assert.deepEqual(a.finals, ["처음"]);
+  assert.equal(a.partial, "중간");
+  assert.deepEqual(b.finals, ["마지막"]);
+  assert.equal(browserResults([result("처음", true), result("마지막", true)], b.delivered).finals.length, 0);
 });
 
-import { browserResults } from "../src/mate/stt/browser.ts";
-test("browser continuous recognition does not wait for onend, repeat finals, or append replaced partials", () => {
-  const result = (text: string, isFinal: boolean) =>
-    Object.assign([{ transcript: text }], { isFinal });
-  const a = browserResults([result("첫 조각", true), result("아직", false)], 0);
-  assert.deepEqual(a.finals, ["첫 조각"]);
-  assert.equal(a.partial, "아직");
-  const b = browserResults(
-    [result("첫 조각", true), result("다음 말", true), result("계속", false)],
-    a.delivered,
-  );
-  assert.deepEqual(b.finals, ["다음 말"]);
-  assert.equal(b.partial, "계속");
-  const c = browserResults(
-    [result("첫 조각", true), result("다음 말", true)],
-    b.delivered,
-  );
-  assert.equal(c.finals.length, 0);
-  assert.equal(c.partial, "");
+import { saveSpeech, pendingSpeech, ackSpeech } from "../src/mate/stt/outbox.ts";
+test("unacknowledged speech survives reconnect; stale acknowledgements cannot erase new text", () => {
+  const values = new Map<string, string>();
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => values.set(k, v) },
+  });
+  const packet: SpeechPacket = {
+    group_id: "v1",
+    client_msg_id: "v1",
+    revision: 1,
+    op: "submit",
+    input: "first",
+    window_ms: 4000,
+    idle_ms: 1800,
+    activity_at: 0,
+  };
+  assert.equal(saveSpeech("sid", packet, []), true);
+  assert.equal(pendingSpeech("sid").length, 1);
+  saveSpeech("sid", { ...packet, revision: 2, input: "first second" }, []);
+  ackSpeech("sid", "v1", 1);
+  assert.equal(pendingSpeech("sid")[0].packet.revision, 2);
+  assert.equal(ackSpeech("sid", "v1", 1, "first"), "second");
+  assert.equal(pendingSpeech("sid").length, 0);
+  Reflect.deleteProperty(globalThis, "localStorage");
+});
+
+test("a final correction after the response window is kept for review instead of silently disappearing", () => {
+  const s = setup();
+  s.speech("잠정 문장");
+  s.tick(4100);
+  s.draft.segment("수정된 최종 문장");
+  s.tick(5000);
+  assert.equal(s.sent.length, 1);
+  assert.equal(s.box, "수정된 최종 문장");
 });

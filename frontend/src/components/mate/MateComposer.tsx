@@ -7,6 +7,8 @@ import { ScreenCaptureApproval, useLocalScreenControls } from "../composer/Local
  */
 import { useCallback, useEffect, useMemo, useRef, useReducer } from "react";
 import type { Mate } from "../../api/mates";
+import { clientMsgId } from "../../mate/voiceOwner";
+import { useComposerStore } from "../../stores/composerStore";
 import { useDraftStore } from "../../stores/draftStore";
 import { useMateStore } from "../../stores/mateStore";
 import { useMateChat, type MateConversation } from "../../mate/useMateConversation";
@@ -113,6 +115,7 @@ function Composer({
   const [, redraw] = useReducer((n: number) => n + 1, 0);
   const composerRef = useRef<ReturnType<typeof useComposer> | null>(null);
   const speechWrite = useRef(false);
+  const conversationRef=useRef(conv);conversationRef.current=conv;
   const speech = useMemo(
     () =>
       createSpeechDraft({
@@ -122,11 +125,15 @@ function Composer({
           useDraftStore.getState().setText(sid, text);
           speechWrite.current = false;
         },
-        send: (text) => {
-          speechWrite.current = true;
-          composerRef.current?.submit("auto", text);
-          speechWrite.current = false;
+        send: (_text,packet) => {
+          const c=composerRef.current;if(!c||c.uploading)return false;
+          const ok=conversationRef.current.speech(packet as unknown as Record<string,unknown>,c.ready.map(i=>i.attachment!));
+          if(ok)useComposerStore.getState().clearSent(sid);
+          return ok;
         },
+        touch: packet=>{conversationRef.current.speech(packet as unknown as Record<string,unknown>);},
+        id: ()=>clientMsgId("v"),
+        late: ()=>composerRef.current?.setNotice(t("mate.speechLate")),
         changed: redraw,
       }),
     [sid],
@@ -146,6 +153,7 @@ function Composer({
     onSent,
     escapeStops,
     viewportCap: !growsWindow,
+    dispatchOverride: (_text,_attachments,automatic)=>automatic?undefined:speech.manualDispatch(),
     prepareSubmit: (text, automatic) => {
       if (automatic) return text;
       const final = speech.manual(text, micRef.current?.interim ?? "");
@@ -177,20 +185,21 @@ function Composer({
     onSegment: (text) => speech.segment(text),
     onPartial: (text) => speech.partial(text),
     onActivity: () => speech.activity(),
-    onSpeaking: (value) => speech.busy(value),
+    onSpeaking: (value) => speech.speaking(value),
   });
   micRef.current = mic;
   const flags = usePreviewFlags(mate.id);
   const merge =
     flags?.sttMergeFragments ?? mate.voice.stt.merge_fragments !== false;
+  const silence=flags?.sttSilence??mate.voice.stt.silence??1.2;
   const grace =
     flags?.sttContinuationGrace ?? mate.voice.stt.continuation_grace ?? 1.8;
   const ignoreShort =
     flags?.sttIgnoreShort ?? !!mate.voice.stt.ignore_short_fragments;
   useEffect(
     () =>
-      speech.configure({ autoSend: mic.autoSend, merge, grace, ignoreShort }),
-    [speech, mic.autoSend, merge, grace, ignoreShort],
+      speech.configure({ autoSend: mic.autoSend, merge, grace, silence, ignoreShort }),
+    [speech, mic.autoSend, merge, grace, silence, ignoreShort],
   );
   useEffect(
     () =>
@@ -221,8 +230,10 @@ function Composer({
       speech.dispose();
     };
   }, [speech]);
+  useEffect(()=>speech.ready(conv.speechReady&&!uploading),[speech,conv.speechReady,uploading]);
+  useEffect(()=>{if(conv.speechClosed)speech.closed(conv.speechClosed.id);},[speech,conv.speechClosed]);
   const visiblePartial = speech.visiblePartial(mic.interim);
-  const hasContent = c.hasContent || !!visiblePartial.trim();
+  const hasContent = c.hasContent || !!visiblePartial.trim() || speech.canFinalize();
   useEffect(() => {
     contentRef.current?.(hasContent);
   }, [hasContent]);
@@ -411,7 +422,7 @@ function Composer({
               disabled={!hasContent || uploading || !connected}
               className={`${btn} bg-accent-grad text-white disabled:opacity-40`}
               title={
-                !connected
+                speech.canFinalize() && !input.trim() && !visiblePartial ? t("mate.speechFinalizeNow") : !connected
                   ? t("mate.connecting")
                   : uploading
                     ? t("mate.waitingUploads")

@@ -13,35 +13,36 @@ slicing the window; existing historical best-effort limits still apply. Codex/un
 not zero-priced subscription consumption. These token ratios cannot represent a provider's subscription quota.
 Top five is by tokens within its own category. Hover, focus/ArrowDown or tap opens a portal; Escape closes it.
 
-## Speech drafts
+## Parallel speech receipt and response deadlines
 
-Every Mate composer (console, native chat, quick chat and browser/mobile) shares `mate/stt/draft.ts`.
-All recognition engines deliver committed segments there, rather than sending a chat message per segment.
-Defaults are merge on, 1.8 seconds of continuation grace (0.5–5), very-short-fragment filter off. Existing
-`auto_send` remains the master switch. Off means keep the editable draft. Recognition VAD/silence remains a
-separate ElevenLabs setting; its boundary does not decide a chat turn. No language-specific unfinished-sentence
-heuristic is used: an arriving partial blocks finalization, and further speech activity restarts the grace.
+All Mate composers use `mate/stt/draft.ts`. Both deadlines start at the latest speech/input activity.
+`stt.silence` is the send pause; `continuation_grace` is the response/merge window and must be at least the pause.
+With 1.8 s / 4 s the server receives and durably stores the first message at 1.8 s, and starts its response at
+4 s. These are parallel deadlines, not 1.8 + 4. A continuation at 3 s extends the same message and sets the new
+response deadline to 7 s (four seconds after that continuation). A continuation after the window is a new group.
+STT/network delays can delay actual receipt; a recognizer final never starts another full silence timer.
 
-Whisper recordings hold pending automatic sends while recording or transcribing. The browser recognizer
-commits new final results while continuing to listen; immutable prior finals are not replayed. Browser speech
-start/end events hold finalization while the user is speaking. Realtime partials
-and fresh non-gated audio postpone automatic sending. Finalized pieces join the persistent conversation draft
-without forced newlines; substantial whole-word overlap is deduplicated conservatively. Existing Japanese/CJK
-joining is retained. No model output/name/grammar correction is involved.
+The collector uses mic activity and live partials, sends a provisional partial at the pause if necessary, and
+replaces it with the corresponding final in the same group. New pieces update the received user bubble in place.
+The response is held until the merge deadline. A different reply already in progress receives the combined
+instruction through the existing steer path; a finishing turn becomes a normal next turn without another user
+row. A group's original message ID and its chronological boundary are preserved, including replay/history.
 
-Typing/IME/direct draft edits cancel and hold automatic sending until manual send or clear; further voice can
-still append. Enter/send always sends immediately, including a visible partial. The matching later final
-transcript consumes that prefix instead of sending it again. A failed manual send retains that partial in the
-editable draft; automatic sends that fail connection/uploads retain their text without retrying blindly.
-Already-sent text is never retroactively edited: a subsequent utterance becomes a new message, using existing
-steer/add-now and bounced-steer queuing while the mate replies. Unmount/Quit cancel timers and never submit an extra last fragment.
-Normal microphone Stop finalizes recognition through the same draft policy. Unsent committed text retains existing draft persistence.
+The backend `SpeechInput` broker stores accepted content and deadlines in SQLite. WebSocket reconnect replays
+pending groups. Client outbox packets remain locally until the matching revision is acknowledged; stale
+acknowledgements cannot drop newer text. Revisions/idempotent group IDs prevent duplicate sends across reconnect
+and backend restart. Once delivered, the broker clears its duplicate transcript/attachments; the canonical
+conversation message remains. A late correction after finalization is kept in the editable draft with a notice,
+not silently dropped or substituted into an answer the model already saw. No transcript is printed in logs.
 
-New recognition-finalization values live with the mate's current listening settings, including unsaved
-cross-window previews and the existing Save flow. No voice setting is relocated; volume alone remains in the
-device-owned store from the earlier change. If listening preferences move to devices later, that should be a
-separate explicit migration, not a side effect here.
+Enter/send forces immediate delivery, including an accepted group (one message). Editing a draft holds automatic
+sending until manual send/clear; typing in an open group postpones response release while the user is active.
+Stop/reset cancels pending response work while retaining the accepted message. Native Quit cancels recordings
+and client timers; accepted server messages survive as in ordinary chat. Model processing time is separate from
+the response-release deadline. Voice volume remains device-owned; these fields retain the existing per-mate
+listening settings and shared unsaved previews. No native shell change is required.
 
-Tests: numeric seven-day/timezone/cost-boundary/source/top-five backend tests; speech draft state-machine tests;
-`frontend/test/e2e/usage-speech.cjs` runs real Electron/Xvfb and an isolated backend with synthetic PCM and fake
-STT protocol transcripts. It does not verify real ElevenLabs/Whisper recognition accuracy or physical microphones.
+Tests: `test_speech_input.py` covers persistence, parallel deadlines, revision/ownership, steering, restart and
+real WS receipt/force; `speech-draft.test.ts` covers the collector/outbox; `mate-steering.test.ts` covers message
+identity/ordering. `speech-parallel.cjs` runs real Electron/Xvfb + the real API/WS against an isolated backend
+with fake STT and model responses. `usage-speech.cjs` retains the seven-day Usage UI regression.

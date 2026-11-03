@@ -49,6 +49,7 @@ export interface ComposerOptions {
   /** after a message went out (sent, steered or queued) */
   onSent?: () => void;
   /** Finalize a live speech draft before manual Enter/send; automatic transcripts are already finalized. */
+  dispatchOverride?: (text: string, attachments: Attachment[], automatic: boolean) => boolean | undefined;
   prepareSubmit?: (text: string, automatic: boolean) => string;
   /** Escape stops the running turn (default true) */
   escapeStops?: boolean;
@@ -223,7 +224,8 @@ export function useComposer(o: ComposerOptions) {
       return false;
     }
     if (!text && !ready.length) return false;
-    if (!dispatch(text, ready.map((i) => i.attachment!), how)) {
+    const atts = ready.map((i) => i.attachment!);
+    if (!(o.dispatchOverride?.(text, atts, spoken !== undefined) ?? dispatch(text, atts, how))) {
       if (spoken) setInput((v) => (v ? `${v} ${spoken}` : spoken));
       setNotice(tr("composer.notConnectedKept"));
       return false;

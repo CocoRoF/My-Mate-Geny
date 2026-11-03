@@ -48,6 +48,7 @@ async def chat_stream(websocket: WebSocket, sid: str) -> None:
     await websocket.accept()
     svc: SessionService = websocket.app.state.session_service
     logs = websocket.app.state.logs
+    speech = getattr(websocket.app.state, "speech_input", None)
 
     try:
         svc.get(sid)
@@ -102,6 +103,8 @@ async def chat_stream(websocket: WebSocket, sid: str) -> None:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
                 continue
+            if not isinstance(msg, dict):
+                continue
             kind = msg.get("type")
 
             if kind == "view" or (kind == "attach" and isinstance(msg.get("visible"), bool)):
@@ -113,12 +116,23 @@ async def chat_stream(websocket: WebSocket, sid: str) -> None:
                 # gap; the eid check in send() drops the overlap.
                 for ev in svc.events(sid, after=after):
                     await send(ev)
-                await send({"type": "run.state", "data": {"running": svc.is_running(sid)}})
+                await send({"type": "run.state", "data": {"running": svc.is_running(sid), "speech_protocol": 2 if speech else 0}})
+                if speech:
+                    for pending in speech.replay(sid):
+                        await send(pending)
                 live = svc.live_usage_for(sid)  # this chat's engine's plan usage, if it reported any
                 if live:
                     await send({"type": "usage.update", "data": live})
                 if pump_task is None:
                     pump_task = asyncio.create_task(pump())
+
+            elif kind == "speech" and speech:
+                if pump_task is None:
+                    pump_task = asyncio.create_task(pump())
+                try:
+                    await speech.receive(sid, msg)
+                except (ValueError, AttachmentError, KeyError) as exc:
+                    await send({"type": "speech.failed", "data": {"group_id": msg.get("group_id"), "message": str(exc)}})
 
             elif kind == "chat":
                 if pump_task is None:  # old clients that never attach
@@ -152,6 +166,8 @@ async def chat_stream(websocket: WebSocket, sid: str) -> None:
                     steer_tasks = {t for t in steer_tasks if not t.done()}
 
             elif kind == "stop":
+                if speech:
+                    speech.cancel(sid)
                 svc.stop(sid)
     except WebSocketDisconnect:
         pass

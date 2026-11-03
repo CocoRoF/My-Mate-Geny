@@ -169,6 +169,11 @@ async def lifespan(app: FastAPI):
             system_monitor = None
     app.state.system_monitor = system_monitor
 
+    from app.services.speech_input import SpeechInput
+    app.state.speech_input = SpeechInput(db, session_service)
+    session_service.speech_input = app.state.speech_input
+    await app.state.speech_input.start()
+
     yield
 
     await app.state.screen_service.triggers.stop()
@@ -179,6 +184,7 @@ async def lifespan(app: FastAPI):
     await cli_tools.stop()
     if system_monitor is not None:
         await system_monitor.stop()  # flushes the partial minute, marks a clean shutdown
+    await app.state.speech_input.stop()
     await session_service.shutdown()  # end engines (and their background tasks) cleanly
     db.close()
 

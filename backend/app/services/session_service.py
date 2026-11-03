@@ -417,6 +417,8 @@ class SessionService:
         return out
 
     def delete(self, sid: str) -> None:
+        if getattr(self, "speech_input", None):
+            self.speech_input.cancel(sid)
         task = self._tasks.get(sid)
         if task is not None and not task.done():
             task.cancel()
@@ -513,6 +515,8 @@ class SessionService:
         if sid in self._tasks:
             raise TurnBusyError("stop the running turn first")
         self.get(sid)
+        if getattr(self, "speech_input", None):
+            self.speech_input.cancel(sid)
         self._db.execute(
             "UPDATE sessions SET cli_session_id = NULL, cli_sessions = '{}', context_floor = ? WHERE id = ?",
             (now_iso(), sid),
@@ -543,6 +547,12 @@ class SessionService:
         self, sid: str, role: str, content: str, provider: str | None = None, model: str | None = None,
         meta: dict[str, Any] | None = None,
     ) -> str:
+        group = (meta or {}).get('speech_group')
+        if group:
+            row = self._db.query_one("SELECT id FROM messages WHERE session_id=? AND json_valid(meta) AND json_extract(meta,'$.speech_group')=? LIMIT 1", (sid, group))
+            if row:
+                self._db.execute('UPDATE messages SET role=?,content=?,meta=? WHERE id=?', (role, content, json.dumps(meta), row['id']))
+                return row['id']
         mid = new_id("msg_")
         self._db.execute(
             "INSERT INTO messages (id, session_id, role, content, provider, model, meta, created_at) "
@@ -612,7 +622,7 @@ class SessionService:
         floor = session.get("context_floor") or ""
         msgs = [
             m for m in self.messages(session["id"])
-            if m["id"] != current_msg_id and m["created_at"] > floor
+            if m["id"] != current_msg_id and m["created_at"] > floor and not (m.get("meta") or {}).get("speech_pending")
         ]
         resume_id = own.get("id")
         if resume_id:
@@ -644,6 +654,14 @@ class SessionService:
                 self._subscribers.pop(sid, None)
 
     def _publish(self, sid: str, msg: dict[str, Any]) -> None:
+        if msg.get("type") == "run.state" and getattr(self, "speech_input", None):
+            msg = {**msg, "data": {**msg.get("data", {}), "speech_protocol": 2}}
+        # The early receipt is the message. Final delivery closes/updates it instead of sending
+        # a second user.message to old viewers that cannot deduplicate speech-group metadata.
+        group = (msg.get("data") or {}).get("speech_group")
+        if msg.get("type") in ("user.message", "user.steer") and group and not (msg.get("data") or {}).get("speech_pending") and getattr(self, "speech_input", None):
+            self.speech_input.delivered(sid, group)
+            return
         for q in list(self._subscribers.get(sid, ())):
             try:
                 q.put_nowait(msg)
@@ -921,6 +939,8 @@ class SessionService:
             return False
 
     def stop(self, sid: str) -> bool:
+        if getattr(self, "speech_input", None):
+            self.speech_input.cancel(sid)
         task = self._tasks.get(sid)
         if task is None or task.done():
             return False
@@ -1114,7 +1134,7 @@ class SessionService:
                     detail={**ctx, "files": [a.name for a in attachments]}, session_id=sid,
                 )
 
-        history = self.messages(sid)
+        history = [m for m in self.messages(sid) if not (m.get("meta") or {}).get("speech_pending")]
         provider_name = session["provider"]
         api_key = self._providers.resolved_api_key(provider_name)
         provider = get_provider(provider_name)

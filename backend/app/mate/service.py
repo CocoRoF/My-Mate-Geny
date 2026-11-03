@@ -507,6 +507,8 @@ class MateService:
                     meta = json.loads(r["meta"] or "null") or {}
                 except ValueError:
                     meta = {}
+                if meta.get("speech_pending"):
+                    continue
                 at = A._t(r["created_at"])
                 if at is None:
                     continue

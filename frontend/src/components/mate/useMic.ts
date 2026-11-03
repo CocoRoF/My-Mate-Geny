@@ -313,6 +313,7 @@ export function useMic(mate: Mate | null, onText: (text: string) => void, opts: 
         const startedAt = Date.now();
         mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
         mr.onstop = async () => {
+          optionsRef.current.onSpeaking?.(false);
           stream.getTracks().forEach((t) => t.stop());
           clearTimeout(cap);
           if (cancelled || Date.now() - startedAt < 300) return finish();
@@ -337,6 +338,7 @@ export function useMic(mate: Mate | null, onText: (text: string) => void, opts: 
             if (mr.state === "recording") mr.stop();
           },
         };
+        optionsRef.current.onSpeaking?.(true);
         mr.start(250);
         setState("recording");
         if (stopRequested) mr.stop(); // released before the mic opened

@@ -1,6 +1,11 @@
 import type { Messages } from "..";
 
 const ko: Messages<"mate"> = {
+  speechFinalizeNow: "지금 응답받기",
+  speechReceived: "전송됨 · 이어지는 말은 여기에 합쳐져요",
+  speechLate: "메시지가 확정된 뒤 도착한 말은 입력창에 보관했어요. 확인한 뒤 보내 주세요.",
+  speechFailed: "음성 메시지를 전달하지 못했어요.",
+  speechSaveFailed: "이 기기에 음성 초안을 보관하지 못했어요. 입력은 아직 보내지 않았어요.",
   moodListening: "듣는 중…",
   moodThinking: "생각 중…",
   moodTalking: "말하는 중",

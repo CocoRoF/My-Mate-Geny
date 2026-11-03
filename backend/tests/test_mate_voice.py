@@ -192,3 +192,11 @@ def test_speech_draft_settings_preserve_existing_voice_and_validate(client):
     for patch in ({"merge_fragments": "yes"}, {"ignore_short_fragments": {}}, {"continuation_grace": True}):
         assert client.patch(url, json={"voice": {"stt": patch}}).status_code == 400
     assert client.patch(url, json={"voice": {"stt": {"continuation_grace": 99}}}).json()["voice"]["stt"]["continuation_grace"] == 5
+
+
+def test_parallel_speech_window_cannot_be_shorter_than_send_pause(client):
+    mid = _mate(client, stt={'silence': 1.8, 'continuation_grace': 4})
+    url = f'/api/mates/{mid}'
+    assert client.patch(url, json={'voice': {'stt': {'continuation_grace': 1.0}}}).status_code == 400
+    row = client.patch(url, json={'voice': {'stt': {'silence': 3, 'continuation_grace': 4}}}).json()
+    assert row['voice']['stt']['silence'] == 3 and row['voice']['stt']['continuation_grace'] == 4

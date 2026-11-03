@@ -1,3 +1,7 @@
+import { saveSpeech, pendingSpeech, ackSpeech } from "./stt/outbox";
+import type {SpeechPacket} from "./stt/draft";
+import {useDraftStore} from "../stores/draftStore";
+import {tr} from "../i18n";
 import { useDevicePreferences, devicePreferencesLoaded } from "../stores/devicePreferences";
 /**
  * A mate's conversation, live (docs/mate.md §3): POST /api/mates/{id}/conversation → its session, then the same
@@ -11,7 +15,7 @@ import { useDevicePreferences, devicePreferencesLoaded } from "../stores/deviceP
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toLogin, wsUrl } from "../api/client";
 import { getHistoryPage } from "../api/sessions";
-import { openConversation, prefsOf, resetConversation, speech, SpeechFallbackError, type Mate } from "../api/mates";
+import { openConversation, prefsOf, resetConversation, speech as synthesizeSpeech, SpeechFallbackError, type Mate } from "../api/mates";
 import { onResync } from "../lib/sync";
 import { createChatStore, FIRST_TURNS, type Turn } from "../stores/chatStore";
 import { useMateStore } from "../stores/mateStore";
@@ -120,6 +124,9 @@ export interface MateConversation {
   send: (text: string, attachments?: Attachment[]) => boolean;
   /** add to her running turn */
   steer: (text: string, attachments?: Attachment[]) => boolean;
+  speech: (packet: Record<string,unknown>, attachments?: Attachment[]) => boolean;
+  speechReady: boolean;
+  speechClosed: {id:string;revision:number;at:number}|null;
   stop: () => void;
   reset: () => Promise<void>;
   /** the user is typing / talking: the mate listens */
@@ -137,6 +144,8 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
   const turns = store((s) => s.turns);
   const streaming = store((s) => s.isStreaming);
   const connection = store((s) => s.connection);
+  const [speechReady,setSpeechReady] = useState(false);
+  const [speechClosed,setSpeechClosed] = useState<MateConversation["speechClosed"]>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [react, setReact] = useState<MateReact>(null);
@@ -147,6 +156,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
   const wsRef = useRef<WebSocket | null>(null);
   const activity = useRef(Date.now());
   const mateId = mate?.id ?? null;
+  useEffect(()=>{setSpeechReady(false);},[mateId]);
 
   const surface = useMemo(currentSurface, []);
   const desk = useDesktopMate();
@@ -185,7 +195,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
       server
         ? async (item, signal) => {
             try {
-              const clip = await speech(mateId, item.text || "", item.emotion ?? null, signal);
+              const clip = await synthesizeSpeech(mateId, item.text || "", item.emotion ?? null, signal);
               fallbackWhy = null;
               return clip;
             } catch (err) {
@@ -400,6 +410,9 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
         retry = 0;
         setConnection("open");
         ws.send(JSON.stringify({ type: "attach", after: store.getState().lastEid }));
+        for(const held of pendingSpeech(sid!)) {
+          ws.send(JSON.stringify({type:'speech',...held.packet,attachments:held.attachments,idle_ms:Math.max(0,Date.now()-held.packet.activity_at)}));
+        }
       };
       ws.onmessage = (e) => {
         clearTimeout(probe);
@@ -409,6 +422,14 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
         } catch {
           return;
         }
+        if (ev.type === "run.state" && ev.data?.speech_protocol!==undefined) setSpeechReady(ev.data.speech_protocol===2);
+        if(ev.type === "speech.pending") ackSpeech(sid!,String(ev.data?.group_id),Number(ev.data?.revision));
+        if(ev.type === "speech.closed") {
+          setSpeechClosed({id:String(ev.data?.group_id),revision:Number(ev.data?.revision),at:Date.now()});
+          const kept=ackSpeech(sid!,String(ev.data?.group_id),Number(ev.data?.revision),String(ev.data?.accepted_text||""));
+          if(kept){const drafts=useDraftStore.getState(),text=drafts.drafts[sid!]?.text||"";if(!text.endsWith(kept))drafts.setText(sid!,[text,kept].filter(Boolean).join(" "));setError(tr("mate.speechLate"));}
+        }
+        if(ev.type === "speech.failed") {setError(String(ev.data?.message||tr("mate.speechFailed")));return;}
         if (ev.type === "task.state" || ev.type === "usage.update") return;
         if (ev.type === "user.message" || ev.type === "user.steer") {
           // where the user is talking from: replies are read on that device (internal messages — a delegated task
@@ -433,6 +454,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
       };
       ws.onclose = (e) => {
         if (wsRef.current !== ws) return;
+        setSpeechReady(false);
         wsRef.current = null;
         clearTimeout(probe);
         if (e.code === 4401) return toLogin();
@@ -527,6 +549,17 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
     [store, queue, touch],
   );
 
+  const speech = useCallback((packet:Record<string,unknown>,attachments:Attachment[]=[]) => {
+    const ws=wsRef.current;
+    if(!speechReady||!ws||ws.readyState!==WebSocket.OPEN)return false;
+    touch();queue.stop();lastSender.current=deviceId;
+    const ids=attachments.map(a=>a.id);
+    if(!saveSpeech(store.getState().sid!,packet as unknown as SpeechPacket,ids)){setError(tr("mate.speechSaveFailed"));return false;}
+    const kept=pendingSpeech(store.getState().sid!).find(p=>p.packet.group_id===packet.group_id);
+    ws.send(JSON.stringify({type:'speech',...packet,attachments:kept?.attachments??ids}));
+    return true;
+  },[speechReady,touch,queue]);
+
   const stop = useCallback(() => {
     wsRef.current?.send(JSON.stringify({ type: "stop" }));
     queue.stop();
@@ -614,6 +647,9 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
     volume,
     send,
     steer,
+    speech,
+    speechReady,
+    speechClosed,
     stop,
     reset,
     setListening,

@@ -141,6 +141,7 @@ export default function VoiceTab({ mate, conv, onTest }: { mate: Mate; conv: Mat
   const sttAutoSend = !!v.stt.auto_send;
   const sttBargeIn = v.stt.barge_in !== false;
   const sttMergeFragments = v.stt.merge_fragments !== false;
+  const sttSilence = v.stt.silence ?? 1.2;
   const sttContinuationGrace = v.stt.continuation_grace ?? 1.8;
   const sttIgnoreShort = !!v.stt.ignore_short_fragments;
   const sttFlagsDirty =
@@ -148,7 +149,7 @@ export default function VoiceTab({ mate, conv, onTest }: { mate: Mate; conv: Mat
     sttBargeIn !== (mate.voice.stt.barge_in !== false) ||
     sttMergeFragments !== (mate.voice.stt.merge_fragments !== false) ||
     sttContinuationGrace !== (mate.voice.stt.continuation_grace ?? 1.8) ||
-    sttIgnoreShort !== !!mate.voice.stt.ignore_short_fragments;
+    sttIgnoreShort !== !!mate.voice.stt.ignore_short_fragments || sttSilence !== (mate.voice.stt.silence ?? 1.2);
   useEffect(() => {
     previewMateFlags(
       mate.id,
@@ -158,6 +159,7 @@ export default function VoiceTab({ mate, conv, onTest }: { mate: Mate; conv: Mat
             sttBargeIn,
             sttMergeFragments,
             sttContinuationGrace,
+            sttSilence,
             sttIgnoreShort,
           }
         : null,
@@ -169,6 +171,7 @@ export default function VoiceTab({ mate, conv, onTest }: { mate: Mate; conv: Mat
     sttBargeIn,
     sttMergeFragments,
     sttContinuationGrace,
+    sttSilence,
     sttIgnoreShort,
   ]);
   useEffect(() => () => previewMateFlags(mate.id, null), [mate.id]);
@@ -821,21 +824,8 @@ function SttDetails({ mate, stt, set, ready }: { mate: Mate; stt: Stt; set: (p: 
 /** the realtime mic: auto-send (+ the pause that ends an utterance), barge-in */
 function RealtimeOptions({ stt, set, name }: { stt: Stt; set: (p: Partial<Stt>) => void; name: string }) {
   const t = useT();
-  const silence = stt.silence ?? 1.2;
   return (
     <div className="space-y-3 border-t border-border/60 pt-3" data-testid="mate-stt-realtime">
-      <Field label={t("mateSettings.sttPause", { x: silence.toFixed(1) })} hint={t("mateSettings.sttPauseHint")}>
-        <input
-          type="range"
-          min={0.5}
-          max={3}
-          step={0.1}
-          value={silence}
-          onChange={(e) => set({ silence: Number(e.target.value) })}
-          className="w-full accent-accent"
-          data-testid="mate-stt-silence"
-        />
-      </Field>
       <Toggle
         on={stt.barge_in !== false}
         onChange={(on) => set({ barge_in: on })}
@@ -858,6 +848,7 @@ function TranscriptOptions({
 }) {
   const t = useT(),
     grace = stt.continuation_grace ?? 1.8;
+  const silence=stt.silence??1.2;
   return (
     <div
       className="space-y-3 border-t border-border/60 pt-3"
@@ -870,6 +861,9 @@ function TranscriptOptions({
         hint={t("mateSettings.sttAutoSendHint")}
         testId="mate-stt-autosend"
       />
+      <Field label={t("mateSettings.sttPause",{x:silence.toFixed(1)})} hint={t("mateSettings.sttPauseHint")}>
+        <input type="range" min={.5} max={3} step={.1} value={silence} onChange={e=>{const n=Number(e.target.value);set({silence:n,continuation_grace:Math.max(n,grace)});}} className="w-full accent-accent" data-testid="mate-stt-silence" aria-label={t("mateSettings.sttPause",{x:silence.toFixed(1)})}/>
+      </Field>
       <Toggle
         on={stt.merge_fragments !== false}
         onChange={(on) => set({ merge_fragments: on })}
@@ -884,7 +878,7 @@ function TranscriptOptions({
         >
           <input
             type="range"
-            min={0.5}
+            min={silence}
             max={5}
             step={0.1}
             value={grace}
@@ -897,6 +891,7 @@ function TranscriptOptions({
           />
         </Field>
       )}
+      <p className="text-[11px] text-content-dim" data-testid="mate-stt-deadline-preview">{t("mateSettings.sttDeadlinePreview",{send:silence.toFixed(1),respond:(stt.merge_fragments!==false?Math.max(grace,silence):silence).toFixed(1)})}</p>
       <Toggle
         on={!!stt.ignore_short_fragments}
         onChange={(on) => set({ ignore_short_fragments: on })}
