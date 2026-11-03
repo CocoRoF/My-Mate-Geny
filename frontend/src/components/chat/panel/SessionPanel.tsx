@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { apiCostHint, fmtUsd } from "../../../lib/usage";
 import { ctxBar, fmtCtx, fmtWindow, limitsFor, meterOf } from "../../../lib/context";
 import { useUsageStore } from "../../../stores/usageStore";
-import { useChatStore, type ToolActivity, type Turn } from "../../../stores/chatStore";
+import { useChatStore, type Turn } from "../../../stores/chatStore";
 import type { HistoryBefore } from "../../../api/sessions";
 import { useConfigStore } from "../../../stores/configStore";
 import { useConnectionStore } from "../../../stores/connectionStore";
@@ -12,6 +12,7 @@ import TodoCard, { todosOf, type Todo } from "../turn/TodoCard";
 import { relPath } from "../turn/toolMeta";
 import { openPath } from "../../../stores/workbenchStore";
 import { useT } from "../../../i18n";
+import { changesOf, latestChangeTurn, CHANGE_PREVIEW_LIMIT } from "../../../lib/turnChanges";
 import HiggsfieldControls, { useHiggsfieldConnected } from "./HiggsfieldControls";
 
 function Section({
@@ -48,56 +49,6 @@ function Section({
 
 const base = (p: string) => p.split("/").filter(Boolean).pop() || p;
 
-interface Change {
-  path: string;
-  ops: number;
-  created: boolean;
-  failed: boolean;
-}
-
-/** Files the agent changed this session: exact git-based turn changes when
- * the workspace is a repo, otherwise what Edit/Write/apply_patch touched.
- * `older`: the same for the part of the chat not loaded yet (the server's
- * count); `extra`: calls parked outside the loaded turns (background work of
- * an older turn that reported since). */
-function changesOf(turns: Turn[], older: HistoryBefore | null, extra: ToolActivity[]): Change[] {
-  const map = new Map<string, Change>();
-  const repoMode = !!older?.changes.git || turns.some((t) => t.changes);
-  const seed = older && older.changes.git === repoMode ? older.changes.files : [];
-  for (const c of seed) map.set(c.path, { ...c });
-  if (repoMode) {
-    for (const t of turns)
-      for (const r of t.changes?.repos || [])
-        for (const f of r.files) {
-          const path = `${r.root}/${f.path}`;
-          const c = map.get(path) || { path, ops: 0, created: false, failed: false };
-          c.ops += 1;
-          c.created ||= f.status === "A";
-          map.delete(path);
-          map.set(path, c);
-        }
-    return [...map.values()].reverse();
-  }
-  const touch = (path: string, created: boolean, failed: boolean) => {
-    if (!path) return;
-    const c = map.get(path) || { path, ops: 0, created: false, failed: false };
-    c.ops += 1;
-    c.created ||= created;
-    c.failed ||= failed;
-    map.delete(path);
-    map.set(path, c); // most recent last
-  };
-  for (const tool of [...turns.flatMap((t) => t.tools), ...extra]) {
-    const n = tool.name.replace(/^mcp__remote__/, "").toLowerCase();
-    const i = (tool.input || {}) as Record<string, any>;
-    if (["edit", "multiedit", "notebookedit"].includes(n)) touch(i.file_path || i.notebook_path, false, !!tool.isError);
-    else if (n === "write" || n === "remote_write") touch(i.file_path || i.path, true, !!tool.isError);
-    else if (n === "apply_patch" && Array.isArray(i.changes))
-      i.changes.forEach((c: any) => touch(String(c.path || ""), c.kind === "add", !!tool.isError));
-  }
-  return [...map.values()].reverse();
-}
-
 /** The latest TodoWrite: in the loaded turns, else the one the server found
  * in the part of the chat not loaded yet. */
 function latestTodos(turns: Turn[], older: HistoryBefore | null): Todo[] {
@@ -113,8 +64,6 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
   const t = useT();
   const turns = useChatStore((s) => s.turns);
   const older = useChatStore((s) => s.older);
-  const detached = useChatStore((s) => s.detached);
-  const pinned = useChatStore((s) => s.pinnedTools);
   const info = useChatStore((s) => s.info);
   const cost = useChatStore((s) => s.runningCostUsd);
   const connections = useConnectionStore((s) => s.connections);
@@ -123,11 +72,13 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
 
   const conn = connections.find((c) => c.id === session.connection_id);
   const hostLabel = conn ? `${conn.name} (${conn.username}@${conn.host})` : t("session.thisServer");
-  // (pinned calls precede the loaded range: the server's count has them)
-  const changes = useMemo(
-    () => changesOf(turns, older, (detached?.tools || []).filter((t) => !pinned.has(t.id))),
-    [turns, older, detached, pinned],
-  );
+  const latestTurn = latestChangeTurn(turns);
+  const changes = useMemo(() => changesOf(latestTurn), [latestTurn]);
+  // Expansion belongs to this session and turn, never to a previous result.
+  const changeScope = `${session.id}:${latestTurn?.key || ""}`;
+  const [expandedScope, setExpandedScope] = useState<string | null>(null);
+  const expanded = expandedScope === changeScope;
+  const visibleChanges = expanded ? changes : changes.slice(0, CHANGE_PREVIEW_LIMIT);
   const todos = useMemo(() => latestTodos(turns, older), [turns, older]);
   // Context = the last model call's input + cache tokens (each call re-reads
   // the whole context), NOT a turn's usage, which sums every call of the turn.
@@ -173,36 +124,49 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
           {changes.length === 0 ? (
             <p className="text-[12px] text-content-faint">{t("session.noChanges")}</p>
           ) : (
-            <ul className="space-y-0.5">
-              {changes.map((c) => (
-                <li
-                  key={c.path}
-                  onClick={() => {
-                    openPath(session, c.path);
-                    if (window.innerWidth < 1280) onClose(); // drawer: show the file
-                  }}
-                  className="-mx-1.5 flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-0.5 hover:bg-surface-3"
-                  title={t("session.openPath", { path: c.path })}
-                >
-                  <span
-                    className={`w-4 shrink-0 text-center font-mono text-[11px] ${
-                      c.failed ? "text-danger" : c.created ? "text-success" : "text-warning"
-                    }`}
+            <>
+              <ul id="session-changed-files" className="space-y-0.5">
+                {visibleChanges.map((c) => (
+                  <li
+                    key={c.path}
+                    onClick={() => {
+                      openPath(session, c.path);
+                      if (window.innerWidth < 1280) onClose(); // drawer: show the file
+                    }}
+                    className="-mx-1.5 flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-0.5 hover:bg-surface-3"
+                    title={t("session.openPath", { path: c.path })}
                   >
-                    {c.failed ? "!" : c.created ? "A" : "M"}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate font-mono text-[11.5px]">
-                    <span className="text-content-dim">{base(c.path)}</span>
-                    {(() => {
-                      const rel = relPath(c.path, session.workspace_path);
-                      const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : rel === base(c.path) ? "" : rel;
-                      return dir ? <span className="text-content-faint"> {dir}</span> : null;
-                    })()}
-                  </span>
-                  {c.ops > 1 && <span className="shrink-0 text-[10.5px] text-content-faint">×{c.ops}</span>}
-                </li>
-              ))}
-            </ul>
+                    <span
+                      className={`w-4 shrink-0 text-center font-mono text-[11px] ${
+                        c.failed ? "text-danger" : c.created ? "text-success" : "text-warning"
+                      }`}
+                    >
+                      {c.failed ? "!" : c.created ? "A" : "M"}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-[11.5px]">
+                      <span className="text-content-dim">{base(c.path)}</span>
+                      {(() => {
+                        const rel = relPath(c.path, session.workspace_path);
+                        const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : rel === base(c.path) ? "" : rel;
+                        return dir ? <span className="text-content-faint"> {dir}</span> : null;
+                      })()}
+                    </span>
+                    {c.ops > 1 && <span className="shrink-0 text-[10.5px] text-content-faint">×{c.ops}</span>}
+                  </li>
+                ))}
+              </ul>
+              {changes.length > CHANGE_PREVIEW_LIMIT && (
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  aria-controls="session-changed-files"
+                  onClick={() => setExpandedScope(expanded ? null : changeScope)}
+                  className="mt-2 rounded-md px-2 py-1 text-xs text-accent hover:bg-surface-3"
+                >
+                  {expanded ? t("session.collapseChanges") : t("session.showAllChanges", { count: changes.length })}
+                </button>
+              )}
+            </>
           )}
         </Section>
 
