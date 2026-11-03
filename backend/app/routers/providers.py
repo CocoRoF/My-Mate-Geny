@@ -16,9 +16,30 @@ class OAuthCode(BaseModel):
     code: str
 
 
+def _signed_in(request: Request, provider: str) -> None:
+    """The host login ("Primary · this machine") was signed in again."""
+    pool = getattr(request.app.state, "account_pool", None)
+    if pool is not None:
+        pool.note_signed_in(f"__primary__{provider}")
+
+
 @router.get("")
-async def list_status(svc: ProviderService = Depends(provider_service)) -> list[dict]:
-    return await svc.status_all()
+async def list_status(request: Request, svc: ProviderService = Depends(provider_service)) -> list[dict]:
+    out = await svc.status_all()
+    pool = getattr(request.app.state, "account_pool", None)
+    if pool is not None:
+        # Login sessions that need the user (needs a sign-in / renewal failed):
+        # the Settings badge (frontend lib/attention.ts). Local files only.
+        for st in out:
+            if st["provider"] in ("claude", "codex"):
+                try:
+                    items = await asyncio.to_thread(pool.public_session_list, st["provider"])
+                except Exception:  # noqa: BLE001 - the badge must never break the list
+                    items = []
+                st["session_attention"] = [
+                    {k: i[k] for k in ("account_id", "label", "health", "detail")} for i in items if i["actionable"]
+                ]
+    return out
 
 
 @router.get("/{provider}")
@@ -78,6 +99,7 @@ async def oauth_status(
         st = oauth.codex_status()
         if st.get("status") == "connected":
             svc.mark_oauth("codex")
+            _signed_in(request, "codex")
         return st
     if provider == "claude":
         connected = oauth.claude_logged_in()
@@ -104,4 +126,5 @@ async def oauth_complete(
 
         merge_claude_credentials(os.path.expanduser("~/.claude/.credentials.json"), res["credentials"])
         svc.mark_oauth("claude")
+        _signed_in(request, "claude")
     return {"ok": res.get("ok", False), "error": res.get("error", "")}

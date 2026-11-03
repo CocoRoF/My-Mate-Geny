@@ -14,9 +14,11 @@ from __future__ import annotations
 import base64
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 _ANTHROPIC = "https://api.anthropic.com"
@@ -24,13 +26,63 @@ _CHATGPT = "https://chatgpt.com/backend-api"
 
 
 class UsageError(RuntimeError):
-    pass
+    """A plan-usage fetch that failed. ``kind`` says what to do about it:
+
+    * ``rate_limited`` — the endpoint answered 429: wait (``retry_after``
+      seconds when it said so, else back off),
+    * ``auth`` — the token was refused (401/403): asking again with the same
+      credentials can't help,
+    * ``http`` / ``network`` — anything else (5xx, timeouts): retry later,
+    * ``no_credentials`` — nothing to ask with.
+    """
+
+    def __init__(self, message: str, *, kind: str = "http", status: int | None = None,
+                 retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.kind = kind
+        self.status = status
+        self.retry_after = retry_after
+
+
+def parse_retry_after(value: str | None, *, now: float | None = None) -> float | None:
+    """Seconds to wait from a ``Retry-After`` header (delta-seconds or an HTTP
+    date); None when absent or unreadable."""
+    if not value:
+        return None
+    value = value.strip()
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max(0.0, when.timestamp() - (now if now is not None else time.time()))
+
+
+def _http_error(exc: urllib.error.HTTPError, *, auth_codes: tuple[int, ...] = (401,)) -> UsageError:
+    if exc.code in auth_codes:
+        return UsageError("token expired — re-authenticate this account", kind="auth", status=exc.code)
+    if exc.code == 429:
+        retry = parse_retry_after(exc.headers.get("Retry-After") if exc.headers else None)
+        return UsageError("usage request failed (429)", kind="rate_limited", status=429, retry_after=retry)
+    return UsageError(f"usage request failed ({exc.code})", kind="http", status=exc.code)
 
 
 def _get_json(url: str, headers: dict[str, str]) -> Any:
     req = urllib.request.Request(url, headers=headers, method="GET")
-    with urllib.request.urlopen(req, timeout=12) as resp:
-        return json.loads(resp.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError:
+        raise
+    except (OSError, ValueError) as exc:  # URLError, timeouts, a body that isn't JSON
+        raise UsageError(f"usage request failed ({type(exc).__name__})", kind="network") from exc
 
 
 def _window(label: str, percent: Any, resets_at: str | None, kind: str = "") -> dict:
@@ -99,10 +151,14 @@ def _claude_windows(usage: dict) -> tuple[list[dict], list[dict]]:
 def _read_claude_oauth(cred_dir: str) -> dict:
     path = os.path.join(cred_dir, ".credentials.json")
     if not os.path.exists(path):
-        raise UsageError("not signed in")
-    oauth = (json.load(open(path)).get("claudeAiOauth") or {})
+        raise UsageError("not signed in", kind="no_credentials")
+    try:
+        with open(path) as fh:
+            oauth = json.load(fh).get("claudeAiOauth") or {}
+    except (OSError, ValueError, AttributeError) as exc:
+        raise UsageError("credentials file unreadable", kind="no_credentials") from exc
     if not oauth.get("accessToken"):
-        raise UsageError("no access token")
+        raise UsageError("no access token", kind="no_credentials")
     return oauth
 
 
@@ -137,7 +193,10 @@ def claude_usage_from_token(token: str) -> dict[str, Any]:
     return {"provider": "claude", "available": True, "windows": windows, "model_windows": model_windows}
 
 
-def claude_subscription(cred_dir: str) -> dict[str, Any]:
+def claude_subscription(cred_dir: str, *, with_profile: bool = True) -> dict[str, Any]:
+    """Plan usage, plus the account's profile unless ``with_profile`` is off
+    (the load balancer only needs the windows, and every extra call counts
+    against the same rate limit)."""
     oauth = _read_claude_oauth(cred_dir)
     headers = {
         "anthropic-beta": "oauth-2025-04-20",
@@ -148,14 +207,13 @@ def claude_subscription(cred_dir: str) -> dict[str, Any]:
     try:
         usage = _get_json(f"{_ANTHROPIC}/api/oauth/usage", headers)
     except urllib.error.HTTPError as exc:
-        if exc.code == 401:
-            raise UsageError("token expired — re-authenticate this account") from exc
-        raise UsageError(f"usage request failed ({exc.code})") from exc
+        raise _http_error(exc) from exc
     profile: dict = {}
-    try:
-        profile = _get_json(f"{_ANTHROPIC}/api/oauth/profile", headers)
-    except urllib.error.HTTPError:
-        pass
+    if with_profile:
+        try:
+            profile = _get_json(f"{_ANTHROPIC}/api/oauth/profile", headers)
+        except (urllib.error.HTTPError, UsageError):
+            pass
 
     windows, model_windows = _claude_windows(usage)
     acc = profile.get("account", {})
@@ -181,8 +239,12 @@ def claude_subscription(cred_dir: str) -> dict[str, Any]:
 def _read_codex_auth(cred_dir: str) -> dict:
     path = os.path.join(cred_dir, "auth.json")
     if not os.path.exists(path):
-        raise UsageError("not signed in")
-    return json.load(open(path))
+        raise UsageError("not signed in", kind="no_credentials")
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except (OSError, ValueError) as exc:
+        raise UsageError("credentials file unreadable", kind="no_credentials") from exc
 
 
 def _codex_email(auth: dict) -> str:
@@ -205,13 +267,14 @@ def _iso_from_epoch(ts: Any) -> str | None:
         return None
 
 
-def codex_subscription(cred_dir: str) -> dict[str, Any]:
+def codex_subscription(cred_dir: str, *, with_profile: bool = True) -> dict[str, Any]:
+    # (one call either way: codex's usage answer carries the email + plan)
     auth = _read_codex_auth(cred_dir)
     tok = auth.get("tokens") or {}
     access = tok.get("access_token")
     account_id = tok.get("account_id") or ""
     if not access:
-        raise UsageError("no access token")
+        raise UsageError("no access token", kind="no_credentials")
     headers = {
         "Authorization": f"Bearer {access}",
         "chatgpt-account-id": account_id,
@@ -220,9 +283,7 @@ def codex_subscription(cred_dir: str) -> dict[str, Any]:
     try:
         data = _get_json(f"{_CHATGPT}/codex/usage", headers)
     except urllib.error.HTTPError as exc:
-        if exc.code in (401, 403):
-            raise UsageError("token expired — re-authenticate this account") from exc
-        raise UsageError(f"usage request failed ({exc.code})") from exc
+        raise _http_error(exc, auth_codes=(401, 403)) from exc
 
     def windows_of(rl: dict, name: str = "") -> list[dict]:
         out = []
@@ -263,9 +324,9 @@ def codex_subscription(cred_dir: str) -> dict[str, Any]:
     }
 
 
-def subscription_usage(provider: str, cred_dir: str) -> dict[str, Any]:
+def subscription_usage(provider: str, cred_dir: str, *, with_profile: bool = True) -> dict[str, Any]:
     if provider == "claude":
-        return claude_subscription(cred_dir)
+        return claude_subscription(cred_dir, with_profile=with_profile)
     if provider == "codex":
-        return codex_subscription(cred_dir)
-    raise UsageError(f"unsupported provider: {provider}")
+        return codex_subscription(cred_dir, with_profile=with_profile)
+    raise UsageError(f"unsupported provider: {provider}", kind="no_credentials")

@@ -33,6 +33,8 @@ from typing import Any
 
 from app.config import settings
 from app.db import Database
+from app.providers import login_session
+from app.providers.plan_fetch import PlanFetcher
 from app.services._ids import new_id, now_iso
 from app.vault import SecretVault
 
@@ -168,7 +170,11 @@ def merge_claude_credentials(path: str, creds: dict) -> None:
         current = {}
     for key, value in creds.items():
         if isinstance(value, dict) and isinstance(current.get(key), dict):
-            current[key] = {**current[key], **value}
+            merged = {**current[key], **value}
+            if key == "claudeAiOauth" and "refreshTokenExpiresAt" not in value and value.get("refreshToken"):
+                # a new refresh token: the old one's end date isn't its own
+                merged.pop("refreshTokenExpiresAt", None)
+            current[key] = merged
         else:
             current[key] = value
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -210,6 +216,9 @@ class AccountSnapshot:
     seven: float | None = None       # 7-day window %
     is_primary: bool = False
     label: str = ""
+    # False when the login can't work without the user (needs a sign-in,
+    # renewal failed) — read locally from the credentials (login_session.py).
+    session_ok: bool = True
 
     @property
     def load(self) -> float:
@@ -248,6 +257,8 @@ def ineligible_reason(a: AccountSnapshot, *, now: float) -> str | None:
         return "no_credentials"
     if a.status == "expired":
         return "expired"
+    if not a.session_ok:
+        return "session_expired"
     if a.cooldown_until and a.cooldown_until > now:
         return "cooling_down"
     if a.max_concurrency > 0 and a.in_flight >= a.max_concurrency:
@@ -561,6 +572,7 @@ def describe_reason(reason: str | None, a: AccountSnapshot | None = None, *, now
         "disabled": "is disabled",
         "no_credentials": "has no credentials",
         "expired": "needs to sign in again",
+        "session_expired": "needs to sign in again (its login can't be renewed)",
         "excluded": "is excluded from load balancing",
         "fallback_only": "is only used when no other account is available",
         "removed": "is no longer connected",
@@ -692,6 +704,24 @@ class AccountStore:
         if acc and acc.get("secret_ref"):
             self._vault.delete(acc["secret_ref"])
         self._db.execute("DELETE FROM provider_accounts WHERE id = ?", (account_id,))
+        self._db.execute("DELETE FROM provider_plan_cache WHERE account_id = ?", (account_id,))
+
+    # plan-usage cache: last numbers + backoff (plan_fetch.PlanFetcher's persist)
+    def load_plan_entries(self) -> dict[str, dict]:
+        out: dict[str, dict] = {}
+        for r in self._db.query("SELECT account_id, data FROM provider_plan_cache"):
+            try:
+                out[r["account_id"]] = json.loads(r["data"])
+            except ValueError:
+                continue
+        return out
+
+    def save_plan_entry(self, key: str, data: dict) -> None:
+        self._db.execute(
+            """INSERT INTO provider_plan_cache (account_id, data, updated_at) VALUES (?, ?, ?)
+               ON CONFLICT(account_id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at""",
+            (key, json.dumps(data), now_iso()),
+        )
 
     def api_key(self, account: dict) -> str | None:
         ref = account.get("secret_ref")
@@ -792,8 +822,10 @@ class AccountUnavailable(RuntimeError):
 
 PRIMARY_PREFIX = "__primary__"
 PRIMARY_LABEL = "Primary · this machine"
-PLAN_TTL_S = 60.0  # plan usage is fetched over HTTPS: at most once a minute per account
-PLAN_BACKOFF_S = 300.0  # after the usage endpoint answers 429, wait this long before asking again
+# Plan usage is fetched over HTTPS through one PlanFetcher (plan_fetch.py): at
+# most one request per account per PLAN_TTL_S, Retry-After / backoff on errors.
+PLAN_TTL_S = PlanFetcher.ttl_s
+SESSION_CHECK_S = 300.0  # background login-session check (local files only)
 
 
 def _num(v: Any) -> float | None:
@@ -805,7 +837,7 @@ def _num(v: Any) -> float | None:
 
 
 class AccountPool:
-    def __init__(self, store: AccountStore) -> None:
+    def __init__(self, store: AccountStore, *, persist_plans: bool = False, fetch_plans: bool = True) -> None:
         self._store = store
         self._in_flight: dict[str, int] = {}   # active turns per account
         self._bound: dict[str, int] = {}       # live leases (engines / one-shot turns) per account
@@ -814,12 +846,17 @@ class AccountPool:
         # In-memory health for the synthetic "primary" (host) account per provider.
         self._primary_health: dict[str, dict] = {}
         self._primary_last_used: dict[str, float] = {}
-        # Plan usage per account: id -> (plan | None, fetched_at). A plan is
-        # {windows, model_windows, fetched_at, error?}; None = can't be known.
-        self._plan_cache: dict[str, tuple[dict | None, float]] = {}
+        # Plan usage per account (windows, last fetch, backoff): one fetcher
+        # for the page, the balancer and the Usage dialog (plan_fetch.py).
+        self._plans = PlanFetcher(persist=store if persist_plans else None, enabled=fetch_plans)
         # What engines saw live (rate_limit_event), per account:
         # {"five_hour": (pct, resets_at, at), "seven_day": (...), "status", "at", "limit"?}
         self._live: dict[str, dict[str, Any]] = {}
+        # Login sessions: the last renewal per account ({at, ok, method, code,
+        # error, definitive, sig}) and the last health the background check saw.
+        self._renew: dict[str, dict] = {}
+        self._renew_locks: dict[str, threading.Lock] = {}
+        self._session_seen: dict[str, str] = {}
 
     # ---- primary (host) account: the subscription already on this machine ----
 
@@ -856,6 +893,7 @@ class AccountPool:
             consecutive_failures=h.get("consecutive_failures", 0),
             is_primary=True,
             label=PRIMARY_LABEL,
+            session_ok=self._session_ok(provider, pid, primary=True, now=now),
         )
 
     def _snapshot(self, acc: dict, now: float) -> AccountSnapshot:
@@ -872,44 +910,245 @@ class AccountPool:
             total_leases=acc["total_leases"],
             consecutive_failures=acc["consecutive_failures"],
             label=acc["label"],
+            session_ok=self._session_ok(acc["provider"], acc["id"], account=acc, now=now),
         )
 
-    # ---- plan usage: fetched (cached 60s) + live (rate_limit_event) ----
+    # ---- login sessions (local files only: login_session.py) ----
 
-    def plan_usage(self, provider: str, acc_id: str, *, primary: bool = False, account: dict | None = None) -> dict | None:
-        """Plan usage windows (5h, 7d, per-model weekly) for an account, cached
-        60s. None when it can't be known (API-key account). A failed fetch
-        keeps the last good windows and says why in ``error``."""
-        now = time.time()
-        cached = self._plan_cache.get(acc_id)
-        if cached and now - cached[1] < PLAN_TTL_S:
-            return cached[0]
+    def cred_dir(self, provider: str, acc_id: str, *, primary: bool | None = None) -> str:
+        if primary is None:
+            primary = acc_id.startswith(PRIMARY_PREFIX)
+        return self._host_cred_dir(provider) if primary else str(account_config_dir(provider, acc_id))
+
+    def _session_facts(self, provider: str, acc_id: str, *, primary: bool = False,
+                       account: dict | None = None) -> dict:
         if account is not None and account.get("auth_mode") == "api_key":
-            self._plan_cache[acc_id] = (None, now)
-            return None
-        prev = cached[0] if cached else None
-        plan: dict | None = prev
-        try:
-            from app.providers import subscription as sub
+            return login_session.stored_key_facts("api_key")
+        cdir = self.cred_dir(provider, acc_id, primary=primary)
+        if provider == "codex":
+            return login_session.codex_facts(cdir)
+        if primary and os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+            return login_session.stored_key_facts("setup_token")  # the CLI prefers it over the file
+        # who it is: the CLI's .claude.json (~/.claude.json for the host login)
+        ident = os.path.join(os.path.expanduser("~"), ".claude.json") if primary else os.path.join(cdir, ".claude.json")
+        facts = login_session.claude_facts(cdir, identity_file=ident)
+        if not facts["present"] and account is not None and self._store.oauth_token(account):
+            return login_session.stored_key_facts("setup_token")
+        return facts
 
-            cdir = self._host_cred_dir(provider) if primary else str(account_config_dir(provider, acc_id))
-            got = sub.subscription_usage(provider, cdir)
-            plan = {
-                "windows": got.get("windows") or [],
-                "model_windows": got.get("model_windows") or [],
-                "fetched_at": _iso(now),
-            }
-        except Exception as exc:  # noqa: BLE001 - shown on the card, never breaks balancing
-            base = {k: v for k, v in (prev or {"windows": [], "model_windows": [], "fetched_at": None}).items()
-                    if k != "error"}
-            plan = {**base, "error": str(exc)[:200] or type(exc).__name__}
-            if "(429)" in str(exc):
-                # The endpoint is throttling us: polling every minute would keep
-                # it that way. Live rate_limit_event numbers still flow meanwhile.
-                self._plan_cache[acc_id] = (plan, now + PLAN_BACKOFF_S - PLAN_TTL_S)
-                return plan
-        self._plan_cache[acc_id] = (plan, now)
-        return plan
+    def _rejected(self, acc_id: str, account: dict | None) -> bool:
+        """The provider refused this login on a turn (status 'expired')."""
+        if acc_id.startswith(PRIMARY_PREFIX):
+            return (self._primary_health.get(acc_id) or {}).get("status") == "expired"
+        return bool(account and account.get("status") == "expired")
+
+    def session_info(self, provider: str, acc_id: str, *, primary: bool | None = None,
+                     account: dict | None = None, now: float | None = None) -> dict:
+        """The card's view of an account's login (no secrets)."""
+        if primary is None:
+            primary = acc_id.startswith(PRIMARY_PREFIX)
+        if account is None and not primary:
+            account = self._store.get(acc_id)
+        facts = self._session_facts(provider, acc_id, primary=primary, account=account)
+        out = login_session.public(facts, now=now, renew=self._renew.get(acc_id),
+                                   rejected=self._rejected(acc_id, account))
+        if not out["email"] or not out["plan"]:
+            prof = (self._plans.entry(acc_id) or None)
+            p = (prof.profile if prof else None) or {}
+            out["email"] = out["email"] or p.get("email") or ""
+            out["organization"] = out["organization"] or p.get("organization") or ""
+            out["plan"] = out["plan"] or p.get("plan") or ""
+        return out
+
+    def _session_ok(self, provider: str, acc_id: str, *, primary: bool = False, account: dict | None = None,
+                    now: float | None = None) -> bool:
+        try:
+            facts = self._session_facts(provider, acc_id, primary=primary, account=account)
+        except Exception:  # noqa: BLE001 - an unreadable file never takes an account out by itself
+            return True
+        if not facts.get("present"):
+            return True  # "no credentials" is its own reason (usable)
+        health, _ = login_session.classify(
+            now=now or time.time(), present=True, method=facts.get("method") or "oauth",
+            expires_at=facts.get("expires_at"), has_refresh=bool(facts.get("has_refresh_token")),
+            refresh_expires_at=facts.get("refresh_expires_at"),
+            renew_failure=self._failure_for(acc_id, facts), rejected=False,
+        )
+        return health not in login_session.ACTIONABLE
+
+    def _failure_for(self, acc_id: str, facts: dict) -> dict | None:
+        r = self._renew.get(acc_id)
+        return r if r and not r.get("ok") and r.get("sig") == facts.get("sig") else None
+
+    def renew_session(self, provider: str, acc_id: str) -> dict:
+        """Renew an account's login the CLI's way (session_renew.py). Blocking
+        (a CLI run / one HTTPS call): call it off the event loop."""
+        from app.providers import session_renew
+        from app.services.cli_tools.tools import effective_binary
+
+        primary = acc_id.startswith(PRIMARY_PREFIX)
+        account = None if primary else self._store.get(acc_id)
+        if not primary and account is None:
+            return {"ok": False, "code": "removed", "error": "no such account", "session": None}
+        if account is not None and account.get("auth_mode") == "api_key":
+            return {"ok": False, "code": "api_key", "error": "an API key has no session to renew",
+                    "session": self.session_info(provider, acc_id, account=account)}
+        with self._lock:
+            lock = self._renew_locks.setdefault(acc_id, threading.Lock())
+        if not lock.acquire(blocking=False):
+            return {"ok": False, "code": "busy", "error": "already renewing",
+                    "session": self.session_info(provider, acc_id, account=account)}
+        try:
+            cdir = self.cred_dir(provider, acc_id, primary=primary)
+            # Same environment a chat on this account runs with (session_service):
+            # the real HOME, only the credentials dir differs per account.
+            env = dict(os.environ)
+            env["HOME"] = os.path.expanduser("~")
+            if provider == "codex":
+                env.pop("CODEX_HOME", None)
+                if not primary:
+                    env["CODEX_HOME"] = cdir
+                res = session_renew.renew_codex(cdir, env=env, binary=effective_binary("codex"))
+            else:
+                env.pop("CLAUDE_CONFIG_DIR", None)  # the host login: the CLI's default (~/.claude)
+                if not primary:
+                    env["CLAUDE_CONFIG_DIR"] = cdir
+                    env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)  # would win over the account's own file
+                res = session_renew.renew_claude(cdir, env=env, binary=effective_binary("claude"))
+            facts = self._session_facts(provider, acc_id, primary=primary, account=account)
+            self._renew[acc_id] = {**res, "at": _iso(time.time()), "sig": facts.get("sig")}
+            if res.get("ok"):
+                # it works again: forget a refusal the engines saw
+                if primary:
+                    h = self._primary_health.get(acc_id)
+                    if h and h.get("status") == "expired":
+                        self._primary_health.pop(acc_id, None)
+                elif account is not None and account.get("status") in ("expired", "unknown"):
+                    self._store.update(acc_id, status="ready")
+            return {"ok": bool(res.get("ok")), "method": res.get("method"), "code": res.get("code") or "",
+                    "error": res.get("error") or "",
+                    "session": self.session_info(provider, acc_id, primary=primary)}
+        finally:
+            lock.release()
+
+    def check_sessions(self, providers: tuple[str, ...] = ("claude", "codex")) -> list[dict]:
+        """The background check: every account's login health from its files
+        (no network). Returns the actionable ones (the Settings badge) and
+        logs each account once when it becomes actionable."""
+        import logging
+
+        log = logging.getLogger("app.providers.sessions")
+        items: list[dict] = []
+        for provider in providers:
+            for acc in self.public_session_list(provider):
+                key, health = acc["account_id"], acc["health"]
+                prev = self._session_seen.get(key)
+                self._session_seen[key] = health
+                if acc["actionable"]:
+                    items.append(acc)
+                    if prev != health:
+                        log.warning("%s account %s: login %s (%s)", provider, acc["label"], health, acc["detail"])
+        return items
+
+    def public_session_list(self, provider: str) -> list[dict]:
+        """(account_id, label, health, detail, actionable) for every enabled
+        account of the provider — what the Settings badge looks at."""
+        now = time.time()
+        out = []
+        if self._host_usable(provider):
+            pid = self._primary_id(provider)
+            s = self.session_info(provider, pid, primary=True, now=now)
+            out.append({"provider": provider, "account_id": pid, "label": PRIMARY_LABEL, "primary": True,
+                        "health": s["health"], "detail": s["detail"], "actionable": s["actionable"]})
+        for a in self._store.list(provider):
+            if not a["enabled"]:
+                continue
+            if not self._store.usable(a):
+                continue  # never signed in: the card's own "Sign in" — not a session problem
+            s = self.session_info(provider, a["id"], account=a, now=now)
+            out.append({"provider": provider, "account_id": a["id"], "label": a["label"], "primary": False,
+                        "health": s["health"], "detail": s["detail"], "actionable": s["actionable"]})
+        return out
+
+    # ---- plan usage: fetched (plan_fetch.py) + live (rate_limit_event) ----
+
+    def _plan_block(self, provider: str, acc_id: str, *, primary: bool, account: dict | None) -> tuple[dict, tuple[str, str] | None]:
+        """(session facts, local block) — a request that can't succeed isn't
+        sent: no credentials, an access token that has run out (the CLI
+        renews it on its next use; asking with it only earns a 401/429)."""
+        facts = self._session_facts(provider, acc_id, primary=primary, account=account)
+        if not facts.get("present"):
+            return facts, ("no_credentials", "not signed in")
+        if facts.get("method") in ("api_key", "setup_token"):
+            return facts, None
+        exp = facts.get("expires_at")
+        if exp is not None and exp <= time.time():
+            return facts, ("token_expired", "access token expired — renewed on the account's next use")
+        failure = self._failure_for(acc_id, facts)
+        if self._rejected(acc_id, account) or (failure and failure.get("definitive")):
+            return facts, ("needs_login", "this login needs a new sign-in")
+        return facts, None
+
+    def plan_usage(self, provider: str, acc_id: str, *, primary: bool = False, account: dict | None = None,
+                   force: bool = False, want_profile: bool = False) -> dict | None:
+        """Plan usage windows (5h, 7d, per-model weekly) for an account — at
+        most one request per account per PLAN_TTL_S, shared by every caller,
+        backing off on errors (Retry-After on a 429). None when it can't be
+        known (API-key account). A failed or skipped fetch keeps the last good
+        windows and says why (``error``, ``stale_reason``, ``retry_at``)."""
+        if account is not None and account.get("auth_mode") == "api_key":
+            return None
+        from app.providers import subscription as sub
+
+        cdir = self.cred_dir(provider, acc_id, primary=primary)
+        facts, block = self._plan_block(provider, acc_id, primary=primary, account=account)
+        if facts.get("method") == "setup_token" and provider == "claude":
+            token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") if primary else (
+                self._store.oauth_token(account) if account else None)
+            if token:
+                def fetch(with_profile: bool) -> dict:
+                    return sub.claude_usage_from_token(token)
+
+                return self._plans.get(acc_id, fetch, cred_sig=facts.get("sig") or "", force=force)
+
+        def fetch(with_profile: bool) -> dict:
+            return sub.subscription_usage(provider, cdir, with_profile=with_profile)
+
+        return self._plans.get(acc_id, fetch, cred_sig=facts.get("sig") or "", local_block=block, force=force,
+                               want_profile=want_profile)
+
+    def subscription(self, provider: str, account_id: str | None, *, force: bool = False) -> dict:
+        """The Usage dialog's view (``/api/usage/subscription``): the same
+        fetcher as the cards (no second cache, no extra requests)."""
+        primary = not account_id or account_id.startswith(PRIMARY_PREFIX)
+        acc_id = self._primary_id(provider) if primary else account_id
+        account = None if primary else self._store.get(acc_id)
+        plan = self.plan_usage(provider, acc_id, primary=primary, account=account, force=force, want_profile=True)
+        if plan is None:
+            return {"provider": provider, "available": False, "error": "API-key account: no plan usage"}
+        sess = self.session_info(provider, acc_id, primary=primary, account=account)
+        acct = dict(plan.get("account") or {})
+        acct.setdefault("auth_method", "ChatGPT" if provider == "codex" else "Claude AI")
+        acct["email"] = acct.get("email") or sess.get("email") or ""
+        acct["organization"] = acct.get("organization") or sess.get("organization") or ""
+        acct["plan"] = acct.get("plan") or sess.get("plan") or ""
+        out: dict[str, Any] = {
+            "provider": provider,
+            "available": bool(plan.get("windows")) or not plan.get("error"),
+            "account": acct,
+            "windows": plan.get("windows") or [],
+            "model_windows": plan.get("model_windows") or [],
+            "manage_url": "https://chatgpt.com/#settings" if provider == "codex" else "https://claude.ai/settings/usage",
+            "fetched_at": plan.get("fetched_at"),
+            "stale_reason": plan.get("stale_reason"),
+            "retry_at": plan.get("retry_at"),
+        }
+        if plan.get("error"):
+            if out["windows"]:
+                out["stale"] = plan["error"]
+            else:
+                out["error"] = plan["error"]
+        return out
 
     def _utilization(self, provider: str, acc_id: str, *, primary: bool = False, account: dict | None = None) -> float | None:
         """Highest plan window % for an account (usage-based balancing). None
@@ -979,8 +1218,8 @@ class AccountPool:
         plan = None
         if fetch and not fresh_live:
             plan = self.plan_usage(provider, acc_id, primary=primary, account=account)
-        elif acc_id in self._plan_cache:
-            plan = self._plan_cache[acc_id][0]
+        else:
+            plan = self._plans.cached(acc_id)
         fetched_at = _ts((plan or {}).get("fetched_at"))
         vals: dict[str, float | None] = {"five_hour": None, "seven_day": None}
         for w in (plan or {}).get("windows") or []:
@@ -999,7 +1238,8 @@ class AccountPool:
     def _plan_fields(self, provider: str, acc_id: str, *, primary: bool = False,
                      account: dict | None = None, usable: bool = True) -> dict:
         """The account-card view of :meth:`plan_usage`, with live engine
-        numbers folded in when they're newer."""
+        numbers folded in when they're newer (and standing in when no fetch
+        has worked yet)."""
         if not usable:
             plan, util = None, None
         else:
@@ -1009,6 +1249,12 @@ class AccountPool:
         fetched = (plan or {}).get("fetched_at")
         live = self._live.get(acc_id) or {}
         newest = _ts(fetched)
+        if plan is not None and not windows:
+            # nothing fetched yet (throttled / token expired): what the engines saw
+            labels = {"five_hour": "Session (5hr)", "seven_day": "Weekly (7 day)"}
+            for kind in ("five_hour", "seven_day"):
+                if live.get(kind):
+                    windows.append({"label": labels[kind], "percent": 0, "resets_at": None, "kind": kind})
         for w in windows:
             lv = live.get(w.get("kind"))
             if lv and lv[2] > _ts(fetched):
@@ -1017,14 +1263,18 @@ class AccountPool:
                     w["resets_at"] = _iso(lv[1])
                 w["source"] = "live"
                 newest = max(newest, lv[2])
-        if windows and util is not None:
-            util = max([util, *[float(w.get("percent") or 0) for w in windows if w.get("source") == "live"]])
+        live_pcts = [float(w.get("percent") or 0) for w in windows if w.get("source") == "live"]
+        if live_pcts:
+            util = max([util or 0.0, *live_pcts])
         return {
             "utilization": util,
             "windows": windows,
             "model_windows": (plan or {}).get("model_windows") or [],
             "plan_fetched_at": _iso(newest) if newest else fetched,
             "plan_error": (plan or {}).get("error"),
+            "plan_stale_reason": (plan or {}).get("stale_reason"),
+            "plan_retry_at": (plan or {}).get("retry_at"),
+            "plan_checked_at": (plan or {}).get("checked_at"),
             "live_status": live.get("status"),
         }
 
@@ -1349,6 +1599,7 @@ class AccountPool:
                 "eligible": reason is None,
                 "ineligible_reason": reason,
                 **self._plan_fields(provider, snap.id, primary=True),
+                "session": self.session_info(provider, snap.id, primary=True, now=now),
                 "total_leases": 0,
                 "total_failures": 0,
                 "consecutive_failures": snap.consecutive_failures,
@@ -1376,6 +1627,7 @@ class AccountPool:
                 "eligible": reason is None,
                 "ineligible_reason": reason,
                 **self._plan_fields(provider, a["id"], account=a, usable=snap.usable),
+                "session": self.session_info(provider, a["id"], account=a, now=now),
                 "total_leases": a["total_leases"],
                 "total_failures": a["total_failures"],
                 "consecutive_failures": a["consecutive_failures"],
@@ -1386,6 +1638,15 @@ class AccountPool:
                 "last_error": a.get("last_error"),
             })
         return out
+
+    def note_signed_in(self, account_id: str) -> None:
+        """A new sign-in landed for this account: forget the old login's
+        renewal failure / refusal (its file is new anyway)."""
+        self._renew.pop(account_id, None)
+        if account_id.startswith(PRIMARY_PREFIX):
+            h = self._primary_health.get(account_id)
+            if h and h.get("status") == "expired":
+                self._primary_health.pop(account_id, None)
 
     def clear_cooldown(self, account_id: str) -> None:
         self._live.get(account_id, {}).pop("limit", None)

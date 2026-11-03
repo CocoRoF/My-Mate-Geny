@@ -157,6 +157,12 @@ class Settings(BaseSettings):
     monitor_guard_psi_full: float = 40        # memguard --psi-full
     monitor_user_ceiling: str = ""            # user-slice memory ceiling to show (e.g. 22G)
 
+    # ---- plan usage (Settings -> Providers; app/providers/plan_fetch.py) ----
+    # Ask the providers' usage endpoints for each account's 5-hour / 7-day
+    # numbers (rate limited: at most one request per account per ~2 min,
+    # Retry-After respected). false = no requests; cached / live numbers only.
+    plan_usage_fetch: bool = True
+
     # ---- CLI versions (Settings -> Providers -> CLI versions; app/services/cli_tools) ----
     # Look up the newest Claude Code / Codex / Higgsfield CLI on the npm registry
     # (and their release notes on GitHub). false = no outbound checks.

@@ -21,7 +21,7 @@ from app.auth import AuthManager, AuthMiddleware, OpenCORSMiddleware
 from app.config import settings
 from app.static_files import ConsoleStaticFiles, index_response
 from app.providers.oauth import OAuthManager
-from app.providers.accounts import AccountPool, AccountStore
+from app.providers.accounts import SESSION_CHECK_S, AccountPool, AccountStore
 from app.db import Database
 from app.routers import (
     accounts,
@@ -91,7 +91,8 @@ async def lifespan(app: FastAPI):
     app.state.auth.warn_if_default()  # also lands in the admin log (bridge above)
     app.state.oauth = OAuthManager()
     account_store = AccountStore(db, vault)
-    account_pool = AccountPool(account_store)
+    # plan numbers + their backoff survive restarts; no requests when PLAN_USAGE_FETCH=false
+    account_pool = AccountPool(account_store, persist_plans=True, fetch_plans=settings.plan_usage_fetch)
     app.state.account_store = account_store
     app.state.account_pool = account_pool
     provider_service = ProviderService(db, vault)
@@ -139,6 +140,18 @@ async def lifespan(app: FastAPI):
 
     housekeeper = asyncio.create_task(housekeeping())
 
+    async def session_watch() -> None:
+        # Login sessions (docs/providers.md): read every account's credentials
+        # file (no network) and log the ones that start needing the user.
+        while True:
+            try:
+                await asyncio.to_thread(account_pool.check_sessions)
+            except Exception:  # noqa: BLE001
+                pass
+            await asyncio.sleep(SESSION_CHECK_S)
+
+    session_watcher = asyncio.create_task(session_watch())
+
     # Host / container metrics, history and alerts (Admin -> System).
     system_monitor = None
     if settings.monitor_enabled:
@@ -153,6 +166,7 @@ async def lifespan(app: FastAPI):
     yield
 
     housekeeper.cancel()
+    session_watcher.cancel()
     higgsfield_keeper.cancel()
     await app.state.avatar_service.stop()
     await cli_tools.stop()
