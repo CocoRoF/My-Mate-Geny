@@ -106,6 +106,98 @@ Real check against temp prefixes (never the CLIs in use):
 `backend/tests/manual_cli_upgrade.py`; the browser run:
 `desktop/test/e2e/cli-versions-browser.js`.
 
+## Plan usage — `app/providers/plan_fetch.py` (the 5-hour / 7-day bars)
+
+Each account's plan numbers come from the provider's usage endpoint (Claude:
+`GET api.anthropic.com/api/oauth/usage`; Codex: `chatgpt.com/backend-api/codex/usage`).
+That endpoint is rate limited per account and can answer **429 with
+`Retry-After: 3600`**. Every reader — the Providers cards, the composer's account
+popover, the load balancer on each turn, the Usage dialog
+(`/api/usage/subscription`) — goes through one `PlanFetcher` per account:
+
+- at most one request per account every **2 minutes** (`ttl_s`); the Usage dialog
+  may ask sooner (`?refresh=true`, ≥ 30 s after the last one) but never inside a
+  backoff; the balancer asks for windows only (no `/api/oauth/profile` call; the
+  profile is fetched at most once a day, for the Usage dialog);
+- **429**: wait what `Retry-After` says (clamped to 1 min … 6 h), else 2, 4, 8 …
+  min; once it keeps refusing, never less than that backoff; 5xx / network: 1, 2,
+  4 … min (≤ 30 min); **401** (token refused): not asked again until the
+  credentials file changes (or 1 h);
+- **no request with an expired access token** (it can only fail): the numbers
+  wait until the CLI renews the token on the account's next use, or *Renew
+  session*;
+- concurrent callers share one request; one that only needs numbers gets the
+  last known ones right away while another one is fetching;
+- the last good numbers are always shown, with `plan_fetched_at` and why they're
+  old (`plan_stale_reason`: rate_limited / token_expired / needs_login / auth /
+  network / http, `plan_retry_at`) — the card says "Last checked 25 min ago · the
+  usage server asked to wait — checking again at 12:30" instead of "no data";
+- numbers + backoff are kept in `provider_plan_cache` (no secrets), so a restart
+  neither forgets them nor asks a throttled endpoint again. When nothing was
+  ever fetched, the engines' live `rate_limit_event` numbers stand in.
+
+`PLAN_USAGE_FETCH=false` turns the requests off (cached / live numbers only).
+
+## Login sessions — `app/providers/login_session.py`, `session_renew.py`
+
+Every account card has a **Login session** row, read from the CLI's own files —
+never a network call, never a token sent to the browser or logged:
+
+| | Claude | Codex |
+|---|---|---|
+| file | `<config dir>/.credentials.json` → `claudeAiOauth` (on Linux this file *is* the CLI's store) | `<CODEX_HOME>/auth.json` |
+| method | subscription OAuth; long-lived token (`setup-token`: no refresh, no expiry; `CLAUDE_CODE_OAUTH_TOKEN`); API key | ChatGPT OAuth; API key |
+| who | `oauthAccount` in the CLI's `.claude.json` (`~/.claude.json` for the host login), else the cached profile | `email` in the id token |
+| expiry | `expiresAt`, `refreshTokenExpiresAt` | the access token's `exp` |
+| last renewed | the file's mtime | `last_refresh` |
+| scopes | `scopes` | the access token's `scp` |
+
+Health (`classify`): **valid**; **expiring** (≤ 15 min left — the CLI renews it 5
+min before — or the refresh token ends within 3 days); **expired** (the access
+token ran out but a refresh token can renew it — the CLI does on the next use:
+information, not a problem); **refresh_failed** (expired *and* the last renewal
+failed transiently); **needs_login** (no / expired refresh token, the provider
+refused the refresh token, or a turn was refused); **no_credentials**.
+Only `needs_login` / `refresh_failed` are *actionable*: they light the Settings
+badge (`GET /api/providers` → `session_attention`, enabled accounts only) and the
+balancer skips them (`ineligible_reason = session_expired`). A background check
+(every 5 min, files only) logs an account once when it becomes actionable.
+
+**Renew session** (`POST /api/providers/{p}/accounts/{id}/session/renew`, the host
+login's id is `__primary__<p>`):
+
+- *Claude, token due* (within Claude Code's 5-minute window, or past it): run
+  `claude auth status --json` with the account's config dir (pooled:
+  `CLAUDE_CONFIG_DIR`; host: the CLI's default `~/.claude`). That command makes
+  Claude Code renew its own token — its lock, its write; the app touches nothing.
+- *Claude, not due yet* (or the CLI didn't renew it): call the same token
+  endpoint the CLI calls (`platform.claude.com/v1/oauth/token`, its client id, the
+  stored scopes) **while holding both locks Claude Code takes before it renews**
+  — `<config dir>/.oauth_refresh.lock` and the legacy `<config dir>.lock` (mkdir
+  locks, stale after 60 s, touched every 5 s). Under the locks the file is read
+  again: a changed token means someone renewed it meanwhile → nothing is sent.
+  After the answer it is read once more and written (atomically, same 0600 mode,
+  every other field kept, rotated refresh token + new expiries) only if the
+  refresh token on disk is still the one that was sent.
+- *Codex*: only the CLI renews — `codex app-server`, `account/read
+  {refreshToken: true}` with the account's `CODEX_HOME`.
+
+Why that's safe for the host login ("Primary · this machine", shared with Claude
+Code in your terminal / editor): refresh tokens rotate, so two parties renewing
+with the same one would leave one of them logged out. The CLI path *is* Claude
+Code; the direct path takes Claude Code's own two locks and re-reads before
+sending and before writing — exactly what a second Claude Code process does, so a
+terminal session waiting on the lock finds the renewed token instead of renewing
+again.
+
+`invalid_grant` (revoked / expired refresh token) → **needs_login**; a network /
+5xx failure → **refresh_failed** only once the access token has also run out.
+**Sign in again** opens the existing sign-in flow (pooled accounts: their own
+OAuth; the host login: the provider-level one, which writes `~/.claude` /
+`~/.codex`). Tests: `backend/tests/test_login_sessions.py` (fake CLI, fake token
+endpoint); browser run: `desktop/test/e2e/login-sessions-browser.js` (seeded by
+`login-sessions-seed.py`, fake tokens, a dead HTTPS proxy).
+
 ## Adding a provider
 
 1. Subclass `Provider`, implement `auth_status` + `run_turn_stream`.

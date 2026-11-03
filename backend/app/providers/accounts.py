@@ -1081,12 +1081,15 @@ class AccountPool:
             return facts, ("no_credentials", "not signed in")
         if facts.get("method") in ("api_key", "setup_token"):
             return facts, None
-        exp = facts.get("expires_at")
-        if exp is not None and exp <= time.time():
-            return facts, ("token_expired", "access token expired — renewed on the account's next use")
-        failure = self._failure_for(acc_id, facts)
-        if self._rejected(acc_id, account) or (failure and failure.get("definitive")):
+        health, _ = login_session.classify(
+            now=time.time(), present=True, method=facts.get("method") or "oauth", expires_at=facts.get("expires_at"),
+            has_refresh=bool(facts.get("has_refresh_token")), refresh_expires_at=facts.get("refresh_expires_at"),
+            renew_failure=self._failure_for(acc_id, facts), rejected=self._rejected(acc_id, account),
+        )
+        if health == "needs_login":
             return facts, ("needs_login", "this login needs a new sign-in")
+        if health in ("expired", "refresh_failed"):
+            return facts, ("token_expired", "access token expired — renewed on the account's next use")
         return facts, None
 
     def plan_usage(self, provider: str, acc_id: str, *, primary: bool = False, account: dict | None = None,
