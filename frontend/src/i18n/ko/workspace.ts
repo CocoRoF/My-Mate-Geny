@@ -23,6 +23,8 @@ const ko: Messages<"workspace"> = {
   navigateHint: "폴더로 이동한 뒤 “이 폴더 사용”을 누르세요.",
   alreadyAdded: "이미 추가됨",
   addFolder: "폴더 추가",
+  selectFolder: "선택",
+  selectFolderTitle: "선택에 담아 두고 여러 폴더(여러 서버의 폴더도)를 한 번에 연결해요",
   appCouldNotRead: "앱이 이 폴더를 읽지 못했어요",
   couldNotRead: "{file:을} 읽지 못했어요",
   copied: "파일 {count}개를 {path}에 복사했어요",

@@ -12,6 +12,7 @@ export default function FolderPicker({
   initialPath,
   exclude,
   onAdd,
+  onPick,
   onClose,
 }: {
   connectionId: string | null;
@@ -19,6 +20,8 @@ export default function FolderPicker({
   initialPath: string;
   exclude: string[];
   onAdd: (path: string) => Promise<void>;
+  /** "Select" instead of connecting at once (several folders, maybe on several hosts, connected together) */
+  onPick?: (path: string) => void;
   onClose: () => void;
 }) {
   const t = useT();
@@ -72,6 +75,21 @@ export default function FolderPicker({
           <button onClick={onClose} className="btn-ghost ml-auto">
             {t("common.cancel")}
           </button>
+          {onPick && (
+            <button
+              onClick={() => {
+                if (!selected) return;
+                onPick(selected.replace(/\/+$/, "") || "/");
+                onClose();
+              }}
+              disabled={!selected || busy || dup}
+              className="btn-soft"
+              title={t("workspace.selectFolderTitle")}
+              data-testid="picker-select"
+            >
+              <Icon name="check" size={15} /> {t("workspace.selectFolder")}
+            </button>
+          )}
           <button onClick={add} disabled={!selected || busy || dup} className="btn-primary">
             {busy ? <Icon name="spinner" size={15} spin /> : <Icon name="plus" size={15} />} {dup ? t("workspace.alreadyAdded") : t("workspace.addFolder")}
           </button>

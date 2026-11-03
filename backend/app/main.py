@@ -110,7 +110,7 @@ async def lifespan(app: FastAPI):
     app.state.workspace_service = workspace_service
     app.state.session_service = session_service
     app.state.folder_uploads = FolderUploadService(session_service, workspace_service)
-    app.state.session_git = SessionGit(session_service, workspace_service)
+    app.state.session_git = SessionGit(session_service, workspace_service, app.state.git_service)
     mate_store = MateStore(db, vault)
     app.state.mate_service = MateService(session_service, mate_store, logs=logs)
     app.state.voice_service = VoiceService(mate_store)

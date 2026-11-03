@@ -18,6 +18,40 @@ dependency-free and works identically on host and in Docker.
 
 Browsing (`list_dir`) uses SFTP directly (asyncssh) — no mount needed.
 
+## Folders on several hosts
+
+A chat's additional folders are *(host, path)* pairs (`app/services/folders.py`, stored in
+`sessions.extra_dirs` as `[{path, connection_id|null}]`; old plain-path rows are migrated to the
+workspace's host). Whatever the workspace is, a folder can be on this server or on any SSH connection:
+
+- **This server** → real paths for the CLI (`--add-dir` for Claude; listed in the message for Codex):
+  the agent's own tools work on them.
+- **SSH hosts** → one `remote` MCP server for all of them (`mcp_remote_bridge.py`, same tool names as
+  before) whose tools take a `host` argument (the connection's name; default = the workspace's host).
+  Each host is allow-listed with only its folders (+ the workspace and the chat's uploads dir there);
+  paths are checked on the host after `realpath -m`, so `..` and symlinks can't leave them.
+  `remote_bash` starts inside an attached folder; what a shell command then does is up to it.
+- The agent gets a short "Folders in this chat" note (Claude: system prompt; Codex: with the message).
+- **A connection that is this machine** (e.g. an SSH connection to the server itself) is detected
+  (`app/workspaces/this_host.py`: a nonce file read back over SSH, then device + inode per folder):
+  its folders that are visible here are used as this server's folders — no SSH hop, no duplicates —
+  and the Folder popover offers it as "this server".
+
+`PATCH /api/sessions/{id}` takes `folders` (every folder, with its host); folders being attached are
+checked on their host first (404 not found, 403 permission, 502 unreachable). `extra_dirs` (paths on
+the workspace's host) is still accepted and returned for older clients. The Explorer, file viewer,
+@-mentions, changed files and the Git button follow each folder's host.
+
+## Git on SSH hosts
+
+`/api/sessions/{id}/git` works on the repo's own host (`git_repo_conn`): status, branches, switching,
+repos found on every host of the chat. `POST …/git/clone` clones onto this server or any SSH host —
+with a Git account (picked from its repos) or anonymously by URL — then connects it. Over SSH the
+token goes in on stdin, lives in a 0600 file in a 0700 `mktemp` dir only while `git clone` runs
+(`GIT_ASKPASS`), and the dir is removed on exit; `credential.helper` is emptied for that run, so
+nothing is written to the repo's config, a credential store or the process list. Pushing from that
+host uses its own Git login.
+
 ## Connections
 
 Register a host in the UI (**Connections** tab) or via API:

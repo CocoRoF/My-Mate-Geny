@@ -3,6 +3,7 @@ import { visit } from "unist-util-visit";
 import remarkGfm from "remark-gfm";
 import { fileUrl } from "../../api/sessions";
 import { fsRawUrl } from "../../api/fs";
+import { unqualify } from "../../lib/hosts";
 import { BARE_PATH, isBarePathCandidate, looksLikePath, parsePathRef, resolvePath } from "../../lib/paths";
 import { useSessionStore } from "../../stores/sessionStore";
 import { openPath } from "../../stores/workbenchStore";
@@ -55,7 +56,10 @@ export default function Markdown({ children, baseDir, doc = false }: { children:
   const imgSrc = (src?: string) => {
     if (!src || !session || /^(https?:|data:|blob:|\/api\/)/.test(src)) return src;
     const p = src.replace(/^file:\/\//, "");
-    if (baseDir) return fsRawUrl(resolvePath(decodeURI(p), baseDir), session.connection_id);
+    if (baseDir) {
+      const b = unqualify(session, baseDir); // (a file on another host: its own host)
+      return fsRawUrl(resolvePath(decodeURI(p), b.path), b.conn);
+    }
     return fileUrl(session.id, p);
   };
   const open = (raw: string) => session && openPath(session, raw, { base: baseDir });

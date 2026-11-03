@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import { fsList, fsResolve, fsStat, type FsEntry } from "../api/fs";
 import { dirName } from "../lib/fileView";
 import { parsePathRef, resolvePath } from "../lib/paths";
+import { folderFor, isQualified, qualify, sessionFolders, strip, unqualify } from "../lib/hosts";
 import type { Session } from "../types";
 import { tr } from "../i18n";
 
@@ -173,17 +174,34 @@ export const useWorkbench = create<WorkbenchState>()(
 export const useSessionTabs = (sid: string | null | undefined) =>
   useWorkbench((s) => (sid ? s.bySession[sid] : undefined) || empty);
 
-/** Roots the explorer shows for a session: workspace, its extra folders, then folders opened here. */
+/** Roots the explorer shows for a session: workspace, its extra folders (on any host: qualified keys, lib/hosts.ts),
+ *  then folders opened here. */
 export function explorerRoots(session: Session, pinned: string[] = []): string[] {
   const out: string[] = [];
-  for (const p of [session.workspace_path, ...(session.extra_dirs || []), ...pinned]) {
-    const r = p.replace(/\/+$/, "") || "/";
-    if (r && !out.includes(r)) out.push(r);
+  const add = (q: string) => {
+    if (q && !out.includes(q)) out.push(q);
+  };
+  add(strip(session.workspace_path) || "/");
+  for (const f of sessionFolders(session)) add(qualify(session, f.connection_id, strip(f.path) || "/"));
+  for (const p of pinned) {
+    const { conn, path } = unqualify(session, p);
+    add(qualify(session, conn, strip(path) || "/"));
   }
   return out;
 }
 
-const inside = (p: string, root: string) => p === root || p.startsWith(root === "/" ? "/" : root + "/");
+const insidePath = (p: string, root: string) => p === root || p.startsWith(root === "/" ? "/" : root + "/");
+/** `q` (a workbench key) is inside root `r` — the same host and under its path. */
+export function insideKey(session: Session, q: string, r: string): boolean {
+  const a = unqualify(session, q);
+  const b = unqualify(session, r);
+  return (a.conn || null) === (b.conn || null) && insidePath(a.path, b.path);
+}
+/** The parent folder of a workbench key, on the same host. */
+export function dirKeyOf(session: Session, q: string): string {
+  const { conn, path } = unqualify(session, q);
+  return qualify(session, conn, dirName(path));
+}
 
 // ---- folder contents cache (not persisted) ------------------------------
 
@@ -222,26 +240,27 @@ export const useDirCache = create<DirCache>((set, get) => ({
   forget: () => set({ dirs: {} }),
 }));
 
-/** Expand every folder from the nearest root down to `path`'s parent and select it. */
+/** Expand every folder from the nearest root down to `path`'s parent and select it. `path` is a workbench key
+ *  (a plain path on the workspace's host, `@host:path` on another — lib/hosts.ts). */
 export async function revealInExplorer(session: Session, path: string, isDir = false) {
   const wb = useWorkbench.getState();
-  const conn = session.connection_id;
+  const { conn } = unqualify(session, path);
   let roots = explorerRoots(session, wb.pinnedRoots[session.id]);
-  let root = roots.filter((r) => inside(path, r)).sort((a, b) => b.length - a.length)[0];
+  let root = roots.filter((r) => insideKey(session, path, r)).sort((a, b) => b.length - a.length)[0];
   if (!root) {
     // outside every root: open its folder as a new explorer root (VS Code "Open Folder")
-    root = isDir ? path : dirName(path);
+    root = isDir ? path : dirKeyOf(session, path);
     wb.addRoot(session.id, root);
     roots = [...roots, root];
   }
   const chain: string[] = [];
-  for (let p = isDir ? path : dirName(path); inside(p, root); p = dirName(p)) {
+  for (let p = isDir ? path : dirKeyOf(session, path); insideKey(session, p, root); p = dirKeyOf(session, p)) {
     chain.unshift(p);
-    if (p === root || p === "/") break;
+    if (p === root || unqualify(session, p).path === "/") break;
   }
   for (const dir of chain) {
     wb.setExpanded(session.id, dir, true);
-    await useDirCache.getState().load(conn, dir);
+    await useDirCache.getState().load(conn, unqualify(session, dir).path);
   }
   wb.select(path, true);
 }
@@ -249,41 +268,67 @@ export async function revealInExplorer(session: Session, path: string, isDir = f
 /**
  * Open what a path reference points at: a file → a tab (at its line), a
  * folder → the explorer, revealed. Relative references resolve against
- * `base` (a markdown file's folder) or the workspace, then the extra folders.
+ * `base` (a markdown file's folder) or the workspace, then the extra folders;
+ * an absolute one is looked up on the host of the folder it is in (the
+ * workspace's host first). `raw` may also be a workbench key (`@host:path`).
  */
 export async function openPath(session: Session, raw: string, opts: { base?: string; preview?: boolean } = {}) {
   const wb = useWorkbench.getState();
-  const ref = parsePathRef(raw);
+  const exact = isQualified(raw) ? unqualify(session, raw) : null;
+  const ref = parsePathRef(exact ? exact.path : raw);
   const relative = !ref.path.startsWith("/") && !ref.path.startsWith("~");
-  const bases = opts.base
-    ? [opts.base, session.workspace_path, ...(session.extra_dirs || [])]
-    : [session.workspace_path, ...(session.extra_dirs || [])];
-  const show = async (st: { path: string; is_dir: boolean }) => {
+  const main = session.connection_id || null;
+  const folders = sessionFolders(session);
+  const show = async (conn: string | null, st: { path: string; is_dir: boolean }) => {
+    const key = qualify(session, conn, st.path);
     if (st.is_dir) {
       wb.setExplorer(true);
-      await revealInExplorer(session, st.path, true);
+      await revealInExplorer(session, key, true);
     } else {
-      wb.openFile(session.id, st.path, { preview: opts.preview ?? true, line: ref.line, endLine: ref.endLine });
-      if (wb.explorerOpen) revealInExplorer(session, st.path).catch(() => {});
+      wb.openFile(session.id, key, { preview: opts.preview ?? true, line: ref.line, endLine: ref.endLine });
+      if (wb.explorerOpen) revealInExplorer(session, key).catch(() => {});
     }
   };
+  // where to look, best first: (host, absolute path)
+  const tries: { conn: string | null; path: string }[] = [];
+  if (exact) tries.push({ conn: exact.conn, path: ref.path });
+  else if (relative) {
+    const b = opts.base ? unqualify(session, opts.base) : { conn: main, path: session.workspace_path };
+    tries.push({ conn: b.conn, path: resolvePath(ref.path, b.path) });
+  } else {
+    const p = resolvePath(ref.path, "/");
+    const f = folderFor(session, p);
+    const inWs = insidePath(p, strip(session.workspace_path));
+    if (f && !(inWs && strip(session.workspace_path).length >= strip(f.path).length)) tries.push({ conn: f.connection_id, path: p });
+    if (!tries.some((x) => (x.conn || null) === main)) tries.push({ conn: main, path: p });
+  }
   let lastErr = "";
-  for (const base of relative ? bases.slice(0, 1) : [session.workspace_path]) {
+  for (const x of tries) {
     try {
-      return await show(await fsStat(resolvePath(ref.path, base), session.connection_id));
+      return await show(x.conn, await fsStat(x.path, x.conn));
     } catch (e: any) {
       lastErr = String(e.message || e);
     }
   }
-  if (relative && lastErr === "not found") {
+  if (relative && !exact && lastErr === "not found") {
     // Not under the first root: the agent may have meant a folder it was
     // working in (a chat on "/" that edited /home/x/repo prints "docs/a.md").
     try {
-      const roots = [...bases, ...(wb.pinnedRoots[session.id] || [])];
-      const { matches } = await fsResolve(ref.path, session.connection_id, session.id, roots);
-      if (matches.length) return await show(matches[0]);
+      const mainRoots = [session.workspace_path, ...folders.filter((f) => (f.connection_id || null) === main).map((f) => f.path)];
+      const roots = [...(opts.base && !isQualified(opts.base) ? [opts.base] : []), ...mainRoots,
+        ...(wb.pinnedRoots[session.id] || []).filter((p) => !isQualified(p))];
+      const { matches } = await fsResolve(ref.path, main, session.id, roots);
+      if (matches.length) return await show(main, matches[0]);
     } catch (e: any) {
       lastErr = String(e.message || e);
+    }
+    // then the folders on the other hosts
+    for (const f of folders.filter((f) => (f.connection_id || null) !== main).slice(0, 6)) {
+      try {
+        return await show(f.connection_id, await fsStat(resolvePath(ref.path, f.path), f.connection_id));
+      } catch {
+        /* next */
+      }
     }
   }
   wb.notify(lastErr === "not found" ? tr("files.notFound", { path: ref.path }) : `${ref.path}: ${lastErr}`, "error");

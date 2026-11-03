@@ -7,6 +7,7 @@ export type SessionPatch = {
   effort?: string;
   mode?: "agent" | "plan";
   extra_dirs?: string[];
+  folders?: { path: string; connection_id: string | null }[]; // every additional folder, with its host
   title?: string;
   auto_compact_window?: number; // tokens; 0 = CLI default; -1 = back to the global default
   account_id?: string; // run on this account from the next turn
@@ -155,7 +156,10 @@ export const revertChanges = (sid: string, eid: number, body: { repo?: number; p
 // ---- workspace file preview ----
 export const fileUrl = (sid: string, path: string) =>
   `/api/sessions/${sid}/file?path=${encodeURIComponent(path)}`;
-export const fileText = (sid: string, path: string) =>
+/** `conn`: the file's host when known (null = this server; undefined = let the server find it). */
+export const fileText = (sid: string, path: string, conn?: string | null) =>
   apiFetch<{ path: string; mime: string; content: string; truncated: boolean }>(
-    `/api/sessions/${sid}/file?path=${encodeURIComponent(path)}&text=1`,
+    `/api/sessions/${sid}/file?path=${encodeURIComponent(path)}&text=1${
+      conn === undefined ? "" : `&connection_id=${encodeURIComponent(conn || "local")}`
+    }`,
   );

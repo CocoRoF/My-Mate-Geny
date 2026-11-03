@@ -126,7 +126,8 @@ class ClaudeCodeProvider(Provider):
                      else ["--system-prompt", req.system_prompt or ""])
             argv += ["--system-prompt-snapshot", "off"]
         else:
-            argv += ["--append-system-prompt", WAIT_GUIDE + (f"\n\n{req.system_append}" if req.system_append else "")]
+            argv += ["--append-system-prompt", WAIT_GUIDE + "".join(
+                f"\n\n{x}" for x in (req.folders_note, req.system_append) if x)]
         if not req.sealed:
             for d in req.plugin_dirs:
                 argv += ["--plugin-dir", d]
@@ -211,6 +212,7 @@ class ClaudeCodeProvider(Provider):
             # (only when set: chats from before keep their engine's fingerprint)
             **({"tool_env": req.tool_env} if req.tool_env else {}),
             **({"append": req.system_append} if req.system_append else {}),
+            **({"folders": req.folders_note} if req.folders_note else {}),
             **({"plugins": req.plugin_dirs} if req.plugin_dirs else {}),
         }, sort_keys=True)
         return hashlib.sha256(key.encode()).hexdigest()

@@ -18,6 +18,12 @@ export interface Connection {
   updated_at: string;
 }
 
+/** An additional folder of a chat: a path on this server (connection_id null) or on an SSH connection's host. */
+export interface Folder {
+  path: string;
+  connection_id: string | null;
+}
+
 export interface Session {
   id: string;
   title: string;
@@ -28,8 +34,11 @@ export interface Session {
   workspace_path: string;
   cli_session_id: string | null;
   mode: "agent" | "plan";
-  extra_dirs: string[];
+  extra_dirs: string[]; // (older view: the folders on the workspace's own host)
+  /** every additional folder with its host: connection_id null = this server, else an SSH connection */
+  folders?: Folder[];
   git_repo?: string | null; // the top bar's Git repo: null = the workspace's own (auto), "" = none, else a path
+  git_repo_host?: string | null; // that repo's host (null = this server)
   cli_info?: CliInfo;
   running?: boolean;
   background?: number; // background tasks still running (subagents, background shells)
@@ -187,6 +196,7 @@ export interface ChangeRepo {
   added: number;
   removed: number;
   truncated?: boolean;
+  connection_id?: string | null; // its host (null = this server; absent in records from before hosts)
 }
 
 /** Files one turn changed (git snapshots), plus the event id for diffs/revert. */

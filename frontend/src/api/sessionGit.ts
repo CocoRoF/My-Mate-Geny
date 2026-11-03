@@ -10,6 +10,7 @@ export interface GitFile {
 export interface GitStatus {
   mode: "auto" | "set" | "off"; // auto = the workspace's repo; set = a chosen repo; off = disconnected
   path: string | null;
+  connection_id?: string | null; // the repo's host (null = this server)
   connected: boolean;
   is_repo: boolean;
   error?: string;
@@ -41,16 +42,38 @@ export interface FoundRepo {
   remote: string;
   repo: string;
   where: "workspace" | "folder";
+  connection_id?: string | null; // its host (null = this server)
 }
 
 const base = (sid: string) => `/api/sessions/${sid}/git`;
 
 export const getSessionGit = (sid: string) => apiFetch<GitStatus>(base(sid));
-export const connectSessionGit = (sid: string, path: string, addFolder = false) =>
-  apiFetch<GitStatus>(base(sid), { method: "PUT", body: JSON.stringify({ path, add_folder: addFolder }) });
+/** `conn`: the repo's host (null = this server; undefined = the workspace's host). */
+export const connectSessionGit = (sid: string, path: string, addFolder = false, conn?: string | null) =>
+  apiFetch<GitStatus>(base(sid), {
+    method: "PUT",
+    body: JSON.stringify({ path, add_folder: addFolder, ...(conn === undefined ? {} : { connection_id: conn }) }),
+  });
 export const disconnectSessionGit = (sid: string) => apiFetch<GitStatus>(base(sid), { method: "DELETE" });
 export const sessionGitBranches = (sid: string) => apiFetch<GitBranches>(`${base(sid)}/branches`);
 export const sessionGitCheckout = (sid: string, branch: string, track = false) =>
   apiFetch<GitStatus>(`${base(sid)}/checkout`, { method: "POST", body: JSON.stringify({ branch, track }) });
 export const detectSessionRepos = (sid: string) =>
-  apiFetch<{ repos: FoundRepo[]; mode: GitStatus["mode"]; current: string | null }>(`${base(sid)}/detect`);
+  apiFetch<{
+    repos: FoundRepo[];
+    mode: GitStatus["mode"];
+    current: string | null;
+    errors?: { connection_id: string | null; error: string }[]; // hosts that couldn't be read
+  }>(`${base(sid)}/detect`);
+
+export interface CloneInput {
+  clone_url: string; // https, no credentials in it
+  connection_id: string | null; // where: null = this server, else an SSH connection
+  account_id?: string | null; // a Git account's token (else anonymous: a public repo)
+  full_name?: string;
+  parent?: string; // folder to clone into (an SSH host: default ~/repos)
+}
+
+/** Clone onto this server or an SSH host (the token is used once, never stored there), then connect it. */
+export const cloneSessionRepo = (sid: string, body: CloneInput) =>
+  apiFetch<GitStatus>(`${base(sid)}/clone`, { method: "POST", body: JSON.stringify(body) });

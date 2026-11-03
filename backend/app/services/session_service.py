@@ -59,6 +59,8 @@ from app.services.history_page import HistoryPager
 from app.services.context_handoff import build_blocks, catchup_preamble, handoff_preamble, ENGINE_LABEL
 from app.services.engines import EngineManager
 from app.services import changes as change_tracker
+from app.services import folder_routing
+from app.services import folders as folder_model
 from app.services.provider_service import ProviderService
 from app.services.workspace_service import WorkspaceService
 
@@ -67,7 +69,7 @@ if TYPE_CHECKING:
     from app.services.log_service import LogService
 
 MODES = ("agent", "plan")
-MAX_EXTRA_DIRS = 20
+MAX_EXTRA_DIRS = folder_model.MAX_FOLDERS
 
 
 def _inside(p: str, root: str) -> bool:
@@ -192,6 +194,7 @@ class SessionService:
         title: str = "New chat",
         mode: str = "agent",
         extra_dirs: list[str] | None = None,
+        folders: list[dict[str, Any]] | None = None,
         kind: str = "chat",
         mate_id: str | None = None,
     ) -> dict[str, Any]:
@@ -199,7 +202,8 @@ class SessionService:
         model = _default_model(provider, model)
         sid = new_id("sess_")
         now = now_iso()
-        dirs = self._clean_dirs(connection_id, extra_dirs or [])
+        wanted = folder_model.normalize(folders or [], None) + folder_model.normalize(extra_dirs or [], connection_id)
+        dirs = self._clean_folders(connection_id, workspace_path, wanted)
         self._db.execute(
             """
             INSERT INTO sessions
@@ -218,19 +222,35 @@ class SessionService:
         self.list_changed("created", sid)
         return self.get(sid)
 
-    @staticmethod
-    def _clean_dirs(connection_id: str | None, dirs: list[str]) -> list[str]:
-        out: list[str] = []
-        for d in dirs:
-            d = (d or "").strip()
-            if not d:
+    def _clean_folders(self, connection_id: str | None, workspace_path: str,
+                       wanted: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Validate a chat's folders: this server's must exist here; an SSH host's must be one of the
+        user's connections, with an absolute (or ~) path. The workspace itself and duplicates drop out."""
+        known: set[str] | None = None
+        out: list[dict[str, Any]] = []
+        seen = {folder_model.key(folder_model.folder(workspace_path, connection_id))}
+        for f in wanted:
+            path, cid = (f.get("path") or "").strip(), f.get("connection_id") or None
+            if not path:
                 continue
-            if not connection_id:  # local: must be a real directory on this host
-                d = os.path.abspath(os.path.expanduser(d))
-                if not os.path.isdir(d):
-                    raise ValueError(f"not a directory: {d}")
-            if d not in out:
-                out.append(d)
+            if cid is None:
+                path = os.path.abspath(os.path.expanduser(path))
+                if not os.path.isdir(path):
+                    raise ValueError(f"not a directory: {path}")
+            else:
+                if known is None:
+                    known = {c["id"] for c in self._workspaces.connections()}
+                if cid not in known:
+                    raise ValueError(f"unknown connection: {cid}")
+                if not folder_model.is_abs(path):
+                    raise ValueError(f"use an absolute path on that server: {path}")
+                path = folder_model.norm_remote(path)
+            item = folder_model.folder(path, cid)
+            k = folder_model.key(item)
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append(item)
         if len(out) > MAX_EXTRA_DIRS:
             raise ValueError(f"at most {MAX_EXTRA_DIRS} additional folders")
         return out
@@ -244,6 +264,7 @@ class SessionService:
         effort: str | None = None,
         mode: str | None = None,
         extra_dirs: list[str] | None = None,
+        folders: list[dict[str, Any]] | None = None,
         title: str | None = None,
         auto_compact_window: int | None = None,
         account_id: str | None = None,
@@ -299,16 +320,22 @@ class SessionService:
                 raise ValueError(f"unknown mode: {mode}")
             sets.append("mode = ?")
             params.append(mode)
-        if extra_dirs is not None:
-            dirs = self._clean_dirs(session["connection_id"], extra_dirs)
+        if folders is not None or extra_dirs is not None:
+            cid = session["connection_id"]
+            wanted = (folder_model.normalize(folders, None) if folders is not None
+                      else folder_model.merge_legacy(session["folders"], extra_dirs or [], cid))
+            dirs = self._clean_folders(cid, session["workspace_path"], wanted)
             sets.append("extra_dirs = ?")
             params.append(json.dumps(dirs))
             # the Git button's repo was in a folder that's gone: back to the workspace's own
             # (only where the paths compare as written: absolute ones — remote "~/x" folders are left alone)
             repo = session.get("git_repo")
-            roots = [session["workspace_path"], *dirs]
-            if repo and all(r.startswith("/") for r in roots) and not any(_inside(repo, r) for r in roots):
-                sets.append("git_repo = NULL")
+            if repo:
+                rhost = session.get("git_repo_host")
+                roots = [session["workspace_path"]] if (rhost or None) == (cid or None) else []
+                roots += [f["path"] for f in dirs if (f["connection_id"] or None) == (rhost or None)]
+                if all(r.startswith("/") for r in roots) and not any(_inside(repo, r) for r in roots):
+                    sets += ["git_repo = NULL", "git_repo_conn = NULL"]
         if title is not None and title.strip():
             sets.append("title = ?")
             params.append(title.strip()[:200])
@@ -320,20 +347,38 @@ class SessionService:
             self.list_changed("updated", sid)
         return self.get(sid)
 
-    def set_git_repo(self, sid: str, path: str | None) -> dict[str, Any]:
-        """The top bar's Git repo: a path, ``""`` = none (disconnected), None = the workspace's (auto)."""
+    def set_git_repo(self, sid: str, path: str | None, connection_id: str | None = None) -> dict[str, Any]:
+        """The top bar's Git repo: a path, ``""`` = none (disconnected), None = the workspace's (auto);
+        ``connection_id``: the host it is on (None = this server)."""
         self.get(sid)
-        self._db.execute("UPDATE sessions SET git_repo = ?, updated_at = ? WHERE id = ?", (path, now_iso(), sid))
+        host = (connection_id or "local") if path else None
+        self._db.execute("UPDATE sessions SET git_repo = ?, git_repo_conn = ?, updated_at = ? WHERE id = ?",
+                         (path, host, now_iso(), sid))
         self.list_changed("updated", sid)
         return self.get(sid)
 
+    @staticmethod
+    def git_repo_host(session: dict[str, Any]) -> str | None:
+        """The host of the chat's chosen Git repo: a connection id, or None = this server
+        (a repo chosen before hosts were stored: the workspace's host)."""
+        h = session.get("git_repo_conn")
+        if h is None:
+            return session.get("connection_id") or None
+        return None if h == "local" else h
+
     def _row(self, row: Any) -> dict[str, Any]:
         d = dict(row)
-        for key, empty in (("extra_dirs", []), ("cli_info", {}), ("cli_sessions", {}), ("accounts", {})):
+        for key, empty in (("cli_info", {}), ("cli_sessions", {}), ("accounts", {})):
             try:
                 d[key] = json.loads(d.get(key) or json.dumps(empty))
             except ValueError:
                 d[key] = empty
+        # additional folders: (host, path) pairs; ``extra_dirs`` stays the old view (the workspace's host only)
+        d["folders"] = folder_model.normalize(d.get("extra_dirs") or "[]", d.get("connection_id"))
+        d["extra_dirs"] = folder_model.legacy_paths(d["folders"], d.get("connection_id"))
+        if d.get("git_repo"):
+            d["git_repo_host"] = self.git_repo_host(d)
+        d.pop("git_repo_conn", None)
         d["higgsfield"] = session_settings(d)
         d["running"] = d["id"] in self._tasks
         d["result_unseen"] = _unseen(d.get("last_result"), d.get("last_result_at"), d.get("last_seen_at"))
@@ -982,10 +1027,13 @@ class SessionService:
         self, sid: str, session: dict[str, Any], attachments: list, ctx: dict[str, Any], msg_id: str
     ) -> AsyncIterator[ProviderEvent]:
         connector = self._workspaces.connector_for(session["connection_id"])
-        extra_dirs: list[str] = list(session.get("extra_dirs") or [])
         try:
-            cwd = await connector.resolve_cwd(session["workspace_path"], extra_dirs)
-            mcp_config = await connector.mcp_config(session["workspace_path"])
+            cwd = await connector.resolve_cwd(session["workspace_path"])
+            # the chat's folders on this server and on SSH hosts: --add-dir paths, the remote
+            # bridge (one allow-listed entry per host) and the agent's note (services/folder_routing.py)
+            routing = await folder_routing.plan(
+                session, self._workspaces,
+                uploads_remote=f"~/.hr-harnessor/uploads/{sid}" if session["connection_id"] else None)
         except Exception as exc:  # noqa: BLE001 - surface as a normalized error event
             self._log(
                 "error", "workspace", str(exc), code="exec.workspace.unresolved",
@@ -998,20 +1046,15 @@ class SessionService:
             yield ev
             return
 
-        if session["connection_id"]:
-            # Remote: extra folders are remote paths (named in the scratch-dir
-            # guide), not local --add-dir targets.
-            local_extra: list[str] = []
-        else:
-            local_extra = [d for d in extra_dirs if os.path.isdir(d)]
-            missing = [d for d in extra_dirs if d not in local_extra]
-            if missing:
-                ev = ProviderEvent(type="notice", data={
-                    "level": "warning", "code": "folders.missing",
-                    "message": "Skipped missing folder(s): " + ", ".join(missing),
-                })
-                self._add_event(sid, ev)
-                yield ev
+        mcp_config = routing.mcp_config
+        local_extra = routing.local_dirs
+        if routing.missing:
+            ev = ProviderEvent(type="notice", data={
+                "level": "warning", "code": "folders.missing",
+                "message": "Skipped missing folder(s): " + ", ".join(routing.missing),
+            })
+            self._add_event(sid, ev)
+            yield ev
 
         # Remote workspace: also ship the attachments to the remote host so
         # remote tools can use them (local copies stay readable either way).
@@ -1103,6 +1146,7 @@ class SessionService:
             attachments=attachments,
             mode=session.get("mode") or "agent",
             extra_dirs=local_extra,
+            folders_note=routing.note,
             inbox=TurnInbox(),
             preamble=preamble,
             uploads_dir=uploads_dir,
@@ -1692,39 +1736,48 @@ class SessionService:
 
     # ---- per-turn file changes (git snapshots) ----
 
-    def _change_runner(self, session: dict[str, Any], connector: Any) -> change_tracker.ShellRunner | None:
-        if not session["connection_id"]:
+    def _change_runner(self, session: dict[str, Any], connection_id: str | None) -> change_tracker.ShellRunner | None:
+        """A shell on the host of ``connection_id`` (None = this server)."""
+        if not connection_id:
             return change_tracker.local_runner()
-        prefix = getattr(connector, "ssh_prefix", None)
+        try:
+            prefix = getattr(self._workspaces.connector_for(connection_id), "ssh_prefix", None)
+        except KeyError:
+            return None
         return change_tracker.ShellRunner(prefix()) if prefix else None
 
-    async def _snapshot_before(self, session: dict[str, Any], connector: Any) -> dict[str, Any] | None:
-        runner = self._change_runner(session, connector)
-        if runner is None:
-            return None
-        roots = [session["workspace_path"], *(session.get("extra_dirs") or [])]
-        try:
-            before = await change_tracker.snapshot_all(runner, roots)
-        except Exception:  # noqa: BLE001 - tracking is best-effort, never blocks a turn
-            return None
-        return {"runner": runner, "before": before} if before else None
+    async def _snapshot_before(self, session: dict[str, Any], connector: Any = None) -> dict[str, Any] | None:
+        """Git snapshots of the chat's folders before a turn — on each of their hosts."""
+        by_host: dict[str | None, dict[str, Any]] = {}
+        for host, roots in folder_model.roots_by_host(session).items():
+            try:
+                runner = self._change_runner(session, host)
+                if runner is None:
+                    continue
+                before = await change_tracker.snapshot_all(runner, roots)
+            except Exception:  # noqa: BLE001 - tracking is best-effort, never blocks a turn
+                continue
+            if before:
+                by_host[host] = {"runner": runner, "before": before}
+        return {"by_host": by_host} if by_host else None
 
     async def _changes_event(self, st: dict[str, Any]) -> ProviderEvent | None:
         snap = st.pop("changes", None)  # once per turn
         if not snap:
             return None
-        runner, before = snap["runner"], snap["before"]
         repos = []
-        try:
-            for root, tree in before.items():
-                after = await change_tracker.snapshot(runner, root)
-                if after is None:
-                    continue
-                summary = await change_tracker.summarize(runner, root, tree, after[1])
-                if summary is not None:
-                    repos.append(summary)
-        except Exception:  # noqa: BLE001
-            return None
+        for host, part in snap["by_host"].items():
+            runner, before = part["runner"], part["before"]
+            try:
+                for root, tree in before.items():
+                    after = await change_tracker.snapshot(runner, root)
+                    if after is None:
+                        continue
+                    summary = await change_tracker.summarize(runner, root, tree, after[1])
+                    if summary is not None:
+                        repos.append({**summary, "connection_id": host})
+            except Exception:  # noqa: BLE001
+                continue
         if not repos:
             return None
         return ProviderEvent(type="turn.changes", data={
@@ -1733,6 +1786,11 @@ class SessionService:
             "added": sum(r["added"] for r in repos),
             "removed": sum(r["removed"] for r in repos),
         })
+
+    @staticmethod
+    def _repo_host(session: dict[str, Any], r: dict[str, Any]) -> str | None:
+        # (records from before hosts were stored: the workspace's host)
+        return r.get("connection_id", session.get("connection_id")) or None
 
     def _change_record(self, sid: str, eid: int) -> tuple[dict[str, Any], dict[str, Any]]:
         row = self._db.query_one(
@@ -1744,7 +1802,7 @@ class SessionService:
     async def changes_patch(self, sid: str, eid: int, repo: int, path: str | None) -> str:
         session, data = self._change_record(sid, eid)
         r = data["repos"][repo]
-        runner = self._change_runner(session, self._workspaces.connector_for(session["connection_id"]))
+        runner = self._change_runner(session, self._repo_host(session, r))
         if runner is None:
             raise KeyError("workspace unavailable")
         paths = [path] if path else []
@@ -1760,13 +1818,13 @@ class SessionService:
         if sid in self._tasks:
             raise TurnBusyError("stop the running turn first")
         session, data = self._change_record(sid, eid)
-        runner = self._change_runner(session, self._workspaces.connector_for(session["connection_id"]))
-        if runner is None:
-            raise KeyError("workspace unavailable")
         reverted: list[str] = []
         for i, r in enumerate(data["repos"]):
             if repo is not None and i != repo:
                 continue
+            runner = self._change_runner(session, self._repo_host(session, r))
+            if runner is None:
+                raise KeyError("workspace unavailable")
             reverted += await change_tracker.revert(runner, r, paths)
         ev = ProviderEvent(type="notice", data={
             "level": "info", "code": "changes.reverted",

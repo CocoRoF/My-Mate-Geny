@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listDir } from "../../../api/workspaces";
+import { folderKey, hostKey, LOCAL, qualify, sessionFolders, strip, thisHostIds, useHosts } from "../../../lib/hosts";
 import { isCopy } from "../../../lib/localFolder";
 import { useConnectionStore } from "../../../stores/connectionStore";
 import { useLocalFolders } from "../../../stores/localFolderStore";
 import { useSessionStore } from "../../../stores/sessionStore";
 import { revealInExplorer, useWorkbench } from "../../../stores/workbenchStore";
-import type { Session } from "../../../types";
+import type { Folder, Session } from "../../../types";
 import Icon from "../../ui/Icon";
 import { useT } from "../../../i18n";
 import Popover from "../../ui/Popover";
@@ -14,129 +15,231 @@ import { loadRecents, pushRecent } from "../../workspaces/FileTree";
 import LocalFolderSection from "./LocalFolderSection";
 
 const base = (p: string) => p.split("/").filter(Boolean).pop() || p;
-const strip = (p: string) => (p.length > 1 ? p.replace(/\/+$/, "") : p);
 const parentOf = (p: string) => {
   const s = strip(p);
   const i = s.lastIndexOf("/");
   return i > 0 ? s.slice(0, i) : "/";
 };
 
+/** Where folders can be added from: this server, each SSH connection (one that is this very machine is folded into
+ *  "this server"), and this computer (upload / link). */
+type Chip = { key: string; conn: string | null; label: string; sub?: string };
+
+/** A friendly line for an attach error (the server's detail says which folder / host). */
+function useFolderError() {
+  const t = useT();
+  return (e: any): string => {
+    const detail = String(e?.message || e);
+    const head =
+      e?.status === 404
+        ? t("topbar.errNotFound")
+        : e?.status === 403
+          ? t("topbar.errPermission")
+          : e?.status === 502
+            ? t("topbar.errUnreachable")
+            : "";
+    return head ? `${head} — ${detail}` : detail;
+  };
+}
+
 /**
- * The top bar's Folder button: the chat's additional folders (the agent reads and edits them alongside the
- * workspace) — list, open in the explorer, disconnect — and adding one: a folder on the workspace's host (recent,
- * nearby, typed, or browsed), or one from this computer (LocalFolderSection).
+ * The top bar's Folder button: the chat's additional folders — on this server or on any SSH host, whatever the
+ * workspace is — listed with their host, opened in the explorer, disconnected; and adding them: pick a host, then
+ * folders there (recent, nearby, typed, or browsed). Click one to connect it now, or tick several (on several hosts)
+ * and connect them together. "This computer" links or uploads one from the user's machine (LocalFolderSection).
  */
 export default function FolderButton({ session, compact }: { session: Session; compact?: boolean }) {
   const t = useT();
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<"host" | "local">("host");
+  const [tab, setTab] = useState<string | null>(null); // a chip key, "computer", or null = the workspace's host
   const [query, setQuery] = useState("");
   const [picker, setPicker] = useState(false);
-  const [nearby, setNearby] = useState<{ for: string; dirs: string[] } | null>(null);
+  const [listing, setListing] = useState<{ for: string; dirs: string[]; error?: string } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Folder[]>([]); // ticked, not connected yet
   const btn = useRef<HTMLButtonElement>(null);
   const update = useSessionStore((s) => s.update);
   const sessions = useSessionStore((s) => s.sessions);
   const connections = useConnectionStore((s) => s.connections);
+  const hosts = useHosts((s) => s.hosts);
+  const loadHosts = useHosts((s) => s.load);
   const job = useLocalFolders((s) => s.jobs[session.id]);
   const notify = useWorkbench((s) => s.notify);
+  const friendly = useFolderError();
 
-  const conn = connections.find((c) => c.id === session.connection_id);
-  const remote = !!session.connection_id;
-  const hostName = conn ? conn.name : t("topbar.theServer");
-  const hostLabel = conn ? `${conn.name} (${conn.username}@${conn.host})` : t("topbar.thisServer");
-  const dirs = session.extra_dirs || [];
-  const taken = useMemo(() => new Set([strip(session.workspace_path), ...dirs.map(strip)]), [session.workspace_path, dirs]);
+  useEffect(() => {
+    loadHosts().catch(() => {}); // once per app (cached): which connections are this machine, before the popover opens
+  }, [loadHosts]);
+
+  const same = useMemo(() => thisHostIds(hosts), [hosts]);
+  // a connection that is this machine counts as this server (no duplicates, no SSH hop)
+  const canon = (conn: string | null | undefined) => (conn && !same.has(conn) ? conn : LOCAL);
+  const ckey = (conn: string | null | undefined, path: string) => `${canon(conn)}::${strip(path)}`;
+  const nameOf = (conn: string | null | undefined) =>
+    canon(conn) === LOCAL ? t("topbar.thisServer") : connections.find((c) => c.id === conn)?.name || String(conn);
+
+  const folders = sessionFolders(session);
+  const wsChip = canon(session.connection_id);
+  const chips: Chip[] = useMemo(
+    () => [
+      { key: LOCAL, conn: null, label: t("topbar.thisServer") },
+      ...connections
+        .filter((c) => !same.has(c.id))
+        .map((c) => ({ key: c.id, conn: c.id, label: c.name, sub: `${c.username}@${c.host}` })),
+    ],
+    [connections, same, t],
+  );
+  const cur = tab === "computer" ? null : chips.find((c) => c.key === (tab ?? wsChip)) || chips[0];
+  const curConn = cur?.conn ?? null;
+  const onWsHost = !!cur && cur.key === wsChip;
+  const taken = useMemo(
+    () => new Set([ckey(session.connection_id, session.workspace_path), ...folders.map((f) => ckey(f.connection_id, f.path))]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [session.workspace_path, session.connection_id, folders, same],
+  );
+  const pickedKeys = new Set(picked.map((f) => ckey(f.connection_id, f.path)));
   const uploading = job?.phase === "uploading";
 
-  // Nearby: the workspace's sibling folders (e.g. a second repo next to this one) — read when the popover opens.
-  const parent = parentOf(session.workspace_path);
+  // Nearby: next to the workspace (its host), or the connection's home folder (another host) — read on open.
+  const listAt = cur ? (onWsHost ? parentOf(session.workspace_path) : connections.find((c) => c.id === curConn)?.default_path || "~") : "";
+  const listingFor = `${hostKey(curConn)}:${listAt}`;
+  const listConn = onWsHost && session.connection_id && same.has(session.connection_id) ? null : curConn;
   useEffect(() => {
-    if (!open || tab !== "host" || nearby?.for === `${session.connection_id}:${parent}`) return;
+    if (!open || !cur || listing?.for === listingFor) return;
     let alive = true;
-    listDir(parent, session.connection_id)
-      .then((r) => alive && setNearby({ for: `${session.connection_id}:${parent}`, dirs: r.entries.filter((e) => e.is_dir).map((e) => e.path) }))
-      .catch(() => alive && setNearby({ for: `${session.connection_id}:${parent}`, dirs: [] }));
+    listDir(listAt, listConn)
+      .then((r) => alive && setListing({ for: listingFor, dirs: r.entries.filter((e) => e.is_dir).map((e) => e.path) }))
+      .catch((e) => alive && setListing({ for: listingFor, dirs: [], error: String(e?.message || e) }));
     return () => {
       alive = false;
     };
-  }, [open, tab, parent, session.connection_id, nearby?.for]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, listingFor]);
+  const nearby = listing?.for === listingFor ? listing : null;
 
-  // Recent: folders picked before on this host + the other chats' workspaces and folders there.
+  // Recent: picked before on this host + the other chats' workspaces and folders there.
   const recent = useMemo(() => {
-    if (!open) return [];
+    if (!open || !cur) return [];
     const out: string[] = [];
     const add = (p: string) => {
       const s = strip(p);
-      if (s && !taken.has(s) && !out.includes(s) && !isCopy(s)) out.push(s);
+      if (s && !taken.has(ckey(curConn, s)) && !out.includes(s) && !isCopy(s)) out.push(s);
     };
-    loadRecents(session.connection_id).forEach(add);
+    loadRecents(curConn).forEach(add);
     [...sessions]
-      .filter((s) => s.id !== session.id && (s.connection_id || null) === (session.connection_id || null))
+      .filter((s) => s.id !== session.id)
       .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
-      .forEach((s) => [s.workspace_path, ...(s.extra_dirs || [])].forEach(add));
+      .forEach((s) => {
+        if (canon(s.connection_id) === cur.key) add(s.workspace_path);
+        sessionFolders(s).forEach((f) => canon(f.connection_id) === cur.key && add(f.path));
+      });
     return out.slice(0, 8);
-  }, [open, sessions, session.id, session.connection_id, taken]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, sessions, session.id, cur?.key, taken, same]);
 
   const q = query.trim().toLowerCase();
   const match = (p: string) => !q || p.toLowerCase().includes(q);
   const shownRecent = recent.filter(match);
-  const shownNearby = (nearby?.dirs || []).filter((p) => !taken.has(strip(p)) && !recent.includes(strip(p)) && match(p)).slice(0, 12);
+  const shownNearby = (nearby?.dirs || [])
+    .filter((p) => !taken.has(ckey(curConn, p)) && !recent.includes(strip(p)) && match(p))
+    .slice(0, 12);
   const typed = /^(\/|~)/.test(query.trim()) ? strip(query.trim()) : "";
 
-  const add = async (p: string) => {
-    const path = strip(p);
+  const save = async (next: Folder[], label: string) => {
     setError("");
-    if (taken.has(path)) return setError(t("topbar.alreadyConnected"));
-    setBusy(path);
+    setBusy(label);
     try {
-      await update(session.id, { extra_dirs: [...dirs, path] });
-      pushRecent(session.connection_id, path);
-      setQuery("");
+      await update(session.id, { folders: next });
+      return true;
     } catch (e: any) {
-      setError(String(e.message || e));
-      throw e;
+      setError(friendly(e));
+      return false;
     } finally {
       setBusy(null);
     }
   };
-  const remove = async (p: string) => {
+  const add = async (conn: string | null, p: string) => {
+    const path = strip(p);
+    if (taken.has(ckey(conn, path))) return setError(t("topbar.alreadyConnected"));
+    if (await save([...folders, { path, connection_id: conn }], path)) {
+      pushRecent(conn, path);
+      setQuery("");
+    } else throw new Error("not connected"); // i18n-ignore (internal: the picker stays open; the error shows below)
+  };
+  const toggle = (conn: string | null, p: string) => {
+    const k = ckey(conn, p);
     setError("");
-    try {
-      await update(session.id, { extra_dirs: dirs.filter((x) => x !== p) });
-    } catch (e: any) {
-      setError(String(e.message || e));
+    setPicked((cur) => (cur.some((f) => ckey(f.connection_id, f.path) === k) ? cur.filter((f) => ckey(f.connection_id, f.path) !== k) : [...cur, { path: strip(p), connection_id: conn }]));
+  };
+  const connectPicked = async () => {
+    const fresh = picked.filter((f) => !taken.has(ckey(f.connection_id, f.path)));
+    if (!fresh.length) return setPicked([]);
+    if (await save([...folders, ...fresh], "picked")) {
+      fresh.forEach((f) => pushRecent(f.connection_id, f.path));
+      setPicked([]);
+      setQuery("");
     }
   };
-  const reveal = (p: string) => {
+  const remove = (f: Folder) => save(folders.filter((x) => folderKey(x) !== folderKey(f)), `rm:${folderKey(f)}`);
+  const reveal = (f: Folder) => {
     setOpen(false);
     useWorkbench.getState().setExplorer(true);
-    revealInExplorer(session, strip(p), true).catch(() => {});
+    revealInExplorer(session, qualify(session, f.connection_id, strip(f.path)), true).catch(() => {});
   };
 
-  const n = dirs.length;
-  const row = (p: string, kind: "recent" | "nearby" | "typed") => (
-    <li key={`${kind}:${p}`}>
-      <button
-        onClick={() => add(p).catch(() => {})}
-        disabled={busy !== null}
-        className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-surface-3 focus-visible:bg-surface-3 outline-none"
-        title={t("topbar.connectX", { name: p })}
+  const n = folders.length;
+  const selecting = picked.length > 0;
+  const row = (p: string, kind: "recent" | "nearby" | "typed") => {
+    const ticked = pickedKeys.has(ckey(curConn, p));
+    return (
+      <li key={`${kind}:${p}`} className="group flex items-center rounded-md hover:bg-surface-3 focus-within:bg-surface-3">
+        <button
+          onClick={() => toggle(curConn, p)}
+          className={`grid h-8 w-7 shrink-0 place-items-center rounded-md outline-none ${ticked ? "text-accent" : "text-content-faint"}`}
+          role="checkbox"
+          aria-checked={ticked}
+          aria-label={t("topbar.selectX", { name: p })}
+          title={t("topbar.selectX", { name: p })}
+          data-testid="folders-tick"
+        >
+          <span className={`grid h-3.5 w-3.5 place-items-center rounded border ${ticked ? "border-accent bg-accent text-surface" : "border-border-strong"}`}>
+            {ticked && <Icon name="check" size={10} />}
+          </span>
+        </button>
+        <button
+          onClick={() => (selecting ? toggle(curConn, p) : add(curConn, p).catch(() => {}))}
+          disabled={busy !== null}
+          className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pr-2 text-left outline-none"
+          title={t("topbar.connectX", { name: p })}
+        >
+          <Icon name={kind === "typed" ? "plus" : "folder"} size={13} className="shrink-0 text-content-faint" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[12.5px] text-content">{kind === "typed" ? t("topbar.connectX", { name: p }) : base(p)}</span>
+            {kind !== "typed" && <span className="block truncate font-mono text-[10.5px] text-content-faint">{p}</span>}
+          </span>
+          {busy === p ? (
+            <Icon name="spinner" size={12} spin className="text-content-faint" />
+          ) : (
+            !selecting && <Icon name="plus" size={12} className="shrink-0 text-content-faint opacity-0 group-hover:opacity-100 group-focus-within:opacity-100" />
+          )}
+        </button>
+      </li>
+    );
+  };
+
+  const badge = (conn: string | null) => {
+    const here = canon(conn) === LOCAL;
+    return (
+      <span
+        className={`pill max-w-[9rem] shrink-0 truncate px-1.5 py-0 text-[10px] ${here ? "bg-surface-3 text-content-dim" : "bg-cyan/10 text-cyan"}`}
+        title={here ? t("topbar.onServer") : t("topbar.onHostTitle", { host: nameOf(conn) })}
+        data-testid="folder-host-badge"
       >
-        <Icon name={kind === "typed" ? "plus" : "folder"} size={13} className="shrink-0 text-content-faint" />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[12.5px] text-content">{kind === "typed" ? t("topbar.connectX", { name: p }) : base(p)}</span>
-          {kind !== "typed" && <span className="block truncate font-mono text-[10.5px] text-content-faint">{p}</span>}
-        </span>
-        {busy === p ? (
-          <Icon name="spinner" size={12} spin className="text-content-faint" />
-        ) : (
-          <Icon name="plus" size={12} className="shrink-0 text-content-faint opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
-        )}
-      </button>
-    </li>
-  );
+        {here ? t("topbar.thisServer") : nameOf(conn)}
+      </span>
+    );
+  };
 
   return (
     <>
@@ -166,11 +269,13 @@ export default function FolderButton({ session, compact }: { session: Session; c
         )}
       </button>
 
-      <Popover open={open} onClose={() => setOpen(false)} anchor={btn} label={t("topbar.folders")} width={400} testId="folders-popover">
+      <Popover open={open} onClose={() => setOpen(false)} anchor={btn} label={t("topbar.folders")} width={420} testId="folders-popover">
         <div className="flex items-center gap-2 border-b border-border/70 px-3.5 py-2.5">
           <Icon name="folder" size={14} className="text-accent" />
           <span className="text-[13px] font-semibold text-content">{t("topbar.folders")}</span>
-          <span className="truncate text-[11px] text-content-faint">{t("topbar.onHost", { host: hostLabel })}</span>
+          <span className="truncate text-[11px] text-content-faint">
+            {t("topbar.workspaceOn", { host: nameOf(session.connection_id) })}
+          </span>
           <button
             onClick={() => setOpen(false)}
             className="ml-auto rounded p-1 text-content-faint hover:bg-surface-3 hover:text-content"
@@ -191,46 +296,39 @@ export default function FolderButton({ session, compact }: { session: Session; c
               </p>
             ) : (
               <ul className="space-y-1" data-testid="folders-connected">
-                {dirs.map((d) => {
-                  const copy = isCopy(d);
+                {folders.map((f) => {
+                  const copy = isCopy(f.path);
                   return (
-                    <li key={d} className="group flex items-center gap-2 rounded-lg bg-surface/70 px-2.5 py-1.5">
-                      <Icon name="folder" size={13} className="shrink-0 text-content-faint" />
-                      <span className="min-w-0 flex-1" title={d}>
+                    <li key={folderKey(f)} className="group flex items-center gap-2 rounded-lg bg-surface/70 px-2.5 py-1.5" data-host={hostKey(f.connection_id)}>
+                      <Icon name={canon(f.connection_id) === LOCAL ? "folder" : "server"} size={13} className="shrink-0 text-content-faint" />
+                      <span className="min-w-0 flex-1" title={`${nameOf(f.connection_id)} · ${f.path}`}>
                         <span className="flex items-center gap-1.5">
-                          <span className="truncate text-[12.5px] text-content">{base(d)}</span>
-                          <span
-                            className={`pill shrink-0 px-1.5 py-0 text-[10px] ${remote ? "bg-cyan/10 text-cyan" : "bg-surface-3 text-content-dim"}`}
-                            title={remote ? t("topbar.onHostTitle", { host: hostLabel }) : t("topbar.onServer")}
-                          >
-                            {remote ? t("topbar.remote") : t("topbar.local")}
-                          </span>
+                          <span className="truncate text-[12.5px] text-content">{base(f.path)}</span>
+                          {badge(f.connection_id)}
                           {copy && (
-                            <span
-                              className="pill shrink-0 bg-warning/15 px-1.5 py-0 text-[10px] text-warning"
-                              title={t("topbar.copyTitle")}
-                            >
+                            <span className="pill shrink-0 bg-warning/15 px-1.5 py-0 text-[10px] text-warning" title={t("topbar.copyTitle")}>
                               {t("topbar.copy")}
                             </span>
                           )}
                         </span>
-                        <span className="block truncate font-mono text-[10.5px] text-content-faint">{d}</span>
+                        <span className="block truncate font-mono text-[10.5px] text-content-faint">{f.path}</span>
                       </span>
                       <button
-                        onClick={() => reveal(d)}
+                        onClick={() => reveal(f)}
                         className="shrink-0 rounded p-1 text-content-faint hover:bg-surface-3 hover:text-content"
                         title={t("topbar.showInExplorer")}
-                        aria-label={t("topbar.showXInExplorer", { name: base(d) })}
+                        aria-label={t("topbar.showXInExplorer", { name: base(f.path) })}
                       >
                         <Icon name="folder-open" size={13} />
                       </button>
                       <button
-                        onClick={() => remove(d)}
+                        onClick={() => remove(f)}
+                        disabled={busy !== null}
                         className="shrink-0 rounded p-1 text-content-faint hover:bg-surface-3 hover:text-danger"
                         title={copy ? t("topbar.disconnectCopy") : t("topbar.disconnectFolder")}
-                        aria-label={t("topbar.disconnectX", { name: base(d) })}
+                        aria-label={t("topbar.disconnectX", { name: base(f.path) })}
                       >
-                        <Icon name="x" size={13} />
+                        {busy === `rm:${folderKey(f)}` ? <Icon name="spinner" size={13} spin /> : <Icon name="x" size={13} />}
                       </button>
                     </li>
                   );
@@ -240,34 +338,56 @@ export default function FolderButton({ session, compact }: { session: Session; c
           </div>
 
           <div className="mt-2.5 border-t border-border/70 px-3.5 pb-3 pt-2.5">
-            <div className="mb-2 flex items-center gap-2">
-              <span className="text-[10.5px] uppercase tracking-wide text-content-faint">{t("topbar.addFolder")}</span>
-              <div className="ml-auto flex rounded-lg bg-surface p-0.5 text-[11.5px]" role="tablist" aria-label={t("topbar.whereFolder")}>
-                {(
-                  [
-                    ["host", remote ? hostName : t("topbar.server"), "server"],
-                    ["local", t("topbar.thisComputer"), "monitor"],
-                  ] as const
-                ).map(([k, label, icon]) => (
+            <div className="mb-1.5 text-[10.5px] uppercase tracking-wide text-content-faint">{t("topbar.addFolder")}</div>
+            {/* where: this server, each SSH host, this computer */}
+            <div
+              className="-mx-1 mb-2 flex gap-1 overflow-x-auto px-1 pb-0.5 text-[11.5px] [scrollbar-width:none]"
+              role="tablist"
+              aria-label={t("topbar.whereFolder")}
+              data-testid="folders-hosts"
+            >
+              {chips.map((c) => {
+                const on = tab !== "computer" && cur?.key === c.key;
+                return (
                   <button
-                    key={k}
+                    key={c.key}
                     role="tab"
-                    aria-selected={tab === k}
-                    onClick={() => setTab(k)}
-                    data-testid={`folders-tab-${k}`}
-                    className={`flex max-w-[150px] items-center gap-1 rounded-md px-2 py-0.5 transition ${
-                      tab === k ? "bg-surface-3 text-content" : "text-content-faint hover:text-content-dim"
+                    aria-selected={on}
+                    onClick={() => setTab(c.key)}
+                    data-testid={c.key === wsChip ? "folders-tab-host" : `folders-host-${c.key}`}
+                    data-host={c.key}
+                    title={c.sub ? `${c.label} · ${c.sub}` : t("topbar.onServer")}
+                    className={`flex max-w-[11rem] shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 transition ${
+                      on ? "border-accent/50 bg-accent-soft text-accent" : "border-border text-content-dim hover:border-border-strong hover:text-content"
                     }`}
                   >
-                    <Icon name={icon} size={11} className="shrink-0" />
-                    <span className="truncate">{label}</span>
-                    {k === "local" && job && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
+                    <Icon name={c.conn ? "server" : "cpu"} size={11} className="shrink-0" />
+                    <span className="truncate">{c.label}</span>
+                    {c.key === wsChip && (
+                      <span className="shrink-0 text-[9.5px] uppercase tracking-wide opacity-70" title={t("topbar.workspaceHost")}>
+                        {t("topbar.wsShort")}
+                      </span>
+                    )}
+                    {picked.some((f) => canon(f.connection_id) === c.key) && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
                   </button>
-                ))}
-              </div>
+                );
+              })}
+              <button
+                role="tab"
+                aria-selected={tab === "computer"}
+                onClick={() => setTab("computer")}
+                data-testid="folders-tab-local"
+                className={`flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 transition ${
+                  tab === "computer" ? "border-accent/50 bg-accent-soft text-accent" : "border-border text-content-dim hover:border-border-strong hover:text-content"
+                }`}
+              >
+                <Icon name="monitor" size={11} className="shrink-0" />
+                <span className="truncate">{t("topbar.thisComputer")}</span>
+                {job && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
+              </button>
             </div>
 
-            {tab === "host" ? (
+            {cur ? (
               <>
                 <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface/80 px-2.5 py-1.5 focus-within:border-accent/60">
                   <Icon name="search" size={12} className="shrink-0 text-content-faint" />
@@ -276,15 +396,16 @@ export default function FolderButton({ session, compact }: { session: Session; c
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.nativeEvent.isComposing && typed) add(typed).catch(() => {});
+                      if (e.key === "Enter" && !e.nativeEvent.isComposing && typed)
+                        selecting ? toggle(curConn, typed) : add(curConn, typed).catch(() => {});
                     }}
-                    placeholder={t("topbar.filterPlaceholder")}
+                    placeholder={t("topbar.filterOnHost", { host: cur.label })}
                     aria-label={t("topbar.filterAria")}
                     className="min-w-0 flex-1 bg-transparent text-[12.5px] text-content placeholder:text-content-faint outline-none"
                   />
                 </div>
-                <ul className="mt-1.5 max-h-[38vh] space-y-px overflow-y-auto sm:max-h-64" data-testid="folders-suggestions">
-                  {typed && !taken.has(typed) && row(typed, "typed")}
+                <ul className="mt-1.5 max-h-[34vh] space-y-px overflow-y-auto sm:max-h-60" data-testid="folders-suggestions">
+                  {typed && !taken.has(ckey(curConn, typed)) && row(typed, "typed")}
                   {shownRecent.length > 0 && (
                     <li className="px-2 pb-0.5 pt-1.5 text-[10.5px] text-content-faint" aria-hidden>
                       {t("topbar.recent")}
@@ -293,13 +414,21 @@ export default function FolderButton({ session, compact }: { session: Session; c
                   {shownRecent.map((p) => row(p, "recent"))}
                   {shownNearby.length > 0 && (
                     <li className="px-2 pb-0.5 pt-1.5 text-[10.5px] text-content-faint" aria-hidden>
-                      {t("topbar.nextToWorkspace")}
+                      {onWsHost ? t("topbar.nextToWorkspace") : t("topbar.inFolder", { path: listAt })}
                     </li>
                   )}
                   {shownNearby.map((p) => row(p, "nearby"))}
-                  {!typed && shownRecent.length === 0 && shownNearby.length === 0 && (
+                  {nearby?.error && (
+                    <li className="px-2 py-1.5 text-[11.5px] text-danger" data-testid="folders-host-error">
+                      {t("topbar.cantListHost", { host: cur.label })}
+                      <span className="block truncate font-mono text-[10.5px] text-content-faint" title={nearby.error}>
+                        {nearby.error}
+                      </span>
+                    </li>
+                  )}
+                  {!typed && shownRecent.length === 0 && shownNearby.length === 0 && !nearby?.error && (
                     <li className="px-2 py-2 text-[12px] text-content-faint">
-                      {nearby || !open ? (q ? t("topbar.noFolderMatches") : t("topbar.noSuggestions")) : t("topbar.lookingAround")}
+                      {nearby ? (q ? t("topbar.noFolderMatches") : t("topbar.noSuggestions")) : t("topbar.lookingAround")}
                     </li>
                   )}
                 </ul>
@@ -311,27 +440,59 @@ export default function FolderButton({ session, compact }: { session: Session; c
                   className="btn-ghost mt-1.5 w-full justify-center py-1.5 text-[12.5px]"
                   data-testid="folders-browse"
                 >
-                  <Icon name="folder-open" size={13} /> {t("topbar.browseHost", { host: hostName })}
+                  <Icon name="folder-open" size={13} /> {t("topbar.browseHost", { host: cur.label })}
                 </button>
               </>
             ) : (
-              <LocalFolderSection
-                session={session}
-                onLinked={(p) => notify(t("topbar.linkedNotice", { path: p }))}
-              />
+              <LocalFolderSection session={session} onLinked={(p) => notify(t("topbar.linkedNotice", { path: p }))} />
             )}
-            {error && <p className="mt-1.5 text-[11.5px] text-danger">{error}</p>}
+
+            {picked.length > 0 && (
+              <div className="mt-2 rounded-lg border border-accent/30 bg-accent-soft/40 p-2" data-testid="folders-picked">
+                <div className="flex flex-wrap gap-1">
+                  {picked.map((f) => (
+                    <span key={folderKey(f)} className="pill flex max-w-full items-center gap-1 bg-surface px-1.5 py-0.5 text-[11px] text-content">
+                      <Icon name={canon(f.connection_id) === LOCAL ? "folder" : "server"} size={10} className="shrink-0 text-content-faint" />
+                      <span className="truncate" title={`${nameOf(f.connection_id)} · ${f.path}`}>
+                        {base(f.path)} <span className="text-content-faint">· {nameOf(f.connection_id)}</span>
+                      </span>
+                      <button onClick={() => toggle(f.connection_id, f.path)} className="shrink-0 text-content-faint hover:text-danger" aria-label={t("topbar.unselectX", { name: base(f.path) })}>
+                        <Icon name="x" size={10} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-1.5 flex items-center justify-end gap-1.5">
+                  <button onClick={() => setPicked([])} className="btn-ghost py-1 px-2 text-[12px]">
+                    {t("common.cancel")}
+                  </button>
+                  <button onClick={connectPicked} disabled={busy !== null} className="btn-primary py-1 px-2.5 text-[12px]" data-testid="folders-connect-picked">
+                    {busy === "picked" ? <Icon name="spinner" size={12} spin /> : <Icon name="plus" size={12} />}{" "}
+                    {t("topbar.connectN", { count: picked.length })}
+                  </button>
+                </div>
+              </div>
+            )}
+            {error && (
+              <p className="mt-1.5 break-words text-[11.5px] text-danger" data-testid="folders-error">
+                {error}
+              </p>
+            )}
           </div>
         </div>
       </Popover>
 
-      {picker && (
+      {picker && cur && (
         <FolderPicker
-          connectionId={session.connection_id}
-          hostLabel={hostLabel}
-          initialPath={session.workspace_path}
-          exclude={[...taken]}
-          onAdd={(p) => add(p)}
+          connectionId={listConn}
+          hostLabel={cur.sub ? `${cur.label} (${cur.sub})` : cur.label}
+          initialPath={onWsHost ? session.workspace_path : listAt || "~"}
+          exclude={[...taken].filter((k) => k.startsWith(`${cur.key}::`)).map((k) => k.slice(cur.key.length + 2))}
+          onAdd={(p) => add(curConn, p)}
+          onPick={(p) => {
+            toggle(curConn, p);
+            setOpen(true);
+          }}
           onClose={() => setPicker(false)}
         />
       )}

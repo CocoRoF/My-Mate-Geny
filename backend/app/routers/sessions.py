@@ -3,9 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
-from app.routers._deps import session_service
+from app.routers._deps import session_service, workspace_service
 from app.schemas.models import SessionCreate, SessionUpdate
+from app.services import folder_routing
+from app.services import folders as folder_model
 from app.services.session_service import SessionService, TurnBusyError
+from app.services.workspace_service import WorkspaceService
 
 router = APIRouter(prefix="/api/sessions")
 
@@ -20,8 +23,13 @@ async def list_sessions(response: Response, svc: SessionService = Depends(sessio
 
 
 @router.post("")
-async def create_session(body: SessionCreate, svc: SessionService = Depends(session_service)) -> dict:
+async def create_session(body: SessionCreate, svc: SessionService = Depends(session_service),
+                         ws: WorkspaceService = Depends(workspace_service)) -> dict:
     try:
+        folders = None
+        if body.folders:
+            stub = {"connection_id": body.connection_id, "workspace_path": body.workspace_path, "folders": []}
+            folders = await folder_routing.prepare(stub, [f.model_dump() for f in body.folders], ws)
         return svc.create(
             provider=body.provider,
             model=body.model,
@@ -31,22 +39,35 @@ async def create_session(body: SessionCreate, svc: SessionService = Depends(sess
             title=body.title,
             mode=body.mode,
             extra_dirs=body.extra_dirs,
+            folders=folders,
         )
+    except folder_routing.FolderError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.patch("/{sid}")
 async def update_session(
-    sid: str, body: SessionUpdate, svc: SessionService = Depends(session_service)
+    sid: str, body: SessionUpdate, svc: SessionService = Depends(session_service),
+    ws: WorkspaceService = Depends(workspace_service),
 ) -> dict:
     try:
+        folders = None
+        if body.folders is not None or body.extra_dirs is not None:
+            # folders being attached are checked on their hosts first (reachable, there, a folder)
+            session = svc.get(sid)
+            wanted = ([f.model_dump() for f in body.folders] if body.folders is not None
+                      else folder_model.merge_legacy(session["folders"], body.extra_dirs or [], session["connection_id"]))
+            folders = await folder_routing.prepare(session, wanted, ws)
         return svc.update(
             sid, provider=body.provider, model=body.model, effort=body.effort,
-            mode=body.mode, extra_dirs=body.extra_dirs, title=body.title,
+            mode=body.mode, folders=folders, title=body.title,
             auto_compact_window=body.auto_compact_window, account_id=body.account_id,
             higgsfield=body.higgsfield,
         )
+    except folder_routing.FolderError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

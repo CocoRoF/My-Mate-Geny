@@ -11,6 +11,7 @@ import {
   useSessionTabs,
   useWorkbench,
 } from "../../stores/workbenchStore";
+import { hostName, qualify, sameHost, sessionFolders, strip, unqualify } from "../../lib/hosts";
 import type { Session } from "../../types";
 import Icon from "../ui/Icon";
 import { fileIcon } from "../viewer/fileIcon";
@@ -25,6 +26,8 @@ interface Menu {
   x: number;
   y: number;
   entry: FsEntry;
+  key: string; // its workbench key (lib/hosts.ts)
+  conn: string | null; // its host
 }
 
 /**
@@ -40,9 +43,18 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
   const t = useT();
   const sid = session.id;
   const conn = session.connection_id;
+  const at = (key: string) => unqualify(session, key);
+  const ld = (key: string, force = false) => {
+    const x = at(key);
+    return load(x.conn, x.path, force);
+  };
   const connections = useConnectionStore((s) => s.connections);
   const pinned = useWorkbench((s) => s.pinnedRoots[sid]);
   const roots = useMemo(() => explorerRoots(session, pinned), [session, pinned]);
+  const folderRoots = useMemo(
+    () => new Set(sessionFolders(session).map((f) => qualify(session, f.connection_id, strip(f.path) || "/"))),
+    [session],
+  );
   const expandedList = useWorkbench((s) => s.expanded[sid]);
   const expanded = useMemo(() => new Set(expandedList || []), [expandedList]);
   const showHidden = useWorkbench((s) => s.showHidden);
@@ -66,8 +78,8 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
 
   // Roots load on open; expanded folders (persisted) reload with them.
   useEffect(() => {
-    for (const r of roots) if (openRoots[r] !== false) load(conn, r);
-    for (const d of expanded) load(conn, d);
+    for (const r of roots) if (openRoots[r] !== false) ld(r);
+    for (const d of expanded) ld(d);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roots, conn]);
 
@@ -103,14 +115,14 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
   }, [menu]);
 
   const refresh = () => {
-    for (const r of roots) load(conn, r, true);
-    for (const d of expanded) load(conn, d, true);
+    for (const r of roots) ld(r, true);
+    for (const d of expanded) ld(d, true);
   };
 
   const toggleDir = (path: string) => {
     const open = !expanded.has(path);
     wb.setExpanded(sid, path, open);
-    if (open) load(conn, path);
+    if (open) ld(path);
     wb.select(path);
   };
 
@@ -122,8 +134,9 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
 
   const visible = (e: FsEntry) => showHidden || !NOISE.has(e.name);
 
-  const rows = (path: string, depth: number): React.ReactNode => {
-    const st = dirs[dirKey(conn, path)];
+  const rows = (key: string, depth: number): React.ReactNode => {
+    const { conn: here, path } = at(key);
+    const st = dirs[dirKey(here, path)];
     if (!st || (!st.entries && st.loading))
       return (
         <div className="py-1 text-[11.5px] text-content-faint" style={{ paddingLeft: depth * INDENT + 22 }}>
@@ -146,21 +159,22 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
     return (
       <>
         {list.map((e) => {
-          const open = e.is_dir && expanded.has(e.path);
-          const isSel = selected === e.path;
-          const isActive = !e.is_dir && activePath === e.path;
+          const k = qualify(session, here, e.path);
+          const open = e.is_dir && expanded.has(k);
+          const isSel = selected === k;
+          const isActive = !e.is_dir && activePath === k;
           const { icon, tone } = e.is_dir ? { icon: open ? "folder-open" : "folder", tone: "text-warning/80 light:text-warning" } : fileIcon(e.name);
           return (
-            <div key={e.path}>
+            <div key={k}>
               <div
-                data-path={e.path}
+                data-path={k}
                 data-selected={isSel}
-                onClick={() => (e.is_dir ? toggleDir(e.path) : openFile(e.path, false))}
-                onDoubleClick={() => !e.is_dir && openFile(e.path, true)}
+                onClick={() => (e.is_dir ? toggleDir(k) : openFile(k, false))}
+                onDoubleClick={() => !e.is_dir && openFile(k, true)}
                 onContextMenu={(ev) => {
                   ev.preventDefault();
-                  wb.select(e.path);
-                  setMenu({ x: ev.clientX, y: ev.clientY, entry: e });
+                  wb.select(k);
+                  setMenu({ x: ev.clientX, y: ev.clientY, entry: e, key: k, conn: here });
                 }}
                 title={`${e.path}${e.is_dir ? "" : `\n${formatBytes(e.size)}${e.mtime ? ` · ${formatTime(e.mtime)}` : ""}`}`}
                 className={`tree-row group relative flex h-[26px] touch:h-9 cursor-pointer select-none items-center gap-1.5 pr-2 text-[12.5px] transition-colors ${
@@ -184,7 +198,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
                   </span>
                 )}
               </div>
-              {open && rows(e.path, depth + 1)}
+              {open && rows(k, depth + 1)}
             </div>
           );
         })}
@@ -197,11 +211,11 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
     );
   };
 
-  const menuItems = (e: FsEntry): [string, () => void][] => {
-    const rel = displayPath(e.path, [session.workspace_path]);
+  const menuItems = ({ entry: e, key, conn: where }: Menu): [string, () => void][] => {
+    const rel = sameHost(where, conn) ? displayPath(e.path, [session.workspace_path]) : e.path;
     const items: [string, () => void][] = [];
-    if (!e.is_dir) items.push([t("common.open"), () => openFile(e.path, true)]);
-    else items.push([t("files.openAsRoot"), () => wb.addRoot(sid, e.path)], [t("common.refresh"), () => load(conn, e.path, true)]);
+    if (!e.is_dir) items.push([t("common.open"), () => openFile(key, true)]);
+    else items.push([t("files.openAsRoot"), () => wb.addRoot(sid, key)], [t("common.refresh"), () => load(where, e.path, true)]);
     items.push(
       [t("files.mentionInChat"), () => {
         wb.insertText(sid, `@${rel.includes(" ") ? `"${rel}"` : rel} `);
@@ -214,7 +228,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
     if (!e.is_dir)
       items.push([t("common.download"), () => {
         const a = document.createElement("a");
-        a.href = fsRawUrl(e.path, conn, true);
+        a.href = fsRawUrl(e.path, where, true);
         a.download = e.name;
         a.click();
       }]);
@@ -294,24 +308,36 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-6">
         {roots.map((r, i) => {
           const open = openRoots[r] !== false;
-          const kind = i === 0 ? "workspace" : (session.extra_dirs || []).some((d) => d.replace(/\/+$/, "") === r) ? "folder" : "opened";
+          const kind = i === 0 ? "workspace" : folderRoots.has(r) ? "folder" : "opened";
+          const rc = at(r).conn;
           return (
             <section key={r} className="border-b border-border/50">
               <div
                 className="group sticky top-0 z-[5] flex h-7 touch:h-10 cursor-pointer select-none items-center gap-1.5 bg-surface/95 px-2 text-[11px] font-semibold uppercase tracking-wide text-content-dim backdrop-blur hover:text-content"
                 onClick={() => {
                   setOpenRoots((s) => ({ ...s, [r]: !open }));
-                  if (!open) load(conn, r);
+                  if (!open) ld(r);
                 }}
                 onContextMenu={(ev) => {
                   ev.preventDefault();
-                  setMenu({ x: ev.clientX, y: ev.clientY, entry: { name: baseName(r), path: r, is_dir: true, size: 0, mtime: null } });
+                  setMenu({ x: ev.clientX, y: ev.clientY, entry: { name: baseName(at(r).path), path: at(r).path, is_dir: true, size: 0, mtime: null }, key: r, conn: rc });
                 }}
-                title={r}
+                title={sameHost(rc, conn) ? at(r).path : `${hostName(rc, connections, t("files.thisServer"))} · ${at(r).path}`}
+                data-root-host={rc || "local"}
               >
                 <Icon name={open ? "chevron-down" : "chevron"} size={12} className="shrink-0" />
-                <span className="truncate">{baseName(r) || "/"}</span>
+                <span className="truncate">{baseName(at(r).path) || "/"}</span>
                 <span className="shrink-0 font-normal normal-case tracking-normal text-content-faint">{t(ROOT_KIND[kind])}</span>
+                {!sameHost(rc, conn) && (
+                  <span
+                    className={`pill max-w-[7rem] shrink-0 truncate px-1.5 py-0 text-[10px] font-normal normal-case tracking-normal ${
+                      rc ? "bg-cyan/10 text-cyan" : "bg-surface-3 text-content-dim"
+                    }`}
+                    data-testid="explorer-root-host"
+                  >
+                    {hostName(rc, connections, t("files.thisServer"))}
+                  </span>
+                )}
                 {kind === "opened" && (
                   <button
                     onClick={(ev) => {
@@ -346,7 +372,7 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
           className="fixed z-[70] min-w-[180px] overflow-hidden rounded-lg border border-border bg-surface-2 py-1 text-[12.5px] shadow-float"
           style={{ left: Math.min(menu.x, window.innerWidth - 190), top: Math.min(menu.y, window.innerHeight - 220) }}
         >
-          {menuItems(menu.entry).map(([label, fn]) => (
+          {menuItems(menu).map(([label, fn]) => (
             <button
               key={label}
               onClick={fn}

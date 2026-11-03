@@ -25,6 +25,8 @@ export default {
   navigateHint: "Navigate to a folder and click “use this”.",
   alreadyAdded: "Already added",
   addFolder: "Add folder",
+  selectFolder: "Select",
+  selectFolderTitle: "Add it to the selection — connect several folders (on several servers) together",
   // a folder from this computer (lib/localFolder.ts, localFolderStore, folderUploads)
   appCouldNotRead: "the app could not read this folder",
   couldNotRead: "could not read {file}",

@@ -174,7 +174,7 @@ class FolderUploadService:
         if total_bytes > lim["max_bytes"]:
             raise FolderUploadError(
                 f"folder too large: {total_bytes / 1048576:.0f} MB (at most {settings.folder_upload_max_mb} MB)", 413)
-        if len(session.get("extra_dirs") or []) >= 20:
+        if len(session.get("folders") or session.get("extra_dirs") or []) >= 20:
             raise FolderUploadError("at most 20 additional folders — disconnect one first")
         if sum(1 for u in self._uploads.values() if u.sid == sid) >= _MAX_ACTIVE_PER_SESSION:
             raise FolderUploadError("another upload for this chat is still running", 409)
@@ -268,10 +268,12 @@ class FolderUploadService:
             if up.remote:
                 shutil.rmtree(up.staging, ignore_errors=True)
         session = self._sessions.get(sid)
-        dirs = list(session.get("extra_dirs") or [])
-        if path not in dirs:
-            dirs.append(path)
-        session = self._sessions.update(sid, extra_dirs=dirs)
+        # the copy is a folder on the workspace's host
+        here = {"path": path, "connection_id": session.get("connection_id") or None}
+        folders = [dict(f) for f in session.get("folders") or []]
+        if here not in folders:
+            folders.append(here)
+        session = self._sessions.update(sid, folders=folders)
         return {"path": path, "files": up.files, "bytes": up.bytes, "skipped": up.skipped, "session": session}
 
     def abort(self, sid: str, uid: str) -> None:

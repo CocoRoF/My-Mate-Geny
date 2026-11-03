@@ -77,7 +77,8 @@ export default function ChangesModal({
   useEffect(() => {
     if (mode !== "file" || !sel || whole !== null) return;
     const root = changes.repos[sel.repo].root;
-    fileText(sid, `${root}/${sel.file.path}`)
+    const repo = changes.repos[sel.repo];
+    fileText(sid, `${root}/${sel.file.path}`, "connection_id" in repo ? repo.connection_id : undefined)
       .then((r) => setWhole(r.content + (r.truncated ? `\n… (${t("files.truncated")})` : "")))
       .catch((e) => setWhole(`(${e.message || e})`));
   }, [mode, sel, whole, sid, changes.repos]);
