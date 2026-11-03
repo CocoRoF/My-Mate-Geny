@@ -41,7 +41,11 @@ export default function DeviceRuntime(){
      if(target&&!intent.mate_id)await patchDevicePreferences({sharing:{mate_id:target.id}});
      if(target && target.session_id!==intent.sid){
       const r=await fetch(`/api/mates/${encodeURIComponent(target.id)}/conversation`,{method:"POST"});
-      if(r.ok){const v=await r.json();await patchDevicePreferences({sharing:{sid:v.session_id}});}
+      if(r.ok){
+       const v=await r.json();
+       if(v.session_id!==intent.sid)await patchDevicePreferences({sharing:{sid:v.session_id}});
+       if(target.session_id!==v.session_id)await useMateStore.getState().load();
+      }
      }
     }
     await resumeSharing();
