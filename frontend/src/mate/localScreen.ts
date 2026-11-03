@@ -473,7 +473,12 @@ export async function resumeSharing() {
     let response: Response;
     try {response=await fetch(`/api/sessions/${encodeURIComponent(saved.sid)}`);} catch {pauseSharing("waiting_connection");return;}
     if ([401,403].includes(response.status)) {pauseSharing("waiting_auth");return;}
-    if (response.status === 404) throw new Error(tr("screen.restoreMissing"));
+    if (response.status === 404) {
+      pauseSharing("waiting_session");
+      const message=tr("screen.waitSession");
+      if(lastRestoreNotice!==message){lastRestoreNotice=message;reportRestoreFailure(message);}
+      return;
+    }
     if (!response.ok) {pauseSharing("waiting_connection");return;}
     if (!native) {
       if (!(await claimBrowserOwner())) return; // another tab already owns the live stream

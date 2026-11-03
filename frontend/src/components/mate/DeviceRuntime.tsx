@@ -34,8 +34,11 @@ export default function DeviceRuntime(){
     if(alive)setDeviceEventHello({device_runtime:true,device_boot:context.bootId,device_start_reason:context.startReason,device_mate_id:mate.id,device_events:events});
     // Conversation recreation never changes saved device intent. Resolve the same Mate only.
     const intent=devicePreferences().sharing;
-    if(intent.enabled && intent.origin===location.origin && intent.mate_id){
-     const target=mates.find(m=>m.id===intent.mate_id);
+    if(intent.enabled && intent.origin===location.origin){
+     // Older device records saved only the conversation ID. Infer its Mate from that exact binding,
+     // never from whichever Mate happens to be selected now.
+     const target=intent.mate_id?mates.find(m=>m.id===intent.mate_id):mates.find(m=>m.session_id===intent.sid);
+     if(target&&!intent.mate_id)await patchDevicePreferences({sharing:{mate_id:target.id}});
      if(target && target.session_id!==intent.sid){
       const r=await fetch(`/api/mates/${encodeURIComponent(target.id)}/conversation`,{method:"POST"});
       if(r.ok){const v=await r.json();await patchDevicePreferences({sharing:{sid:v.session_id}});}
