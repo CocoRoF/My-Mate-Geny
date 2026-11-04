@@ -44,6 +44,12 @@ const visible = (h: string) => decode(h.replace(/<pre[\s\S]*?<\/pre>/g, " ").rep
 
 const kinds = (blocks: MateBlock[]) => blocks.map((b) => b.type ?? b.kind);
 
+test('empty and emotion-only completed replies have no display blocks or bubble spacing',()=>{
+ for(const text of ['', ' \n\t ', '[neutral]', '[smile]','(잠시 생각함)'])assert.deepEqual(segmentReply(text),[]);
+ assert.equal(segmentReply('...').length,1);
+ assert.equal(segmentReply('```text\n[SILENT]\n```').length,1,'literal code stays visible');
+});
+
 // ── one reply with every element ──────────────────────────────────────
 
 const FENCE = "```";

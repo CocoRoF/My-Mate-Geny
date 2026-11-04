@@ -31,6 +31,8 @@ media playback or browser speech actually starts, so a blocked window can hand i
 Buffered autonomous text and its completion share a timestamp and retain event-ID order. History reconstruction
 also preserves causal event order for older records whose completion timestamp preceded their buffered text.
 Those old records render once without editing the saved conversation or deleting genuinely repeated replies.
+Completed silent turns have no transcript row, including its layout gap. Emotion-only or otherwise empty display
+blocks also reserve no space; running indicators, tool cards, errors and explicit interruption notices stay visible.
 
 Tests: `backend/tests/test_device_runtime.py`, `tests/test_geny_triggers.py`,
 `desktop/test/device-runtime.test.js`, `desktop/test/e2e/device-runtime-e2e.js` (actual Electron/X11, isolated

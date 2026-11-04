@@ -8,6 +8,7 @@ import type { FlowItem, ToolActivity, Turn } from "../../stores/chatStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUIStore } from "../../stores/uiStore";
 import { parseEmotionText } from "../../mate/emotion";
+import { segmentReply } from "../../mate/markdown";
 import { currentSurface, desktopMate } from "../../mate/desktop";
 import Icon, { type IconName } from "../ui/Icon";
 import MateReply from "./MateReply";
@@ -279,7 +280,9 @@ const AssistantBubbles = memo(function AssistantBubbles({ turn, compact }: { tur
   const items: JSX.Element[] = [];
   turn.flow.forEach((f: FlowItem, i) => {
     if (f.kind === "text") {
-      items.push(<MateReply key={i} keyPrefix={`${i}.`} text={f.text} streaming={running && i === lastText && i > lastSteer} compact={compact} />);
+      const streaming = running && i === lastText && i > lastSteer;
+      if (segmentReply(f.text, { streaming }).length)
+        items.push(<MateReply key={i} keyPrefix={`${i}.`} text={f.text} streaming={streaming} compact={compact} />);
     } else if (f.kind === "tool") {
       const t = toolsById.get(f.toolId);
       if (t) items.push(<ActivityChip key={i} tool={t} />);
@@ -295,6 +298,9 @@ const AssistantBubbles = memo(function AssistantBubbles({ turn, compact }: { tur
   });
   const hasText = lastText >= 0 && !!parseEmotionText(turn.text, { streaming: running }).text.trim();
   const toolRunning = turn.tools.some((t) => t.durationMs === undefined);
+  // [SILENT] / empty completed turns have no row at all: a zero-height wrapper
+  // would still add the parent's flex gap for every autonomous silence.
+  if (!running && !items.length && !turn.error && turn.status !== "interrupted") return null;
   return (
     <div className="flex w-full min-w-0 flex-col items-start gap-1.5 animate-fade-in" data-testid="mate-turn">
       {items}
