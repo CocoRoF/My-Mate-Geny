@@ -7,7 +7,7 @@ import Icon from "../ui/Icon";
 import { useBackHandler } from "../../lib/back";
 import { formatBytes } from "./fileMeta";
 import { useT } from "../../i18n";
-import { useImageView } from "./useImageView";
+import ZoomableImage from "./ZoomableImage";
 
 /** Full-screen image viewer: ←/→ to browse, Esc / backdrop to close. */
 export default function Lightbox({
@@ -84,7 +84,7 @@ export default function Lightbox({
       </div>
 
       <div className="relative flex-1 min-h-0 overflow-hidden">
-        <ZoomImage key={img.id} image={img} onClose={onClose} />
+        <ZoomableImage key={img.id} url={freshImg(img.url)} name={img.name} onBackdrop={onClose} />
         {many && (
           <>
             <button
@@ -107,35 +107,4 @@ export default function Lightbox({
     </div>,
     document.body,
   );
-}
-
-/** Each image owns its gesture state; browsing always starts fitted, including cached images. */
-function ZoomImage({image,onClose}:{image:Attachment;onClose:()=>void}) {
-  const t=useT(),[size,setSize]=useState({width:0,height:0}),[failed,setFailed]=useState(false);
-  const zoom=useImageView(size),loaded=!!size.width;
-  useEffect(()=>{
-    const key=(e:KeyboardEvent)=>{
-      if(e.key==='+'||e.key==='='){e.preventDefault();zoom.zoom(1.25)}
-      else if(e.key==='-'){e.preventDefault();zoom.zoom(1/1.25)}
-      else if(e.key==='0'){e.preventDefault();zoom.reset()}
-    };
-    window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);
-  });
-  return <>
-    <div ref={zoom.area} data-testid="image-zoom-area" data-scale={zoom.view.scale} className="absolute inset-x-4 top-0 bottom-16 flex items-center justify-center overflow-hidden select-none" style={{touchAction:'none',cursor:zoom.view.scale>1?(zoom.dragging?'grabbing':'grab'):'default'}}
-      onClick={e=>{e.stopPropagation();if(zoom.backdropClick())onClose()}}
-      onDoubleClick={e=>{e.stopPropagation();zoom.doubleClick(e.clientX,e.clientY)}}>
-      {!loaded&&!failed&&<Icon name="spinner" size={26} spin className="absolute text-white/60"/>}
-      {failed&&<span className="text-sm text-white/70">{t('files.imageUnavailable')}</span>}
-      <img src={freshImg(image.url)} alt={image.name} draggable={false} data-testid="lightbox-image"
-        onLoad={e=>setSize({width:e.currentTarget.naturalWidth,height:e.currentTarget.naturalHeight})} onError={()=>setFailed(true)}
-        className="shrink-0 rounded-lg shadow-float" style={{width:zoom.fit.width,height:zoom.fit.height,opacity:loaded?1:0,transform:`translate(${zoom.view.x}px,${zoom.view.y}px) scale(${zoom.view.scale})`}}/>
-    </div>
-    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-xl border border-white/15 bg-black/70 px-2 py-1.5 text-white shadow-float" onClick={e=>e.stopPropagation()}>
-      <button className="grid h-9 w-9 place-items-center rounded-lg hover:bg-white/15 disabled:opacity-30" onClick={()=>zoom.zoom(1/1.25)} disabled={!loaded||zoom.view.scale<=1} title={t('files.zoomOut')} aria-label={t('files.zoomOut')} data-testid="image-zoom-out">−</button>
-      <button className="min-w-16 rounded-lg px-2 py-2 text-xs tabular-nums hover:bg-white/15" onClick={zoom.reset} title={t('files.zoomReset')} aria-label={t('files.zoomReset')} data-testid="image-zoom-reset">{Math.round(zoom.view.scale*100)}%</button>
-      <button className="grid h-9 w-9 place-items-center rounded-lg hover:bg-white/15 disabled:opacity-30" onClick={()=>zoom.zoom(1.25)} disabled={!loaded||zoom.view.scale>=8} title={t('files.zoomIn')} aria-label={t('files.zoomIn')} data-testid="image-zoom-in">+</button>
-    </div>
-    <span className="sr-only" role="status">{t('files.zoomHelp')}</span>
-  </>;
 }

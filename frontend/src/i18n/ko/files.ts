@@ -78,8 +78,8 @@ const ko: Messages<"files"> = {
   revealInExplorer: "탐색기에서 보기",
   showingFirst: "전체 {total} 중 처음 {shown}만 보여 주고 있어요.",
   loadUpTo: "최대 {size}까지 불러오기",
-  fitToWindow: "창에 맞춤 — 클릭하면 실제 크기",
-  actualSize: "실제 크기 — 클릭하면 창에 맞춤",
+  fitToWindow: "창에 맞춤",
+  actualSize: "실제 크기",
   // tables
   rowsCols: "{count}행 × {cols}열",
   nMatch: "{count}개 일치",

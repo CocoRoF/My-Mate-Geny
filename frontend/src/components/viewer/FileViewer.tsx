@@ -20,6 +20,7 @@ import { useConnectionStore } from "../../stores/connectionStore";
 import { displayPath } from "../../lib/paths";
 import { explorerRoots, revealInExplorer, useWorkbench, type FileTab } from "../../stores/workbenchStore";
 import type { Session } from "../../types";
+import ZoomableImage from "../attachments/ZoomableImage";
 import Icon, { type IconName } from "../ui/Icon";
 import Markdown from "../ui/Markdown";
 import CodeView from "./CodeView";
@@ -365,31 +366,15 @@ export default function FileViewer({ session, tab }: { session: Session; tab: Fi
 }
 
 function ImageView({ url, name }: { url: string; name: string }) {
-  const t = useT();
-  const [fit, setFit] = useState(true);
-  const [dims, setDims] = useState("");
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div
-        className={`min-h-0 flex-1 overflow-auto ${fit ? "grid place-items-center" : ""} p-4`}
-        style={{
-          backgroundImage:
-            "linear-gradient(45deg,var(--checker) 25%,transparent 25%),linear-gradient(-45deg,var(--checker) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,var(--checker) 75%),linear-gradient(-45deg,transparent 75%,var(--checker) 75%)",
-          backgroundSize: "20px 20px",
-          backgroundPosition: "0 0,0 10px,10px -10px,-10px 0",
-        }}
-      >
-        <img
-          src={url}
-          alt={name}
-          onClick={() => setFit(!fit)}
-          onLoad={(e) => setDims(`${e.currentTarget.naturalWidth} × ${e.currentTarget.naturalHeight}`)}
-          className={`${fit ? "max-h-full max-w-full object-contain cursor-zoom-in" : "max-w-none cursor-zoom-out"}`}
-        />
-      </div>
-      <div className="shrink-0 border-t border-border/60 px-3 py-1 text-[11px] text-content-faint">
-        {dims} · {fit ? t("files.fitToWindow") : t("files.actualSize")}
-      </div>
+    <div className="h-full min-h-0 overflow-hidden"
+      style={{
+        backgroundImage:
+          "linear-gradient(45deg,var(--checker) 25%,transparent 25%),linear-gradient(-45deg,var(--checker) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,var(--checker) 75%),linear-gradient(-45deg,transparent 75%,var(--checker) 75%)",
+        backgroundSize: "20px 20px",
+        backgroundPosition: "0 0,0 10px,10px -10px,-10px 0",
+      }}>
+      <ZoomableImage key={url} url={url} name={name} embedded />
     </div>
   );
 }

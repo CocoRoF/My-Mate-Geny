@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {clampImageView,fittedImage,IMAGE_HOME,zoomImage,type ImageBounds,type ImageView} from './imageView';
+import {clampImageView,fittedImage,IMAGE_HOME,maxImageZoom,zoomImage,type ImageBounds,type ImageView} from './imageView';
 
 export function useImageView(imageSize: {width:number;height:number}) {
   const area=useRef<HTMLDivElement>(null),current=useRef<ImageView>(IMAGE_HOME);
@@ -11,7 +11,7 @@ export function useImageView(imageSize: {width:number;height:number}) {
   const zoom=(factor:number)=>put(zoomImage(current.current,factor,{x:0,y:0},{x:0,y:0},bounds.current));
   useEffect(()=>{
     const el=area.current;if(!el)return;
-    const measure=()=>{const r=el.getBoundingClientRect();bounds.current={width:r.width,height:r.height,imageWidth:imageSize.width,imageHeight:imageSize.height};setFit(fittedImage(bounds.current));put(current.current)};
+    const measure=()=>{const r=el.getBoundingClientRect();if(!r.width||!r.height)return;bounds.current={width:r.width,height:r.height,imageWidth:imageSize.width,imageHeight:imageSize.height};setFit(fittedImage(bounds.current));put(current.current)};
     measure();const observer=new ResizeObserver(measure);observer.observe(el);
     const points=new Map<number,{x:number;y:number}>();
     let origin:{x:number;y:number}|null=null;
@@ -47,7 +47,9 @@ export function useImageView(imageSize: {width:number;height:number}) {
     el.addEventListener('wheel',wheel,{passive:false});el.addEventListener('pointerdown',down);el.addEventListener('pointermove',move);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);el.addEventListener('lostpointercapture',up);window.addEventListener('blur',blur);
     return()=>{observer.disconnect();el.removeEventListener('touchstart',lockTouch);el.removeEventListener('touchmove',lockTouch);el.removeEventListener('wheel',wheel);el.removeEventListener('pointerdown',down);el.removeEventListener('pointermove',move);el.removeEventListener('pointerup',up);el.removeEventListener('pointercancel',up);el.removeEventListener('lostpointercapture',up);window.removeEventListener('blur',blur)};
   },[imageSize.width,imageSize.height]);
-  return {area,view,fit,dragging,reset,zoom,
+  const actualScale=fit.width>0?imageSize.width/fit.width:1;
+  const actualSize=()=>put({x:0,y:0,scale:actualScale});
+  return {area,view,fit,dragging,reset,zoom,actualScale,actualSize,maxScale:maxImageZoom(bounds.current),
     backdropClick:()=>!suppressClick.current&&!onImage.current,
     doubleClick:(x:number,y:number)=>{if(current.current.scale>1)reset();else{const r=area.current!.getBoundingClientRect(),p={x:x-r.left-r.width/2,y:y-r.top-r.height/2};put(zoomImage(current.current,2,p,p,bounds.current))}},
   };

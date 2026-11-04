@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {IMAGE_HOME,clampImageView,fittedImage,zoomImage} from '../src/components/attachments/imageView.ts';
+import {IMAGE_HOME,maxImageZoom,clampImageView,fittedImage,zoomImage} from '../src/components/attachments/imageView.ts';
 const bounds={width:800,height:600,imageWidth:1600,imageHeight:1200};
 test('images fit without stretching or upscaling small originals',()=>{
  assert.deepEqual(fittedImage(bounds),{width:800,height:600});
@@ -23,4 +23,11 @@ test('pan never loses an image; zoom limits and resize remain bounded',()=>{
  assert.equal(clampImageView({...v,scale:90},bounds).scale,8);
  const fit=clampImageView({...v,scale:.01},bounds);assert.equal(fit.scale,1);assert.equal(Math.abs(fit.x),0);assert.equal(Math.abs(fit.y),0);
  assert.deepEqual(clampImageView({...v,scale:NaN},bounds),{x:0,y:-0,scale:1});
+});
+
+test('huge filesystem images retain access to their original 1:1 resolution',()=>{
+ const huge={width:400,height:600,imageWidth:12000,imageHeight:4000};
+ assert.equal(maxImageZoom(huge),30);
+ const v=zoomImage(IMAGE_HOME,30,{x:0,y:0},{x:0,y:0},huge);
+ assert.equal(v.scale,30);assert.equal(fittedImage(huge).width*v.scale,12000);
 });

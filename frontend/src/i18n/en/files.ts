@@ -77,8 +77,8 @@ export default {
   revealInExplorer: "Reveal in explorer",
   showingFirst: "Showing the first {shown} of {total}.",
   loadUpTo: "Load up to {size}",
-  fitToWindow: "fit to window — click for actual size",
-  actualSize: "actual size — click to fit",
+  fitToWindow: "Fit to window",
+  actualSize: "Actual size",
   // tables
   rowsCols: { one: "{count} row × {cols} columns", other: "{count} rows × {cols} columns" },
   nMatch: { one: "{count} match", other: "{count} matches" },
