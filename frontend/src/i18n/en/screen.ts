@@ -45,7 +45,6 @@ const screen = {
   "selectedScreen": "Selected screen",
   "notSharing": "Screen sharing is off or ended.",
   "allowRequest": "Allow {name} to capture your selected screen now?",
-  "captured": "Screen captured",
   "requestFailed": "Screen capture or upload failed. Check your connection and screen permission.",
   "thisConversation": "this conversation",
   "sharing": "Sharing: {source}",

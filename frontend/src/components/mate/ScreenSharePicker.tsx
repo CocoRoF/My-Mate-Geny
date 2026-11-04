@@ -10,7 +10,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { type Mate } from "../../api/mates";
 import {
-  captureBridge, notifyCaptured,
+  captureBridge,
   captureError,
   lastShared,
   rememberShared,
@@ -120,7 +120,6 @@ export default function ScreenSharePicker({
         return;
       }
       rememberShared(sourceId);
-      if(!b.notifications)notifyCaptured(captureId.current);
       onShot?.(shotFile(shot));
     } catch {
       if (alive.current) setError(t("mate.shareFailed"));

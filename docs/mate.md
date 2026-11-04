@@ -748,6 +748,10 @@ Request routing/upload, unpredictable response proof, source selection and appro
 [screen capture pipeline](screen-capture.md). The default per-request approval remains. A capture never hides or
 moves Geny windows. One short floating toast appears in one visible window; no persistent composer rows, title
 suffixes or tray sharing text exist. The avatar toolbar's active/waiting dot and Screen settings expose Stop.
+Completed captures never display a notification: neither agent requests, automatic sampling nor manual captures
+produce a success toast. The frontend has no capture-completion listener or fallback notification. Legacy native
+completion IPC remains wire-compatible for older servers and is ignored here. Errors/approval prompts use their
+own controls; generic floating errors live in `lib/toast.ts`, outside the capture completion path.
 Sent images remain normal conversation attachments (including model CLI session retention); transient/failed
 captures are deleted and no image bytes are copied into app logs or long-term memory.
 

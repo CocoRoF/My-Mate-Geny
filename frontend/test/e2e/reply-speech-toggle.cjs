@@ -81,7 +81,7 @@ function wav(seconds){const n=8000*seconds,b=Buffer.alloc(44+n*2);b.write('RIFF'
   // A failed update rolls back visually, reports an error and unlocks the button for retry.
   await overlay.route('**/api/mates/'+mate.id,route=>route.request().method()==='PATCH'?route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'verification offline'})}):route.continue());
   await voice.evaluate(b=>b.click());await until('failure unlocks native control',async()=>!(await voice.isDisabled()));
-  assert.equal(await voice.getAttribute('aria-pressed'),'true');await overlay.getByTestId('capture-toast').waitFor();
+  assert.equal(await voice.getAttribute('aria-pressed'),'true');await overlay.getByTestId('app-toast').waitFor();
   await overlay.unroute('**/api/mates/'+mate.id);
   await voice.evaluate(b=>b.click());await all(false,'retry OFF succeeds');
   await main.reload();await main.getByTestId('mate-settings-open').click();await main.getByTestId('mate-tab-voice').click();await all(false,'reload keeps OFF');

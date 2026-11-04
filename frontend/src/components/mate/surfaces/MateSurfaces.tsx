@@ -1,5 +1,5 @@
 import { useReplySpeech } from "../../../mate/useReplySpeech";
-import { toast } from "../../../mate/screenCapture";
+import { toast } from "../../../lib/toast";
 /**
  * Full-page Mate surfaces for the desktop app's windows (docs/mate.md §6–7), no console chrome:
  *   ?surface=mate-overlay&mate=<id>  the avatar + caption bubble on a transparent page; plays the voice; pan / zoom
