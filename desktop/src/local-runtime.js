@@ -70,6 +70,7 @@ function createLocalRuntime({root,dataDir,cookies,log=()=>{},onCrash=()=>{},pref
       const auth=await request(address,'/api/local/bootstrap',secret);
       if(stopping||epoch!==generation)throw new Error('Local start cancelled');
       await cookies.set({url:address,name:auth.name,value:auth.token,httpOnly:true,secure:false,sameSite:'strict',path:'/',expirationDate:Date.now()/1000+auth.expires});
+      if(stopping||epoch!==generation)throw new Error("Local start cancelled");
       origin=address;return {origin};
     })().catch(e=>{force(child);child=null;origin='';throw e;}).finally(()=>{pending=null;});
     return pending;

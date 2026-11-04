@@ -21,7 +21,7 @@ def configure(data: Path, static: Path) -> None:
     defaults = {
         "EXECUTION_MODE": "local", "DATA_HOME": str(data), "DB_PATH": str(data / "geny.db"),
         "STATIC_DIR": str(static), "AUTH_USERNAME": "local", "AUTH_PASSWORD": password_file.read_text(),
-        "HOST": "127.0.0.1", "COOKIE_SECURE": "false", "MATE_SEARCH_ROOTS": str(Path.home()),
+        "HOST": "127.0.0.1", "COOKIE_SECURE": "false", "CORS_ORIGINS": "", "MATE_SEARCH_ROOTS": str(Path.home()),
         "MOUNT_ROOT": str(data / "mounts"), "REPOS_ROOT": str(data / "repos"),
         "UPLOADS_ROOT": str(data / "uploads"), "MATES_ROOT": str(data / "mates"),
         "HIGGSFIELD_ROOT": str(data / "higgsfield"), "AVATAR_ROOT": str(data / "avatars"),

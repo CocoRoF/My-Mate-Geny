@@ -70,12 +70,12 @@ export default function App() {
     useCliToolsStore.getState().load(); // the Settings badge when a CLI update can be installed (lib/attention.ts)
   }, [loadProviders, loadConnections, loadSessions, loadConfig]);
 
-  const title = TITLES[view] ? t(TITLES[view]) : "";
+  const title = setup ? t("setup.title") : TITLES[view] ? t(TITLES[view]) : "";
   const tab = tabMeta(useUIStore((s) => (s.view === "settings" ? s.settingsTab : null)));
 
   const sessionTitle = useSessionStore((s) => (s.activeId ? s.sessions.find((x) => x.id === s.activeId)?.title : undefined));
   const chrome = !!nativeWindow(); // the desktop app without a system title bar: ours on top (TitleBar)
-  const context = view === "chat" ? sessionTitle || t("nav.newChat") : tab ? `${title} · ${t(tab.label)}` : title;
+  const context = setup ? t("setup.title") : view === "chat" ? sessionTitle || t("nav.newChat") : tab ? `${title} · ${t(tab.label)}` : title;
 
   const shell = (
     // the visible height: 100dvh, or what the keyboard leaves where the layout viewport doesn't shrink (lib/keyboard.ts)
@@ -96,7 +96,7 @@ export default function App() {
         <UpdateBanner />
         <DefaultPasswordBanner />
         {/* chat with an open session, the Mate and Settings (its list / a tab with a back button) have their own header */}
-        {!(view === "chat" && activeId) && view !== "mate" && view !== "settings" && <MobileTopBar title={title} />}
+        {(setup || (!(view === "chat" && activeId) && view !== "mate" && view !== "settings")) && <MobileTopBar title={title} />}
         {/* (a new screen fades in: keyed by the screen) */}
         <div key={view} className="flex-1 min-h-0 animate-fade-in">
           {/* one view failing (or its code gone after a deploy) never takes the sidebar with it */}

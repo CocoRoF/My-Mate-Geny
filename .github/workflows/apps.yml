@@ -208,9 +208,5 @@ jobs:
     if: failure() || cancelled()
     runs-on: ubuntu-latest
     steps:
-      - name: Drop the unfinished draft
-        run: |
-          # Never delete a published release after a rolling-release upload failed.
-          if [ "$(gh release view "apps-v$VERSION" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)" = true ]; then
-            gh release delete "apps-v$VERSION" --yes --repo "$GITHUB_REPOSITORY" || true
-          fi
+      - name: Preserve unfinished artifacts for retry
+        run: echo "Build or publishing failed. Keep apps-v$VERSION as-is for recovery; never delete completed uploads."

@@ -8,7 +8,6 @@ import time
 import shutil
 import tempfile
 from pathlib import Path
-import httpx
 from fastapi import HTTPException
 from app.config import settings
 from app.providers._cli_runtime import _ENV_WHITELIST, _kill_group
@@ -81,6 +80,7 @@ class DesktopSetup:
         try:
             suffix = '.ps1' if os.name == 'nt' else '.sh'
             url = TOOLS[tool][1] + suffix
+            import httpx
             async with httpx.AsyncClient(follow_redirects=True, timeout=60) as client:
                 response = await client.get(url)
                 response.raise_for_status()

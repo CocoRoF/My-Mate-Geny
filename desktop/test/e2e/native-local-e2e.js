@@ -1,6 +1,6 @@
 'use strict';
 const {App,until,sleep}=require('./screen-capture-e2e');
-const fs=require('fs'),path=require('path'),os=require('os'),assert=require('assert/strict');
+const fs=require('fs'),path=require('path'),os=require('os'),assert=require('assert/strict'),http=require('http');
 const out=process.env.LOCAL_TEST_OUTPUT||fs.mkdtempSync(path.join(os.tmpdir(),'geny-local-e2e-'));
 fs.mkdirSync(out,{recursive:true});
 const home=fs.mkdtempSync(path.join(out,'home-')),workspace=path.join(out,'project');
@@ -12,7 +12,7 @@ process.env.CLAUDE_BINARY=path.resolve(__dirname,'fake-claude.py');
 fs.mkdirSync(path.join(home,'.config/hr-harnessor'),{recursive:true});
 fs.writeFileSync(path.join(home,'.config/hr-harnessor/settings.json'),JSON.stringify({language:'ko'}));
 process.env.PLAN_USAGE_FETCH='false';process.env.CLI_UPDATE_CHECK='false';process.env.MONITOR_ENABLED='false';
-let app=null;const results={};
+let app=null,occupied=null;const results={};
 async function shot(page,name){const r=await page.send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(out,name),Buffer.from(r.data,'base64'));}
 const request=(p,route,init={})=>p.eval(`fetch(${JSON.stringify(route)},${JSON.stringify(init)}).then(async r=>({status:r.status,data:await r.json()}))`);
 async function start(port){app=new App(home,port,port+500);app.start();return app;}
@@ -44,7 +44,10 @@ async function start(port){app=new App(home,port,port+500);app.start();return ap
  await shot(page,'04-local-session.png');
  const firstSettings=JSON.parse(fs.readFileSync(path.join(home,'.config/hr-harnessor/settings.json')));
  assert.equal(firstSettings.launchMode,'local');assert.equal(firstSettings.setupCompleted.local,true);
+ await sleep(1200);
  await app.stop();app=null;
+ occupied=http.createServer((_req,res)=>res.end('A different local application owns this old port'));
+ await new Promise((resolve,reject)=>{occupied.once('error',reject);occupied.listen(Number(new URL(results.origin).port),'127.0.0.1',resolve);});
  await start(9872);page=await app.page(/^http:\/\/127\.0\.0\.1:\d+\/(?!\?surface)/,65000);
  await until('restored local session',async()=>{const r=await request(page,'/api/sessions');return JSON.stringify(r.data).includes(session.id);});
  await sleep(1500);assert.equal(await page.eval('!!document.querySelector("[data-testid=setup-assistant]")'),false);results.restart=true;
@@ -52,12 +55,15 @@ async function start(port){app=new App(home,port,port+500);app.start();return ap
  const mainSettings=await app.main(`return require(${JSON.stringify(path.resolve(__dirname,'../../src/settings.js'))}).readSettings();`);
  const db=path.join(home,'.config/hr-harnessor/local/geny.db');assert.ok(fs.existsSync(db));
  results.restoredOrigin=mainSettings.localOrigin;
+ assert.notEqual(results.restoredOrigin,results.origin);results.portFallback=true;
+ assert.equal(await page.eval('localStorage.getItem("hrh_last_session")'),session.id);results.deviceUiStateRestored=true;
+ occupied.close();occupied=null;
  await page.eval('window.hrhNative.switchServer()');page=await app.page(/connect\.html/);await until('server choice rendered',()=>page.eval('!!document.getElementById("modeServer")'));await page.eval('document.getElementById("modeServer").click()');assert.equal(await page.eval('!document.getElementById("serverFields").hidden'),true);results.serverModeSelectable=true;
  await shot(page,'06-server-connection.png');
  await app.stop();app=null;
  // The backend port must close with the app, not remain as a hidden local service.
- await until('backend exited',async()=>{try{await fetch(results.origin+'/health');return false;}catch{return true;}},7000);results.quit=true;
+ await until('backend exited',async()=>{try{await fetch(results.restoredOrigin+'/health');return false;}catch{return true;}},7000);results.quit=true;
  console.log(JSON.stringify(results,null,2));fs.writeFileSync(path.join(out,'results.json'),JSON.stringify(results,null,2));
  }catch(e){if(app){fs.writeFileSync(path.join(out,'electron.log'),app.out||'');try{const pages=await app.targets();for(const target of pages){const p=await app.page(new RegExp(target.url.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));await shot(p,'failure.png');break;}}catch{}}throw e;}
- finally{if(app)await app.stop();console.log('Artifacts: '+out);}
+ finally{occupied?.close();if(app)await app.stop();console.log('Artifacts: '+out);}
 })().catch(e=>{console.error(e);process.exitCode=1;});

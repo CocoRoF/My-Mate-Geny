@@ -44,3 +44,15 @@ Official references:
 - https://learn.chatgpt.com/docs/config-file/environment-variables
 - https://code.claude.com/docs/en/setup
 - https://docs.astral.sh/uv/guides/install-python/
+
+## Persistence and updates
+
+Local history/vault/assets stay in the existing desktop user-data directory's `local` subfolder. Remote history
+is not copied into it. Local selection does not erase the remembered remote server or its credentials.
+The runtime prefers its previous loopback port; if busy, it chooses another port and restores native-owned UI
+preferences and capture origin. Setup completion is keyed by `local`, independent of that port.
+
+A local installation runs its bundled code. Installing a newer desktop package updates that code while retaining
+its data; a browser reload alone cannot update a local bundle. The existing private release repository requires
+an authenticated download; Local mode never requires a Geny account just to start and does not make that repository
+public or embed download credentials. Quiet server-backed update polling is skipped in Local mode.

@@ -25,3 +25,16 @@ test('startup errors do not strand a pending start',async t=>{
  let count=0;const rt=createLocalRuntime({root,cookies:{},spawnProcess:()=>{count++;const p=new EventEmitter();Object.assign(p,{stdout:new PassThrough(),stderr:new PassThrough()});setImmediate(()=>p.emit('error',new Error('fixture spawn failure')));return p;}});
  await assert.rejects(rt.start(),/fixture/);await assert.rejects(rt.start(),/fixture/);assert.equal(count,2);
 });
+
+test('cancel while cookie installation is pending cannot enter a dead local origin',async t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'geny-runtime-test-'));
+ fs.writeFileSync(path.join(root,'python'),'fixture');fs.writeFileSync(path.join(root,'manifest.json'),JSON.stringify({format:1,python:'python',backend:'main.py',web:'web'}));
+ const server=http.createServer((_req,res)=>res.end(JSON.stringify({name:'hrh_session',token:'fixture',expires:60})));
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>{server.close();fs.rmSync(root,{recursive:true,force:true});});
+ let release,reached;const waiting=new Promise(r=>reached=r);
+ const rt=createLocalRuntime({root,dataDir:root,cookies:{set:()=>{reached();return new Promise(r=>release=r);}},spawnProcess:()=>{
+  const p=new EventEmitter();Object.assign(p,{stdout:new PassThrough(),stderr:new PassThrough(),exitCode:null});
+  setImmediate(()=>p.stdout.write('GENY_LOCAL_READY '+JSON.stringify({port:server.address().port})+'\n'));return p;
+ }});
+ const started=rt.start();await waiting;rt.stopNow();release();await assert.rejects(started,/cancelled/);assert.equal(rt.origin(),'');
+});
