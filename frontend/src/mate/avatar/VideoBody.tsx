@@ -9,10 +9,9 @@
  * Switching is calm on purpose. Every clip starts and ends on the same home frame, so a switch at the end of a clip
  * is invisible; a switch in the middle used to be a crossfade, i.e. two poses blended with alpha — the "overlapping
  * frames / bad chroma key" look (a see-through sleeve over her dress), and it ran on every thinking ↔ talking flip
- * while a reply streamed. Now: a mood has to hold for MOOD_SETTLE_MS before it counts; only talking (or a real voice
- * starting), a reaction, or leaving a looping clip cuts in, and it does so by hurrying the clip on screen to its end
- * (faster playback, ≤ HURRY_S) so the next clip starts on the home frame; everything else waits for the clip on screen
- * to end. A crossfade is only the fallback, at least MIN_FADE_GAP_MS apart.
+ * while a reply streamed. A mood has to hold for MOOD_SETTLE_MS before it counts. Talking, a reaction or leaving
+ * a loop finishes the current clip at its natural end; no transition speeds up the animation. The next clip is
+ * prepared ahead and starts on the shared home frame, without blending two poses.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BodyMood, MateReact, Rig, RigClip } from "../types";
@@ -33,14 +32,6 @@ export interface VideoBodyProps {
 
 /** a mood shorter than this never switches a clip */
 export const MOOD_SETTLE_MS = 600;
-/** at most one crossfade per this long */
-export const MIN_FADE_GAP_MS = 1200;
-/** a clip with less than this left plays to its end (the switch there is seamless) */
-const END_SOON_S = 0.6;
-/** a clip that has to make way (talking starts, a reaction) finishes within about this long, played faster */
-const HURRY_S = 0.8;
-const HURRY_MAX_RATE = 4;
-const FADE_MS = 220;
 
 const RANK: Record<string, number> = { idle: 0, talk: 1, think: 2, listen: 3, react: 4, away: 5 };
 
@@ -53,14 +44,13 @@ type State = {
   last: string;
   /** the clip loaded ahead for when the one on screen ends (used then if it still suits what she is doing) */
   upcoming: RigClip | null;
-  lastFade: number;
 };
 
 export default function VideoBody({ rig, size, mood, react, poster, name, onFail }: VideoBodyProps) {
   const wrap = useRef<HTMLDivElement>(null);
-  /** what she does changed: `now` = the mood that counts asks for a cut, else only get the end-of-clip switch ready */
+  /** a priority change ends a loop normally; other changes only prepare the next clip */
   const changeRef = useRef<((now: boolean) => void) | null>(null);
-  /** a reaction: on now (or at the end of a clip that is about to end) */
+  /** a reaction queued for the next natural clip boundary */
   const reactRef = useRef<((c: RigClip) => void) | null>(null);
   const failRef = useRef(onFail);
   failRef.current = onFail;
@@ -93,7 +83,6 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
       playing: null,
       last: "",
       upcoming: null,
-      lastFade: 0,
     };
     st.current = s;
     let p: ClipPlayer;
@@ -164,8 +153,6 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
     };
     const forMood = (m: BodyMood): RigClip | null => pickFrom(moodPool(active, m).clips);
     const moodNow = (): BodyMood => (s.voice ? "talking" : s.mood);
-    /** the first frame is on the canvas (before that, a switch is instant: nothing to fade from) */
-    const shownRef = { current: false };
     /** load what plays when the clip on screen ends (a pending reaction, else a clip for the mood that counts) */
     const prepareNext = () => {
       let c: RigClip | null = s.react;
@@ -176,8 +163,8 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
       }
       if (c && c.id !== s.playing?.id) p.prepare(srcOf(c));
     };
-    /** put the next clip on (urgent: now, crossfading; otherwise the clip on screen just ended) */
-    const next = (urgent: boolean) => {
+    /** put the next clip on after the current clip's natural end */
+    const next = () => {
       let c: RigClip | null;
       if (s.react) {
         c = s.react;
@@ -192,10 +179,8 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
       s.last = c.id;
       // which clip is on (tests, the clip editor's checks); a DOM attribute, not state: no re-render per clip
       box.dataset.mateClip = c.id;
-      const fade = urgent && shownRef.current;
-      if (fade) s.lastFade = performance.now();
       // a clip marked loop (e.g. dozing) loops
-      p.show(srcOf(c), { loop: !!c.loop, fadeMs: fade ? FADE_MS : 0 });
+      p.show(srcOf(c), { loop: !!c.loop });
       // have the likely next clip ready, so the switch at the end shows no seam
       const after = forMood(moodNow());
       if (after && after.id !== c.id) {
@@ -203,41 +188,27 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
         p.prepare(srcOf(after));
       }
     };
-    let gapTimer: ReturnType<typeof setTimeout> | null = null;
-    /**
-     * the next clip as soon as possible, without blending two poses: the clip on screen hurries to its end (played
-     * faster, ≤ HURRY_S) and the next one starts on the shared home frame. Only when that can't be done (e.g. the
-     * player is mid-crossfade) a crossfade, and those at least MIN_FADE_GAP_MS apart.
-     */
+    /** Finish a loop normally. Before any clip is visible, the new choice can start immediately. */
     const cut = () => {
-      if (gapTimer) clearTimeout(gapTimer);
-      gapTimer = null;
       prepareNext();
-      if (p.remaining() < END_SOON_S || p.hurry(HURRY_S, HURRY_MAX_RATE)) return;
-      const since = performance.now() - s.lastFade;
-      if (since < MIN_FADE_GAP_MS) {
-        gapTimer = setTimeout(() => (s.react ? cut() : change(true)), MIN_FADE_GAP_MS - since);
-        return;
-      }
-      next(true);
+      if (!p.finishAtBoundary()) next();
     };
-    /** what she does changed: a cut when asked for and needed; a reaction always plays to its end */
+    /** what she does changed: a loop may finish; reactions always play to their natural end */
     const change = (now: boolean) => {
       if (s.playing?.kind === "react" || (s.playing && s.playing.kind === wanted(moodNow()))) return prepareNext();
       if (now) cut();
       else prepareNext();
     };
     p.onFirstFrame = () => {
-      shownRef.current = true;
       setShown(true);
     };
-    p.onEnded = () => next(false);
+    p.onEnded = next;
     changeRef.current = change;
     reactRef.current = (c) => {
       s.react = c;
       cut();
     };
-    next(false);
+    next();
     // asleep when nobody can see it: the tab is hidden or the body is off screen
     let hidden = document.hidden;
     let off = false;
@@ -255,7 +226,7 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
           })
         : null;
     io?.observe(box);
-    // a voice actually starting is talking for real: the talk clip now
+    // Actual speech prepares the talk clip and finishes a looping idle at normal speed.
     const unsub = subscribeVoice((e) => {
       if (e.type === "start") {
         s.voice = true;
@@ -268,7 +239,6 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
     return () => {
       alive = false;
       ctrl?.abort();
-      if (gapTimer) clearTimeout(gapTimer);
       unsub();
       io?.disconnect();
       document.removeEventListener("visibilitychange", vis);
@@ -286,8 +256,7 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
     };
   }, [active, size, packing, aspectW, aspectH]);
 
-  // a new mood counts once it held MOOD_SETTLE_MS: talking cuts in (and so does leaving a looping clip, e.g. waking
-  // from a doze); thinking, listening, idle and away wait for the clip on screen to end
+  // A settled talking mood or leaving a loop requests a normal-speed end; other moods prepare the next clip.
   useEffect(() => {
     const t = setTimeout(() => {
       const s = st.current;

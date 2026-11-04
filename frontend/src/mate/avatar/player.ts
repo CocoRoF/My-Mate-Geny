@@ -23,11 +23,8 @@ export interface ClipPlayer {
   setPaused(paused: boolean): void;
   /** seconds left of the clip on screen (Infinity while it loops or nothing plays yet) */
   remaining(): number;
-  /**
-   * finish the clip on screen within about `within` seconds — played faster (at most `maxRate`×), no longer looping —
-   * so the next clip starts on the shared home frame instead of crossfading two poses. false: nothing to hurry.
-   */
-  hurry(within?: number, maxRate?: number): boolean;
+  /** stop looping and finish at normal speed, so the next clip starts on the shared home frame */
+  finishAtBoundary(): boolean;
   dispose(): void;
 }
 
@@ -52,12 +49,12 @@ export interface ShowOptions {
 
 type Slot = { video: HTMLVideoElement; tex: WebGLTexture; src: string; ready: boolean };
 
-/** play `v` to its end within ~`within` s (faster, never slower, at most `maxRate`×); it stops looping */
-function hurryVideo(v: HTMLVideoElement, within: number, maxRate: number, paused: boolean): boolean {
+/** A state transition never changes the animation's tempo or seeks past its motion. */
+export function finishVideo(v: HTMLVideoElement, paused: boolean): boolean {
+  v.defaultPlaybackRate = 1;
+  v.playbackRate = 1;
   if (!Number.isFinite(v.duration) || !v.duration || v.ended) return false;
   v.loop = false;
-  const left = Math.max(0, v.duration - v.currentTime);
-  v.playbackRate = Math.min(maxRate, Math.max(1, left / Math.max(0.1, within)));
   if (v.paused && !paused) void v.play().catch(() => {});
   return true;
 }
@@ -66,6 +63,7 @@ function hurryVideo(v: HTMLVideoElement, within: number, maxRate: number, paused
 const WAIT = ["loadeddata", "canplay", "seeked"] as const;
 
 export class StackedPlayer implements ClipPlayer {
+  private canvas: HTMLCanvasElement;
   private gl: WebGLRenderingContext;
   private slots: [Slot, Slot];
   private cur = 0;
@@ -99,7 +97,8 @@ export class StackedPlayer implements ClipPlayer {
     }
   }
 
-  constructor(private canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement) {
+    this.canvas = canvas;
     const gl = canvas.getContext("webgl", { premultipliedAlpha: true, alpha: true, antialias: false });
     if (!gl) throw new Error("no webgl"); // i18n-ignore (a technical reason, shown inside a translated message)
     this.gl = gl;
@@ -175,9 +174,9 @@ export class StackedPlayer implements ClipPlayer {
     return Math.max(0, v.duration - v.currentTime);
   }
 
-  hurry(within = 0.8, maxRate = 4): boolean {
+  finishAtBoundary(): boolean {
     if (!this.drawn || this.fade) return false;
-    return hurryVideo(this.slots[this.cur].video, within, maxRate, this.paused);
+    return finishVideo(this.slots[this.cur].video, this.paused);
   }
 
   /** put a clip on screen: at once (the spare already has it, or the first clip) or with a crossfade */
@@ -197,6 +196,7 @@ export class StackedPlayer implements ClipPlayer {
         this.pending = false;
       }
       now.video.loop = loop;
+      now.video.defaultPlaybackRate = 1;
       now.video.playbackRate = 1;
       if (now.video.paused && !this.paused) void now.video.play().catch(() => {});
       return;
@@ -208,6 +208,7 @@ export class StackedPlayer implements ClipPlayer {
       spare.ready = false;
       spare.video.src = src;
     }
+    spare.video.defaultPlaybackRate = 1;
     spare.video.playbackRate = 1;
     spare.video.loop = loop;
     // a clip played before (or a preloaded one) starts again from its first frame: that is a seek, which never fires
@@ -246,6 +247,8 @@ export class StackedPlayer implements ClipPlayer {
   setPaused(paused: boolean): void {
     this.paused = paused;
     for (const s of this.slots) {
+      s.video.defaultPlaybackRate = 1;
+      s.video.playbackRate = 1;
       if (paused) s.video.pause();
     }
     if (!paused) void this.slots[this.cur].video.play().catch(() => {});
@@ -391,9 +394,9 @@ export class PlainPlayer implements ClipPlayer {
     return Math.max(0, v.duration - v.currentTime);
   }
 
-  hurry(within = 0.8, maxRate = 4): boolean {
+  finishAtBoundary(): boolean {
     if (!this.drawn || performance.now() < this.fadingUntil) return false;
-    return hurryVideo(this.slots[this.cur].video, within, maxRate, this.paused);
+    return finishVideo(this.slots[this.cur].video, this.paused);
   }
 
   show(src: string, opts: ShowOptions = {}): void {
@@ -416,6 +419,7 @@ export class PlainPlayer implements ClipPlayer {
         this.pending = false;
       }
       now.video.loop = loop;
+      now.video.defaultPlaybackRate = 1;
       now.video.playbackRate = 1;
       if (now.video.paused && !this.paused) void now.video.play().catch(() => {});
       return;
@@ -427,6 +431,7 @@ export class PlainPlayer implements ClipPlayer {
       spare.video.src = src;
     }
     spare.video.loop = loop;
+    spare.video.defaultPlaybackRate = 1;
     spare.video.playbackRate = 1;
     if (spare.video.currentTime !== 0) spare.video.currentTime = 0;
     const token = ++this.waiting;
@@ -474,6 +479,10 @@ export class PlainPlayer implements ClipPlayer {
 
   setPaused(paused: boolean): void {
     this.paused = paused;
+    for (const s of this.slots) {
+      s.video.defaultPlaybackRate = 1;
+      s.video.playbackRate = 1;
+    }
     if (paused) for (const s of this.slots) s.video.pause();
     else void this.slots[this.cur].video.play().catch(() => {});
   }

@@ -293,12 +293,11 @@ as in Geny).
   playing) the previous one's player, canvas, videos or Blob URLs. Switching
   is calm: a mood counts only after it held 600 ms (thinking ↔ talking flips
   while a reply streams are ignored); talking (or a voice starting), a
-  reaction, or leaving a looping clip **hurries the clip on screen to its end**
-  (faster playback, ≤ 0.8 s, ≤ 4×) so the next clip starts on the home frame;
-  every other mood waits for the clip on screen to end. A mid-clip crossfade
-  blends two poses with alpha (the see-through "overlapping frames" look), so it
-  is only a fallback, ≥ 1.2 s apart, and a switch asked for during one waits
-  for it to finish.
+  reaction, or leaving a looping clip stops its loop and **finishes at normal 1× speed**
+  so the preloaded next clip starts on the shared home frame. No state change accelerates or seeks past
+  the current motion; pause/resume and reused slots also restore 1×. Other mood changes prepare the
+  next clip without cutting in. The remaining clip duration bounds the wait (the bundled Han Chaerin
+  idle clip is about 5 seconds). This avoids both fast motion and blended, overlapping poses.
 - **Clip choice** (`src/mate/avatar/shared.ts`, used by the video body *and*
   the clip editor's trigger preview, so the preview is exactly the stage):
   disabled clips never count. A mood plays a random clip of its kind
