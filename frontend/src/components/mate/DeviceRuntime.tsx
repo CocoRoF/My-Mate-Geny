@@ -1,4 +1,4 @@
-import {useEffect,useState} from "react";
+import {useEffect,useRef,useState} from "react";
 import {useSessionSync} from "../../hooks/useSessionSync";
 import {useMateStore} from "../../stores/mateStore";
 import {devicePreferences,loadDevicePreferences,patchDevicePreferences,useDevicePreferences,subscribeDevicePreferences} from "../../stores/devicePreferences";
@@ -13,7 +13,10 @@ export default function DeviceRuntime(){
  const [selected,setSelected]=useState<string|null>(null);
  const targetId=prefs.screen.proactive_enabled ? prefs.screen.proactive_mate||selected : prefs.sharing.mate_id||selected;
  const mate=mates.find(m=>m.id===targetId)||null;
- useMateConversation(mate,{connect:!!prefs.screen.proactive_enabled||prefs.sharing.enabled});
+ const conversation=useMateConversation(mate,{connect:!!prefs.screen.proactive_enabled||prefs.sharing.enabled});
+ const ready=useRef(false),tickRef=useRef<null|(()=>Promise<void>)>(null);
+ ready.current=conversation.connection==='open' && !!conversation.sessionId && mate?.session_id===conversation.sessionId;
+ useEffect(()=>{void tickRef.current?.().catch(()=>{});},[conversation.connection,conversation.sessionId,mate?.id]);
  useEffect(()=>{
   let alive=true,busy=false;
   const tick=async()=>{
@@ -31,7 +34,8 @@ export default function DeviceRuntime(){
       await patchDevicePreferences({screen:{proactive_mate:mate.id}});
     if(alive)setSelected(mate.id);
     const events=await window.hrhNative?.device?.events?.(mate.id)||[];
-    if(alive)setDeviceEventHello({device_runtime:true,device_boot:context.bootId,device_start_reason:context.startReason,device_mate_id:mate.id,device_events:events});
+    // Lifecycle greetings must wait for their voice listener, not race its initial history fetch.
+    if(alive)setDeviceEventHello(ready.current?{device_runtime:true,device_boot:context.bootId,device_start_reason:context.startReason,device_mate_id:mate.id,device_events:events}:{});
     // Conversation recreation never changes saved device intent. Resolve the same Mate only.
     const intent=devicePreferences().sharing;
     if(intent.enabled && intent.origin===location.origin){
@@ -51,11 +55,12 @@ export default function DeviceRuntime(){
     await resumeSharing();
    }finally{busy=false;}
   };
+  tickRef.current=tick;
   void tick().catch(()=>{});
   const timer=setInterval(()=>void tick().catch(()=>{}),5000);
   const offPrefs=subscribeDevicePreferences(()=>{void tick().catch(()=>{});});
   const off=subscribeSharing(()=>{void tick().catch(()=>{});});
-  return()=>{alive=false;clearInterval(timer);off();offPrefs();};
+  return()=>{alive=false;tickRef.current=null;setDeviceEventHello({});clearInterval(timer);off();offPrefs();};
  },[]);
  // Native consent dialogs are separate visible windows; this renderer itself never becomes visible.
  return <ScreenCaptureApproval/>;

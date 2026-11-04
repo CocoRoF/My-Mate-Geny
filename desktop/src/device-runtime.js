@@ -26,7 +26,7 @@ function createRuntimeWindow({BrowserWindow,preload,version,serverUrl,allowed}){
     const url=base+"/?surface=device-runtime";
     if(win&&!win.isDestroyed()){if(lastUrl!==url||/\/login(?:[?#]|$)/.test(win.webContents.getURL())){lastUrl=url;void win.loadURL(url).catch(()=>{});}return;}
     lastUrl=url;
-    win=new BrowserWindow({show:false,width:32,height:32,skipTaskbar:true,webPreferences:{preload,contextIsolation:true,sandbox:true,nodeIntegration:false,backgroundThrottling:false,additionalArguments:[`--hrh-version=${version}`,"--hrh-surface=device-runtime"]}});
+    win=new BrowserWindow({show:false,width:32,height:32,skipTaskbar:true,webPreferences:{preload,contextIsolation:true,sandbox:true,nodeIntegration:false,backgroundThrottling:false,autoplayPolicy:"no-user-gesture-required",additionalArguments:[`--hrh-version=${version}`,"--hrh-surface=device-runtime"]}});
     win.webContents.setWindowOpenHandler(()=>({action:"deny"}));
     win.webContents.on("will-navigate",(e,target)=>{if(!allowed(target))e.preventDefault();});
     win.webContents.on("render-process-gone",()=>{clearTimeout(retry);retry=setTimeout(()=>{if(win&&!win.isDestroyed())void win.loadURL(lastUrl).catch(()=>{});},1500);});

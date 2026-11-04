@@ -249,7 +249,6 @@ export class MateAudioQueue {
     this.prefetchAhead();
     if (this.playing !== job || job.abort.signal.aborted) return;
     try {
-      this.onItemStart?.(job.item);
       if (clip) await this.playClip(job, clip);
       else if ((job.item.browser || this.fallbackToBrowser) && job.item.text) await this.playBrowser(job);
     } catch (err) {
@@ -272,6 +271,7 @@ export class MateAudioQueue {
     const url = typeof clip === "string" ? clip : (this.objectUrl = URL.createObjectURL(clip));
     return new Promise<void>((resolve, reject) => {
       let done = false;
+      let started = false;
       const finish = (err?: unknown) => {
         if (done) return;
         done = true;
@@ -291,6 +291,11 @@ export class MateAudioQueue {
       const tryPlay = () =>
         el.play().then(
           () => {
+            if (done || this.playing !== job || job.abort.signal.aborted) return;
+            if (!started) {
+              started = true;
+              this.onItemStart?.(job.item);
+            }
             if (this.state.blocked) {
               this.state = { ...this.state, blocked: false };
               this.publish();
@@ -352,6 +357,8 @@ export class MateAudioQueue {
         resolve();
       };
       u.onstart = () => {
+        if (done || this.playing !== job || job.abort.signal.aborted) return;
+        this.onItemStart?.(job.item);
         t0 = performance.now();
         voiceStart(id);
         raf = requestAnimationFrame(tick);
@@ -360,7 +367,10 @@ export class MateAudioQueue {
         bump = 0.12;
       };
       u.onend = finish;
-      u.onerror = finish;
+      u.onerror = (event) => {
+        if (!job.abort.signal.aborted) this.onError?.(job.item, new Error(event.error || tr("mate.audioError")));
+        finish();
+      };
       this.finishCurrent = finish;
       // some engines never fire onend (or never start): give up after a generous estimate
       const guard = setTimeout(finish, 4000 + text.length * 250);

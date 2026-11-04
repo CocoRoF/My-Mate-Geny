@@ -84,6 +84,8 @@ async def test_no_silence_fragments_reach_ui_or_tts(text,silent):
     assert [e.data['text'] for e in out if e.type=='text.delta']==([] if silent else [text])
     assert out[-1].data['text']==('' if silent else text)
     assert out[-1].data['cost_usd']==0.02
+    if not silent:
+        assert out[-2].timestamp == out[-1].timestamp
 
 
 def runtime(db,tmp_path,monkeypatch):

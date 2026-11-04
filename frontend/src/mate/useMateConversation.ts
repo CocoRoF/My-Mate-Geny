@@ -91,6 +91,10 @@ interface Follow {
   /** avatar reactions this reply had (the "subtle" emotion level reacts once) */
   reacted: number;
   quiet: boolean;
+  /** a completed, freshly observed reply may wait for the startup election or autoplay handoff */
+  seenAt: number;
+  finished: boolean;
+  queued: Set<number>;
   /** a barge-in stopped her voice: the rest of this reply is shown, not read */
   hushed?: boolean;
   /** the device the turn answers (null: unknown — read here) */
@@ -166,13 +170,18 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
   const pageVisible = usePageVisible();
   // the turn this window is reading now (it keeps the voice until that reply is done)
   const [speakingTurn, setSpeakingTurn] = useState<string | null>(null);
-  const rank = opts.voice === false ? 0 : voiceRank(surface, desk, pageVisible);
+  const [blockedTurn, setBlockedTurn] = useState<string | null>(null);
+  const rank = opts.voice === false || blockedTurn ? 0 : voiceRank(surface, desk, pageVisible);
   const owner = useVoiceElection(mateId, rank, speakingTurn);
-  const speaks = opts.voice !== false && owner && !muted && !!mate?.voice.auto_read && engine !== "off";
+  const voiceEnabled = opts.voice !== false && !muted && !!mate?.voice.auto_read && engine !== "off";
+  const voiceEnabledRef = useRef(voiceEnabled);
+  voiceEnabledRef.current = voiceEnabled;
+  const speaks = owner && voiceEnabled;
   const speaksRef = useRef(speaks);
   speaksRef.current = speaks;
   /** the device the latest user message came from (mate/voiceOwner: a reply is read on the device that asked) */
   const lastSender = useRef<string | null>(null);
+  const turnOrigin = useRef<string | null>(null);
   const followRef = useRef<Follow | null>(null);
 
   const touch = useCallback(() => {
@@ -212,6 +221,8 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
       setVoiceError(fallbackWhy);
       // the other windows of this device: this sentence (and all before it) is said — never again, never twice
       const m = item.meta as { turn?: string; idx?: number } | undefined;
+      const f = followRef.current;
+      if (f && m?.turn === f.vid) setSpeakingTurn(f.key);
       if (m?.turn && typeof m.idx === "number") announceStarted(mateId, m.turn, m.idx, item.text);
       else if (item.text) noteSaid(mateId, item.text);
       // (the mic in any window of this device: she is speaking — mate/stt/echo.ts)
@@ -249,11 +260,20 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
   }),[queue]);
   // muted / no longer the owner: stop at once
   useEffect(() => {
+    if (!voiceEnabled && followRef.current) followRef.current.hushed = true;
     if (!speaks) {
       queue.stop();
+      followRef.current?.queued.clear();
       setSpeakingTurn(null);
     }
-  }, [speaks, queue]);
+  }, [speaks, voiceEnabled, queue]);
+  // A blocked queue has not spoken. Let an eligible visible window take over it.
+  useEffect(() => {
+    if (qstate.blocked) {
+      setBlockedTurn(followRef.current?.key || "blocked");
+      setSpeakingTurn(null);
+    }
+  }, [qstate.blocked]);
 
   // nothing playing (stopped, done): not voicing
   useEffect(() => {
@@ -284,7 +304,8 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
   /** read one sentence of a followed turn here, unless a window of this device already started it (or a later one) */
   const readHere = useCallback(
     (f: Follow, s: Follow["sentences"][number]) => {
-      if (s.idx <= startedUpTo(f.vid)) return false;
+      if (s.idx <= startedUpTo(f.vid) || f.queued.has(s.idx)) return false;
+      f.queued.add(s.idx);
       queue.enqueue({ text: s.speech, emotion: voiceEmotionAt(emotionLevel.current, s.emotion), meta: { display: s.text, turn: f.vid, idx: s.idx } });
       setSpeakingTurn(f.key);
       return true;
@@ -301,7 +322,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
     if (!f || f.quiet || f.hushed || (f.origin !== null && f.origin !== deviceId)) return;
     const t = store.getState().turns.find((x) => x.key === f.key);
     const said = startedUpTo(f.vid);
-    if (!t || (t.complete && said < 0)) return; // (a reply nobody was reading is not read later)
+    if (!t || (t.complete && said < 0 && Date.now() - f.seenAt >= SPEAK_FRESH_MS)) return;
     for (const s of f.sentences) if (s.idx > said) readHere(f, s);
   }, [speaks, readHere, store]);
 
@@ -324,6 +345,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
     let follow: Follow | null = null;
     followRef.current = null;
     lastSender.current = null;
+    turnOrigin.current = null;
     // Turns that came with the history are not read aloud (by key: older
     // pages prepended later shift the indexes).
     let quiet = new Set<string>();
@@ -333,6 +355,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
       if (!la || quiet.has(la.turn.key)) return;
       const t = la.turn;
       if (!follow || follow.key !== t.key) {
+        setBlockedTurn(null);
         // (the device a reply is read on is fixed when it starts: a message added meanwhile does not move it)
         follow = {
           key: t.key,
@@ -341,7 +364,11 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
           emo: new EmotionTracker(),
           reacted: 0,
           quiet: !fresh,
-          origin: lastSender.current,
+          hushed: !voiceEnabledRef.current,
+          origin: t.voiceDevice ?? turnOrigin.current ?? lastSender.current,
+          seenAt: Date.now(),
+          finished: false,
+          queued: new Set(),
           sentences: [],
           n: 0,
         };
@@ -354,7 +381,9 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
         setReact({ name: e.emotion, at: Date.now() });
       }
       const done = t.complete;
+      if (f.finished) return;
       const sentences = done ? f.stream.flush(t.text) : f.stream.push(t.text);
+      if (done) f.finished = true;
       // a sentence's index is its place in the whole reply (the same in every window, also one that joined late)
       const first = f.n;
       f.n += sentences.length;
@@ -423,6 +452,8 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
         } catch {
           return;
         }
+        // A replay overlap must not stop current audio or flush an already-finished sentence stream again.
+        if (ev.eid && ev.eid <= store.getState().lastEid) return;
         if (ev.type === "run.state" && ev.data?.speech_protocol!==undefined) setSpeechReady(ev.data.speech_protocol===2);
         if(ev.type === "speech.pending") ackSpeech(sid!,String(ev.data?.group_id),Number(ev.data?.revision));
         if(ev.type === "speech.closed") {
@@ -435,12 +466,17 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
         if (ev.type === "user.message" || ev.type === "user.steer") {
           // where the user is talking from: replies are read on that device (internal messages — a delegated task
           // reporting back — do not move it; a message without a device came from another / older client)
-          const d = (ev.data ?? {}) as { client_msg_id?: unknown; internal?: unknown };
+          const d = (ev.data ?? {}) as { client_msg_id?: unknown; internal?: unknown; device?: unknown };
           if (!d.internal) {
             lastSender.current = deviceOf(d.client_msg_id) ?? (d.client_msg_id ? "?" : lastSender.current);
+            turnOrigin.current = lastSender.current;
             // a new question / an addition: she stops talking — in whichever window was reading (not only the
             // one it was typed in: the quick card's question stops the overlay)
             queue.stop();
+            if (followRef.current) followRef.current.hushed = true;
+            followRef.current?.queued.clear();
+          } else if (ev.type === "user.message") {
+            turnOrigin.current = deviceOf(d.client_msg_id) ?? deviceOf(`~${d.device ?? ""}`) ?? lastSender.current;
           }
         }
         applyEvent(ev);

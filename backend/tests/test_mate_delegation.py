@@ -57,6 +57,27 @@ async def _turn(svc, q, sid, text):
     return await _until(q, _ended)
 
 
+async def test_autonomous_voice_targets_its_device_and_persists_the_target_for_late_joiners(db,tmp_path,monkeypatch):
+    svc,store,mates=_setup(db,tmp_path,monkeypatch)
+    mate=store.create(name='Voice routing',llm={'model':'m1'})
+    sid=mates.conversation(mate['id'])['session_id'];q=svc.subscribe(sid)
+    device='dev_0123456789abcdef0123456789abcdef'
+    try:
+        svc.start_turn(sid,'earlier question',client_msg_id='m~otherdevice')
+        await _until(q,_ended)
+        svc.start_turn(sid,'reach out now',client_msg_id=f'thinking~{device}',meta={'internal':True,'kind':'thinking_trigger'})
+        seen=await _until(q,_ended)
+        start=next(e for e in seen if e['type']=='session.start')
+        assert start['data']['voice_device']==device
+        delta=next(e for e in seen if e['type']=='text.delta')
+        end=next(e for e in seen if e['type']=='turn.complete')
+        assert delta['timestamp']==end['timestamp']
+        persisted=svc.events(sid)
+        assert [e['data']['voice_device'] for e in persisted if e['type']=='session.start']==['otherdevice',device]
+    finally:
+        await svc.shutdown()
+
+
 def _ctx(mates, mate_id, msid):
     return mates.token_info(mates._token(mate_id, msid))
 

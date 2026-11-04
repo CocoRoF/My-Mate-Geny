@@ -97,6 +97,8 @@ export interface Turn {
   model?: string;
   usage?: Record<string, any>;
   startedAt?: number;
+  /** device designated by the server for this reply's voice, including autonomous turns */
+  voiceDevice?: string | null;
   endedAt?: number;
   attachments?: Attachment[];
   level?: "info" | "warning"; // system turns
@@ -377,10 +379,11 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
     case "session.start": {
       const last = turns[turns.length - 1];
       if (last && last.role === "assistant" && !last.complete && !last.flow.length) {
-        turns[turns.length - 1] = { ...last, startedAt: at, trigger: data.trigger || last.trigger };
+        turns[turns.length - 1] = { ...last, startedAt: at, trigger: data.trigger || last.trigger, voiceDevice: data.voice_device };
       } else {
         if (hasLiveTurn(turns)) finish(liveTurn(turns, at), at);
         const t = liveTurn(turns, at); // opens a fresh running turn
+        t.voiceDevice = data.voice_device;
         if (data.trigger) t.trigger = String(data.trigger);
       }
       break;
@@ -597,14 +600,18 @@ function reconstruct(
   type Item = { at: string; order: number; eid: number; user?: ChatMessage; ev?: ProviderEvent };
   const speechAnchors = new Set(events.filter(e=>e.type==='user.steer'&&e.data?.speech_group).map(e=>String(e.data.speech_group)));
   const speechMessages = new Map(messages.filter(m=>m.meta?.speech_group).map(m=>[String(m.meta!.speech_group),m]));
+  // Event IDs describe causal order. Old buffered autonomous completions could carry
+  // a timestamp just before their text delta; do not split those existing replies.
+  let eventAt = "";
   const items: Item[] = [
     ...messages
       // (+ a mate's greeting: an assistant message with no turn behind it)
       .filter((m) => (m.role === "user" && !(m.meta?.speech_group && speechAnchors.has(String(m.meta.speech_group)))) || (m.role === "assistant" && m.meta?.kind === "greeting"))
       .map((m) => ({ at: m.created_at || "", order: 0, eid: 0, user: m })),
     ...events.map((e) => {
+      eventAt = e.timestamp > eventAt ? e.timestamp : eventAt;
       const msg=e.type==='user.steer'&&e.data?.speech_group?speechMessages.get(String(e.data.speech_group)):undefined;
-      return {at:e.timestamp,order:1,eid:e.eid||0,ev:msg?{...e,data:{...e.data,text:msg.content,...msg.meta}}:e};
+      return {at:eventAt,order:1,eid:e.eid||0,ev:msg?{...e,data:{...e.data,text:msg.content,...msg.meta}}:e};
     }),
   ];
   items.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.order - b.order || a.eid - b.eid));

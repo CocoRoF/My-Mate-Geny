@@ -1306,6 +1306,10 @@ class SessionService:
                         break
                     if ev.type == "session.start":
                         if attempt == 0:
+                            if session.get("kind") == "mate":
+                                # Autonomous turns target the device that enabled them, not an
+                                # unrelated device's earlier question. Persist for late joiners too.
+                                ev.data = {**ev.data, "voice_device": self.last_client_device(sid)}
                             await self._record_event(sid, ev, st)
                             yield ev
                         # (a retry continues the turn: it already has its start event)

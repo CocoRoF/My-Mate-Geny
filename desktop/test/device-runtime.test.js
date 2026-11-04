@@ -20,7 +20,7 @@ test('background runtime does not open UI, survives no user windows and does not
  const made=[];
  class Win extends EventEmitter {constructor(options){super();this.options=options;this.webContents=new EventEmitter();this.webContents.setWindowOpenHandler=()=>{};this.webContents.getURL=()=>this.url;made.push(this);}isDestroyed(){return !!this.dead;}loadURL(url){this.url=url;return Promise.resolve();}destroy(){this.dead=true;this.emit('closed');}}
  const runtime=createRuntimeWindow({BrowserWindow:Win,preload:'/preload',version:'x',serverUrl:()=> 'https://one',allowed:()=>true});
- runtime.ensure();runtime.ensure();assert.equal(made.length,1);assert.equal(made[0].options.show,false);assert.equal(made[0].options.webPreferences.backgroundThrottling,false);assert.match(made[0].url,/surface=device-runtime/);
+ runtime.ensure();runtime.ensure();assert.equal(made.length,1);assert.equal(made[0].options.show,false);assert.equal(made[0].options.webPreferences.backgroundThrottling,false);assert.equal(made[0].options.webPreferences.autoplayPolicy,'no-user-gesture-required');assert.match(made[0].url,/surface=device-runtime/);
  made[0].destroy();runtime.ensure();assert.equal(made.length,2);
  runtime.destroy();runtime.ensure();assert.equal(made.length,2);
 });

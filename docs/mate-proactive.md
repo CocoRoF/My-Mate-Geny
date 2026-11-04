@@ -21,6 +21,17 @@ busy. Pending events wait through a disconnect; replay/reload/other windows cann
 A new device has independent settings and only speaks when reach-out is enabled there. Browser ON events use a
 local outbox; browser autoplay/screen selection restrictions still apply.
 
+Voice delivery uses the autonomous turn's initiating device, regardless of which device sent an earlier question.
+The persisted `session.start.voice_device` also routes an in-progress reply for a window joining later. The hidden
+desktop controller permits autoplay like the avatar window and only advertises lifecycle greetings after its
+conversation socket is connected. A fresh reply that finishes during the startup voice election is still spoken;
+history is quiet, and mute/barge-in never replays a completed reply. A sentence is announced as spoken only after
+media playback or browser speech actually starts, so a blocked window can hand it to a visible reader.
+
+Buffered autonomous text and its completion share a timestamp and retain event-ID order. History reconstruction
+also preserves causal event order for older records whose completion timestamp preceded their buffered text.
+Those old records render once without editing the saved conversation or deleting genuinely repeated replies.
+
 Tests: `backend/tests/test_device_runtime.py`, `tests/test_geny_triggers.py`,
 `desktop/test/device-runtime.test.js`, `desktop/test/e2e/device-runtime-e2e.js` (actual Electron/X11, isolated
 backend and fake model). Real Windows/macOS/Wayland behavior and model conversation quality require devices.

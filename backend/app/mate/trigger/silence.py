@@ -22,7 +22,10 @@ async def deliver_autonomous(stream):
         if ev.type=='turn.complete':
             text=ev.data.get('text') or ''.join(chunks)
             silent=is_silence_text(text)
-            if text and not silent:yield ProviderEvent(type='text.delta',data={'text':text})
+            # The buffered text precedes its terminal event on the wire and in history.
+            # A new timestamp here would be later than the already-created completion:
+            # history sorted by time would render the same answer in two turns.
+            if text and not silent:yield ProviderEvent(type='text.delta',data={'text':text},timestamp=ev.timestamp)
             ev.data={**ev.data,'text':'' if silent else text,'silent':silent}
             chunks=[]
         yield ev
