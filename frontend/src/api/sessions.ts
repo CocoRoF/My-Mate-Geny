@@ -133,6 +133,14 @@ export const getEvents = (id: string, eids: number[]) =>
 
 // ---- background tasks ----
 export const listTasks = (sid: string) => apiFetch<TaskInfo[]>(`/api/sessions/${sid}/tasks`);
+export interface TaskPage {
+  as_of?: string;
+  tasks: TaskInfo[];
+  running: TaskInfo[];
+  page: { cursor: string | null; has_more: boolean; turns: number; start: string | null; until: string | null };
+}
+export const taskPage = (sid: string, cursor?: string) =>
+  apiFetch<TaskPage>(`/api/sessions/${sid}/tasks/page${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
 export const allTasks = () => apiFetch<TaskInfo[]>("/api/tasks");
 export const taskOutput = (sid: string, taskId: string, tail = 65536) =>
   apiFetch<{ output: string; truncated: boolean; available: boolean; size?: number }>(

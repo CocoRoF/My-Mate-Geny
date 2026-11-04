@@ -218,6 +218,9 @@ CREATE TABLE IF NOT EXISTS bg_tasks (
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
+CREATE INDEX IF NOT EXISTS idx_bg_tasks_page ON bg_tasks(session_id, COALESCE(started_at, unixepoch(updated_at), 0) DESC, task_id DESC);
+CREATE INDEX IF NOT EXISTS idx_bg_tasks_status ON bg_tasks(session_id, status);
+
 -- Mates (avatar secretaries). Persona/avatar/llm/voice are JSON documents
 -- (docs/mate.md); the conversation is a sessions row with kind = 'mate'.
 CREATE TABLE IF NOT EXISTS mates (

@@ -107,6 +107,12 @@ class HistoryPager:
 
     # ---- the page ----
 
+    def turn_range(self, sid: str, turns: int, before: str | None = None) -> tuple[str | None, bool]:
+        """Shared turn boundaries for history and the task drawer; oldest range includes the prelude."""
+        start = self._start_of(sid, max(1, min(turns, MAX_TURNS)), before)
+        more = start is not None and self._has_anchor_before(sid, start)
+        return (start if more else None), more
+
     def page(self, sid: str, *, turns: int | None = None, before: str | None = None,
              since: str | None = None, running_tasks: list[dict[str, Any]] | None = None,
              lite: bool = False, running: bool = False) -> dict[str, Any]:

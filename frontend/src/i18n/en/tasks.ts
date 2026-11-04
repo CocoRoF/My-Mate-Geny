@@ -1,5 +1,8 @@
 // The background tasks panel.
 export default {
+  recentTurns: "Starts with the latest 2 turns. Running tasks stay visible; load earlier work below.",
+  loadMore: "Show more tasks",
+  loadError: "Could not load tasks. Please retry.",
   title: "Background tasks",
   thisChat: "This chat",
   allChats: "All chats",

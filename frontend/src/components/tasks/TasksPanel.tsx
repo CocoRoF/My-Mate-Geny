@@ -4,7 +4,7 @@ import { stopTask, taskOutput } from "../../api/sessions";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useChatStore } from "../../stores/chatStore";
 import { useSubagentUi } from "../../stores/subagentStore";
-import { isRunning, useTaskStore } from "../../stores/taskStore";
+import { isRunning, useTaskStore, visibleTasks } from "../../stores/taskStore";
 import type { TaskInfo } from "../../types";
 import Icon from "../ui/Icon";
 import { useBackHandler } from "../../lib/back";
@@ -87,7 +87,7 @@ function Row({ task, now, showChat }: { task: TaskInfo; now: number; showChat: b
   );
   const openAgent = useSubagentUi((s) => s.open);
   return (
-    <div className={`rounded-xl border border-border/70 ${open ? "bg-surface-2/60" : "bg-surface/60"}`}>
+    <div data-testid="task-row" className={`rounded-xl border border-border/70 ${open ? "bg-surface-2/60" : "bg-surface/60"}`}>
       <div className="flex items-center gap-2.5 px-3 py-2">
         <button onClick={() => setOpen(!open)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
           <Icon name={open ? "chevron-down" : "chevron"} size={12} className="shrink-0 text-content-faint" />
@@ -149,14 +149,16 @@ export default function TasksPanel({ sid, onClose }: { sid: string; onClose: () 
   const all = useTaskStore((s) => s.all);
   const loadSession = useTaskStore((s) => s.loadSession);
   const loadAll = useTaskStore((s) => s.loadAll);
-  const tasks = useMemo(() => (scope === "chat" ? (bySession || []).map((t) => ({ ...t, session_id: sid })) : all), [scope, bySession, all, sid]);
+  const paging = useTaskStore(s => s.paging[sid]);
+  const loadMore = useTaskStore(s => s.loadMore);
+  const tasks = useMemo(() => (scope === "chat" ? visibleTasks(bySession || [], paging?.ids || []).map((t) => ({ ...t, session_id: sid })) : all), [scope, bySession, paging?.ids, all, sid]);
   const running = tasks.filter(isRunning);
   const done = tasks.filter((t) => !isRunning(t));
   const now = useNow(running.length > 0);
   useBackHandler(true, onClose);
 
   useEffect(() => {
-    if (scope === "chat") loadSession(sid).catch(() => {});
+    if (scope === "chat") loadSession(sid, true).catch(() => {});
     else {
       loadAll().catch(() => {});
       const t = setInterval(() => loadAll().catch(() => {}), 5000);
@@ -171,7 +173,7 @@ export default function TasksPanel({ sid, onClose }: { sid: string; onClose: () 
   }, [onClose]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex justify-end bg-scrim/40 backdrop-blur-[2px]" onClick={onClose}>
+    <div className="fixed inset-0 top-[var(--window-chrome-height,0px)] z-[80] flex justify-end bg-scrim/40 backdrop-blur-[2px]" onClick={onClose}>
       <div
         className="flex h-full w-full max-w-[520px] flex-col border-l border-border bg-surface shadow-float animate-fade-in"
         onClick={(e) => e.stopPropagation()}
@@ -194,8 +196,10 @@ export default function TasksPanel({ sid, onClose }: { sid: string; onClose: () 
             <Icon name="x" size={17} />
           </button>
         </div>
-        <div className="flex-1 space-y-4 overflow-y-auto p-4">
-          {tasks.length === 0 && (
+        <div data-testid="tasks-list" className="flex-1 space-y-4 overflow-y-auto p-4">
+          {scope === "chat" && <p className="text-[11.5px] text-content-faint">{t("tasks.recentTurns")}</p>}
+          {scope === "chat" && paging?.error && <p role="alert" className="text-[12px] text-danger">{t("tasks.loadError")}</p>}
+          {tasks.length === 0 && !(scope === "chat" && paging?.loading) && (
             <div className="grid place-items-center py-16 text-center">
               <Icon name="activity" size={24} className="mb-3 text-content-faint" />
               <p className="max-w-xs text-[13px] text-content-dim">
@@ -222,6 +226,11 @@ export default function TasksPanel({ sid, onClose }: { sid: string; onClose: () 
                 ))}
               </div>
             </section>
+          )}
+          {scope === "chat" && (paging?.hasMore || paging?.loading || paging?.error) && (
+            <button data-testid="tasks-more" disabled={paging?.loading} className="btn-ghost w-full border border-border text-[12px]" onClick={() => paging?.cursor ? void loadMore(sid) : void loadSession(sid)}>
+              {paging?.loading ? t("common.loading") : paging?.error ? t("common.retry") : t("tasks.loadMore")}
+            </button>
           )}
         </div>
       </div>

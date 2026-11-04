@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from app.routers._deps import session_service, workspace_service
@@ -77,6 +77,17 @@ async def update_session(
 @router.get("/{sid}/tasks")
 async def list_tasks(sid: str, svc: SessionService = Depends(session_service)) -> list[dict]:
     return svc.list_tasks(sid)
+
+
+@router.get("/{sid}/tasks/page")
+async def tasks_page(sid: str, cursor: str | None = Query(None, max_length=2048),
+                     svc: SessionService = Depends(session_service)) -> dict:
+    try:
+        return svc.task_page(sid, cursor)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail='session not found') from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/{sid}/tasks/{task_id}/output")

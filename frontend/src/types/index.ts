@@ -164,6 +164,7 @@ export interface ProviderEvent {
 
 /** A background / long-running task the Claude engine reported. */
 export interface TaskInfo {
+  updated_at?: string;
   session_id?: string;
   task_id: string;
   tool_use_id?: string | null;

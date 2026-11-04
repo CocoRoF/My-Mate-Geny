@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { stopTurn } from "../../api/sessions";
-import SessionPanel from "./panel/SessionPanel";
+import RightSidebar from "./panel/RightSidebar";
 import { MenuButton } from "../layout/MobileTopBar";
 import { useBackHandler } from "../../lib/back";
 import TasksPanel from "../tasks/TasksPanel";
@@ -13,7 +13,6 @@ import { DropOverlay, useFileDrop } from "../composer/useFileDrop";
 import NewSessionPanel from "./NewSessionPanel";
 import UsageModal from "../usage/UsageModal";
 import Icon, { type IconName } from "../ui/Icon";
-import ExplorerPanel from "../explorer/ExplorerPanel";
 import TabBar from "../viewer/TabBar";
 import FolderButton from "./topbar/FolderButton";
 import GitButton from "./topbar/GitButton";
@@ -120,24 +119,10 @@ export default function ChatView() {
   const [showTasks, setShowTasks] = useState(false);
   const [more, setMore] = useState(false);
   const runningTasks = useTaskStore((s) => (activeId ? (s.bySession[activeId] || []).filter(isRunning).length : 0));
-  const [panel, setPanel] = useState(() => {
-    try {
-      // one right-side panel at a time: a saved-open explorer wins
-      if (useWorkbench.getState().explorerOpen) return false;
-      return localStorage.getItem("hrh_session_panel") !== "0" && window.innerWidth >= 1100;
-    } catch {
-      return false;
-    }
-  });
-  const togglePanel = () =>
-    setPanel((v) => {
-      try {
-        localStorage.setItem("hrh_session_panel", v ? "0" : "1");
-      } catch {
-        /* ignore */
-      }
-      return !v;
-    });
+  const sidePanel = useWorkbench(s => s.sidePanel);
+  const setSidePanel = useWorkbench(s => s.setSidePanel);
+  const panel = sidePanel === "session";
+  const togglePanel = () => setSidePanel(panel ? null : "session");
   const explorer = useWorkbench((s) => s.explorerOpen);
   const setExplorer = useWorkbench((s) => s.setExplorer);
   const { tabs, active: activeTab } = useSessionTabs(activeId);
@@ -152,18 +137,9 @@ export default function ChatView() {
   const labels = density === "full" ? "hidden sm:inline" : "hidden";
   // Narrow screens open on the chat: a drawer left open last time stays closed.
   useEffect(() => {
-    if (window.innerWidth < WIDE) setExplorer(false);
+    if (window.innerWidth < WIDE) setSidePanel(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // The explorer and the session panel share the right side: one at a time.
-  useEffect(() => {
-    if (explorer && panel) setPanel(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [explorer]);
-  useEffect(() => {
-    if (panel && explorer) setExplorer(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [panel]);
   // Tabs mount on first view and then stay mounted (scroll, zoom, sheet survive switching).
   const [visited, setVisited] = useState<Set<string>>(() => new Set());
   useEffect(() => {
@@ -329,26 +305,7 @@ export default function ChatView() {
       {showUsage && active && <UsageModal provider={active.provider} onClose={() => setShowUsage(false)} />}
       {showTasks && active && <TasksPanel sid={active.id} onClose={() => setShowTasks(false)} />}
     </div>
-    {explorer && active && (
-      <>
-        <div className="fixed inset-0 z-30 bg-scrim/45 xl:hidden animate-fade-in" onClick={() => setExplorer(false)} />
-        <div className="fixed inset-y-0 right-0 z-40 pt-safe xl:pt-0 bg-surface xl:static xl:z-auto shadow-float xl:shadow-none">
-          <ExplorerPanel
-            session={active}
-            onClose={() => setExplorer(false)}
-            onOpened={() => window.innerWidth < WIDE && setExplorer(false)}
-          />
-        </div>
-      </>
-    )}
-    {panel && active && (
-      <>
-        <div className="fixed inset-0 z-30 bg-scrim/45 xl:hidden animate-fade-in" onClick={togglePanel} />
-        <div className="fixed inset-y-0 right-0 z-40 pt-safe xl:pt-0 bg-surface xl:static xl:z-auto shadow-float xl:shadow-none">
-          <SessionPanel session={active} onClose={togglePanel} />
-        </div>
-      </>
-    )}
+    {active && <RightSidebar key={active.id} session={active} />}
     <Toast />
     </div>
   );

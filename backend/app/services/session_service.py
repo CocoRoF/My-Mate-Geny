@@ -2133,6 +2133,11 @@ class SessionService:
             rows = self._db.query("SELECT * FROM bg_tasks ORDER BY started_at DESC LIMIT ?", (limit,))
         return [self._task_out(r) for r in rows]
 
+    def task_page(self, sid: str, cursor: str | None = None) -> dict[str, Any]:
+        from app.services.task_page import task_page
+        self.get(sid)
+        return task_page(self._db, sid, cursor=cursor, out=self._task_out)
+
     def task_output(self, sid: str, task_id: str, tail: int = 65536) -> dict[str, Any]:
         row = self._db.query_one("SELECT * FROM bg_tasks WHERE session_id = ? AND task_id = ?", (sid, task_id))
         if row is None:

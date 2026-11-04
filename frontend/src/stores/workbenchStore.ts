@@ -6,6 +6,7 @@ import { parsePathRef, resolvePath } from "../lib/paths";
 import { folderFor, isQualified, qualify, sessionFolders, strip, unqualify } from "../lib/hosts";
 import type { Session } from "../types";
 import { tr } from "../i18n";
+import { sidePanelPreferences, panelWidth, type SidePanelKind } from "../lib/sidePanel";
 
 /**
  * Workbench = the VS Code-like layer around a chat: file tabs in the main
@@ -38,7 +39,8 @@ interface Toast {
 interface WorkbenchState {
   bySession: Record<string, SessionTabs>;
   explorerOpen: boolean;
-  explorerWidth: number;
+  sidePanel: SidePanelKind;
+  panelWidth: number;
   showHidden: boolean;
   pinnedRoots: Record<string, string[]>; // folders opened in the explorer beyond the session's own
   expanded: Record<string, string[]>; // per session
@@ -49,7 +51,8 @@ interface WorkbenchState {
   insert: { sid: string; text: string; n: number } | null; // text for the composer
 
   setExplorer: (open: boolean) => void;
-  setExplorerWidth: (w: number) => void;
+  setSidePanel: (kind: SidePanelKind) => void;
+  setPanelWidth: (w: number) => void;
   toggleHidden: () => void;
   openFile: (sid: string, path: string, opts?: { preview?: boolean; line?: number; endLine?: number }) => void;
   pinTab: (sid: string, id: string) => void;
@@ -67,6 +70,11 @@ interface WorkbenchState {
   insertText: (sid: string, text: string) => void;
 }
 
+const initialPanel = (): SidePanelKind => {
+  try { return typeof window !== "undefined" && window.innerWidth >= 1100 && localStorage.getItem("hrh_session_panel") !== "0" ? "session" : null; }
+  catch { return null; }
+};
+
 const empty: SessionTabs = { tabs: [], active: null };
 
 export const useWorkbench = create<WorkbenchState>()(
@@ -77,7 +85,8 @@ export const useWorkbench = create<WorkbenchState>()(
       return {
         bySession: {},
         explorerOpen: false,
-        explorerWidth: 300,
+        sidePanel: initialPanel(),
+        panelWidth: 340,
         showHidden: false,
         pinnedRoots: {},
         expanded: {},
@@ -87,8 +96,9 @@ export const useWorkbench = create<WorkbenchState>()(
         toast: null,
         insert: null,
 
-        setExplorer: (open) => set({ explorerOpen: open }),
-        setExplorerWidth: (w) => set({ explorerWidth: Math.round(Math.min(640, Math.max(220, w))) }),
+        setExplorer: (open) => set(s => open ? { explorerOpen: true, sidePanel: "explorer" } : s.sidePanel === "explorer" ? { explorerOpen: false, sidePanel: null } : {}),
+        setSidePanel: kind => set({ sidePanel: kind, explorerOpen: kind === "explorer" }),
+        setPanelWidth: w => set({ panelWidth: panelWidth(w) }),
         toggleHidden: () => set((s) => ({ showHidden: !s.showHidden })),
 
         openFile: (sid, path, opts = {}) =>
@@ -158,11 +168,13 @@ export const useWorkbench = create<WorkbenchState>()(
     },
     {
       name: "hrh_workbench_v1",
-      version: 1,
+      version: 2,
+      migrate: (saved) => ({ bySession: {}, showHidden: false, pinnedRoots: {}, expanded: {}, ...(saved as Partial<WorkbenchState>), ...sidePanelPreferences(saved, initialPanel()) }),
+      merge: (saved, current) => ({ ...current, ...(saved as object), ...sidePanelPreferences(saved, current.sidePanel) }),
       partialize: (s) => ({
         bySession: s.bySession,
-        explorerOpen: s.explorerOpen,
-        explorerWidth: s.explorerWidth,
+        sidePanel: s.sidePanel,
+        panelWidth: s.panelWidth,
         showHidden: s.showHidden,
         pinnedRoots: s.pinnedRoots,
         expanded: s.expanded,
@@ -233,7 +245,7 @@ export const useDirCache = create<DirCache>((set, get) => ({
       set((s) => ({ dirs: { ...s.dirs, [key]: { entries: r.entries, truncated: r.truncated, loading: false } } }));
       return r.entries;
     } catch (e: any) {
-      set((s) => ({ dirs: { ...s.dirs, [key]: { loading: false, error: String(e.message || e) } } }));
+      set((s) => ({ dirs: { ...s.dirs, [key]: { ...get().dirs[key], loading: false, error: String(e.message || e) } } }));
       return undefined;
     }
   },

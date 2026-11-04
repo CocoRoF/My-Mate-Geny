@@ -667,3 +667,6 @@ html[data-keyboard="open"] .pb-safe { padding-bottom: 0; }
 @media (prefers-reduced-motion: reduce) {
   .studio-glow { animation: none; box-shadow: 0 0 0 2px rgb(var(--c-success) / 0.35); }
 }
+
+/* Fixed console drawers begin below the native app title bar. */
+html[data-hrh-chrome] { --window-chrome-height: 36px; }

@@ -94,7 +94,7 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
   const hfConnected = useHiggsfieldConnected();
 
   return (
-    <aside className="flex h-full w-[340px] max-w-[92vw] shrink-0 flex-col border-l border-border bg-surface/95 backdrop-blur-xl">
+    <div data-testid="session-panel" className="flex h-full min-w-0 flex-col">
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 px-4">
         <Icon name="activity" size={15} className="text-accent" />
         <span className="text-[13px] font-semibold">{t("session.session")}</span>
@@ -284,6 +284,6 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
         </Section>
       </div>
 
-    </aside>
+    </div>
   );
 }

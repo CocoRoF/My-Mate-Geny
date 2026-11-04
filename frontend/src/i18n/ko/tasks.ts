@@ -1,6 +1,9 @@
 import type { Messages } from "..";
 
 const ko: Messages<"tasks"> = {
+  recentTurns: "최근 2턴부터 보여 줘요. 실행 중인 작업은 계속 표시하며, 이전 작업은 더 보기로 불러와요.",
+  loadMore: "이전 작업 더 보기",
+  loadError: "작업을 불러오지 못했어요. 다시 시도해 주세요.",
   title: "백그라운드 작업",
   thisChat: "이 채팅",
   allChats: "모든 채팅",

@@ -84,3 +84,30 @@ one event object per frame. The socket stays open across turns.
   `translators/_cli.py`, `StreamJsonAccumulator`).
 - FastAPI + React + WS layout — `geny-executor-web`.
 - `asyncssh` remote exec + encrypted vault + host-auth mounting — GAPT.
+
+## Task drawer and right sidebar
+
+`GET /api/sessions/{sid}/tasks/page` returns completed task metadata for the latest two
+conversation turns, plus every still-running task independently of its launch turn.
+It uses the same user/automatic-turn anchors as chat history. Earlier two-turn windows
+are requested explicitly through an opaque, session-bound cursor. A single large window
+is additionally capped at 50 finished tasks per request, using `(started_at, task_id)`
+keyset pagination. The oldest window includes pre-turn/legacy rows. No tasks or output
+files are deleted; expanding a row continues to fetch its output separately. The legacy
+list endpoints remain available for old clients. SQLite indexes cover the task time range
+and active statuses. Snapshot timestamps prevent older fetches from overwriting newer
+socket updates; a reconnect clears outdated running badges.
+
+The task store loads only this first page on initial connection. The drawer's “more” button
+loads additional metadata while preserving expanded row state. Its all-chats tab keeps its
+existing cross-session behavior. Tests: `test_task_page.py`, `task-paging.test.ts`, and real
+Electron fixture `tasks-sidebar.cjs` (1,200 finished tasks and pinned old work).
+
+Explorer and Session panel share one `RightSidebar` shell and one atomic `sidePanel` state,
+with one device-local width (340px default, 220–640px adjustable). Existing explorer width,
+expanded folders and file tabs migrate through workbench persistence v2. The two bodies
+remain mounted after first use; switching changes only which body is shown. This retains
+scroll and section state and avoids intermediate double panels and chat-width changes.
+Only an active explorer fetches roots or refreshes after a completed turn; cached content
+remains visible during refresh. Both views share pointer/keyboard resizing and the same
+mobile drawer/backdrop. Native application code does not change.

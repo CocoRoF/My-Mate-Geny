@@ -35,9 +35,10 @@ interface Menu {
  * folders and any folder opened here, as lazily loaded trees. Clicking a file
  * opens a preview tab (double-click keeps it); folders expand in place.
  */
-export default function ExplorerPanel({ session, onClose, onOpened }: {
+export default function ExplorerPanel({ session, onClose, onOpened, active: isActive = true }: {
   session: Session;
   onClose: () => void;
+  active?: boolean;
   onOpened?: () => void; // a file was opened (mobile: close the drawer)
 }) {
   const t = useT();
@@ -61,7 +62,6 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
   const selected = useWorkbench((s) => s.selected);
   const reveal = useWorkbench((s) => s.reveal);
   const epoch = useWorkbench((s) => s.epoch);
-  const width = useWorkbench((s) => s.explorerWidth);
   const { tabs, active } = useSessionTabs(sid);
   const wb = useWorkbench.getState();
   const dirs = useDirCache((s) => s.dirs);
@@ -78,21 +78,21 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
 
   // Roots load on open; expanded folders (persisted) reload with them.
   useEffect(() => {
+    if (!isActive) return;
     for (const r of roots) if (openRoots[r] !== false) ld(r);
     for (const d of expanded) ld(d);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roots, conn]);
+  }, [roots, conn, isActive]);
 
   // A turn ended: refresh what's on screen (the agent may have added/removed files).
-  const first = useRef(true);
+  const refreshedEpoch = useRef(epoch);
   useEffect(() => {
-    if (first.current) {
-      first.current = false;
-      return;
-    }
+    if (!isActive) return;
+    if (refreshedEpoch.current === epoch) return;
+    refreshedEpoch.current = epoch;
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [epoch]);
+  }, [epoch, isActive]);
 
   useEffect(() => {
     if (!reveal) return;
@@ -235,32 +235,8 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
     return items;
   };
 
-  // drag the left edge to resize (wide screens)
-  const startResize = (ev: React.PointerEvent) => {
-    ev.preventDefault();
-    const x0 = ev.clientX;
-    const w0 = width;
-    const move = (e: PointerEvent) => wb.setExplorerWidth(w0 + (x0 - e.clientX));
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      document.body.style.cursor = "";
-    };
-    document.body.style.cursor = "col-resize";
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  };
-
   return (
-    <aside
-      className="relative flex h-full max-w-[92vw] shrink-0 flex-col border-l border-border bg-surface/95 backdrop-blur-xl"
-      style={{ width }}
-    >
-      <div
-        onPointerDown={startResize}
-        className="absolute inset-y-0 -left-1 z-10 hidden w-2 cursor-col-resize hover:bg-accent/30 xl:block"
-        title={t("files.dragResize")}
-      />
+    <div data-testid="explorer-panel" className="relative flex h-full min-w-0 flex-col">
       <div className="flex h-14 shrink-0 items-center gap-1 border-b border-border/70 pl-4 pr-2">
         <Icon name="files" size={15} className="text-accent" />
         <span className="min-w-0 flex-1">
@@ -383,6 +359,6 @@ export default function ExplorerPanel({ session, onClose, onOpened }: {
           ))}
         </div>
       )}
-    </aside>
+    </div>
   );
 }
