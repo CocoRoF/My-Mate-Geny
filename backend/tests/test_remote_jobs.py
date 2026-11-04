@@ -126,6 +126,7 @@ async def test_backend_mirrors_output_restart_and_stop(db,tmp_path):
             await asyncio.sleep(.1)
         assert row['status']=='completed'
         assert Path(row['output_file']).read_bytes()=='begin 끝'.encode()
+        assert Path(row['output_file']).stat().st_mode & 0o777 == 0o600
         assert 'output_file' not in service._task_out(row)
         slow=c.prepare(h,'sleep 20',h['cwd']);c.start(slow,wait_ms=100)
         service.remote_jobs=mirror

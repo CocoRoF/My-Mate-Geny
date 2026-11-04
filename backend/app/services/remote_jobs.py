@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 import shutil
 from pathlib import Path
 import time
@@ -105,8 +106,10 @@ class RemoteJobService:
                 raise RemoteTransportError('Job unavailable; retain its ID and reconnect instead of resubmitting.')
             data=base64.b64decode(result.get('data') or '')
             if data:
-                with open(output,'ab') as stream:
-                    stream.write(data);stream.flush()
+                fd=os.open(output,os.O_WRONLY|os.O_CREAT|os.O_APPEND,0o600)
+                with os.fdopen(fd,'ab') as stream:
+                    os.fchmod(stream.fileno(),0o600)
+                    stream.write(data);stream.flush();os.fsync(stream.fileno())
             saved={k:v for k,v in result.items() if k!='data'}
             saved['cached_bytes']=offset+len(data)
             if result.get('status') in TERMINAL:
