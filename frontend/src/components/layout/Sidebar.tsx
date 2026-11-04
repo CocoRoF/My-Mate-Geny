@@ -1,4 +1,4 @@
-import { useConfigStore } from "../../stores/configStore";
+import { signOutHere } from "../../lib/authNavigation";
 import { cliUpdatesNeedAttention, providersNeedAttention, sessionsNeedAttention } from "../../lib/attention";
 import { useCliToolsStore } from "../../stores/cliToolsStore";
 import { useMemo, useState } from "react";
@@ -6,7 +6,6 @@ import { useSessionStore } from "../../stores/sessionStore";
 import { openSettings, useUIStore, type View } from "../../stores/uiStore";
 import { useProviderStore } from "../../stores/providerStore";
 import { useChatStore } from "../../stores/chatStore";
-import { apiFetch } from "../../api/client";
 import { requestResync } from "../../lib/sync";
 import { APP_VERSION } from "../../version";
 import Icon, { type IconName } from "../ui/Icon";
@@ -88,13 +87,6 @@ export default function Sidebar() {
     setActive(null);
     reset();
     setView("chat");
-  };
-
-  const local=useConfigStore(s=>s.executionMode)==="local";
-  const logout = async () => {
-    if(local && window.hrhNative?.signOut){await window.hrhNative.signOut();return;}
-    await apiFetch("/api/auth/logout", { method: "POST" }).catch(() => {});
-    window.location.href = "/login";
   };
 
   const needsProvider = providersNeedAttention(providers);
@@ -359,7 +351,7 @@ export default function Sidebar() {
         </div>
         <span className="min-w-0 truncate text-xs" title={t("nav.signedInAs", { user })}>{user}</span>
         <span className="ml-auto text-[10px]">v{APP_VERSION}</span>
-        <button onClick={logout} className="rounded-md p-1 touch:p-2.5 touch:-mr-1.5 hover:text-danger hover:bg-surface-3 transition" title={t("nav.logOut")} aria-label={t("nav.logOut")}>
+        <button data-testid="nav-signout" onClick={signOutHere} className="rounded-md p-1 touch:p-2.5 touch:-mr-1.5 hover:text-danger hover:bg-surface-3 transition" title={t("nav.logOut")} aria-label={t("nav.logOut")}>
           <Icon name="logout" size={15} />
         </button>
       </div>

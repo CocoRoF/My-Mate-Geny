@@ -26,7 +26,7 @@ import {
   revokeAllSessions,
   type AuthStatus,
 } from "../../api/admin";
-import { apiFetch } from "../../api/client";
+import { signOutHere } from "../../lib/authNavigation";
 import { compareVersions, getDownloads, type AppRelease } from "../../api/downloads";
 import { LANGS, useLang, useT, type Lang, type MsgKey, type TFunction, type Vars } from "../../i18n";
 import { relTime } from "../../i18n/format";
@@ -366,11 +366,6 @@ function AccountSection() {
     } finally {
       setRevokeBusy(false);
     }
-  };
-
-  const signOutHere = async () => {
-    await apiFetch("/api/auth/logout", { method: "POST" }).catch(() => {});
-    window.location.href = "/login";
   };
 
   const msg = (m: Msg, testId: string) =>

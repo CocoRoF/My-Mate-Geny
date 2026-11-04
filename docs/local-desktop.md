@@ -56,3 +56,12 @@ A local installation runs its bundled code. Installing a newer desktop package u
 its data; a browser reload alone cannot update a local bundle. The existing private release repository requires
 an authenticated download; Local mode never requires a Geny account just to start and does not make that repository
 public or embed download credentials. Quiet server-backed update polling is skipped in Local mode.
+
+## Signing out and expired authentication
+
+Both desktop sign-out buttons invoke the native connection transition in every execution mode. That transition
+shows Local/Server selection, clears the former connection's cookies, pauses capture without erasing saved sharing
+intent, and stops its owned local runtime. Selecting another mode waits for that cleanup to finish.
+The console also recovers an expired-session redirect or a saved `/login` page into the same chooser. Subframes,
+external sites and stale navigation from a previous server cannot reset the current connection. Browser/mobile web
+authentication continues using the web login form.

@@ -226,6 +226,10 @@ function createWindow(url) {
       if (/^https?:/.test(url)) shell.openExternal(url);
     }
   });
+  require("./connection-navigation").bindConsoleAuthNavigation(wc, {
+    serverUrl, onLogin: () => signOut(),
+    onError: error => mainLog.warn(`return to connection chooser: ${error.message}`),
+  });
   // back on the app after signing in: Mate windows left on the login page reload
   wc.on("did-navigate", (_e, url) => {
     // just signed in (exchange → console): write the new cookie to disk now,
@@ -320,8 +324,20 @@ function refreshMenus() {
 
 /** Sign out: the server's cookies go, the connect screen comes back
  *  (prefilled with the server and username if they were remembered). */
-async function signOut() {
+let signOutPromise = null;
+function signOut() {
+  if (!signOutPromise) signOutPromise = performSignOut().finally(() => { signOutPromise = null; });
+  return signOutPromise;
+}
+async function performSignOut() {
   const base = serverUrl();
+  writeSettings({ serverUrl: undefined, forgetServer: undefined, launchMode:"choose" });
+  // Keep/create the console before closing background windows (including hidden autostart).
+  showConnect({ notice: "signed-out" });
+  captureSharing.pause("waiting_connection");
+  deviceRuntime.destroy();
+  mate.disconnect();
+  closeStrays();
   if (base) {
     try {
       // the server's own logout (best effort; it only deletes the cookie today)
@@ -333,11 +349,7 @@ async function signOut() {
     await clearServerCookies(base);
   }
   await localRuntime.stop();
-  writeSettings({ serverUrl: undefined, forgetServer: undefined, launchMode:"choose" });
-  mate.disconnect();
-  closeStrays();
   refreshMenus();
-  showConnect({ notice: "signed-out" });
 }
 
 /** Builds before 0.4 fell back to the owner's server when none was saved.
@@ -396,7 +408,7 @@ ipcMain.handle("connect:state", (e) => {
 });
 ipcMain.handle("connect:local",async e=>{
   if(!fromConnect(e))return null;
-  try{return await enterLocal();}catch(err){return {ok:false,message:err.message};}
+  try{await signOutPromise;if(!fromConnect(e))return null;return await enterLocal();}catch(err){return {ok:false,message:err.message};}
 });
 ipcMain.handle("connect:localCancel",async e=>{if(fromConnect(e)){await localRuntime.stop();return true;}return false;});
 ipcMain.handle("connect:find", async (e, input) => {
@@ -406,6 +418,8 @@ ipcMain.handle("connect:find", async (e, input) => {
   return plain(r);
 });
 ipcMain.handle("connect:signIn", async (e, o = {}) => {
+  if (!fromConnect(e)) return null;
+  await signOutPromise;
   if (!fromConnect(e)) return null;
   let server = core.cleanBase(o.server);
   if (!server || !found.has(server)) {

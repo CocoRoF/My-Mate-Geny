@@ -1,3 +1,5 @@
+import { authenticationRequired } from "../lib/authNavigation";
+
 const BASE = "";
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -11,7 +13,7 @@ export async function apiResponse(path: string, init?: RequestInit): Promise<Res
     ...init,
   });
   if (res.status === 401) {
-    // Session expired / revoked: back to the login page.
+    // Session expired / revoked: return to this client's authentication entry.
     toLogin();
     throw new Error("authentication required"); // i18n-ignore (the page goes to the login screen)
   }
@@ -40,5 +42,5 @@ export function toLogin() {
   if (!loginRedirect) return;
   if (redirecting || window.location.pathname === "/login") return;
   redirecting = true;
-  window.location.href = "/login";
+  void authenticationRequired().catch(() => { redirecting = false; });
 }
