@@ -3,6 +3,9 @@ on:
   push:
     branches: [codex/native-local]
   workflow_dispatch:
+concurrency:
+  group: local-desktop-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -49,6 +52,9 @@ jobs:
       - name: Package native resources
         working-directory: desktop
         run: npx electron-builder --dir --${{ matrix.arch }} --publish never -c.extraMetadata.version=0.5.0
+      - name: Boot the runtime from the packaged app
+        working-directory: desktop
+        run: python test/verify-packed-runtime.py
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

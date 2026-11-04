@@ -98,6 +98,8 @@ jobs:
         run: |
           sudo mdutil -a -i off || true
           npx electron-builder --mac dmg --${{ matrix.arch }} --publish never -c.extraMetadata.version=$VERSION -c.dmg.title="My Mate Geny (${{ matrix.arch }})"
+      - name: Verify the runtime inside the native app
+        run: python test/verify-packed-runtime.py
       # + the in-app updater's descriptions (electron-updater, generic provider — desktop/src/updater.js): latest.yml
       # (Windows) and latest-linux.yml, served to the app by the console's /api/downloads/update/. No latest-mac.yml:
       # unsigned macOS builds cannot replace themselves (the app offers the .dmg).
