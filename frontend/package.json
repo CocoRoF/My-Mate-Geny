@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test:i18n": "node --test test/i18n.test.ts && node scripts/i18n-scan.mjs --strict",
-    "test:unit": "node --import ./test/ts-resolve.mjs --test test/reply-speech.test.ts test/video-player.test.ts test/mate-autonomous.test.ts test/voice-playback.test.ts test/task-paging.test.ts test/last-conversation.test.ts test/speech-draft.test.ts test/voice-device.test.ts test/device-preferences.test.ts test/screen-owner-timer.test.ts test/mate-steering.test.ts test/local-screen.test.ts test/turn-changes.test.ts test/lite-history.test.ts test/mate-markdown.test.ts test/mate-sentences.test.ts test/update-error.test.ts test/josa.test.ts test/nav-url.test.ts test/session-status.test.ts test/relation-journal.test.ts test/attention.test.ts test/theme.test.ts test/mate-stt.test.ts test/hosts.test.ts test/login-session.test.ts"
+    "test:unit": "node --import ./test/ts-resolve.mjs --test test/image-view.test.ts test/reply-speech.test.ts test/video-player.test.ts test/mate-autonomous.test.ts test/voice-playback.test.ts test/task-paging.test.ts test/last-conversation.test.ts test/speech-draft.test.ts test/voice-device.test.ts test/device-preferences.test.ts test/screen-owner-timer.test.ts test/mate-steering.test.ts test/local-screen.test.ts test/turn-changes.test.ts test/lite-history.test.ts test/mate-markdown.test.ts test/mate-sentences.test.ts test/update-error.test.ts test/josa.test.ts test/nav-url.test.ts test/session-status.test.ts test/relation-journal.test.ts test/attention.test.ts test/theme.test.ts test/mate-stt.test.ts test/hosts.test.ts test/login-session.test.ts"
   },
   "dependencies": {
     "docx-preview": "^0.4.1",

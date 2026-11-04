@@ -1,0 +1,52 @@
+// Real session chat attachments and the shared lightbox, native mouse wheel + CDP multi-touch.
+const {App,fill,until,sleep}=require('../../../desktop/test/e2e/screen-capture-e2e');
+const {chromium}=require('playwright-core');
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),assert=require('node:assert/strict');
+const [server,password,workspace]=process.argv.slice(2),shots=process.env.SCREEN_SHOTS,before=process.env.IMAGE_ZOOM_BEFORE==='1';
+const app=new App(fs.mkdtempSync(path.join(os.tmpdir(),'geny-image-zoom-')),9625,10125);
+(async()=>{let browser,desktopStopped=false;try{
+ app.start();const connect=await app.page(/connect\.html/);await until('connect',()=>connect.eval('!!window.hrhConnect'));await connect.eval(fill(server,'admin',password));
+ await app.page(new RegExp('^'+server.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'/(?!login)(?!\\?surface=)'));
+ browser=await chromium.connectOverCDP('http://127.0.0.1:9625');const ctx=browser.contexts()[0];await ctx.addInitScript(()=>{localStorage.setItem('hrh_lang','ko');localStorage.setItem('hrh_theme','dark')});
+ let page=ctx.pages().find(p=>p.url().startsWith(server)&&!p.url().includes('surface='));
+ const resp=await ctx.request.post(server+'/api/sessions',{data:{provider:'claude',model:'haiku',connection_id:null,workspace_path:workspace,title:'이미지 확대·축소 검증'}});assert(resp.ok());const sid=(await resp.json()).id;
+ await page.goto(server+'/?view=chat&session='+sid);await page.getByTestId('composer-photo-input').waitFor({state:'attached'});
+ const buffer=fs.readFileSync('/home/hrjang/.hr-harnessor/uploads/sess_0da61eb1771bec00/att_86127921525edadd/pasted-20261104-194606.png');
+ await page.getByTestId('composer-photo-input').setInputFiles([1,2].map(n=>({name:'tool-image-'+n+'.png',mimeType:'image/png',buffer})));
+ const input=page.locator('textarea').last();await input.fill('확대 확인');const send=page.getByRole('button',{name:'보내기',exact:true});await until('uploads ready',()=>send.isEnabled());await send.click();
+ const tile=page.locator('img[alt="tool-image-1.png"]').first();await tile.waitFor();await tile.click();
+ const image=page.locator('img[alt="tool-image-1.png"]').last();await image.waitFor();await until('image loaded',()=>image.evaluate(el=>el.complete&&el.naturalWidth>0));
+ const fit=await image.boundingBox();await page.mouse.move(fit.x+fit.width*.6,fit.y+fit.height*.5);await page.mouse.wheel(0,-500);await sleep(200);
+ if(before){assert(Math.abs((await image.boundingBox()).width-fit.width)<1);await page.screenshot({path:path.join(shots,'before-image-wheel.png')});console.log('REPRODUCED wheel does not zoom');return;}
+ let area=page.getByTestId('image-zoom-area'),results=[];const scale=()=>area.getAttribute('data-scale').then(Number);
+ assert.equal(await page.getByTestId('image-lightbox').locator('span').first().evaluate(el=>getComputedStyle(el).color),'rgb(255, 255, 255)');assert((await scale())>2);assert((await image.boundingBox()).width>fit.width*2);results.push({case:'desktop wheel',scale:await scale()});
+ const a=await area.boundingBox(),x=a.x+a.width/2,y=a.y+a.height/2,panBefore=await image.boundingBox();
+ await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+80,y+25,{steps:8});await page.mouse.up();
+ assert(await page.getByTestId('image-lightbox').isVisible());assert(Math.abs((await image.boundingBox()).x-panBefore.x)>20);
+ await page.screenshot({path:path.join(shots,'after-image-desktop-zoom.png')});
+ await page.keyboard.press('0');assert.equal(await scale(),1);await image.dblclick();assert.equal(await scale(),2);await image.dblclick();assert.equal(await scale(),1);for(let tab=0;tab<10;tab++){await page.keyboard.press('Tab');assert(await page.evaluate(()=>document.querySelector('[data-testid=image-lightbox]').contains(document.activeElement)))}await page.keyboard.press('+');assert((await scale())>1);await page.keyboard.press('ArrowRight');await until('next image fitted',()=>scale().then(s=>s===1));
+ await page.getByTestId('image-zoom-in').click();assert((await scale())>1);await page.getByTestId('image-zoom-reset').click();assert.equal(await scale(),1);
+ await page.mouse.move(x,y);await page.mouse.wheel(0,-100000);await sleep(100);assert.equal(await scale(),8);await page.getByTestId('image-zoom-reset').click();
+ await page.keyboard.press('Escape');assert.equal(await page.getByTestId('image-lightbox').count(),0);
+ await tile.click();await page.getByTestId('image-lightbox').waitFor();assert.equal(await scale(),1);
+ const cookies=await ctx.cookies();await app.stop();desktopStopped=true;await browser.close();browser=null;
+ browser=await chromium.launch({executablePath:process.env.CHROME,args:['--no-sandbox']});
+ const mobile=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});await mobile.addCookies(cookies);
+ await mobile.addInitScript(()=>localStorage.setItem('hrh_lang','ko'));
+ page=await mobile.newPage();await page.goto(server+'/?view=chat&session='+sid);await page.locator('img[alt="tool-image-1.png"]').first().click();
+ area=page.getByTestId('image-zoom-area');await area.waitFor();await until('mobile image fitted',()=>page.getByTestId('lightbox-image').evaluate(el=>el.complete&&el.naturalWidth>0));
+ const cdp=await mobile.newCDPSession(page);await page.getByTestId('image-zoom-in').tap();assert((await scale())>1);await page.getByTestId('image-zoom-reset').tap();assert.equal(await scale(),1);
+ await sleep(250);const m=await area.boundingBox(),cy=m.y+m.height/2,cx=m.x+m.width/2;
+ const touch=async(type,p)=>cdp.send('Input.dispatchTouchEvent',{type,touchPoints:p.map(([id,x,y])=>({id,x,y,radiusX:4,radiusY:4,force:1}))});
+ await touch('touchStart',[[1,cx-50,cy],[2,cx+50,cy]]);
+ for(let step=1;step<=8;step++)await touch('touchMove',[[1,cx-50-step*8,cy],[2,cx+50+step*8,cy]]);
+ await touch('touchEnd',[]);await sleep(200);assert((await scale())>2);results.push({case:'mobile real multi-touch pinch',scale:await scale()});
+ const pBefore=await page.getByTestId('lightbox-image').boundingBox();
+ await touch('touchStart',[[3,cx,cy]]);await touch('touchMove',[[3,cx+45,cy]]);await touch('touchEnd',[]);await sleep(100);
+ assert(Math.abs((await page.getByTestId('lightbox-image').boundingBox()).x-pBefore.x)>20);assert(await page.getByTestId('image-lightbox').isVisible());
+ for(const b of await page.getByTestId('image-lightbox').locator('button,a').all()){const r=await b.boundingBox();if(r)assert(r.x>=-1&&r.x+r.width<=391,JSON.stringify(r));}
+ const viewport=await page.evaluate(()=>({scale:visualViewport.scale,height:visualViewport.height,action:getComputedStyle(document.querySelector('[data-testid=image-zoom-area]')).touchAction}));assert.equal(viewport.scale,1,JSON.stringify(viewport));
+ await page.screenshot({path:path.join(shots,'after-image-mobile-pinch.png')});await page.getByTestId('image-zoom-reset').tap();await until('mobile tap resets fit',()=>scale().then(s=>s===1));
+ results.push({case:'mouse pan, keyboard, fit, next reset, close/reopen, max bound, mobile pan/controls',passed:true});
+ fs.writeFileSync(path.join(shots,'image-zoom-results.json'),JSON.stringify(results,null,2));console.log('IMAGE ZOOM E2E OK');
+}finally{if(!desktopStopped)await app.stop();if(browser)await browser.close().catch(()=>{});}})().catch(e=>{console.error(e);process.exitCode=1});

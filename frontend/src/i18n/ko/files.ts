@@ -13,6 +13,8 @@ const ko: Messages<"files"> = {
   uploadFailed: "업로드 실패 (HTTP {status})",
   uploadNetwork: "업로드 중 네트워크 오류",
   uploadCancelled: "업로드 취소됨",
+  zoomReset: "창에 맞춤 (0)",
+  zoomHelp: "휠 또는 두 손가락으로 확대·축소하고, 확대한 이미지를 끌어서 이동해요.",
   // a turn's changes
   filesChanged: "파일 {count}개 변경됨",
   viewAllFiles: "파일 {count}개 모두 보기",

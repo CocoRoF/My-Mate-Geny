@@ -12,6 +12,8 @@ export default {
   uploadFailed: "upload failed (HTTP {status})",
   uploadNetwork: "network error during upload",
   uploadCancelled: "upload cancelled",
+  zoomReset: "Fit to window (0)",
+  zoomHelp: "Use the wheel or pinch to zoom. Drag a zoomed image to pan.",
   // a turn's changes
   filesChanged: { one: "{count} file changed", other: "{count} files changed" },
   viewAllFiles: "View all {count} files",
