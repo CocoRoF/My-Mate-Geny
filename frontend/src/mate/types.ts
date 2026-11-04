@@ -87,6 +87,8 @@ export interface MateAvatarProps {
   portrait?: string | null;
   size?: AvatarSize;
   mood?: BodyMood;
+  /** separate activity-only mood for video bodies; no audio playback state */
+  videoMood?: BodyMood;
   react?: MateReact;
   className?: string;
 }

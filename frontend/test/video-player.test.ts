@@ -1,24 +1,14 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {finishVideo,PlainPlayer} from '../src/mate/avatar/player.ts';
+import {PlainPlayer} from '../src/mate/avatar/player.ts';
+import {activityMood} from '../src/mate/activityMood.ts';
 
-function clip(patch:Record<string,unknown>={}){
- return {duration:5,currentTime:1.2,ended:false,paused:false,loop:true,playbackRate:4,defaultPlaybackRate:4,plays:0,
-  play(){this.plays++;this.paused=false;return Promise.resolve();},...patch} as unknown as HTMLVideoElement&{plays:number};
-}
-test('a voice/reaction transition finishes the remaining motion at 1x without seeking',()=>{
- const v=clip();assert.equal(finishVideo(v,false),true);
- assert.equal(v.playbackRate,1);assert.equal(v.defaultPlaybackRate,1);assert.equal(v.loop,false);
- assert.equal(v.currentTime,1.2);assert.equal(v.plays,0);
-});
-test('a hidden avatar stays paused; an active avatar can resume without acceleration',()=>{
- const v=clip({paused:true});assert.equal(finishVideo(v,true),true);assert.equal(v.plays,0);
- assert.equal(finishVideo(v,false),true);assert.equal(v.plays,1);assert.equal(v.playbackRate,1);
-});
-test('ended and not-yet-loaded clips cannot acquire a fast playback rate',()=>{
- for(const patch of [{ended:true},{duration:NaN},{duration:Infinity},{duration:0}]){
-  const v=clip(patch);assert.equal(finishVideo(v,false),false);assert.equal(v.playbackRate,1);assert.equal(v.defaultPlaybackRate,1);assert.equal(v.currentTime,1.2);
- }
+test('video intent is conversation activity, with no audio playback input',()=>{
+ assert.equal(activityMood(false,false,false,false),'idle');
+ assert.equal(activityMood(true,true,false,false),'talking');
+ assert.equal(activityMood(true,false,true,true),'thinking');
+ assert.equal(activityMood(false,false,true,true),'listening');
+ assert.equal(activityMood(false,false,false,true),'away');
 });
 test('plain slots remain 1x across loop exit, reuse, pause and restore',()=>{
  class Video extends EventTarget {
@@ -29,8 +19,10 @@ test('plain slots remain 1x across loop exit, reuse, pause and restore',()=>{
  Object.assign(globalThis,{document:{createElement(){const v=new Video();videos.push(v);return v;}},requestAnimationFrame:()=>0});
  const player=new PlainPlayer({appendChild(){}} as any);
  try{
-  player.show('idle.mp4',{loop:true});assert.equal(player.finishAtBoundary(),true);
+  player.show('idle.mp4',{loop:true});
   assert(videos.every(v=>v.playbackRate===1&&v.defaultPlaybackRate===1));
+  const current=videos.find(v=>!v.paused)!;current.currentTime=2;
+  player.prepare('next.mp4');assert.equal(current.currentTime,2);assert.equal(current.loop,true);assert.equal(current.paused,false);
   videos.forEach(v=>{v.playbackRate=4;v.defaultPlaybackRate=4;});player.setPaused(true);
   assert(videos.every(v=>v.paused&&v.playbackRate===1&&v.defaultPlaybackRate===1));
   player.setPaused(false);player.show('talk.mp4');player.show('idle.mp4');

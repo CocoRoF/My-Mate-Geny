@@ -7,11 +7,11 @@
  * - live2d → Live2DBody (lazy chunk; pixi is not in the main bundle)
  * - none   → the portrait, else the name's initial
  *
- * The speaking level comes from the shared voice bridge (src/mate/voiceBridge.ts), not from props.
+ * Photo/Live2D mouths follow the voice bridge. Video receives conversation activity separately from audio.
  */
 import { lazy, memo, Suspense, useState, useSyncExternalStore } from "react";
 import { useLiveAvatar } from "../livePreview";
-import type { Avatar, MateAvatarProps } from "../types";
+import type { Avatar, BodyMood, MateAvatarProps } from "../types";
 import { StackedPlayer } from "./player";
 import { reducedMotion } from "./shared";
 import VideoBody from "./VideoBody";
@@ -46,6 +46,7 @@ export const MateAvatar = memo(function MateAvatar({
   portrait = null,
   size = "lg",
   mood = "idle",
+  videoMood,
   react = null,
   className,
   live2dCoreUrl,
@@ -101,7 +102,7 @@ export const MateAvatar = memo(function MateAvatar({
             key={`v|${size}|${packing}|${rig.clips.map((c) => c.src).join(",")}`}
             rig={rig}
             size={size}
-            mood={mood}
+            mood={videoMood ?? mood}
             react={react}
             poster={home}
             name={name}
@@ -145,7 +146,7 @@ function Initial({ name }: { name: string }) {
 export function LiveMateAvatar({
   mate,
   ...rest
-}: Omit<MateAvatarProps, "avatar" | "name"> & MateAvatarExtraProps & { mate: { id: string; name: string; avatar: Avatar } }) {
+}: Omit<MateAvatarProps, "avatar" | "name"> & MateAvatarExtraProps & { videoMood: BodyMood; mate: { id: string; name: string; avatar: Avatar } }) {
   const avatar = useLiveAvatar(mate) ?? mate.avatar;
   return <MateAvatar avatar={avatar} name={mate.name} {...rest} />;
 }

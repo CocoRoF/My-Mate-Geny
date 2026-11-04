@@ -423,7 +423,7 @@ export default function MateView() {
             {!collapsed && (
               <MateStage
                 mate={mate}
-                mood={conv.mood}
+                mood={conv.mood} videoMood={conv.videoMood}
                 react={conv.react}
                 caption={conv.caption}
                 size="sm"
@@ -445,7 +445,7 @@ export default function MateView() {
       <div className="flex min-h-0 flex-1" data-testid="mate-split">
         <MateStage
           mate={mate}
-          mood={conv.mood}
+          mood={conv.mood} videoMood={conv.videoMood}
           react={conv.react}
           caption={conv.caption}
           className="min-w-[300px] flex-1 basis-0 border-r border-border/60 bg-[radial-gradient(ellipse_at_50%_100%,rgb(var(--c-surface-2)/0.9),transparent_70%)] px-4 pt-4"

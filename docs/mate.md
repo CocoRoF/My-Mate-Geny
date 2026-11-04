@@ -282,9 +282,8 @@ Renderer contract (frontend `src/mate/avatar`): one component
 
 The speaking level (0..1, ~30/s) comes from the shared voice bridge
 `src/mate/voiceBridge.ts` (`start(id) / level(v) / end()` + `attachAudio(el)`),
-used by the video body (subtle motion), the photo body (mouth stills) and the
-Live2D body (`ParamMouthOpenY`, RMS smoothing 0.3 / threshold 0.015 / scale 1.8
-as in Geny).
+used by the photo body (mouth stills) and the Live2D body (`ParamMouthOpenY`, RMS smoothing 0.3 /
+threshold 0.015 / scale 1.8 as in Geny). Video motion has no audio-event subscription.
 
 - **Video**: ailism-mate `StackedPlayer` (WebGL, two `<video>` slots, preloaded
   Blob URLs, seamless clip switching on the home frame); `plain` packing plays
@@ -292,12 +291,12 @@ as in Geny).
   the body by mate + rig + size, so another mate never reuses (or keeps
   playing) the previous one's player, canvas, videos or Blob URLs. Switching
   is calm: a mood counts only after it held 600 ms (thinking ↔ talking flips
-  while a reply streams are ignored); talking (or a voice starting), a
-  reaction, or leaving a looping clip stops its loop and **finishes at normal 1× speed**
-  so the preloaded next clip starts on the shared home frame. No state change accelerates or seeks past
-  the current motion; pause/resume and reused slots also restore 1×. Other mood changes prepare the
-  next clip without cutting in. The remaining clip duration bounds the wait (the bundled Han Chaerin
-  idle clip is about 5 seconds). This avoids both fast motion and blended, overlapping poses.
+  while a reply streams are ignored). Video receives a separate `videoMood` based only on conversation
+  activity; audio start/end/cancel/mute is never its input, directly or through the displayed speaking mood.
+  Activity and reactions only preload the next clip. **The video's own ended event is the sole transition
+  clock**, always at 1×. The controller repeats loop clips at natural boundaries instead of changing a
+  media loop flag in response to events. No force-finish, acceleration or mid-clip seek exists. Pause/resume
+  and reused slots restore 1×. Photo/Live2D mouth animation still follows the voice bridge.
 - **Clip choice** (`src/mate/avatar/shared.ts`, used by the video body *and*
   the clip editor's trigger preview, so the preview is exactly the stage):
   disabled clips never count. A mood plays a random clip of its kind

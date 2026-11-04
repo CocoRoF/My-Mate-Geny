@@ -3,6 +3,7 @@ import type {SpeechPacket} from "./stt/draft";
 import {useDraftStore} from "../stores/draftStore";
 import {tr} from "../i18n";
 import { rememberConversation } from "../lib/lastConversation";
+import { activityMood } from "./activityMood";
 import { useDevicePreferences, devicePreferencesLoaded } from "../stores/devicePreferences";
 /**
  * A mate's conversation, live (docs/mate.md §3): POST /api/mates/{id}/conversation → its session, then the same
@@ -119,6 +120,8 @@ export interface MateConversation {
   connection: "connecting" | "open" | "reconnecting";
   error: string | null;
   mood: BodyMood;
+  /** conversation activity only; audio start/end/mute/cancel never drives a video */
+  videoMood: BodyMood;
   react: MateReact;
   caption: Caption | null;
   voiceError: string | null;
@@ -639,39 +642,28 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
     }, 30_000);
     return () => clearInterval(t);
   }, []);
-  useEffect(() => {
-    if (qstate.current) touch();
-  }, [qstate.current, touch]);
-
   // ── mood ──
   const speaking = useVoiceSpeaking() !== null || !!qstate.current;
   const la = lastAssistant(turns);
   const live = la && !la.turn.complete ? la.turn : null;
   const toolRunning = !!live && live.tools.some((t) => t.durationMs === undefined && !t.parent);
   const writing = !!live && !!live.text.trim() && !toolRunning;
-  const mood: BodyMood = speaking || (streaming && writing)
-    ? "talking"
-    : streaming
-      ? "thinking"
-      : listening
-        ? "listening"
-        : away
-          ? "away"
-          : "idle";
+  const videoMood = activityMood(streaming, writing, listening, away);
+  const mood: BodyMood = speaking ? "talking" : videoMood;
 
   // Relationship → "the avatar's idle look follows her mood" (opt-in): while she is idle, a gentle look for her mood
   // (cheerful / content → smile, sleepy → sleepy, concerned → sad) now and then; reactions from her replies win.
   const rel = mate?.relation;
   const moodLook = rel?.enabled && !rel.paused && (flags?.avatarMood ?? rel.avatar_mood) && rel.mood ? MOOD_LOOK[rel.mood] : undefined;
   useEffect(() => {
-    if (!moodLook || mood !== "idle") return;
+    if (!moodLook || videoMood !== "idle") return;
     const first = setTimeout(() => setReact({ name: moodLook, at: Date.now() }), 4000);
     const every = setInterval(() => setReact({ name: moodLook, at: Date.now() }), MOOD_LOOK_EVERY_MS);
     return () => {
       clearTimeout(first);
       clearInterval(every);
     };
-  }, [moodLook, mood]);
+  }, [moodLook, videoMood]);
 
   return {
     sessionId,
@@ -680,6 +672,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
     connection,
     error,
     mood,
+    videoMood,
     react,
     caption,
     voiceError,

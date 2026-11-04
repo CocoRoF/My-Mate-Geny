@@ -21,10 +21,6 @@ export interface ClipPlayer {
   prepare(src: string): void;
   show(src: string, opts?: ShowOptions): void;
   setPaused(paused: boolean): void;
-  /** seconds left of the clip on screen (Infinity while it loops or nothing plays yet) */
-  remaining(): number;
-  /** stop looping and finish at normal speed, so the next clip starts on the shared home frame */
-  finishAtBoundary(): boolean;
   dispose(): void;
 }
 
@@ -48,16 +44,6 @@ export interface ShowOptions {
 }
 
 type Slot = { video: HTMLVideoElement; tex: WebGLTexture; src: string; ready: boolean };
-
-/** A state transition never changes the animation's tempo or seeks past its motion. */
-export function finishVideo(v: HTMLVideoElement, paused: boolean): boolean {
-  v.defaultPlaybackRate = 1;
-  v.playbackRate = 1;
-  if (!Number.isFinite(v.duration) || !v.duration || v.ended) return false;
-  v.loop = false;
-  if (v.paused && !paused) void v.play().catch(() => {});
-  return true;
-}
 
 /** what a clip waiting to go on screen listens for: loaded (a new src), can play, or seeked (back to its first frame) */
 const WAIT = ["loadeddata", "canplay", "seeked"] as const;
@@ -166,17 +152,6 @@ export class StackedPlayer implements ClipPlayer {
     spare.ready = false;
     spare.video.src = src;
     spare.video.load();
-  }
-
-  remaining(): number {
-    const v = this.slots[this.cur].video;
-    if (!this.drawn || v.loop || !Number.isFinite(v.duration) || !v.duration) return Infinity;
-    return Math.max(0, v.duration - v.currentTime);
-  }
-
-  finishAtBoundary(): boolean {
-    if (!this.drawn || this.fade) return false;
-    return finishVideo(this.slots[this.cur].video, this.paused);
   }
 
   /** put a clip on screen: at once (the spare already has it, or the first clip) or with a crossfade */
@@ -386,17 +361,6 @@ export class PlainPlayer implements ClipPlayer {
     spare.src = src;
     spare.video.src = src;
     spare.video.load();
-  }
-
-  remaining(): number {
-    const v = this.slots[this.cur].video;
-    if (!this.drawn || v.loop || !Number.isFinite(v.duration) || !v.duration) return Infinity;
-    return Math.max(0, v.duration - v.currentTime);
-  }
-
-  finishAtBoundary(): boolean {
-    if (!this.drawn || performance.now() < this.fadingUntil) return false;
-    return finishVideo(this.slots[this.cur].video, this.paused);
   }
 
   show(src: string, opts: ShowOptions = {}): void {

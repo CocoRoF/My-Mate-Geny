@@ -68,6 +68,7 @@ export function MateThumb({ mate, className = "h-7 w-7" }: { mate: Mate; classNa
 export default function MateStage({
   mate,
   mood,
+  videoMood,
   react,
   caption,
   size = "lg",
@@ -77,6 +78,7 @@ export default function MateStage({
 }: {
   mate: Mate;
   mood: BodyMood;
+  videoMood: BodyMood;
   react: MateReact;
   caption?: Caption | null;
   size?: "lg" | "sm";
@@ -102,7 +104,7 @@ export default function MateStage({
       )}
       <div className="relative min-h-0 w-full flex-1">
         {/* keyed by the mate: switching mates never shows (or keeps playing) the previous mate's body */}
-        <LiveMateAvatar key={mate.id} mate={mate} size={size} mood={mood} react={react} onTap={onTap} />
+        <LiveMateAvatar key={mate.id} mate={mate} size={size} mood={mood} videoMood={videoMood} react={react} onTap={onTap} />
       </div>
       {showName && (
         <div className="flex shrink-0 items-center gap-2 pb-2 pt-1 text-[12.5px]">

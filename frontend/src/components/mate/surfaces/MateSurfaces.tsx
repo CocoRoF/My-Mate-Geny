@@ -162,7 +162,7 @@ function Overlay() {
         style={interactive ? { cursor: dragging ? "grabbing" : "grab", touchAction: "none" } : undefined}
         data-testid="mate-avatar-area"
       >
-        <LiveMateAvatar key={mate.id} mate={mate} mood={conv.mood} react={conv.react} onTap={() => conv.poke("greet")} view={view} />
+        <LiveMateAvatar key={mate.id} mate={mate} mood={conv.mood} videoMood={conv.videoMood} react={conv.react} onTap={() => conv.poke("greet")} view={view} />
       </div>
       {interactive && !moveMode && !isHome(view) && (
         <button
@@ -468,7 +468,7 @@ function ChatWindow() {
         data-testid="mate-chat-header"
       >
         <div className="relative h-10 w-9 shrink-0 overflow-hidden rounded-xl bg-surface-2 ring-1 ring-border/80">
-          <LiveMateAvatar key={mate.id} mate={mate} size="sm" mood={conv.mood} react={conv.react} interactive={false} />
+          <LiveMateAvatar key={mate.id} mate={mate} size="sm" mood={conv.mood} videoMood={conv.videoMood} react={conv.react} interactive={false} />
         </div>
         <div className="min-w-0 flex-1 leading-tight">
           <div className="flex min-w-0 items-center gap-1">

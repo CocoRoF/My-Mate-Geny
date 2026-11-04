@@ -9,13 +9,11 @@
  * Switching is calm on purpose. Every clip starts and ends on the same home frame, so a switch at the end of a clip
  * is invisible; a switch in the middle used to be a crossfade, i.e. two poses blended with alpha — the "overlapping
  * frames / bad chroma key" look (a see-through sleeve over her dress), and it ran on every thinking ↔ talking flip
- * while a reply streamed. A mood has to hold for MOOD_SETTLE_MS before it counts. Talking, a reaction or leaving
- * a loop finishes the current clip at its natural end; no transition speeds up the animation. The next clip is
- * prepared ahead and starts on the shared home frame, without blending two poses.
+ * while a reply streamed. Conversation activity settles for MOOD_SETTLE_MS and only prepares a future clip.
+ * The video's own ended event is the only transition clock. Audio state is never read or subscribed to here.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BodyMood, MateReact, Rig, RigClip } from "../types";
-import { subscribe as subscribeVoice, voiceBridge } from "../voiceBridge";
 import { PlainPlayer, StackedPlayer, type ClipPlayer } from "./player";
 import { clipFor, clipUrl, enabledClips, moodPool } from "./shared";
 
@@ -38,7 +36,6 @@ const RANK: Record<string, number> = { idle: 0, talk: 1, think: 2, listen: 3, re
 type State = {
   /** the mood that counts (held for MOOD_SETTLE_MS) */
   mood: BodyMood;
-  voice: boolean;
   react: RigClip | null;
   playing: RigClip | null;
   last: string;
@@ -48,8 +45,8 @@ type State = {
 
 export default function VideoBody({ rig, size, mood, react, poster, name, onFail }: VideoBodyProps) {
   const wrap = useRef<HTMLDivElement>(null);
-  /** a priority change ends a loop normally; other changes only prepare the next clip */
-  const changeRef = useRef<((now: boolean) => void) | null>(null);
+  /** changes only prepare the next clip; onEnded is the sole transition clock */
+  const changeRef = useRef<(() => void) | null>(null);
   /** a reaction queued for the next natural clip boundary */
   const reactRef = useRef<((c: RigClip) => void) | null>(null);
   const failRef = useRef(onFail);
@@ -78,7 +75,6 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
     // fresh state for every player: nothing of a previous avatar (its upcoming clip, its reaction) carries over
     const s: State = {
       mood: moodRef.current,
-      voice: !!voiceBridge.speaking,
       react: null,
       playing: null,
       last: "",
@@ -152,13 +148,13 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
       return pool[Math.floor(Math.random() * pool.length)];
     };
     const forMood = (m: BodyMood): RigClip | null => pickFrom(moodPool(active, m).clips);
-    const moodNow = (): BodyMood => (s.voice ? "talking" : s.mood);
+    const moodNow = (): BodyMood => s.mood;
     /** load what plays when the clip on screen ends (a pending reaction, else a clip for the mood that counts) */
     const prepareNext = () => {
       let c: RigClip | null = s.react;
       if (!c) {
         const m = moodNow();
-        c = s.upcoming && s.upcoming.kind === wanted(m) ? s.upcoming : forMood(m);
+        c = s.playing?.loop && s.playing.kind === wanted(m) ? s.playing : s.upcoming && s.upcoming.kind === wanted(m) ? s.upcoming : forMood(m);
         s.upcoming = c;
       }
       if (c && c.id !== s.playing?.id) p.prepare(srcOf(c));
@@ -171,7 +167,7 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
         s.react = null;
       } else {
         const m = moodNow();
-        c = s.upcoming && s.upcoming.kind === wanted(m) ? s.upcoming : forMood(m);
+        c = s.playing?.loop && s.playing.kind === wanted(m) ? s.playing : s.upcoming && s.upcoming.kind === wanted(m) ? s.upcoming : forMood(m);
       }
       s.upcoming = null;
       if (!c) return;
@@ -179,34 +175,24 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
       s.last = c.id;
       // which clip is on (tests, the clip editor's checks); a DOM attribute, not state: no re-render per clip
       box.dataset.mateClip = c.id;
-      // a clip marked loop (e.g. dozing) loops
-      p.show(srcOf(c), { loop: !!c.loop });
+      // Repeat looping clips in this controller at their natural end. No event
+      // ever needs to edit the current media element's loop flag to leave one.
+      p.show(srcOf(c), { loop: false });
       // have the likely next clip ready, so the switch at the end shows no seam
-      const after = forMood(moodNow());
+      const after = c.loop && c.kind === wanted(moodNow()) ? c : forMood(moodNow());
       if (after && after.id !== c.id) {
         s.upcoming = after;
         p.prepare(srcOf(after));
       }
     };
-    /** Finish a loop normally. Before any clip is visible, the new choice can start immediately. */
-    const cut = () => {
-      prepareNext();
-      if (!p.finishAtBoundary()) next();
-    };
-    /** what she does changed: a loop may finish; reactions always play to their natural end */
-    const change = (now: boolean) => {
-      if (s.playing?.kind === "react" || (s.playing && s.playing.kind === wanted(moodNow()))) return prepareNext();
-      if (now) cut();
-      else prepareNext();
-    };
     p.onFirstFrame = () => {
       setShown(true);
     };
     p.onEnded = next;
-    changeRef.current = change;
+    changeRef.current = prepareNext;
     reactRef.current = (c) => {
       s.react = c;
-      cut();
+      prepareNext();
     };
     next();
     // asleep when nobody can see it: the tab is hidden or the body is off screen
@@ -226,20 +212,9 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
           })
         : null;
     io?.observe(box);
-    // Actual speech prepares the talk clip and finishes a looping idle at normal speed.
-    const unsub = subscribeVoice((e) => {
-      if (e.type === "start") {
-        s.voice = true;
-        change(true);
-      } else if (e.type === "end") {
-        s.voice = false;
-        change(false);
-      }
-    });
     return () => {
       alive = false;
       ctrl?.abort();
-      unsub();
       io?.disconnect();
       document.removeEventListener("visibilitychange", vis);
       ro?.disconnect();
@@ -256,13 +231,13 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
     };
   }, [active, size, packing, aspectW, aspectH]);
 
-  // A settled talking mood or leaving a loop requests a normal-speed end; other moods prepare the next clip.
+  // Activity changes prepare a future clip. The currently playing clip is never touched.
   useEffect(() => {
     const t = setTimeout(() => {
       const s = st.current;
       if (!s || s.mood === mood) return;
       s.mood = mood;
-      changeRef.current?.(mood === "talking" || !!s.playing?.loop);
+      changeRef.current?.();
     }, MOOD_SETTLE_MS);
     return () => clearTimeout(t);
   }, [mood]);
@@ -283,6 +258,7 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
       role="img"
       aria-label={name}
       data-mate-body="video"
+      data-video-mood={mood}
       data-mate-shown={shown ? "1" : "0"}
     >
       {poster && !shown ? <img className="mate-fit" src={poster} alt="" decoding="async" /> : null}
