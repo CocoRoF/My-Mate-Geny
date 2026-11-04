@@ -15,6 +15,7 @@ their upgrade (Settings → Providers → CLI versions; docs/providers.md, "CLI 
 """
 
 from __future__ import annotations
+from app.portability import child_command, subprocess_flags
 
 import asyncio
 import contextlib
@@ -308,8 +309,8 @@ class CliToolsService:
     async def _run_version(self, path: str) -> tuple[str | None, str | None]:
         try:
             proc = await asyncio.create_subprocess_exec(
-                path, "--version", stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT, env=self._env(), start_new_session=True,
+                *child_command(path, ["--version"]), stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT, env=self._env(), start_new_session=True, **subprocess_flags(),
             )
         except OSError as exc:
             return None, f"{type(exc).__name__}: {exc}"[:300]
@@ -692,9 +693,9 @@ class CliToolsService:
 
     async def _exec(self, job: Job, argv: list[str]) -> int:
         proc = await asyncio.create_subprocess_exec(
-            *argv, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
+            *child_command(argv[0], argv[1:]), stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT, env=self._env(), cwd=os.path.expanduser("~"),
-            start_new_session=True,
+            start_new_session=True, **subprocess_flags(),
         )
         self._proc = proc
         assert proc.stdout is not None

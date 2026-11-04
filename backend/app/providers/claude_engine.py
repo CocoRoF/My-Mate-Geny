@@ -27,7 +27,7 @@ from collections import deque
 from typing import Any
 
 from app.providers._cli_runtime import _ENV_WHITELIST, _kill_group
-from app.portability import child_command
+from app.portability import child_command, subprocess_flags
 from app.providers._stream_json import StreamJsonAccumulator
 from app.providers.base import ProviderEvent
 
@@ -114,7 +114,7 @@ class ClaudeEngine:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            start_new_session=True,  # own process group: shutdown kills tasks too
+            start_new_session=True, **subprocess_flags(),  # own process group: shutdown kills tasks too
             limit=32 * 1024 * 1024,
         )
         self._reader = asyncio.create_task(self._read())

@@ -9,7 +9,7 @@ from pathlib import Path
 async def main():
     runtime = Path(sys.argv[1]).resolve()
     sys.path.insert(0, str(runtime / 'backend'))
-    with tempfile.TemporaryDirectory(prefix='geny-installer-check-') as directory:
+    with tempfile.TemporaryDirectory(prefix='.local-install-check-', dir=Path.cwd()) as directory:
         home=Path(directory)
         os.environ.update(HOME=directory, USERPROFILE=directory, DATA_HOME=str(home/'state'),
                           PATH='/usr/bin:/bin', AUTH_PASSWORD='installation-test-only',
@@ -28,7 +28,12 @@ async def main():
                 result[tool]={'phase':state['phase'],'error':state['error'],'log':state['log'][-8:]}
                 print(json.dumps({tool:result[tool]}),flush=True)
                 if state['phase']!='done':raise RuntimeError(f'{tool} official installation failed')
-                assert str(resolve_path(effective_binary(tool))).startswith(directory)
+                binary=resolve_path(effective_binary(tool))
+                assert str(binary).startswith(directory)
+                proc=await asyncio.create_subprocess_exec(binary, '--version',stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
+                stdout,stderr=await asyncio.wait_for(proc.communicate(),15)
+                assert proc.returncode==0,(stdout,stderr)
+                print(json.dumps({'tool':tool,'version':stdout.decode().strip(),'executable':True}),flush=True)
             print('LOCAL_INSTALLERS_OK',flush=True)
         finally:
             await service.stop()

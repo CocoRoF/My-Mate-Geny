@@ -47,11 +47,21 @@ def child_command(binary: str, args: list[str]) -> list[str]:
         from pathlib import Path
         import shutil
         base = Path(binary).parent
-        entries = [base / 'node_modules/@anthropic-ai/claude-code/cli.js',
-                   base / 'node_modules/@openai/codex/bin/codex.js']
+        entries = {
+            'claude': 'node_modules/@anthropic-ai/claude-code/cli.js',
+            'codex': 'node_modules/@openai/codex/bin/codex.js',
+            'npm': 'node_modules/npm/bin/npm-cli.js',
+        }
+        entry = entries.get(Path(binary).stem.lower())
+        if entry is None:
+            return [binary, *args]
         node = shutil.which('node')
-        target = entries[0] if Path(binary).stem.lower() == 'claude' else entries[1]
+        target = base / entry
         if node and target.is_file():
             return [node, str(target), *args]
         raise RuntimeError('Install the native CLI using the setup assistant; this legacy Windows shim has no usable Node runtime')
     return [binary, *args]
+
+
+def subprocess_flags() -> dict:
+    return {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}

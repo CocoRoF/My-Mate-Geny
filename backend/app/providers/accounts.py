@@ -871,10 +871,11 @@ class AccountPool:
 
     def _host_usable(self, provider: str) -> bool:
         cfg = self._host_cred_dir(provider)
-        return any(
-            os.path.exists(os.path.join(cfg, f))
-            for f in (".credentials.json", "credentials.json", "auth.json")
-        )
+        if any(os.path.exists(os.path.join(cfg, f)) for f in (".credentials.json", "credentials.json", "auth.json")):
+            return True
+        from .native_login import logged_in
+        from app.services.cli_tools.tools import effective_binary
+        return logged_in(provider, effective_binary(provider))
 
     def _primary_snapshot(self, provider: str, now: float) -> AccountSnapshot:
         pid = self._primary_id(provider)
@@ -950,6 +951,8 @@ class AccountPool:
         if account is None and not primary:
             account = self._store.get(acc_id)
         facts = self._session_facts(provider, acc_id, primary=primary, account=account)
+        if primary and not facts.get("present") and self._host_usable(provider):
+            facts = login_session.stored_key_facts("native_cli")
         out = login_session.public(facts, now=now, renew=self._renew.get(acc_id),
                                    rejected=self._rejected(acc_id, account))
         if not out["email"] or not out["plan"]:

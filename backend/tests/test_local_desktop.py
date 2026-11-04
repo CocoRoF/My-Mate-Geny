@@ -68,3 +68,22 @@ def test_portable_host_memory_and_processes():
     assert m['occupied']==m['total']-m['free']
     me,kids=c.processes(0,None);assert me.pid==os.getpid()
     assert c.disk_usage()[0]['total']>0
+
+
+def test_native_credential_store_detection_is_local_only_and_cached(monkeypatch):
+    from app.providers import native_login
+    monkeypatch.setattr(settings, 'execution_mode', 'local')
+    native_login._cache.clear()
+    calls=[]
+    def run(argv, **kw):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0,stdout=b'{"loggedIn":true}')
+    monkeypatch.setattr(native_login.subprocess,'run',run)
+    assert native_login.logged_in('claude','native-claude')
+    assert native_login.logged_in('claude','native-claude')
+    assert native_login.logged_in('codex','native-codex')
+    assert len(calls)==2
+    monkeypatch.setattr(settings, 'execution_mode', 'server')
+    assert not native_login.logged_in('codex','native-codex')
+    assert len(calls)==2
+    native_login._cache.clear()

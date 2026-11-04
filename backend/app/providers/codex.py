@@ -70,6 +70,9 @@ class CodexProvider(Provider):
             )
         auth_file = os.path.expanduser("~/.codex/auth.json")
         has_auth = os.path.exists(auth_file)
+        if not has_auth:
+            from .native_login import logged_in
+            has_auth = await asyncio.to_thread(logged_in, "codex", resolved)
         return AuthStatus(
             provider=self.name,
             connected=has_auth,

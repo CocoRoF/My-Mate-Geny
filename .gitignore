@@ -61,3 +61,5 @@ backend/app/mate/builtin/personas/mao.json
 
 /desktop/node_modules
 /frontend/node_modules
+
+/desktop/.local-install-check-*/

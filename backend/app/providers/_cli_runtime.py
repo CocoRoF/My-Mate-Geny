@@ -13,13 +13,14 @@ import os
 import signal
 from dataclasses import dataclass, field
 from typing import AsyncIterator
-from app.portability import child_command, kill_tree
+from app.portability import child_command, kill_tree, subprocess_flags
 
 # Parent env vars the child is allowed to inherit. Notably ANTHROPIC_API_KEY is
 # NOT here — it is injected explicitly only on the api_key auth path.
 _ENV_WHITELIST = ("HOME", "PATH", "USER", "LANG", "LC_ALL", "TERM", "TMPDIR", "TZ", "SHELL",
                   "USERPROFILE", "APPDATA", "LOCALAPPDATA", "SYSTEMROOT", "SystemRoot", "COMSPEC",
-                  "TEMP", "TMP", "PATHEXT", "ProgramFiles", "ProgramFiles(x86)")
+                  "TEMP", "TMP", "PATHEXT", "ProgramFiles", "ProgramFiles(x86)",
+                  "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR", "SSH_AUTH_SOCK", "SECURITYSESSIONID")
 
 
 @dataclass
@@ -60,7 +61,7 @@ class CLIProcessRunner:
             stderr=asyncio.subprocess.PIPE,
             # Own process group, so Stop/timeout also kills the shells and MCP
             # servers the agent spawned — not just the CLI itself.
-            start_new_session=True,
+            start_new_session=True, **subprocess_flags(),
             limit=16 * 1024 * 1024,  # stream-json lines (e.g. big tool output) can be large
         )
         assert proc.stdout is not None and proc.stdin is not None

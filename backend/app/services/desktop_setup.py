@@ -1,5 +1,6 @@
 """Explicit first-run CLI installation. Never upgrades an existing CLI or changes its credentials."""
 from __future__ import annotations
+from app.portability import child_command, subprocess_flags
 import asyncio
 import os
 import platform
@@ -35,11 +36,10 @@ class DesktopSetup:
             if binary and cached and cached[1]==binary and time.monotonic()-cached[0]<60:
                 version=cached[2]
             elif binary:
-                from app.portability import child_command
                 proc = None
                 try:
                     proc = await asyncio.create_subprocess_exec(*child_command(binary, ['--version']),
-                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, start_new_session=True)
+                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, start_new_session=True, **subprocess_flags())
                     out, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
                     version = out.decode(errors='replace').strip()[:120]
                     self.versions[tool]=(time.monotonic(),binary,version)
@@ -106,7 +106,7 @@ class DesktopSetup:
                 env['CODEX_NON_INTERACTIVE'] = '1'
                 proc = await asyncio.create_subprocess_exec(*cmd, env=env, cwd=directory,
                     stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT, start_new_session=True)
+                    stderr=asyncio.subprocess.STDOUT, start_new_session=True, **subprocess_flags())
                 async with asyncio.timeout(600):
                     while line := await proc.stdout.readline():
                         job['log'].append(line.decode(errors='replace').rstrip()[:500])

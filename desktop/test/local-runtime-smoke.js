@@ -5,9 +5,12 @@ const {spawn}=require('child_process');
 const {createLocalRuntime}=require('../src/local-runtime');
 const root=path.resolve(process.argv[2]||'local-runtime');
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'geny-local-smoke-'));
+const fixture=path.join(temp,'fixture-cli.py');
+fs.writeFileSync(fixture,'import sys,json\nif "--version" in sys.argv: print("0.0.1 (local smoke fixture)")\nelse: print(json.dumps({"loggedIn":False})); sys.exit(1)\n');
+fs.chmodSync(fixture,0o755);
 let cookie,logs='';
 const rt=createLocalRuntime({root,dataDir:path.join(temp,'state'),cookies:{set:async c=>cookie=c},log:m=>logs+=m+'\n',
- spawnProcess:(exe,args,o)=>spawn(exe,args,{...o,env:{...o.env,HOME:temp,USERPROFILE:temp,PLAN_USAGE_FETCH:'false',CLI_UPDATE_CHECK:'false',MONITOR_ENABLED:'false',MATE_SEARCH_ROOTS:temp}})});
+ spawnProcess:(exe,args,o)=>spawn(exe,args,{...o,env:{...o.env,HOME:temp,USERPROFILE:temp,CLAUDE_BINARY:fixture,PLAN_USAGE_FETCH:'false',CLI_UPDATE_CHECK:'false',MONITOR_ENABLED:'false',MATE_SEARCH_ROOTS:temp}})});
 (async()=>{try{
  const {origin}=await rt.start();assert.match(origin,/^http:\/\/127\.0\.0\.1:\d+$/);
  assert.equal(cookie.name,'hrh_session');assert.equal(cookie.httpOnly,true);
@@ -15,6 +18,7 @@ const rt=createLocalRuntime({root,dataDir:path.join(temp,'state'),cookies:{set:a
  assert.equal((await fetch(origin+'/health')).status,200);
  assert.equal((await api('/api/config')).data.execution_mode,'local');
  const setup=await api('/api/setup');assert.equal(setup.status,200);assert.deepEqual(setup.data.tools.map(t=>t.id),['claude','codex']);
+ assert.equal(setup.data.tools[0].installed,true);assert.match(setup.data.tools[0].version,/0\.0\.1/);
  assert.equal((await api('/api/local/bootstrap',{method:'POST'})).status,403);
  assert.ok(fs.existsSync(path.join(temp,'state/geny.db')));
  await rt.stop();await assert.rejects(fetch(origin+'/health'));

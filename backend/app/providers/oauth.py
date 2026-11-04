@@ -121,7 +121,11 @@ class OAuthManager:
         )
 
     def codex_logged_in(self) -> bool:
-        return os.path.exists(os.path.join(self._home, ".codex", "auth.json"))
+        if os.path.exists(os.path.join(self._home, ".codex", "auth.json")):
+            return True
+        from .native_login import logged_in
+        from app.services.cli_tools.tools import effective_binary
+        return logged_in('codex', effective_binary('codex'))
 
     # ---- codex: device-code flow (stdout pipes) ----
 
@@ -202,7 +206,12 @@ class OAuthManager:
                 s.done = True
                 # Judge THIS login by its own auth file (an account's CODEX_HOME,
                 # not the host's ~/.codex) and only if written after it started.
-                s.ok = proc.returncode == 0 and _fresh(s.auth_file, s.started_at)
+                native_ok = False
+                if proc.returncode == 0 and key == 'codex' and not env_extra:
+                    from .native_login import logged_in, invalidate
+                    invalidate('codex')
+                    native_ok = logged_in('codex', effective_binary('codex'))
+                s.ok = proc.returncode == 0 and (_fresh(s.auth_file, s.started_at) or native_ok)
                 if not s.ok and not s.error:
                     tail = s.output.strip().splitlines()[-3:]
                     s.error = " ".join(tail)[:300] or "login did not complete"
