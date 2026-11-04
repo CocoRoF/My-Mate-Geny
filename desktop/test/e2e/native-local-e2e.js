@@ -27,15 +27,34 @@ async function start(port){app=new App(home,port,port+500);app.start();return ap
  await shot(page,'02-local-setup-detected.png');
  const setup=await request(page,'/api/setup');assert.equal(setup.status,200);assert.equal(setup.data.execution_mode,'local');assert.equal(setup.data.tools.find(t=>t.id==='claude').connected,true);results.discovery=setup.data.tools.map(({id,installed,connected})=>({id,installed,connected}));
  assert.equal((await request(page,'/api/local/bootstrap',{method:'POST'})).status,403);
+ assert.equal(await page.eval('!!document.querySelector("[data-testid=setup-assistant] [data-testid=local-workspace-picker]")'),false);
+ assert.equal(await page.eval('document.querySelector("[data-testid=setup-assistant]").innerText.includes("작업 폴더")'),false);
+ assert.equal((await request(page,'/api/sessions')).data.length,0);
+ await page.eval('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="설정 완료").click()');
+ await until('provider setup completes without a folder',()=>page.eval('!document.querySelector("[data-testid=setup-assistant]") && !!document.querySelector("[data-testid=local-workspace-picker]")'));
+ assert.equal((await request(page,'/api/sessions')).data.length,0);results.providerOnlySetup=true;
+ assert.equal(await page.eval('document.documentElement.dataset.themeMode'),'system');
+ for(const color of ['dark','light']){
+  await page.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:color}]});
+  await until('system theme follows '+color,()=>page.eval(`document.documentElement.dataset.theme===${JSON.stringify(color)} && document.documentElement.dataset.themeMode==='system'`));
+  await shot(page,`03-new-chat-${color}.png`);
+ }
+ assert.equal(await app.main('return require("electron").nativeTheme.themeSource;'),'system');results.defaultSystemTheme=true;
+ await app.main(`require('electron').dialog.showOpenDialog=async()=>({canceled:true,filePaths:[]});return true;`);
+ await page.eval('document.querySelector("[data-testid=local-workspace-picker] button").click()');
+ await until('canceled folder dialog',()=>page.eval('document.querySelector("[data-testid=local-workspace-picker] button").getAttribute("aria-busy")==="false"'));
+ assert.equal((await request(page,'/api/sessions')).data.length,0);results.folderCancel=true;
  // OS folder dialog is intercepted in the main process; the real bridge/probe/release still execute.
  await app.main(`require('electron').dialog.showOpenDialog=async()=>({canceled:false,filePaths:[${JSON.stringify(workspace)}]});return true;`);
- await page.eval('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="로컬 폴더 선택").click()');
+ await page.eval('document.querySelector("[data-testid=local-workspace-picker] button").focus()');
+ await page.send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:'\r',unmodifiedText:'\r'});
+ await page.send('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
  await until('chosen local path',()=>page.eval(`document.body.innerText.includes(${JSON.stringify(workspace)})`));
- await shot(page,'03-local-folder-selected.png');
- await page.eval('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="선택한 폴더에서 시작").click()');
- await until('setup completed',()=>page.eval('!document.querySelector("[data-testid=setup-assistant]")'));
+ await shot(page,'03-local-folder-selected.png');results.folderKeyboard=true;
+ await page.eval('Array.from(document.querySelectorAll("button")).find(b=>b.textContent.includes("채팅 시작")).click()');
+ await until('chat created',async()=>!!(await request(page,'/api/sessions')).data.length);
  const sessions=await request(page,'/api/sessions');const session=sessions.data.sessions?.[0]||sessions.data[0];assert.ok(session?.id);assert.equal(session.workspace_path,workspace);results.session=session.id;
- await until('composer',()=>page.eval('!!document.querySelector("textarea")'));
+ await until('composer socket ready',()=>page.eval('!!document.querySelector("textarea") && document.body.innerText.includes("메시지를 보내서 이 워크스페이스에서 작업을 시작하세요.")'));
  await page.eval('document.querySelector("textarea").focus()');await page.send('Input.insertText',{text:'local native test message'});
  await page.send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
  await page.send('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
@@ -59,7 +78,7 @@ async function start(port){app=new App(home,port,port+500);app.start();return ap
  assert.notEqual(results.restoredOrigin,results.origin);results.portFallback=true;
  assert.equal(await page.eval('localStorage.getItem("hrh_last_session")'),session.id);results.deviceUiStateRestored=true;
  occupied.close();occupied=null;
- await page.eval('window.hrhNative.switchServer()');page=await app.page(/connect\.html/);await until('server choice rendered',()=>page.eval('!!document.getElementById("modeServer")'));await page.eval('document.getElementById("modeServer").click()');assert.equal(await page.eval('!document.getElementById("serverFields").hidden'),true);results.serverModeSelectable=true;
+ await page.eval('void window.hrhNative.switchServer(); true');page=await app.page(/connect\.html/);await until('server choice rendered',()=>page.eval('!!document.getElementById("modeServer")'));await page.eval('document.getElementById("modeServer").click()');assert.equal(await page.eval('!document.getElementById("serverFields").hidden'),true);results.serverModeSelectable=true;
  await shot(page,'06-server-connection.png');
  await app.stop();app=null;
  // The backend port must close with the app, not remain as a hidden local service.

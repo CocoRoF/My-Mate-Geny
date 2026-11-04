@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useProviderStore } from "../../stores/providerStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useConfigStore } from "../../stores/configStore";
-import { folderBridge } from "../../lib/localFolder";
+import LocalWorkspacePicker from "../workspaces/LocalWorkspacePicker";
 import WorkspacePicker from "../workspaces/WorkspacePicker";
 import Icon from "../ui/Icon";
 import { useT } from "../../i18n";
@@ -33,7 +33,6 @@ export default function NewSessionPanel() {
   const [effort, setEffort] = useState("default");
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [path, setPath] = useState<string | null>(null);
-  const pickLocal=async()=>{try{const bridge=folderBridge();const result=await bridge?.pick();if(result){setPath(result.path);setConnectionId(null);await bridge?.release(result.path);}}catch(e:any){setError(e.message);}};
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -139,7 +138,7 @@ export default function NewSessionPanel() {
         </div>
 
         {/* Workspace */}
-        {local?<div className="my-3"><button className="btn" onClick={()=>void pickLocal()}>{t("setup.pickFolder")}</button><p className="mt-2 break-all text-xs text-content-muted">{path||t("setup.folderHint")}</p></div>:<WorkspacePicker
+        {local?<LocalWorkspacePicker path={path} onChange={value=>{setPath(value);setConnectionId(null);}} onError={setError}/>:<WorkspacePicker
           connectionId={connectionId}
           setConnectionId={setConnectionId}
           path={path}

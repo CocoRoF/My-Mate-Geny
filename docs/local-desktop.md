@@ -26,8 +26,14 @@ the existing last-conversation restoration policy. The assistant can be reopened
 2. If missing, explicitly install using the providers' official user-scoped standalone installers; show progress,
    cancellation/retry and re-detect. Never auto-install/upgrade an already installed CLI, and never touch Higgsfield.
 3. Reuse existing CLI login or guide provider sign-in/configuration with the existing provider controls.
-4. Local execution picks a real local folder with the OS folder dialog. Server mode keeps server workspace/SSH/Git
-   selection. Persist setup completion and start the selected provider/model in that workspace.
+4. The assistant configures providers only. Its footer offers the text action “I'll set this up later” and a
+   “Finish setup” primary button, enabled once either provider is connected. Both persist dismissal; neither picks
+   a folder nor creates a session. Reopen the assistant later to finish provider setup.
+
+The new-chat form chooses the working folder separately. Local execution uses a full-width folder card and the OS
+folder dialog; the card shows the selected folder name/path and a Change action. Server mode keeps server
+workspace/SSH/Git selection. No theme choice defaults to System: the first paint, app windows and console follow
+OS light/dark changes; an explicitly saved appearance choice remains respected.
 
 ## Delivery checks
 
