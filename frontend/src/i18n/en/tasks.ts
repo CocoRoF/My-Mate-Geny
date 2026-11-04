@@ -9,6 +9,7 @@ export default {
   empty: "Commands and subagents the agent runs in the background show up here — e.g. ask it to start a dev server or a long build “in the background”.",
   runningN: "Running {n}",
   finishedN: "Finished {n}",
+  typeRemote: "remote command",
   typeCommand: "command",
   typeSubagent: "subagent",
   typeAgent: "agent",

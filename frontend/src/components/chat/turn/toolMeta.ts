@@ -125,9 +125,10 @@ export function summarize(metas: ToolMeta[]): string {
 /** "850ms", "4.2s", "3m 5s", "1h 2m" / "4.2초", "3분 5초" … */
 export function fmtMs(ms: number): string {
   if (ms < 1000) return tr("turn.ms", { n: String(Math.max(0, Math.round(ms))) });
-  const s = ms / 1000;
+  const s = Math.round(ms / 100) / 10;
   if (s < 60) return tr("turn.sec", { n: s.toFixed(1) });
-  const m = Math.floor(s / 60);
-  if (m < 60) return tr("common.durMS", { m, s: Math.round(s % 60) });
+  const seconds = Math.round(s);
+  const m = Math.floor(seconds / 60);
+  if (m < 60) return tr("common.durMS", { m, s: seconds % 60 });
   return tr("common.durHM", { h: Math.floor(m / 60), m: m % 60 });
 }

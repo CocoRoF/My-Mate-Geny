@@ -254,6 +254,11 @@ async def test_launch_wiring_for_both_engines(db, tmp_path, monkeypatch):
 
 
 def _bridge(monkeypatch, hosts):
+    base = pathlib.Path(hosts[0]['cwd']).parent / 'job-test'
+    for h in hosts:
+        h['job_root'] = str(base/h['name'])
+    monkeypatch.setenv('HRH_REMOTE_JOBS_ROOT', str(base/'local'))
+    monkeypatch.setenv('HRH_REMOTE_SESSION_ID', 'bridge-test')
     monkeypatch.setenv("HRH_REMOTE_HOSTS", json.dumps(hosts))
     import app.workspaces.mcp_remote_bridge as mod
 
@@ -278,7 +283,7 @@ def test_bridge_routes_hosts_and_confines_paths(monkeypatch, tmp_path):
         {"name": "srv-b", "aliases": ["conn_b"], "host": "y", "cwd": str(b), "roots": [str(b)], "default": False},
     ])
     names = [t["name"] for t in mod.TOOLS]
-    assert names == ["remote_bash", "remote_read", "remote_write", "remote_list"]  # same tool names as before
+    assert names == ["remote_bash", "remote_read", "remote_write", "remote_list", "remote_poll", "remote_stop"]  # existing names retained; durable job control appended
     assert "srv-b" in mod.TOOLS[0]["inputSchema"]["properties"]["host"]["description"]
     assert _txt(mod.call("remote_read", {"path": "f.txt"})) == ("in a\n", False)  # default host, relative
     out, err = mod.call("remote_write", {"path": "new.txt", "content": "hello", "host": "srv-b"}).values()

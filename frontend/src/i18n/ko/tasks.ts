@@ -10,6 +10,7 @@ const ko: Messages<"tasks"> = {
   empty: "에이전트가 백그라운드에서 실행하는 명령과 서브에이전트가 여기에 나타나요 — 예를 들어 개발 서버나 오래 걸리는 빌드를 “백그라운드에서” 시작해 달라고 해 보세요.",
   runningN: "실행 중 {n}",
   finishedN: "완료 {n}",
+  typeRemote: "원격 명령",
   typeCommand: "명령",
   typeSubagent: "서브에이전트",
   typeAgent: "에이전트",

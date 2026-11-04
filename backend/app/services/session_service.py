@@ -115,6 +115,8 @@ class SessionService:
         self._pool = pool
         self._attachments = attachments
         self._logs = logs
+        from app.services.remote_jobs import RemoteJobService
+        self.remote_jobs = RemoteJobService(self, self._db._path.with_suffix('.remote-jobs'))
         # History pages' session-wide numbers, folded once per chat and extended
         # as events arrive (services/history_aggregates.py).
         self.history_aggregates = SessionAggregates()
@@ -174,7 +176,7 @@ class SessionService:
         # Engines don't survive a restart: tasks still marked running are gone.
         try:
             self._db.execute(
-                "UPDATE bg_tasks SET status = 'lost', updated_at = ? WHERE status IN ('running', 'pending')",
+                "UPDATE bg_tasks SET status = 'lost', updated_at = ? WHERE status IN ('running', 'pending') AND COALESCE(task_type,'') != 'remote_bash'",
                 (now_iso(),),
             )
         except Exception:  # noqa: BLE001 - table may not exist on very old test DBs
@@ -417,6 +419,7 @@ class SessionService:
         return out
 
     def delete(self, sid: str) -> None:
+        self.remote_jobs.cancel(sid, include_background=True)
         if getattr(self, "speech_input", None):
             self.speech_input.cancel(sid)
         task = self._tasks.get(sid)
@@ -939,11 +942,12 @@ class SessionService:
             return False
 
     def stop(self, sid: str) -> bool:
+        remote_stopped = self.remote_jobs.cancel(sid)
         if getattr(self, "speech_input", None):
             self.speech_input.cancel(sid)
         task = self._tasks.get(sid)
         if task is None or task.done():
-            return False
+            return remote_stopped
         slot = self._engines.slot(sid)
         if slot is not None and slot.engine.turn_active:
             # Interrupt keeps the engine (and its background tasks) alive.
@@ -1109,6 +1113,10 @@ class SessionService:
             return
 
         mcp_config = routing.mcp_config
+        if mcp_config and 'remote' in mcp_config.get('mcpServers', {}):
+            mcp_config['mcpServers']['remote'].setdefault('env', {}).update(self.remote_jobs.environment(sid))
+            existing_jobs = self.remote_jobs.active_note(sid)
+            if existing_jobs: routing.note = (routing.note or '')+'\n'+existing_jobs
         local_extra = routing.local_dirs
         if routing.missing:
             ev = ProviderEvent(type="notice", data={
@@ -2097,7 +2105,7 @@ class SessionService:
         self._live_usage_by_session.pop(sid, None)
         self._ctx_limits.pop(sid, None)
         rows = self._db.query(
-            "SELECT * FROM bg_tasks WHERE session_id = ? AND status IN ('running', 'pending')", (sid,)
+            "SELECT * FROM bg_tasks WHERE session_id = ? AND status IN ('running', 'pending') AND COALESCE(task_type,'') != 'remote_bash'", (sid,)
         )
         for r in rows:
             self._db.execute(
@@ -2154,6 +2162,8 @@ class SessionService:
                 "size": size, "available": True}
 
     async def stop_task(self, sid: str, task_id: str) -> bool:
+        if self.remote_jobs.has(sid, task_id):
+            return await self.remote_jobs.stop_task(sid, task_id)
         return await self._engines.stop_task(sid, task_id)
 
     def engines(self) -> list[dict[str, Any]]:
@@ -2165,6 +2175,7 @@ class SessionService:
         return await self._engines.retire_stale(reason)
 
     async def shutdown(self) -> None:
+        await self.remote_jobs.close()
         await self._engines.shutdown_all()
 
 

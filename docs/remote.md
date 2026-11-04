@@ -79,3 +79,57 @@ and agent turns using `remote_bash`, `remote_write` + `remote_read`.
 
 Remaining hardening: pin `known_hosts` (currently `StrictHostKeyChecking=no` /
 `known_hosts=None`); add `remote_glob`/`remote_grep` convenience tools.
+
+## Durable remote commands
+
+`remote_bash` commands run under a small Python 3.8+ supervisor on the SSH host,
+independently of the SSH control connection and the agent CLI. The former
+`subprocess.run(timeout=300)` command cap is no longer used for shells. Each
+control request is bounded; execution itself defaults to no timeout. An explicit
+`timeout_ms` sets a real deadline and terminates the command's process group.
+
+Short commands keep their previous plain-output response. Longer ones yield an
+opaque `job_id`; `remote_poll(job_id, offset, wait_ms)` continues the **same**
+execution with bounded output chunks and its actual exit status. `next_offset`
+continues the output without replay or broken UTF-8 boundaries. Never submit a
+second command because the first one is waiting or SSH disconnected. Native
+background auto-turn guidance is explicitly scoped: SSH foreground jobs use
+`remote_poll`; `run_in_background` is for work the user actually wants left
+running. `remote_stop` cancels the process group (TERM followed by KILL when
+needed), including background children of a shell that already exited.
+
+The backend independently monitors jobs, caches their complete output and
+publishes the existing `task.state` events. They appear in the task drawer as
+remote commands, with live output and the same Stop button. Reconnects use the
+existing ID and durable byte offset. An execution claim prevents retries of a
+lost start response from running a command twice. Backend/CLI restarts retain
+these jobs and recover their metadata; ordinary native tasks still use the old
+engine lifecycle. Active remote job IDs are included in the next agent turn's
+folder note. Turn Stop requests cancellation of foreground remote jobs; an
+explicit background job has its own Stop button. Deleting a session cancels its
+remaining jobs and removes their private artifacts after cancellation is confirmed.
+
+Registry paths are private sibling directories of the application's SQLite DB
+(`harnessor.remote-jobs`); metadata/commands/output use owner-only permissions.
+Remote state lives in `~/.cache/my-mate-geny/remote-jobs/<session>/`, outside the
+project. Decrypted keys are referenced by their existing protected file paths,
+never duplicated into job manifests. Command input travels on stdin, and output
+is not printed into application error logs. The short-lived command request file
+is removed after execution; full output remains available until session cleanup.
+The SSH host must be POSIX/Unix and have Python 3.8+; missing support is reported without installing
+anything or running the command through an unsafe fallback.
+
+SSH tools and Git-control commands reuse a per-connection ControlMaster socket
+(with a 60-second idle lifetime), pinned host-key policy and keepalives. Connect,
+control and file-transfer timeouts remain finite. The shared provider turn limit
+(default 600 seconds for both local and remote work) is separate from command
+lifetime: an SSH job survives the end of that model turn and is recoverable by ID.
+Git/CI commands may still contain their own explicit `timeout` or waits; these are
+honored. Duration labels represent the whole command, including GitHub/CI waits,
+and round minutes correctly instead of displaying “1 minute 60 seconds”.
+
+Tests: `test_remote_jobs.py` runs actual supervisor subprocesses for idempotence,
+UTF-8 chunks, lost responses, process-group cancellation, timeout, restart, and
+session cleanup. `remote-jobs.cjs` connects real Electron/API/MCP to an isolated
+SSH fixture and checks live output, completion without collapsing output, and
+Stop against the actual remote process group. No user's project is modified.

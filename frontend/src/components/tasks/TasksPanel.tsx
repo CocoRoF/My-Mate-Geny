@@ -21,7 +21,7 @@ function useNow(active: boolean) {
   return now;
 }
 
-const TYPE: Record<string, MsgKey> = { local_bash: "tasks.typeCommand", local_agent: "tasks.typeSubagent", remote_agent: "tasks.typeAgent" };
+const TYPE: Record<string, MsgKey> = { local_bash: "tasks.typeCommand", remote_bash: "tasks.typeRemote", local_agent: "tasks.typeSubagent", remote_agent: "tasks.typeAgent" };
 const STATUS: Record<string, MsgKey> = {
   running: "tasks.stRunning",
   pending: "tasks.stPending",
@@ -66,9 +66,8 @@ function Output({ sid, task }: { sid: string; task: TaskInfo }) {
   );
 }
 
-function Row({ task, now, showChat }: { task: TaskInfo; now: number; showChat: boolean }) {
+function Row({ task, now, showChat, open, toggle }: { task: TaskInfo; now: number; showChat: boolean; open: boolean; toggle: () => void }) {
   const t = useT();
-  const [open, setOpen] = useState(false);
   const [stopping, setStopping] = useState(false);
   const sessions = useSessionStore((s) => s.sessions);
   const running = isRunning(task);
@@ -89,7 +88,7 @@ function Row({ task, now, showChat }: { task: TaskInfo; now: number; showChat: b
   return (
     <div data-testid="task-row" className={`rounded-xl border border-border/70 ${open ? "bg-surface-2/60" : "bg-surface/60"}`}>
       <div className="flex items-center gap-2.5 px-3 py-2">
-        <button onClick={() => setOpen(!open)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
+        <button onClick={toggle} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
           <Icon name={open ? "chevron-down" : "chevron"} size={12} className="shrink-0 text-content-faint" />
           {running ? (
             <span className="w-3.5 h-3.5 shrink-0 rounded-full border-2 border-accent border-t-transparent animate-spin" />
@@ -144,6 +143,9 @@ function Row({ task, now, showChat }: { task: TaskInfo; now: number; showChat: b
 /** Claude Code-style background tasks: running + completed, live output, stop. */
 export default function TasksPanel({ sid, onClose }: { sid: string; onClose: () => void }) {
   const t = useT();
+  const [opened, setOpened] = useState<Set<string>>(() => new Set());
+  const rowKey = (task: TaskInfo) => `${task.session_id}:${task.task_id}`;
+  const toggleRow = (task: TaskInfo) => setOpened(prev => { const next = new Set(prev), key = rowKey(task); next.has(key) ? next.delete(key) : next.add(key); return next; });
   const [scope, setScope] = useState<"chat" | "all">("chat");
   const bySession = useTaskStore((s) => s.bySession[sid]);
   const all = useTaskStore((s) => s.all);
@@ -212,7 +214,7 @@ export default function TasksPanel({ sid, onClose }: { sid: string; onClose: () 
               <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-content-faint">{t("tasks.runningN", { n: running.length })}</div>
               <div className="space-y-1.5">
                 {running.map((t) => (
-                  <Row key={`${t.session_id}:${t.task_id}`} task={t} now={now} showChat={scope === "all"} />
+                  <Row key={`${t.session_id}:${t.task_id}`} task={t} now={now} showChat={scope === "all"} open={opened.has(rowKey(t))} toggle={() => toggleRow(t)} />
                 ))}
               </div>
             </section>
@@ -222,7 +224,7 @@ export default function TasksPanel({ sid, onClose }: { sid: string; onClose: () 
               <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-content-faint">{t("tasks.finishedN", { n: done.length })}</div>
               <div className="space-y-1.5">
                 {done.map((t) => (
-                  <Row key={`${t.session_id}:${t.task_id}`} task={t} now={now} showChat={scope === "all"} />
+                  <Row key={`${t.session_id}:${t.task_id}`} task={t} now={now} showChat={scope === "all"} open={opened.has(rowKey(t))} toggle={() => toggleRow(t)} />
                 ))}
               </div>
             </section>

@@ -142,10 +142,14 @@ class RemoteSshConnector(WorkspaceConnector):
             f"- Host: `{self._spec.username}@{self._spec.host}:{self._spec.port}`\n"
             f"- Remote path: `{remote_path}`\n\n"
             f"Operate the remote host ONLY through the `remote_*` MCP tools "
-            f"(`remote_bash`, `remote_read`, `remote_write`, `remote_list`); they reach the folders "
+            f"(`remote_bash`, `remote_poll`, `remote_stop`, `remote_read`, `remote_write`, `remote_list`); they reach the folders "
             f"attached to this chat on that host. Do NOT use your built-in file/Bash tools for the "
             f"remote workspace — they act on this local scratch dir (and on folders of THIS server "
             f"attached to the chat, if any), not on the remote host.\n"
+            "Long remote_bash commands return a job_id. Poll that SAME job with remote_poll (wait_ms=30000) "
+            "until complete and consume output with next_offset; never repeat a command just because it is "
+            "still running or SSH disconnected. Use remote_stop to cancel it. Only leave it running if the "
+            "user explicitly requested background work. timeout_ms=0 is unlimited execution.\n"
         )
         # Claude reads CLAUDE.md, Codex reads AGENTS.md: same guide for both.
         for name in ("CLAUDE.md", "AGENTS.md"):
@@ -204,13 +208,8 @@ class RemoteSshConnector(WorkspaceConnector):
 
     def ssh_prefix(self) -> list[str]:
         """argv prefix to run a command on the remote host over SSH."""
-        key = self._ensure_key_file()
-        return [
-            "ssh", "-p", str(self._spec.port), "-i", key,
-            "-o", "StrictHostKeyChecking=accept-new", "-o", f"UserKnownHostsFile={self._known_hosts()}",
-            "-o", "BatchMode=yes", "-o", "ConnectTimeout=8",
-            f"{self._spec.username}@{self._spec.host}",
-        ]
+        from app.workspaces.remote_jobs import ssh_prefix
+        return ssh_prefix(self.bridge_host(name=self._spec.connection_id, aliases=[], cwd='~', roots=['~']))
 
     def bridge_host(self, *, name: str, aliases: list[str], cwd: str, roots: list[str],
                     default: bool = False) -> dict[str, Any]:
@@ -226,6 +225,7 @@ class RemoteSshConnector(WorkspaceConnector):
             "known_hosts": self._known_hosts(),
             "cwd": cwd,
             "roots": roots,
+            "control_path": os.path.join(str(settings.mount_root_path), '.control', hashlib.sha256(self._spec.connection_id.encode()).hexdigest()[:16]),
             "default": default,
         }
 

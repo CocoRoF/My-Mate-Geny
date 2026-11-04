@@ -31,6 +31,11 @@ import posixpath
 import shlex
 import subprocess
 import sys
+from pathlib import Path
+try:
+    from .remote_jobs import RemoteJobs, RemoteTransportError, TERMINAL, fingerprint, ssh_prefix
+except ImportError:  # launched directly by an agent CLI
+    from remote_jobs import RemoteJobs, RemoteTransportError, TERMINAL, fingerprint, ssh_prefix
 
 
 def _load_hosts() -> list[dict]:
@@ -75,11 +80,19 @@ TOOLS = [
     {
         "name": "remote_bash",
         "description": "Run a shell command on a remote server, starting in an attached folder there "
-        f"(cwd; default: the host's main folder). Returns stdout/stderr. Hosts and folders: {_hosts_line()}",
+        "(cwd; default: the host's main folder). Short commands return output directly. Long commands "
+        "return a durable job_id: use remote_poll to await completion, never rerun a still-running command. "
+        "There is no default execution time limit. Do not add shell timeout wrappers just to fit a tool call. "
+        "remote_stop cancels its process group. "
+        f"Hosts and folders: {_hosts_line()}",
         "inputSchema": {
             "type": "object",
             "properties": {"command": {"type": "string"}, "host": _HOST_PROP,
-                           "cwd": {"type": "string", "description": "start directory (inside an attached folder)"}},
+                           "cwd": {"type": "string", "description": "start directory (inside an attached folder)"},
+                           "description": {"type": "string", "description": "brief task label, without secrets"},
+                           "yield_time_ms": {"type": "integer", "minimum": 0, "maximum": 30000, "default": 10000},
+                           "timeout_ms": {"type": "integer", "minimum": 0, "default": 0, "description": "optional actual command time limit; 0 = unlimited"},
+                           "run_in_background": {"type": "boolean", "default": False}},
             "required": ["command", *_REQ_HOST],
         },
     },
@@ -112,6 +125,27 @@ TOOLS = [
     },
 ]
 
+TOOLS += [{"name": "remote_poll", "description": "Read/await the SAME remote job, including after SSH or CLI reconnect. "
+          "Use next_offset to continue output; wait_ms up to 30000 avoids busy polling. Keep polling running work "
+          "until complete unless the user requested background execution.",
+          "inputSchema": {"type": "object", "properties": {"job_id": {"type": "string"}, "host": _HOST_PROP,
+                         "offset": {"type": "integer", "minimum": 0}, "wait_ms": {"type": "integer", "minimum": 0, "maximum": 30000}}, "required": ["job_id"]}},
+         {"name": "remote_stop", "description": "Stop this conversation's remote job and its process group. A disconnected stop is retained and retried by the server.",
+          "inputSchema": {"type": "object", "properties": {"job_id": {"type": "string"}, "host": _HOST_PROP}, "required": ["job_id"]}}]
+
+
+def jobs():
+    return RemoteJobs(os.environ.get('HRH_REMOTE_JOBS_ROOT') or str(Path.home()/'.cache/my-mate-geny/remote-jobs-local'),
+                      os.environ.get('HRH_REMOTE_SESSION_ID') or 'standalone', prefix=_ssh_prefix)
+
+
+def job_result(result, *, plain=False):
+    shown = RemoteJobs.display(result)
+    error = shown.get('status') in TERMINAL and shown.get('exit_code', 1) != 0
+    if plain and shown.get('status') in TERMINAL and not shown.get('has_more'):
+        return _text(shown.get('output') or shown.get('error') or '(no output)', 1 if error else 0)
+    return _text(json.dumps(shown, ensure_ascii=False), 1 if error else 0)
+
 
 class ToolError(Exception):
     pass
@@ -130,14 +164,7 @@ def pick_host(name: str | None) -> dict:
 
 
 def _ssh_prefix(h: dict) -> list[str]:
-    argv = ["ssh", "-p", str(h.get("port") or 22), "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
-            "-o", "StrictHostKeyChecking=accept-new"]
-    if h.get("known_hosts"):  # host key pinned on first use (see RemoteSshConnector)
-        argv += ["-o", f"UserKnownHostsFile={h['known_hosts']}"]
-    if h.get("key_file"):
-        argv += ["-i", h["key_file"]]
-    argv.append(f"{h.get('user', '')}@{h['host']}")
-    return argv
+    return ssh_prefix(h)
 
 
 def _run(h: dict, remote_cmd: str, timeout: int = 300, stdin: str | None = None) -> tuple[int, str]:
@@ -197,17 +224,30 @@ def _text(out: str, rc: int) -> dict:
 
 def call(name: str, args: dict) -> dict:
     try:
+        if name in ('remote_poll', 'remote_stop'):
+            manager = jobs()
+            manifest = manager.manifest(args.get('job_id'))
+            if args.get('host') and fingerprint(manifest['host']) != fingerprint(pick_host(args['host'])):
+                raise ToolError('job belongs to a different host')
+            if name == 'remote_stop':
+                result = manager.stop(manifest)
+            else:
+                result = manager.poll(manifest, offset=args.get('offset', 0), wait_ms=max(0,min(30000,int(args.get('wait_ms', 0)))))
+            return job_result(result)
         if name not in ("remote_bash", "remote_read", "remote_write", "remote_list"):
             return _text(f"unknown tool {name}", 1)
         h = pick_host(args.get("host"))
         if name == "remote_bash":
             cwd = resolve(h, args.get("cwd") or h.get("cwd") or "~")
-            script = guard(h, "__d", cwd) + (
-                'cd -- "$__d" || { echo "remote_bash: cannot enter $__d" >&2; exit 97; }\n'
-                + (args.get("command") or "")
-            )
-            rc, out = _run(h, script)
-            return _text(out, rc)
+            manager = jobs()
+            wait_ms = max(0,min(30000,int(args.get('yield_time_ms', 10000))))
+            manifest = manager.prepare(h, args.get('command'), cwd, description=args.get('description') or '',
+                                       timeout_ms=args.get('timeout_ms', 0), background=args.get('run_in_background', False))
+            try:
+                wait_ms = 0 if manifest['background'] else wait_ms
+                return job_result(manager.start(manifest, wait_ms=wait_ms), plain=True)
+            except RemoteTransportError as exc:
+                return _text(json.dumps({'job_id':manifest['job_id'], 'status':'connection_lost', 'message':str(exc)}), 0)
         if name == "remote_read":
             p = resolve(h, args.get("path", ""))
             rc, out = _run(h, guard(h, "__f", p) + 'cat -- "$__f"')
@@ -220,7 +260,9 @@ def call(name: str, args: dict) -> dict:
         p = resolve(h, args.get("path") or ".")
         rc, out = _run(h, guard(h, "__f", p) + 'ls -la -- "$__f"')
         return _text(out, rc)
-    except ToolError as exc:
+    except RemoteTransportError as exc:
+        return _text(json.dumps({'job_id':args.get('job_id'), 'status':'connection_lost', 'message':str(exc)}), 0)
+    except (ToolError, ValueError) as exc:
         return _text(str(exc), 1)
 
 
@@ -247,7 +289,7 @@ def main() -> None:
                 {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "hrh-remote", "version": "0.3.0"},
+                    "serverInfo": {"name": "hrh-remote", "version": "0.4.0"},
                 },
             )
         elif method == "notifications/initialized":

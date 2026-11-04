@@ -55,7 +55,10 @@ WAIT_GUIDE = (
     "sleep/poll loops or repeated status checks: every check is a full model call that re-reads "
     "the entire conversation and burns the user's plan usage. If you must watch for a condition, "
     "use one background command that waits for it (or the Monitor tool when available) instead "
-    "of polling from your own turn."
+    "of polling from your own turn. This native background-notification rule does not apply to "
+    "SSH remote_bash jobs: they have their own durable job IDs and live Tasks view. When a final result "
+    "is requested, await the same ID with remote_poll(wait_ms=30000), never resubmit it or wrap it in "
+    "local Bash. Leave SSH work running only when the user explicitly requested background execution."
 )
 AUTO_COMPACT_ENV = "CLAUDE_CODE_AUTO_COMPACT_WINDOW"
 

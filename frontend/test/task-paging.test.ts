@@ -39,3 +39,10 @@ test("task metadata is fetched in pages, stale requests cannot replace a newer r
     assert(!useTaskStore.getState().bySession['paging-unit'].some(t=>t.task_id==='missed-finish')); 
   } finally {globalThis.fetch=original;}
 });
+
+import { fmtMs } from "../src/components/chat/turn/toolMeta.ts";
+test("elapsed time carries rounded seconds into minutes instead of showing 1m 60s", () => {
+  assert.equal(fmtMs(119999), fmtMs(120000));
+  assert.equal(fmtMs(59999), fmtMs(60000));
+  assert.equal(fmtMs(3599999), fmtMs(3600000));
+});

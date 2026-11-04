@@ -202,7 +202,7 @@ async def plan(session: dict[str, Any], workspaces: Any, *, uploads_remote: str 
     if folders:
         tail = []
         if r.hosts:
-            tail.append("The remote_* tools reach only the folders listed for their server.")
+            tail.append("The remote_* tools reach only the folders listed for their server. Long remote_bash calls return a job_id: await that same job using remote_poll (wait_ms=30000), continuing output at next_offset. Do not repeat or abandon unfinished commands; remote_stop cancels them. Use run_in_background only for explicitly requested background work.")
         if main:
             tail.append("Your own file tools act on this server only, never on a remote one.")
         r.note = "# Folders in this chat\n" + "\n".join(lines) + ("\n" + " ".join(tail) if tail else "")

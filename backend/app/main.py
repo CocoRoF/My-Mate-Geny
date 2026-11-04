@@ -173,6 +173,7 @@ async def lifespan(app: FastAPI):
     app.state.speech_input = SpeechInput(db, session_service)
     session_service.speech_input = app.state.speech_input
     await app.state.speech_input.start()
+    await session_service.remote_jobs.start()
 
     yield
 
