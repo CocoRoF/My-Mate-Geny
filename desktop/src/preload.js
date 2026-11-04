@@ -63,6 +63,7 @@ const mate = {
   setMate: (mateId) => ipcRenderer.invoke("mate:setMate", String(mateId || "")),
   setHotkey: (accel) => ipcRenderer.invoke("mate:setHotkey", String(accel ?? "")),
   setAutostart: (on) => ipcRenderer.invoke("mate:setAutostart", !!on),
+  voiceState: (s) => ipcRenderer.send("mate:voiceState", s ? { mateId: String(s.mateId || ""), enabled: !!s.enabled, available: !!s.available, busy: !!s.busy } : null),
   onCommand: (cb) => listen("mate:command", cb),
 };
 

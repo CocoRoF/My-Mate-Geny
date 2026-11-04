@@ -39,7 +39,7 @@ const MARGIN = 16;
 const AVATAR_DEFAULT = { width: 300, height: 400 };
 // The bar window keeps room above the buttons for a label (clicks there pass
 // through on Windows/macOS). Linux has no forwarding, so no label room there.
-const BAR = { w: 302, h: linux ? 46 : 84, strip: 46 };
+const BAR = { w: 336, h: linux ? 46 : 84, strip: 46 };
 // The quick card: a FIXED width (project-geny-app / Geny: the strip never changes
 // width); the page reports its height and the window grows downwards from a
 // fixed top edge, up to maxH (then the text scrolls inside the card).
@@ -59,6 +59,7 @@ html:not([data-hrh-own-move]) :is(button,a,input,textarea,select,[data-no-drag])
 let deps = { openConsole: () => {}, consoleWindow: () => null, switchServer: () => {}, signOut: () => {}, quit: () => app.quit() };
 let avatar = null;
 let bar = null;
+let replySpeech = null;
 let quick = null;
 let chat = null;
 let tray = null;
@@ -346,6 +347,8 @@ function createAvatar() {
   const wc = win.webContents;
   wc.on("did-start-loading", () => {
     overlayFailed = false;
+    replySpeech = null;
+    barState();
   });
   wc.on("did-finish-load", () => {
     if(quitting)return;
@@ -640,6 +643,10 @@ function barState() {
   if (!alive(bar)) return;
   bar.webContents.send("bar:state", {
     screenSharing, screenBusy,screenStatus,
+    voiceReady: !!replySpeech,
+    voiceEnabled: !!replySpeech?.enabled,
+    voiceAvailable: !!replySpeech?.available,
+    voiceBusy: !!replySpeech?.busy,
     clickThrough: clickThrough(),
     moveMode,
     chatOpen: alive(chat) && chat.isVisible(),
@@ -648,6 +655,10 @@ function barState() {
     lang: language(),
     // the buttons' labels in the app's language (bar.js falls back to English)
     labels: {
+      voiceOn: t("page.barVoiceOn"),
+      voiceOff: t("page.barVoiceOff"),
+      voiceUnavailable: t("page.barVoiceUnavailable"),
+      voiceLoading: t("page.barVoiceLoading"),
       screen: t("page.barScreen"),
       chat: t("page.barChat"),
       quick: t("page.barQuick"),
@@ -663,7 +674,14 @@ function barState() {
 }
 
 function barAct(name) {
-  if (name === "screen") deps.toggleScreenSharing?.();
+  if (name === "voice") {
+    if (!replySpeech || replySpeech.busy || !replySpeech.available) return;
+    const on = !replySpeech.enabled;
+    replySpeech = { ...replySpeech, busy: true };
+    barState();
+    command(avatar, { type: "reply-speech", mateId: replySpeech.mateId, on });
+  }
+  else if (name === "screen") deps.toggleScreenSharing?.();
   else if (name === "chat") toggleChat();
   else if (name === "quick") toggleQuick();
   else if (name === "through") setClickThrough(!clickThrough());
@@ -923,6 +941,7 @@ function reloadSurfaces() {
 /** Signed out / switching servers: the Mate windows of the old server go
  *  (mateVisible stays, so the avatar returns once connected again). */
 function disconnect() {
+  replySpeech = null;
   setMoveMode(false);
   clearTimeout(failTimer);
   failDelay = 0;
@@ -942,6 +961,7 @@ function setMate(id) {
   const next = validId(id);
   if (!next) return false;
   if (next !== mateId()) {
+    replySpeech = null;
     writeSettings({ mateId: next });
     reloadSurfaces();
   }
@@ -1244,6 +1264,16 @@ function registerIpc() {
   ipcMain.on("mate:size", (e, w, h) => {
     if (fromWeb(e, [avatar])) setAvatarSize(Number(w), Number(h));
     else if (fromWeb(e, [quick])) setQuickSize(Number(w), Number(h));
+  });
+  // Only the selected overlay may drive the local voice button; never a stale
+  // console/chat, cross-origin frame or old mate after switching avatars.
+  ipcMain.on("mate:voiceState", (e, state) => {
+    if (!fromWeb(e, [avatar])) return;
+    if (state && (!validId(state.mateId) || (mateId() && state.mateId !== mateId()))) return;
+    if (state && !mateId()) writeSettings({ mateId: state.mateId });
+    replySpeech = state ? { mateId: state.mateId, enabled: state.enabled === true,
+      available: state.available === true, busy: state.busy === true } : null;
+    barState();
   });
   ipcMain.on("bar:act", (e, name) => fromBar(e) && barAct(String(name)));
   ipcMain.on("bar:over", (e, on) => {

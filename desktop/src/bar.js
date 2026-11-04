@@ -6,6 +6,8 @@
 // room lets clicks through; Linux has no room, so it uses title tooltips).
 const S = "http://www.w3.org/2000/svg";
 const ICONS = {
+  voiceOn: ["M11 5 6 9H3v6h3l5 4Z", "M15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14"],
+  voiceOff: ["M11 5 6 9H3v6h3l5 4Z", "M16 9l5 6M21 9l-5 6"],
   screen: ["M3 4h18v13H3z", "M8 21h8M12 17v4"],
   chat: ["M20 11.5a8 8 0 0 1-11.6 7.1L4 20l1.4-4.2A8 8 0 1 1 20 11.5z"],
   quick: ["M13 2 3 14h9l-1 8 10-12h-9l1-8Z"],
@@ -54,6 +56,7 @@ function set(name, paths, on, label, dashed) {
 
 // the labels come in the app's language with the state (mate.js → i18n.js); these are the fallback
 const EN = {
+  voiceOn: "Voice replies: on · Turn off", voiceOff: "Voice replies: off · Turn on", voiceUnavailable: "Voice replies · Configure a voice in Mate settings", voiceLoading: "Voice replies · Loading settings",
   screen: "Screen sharing", chat: "Chat", quick: "Quick chat", quickKey: "Quick chat ({key})", throughOn: "Click-through: on",
   throughOff: "Click-through: off", move: "Move", doneMoving: "Done moving", hide: "Hide Mate", console: "Open console",
 };
@@ -61,6 +64,10 @@ const EN = {
 function render(s) {
   linux = !!s.linux;
   const L = { ...EN, ...(s.labels || {}) };
+  const voiceLabel = !s.voiceReady ? L.voiceLoading : !s.voiceAvailable ? L.voiceUnavailable : s.voiceEnabled ? L.voiceOn : L.voiceOff;
+  set("voice", s.voiceEnabled ? ICONS.voiceOn : ICONS.voiceOff, s.voiceEnabled, voiceLabel);
+  buttons.voice.disabled = !s.voiceReady || !s.voiceAvailable || !!s.voiceBusy;
+  buttons.voice.setAttribute("aria-busy", s.voiceBusy ? "true" : "false");
   const waiting=!!s.screenSharing && s.screenStatus && s.screenStatus!=="ready";
   const waitLabel=s.lang==="ko" ? " · 켜짐 · 연결/대상/권한 대기" : " · Enabled · waiting for connection/source/permission";
   set("screen", ICONS.screen, s.screenSharing, L.screen+(waiting?waitLabel:""));
@@ -82,7 +89,7 @@ window.hrhBar.onState(render);
 
 bar.addEventListener("click", (e) => {
   const b = e.target.closest("button");
-  if (b) window.hrhBar.act(b.dataset.act);
+  if (b && !b.disabled) window.hrhBar.act(b.dataset.act);
 });
 
 let over = false;

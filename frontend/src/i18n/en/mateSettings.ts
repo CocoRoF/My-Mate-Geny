@@ -59,7 +59,7 @@ export default {
   voiceSpeaking: "Speaking",
   voiceSpeakingHint: "How this mate's replies sound.",
   voiceReadAloud: "Read replies aloud",
-  voiceReadAloudHint: "Sentence by sentence while the reply is written. The speaker button by the message box mutes this device.",
+  voiceReadAloudHint: "Read replies sentence by sentence. This switch and the composer and mini-avatar speakers stay in sync and save immediately.",
   voiceTestTitle: "Saves, then the mate says hello with its avatar",
   voiceSaveHello: "Save & say hello",
   voiceSayHello: "Say hello",

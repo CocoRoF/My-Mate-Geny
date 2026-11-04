@@ -1,3 +1,4 @@
+import { useReplySpeech } from "../../mate/useReplySpeech";
 import { ScreenCaptureApproval, useLocalScreenControls } from "../composer/LocalScreenControls";
 /**
  * The mate's composer: the Chat composer's machinery (components/composer: drafts + files + queue per conversation,
@@ -10,7 +11,6 @@ import type { Mate } from "../../api/mates";
 import { clientMsgId } from "../../mate/voiceOwner";
 import { useComposerStore } from "../../stores/composerStore";
 import { useDraftStore } from "../../stores/draftStore";
-import { useMateStore } from "../../stores/mateStore";
 import { useMateChat, type MateConversation } from "../../mate/useMateConversation";
 import AttachmentTray from "../attachments/AttachmentTray";
 import ComposerMenu, { type MenuItem } from "../chat/ComposerMenu";
@@ -530,20 +530,19 @@ function RealtimeStatus({ mic, name, compact }: { mic: Mic; name: string; compac
 /** Read replies aloud on/off (the composer's row on wide screens; the Mate view's header on phones). */
 export function ReadAloudToggle({ mate, conv, className, size = 17 }: { mate: Mate; conv: MateConversation; className: string; size?: number }) {
   const t = useT();
-  const muted = useMateStore((s) => s.muted);
-  const reading = mate.voice.auto_read && !muted && mate.voice.tts.engine !== "off";
+  const speech = useReplySpeech(mate);
+  const reading = speech.enabled;
   const toggle = () => {
-    const st = useMateStore.getState();
-    if (reading) st.setMuted(true);
-    else if (muted) st.setMuted(false);
-    else void st.patch(mate.id, { voice: { auto_read: true } }).catch(() => {});
     if (reading) conv.stopVoice();
+    void speech.setEnabled(!reading);
   };
   return (
     <button
       onClick={toggle}
+      disabled={!speech.available || speech.busy}
+      aria-busy={speech.busy}
       className={`${className} ${reading ? "text-accent hover:bg-accent/10" : "text-content-faint hover:text-content hover:bg-surface-3"}`}
-      title={reading ? t("mate.readingAloudClick") : t("mate.readAloud")}
+      title={speech.error || (reading ? t("mate.readingAloudClick") : t("mate.readAloud"))}
       aria-label={reading ? t("mate.readingAloudTap") : t("mate.readAloud")}
       aria-pressed={reading}
       data-testid="mate-read-toggle"

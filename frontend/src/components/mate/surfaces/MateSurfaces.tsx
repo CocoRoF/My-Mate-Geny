@@ -1,3 +1,5 @@
+import { useReplySpeech } from "../../../mate/useReplySpeech";
+import { toast } from "../../../mate/screenCapture";
 /**
  * Full-page Mate surfaces for the desktop app's windows (docs/mate.md §6–7), no console chrome:
  *   ?surface=mate-overlay&mate=<id>  the avatar + caption bubble on a transparent page; plays the voice; pan / zoom
@@ -96,13 +98,24 @@ function Overlay() {
   const [moveMode, setMoveMode] = useState(false);
   const [sizeKey, setSizeKey] = useState(0);
   const resetRef = useRef<() => void>(() => {});
+  const speechCommand = useRef<(cmd: DesktopCommand) => void>(() => {});
   const onCommand = useCallback((cmd: DesktopCommand) => {
+    if (cmd.type === "reply-speech") speechCommand.current(cmd);
     if (cmd.type === "move-mode") setMoveMode(!!cmd.on);
     if (cmd.type === "state" && typeof cmd.moveMode === "boolean") setMoveMode(cmd.moveMode);
     if (cmd.type === "reset-view") resetRef.current(); // tray → Reset Mate position & size
   }, []);
   const { mate, desk } = useSurfaceMate(onCommand);
   const conv = useMateConversation(mate);
+  const speech = useReplySpeech(mate);
+  speechCommand.current = (cmd) => {
+    if (cmd.mateId === mate?.id && typeof cmd.on === "boolean") void speech.setEnabled(cmd.on);
+  };
+  useEffect(() => {
+    desktopMate()?.voiceState?.(mate ? { mateId: mate.id, enabled: speech.enabled, available: speech.available, busy: speech.busy } : null);
+  }, [mate?.id, speech.enabled, speech.available, speech.busy]);
+  useEffect(() => () => desktopMate()?.voiceState?.(null), []);
+  useEffect(() => { if (speech.error) toast(speech.error, 4000); }, [speech.error]);
   const caption = useFadingCaption(conv.caption, 7000);
   const live = useLiveLine(conv);
   const line = caption || live;

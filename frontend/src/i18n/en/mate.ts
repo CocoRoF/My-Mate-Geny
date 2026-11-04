@@ -171,9 +171,9 @@ export default {
   hintSteer: "Enter adds to the reply now · Queue sends after · Esc stops",
   hintTouch: "Return adds a line · tap ↑ to send · / commands",
   hintKeys: "Enter to send · Shift+Enter newline · / commands · paste or drop files · hold the mic to talk",
-  readAloud: "Read replies aloud",
-  readingAloudClick: "Reading replies aloud — click to mute",
-  readingAloudTap: "Reading replies aloud — tap to mute",
+  readAloud: "Voice replies: off · Turn on",
+  readingAloudClick: "Voice replies: on · Turn off",
+  readingAloudTap: "Voice replies: on · Turn off",
 
   // push-to-talk
   micNoMate: "No mate",

@@ -168,9 +168,9 @@ const ko: Messages<"mate"> = {
   hintSteer: "Enter 지금 답변에 더하기 · 대기열은 끝난 뒤 보내기 · Esc 중지",
   hintTouch: "Return 줄 바꿈 · ↑ 탭해서 보내기 · / 명령",
   hintKeys: "Enter 보내기 · Shift+Enter 줄 바꿈 · / 명령 · 파일 붙여넣기·끌어다 놓기 · 마이크를 누르고 말하기",
-  readAloud: "답변 소리 내어 읽기",
-  readingAloudClick: "답변을 소리 내어 읽는 중 — 클릭하면 음소거",
-  readingAloudTap: "답변을 소리 내어 읽는 중 — 탭하면 음소거",
+  readAloud: "음성으로 말하기 꺼짐 · 켜기",
+  readingAloudClick: "음성으로 말하기 켜짐 · 끄기",
+  readingAloudTap: "음성으로 말하기 켜짐 · 끄기",
 
   micNoMate: "메이트 없음",
   micOff: "음성 입력이 꺼져 있어요 — 메이트 설정 → 음성에서 음성 인식 엔진을 고르세요.",

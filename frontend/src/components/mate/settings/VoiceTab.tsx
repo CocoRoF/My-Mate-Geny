@@ -1,3 +1,5 @@
+import { useReplySpeech } from "../../../mate/useReplySpeech";
+import { voiceSettingsDraft } from "../../../mate/replySpeechControl";
 import { useDevicePreferences, patchDevicePreferences } from "../../../stores/devicePreferences";
 /**
  * Voice (this mate): how it speaks (TTS) and hears (STT). Only engines that work are offered — Off, the browser and
@@ -129,11 +131,12 @@ export default function VoiceTab({ mate, conv, onTest }: { mate: Mate; conv: Mat
   const saver = useSaver();
   const providers = useMateStore((s) => s.providers);
   const providersError = useMateStore((s) => s.providersError);
-  const dirty = JSON.stringify(v) !== JSON.stringify(mate.voice);
+  const speech = useReplySpeech(mate);
+  const dirty = JSON.stringify(voiceSettingsDraft(v)) !== JSON.stringify(voiceSettingsDraft(mate.voice));
   const tts = (patch: Partial<Tts>) => setV((x) => ({ ...x, tts: { ...x.tts, ...patch } }));
   const stt = (patch: Partial<Stt>) => setV((x) => ({ ...x, stt: { ...x.stt, ...patch } }));
-  const save = () => saver.run(() => { const {volume: _legacyVolume, ...voice} = v; return useMateStore.getState().patch(mate.id, { voice }); });
-  useFollowSaved(mate.voice, dirty, () => setV(mate.voice));
+  const save = () => saver.run(() => useMateStore.getState().patch(mate.id, { voice: voiceSettingsDraft(v) }));
+  useFollowSaved(voiceSettingsDraft(mate.voice), dirty, () => setV(mate.voice));
   useEffect(() => () => stopPreview(), []);
   const volume = useDevicePreferences().volume;
   useEffect(() => { setPreviewVolume(volume); }, [volume]);
@@ -189,7 +192,7 @@ export default function VoiceTab({ mate, conv, onTest }: { mate: Mate; conv: Mat
   };
 
   const test = async () => {
-    if (dirty && !(await saver.run(() => useMateStore.getState().patch(mate.id, { voice: v })))) return;
+    if (dirty && !(await saver.run(() => useMateStore.getState().patch(mate.id, { voice: voiceSettingsDraft(v) })))) return;
     onTest?.();
     conv.say(`[greet] ${SAMPLE[(mate.persona.language || "ko").slice(0, 2)] || SAMPLE.en}`);
   };
@@ -213,12 +216,14 @@ export default function VoiceTab({ mate, conv, onTest }: { mate: Mate; conv: Mat
         <p className="text-xs text-content-faint">{t("screen.deviceVolume")}</p>
         <VolumeField value={volume} engine={v.tts.engine} onChange={(x) => { void patchDevicePreferences({ volume: x }); }} />
         <Toggle
-          on={v.auto_read}
-          onChange={(on) => setV((x) => ({ ...x, auto_read: on }))}
+          on={speech.enabled}
+          onChange={(on) => { void speech.setEnabled(on); }}
+          testId="mate-voice-read-aloud"
           label={t("mateSettings.voiceReadAloud")}
           hint={t("mateSettings.voiceReadAloudHint")}
-          disabled={v.tts.engine === "off"}
+          disabled={!speech.available || speech.busy}
         />
+        {speech.error && <p role="alert" className="text-xs text-danger">{speech.error}</p>}
         <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
           <button className="btn-soft" onClick={test} disabled={v.tts.engine === "off" || saver.busy} data-testid="mate-voice-test" title={t("mateSettings.voiceTestTitle")}>
             <Icon name="volume" size={14} /> {dirty ? t("mateSettings.voiceSaveHello") : t("mateSettings.voiceSayHello")}

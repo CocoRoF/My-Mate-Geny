@@ -73,6 +73,10 @@ const MESSAGES = {
     // the local pages (preload → hrhNative.text)
     page: {
       // the action bar (bar.js)
+      barVoiceOn: "Voice replies: on · Turn off",
+      barVoiceOff: "Voice replies: off · Turn on",
+      barVoiceUnavailable: "Voice replies · Configure a voice in Mate settings",
+      barVoiceLoading: "Voice replies · Loading settings",
       barScreen: "Screen sharing",
       barChat: "Chat",
       barQuick: "Quick chat",
@@ -211,6 +215,10 @@ const MESSAGES = {
     updOs: "이 시스템에서는 업데이트를 쓸 수 없어요.",
     updServer: "서버에 연결되어 있지 않아요.",
     page: {
+      barVoiceOn: "음성으로 말하기 켜짐 · 끄기",
+      barVoiceOff: "음성으로 말하기 꺼짐 · 켜기",
+      barVoiceUnavailable: "음성으로 말하기 · 메이트 설정에서 음성을 선택하세요",
+      barVoiceLoading: "음성으로 말하기 · 설정 불러오는 중",
       barScreen: "화면 공유",
       barChat: "채팅",
       barQuick: "빠른 채팅",

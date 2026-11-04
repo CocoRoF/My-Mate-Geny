@@ -60,7 +60,7 @@ const ko: Messages<"mateSettings"> = {
   voiceSpeaking: "말하기",
   voiceSpeakingHint: "이 메이트의 답장이 어떤 목소리로 들릴지 정해요.",
   voiceReadAloud: "답장 소리 내어 읽기",
-  voiceReadAloudHint: "답장이 써지는 동안 문장 단위로 읽어요. 입력창 옆 스피커 버튼을 누르면 이 기기에서 음소거돼요.",
+  voiceReadAloudHint: "답장을 문장 단위로 읽어요. 이 스위치·입력창 스피커·미니 아바타 스피커가 함께 바뀌며 즉시 저장돼요.",
   voiceTestTitle: "저장한 뒤 메이트가 아바타와 함께 인사해요",
   voiceSaveHello: "저장하고 인사 듣기",
   voiceSayHello: "인사 듣기",

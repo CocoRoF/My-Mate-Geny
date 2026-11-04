@@ -918,6 +918,21 @@ push-to-talk (the transcript goes out with the attached files) and the
 read-aloud toggle. The quick card's + opens the file picker directly. The
 console Mate view, the quick card and the chat window all have it.
 
+Reply reading has one immediate saved switch: `voice.auto_read` for the selected mate.
+Voice settings, the console/chat speaker and the native mini-avatar's speaker use
+`useReplySpeech`; OFF hushes every playback owner on this device immediately, ON
+clears an existing device mute after saving successfully. The separate global
+"read on this device" policy still applies. Volume remains device-local. Voice
+configuration drafts exclude `auto_read` and volume, so a later Save cannot revert
+a speaker toggle made in another window. Failed saves retain the confirmed state
+and allow retry; enabling again does not replay a hushed reply.
+
+The native hover bar receives this state only from its selected, same-origin
+overlay. Its speaker shows blue/white-dot ON and a crossed speaker OFF, with an
+explicit ON/OFF tooltip. Loading, saving and an unconfigured TTS engine disable
+the action. The toolbar window has its own clamped width, independent of the
+avatar's size; adding the speaker cannot clip it in a small avatar window.
+
 Extra full-page surfaces (no sidebar), used by the desktop app:
 
 - `/?surface=mate-overlay&mate=<id>` — transparent page: avatar + caption

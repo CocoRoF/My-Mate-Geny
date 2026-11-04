@@ -43,6 +43,8 @@ export interface MateBridge {
   setMate(mateId: string): Promise<void>;
   setHotkey(accel: string): Promise<boolean>;
   setAutostart(on: boolean): Promise<void>;
+  /** The overlay reports its selected mate's saved reply-reading state to the local toolbar. */
+  voiceState?(state: { mateId: string; enabled: boolean; available: boolean; busy: boolean } | null): void;
   onCommand(cb: (cmd: DesktopCommand) => void): () => void;
 }
 
