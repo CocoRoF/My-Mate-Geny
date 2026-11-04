@@ -153,6 +153,8 @@ def capped_path() -> str | None:
     it can actually cap here: a systemd user session is reachable — or we
     already run inside a cap (CAPPED_MEM), which then also bounds the upgrade.
     In a container there is neither: the upgrade runs uncapped (logged)."""
+    if os.name == "nt":
+        return None
     c = shutil.which("capped") or next(
         (p for p in (os.path.expanduser("~/.local/bin/capped"),) if os.access(p, os.X_OK)), None)
     if not c:
@@ -315,7 +317,7 @@ class CliToolsService:
             out, _ = await asyncio.wait_for(proc.communicate(), timeout=VERSION_TIMEOUT_S)
         except asyncio.TimeoutError:
             with contextlib.suppress(ProcessLookupError):
-                os.killpg(proc.pid, signal.SIGKILL)
+                _signal(proc, getattr(signal, "SIGKILL", signal.SIGTERM))
             return None, "timeout"
         text = out.decode("utf-8", "replace").strip()
         if proc.returncode != 0 and not parse_version(text):
@@ -719,10 +721,10 @@ class CliToolsService:
             try:
                 await asyncio.wait_for(proc.wait(), timeout=10)
             except asyncio.TimeoutError:
-                _signal(proc, signal.SIGKILL)
+                _signal(proc, getattr(signal, "SIGKILL", signal.SIGTERM))
             raise UpgradeError("timeout", f"the updater took longer than {int(settings.cli_upgrade_timeout_s)} s")
         except asyncio.CancelledError:
-            _signal(proc, signal.SIGKILL)
+            _signal(proc, getattr(signal, "SIGKILL", signal.SIGTERM))
             raise
         finally:
             self._proc = None
@@ -780,7 +782,11 @@ class CliToolsService:
 def _signal(proc: asyncio.subprocess.Process, sig: signal.Signals) -> None:
     """The updater's whole process group (npm runs install scripts as children)."""
     with contextlib.suppress(ProcessLookupError, PermissionError):
-        os.killpg(proc.pid, sig)
+        if os.name == "nt":
+            from app.portability import kill_tree
+            kill_tree(proc.pid)
+        else:
+            os.killpg(proc.pid, sig)
 
 
 def _read_json(path: str) -> dict:

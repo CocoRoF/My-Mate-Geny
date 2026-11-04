@@ -44,11 +44,12 @@ TOOLS: dict[str, ToolSpec] = {
         setting="claude_binary", env="CLAUDE_BINARY", channels=("latest", "stable"), native=True,
         notes="claude_changelog", gh_repo="anthropics/claude-code",
         changelog_url="https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md",
-        restart="engine_restart",
+        restart="engine_restart", fallbacks=("~/.local/bin/claude", "~/.local/bin/claude.exe"),
     ),
     "codex": ToolSpec(
         id="codex", label="Codex", pkg="@openai/codex", bin_name="codex",
-        setting="codex_binary", env="CODEX_BINARY", gh_repo="openai/codex", gh_tag="rust-v{v}",
+        setting="codex_binary", env="CODEX_BINARY", fallbacks=("~/.local/bin/codex", "~/.local/bin/codex.exe",
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs/OpenAI/Codex/bin/codex.exe")), gh_repo="openai/codex", gh_tag="rust-v{v}",
     ),
     "higgsfield": ToolSpec(
         id="higgsfield", label="Higgsfield", pkg="@higgsfield/cli", bin_name="higgsfield",
@@ -145,7 +146,7 @@ def resolve_path(binary: str, fallbacks: tuple[str, ...] = ()) -> str | None:
     if os.sep in binary and os.path.isfile(binary) and os.access(binary, os.X_OK):
         return os.path.abspath(binary)
     for fb in fallbacks:
-        p = os.path.expanduser(fb)
+        p = os.path.expandvars(os.path.expanduser(fb))
         if os.path.isfile(p) and os.access(p, os.X_OK):
             return p
     return None

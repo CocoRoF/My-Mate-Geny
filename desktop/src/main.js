@@ -51,6 +51,27 @@ const deviceLifecycle = deviceRuntimeModule.createDeviceLifecycle({readSettings,
 let deviceEditOrigin = "";
 const deviceRuntime = deviceRuntimeModule.createRuntimeWindow({BrowserWindow,preload:path.join(__dirname,"preload.js"),version:app.getVersion(),serverUrl,allowed:sameOrigin});
 const core = require("./connect-core");
+const localRuntime = require("./local-runtime").createLocalRuntime({
+  root: envRuntimeRoot(), dataDir:path.join(app.getPath("userData"),"local"),
+  cookies:{set: value=>session.defaultSession.cookies.set(value)},
+  preferredPort:()=>{try{return new URL(readSettings().localOrigin).port;}catch{return 0;}},
+  log:m=>mainLog.info(`[local] ${m}`),
+  onCrash:message=>{mainLog.warn(message);if(!quitting)showConnect({notice:"local-failed"});},
+});
+function envRuntimeRoot(){return process.env.HRH_LOCAL_RUNTIME_ROOT || (app.isPackaged?path.join(process.resourcesPath,"local-runtime"):path.join(__dirname,"..","local-runtime"));}
+async function enterLocal(){
+  const previous=readSettings().localOrigin;
+  const {origin}=await localRuntime.start();
+  if(quitting)return {ok:false,message:"App is quitting"};
+  closeStrays();mate.disconnect();deviceRuntime.destroy();
+  writeSettings({launchMode:"local",serverUrl:origin,localOrigin:origin,forgetServer:undefined});
+  const prefs=devicePreferences.get();
+  if(previous&&prefs.sharing.origin===previous)devicePreferences.patch({sharing:{origin}});
+  refreshMenus();
+  if(win&&!win.isDestroyed())await win.loadURL(origin+"/");
+  deviceRuntime.ensure();return {ok:true,server:origin};
+}
+
 const mate = require("./mate");
 const recovery = require("./recovery");
 const chrome = require("./chrome");
@@ -311,7 +332,8 @@ async function signOut() {
     } catch {}
     await clearServerCookies(base);
   }
-  writeSettings({ serverUrl: undefined, forgetServer: undefined });
+  await localRuntime.stop();
+  writeSettings({ serverUrl: undefined, forgetServer: undefined, launchMode:"choose" });
   mate.disconnect();
   closeStrays();
   refreshMenus();
@@ -341,7 +363,8 @@ async function migrateLegacy() {
 async function forgetIfAsked() {
   if (!readSettings().forgetServer) return;
   const base = serverUrl();
-  writeSettings({ serverUrl: undefined, forgetServer: undefined });
+  await localRuntime.stop();
+  writeSettings({ serverUrl: undefined, forgetServer: undefined, launchMode:"choose" });
   if (base) await clearServerCookies(base);
 }
 
@@ -368,8 +391,14 @@ ipcMain.handle("connect:state", (e) => {
     username: typeof s.username === "string" ? s.username : "",
     remember: s.rememberConnect !== false,
     version: app.getVersion(),
+    mode:s.launchMode||"local", localAvailable:localRuntime.available(),
   };
 });
+ipcMain.handle("connect:local",async e=>{
+  if(!fromConnect(e))return null;
+  try{return await enterLocal();}catch(err){return {ok:false,message:err.message};}
+});
+ipcMain.handle("connect:localCancel",async e=>{if(fromConnect(e)){await localRuntime.stop();return true;}return false;});
 ipcMain.handle("connect:find", async (e, input) => {
   if (!fromConnect(e)) return null;
   const r = await core.findServer(String(input ?? "").slice(0, 2048), httpRequest);
@@ -387,6 +416,8 @@ ipcMain.handle("connect:signIn", async (e, o = {}) => {
   }
   const r = await core.signIn(server, o.username, o.password, httpRequest);
   if (!r.ok || !win || win.isDestroyed()) return plain(r);
+  await localRuntime.stop();
+  writeSettings({launchMode:"server"});
   const remember = o.remember !== false;
   writeSettings(remember
     ? { serverUrl: server, lastServer: server, username: String(o.username || "").trim(), rememberConnect: true, forgetServer: undefined }
@@ -406,6 +437,19 @@ ipcMain.handle("connect:cancel", (e) => {
   return true;
 });
 
+// First-run status is keyed by connection; an ephemeral local port never resets setup.
+ipcMain.on("local:browserState",(e,value)=>{
+  if(!fromServerPage(e)||readSettings().launchMode!=="local"){e.returnValue=null;return;}
+  if(value&&typeof value==="object"){
+    const entries=Object.entries(value).filter(([k,v])=>k.startsWith("hrh_")&&typeof v==="string"&&v.length<=512000);
+    const next=Object.fromEntries(entries);
+    if(JSON.stringify(next).length<=2_000_000)writeSettings({localBrowserState:next});
+  }
+  e.returnValue=readSettings().localBrowserState||{};
+});
+function setupKey(){return readSettings().launchMode==="local"?"local":serverUrl();}
+ipcMain.handle("setup:state",e=>fromServerPage(e)?!!readSettings().setupCompleted?.[setupKey()]:null);
+ipcMain.handle("setup:complete",e=>{if(!fromServerPage(e))return false;writeSettings({setupCompleted:{...readSettings().setupCompleted,[setupKey()]:true}});return true;});
 chrome.registerIpc();
 
 // Every hrh:* call comes from a top-level page in one of our windows.
@@ -615,6 +659,7 @@ const quitController=require("./quit").createQuitController({
     clean("capture",()=>captureSharing.pause("waiting_connection"));
     clean("runtime",()=>deviceRuntime.destroy());
     clean("mate",()=>mate.stop());
+    clean("local runtime",()=>localRuntime.stopNow());
     clean("storage",()=>session.defaultSession.flushStorageData());
   },
 });
@@ -794,7 +839,12 @@ if (restartOnX11 && relaunchOnX11()) {
     const startedHidden = hiddenStart || loginHidden;
     deviceLifecycle.started(startedHidden);
     if (env.HRH_TEST_START_FAIL === "1") throw new Error("HRH_TEST_START_FAIL: a start that fails on purpose");
-    if (!startedHidden) createWindow();
+    if(readSettings().launchMode==="local"){
+      // Discard last run's ephemeral port before showing any app window.
+      writeSettings({serverUrl:undefined});
+      if(!startedHidden)createWindow();
+      try{await enterLocal();}catch(e){mainLog.warn(`[local] ${e.message}`);showConnect({notice:"local-failed"});}
+    }else if (!startedHidden) createWindow();
     mate.start();
     mate.setCaptureSharing(devicePreferences.get().sharing.enabled,false,captureSharing.snapshot().status);
     deviceRuntime.ensure();
@@ -812,8 +862,8 @@ if (restartOnX11 && relaunchOnX11()) {
       });
     }
     // updates: a quiet look 30 s after the start and every 6 hours (downloading is the user's call)
-    updateTimer=setTimeout(() => void updater.check(), 30_000);updateTimer.unref?.();
-    updateInterval=setInterval(() => void updater.check(), 6 * 3600_000);updateInterval.unref?.();
+    updateTimer=setTimeout(() => {if(readSettings().launchMode!=="local")void updater.check();}, 30_000);updateTimer.unref?.();
+    updateInterval=setInterval(() => {if(readSettings().launchMode!=="local")void updater.check();}, 6 * 3600_000);updateInterval.unref?.();
     // macOS: a Dock click opens the console (but not the launch-time
     // activate of a start at login)
     const readyAt = Date.now();

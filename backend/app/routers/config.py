@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 import asyncio
 
 from app import __version__
+from app.config import settings
 from app.providers import list_providers
 from app.providers.catalog import build_catalog
 from app.routers._deps import provider_service
@@ -20,6 +21,7 @@ async def get_config(svc: ProviderService = Depends(provider_service)) -> dict:
     catalog = await asyncio.to_thread(build_catalog)
     return {
         "version": __version__,
+        "execution_mode": settings.execution_mode,
         "providers": list_providers(),
         "provider_status": await svc.status_all(),
         "catalog": catalog,

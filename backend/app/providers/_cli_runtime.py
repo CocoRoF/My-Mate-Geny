@@ -13,10 +13,13 @@ import os
 import signal
 from dataclasses import dataclass, field
 from typing import AsyncIterator
+from app.portability import child_command, kill_tree
 
 # Parent env vars the child is allowed to inherit. Notably ANTHROPIC_API_KEY is
 # NOT here — it is injected explicitly only on the api_key auth path.
-_ENV_WHITELIST = ("HOME", "PATH", "USER", "LANG", "LC_ALL", "TERM", "TMPDIR", "TZ", "SHELL")
+_ENV_WHITELIST = ("HOME", "PATH", "USER", "LANG", "LC_ALL", "TERM", "TMPDIR", "TZ", "SHELL",
+                  "USERPROFILE", "APPDATA", "LOCALAPPDATA", "SYSTEMROOT", "SystemRoot", "COMSPEC",
+                  "TEMP", "TMP", "PATHEXT", "ProgramFiles", "ProgramFiles(x86)")
 
 
 @dataclass
@@ -49,8 +52,7 @@ class CLIProcessRunner:
         :class:`asyncio.TimeoutError` on timeout.
         """
         proc = await asyncio.create_subprocess_exec(
-            self.binary,
-            *argv,
+            *child_command(self.binary, argv),
             cwd=self.cwd,
             env=self._build_env(),
             stdin=asyncio.subprocess.PIPE,
@@ -147,6 +149,9 @@ class CLIProcessRunner:
 
 def _kill_group(proc: asyncio.subprocess.Process) -> None:
     """SIGTERM the CLI's whole process group, then SIGKILL anything left."""
+    if os.name == "nt":
+        kill_tree(proc.pid)
+        return
     try:
         pgid = os.getpgid(proc.pid)
     except ProcessLookupError:

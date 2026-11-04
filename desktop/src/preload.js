@@ -123,7 +123,22 @@ const windowBridge = chromeInfo
     }
   : undefined;
 
+// Ports can change if another application occupies the saved local port. Keep device UI state across that move.
+if(surface==="console"&&location.protocol==="http:"){
+  try{
+    const saved=ipcRenderer.sendSync("local:browserState");
+    if(saved){
+      for(const [k,v] of Object.entries(saved))localStorage.setItem(k,v);
+      let last=JSON.stringify(saved);
+      const save=()=>{try{const state={};for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k?.startsWith("hrh_"))state[k]=localStorage.getItem(k);}const next=JSON.stringify(state);if(next!==last){ipcRenderer.sendSync("local:browserState",state);last=next;}}catch{}};
+      setInterval(save,1000);window.addEventListener("pagehide",save);document.addEventListener("visibilitychange",save);
+      ipcRenderer.on("app:quitting",save);
+    }
+  }catch{}
+}
+
 contextBridge.exposeInMainWorld("hrhNative", {
+  setup: {state:()=>ipcRenderer.invoke("setup:state"),complete:()=>ipcRenderer.invoke("setup:complete")},
   platform: `desktop-${process.platform}`,
   version: arg("hrh-version") || "0.0.0",
   // which window this page is in: console | mate-overlay | mate-quick | mate-chat | bar
@@ -286,6 +301,8 @@ if (onConnectPage) {
   const str = (v) => (typeof v === "string" ? v : "");
   contextBridge.exposeInMainWorld("hrhConnect", {
     state: () => ipcRenderer.invoke("connect:state"),
+    startLocal: () => ipcRenderer.invoke("connect:local"),
+    cancelLocal: () => ipcRenderer.invoke("connect:localCancel"),
     findServer: (input) => ipcRenderer.invoke("connect:find", str(input)),
     signIn: (o = {}) => ipcRenderer.invoke("connect:signIn", {
       server: str(o.server), username: str(o.username), password: str(o.password), remember: o.remember !== false,

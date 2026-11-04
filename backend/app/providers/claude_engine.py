@@ -27,6 +27,7 @@ from collections import deque
 from typing import Any
 
 from app.providers._cli_runtime import _ENV_WHITELIST, _kill_group
+from app.portability import child_command
 from app.providers._stream_json import StreamJsonAccumulator
 from app.providers.base import ProviderEvent
 
@@ -107,8 +108,7 @@ class ClaudeEngine:
         env = {k: os.environ[k] for k in _ENV_WHITELIST if k in os.environ}
         env.update(self.env_extras)
         self._proc = await asyncio.create_subprocess_exec(
-            self.binary,
-            *self.argv,
+            *child_command(self.binary, self.argv),
             cwd=self.cwd,
             env=env,
             stdin=asyncio.subprocess.PIPE,

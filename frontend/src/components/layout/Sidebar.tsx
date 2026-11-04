@@ -1,3 +1,4 @@
+import { useConfigStore } from "../../stores/configStore";
 import { cliUpdatesNeedAttention, providersNeedAttention, sessionsNeedAttention } from "../../lib/attention";
 import { useCliToolsStore } from "../../stores/cliToolsStore";
 import { useMemo, useState } from "react";
@@ -89,7 +90,9 @@ export default function Sidebar() {
     setView("chat");
   };
 
+  const local=useConfigStore(s=>s.executionMode)==="local";
   const logout = async () => {
+    if(local && window.hrhNative?.signOut){await window.hrhNative.signOut();return;}
     await apiFetch("/api/auth/logout", { method: "POST" }).catch(() => {});
     window.location.href = "/login";
   };
@@ -329,6 +332,7 @@ export default function Sidebar() {
       )}
       {!showSessions && <div className="flex-1" />}
 
+      <button className="mx-3 mb-2 rounded-lg px-3 py-2 text-left text-xs text-content-faint hover:bg-surface-2" onClick={()=>window.dispatchEvent(new Event("geny:setup"))}>시작 도우미</button>
       {/* Settings: always at the bottom, right above the account row */}
       <div className="px-2 pb-1.5 pt-1.5 border-t border-border/60">
         <button

@@ -1,6 +1,6 @@
 import { useMateStore } from "./stores/mateStore";
 import { ScreenCaptureApproval } from "./components/composer/LocalScreenControls";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import Sidebar from "./components/layout/Sidebar";
 import ChatView from "./components/chat/ChatView";
 import MobileTopBar from "./components/layout/MobileTopBar";
@@ -22,6 +22,7 @@ import { nativeWindow } from "./lib/nativeWindow";
 import { useT, type MsgKey } from "./i18n";
 import { installLanguageSync } from "./i18n/sync";
 import { tabMeta } from "./components/settings/tabs";
+import SetupAssistant, {setupCompleted} from "./components/setup/SetupAssistant";
 import { fillTimezone } from "./stores/mateStore";
 
 // Secondary views load on demand: the chat (first screen) stays light.
@@ -37,6 +38,8 @@ const TITLES: Record<string, MsgKey> = {
 
 export default function App() {
   const t = useT();
+  const [setup,setSetup]=useState<boolean|null>(null);
+  useEffect(()=>{void setupCompleted().then(done=>setSetup(!done));const reopen=()=>setSetup(true);window.addEventListener("geny:setup",reopen);return()=>window.removeEventListener("geny:setup",reopen);},[]);
   const view = useUIStore((s) => s.view);
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const setSidebar = useUIStore((s) => s.setSidebar);
@@ -99,9 +102,11 @@ export default function App() {
           {/* one view failing (or its code gone after a deploy) never takes the sidebar with it */}
           <ErrorBoundary variant="view" resetKey={view}>
           <Suspense fallback={<PageLoading />}>
+          {setup===null?<PageLoading/>:setup?<SetupAssistant onDone={()=>setSetup(false)}/>:<>
           {view === "mate" && <MateView />}
           {view === "chat" && <ChatView />}
           {view === "settings" && <SettingsView />}
+          </>}
           </Suspense>
           </ErrorBoundary>
         </div>

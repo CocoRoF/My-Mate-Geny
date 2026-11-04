@@ -52,3 +52,12 @@ deploy/*.local.yml
 backend/app/mate/builtin/assets/mao/
 backend/app/mate/builtin/mates/mao.json
 backend/app/mate/builtin/personas/mao.json
+
+# Packaged local desktop build products
+/desktop/local-runtime/
+/desktop/.python-build/
+/desktop/.local-build-*/
+/frontend/dist-local/
+
+/desktop/node_modules
+/frontend/node_modules

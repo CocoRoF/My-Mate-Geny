@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useProviderStore } from "../../stores/providerStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useConfigStore } from "../../stores/configStore";
+import { folderBridge } from "../../lib/localFolder";
 import WorkspacePicker from "../workspaces/WorkspacePicker";
 import Icon from "../ui/Icon";
 import { useT } from "../../i18n";
@@ -13,6 +14,7 @@ export default function NewSessionPanel() {
   const t = useT();
   const providers = useProviderStore((s) => s.providers);
   const catalog = useConfigStore((s) => s.catalog);
+  const local = useConfigStore((s) => s.executionMode)==="local";
   const createSession = useSessionStore((s) => s.create);
 
   const firstConnected = providers.find((p) => p.connected)?.provider || "claude";
@@ -31,6 +33,7 @@ export default function NewSessionPanel() {
   const [effort, setEffort] = useState("default");
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [path, setPath] = useState<string | null>(null);
+  const pickLocal=async()=>{try{const bridge=folderBridge();const result=await bridge?.pick();if(result){setPath(result.path);setConnectionId(null);await bridge?.release(result.path);}}catch(e:any){setError(e.message);}};
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -54,7 +57,7 @@ export default function NewSessionPanel() {
         effort,
         connection_id: connectionId,
         workspace_path: path,
-        title: path.split("/").pop() || "chat",
+        title: path.split(/[\\/]/).pop() || "chat",
       });
     } catch (e: any) {
       setError(String(e.message || e));
@@ -136,12 +139,12 @@ export default function NewSessionPanel() {
         </div>
 
         {/* Workspace */}
-        <WorkspacePicker
+        {local?<div className="my-3"><button className="btn" onClick={()=>void pickLocal()}>로컬 폴더 선택</button><p className="mt-2 break-all text-xs text-content-muted">{path||'이 컴퓨터의 작업 폴더를 선택해 주세요.'}</p></div>:<WorkspacePicker
           connectionId={connectionId}
           setConnectionId={setConnectionId}
           path={path}
           setPath={setPath}
-        />
+        />}
 
         {error && (
           <p className="mt-3 text-xs text-danger flex items-center gap-1.5">

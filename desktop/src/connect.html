@@ -10,6 +10,10 @@
   .head img{width:56px;height:56px;border-radius:14px;flex:none}
   h1{font-size:18px;margin:0 0 3px} .sub{color:#9aa3b4;font-size:13px;margin:0}
   label{display:block;font-size:12px;color:#9aa3b4;margin:0 0 6px}
+  .modes{display:flex;gap:6px;margin-bottom:18px;background:#0f1218;padding:4px;border-radius:12px}
+  .modes button{flex:1;padding:10px;border:0;border-radius:9px;background:transparent;color:#9aa3b4;cursor:pointer;font:inherit}
+  .modes button[aria-selected=true]{background:#5b7cff;color:white}
+  #localIntro{line-height:1.65;color:#9aa3b4;margin:0 0 20px}
   .field{margin-bottom:14px}
   input[type=text],input[type=password],input[type=url]{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #232936;background:#0f1218;color:#e6e9f0;font:inherit;outline:none}
   input:focus{border-color:#5b7cff;box-shadow:0 0 0 3px rgba(91,124,255,.18)}
@@ -55,7 +59,13 @@
     <img src="logo.png" alt="">
     <div><h1 id="heading">Connect to your server</h1><p class="sub">My Mate Geny <span id="ver"></span></p></div>
   </div>
+  <div class="modes" role="tablist" aria-label="실행 방식">
+    <button type="button" id="modeLocal" role="tab" aria-selected="true">로컬 실행</button>
+    <button type="button" id="modeServer" role="tab" aria-selected="false">서버 접속</button>
+  </div>
+  <p id="localIntro">이 컴퓨터에서 실행합니다. 별도의 Geny 로그인 없이 로컬 폴더와 설치된 Claude Code·Codex를 사용할 수 있습니다.</p>
   <div class="notice" id="notice" hidden></div>
+  <div id="serverFields" hidden>
   <div class="field">
     <label for="server" id="serverLabel">Server address</label>
     <input id="server" name="server" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="example.com or 192.168.0.10:58080" autocomplete="url">
@@ -73,6 +83,7 @@
     </div>
   </div>
   <label class="check"><input type="checkbox" id="remember" checked> <span id="rememberText">Remember the server and username (never the password)</span></label>
+  </div>
   <div class="row">
     <button type="button" class="ghost" id="cancel" hidden>Back</button>
     <button type="submit" class="primary" id="go">Connect</button>
@@ -95,7 +106,18 @@
   }
   if (typeof W.serverPlaceholder === "string") $("server").placeholder = W.serverPlaceholder;
   const q = new URLSearchParams(location.search);
-  let busy = false;
+  let busy = false, mode="local";
+  function choose(value){
+    if(busy)return;mode=value;
+    $("modeLocal").setAttribute("aria-selected",String(mode==="local"));
+    $("modeServer").setAttribute("aria-selected",String(mode==="server"));
+    $("serverFields").hidden=mode!=="server";$("localIntro").hidden=mode!=="local";
+    $("heading").textContent=mode==="local"?"이 컴퓨터에서 시작":"서버에 접속";
+    $("go").textContent=mode==="local"?"시작":say("connect","Connect");status("","");
+  }
+  $("modeLocal").onclick=()=>choose("local");$("modeServer").onclick=()=>choose("server");
+  // Arrow keys select tabs; each mode has its own clear primary action.
+  document.querySelector('.modes').onkeydown=e=>{if(["ArrowLeft","ArrowRight"].includes(e.key)){e.preventDefault();choose(mode==="local"?"server":"local");$(mode==="local"?"modeLocal":"modeServer").focus();}};
 
   function status(kind, text, detail) {
     const el = $("status");
@@ -118,6 +140,7 @@
   function setBusy(on) {
     busy = on;
     $("go").disabled = on;
+    $("modeLocal").disabled=on;$("modeServer").disabled=on;
     for (const id of ["server", "username", "password"]) $(id).readOnly = on;
   }
   function mark(id) {
@@ -136,11 +159,18 @@
     $("show").setAttribute("aria-pressed", String(show));
     p.focus();
   };
-  $("cancel").onclick = () => api.cancel();
+  $("cancel").onclick = async () => {if(busy&&mode==="local"){await api.cancelLocal();setBusy(false);status("","");}else api.cancel();};
 
   $("form").onsubmit = async (ev) => {
     ev.preventDefault();
     if (busy || !api) return;
+    if(mode==="local"){
+      setBusy(true);$("cancel").hidden=false;
+      status("busy","로컬 실행을 준비하고 있습니다…");
+      try{const r=await api.startLocal();if(!r?.ok)status("err","로컬 실행을 시작하지 못했습니다.",r?.message||"");}
+      catch(e){status("err","로컬 실행을 시작하지 못했습니다.",e.message);}
+      finally{setBusy(false);}return;
+    }
     const input = $("server").value.trim();
     const username = $("username").value.trim();
     const password = $("password").value;
@@ -177,15 +207,18 @@
     if (!api) return status("err", say("onlyInApp", "This page only works inside the My Mate Geny app."));
     const s = (await api.state()) || {};
     $("ver").textContent = s.version ? "· " + s.version : "";
-    $("server").value = s.server || s.lastServer || "";
+    $("server").value = s.mode==="local"?(s.lastServer||""):(s.server || s.lastServer || "");
+    choose(s.mode==="server"||!s.localAvailable?"server":"local");
+    if(!s.localAvailable){$("modeLocal").disabled=true;$("modeLocal").title="로컬 실행이 포함된 새 앱 설치가 필요합니다.";}
     $("username").value = s.username || "";
     $("remember").checked = s.remember !== false;
     $("cancel").hidden = !s.server;
     const notice = q.get("notice");
+    if(notice==="local-failed"){status("err","로컬 실행이 중단되었습니다. 시작을 눌러 다시 실행하세요.");}
     if (notice === "signed-out") {
       $("notice").textContent = say("signedOut", "You're signed out.");
       $("notice").hidden = false;
     }
-    ($("server").value ? ($("username").value ? $("password") : $("username")) : $("server")).focus();
+    if(mode==="local")$("go").focus();else ($("server").value ? ($("username").value ? $("password") : $("username")) : $("server")).focus();
   })();
 </script></body></html>

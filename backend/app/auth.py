@@ -542,6 +542,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         ip = AuthManager.client_ip(request)
 
+        # A private local process handshake uses a launch-scoped main-process
+        # secret, not a password. The route performs loopback/Host/secret checks.
+        if settings.execution_mode == "local" and path in ("/api/local/bootstrap", "/api/local/shutdown"):
+            return await call_next(request)
+
         # Banned IPs are blocked everywhere (not just the login route).
         if auth.is_banned(ip):
             return JSONResponse(

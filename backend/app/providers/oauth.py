@@ -18,17 +18,14 @@ State lives in-memory (single uvicorn process, single user).
 from __future__ import annotations
 
 import base64
-import fcntl
 import hashlib
 import json
 import os
-import pty
 import re
 import secrets
 import select
 import struct
 import subprocess
-import termios
 import threading
 import time
 import urllib.error
@@ -136,28 +133,40 @@ class OAuthManager:
         self._sessions[key] = s
         # Run under a pty: a pipe would block-buffer codex's output so the
         # URL/code never arrive line-by-line. A pty makes it flush interactively.
-        master, slave = pty.openpty()
-        try:
-            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 60, 400, 0, 0))
-        except Exception:
-            pass
-        try:
-            from app.services.cli_tools.tools import effective_binary
-
-            proc = subprocess.Popen(
-                [effective_binary("codex"), "login", "--device-auth"],
-                stdin=slave,
-                stdout=slave,
-                stderr=slave,
-                env=self._env(env_extra),
-                close_fds=True,
-                preexec_fn=os.setsid,
-            )
-        except FileNotFoundError:
-            os.close(master)
-            os.close(slave)
-            return {"flow": "device", "error": "codex CLI not found"}
-        os.close(slave)
+        from app.services.cli_tools.tools import effective_binary
+        from app.portability import child_command
+        cmd = child_command(effective_binary("codex"), ["login", "--device-auth"])
+        conpty = None
+        master = None
+        if os.name == "nt":
+            from winpty import PtyProcess
+            try:
+                conpty = PtyProcess.spawn(cmd, env=self._env(env_extra), dimensions=(60, 400))
+            except (OSError, RuntimeError) as exc:
+                return {"flow": "device", "error": str(exc)[:300]}
+            class ProcessAdapter:
+                pid = conpty.pid
+                @property
+                def returncode(self):
+                    return None if conpty.isalive() else conpty.exitstatus
+                def poll(self): return self.returncode
+                def wait(self): return conpty.wait()
+                def kill(self):
+                    from app.portability import kill_tree
+                    kill_tree(self.pid)
+            proc = ProcessAdapter()
+        else:
+            import fcntl, pty, termios
+            master, slave = pty.openpty()
+            try:
+                fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 60, 400, 0, 0))
+                proc = subprocess.Popen(cmd, stdin=slave, stdout=slave, stderr=slave,
+                                        env=self._env(env_extra), close_fds=True, start_new_session=True)
+            except OSError as exc:
+                os.close(master)
+                return {"flow": "device", "error": str(exc)[:300]}
+            finally:
+                os.close(slave)
         s.proc = proc
         s.master_fd = master
 
@@ -165,13 +174,13 @@ class OAuthManager:
             buf = b""
             while True:
                 try:
-                    r, _, _ = select.select([master], [], [], 0.5)
+                    r, _, _ = ([], [], []) if conpty else select.select([master], [], [], 0.5)
                 except OSError:
                     break
-                if master in r:
+                if conpty or master in r:
                     try:
-                        data = os.read(master, 4096)
-                    except OSError:
+                        data = conpty.read(4096).encode() if conpty else os.read(master, 4096)
+                    except (OSError, EOFError):
                         break
                     if not data:
                         break
@@ -187,6 +196,8 @@ class OAuthManager:
                 if proc.poll() is not None:
                     break
             proc.wait()
+            if conpty:
+                conpty.close()
             with s.lock:
                 s.done = True
                 # Judge THIS login by its own auth file (an account's CODEX_HOME,

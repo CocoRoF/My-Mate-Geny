@@ -97,6 +97,18 @@ class ClaudeCodeProvider(Provider):
             os.path.exists(os.path.join(claude_home, f))
             for f in (".credentials.json", "credentials.json", "auth.json")
         )
+        # Native macOS installs keep credentials in Keychain, not a JSON file.
+        if not has_auth and __import__('sys').platform == 'darwin':
+            from app.portability import child_command
+            proc = None
+            try:
+                proc = await asyncio.create_subprocess_exec(*child_command(resolved, ["auth", "status", "--json"]),
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+                output, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+                has_auth = json.loads(output).get("loggedIn") is True
+            except (ValueError, OSError, TimeoutError):
+                if proc and proc.returncode is None:
+                    proc.kill()
         return AuthStatus(
             provider=self.name,
             connected=has_auth,

@@ -83,6 +83,9 @@ class SystemMonitor:
         self.interval = max(0.5, float(self.cfg.monitor_interval_s))
         self.store = MetricsStore(db, keep_1m_days=self.cfg.monitor_keep_1m_days,
                                   keep_15m_days=self.cfg.monitor_keep_15m_days)
+        if collector is None and platform.system() != "Linux":
+            from .portable import Collector as PortableCollector
+            collector = PortableCollector(disk_paths=self._disk_paths())
         self.collector = collector or Collector(disk_paths=self._disk_paths())
         self.gpu = gpu or GpuReader(mode=self.cfg.monitor_gpu, interval_s=self.interval,
                                     cpu_model=self.collector.cpu_model)
@@ -133,6 +136,8 @@ class SystemMonitor:
 
     def _detect_guard(self) -> dict[str, Any] | None:
         """Host memory protections worth drawing on the charts (docs/monitoring.md)."""
+        if os.name == "nt":
+            return None
         mode = (self.cfg.monitor_guard or "auto").lower()
         if mode == "off":
             return None

@@ -25,6 +25,8 @@ from app.providers.accounts import SESSION_CHECK_S, AccountPool, AccountStore
 from app.db import Database
 from app.routers import (
     screen as screen_router,
+    local_runtime,
+    setup,
     accounts,
     admin,
     attachments,
@@ -176,6 +178,7 @@ async def lifespan(app: FastAPI):
     await session_service.remote_jobs.start()
 
     yield
+    await setup.service.stop()
 
     await app.state.screen_service.triggers.stop()
     housekeeper.cancel()
@@ -264,6 +267,8 @@ for r in (
     avatar_router.internal,
     preferences_router.router,
     cli_tools_router.router,
+    local_runtime.router,
+    setup.router,
 ):
     app.include_router(r)
 

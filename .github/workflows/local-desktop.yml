@@ -1,0 +1,56 @@
+name: local-desktop
+on:
+  push:
+    branches: [codex/native-local]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x64
+          - os: windows-latest
+            arch: x64
+          - os: macos-15
+            arch: arm64
+          - os: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - run: npm ci --prefix frontend
+      - run: npm ci --prefix desktop
+      - name: Build bundled UI and runtime
+        run: |
+          cd frontend
+          npx tsc -b
+          npx vite build --outDir dist-local --emptyOutDir
+          cd ..
+          BUILD_COMMIT=$GITHUB_SHA python desktop/build/local-runtime.py
+      - name: Native lifecycle and live loopback API
+        working-directory: desktop
+        run: |
+          node --test test/local-runtime.test.js
+          node test/local-runtime-smoke.js
+      - name: Package native resources
+        working-directory: desktop
+        run: npx electron-builder --dir --${{ matrix.arch }} --publish never -c.extraMetadata.version=0.5.0
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: local-native-failure-${{ matrix.os }}
+          path: desktop/local-runtime/manifest.json

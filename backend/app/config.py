@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     )
 
     # Server
+    execution_mode: str = "server"
+    local_bootstrap_secret: str = ""
+    data_home: str = ""
     host: str = "0.0.0.0"
     port: int = 8080
 
@@ -211,7 +214,7 @@ class Settings(BaseSettings):
 
     @property
     def home_dir(self) -> Path:
-        return _default_home()
+        return Path(self.data_home).expanduser().resolve() if self.data_home else _default_home()
 
     @property
     def vault_key_file(self) -> Path:

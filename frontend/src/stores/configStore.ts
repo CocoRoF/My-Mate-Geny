@@ -5,14 +5,16 @@ import { getConfig } from "../api/config";
 interface ConfigState {
   catalog: ProviderCatalog;
   version: string;
+  executionMode: "server"|"local";
   load: () => Promise<void>;
 }
 
 export const useConfigStore = create<ConfigState>((set) => ({
   catalog: {},
   version: "",
+  executionMode: "server",
   load: async () => {
     const c = await getConfig();
-    set({ catalog: c.catalog, version: c.version });
+    set({ catalog: c.catalog, version: c.version, executionMode:c.execution_mode||"server" });
   },
 }));

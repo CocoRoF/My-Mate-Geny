@@ -14,11 +14,13 @@ backends sharing it queue too).
 from __future__ import annotations
 
 import asyncio
-import fcntl
 import hashlib
 import json
 import os
-import resource
+try:
+    import resource
+except ImportError:
+    resource = None
 import shutil
 import sys
 import time
@@ -26,6 +28,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 
 from app.config import settings
+from app.portability import lock_file
 
 PIPELINE = Path(__file__).with_name("pipeline.py")
 # (OpenCV 5 dropped the cascade face detectors the stills need: stay on 4.x)
@@ -51,7 +54,7 @@ def venv_dir() -> Path:
 
 
 def venv_python() -> Path:
-    return venv_dir() / "bin" / "python"
+    return venv_dir() / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 
 def _mem_bytes(text: str) -> int:
@@ -63,6 +66,8 @@ def _mem_bytes(text: str) -> int:
 def capped_argv(argv: list[str], mem: str) -> tuple[list[str], Any]:
     """``capped -m <mem> -- argv`` where a systemd user scope can be made; else argv with an address-space limit
     set in the child (preexec)."""
+    if os.name == "nt":
+        return argv, None
     exe = shutil.which("capped") or os.path.expanduser("~/.local/bin/capped")
     run_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
     if os.path.isfile(exe) and os.access(exe, os.X_OK) and shutil.which("systemd-run") \
@@ -236,14 +241,15 @@ class Deps:
         async with self._lock:
             fd = os.open(root / ".processing.lock", os.O_RDWR | os.O_CREAT, 0o600)
             try:
-                await asyncio.to_thread(fcntl.flock, fd, fcntl.LOCK_EX)
+                await asyncio.to_thread(lock_file, fd)
                 return await self._run_step(step, args, timeout, on_progress)
             finally:
                 os.close(fd)  # (closing drops the lock)
 
     async def _run_step(self, step: str, args: list[str], timeout: float, on_progress: Any) -> dict[str, Any]:
         argv, pre = capped_argv([str(venv_python()), "-I", str(PIPELINE), step, *args], settings.avatar_mem)
-        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": os.environ.get("HOME", ""),
+        from app.providers._cli_runtime import _ENV_WHITELIST
+        env = {**{k: os.environ[k] for k in _ENV_WHITELIST if k in os.environ},
                "OMP_NUM_THREADS": "2", "OPENBLAS_NUM_THREADS": "2",
                **({"XDG_RUNTIME_DIR": os.environ["XDG_RUNTIME_DIR"]} if os.environ.get("XDG_RUNTIME_DIR") else {})}
         proc = await asyncio.create_subprocess_exec(*argv, stdout=asyncio.subprocess.PIPE,

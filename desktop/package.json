@@ -14,7 +14,8 @@
     "test": "node --test test/*.test.js",
     "dist:linux": "electron-builder --linux AppImage deb --publish never",
     "dist:win": "electron-builder --win nsis --x64 --publish never",
-    "dist:mac": "electron-builder --mac dmg --arm64 --x64 --publish never"
+    "dist:mac": "electron-builder --mac dmg --arm64 --x64 --publish never",
+    "build:runtime": "python3 build/local-runtime.py"
   },
   "dependencies": {
     "electron-updater": "6.3.9"
@@ -27,12 +28,31 @@
     "appId": "me.hrletsgo.harnessor",
     "productName": "My Mate Geny",
     "copyright": "My Mate Geny contributors",
-    "directories": { "buildResources": "build", "output": "dist" },
-    "files": ["src/**/*", "build/icon.png", "package.json"],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
     "afterPack": "build/after-pack.js",
-    "publish": [{ "provider": "generic", "url": "https://updates.invalid/set-at-runtime" }],
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://updates.invalid/set-at-runtime"
+      }
+    ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "artifactName": "my-mate-geny-${version}-windows-x64-setup.${ext}"
     },
     "nsis": {
@@ -53,13 +73,18 @@
       }
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "executableName": "my-mate-geny",
       "icon": "build/icons",
       "category": "Development",
       "maintainer": "My Mate Geny contributors <my-mate-geny@users.noreply.github.com>",
       "synopsis": "My Mate Geny – agent console for Claude Code & Codex, with a desktop Mate",
-      "executableArgs": ["--ozone-platform=x11"],
+      "executableArgs": [
+        "--ozone-platform=x11"
+      ],
       "artifactName": "my-mate-geny-${version}-linux-${arch}.${ext}",
       "desktop": {
         "GenericName": "Agent console",
@@ -70,10 +95,14 @@
       "packageName": "my-mate-geny",
       "packageCategory": "devel",
       "fpm": [
-        "--replaces", "hr-harnessor-desktop",
-        "--conflicts", "hr-harnessor-desktop",
-        "--provides", "hr-harnessor-desktop",
-        "--description", "My Mate Geny – agent console for Claude Code & Codex, with a desktop Mate\nMy Mate Geny is the desktop app for your own My Mate Geny server: its agent\nconsole for Claude Code and Codex sessions in a native window, and the Mate,\nyour companion character, on the desktop (tray, quick chat, start at login).\n.\nFormerly packaged as hr-harnessor-desktop: installing this package replaces\nthat one and keeps your settings and sign-in."
+        "--replaces",
+        "hr-harnessor-desktop",
+        "--conflicts",
+        "hr-harnessor-desktop",
+        "--provides",
+        "hr-harnessor-desktop",
+        "--description",
+        "My Mate Geny – agent console for Claude Code & Codex, with a desktop Mate\nMy Mate Geny is the desktop app for your own My Mate Geny server: its agent\nconsole for Claude Code and Codex sessions in a native window, and the Mate,\nyour companion character, on the desktop (tray, quick chat, start at login).\n.\nFormerly packaged as hr-harnessor-desktop: installing this package replaces\nthat one and keeps your settings and sign-in."
       ],
       "depends": [
         "libgtk-3-0t64 | libgtk-3-0",
@@ -90,6 +119,17 @@
       ],
       "afterInstall": "build/deb-postinst.tpl",
       "afterRemove": "build/deb-postrm.tpl"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "local-runtime",
+        "to": "local-runtime",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
+        ]
+      }
+    ]
   }
 }
