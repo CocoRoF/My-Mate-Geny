@@ -104,7 +104,8 @@ class App {
     delete env.WAYLAND_DISPLAY;
     Object.assign(env, { LANG: "en_US.UTF-8", LANGUAGE: "en_US", LC_ALL: "en_US.UTF-8" });
     const args = [path.join(__dirname, "..", ".."), "--no-sandbox", `--remote-debugging-port=${this.port}`, `--inspect=${this.iport}`, "--disable-gpu", "--lang=en-US", ...extraArgs];
-    this.proc = spawn(path.join(__dirname, "..", "..", "node_modules", ".bin", "electron"), args, { env, stdio: ["ignore", "pipe", "pipe"], detached: true });
+    const packaged=process.env.LOCAL_TEST_PACKAGED_APP;
+    this.proc = spawn(packaged || path.join(__dirname, "..", "..", "node_modules", ".bin", "electron"), packaged ? args.slice(1) : args, { env, stdio: ["ignore", "pipe", "pipe"], detached: true });
     this.out = "";
     this.proc.stdout.on("data", (d) => (this.out += d));
     this.proc.stderr.on("data", (d) => (this.out += d));

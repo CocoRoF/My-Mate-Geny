@@ -35,6 +35,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify backend before publishing packages
+        run: |
+          cd backend
+          pip install -e '.[dev]'
+          python -m pytest -q -p no:cacheprovider
+      - name: Verify frontend before publishing packages
+        run: |
+          cd frontend
+          npm ci --no-audit --no-fund
+          npx tsc -b
+          npm run test:unit
+          npm run test:i18n
       - name: Draft release for this build
         run: gh release create "apps-v$VERSION" --draft --title "Apps $VERSION" --notes "Building…" --target "$GITHUB_SHA"
 

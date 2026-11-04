@@ -6,13 +6,14 @@ fs.mkdirSync(out,{recursive:true});
 const home=fs.mkdtempSync(path.join(out,'home-')),workspace=path.join(out,'project');
 fs.mkdirSync(path.join(home,'.claude'),{recursive:true});fs.mkdirSync(workspace,{recursive:true});
 fs.writeFileSync(path.join(home,'.claude','.credentials.json'),JSON.stringify({claudeAiOauth:{accessToken:'fixture-only',refreshToken:'fixture-only',expiresAt:Date.now()+86400000,scopes:['user:inference']}}));
-process.env.HRH_LOCAL_RUNTIME_ROOT=path.resolve(__dirname,'../../local-runtime');
+if(process.env.LOCAL_TEST_PACKAGED_APP)delete process.env.HRH_LOCAL_RUNTIME_ROOT;
+else process.env.HRH_LOCAL_RUNTIME_ROOT=path.resolve(__dirname,'../../local-runtime');
 process.env.CLAUDE_BINARY=path.resolve(__dirname,'fake-claude.py');
 // Pin Korean UI to match the requested screenshots.
 fs.mkdirSync(path.join(home,'.config/hr-harnessor'),{recursive:true});
 fs.writeFileSync(path.join(home,'.config/hr-harnessor/settings.json'),JSON.stringify({language:'ko'}));
 process.env.PLAN_USAGE_FETCH='false';process.env.CLI_UPDATE_CHECK='false';process.env.MONITOR_ENABLED='false';
-let app=null,occupied=null;const results={};
+let app=null,occupied=null;const results={packaged:!!process.env.LOCAL_TEST_PACKAGED_APP};
 async function shot(page,name){const r=await page.send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(out,name),Buffer.from(r.data,'base64'));}
 const request=(p,route,init={})=>p.eval(`fetch(${JSON.stringify(route)},${JSON.stringify(init)}).then(async r=>({status:r.status,data:await r.json()}))`);
 async function start(port){app=new App(home,port,port+500);app.start();return app;}
