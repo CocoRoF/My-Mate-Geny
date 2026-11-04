@@ -139,7 +139,7 @@ export default function NewSessionPanel() {
         </div>
 
         {/* Workspace */}
-        {local?<div className="my-3"><button className="btn" onClick={()=>void pickLocal()}>로컬 폴더 선택</button><p className="mt-2 break-all text-xs text-content-muted">{path||'이 컴퓨터의 작업 폴더를 선택해 주세요.'}</p></div>:<WorkspacePicker
+        {local?<div className="my-3"><button className="btn" onClick={()=>void pickLocal()}>{t("setup.pickFolder")}</button><p className="mt-2 break-all text-xs text-content-muted">{path||t("setup.folderHint")}</p></div>:<WorkspacePicker
           connectionId={connectionId}
           setConnectionId={setConnectionId}
           path={path}

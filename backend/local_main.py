@@ -10,7 +10,9 @@ from pathlib import Path
 
 
 def configure(data: Path, static: Path) -> None:
-    data.mkdir(parents=True, exist_ok=True)
+    if os.name != "nt":
+        os.umask(0o077)
+    data.mkdir(parents=True, exist_ok=True, mode=0o700)
     password_file = data / "local-owner.key"
     if not password_file.exists():
         fd = os.open(password_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -64,6 +66,7 @@ def main() -> None:
         threading.Thread(target=watch_parent, daemon=True).start()
     import uvicorn
     from app.main import app
+    os.environ.pop("LOCAL_BOOTSTRAP_SECRET", None)
 
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", loop="asyncio"))
     app.state.local_shutdown = lambda: setattr(server, "should_exit", True)

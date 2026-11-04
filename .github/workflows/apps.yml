@@ -1,7 +1,6 @@
 # Native apps: desktop (Windows / macOS / Linux, Electron) + Android (Capacitor).
-# Both apps load the live console, so UI changes reach them without a new
-# build; this pipeline rebuilds and publishes the app shells whenever they
-# change (or on demand). Builds upload straight to a GitHub Release (no
+# Server-connected apps load the live console. Local desktop execution bundles
+# the backend and UI, so source changes also rebuild the native packages. Builds upload straight to a GitHub Release (no
 # Actions artifact storage); the console's Download page serves the rolling
 # `apps-latest` release. Artifacts are named `my-mate-geny-<version>-…` since
 # 0.3 (formerly `hr-harnessor-…`; backend/app/services/downloads.py matches
@@ -13,6 +12,8 @@ on:
     branches: [main]
     paths:
       - "desktop/**"
+      - "backend/**"
+      - "frontend/**"
       - "mobile/**"
       - "assets/**"
       - ".github/workflows/apps.yml"
@@ -48,8 +49,12 @@ jobs:
             os: ubuntu-latest
           - name: windows
             os: windows-latest
-          - name: macos
-            os: macos-latest
+          - name: macos-arm64
+            os: macos-15
+            arch: arm64
+          - name: macos-x64
+            os: macos-15-intel
+            arch: x64
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -64,7 +69,21 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: desktop/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
       - run: npm ci
+      - name: Bundle local UI and Python backend
+        run: |
+          cd ../frontend
+          npm ci --no-audit --no-fund
+          npx tsc -b
+          BUILD_COMMIT=$GITHUB_SHA npx vite build --outDir dist-local --emptyOutDir
+          cd ..
+          BUILD_COMMIT=$GITHUB_SHA python desktop/build/local-runtime.py
+      - name: Local runtime smoke test on this OS
+        run: node test/local-runtime-smoke.js
       - name: Unit tests (server address + sign-in)
         if: matrix.name == 'linux'
         run: npm test
@@ -75,12 +94,10 @@ jobs:
         if: matrix.name == 'windows'
         run: npx electron-builder --win nsis --x64 --publish never -c.extraMetadata.version=$VERSION
       - name: Build (macos)
-        if: matrix.name == 'macos'
+        if: startsWith(matrix.name, 'macos-')
         run: |
-          sudo mdutil -a -i off || true   # Spotlight indexing breaks dmg detach on runners
-          # One arch at a time, each with its own volume name (they collide otherwise); the name is what Finder shows.
-          npx electron-builder --mac dmg --arm64 --publish never -c.extraMetadata.version=$VERSION -c.dmg.title="My Mate Geny (Apple Silicon)"
-          npx electron-builder --mac dmg --x64 --publish never -c.extraMetadata.version=$VERSION -c.dmg.title="My Mate Geny (Intel)"
+          sudo mdutil -a -i off || true
+          npx electron-builder --mac dmg --${{ matrix.arch }} --publish never -c.extraMetadata.version=$VERSION -c.dmg.title="My Mate Geny (${{ matrix.arch }})"
       # + the in-app updater's descriptions (electron-updater, generic provider — desktop/src/updater.js): latest.yml
       # (Windows) and latest-linux.yml, served to the app by the console's /api/downloads/update/. No latest-mac.yml:
       # unsigned macOS builds cannot replace themselves (the app offers the .dmg).
@@ -89,7 +106,13 @@ jobs:
           shopt -s nullglob
           files=(dist/*.exe dist/*.dmg dist/*.AppImage dist/*.deb dist/latest*.yml)
           ls -la "${files[@]}"
-          gh release upload "apps-v$VERSION" "${files[@]}" --clobber
+          for file in "${files[@]}"; do
+            for attempt in 1 2 3 4 5; do
+              gh release upload "apps-v$VERSION" "$file" --clobber && break
+              if [ "$attempt" = 5 ]; then exit 1; fi
+              sleep $((attempt * 3))
+            done
+          done
 
   android:
     needs: prepare
@@ -146,7 +169,8 @@ jobs:
       - name: Publish
         run: |
           set -euo pipefail
-          gh release download "apps-v$VERSION" -D out
+          retry() { local attempt; for attempt in 1 2 3 4 5; do "$@" && return 0; sleep $((attempt * 3)); done; return 1; }
+          retry gh release download "apps-v$VERSION" -D out --clobber
           ls -la out
           prev=$(git tag --list 'apps-v*' --sort=-v:refname | head -1)
           {
@@ -158,13 +182,13 @@ jobs:
               git log --no-merges --format='- %s (%h)' "$prev"..HEAD | head -40
             fi
           } > notes.md
-          gh release edit "apps-v$VERSION" --draft=false --notes-file notes.md
+          retry gh release edit "apps-v$VERSION" --draft=false --notes-file notes.md
 
           # The rolling release the Download page reads, updated in place so
           # downloads never disappear mid-swap.
           if gh release view apps-latest >/dev/null 2>&1; then
             git tag -f apps-latest "$GITHUB_SHA" && git push -f origin apps-latest
-            gh release upload apps-latest out/* --clobber
+            for file in out/*; do retry gh release upload apps-latest "$file" --clobber; done
             keep=$(cd out && ls)
             for a in $(gh release view apps-latest --json assets --jq '.assets[].name'); do
               echo "$keep" | grep -qx "$a" || gh release delete-asset apps-latest "$a" --yes
@@ -185,4 +209,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Drop the unfinished draft
-        run: gh release delete "apps-v$VERSION" --yes --repo "$GITHUB_REPOSITORY" || true
+        run: |
+          # Never delete a published release after a rolling-release upload failed.
+          if [ "$(gh release view "apps-v$VERSION" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)" = true ]; then
+            gh release delete "apps-v$VERSION" --yes --repo "$GITHUB_REPOSITORY" || true
+          fi

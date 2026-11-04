@@ -3,11 +3,14 @@ const {App,until,sleep}=require('./screen-capture-e2e');
 const fs=require('fs'),path=require('path'),os=require('os'),assert=require('assert/strict');
 const out=process.env.LOCAL_TEST_OUTPUT||fs.mkdtempSync(path.join(os.tmpdir(),'geny-local-e2e-'));
 fs.mkdirSync(out,{recursive:true});
-const home=path.join(out,'home'),workspace=path.join(out,'project');
+const home=fs.mkdtempSync(path.join(out,'home-')),workspace=path.join(out,'project');
 fs.mkdirSync(path.join(home,'.claude'),{recursive:true});fs.mkdirSync(workspace,{recursive:true});
 fs.writeFileSync(path.join(home,'.claude','.credentials.json'),JSON.stringify({claudeAiOauth:{accessToken:'fixture-only',refreshToken:'fixture-only',expiresAt:Date.now()+86400000,scopes:['user:inference']}}));
 process.env.HRH_LOCAL_RUNTIME_ROOT=path.resolve(__dirname,'../../local-runtime');
 process.env.CLAUDE_BINARY=path.resolve(__dirname,'fake-claude.py');
+// Pin Korean UI to match the requested screenshots.
+fs.mkdirSync(path.join(home,'.config/hr-harnessor'),{recursive:true});
+fs.writeFileSync(path.join(home,'.config/hr-harnessor/settings.json'),JSON.stringify({language:'ko'}));
 process.env.PLAN_USAGE_FETCH='false';process.env.CLI_UPDATE_CHECK='false';process.env.MONITOR_ENABLED='false';
 let app=null;const results={};
 async function shot(page,name){const r=await page.send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(out,name),Buffer.from(r.data,'base64'));}
@@ -31,6 +34,12 @@ async function start(port){app=new App(home,port,port+500);app.start();return ap
  await page.eval('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="선택한 폴더에서 시작").click()');
  await until('setup completed',()=>page.eval('!document.querySelector("[data-testid=setup-assistant]")'));
  const sessions=await request(page,'/api/sessions');const session=sessions.data.sessions?.[0]||sessions.data[0];assert.ok(session?.id);assert.equal(session.workspace_path,workspace);results.session=session.id;
+ await until('composer',()=>page.eval('!!document.querySelector("textarea")'));
+ await page.eval('document.querySelector("textarea").focus()');await page.send('Input.insertText',{text:'local native test message'});
+ await page.send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
+ await page.send('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
+ await until('local CLI reply',async()=>{const r=await request(page,`/api/sessions/${session.id}/messages`);return r.status===200&&r.data.some(m=>m.role==='assistant'&&m.content);},30000);
+ results.localChat=true;
  results.origin=await page.eval('location.origin');
  await shot(page,'04-local-session.png');
  const firstSettings=JSON.parse(fs.readFileSync(path.join(home,'.config/hr-harnessor/settings.json')));
@@ -43,7 +52,7 @@ async function start(port){app=new App(home,port,port+500);app.start();return ap
  const mainSettings=await app.main(`return require(${JSON.stringify(path.resolve(__dirname,'../../src/settings.js'))}).readSettings();`);
  const db=path.join(home,'.config/hr-harnessor/local/geny.db');assert.ok(fs.existsSync(db));
  results.restoredOrigin=mainSettings.localOrigin;
- await page.eval('window.hrhNative.switchServer()');page=await app.page(/connect\.html/);await page.eval('document.getElementById("modeServer").click()');assert.equal(await page.eval('!document.getElementById("serverFields").hidden'),true);results.serverModeSelectable=true;
+ await page.eval('window.hrhNative.switchServer()');page=await app.page(/connect\.html/);await until('server choice rendered',()=>page.eval('!!document.getElementById("modeServer")'));await page.eval('document.getElementById("modeServer").click()');assert.equal(await page.eval('!document.getElementById("serverFields").hidden'),true);results.serverModeSelectable=true;
  await shot(page,'06-server-connection.png');
  await app.stop();app=null;
  // The backend port must close with the app, not remain as a hidden local service.

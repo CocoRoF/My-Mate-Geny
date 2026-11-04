@@ -332,7 +332,7 @@ export default function Sidebar() {
       )}
       {!showSessions && <div className="flex-1" />}
 
-      <button className="mx-3 mb-2 rounded-lg px-3 py-2 text-left text-xs text-content-faint hover:bg-surface-2" onClick={()=>window.dispatchEvent(new Event("geny:setup"))}>시작 도우미</button>
+      <button className="mx-3 mb-2 rounded-lg px-3 py-2 text-left text-xs text-content-faint hover:bg-surface-2" onClick={()=>window.dispatchEvent(new Event("geny:setup"))}>{t("setup.title")}</button>
       {/* Settings: always at the bottom, right above the account row */}
       <div className="px-2 pb-1.5 pt-1.5 border-t border-border/60">
         <button

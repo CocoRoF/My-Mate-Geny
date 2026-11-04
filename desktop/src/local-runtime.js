@@ -27,7 +27,7 @@ function createLocalRuntime({root,dataDir,cookies,log=()=>{},onCrash=()=>{},pref
     else{
       // Providers can create separate process groups. Kill descendants before their parent disappears.
       try{const m=manifest();spawnSync(path.join(root,m.python),['-c',
-        'import psutil,sys; p=psutil.Process(int(sys.argv[1])); children=p.children(recursive=True); [(c.kill() if c.is_running() else None) for c in reversed(children)]; p.kill()',String(proc.pid)],
+        'import psutil,sys\np=psutil.Process(int(sys.argv[1]))\nfor c in reversed(p.children(recursive=True)):\n try:c.kill()\n except psutil.NoSuchProcess:pass\np.kill()',String(proc.pid)],
         {timeout:1800,stdio:'ignore',env:guiEnv()});}catch{}
       try{process.kill(-proc.pid,'SIGKILL');}catch{try{proc.kill('SIGKILL');}catch{}}}
   }

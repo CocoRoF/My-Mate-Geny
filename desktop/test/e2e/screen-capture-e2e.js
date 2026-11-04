@@ -161,6 +161,7 @@ class App {
 }
 
 const fill = (server, username, password) => `(() => {
+  document.getElementById("modeServer")?.click();
   const set = (id, v) => { document.getElementById(id).value = v; };
   set("server", ${JSON.stringify(server)}); set("username", ${JSON.stringify(username)}); set("password", ${JSON.stringify(password)});
   document.getElementById("go").click();

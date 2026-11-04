@@ -129,6 +129,7 @@ if(surface==="console"&&location.protocol==="http:"){
     const saved=ipcRenderer.sendSync("local:browserState");
     if(saved){
       for(const [k,v] of Object.entries(saved))localStorage.setItem(k,v);
+      if(!localStorage.getItem("hrh_lang")&&i18n?.lang)localStorage.setItem("hrh_lang",i18n.lang);
       let last=JSON.stringify(saved);
       const save=()=>{try{const state={};for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k?.startsWith("hrh_"))state[k]=localStorage.getItem(k);}const next=JSON.stringify(state);if(next!==last){ipcRenderer.sendSync("local:browserState",state);last=next;}}catch{}};
       setInterval(save,1000);window.addEventListener("pagehide",save);document.addEventListener("visibilitychange",save);
