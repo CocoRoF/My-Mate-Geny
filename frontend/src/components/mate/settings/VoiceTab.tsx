@@ -494,14 +494,14 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
     <div className="space-y-3 rounded-lg border border-border/70 bg-surface/40 p-3" data-testid={`mate-tts-details-${engine}`}>
       {engine === "browser" && <BrowserVoice mate={mate} tts={tts} set={set} sample={sample} />}
 
-      {engine === "openai" && (
+      {(engine === "openai" || engine === "google") && (
         <>
           <Field label={t("mateSettings.voiceModel")} as="div">
             <SearchSelect
               value={tts.model}
               onChange={(model) => set({ model })}
               options={(models.data?.models ?? []).map((m) => ({ value: m.id, label: m.name, sub: m.description ?? m.id }))}
-              noneLabel={t("mateSettings.voiceDefaultX", { x: models.data?.default || "gpt-4o-mini-tts" })}
+              noneLabel={t("mateSettings.voiceDefaultX", { x: models.data?.default || (engine === "google" ? "Gemini" : "gpt-4o-mini-tts") })}
               loading={models.busy}
               testId="mate-tts-model"
             />
@@ -510,10 +510,10 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
             label={t("mateSettings.voiceVoice")}
             value={tts.voice}
             onChange={(voice) => set({ voice })}
-            noneLabel={t("mateSettings.voiceDefaultX", { x: "Alloy" })}
+            noneLabel={t("mateSettings.voiceDefaultX", { x: engine === "google" ? "Kore" : "Alloy" })}
             voices={voices}
             toOption={(x) => {
-              const model = tts.model || models.data?.default || "gpt-4o-mini-tts";
+              const model = tts.model || models.data?.default || (engine === "google" ? "Gemini" : "gpt-4o-mini-tts");
               const can = !x.models || x.models.includes(model);
               return { value: x.id, label: x.name, sub: can ? x.description : `${x.description ?? ""} · ${t("mateSettings.voiceOnlyMini")}`, disabled: !can };
             }}
@@ -796,10 +796,10 @@ function OmniVoice({ mate, tts, set, voices }: { mate: Mate; tts: Tts; set: (p: 
 function SttDetails({ mate, stt, set, ready }: { mate: Mate; stt: Stt; set: (p: Partial<Stt>) => void; ready: boolean }) {
   const t = useT();
   const engine = stt.engine;
-  const models = useFetched<ModelList>(ready && (engine === "openai" || engine === "whisper") ? `models:${engine}:stt` : null, () => listModels(engine, "stt"));
+  const models = useFetched<ModelList>(ready && (engine === "openai" || engine === "whisper" || engine === "google") ? `models:${engine}:stt` : null, () => listModels(engine, "stt"));
   return (
     <div className="space-y-3 rounded-lg border border-border/70 bg-surface/40 p-3" data-testid={`mate-stt-details-${engine}`}>
-      {(engine === "openai" || engine === "whisper") && (
+      {(engine === "openai" || engine === "whisper" || engine === "google") && (
         <Field label={t("mateSettings.voiceModel")} as="div" hint={engine === "whisper" && models.data && !models.data.models.length ? t("mateSettings.voiceNoModelsStt") : undefined}>
           <SearchSelect
             value={stt.model}

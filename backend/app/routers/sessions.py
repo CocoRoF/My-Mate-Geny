@@ -64,7 +64,7 @@ async def update_session(
             sid, provider=body.provider, model=body.model, effort=body.effort,
             mode=body.mode, folders=folders, title=body.title,
             auto_compact_window=body.auto_compact_window, account_id=body.account_id,
-            higgsfield=body.higgsfield,
+            higgsfield=body.higgsfield, mcp=body.mcp,
         )
     except folder_routing.FolderError as exc:
         raise HTTPException(status_code=exc.status, detail=str(exc)) from exc

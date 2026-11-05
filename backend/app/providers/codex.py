@@ -138,6 +138,13 @@ class CodexProvider(Provider):
             if env:
                 table = ", ".join(f"{json.dumps(str(k))} = {json.dumps(str(v))}" for k, v in env.items())
                 out += ["-c", f"mcp_servers.{name}.env={{{table}}}"]
+            if name.startswith("geny_") and isinstance(spec.get("timeout"), int):
+                # The managed gateway owns the real timeout; do not let Codex's
+                # default 60 seconds expire before its response arrives.
+                out += ["-c", f"mcp_servers.{name}.tool_timeout_sec={(spec['timeout'] + 999) // 1000}",
+                        "-c", f"mcp_servers.{name}.startup_timeout_sec=35"]
+        if any(name.startswith("geny_") for name in servers):
+            out += ["-c", "mcp_optional_startup_grace_ms=0"]
         return out
 
     def _build_prompt(self, req: TurnRequest) -> bytes:

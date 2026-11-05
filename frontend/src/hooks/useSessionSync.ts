@@ -4,6 +4,7 @@ import { sharingSnapshot, stopOwnedSharing, resumeSharing } from "../mate/localS
 import { useEffect } from "react";
 import { toLogin, wsUrl } from "../api/client";
 import { onResync } from "../lib/sync";
+import { useMcpStore } from "../stores/mcpStore";
 import { useCliToolsStore } from "../stores/cliToolsStore";
 import { useMateStore } from "../stores/mateStore";
 import { cancelCaptureRequest, clientHello, handleCaptureRequest } from "../mate/screenCapture";
@@ -87,6 +88,7 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
           cancelCaptureRequest(msg.data);
           return;
         }
+        if (msg.type === "mcp.changed" || msg.type === "hello") void useMcpStore.getState().load();
         if (msg.type === "cli.changed" || msg.type === "cli.log") {
           // Settings → Providers → CLI versions: a status change / an upgrade's new log lines (stores/cliToolsStore.ts)
           useCliToolsStore.getState().remote(msg as { type: string; data?: Record<string, unknown> });

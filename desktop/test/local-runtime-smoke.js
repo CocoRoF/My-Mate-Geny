@@ -17,6 +17,10 @@ const rt=createLocalRuntime({root,dataDir:path.join(temp,'state'),cookies:{set:a
  const api=async(route,options={})=>{const r=await fetch(origin+route,{...options,headers:{Authorization:'Bearer '+cookie.value,...options.headers}});return {status:r.status,data:await r.json()};};
  assert.equal((await fetch(origin+'/health')).status,200);
  assert.equal((await api('/api/config')).data.execution_mode,'local');
+ const catalog=await api('/api/mcp');assert.equal(catalog.status,200);assert.equal(catalog.data.execution_mode,'local');assert.deepEqual(catalog.data.items,[]);
+ const registered=await api('/api/mcp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Packaged MCP smoke',command:'unused-disabled-fixture',enabled:false,env:{FIXTURE_KEY:'smoke-only'}})});
+ assert.equal(registered.status,200);assert.equal(registered.data.state,'disabled');assert.equal(registered.data.env.FIXTURE_KEY,null);
+ assert.equal((await api('/api/mcp/'+registered.data.id,{method:'DELETE'})).status,200);
  const setup=await api('/api/setup');assert.equal(setup.status,200);assert.deepEqual(setup.data.tools.map(t=>t.id),['claude','codex']);
  assert.equal(setup.data.tools[0].installed,true);assert.match(setup.data.tools[0].version,/0\.0\.1/);
  assert.equal((await api('/api/local/bootstrap',{method:'POST'})).status,403);

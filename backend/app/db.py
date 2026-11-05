@@ -362,6 +362,7 @@ class Database:
                 ("last_result", "TEXT"),
                 ("last_result_at", "TEXT"),
                 ("last_seen_at", "TEXT"),
+                ("mcp", "TEXT NOT NULL DEFAULT '{}'"),
                 ("higgsfield", "TEXT"),  # the chat's Higgsfield settings (JSON; NULL = defaults)
             ):
                 if col not in cols:

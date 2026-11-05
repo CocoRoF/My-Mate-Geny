@@ -562,6 +562,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # proxy hop, and a live per-conversation token — never the cookie.
             if not internal_caller_ok(request):
                 return JSONResponse({"detail": "not found"}, status_code=404)
+            if path.startswith(INTERNAL_PREFIX + "mcp/"):
+                mcp = getattr(request.app.state, "mcp", None)
+                if mcp is None or mcp.token_info(request.headers.get("x-mcp-token")) is None:
+                    return JSONResponse({"detail": "invalid mcp token"}, status_code=401)
+                return await call_next(request)
             if path.startswith(INTERNAL_PREFIX + "screen/"):
                 screens = getattr(request.app.state, "screen_service", None)
                 if screens is None or screens.token_info(request.headers.get("x-screen-token")) is None:

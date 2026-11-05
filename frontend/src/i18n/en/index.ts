@@ -1,3 +1,4 @@
+import mcp from "./mcp.ts";
 import setup from "./setup.ts";
 import screen from "./screen.ts";
 // The English messages — the source of every key (docs/i18n.md). One file per namespace.
@@ -24,6 +25,6 @@ import turn from "./turn.ts";
 import usage from "./usage.ts";
 import workspace from "./workspace.ts";
 
-const en = { setup, screen, admin, avatar, chat, cliTools, common, composer, connections, downloads, files, higgsfield, mate, mateSettings, nav, providers, session, settings, studio, tasks, topbar, turn, usage, workspace };
+const en = { mcp, setup, screen, admin, avatar, chat, cliTools, common, composer, connections, downloads, files, higgsfield, mate, mateSettings, nav, providers, session, settings, studio, tasks, topbar, turn, usage, workspace };
 export type Catalog = typeof en;
 export default en;

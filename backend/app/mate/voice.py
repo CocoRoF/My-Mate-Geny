@@ -133,7 +133,7 @@ class Speech:
         self.body, self.media_type, self.cached, self.fallback = body, media_type, cached, fallback
 
 
-def _need(value: str, what: str, where: str = "Global settings → Voice services") -> str:
+def _need(value: str, what: str, where: str = "Settings → Image and voice providers") -> str:
     if not value:
         raise MateError(f"{what} is not set — add it in {where}")
     return value
@@ -248,6 +248,9 @@ class VoiceService:
             raise MateError(f"text is longer than {MAX_TEXT} characters")
         emotion = re.sub(r"[^a-z_-]", "", (emotion or "").lower())[:24]  # an emotion tag, nothing else
         cfg = self.store.settings()
+        if engine == "google" and not tts.get("model"):
+            from app.mate.google import default_model
+            tts["model"] = default_model(self.providers, "tts")
         shape = {"engine": engine, "voice": tts.get("voice"), "model": tts.get("model"), "speed": tts.get("speed"),
                  "profile": tts.get("profile"), "language": tts.get("language") or mate["persona"].get("language"),
                  "emotion": emotion, "text": text,
@@ -276,6 +279,11 @@ class VoiceService:
                 break
             p.unlink(missing_ok=True)
             total -= size
+
+    async def _tts_google(self, tts, text, shape, cfg):
+        from app.mate.google import speech
+        return await speech(_need(self.store.secret("google_key"), "The Gemini API key"), tts["model"], text,
+                            tts.get("voice"), float(tts.get("speed") or 1))
 
     async def _tts_openai(self, tts: dict, text: str, shape: dict, cfg: dict) -> tuple[bytes, str]:
         key = _need(self.store.secret("openai_key"), "The OpenAI API key")
@@ -344,6 +352,8 @@ class VoiceService:
                 return engine
         if eleven and self.providers.configured("elevenlabs"):
             return "elevenlabs"
+        if self.providers.configured("google"):
+            return "google"
         return None
 
     async def realtime_token(self, mate: dict[str, Any]) -> dict[str, Any]:
@@ -405,9 +415,9 @@ class VoiceService:
             engine = self.stt_fallback()
             if engine is None:
                 raise MateError("no speech-to-text service on the server can transcribe a recording "
-                                "(set up Whisper, OpenAI or ElevenLabs in Global settings → Voice services)")
+                                "(set up Whisper, OpenAI, Google or ElevenLabs in Settings → Image and voice providers)")
         elif engine:
-            if engine not in ("openai", "whisper", "elevenlabs"):
+            if engine not in ("openai", "whisper", "elevenlabs", "google"):
                 raise MateError(f"unknown stt engine: {engine}")
         else:
             engine = mine
@@ -421,6 +431,10 @@ class VoiceService:
             raise MateError(self.providers.missing_reason(engine))
         cfg = self.store.settings()
         language = (stt.get("language") or mate["persona"].get("language") or "").split("-")[0]
+        if engine == "google":
+            from app.mate.google import default_model, transcribe
+            model = (stt.get("model") if engine == mine else "") or default_model(self.providers, "stt")
+            return await transcribe(self.store.secret("google_key"), model, audio, content_type, language)
         if engine == "elevenlabs":
             key = self.store.secret("elevenlabs_key")
             fields = {"model_id": ELEVEN_BATCH_STT}
@@ -467,6 +481,9 @@ class VoiceService:
         ElevenLabs: everything in the account (premade, cloned, generated,
         added from the library) with ``category``, ``labels``, ``languages``,
         ``preview_url``; OmniVoice: its profiles with their ``emotions``."""
+        if engine == "google":
+            from app.mate.google import VOICES
+            return [{"id": v, "name": v} for v in VOICES]
         if engine == "openai":
             return openai_voices()
         if engine == "elevenlabs":

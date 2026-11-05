@@ -24,6 +24,7 @@ from app.providers.oauth import OAuthManager
 from app.providers.accounts import SESSION_CHECK_S, AccountPool, AccountStore
 from app.db import Database
 from app.routers import (
+    mcp as mcp_router,
     screen as screen_router,
     local_runtime,
     setup,
@@ -113,6 +114,10 @@ async def lifespan(app: FastAPI):
     app.state.connection_service = connection_service
     app.state.workspace_service = workspace_service
     app.state.session_service = session_service
+    from app.mcp_runtime.service import McpService
+    app.state.mcp = McpService(db, vault, session_service, logs)
+    session_service.mcp = app.state.mcp
+    await app.state.mcp.start()
     app.state.folder_uploads = FolderUploadService(session_service, workspace_service)
     app.state.session_git = SessionGit(session_service, workspace_service, app.state.git_service)
     mate_store = MateStore(db, vault)
@@ -190,6 +195,7 @@ async def lifespan(app: FastAPI):
         await system_monitor.stop()  # flushes the partial minute, marks a clean shutdown
     await app.state.speech_input.stop()
     await session_service.shutdown()  # end engines (and their background tasks) cleanly
+    await app.state.mcp.stop()
     db.close()
 
 
@@ -238,6 +244,8 @@ app.add_middleware(
 app.add_middleware(OpenCORSMiddleware)
 
 for r in (
+    mcp_router.router,
+    mcp_router.internal,
     screen_router.router,
     screen_router.internal,
     auth_router.router,

@@ -13,6 +13,7 @@ import { relPath } from "../turn/toolMeta";
 import { openPath } from "../../../stores/workbenchStore";
 import { useT } from "../../../i18n";
 import { changesOf, latestChangeTurn, CHANGE_PREVIEW_LIMIT } from "../../../lib/turnChanges";
+import McpControls from "./McpControls";
 import HiggsfieldControls, { useHiggsfieldConnected } from "./HiggsfieldControls";
 
 function Section({
@@ -240,6 +241,7 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
           {!live && <p className="mt-1 text-[11.5px] text-content-faint">{t("session.detailsLater")}</p>}
         </Section>
 
+        <Section title={t("mcp.title")} icon="plug"><McpControls session={session} /></Section>
         {hfConnected && (
           <Section title="Higgsfield" icon="sparkles">
             <HiggsfieldControls session={session} />

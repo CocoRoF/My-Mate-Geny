@@ -1,3 +1,4 @@
+import { openSettings } from "./uiStore";
 import { migrateDevicePreferences, installDevicePreferences } from "./devicePreferences";
 import { create } from "zustand";
 import {
@@ -185,7 +186,7 @@ export const useMateStore = create<MateState>((set, get) => ({
   },
   globalOpen: false,
   globalSection: "voice",
-  openGlobal: (section) => set((s) => ({ globalOpen: true, globalSection: section ?? s.globalSection })),
+  openGlobal: (section) => { if (section === "voice") { set({ globalOpen: false });openSettings("media"); } else set((s) => ({ globalOpen: true, globalSection: section ?? s.globalSection })); },
   closeGlobal: () => set({ globalOpen: false }),
 
   load: async () => {

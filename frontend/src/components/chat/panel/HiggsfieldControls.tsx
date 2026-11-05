@@ -90,7 +90,7 @@ export default function HiggsfieldControls({ session }: { session: Session }) {
         </>
       )}
       {error && <p className="text-[11px] text-danger">{error}</p>}
-      <button onClick={() => openSettings("providers")} className="flex items-center gap-1 text-[11px] text-accent hover:underline">
+      <button onClick={() => openSettings("media")} className="flex items-center gap-1 text-[11px] text-accent hover:underline">
         <Icon name="settings" size={11} /> {t("higgsfield.manage")}
       </button>
     </div>

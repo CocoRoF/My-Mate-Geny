@@ -25,7 +25,6 @@ import AccountSession, { PlanStaleNote } from "./AccountSession";
 import CliVersionsSection from "./CliVersionsSection";
 import PlanWindowBars from "../usage/PlanWindowBars";
 import UsageModal from "../usage/UsageModal";
-import HiggsfieldPanel, { HIGGSFIELD, HiggsfieldTab } from "./HiggsfieldPanel";
 
 const STRATEGIES: { id: string; label: MsgKey }[] = [
   { id: "most_remaining", label: "providers.stratMostRemaining" },
@@ -64,7 +63,7 @@ export default function ProvidersView() {
   const providers = useProviderStore((s) => s.providers);
   const catalog = useConfigStore((s) => s.catalog);
   const [tab, setTab] = useState("");
-  const providerIds = useMemo(() => Object.keys(catalog), [catalog]);
+  const providerIds = useMemo(() => Object.keys(catalog).filter(id => id === "claude" || id === "codex"), [catalog]);
 
   useEffect(() => {
     if (!tab && providerIds.length) setTab(providerIds[0]);
@@ -95,17 +94,12 @@ export default function ProvidersView() {
               </button>
             );
           })}
-          <HiggsfieldTab selected={tab === HIGGSFIELD} onPick={() => setTab(HIGGSFIELD)} />
         </div>
 
-        {tab === HIGGSFIELD ? (
-          <HiggsfieldPanel />
-        ) : (
-          tab && <ProviderPanel key={tab} provider={tab} label={catalog[tab]?.label || tab} />
-        )}
+        {tab && <ProviderPanel key={tab} provider={tab} label={catalog[tab]?.label || tab} />}
       </div>
       {/* every CLI the chats run (Claude Code, Codex, Higgsfield): installed vs latest, upgrades */}
-      <CliVersionsSection />
+      <CliVersionsSection ids={["claude", "codex"]} />
     </div>
   );
 }

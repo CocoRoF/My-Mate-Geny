@@ -29,14 +29,15 @@ TTL = 30 * 60              # re-check a provider's verification after this many 
 VERIFY_TIMEOUT = 10.0       # one verification request
 
 PROVIDERS: dict[str, dict[str, Any]] = {
+    "google": {"label": "Google Gemini", "kinds": ("tts", "stt"), "needs": ("google_key",)},
     "openai": {"label": "OpenAI", "kinds": ("tts", "stt"), "needs": ("openai_key",)},
     "elevenlabs": {"label": "ElevenLabs", "kinds": ("tts", "stt"), "needs": ("elevenlabs_key",)},
     "omnivoice": {"label": "OmniVoice", "kinds": ("tts",), "needs": ("omnivoice_url",)},
     "http": {"label": "OpenAI-compatible TTS server", "kinds": ("tts",), "needs": ("http_tts_url",)},
     "whisper": {"label": "Whisper server", "kinds": ("stt",), "needs": ("whisper_url",)},
 }
-TTS_ORDER = ("openai", "elevenlabs", "omnivoice", "http")
-STT_ORDER = ("openai", "whisper", "elevenlabs")
+TTS_ORDER = ("openai", "google", "elevenlabs", "omnivoice", "http")
+STT_ORDER = ("openai", "google", "whisper", "elevenlabs")
 # The realtime model a mate's mic streams to (ElevenLabs …/speech-to-text/realtime) and the batch model the same
 # key transcribes a recording with when the stream can't be used (docs/mate.md §5).
 ELEVEN_REALTIME_MODELS = [
@@ -139,7 +140,7 @@ class Providers:
     def missing_reason(self, provider: str) -> str:
         label = PROVIDERS[provider]["label"]
         what = "API key" if PROVIDERS[provider]["needs"][0].endswith("_key") else "URL"
-        return f"{label} isn't set up (no {what}) — add it in Global settings → Voice services"
+        return f"{label} isn't set up (no {what}) — add it in Settings → Image and voice providers"
 
     # ---- verification ----
 
@@ -179,6 +180,7 @@ class Providers:
                "ok": bool(v and v.get("ok")) if v else (False if not configured else None),
                "error": (v or {}).get("error"), "detail": (v or {}).get("detail"),
                "checked_at": (v or {}).get("checked_at")}
+        out["media_models"] = ((v or {}).get("info") or {}).get("media_models", {})
         if kind:
             out["kind"] = kind
         return out
@@ -212,7 +214,16 @@ class Providers:
         detail = "Key accepted"
         if missing:
             detail += f" — this key can't see {', '.join(missing)}"
-        return detail, {}
+        media = {"tts": [], "stt": [], "image": []}
+        for mid in ids:
+            kind = "tts" if "tts" in mid else "stt" if "transcribe" in mid or mid == "whisper-1" else "image" if "image" in mid or "dall-e" in mid else None
+            if kind:
+                media[kind].append({"id": mid, "name": mid})
+        return detail, {"media_models": media}
+
+    async def _check_google(self):
+        from app.mate.google import verify
+        return await verify(self.value("google_key"))
 
     async def _check_elevenlabs(self) -> tuple[str, dict[str, Any]]:
         resp = await netio.request("GET", f"{elevenlabs_api()}/voices", timeout=VERIFY_TIMEOUT,
@@ -304,6 +315,11 @@ class Providers:
             return out
         if not self.configured(engine):
             raise MateError(self.missing_reason(engine))
+        if engine == "google":
+            from app.mate.google import default_model
+            out["models"] = self.info("google").get("media_models", {}).get(kind) or []
+            out["default"] = default_model(self, kind)
+            return out
         if engine == "elevenlabs" and kind == "stt":
             out["models"] = ELEVEN_REALTIME_MODELS
             out["default"] = ELEVEN_REALTIME_MODELS[0]["id"]

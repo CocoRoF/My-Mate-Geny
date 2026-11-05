@@ -35,7 +35,7 @@ from app.services._ids import now_iso
 LEVELS = ("error", "warning", "info")
 SOURCES = (
     "provider", "tool", "workspace", "account", "upload",
-    "http", "ws", "auth", "client", "system", "monitor",
+    "http", "ws", "auth", "client", "system", "monitor", "mcp",
 )
 
 _MAX_MESSAGE = 4000

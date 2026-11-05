@@ -1,3 +1,4 @@
+import McpRuntime from "./system/McpRuntime";
 // Admin -> System: live host / container monitoring (docs/monitoring.md).
 //
 // Live data arrives over /ws/admin/system (a sample every 2 s, only while
@@ -94,6 +95,7 @@ function Toolbar({ range, setRange, now }: { range: ViewRange; setRange: (r: Vie
       <button onClick={() => setPaused(!paused)} className="btn-ghost px-2.5 py-1 text-[12px]" title={paused ? t("admin.resumeTitle") : t("admin.pauseTitle")}>
         <Icon name={paused ? "play" : "pause"} size={13} /> {paused ? t("admin.resume") : t("admin.pause")}
       </button>
+      <button className="btn-ghost !px-2.5 !py-1" onClick={() => document.querySelector("[data-testid=mcp-system]")?.scrollIntoView({block:"start",behavior:"smooth"})}><Icon name="plug" size={13} />{t("mcp.title")}</button>
       <StatusPill status={status} paused={paused} lastAt={lastAt} />
       {now && (
         <span className="ml-auto hidden md:inline text-[11.5px] text-content-faint truncate">
@@ -301,6 +303,7 @@ export default function SystemPanel() {
           </div>
         </div>
       </div>
+      <McpRuntime />
       <StaticCards info={info} error={error} reload={load} loading={loading} />
     </div>
   );

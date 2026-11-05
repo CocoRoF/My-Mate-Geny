@@ -11,7 +11,7 @@ import Icon from "../../ui/Icon";
 import DefaultsPanel from "./global/DefaultsPanel";
 import DesktopPanel from "./global/DesktopPanel";
 import Live2DPanel from "./global/Live2DPanel";
-import ProvidersPanel from "./global/ProvidersPanel";
+import { openSettings } from "../../../stores/uiStore";
 import { useT, type MsgKey } from "../../../i18n";
 
 export default function GlobalSettings({ onClose, section }: { onClose: () => void; section?: GlobalSection }) {
@@ -57,7 +57,7 @@ export default function GlobalSettings({ onClose, section }: { onClose: () => vo
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
         <div className="mx-auto max-w-xl space-y-4 pb-6">
-          {tab === "voice" && <ProvidersPanel />}
+          {tab === "voice" && <div className="card space-y-3 p-4"><p className="text-sm text-content-dim">{t("mcp.mediaMoved")}</p><button className="btn-primary" onClick={() => { onClose();openSettings("media"); }}>{t("mcp.mediaManage")}</button></div>}
           {tab === "live2d" && <Live2DPanel />}
           {tab === "desktop" && <DesktopPanel />}
           {tab === "defaults" && <DefaultsPanel />}

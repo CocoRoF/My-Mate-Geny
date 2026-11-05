@@ -28,10 +28,10 @@ from app.vault import SecretVault
 PERSONA_FIELDS = ("description", "personality", "greeting", "language", "instructions")
 # persona fields of older documents / clients / imports and where they live now (prefs): moved, never dropped
 LEGACY_STYLE_FIELDS = {"speech": "speech_style", "address": "address"}
-TTS_ENGINES = ("off", "browser", "openai", "elevenlabs", "omnivoice", "http")
+TTS_ENGINES = ("off", "browser", "google", "openai", "elevenlabs", "omnivoice", "http")
 # elevenlabs = Scribe v2 Realtime: the page streams the mic straight to ElevenLabs with a single-use token the
 # backend mints (app/mate/voice.py realtime_token); the key never leaves the server.
-STT_ENGINES = ("off", "browser", "openai", "whisper", "elevenlabs")
+STT_ENGINES = ("off", "browser", "google", "openai", "whisper", "elevenlabs")
 # voice.stt.silence: how long a pause ends an utterance (ElevenLabs VAD, seconds; its API takes 0.192 – 3.0)
 STT_SILENCE = (0.3, 3.0, 1.2)
 AVATAR_KINDS = ("none", "video", "photo", "live2d")
@@ -50,10 +50,10 @@ MAX_MEMORIES = 500        # active ones per mate (app/mate/memory.py MAX_ACTIVE;
 
 # Global settings: plain values (URLs) and vault-held keys.
 SETTING_URLS = ("omnivoice_url", "whisper_url", "http_tts_url")
-SETTING_KEYS = ("openai_key", "elevenlabs_key", "http_tts_key")
+SETTING_KEYS = ("google_key", "openai_key", "elevenlabs_key", "http_tts_key")
 # Which voice provider (app/mate/providers.py) each setting belongs to: a
 # change drops that provider's cached verification.
-SETTING_PROVIDERS = {"openai_key": "openai", "elevenlabs_key": "elevenlabs", "omnivoice_url": "omnivoice",
+SETTING_PROVIDERS = {"google_key": "google", "openai_key": "openai", "elevenlabs_key": "elevenlabs", "omnivoice_url": "omnivoice",
                      "whisper_url": "whisper", "http_tts_url": "http", "http_tts_key": "http"}
 _VERIFY_PREFIX = "verify:"
 _VAULT_SCOPE = "mate"

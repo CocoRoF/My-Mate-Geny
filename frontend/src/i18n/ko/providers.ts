@@ -1,7 +1,6 @@
 import type { Messages } from "..";
 
 const ko: Messages<"providers"> = {
-  intro: "엔진을 고르고 계정을 하나 이상 연결해서, 여러 계정에 부하를 나눠요.",
   stratMostRemaining: "남은 사용량이 가장 많은 계정",
   stratLeastBusy: "가장 한가한 계정",
   stratRoundRobin: "돌아가며",

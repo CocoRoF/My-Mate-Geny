@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     mate_search_roots: str = "/home"
     # Voice provider API bases (tests and self-hosted proxies point these elsewhere).
     mate_openai_base: str = "https://api.openai.com/v1"
+    mate_google_base: str = "https://generativelanguage.googleapis.com/v1beta"
     mate_elevenlabs_base: str = "https://api.elevenlabs.io/v1"
 
     # Admin error log retention (rows beyond this are pruned, oldest first).

@@ -21,6 +21,8 @@ export type SettingsTab =
   | "notifications"
   | "mate"
   | "desktop"
+  | "media"
+  | "mcp"
   | "providers"
   | "connections"
   | "usage"
@@ -35,6 +37,8 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   "mate",
   "desktop",
   "providers",
+  "media",
+  "mcp",
   "connections",
   "usage",
   "admin",

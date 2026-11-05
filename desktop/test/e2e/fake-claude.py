@@ -103,7 +103,8 @@ def call_tool(name: str, arguments: dict) -> str:
 
     cfg_arg = args[args.index("--mcp-config") + 1]
     cfg = json.load(open(cfg_arg)) if os.path.exists(cfg_arg) else json.loads(cfg_arg)
-    srv = cfg["mcpServers"]["mate"]
+    servers = cfg["mcpServers"]
+    srv = servers.get("mate") or next(value for name, value in servers.items() if name.startswith("geny_"))
     proc = subprocess.Popen([srv["command"], *srv["args"]], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             env={**os.environ, **srv.get("env", {})}, text=True)
 
@@ -112,7 +113,7 @@ def call_tool(name: str, arguments: dict) -> str:
         proc.stdin.flush()
         return json.loads(proc.stdout.readline()) if "id" in o else None
 
-    rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}})
+    rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "Geny test CLI", "version": "1.0"}}})
     rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
     out = rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": name, "arguments": arguments}})
     proc.stdin.close()
@@ -145,7 +146,7 @@ def avatar_turn(lines: list[str], intro: str | None = None) -> str:
                                                 "delta": {"type": "text_delta", "text": intro}}})
         emit({"type": "assistant", "message": {"model": model, "content": [{"type": "text", "text": intro}]}})
     try:
-        rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}})
+        rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "Geny test CLI", "version": "1.0"}}})
         rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
         for k, line in enumerate(lines):
             m = re.match(r"^atool:(\w+)\s*(\{.*\})?\s*$", line.strip())
@@ -317,7 +318,7 @@ def see_screen_turn(local=False) -> str:
         return json.loads(proc.stdout.readline()) if "id" in o else None
 
     try:
-        rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}})
+        rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "Geny test CLI", "version": "1.0"}}})
         rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
         names = [t["name"] for t in (rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}) or {})["result"]["tools"]]
         if tool_name not in names:

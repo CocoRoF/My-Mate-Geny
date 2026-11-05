@@ -12,7 +12,7 @@ import Icon from "../ui/Icon";
  * latest, "Check now", an upgrade with its live log (pushed over /ws/sessions: stores/cliToolsStore.ts), "when idle",
  * pin / roll back, automatic upgrades. Backend: app/services/cli_tools.
  */
-export default function CliVersionsSection() {
+export default function CliVersionsSection({ ids }: { ids?: string[] } = {}) {
   const t = useT();
   const local=useConfigStore(s=>s.executionMode)==="local";
   const installations=useInstallations();
@@ -69,7 +69,7 @@ export default function CliVersionsSection() {
 
       <Dependencies installations={installations} otherJob={jobActive}/>
       <div className="mt-3 space-y-2.5">
-        {status?.tools.map((tool) => (
+        {status?.tools.filter(tool => !ids || ids.includes(tool.id)).map((tool) => (
           <ToolRow installations={installations} key={tool.id} tool={tool} running={status.running_chats} otherJob={jobActive && !tool.job?.active} memCap={status.mem_cap} prefix={status.managed_prefix} />
         ))}
       </div>

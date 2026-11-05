@@ -14,9 +14,9 @@ export interface Persona {
   instructions: string;
 }
 
-export type TtsEngine = "off" | "browser" | "openai" | "elevenlabs" | "omnivoice" | "http";
+export type TtsEngine = "google" | "off" | "browser" | "openai" | "elevenlabs" | "omnivoice" | "http";
 /** elevenlabs = Scribe v2 Realtime (live transcript while speaking; the page streams with a server-minted token) */
-export type SttEngine = "off" | "browser" | "openai" | "whisper" | "elevenlabs";
+export type SttEngine = "google" | "off" | "browser" | "openai" | "whisper" | "elevenlabs";
 
 export interface MateVoice {
   auto_read: boolean;
@@ -346,6 +346,7 @@ export interface RecallPreview {
 }
 
 export interface VoiceSettings {
+  google_key_set?: boolean;
   openai_key_set: boolean;
   elevenlabs_key_set: boolean;
   omnivoice_url: string;
@@ -358,6 +359,7 @@ export interface VoiceSettings {
 
 export type VoiceSettingsPatch = Partial<{
   timezone: string;
+  google_key: string | null;
   openai_key: string | null;
   elevenlabs_key: string | null;
   http_tts_key: string | null;
@@ -405,6 +407,7 @@ export interface ModelList {
 
 /** a voice provider set up in Global settings (GET /api/mates/providers) */
 export interface ProviderStatus {
+  media_models?: Record<string, { id: string; name: string }[]>;
   engine: string;
   label: string;
   kind?: "tts" | "stt";

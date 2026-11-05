@@ -22,6 +22,7 @@ export const TTS_ENGINES: EngineInfo<TtsEngine>[] = [
   { id: "off", label: "common.off", hint: "mateSettings.engTtsOffHint", provider: false },
   { id: "browser", label: "mateSettings.engTtsBrowser", hint: "mateSettings.engTtsBrowserHint", provider: false },
   { id: "openai", label: "mateSettings.engOpenai", hint: "mateSettings.engTtsOpenaiHint", provider: true },
+  { id: "google", label: "mcp.google", hint: "mcp.googleTtsHint", provider: true },
   { id: "elevenlabs", label: "mateSettings.engElevenlabs", hint: "mateSettings.engTtsElevenHint", provider: true },
   { id: "omnivoice", label: "mateSettings.engOmnivoice", hint: "mateSettings.engTtsOmniHint", provider: true },
   { id: "http", label: "mateSettings.engHttp", hint: "mateSettings.engTtsHttpHint", provider: true },
@@ -31,6 +32,7 @@ export const STT_ENGINES: EngineInfo<SttEngine>[] = [
   { id: "off", label: "common.off", hint: "mateSettings.engSttOffHint", provider: false },
   { id: "browser", label: "mateSettings.engSttBrowser", hint: "mateSettings.engSttBrowserHint", provider: false },
   { id: "openai", label: "mateSettings.engOpenai", hint: "mateSettings.engSttOpenaiHint", provider: true },
+  { id: "google", label: "mcp.google", hint: "mcp.googleSttHint", provider: true },
   { id: "whisper", label: "mateSettings.engWhisper", hint: "mateSettings.engSttWhisperHint", provider: true },
   { id: "elevenlabs", label: "mateSettings.engElevenRealtime", hint: "mateSettings.engSttElevenHint", provider: true },
 ];

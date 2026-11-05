@@ -54,6 +54,8 @@ import { GROUPS, isAndroidApp, isDesktopApp, visibleTabs, type TabMeta } from ".
 
 // the tabs that were screens of their own: loaded with their tab
 const DownloadsView = lazy(() => import("../downloads/DownloadsView"));
+const McpView = lazy(() => import("../mcp/McpView"));
+const MediaProvidersView = lazy(() => import("../providers/MediaProvidersView"));
 const ProvidersView = lazy(() => import("../providers/ProvidersView"));
 const ConnectionsView = lazy(() => import("../connections/ConnectionsView"));
 const UsageView = lazy(() => import("../usage/UsageView"));
@@ -749,6 +751,10 @@ function TabContent({ id }: { id: SettingsTab }) {
       return <MateSection />;
     case "desktop":
       return <DesktopSection />;
+    case "mcp":
+      return <McpView />;
+    case "media":
+      return <MediaProvidersView />;
     case "providers":
       return <ProvidersView />;
     case "connections":
@@ -775,8 +781,9 @@ function TabButton({ tab, selected, list, onPick }: { tab: TabMeta; selected: bo
   // …or an account's login needs a sign-in (its card's session row says which)
   const needsSession = useProviderStore((s) => sessionsNeedAttention(s.providers));
   // …or a newer CLI version can be installed (Providers → CLI versions)
-  const needsCli = useCliToolsStore((s) => cliUpdatesNeedAttention(s.status?.tools));
-  const badge = tab.id === "providers" && (needsProvider || needsSession || needsCli);
+  const needsCli = useCliToolsStore((s) => cliUpdatesNeedAttention(s.status?.tools.filter(tool => tool.id === "claude" || tool.id === "codex")));
+  const needsMediaCli = useCliToolsStore((s) => cliUpdatesNeedAttention(s.status?.tools.filter(tool => tool.id === "higgsfield")));
+  const badge = tab.id === "providers" ? (needsProvider || needsSession || needsCli) : tab.id === "media" && needsMediaCli;
   return (
     <button
       id={`settings-tab-${tab.id}`}
@@ -790,7 +797,7 @@ function TabButton({ tab, selected, list, onPick }: { tab: TabMeta; selected: bo
     >
       <Icon name={tab.icon} size={16} className="shrink-0 text-content-faint group-hover:text-content-dim group-data-[active=true]:text-accent" />
       <span className="min-w-0 flex-1 truncate">{t(tab.label)}</span>
-      <Badge on={badge} title={t(needsProvider ? "nav.providersNone" : needsSession ? "nav.sessionsNeedLogin" : "cliTools.badge")} />
+      <Badge on={badge} title={t(tab.id !== "providers" ? "cliTools.badge" : needsProvider ? "nav.providersNone" : needsSession ? "nav.sessionsNeedLogin" : "cliTools.badge")} />
       {list && <Icon name="chevron" size={14} className="shrink-0 text-content-faint" />}
     </button>
   );

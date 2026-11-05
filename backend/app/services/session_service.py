@@ -153,6 +153,7 @@ class SessionService:
         self.persistent_engines = True  # Claude: one long-lived CLI process per chat
         # Higgsfield for the chats' agents (app.higgsfield.agent; main.py sets it). None = not wired.
         self.screen: Any = None
+        self.mcp = None
         self.higgsfield: HiggsfieldAgent | None = None
         self._hf_note: dict[str, str] = {}  # sid -> the Higgsfield note Codex was last told (in its message)
         # Latest plan usage an engine reported (rate_limit_event), per account
@@ -274,6 +275,7 @@ class SessionService:
         auto_compact_window: int | None = None,
         account_id: str | None = None,
         higgsfield: dict[str, Any] | None = None,
+        mcp: dict[str, bool] | None = None,
     ) -> dict[str, Any]:
         """Change engine/model/think level/mode/folders mid-conversation.
         Switching provider resets the provider-side session id.
@@ -287,6 +289,17 @@ class SessionService:
         session = self.get(sid)
         sets: list[str] = []
         params: list[Any] = []
+        if mcp is not None:
+            if self.mcp is None:
+                raise ValueError("mcp_unavailable")
+            self.mcp.selection(mcp)
+            selected = {**session.get("mcp", {}), **mcp}
+            sets.append("mcp = ?")
+            params.append(json.dumps(selected))
+            for mid, enabled in mcp.items():
+                if not enabled:
+                    self.mcp.revoke(sid=sid, mid=mid)
+                self.mcp.log(mid, "info", "session_enabled" if enabled else "session_disabled", sid=sid)
         if higgsfield is not None:
             hf = clean_settings(higgsfield, session.get("higgsfield"))
             sets.append("higgsfield = ?")
@@ -373,7 +386,7 @@ class SessionService:
 
     def _row(self, row: Any) -> dict[str, Any]:
         d = dict(row)
-        for key, empty in (("cli_info", {}), ("cli_sessions", {}), ("accounts", {})):
+        for key, empty in (("cli_info", {}), ("cli_sessions", {}), ("accounts", {}), ("mcp", {})):
             try:
                 d[key] = json.loads(d.get(key) or json.dumps(empty))
             except ValueError:
@@ -434,6 +447,8 @@ class SessionService:
         self._hf_note.pop(sid, None)
         if self.higgsfield is not None:
             self.higgsfield.forget(sid)
+        if self.mcp is not None:
+            self.mcp.revoke(sid=sid)
         self._db.execute("DELETE FROM sessions WHERE id = ?", (sid,))
         if self._attachments is not None:
             self._attachments.purge_session(sid)
@@ -942,6 +957,8 @@ class SessionService:
             return False
 
     def stop(self, sid: str) -> bool:
+        if self.mcp is not None:
+            self.mcp.revoke(sid=sid)
         remote_stopped = self.remote_jobs.cancel(sid)
         if getattr(self, "speech_input", None):
             self.speech_input.cancel(sid)
@@ -1226,6 +1243,8 @@ class SessionService:
             system_append=hf.prompt if hf is not None else "",
             plugin_dirs=list(hf.plugin_dirs) if hf is not None else [],
         )
+        if self.mcp is not None and session.get("kind") not in ("mate", "avatar"):
+            self.mcp.configure(sid, req)
         if self.screen is not None and session.get("kind") not in ("mate", "avatar"):
             self.screen.configure(sid, req)
         if provider_name == "codex" and req.system_append:

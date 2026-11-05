@@ -2,7 +2,6 @@
 export default {
   mate: "Mate",
   chat: "Chat",
-  providers: "Providers",
   connections: "Connections",
   usage: "Usage",
   admin: "Admin",

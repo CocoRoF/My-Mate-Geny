@@ -49,7 +49,7 @@ def client():
     with TestClient(app) as c:
         assert c.post("/api/auth/login", json={"username": "admin", "password": "test-pass"}).status_code == 200
         # a clean slate: no keys/URLs (other tests share the DB)
-        c.put("/api/mates/settings", json={"openai_key": None, "elevenlabs_key": None, "http_tts_key": None,
+        c.put("/api/mates/settings", json={"google_key": None, "openai_key": None, "elevenlabs_key": None, "http_tts_key": None,
                                            "omnivoice_url": "", "whisper_url": "", "http_tts_url": ""})
         yield c
 
@@ -69,8 +69,8 @@ def _by(doc, kind, engine):
 
 def test_nothing_configured(client, http):
     doc = client.get("/api/mates/providers").json()
-    assert [p["engine"] for p in doc["tts"]] == ["openai", "elevenlabs", "omnivoice", "http"]
-    assert [p["engine"] for p in doc["stt"]] == ["openai", "whisper", "elevenlabs"]
+    assert [p["engine"] for p in doc["tts"]] == ["openai", "google", "elevenlabs", "omnivoice", "http"]
+    assert [p["engine"] for p in doc["stt"]] == ["openai", "google", "whisper", "elevenlabs"]
     for p in doc["tts"] + doc["stt"]:
         assert p["configured"] is False and p["ok"] is False and p["error"] is None and p["checked_at"] is None
     assert http.calls == []
@@ -177,10 +177,10 @@ def test_whisper_fallbacks_and_default_model(client, http):
     assert http.calls[-1]["url"] == "http://stt.local:8001/v1/audio/transcriptions"
     # (multipart body is in data, not recorded here) — the model sent is checked through the service directly
     assert app.state.voice_service.providers.default_model("whisper") == "openai/whisper-large-v3"
-    # whisper URL removed: a clear 400 pointing at Global settings
+    # Missing credentials point to the provider settings' new location.
     client.put("/api/mates/settings", json={"whisper_url": ""})
     r = client.post(f"/api/mates/{mid}/transcribe", files={"file": ("a.webm", b"x", "audio/webm")})
-    assert r.status_code == 400 and "Global settings" in r.json()["detail"]
+    assert r.status_code == 400 and "Settings → Image and voice providers" in r.json()["detail"]
 
 
 def test_http_tts_server(client, http):

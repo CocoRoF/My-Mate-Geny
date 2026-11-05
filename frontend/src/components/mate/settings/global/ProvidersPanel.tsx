@@ -10,13 +10,13 @@ import { tr, useT, type MsgKey } from "../../../../i18n";
 import Icon from "../../../ui/Icon";
 import { ErrorLine, Field, Section, StatusBadge } from "../ui";
 
-type KeyName = "openai_key" | "elevenlabs_key" | "http_tts_key";
+type KeyName = "openai_key" | "elevenlabs_key" | "http_tts_key" | "google_key";
 type UrlName = "omnivoice_url" | "whisper_url" | "http_tts_url";
 
 interface CardSpec {
   engine: string;
   title: MsgKey;
-  kinds: ("Speaking" | "Listening")[];
+  kinds: ("Speaking" | "Listening" | "Images")[];
   hint: MsgKey;
   link?: { href: string; label: MsgKey };
   url?: { name: UrlName; label: MsgKey; placeholder: string; hint?: MsgKey };
@@ -24,10 +24,13 @@ interface CardSpec {
 }
 
 const CARDS: CardSpec[] = [
+  { engine: "google", title: "mcp.google", kinds: ["Speaking", "Listening", "Images"], hint: "mcp.googleHint",
+    link: { href: "https://aistudio.google.com/apikey", label: "mateSettings.provGetKey" },
+    key: { name: "google_key", label: "mateSettings.provApiKey" } },
   {
     engine: "openai",
     title: "mateSettings.engOpenai",
-    kinds: ["Speaking", "Listening"],
+    kinds: ["Speaking", "Listening", "Images"],
     hint: "mateSettings.provOpenaiHint",
     link: { href: "https://platform.openai.com/api-keys", label: "mateSettings.provGetKey" },
     key: { name: "openai_key", label: "mateSettings.provApiKey", placeholder: "sk-…" },
@@ -72,7 +75,8 @@ export function statusOf(p: ProviderStatus | undefined, busy = false): { status:
   return p.ok ? { status: "ok", label: tr("common.connected") } : { status: "error", label: tr("common.error") };
 }
 
-export default function ProvidersPanel() {
+export default function ProvidersPanel({ engines }: { engines?: string[] } = {}) {
+  const cards = CARDS.filter(c => !engines || engines.includes(c.engine));
   const t = useT();
   const [s, setS] = useState<VoiceSettings | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -80,11 +84,11 @@ export default function ProvidersPanel() {
   const loading = useMateStore((x) => x.providersLoading);
   const provErr = useMateStore((x) => x.providersError);
   useEffect(() => {
-    getVoiceSettings()
-      .then(setS)
-      .catch((e) => setErr((e as Error).message));
-    void useMateStore.getState().loadProviders();
-  }, []);
+    let active = true;
+    getVoiceSettings().then(value => { if (active) setS(value); }).catch((e) => { if (active) setErr((e as Error).message); });
+    return () => { active = false; };
+  }, [providers]);
+  useEffect(() => { void useMateStore.getState().loadProviders(); }, []);
   const find = (engine: string) => providers?.tts.find((p) => p.engine === engine) ?? providers?.stt.find((p) => p.engine === engine);
 
   return (
@@ -99,7 +103,7 @@ export default function ProvidersPanel() {
         }
       >
         <div className="flex flex-wrap gap-1.5 text-[11.5px]" data-testid="mate-providers-summary">
-          {CARDS.map((c) => {
+          {cards.map((c) => {
             const st = statusOf(find(c.engine), loading && !providers);
             return (
               <StatusBadge key={c.engine} status={st.status}>
@@ -111,7 +115,7 @@ export default function ProvidersPanel() {
         <ErrorLine text={err || provErr} />
       </Section>
       {s &&
-        CARDS.map((c) => <ProviderCard key={c.engine} spec={c} settings={s} status={find(c.engine)} onSettings={setS} />)}
+        cards.map((c) => <ProviderCard key={c.engine} spec={c} settings={s} status={find(c.engine)} onSettings={setS} />)}
     </>
   );
 }
@@ -179,7 +183,7 @@ function ProviderCard({ spec, settings, status, onSettings }: { spec: CardSpec; 
           {spec.kinds.map((k) => (
             <span key={k} className="rounded bg-surface-3 px-1.5 py-px text-[10.5px] font-medium text-content-dim">
               <Icon name={k === "Speaking" ? "volume" : "mic"} size={10} className="-mt-px mr-0.5 inline" />
-              {k === "Speaking" ? t("mateSettings.voiceSpeaking") : t("mateSettings.provListening")}
+              {k === "Images" ? t("mcp.images") : k === "Speaking" ? t("mateSettings.voiceSpeaking") : t("mateSettings.provListening")}
             </span>
           ))}
         </span>
@@ -258,6 +262,7 @@ function ProviderCard({ spec, settings, status, onSettings }: { spec: CardSpec; 
           {status.checked_at && <span className="ml-1.5 text-content-faint">· {t("mateSettings.provChecked", { when: relTime(status.checked_at) })}</span>}
         </div>
       )}
+      {status?.media_models && Object.values(status.media_models).some(items => items.length > 0) && <details className="rounded-lg border border-border p-3 text-xs"><summary className="cursor-pointer font-medium">{t("mcp.modelCatalog")}</summary><div className="mt-2 max-h-64 space-y-2 overflow-y-auto">{Object.entries(status.media_models).map(([kind, models]) => models.length > 0 && <div key={kind}><p className="mb-1 text-content-faint">{t(kind === "image" ? "mcp.images" : kind === "tts" ? "mateSettings.voiceSpeaking" : "mateSettings.provListening")}</p><div className="flex flex-wrap gap-1">{models.map(model => <span key={model.id} className="pill max-w-full truncate bg-surface-3 font-mono" title={model.name}>{model.id}</span>)}</div></div>)}</div></details>}
       <ErrorLine text={err} />
       <div className="flex flex-wrap items-center justify-end gap-2">
         {configured && (

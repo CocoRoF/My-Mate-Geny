@@ -3,7 +3,6 @@ import type { Messages } from "..";
 const ko: Messages<"nav"> = {
   mate: "메이트",
   chat: "채팅",
-  providers: "공급자",
   connections: "연결",
   usage: "사용량",
   admin: "관리자",
