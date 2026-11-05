@@ -65,6 +65,15 @@ class DesktopSetup:
             if await proc.wait():raise RuntimeError(f'Installer failed (exit {proc.returncode}); see the log')
         finally:
             if proc.returncode is None:await asyncio.to_thread(_kill_group,proc);await proc.wait()
+    async def _install_npm(self,tool,job,dependencies):
+        if not managed_node.status()['installed']:
+            if not dependencies:raise RuntimeError('node_required: install Node.js/npm in Providers and retry')
+            await managed_node.install(job)
+        job['step']='providerInstall';npm=managed_node.which('npm')
+        if not npm:raise RuntimeError('node_required')
+        await self._exec(child_command(npm,['install','--global','--prefix',T.managed_prefix(),'--no-audit','--no-fund',T.TOOLS[tool].pkg+'@latest']),job,Path.home())
+        if not Path(T.managed_binary(tool)).is_file():raise RuntimeError('CLI binary was not found after installation')
+        T.update_state(tool,use_managed=True)
     async def _install(self,tool,dependencies=False):
         job=self.jobs[tool]
         try:
@@ -73,23 +82,27 @@ class DesktopSetup:
                     if tool!='node' and not dependencies:raise RuntimeError('node_required')
                     await managed_node.install(job)
                 if tool=='higgsfield':
-                    job['step']='providerInstall';npm=managed_node.which('npm')
-                    if not npm:raise RuntimeError('node_required')
-                    await self._exec(child_command(npm,['install','--global','--prefix',T.managed_prefix(),'--no-audit','--no-fund','@higgsfield/cli@latest']),job,Path.home())
-                    if not Path(T.managed_binary(tool)).is_file():raise RuntimeError('Higgsfield binary was not found after installation')
-                    T.update_state(tool,use_managed=True)
+                    await self._install_npm(tool,job,dependencies)
                 elif tool!='node':
-                    suffix='.ps1' if os.name=='nt' else '.sh'
-                    async with httpx.AsyncClient(follow_redirects=True,timeout=60) as client:
-                        response=await client.get(TOOLS[tool][1]+suffix);response.raise_for_status();content=response.content
-                    if not content or len(content)>2_000_000:raise RuntimeError('Invalid installer response')
-                    target=settings.home_dir/'setup';target.mkdir(parents=True,exist_ok=True)
-                    with tempfile.TemporaryDirectory(dir=target) as directory:
-                        script=Path(directory)/('install'+suffix);script.write_bytes(content)
-                        shell=shutil.which('powershell') or shutil.which('pwsh') if os.name=='nt' else shutil.which('bash' if tool=='claude' else 'sh')
-                        if not shell:raise RuntimeError('The official installer shell is missing')
-                        args=['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',str(script)] if os.name=='nt' else [str(script)]
-                        await self._exec([shell,*args],job,directory)
+                    try:
+                        suffix='.ps1' if os.name=='nt' else '.sh'
+                        async with httpx.AsyncClient(follow_redirects=True,timeout=60) as client:
+                            response=await client.get(TOOLS[tool][1]+suffix);response.raise_for_status();content=response.content
+                        if not content or len(content)>2_000_000 or content.lstrip().lower().startswith((b'<html',b'<!doctype')):raise RuntimeError('Invalid installer response')
+                        target=settings.home_dir/'setup';target.mkdir(parents=True,exist_ok=True)
+                        with tempfile.TemporaryDirectory(dir=target) as directory:
+                            script=Path(directory)/('install'+suffix);script.write_bytes(content)
+                            shell=shutil.which('powershell') or shutil.which('pwsh') if os.name=='nt' else shutil.which('bash' if tool=='claude' else 'sh')
+                            if not shell:raise RuntimeError('The official installer shell is missing')
+                            args=['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',str(script)] if os.name=='nt' else [str(script)]
+                            await self._exec([shell,*args],job,directory)
+                    except (httpx.HTTPError,OSError,RuntimeError) as exc:
+                        # Official installers may be blocked or depend on a shell/curl that a new PC lacks.
+                        # npm packages are also official and stay inside the app-owned prefix.
+                        if resolve_path(T.effective_binary(tool)):
+                            raise RuntimeError('An installation appeared while preparing; keeping it unchanged') from exc
+                        job['log'].append(f'Native installer unavailable ({type(exc).__name__}); using the official npm package.')
+                        await self._install_npm(tool,job,dependencies)
                 if tool!='node' and not resolve_path(T.effective_binary(tool)):raise RuntimeError('Installation finished but the CLI could not be detected; check the log')
                 self.versions.pop(tool,None);job.update(phase='done',step='done')
         except asyncio.CancelledError:job.update(phase='cancelled',error='')

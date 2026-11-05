@@ -88,3 +88,29 @@ def test_installed_node_reaches_session_and_login_subprocesses(monkeypatch,tmp_p
     assert runner._build_env()['PATH'].split(os.pathsep)[0]==expected
     assert native_login._env()['PATH'].split(os.pathsep)[0]==expected
     assert OAuthManager()._env()['PATH'].split(os.pathsep)[0]==expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('tool,package',[('claude','@anthropic-ai/claude-code@latest'),('codex','@openai/codex@latest')])
+async def test_blocked_native_installer_falls_back_to_official_app_owned_npm(monkeypatch,tmp_path,tool,package):
+    from app.services import desktop_setup as setup
+    installed={'node':False,'tool':False};events=[]
+    monkeypatch.setattr(setup,'resolve_path',lambda b:str(tmp_path/'provider') if installed['tool'] else None)
+    monkeypatch.setattr(setup.T,'effective_binary',lambda t:'missing-provider')
+    monkeypatch.setattr(setup.T,'managed_binary',lambda t:str(tmp_path/'provider'))
+    monkeypatch.setattr(setup.T,'managed_prefix',lambda:str(tmp_path/'prefix'))
+    monkeypatch.setattr(setup.T,'update_state',lambda t,**p:None)
+    monkeypatch.setattr(node,'status',lambda:{'installed':installed['node']})
+    monkeypatch.setattr(node,'which',lambda t:'/fixture/npm')
+    async def install_node(job):events.append('node');installed['node']=True
+    monkeypatch.setattr(node,'install',install_node)
+    original=httpx.AsyncClient
+    monkeypatch.setattr(setup.httpx,'AsyncClient',lambda **kw:original(transport=httpx.MockTransport(lambda r:httpx.Response(403)),**kw))
+    svc=DesktopSetup()
+    async def execute(cmd,job,cwd):events.append(cmd);(tmp_path/'provider').write_text('fixture only');installed['tool']=True
+    monkeypatch.setattr(svc,'_exec',execute)
+    svc.install(tool,dependencies=True);await svc.tasks[tool]
+    assert svc.state(tool)['phase']=='done'
+    assert events[0]=='node' and package in events[1]
+    assert '--prefix' in events[1]
+    assert any('Native installer unavailable' in line for line in svc.state(tool)['log'])

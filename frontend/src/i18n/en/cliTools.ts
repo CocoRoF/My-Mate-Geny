@@ -10,7 +10,7 @@ export default {
   gitHint: "If Git is missing, use its official installer.",
   installGit: "Get Git",
   installTool: "Download and install",
-  installWithNode: "Install with Node.js / npm",
+  installWithNode: "Install with prerequisites",
   downloadingNode: "Downloading Node.js / npm…",
   extractingNode: "Verifying and installing prerequisites…",
   installingTool: "Running the official installer…",

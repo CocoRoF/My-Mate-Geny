@@ -27,7 +27,7 @@ export default function SetupAssistant({onDone}:{onDone:()=>void}){
     void load();const timer=setInterval(load,2500);return()=>{alive=false;clearInterval(timer);};
   },[refresh]);
   const local=data?.execution_mode==='local';
-  const action=async(tool:string,cancel=false)=>{setError('');try{await apiFetch(`/api/setup/${tool}/${cancel?'cancel':'install'}`,{method:'POST'});setRefresh(x=>x+1);}catch(e:any){setError(e.message);}};
+  const action=async(tool:string,cancel=false)=>{setError('');try{await apiFetch(`/api/setup/${tool}/${cancel?'cancel':'install'}`,{method:'POST',...(cancel?{}:{body:JSON.stringify({dependencies:true})})});setRefresh(x=>x+1);}catch(e:any){setError(e.message);}};
   const canComplete=!!data?.tools.some(tool=>tool.connected);
   const finish=async()=>{
     setBusy(true);setError('');try{

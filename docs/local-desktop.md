@@ -84,8 +84,9 @@ The assistant is automatic only on a connection's first visit. Showing it record
 closes the app without finishing; existing completed setup and existing connections migrate on update. Local visits
 are keyed by `local`, not the loopback port. The assistant is still available from the sidebar when explicitly opened.
 
-Settings → Providers can install missing Claude Code/Codex with their official standalone installers and missing
-Higgsfield through its official npm package. Node.js/npm can be explicitly installed in app-owned storage first, or
+Settings → Providers can install missing Claude Code/Codex with their official standalone installers, falling back
+to official npm packages if those installers are blocked or their shell is unavailable. Missing Higgsfield uses its
+official npm package. A click authorizes needed app-owned prerequisites; existing installations remain untouched. Node.js/npm can be explicitly installed in app-owned storage first, or
 with the Higgsfield install button. Node 24 LTS binaries come from nodejs.org, with SHA256 validation, safe archive
 extraction, staging before activation, progress/cancellation and post-install verification. PATH changes are limited to
 app child processes; system tools and existing credentials are preserved. Session engines and login/version helpers

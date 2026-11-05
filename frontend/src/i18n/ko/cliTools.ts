@@ -11,7 +11,7 @@ const ko: Messages<"cliTools"> = {
   gitHint: "Git이 없다면 공식 설치 도우미를 사용할 수 있습니다.",
   installGit: "Git 설치 도우미",
   installTool: "다운로드 및 설치",
-  installWithNode: "Node.js / npm과 함께 설치",
+  installWithNode: "필요한 도구와 함께 설치",
   downloadingNode: "Node.js / npm 다운로드 중…",
   extractingNode: "필수 도구를 확인하고 설치하는 중…",
   installingTool: "공식 설치 도구를 실행하는 중…",

@@ -42,7 +42,7 @@ export function Dependencies({installations,otherJob}:{installations:Installatio
 }
 export function InstallTool({tool,installations,otherJob}:{tool:string;installations:Installations;otherJob:boolean}){
  const t=useT(),data=installations.data,item=data?.tools.find(x=>x.id===tool);if(!data||!item)return null;
- const withNode=tool==='higgsfield'&&!data.node.installed;
+ const withNode=!data.node.installed;
  return <div className="mt-3" data-testid={`install-tool-${tool}`}>
   {!item.installed&&item.job.phase!=='installing'&&<button className="btn-primary" disabled={data.busy||otherJob} onClick={()=>void installations.action(tool,false,withNode)}><Icon name="download" size={14}/>{t(withNode?'cliTools.installWithNode':'cliTools.installTool')}</button>}
   <Progress job={item.job} cancel={()=>void installations.action(tool,true)}/>
