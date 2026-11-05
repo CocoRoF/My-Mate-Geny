@@ -595,6 +595,9 @@ async def run_app_server(
             params["model"] = model
         if req.cli_session_id:
             params["threadId"] = req.cli_session_id
+            # Never ask for the history: the CLI already holds it, and for a long conversation the reply is one
+            # JSON line over the reader's limit (17 MB seen), which closed the connection on every message.
+            params["excludeTurns"] = True
         reply = await client.request(
             "thread/resume" if req.cli_session_id else "thread/start", params
         )

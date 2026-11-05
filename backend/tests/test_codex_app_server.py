@@ -271,7 +271,10 @@ for line in sys.stdin:
     with open(sys.argv[0]+".log", "a") as f: f.write(json.dumps(msg)+"\n")
     method, p = msg.get("method"), msg.get("params", {})
     if method == "initialize": out({"id": msg["id"], "result": {"userAgent": "codex/0.166.0"}})
-    elif method in ("thread/start", "thread/resume"): out({"id": msg["id"], "result": {"thread": {"id": "root"}}})
+    elif method in ("thread/start", "thread/resume"):
+        # the real server returns the whole history on resume unless told not to (one line, 17 MB seen)
+        turns = [{"id": "old", "items": ["x" * (17 * 1024 * 1024)]}] if method == "thread/resume" and not p.get("excludeTurns") else []
+        out({"id": msg["id"], "result": {"thread": {"id": "root", "turns": turns}}})
     elif method == "turn/start":
         out({"id": msg["id"], "result": {"turn": {"id": "turn", "status": "inProgress"}}})
         event("turn/started", turn={"id": "turn", "status": "inProgress"})
@@ -330,6 +333,28 @@ async def test_real_stdio_same_turn_steering_and_rejection_are_acknowledged(tmp_
     )
     steer = next(m for m in messages if m.get("method") == "turn/steer")["params"]
     assert steer["expectedTurnId"] == "turn" and "also review tests" in steer["input"][0]["text"]
+
+
+async def test_resuming_a_long_conversation_does_not_load_its_history(tmp_path):
+    """A resume reply with the history is one JSON line over the reader's limit: every message of a long Codex chat
+    ended in "connection closed"."""
+    script = fake_cli(tmp_path)
+    req = TurnRequest(messages=[{"role": "user", "content": "Go on"}], model="default", cwd=str(tmp_path),
+                      cli_session_id="root", inbox=TurnInbox())
+    events = []
+    delivered = asyncio.get_running_loop().create_future()
+
+    async def run():
+        async for ev in CodexProvider(binary=str(script)).run_turn_stream(req):
+            events.append(ev)
+            if ev.type == "thinking.start":
+                assert req.inbox.offer(SteerMessage(text="next", delivered=delivered))
+
+    await asyncio.wait_for(run(), 15)
+    assert events[-1].type == "turn.complete" and not any(e.type == "error" for e in events)
+    messages = [json.loads(x) for x in script.with_suffix(".log").read_text().splitlines()]
+    resume = next(m for m in messages if m.get("method") == "thread/resume")["params"]
+    assert resume["threadId"] == "root" and resume["excludeTurns"] is True
 
 
 async def test_dead_process_does_not_leave_thinking_or_wait_forever(tmp_path):
