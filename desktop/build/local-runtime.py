@@ -26,6 +26,10 @@ def build(output: Path, frontend: Path, cache: Path, python_version: str = "3.12
         raise RuntimeError("Build dependency uv is required; users of the packaged app do not need it")
     cache.mkdir(parents=True, exist_ok=True)
     run([uv, "python", "install", python_version, "--install-dir", cache, "--no-bin", "--no-registry"])
+    # uv also links cpython-3.12-* to the install. It is only a convenience, and a Windows junction doesn't survive the CI
+    # cache: restored, uv can neither reuse nor remove it ("The directory name is invalid"). So it never reaches the cache.
+    for link in cache.glob(f"cpython-{'.'.join(python_version.split('.')[:2])}-*"):
+        os.unlink(link)
     pattern = f"cpython-{python_version}-*"
     candidates = list(cache.glob(pattern + "/python.exe")) if os.name == "nt" else list(cache.glob(pattern + "/bin/python3"))
     candidates = list({p.resolve(): p.resolve() for p in candidates}.values())
