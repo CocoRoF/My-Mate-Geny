@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import sys
 from pathlib import Path
@@ -10,8 +11,10 @@ from test_sessions import _services
 
 from app.config import settings
 from app.main import app
+from app.mcp_runtime.catalog import RECIPES
 from app.mcp_runtime.catalog import definition as recipe_definition
 from app.mcp_runtime.client import Connection
+from app.mcp_runtime.diagnostics import ConnectionIssue
 from app.mcp_runtime.installations import Installations
 from app.mcp_runtime.service import McpService
 from app.mcp_runtime.store import McpStore
@@ -39,41 +42,52 @@ def test_browsing_catalog_downloads_and_launches_nothing(client, monkeypatch):
     assert not app.state.mcp.installations.root.exists()
 
 
-def test_atlassian_recipe_has_named_cloud_and_data_center_credentials(tmp_path):
-    spec = recipe_definition(
-        "atlassian",
+def test_atlassian_recipe_uses_the_official_server_with_basic_or_bearer(tmp_path):
+    values = {"email": "fixture@example.com", "token": "fixture-secret"}
+    spec = recipe_definition("atlassian", values, data_dir=tmp_path)
+    assert spec["transport"] == "http" and spec["url"] == "https://mcp.atlassian.com/v2/mcp"
+    assert not spec["command"] and not spec["env"]
+    basic = base64.b64decode(spec["headers"]["Authorization"].removeprefix("Basic "))
+    assert basic == b"fixture@example.com:fixture-secret"
+    key = recipe_definition("atlassian", {"auth": "bearer", "token": "key"}, data_dir=tmp_path)
+    assert key["headers"] == {"Authorization": "Bearer key"}
+    with pytest.raises(ValueError, match="required_field:email"):
+        recipe_definition("atlassian", {"token": "fixture-secret"}, data_dir=tmp_path)
+
+
+def test_package_connections_move_to_the_official_server_under_the_same_id(db):
+    service = McpService(db, SecretVault(db), _services(db), LogService(db))
+    package = {"catalog_id": "atlassian", "command": "geny-managed"}
+    service.store.save(
+        "cloud",
         {
-            "service": "both",
-            "deployment": "cloud",
-            "jira_url": "https://company.atlassian.net",
-            "jira_email": "fixture@example.com",
-            "jira_token": "fixture-jira-secret",
-            "confluence_url": "https://company.atlassian.net/wiki",
-            "confluence_email": "fixture@example.com",
-            "confluence_token": "fixture-confluence-secret",
-            "read_only": True,
+            **package,
+            "name": "sooperset-mcp-atlassian",
+            "env": {
+                "JIRA_USERNAME": "fixture@example.com",
+                "JIRA_API_TOKEN": "fixture-secret",
+                "READ_ONLY_MODE": "true",
+            },
         },
-        data_dir=tmp_path,
+        create=True,
     )
-    assert spec["command"] == "geny-managed" and spec["args"] == []
-    assert spec["env"]["JIRA_API_TOKEN"] == "fixture-jira-secret"
-    assert spec["env"]["CONFLUENCE_URL"].endswith("/wiki")
-    assert spec["env"]["READ_ONLY_MODE"] == "true"
-    dc = recipe_definition(
-        "atlassian",
-        {"deployment": "server", "jira_url": "https://jira.internal", "jira_token": "fixture-pat"},
-        data_dir=tmp_path,
+    moved = service._to_official_atlassian("cloud", service.store.get("cloud"))
+    assert moved == service.store.get("cloud")
+    assert moved["id"] == "cloud" and moved["name"] == "Atlassian · Jira / Confluence"
+    assert moved["transport"] == "http" and moved["url"] == "https://mcp.atlassian.com/v2/mcp"
+    assert moved["env"] == {} and moved["headers"]["Authorization"].startswith("Basic ")
+    assert service._to_official_atlassian("cloud", moved) == moved
+
+    # A Data Center token can't reach the official server: the entry stays and fails with a reason.
+    service.store.save(
+        "server",
+        {**package, "name": "Server", "env": {"JIRA_PERSONAL_TOKEN": "fixture-secret"}},
+        create=True,
     )
-    assert dc["env"]["JIRA_PERSONAL_TOKEN"] == "fixture-pat"
-    assert "JIRA_USERNAME" not in dc["env"]
-    with pytest.raises(ValueError, match="jira_url"):
-        recipe_definition("atlassian", {"jira_token": "fixture"}, data_dir=tmp_path)
-    with pytest.raises(ValueError, match="jira_email"):
-        recipe_definition(
-            "atlassian",
-            {"jira_url": "https://company.atlassian.net", "jira_token": "fixture"},
-            data_dir=tmp_path,
-        )
+    stays = service._to_official_atlassian("server", service.store.get("server"))
+    assert stays["transport"] == "stdio" and stays["env"]["JIRA_PERSONAL_TOKEN"]
+    with pytest.raises(ConnectionIssue, match="set it up again"):
+        service.installations.materialize(stays)
 
 
 def test_missing_executable_and_missing_directory_are_distinct_failed_tests_not_entries(
@@ -177,8 +191,8 @@ def test_catalog_repair_defaults_keep_saved_tokens_private(client):
         },
     ).json()
     defaults = client.get("/api/mcp/recipes/atlassian/defaults?existing_id=" + item["id"]).json()
-    assert set(defaults["saved_fields"]) == {"jira_token", "confluence_token"}
-    assert not defaults["values"]["jira_token"] and token not in json.dumps(defaults)
+    assert defaults["saved_fields"] == ["token"]
+    assert not defaults["values"]["token"] and token not in json.dumps(defaults)
 
 
 @pytest.mark.asyncio
@@ -221,6 +235,16 @@ async def test_test_expiry_releases_real_process(db, monkeypatch):
 async def test_download_is_isolated_cancellable_and_survives_interpreter_path_changes(
     tmp_path, monkeypatch
 ):
+    monkeypatch.setitem(
+        RECIPES,
+        "fixture",
+        {
+            "kind": "python",
+            "package": "mcp-fixture",
+            "entry": "mcp-fixture",
+            "source": "https://github.com/example/mcp-fixture",
+        },
+    )
     installs = Installations()
     calls = []
 
@@ -230,36 +254,36 @@ async def test_download_is_isolated_cancellable_and_survives_interpreter_path_ch
     async def execute(argv, job, cwd):
         calls.append(argv)
         target = Path(argv[argv.index("--target") + 1])
-        meta = target / "mcp_atlassian-0.0.1.dist-info"
+        meta = target / "mcp_fixture-0.0.1.dist-info"
         meta.mkdir(parents=True)
-        (meta / "METADATA").write_text("Name: mcp-atlassian\nVersion: 0.0.1\n")
-        (meta / "entry_points.txt").write_text("[console_scripts]\nmcp-atlassian = fixture:main\n")
+        (meta / "METADATA").write_text("Name: mcp-fixture\nVersion: 0.0.1\n")
+        (meta / "entry_points.txt").write_text("[console_scripts]\nmcp-fixture = fixture:main\n")
 
     monkeypatch.setattr(installs, "_version", version)
     monkeypatch.setattr(installs, "_exec", execute)
-    assert not installs.state("atlassian")["installed"]
-    installs.start("atlassian")
-    await installs.tasks["atlassian"]
-    assert installs.state("atlassian")["installed"]
+    assert not installs.state("fixture")["installed"]
+    installs.start("fixture")
+    await installs.tasks["fixture"]
+    assert installs.state("fixture")["installed"]
     assert "--target" in calls[0] and "--no-build" in calls[0]
-    spec = {"command": "geny-managed", "catalog_id": "atlassian", "args": [], "env": {}}
+    spec = {"command": "geny-managed", "catalog_id": "fixture", "args": [], "env": {}}
     assert installs.materialize(spec)["command"] == sys.executable
     assert (installs.root / "python-runner-v1.py").is_file()
     monkeypatch.setattr(sys, "executable", "/a/new/bundled/python")
     assert installs.materialize(spec)["command"] == "/a/new/bundled/python"
 
-    pointer = installs.root / "atlassian" / "current.json"
+    pointer = installs.root / "fixture" / "current.json"
     pointer.write_text("{damaged")
-    assert not installs.manifest("atlassian")
+    assert not installs.manifest("fixture")
 
     async def pause(*a):
         await asyncio.sleep(30)
 
     monkeypatch.setattr(installs, "_version", pause)
-    installs.start("atlassian")
+    installs.start("fixture")
     await asyncio.sleep(0.01)
     with pytest.raises(ValueError, match="busy"):
-        Installations().start("atlassian")
-    await installs.cancel("atlassian")
-    assert installs.state("atlassian")["phase"] == "cancelled"
-    assert not installs.manifest("atlassian")
+        Installations().start("fixture")
+    await installs.cancel("fixture")
+    assert installs.state("fixture")["phase"] == "cancelled"
+    assert not installs.manifest("fixture")

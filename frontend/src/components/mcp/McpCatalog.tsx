@@ -321,21 +321,9 @@ function Wizard({
       if (alive.current) setBusy(false);
     }
   };
-  const visible = recipe.fields.filter((f) => {
-    if (
-      recipe.id === "atlassian" &&
-      (f.key.startsWith("jira_") || f.key.startsWith("confluence_"))
-    ) {
-      if (
-        values.service !== "both" &&
-        !f.key.startsWith(String(values.service) + "_")
-      )
-        return false;
-      if (f.key.endsWith("_email") && values.deployment === "server")
-        return false;
-    }
-    return true;
-  });
+  const visible = recipe.fields.filter(
+    (f) => f.key !== "email" || values.auth === "basic",
+  );
   return (
     <section
       className="card space-y-4 p-4 sm:p-5"

@@ -5,8 +5,8 @@ Sources verified 2026-11-05. Package versions resolve only after Download is cli
 
 from __future__ import annotations
 
+import base64
 from pathlib import Path
-from urllib.parse import urlsplit
 
 
 def text(ko, en):
@@ -31,74 +31,42 @@ def choice(value, ko, en):
 RECIPES = {
     "atlassian": {
         "name": "Atlassian · Jira / Confluence",
-        "publisher": "sooperset",
-        "official": False,
+        "publisher": "Atlassian",
+        "official": True,
         "category": "work",
-        "kind": "python",
-        "package": "mcp-atlassian",
-        "entry": "mcp-atlassian",
-        "source": "https://github.com/sooperset/mcp-atlassian",
-        "docs": "https://github.com/sooperset/mcp-atlassian/blob/main/docs/installation.mdx",
-        "method": "python -m pip install mcp-atlassian",
+        "kind": "remote",
+        "url": "https://mcp.atlassian.com/v2/mcp",
+        "source": "https://github.com/atlassian/atlassian-mcp-server",
+        "docs": "https://support.atlassian.com/atlassian-ai-gateway/docs/configure-authentication-via-api-token/",
+        "method": "https://mcp.atlassian.com/v2/mcp",
         "summary": text(
-            "Jira·Confluence Cloud와 Server/Data Center를 연결해요. Docker 없이 앱 전용 환경에 설치해요.",
-            "Connect Jira and Confluence Cloud or Server/Data Center in an app-owned environment, without Docker.",
+            "Atlassian 공식 서버로 Jira·Confluence Cloud를 연결해요. 글 작성·수정, 이슈 생성·변경까지 할 수 있고 다운로드는 필요 없어요.",
+            "Connect Jira and Confluence Cloud through Atlassian's official server: read, publish and edit pages, create and change issues. No download.",
         ),
         "help": text(
-            "Cloud는 사이트 주소·계정 이메일·API 토큰, Server/Data Center는 주소·개인 액세스 토큰이 필요해요. 필요한 서비스만 선택하세요.",
-            "Cloud needs a site URL, account email and API token; Server/Data Center needs its URL and a personal access token. Choose the services you use.",
+            "계정 이메일과 API 토큰을 입력하세요. 조직 관리자가 API 토큰 인증을 막아 두었다면 연결되지 않아요. Server/Data Center는 직접 설정을 사용하세요.",
+            "Enter your account email and API token. If your organization disabled API-token authentication, it won't connect. For Server/Data Center, use manual setup.",
         ),
         "fields": [
             field(
-                "service",
-                "연결할 서비스",
-                "Services",
+                "auth",
+                "인증 방식",
+                "Authentication",
                 "select",
-                default="jira",
+                default="basic",
                 choices=[
-                    choice("jira", "Jira", "Jira"),
-                    choice("confluence", "Confluence", "Confluence"),
-                    choice("both", "둘 다", "Both"),
+                    choice("basic", "이메일 + 개인 API 토큰", "Email + personal API token"),
+                    choice("bearer", "서비스 계정 API 키", "Service account API key"),
                 ],
             ),
+            field("email", "계정 이메일", "Account email", "email"),
             field(
-                "deployment",
-                "Atlassian 종류",
-                "Atlassian deployment",
-                "select",
-                default="cloud",
-                choices=[
-                    choice("cloud", "Cloud", "Cloud"),
-                    choice("server", "Server / Data Center", "Server / Data Center"),
-                ],
-            ),
-            field("jira_url", "Jira 사이트 주소", "Jira site URL", "url"),
-            field("jira_email", "Jira 계정 이메일 · Cloud", "Jira email · Cloud", "email"),
-            field(
-                "jira_token",
-                "Jira API 토큰 또는 개인 토큰",
-                "Jira API token or personal token",
+                "token",
+                "API 토큰 또는 서비스 계정 키",
+                "API token or service account key",
                 "password",
+                required=True,
             ),
-            field(
-                "confluence_url",
-                "Confluence 사이트 주소 · /wiki 포함",
-                "Confluence site URL · include /wiki",
-                "url",
-            ),
-            field(
-                "confluence_email",
-                "Confluence 계정 이메일 · Cloud",
-                "Confluence email · Cloud",
-                "email",
-            ),
-            field(
-                "confluence_token",
-                "Confluence API 토큰 또는 개인 토큰",
-                "Confluence API token or personal token",
-                "password",
-            ),
-            field("read_only", "읽기 전용으로 연결", "Connect read-only", "boolean", default=True),
         ],
     },
 }
@@ -129,30 +97,17 @@ def definition(rid, values, *, name="", data_dir: Path):
     spec = {
         "name": name.strip() or r["name"],
         "catalog_id": rid,
-        "transport": "http" if r["kind"] == "remote" else "stdio",
-        "command": "geny-managed" if r["kind"] != "remote" else "",
+        "transport": "http",
+        "command": "",
         "args": [],
         "env": {},
-        "headers": {},
+        "url": r["url"],
         "enabled": True,
     }
-    for service in ("jira", "confluence"):
-        if v["service"] not in (service, "both"):
-            continue
-        prefix = service.upper()
-        url, token = v[service + "_url"].strip(), v[service + "_token"]
-        if urlsplit(url).scheme not in ("https", "http") or not urlsplit(url).hostname:
-            raise ValueError("required_field:" + service + "_url")
-        if not token:
-            raise ValueError("required_field:" + service + "_token")
-        spec["env"][prefix + "_URL"] = url
-        if v["deployment"] == "cloud":
-            if not v[service + "_email"]:
-                raise ValueError("required_field:" + service + "_email")
-            spec["env"].update(
-                {prefix + "_USERNAME": v[service + "_email"], prefix + "_API_TOKEN": token}
-            )
-        else:
-            spec["env"][prefix + "_PERSONAL_TOKEN"] = token
-    spec["env"]["READ_ONLY_MODE"] = str(v["read_only"]).lower()
+    auth = "Bearer " + v["token"]
+    if v["auth"] == "basic":
+        if not v["email"] or ":" in v["email"] or "@" not in v["email"]:
+            raise ValueError("required_field:email")
+        auth = "Basic " + base64.b64encode((v["email"] + ":" + v["token"]).encode()).decode()
+    spec["headers"] = {"Authorization": auth}
     return spec

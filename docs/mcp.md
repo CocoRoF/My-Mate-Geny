@@ -16,16 +16,20 @@ Settings has three independent entries:
 ## Manage, catalog and manual setup
 
 The MCP settings page opens on **Manage MCPs**. **Catalog** contains only
-**Atlassian (Jira / Confluence)**, using the sooperset package. It supports
-Cloud and Server/Data Center. The card shows its publisher, source and
-installation documentation; browsing does not install or connect anything.
+**Atlassian (Jira / Confluence)**, using Atlassian's official hosted server
+(`https://mcp.atlassian.com/v2/mcp`). The card shows its publisher, source and
+documentation; browsing does not connect anything.
 
-The catalog flow is **Download → Configure and test → Register MCP**. The recipe offers named Jira/Confluence URLs, Cloud
-email/API-token credentials or Server/Data Center personal tokens. It defaults
-to read-only; the user can change that option before testing. Microsoft SSO
-does not replace the API token used for this connection.
+The catalog flow is **Configure and test → Register MCP**; nothing is downloaded. The recipe asks for an account email
+and API token (Basic) or a service account key (Bearer). Reading and writing are both available: publishing and editing
+Confluence pages, creating and changing Jira issues. Microsoft SSO does not replace the API token used for this
+connection. The official server is Cloud-only, so Server/Data Center goes through manual setup.
 
-Downloads use reviewed, fixed package identities, resolve an exact version on
+Connections made with the earlier community package become the official server at startup, under the same id so each
+chat's on/off stays. An entry without a Cloud email and token cannot move: it stays listed and its error says to set it
+up again.
+
+Package recipes (the catalog has none right now) use reviewed, fixed package identities, resolve an exact version on
 an explicit click, and install in `home_dir/mcp-packages`. Python packages and
 their complete dependency sets use isolated target directories; their SDK
 version cannot replace Geny's SDK. A small runner uses the **current** bundled
@@ -193,10 +197,11 @@ Official implementation references:
 
 Reviewed catalog references (2026-11-05):
 
-* [sooperset Atlassian installation](https://github.com/sooperset/mcp-atlassian/blob/main/docs/installation.mdx)
+* [Atlassian MCP server](https://github.com/atlassian/atlassian-mcp-server)
+* [Atlassian API token authentication](https://support.atlassian.com/atlassian-ai-gateway/docs/configure-authentication-via-api-token/)
 
 `test_mcp_catalog.py` covers browsing without downloads, named credentials,
-prerequisite errors, private legacy arguments, exact test promotion, stale
+prerequisite errors, private legacy arguments, moving package connections to the official server, exact test promotion, stale
 revisions, expiry, isolated installation, cancellation and damaged manifests.
 The existing `provider-mcp-e2e.js` also checks the server catalog at mobile
 width. Optional execution checks that downloaded unrelated catalog entries

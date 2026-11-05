@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import secrets
@@ -16,44 +17,29 @@ TEST_TTL = 300
 
 
 def previous_values(spec):
-    """Recognize the old Docker recipe without exposing any credential values."""
+    """What a saved Atlassian connection already holds, in the recipe's fields: its Authorization header, or the
+    credentials of the older package / Docker entries (Cloud only — the official server doesn't serve Data Center)."""
+    auth = str((spec.get("headers") or {}).get("Authorization", ""))
+    if auth.startswith("Basic "):
+        try:
+            email, _, token = base64.b64decode(auth[6:]).decode().partition(":")
+        except ValueError:
+            email, token = "", ""
+        return {"auth": "basic", "email": email, "token": token}
+    if auth.startswith("Bearer "):
+        return {"auth": "bearer", "email": "", "token": auth[7:]}
     env = dict(spec.get("env", {}))
     args = spec.get("args", [])
     for i, arg in enumerate(args):
         if i and args[i - 1] in ("-e", "--env") and "=" in arg:
             k, v = arg.split("=", 1)
-            if k in {
-                "JIRA_URL",
-                "JIRA_USERNAME",
-                "JIRA_API_TOKEN",
-                "JIRA_PERSONAL_TOKEN",
-                "CONFLUENCE_URL",
-                "CONFLUENCE_USERNAME",
-                "CONFLUENCE_API_TOKEN",
-                "CONFLUENCE_PERSONAL_TOKEN",
-            }:
-                env[k] = v
-    out = {
-        "service": "both"
-        if env.get("JIRA_URL") and env.get("CONFLUENCE_URL")
-        else "confluence"
-        if env.get("CONFLUENCE_URL")
-        else "jira",
-        "deployment": "server"
-        if env.get("JIRA_PERSONAL_TOKEN") or env.get("CONFLUENCE_PERSONAL_TOKEN")
-        else "cloud",
-        "read_only": env.get("READ_ONLY_MODE", "true").lower() == "true",
-    }
+            env.setdefault(k, v)
     token = next((x for x in args if x.startswith("ATATT") and len(x) > 30 and "\n" not in x), "")
-    for service in ("jira", "confluence"):
-        out[service + "_url"] = env.get(service.upper() + "_URL", "")
-        out[service + "_email"] = env.get(service.upper() + "_USERNAME", "")
-        out[service + "_token"] = (
-            env.get(service.upper() + "_API_TOKEN")
-            or env.get(service.upper() + "_PERSONAL_TOKEN")
-            or token
-        )
-    return out
+    return {
+        "auth": "basic",
+        "email": env.get("CONFLUENCE_USERNAME") or env.get("JIRA_USERNAME") or "",
+        "token": env.get("CONFLUENCE_API_TOKEN") or env.get("JIRA_API_TOKEN") or token,
+    }
 
 
 class SetupTests:
