@@ -16,11 +16,6 @@ export default {
   catalogHint:
     "배포처와 다운로드 방법을 확인한 뒤 필요한 MCP만 설치하세요. 목록을 여는 것만으로 다운로드하거나 연결하지 않아요.",
   searchCatalog: "MCP 이름·기능 검색",
-  category: "분류",
-  categoryAll: "전체 분류",
-  categoryWork: "업무·협업",
-  categoryDevelopment: "개발 도구",
-  categoryFiles: "파일·기억",
   catalogLoading: "카탈로그 불러오는 중…",
   noCatalogMatches: "검색 결과가 없어요.",
   official: "제작사·프로젝트 공식",

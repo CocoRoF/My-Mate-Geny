@@ -34,18 +34,7 @@ def test_browsing_catalog_downloads_and_launches_nothing(client, monkeypatch):
         app.state.mcp.installations, "start", lambda *a: pytest.fail("Auto-download")
     )
     catalog = client.get("/api/mcp/recipes").json()
-    assert len(catalog["items"]) >= 9
-    assert {
-        "atlassian",
-        "atlassian-cloud",
-        "github",
-        "context7",
-        "playwright",
-        "filesystem",
-        "memory",
-        "fetch",
-        "time",
-    } <= {x["id"] for x in catalog["items"]}
+    assert [x["id"] for x in catalog["items"]] == ["atlassian"]
     assert all(x["source"].startswith("https://github.com/") for x in catalog["items"])
     assert not app.state.mcp.installations.root.exists()
 
@@ -85,37 +74,6 @@ def test_atlassian_recipe_has_named_cloud_and_data_center_credentials(tmp_path):
             {"jira_url": "https://company.atlassian.net", "jira_token": "fixture"},
             data_dir=tmp_path,
         )
-
-
-def test_hosted_atlassian_and_github_do_not_need_docker_or_package_download(tmp_path):
-    import base64
-
-    spec = recipe_definition(
-        "atlassian-cloud",
-        {"email": "fixture@example.com", "token": "fixture-token"},
-        data_dir=tmp_path,
-    )
-    assert spec["transport"] == "http" and spec["url"] == "https://mcp.atlassian.com/v2/mcp"
-    assert (
-        spec["headers"]["Authorization"]
-        == "Basic " + base64.b64encode(b"fixture@example.com:fixture-token").decode()
-    )
-    assert (
-        recipe_definition("github", {"token": "fixture-pat"}, data_dir=tmp_path)["headers"][
-            "Authorization"
-        ]
-        == "Bearer fixture-pat"
-    )
-    assert Installations().state("atlassian-cloud")["download_required"] is False
-    assert not tmp_path.joinpath("app", "mcp-packages").exists()
-
-
-def test_filesystem_requires_explicit_existing_absolute_roots(tmp_path):
-    with pytest.raises(ValueError):
-        recipe_definition("filesystem", {"folders": "relative"}, data_dir=tmp_path)
-    assert recipe_definition("filesystem", {"folders": str(tmp_path)}, data_dir=tmp_path)[
-        "args"
-    ] == [str(tmp_path)]
 
 
 def test_missing_executable_and_missing_directory_are_distinct_failed_tests_not_entries(
@@ -272,39 +230,36 @@ async def test_download_is_isolated_cancellable_and_survives_interpreter_path_ch
     async def execute(argv, job, cwd):
         calls.append(argv)
         target = Path(argv[argv.index("--target") + 1])
-        meta = target / "mcp_server_time-0.0.1.dist-info"
+        meta = target / "mcp_atlassian-0.0.1.dist-info"
         meta.mkdir(parents=True)
-        (meta / "METADATA").write_text("Name: mcp-server-time\nVersion: 0.0.1\n")
-        (meta / "entry_points.txt").write_text(
-            "[console_scripts]\nmcp-server-time = fixture:main\n"
-        )
+        (meta / "METADATA").write_text("Name: mcp-atlassian\nVersion: 0.0.1\n")
+        (meta / "entry_points.txt").write_text("[console_scripts]\nmcp-atlassian = fixture:main\n")
 
     monkeypatch.setattr(installs, "_version", version)
     monkeypatch.setattr(installs, "_exec", execute)
-    assert not installs.state("time")["installed"]
-    installs.start("time")
-    await installs.tasks["time"]
-    assert installs.state("time")["installed"]
+    assert not installs.state("atlassian")["installed"]
+    installs.start("atlassian")
+    await installs.tasks["atlassian"]
+    assert installs.state("atlassian")["installed"]
     assert "--target" in calls[0] and "--no-build" in calls[0]
-    spec = {"command": "geny-managed", "catalog_id": "time", "args": [], "env": {}}
+    spec = {"command": "geny-managed", "catalog_id": "atlassian", "args": [], "env": {}}
     assert installs.materialize(spec)["command"] == sys.executable
     assert (installs.root / "python-runner-v1.py").is_file()
     monkeypatch.setattr(sys, "executable", "/a/new/bundled/python")
     assert installs.materialize(spec)["command"] == "/a/new/bundled/python"
 
+    pointer = installs.root / "atlassian" / "current.json"
+    pointer.write_text("{damaged")
+    assert not installs.manifest("atlassian")
+
     async def pause(*a):
         await asyncio.sleep(30)
 
     monkeypatch.setattr(installs, "_version", pause)
-    installs.start("fetch")
+    installs.start("atlassian")
     await asyncio.sleep(0.01)
     with pytest.raises(ValueError, match="busy"):
-        installs.start("atlassian")
-    await installs.cancel("fetch")
-    assert installs.state("fetch")["phase"] == "cancelled"
-    assert not installs.manifest("fetch")
-    assert installs.manifest("time")
-    pointer = installs.root / "time" / "current.json"
-    pointer.write_text("{damaged")
-    assert not installs.manifest("time")
-    assert not installs.state("time")["installed"]
+        Installations().start("atlassian")
+    await installs.cancel("atlassian")
+    assert installs.state("atlassian")["phase"] == "cancelled"
+    assert not installs.manifest("atlassian")

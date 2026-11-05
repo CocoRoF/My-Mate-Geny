@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import hashlib
 import json
 import secrets
@@ -85,21 +84,6 @@ class SetupTests:
         spec = self.service.store.get(mid)
         if rid == "atlassian":
             return previous_values(spec)
-        if rid in ("atlassian-cloud", "github", "context7") and spec.get("catalog_id") == rid:
-            auth = spec["headers"].get("Authorization", "")
-            if auth.startswith("Bearer "):
-                return {"auth": "bearer", "token": auth[7:]}
-            if rid == "atlassian-cloud" and auth.startswith("Basic "):
-                try:
-                    email, token = base64.b64decode(auth[6:], validate=True).decode().split(":", 1)
-                    return {"auth": "basic", "email": email, "token": token}
-                except (ValueError, UnicodeError):
-                    return {}
-        if spec.get("catalog_id") == rid:
-            if rid == "filesystem":
-                return {"folders": "\n".join(spec["args"])}
-            if rid == "playwright":
-                return {"headless": "--headless" in spec["args"]}
         return {}
 
     async def catalog_test(self, rid, values, name="", mid=None):

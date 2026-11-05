@@ -15,7 +15,6 @@ import {
   type McpText,
 } from "../../api/mcp";
 import { useLang, useT } from "../../i18n";
-import { folderBridge } from "../../lib/localFolder";
 import { useConfigStore } from "../../stores/configStore";
 import Icon from "../ui/Icon";
 import McpIssue from "./McpIssue";
@@ -35,8 +34,7 @@ export default function McpCatalog({
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(initial?.recipe ?? ""),
-    [query, setQuery] = useState(""),
-    [category, setCategory] = useState("all");
+    [query, setQuery] = useState("");
   const load = async () => {
     setLoading(true);
     try {
@@ -65,13 +63,11 @@ export default function McpCatalog({
         onRegistered={onRegistered}
       />
     );
-  const shown = items.filter(
-    (r) =>
-      (category === "all" || r.category === category) &&
-      [r.name, r.publisher, tr(r.summary)]
-        .join(" ")
-        .toLowerCase()
-        .includes(query.toLowerCase()),
+  const shown = items.filter((r) =>
+    [r.name, r.publisher, tr(r.summary)]
+      .join(" ")
+      .toLowerCase()
+      .includes(query.toLowerCase()),
   );
   return (
     <div className="space-y-4" data-testid="mcp-discovery">
@@ -85,17 +81,6 @@ export default function McpCatalog({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <select
-          className="field"
-          aria-label={t("mcp.category")}
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-        >
-          <option value="all">{t("mcp.categoryAll")}</option>
-          <option value="work">{t("mcp.categoryWork")}</option>
-          <option value="development">{t("mcp.categoryDevelopment")}</option>
-          <option value="files">{t("mcp.categoryFiles")}</option>
-        </select>
       </div>
       {error && (
         <p role="alert" className="text-sm text-danger">
@@ -349,33 +334,8 @@ function Wizard({
       if (f.key.endsWith("_email") && values.deployment === "server")
         return false;
     }
-    if (
-      recipe.id === "atlassian-cloud" &&
-      f.key === "email" &&
-      values.auth === "bearer"
-    )
-      return false;
     return true;
   });
-  const chooseFolder = async () => {
-    try {
-      const bridge = folderBridge();
-      if (!bridge) return;
-      const result = await bridge.pick();
-      if (result) {
-        try {
-          change(
-            "folders",
-            [values.folders, result.path].filter(Boolean).join("\n"),
-          );
-        } finally {
-          await bridge.release(result.path);
-        }
-      }
-    } catch (e) {
-      setError(explain((e as Error).message));
-    }
-  };
   return (
     <section
       className="card space-y-4 p-4 sm:p-5"
@@ -612,17 +572,6 @@ function Wizard({
               )}
             </label>
           ))}
-          {recipe.id === "filesystem" && local && folderBridge() && (
-            <button
-              type="button"
-              className="btn-soft"
-              disabled={busy}
-              onClick={() => void chooseFolder()}
-            >
-              <Icon name="folder-open" size={15} />
-              {t("setup.pickFolder")}
-            </button>
-          )}
           <p className="text-xs text-content-faint">{t("mcp.testScope")}</p>
           {test && !test.ok && (
             <McpIssue code={test.error_code} fallback={test.error} />

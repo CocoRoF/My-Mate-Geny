@@ -15,18 +15,12 @@ Settings has three independent entries:
 
 ## Manage, catalog and manual setup
 
-The MCP settings page opens on **Manage MCPs**. **Catalog** contains nine
-reviewed recipes: Atlassian (sooperset, Jira/Confluence Cloud and Server/Data
-Center), Atlassian's hosted Cloud server, GitHub, Context7, Playwright,
-Filesystem, Memory, Fetch and Time. Each shows its publisher, upstream source
-and installation documentation; browsing does not install or connect anything.
+The MCP settings page opens on **Manage MCPs**. **Catalog** contains only
+**Atlassian (Jira / Confluence)**, using the sooperset package. It supports
+Cloud and Server/Data Center. The card shows its publisher, source and
+installation documentation; browsing does not install or connect anything.
 
-The catalog flow is **Download → Configure and test → Register MCP**. Hosted
-services explicitly say they need no download and use a connection-preparation
-step instead. The Atlassian Cloud recipe supports personal API tokens (email
-and token become an encrypted Basic header) and service-account Bearer keys.
-The organization must enable API-token authentication for Atlassian's hosted
-MCP. The sooperset recipe instead offers named Jira/Confluence URLs, Cloud
+The catalog flow is **Download → Configure and test → Register MCP**. The recipe offers named Jira/Confluence URLs, Cloud
 email/API-token credentials or Server/Data Center personal tokens. It defaults
 to read-only; the user can change that option before testing. Microsoft SSO
 does not replace the API token used for this connection.
@@ -199,18 +193,11 @@ Official implementation references:
 
 Reviewed catalog references (2026-11-05):
 
-* [Atlassian MCP API-token authentication](https://support.atlassian.com/atlassian-ai-gateway/docs/configure-authentication-via-api-token/)
 * [sooperset Atlassian installation](https://github.com/sooperset/mcp-atlassian/blob/main/docs/installation.mdx)
-* [GitHub MCP](https://github.com/github/github-mcp-server)
-* [Context7](https://github.com/upstash/context7)
-* [Playwright MCP](https://github.com/microsoft/playwright-mcp)
-* [MCP reference servers](https://github.com/modelcontextprotocol/servers)
 
 `test_mcp_catalog.py` covers browsing without downloads, named credentials,
 prerequisite errors, private legacy arguments, exact test promotion, stale
 revisions, expiry, isolated installation, cancellation and damaged manifests.
-`mcp-catalog-e2e.js` downloads a real public Time package in the actual Local
-app and checks the full setup flow, session gateway, two windows, restart and
-process cleanup. `provider-mcp-e2e.js` also checks the server catalog at mobile
-width. The coding CLI in UI verification is a fixture; no paid model inference
-is performed.
+The existing `provider-mcp-e2e.js` also checks the server catalog at mobile
+width. Optional execution checks that downloaded unrelated catalog entries
+were removed. Manual MCP connections remain available in Manual setup.

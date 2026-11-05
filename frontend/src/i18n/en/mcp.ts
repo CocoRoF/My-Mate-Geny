@@ -16,11 +16,6 @@ export default {
   catalogHint:
     "Review the publisher and installation method, then install only the MCPs you need. Browsing does not download or connect anything.",
   searchCatalog: "Search MCP names and capabilities",
-  category: "Category",
-  categoryAll: "All categories",
-  categoryWork: "Work and collaboration",
-  categoryDevelopment: "Development",
-  categoryFiles: "Files and memory",
   catalogLoading: "Loading catalog…",
   noCatalogMatches: "No matching MCPs.",
   official: "First-party / project maintained",
