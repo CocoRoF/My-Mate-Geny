@@ -37,6 +37,7 @@ const ko: Messages<"downloads"> = {
   checkAgain: "다시 확인",
 
   localIntro: "이 컴퓨터의 앱과 로컬 데이터를 유지하면서 새 버전으로 업데이트합니다. 업데이트와 설치 파일은 아래 GitHub 소스에서 직접 가져옵니다.",
+  sourceIncompatible: "이 저장소에 Geny 호환 앱 설치 파일이 없습니다. 릴리스 파일을 확인해 주세요.",
   sourceTitle: "업데이트 소스",
   sourceChange: "변경",
   sourceRepository: "GitHub 저장소 주소",

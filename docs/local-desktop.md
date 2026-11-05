@@ -71,7 +71,8 @@ computer's existing GitHub CLI sign-in or a user-supplied read token. Changing r
 OS encryption protects saved tokens; if unavailable, tokens stay in memory only and the UI explains that lifetime.
 Tokens are never returned to renderers or sent to Geny servers, and are stripped before signed-storage redirects.
 
-The source reads `apps-latest`, falling back to the repository's latest release. A compatible source publishes
+The source reads `apps-latest`, pins its published version to the immutable `apps-vX.Y.Z` release, and falls back
+to the repository's latest release when the rolling tag is absent. This prevents mixed feeds/installers during publishing. A compatible source publishes
 `latest.yml` / `latest-linux.yml` and installers with the existing platform suffixes. A random capability on a random
 IPv4 loopback port exposes only release assets to the desktop updater, never arbitrary URLs or filesystem paths.
 Source edits are blocked while checking/downloading/ready-to-install; all windows subscribe to native source changes.

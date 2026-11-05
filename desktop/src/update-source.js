@@ -57,7 +57,15 @@ function createUpdateSource({readSettings,writeSettings,safeStorage,fetcher=glob
       let response=await request(`${apiBase}/repos/${repo}/releases/tags/apps-latest`);
       if(response.status===404){await response.body?.cancel();response=await request(`${apiBase}/repos/${repo}/releases/latest`);}
       if(!response.ok){await response.body?.cancel();throw sourceError(response.status===404||response.status===401?'sourceAccess':response.status===403||response.status===429?'sourceRateLimit':'sourceUnavailable');}
-      const data=await response.json(),files=new Map();
+      let data=await response.json();
+      // apps-latest is overwritten asset by asset. Pin its published metadata to the immutable
+      // versioned release so a check can never mix new feeds with old installers or notes.
+      let published={};try{published=JSON.parse(/<!--\s*hrh-meta\s*(\{.*?\})\s*-->/.exec(data.body||'')?.[1]||'{}');}catch{}
+      if(data.tag_name==='apps-latest'&&/^\d+\.\d+\.\d+$/.test(published.version||'')){
+        const stable=await request(`${apiBase}/repos/${repo}/releases/tags/apps-v${published.version}`);
+        if(stable.ok)data=await stable.json();else{await stable.body?.cancel();throw sourceError('sourceUnavailable');}
+      }
+      const files=new Map();
       for(const file of data.assets||[])if(file.state==='uploaded'&&Number.isSafeInteger(file.id)&&/^[\w.+-]+$/.test(file.name)&&file.size>0)files.set(file.name,file);
       let meta={};try{meta=JSON.parse(/<!--\s*hrh-meta\s*(\{.*?\})\s*-->/.exec(data.body||'')?.[1]||'{}');}catch{}
       const value={repo,files,version:meta.version||String(data.tag_name||'').match(/\d+\.\d+\.\d+[^\s]*/)?.[0],commit:meta.commit,commit_message:meta.commit_message,built_at:meta.built_at||data.published_at,notes:String(data.body||'').replace(/<!--[\s\S]*?-->/g,'').trim()};
@@ -92,7 +100,7 @@ function createUpdateSource({readSettings,writeSettings,safeStorage,fetcher=glob
       const m=await metadata(force);await start();const newest=new Map();
       for(const file of m.files.values()){const kind=classify(file.name);if(!kind)continue;const key=kind.platform+'/'+kind.arch+'/'+kind.kind,old=newest.get(key);if(!old||String(file.updated_at||'')>=String(old.updated_at||''))newest.set(key,file);}
       const assets=[...newest.values()].map(f=>({id:f.id,name:f.name,size:f.size,url:`${base}/${cap}/${encodeURIComponent(f.name)}`,...classify(f.name)}));
-      return {available:assets.length>0,repository:config().repository,product:'My Mate Geny',version:m.version,commit:m.commit,commit_message:m.commit_message,built_at:m.built_at,notes:m.notes,assets};
+      return {available:assets.length>0,...(assets.length?{}:{reason:'incompatible_source'}),repository:config().repository,product:'My Mate Geny',version:m.version,commit:m.commit,commit_message:m.commit_message,built_at:m.built_at,notes:m.notes,assets};
     }catch(error){return {available:false,repository:config().repository,reason:error.code||'sourceUnavailable',assets:[]};}
   }
   function close(){closed=true;for(const c of controllers)c.abort();server?.closeAllConnections();server?.close();base='';}

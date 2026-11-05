@@ -37,6 +37,7 @@ export default {
   checkAgain: "Check again",
 
   localIntro: "Update this desktop app while keeping local data. Updates and installers come directly from the GitHub source below.",
+  sourceIncompatible: "This repository has no compatible Geny installers. Check its release files.",
   sourceTitle: "Update source",
   sourceChange: "Change",
   sourceRepository: "GitHub repository URL",

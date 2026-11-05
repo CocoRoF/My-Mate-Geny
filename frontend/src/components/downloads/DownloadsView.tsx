@@ -184,6 +184,9 @@ export default function DownloadsView() {
     load();const changed=()=>void load(true);window.addEventListener("geny:update-source-changed",changed);return()=>window.removeEventListener("geny:update-source-changed",changed);
   }, []);
 
+  // A new updater result must refresh the installer list as well as the status card.
+  useEffect(()=>{if(upd?.version&&["available","latest"].includes(upd.status))void load();},[upd?.version,upd?.status]);
+
   const assets = rel?.assets || [];
   const forPlatform = (p: string) => assets.filter((a) => a.platform === p);
   const mine = forPlatform(platform === "ios" ? "" : platform);
@@ -268,7 +271,7 @@ export default function DownloadsView() {
                 ? t("downloads.noRelease")
                 : rel.reason === "not_configured"
                   ? t("downloads.notConfigured")
-                  : t(rel.reason?.startsWith("source")?"downloads.sourceUnavailable":"downloads.unavailable", { reason: rel.reason })}
+                  : t(rel.reason==="incompatible_source"?"downloads.sourceIncompatible":rel.reason?.startsWith("source")?"downloads.sourceUnavailable":"downloads.unavailable", { reason: rel.reason })}
             </p>
           )}
           {error && <p className="mt-3 text-xs text-danger">{error}</p>}
