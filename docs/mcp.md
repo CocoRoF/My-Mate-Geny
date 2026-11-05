@@ -13,7 +13,61 @@ Settings has three independent entries:
 * **MCP**: a catalog of configured connections and tools. Nothing in this
   catalog is automatically enabled in every chat.
 
-## Setup
+## Manage, catalog and manual setup
+
+The MCP settings page opens on **Manage MCPs**. **Catalog** contains nine
+reviewed recipes: Atlassian (sooperset, Jira/Confluence Cloud and Server/Data
+Center), Atlassian's hosted Cloud server, GitHub, Context7, Playwright,
+Filesystem, Memory, Fetch and Time. Each shows its publisher, upstream source
+and installation documentation; browsing does not install or connect anything.
+
+The catalog flow is **Download → Configure and test → Register MCP**. Hosted
+services explicitly say they need no download and use a connection-preparation
+step instead. The Atlassian Cloud recipe supports personal API tokens (email
+and token become an encrypted Basic header) and service-account Bearer keys.
+The organization must enable API-token authentication for Atlassian's hosted
+MCP. The sooperset recipe instead offers named Jira/Confluence URLs, Cloud
+email/API-token credentials or Server/Data Center personal tokens. It defaults
+to read-only; the user can change that option before testing. Microsoft SSO
+does not replace the API token used for this connection.
+
+Downloads use reviewed, fixed package identities, resolve an exact version on
+an explicit click, and install in `home_dir/mcp-packages`. Python packages and
+their complete dependency sets use isolated target directories; their SDK
+version cannot replace Geny's SDK. A small runner uses the **current** bundled
+interpreter, rather than persisting a temporary AppImage interpreter path.
+Node packages have their own npm prefix and run their installed entry point,
+not an `npx` download during connection startup. Node/npm is prepared in the
+existing app-owned runtime if absent. Neither flow upgrades system packages
+or provider accounts. Download operations share a single lease with provider
+installation, are cancellable, and publish a manifest atomically only after
+entry-point verification. Broken manifests/entry points and incompatible
+Python runtimes are reported as requiring a new download.
+
+Testing initializes the actual MCP transport and discovers tools. It does
+not invoke tools or verify every tool's upstream permissions. A failed test
+creates no registration and leaves an existing registration unchanged. A
+successful test yields a one-use, five-minute server-side draft; registration
+promotes that exact live connection. Editing a draft, expiry or a concurrent
+change in another window requires a new test. Closing or expiring a draft
+releases its connection. Repair preserves the registration ID and session
+selections. No session is automatically granted a newly registered MCP.
+
+**Manual setup** retains command, URL, JSON import, environment and header
+editors. Saving with connection enabled tests before registering; explicitly
+saving a disabled definition and importing JSON retain their offline behavior.
+Sensitive legacy argv values are returned as JSON `null`; sending that null
+at the same secret position preserves the saved value without echoing it.
+
+Prerequisite errors distinguish missing executables (including Docker),
+inaccessible working folders, invalid Docker environment arguments, unavailable
+Docker engines, authentication rejection and connection timeouts. They name the
+**runtime** that owns the process. Docker on the desktop or host does not make
+it available inside a server container, and this feature does not mount a host
+Docker socket. Catalog alternatives can avoid that dependency entirely.
+Connection failures count as errors in the system card as well as in the logs.
+
+## Manual configuration format
 
 Add a name and either an executable plus arguments (`stdio`), a Streamable
 HTTP endpoint, or a legacy SSE endpoint. Arguments may be one per line or
@@ -142,3 +196,21 @@ Official implementation references:
 * [Claude Code MCP time limits](https://code.claude.com/docs/en/mcp#time-limits-on-mcp-tool-calls)
 * [Gemini speech](https://aistudio.google.com/docs/speech-generation)
 * [Gemini audio](https://aistudio.google.com/docs/audio)
+
+Reviewed catalog references (2026-11-05):
+
+* [Atlassian MCP API-token authentication](https://support.atlassian.com/atlassian-ai-gateway/docs/configure-authentication-via-api-token/)
+* [sooperset Atlassian installation](https://github.com/sooperset/mcp-atlassian/blob/main/docs/installation.mdx)
+* [GitHub MCP](https://github.com/github/github-mcp-server)
+* [Context7](https://github.com/upstash/context7)
+* [Playwright MCP](https://github.com/microsoft/playwright-mcp)
+* [MCP reference servers](https://github.com/modelcontextprotocol/servers)
+
+`test_mcp_catalog.py` covers browsing without downloads, named credentials,
+prerequisite errors, private legacy arguments, exact test promotion, stale
+revisions, expiry, isolated installation, cancellation and damaged manifests.
+`mcp-catalog-e2e.js` downloads a real public Time package in the actual Local
+app and checks the full setup flow, session gateway, two windows, restart and
+process cleanup. `provider-mcp-e2e.js` also checks the server catalog at mobile
+width. The coding CLI in UI verification is a fixture; no paid model inference
+is performed.

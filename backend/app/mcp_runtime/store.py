@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.db import Database
+from app.mcp_runtime.secret_args import secret_indexes
 from app.services._ids import now_iso
 from app.vault import SecretVault
 
@@ -25,6 +26,7 @@ class Definition(BaseModel):
     enabled: bool = True
     timeout_s: int = Field(default=120, ge=5, le=3600)
     log_stderr: bool = False
+    catalog_id: str = Field(default="", max_length=80, pattern=r"^[a-z0-9-]*$")
 
     @model_validator(mode="after")
     def validate_transport(self):
@@ -90,22 +92,37 @@ class McpStore:
             r["id"] for r in self.db.query("SELECT id FROM mcp_catalog ORDER BY created_at, id")
         ]
 
+    def prepare(self, patch: dict, mid: str | None = None) -> dict:
+        """Merge write-only fields without persisting or launching anything."""
+        old = self.get(mid) if mid else {}
+        data = {k: v for k, v in old.items() if k in Definition.model_fields}
+        if isinstance(patch.get("args"), list):
+            args = []
+            for i, value in enumerate(patch["args"]):
+                if value is None:
+                    if i >= len(data.get("args", [])) or i not in secret_indexes(data["args"]):
+                        raise ValueError("missing_secret_argument")
+                    value = data["args"][i]
+                args.append(value)
+            patch = {**patch, "args": args}
+        for field in ("env", "headers"):
+            if field not in patch:
+                continue
+            if not isinstance(patch[field], dict):
+                raise ValueError("invalid_" + field)
+            values = {}
+            for key, value in patch[field].items():
+                if value is None:
+                    if key not in data.get(field, {}):
+                        raise ValueError("missing_secret_value")
+                    value = data[field][key]
+                values[key] = value
+            patch = {**patch, field: values}
+        return Definition.model_validate({**data, **patch}).model_dump()
+
     def save(self, mid: str, patch: dict, *, create: bool = False) -> dict:
         old = {} if create else self.get(mid)
-        data = {k: v for k, v in old.items() if k in Definition.model_fields}
-        for field in ("env", "headers"):
-            if field in patch:
-                if not isinstance(patch[field], dict):
-                    raise ValueError("invalid_" + field)
-                values = {}
-                for key, value in patch[field].items():
-                    if value is None:
-                        if key not in data.get(field, {}):
-                            raise ValueError("missing_secret_value")
-                        value = data[field][key]
-                    values[key] = value
-                patch = {**patch, field: values}
-        spec = Definition.model_validate({**data, **patch}).model_dump()
+        spec = self.prepare(patch, None if create else mid)
         stamp = now_iso()
         self.vault.put("mcp", mid, json.dumps(spec, ensure_ascii=False))
         self.db.execute(
@@ -125,6 +142,9 @@ class McpStore:
     def public(spec: dict) -> dict:
         return {
             **spec,
+            "args": [
+                None if i in secret_indexes(spec["args"]) else v for i, v in enumerate(spec["args"])
+            ],
             "env": {k: None for k in spec["env"]},
             "headers": {k: None for k in spec["headers"]},
         }

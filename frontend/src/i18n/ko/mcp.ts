@@ -1,5 +1,85 @@
 import type { Messages } from "..";
 export default {
+  issueDockerDaemon:
+    "Docker 명령은 있지만 Docker 엔진에 연결할 수 없어요. 실행 기기의 Docker 상태와 접근 권한을 확인하거나 카탈로그의 Docker 없는 방식을 선택하세요.",
+  registrationDone: "MCP 등록이 완료됐어요. 세션 패널에서 켜서 사용하세요.",
+  requiredCatalogField: "{field} 항목을 입력해 주세요.",
+  setupChanged: "다른 창에서 설정이 바뀌었어요. 다시 불러와 테스트해 주세요.",
+  downloadBusy: "다른 다운로드가 진행 중이에요. 완료된 뒤 다시 시도해 주세요.",
+
+  managedPackage: "앱에서 관리하는 MCP 패키지",
+  manageTab: "MCP 관리",
+  catalogTab: "카탈로그",
+  directTab: "직접 설정",
+  directHint:
+    "실행 명령이나 서버 주소를 직접 설정해요. 연결해서 저장할 때는 초기화·도구 목록 테스트가 성공해야 등록돼요.",
+  catalogHint:
+    "배포처와 다운로드 방법을 확인한 뒤 필요한 MCP만 설치하세요. 목록을 여는 것만으로 다운로드하거나 연결하지 않아요.",
+  searchCatalog: "MCP 이름·기능 검색",
+  category: "분류",
+  categoryAll: "전체 분류",
+  categoryWork: "업무·협업",
+  categoryDevelopment: "개발 도구",
+  categoryFiles: "파일·기억",
+  catalogLoading: "카탈로그 불러오는 중…",
+  noCatalogMatches: "검색 결과가 없어요.",
+  official: "제작사·프로젝트 공식",
+  community: "커뮤니티 제공",
+  downloaded: "다운로드됨",
+  noDownload: "원격 서비스 · 다운로드가 필요 없어요.",
+  installOnDevice: "이 컴퓨터의 앱 전용 폴더에 설치해요.",
+  installOnServer: "접속한 서버의 앱 전용 폴더에 설치해요.",
+  downloadMethod: "다운로드 방법",
+  startSetup: "설정 시작",
+  replaceExisting: "기존 등록 항목과 세션 선택을 유지하며 다시 설정해요.",
+  newRegistration: "테스트에 성공한 설정만 MCP 관리에 등록해요.",
+  prepareConnection: "연결 준비",
+  download: "다운로드",
+  configureTest: "설정 및 테스트",
+  registerSuccess: "MCP 등록",
+  remotePreparation:
+    "다운로드 대신 인증 정보를 설정하고 이 실행 환경에서 서버에 연결하는지 확인해요.",
+  isolatedInstallHint:
+    "표시된 배포처의 패키지와 의존성을 앱 전용 환경에 내려받아요. Node.js/npm이 필요하면 함께 준비하며, 기존 시스템 설치와 계정은 바꾸지 않아요.",
+  publisherDocs: "배포처 설치 문서",
+  sourceCode: "소스 코드",
+  downloading: "패키지와 의존성을 다운로드하고 있어요…",
+  downloadLog: "다운로드 기록",
+  cancelDownload: "다운로드 취소",
+  previousStep: "이전",
+  testConnection: "연결 테스트",
+  testing: "연결·도구 목록 확인 중…",
+  testPassed: "연결 테스트 성공",
+  testFailed: "연결 테스트에 실패했어요.",
+  testExpired: "테스트 유효 시간이 지났어요. 다시 테스트해 주세요.",
+  testScope:
+    "서버 초기화와 도구 목록 조회만 확인해요. 실제 파일 수정·이슈 생성 등의 작업은 실행하지 않아요.",
+  registrationHint:
+    "등록 후 MCP 관리에서 연결 상태를 확인하세요. 각 세션의 패널에서 켠 경우에만 해당 세션에서 사용할 수 있어요.",
+  registerMcp: "MCP로 등록",
+  repairWithCatalog: "카탈로그로 설치·설정 다시 하기",
+  technicalDetails: "기술 정보",
+  secretArgHint:
+    "보안 값이 들어 있는 인수는 null로 가려져요. null은 그 위치의 저장값을 유지해요.",
+  issueDocker:
+    "이 실행 환경에 Docker 명령이 없어요. 카탈로그의 Docker 없는 설치·원격 연결 방식을 선택하거나, MCP가 실행되는 기기에 Docker를 준비해 주세요.",
+  issueExecutable:
+    "이 실행 환경에서 실행 파일을 찾을 수 없어요. 실행 파일 경로와 설치 상태를 확인해 주세요. 서버 모드는 서버의 파일을 사용해요.",
+  issuePermission: "실행 파일에 접근하거나 실행할 권한이 없어요.",
+  issueFolder:
+    "작업 폴더가 이 실행 환경에 없어요. 폴더를 고치거나 기본 폴더를 쓰도록 비워 주세요.",
+  issueFolderPermission: "작업 폴더에 접근할 권한이 없어요.",
+  issueDockerEnv:
+    "Docker 환경변수 인수가 올바르지 않아요. 토큰만 인수로 넣지 말고 카탈로그의 항목별 인증 설정을 사용해 주세요.",
+  issueAuth:
+    "서버가 인증을 거부했어요. 계정·토큰·접근 권한과 조직의 MCP 허용 정책을 확인해 주세요.",
+  issueTimeout:
+    "서버 연결 시간이 초과됐어요. 주소·네트워크·서버 실행 상태를 확인해 주세요.",
+  issueConnection:
+    "MCP 초기화에 실패했거나 실행 직후 종료됐어요. 필요한 설정과 실행 로그를 확인해 주세요.",
+  issuePackage:
+    "앱에서 관리하는 MCP 패키지가 없거나 사용할 수 없어요. 카탈로그에서 다시 다운로드해 주세요.",
+
   loadingTools: "도구 불러오는 중…",
   moreTools: "도구 더 보기",
 

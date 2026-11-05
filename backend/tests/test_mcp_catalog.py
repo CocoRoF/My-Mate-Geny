@@ -1,0 +1,310 @@
+import asyncio
+import json
+import sys
+from pathlib import Path
+
+import pytest
+from test_mcp_api import client as api_client_fixture
+from test_mcp_runtime import definition
+from test_sessions import _services
+
+from app.config import settings
+from app.main import app
+from app.mcp_runtime.catalog import definition as recipe_definition
+from app.mcp_runtime.client import Connection
+from app.mcp_runtime.installations import Installations
+from app.mcp_runtime.service import McpService
+from app.mcp_runtime.store import McpStore
+from app.services.log_service import LogService
+from app.vault import SecretVault
+
+
+@pytest.fixture
+def client():
+    yield from api_client_fixture.__wrapped__()
+
+
+@pytest.fixture(autouse=True)
+def private_packages(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "data_home", str(tmp_path / "app"))
+
+
+def test_browsing_catalog_downloads_and_launches_nothing(client, monkeypatch):
+    monkeypatch.setattr(
+        app.state.mcp.installations, "start", lambda *a: pytest.fail("Auto-download")
+    )
+    catalog = client.get("/api/mcp/recipes").json()
+    assert len(catalog["items"]) >= 9
+    assert {
+        "atlassian",
+        "atlassian-cloud",
+        "github",
+        "context7",
+        "playwright",
+        "filesystem",
+        "memory",
+        "fetch",
+        "time",
+    } <= {x["id"] for x in catalog["items"]}
+    assert all(x["source"].startswith("https://github.com/") for x in catalog["items"])
+    assert not app.state.mcp.installations.root.exists()
+
+
+def test_atlassian_recipe_has_named_cloud_and_data_center_credentials(tmp_path):
+    spec = recipe_definition(
+        "atlassian",
+        {
+            "service": "both",
+            "deployment": "cloud",
+            "jira_url": "https://company.atlassian.net",
+            "jira_email": "fixture@example.com",
+            "jira_token": "fixture-jira-secret",
+            "confluence_url": "https://company.atlassian.net/wiki",
+            "confluence_email": "fixture@example.com",
+            "confluence_token": "fixture-confluence-secret",
+            "read_only": True,
+        },
+        data_dir=tmp_path,
+    )
+    assert spec["command"] == "geny-managed" and spec["args"] == []
+    assert spec["env"]["JIRA_API_TOKEN"] == "fixture-jira-secret"
+    assert spec["env"]["CONFLUENCE_URL"].endswith("/wiki")
+    assert spec["env"]["READ_ONLY_MODE"] == "true"
+    dc = recipe_definition(
+        "atlassian",
+        {"deployment": "server", "jira_url": "https://jira.internal", "jira_token": "fixture-pat"},
+        data_dir=tmp_path,
+    )
+    assert dc["env"]["JIRA_PERSONAL_TOKEN"] == "fixture-pat"
+    assert "JIRA_USERNAME" not in dc["env"]
+    with pytest.raises(ValueError, match="jira_url"):
+        recipe_definition("atlassian", {"jira_token": "fixture"}, data_dir=tmp_path)
+    with pytest.raises(ValueError, match="jira_email"):
+        recipe_definition(
+            "atlassian",
+            {"jira_url": "https://company.atlassian.net", "jira_token": "fixture"},
+            data_dir=tmp_path,
+        )
+
+
+def test_hosted_atlassian_and_github_do_not_need_docker_or_package_download(tmp_path):
+    import base64
+
+    spec = recipe_definition(
+        "atlassian-cloud",
+        {"email": "fixture@example.com", "token": "fixture-token"},
+        data_dir=tmp_path,
+    )
+    assert spec["transport"] == "http" and spec["url"] == "https://mcp.atlassian.com/v2/mcp"
+    assert (
+        spec["headers"]["Authorization"]
+        == "Basic " + base64.b64encode(b"fixture@example.com:fixture-token").decode()
+    )
+    assert (
+        recipe_definition("github", {"token": "fixture-pat"}, data_dir=tmp_path)["headers"][
+            "Authorization"
+        ]
+        == "Bearer fixture-pat"
+    )
+    assert Installations().state("atlassian-cloud")["download_required"] is False
+    assert not tmp_path.joinpath("app", "mcp-packages").exists()
+
+
+def test_filesystem_requires_explicit_existing_absolute_roots(tmp_path):
+    with pytest.raises(ValueError):
+        recipe_definition("filesystem", {"folders": "relative"}, data_dir=tmp_path)
+    assert recipe_definition("filesystem", {"folders": str(tmp_path)}, data_dir=tmp_path)[
+        "args"
+    ] == [str(tmp_path)]
+
+
+def test_missing_executable_and_missing_directory_are_distinct_failed_tests_not_entries(
+    client, tmp_path
+):
+    before = len(client.get("/api/mcp").json()["items"])
+    result = client.post(
+        "/api/mcp/test",
+        json={
+            "definition": {
+                "name": "Missing executable",
+                "command": "geny-deliberately-missing-executable",
+            }
+        },
+    ).json()
+    assert not result["ok"] and result["error_code"] == "executable_missing"
+    result = client.post(
+        "/api/mcp/test", json={"definition": definition(cwd=str(tmp_path / "missing"))}
+    ).json()
+    assert not result["ok"] and result["error_code"] == "working_directory_missing"
+    assert len(client.get("/api/mcp").json()["items"]) == before
+
+
+def test_registration_promotes_exact_tested_connection_and_preserves_session_selection(
+    client, tmp_path
+):
+    pid_file = tmp_path / "mcp.pid"
+    checked = client.post(
+        "/api/mcp/test",
+        json={
+            "definition": definition(
+                env={"FIXTURE_PID": str(pid_file), "SERVICE_KEY": "fixture-secret"}
+            )
+        },
+    ).json()
+    assert checked["ok"] and checked["tool_count"] == 3
+    assert "fixture-secret" not in json.dumps(checked)
+    pid = int(pid_file.read_text())
+    registered = client.post("/api/mcp/tests/" + checked["test_id"] + "/register").json()
+    assert registered["state"] == "connected"
+    assert int(pid_file.read_text()) == pid
+    assert registered["env"]["SERVICE_KEY"] is None
+    assert client.post("/api/mcp/tests/" + checked["test_id"] + "/register").status_code == 400
+    mid = registered["id"]
+    sid = client.post(
+        "/api/sessions", json={"provider": "claude", "workspace_path": str(tmp_path)}
+    ).json()["id"]
+    client.patch("/api/sessions/" + sid, json={"mcp": {mid: True}})
+    updated = client.post(
+        "/api/mcp/test",
+        json={"existing_id": mid, "definition": {"name": "Updated", "env": {"SERVICE_KEY": None}}},
+    ).json()
+    assert updated["ok"]
+    assert client.post("/api/mcp/tests/" + updated["test_id"] + "/register").json()["id"] == mid
+    assert client.get("/api/sessions/" + sid).json()["mcp"][mid] is True
+    client.delete("/api/sessions/" + sid)
+
+
+def test_saved_config_changes_after_testing_require_retest(client):
+    item = client.post("/api/mcp", json=definition()).json()
+    checked = client.post(
+        "/api/mcp/test", json={"existing_id": item["id"], "definition": {"name": "Tested draft"}}
+    ).json()
+    client.patch("/api/mcp/" + item["id"], json={"name": "Changed elsewhere"})
+    result = client.post("/api/mcp/tests/" + checked["test_id"] + "/register")
+    assert result.status_code == 400 and "mcp_config_changed" in result.text
+    assert client.get("/api/mcp").json()["items"][0]["name"] == "Changed elsewhere"
+
+
+def test_credentials_in_legacy_arguments_are_write_only_and_kept_without_echo(db):
+    store = McpStore(db, SecretVault(db))
+    token = "ATATT" + "fixture_only_" * 8 + "=not-real"
+    store.save(
+        "legacy",
+        {
+            "name": "Old Docker",
+            "command": "docker",
+            "args": ["run", "-e", "JIRA_API_TOKEN=fixture-old-secret", "-e", token],
+            "enabled": False,
+        },
+        create=True,
+    )
+    visible = store.public(store.get("legacy"))
+    assert visible["args"] == ["run", "-e", None, "-e", None]
+    assert token not in json.dumps(visible)
+    store.save("legacy", {"args": visible["args"]})
+    assert store.get("legacy")["args"][-1] == token
+    with pytest.raises(ValueError):
+        store.prepare({"name": "New", "command": "test", "args": [None]})
+
+
+def test_catalog_repair_defaults_keep_saved_tokens_private(client):
+    token = "ATATT" + "fixture_only_" * 8
+    item = client.post(
+        "/api/mcp",
+        json={
+            "name": "Old",
+            "command": "docker",
+            "args": ["run", "-i", "-e", token, "ghcr.io/sooperset/mcp-atlassian:latest"],
+            "enabled": False,
+        },
+    ).json()
+    defaults = client.get("/api/mcp/recipes/atlassian/defaults?existing_id=" + item["id"]).json()
+    assert set(defaults["saved_fields"]) == {"jira_token", "confluence_token"}
+    assert not defaults["values"]["jira_token"] and token not in json.dumps(defaults)
+
+
+@pytest.mark.asyncio
+async def test_docker_failure_reports_missing_runtime_before_any_spawn(monkeypatch):
+    from app.mcp_runtime import diagnostics
+
+    monkeypatch.setattr(diagnostics.shutil, "which", lambda *a, **kw: None)
+    spec = {"id": "docker", **definition(command="docker", args=[])}
+    from app.mcp_runtime.store import Definition
+
+    spec = {
+        "id": "docker",
+        **Definition.model_validate({k: v for k, v in spec.items() if k != "id"}).model_dump(),
+    }
+    connection = Connection(spec, lambda *a: None)
+    try:
+        await connection.ready
+        assert connection.error_code == "docker_missing"
+    finally:
+        await connection.close()
+
+
+@pytest.mark.asyncio
+async def test_test_expiry_releases_real_process(db, monkeypatch):
+    import app.mcp_runtime.setup as setup
+
+    monkeypatch.setattr(setup, "TEST_TTL", 0.15)
+    service = McpService(db, SecretVault(db), _services(db), LogService(db))
+    try:
+        checked = await service.setup.test(definition())
+        connection = service.setup.pending[checked["test_id"]]["connection"]
+        await asyncio.sleep(0.4)
+        assert checked["test_id"] not in service.setup.pending
+        assert connection.task.done()
+    finally:
+        await service.stop()
+
+
+@pytest.mark.asyncio
+async def test_download_is_isolated_cancellable_and_survives_interpreter_path_changes(
+    tmp_path, monkeypatch
+):
+    installs = Installations()
+    calls = []
+
+    async def version(r):
+        return "0.0.1"
+
+    async def execute(argv, job, cwd):
+        calls.append(argv)
+        target = Path(argv[argv.index("--target") + 1])
+        meta = target / "mcp_server_time-0.0.1.dist-info"
+        meta.mkdir(parents=True)
+        (meta / "METADATA").write_text("Name: mcp-server-time\nVersion: 0.0.1\n")
+        (meta / "entry_points.txt").write_text(
+            "[console_scripts]\nmcp-server-time = fixture:main\n"
+        )
+
+    monkeypatch.setattr(installs, "_version", version)
+    monkeypatch.setattr(installs, "_exec", execute)
+    assert not installs.state("time")["installed"]
+    installs.start("time")
+    await installs.tasks["time"]
+    assert installs.state("time")["installed"]
+    assert "--target" in calls[0] and "--no-build" in calls[0]
+    spec = {"command": "geny-managed", "catalog_id": "time", "args": [], "env": {}}
+    assert installs.materialize(spec)["command"] == sys.executable
+    assert (installs.root / "python-runner-v1.py").is_file()
+    monkeypatch.setattr(sys, "executable", "/a/new/bundled/python")
+    assert installs.materialize(spec)["command"] == "/a/new/bundled/python"
+
+    async def pause(*a):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(installs, "_version", pause)
+    installs.start("fetch")
+    await asyncio.sleep(0.01)
+    with pytest.raises(ValueError, match="busy"):
+        installs.start("atlassian")
+    await installs.cancel("fetch")
+    assert installs.state("fetch")["phase"] == "cancelled"
+    assert not installs.manifest("fetch")
+    assert installs.manifest("time")
+    pointer = installs.root / "time" / "current.json"
+    pointer.write_text("{damaged")
+    assert not installs.manifest("time")
+    assert not installs.state("time")["installed"]

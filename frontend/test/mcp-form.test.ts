@@ -15,6 +15,7 @@ test("MCP arguments preserve a folder containing spaces without shell parsing", 
     "",
   ]);
   assert.throws(() => mcpArguments('["x", 3]'));
+  assert.deepEqual(mcpArguments('["--token", null]'), ["--token", null]);
 });
 
 test("editing MCP settings preserves existing secrets and removes only deleted rows", () => {

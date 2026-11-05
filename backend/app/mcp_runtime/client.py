@@ -16,11 +16,11 @@ import anyio
 import httpx
 from mcp import ClientSession, McpError, StdioServerParameters, types
 from mcp.client.sse import sse_client
-from mcp.client.stdio import get_default_environment, stdio_client
+from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
+from app.mcp_runtime.diagnostics import ConnectionIssue, launch_environment, preflight
 from app.portability import child_command
-from app.services import managed_node
 
 HEALTH_INTERVAL = 10
 
@@ -62,8 +62,9 @@ def exception_message(exc):
 
 
 class Connection:
-    def __init__(self, spec: dict, event):
+    def __init__(self, spec: dict, event, prepare=None):
         self.spec, self.event = spec, event
+        self.prepare = prepare
         self.ready = asyncio.get_running_loop().create_future()
         self.queue: asyncio.Queue = asyncio.Queue(maxsize=128)
         self.calls: set[asyncio.Task] = set()
@@ -73,12 +74,24 @@ class Connection:
         self.server_info: dict = {}
         self.protocol = ""
         self.state, self.error, self.connected_at = "connecting", "", None
+        self.error_code = ""
+        self.docker_unavailable = False
         self.task = asyncio.create_task(self._run(), name="mcp:" + spec["id"])
 
     async def _run(self):
         try:
             async with AsyncExitStack() as stack:
                 spec = self.spec
+                if self.prepare:
+                    spec = self.prepare(spec)
+                    self.spec = spec
+                spec = {
+                    **spec,
+                    "command": os.path.expanduser(spec["command"]),
+                    "cwd": os.path.expanduser(spec["cwd"]),
+                }
+                self.spec = spec
+                preflight(spec)
                 if spec["transport"] == "stdio":
                     # Capture stderr through a pipe: never forward raw provider output to Python logging.
                     read_fd, write_fd = os.pipe()
@@ -90,6 +103,16 @@ class Connection:
                             chunk = await asyncio.to_thread(os.read, read_fd, 4096)
                             if not chunk:
                                 return
+                            lower = chunk.lower()
+                            if any(
+                                s in lower
+                                for s in (
+                                    b"cannot connect to the docker daemon",
+                                    b"is the docker daemon running",
+                                    b"docker.sock: connect: permission denied",
+                                )
+                            ):
+                                self.docker_unavailable = True
                             self.event("stderr", chunk.decode("utf-8", "replace"))
 
                     tail = asyncio.create_task(stderr())
@@ -104,8 +127,10 @@ class Connection:
 
                     stack.push_async_callback(stop_tail)
                     stack.callback(output.close)
-                    env = {**managed_node.environment(get_default_environment()), **spec["env"]}
-                    command = managed_node.which(spec["command"]) or spec["command"]
+                    env = launch_environment(spec)
+                    import shutil
+
+                    command = shutil.which(spec["command"], path=env.get("PATH")) or spec["command"]
                     argv = child_command(command, spec["args"])
                     streams = await stack.enter_async_context(
                         stdio_client(
@@ -200,6 +225,19 @@ class Connection:
         except BaseException as exc:
             # SDK exception groups may contain a server's raw message: callers/logs redact it.
             self.error = exception_message(exc)[:4000]
+            if isinstance(exc, ConnectionIssue):
+                self.error_code = exc.code
+            else:
+                detail = self.error.lower()
+                self.error_code = (
+                    "authentication_failed"
+                    if any(x in detail for x in ("401", "403", "unauthorized", "forbidden"))
+                    else "connection_timeout"
+                    if "timeout" in detail or "timed out" in detail
+                    else "connection_failed"
+                )
+                if self.docker_unavailable:
+                    self.error_code = "docker_unavailable"
             self.state = "error"
             self.event("error", self.error)
         finally:

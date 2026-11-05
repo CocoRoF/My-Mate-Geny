@@ -1,4 +1,86 @@
 export default {
+  issueDockerDaemon:
+    "Docker is installed but its engine is unavailable. Check Docker and its permissions on the runtime machine, or use a catalog option without Docker.",
+  registrationDone: "MCP registered. Enable it in a session panel to use it.",
+  requiredCatalogField: "Enter {field}.",
+  setupChanged:
+    "The configuration changed in another window. Reload and test again.",
+  downloadBusy: "Another download is in progress. Try again when it finishes.",
+
+  managedPackage: "App-managed MCP package",
+  manageTab: "Manage MCPs",
+  catalogTab: "Catalog",
+  directTab: "Manual setup",
+  directHint:
+    "Configure an executable or server URL directly. Saving a connected configuration first tests initialization and tool discovery.",
+  catalogHint:
+    "Review the publisher and installation method, then install only the MCPs you need. Browsing does not download or connect anything.",
+  searchCatalog: "Search MCP names and capabilities",
+  category: "Category",
+  categoryAll: "All categories",
+  categoryWork: "Work and collaboration",
+  categoryDevelopment: "Development",
+  categoryFiles: "Files and memory",
+  catalogLoading: "Loading catalog…",
+  noCatalogMatches: "No matching MCPs.",
+  official: "First-party / project maintained",
+  community: "Community maintained",
+  downloaded: "Downloaded",
+  noDownload: "Hosted service · no download required.",
+  installOnDevice: "Installed in this computer’s app-owned folder.",
+  installOnServer: "Installed in the connected server’s app-owned folder.",
+  downloadMethod: "Installation method",
+  startSetup: "Start setup",
+  replaceExisting:
+    "Reconfigure the existing entry while preserving its identity and session selections.",
+  newRegistration: "Only a successfully tested configuration is registered.",
+  prepareConnection: "Prepare connection",
+  download: "Download",
+  configureTest: "Configure and test",
+  registerSuccess: "Register MCP",
+  remotePreparation:
+    "Configure credentials and test the hosted connection from this runtime. No download is needed.",
+  isolatedInstallHint:
+    "Downloads the publisher’s package and dependencies into an app-owned environment. Node.js/npm is prepared if needed. Existing system installations and accounts are preserved.",
+  publisherDocs: "Publisher installation guide",
+  sourceCode: "Source code",
+  downloading: "Downloading package and dependencies…",
+  downloadLog: "Download log",
+  cancelDownload: "Cancel download",
+  previousStep: "Back",
+  testConnection: "Test connection",
+  testing: "Checking connection and tools…",
+  testPassed: "Connection test passed",
+  testFailed: "Connection test failed.",
+  testExpired: "The connection test expired. Please test again.",
+  testScope:
+    "Tests server initialization and tool discovery only. Does not edit files, create issues or execute tools.",
+  registrationHint:
+    "After registration, check the connection in Manage MCPs. Each session must enable it in its panel before use.",
+  registerMcp: "Register MCP",
+  repairWithCatalog: "Repair using catalog setup",
+  technicalDetails: "Technical details",
+  secretArgHint:
+    "Arguments containing credentials appear as null. A null keeps the saved value at that position.",
+  issueDocker:
+    "Docker is not installed in this MCP runtime. Choose a catalog installation or hosted connection that does not need Docker, or install Docker on the machine running MCP.",
+  issueExecutable:
+    "Executable not found in this runtime. Check its installation and path. Server mode uses files on the server.",
+  issuePermission: "The runtime cannot access or execute the configured file.",
+  issueFolder:
+    "The working folder does not exist in this runtime. Correct it or leave it empty to use the default.",
+  issueFolderPermission: "The runtime cannot access the working folder.",
+  issueDockerEnv:
+    "A Docker environment argument is invalid. Use the catalog’s named credential fields instead of placing a bare token in arguments.",
+  issueAuth:
+    "Authentication was rejected. Check the account, token, permissions and your organization’s MCP policy.",
+  issueTimeout:
+    "Connection timed out. Check the address, network and server status.",
+  issueConnection:
+    "MCP initialization failed or the process exited. Check the required configuration and logs.",
+  issuePackage:
+    "The app-managed MCP package is missing or unavailable. Download it again from the catalog.",
+
   loadingTools: "Loading tools…",
   moreTools: "Load more tools",
 

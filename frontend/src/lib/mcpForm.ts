@@ -1,10 +1,13 @@
 /** Both input styles preserve arguments containing spaces; no shell is evaluated. */
-export function mcpArguments(text: string): string[] {
+export function mcpArguments(text: string): (string | null)[] {
   if (text.trim().startsWith("[")) {
     const value: unknown = JSON.parse(text);
-    if (!Array.isArray(value) || value.some((x) => typeof x !== "string"))
+    if (
+      !Array.isArray(value) ||
+      value.some((x) => x !== null && typeof x !== "string")
+    )
       throw new Error("invalid_arguments");
-    return value as string[];
+    return value as (string | null)[];
   }
   return text
     .split(/\r?\n/)

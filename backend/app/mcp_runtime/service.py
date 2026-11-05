@@ -15,6 +15,9 @@ from urllib.parse import parse_qsl, urlsplit
 
 from app.config import settings
 from app.mcp_runtime.client import Connection
+from app.mcp_runtime.installations import Installations
+from app.mcp_runtime.secret_args import values as secret_arguments
+from app.mcp_runtime.setup import SetupTests
 from app.mcp_runtime.store import McpStore
 
 METHODS = {
@@ -64,6 +67,8 @@ class McpService:
         self.directory = tempfile.TemporaryDirectory(prefix="geny-mcp-")
         self.startup = None
         self.closed = False
+        self.installations = Installations(self.changed, self.log)
+        self.setup = SetupTests(self)
         self.logger = logging.getLogger("mcp")
         self.previous_propagate = self.logger.propagate
         self.log_handler = _SafeSdkLog(self)
@@ -75,6 +80,7 @@ class McpService:
             self.sessions.broadcast_list({"type": "mcp.changed", "data": {}})
 
     def _remember(self, spec):
+        self.secret_values.update(v for v in secret_arguments(spec["args"]) if v)
         self.secret_values.update(
             v for v in [*spec["env"].values(), *spec["headers"].values()] if v
         )
@@ -112,6 +118,8 @@ class McpService:
 
     def _event(self, mid, event, text):
         stats = self.stats.setdefault(mid, {})
+        if event == "error":
+            stats["errors"] = stats.get("errors", 0) + 1
         if event == "stderr":
             client = self.clients.get(mid)
             if client is None or not client.spec.get("log_stderr"):
@@ -144,7 +152,29 @@ class McpService:
         async def restore():
             for mid in self.store.ids():
                 try:
-                    if self.store.get(mid)["enabled"]:
+                    spec = self.store.get(mid)
+                    # Adopt the stable runner used to repair the previous Docker-only entry.
+                    # Only an exact app-owned launch signature is migrated.
+                    if not spec["catalog_id"] and spec["command"] == sys.executable:
+                        candidate = {
+                            **spec,
+                            "catalog_id": "atlassian",
+                            "command": "geny-managed",
+                            "args": [],
+                        }
+                        if self.installations.manifest("atlassian"):
+                            launch = self.installations.materialize(candidate)
+                            if spec["args"] == launch["args"]:
+                                spec = self.store.save(
+                                    mid,
+                                    {
+                                        "catalog_id": "atlassian",
+                                        "command": "geny-managed",
+                                        "args": [],
+                                    },
+                                )
+                                self.log(mid, "info", "managed_migrated")
+                    if spec["enabled"]:
                         await self.connect(mid)
                 except Exception as exc:
                     self.log(mid, "error", "restore_failed", type(exc).__name__)
@@ -163,7 +193,11 @@ class McpService:
                 self.clients.pop(mid, None)
                 self.changed()
                 return self.entry(mid)
-            client = Connection(spec, lambda event, text: self._event(mid, event, text))
+            client = Connection(
+                spec,
+                lambda event, text: self._event(mid, event, text),
+                prepare=self.installations.materialize,
+            )
             self.clients[mid] = client
             self.changed()
             await asyncio.shield(client.ready)
@@ -180,6 +214,14 @@ class McpService:
             **spec,
             "state": state,
             "error": self.redact(client.error) if client else "",
+            "error_code": client.error_code if client else "",
+            "repair_recipe": "atlassian"
+            if spec["command"] in ("docker", "docker.exe")
+            and any(
+                isinstance(a, str) and a.startswith("ghcr.io/sooperset/mcp-atlassian")
+                for a in spec["args"]
+            )
+            else None,
             "connected_at": client.connected_at if client else None,
             "tool_count": len(client.tools) if client else 0,
             "tools": [
@@ -408,6 +450,8 @@ class McpService:
 
     async def stop(self):
         self.closed = True
+        await self.setup.stop()
+        await self.installations.stop()
         self.revoke()
         if self.startup:
             self.startup.cancel()

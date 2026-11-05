@@ -8,6 +8,7 @@ from app.config import settings
 from app.portability import child_command, subprocess_flags
 from app.providers._cli_runtime import _ENV_WHITELIST, _kill_group
 from app.services import managed_node
+from app.services import install_lock
 from app.services.cli_tools import tools as T
 from app.services.cli_tools.tools import resolve_path
 
@@ -43,8 +44,10 @@ class DesktopSetup:
         if installed:raise HTTPException(409,'Already installed; installation does not upgrade existing tools')
         if self.busy:raise HTTPException(409,'Another installation is running')
         if tool=='higgsfield' and not managed_node.status()['installed'] and not dependencies:raise HTTPException(409,'node_required')
+        owner=object()
+        if not install_lock.claim(owner):raise HTTPException(409,'Another installation is running')
         self.jobs[tool]={'phase':'installing','step':'providerInstall','log':[],'error':'','transferred':0,'total':0}
-        self.tasks[tool]=asyncio.create_task(self._install(tool,dependencies));return self.state(tool)
+        self.tasks[tool]=asyncio.create_task(self._install(tool,dependencies));self.tasks[tool].add_done_callback(lambda task:install_lock.release(owner));return self.state(tool)
     def cancel(self,tool):
         if tool in self.tasks:self.tasks[tool].cancel()
         return {'ok':True}

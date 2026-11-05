@@ -5,6 +5,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import ValidationError
 
+from app.mcp_runtime.catalog import RECIPES, recipe
 from app.mcp_runtime.store import Definition
 
 router = APIRouter(prefix="/api/mcp")
@@ -24,6 +25,92 @@ def _fail(exc):
 @router.get("")
 async def catalog(request: Request):
     return request.app.state.mcp.catalog()
+
+
+@router.get("/recipes")
+async def recipes(request: Request):
+    service = request.app.state.mcp
+    return {
+        "items": [
+            {**recipe(rid), "installation": service.installations.state(rid)} for rid in RECIPES
+        ],
+        "execution_mode": service.catalog()["execution_mode"],
+    }
+
+
+@router.get("/recipes/{rid}/defaults")
+async def defaults(rid: str, request: Request, existing_id: str | None = None):
+    try:
+        return request.app.state.mcp.setup.defaults(rid, existing_id)
+    except (ValueError, KeyError) as exc:
+        raise _fail(exc) from None
+
+
+@router.post("/recipes/{rid}/download")
+async def download(rid: str, request: Request):
+    try:
+        return request.app.state.mcp.installations.start(rid)
+    except (ValueError, KeyError) as exc:
+        raise _fail(exc) from None
+
+
+@router.get("/recipes/{rid}/download")
+async def download_state(rid: str, request: Request):
+    try:
+        return request.app.state.mcp.installations.state(rid)
+    except KeyError as exc:
+        raise _fail(exc) from None
+
+
+@router.delete("/recipes/{rid}/download")
+async def cancel_download(rid: str, request: Request):
+    try:
+        return await request.app.state.mcp.installations.cancel(rid)
+    except KeyError as exc:
+        raise _fail(exc) from None
+
+
+def _draft(body):
+    mid = body.get("existing_id")
+    if mid is not None and (not isinstance(mid, str) or len(mid) > 80):
+        raise ValueError("invalid_existing_id")
+    return mid
+
+
+@router.post("/recipes/{rid}/test")
+async def test_recipe(rid: str, body: dict, request: Request):
+    try:
+        name = body.get("name", "")
+        if not isinstance(name, str):
+            raise ValueError("invalid_name")
+        return await request.app.state.mcp.setup.catalog_test(
+            rid, body.get("values", {}), name, _draft(body)
+        )
+    except (ValueError, KeyError) as exc:
+        raise _fail(exc) from None
+
+
+@router.post("/test")
+async def test_direct(body: dict, request: Request):
+    try:
+        if not isinstance(body.get("definition"), dict):
+            raise ValueError("invalid_config")
+        return await request.app.state.mcp.setup.test(body["definition"], _draft(body))
+    except (ValueError, KeyError) as exc:
+        raise _fail(exc) from None
+
+
+@router.delete("/tests/{token}")
+async def discard_test(token: str, request: Request):
+    return await request.app.state.mcp.setup.discard(token)
+
+
+@router.post("/tests/{token}/register")
+async def register_test(token: str, request: Request):
+    try:
+        return await request.app.state.mcp.setup.register(token)
+    except (ValueError, KeyError) as exc:
+        raise _fail(exc) from None
 
 
 @router.post("")

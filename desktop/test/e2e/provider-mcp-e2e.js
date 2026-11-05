@@ -201,7 +201,8 @@ async function serverFlow() {
     MATES_ROOT: path.join(serverHome, "mates"),
     HIGGSFIELD_ROOT: path.join(serverHome, "higgsfield"),
     AVATAR_ROOT: path.join(serverHome, "avatars"),
-    STATIC_DIR: path.join(ROOT, "frontend/dist-mcp"),
+    STATIC_DIR:
+      process.env.MCP_SERVER_WEB || path.join(ROOT, "frontend/dist-mcp"),
     AUTH_USERNAME: "fixture",
     AUTH_PASSWORD: "fixture-mcp-password",
     COOKIE_SECURE: "false",
@@ -341,6 +342,31 @@ async function serverFlow() {
       path: path.join(out, "08-server-mcp-catalog.png"),
       animations: "disabled",
     });
+    await page.locator("[data-testid=mcp-tab-catalog]").click();
+    await page.waitForSelector("[data-testid=mcp-recipe-atlassian]");
+    await page.screenshot({
+      path: path.join(out, "08b-server-discovery.png"),
+      animations: "disabled",
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector("[data-testid=mcp-runtime-scope]")
+          ?.getBoundingClientRect().width >= 200,
+    );
+    await page.screenshot({
+      path: path.join(out, "08c-server-mobile-catalog.png"),
+      animations: "disabled",
+    });
+    assert(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth + 1,
+      ),
+    );
+    result.serverCatalogAndMobileLayout = true;
+    await page.setViewportSize({ width: 1360, height: 980 });
+    await page.locator("[data-testid=mcp-tab-manage]").click();
     const created = await context.request.post(base + "/api/sessions", {
       data: {
         provider: "claude",
@@ -631,6 +657,11 @@ async function serverFlow() {
     assert.deepEqual(session.mcp, {});
     await p.eval(`location.href='/?view=chat&session=${session.id}'`);
     await panel(p);
+    await until("specific MCP toggle ready", () =>
+      p.eval(
+        `!!document.querySelector('[data-testid=session-mcp-toggle-${mid}]')`,
+      ),
+    );
     assert.equal(
       await p.eval(
         `document.querySelector('[data-testid=session-mcp-toggle-${mid}]').getAttribute('aria-pressed')`,

@@ -5,6 +5,7 @@ import { useT } from "../../../i18n";
 import { absTime } from "../format";
 import Icon from "../../ui/Icon";
 import { McpStatus } from "../../mcp/McpStatus";
+import McpIssue from "../../mcp/McpIssue";
 
 export default function McpRuntime() {
   const t = useT(),
@@ -107,11 +108,7 @@ export default function McpRuntime() {
                 </b>
               </span>
             </div>
-            {item.error && (
-              <p className="mt-2 break-words text-xs text-danger">
-                {item.error}
-              </p>
-            )}
+            <McpIssue code={item.error_code} fallback={item.error} />
           </div>
         ))}
       </div>
