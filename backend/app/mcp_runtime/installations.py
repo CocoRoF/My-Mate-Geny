@@ -306,10 +306,6 @@ class Installations:
             return spec
         rid = spec.get("catalog_id", "")
         r, manifest = recipe(rid), self.manifest(rid)
-        if r["kind"] == "remote":  # a package entry of a recipe that is hosted now
-            raise ConnectionIssue(
-                "package_missing", "This package was replaced: set it up again from the catalog or manual setup."
-            )
         if not manifest:
             raise ConnectionIssue(
                 "package_missing", "Download this MCP package from the catalog first."

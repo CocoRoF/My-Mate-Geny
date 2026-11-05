@@ -14,11 +14,10 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
 from app.config import settings
-from app.mcp_runtime.catalog import definition
 from app.mcp_runtime.client import Connection
 from app.mcp_runtime.installations import Installations
 from app.mcp_runtime.secret_args import values as secret_arguments
-from app.mcp_runtime.setup import SetupTests, previous_values
+from app.mcp_runtime.setup import SetupTests
 from app.mcp_runtime.store import McpStore
 
 METHODS = {
@@ -154,31 +153,33 @@ class McpService:
             for mid in self.store.ids():
                 try:
                     spec = self.store.get(mid)
-                    spec = self._to_official_atlassian(mid, spec)
+                    # Adopt the stable runner used to repair the previous Docker-only entry.
+                    # Only an exact app-owned launch signature is migrated.
+                    if not spec["catalog_id"] and spec["command"] == sys.executable:
+                        candidate = {
+                            **spec,
+                            "catalog_id": "atlassian",
+                            "command": "geny-managed",
+                            "args": [],
+                        }
+                        if self.installations.manifest("atlassian"):
+                            launch = self.installations.materialize(candidate)
+                            if spec["args"] == launch["args"]:
+                                spec = self.store.save(
+                                    mid,
+                                    {
+                                        "catalog_id": "atlassian",
+                                        "command": "geny-managed",
+                                        "args": [],
+                                    },
+                                )
+                                self.log(mid, "info", "managed_migrated")
                     if spec["enabled"]:
                         await self.connect(mid)
                 except Exception as exc:
                     self.log(mid, "error", "restore_failed", type(exc).__name__)
 
         self.startup = asyncio.create_task(restore())
-
-    def _to_official_atlassian(self, mid, spec):
-        """The community package is gone from the catalog: its Cloud connections become the official server, under the
-        same id (each chat's on/off stays). Without a Cloud email + token (Data Center) the entry stays and says why."""
-        if spec["catalog_id"] != "atlassian" or spec["transport"] != "stdio":
-            return spec
-        old = previous_values(spec)
-        if not old["email"] or not old["token"]:
-            return spec
-        new = definition("atlassian", old, name=spec["name"], data_dir=self.installations.root / "data" / "atlassian")
-        spec = self.store.save(
-            mid,
-            {"name": "Atlassian · Jira / Confluence" if "sooperset" in spec["name"] else spec["name"],
-             "transport": new["transport"], "command": "", "args": [], "url": new["url"], "env": {},
-             "headers": new["headers"], "catalog_id": "atlassian"},
-        )
-        self.log(mid, "info", "official_migrated")
-        return spec
 
     async def connect(self, mid, *, force=False):
         async with self.locks.setdefault(mid, asyncio.Lock()):
