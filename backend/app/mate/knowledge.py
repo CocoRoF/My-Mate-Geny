@@ -112,6 +112,9 @@ def bootstrap(db) -> None:
                 "INSERT INTO memory_evidence(memory_id,memory_revision,source_id,source_revision,quote,start,end,relation) SELECT memory_id,1,source_id,source_revision,quote,start,end,relation FROM memory_evidence_v0"
             )
             db.execute("DROP TABLE memory_evidence_v0")
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memory_evidence_source ON memory_evidence(source_id,source_revision)"
+        )
         ccols = {r["name"] for r in db.query("PRAGMA table_info(memory_context)")}
         if "privacy_reset" not in ccols:
             db.execute(
@@ -177,12 +180,12 @@ def source_meta(raw: str | None) -> dict:
         return {"internal": True}  # unknown historical policy: do not index
 
 
-def record_message(db, mid: str, *, enqueue: bool = True) -> None:
+def record_message(db, mid: str, *, enqueue: bool = True) -> set[str]:
     with db.transaction():
-        _record_message(db, mid, enqueue=enqueue)
+        return _record_message(db, mid, enqueue=enqueue)
 
 
-def _record_message(db, mid: str, *, enqueue: bool = True) -> None:
+def _record_message(db, mid: str, *, enqueue: bool = True) -> set[str]:
     """Called in the message transaction: source revision + durable outbox.
 
     Speech drafts are indexed only after confirmation. Internal screen snapshots,
@@ -193,7 +196,7 @@ def _record_message(db, mid: str, *, enqueue: bool = True) -> None:
         (mid,),
     )
     if not row:
-        return
+        return set()
     meta = source_meta(row["meta"])
     text = row["content"]
     eligible = bool(
@@ -209,7 +212,7 @@ def _record_message(db, mid: str, *, enqueue: bool = True) -> None:
     h = digest(text + "\0" + str(eligible))
     if old and old["digest"] == h:
         db.execute("DELETE FROM memory_dirty WHERE message_id=?", (mid,))
-        return
+        return set()
     revision = old["revision"] + 1 if old else 1
     db.execute(
         "INSERT INTO memory_sources(id,session_id,message_id,revision,digest,role,observed_at,eligible) "
@@ -227,11 +230,7 @@ def _record_message(db, mid: str, *, enqueue: bool = True) -> None:
         ),
     )
     # Quotes from an edited source must never silently cite the new text.
-    db.execute(
-        "UPDATE mate_memories SET status='archived' WHERE evidence_type='extracted' AND id IN "
-        "(SELECT memory_id FROM memory_evidence WHERE source_id=? AND source_revision!=?)",
-        (source_id, revision),
-    )
+    changed = Knowledge(db).retract_source(source_id, revision) if old else set()
     db.execute(
         "DELETE FROM memory_evidence WHERE source_id=? AND source_revision!=?",
         (source_id, revision),
@@ -266,17 +265,21 @@ def _record_message(db, mid: str, *, enqueue: bool = True) -> None:
                 (new_id("mj_"), row["mate_id"], source_id, revision, now, now),
             )
 
+    return changed
+
 
 class Knowledge:
     def __init__(self, db):
         self.db = db
+        self.changed_mates: set[str] = set()
         self.fts = bool(db.query_one("SELECT 1 FROM sqlite_master WHERE name='memory_fts'"))
 
     def backfill(self, batch: int = 100) -> int:
         """Incremental, resumable and bounded. No provider calls in this pass."""
+        self.changed_mates.clear()
         dirty = self.db.query("SELECT message_id FROM memory_dirty LIMIT ?", (batch,))
         for r in dirty:
-            record_message(self.db, r["message_id"])
+            self.changed_mates.update(record_message(self.db, r["message_id"]))
         row = self.db.query_one("SELECT value FROM memory_checkpoints WHERE key='messages_v1'")
         cursor = int(row["value"]) if row else 0
         rows = self.db.query(
@@ -286,7 +289,7 @@ class Knowledge:
         # the connection lock across a batch. A crash replays idempotently
         # from the last completed checkpoint.
         for r in rows:
-            record_message(self.db, r["id"], enqueue=False)
+            self.changed_mates.update(record_message(self.db, r["id"], enqueue=False))
         if rows:
             self.db.execute(
                 "INSERT INTO memory_checkpoints VALUES('messages_v1',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -646,6 +649,52 @@ class Knowledge:
             "untrusted_evidence": True,
         }
 
+    def retract_source(self, source_id: str, revision: int) -> set[str]:
+        """Source corrections retract only the currently supported version,
+        preserve its ledger, and invalidate cached prompts as well as citations.
+        """
+        affected = self.db.query(
+            "SELECT DISTINCT m.* FROM mate_memories m JOIN memory_evidence e ON e.memory_id=m.id AND e.memory_revision=m.revision WHERE e.source_id=? AND e.source_revision!=? AND m.evidence_type='extracted' AND m.status='active'",
+            (source_id, revision),
+        )
+        mates = set()
+        for raw in affected:
+            memory = dict(raw)
+            mid, mate_id = memory["id"], memory["mate_id"]
+            self.snapshot(memory, "source", "before_source_edit")
+            self.db.execute(
+                "UPDATE mate_memories SET status='archived',revision=revision+1,updated_at=? WHERE id=?",
+                (now_iso(), mid),
+            )
+            self.snapshot(
+                dict(self.db.query_one("SELECT * FROM mate_memories WHERE id=?", (mid,))),
+                "source",
+                "source_edited",
+            )
+            key = "memchg:" + mate_id
+            pending = self.db.query_one("SELECT value FROM mate_settings WHERE key=?", (key,))
+            changes = json.loads(pending["value"]) if pending else []
+            changes = [c for c in changes if c.get("id") != mid]
+            changes.append(
+                {
+                    "id": mid,
+                    "op": "archived",
+                    "text": "Original evidence changed; do not rely on this assertion. Search the corrected source.",
+                }
+            )
+            self.db.execute(
+                "INSERT INTO mate_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, json.dumps(changes[-20:], ensure_ascii=False)),
+            )
+            mates.add(mate_id)
+        for mate_id in mates:
+            self.db.execute("UPDATE mates SET memory_rev=memory_rev+1 WHERE id=?", (mate_id,))
+            self.db.execute(
+                "INSERT INTO memory_context(mate_id,generation) VALUES(?,1) ON CONFLICT(mate_id) DO UPDATE SET generation=generation+1,state='{}'",
+                (mate_id,),
+            )
+        return mates
+
     def unindexed(self, mate_id: str | None = None, scope: str = "mate") -> int:
         where, params = [], []
         if mate_id:
@@ -656,7 +705,11 @@ class Knowledge:
             elif scope == "sessions":
                 where.append("s.kind!='mate'")
         where.append("(x.id IS NULL OR d.message_id IS NOT NULL)")
-        return self.db.query_one("SELECT COUNT(*) n FROM messages m JOIN sessions s ON s.id=m.session_id LEFT JOIN memory_sources x ON x.message_id=m.id LEFT JOIN memory_dirty d ON d.message_id=m.id WHERE " + " AND ".join(where), params)["n"]
+        return self.db.query_one(
+            "SELECT COUNT(*) n FROM messages m JOIN sessions s ON s.id=m.session_id LEFT JOIN memory_sources x ON x.message_id=m.id LEFT JOIN memory_dirty d ON d.message_id=m.id WHERE "
+            + " AND ".join(where),
+            params,
+        )["n"]
 
     def stats(self, mate_id: str) -> dict:
         jobs = {

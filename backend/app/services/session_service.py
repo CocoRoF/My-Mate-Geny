@@ -568,12 +568,15 @@ class SessionService:
         from app.mate.knowledge import record_message
         with self._db.transaction():
             mid = self._write_message(sid, role, content, provider, model, meta)
+            changed_mates = set()
             try:
                 with self._db.transaction():
-                    record_message(self._db, mid)
+                    changed_mates = record_message(self._db, mid)
             except Exception:  # a failed derivative never loses a chat message
                 self._log("warning", "mate", "Memory index deferred; source remains in chat history",
                           code="memory.index_deferred", session_id=sid)
+            for mate_id in changed_mates:
+                self.mates_changed("memory", mate_id)
             return mid
 
     def _write_message(

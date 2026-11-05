@@ -492,67 +492,112 @@ def test_long_evidence_can_be_read_at_search_hit_and_paged_without_losing_target
 
 def test_new_bridge_is_compatible_with_backend_before_idle_restart(monkeypatch):
     from app.mate.mcp_bridge import tools
-    monkeypatch.delenv('HRH_MATE_MEMORY', raising=False)
-    assert 'search_history' not in {t['name'] for t in tools()}
-    monkeypatch.setenv('HRH_MATE_MEMORY','1')
-    assert 'search_history' in {t['name'] for t in tools()}
+
+    monkeypatch.delenv("HRH_MATE_MEMORY", raising=False)
+    assert "search_history" not in {t["name"] for t in tools()}
+    monkeypatch.setenv("HRH_MATE_MEMORY", "1")
+    assert "search_history" in {t["name"] for t in tools()}
 
 
 def test_metadata_only_revision_preserves_citation_but_text_edit_does_not(db):
     store, mates, mid, sid = setup(db)
-    msg = mates._svc._add_message(sid,'user','지금은 차를 좋아해')
-    mem = store.add_memory(mid,'지금은 차를 좋아해')
-    store.knowledge.attach(mid,mem['id'],'msg:'+msg,'지금은 차를 좋아해')
-    store.update_memory(mid,mem['id'],{'importance':5})
-    assert store.knowledge.memory_details(mid,mem['id'])['evidence']
-    store.update_memory(mid,mem['id'],{'text':'차를 좋아하지 않아'},by_user=True)
-    assert store.knowledge.memory_details(mid,mem['id'])['evidence'] == []
+    msg = mates._svc._add_message(sid, "user", "지금은 차를 좋아해")
+    mem = store.add_memory(mid, "지금은 차를 좋아해")
+    store.knowledge.attach(mid, mem["id"], "msg:" + msg, "지금은 차를 좋아해")
+    store.update_memory(mid, mem["id"], {"importance": 5})
+    assert store.knowledge.memory_details(mid, mem["id"])["evidence"]
+    store.update_memory(mid, mem["id"], {"text": "차를 좋아하지 않아"}, by_user=True)
+    assert store.knowledge.memory_details(mid, mem["id"])["evidence"] == []
 
 
 def test_partial_index_failure_keeps_dirty_outbox_and_retries_atomically(db, monkeypatch):
     import app.mate.knowledge as K
+
     store, mates, mid, sid = setup(db)
     original = K.terms
-    monkeypatch.setattr(K,'terms',lambda _: (_ for _ in ()).throw(RuntimeError('simulated index interruption')))
-    msg = mates._svc._add_message(sid,'user','식당은 토리하나')
-    assert db.query_one('SELECT 1 FROM messages WHERE id=?',(msg,))
-    assert not db.query_one('SELECT 1 FROM memory_sources WHERE message_id=?',(msg,))
-    assert db.query_one('SELECT 1 FROM memory_dirty WHERE message_id=?',(msg,))
-    monkeypatch.setattr(K,'terms',original)
+    monkeypatch.setattr(
+        K, "terms", lambda _: (_ for _ in ()).throw(RuntimeError("simulated index interruption"))
+    )
+    msg = mates._svc._add_message(sid, "user", "식당은 토리하나")
+    assert db.query_one("SELECT 1 FROM messages WHERE id=?", (msg,))
+    assert not db.query_one("SELECT 1 FROM memory_sources WHERE message_id=?", (msg,))
+    assert db.query_one("SELECT 1 FROM memory_dirty WHERE message_id=?", (msg,))
+    monkeypatch.setattr(K, "terms", original)
     store.knowledge.backfill()
-    assert store.knowledge.search(mid,'토리하나')['items']
-    assert db.query_one('SELECT 1 FROM memory_jobs WHERE source_id=?',('msg:'+msg,))
+    assert store.knowledge.search(mid, "토리하나")["items"]
+    assert db.query_one("SELECT 1 FROM memory_jobs WHERE source_id=?", ("msg:" + msg,))
 
 
 async def test_background_core_change_reloads_launch_prompt_and_unknown_sources_are_labeled(db):
     from app.mate import memory as M
+
     store, mates, mid, sid = setup(db)
-    old = store.add_memory(mid,'검증되지 않은 과거 메모')
-    assert 'source=reported; verify original' in M.line(old)
-    before, _ = _turn(mates,mid,'hi')
-    mates._svc._add_message(sid,'user','내 고양이 이름은 나비야')
+    old = store.add_memory(mid, "검증되지 않은 과거 메모")
+    assert "source=reported; verify original" in M.line(old)
+    before, _ = _turn(mates, mid, "hi")
+    mates._svc._add_message(sid, "user", "내 고양이 이름은 나비야")
+
     async def extract(mate, source):
-        return {'facts':[{'quote':'내 고양이 이름은 나비야','kind':'profile'}]}, {}
+        return {"facts": [{"quote": "내 고양이 이름은 나비야", "kind": "profile"}]}, {}
+
     await Consolidator(mates).once(extract)
-    after, prompt = _turn(mates,mid,'hi',cli='old-cached-launch')
-    assert after.prompt_key != before.prompt_key and '내 고양이 이름은 나비야' in prompt
+    after, prompt = _turn(mates, mid, "hi", cli="old-cached-launch")
+    assert after.prompt_key != before.prompt_key and "내 고양이 이름은 나비야" in prompt
 
 
 def test_legacy_history_indexing_progress_is_not_misreported_as_no_record(db):
     store, _mates, mid, sid = setup(db)
-    db.execute("INSERT INTO messages(id,session_id,role,content,created_at) VALUES('legacy-hidden',?,'user','옛 식당은 토리하나','2025-10-01T00:00:00+00:00')",(sid,))
-    result = store.knowledge.search(mid,'토리하나')
-    assert result['items'] == [] and result['indexing_pending'] == 1
-    assert store.knowledge.stats(mid)['unindexed'] == 1
+    db.execute(
+        "INSERT INTO messages(id,session_id,role,content,created_at) VALUES('legacy-hidden',?,'user','옛 식당은 토리하나','2025-10-01T00:00:00+00:00')",
+        (sid,),
+    )
+    result = store.knowledge.search(mid, "토리하나")
+    assert result["items"] == [] and result["indexing_pending"] == 1
+    assert store.knowledge.stats(mid)["unindexed"] == 1
     store.knowledge.backfill()
-    assert store.knowledge.search(mid,'토리하나')['items']
-    assert store.knowledge.stats(mid)['unindexed'] == 0
+    assert store.knowledge.search(mid, "토리하나")["items"]
+    assert store.knowledge.stats(mid)["unindexed"] == 0
 
 
 def test_malformed_old_metadata_does_not_poison_following_history(db):
     store, mates, mid, sid = setup(db)
-    db.execute("INSERT INTO messages(id,session_id,role,content,meta,created_at) VALUES('old-bad-meta',?,'user','안전하지 않은 원문','{broken','2024-01-01')",(sid,))
-    mates._svc._add_message(sid,'user','올바른 식당 토리하나')
+    db.execute(
+        "INSERT INTO messages(id,session_id,role,content,meta,created_at) VALUES('old-bad-meta',?,'user','안전하지 않은 원문','{broken','2024-01-01')",
+        (sid,),
+    )
+    mates._svc._add_message(sid, "user", "올바른 식당 토리하나")
     store.knowledge.backfill()
-    assert store.knowledge.search(mid,'토리하나')['items']
-    assert not store.knowledge.allowed(mid,'msg:old-bad-meta')
+    assert store.knowledge.search(mid, "토리하나")["items"]
+    assert not store.knowledge.allowed(mid, "msg:old-bad-meta")
+
+
+async def test_corrected_speech_source_retracts_cached_fact_and_keeps_version_ledger(db):
+    store, mates, mid, sid = setup(db)
+    msg = mates._svc._add_message(
+        sid,
+        "user",
+        "고양이 이름은 나비야",
+        meta={"speech_group": "source-revision-test", "speech_pending": False},
+    )
+
+    async def extract(mate, source):
+        return {"facts": [{"quote": "고양이 이름은 나비야", "kind": "profile"}]}, {}
+
+    await Consolidator(mates).once(extract)
+    before, _ = _turn(mates, mid, "고양이?", cli="cached")
+    mem = store.memories(mid)[0]
+    changed = []
+    mates._svc.mates_changed = lambda reason, mate_id: changed.append((reason, mate_id))
+    same = mates._svc._add_message(
+        sid,
+        "user",
+        "정정할게. 고양이 이름은 보리야",
+        meta={"speech_group": "source-revision-test", "speech_pending": False},
+    )
+    assert same == msg and ("memory", mid) in changed
+    after, prompt = _turn(mates, mid, "고양이?", cli="cached")
+    assert after.prompt_key != before.prompt_key
+    assert "고양이 이름은 나비야" not in prompt
+    assert "Original evidence changed" in after.preamble
+    assert store.memory(mid, mem["id"])["status"] == "archived"
+    assert len(store.knowledge.history(mid, mem["id"])) == 2

@@ -64,6 +64,8 @@ class Consolidator:
             try:
                 if not self.mates._svc.active_runs:
                     indexed = await asyncio.to_thread(self.knowledge.backfill, 100)
+                    for mate_id in self.knowledge.changed_mates:
+                        self.mates.store._changed("memory", mate_id)
                     await self.once()
                     if indexed:
                         delay = 1  # catch up old history in bounded idle batches, not hours of polling

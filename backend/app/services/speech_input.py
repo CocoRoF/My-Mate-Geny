@@ -170,7 +170,8 @@ class SpeechInput:
             meta = json.loads(message['meta'] or '{}');meta['speech_pending'] = False
             self.db.execute('UPDATE messages SET meta=? WHERE id=?', (json.dumps(meta), row['message_id']))
             from app.mate.knowledge import record_message
-            record_message(self.db, row['message_id'])
+            for mate_id in record_message(self.db, row['message_id']):
+                self.sessions.mates_changed('memory', mate_id)
         self.publish(row['session_id'], 'speech.closed', {'group_id': row['id'], 'state': row['state'], 'revision': row['revision'], 'accepted_text': message['content'] if message else '', 'attachments': self.sessions._attachments.by_message(row['session_id']).get(row['message_id'], []) if self.sessions._attachments else []})
 
     def delivered(self, sid, group):
@@ -190,7 +191,8 @@ class SpeechInput:
             meta = {'speech_group': row['id'], 'speech_pending': False, 'speech_cancelled': True, 'speech_at': row['created_at']}
             self.db.execute('UPDATE messages SET meta=? WHERE id=?', (json.dumps(meta), row['message_id']))
             from app.mate.knowledge import record_message
-            record_message(self.db, row['message_id'])
+            for mate_id in record_message(self.db, row['message_id']):
+                self.sessions.mates_changed('memory', mate_id)
             if self.sessions._attachments:
                 self.sessions._attachments.link(json.loads(row['attachments']), row['message_id'])
             self.db.execute("UPDATE speech_inputs SET state='cancelled',text='',attachments='[]' WHERE id=?", (row['id'],))
