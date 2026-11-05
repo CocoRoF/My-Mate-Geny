@@ -570,7 +570,7 @@ Live2D content. The originals are authoritative; see
   edits of core memories, or turning the relationship on/off restarts the engine at the next turn (`--resume`, same conversation); a model
   change is applied live; what the mate `remember`s itself, the user's edits of other memories (told
   in the next `<context>` block) and affinity / mood changes don't restart it.
-- Engine **Codex** (`codex exec --json` per turn like Codex chats, resuming the
+- Engine **Codex** (`codex exec --json` per turn, resuming the
   thread; same account pool; default model `gpt-6.1-sol`), sealed by
   `app/providers/_codex_sealed.py` (verified against codex 0.166):
   - `CODEX_HOME` = `HOME` = `<id>/codex/` (0700), never the user's `~/.codex`:
@@ -602,7 +602,7 @@ Live2D content. The originals are authoritative; see
     `mate` tools (+ Codex's harmless MCP-resource listing tools); asked to run
     `ls` it says it can't.
   - Images go as `--image`, other files inline as for Claude; steering =
-    interrupt + resume the thread (as in Codex chats); `-m` / `-c
+    interrupt + resume the sealed thread (normal chats use app-server steering); `-m` / `-c
     model_reasoning_effort` from `mate.llm`.
 - **Attachments** work like in a chat: uploads go to
   `POST /api/sessions/{mate sid}/attachments`, the ws `chat` / `steer` messages

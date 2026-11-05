@@ -115,7 +115,7 @@ export function agentView(tool: ToolActivity, allTools: ToolActivity[], task: Ta
         activity = c.durationMs === undefined ? m.running : [m.label, m.target].filter(Boolean).join(" · ");
       }
     } else if (last?.kind === "text") activity = firstLine(last.text);
-    else if (last?.kind === "thinking") activity = tr("turn.thinking");
+    else if (last?.kind === "thinking" && last.endedAt === undefined) activity = last.scope === "response" ? tr("turn.generating") : tr("turn.thinking");
     activity = activity || task?.activity || tr("turn.startingDots");
   } else if (status === "failed" || status === "stopped") {
     activity = firstLine(tool.isError ? tool.output || "" : "") || (status === "stopped" ? tr("turn.stopped") : tr("turn.failed"));

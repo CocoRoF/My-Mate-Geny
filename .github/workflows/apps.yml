@@ -1,7 +1,8 @@
 # Native apps: desktop (Windows / macOS / Linux, Electron) + Android (Capacitor).
 # Server-connected apps load the live console. Local desktop execution bundles
-# the backend and UI, so source changes also rebuild the native packages. Builds upload straight to a GitHub Release (no
-# Actions artifact storage); the console's Download page serves the rolling
+# the backend and UI, so source changes also rebuild the native packages. The
+# platform-independent UI is built once and shared for one day. Final packages
+# upload straight to a GitHub Release; the Download page serves the rolling
 # `apps-latest` release. Artifacts are named `my-mate-geny-<version>-…` since
 # 0.3 (formerly `hr-harnessor-…`; backend/app/services/downloads.py matches
 # both by suffix, so the swap is seamless).
@@ -29,6 +30,8 @@ concurrency:
 env:
   VERSION: 0.4.${{ github.run_number }}
   GH_TOKEN: ${{ github.token }}
+  LOCAL_PYTHON_VERSION: '3.12.16'
+  UV_VERSION: '0.13.6'
 
 jobs:
   prepare:
@@ -41,10 +44,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/pyproject.toml
       - name: Verify backend before publishing packages
         run: |
           cd backend
-          pip install -e '.[dev]'
+          uv pip install --system -e '.[dev]'
           python -m pytest -q -p no:cacheprovider
       - name: Verify frontend before publishing packages
         run: |
@@ -53,8 +63,20 @@ jobs:
           npx tsc -b
           npm run test:unit
           npm run test:i18n
+          BUILD_COMMIT=$GITHUB_SHA npx vite build --outDir dist-local --emptyOutDir
+      - name: Share the verified local UI with all desktop platforms
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-ui-${{ github.sha }}
+          path: frontend/dist-local
+          retention-days: 1
+          if-no-files-found: error
+          overwrite: true
       - name: Draft release for this build
-        run: gh release create "apps-v$VERSION" --draft --title "Apps $VERSION" --notes "Building…" --target "$GITHUB_SHA"
+        run: |
+          if ! gh release view "apps-v$VERSION" >/dev/null 2>&1; then
+            gh release create "apps-v$VERSION" --draft --title "Apps $VERSION" --notes "Building…" --target "$GITHUB_SHA"
+          fi
 
   desktop:
     name: desktop (${{ matrix.name }})
@@ -91,17 +113,33 @@ jobs:
         with:
           python-version: '3.12'
       - uses: astral-sh/setup-uv@v6
-      - run: npm ci
-      - name: Bundle local UI and Python backend
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/pyproject.toml
+      - name: Restore only the managed Python interpreter and its dependencies
+        id: runtime-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: desktop/.python-build
+          key: local-python-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LOCAL_PYTHON_VERSION }}-${{ hashFiles('backend/pyproject.toml', 'desktop/build/local-runtime.py') }}
+      - name: Download the verified UI (no platform-specific frontend rebuild)
+        uses: actions/download-artifact@v4
+        with:
+          name: local-ui-${{ github.sha }}
+          path: frontend/dist-local
+      - run: npm ci --no-audit --no-fund
+      - name: Bundle the current Python backend with the shared UI
         run: |
-          cd ../frontend
-          npm ci --no-audit --no-fund
-          npx tsc -b
-          BUILD_COMMIT=$GITHUB_SHA npx vite build --outDir dist-local --emptyOutDir
-          cd ..
-          BUILD_COMMIT=$GITHUB_SHA python desktop/build/local-runtime.py
+          BUILD_COMMIT=$GITHUB_SHA python build/local-runtime.py --python-version "$LOCAL_PYTHON_VERSION"
       - name: Local runtime smoke test on this OS
         run: node test/local-runtime-smoke.js
+      - name: Cache the verified runtime before installer packaging
+        if: steps.runtime-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: desktop/.python-build
+          key: ${{ steps.runtime-cache.outputs.cache-primary-key }}
       - name: Unit tests (server address + sign-in)
         if: matrix.name == 'linux'
         run: npm test
@@ -115,7 +153,8 @@ jobs:
         if: startsWith(matrix.name, 'macos-')
         run: |
           sudo mdutil -a -i off || true
-          npx electron-builder --mac dmg --${{ matrix.arch }} --publish never -c.extraMetadata.version=$VERSION -c.dmg.title="My Mate Geny (${{ matrix.arch }})"
+          npx electron-builder --mac dir --${{ matrix.arch }} --publish never -c.extraMetadata.version=$VERSION
+          python build/macos-dmg.py --version "$VERSION" --arch "${{ matrix.arch }}"
       - name: Verify the runtime inside the native app
         run: python test/verify-packed-runtime.py
       # + the in-app updater's descriptions (electron-updater, generic provider — desktop/src/updater.js): latest.yml
@@ -191,6 +230,10 @@ jobs:
           set -euo pipefail
           retry() { local attempt; for attempt in 1 2 3 4 5; do "$@" && return 0; sleep $((attempt * 3)); done; return 1; }
           retry gh release download "apps-v$VERSION" -D out --clobber
+          # Publish one feed with BOTH architectures, instead of matrix jobs
+          # overwriting latest-mac.yml with their own single-architecture feed.
+          python desktop/build/macos-dmg.py --version "$VERSION" --write-feed out
+          retry gh release upload "apps-v$VERSION" out/latest-mac.yml --clobber
           ls -la out
           prev=$(git tag --list 'apps-v*' --sort=-v:refname | head -1)
           {

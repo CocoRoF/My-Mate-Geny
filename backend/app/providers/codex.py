@@ -1,7 +1,7 @@
 """Codex (OpenAI CLI) provider.
 
-Spawns ``codex exec --json`` and normalizes its JSONL event stream (see
-:mod:`app.providers._codex_json`). Non-interactive automation uses
+Uses Codex's stdio app-server for live item lifecycles and same-turn steering.
+Sealed Mate engines retain their isolated ``exec --json`` path. Automation uses
 ``--dangerously-bypass-approvals-and-sandbox`` because the harness is the
 sandbox boundary (same spirit as the Claude provider's permission allow-list).
 
@@ -21,6 +21,7 @@ import json
 import re
 import os
 import shutil
+from contextlib import aclosing
 from typing import AsyncIterator
 
 from app.config import settings
@@ -45,8 +46,9 @@ _PLAN_PREFIX = (
 class CodexProvider(Provider):
     name = "codex"
 
-    def __init__(self, binary: str | None = None) -> None:
+    def __init__(self, binary: str | None = None, *, transport: str = "app-server") -> None:
         self._binary_arg = binary
+        self._transport = transport
 
     @property
     def _binary(self) -> str:
@@ -223,6 +225,13 @@ class CodexProvider(Provider):
                                "using the account's default model. Pick a model from the list.",
                 },
             )
+
+        if not req.sealed and self._transport == "app-server":
+            from app.providers._codex_app_server import run_app_server
+            async with aclosing(run_app_server(self, req, env_extras)) as stream:
+                async for ev in stream:
+                    yield ev
+            return
 
         # `codex exec` reads its prompt once, so steering = interrupt the
         # current step and resume the SAME thread with the new instructions.

@@ -1,0 +1,61 @@
+// Real API + compiled UI + Codex stdio fixture. No paid model calls.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const {chromium} = require('playwright-core');
+const [server, password, workspace, shots] = process.argv.slice(2);
+(async () => {
+  const browser = await chromium.launch({executablePath: process.env.CHROME, args: ['--no-sandbox']});
+  try {
+    const context = await browser.newContext({viewport: {width: 1280, height: 900}});
+    assert((await context.request.post(server+'/api/auth/login', {data: {username:'admin', password}})).ok());
+    await context.addInitScript(() => {
+      localStorage.setItem('hrh_lang','ko'); localStorage.setItem('hrh_theme','dark'); localStorage.setItem('hrh_setup_seen_v2','1');
+    });
+    const response = await context.request.post(server+'/api/sessions', {data:{provider:'codex', model:'default', connection_id:null, workspace_path:workspace, title:'Codex Thinking 검증'}});
+    assert(response.ok()); const {id} = await response.json();
+    const page = await context.newPage();
+    const errors=[]; page.on('pageerror',e=>errors.push(e.message));
+    await page.goto(server+'/?view=chat&session='+id);
+    await page.getByTestId('topbar').waitFor();
+    const input = page.locator('textarea').first();
+    await input.fill('UI reasoning fixture'); await input.press('Enter');
+    const thinking = page.getByRole('button',{name:/생각 중 ·/});
+    await thinking.waitFor();
+    const first = await thinking.innerText();
+    await page.waitForTimeout(1500);
+    assert.notEqual(await thinking.innerText(),first,'live elapsed time must advance without a text delta');
+    await page.screenshot({path:path.join(shots,'thinking-live.png')});
+    await page.getByText('검증 완료',{exact:true}).waitFor();
+    assert(await page.getByRole('button',{name:/4.*동안 생각함/}).count());
+    const history = await (await context.request.get(server+'/api/history/'+id)).json();
+    assert(history.events.some(e=>e.type==='thinking.start'));
+    assert(history.events.some(e=>e.type==='task.update'&&e.data.status==='completed'));
+    const tasks = await (await context.request.get(server+'/api/sessions/'+id+'/tasks')).json();
+    assert.equal(tasks.length,1); assert.equal(tasks[0].status,'completed'); assert(tasks[0].started_at&&tasks[0].ended_at);
+    await page.screenshot({path:path.join(shots,'thinking-complete.png')});
+    await page.reload(); await page.getByText('검증 완료',{exact:true}).waitFor();
+    assert(await page.getByRole('button',{name:/4.*동안 생각함/}).count());
+    await page.screenshot({path:path.join(shots,'thinking-restored.png')});
+    await input.fill('hidden fixture'); await input.press('Enter');
+    await page.getByText('검증 완료',{exact:true}).nth(1).waitFor();
+    await page.getByRole('button',{name:/응답 생성 2\.\d초/}).waitFor();
+    assert(!(await page.locator('body').innerText()).includes('0ms 동안 생각함'));
+    assert.match(await page.locator('body').innerText(),/응답 생성 2\.\d초/);
+    await page.getByText('검증 완료',{exact:true}).nth(1).scrollIntoViewIfNeeded();
+    await page.screenshot({path:path.join(shots,'hidden-reasoning.png')});
+    await input.fill('Cancel the parent turn fixture'); await input.press('Enter');
+    await page.getByText('Review the timing records',{exact:true}).nth(1).waitFor();
+    const beforeStop = await (await context.request.get(server+'/api/sessions/'+id+'/tasks')).json();
+    assert(beforeStop.some(t=>t.status==='running'),'fixture child must be active before Stop');
+    const stopped = await context.request.post(server+'/api/sessions/'+id+'/stop'); assert(stopped.ok());
+    await page.getByText('중지됨',{exact:true}).last().waitFor();
+    const afterStop = await (await context.request.get(server+'/api/sessions/'+id+'/tasks')).json();
+    assert(!afterStop.some(t=>t.status==='running'||t.status==='pending'),'no orphan child task after Stop');
+    const saved = await (await context.request.get(server+'/api/sessions/'+id)).json();
+    assert.equal(saved.cli_session_id,'ui-root','accepted thread survives an interrupted turn');
+    assert.deepEqual(errors,[]);
+    fs.writeFileSync(path.join(shots,'browser-result.json'),JSON.stringify({liveCounter:true,completedTiming:true,restoredTiming:true,codexTaskRegistry:true,hiddenReasoningNoZeroMs:true,stopClearsTasks:true,stopPreservesThread:true},null,2));
+    console.log('THINKING_UI_E2E_OK');
+  } finally {await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

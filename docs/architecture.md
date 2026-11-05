@@ -12,7 +12,7 @@ described in [mate.md](mate.md).
         (optional HTTPS reverse proxy / tunnel)
                                    ▼
         FastAPI backend (app/main.py) — also serves the built console (STATIC_DIR)
-        ├─ providers/    claude (persistent engine) | codex (exec per turn) — CLI subprocesses
+        ├─ providers/    claude (persistent engine) | codex (app-server per turn; sealed mates: exec) — CLI subprocesses
         ├─ providers/accounts.py   pooled CLI logins + balancing
         ├─ workspaces/   local | remote_ssh (SSH-backed MCP bridge)
         ├─ mate/         persona, voice, avatar, delegation to chats
@@ -30,7 +30,7 @@ A **session** = `provider × workspace × conversation`.
 
 - **Provider** — *which engine*. `app/providers/`. A `Provider` spawns a CLI in
   stream-json mode and yields **normalized events** (`ProviderEvent`): one of
-  `session.start · text.delta · thinking.delta · tool.use · tool.result ·
+  `session.start · text.delta · thinking.start/delta/end · tool.use · tool.result ·
   turn.complete · error`. The UI never sees provider-specific wire formats.
 - **Workspace** — *where it runs*. `app/workspaces/`. A `WorkspaceConnector`
   resolves a local `cwd` the CLI can use and optionally an `mcp_config`.

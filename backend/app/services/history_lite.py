@@ -243,7 +243,7 @@ _GONE: dict[str, Any] = {"type": "_gone"}
 
 def _mergeable(e: dict[str, Any] | None) -> bool:
     return e is not None and e["type"] in _DELTAS and isinstance(e["data"], dict) \
-        and set(e["data"]) == {"text"} and isinstance(e["data"]["text"], str)
+        and "text" in e["data"] and set(e["data"]) <= {"text", "id", "parent"} and isinstance(e["data"]["text"], str)
 
 
 def _merge_deltas(line: list[dict[str, Any] | None]) -> list[dict[str, Any] | None]:
@@ -256,11 +256,12 @@ def _merge_deltas(line: list[dict[str, Any] | None]) -> list[dict[str, Any] | No
         elif run:
             first, last = run[0], run[-1]
             out.append({**first, "eid": last["eid"], "seq": last["seq"],
-                        "data": {"text": "".join(e["data"]["text"] for e in run)}})
+                        "data": {**first["data"], "text": "".join(e["data"]["text"] for e in run)}})
         run.clear()
 
     for e in line:
-        if _mergeable(e) and (not run or run[-1]["type"] == e["type"]):  # type: ignore[index]
+        if _mergeable(e) and (not run or (run[-1]["type"] == e["type"] and  # type: ignore[index]
+                all(run[-1]["data"].get(k) == e["data"].get(k) for k in ("id", "parent")))):  # type: ignore[index]
             run.append(e)  # type: ignore[arg-type]
             continue
         flush()

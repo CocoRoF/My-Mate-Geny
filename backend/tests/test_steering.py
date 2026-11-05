@@ -78,7 +78,7 @@ async def test_claude_steering_is_injected_into_the_running_turn(tmp_path):
 
 async def test_codex_steering_interrupts_and_resumes_the_thread(tmp_path):
     fake = _fake(tmp_path, "codex", FAKE_CODEX)
-    p = CodexProvider(binary=fake)
+    p = CodexProvider(binary=fake, transport="exec")
     req = TurnRequest(messages=[{"role": "user", "content": "start"}], model="default", cwd=str(tmp_path), inbox=TurnInbox())
     events = await _drive(p, req, "use port 8080 instead", lambda ev: ev.type == "tool.use")
     evs = [e for e in events if not isinstance(e, tuple)]

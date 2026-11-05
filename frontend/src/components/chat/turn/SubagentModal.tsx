@@ -43,7 +43,7 @@ function Sheet({ children, onClose }: { children: ReactNode; onClose: () => void
 
 type Seg =
   | { kind: "text"; text: string }
-  | { kind: "thinking"; text: string; at: number }
+  | { kind: "thinking"; text: string; at: number; endedAt?: number; timingKnown?: boolean; scope?: "response" }
   | { kind: "tools"; tools: ToolActivity[] }
   | { kind: "agent"; tool: ToolActivity };
 
@@ -129,7 +129,7 @@ function DetailBody({
         if (last?.kind === "text") last.text += `\n\n${item.text}`;
         else out.push({ kind: "text", text: item.text });
       } else if (item.kind === "thinking") {
-        out.push({ kind: "thinking", text: item.text, at: item.at });
+        out.push({ ...item });
       } else {
         const c = byId.get(item.toolId);
         if (!c) return;
@@ -228,7 +228,7 @@ function DetailBody({
                   </div>
                 );
               case "thinking":
-                return <ThinkingBlock key={i} text={s.text} startedAt={s.at} live={false} />;
+                return <ThinkingBlock key={i} text={s.text} startedAt={s.at} endedAt={s.endedAt} timingKnown={s.timingKnown} scope={s.scope} live={running} />;
               case "tools":
                 return <ToolGroup key={i} tools={s.tools} allTools={turn.tools} defaultOpen />;
               case "agent":

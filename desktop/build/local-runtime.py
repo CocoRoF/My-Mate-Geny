@@ -20,13 +20,14 @@ def run(args, **kw):
     subprocess.run([str(a) for a in args], check=True, **kw)
 
 
-def build(output: Path, frontend: Path, cache: Path) -> None:
+def build(output: Path, frontend: Path, cache: Path, python_version: str = "3.12.16") -> None:
     uv = shutil.which("uv")
     if not uv:
         raise RuntimeError("Build dependency uv is required; users of the packaged app do not need it")
     cache.mkdir(parents=True, exist_ok=True)
-    run([uv, "python", "install", "3.12", "--install-dir", cache, "--no-bin", "--no-registry"])
-    candidates = list(cache.glob("cpython-3.12*/python.exe")) if os.name == "nt" else list(cache.glob("cpython-3.12*/bin/python3"))
+    run([uv, "python", "install", python_version, "--install-dir", cache, "--no-bin", "--no-registry"])
+    pattern = f"cpython-{python_version}-*"
+    candidates = list(cache.glob(pattern + "/python.exe")) if os.name == "nt" else list(cache.glob(pattern + "/bin/python3"))
     candidates = list({p.resolve(): p.resolve() for p in candidates}.values())
     if len(candidates) != 1:
         raise RuntimeError(f"Expected one managed runtime, found {len(candidates)}")
@@ -67,5 +68,6 @@ if __name__ == "__main__":
     p.add_argument("--output", type=Path, default=ROOT / "desktop/local-runtime")
     p.add_argument("--frontend", type=Path, default=ROOT / "frontend/dist-local")
     p.add_argument("--cache", type=Path, default=ROOT / "desktop/.python-build")
+    p.add_argument("--python-version", default="3.12.16")
     args = p.parse_args()
-    build(args.output.resolve(), args.frontend.resolve(), args.cache.resolve())
+    build(args.output.resolve(), args.frontend.resolve(), args.cache.resolve(), args.python_version)

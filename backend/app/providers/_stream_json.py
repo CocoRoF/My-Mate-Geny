@@ -49,6 +49,8 @@ class StreamJsonAccumulator:
         self.context_tokens: int | None = None
         self._ctx_call: str | None = None
         self.api_error: dict[str, Any] | None = None
+        self._thinking: dict[int, str] = {}
+        self._message_number = 0
 
     def _ev(self, type_: str, data: dict[str, Any]) -> ProviderEvent:
         self._seq += 1
@@ -115,13 +117,30 @@ class StreamJsonAccumulator:
 
     def _handle_stream_event(self, event: dict[str, Any]) -> Iterator[ProviderEvent]:
         etype = event.get("type")
-        if etype == "content_block_delta":
+        index = event.get("index", 0)
+        if etype == "message_start":
+            self._message_number += 1
+        elif etype == "content_block_start":
+            block = event.get("content_block") or {}
+            if block.get("type") in ("thinking", "redacted_thinking"):
+                iid = f"claude:{self._message_number}:{index}"
+                self._thinking[index] = iid
+                yield self._ev("thinking.start", {"id": iid})
+                if block.get("thinking"):
+                    yield self._ev("thinking.delta", {"id": iid, "text": block["thinking"]})
+        elif etype == "content_block_stop" and index in self._thinking:
+            yield self._ev("thinking.end", {"id": self._thinking.pop(index)})
+        elif etype == "message_stop":
+            for iid in self._thinking.values():
+                yield self._ev("thinking.end", {"id": iid})
+            self._thinking.clear()
+        elif etype == "content_block_delta":
             delta = event.get("delta", {})
             dtype = delta.get("type")
             if dtype == "text_delta" and delta.get("text"):
                 yield self._ev("text.delta", {"text": delta["text"]})
             elif dtype == "thinking_delta" and delta.get("thinking"):
-                yield self._ev("thinking.delta", {"text": delta["thinking"]})
+                yield self._ev("thinking.delta", {"id": self._thinking.get(index), "text": delta["thinking"]})
         elif etype == "message_delta":
             stop = event.get("delta", {}).get("stop_reason")
             if stop:

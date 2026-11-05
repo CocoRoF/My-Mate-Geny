@@ -28,7 +28,7 @@ export interface ToolActivity {
 /** One step of a subagent's work (its tool calls live in `Turn.tools`). */
 export type SubItem =
   | { kind: "text"; text: string; at: number }
-  | { kind: "thinking"; text: string; at: number }
+  | { kind: "thinking"; text: string; at: number; id?: string; endedAt?: number; timingKnown?: boolean; scope?: "response" }
   | { kind: "tool"; toolId: string };
 
 /** The CLI's summary of a finished (or launched, for background) subagent. */
@@ -48,7 +48,7 @@ export interface AgentReport {
 // reasoning, tool calls and inline notices.
 export type FlowItem =
   | { kind: "text"; text: string }
-  | { kind: "thinking"; text: string; startedAt: number; endedAt?: number }
+  | { kind: "thinking"; text: string; startedAt: number; endedAt?: number; id?: string; timingKnown?: boolean; scope?: "response" }
   | { kind: "tool"; toolId: string }
   | { kind: "notice"; level: "info" | "warning"; message: string; code?: string; data?: Record<string, any> }
   // Instructions the user added while the agent was working (pending until
@@ -207,8 +207,7 @@ const hasLiveTurn = (turns: Turn[]) => {
 };
 
 function closeThinking(turn: Turn, at: number) {
-  const last = turn.flow[turn.flow.length - 1];
-  if (last && last.kind === "thinking" && !last.endedAt) last.endedAt = at;
+  for (const item of turn.flow) if (item.kind === "thinking" && item.endedAt === undefined) item.endedAt = Math.max(item.startedAt, at);
 }
 
 function appendText(turn: Turn, text: string, at: number) {
@@ -391,11 +390,48 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
     case "text.delta":
       appendText(liveTurn(turns, at), String(data.text || ""), at);
       break;
+    case "thinking.start":
+    case "thinking.end":
     case "thinking.delta": {
+      const id = data.id ? String(data.id) : undefined;
+      if (data.parent) {
+        const parent = String(data.parent);
+        const t = turnWith(turns, parent, at);
+        const tool = t?.tools.find(x => x.id === parent);
+        if (!t || !tool) break;
+        tool.sub = (tool.sub || []).map(x => ({...x}));
+        let item = [...tool.sub].reverse().find(x => x.kind === "thinking" && (id ? x.id === id : x.endedAt === undefined));
+        if (!item && ev.type !== "thinking.end") {
+          item = {kind: "thinking", text: "", at, id, timingKnown: ev.type === "thinking.start"};
+          if (data.scope === "response") item.scope = "response";
+          tool.sub.push(item);
+        }
+        if (item?.kind === "thinking") {
+          if (ev.type === "thinking.end") {
+            item.endedAt = Math.max(item.at, at);
+            if (data.timing_known === false) item.timingKnown = false;
+          }
+          else if (ev.type === "thinking.delta") item.text += String(data.text || "");
+        }
+        tool.lastAt = at;
+        break;
+      }
+      if (ev.type === "thinking.end" && !hasLiveTurn(turns)) break;
       const t = liveTurn(turns, at);
-      const last = t.flow[t.flow.length - 1];
-      if (last && last.kind === "thinking" && !last.endedAt) last.text += String(data.text || "");
-      else t.flow.push({ kind: "thinking", text: String(data.text || ""), startedAt: at });
+      let item = [...t.flow].reverse().find(x => x.kind === "thinking" && (id ? x.id === id : x.endedAt === undefined));
+      if (!item && ev.type !== "thinking.end") {
+        closeThinking(t, at);
+        item = {kind: "thinking", text: "", startedAt: at, id, timingKnown: ev.type === "thinking.start"};
+        if (data.scope === "response") item.scope = "response";
+        t.flow.push(item);
+      }
+      if (item?.kind === "thinking") {
+        if (ev.type === "thinking.end") {
+          item.endedAt = Math.max(item.startedAt, at);
+          if (data.timing_known === false) item.timingKnown = false;
+        }
+        else if (ev.type === "thinking.delta") item.text += String(data.text || "");
+      }
       break;
     }
     case "tool.use": {
@@ -659,6 +695,9 @@ function anchorOf(ev: ProviderEvent): string | null {
   const d = ev.data as Record<string, any>;
   switch (ev.type) {
     case "tool.use":
+    case "thinking.start":
+    case "thinking.delta":
+    case "thinking.end":
     case "subagent.text":
     case "subagent.thinking":
       return d.parent ? String(d.parent) : null;

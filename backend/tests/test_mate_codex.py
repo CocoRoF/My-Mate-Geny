@@ -75,7 +75,7 @@ def _setup(db, tmp_path, monkeypatch):
     codex.write_text(f"#!{sys.executable}\n" + textwrap.dedent(FAKE_CODEX).replace("__FAKE_DIR__", str(tmp_path)))
     for f in (claude, codex):
         f.chmod(f.stat().st_mode | stat.S_IEXEC)
-    monkeypatch.setattr(ss_mod, "get_provider", lambda name: CodexProvider(binary=str(codex)) if name == "codex"
+    monkeypatch.setattr(ss_mod, "get_provider", lambda name: CodexProvider(binary=str(codex), transport="exec") if name == "codex"
                         else ClaudeCodeProvider(binary=str(claude)))
     vault = SecretVault(db)
     svc = SessionService(db, ProviderService(db, vault), WorkspaceService(ConnectionService(db, vault)))

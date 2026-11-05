@@ -58,6 +58,7 @@ class CodexJsonAccumulator:
         self._text_so_far: dict[str, str] = {}
         self._todos_seen: dict[str, str] = {}
         self._open: set[str] = set()
+        self._thinking: set[str] = set()
 
     def _ev(self, type_: str, data: dict[str, Any]) -> ProviderEvent:
         if type_ == "tool.result":
@@ -131,11 +132,17 @@ class CodexJsonAccumulator:
                 self.final_text = txt
 
         elif itype in ("reasoning", "thinking"):
+            if etype == "item.started" and iid not in self._thinking:
+                self._thinking.add(iid)
+                yield self._ev("thinking.start", {"id": iid})
             txt = _text_of(item)
             prev = self._text_so_far.get(iid, "")
             if txt and txt != prev:
-                yield self._ev("thinking.delta", {"text": txt[len(prev):] if txt.startswith(prev) else txt})
+                yield self._ev("thinking.delta", {"id": iid, "text": txt[len(prev):] if txt.startswith(prev) else txt})
                 self._text_so_far[iid] = txt
+            if done:
+                self._thinking.discard(iid)
+                yield self._ev("thinking.end", {"id": iid})
 
         elif itype in ("command_execution", "exec_command", "shell"):
             cmd = item.get("command") or item.get("cmd") or item.get("input")
@@ -144,9 +151,12 @@ class CodexJsonAccumulator:
                 out = item.get("aggregated_output") or item.get("stdout") or item.get("output") or ""
                 code = item.get("exit_code")
                 text = _short(out)
+                failed = code not in (0, None) or item.get("status") in ("failed", "declined", "interrupted")
                 if code not in (0, None):
                     text = f"{text}\n[exit code {code}]".strip()
-                yield self._ev("tool.result", {"id": iid, "output": text, "is_error": code not in (0, None)})
+                elif failed and not text:
+                    text = f"Command {item['status']}"
+                yield self._ev("tool.result", {"id": iid, "output": text, "is_error": failed})
 
         elif itype == "file_change":
             changes = item.get("changes") or []

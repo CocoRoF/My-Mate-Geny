@@ -128,7 +128,9 @@ export interface ChatMessage {
 export type EventType =
   | "session.start"
   | "text.delta"
+  | "thinking.start"
   | "thinking.delta"
+  | "thinking.end"
   | "tool.use"
   | "tool.result"
   | "subagent.text"

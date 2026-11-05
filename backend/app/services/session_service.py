@@ -1366,6 +1366,15 @@ class SessionService:
                 if not retry:
                     break
         finally:
+            if provider_name == "codex":
+                # Its per-turn process group has ended, including on Stop.
+                # Do not leave child agents marked running after their process died.
+                for task in self._db.query("SELECT * FROM bg_tasks WHERE session_id = ? AND task_type = 'codex_agent' AND status IN ('running', 'pending')", (sid,)):
+                    data = {**self._task_out(task), "status": "stopped", "ended_at": time.time()}
+                    event = ProviderEvent(type="task.update", data=data)
+                    self._add_event(sid, event)
+                    self._on_task(sid, data)
+                    self._publish(sid, event.to_dict())
             if self._inboxes.get(sid) is req.inbox:
                 self._inboxes.pop(sid, None)
             req.inbox.close()
@@ -1434,6 +1443,8 @@ class SessionService:
 
     def _session_info(self, sid: str, ev: ProviderEvent, ctx: dict[str, Any]) -> ProviderEvent:
         info = {**ev.data, "account": ctx.get("account")}
+        if ev.data.get("provider") == "codex" and ev.data.get("cli_session_id"):
+            self._set_cli_session(sid, str(ev.data["cli_session_id"]), "codex")
         self._db.execute("UPDATE sessions SET cli_info = ? WHERE id = ?", (json.dumps(info), sid))
         return ProviderEvent(type="session.info", data=info, seq=ev.seq, timestamp=ev.timestamp)
 
@@ -1509,7 +1520,11 @@ class SessionService:
             # Which account ran this turn — kept with the chat, so it's auditable.
             ev.data = {**ev.data, "account": ctx.get("account"), "account_id": ctx.get("account_id")}
         self._add_event(sid, ev)
-        if ev.type == "turn.complete":
+        if ev.type == "task.update" and st["provider"] == "codex":
+            # Codex app-server uses the same persistent task registry and live
+            # sidebar updates as Claude's background-task callback.
+            self._on_task(sid, ev.data)
+        elif ev.type == "turn.complete":
             final_text = ev.data.get("text", "")
             st["final_text"] = final_text
             # Answer first, then the watermark: the engine has seen
@@ -2187,6 +2202,9 @@ class SessionService:
     async def stop_task(self, sid: str, task_id: str) -> bool:
         if self.remote_jobs.has(sid, task_id):
             return await self.remote_jobs.stop_task(sid, task_id)
+        inbox = self._inboxes.get(sid)
+        if inbox is not None and inbox.stop_task is not None:
+            return await inbox.stop_task(task_id)
         return await self._engines.stop_task(sid, task_id)
 
     def engines(self) -> list[dict[str, Any]]:

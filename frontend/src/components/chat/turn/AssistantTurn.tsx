@@ -39,7 +39,8 @@ function segment(turn: Turn): Segment[] {
       if (last?.kind === "text") last.text += item.text;
       else out.push({ kind: "text", text: item.text });
     } else if (item.kind === "thinking") {
-      if (item.text.trim() || !item.endedAt) out.push({ kind: "thinking", item });
+      if (item.scope === "response" && item.endedAt !== undefined && item.endedAt - item.startedAt < 100) continue;
+      if (item.text.trim() || item.timingKnown || !item.endedAt) out.push({ kind: "thinking", item });
     } else if (item.kind === "notice") {
       out.push({ kind: "notice", item });
     } else if (item.kind === "steer") {
@@ -101,6 +102,10 @@ function Footer({ turn }: { turn: Turn }) {
   const parts = [
     turn.model,
     dur && t("turn.worked", { d: dur }),
+    (() => {
+      const ms = turn.flow.reduce((n, f) => n + (f.kind === "thinking" && !f.scope && f.timingKnown && f.endedAt !== undefined ? Math.max(0, f.endedAt - f.startedAt) : 0), 0);
+      return ms > 0 ? t("turn.thoughtFor", { d: fmtMs(ms) }) : null;
+    })(),
     turn.tools.length ? `${t("turn.toolsN", { count: turn.tools.length })}${failed ? ` (${t("turn.failedN", { count: failed })})` : ""}` : null,
     tk,
   ].filter(Boolean);
@@ -162,7 +167,7 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
               return <Markdown key={i}>{s.text}</Markdown>;
             case "thinking":
               return (
-                <ThinkingBlock key={i} text={s.item.text} startedAt={s.item.startedAt} endedAt={s.item.endedAt} live={live} />
+                <ThinkingBlock key={i} text={s.item.text} startedAt={s.item.startedAt} endedAt={s.item.endedAt} timingKnown={s.item.timingKnown} scope={s.item.scope} live={live} />
               );
             case "tools":
               return <ToolGroup key={i} tools={s.tools} allTools={turn.tools} />;
@@ -215,7 +220,7 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
           }
         })}
 
-        {live && (empty || !["tools", "agent"].includes(segments[segments.length - 1].kind)) && (
+        {live && !turn.flow.some(f => f.kind === "thinking" && f.endedAt === undefined) && (empty || !["tools", "agent"].includes(segments[segments.length - 1].kind)) && (
           <div className="flex items-center gap-1.5 py-1 text-content-faint text-sm">
             <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" />
             <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot [animation-delay:0.2s]" />

@@ -354,7 +354,7 @@ class HistoryPager:
             for r in self._db.query(
                 "SELECT id, seq, type, data, created_at FROM events INDEXED BY idx_events_sid_ts "
                 "WHERE session_id = ? AND created_at >= ? AND created_at < ? AND type IN "
-                "('tool.use', 'subagent.text', 'subagent.thinking', 'task.update') "
+                "('tool.use', 'subagent.text', 'subagent.thinking', 'thinking.start', 'thinking.delta', 'thinking.end', 'task.update') "
                 "AND (id = ? OR type = 'task.update' OR instr(data, '\"parent\": \"') > 0) ORDER BY id",
                 (*span, launch["id"]),
             ):

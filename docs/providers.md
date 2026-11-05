@@ -36,26 +36,49 @@ Verified E2E: a turn runs `ls` via the Bash tool and returns a result with
 
 ## Codex — `app/providers/codex.py` (installed & wired)
 
-`codex` CLI 0.165 is installed. The provider spawns:
+Normal Codex chats use the CLI's stdio `app-server` protocol (verified with
+0.166.0): initialize → thread/start or thread/resume → turn/start. Each turn
+uses the selected account environment, model/effort, working directory and
+MCP overrides. Agent mode retains the existing harness permission boundary;
+plan mode remains read-only. Images use localImage inputs. No user config or
+provider credentials are rewritten.
 
-```
-codex exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox
-  -C <cwd> [-m <model>] "<latest user message>"
-# resume:  codex exec resume <thread_id> --json ...
-```
+`_codex_app_server.py` normalizes item lifecycles, text/reasoning deltas, tools,
+plans, token usage and collaboration events. `turn/steer` adds instructions to
+the active turn without killing a command and restarting the thread. A late
+rejected steer returns to the existing next-turn queue. Stop/timeout/EOF close
+the process group, pending input and task status. A child-agent Stop uses its
+own turn/interrupt request. The accepted thread ID is saved before completion
+so a stopped first turn can resume.
 
-and normalizes its JSONL events (`_codex_json.py`): `thread.started` →
-resumable id, `item.*` (agent_message → text, reasoning → thinking,
-command_execution → tool.use/result), `turn.completed` → usage, `error` → error.
+Codex spawn/resume/send/wait/close operations are recorded; child text and
+reasoning nest under the Agent card rather than becoming the main answer.
+Task updates use the same persisted task registry/sidebar as Claude. Each
+launch has its own task ID, even when an existing child thread resumes. The
+Codex process still belongs to one parent turn: children remaining at parent
+shutdown are marked stopped. This does not introduce a persistent Codex daemon.
 
-**Auth needed to run** (one of):
-```bash
-codex login                 # ChatGPT OAuth, stored under ~/.codex
-# or export OPENAI_API_KEY=... (or save it via the Providers tab)
-```
-Verified: unauthenticated turns stream a clean `error` event (no hang); auth
-status reports installed/not-logged-in correctly. The `item.*` field names
-should be reconfirmed on the first authenticated run (the parser is defensive).
+**Thinking timing:** Claude content-block start/stop and Codex item start/end
+emit thinking.start/end, independently of text. UI counters run while active;
+completed spans survive paged history and refresh. Reasoning and response
+creation have separate scopes. Codex can deliver hidden reasoning with equal
+start/end timestamps; that means the pure reasoning duration is unavailable,
+not zero. In that case the UI retains response-generation elapsed time (which
+includes network wait), without inventing a reasoning duration. Tool execution
+is excluded from response-generation spans. Legacy text-only histories show
+reasoning without claiming a measured duration.
+
+Sealed Mate/avatar engines keep their isolated CODEX_HOME and exec JSONL path
+(`_codex_sealed.py`, `_codex_json.py`); their existing permission/tool isolation
+is unchanged. The exec parser also accepts reasoning lifecycle events when the
+CLI provides them. The explicit exec transport remains available for legacy
+integration fixtures.
+
+Auth is the CLI's existing ChatGPT login or the configured API key. Protocol
+reference: https://learn.chatgpt.com/docs/app-server . Regression fixtures cover
+streaming, same-turn steering/rejection, child lifecycles, usage deduplication,
+EOF and cancellation. `frontend/test/e2e/thinking.cjs` uses the real compiled
+console/API against `desktop/test/e2e/fake-codex.py`, without a model call.
 
 ## Higgsfield — `app/higgsfield/` (a provider of tools, not an engine)
 

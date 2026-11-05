@@ -103,3 +103,25 @@ intent, and stops its owned local runtime. Selecting another mode waits for that
 The console also recovers an expired-session redirect or a saved `/login` page into the same chooser. Subframes,
 external sites and stale navigation from a previous server cannot reset the current connection. Browser/mobile web
 authentication continues using the web login form.
+
+## Native build performance
+
+The apps workflow verifies and builds the local UI once on Linux, shares the
+commit-specific bundle with all four desktop jobs, and expires that intermediate
+artifact after one day. OS/CPU-specific Python and dependency caches contain
+only the managed interpreter, keyed by the exact Python version, dependency
+declarations and runtime builder. Backend source, UI and manifests are copied
+fresh for every build. A successful runtime smoke test saves that cache before
+installer packaging, so a later packaging failure does not lose it. uv's own
+download cache is also preserved.
+
+macOS first builds the signed/ad-hoc .app directory with electron-builder and
+its existing afterPack hook. build/macos-dmg.py stages it with an Applications
+shortcut and uses hdiutil create directly (read-only ULFO/LZFSE), then verifies
+the resulting image. It does not use Finder customization or the old attach /
+detach retry path. The runtime inside the actual .app is still smoke-tested.
+Publishing generates one latest-mac.yml with hashes and sizes for both CPU
+architectures. The unsigned app's manual DMG update policy stays the same.
+
+The change removes redundant work; actual cold/warm macOS timing must be
+measured on the Actions runners. A Linux packaging test is not a macOS build.

@@ -19,7 +19,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Callable
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Literal
+from typing import Any, AsyncIterator, Awaitable, Literal
 
 from app.providers._attachments import Attachment
 
@@ -27,7 +27,9 @@ from app.providers._attachments import Attachment
 EVENT_TYPES = (
     "session.start",   # turn began; data: {provider, model, workspace}
     "text.delta",      # streaming assistant text; data: {text}
+    "thinking.start",  # item lifecycle; data: {id, parent?, scope?} (response scope includes model/network wait)
     "thinking.delta",  # streaming reasoning; data: {text}
+    "thinking.end",    # closes the same reasoning item, even when its text is hidden
     "tool.use",        # agent invoked a tool; data: {id, name, input, parent?}  (parent = the Agent/Task call it ran in)
     "tool.result",     # tool returned; data: {id, name, output, is_error, parent?, agent?}  (agent = subagent report + stats)
     "subagent.text",   # a subagent's prose (one complete block); data: {parent, text} — never part of the answer
@@ -50,7 +52,9 @@ EVENT_TYPES = (
 EventType = Literal[
     "session.start",
     "text.delta",
+    "thinking.start",
     "thinking.delta",
+    "thinking.end",
     "tool.use",
     "tool.result",
     "subagent.text",
@@ -135,6 +139,7 @@ class TurnInbox:
     def __init__(self) -> None:
         self.queue: asyncio.Queue[SteerMessage] = asyncio.Queue()
         self.open = True
+        self.stop_task: Callable[[str], Awaitable[bool]] | None = None
 
     def offer(self, msg: SteerMessage) -> bool:
         if not self.open:
@@ -144,6 +149,7 @@ class TurnInbox:
 
     def close(self) -> None:
         self.open = False
+        self.stop_task = None
         while not self.queue.empty():  # nobody will deliver these now
             self.queue.get_nowait().resolve(False)
 
