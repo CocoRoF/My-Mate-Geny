@@ -369,7 +369,7 @@ export default {
   memRecallLight: "A few",
   memRecallRich: "Many",
   memSelfSave: "Let {name} save memories on her own",
-  memSelfSaveHint: "Confirmed new input is consolidated through your provider in the background (at most 24 calls/day). Extra usage appears under internal calls. Off: save only when explicitly asked.",
+  memSelfSaveHint: "Conversations are organized together without a special request. Uses your existing provider; extra usage appears under internal calls.",
   memTest: "Test recall",
   memTestHint: "Type a message: see exactly what she would be reminded of.",
   memTestPh: "e.g. what's on Tuesday?",

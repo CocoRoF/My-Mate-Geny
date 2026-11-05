@@ -370,7 +370,7 @@ const ko: Messages<"mateSettings"> = {
   memRecallLight: "조금",
   memRecallRich: "많이",
   memSelfSave: "{name:이} 스스로 기억하기",
-  memSelfSaveHint: "확정된 새 발언을 기존 공급자로 백그라운드 정리해요(하루 최대 24회). 추가 사용량은 내부 호출로 표시돼요. 끄면 기억해 달라고 할 때만 저장해요.",
+  memSelfSaveHint: "별도로 기억해 달라고 하지 않아도 앞뒤 대화를 함께 정리해요. 기존 공급자를 사용하며 추가 사용량은 내부 호출로 표시돼요.",
   memTest: "떠올리기 시험",
   memTestHint: "메시지를 적어 보면 무엇을 떠올릴지 그대로 보여 줘요.",
   memTestPh: "예: 화요일에 뭐 있었지?",

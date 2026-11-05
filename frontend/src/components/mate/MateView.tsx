@@ -58,7 +58,8 @@ export default function MateView() {
   // one panel slot: Mate settings or the Relationship panel (local), or Global settings (the store's: Mate settings
   // and anything else open it with openGlobal(section); inside Mate settings it swaps itself for Global settings)
   const [panel, setPanel] = useState<"mate" | "relation" | null>(null);
-  const [mateTab, setMateTab] = useState<SettingsTab>(undefined);
+  const [mateTab, setMateTab] = useState<"profile" | undefined>(undefined);
+  const [bondTab, setBondTab] = useState<"memory" | "relation">("relation");
   const mateOpen = panel === "mate";
   const globalOpen = useMateStore((s) => s.globalOpen);
   const relationOpen = panel === "relation" && !globalOpen;
@@ -74,7 +75,12 @@ export default function MateView() {
   };
   const openMate = (tab?: SettingsTab) => {
     useMateStore.getState().closeGlobal();
-    setMateTab(tab);
+    if (tab) {
+      setBondTab(tab);
+      setPanel("relation");
+      return;
+    }
+    setMateTab("profile");
     setPanel("mate");
   };
   const toggleMate = () => {
@@ -86,7 +92,7 @@ export default function MateView() {
     useMateStore.getState().closeGlobal();
     setPanel("relation");
   };
-  // opened for one of these panels (the desktop Mate chat window's "Adjust in settings": /?view=mate&panel=…)
+  // Older settings-memory/settings-relation links now enter the heart panel.
   useEffect(() => {
     const link = takeMatePanelLink();
     if (!link) return;
@@ -319,19 +325,16 @@ export default function MateView() {
           <button onClick={reset} disabled={resetting || conv.streaming} className="btn-ghost !px-2.5" title={t("mate.resetTitle")} data-testid="mate-reset">
             <Icon name="rotate" size={15} spin={resetting} />
           </button>
-          {/* (phones: the header is full — the indicator next to her name opens it; ♥ only while that is hidden) */}
-          {(!phone || !(mate.relation?.enabled && mate.relation?.show_indicator)) && (
-            <button
-              onClick={toggleRelation}
-              className={`btn-ghost !px-2.5 ${relationOpen ? "!bg-surface-3 !text-content" : ""}`}
-              title={t("mate.relPanelOpenTitle", { name: mate.name })}
-              aria-label={t("mate.relPanelOpen")}
-              aria-pressed={relationOpen}
-              data-testid="mate-relation-open"
-            >
-              <Icon name="heart" size={16} />
-            </button>
-          )}
+          <button
+            onClick={toggleRelation}
+            className={`btn-ghost !px-2.5 ${relationOpen ? "!bg-surface-3 !text-content" : ""}`}
+            title={t("mate.relPanelOpenTitle", { name: mate.name })}
+            aria-label={t("mate.relPanelOpen")}
+            aria-pressed={relationOpen}
+            data-testid="mate-relation-open"
+          >
+            <Icon name="heart" size={16} />
+          </button>
           <button
             onClick={toggleGlobal}
             className={`btn-ghost !px-2.5 ${globalOpen ? "!bg-surface-3 !text-content" : ""}`}
@@ -404,7 +407,7 @@ export default function MateView() {
         // shows Global settings itself while those are open (and closes them when it goes)
         <MateSettings key={mateTab ?? ""} mate={mate} conv={conv} onClose={closePanels} initialTab={mateTab} />
       ) : relationOpen ? (
-        <RelationPanel mate={mate} onClose={closePanels} onOpenSettings={(tab) => openMate(tab)} />
+        <RelationPanel key={bondTab} mate={mate} onClose={closePanels} initialTab={bondTab} />
       ) : (
         <GlobalSettings onClose={() => useMateStore.getState().closeGlobal()} />
       )}

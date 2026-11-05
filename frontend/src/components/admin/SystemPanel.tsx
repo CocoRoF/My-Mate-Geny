@@ -309,7 +309,7 @@ export default function SystemPanel() {
         <h3 className="font-semibold">{t("admin.memoryTitle")}</h3>
         <p className="text-xs text-content-faint">{t("admin.memoryHint")}</p>
         <p className="text-[12px] text-content-dim">{t("admin.memoryCounts", { sources: info.memory.sources, episodes: info.memory.episodes, pending: (info.memory.jobs.pending ?? 0) + (info.memory.jobs.running ?? 0), failed: info.memory.jobs.failed ?? 0, unindexed: info.memory.unindexed })}</p>
-        <p className="text-[12px] text-content-dim">{t("admin.memoryBudget", { limit: info.memory.daily_call_limit, ms: info.memory.latency_ms, cost: info.memory.cost_usd.toFixed(4) })}</p>
+        <p className="text-[12px] text-content-dim">{t("admin.memoryBudget", { limit: info.memory.max_calls_per_minute, ms: info.memory.latency_ms, cost: info.memory.cost_usd.toFixed(4) })}</p>
       </section>}
       <StaticCards info={info} error={error} reload={load} loading={loading} />
     </div>

@@ -161,6 +161,7 @@ CREATE TABLE IF NOT EXISTS attachments (
     mime        TEXT NOT NULL,
     size        INTEGER NOT NULL,
     kind        TEXT NOT NULL,            -- image | file
+    origin      TEXT NOT NULL DEFAULT 'user', -- user | screen: presentation provenance, not model access
     width       INTEGER,
     height      INTEGER,
     path        TEXT NOT NULL,            -- original, on this runtime host
@@ -405,6 +406,10 @@ class Database:
             for col in ("provider", "model", "meta"):
                 if col not in mcols:
                     self._conn.execute(f"ALTER TABLE messages ADD COLUMN {col} TEXT")
+            acols = {r["name"] for r in self._conn.execute("PRAGMA table_info(attachments)")}
+            if "origin" not in acols:
+                self._conn.execute("ALTER TABLE attachments ADD COLUMN origin TEXT NOT NULL DEFAULT 'user'")
+                self._conn.execute("UPDATE attachments SET origin='screen' WHERE message_id LIKE 'artifact:screen:%' OR message_id LIKE 'artifact:capture:%' OR message_id IN (SELECT id FROM messages WHERE CASE WHEN json_valid(meta) THEN json_extract(meta,'$.kind') END='screen_observation')")
             gcols = {r["name"] for r in self._conn.execute("PRAGMA table_info(git_accounts)")}
             if gcols and "scopes" not in gcols:
                 self._conn.execute("ALTER TABLE git_accounts ADD COLUMN scopes TEXT NOT NULL DEFAULT ''")

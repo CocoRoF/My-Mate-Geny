@@ -34,6 +34,7 @@ export function Toggle({ on, onChange, label, hint, disabled, testId }: { on: bo
       <button
         type="button"
         role="switch"
+        aria-label={label}
         aria-checked={on}
         disabled={disabled}
         onClick={() => onChange(!on)}

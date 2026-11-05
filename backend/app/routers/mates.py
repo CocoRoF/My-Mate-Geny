@@ -646,7 +646,7 @@ async def restore_memory_version(mate_id: str, mem_id: str, request: Request) ->
             restored = svc.store.update_memory(mate_id, mem_id, patch, by_user=True)
             for evidence in svc.store._db.query("SELECT * FROM memory_evidence WHERE memory_id=? AND memory_revision=?", (mem_id, old['revision'])):
                 try:
-                    svc.store.knowledge.attach(mate_id, mem_id, evidence['source_id'], evidence['quote'], evidence['source_revision'])
+                    svc.store.knowledge.attach(mate_id, mem_id, evidence['source_id'], evidence['quote'], evidence['source_revision'], contextual=evidence['relation'] == 'context')
                 except ValueError:
                     pass  # old evidence may have been edited or excluded
             return restored
@@ -658,6 +658,19 @@ async def restore_memory_version(mate_id: str, mem_id: str, request: Request) ->
 async def knowledge_status(mate_id: str, request: Request) -> dict:
     _mate(request, mate_id)
     return _svc(request).store.knowledge.stats(mate_id)
+
+
+@router.post('/{mate_id}/knowledge/retry')
+async def retry_memory(mate_id: str, request: Request) -> dict:
+    _mate(request, mate_id)
+    try:
+        from app.mate.consolidation import Consolidator
+        svc = _svc(request)
+        queued = Consolidator(svc).retry_failed(mate_id)
+        svc.store._changed('memory', mate_id)
+        return {'queued': queued}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get('/{mate_id}/knowledge/tasks')
@@ -690,3 +703,12 @@ async def task_receipt(mate_id: str, request_id: str, event_id: int, request: Re
         return _svc(request).tasks.read_receipt(mate_id, request_id, event_id)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+@router.get('/{mate_id}/knowledge/episodes')
+async def memory_episodes(mate_id: str, request: Request, before: str | None = None, limit: int = 40, q: str = '') -> dict:
+    _mate(request, mate_id)
+    try:
+        return _svc(request).store.knowledge.episodes(mate_id, before=before, limit=max(1, min(100, limit)), q=q)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc

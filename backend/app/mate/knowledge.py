@@ -86,6 +86,13 @@ CREATE TABLE IF NOT EXISTS mate_delegation_requests (
  delivered INTEGER NOT NULL DEFAULT 0, result_revision INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_mate_requests_worker ON mate_delegation_requests(worker_sid,state);
+CREATE TABLE IF NOT EXISTS memory_runs (
+ id TEXT PRIMARY KEY, mate_id TEXT NOT NULL REFERENCES mates(id) ON DELETE CASCADE,
+ started_at TEXT NOT NULL, finished_at TEXT, state TEXT NOT NULL,
+ sources INTEGER NOT NULL DEFAULT 0, facts INTEGER NOT NULL DEFAULT 0, episodes INTEGER NOT NULL DEFAULT 0,
+ error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_memory_runs_mate ON memory_runs(mate_id,started_at);
 CREATE TABLE IF NOT EXISTS memory_checkpoints (key TEXT PRIMARY KEY,value TEXT NOT NULL);
 """
 
@@ -133,6 +140,7 @@ def bootstrap(db) -> None:
             ("revision", "INTEGER NOT NULL DEFAULT 1"),
             ("evidence_type", "TEXT NOT NULL DEFAULT 'legacy'"),
             ("subject", "TEXT"),
+            ("subject_type", "TEXT NOT NULL DEFAULT 'other'"),
             ("predicate", "TEXT"),
             ("valid_from", "TEXT"),
             ("valid_until", "TEXT"),
@@ -730,13 +738,27 @@ class Knowledge:
                 "SELECT COUNT(*) n FROM memory_evidence e JOIN mate_memories m ON m.id=e.memory_id WHERE m.mate_id=?",
                 (mate_id,),
             )["n"],
+            "recent_runs": [
+                dict(r)
+                for r in self.db.query(
+                    "SELECT started_at,finished_at,state,sources,facts,episodes,error FROM memory_runs WHERE mate_id=? ORDER BY started_at DESC LIMIT 5",
+                    (mate_id,),
+                )
+            ],
             "cost": self.db.query_one(
                 "SELECT COALESCE(SUM(cost),0) n FROM memory_jobs WHERE mate_id=?", (mate_id,)
             )["n"],
         }
 
     def attach(
-        self, mate_id: str, memory_id: str, source_id: str, quote: str, revision: int | None = None
+        self,
+        mate_id: str,
+        memory_id: str,
+        source_id: str,
+        quote: str,
+        revision: int | None = None,
+        *,
+        contextual: bool = False,
     ) -> None:
         source = self.allowed(mate_id, source_id)
         memory = self.db.query_one(
@@ -746,7 +768,9 @@ class Knowledge:
             raise ValueError("An exact quote from accessible original evidence is required")
         if revision is not None and revision != source["revision"]:
             raise ValueError("Source revision changed")
-        if M.normalized(memory["text"]) != M.normalized(quote):
+        if M.normalized(memory["text"]) != M.normalized(quote) and not (
+            contextual and " ".join(quote.split()) in memory["text"]
+        ):
             raise ValueError(
                 "A citation must support the complete stored assertion; save the exact supported quote"
             )
@@ -761,7 +785,7 @@ class Knowledge:
                 quote[:2000],
                 start,
                 start + len(quote[:2000]),
-                "supports",
+                "context" if contextual else "supports",
             ),
         )
 
@@ -949,6 +973,44 @@ class Knowledge:
             "episodes": self.db.query_one("SELECT COUNT(*) n FROM memory_episodes")["n"],
             "latency_ms": round(perf["latency_ms"]),
             "cost_usd": round(perf["cost"], 6),
-            "daily_call_limit": 24,
+            "max_calls_per_minute": 2,
+            "batch_size": 8,
             "content_logged": False,
+        }
+
+    def episodes(
+        self, mate_id: str, *, limit: int = 40, before: str | None = None, q: str = ""
+    ) -> dict:
+        limit = min(100, max(1, limit))
+        where, params = (
+            [
+                "e.mate_id=?",
+                "x.eligible=1",
+                "e.source_revision=x.revision",
+                "NOT EXISTS(SELECT 1 FROM memory_exclusions z WHERE z.mate_id=e.mate_id AND z.key=e.source_id)",
+            ],
+            [mate_id],
+        )
+        if q.strip():
+            where.append("instr(lower(e.title||' '||e.quote||' '||e.entities),lower(?))>0")
+            params.append(q.strip()[:300])
+        if before:
+            stamp, eid = before.split("|", 1)
+            where.append("(e.created_at,e.id)<(?,?)")
+            params.extend([stamp, eid])
+        rows = self.db.query(
+            "SELECT e.*,s.title source_title,x.observed_at FROM memory_episodes e JOIN memory_sources x ON x.id=e.source_id JOIN sessions s ON s.id=x.session_id WHERE "
+            + " AND ".join(where)
+            + " ORDER BY e.created_at DESC,e.id DESC LIMIT ?",
+            (*params, min(100, max(1, limit)) + 1),
+        )
+        out = []
+        for row in rows[:limit]:
+            if self.allowed(mate_id, row["source_id"]):
+                out.append({**dict(row), "entities": json.loads(row["entities"])})
+        return {
+            "items": out,
+            "next_cursor": rows[limit - 1]["created_at"] + "|" + rows[limit - 1]["id"]
+            if len(rows) > limit
+            else None,
         }

@@ -12,6 +12,7 @@ import { segmentReply } from "../../mate/markdown";
 import { currentSurface, desktopMate } from "../../mate/desktop";
 import Icon, { type IconName } from "../ui/Icon";
 import MateReply from "./MateReply";
+import { visibleAttachments } from "../../lib/attachmentVisibility";
 import MessageAttachments from "../attachments/MessageAttachments";
 import type { Attachment } from "../../types";
 import { useMateChat } from "../../mate/useMateConversation";
@@ -174,7 +175,7 @@ function ActivityChip({ tool }: { tool: ToolActivity }) {
       {d.sessionId && !tool.isError && <Icon name="external" size={10} className="shrink-0 opacity-60" />}
     </>
   );
-  const shot = !!tool.images?.length && tool.name.endsWith("see_screen");
+  const shot = visibleAttachments(tool.images).length > 0 && tool.name.endsWith("see_screen");
   return (
     <div className={shot ? "flex flex-col items-start gap-1.5" : "flex"} data-testid="mate-activity">
       {d.sessionId && !tool.isError ? (
@@ -202,6 +203,7 @@ function ActivityChip({ tool }: { tool: ToolActivity }) {
 /** what the user said: the files they attached (thumbnails / file cards, like the Chat view), then the text */
 function UserBubble({ text, attachments, pending, collecting, compact }: { text: string; attachments?: Attachment[]; pending?: boolean; collecting?: boolean; compact?: boolean }) {
   const t=useT();
+  attachments = visibleAttachments(attachments);
   return (
     <div className={`flex w-full min-w-0 flex-col items-end gap-1.5 ${pending ? "opacity-70" : ""}`} data-testid="mate-user-message">
       {!!attachments?.length && (

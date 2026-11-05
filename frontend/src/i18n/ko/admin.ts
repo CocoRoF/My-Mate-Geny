@@ -306,6 +306,6 @@ const ko: Messages<"admin"> = {
   memoryTitle: "기억 처리 상태",
   memoryHint: "원문은 대화에 보관하며, 이 집계에는 내용·API 키를 기록하지 않아요. 자동 정리는 대화가 쉬는 동안 한 건씩 실행해요.",
   memoryCounts: "원문 {sources}개 · 사건 {episodes}개 · 정리 대기 {pending}개 · 실패 {failed}개 · 인덱스 대기 {unindexed}개",
-  memoryBudget: "하루 최대 {limit}회 · 평균 정리 {ms}ms · 기록된 API 환산 비용 ${cost}",
+  memoryBudget: "한 번에 1개 정리 · 최대 {limit}회/분 · 평균 정리 {ms}ms · 기록된 API 환산 비용 ${cost}",
 };
 export default ko;

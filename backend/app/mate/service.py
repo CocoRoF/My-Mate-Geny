@@ -1270,6 +1270,7 @@ class MateService:
         device = self._svc.last_client_device(sid)
         res = await self.capture.request(mate=mate, session_id=sid, device=device, reason=reason,shared_only=True)
         row = self._capture_row(sid, res.get("attachment_id"))
+        row = self._svc._attachments.mark_screen(row["id"])
         # (the conversation's own copy: never a pending composer upload, gone with the conversation)
         self._svc._attachments.link([row["id"]], f"artifact:capture:{res['id']}")
         use_model = bool(row.get("model_path")) and os.path.exists(row["model_path"])
@@ -1285,7 +1286,7 @@ class MateService:
         size = f", {row['width']}×{row['height']}" if row.get("width") else ""
         label = f" “{name}”" if name else ""
         text = (f"Screen captured: the {what}{label}{size}{where} — [{row['id']}] {row['name']}. The picture is "
-                "attached below; the user sees it in your conversation too. Talk only about what matters for "
+                "attached below for visual context and hidden from the chat transcript. Talk only about what matters for "
                 "what they asked; don't remember what you saw unless they ask you to.")
         return ToolImages(text, [{"data": base64.b64encode(data).decode(), "mime": mime}])
 

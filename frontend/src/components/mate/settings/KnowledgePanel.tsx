@@ -10,7 +10,7 @@ import { useT, type MsgKey } from "../../../i18n";
 import { relTime } from "../../../i18n/format";
 import { ErrorLine, Section } from "./ui";
 
-function Evidence({ mateId, source, revision, offset = 0, onForgot }: { mateId: string; source: string; revision?: number; offset?: number; onForgot?: () => void }) {
+export function Evidence({ mateId, source, revision, offset = 0, onForgot }: { mateId: string; source: string; revision?: number; offset?: number; onForgot?: () => void }) {
   const t = useT();
   const [value, setValue] = useState<EvidenceView | null>(null);
   const [err, setErr] = useState("");
@@ -66,14 +66,14 @@ export function MemoryHistoryDetails({ mateId, memory, onChanged }: { mateId: st
     <ErrorLine text={err} />
     {open && data && <div className="space-y-2 pt-1">
       {!data.evidence.length && <p className="text-content-faint">{t("mateSettings.knowledgeNoEvidence")}</p>}
-      {data.evidence.map(e => <button type="button" key={`${e.source_id}:${e.source_revision}`} className="block w-full rounded-lg bg-surface-2 p-2 text-left hover:bg-surface-3" onClick={() => setSource({ id: e.source_id, rev: e.source_revision, offset: Math.max(0, e.start - 120) })}>
+      {data.evidence.map(e => <button type="button" key={`${e.source_id}:${e.source_revision}:${e.start}`} className="block w-full rounded-lg bg-surface-2 p-2 text-left hover:bg-surface-3" onClick={() => setSource({ id: e.source_id, rev: e.source_revision, offset: Math.max(0, e.start - 120) })}>
         <span className="block text-accent">{e.title} · {relTime(e.observed_at)}</span><span className="block break-words">{e.quote}</span>
       </button>)}
       {source && <Evidence key={`${source.id}:${source.offset ?? 0}`} mateId={mateId} source={source.id} revision={source.rev} offset={source.offset} onForgot={onChanged} />}
       {data.versions.map(v => <div key={v.revision} className="rounded-lg border border-border p-2">
         <p className="text-content-faint">{t("mateSettings.knowledgeRevision", { revision: v.revision })} · {relTime(v.recorded_at)}</p>
         <p className="whitespace-pre-wrap break-words">{v.snapshot.text}</p>
-        {v.evidence?.map(e => <button type="button" key={e.source_id} className="block py-1 text-left text-accent" onClick={() => setSource({ id: e.source_id, rev: e.source_revision, offset: Math.max(0, e.start - 120) })}>{e.title} · {relTime(e.observed_at)}</button>)}
+        {v.evidence?.map(e => <button type="button" key={`${e.source_id}:${e.start}`} className="block py-1 text-left text-accent" onClick={() => setSource({ id: e.source_id, rev: e.source_revision, offset: Math.max(0, e.start - 120) })}>{e.title} · {relTime(e.observed_at)}</button>)}
         {v.revision !== memory.revision && <button type="button" className="btn-soft mt-1" disabled={busy} onClick={() => void restore(v.revision)}>{t("mateSettings.knowledgeRestore")}</button>}
       </div>)}
     </div>}

@@ -3,9 +3,8 @@
  * Mate view (header ♥ or the indicator) and of the desktop Mate chat window. View-first: where you two are (stage
  * ring, affinity, mood, days together, streak), what the next stage still needs (the earned part and the warmth part —
  * the stage is the lower of the two), stats, 30 days of affinity, milestones and anniversaries, the change journal
- * (filters, by day) and her latest memories. Adjusting stays in Mate settings → Relationship ("Adjust in settings");
- * only turning it back on / resuming is offered here. It follows the server's pushes (mates.changed → the store), no
- * polling.
+ * (filters, by day) and her latest memories. This heart panel owns both memory and relationship management,
+ * including their preferences. It follows the server's pushes (mates.changed → the store).
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getRelationJournal, patchRelation, type Mate, type RelationChange, type RelationJournal, type RelationStage, RELATION_STAGES } from "../../api/mates";
@@ -14,6 +13,8 @@ import { fmtDate, fmtTime, relTime } from "../../i18n/format";
 import { useT, type MsgKey, type TFunction } from "../../i18n";
 import Icon from "../ui/Icon";
 import { MOOD_LABEL, STAGE_COLOR, STAGE_LABEL } from "./RelationBadge";
+import MemoryNotebook from "./MemoryNotebook";
+import RelationshipTab from "./settings/RelationshipTab";
 import { milestoneText, whyText } from "./settings/RelationshipTab";
 import { CHANGE_FILTERS, chartSummary, deltaText, filterChanges, groupByDay, localDay, MOOD_EMOJI, nextAnniversary, type ChangeFilter } from "../../mate/relationJournal";
 
@@ -41,8 +42,10 @@ const KIND_LABEL: Record<string, MsgKey> = {
 };
 const PAGE = 25;
 
-export default function RelationPanel({ mate, onClose, onOpenSettings }: { mate: Mate; onClose: () => void; onOpenSettings: (tab: RelationLink) => void }) {
+export default function RelationPanel({ mate, onClose, initialTab = "relation" }: { mate: Mate; onClose: () => void; initialTab?: RelationLink }) {
   const t = useT();
+  const [tab, setTab] = useState<RelationLink>(initialTab);
+  const [adjusting, setAdjusting] = useState(false);
   const [j, setJ] = useState<RelationJournal | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -81,24 +84,35 @@ export default function RelationPanel({ mate, onClose, onOpenSettings }: { mate:
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
         <Icon name="heart" size={15} className="text-content-faint" />
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[14px] font-semibold">{t("mate.relPanelOpen")}</h2>
+          <h2 className="truncate text-[14px] font-semibold">{t("mate.bondTitle")}</h2>
           <p className="truncate text-[11px] text-content-faint">{t("mate.relPanelSub", { name: mate.name })}</p>
         </div>
-        <button
-          onClick={() => onOpenSettings("relation")}
+        {tab === "relation" && <button
+          onClick={() => setAdjusting(v => !v)}
+          aria-pressed={adjusting}
           className="btn-ghost shrink-0 !px-2.5 !py-1 text-[12px]"
-          title={t("mate.relPanelAdjust")}
-          aria-label={t("mate.relPanelAdjust")}
+          title={t("mate.bondAdjust")}
+          aria-label={t("mate.bondAdjust")}
           data-testid="mate-relation-panel-adjust"
         >
-          <Icon name="sliders" size={13} /> <span className="hidden min-[400px]:inline">{t("mate.relPanelAdjust")}</span>
-        </button>
+          <Icon name="sliders" size={13} /> <span className="hidden min-[400px]:inline">{t("mate.bondAdjust")}</span>
+        </button>}
         <button onClick={onClose} className="btn-ghost !px-2" aria-label={t("common.close")} data-testid="mate-relation-panel-close">
           <Icon name="x" size={16} />
         </button>
       </div>
+      <div className="flex shrink-0 gap-1 border-b border-border px-4 py-2" role="tablist" aria-label={t("mate.bondTitle")}>
+        {(["relation", "memory"] as const).map(id => (
+          <button type="button" role="tab" key={id} aria-selected={tab === id}
+            className={tab === id ? "btn-soft" : "btn-ghost"} data-testid={`bond-tab-${id}`} onClick={() => setTab(id)}>
+            <Icon name={id === "relation" ? "heart" : "brain"} size={14} />
+            {t(id === "relation" ? "mateSettings.relTitle" : "mateSettings.memTitle")}
+          </button>
+        ))}
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
         <div className="mx-auto max-w-xl space-y-4 pb-6">
+          {tab === "memory" ? <MemoryNotebook key={mate.id} mate={mate} /> : adjusting ? <RelationshipTab key={mate.id} mate={mate} /> : <>
           {err && <p className="rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{t("mate.relPanelError", { error: err })}</p>}
           {!j || !v ? (
             !err && <p className="text-[12px] text-content-faint">{t("common.loading")}</p>
@@ -134,9 +148,10 @@ export default function RelationPanel({ mate, onClose, onOpenSettings }: { mate:
               <Chart j={j} />
               <Milestones j={j} />
               <Changes changes={j.changes} />
-              <Memories j={j} mate={mate} onManage={() => onOpenSettings("memory")} />
+              <Memories j={j} mate={mate} onManage={() => setTab("memory")} />
             </>
           )}
+          </>}
         </div>
       </div>
     </div>

@@ -74,7 +74,7 @@ export interface SystemInfo {
     disk_used: number | null;
     disk_free: number | null;
   };
-  memory?: { jobs: Record<string, number>; fts: boolean; sources: number; unindexed: number; episodes: number; latency_ms: number; cost_usd: number; daily_call_limit: number };
+  memory?: { jobs: Record<string, number>; fts: boolean; sources: number; unindexed: number; episodes: number; latency_ms: number; cost_usd: number; max_calls_per_minute: number; batch_size: number };
   limits: Record<string, number>;
 }
 

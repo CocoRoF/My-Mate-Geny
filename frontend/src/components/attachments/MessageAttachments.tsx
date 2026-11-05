@@ -1,3 +1,4 @@
+import { visibleAttachments } from "../../lib/attachmentVisibility";
 import { useState } from "react";
 import type { Attachment } from "../../types";
 import { downloadUrl } from "../../api/attachments";
@@ -34,6 +35,7 @@ export default function MessageAttachments({
   const [viewing, setViewing] = useState<number | null>(null);
   const [broken, setBroken] = useState<Record<string, true>>({});
   const fail = (id: string) => setBroken((b) => (b[id] ? b : { ...b, [id]: true }));
+  attachments = visibleAttachments(attachments);
   const images = attachments.filter((a) => a.kind === "image");
   const files = attachments.filter((a) => a.kind !== "image");
   if (!attachments.length) return null;

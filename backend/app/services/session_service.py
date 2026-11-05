@@ -961,7 +961,7 @@ class SessionService:
                 "text": text,
                 "client_msg_id": client_msg_id,
                 "message_id": mid,
-                "attachments": [self._attachments.out(r) for r in rows] if self._attachments else [],
+                "attachments": [self._attachments.out(r) for r in rows if r.get("origin") != "screen"] if self._attachments else [],
                 **(meta or {}),
             })
             self._add_event(sid, ev)
@@ -1085,7 +1085,7 @@ class SessionService:
         # Other tabs/devices watching this session render the user's bubble.
         self._publish(sid, {"type": "user.message", "data": {
             "message_id": msg_id, "client_msg_id": client_msg_id, "text": user_input,
-            "attachments": [self._attachments.out(r) for r in rows] if self._attachments else [],
+            "attachments": [self._attachments.out(r) for r in rows if r.get("origin") != "screen"] if self._attachments else [],
             **(meta or {}),
         }})
         if screen_failed:

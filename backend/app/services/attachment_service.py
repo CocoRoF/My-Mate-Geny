@@ -264,12 +264,20 @@ class AttachmentService:
             "mime": row["mime"],
             "size": row["size"],
             "kind": row["kind"],
+            "origin": row.get("origin") or "user",
             "width": row["width"],
             "height": row["height"],
             "url": f"/api/attachments/{row['id']}/content",
             "preview_url": f"/api/attachments/{row['id']}/content?variant=preview",
             "created_at": row["created_at"],
         }
+
+    def mark_screen(self, aid: str) -> dict[str, Any]:
+        """Only trusted capture responders call this, never client upload fields.
+        Keep the model's image and file lifecycle, hide it from chat attachments.
+        """
+        self._db.execute("UPDATE attachments SET origin='screen' WHERE id=?", (aid,))
+        return self.get(aid)
 
     def pending(self, sid: str, ids: list[str]) -> list[dict[str, Any]]:
         """Validate composer attachments for a send: exist, same session, unsent."""
@@ -291,7 +299,7 @@ class AttachmentService:
         out: dict[str, list[dict[str, Any]]] = {}
         for r in self._db.query(
             "SELECT * FROM attachments WHERE session_id = ? AND message_id IS NOT NULL "
-            "AND message_id NOT LIKE 'artifact:%' ORDER BY created_at",
+            "AND message_id NOT LIKE 'artifact:%' AND origin!='screen' ORDER BY created_at",
             (sid,),
         ):
             out.setdefault(r["message_id"], []).append(self.out(dict(r)))

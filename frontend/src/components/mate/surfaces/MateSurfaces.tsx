@@ -29,18 +29,9 @@ import MateComposer from "../MateComposer";
 import MateMessages from "../MateMessages";
 import { MateThumb, moodLabel, useFadingCaption } from "../MateStage";
 import RelationBadge from "../RelationBadge";
-import type { RelationLink } from "../RelationPanel";
-import { matePanelUrl } from "../../../lib/navUrl";
 import { useT } from "../../../i18n";
 
 const RelationPanel = lazy(() => import("../RelationPanel"));
-
-/** the console's Mate settings at that tab: the desktop app's console window, or (a browser) a new tab */
-function openMateSettings(mateId: string, tab: RelationLink) {
-  const url = matePanelUrl(mateId, tab === "memory" ? "settings-memory" : "settings-relation");
-  if (desktopMate()) void desktopMate()!.openConsole(`${window.location.origin}${url}`);
-  else window.open(url, "_blank");
-}
 
 type Kind = "mate-overlay" | "mate-quick" | "mate-chat";
 
@@ -554,7 +545,7 @@ function ChatWindow() {
         {relOpen && (
           <div className="absolute inset-0 z-20 bg-surface animate-fade-in" data-testid="mate-chat-relation-panel">
             <Suspense fallback={null}>
-              <RelationPanel mate={mate} onClose={() => setRelOpen(false)} onOpenSettings={(tab) => openMateSettings(mate.id, tab)} />
+              <RelationPanel mate={mate} onClose={() => setRelOpen(false)} />
             </Suspense>
           </div>
         )}

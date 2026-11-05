@@ -104,6 +104,7 @@ export interface DirEntry {
 }
 
 export interface Attachment {
+  origin?: "user" | "screen";
   id: string;
   name: string;
   mime: string;

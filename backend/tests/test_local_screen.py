@@ -104,6 +104,8 @@ async def test_stopping_connection_or_turn_cancels_pending_request(db, tmp_path,
 
 async def test_on_turn_adds_current_frame_to_user_and_provider_inputs(db, tmp_path, monkeypatch):
     svc, atts, broker, screen, sid = setup(db, tmp_path)
+    published = []
+    monkeypatch.setattr(svc, "_publish", lambda sid, event: published.append(event))
     _, queue = client(broker, sid, "on_turn")
     seen = []
     async def fake_run(sid, session, attachments, ctx, msg_id):
@@ -119,11 +121,64 @@ async def test_on_turn_adds_current_frame_to_user_and_provider_inputs(db, tmp_pa
     assert len(seen) == 1 and seen[0].is_image
     assert Path(seen[0].inline_path).read_bytes() == _png()
     assert atts.get(row["id"])["message_id"] == svc.messages(sid)[0]["id"]
+    assert atts.get(row["id"])["origin"] == "screen"
+    assert svc.messages(sid)[0]["attachments"] == []
+    assert svc.history_page(sid)["messages"][0]["attachments"] == []
+    assert next(e for e in published if e["type"] == "user.message")["data"]["attachments"] == []
     # A delegation/internal/background message must not trigger another screen grab.
     for meta in ({"internal": True}, {"via": {"kind": "mate"}}):
         assert await screen.for_turn(sid, "m~dev-a", meta) is None
     assert await screen.for_turn(sid, None, None) is None
     assert queue.empty()
+
+
+async def test_manual_image_named_like_capture_remains_visible_next_to_hidden_frame(db, tmp_path, monkeypatch):
+    svc, atts, broker, screen, sid = setup(db, tmp_path)
+    published = []
+    monkeypatch.setattr(svc, "_publish", lambda sid, event: published.append(event))
+    client(broker, sid, "on_turn")
+    manual = await _upload(atts, sid, "screen-20261105-234904.png", _png())
+    frame = await _upload(atts, sid, "screen-20261105-234905.png", _png())
+    atts.mark_screen(frame["id"])
+    seen = []
+
+    async def capture(*args):
+        return atts.get(frame["id"])
+
+    async def fake_run(sid, session, attachments, ctx, msg_id):
+        seen.extend(attachments)
+        yield ProviderEvent(type="turn.complete", data={})
+
+    monkeypatch.setattr(screen, "for_turn", capture)
+    monkeypatch.setattr(svc, "_run_turn", fake_run)
+    _ = [e async for e in svc.run_turn(sid, "사진도 같이 봐줘", [manual["id"]], client_msg_id="m~dev-a")]
+    assert len(seen) == 2 and all(a.is_image for a in seen)
+    expected = [manual["id"]]
+    assert [a["id"] for a in svc.messages(sid)[0]["attachments"]] == expected
+    assert [a["id"] for a in svc.history_page(sid)["messages"][0]["attachments"]] == expected
+    assert [a["id"] for a in next(e for e in published if e["type"] == "user.message")["data"]["attachments"]] == expected
+    # This is persisted provenance, so re-opening/bootstrap cannot bring the frame back.
+    db.bootstrap()
+    assert [a["id"] for a in svc.messages(sid)[0]["attachments"]] == expected
+
+
+async def test_legacy_capture_migration_uses_trusted_provenance_not_filenames(db, tmp_path):
+    svc, atts, broker, screen, sid = setup(db, tmp_path)
+    manual = await _upload(atts, sid, "screen-20261105-234904.png", _png())
+    tool = await _upload(atts, sid, "frame.png", _png())
+    observed = await _upload(atts, sid, "observation.png", _png())
+    atts.link([tool["id"]], "artifact:capture:legacy")
+    msg = svc._add_message(sid, "user", "shared screen", meta={"internal": True, "kind": "screen_observation"})
+    atts.link([observed["id"]], msg)
+    malformed = svc._add_message(sid, "user", "old message")
+    db.execute("UPDATE messages SET meta='{broken' WHERE id=?", (malformed,))
+    db.execute("ALTER TABLE attachments DROP COLUMN origin")
+    db.bootstrap()
+    assert atts.get(manual["id"])["origin"] == "user"
+    assert atts.get(tool["id"])["origin"] == "screen"
+    assert atts.get(observed["id"])["origin"] == "screen"
+    db.bootstrap()
+    assert atts.get(manual["id"])["origin"] == "user"
 
 
 async def test_failed_auto_capture_keeps_text_and_warns(db, tmp_path, monkeypatch):

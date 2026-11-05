@@ -299,6 +299,8 @@ export type MemoryStatus = "active" | "done" | "archived";
 export interface Memory {
   revision: number;
   evidence_type: string;
+  subject?: string | null;
+  subject_type?: "person" | "place" | "project" | "other";
   id: string;
   text: string;
   created_at: string;
@@ -763,7 +765,7 @@ export interface EvidenceView {
   source_id: string; title: string; session_id: string; revision: number; next_offset: number | null;
   messages: { source_id: string; revision: number; role: string; text: string; observed_at: string; truncated: boolean }[];
 }
-export interface KnowledgeStatus { unindexed: number; jobs: Record<string, number>; fts: boolean; episodes: number; evidence: number; cost: number }
+export interface KnowledgeStatus { recent_runs?: {state:string; started_at:string; finished_at:string|null; sources:number; facts:number; episodes:number}[]; unindexed: number; jobs: Record<string, number>; fts: boolean; episodes: number; evidence: number; cost: number }
 export interface TaskRecord {
   id: string; title: string; state: string; worker_sid: string; created_at: string; instruction: string;
   verification: string; outcome: string | null;
@@ -781,6 +783,18 @@ export const memoryHistory = (id: string, memory: string) =>
 export const restoreMemoryVersion = (id: string, memory: string, revision: number, expected_revision: number) =>
   apiFetch<Memory>(`/api/mates/${enc(id)}/memories/${enc(memory)}/restore-version`, { method: "POST", ...j({ revision, expected_revision }) });
 export const knowledgeStatus = (id: string) => apiFetch<KnowledgeStatus>(`/api/mates/${enc(id)}/knowledge/status`);
+export const retryMemory = (id: string) => apiFetch<{queued:number}>(`/api/mates/${enc(id)}/knowledge/retry`, {method:"POST"});
 export const listTaskRecords = (id: string) => apiFetch<TaskRecord[]>(`/api/mates/${enc(id)}/knowledge/tasks`);
 export const processMemorySource = (id: string, source_id: string) =>
   apiFetch(`/api/mates/${enc(id)}/knowledge/process-source`, { method: "POST", ...j({ source_id }) });
+
+export interface MemoryEpisode {
+  id: string; title: string; quote: string; entities: string[]; source_id: string; source_revision: number;
+  created_at: string; occurred_at: string | null; observed_at: string; source_title: string;
+}
+export const listMemoryEpisodes = (id: string, before?: string, q?: string) => {
+  const search = new URLSearchParams();
+  if (before) search.set("before", before);
+  if (q) search.set("q", q);
+  return apiFetch<{items: MemoryEpisode[]; next_cursor: string | null}>(`/api/mates/${enc(id)}/knowledge/episodes?${search}`);
+};

@@ -97,7 +97,7 @@ class ScreenService:
         row = self.sessions._attachments.get(str(result.get("attachment_id") or ""))
         if row is None or row["session_id"] != sid or row["kind"] != "image" or row["message_id"] is not None:
             raise CaptureError("error", "Capture did not arrive as a new image of this conversation")
-        return row
+        return self.sessions._attachments.mark_screen(row["id"])
 
     def resolve(self, sid: str, rid: str, body: dict) -> bool:
         p = self.broker._pending.get(rid)
