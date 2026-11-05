@@ -305,4 +305,8 @@ export default {
   countAttachments: "attachments",
   countConnections: "connections",
   countErrorLogs: "error logs",
+  memoryTitle: "Memory processing",
+  memoryHint: "Originals remain in conversations; this diagnostic summary records no content or API keys. Background extraction runs one job at a time while foreground work is idle.",
+  memoryCounts: "{sources} sources · {episodes} episodes · {pending} queued · {failed} failed · {unindexed} awaiting index",
+  memoryBudget: "At most {limit} calls/day · average extraction {ms}ms · reported API equivalent ${cost}",
 };

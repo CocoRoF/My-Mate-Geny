@@ -265,6 +265,7 @@ function StaticCards({ info, error, reload, loading }: { info: SystemInfo | null
 }
 
 export default function SystemPanel() {
+  const t = useT();
   useSystemFeed();
   useResolvedTheme(); // the charts' colours follow the theme (system/fmt.ts): re-render them on a switch
   const [range, setRange] = useState<ViewRange>("live");
@@ -304,6 +305,12 @@ export default function SystemPanel() {
         </div>
       </div>
       <McpRuntime />
+      {info?.memory && <section className="card space-y-2 p-4 sm:p-5" data-testid="memory-system">
+        <h3 className="font-semibold">{t("admin.memoryTitle")}</h3>
+        <p className="text-xs text-content-faint">{t("admin.memoryHint")}</p>
+        <p className="text-[12px] text-content-dim">{t("admin.memoryCounts", { sources: info.memory.sources, episodes: info.memory.episodes, pending: (info.memory.jobs.pending ?? 0) + (info.memory.jobs.running ?? 0), failed: info.memory.jobs.failed ?? 0, unindexed: info.memory.unindexed })}</p>
+        <p className="text-[12px] text-content-dim">{t("admin.memoryBudget", { limit: info.memory.daily_call_limit, ms: info.memory.latency_ms, cost: info.memory.cost_usd.toFixed(4) })}</p>
+      </section>}
       <StaticCards info={info} error={error} reload={load} loading={loading} />
     </div>
   );

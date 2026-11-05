@@ -124,6 +124,8 @@ class ClaudeCodeProvider(Provider):
             "--permission-mode",
             _PERMISSION_MODE.get(req.mode, "bypassPermissions"),
         ]
+        if req.ephemeral:
+            argv.append("--no-session-persistence")
         if req.system_prompt_file or req.system_prompt is not None:
             # A prompt of our own (Mate). Snapshot off: the CLI would otherwise
             # keep the first launch's prompt on every --resume, so an edited

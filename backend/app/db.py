@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -319,7 +320,8 @@ CREATE INDEX IF NOT EXISTS idx_events_tool_err  ON events(session_id, id)
 class Database:
     def __init__(self, path: Path | None = None) -> None:
         self._path = path or settings.db_file
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        self._transaction_depth = 0
         self._conn: sqlite3.Connection | None = None
 
     def connect(self) -> None:
@@ -337,6 +339,8 @@ class Database:
             self._conn.executescript(_SCHEMA)
             self._conn.commit()
         self._migrate()
+        from app.mate.knowledge import bootstrap
+        bootstrap(self)
 
     def _migrate(self) -> None:
         """Additive, idempotent column migrations for pre-existing databases."""
@@ -430,18 +434,50 @@ class Database:
 
     # ---- low-level helpers (all lock-guarded) ----
 
+    @contextmanager
+    def transaction(self):
+        """Serialize a synchronous unit of work. Nested callers use savepoints.
+
+        Never hold this context across an await: the connection and lock belong
+        to this thread. Outside a unit of work helpers retain their old autocommit.
+        """
+        assert self._conn is not None, "database not connected"
+        with self._lock:
+            depth = self._transaction_depth
+            point = f"unit_{depth}"
+            self._conn.execute("BEGIN IMMEDIATE" if depth == 0 else f"SAVEPOINT {point}")
+            self._transaction_depth += 1
+            try:
+                yield self
+            except BaseException:
+                if depth == 0:
+                    self._conn.rollback()
+                else:
+                    self._conn.execute(f"ROLLBACK TO {point}")
+                    self._conn.execute(f"RELEASE {point}")
+                raise
+            else:
+                if depth == 0:
+                    self._conn.commit()
+                else:
+                    self._conn.execute(f"RELEASE {point}")
+            finally:
+                self._transaction_depth -= 1
+
     def execute(self, sql: str, params: Iterable[Any] = ()) -> None:
         assert self._conn is not None, "database not connected"
         with self._lock:
             self._conn.execute(sql, tuple(params))
-            self._conn.commit()
+            if not self._transaction_depth:
+                self._conn.commit()
 
     def insert(self, sql: str, params: Iterable[Any] = ()) -> int | None:
         """Execute an INSERT and return the new rowid."""
         assert self._conn is not None, "database not connected"
         with self._lock:
             cur = self._conn.execute(sql, tuple(params))
-            self._conn.commit()
+            if not self._transaction_depth:
+                self._conn.commit()
             return cur.lastrowid
 
     def query(self, sql: str, params: Iterable[Any] = ()) -> list[sqlite3.Row]:

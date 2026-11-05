@@ -98,6 +98,8 @@ class CodexProvider(Provider):
         resume = resume_id if resume_id is not None else req.cli_session_id
         argv = ["exec", "resume", resume] if resume else ["exec"]
         argv.append("--json")
+        if req.ephemeral:
+            argv.append("--ephemeral")
         # Images first, each as its own `--image <path>` and always followed by
         # another flag: `-i` takes multiple values and would otherwise swallow
         # the trailing prompt argument.

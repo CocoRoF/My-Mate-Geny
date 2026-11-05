@@ -18,7 +18,7 @@ from __future__ import annotations
 import math
 import re
 import unicodedata
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Iterable
 
 KINDS = ("profile", "preference", "fact", "plan", "context")
@@ -28,7 +28,6 @@ MAX_ACTIVE = 500
 MAX_ROWS = 2000
 CONTEXT_DAYS = 14          # a short-term context memory lives this long…
 USED_EXTENDS_DAYS = 7      # …and this much longer each time it is recalled
-PLAN_DONE_AFTER_DAYS = 7   # a plan this long past due counts as done
 INJECT_TTL_TURNS = 20      # a recalled memory isn't sent again for this many turns of the same engine session
 
 # core = what the system prompt always carries
@@ -179,7 +178,9 @@ def line(m: dict[str, Any]) -> str:
     tag = m.get("kind") or "fact"
     if m.get("kind") == "plan" and m.get("due_at"):
         tag += f", due {m['due_at'].replace('T', ' ')}"
-    return f"[{m['id']}] ({tag}) {m['text']}"
+    source = m.get("evidence_type")
+    provenance = f" {{source={source}; verify original}}" if source in ("legacy", "reported") else ""
+    return f"[{m['id']}] ({tag}) {m['text']}{provenance}"
 
 
 def core(active: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -302,7 +303,7 @@ def recall(rows: list[dict[str, Any]], query: str, *, now_utc: datetime, now_loc
             break
         if any(o["id"] == m["id"] for o in out):
             continue
-        if used + len(m["text"]) > c_max and out:
+        if used + len(m["text"]) > c_max:
             continue
         out.append(m)
         used += len(m["text"])
@@ -316,8 +317,4 @@ def expired(m: dict[str, Any], now_utc: datetime, now_local: datetime) -> str | 
     if m.get("kind") == "context" and m.get("expires_at") and int(m.get("importance") or 3) < 4:
         if _age_days(m["expires_at"], now_utc) > 0:  # (the expiry is in the past)
             return "archived"
-    if m.get("kind") == "plan":
-        due = due_local(m.get("due_at"))
-        if due is not None and now_local - due > timedelta(days=PLAN_DONE_AFTER_DAYS):
-            return "done"
     return None

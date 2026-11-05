@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import math
 import re
-import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -19,6 +18,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from app.db import Database
 from app.mate import affinity as A
 from app.mate import memory as M
+from app.mate.knowledge import Knowledge, digest, safe_text
 from app.providers.catalog import DEFAULT_MATE_MODEL, default_mate_model
 from app.services._ids import new_id, now_iso
 from app.vault import SecretVault
@@ -46,7 +46,7 @@ LLM_PROVIDERS = ("claude", "codex")  # engines that can run sealed (own prompt, 
 MAX_FIELD = 8000          # one persona field
 MAX_AVATAR_JSON = 256 * 1024
 MAX_MEMORY = 1000         # one memory, chars
-MAX_MEMORIES = 500        # active ones per mate (app/mate/memory.py MAX_ACTIVE; archived ones too up to MAX_ROWS)
+MAX_MEMORIES = 500        # active prompt tier; archived history is retained until explicit forgetting
 
 # Global settings: plain values (URLs) and vault-held keys.
 SETTING_URLS = ("omnivoice_url", "whisper_url", "http_tts_url")
@@ -600,13 +600,17 @@ class MateStore:
     def __init__(self, db: Database, vault: SecretVault | None = None) -> None:
         self._db = db
         self._vault = vault
-        self._lock = threading.Lock()
+        # One reentrant connection lock avoids inversion between a source
+        # transaction and a store mutation (UI, background worker, imports).
+        self._lock = db._lock
+        self.knowledge = Knowledge(db)
         self.last_changed: set[str] = set()  # the settings the last update_settings() changed
         # told (reason, mate_id) after every write a client can see: MateService
         # wires it to the /ws/sessions feed so every window refetches its mates
         self.on_change: Callable[[str, str | None], None] | None = None
         # told (mate_id) when a memory was added (not merged): the relationship counts it
         self.on_memory_added: Callable[[str], None] | None = None
+        self.on_memory_forgotten: Callable[[str, bool], None] | None = None
 
     def _changed(self, reason: str, mate_id: str | None = None) -> None:
         if self.on_change is not None:
@@ -913,7 +917,6 @@ class MateStore:
     @staticmethod
     def _mem(row: Any) -> dict[str, Any]:
         d = dict(row)
-        d.pop("mate_id", None)
         d["pinned"] = bool(d.get("pinned"))
         d["updated_at"] = d.get("updated_at") or d["created_at"]
         d["kind"] = d.get("kind") or "fact"
@@ -985,15 +988,20 @@ class MateStore:
         self._put_setting(key, json.dumps(pending[-20:], ensure_ascii=False))
 
     def take_memory_changes(self, mate_id: str) -> list[dict[str, Any]]:
-        """The user's memory edits the mate hasn't been told about yet (cleared)."""
+        """Peek until a provider acknowledges this turn's context."""
+        return _loads(self._setting(f"memchg:{mate_id}"), [])
+
+    def ack_memory_changes(self, mate_id: str, changes: list[dict[str, Any]]) -> None:
         key = f"memchg:{mate_id}"
-        pending = _loads(self._setting(key), [])
-        if pending:
-            self._db.execute("DELETE FROM mate_settings WHERE key = ?", (key,))
-        return pending
+        with self._db.transaction():
+            pending = _loads(self._setting(key), [])
+            remaining = [c for c in pending if c not in changes]
+            self._put_setting(key, json.dumps(remaining, ensure_ascii=False))
 
     def _clean(self, text: Any) -> str:
-        text = " ".join(_s(text, MAX_MEMORY * 2).split())[:MAX_MEMORY]
+        text = " ".join(_s(text, MAX_MEMORY * 2).split())
+        if len(text) > MAX_MEMORY:
+            raise MateError(f"Memory exceeds {MAX_MEMORY} characters; save a shorter supported assertion")
         if not text:
             raise MateError("empty memory")
         return text
@@ -1034,40 +1042,45 @@ class MateStore:
                 "ORDER BY importance, COALESCE(last_used_at, updated_at, created_at) LIMIT 1", (mate_id,))
             if row is None:
                 raise MateError(f"memory is full ({M.MAX_ACTIVE} items): forget something first")
-            self._db.execute("UPDATE mate_memories SET status = 'archived', updated_at = ? WHERE id = ?",
+            cur = self.memory(mate_id, row["id"])
+            self.knowledge.snapshot(cur, "policy", "before_archive")
+            self._db.execute("UPDATE mate_memories SET status = 'archived', updated_at = ?, revision=revision+1 WHERE id = ?",
                              (now_iso(), row["id"]))
-        total = self._db.query_one("SELECT COUNT(*) AS c FROM mate_memories WHERE mate_id = ?", (mate_id,))["c"]
-        if total >= M.MAX_ROWS:
-            row = self._db.query_one(
-                "SELECT id FROM mate_memories WHERE mate_id = ? AND COALESCE(status, 'active') != 'active' "
-                "ORDER BY updated_at LIMIT 1", (mate_id,))
-            if row is None:
-                raise MateError(f"memory is full ({M.MAX_ROWS} items): forget something first")
-            self._db.execute("DELETE FROM mate_memories WHERE id = ?", (row["id"],))
+            self.knowledge.snapshot(self.memory(mate_id, row["id"]), "policy", "archived")
+        # MAX_ROWS used to destroy archived history. Archive is a retrieval
+        # tier, never a retention deadline; only explicit forgetting deletes.
 
     def add_memory(self, mate_id: str, text: str, *, kind: Any = None, importance: Any = None, pinned: bool = False,
                    due_at: Any = None, by_user: bool = False, source: str | None = None) -> dict[str, Any]:
-        """A new memory — or, when an active one of the same kind says the same (≥ 0.85 similar, or one
-        contains the other), that one updated (``merged``). ``similar``: other close ones (0.55 – 0.85)."""
+        """Only exact same assertions deduplicate. Similarity suggests review,
+        never that a negation, another date or a shorter correction is equivalent."""
         self.get(mate_id)
         text = self._clean(text)
+        if not safe_text(text):
+            raise MateError("Credentials belong in provider settings, not personal memory")
+        if not by_user and self.knowledge.excluded(mate_id, "text:" + digest(M.normalized(text))):
+            raise MateError("This memory was explicitly forgotten; ask before saving it again")
         kind = self._kind(kind)
         imp = self._importance(importance)
         due = self._due(due_at)
         now = now_iso()
-        with self._lock:
+        with self._lock, self._db.transaction():
             before = self._core_sig(mate_id) if by_user else ""
             rows = self.memories(mate_id)
             close = M.similar(text, kind, rows)
-            if close and close[0][0] >= M.MERGE_AT:
-                old = close[0][1]
-                new_text = text if len(text) >= len(old["text"]) else old["text"]
+            exact = next((m for m in rows if m["kind"] == kind and M.normalized(m["text"]) == M.normalized(text)
+                          and (due is None or due == m.get("due_at"))), None)
+            if exact:
+                old = exact
+                self.knowledge.snapshot(old, "user" if by_user else "mate", "before_edit")
+                new_text = text
                 self._db.execute(
-                    "UPDATE mate_memories SET text = ?, importance = ?, due_at = ?, pinned = ?, updated_at = ? "
+                    "UPDATE mate_memories SET text = ?, importance = ?, due_at = ?, pinned = ?, updated_at = ?, revision=revision+1 "
                     "WHERE id = ?",
                     (new_text, max(imp, int(old.get("importance") or 3)), due or old.get("due_at"),
                      1 if (old["pinned"] or (pinned and by_user)) else 0, now, old["id"]))
                 mem = {**self.memory(mate_id, old["id"]), "merged": True, "similar": []}
+                self.knowledge.snapshot(self.memory(mate_id, old["id"]), "user" if by_user else "mate", "deduplicated")
                 if by_user:
                     self._user_edit(mate_id, before, {"id": old["id"], "op": "edited", "text": mem["text"]})
                 self._changed("memory", mate_id)
@@ -1081,6 +1094,8 @@ class MateStore:
                 "expires_at, status, source, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)",
                 (mid, mate_id, text, now, kind, imp, 1 if (pinned and by_user) else 0, due, expires,
                  source or ("user" if by_user else "mate"), now))
+            self._db.execute("UPDATE mate_memories SET evidence_type=? WHERE id=?", ("asserted" if by_user else "reported", mid))
+            self.knowledge.snapshot(self.memory(mate_id, mid), "user" if by_user else "mate", "created")
             mem = {**self.memory(mate_id, mid), "merged": False, "similar": [m for _s2, m in close[:3]]}
             if by_user:
                 self._user_edit(mate_id, before, {"id": mid, "op": "added", "text": text, "kind": kind})
@@ -1099,6 +1114,8 @@ class MateStore:
             raise KeyError(f"no memory with id {mem_id!r}")
         if not isinstance(patch, dict):
             raise MateError("a memory patch must be an object")
+        if patch.get("expected_revision") is not None and patch["expected_revision"] != cur["revision"]:
+            raise MateError("Memory changed in another window; reload before editing", status=409)
         sets: dict[str, Any] = {}
         if "text" in patch and patch["text"] is not None:
             sets["text"] = self._clean(patch["text"])
@@ -1117,14 +1134,29 @@ class MateStore:
             sets["status"] = st
         if "pinned" in patch and by_user:
             sets["pinned"] = 1 if patch["pinned"] else 0
+        sets = {k: v for k, v in sets.items() if cur.get(k) != v}
         if not sets:
             return cur
-        with self._lock:
+        with self._lock, self._db.transaction():
+            cur = self.memory(mate_id, mem_id)
+            if cur is None:
+                raise KeyError(mem_id)
+            if patch.get("expected_revision") is not None and patch["expected_revision"] != cur["revision"]:
+                raise MateError("Memory changed in another window; reload before editing", status=409)
+            if "text" in sets and not safe_text(sets["text"]):
+                raise MateError("Credentials belong in provider settings, not personal memory")
+            self.knowledge.snapshot(cur, "user" if by_user else "mate", "before_edit")
             before = self._core_sig(mate_id) if by_user else ""
+            if "text" in sets and sets["text"] != cur["text"]:
+                sets["evidence_type"] = "asserted" if by_user else "reported"
+            sets["revision"] = cur["revision"] + 1
             sets["updated_at"] = now_iso()
             self._db.execute(f"UPDATE mate_memories SET {', '.join(f'{k} = ?' for k in sets)} WHERE id = ?",
                              (*sets.values(), mem_id))
             mem = self.memory(mate_id, mem_id)
+            if mem["text"] == cur["text"]:
+                self._db.execute("INSERT OR IGNORE INTO memory_evidence(memory_id,memory_revision,source_id,source_revision,quote,start,end,relation) SELECT memory_id,?,source_id,source_revision,quote,start,end,relation FROM memory_evidence WHERE memory_id=? AND memory_revision=?", (mem["revision"], mem_id, cur["revision"]))
+            self.knowledge.snapshot(mem, "user" if by_user else "mate", "updated")
             if by_user:
                 op = "done" if sets.get("status") == "done" else "archived" if sets.get("status") == "archived" \
                     else "edited"
@@ -1136,44 +1168,32 @@ class MateStore:
         row = self._db.query_one("SELECT 1 FROM mate_memories WHERE id = ? AND mate_id = ?", (mem_id, mate_id))
         if row is None:
             return False
-        with self._lock:
+        with self._lock, self._db.transaction():
             before = self._core_sig(mate_id) if by_user else ""
-            self._db.execute("DELETE FROM mate_memories WHERE id = ? AND mate_id = ?", (mem_id, mate_id))
+            self.knowledge.forget(mate_id, self.memory(mate_id, mem_id))
             if by_user:
                 self._user_edit(mate_id, before, {"id": mem_id, "op": "deleted"})
+        if self.on_memory_forgotten:
+            self.on_memory_forgotten(mate_id, by_user)
         self._changed("memory", mate_id)
         return True
 
     def bulk_memories(self, mate_id: str, ids: list[str], action: str) -> int:
-        """The Memory tab's selection: delete | archive | restore | pin | unpin (the user's)."""
         if action not in ("delete", "archive", "restore", "pin", "unpin"):
             raise MateError(f"unknown bulk action: {action}")
-        done: list[dict[str, Any]] = []
-        with self._lock:
-            before = self._core_sig(mate_id)
+        count = 0
+        with self._lock, self._db.transaction():
             for mid in dict.fromkeys(str(i) for i in ids or []):
-                cur = self.memory(mate_id, mid)
-                if cur is None:
+                if self.memory(mate_id, mid) is None:
                     continue
                 if action == "delete":
-                    self._db.execute("DELETE FROM mate_memories WHERE id = ? AND mate_id = ?", (mid, mate_id))
+                    self.delete_memory(mate_id, mid, by_user=True)
                 else:
-                    col, val = {"archive": ("status", "archived"), "restore": ("status", "active"),
-                                "pin": ("pinned", 1), "unpin": ("pinned", 0)}[action]
-                    self._db.execute(f"UPDATE mate_memories SET {col} = ?, updated_at = ? WHERE id = ?",
-                                     (val, now_iso(), mid))
-                done.append({"id": mid, "op": {"delete": "deleted", "archive": "archived"}.get(action, "edited"),
-                             **({} if action == "delete" else {"text": cur["text"]})})
-            if done:
-                if self._core_sig(mate_id) != before:
-                    self._bump_memory(mate_id)
-                else:
-                    for change in done:
-                        self._user_edit(mate_id, before, change)
-        n = len(done)
-        if n:
-            self._changed("memory", mate_id)
-        return n
+                    k, v = {"archive": ("status", "archived"), "restore": ("status", "active"),
+                            "pin": ("pinned", True), "unpin": ("pinned", False)}[action]
+                    self.update_memory(mate_id, mid, {k: v}, by_user=True)
+                count += 1
+        return count
 
     def mark_used(self, mate_id: str, ids: list[str]) -> None:
         """Recalled into a conversation: counted, and a short-term context memory lives a week longer."""
@@ -1188,17 +1208,13 @@ class MateStore:
                 "WHERE id = ? AND mate_id = ?", (now.isoformat(), ext, ext, mid, mate_id))
 
     def housekeep(self, mate_id: str, now_utc: datetime, now_local: datetime) -> int:
-        """Short-term context past its expiry → archived; plans a week past due → done. (No restart: what
-        the system prompt carried stays until the engine reloads for another reason.)"""
+        """Expired temporary context is archived. An overdue plan stays unconfirmed."""
         n = 0
         for m in self.memories(mate_id):
             st = M.expired(m, now_utc, now_local)
             if st:
-                self._db.execute("UPDATE mate_memories SET status = ?, updated_at = ? WHERE id = ?",
-                                 (st, now_iso(), m["id"]))
+                self.update_memory(mate_id, m["id"], {"status": st}, by_user=True)
                 n += 1
-        if n:
-            self._changed("memory", mate_id)
         return n
 
     def _bump_memory(self, mate_id: str) -> None:

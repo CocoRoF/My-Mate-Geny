@@ -27,6 +27,7 @@ import {
   type RecallLevel,
   type RecallPreview,
 } from "../../../api/mates";
+import KnowledgePanel, { MemoryHistoryDetails } from "./KnowledgePanel";
 import { useMateStore } from "../../../stores/mateStore";
 import { relTime } from "../../../i18n/format";
 import { useT, type MsgKey } from "../../../i18n";
@@ -160,8 +161,8 @@ export default function MemoryTab({ mate, onOpenStyle }: { mate: Mate; onOpenSty
   const merge = (into: Memory) =>
     run(async () => {
       if (!added) return;
-      await updateMemory(mate.id, into.id, { text: added.text, importance: Math.max(into.importance, added.importance) });
-      await deleteMemory(mate.id, added.id);
+      await updateMemory(mate.id, into.id, { text: added.text, importance: Math.max(into.importance, added.importance), expected_revision: into.revision });
+      await updateMemory(mate.id, added.id, { status: "archived", expected_revision: added.revision });
       setAdded(null);
     });
 
@@ -179,7 +180,7 @@ export default function MemoryTab({ mate, onOpenStyle }: { mate: Mate; onOpenSty
     run(async () => {
       const e = editing;
       setEditing(null);
-      if (e.text.trim()) await updateMemory(mate.id, e.id, { text: e.text.trim() });
+      if (e.text.trim()) await updateMemory(mate.id, e.id, { text: e.text.trim(), expected_revision: items?.find(m => m.id === e.id)?.revision });
     });
 
   const toggleSel = (id: string) =>
@@ -212,6 +213,7 @@ export default function MemoryTab({ mate, onOpenStyle }: { mate: Mate; onOpenSty
 
   return (
     <>
+      <KnowledgePanel mateId={mate.id} rev={rev} />
       <Section
         title={title}
         hint={t("mateSettings.memHint", { name: mate.name })}
@@ -384,6 +386,8 @@ export default function MemoryTab({ mate, onOpenStyle }: { mate: Mate; onOpenSty
                       {m.text}
                     </p>
                   )}
+                  <MemoryHistoryDetails mateId={mate.id} memory={m} onChanged={load} />
+                  {m.kind === "plan" && m.status === "active" && <p className="text-[10.5px] text-content-faint">{t("mateSettings.knowledgePlanHint")}</p>}
                   {m.style_flag && m.status === "active" && (
                     <div className="flex flex-wrap items-center gap-1.5 rounded-md bg-warning/10 px-2 py-1 text-[11px] text-content-dim" data-testid="mate-memory-style-flag" data-reason={m.style_flag.reason}>
                       <Icon name="sliders" size={11} className="shrink-0 text-warning" />

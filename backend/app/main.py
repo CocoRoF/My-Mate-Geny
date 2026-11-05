@@ -122,6 +122,10 @@ async def lifespan(app: FastAPI):
     app.state.session_git = SessionGit(session_service, workspace_service, app.state.git_service)
     mate_store = MateStore(db, vault)
     app.state.mate_service = MateService(session_service, mate_store, logs=logs)
+    from app.mate.consolidation import Consolidator
+    app.state.memory_worker = Consolidator(app.state.mate_service)
+    app.state.memory_worker.start()
+    app.state.mate_service.recover_memory_work()
     from app.services.screen import ScreenService
     app.state.screen_service = ScreenService(session_service, app.state.mate_service.capture, mates=mate_store)
     session_service.screen = app.state.screen_service
@@ -184,6 +188,7 @@ async def lifespan(app: FastAPI):
 
     yield
     await setup.service.stop()
+    await app.state.memory_worker.stop()
 
     await app.state.screen_service.triggers.stop()
     housekeeper.cancel()

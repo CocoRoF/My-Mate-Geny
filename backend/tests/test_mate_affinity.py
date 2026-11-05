@@ -214,6 +214,7 @@ def _engine(mates, mate_id, text="hi", cli=None):
     session = mates.conversation(mate_id)["session"]
     req = TurnRequest(messages=[{"role": "user", "content": text}], model="", cwd="/tmp", cli_session_id=cli)
     mates.configure_engine(session, req)
+    req.on_context_delivered()  # this helper simulates a provider accepting the turn
     return req, open(req.system_prompt_file, encoding="utf-8").read()
 
 

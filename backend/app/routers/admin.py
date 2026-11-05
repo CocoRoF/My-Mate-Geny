@@ -172,6 +172,7 @@ async def system(request: Request, providers: ProviderService = Depends(provider
             "disk_used": disk.used if disk else None,
             "disk_free": disk.free if disk else None,
         },
+        "memory": state.mate_service.store.knowledge.diagnostics(),
         "monitor": state.system_monitor.sampler_stats() if getattr(state, "system_monitor", None) else None,
         "limits": {
             "upload_max_mb": settings.upload_max_mb,

@@ -169,6 +169,8 @@ def prepare(req: TurnRequest, source_home: str) -> tuple[dict[str, str], list[st
         catalog_file = str(home / CATALOG)
         _write(home / CATALOG, json.dumps(catalog, ensure_ascii=False))
     else:
+        if req.require_sealed_catalog:
+            raise ValueError("The extractor requires a sealed tool-free model catalog")
         (home / CATALOG).unlink(missing_ok=True)
         warnings.append("No Codex model list to seal (models_cache.json): the mate runs with the model's "
                         "default tool set, held read-only by the sandbox. Open a Codex chat once to fetch it.")

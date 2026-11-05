@@ -197,6 +197,7 @@ class TurnRequest:
     # system_prompt). Lets parts of the prompt (e.g. memories the model wrote
     # itself) change without restarting the engine.
     prompt_key: str = ""
+    on_context_delivered: Callable[[], None] | None = None
     # Claude: built-in tool set (``--tools``); None = default, [] = none.
     tools: list[str] | None = None
     # Claude: tools allowed without a prompt (``--allowedTools``).
@@ -206,6 +207,8 @@ class TurnRequest:
     # ``engine_home`` (below) with only the instructions + MCP servers given
     # here, and none of Codex's own tools (shell, apply_patch, web, images…).
     sealed: bool = False
+    ephemeral: bool = False  # background extractors must not leave extra conversation copies
+    require_sealed_catalog: bool = False
     # Codex, sealed: a private CODEX_HOME the provider owns (its config, the
     # threads to resume; the account's auth.json linked in). Required when
     # sealed — the user's own ~/.codex config is never loaded.

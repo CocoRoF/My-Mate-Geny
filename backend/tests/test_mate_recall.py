@@ -102,7 +102,7 @@ def test_housekeeping_rules():
     recent_plan = mem(5, "dentist", "plan", due_at="2026-10-30")
     pinned = {**old_ctx, "id": "mem_6", "pinned": True}
     got = {m["id"]: M.expired(m, NOW, LOCAL) for m in (old_ctx, live_ctx, important_ctx, past_plan, recent_plan, pinned)}
-    assert got == {"mem_1": "archived", "mem_2": None, "mem_3": None, "mem_4": "done", "mem_5": None, "mem_6": None}
+    assert got == {"mem_1": "archived", "mem_2": None, "mem_3": None, "mem_4": None, "mem_5": None, "mem_6": None}
 
 
 def test_line_shows_kind_and_due():

@@ -23,6 +23,7 @@ os.environ.setdefault("HIGGSFIELD_ROOT", tempfile.mkdtemp(prefix="hrh_test_higgs
 os.environ.setdefault("AVATAR_ROOT", tempfile.mkdtemp(prefix="hrh_test_avatars_"))
 # no registry / GitHub lookups from the CLI-versions service (tests/test_cli_tools.py fakes them)
 os.environ.setdefault("CLI_UPDATE_CHECK", "false")
+os.environ.setdefault("MEMORY_CONSOLIDATION_ENABLED", "false")
 
 from app.db import Database  # noqa: E402
 

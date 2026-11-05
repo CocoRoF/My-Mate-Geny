@@ -1,3 +1,5 @@
+> Memory storage/retrieval contracts were extended on 2026-11-05. See [the current implementation record](mate-memory-implementation.md) for source-backed evidence, revision history, durable work receipts and privacy resets. The affinity sections below still apply.
+
 # Mate settings, memory and affinity — design (phase 1)
 
 Status: **implemented** (stages A–D; mate.md carries the contract). Where the implementation differs from
@@ -207,7 +209,7 @@ emotion gating (`level 0` ⇒ no react; `1` ⇒ only intensity ≥ 0.5). `test:i
 | `use_count` | INTEGER 0 | times recalled |
 | `supersedes` | TEXT NULL | id of the memory this one replaced (history) |
 
-Limits: 500 **active** per mate (was 200 total), 2 000 rows including archived, 1 000 chars each.
+Limits: 500 **active** per mate (was 200 total), archived rows are retained until explicit forgetting, 1 000 chars each.
 `db.py` adds the columns in its migration block; index `(mate_id, status, kind)`.
 
 **Migration** (once, `mate_settings` key `memory_schema = 2`): existing rows get `source` `mate`,
@@ -301,8 +303,7 @@ this can be added later.
 ### 4.4 Housekeeping (deterministic, on write and on the first turn of a day)
 
 - `context` past `expires_at` → `archived` (unless importance ≥ 4 or pinned; recalled and used → +7 days).
-- `plan` more than 7 days past due → `done` automatically (kept, not recalled; `recall` can still
-  find it with `status`).
+- An overdue `plan` stays active/unconfirmed. Only explicit completion changes it to `done`.
 - Above 500 active: archive the lowest `importance`, then the oldest `last_used_at`, never pinned,
   never profile.
 - Optional **Tidy up** (Stage B2, Memory tab button): groups similar memories (Jaccard ≥ 0.5) and

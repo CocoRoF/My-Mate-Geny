@@ -297,6 +297,8 @@ export type MemoryStatus = "active" | "done" | "archived";
 
 /** one memory (docs/mate-memory-affinity.md §4) */
 export interface Memory {
+  revision: number;
+  evidence_type: string;
   id: string;
   text: string;
   created_at: string;
@@ -325,7 +327,7 @@ export interface MemoryAdded extends Memory {
   similar: Memory[];
 }
 
-export type MemoryPatch = Partial<Pick<Memory, "text" | "kind" | "importance" | "pinned" | "due_at" | "status">>;
+export type MemoryPatch = Partial<Pick<Memory, "text" | "kind" | "importance" | "pinned" | "due_at" | "status">> & { expected_revision?: number };
 export interface MemoryQuery {
   q?: string;
   kind?: MemoryKind | "";
@@ -744,3 +746,41 @@ export interface GenyTriggerPreset {
   prompts:{id:string;label:string;content:Record<string,string>;[k:string]:unknown}[];
   [k:string]:unknown;
 }
+
+export interface HistoryHit {
+  source_id: string; revision: number; session_id: string; title: string;
+  role: string; observed_at: string; excerpt: string; offset: number; evidence_type: string; episodes: string[];
+}
+export interface HistorySearch { items: HistoryHit[]; next_offset: number | null; method: string; indexing_pending: number }
+export interface MemoryEvidence {
+  source_id: string; source_revision: number; quote: string; start: number; title: string; observed_at: string;
+}
+export interface MemoryHistory {
+  evidence_type: string; evidence: MemoryEvidence[];
+  versions: { revision: number; actor: string; recorded_at: string; snapshot: Memory; evidence: MemoryEvidence[] }[];
+}
+export interface EvidenceView {
+  source_id: string; title: string; session_id: string; revision: number; next_offset: number | null;
+  messages: { source_id: string; revision: number; role: string; text: string; observed_at: string; truncated: boolean }[];
+}
+export interface KnowledgeStatus { unindexed: number; jobs: Record<string, number>; fts: boolean; episodes: number; evidence: number; cost: number }
+export interface TaskRecord {
+  id: string; title: string; state: string; worker_sid: string; created_at: string; instruction: string;
+  verification: string; outcome: string | null;
+  receipts: { id: number; type: string; created_at: string }[];
+  result: { text: string; error?: string | null } | null;
+}
+export const searchHistory = (id: string, q: string, scope = "mate", offset = 0) =>
+  apiFetch<HistorySearch>(`/api/mates/${enc(id)}/knowledge/search?${new URLSearchParams({ q, scope, offset: String(offset) })}`);
+export const readEvidence = (id: string, source: string, revision?: number, offset = 0) =>
+  apiFetch<EvidenceView>(`/api/mates/${enc(id)}/knowledge/evidence/${enc(source)}?offset=${offset}${revision === undefined ? "" : `&revision=${revision}`}`);
+export const forgetEvidence = (id: string, source: string) =>
+  apiFetch(`/api/mates/${enc(id)}/knowledge/evidence/${enc(source)}`, { method: "DELETE" });
+export const memoryHistory = (id: string, memory: string) =>
+  apiFetch<MemoryHistory>(`/api/mates/${enc(id)}/memories/${enc(memory)}/history`);
+export const restoreMemoryVersion = (id: string, memory: string, revision: number, expected_revision: number) =>
+  apiFetch<Memory>(`/api/mates/${enc(id)}/memories/${enc(memory)}/restore-version`, { method: "POST", ...j({ revision, expected_revision }) });
+export const knowledgeStatus = (id: string) => apiFetch<KnowledgeStatus>(`/api/mates/${enc(id)}/knowledge/status`);
+export const listTaskRecords = (id: string) => apiFetch<TaskRecord[]>(`/api/mates/${enc(id)}/knowledge/tasks`);
+export const processMemorySource = (id: string, source_id: string) =>
+  apiFetch(`/api/mates/${enc(id)}/knowledge/process-source`, { method: "POST", ...j({ source_id }) });

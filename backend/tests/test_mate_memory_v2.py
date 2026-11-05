@@ -65,8 +65,8 @@ def test_add_merges_duplicates_and_reports_similar(db):
     c = store.add_memory(m["id"], "Likes green tea", kind="fact")  # another kind: its own memory
     assert not c["merged"]
     d = store.add_memory(m["id"], "Likes green tea with honey in the morning", kind="preference")
-    assert d["merged"]  # one contains the other: the longer text wins
-    assert store.memory(m["id"], a["id"])["text"] == "Likes green tea with honey in the morning"
+    assert not d["merged"]  # additional conditions are a distinct assertion, never a length-based overwrite
+    assert store.memory(m["id"], a["id"])["text"] == "likes green tea!"
     e = store.add_memory(m["id"], "현석은 아메리카노를 좋아해", kind="preference")
     f = store.add_memory(m["id"], "현석은 아메리카노 좋아함", kind="preference")
     assert not f["merged"] and [x["id"] for x in f["similar"]] == [e["id"]]
@@ -119,12 +119,14 @@ def test_core_in_the_prompt_recall_per_turn_and_no_restart_for_the_mates_writes(
     store.add_memory(m["id"], "고양이 이름은 나비", kind="fact")
     req2, _ = _turn(mates, m["id"], "치과 예약 언제였지?", cli="cli-1")
     assert req2.prompt_key == key1
-    assert "치과 예약은" not in req2.preamble  # already in this engine session's context (tracker)
+    assert "치과 예약은" in req2.preamble  # explicit repeat queries remain safe after compaction or delivery failure
     # a fresh engine context (no session to resume) is told again
     req3, _ = _turn(mates, m["id"], "치과 예약 언제였지?")
     assert "치과 예약은" in req3.preamble
     used = [r for r in store.memories(m["id"]) if r["text"].startswith("치과")][0]
-    assert used["use_count"] == 2 and used["last_used_at"]
+    assert used["use_count"] == 0  # preparing a failed request is not delivery
+    req3.on_context_delivered()
+    assert store.memory(m["id"], used["id"])["use_count"] == 1
 
 
 def test_user_edits_outside_the_core_reach_the_mate_without_a_restart(db):
@@ -139,9 +141,10 @@ def test_user_edits_outside_the_core_reach_the_mate_without_a_restart(db):
     gone = store.memories(m["id"])[6]
     store.delete_memory(m["id"], gone["id"], by_user=True)
     req2, _ = _turn(mates, m["id"], cli="cli-1")
-    assert req2.prompt_key == key  # not in the core: no restart
+    assert req2.prompt_key != key  # forgetting clears old engine context as a privacy boundary
     assert f"[{victim['id']}] changed: note 5 was wrong" in req2.preamble
     assert f"[{gone['id']}] deleted — don't rely on it" in req2.preamble
+    req2.on_context_delivered()
     req3, _ = _turn(mates, m["id"], cli="cli-1")
     assert "changed your memory" not in req3.preamble  # told once
     # a core change (a pin) reloads the engine
@@ -199,7 +202,7 @@ def test_housekeeping_runs_once_a_day(db):
     m = store.create(name="Rin")
     old = store.add_memory(m["id"], "dentist", kind="plan", due_at="2020-01-01")
     _turn(mates, m["id"])
-    assert store.memory(m["id"], old["id"])["status"] == "done"
+    assert store.memory(m["id"], old["id"])["status"] == "active"
 
 
 @pytest.fixture

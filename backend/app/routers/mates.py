@@ -583,3 +583,110 @@ async def realtime_stt(mate_id: str, request: Request) -> Response:
     except MateError as exc:
         raise _http(exc) from exc
     return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+
+# Source-backed memory. Existing memory CRUD remains compatible.
+@router.get('/{mate_id}/knowledge/search')
+async def search_knowledge(mate_id: str, request: Request, q: str = '', scope: str = 'mate',
+                           session_id: str | None = None, since: str | None = None,
+                           until: str | None = None, offset: int = 0, limit: int = 10) -> dict:
+    _mate(request, mate_id)
+    try:
+        return await asyncio.to_thread(_svc(request).store.knowledge.search, mate_id, q, scope=scope,
+                                       session_id=session_id, since=since, until=until, offset=offset, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get('/{mate_id}/knowledge/evidence/{source_id}')
+async def get_evidence(mate_id: str, source_id: str, request: Request, revision: int | None = None,
+                       before: int = 1, after: int = 1, offset: int = 0) -> dict:
+    _mate(request, mate_id)
+    try:
+        return _svc(request).store.knowledge.evidence(mate_id, source_id, revision, before, after, offset)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.delete('/{mate_id}/knowledge/evidence/{source_id}')
+async def forget_evidence(mate_id: str, source_id: str, request: Request) -> dict:
+    _mate(request, mate_id)
+    try:
+        _svc(request).store.knowledge.exclude_source(mate_id, source_id)
+        _svc(request).forget_engine_context(mate_id, interrupt=True)
+        _svc(request).store._changed('memory', mate_id)
+        return {'excluded': True, 'original_chat_retained': True}
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.get('/{mate_id}/memories/{mem_id}/history')
+async def memory_history(mate_id: str, mem_id: str, request: Request) -> dict:
+    _mate(request, mate_id)
+    try:
+        return _svc(request).store.knowledge.memory_details(mate_id, mem_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.post('/{mate_id}/memories/{mem_id}/restore-version')
+async def restore_memory_version(mate_id: str, mem_id: str, request: Request) -> dict:
+    _mate(request, mate_id)
+    body = await _json(request)
+    svc = _svc(request)
+    old = next((v for v in svc.store.knowledge.history(mate_id, mem_id) if v['revision'] == body.get('revision')), None)
+    if not old:
+        raise HTTPException(404, 'Version not found')
+    if not isinstance(body.get('expected_revision'), int):
+        raise HTTPException(400, 'expected_revision is required')
+    patch = {k: old['snapshot'].get(k) for k in ('text', 'kind', 'importance', 'due_at', 'status', 'pinned')}
+    patch['expected_revision'] = body['expected_revision']
+    try:
+        with svc.store._db.transaction():
+            restored = svc.store.update_memory(mate_id, mem_id, patch, by_user=True)
+            for evidence in svc.store._db.query("SELECT * FROM memory_evidence WHERE memory_id=? AND memory_revision=?", (mem_id, old['revision'])):
+                try:
+                    svc.store.knowledge.attach(mate_id, mem_id, evidence['source_id'], evidence['quote'], evidence['source_revision'])
+                except ValueError:
+                    pass  # old evidence may have been edited or excluded
+            return restored
+    except (KeyError, MateError) as exc:
+        raise _http(exc) from exc
+
+
+@router.get('/{mate_id}/knowledge/status')
+async def knowledge_status(mate_id: str, request: Request) -> dict:
+    _mate(request, mate_id)
+    return _svc(request).store.knowledge.stats(mate_id)
+
+
+@router.get('/{mate_id}/knowledge/tasks')
+async def knowledge_tasks(mate_id: str, request: Request, limit: int = 20) -> list:
+    _mate(request, mate_id)
+    return _svc(request).tasks.list(mate_id, limit)
+
+
+@router.post('/{mate_id}/knowledge/process-source')
+async def process_memory_source(mate_id: str, request: Request) -> dict:
+    """Explicitly queue an older source, without bypassing self_save or forget."""
+    from app.services._ids import new_id, now_iso
+    _mate(request, mate_id)
+    body = await _json(request)
+    svc = _svc(request)
+    source = svc.store.knowledge.allowed(mate_id, str(body.get('source_id') or ''), 'mate')
+    if not source or not svc.store.get(mate_id)['prefs']['memory']['self_save']:
+        raise HTTPException(400, 'Source unavailable or automatic saving disabled')
+    now = now_iso()
+    svc.store._db.execute("INSERT INTO memory_jobs(id,mate_id,source_id,source_revision,available_at,updated_at) VALUES(?,?,?,?,?,?) "
+                         "ON CONFLICT(mate_id,source_id,source_revision) DO UPDATE SET state=CASE WHEN state='failed' THEN 'pending' ELSE state END,available_at=excluded.available_at",
+                         (new_id('mj_'), mate_id, source['id'], source['revision'], now, now))
+    return {'queued': True}
+
+
+@router.get('/{mate_id}/knowledge/tasks/{request_id}/receipts/{event_id}')
+async def task_receipt(mate_id: str, request_id: str, event_id: int, request: Request) -> dict:
+    _mate(request, mate_id)
+    try:
+        return _svc(request).tasks.read_receipt(mate_id, request_id, event_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc

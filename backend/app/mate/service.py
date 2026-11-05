@@ -36,6 +36,7 @@ from app.mate import files
 from app.mate import memory as M
 from app.mate import style as STY
 from app.mate.prompt import LANGUAGES, MOOD_WORDS, context_block, prompt_key, settings_change_note, system_prompt
+from app.mate.task_memory import TaskMemory
 from app.mate.store import MateError, MateStore, normalize_persona, normalize_prefs
 from app.providers import get_provider
 from app.providers.catalog import default_mate_model
@@ -84,6 +85,7 @@ class MateService:
         self.store = store
         self._svc = sessions
         self._logs = logs
+        self.tasks = TaskMemory(store._db)
         self._tokens: dict[str, dict[str, str]] = {}      # token -> {mate_id, session_id}
         self._token_by_sid: dict[str, str] = {}
         self._delegations: dict[str, dict[str, Any]] = {}  # worker sid -> who delegated (mate) + chain depth
@@ -98,6 +100,7 @@ class MateService:
         store.on_change = sessions.mates_changed
         self._housekept: dict[str, str] = {}               # mate id -> the local day its memory was tidied
         store.on_memory_added = self._memory_added
+        store.on_memory_forgotten = self.forget_engine_context
         try:
             store.migrate_memories()  # (memories saved before kinds existed; idempotent)
         except Exception as exc:  # noqa: BLE001 - never stops the app
@@ -119,6 +122,30 @@ class MateService:
                 self.relation_doc(m["id"])  # (a mate from before relationships: seeded from its real history)
             except Exception as exc:  # noqa: BLE001
                 self._log("warning", f"relationship seed for {m['id']}: {exc}")
+
+    def forget_engine_context(self, mate_id: str, interrupt: bool = False) -> None:
+        """Discard provider history containing forgotten facts. The original UI
+        chat stays intact; future handoffs start after this privacy boundary."""
+        mate = self.store.get(mate_id)
+        paths = [files.home_dir(mate_id) / ".codex-prompt.json", *(files.mate_dir(mate_id) / "engine").glob("prompt-*.md")]
+        for path in paths:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass  # a Windows process may still hold it; the privacy boundary prevents reuse
+        sid = mate.get("session_id")
+        if sid:
+            self.store._db.execute("UPDATE sessions SET cli_sessions='{}',cli_session_id=NULL,context_floor=? WHERE id=?", (now_iso(), sid))
+            if interrupt:
+                self._svc.stop(sid)
+            if interrupt or not self._svc.is_running(sid):
+                self._svc._retire_engine(sid, "memory forgotten")
+
+    def recover_memory_work(self) -> None:
+        for mate_sid, entry in self.tasks.recover():
+            self._pending.setdefault(mate_sid, []).append(entry)
+        for sid in list(self._pending):
+            asyncio.get_running_loop().call_soon(self._flush, sid)
 
     def _log(self, level: str, message: str, **kw: Any) -> None:
         if self._logs is not None:
@@ -320,6 +347,11 @@ class MateService:
             mate = {"id": mate_id, "name": session.get("title") or "Mate", "persona": {}, "memory_rev": 0,
                     "llm": {"provider": engine, "model": session.get("model") or "",
                             "effort": session.get("effort") or "low"}}
+        boundary = self.store._db.query_one("SELECT privacy_reset FROM memory_context WHERE mate_id=?", (mate_id,))
+        if boundary and boundary["privacy_reset"]:
+            req.cli_session_id = None
+            req.preamble = ""
+            req.messages = req.messages[-1:]  # no handoff of forgotten content
         now_utc = datetime.now(timezone.utc)
         tz = self.store.tz()
         now_local = now_utc.astimezone(tz).replace(tzinfo=None)
@@ -366,6 +398,7 @@ class MateService:
                 "HRH_MATE_TOKEN": self._token(mate_id, session["id"]),
                 "HRH_MATE_ID": mate_id,
                 "HRH_MATE_SESSION": session["id"],
+                "HRH_MATE_MEMORY": "1",
                 **({"HRH_MATE_SCREEN": "1"} if screen else {}),  # the bridge offers see_screen only then
                 # update_conversation_style — unless she may not change her own style
                 **({"HRH_MATE_STYLE": prefs.get("self_edit") or "auto"}
@@ -415,28 +448,18 @@ class MateService:
         return str(getattr(tz, "key", "") or now_utc.astimezone(tz).tzname() or "")
 
     def _context_state(self, mate_id: str, engine: str, cli: str | None) -> dict[str, Any]:
-        """What this engine session was already told (recalled memory ids by turn, the last relationship and
-        mood lines). A fresh context (no session to resume, another engine, a different session) starts
-        over, so a new context is told everything again."""
-        path = files.home_dir(mate_id) / ".context-state.json"
-        try:
-            st = json.loads(path.read_text("utf-8"))
-        except (OSError, ValueError):
-            st = None
-        fresh = {"engine": engine, "cli": cli, "turn": 0, "injected": {}, "rel": None, "mood": None, "mood_at": 0}
-        if not isinstance(st, dict) or not cli:
-            return fresh
-        if st.get("engine") != engine or (st.get("cli") and st.get("cli") != cli):
+        row = self.store._db.query_one("SELECT generation,state FROM memory_context WHERE mate_id=?", (mate_id,))
+        generation = row["generation"] if row else 0
+        st = json.loads(row["state"]) if row else {}
+        fresh = {"engine": engine, "cli": cli, "generation": generation, "turn": 0, "injected": {},
+                 "rel": None, "mood": None, "mood_at": 0}
+        if not cli or st.get("engine") != engine or st.get("generation") != generation or (st.get("cli") and st["cli"] != cli):
             return fresh
         return {**fresh, **st, "cli": cli}
 
     def _save_context_state(self, mate_id: str, st: dict[str, Any]) -> None:
-        path = files.home_dir(mate_id) / ".context-state.json"
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(st, ensure_ascii=False), "utf-8")
-        except OSError:
-            pass
+        self.store._db.execute("INSERT INTO memory_context(mate_id,state) VALUES(?,?) ON CONFLICT(mate_id) DO UPDATE SET state=excluded.state,privacy_reset=0",
+                               (mate_id, json.dumps(st, ensure_ascii=False)))
 
     def _context(self, mate: dict[str, Any], req: TurnRequest, engine: str, memories: list[dict[str, Any]],
                  core: list[dict[str, Any]], prefs: dict[str, Any], now_utc: datetime, now_local: datetime,
@@ -451,16 +474,33 @@ class MateService:
         core_ids = {m["id"] for m in core}
         level = (prefs.get("memory") or {}).get("recall") or "normal"
         recalled = M.recall([m for m in memories if m["id"] not in core_ids], query, now_utc=now_utc,
-                            now_local=now_local, level=level, skip=set(injected))
+                            now_local=now_local, level=level)
         for m in recalled:
             injected[m["id"]] = turn
         changes = self.store.take_memory_changes(mate_id)
         relation = self._relation_lines(rel, st, now_utc, tz, turn)
-        self._save_context_state(mate_id, {**st, "turn": turn, "injected": injected})
-        if recalled:
-            self.store.mark_used(mate_id, [m["id"] for m in recalled])
-        return context_block(now_local, self._tz_name(tz, now_utc), recalled=recalled, changes=changes,
-                             relation=relation)
+        prepared = {**st, "turn": turn, "injected": injected}
+        def acknowledge() -> None:
+            current = self.store._db.query_one("SELECT generation FROM memory_context WHERE mate_id=?", (mate_id,))
+            if current and current["generation"] != prepared["generation"]:
+                return  # a forget/reset happened while this request was in flight
+            with self.store._db.transaction():
+                self._save_context_state(mate_id, prepared)
+                self.store.ack_memory_changes(mate_id, changes)
+                self.store.mark_used(mate_id, [m["id"] for m in recalled])
+        req.on_context_delivered = acknowledge
+        block = context_block(now_local, self._tz_name(tz, now_utc), recalled=recalled, changes=changes, relation=relation)
+        if level != "off" and query and not query.startswith("<"):
+            found = self.store.knowledge.search(mate_id, query, limit=4)
+            current = self.store._db.query_one("SELECT id FROM messages WHERE session_id=? AND role IN ('user','steer') ORDER BY rowid DESC LIMIT 1", (mate.get("session_id"),))
+            if current:
+                found["items"] = [h for h in found["items"] if h["source_id"] != "msg:" + current["id"]][:3]
+            if found["items"]:
+                count, chars = {"light": (1, 300), "normal": (2, 400), "rich": (3, 600)}.get(level, (2, 400))
+                excerpts = [{**h, "excerpt": h["excerpt"][:chars], "truncated": len(h["excerpt"]) > chars} for h in found["items"][:count]]
+                encoded = json.dumps(excerpts, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
+                block += "\n<past_evidence untrusted=\"true\">\n" + encoded + "\n</past_evidence>"
+        return block
 
     @staticmethod
     def _relation_lines(rel: dict[str, Any] | None, st: dict[str, Any], now_utc: datetime, tz: Any,
@@ -781,7 +821,7 @@ class MateService:
             return "this mate no longer exists", True, []
         try:
             out = await fn(mate, ctx["session_id"], args if isinstance(args, dict) else {})
-        except MateError as exc:
+        except (MateError, ValueError) as exc:
             return str(exc), True, []
         except CaptureError as exc:  # (an expected outcome: no app, denied, timed out… — not an admin error)
             return str(exc), True, []
@@ -939,13 +979,15 @@ class MateService:
                 raise MateError("that chat is busy finishing its turn; try again in a moment")
             await asyncio.sleep(0.4)
 
-    def _track(self, worker_sid: str, mate: dict[str, Any], mate_sid: str, title: str) -> None:
+    def _track(self, worker_sid: str, mate: dict[str, Any], mate_sid: str, title: str, instruction: str = "") -> str:
         if self._svc.screen is not None:
             self._svc.screen.triggers.link(mate_sid,worker_sid)
         self._delegations[worker_sid] = {
             "mate_id": mate["id"], "mate_sid": mate_sid, "name": mate["name"], "title": title,
             "depth": self._depth.get(mate_sid, 0), "at": time.time(), "auto_only": False,
         }
+
+        return self.tasks.create(worker_sid, mate, mate_sid, title, instruction, self._depth.get(mate_sid, 0))
 
     async def _tool_send_to_session(self, mate: dict[str, Any], mate_sid: str, args: dict[str, Any]) -> str:
         s = self._chat(args.get("session_id"))
@@ -954,16 +996,17 @@ class MateService:
             raise MateError("message is empty")
         rows = self._forwarded(mate_sid, args.get("attachments"))
         copies = await self._copies(rows, s["id"])
-        self._track(s["id"], mate, mate_sid, s["title"])
+        rid = self._track(s["id"], mate, mate_sid, s["title"], text)
         try:
             how = await self._deliver(s["id"], text, self._via(mate), copies)
         except Exception:
+            self.tasks.fail_delivery(rid)
             self._delegations.pop(s["id"], None)
             self._drop_copies(copies)
             raise
         what = "it started a new turn" if how == "started" else "it was added to the turn it is running"
         return (f"Sent to \"{s['title']}\" ({s['id']}){self._files_phrase(rows)}: {what}. Its result will "
-                "reach you as a <delegation_result> when it finishes — tell the user what you sent and end "
+                f"reach you as a <delegation_result> when it finishes (request {rid}) — tell the user what you sent and end "
                 "your turn.")
 
     async def _tool_create_session(self, mate: dict[str, Any], mate_sid: str, args: dict[str, Any]) -> str:
@@ -990,16 +1033,17 @@ class MateService:
         if not msg:
             return f"Created chat \"{s['title']}\" ({s['id']}) on {path}. No instruction sent yet."
         copies = await self._copies(rows, s["id"])
-        self._track(s["id"], mate, mate_sid, s["title"])
+        rid = self._track(s["id"], mate, mate_sid, s["title"], msg)
         try:
             await self._deliver(s["id"], msg, self._via(mate), copies)
         except Exception:
+            self.tasks.fail_delivery(rid)
             self._delegations.pop(s["id"], None)
             self._drop_copies(copies)
             raise
         return (f"Created chat \"{s['title']}\" ({s['id']}) on {path} and sent the instruction"
                 f"{self._files_phrase(rows)}; it is working on it. Its result will reach you as a "
-                "<delegation_result>.")
+                f"<delegation_result> (request {rid}).")
 
     async def _tool_find_folders(self, mate: dict[str, Any], _sid: str, args: dict[str, Any]) -> Any:
         q = str(args.get("query") or "").strip()
@@ -1011,19 +1055,26 @@ class MateService:
         return found or f"No folder matching {q!r} found. Ask the user for the path."
 
     async def _tool_remember(self, mate: dict[str, Any], _sid: str, args: dict[str, Any]) -> str:
-        mem = self.store.add_memory(mate["id"], str(args.get("text") or ""), kind=args.get("kind"),
-                                    importance=args.get("importance"), due_at=args.get("due"))
+        with self.store._db.transaction():
+            if not mate["prefs"]["memory"]["self_save"]:
+                latest = self.store._db.query_one("SELECT content FROM messages WHERE session_id=? AND role IN ('user','steer') ORDER BY rowid DESC LIMIT 1", (_sid,))
+                if not latest or not re.search(r"기억|잊지|remember|save.*memory", latest["content"], re.I):
+                    raise MateError("Automatic saving is off. Save only an explicit user memory request.")
+            mem = self.store.add_memory(mate["id"], str(args.get("text") or ""), kind=args.get("kind"),
+                                        importance=args.get("importance"), due_at=args.get("due"))
+            if args.get("source_id"):
+                self.store.knowledge.attach(mate["id"], mem["id"], str(args["source_id"]), str(args.get("quote") or ""), args.get("source_revision"))
         if mem["merged"]:
             return f"Already known as {M.line(mem)} — updated it."
         out = f"Remembered {M.line(mem)}"
         if mem["similar"]:
             out += ("\nSimilar memories: " + "; ".join(M.line(m) for m in mem["similar"])
-                    + " — if the new one replaces one of them, update_memory that one and forget the duplicate.")
+                    + " — compare their subjects, dates and negations first. Update an old id only for a confirmed correction; different events stay separate.")
         return out
 
     async def _tool_update_memory(self, mate: dict[str, Any], _sid: str, args: dict[str, Any]) -> str:
         mid = str(args.get("id") or "").strip().strip("[]")
-        patch = {k: args[k] for k in ("text", "kind", "importance", "status") if args.get(k) not in (None, "")}
+        patch = {k: args[k] for k in ("text", "kind", "importance", "status", "expected_revision") if args.get(k) not in (None, "")}
         if "due" in args:
             patch["due_at"] = args.get("due")
         if not patch:
@@ -1049,6 +1100,10 @@ class MateService:
         except (TypeError, ValueError):
             limit = 6
         kind = str(args.get("kind") or "").strip() or None
+        if args.get("as_of"):
+            rows = self.store.knowledge.temporal_memories(mate["id"], str(args["as_of"]), q)
+            return {"as_recorded_at": args["as_of"], "items": rows,
+                    "note": "Historical versions as known then; unknown event validity is not an inferred date."}
         rows = self.store.memories(mate["id"], status="all" if args.get("include_done") else "active", kind=kind)
         now_utc = datetime.now(timezone.utc)
         now_local = now_utc.astimezone(self.store.tz()).replace(tzinfo=None)
@@ -1057,6 +1112,33 @@ class MateService:
             return f"Nothing in your memory matches {q!r}."
         return "\n".join(M.line(m) + (f" (status {m['status']})" if m.get("status") != "active" else "")
                          for m in found)
+
+    async def _tool_search_history(self, mate, _sid, args):
+        return self.store.knowledge.search(mate["id"], str(args.get("query") or ""),
+            scope=str(args.get("scope") or "mate"), session_id=args.get("session_id"),
+            since=args.get("since"), until=args.get("until"), aliases=args.get("aliases"),
+            offset=int(args.get("offset") or 0), limit=int(args.get("limit") or 10))
+
+    async def _tool_read_evidence(self, mate, _sid, args):
+        return self.store.knowledge.evidence(mate["id"], str(args.get("source_id") or ""),
+            revision=args.get("revision"), before=int(args.get("before") or 0), after=int(args.get("after") or 0), offset=int(args.get("offset") or 0))
+
+    async def _tool_record_episode(self, mate, _sid, args):
+        if not mate["prefs"]["memory"]["self_save"]:
+            raise MateError("Automatic episode saving is off")
+        return self.store.knowledge.episode(mate["id"], args)
+
+    async def _tool_get_episode(self, mate, _sid, args):
+        return self.store.knowledge.get_episode(mate["id"], str(args.get("episode_id") or ""))
+
+    async def _tool_get_task_record(self, mate, _sid, args):
+        return self.tasks.get(mate["id"], str(args.get("request_id") or ""))
+
+    async def _tool_read_task_receipt(self, mate, _sid, args):
+        return self.tasks.read_receipt(mate["id"], str(args.get("request_id") or ""), int(args.get("event_id") or 0))
+
+    async def _tool_list_task_records(self, mate, _sid, args):
+        return self.tasks.list(mate["id"], int(args.get("limit") or 20))
 
     # ---- her own conversation style (docs/mate.md "Prompt composition": update_conversation_style) ----
 
@@ -1238,24 +1320,18 @@ class MateService:
     def _on_turn_end(self, sid: str, outcome: dict[str, Any]) -> None:
         if self._svc.is_mate_session(sid):
             self.capture.cancel_session(sid)  # (a capture still waiting: the turn that wanted it is over)
-        d = self._delegations.get(sid)
-        if d is not None:
-            self._delegations.pop(sid, None)
-            if not d["auto_only"] or outcome.get("trigger") == "auto":
-                try:
-                    title = self._svc.get(sid)["title"]
-                except KeyError:
-                    title = d["title"]
-                entry = {"session_id": sid, "title": title, "status": outcome.get("status") or "error",
-                         "text": outcome.get("text") or "", "error": outcome.get("error"), "depth": d["depth"]}
-                bg = self._svc.running_task_count(sid)
-                if bg and entry["status"] == "ok":
-                    # Work continues in the background: report again when the
-                    # chat's own follow-up turn (the task finished) ends.
-                    entry["background"] = bg
-                    self._delegations[sid] = {**d, "auto_only": True, "at": time.time()}
-                self._pending.setdefault(d["mate_sid"], []).append(entry)
-                asyncio.get_running_loop().call_soon(self._flush, d["mate_sid"])
+        d = self._delegations.pop(sid, None)
+        bg = self._svc.running_task_count(sid) if outcome.get("status") == "ok" else 0
+        try:
+            outcome = {**outcome, "title": self._svc.get(sid)["title"]}
+        except KeyError:
+            pass
+        results = self.tasks.complete(sid, outcome, bg)
+        for mate_sid, entry in results:
+            if bg and d:
+                self._delegations[sid] = {**d, "auto_only": True, "at": time.time()}
+            self._pending.setdefault(mate_sid, []).append(entry)
+            asyncio.get_running_loop().call_soon(self._flush, mate_sid)
         if self._svc.is_mate_session(sid):
             if outcome.get("trigger") == "turn" and "meta" in outcome:
                 try:
@@ -1273,6 +1349,8 @@ class MateService:
         attrs = f'session_id="{_attr(e["session_id"])}" title="{_attr(e["title"])}" status="{e["status"]}"'
         if e.get("background"):
             attrs += f' background_tasks="{e["background"]}"'
+        if e.get("request_id"):
+            attrs += f' request_id="{_attr(e["request_id"])}" verification="{_attr(e.get("verification") or "unverified")}"'
         body = _trim_answer(e["text"]) if e["status"] == "ok" else (
             (e.get("error") or "the turn failed") + (("\n\nPartial answer:\n" + _trim_answer(e["text"]))
                                                       if e.get("text") else ""))
@@ -1295,9 +1373,13 @@ class MateService:
                         mate_sid, "mate.delegation_held",
                         f"\"{e['title']}\" finished ({e['status']}) — not handed to the mate automatically "
                         "after several automatic hand-offs in a row.", delegation=delegs)
+                self.tasks.mark_delivered([e["request_id"] for e in items if e.get("request_id")])
                 return
             self._svc.start_turn(mate_sid, "\n\n".join(self._result_block(e) for e in items),
-                                 meta={"internal": True, "kind": "delegation_result", "delegations": delegs})
+                                 meta={"internal": True, "kind": "delegation_result", "delegations": delegs,
+                                       "delegation_requests": [e["request_id"] for e in items if e.get("request_id")],
+                                       "delegation_receipts": [e["request_id"]+":"+str(e.get("receipt_revision", 1)) for e in items if e.get("request_id")]})
+            self.tasks.mark_delivered([e["request_id"] for e in items if e.get("request_id")])
             self._depth[mate_sid] = depth
         except TurnBusyError:
             self._pending.setdefault(mate_sid, [])[:0] = items  # retried when that turn ends

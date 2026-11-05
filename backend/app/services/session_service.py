@@ -432,6 +432,8 @@ class SessionService:
         return out
 
     def delete(self, sid: str) -> None:
+        from app.mate.knowledge import Knowledge
+        Knowledge(self._db).purge_session(sid)
         self.remote_jobs.cancel(sid, include_background=True)
         if getattr(self, "speech_input", None):
             self.speech_input.cancel(sid)
@@ -561,7 +563,20 @@ class SessionService:
 
     # ---- persistence helpers ----
 
-    def _add_message(
+    def _add_message(self, sid: str, role: str, content: str, provider: str | None = None,
+                     model: str | None = None, meta: dict[str, Any] | None = None) -> str:
+        from app.mate.knowledge import record_message
+        with self._db.transaction():
+            mid = self._write_message(sid, role, content, provider, model, meta)
+            try:
+                with self._db.transaction():
+                    record_message(self._db, mid)
+            except Exception:  # a failed derivative never loses a chat message
+                self._log("warning", "mate", "Memory index deferred; source remains in chat history",
+                          code="memory.index_deferred", session_id=sid)
+            return mid
+
+    def _write_message(
         self, sid: str, role: str, content: str, provider: str | None = None, model: str | None = None,
         meta: dict[str, Any] | None = None,
     ) -> str:
@@ -581,6 +596,10 @@ class SessionService:
         return mid
 
     def _add_event(self, sid: str, ev: ProviderEvent) -> None:
+        if ev.type == "notice" and ev.data.get("code") in ("context.compacted", "context.reset"):
+            row = self._db.query_one("SELECT mate_id FROM sessions WHERE id=? AND kind='mate'", (sid,))
+            if row and row["mate_id"]:
+                self._db.execute("INSERT INTO memory_context(mate_id,generation) VALUES(?,1) ON CONFLICT(mate_id) DO UPDATE SET generation=generation+1,state='{}'", (row["mate_id"],))
         ev.eid = self._db.insert(
             "INSERT INTO events (session_id, seq, type, data, created_at) VALUES (?, ?, ?, ?, ?)",
             (sid, ev.seq, ev.type, json.dumps(ev.data), ev.timestamp),
@@ -1294,6 +1313,9 @@ class SessionService:
                     from app.mate.trigger.silence import deliver_autonomous
                     stream=deliver_autonomous(stream)
                 async for ev in stream:
+                    if ev.type not in ("session.start", "session.info", "notice", "error") and req.on_context_delivered:
+                        ack, req.on_context_delivered = req.on_context_delivered, None
+                        ack()
                     if ev.type == "session.info":
                         yield self._session_info(sid, ev, ctx)
                         continue

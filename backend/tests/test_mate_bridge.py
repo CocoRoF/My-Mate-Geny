@@ -49,7 +49,7 @@ def test_bridge_protocol_and_forwarding():
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     api = f"http://127.0.0.1:{srv.server_address[1]}"
     env = {"PATH": os.environ.get("PATH", ""), "HRH_MATE_API": api, "HRH_MATE_TOKEN": "tok-123",
-           "HRH_MATE_ID": "mate_x", "HRH_MATE_SESSION": "sess_y"}
+           "HRH_MATE_ID": "mate_x", "HRH_MATE_SESSION": "sess_y", "HRH_MATE_MEMORY": "1"}
     proc = subprocess.Popen([sys.executable, "-I", BRIDGE], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             text=True, env=env)
     try:
@@ -62,7 +62,8 @@ def test_bridge_protocol_and_forwarding():
         tools = _rpc(proc, {"jsonrpc": "2.0", "id": 3, "method": "tools/list"})["result"]["tools"]
         names = [t["name"] for t in tools]
         assert names == ["list_sessions", "read_session", "send_to_session", "create_session", "find_folders",
-                         "remember", "update_memory", "forget", "recall"]
+                         "remember", "update_memory", "forget", "recall", "search_history", "read_evidence",
+                         "record_episode", "get_episode", "get_task_record", "read_task_receipt", "list_task_records"]
         assert all(len(t["description"]) > 60 and t["inputSchema"]["type"] == "object" for t in tools)
         r = _rpc(proc, {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
                         "params": {"name": "send_to_session", "arguments": {"session_id": "s", "message": "hi"}}})
