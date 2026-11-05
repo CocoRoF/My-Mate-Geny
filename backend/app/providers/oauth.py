@@ -91,7 +91,8 @@ class OAuthManager:
         self._home = os.environ.get("HOME", os.path.expanduser("~"))
 
     def _env(self, extra: dict[str, str] | None = None) -> dict[str, str]:
-        env = dict(os.environ)
+        from app.services.managed_node import environment
+        env = environment()
         env["HOME"] = self._home
         env.setdefault("TERM", "xterm-256color")
         if extra:

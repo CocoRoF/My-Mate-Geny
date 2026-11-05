@@ -34,6 +34,7 @@ from typing import Any, Awaitable, Callable
 
 from app import __version__
 from app.config import settings
+from app.services import managed_node
 from app.services.cli_tools import tools as T
 from app.services.cli_tools.versions import (
     Install,
@@ -272,7 +273,7 @@ class CliToolsService:
 
     @staticmethod
     def _env() -> dict[str, str]:
-        env = dict(os.environ)
+        env = managed_node.environment()
         env.update({"NO_COLOR": "1", "npm_config_update_notifier": "false", "npm_config_fund": "false"})
         return env
 
@@ -433,10 +434,14 @@ class CliToolsService:
                 return ch
         return spec.channels[0]
 
+    @property
+    def installation_active(self) -> bool:
+        return self._job is not None
+
     def _plan(self, tool: str, info: dict[str, Any], version: str) -> Any:
         spec = T.TOOLS[tool]
         inst = Install(info["method"], info["prefix"], info["writable"])
-        npm = npm_for_prefix(inst.prefix if inst.method in ("npm", "managed") else None, shutil.which, os.path.exists)
+        npm = npm_for_prefix(inst.prefix if inst.method in ("npm", "managed") else None, managed_node.which, os.path.exists)
         return plan_upgrade(pkg=spec.pkg, install=inst, binary_path=info["path"], version=version,
                             npm=npm, managed_prefix=T.managed_prefix())
 
@@ -558,6 +563,9 @@ class CliToolsService:
             return await self._start(tool, version=version, when=when, reason=reason)
 
     async def _start(self, tool: str, *, version: str | None, when: str, reason: str) -> dict[str, Any]:
+        from app.services.desktop_setup import service as setup_service
+        if setup_service.busy:
+            raise UpgradeError("busy", "Another installation is running", status=409)
         if tool not in T.TOOLS:
             raise UpgradeError("unknown_tool", tool, 404)
         if when not in ("now", "idle"):

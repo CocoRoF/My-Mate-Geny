@@ -38,7 +38,8 @@ def logged_in(tool: str, binary: str) -> bool:
 
 def _env():
     from ._cli_runtime import _ENV_WHITELIST
-    return {k:os.environ[k] for k in _ENV_WHITELIST if k in os.environ}
+    from app.services.managed_node import environment
+    return environment({k:os.environ[k] for k in _ENV_WHITELIST if k in os.environ})
 
 
 def invalidate(tool: str):

@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import qrcode from "qrcode-generator";
+import { useConfigStore } from "../../stores/configStore";
+import UpdateSource from "./UpdateSource";
 import { detectPlatform, getDownloads, type AppAsset, type AppRelease } from "../../api/downloads";
 import { formatBytes } from "../attachments/fileMeta";
 import { absTime, relTime } from "../admin/format";
@@ -146,7 +148,9 @@ function DownloadProgress({
 export default function DownloadsView() {
   const t = useT();
   const [rel, setRel] = useState<AppRelease | null>(null);
+  const loadSequence=useRef(0);
   const [error, setError] = useState("");
+  const local=useConfigStore(s=>s.executionMode)==="local";
   const platform = detectPlatform();
   const native = window.hrhNative;
   const upd = useUpdateState(); // the desktop app's own updater (desktop/src/updater.js)
@@ -170,16 +174,14 @@ export default function DownloadsView() {
     }
   };
 
-  const load = (refresh = false) =>
-    getDownloads(refresh)
-      .then((r) => {
-        setRel(r);
-        setError("");
-      })
-      .catch((e) => setError(String(e.message || e)));
+  const load = async (refresh = false) => {
+    const request=++loadSequence.current;
+    try { const release=await getDownloads(refresh);if(request===loadSequence.current){setRel(release);setError("");} }
+    catch(e:any){if(request===loadSequence.current)setError(String(e.message||e));}
+  };
 
   useEffect(() => {
-    load();
+    load();const changed=()=>void load(true);window.addEventListener("geny:update-source-changed",changed);return()=>window.removeEventListener("geny:update-source-changed",changed);
   }, []);
 
   const assets = rel?.assets || [];
@@ -203,7 +205,7 @@ export default function DownloadsView() {
             <div className="min-w-0 flex-1">
               <h2 className="text-xl font-semibold tracking-tight">{t("downloads.title")}</h2>
               <p className="mt-1 text-sm text-content-dim">
-                {t("downloads.intro")}
+                {t(local?"downloads.localIntro":"downloads.intro")}
               </p>
             </div>
           </div>
@@ -266,13 +268,13 @@ export default function DownloadsView() {
                 ? t("downloads.noRelease")
                 : rel.reason === "not_configured"
                   ? t("downloads.notConfigured")
-                  : t("downloads.unavailable", { reason: rel.reason })}
+                  : t(rel.reason?.startsWith("source")?"downloads.sourceUnavailable":"downloads.unavailable", { reason: rel.reason })}
             </p>
           )}
           {error && <p className="mt-3 text-xs text-danger">{error}</p>}
         </div>
 
-        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {assets.length>0&&<div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {PLATFORMS.map((p) => {
             const list = forPlatform(p.id);
             const isMine = p.id === platform;
@@ -286,7 +288,7 @@ export default function DownloadsView() {
                     </h2>
                     <p className="text-[12px] text-content-faint">{t(p.sub)}</p>
                   </div>
-                  {p.id === "android" && list.length > 0 && platform !== "android" && <Qr text={pageUrl} />}
+                  {!local && p.id === "android" && list.length > 0 && platform !== "android" && <Qr text={pageUrl} />}
                 </div>
                 <div className="mt-3 space-y-2">
                   {list.length ? (
@@ -303,7 +305,7 @@ export default function DownloadsView() {
                     </li>
                   ))}
                 </ul>
-                {p.id === "android" && list.length > 0 && platform !== "android" && (
+                {!local && p.id === "android" && list.length > 0 && platform !== "android" && (
                   <p className="mt-2 text-[11px] text-content-faint">{t("downloads.scanHint")}</p>
                 )}
               </section>
@@ -311,6 +313,7 @@ export default function DownloadsView() {
           })}
         </div>
 
+        }
         {rel?.notes && (
           <section className="card mt-3 p-4">
             <h2 className="mb-2 text-[14px] font-semibold">{t("downloads.whatsNew")}</h2>
@@ -318,6 +321,7 @@ export default function DownloadsView() {
           </section>
         )}
       </div>
+      <UpdateSource />
     </div>
   );
 }

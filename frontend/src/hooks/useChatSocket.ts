@@ -16,7 +16,8 @@ declare global {
     // Bridge the desktop (Electron) / Android (Capacitor) shells inject.
     hrhNative?: {
       signOut?: () => Promise<unknown>;
-      setup?: {state:()=>Promise<boolean|null>;complete:()=>Promise<boolean>};
+      setup?: {state:()=>Promise<boolean|null>;seen?:()=>Promise<boolean>;complete:()=>Promise<boolean>};
+      executionMode?: "local"|"server";
       platform: string;
       version: string;
       notify?: (title: string, body: string) => void;

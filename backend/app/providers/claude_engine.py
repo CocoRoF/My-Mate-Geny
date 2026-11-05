@@ -105,7 +105,8 @@ class ClaudeEngine:
         return [t for t in self.tasks.values() if t.get("status") in (None, "running", "pending")]
 
     async def start(self) -> None:
-        env = {k: os.environ[k] for k in _ENV_WHITELIST if k in os.environ}
+        from app.services.managed_node import environment
+        env = environment({k: os.environ[k] for k in _ENV_WHITELIST if k in os.environ})
         env.update(self.env_extras)
         self._proc = await asyncio.create_subprocess_exec(
             *child_command(self.binary, self.argv),

@@ -15,7 +15,7 @@
 // in-place updates) and the userData folder `hr-harnessor` (settings.json,
 // the login cookie, logs), pinned below because Electron would otherwise
 // derive it from the productName and log everyone out.
-const { app, BrowserWindow, Menu, Notification, ipcMain, shell, clipboard, session, systemPreferences, net, dialog, nativeTheme, desktopCapturer } = require("electron");
+const { app, BrowserWindow, Menu, Notification, ipcMain, shell, clipboard, session, systemPreferences, net, dialog, nativeTheme, desktopCapturer, safeStorage } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 
@@ -461,9 +461,10 @@ ipcMain.on("local:browserState",(e,value)=>{
   }
   e.returnValue=readSettings().localBrowserState||{};
 });
-function setupKey(){return readSettings().launchMode==="local"?"local":serverUrl();}
-ipcMain.handle("setup:state",e=>fromServerPage(e)?!!readSettings().setupCompleted?.[setupKey()]:null);
-ipcMain.handle("setup:complete",e=>{if(!fromServerPage(e))return false;writeSettings({setupCompleted:{...readSettings().setupCompleted,[setupKey()]:true}});return true;});
+const setupHistory=require("./setup-history").createSetupHistory({readSettings,writeSettings});
+ipcMain.handle("setup:state",e=>fromServerPage(e)?setupHistory.seen(serverUrl()):null);
+ipcMain.handle("setup:seen",e=>fromServerPage(e)?setupHistory.mark(serverUrl()):false);
+ipcMain.handle("setup:complete",e=>fromServerPage(e)?setupHistory.mark(serverUrl(),true):false);
 chrome.registerIpc();
 
 // Every hrh:* call comes from a top-level page in one of our windows.
@@ -508,7 +509,7 @@ ipcMain.handle("hrh:signOut", async (e) => {
 // ── the language (i18n.js): the console tells it; the menus, tray, bar and local pages follow ──
 // (sync: the preload reads it while the page starts — the local pages and the fallback title bar need it at once)
 ipcMain.on("hrh:i18n", (e) => {
-  e.returnValue = { lang: language(), text: pageText(), device:deviceLifecycle.info() };
+  e.returnValue = { lang: language(), text: pageText(), device:deviceLifecycle.info(), executionMode:readSettings().launchMode==="local"?"local":"server" };
 });
 ipcMain.on("hrh:setLanguage", (e, lang) => {
   if (!ours(e) || !fileOrServer(e) || !isLang(lang) || readSettings().language === lang) return;
@@ -534,6 +535,7 @@ nativeTheme.on("updated", () => theme.applyTheme(nativeTheme, readSettings().the
 
 // ── in-app updates (updater.js): state here, every window follows it (the Download page shows it) ──
 let notifiedUpdate = "";
+const updateSource=require("./update-source").createUpdateSource({readSettings,writeSettings,safeStorage});
 const updater = createUpdater({
   autoUpdater: async () => require("electron-updater").autoUpdater,
   cancelToken: () => new (require("electron-updater").CancellationToken)(),
@@ -541,21 +543,16 @@ const updater = createUpdater({
   platform: process.platform,
   isPackaged: app.isPackaged,
   env: process.env,
-  server: () => serverUrl(),
+  server: () => updateSource.config().repository,
   // (development runs only: tests point the feed elsewhere and give electron-updater a config file)
-  feedUrl: () => (!app.isPackaged && env.HRH_UPDATE_FEED) || `${serverUrl()}/api/downloads/update`,
+  feedUrl: () => (!app.isPackaged && env.HRH_UPDATE_FEED) || updateSource.feedUrl(),
   reasonText: (code) => t(code),
   devConfigPath: () => {
     const f = path.join(app.getPath("userData"), "dev-app-update.yml");
     require("fs").writeFileSync(f, "provider: generic\nurl: https://updates.invalid/\nupdaterCacheDirName: my-mate-geny-updater-dev\n");
     return f;
   },
-  cookieHeader: async () => {
-    const base = serverUrl();
-    if (!base) return "";
-    const list = await session.defaultSession.cookies.get({ url: `${base}/` });
-    return list.map((c) => `${c.name}=${c.value}`).join("; ");
-  },
+  cookieHeader: async () => "",
   beforeInstall: () => {
     installingUpdate = true;
     quitting = true;
@@ -596,6 +593,15 @@ ipcMain.handle("update:download", (e) => (fromAppPage(e) ? updater.download() : 
 ipcMain.handle("update:cancel", (e) => (fromAppPage(e) ? updater.cancel() : null));
 ipcMain.handle("update:install", (e) => (fromAppPage(e) ? updater.install() : null));
 ipcMain.handle("update:retry", (e) => (fromAppPage(e) ? updater.retry() : null));
+ipcMain.handle("update:source",e=>fromAppPage(e)?updateSource.config():null);
+ipcMain.handle("update:catalog",(e,refresh)=>fromAppPage(e)?updateSource.catalog(refresh===true):null);
+ipcMain.handle("update:setSource",async(e,value)=>{
+  if(!fromAppPage(e))return null;
+  if(!updater.reset())throw Error('sourceBusy');
+  const config=updateSource.configure(value);
+  for(const w of BrowserWindow.getAllWindows())if(!w.isDestroyed())w.webContents.send('update:sourceChanged',config);
+  return config;
+});
 
 // Higgsfield's sign-in lands on http://localhost:8765/callback (its CLI's OAuth client): while the console's connect
 // dialog waits, catch it here and hand the address to the page, which sends it to the server (oauth-catch.js)
@@ -674,6 +680,7 @@ const quitController=require("./quit").createQuitController({
     clean("runtime",()=>deviceRuntime.destroy());
     clean("mate",()=>mate.stop());
     clean("local runtime",()=>localRuntime.stopNow());
+    clean("update source",()=>updateSource.close());
     clean("storage",()=>session.defaultSession.flushStorageData());
   },
 });
@@ -827,6 +834,7 @@ if (restartOnX11 && relaunchOnX11()) {
   });
   app.setAppUserModelId("me.hrletsgo.harnessor"); // Windows notifications (unchanged id)
   app.whenReady().then(async () => {
+    setupHistory.migrate();
     theme.applyTheme(nativeTheme, readSettings().theme); // before any window: its background and menus match
     await forgetIfAsked();
     await migrateLegacy();
@@ -876,8 +884,8 @@ if (restartOnX11 && relaunchOnX11()) {
       });
     }
     // updates: a quiet look 30 s after the start and every 6 hours (downloading is the user's call)
-    updateTimer=setTimeout(() => {if(readSettings().launchMode!=="local")void updater.check();}, 30_000);updateTimer.unref?.();
-    updateInterval=setInterval(() => {if(readSettings().launchMode!=="local")void updater.check();}, 6 * 3600_000);updateInterval.unref?.();
+    updateTimer=setTimeout(() => {void updater.check();}, 30_000);updateTimer.unref?.();
+    updateInterval=setInterval(() => {void updater.check();}, 6 * 3600_000);updateInterval.unref?.();
     // macOS: a Dock click opens the console (but not the launch-time
     // activate of a start at login)
     const readyAt = Date.now();

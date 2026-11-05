@@ -15,6 +15,7 @@ export default {
   backToList: "Back to Settings",
 
   // updates
+  localUpdatesHint: "Manage this computer’s app version and updates. Local data is kept after updates.",
   updatesHint: "The console updates itself when the server is updated; the desktop and Android apps load it live and only need a new build now and then.",
   webConsole: "Web console",
   webBuild: "Version {version}",

@@ -5,7 +5,7 @@
  */
 import type { MsgKey, Vars } from "../i18n";
 
-export type UpdateErrorCode = "signIn" | "replaced" | "noUpdate" | "server" | "unreachable" | "damaged" | "cannotSelfUpdate" | "other";
+export type UpdateErrorCode = "signIn" | "replaced" | "noUpdate" | "server" | "unreachable" | "damaged" | "cannotSelfUpdate" | "other" | "sourceAccess" | "sourceCredential" | "sourceRateLimit" | "sourceUnavailable" | "sourceInvalid" | "sourceChanged";
 
 export interface UpdateErrorState {
   error?: string;
@@ -15,6 +15,12 @@ export interface UpdateErrorState {
 }
 
 const WHY: Partial<Record<UpdateErrorCode, MsgKey>> = {
+  sourceAccess: "downloads.sourceAccess",
+  sourceCredential: "downloads.sourceCredential",
+  sourceRateLimit: "downloads.sourceRateLimit",
+  sourceUnavailable: "downloads.sourceUnavailable",
+  sourceInvalid: "downloads.sourceInvalid",
+  sourceChanged: "downloads.sourceChanged",
   signIn: "downloads.updErrSignIn",
   replaced: "downloads.updErrReplaced",
   noUpdate: "downloads.updErrNoUpdate",

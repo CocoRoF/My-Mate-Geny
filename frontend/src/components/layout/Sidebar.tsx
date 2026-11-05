@@ -7,6 +7,7 @@ import { openSettings, useUIStore, type View } from "../../stores/uiStore";
 import { useProviderStore } from "../../stores/providerStore";
 import { useChatStore } from "../../stores/chatStore";
 import { requestResync } from "../../lib/sync";
+import { useNativeVersion } from "../../lib/nativeVersion";
 import { APP_VERSION } from "../../version";
 import Icon, { type IconName } from "../ui/Icon";
 import { useAuthStatus } from "../admin/useAuthStatus";
@@ -27,6 +28,7 @@ const NAV: { id: View; label: MsgKey; icon: IconName }[] = [
 ];
 
 export default function Sidebar() {
+  const nativeVersion=useNativeVersion();
   const t = useT();
   const view = useUIStore((s) => s.view);
   const setView = useUIStore((s) => s.setView);
@@ -350,7 +352,7 @@ export default function Sidebar() {
           {(user || "?").slice(0, 1).toUpperCase()}
         </div>
         <span className="min-w-0 truncate text-xs" title={t("nav.signedInAs", { user })}>{user}</span>
-        <span className="ml-auto text-[10px]">v{APP_VERSION}</span>
+        <span className="ml-auto text-[10px]">v{nativeVersion||APP_VERSION}</span>
         <button data-testid="nav-signout" onClick={signOutHere} className="rounded-md p-1 touch:p-2.5 touch:-mr-1.5 hover:text-danger hover:bg-surface-3 transition" title={t("nav.logOut")} aria-label={t("nav.logOut")}>
           <Icon name="logout" size={15} />
         </button>

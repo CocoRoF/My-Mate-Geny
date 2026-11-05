@@ -14,6 +14,7 @@ export interface AppAsset {
 
 export interface AppRelease {
   available: boolean;
+  repository?: string;
   reason?: string;
   version?: string;
   commit?: string;
@@ -23,7 +24,10 @@ export interface AppRelease {
   assets?: AppAsset[];
 }
 
-export const getDownloads = (refresh = false) => apiFetch<AppRelease>(`/api/downloads${refresh ? "?refresh=1" : ""}`);
+export const getDownloads = (refresh = false): Promise<AppRelease> => {
+  const native=(typeof window!=="undefined" ? (window.hrhNative as any)?.updates : null);
+  return native?.catalog ? native.catalog(refresh) : apiFetch<AppRelease>(`/api/downloads${refresh ? "?refresh=1" : ""}`);
+};
 
 export type Platform = "windows" | "macos" | "linux" | "android" | "ios" | "other";
 

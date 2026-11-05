@@ -12,7 +12,7 @@ interface ConfigState {
 export const useConfigStore = create<ConfigState>((set) => ({
   catalog: {},
   version: "",
-  executionMode: "server",
+  executionMode: typeof window!=="undefined"&&window.hrhNative?.executionMode==="local"?"local":"server",
   load: async () => {
     const c = await getConfig();
     set({ catalog: c.catalog, version: c.version, executionMode:c.execution_mode||"server" });

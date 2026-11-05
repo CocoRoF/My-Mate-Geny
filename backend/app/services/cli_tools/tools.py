@@ -72,6 +72,9 @@ def managed_prefix() -> str:
 
 
 def managed_binary(tool: str) -> str:
+    if os.name == "nt":
+        prefix=managed_prefix();name=TOOLS[tool].bin_name
+        return next((os.path.join(prefix,name+ext) for ext in (".cmd",".exe","") if os.path.isfile(os.path.join(prefix,name+ext))),os.path.join(prefix,name+".cmd"))
     return os.path.join(managed_prefix(), "bin", TOOLS[tool].bin_name)
 
 

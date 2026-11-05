@@ -139,12 +139,13 @@ if(surface==="console"&&location.protocol==="http:"){
 }
 
 contextBridge.exposeInMainWorld("hrhNative", {
-  setup: {state:()=>ipcRenderer.invoke("setup:state"),complete:()=>ipcRenderer.invoke("setup:complete")},
+  setup: {state:()=>ipcRenderer.invoke("setup:state"),seen:()=>ipcRenderer.invoke("setup:seen"),complete:()=>ipcRenderer.invoke("setup:complete")},
   platform: `desktop-${process.platform}`,
   version: arg("hrh-version") || "0.0.0",
   // which window this page is in: console | mate-overlay | mate-quick | mate-chat | bar
   surface,
   deviceIdentity: i18n?.device || null,
+  executionMode: i18n?.executionMode || "server",
   onQuitting:cb=>listen("app:quitting",cb),
   notify: (title, body) => ipcRenderer.invoke("hrh:notify", { title, body }),
   openExternal: (url) => ipcRenderer.invoke("hrh:openExternal", url),
@@ -184,6 +185,10 @@ contextBridge.exposeInMainWorld("hrhNative", {
   },
   // in-app updates (updater.js): the state lives in the app, a page (re)reads it and follows it
   updates: {
+    source:()=>ipcRenderer.invoke('update:source'),
+    setSource:value=>ipcRenderer.invoke('update:setSource',value),
+    catalog:refresh=>ipcRenderer.invoke('update:catalog',refresh===true),
+    onSourceChanged:cb=>listen('update:sourceChanged',cb),
     getState: () => ipcRenderer.invoke("update:state"),
     check: () => ipcRenderer.invoke("update:check"),
     download: () => ipcRenderer.invoke("update:download"),

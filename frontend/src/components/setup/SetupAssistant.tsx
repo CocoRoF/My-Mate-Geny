@@ -9,9 +9,10 @@ type Job={phase:string;log:string[];error:string};
 type Tool={id:string;label:string;installed:boolean;path:string|null;version:string;connected:boolean;job:Job};
 type Setup={execution_mode:string;platform:string;home:string;tools:Tool[]};
 export const SETUP_KEY='hrh_setup_completed_v1';
+const SEEN_KEY='hrh_setup_seen_v2';
 const nativeSetup=()=> (window.hrhNative as any)?.setup;
 export async function setupCompleted():Promise<boolean>{
-  try{if(nativeSetup())return await nativeSetup().state()===true;return localStorage.getItem(SETUP_KEY)==='1';}catch{return false;}
+  try{if(nativeSetup())return await nativeSetup().state()===true;return localStorage.getItem(SEEN_KEY)==='1'||localStorage.getItem(SETUP_KEY)==='1'||!!localStorage.getItem('hrh_last_session')||!!localStorage.getItem('hrh_last_conversation');}catch{return false;}
 }
 async function complete(){if(nativeSetup())await nativeSetup().complete();localStorage.setItem(SETUP_KEY,'1');}
 
@@ -19,6 +20,7 @@ export default function SetupAssistant({onDone}:{onDone:()=>void}){
   const t=useT();
   const [data,setData]=useState<Setup|null>(null),[error,setError]=useState('');
   const [login,setLogin]=useState(''),[busy,setBusy]=useState(false),[refresh,setRefresh]=useState(0);
+  useEffect(()=>{try{localStorage.setItem(SEEN_KEY,'1');}catch{}void nativeSetup()?.seen?.().catch(()=>{});},[]);
   useEffect(()=>{
     let alive=true,working=false;
     const load=async()=>{if(working)return;working=true;try{const d=await apiFetch<Setup>('/api/setup');if(alive){setData(d);setError('');}}catch(e:any){if(alive)setError(e.message);}finally{working=false;}};

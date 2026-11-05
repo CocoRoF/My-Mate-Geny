@@ -15,6 +15,7 @@ const ko: Messages<"settings"> = {
   usageHint: "연결된 계정마다 요금제가 얼마나 남았는지, 이 서버가 센 토큰은 얼마인지 보여 줘요.",
   backToList: "설정으로 돌아가기",
 
+  localUpdatesHint: "이 컴퓨터의 앱 버전과 업데이트를 관리합니다. 로컬 데이터는 업데이트 후에도 유지됩니다.",
   updatesHint: "콘솔은 서버가 업데이트되면 함께 업데이트돼요. 데스크톱·Android 앱은 콘솔을 실시간으로 불러오므로 가끔 새 빌드만 설치하면 돼요.",
   webConsole: "웹 콘솔",
   webBuild: "버전 {version}",

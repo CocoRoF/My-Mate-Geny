@@ -59,9 +59,39 @@ The runtime prefers its previous loopback port; if busy, it chooses another port
 preferences and capture origin. Setup completion is keyed by `local`, independent of that port.
 
 A local installation runs its bundled code. Installing a newer desktop package updates that code while retaining
-its data; a browser reload alone cannot update a local bundle. The existing private release repository requires
-an authenticated download; Local mode never requires a Geny account just to start and does not make that repository
-public or embed download credentials. Quiet server-backed update polling is skipped in Local mode.
+its data; a browser reload alone cannot update a local bundle.
+
+## Device-owned app updates
+
+Every desktop mode defaults to `https://github.com/CocoRoF/My-Mate-Geny`. Settings → Updates & Download ends with
+an Update source editor for a compatible public repository/fork. The selection lives in native settings on this
+device, independently of any connected Geny server. The local UI shows the desktop version, not a web-console build.
+The sidebar also shows the real app version. The default repository is currently private: its assets need this
+computer's existing GitHub CLI sign-in or a user-supplied read token. Changing repository visibility is never automatic.
+OS encryption protects saved tokens; if unavailable, tokens stay in memory only and the UI explains that lifetime.
+Tokens are never returned to renderers or sent to Geny servers, and are stripped before signed-storage redirects.
+
+The source reads `apps-latest`, falling back to the repository's latest release. A compatible source publishes
+`latest.yml` / `latest-linux.yml` and installers with the existing platform suffixes. A random capability on a random
+IPv4 loopback port exposes only release assets to the desktop updater, never arbitrary URLs or filesystem paths.
+Source edits are blocked while checking/downloading/ready-to-install; all windows subscribe to native source changes.
+Normal updater checksum validation, cancellation, quit cleanup and restart behavior remain in effect.
+
+## Visits and prerequisite installation
+
+The assistant is automatic only on a connection's first visit. Showing it records the visit even when the user
+closes the app without finishing; existing completed setup and existing connections migrate on update. Local visits
+are keyed by `local`, not the loopback port. The assistant is still available from the sidebar when explicitly opened.
+
+Settings → Providers can install missing Claude Code/Codex with their official standalone installers and missing
+Higgsfield through its official npm package. Node.js/npm can be explicitly installed in app-owned storage first, or
+with the Higgsfield install button. Node 24 LTS binaries come from nodejs.org, with SHA256 validation, safe archive
+extraction, staging before activation, progress/cancellation and post-install verification. PATH changes are limited to
+app child processes; system tools and existing credentials are preserved. Session engines and login/version helpers
+use the same prerequisite path immediately. Missing Git links to its official install assistant.
+
+Installer jobs are serialized with CLI upgrades. API clients on older Geny servers keep their existing upgrade UI
+until the new installer endpoints are available. Local installations use the backend bundled with this app.
 
 ## Signing out and expired authentication
 

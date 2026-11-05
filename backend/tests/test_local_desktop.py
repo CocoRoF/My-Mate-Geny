@@ -47,6 +47,8 @@ async def test_installer_never_upgrades_existing_cli(monkeypatch):
     with pytest.raises(HTTPException) as e:svc.install('claude')
     assert e.value.status_code==409
     with pytest.raises(HTTPException) as e:svc.install('higgsfield')
+    assert e.value.status_code==409
+    with pytest.raises(HTTPException) as e:svc.install('unknown')
     assert e.value.status_code==404
     assert not svc.tasks
 

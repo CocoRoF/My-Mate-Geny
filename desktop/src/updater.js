@@ -6,9 +6,9 @@
 //   idle → checking → latest | available → downloading (percent, bytes/s, ETA; Cancel) → ready → installing
 //                              ↘ error (Retry)                    ↘ cancelled → available
 //
-// The feed is the connected server (`{server}/api/downloads/update/`, backend/app/routers/downloads.py), which
-// serves electron-builder's latest.yml / latest-linux.yml and the installers from the rolling `apps-latest`
-// release (fetched server-side: the release needs a token). The requests carry the session cookie.
+// The native update-source module reads the selected GitHub repository and serves a capability-protected
+// loopback feed. It works in Local and Server modes without a Geny server or Geny cookies. Private source
+// credentials remain on this device; signed asset redirects never receive the GitHub authorization header.
 //
 // Platforms: Windows (NSIS) and Linux AppImage replace themselves; Linux .deb installs through a privilege prompt
 // (electron-updater's DebUpdater); macOS builds are unsigned, which Squirrel.Mac refuses — there the page offers the
@@ -126,7 +126,7 @@ function createUpdater(deps) {
     wire(u);
     if(shuttingDown)throw Error("App is quitting");
     // (only when it changes: setFeedURL forgets the update a check found — "Please check update first")
-    const url = deps.feedUrl ? deps.feedUrl() : `${deps.server()}/api/downloads/update`;
+    const url = deps.feedUrl ? await deps.feedUrl() : `${deps.server()}/api/downloads/update`;
     if (url !== feedSet) {
       u.setFeedURL({ provider: "generic", url });
       feedSet = url;
@@ -140,6 +140,7 @@ function createUpdater(deps) {
   // what went wrong: `error` in English (logs, older consoles), `errorCode` + `errorDetail` for the console to say it
   // in the UI's language (downloads.updErr.<code> in frontend/src/i18n)
   const failure = (e, during) => {
+    if(/^source(Access|Credential|RateLimit|Unavailable|Invalid|Changed)$/.test(e?.code||''))return {errorCode:e.code,error:e.code,errorDetail:''};
     const m = String(e?.message || e || "unknown error");
     const first = m.split("\n")[0];
     const out = (errorCode, error, errorDetail = "") => ({ errorCode, error, errorDetail });
@@ -287,7 +288,8 @@ function createUpdater(deps) {
     if(instance){instance.autoInstallOnAppQuit=false;instance.autoRunAppAfterInstall=false;}
     token?.cancel();token=null;
   }
-  return { get state() { return view(); }, check, download, cancel, install, retry, refresh, shutdown, STATUS };
+  function reset(){if(shuttingDown||['checking','downloading','ready','installing'].includes(state.status))return false;set({status:'idle',current:deps.version},true);return true;}
+  return { get state() { return view(); }, check, download, cancel, install, retry, refresh, shutdown, reset, STATUS };
 }
 
 /** the arguments the restarted app gets: this one's own (`--no-sandbox`, `--ozone-platform=x11`, …) — never a hidden

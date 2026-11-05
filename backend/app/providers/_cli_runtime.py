@@ -37,7 +37,8 @@ class CLIProcessRunner:
     timeout_s: float = 600.0
 
     def _build_env(self) -> dict[str, str]:
-        env = {k: os.environ[k] for k in _ENV_WHITELIST if k in os.environ}
+        from app.services.managed_node import environment
+        env = environment({k: os.environ[k] for k in _ENV_WHITELIST if k in os.environ})
         env.update(self.env_extras)
         return env
 

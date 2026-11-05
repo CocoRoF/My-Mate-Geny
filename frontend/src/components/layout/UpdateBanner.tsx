@@ -22,9 +22,9 @@ export default function UpdateBanner() {
   useEffect(() => {
     if (!native) return;
     const check = () => getDownloads().then((r) => r.available && r.version && setLatest(r.version)).catch(() => {});
-    check();
+    check();window.addEventListener("geny:update-source-changed",check);
     const t = setInterval(check, 6 * 3600 * 1000);
-    return () => clearInterval(t);
+    return () => {clearInterval(t);window.removeEventListener("geny:update-source-changed",check);};
   }, [native]);
 
   if (!native || !version || !latest || compareVersions(latest, version) <= 0 || dismissed === latest) return null;

@@ -98,6 +98,7 @@ function Status({ tone, children, testId }: { tone: "ok" | "warn" | "error" | "i
 
 function UpdatesSection() {
   const t = useT();
+  const local=useConfigStore(s=>s.executionMode)==="local";
   const serverVersion = useConfigStore((s) => s.version);
   const [web, setWeb] = useState<ConsoleUpdate | "checking" | "error" | null>(null);
   const native = window.hrhNative;
@@ -121,7 +122,7 @@ function UpdatesSection() {
   return (
     <Card id="updates">
       <div className="space-y-2">
-        <Row
+        {!local&&<><Row
           label={t("settings.webConsole")}
           right={
             <button className="btn-ghost border border-border !py-1.5 text-[12.5px]" onClick={check} disabled={web === "checking"} data-testid="settings-check-web">
@@ -142,7 +143,7 @@ function UpdatesSection() {
             </button>
           </div>
         )}
-      </div>
+      </>} </div>
       {isDesktopApp() && <DesktopAppUpdates />}
       {isAndroidApp() && <AndroidAppUpdates />}
       {!native && (
@@ -840,6 +841,7 @@ function TabList({ tabs, selected, list }: { tabs: TabMeta[]; selected: Settings
 }
 
 export default function SettingsView() {
+  const local=useConfigStore(s=>s.executionMode)==="local";
   const t = useT();
   const wide = useWide();
   const asked = useUIStore((s) => s.settingsTab);
@@ -951,10 +953,10 @@ export default function SettingsView() {
                     <Icon name={meta.icon} size={20} className="text-accent" />
                     <h2 className="text-lg font-semibold">{t(meta.label)}</h2>
                   </div>
-                  {meta.hint && <p className="mt-1 text-sm text-content-dim">{t(meta.hint)}</p>}
+                  {meta.hint && <p className="mt-1 text-sm text-content-dim">{t(local&&shown==="updates"?"settings.localUpdatesHint":meta.hint)}</p>}
                 </div>
               )}
-              {!wide && meta.hint && <p className="mb-4 text-[13px] text-content-dim">{t(meta.hint)}</p>}
+              {!wide && meta.hint && <p className="mb-4 text-[13px] text-content-dim">{t(local&&shown==="updates"?"settings.localUpdatesHint":meta.hint)}</p>}
               <Suspense fallback={<PageLoading />}>
                 <TabContent id={shown} />
               </Suspense>

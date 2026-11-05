@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useConfigStore } from "../../stores/configStore";
+import { useInstallations, Dependencies, InstallTool, type Installations } from "./ToolInstallations";
 import { useCliToolsStore } from "../../stores/cliToolsStore";
 import { CliError, type CliJob, type CliTool } from "../../api/cliTools";
 import { useT, type MsgKey } from "../../i18n";
@@ -12,6 +14,8 @@ import Icon from "../ui/Icon";
  */
 export default function CliVersionsSection() {
   const t = useT();
+  const local=useConfigStore(s=>s.executionMode)==="local";
+  const installations=useInstallations();
   const status = useCliToolsStore((s) => s.status);
   const error = useCliToolsStore((s) => s.error);
   const checking = useCliToolsStore((s) => s.checking);
@@ -43,8 +47,8 @@ export default function CliVersionsSection() {
               </button>
             </span>
           </div>
-          <p className="text-xs text-content-faint mt-0.5">{t("cliTools.intro", { hours: status?.ttl_h ?? 6 })}</p>
-          {status && !status.check_enabled && <p className="text-[11px] text-content-faint mt-1">{t("cliTools.checksOff")}</p>}
+          <p className="text-xs text-content-faint mt-0.5">{t(local?"cliTools.introLocal":"cliTools.intro", { hours: status?.ttl_h ?? 6 })}</p>
+          {status && !status.check_enabled && <p className="text-[11px] text-content-faint mt-1">{t(local?"cliTools.checksOffLocal":"cliTools.checksOff")}</p>}
         </div>
       </div>
 
@@ -63,9 +67,10 @@ export default function CliVersionsSection() {
         </div>
       )}
 
+      <Dependencies installations={installations} otherJob={jobActive}/>
       <div className="mt-3 space-y-2.5">
         {status?.tools.map((tool) => (
-          <ToolRow key={tool.id} tool={tool} running={status.running_chats} otherJob={jobActive && !tool.job?.active} memCap={status.mem_cap} prefix={status.managed_prefix} />
+          <ToolRow installations={installations} key={tool.id} tool={tool} running={status.running_chats} otherJob={jobActive && !tool.job?.active} memCap={status.mem_cap} prefix={status.managed_prefix} />
         ))}
       </div>
     </section>
@@ -109,12 +114,14 @@ function ToolRow({
   otherJob,
   memCap,
   prefix,
+  installations,
 }: {
   tool: CliTool;
   running: number;
   otherJob: boolean;
   memCap: { available: boolean; size: string };
   prefix: string;
+  installations: Installations;
 }) {
   const t = useT();
   const upgrade = useCliToolsStore((s) => s.upgrade);
@@ -162,7 +169,7 @@ function ToolRow({
   else pill = { text: t("cliTools.upToDate"), cls: "bg-success/10 text-success" };
 
   const canStart = tool.upgrade.possible && !busyHere && !otherJob;
-  const offer = (tool.update_available || (missing && !!target)) && tool.upgrade.possible;
+  const offer = (tool.update_available || (missing && !!target && !installations.data)) && tool.upgrade.possible;
   const notesCount = tool.notes?.sections.reduce((n, s) => n + s.count, 0) ?? 0;
   const pinExample = target || inst.version || "1.2.3";
 
@@ -244,7 +251,8 @@ function ToolRow({
           </button>
         </div>
       )}
-      {!tool.upgrade.possible && (tool.update_available || missing) && (
+      {installations.data&&<InstallTool tool={tool.id} installations={installations} otherJob={busyHere||otherJob}/>}
+      {!tool.upgrade.possible && (tool.update_available || missing) && !installations.data && (
         <p className="mt-2 text-[11px] text-warning">
           {tool.upgrade.code === "npm_missing" ? t("cliTools.cantUpgrade_npm_missing") : t("cliTools.cantUpgrade_default", { code: tool.upgrade.code })}
         </p>

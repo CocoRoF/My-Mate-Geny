@@ -175,6 +175,11 @@ class HiggsfieldAgent:
         d = self.root / "bin"
         d.mkdir(parents=True, exist_ok=True)
         for name in ("higgsfield", "higgs"):
+            if os.name == "nt":
+                # Windows users can run app-owned shims without symlink privileges.
+                destination = str(target).replace('%','%%')
+                _atomic_write(d / (name+'.cmd'), '@echo off\r\ncall "'+destination+'" %*\r\n')
+                continue
             link = d / name
             try:
                 if link.is_symlink() and os.readlink(link) == target:
@@ -191,11 +196,13 @@ class HiggsfieldAgent:
         if path is None:
             return None
         import subprocess
+        from app.services.managed_node import environment
+        from app.portability import child_command, subprocess_flags
 
         try:
-            r = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=10,
-                               env={"PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", ""),
-                                    "HIGGSFIELD_NO_UPDATE_CHECK": "1"})
+            r = subprocess.run(child_command(path, ["--version"]), capture_output=True, text=True, timeout=10,
+                               env=environment({"PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", ""),
+                                    "HIGGSFIELD_NO_UPDATE_CHECK": "1"}), **subprocess_flags())
         except (OSError, subprocess.SubprocessError):
             return None
         line = (r.stdout or r.stderr or "").strip().splitlines()
@@ -461,8 +468,9 @@ class HiggsfieldAgent:
                                            + redact(exc.text())})
             return Launch(account_id=aid, enabled=False, env=off_env, notices=notices)
         d = await asyncio.to_thread(self._write_files, sid, aid, tokens["access"])
+        from app.services.managed_node import environment
         env = {
-            "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '/usr/bin:/bin')}",
+            "PATH": f"{bin_dir}{os.pathsep}{environment().get('PATH', '/usr/bin:/bin')}",
             "HIGGSFIELD_CREDENTIALS_PATH": str(d / "credentials.json"),
             "HIGGSFIELD_CONFIG_PATH": str(d / "config.json"),
             "HIGGSFIELD_NO_UPDATE_CHECK": "1",

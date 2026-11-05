@@ -1005,7 +1005,8 @@ class AccountPool:
             cdir = self.cred_dir(provider, acc_id, primary=primary)
             # Same environment a chat on this account runs with (session_service):
             # the real HOME, only the credentials dir differs per account.
-            env = dict(os.environ)
+            from app.services.managed_node import environment
+            env = environment()
             env["HOME"] = os.path.expanduser("~")
             if provider == "codex":
                 env.pop("CODEX_HOME", None)
