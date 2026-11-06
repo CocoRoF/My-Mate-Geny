@@ -408,15 +408,32 @@ def test_an_edited_outfit_keeps_its_edits_when_the_bundle_moves_its_files(db, mo
     rig = mates.outfit(mid, oid)["avatar"]["rig"]
     assert rig["stills"]["smile"] == "/mine/smile.webp" and rig["home"] == "/b/v5/neutral.webp"
 
+    # what the new files bring for the first time joins the edits; what the user took out stays out
+    own = mates.outfit(mid, oid)["avatar"]
+    own["rig"]["clips"] = own["rig"]["clips"][1:]
+    mates.set_outfit_avatar(mid, oid, own)
+    sixth = _locked_outfit(avatar=pack("v6", [14, 12]))
+    angry = {"id": "angry", "kind": "react", "emotion": "angry", "src": "/b/v6/angry.lg.mp4", "small": "/b/v6/angry.sm.mp4"}
+    sixth["avatar"]["rig"]["clips"].append(angry)
+    sixth["avatar"]["rig"]["stills"]["angry"] = "/b/v6/angry.webp"
+    sixth["avatar"]["rig"]["emotions"] = {"angry": ["angry"]}
+    seed(mid, [sixth], [fifth])
+    rig = mates.outfit(mid, oid)["avatar"]["rig"]
+    assert [c["id"] for c in rig["clips"]] == ["talk_b", "angry"]
+    assert rig["clips"][0]["disabled"] is True and rig["clips"][1]["src"] == "/b/v6/angry.lg.mp4"
+    assert rig["stills"]["angry"] == "/b/v6/angry.webp" and rig["stills"]["smile"] == "/mine/smile.webp"
+    assert rig["emotions"]["angry"] == ["angry"]
+
 
 def test_the_real_bundle_is_named_and_locked_as_decided():
     [gray] = files.builtin_outfits("chaerin")
     assert gray["id"] == "builtin-gray-band" and gray["name"] == "크롭탑" and gray["unlock"] == {"affinity": 60}
     rig = gray["avatar"]["rig"]
-    assert len(rig["clips"]) == 15 and len(rig["stills"]) == 12
+    assert len(rig["clips"]) == 16 and len(rig["stills"]) == 13
+    assert rig["emotions"]["angry"] == ["angry"] and "angry" in rig["stills"]
     urls = [rig["home"], *rig["stills"].values(), *(c["src"] for c in rig["clips"]), *(c["small"] for c in rig["clips"])]
     for url in urls:
-        assert url.startswith("/api/mates/builtin/chaerin/outfits/gray-band-2/"), url
+        assert url.startswith("/api/mates/builtin/chaerin/outfits/crop-top/"), url
         assert files.resolve_builtin("chaerin", url.split("/chaerin/", 1)[1]).is_file()
 
 

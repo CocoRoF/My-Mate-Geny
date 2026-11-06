@@ -606,7 +606,8 @@ def _loads(raw: Any, empty: Any) -> Any:
 
 def _on_new_files(avatar: dict[str, Any], old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
     """A set the user edited, when the bundle's files moved to another folder: the edits stay (a clip switched off, her
-    triggers), on the new files. The old folder is gone with that bundle."""
+    triggers), on the new files, and what the new files bring for the first time joins them. The old folder is gone
+    with that bundle."""
     def folder(doc: dict[str, Any]) -> str:
         return str((doc.get("rig") or {}).get("home") or "").rpartition("/")[0]
 
@@ -614,8 +615,18 @@ def _on_new_files(avatar: dict[str, Any], old: dict[str, Any], new: dict[str, An
     if not was or not now or was == now:
         return avatar
     moved = json.loads(json.dumps(avatar, ensure_ascii=False).replace(f"{was}/", f"{now}/"))
-    if isinstance(moved.get("rig"), dict) and (new.get("rig") or {}).get("aspect"):
-        moved["rig"]["aspect"] = new["rig"]["aspect"]  # (the new files' crop)
+    rig, before, after = moved.get("rig"), old.get("rig") or {}, new.get("rig") or {}
+    if not isinstance(rig, dict):
+        return moved
+    if after.get("aspect"):
+        rig["aspect"] = after["aspect"]  # (the new files' crop)
+    # (only what the bundle never had: something the user took out of the old set stays out)
+    had = {c.get("id") for c in before.get("clips") or []}
+    rig["clips"] = [*(rig.get("clips") or []), *(c for c in after.get("clips") or [] if c.get("id") not in had)]
+    for field in ("stills", "emotions"):
+        fresh = {k: v for k, v in (after.get(field) or {}).items() if k not in (before.get(field) or {})}
+        if fresh:
+            rig[field] = {**(rig.get(field) or {}), **fresh}
     return moved
 
 

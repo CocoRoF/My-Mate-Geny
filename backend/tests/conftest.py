@@ -43,3 +43,11 @@ def db():
     yield d
     d.close()
     os.unlink(path)
+
+
+@pytest.fixture(autouse=True)
+def _whatever_time_it_really_is(monkeypatch):
+    """Past 21:00 a mate gets sleepy, and that would outweigh what a test is about whenever the suite happens to run then."""
+    from app.mate import state
+
+    monkeypatch.setattr(state, "_late", lambda now, tz: 0.0)

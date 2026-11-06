@@ -16,6 +16,8 @@ from app.mate import wardrobe as W
 from app.mate.prompt import base_prompt, context_block, prompt_key, settings_change_note
 from app.mate.store import DEFAULT_OUTFIT
 
+_REAL_LATE = S._late  # (conftest.py pins it for every test but the one about it)
+
 TZ = timezone.utc
 NOON = datetime(2026, 11, 6, 12, tzinfo=TZ)
 CROP_TOP = {"id": "u", "name": "크롭탑", "feel": {"shy": 0.6}, "since": S.A._iso(NOON)}
@@ -189,7 +191,8 @@ def test_being_stopped_and_poked_count():
     assert _lv(doc, w)["angry"] > 0 and S.levels(doc, w, NOON, TZ)["angry"]["why"] == {"code": "poked"}
 
 
-def test_late_at_night_she_is_sleepy_because_it_is_late():
+def test_late_at_night_she_is_sleepy_because_it_is_late(monkeypatch):
+    monkeypatch.setattr(S, "_late", _REAL_LATE)
     w, doc = S.who(), S.new()
     three = datetime(2026, 11, 6, 3, tzinfo=TZ)
     assert S.levels(doc, w, three, TZ)["sleepy"] == {"v": 0.85, "why": {"code": "late"}}
@@ -645,4 +648,4 @@ def test_on_since_before_anyone_noted_the_time_it_counts_from_the_update(db):
 def test_the_real_crop_top_is_named_and_made_shy():
     [item] = files.builtin_outfits("chaerin")
     assert item["id"] == "builtin-gray-band" and item["name"] == "크롭탑" and item["feel"] == {"shy": 0.6}
-    assert item["unlock"] == {"affinity": 60} and "crop top" in item["note"] and "underwear" not in item["note"]
+    assert item["unlock"] == {"affinity": 60} and "crop top" in item["note"] and "underwear" not in item["note"] and "no headset" in item["note"]

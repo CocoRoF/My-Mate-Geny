@@ -145,4 +145,4 @@ def test_the_real_sets_are_measured_and_line_up():
     assert usual["how"] == worn["how"] == "face" and usual["for"] == worn["for"] == "neutral.webp"
     for frame in (usual, worn):
         assert 0.2 < frame["face"][1] < 0.4  # (her face, not the chest a detector once took for it)
-    assert abs(usual["face"][2] * 970 - worn["face"][2] * 964) < 6  # (the same size in the pictures, once margins are set aside)
+    assert abs(usual["face"][2] / worn["face"][2] - 1) < 0.1  # (lining them up hardly has to scale her)

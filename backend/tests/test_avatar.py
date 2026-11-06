@@ -594,21 +594,44 @@ def _venv() -> Path | None:
 needs_venv = pytest.mark.skipif(_venv() is None, reason="no avatar processing venv (AVATAR_TEST_VENV)")
 
 
+async def test_the_cli_never_waits_on_stdin(tmp_path, monkeypatch):
+    """With no --prompt (the video background remover) the CLI reads one from stdin: an open pipe would hold it for good."""
+    cli = tmp_path / "higgsfield"
+    cli.write_text(f"#!{sys.executable}\nimport json, sys\nprint(json.dumps({{'read': sys.stdin.read()}}))\n")
+    cli.chmod(0o755)
+    monkeypatch.setattr("app.avatar.generator.find_cli", lambda: str(cli))
+    gen = Generator(object())
+
+    async def env(workdir):
+        return dict(os.environ), tmp_path / "creds"
+    gen._env = env
+    keep, (read, write) = os.dup(0), os.pipe()
+    os.dup2(read, 0)  # (what a server started from a pipe or socket hands its children)
+    try:
+        assert await gen._cli(["generate", "create", "video_background_remover"], workdir=tmp_path, timeout=10) == {"read": ""}
+    finally:
+        os.dup2(keep, 0)
+        for fd in (keep, read, write):
+            os.close(fd)
+
+
 @needs_venv
 def test_the_pipeline_finds_her_face_across_her_stills_even_when_one_picture_fools_it(tmp_path):
-    bundled = S.Path(S.__file__).parents[1] / "mate" / "builtin" / "assets" / "chaerin" / "outfits" / "gray-band-2"
+    bundled = S.Path(S.__file__).parents[1] / "mate" / "builtin" / "assets" / "chaerin" / "outfits" / "crop-top"
     rig = json.loads((bundled / "rig.json").read_text())
     rig.pop("frame", None)
     (tmp_path / "rig.json").write_text(json.dumps(rig))
     for path in bundled.glob("*.webp"):
         (tmp_path / path.name).write_bytes(path.read_bytes())
+    fools = S.Path(__file__).parent / "fixtures" / "fools-the-face-finder.webp"  # (alone: her face isn't found in it)
+    (tmp_path / "neutral.webp").write_bytes(fools.read_bytes())
     r = subprocess.run([str(_venv() / "bin" / "python"), "-I", str(S.Path(S.__file__).with_name("pipeline.py")), "frame", str(tmp_path)],
                        capture_output=True, text=True, timeout=120)
     res = json.loads(r.stdout.strip().splitlines()[-1])
     assert res["ok"], res
     cx, cy, h = res["frame"]["face"]
     assert res["frame"]["how"] == "face" and res["frame"]["for"] == "neutral.webp"
-    assert 0.48 < cx < 0.56 and 0.24 < cy < 0.33 and 0.27 < h < 0.34  # (neutral alone gets her chest: cy 0.52)
+    assert 0.31 < cx < 0.39 and 0.24 < cy < 0.33 and 0.25 < h < 0.34
     assert len(res["frame"]["outline"]) == 3  # (for comparing with a set that has only that)
     assert json.loads((tmp_path / "rig.json").read_text())["frame"] == res["frame"]
 

@@ -215,7 +215,9 @@ class Generator:
     async def _cli(self, args: list[str], *, workdir: Path, timeout: float) -> Any:
         env, creds = await self._env(workdir)
         exe = self.cli() or "higgsfield"
+        # (stdin closed: with no --prompt the CLI reads one from it, and a pipe nobody writes to holds it until the timeout)
         proc = await asyncio.create_subprocess_exec(exe, *args, cwd=str(workdir), env=env,
+                                                    stdin=asyncio.subprocess.DEVNULL,
                                                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         try:
             out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)

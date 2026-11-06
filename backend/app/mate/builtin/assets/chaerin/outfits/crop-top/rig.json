@@ -1,0 +1,177 @@
+{
+  "version": 1,
+  "aspect": [
+    1134,
+    1292
+  ],
+  "anchor": [
+    0.5,
+    1.0
+  ],
+  "home": "asset:chaerin-crop-top/neutral.webp",
+  "stills": {
+    "neutral": "asset:chaerin-crop-top/neutral.webp",
+    "smile": "asset:chaerin-crop-top/smile.webp",
+    "laugh": "asset:chaerin-crop-top/laugh.webp",
+    "shy": "asset:chaerin-crop-top/shy.webp",
+    "surprised": "asset:chaerin-crop-top/surprised.webp",
+    "sad": "asset:chaerin-crop-top/sad.webp",
+    "angry": "asset:chaerin-crop-top/angry.webp",
+    "thinking": "asset:chaerin-crop-top/thinking.webp",
+    "sleepy": "asset:chaerin-crop-top/sleepy.webp",
+    "blink": "asset:chaerin-crop-top/blink.webp",
+    "mouth_half": "asset:chaerin-crop-top/mouth_half.webp",
+    "mouth_open": "asset:chaerin-crop-top/mouth_open.webp",
+    "mouth_o": "asset:chaerin-crop-top/mouth_o.webp"
+  },
+  "clips": [
+    {
+      "id": "idle_a",
+      "kind": "idle",
+      "src": "asset:chaerin-crop-top/idle_a.lg.mp4",
+      "small": "asset:chaerin-crop-top/idle_a.sm.mp4"
+    },
+    {
+      "id": "idle_b",
+      "kind": "idle",
+      "src": "asset:chaerin-crop-top/idle_b.lg.mp4",
+      "small": "asset:chaerin-crop-top/idle_b.sm.mp4"
+    },
+    {
+      "id": "idle_c",
+      "kind": "idle",
+      "src": "asset:chaerin-crop-top/idle_c.lg.mp4",
+      "small": "asset:chaerin-crop-top/idle_c.sm.mp4"
+    },
+    {
+      "id": "talk_a",
+      "kind": "talk",
+      "src": "asset:chaerin-crop-top/talk_a.lg.mp4",
+      "small": "asset:chaerin-crop-top/talk_a.sm.mp4"
+    },
+    {
+      "id": "talk_b",
+      "kind": "talk",
+      "src": "asset:chaerin-crop-top/talk_b.lg.mp4",
+      "small": "asset:chaerin-crop-top/talk_b.sm.mp4"
+    },
+    {
+      "id": "listen",
+      "kind": "listen",
+      "src": "asset:chaerin-crop-top/listen.lg.mp4",
+      "small": "asset:chaerin-crop-top/listen.sm.mp4"
+    },
+    {
+      "id": "think",
+      "kind": "think",
+      "src": "asset:chaerin-crop-top/think.lg.mp4",
+      "small": "asset:chaerin-crop-top/think.sm.mp4"
+    },
+    {
+      "id": "laugh",
+      "kind": "react",
+      "src": "asset:chaerin-crop-top/laugh.lg.mp4",
+      "small": "asset:chaerin-crop-top/laugh.sm.mp4",
+      "emotion": "joy"
+    },
+    {
+      "id": "smile",
+      "kind": "react",
+      "src": "asset:chaerin-crop-top/smile.lg.mp4",
+      "small": "asset:chaerin-crop-top/smile.sm.mp4",
+      "emotion": "happy"
+    },
+    {
+      "id": "shy",
+      "kind": "react",
+      "src": "asset:chaerin-crop-top/shy.lg.mp4",
+      "small": "asset:chaerin-crop-top/shy.sm.mp4",
+      "emotion": "shy"
+    },
+    {
+      "id": "surprised",
+      "kind": "react",
+      "src": "asset:chaerin-crop-top/surprised.lg.mp4",
+      "small": "asset:chaerin-crop-top/surprised.sm.mp4",
+      "emotion": "surprise"
+    },
+    {
+      "id": "sad",
+      "kind": "react",
+      "src": "asset:chaerin-crop-top/sad.lg.mp4",
+      "small": "asset:chaerin-crop-top/sad.sm.mp4",
+      "emotion": "sad"
+    },
+    {
+      "id": "angry",
+      "kind": "react",
+      "src": "asset:chaerin-crop-top/angry.lg.mp4",
+      "small": "asset:chaerin-crop-top/angry.sm.mp4",
+      "emotion": "angry"
+    },
+    {
+      "id": "nod",
+      "kind": "react",
+      "src": "asset:chaerin-crop-top/nod.lg.mp4",
+      "small": "asset:chaerin-crop-top/nod.sm.mp4",
+      "emotion": "agree"
+    },
+    {
+      "id": "wave",
+      "kind": "react",
+      "src": "asset:chaerin-crop-top/wave.lg.mp4",
+      "small": "asset:chaerin-crop-top/wave.sm.mp4",
+      "emotion": "greet"
+    },
+    {
+      "id": "doze",
+      "kind": "away",
+      "src": "asset:chaerin-crop-top/doze.lg.mp4",
+      "small": "asset:chaerin-crop-top/doze.sm.mp4",
+      "loop": true
+    }
+  ],
+  "emotions": {
+    "joy": [
+      "laugh"
+    ],
+    "happy": [
+      "smile"
+    ],
+    "shy": [
+      "shy"
+    ],
+    "surprise": [
+      "surprised"
+    ],
+    "sad": [
+      "sad"
+    ],
+    "angry": [
+      "angry"
+    ],
+    "agree": [
+      "nod"
+    ],
+    "greet": [
+      "wave"
+    ]
+  },
+  "packing": "stacked-alpha",
+  "portrait": "asset:chaerin-crop-top/portrait.webp",
+  "frame": {
+    "face": [
+      0.3512,
+      0.2874,
+      0.2962
+    ],
+    "outline": [
+      0.3547,
+      0.2028,
+      0.1889
+    ],
+    "top": 0.0423,
+    "how": "face",
+    "for": "neutral.webp"
+  }
+}

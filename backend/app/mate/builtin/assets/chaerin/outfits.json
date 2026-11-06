@@ -3,14 +3,14 @@
     {
       "id": "builtin-gray-band",
       "name": "크롭탑",
-      "note": "A plain heather-gray crop top and matching bottoms with white bands. No black hoodie; her white cat-ear headset hangs around her neck.",
+      "note": "A plain heather-gray crop top and matching bottoms with white bands. No black hoodie and no headset in this outfit; she stands with her arms crossed in front of her.",
       "feel": {
         "shy": 0.6
       },
       "unlock": {
         "affinity": 60
       },
-      "rig": "outfits/gray-band-2/rig.json"
+      "rig": "outfits/crop-top/rig.json"
     }
   ]
 }
