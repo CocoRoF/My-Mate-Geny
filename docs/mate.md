@@ -1004,9 +1004,9 @@ delete / memories / relationship / global voice settings) is announced on `/ws/s
 `mates_version` in hello/pong); every window refetches `GET /api/mates`
 (coalesced). The Voice tab's unsaved volume previews in every window of the
 browser (BroadcastChannel `hrh-mate-preview`) and is dropped when the tab
-closes; so does the Conversation style tab's unsaved emotion level (avatar reactions). The relationship
-indicator (a ring + the stage next to the name) follows `mates.changed` (reason `relation`, sent only
-when the mate document's summary changed); so does the Relationship panel (also on reason `memory`).
+closes; so does the Conversation style tab's unsaved emotion level (avatar reactions). The Relationship
+panel follows `mates.changed` (reason `relation`, sent only when the mate document's summary changed, and
+reason `memory`).
 
 ## 7. Desktop app (Electron) — Mate only
 
@@ -1191,7 +1191,7 @@ default set always stays.
   URL). Han Chaerin's **그레이 밴드** uses plain
   gray fabric and white bands without brand names or logos.
 - **Unlocks**: an entry may say `"unlock": {"affinity": 60}` (그레이 밴드 does). It is in the wardrobe from the start, but until
-  her affinity (as the indicator rounds it) reaches that, its card only carries `locked: {affinity}` and the server answers
+  her affinity (rounded) reaches that, its card only carries `locked: {affinity}` and the server answers
   403 to wearing, reading, changing and deleting it, and to opening it in the studio. Once reached it stays open
   (`unlock.at`, set whenever the relationship is saved), however the affinity moves later; **Start over**
   closes it again and she goes back to her default set if she had it on. A value set by hand counts like any other, and word

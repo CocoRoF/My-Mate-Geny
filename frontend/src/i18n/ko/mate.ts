@@ -16,7 +16,6 @@ const ko: Messages<"mate"> = {
   relStageFamiliar: "익숙",
   relStageTrusted: "신뢰",
   relStageCompanion: "동반",
-  relTooltip: "나와 {name}: {stage} ({value} / 100)",
   relPaused: "멈춤",
   relMood: "기분: {mood}",
   stateHappy: "기쁨",

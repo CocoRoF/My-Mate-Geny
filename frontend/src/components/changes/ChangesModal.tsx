@@ -104,7 +104,7 @@ export default function ChangesModal({
   const total = useMemo(() => ({ add: changes.added, del: changes.removed }), [changes]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[95] flex flex-col bg-bg/95 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-[95] flex flex-col bg-bg/95 pt-safe pb-safe backdrop-blur-sm animate-fade-in">
       <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
         <Icon name="pencil" size={16} className="text-accent" />
         <span className="text-sm font-semibold">

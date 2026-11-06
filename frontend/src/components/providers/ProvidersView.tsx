@@ -302,7 +302,7 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
                 <span className="text-sm font-medium">{a.label}</span>
                 {a.primary && <span className="pill bg-accent-soft text-accent">{t("providers.default")}</span>}
                 {!a.usable && <span className="pill bg-danger/10 text-danger">{t("providers.noCredentials")}</span>}
-                {a.usable && a.eligible && <span className="pill bg-success/10 text-success">{t("providers.eligible")}</span>}
+                {a.usable && a.eligible && a.status !== "ready" && <span className="pill bg-success/10 text-success">{t("providers.eligible")}</span>}
                 {a.usable && !a.eligible && (
                   <span className="pill bg-surface-3 text-content-faint" data-testid="ineligible-reason">
                     {INELIGIBLE_LABEL[a.ineligible_reason || ""] ? t(INELIGIBLE_LABEL[a.ineligible_reason || ""]) : a.ineligible_reason}
@@ -338,7 +338,7 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
                   <select
                     value={a.primary_mode || "normal"}
                     onChange={(e) => setPool(provider, { primary_mode: e.target.value as PrimaryMode }).then(load)}
-                    className="field py-0.5 text-[11px] w-64"
+                    className="field w-64 max-w-full py-0.5 text-[11px]"
                   >
                     <option value="normal">{t("providers.primaryNormal")}</option>
                     <option value="fallback">{t("providers.primaryFallback")}</option>
@@ -354,7 +354,7 @@ function ProviderPanel({ provider, label }: { provider: string; label: string })
                 {a.usable && (
                   <button
                     onClick={() => setUsageFor(a)}
-                    className="btn-ghost py-1"
+                    className="btn-ghost py-1 text-[12px]"
                     title={t("providers.accountUsage")}
                   >
                     <Icon name="cpu" size={13} /> {t("providers.usage")}

@@ -416,8 +416,6 @@ const ko: Messages<"mateSettings"> = {
   relSensitivityHint: "대화와 조용한 날이 얼마나 크게 움직이는지 정해요.",
   relSensGentle: "완만하게",
   relSensStrong: "크게",
-  relIndicator: "이름 옆에 표시 보이기",
-  relIndicatorHint: "단계를 나타내는 작은 고리예요.",
   relAvatarMood: "쉬는 동안 아바타가 감정을 드러내기",
   relAvatarMoodHint: "{name:이} 가만히 있을 때 지금 감정을 드러내요(미소, 부끄러운 표정, 졸린 눈…).",
   relManual: "직접 정하기",

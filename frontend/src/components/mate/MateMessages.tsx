@@ -20,7 +20,7 @@ import { useHistoryScroll } from "../../hooks/useHistoryScroll";
 import HistoryEdge from "../chat/HistoryEdge";
 import { tr, useT, type MsgKey } from "../../i18n";
 import type { StateEmotion } from "../../api/mates";
-import { STATE_LABEL } from "./StateBadge";
+import { STATE_LABEL } from "./StateCard";
 import { useMateStore } from "../../stores/mateStore";
 import { changeIdOf, describeChanges, flatArgs, resolveChange, useStyleChanges } from "../../mate/styleChanges";
 

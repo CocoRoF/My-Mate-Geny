@@ -8,6 +8,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useBackHandler } from "../../lib/back";
+import { usePhone } from "../../lib/device";
 
 type Pos = {
   left?: number;
@@ -20,7 +21,8 @@ type Pos = {
 /**
  * A small info popover: opens on hover with a mouse, on tap with touch.
  * Clicking (desktop) pins it open until the next click / outside click / Esc.
- * Rendered in a portal, above or below the trigger — wherever there's room.
+ * Rendered in a portal, above or below the trigger — wherever there's room. On a phone, a sheet from the bottom: the
+ * panels are wider than what is left beside a trigger in the middle of a bar.
  */
 export default function HoverPopover({
   trigger,
@@ -47,6 +49,7 @@ export default function HoverPopover({
   const btn = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
+  const sheet = usePhone();
 
   const close = () => {
     clearTimeout(timer.current);
@@ -86,13 +89,18 @@ export default function HoverPopover({
     setPos(p);
   };
   useLayoutEffect(() => {
-    if (open) place();
+    if (open && !sheet) place();
     else setPos(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, align]);
+  }, [open, align, sheet]);
+  // (its width is only known now: hanging from a trigger near the left edge, it would run off the screen)
+  useLayoutEffect(() => {
+    if (!panel.current || pos?.right === undefined) return;
+    if (panel.current.getBoundingClientRect().left < 8) setPos({ ...pos, right: undefined, left: 8 });
+  }, [pos]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || sheet) return; // (a sheet: its own backdrop closes it, and a tap there must not reach what is below)
     const outside = (e: MouseEvent | TouchEvent) => {
       const t = e.target as Node;
       if (panel.current?.contains(t) || btn.current?.contains(t)) return;
@@ -126,7 +134,15 @@ export default function HoverPopover({
       window.removeEventListener("scroll", moved, true);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, sheet]);
+
+  useEffect(() => {
+    if (!open || !sheet) return;
+    const key = (e: KeyboardEvent) => e.key === "Escape" && close();
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, sheet]);
 
   const blur = (e: React.FocusEvent<HTMLElement>) => {
     const next = e.relatedTarget as Node | null;
@@ -142,10 +158,11 @@ export default function HoverPopover({
         aria-label={label}
         aria-expanded={open}
         aria-haspopup="dialog"
+        data-hover-popover
         className={triggerClassName}
         style={triggerStyle}
-        onFocus={show}
-        onBlur={blur}
+        onFocus={sheet ? undefined : show}
+        onBlur={sheet ? undefined : blur}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown") {
             e.preventDefault();
@@ -156,8 +173,8 @@ export default function HoverPopover({
             );
           }
         }}
-        onPointerEnter={(e) => e.pointerType === "mouse" && show()}
-        onPointerLeave={(e) => e.pointerType === "mouse" && hideSoon()}
+        onPointerEnter={(e) => e.pointerType === "mouse" && !sheet && show()}
+        onPointerLeave={(e) => e.pointerType === "mouse" && !sheet && hideSoon()}
         onClick={() => {
           if (open && pinned) return close();
           show();
@@ -167,6 +184,28 @@ export default function HoverPopover({
         {trigger}
       </button>
       {open &&
+        sheet &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[70] flex items-end bg-scrim/45 animate-fade-in"
+            onClick={(e) => e.target === e.currentTarget && close()}
+            data-testid="popover-sheet"
+          >
+            <div
+              ref={panel}
+              role="dialog"
+              aria-label={label}
+              className="max-h-[80vh] w-full overflow-y-auto rounded-t-2xl border-t border-border bg-surface-2 pb-safe pt-1.5 shadow-float"
+            >
+              <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-border-strong" />
+              {/* (the panels are sized for the popover) */}
+              <div className="[&>*]:!w-full [&>*]:!max-w-none">{typeof children === "function" ? children() : children}</div>
+            </div>
+          </div>,
+          document.body,
+        )}
+      {open &&
+        !sheet &&
         pos &&
         createPortal(
           <div

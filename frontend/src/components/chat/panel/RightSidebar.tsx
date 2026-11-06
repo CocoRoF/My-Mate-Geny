@@ -19,7 +19,7 @@ export default function RightSidebar({ session }: { session: Session }) {
   return <>
     <div hidden={!kind} className={`${kind ? "" : "hidden"} fixed inset-0 z-30 bg-scrim/45 xl:hidden`} onClick={() => setPanel(null)} data-testid="right-sidebar-backdrop" />
     <aside hidden={!kind} data-testid="right-sidebar" data-panel={kind ?? "closed"} style={{ width }}
-      className={`${kind ? "flex" : "hidden"} fixed inset-y-0 top-[var(--window-chrome-height,0px)] right-0 z-40 max-w-[92vw] shrink-0 flex-col border-l border-border bg-surface pt-safe shadow-float xl:relative xl:top-auto xl:z-auto xl:pt-0 xl:shadow-none`}>
+      className={`${kind ? "flex" : "hidden"} fixed inset-y-0 top-[var(--window-chrome-height,0px)] right-0 z-40 max-w-[92vw] shrink-0 flex-col border-l border-border bg-surface pt-safe pb-safe shadow-float xl:relative xl:top-auto xl:z-auto xl:pt-0 xl:shadow-none`}>
       <div role="separator" aria-orientation="vertical" aria-label={t("files.dragResize")} aria-valuemin={220} aria-valuemax={640} aria-valuenow={width} tabIndex={0}
         className="absolute inset-y-0 -left-1 z-10 hidden w-2 cursor-col-resize hover:bg-accent/30 focus:bg-accent/30 xl:block"
         onPointerDown={e => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); drag.current = { x: e.clientX, width }; document.body.style.cursor = "col-resize"; }}

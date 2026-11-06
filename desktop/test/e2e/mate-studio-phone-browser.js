@@ -144,25 +144,13 @@ const NAV_BAR = 48;
       const over = await page.$eval('[data-testid="mate-settings-open"]', (el) => el.getBoundingClientRect().right - innerWidth);
       assert(over <= 0, `the header fits at ${width}: ${over}`);
     }
-    step("her ring opens the panel the heart would; the heart comes back when the ring is hidden");
-    assert.equal(await page.locator('[data-testid="mate-relation-open"]').count(), 0);
-    await page.click('[data-testid="mate-relation-badge"]');
-    await page.waitForSelector('[data-testid="mate-relation-panel"]');
-    await page.click('[data-testid="mate-relation-panel-close"]');
-    const hide = (on) => ctx.request.patch(`${SERVER}/api/mates/${mate.id}/relation`, { data: { show_indicator: on } });
-    const hidden = await hide(false);
-    assert(hidden.ok(), `hide the ring: ${hidden.status()}`);
-    await page.reload();
-    await page.waitForSelector('[data-testid="mate-relation-open"]');
+    step("the heart opens her relationship");
     await page.click('[data-testid="mate-relation-open"]');
     await page.waitForSelector('[data-testid="mate-relation-panel"]');
     await page.click('[data-testid="mate-relation-panel-close"]');
-    assert((await hide(true)).ok());
-    await page.reload();
-    await page.waitForSelector('[data-testid="mate-relation-badge"]');
 
     step("a value set by hand opens the locked outfit, with word of it on the screen");
-    await page.click('[data-testid="mate-relation-badge"]');
+    await page.click('[data-testid="mate-relation-open"]');
     await page.click('[data-testid="mate-relation-panel-adjust"]');
     const set = page.locator('[data-testid="mate-relation-set"]');
     await set.waitFor();

@@ -225,8 +225,8 @@ function ToolRow({
 
       {tool.channels.length > 1 && (
         <div className="mt-2 flex items-center gap-2 text-[11px] text-content-faint">
-          <span>{t("cliTools.channel")}</span>
-          <select value={tool.channel} onChange={(e) => save({ channel: e.target.value })} className="field py-0.5 text-[11px] w-auto" data-testid={`cli-channel-${tool.id}`}>
+          <span className="shrink-0">{t("cliTools.channel")}</span>
+          <select value={tool.channel} onChange={(e) => save({ channel: e.target.value })} className="field min-w-0 w-auto max-w-full py-0.5 text-[11px]" data-testid={`cli-channel-${tool.id}`}>
             {tool.channels.map((c) => (
               <option key={c} value={c}>
                 {c === "stable" ? t("cliTools.channelStable") : c === "latest" ? t("cliTools.channelLatest") : c}

@@ -16,7 +16,6 @@ export default {
   relStageFamiliar: "Familiar",
   relStageTrusted: "Trusted",
   relStageCompanion: "Companion",
-  relTooltip: "You and {name}: {stage} ({value} / 100)",
   relPaused: "paused",
   relMood: "Mood: {mood}",
   stateHappy: "happy",

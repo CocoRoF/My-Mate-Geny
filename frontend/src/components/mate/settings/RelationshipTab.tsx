@@ -9,8 +9,8 @@ import { getRelation, patchRelation, RELATION_STAGES, resetRelation, type Mate, 
 import { useMateStore } from "../../../stores/mateStore";
 import { relTime } from "../../../i18n/format";
 import { useT, type TFunction } from "../../../i18n";
-import { RelationRing, STAGE_LABEL } from "../RelationBadge";
-import { stateLine } from "../StateBadge";
+import { RelationRing, STAGE_LABEL } from "../RelationRing";
+import { stateLine } from "../StateCard";
 import { ErrorLine, Field, ProgressBar, Section, Segmented, Toggle } from "./ui";
 
 const SENS: { id: string; v: number; label: "mateSettings.relSensGentle" | "mateSettings.styleNormal" | "mateSettings.relSensStrong" }[] = [
@@ -149,7 +149,6 @@ export default function RelationshipTab({ mate }: { mate: Mate }) {
             testId="mate-relation-sensitivity"
           />
         </Field>
-        <Toggle on={v.show_indicator} onChange={(on) => void patch({ show_indicator: on })} disabled={off} label={t("mateSettings.relIndicator")} hint={t("mateSettings.relIndicatorHint")} testId="mate-relation-indicator" />
         <Toggle on={v.avatar_mood} onChange={(on) => void patch({ avatar_mood: on })} label={t("mateSettings.relAvatarMood")} hint={t("mateSettings.relAvatarMoodHint", { name: mate.name })} testId="mate-relation-avatar-mood" />
         <Field label={t("mateSettings.relManual")} hint={t("mateSettings.relManualHint")} as="div">
           <div className="flex items-center gap-2">

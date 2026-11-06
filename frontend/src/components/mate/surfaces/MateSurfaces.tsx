@@ -28,8 +28,6 @@ import { DropOverlay, useFileDrop } from "../../composer/useFileDrop";
 import MateComposer from "../MateComposer";
 import MateMessages from "../MateMessages";
 import { MateThumb, moodLabel, useFadingCaption } from "../MateStage";
-import RelationBadge from "../RelationBadge";
-import StateBadge from "../StateBadge";
 import { useT } from "../../../i18n";
 
 const RelationPanel = lazy(() => import("../RelationPanel"));
@@ -427,7 +425,7 @@ function ChatWindow() {
   const desk = useDesktopMate();
   const conv = useMateConversation(mate);
   const { dragging, dropProps } = useFileDrop(conv.sessionId);
-  // the Relationship panel, over the conversation (♥ in the title bar, or the indicator); Esc closes it
+  // the Relationship panel, over the conversation (♥ in the title bar); Esc closes it
   const [relOpen, setRelOpen] = useState(false);
   useEffect(() => {
     if (!relOpen) return;
@@ -439,6 +437,21 @@ function ChatWindow() {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [relOpen]);
+  const [more, setMore] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!more) return;
+    const away = (e: PointerEvent) => {
+      if (!moreRef.current?.contains(e.target as Node)) setMore(false);
+    };
+    const key = (e: KeyboardEvent) => e.key === "Escape" && setMore(false);
+    window.addEventListener("pointerdown", away);
+    window.addEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("pointerdown", away);
+      window.removeEventListener("keydown", key);
+    };
+  }, [more]);
   const loadConfig = useConfigStore((s) => s.load);
   useEffect(() => {
     loadConfig().catch(() => {});
@@ -457,7 +470,7 @@ function ChatWindow() {
             <span className="h-6 w-6 animate-spin rounded-full border-2 border-accent/25 border-t-accent" />
           )}
         </div>
-        {win && <WindowControls w={win} height={51} className="absolute right-0 top-0" />}
+        {win && <WindowControls w={win} height={51} small className="absolute right-0 top-0" />}
       </div>
     );
   }
@@ -465,24 +478,21 @@ function ChatWindow() {
   const online = conv.connection === "open";
   const status = moodLabel(t, conv.mood) || (online ? t("mate.statusHere") : t("mate.statusConnecting"));
   const iconBtn = "grid h-8 w-8 place-items-center rounded-lg text-content-dim transition hover:bg-surface-3 hover:text-content";
+  const menuItem = "flex w-full items-center gap-2 px-3 py-2 text-left text-[12.5px] text-content-dim transition hover:bg-surface-3 hover:text-content";
   return (
     <div className="relative flex h-full flex-col bg-bg" data-testid="mate-chat-window" data-chrome={win ? win.chrome : "none"} {...dropProps}>
       {dragging && <DropOverlay compact hint={t("mate.dropHintShort", { name: mate.name })} />}
       <header
-        className={`flex h-[52px] shrink-0 select-none items-center gap-2.5 border-b border-border/60 bg-surface/90 backdrop-blur-xl ${
-          mac ? "pl-[78px]" : "pl-3"
-        } ${win && !mac ? "pr-0" : "pr-2"}`}
+        className={`relative z-30 flex h-[52px] shrink-0 select-none items-center gap-2 border-b border-border/60 bg-surface/90 backdrop-blur-xl ${
+          mac ? "pl-[78px]" : "pl-2.5"
+        } ${win && !mac ? "pr-0" : "pr-1.5"}`}
         style={win ? DRAG : undefined}
         data-testid="mate-chat-header"
       >
-        <div className="relative h-10 w-9 shrink-0 overflow-hidden rounded-xl bg-surface-2 ring-1 ring-border/80">
-          <LiveMateAvatar key={mate.id} mate={mate} size="sm" mood={conv.mood} videoMood={conv.videoMood} react={conv.react} interactive={false} />
-        </div>
+        <MateThumb mate={mate} className="h-9 w-9" />
         <div className="min-w-0 flex-1 leading-tight">
-          <div className="flex min-w-0 items-center gap-1">
-            <span className="truncate text-[13.5px] font-semibold text-content">{mate.name}</span>
-            <RelationBadge mate={mate} compact onClick={() => setRelOpen((v) => !v)} active={relOpen} />
-            <StateBadge mate={mate} compact onClick={() => setRelOpen((v) => !v)} />
+          <div className="truncate text-[13.5px] font-semibold text-content" data-testid="mate-chat-name">
+            {mate.name}
           </div>
           <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-content-faint" data-testid="mate-chat-status">
             <span
@@ -491,55 +501,79 @@ function ChatWindow() {
             <span className="truncate">{status}</span>
           </div>
         </div>
-        <button
-          className={`${iconBtn} shrink-0 ${relOpen ? "bg-surface-3 !text-content" : ""}`}
-          style={win ? NO_DRAG : undefined}
-          onClick={() => setRelOpen((v) => !v)}
-          title={t("mate.relPanelOpenTitle", { name: mate.name })}
-          aria-label={t("mate.relPanelOpen")}
-          aria-pressed={relOpen}
-          data-testid="mate-chat-relation"
-        >
-          <Icon name="heart" size={14} />
-        </button>
-        {desktopMate() && (
-          <div className="-ml-2 flex shrink-0 items-center gap-0.5" style={win ? NO_DRAG : undefined}>
-            <button
-              className={`${iconBtn} ${onTop ? "bg-accent-soft !text-accent hover:!bg-accent/20" : ""}`}
-              onClick={() => desktopMate()!.setChatOnTop(!onTop)}
-              title={onTop ? t("mate.unpinTop") : t("mate.pinTop")}
-              aria-pressed={onTop}
-              data-testid="mate-chat-pin"
-            >
-              <Icon name="pin" size={14} />
-            </button>
-            {/* New mate: the console's Mate Create studio (a fresh draft) */}
-            <button
-              className={iconBtn}
-              onClick={() => void desktopMate()!.openConsole(`${window.location.origin}/?view=mate&create=new`)}
-              title={t("studio.newInConsole")}
-              aria-label={t("mate.newMate")}
-              data-testid="mate-chat-new"
-            >
-              <Icon name="plus" size={14} />
-            </button>
-            <button className={iconBtn} onClick={() => desktopMate()!.openConsole()} title={t("mate.openConsole")} data-testid="mate-chat-console">
-              <Icon name="monitor" size={14} />
-            </button>
-            {/* (with our own title bar the window buttons below close it; on macOS the traffic lights) */}
-            {!win && (
-              <button className={iconBtn} onClick={() => desktopMate()!.closeChat()} title={t("common.close")} aria-label={t("common.close")}>
-                <Icon name="x" size={15} />
+        <div className="flex shrink-0 items-center gap-0.5" style={win ? NO_DRAG : undefined}>
+          <button
+            className={`${iconBtn} ${relOpen ? "bg-surface-3 !text-content" : ""}`}
+            onClick={() => setRelOpen((v) => !v)}
+            title={t("mate.relPanelOpenTitle", { name: mate.name })}
+            aria-label={t("mate.relPanelOpen")}
+            aria-pressed={relOpen}
+            data-testid="mate-chat-relation"
+          >
+            <Icon name="heart" size={14} />
+          </button>
+          {desktopMate() && (
+            <>
+              <button
+                className={`${iconBtn} ${onTop ? "bg-accent-soft !text-accent hover:!bg-accent/20" : ""}`}
+                onClick={() => desktopMate()!.setChatOnTop(!onTop)}
+                title={onTop ? t("mate.unpinTop") : t("mate.pinTop")}
+                aria-pressed={onTop}
+                data-testid="mate-chat-pin"
+              >
+                <Icon name="pin" size={14} />
               </button>
-            )}
-          </div>
-        )}
-        {win && !mac && (
-          <>
-            <span className="mx-1 h-5 w-px shrink-0 bg-border" />
-            <WindowControls w={win} height={51} />
-          </>
-        )}
+              {/* (what isn't about this conversation: in one menu, the header is the size of a small window) */}
+              <div className="relative" ref={moreRef}>
+                <button
+                  className={`${iconBtn} ${more ? "bg-surface-3 !text-content" : ""}`}
+                  onClick={() => setMore((v) => !v)}
+                  title={t("mate.moreActions")}
+                  aria-label={t("mate.moreActions")}
+                  aria-expanded={more}
+                  data-testid="mate-chat-more"
+                >
+                  <Icon name="more" size={15} />
+                </button>
+                {more && (
+                  <div className="absolute right-0 top-full z-40 mt-1.5 w-max min-w-[11rem] overflow-hidden rounded-xl border border-border bg-surface-2 py-1 shadow-float animate-fade-in" role="menu">
+                    {/* New mate: the console's Mate Create studio (a fresh draft) */}
+                    <button
+                      className={menuItem}
+                      role="menuitem"
+                      onClick={() => {
+                        setMore(false);
+                        void desktopMate()!.openConsole(`${window.location.origin}/?view=mate&create=new`);
+                      }}
+                      title={t("studio.newInConsole")}
+                      data-testid="mate-chat-new"
+                    >
+                      <Icon name="plus" size={14} /> {t("mate.newMate")}
+                    </button>
+                    <button
+                      className={menuItem}
+                      role="menuitem"
+                      onClick={() => {
+                        setMore(false);
+                        void desktopMate()!.openConsole();
+                      }}
+                      data-testid="mate-chat-console"
+                    >
+                      <Icon name="monitor" size={14} /> {t("mate.openConsole")}
+                    </button>
+                  </div>
+                )}
+              </div>
+              {/* (with our own title bar the window buttons below close it; on macOS the traffic lights) */}
+              {!win && (
+                <button className={iconBtn} onClick={() => desktopMate()!.closeChat()} title={t("common.close")} aria-label={t("common.close")}>
+                  <Icon name="x" size={15} />
+                </button>
+              )}
+            </>
+          )}
+        </div>
+        {win && !mac && <WindowControls w={win} height={51} small />}
       </header>
       {conv.voiceError && <div className="px-3 pt-1 text-[11.5px] text-danger">{t("mate.voiceError", { error: conv.voiceError })}</div>}
       <div className="relative flex min-h-0 flex-1 flex-col">

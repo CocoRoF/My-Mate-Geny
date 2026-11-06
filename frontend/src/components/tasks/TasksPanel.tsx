@@ -177,7 +177,7 @@ export default function TasksPanel({ sid, onClose }: { sid: string; onClose: () 
   return createPortal(
     <div className="fixed inset-0 top-[var(--window-chrome-height,0px)] z-[80] flex justify-end bg-scrim/40 backdrop-blur-[2px]" onClick={onClose}>
       <div
-        className="flex h-full w-full max-w-[520px] flex-col border-l border-border bg-surface shadow-float animate-fade-in"
+        className="flex h-full w-full max-w-[520px] flex-col border-l border-border bg-surface pt-safe pb-safe shadow-float animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">

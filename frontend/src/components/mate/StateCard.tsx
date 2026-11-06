@@ -1,8 +1,7 @@
 /**
- * How she feels right now (docs/mate-memory-affinity.md §5.4): next to her name a small face and the one state her feelings make
- * together, the tooltip says why; in the Relationship tab and panel every emotion with its own value and reason, how good and
- * how lively it all feels, and what moved them lately. Every mate has this, with the relationship on or off; the user can only
- * hide the indicator (Mate settings → Relationship).
+ * How she feels right now (docs/mate-memory-affinity.md §5.4), in the Relationship tab and panel: the one state her feelings
+ * make together and why, every emotion with its own value and reason, how good and how lively it all feels, and what moved
+ * them lately. Every mate has this, with the relationship on or off.
  */
 import { useEffect, useState } from "react";
 import { getMateState, type Mate, type MateState, type StateEmotion, type StateLabel, type StateLogEntry, type StateView, type StateWhy } from "../../api/mates";
@@ -39,28 +38,6 @@ export function stateLine(t: TFunction, mate: Mate): string {
   if (!s) return "";
   const why = stateWhy(t, s.top[0]?.why);
   return t("mate.relMood", { mood: stateName(t, s) }) + (why ? ` (${why})` : "");
-}
-
-export default function StateBadge({ mate, compact = false, onClick }: { mate: Mate; compact?: boolean; onClick?: () => void }) {
-  const t = useT();
-  const s = mate.state;
-  if (!s || mate.relation?.show_indicator === false) return null;
-  const tip = stateLine(t, mate);
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] text-content-dim transition hover:bg-surface-3 hover:text-content"
-      title={tip}
-      aria-label={tip}
-      data-testid="mate-state-badge"
-      data-state={s.label}
-      style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-    >
-      <span aria-hidden>{STATE_EMOJI[s.label]}</span>
-      {!compact && <span>{stateName(t, s)}</span>}
-    </button>
-  );
 }
 
 function LogLine({ e }: { e: StateLogEntry }) {

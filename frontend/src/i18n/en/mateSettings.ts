@@ -415,8 +415,6 @@ export default {
   relSensitivityHint: "How strongly talks and quiet days move it.",
   relSensGentle: "Gentle",
   relSensStrong: "Strong",
-  relIndicator: "Show the indicator next to her name",
-  relIndicatorHint: "A small ring with the stage.",
   relAvatarMood: "Let the avatar show how she feels while idle",
   relAvatarMoodHint: "While {name} is idle she shows what she feels right now (a smile, a shy look, sleepy eyes…).",
   relManual: "Set by hand",

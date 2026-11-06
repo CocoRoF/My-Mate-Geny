@@ -7,7 +7,7 @@
 // Settings tabs work and persist; a setting changes what the engine receives (system prompt + the per-turn
 // <context> block, read back from the fake CLI's log); memories with kinds / importance / dates, edit, search,
 // recall test; the mate's own memory tools through the real MCP bridge (the fake CLI runs `tool:<name> {…}`);
-// the relationship indicator and tab; changes reaching a second window live. Screenshots: en + ko, desktop + phone.
+// the relationship tab; changes reaching a second window live. Screenshots: en + ko, desktop + phone.
 "use strict";
 const assert = require("assert/strict");
 const fs = require("fs");
@@ -217,9 +217,7 @@ async function main() {
     const t2 = turns().at(-1).text;
     console.log(`  next context: ${JSON.stringify(t2.split("</context>")[0])}`);
 
-    step("Relationship: the indicator, the tab, set by hand → the second window's indicator follows");
-    const badge = a.locator('[data-testid="mate-relation-badge"]').first();
-    await badge.waitFor();
+    step("Relationship: the tab, set by hand → the server has it and the second window's mate follows");
     await settingsTab(a, "relation");
     await a.waitForSelector('[data-testid="mate-relation-status"]');
     const status = await a.textContent('[data-testid="mate-relation-status"]');
@@ -229,20 +227,18 @@ async function main() {
       el.dispatchEvent(new Event("input", { bubbles: true }));
     }, "62");
     await a.click('[data-testid="mate-relation-set"]');
-    await until("value set", async () => (await a.getAttribute('[data-testid="mate-relation-badge"]', "data-value")) === "62");
+    const affinityIn = (page) => page.evaluate(async () => {
+      const mates = await (await fetch("/api/mates")).json();
+      return mates.find((m) => m.builtin === "chaerin")?.relation?.affinity;
+    });
+    await until("value set", async () => (await affinityIn(a)) === 62);
     await b.bringToFront();
-    await until("second window badge follows", async () => (await b.getAttribute('[data-testid="mate-relation-badge"]', "data-value")) === "62", 15000);
+    await until("second window follows", async () => (await affinityIn(b)) === 62, 15000);
     await a.bringToFront();
     await a.locator('[data-testid="mate-relation-log"] summary').click();
     assert.match(await a.textContent('[data-testid="mate-relation-log"]'), /Set by hand/);
     await shot(a, "en-desktop-relationship");
-    await a.click('[data-testid="mate-relation-indicator"]');
-    await b.bringToFront();
-    await until("indicator hidden in the second window", async () => (await b.locator('[data-testid="mate-relation-badge"]').count()) === 0, 15000);
-    await a.bringToFront();
-    await a.click('[data-testid="mate-relation-indicator"]');
     await a.click('[data-testid="mate-settings-close"]');
-    await until("indicator back", async () => (await a.locator('[data-testid="mate-relation-badge"]').count()) > 0);
     await shot(a, "en-desktop-header");
     await en.close();
 

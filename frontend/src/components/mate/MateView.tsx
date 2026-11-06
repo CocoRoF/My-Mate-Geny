@@ -22,8 +22,6 @@ import { DropOverlay, useFileDrop } from "../composer/useFileDrop";
 import MateComposer, { ReadAloudToggle } from "./MateComposer";
 import MateMessages from "./MateMessages";
 import MateStage, { BuiltinBadge, MateThumb, moodLabel } from "./MateStage";
-import RelationBadge from "./RelationBadge";
-import StateBadge from "./StateBadge";
 import { takeMatePanelLink } from "../../lib/nav";
 import { useT } from "../../i18n";
 import { useStudio } from "../../stores/studioStore";
@@ -330,8 +328,6 @@ export default function MateView() {
             </>
           )}
         </div>
-        <RelationBadge mate={mate} compact={phone} onClick={toggleRelation} active={relationOpen} />
-        <StateBadge mate={mate} compact={phone} onClick={toggleRelation} />
         {phone && stageAway && moodLabel(t, conv.mood) && (
           <span className="min-w-0 truncate text-[11.5px] text-content-faint" data-testid="mate-header-mood">
             {moodLabel(t, conv.mood)}
@@ -356,19 +352,16 @@ export default function MateView() {
               </button>
             </>
           )}
-          {/* (phones: her ring next to the name opens the same panel, and her name needs the room) */}
-          {!(phone && mate.relation?.enabled && mate.relation.show_indicator) && (
-            <button
-              onClick={toggleRelation}
-              className={`btn-ghost !px-2.5 ${relationOpen ? "!bg-surface-3 !text-content" : ""}`}
-              title={t("mate.relPanelOpenTitle", { name: mate.name })}
-              aria-label={t("mate.relPanelOpen")}
-              aria-pressed={relationOpen}
-              data-testid="mate-relation-open"
-            >
-              <Icon name="heart" size={16} />
-            </button>
-          )}
+          <button
+            onClick={toggleRelation}
+            className={`btn-ghost !px-2.5 ${relationOpen ? "!bg-surface-3 !text-content" : ""}`}
+            title={t("mate.relPanelOpenTitle", { name: mate.name })}
+            aria-label={t("mate.relPanelOpen")}
+            aria-pressed={relationOpen}
+            data-testid="mate-relation-open"
+          >
+            <Icon name="heart" size={16} />
+          </button>
           {!phone && (
             <button
               onClick={toggleGlobal}

@@ -388,8 +388,8 @@ IANA name, or `local:<abbr><±hhmm>` for the server's). Whenever that differs fr
 or a document from before `tz` — `service.relation_doc` counts it again from the history (`replay`,
 the same rules as real time). What the user did by hand is kept: `marks` (a value set by hand, a
 fresh start — read from the log for older documents) are replayed when they happened; the switches
-(on/off, paused, sensitivity, indicator) are kept. `PUT /api/mates/settings` with a new timezone
-recounts every mate at once and announces it (`mates.changed`), so indicators follow without a
+(on/off, paused, sensitivity) are kept. `PUT /api/mates/settings` with a new timezone
+recounts every mate at once and announces it (`mates.changed`), so what shows it follows without a
 reload. Quiet days counted in a stand-in zone therefore never stay.
 
 ### 5.2 Stages
@@ -522,26 +522,24 @@ moves. Router shapes and push throttling.
 
 ---
 
-## 6. Stage D — relationship UI, indicator, avatar mood
+## 6. Stage D — relationship UI, avatar mood
 
 **Relationship tab** (`RelationshipTab.tsx`, 관계):
 
 ```
-[✓] Relationship               (off: no tracking, no prompt section, no indicator; she still has feelings)
+[✓] Relationship               (off: no tracking, no prompt section; she still has feelings)
   ◔ Familiar · 42          day 12 together · 3 days in a row · 140 talks · 18 memories
   Next: Trusted — 4 more days, 12 more talks          ▓▓▓▓▓▓░░░░
   Mood: shy (she has “크롭탑” on)                         (refreshes with the mate)
   [ ] Pause (away mode) — nothing changes while you're away
   Sensitivity  [Gentle 0.5× | Normal | Strong 1.5×]
-  [✓] Show the indicator next to the name   [✓] Let the avatar show how she feels while idle
+  [✓] Let the avatar show how she feels while idle
   Set manually: [——●———] 42 [Set]     Reset: [To zero] [Recalculate from history]  (confirm)
   ▸ Why it changed (log: "+6 talked today", "−4 quiet for 4 days", "manual"…)   ▸ Milestones
 ```
 
-- **Indicator** (`RelationBadge`): a small ring (fill = affinity, colour = stage) plus the stage
-  word, next to the name in `MateStage` and the mate chat window header. Its tooltip gives the
-  stage and value; `StateBadge` beside it, a face and the one state (just the face on a phone), and why in its tooltip. Hidden when
-  `show_indicator` is false. No numbers on the overlay. `StateCard`, in the Relationship panel's first tab: the state, why, how good and
+- **One way in:** nothing about the relationship or her mood sits beside her name; ♥ in the header opens it (Mate view and the
+  desktop Mate chat window, on a phone too). `show_indicator` is still stored but no longer shows anything. No numbers on the overlay. `StateCard`, in the Relationship panel's first tab: the state, why, how good and
   how lively, every emotion with its value and reason, and what moved them lately.
 - **Her face comes from how she feels** (on unless switched off; `mate/stateLook.ts`): the look for `state.label` (happy → smile, excited →
   joy, shy → shy, angry → angry, sad / lonely / worried → sad, sleepy → sleepy) plays through the same `react` as a reply's tag while she
@@ -555,9 +553,8 @@ moves. Router shapes and push throttling.
 
 ### 6.1 Relationship panel (memora's relationship page, as a side panel)
 
-Opened from the Mate view's header (♥ next to reset / Global settings / Mate settings, or a click on the
-indicator; on phones the indicator, ♥ only while it is hidden) and from the desktop Mate chat window's
-title bar (♥ or the indicator; the panel covers its conversation). Same slot as the settings panels: one
+Opened from the Mate view's header (♥ next to reset / Global settings / Mate settings) and from the desktop
+Mate chat window's title bar (♥; the panel covers its conversation). Same slot as the settings panels: one
 at a time, Esc closes, full height on phones. View-first — adjusting stays in Mate settings → Relationship
 ("Adjust in settings"; from the chat window the console opens at `/?view=mate&mate=<id>&panel=settings-relation`).
 

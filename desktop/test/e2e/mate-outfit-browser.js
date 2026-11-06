@@ -327,7 +327,6 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
       await change(GRAY);
       await chipSays("“크롭탑” 의상으로 갈아입었어요");
       await until("she is shy in it", async () => (await felt("shy"))?.why?.code === "outfit");
-      await until("the badge says what stands out", async () => (await here.locator('[data-testid="mate-state-badge"]').getAttribute("data-state")) === (await stateOf()).label);
       // (a shy clip where video plays; here, without WebGL, the shy still as the face she rests on)
       if ((await stateOf()).label === "shy") {
         await until("her face shows it", () => here.evaluate(() => {
@@ -335,7 +334,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
           return body?.getAttribute("data-mate-clip") === "shy" || [...(body?.querySelectorAll("img") ?? [])].some((i) => /\/shy\b/.test(i.src));
         }), 40000);
       }
-      await here.locator('[data-testid="mate-state-badge"]').click();
+      await here.locator('[data-testid="mate-relation-open"]').click();
       const row = (emotion) => here.locator(`[data-testid="mate-state-feeling"][data-emotion="${emotion}"]`);
       await row("shy").waitFor({ timeout: 15000 });
       assert.equal(await here.locator('[data-testid="mate-state-feeling"]').count(), 8, "every emotion has its value");
@@ -389,7 +388,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
       const picture = (page) => page.evaluate(() => document.querySelector("[data-mate-set] img")?.src ?? "");
       const showing = (page, what) => until(`${what} on the screen`, async () => what.test(await picture(page)) && (await page.locator(".mate-outfit-out, .mate-outfit-in").count()) === 0);
       const USUAL = /chaerin\/neutral/;
-      const CROP_TOP = /gray-band/;
+      const CROP_TOP = /crop-top/;
       await until("in her usual clothes", async () => (await mateNow()).outfits.worn === "default");
       await showing(here, USUAL);
       const usual = await faceOn(here);
@@ -417,8 +416,8 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
       const during = (part) => fade.filter((x) => x.phase === part);
       assert.ok(during("out").some((x) => x.opacity > 0 && x.opacity < 1), `it fades away: ${JSON.stringify(during("out").map((x) => x.opacity))}`);
       assert.ok(during("in").some((x) => x.opacity > 0 && x.opacity < 1), `it fades in: ${JSON.stringify(during("in").map((x) => x.opacity))}`);
-      assert.ok(during("out").every((x) => !/gray-band/.test(x.pic)), "the new set only shows once the old one is gone");
-      assert.ok(during("in").every((x) => /gray-band/.test(x.pic)), "and it is there when she comes back");
+      assert.ok(during("out").every((x) => !/crop-top/.test(x.pic)), "the new set only shows once the old one is gone");
+      assert.ok(during("in").every((x) => /crop-top/.test(x.pic)), "and it is there when she comes back");
       assert.equal(await here.evaluate(() => Number(getComputedStyle(document.querySelector("[data-mate-kind]")).opacity)), 1);
       await showing(here, CROP_TOP);
       sameSpot(usual, await faceOn(here), "desktop");
