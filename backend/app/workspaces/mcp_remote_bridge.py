@@ -82,8 +82,9 @@ TOOLS = [
         "description": "Run a shell command on a remote server, starting in an attached folder there "
         "(cwd; default: the host's main folder). Short commands return output directly. Long commands "
         "return a durable job_id: use remote_poll to await completion, never rerun a still-running command. "
-        "There is no default execution time limit. Do not add shell timeout wrappers just to fit a tool call. "
-        "remote_stop cancels its process group. "
+        "A command stops at 24 hours, or 2 hours with run_in_background, unless timeout_ms says otherwise: pass it for "
+        "work you expect to run longer. Do not add shell timeout wrappers just to fit a tool call. remote_stop cancels "
+        "its process group: use it for a job you no longer need. "
         f"Hosts and folders: {_hosts_line()}",
         "inputSchema": {
             "type": "object",
@@ -91,7 +92,7 @@ TOOLS = [
                            "cwd": {"type": "string", "description": "start directory (inside an attached folder)"},
                            "description": {"type": "string", "description": "brief task label, without secrets"},
                            "yield_time_ms": {"type": "integer", "minimum": 0, "maximum": 30000, "default": 10000},
-                           "timeout_ms": {"type": "integer", "minimum": 0, "default": 0, "description": "optional actual command time limit; 0 = unlimited"},
+                           "timeout_ms": {"type": "integer", "minimum": 0, "description": "the command's time limit, when the default doesn't fit"},
                            "run_in_background": {"type": "boolean", "default": False}},
             "required": ["command", *_REQ_HOST],
         },

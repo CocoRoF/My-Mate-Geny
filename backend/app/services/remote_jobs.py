@@ -24,7 +24,7 @@ class RemoteJobService:
         return {'HRH_REMOTE_JOBS_ROOT': str(self.root), 'HRH_REMOTE_SESSION_ID': sid}
 
     def active_note(self, sid):
-        rows=self.sessions._db.query("SELECT task_id,description FROM bg_tasks WHERE session_id=? AND task_type='remote_bash' AND status IN ('running','pending') ORDER BY started_at DESC LIMIT 30",(sid,))
+        rows=self.sessions._db.query("SELECT task_id,description,started_at FROM bg_tasks WHERE session_id=? AND task_type='remote_bash' AND status IN ('running','pending') ORDER BY started_at DESC LIMIT 30",(sid,))
         rows=[dict(row) for row in rows]
         known={row['task_id'] for row in rows}
         for file in (self.root/'inbox').glob(sid+'_*.json'):
@@ -33,13 +33,15 @@ class RemoteJobService:
                 identity=json.loads(file.read_text());manager=self.factory(self.root,sid)
                 manifest=manager.manifest(identity['job_id']);task_id='remote_'+manifest['job_id']
                 if task_id not in known and self.state(manager.path(manifest['job_id'])).get('status') not in TERMINAL:
-                    rows.append({'task_id':task_id,'description':manifest['description']});known.add(task_id)
+                    rows.append({'task_id':task_id,'description':manifest['description'],'started_at':manifest.get('started_at')});known.add(task_id)
             except (OSError,ValueError,KeyError):continue
         if not rows:return ''
-        lines=['Existing remote jobs (already submitted; do not re-run their commands):']
+        lines=['<remote_jobs>','Remote jobs still running (already submitted; do not re-run their commands):']
         for row in rows:
-            lines.append('job_id='+row['task_id'][7:]+' — '+json.dumps(row['description'] or 'remote command',ensure_ascii=False))
-        return '\n'.join(lines)+'\nUse remote_poll on those IDs to recover progress/output, or remote_stop to cancel.'
+            age=f" — running {max(0,int((time.time()-row['started_at'])/60))} min" if row.get('started_at') else ''
+            lines.append('job_id='+row['task_id'][7:]+' — '+json.dumps(row['description'] or 'remote command',ensure_ascii=False)+age)
+        lines.append('Use remote_poll on those IDs to recover progress/output. remote_stop the ones you no longer need: they go on until their time limit otherwise.')
+        return '\n'.join(lines)+'\n</remote_jobs>'
 
     async def start(self):
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)

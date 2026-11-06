@@ -85,8 +85,12 @@ Remaining hardening: pin `known_hosts` (currently `StrictHostKeyChecking=no` /
 `remote_bash` commands run under a small Python 3.8+ supervisor on the SSH host,
 independently of the SSH control connection and the agent CLI. The former
 `subprocess.run(timeout=300)` command cap is no longer used for shells. Each
-control request is bounded; execution itself defaults to no timeout. An explicit
-`timeout_ms` sets a real deadline and terminates the command's process group.
+control request is bounded. Execution has a generous default limit: 2 hours with
+`run_in_background`, where nobody waits for the command, and 24 hours otherwise. A wait
+loop whose condition can never come true (the file it watches was deleted) therefore
+ends by itself instead of showing as running for ever. An explicit `timeout_ms` replaces
+the default; reaching the limit terminates the command's process group, and the task
+says why.
 
 Short commands keep their previous plain-output response. Longer ones yield an
 opaque `job_id`; `remote_poll(job_id, offset, wait_ms)` continues the **same**
@@ -104,8 +108,10 @@ remote commands, with live output and the same Stop button. Reconnects use the
 existing ID and durable byte offset. An execution claim prevents retries of a
 lost start response from running a command twice. Backend/CLI restarts retain
 these jobs and recover their metadata; ordinary native tasks still use the old
-engine lifecycle. Active remote job IDs are included in the next agent turn's
-folder note. Turn Stop requests cancellation of foreground remote jobs; an
+engine lifecycle. Active remote job IDs and how long each has run are included in the
+next agent turn's message (not the folder note, which is part of the engine's
+fingerprint: a job starting or ending must not restart the engine), with a reminder to
+stop what it no longer needs. Turn Stop requests cancellation of foreground remote jobs; an
 explicit background job has its own Stop button. Deleting a session cancels its
 remaining jobs and removes their private artifacts after cancellation is confirmed.
 
@@ -129,7 +135,7 @@ honored. Duration labels represent the whole command, including GitHub/CI waits,
 and round minutes correctly instead of displaying “1 minute 60 seconds”.
 
 Tests: `test_remote_jobs.py` runs actual supervisor subprocesses for idempotence,
-UTF-8 chunks, lost responses, process-group cancellation, timeout, restart, and
-session cleanup. `remote-jobs.cjs` connects real Electron/API/MCP to an isolated
+UTF-8 chunks, lost responses, process-group cancellation, timeout, default limits, a dead
+supervisor, restart, and session cleanup. `remote-jobs.cjs` connects real Electron/API/MCP to an isolated
 SSH fixture and checks live output, completion without collapsing output, and
 Stop against the actual remote process group. No user's project is modified.

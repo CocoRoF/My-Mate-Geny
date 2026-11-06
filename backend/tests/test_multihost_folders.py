@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import time
 import os
 import pathlib
 import stat
@@ -238,6 +239,7 @@ async def test_launch_wiring_for_both_engines(db, tmp_path, monkeypatch):
         "srv-2224": ["/home/u/app", f"~/.hr-harnessor/uploads/{s['id']}"], "srv-2222": ["/data/x"]}
     prompt = argv[argv.index("--append-system-prompt") + 1]
     assert "Folders in this chat" in prompt and "`/data/x` on server \"srv-2222\"" in prompt
+    assert "<remote_jobs>" not in prompt
     assert ClaudeCodeProvider().engine_fingerprint(req) != ClaudeCodeProvider().engine_fingerprint(
         TurnRequest(messages=req.messages, model=req.model, cwd=req.cwd, mcp_config=req.mcp_config,
                     extra_dirs=req.extra_dirs))  # the note is part of the launch: a change restarts the engine
@@ -248,6 +250,17 @@ async def test_launch_wiring_for_both_engines(db, tmp_path, monkeypatch):
     assert any(c.startswith("mcp_servers.remote.env=") and "HRH_REMOTE_HOSTS" in c and "srv-2222" in c for c in cfgs)
     text = cx._build_prompt(req).decode()
     assert "<folders>" in text and str(tmp_path / "local") in text and "<additional_folders>" not in text
+
+    # A remote job running: it reaches the agent with the turn's message, and the engine isn't restarted for it
+    svc._on_task(s["id"], {"task_id": "remote_" + "a" * 32, "task_type": "remote_bash", "status": "running",
+                           "description": "Wait for the suites", "started_at": time.time() - 600})
+    svc.start_turn(s["id"], "next")
+    while (m := await asyncio.wait_for(q.get(), timeout=10))["type"] != "run.state" or m["data"]["running"]:
+        pass
+    next_req = cap.reqs[-1]
+    assert "a" * 32 in next_req.preamble and "Wait for the suites" in next_req.preamble
+    assert "running 10 min" in next_req.preamble and "remote_stop" in next_req.preamble
+    assert ClaudeCodeProvider().engine_fingerprint(next_req) == ClaudeCodeProvider().engine_fingerprint(req)
 
 
 # ---- the bridge: host allow-list + path confinement ----
