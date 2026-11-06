@@ -317,10 +317,15 @@ _CHANGE_OPS = {"added": "added", "edited": "changed", "done": "marked done", "ar
 
 
 def context_block(now_local: datetime, tz_name: str, *, recalled: list[dict[str, Any]] | None = None,
-                  changes: list[dict[str, Any]] | None = None, relation: list[str] | None = None) -> str:
+                  changes: list[dict[str, Any]] | None = None, relation: list[str] | None = None,
+                  outfit: dict[str, Any] | None = None) -> str:
     """The per-turn <context> block (prepended to the message, never stored, never restarts the engine)."""
     lines = [f"Now: {now_local.strftime('%Y-%m-%d (%a) %H:%M')} {tz_name}".rstrip()]
     lines += relation or []
+    if outfit:  # (her profile describes her default look: this is what the user sees now)
+        what = outfit.get("note") or ""
+        lines.append(f"You have on the outfit “{outfit['name']}”" + (f": {what}" if what else "") + ". The user chose it "
+                     "in your wardrobe; it replaces the clothes your profile describes.")
     if recalled:
         lines.append("Memories that may help (use them only if relevant):")
         lines += [f"- {M.line(m)}" for m in recalled]

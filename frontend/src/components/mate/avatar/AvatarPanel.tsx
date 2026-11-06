@@ -523,12 +523,25 @@ function Finish({ project, act, studio }: { project: AvatarProject; act: Act; st
           {project.check.passed ? t("avatar.allChecksPassed") : t("avatar.someChecksFailed", { ids: project.check.redo.join(", ") })}
         </p>
       )}
-      {applied && !applied.restored_at && (
+      {!project.outfit && applied && !applied.restored_at && (
         <p className="mt-2 rounded-lg bg-success/10 px-2.5 py-1.5 text-center text-[12px] text-success" data-testid="avatar-applied">
           {studio?.kind === "new" ? t("studio.avatarOnHer") : t("avatar.appliedTo", { name: applied.name })}
         </p>
       )}
-      {studio?.kind === "new" ? (
+      {project.outfit ? (
+        <div className="mt-2 space-y-2" data-testid="outfit-finish">
+          <p className="text-center text-[12px] text-content-dim">{t("studio.outfitInWardrobe", { name: project.outfit.name })}</p>
+          {mates.find((m) => m.id === target.mate_id)?.outfits?.worn === project.outfit.id && project.outfit.id ? (
+            <p className="rounded-lg bg-success/10 px-2.5 py-1.5 text-center text-[12px] text-success" data-testid="outfit-worn">
+              {t("studio.outfitWorn", { name: target.name })}
+            </p>
+          ) : (
+            <button className="btn-primary w-full" onClick={() => act(() => applyAvatar(project.id, { mate_id: target.mate_id || "" }))} data-testid="outfit-wear">
+              <Icon name="check" size={14} /> {t("studio.outfitWear", { name: target.name })}
+            </button>
+          )}
+        </div>
+      ) : studio?.kind === "new" ? (
         !applied && (
           <p className="mt-2 flex items-center justify-center gap-1.5 text-[12px] text-content-faint">
             <Icon name="spinner" size={12} spin /> {t("studio.avatarApplying")}

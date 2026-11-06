@@ -40,7 +40,7 @@ from app.avatar.store import AvatarError, AvatarStore, project_dir, safe_rel
 from app.config import settings
 from app.higgsfield.oauth import HiggsfieldError
 from app.mate import files as mate_files
-from app.mate.store import MateError
+from app.mate.store import DEFAULT_OUTFIT, MateError
 from app.providers.base import TurnRequest
 from app.providers.catalog import default_mate_model
 from app.services._ids import now_iso
@@ -153,15 +153,17 @@ class AvatarService:
                 continue
             out.append({"id": pid, "title": d.get("title"), "status": d.get("status"), "phase": d.get("phase"),
                         "mate_id": (d.get("brief") or {}).get("target", {}).get("mate_id"),
+                        "outfit": d.get("outfit"),
                         "updated_at": d.get("updated_at"), "created_at": d.get("created_at"),
                         "thumb": self._url(d, "thumbs/home.jpg") if (self.dir(pid) / "thumbs/home.jpg").is_file()
                         else None})
         return out
 
     def create(self, *, mate_id: str | None = None, language: str = "en", provider: str = "claude",
-               studio: str | None = None) -> dict[str, Any]:
+               studio: str | None = None, outfit: dict[str, Any] | None = None) -> dict[str, Any]:
         """A project. ``studio``: "new" (the Mate Create studio making the draft mate ``mate_id``) or "existing"
-        (the studio for that mate's avatar); None: a plain Avatar Create project."""
+        (the studio for that mate's avatar); None: a plain Avatar Create project. ``outfit``: a new set for that
+        mate's wardrobe (docs/avatar-create.md §12)."""
         brief = P.default_brief()
         title = "New avatar"
         if mate_id:
@@ -176,14 +178,26 @@ class AvatarService:
             "done": {}, "ledger": {"committed": 0.0, "jobs": 0}, "paused": False, "picked": None, "check": None,
             "result": None, "applied": None, "error": None, "log": [],
             **({"studio": self._new_studio(studio, mate_id)} if studio and mate_id else {}),
+            **({"outfit": outfit} if outfit else {}),
         })
         pid = doc["id"]
+        if outfit:
+            self._start_outfit(doc)
+            title = doc["title"]
         label = "Mate studio" if studio == "new" else "Avatar"
         s = self._svc.create(provider=provider, model=doc["engine"]["model"], effort=doc["engine"]["effort"],
                              workspace_path=str(self.dir(pid)), title=f"{label} · {title}", kind="avatar")
         doc["session_id"] = s["id"]
         self.save(doc)
-        if studio == "new":
+        if outfit:
+            entry = P.OUTFITS.get(outfit.get("preset") or "")
+            self._event(pid, "start", f"The user chose the preset “{entry['name'].get(doc['language'])}” ({entry['wears']}) "
+                        f"for {doc['brief']['target']['name']}: the brief already holds its prompt, name and motions. "
+                        "Greet them in one sentence, say what she will wear and which motions, and call estimate so "
+                        "they see the price; they can still change anything." if entry else
+                        f"The user opened the wardrobe of {doc['brief']['target']['name']} to make a new outfit. Greet "
+                        "them in one sentence and ask what she should wear (one card).")
+        elif studio == "new":
             self._event(pid, "start", "The user opened the Mate Create studio to make a new mate: you are on the left, "
                         "her settings (still empty) are on the right. Greet them in one sentence and start with the "
                         "concept — ask what kind of mate they want, or offer 3 concept directions (ask_user kind "
@@ -198,6 +212,75 @@ class AvatarService:
                            " (the avatar may go to a new mate or an existing one)")
                         + ". Greet them in one sentence and start the interview with the first question card.")
         return self.view(pid)
+
+    # ---------------------------------------------------------------- outfits (§12)
+
+    def _start_outfit(self, doc: dict[str, Any]) -> None:
+        """The project's first state: her own picture as the reference, the brief from the preset and her default set."""
+        mate_id = doc["brief"]["target"]["mate_id"]
+        mate = self.mates.get(mate_id)
+        base = self.mates.store.base_avatar(mate_id)
+        refs = []
+        src = mate_files.avatar_picture(base, mate_id)
+        if src is not None:
+            ref_dir = self.dir(doc["id"]) / "ref"
+            ref_dir.mkdir(parents=True, exist_ok=True)
+            refs = [f"ref-1{src.suffix.lower()}"]
+            shutil.copyfile(src, ref_dir / refs[0])
+        out = doc["outfit"]
+        entry = P.OUTFITS.get(out.get("preset") or "")
+        names = entry["name"] if entry else {"ko": "새 의상", "en": "New outfit"}
+        out["name"] = names.get(doc["language"]) or names["en"]
+        out["note"] = entry["wears"] if entry else ""
+        doc["brief"] = P.outfit_brief(out.get("preset"), base, refs, doc["brief"]["target"])
+        doc["title"] = f"{mate['name']} · {out['name']}"
+
+    def _open_outfit(self, mate: dict[str, Any], preset: str | None, language: str, provider: str) -> dict[str, Any]:
+        """The studio for a new outfit: an untouched project of the same choice if there is one, else a new one."""
+        if mate.get("draft"):
+            raise AvatarError("finish making the mate first", 409)
+        if preset and not P.outfit_allowed(preset, mate.get("builtin")):
+            raise AvatarError("this preset is not available for this mate", 409, "outfit_not_allowed")
+        for pid in self.store.ids():
+            if self._target_of(pid) != mate["id"]:
+                continue
+            doc = self.doc(pid)
+            if doc.get("outfit") and doc["outfit"].get("preset") == preset and doc.get("status") == "interview" \
+                    and not doc.get("plan"):
+                return self.view(pid)
+        return self.create(mate_id=mate["id"], language=language, provider=provider, studio="existing",
+                           outfit={"preset": preset, "name": "", "note": "", "id": None, "stored": None})
+
+    async def _store_outfit(self, doc: dict[str, Any]) -> str:
+        """The finished set in her wardrobe, not on her: wearing it is the user's choice. A redo replaces its set."""
+        out = doc["outfit"]
+        mate_id = doc["brief"]["target"]["mate_id"]
+        made = (doc.get("result") or {}).get("at")
+        if out.get("id") and out.get("stored") == made:
+            return out["id"]
+        avatar = await asyncio.to_thread(mate_files.import_folder_pack, mate_id, self.dir(doc["id"]) / "export")
+        avatar = mate_files.inherit_rig_tuning(avatar, self.mates.store.base_avatar(mate_id))
+        cards = self.mates.get(mate_id)["outfits"]["items"]
+        if out.get("id") and any(c["id"] == out["id"] for c in cards):
+            self.mates.replace_outfit(mate_id, out["id"], avatar)
+        else:
+            out["id"] = self.mates.add_outfit(mate_id, name=out["name"], avatar=avatar, preset=out.get("preset") or "",
+                                              note=out.get("note") or doc["brief"]["design"]["prompt"],
+                                              project_id=doc["id"])
+        out["stored"] = made
+        self._history(doc, "outfit_stored", outfit=out["id"])
+        self.save(doc)
+        return out["id"]
+
+    async def _outfit_ready(self, pid: str) -> None:
+        try:
+            async with self._lock(pid):
+                doc = self.doc(pid)
+                if doc.get("status") == "ready":
+                    await self._store_outfit(doc)
+        except (AvatarError, MateError, KeyError) as exc:
+            self._log("warning", f"avatar {pid}: outfit: {exc}")
+            self._event(pid, "outfit_failed", f"The outfit could not join her wardrobe: {exc}. Tell the user.")
 
     # ---------------------------------------------------------------- the Mate Create studio (§11)
 
@@ -228,9 +311,14 @@ class AvatarService:
             raise AvatarError("the mate of this project no longer exists", 410, "gone") from None
 
     def studio_open(self, *, mate_id: str | None = None, language: str = "en", provider: str = "claude",
-                    fresh: bool = False) -> dict[str, Any]:
-        """The studio for a mate: a new draft (no ``mate_id``), a draft's own project, or an existing mate's latest
-        project (``fresh``: a new one)."""
+                    fresh: bool = False, outfit: dict[str, Any] | None = None) -> dict[str, Any]:
+        """The studio for a mate: a new draft (no ``mate_id``), a draft's own project, an existing mate's latest
+        project (``fresh``: a new one) or, with ``outfit`` ({preset?}), a new set for her wardrobe."""
+        if outfit is not None:
+            if not mate_id:
+                raise AvatarError("which mate?")
+            mate = self.mates.get(mate_id)  # KeyError → 404
+            return self._open_outfit(mate, str(outfit.get("preset") or "") or None, language, provider)
         if not mate_id:
             self._drop_untouched_drafts()
             mate = self.mates.store.create(name="", persona={"language": language if language in ST.LANGS else "en"},
@@ -244,8 +332,8 @@ class AvatarService:
                     return self.view(pid)
             return self.create(mate_id=mate_id, language=language, provider=provider, studio="new")
         if not fresh:
-            for pid in mine:  # (newest first)
-                if self.doc(pid).get("status") != "canceled":
+            for pid in mine:  # (newest first; an outfit's project is opened from the wardrobe)
+                if self.doc(pid).get("status") != "canceled" and not self.doc(pid).get("outfit"):
                     doc = self.doc(pid)
                     if "studio" not in doc and self._studio(doc) is not None:
                         self.save(doc)
@@ -315,7 +403,10 @@ class AvatarService:
         after = ST.snapshot(mate, st.get("concept"))
         if mate.get("name") and doc["brief"]["target"].get("mate_id") == st["mate_id"]:
             doc["brief"]["target"]["name"] = mate["name"]
-            doc["title"] = mate["name"]
+            if doc.get("outfit"):
+                doc["title"] = f"{mate['name']} · {doc['outfit']['name']}"
+            else:
+                doc["title"] = mate["name"]
         return mate, before, after
 
     async def _tool_update_mate_draft(self, pid: str, args: dict[str, Any]) -> Any:
@@ -636,8 +727,15 @@ class AvatarService:
                                                                       else "."))
         # (the system prompt stays the same for the whole project — the engine is not restarted; what changes goes
         # into the message: the studio's <studio_update>)
+        kind = "outfit" if doc.get("outfit") else (st or {}).get("kind")
+        swimwear = False
+        if doc.get("outfit"):
+            try:
+                swimwear = self.mates.get(t["mate_id"]).get("builtin") in P.STATED_ADULTS
+            except KeyError:
+                pass
         prompt = system_prompt(language=doc.get("language") or "en", state=state, emotions=list(P.EMOTIONS),
-                               studio=(st or {}).get("kind"), mate=t.get("name") or "")
+                               studio=kind, mate=t.get("name") or "", swimwear=swimwear)
         note = self._studio_note(doc) if st else ""
         if note:
             req.preamble = "\n\n".join(x for x in (note, req.preamble) if x)
@@ -763,6 +861,7 @@ class AvatarService:
             "failed": [{"item": k, "error": it.get("error")} for k, it in items.items() if it.get("status") == "failed"],
             "picked": doc.get("picked"), "check": doc.get("check"),
             "ready": bool(doc.get("result")), "applied": doc.get("applied"),
+            **({"outfit": doc["outfit"]} if doc.get("outfit") else {}),
             **({"studio": self._studio_summary(doc)} if doc.get("studio") else {}),
         }
 
@@ -822,6 +921,15 @@ class AvatarService:
         patch = args.get("patch") if isinstance(args.get("patch"), dict) else {k: v for k, v in args.items()}
         if doc.get("studio"):
             patch = {k: v for k, v in patch.items() if k != "target"}  # (the studio's mate gets it)
+        if doc.get("outfit"):
+            patch = {k: v for k, v in patch.items() if k != "reference"}  # (her own picture stays the reference)
+            name = " ".join(str(patch.pop("outfit_name", "") or "").split())[:40]
+            if name:
+                doc["outfit"]["name"] = name
+                doc["title"] = f"{doc['brief']['target']['name']} · {name}"
+            desc = (patch.get("design") or {}).get("prompt") if isinstance(patch.get("design"), dict) else None
+            if desc:
+                doc["outfit"]["note"] = " ".join(str(desc).split())[:300]
         t = patch.get("target")
         if isinstance(t, dict) and t.get("mode") == "existing" and t.get("mate_id"):
             try:
@@ -830,7 +938,8 @@ class AvatarService:
                 raise AvatarError(f"no mate with id {t['mate_id']!r}") from None
         doc["brief"] = P.merge_brief(doc["brief"], patch)
         tg = doc["brief"]["target"]
-        doc["title"] = tg.get("name") or doc.get("title")
+        if not doc.get("outfit"):
+            doc["title"] = tg.get("name") or doc.get("title")
         if doc.get("plan") and doc["status"] == "estimate":
             doc["plan"] = None  # (the old estimate no longer matches)
             doc["status"] = "interview"
@@ -861,7 +970,9 @@ class AvatarService:
 
     def _add_ref(self, doc: dict[str, Any], name: str) -> None:
         ref = doc["brief"]["reference"]
-        ref["files"] = [*(ref.get("files") or []), name][-4:]
+        files = [*(ref.get("files") or []), name]
+        # (an outfit's first reference is she herself: the others are clothes)
+        ref["files"] = [files[0], *files[1:][-3:]] if doc.get("outfit") else files[-4:]
         if ref.get("mode") == "none":
             ref["mode"] = "redraw"
         doc["question"] = None
@@ -1433,10 +1544,14 @@ class AvatarService:
                     + (f"These clips failed the automatic check: {', '.join(bad)} — explain and offer redos. "
                        if bad else "Every clip passed the automatic check. ")
                     + (f"These items failed and were left out: {', '.join(failed)}. " if failed else "")
-                    + ("It goes on the new mate by itself; tell the user they can preview it on the right."
+                    + ("It joins her wardrobe by itself; tell the user they can press Wear on the right, or switch "
+                       "any time in Mate settings → Outfits." if doc.get("outfit") else
+                       "It goes on the new mate by itself; tell the user they can preview it on the right."
                        if (doc.get("studio") or {}).get("kind") == "new" else
                        "Tell the user they can press Apply (to the target mate) or create a new mate with it."))
-        if (doc.get("studio") or {}).get("kind") == "new":
+        if doc.get("outfit"):
+            asyncio.get_running_loop().create_task(self._outfit_ready(pid))
+        elif (doc.get("studio") or {}).get("kind") == "new":
             asyncio.get_running_loop().create_task(self._auto_apply(pid))
 
     # ---- jobs ----
@@ -1581,9 +1696,16 @@ class AvatarService:
         self.save(doc)
         ref = [str(self.dir(pid) / "ref" / f) for f in b["reference"].get("files") or []]
         note = doc.get("design_note") or ""
+        outfit = bool(doc.get("outfit"))
+        if outfit and redraw and ref:  # (her own picture has no background: the model gets it on the known gray)
+            flat = self.dir(pid) / "ref" / "her-flat.jpg"
+            if not flat.is_file():
+                await self.deps.run("flatten", [ref[0], str(flat)], timeout=120)
+            ref[0] = str(flat)
 
         def flags(d: dict[str, Any], it: dict[str, Any]) -> list[str]:
-            prompt = P.design_prompt(" ".join(x for x in (d["brief"]["design"]["prompt"], note) if x), redraw=redraw)
+            prompt = P.design_prompt(" ".join(x for x in (d["brief"]["design"]["prompt"], note) if x), redraw=redraw,
+                                     outfit=outfit, clothes_refs=len(ref) > 1)
             out = ["--prompt", prompt, "--aspect_ratio", PL.IMAGE_PARAMS["aspect_ratio"], "--resolution",
                    PL.IMAGE_PARAMS["resolution"]]
             for r in (ref if redraw else []):
@@ -1734,6 +1856,19 @@ class AvatarService:
             exp = self.dir(pid) / "export"
             if not (exp / "rig.json").is_file():
                 raise AvatarError("the avatar is not ready yet", 409)
+            if doc.get("outfit"):
+                target = doc["brief"]["target"]["mate_id"]
+                try:
+                    oid = await self._store_outfit(doc)
+                    mate = self.mates.wear_outfit(target, oid)
+                except MateError as exc:
+                    raise AvatarError(str(exc)) from None
+                doc["applied"] = {"mate_id": target, "name": mate["name"], "at": now_iso(), "backup": None,
+                                  "new": False, "outfit_id": oid}
+                doc["status"] = "applied"
+                self._history(doc, "outfit_worn", outfit=oid)
+                self.save(doc)
+                return {"project": self.view(pid), "mate": mate}
             if new_name is not None:
                 name = new_name.strip() or doc["brief"]["target"].get("name") or "New mate"
                 lang = doc.get("language") or "en"
@@ -1743,7 +1878,8 @@ class AvatarService:
             else:
                 if not mate_id:
                     raise AvatarError("which mate?")
-                mate = self.mates.get(mate_id)
+                # (a new avatar is her new default set: it never lands on an outfit)
+                mate = self.mates.wear_outfit(mate_id, DEFAULT_OUTFIT)
                 backup = await asyncio.to_thread(self._backup, pid, mate)
             avatar = await asyncio.to_thread(mate_files.import_folder_pack, mate_id, exp)
             mate = self.mates.update(mate_id, {"avatar": avatar})

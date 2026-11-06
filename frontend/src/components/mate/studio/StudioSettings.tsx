@@ -318,7 +318,7 @@ function AvatarStage({ project, mate, kind, onSkip }: { project: AvatarProject; 
         <p className="font-medium text-content">
           {skipped ? t("studio.avatarSkipped") : live ? t("studio.avatarMaking") : has ? t("studio.avatarCurrent") : t("studio.avatarNone")}
         </p>
-        <p className="mt-0.5 text-[11.5px] text-content-faint">{skipped ? t("studio.avatarSkippedHint") : live ? t("studio.avatarMakingHint") : kind === "existing" ? t("studio.avatarCurrentHint") : t("studio.avatarNoneHint")}</p>
+        <p className="mt-0.5 text-[11.5px] text-content-faint">{skipped ? t("studio.avatarSkippedHint") : live ? t("studio.avatarMakingHint") : project.outfit ? t("studio.outfitStageHint") : kind === "existing" ? t("studio.avatarCurrentHint") : t("studio.avatarNoneHint")}</p>
         {kind === "new" && onSkip && !project.confirmation && (
           <button type="button" className="btn-ghost mt-1.5 !px-2 !py-1 text-[12px]" onClick={() => onSkip(!skipped)} data-testid="studio-skip-avatar">
             <Icon name={skipped ? "sparkles" : "x"} size={12} /> {skipped ? t("studio.avatarUnskip") : t("studio.avatarSkip")}
@@ -409,6 +409,8 @@ export default function StudioSettings({ project, mate, env, act, reloadEnv, con
           )}
           <span className="ml-auto hidden truncate sm:inline">{kind === "new" ? t("studio.rightHintNew") : t("studio.rightHintExisting", { name: mate.name })}</span>
         </div>
+        {!project.outfit && (
+        <>
         <Section id="concept" title={t("studio.secConcept")} icon="sparkles" open={open.concept} onToggle={() => toggle("concept")} filled={filledBy.concept} summary={studio.concept.pitch || (conceptN ? t("studio.conceptN", { count: conceptN }) : t("studio.conceptEmpty"))}>
           <ConceptSection studio={studio} />
         </Section>
@@ -418,12 +420,16 @@ export default function StudioSettings({ project, mate, env, act, reloadEnv, con
         <Section id="style" title={t("studio.secStyle")} icon="chat" open={open.style} onToggle={() => toggle("style")} filled={filledBy.style} summary={t(`studio.formality_${prefs.formality}` as MsgKey)}>
           <StyleSection mate={mate} />
         </Section>
+        </>
+        )}
         <Section id="avatar" title={t("studio.secAvatar")} icon="image" open={open.avatar} onToggle={() => toggle("avatar")} filled={0} summary={avatarSummary}>
           <AvatarStage project={project} mate={mate} kind={kind} onSkip={onSkip} />
           {!(kind === "new" && studio.avatar_skipped && !project.confirmation) && (
             <AvatarPanel project={project} env={env} act={act} reloadEnv={reloadEnv} studio={{ kind: studio.kind, mateId: mate.id, mateName: mate.name || t("studio.untitled") }} hideSteps={kind === "existing"} />
           )}
         </Section>
+        {!project.outfit && (
+        <>
         <Section id="voice" title={t("studio.secVoice")} icon="volume" open={open.voice} onToggle={() => toggle("voice")} filled={0} summary={studio.concept.voice ? t("studio.voiceSuggest", { voice: studio.concept.voice }) : mate.voice.tts.engine}>
           {studio.concept.voice && (
             <p className="flex items-start gap-2 rounded-lg border border-accent/30 bg-accent-soft/30 px-3 py-2 text-[12px] text-content-dim" data-testid="studio-voice-hint">
@@ -435,6 +441,8 @@ export default function StudioSettings({ project, mate, env, act, reloadEnv, con
         <Section id="model" title={t("studio.secModel")} icon="brain" open={open.model} onToggle={() => toggle("model")} filled={0} summary={mate.llm.model}>
           <ModelTab key={mate.id} mate={mate} />
         </Section>
+        </>
+        )}
       </div>
     </FieldsCtx.Provider>
   );

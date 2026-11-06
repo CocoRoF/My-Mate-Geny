@@ -151,6 +151,7 @@ export interface AvatarProject {
   agent_running: boolean;
   /** the Mate Create studio's part (docs/avatar-create.md §11): absent on a plain Avatar Create project */
   studio?: StudioInfo;
+  outfit?: ProjectOutfit | null;
   log: { at: string; what: string }[];
   updated_at: string;
   version: number;
@@ -195,12 +196,21 @@ export interface StudioFieldsPatch {
   concept?: Partial<Record<ConceptKey, string>>;
 }
 
+/** a project making a new set for a mate's wardrobe (docs/avatar-create.md §12) */
+export interface ProjectOutfit {
+  preset: string | null;
+  name: string;
+  /** its place in her wardrobe, once it is there */
+  id: string | null;
+}
+
 export interface ProjectSummary {
   id: string;
   title: string;
   status: ProjectStatus;
   phase: string | null;
   mate_id: string | null;
+  outfit?: ProjectOutfit | null;
   updated_at: string;
   created_at: string;
   thumb: string | null;
@@ -242,7 +252,7 @@ export const restoreAvatar = (pid: string) => post<{ project: AvatarProject; mat
 // ── the Mate Create studio ──
 const SP = (pid: string) => `/api/avatar/studio/${pid}`;
 /** a new draft (no mate_id), a draft's project, or an existing mate's latest project (fresh: a new one) */
-export const openStudio = (body: { mate_id?: string | null; language: string; fresh?: boolean }) => post<AvatarProject>("/api/avatar/studio", body);
+export const openStudio = (body: { mate_id?: string | null; language: string; fresh?: boolean; outfit?: { preset: string | null } }) => post<AvatarProject>("/api/avatar/studio", body);
 export const listDrafts = () => apiFetch<DraftSummary[]>("/api/avatar/studio/drafts");
 export const patchStudioFields = (pid: string, patch: StudioFieldsPatch) =>
   apiFetch<AvatarProject>(`${SP(pid)}/fields`, { method: "PATCH", body: JSON.stringify(patch) });

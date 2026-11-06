@@ -196,6 +196,32 @@ def import_dirs_of(avatar: dict[str, Any], mate_id: str) -> set[str]:
     return set(re.findall(rf"/api/mates/{re.escape(mate_id)}/assets/((?:pack|l2d)-[0-9a-f]+)/", blob))
 
 
+def avatar_picture(avatar: dict[str, Any], mate_id: str) -> Path | None:
+    """The file of a video/photo avatar's base picture (a built-in's or an imported pack's), if it has one."""
+    rig = avatar.get("rig") if isinstance(avatar.get("rig"), dict) else {}
+    url = str(rig.get("home") or (rig.get("stills") or {}).get("neutral") or "").split("?")[0]
+    try:
+        if url.startswith("/api/mates/builtin/"):
+            key, _, rel = url[len("/api/mates/builtin/"):].partition("/")
+            return resolve_builtin(key, rel)
+        prefix = f"/api/mates/{mate_id}/assets/"
+        return resolve_asset(mate_id, url[len(prefix):]) if url.startswith(prefix) else None
+    except MateError:
+        return None
+
+
+def inherit_rig_tuning(avatar: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
+    """A new outfit set reacts like her default set: its emotion choices carry over (normalize_rig drops the clips
+    this set doesn't have)."""
+    if avatar.get("kind") != "video" or base.get("kind") != "video":
+        return avatar
+    rig, old = dict(avatar["rig"]), base["rig"]
+    for key in ("emotions", "emotion_stills"):
+        if old.get(key):
+            rig[key] = {**(rig.get(key) or {}), **old[key]}
+    return {**avatar, "rig": rig}
+
+
 # ---- zip import ----
 
 def _limit_bytes() -> int:

@@ -55,6 +55,7 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
   const [avatar, setAvatar] = useState<Avatar>(mate.avatar);
   const saver = useSaver();
   const dirty = JSON.stringify(avatar) !== JSON.stringify(mate.avatar);
+  const worn = mate.outfits && mate.outfits.worn !== "default" ? mate.outfits.items.find((o) => o.id === mate.outfits?.worn) : undefined;
   // the server replaced the avatar (an import): start from it
   const serverAvatar = JSON.stringify(mate.avatar);
   useEffect(() => setAvatar(JSON.parse(serverAvatar)), [serverAvatar]);
@@ -97,6 +98,11 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
           ))}
         </div>
       </Section>
+      {worn && (
+        <Banner tone="info" testId="mate-avatar-outfit-note">
+          {t("mateSettings.outfitEditing", { name: worn.name })}
+        </Banner>
+      )}
       <Section title={t("avatar.createWithAi")} hint={t("avatar.createWithAiHint")} testId="mate-avatar-ai">
         <button className="btn-primary" onClick={() => useStudio.getState().openAvatar(mate.id)} data-testid="mate-avatar-ai-open">
           <Icon name="sparkles" size={14} /> {t("avatar.createWithAiBtn")}

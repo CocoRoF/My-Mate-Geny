@@ -29,6 +29,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from app.avatar.presets import outfit_presets
 from app.config import settings
 from app.mate import affinity as A
 from app.mate.capture import CaptureBroker, CaptureError
@@ -37,7 +38,7 @@ from app.mate import memory as M
 from app.mate import style as STY
 from app.mate.prompt import LANGUAGES, MOOD_WORDS, context_block, prompt_key, settings_change_note, system_prompt
 from app.mate.task_memory import TaskMemory
-from app.mate.store import MateError, MateStore, normalize_persona, normalize_prefs
+from app.mate.store import DEFAULT_OUTFIT, MateError, MateStore, normalize_persona, normalize_prefs
 from app.providers import get_provider
 from app.providers.catalog import default_mate_model
 from app.providers.base import TurnRequest
@@ -185,8 +186,10 @@ class MateService:
                     if voice:
                         self.store.update(mate["id"], {"voice": voice, "_sync": True})
                     continue
-                prev = cur["builtin_snapshot"] or files.legacy_snapshot(cur, doc, snapshot["avatar"])
-                patch = files.merge_builtin(cur, prev, snapshot)
+                # (a bundle's avatar is her default set, whatever she has on)
+                base = {**cur, "avatar": self.store.base_avatar(cur["id"])}
+                prev = cur["builtin_snapshot"] or files.legacy_snapshot(base, doc, snapshot["avatar"])
+                patch = files.merge_builtin(base, prev, snapshot)
                 if patch:
                     self.store.update(cur["id"], {**patch, "_sync": True})
                     self._log("info", f"built-in mate {key} updated: {', '.join(sorted(patch))}"
@@ -211,6 +214,7 @@ class MateService:
             raise MateError("only a built-in mate has a bundled avatar to go back to")
         doc = files.builtin_doc(key)
         snapshot = files.builtin_snapshot(key, doc)
+        self.store.wear_outfit(mate_id, DEFAULT_OUTFIT)
         mate, _changed = self.store.update(mate_id, {"avatar": snapshot["avatar"], "_sync": True})
         _name, persona = files.localized(snapshot, mate["persona"]["language"])
         if mate["customized"] and normalize_persona(persona, mate["persona"]) == mate["persona"]:
@@ -239,8 +243,38 @@ class MateService:
             # session, the other one is handed the conversation so far.
             self._svc.update(sid, **self._engine_fields(mate), title=mate["name"])
         if "avatar" in changed and files.import_dirs_of(before["avatar"], mate_id):
-            # an imported pack/model the avatar no longer uses
-            files.drop_import_dirs(mate_id, keep=files.import_dirs_of(mate["avatar"], mate_id))
+            self._drop_unused_imports(mate_id)
+        return mate
+
+    def _drop_unused_imports(self, mate_id: str) -> None:
+        """Imported packs/models no avatar of hers uses any more (the whole wardrobe counts)."""
+        keep: set[str] = set()
+        for avatar in self.store.all_avatars(mate_id):
+            keep |= files.import_dirs_of(avatar, mate_id)
+        files.drop_import_dirs(mate_id, keep=keep)
+
+    # ---- the wardrobe (docs/mate.md "Outfits") ----
+
+    def outfits(self, mate_id: str) -> dict[str, Any]:
+        mate = self.store.get(mate_id)
+        return {**mate["outfits"], "presets": outfit_presets(mate.get("builtin"))}
+
+    def wear_outfit(self, mate_id: str, oid: str) -> dict[str, Any]:
+        return self.store.wear_outfit(mate_id, oid)
+
+    def add_outfit(self, mate_id: str, **kw: Any) -> str:
+        return self.store.add_outfit(mate_id, **kw)
+
+    def replace_outfit(self, mate_id: str, oid: str, avatar: dict[str, Any]) -> None:
+        self.store.replace_outfit(mate_id, oid, avatar)
+        self._drop_unused_imports(mate_id)
+
+    def rename_outfit(self, mate_id: str, oid: str, name: str) -> dict[str, Any]:
+        return self.store.rename_outfit(mate_id, oid, name)
+
+    def delete_outfit(self, mate_id: str, oid: str) -> dict[str, Any]:
+        mate = self.store.delete_outfit(mate_id, oid)
+        self._drop_unused_imports(mate_id)
         return mate
 
     def delete(self, mate_id: str) -> None:
@@ -489,7 +523,8 @@ class MateService:
                 self.store.ack_memory_changes(mate_id, changes)
                 self.store.mark_used(mate_id, [m["id"] for m in recalled])
         req.on_context_delivered = acknowledge
-        block = context_block(now_local, self._tz_name(tz, now_utc), recalled=recalled, changes=changes, relation=relation)
+        block = context_block(now_local, self._tz_name(tz, now_utc), recalled=recalled, changes=changes, relation=relation,
+                              outfit=self.store.worn_outfit(mate_id))
         if level != "off" and query and not query.startswith("<"):
             found = self.store.knowledge.search(mate_id, query, limit=4)
             current = self.store._db.query_one("SELECT id FROM messages WHERE session_id=? AND role IN ('user','steer') ORDER BY rowid DESC LIMIT 1", (mate.get("session_id"),))

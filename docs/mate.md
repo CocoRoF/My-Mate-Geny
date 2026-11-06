@@ -1127,3 +1127,21 @@ Android (Capacitor): the Mate view runs in-page; microphone permission added.
 Mate settings → Reach out has one local device ON/OFF switch. The selected Mate and opt-in are stored in the
 device record. The fixed situation policy is product-owned; legacy presets/prompts remain archived unchanged
 and are ignored by fixed-policy clients. See [automatic conversation](mate-proactive.md).
+
+## Outfits
+
+A mate has a wardrobe: whole avatar sets (base picture, expressions, motions) she can switch between in **Mate settings →
+Outfits**. Wearing one swaps all of it at once in every window (`mates.changed`). Her default set always stays.
+
+- **Stored** in `mates.outfits`: `{worn, base, items: [{id, name, preset, note, project_id, avatar}]}`. The `avatar` column
+  is always the set she has on, so everything that reads a mate just works; `base` holds her default set while another one
+  is on. What comes off keeps the state it was in.
+- **Edits** in Avatar settings go to the set she has on (a banner says so) and don't mark a built-in as customized.
+  A bundle update or Reset goes to her default set (Reset puts it back on). A new avatar from the studio is her new default
+  set, never an outfit. Imported packs are only removed when no set uses them any more.
+- **She knows**: while an outfit is on, the per-turn `<context>` says what she has on (it replaces the clothes in her
+  profile; no restart, nothing stored).
+- **API**: `GET /api/mates/{id}/outfits` (`worn`, cards, presets), `POST …/outfits/{oid}/wear` (`default`: her default
+  set), `PATCH …/outfits/{oid} {name}`, `DELETE …/outfits/{oid}`. A mate document carries `outfits` (the cards, no avatars).
+
+New sets are made in the studio: docs/avatar-create.md §12.

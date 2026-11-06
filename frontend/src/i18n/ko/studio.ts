@@ -3,6 +3,11 @@ import type { Messages } from "../index";
 const studio: Messages<"studio"> = {
   titleNew: "새 메이트 만들기",
   titleAvatar: "{name}의 아바타",
+  titleOutfit: "{name}의 새 의상",
+  outfitInWardrobe: "“{name}” 세트가 옷장에 들어갔어요. 메이트 설정의 의상 탭에서 언제든 바꿔 입을 수 있어요.",
+  outfitWorn: "{name}이(가) 지금 입고 있어요",
+  outfitWear: "{name}에게 지금 입히기",
+  outfitStageHint: "얼굴과 머리는 그대로 두고 옷만 바꿔 새 세트를 만들어요. 가격을 보고 확인하기 전에는 크레딧이 쓰이지 않고, 기본 의상은 그대로 남아요.",
   untitled: "이름 없는 메이트",
   draftLine: "초안 · {name}",
   createdLine: "만들었어요 · {name}",

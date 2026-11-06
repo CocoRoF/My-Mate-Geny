@@ -45,6 +45,9 @@ LLM_PROVIDERS = ("claude", "codex")  # engines that can run sealed (own prompt, 
 
 MAX_FIELD = 8000          # one persona field
 MAX_AVATAR_JSON = 256 * 1024
+#: the id of her default set in the wardrobe, and how many other sets it holds
+DEFAULT_OUTFIT = "default"
+MAX_OUTFITS = 24
 MAX_MEMORY = 1000         # one memory, chars
 MAX_MEMORIES = 500        # active prompt tier; archived history is retained until explicit forgetting
 
@@ -596,6 +599,26 @@ def _loads(raw: Any, empty: Any) -> Any:
     return v if isinstance(v, type(empty)) else empty
 
 
+def _outfit_card(oid: str, name: str, avatar: dict[str, Any], *, preset: str = "", note: str = "") -> dict[str, Any]:
+    rig = avatar.get("rig") if isinstance(avatar.get("rig"), dict) else {}
+    return {"id": oid, "name": name, "kind": avatar.get("kind") or "none",
+            "home": rig.get("home") or (rig.get("stills") or {}).get("neutral") or "",
+            "aspect": rig.get("aspect") or [3, 4], "clips": len(rig.get("clips") or []),
+            "stills": len(rig.get("stills") or {}), "preset": preset, "note": note}
+
+
+def outfits_view(raw: dict[str, Any], on: dict[str, Any]) -> dict[str, Any]:
+    """The wardrobe as clients see it (no avatar documents): which set she has on and a card per set, her default
+    set first. ``on`` is the avatar column: the set she has on."""
+    worn = raw.get("worn") or DEFAULT_OUTFIT
+    base = on if worn == DEFAULT_OUTFIT else (raw.get("base") or {"kind": "none"})
+    return {"worn": worn, "items": [
+        _outfit_card(DEFAULT_OUTFIT, "", base),
+        *(_outfit_card(it["id"], it["name"], on if it["id"] == worn else it["avatar"], preset=it.get("preset") or "",
+                       note=it.get("note") or "") for it in raw.get("items") or []),
+    ]}
+
+
 class MateStore:
     def __init__(self, db: Database, vault: SecretVault | None = None) -> None:
         self._db = db
@@ -622,6 +645,7 @@ class MateStore:
     # ---- mates ----
 
     def _out(self, row: Any) -> dict[str, Any]:
+        avatar = _loads(row["avatar"], {}) or {"kind": "none"}
         return {
             "id": row["id"],
             "name": row["name"],
@@ -629,7 +653,8 @@ class MateStore:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "persona": normalize_persona(_loads(row["persona"], {})),
-            "avatar": _loads(row["avatar"], {}) or {"kind": "none"},
+            "avatar": avatar,
+            "outfits": outfits_view(_loads(row["outfits"], {}) if "outfits" in row.keys() else {}, avatar),
             "llm": normalize_llm(None, _loads(row["llm"], {})),
             "voice": normalize_voice(None, _loads(row["voice"], {})),
             "prefs": normalize_prefs(None, _loads(row["prefs"], {}) if "prefs" in row.keys() else {}),
@@ -759,13 +784,22 @@ class MateStore:
                     sets.append(f"{key} = ?")
                     params.append(json.dumps(new, ensure_ascii=False))
                     changed.add(key)
+        in_outfit = cur["outfits"]["worn"] != DEFAULT_OUTFIT
         if "avatar" in patch and patch["avatar"] is not None:
             new = normalize_avatar(patch["avatar"])
-            if new != cur["avatar"]:
+            if patch.get("_sync") and in_outfit:  # (a bundle update is her default set, not what she has on)
+                wardrobe = self._wardrobe(mate_id)
+                if new != wardrobe["base"]:
+                    sets.append("outfits = ?")
+                    params.append(json.dumps({**wardrobe, "base": new}, ensure_ascii=False))
+                    changed.add("avatar")
+            elif new != cur["avatar"]:
                 sets.append("avatar = ?")
                 params.append(json.dumps(new, ensure_ascii=False))
                 changed.add("avatar")
-        if cur.get("builtin") and changed & {"persona", "avatar"} and not patch.get("_sync"):
+        # (editing an outfit set leaves the bundled default set as it is)
+        if cur.get("builtin") and not patch.get("_sync") and ("persona" in changed or ("avatar" in changed
+                                                                                        and not in_outfit)):
             sets.append("customized = 1")  # the user's own version now: content updates leave it alone
         with self._lock:
             if patch.get("is_default") and not cur["is_default"] and not cur.get("draft"):
@@ -779,6 +813,114 @@ class MateStore:
         if sets:
             self._changed("draft" if cur.get("draft") else "updated", mate_id)
         return self.get(mate_id), changed
+
+    # ---- the wardrobe (docs/mate.md "Outfits") ----
+    # The avatar column is always the set she has on, so everything that reads a mate just works. ``outfits`` holds the
+    # rest: {worn, base (her default set while another one is on), items: [{id, name, preset, note, project_id, avatar}]}.
+    # What comes off keeps the state it was in (a worn item's own ``avatar`` is only refreshed then).
+
+    def _wardrobe(self, mate_id: str) -> dict[str, Any]:
+        row = self._db.query_one("SELECT outfits FROM mates WHERE id = ?", (mate_id,))
+        if row is None:
+            raise KeyError(f"mate not found: {mate_id}")
+        w = _loads(row["outfits"], {})
+        return {"worn": w.get("worn") or DEFAULT_OUTFIT, "base": w.get("base"), "items": w.get("items") or []}
+
+    def _save_wardrobe(self, mate_id: str, wardrobe: dict[str, Any], avatar: dict[str, Any] | None = None) -> None:
+        sets, params = ["outfits = ?", "updated_at = ?"], [json.dumps(wardrobe, ensure_ascii=False), now_iso()]
+        if avatar is not None:
+            sets.append("avatar = ?")
+            params.append(json.dumps(avatar, ensure_ascii=False))
+        self._db.execute(f"UPDATE mates SET {', '.join(sets)} WHERE id = ?", (*params, mate_id))
+        self._changed("updated", mate_id)
+
+    @staticmethod
+    def _outfit_item(wardrobe: dict[str, Any], oid: str) -> dict[str, Any]:
+        for it in wardrobe["items"]:
+            if it["id"] == oid:
+                return it
+        raise KeyError(f"outfit not found: {oid}")
+
+    def base_avatar(self, mate_id: str) -> dict[str, Any]:
+        """Her default set, whatever she has on."""
+        w = self._wardrobe(mate_id)
+        return self.get(mate_id)["avatar"] if w["worn"] == DEFAULT_OUTFIT else (w["base"] or {"kind": "none"})
+
+    def all_avatars(self, mate_id: str) -> list[dict[str, Any]]:
+        """Every avatar document of this mate: what she has on and all the rest of the wardrobe."""
+        w = self._wardrobe(mate_id)
+        return [self.get(mate_id)["avatar"], *([w["base"]] if w["base"] else []), *(it["avatar"] for it in w["items"])]
+
+    def worn_outfit(self, mate_id: str) -> dict[str, Any] | None:
+        """The outfit she has on, without its avatar; None in her default set."""
+        w = self._wardrobe(mate_id)
+        if w["worn"] == DEFAULT_OUTFIT:
+            return None
+        return {k: v for k, v in self._outfit_item(w, w["worn"]).items() if k != "avatar"}
+
+    def wear_outfit(self, mate_id: str, oid: str) -> dict[str, Any]:
+        with self._lock:
+            cur = self.get(mate_id)
+            w = self._wardrobe(mate_id)
+            if oid == w["worn"]:
+                return cur
+            on = w["base"] if oid == DEFAULT_OUTFIT else self._outfit_item(w, oid)["avatar"]
+            if w["worn"] == DEFAULT_OUTFIT:
+                w["base"] = cur["avatar"]
+            else:
+                self._outfit_item(w, w["worn"])["avatar"] = cur["avatar"]
+            if oid == DEFAULT_OUTFIT:
+                w["base"] = None
+            w["worn"] = oid
+            self._save_wardrobe(mate_id, w, on or {"kind": "none"})
+        return self.get(mate_id)
+
+    def add_outfit(self, mate_id: str, *, name: str, avatar: Any, preset: str = "", note: str = "",
+                   project_id: str = "") -> str:
+        name = _s(name, 40).strip()
+        if not name:
+            raise MateError("an outfit needs a name")
+        doc = normalize_avatar(avatar)
+        with self._lock:
+            w = self._wardrobe(mate_id)
+            if len(w["items"]) >= MAX_OUTFITS:
+                raise MateError(f"a wardrobe holds at most {MAX_OUTFITS} outfits: delete one first")
+            oid = new_id("out_")
+            w["items"].append({"id": oid, "name": name, "preset": _s(preset, 40), "note": _s(note, 300),
+                               "project_id": _s(project_id, 80), "created_at": now_iso(), "avatar": doc})
+            self._save_wardrobe(mate_id, w)
+        return oid
+
+    def replace_outfit(self, mate_id: str, oid: str, avatar: Any) -> None:
+        """A remade set (a redo in its project): its place in the wardrobe, on her if she has it on."""
+        doc = normalize_avatar(avatar)
+        with self._lock:
+            w = self._wardrobe(mate_id)
+            self._outfit_item(w, oid)["avatar"] = doc
+            self._save_wardrobe(mate_id, w, doc if w["worn"] == oid else None)
+
+    def rename_outfit(self, mate_id: str, oid: str, name: str) -> dict[str, Any]:
+        name = _s(name, 40).strip()
+        if not name:
+            raise MateError("an outfit needs a name")
+        with self._lock:
+            w = self._wardrobe(mate_id)
+            self._outfit_item(w, oid)["name"] = name
+            self._save_wardrobe(mate_id, w)
+        return self.get(mate_id)
+
+    def delete_outfit(self, mate_id: str, oid: str) -> dict[str, Any]:
+        """Out of the wardrobe (her default set back on when she had it on). The default set can't go."""
+        with self._lock:
+            if oid == DEFAULT_OUTFIT:
+                raise MateError("her default set stays in the wardrobe")
+            self._outfit_item(self._wardrobe(mate_id), oid)
+            if self._wardrobe(mate_id)["worn"] == oid:
+                self.wear_outfit(mate_id, DEFAULT_OUTFIT)
+            w = self._wardrobe(mate_id)
+            w["items"] = [it for it in w["items"] if it["id"] != oid]
+            self._save_wardrobe(mate_id, w)
+        return self.get(mate_id)
 
     # ---- built-in mates ----
 

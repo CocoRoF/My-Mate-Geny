@@ -157,12 +157,13 @@ for _a in ("answer", "estimate", "confirm", "change", "discard", "pause", "resum
 
 @router.post("/studio")
 async def studio_open(request: Request) -> dict:
-    """``{mate_id?, language, fresh?}`` → the studio's project: a new draft mate (no ``mate_id``), a draft's own
-    project, or an existing mate's latest project (``fresh``: a new one)."""
+    """``{mate_id?, language, fresh?, outfit?: {preset?}}`` → the studio's project: a new draft mate (no ``mate_id``),
+    a draft's own project, an existing mate's latest project (``fresh``: a new one) or a new outfit for her wardrobe."""
     b = await _body(request)
     try:
         return _svc(request).studio_open(mate_id=b.get("mate_id") or None, language=str(b.get("language") or "en"),
-                                         provider=str(b.get("provider") or "claude"), fresh=bool(b.get("fresh")))
+                                         provider=str(b.get("provider") or "claude"), fresh=bool(b.get("fresh")),
+                                         outfit=b["outfit"] if isinstance(b.get("outfit"), dict) else None)
     except Exception as exc:  # noqa: BLE001
         raise _http(exc) from None
 

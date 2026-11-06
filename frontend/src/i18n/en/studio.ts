@@ -2,6 +2,11 @@
 export default {
   titleNew: "New mate",
   titleAvatar: "Avatar for {name}",
+  titleOutfit: "New outfit for {name}",
+  outfitInWardrobe: "The “{name}” set is in her wardrobe. It can be switched any time in Mate settings → Outfits.",
+  outfitWorn: "{name} is wearing it now",
+  outfitWear: "Put it on {name} now",
+  outfitStageHint: "Her face and hair stay and only the clothes change. No credits are spent until you see the price and confirm, and her default outfit stays.",
   untitled: "Untitled mate",
   draftLine: "Draft · {name}",
   createdLine: "Created · {name}",

@@ -227,6 +227,14 @@ def thumb(src: Path, dst: Path, px: int = 512) -> None:
     atomic_save(im, dst, quality=85)
 
 
+def flatten(src: Path, dst: Path) -> None:
+    """A picture with a transparent background on the known gray, at full size (a reference for the image model)."""
+    im = Image.open(src).convert("RGBA")
+    flat = Image.new("RGBA", im.size, GRAY + (255,))
+    flat.alpha_composite(im)
+    atomic_save(flat.convert("RGB"), dst, quality=93)
+
+
 def nearest_aspect(w: int, h: int) -> str:
     r = w / h
     return min(JOB_ASPECTS, key=lambda k: abs(np.log(JOB_ASPECTS[k] / r)))
@@ -646,6 +654,9 @@ def main(argv: list[str]) -> int:
             res = cmd_versions()
         elif step == "thumb":
             thumb(Path(rest[0]), Path(rest[1]), int(rest[2]) if len(rest) > 2 else 512)
+            res = {}
+        elif step == "flatten":
+            flatten(Path(rest[0]), Path(rest[1]))
             res = {}
         else:
             p = Path(rest[0]).resolve()

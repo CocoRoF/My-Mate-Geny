@@ -466,7 +466,11 @@ export default function MateStudio() {
   }, [kind, pid, isNew]);
   const mates = useMateStore((s) => s.mates);
 
-  const title = isNew || (kind === "create" && !created) ? t("studio.titleNew") : t("studio.titleAvatar", { name: mate?.name || "" });
+  const title = isNew || (kind === "create" && !created)
+    ? t("studio.titleNew")
+    : project?.outfit
+      ? t("studio.titleOutfit", { name: mate?.name || "" })
+      : t("studio.titleAvatar", { name: mate?.name || "" });
   const name = mate ? mate.name || t("studio.untitled") : "";
   const credits = project?.confirmation ? (
     <span className="pill bg-surface-3 tabular-nums text-content-dim" title={t("avatar.creditsCounted")} data-testid="studio-credits">
@@ -539,7 +543,7 @@ export default function MateStudio() {
                     }}
                     testId="studio-project-item"
                   >
-                    <span className="block truncate">{new Date(p.created_at).toLocaleString()}</span>
+                    <span className="block truncate">{p.outfit ? p.outfit.name : new Date(p.created_at).toLocaleString()}</span>
                     <span className="block text-[11px] text-content-faint">{t(`avatar.status_${p.status}` as MsgKey)}</span>
                   </MenuItem>
                   {p.id !== pid && !LIVE.has(p.status) && (

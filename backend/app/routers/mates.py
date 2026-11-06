@@ -460,6 +460,42 @@ async def delete_memory(mate_id: str, mem_id: str, request: Request) -> dict:
     return {"id": mem_id, "deleted": True}
 
 
+# ---- the wardrobe (docs/mate.md "Outfits") ----
+
+@router.get("/{mate_id}/outfits")
+async def get_outfits(mate_id: str, request: Request) -> dict:
+    """``{worn, items: [cards], presets}``"""
+    try:
+        return _svc(request).outfits(mate_id)
+    except (KeyError, MateError) as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/{mate_id}/outfits/{oid}/wear")
+async def wear_outfit(mate_id: str, oid: str, request: Request) -> dict:
+    """Puts the whole set on her (``default``: her default set); every window follows."""
+    try:
+        return _svc(request).wear_outfit(mate_id, oid)
+    except (KeyError, MateError) as exc:
+        raise _http(exc) from exc
+
+
+@router.patch("/{mate_id}/outfits/{oid}")
+async def rename_outfit(mate_id: str, oid: str, request: Request) -> dict:
+    try:
+        return _svc(request).rename_outfit(mate_id, oid, str((await _json(request)).get("name") or ""))
+    except (KeyError, MateError) as exc:
+        raise _http(exc) from exc
+
+
+@router.delete("/{mate_id}/outfits/{oid}")
+async def delete_outfit(mate_id: str, oid: str, request: Request) -> dict:
+    try:
+        return _svc(request).delete_outfit(mate_id, oid)
+    except (KeyError, MateError) as exc:
+        raise _http(exc) from exc
+
+
 # ---- assets / avatar ----
 
 @router.post("/{mate_id}/assets")

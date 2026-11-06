@@ -228,6 +228,28 @@ export const DEFAULT_SCREEN: MateScreen = { enabled: false, approval: "ask", hid
 /** the mate's screen settings, complete (an older server sends none) */
 export const screenOf = (m: Pick<Mate, "screen"> | null | undefined): MateScreen => ({ ...DEFAULT_SCREEN, ...(m?.screen ?? {}) });
 
+/** one set in a mate's wardrobe (docs/mate.md "Outfits"); id "default" is her default set, its name is ours to show */
+export interface OutfitCard {
+  id: string;
+  name: string;
+  kind: Avatar["kind"];
+  home: string;
+  aspect: number[];
+  clips: number;
+  stills: number;
+  preset: string;
+  note: string;
+}
+
+export interface OutfitPreset {
+  id: string;
+  name: Record<string, string>;
+  hint: Record<string, string>;
+  motions: string;
+}
+
+export const DEFAULT_OUTFIT = "default";
+
 export interface Mate {
   id: string;
   name: string;
@@ -235,7 +257,10 @@ export interface Mate {
   created_at: string;
   updated_at: string;
   persona: Persona;
+  /** the set she has on */
   avatar: Avatar;
+  /** missing on documents from an older server */
+  outfits?: { worn: string; items: OutfitCard[] };
   llm: MateLlm;
   voice: MateVoice;
   /** missing on documents from an older server: DEFAULT_PREFS */
@@ -455,6 +480,11 @@ export const getMate = (id: string) => apiFetch<Mate>(`/api/mates/${enc(id)}`);
 export const createMate = (body: MatePatch & { name: string }) => apiFetch<Mate>("/api/mates", { method: "POST", ...j(body) });
 export const updateMate = (id: string, patch: MatePatch) =>
   apiFetch<Mate>(`/api/mates/${enc(id)}`, { method: "PATCH", ...j(patch) });
+export const getOutfits = (id: string) => apiFetch<{ worn: string; items: OutfitCard[]; presets: OutfitPreset[] }>(`/api/mates/${enc(id)}/outfits`);
+export const wearOutfit = (id: string, oid: string) => apiFetch<Mate>(`/api/mates/${enc(id)}/outfits/${enc(oid)}/wear`, { method: "POST" });
+export const renameOutfit = (id: string, oid: string, name: string) =>
+  apiFetch<Mate>(`/api/mates/${enc(id)}/outfits/${enc(oid)}`, { method: "PATCH", ...j({ name }) });
+export const deleteOutfit = (id: string, oid: string) => apiFetch<Mate>(`/api/mates/${enc(id)}/outfits/${enc(oid)}`, { method: "DELETE" });
 /** bring back deleted built-in mates → the whole list */
 export const restoreBuiltins = () => apiFetch<Mate[]>("/api/mates/builtin/restore", { method: "POST" });
 /** a built-in mate: the bundled avatar back (clip / trigger edits undone) → the mate */
