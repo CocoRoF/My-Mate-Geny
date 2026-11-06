@@ -619,6 +619,16 @@ def _on_new_files(avatar: dict[str, Any], old: dict[str, Any], new: dict[str, An
     return moved
 
 
+def takes_frame(avatar: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+    """A set the user edited keeps the edits, and takes the bundle's measurement of the same picture."""
+    rig, bundled = avatar.get("rig"), new.get("rig")
+    if not isinstance(rig, dict) or not isinstance(bundled, dict) or not bundled.get("frame"):
+        return avatar
+    if rig.get("home") != bundled.get("home") or rig.get("frame") == bundled["frame"]:
+        return avatar
+    return {**avatar, "rig": {**rig, "frame": bundled["frame"]}}
+
+
 def outfit_lock(item: dict[str, Any], affinity: int) -> int | None:
     """The affinity an outfit still waits for, None when it is open. Once reached it stays open (``unlock.at``), however
     the affinity moves later."""
@@ -635,7 +645,7 @@ def _outfit_card(oid: str, name: str, avatar: dict[str, Any], *, note: str = "",
     rig = avatar.get("rig") if isinstance(avatar.get("rig"), dict) else {}
     return {"id": oid, "name": name, "kind": avatar.get("kind") or "none",
             "home": rig.get("home") or (rig.get("stills") or {}).get("neutral") or "",
-            "aspect": rig.get("aspect") or [3, 4], "clips": len(rig.get("clips") or []),
+            "aspect": rig.get("aspect") or [3, 4], "frame": rig.get("frame"), "clips": len(rig.get("clips") or []),
             "stills": len(rig.get("stills") or {}), "note": note, "feel": S.clean_feel(feel)}
 
 
@@ -976,7 +986,7 @@ class MateStore:
                         cur["note"] = it.get("note") or ""
                     new = normalize_avatar(it["avatar"])
                     live = self.get(mate_id)["avatar"] if worn else cur["avatar"]
-                    follows = new if live == old["avatar"] else _on_new_files(live, old["avatar"], new)
+                    follows = new if live == old["avatar"] else takes_frame(_on_new_files(live, old["avatar"], new), new)
                     if follows != live:
                         cur["avatar"] = follows
                         on = follows if worn else on
@@ -1040,6 +1050,20 @@ class MateStore:
             if note is not None:
                 item["note"] = _s(note, 300)
             self._save_wardrobe(mate_id, w, doc if w["worn"] == oid else None)
+
+    def fill_frames(self, mate_id: str, framed: Callable[[Any, str], Any]) -> None:
+        """Sets from before they carried a ``frame``: measured once, without anything else changing."""
+        with self._lock:
+            w = self._wardrobe(mate_id)
+            before = json.dumps(w, sort_keys=True)
+            if w["base"]:
+                w["base"] = framed(w["base"], mate_id)
+            for it in w["items"]:
+                it["avatar"] = framed(it["avatar"], mate_id)
+            cur = self.get(mate_id)["avatar"]
+            on = framed(cur, mate_id)
+            if json.dumps(w, sort_keys=True) != before or on != cur:
+                self._save_wardrobe(mate_id, w, on if on != cur else None)
 
     def rename_outfit(self, mate_id: str, oid: str, name: str) -> dict[str, Any]:
         name = _s(name, 40).strip()
@@ -1519,6 +1543,14 @@ class MateStore:
             "ON CONFLICT(mate_id) DO UPDATE SET doc = excluded.doc, updated_at = excluded.updated_at",
             (mate_id, json.dumps(doc, ensure_ascii=False), now_iso()))
         self._open_reached_outfits(mate_id, round(float(doc.get("affinity") or 0)))
+
+    def wipe_memory(self, mate_id: str) -> None:
+        """What she knows and what she got from talking, in this database: memories, the record of how she changed her own
+        style (it quotes what was asked; the style itself stays), and how she feels (its reasons quote what was said)."""
+        self.knowledge.wipe(mate_id)
+        self._db.execute("DELETE FROM mate_style_changes WHERE mate_id = ?", (mate_id,))
+        self._db.execute("DELETE FROM mate_settings WHERE key = ?", (f"memchg:{mate_id}",))
+        self.save_state(mate_id, S.new())
 
     # ---- how she feels (app/mate/state.py) ----
 

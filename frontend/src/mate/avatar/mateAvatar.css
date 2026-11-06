@@ -9,6 +9,18 @@
   border-radius:var(--mate-plain-radius,18px);box-shadow:0 10px 36px rgba(0,0,0,.35)}
 .mate-plain-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 
+/* every set of a mate stands in the same place at the same size: a box her default set's shape, fitted at the bottom centre,
+   with this set placed in it (framing.ts). What reaches past that box still shows, up to the edge of the whole body. */
+.mate-frame-box{position:absolute;inset:0;container-type:size}
+.mate-frame{position:absolute;left:0;right:0;bottom:0;margin-inline:auto;aspect-ratio:var(--mate-frame);
+  width:min(100cqw,calc(100cqh*var(--mate-frame)))}
+.mate-set{position:absolute}
+
+/* a change of clothes dissolves: away, then back in the new set (outfitFade.ts has the same times) */
+.mate-outfit-out{opacity:0;transition:opacity .38s ease-in}
+.mate-outfit-in{animation:mate-outfit-in .52s ease-out both}
+@keyframes mate-outfit-in{from{opacity:0}to{opacity:1}}
+
 /* (the video body has no level-driven transform: rescaling the canvas every frame made her edges swim — the talk
    clips move on their own) */
 

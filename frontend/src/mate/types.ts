@@ -28,9 +28,22 @@ export interface RigClip {
   disabled?: boolean;
 }
 
+/** where her face sits in a set's pictures, in fractions of the picture: every set of a mate is lined up by it (avatar/framing.ts) */
+export interface RigFrame {
+  /** centre x, centre y, height */
+  face: number[];
+  /** the same, estimated from the outline, for comparing with a set that has only that */
+  outline?: number[];
+  /** where her figure starts from the top */
+  top?: number;
+  /** "outline": estimated from the outline, no face was found */
+  how?: "face" | "outline";
+}
+
 export interface Rig {
   /** w, h of one frame */
   aspect: [number, number];
+  frame?: RigFrame | null;
   /** video only; stacked-alpha = colour top / alpha bottom (H.264). Default "stacked-alpha". */
   packing?: "stacked-alpha" | "plain";
   /** still of the shared home frame (poster / fallback) */

@@ -147,5 +147,20 @@
     ]
   },
   "packing": "stacked-alpha",
-  "portrait": "asset:gray-band/portrait.webp"
+  "portrait": "asset:gray-band/portrait.webp",
+  "frame": {
+    "face": [
+      0.5251,
+      0.2801,
+      0.3096
+    ],
+    "outline": [
+      0.5129,
+      0.1976,
+      0.1898
+    ],
+    "top": 0.0363,
+    "how": "face",
+    "for": "neutral.webp"
+  }
 }

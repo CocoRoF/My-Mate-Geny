@@ -31,7 +31,7 @@ from typing import Any
 from urllib.parse import quote
 
 from app.config import settings
-from app.mate.store import DEFAULT_GREETINGS, MateError, normalize_avatar
+from app.mate.store import DEFAULT_GREETINGS, MateError, normalize_avatar, takes_frame
 from app.services._ids import new_id
 
 CORE_URL = "https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"
@@ -213,6 +213,68 @@ def avatar_picture(avatar: dict[str, Any], mate_id: str) -> Path | None:
         return resolve_asset(mate_id, url[len(prefix):]) if url.startswith(prefix) else None
     except MateError:
         return None
+
+
+def _clean_frame(raw: Any) -> dict[str, Any] | None:
+    """A set's ``frame`` as a rig carries it: where her face sits, in fractions of the picture."""
+    if not isinstance(raw, dict):
+        return None
+    face = raw.get("face")
+    if not (isinstance(face, list) and len(face) == 3 and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in face)):
+        return None
+    if face[2] <= 0:
+        return None
+    top = raw.get("top") if isinstance(raw.get("top"), (int, float)) else 0.0
+    out = {"face": [float(v) for v in face], "top": float(top), "how": "outline" if raw.get("how") == "outline" else "face",
+           "for": str(raw.get("for") or "")}
+    outline = raw.get("outline")
+    if isinstance(outline, list) and len(outline) == 3 and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in outline) and outline[2] > 0:
+        out["outline"] = [float(v) for v in outline]
+    return out
+
+
+def outline_frame(path: Path) -> dict[str, Any] | None:
+    """Where her face sits, estimated from the outline of a cut-out (the same estimate as the pipeline's when it finds no face:
+    this server has no face detector). A picture without a transparent background has no outline: None."""
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        with Image.open(path) as im:
+            alpha = im.convert("RGBA").getchannel("A").point(lambda v: 255 if v > 25 else 0)
+    except (OSError, UnidentifiedImageError):
+        return None
+    W, H = alpha.size
+    box = alpha.getbbox()
+    if box is None or box == (0, 0, W, H):
+        return None
+    left, top, right, bottom = box
+    band = alpha.crop((0, top, W, top + max(1, (bottom - top) // 4))).getbbox()
+    if band is None:
+        return None
+    size = max(40.0, (band[2] - band[0]) * 0.55)
+    return {"face": [round((band[0] + band[2]) / 2 / W, 4), round((top + size * 0.85) / H, 4), round(size / H, 4)],
+            "top": round(top / H, 4), "how": "outline"}
+
+
+def framed(avatar: Any, mate_id: str) -> Any:
+    """A video/photo set always says where her face sits, so it can stand where her default set stands: what it came with while
+    that is still about its picture (``for``), else measured here."""
+    rig = avatar.get("rig") if isinstance(avatar, dict) and avatar.get("kind") in ("video", "photo") else None
+    if not isinstance(rig, dict):
+        return avatar
+    home = PurePosixPath(str(rig.get("home") or (rig.get("stills") or {}).get("neutral") or "").split("?")[0]).name
+    frame = _clean_frame(rig.get("frame"))
+    if frame and frame["for"] == home:
+        return avatar
+    try:
+        picture = avatar_picture(avatar, mate_id)
+    except KeyError:  # (a picture that isn't there yet)
+        picture = None
+    measured = outline_frame(picture) if picture else None
+    out = {k: v for k, v in rig.items() if k != "frame"}
+    if measured:
+        out["frame"] = {**measured, "for": home}
+    return {**avatar, "rig": out}
 
 
 def inherit_rig_tuning(avatar: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
@@ -408,6 +470,9 @@ def rig_avatar(raw: Any, base: Path, url_for: Any) -> dict[str, Any]:
     if not (isinstance(aspect, list) and len(aspect) == 2 and all(isinstance(x, (int, float)) and x > 0 for x in aspect)):
         aspect = [1, 1]
     rig: dict[str, Any] = {"aspect": aspect, "home": home or "", "stills": stills, "clips": clips}
+    frame = _clean_frame(raw.get("frame"))
+    if frame:
+        rig["frame"] = frame
     if emotions:
         rig["emotions"] = emotions
     es = raw.get("emotion_stills")
@@ -1022,6 +1087,8 @@ def merge_builtin(mate: dict[str, Any], prev: dict[str, Any], new: dict[str, Any
     if "avatar" in new and prev.get("avatar") is not None and mate["avatar"] == prev["avatar"] \
             and new["avatar"] != mate["avatar"]:
         patch["avatar"] = new["avatar"]
+    elif "avatar" in new and takes_frame(mate["avatar"], new["avatar"]) != mate["avatar"]:
+        patch["avatar"] = takes_frame(mate["avatar"], new["avatar"])  # (a body the user edited: still measured right)
     return patch
 
 

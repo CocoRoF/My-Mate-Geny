@@ -21,6 +21,7 @@ Steps (files are relative to the project dir; ``pipeline.json`` there holds the 
                        web/box.json (one crop for every clip and still)
     check              → check.json: loop seam, first frame vs the base picture, background drift, alpha quality
     export <key>       → export/: rig.json, <still>.webp, <clip>.{lg,sm}.mp4, portrait.webp (an ailism-style pack)
+    frame <pack>       measure where her face sits in a pack's stills and write it into its rig.json
     sheet <id> <out>   four frames of a clip side by side, cut out on a dark page once its matte exists (for a look)
     thumb <src> <dst> [px]
     selftest [assets]  the alpha recovery on a synthetic frame and, given the bundled mates' assets, on real art (tests)
@@ -395,16 +396,53 @@ def find_face(home: Image.Image) -> tuple[list[int], str]:
         if len(faces):
             x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
             return [int(x), int(y), int(w), int(h)], name
+    return _outline_box(home), "estimate"
+
+
+def _outline_box(home: Image.Image) -> list[int]:
+    """A face box estimated from the figure's outline (the top of the body)."""
+    W, H = home.size
     a = np.asarray(home)[..., 3] > 25
     ys, xs = np.nonzero(a)
     if not len(ys):
-        return [W // 3, H // 8, W // 3, W // 3], "estimate"
+        return [W // 3, H // 8, W // 3, W // 3]
     top, bottom = ys.min(), ys.max()
     band = a[top:top + max(1, (bottom - top) // 4)]
     cols = np.nonzero(band.any(axis=0))[0]
     cx = (cols.min() + cols.max()) / 2 if len(cols) else W / 2
     size = max(40, int((cols.max() - cols.min()) * 0.55)) if len(cols) else W // 4
-    return [int(cx - size / 2), int(top + size * 0.35), size, size], "estimate"
+    return [int(cx - size / 2), int(top + size * 0.35), size, size]
+
+
+def measure_frame(stills: list[Image.Image], home: str) -> dict:
+    """Where her face sits in a set, in fractions of the picture, so that every set of a mate can stand in the same place at
+    the same size (frontend mate/avatar/framing.ts). One picture can fool the detector (a chest taken for a face), so it is
+    the median over her stills, of the boxes in the upper half of her figure. ``home``: the picture it was measured for."""
+    faces, tops = [], []
+    for im in stills:
+        ys = np.nonzero((np.asarray(im)[..., 3] > 25).any(axis=1))[0]
+        if not len(ys):
+            continue
+        W, H = im.size
+        tops.append(float(ys[0]) / H)
+        box, how = find_face(im)
+        middle = box[1] + box[3] / 2
+        if how != "estimate" and middle <= ys[0] + (ys[-1] - ys[0]) * 0.5:
+            faces.append(((box[0] + box[2] / 2) / W, middle / H, box[3] / H))
+    outline = [0.5, 0.3, 0.3]
+    if stills:
+        W, H = stills[0].size
+        x, y, w, h = _outline_box(stills[0])
+        outline = [(x + w / 2) / W, (y + h / 2) / H, h / H]
+    face, how = ([float(np.median([f[i] for f in faces])) for i in range(3)], "face") if faces else (outline, "outline")
+    # (the outline too: a set from before, measured only that way, can still be compared with this one)
+    return {"face": [round(v, 4) for v in face], "outline": [round(v, 4) for v in outline],
+            "top": round(float(np.median(tops)) if tops else 0.0, 4), "how": how, "for": home}
+
+
+def _frame_stills(folder: Path, names: list[str]) -> list[Image.Image]:
+    """The stills that show her as she is (a blink or a mouth frame is only the same picture again)."""
+    return [Image.open(folder / n).convert("RGBA") for n in names if not Path(n).stem.startswith(("blink", "mouth"))]
 
 
 def face_mask(home: Image.Image, box: list[int]) -> np.ndarray:
@@ -701,12 +739,25 @@ def cmd_export(p: Path, key: str) -> dict:
     home = Image.open(m / "home.png").convert("RGBA")
     face = json.loads((m / "face.json").read_text())
     portrait(home, face["box"]).save(tmp / "portrait.webp", quality=90, method=6)
+    names = [Path(v).name for v in stills.values()]
     rig = {"version": 1, "aspect": [w, h], "anchor": [0.5, 1.0], "home": stills.get("neutral"), "stills": stills,
-           "clips": clips, "emotions": emotions, "packing": "stacked-alpha", "portrait": f"asset:{key}/portrait.webp"}
+           "clips": clips, "emotions": emotions, "packing": "stacked-alpha", "portrait": f"asset:{key}/portrait.webp",
+           "frame": measure_frame(_frame_stills(tmp, names), Path(stills.get("neutral") or "neutral.webp").name)}
     (tmp / "rig.json").write_text(json.dumps(rig, ensure_ascii=False, indent=2) + "\n")
     shutil.rmtree(dest, ignore_errors=True)
     os.replace(tmp, dest)
     return {"export": str(dest), "stills": len(stills), "clips": len(clips), "aspect": [w, h]}
+
+
+def cmd_frame(pack: Path) -> dict:
+    """Measure a pack that was made before sets carried their ``frame`` (the bundled mates' are kept in their rig.json)."""
+    path = pack / "rig.json"
+    rig = json.loads(path.read_text())
+    home = Path(str(rig.get("home") or "neutral.webp")).name
+    names = [Path(str(v)).name for v in (rig.get("stills") or {}).values()]
+    rig["frame"] = measure_frame(_frame_stills(pack, [n for n in names if (pack / n).is_file()]), home)
+    path.write_text(json.dumps(rig, ensure_ascii=False, indent=2) + "\n")
+    return {"frame": rig["frame"]}
 
 
 def cmd_sheet(p: Path, cid: str, dst: str) -> dict:
@@ -869,7 +920,7 @@ def main(argv: list[str]) -> int:
             res = {}
         else:
             p = Path(rest[0]).resolve()
-            fn = {"prep": cmd_prep, "home": cmd_home, "stills": cmd_stills, "check": cmd_check}.get(step)
+            fn = {"prep": cmd_prep, "home": cmd_home, "stills": cmd_stills, "check": cmd_check, "frame": cmd_frame}.get(step)
             if fn is not None:
                 res = fn(p)
             elif step == "matte":

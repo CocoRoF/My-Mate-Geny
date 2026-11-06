@@ -157,6 +157,16 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
   const [speechReady,setSpeechReady] = useState(false);
   const [speechClosed,setSpeechClosed] = useState<MateConversation["speechClosed"]>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // her conversation was replaced (her memory was reset, here or in another window): open the new one
+  const [conversationRev, setConversationRev] = useState(0);
+  const conversationNow = mate?.session_id ?? null;
+  useEffect(() => {
+    if (sessionId && conversationNow && conversationNow !== sessionId) {
+      getMateAudioQueue().stop();
+      setCaption(null);
+      setConversationRev((n) => n + 1);
+    }
+  }, [sessionId, conversationNow]);
   const [error, setError] = useState<string | null>(null);
   const [react, setReact] = useState<MateReact>(null);
   const [caption, setCaption] = useState<Caption | null>(null);
@@ -556,7 +566,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
       old?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mateId, store, connectOn]);
+  }, [mateId, store, connectOn, conversationRev]);
 
   /** a new turn with these files; false when not connected (the caller keeps the draft) */
   const send = useCallback(

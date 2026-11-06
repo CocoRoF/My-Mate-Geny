@@ -415,6 +415,15 @@ class Knowledge:
                 (mate_id, mid, "forgotten", "user", now),
             )
 
+    def wipe(self, mate_id: str) -> None:
+        """All she has learned is gone (the sources went with the sessions they came from; a memory takes its versions and
+        evidence with it): what [Reset her memory] does."""
+        with self.db.transaction():
+            for table in ("mate_memories", "memory_audit", "memory_exclusions", "memory_episodes", "memory_links", "memory_jobs", "memory_runs"):
+                self.db.execute(f"DELETE FROM {table} WHERE mate_id=?", (mate_id,))  # noqa: S608 - our own table names
+            self.invalidate(mate_id)
+            self.db.execute("UPDATE memory_context SET state='{}' WHERE mate_id=?", (mate_id,))
+
     def invalidate(self, mate_id: str) -> None:
         self.db.execute(
             "INSERT INTO memory_context(mate_id,generation,privacy_reset) VALUES(?,1,1) ON CONFLICT(mate_id) DO UPDATE SET generation=generation+1,privacy_reset=1,state='{}'",

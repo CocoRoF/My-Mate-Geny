@@ -595,6 +595,25 @@ needs_venv = pytest.mark.skipif(_venv() is None, reason="no avatar processing ve
 
 
 @needs_venv
+def test_the_pipeline_finds_her_face_across_her_stills_even_when_one_picture_fools_it(tmp_path):
+    bundled = S.Path(S.__file__).parents[1] / "mate" / "builtin" / "assets" / "chaerin" / "outfits" / "gray-band-2"
+    rig = json.loads((bundled / "rig.json").read_text())
+    rig.pop("frame", None)
+    (tmp_path / "rig.json").write_text(json.dumps(rig))
+    for path in bundled.glob("*.webp"):
+        (tmp_path / path.name).write_bytes(path.read_bytes())
+    r = subprocess.run([str(_venv() / "bin" / "python"), "-I", str(S.Path(S.__file__).with_name("pipeline.py")), "frame", str(tmp_path)],
+                       capture_output=True, text=True, timeout=120)
+    res = json.loads(r.stdout.strip().splitlines()[-1])
+    assert res["ok"], res
+    cx, cy, h = res["frame"]["face"]
+    assert res["frame"]["how"] == "face" and res["frame"]["for"] == "neutral.webp"
+    assert 0.48 < cx < 0.56 and 0.24 < cy < 0.33 and 0.27 < h < 0.34  # (neutral alone gets her chest: cy 0.52)
+    assert len(res["frame"]["outline"]) == 3  # (for comparing with a set that has only that)
+    assert json.loads((tmp_path / "rig.json").read_text())["frame"] == res["frame"]
+
+
+@needs_venv
 def test_alpha_recovery_on_a_synthetic_frame():
     r = subprocess.run([str(_venv() / "bin" / "python"), "-I", str(S.Path(S.__file__).with_name("pipeline.py")),
                         "selftest", str(S.Path(S.__file__).parents[1] / "mate" / "builtin" / "assets")],

@@ -1,7 +1,7 @@
 /** /api/mates (docs/mate.md §1–5). */
 import { apiFetch, apiResponse, toLogin } from "./client";
 import { tr } from "../i18n";
-import type { Avatar } from "../mate/types";
+import type { Avatar, RigFrame } from "../mate/types";
 import type { Session } from "../types";
 
 /** who she is — the character only (how she talks is the conversation style: MatePrefs) */
@@ -280,6 +280,7 @@ export interface OutfitCard {
   kind: Avatar["kind"];
   home: string;
   aspect: number[];
+  frame?: RigFrame | null;
   clips: number;
   stills: number;
   note: string;
@@ -536,6 +537,8 @@ export const deleteMate = (id: string) => apiFetch<{ deleted: boolean }>(`/api/m
 
 export const openConversation = (id: string) =>
   apiFetch<Conversation>(`/api/mates/${enc(id)}/conversation`, { method: "POST" });
+/** all her memories and the whole conversation go, for good; `confirm`: her name */
+export const wipeMateMemory = (id: string, confirm: string) => apiFetch<Mate>(`/api/mates/${enc(id)}/memory/wipe`, { method: "POST", ...j({ confirm }) });
 export const resetConversation = (id: string) =>
   apiFetch<Conversation>(`/api/mates/${enc(id)}/conversation/reset`, { method: "POST" });
 

@@ -381,6 +381,10 @@ const ko: Messages<"mateSettings"> = {
   // DangerTab
   dangerRestored: "기본 메이트 {count}명을 되살렸어요.",
   dangerAllHere: "기본 메이트가 모두 있어요.",
+  dangerWipeTitle: "{name} 기억 초기화",
+  dangerWipeHint: "기억과 대화 이력, 호감도, 지금 감정을 모두 지우고 처음 만난 것처럼 다시 시작해요. 되돌릴 수 없어요. 호감도로 열린 의상도 다시 잠겨요. 프로필과 말투, 아바타는 그대로이고, 채팅에 맡긴 일도 채팅에 남아요.",
+  dangerWipeBtn: "기억 초기화",
+  dangerWiped: "{name:의} 기억을 지웠어요.",
   dangerDeleteTitle: "{name} 삭제",
   dangerDeleteHint: "메이트와 대화, 기억, 아바타 파일을 지워요. 채팅(과 메이트가 채팅에 보낸 내용)은 남아요.",
   dangerBuiltinHint: "<b>{name:은} 앱에 기본으로 들어 있어요:</b> “기본 메이트 되살리기”로 다시 불러올 수 있어요(이 대화와 기억은 없이 새로).",

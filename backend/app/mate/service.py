@@ -41,6 +41,7 @@ from app.mate import style as STY
 from app.mate.prompt import LANGUAGES, context_block, prompt_key, settings_change_note, system_prompt
 from app.mate.task_memory import TaskMemory
 from app.mate.store import DEFAULT_OUTFIT, MateError, MateStore, normalize_persona, normalize_prefs
+from app.providers import accounts
 from app.providers import get_provider
 from app.providers.catalog import default_mate_model
 from app.providers.base import TurnRequest
@@ -202,6 +203,11 @@ class MateService:
                 self.store.mark_builtin(cur["id"], key, version, snapshot)
             except Exception as exc:  # noqa: BLE001 - one broken bundle must not stop the app
                 self._log("warning", f"built-in mate {key}: {exc}")
+        for mate in self.store.list():
+            try:
+                self.store.fill_frames(mate["id"], files.framed)
+            except Exception as exc:  # noqa: BLE001 - a picture that can't be read must not stop the app
+                self._log("warning", f"measuring {mate['name']}'s sets: {exc}")
 
     def restore_builtins(self) -> list[dict[str, Any]]:
         self.store.restore_builtins()
@@ -237,6 +243,8 @@ class MateService:
     def update(self, mate_id: str, patch: dict[str, Any]) -> dict[str, Any]:
         before = self.store.get(mate_id)
         patch = files.localize_patch(before, patch)  # a new reply language: bundled name/greeting follow it
+        if "avatar" in patch:
+            patch = {**patch, "avatar": files.framed(patch["avatar"], mate_id)}
         mate, changed = self.store.update(mate_id, patch)
         sid = self._live_session(mate)
         if sid and changed & {"llm", "name"}:
@@ -285,7 +293,7 @@ class MateService:
         worn = self.store.get(mate_id)["outfits"]["worn"]
         if oid == worn == DEFAULT_OUTFIT:
             return self.update(mate_id, {"avatar": avatar})
-        self.store.set_outfit_avatar(mate_id, oid, avatar, note=note)
+        self.store.set_outfit_avatar(mate_id, oid, files.framed(avatar, mate_id), note=note)
         self._drop_unused_imports(mate_id)
         return self.store.get(mate_id)
 
@@ -358,6 +366,26 @@ class MateService:
                 and not self._svc.is_running(sid):
             self._svc.update(sid, **self._engine_fields(mate))  # (a switch that didn't reach the row)
         return {"mate": mate, "session_id": sid, "session": self._svc.get(sid), "running": self._svc.is_running(sid)}
+
+    def wipe_memory(self, mate_id: str) -> dict[str, Any]:
+        """[Reset her memory]: as if they had never talked. Her memories and the whole conversation go, here and in the
+        files the engines keep, so nothing can be resumed or read back; so does how close they were, with what that opened;
+        and she starts over with her greeting. Who she is stays: her profile, how she talks, her avatar and outfits. So do
+        the chats she passed work to."""
+        self.forget_engine_context(mate_id, interrupt=True)
+        rows = self.store._db.query("SELECT id FROM sessions WHERE kind='mate' AND mate_id=?", (mate_id,))
+        for row in rows:
+            self._svc.delete(row["id"])
+            self._forget_session(row["id"])
+        self.store.set_session(mate_id, None)
+        self.relation_reset(mate_id, "zero")
+        self.store.wipe_memory(mate_id)
+        for folder in [*accounts.claude_transcript_dirs(files.home_dir(mate_id)), files.mate_dir(mate_id) / "codex"]:
+            shutil.rmtree(folder, ignore_errors=True)
+        self._log("info", f"the memory of “{self.store.get(mate_id)['name']}” was reset", code="mate.memory_wiped")
+        self.conversation(mate_id)
+        self.store._changed("memory", mate_id)
+        return self.store.get(mate_id)
 
     def reset(self, mate_id: str) -> dict[str, Any]:
         conv = self.conversation(mate_id)

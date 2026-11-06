@@ -7,6 +7,7 @@ import { useState } from "react";
 import { addOutfit, DEFAULT_OUTFIT, deleteOutfit, patchOutfit, wearOutfit, type Mate, type OutfitCard } from "../../../api/mates";
 import { useT } from "../../../i18n";
 import { useMateStore } from "../../../stores/mateStore";
+import AlignedBox from "../../../mate/avatar/AlignedBox";
 import Icon from "../../ui/Icon";
 import { ErrorLine, ProgressBar, Section, Toggle } from "./ui";
 
@@ -20,6 +21,7 @@ export default function OutfitBar({ mate, selected, onSelect }: { mate: Mate; se
   const worn = mate.outfits?.worn ?? DEFAULT_OUTFIT;
   const items = mate.outfits?.items ?? [];
   const card = items.find((c) => c.id === selected);
+  const baseCard = items.find((c) => c.id === DEFAULT_OUTFIT);
   const nameOf = (c: OutfitCard) => (c.id === DEFAULT_OUTFIT ? t("mateSettings.outfitDefault") : c.name);
 
   const run = async (fn: () => Promise<void>) => {
@@ -79,7 +81,14 @@ export default function OutfitBar({ mate, selected, onSelect }: { mate: Mate; se
                   <span className="text-[11px] tabular-nums">{t("mateSettings.outfitLockedTile", { n: c.locked.affinity })}</span>
                 </span>
               ) : c.home ? (
-                <img src={c.home} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-contain object-bottom" />
+                // (her default set's shape, her face where it is there: at a glance, only the clothes differ)
+                baseCard?.home && baseCard.kind !== "none" ? (
+                  <AlignedBox set={c} to={baseCard}>
+                    <img src={c.home} alt="" loading="lazy" className="mate-fit" />
+                  </AlignedBox>
+                ) : (
+                  <img src={c.home} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-contain object-bottom" />
+                )
               ) : (
                 <span className="absolute inset-0 grid place-items-center text-[11px] text-content-faint">{t("mateSettings.outfitEmpty")}</span>
               )}

@@ -51,6 +51,13 @@ def account_config_dir(provider: str, account_id: str) -> Path:
     return account_home(provider, account_id) / sub
 
 
+def claude_transcript_dirs(cwd: str | Path) -> list[Path]:
+    """Where Claude Code keeps what was said in this folder, in every login that may have run there."""
+    name = re.sub(r"[^A-Za-z0-9]", "-", str(cwd))
+    roots = [_host_config_dir("claude"), *(settings.home_dir / "accounts" / "claude").glob("*/.claude")]
+    return [d for d in (root / "projects" / name for root in roots) if d.is_dir()]
+
+
 def ensure_account_dirs(provider: str, account_id: str) -> tuple[Path, Path]:
     home = account_home(provider, account_id)
     cfg = account_config_dir(provider, account_id)

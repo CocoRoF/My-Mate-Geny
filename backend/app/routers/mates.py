@@ -303,6 +303,19 @@ async def conversation_reset(mate_id: str, request: Request) -> dict:
         raise _http(exc) from exc
 
 
+@router.post("/{mate_id}/memory/wipe")
+async def wipe_memory(mate_id: str, request: Request) -> dict:
+    """``{confirm: her name}``: all her memories and the whole conversation go, for good"""
+    body = await _json(request)
+    svc = _svc(request)
+    try:
+        if str(body.get("confirm") or "").strip() != svc.get(mate_id)["name"].strip():
+            raise MateError("type her name to confirm", status=400)
+        return svc.wipe_memory(mate_id)
+    except (KeyError, MateError) as exc:
+        raise _http(exc) from exc
+
+
 # ---- the relationship (docs/mate-memory-affinity.md §5) ----
 
 @router.get("/{mate_id}/relation")

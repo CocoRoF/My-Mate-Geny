@@ -368,6 +368,77 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
       assert.ok(poked.ok() && (await poked.json()).top, "a tap counts");
       await change("default");
       await until("still a little shy, for having just had it on", async () => (await felt("shy"))?.why?.code === "was_outfit");
+      step("a change of clothes dissolves, and she stands in the same place at the same size");
+      const wear = async (id) => assert.ok((await mine.request.post(`${SERVER}/api/mates/${chaerin.id}/outfits/${id}/wear`)).ok(), `wearing ${id}`);
+      // where her face is on the screen, from the set on her and where it was placed
+      const faceOn = async (page) => {
+        const { frame } = (await mateNow()).avatar.rig;
+        assert.ok(frame?.face, "a set says where her face is");
+        return page.evaluate((f) => {
+          const set = document.querySelector("[data-mate-set]").getBoundingClientRect();
+          const box = document.querySelector("[data-mate-frame]").getBoundingClientRect();
+          return { x: set.left + f[0] * set.width, y: set.top + f[1] * set.height, h: f[2] * set.height, box: [box.left, box.top, box.width, box.height] };
+        }, frame.face);
+      };
+      const sameSpot = (a, b, where) => {
+        assert.ok(Math.abs(a.x - b.x) < 1.5 && Math.abs(a.y - b.y) < 1.5, `${where}: her face moved ${JSON.stringify([a, b])}`);
+        assert.ok(Math.abs(a.h - b.h) / a.h < 0.02, `${where}: her face changed size ${JSON.stringify([a, b])}`);
+        assert.deepEqual(a.box, b.box, `${where}: the box moved`);
+      };
+      const idle = (page) => until("the fade to end", async () => (await page.locator(".mate-outfit-out, .mate-outfit-in").count()) === 0);
+      const picture = (page) => page.evaluate(() => document.querySelector("[data-mate-set] img")?.src ?? "");
+      const showing = (page, what) => until(`${what} on the screen`, async () => what.test(await picture(page)) && (await page.locator(".mate-outfit-out, .mate-outfit-in").count()) === 0);
+      const USUAL = /chaerin\/neutral/;
+      const UNDERWEAR = /gray-band/;
+      await until("in her usual clothes", async () => (await mateNow()).outfits.worn === "default");
+      await showing(here, USUAL);
+      const usual = await faceOn(here);
+      await here.screenshot({ path: path.join(SHOTS, "frame-usual-ko-dark.png") });
+      // (what it looks like over time: which part of the fade, how see-through, which picture)
+      await here.bringToFront();
+      await here.evaluate(() => {
+        window.__fade = [];
+        window.__fadeTimer = setInterval(() => {
+          const root = document.querySelector("[data-mate-kind]");
+          if (root) window.__fade.push({ phase: /mate-outfit-(out|in)/.exec(root.className)?.[1] ?? "idle", opacity: Number(getComputedStyle(root).opacity), pic: root.querySelector("[data-mate-set] img")?.src ?? "" });
+        }, 25);
+      });
+      await wear(GRAY);
+      await until("it starts by fading away", async () => (await here.locator(".mate-outfit-out").count()) > 0, 8000);
+      await until("and comes back in the new set", async () => (await here.locator(".mate-outfit-in").count()) > 0, 8000);
+      await idle(here);
+      await sleep(200);
+      const fade = await here.evaluate(() => {
+        clearInterval(window.__fadeTimer);
+        return window.__fade;
+      });
+      const parts = fade.map((x) => x.phase).filter((x, i, all) => x !== all[i - 1]);
+      assert.deepEqual(parts.slice(parts.indexOf("out")), ["out", "in", "idle"], `away, back, done: ${JSON.stringify(parts)}`);
+      const during = (part) => fade.filter((x) => x.phase === part);
+      assert.ok(during("out").some((x) => x.opacity > 0 && x.opacity < 1), `it fades away: ${JSON.stringify(during("out").map((x) => x.opacity))}`);
+      assert.ok(during("in").some((x) => x.opacity > 0 && x.opacity < 1), `it fades in: ${JSON.stringify(during("in").map((x) => x.opacity))}`);
+      assert.ok(during("out").every((x) => !/gray-band/.test(x.pic)), "the new set only shows once the old one is gone");
+      assert.ok(during("in").every((x) => /gray-band/.test(x.pic)), "and it is there when she comes back");
+      assert.equal(await here.evaluate(() => Number(getComputedStyle(document.querySelector("[data-mate-kind]")).opacity)), 1);
+      await showing(here, UNDERWEAR);
+      sameSpot(usual, await faceOn(here), "desktop");
+      await here.screenshot({ path: path.join(SHOTS, "frame-underwear-ko-dark.png") });
+      await wear("default");
+      await showing(here, USUAL);
+
+      await here.locator('[data-testid="mate-relation-panel-close"]').click();  // (on a phone it would cover her)
+      for (const [label, size] of [["a phone", { width: 390, height: 844 }], ["a narrow window", { width: 460, height: 900 }]]) {
+        await here.setViewportSize(size);
+        await showing(here, USUAL);
+        await sleep(300);
+        const a = await faceOn(here);
+        await wear(GRAY);
+        await showing(here, UNDERWEAR);
+        sameSpot(a, await faceOn(here), label);
+        await here.screenshot({ path: path.join(SHOTS, `frame-underwear-${size.width}.png`) });
+        await wear("default");
+        await showing(here, USUAL);
+      }
       await mine.close();
     }
 

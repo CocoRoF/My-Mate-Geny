@@ -48,7 +48,7 @@ Exactly the official mates' body (docs/mate.md §2 `video`, packing `stacked-alp
    above, alpha below) at two heights (studio: lg 1080 / sm 540; light: 720 / 360).
 7. **Check** — per clip: loop seam (first vs last frame, < 3/255), first frame vs the base picture (< 4), background
    drift (< 10), soft alpha inside the body (< 12 %).
-8. **Export** — `rig.json` (`aspect`, `home`, `stills`, `clips` with kind / emotion / loop, `emotions`,
+8. **Export** — `rig.json` (`aspect`, `frame` (where her face sits: docs/mate.md "Outfits"), `home`, `stills`, `clips` with kind / emotion / loop, `emotions`,
    `packing: stacked-alpha`), the stills as WebP on the clips' crop, the clips, `portrait.webp` — an ailism-style pack
    the existing importer (`files.import_folder_pack`) puts on a mate.
 

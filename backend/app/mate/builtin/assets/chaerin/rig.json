@@ -149,5 +149,20 @@
       "wave"
     ]
   },
-  "packing": "stacked-alpha"
+  "packing": "stacked-alpha",
+  "frame": {
+    "face": [
+      0.4841,
+      0.3165,
+      0.3072
+    ],
+    "outline": [
+      0.487,
+      0.233,
+      0.2247
+    ],
+    "top": 0.0423,
+    "how": "face",
+    "for": "neutral.webp"
+  }
 }

@@ -9,11 +9,14 @@
  *
  * Photo/Live2D mouths follow the voice bridge. Video receives conversation activity separately from audio.
  */
-import { lazy, memo, Suspense, useState, useSyncExternalStore } from "react";
+import { lazy, memo, Suspense, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useLiveAvatar } from "../livePreview";
 import type { Avatar, BodyMood, MateAvatarProps } from "../types";
-import type { MateState } from "../../api/mates";
+import { DEFAULT_OUTFIT, type MateState, type OutfitCard } from "../../api/mates";
 import { restingLook } from "../stateLook";
+import AlignedBox from "./AlignedBox";
+import type { FramedSet } from "./framing";
+import { useOutfitFade } from "./outfitFade";
 import { StackedPlayer } from "./player";
 import { reducedMotion } from "./shared";
 import VideoBody from "./VideoBody";
@@ -40,6 +43,8 @@ export interface MateAvatarExtraProps {
   interactive?: boolean;
   /** the user's pan / zoom inside the box (mate/avatar/view.ts; the desktop overlay) */
   view?: AvatarViewT;
+  /** her default set: this one stands where that one stands (framing.ts) */
+  frameTo?: FramedSet;
 }
 
 export const MateAvatar = memo(function MateAvatar({
@@ -51,6 +56,7 @@ export const MateAvatar = memo(function MateAvatar({
   videoMood,
   react = null,
   look,
+  frameTo,
   className,
   live2dCoreUrl,
   onTap,
@@ -91,6 +97,7 @@ export const MateAvatar = memo(function MateAvatar({
     const aspect = rig.aspect?.length === 2 && rig.aspect[0] > 0 && rig.aspect[1] > 0 ? rig.aspect : [3, 4];
     const style = { aspectRatio: `${aspect[0]} / ${aspect[1]}` };
     const packing = rig.packing ?? "stacked-alpha";
+    const aligned = (body: ReactNode) => (frameTo ? <AlignedBox set={{ aspect, frame: rig.frame }} to={frameTo}>{body}</AlignedBox> : body);
     const video =
       avatar.kind === "video" &&
       rig.clips.some((c) => !c.disabled) &&
@@ -100,7 +107,8 @@ export const MateAvatar = memo(function MateAvatar({
       <div className={cls} style={style} data-mate-kind={avatar.kind}>
         {/* (always this layer: adding it later would restart the body's player) */}
         <div className="mate-layer" style={{ transform: view && viewTransform(view), transformOrigin: "0 0" }} data-mate-view="">
-        {video ? (
+        {aligned(
+          video ? (
           <VideoBody
             // one player per rig and size: another avatar never reuses this one's player, canvas, videos or clips
             key={`v|${size}|${packing}|${rig.clips.map((c) => c.src).join(",")}`}
@@ -116,6 +124,7 @@ export const MateAvatar = memo(function MateAvatar({
           <PhotoBody key={`p|${home}`} stills={rig.stills} emotionStills={rig.emotion_stills} home={home} mood={mood} react={react} look={look} name={name} />
         ) : (
           <Initial name={name} />
+          ),
         )}
         </div>
       </div>
@@ -149,10 +158,26 @@ function Initial({ name }: { name: string }) {
  */
 export function LiveMateAvatar({
   mate,
+  className,
   ...rest
-}: Omit<MateAvatarProps, "avatar" | "name"> & MateAvatarExtraProps & { videoMood: BodyMood; mate: { id: string; name: string; avatar: Avatar; state?: MateState; relation?: { avatar_mood?: boolean } } }) {
+}: Omit<MateAvatarProps, "avatar" | "name"> &
+  MateAvatarExtraProps & {
+    videoMood: BodyMood;
+    mate: { id: string; name: string; avatar: Avatar; state?: MateState; relation?: { avatar_mood?: boolean }; outfits?: { worn: string; items: OutfitCard[] } };
+  }) {
   const avatar = useLiveAvatar(mate) ?? mate.avatar;
-  return <MateAvatar avatar={avatar} name={mate.name} look={restingLook(mate)} {...rest} />;
+  const { shown, phase } = useOutfitFade(mate.outfits?.worn ?? DEFAULT_OUTFIT, avatar);
+  const fading = phase === "idle" ? "" : `mate-outfit-${phase}`;
+  const base = mate.outfits?.items.find((c) => c.id === DEFAULT_OUTFIT);
+  const wide = base?.aspect?.[0];
+  const high = base?.aspect?.[1];
+  const measured = JSON.stringify(base?.frame ?? null);
+  const hasBody = base?.kind === "video" || base?.kind === "photo";
+  const frameTo = useMemo<FramedSet | undefined>(
+    () => (hasBody && wide && high ? { aspect: [wide, high], frame: JSON.parse(measured) } : undefined),
+    [hasBody, wide, high, measured],
+  );
+  return <MateAvatar avatar={shown} name={mate.name} look={restingLook(mate)} frameTo={frameTo} className={[className, fading].filter(Boolean).join(" ") || undefined} {...rest} />;
 }
 
 export default MateAvatar;

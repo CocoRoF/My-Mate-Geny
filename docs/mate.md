@@ -1145,6 +1145,15 @@ Mate settings → Reach out has one local device ON/OFF switch. The selected Mat
 device record. The fixed situation policy is product-owned; legacy presets/prompts remain archived unchanged
 and are ignored by fixed-policy clients. See [automatic conversation](mate-proactive.md).
 
+## Reset her memory
+
+**Mate settings → Danger zone → Reset memory** (`POST /api/mates/{id}/memory/wipe {confirm: her name}`) is as if they had never talked: her
+memories and all that goes with them, the whole conversation with its attachments, the relationship (a fresh start: outfits her affinity
+opened lock again, and she goes back to her default set if she had one on), how she feels now, and the record of how she changed her own
+style go, along with the files the engines keep (Claude Code's transcripts for her folder in every login, her Codex home, her compiled
+prompts), so nothing can be resumed or read back. She starts over with her greeting, and every open window follows to the new conversation.
+Who she is stays: her profile, her conversation style, her avatar and outfits. So do the chats she passed work to.
+
 ## Outfits
 
 A mate has a wardrobe, at the top of **Mate settings → Avatar & outfits**: her default set, bundled outfits, and the outfits the user added.
@@ -1156,6 +1165,17 @@ default set always stays.
 - **Stored** in `mates.outfits`: `{worn, worn_at, base, items: [{id, name, note, feel, avatar}]}`. The `avatar` column is always the set she
   has on, so everything that reads a mate just works; `base` holds her default set while another one is on. What comes off
   keeps the state it was in.
+- **Same place, same size**: sets are cut separately, so each picture has its own shape and margins and her face sits elsewhere
+  in it. Each set says where her face is (`rig.frame`: `{face: [cx, cy, h], outline, top, how, for}`, in fractions of the picture), and the
+  stage always keeps her default set's shape and places any other set so that its face lands on her default face
+  (`mate/avatar/framing.ts`), keeping her head on the page and her feet on the bottom edge. The AI pipeline measures every set it
+  makes (`pipeline.py export`; `frame <pack>` for a pack made before, as the bundled ones are): a face detector over all her stills,
+  taking the median, since one picture can fool it. Anything else (an imported pack, a new picture, sets from before) is
+  measured by the server from the picture's outline (`files.framed`, `how: outline`); `for` says which picture it is about, so a new
+  picture gets measured again. Faces are compared with faces and outlines with outlines (a measured set has both); what still can't be
+  compared only shares her height and her spot. The wardrobe's tiles line up the same way.
+- **A change of clothes dissolves** (`mate/avatar/outfitFade.ts`): what she has on fades away, the new set is made ready behind it, then
+  it fades in, in every window. Editing the same set, or another mate, goes straight in; `prefers-reduced-motion` skips it.
 - **Files**: an outfit's uploads go to `assets/outfits/<id>/` and are removed with it. Imported packs are removed when no set
   uses them any more.
 - **Built-ins**: editing an outfit doesn't mark a built-in as customized; editing her default set does. A bundle update or

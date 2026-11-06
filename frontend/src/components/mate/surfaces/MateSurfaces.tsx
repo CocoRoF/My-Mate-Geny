@@ -10,7 +10,7 @@ import { toast } from "../../../lib/toast";
  * They all attach to the same mate session (useMateConversation), so every window stays in sync.
  */
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Mate } from "../../../api/mates";
+import { DEFAULT_OUTFIT, type Mate } from "../../../api/mates";
 import { useSessionSync } from "../../../hooks/useSessionSync";
 import { useConfigStore } from "../../../stores/configStore";
 import { useMateStore } from "../../../stores/mateStore";
@@ -274,7 +274,10 @@ function ResizeFrame() {
   );
 }
 
+/** the shape of her default set: what she has on stands in it, so a change of clothes doesn't change the window */
 function aspectOf(mate: Mate): number {
+  const base = mate.outfits?.items.find((c) => c.id === DEFAULT_OUTFIT);
+  if (base && base.kind !== "none" && base.kind !== "live2d" && base.aspect?.[0] > 0 && base.aspect?.[1] > 0) return base.aspect[0] / base.aspect[1];
   const a = mate.avatar;
   if ((a.kind === "video" || a.kind === "photo") && a.rig.aspect?.[0] > 0 && a.rig.aspect?.[1] > 0) return a.rig.aspect[0] / a.rig.aspect[1];
   return 0.75;
