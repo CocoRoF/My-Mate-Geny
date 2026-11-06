@@ -9,7 +9,7 @@
 // in a second window; AI opens that outfit's own project (nothing spent) and its finished set is worn from there; rename,
 // delete (her default can't be deleted, deleting what she has on puts it back); she changes by herself through the real tool,
 // with its chip here and the set following in a second window, and the switch takes that away; every emotion shows with its
-// value and reason, they make one state, what the user says moves them, and her underwear makes her shy, on her face too.
+// value and reason, they make one state, what the user says moves them, and her crop top makes her shy, on her face too.
 // ko dark, en light, desktop, phone.
 "use strict";
 const assert = require("assert/strict");
@@ -91,7 +91,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     assert.equal(await q.locator('[data-testid="mate-tab-outfit"]').count(), 0);
     await q.close();
 
-    step("속옷 waits for her affinity: the card says so, the server refuses, the picture stays away");
+    step("크롭탑 waits for her affinity: the card says so, the server refuses, the picture stays away");
     const ctx = await context(browser, { mateId: chaerin.id });
     const p = await ctx.newPage();
     watch(p);
@@ -99,7 +99,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     const grayCard = async () => (await mate()).outfits.items.find((c) => c.id === GRAY);
     const setAffinity = (v) => boot.request.patch(`${SERVER}/api/mates/${chaerin.id}/relation`, { data: { affinity: v } });
     const gray = await grayCard();
-    assert.equal(gray.name, "속옷");
+    assert.equal(gray.name, "크롭탑");
     assert.deepEqual(gray.locked, { affinity: 60 });
     assert.equal(gray.home, "");
     for (const [what, res] of [
@@ -125,7 +125,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     await p.click('[data-testid="mate-settings-close"]');
     assert.ok((await setAffinity(60)).ok());
     await p.waitForSelector('[data-testid="mate-info"]');
-    assert.ok((await p.textContent('[data-testid="mate-info"]')).includes("속옷"));
+    assert.ok((await p.textContent('[data-testid="mate-info"]')).includes("크롭탑"));
     await openTab(p);
     await until("the open tile", async () => (await tile(p, GRAY).getAttribute("data-locked")) === "false");
     assert.equal(await tile(p, GRAY).locator("img").count(), 1);
@@ -163,7 +163,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     assert.equal(await p.locator('[data-testid="mate-info"]').count(), 0);
     await byHand(60);
     await p.waitForSelector('[data-testid="mate-info"]');
-    assert.ok((await p.textContent('[data-testid="mate-info"]')).includes("속옷"));
+    assert.ok((await p.textContent('[data-testid="mate-info"]')).includes("크롭탑"));
     assert.ok(await set.isVisible(), "the panel stays open under it");
     assert.equal((await grayCard()).locked, undefined);
     await byHand(30);
@@ -316,7 +316,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
       await there.locator('[data-testid="outfit-self"]').click();
       await until("switched on", async () => (await mateNow()).prefs.self_outfit === "auto");
 
-      step("how she feels: every emotion with its value and reason, one state from them; her underwear keeps her getting shyer");
+      step("how she feels: every emotion with its value and reason, one state from them; her crop top keeps her getting shyer");
       const stateOf = async () => (await mateNow()).state;
       const felt = async (emotion) => (await stateOf()).top.find((f) => f.emotion === emotion);
       const relation = await mine.request.patch(`${SERVER}/api/mates/${chaerin.id}/relation`, { data: { affinity: 70 } });
@@ -325,7 +325,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
       await there.locator('[data-testid="outfit-wardrobe"]').screenshot({ path: path.join(SHOTS, "outfit-self-ko-dark.png") });
       assert.ok(!(await felt("shy")), "not shy in her usual clothes");
       await change(GRAY);
-      await chipSays("“속옷” 의상으로 갈아입었어요");
+      await chipSays("“크롭탑” 의상으로 갈아입었어요");
       await until("she is shy in it", async () => (await felt("shy"))?.why?.code === "outfit");
       await until("the badge says what stands out", async () => (await here.locator('[data-testid="mate-state-badge"]').getAttribute("data-state")) === (await stateOf()).label);
       // (a shy clip where video plays; here, without WebGL, the shy still as the face she rests on)
@@ -339,7 +339,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
       const row = (emotion) => here.locator(`[data-testid="mate-state-feeling"][data-emotion="${emotion}"]`);
       await row("shy").waitFor({ timeout: 15000 });
       assert.equal(await here.locator('[data-testid="mate-state-feeling"]').count(), 8, "every emotion has its value");
-      assert.ok((await row("shy").textContent()).includes("“속옷” 차림이라서"), "with the reason");
+      assert.ok((await row("shy").textContent()).includes("“크롭탑” 차림이라서"), "with the reason");
       assert.ok(Number(await row("shy").getAttribute("data-value")) >= 40, "with its value");
       await here.screenshot({ path: path.join(SHOTS, "state-panel-ko-dark.png") });
 
@@ -389,7 +389,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
       const picture = (page) => page.evaluate(() => document.querySelector("[data-mate-set] img")?.src ?? "");
       const showing = (page, what) => until(`${what} on the screen`, async () => what.test(await picture(page)) && (await page.locator(".mate-outfit-out, .mate-outfit-in").count()) === 0);
       const USUAL = /chaerin\/neutral/;
-      const UNDERWEAR = /gray-band/;
+      const CROP_TOP = /gray-band/;
       await until("in her usual clothes", async () => (await mateNow()).outfits.worn === "default");
       await showing(here, USUAL);
       const usual = await faceOn(here);
@@ -420,9 +420,9 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
       assert.ok(during("out").every((x) => !/gray-band/.test(x.pic)), "the new set only shows once the old one is gone");
       assert.ok(during("in").every((x) => /gray-band/.test(x.pic)), "and it is there when she comes back");
       assert.equal(await here.evaluate(() => Number(getComputedStyle(document.querySelector("[data-mate-kind]")).opacity)), 1);
-      await showing(here, UNDERWEAR);
+      await showing(here, CROP_TOP);
       sameSpot(usual, await faceOn(here), "desktop");
-      await here.screenshot({ path: path.join(SHOTS, "frame-underwear-ko-dark.png") });
+      await here.screenshot({ path: path.join(SHOTS, "frame-crop-top-ko-dark.png") });
       await wear("default");
       await showing(here, USUAL);
 
@@ -433,9 +433,9 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
         await sleep(300);
         const a = await faceOn(here);
         await wear(GRAY);
-        await showing(here, UNDERWEAR);
+        await showing(here, CROP_TOP);
         sameSpot(a, await faceOn(here), label);
-        await here.screenshot({ path: path.join(SHOTS, `frame-underwear-${size.width}.png`) });
+        await here.screenshot({ path: path.join(SHOTS, `frame-crop-top-${size.width}.png`) });
         await wear("default");
         await showing(here, USUAL);
       }

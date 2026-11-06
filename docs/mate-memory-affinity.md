@@ -465,7 +465,7 @@ the tone): feelings now change how she talks, what she decides and what her face
 - **Everything else**: the hour (sleepy from the circadian curve), delegated work (ok → happy, failed → worried, never about the user).
   `relation.sensitivity` scales the rises.
 - **What she has on**: an outfit's `feel` makes that emotion climb for as long as it is on (towards 0.95, half-way in 25 minutes),
-  whichever way it got on, from a start that closeness eases, and rises in it are stronger. Only 속옷 has one: `{shy: 0.6}`. Taking it
+  whichever way it got on, from a start that closeness eases, and rises in it are stronger. Only 크롭탑 has one: `{shy: 0.6}`. Taking it
   off, the feeling starts fading from where it was (`was_outfit`).
 - **How it comes out** (`conduct`): the two strongest give the line "How it comes out now" in her `<context>`: angry and strong is very
   few words, coldly, talking back, maybe just "..."; shy and strong is stumbling and trailing off; happy is warmer. It outweighs her
@@ -493,7 +493,7 @@ the tone): feelings now change how she talks, what she decides and what her face
   when `(stage, streak bucket)` changed since the last injection, on a fresh context, or every 30
   turns. When warmth < earned (they were away): "It has been a while: you still know them; be a
   little more reserved for now and let it close naturally. Never mention the gap." Disabled or paused → no lines. Whatever the relationship: `How you feel right
-  now: shy, strongly (you have “속옷” on); …` when what stands out changed since she was last told, or every 10 turns.
+  now: shy, strongly (you have “크롭탑” on); …` when what stands out changed since she was last told, or every 10 turns.
 
 ### 5.6 API
 
@@ -530,7 +530,7 @@ moves. Router shapes and push throttling.
 [✓] Relationship               (off: no tracking, no prompt section, no indicator; she still has feelings)
   ◔ Familiar · 42          day 12 together · 3 days in a row · 140 talks · 18 memories
   Next: Trusted — 4 more days, 12 more talks          ▓▓▓▓▓▓░░░░
-  Mood: shy (she has “속옷” on)                         (refreshes with the mate)
+  Mood: shy (she has “크롭탑” on)                         (refreshes with the mate)
   [ ] Pause (away mode) — nothing changes while you're away
   Sensitivity  [Gentle 0.5× | Normal | Strong 1.5×]
   [✓] Show the indicator next to the name   [✓] Let the avatar show how she feels while idle

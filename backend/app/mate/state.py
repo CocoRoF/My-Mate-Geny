@@ -8,7 +8,7 @@ her how she feels, how it comes out and how she leans on what is up to her (``le
 would.
 
 What she has on can be part of it: an outfit's ``feel`` ({emotion: strength}) keeps that emotion climbing for as long as she
-has it on, and rises in it are stronger. Her underwear does that to shy, however she came to be in it.
+has it on, and rises in it are stronger. Her crop top does that to shy, however she came to be in it.
 
 Pure functions over one JSON document (``new()``); no I/O. ``who`` is everything else they read about her (``who()``).
 """

@@ -674,7 +674,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
   const videoMood = activityMood(streaming, writing, listening, away);
   const mood: BodyMood = speaking ? "talking" : videoMood;
 
-  // What her face does comes from how she feels: while she is idle, the look for it now and then (shy in her underwear,
+  // What her face does comes from how she feels: while she is idle, the look for it now and then (shy in her crop top,
   // sleepy late at night), and often when she feels it strongly; what she shows in a reply goes first.
   const look = lookNow;
   const lookEvery = (mate?.state?.level ?? 0) >= STATE_STRONG ? STATE_LOOK_STRONG_EVERY_MS : STATE_LOOK_EVERY_MS;

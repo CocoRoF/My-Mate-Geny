@@ -1202,7 +1202,7 @@ default set always stays.
   (or every 30 turns), naming what is still closed.
 - **It can make her feel something**: an outfit's `feel` ({emotion: strength}, in `outfits.json`) makes that emotion climb for as long
   as she has it on, however she came to wear it, and rises in it are stronger; it fades after she takes it off
-  (docs/mate-memory-affinity.md §5.4). Only 속옷 has one: that is why she keeps getting shyer in it.
+  (docs/mate-memory-affinity.md §5.4). Only 크롭탑 has one: that is why she keeps getting shyer in it.
 - **She changes herself** (`change_outfit(outfit, reason)`): whether to is hers to decide, from how she feels. There is no
   rule to get past, no count: her `<context>` lists the wardrobe with how she leans on each outfit right now
   (`state.leaning`: how she feels, how close they are, how exposed it is, and asking again wears her down until it angers

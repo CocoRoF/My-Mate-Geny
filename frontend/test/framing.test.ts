@@ -4,9 +4,9 @@ import test from "node:test";
 import { placeSet } from "../src/mate/avatar/framing";
 import type { RigFrame } from "../src/mate/types";
 
-// han Chaerin as measured: her default set and her underwear, cut with other margins and another head height
+// han Chaerin as measured: her default set and her crop top, cut with other margins and another head height
 const usual = { aspect: [848, 970], frame: { face: [0.481, 0.314, 0.308], top: 0.042, how: "face" } as RigFrame };
-const underwear = { aspect: [1046, 964], frame: { face: [0.52, 0.278, 0.297], top: 0.037, how: "face" } as RigFrame };
+const cropTop = { aspect: [1046, 964], frame: { face: [0.52, 0.278, 0.297], top: 0.037, how: "face" } as RigFrame };
 const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-6, `${a} ≠ ${b}`);
 
 test("her default set fills the box exactly", () => {
@@ -18,12 +18,12 @@ test("her default set fills the box exactly", () => {
 });
 
 test("another set's face lands on her default face, at its size", () => {
-  const p = placeSet(underwear, usual);
+  const p = placeSet(cropTop, usual);
   const box = usual.aspect[0] / usual.aspect[1];
-  near(p.left + underwear.frame.face[0] * p.width, usual.frame.face[0]);
-  near(p.top + underwear.frame.face[1] * p.height, usual.frame.face[1]);
-  near(underwear.frame.face[2] * p.height, usual.frame.face[2]);
-  near(p.width / p.height, underwear.aspect[0] / underwear.aspect[1] / box); // (not stretched)
+  near(p.left + cropTop.frame.face[0] * p.width, usual.frame.face[0]);
+  near(p.top + cropTop.frame.face[1] * p.height, usual.frame.face[1]);
+  near(cropTop.frame.face[2] * p.height, usual.frame.face[2]);
+  near(p.width / p.height, cropTop.aspect[0] / cropTop.aspect[1] / box); // (not stretched)
 });
 
 test("her head stays on the page", () => {
@@ -51,7 +51,7 @@ test("a set measured only by its outline is compared by outlines", () => {
 test("what can't be compared, or looks wrong, only shares her height and her spot", () => {
   const plain = { aspect: [1046, 964] };
   const box = usual.aspect[0] / usual.aspect[1];
-  for (const set of [plain, { ...underwear, frame: { face: [0.5, 0.3, 0.3], how: "outline" } as RigFrame }, { ...underwear, frame: { face: [0.5, 0.3, 0.05], how: "face" } as RigFrame }]) {
+  for (const set of [plain, { ...cropTop, frame: { face: [0.5, 0.3, 0.3], how: "outline" } as RigFrame }, { ...cropTop, frame: { face: [0.5, 0.3, 0.05], how: "face" } as RigFrame }]) {
     const p = placeSet(set, usual);
     near(p.height, 1);
     near(p.top, 0);

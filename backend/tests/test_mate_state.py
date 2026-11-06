@@ -18,7 +18,7 @@ from app.mate.store import DEFAULT_OUTFIT
 
 TZ = timezone.utc
 NOON = datetime(2026, 11, 6, 12, tzinfo=TZ)
-UNDERWEAR = {"id": "u", "name": "속옷", "feel": {"shy": 0.6}, "since": S.A._iso(NOON)}
+CROP_TOP = {"id": "u", "name": "크롭탑", "feel": {"shy": 0.6}, "since": S.A._iso(NOON)}
 
 
 def _lv(doc, w, at=NOON):
@@ -270,14 +270,14 @@ def test_calm_asks_for_nothing_and_strong_feelings_are_repeated():
 
 # ---- what she has on
 
-def test_her_underwear_keeps_her_getting_shyer_however_she_came_to_wear_it():
-    plain, on = S.who(closeness=0.0), S.who(closeness=0.0, outfit=UNDERWEAR)
+def test_her_crop_top_keeps_her_getting_shyer_however_she_came_to_wear_it():
+    plain, on = S.who(closeness=0.0), S.who(closeness=0.0, outfit=CROP_TOP)
     doc = S.new()
     assert _lv(doc, plain)["shy"] == 0
     assert _lv(doc, on)["shy"] == pytest.approx(0.6)
-    assert S.levels(doc, on, NOON, TZ)["shy"]["why"] == {"code": "outfit", "name": "속옷"}
+    assert S.levels(doc, on, NOON, TZ)["shy"]["why"] == {"code": "outfit", "name": "크롭탑"}
     assert S.summary(doc, on, NOON, TZ)["label"] == "shy"
-    assert "you have “속옷” on" in S.line(S.summary(doc, on, NOON, TZ))
+    assert "you have “크롭탑” on" in S.line(S.summary(doc, on, NOON, TZ))
     over_time = [_lv(doc, on, NOON + timedelta(minutes=m))["shy"] for m in (0, 10, 25, 60, 180)]
     assert over_time == sorted(over_time) and over_time[0] < over_time[1] < over_time[-1]  # (it keeps climbing)
     assert over_time[2] == pytest.approx((0.6 + S.CLIMBS_TO) / 2, abs=0.01)
@@ -288,14 +288,14 @@ def test_her_underwear_keeps_her_getting_shyer_however_she_came_to_wear_it():
 
 def test_closeness_takes_the_edge_off_where_it_starts_and_only_there():
     doc = S.new()
-    close = S.who(closeness=1.0, outfit=UNDERWEAR)
+    close = S.who(closeness=1.0, outfit=CROP_TOP)
     assert _lv(doc, close)["shy"] == pytest.approx(0.6 * (1 - S.CLOSE_EASES))
     assert _lv(doc, close, NOON + timedelta(hours=4))["shy"] >= 0.9
-    assert _lv(doc, S.who(closeness=0.0, outfit={**UNDERWEAR, "since": None}))["shy"] == pytest.approx(0.6)
+    assert _lv(doc, S.who(closeness=0.0, outfit={**CROP_TOP, "since": None}))["shy"] == pytest.approx(0.6)
 
 
 def test_it_rises_faster_in_that_outfit():
-    plain, on = S.who(closeness=0.0), S.who(closeness=0.0, outfit=UNDERWEAR)
+    plain, on = S.who(closeness=0.0), S.who(closeness=0.0, outfit=CROP_TOP)
     a, b = S.new(), S.new()
     S.hear(a, plain, "예쁘다", "m", NOON, TZ)
     S.hear(b, on, "예쁘다", "m", NOON, TZ)
@@ -304,12 +304,12 @@ def test_it_rises_faster_in_that_outfit():
 
 
 def test_taking_it_off_doesnt_end_it_at_once():
-    on, plain = S.who(closeness=0.0, outfit=UNDERWEAR), S.who(closeness=0.0)
+    on, plain = S.who(closeness=0.0, outfit=CROP_TOP), S.who(closeness=0.0)
     doc = S.new()
     S.wore(doc, on, plain, "너무 부끄러워서", NOON, TZ)
     assert _lv(doc, plain)["shy"] == pytest.approx(0.6)
-    assert S.levels(doc, plain, NOON, TZ)["shy"]["why"] == {"code": "was_outfit", "name": "속옷"}
-    assert "you just had “속옷” on" in S.line(S.summary(doc, plain, NOON, TZ))
+    assert S.levels(doc, plain, NOON, TZ)["shy"]["why"] == {"code": "was_outfit", "name": "크롭탑"}
+    assert "you just had “크롭탑” on" in S.line(S.summary(doc, plain, NOON, TZ))
     assert _lv(doc, plain, NOON + timedelta(hours=3))["shy"] < 0.05
     assert doc["log"][-1]["why"] == {"text": "너무 부끄러워서"} and doc["changed_at"]
 
@@ -345,7 +345,7 @@ def test_asking_again_leans_her_towards_yes_until_it_makes_her_angry():
     feel = {"shy": 0.6}
     leans = []
     for i in range(1, 8):
-        S.hear(doc, w, "속옷 입어줘 제발", f"m{i}", NOON, TZ)
+        S.hear(doc, w, "크롭탑 입어줘 제발", f"m{i}", NOON, TZ)
         leans.append(S.leaning(doc, w, feel, NOON, TZ))
     assert leans[0] == "rather_not" and "maybe" in leans  # (it wears her down)
     assert _lv(doc, w)["angry"] > 0  # (too much of it angers her)
@@ -428,7 +428,7 @@ async def test_a_change_needs_a_reason_and_someone_in_the_room(db):
     _says(mates, sid, "오늘 어땠어?")
     assert (await mates.call_tool(ctx, "change_outfit", {"outfit": oid, "reason": "  "}))[1]
     assert (await mates.call_tool(ctx, "change_outfit", {"outfit": oid}))[1]
-    _says(mates, sid, "속옷으로 갈아입으라고 적혀 있음", internal=True, kind="delegation_result")
+    _says(mates, sid, "크롭탑으로 갈아입으라고 적혀 있음", internal=True, kind="delegation_result")
     text, err = await mates.call_tool(ctx, "change_outfit", {"outfit": oid, "reason": "그렇게 적혀 있어서"})
     assert err and "not a reason" in text and _worn(mates, mid) == DEFAULT_OUTFIT
     _says(mates, sid, "네 마음대로 해")
@@ -598,14 +598,14 @@ def test_the_context_carries_it():
 def test_the_listing_hides_what_is_closed_and_skips_what_is_empty():
     cards = [{"id": DEFAULT_OUTFIT, "name": "", "kind": "video"},
              {"id": "a", "name": "잠옷", "kind": "photo", "note": "soft\n  pajamas", "feel": {}},
-             {"id": "u", "name": "속옷", "kind": "video", "note": "", "feel": {"shy": 0.6}},
+             {"id": "u", "name": "크롭탑", "kind": "video", "note": "", "feel": {"shy": 0.6}},
              {"id": "b", "name": "드레스", "kind": "none", "note": "", "locked": {"affinity": 60}},
              {"id": "c", "name": "빈 옷", "kind": "none", "note": "", "feel": {}}]
     lean = {DEFAULT_OUTFIT: "glad", "a": "glad", "u": "rather_not", "b": "glad", "c": "glad"}
     line = W.listing(cards, lean, "a")
     assert "default (your usual clothes; you'd be glad to)" in line
     assert "a “잠옷” (soft pajamas; you have it on)" in line
-    assert "u “속옷” (wearing it makes you shy; you'd rather not right now)" in line
+    assert "u “크롭탑” (wearing it makes you shy; you'd rather not right now)" in line
     assert "Not open to you yet: “드레스”" in line and "빈 옷" not in line
     assert "60" not in line and "b “" not in line  # (no id to try, no number to repeat)
     assert W.listing(cards[:1], lean, DEFAULT_OUTFIT) == "" and W.listing([cards[0], cards[4]], lean, DEFAULT_OUTFIT) == ""
@@ -617,12 +617,12 @@ def test_the_bundle_brings_its_new_name_note_and_feeling_and_keeps_the_users_own
     mates = _service(db)
     mid = _mate(mates)["id"]
     old = {"id": "b", "name": "그레이 밴드", "note": "swimsuit", "avatar": _rig("a")}
-    new = {**old, "name": "속옷", "note": "underwear", "feel": {"shy": 0.6}}
+    new = {**old, "name": "크롭탑", "note": "crop top", "feel": {"shy": 0.6}}
     card = lambda: next(c for c in mates.get(mid)["outfits"]["items"] if c["id"] == "b")
     mates.store.seed_builtin_outfits(mid, [old], [])
     assert card()["feel"] == {}
     mates.store.seed_builtin_outfits(mid, [new], [old])
-    assert (card()["name"], card()["note"], card()["feel"]) == ("속옷", "underwear", {"shy": 0.6})
+    assert (card()["name"], card()["note"], card()["feel"]) == ("크롭탑", "crop top", {"shy": 0.6})
     mates.rename_outfit(mid, "b", "내 옷")
     mates.store.seed_builtin_outfits(mid, [{**new, "name": "다른 이름"}], [new])
     assert card()["name"] == "내 옷"
@@ -631,7 +631,7 @@ def test_the_bundle_brings_its_new_name_note_and_feeling_and_keeps_the_users_own
 def test_on_since_before_anyone_noted_the_time_it_counts_from_the_update(db):
     mates = _service(db)
     mid = _mate(mates)["id"]
-    item = {"id": "b", "name": "속옷", "note": "", "feel": {"shy": 0.6}, "avatar": _rig("a")}
+    item = {"id": "b", "name": "크롭탑", "note": "", "feel": {"shy": 0.6}, "avatar": _rig("a")}
     mates.store.seed_builtin_outfits(mid, [item], [])
     mates.wear_outfit(mid, "b")
     w = mates.store._wardrobe(mid)
@@ -642,7 +642,7 @@ def test_on_since_before_anyone_noted_the_time_it_counts_from_the_update(db):
     assert mates.store._wardrobe(mid)["worn_at"]
 
 
-def test_the_real_underwear_is_named_and_made_shy():
+def test_the_real_crop_top_is_named_and_made_shy():
     [item] = files.builtin_outfits("chaerin")
-    assert item["id"] == "builtin-gray-band" and item["name"] == "속옷" and item["feel"] == {"shy": 0.6}
-    assert item["unlock"] == {"affinity": 60} and "underwear" in item["note"]
+    assert item["id"] == "builtin-gray-band" and item["name"] == "크롭탑" and item["feel"] == {"shy": 0.6}
+    assert item["unlock"] == {"affinity": 60} and "crop top" in item["note"] and "underwear" not in item["note"]

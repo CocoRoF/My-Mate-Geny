@@ -2,8 +2,8 @@
   "items": [
     {
       "id": "builtin-gray-band",
-      "name": "속옷",
-      "note": "A plain heather-gray two-piece underwear set with white bands. No black hoodie; her white cat-ear headset hangs around her neck.",
+      "name": "크롭탑",
+      "note": "A plain heather-gray crop top and matching bottoms with white bands. No black hoodie; her white cat-ear headset hangs around her neck.",
       "feel": {
         "shy": 0.6
       },
