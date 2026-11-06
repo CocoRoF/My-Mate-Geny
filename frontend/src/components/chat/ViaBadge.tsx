@@ -2,7 +2,7 @@ import type { MessageMeta } from "../../stores/chatStore";
 import Icon from "../ui/Icon";
 import { useT } from "../../i18n";
 
-/** "via Estelle": a message a mate sent into this chat on the user's behalf. */
+/** "via Chaerin": a message a mate sent into this chat on the user's behalf. */
 export default function ViaBadge({ meta }: { meta?: MessageMeta | null }) {
   const t = useT();
   const via = meta?.via;

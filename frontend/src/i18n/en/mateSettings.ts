@@ -390,7 +390,7 @@ export default {
   dangerTypeToConfirm: "Type <b>{name}</b> to confirm",
   dangerDeleteBtn: "Delete mate",
   dangerBuiltins: "Built-in mates",
-  dangerBuiltinsHint: "Estelle, Chaerin and Seoa ship with the app. Bring back any you deleted (fresh, as shipped).",
+  dangerBuiltinsHint: "Built-in mates ship with the app. Bring back any you deleted (fresh, as shipped).",
   dangerMissing: "Missing: {list}",
   dangerAllOfThem: "All of them are here.",
   dangerRestoreBtn: "Restore built-in mates",

@@ -37,7 +37,7 @@ def _seed_legacy(db):
     (persona mapped from the Korean source, no snapshot, an older bundle hash)."""
     store = MateStore(db, SecretVault(db))
     ids = {}
-    for key in [k for k in ("estelle", "chaerin", "seoa", "mao") if k in files.builtin_keys()]:  # old order
+    for key in [k for k in ("chaerin", "mao") if k in files.builtin_keys()]:
         doc = files.builtin_doc(key)
         name, persona = files.legacy_persona(doc)
         m = store.create(name=name, persona=persona, avatar=files.builtin_avatar(key, doc))
@@ -75,7 +75,7 @@ def test_fresh_install_chaerin_default_with_english_persona(db):
 
 def test_bundles_keep_speech_level_and_address_out_of_the_free_text():
     """The bundles' free text keeps habits only: the speech level and the address are structured data."""
-    for key in ("chaerin", "estelle", "seoa"):
+    for key in ("chaerin",):
         st = files.builtin_bundle(key)["style"]
         assert st["defaults"]["formality"] in ("haeyo", "banmal") and st["defaults"]["address"]
         text = st["speech_style"]
@@ -93,7 +93,7 @@ def test_every_bundle_has_both_languages():
         # the Korean greeting is the author's original line
         _name, legacy = files.legacy_persona(files.builtin_doc(key))
         assert b["greetings"]["ko"] == legacy["greeting"], key
-    assert files.builtin_bundle("estelle")["names"] == {"en": "Estelle Luminar", "ko": "에스텔 루미나르"}
+    assert files.builtin_bundle("chaerin")["names"] == {"en": "Han Chaerin", "ko": "한채린"}
 
 
 def test_default_geny_persona_is_english():
@@ -105,31 +105,31 @@ def test_default_geny_persona_is_english():
 
 def test_migration_of_an_unedited_builtin(db):
     store, ids = _seed_legacy(db)
-    store.update(ids["estelle"], {"voice": {"tts": {"engine": "elevenlabs", "voice": "v1"}}, "_sync": True})
-    store.add_memory(ids["estelle"], "likes tea")
-    before = store.get(ids["estelle"])
+    store.update(ids["chaerin"], {"voice": {"tts": {"engine": "elevenlabs", "voice": "v1"}}, "_sync": True})
+    store.add_memory(ids["chaerin"], "likes tea")
+    before = store.get(ids["chaerin"])
     mates = _service(db)  # startup: the sync migrates
-    est = mates.get(ids["estelle"])
-    new = files.builtin_bundle("estelle")
+    cha = mates.get(ids["chaerin"])
+    new = files.builtin_bundle("chaerin")
     for k in TEXT_FIELDS:
-        assert est["persona"][k] == new["persona"][k]
-    assert est["persona"]["description"] != before["persona"]["description"]
-    assert est["prefs"]["speech_style"] == new["style"]["speech_style"] != before["prefs"]["speech_style"]
-    assert est["prefs"]["defaults"]["formality"] == "banmal"
-    assert "archmage" in est["persona"]["description"] and "Your world:" in est["persona"]["description"]
+        assert cha["persona"][k] == new["persona"][k]
+    assert cha["persona"]["description"] != before["persona"]["description"]
+    assert cha["prefs"]["speech_style"] == new["style"]["speech_style"] != before["prefs"]["speech_style"]
+    assert cha["prefs"]["defaults"]["formality"] == "haeyo"
+    assert "QA" in cha["persona"]["description"]
     # language, name and greeting stay Korean; voice, memories, default untouched
-    assert est["persona"]["language"] == "ko" and est["name"] == "에스텔 루미나르"
-    assert est["persona"]["greeting"] == before["persona"]["greeting"]
-    assert est["voice"] == before["voice"] and est["is_default"] and not est["customized"]
-    assert [m["text"] for m in mates.store.memories(est["id"])] == ["likes tea"]
-    row = mates.store.by_builtin("estelle")
-    assert row["builtin_hash"] == files.builtin_hash("estelle") and row["builtin_snapshot"]["persona"] == new["persona"]
+    assert cha["persona"]["language"] == "ko" and cha["name"] == "한채린"
+    assert cha["persona"]["greeting"] == before["persona"]["greeting"]
+    assert cha["voice"] == before["voice"] and cha["is_default"] and not cha["customized"]
+    assert [m["text"] for m in mates.store.memories(cha["id"])] == ["likes tea"]
+    row = mates.store.by_builtin("chaerin")
+    assert row["builtin_hash"] == files.builtin_hash("chaerin") and row["builtin_snapshot"]["persona"] == new["persona"]
     # Mao's bundled name is now per language: the Korean one for a Korean-replying mate
     if "mao" in ids:  # (Mao is only on installs that added the Live2D sample)
         assert mates.get(ids["mao"])["name"] == "마오"
     # idempotent: a restart changes nothing
     _service(db)
-    assert mates.get(ids["estelle"]) == est
+    assert mates.get(ids["chaerin"]) == cha
 
 
 def test_migration_of_an_edited_builtin_keeps_the_users_fields(db):
@@ -158,7 +158,6 @@ def test_migration_of_an_edited_builtin_keeps_the_users_fields(db):
     assert p["instructions"] == new["persona"]["instructions"]
     assert p["greeting"] == legacy["persona"]["greeting"] and p["language"] == "ko" and cha["name"] == "한채린"
     assert cha["is_default"] and cha["customized"] and cha["voice"]["tts"]["voice"] == "Mi0l"
-    assert not mates.get(ids["estelle"])["is_default"]
     # the engine restarts (new prompt key) and the next message carries a settings note
     assert prompt_key(cha["name"], p, 0, s) != prompt_key(old["name"], old_persona, 0, {})
     note = mates._settings_note(cid, cha)
@@ -170,30 +169,30 @@ def test_migration_of_an_edited_builtin_keeps_the_users_fields(db):
 
 def test_later_bundle_updates_merge_against_the_snapshot(db):
     mates = _service(db)
-    seoa = mates.store.by_builtin("seoa")
-    snap = seoa["builtin_snapshot"]
+    cha = mates.store.by_builtin("chaerin")
+    snap = cha["builtin_snapshot"]
     old_snap = {**snap, "persona": {**snap["persona"], "description": "old bundled text"},
                 "style": {**snap["style"], "speech_style": "old speech", "address": "",
-                          "defaults": {"formality": "haeyo", "address": {"ko": "{name} 님"}, "self_ref": {}}},
+                          "defaults": {"formality": "banmal", "address": {"ko": "{name}"}, "self_ref": {}}},
                 "greetings": {"en": "old hi", "ko": "옛 인사"}}
-    mates.store.update(seoa["id"], {"persona": {"description": "old bundled text", "greeting": "옛 인사"},
+    mates.store.update(cha["id"], {"persona": {"description": "old bundled text", "greeting": "옛 인사"},
                                     "prefs": {"speech_style": "user speech", "formality": "hapsyo",
-                                              "defaults": {"formality": "haeyo", "address": "{name} 님"}},
+                                              "defaults": {"formality": "banmal", "address": "{name}"}},
                        "_sync": True})
-    mates.store.mark_builtin(seoa["id"], "seoa", "older", old_snap)
+    mates.store.mark_builtin(cha["id"], "chaerin", "older", old_snap)
     mates.sync_builtins()
-    m = mates.get(seoa["id"])
+    m = mates.get(cha["id"])
     p, s = m["persona"], m["prefs"]
     assert p["description"] == snap["persona"]["description"]   # was bundled -> refreshed
     assert s["speech_style"] == "user speech"                    # the user's -> kept
     assert s["formality"] == "hapsyo"                            # the user's speech level -> kept
-    assert s["defaults"] == {"formality": "banmal", "address": "{name}", "self_ref": ""}  # bundle data -> follows
+    assert s["defaults"] == files.style_defaults(files.builtin_bundle("chaerin"), "ko") and s["defaults"]["formality"] == "haeyo"  # bundle data -> follows
     assert p["greeting"] == snap["greetings"]["ko"]              # an old bundled greeting -> today's (ko)
     # a bundled speech text (still as bundled) follows the bundle
-    mates.store.update(seoa["id"], {"prefs": {"speech_style": "old speech"}, "_sync": True})
-    mates.store.mark_builtin(seoa["id"], "seoa", "older", old_snap)
+    mates.store.update(cha["id"], {"prefs": {"speech_style": "old speech"}, "_sync": True})
+    mates.store.mark_builtin(cha["id"], "chaerin", "older", old_snap)
     mates.sync_builtins()
-    assert mates.get(seoa["id"])["prefs"]["speech_style"] == snap["style"]["speech_style"]
+    assert mates.get(cha["id"])["prefs"]["speech_style"] == snap["style"]["speech_style"]
 
 
 def test_old_snapshot_shape_is_read_as_today(db):

@@ -1097,6 +1097,24 @@ class MateStore:
         snap = _loads(row["builtin_snapshot"], {}) if "builtin_snapshot" in row.keys() else {}
         return {**self._out(row), "builtin_hash": row["builtin_hash"], "builtin_snapshot": snap or None}
 
+    def release_builtin(self, mate_id: str) -> None:
+        """A bundled mate whose bundle is gone stays on as the user's own: all that is hers stays, and a body that was
+        made of the bundle's files goes, since they are gone with it."""
+        with self._lock:
+            mate = self.get(mate_id)
+            bundle = f"/api/mates/builtin/{mate['builtin']}/"
+            gone = lambda avatar: bundle in json.dumps(avatar or {}, ensure_ascii=False)  # noqa: E731
+            w = self._wardrobe(mate_id)
+            if gone(w["base"]):
+                w["base"] = {"kind": "none"}
+            for it in w["items"]:
+                if gone(it["avatar"]):
+                    it["avatar"] = {"kind": "none"}
+            self._save_wardrobe(mate_id, w, {"kind": "none"} if gone(mate["avatar"]) else None)
+            self._db.execute("UPDATE mates SET builtin = NULL, builtin_hash = NULL, builtin_snapshot = NULL, customized = 0 WHERE id = ?",
+                             (mate_id,))
+        self._changed("updated", mate_id)
+
     def builtin_removed(self) -> set[str]:
         return {r["key"] for r in self._db.query("SELECT key FROM mate_builtin_removed")}
 

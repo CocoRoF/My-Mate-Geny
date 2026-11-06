@@ -185,7 +185,7 @@ export default {
   name: "Name",
   namePlaceholder: "e.g. Geny",
   importPathLabel: "Folder or file on this server",
-  importPathPlaceholder: "/path/to/content/mates/estelle.json  or a Live2D model folder",
+  importPathPlaceholder: "/path/to/content/mates/mate.json  or a Live2D model folder",
   importPathHint:
     "An ailism content folder (every character in it, with voices), one mates/<name>.json, a folder with rig.json, or a Live2D model folder (*.model3.json). Re-importing updates the mate with the same name.",
   create: "Create",

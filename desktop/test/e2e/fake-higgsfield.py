@@ -36,7 +36,7 @@ FILES.mkdir(parents=True, exist_ok=True)
 URL = CONF["files_url"].rstrip("/")
 DELAY = float(CONF.get("delay", 0.5))
 LOG = Path(CONF.get("log") or FILES / "jobs.jsonl")
-CHARS = [c for c in ("chaerin", "estelle", "seoa") if (MASTERS / c / "masters" / "candidate.png").is_file()]
+CHARS = [c for c in ("chaerin",) if (MASTERS / c / "masters" / "candidate.png").is_file()]
 COSTS = {"nano_banana_pro": 2.0, "image_background_remover": 0.5, "kling_o3_flf": 9.0,
          "video_background_remover": 1.0}
 

@@ -24,7 +24,7 @@ from app.vault import SecretVault
 # install may add it locally (docs/mate.md). Its tests run only where it is.
 HAS_MAO = (files.BUILTIN_DIR / "mates" / "mao.json").is_file()
 needs_mao = pytest.mark.skipif(not HAS_MAO, reason="Live2D Mao sample not bundled on this install")
-KEYS = ["chaerin", "estelle", "seoa"] + (["mao"] if HAS_MAO else [])
+KEYS = ["chaerin"] + (["mao"] if HAS_MAO else [])
 
 
 def _service(db):
@@ -41,50 +41,89 @@ def test_bundled_characters_are_mates_out_of_the_box(db):
     # a new install: Chaerin first and the default
     assert mates[0]["builtin"] == "chaerin" and [m["is_default"] for m in mates].count(True) == 1
     assert by_key["chaerin"]["is_default"] and by_key["chaerin"]["name"] == "한채린"
-    est = by_key["estelle"]
-    assert not est["is_default"] and est["name"] == "에스텔 루미나르"
-    assert est["avatar"]["kind"] == "video" and len(est["avatar"]["rig"]["clips"]) >= 10
-    assert est["avatar"]["rig"]["home"].startswith("/api/mates/builtin/estelle/")
-    assert est["llm"]["model"] == "claude-sonnet-5-5"
-    assert "Your world:" in est["persona"]["description"]
-    tts = {k: m["voice"]["tts"] for k, m in by_key.items()}
-    assert tts["chaerin"]["ref"] and tts["chaerin"]["ref_text"] and tts["estelle"]["instruct"]
+    cha = by_key["chaerin"]
+    assert cha["avatar"]["kind"] == "video" and len(cha["avatar"]["rig"]["clips"]) >= 10
+    assert cha["avatar"]["rig"]["home"].startswith("/api/mates/builtin/chaerin/")
+    assert cha["llm"]["model"] == "claude-sonnet-5-5"
+    assert "QA" in cha["persona"]["description"]
+    assert cha["voice"]["tts"]["ref"] and cha["voice"]["tts"]["ref_text"]
 
 
 def test_sync_is_idempotent_respects_deletes_and_edits(db):
     mates = _service(db)
-    est = mates.store.by_builtin("estelle")
+    cha = mates.store.by_builtin("chaerin")
     # a restart (new service on the same DB) creates nothing new
     _service(db)
     assert len(mates.store.list()) == len(KEYS)
-    # the user edits Estelle: a newer bundle no longer overwrites her
-    mates.update(est["id"], {"persona": {"greeting": "mine"}})
-    mates.store.mark_builtin(est["id"], "estelle", "old-version")
-    mates.sync_builtins()
-    assert mates.get(est["id"])["persona"]["greeting"] == "mine"
     # an unedited one is refreshed when the bundle changes
-    seoa = mates.store.by_builtin("seoa")
-    mates.store.mark_builtin(seoa["id"], "seoa", "old-version")
+    mates.store.mark_builtin(cha["id"], "chaerin", "old-version")
     mates.sync_builtins()
-    assert mates.store.by_builtin("seoa")["builtin_hash"] == files.builtin_hash("seoa")
+    assert mates.store.by_builtin("chaerin")["builtin_hash"] == files.builtin_hash("chaerin")
+    # the user edits her: a newer bundle no longer overwrites her
+    mates.update(cha["id"], {"persona": {"greeting": "mine"}})
+    mates.store.mark_builtin(cha["id"], "chaerin", "old-version")
+    mates.sync_builtins()
+    assert mates.get(cha["id"])["persona"]["greeting"] == "mine"
     # deleting a built-in keeps it deleted across restarts, until restored
-    mates.delete(seoa["id"])
+    mates.delete(cha["id"])
     _service(db).sync_builtins()
-    assert mates.store.by_builtin("seoa") is None
+    assert mates.store.by_builtin("chaerin") is None
     restored = mates.restore_builtins()
-    assert any(m["builtin"] == "seoa" for m in restored)
+    assert any(m["builtin"] == "chaerin" for m in restored)
+
+
+def _once_bundled(mates, key, name):
+    """A mate as an install has her from when her bundle was still shipped."""
+    url = f"/api/mates/builtin/{key}/neutral.webp"
+    avatar = {"kind": "video", "rig": {"aspect": [3, 4], "home": url, "stills": {"neutral": url},
+                                       "clips": [{"id": "idle", "kind": "idle", "src": f"/api/mates/builtin/{key}/idle.mp4"}]}}
+    m = mates.store.create(name=name, persona={"greeting": "안녕", "description": "그 사람"}, avatar=avatar)
+    mates.store.mark_builtin(m["id"], key, "old", {"avatar": avatar})
+    return m["id"], mates.conversation(m["id"])["session_id"]
+
+
+def test_a_bundle_no_longer_shipped_goes_if_she_was_never_used(db):
+    mates = _service(db)
+    mid, sid = _once_bundled(mates, "estelle", "에스텔")
+    mates._svc.seed_message(sid, "user", "[thinking]", provider="claude", meta={"internal": True, "kind": "thinking_trigger"})
+    mates.sync_builtins()
+    assert mates.store.by_builtin("estelle") is None
+    with pytest.raises(KeyError):
+        mates.get(mid)
+    assert db.query_one("SELECT COUNT(*) AS n FROM messages WHERE session_id = ?", (sid,))["n"] == 0
+    assert "estelle" not in mates.store.builtin_removed()  # (nothing is waiting to be restored)
+    assert all(m["builtin"] != "estelle" for m in mates.restore_builtins())
+
+
+@pytest.mark.parametrize("used", ["talked", "memory", "changed"])
+def test_a_bundle_no_longer_shipped_stays_as_their_own_mate_if_she_was_used(db, used):
+    mates = _service(db)
+    mid, sid = _once_bundled(mates, "seoa", "서아")
+    if used == "talked":
+        mates._svc.seed_message(sid, "user", "안녕 서아", provider="claude")
+    elif used == "memory":
+        mates.store.add_memory(mid, "고양이 이름은 나비", kind="fact")
+    else:
+        mates.store.set_customized(mid, True)
+    mates.sync_builtins()
+    mate = mates.get(mid)
+    assert mate["builtin"] is None and mate["name"] == "서아" and mate["persona"]["description"] == "그 사람"
+    assert mate["avatar"] == {"kind": "none"}  # (her files are gone with the bundle)
+    assert mate["session_id"] == sid and len(mates.store.memories(mid)) == (1 if used == "memory" else 0)
+    mates.sync_builtins()  # (settled once: she is simply theirs now)
+    assert mates.get(mid)["builtin"] is None and mates.get(mid)["session_id"] == sid
 
 
 def test_builtin_files_are_served_and_confined():
     with TestClient(app) as client:
         assert client.post("/api/auth/login", json={"username": "admin", "password": "test-pass"}).status_code == 200
-        est = next(m for m in client.get("/api/mates").json() if m["builtin"] == "estelle")
-        home = client.get(est["avatar"]["rig"]["home"])
+        cha = next(m for m in client.get("/api/mates").json() if m["builtin"] == "chaerin")
+        home = client.get(cha["avatar"]["rig"]["home"])
         assert home.status_code == 200 and home.headers["content-type"] == "image/webp"
-        clip = est["avatar"]["rig"]["clips"][0]["src"]
+        clip = cha["avatar"]["rig"]["clips"][0]["src"]
         part = client.get(clip, headers={"Range": "bytes=0-99"})
         assert part.status_code == 206 and len(part.content) == 100
-        assert client.get("/api/mates/builtin/estelle/..%2F..%2Fmates%2Festelle.json").status_code == 404
+        assert client.get("/api/mates/builtin/chaerin/..%2F..%2Fmates%2Fchaerin.json").status_code == 404
         assert client.get("/api/mates/builtin/nobody/neutral.webp").status_code == 404
 
 
@@ -127,7 +166,7 @@ def test_builtin_hash_sees_nested_live2d_files(db, monkeypatch, tmp_path):
     # a broken bundle (model missing) is skipped, never stops the others
     (root / "assets" / "mao" / "runtime" / "mao_pro.model3.json").unlink()
     mates = _service(db)
-    assert mates.store.by_builtin("mao") is None and mates.store.by_builtin("estelle") is not None
+    assert mates.store.by_builtin("mao") is None and mates.store.by_builtin("chaerin") is not None
 
 
 @needs_mao

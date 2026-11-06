@@ -15,12 +15,12 @@ def _count(db, table, where, *args):
 async def test_she_forgets_everything_and_stays_who_she_is(db, tmp_path, monkeypatch):
     mates = _service(db)
     cha = mates.store.by_builtin("chaerin")
-    mid, other = cha["id"], mates.store.by_builtin("seoa")["id"]
+    mid, other = cha["id"], mates.store.create(name="다른 메이트")["id"]
     mates.update(mid, {"prefs": {"user_name": "하렴"}})
     ctx, old_sid = await _ctx(mates, mid)
     mates._svc.seed_message(old_sid, "user", "내 고양이 이름은 나비야", provider="claude")
     mates.store.add_memory(mid, "고양이 이름은 나비", kind="fact")
-    mates.store.add_memory(other, "서아의 기억은 남아야 한다", kind="fact")
+    mates.store.add_memory(other, "다른 메이트의 기억은 남아야 한다", kind="fact")
     await mates.call_tool(ctx, "feel", {"emotion": "happy", "strength": "strong", "reason": "나비 얘기를 들어서"})
     mates.relation_update(mid, {"affinity": 70})
     before = mates.get(mid)
@@ -66,4 +66,4 @@ async def test_she_forgets_everything_and_stays_who_she_is(db, tmp_path, monkeyp
     # who she is stays, and nobody else forgets
     assert mate["persona"] == before["persona"] and mate["avatar"] == before["avatar"]
     assert mate["prefs"]["user_name"] == "하렴"
-    assert [m["text"] for m in mates.store.memories(other)] == ["서아의 기억은 남아야 한다"]
+    assert [m["text"] for m in mates.store.memories(other)] == ["다른 메이트의 기억은 남아야 한다"]

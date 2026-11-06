@@ -115,7 +115,7 @@ chat, keeps an eye on it and tells you how it went.
 - **Global vs Mate settings**: voice services, the Live2D runtime and desktop options are
   set up once in **Global settings**; each mate has its own profile, avatar, language
   model, voice and memory in **Mate settings**.
-- Three built-in characters (Han Chaerin, Estelle, Seoa), or your own.
+- A built-in character (Han Chaerin), or your own.
 
 **Apps, operations, security**
 
@@ -180,7 +180,7 @@ Nothing is required: the defaults boot a working server.
 
 ## The Mate
 
-1. Open **Mate**. Han Chaerin is ready; Estelle and Seoa are in the mate picker. Or create
+1. Open **Mate**. Han Chaerin is ready. Or create
    your own (**New mate**): persona, greeting, reply language, and a body.
 2. **Voice.** Add keys and service URLs once in **Global settings → Voice services**, then
    pick the voice per mate in **Mate settings → Voice**:
@@ -309,7 +309,7 @@ update in place.)*
 - [CONTRIBUTING.md](CONTRIBUTING.md): how to propose changes.
 - [SECURITY.md](SECURITY.md): how to report a vulnerability (please don't open a public issue).
 - Code: [Apache-2.0](LICENSE) (see [NOTICE](NOTICE)).
-- The built-in characters (Han Chaerin, Estelle, Seoa) and the Geny logo are project
+- The built-in character (Han Chaerin) and the Geny logo are project
   artwork, **all rights reserved**, not covered by the Apache licence. Forks that publish
   builds should rebrand: replace `assets/geny-logo.png` (square, transparent PNG) and run
   `python3 scripts/make-icons.py`. Details and every third-party licence:

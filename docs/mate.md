@@ -136,7 +136,7 @@ she edits her memories, and every source that could fight it is either gone or e
 | Input | Where | Written by | Conflict found |
 |---|---|---|---|
 | `persona.description`, `personality` | Who you are | user (Profile), built-in sync, ailism import, studio agent | none (character) |
-| `persona.speech` | "Speaking style:" in Who you are | user, built-in sync (all three bundles), import (`speech` + examples), studio (`update_mate_draft`) | **the bundles' speech fixed the speech level and the address in free text** — 한채린: "short 존댓말 (해요체) with the user — never 반말 … Call the user “<이름> 님”", "Your catchphrases are *exactly* …" (all 해요체); 에스텔/서아: "반말 throughout — never 존댓말". A `formality` setting had to fight it ("This wins over the speaking style above") and a self-change had nowhere to go |
+| `persona.speech` | "Speaking style:" in Who you are | user, built-in sync (the bundles), import (`speech` + examples), studio (`update_mate_draft`) | **the bundles' speech fixed the speech level and the address in free text** — 한채린: "short 존댓말 (해요체) with the user — never 반말 … Call the user “<이름> 님”", "Your catchphrases are *exactly* …" (all 해요체); 에스텔/서아: "반말 throughout — never 존댓말". A `formality` setting had to fight it ("This wins over the speaking style above") and a self-change had nowhere to go |
 | `persona.address` | "Call the user …" in Who you are | user (Profile chips), import, studio | a second address source next to the speech text's "<이름> 님" and `prefs.user_name` |
 | `persona.instructions` | Standing instructions | user, built-in sync (opening + return lines, interests), import, studio | the bundles' opening / return lines are in her default speech level (해요체 / 반말) under "standing instructions from the user" |
 | `persona.greeting` | Greeting (+ the first message) | user, built-in sync / language switch, studio | the line already said; stays at the level it was written in |
@@ -429,13 +429,14 @@ puts it on a mate (the old avatar is backed up and can be restored) or **New mat
 
 ### Built-in mates (shipped with the app)
 
-Three characters are bundled in `backend/app/mate/builtin/`: **Han Chaerin**
-(한채린, the default on a new install), **Estelle** and **Seoa** — all video
-mates (`mates/<key>.json` = the authors' original ailism content,
-`assets/<key>/` video clips + stills + `rig.json`, `voices/<key>/voice.json`).
-Order: `files.BUILTIN_ORDER` (chaerin, estelle, seoa, then the optional `mao`,
-see below); the first one created on a new install is the default — an
-existing install keeps the user's default.
+**Han Chaerin** (한채린, the default on a new install) is bundled in `backend/app/mate/builtin/`, a video mate
+(`mates/<key>.json` = the authors' original ailism content, `assets/<key>/` video clips + stills + `rig.json`,
+`voices/<key>/voice.json`). Order: `files.BUILTIN_ORDER` (chaerin, then the optional `mao`, see below); the first one created on a
+new install is the default — an existing install keeps the user's default.
+
+Bundles no longer shipped (`files.RETIRED_BUILTINS`: Estelle and Seoa) are settled at startup: one nobody ever used is removed; one the
+user talked to, taught something or changed stays on as their own mate, with all that is hers but without the bundle's body, whose files
+are gone with it.
 
 **Personas are English** (`personas/<key>.json`): everything the authors wrote
 (tagline, profile, appearance, background, relationship, knowledge, world,
@@ -491,8 +492,8 @@ Mao (PRO)* may not be redistributed (Live2D Free Material License, art. 4.1.1),
 so the repository does not ship it. The built-in machinery still supports a
 bundled **Live2D** character: an install that adds `assets/mao/` (the model
 under `runtime/` plus Live2D's `ReadMe.txt`), `mates/mao.json` and
-`personas/mao.json` locally (all three are gitignored) gets Mao as a fourth
-built-in after the three. `assets/<key>/live2d.json` makes a bundle Live2D: the
+`personas/mao.json` locally (all three are gitignored) gets Mao as a second
+built-in. `assets/<key>/live2d.json` makes a bundle Live2D: the
 fields of the Live2D avatar with `model` relative to the folder (validated:
 the model and its `.moc3` exist; motion groups named in `idle_group` /
 `emotion_motions` / `tap_motions` must exist). Files (nested folders too) are

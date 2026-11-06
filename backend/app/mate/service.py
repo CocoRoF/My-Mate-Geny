@@ -170,6 +170,7 @@ class MateService:
         persona fields, name, greeting and body still as previously bundled get
         the new version, whatever the user changed stays theirs. The reply
         language, voice, model, memories and default flag are never touched."""
+        self._retire_builtins()
         removed = self.store.builtin_removed()
         for key in files.builtin_keys():
             try:
@@ -209,6 +210,32 @@ class MateService:
                 self.store.fill_frames(mate["id"], files.framed)
             except Exception as exc:  # noqa: BLE001 - a picture that can't be read must not stop the app
                 self._log("warning", f"measuring {mate['name']}'s sets: {exc}")
+
+    def _retire_builtins(self) -> None:
+        """Bundled mates the app no longer ships: nothing can be lost with one nobody ever used, so she goes; one the user
+        talked to, taught something or changed stays on as their own mate, without the bundle's body."""
+        for key in files.RETIRED_BUILTINS:
+            mate = self.store.by_builtin(key)
+            try:
+                if mate is not None:
+                    if self._ever_used(mate):
+                        self.store.release_builtin(mate["id"])
+                        self._log("info", f"“{mate['name']}” is no longer bundled: she stays as the user's own mate, without her avatar")
+                    else:
+                        self.delete(mate["id"])
+                        self._log("info", f"“{mate['name']}” is no longer bundled and was never used: removed")
+                self.store._db.execute("DELETE FROM mate_builtin_removed WHERE key = ?", (key,))
+            except Exception as exc:  # noqa: BLE001 - one mate must not stop the app
+                self._log("warning", f"retiring built-in mate {key}: {exc}")
+
+    def _ever_used(self, mate: dict[str, Any]) -> bool:
+        """Whether the user did anything with her: changed her, she remembers something, or they wrote to her (what the app
+        itself sends her, such as a thinking trigger, doesn't count)."""
+        if mate.get("customized") or self.store.memories(mate["id"]):
+            return True
+        rows = self.store._db.query("SELECT m.meta FROM messages m JOIN sessions s ON s.id = m.session_id "
+                                    "WHERE s.kind = 'mate' AND s.mate_id = ? AND m.role IN ('user', 'steer')", (mate["id"],))
+        return any(not (json.loads(r["meta"] or "null") or {}).get("internal") for r in rows)
 
     def restore_builtins(self) -> list[dict[str, Any]]:
         self.store.restore_builtins()

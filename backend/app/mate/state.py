@@ -63,10 +63,6 @@ TOLD_EVERY_TURN_FROM = 0.7
 TEMPERAMENTS: dict[str, dict[str, Any]] = {
     "chaerin": {"base": {"shy": 0.15}, "rise": {"shy": 1.2, "excited": 1.3},
                 "loves": r"게임|버그|레이드|길드|코드|디버그|재현|\braid\b|\bgame|\bbug"},  # quiet, until games come up
-    "estelle": {"base": {"sleepy": 0.15}, "rise": {"shy": 0.6, "angry": 0.7},
-                "loves": r"마법|마도|낮잠|\bmagic\b|\bnap\b"},  # lazy, and 271 years old
-    "seoa": {"base": {"happy": 0.1}, "rise": {"happy": 1.3, "sad": 1.3, "excited": 1.3},
-             "loves": r"주식|차트|종목|상한가|시장|방송|\bstock|\bchart\b|\bmarket\b"},  # every feeling shows on her face
 }
 
 # what the user says moves it, by this much

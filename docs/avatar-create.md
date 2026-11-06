@@ -2,7 +2,7 @@
 
 The **Mate Create studio** is where a mate is made: the creation agent on the left helps define who she is (concept,
 personality, speech, how she calls the user, voice character, visual concept) and fills her settings on the right as
-it goes; then it designs her **video avatar** with Higgsfield — the way the bundled mates (한채린, 서아, 에스텔) were
+it goes; then it designs her **video avatar** with Higgsfield — the way the bundled mate (한채린) was
 made by hand with Claude Code + Higgsfield (ailism-mate `original_content/tools/mate.py`). The same studio makes a new
 avatar for an existing mate. The agent has a conversation of its own, separate from the mate's chat. §11 is the
 studio; §1–§10 the avatar part (unchanged since Avatar Create); §12 outfit sets for a mate's wardrobe.

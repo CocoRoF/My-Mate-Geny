@@ -4,7 +4,7 @@
   python3 desktop/test/e2e/mate-outfit-server.py <port> <frontend dist> [<picture> <picture>]
 
 한채린 (the bundled mate) gets two outfits filled with one picture each, and an empty one with a finished project made of
-서아's real clips: a whole video set, only to check that wearing it swaps everything. The agent is fake-claude.py.
+her own real clips: a whole video set, only to check that wearing it swaps everything. The agent is fake-claude.py.
 """
 
 import os
@@ -56,13 +56,13 @@ async def seeded(app):
     async with original(app):
         mates, av = app.state.mate_service, app.state.avatar_service
         mid = mates.store.by_builtin("chaerin")["id"]
-        srcs = [Path(p) for p in PICTURES] or [BUILTIN / "seoa/neutral.webp", BUILTIN / "estelle/neutral.webp"]
+        srcs = [Path(p) for p in PICTURES] or [BUILTIN / "chaerin/smile.webp", BUILTIN / "chaerin/laugh.webp"]
         for name, src, tag in (("캐주얼", srcs[0], "a"), ("여름옷", srcs[1], "b")):
             mates.set_outfit_avatar(mid, mates.add_outfit(mid, name), picture_set(mid, src, tag))
         made = mates.add_outfit(mid, "출근복")
         pid = av.studio_open(mate_id=mid, language="ko", outfit={"id": made})["id"]
         doc = av.doc(pid)
-        shutil.copytree(BUILTIN / "seoa", av.dir(pid) / "export")
+        shutil.copytree(BUILTIN / "chaerin", av.dir(pid) / "export", ignore=shutil.ignore_patterns("outfits", "outfits.json"))
         doc.update(status="ready", result={"at": "2026-11-06T00:00:00+00:00", "stills": 12, "clips": 15})
         av.save(doc)
         if os.environ.get("OUTFIT_E2E_WAITING"):  # for mate-studio-phone-browser.js: a redo waits for the user's OK
@@ -71,8 +71,8 @@ async def seeded(app):
             (av.dir(pid) / "design").mkdir()
             (av.dir(pid) / "thumbs").mkdir(exist_ok=True)
             for c in ("c1", "c2", "c3"):
-                shutil.copyfile(BUILTIN / "seoa/neutral.webp", av.dir(pid) / f"design/{c}.png")
-                shutil.copyfile(BUILTIN / "seoa/neutral.webp", av.dir(pid) / f"thumbs/{c}.jpg")
+                shutil.copyfile(BUILTIN / "chaerin/neutral.webp", av.dir(pid) / f"design/{c}.png")
+                shutil.copyfile(BUILTIN / "chaerin/neutral.webp", av.dir(pid) / f"thumbs/{c}.jpg")
                 doc["items"][f"design:{c}"] = {"stage": "design", "job_type": "nano_banana_pro", "status": "done",
                                                "out": f"design/{c}.png", "credits": 2.0, "tries": 1}
             doc["done"]["design"] = True

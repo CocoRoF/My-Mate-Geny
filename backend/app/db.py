@@ -237,7 +237,7 @@ CREATE TABLE IF NOT EXISTS mates (
     screen      TEXT NOT NULL DEFAULT '{}',   -- screen capture settings (docs/mate.md §4 "Seeing the screen")
     session_id  TEXT,
     memory_rev  INTEGER NOT NULL DEFAULT 0,   -- bumped by user edits of the memory (the engine reloads it)
-    builtin     TEXT,                         -- bundled character key (estelle, …) for built-in mates
+    builtin     TEXT,                         -- bundled character key (chaerin, …) for built-in mates
     builtin_hash TEXT,                        -- the bundled version it was last synced from
     builtin_snapshot TEXT,                    -- JSON: that bundle (names, greetings, persona, avatar) for field merges
     customized  INTEGER NOT NULL DEFAULT 0,   -- the user edited its persona/avatar (updates keep the edited fields)

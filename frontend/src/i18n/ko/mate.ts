@@ -183,7 +183,7 @@ const ko: Messages<"mate"> = {
   name: "이름",
   namePlaceholder: "예: Geny",
   importPathLabel: "이 서버의 폴더 또는 파일",
-  importPathPlaceholder: "/path/to/content/mates/estelle.json  또는 Live2D 모델 폴더",
+  importPathPlaceholder: "/path/to/content/mates/mate.json  또는 Live2D 모델 폴더",
   importPathHint:
     "ailism 콘텐츠 폴더(안의 모든 캐릭터와 음성), mates/<name>.json 파일 하나, rig.json이 있는 폴더, 또는 Live2D 모델 폴더(*.model3.json)를 쓸 수 있어요. 다시 가져오면 같은 이름의 메이트가 업데이트돼요.",
   create: "만들기",

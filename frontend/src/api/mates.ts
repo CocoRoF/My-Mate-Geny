@@ -305,7 +305,7 @@ export interface Mate {
   /** missing on documents from an older server: DEFAULT_SCREEN */
   screen?: MateScreen;
   session_id: string | null;
-  /** a mate shipped with the app (estelle | chaerin | seoa), else null */
+  /** a mate shipped with the app (chaerin, …), else null */
   builtin?: string | null;
   /** a built-in the user edited (bundle updates keep the fields the user changed) */
   customized?: boolean;

@@ -391,7 +391,7 @@ const ko: Messages<"mateSettings"> = {
   dangerTypeToConfirm: "확인하려면 메이트 이름(<b>{name}</b>)을 입력하세요",
   dangerDeleteBtn: "메이트 삭제",
   dangerBuiltins: "기본 메이트",
-  dangerBuiltinsHint: "Estelle, Chaerin, Seoa는 앱에 기본으로 들어 있어요. 지운 메이트를 처음 모습 그대로 되살릴 수 있어요.",
+  dangerBuiltinsHint: "기본 메이트는 앱에 들어 있어요. 지운 메이트를 처음 모습 그대로 되살릴 수 있어요.",
   dangerMissing: "없는 메이트: {list}",
   dangerAllOfThem: "모두 있어요.",
   dangerRestoreBtn: "기본 메이트 되살리기",

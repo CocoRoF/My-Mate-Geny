@@ -146,5 +146,3 @@ def test_the_real_sets_are_measured_and_line_up():
     for frame in (usual, worn):
         assert 0.2 < frame["face"][1] < 0.4  # (her face, not the chest a detector once took for it)
     assert abs(usual["face"][2] * 970 - worn["face"][2] * 964) < 6  # (the same size in the pictures, once margins are set aside)
-    for key in ("estelle", "seoa"):
-        assert files.builtin_avatar(key, files.builtin_doc(key))["rig"]["frame"]["how"] == "face"

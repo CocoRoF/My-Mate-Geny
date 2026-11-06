@@ -6,7 +6,7 @@ import { ErrorLine, Section } from "./ui";
 import { useT } from "../../../i18n";
 
 /** the characters bundled with the app (backend/app/mate/builtin) */
-const BUILTINS: Record<string, string> = { estelle: "Estelle", chaerin: "Chaerin", seoa: "Seoa" };
+const BUILTINS: Record<string, string> = { chaerin: "Chaerin" };
 
 /** [Reset her memory]: as if they had never talked. She stays who she is. */
 function WipeMemory({ mate }: { mate: Mate }) {

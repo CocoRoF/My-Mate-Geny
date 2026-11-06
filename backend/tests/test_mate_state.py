@@ -120,15 +120,14 @@ def test_plain_talk_leaves_it_alone():
 
 
 def test_what_she_loves_lights_her_up_and_each_mate_is_her_own():
-    chaerin, seoa = S.who(builtin="chaerin"), S.who(builtin="seoa")
+    chaerin, other = S.who(builtin="chaerin"), S.who(builtin="someone made by the user")
     a, b = S.new(), S.new()
     S.hear(a, chaerin, "이번 레이드 버그 재현됐어", "m", NOON, TZ)
-    S.hear(b, seoa, "이번 레이드 버그 재현됐어", "m", NOON, TZ)
-    assert _lv(a, chaerin)["excited"] > 0.2 and _lv(b, seoa)["excited"] == 0
+    S.hear(b, other, "이번 레이드 버그 재현됐어", "m", NOON, TZ)
+    assert _lv(a, chaerin)["excited"] > 0.2 and _lv(b, other)["excited"] == 0
     assert S.levels(a, chaerin, NOON, TZ)["excited"]["why"] == {"code": "loves"}
-    assert _lv(S.new(), chaerin)["shy"] > _lv(S.new(), seoa)["shy"]
-    assert _lv(S.new(), seoa)["happy"] > _lv(S.new(), chaerin)["happy"]
-    assert S.who(builtin="someone made by the user")["temperament"] == {}
+    assert _lv(S.new(), chaerin)["shy"] > _lv(S.new(), other)["shy"]
+    assert other["temperament"] == {}
 
 
 def test_coming_back_after_a_while_is_welcome():

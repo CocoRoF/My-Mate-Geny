@@ -75,8 +75,8 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     const boot = await context(browser, {});
     const mates = await get(boot, "/api/mates");
     const chaerin = mates.find((m) => m.builtin === "chaerin");
-    const other = mates.find((m) => m.builtin === "seoa");
-    assert.ok(chaerin && other, "the bundled mates are there");
+    assert.ok(chaerin, "the bundled mate is there");
+    const other = await (await boot.request.post(`${SERVER}/api/mates`, { data: { name: "새 메이트" } })).json();
     const mate = () => get(boot, `/api/mates/${chaerin.id}`);
     const homeBefore = chaerin.avatar.rig.home;
     const initialOutfits = chaerin.outfits.items.length;

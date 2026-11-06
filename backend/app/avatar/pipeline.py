@@ -1,6 +1,6 @@
 """Avatar processing — the picture and video work between the Higgsfield jobs (docs/avatar-create.md §5).
 
-A port of ailism-mate ``original_content/tools/mate.py`` (the pipeline that made 한채린, 서아 and 에스텔), run by the
+A port of ailism-mate ``original_content/tools/mate.py`` (the pipeline that made 한채린), run by the
 backend in its own venv (numpy, scipy, opencv, pillow; ffmpeg from the system or imageio-ffmpeg) under a memory cap,
 one at a time. Every step streams video frame by frame (a 1440px clip is ~1 GB as one array).
 

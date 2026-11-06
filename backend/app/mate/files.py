@@ -829,7 +829,9 @@ def ailism_voice(doc: dict[str, Any], voice_dir: Path | None, mate_id: str) -> d
 # first migration compares against it to tell the user's edits from bundled text.
 
 BUILTIN_DIR = Path(__file__).resolve().parent / "builtin"
-BUILTIN_ORDER = ("chaerin", "estelle", "seoa", "mao")  # the first is the default mate on a new install
+BUILTIN_ORDER = ("chaerin", "mao")  # the first is the default mate on a new install
+#: bundled once, no longer shipped: what an install still has of them is settled at startup (MateService._retire_builtins)
+RETIRED_BUILTINS = ("estelle", "seoa")
 # persona fields a bundle sets for every language (greeting and name are per language) — the character only
 BUNDLE_FIELDS = ("description", "personality", "instructions")
 # conversation-style fields (prefs) a bundle sets and later updates merge field by field like the persona's; the

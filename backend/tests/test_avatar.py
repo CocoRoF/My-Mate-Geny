@@ -629,7 +629,7 @@ def test_alpha_recovery_on_a_synthetic_frame():
     assert res["light_patch_alpha_min"] > 0.9 and res["deep_patch_alpha_min"] > 0.9  # body in the gray's colour stays
     assert res["strand_shown_mean"] > 0.5  # a fine strand isn't eaten away at the edge
     # real art, black hair, silver hair, pink hair: what is solid stays, what the remover covered opens
-    assert set(res["art"]) == {"chaerin", "estelle", "seoa"}
+    assert set(res["art"]) == {"chaerin"}
     for who, m in res["art"].items():
         assert m["lost"] < 1 and m["opened"] > 30, (who, m)
     assert res["wall_changed"] == 0  # not on one flat colour: the picture says nothing about the background
