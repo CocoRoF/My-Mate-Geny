@@ -12,7 +12,8 @@ Env: HRH_MATE_API (e.g. http://127.0.0.1:8080), HRH_MATE_TOKEN, HRH_MATE_ID,
 HRH_MATE_SESSION; HRH_MATE_SCREEN=1 when the mate may look at the user's screen
 (``see_screen`` is listed only then; its picture comes back as MCP image content);
 HRH_MATE_STYLE=auto|ask when she may change her own conversation style
-(``update_conversation_style``; absent = not listed).
+(``update_conversation_style``; absent = not listed); HRH_MATE_OUTFIT=1 when she may change her clothes when asked
+(``change_outfit``).
 """
 
 from __future__ import annotations
@@ -275,6 +276,27 @@ UPDATE_STYLE = {
     },
 }
 
+# offered unless the mate's "changes her clothes when asked" setting is off (HRH_MATE_OUTFIT=1)
+CHANGE_OUTFIT = {
+    "name": "change_outfit",
+    "description": (
+        "Change into another outfit of your wardrobe (your <context> lists it) because the user asked you to: the "
+        "avatar they see changes at once. Call it every time they ask, in any words, or say yes to your offer, even if "
+        "you don't feel like it: it knows how you feel and how often they have asked, and tells you whether you change. "
+        "Never call it on your own initiative. Returns what happened: Changed, Not yet, Closed, Empty or Already."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "outfit": {"type": "string", "description": "The outfit's id from your wardrobe; default = your usual clothes."},
+            "asked": {"type": "string", "description": (
+                "The user's own words from their latest message that ask for it, copied exactly (\"그 옷으로 갈아입어\", "
+                "\"응\"). Not your paraphrase: anything they didn't write is refused.")},
+        },
+        "required": ["outfit", "asked"],
+    },
+}
+
 # offered only while the mate's Screen setting is on (HRH_MATE_SCREEN=1, app/mate/service.configure_engine)
 SEE_SCREEN = {
     "name": "see_screen",
@@ -299,6 +321,7 @@ _SLOW = {"see_screen": 150}  # (waits for the user's answer + the capture; the b
 def tools() -> list[dict]:
     base = TOOLS if os.environ.get("HRH_MATE_MEMORY") == "1" else TOOLS[:9]
     return (base + ([UPDATE_STYLE] if os.environ.get("HRH_MATE_STYLE") in ("auto", "ask") else [])
+            + ([CHANGE_OUTFIT] if os.environ.get("HRH_MATE_OUTFIT") == "1" else [])
             + ([SEE_SCREEN] if os.environ.get("HRH_MATE_SCREEN") == "1" else []))
 
 

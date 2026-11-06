@@ -499,6 +499,8 @@ const ko: Messages<"mateSettings"> = {
   outfitWear: "입기",
   outfitEmptyHint: "아래에서 AI로 만들거나 파일을 넣으면 입을 수 있어요.",
   outfitMeta: "동작 {clips}개 · 표정 {stills}개",
+  outfitSelf: "부탁하면 직접 갈아입어요",
+  outfitSelfHint: "기분과 사이에 따라 몇 번 더 부탁해야 할 때도 있어요. 잠긴 의상은 입지 않고, 평소 옷으로 돌아가는 건 언제든 바로 해요.",
   outfitLockedTile: "호감도 {n}",
   outfitLockedHint: "호감도가 {n}이 되면 열려요. 지금 {now}이에요.",
   outfitLockedStopped: "관계와 기분이 꺼져 있거나 멈춰 있으면 호감도가 오르지 않아요.",

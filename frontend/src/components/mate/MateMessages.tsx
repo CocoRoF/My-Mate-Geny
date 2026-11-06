@@ -100,6 +100,14 @@ export function describeTool(t: ToolActivity): { icon: IconName; label: string; 
       if (t.isError) return { icon: "sliders", label: tr("mate.toolStyleFailed") };
       return { icon: "sliders", label: /^Proposed/.test(out) ? tr("mate.toolStyleProposed", { what }) : /^Nothing/.test(out) ? tr("mate.toolStyleSame") : tr("mate.toolStyleChanged", { what }) };
     }
+    case "change_outfit": {
+      // (what she has on follows by itself, in every window)
+      if (t.durationMs === undefined) return { icon: "sparkles", label: tr("mate.toolOutfitChanging") };
+      if (/^Changed back/.test(out)) return { icon: "sparkles", label: tr("mate.toolOutfitBack") };
+      const named = /^Changed to “(.+?)”/.exec(out);
+      if (named) return { icon: "sparkles", label: tr("mate.toolOutfitChanged", { name: named[1] }) };
+      return { icon: "sparkles", label: tr("mate.toolOutfitStays") };
+    }
     case "see_screen":
       // (docs/mate.md §4 "Seeing the screen": the picture shows under the chip)
       return {

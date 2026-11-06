@@ -8,7 +8,7 @@ import { addOutfit, DEFAULT_OUTFIT, deleteOutfit, patchOutfit, wearOutfit, type 
 import { useT } from "../../../i18n";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
-import { ErrorLine, ProgressBar, Section } from "./ui";
+import { ErrorLine, ProgressBar, Section, Toggle } from "./ui";
 
 export default function OutfitBar({ mate, selected, onSelect }: { mate: Mate; selected: string; onSelect: (id: string) => void }) {
   const t = useT();
@@ -188,6 +188,15 @@ export default function OutfitBar({ mate, selected, onSelect }: { mate: Mate; se
         </div>
       )}
       <ErrorLine text={error} />
+      {items.length > 1 && (
+        <Toggle
+          on={mate.prefs?.self_outfit !== "off"}
+          onChange={(on) => void run(async () => void (await useMateStore.getState().patch(mate.id, { prefs: { self_outfit: on ? "auto" : "off" } })))}
+          label={t("mateSettings.outfitSelf")}
+          hint={t("mateSettings.outfitSelfHint")}
+          testId="outfit-self"
+        />
+      )}
     </Section>
   );
 }

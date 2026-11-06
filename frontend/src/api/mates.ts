@@ -98,6 +98,8 @@ export interface MatePrefs {
   avoid: string;
   memory: { recall: RecallLevel; self_save: boolean };
   self_edit: SelfEdit;
+  /** she changes her clothes when the user asks */
+  self_outfit?: "auto" | "off";
   defaults: StyleDefaults;
 }
 
@@ -113,6 +115,7 @@ export const DEFAULT_PREFS: MatePrefs = {
   avoid: "",
   memory: { recall: "normal", self_save: true },
   self_edit: "auto",
+  self_outfit: "auto",
   defaults: { formality: "", address: "", self_ref: "" },
 };
 

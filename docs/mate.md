@@ -698,6 +698,7 @@ lists each message's `files` (names).
 | `update_memory(id, text?, kind?, importance?, due?, status?)` | correct / merge / mark a plan done |
 | `forget(id, reason?)` / `recall(query, kind?, limit?, include_done?)` | delete one; search all memories |
 | `update_conversation_style(formality?, address?, user_name?, self_ref?, language?, length?, emotion?, tone?, speech_style?, avoid?, reason)` | unless `prefs.self_edit` is off: change her own conversation style when the user asks for a lasting change (applied, or proposed with "ask me first"; recorded, undoable — §1a) |
+| `change_outfit(outfit, asked)` | unless `prefs.self_outfit` is off: change her clothes because the user asked; `asked` quotes their latest message, and the tool decides (see "Outfits") |
 | `see_screen(reason?)` | only while this device shares the conversation: a picture of the user's screen from their desktop app (below) |
 
 Policy in the prompt: find the chat already working on that project and send
@@ -1149,7 +1150,7 @@ outfit exactly like an avatar (kind, Make it with AI, zip or folder import, stil
 or not. **Wear** swaps the whole set at once in every window (`mates.changed`); an empty outfit can't be worn yet. Her
 default set always stays.
 
-- **Stored** in `mates.outfits`: `{worn, base, items: [{id, name, note, avatar}]}`. The `avatar` column is always the set she
+- **Stored** in `mates.outfits`: `{worn, base, items: [{id, name, note, avatar}], self}` (`self`: the asks below; no client sees it). The `avatar` column is always the set she
   has on, so everything that reads a mate just works; `base` holds her default set while another one is on. What comes off
   keeps the state it was in.
 - **Files**: an outfit's uploads go to `assets/outfits/<id>/` and are removed with it. Imported packs are removed when no set
@@ -1172,7 +1173,22 @@ default set always stays.
   of the opening shows over the panel it was set in. The files themselves
   are not hidden: the repository is public, and this is a reward, not a protection.
 - **She knows**: while an outfit is on, the per-turn `<context>` says what she has on (it replaces the clothes in her
-  profile; no restart, nothing stored).
+  profile; no restart, nothing stored). It lists her wardrobe too when that changed since the engine session was last told
+  (or every 30 turns), naming what is still closed.
+- **She changes herself** (`change_outfit`, `app/mate/wardrobe.py`), only because the user asked: her system prompt says never
+  on a whim, and that she calls the tool whenever they ask, even if she doesn't feel like it, because the tool decides.
+  - The tool checks that `asked`, the words she quotes, really is in the user's latest message. A turn someone else started
+    (`meta.internal`: her greeting, a delegation's result, a look at the screen) has no asker and is refused. This catches a
+    made-up request; whether real words mean it is still the model's reading.
+  - Locked (`Closed`), empty (`Empty`) and already on (`Already`) change nothing and count as no ask.
+  - How many asks it takes: by mood 1 (cheerful, content, calm), 2 (focused, sleepy), 3 (concerned); one more if the stage is
+    still `new` or she changed in the last 10 minutes; at most 4. With the relationship off or paused, 1.
+  - An ask counts once per message of theirs, for one outfit; asking for another one starts over, and so does 30 minutes of
+    silence or a change. A rude message isn't an ask. Short of the count she answers `Not yet`, stays as she is and says so
+    in her own voice, with no numbers and no sulking (`mate.outfit_not_yet` in the log).
+  - `default`, back to her usual clothes, always works at once, whatever the mood: it is the user's call.
+  - **Wear** in settings is untouched by all of this. `prefs.self_outfit` `off` (the switch under her wardrobe) takes the
+    tool and its rules away, and the tool refuses by itself if an engine still has it.
 - **API**: `POST /api/mates/{id}/outfits {name}` → `{id, mate}`, `GET …/outfits/{oid}` → `{id, name, avatar}`,
   `POST …/outfits/{oid}/wear` (`default`: her default set), `PATCH …/outfits/{oid} {name?, avatar?}`,
   `DELETE …/outfits/{oid}`; `POST …/avatar/import` and `POST /api/mates/import-local` take `outfit`. A mate document carries

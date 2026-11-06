@@ -498,6 +498,8 @@ export default {
   outfitWear: "Wear",
   outfitEmptyHint: "Make it with AI below or add files, then she can wear it.",
   outfitMeta: "{clips} motions · {stills} expressions",
+  outfitSelf: "Changes her clothes when you ask",
+  outfitSelfHint: "Depending on her mood and how close you are, it may take asking again. She won't wear what is still locked, and going back to her usual clothes always works at once.",
   outfitLockedTile: "Affinity {n}",
   outfitLockedHint: "Opens at affinity {n}. It is {now} now.",
   outfitLockedStopped: "Affinity doesn't rise while Relationship & mood is off or paused.",

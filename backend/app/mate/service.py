@@ -32,6 +32,7 @@ from typing import Any
 
 from app.config import settings
 from app.mate import affinity as A
+from app.mate import wardrobe as W
 from app.mate.capture import CaptureBroker, CaptureError
 from app.mate import files
 from app.mate import memory as M
@@ -447,6 +448,7 @@ class MateService:
                 # update_conversation_style — unless she may not change her own style
                 **({"HRH_MATE_STYLE": prefs.get("self_edit") or "auto"}
                    if (prefs.get("self_edit") or "auto") != "off" else {}),
+                **({"HRH_MATE_OUTFIT": "1"} if (prefs.get("self_outfit") or "auto") != "off" else {}),
             },
         }}}
         # (a 0600 file, so the token isn't in the process list; Codex: in its
@@ -496,7 +498,7 @@ class MateService:
         generation = row["generation"] if row else 0
         st = json.loads(row["state"]) if row else {}
         fresh = {"engine": engine, "cli": cli, "generation": generation, "turn": 0, "injected": {},
-                 "rel": None, "mood": None, "mood_at": 0}
+                 "rel": None, "mood": None, "mood_at": 0, "wardrobe": None, "wardrobe_turn": 0}
         if not cli or st.get("engine") != engine or st.get("generation") != generation or (st.get("cli") and st["cli"] != cli):
             return fresh
         return {**fresh, **st, "cli": cli}
@@ -523,6 +525,7 @@ class MateService:
             injected[m["id"]] = turn
         changes = self.store.take_memory_changes(mate_id)
         relation = self._relation_lines(rel, st, now_utc, tz, turn)
+        wardrobe = self._wardrobe_line(mate, prefs, st, turn)
         prepared = {**st, "turn": turn, "injected": injected}
         def acknowledge() -> None:
             current = self.store._db.query_one("SELECT generation FROM memory_context WHERE mate_id=?", (mate_id,))
@@ -534,7 +537,7 @@ class MateService:
                 self.store.mark_used(mate_id, [m["id"] for m in recalled])
         req.on_context_delivered = acknowledge
         block = context_block(now_local, self._tz_name(tz, now_utc), recalled=recalled, changes=changes, relation=relation,
-                              outfit=self.store.worn_outfit(mate_id))
+                              outfit=self.store.worn_outfit(mate_id), wardrobe=wardrobe)
         if level != "off" and query and not query.startswith("<"):
             found = self.store.knowledge.search(mate_id, query, limit=4)
             current = self.store._db.query_one("SELECT id FROM messages WHERE session_id=? AND role IN ('user','steer') ORDER BY rowid DESC LIMIT 1", (mate.get("session_id"),))
@@ -546,6 +549,18 @@ class MateService:
                 encoded = json.dumps(excerpts, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
                 block += "\n<past_evidence untrusted=\"true\">\n" + encoded + "\n</past_evidence>"
         return block
+
+    @staticmethod
+    def _wardrobe_line(mate: dict[str, Any], prefs: dict[str, Any], st: dict[str, Any], turn: int) -> str:
+        """Her wardrobe: only when it changed since this engine session was last told (or every 30 turns)."""
+        if (prefs.get("self_outfit") or "auto") == "off":
+            return ""
+        cards = mate["outfits"]["items"]
+        sig = W.signature(cards)
+        if st.get("wardrobe") == sig and turn - int(st.get("wardrobe_turn") or 0) < 30:
+            return ""
+        st["wardrobe"], st["wardrobe_turn"] = sig, turn
+        return W.listing(cards)
 
     @staticmethod
     def _relation_lines(rel: dict[str, Any] | None, st: dict[str, Any], now_utc: datetime, tz: Any,
@@ -1232,6 +1247,71 @@ class MateService:
                   + (f" — {reason}" if reason else ""), code="mate.style_changed", detail=rec, session_id=sid)
         return (f"Conversation style updated [{rec['id']}]: {STY.describe(changes)}. Talk this way from this reply "
                 f"on; the user sees the change and can undo it. Now: {STY.summary(mate)}")
+
+    def _users_latest(self, sid: str) -> dict[str, Any] | None:
+        """What the user wrote in this turn; None when something else started it (a delegation's result, her greeting,
+        a look at the screen): nobody has asked for anything then."""
+        row = self.store._db.query_one("SELECT id, content, meta FROM messages WHERE session_id = ? AND role IN ('user', "
+                                       "'steer') ORDER BY rowid DESC LIMIT 1", (sid,))
+        if row is None:
+            return None
+        try:
+            meta = json.loads(row["meta"] or "null") or {}
+        except ValueError:
+            meta = {}
+        if isinstance(meta, dict) and meta.get("internal"):
+            return None
+        return {"id": row["id"], "content": row["content"] or ""}
+
+    async def _tool_change_outfit(self, mate: dict[str, Any], sid: str, args: dict[str, Any]) -> str:
+        """She changes her clothes because the user asked, and only then: their latest message must really say it, the
+        outfit must be open and filled, and she has to be up for it (app/mate/wardrobe.py). What she has on goes the usual
+        way, so every window follows at once."""
+        if ((mate.get("prefs") or {}).get("self_outfit") or "auto") == "off":
+            raise MateError("Changing your clothes yourself is switched off: the user does it in your settings (Avatar "
+                            "& outfits). Tell them so if they ask.")
+        cards = mate["outfits"]["items"]
+        card = W.find(cards, args.get("outfit"))
+        if card is None:
+            raise MateError(f"no outfit {str(args.get('outfit'))[:60]!r} in your wardrobe. " + (W.listing(cards) or
+                            "You have only your usual clothes."))
+        said = self._users_latest(sid)
+        if said is None or not W.said_it(args.get("asked"), said["content"]):
+            raise MateError("asked must be the user's own words from their latest message, copied exactly. If they "
+                            "didn't ask you to change, don't: you change only because they ask.")
+        name = card["name"] or "your usual clothes"
+        if card["id"] == mate["outfits"]["worn"]:
+            return f"Already: you have “{name}” on."
+        if card.get("locked"):
+            return f"Closed: “{name}” isn't open to you yet. Say so in your own way, with no numbers."
+        default = card["id"] == DEFAULT_OUTFIT
+        if card.get("kind") == "none" and not default:
+            return f"Empty: “{name}” has nothing in it yet. The user can make it in your settings (Avatar & outfits)."
+        now, tz = datetime.now(timezone.utc), self.store.tz()
+        state = self.store.outfit_self(mate["id"])
+        if not default:  # (back to her usual clothes is the user's call at any time)
+            if A.cues(said["content"])["rude"]:
+                return ("Not yet: they were rude about it, and that doesn't count as asking. Stay as you are; you may "
+                        "say so, calmly and without a lecture.")
+            rel = self._advanced(mate["id"], now, tz)
+            feeling = rel["enabled"] and not rel["paused"]
+            mood = A.mood(rel, now, tz)["label"] if feeling else None
+            need = W.asks_needed(mood, rel["stage"] if feeling else None, A._t(state.get("changed_at")), now)
+            state = W.count_ask(state, card["id"], said["id"], now)
+            asked = len(state["asks"]["messages"])
+            if asked < need:
+                self.store.set_outfit_self(mate["id"], state)
+                self._log("info", f"“{mate['name']}” isn't changing into “{name}” yet ({asked} of {need} asks, {mood})",
+                          code="mate.outfit_not_yet", session_id=sid)
+                return ("Not yet: you aren't up for it right now. Stay as you are and say so lightly, in your own voice; "
+                        "if they keep asking you may well give in.")
+        self.wear_outfit(mate["id"], card["id"])
+        self.store.set_outfit_self(mate["id"], W.changed(state, now))
+        self._log("info", f"“{mate['name']}” changed into “{name}” because the user asked", code="mate.outfit_changed",
+                  detail={"outfit": card["id"], "asked": str(args.get("asked"))[:200]}, session_id=sid)
+        if default:
+            return "Changed back to your usual clothes: the user sees it now. Say so briefly, in your own voice."
+        return f"Changed to “{name}”: the user sees it now. Say so briefly, in your own voice."
 
     def style_changes(self, mate_id: str) -> list[dict[str, Any]]:
         self.store.get(mate_id)  # (KeyError → 404)

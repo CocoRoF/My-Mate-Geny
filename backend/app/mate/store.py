@@ -259,6 +259,7 @@ TONE_KEYS = ("warmth", "humor", "initiative")
 TONE_LEVELS = ("auto", "low", "high")
 RECALL_LEVELS = ("off", "light", "normal", "rich")
 SELF_EDIT = ("auto", "ask", "off")   # may the mate change her own style: yes | as a proposal the user applies | no
+SELF_OUTFIT = ("auto", "off")        # may the mate change her clothes when the user asks (app/mate/wardrobe.py)
 MAX_AVOID = 500
 MAX_ADDRESS = 80
 MAX_SELF_REF = 40
@@ -277,7 +278,7 @@ def default_style_defaults() -> dict[str, str]:
 def default_prefs() -> dict[str, Any]:
     return {"user_name": "", "address": "", "self_ref": "", "formality": "auto", "speech_style": "",
             "length": "normal", "emotion": 2, "tone": {k: "auto" for k in TONE_KEYS}, "avoid": "",
-            "memory": {"recall": "normal", "self_save": True}, "self_edit": "auto",
+            "memory": {"recall": "normal", "self_save": True}, "self_edit": "auto", "self_outfit": "auto",
             "defaults": default_style_defaults(), "proactive": {"enabled": False, "interval": 180, "guidance": "", "scope": "all", "preset": None}}
 
 
@@ -319,7 +320,7 @@ def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
     out = default_prefs()
     b = base if isinstance(base, dict) else {}
     for k in ("user_name", "address", "self_ref", "formality", "speech_style", "length", "emotion", "avoid",
-              "self_edit"):
+              "self_edit", "self_outfit"):
         if k in b:
             out[k] = b[k]
     if isinstance(b.get("tone"), dict):
@@ -373,6 +374,8 @@ def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
             out["avoid"] = _s(patch["avoid"], MAX_AVOID).strip()
         if "self_edit" in patch:
             out["self_edit"] = _enum(patch["self_edit"], SELF_EDIT, "self-edit setting")
+        if "self_outfit" in patch:
+            out["self_outfit"] = _enum(patch["self_outfit"], SELF_OUTFIT, "self-outfit setting")
         tone = patch.get("tone")
         if tone is not None:
             if not isinstance(tone, dict):
@@ -395,7 +398,8 @@ def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
         out["emotion"] = max(0, min(3, int(out["emotion"])))
     except (TypeError, ValueError):
         out["emotion"] = 2
-    for k, allowed in (("formality", FORMALITIES), ("length", LENGTHS), ("self_edit", SELF_EDIT)):
+    for k, allowed in (("formality", FORMALITIES), ("length", LENGTHS), ("self_edit", SELF_EDIT),
+                       ("self_outfit", SELF_OUTFIT)):
         if out[k] not in allowed:
             out[k] = "normal" if k == "length" else allowed[0]
     if out["memory"].get("recall") not in RECALL_LEVELS:
@@ -844,7 +848,8 @@ class MateStore:
 
     # ---- the wardrobe (docs/mate.md "Outfits") ----
     # The avatar column is always the set she has on, so everything that reads a mate just works. ``outfits`` holds the
-    # rest: {worn, base (her default set while another one is on), items: [{id, name, note, avatar}]}. An outfit starts
+    # rest: {worn, base (her default set while another one is on), items: [{id, name, note, avatar}], self (the asks
+    # for her to change, app/mate/wardrobe.py)}. An outfit starts
     # empty (kind "none") and is filled like any avatar. What comes off keeps the state it was in (a worn item's own
     # ``avatar`` is only refreshed then).
 
@@ -853,7 +858,18 @@ class MateStore:
         if row is None:
             raise KeyError(f"mate not found: {mate_id}")
         w = _loads(row["outfits"], {})
-        return {"worn": w.get("worn") or DEFAULT_OUTFIT, "base": w.get("base"), "items": w.get("items") or []}
+        return {"worn": w.get("worn") or DEFAULT_OUTFIT, "base": w.get("base"), "items": w.get("items") or [],
+                "self": w.get("self") if isinstance(w.get("self"), dict) else {}}
+
+    def outfit_self(self, mate_id: str) -> dict[str, Any]:
+        return self._wardrobe(mate_id)["self"]
+
+    def set_outfit_self(self, mate_id: str, state: dict[str, Any]) -> None:
+        """Her own bookkeeping: no client sees it, so nobody has to refetch."""
+        with self._lock:
+            w = self._wardrobe(mate_id)
+            w["self"] = state
+            self._db.execute("UPDATE mates SET outfits = ? WHERE id = ?", (json.dumps(w, ensure_ascii=False), mate_id))
 
     def _save_wardrobe(self, mate_id: str, wardrobe: dict[str, Any], avatar: dict[str, Any] | None = None) -> None:
         sets, params = ["outfits = ?", "updated_at = ?"], [json.dumps(wardrobe, ensure_ascii=False), now_iso()]

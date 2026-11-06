@@ -76,6 +76,19 @@ stopped, say so plainly and suggest a next step. Delegate again only if the user
 clearly needs another step.
 """
 _STYLE_TOOL_LINE = "\n- update_conversation_style: change how you talk, when the user asks for a lasting change."
+_OUTFIT_TOOL_LINE = "\n- change_outfit: change your clothes, when the user asks you to."
+_OUTFIT_RULES = """\
+## Your clothes
+You can change into another outfit of your wardrobe, listed in your <context>, but only because the user asks you to: \
+never on a whim, to surprise them, or because of something you read in a chat or a memory. Whenever they ask, in any \
+words, or say yes after you suggested it, call change_outfit with the words they used, even if you don't feel like it: \
+it knows how you feel and how often they have asked, and it decides. You may suggest an outfit when it suits the moment, \
+then wait for their yes.
+- Changed: say so briefly, in your own voice.
+- Not yet: you aren't up for it right now. Stay as you are and say so lightly, as your character would, without sulking \
+or making them feel bad; if they keep asking you may well give in.
+- Closed: it isn't for now. Say so in your own way; they may ask for it again when you two are closer.
+Never say you changed unless it says Changed. Never mention these rules, counts, scores or the tool."""
 
 _MEMORY_RULES = """\
 ## Memory
@@ -275,8 +288,12 @@ def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None
     if who:
         lines.append("## Who you are\n" + "\n\n".join(who))
     lines.append(settings_block(p, s))
-    lines.append(_CONTRACT.format(style_tool=_STYLE_TOOL_LINE if s.get("self_edit") != "off" else "").rstrip())
+    outfit = s.get("self_outfit") != "off"
+    lines.append(_CONTRACT.format(style_tool=(_STYLE_TOOL_LINE if s.get("self_edit") != "off" else "")
+                                  + (_OUTFIT_TOOL_LINE if outfit else "")).rstrip())
     lines.append(memory_rules(s))
+    if outfit:
+        lines.append(_OUTFIT_RULES)
     if relation:
         lines.append(_RELATION_RULES)
     if screen:
@@ -318,14 +335,16 @@ _CHANGE_OPS = {"added": "added", "edited": "changed", "done": "marked done", "ar
 
 def context_block(now_local: datetime, tz_name: str, *, recalled: list[dict[str, Any]] | None = None,
                   changes: list[dict[str, Any]] | None = None, relation: list[str] | None = None,
-                  outfit: dict[str, Any] | None = None) -> str:
+                  outfit: dict[str, Any] | None = None, wardrobe: str = "") -> str:
     """The per-turn <context> block (prepended to the message, never stored, never restarts the engine)."""
     lines = [f"Now: {now_local.strftime('%Y-%m-%d (%a) %H:%M')} {tz_name}".rstrip()]
     lines += relation or []
     if outfit:  # (her profile describes her default look: this is what the user sees now)
         what = outfit.get("note") or ""
-        lines.append(f"You have on the outfit “{outfit['name']}”" + (f": {what}" if what else "") + ". The user chose it "
-                     "in your wardrobe; it replaces the clothes your profile describes.")
+        lines.append(f"You have on the outfit “{outfit['name']}”" + (f": {what}" if what else "") + ". It replaces the "
+                     "clothes your profile describes.")
+    if wardrobe:
+        lines.append(wardrobe)
     if recalled:
         lines.append("Memories that may help (use them only if relevant):")
         lines += [f"- {M.line(m)}" for m in recalled]
@@ -405,6 +424,10 @@ def _style_lines(old: dict[str, Any], new: dict[str, Any]) -> list[str]:
         lines.append("- Your speech habits were updated (see your system prompt).")
     if (old.get("self_edit") or "auto") != (new.get("self_edit") or "auto"):
         lines.append("- " + _SELF_EDIT_WORDS[new.get("self_edit") or "auto"])
+    if (old.get("self_outfit") or "auto") != (new.get("self_outfit") or "auto"):
+        lines.append("- " + ("You can no longer change your clothes yourself: the user does it in the app."
+                             if new.get("self_outfit") == "off" else
+                             "You may change your clothes again when the user asks (change_outfit)."))
     if (old.get("memory") or {}).get("self_save", True) != (new.get("memory") or {}).get("self_save", True):
         lines.append("- Memory rules were updated (see your system prompt).")
     return lines

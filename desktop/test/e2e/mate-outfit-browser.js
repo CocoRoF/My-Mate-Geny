@@ -7,7 +7,9 @@
 // Checks: a mate without bundled outfits starts with her default set; Add outfit makes an empty place that can't
 // be worn yet; files go into it like into any avatar, without touching what she has on; wearing swaps the whole set here and
 // in a second window; AI opens that outfit's own project (nothing spent) and its finished set is worn from there; rename,
-// delete (her default can't be deleted, deleting what she has on puts it back). ko dark, en light, desktop, phone.
+// delete (her default can't be deleted, deleting what she has on puts it back); asked in the chat she changes by herself,
+// through the real tool, with its chip here and the set following in a second window, and the switch takes that away.
+// ko dark, en light, desktop, phone.
 "use strict";
 const assert = require("assert/strict");
 const fs = require("fs");
@@ -270,6 +272,50 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     assert.equal(await p.locator('[data-testid="outfit-delete"]').count(), 0, "her default can't be deleted");
     await p.close();
     await second.close();
+
+    step("asked in the chat, she changes herself; the switch takes that away");
+    {
+      const mine = await context(browser, { mateId: chaerin.id });
+      const here = await mine.newPage();
+      const watching = await mine.newPage();
+      const there = await mine.newPage();
+      for (const w of [here, watching, there]) watch(w);
+      await openTab(there);
+      await there.waitForSelector('[data-testid="outfit-self"]');
+      await there.locator('[data-testid="outfit-wardrobe"]').screenshot({ path: path.join(SHOTS, "outfit-self-ko-dark.png") });
+      await watching.goto(`${SERVER}/?view=mate`);
+      await watching.waitForSelector('[data-mate-kind="video"]', { timeout: 30000 });
+      await here.goto(`${SERVER}/?view=mate`);
+      const input = here.locator('[data-testid="mate-input"]').first();
+      await input.waitFor({ timeout: 30000 });
+      const mateNow = async () => (await get(mine, "/api/mates")).find((m) => m.id === chaerin.id);
+      const casual = (await mateNow()).outfits.items.find((c) => c.name === "캐주얼");
+      const say = async (outfit) => {
+        const seen = await here.getByText("Done: change_outfit").count();
+        await input.fill(`ctool:change_outfit ${JSON.stringify({ outfit, asked: "change_outfit" })}`);
+        await input.press("Enter");
+        await until("her answer", async () => (await here.getByText("Done: change_outfit").count()) > seen);
+      };
+      const chipSays = (text) => until(`chip: ${text}`, async () => (await here.locator('[data-testid="mate-activity"]', { hasText: text }).count()) > 0);
+      // (one ask or several, by how she feels today: backend/tests/test_mate_self_outfit.py has the counts)
+      for (let i = 0; i < 4 && (await mateNow()).outfits.worn !== casual.id; i++) await say(casual.id);
+      assert.equal((await mateNow()).outfits.worn, casual.id, "she changed");
+      await chipSays("“캐주얼” 의상으로 갈아입었어요");
+      await watching.waitForSelector('[data-mate-kind="photo"]', { timeout: 15000 });
+      await here.screenshot({ path: path.join(SHOTS, "outfit-self-chip-ko-dark.png") });
+      await say("default");
+      await chipSays("평소 옷으로 갈아입었어요");
+      assert.equal((await mateNow()).outfits.worn, "default");
+      await watching.waitForSelector('[data-mate-kind="video"]', { timeout: 15000 });
+      await there.locator('[data-testid="outfit-self"]').click();
+      await until("switched off", async () => (await mateNow()).prefs.self_outfit === "off");
+      await say(casual.id);
+      await chipSays("옷은 그대로예요");
+      assert.equal((await mateNow()).outfits.worn, "default", "not while it is switched off");
+      await there.locator('[data-testid="outfit-self"]').click();
+      await until("switched on", async () => (await mateNow()).prefs.self_outfit === "auto");
+      await mine.close();
+    }
 
     step("phone, English, light");
     const phone = await context(browser, { lang: "en", theme: "light", mateId: chaerin.id, phone: true });

@@ -24,7 +24,7 @@ os.environ.update({
     "DB_PATH": str(ROOT / "app.db"), "DATA_HOME": str(ROOT), "VAULT_KEY": Fernet.generate_key().decode(),
     "MATES_ROOT": str(ROOT / "mates"), "UPLOADS_ROOT": str(ROOT / "uploads"), "AVATAR_ROOT": str(ROOT / "avatars"),
     "HIGGSFIELD_ROOT": str(ROOT / "higgsfield"), "MOUNT_ROOT": str(ROOT / "mounts"), "REPOS_ROOT": str(ROOT / "repos"),
-    "AUTH_USERNAME": "admin", "AUTH_PASSWORD": "outfit-test-only", "SESSION_SECRET": "outfit-test-only",
+    "PORT": str(PORT), "AUTH_USERNAME": "admin", "AUTH_PASSWORD": "outfit-test-only", "SESSION_SECRET": "outfit-test-only",
     "COOKIE_SECURE": "false", "MONITOR_ENABLED": "false", "CLI_UPDATE_CHECK": "false", "PLAN_USAGE_FETCH": "false",
     "MEMORY_CONSOLIDATION_ENABLED": "false", "GITHUB_TOKEN": "", "CODEX_BINARY": "/nonexistent/codex",
     "CLAUDE_BINARY": str(REPO / "desktop/test/e2e/fake-claude.py"), "STATIC_DIR": DIST,
