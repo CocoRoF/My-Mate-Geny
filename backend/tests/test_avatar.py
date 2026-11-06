@@ -604,6 +604,8 @@ def test_alpha_recovery_on_a_synthetic_frame():
     assert res["alpha_inside_mean"] > 0.995 and res["alpha_inside_min"] > 0.9
     assert res["fold_alpha_min"] > 0.9  # the remover's crack along a dark fold is closed
     assert res["alpha_edge_mae"] < 0.3 and res["colour_mae"] < 3.0
+    assert res["gap_alpha_max"] < 0.1 and res["strand_alpha_mean"] > 0.5  # the gray between hair and a loose strand
+    assert res["light_patch_alpha_min"] > 0.9 and res["deep_patch_alpha_min"] > 0.9  # body in the gray's colour stays
 
 
 @needs_venv

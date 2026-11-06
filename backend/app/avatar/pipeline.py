@@ -15,7 +15,8 @@ Steps (files are relative to the project dir; ``pipeline.json`` there holds the 
                        last frame), face.json + face-mask.png (the region the stills may change)
     stills             stills/<n>.raw.png → stills/<n>.png (only the face region laid over the home picture)
     matte <id>         clips/<id>.mp4 + clips/<id>.nobg.mp4 → matte/<id>.alpha.mkv (lossless gray) + matte/<id>.json
-                       (alpha recovered from the known flat gray: α = removed / original, colour = (orig − (1−α)·bg) / α)
+                       (alpha recovered from the known flat gray: α = removed / original, colour = (orig − (1−α)·bg) / α;
+                       gaps the remover covers opened again, see rematte)
     encode             all mattes → web/<id>.lg.mp4, web/<id>.sm.mp4 (stacked alpha: colour above, alpha below) +
                        web/box.json (one crop for every clip and still)
     check              → check.json: loop seam, first frame vs the base picture, background drift, alpha quality
@@ -48,6 +49,8 @@ GRAY = (213, 212, 217)
 CANVASES = {"9:16": (1080, 1920), "1:1": (1080, 1080)}
 #: colour distance from the background gray where a pixel starts to count as the body, and where it surely is
 KEY_FROM, KEY_TO = 45.0, 90.0
+#: colour distance under which a pixel simply shows the background (video noise stays under ~5)
+GAP_KEY = 9.0
 JOB_ASPECTS = {"1:1": 1.0, "3:4": 0.75, "4:3": 4 / 3, "2:3": 2 / 3, "3:2": 1.5, "9:16": 9 / 16, "16:9": 16 / 9}
 
 
@@ -163,6 +166,72 @@ def border_bg(orig: np.ndarray, k: int) -> np.ndarray:
     return np.median(border, axis=0)
 
 
+def near_dark(orig: np.ndarray, bg: np.ndarray, px: int) -> np.ndarray:
+    """Where something as dark as hair lies within ``px`` pixels."""
+    size = 2 * px + 1
+    return cv2.erode(orig.mean(-1).astype(np.float32), np.ones((size, size), np.uint8)) < 0.5 * bg.mean()
+
+
+def rematte(a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -> np.ndarray:
+    """The remover's mask is a smooth hull over fine hair: gray seen between a loose strand and the head comes out as
+    body (a white patch on a dark page) and a dark edge keeps a rim of gray. The background is one known flat colour, so
+    the picture itself tells. A patch of that gray, or of that gray mixed with the dark next to it (a gap a few pixels
+    wide never gets to the pure gray), is background when it is ringed by dark or open background and lies near the
+    outline, opens to a hole or lies next to such a gap; light parts of the body can match the gray too (a headset's
+    shading, a white band), but those are ringed by other light colours or, like the eyes, lie deep inside. From there on
+    a few pixels of mix get the coverage the mix says. Colours that cannot be told from the gray (silver hair) keep the
+    remover's answer."""
+    W = a.shape[1]
+    r = max(3, W // 288)
+    kernel = np.ones((3, 3), np.uint8)
+    dark = cv2.erode(orig, np.ones((3 * r | 1, 3 * r | 1), np.uint8))  # per channel: the darkest colour near a pixel
+    v = dark - bg
+    vv = (v * v).sum(-1)
+    cover = ((orig - bg) * v).sum(-1) / np.maximum(vv, 1.0)
+    off = np.sqrt(((orig - bg - cover[..., None] * v) ** 2).sum(-1))
+    dist = np.sqrt(((orig - bg) ** 2).sum(-1))
+    # a little lighter than the gray is the sharpening's overshoot next to a dark edge
+    mix = (vv > (1.5 * KEY_TO) ** 2) & (cover < 0.9) & (off < GAP_KEY) & ((cover > 0) | (dist < 4 * GAP_KEY))
+    cover = np.clip(cover, 0, 1).astype(np.float32)
+    hull = a > 0.5
+    flat = dist < GAP_KEY
+    light = hull & (flat | (mix & (cover < 0.25)))
+    # the fragments of one gap (noise cuts it up) count as one, but not across an outline
+    lab, n = ndimage.label(ndimage.binary_dilation(light, structure=kernel, iterations=2, mask=hull & (cover < 0.6)),
+                           structure=kernel)
+    gaps = np.zeros_like(hull)
+    if n:
+        ids = np.arange(1, n + 1)
+
+        def around(m: np.ndarray) -> np.ndarray:
+            return ndimage.sum(cv2.boxFilter(m.astype(np.float32), -1, (11, 11), normalize=False), lab, ids)
+
+        total = np.maximum(around(~light), 1)
+        hole = around(~hull) / total
+        ringed = np.zeros(n + 1, bool)
+        ringed[1:] = (hole + around(hull & (orig.mean(-1) < 0.5 * bg.mean())) / total >= 0.6) & (
+            ndimage.sum(light, lab, ids) >= 6)
+        inside = cv2.distanceTransform(ndimage.binary_fill_holes(hull).astype(np.uint8), cv2.DIST_L2, 3)
+        keep = ringed.copy()
+        keep[1:] &= (np.atleast_1d(ndimage.mean(inside, lab, ids)) <= max(12.0, 0.015 * W)) | (hole >= 0.05)
+        keep[np.unique(lab[cv2.dilate(keep[lab].astype(np.uint8), np.ones((6 * r + 1, 6 * r + 1), np.uint8)) > 0])] = True
+        keep &= ringed
+        gaps = keep[lab] & light
+    # from the background the mix only ever darkens: what turns light again lies behind an outline
+    edge = gaps | (a < 0.04)
+    for _ in range(r):
+        step = cv2.dilate(edge.astype(np.uint8), kernel).astype(bool) & ~edge & mix
+        step &= cover >= cv2.erode(np.where(edge, cover, 9.0).astype(np.float32), kernel) - 0.05
+        if not step.any():
+            break
+        edge |= step
+    a = np.where(edge, np.minimum(a, np.clip((cover - 0.03) / 0.57, 0, 1)), a)  # the half-dark tones of hair stay solid
+    a[gaps & flat] = 0
+    # the gray the remover itself was unsure of, beside the hair (a headset's shading it is sure of)
+    a[(a < 0.8) & (dist < 2 * GAP_KEY) & near_dark(orig, bg, 3 * r)] = 0
+    return a
+
+
 def recover(orig: np.ndarray, masked: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """One frame's alpha (0..1) from the original on the flat gray and the remover's subject-on-black, and the
     background colour of this frame (the light may drift a little)."""
@@ -182,7 +251,7 @@ def recover(orig: np.ndarray, masked: np.ndarray) -> tuple[np.ndarray, np.ndarra
     # solid inside the body — but holes that ARE the background (gray seen through a ponytail's loop) stay open
     solid = ndimage.binary_fill_holes(a > 0.5)
     a = np.where(solid & (a < 0.5) & (dist > KEY_FROM), np.maximum(a, 0.98), a)
-    a = clean_alpha(a)
+    a = clean_alpha(rematte(a, orig, bg))
     a = cv2.GaussianBlur(a.astype(np.float32), (0, 0), 0.6)
     return a, bg
 
@@ -192,10 +261,12 @@ def colour(orig: np.ndarray, a: np.ndarray, bg: np.ndarray) -> np.ndarray:
     return np.where(aa > 0.02, (orig - (1 - aa) * bg) / np.maximum(aa, 0.02), 0).clip(0, 255)
 
 
-def solidify(rgb: np.ndarray, a: np.ndarray, orig: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def solidify(rgb: np.ndarray, a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Full opacity well inside the body (dark cloth gives a noisy ratio matte): small holes closed, pixels two
-    steps inside get alpha 1 and their original colour back."""
+    steps inside get alpha 1 and their original colour back. Gaps that show the background gray between dark strands
+    stay open, and so do their edges."""
     body = ndimage.binary_closing(a > 0.5, structure=np.ones((3, 3)), iterations=2)
+    body &= ~((a < 0.5) & (np.sqrt(((orig - bg) ** 2).sum(-1)) < KEY_FROM) & near_dark(orig, bg, 4))
     inner = ndimage.binary_erosion(body, structure=np.ones((3, 3)), iterations=2) & (a < 1.0)
     if inner.any():
         rgb = rgb.copy()
@@ -306,12 +377,13 @@ def cmd_home(p: Path) -> dict:
     orig = np.asarray(src.resize(rgba.size, Image.LANCZOS), np.float32)
     bg = np.median(np.concatenate([orig[:16].reshape(-1, 3), orig[:, :16].reshape(-1, 3),
                                    orig[:, -16:].reshape(-1, 3)]), axis=0)
-    fg = colour(orig, a, bg)
-    home = Image.fromarray(np.dstack([fg, a * 255]).astype(np.uint8), "RGBA")
-    atomic_save(home, m / "home.png")
     # the canvas: the figure fills 86% of the height (or 92% of the width), bottom-aligned, centred on its bbox
     ys, xs = np.nonzero(a > 0.1)
     x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
+    a = clean_alpha(rematte(a, orig, bg))
+    fg = colour(orig, a, bg)
+    home = Image.fromarray(np.dstack([fg, a * 255]).astype(np.uint8), "RGBA")
+    atomic_save(home, m / "home.png")
     aspect = c.get("aspect", "1:1")
     W, H = CANVASES[aspect]
     s = min(0.92 * W / (x1 - x0 + 1), 0.86 * H / (y1 - y0 + 1))
@@ -439,7 +511,7 @@ def cmd_encode(p: Path, only: list[str] | None = None) -> dict:
             a = a8[y:y + h, x:x + w].astype(np.float32) / 255.0
             bg = np.array(bgs[min(i, len(bgs) - 1)], np.float32)
             rgb = colour(o, a, bg)
-            rgb, a = solidify(rgb, a, o)
+            rgb, a = solidify(rgb, a, o, bg)
             a = choke(a)
             crop = np.dstack([rgb, a * 255.0]).clip(0, 255).round().astype(np.uint8)
             for proc, (ww, hh), _ in procs.values():
@@ -629,6 +701,39 @@ def cmd_selftest() -> dict:
         "alpha_edge_mae": round(float(np.abs(a - a_true)[edge].mean()), 4),
         "fold_alpha_min": round(float(a[fold].min()), 4),
         "colour_mae": round(col_err, 3),
+        **selftest_gaps(rng),
+    }
+
+
+def selftest_gaps(rng: np.random.Generator) -> dict:
+    """Dark hair with a loose strand beside it, and the remover's hull over the gray between them; the gap must open
+    and the strand stay. So must two places of the gray's very colour that are body: inside a light badge at the edge
+    of the hair, and deep inside it (an eye)."""
+    H = W = 240
+    yy, xx = np.mgrid[0:H, 0:W]
+    d = np.sqrt((yy - 120.0) ** 2 + (xx - 120.0) ** 2)
+    arc = np.abs(np.arctan2(yy - 120.0, 120.0 - xx)) < 0.6  # the left side
+    bg = np.array(GRAY, np.float32)
+    fg = np.full((H, W, 3), (25, 22, 30), np.float32)
+    a_true = ((d < 80) | ((d >= 86) & (d < 89) & arc)).astype(np.float32)
+    badge = np.sqrt((yy - 195.0) ** 2 + (xx - 120.0) ** 2)
+    fg[badge < 18] = (235, 235, 240)
+    a_true[badge < 18] = 1
+    light = badge < 5
+    deep = d < 6
+    fg[light | deep] = bg
+    soft = cv2.GaussianBlur(a_true, (0, 0), 1.0)
+    orig = (cv2.GaussianBlur(fg * a_true[..., None], (0, 0), 1.0) + bg * (1 - soft[..., None])
+            + rng.normal(0, 0.8, (H, W, 3))).clip(0, 255).astype(np.float32)
+    hull = (d < 82) | ((d < 92) & arc) | (badge < 20)
+    a, bg_est = recover(orig, (orig * hull[..., None]).astype(np.float32))
+    _, a = solidify(colour(orig, a, bg_est), a, orig, bg_est)
+    side = np.abs(np.arctan2(yy - 120.0, 120.0 - xx)) < 0.5
+    return {
+        "gap_alpha_max": round(float(a[(d >= 82) & (d < 84) & side].max()), 4),
+        "strand_alpha_mean": round(float(a[(d > 86.5) & (d < 88.5) & side].mean()), 4),
+        "light_patch_alpha_min": round(float(a[light].min()), 4),
+        "deep_patch_alpha_min": round(float(a[deep].min()), 4),
     }
 
 
