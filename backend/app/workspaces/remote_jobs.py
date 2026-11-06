@@ -21,6 +21,13 @@ class RemoteTransportError(RuntimeError):
     pass
 
 
+#: how long a command may run when the agent names no limit. Nobody waits for a command left in the background, so a wait
+#: loop that can't finish any more (the file it watches was deleted, say) would otherwise run for ever. The foreground limit
+#: only catches what the agent walked away from: long work it really waits for fits well inside it.
+BACKGROUND_TIMEOUT_MS = 2 * 3600 * 1000
+FOREGROUND_TIMEOUT_MS = 24 * 3600 * 1000
+
+
 def atomic(path, data):
     temp = path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp')
     with open(temp, 'w') as stream:
@@ -94,7 +101,9 @@ class RemoteJobs:
             if not isinstance(value, dict): raise ValueError('invalid control response')
         except (ValueError, UnicodeError, IndexError) as exc:
             raise RemoteTransportError('Remote job control unavailable (requires python3 on the SSH host); command status is unknown. Poll this job rather than resubmitting.') from exc
-        if value.get('error'):
+        # (error_type: this control request failed. A job's own state can carry an error too, as a finished job: that is an
+        # answer, and taking it for a failed request would leave the job "running" for ever.)
+        if value.get('error_type'):
             error = RemoteTransportError if value.get('error_type') in ('OSError','PermissionError','FileNotFoundError') else ValueError
             raise error(value['error'])
         if not isinstance(value.get('status'), str):
@@ -107,7 +116,7 @@ class RemoteJobs:
         if not isinstance(description, str) or not isinstance(background, bool):
             raise ValueError('description must be text and run_in_background must be boolean')
         if isinstance(timeout_ms, bool) or not isinstance(timeout_ms, (int,float)) or not 0 <= timeout_ms < 1e12:
-            raise ValueError('timeout_ms must be zero (unlimited) or a positive number')
+            raise ValueError('timeout_ms must be a positive number, or zero for the default limit')
         job_id = uuid.uuid4().hex
         path = self.path(job_id)
         path.mkdir(mode=0o700)
@@ -115,7 +124,8 @@ class RemoteJobs:
                     'description': (description or 'Remote command · ' + host['name'])[:200],
                     'background': bool(background), 'remote_root': host.get('job_root') or '~/.cache/my-mate-geny/remote-jobs/' + self.sid}
         request = {'action':'start', 'cwd':cwd, 'roots':host['roots'], 'command':command,
-                   'timeout_ms':timeout_ms, 'runner_source':SOURCE}
+                   'timeout_ms':timeout_ms or (BACKGROUND_TIMEOUT_MS if background else FOREGROUND_TIMEOUT_MS),
+                   'runner_source':SOURCE}
         atomic(path/'launch.json', request)
         # Published last: the backend sees either a complete launch or nothing.
         atomic(path/'manifest.json', manifest)

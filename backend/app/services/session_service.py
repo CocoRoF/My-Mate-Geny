@@ -1152,10 +1152,12 @@ class SessionService:
             return
 
         mcp_config = routing.mcp_config
+        existing_jobs = ""
         if mcp_config and 'remote' in mcp_config.get('mcpServers', {}):
             mcp_config['mcpServers']['remote'].setdefault('env', {}).update(self.remote_jobs.environment(sid))
+            # (in this turn's message: in the folder note it would be part of the engine's fingerprint, so a job starting
+            # or ending would restart the engine and lose the prompt cache)
             existing_jobs = self.remote_jobs.active_note(sid)
-            if existing_jobs: routing.note = (routing.note or '')+'\n'+existing_jobs
         local_extra = routing.local_dirs
         if routing.missing:
             ev = ProviderEvent(type="notice", data={
@@ -1257,7 +1259,7 @@ class SessionService:
             extra_dirs=local_extra,
             folders_note=routing.note,
             inbox=TurnInbox(),
-            preamble=preamble,
+            preamble="\n\n".join(x for x in (preamble, existing_jobs) if x),
             uploads_dir=uploads_dir,
             inline_files=session.get("kind") in ("mate", "avatar"),
             auto_compact_window=self.auto_compact_window(session) if provider_name == "claude" else 0,

@@ -150,6 +150,8 @@ def worker(job):
                     terminate(state)
                     proc.wait()
                     state.update(status='stopped' if cancelled else 'timed_out', exit_code=130 if cancelled else 124)
+                    if not cancelled:
+                        state['error'] = 'Stopped: it reached its time limit of %g minutes.' % (request['timeout_ms']/60000)
                     break
                 time.sleep(.05)
             else:

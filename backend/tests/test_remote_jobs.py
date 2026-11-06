@@ -3,11 +3,14 @@ import asyncio
 import base64
 from concurrent.futures import ThreadPoolExecutor
 import json
+import os
 from pathlib import Path
 import shlex
+import signal
 import time
 
 import pytest
+from app.workspaces import remote_jobs
 from app.workspaces.remote_jobs import RemoteJobs, RemoteTransportError
 from app.services.remote_jobs import RemoteJobService
 from app.workspaces.remote_runner import group_alive
@@ -62,6 +65,65 @@ def test_timeout_and_process_group_cancellation(tmp_path):
     state=c.stop(job)
     assert state['status']=='stopped' and state['exit_code']==130
     assert not group_alive(state)
+
+
+def test_a_wait_that_can_never_finish_ends_at_the_default_limit(tmp_path,monkeypatch):
+    # The real case: waiting in the background for a line in a log that was deleted, with nobody polling.
+    monkeypatch.setattr(remote_jobs,'BACKGROUND_TIMEOUT_MS',300)
+    c=manager(tmp_path);h=host(tmp_path)
+    job=c.prepare(h,'until grep -q DONE gone.log; do sleep .05; done; echo finished',h['cwd'],background=True)
+    c.start(job,wait_ms=0)
+    result=finished(c,job)
+    assert result['status']=='timed_out' and result['exit_code']==124
+    assert 'time limit' in result['error']
+    assert not group_alive(result)
+    assert b'finished' not in base64.b64decode(result.get('data') or '')
+
+
+def test_a_supervisor_that_died_ends_as_lost_instead_of_running_for_ever(tmp_path):
+    # (killed by the memory guard, a reboot...: the state carries an error, which is an answer and not a failed request)
+    c=manager(tmp_path);h=host(tmp_path)
+    job=c.prepare(h,'sleep 20',h['cwd'],background=True)
+    state=c.start(job,wait_ms=200)
+    assert state['status']=='running' and state['worker'] and state['pid']
+    os.kill(state['worker'],signal.SIGKILL);os.killpg(state['pid'],signal.SIGKILL)
+    result=finished(c,job)
+    assert result['status']=='lost' and 'supervisor' in result['error']
+
+
+async def test_the_task_list_ends_a_job_whose_state_carries_an_error(db,tmp_path):
+    from app.services.connection_service import ConnectionService
+    from app.services.provider_service import ProviderService
+    from app.services.session_service import SessionService
+    from app.services.workspace_service import WorkspaceService
+    from app.vault import SecretVault
+    v=SecretVault(db)
+    service=SessionService(db,ProviderService(db,v),WorkspaceService(ConnectionService(db,v)))
+    sid=service.create(provider='claude',workspace_path=str(tmp_path))['id']
+    c=manager(tmp_path,sid);h=host(tmp_path)
+    mirror=RemoteJobService(service,tmp_path/'local',manager_factory=lambda root,sid:RemoteJobs(root,sid,prefix=lambda h:['sh','-c']))
+    job=c.prepare(h,'sleep 20',h['cwd'],timeout_ms=200,background=True)
+    c.start(job,wait_ms=0)
+    await mirror.start()
+    try:
+        for _ in range(80):
+            row=db.query_one('SELECT * FROM bg_tasks WHERE session_id=? AND task_id=?',(sid,'remote_'+job['job_id']))
+            if row and row['status']=='failed':break
+            await asyncio.sleep(.1)
+        assert row['status']=='failed' and 'time limit' in row['summary']
+    finally:await mirror.close()
+
+
+def test_limits_default_by_kind_and_an_explicit_one_wins(tmp_path):
+    c=manager(tmp_path);h=host(tmp_path)
+    def limit(**kw):
+        job=c.prepare(h,'true',h['cwd'],**kw)
+        return json.loads((c.path(job['job_id'])/'launch.json').read_text())['timeout_ms']
+    assert limit(background=True)==remote_jobs.BACKGROUND_TIMEOUT_MS
+    assert limit()==remote_jobs.FOREGROUND_TIMEOUT_MS
+    assert limit(background=True,timeout_ms=0)==remote_jobs.BACKGROUND_TIMEOUT_MS
+    assert limit(background=True,timeout_ms=5*3600*1000)==5*3600*1000
+    with pytest.raises(ValueError):limit(timeout_ms=-1)
 
 
 def test_stop_before_start_is_a_tombstone_and_never_runs(tmp_path):
