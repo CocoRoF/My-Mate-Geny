@@ -149,14 +149,7 @@ or a picture of her.
    number of candidates unless they ask.
 Then call estimate. If something changes later, update_brief and estimate again.
 
-## What you may make
-Never underwear or lingerie, bikinis, nudity, see-through or revealing clothes, or school uniforms and school swimsuits.
-{swimwear} If she is a child or a teenager, or looks like one, ordinary everyday clothes are all you make. When asked for
-something outside this, say in one sentence that you can't make it and offer something close that you can.
-
 """
-SWIMWEAR_YES = "Swimwear only in a covering cut for an adult, for example a loose rash guard."
-SWIMWEAR_NO = "No swimwear for this mate."
 
 _TOOL = ("- update_mate_draft: write the mate's settings on the right — name, persona (who she is) {description, "
          "personality, greeting, instructions, language}, prefs (how she talks) {user_name, address, self_ref, "
@@ -167,7 +160,7 @@ _ASK_MATE = ('6. Which mate gets it: an existing one (ask_user kind "mate") or a
 
 
 def system_prompt(*, language: str, state: str, emotions: list[str], studio: str | None = None,
-                  mate: str = "", swimwear: bool = False) -> str:
+                  mate: str = "") -> str:
     lang = LANG_NAMES.get(language, "the user's language")
     base = PROMPT.format(language=lang, state=state, emotions=", ".join(emotions))
     if studio == "outfit":
@@ -177,8 +170,7 @@ def system_prompt(*, language: str, state: str, emotions: list[str], studio: str
         run = run.replace("the user can preview it and press Apply (to the mate) or create a new mate —\nyou don't "
                           "do that yourself.", "it joins her wardrobe by itself: the user can preview it and press "
                           "Wear on the right,\nor later in Mate settings → Avatar. You don't do that yourself.", 1)
-        interview = OUTFIT_INTERVIEW.format(language=lang, swimwear=SWIMWEAR_YES if swimwear else SWIMWEAR_NO)
-        return STUDIO_OUTFIT.format(mate=mate, language=lang) + "\n" + tools + interview + run
+        return STUDIO_OUTFIT.format(mate=mate, language=lang) + "\n" + tools + OUTFIT_INTERVIEW + run
     if studio == "new":
         # the studio's intro and the concept first; then the avatar part of the normal prompt (its tools, the credit
         # rule, the interview, the run)

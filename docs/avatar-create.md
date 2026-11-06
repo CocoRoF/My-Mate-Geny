@@ -271,12 +271,9 @@ opened again where it stopped; the normal avatar studio never opens it).
   it is put on the known gray before the first job: `flatten`); more references are pictures of the clothes. The brief
   takes the shape of her default set and the standard motions, without clips the user switched off there: they would be
   paid for and never play.
-- **The image prompt.** `presets.OUTFIT` + the clothes + the framing + `OUTFIT_CROP`, nothing else: Higgsfield's own filter
-  decides what it refuses. The agent writes "Wearing …" only (`app/avatar/prompt.py` `STUDIO_OUTFIT`, `OUTFIT_INTERVIEW`).
+- **The image prompt.** `presets.OUTFIT` + the clothes + the framing + `OUTFIT_CROP`, nothing else. Neither this prompt nor
+  the agent's adds rules about what may be made: the agent's model and Higgsfield's own filter decide. The agent writes "Wearing …" only (`app/avatar/prompt.py` `STUDIO_OUTFIT`, `OUTFIT_INTERVIEW`).
 - **The finish.** When it is ready the set goes into its outfit by itself (imported pack, her emotion choices carried over),
   not on her; **Wear** in the panel or in the settings puts it on. A redo replaces it.
-- **What the agent makes.** Its prompt keeps it from writing underwear, lingerie, bikinis, revealing or see-through clothes
-  and school wear. Swimwear only in a covering cut, and only for built-in mates whose profile states an adult age
-  (`STATED_ADULTS`). Files the user adds aren't looked at.
 
 Tests: `backend/tests/test_mate_outfits.py`, `desktop/test/e2e/mate-outfit-browser.js` (+ `mate-outfit-server.py`).

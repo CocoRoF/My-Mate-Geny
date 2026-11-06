@@ -120,8 +120,6 @@ OUTFIT = ("The same character as the reference: exactly the same face, eyes, hai
           "accessories like a headset or glasses do.")
 OUTFIT_CLOTHES_REFS = "The first reference picture is the character; the others only show the clothes to wear."
 OUTFIT_CROP = "Cropped at the waist: nothing below the waist is in the picture."
-#: built-in mates whose profile states an adult age (what the outfit agent may make: app/avatar/prompt.py)
-STATED_ADULTS = ("chaerin", "seoa", "estelle")
 
 
 def words(pronoun: str | None) -> dict[str, str]:

@@ -716,14 +716,8 @@ class AvatarService:
         # (the system prompt stays the same for the whole project — the engine is not restarted; what changes goes
         # into the message: the studio's <studio_update>)
         kind = "outfit" if doc.get("outfit") else (st or {}).get("kind")
-        swimwear = False
-        if doc.get("outfit"):
-            try:
-                swimwear = self.mates.get(t["mate_id"]).get("builtin") in P.STATED_ADULTS
-            except KeyError:
-                pass
         prompt = system_prompt(language=doc.get("language") or "en", state=state, emotions=list(P.EMOTIONS),
-                               studio=kind, mate=t.get("name") or "", swimwear=swimwear)
+                               studio=kind, mate=t.get("name") or "")
         note = self._studio_note(doc) if st else ""
         if note:
             req.preamble = "\n\n".join(x for x in (note, req.preamble) if x)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A throwaway server for desktop/test/e2e/mate-outfit-browser.js: no credits, nothing of the real data.
 
-  python3 desktop/test/e2e/mate-outfit-server.py <port> <frontend dist> [<casual picture> <swimwear picture>]
+  python3 desktop/test/e2e/mate-outfit-server.py <port> <frontend dist> [<picture> <picture>]
 
 한채린 (the bundled mate) gets two outfits filled with one picture each, and an empty one with a finished project made of
 서아's real clips: a whole video set, only to check that wearing it swaps everything. The agent is fake-claude.py.

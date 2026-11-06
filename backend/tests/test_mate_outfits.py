@@ -143,14 +143,13 @@ def test_an_outfit_image_prompt_is_only_her_the_clothes_and_the_framing():
 
 
 def test_the_outfit_agent_has_its_own_short_interview():
-    args = dict(language="ko", state="Project p.", emotions=["joy"], studio="outfit", mate="한채린")
-    yes, no = system_prompt(**args, swimwear=True), system_prompt(**args, swimwear=False)
-    for text in (yes, no):
-        assert "Wardrobe agent" in text and "한채린" in text and "Korean" in text
-        assert "The outfit interview" in text and "## The interview" not in text
-        assert "## Your tools" in text and "## Credits" in text and "## While it runs" in text
-        assert "update_mate_draft" not in text and "Which mate gets it" not in text
-    assert "rash guard" in yes and "No swimwear for this mate" in no
+    text = system_prompt(language="ko", state="Project p.", emotions=["joy"], studio="outfit", mate="한채린")
+    assert "Wardrobe agent" in text and "한채린" in text and "Korean" in text
+    assert "The outfit interview" in text and "## The interview" not in text
+    assert "## Your tools" in text and "## Credits" in text and "## While it runs" in text
+    assert "update_mate_draft" not in text and "Which mate gets it" not in text
+    assert "{" not in text.split("## The outfit interview")[1]  # (nothing left unfilled)
+    assert "What you may make" not in text  # (its model's own judgment and the image model's own filter decide)
 
 
 def test_the_mate_knows_what_she_has_on():
