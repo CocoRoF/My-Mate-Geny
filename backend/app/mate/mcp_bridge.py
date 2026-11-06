@@ -12,8 +12,8 @@ Env: HRH_MATE_API (e.g. http://127.0.0.1:8080), HRH_MATE_TOKEN, HRH_MATE_ID,
 HRH_MATE_SESSION; HRH_MATE_SCREEN=1 when the mate may look at the user's screen
 (``see_screen`` is listed only then; its picture comes back as MCP image content);
 HRH_MATE_STYLE=auto|ask when she may change her own conversation style
-(``update_conversation_style``; absent = not listed); HRH_MATE_OUTFIT=1 when she may change her clothes when asked
-(``change_outfit``).
+(``update_conversation_style``; absent = not listed); HRH_MATE_OUTFIT=1 when she may change her clothes
+(``change_outfit``); HRH_MATE_STATE=1 for ``feel``.
 """
 
 from __future__ import annotations
@@ -276,24 +276,40 @@ UPDATE_STYLE = {
     },
 }
 
-# offered unless the mate's "changes her clothes when asked" setting is off (HRH_MATE_OUTFIT=1)
+# how she feels (app/mate/state.py)
+FEEL = {
+    "name": "feel",
+    "description": (
+        "Say how you feel, when something moved you and it changed noticeably, or a feeling has passed. Not on every "
+        "message. The user never hears this as words; it is what your <context> and your avatar go by from now on."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "emotion": {"type": "string", "enum": ["happy", "excited", "shy", "angry", "sad", "lonely", "worried", "sleepy"]},
+            "strength": {"type": "string", "enum": ["none", "slight", "moderate", "strong"],
+                         "description": "none: it has passed."},
+            "reason": {"type": "string", "description": "Why, in a few of your own words, in the user's language."},
+        },
+        "required": ["emotion", "strength", "reason"],
+    },
+}
+
+# offered unless the mate's "changes her clothes herself" setting is off (HRH_MATE_OUTFIT=1)
 CHANGE_OUTFIT = {
     "name": "change_outfit",
     "description": (
-        "Change into another outfit of your wardrobe (your <context> lists it) because the user asked you to: the "
-        "avatar they see changes at once. Call it every time they ask, in any words, or say yes to your offer, even if "
-        "you don't feel like it: it knows how you feel and how often they have asked, and tells you whether you change. "
-        "Never call it on your own initiative. Returns what happened: Changed, Not yet, Closed, Empty or Already."
+        "Change into another outfit of your wardrobe (your <context> lists it, with how you lean on each): the avatar the "
+        "user sees changes at once. Whether to is yours to decide, from how you feel: when it doesn't feel right, don't "
+        "call this and say no in your own way. Returns what happened: Changed, Closed, Empty or Already."
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
             "outfit": {"type": "string", "description": "The outfit's id from your wardrobe; default = your usual clothes."},
-            "asked": {"type": "string", "description": (
-                "The user's own words from their latest message that ask for it, copied exactly (\"그 옷으로 갈아입어\", "
-                "\"응\"). Not your paraphrase: anything they didn't write is refused.")},
+            "reason": {"type": "string", "description": "Why you are changing, in a few of your own words, in the user's language."},
         },
-        "required": ["outfit", "asked"],
+        "required": ["outfit", "reason"],
     },
 }
 
@@ -321,6 +337,7 @@ _SLOW = {"see_screen": 150}  # (waits for the user's answer + the capture; the b
 def tools() -> list[dict]:
     base = TOOLS if os.environ.get("HRH_MATE_MEMORY") == "1" else TOOLS[:9]
     return (base + ([UPDATE_STYLE] if os.environ.get("HRH_MATE_STYLE") in ("auto", "ask") else [])
+            + ([FEEL] if os.environ.get("HRH_MATE_STATE") == "1" else [])
             + ([CHANGE_OUTFIT] if os.environ.get("HRH_MATE_OUTFIT") == "1" else [])
             + ([SEE_SCREEN] if os.environ.get("HRH_MATE_SCREEN") == "1" else []))
 

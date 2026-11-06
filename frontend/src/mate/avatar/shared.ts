@@ -61,6 +61,9 @@ export function clipsFor(rig: Pick<Rig, "clips" | "emotions">, name: string): Em
     const found = reacts.filter((x) => x.emotion?.toLowerCase() === n || x.id.toLowerCase() === n);
     if (found.length) return { clips: found, via: "name", key: n };
   }
+  // (sleepy has no reaction of its own in most rigs, but dozing off is one)
+  const away = names.includes("sleepy") ? on.filter((c) => c.kind === "away") : [];
+  if (away.length) return { clips: away, via: "name", key: "sleepy" };
   return { clips: [], via: "none", key: null };
 }
 

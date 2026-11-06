@@ -7,8 +7,9 @@
 // Checks: a mate without bundled outfits starts with her default set; Add outfit makes an empty place that can't
 // be worn yet; files go into it like into any avatar, without touching what she has on; wearing swaps the whole set here and
 // in a second window; AI opens that outfit's own project (nothing spent) and its finished set is worn from there; rename,
-// delete (her default can't be deleted, deleting what she has on puts it back); asked in the chat she changes by herself,
-// through the real tool, with its chip here and the set following in a second window, and the switch takes that away.
+// delete (her default can't be deleted, deleting what she has on puts it back); she changes by herself through the real tool,
+// with its chip here and the set following in a second window, and the switch takes that away; every emotion shows with its
+// value and reason, they make one state, what the user says moves them, and her underwear makes her shy, on her face too.
 // ko dark, en light, desktop, phone.
 "use strict";
 const assert = require("assert/strict");
@@ -90,7 +91,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     assert.equal(await q.locator('[data-testid="mate-tab-outfit"]').count(), 0);
     await q.close();
 
-    step("그레이 밴드 waits for her affinity: the card says so, the server refuses, the picture stays away");
+    step("속옷 waits for her affinity: the card says so, the server refuses, the picture stays away");
     const ctx = await context(browser, { mateId: chaerin.id });
     const p = await ctx.newPage();
     watch(p);
@@ -98,7 +99,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     const grayCard = async () => (await mate()).outfits.items.find((c) => c.id === GRAY);
     const setAffinity = (v) => boot.request.patch(`${SERVER}/api/mates/${chaerin.id}/relation`, { data: { affinity: v } });
     const gray = await grayCard();
-    assert.equal(gray.name, "그레이 밴드");
+    assert.equal(gray.name, "속옷");
     assert.deepEqual(gray.locked, { affinity: 60 });
     assert.equal(gray.home, "");
     for (const [what, res] of [
@@ -124,7 +125,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     await p.click('[data-testid="mate-settings-close"]');
     assert.ok((await setAffinity(60)).ok());
     await p.waitForSelector('[data-testid="mate-info"]');
-    assert.ok((await p.textContent('[data-testid="mate-info"]')).includes("그레이 밴드"));
+    assert.ok((await p.textContent('[data-testid="mate-info"]')).includes("속옷"));
     await openTab(p);
     await until("the open tile", async () => (await tile(p, GRAY).getAttribute("data-locked")) === "false");
     assert.equal(await tile(p, GRAY).locator("img").count(), 1);
@@ -162,7 +163,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     assert.equal(await p.locator('[data-testid="mate-info"]').count(), 0);
     await byHand(60);
     await p.waitForSelector('[data-testid="mate-info"]');
-    assert.ok((await p.textContent('[data-testid="mate-info"]')).includes("그레이 밴드"));
+    assert.ok((await p.textContent('[data-testid="mate-info"]')).includes("속옷"));
     assert.ok(await set.isVisible(), "the panel stays open under it");
     assert.equal((await grayCard()).locked, undefined);
     await byHand(30);
@@ -273,7 +274,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     await p.close();
     await second.close();
 
-    step("asked in the chat, she changes herself; the switch takes that away");
+    step("she changes herself for a reason of her own; the switch takes that away");
     {
       const mine = await context(browser, { mateId: chaerin.id });
       const here = await mine.newPage();
@@ -282,7 +283,6 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
       for (const w of [here, watching, there]) watch(w);
       await openTab(there);
       await there.waitForSelector('[data-testid="outfit-self"]');
-      await there.locator('[data-testid="outfit-wardrobe"]').screenshot({ path: path.join(SHOTS, "outfit-self-ko-dark.png") });
       await watching.goto(`${SERVER}/?view=mate`);
       await watching.waitForSelector('[data-mate-kind="video"]', { timeout: 30000 });
       await here.goto(`${SERVER}/?view=mate`);
@@ -290,30 +290,84 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
       await input.waitFor({ timeout: 30000 });
       const mateNow = async () => (await get(mine, "/api/mates")).find((m) => m.id === chaerin.id);
       const casual = (await mateNow()).outfits.items.find((c) => c.name === "캐주얼");
-      const say = async (outfit) => {
-        const seen = await here.getByText("Done: change_outfit").count();
-        await input.fill(`ctool:change_outfit ${JSON.stringify({ outfit, asked: "change_outfit" })}`);
+      const tool = async (name, args) => {
+        const seen = await here.getByText(`Done: ${name}`).count();
+        await input.fill(`ctool:${name} ${JSON.stringify(args)}`);
         await input.press("Enter");
-        await until("her answer", async () => (await here.getByText("Done: change_outfit").count()) > seen);
+        await until("her answer", async () => (await here.getByText(`Done: ${name}`).count()) > seen);
       };
+      const change = (outfit) => tool("change_outfit", { outfit, reason: "오늘은 이게 입고 싶어서" });
       const chipSays = (text) => until(`chip: ${text}`, async () => (await here.locator('[data-testid="mate-activity"]', { hasText: text }).count()) > 0);
-      // (one ask or several, by how she feels today: backend/tests/test_mate_self_outfit.py has the counts)
-      for (let i = 0; i < 4 && (await mateNow()).outfits.worn !== casual.id; i++) await say(casual.id);
+      // (whether she does is hers to decide: the tool has no count to get past)
+      await change(casual.id);
       assert.equal((await mateNow()).outfits.worn, casual.id, "she changed");
       await chipSays("“캐주얼” 의상으로 갈아입었어요");
       await watching.waitForSelector('[data-mate-kind="photo"]', { timeout: 15000 });
       await here.screenshot({ path: path.join(SHOTS, "outfit-self-chip-ko-dark.png") });
-      await say("default");
+      await change("default");
       await chipSays("평소 옷으로 갈아입었어요");
       assert.equal((await mateNow()).outfits.worn, "default");
       await watching.waitForSelector('[data-mate-kind="video"]', { timeout: 15000 });
       await there.locator('[data-testid="outfit-self"]').click();
       await until("switched off", async () => (await mateNow()).prefs.self_outfit === "off");
-      await say(casual.id);
+      await change(casual.id);
       await chipSays("옷은 그대로예요");
       assert.equal((await mateNow()).outfits.worn, "default", "not while it is switched off");
       await there.locator('[data-testid="outfit-self"]').click();
       await until("switched on", async () => (await mateNow()).prefs.self_outfit === "auto");
+
+      step("how she feels: every emotion with its value and reason, one state from them; her underwear keeps her getting shyer");
+      const stateOf = async () => (await mateNow()).state;
+      const felt = async (emotion) => (await stateOf()).top.find((f) => f.emotion === emotion);
+      const relation = await mine.request.patch(`${SERVER}/api/mates/${chaerin.id}/relation`, { data: { affinity: 70 } });
+      assert.ok(relation.ok(), "affinity set");
+      await tile(there, GRAY).click();
+      await there.locator('[data-testid="outfit-wardrobe"]').screenshot({ path: path.join(SHOTS, "outfit-self-ko-dark.png") });
+      assert.ok(!(await felt("shy")), "not shy in her usual clothes");
+      await change(GRAY);
+      await chipSays("“속옷” 의상으로 갈아입었어요");
+      await until("she is shy in it", async () => (await felt("shy"))?.why?.code === "outfit");
+      await until("the badge says what stands out", async () => (await here.locator('[data-testid="mate-state-badge"]').getAttribute("data-state")) === (await stateOf()).label);
+      // (a shy clip where video plays; here, without WebGL, the shy still as the face she rests on)
+      if ((await stateOf()).label === "shy") {
+        await until("her face shows it", () => here.evaluate(() => {
+          const body = document.querySelector("[data-mate-body]");
+          return body?.getAttribute("data-mate-clip") === "shy" || [...(body?.querySelectorAll("img") ?? [])].some((i) => /\/shy\b/.test(i.src));
+        }), 40000);
+      }
+      await here.locator('[data-testid="mate-state-badge"]').click();
+      const row = (emotion) => here.locator(`[data-testid="mate-state-feeling"][data-emotion="${emotion}"]`);
+      await row("shy").waitFor({ timeout: 15000 });
+      assert.equal(await here.locator('[data-testid="mate-state-feeling"]').count(), 8, "every emotion has its value");
+      assert.ok((await row("shy").textContent()).includes("“속옷” 차림이라서"), "with the reason");
+      assert.ok(Number(await row("shy").getAttribute("data-value")) >= 40, "with its value");
+      await here.screenshot({ path: path.join(SHOTS, "state-panel-ko-dark.png") });
+
+      step("what the user says moves it, and it comes out as one state");
+      await tool("feel", { emotion: "happy", strength: "moderate", reason: "칭찬을 받아서" });
+      await chipSays("기쁨: 칭찬을 받아서");
+      await until("the panel follows", async () => (await row("happy").textContent()).includes("칭찬을 받아서"));
+      await until("the two make one state", async () => (await stateOf()).blend === "happy_shy");
+      await until("and its name shows", async () => (await here.locator('[data-testid="mate-state-now"]').textContent()).includes("수줍은 기쁨"));
+      await here.screenshot({ path: path.join(SHOTS, "state-blend-ko-dark.png") });
+      const say = async (text) => {
+        await input.fill(text);
+        await input.press("Enter");
+        await until("her answer", async () => {
+          const all = await get(mine, `/api/sessions/${(await mateNow()).session_id}/messages`);
+          return all.some((m) => m.content === text) && all[all.length - 1].role === "assistant";
+        });
+      };
+      for (const insult of ["닥쳐", "진짜 멍청하네", "닥쳐 이 쓸모없는"]) await say(insult);
+      await until("keeping it up makes her angry", async () => (await stateOf()).label === "angry" && (await stateOf()).level >= 0.7, 30000);
+      await until("the panel says why", async () => (await row("angry").textContent()).includes("거친 말을 들어서"));
+      await here.screenshot({ path: path.join(SHOTS, "state-angry-ko-dark.png") });
+      await say("미안해 내가 잘못했어");
+      await until("an apology helps", async () => (await stateOf()).top.find((f) => f.emotion === "angry")?.v < 0.75, 30000);
+      const poked = await mine.request.post(`${SERVER}/api/mates/${chaerin.id}/state/poke`);
+      assert.ok(poked.ok() && (await poked.json()).top, "a tap counts");
+      await change("default");
+      await until("still a little shy, for having just had it on", async () => (await felt("shy"))?.why?.code === "was_outfit");
       await mine.close();
     }
 

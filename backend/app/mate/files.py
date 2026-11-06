@@ -951,6 +951,7 @@ def builtin_outfits(key: str) -> list[dict[str, Any]]:
             raise MateError("invalid bundled outfit unlock: affinity is 1 to 100")
         outfits.append({"id": oid, "name": item["name"], "note": item.get("note", ""),
                         **({"unlock": {"affinity": need}} if need else {}),
+                        **({"feel": item["feel"]} if item.get("feel") else {}),
                         "avatar": normalize_avatar(avatar)})
     return outfits
 

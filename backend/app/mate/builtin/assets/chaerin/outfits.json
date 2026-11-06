@@ -2,8 +2,11 @@
   "items": [
     {
       "id": "builtin-gray-band",
-      "name": "그레이 밴드",
-      "note": "Plain heather-gray two-piece swimsuit with white straps, piping and bands; no brand names or logos. White cat-ear headset around her neck. She is not wearing her black hoodie.",
+      "name": "속옷",
+      "note": "A plain heather-gray two-piece underwear set with white bands. No black hoodie; her white cat-ear headset hangs around her neck.",
+      "feel": {
+        "shy": 0.6
+      },
       "unlock": {
         "affinity": 60
       },

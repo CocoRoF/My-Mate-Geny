@@ -98,7 +98,7 @@ export interface MatePrefs {
   avoid: string;
   memory: { recall: RecallLevel; self_save: boolean };
   self_edit: SelfEdit;
-  /** she changes her clothes when the user asks */
+  /** she changes her clothes herself, when she feels like it */
   self_outfit?: "auto" | "off";
   defaults: StyleDefaults;
 }
@@ -135,7 +135,50 @@ export interface StyleChange {
 
 export type RelationStage = "new" | "familiar" | "trusted" | "companion";
 export const RELATION_STAGES: RelationStage[] = ["new", "familiar", "trusted", "companion"];
-export type MoodLabel = "cheerful" | "content" | "calm" | "focused" | "sleepy" | "concerned";
+export type StateEmotion = "happy" | "excited" | "shy" | "angry" | "sad" | "lonely" | "worried" | "sleepy";
+export type StateLabel = StateEmotion | "calm";
+/** why she feels it: her own words (`text`), or what happened (`code`, with an outfit's `name` or what was said, `quote`) */
+export interface StateWhy {
+  text?: string;
+  code?: string;
+  name?: string;
+  quote?: string;
+}
+export interface StateFeeling {
+  emotion: StateEmotion;
+  /** 0 – 1 */
+  v: number;
+  why: StateWhy;
+}
+/** what the mate document carries: the one state her feelings make (docs/mate-memory-affinity.md §5.4) */
+export interface MateState {
+  /** the strongest emotion, or calm */
+  label: StateLabel;
+  level: number;
+  /** what the two strongest make together, when they are close */
+  blend: string | null;
+  /** -1 – 1: how good it all feels */
+  valence: number;
+  /** 0 – 1: how lively */
+  arousal: number;
+  /** what stands out, strongest first */
+  top: StateFeeling[];
+}
+export interface StateLogEntry {
+  at: string;
+  emotion?: StateEmotion;
+  from?: number;
+  to?: number;
+  /** she changed clothes ("": back into her usual ones) */
+  clothes?: string;
+  why: StateWhy;
+}
+/** GET /api/mates/{id}/state */
+export interface StateView extends MateState {
+  feelings: StateFeeling[];
+  /** newest first */
+  log: StateLogEntry[];
+}
 
 /** what the mate document carries about the relationship (the indicator) */
 export interface RelationSummary {
@@ -144,7 +187,6 @@ export interface RelationSummary {
   stage: RelationStage;
   /** 0 – 100, rounded */
   affinity: number;
-  mood: MoodLabel | null;
   show_indicator: boolean;
   avatar_mood: boolean;
 }
@@ -163,7 +205,6 @@ export interface RelationView {
   warmth_stage: RelationStage;
   next: { stage: RelationStage; ratio: number; needs: { days: number; turns: number; memories: number } } | null;
   stats: { days_together: number; turns: number; active_days: number; streak_days: number; memories: number; idle_days: number | null; grace_days: number };
-  mood: { label: MoodLabel; valence: number; energy: number };
   milestones: { key: string; at: string }[];
   /** newest first: d = the change, v = the value after it */
   log: { at: string; d: number; why: string; v: number }[];
@@ -244,6 +285,8 @@ export interface OutfitCard {
   note: string;
   /** waits for her affinity: nothing of the set comes along until then */
   locked?: { affinity: number };
+  /** what wearing it does to how she feels: that emotion keeps climbing while it is on */
+  feel?: Partial<Record<StateEmotion, number>>;
 }
 
 export const DEFAULT_OUTFIT = "default";
@@ -265,6 +308,7 @@ export interface Mate {
   prefs?: MatePrefs;
   /** missing on documents from an older server */
   relation?: RelationSummary;
+  state?: MateState;
   /** missing on documents from an older server: DEFAULT_SCREEN */
   screen?: MateScreen;
   session_id: string | null;
@@ -509,6 +553,9 @@ export const bulkMemories = (id: string, ids: string[], action: "delete" | "arch
 export const getRelation = (id: string) => apiFetch<RelationView>(`/api/mates/${enc(id)}/relation`);
 export const getRelationJournal = (id: string, days = 30) =>
   apiFetch<RelationJournal>(`/api/mates/${enc(id)}/relation/journal?days=${days}`);
+export const getMateState = (id: string) => apiFetch<StateView>(`/api/mates/${enc(id)}/state`);
+/** she was tapped: a bit of attention, until it is too much of it */
+export const pokeMate = (id: string) => apiFetch<MateState>(`/api/mates/${enc(id)}/state/poke`, { method: "POST" });
 export const patchRelation = (id: string, patch: RelationPatch) =>
   apiFetch<RelationView>(`/api/mates/${enc(id)}/relation`, { method: "PATCH", ...j(patch) });
 export const resetRelation = (id: string, mode: "zero" | "recompute") =>

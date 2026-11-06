@@ -17,6 +17,8 @@ export interface PhotoBodyProps {
   home: string;
   mood: BodyMood;
   react: MateReact;
+  /** how she feels, as the face she rests on */
+  look?: string;
   name: string;
 }
 
@@ -31,7 +33,7 @@ export default function PhotoBody(props: PhotoBodyProps) {
   return single ? <SinglePhoto {...props} /> : <StillBody {...props} />;
 }
 
-function SinglePhoto({ stills, emotionStills, home, mood, react, name }: PhotoBodyProps) {
+function SinglePhoto({ stills, emotionStills, home, mood, react, look, name }: PhotoBodyProps) {
   const pulse = useRef<HTMLDivElement>(null);
   useLevelVar(pulse, 1.8);
   const [over, setOver] = useState(0);
@@ -42,7 +44,7 @@ function SinglePhoto({ stills, emotionStills, home, mood, react, name }: PhotoBo
     return () => clearTimeout(t);
   }, [reactAt]);
   const feeling = react && react.at > over ? stillFor(stills, react.name, emotionStills) : null;
-  const face = mood === "thinking" ? stillFor(stills, "thinking", emotionStills) : mood === "away" ? stillFor(stills, "sleepy", emotionStills) : null;
+  const face = mood === "thinking" ? stillFor(stills, "thinking", emotionStills) : mood === "away" ? stillFor(stills, "sleepy", emotionStills) : look && mood !== "talking" ? stillFor(stills, look, emotionStills) : null;
   const src = feeling ?? face ?? home;
   return (
     <div className="mate-layer mate-breathe" data-mate-body="photo-single">
@@ -53,7 +55,7 @@ function SinglePhoto({ stills, emotionStills, home, mood, react, name }: PhotoBo
   );
 }
 
-function StillBody({ stills, emotionStills, home, mood, react, name }: PhotoBodyProps) {
+function StillBody({ stills, emotionStills, home, mood, react, look, name }: PhotoBodyProps) {
   const [blink, setBlink] = useState(false);
   const [mouth, setMouth] = useState<Mouth>(-1);
   const [voice, setVoice] = useState(() => !!voiceBridge.speaking);
@@ -146,7 +148,7 @@ function StillBody({ stills, emotionStills, home, mood, react, name }: PhotoBody
     return mouths[i] ?? mouths[1] ?? mouths[0] ?? mouths[2] ?? null;
   };
   const feeling = react && react.at > over ? stillFor(stills, react.name, emotionStills) : null;
-  const face = mood === "thinking" ? stillFor(stills, "thinking", emotionStills) : mood === "away" ? stillFor(stills, "sleepy", emotionStills) : null;
+  const face = mood === "thinking" ? stillFor(stills, "thinking", emotionStills) : mood === "away" ? stillFor(stills, "sleepy", emotionStills) : look && mood !== "talking" ? stillFor(stills, look, emotionStills) : null;
   const mouthShown = voice ? pickMouth(mouth) : textTalking ? pickMouth(timerMouth === 3 ? -1 : timerMouth) : null;
   const shown = feeling ?? mouthShown ?? face ?? (blink ? stills.blink : null);
   // a feeling or a face fades in; a blink and talking mouths switch at once

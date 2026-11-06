@@ -1,5 +1,5 @@
-"""How close the user and a mate are, and how the mate feels right now
-(docs/mate-memory-affinity.md §5) — modelled on memora's relationship engine.
+"""How close the user and a mate are (docs/mate-memory-affinity.md §5) — modelled on memora's relationship engine.
+How she feels right now is app/mate/state.py.
 
 Two numbers, as in memora:
 
@@ -14,9 +14,7 @@ functions for real time and for a recompute from history (memora plan/61:
 two rule sets drift; a timer that settles a day before its talk was counted
 only ever lowers it). Every change is logged with its reason.
 
-The mood (valence, energy → a label) drifts toward a stage baseline, follows
-the time of day and how exchanges go. Nothing here is ever said as a number
-to the model: the prompt gets a stage and a mood word (app/mate/prompt.py).
+Nothing here is ever said as a number to the model: the prompt gets a stage (app/mate/prompt.py).
 
 Pure functions over one JSON document (``new()``); no I/O.
 """
@@ -50,13 +48,6 @@ LOG_MAX = 200
 SENSITIVITY = (0.5, 1.5)
 ANNIVERSARIES = (7, 30, 100, 365)
 
-MOODS = ("cheerful", "content", "calm", "focused", "sleepy", "concerned")
-BASELINE = {"new": 0.10, "familiar": 0.15, "trusted": 0.20, "companion": 0.25}
-MOOD_HALF_LIFE_H = 4.0
-# energy over the day (local hour 0–23)
-CIRCADIAN = (0.40, 0.33, 0.28, 0.25, 0.25, 0.30, 0.40, 0.55, 0.70, 0.80, 0.90, 0.90,
-             0.90, 0.90, 0.90, 0.90, 0.90, 0.88, 0.85, 0.80, 0.75, 0.65, 0.55, 0.45)
-
 _POS = re.compile(r"고마워|고맙|감사|최고|사랑해|귀여|잘했|덕분|좋아요|좋아!|좋다|멋져|ㅋㅋ|ㅎㅎ|\bthanks?\b|thank you|great|awesome|"
                   r"love (it|you|this)|\bnice\b|\bcool\b|perfect|haha|\blol\b|well done|amazing", re.I)
 _RUDE = re.compile(r"닥쳐|꺼져|멍청|병신|시발|씨발|ㅅㅂ|쓸모없|바보 ?같|shut up|stupid|useless|idiot|\bdumb\b|hate you|"
@@ -70,11 +61,11 @@ _REPLY_POS = re.compile(r"\[\s*(joy|laugh|smile|shy)\b", re.I)
 
 def new() -> dict[str, Any]:
     return {
-        "enabled": True, "paused": False, "sensitivity": 1.0, "show_indicator": True, "avatar_mood": False,
+        "enabled": True, "paused": False, "sensitivity": 1.0, "show_indicator": True, "avatar_mood": True,
+        "avatar_v2": True,
         "affinity": 0.0, "started_at": None, "turns": 0, "active_days": 0, "last_active_day": None,
         "streak_days": 0, "memories": 0, "settled_day": None, "today": {}, "talk_days": [], "warm": 0,
         "stage": "new", "stage_changed_at": None, "milestones": [], "log": [],
-        "mood": {"valence": None, "at": None, "concern_until": None, "turns": []},
         "quiet_from": None,
         "tz": None,  # the zone its days were counted in (store.tz_and_key); another → computed again from history
         "marks": [],  # what the user did by hand ({at, kind: set | reset, v}): a recompute in another zone keeps them
@@ -85,8 +76,8 @@ def normalized(doc: Any) -> dict[str, Any]:
     out = new()
     if isinstance(doc, dict):
         out.update({k: v for k, v in doc.items() if k in out})
-        if isinstance(doc.get("mood"), dict):
-            out["mood"] = {**new()["mood"], **doc["mood"]}
+        if "avatar_v2" not in doc:  # (from when the avatar only followed how she feels if asked to; now unless told not to)
+            out["avatar_mood"] = True
     out["sensitivity"] = max(SENSITIVITY[0], min(SENSITIVITY[1], float(out.get("sensitivity") or 1.0)))
     out["affinity"] = max(0.0, min(100.0, float(out.get("affinity") or 0.0)))
     return out
@@ -293,7 +284,6 @@ def credit_turn(r: dict[str, Any], at: datetime, tz: Any, user_text: str = "", r
         loss = min(RUDE * r["sensitivity"], RUDE_CAP - float(t.get("rude") or 0.0))
         t["rude"] = float(t.get("rude") or 0.0) + loss
         _bump(r, -loss, "rude", at)
-    mood_turn(r, at, c)
     refresh(r, at, tz)
 
 
@@ -336,7 +326,7 @@ def _mark(r: dict[str, Any], at: datetime, kind: str, v: float | None = None) ->
 
 
 def reset(r: dict[str, Any], at: datetime, tz: Any) -> dict[str, Any]:
-    """A fresh start: counters, affinity, mood, milestones gone; the user's settings kept."""
+    """A fresh start: counters, affinity, milestones gone; the user's settings kept."""
     out = new()
     for k in ("enabled", "paused", "sensitivity", "show_indicator", "avatar_mood", "tz", "marks"):
         out[k] = r[k]
@@ -357,64 +347,6 @@ def marks_of(r: dict[str, Any]) -> list[dict[str, Any]]:
         elif e.get("why") == "reset" and e.get("at"):
             out.append({"at": e["at"], "kind": "reset"})
     return out
-
-
-# ---- mood ----
-
-def _valence_now(r: dict[str, Any], now: datetime) -> float:
-    base = BASELINE.get(r["stage"], 0.1)
-    m = r["mood"]
-    at = _t(m.get("at"))
-    v = m.get("valence")
-    if v is None or at is None:
-        return base
-    hours = max(0.0, (now - at).total_seconds() / 3600)
-    return base + (float(v) - base) * 0.5 ** (hours / MOOD_HALF_LIFE_H)
-
-
-def mood_turn(r: dict[str, Any], at: datetime, c: dict[str, bool]) -> None:
-    m = r["mood"]
-    v = _valence_now(r, at)
-    v += max(-0.3, min(0.3, 0.15 * ((1 if c.get("warm") else 0) - (1 if c.get("rude") else 0))))
-    m["valence"] = round(max(-1.0, min(1.0, v)), 3)
-    m["at"] = _iso(at)
-    if c.get("distress"):
-        m["concern_until"] = _iso(at + timedelta(hours=2))
-    cutoff = at - timedelta(hours=2)
-    m["turns"] = [x for x in (m.get("turns") or []) if (_t(x) or at) >= cutoff][-30:] + [_iso(at)]
-
-
-def mood_result(r: dict[str, Any], at: datetime, ok: bool) -> None:
-    """A delegated chat finished: a little pleased, or concerned about the work (never about the user)."""
-    if not r["enabled"] or r["paused"]:
-        return
-    m = r["mood"]
-    m["valence"] = round(max(-1.0, min(1.0, _valence_now(r, at) + (0.05 if ok else -0.10))), 3)
-    m["at"] = _iso(at)
-
-
-def mood(r: dict[str, Any], now: datetime, tz: Any) -> dict[str, Any]:
-    """The mood as of now: ``{label, valence, energy}``."""
-    local = now.astimezone(tz)
-    h = local.hour
-    v = _valence_now(r, now)
-    cutoff = now - timedelta(hours=2)
-    recent = sum(1 for x in (r["mood"].get("turns") or []) if (_t(x) or cutoff) > cutoff)
-    e = max(0.0, CIRCADIAN[h] - 0.02 * min(10, recent))
-    concern = _t(r["mood"].get("concern_until"))
-    if concern and concern > now:
-        label = "concerned"
-    elif (h >= 23 or h < 6) and e < 0.5:
-        label = "sleepy"
-    elif v <= -0.25:
-        label = "concerned"
-    elif v >= 0.4:
-        label = "cheerful" if e >= 0.55 else "content"
-    elif e >= 0.8:
-        label = "focused"
-    else:
-        label = "calm"
-    return {"label": label, "valence": round(v, 2), "energy": round(e, 2)}
 
 
 # ---- views ----
@@ -442,7 +374,7 @@ def view(r: dict[str, Any], now: datetime, tz: Any) -> dict[str, Any]:
         "stats": {"days_together": days_together(r, today, tz), "turns": r["turns"], "active_days": r["active_days"],
                   "streak_days": r["streak_days"], "memories": r["memories"],
                   "idle_days": (today - last).days if last else None, "grace_days": GRACE_DAYS},
-        "mood": mood(r, now, tz), "milestones": list(reversed(r["milestones"])),
+        "milestones": list(reversed(r["milestones"])),
         "log": list(reversed(r["log"][-100:])), "started_at": r["started_at"],
     }
 
@@ -450,7 +382,6 @@ def view(r: dict[str, Any], now: datetime, tz: Any) -> dict[str, Any]:
 def summary(r: dict[str, Any], now: datetime, tz: Any) -> dict[str, Any]:
     """What the mate document carries (the indicator): changes rarely, so pushes stay rare."""
     return {"enabled": r["enabled"], "paused": r["paused"], "stage": r["stage"], "affinity": int(round(r["affinity"])),
-            "mood": mood(r, now, tz)["label"] if r["enabled"] and not r["paused"] else None,
             "show_indicator": r["show_indicator"], "avatar_mood": r["avatar_mood"]}
 
 

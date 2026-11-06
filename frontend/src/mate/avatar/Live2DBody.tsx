@@ -23,6 +23,8 @@ export interface Live2DBodyProps {
   live2d: Live2D;
   mood: BodyMood;
   react: MateReact;
+  /** how she feels, as the face she rests on */
+  look?: string;
   name: string;
   size?: "lg" | "sm";
   /** Cubism Core script URL (default: setLive2DCoreUrl / `/api/mates/live2d/core.js`) */
@@ -77,7 +79,7 @@ function saccadeInterval(): number {
   return SACCADE_P[SACCADE_P.length - 1][1] + Math.random() * SACCADE_STEP;
 }
 
-export default function Live2DBody({ live2d, mood, react, name, coreUrl, onTap, interactive = true, view }: Live2DBodyProps) {
+export default function Live2DBody({ live2d, mood, react, look, name, coreUrl, onTap, interactive = true, view }: Live2DBodyProps) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
   const viewRef = useRef<AvatarViewT>(view ?? VIEW_HOME);
@@ -99,6 +101,8 @@ export default function Live2DBody({ live2d, mood, react, name, coreUrl, onTap, 
   tapRef.current = onTap;
   const moodRef = useRef(mood);
   moodRef.current = mood;
+  const lookRef = useRef(look);
+  lookRef.current = look;
   /** the expression the mood asks for is shown after a reaction's hold ends */
   const holdUntil = useRef(0);
 
@@ -419,13 +423,13 @@ export default function Live2DBody({ live2d, mood, react, name, coreUrl, onTap, 
     const a = api.current;
     if (!a || performance.now() < holdUntil.current) return;
     const m = moodRef.current;
-    const name = m === "thinking" ? "thinking" : m === "away" ? "sleepy" : "neutral";
+    const name = m === "thinking" ? "thinking" : m === "away" ? "sleepy" : lookRef.current ?? "neutral";
     if (!applyEmotion(a.model, cfg.current, name, a.priority, name !== "neutral")) resetExpression(a.model, cfg.current);
   };
   useEffect(() => {
     if (status.kind === "ready") applyMood();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mood, status.kind]);
+  }, [mood, look, status.kind]);
 
   // ── a one-shot emotion: expression (+ motion), held a while, then back to the mood's face ──
   const reactAt = react?.at;

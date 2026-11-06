@@ -19,6 +19,8 @@ import { useMateChat } from "../../mate/useMateConversation";
 import { useHistoryScroll } from "../../hooks/useHistoryScroll";
 import HistoryEdge from "../chat/HistoryEdge";
 import { tr, useT, type MsgKey } from "../../i18n";
+import type { StateEmotion } from "../../api/mates";
+import { STATE_LABEL } from "./StateBadge";
 import { useMateStore } from "../../stores/mateStore";
 import { changeIdOf, describeChanges, flatArgs, resolveChange, useStyleChanges } from "../../mate/styleChanges";
 
@@ -99,6 +101,13 @@ export function describeTool(t: ToolActivity): { icon: IconName; label: string; 
       if (t.durationMs === undefined) return { icon: "sliders", label: tr("mate.toolStyleChanging") };
       if (t.isError) return { icon: "sliders", label: tr("mate.toolStyleFailed") };
       return { icon: "sliders", label: /^Proposed/.test(out) ? tr("mate.toolStyleProposed", { what }) : /^Nothing/.test(out) ? tr("mate.toolStyleSame") : tr("mate.toolStyleChanged", { what }) };
+    }
+    case "feel": {
+      // (how she feels, and why: the same words as next to her name)
+      const emotion = STATE_LABEL[input.emotion as StateEmotion];
+      if (t.isError || !emotion) return { icon: "heart", label: tr("mate.toolFeelPlain") };
+      const why = short(String(input.reason || ""), 60);
+      return { icon: "heart", label: input.strength === "none" ? tr("mate.toolFeelPassed", { emotion: tr(emotion), why }) : tr("mate.toolFeel", { emotion: tr(emotion), why }) };
     }
     case "change_outfit": {
       // (what she has on follows by itself, in every window)

@@ -1,68 +1,23 @@
-"""Her wardrobe from her side: when she changes because the user asked.
+"""Her wardrobe as she sees it: what she can change into, and how she feels about each right now.
 
-She doesn't change on a whim, and the model's word isn't enough: the tool checks that the user's latest message really says
-it, that the outfit can be worn, and whether she is up for it. In a good mood she does it when asked; otherwise it takes
-asking again. Going back to her default clothes is the user's call at any time.
-
-Pure helpers; MateService owns the writes (docs/mate.md "Outfits").
+Whether she changes is hers to decide (docs/mate.md "Outfits"); these only say what is there. Pure helpers.
 """
 
 from __future__ import annotations
 
 import re
 import unicodedata
-from datetime import datetime, timedelta
 from typing import Any
 
-from app.mate import affinity as A
 from app.mate.store import DEFAULT_OUTFIT
 
-#: how many times the user has to ask, by how she feels
-MOOD_ASKS = {"cheerful": 1, "content": 1, "calm": 1, "focused": 2, "sleepy": 2, "concerned": 3}
-#: one more if they have only just met, or she has only just changed
-NEW_ASKS = 1
-AGAIN_ASKS = 1
-AGAIN_WITHIN = timedelta(minutes=10)
-MAX_ASKS = 4
-#: asking again after this long starts over
-ASK_WINDOW = timedelta(minutes=30)
 NOTE_CHARS = 100
-
-
-def asks_needed(mood: str | None, stage: str | None, changed_at: datetime | None, now: datetime) -> int:
-    """``mood`` / ``stage``: None while the relationship is off or paused (nothing holds her back then)."""
-    n = MOOD_ASKS.get(mood or "", 1)
-    if stage == "new":
-        n += NEW_ASKS
-    if changed_at is not None and now - changed_at < AGAIN_WITHIN:
-        n += AGAIN_ASKS
-    return min(n, MAX_ASKS)
+LEAN_WORDS = {"glad": "you'd be glad to", "maybe": "you could go either way", "rather_not": "you'd rather not right now"}
 
 
 def _plain(text: Any) -> str:
-    """For comparing words: no case, spacing or punctuation."""
+    """For comparing names: no case, spacing or punctuation."""
     return re.sub(r"[\W_]+", "", unicodedata.normalize("NFKC", str(text or "")).casefold())
-
-
-def said_it(asked: Any, message: Any) -> bool:
-    """Whether ``asked`` really is in what the user wrote."""
-    words = _plain(asked)
-    return bool(words) and words in _plain(message)
-
-
-def count_ask(state: dict[str, Any], outfit: str, message: str, now: datetime) -> dict[str, Any]:
-    """The state with this ask counted: one per message of theirs, for one outfit, while they keep at it."""
-    asks = state.get("asks") if isinstance(state.get("asks"), dict) else {}
-    at = A._t(asks.get("at"))
-    going = asks.get("outfit") == outfit and at is not None and now - at <= ASK_WINDOW
-    seen = [str(m) for m in asks.get("messages") or []] if going else []
-    if message not in seen:
-        seen = [*seen, message][-MAX_ASKS:]
-    return {**state, "asks": {"outfit": outfit, "messages": seen, "at": A._iso(now)}}
-
-
-def changed(state: dict[str, Any], now: datetime) -> dict[str, Any]:
-    return {**{k: v for k, v in state.items() if k != "asks"}, "changed_at": A._iso(now)}
 
 
 def find(cards: list[dict[str, Any]], text: Any) -> dict[str, Any] | None:
@@ -79,25 +34,35 @@ def find(cards: list[dict[str, Any]], text: Any) -> dict[str, Any] | None:
     return None
 
 
-def signature(cards: list[dict[str, Any]]) -> list[list[Any]]:
+def _wearable(card: dict[str, Any]) -> bool:
+    return card["id"] == DEFAULT_OUTFIT or (not card.get("locked") and card.get("kind") != "none")
+
+
+def signature(cards: list[dict[str, Any]], lean: dict[str, str], worn: str) -> list[list[Any]]:
     """What she has to be told again about when it changes."""
-    return [[c["id"], c["name"], c.get("kind"), bool(c.get("locked"))] for c in cards]
+    return [[c["id"], c["name"], c.get("kind"), bool(c.get("locked")), lean.get(c["id"]), c["id"] == worn] for c in cards]
 
 
-def listing(cards: list[dict[str, Any]]) -> str:
-    """Her wardrobe in a line of her <context>; "" when there is nothing to change into."""
+def listing(cards: list[dict[str, Any]], lean: dict[str, str], worn: str) -> str:
+    """Her wardrobe in a line of her <context>, with how she leans on each; "" when there is nothing to change into."""
+    def how(card: dict[str, Any]) -> str:
+        return "you have it on" if card["id"] == worn else LEAN_WORDS.get(lean.get(card["id"], ""), "")
+
     ready, closed = [], []
     for c in cards:
         if c["id"] == DEFAULT_OUTFIT:
             continue
         if c.get("locked"):
             closed.append(f"“{c['name']}”")
-        elif c.get("kind") != "none":
+        elif _wearable(c):
             note = " ".join(str(c.get("note") or "").split())[:NOTE_CHARS]
-            ready.append(f"{c['id']} “{c['name']}”" + (f" ({note})" if note else ""))
+            feels = ", ".join(c.get("feel") or {})
+            parts = [*([note] if note else []), *([f"wearing it makes you {feels}"] if feels else []), how(c)]
+            ready.append(f"{c['id']} “{c['name']}” ({'; '.join(p for p in parts if p)})")
     if not ready and not closed:
         return ""
-    line = "Your wardrobe, for change_outfit: default (your usual clothes)"
+    default = next((c for c in cards if c["id"] == DEFAULT_OUTFIT), {"id": DEFAULT_OUTFIT})
+    line = f"Your wardrobe, for change_outfit, and how you lean on each right now: default (your usual clothes; {how(default)})"
     if ready:
         line += "; " + "; ".join(ready)
     if closed:

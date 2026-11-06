@@ -1,9 +1,9 @@
 /**
  * The relationship indicator next to a mate's name (docs/mate-memory-affinity.md §6): a small ring (how warm it is
- * now, 0–100) in the stage's colour and the stage word; the tooltip adds the value and her mood. Hidden while the
+ * now, 0–100) in the stage's colour and the stage word; the tooltip adds the value. Hidden while the
  * relationship is off or the user hid the indicator (Mate settings → Relationship). It follows the server's pushes.
  */
-import type { Mate, MoodLabel, RelationStage } from "../../api/mates";
+import type { Mate, RelationStage } from "../../api/mates";
 import { useT, type MsgKey } from "../../i18n";
 
 export const STAGE_LABEL: Record<RelationStage, MsgKey> = {
@@ -11,14 +11,6 @@ export const STAGE_LABEL: Record<RelationStage, MsgKey> = {
   familiar: "mate.relStageFamiliar",
   trusted: "mate.relStageTrusted",
   companion: "mate.relStageCompanion",
-};
-export const MOOD_LABEL: Record<MoodLabel, MsgKey> = {
-  cheerful: "mate.moodCheerful",
-  content: "mate.moodContent",
-  calm: "mate.moodCalm",
-  focused: "mate.moodFocused",
-  sleepy: "mate.moodSleepy",
-  concerned: "mate.moodConcerned",
 };
 export const STAGE_COLOR: Record<RelationStage, string> = {
   new: "rgb(var(--c-stage-new))",
@@ -46,7 +38,7 @@ export default function RelationBadge({ mate, compact = false, onClick, active =
   const stage = t(STAGE_LABEL[rel.stage]);
   const tip = [
     t("mate.relTooltip", { name: mate.name, stage, value: rel.affinity }),
-    rel.paused ? t("mate.relPaused") : rel.mood ? t("mate.relMood", { mood: t(MOOD_LABEL[rel.mood]) }) : "",
+    rel.paused ? t("mate.relPaused") : "",
   ]
     .filter(Boolean)
     .join(" · ");

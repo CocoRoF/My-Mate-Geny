@@ -9,7 +9,8 @@ import { getRelation, patchRelation, RELATION_STAGES, resetRelation, type Mate, 
 import { useMateStore } from "../../../stores/mateStore";
 import { relTime } from "../../../i18n/format";
 import { useT, type TFunction } from "../../../i18n";
-import { MOOD_LABEL, RelationRing, STAGE_LABEL } from "../RelationBadge";
+import { RelationRing, STAGE_LABEL } from "../RelationBadge";
+import { stateLine } from "../StateBadge";
 import { ErrorLine, Field, ProgressBar, Section, Segmented, Toggle } from "./ui";
 
 const SENS: { id: string; v: number; label: "mateSettings.relSensGentle" | "mateSettings.styleNormal" | "mateSettings.relSensStrong" }[] = [
@@ -126,7 +127,7 @@ export default function RelationshipTab({ mate }: { mate: Mate }) {
               {v.stats.streak_days >= 2 ? ` · ${t("mateSettings.relStreak", { count: v.stats.streak_days })}` : ""}
             </p>
             <p className="text-[11.5px] text-content-faint" data-testid="mate-relation-mood">
-              {v.paused ? t("mate.relPaused") : t("mate.relMood", { mood: t(MOOD_LABEL[v.mood.label]) })}
+              {v.paused ? t("mate.relPaused") : stateLine(t, mate)}
             </p>
           </div>
         </div>
@@ -157,7 +158,7 @@ export default function RelationshipTab({ mate }: { mate: Mate }) {
           />
         </Field>
         <Toggle on={v.show_indicator} onChange={(on) => void patch({ show_indicator: on })} disabled={off} label={t("mateSettings.relIndicator")} hint={t("mateSettings.relIndicatorHint")} testId="mate-relation-indicator" />
-        <Toggle on={v.avatar_mood} onChange={(on) => void patch({ avatar_mood: on })} disabled={off} label={t("mateSettings.relAvatarMood")} hint={t("mateSettings.relAvatarMoodHint", { name: mate.name })} testId="mate-relation-avatar-mood" />
+        <Toggle on={v.avatar_mood} onChange={(on) => void patch({ avatar_mood: on })} label={t("mateSettings.relAvatarMood")} hint={t("mateSettings.relAvatarMoodHint", { name: mate.name })} testId="mate-relation-avatar-mood" />
         <Field label={t("mateSettings.relManual")} hint={t("mateSettings.relManualHint")} as="div">
           <div className="flex items-center gap-2">
             <input type="range" min={0} max={100} step={1} value={value} disabled={off} onChange={(e) => setManual(Number(e.target.value))} className="flex-1" aria-label={t("mateSettings.relManual")} data-testid="mate-relation-slider" />

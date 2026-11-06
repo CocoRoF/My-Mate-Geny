@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from app.db import Database
 from app.mate import affinity as A
 from app.mate import memory as M
+from app.mate import state as S
 from app.mate.knowledge import Knowledge, digest, safe_text
 from app.providers.catalog import DEFAULT_MATE_MODEL, default_mate_model
 from app.services._ids import new_id, now_iso
@@ -626,7 +627,8 @@ def outfit_lock(item: dict[str, Any], affinity: int) -> int | None:
     return need if need and not unlock.get("at") and affinity < need else None
 
 
-def _outfit_card(oid: str, name: str, avatar: dict[str, Any], *, note: str = "", lock: int | None = None) -> dict[str, Any]:
+def _outfit_card(oid: str, name: str, avatar: dict[str, Any], *, note: str = "", lock: int | None = None,
+                 feel: Any = None) -> dict[str, Any]:
     if lock:  # (only that it is there and what opens it: nothing of the set itself)
         return {"id": oid, "name": name, "kind": "none", "home": "", "aspect": [3, 4], "clips": 0, "stills": 0, "note": "",
                 "locked": {"affinity": lock}}
@@ -634,7 +636,7 @@ def _outfit_card(oid: str, name: str, avatar: dict[str, Any], *, note: str = "",
     return {"id": oid, "name": name, "kind": avatar.get("kind") or "none",
             "home": rig.get("home") or (rig.get("stills") or {}).get("neutral") or "",
             "aspect": rig.get("aspect") or [3, 4], "clips": len(rig.get("clips") or []),
-            "stills": len(rig.get("stills") or {}), "note": note}
+            "stills": len(rig.get("stills") or {}), "note": note, "feel": S.clean_feel(feel)}
 
 
 def outfits_view(raw: dict[str, Any], on: dict[str, Any], affinity: int = 0) -> dict[str, Any]:
@@ -645,7 +647,7 @@ def outfits_view(raw: dict[str, Any], on: dict[str, Any], affinity: int = 0) -> 
     return {"worn": worn, "items": [
         _outfit_card(DEFAULT_OUTFIT, "", base),
         *(_outfit_card(it["id"], it["name"], on if it["id"] == worn else it["avatar"], note=it.get("note") or "",
-                       lock=None if it["id"] == worn else outfit_lock(it, affinity))
+                       lock=None if it["id"] == worn else outfit_lock(it, affinity), feel=it.get("feel"))
           for it in raw.get("items") or []),
     ]}
 
@@ -678,6 +680,9 @@ class MateStore:
     def _out(self, row: Any) -> dict[str, Any]:
         avatar = _loads(row["avatar"], {}) or {"kind": "none"}
         relation = self.relation_summary(row["id"])
+        raw_outfits = _loads(row["outfits"], {}) if "outfits" in row.keys() else {}
+        builtin = row["builtin"] if "builtin" in row.keys() else None
+        who = self._who(builtin, raw_outfits, self.relation_doc(row["id"]) or A.new())
         return {
             "id": row["id"],
             "name": row["name"],
@@ -686,17 +691,18 @@ class MateStore:
             "updated_at": row["updated_at"],
             "persona": normalize_persona(_loads(row["persona"], {})),
             "avatar": avatar,
-            "outfits": outfits_view(_loads(row["outfits"], {}) if "outfits" in row.keys() else {}, avatar, relation["affinity"]),
+            "outfits": outfits_view(raw_outfits, avatar, relation["affinity"]),
             "llm": normalize_llm(None, _loads(row["llm"], {})),
             "voice": normalize_voice(None, _loads(row["voice"], {})),
             "prefs": normalize_prefs(None, _loads(row["prefs"], {}) if "prefs" in row.keys() else {}),
             "screen": normalize_screen(None, _loads(row["screen"], {}) if "screen" in row.keys() else {}),
             "session_id": row["session_id"],
             "memory_rev": row["memory_rev"],
-            "builtin": row["builtin"] if "builtin" in row.keys() else None,
+            "builtin": builtin,
             "customized": bool(row["customized"]) if "customized" in row.keys() else False,
             "draft": bool(row["draft"]) if "draft" in row.keys() else False,
             "relation": relation,
+            "state": S.summary(self.state_doc(row["id"]), who, datetime.now(timezone.utc), self.tz()),
         }
 
     def list(self) -> list[dict[str, Any]]:
@@ -848,8 +854,8 @@ class MateStore:
 
     # ---- the wardrobe (docs/mate.md "Outfits") ----
     # The avatar column is always the set she has on, so everything that reads a mate just works. ``outfits`` holds the
-    # rest: {worn, base (her default set while another one is on), items: [{id, name, note, avatar}], self (the asks
-    # for her to change, app/mate/wardrobe.py)}. An outfit starts
+    # rest: {worn, worn_at (since when), base (her default set while another one is on), items: [{id, name, note, feel,
+    # avatar}]}. An outfit starts
     # empty (kind "none") and is filled like any avatar. What comes off keeps the state it was in (a worn item's own
     # ``avatar`` is only refreshed then).
 
@@ -858,18 +864,8 @@ class MateStore:
         if row is None:
             raise KeyError(f"mate not found: {mate_id}")
         w = _loads(row["outfits"], {})
-        return {"worn": w.get("worn") or DEFAULT_OUTFIT, "base": w.get("base"), "items": w.get("items") or [],
-                "self": w.get("self") if isinstance(w.get("self"), dict) else {}}
-
-    def outfit_self(self, mate_id: str) -> dict[str, Any]:
-        return self._wardrobe(mate_id)["self"]
-
-    def set_outfit_self(self, mate_id: str, state: dict[str, Any]) -> None:
-        """Her own bookkeeping: no client sees it, so nobody has to refetch."""
-        with self._lock:
-            w = self._wardrobe(mate_id)
-            w["self"] = state
-            self._db.execute("UPDATE mates SET outfits = ? WHERE id = ?", (json.dumps(w, ensure_ascii=False), mate_id))
+        return {"worn": w.get("worn") or DEFAULT_OUTFIT, "worn_at": w.get("worn_at"), "base": w.get("base"),
+                "items": w.get("items") or []}
 
     def _save_wardrobe(self, mate_id: str, wardrobe: dict[str, Any], avatar: dict[str, Any] | None = None) -> None:
         sets, params = ["outfits = ?", "updated_at = ?"], [json.dumps(wardrobe, ensure_ascii=False), now_iso()]
@@ -955,13 +951,14 @@ class MateStore:
                 self._outfit_item(w, w["worn"])["avatar"] = cur["avatar"]
             if oid == DEFAULT_OUTFIT:
                 w["base"] = None
-            w["worn"] = oid
+            w["worn"], w["worn_at"] = oid, now_iso()
             self._save_wardrobe(mate_id, w, on or {"kind": "none"})
         return self.get(mate_id)
 
     def seed_builtin_outfits(self, mate_id: str, items: list[dict[str, Any]], previous: list[dict[str, Any]]) -> None:
         """Offer new bundled outfits once. Preserve edits, deletions, and whatever she has on. One she already has follows
-        the bundle where it is still as bundled (its name, its set), and always in what opens it."""
+        the bundle where it is still as bundled (its name and note, its set), and always in what opens it and what it does
+        to how she feels."""
         with self._lock:
             w = self._wardrobe(mate_id)
             before = json.dumps(w, sort_keys=True)
@@ -975,12 +972,17 @@ class MateStore:
                 if old:
                     if cur["name"] == old["name"]:
                         cur["name"] = it["name"]
+                    if (cur.get("note") or "") == (old.get("note") or ""):
+                        cur["note"] = it.get("note") or ""
                     new = normalize_avatar(it["avatar"])
                     live = self.get(mate_id)["avatar"] if worn else cur["avatar"]
                     follows = new if live == old["avatar"] else _on_new_files(live, old["avatar"], new)
                     if follows != live:
                         cur["avatar"] = follows
                         on = follows if worn else on
+                cur["feel"] = S.clean_feel(it.get("feel"))  # (what it does to her comes with the outfit)
+                if worn and not w.get("worn_at"):
+                    w["worn_at"] = now_iso()  # (on since before anyone noted the time: it counts from here)
                 need = (it.get("unlock") or {}).get("affinity")
                 # (an update never takes off what she has on: that one stays open)
                 at = (cur.get("unlock") or {}).get("at") or (now_iso() if worn and need else None)
@@ -1105,6 +1107,7 @@ class MateStore:
                                  (row["builtin"], now_iso()))
             self._db.execute("DELETE FROM mate_memories WHERE mate_id = ?", (mate_id,))
             self._db.execute("DELETE FROM mate_relation WHERE mate_id = ?", (mate_id,))
+            self._db.execute("DELETE FROM mate_state WHERE mate_id = ?", (mate_id,))
             self._db.execute("DELETE FROM mate_style_changes WHERE mate_id = ?", (mate_id,))
             self._db.execute("DELETE FROM mate_settings WHERE key = ?", (f"styleok:{mate_id}",))
             self._db.execute("DELETE FROM mate_settings WHERE key = ?", (f"memchg:{mate_id}",))
@@ -1516,6 +1519,33 @@ class MateStore:
             "ON CONFLICT(mate_id) DO UPDATE SET doc = excluded.doc, updated_at = excluded.updated_at",
             (mate_id, json.dumps(doc, ensure_ascii=False), now_iso()))
         self._open_reached_outfits(mate_id, round(float(doc.get("affinity") or 0)))
+
+    # ---- how she feels (app/mate/state.py) ----
+
+    def state_doc(self, mate_id: str) -> dict[str, Any]:
+        row = self._db.query_one("SELECT doc FROM mate_state WHERE mate_id = ?", (mate_id,))
+        return S.normalized(_loads(row["doc"], {}) if row is not None else None)
+
+    def save_state(self, mate_id: str, doc: dict[str, Any]) -> None:
+        self._db.execute(
+            "INSERT INTO mate_state (mate_id, doc, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(mate_id) DO UPDATE SET doc = excluded.doc, updated_at = excluded.updated_at",
+            (mate_id, json.dumps(doc, ensure_ascii=False), now_iso()))
+
+    @staticmethod
+    def _who(builtin: str | None, wardrobe: dict[str, Any], relation: dict[str, Any]) -> dict[str, Any]:
+        worn = wardrobe.get("worn") or DEFAULT_OUTFIT
+        item = next((it for it in wardrobe.get("items") or [] if it["id"] == worn), None)
+        outfit = {"id": worn, "name": item["name"], "feel": S.clean_feel(item.get("feel")), "since": wardrobe.get("worn_at")} if item else None
+        on = relation["enabled"]
+        return S.who(closeness=float(relation["affinity"]) / 100 if on else 0.33, sensitivity=relation["sensitivity"] if on else 1.0,
+                     builtin=builtin, away=on and relation["paused"], outfit=outfit)
+
+    def state_who(self, mate_id: str) -> dict[str, Any]:
+        row = self._db.query_one("SELECT builtin, outfits FROM mates WHERE id = ?", (mate_id,))
+        if row is None:
+            raise KeyError(f"mate not found: {mate_id}")
+        return self._who(row["builtin"], _loads(row["outfits"], {}), self.relation_doc(mate_id) or A.new())
 
     def relation_summary(self, mate_id: str) -> dict[str, Any]:
         doc = self.relation_doc(mate_id) or A.new()

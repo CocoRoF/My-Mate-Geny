@@ -12,11 +12,12 @@ import { useMateStore } from "../../stores/mateStore";
 import { fmtDate, fmtTime, relTime } from "../../i18n/format";
 import { useT, type MsgKey, type TFunction } from "../../i18n";
 import Icon from "../ui/Icon";
-import { MOOD_LABEL, STAGE_COLOR, STAGE_LABEL } from "./RelationBadge";
+import { STAGE_COLOR, STAGE_LABEL } from "./RelationBadge";
+import { StateCard, stateName, stateWhy } from "./StateBadge";
 import MemoryNotebook from "./MemoryNotebook";
 import RelationshipTab from "./settings/RelationshipTab";
 import { milestoneText, whyText } from "./settings/RelationshipTab";
-import { CHANGE_FILTERS, chartSummary, deltaText, filterChanges, groupByDay, localDay, MOOD_EMOJI, nextAnniversary, type ChangeFilter } from "../../mate/relationJournal";
+import { CHANGE_FILTERS, chartSummary, deltaText, filterChanges, groupByDay, localDay, nextAnniversary, STATE_EMOJI, type ChangeFilter } from "../../mate/relationJournal";
 
 export type RelationLink = "relation" | "memory";
 
@@ -146,6 +147,7 @@ export default function RelationPanel({ mate, onClose, initialTab = "relation" }
                     </div>
                   )}
                   <Hero j={j} mate={mate} />
+                  <StateCard mate={mate} />
                   <NextStage j={j} mate={mate} />
                 </>
               )}
@@ -232,11 +234,11 @@ function Hero({ j, mate }: { j: RelationJournal; mate: Mate }) {
             <Chip testId="mate-relation-panel-mood">
               {v.paused ? (
                 t("mate.relPaused")
-              ) : (
-                <>
-                  <span aria-hidden>{MOOD_EMOJI[v.mood.label]}</span> {t(MOOD_LABEL[v.mood.label])}
-                </>
-              )}
+              ) : mate.state ? (
+                <span title={stateWhy(t, mate.state.top[0]?.why)}>
+                  <span aria-hidden>{STATE_EMOJI[mate.state.label]}</span> {stateName(t, mate.state)}
+                </span>
+              ) : null}
             </Chip>
             <Chip testId="mate-relation-panel-days">
               <Icon name="heart" size={11} className="text-content-faint" />{" "}

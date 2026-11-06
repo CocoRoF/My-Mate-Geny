@@ -372,7 +372,7 @@ def test_an_edited_outfit_keeps_its_edits_when_the_bundle_moves_its_files(db, mo
 
 def test_the_real_bundle_is_named_and_locked_as_decided():
     [gray] = files.builtin_outfits("chaerin")
-    assert gray["id"] == "builtin-gray-band" and gray["name"] == "그레이 밴드" and gray["unlock"] == {"affinity": 60}
+    assert gray["id"] == "builtin-gray-band" and gray["name"] == "속옷" and gray["unlock"] == {"affinity": 60}
     rig = gray["avatar"]["rig"]
     assert len(rig["clips"]) == 15 and len(rig["stills"]) == 12
     urls = [rig["home"], *rig["stills"].values(), *(c["src"] for c in rig["clips"]), *(c["small"] for c in rig["clips"])]

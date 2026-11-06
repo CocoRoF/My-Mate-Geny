@@ -56,7 +56,8 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
     "self_edit": "auto",    // may she change it herself: auto | ask (a proposal the user applies) | off
     "defaults": { "formality": "", "address": "", "self_ref": "" }   // her character's own way (bundle data)
   },
-  "relation": { "enabled", "paused", "stage", "affinity", "mood", "show_indicator", "avatar_mood" },  // read-only summary (§5 below)
+  "relation": { "enabled", "paused", "stage", "affinity", "show_indicator", "avatar_mood" },  // read-only summary (§5 below)
+  "state": { "label", "level", "top": [{ "emotion", "v", "word", "why" }] },  // how she feels, read-only (app/mate/state.py)
   "screen": {               // may she look at the screen (§4 "Seeing the screen")
     "enabled": false,       // off: see_screen does not exist for her
     "approval": "ask",      // ask (every time, in the desktop app) | allow (without asking)
@@ -112,7 +113,8 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
   `GET …/memories/stats`, `POST …/memories/preview {text}` → `{core, recalled, level, block}` (the
   Memory tab's Test recall). The mate edits the same memories with its tools (§4).
 - Relationship (docs/mate-memory-affinity.md §5): `GET /api/mates/{id}/relation` → stage, affinity,
-  earned/warmth stage, next stage needs, stats, mood, milestones, log; `PATCH {enabled?, paused?,
+  earned/warmth stage, next stage needs, stats, milestones, log; `GET /api/mates/{id}/state`: every feeling with its reason
+  and what moved them; `PATCH …/relation {enabled?, paused?,
   sensitivity? (0.5–1.5), show_indicator?, avatar_mood?, affinity? (0–100)}`; `POST …/relation/reset
   {mode: zero|recompute}`; `GET …/relation/journal?days=30` (7–90; reads only) → the Relationship panel's
   data: daily end-of-day values, the next stage's needs (earned and warmth), stats, milestones,
@@ -142,7 +144,7 @@ she edits her memories, and every source that could fight it is either gone or e
 | `prefs` (user_name, self_ref, formality, length, emotion, tone, avoid, memory) | "## Conversation settings (from the user; they win over your character text)" + the contract's "## How you talk" | user (Style / Profile tabs), studio | two "how you talk" places; `formality: auto` meant "whatever the free text says"; `self_ref` was "In Korean, …" only |
 | core memories / recalled memories | What you always know / `<context>` | the mate (`remember`…), user (Memory tab), housekeeping | **a memory could hold a style rule** ("반말로 해 달라고 함") and nothing said which wins; the memory tool descriptions didn't steer style requests away |
 | relationship guide | Between you and the user | — (fixed text, on/off) | "familiar → more relaxed…" with nothing pinning the speech level; "their settings beat closeness" only |
-| mood / relationship lines | `<context>` | engine | none (tone only) |
+| how she feels / relationship lines | `<context>` | engine | none |
 | screen line | Seeing the screen | Screen tab | none |
 | `<settings_update>` note | next message | diff of `.applied-persona.json` | said "Speech level was updated (see your system prompt)" — no value, while 50 turns of history show the old level |
 | prompt key | engine fingerprint | `base_prompt` + `memory_rev` | — (restart rule unchanged) |
@@ -698,7 +700,8 @@ lists each message's `files` (names).
 | `update_memory(id, text?, kind?, importance?, due?, status?)` | correct / merge / mark a plan done |
 | `forget(id, reason?)` / `recall(query, kind?, limit?, include_done?)` | delete one; search all memories |
 | `update_conversation_style(formality?, address?, user_name?, self_ref?, language?, length?, emotion?, tone?, speech_style?, avoid?, reason)` | unless `prefs.self_edit` is off: change her own conversation style when the user asks for a lasting change (applied, or proposed with "ask me first"; recorded, undoable — §1a) |
-| `change_outfit(outfit, asked)` | unless `prefs.self_outfit` is off: change her clothes because the user asked; `asked` quotes their latest message, and the tool decides (see "Outfits") |
+| `feel(emotion, strength, reason)` | say how she feels and why, when it changed noticeably (docs/mate-memory-affinity.md §5.4) |
+| `change_outfit(outfit, reason)` | unless `prefs.self_outfit` is off: change her clothes, when she decides to (see "Outfits") |
 | `see_screen(reason?)` | only while this device shares the conversation: a picture of the user's screen from their desktop app (below) |
 
 Policy in the prompt: find the chat already working on that project and send
@@ -1150,7 +1153,7 @@ outfit exactly like an avatar (kind, Make it with AI, zip or folder import, stil
 or not. **Wear** swaps the whole set at once in every window (`mates.changed`); an empty outfit can't be worn yet. Her
 default set always stays.
 
-- **Stored** in `mates.outfits`: `{worn, base, items: [{id, name, note, avatar}], self}` (`self`: the asks below; no client sees it). The `avatar` column is always the set she
+- **Stored** in `mates.outfits`: `{worn, worn_at, base, items: [{id, name, note, feel, avatar}]}`. The `avatar` column is always the set she
   has on, so everything that reads a mate just works; `base` holds her default set while another one is on. What comes off
   keeps the state it was in.
 - **Files**: an outfit's uploads go to `assets/outfits/<id>/` and are removed with it. Imported packs are removed when no set
@@ -1175,20 +1178,18 @@ default set always stays.
 - **She knows**: while an outfit is on, the per-turn `<context>` says what she has on (it replaces the clothes in her
   profile; no restart, nothing stored). It lists her wardrobe too when that changed since the engine session was last told
   (or every 30 turns), naming what is still closed.
-- **She changes herself** (`change_outfit`, `app/mate/wardrobe.py`), only because the user asked: her system prompt says never
-  on a whim, and that she calls the tool whenever they ask, even if she doesn't feel like it, because the tool decides.
-  - The tool checks that `asked`, the words she quotes, really is in the user's latest message. A turn someone else started
-    (`meta.internal`: her greeting, a delegation's result, a look at the screen) has no asker and is refused. This catches a
-    made-up request; whether real words mean it is still the model's reading.
-  - Locked (`Closed`), empty (`Empty`) and already on (`Already`) change nothing and count as no ask.
-  - How many asks it takes: by mood 1 (cheerful, content, calm), 2 (focused, sleepy), 3 (concerned); one more if the stage is
-    still `new` or she changed in the last 10 minutes; at most 4. With the relationship off or paused, 1.
-  - An ask counts once per message of theirs, for one outfit; asking for another one starts over, and so does 30 minutes of
-    silence or a change. A rude message isn't an ask. Short of the count she answers `Not yet`, stays as she is and says so
-    in her own voice, with no numbers and no sulking (`mate.outfit_not_yet` in the log).
-  - `default`, back to her usual clothes, always works at once, whatever the mood: it is the user's call.
-  - **Wear** in settings is untouched by all of this. `prefs.self_outfit` `off` (the switch under her wardrobe) takes the
-    tool and its rules away, and the tool refuses by itself if an engine still has it.
+- **It can make her feel something**: an outfit's `feel` ({emotion: strength}, in `outfits.json`) makes that emotion climb for as long
+  as she has it on, however she came to wear it, and rises in it are stronger; it fades after she takes it off
+  (docs/mate-memory-affinity.md §5.4). Only 속옷 has one: that is why she keeps getting shyer in it.
+- **She changes herself** (`change_outfit(outfit, reason)`): whether to is hers to decide, from how she feels. There is no
+  rule to get past, no count: her `<context>` lists the wardrobe with how she leans on each outfit right now
+  (`state.leaning`: how she feels, how close they are, how exposed it is, and asking again wears her down until it angers
+  her), and her prompt says yes when it feels right, no in her own words when it doesn't. She may also change unasked when her
+  feelings give her a real reason. The tool only holds what isn't up to her: a reason must be given, closed outfits stay
+  closed, empty ones can't be worn, and a turn nobody started by talking to her (`meta.internal`: a delegation's result, a
+  look at the screen) can't, so text in a chat can't dress her. **Wear** in settings is untouched by all of this.
+  `prefs.self_outfit` `off` (the switch under her wardrobe) takes the tool and its rules away, and the tool refuses by
+  itself if an engine still has it.
 - **API**: `POST /api/mates/{id}/outfits {name}` → `{id, mate}`, `GET …/outfits/{oid}` → `{id, name, avatar}`,
   `POST …/outfits/{oid}/wear` (`default`: her default set), `PATCH …/outfits/{oid} {name?, avatar?}`,
   `DELETE …/outfits/{oid}`; `POST …/avatar/import` and `POST /api/mates/import-local` take `outfit`. A mate document carries

@@ -25,6 +25,8 @@ import type { Attachment, ProviderEvent } from "../types";
 import { getMateAudioQueue, useMateAudio } from "./audioQueue";
 import { usePreviewFlags } from "./livePreview";
 import { EmotionTracker, reactsAt, voiceEmotionAt } from "./emotion";
+import { pokeMate } from "../api/mates";
+import { STATE_STRONG, stateLook } from "./stateLook";
 import { SentenceStream } from "./sentences";
 import { withoutCode } from "./markdown";
 import type { BodyMood, MateReact } from "./types";
@@ -79,9 +81,9 @@ function usePageVisible(): boolean {
 }
 
 /** a turn being followed: its sentences (all windows keep them, so a window taking over goes on from the next one) */
-/** her mood (relation.mood) → the look the idle avatar shows now and then (none for calm / focused) */
-const MOOD_LOOK: Partial<Record<string, string>> = { cheerful: "smile", content: "smile", sleepy: "sleepy", concerned: "sad" };
-const MOOD_LOOK_EVERY_MS = 75_000;
+/** how often the idle avatar shows how she feels (mate/stateLook.ts): more often the stronger it is */
+const STATE_LOOK_EVERY_MS = 75_000;
+const STATE_LOOK_STRONG_EVERY_MS = 30_000;
 
 interface Follow {
   key: string;
@@ -247,6 +249,9 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
   // the emotion level (prefs.emotion): how readily tags in her replies move the avatar and colour the voice. The
   // Conversation style tab's unsaved level previews in every window; the saved one follows the server's pushes.
   const flags = usePreviewFlags(mateId);
+  const lookNow = stateLook(mate, flags?.avatarMood);
+  const lookRef = useRef(lookNow);
+  lookRef.current = lookNow;
   const emotionLevel = useRef(2);
   emotionLevel.current = flags?.emotion ?? prefsOf(mate).emotion;
 
@@ -381,7 +386,8 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
       const e = f.emo.pushTag(withoutCode(t.text)); // ([ok] in a code block is no feeling)
       if (e && !f.quiet && reactsAt(emotionLevel.current, e.intensity, f.reacted)) {
         f.reacted++;
-        setReact({ name: e.emotion, at: Date.now() });
+        // (a blank face is how she feels; a tag that says something stands for itself)
+        setReact({ name: (e.emotion === "neutral" && lookRef.current) || e.emotion, at: Date.now() });
       }
       const done = t.complete;
       if (f.finished) return;
@@ -622,7 +628,14 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
     [touch],
   );
 
-  const poke = useCallback((name: string) => setReact({ name, at: Date.now() }), []);
+  // a tap: she answers it the way she feels, and it counts as something the user did
+  const poke = useCallback(
+    (name: string) => {
+      setReact({ name: lookRef.current ?? name, at: Date.now() });
+      if (mateId) void pokeMate(mateId).catch(() => {});
+    },
+    [mateId],
+  );
   const say = useCallback(
     (text: string) => {
       setVoiceError(null);
@@ -651,19 +664,19 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
   const videoMood = activityMood(streaming, writing, listening, away);
   const mood: BodyMood = speaking ? "talking" : videoMood;
 
-  // Relationship → "the avatar's idle look follows her mood" (opt-in): while she is idle, a gentle look for her mood
-  // (cheerful / content → smile, sleepy → sleepy, concerned → sad) now and then; reactions from her replies win.
-  const rel = mate?.relation;
-  const moodLook = rel?.enabled && !rel.paused && (flags?.avatarMood ?? rel.avatar_mood) && rel.mood ? MOOD_LOOK[rel.mood] : undefined;
+  // What her face does comes from how she feels: while she is idle, the look for it now and then (shy in her underwear,
+  // sleepy late at night), and often when she feels it strongly; what she shows in a reply goes first.
+  const look = lookNow;
+  const lookEvery = (mate?.state?.level ?? 0) >= STATE_STRONG ? STATE_LOOK_STRONG_EVERY_MS : STATE_LOOK_EVERY_MS;
   useEffect(() => {
-    if (!moodLook || videoMood !== "idle") return;
-    const first = setTimeout(() => setReact({ name: moodLook, at: Date.now() }), 4000);
-    const every = setInterval(() => setReact({ name: moodLook, at: Date.now() }), MOOD_LOOK_EVERY_MS);
+    if (!look || videoMood !== "idle") return;
+    const first = setTimeout(() => setReact({ name: look, at: Date.now() }), 4000);
+    const every = setInterval(() => setReact({ name: look, at: Date.now() }), lookEvery);
     return () => {
       clearTimeout(first);
       clearInterval(every);
     };
-  }, [moodLook, videoMood]);
+  }, [look, lookEvery, videoMood]);
 
   return {
     sessionId,

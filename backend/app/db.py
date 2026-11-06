@@ -279,6 +279,13 @@ CREATE TABLE IF NOT EXISTS mate_relation (
     updated_at TEXT NOT NULL
 );
 
+-- How a mate feels right now, and why (app/mate/state.py): one JSON document per mate.
+CREATE TABLE IF NOT EXISTS mate_state (
+    mate_id    TEXT PRIMARY KEY,
+    doc        TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 -- Changes of a mate's conversation style made by the mate herself (update_conversation_style): applied or proposed,
 -- undone / applied / dismissed by the user (docs/mate.md "Prompt composition").
 CREATE TABLE IF NOT EXISTS mate_style_changes (

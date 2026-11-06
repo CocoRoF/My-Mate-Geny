@@ -90,5 +90,7 @@ export interface MateAvatarProps {
   /** separate activity-only mood for video bodies; no audio playback state */
   videoMood?: BodyMood;
   react?: MateReact;
+  /** how she feels, as a face to rest on (mate/stateLook.ts) */
+  look?: string;
   className?: string;
 }

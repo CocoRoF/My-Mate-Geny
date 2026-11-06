@@ -1,6 +1,6 @@
 """The relationship engine (app/mate/affinity.py, docs/mate-memory-affinity.md §5) under simulated time — grace
 days then accelerating decay with a cap and a floor, daily caps, lively days, streaks, warmth and rudeness
-(sadness never costs), pause, sensitivity, hysteresis, earned × warmth, mood — and the same engine for real time
+(sadness never costs), pause, sensitivity, hysteresis, earned × warmth — and the same engine for real time
 and for a recompute from history; then the service (seed from history, turn and memory hooks, the prompt guide
 and the per-turn lines without a restart) and the routes."""
 
@@ -107,8 +107,6 @@ def test_rudeness_costs_a_little_sadness_never():
     A.set_value(s, 50, day(0), TZ)
     talk(s, day(0, 13), "오늘 너무 힘들고 우울해…")
     assert "rude" not in whys(s) and s["affinity"] == 50
-    assert A.mood(s, day(0, 13, 30), TZ)["label"] == "concerned"
-    assert A.mood(s, day(0, 16), TZ)["label"] != "concerned"  # (two hours later)
 
 
 def test_pause_off_and_sensitivity():
@@ -153,17 +151,12 @@ def test_hysteresis_and_earned_times_warmth():
     assert any(m["key"] == "stage_familiar" for m in r["milestones"])
 
 
-def test_mood_baseline_circadian_and_results():
-    r = A.new()
-    talk(r, day(0, 14), "thanks!")
-    assert A.mood(r, day(0, 3), TZ)["label"] == "sleepy"
-    noon = A.mood(r, day(0, 14, 1), TZ)
-    assert noon["valence"] > A.BASELINE["new"] and noon["energy"] < A.CIRCADIAN[14]  # (just talked: a bit spent)
-    later = A.mood(r, day(1, 14), TZ)
-    assert later["valence"] == pytest.approx(A.BASELINE["new"], abs=0.01) and later["label"] == "focused"
-    A.mood_result(r, day(1, 14), ok=False)
-    assert A.mood(r, day(1, 14), TZ)["valence"] < A.BASELINE["new"]
-    assert set(A.MOODS) >= {A.mood(r, day(1, h), TZ)["label"] for h in range(24)}
+def test_the_avatar_follows_how_she_feels_unless_told_not_to():
+    assert A.new()["avatar_mood"] is True
+    assert A.normalized({"avatar_mood": False})["avatar_mood"] is True  # (from when it was off unless asked for)
+    assert A.normalized({"avatar_mood": True})["avatar_mood"] is True
+    assert A.normalized({"avatar_mood": False, "avatar_v2": True})["avatar_mood"] is False  # (off since: the user's)
+    assert "mood" not in A.normalized({"mood": {"valence": 0.2}})
 
 
 def _history():
@@ -195,9 +188,9 @@ def test_view_and_summary_shapes():
     r = A.replay(_history(), day(30), TZ)
     v = A.view(r, day(30), TZ)
     assert v["stats"]["turns"] == 57 and v["stats"]["grace_days"] == 3 and v["next"]["stage"] in A.STAGES
-    assert v["log"][0]["why"] == "recomputed" and v["mood"]["label"] in A.MOODS
+    assert v["log"][0]["why"] == "recomputed" and "mood" not in v
     s = A.summary(r, day(30), TZ)
-    assert set(s) == {"enabled", "paused", "stage", "affinity", "mood", "show_indicator", "avatar_mood"}
+    assert set(s) == {"enabled", "paused", "stage", "affinity", "show_indicator", "avatar_mood"}
     assert isinstance(s["affinity"], int)
 
 
@@ -241,7 +234,7 @@ def test_turns_and_memories_move_it_and_the_prompt_gets_lines_only_on_change(db)
     m = store.create(name="Rin", persona={"language": "ko"})
     req, prompt = _engine(mates, m["id"])
     assert "## Between you and the user" in prompt and "never guilt-trip" in prompt.lower()
-    assert "Relationship: new — day" not in req.preamble and "Your state: " in req.preamble  # (no turn yet)
+    assert "Relationship: new — day" not in req.preamble and "How you feel right now: " in req.preamble  # (no turn yet)
     mates._relation_turn(m["id"], {"input": "고마워!", "text": "[joy] 천만에요", "meta": None})
     mates._relation_turn(m["id"], {"input": "<delegation_result>", "text": "", "meta": {
         "internal": True, "kind": "delegation_result", "delegations": [{"status": "ok"}]}})
@@ -252,7 +245,7 @@ def test_turns_and_memories_move_it_and_the_prompt_gets_lines_only_on_change(db)
     req2, _ = _engine(mates, m["id"], cli="c1")
     assert "Relationship: new — day 1 together." in req2.preamble
     req3, _ = _engine(mates, m["id"], cli="c1")
-    assert "Relationship:" not in req3.preamble and "Your state:" not in req3.preamble  # told already
+    assert "Relationship:" not in req3.preamble and "How you feel" not in req3.preamble  # told already
     assert req3.prompt_key == req2.prompt_key  # affinity moves never restart the engine
     req4, _ = _engine(mates, m["id"])  # a fresh context: told again
     assert "Relationship:" in req4.preamble

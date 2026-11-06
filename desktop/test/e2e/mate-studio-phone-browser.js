@@ -174,7 +174,7 @@ const NAV_BAR = 48;
     await set.click();
     await page.waitForSelector('[data-testid="mate-info"]');
     const word = await page.$eval('[data-testid="mate-info"]', (el) => { const r = el.getBoundingClientRect(); return { text: el.textContent, left: r.left, right: r.right, top: r.top, bottom: r.bottom, vw: innerWidth, vh: innerHeight }; });
-    assert(word.text.includes("그레이 밴드"), word.text);
+    assert(word.text.includes("속옷"), word.text);
     assert(word.left >= 0 && word.right <= word.vw && word.top >= 36 && word.bottom <= word.vh - NAV_BAR, JSON.stringify(word));
     await page.screenshot({ path: path.join(SHOTS, "unlock-by-hand-phone.png") });
     const opened = (await (await ctx.request.get(`${SERVER}/api/mates/${mate.id}`)).json()).outfits.items.find((c) => c.id === "builtin-gray-band");

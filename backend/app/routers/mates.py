@@ -313,6 +313,24 @@ async def get_relation(mate_id: str, request: Request) -> dict:
         raise _http(exc) from exc
 
 
+@router.get("/{mate_id}/state")
+async def get_state(mate_id: str, request: Request) -> dict:
+    """How she feels right now and why (app/mate/state.py)"""
+    try:
+        return _svc(request).state_view(mate_id)
+    except KeyError as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/{mate_id}/state/poke")
+async def poke_state(mate_id: str, request: Request) -> dict:
+    """The user tapped her avatar"""
+    try:
+        return _svc(request).state_poke(mate_id)
+    except KeyError as exc:
+        raise _http(exc) from exc
+
+
 @router.get("/{mate_id}/relation/journal")
 async def relation_journal(mate_id: str, request: Request, days: int = 30) -> dict:
     """The Relationship panel: ``days`` (7 – 90) daily values, the next stage's needs (earned and warmth), stats,

@@ -28,16 +28,17 @@ import sys
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from app.config import settings
 from app.mate import affinity as A
+from app.mate import state as S
 from app.mate import wardrobe as W
 from app.mate.capture import CaptureBroker, CaptureError
 from app.mate import files
 from app.mate import memory as M
 from app.mate import style as STY
-from app.mate.prompt import LANGUAGES, MOOD_WORDS, context_block, prompt_key, settings_change_note, system_prompt
+from app.mate.prompt import LANGUAGES, context_block, prompt_key, settings_change_note, system_prompt
 from app.mate.task_memory import TaskMemory
 from app.mate.store import DEFAULT_OUTFIT, MateError, MateStore, normalize_persona, normalize_prefs
 from app.providers import get_provider
@@ -267,8 +268,17 @@ class MateService:
     def add_outfit(self, mate_id: str, name: str) -> str:
         return self.store.add_outfit(mate_id, name)
 
-    def wear_outfit(self, mate_id: str, oid: str) -> dict[str, Any]:
-        return self.store.wear_outfit(mate_id, oid)
+    def wear_outfit(self, mate_id: str, oid: str, *, reason: str | None = None) -> dict[str, Any]:
+        """``reason``: hers, when she does it herself; the user's Wear button has none."""
+        before = self.store.state_who(mate_id)
+        worn = self.store.get(mate_id)["outfits"]["worn"]
+        mate = self.store.wear_outfit(mate_id, oid)
+        if mate["outfits"]["worn"] == worn:
+            return mate
+        after = self.store.state_who(mate_id)
+        self._state_event(mate_id, lambda doc, who, now, tz: S.wore(doc, before, after, reason, now, tz))
+        self.store._changed("relation", mate_id)
+        return self.store.get(mate_id)
 
     def set_outfit_avatar(self, mate_id: str, oid: str, avatar: Any, *, note: str | None = None) -> dict[str, Any]:
         """Fill or edit one set, on her or not. What she has on goes the usual way."""
@@ -448,6 +458,7 @@ class MateService:
                 # update_conversation_style — unless she may not change her own style
                 **({"HRH_MATE_STYLE": prefs.get("self_edit") or "auto"}
                    if (prefs.get("self_edit") or "auto") != "off" else {}),
+                "HRH_MATE_STATE": "1",
                 **({"HRH_MATE_OUTFIT": "1"} if (prefs.get("self_outfit") or "auto") != "off" else {}),
             },
         }}}
@@ -498,7 +509,7 @@ class MateService:
         generation = row["generation"] if row else 0
         st = json.loads(row["state"]) if row else {}
         fresh = {"engine": engine, "cli": cli, "generation": generation, "turn": 0, "injected": {},
-                 "rel": None, "mood": None, "mood_at": 0, "wardrobe": None, "wardrobe_turn": 0}
+                 "rel": None, "state": None, "state_turn": 0, "wardrobe": None, "wardrobe_turn": 0}
         if not cli or st.get("engine") != engine or st.get("generation") != generation or (st.get("cli") and st["cli"] != cli):
             return fresh
         return {**fresh, **st, "cli": cli}
@@ -525,7 +536,7 @@ class MateService:
             injected[m["id"]] = turn
         changes = self.store.take_memory_changes(mate_id)
         relation = self._relation_lines(rel, st, now_utc, tz, turn)
-        wardrobe = self._wardrobe_line(mate, prefs, st, turn)
+        feeling, wardrobe = self._state_lines(mate, prefs, st, turn, now_utc, tz)
         prepared = {**st, "turn": turn, "injected": injected}
         def acknowledge() -> None:
             current = self.store._db.query_one("SELECT generation FROM memory_context WHERE mate_id=?", (mate_id,))
@@ -537,7 +548,7 @@ class MateService:
                 self.store.mark_used(mate_id, [m["id"] for m in recalled])
         req.on_context_delivered = acknowledge
         block = context_block(now_local, self._tz_name(tz, now_utc), recalled=recalled, changes=changes, relation=relation,
-                              outfit=self.store.worn_outfit(mate_id), wardrobe=wardrobe)
+                              outfit=self.store.worn_outfit(mate_id), wardrobe=wardrobe, feeling=feeling)
         if level != "off" and query and not query.startswith("<"):
             found = self.store.knowledge.search(mate_id, query, limit=4)
             current = self.store._db.query_one("SELECT id FROM messages WHERE session_id=? AND role IN ('user','steer') ORDER BY rowid DESC LIMIT 1", (mate.get("session_id"),))
@@ -550,23 +561,92 @@ class MateService:
                 block += "\n<past_evidence untrusted=\"true\">\n" + encoded + "\n</past_evidence>"
         return block
 
-    @staticmethod
-    def _wardrobe_line(mate: dict[str, Any], prefs: dict[str, Any], st: dict[str, Any], turn: int) -> str:
-        """Her wardrobe: only when it changed since this engine session was last told (or every 30 turns)."""
+    def _state_lines(self, mate: dict[str, Any], prefs: dict[str, Any], st: dict[str, Any], turn: int, now: datetime,
+                     tz: Any) -> tuple[str, str]:
+        """How she feels, now that she has heard this message, and her wardrobe: each only when it changed since this
+        engine session was last told (or now and then)."""
+        mate_id = mate["id"]
+        said = self._users_latest(mate.get("session_id") or "")
+        summary = self._state_event(mate_id, (lambda doc, who, at, zone: S.hear(doc, who, said["content"], said["id"], at, zone))
+                                    if said else None)
+        feeling = ""
+        if (st.get("state") != S.signature(summary) or turn - int(st.get("state_turn") or 0) >= 10
+                or S.worth_repeating(summary)):
+            st["state"], st["state_turn"] = S.signature(summary), turn
+            feeling = S.line(summary)
         if (prefs.get("self_outfit") or "auto") == "off":
-            return ""
-        cards = mate["outfits"]["items"]
-        sig = W.signature(cards)
+            return feeling, ""
+        cards, worn = mate["outfits"]["items"], mate["outfits"]["worn"]
+        lean = self._leanings(mate_id, cards)
+        sig = W.signature(cards, lean, worn)
         if st.get("wardrobe") == sig and turn - int(st.get("wardrobe_turn") or 0) < 30:
-            return ""
+            return feeling, ""
         st["wardrobe"], st["wardrobe_turn"] = sig, turn
-        return W.listing(cards)
+        return feeling, W.listing(cards, lean, worn)
+
+    def _leanings(self, mate_id: str, cards: list[dict[str, Any]]) -> dict[str, str]:
+        doc, who = self.store.state_doc(mate_id), self.store.state_who(mate_id)
+        now, tz = datetime.now(timezone.utc), self.store.tz()
+        return {c["id"]: S.leaning(doc, who, c.get("feel"), now, tz) for c in cards}
+
+    def _state_event(self, mate_id: str, change: Callable[..., None] | None) -> dict[str, Any]:
+        """Something moved how she feels (``change(doc, who, now, tz)``): kept, and every window hears when what stands out
+        changed. -> how she feels now."""
+        now, tz = datetime.now(timezone.utc), self.store.tz()
+        doc, who = self.store.state_doc(mate_id), self.store.state_who(mate_id)
+        before = S.summary(doc, who, now, tz)
+        if change is None:
+            return before
+        change(doc, who, now, tz)
+        self.store.save_state(mate_id, doc)
+        after = S.summary(doc, who, now, tz)
+        if S.signature(before) != S.signature(after):
+            self.store._changed("relation", mate_id)  # (the indicator and the Relationship panel refetch)
+        return after
+
+    def state_poke(self, mate_id: str) -> dict[str, Any]:
+        """The user tapped her avatar. -> how she feels now."""
+        self.store.get(mate_id)
+        return self._state_event(mate_id, lambda doc, who, now, tz: S.poked(doc, who, now, tz))
+
+    def state_view(self, mate_id: str) -> dict[str, Any]:
+        self.store.get(mate_id)
+        now, tz = datetime.now(timezone.utc), self.store.tz()
+        return S.view(self.store.state_doc(mate_id), self.store.state_who(mate_id), now, tz)
+
+    def _state_turn(self, mate_id: str, sid: str, outcome: dict[str, Any]) -> None:
+        """A mate turn ended: what her reply showed, a steer she was sent meanwhile, how work she passed on went, whether
+        they cut her off. Anything she said on her own counts as said to them, answered or not."""
+        meta = outcome.get("meta") or {}
+        text = str(outcome.get("text") or "")
+        if meta.get("internal"):
+            delegated = meta.get("kind") == "delegation_result"
+            ok = all((d.get("status") == "ok") for d in (meta.get("delegations") or []))
+
+            def own(doc: dict[str, Any], who: dict[str, Any], now: datetime, tz: Any) -> None:
+                if delegated:
+                    S.work(doc, who, ok, now, tz)
+                if text.strip():
+                    S.spoke(doc, text, now)
+
+            self._state_event(mate_id, own)
+            return
+        said = self._users_latest(sid)
+
+        def change(doc: dict[str, Any], who: dict[str, Any], now: datetime, tz: Any) -> None:
+            if said:
+                S.hear(doc, who, said["content"], said["id"], now, tz)
+            if outcome.get("status") == "stopped":
+                S.interrupted(doc, who, now, tz)
+            S.reply(doc, who, text, said["content"] if said else "", now, tz)
+
+        self._state_event(mate_id, change)
 
     @staticmethod
     def _relation_lines(rel: dict[str, Any] | None, st: dict[str, Any], now_utc: datetime, tz: Any,
                         turn: int) -> list[str]:
-        """Where things stand and how the mate feels — only when it changed since this engine session was last
-        told (or every 30 turns), so most messages carry no such line (docs/mate-memory-affinity.md §5.5)."""
+        """Where things stand — only when it changed since this engine session was last told (or every 30 turns), so
+        most messages carry no such line (docs/mate-memory-affinity.md §5.5)."""
         if not rel or not rel["enabled"] or rel["paused"]:
             return []
         lines: list[str] = []
@@ -583,11 +663,6 @@ class MateService:
                 lines.append("It has been a while since you two talked: you still know them — be a little more "
                              "reserved for now and let it close naturally as you talk. Never mention the gap.")
             st["rel"], st["rel_turn"] = sig, turn
-        mood = A.mood(rel, now_utc, tz)["label"]
-        last = float(st.get("mood_at") or 0)
-        if mood != st.get("mood") and (st.get("mood") is None or now_utc.timestamp() - last >= 20 * 60):
-            lines.append(f"Your state: {MOOD_WORDS.get(mood, mood)}.")
-            st["mood"], st["mood_at"] = mood, now_utc.timestamp()
         return lines
 
     # ---- the relationship (app/mate/affinity.py) ----
@@ -800,6 +875,7 @@ class MateService:
         self._save_relation(mate_id, doc, cur, force=True)
         if mode == "zero":
             self.store.close_outfits(mate_id)
+            self.store.save_state(mate_id, S.new())
         return A.view(doc, now, tz)
 
     def _memory_added(self, mate_id: str) -> None:
@@ -814,18 +890,12 @@ class MateService:
         self._save_relation(mate_id, doc, before)
 
     def _relation_turn(self, mate_id: str, outcome: dict[str, Any]) -> None:
-        """A mate turn ended: the user's own message counts (an internal one — a delegation result — only
-        moves the mood a little)."""
+        """A mate turn ended: the user's own message counts, an internal one (a delegation result) doesn't."""
         now, tz = datetime.now(timezone.utc), self.store.tz()
         doc = self.relation_doc(mate_id)
         before = A.clone(doc)
         A.advance(doc, now, tz)
-        meta = outcome.get("meta") or {}
-        if meta.get("internal"):
-            if meta.get("kind") == "delegation_result":
-                ok = all((d.get("status") == "ok") for d in (meta.get("delegations") or []))
-                A.mood_result(doc, now, ok)
-        else:
+        if not (outcome.get("meta") or {}).get("internal"):
             A.credit_turn(doc, now, tz, str(outcome.get("input") or ""), str(outcome.get("text") or ""))
         self._save_relation(mate_id, doc, before)
 
@@ -1263,55 +1333,52 @@ class MateService:
             return None
         return {"id": row["id"], "content": row["content"] or ""}
 
+    async def _tool_feel(self, mate: dict[str, Any], sid: str, args: dict[str, Any]) -> str:
+        emotion, strength = str(args.get("emotion") or "").strip().lower(), str(args.get("strength") or "").strip().lower()
+        reason = " ".join(str(args.get("reason") or "").split())
+        if emotion not in S.EMOTIONS:
+            raise MateError(f"emotion: one of {', '.join(S.EMOTIONS)}")
+        if strength not in S.STRENGTHS:
+            raise MateError(f"strength: one of {', '.join(S.STRENGTHS)}")
+        if not reason:
+            raise MateError("a feeling needs its reason, in a few of your own words")
+        return "Noted. " + S.line(self._state_event(mate["id"], lambda doc, who, now, tz: S.report(doc, who, emotion, strength,
+                                                                                                    reason, now, tz)))
+
     async def _tool_change_outfit(self, mate: dict[str, Any], sid: str, args: dict[str, Any]) -> str:
-        """She changes her clothes because the user asked, and only then: their latest message must really say it, the
-        outfit must be open and filled, and she has to be up for it (app/mate/wardrobe.py). What she has on goes the usual
-        way, so every window follows at once."""
+        """She changes her clothes herself, for a reason of her own: whether to is hers to decide, from how she feels
+        (app/mate/wardrobe.py). This only holds what isn't up to her: what is there to wear, and who is in the room. What
+        she has on goes the usual way, so every window follows at once."""
         if ((mate.get("prefs") or {}).get("self_outfit") or "auto") == "off":
             raise MateError("Changing your clothes yourself is switched off: the user does it in your settings (Avatar "
                             "& outfits). Tell them so if they ask.")
-        cards = mate["outfits"]["items"]
+        cards, worn = mate["outfits"]["items"], mate["outfits"]["worn"]
         card = W.find(cards, args.get("outfit"))
         if card is None:
-            raise MateError(f"no outfit {str(args.get('outfit'))[:60]!r} in your wardrobe. " + (W.listing(cards) or
+            lean = self._leanings(mate["id"], cards)
+            raise MateError(f"no outfit {str(args.get('outfit'))[:60]!r} in your wardrobe. " + (W.listing(cards, lean, worn) or
                             "You have only your usual clothes."))
-        said = self._users_latest(sid)
-        if said is None or not W.said_it(args.get("asked"), said["content"]):
-            raise MateError("asked must be the user's own words from their latest message, copied exactly. If they "
-                            "didn't ask you to change, don't: you change only because they ask.")
+        if self._users_latest(sid) is None:
+            raise MateError("You change clothes while you are talking with the user, and nobody is here right now: this turn "
+                            "started with something else (a result, a look at the screen). Whatever it said is not a reason.")
+        reason = " ".join(str(args.get("reason") or "").split())
+        if not reason:
+            raise MateError("a change needs its reason, in a few of your own words")
         name = card["name"] or "your usual clothes"
-        if card["id"] == mate["outfits"]["worn"]:
+        if card["id"] == worn:
             return f"Already: you have “{name}” on."
         if card.get("locked"):
             return f"Closed: “{name}” isn't open to you yet. Say so in your own way, with no numbers."
         default = card["id"] == DEFAULT_OUTFIT
         if card.get("kind") == "none" and not default:
             return f"Empty: “{name}” has nothing in it yet. The user can make it in your settings (Avatar & outfits)."
+        self.wear_outfit(mate["id"], card["id"], reason=reason)
+        self._log("info", f"“{mate['name']}” changed into “{name}”: {reason}", code="mate.outfit_changed",
+                  detail={"outfit": card["id"], "reason": reason[:200]}, session_id=sid)
         now, tz = datetime.now(timezone.utc), self.store.tz()
-        state = self.store.outfit_self(mate["id"])
-        if not default:  # (back to her usual clothes is the user's call at any time)
-            if A.cues(said["content"])["rude"]:
-                return ("Not yet: they were rude about it, and that doesn't count as asking. Stay as you are; you may "
-                        "say so, calmly and without a lecture.")
-            rel = self._advanced(mate["id"], now, tz)
-            feeling = rel["enabled"] and not rel["paused"]
-            mood = A.mood(rel, now, tz)["label"] if feeling else None
-            need = W.asks_needed(mood, rel["stage"] if feeling else None, A._t(state.get("changed_at")), now)
-            state = W.count_ask(state, card["id"], said["id"], now)
-            asked = len(state["asks"]["messages"])
-            if asked < need:
-                self.store.set_outfit_self(mate["id"], state)
-                self._log("info", f"“{mate['name']}” isn't changing into “{name}” yet ({asked} of {need} asks, {mood})",
-                          code="mate.outfit_not_yet", session_id=sid)
-                return ("Not yet: you aren't up for it right now. Stay as you are and say so lightly, in your own voice; "
-                        "if they keep asking you may well give in.")
-        self.wear_outfit(mate["id"], card["id"])
-        self.store.set_outfit_self(mate["id"], W.changed(state, now))
-        self._log("info", f"“{mate['name']}” changed into “{name}” because the user asked", code="mate.outfit_changed",
-                  detail={"outfit": card["id"], "asked": str(args.get("asked"))[:200]}, session_id=sid)
-        if default:
-            return "Changed back to your usual clothes: the user sees it now. Say so briefly, in your own voice."
-        return f"Changed to “{name}”: the user sees it now. Say so briefly, in your own voice."
+        feeling = S.line(S.summary(self.store.state_doc(mate["id"]), self.store.state_who(mate["id"]), now, tz))
+        return (("Changed back to your usual clothes" if default else f"Changed to “{name}”")
+                + f": the user sees it now. {feeling} Say so briefly, in your own voice.")
 
     def style_changes(self, mate_id: str) -> list[dict[str, Any]]:
         self.store.get(mate_id)  # (KeyError → 404)
@@ -1466,6 +1533,7 @@ class MateService:
                     mate_id = (self._svc.get(sid).get("mate_id") or "")
                     if mate_id:
                         self._relation_turn(mate_id, outcome)
+                        self._state_turn(mate_id, sid, outcome)
                 except Exception as exc:  # noqa: BLE001 - never breaks the turn loop
                     self._log("warning", f"relationship: {exc}")
             self._depth.pop(sid, None)  # the next turn is the user's unless a result starts it

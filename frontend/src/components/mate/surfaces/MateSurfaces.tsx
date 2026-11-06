@@ -29,6 +29,7 @@ import MateComposer from "../MateComposer";
 import MateMessages from "../MateMessages";
 import { MateThumb, moodLabel, useFadingCaption } from "../MateStage";
 import RelationBadge from "../RelationBadge";
+import StateBadge from "../StateBadge";
 import { useT } from "../../../i18n";
 
 const RelationPanel = lazy(() => import("../RelationPanel"));
@@ -478,6 +479,7 @@ function ChatWindow() {
           <div className="flex min-w-0 items-center gap-1">
             <span className="truncate text-[13.5px] font-semibold text-content">{mate.name}</span>
             <RelationBadge mate={mate} compact onClick={() => setRelOpen((v) => !v)} active={relOpen} />
+            <StateBadge mate={mate} compact onClick={() => setRelOpen((v) => !v)} />
           </div>
           <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-content-faint" data-testid="mate-chat-status">
             <span

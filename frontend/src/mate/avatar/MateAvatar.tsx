@@ -12,6 +12,8 @@
 import { lazy, memo, Suspense, useState, useSyncExternalStore } from "react";
 import { useLiveAvatar } from "../livePreview";
 import type { Avatar, BodyMood, MateAvatarProps } from "../types";
+import type { MateState } from "../../api/mates";
+import { restingLook } from "../stateLook";
 import { StackedPlayer } from "./player";
 import { reducedMotion } from "./shared";
 import VideoBody from "./VideoBody";
@@ -48,6 +50,7 @@ export const MateAvatar = memo(function MateAvatar({
   mood = "idle",
   videoMood,
   react = null,
+  look,
   className,
   live2dCoreUrl,
   onTap,
@@ -68,6 +71,7 @@ export const MateAvatar = memo(function MateAvatar({
             key={`l|${avatar.live2d.model}`}
             live2d={avatar.live2d}
             mood={mood}
+            look={look}
             react={react}
             name={name}
             size={size}
@@ -109,7 +113,7 @@ export const MateAvatar = memo(function MateAvatar({
             onFail={() => setVideoFailed(true)}
           />
         ) : home ? (
-          <PhotoBody key={`p|${home}`} stills={rig.stills} emotionStills={rig.emotion_stills} home={home} mood={mood} react={react} name={name} />
+          <PhotoBody key={`p|${home}`} stills={rig.stills} emotionStills={rig.emotion_stills} home={home} mood={mood} react={react} look={look} name={name} />
         ) : (
           <Initial name={name} />
         )}
@@ -146,9 +150,9 @@ function Initial({ name }: { name: string }) {
 export function LiveMateAvatar({
   mate,
   ...rest
-}: Omit<MateAvatarProps, "avatar" | "name"> & MateAvatarExtraProps & { videoMood: BodyMood; mate: { id: string; name: string; avatar: Avatar } }) {
+}: Omit<MateAvatarProps, "avatar" | "name"> & MateAvatarExtraProps & { videoMood: BodyMood; mate: { id: string; name: string; avatar: Avatar; state?: MateState; relation?: { avatar_mood?: boolean } } }) {
   const avatar = useLiveAvatar(mate) ?? mate.avatar;
-  return <MateAvatar avatar={avatar} name={mate.name} {...rest} />;
+  return <MateAvatar avatar={avatar} name={mate.name} look={restingLook(mate)} {...rest} />;
 }
 
 export default MateAvatar;

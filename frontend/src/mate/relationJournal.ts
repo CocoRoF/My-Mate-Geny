@@ -2,19 +2,22 @@
  * The Relationship panel's pure parts (components/mate/RelationPanel.tsx): the change filters, the journal grouped by
  * day, the chart's summary (its text alternative), the next anniversary. Tested in test/relation-journal.test.ts.
  */
-import type { MoodLabel, RelationChange, RelationJournal } from "../api/mates";
+import type { RelationChange, RelationJournal, StateLabel } from "../api/mates";
 
 export type ChangeFilter = "all" | "gain" | "loss" | "stage" | "manual";
 export const CHANGE_FILTERS: ChangeFilter[] = ["all", "gain", "loss", "stage", "manual"];
 
-/** a small picture for her mood, next to its word */
-export const MOOD_EMOJI: Record<MoodLabel, string> = {
-  cheerful: "😄",
-  content: "😊",
-  calm: "😌",
-  focused: "🧐",
+/** a small picture for how she feels, next to its word */
+export const STATE_EMOJI: Record<StateLabel, string> = {
+  happy: "😊",
+  excited: "🤩",
+  shy: "😳",
+  angry: "😠",
+  sad: "😢",
+  lonely: "🥺",
+  worried: "😟",
   sleepy: "😴",
-  concerned: "😟",
+  calm: "😌",
 };
 
 export function filterChanges(changes: RelationChange[], f: ChangeFilter): RelationChange[] {

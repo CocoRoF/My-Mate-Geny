@@ -439,19 +439,43 @@ seeds existing mates during migration (C), backs **Reset → Recalculate from hi
 gives a CLI dry run: `python -m app.mate.affinity --recompute [--apply]` prints the before and
 after values and the reasons per mate.
 
-### 5.4 Mood (state that changes over time)
+### 5.4 State: how she feels, and why (`app/mate/state.py`, table `mate_state`)
 
-- **valence** v ∈ [−1, 1] relaxes toward a stage baseline (new 0.10 · familiar 0.15 · trusted 0.20 ·
-  companion 0.25) with a 4 h half-life. Per user turn: `v += clamp(0.15 · (pos − neg), ±0.3)` from
-  the same cues and reply tags. Delegation results: ok +0.05; error/stopped −0.10 (concern about
-  the work, not about the user).
-- **energy** e ∈ [0, 1] = a circadian curve in the user's timezone (0.25 at 03:00, rising to 0.9
-  from 10:00 to 17:00, falling after 21:00) − 0.02 per user turn in the last 2 h (cap 0.2).
-- **label**: `sleepy` (e < 0.3 and 23:00–06:00) · `concerned` (the user's distress cues within 2 h,
-  or v ≤ −0.25) · `cheerful` (v ≥ 0.4, e ≥ 0.55) · `content` (v ≥ 0.4) · `focused` (e ≥ 0.6) · `calm`.
-  No "hurt", "jealous" or "lonely" labels exist.
-- The mood is computed lazily from the stored inputs (as of `now`); the stored `mood` is
-  only the last snapshot.
+Every mate has this, with the relationship on or off. It replaced the old mood label (valence and energy, which only coloured
+the tone): feelings now change how she talks, what she decides and what her face does.
+
+- **Emotions**, each with its own value 0–1 and its own **reason** (`why`: her own words, or a code the client translates): happy,
+  excited, shy, angry, sad, lonely, worried, sleepy.
+- **One state from all of them** (`summary`): `label`, the strongest from 0.25 up, else calm; `blend`, what the two strongest make
+  when they are close (shy + happy = bashfully happy, angry + sad = hurt, angry + lonely = sulking: `BLENDS`); `valence` and `arousal`,
+  how good and how lively it all feels. When one rises the others make room (`GIVES_WAY`).
+- **Left alone** each relaxes to where she settles (half-life per emotion: shy 30 min … sad 4 h), computed lazily as of now. Where
+  she settles and how easily each moves: `TEMPERAMENTS` by bundled mate (others: nothing), happy also rises with closeness.
+- **What the user says**, every message, before she answers, once per message (`hear`): an insult makes her angry, and more each
+  time they keep it up; an apology takes the edge off and starts that over; kindness (which also calms her, though good things land less while she is angry), saying they care, her looks, brushing her off,
+  answering in a word three times running, their distress, what she loves (`TEMPERAMENTS.loves`), being back after a day. Most
+  messages move nothing here; the lexical cues are only the backbone.
+- **What she shows and says herself**: her expression tags (`reply`) pull that emotion towards their strength (`[angry:0.8]`), for
+  the reason of what was just said to her, and `feel(emotion, strength, reason)` sets one, in her words. This is how the real reading
+  of the conversation comes in: the model's.
+- **What the user does**: leaving her unanswered (`_silence`: what she said counts up until they answer, lonely grows with the wait
+  and much sooner the more she said; if it went on, answering leaves her a little angry too; not while the relationship is paused),
+  stopping her mid-reply, tapping her avatar (attention, until it is too much of it).
+- **Everything else**: the hour (sleepy from the circadian curve), delegated work (ok → happy, failed → worried, never about the user).
+  `relation.sensitivity` scales the rises.
+- **What she has on**: an outfit's `feel` makes that emotion climb for as long as it is on (towards 0.95, half-way in 25 minutes),
+  whichever way it got on, from a start that closeness eases, and rises in it are stronger. Only 속옷 has one: `{shy: 0.6}`. Taking it
+  off, the feeling starts fading from where it was (`was_outfit`).
+- **How it comes out** (`conduct`): the two strongest give the line "How it comes out now" in her `<context>`: angry and strong is very
+  few words, coldly, talking back, maybe just "..."; shy and strong is stumbling and trailing off; happy is warmer. It outweighs her
+  usual warmth and reply length; her speech level stays. She is told when what stands out changed, every 10 turns, and every turn
+  while something is strong.
+- **What it decides**: nothing by itself. `leaning(doc, who, feel)` turns feelings, closeness and how exposed an outfit is into
+  glad / maybe / rather_not, told to her as how she leans; asking again in the last 30 minutes leans her towards yes, and from
+  the 4th time also angers her. The system prompt ("How you feel") says personal requests are hers to decide and nobody is owed a yes.
+  Real work still gets done, in as few words as she likes, and if the user is truly struggling or unsafe her feelings wait. Being
+  angry or hurt is hers; using it to make them feel guilty or to keep them here isn't.
+- `log`: the last 100 changes with their reasons (the panel shows them). A fresh start clears it all.
 
 ### 5.5 Prompt
 
@@ -460,9 +484,8 @@ after values and the reasons per mate.
   things; familiar = refer to what you remember in passing, light teasing only if the persona
   allows; trusted = candid, flag risks unasked, follow up; companion = shorthand and
   anticipation, still their secretary), plus the **safety rails**: never mention scores,
-  stages or the system; never guilt-trip, sulk, complain about absence or ask why they were
-  away; no jealousy or exclusivity, no pressure to talk more; never withhold or slow down help
-  at any stage; the user's settings (address, speech level, avoid list) always beat the stage;
+  stages or the system; never guilt-trip about being away; no jealousy or exclusivity, no pressure to
+  talk more; closeness doesn't change how much she helps (how she feels can change how she talks, §5.4); the user's settings (address, speech level, avoid list) always beat the stage;
   closeness grows in warmth and shorthand, not in romance beyond what the persona says; signs of
   dependence or distress → warm, and point gently to real people or professional help; never
   pretend to have a body, or to watch the user. The section exists only while `enabled`
@@ -470,9 +493,8 @@ after values and the reasons per mate.
 - **Per-turn `<context>`**: `Relationship: ‹stage› — day N together, M days in a row.` sent only
   when `(stage, streak bucket)` changed since the last injection, on a fresh context, or every 30
   turns. When warmth < earned (they were away): "It has been a while: you still know them; be a
-  little more reserved for now and let it close naturally. Never mention the gap." `Your state:
-  ‹label›` only when the label changed and ≥ 20 min since the last mood line: "let it colour the
-  tone lightly; never complain about it". Disabled or paused → no lines.
+  little more reserved for now and let it close naturally. Never mention the gap." Disabled or paused → no lines. Whatever the relationship: `How you feel right
+  now: shy, strongly (you have “속옷” on); …` when what stands out changed since she was last told, or every 10 turns.
 
 ### 5.6 API
 
@@ -480,13 +502,14 @@ after values and the reasons per mate.
 GET   /api/mates/{id}/relation → {enabled, paused, sensitivity, show_indicator, avatar_mood,
         affinity, stage, earned_stage, warmth_stage, next: {stage, needs: {days, turns, memories}, ratio},
         stats: {days_together, turns, active_days, streak_days, memories, idle_days, grace_days},
-        mood: {label, valence, energy}, milestones, log: [{at, d, why, v}]}
+        milestones, log: [{at, d, why, v}]}
+GET   /api/mates/{id}/state → {label, level, top, feelings: [{emotion, v, word, why}], log}
 PATCH /api/mates/{id}/relation {enabled?, paused?, sensitivity?, show_indicator?, avatar_mood?, affinity?}
 POST  /api/mates/{id}/relation/reset {mode: "zero" | "recompute"}
 ```
-The mate document gains `relation: {enabled, stage, affinity (integer), mood, show_indicator,
-avatar_mood}`. `mates.changed{reason:"relation"}` is sent only when that summary changes (the
-integer value, stage, mood label or a setting), at most once per turn, so a normal turn usually
+The mate document gains `relation: {enabled, stage, affinity (integer), show_indicator,
+avatar_mood}` and `state` (§5.4). `mates.changed{reason:"relation"}` is sent only when those change (the
+integer value, stage, what stands out in how she feels or a setting), so a normal turn usually
 adds no extra refetch.
 
 ### 5.7 Tests (Stage C)
@@ -505,26 +528,27 @@ moves. Router shapes and push throttling.
 **Relationship tab** (`RelationshipTab.tsx`, 관계):
 
 ```
-[✓] Relationship & mood        (off: no tracking, no prompt section, no indicator)
+[✓] Relationship               (off: no tracking, no prompt section, no indicator; she still has feelings)
   ◔ Familiar · 42          day 12 together · 3 days in a row · 140 talks · 18 memories
   Next: Trusted — 4 more days, 12 more talks          ▓▓▓▓▓▓░░░░
-  Mood now: cheerful · a little tired                  (refreshes with the mate)
+  Mood: shy (she has “속옷” on)                         (refreshes with the mate)
   [ ] Pause (away mode) — nothing changes while you're away
   Sensitivity  [Gentle 0.5× | Normal | Strong 1.5×]
-  [✓] Show the indicator next to the name   [ ] Let the avatar's idle look follow her mood
+  [✓] Show the indicator next to the name   [✓] Let the avatar show how she feels while idle
   Set manually: [——●———] 42 [Set]     Reset: [To zero] [Recalculate from history]  (confirm)
   ▸ Why it changed (log: "+6 talked today", "−4 quiet for 4 days", "manual"…)   ▸ Milestones
 ```
 
 - **Indicator** (`RelationBadge`): a small ring (fill = affinity, colour = stage) plus the stage
   word, next to the name in `MateStage` and the mate chat window header. Its tooltip gives the
-  stage, value and mood. Hidden when off or `show_indicator` is false. No numbers on the overlay.
-- **Avatar follows mood** (opt-in): `MateAvatar` gets `baseEmotion` from the mood label (cheerful →
-  smile, content → smile, sleepy → sleepy, concerned → sad, else none). Photo: the idle still for
-  that emotion (`emotion_stills`); Live2D: that expression while idle; video: idle clips whose
-  `emotion` matches are preferred in `moodPool` (when none matches, the normal pool is used).
-  Reactions from tags still win. Saved settings reach every window by refetch. The tab's
-  unsaved toggle previews through `livePreview` `{type:"prefs"}`.
+  stage and value; `StateBadge` beside it, a face and the one state (just the face on a phone), and why in its tooltip. Hidden when
+  `show_indicator` is false. No numbers on the overlay. `StateCard`, in the Relationship panel's first tab: the state, why, how good and
+  how lively, every emotion with its value and reason, and what moved them lately.
+- **Her face comes from how she feels** (on unless switched off; `mate/stateLook.ts`): the look for `state.label` (happy → smile, excited →
+  joy, shy → shy, angry → angry, sad / lonely / worried → sad, sleepy → sleepy) plays through the same `react` as a reply's tag while she
+  is idle, every 75 s, or every 30 s when she feels it strongly; it replaces a blank `[neutral]` and answers a tap; and from 0.45 up it is
+  the face she rests on (photo and Live2D bodies). A rig with no clip for it falls to a near feeling (`mate/emotion.ts`), sleepy to its
+  doze clip. The tab's unsaved toggle previews through `livePreview` `{type:"prefs"}`.
 - i18n: all new strings in `en` and `ko` (`mateSettings.rel*`, `mateSettings.mem*`,
   `mateSettings.style*`), reasons in the log localized from codes (`talk`, `lively`, `streak`,
   `warm`, `memory`, `rude`, `quiet_n`, `manual`, `reset`, `recomputed`), and stage and mood labels

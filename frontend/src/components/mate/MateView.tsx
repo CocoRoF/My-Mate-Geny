@@ -23,6 +23,7 @@ import MateComposer, { ReadAloudToggle } from "./MateComposer";
 import MateMessages from "./MateMessages";
 import MateStage, { BuiltinBadge, MateThumb, moodLabel } from "./MateStage";
 import RelationBadge from "./RelationBadge";
+import StateBadge from "./StateBadge";
 import { takeMatePanelLink } from "../../lib/nav";
 import { useT } from "../../i18n";
 import { useStudio } from "../../stores/studioStore";
@@ -330,6 +331,7 @@ export default function MateView() {
           )}
         </div>
         <RelationBadge mate={mate} compact={phone} onClick={toggleRelation} active={relationOpen} />
+        <StateBadge mate={mate} compact={phone} onClick={toggleRelation} />
         {phone && stageAway && moodLabel(t, conv.mood) && (
           <span className="min-w-0 truncate text-[11.5px] text-content-faint" data-testid="mate-header-mood">
             {moodLabel(t, conv.mood)}
