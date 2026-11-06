@@ -377,7 +377,7 @@ def test_the_real_bundle_is_named_and_locked_as_decided():
     assert len(rig["clips"]) == 15 and len(rig["stills"]) == 12
     urls = [rig["home"], *rig["stills"].values(), *(c["src"] for c in rig["clips"]), *(c["small"] for c in rig["clips"])]
     for url in urls:
-        assert url.startswith("/api/mates/builtin/chaerin/outfits/gray-band/"), url
+        assert url.startswith("/api/mates/builtin/chaerin/outfits/gray-band-2/"), url
         assert files.resolve_builtin("chaerin", url.split("/chaerin/", 1)[1]).is_file()
 
 
