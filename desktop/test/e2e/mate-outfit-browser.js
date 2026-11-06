@@ -140,6 +140,35 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     assert.deepEqual((await grayCard()).locked, { affinity: 60 });
     assert.equal((await mate()).avatar.rig.home, homeBefore);
     await until("locked again", async () => (await tile(p, GRAY).getAttribute("data-locked")) === "true");
+
+    step("the value set by hand opens it just the same, with word of it over the panel");
+    await p.click('[data-testid="mate-settings-close"]');
+    await p.click('[data-testid="mate-relation-open"]');
+    await p.click('[data-testid="mate-relation-panel-adjust"]');
+    const set = p.locator('[data-testid="mate-relation-set"]');
+    await set.waitFor();
+    const byHand = async (v) => {
+      await p.locator('[data-testid="mate-relation-slider"]').evaluate((el, x) => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, String(x));
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      }, v);
+      await set.click();
+    };
+    await byHand(59);
+    await until("59 by hand", async () => (await mate()).relation.affinity === 59);
+    assert.deepEqual((await grayCard()).locked, { affinity: 60 });
+    assert.equal(await p.locator('[data-testid="mate-info"]').count(), 0);
+    await byHand(60);
+    await p.waitForSelector('[data-testid="mate-info"]');
+    assert.ok((await p.textContent('[data-testid="mate-info"]')).includes("그레이 밴드"));
+    assert.ok(await set.isVisible(), "the panel stays open under it");
+    assert.equal((await grayCard()).locked, undefined);
+    await byHand(30);
+    await until("30 by hand", async () => (await mate()).relation.affinity === 30);
+    assert.equal((await grayCard()).locked, undefined, "and it stays open when the value comes down by hand");
+    assert.ok((await boot.request.post(`${SERVER}/api/mates/${chaerin.id}/relation/reset`, { data: { mode: "zero" } })).ok());
+    await openTab(p);
+    await until("locked for the rest", async () => (await tile(p, GRAY).getAttribute("data-locked")) === "true");
     await tile(p, "default").click();
 
     step("Add outfit: a name makes an empty place, which can't be worn yet");

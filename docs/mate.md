@@ -1166,7 +1166,8 @@ default set always stays.
   her affinity (as the indicator rounds it) reaches that, its card only carries `locked: {affinity}` and the server answers
   403 to wearing, reading, changing and deleting it, and to opening it in the studio. Once reached it stays open
   (`unlock.at`, set whenever the relationship is saved), however the affinity moves later; **Start over**
-  closes it again and she goes back to her default set if she had it on. A value set by hand counts. The files themselves
+  closes it again and she goes back to her default set if she had it on. A value set by hand counts like any other, and word
+  of the opening shows over the panel it was set in. The files themselves
   are not hidden: the repository is public, and this is a reward, not a protection.
 - **She knows**: while an outfit is on, the per-turn `<context>` says what she has on (it replaces the clothes in her
   profile; no restart, nothing stored).

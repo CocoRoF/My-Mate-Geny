@@ -160,6 +160,28 @@ const NAV_BAR = 48;
     assert((await hide(true)).ok());
     await page.reload();
     await page.waitForSelector('[data-testid="mate-relation-badge"]');
+
+    step("a value set by hand opens the locked outfit, with word of it on the screen");
+    await page.click('[data-testid="mate-relation-badge"]');
+    await page.click('[data-testid="mate-relation-panel-adjust"]');
+    const set = page.locator('[data-testid="mate-relation-set"]');
+    await set.waitFor();
+    await page.locator('[data-testid="mate-relation-slider"]').evaluate((el) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, "60");
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await set.scrollIntoViewIfNeeded();
+    await set.click();
+    await page.waitForSelector('[data-testid="mate-info"]');
+    const word = await page.$eval('[data-testid="mate-info"]', (el) => { const r = el.getBoundingClientRect(); return { text: el.textContent, left: r.left, right: r.right, top: r.top, bottom: r.bottom, vw: innerWidth, vh: innerHeight }; });
+    assert(word.text.includes("그레이 밴드"), word.text);
+    assert(word.left >= 0 && word.right <= word.vw && word.top >= 36 && word.bottom <= word.vh - NAV_BAR, JSON.stringify(word));
+    await page.screenshot({ path: path.join(SHOTS, "unlock-by-hand-phone.png") });
+    const opened = (await (await ctx.request.get(`${SERVER}/api/mates/${mate.id}`)).json()).outfits.items.find((c) => c.id === "builtin-gray-band");
+    assert.equal(opened.locked, undefined);
+    assert((await ctx.request.post(`${SERVER}/api/mates/${mate.id}/relation/reset`, { data: { mode: "zero" } })).ok());
+    await page.goto(`${SERVER}/?view=mate`);
+    await page.waitForSelector('[data-testid="mate-settings-open"]');
     assert.equal(await page.locator('[data-testid="mate-reset"]').count(), 0);
     await page.click('[data-testid="mate-more"]');
     for (const id of ["mate-avatar-toggle", "mate-avatar-create", "mate-global-settings-open", "mate-reset"]) assert(await page.locator(`[data-testid="${id}"]`).isVisible(), id);

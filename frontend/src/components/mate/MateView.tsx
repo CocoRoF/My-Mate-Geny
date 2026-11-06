@@ -424,14 +424,22 @@ export default function MateView() {
     </div>
   );
 
+  const infoLine = info && (
+    <div className="flex items-center gap-2 rounded-lg bg-success/10 px-3 py-1.5 text-[12px] text-success" data-testid="mate-info">
+      <Icon name="check" size={12} className="shrink-0" />
+      <span className="break-words">{info}</span>
+    </div>
+  );
+  // (a panel covers the conversation: what happened while it is open, like a value set by hand, shows over it)
+  const infoOverPanel = settings && infoLine && (
+    <div className="pointer-events-none absolute inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-30 flex justify-center">
+      <div className="max-w-full rounded-lg bg-surface-2 shadow-float">{infoLine}</div>
+    </div>
+  );
+
   const banners = (
     <>
-      {info && (
-        <div className="mx-auto mt-2 flex w-fit max-w-[92%] items-center gap-2 rounded-lg bg-success/10 px-3 py-1.5 text-[12px] text-success" data-testid="mate-info">
-          <Icon name="check" size={12} />
-          <span className="break-words">{info}</span>
-        </div>
-      )}
+      {!settings && infoLine && <div className="mx-auto mt-2 w-fit max-w-[92%]">{infoLine}</div>}
       {(conv.error || conv.connection === "reconnecting") && (
         <div className="mx-auto mt-2 w-fit rounded-full border border-warning/30 bg-surface-2 px-3 py-1 text-[11.5px] text-warning">
           {conv.error ? t("mate.cantReach", { name: mate.name, error: conv.error }) : t("mate.reconnecting")}
@@ -487,7 +495,10 @@ export default function MateView() {
         {/* (a panel takes the whole screen: its own title bar closes it, and Android's Back) */}
         {!settings && header}
         {settings ? (
-          <div className="min-h-0 flex-1 pt-safe">{settingsPanel}</div>
+          <div className="relative min-h-0 flex-1 pt-safe">
+            {settingsPanel}
+            {infoOverPanel}
+          </div>
         ) : (
           <>
             {/* (the keyboard only hides it: her body stays loaded for when it goes) */}
@@ -527,6 +538,7 @@ export default function MateView() {
           {settings && (
             <div className="absolute inset-0 z-20 border-l border-border bg-surface animate-fade-in" data-testid="mate-panel">
               {settingsPanel}
+              {infoOverPanel}
             </div>
           )}
         </div>
