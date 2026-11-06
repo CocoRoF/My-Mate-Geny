@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 
 // Touch-first: the primary input is a finger and there's no hover (phones,
 // tablets without a mouse/trackpad), or the Android app. There the on-screen
@@ -32,6 +32,31 @@ function useMedia(query: string, read: () => boolean): boolean {
 /** Live `isTouchFirst()`: follows a mouse being attached/detached. */
 export function useTouchFirst(): boolean {
   return useMedia(TOUCH_QUERY, isTouchFirst);
+}
+
+const SHORT_QUERY = "(max-height: 500px)"; // a phone on its side
+
+/** Too short for chrome around a panel: a phone on its side. */
+export function useShortScreen(): boolean {
+  return useMedia(SHORT_QUERY, () => matches(SHORT_QUERY));
+}
+
+/** An element narrower than `px`, whatever the viewport (the main area beside the sidebar). → [narrow, its ref] */
+export function useNarrowerThan(px: number): [boolean, (el: HTMLElement | null) => void] {
+  const [narrow, setNarrow] = useState(false);
+  const observer = useRef<ResizeObserver | null>(null);
+  const ref = useCallback(
+    (el: HTMLElement | null) => {
+      observer.current?.disconnect();
+      if (!el) return;
+      const measure = () => setNarrow(el.clientWidth < px);
+      measure();
+      observer.current = new ResizeObserver(measure);
+      observer.current.observe(el);
+    },
+    [px],
+  );
+  return [narrow, ref];
 }
 
 /** Phone-width viewport (below Tailwind's `sm`). */

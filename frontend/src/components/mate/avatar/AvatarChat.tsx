@@ -16,7 +16,7 @@ import MessageAttachments from "../../attachments/MessageAttachments";
 import HistoryEdge from "../../chat/HistoryEdge";
 import Icon, { type IconName } from "../../ui/Icon";
 import MateReply from "../MateReply";
-import { EstimateCard, type Act } from "./AvatarPanel";
+import { EstimateCard, ExtraCard, type Act } from "./AvatarPanel";
 import { useAvatarChat, type AgentChat } from "./useAgentChat";
 import { tr, useT, type MsgKey } from "../../../i18n";
 
@@ -123,23 +123,29 @@ function Chip({ tool }: { tool: ToolActivity }) {
   const d = TOOL[name] || { icon: "bolt" as IconName, label: "avatar.toolOther" as MsgKey };
   const running = tool.durationMs === undefined;
   const input = (tool.input || {}) as Record<string, unknown>;
-  const extra = name === "look" && input.target ? ` · ${String(input.target)}` : name === "regenerate" && input.item ? ` · ${String(input.item)}` : "";
+  const extra = tool.isError ? "" : name === "look" && input.target ? ` · ${String(input.target)}` : name === "regenerate" && input.item ? ` · ${String(input.item)}` : "";
   return (
     <div className="flex flex-col items-start gap-1.5" data-testid="avatar-tool">
       <span
         className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] ${
-          tool.isError ? "border-danger/30 bg-danger/10 text-danger" : "border-border bg-surface-2/80 text-content-dim"
+          tool.isError ? "border-warning/30 bg-warning/10 text-warning" : "border-border bg-surface-2/80 text-content-dim"
         }`}
         data-testid={`avatar-tool-${name}`}
         data-error={tool.isError ? "1" : "0"}
       >
         <Icon name={running ? "spinner" : tool.isError ? "warning" : d.icon} size={11} spin={running} />
         <span className="truncate">
-          {t(d.label)}
+          {tool.isError ? t("avatar.toolFailed") : t(d.label)}
           {extra}
         </span>
       </span>
-      {tool.isError && tool.output && <span className="max-w-full break-words pl-2 text-[11px] text-danger/80">{tool.output.slice(0, 240)}</span>}
+      {/* (the agent's own business, in its language: it usually goes on another way) */}
+      {tool.isError && tool.output && (
+        <details className="max-w-full break-words pl-2 text-[11px] text-content-faint" data-testid="avatar-tool-error">
+          <summary className="cursor-pointer">{t("avatar.toolFailedDetail")}</summary>
+          {tool.output.slice(0, 240)}
+        </details>
+      )}
       {!!tool.images?.length && (
         <div className="max-w-full">
           <MessageAttachments attachments={tool.images} />
@@ -480,6 +486,7 @@ export default function AvatarChat({ project, env, act, chat, onShow, placeholde
   const send = (s: string) => {
     chat.send(s);
   };
+  const pending = project.extras.filter((x) => x.status === "pending");
   // the open question / the current estimate: the last such tool call of the conversation
   const { lastAsk, lastEstimate } = useMemo(() => {
     let ask: string | null = null;
@@ -528,7 +535,17 @@ export default function AvatarChat({ project, env, act, chat, onShow, placeholde
           })}
         </div>
       </div>
-      <Composer sid={project.session_id} chat={chat} placeholder={placeholder} />
+      {/* what waits for the user's OK stays in sight: on a phone the settings are on another tab */}
+      {pending.length > 0 && (
+        <div className="flex max-h-[45dvh] shrink-0 flex-col gap-2 overflow-y-auto px-3 pb-2" data-testid="avatar-chat-extras">
+          {pending.map((x) => (
+            <ExtraCard key={x.id} project={project} x={x} act={act} />
+          ))}
+        </div>
+      )}
+      <div className="shrink-0 pb-safe">
+        <Composer sid={project.session_id} chat={chat} placeholder={placeholder} />
+      </div>
     </div>
   );
 }

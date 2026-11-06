@@ -152,6 +152,7 @@ export default {
   wait_home: "Waiting for you: approve the base picture",
   wait_stills: "Waiting for you: approve the stills",
   wait_cap: "Waiting for you: more credits are needed",
+  wait_extra: "Waiting for you: confirm the credits",
   evCreated: "Mate created",
   evSkipped: "Avatar skipped",
   evAvatarBack: "Back to the avatar",

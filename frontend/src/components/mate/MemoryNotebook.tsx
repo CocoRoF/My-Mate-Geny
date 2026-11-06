@@ -570,9 +570,10 @@ export default function MemoryNotebook({ mate }: { mate: Mate }) {
           className="btn-soft shrink-0"
           onClick={() => setAdding((v) => !v)}
           aria-expanded={adding}
+          aria-label={t("common.add")}
         >
           <Icon name="plus" size={14} />
-          {t("common.add")}
+          <span className="hidden min-[400px]:inline">{t("common.add")}</span>
         </button>
       </div>
       {adding && (

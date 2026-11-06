@@ -5,6 +5,7 @@
  * made so far (candidates, stills, clips with their checks), and at the end the avatar playing with Apply / Restore
  * (a new mate's avatar goes on her by itself).
  */
+import { useCenteredChild } from "../../../lib/scrollRow";
 import { useEffect, useRef, useState } from "react";
 import {
   applyAvatar,
@@ -64,12 +65,13 @@ function stepOf(p: AvatarProject): string {
 export function StepBar({ project, nowrap = false }: { project: AvatarProject; nowrap?: boolean }) {
   const t = useT();
   const cur = STEPS.findIndex((s) => s.id === stepOf(project));
+  const row = useCenteredChild<HTMLOListElement>(cur);
   return (
-    <ol className={`flex gap-1 ${nowrap ? "" : "flex-wrap"}`} data-testid="avatar-steps">
+    <ol ref={row} className={`flex gap-1 ${nowrap ? "no-scrollbar -mx-3 overflow-x-auto overscroll-x-contain px-3" : "flex-wrap"}`} data-testid="avatar-steps">
       {STEPS.map((s, i) => (
         <li
           key={s.id}
-          className={`rounded-full border px-2 py-0.5 text-[11px] ${
+          className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] ${
             i === cur ? "border-accent/60 bg-accent-soft text-content" : i < cur ? "border-border text-content-dim" : "border-border/60 text-content-faint"
           }`}
           data-active={i === cur}
@@ -249,11 +251,24 @@ function Thumb({ src, label, selected, onClick, testId, children }: { src: strin
   );
 }
 
-function ExtraCard({ project, x, act }: { project: AvatarProject; x: Extra; act: Act }) {
+export function ExtraCard({ project, x, act }: { project: AvatarProject; x: Extra; act: Act }) {
   const t = useT();
+  const it = x.items?.[0];
+  const reason =
+    it?.kind === "reroll"
+      ? it.base
+        ? t("avatar.extraRerollFrom", { id: it.base })
+        : t("avatar.extraReroll", { n: it.count ?? 0 })
+      : it?.kind === "item"
+        ? t("avatar.extraRedo", { item: it.key })
+        : it?.kind === "add"
+          ? t("avatar.extraAdd", { clips: it.clips?.length ?? 0, stills: it.stills?.length ?? 0 })
+          : it?.kind === "cap"
+            ? t("avatar.extraCap")
+            : x.reason;
   return (
     <Card title={t("avatar.extraTitle")} icon="warning" tone="warn" testId="avatar-extra">
-      <p className="text-[12px] text-content-dim">{t("avatar.extraBody", { reason: x.reason, n: fmt(x.total) })}</p>
+      <p className="text-[12px] text-content-dim">{t("avatar.extraBody", { reason, n: fmt(x.total) })}</p>
       <div className="mt-2.5 flex justify-end gap-2">
         <button className="btn-ghost" onClick={() => act(() => declineExtra(project.id, x))}>
           {t("avatar.decline")}
@@ -298,7 +313,7 @@ function Checkpoint({ project, act }: { project: AvatarProject; act: Act }) {
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {f.candidates.map((c) => (
             <Thumb key={c.id} src={c.url} label={c.id} testId="avatar-candidate">
-              <button className="rounded bg-accent px-1.5 py-0.5 text-[10.5px] font-medium text-white" onClick={() => act(() => checkpoint(project.id, "pick", c.id))} data-testid={`avatar-pick-${c.id}`}>
+              <button className="rounded-md bg-accent px-2.5 py-0.5 text-[11.5px] font-medium text-white" onClick={() => act(() => checkpoint(project.id, "pick", c.id))} data-testid={`avatar-pick-${c.id}`}>
                 {t("avatar.useThis")}
               </button>
             </Thumb>

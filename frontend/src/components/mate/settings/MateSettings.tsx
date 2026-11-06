@@ -4,9 +4,10 @@
  * App-wide things (voice service keys / URLs, the Live2D runtime, the desktop app, the default mate) are in Global
  * settings — opened from here ("Global settings", "Set up in Global settings") in place of this panel.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Mate } from "../../../api/mates";
 import { useBackHandler } from "../../../lib/back";
+import { useCenteredChild } from "../../../lib/scrollRow";
 import type { MateConversation } from "../../../mate/useMateConversation";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
@@ -16,6 +17,7 @@ import StyleTab from "./StyleTab";
 import AvatarTab from "./AvatarTab";
 import ModelTab from "./ModelTab";
 import VoiceTab from "./VoiceTab";
+import { SaveBarSlot } from "./ui";
 import ScreenTab from "./ScreenTab";
 import ProactiveTab from "./ProactiveTab";
 import DangerTab from "./DangerTab";
@@ -38,6 +40,13 @@ const TABS: { id: Tab; label: MsgKey }[] = [
 export default function MateSettings({ mate, conv, onClose, initialTab = "profile" }: { mate: Mate; conv: MateConversation; onClose: () => void; initialTab?: Tab }) {
   const t = useT();
   const [tab, setTab] = useState<Tab>(initialTab);
+  const [saveSlot, setSaveSlot] = useState<HTMLDivElement | null>(null);
+  const tabs = useCenteredChild<HTMLDivElement>(TABS.findIndex((x) => x.id === tab));
+  // another tab starts at its top, not where the last one was scrolled to
+  const body = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    body.current?.scrollTo(0, 0);
+  }, [tab]);
   const globalOpen = useMateStore((s) => s.globalOpen);
   const closeGlobal = useMateStore((s) => s.closeGlobal);
   useBackHandler(globalOpen, closeGlobal);
@@ -73,7 +82,7 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
           <Icon name="x" size={16} />
         </button>
       </div>
-      <div className="no-scrollbar flex shrink-0 gap-1 overflow-x-auto border-b border-border/70 px-3 py-2" role="tablist">
+      <div ref={tabs} className="no-scrollbar flex shrink-0 gap-1 overflow-x-auto overscroll-x-contain border-b border-border/70 px-3 py-2" role="tablist">
         {TABS.map((x) => (
           <button
             key={x.id}
@@ -88,7 +97,8 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
           </button>
         ))}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
+      <SaveBarSlot.Provider value={saveSlot}>
+      <div ref={body} className="fit-fields min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
         <div className="mx-auto max-w-xl space-y-4 pb-6">
           {/* key: a different mate starts from its own values */}
           {tab === "profile" && <ProfileTab key={mate.id} mate={mate} onOpenStyle={() => setTab("style")} />}
@@ -101,6 +111,8 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
           {tab === "danger" && <DangerTab key={mate.id} mate={mate} onDeleted={onClose} />}
         </div>
       </div>
+      </SaveBarSlot.Provider>
+      <div ref={setSaveSlot} className="shrink-0" />
     </div>
   );
 }

@@ -58,9 +58,11 @@ export interface Plan {
 
 export interface Extra {
   id: string;
+  /** the server's words (the card says it from the items) */
   reason: string;
   total: number;
   status: "pending" | "confirmed" | "declined";
+  items?: { kind: "reroll" | "item" | "add" | "cap"; key: string; count?: number; base?: string; clips?: unknown[]; stills?: unknown[] }[];
 }
 
 export interface ClipCheck {

@@ -187,7 +187,7 @@ export default function ScreenSharePicker({
     );
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-3 animate-fade-in"
+      className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] animate-fade-in"
       onMouseDown={(e) => e.target === e.currentTarget && close()}
       data-testid="share-picker"
     >
@@ -302,8 +302,8 @@ export default function ScreenSharePicker({
             </p>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-2 border-t border-border px-4 py-2.5">
-          <span className="min-w-0 flex-1 text-[11px] text-content-faint">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border px-4 py-2.5">
+          <span className="min-w-0 flex-1 basis-full text-[11px] text-content-faint sm:basis-0">
             {t("mate.shareNote")}
           </span>
           <button

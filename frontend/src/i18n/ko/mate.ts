@@ -110,6 +110,8 @@ const ko: Messages<"mate"> = {
   builtinsAllHere: "기본 제공 메이트가 이미 모두 있어요",
   showAvatar: "아바타 보이기",
   hideAvatar: "아바타 숨기기",
+  moreActions: "더 보기",
+  newConversation: "새 대화",
   resetTitle: "새 대화 (위의 대화는 잊지만 기억은 남아요)",
   resetConfirm: "{name:와} 새 대화를 시작할까요? 메시지는 여기 남지만 {name:은} 그 내용을 기억하지 못해요 (기억은 유지돼요).",
   resetDone: "새 대화 — {name:은} 위의 대화를 잊어요 (기억은 남아요).",

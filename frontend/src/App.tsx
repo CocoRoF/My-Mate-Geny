@@ -79,12 +79,13 @@ export default function App() {
 
   const shell = (
     // the visible height: 100dvh, or what the keyboard leaves where the layout viewport doesn't shrink (lib/keyboard.ts)
-    <div className={`${chrome ? "min-h-0 flex-1" : "h-[var(--app-h,100dvh)]"} flex overflow-hidden text-content`}>
-      <div className="hidden md:flex">
+    // (a phone on its side: no room for the sidebar, which opens as on a phone; its notch and bar are on the sides)
+    <div className={`${chrome ? "min-h-0 flex-1" : "h-[var(--app-h,100dvh)]"} flex overflow-hidden pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] text-content`}>
+      <div className="hidden md:flex [@media(max-height:500px)]:!hidden">
         <Sidebar />
       </div>
       {sidebarOpen && (
-        <div className="md:hidden fixed inset-0 z-[60] flex">
+        <div className="md:hidden [@media(max-height:500px)]:!flex fixed inset-0 z-[60] flex">
           <div className="absolute inset-0 bg-scrim/55 animate-fade-in" onClick={() => setSidebar(false)} />
           <div className="relative h-full w-[min(86vw,300px)] shadow-float animate-fade-in">
             <Sidebar />

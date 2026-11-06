@@ -8,7 +8,7 @@ export function MenuButton({ className = "" }: { className?: string }) {
   return (
     <button
       onClick={() => setSidebar(true)}
-      className={`md:hidden grid shrink-0 place-items-center w-10 h-10 -ml-2 rounded-lg text-content-dim hover:text-content hover:bg-surface-3 ${className}`}
+      className={`md:hidden [@media(max-height:500px)]:!grid grid shrink-0 place-items-center w-10 h-10 -ml-2 rounded-lg text-content-dim hover:text-content hover:bg-surface-3 ${className}`}
       aria-label={t("nav.openMenu")}
     >
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -20,7 +20,7 @@ export function MenuButton({ className = "" }: { className?: string }) {
 
 export default function MobileTopBar({ title }: { title: string }) {
   return (
-    <div className="md:hidden pt-safe shrink-0 border-b border-border/70 bg-surface/80 backdrop-blur-xl">
+    <div className="md:hidden [@media(max-height:500px)]:!block pt-safe shrink-0 border-b border-border/70 bg-surface/80 backdrop-blur-xl">
       <div className="flex h-12 items-center gap-1 px-3">
         <MenuButton />
         <img src="/logo.png" alt="" width={28} height={28} className="w-7 h-7 shrink-0 select-none" draggable={false} />

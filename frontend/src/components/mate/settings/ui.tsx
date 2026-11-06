@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import Icon, { type IconName } from "../../ui/Icon";
 import { useT } from "../../../i18n";
+import { usePhone, useTouchFirst } from "../../../lib/device";
 
 export function Section({ title, hint, children, right, testId }: { title: ReactNode; hint?: ReactNode; children: ReactNode; right?: ReactNode; testId?: string }) {
   return (
@@ -92,10 +94,17 @@ export function useSaver() {
   return { ...state, run };
 }
 
+/** where a settings screen's Save bar goes: under the scrolling form, never over it */
+export const SaveBarSlot = createContext<HTMLElement | null>(null);
+
 export function SaveBar({ saver, onSave, dirty, label, onReset }: { saver: ReturnType<typeof useSaver>; onSave: () => void; dirty: boolean; label?: string; onReset?: () => void }) {
   const t = useT();
-  return (
-    <div className="sticky bottom-0 z-10 -mx-1 flex items-center justify-end gap-3 rounded-xl bg-surface/90 px-1 py-2 backdrop-blur">
+  const small = useTouchFirst() || usePhone();
+  const slot = useContext(SaveBarSlot);
+  // (a phone keeps the room for the form until there is something to save)
+  if (small && !dirty && !saver.busy && !saver.ok && !saver.err) return null;
+  const bar = (
+    <div className={`flex items-center justify-end gap-3 ${slot ? "mx-auto max-w-xl px-4 py-2" : "sticky bottom-0 z-10 -mx-1 rounded-xl bg-surface/90 px-1 py-2 backdrop-blur"}`}>
       {saver.err && <span className="min-w-0 flex-1 text-[12px] text-danger break-words">{saver.err}</span>}
       {!saver.err && dirty && <span className="min-w-0 flex-1 text-[11.5px] text-content-faint">{t("mateSettings.uiUnsaved")}</span>}
       {saver.ok && (
@@ -113,6 +122,7 @@ export function SaveBar({ saver, onSave, dirty, label, onReset }: { saver: Retur
       </button>
     </div>
   );
+  return slot ? createPortal(<div className="border-t border-border bg-surface pb-safe" data-testid="mate-settings-savebar">{bar}</div>, slot) : bar;
 }
 
 export function ErrorLine({ text }: { text: string | null }) {
@@ -169,8 +179,16 @@ export function LinkButton({ onClick, children, testId }: { onClick: () => void;
 
 /** Pick one of a few (effort, mode). Wraps on a phone. */
 export function Segmented<T extends string>({ value, options, onChange, testId }: { value: T; options: { id: T; label: ReactNode; title?: string; disabled?: boolean }[]; onChange: (v: T) => void; testId?: string }) {
+  const phone = usePhone();
+  // phones: even columns across the width, nothing left alone on a second line
+  const columns = options.length <= 4 ? options.length : 3;
   return (
-    <div className="inline-flex flex-wrap gap-1 rounded-lg border border-border bg-surface/60 p-1" role="radiogroup" data-testid={testId}>
+    <div
+      className={`gap-1 rounded-lg border border-border bg-surface/60 p-1 ${phone ? "grid" : "inline-flex flex-wrap"}`}
+      style={phone ? { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` } : undefined}
+      role="radiogroup"
+      data-testid={testId}
+    >
       {options.map((o) => (
         <button
           key={o.id}
@@ -181,7 +199,7 @@ export function Segmented<T extends string>({ value, options, onChange, testId }
           title={o.title}
           onClick={() => onChange(o.id)}
           data-value={o.id}
-          className={`rounded-md px-2.5 py-1 text-[12.5px] transition disabled:cursor-not-allowed disabled:opacity-40 ${
+          className={`rounded-md py-1 text-[12.5px] transition disabled:cursor-not-allowed disabled:opacity-40 ${phone ? "min-h-[40px] break-keep px-1 leading-tight" : "px-2.5"} ${
             value === o.id ? "bg-accent-soft text-content shadow-[inset_0_0_0_1px_rgb(var(--c-accent)/0.4)]" : "text-content-dim hover:bg-surface-3 hover:text-content"
           }`}
         >

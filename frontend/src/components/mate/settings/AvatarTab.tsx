@@ -390,7 +390,7 @@ function StillsEditor({ mate, rig, onChange, folder = "" }: { mate: Mate; rig: R
                 </div>
               </label>
               {url && (
-                <button onClick={() => remove(n)} className="absolute right-1 top-1 hidden rounded bg-black/60 p-0.5 text-white group-hover:block" aria-label={t("mateSettings.avRemoveStill", { name: n })}>
+                <button onClick={() => remove(n)} className="absolute right-1 top-1 hidden rounded bg-black/60 p-0.5 text-white group-hover:block [@media(hover:none)]:grid [@media(hover:none)]:h-8 [@media(hover:none)]:w-8 [@media(hover:none)]:place-items-center" aria-label={t("mateSettings.avRemoveStill", { name: n })}>
                   <Icon name="x" size={11} />
                 </button>
               )}

@@ -903,6 +903,19 @@ conversation the other half; Mate settings / Global settings (header buttons:
 sliders = Global, gear = this mate) open over the conversation half, so the
 stage never moves or overflows (1280 / 1440 / 1600 px alike). Phones: the stage
 on top (36 dvh, collapsible), the conversation below, settings full screen.
+Whether the split fits is measured on the main area (`useNarrowerThan`): beside
+the sidebar a tablet or a small window gets the phone layout too. On a phone the
+header keeps her picture and name, her ring (or the heart when the ring is
+hidden: both open the same panel), read aloud and the gear; the rest
+(hide the avatar, Avatar Create, Global settings, New conversation) is in one
+`more` menu, and a panel takes the header's room, under the status bar (Android's
+Back closes it). In settings a long field grows with its text, the Save bar sits
+under the form on the bottom edge and only shows with something to save, a choice
+of many (`Segmented`) has even columns, what a finger presses is big enough
+(`.touch-ui`), and another tab starts at its top. A phone on its side (`max-height:
+500px`): the sidebar opens as on a phone, the stage stays beside the conversation
+until a panel opens, and nothing goes under the side bar. Checked at 360, 412 and
+landscape in `desktop/test/e2e/mate-studio-phone-browser.js`.
 **Mate composer** = the Chat composer's machinery
 (`src/components/composer/`: `useComposer`, `ComposerParts` (`AttachMenu`,
 `QueuedList`, `FileInputs`), `useFileDrop` + `DropOverlay`, `files.ts`
@@ -1144,6 +1157,10 @@ default set always stays.
 - **Built-ins**: editing an outfit doesn't mark a built-in as customized; editing her default set does. A bundle update or
   Reset goes to her default set (Reset puts it back on). A new avatar from the studio is her new default set, never an
   outfit.
+- **Bundled outfits**: `builtin/assets/<key>/outfits.json` lists `{items: [{id, name, note, rig}]}`; `rig` is a relative
+  path to a rig pack in the character's asset folder. New entries enter the wardrobe once during built-in sync, without
+  changing what she wears. The built-in snapshot remembers which were offered, so updates preserve the user's edits and
+  deletions. Han Chaerin's **그레이 밴드 수영복** uses plain gray fabric and white bands without brand names or logos.
 - **She knows**: while an outfit is on, the per-turn `<context>` says what she has on (it replaces the clothes in her
   profile; no restart, nothing stored).
 - **API**: `POST /api/mates/{id}/outfits {name}` → `{id, mate}`, `GET …/outfits/{oid}` → `{id, name, avatar}`,
@@ -1152,7 +1169,3 @@ default set always stays.
   `outfits` (cards, no avatars).
 
 The project behind Make it with AI: docs/avatar-create.md §12.
-- **Bundled outfits**: `builtin/assets/<key>/outfits.json` lists `{items: [{id, name, note, rig}]}`; `rig` is a relative
-  path to a rig pack in the character's asset folder. New entries enter the wardrobe once during built-in sync, without
-  changing what she wears. The built-in snapshot remembers which were offered, so updates preserve the user's edits and
-  deletions. Han Chaerin's **그레이 밴드 수영복** uses plain gray fabric and white bands without brand names or logos.

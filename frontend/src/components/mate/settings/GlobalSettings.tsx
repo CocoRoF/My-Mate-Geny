@@ -5,7 +5,8 @@
  *
  * Opened from the Mate view's header, and from Mate settings ("Set up in Global settings"): `useMateStore().openGlobal(section)`.
  */
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { useCenteredChild } from "../../../lib/scrollRow";
 import { useMateStore, type GlobalSection } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
 import DefaultsPanel from "./global/DefaultsPanel";
@@ -28,6 +29,11 @@ export default function GlobalSettings({ onClose, section }: { onClose: () => vo
     { id: "defaults", label: "mateSettings.tabDefaults" },
   ];
   const pick = (t: GlobalSection) => useMateStore.setState({ globalSection: t });
+  const row = useCenteredChild<HTMLDivElement>(tabs.findIndex((x) => x.id === tab));
+  const body = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    body.current?.scrollTo(0, 0);
+  }, [tab]);
   return (
     <div className="flex h-full flex-col" data-testid="mate-global-settings">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
@@ -40,7 +46,7 @@ export default function GlobalSettings({ onClose, section }: { onClose: () => vo
           <Icon name="x" size={16} />
         </button>
       </div>
-      <div className="no-scrollbar flex shrink-0 gap-1 overflow-x-auto border-b border-border/70 px-3 py-2" role="tablist">
+      <div ref={row} className="no-scrollbar flex shrink-0 gap-1 overflow-x-auto overscroll-x-contain border-b border-border/70 px-3 py-2" role="tablist">
         {tabs.map((x) => (
           <button
             key={x.id}
@@ -55,7 +61,7 @@ export default function GlobalSettings({ onClose, section }: { onClose: () => vo
           </button>
         ))}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
+      <div ref={body} className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
         <div className="mx-auto max-w-xl space-y-4 pb-6">
           {tab === "voice" && <div className="card space-y-3 p-4"><p className="text-sm text-content-dim">{t("mcp.mediaMoved")}</p><button className="btn-primary" onClick={() => { onClose();openSettings("media"); }}>{t("mcp.mediaManage")}</button></div>}
           {tab === "live2d" && <Live2DPanel />}

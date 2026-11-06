@@ -153,6 +153,7 @@ const studio: Messages<"studio"> = {
   wait_home: "기다리는 중: 기준 그림을 확인해 주세요",
   wait_stills: "기다리는 중: 표정 그림을 확인해 주세요",
   wait_cap: "기다리는 중: 크레딧이 더 필요해요",
+  wait_extra: "기다리는 중: 크레딧 사용을 확인해 주세요",
   evCreated: "메이트를 만들었어요",
   evSkipped: "아바타 건너뜀",
   evAvatarBack: "다시 아바타로",

@@ -627,6 +627,18 @@ code.hljs {
 /* ---- mobile ---- */
 .pt-safe { padding-top: env(safe-area-inset-top); }
 .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+/* A phone: what a finger presses in the Mate is big enough (.touch-ui: the root of the Mate view and the studio there),
+   and a long field grows with its text instead of scrolling inside the scrolling page. */
+.touch-ui :is(.btn-primary, .btn-soft, .btn-ghost, .nav-tab) { min-height: 40px; }
+.touch-ui .btn-ghost { min-width: 40px; }
+.touch-ui .nav-tab { display: inline-flex; align-items: center; justify-content: center; }
+/* (the floor for everything else: :where keeps it below any size a control sets itself) */
+:where(.touch-ui) :where(button:not([role="switch"]), select) { min-height: 36px; }
+.touch-ui summary { padding-block: 8px; }
+.touch-ui label:has(> [role="switch"]) { padding-block: 6px; }
+.touch-ui [role="option"] { min-height: 44px; }
+.touch-ui input[type="range"] { height: 32px; }
+.touch-ui .fit-fields textarea { field-sizing: content; min-height: 5.5em; max-height: none; }
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 html, body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }

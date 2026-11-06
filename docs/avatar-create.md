@@ -201,8 +201,9 @@ personality; its tooltip says what is missing). Below it the steps — Concept �
 Done (done ✓ / current / to do; a click shows that section) — or, for an existing mate, the avatar's own steps.
 Desktop: two columns, the agent ~47 % on the left and the settings on the right, a splitter (drag, ←/→, double-click
 or Home resets) remembered in localStorage `hrh_studio_split`. Phone: two tabs, **Agent | Settings**; Settings carries
-the number of fields the agent filled since you last looked (or a dot when an estimate / checkpoint waits). Both stay
-mounted (no lost scroll or typing).
+the number of fields the agent filled since you last looked (or a dot when an estimate / checkpoint / extra waits). Both
+stay mounted (no lost scroll or typing). The steps stay on one line that scrolls sideways, the current one in view; an
+extra's card is on the Agent tab too, right above the message box. `desktop/test/e2e/mate-studio-phone-browser.js`.
 
 **Left — the creation agent** (`AvatarChat`): its lines, its cards (distinct from plain messages: an accent frame and a
 label) — **concept directions** (`ask_user` kind `concepts`: 2–4 big cards with a name, a one-line pitch and a palette

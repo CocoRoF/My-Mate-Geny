@@ -35,13 +35,15 @@ import {
   type StudioFieldsPatch,
 } from "../../../api/avatar";
 import { prefsOf, type Mate } from "../../../api/mates";
-import { usePhone } from "../../../lib/device";
+import { useNarrowerThan, usePhone, useTouchFirst } from "../../../lib/device";
+import { useCenteredChild } from "../../../lib/scrollRow";
 import { cameFrom, goBack } from "../../../lib/nav";
 import { useMateConversation } from "../../../mate/useMateConversation";
 import { useMateStore } from "../../../stores/mateStore";
 import { useStudio } from "../../../stores/studioStore";
 import { useLang, useT, type MsgKey } from "../../../i18n";
 import Icon, { type IconName } from "../../ui/Icon";
+import { SaveBarSlot } from "../settings/ui";
 import AvatarChat from "../avatar/AvatarChat";
 import { StatusPill, StepBar, type Act } from "../avatar/AvatarPanel";
 import { useAgentChat } from "../avatar/useAgentChat";
@@ -96,8 +98,9 @@ function Steps({ project, mate, onPick, compact }: { project: AvatarProject; mat
   const t = useT();
   const done = stepsDone(project, mate);
   const cur = STEPS.findIndex((s) => !done[s.id]);
+  const row = useCenteredChild<HTMLOListElement>(cur);
   return (
-    <ol className={`no-scrollbar flex items-center gap-1 overflow-x-auto ${compact ? "" : "justify-center"}`} data-testid="studio-steps" aria-label={t("studio.stepsLabel")}>
+    <ol ref={row} className={`no-scrollbar flex items-center gap-1 overflow-x-auto ${compact ? "-mx-3 overscroll-x-contain px-3" : "justify-center"}`} data-testid="studio-steps" aria-label={t("studio.stepsLabel")}>
       {STEPS.map((s, i) => {
         const state = done[s.id] ? "done" : i === cur ? "current" : "todo";
         return (
@@ -107,7 +110,7 @@ function Steps({ project, mate, onPick, compact }: { project: AvatarProject; mat
               type="button"
               disabled={!s.section}
               onClick={() => s.section && onPick(s.section)}
-              className={`flex items-center gap-1 rounded-full border px-2.5 py-[3px] text-[11.5px] transition ${
+              className={`flex items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-[3px] text-[11.5px] transition ${
                 state === "current"
                   ? "border-accent/60 bg-accent-soft font-medium text-content"
                   : state === "done"
@@ -177,7 +180,7 @@ function RunStatus({ project, onShow }: { project: AvatarProject; onShow: () => 
   const pct = items.length ? Math.round((done / items.length) * 100) : 0;
   const waiting = project.status === "waiting";
   const label = waiting
-    ? t(`studio.wait_${project.checkpoint?.stage ?? "pick"}` as MsgKey)
+    ? t(project.extras.some((x) => x.status === "pending") ? "studio.wait_extra" : (`studio.wait_${project.checkpoint?.stage ?? "pick"}` as MsgKey))
     : project.status === "paused"
       ? t("avatar.status_paused")
       : project.status === "failed"
@@ -190,7 +193,7 @@ function RunStatus({ project, onShow }: { project: AvatarProject; onShow: () => 
         <span className="min-w-0 flex-1 truncate text-content">{label}</span>
         <span className="tabular-nums text-content-faint">{t("studio.runCount", { done, total: items.length })}</span>
         {waiting && (
-          <button className="rounded-md px-1.5 py-0.5 text-[11.5px] font-medium text-accent hover:bg-accent-soft" onClick={onShow} data-testid="studio-run-show">
+          <button className="rounded-md px-2.5 py-0.5 text-[11.5px] font-medium text-accent hover:bg-accent-soft" onClick={onShow} data-testid="studio-run-show">
             {t("studio.filledShow")}
           </button>
         )}
@@ -261,7 +264,10 @@ function Splitter({ value, onChange, container }: { value: number; onChange: (v:
 export default function MateStudio() {
   const t = useT();
   const lang = useLang();
-  const phone = usePhone();
+  // (both columns' least widths: beside the sidebar a tablet or a small window has less, whatever the viewport)
+  const [narrow, rootRef] = useNarrowerThan(MIN_LEFT + MIN_RIGHT);
+  const phone = usePhone() || narrow;
+  const touch = useTouchFirst();
   const kind = useStudio((s) => s.kind);
   const wantMate = useStudio((s) => s.mateId);
   const wantProject = useStudio((s) => s.projectId);
@@ -273,6 +279,7 @@ export default function MateStudio() {
   const [gone, setGone] = useState(false);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"agent" | "settings">("agent");
+  const [saveSlot, setSaveSlot] = useState<HTMLDivElement | null>(null);
   const [focus, setFocus] = useState<{ id: SectionId; n: number } | null>(null);
   const [dialog, setDialog] = useState<NewMateTab | null>(null);
   const [template, setTemplate] = useState(false);
@@ -399,7 +406,7 @@ export default function MateStudio() {
     if (tab === "settings" || !phone) setSeenFills(new Set(fills));
   }, [tab, phone, fills]);
   const unseen = fills.filter((a) => !seenFills.has(a)).length;
-  const waits = !!project && (project.status === "waiting" || (project.status === "estimate" && !!project.plan && !project.confirmation));
+  const waits = !!project && (project.status === "waiting" || project.extras.some((x) => x.status === "pending") || (project.status === "estimate" && !!project.plan && !project.confirmation));
 
   // ── the splitter ──
   const box = useRef<HTMLDivElement>(null);
@@ -644,7 +651,7 @@ export default function MateStudio() {
   );
 
   const header = (
-    <div className={`relative z-30 shrink-0 border-b border-border/70 bg-surface/80 backdrop-blur-xl ${phone ? "pt-safe" : ""}`} data-testid="studio-header">
+    <div className="relative z-30 shrink-0 border-b border-border/70 bg-surface/80 pt-safe backdrop-blur-xl" data-testid="studio-header">
       <div className={`flex items-center gap-2 px-2 sm:px-3 ${phone ? "h-12" : "h-14"}`}>
         <button className="btn-ghost !px-2" onClick={exit} aria-label={isNew ? t("studio.saveExit") : t("avatar.close")} title={isNew ? t("studio.saveExit") : t("avatar.close")} data-testid="studio-back">
           <Icon name="chevron-left" size={17} />
@@ -686,8 +693,8 @@ export default function MateStudio() {
         {createBtn}
       </div>
       {project && mate && (
-        <div className={`border-t border-border/50 px-3 ${phone ? "py-1.5" : "py-2"}`}>
-          {isNew ? <Steps project={project} mate={mate} onPick={show} compact={phone} /> : <div className={phone ? "no-scrollbar overflow-x-auto" : "flex justify-center"}><StepBar project={project} nowrap={phone} /></div>}
+        <div className={`border-t border-border/50 px-3 [@media(max-height:500px)]:hidden ${phone ? "py-1.5" : "py-2"}`}>
+          {isNew ? <Steps project={project} mate={mate} onPick={show} compact={phone} /> : <div className={phone ? "" : "flex justify-center"}><StepBar project={project} nowrap={phone} /></div>}
           {phone && credits && <div className="mt-1.5 flex">{credits}</div>}
         </div>
       )}
@@ -752,7 +759,7 @@ export default function MateStudio() {
   // ── not there (yet) ──
   if (!project || !mate) {
     return (
-      <div className="flex h-full flex-col" data-testid="mate-studio" data-state={gone ? "gone" : "loading"}>
+      <div ref={rootRef} className="flex h-full flex-col" data-testid="mate-studio" data-state={gone ? "gone" : "loading"}>
         {header}
         <div className="grid flex-1 place-items-center p-6 text-center">
           {gone ? (
@@ -820,7 +827,7 @@ export default function MateStudio() {
 
   if (phone) {
     return (
-      <div className="flex h-full flex-col" data-testid="mate-studio" data-kind={kind} data-layout="tabs">
+      <div ref={rootRef} className="touch-ui flex h-full flex-col" data-testid="mate-studio" data-kind={kind} data-layout="tabs">
         {header}
         <div className="flex shrink-0 gap-1 border-b border-border/60 px-3 py-1.5" role="tablist">
           <button role="tab" aria-selected={tab === "agent"} className="nav-tab inline-flex flex-1 items-center justify-center gap-1.5" data-active={tab === "agent"} onClick={() => setTab("agent")} data-testid="studio-tab-agent">
@@ -841,13 +848,18 @@ export default function MateStudio() {
         {banner}
         {/* (both stay mounted: switching tabs keeps the conversation's scroll and the fields being typed) */}
         <div className={`min-h-0 flex-1 flex-col ${tab === "agent" ? "flex" : "hidden"}`}>{agent}</div>
-        <div className={`min-h-0 flex-1 overflow-y-auto pb-safe ${tab === "settings" ? "block" : "hidden"}`}>{settings}</div>
+        <div className={`min-h-0 flex-1 flex-col ${tab === "settings" ? "flex" : "hidden"}`}>
+          <SaveBarSlot.Provider value={saveSlot}>
+            <div className="fit-fields min-h-0 flex-1 overflow-y-auto pb-safe">{settings}</div>
+          </SaveBarSlot.Provider>
+          <div ref={setSaveSlot} className="shrink-0" />
+        </div>
         {dialogs}
       </div>
     );
   }
   return (
-    <div className="flex h-full flex-col" data-testid="mate-studio" data-kind={kind} data-layout="split">
+    <div ref={rootRef} className={`flex h-full flex-col ${touch ? "touch-ui" : ""}`} data-testid="mate-studio" data-kind={kind} data-layout="split">
       {header}
       {banner}
       <div className="flex min-h-0 flex-1" ref={box}>
@@ -855,8 +867,11 @@ export default function MateStudio() {
           {agent}
         </section>
         <Splitter value={split} onChange={onSplit} container={box} />
-        <section className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-[linear-gradient(to_bottom,rgb(var(--c-surface-2)/0.35),transparent_240px)]" style={{ minWidth: MIN_RIGHT }} aria-label={t("studio.tabSettings")} data-testid="studio-right">
-          {settings}
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-[linear-gradient(to_bottom,rgb(var(--c-surface-2)/0.35),transparent_240px)]" style={{ minWidth: MIN_RIGHT }} aria-label={t("studio.tabSettings")} data-testid="studio-right">
+          <SaveBarSlot.Provider value={saveSlot}>
+            <div className="min-h-0 flex-1 overflow-y-auto">{settings}</div>
+          </SaveBarSlot.Provider>
+          <div ref={setSaveSlot} className="shrink-0" />
         </section>
       </div>
       {dialogs}

@@ -65,6 +65,28 @@ async def seeded(app):
         shutil.copytree(BUILTIN / "seoa", av.dir(pid) / "export")
         doc.update(status="ready", result={"at": "2026-11-06T00:00:00+00:00", "stills": 12, "clips": 15})
         av.save(doc)
+        if os.environ.get("OUTFIT_E2E_WAITING"):  # for mate-studio-phone-browser.js: a redo waits for the user's OK
+            pid = av.studio_open(mate_id=mid, language="ko", outfit={"id": mates.add_outfit(mid, "여행복")})["id"]
+            doc = av.doc(pid)
+            (av.dir(pid) / "design").mkdir()
+            (av.dir(pid) / "thumbs").mkdir(exist_ok=True)
+            for c in ("c1", "c2", "c3"):
+                shutil.copyfile(BUILTIN / "seoa/neutral.webp", av.dir(pid) / f"design/{c}.png")
+                shutil.copyfile(BUILTIN / "seoa/neutral.webp", av.dir(pid) / f"thumbs/{c}.jpg")
+                doc["items"][f"design:{c}"] = {"stage": "design", "job_type": "nano_banana_pro", "status": "done",
+                                               "out": f"design/{c}.png", "credits": 2.0, "tries": 1}
+            doc["done"]["design"] = True
+            doc.update(status="waiting", phase="pick", checkpoint={"stage": "pick", "at": "2026-11-06T00:00:00+00:00"},
+                       plan={"id": "plan_e2e", "total": 100.0, "reserve": 15.0, "cap": 115.0, "minutes": 10,
+                             "complete": True, "errors": [], "balance": 150.0, "usd": 0, "counts": {},
+                             "lines": [{"stage": "design", "job_type": "nano_banana_pro", "count": 3, "unit": 2.0,
+                                        "credits": 6.0}]},
+                       confirmation={"plan_id": "plan_e2e", "total": 100.0, "cap": 115.0,
+                                     "at": "2026-11-06T00:00:00+00:00"},
+                       extras=[{"id": "x_e2e", "reason": "3 new candidates", "total": 6.0, "status": "pending",
+                                "at": "2026-11-06T00:00:00+00:00",
+                                "items": [{"kind": "reroll", "key": "design", "count": 3, "credits": 6.0, "note": "x"}]}])
+            av.save(doc)
         yield
 
 

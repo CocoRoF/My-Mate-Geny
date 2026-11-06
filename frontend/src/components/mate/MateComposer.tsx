@@ -453,7 +453,7 @@ function Composer({
               {touch ? t("mate.hintSteerTouch") : t("mate.hintSteer")}
             </span>
           ) : (
-            <span className="hidden truncate sm:inline">
+            <span className="hidden truncate sm:inline [@media(max-height:500px)]:hidden">
               {touch ? t("mate.hintTouch") : t("mate.hintKeys")}
             </span>
           )}

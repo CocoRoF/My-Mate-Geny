@@ -46,6 +46,11 @@ export default function RelationPanel({ mate, onClose, initialTab = "relation" }
   const t = useT();
   const [tab, setTab] = useState<RelationLink>(initialTab);
   const [adjusting, setAdjusting] = useState(false);
+  // the other tab or view starts at its top
+  const body = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    body.current?.scrollTo(0, 0);
+  }, [tab, adjusting]);
   const [j, setJ] = useState<RelationJournal | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -110,7 +115,7 @@ export default function RelationPanel({ mate, onClose, initialTab = "relation" }
           </button>
         ))}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
+      <div ref={body} className="fit-fields min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
         <div className="mx-auto max-w-xl space-y-4 pb-6">
           {tab === "memory" ? <MemoryNotebook key={mate.id} mate={mate} /> : adjusting ? <RelationshipTab key={mate.id} mate={mate} /> : <>
           {err && <p className="rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{t("mate.relPanelError", { error: err })}</p>}

@@ -691,7 +691,7 @@ function EmotionClipsEditor({ rig, name, onChange }: { rig: Rig; name: string; o
             <span className="font-mono">{c.id}</span>
             <button
               onClick={() => onChange(withEmotion(rig, name, ids(now.clips).filter((x) => x !== c.id)))}
-              className="text-content-faint hover:text-danger"
+              className="text-content-faint hover:text-danger min-w-[32px]"
               aria-label={t("mateSettings.clipDontPlay", { id: c.id, name })}
               data-testid={`mate-emotion-remove-${c.id}`}
             >

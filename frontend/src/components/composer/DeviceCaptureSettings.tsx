@@ -38,14 +38,14 @@ export default function DeviceCaptureSettings({mate}: {mate?:Mate}) {
 
       <label className="flex flex-wrap items-center gap-2">
         {t("screen.mode")}
-        <select value={prefs.sharing.mode} onChange={e=>void patchDevicePreferences({sharing:{mode:e.target.value as typeof prefs.sharing.mode}})} className="rounded border border-border bg-surface px-2 py-1" data-testid="screen-mode">
+        <select value={prefs.sharing.mode} onChange={e=>void patchDevicePreferences({sharing:{mode:e.target.value as typeof prefs.sharing.mode}})} className="min-w-0 flex-1 basis-40 rounded border border-border bg-surface px-2 py-1" data-testid="screen-mode">
           <option value="ask">{t("screen.whenRequested")}</option>
           <option value="on_turn">{t("screen.onTurn")}</option>
           {(!mate || prefs.sharing.mode==="observe")&&<option value="observe">{t("screen.observe")}</option>}
         </select>
       </label>
       {prefs.sharing.mode==="observe"&&<label className="flex flex-wrap items-center gap-2">{t("screen.interval")}
-        <select value={prefs.sharing.interval} onChange={e=>void patchDevicePreferences({sharing:{interval:Number(e.target.value)}})} data-testid="screen-interval" className="rounded border border-border bg-surface px-2 py-1">
+        <select value={prefs.sharing.interval} onChange={e=>void patchDevicePreferences({sharing:{interval:Number(e.target.value)}})} data-testid="screen-interval" className="min-w-0 flex-1 basis-40 rounded border border-border bg-surface px-2 py-1">
           {[60,180,300,600].map(n=><option key={n} value={n}>{t("screen.seconds",{count:n})}</option>)}
         </select>
       </label>}
@@ -53,7 +53,7 @@ export default function DeviceCaptureSettings({mate}: {mate?:Mate}) {
         <label className="flex flex-wrap items-center gap-2">
           {t("screen.source")}
           <select
-            className="min-w-0 max-w-full rounded border border-border bg-surface px-2 py-1"
+            className="min-w-0 max-w-full flex-1 basis-40 rounded border border-border bg-surface px-2 py-1"
             value={s.source_invalid?"__invalid__":s.source?.id || ""}
             onChange={(e) =>
               patch({
@@ -83,7 +83,7 @@ export default function DeviceCaptureSettings({mate}: {mate?:Mate}) {
           onChange={(e) =>
             patch({ approval: e.target.value as typeof s.approval })
           }
-          className="rounded border border-border bg-surface px-2 py-1"
+          className="min-w-0 flex-1 basis-40 rounded border border-border bg-surface px-2 py-1"
           data-testid="device-capture-approval"
         >
           <option value="ask">{t("screen.ask")}</option>
@@ -95,7 +95,7 @@ export default function DeviceCaptureSettings({mate}: {mate?:Mate}) {
         <select
           value={s.max_edge}
           onChange={(e) => patch({ max_edge: Number(e.target.value) })}
-          className="rounded border border-border bg-surface px-2 py-1"
+          className="min-w-0 flex-1 basis-40 rounded border border-border bg-surface px-2 py-1"
           data-testid="device-capture-size"
         >
           {[1280, 1920, 2560, 0].map((n) => (
@@ -110,7 +110,7 @@ export default function DeviceCaptureSettings({mate}: {mate?:Mate}) {
         <select
           value={s.format}
           onChange={(e) => patch({ format: e.target.value as typeof s.format })}
-          className="rounded border border-border bg-surface px-2 py-1"
+          className="min-w-0 flex-1 basis-40 rounded border border-border bg-surface px-2 py-1"
           data-testid="device-capture-format"
         >
           <option value="png">PNG</option>

@@ -114,7 +114,7 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="w-full md:w-[268px] h-full shrink-0 flex flex-col border-r border-border bg-surface md:bg-surface/80 backdrop-blur-xl pt-safe pb-safe">
+    <aside className="w-full md:w-[268px] [@media(max-height:500px)]:!w-full h-full shrink-0 flex flex-col border-r border-border bg-surface md:bg-surface/80 [@media(max-height:500px)]:!bg-surface backdrop-blur-xl pt-safe pb-safe">
       {/* Brand */}
       <div className="flex items-center gap-2.5 px-4 h-14">
         <img src="/logo.png" alt="" width={36} height={36} className="w-9 h-9 shrink-0 select-none drop-shadow" draggable={false} />

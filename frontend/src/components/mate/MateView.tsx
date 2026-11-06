@@ -10,14 +10,14 @@
 import PageLoading from "../ui/Loading";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { listDrafts, type DraftSummary } from "../../api/avatar";
-import { usePhone } from "../../lib/device";
+import { useNarrowerThan, usePhone, useShortScreen, useTouchFirst } from "../../lib/device";
 import { useKeyboardOpen } from "../../lib/keyboard";
 import { useBackHandler } from "../../lib/back";
 import { useMateStore } from "../../stores/mateStore";
 import { useMateConversation } from "../../mate/useMateConversation";
 import { OPEN_GLOBAL_SETTINGS_EVENT } from "../../mate/live2dCore";
 import { MenuButton } from "../layout/MobileTopBar";
-import Icon from "../ui/Icon";
+import Icon, { type IconName } from "../ui/Icon";
 import { DropOverlay, useFileDrop } from "../composer/useFileDrop";
 import MateComposer, { ReadAloudToggle } from "./MateComposer";
 import MateMessages from "./MateMessages";
@@ -37,6 +37,8 @@ type SettingsTab = "relation" | "memory" | undefined;
 type GlobalSection = Parameters<ReturnType<typeof useMateStore.getState>["openGlobal"]>[0];
 
 const COLLAPSE_KEY = "hrh_mate_stage_collapsed";
+/** the stage's and the conversation's least widths, side by side */
+const SPLIT_MIN = 660;
 
 export default function MateView() {
   const t = useT();
@@ -53,7 +55,11 @@ export default function MateView() {
   const conv = useMateConversation(studio ? null : mate);
   // drop files on the conversation, or paste them anywhere on the page: they go to the composer
   const { dragging, dropProps } = useFileDrop(conv.sessionId);
-  const phone = usePhone();
+  // the split needs its stage and conversation side by side: beside the sidebar a tablet or a small window has less
+  const [narrow, rootRef] = useNarrowerThan(SPLIT_MIN);
+  const phone = usePhone() || narrow;
+  const touch = useTouchFirst();
+  const short = useShortScreen();
   const keyboard = useKeyboardOpen();
   // one panel slot: Mate settings or the Relationship panel (local), or Global settings (the store's: Mate settings
   // and anything else open it with openGlobal(section); inside Mate settings it swaps itself for Global settings)
@@ -126,6 +132,17 @@ export default function MateView() {
   }, []);
   const [switcher, setSwitcher] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
+  // phones: the header keeps what is used all the time, the rest is one press away
+  const [more, setMore] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!more) return;
+    const onDown = (e: PointerEvent) => {
+      if (!moreRef.current?.contains(e.target as Node)) setMore(false);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [more]);
   // a press anywhere outside the switcher closes it (a fixed backdrop would be
   // clipped to the header: backdrop-filter makes it the containing block)
   useEffect(() => {
@@ -158,6 +175,7 @@ export default function MateView() {
   }, [info]);
   useBackHandler(settings, closePanels);
   useBackHandler(switcher, () => setSwitcher(false));
+  useBackHandler(more, () => setMore(false));
   // the studio closed with something to say (created, discarded, imported)
   const studioNotice = useStudio((s) => s.notice);
   useEffect(() => {
@@ -211,11 +229,12 @@ export default function MateView() {
     );
 
   const header = (
-    <div className={`relative z-30 flex shrink-0 items-center gap-1.5 border-b border-border/70 bg-surface/80 backdrop-blur-xl px-3 ${phone ? "pt-safe" : ""}`}>
+    <div className="relative z-30 flex shrink-0 items-center gap-1.5 border-b border-border/70 bg-surface/80 px-3 pt-safe backdrop-blur-xl">
       <div className="flex h-12 w-full items-center gap-1.5">
         <MenuButton />
         {/* (flex: a long name truncates instead of running under the indicator) */}
-        <div className="relative flex min-w-0" ref={switcherRef}>
+        {/* (phones: the menu takes the header's width, not this button's) */}
+        <div className={`flex min-w-0 ${phone ? "" : "relative"}`} ref={switcherRef}>
           <button
             onClick={() => setSwitcher((v) => !v)}
             className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-surface-2"
@@ -228,7 +247,7 @@ export default function MateView() {
           </button>
           {switcher && (
             <>
-              <div className="absolute left-0 top-11 z-40 w-80 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-border bg-surface-2 shadow-float animate-fade-in" data-testid="mate-switcher-menu">
+              <div className={`absolute z-40 overflow-hidden rounded-xl border border-border bg-surface-2 shadow-float animate-fade-in ${phone ? "inset-x-3 top-[calc(100%+4px)]" : "left-0 top-11 w-80 max-w-[calc(100vw-1.5rem)]"}`} data-testid="mate-switcher-menu">
                 <div className="max-h-72 overflow-y-auto py-1">
                   {mates.map((m) => (
                     <button
@@ -306,44 +325,48 @@ export default function MateView() {
           </span>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {phone && <ReadAloudToggle mate={mate} conv={conv} className="btn-ghost !px-2.5" size={16} />}
-          {phone && !keyboard && (
-            <button onClick={toggleCollapsed} className="btn-ghost !px-2.5" title={collapsed ? t("mate.showAvatar") : t("mate.hideAvatar")}>
-              <Icon name={collapsed ? "chevron-down" : "chevron-up"} size={16} />
+          {(phone || touch) && <ReadAloudToggle mate={mate} conv={conv} className="btn-ghost !px-2.5" size={16} />}
+          {!phone && (
+            <>
+              <button
+                onClick={() => useStudio.getState().openAvatar(mate.id)}
+                className="btn-ghost !px-2.5"
+                title={t("avatar.openTitle", { name: mate.name })}
+                aria-label={t("avatar.title")}
+                data-testid="mate-avatar-create"
+              >
+                <Icon name="sparkles" size={15} />
+                <span className="ml-1 text-[12.5px]">{t("avatar.title")}</span>
+              </button>
+              <button onClick={reset} disabled={resetting || conv.streaming} className="btn-ghost !px-2.5" title={t("mate.resetTitle")} data-testid="mate-reset">
+                <Icon name="rotate" size={15} spin={resetting} />
+              </button>
+            </>
+          )}
+          {/* (phones: her ring next to the name opens the same panel, and her name needs the room) */}
+          {!(phone && mate.relation?.enabled && mate.relation.show_indicator) && (
+            <button
+              onClick={toggleRelation}
+              className={`btn-ghost !px-2.5 ${relationOpen ? "!bg-surface-3 !text-content" : ""}`}
+              title={t("mate.relPanelOpenTitle", { name: mate.name })}
+              aria-label={t("mate.relPanelOpen")}
+              aria-pressed={relationOpen}
+              data-testid="mate-relation-open"
+            >
+              <Icon name="heart" size={16} />
             </button>
           )}
-          <button
-            onClick={() => useStudio.getState().openAvatar(mate.id)}
-            className="btn-ghost !px-2.5"
-            title={t("avatar.openTitle", { name: mate.name })}
-            aria-label={t("avatar.title")}
-            data-testid="mate-avatar-create"
-          >
-            <Icon name="sparkles" size={15} />
-            {!phone && <span className="ml-1 text-[12.5px]">{t("avatar.title")}</span>}
-          </button>
-          <button onClick={reset} disabled={resetting || conv.streaming} className="btn-ghost !px-2.5" title={t("mate.resetTitle")} data-testid="mate-reset">
-            <Icon name="rotate" size={15} spin={resetting} />
-          </button>
-          <button
-            onClick={toggleRelation}
-            className={`btn-ghost !px-2.5 ${relationOpen ? "!bg-surface-3 !text-content" : ""}`}
-            title={t("mate.relPanelOpenTitle", { name: mate.name })}
-            aria-label={t("mate.relPanelOpen")}
-            aria-pressed={relationOpen}
-            data-testid="mate-relation-open"
-          >
-            <Icon name="heart" size={16} />
-          </button>
-          <button
-            onClick={toggleGlobal}
-            className={`btn-ghost !px-2.5 ${globalOpen ? "!bg-surface-3 !text-content" : ""}`}
-            title={t("mate.globalSettingsTitle")}
-            aria-label={t("mate.globalSettings")}
-            data-testid="mate-global-settings-open"
-          >
-            <Icon name="sliders" size={16} />
-          </button>
+          {!phone && (
+            <button
+              onClick={toggleGlobal}
+              className={`btn-ghost !px-2.5 ${globalOpen ? "!bg-surface-3 !text-content" : ""}`}
+              title={t("mate.globalSettingsTitle")}
+              aria-label={t("mate.globalSettings")}
+              data-testid="mate-global-settings-open"
+            >
+              <Icon name="sliders" size={16} />
+            </button>
+          )}
           <button
             onClick={toggleMate}
             className={`btn-ghost !px-2.5 ${mateOpen && !globalOpen ? "!bg-surface-3 !text-content" : ""}`}
@@ -353,6 +376,38 @@ export default function MateView() {
           >
             <Icon name="settings" size={16} />
           </button>
+          {phone && (
+            <div ref={moreRef} className="flex">
+              <button onClick={() => setMore((v) => !v)} className={`btn-ghost !px-2.5 ${more ? "!bg-surface-3 !text-content" : ""}`} aria-label={t("mate.moreActions")} aria-expanded={more} data-testid="mate-more">
+                <Icon name="more" size={16} />
+              </button>
+              {more && (
+                <div className="absolute right-3 top-[calc(100%+4px)] z-40 w-60 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-border bg-surface-2 py-1 shadow-float animate-fade-in" role="menu" data-testid="mate-more-menu">
+                  {[
+                    { icon: collapsed ? "chevron-down" : "chevron-up", label: collapsed ? t("mate.showAvatar") : t("mate.hideAvatar"), run: toggleCollapsed, id: "mate-avatar-toggle" },
+                    { icon: "sparkles", label: t("avatar.title"), run: () => useStudio.getState().openAvatar(mate.id), id: "mate-avatar-create" },
+                    { icon: "sliders", label: t("mate.globalSettings"), run: toggleGlobal, id: "mate-global-settings-open" },
+                    { icon: "rotate", label: t("mate.newConversation"), run: () => void reset(), id: "mate-reset", disabled: resetting || conv.streaming },
+                  ].map((x) => (
+                    <button
+                      key={x.id}
+                      role="menuitem"
+                      disabled={x.disabled}
+                      onClick={() => {
+                        setMore(false);
+                        x.run();
+                      }}
+                      className="flex min-h-[44px] w-full items-center gap-2.5 px-3 text-left text-[13.5px] text-content hover:bg-surface-3 disabled:opacity-40"
+                      data-testid={x.id}
+                    >
+                      <Icon name={x.icon as IconName} size={15} className="shrink-0 text-content-dim" />
+                      <span className="min-w-0 flex-1 truncate">{x.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -396,7 +451,7 @@ export default function MateView() {
       <MateMessages turns={conv.turns} compact={phone} emptyText={conv.connection === "open" ? t("mate.sayHi", { name: mate.name }) : t("common.loading")} />
       <div className={`shrink-0 px-3 pt-1 sm:px-4 ${keyboard ? "pb-2" : "pb-3"}`}>
         {/* phones: read-aloud lives in the header, the composer row is + · text · mic · send */}
-        <MateComposer mate={mate} conv={conv} showVoiceToggle={!phone} />
+        <MateComposer mate={mate} conv={conv} showVoiceToggle={!phone && !touch} />
       </div>
     </div>
   );
@@ -414,12 +469,14 @@ export default function MateView() {
     </Suspense>
   );
 
-  if (phone) {
+  // (a phone on its side keeps the stage beside the conversation, but a panel needs all of its little height)
+  if (phone || (short && settings)) {
     return (
-      <div className="flex h-full flex-col" data-testid="mate-view">
-        {header}
+      <div ref={rootRef} className="touch-ui flex h-full flex-col" data-testid="mate-view">
+        {/* (a panel takes the whole screen: its own title bar closes it, and Android's Back) */}
+        {!settings && header}
         {settings ? (
-          <div className="min-h-0 flex-1">{settingsPanel}</div>
+          <div className="min-h-0 flex-1 pt-safe">{settingsPanel}</div>
         ) : (
           <>
             {/* (the keyboard only hides it: her body stays loaded for when it goes) */}
@@ -442,7 +499,7 @@ export default function MateView() {
   }
 
   return (
-    <div className="flex h-full flex-col" data-testid="mate-view">
+    <div ref={rootRef} className={`flex h-full flex-col ${touch ? "touch-ui" : ""}`} data-testid="mate-view">
       {header}
       {/* half avatar, half conversation (Geny's VTuber tab); settings cover the conversation half */}
       <div className="flex min-h-0 flex-1" data-testid="mate-split">
