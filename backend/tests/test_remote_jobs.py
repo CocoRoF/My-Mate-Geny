@@ -156,6 +156,10 @@ def test_shell_background_children_stay_managed(tmp_path):
     c=manager(tmp_path);h=host(tmp_path)
     job=c.prepare(h,'sleep 20 &',h['cwd'])
     state=c.start(job,wait_ms=150)
+    for _ in range(30):  # (a loaded machine takes longer to get it going)
+        if state['status']=='running':
+            break
+        state=c.poll(job,wait_ms=100)
     assert state['status']=='running'
     stopped=c.stop(job)
     assert stopped['status']=='stopped' and not group_alive(stopped)

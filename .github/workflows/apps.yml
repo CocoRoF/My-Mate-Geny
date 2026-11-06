@@ -55,7 +55,7 @@ jobs:
         run: |
           cd backend
           uv pip install --system -e '.[dev]'
-          python -m pytest -q -p no:cacheprovider
+          python -m pytest -q -p no:cacheprovider -n auto
       - name: Verify frontend before publishing packages
         run: |
           cd frontend

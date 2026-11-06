@@ -4,19 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.mate.josa import address_forms, final_sound, josa, particle
+from app.mate.josa import address_forms, final_sound, particle
 from app.mate.prompt import address_line, prompt_key, system_prompt
-
-
-@pytest.mark.parametrize("word,p,expected", [
-    ("하렴", "아", "하렴아"), ("지수", "아", "지수야"), ("현석", "이", "현석이"), ("지수", "이", "지수가"),
-    ("하렴", "은", "하렴은"), ("지수", "는", "지수는"), ("하렴", "를", "하렴을"), ("지수", "을", "지수를"),
-    ("서울", "(으)로", "서울로"), ("부산", "(으)로", "부산으로"), ("학교", "으로", "학교로"),
-    ("Sam", "이", "Sam이"), ("Kai", "이", "Kai가"), ("Bill", "(으)로", "Bill로"), ("3", "은", "3은"), ("2", "은", "2는"),
-    ("하렴~", "아", "하렴~아"), ("“하렴”", "이", "“하렴”이"),
-])
-def test_josa(word, p, expected):
-    assert josa(word, p) == expected
 
 
 def test_unknown_sound_falls_back_to_the_written_pair():

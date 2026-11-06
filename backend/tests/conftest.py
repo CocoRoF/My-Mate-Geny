@@ -10,6 +10,10 @@ from cryptography.fernet import Fernet
 
 # Set env BEFORE any app import so the cached Settings pick it up. Isolate the
 # DB to a temp file so the TestClient-based tests never touch the prod DB.
+# (pytest-xdist: a worker inherits these from the process that started it, and each must have its own)
+if os.environ.get("PYTEST_XDIST_WORKER"):
+    for _shared in ("DB_PATH", "UPLOADS_ROOT", "MATES_ROOT", "HIGGSFIELD_ROOT", "AVATAR_ROOT"):
+        os.environ.pop(_shared, None)
 os.environ.setdefault("VAULT_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("AUTH_PASSWORD", "test-pass")
 os.environ.setdefault("SESSION_SECRET", "test-session-secret")
