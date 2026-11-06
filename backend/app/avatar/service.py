@@ -1039,7 +1039,8 @@ class AvatarService:
             sheet = d / "sheets" / f"{cid}.jpg"
             if not (d / "clips" / f"{cid}.mp4").is_file():
                 raise AvatarError(f"clip {cid} has not been made yet")
-            if not sheet.is_file():
+            made = [f.stat().st_mtime for f in (d / "clips" / f"{cid}.mp4", d / "matte" / f"{cid}.alpha.mkv") if f.is_file()]
+            if not sheet.is_file() or sheet.stat().st_mtime < max(made):  # (cut out or redone since)
                 await self.deps.run("sheet", [str(d), cid, str(sheet)], timeout=300)
             paths = [(f"clip {cid} (4 frames)", sheet)]
         else:
@@ -1522,8 +1523,10 @@ class AvatarService:
                     "you notice in each (hands, framing, face, background); recommend one. They pick in the panel, "
                     "or ask for new candidates.",
             "home": "The base picture is cut out and placed (look home: the picture and the face region the stills "
-                    "may change). Check edges, hair and the face region, then ask the user to approve it in the "
-                    "panel (or go back to the candidates).",
+                    "may change, on a dark page: anything pale between the strands or along the edges is background "
+                    "that was not cut out, and something missing was cut too much). Check edges, hair and the face "
+                    "region, then ask the user to approve it in the panel (or go back to the candidates, or redo the "
+                    "cut-out).",
             "stills": "The stills are ready (look stills). Compare each face with the base picture; point out any "
                       "that look wrong and offer to redo them. The user approves in the panel; the clips come next.",
         }

@@ -21,9 +21,9 @@ Steps (files are relative to the project dir; ``pipeline.json`` there holds the 
                        web/box.json (one crop for every clip and still)
     check              → check.json: loop seam, first frame vs the base picture, background drift, alpha quality
     export <key>       → export/: rig.json, <still>.webp, <clip>.{lg,sm}.mp4, portrait.webp (an ailism-style pack)
-    sheet <id> <out>   four frames of a clip side by side (for a look)
+    sheet <id> <out>   four frames of a clip side by side, cut out on a dark page once its matte exists (for a look)
     thumb <src> <dst> [px]
-    selftest           the alpha recovery on a synthetic frame (tests)
+    selftest [assets]  the alpha recovery on a synthetic frame and, given the bundled mates' assets, on real art (tests)
     versions           what is installed
 
 The last line on stdout is a JSON object: {"ok": true, …} or {"ok": false, "error": "…"}.
@@ -37,6 +37,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import cv2
@@ -51,6 +52,10 @@ CANVASES = {"9:16": (1080, 1920), "1:1": (1080, 1080)}
 KEY_FROM, KEY_TO = 45.0, 90.0
 #: colour distance under which a pixel simply shows the background (video noise stays under ~5)
 GAP_KEY = 9.0
+#: under this the picture may still be the background: the gray behind fine hair picks up a tint of the hair
+NEAR_KEY = 3 * GAP_KEY
+#: pictures to judge a cut-out by stand on this: on the gray they were cut from, what is left of it can't be seen
+REVIEW_PAGE = (22, 46, 72)
 JOB_ASPECTS = {"1:1": 1.0, "3:4": 0.75, "4:3": 4 / 3, "2:3": 2 / 3, "3:2": 1.5, "9:16": 9 / 16, "16:9": 16 / 9}
 
 
@@ -172,6 +177,15 @@ def near_dark(orig: np.ndarray, bg: np.ndarray, px: int) -> np.ndarray:
     return cv2.erode(orig.mean(-1).astype(np.float32), np.ones((size, size), np.uint8)) < 0.5 * bg.mean()
 
 
+def flat_background(orig: np.ndarray, a: np.ndarray, bg: np.ndarray) -> bool:
+    """Whether a picture stands on one flat colour, which is what telling the background by its colour rests on. Clips
+    always do (they start from the known gray); a reference used as it is (``as_base``) may stand on a room."""
+    away = cv2.erode((a < 0.02).astype(np.uint8), np.ones((9, 9), np.uint8)).astype(bool)[::4, ::4]
+    if away.mean() < 0.01:
+        return False
+    return float(np.percentile(np.abs(orig[::4, ::4][away] - bg).max(-1), 95)) <= 2 * GAP_KEY
+
+
 def rematte(a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -> np.ndarray:
     """The remover's mask is a smooth hull over fine hair: gray seen between a loose strand and the head comes out as
     body (a white patch on a dark page) and a dark edge keeps a rim of gray. The background is one known flat colour, so
@@ -180,8 +194,21 @@ def rematte(a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -> np.ndarray:
     outline, opens to a hole or lies next to such a gap; light parts of the body can match the gray too (a headset's
     shading, a white band), but those are ringed by other light colours or, like the eyes, lie deep inside. From there on
     a few pixels of mix get the coverage the mix says. Colours that cannot be told from the gray (silver hair) keep the
-    remover's answer."""
-    W = a.shape[1]
+    remover's answer, unless it doubts it (``doubted_gray``). Only on one flat background: elsewhere nothing changes."""
+    if not flat_background(orig, a, bg):
+        return a
+    # (only around the body: most of a frame is empty, and a clip has over a hundred of them)
+    rows, cols = np.flatnonzero((a > 0.04).any(1)), np.flatnonzero((a > 0.04).any(0))
+    if not len(rows):
+        return a
+    y0, y1 = max(0, rows[0] - 40), rows[-1] + 41
+    x0, x1 = max(0, cols[0] - 40), cols[-1] + 41
+    out = a.copy()
+    out[y0:y1, x0:x1] = _rematte(a[y0:y1, x0:x1], orig[y0:y1, x0:x1], bg, a.shape[1], a.size)
+    return out
+
+
+def _rematte(a: np.ndarray, orig: np.ndarray, bg: np.ndarray, W: int, size: int) -> np.ndarray:
     r = max(3, W // 288)
     kernel = np.ones((3, 3), np.uint8)
     dark = cv2.erode(orig, np.ones((3 * r | 1, 3 * r | 1), np.uint8))  # per channel: the darkest colour near a pixel
@@ -227,9 +254,25 @@ def rematte(a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -> np.ndarray:
         edge |= step
     a = np.where(edge, np.minimum(a, np.clip((cover - 0.03) / 0.57, 0, 1)), a)  # the half-dark tones of hair stay solid
     a[gaps & flat] = 0
-    # the gray the remover itself was unsure of, beside the hair (a headset's shading it is sure of)
-    a[(a < 0.8) & (dist < 2 * GAP_KEY) & near_dark(orig, bg, 3 * r)] = 0
-    return a
+    return doubted_gray(a, dist, size)
+
+
+def doubted_gray(a: np.ndarray, dist: np.ndarray, size: int) -> np.ndarray:
+    """Where the remover itself doubts and the picture says it is about the gray. That is what tells a tinted gap between
+    pale hair from a pale part of the body the remover is sure of (a headset, a white band). A small patch it doubts for a
+    good part goes as a whole; elsewhere each doubted pixel fades with how close it is to the gray. No hard thresholds:
+    they show as jagged edges and flicker from frame to frame."""
+    near = (dist < NEAR_KEY) & (a > 0.04)
+    lab, n = ndimage.label(near, structure=np.ones((3, 3)))
+    if n:
+        ids = np.arange(1, n + 1)
+        small = ndimage.sum(near, lab, ids) <= 0.004 * size
+        keep = np.zeros(n + 1, bool)
+        keep[1:] = small & (np.asarray(ndimage.mean(a, lab, ids)) < 0.65)  # (it mostly says "not her")
+        patch = cv2.GaussianBlur(keep[lab].astype(np.float32), (0, 0), 1.5)
+        a = a + np.clip(2 * patch, 0, 1) * (np.minimum(a, np.clip((dist - GAP_KEY) / (NEAR_KEY - GAP_KEY), 0, 1)) - a)
+    doubt = np.clip((0.95 - a) / 0.15, 0, 1)
+    return a * (1 - doubt * (1 - np.clip((dist - GAP_KEY) / (NEAR_KEY - GAP_KEY), 0, 1)))
 
 
 def recover(orig: np.ndarray, masked: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -276,12 +319,22 @@ def solidify(rgb: np.ndarray, a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -
     return rgb, a
 
 
-def choke(a: np.ndarray) -> np.ndarray:
+def choke(a: np.ndarray, seen: np.ndarray, bg: np.ndarray) -> np.ndarray:
     """The edge about a pixel in: the old gray in the outermost pixels reads as a light rim on a dark page, the
-    remover's faint wisps as smoke. Solid parts stay."""
+    remover's faint wisps as smoke. Solid parts stay, and so does what clearly isn't the gray (``seen``: the picture on it):
+    a fine strand or an outline is no rim, and eaten away it breaks into dashes."""
+    was = a
     a = np.where(a < 1.0, a ** 1.4, a).astype(np.float32)
     inner = cv2.erode(a, np.ones((3, 3), np.uint8))
-    return np.minimum(a, cv2.GaussianBlur(inner, (0, 0), 0.8))
+    out = np.minimum(a, cv2.GaussianBlur(inner, (0, 0), 0.8))
+    clear = np.clip((np.sqrt(((seen - bg) ** 2).sum(-1)) - KEY_FROM) / (KEY_TO - KEY_FROM), 0, 1) * np.clip((was - 0.1) / 0.3, 0, 1)
+    return (out + clear * (was - out)).astype(np.float32)
+
+
+def on_gray(rgba: np.ndarray) -> np.ndarray:
+    """A picture with alpha as it looks on the known gray."""
+    al = rgba[..., 3:4] / 255.0
+    return rgba[..., :3] * al + np.array(GRAY, np.float32) * (1 - al)
 
 
 # ---------------------------------------------------------------- pictures
@@ -290,7 +343,7 @@ def thumb(src: Path, dst: Path, px: int = 512) -> None:
     im = Image.open(src)
     if im.mode in ("RGBA", "LA", "P"):
         im = im.convert("RGBA")
-        flat = Image.new("RGBA", im.size, GRAY + (255,))
+        flat = Image.new("RGBA", im.size, REVIEW_PAGE + (255,))
         flat.alpha_composite(im)
         im = flat
     im = im.convert("RGB")
@@ -401,7 +454,7 @@ def cmd_home(p: Path) -> dict:
     thumb(m / "home.png", p / "thumbs" / "home.jpg")
     # the region the expressions may change, outlined on the base picture (for the user's approval)
     view = np.asarray(Image.open(m / "home.png").convert("RGBA")).astype(np.float32)
-    flat = view[..., :3] * (view[..., 3:] / 255.0) + np.array(GRAY, np.float32) * (1 - view[..., 3:] / 255.0)
+    flat = view[..., :3] * (view[..., 3:] / 255.0) + np.array(REVIEW_PAGE, np.float32) * (1 - view[..., 3:] / 255.0)
     ring = (mask > 0.04) & (mask < 0.5)
     flat[ring] = flat[ring] * 0.3 + np.array([255, 80, 120], np.float32) * 0.7
     im = Image.fromarray(flat.clip(0, 255).astype(np.uint8))
@@ -512,7 +565,7 @@ def cmd_encode(p: Path, only: list[str] | None = None) -> dict:
             bg = np.array(bgs[min(i, len(bgs) - 1)], np.float32)
             rgb = colour(o, a, bg)
             rgb, a = solidify(rgb, a, o, bg)
-            a = choke(a)
+            a = choke(a, o, bg)
             crop = np.dstack([rgb, a * 255.0]).clip(0, 255).round().astype(np.uint8)
             for proc, (ww, hh), _ in procs.values():
                 small = cv2.resize(crop, (ww, hh), interpolation=cv2.INTER_AREA)
@@ -581,7 +634,7 @@ def cmd_check(p: Path) -> dict:
 def portrait(home: Image.Image, box: list[int]) -> Image.Image:
     """Head and shoulders from the home picture, 3:4 (768×1024), on a soft two-tone of the character's own colours."""
     px = np.asarray(home).astype(np.float32)
-    px[..., 3] = choke(px[..., 3] / 255.0) * 255.0
+    px[..., 3] = choke(px[..., 3] / 255.0, on_gray(px), np.array(GRAY, np.float32)) * 255.0
     home = Image.fromarray(px.clip(0, 255).astype(np.uint8), "RGBA")
     fx, fy, fw, fh = box
     top = max(0, round(fy - fh * 0.8))
@@ -617,7 +670,7 @@ def cmd_export(p: Path, key: str) -> dict:
             continue
         im = Image.open(src).convert("RGBA")
         px = np.asarray(im).astype(np.float32)
-        px[..., 3] = choke(px[..., 3] / 255.0) * 255.0
+        px[..., 3] = choke(px[..., 3] / 255.0, on_gray(px), np.array(GRAY, np.float32)) * 255.0
         im = Image.fromarray(px.clip(0, 255).astype(np.uint8), "RGBA")
         canvas = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
         canvas.alpha_composite(im.resize((round(im.width * s), round(im.height * s)), Image.LANCZOS), (ox, oy))
@@ -659,16 +712,29 @@ def cmd_export(p: Path, key: str) -> dict:
 def cmd_sheet(p: Path, cid: str, dst: str) -> dict:
     path = p / "clips" / f"{cid}.mp4"
     w, h, _ = probe(path)
-    allf = list(frames(path, size=(360, 360 * h // w // 2 * 2)))
-    picks = [allf[int(i)] for i in np.linspace(0, len(allf) - 1, 6)[1:-1]]
-    sheet = Image.fromarray(np.concatenate(picks, axis=1))
+    size = (360, 360 * h // w // 2 * 2)
+    allf = list(frames(path, size=size))
+    picks = [int(i) for i in np.linspace(0, len(allf) - 1, 6)[1:-1]]
+    shown = [allf[i] for i in picks]
+    alpha, meta = p / "matte" / f"{cid}.alpha.mkv", p / "matte" / f"{cid}.json"
+    if alpha.exists() and meta.exists():  # (cut out already: how it will look, with whatever is left of the gray)
+        bgs = json.loads(meta.read_text())["bg"]
+        a8 = list(frames(alpha, "gray", size=size))
+        page = np.array(REVIEW_PAGE, np.float32)
+        shown = []
+        for i in picks:
+            a = a8[min(i, len(a8) - 1)].astype(np.float32) / 255.0
+            o = allf[i].astype(np.float32)
+            rgb = colour(o, a, np.array(bgs[min(i, len(bgs) - 1)], np.float32))
+            shown.append((rgb * a[..., None] + page * (1 - a[..., None])).clip(0, 255).astype(np.uint8))
+    sheet = Image.fromarray(np.concatenate(shown, axis=1))
     atomic_save(sheet, Path(dst), quality=85)
     return {"sheet": dst, "frames": len(allf)}
 
 
 # ---------------------------------------------------------------- tests
 
-def cmd_selftest() -> dict:
+def cmd_selftest(assets: str | None = None) -> dict:
     """Alpha recovery on a synthetic frame with a known gray background: a dark disk (cloth, with a darker fold
     line) and a light one (silver hair) with soft edges, composited over the gray; the 'remover' result is the same
     figure on black. The recovered alpha and colour are compared with the truth."""
@@ -697,12 +763,48 @@ def cmd_selftest() -> dict:
         "bg": [round(float(v), 2) for v in bg_est],
         "alpha_inside_min": round(float(a[inside].min()), 4),
         "alpha_inside_mean": round(float(a[inside].mean()), 4),
+        "alpha_shipped_inside_min": round(float(solidify(rgb, a, orig, bg_est)[1][inside].min()), 4),
         "alpha_outside_max": round(float(a[outside].max()), 4),
         "alpha_edge_mae": round(float(np.abs(a - a_true)[edge].mean()), 4),
         "fold_alpha_min": round(float(a[fold].min()), 4),
         "colour_mae": round(col_err, 3),
         **selftest_gaps(rng),
+        **selftest_page(),
+        **(selftest_art(Path(assets)) if assets else {}),
     }
+
+
+def selftest_art(assets: Path) -> dict:
+    """Real art on the gray, from a remover that covers the gaps and from one that doubts a wide band around her: what is
+    solid stays, what is empty opens. The same picture before a wall instead of one flat colour changes nothing."""
+    art = {}
+    wall_changed = 0
+    for f in sorted(assets.glob("*/neutral.webp")):
+        px = np.asarray(Image.open(f).convert("RGBA"), np.float32)
+        at = px[..., 3] / 255.0
+        bg = np.array(GRAY, np.float32)
+        orig = on_gray(px)
+        solid = (at > 0.5).astype(np.uint8)
+        hull = cv2.GaussianBlur(cv2.dilate(solid, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (19, 19))).astype(np.float32), (0, 0), 3)
+        doubting = cv2.GaussianBlur(cv2.dilate(solid, np.ones((5, 5), np.uint8)).astype(np.float32), (0, 0), 12)
+        empty = (at < 0.05) & (hull > 0.5)
+        art[f.parent.name] = {"lost": round(100 * float((rematte(doubting, orig, bg)[at > 0.95] < 0.5).mean()), 2),
+                              "opened": round(100 * float((rematte(hull, orig, bg)[empty] < 0.5).mean()), 1)}
+        shade = np.linspace(-45, 45, at.shape[1], dtype=np.float32)[None, :, None]  # (light falling along a wall)
+        wall = shade + np.array((205, 185, 160), np.float32)
+        before = (px[..., :3] * at[..., None] + wall * (1 - at[..., None])).astype(np.float32)
+        wall_bg = np.median(before[:16].reshape(-1, 3), axis=0)
+        wall_changed += int(np.count_nonzero(rematte(hull, before, wall_bg) != hull))
+    return {"art": art, "wall_changed": wall_changed}
+
+
+def selftest_page() -> dict:
+    """What is left of the gray must show in the pictures a cut-out is judged by."""
+    with tempfile.TemporaryDirectory() as tmp:
+        src, dst = Path(tmp) / "a.png", Path(tmp) / "a.jpg"
+        Image.new("RGBA", (40, 40), (0, 0, 0, 0)).save(src)
+        thumb(src, dst)
+        return {"thumb_page": [int(v) for v in np.asarray(Image.open(dst).convert("RGB"))[20, 20]]}
 
 
 def selftest_gaps(rng: np.random.Generator) -> dict:
@@ -729,7 +831,9 @@ def selftest_gaps(rng: np.random.Generator) -> dict:
     a, bg_est = recover(orig, (orig * hull[..., None]).astype(np.float32))
     _, a = solidify(colour(orig, a, bg_est), a, orig, bg_est)
     side = np.abs(np.arctan2(yy - 120.0, 120.0 - xx)) < 0.5
+    shown = choke(a, orig, bg_est)
     return {
+        "strand_shown_mean": round(float(shown[(d > 86.5) & (d < 88.5) & side].mean()), 4),
         "gap_alpha_max": round(float(a[(d >= 82) & (d < 84) & side].max()), 4),
         "strand_alpha_mean": round(float(a[(d > 86.5) & (d < 88.5) & side].mean()), 4),
         "light_patch_alpha_min": round(float(a[light].min()), 4),
@@ -754,7 +858,7 @@ def main(argv: list[str]) -> int:
     step, rest = argv[0], argv[1:]
     try:
         if step == "selftest":
-            res = cmd_selftest()
+            res = cmd_selftest(rest[0] if rest else None)
         elif step == "versions":
             res = cmd_versions()
         elif step == "thumb":

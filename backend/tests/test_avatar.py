@@ -597,15 +597,24 @@ needs_venv = pytest.mark.skipif(_venv() is None, reason="no avatar processing ve
 @needs_venv
 def test_alpha_recovery_on_a_synthetic_frame():
     r = subprocess.run([str(_venv() / "bin" / "python"), "-I", str(S.Path(S.__file__).with_name("pipeline.py")),
-                        "selftest"], capture_output=True, text=True, timeout=120)
+                        "selftest", str(S.Path(S.__file__).parents[1] / "mate" / "builtin" / "assets")],
+                       capture_output=True, text=True, timeout=240)
     res = json.loads(r.stdout.strip().splitlines()[-1])
     assert res["ok"], res
     assert res["bg"] == pytest.approx([213, 212, 217], abs=1.0)
-    assert res["alpha_inside_mean"] > 0.995 and res["alpha_inside_min"] > 0.9
+    # (a stray pixel where two parts meet may dip before solidify; what ships is solid)
+    assert res["alpha_inside_mean"] > 0.995 and res["alpha_inside_min"] > 0.85 and res["alpha_shipped_inside_min"] > 0.99
     assert res["fold_alpha_min"] > 0.9  # the remover's crack along a dark fold is closed
     assert res["alpha_edge_mae"] < 0.3 and res["colour_mae"] < 3.0
     assert res["gap_alpha_max"] < 0.1 and res["strand_alpha_mean"] > 0.5  # the gray between hair and a loose strand
     assert res["light_patch_alpha_min"] > 0.9 and res["deep_patch_alpha_min"] > 0.9  # body in the gray's colour stays
+    assert res["strand_shown_mean"] > 0.5  # a fine strand isn't eaten away at the edge
+    # real art, black hair, silver hair, pink hair: what is solid stays, what the remover covered opens
+    assert set(res["art"]) == {"chaerin", "estelle", "seoa"}
+    for who, m in res["art"].items():
+        assert m["lost"] < 1 and m["opened"] > 30, (who, m)
+    assert res["wall_changed"] == 0  # not on one flat colour: the picture says nothing about the background
+    assert res["thumb_page"] == pytest.approx([22, 46, 72], abs=6)  # judged on a page where the gray would show
 
 
 @needs_venv

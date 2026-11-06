@@ -27,6 +27,26 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: python -m pytest -q -p no:cacheprovider
 
+  # The avatar pipeline runs in a venv of its own (app/avatar/deps.py), so the job above skips it: cut-outs are checked here.
+  avatar-processing:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e '.[dev]'
+      - run: |
+          python -m venv /tmp/avatar-venv
+          /tmp/avatar-venv/bin/pip install "numpy<3" scipy "opencv-python-headless<5" pillow imageio-ffmpeg
+          touch /tmp/avatar-venv/ready.json
+      - run: python -m pytest -q -p no:cacheprovider tests/test_avatar.py -k "alpha_recovery or end_to_end"
+        env:
+          AVATAR_TEST_VENV: /tmp/avatar-venv
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

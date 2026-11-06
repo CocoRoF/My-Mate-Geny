@@ -36,8 +36,14 @@ Exactly the official mates' body (docs/mate.md §2 `video`, packing `stacked-alp
    gray: α = removed / original, colour = (original − (1 − α)·bg) / α; near the body, colours clearly not the gray are
    body (the remover cracks along dark folds); holes inside the body are filled unless they are the gray itself; gaps
    the remover covers (the gray between hair and a loose strand: its mask is a smooth hull there) opened again from the
-   picture, with the coverage of the dark edges beside them; specks dropped; the inside made solid; the edge choked a
-   pixel in. The base picture's cut-out gets the same opening.
+   picture, with the coverage of the dark edges beside them, and what the remover itself doubts fades with how close it
+   is to the gray (behind pale hair the gray picks up a tint); specks dropped; the inside made solid; the edge choked a
+   pixel in, except what clearly isn't the gray (a fine strand, an outline). The base picture's cut-out gets the same
+   opening, so every way of making an avatar does: a new mate, an existing mate's avatar, an outfit, a redo. All of it only
+   on one flat background (`flat_background`): a reference used as it is may stand on a room, and then the remover's
+   answer stands. Pictures to judge a cut-out by (the base picture, the stills, a clip's sheet once it has a matte) stand
+   on a dark page: on the gray they were cut from, what is left of it can't be seen. `pipeline.py selftest <assets>` checks
+   this on the bundled mates' real art.
 6. **Encode** — one crop box for every clip (the union of where the body ever is + 3 %), stacked-alpha H.264 (colour
    above, alpha below) at two heights (studio: lg 1080 / sm 540; light: 720 / 360).
 7. **Check** — per clip: loop seam (first vs last frame, < 3/255), first frame vs the base picture (< 4), background
@@ -142,7 +148,7 @@ ffmpeg with libx264 when the system has none — the Docker image has none). Ins
 progress streamed) with `uv` when present (the image has it), else venv + pip, else a pip bootstrap. Each step is
 memory-capped (`capped -m $AVATAR_MEM` where a systemd user scope can be made, else an address-space limit) and
 serialized: one avatar's processing at a time on the machine (an fcntl lock under the avatar root). Measured on
-한채린's real 1440² clips: matte ≈ 80 s and ≈ 0.4 GB per clip, encode ≈ 15 s per clip at ≈ 1 GB peak.
+한채린's real 1440² clips: matte ≈ 60 s and ≈ 0.4 GB per clip, encode ≈ 15 s per clip at ≈ 1 GB peak.
 
 Project folder `<AVATAR_ROOT>/<id>/` (default `~/.hr-harnessor/avatars`): `ref/`, `design/`, `masters/`
 (candidate, cut-out, home, place, face), `stills/`, `clips/` (+ `.nobg.mp4`), `matte/` (lossless alpha as FFV1 +
