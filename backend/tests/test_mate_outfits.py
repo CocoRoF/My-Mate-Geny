@@ -253,3 +253,15 @@ async def test_a_new_avatar_goes_on_her_default_set_not_on_the_outfit(db, tmp_pa
     res = await av.apply(pid, mate_id=m["id"])
     assert res["mate"]["outfits"]["worn"] == DEFAULT_OUTFIT
     assert next(c for c in res["mate"]["outfits"]["items"] if c["id"] == oid)["home"] == "/x/pajamas.webp"
+
+
+async def test_an_outfit_waiting_for_her_affinity_cant_be_opened_in_the_studio(db, tmp_path, monkeypatch):
+    _svc, mates, av = _services(db, tmp_path, monkeypatch)
+    m = _mate(mates)
+    mates.store.seed_builtin_outfits(m["id"], [{"id": "builtin-x", "name": "X", "note": "", "avatar": _rig("x"), "unlock": {"affinity": 60}}], [])
+    with pytest.raises(AvatarError) as e:
+        av.studio_open(mate_id=m["id"], language="ko", outfit={"id": "builtin-x"})
+    assert e.value.status == 403 and e.value.code == "locked"
+    assert av.store.ids() == []
+    mates.relation_update(m["id"], {"affinity": 60})
+    assert av.studio_open(mate_id=m["id"], language="ko", outfit={"id": "builtin-x"})["outfit"]["id"] == "builtin-x"

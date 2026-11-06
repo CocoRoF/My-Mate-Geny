@@ -1160,7 +1160,14 @@ default set always stays.
 - **Bundled outfits**: `builtin/assets/<key>/outfits.json` lists `{items: [{id, name, note, rig}]}`; `rig` is a relative
   path to a rig pack in the character's asset folder. New entries enter the wardrobe once during built-in sync, without
   changing what she wears. The built-in snapshot remembers which were offered, so updates preserve the user's edits and
-  deletions. Han Chaerin's **그레이 밴드 수영복** uses plain gray fabric and white bands without brand names or logos.
+  deletions; one she already has follows the bundle where it is still as bundled. Han Chaerin's **그레이 밴드** uses plain
+  gray fabric and white bands without brand names or logos.
+- **Unlocks**: an entry may say `"unlock": {"affinity": 60}` (그레이 밴드 does). It is in the wardrobe from the start, but until
+  her affinity (as the indicator rounds it) reaches that, its card only carries `locked: {affinity}` and the server answers
+  403 to wearing, reading, changing and deleting it, and to opening it in the studio. Once reached it stays open
+  (`unlock.at`, set whenever the relationship is saved), however the affinity moves later; **Start over**
+  closes it again and she goes back to her default set if she had it on. A value set by hand counts. The files themselves
+  are not hidden: the repository is public, and this is a reward, not a protection.
 - **She knows**: while an outfit is on, the per-turn `<context>` says what she has on (it replaces the clothes in her
   profile; no restart, nothing stored).
 - **API**: `POST /api/mates/{id}/outfits {name}` → `{id, mate}`, `GET …/outfits/{oid}` → `{id, name, avatar}`,

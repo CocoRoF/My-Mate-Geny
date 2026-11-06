@@ -184,6 +184,17 @@ export default function MateView() {
     useStudio.getState().note(null);
   }, [studioNotice, studio]);
   const startError = useStudio((s) => s.startError);
+  // her affinity just opened an outfit
+  const waiting = useRef<{ mate: string; ids: Set<string> } | null>(null);
+  useEffect(() => {
+    if (!mate) return;
+    const items = mate.outfits?.items ?? [];
+    const ids = new Set(items.filter((c) => c.locked).map((c) => c.id));
+    const was = waiting.current?.mate === mate.id ? waiting.current.ids : null;
+    waiting.current = { mate: mate.id, ids };
+    const opened = items.find((c) => was?.has(c.id) && !c.locked);
+    if (opened) setInfo(t("mate.outfitUnlocked", { name: opened.name }));
+  }, [mate, t]);
 
   useEffect(() => {
     load();

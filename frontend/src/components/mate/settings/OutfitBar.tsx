@@ -1,14 +1,14 @@
 /**
  * Her wardrobe (docs/mate.md "Outfits"): her default set and the outfits the user added. Adding one only takes a name: it
  * starts empty and is filled below like any avatar, with AI or with files. Picking one shows its settings; Wear puts the
- * whole set on her at once, in every window.
+ * whole set on her at once, in every window. A bundled outfit may wait for her affinity: until then it only says so.
  */
 import { useState } from "react";
 import { addOutfit, DEFAULT_OUTFIT, deleteOutfit, patchOutfit, wearOutfit, type Mate, type OutfitCard } from "../../../api/mates";
 import { useT } from "../../../i18n";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
-import { ErrorLine, Section } from "./ui";
+import { ErrorLine, ProgressBar, Section } from "./ui";
 
 export default function OutfitBar({ mate, selected, onSelect }: { mate: Mate; selected: string; onSelect: (id: string) => void }) {
   const t = useT();
@@ -69,10 +69,16 @@ export default function OutfitBar({ mate, selected, onSelect }: { mate: Mate; se
             data-testid="outfit-tile"
             data-outfit={c.id}
             data-worn={c.id === worn}
-            data-empty={c.kind === "none"}
+            data-empty={c.kind === "none" && !c.locked}
+            data-locked={!!c.locked}
           >
             <span className="relative block aspect-[4/5] w-full bg-[radial-gradient(ellipse_at_50%_100%,rgb(var(--c-surface-3)),transparent_75%)]">
-              {c.home ? (
+              {c.locked ? (
+                <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-content-faint">
+                  <Icon name="lock" size={18} />
+                  <span className="text-[11px] tabular-nums">{t("mateSettings.outfitLockedTile", { n: c.locked.affinity })}</span>
+                </span>
+              ) : c.home ? (
                 <img src={c.home} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-contain object-bottom" />
               ) : (
                 <span className="absolute inset-0 grid place-items-center text-[11px] text-content-faint">{t("mateSettings.outfitEmpty")}</span>
@@ -142,11 +148,20 @@ export default function OutfitBar({ mate, selected, onSelect }: { mate: Mate; se
             ) : (
               <div className="truncate text-[13px] font-medium">{nameOf(card)}</div>
             )}
-            <div className="truncate text-[11px] text-content-faint">
+            {card.locked && (
+              <div className="mt-1 space-y-1" data-testid="outfit-locked-hint">
+                <p className="text-[11px] leading-relaxed text-content-faint">
+                  {t("mateSettings.outfitLockedHint", { n: card.locked.affinity, now: mate.relation?.affinity ?? 0 })}
+                  {(!mate.relation?.enabled || mate.relation.paused) && ` ${t("mateSettings.outfitLockedStopped")}`}
+                </p>
+                <ProgressBar value={(mate.relation?.affinity ?? 0) / card.locked.affinity} />
+              </div>
+            )}
+            <div className={`truncate text-[11px] text-content-faint ${card.locked ? "hidden" : ""}`}>
               {card.kind === "none" && card.id !== DEFAULT_OUTFIT ? t("mateSettings.outfitEmptyHint") : card.kind === "none" ? "" : t("mateSettings.outfitMeta", { clips: card.clips, stills: card.stills })}
             </div>
           </div>
-          {card.id !== DEFAULT_OUTFIT && renaming === null && (
+          {card.id !== DEFAULT_OUTFIT && !card.locked && renaming === null && (
             <>
               <button className="btn-ghost !px-1.5 !py-1" onClick={() => setRenaming(card.name)} aria-label={t("mateSettings.outfitRename")} title={t("mateSettings.outfitRename")} data-testid="outfit-rename">
                 <Icon name="pencil" size={13} />
@@ -156,7 +171,7 @@ export default function OutfitBar({ mate, selected, onSelect }: { mate: Mate; se
               </button>
             </>
           )}
-          {card.id === worn ? (
+          {card.locked ? null : card.id === worn ? (
             <span className="pill bg-success/15 text-[11px] text-success" data-testid="outfit-is-worn">
               <Icon name="check" size={10} /> {t("mateSettings.outfitWorn")}
             </span>

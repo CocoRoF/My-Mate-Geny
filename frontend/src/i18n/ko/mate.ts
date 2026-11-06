@@ -111,6 +111,7 @@ const ko: Messages<"mate"> = {
   showAvatar: "아바타 보이기",
   hideAvatar: "아바타 숨기기",
   moreActions: "더 보기",
+  outfitUnlocked: "새 의상 “{name}”이 열렸어요. 설정 → 아바타·의상에서 입혀 볼 수 있어요.",
   newConversation: "새 대화",
   resetTitle: "새 대화 (위의 대화는 잊지만 기억은 남아요)",
   resetConfirm: "{name:와} 새 대화를 시작할까요? 메시지는 여기 남지만 {name:은} 그 내용을 기억하지 못해요 (기억은 유지돼요).",

@@ -239,6 +239,8 @@ export interface OutfitCard {
   clips: number;
   stills: number;
   note: string;
+  /** waits for her affinity: nothing of the set comes along until then */
+  locked?: { affinity: number };
 }
 
 export const DEFAULT_OUTFIT = "default";

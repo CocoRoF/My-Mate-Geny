@@ -946,7 +946,11 @@ def builtin_outfits(key: str) -> list[dict[str, Any]]:
         folder = path.parent
         avatar = rig_avatar(_read_json(path), folder,
                             lambda ref, folder=folder: builtin_url(key, (folder / ref).relative_to(root).as_posix()))
+        need = (item.get("unlock") or {}).get("affinity")
+        if need is not None and (not isinstance(need, int) or isinstance(need, bool) or not 1 <= need <= 100):
+            raise MateError("invalid bundled outfit unlock: affinity is 1 to 100")
         outfits.append({"id": oid, "name": item["name"], "note": item.get("note", ""),
+                        **({"unlock": {"affinity": need}} if need else {}),
                         "avatar": normalize_avatar(avatar)})
     return outfits
 

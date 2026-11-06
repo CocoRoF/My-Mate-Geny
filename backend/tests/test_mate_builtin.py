@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.mate import files
 from app.mate.service import MateService
-from app.mate.store import MateStore
+from app.mate.store import MateError, MateStore
 from app.services.connection_service import ConnectionService
 from app.services.provider_service import ProviderService
 from app.services.session_service import SessionService
@@ -151,8 +151,8 @@ def test_builtin_live2d_files_are_served():
 
 
 def test_bundled_outfits_arrive_once_and_preserve_the_worn_set(db, monkeypatch):
-    outfit = {"id": "builtin-gray-band", "name": "그레이 밴드 수영복", "note": "Gray swimsuit with plain white bands",
-              "avatar": {"kind": "photo", "rig": {"home": "/swimwear.webp", "aspect": [4, 5], "stills": {"neutral": "/swimwear.webp"}, "clips": []}}}
+    outfit = {"id": "builtin-gray-band", "name": "그레이 밴드", "note": "Gray swimsuit with plain white bands",
+              "avatar": {"kind": "photo", "rig": {"home": "/gray-band.webp", "aspect": [4, 5], "stills": {"neutral": "/gray-band.webp"}, "clips": []}}}
     monkeypatch.setattr(files, "builtin_outfits", lambda key: [outfit] if key == "chaerin" else [])
     mates = _service(db)
     cha = mates.store.by_builtin("chaerin")
@@ -180,16 +180,16 @@ def test_existing_install_receives_new_bundled_outfit_without_overwriting_edits(
     cha = mates.store.by_builtin("chaerin")
     mid = cha["id"]
     custom = mates.add_outfit(mid, "내 의상")
-    outfit = {"id": "builtin-gray-band", "name": "그레이 밴드 수영복", "note": "",
-              "avatar": {"kind": "photo", "rig": {"home": "/swimwear.webp", "aspect": [4, 5], "stills": {"neutral": "/swimwear.webp"}, "clips": []}}}
+    outfit = {"id": "builtin-gray-band", "name": "그레이 밴드", "note": "",
+              "avatar": {"kind": "photo", "rig": {"home": "/gray-band.webp", "aspect": [4, 5], "stills": {"neutral": "/gray-band.webp"}, "clips": []}}}
     monkeypatch.setattr(files, "builtin_outfits", lambda key: [outfit] if key == "chaerin" else [])
     mates.store.mark_builtin(mid, "chaerin", "old-version")
     mates.sync_builtins()
     assert [it["id"] for it in mates.get(mid)["outfits"]["items"]] == ["default", custom, outfit["id"]]
-    mates.rename_outfit(mid, outfit["id"], "내 수영복")
+    mates.rename_outfit(mid, outfit["id"], "내 옷")
     mates.store.mark_builtin(mid, "chaerin", "old-version-again")
     mates.sync_builtins()
-    assert mates.get(mid)["outfits"]["items"][-1]["name"] == "내 수영복"
+    assert mates.get(mid)["outfits"]["items"][-1]["name"] == "내 옷"
 
 
 def test_bundled_outfit_pack_uses_nested_builtin_asset_urls(tmp_path, monkeypatch):
@@ -203,8 +203,140 @@ def test_bundled_outfit_pack_uses_nested_builtin_asset_urls(tmp_path, monkeypatc
         "stills": {"neutral": "asset:gray-band/neutral.webp"}, "clips": [],
     }))
     (root / "outfits.json").write_text(json.dumps({"items": [{
-        "id": "builtin-gray-band", "name": "그레이 밴드 수영복", "rig": "outfits/gray-band/rig.json",
+        "id": "builtin-gray-band", "name": "그레이 밴드", "rig": "outfits/gray-band/rig.json",
     }]}))
     outfits = files.builtin_outfits("chaerin")
     assert outfits[0]["avatar"]["rig"]["home"] == "/api/mates/builtin/chaerin/outfits/gray-band/neutral.webp"
     assert outfits[0]["avatar"]["rig"]["stills"]["neutral"] == outfits[0]["avatar"]["rig"]["home"]
+
+
+def _locked_outfit(**extra):
+    return {"id": "builtin-gray-band", "name": "그레이 밴드", "note": "Gray with plain white bands",
+            "avatar": {"kind": "photo", "rig": {"home": "/gray-band.webp", "aspect": [4, 5],
+                                                "stills": {"neutral": "/gray-band.webp"}, "clips": []}},
+            "unlock": {"affinity": 60}, **extra}
+
+
+def _card(mates, mid, oid="builtin-gray-band"):
+    return next(c for c in mates.get(mid)["outfits"]["items"] if c["id"] == oid)
+
+
+def test_a_bundled_outfit_waits_for_her_affinity_and_then_stays_open(db, monkeypatch):
+    monkeypatch.setattr(files, "builtin_outfits", lambda key: [_locked_outfit()] if key == "chaerin" else [])
+    mates = _service(db)
+    mid = mates.store.by_builtin("chaerin")["id"]
+    oid = "builtin-gray-band"
+
+    # locked: the card only says what opens it, and nothing of the set can be used, read or changed
+    card = _card(mates, mid)
+    assert card["locked"] == {"affinity": 60} and card["name"] == "그레이 밴드"
+    assert card["home"] == "" and card["clips"] == card["stills"] == 0 and card["note"] == ""
+    for refused in (lambda: mates.wear_outfit(mid, oid), lambda: mates.outfit(mid, oid),
+                    lambda: mates.rename_outfit(mid, oid, "x"), lambda: mates.delete_outfit(mid, oid),
+                    lambda: mates.set_outfit_avatar(mid, oid, {"kind": "none"})):
+        with pytest.raises(MateError) as e:
+            refused()
+        assert e.value.status == 403 and "60" in str(e.value)
+    assert mates.get(mid)["outfits"]["worn"] == "default"
+
+    # as the indicator rounds it: what shows as 59 is locked, what shows as 60 is open
+    mates.relation_update(mid, {"affinity": 59.4})
+    assert _card(mates, mid)["locked"] == {"affinity": 60}
+    mates.relation_update(mid, {"affinity": 59.6})
+    card = _card(mates, mid)
+    assert "locked" not in card and card["home"] == "/gray-band.webp" and card["note"]
+    mates.wear_outfit(mid, oid)
+    assert mates.get(mid)["avatar"]["rig"]["home"] == "/gray-band.webp"
+
+    # the affinity falls: she keeps it, on her or off
+    mates.relation_update(mid, {"affinity": 10})
+    assert mates.get(mid)["outfits"]["worn"] == oid
+    mates.wear_outfit(mid, "default")
+    assert "locked" not in _card(mates, mid)
+    assert mates.outfit(mid, oid)["avatar"]["rig"]["home"] == "/gray-band.webp"
+
+    # a recount keeps it; a fresh start closes it again and she goes back to what is open
+    mates.relation_reset(mid, "recompute")
+    assert "locked" not in _card(mates, mid)
+    mates.wear_outfit(mid, oid)
+    mates.relation_reset(mid, "zero")
+    assert mates.get(mid)["outfits"]["worn"] == "default"
+    assert _card(mates, mid)["locked"] == {"affinity": 60}
+    assert mates.get(mid)["avatar"]["rig"]["home"] != "/gray-band.webp"
+
+    # however the affinity gets there: every relationship write goes through the store
+    doc = mates.relation_doc(mid)
+    doc["affinity"] = 61.0
+    mates.store.save_relation(mid, doc)
+    assert "locked" not in _card(mates, mid)
+
+
+def test_an_outfit_arriving_for_a_bond_already_there_is_open(db, monkeypatch):
+    monkeypatch.setattr(files, "builtin_outfits", lambda key: [])
+    mates = _service(db)
+    mid = mates.store.by_builtin("chaerin")["id"]
+    mates.relation_update(mid, {"affinity": 75})
+    mates.store.seed_builtin_outfits(mid, [_locked_outfit()], [])
+    assert "locked" not in _card(mates, mid)
+    mates.relation_update(mid, {"affinity": 0})
+    assert "locked" not in _card(mates, mid)
+
+
+def test_a_bundled_outfit_she_has_follows_the_bundle_where_it_is_untouched(db, monkeypatch):
+    first = _locked_outfit(name="옛 이름")
+    first.pop("unlock")
+    monkeypatch.setattr(files, "builtin_outfits", lambda key: [first] if key == "chaerin" else [])
+    mates = _service(db)
+    mid = mates.store.by_builtin("chaerin")["id"]
+    oid = "builtin-gray-band"
+    newer = _locked_outfit()
+    newer["avatar"] = {"kind": "photo", "rig": {"home": "/new.webp", "aspect": [4, 5], "stills": {"neutral": "/new.webp"}, "clips": []}}
+
+    # off her and untouched: the new name, the new set, the lock
+    mates.store.seed_builtin_outfits(mid, [newer], [first])
+    card = _card(mates, mid)
+    assert card["name"] == "그레이 밴드" and card["locked"] == {"affinity": 60}
+    mates.relation_update(mid, {"affinity": 60})
+    assert _card(mates, mid)["home"] == "/new.webp"
+
+    # the user's own name and set stay
+    mates.rename_outfit(mid, oid, "내 옷")
+    own = {"kind": "photo", "rig": {"home": "/mine.webp", "aspect": [4, 5], "stills": {"neutral": "/mine.webp"}, "clips": []}}
+    mates.set_outfit_avatar(mid, oid, own)
+    third = _locked_outfit(name="또 다른 이름")
+    mates.store.seed_builtin_outfits(mid, [third], [newer])
+    card = _card(mates, mid)
+    assert card["name"] == "내 옷" and card["home"] == "/mine.webp"
+    assert "locked" not in card  # (still open: a bundle update doesn't close what her affinity opened)
+
+    # a lock arriving on what she has on doesn't take it off
+    mates.relation_reset(mid, "zero")
+    assert _card(mates, mid)["locked"] == {"affinity": 60}
+    open_one = _locked_outfit(name="또 다른 이름")
+    open_one.pop("unlock")
+    mates.store.seed_builtin_outfits(mid, [open_one], [third])
+    mates.wear_outfit(mid, oid)
+    mates.store.seed_builtin_outfits(mid, [third], [open_one])
+    assert mates.get(mid)["outfits"]["worn"] == oid and "locked" not in _card(mates, mid)
+
+
+def test_the_real_bundle_is_named_and_locked_as_decided():
+    [gray] = files.builtin_outfits("chaerin")
+    assert gray["id"] == "builtin-gray-band" and gray["name"] == "그레이 밴드" and gray["unlock"] == {"affinity": 60}
+    rig = gray["avatar"]["rig"]
+    assert len(rig["clips"]) == 15 and len(rig["stills"]) == 12
+    urls = [rig["home"], *rig["stills"].values(), *(c["src"] for c in rig["clips"]), *(c["small"] for c in rig["clips"])]
+    for url in urls:
+        assert url.startswith("/api/mates/builtin/chaerin/outfits/gray-band/"), url
+        assert files.resolve_builtin("chaerin", url.split("/chaerin/", 1)[1]).is_file()
+
+
+def test_a_bad_unlock_in_the_manifest_is_refused(tmp_path, monkeypatch):
+    root = tmp_path / "assets" / "chaerin"
+    (root / "outfits" / "x").mkdir(parents=True)
+    (root / "outfits" / "x" / "rig.json").write_text(json.dumps({"version": 1, "aspect": [4, 5], "stills": {}, "clips": []}))
+    monkeypatch.setattr(files, "BUILTIN_DIR", tmp_path)
+    for bad in (0, 101, "60", True, 59.5):
+        (root / "outfits.json").write_text(json.dumps({"items": [{"id": "x", "name": "x", "rig": "outfits/x/rig.json", "unlock": {"affinity": bad}}]}))
+        with pytest.raises(MateError):
+            files.builtin_outfits("chaerin")

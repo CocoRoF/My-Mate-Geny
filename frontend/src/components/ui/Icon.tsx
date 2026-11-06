@@ -89,6 +89,7 @@ import {
   LuSunMoon,
   LuSun,
   LuMoon,
+  LuLock,
 } from "react-icons/lu";
 
 const MAP = {
@@ -111,6 +112,7 @@ const MAP = {
   bolt: LuZap,
   search: LuSearch,
   more: LuEllipsis,
+  lock: LuLock,
   copy: LuCopy,
   external: LuExternalLink,
   key: LuKeyRound,

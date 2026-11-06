@@ -599,7 +599,18 @@ def _loads(raw: Any, empty: Any) -> Any:
     return v if isinstance(v, type(empty)) else empty
 
 
-def _outfit_card(oid: str, name: str, avatar: dict[str, Any], *, note: str = "") -> dict[str, Any]:
+def outfit_lock(item: dict[str, Any], affinity: int) -> int | None:
+    """The affinity an outfit still waits for, None when it is open. Once reached it stays open (``unlock.at``), however
+    the affinity moves later."""
+    unlock = item.get("unlock") or {}
+    need = unlock.get("affinity")
+    return need if need and not unlock.get("at") and affinity < need else None
+
+
+def _outfit_card(oid: str, name: str, avatar: dict[str, Any], *, note: str = "", lock: int | None = None) -> dict[str, Any]:
+    if lock:  # (only that it is there and what opens it: nothing of the set itself)
+        return {"id": oid, "name": name, "kind": "none", "home": "", "aspect": [3, 4], "clips": 0, "stills": 0, "note": "",
+                "locked": {"affinity": lock}}
     rig = avatar.get("rig") if isinstance(avatar.get("rig"), dict) else {}
     return {"id": oid, "name": name, "kind": avatar.get("kind") or "none",
             "home": rig.get("home") or (rig.get("stills") or {}).get("neutral") or "",
@@ -607,14 +618,15 @@ def _outfit_card(oid: str, name: str, avatar: dict[str, Any], *, note: str = "")
             "stills": len(rig.get("stills") or {}), "note": note}
 
 
-def outfits_view(raw: dict[str, Any], on: dict[str, Any]) -> dict[str, Any]:
+def outfits_view(raw: dict[str, Any], on: dict[str, Any], affinity: int = 0) -> dict[str, Any]:
     """The wardrobe as clients see it (no avatar documents): which set she has on and a card per set, her default
     set first. ``on`` is the avatar column: the set she has on."""
     worn = raw.get("worn") or DEFAULT_OUTFIT
     base = on if worn == DEFAULT_OUTFIT else (raw.get("base") or {"kind": "none"})
     return {"worn": worn, "items": [
         _outfit_card(DEFAULT_OUTFIT, "", base),
-        *(_outfit_card(it["id"], it["name"], on if it["id"] == worn else it["avatar"], note=it.get("note") or "")
+        *(_outfit_card(it["id"], it["name"], on if it["id"] == worn else it["avatar"], note=it.get("note") or "",
+                       lock=None if it["id"] == worn else outfit_lock(it, affinity))
           for it in raw.get("items") or []),
     ]}
 
@@ -646,6 +658,7 @@ class MateStore:
 
     def _out(self, row: Any) -> dict[str, Any]:
         avatar = _loads(row["avatar"], {}) or {"kind": "none"}
+        relation = self.relation_summary(row["id"])
         return {
             "id": row["id"],
             "name": row["name"],
@@ -654,7 +667,7 @@ class MateStore:
             "updated_at": row["updated_at"],
             "persona": normalize_persona(_loads(row["persona"], {})),
             "avatar": avatar,
-            "outfits": outfits_view(_loads(row["outfits"], {}) if "outfits" in row.keys() else {}, avatar),
+            "outfits": outfits_view(_loads(row["outfits"], {}) if "outfits" in row.keys() else {}, avatar, relation["affinity"]),
             "llm": normalize_llm(None, _loads(row["llm"], {})),
             "voice": normalize_voice(None, _loads(row["voice"], {})),
             "prefs": normalize_prefs(None, _loads(row["prefs"], {}) if "prefs" in row.keys() else {}),
@@ -664,7 +677,7 @@ class MateStore:
             "builtin": row["builtin"] if "builtin" in row.keys() else None,
             "customized": bool(row["customized"]) if "customized" in row.keys() else False,
             "draft": bool(row["draft"]) if "draft" in row.keys() else False,
-            "relation": self.relation_summary(row["id"]),
+            "relation": relation,
         }
 
     def list(self) -> list[dict[str, Any]]:
@@ -842,6 +855,43 @@ class MateStore:
                 return it
         raise KeyError(f"outfit not found: {oid}")
 
+    def _open_outfit_item(self, mate_id: str, wardrobe: dict[str, Any], oid: str) -> dict[str, Any]:
+        """One outfit to use or change: not while it waits for her affinity."""
+        item = self._outfit_item(wardrobe, oid)
+        need = None if oid == wardrobe["worn"] else outfit_lock(item, self.relation_summary(mate_id)["affinity"])
+        if need:
+            raise MateError(f"this outfit opens at affinity {need}", status=403)
+        return item
+
+    def _open_reached_outfits(self, mate_id: str, affinity: int) -> None:
+        """What her affinity reached stays open from now on."""
+        with self._lock:
+            try:
+                w = self._wardrobe(mate_id)
+            except KeyError:
+                return
+            reached = [it for it in w["items"] if (it.get("unlock") or {}).get("affinity") and not outfit_lock(it, affinity)
+                       and not it["unlock"].get("at")]
+            for it in reached:
+                it["unlock"] = {**it["unlock"], "at": now_iso()}
+            if reached:
+                self._save_wardrobe(mate_id, w)
+
+    def close_outfits(self, mate_id: str) -> None:
+        """A fresh start with her: what her affinity opened waits again, and she goes back to what is open."""
+        with self._lock:
+            w = self._wardrobe(mate_id)
+            opened = [it["id"] for it in w["items"] if (it.get("unlock") or {}).get("at")]
+            if not opened:
+                return
+            if w["worn"] in opened:
+                self.wear_outfit(mate_id, DEFAULT_OUTFIT)
+                w = self._wardrobe(mate_id)
+            for it in w["items"]:
+                if it["id"] in opened:
+                    it["unlock"] = {"affinity": it["unlock"]["affinity"]}
+            self._save_wardrobe(mate_id, w)
+
     def base_avatar(self, mate_id: str) -> dict[str, Any]:
         """Her default set, whatever she has on."""
         w = self._wardrobe(mate_id)
@@ -865,7 +915,7 @@ class MateStore:
             w = self._wardrobe(mate_id)
             if oid == w["worn"]:
                 return cur
-            on = w["base"] if oid == DEFAULT_OUTFIT else self._outfit_item(w, oid)["avatar"]
+            on = w["base"] if oid == DEFAULT_OUTFIT else self._open_outfit_item(mate_id, w, oid)["avatar"]
             if oid != DEFAULT_OUTFIT and on.get("kind") == "none":
                 raise MateError("this outfit is still empty")
             if w["worn"] == DEFAULT_OUTFIT:
@@ -879,17 +929,40 @@ class MateStore:
         return self.get(mate_id)
 
     def seed_builtin_outfits(self, mate_id: str, items: list[dict[str, Any]], previous: list[dict[str, Any]]) -> None:
-        """Offer new bundled outfits once. Preserve edits, deletions, and whatever she has on."""
+        """Offer new bundled outfits once. Preserve edits, deletions, and whatever she has on. One she already has follows
+        the bundle where it is still as bundled (its name, its set), and always in what opens it."""
         with self._lock:
             w = self._wardrobe(mate_id)
+            before = json.dumps(w, sort_keys=True)
+            on = None
+            was = {it["id"]: it for it in previous}
+            for it in items:
+                cur = next((x for x in w["items"] if x["id"] == it["id"]), None)
+                if cur is None:
+                    continue
+                old, worn = was.get(it["id"]), cur["id"] == w["worn"]
+                if old:
+                    if cur["name"] == old["name"]:
+                        cur["name"] = it["name"]
+                    new = normalize_avatar(it["avatar"])
+                    if (self.get(mate_id)["avatar"] if worn else cur["avatar"]) == old["avatar"] and new != old["avatar"]:
+                        cur["avatar"] = new
+                        on = new if worn else on
+                need = (it.get("unlock") or {}).get("affinity")
+                # (an update never takes off what she has on: that one stays open)
+                at = (cur.get("unlock") or {}).get("at") or (now_iso() if worn and need else None)
+                if need:
+                    cur["unlock"] = {"affinity": need, **({"at": at} if at else {})}
+                else:
+                    cur.pop("unlock", None)
             seen = {it["id"] for it in [*previous, *w["items"]]}
             added = [it for it in items if it["id"] not in seen]
-            if not added:
-                return
             if len(w["items"]) + len(added) > MAX_OUTFITS:
                 raise MateError("wardrobe is full: delete an outfit before adding bundled outfits")
             w["items"].extend({**it, "avatar": normalize_avatar(it["avatar"]), "created_at": now_iso()} for it in added)
-            self._save_wardrobe(mate_id, w)
+            if json.dumps(w, sort_keys=True) != before:
+                self._save_wardrobe(mate_id, w, on)
+            self._open_reached_outfits(mate_id, self.relation_summary(mate_id)["affinity"])
 
     def add_outfit(self, mate_id: str, name: str) -> str:
         """A new, empty place in her wardrobe."""
@@ -912,7 +985,7 @@ class MateStore:
             return self.get(mate_id)["avatar"]
         if oid == DEFAULT_OUTFIT:
             return w["base"] or {"kind": "none"}
-        return self._outfit_item(w, oid)["avatar"]
+        return self._open_outfit_item(mate_id, w, oid)["avatar"]
 
     def set_outfit_avatar(self, mate_id: str, oid: str, avatar: Any, *, note: str | None = None) -> None:
         """What one set is made of, whether she has it on or not."""
@@ -927,7 +1000,7 @@ class MateStore:
                 if self.get(mate_id).get("builtin"):
                     self.set_customized(mate_id, True)  # (the user's own version now, as with any avatar edit)
                 return
-            item = self._outfit_item(w, oid)
+            item = self._open_outfit_item(mate_id, w, oid)
             item["avatar"] = doc
             if note is not None:
                 item["note"] = _s(note, 300)
@@ -939,7 +1012,7 @@ class MateStore:
             raise MateError("an outfit needs a name")
         with self._lock:
             w = self._wardrobe(mate_id)
-            self._outfit_item(w, oid)["name"] = name
+            self._open_outfit_item(mate_id, w, oid)["name"] = name
             self._save_wardrobe(mate_id, w)
         return self.get(mate_id)
 
@@ -948,7 +1021,7 @@ class MateStore:
         with self._lock:
             if oid == DEFAULT_OUTFIT:
                 raise MateError("her default set stays in the wardrobe")
-            self._outfit_item(self._wardrobe(mate_id), oid)
+            self._open_outfit_item(mate_id, self._wardrobe(mate_id), oid)
             if self._wardrobe(mate_id)["worn"] == oid:
                 self.wear_outfit(mate_id, DEFAULT_OUTFIT)
             w = self._wardrobe(mate_id)
@@ -1409,6 +1482,7 @@ class MateStore:
             "INSERT INTO mate_relation (mate_id, doc, updated_at) VALUES (?, ?, ?) "
             "ON CONFLICT(mate_id) DO UPDATE SET doc = excluded.doc, updated_at = excluded.updated_at",
             (mate_id, json.dumps(doc, ensure_ascii=False), now_iso()))
+        self._open_reached_outfits(mate_id, round(float(doc.get("affinity") or 0)))
 
     def relation_summary(self, mate_id: str) -> dict[str, Any]:
         doc = self.relation_doc(mate_id) or A.new()

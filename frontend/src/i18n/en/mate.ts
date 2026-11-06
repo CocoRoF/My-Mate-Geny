@@ -112,6 +112,7 @@ export default {
   showAvatar: "Show the avatar",
   hideAvatar: "Hide the avatar",
   moreActions: "More",
+  outfitUnlocked: "New outfit “{name}” is open. She can wear it from Settings → Avatar & outfits.",
   newConversation: "New conversation",
   resetTitle: "New conversation (she forgets the chat above; memories stay)",
   resetConfirm: "Start a fresh conversation with {name}? The messages stay here, but {name} won't remember them (memories are kept).",

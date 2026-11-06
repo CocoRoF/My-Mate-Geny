@@ -88,11 +88,61 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     assert.equal(await q.locator('[data-testid="mate-tab-outfit"]').count(), 0);
     await q.close();
 
-    step("Add outfit: a name makes an empty place, which can't be worn yet");
+    step("그레이 밴드 waits for her affinity: the card says so, the server refuses, the picture stays away");
     const ctx = await context(browser, { mateId: chaerin.id });
     const p = await ctx.newPage();
     watch(p);
+    const GRAY = "builtin-gray-band";
+    const grayCard = async () => (await mate()).outfits.items.find((c) => c.id === GRAY);
+    const setAffinity = (v) => boot.request.patch(`${SERVER}/api/mates/${chaerin.id}/relation`, { data: { affinity: v } });
+    const gray = await grayCard();
+    assert.equal(gray.name, "그레이 밴드");
+    assert.deepEqual(gray.locked, { affinity: 60 });
+    assert.equal(gray.home, "");
+    for (const [what, res] of [
+      ["wear", await boot.request.post(`${SERVER}/api/mates/${chaerin.id}/outfits/${GRAY}/wear`)],
+      ["read", await boot.request.get(`${SERVER}/api/mates/${chaerin.id}/outfits/${GRAY}`)],
+      ["rename", await boot.request.patch(`${SERVER}/api/mates/${chaerin.id}/outfits/${GRAY}`, { data: { name: "x" } })],
+      ["delete", await boot.request.delete(`${SERVER}/api/mates/${chaerin.id}/outfits/${GRAY}`)],
+      ["studio", await boot.request.post(`${SERVER}/api/avatar/studio`, { data: { mate_id: chaerin.id, language: "ko", outfit: { id: GRAY } } })],
+    ]) assert.equal(res.status(), 403, what);
     await openTab(p);
+    await until("the locked tile", async () => (await tile(p, GRAY).getAttribute("data-locked")) === "true");
+    assert.equal(await tile(p, GRAY).locator("img").count(), 0);
+    await tile(p, GRAY).click();
+    await p.waitForSelector('[data-testid="outfit-locked-hint"]');
+    assert.ok((await p.textContent('[data-testid="outfit-locked-hint"]')).includes("60"));
+    for (const id of ["outfit-wear", "outfit-rename", "outfit-delete", "outfit-ai-open"]) assert.equal(await p.locator(`[data-testid="${id}"]`).count(), 0, id);
+    await p.screenshot({ path: path.join(SHOTS, "outfit-locked-ko-dark.png") });
+
+    step("at 60 it opens by itself, with word of it, and stays open when the affinity falls");
+    assert.ok((await setAffinity(59)).ok());
+    await until("59 shown", async () => (await p.textContent('[data-testid="outfit-locked-hint"]')).includes("59"));
+    assert.equal(await tile(p, GRAY).getAttribute("data-locked"), "true");
+    await p.click('[data-testid="mate-settings-close"]');
+    assert.ok((await setAffinity(60)).ok());
+    await p.waitForSelector('[data-testid="mate-info"]');
+    assert.ok((await p.textContent('[data-testid="mate-info"]')).includes("그레이 밴드"));
+    await openTab(p);
+    await until("the open tile", async () => (await tile(p, GRAY).getAttribute("data-locked")) === "false");
+    assert.equal(await tile(p, GRAY).locator("img").count(), 1);
+    await tile(p, GRAY).click();
+    await p.waitForSelector('[data-testid="outfit-wear"]');
+    await p.click('[data-testid="outfit-wear"]');
+    await until("worn", async () => (await mate()).outfits.worn === GRAY);
+    assert.ok((await setAffinity(5)).ok());
+    assert.equal((await mate()).outfits.worn, GRAY);
+    assert.equal((await grayCard()).locked, undefined);
+
+    step("a fresh start closes it again: she goes back to her default set");
+    assert.ok((await boot.request.post(`${SERVER}/api/mates/${chaerin.id}/relation/reset`, { data: { mode: "zero" } })).ok());
+    await until("back in her default set", async () => (await mate()).outfits.worn === "default");
+    assert.deepEqual((await grayCard()).locked, { affinity: 60 });
+    assert.equal((await mate()).avatar.rig.home, homeBefore);
+    await until("locked again", async () => (await tile(p, GRAY).getAttribute("data-locked")) === "true");
+    await tile(p, "default").click();
+
+    step("Add outfit: a name makes an empty place, which can't be worn yet");
     await until("her sets", async () => (await p.locator('[data-testid="outfit-tile"]').count()) === initialOutfits);
     assert.equal(await tile(p, "default").getAttribute("data-worn"), "true");
     await p.click('[data-testid="outfit-add"]');

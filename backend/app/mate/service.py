@@ -783,6 +783,8 @@ class MateService:
         else:
             raise MateError("mode: zero | recompute")
         self._save_relation(mate_id, doc, cur, force=True)
+        if mode == "zero":
+            self.store.close_outfits(mate_id)
         return A.view(doc, now, tz)
 
     def _memory_added(self, mate_id: str) -> None:

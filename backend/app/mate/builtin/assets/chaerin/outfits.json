@@ -1,10 +1,13 @@
 {
   "items": [
     {
-      "id": "builtin-gray-band-swimwear",
-      "name": "그레이 밴드 수영복",
+      "id": "builtin-gray-band",
+      "name": "그레이 밴드",
       "note": "Plain heather-gray two-piece swimsuit with white straps, piping and bands; no brand names or logos. White cat-ear headset around her neck. She is not wearing her black hoodie.",
-      "rig": "outfits/gray-band-swimwear-2/rig.json"
+      "unlock": {
+        "affinity": 60
+      },
+      "rig": "outfits/gray-band/rig.json"
     }
   ]
 }

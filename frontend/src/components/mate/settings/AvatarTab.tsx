@@ -63,8 +63,10 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
   // what she has on comes with the mate; any other set is asked for, again after every change
   const [other, setOther] = useState<{ id: string; avatar: Avatar } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // (waiting for her affinity: the wardrobe says so, and there is nothing to edit yet)
+  const locked = !!mate.outfits?.items.find((o) => o.id === current)?.locked;
   useEffect(() => {
-    if (current === worn) return;
+    if (current === worn || locked) return;
     let alive = true;
     getOutfit(mate.id, current)
       .then((o) => alive && setOther({ id: o.id, avatar: o.avatar }))
@@ -72,7 +74,7 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
     return () => {
       alive = false;
     };
-  }, [mate.id, current, worn, mate.updated_at]);
+  }, [mate.id, current, worn, locked, mate.updated_at]);
   const saved = current === worn ? mate.avatar : other?.id === current ? other.avatar : null;
   const dirty = useRef(false);
   const select = (id: string) => {
@@ -85,7 +87,7 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
     <>
       <OutfitBar mate={mate} selected={current} onSelect={select} />
       <ErrorLine text={error} />
-      {saved ? (
+      {locked ? null : saved ? (
         <AvatarEditor key={current} mate={mate} conv={conv} outfit={current} saved={saved} live={current === worn} dirtyRef={dirty} />
       ) : (
         <div className="grid h-24 place-items-center text-content-faint">

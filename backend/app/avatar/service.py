@@ -233,6 +233,8 @@ class AvatarService:
         card = next((c for c in mate["outfits"]["items"] if c["id"] == oid and oid != DEFAULT_OUTFIT), None)
         if card is None:
             raise AvatarError("no such outfit", 404, "not_found")
+        if card.get("locked"):
+            raise AvatarError(f"this outfit opens at affinity {card['locked']['affinity']}", 403, "locked")
         for pid in self.store.ids():  # (newest first)
             if self._target_of(pid) == mate["id"]:
                 doc = self.doc(pid)
