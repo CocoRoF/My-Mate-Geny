@@ -181,6 +181,7 @@ class MateService:
                     name, persona = files.localized(snapshot)
                     mate = self.store.create(name=name, persona=persona, avatar=snapshot["avatar"],
                                              prefs=files.bundle_prefs(snapshot, persona["language"]))
+                    self.store.seed_builtin_outfits(mate["id"], snapshot.get("outfits", []), [])
                     self.store.mark_builtin(mate["id"], key, version, snapshot)
                     voice = files.ailism_voice(doc, files.builtin_voice_dir(key), mate["id"])
                     if voice:
@@ -195,6 +196,7 @@ class MateService:
                     self._log("info", f"built-in mate {key} updated: {', '.join(sorted(patch))}"
                               + (f" (persona: {', '.join(sorted(patch['persona']))})" if "persona" in patch else "")
                               + (f" (style: {', '.join(sorted(patch['prefs']))})" if "prefs" in patch else ""))
+                self.store.seed_builtin_outfits(cur["id"], snapshot.get("outfits", []), prev.get("outfits", []))
                 self.store.mark_builtin(cur["id"], key, version, snapshot)
             except Exception as exc:  # noqa: BLE001 - one broken bundle must not stop the app
                 self._log("warning", f"built-in mate {key}: {exc}")

@@ -924,7 +924,31 @@ def bundle_prefs(bundle: dict[str, Any], language: str | None = None) -> dict[st
 
 def builtin_snapshot(key: str, doc: dict[str, Any]) -> dict[str, Any]:
     """The current bundle of a built-in with its (normalized) avatar."""
-    return {**builtin_bundle(key, doc), "avatar": normalize_avatar(builtin_avatar(key, doc) or {"kind": "none"})}
+    return {**builtin_bundle(key, doc), "avatar": normalize_avatar(builtin_avatar(key, doc) or {"kind": "none"}),
+            "outfits": builtin_outfits(key)}
+
+
+def builtin_outfits(key: str) -> list[dict[str, Any]]:
+    """Optional ready-made wardrobe packs, served by the existing built-in asset route."""
+    root = (BUILTIN_DIR / "assets" / key).resolve()
+    manifest = root / "outfits.json"
+    if not manifest.is_file():
+        return []
+    outfits = []
+    for item in _read_json(manifest).get("items", []):
+        oid = str(item["id"])
+        if not re.fullmatch(r"[a-z0-9_-]{1,60}", oid):
+            raise MateError("invalid bundled outfit id")
+        rel = safe_rel(item["rig"])
+        path = (root / rel).resolve()
+        if root not in path.parents:
+            raise MateError("bundled outfit outside asset folder")
+        folder = path.parent
+        avatar = rig_avatar(_read_json(path), folder,
+                            lambda ref, folder=folder: builtin_url(key, (folder / ref).relative_to(root).as_posix()))
+        outfits.append({"id": oid, "name": item["name"], "note": item.get("note", ""),
+                        "avatar": normalize_avatar(avatar)})
+    return outfits
 
 
 def upgrade_snapshot(snap: dict[str, Any]) -> dict[str, Any]:

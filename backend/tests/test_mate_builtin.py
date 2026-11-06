@@ -148,3 +148,63 @@ def test_builtin_live2d_files_are_served():
         assert exp.status_code == 200
         assert client.get("/api/mates/builtin/../mates/mao.json").status_code == 404
         assert client.get("/api/mates/builtin/mao/..%2Fmates%2Fmao.json").status_code == 404
+
+
+def test_bundled_outfits_arrive_once_and_preserve_the_worn_set(db, monkeypatch):
+    outfit = {"id": "builtin-gray-band", "name": "그레이 밴드 수영복", "note": "Gray swimsuit with plain white bands",
+              "avatar": {"kind": "photo", "rig": {"home": "/swimwear.webp", "aspect": [4, 5], "stills": {"neutral": "/swimwear.webp"}, "clips": []}}}
+    monkeypatch.setattr(files, "builtin_outfits", lambda key: [outfit] if key == "chaerin" else [])
+    mates = _service(db)
+    cha = mates.store.by_builtin("chaerin")
+    mid = cha["id"]
+    base = cha["avatar"]
+    assert [it["id"] for it in cha["outfits"]["items"]] == ["default", outfit["id"]]
+    assert cha["outfits"]["worn"] == "default" and cha["avatar"] == base
+    mates.wear_outfit(mid, outfit["id"])
+    mates.store.mark_builtin(mid, "chaerin", "force-version-change")
+    mates.sync_builtins()
+    cha = mates.get(mid)
+    assert cha["outfits"]["worn"] == outfit["id"]
+    assert len(cha["outfits"]["items"]) == 2
+    assert not cha["customized"]
+    mates.delete_outfit(mid, outfit["id"])
+    mates.store.mark_builtin(mid, "chaerin", "another-version")
+    mates.sync_builtins()
+    assert len(mates.get(mid)["outfits"]["items"]) == 1  # deletion survives bundle updates
+    assert mates.get(mid)["avatar"] == base
+
+
+def test_existing_install_receives_new_bundled_outfit_without_overwriting_edits(db, monkeypatch):
+    monkeypatch.setattr(files, "builtin_outfits", lambda key: [])
+    mates = _service(db)
+    cha = mates.store.by_builtin("chaerin")
+    mid = cha["id"]
+    custom = mates.add_outfit(mid, "내 의상")
+    outfit = {"id": "builtin-gray-band", "name": "그레이 밴드 수영복", "note": "",
+              "avatar": {"kind": "photo", "rig": {"home": "/swimwear.webp", "aspect": [4, 5], "stills": {"neutral": "/swimwear.webp"}, "clips": []}}}
+    monkeypatch.setattr(files, "builtin_outfits", lambda key: [outfit] if key == "chaerin" else [])
+    mates.store.mark_builtin(mid, "chaerin", "old-version")
+    mates.sync_builtins()
+    assert [it["id"] for it in mates.get(mid)["outfits"]["items"]] == ["default", custom, outfit["id"]]
+    mates.rename_outfit(mid, outfit["id"], "내 수영복")
+    mates.store.mark_builtin(mid, "chaerin", "old-version-again")
+    mates.sync_builtins()
+    assert mates.get(mid)["outfits"]["items"][-1]["name"] == "내 수영복"
+
+
+def test_bundled_outfit_pack_uses_nested_builtin_asset_urls(tmp_path, monkeypatch):
+    monkeypatch.setattr(files, "BUILTIN_DIR", tmp_path)
+    root = tmp_path / "assets" / "chaerin"
+    folder = root / "outfits" / "gray-band"
+    folder.mkdir(parents=True)
+    (folder / "neutral.webp").write_bytes(b"image")
+    (folder / "rig.json").write_text(json.dumps({
+        "version": 1, "aspect": [4, 5], "home": "asset:gray-band/neutral.webp",
+        "stills": {"neutral": "asset:gray-band/neutral.webp"}, "clips": [],
+    }))
+    (root / "outfits.json").write_text(json.dumps({"items": [{
+        "id": "builtin-gray-band", "name": "그레이 밴드 수영복", "rig": "outfits/gray-band/rig.json",
+    }]}))
+    outfits = files.builtin_outfits("chaerin")
+    assert outfits[0]["avatar"]["rig"]["home"] == "/api/mates/builtin/chaerin/outfits/gray-band/neutral.webp"
+    assert outfits[0]["avatar"]["rig"]["stills"]["neutral"] == outfits[0]["avatar"]["rig"]["home"]

@@ -4,7 +4,7 @@
 //   NODE_PATH=<dir with playwright-core> CHROME=<chromium binary> \
 //     node desktop/test/e2e/mate-outfit-browser.js http://127.0.0.1:18974 outfit-test-only <shots dir>
 //
-// Checks: a mate has only her default outfit until one is added; Add outfit takes a name and makes an empty place that can't
+// Checks: a mate without bundled outfits starts with her default set; Add outfit makes an empty place that can't
 // be worn yet; files go into it like into any avatar, without touching what she has on; wearing swaps the whole set here and
 // in a second window; AI opens that outfit's own project (nothing spent) and its finished set is worn from there; rename,
 // delete (her default can't be deleted, deleting what she has on puts it back). ko dark, en light, desktop, phone.
@@ -76,6 +76,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     assert.ok(chaerin && other, "the bundled mates are there");
     const mate = () => get(boot, `/api/mates/${chaerin.id}`);
     const homeBefore = chaerin.avatar.rig.home;
+    const initialOutfits = chaerin.outfits.items.length;
 
     step("a mate that nobody dressed has only her default outfit, and nothing is offered ready-made");
     assert.deepEqual(other.outfits.items.map((c) => c.id), ["default"]);
@@ -92,7 +93,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     const p = await ctx.newPage();
     watch(p);
     await openTab(p);
-    await until("her sets", async () => (await p.locator('[data-testid="outfit-tile"]').count()) === 4);
+    await until("her sets", async () => (await p.locator('[data-testid="outfit-tile"]').count()) === initialOutfits);
     assert.equal(await tile(p, "default").getAttribute("data-worn"), "true");
     await p.click('[data-testid="outfit-add"]');
     await p.fill('[data-testid="outfit-add-name"]', "잠옷");
@@ -169,7 +170,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     assert.equal(dressed.outfits.worn, empty.id);
     assert.equal(dressed.avatar.kind, "video");
     assert.ok(dressed.avatar.rig.clips.length > 3 && dressed.avatar.rig.home.includes("/assets/pack-"));
-    assert.equal(dressed.outfits.items.length, 5, "it filled its own place");
+    assert.equal(dressed.outfits.items.length, initialOutfits + 1, "it filled its own place");
     await second.waitForSelector('[data-mate-kind="video"]', { timeout: 15000 });
 
     step("rename, and delete what she has on: her default set comes back");
@@ -184,7 +185,7 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     await p.click('[data-testid="outfit-delete"]');
     await until("default back on", async () => {
       const m = await mate();
-      return m.outfits.worn === "default" && m.avatar.rig.home === homeBefore && m.outfits.items.length === 4;
+      return m.outfits.worn === "default" && m.avatar.rig.home === homeBefore && m.outfits.items.length === initialOutfits;
     });
     await until("default selected", async () => (await tile(p, "default").getAttribute("aria-pressed")) === "true");
     assert.equal(await p.locator('[data-testid="outfit-delete"]').count(), 0, "her default can't be deleted");

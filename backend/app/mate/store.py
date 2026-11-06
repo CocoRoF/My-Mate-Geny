@@ -878,6 +878,19 @@ class MateStore:
             self._save_wardrobe(mate_id, w, on or {"kind": "none"})
         return self.get(mate_id)
 
+    def seed_builtin_outfits(self, mate_id: str, items: list[dict[str, Any]], previous: list[dict[str, Any]]) -> None:
+        """Offer new bundled outfits once. Preserve edits, deletions, and whatever she has on."""
+        with self._lock:
+            w = self._wardrobe(mate_id)
+            seen = {it["id"] for it in [*previous, *w["items"]]}
+            added = [it for it in items if it["id"] not in seen]
+            if not added:
+                return
+            if len(w["items"]) + len(added) > MAX_OUTFITS:
+                raise MateError("wardrobe is full: delete an outfit before adding bundled outfits")
+            w["items"].extend({**it, "avatar": normalize_avatar(it["avatar"]), "created_at": now_iso()} for it in added)
+            self._save_wardrobe(mate_id, w)
+
     def add_outfit(self, mate_id: str, name: str) -> str:
         """A new, empty place in her wardrobe."""
         name = _s(name, 40).strip()

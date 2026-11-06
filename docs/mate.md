@@ -1130,8 +1130,8 @@ and are ignored by fixed-policy clients. See [automatic conversation](mate-proac
 
 ## Outfits
 
-A mate has a wardrobe, at the top of **Mate settings → Avatar & outfits**: her default set, and the outfits the user added.
-Nothing is ready-made: **Add outfit** takes a name and makes an empty place. Everything below in that tab edits the picked
+A mate has a wardrobe, at the top of **Mate settings → Avatar & outfits**: her default set, bundled outfits, and the outfits the user added.
+**Add outfit** takes a name and makes an empty place. Everything below in that tab edits the picked
 outfit exactly like an avatar (kind, Make it with AI, zip or folder import, stills, clips, triggers), whether she has it on
 or not. **Wear** swaps the whole set at once in every window (`mates.changed`); an empty outfit can't be worn yet. Her
 default set always stays.
@@ -1152,3 +1152,7 @@ default set always stays.
   `outfits` (cards, no avatars).
 
 The project behind Make it with AI: docs/avatar-create.md §12.
+- **Bundled outfits**: `builtin/assets/<key>/outfits.json` lists `{items: [{id, name, note, rig}]}`; `rig` is a relative
+  path to a rig pack in the character's asset folder. New entries enter the wardrobe once during built-in sync, without
+  changing what she wears. The built-in snapshot remembers which were offered, so updates preserve the user's edits and
+  deletions. Han Chaerin's **그레이 밴드 수영복** uses plain gray fabric and white bands without brand names or logos.
