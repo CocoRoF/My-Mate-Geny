@@ -188,13 +188,13 @@ async def import_local(request: Request) -> dict:
         if info["kind"] == "ailism_many":
             mates = [await _import_one(svc, item, None, None) for item in info["items"]]
             return {"mate": mates[0], "mates": mates, "imported": "ailism"}
-        mate = await _import_one(svc, info, body.get("mate_id"), body.get("name"))
+        mate = await _import_one(svc, info, body.get("mate_id"), body.get("name"), str(body.get("outfit") or ""))
         return {"mate": mate, "mates": [mate], "imported": info["kind"]}
     except (KeyError, MateError) as exc:
         raise _http(exc) from exc
 
 
-async def _import_one(svc: Any, info: dict[str, Any], target: Any, name: Any) -> dict[str, Any]:
+async def _import_one(svc: Any, info: dict[str, Any], target: Any, name: Any, outfit: str = "") -> dict[str, Any]:
     created = False
     if target:
         mate = svc.get(str(target))
@@ -227,7 +227,7 @@ async def _import_one(svc: Any, info: dict[str, Any], target: Any, name: Any) ->
             svc.delete(mate["id"])
         raise
     if avatar is not None:
-        mate = svc.update(mate["id"], {"avatar": avatar})
+        mate = svc.set_outfit_avatar(mate["id"], outfit, avatar) if outfit else svc.update(mate["id"], {"avatar": avatar})
     return mate
 
 
@@ -462,11 +462,22 @@ async def delete_memory(mate_id: str, mem_id: str, request: Request) -> dict:
 
 # ---- the wardrobe (docs/mate.md "Outfits") ----
 
-@router.get("/{mate_id}/outfits")
-async def get_outfits(mate_id: str, request: Request) -> dict:
-    """``{worn, items: [cards], presets}``"""
+@router.post("/{mate_id}/outfits")
+async def add_outfit(mate_id: str, request: Request) -> dict:
+    """``{name}`` → a new, empty place in her wardrobe: ``{id, mate}``."""
+    svc = _svc(request)
     try:
-        return _svc(request).outfits(mate_id)
+        oid = svc.add_outfit(mate_id, str((await _json(request)).get("name") or ""))
+        return {"id": oid, "mate": svc.get(mate_id)}
+    except (KeyError, MateError) as exc:
+        raise _http(exc) from exc
+
+
+@router.get("/{mate_id}/outfits/{oid}")
+async def get_outfit(mate_id: str, oid: str, request: Request) -> dict:
+    """``{id, name, avatar}``: one set, whether she has it on or not."""
+    try:
+        return _svc(request).outfit(mate_id, oid)
     except (KeyError, MateError) as exc:
         raise _http(exc) from exc
 
@@ -481,9 +492,16 @@ async def wear_outfit(mate_id: str, oid: str, request: Request) -> dict:
 
 
 @router.patch("/{mate_id}/outfits/{oid}")
-async def rename_outfit(mate_id: str, oid: str, request: Request) -> dict:
+async def patch_outfit(mate_id: str, oid: str, request: Request) -> dict:
+    """``{name?, avatar?}``"""
+    body = await _json(request)
+    svc = _svc(request)
     try:
-        return _svc(request).rename_outfit(mate_id, oid, str((await _json(request)).get("name") or ""))
+        if "name" in body:
+            svc.rename_outfit(mate_id, oid, str(body.get("name") or ""))
+        if body.get("avatar") is not None:
+            svc.set_outfit_avatar(mate_id, oid, body["avatar"])
+        return svc.get(mate_id)
     except (KeyError, MateError) as exc:
         raise _http(exc) from exc
 
@@ -540,7 +558,7 @@ async def get_asset(mate_id: str, rel: str, request: Request, v: str | None = No
 
 
 @router.post("/{mate_id}/avatar/import")
-async def import_avatar(mate_id: str, request: Request, file: UploadFile = File(...)) -> dict:
+async def import_avatar(mate_id: str, request: Request, file: UploadFile = File(...), outfit: str = Form("")) -> dict:
     """A zip: an ailism-style pack (rig.json + files -> video/photo) or a
     Live2D model (*.model3.json; geny-avatar's avatar-editor.json is read)."""
     _mate(request, mate_id)
@@ -559,7 +577,9 @@ async def import_avatar(mate_id: str, request: Request, file: UploadFile = File(
                 fh.write(chunk)
         try:
             avatar = await asyncio.to_thread(files.import_zip, mate_id, tmp)
-            return {"mate": _svc(request).update(mate_id, {"avatar": avatar}), "avatar": avatar}
+            svc = _svc(request)
+            mate = svc.set_outfit_avatar(mate_id, outfit, avatar) if outfit else svc.update(mate_id, {"avatar": avatar})
+            return {"mate": mate, "avatar": avatar}
         except (KeyError, MateError) as exc:
             raise _http(exc) from exc
     finally:

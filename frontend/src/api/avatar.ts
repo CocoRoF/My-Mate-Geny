@@ -196,12 +196,11 @@ export interface StudioFieldsPatch {
   concept?: Partial<Record<ConceptKey, string>>;
 }
 
-/** a project making a new set for a mate's wardrobe (docs/avatar-create.md §12) */
+/** a project filling an outfit of a mate's wardrobe (docs/avatar-create.md §12) */
 export interface ProjectOutfit {
-  preset: string | null;
-  name: string;
-  /** its place in her wardrobe, once it is there */
+  /** its place in her wardrobe */
   id: string | null;
+  name: string;
 }
 
 export interface ProjectSummary {
@@ -252,7 +251,7 @@ export const restoreAvatar = (pid: string) => post<{ project: AvatarProject; mat
 // ── the Mate Create studio ──
 const SP = (pid: string) => `/api/avatar/studio/${pid}`;
 /** a new draft (no mate_id), a draft's project, or an existing mate's latest project (fresh: a new one) */
-export const openStudio = (body: { mate_id?: string | null; language: string; fresh?: boolean; outfit?: { preset: string | null } }) => post<AvatarProject>("/api/avatar/studio", body);
+export const openStudio = (body: { mate_id?: string | null; language: string; fresh?: boolean; outfit?: { id: string } }) => post<AvatarProject>("/api/avatar/studio", body);
 export const listDrafts = () => apiFetch<DraftSummary[]>("/api/avatar/studio/drafts");
 export const patchStudioFields = (pid: string, patch: StudioFieldsPatch) =>
   apiFetch<AvatarProject>(`${SP(pid)}/fields`, { method: "PATCH", body: JSON.stringify(patch) });

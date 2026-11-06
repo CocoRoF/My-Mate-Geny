@@ -262,24 +262,21 @@ splitter; en / ko, light / dark, desktop / phone.
 
 ## 12. Outfits
 
-A new set for a mate's wardrobe (docs/mate.md "Outfits"): the same project, agent, estimate, gate, checkpoints and
-processing as any avatar, with `doc.outfit = {preset, name, note, id, stored}`. Opened from Mate settings → Outfits:
-`POST /api/avatar/studio {mate_id, language, outfit: {preset?}}` (an untouched project of the same choice is reopened; the
-normal avatar studio never opens an outfit's project).
+The project that fills one outfit of a mate's wardrobe (docs/mate.md "Outfits"): the same project, agent, estimate, gate,
+checkpoints and processing as any avatar, with `doc.outfit = {id, name, note, stored}`. Opened from Mate settings → Avatar
+& outfits, with an outfit picked: `POST /api/avatar/studio {mate_id, language, outfit: {id}}` (an outfit has one project,
+opened again where it stopped; the normal avatar studio never opens it).
 
 - **The start.** Her default set's picture is copied in as the first reference (`redraw`; the agent can't change it, and
   it is put on the known gray before the first job: `flatten`); more references are pictures of the clothes. The brief
-  takes the shape of her default set and the motions of the preset (`standard` unless it says otherwise), without clips
-  the user switched off there: they would be paid for and never play.
-- **The prompt.** `presets.OUTFIT` + the clothes + the framing + `OUTFIT_CROP`: the same face, eyes, hairstyle, skin, body
-  and art style, only the clothes change. The agent writes "Wearing …" only (`app/avatar/prompt.py` `STUDIO_OUTFIT`,
-  `OUTFIT_INTERVIEW`; `update_brief {outfit_name}` names it).
-- **The finish.** When it is ready the set joins the wardrobe by itself (imported pack, her emotion choices carried over),
-  not on her; **Wear** in the panel or the Outfits tab puts it on. A redo replaces its own set.
-- **Limits.** Presets (`presets.OUTFITS`) are recipes, not pictures: nothing is generated before the estimate and the
-  user's Confirm. Ordinary, non-sexual clothes only: no underwear, lingerie, bikinis, revealing or see-through clothes, no
-  school uniforms or school swimsuits. Swimwear is one covering preset (a loose rash guard with a beach towel), offered
-  only to built-in mates whose profile states an adult age (`STATED_ADULTS`; refused with 409 for others, and the agent is
-  told the same). A stated age doesn't settle how a picture reads, so these limits hold for every mate.
+  takes the shape of her default set and the standard motions, without clips the user switched off there: they would be
+  paid for and never play.
+- **The image prompt.** `presets.OUTFIT` + the clothes + the framing + `OUTFIT_CROP`, nothing else: Higgsfield's own filter
+  decides what it refuses. The agent writes "Wearing …" only (`app/avatar/prompt.py` `STUDIO_OUTFIT`, `OUTFIT_INTERVIEW`).
+- **The finish.** When it is ready the set goes into its outfit by itself (imported pack, her emotion choices carried over),
+  not on her; **Wear** in the panel or in the settings puts it on. A redo replaces it.
+- **What the agent makes.** Its prompt keeps it from writing underwear, lingerie, bikinis, revealing or see-through clothes
+  and school wear. Swimwear only in a covering cut, and only for built-in mates whose profile states an adult age
+  (`STATED_ADULTS`). Files the user adds aren't looked at.
 
 Tests: `backend/tests/test_mate_outfits.py`, `desktop/test/e2e/mate-outfit-browser.js` (+ `mate-outfit-server.py`).

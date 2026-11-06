@@ -23,13 +23,13 @@ import json
 import os
 import re
 import secrets
+import shutil
 import sys
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from app.avatar.presets import outfit_presets
 from app.config import settings
 from app.mate import affinity as A
 from app.mate.capture import CaptureBroker, CaptureError
@@ -255,19 +255,26 @@ class MateService:
 
     # ---- the wardrobe (docs/mate.md "Outfits") ----
 
-    def outfits(self, mate_id: str) -> dict[str, Any]:
-        mate = self.store.get(mate_id)
-        return {**mate["outfits"], "presets": outfit_presets(mate.get("builtin"))}
+    def outfit(self, mate_id: str, oid: str) -> dict[str, Any]:
+        card = next((c for c in self.store.get(mate_id)["outfits"]["items"] if c["id"] == oid), None)
+        if card is None:
+            raise KeyError(f"outfit not found: {oid}")
+        return {"id": oid, "name": card["name"], "avatar": self.store.outfit_avatar(mate_id, oid)}
+
+    def add_outfit(self, mate_id: str, name: str) -> str:
+        return self.store.add_outfit(mate_id, name)
 
     def wear_outfit(self, mate_id: str, oid: str) -> dict[str, Any]:
         return self.store.wear_outfit(mate_id, oid)
 
-    def add_outfit(self, mate_id: str, **kw: Any) -> str:
-        return self.store.add_outfit(mate_id, **kw)
-
-    def replace_outfit(self, mate_id: str, oid: str, avatar: dict[str, Any]) -> None:
-        self.store.replace_outfit(mate_id, oid, avatar)
+    def set_outfit_avatar(self, mate_id: str, oid: str, avatar: Any, *, note: str | None = None) -> dict[str, Any]:
+        """Fill or edit one set, on her or not. What she has on goes the usual way."""
+        worn = self.store.get(mate_id)["outfits"]["worn"]
+        if oid == worn == DEFAULT_OUTFIT:
+            return self.update(mate_id, {"avatar": avatar})
+        self.store.set_outfit_avatar(mate_id, oid, avatar, note=note)
         self._drop_unused_imports(mate_id)
+        return self.store.get(mate_id)
 
     def rename_outfit(self, mate_id: str, oid: str, name: str) -> dict[str, Any]:
         return self.store.rename_outfit(mate_id, oid, name)
@@ -275,6 +282,7 @@ class MateService:
     def delete_outfit(self, mate_id: str, oid: str) -> dict[str, Any]:
         mate = self.store.delete_outfit(mate_id, oid)
         self._drop_unused_imports(mate_id)
+        shutil.rmtree(files.outfit_upload_dir(mate_id, oid), ignore_errors=True)
         return mate
 
     def delete(self, mate_id: str) -> None:

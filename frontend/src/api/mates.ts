@@ -228,7 +228,8 @@ export const DEFAULT_SCREEN: MateScreen = { enabled: false, approval: "ask", hid
 /** the mate's screen settings, complete (an older server sends none) */
 export const screenOf = (m: Pick<Mate, "screen"> | null | undefined): MateScreen => ({ ...DEFAULT_SCREEN, ...(m?.screen ?? {}) });
 
-/** one set in a mate's wardrobe (docs/mate.md "Outfits"); id "default" is her default set, its name is ours to show */
+/** one set in a mate's wardrobe (docs/mate.md "Outfits"): empty (kind "none") until it is filled like any avatar; id
+ * "default" is her default set, its name is ours to show */
 export interface OutfitCard {
   id: string;
   name: string;
@@ -237,15 +238,7 @@ export interface OutfitCard {
   aspect: number[];
   clips: number;
   stills: number;
-  preset: string;
   note: string;
-}
-
-export interface OutfitPreset {
-  id: string;
-  name: Record<string, string>;
-  hint: Record<string, string>;
-  motions: string;
 }
 
 export const DEFAULT_OUTFIT = "default";
@@ -480,10 +473,11 @@ export const getMate = (id: string) => apiFetch<Mate>(`/api/mates/${enc(id)}`);
 export const createMate = (body: MatePatch & { name: string }) => apiFetch<Mate>("/api/mates", { method: "POST", ...j(body) });
 export const updateMate = (id: string, patch: MatePatch) =>
   apiFetch<Mate>(`/api/mates/${enc(id)}`, { method: "PATCH", ...j(patch) });
-export const getOutfits = (id: string) => apiFetch<{ worn: string; items: OutfitCard[]; presets: OutfitPreset[] }>(`/api/mates/${enc(id)}/outfits`);
+export const addOutfit = (id: string, name: string) => apiFetch<{ id: string; mate: Mate }>(`/api/mates/${enc(id)}/outfits`, { method: "POST", ...j({ name }) });
+export const getOutfit = (id: string, oid: string) => apiFetch<{ id: string; name: string; avatar: Avatar }>(`/api/mates/${enc(id)}/outfits/${enc(oid)}`);
 export const wearOutfit = (id: string, oid: string) => apiFetch<Mate>(`/api/mates/${enc(id)}/outfits/${enc(oid)}/wear`, { method: "POST" });
-export const renameOutfit = (id: string, oid: string, name: string) =>
-  apiFetch<Mate>(`/api/mates/${enc(id)}/outfits/${enc(oid)}`, { method: "PATCH", ...j({ name }) });
+export const patchOutfit = (id: string, oid: string, patch: { name?: string; avatar?: Avatar }) =>
+  apiFetch<Mate>(`/api/mates/${enc(id)}/outfits/${enc(oid)}`, { method: "PATCH", ...j(patch) });
 export const deleteOutfit = (id: string, oid: string) => apiFetch<Mate>(`/api/mates/${enc(id)}/outfits/${enc(oid)}`, { method: "DELETE" });
 /** bring back deleted built-in mates → the whole list */
 export const restoreBuiltins = () => apiFetch<Mate[]>("/api/mates/builtin/restore", { method: "POST" });
@@ -658,7 +652,7 @@ export const assetUrl = (id: string, path: string) =>
   `/api/mates/${enc(id)}/assets/${path.split("/").map(enc).join("/")}`;
 
 /** a folder of several ailism characters imports them all (`mates`; `mate` = the first) */
-export const importLocal = (body: { path: string; mate_id?: string; name?: string }) =>
+export const importLocal = (body: { path: string; mate_id?: string; name?: string; outfit?: string }) =>
   apiFetch<{ mate: Mate; mates?: Mate[]; imported: string }>("/api/mates/import-local", { method: "POST", ...j(body) });
 
 /** multipart upload (no JSON content type: the browser sets the boundary) */
@@ -682,9 +676,10 @@ export function uploadAsset(id: string, file: Blob, path: string) {
   return upload<{ path: string; url: string; size: number }>(`/api/mates/${enc(id)}/assets`, f);
 }
 
-export function importAvatarZip(id: string, file: File) {
+export function importAvatarZip(id: string, file: File, outfit?: string) {
   const f = new FormData();
   f.append("file", file, file.name);
+  if (outfit) f.append("outfit", outfit);
   return upload<{ mate: Mate; avatar: Avatar }>(`/api/mates/${enc(id)}/avatar/import`, f);
 }
 

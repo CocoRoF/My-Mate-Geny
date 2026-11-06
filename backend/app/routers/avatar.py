@@ -157,8 +157,8 @@ for _a in ("answer", "estimate", "confirm", "change", "discard", "pause", "resum
 
 @router.post("/studio")
 async def studio_open(request: Request) -> dict:
-    """``{mate_id?, language, fresh?, outfit?: {preset?}}`` → the studio's project: a new draft mate (no ``mate_id``),
-    a draft's own project, an existing mate's latest project (``fresh``: a new one) or a new outfit for her wardrobe."""
+    """``{mate_id?, language, fresh?, outfit?: {id}}`` → the studio's project: a new draft mate (no ``mate_id``), a
+    draft's own project, an existing mate's latest project (``fresh``: a new one) or the one filling an outfit of hers."""
     b = await _body(request)
     try:
         return _svc(request).studio_open(mate_id=b.get("mate_id") or None, language=str(b.get("language") or "en"),

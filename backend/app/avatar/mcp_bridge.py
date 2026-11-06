@@ -66,13 +66,12 @@ TOOLS = [
                     "the character only, notes}, pronoun (she|he|they), candidates (1-4), aspect (1:1|9:16), tier "
                     "(studio|light), preset (minimal|standard|rich|custom — a preset fills clips and stills), clips "
                     "[{id, kind, action, emotion?}], stills [{name, face}], target {mode: new|existing, mate_id?, "
-                    "name?}, outfit_name (an outfit project: the outfit's short name). Locked once the plan is confirmed.",
+                    "name?}. Locked once the plan is confirmed.",
      "inputSchema": {"type": "object", "properties": {"patch": {"type": "object", "properties": {
          "reference": {"type": "object"}, "design": {"type": "object"}, "pronoun": {"type": "string"},
          "candidates": {"type": "integer"}, "aspect": {"type": "string"}, "tier": {"type": "string"},
          "preset": {"type": "string"}, "clips": {"type": "array", "items": _CLIP},
-         "stills": {"type": "array", "items": _STILL}, "target": {"type": "object"},
-         "outfit_name": {"type": "string"}}}},
+         "stills": {"type": "array", "items": _STILL}, "target": {"type": "object"}}}},
          "required": ["patch"]}},
     {"name": "update_mate_draft",
      "description": "Mate Create studio: write the settings of the mate on the right of the user's screen (merged "

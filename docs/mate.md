@@ -1130,18 +1130,25 @@ and are ignored by fixed-policy clients. See [automatic conversation](mate-proac
 
 ## Outfits
 
-A mate has a wardrobe: whole avatar sets (base picture, expressions, motions) she can switch between in **Mate settings →
-Outfits**. Wearing one swaps all of it at once in every window (`mates.changed`). Her default set always stays.
+A mate has a wardrobe, at the top of **Mate settings → Avatar & outfits**: her default set, and the outfits the user added.
+Nothing is ready-made: **Add outfit** takes a name and makes an empty place. Everything below in that tab edits the picked
+outfit exactly like an avatar (kind, Make it with AI, zip or folder import, stills, clips, triggers), whether she has it on
+or not. **Wear** swaps the whole set at once in every window (`mates.changed`); an empty outfit can't be worn yet. Her
+default set always stays.
 
-- **Stored** in `mates.outfits`: `{worn, base, items: [{id, name, preset, note, project_id, avatar}]}`. The `avatar` column
-  is always the set she has on, so everything that reads a mate just works; `base` holds her default set while another one
-  is on. What comes off keeps the state it was in.
-- **Edits** in Avatar settings go to the set she has on (a banner says so) and don't mark a built-in as customized.
-  A bundle update or Reset goes to her default set (Reset puts it back on). A new avatar from the studio is her new default
-  set, never an outfit. Imported packs are only removed when no set uses them any more.
+- **Stored** in `mates.outfits`: `{worn, base, items: [{id, name, note, avatar}]}`. The `avatar` column is always the set she
+  has on, so everything that reads a mate just works; `base` holds her default set while another one is on. What comes off
+  keeps the state it was in.
+- **Files**: an outfit's uploads go to `assets/outfits/<id>/` and are removed with it. Imported packs are removed when no set
+  uses them any more.
+- **Built-ins**: editing an outfit doesn't mark a built-in as customized; editing her default set does. A bundle update or
+  Reset goes to her default set (Reset puts it back on). A new avatar from the studio is her new default set, never an
+  outfit.
 - **She knows**: while an outfit is on, the per-turn `<context>` says what she has on (it replaces the clothes in her
   profile; no restart, nothing stored).
-- **API**: `GET /api/mates/{id}/outfits` (`worn`, cards, presets), `POST …/outfits/{oid}/wear` (`default`: her default
-  set), `PATCH …/outfits/{oid} {name}`, `DELETE …/outfits/{oid}`. A mate document carries `outfits` (the cards, no avatars).
+- **API**: `POST /api/mates/{id}/outfits {name}` → `{id, mate}`, `GET …/outfits/{oid}` → `{id, name, avatar}`,
+  `POST …/outfits/{oid}/wear` (`default`: her default set), `PATCH …/outfits/{oid} {name?, avatar?}`,
+  `DELETE …/outfits/{oid}`; `POST …/avatar/import` and `POST /api/mates/import-local` take `outfit`. A mate document carries
+  `outfits` (cards, no avatars).
 
-New sets are made in the studio: docs/avatar-create.md §12.
+The project behind Make it with AI: docs/avatar-create.md §12.

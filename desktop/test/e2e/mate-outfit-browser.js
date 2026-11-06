@@ -4,10 +4,10 @@
 //   NODE_PATH=<dir with playwright-core> CHROME=<chromium binary> \
 //     node desktop/test/e2e/mate-outfit-browser.js http://127.0.0.1:18974 outfit-test-only <shots dir>
 //
-// Checks: Mate settings → Outfits shows her default set and the others; wearing one swaps the avatar here and in a second
-// window at once; Avatar settings says which set the edits go to; swimwear is offered only for a mate with a stated adult
-// age; a preset opens the studio (nothing is spent); a finished project's Wear puts the whole video set on her; rename,
-// delete (her default set can't be deleted, deleting what she has on puts it back). en / ko, light / dark, desktop / phone.
+// Checks: a mate has only her default outfit until one is added; Add outfit takes a name and makes an empty place that can't
+// be worn yet; files go into it like into any avatar, without touching what she has on; wearing swaps the whole set here and
+// in a second window; AI opens that outfit's own project (nothing spent) and its finished set is worn from there; rename,
+// delete (her default can't be deleted, deleting what she has on puts it back). ko dark, en light, desktop, phone.
 "use strict";
 const assert = require("assert/strict");
 const fs = require("fs");
@@ -55,12 +55,14 @@ async function context(browser, { lang = "ko", theme = "dark", mateId, phone = f
 }
 const get = async (ctx, url) => (await ctx.request.get(SERVER + url)).json();
 
-async function openTab(p, tab = "outfit") {
+async function openTab(p) {
   await p.goto(`${SERVER}/?view=mate`);
   await p.waitForSelector('[data-testid="mate-settings-open"]', { timeout: 30000 });
   await p.click('[data-testid="mate-settings-open"]');
-  await p.click(`[data-testid="mate-tab-${tab}"]`);
+  await p.click('[data-testid="mate-tab-avatar"]');
+  await p.waitForSelector('[data-testid="outfit-wardrobe"]');
 }
+const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id}"]`);
 
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROME, headless: true, args: ["--no-sandbox", "--use-gl=swiftshader", "--enable-webgl", "--ignore-gpu-blocklist"] });
@@ -70,116 +72,133 @@ async function openTab(p, tab = "outfit") {
     const boot = await context(browser, {});
     const mates = await get(boot, "/api/mates");
     const chaerin = mates.find((m) => m.builtin === "chaerin");
-    const mao = mates.find((m) => m.builtin === "mao");
-    assert.ok(chaerin, "the bundled mate is there");
+    const other = mates.find((m) => m.builtin === "seoa");
+    assert.ok(chaerin && other, "the bundled mates are there");
     const mate = () => get(boot, `/api/mates/${chaerin.id}`);
     const homeBefore = chaerin.avatar.rig.home;
 
-    step("the wardrobe: her default set first, on her");
+    step("a mate that nobody dressed has only her default outfit, and nothing is offered ready-made");
+    assert.deepEqual(other.outfits.items.map((c) => c.id), ["default"]);
+    const q = await (await context(browser, { mateId: other.id })).newPage();
+    watch(q);
+    await openTab(q);
+    assert.equal(await q.locator('[data-testid="outfit-tile"]').count(), 1);
+    assert.equal(await q.locator('[data-testid^="outfit-preset"]').count(), 0);
+    assert.equal(await q.locator('[data-testid="mate-tab-outfit"]').count(), 0);
+    await q.close();
+
+    step("Add outfit: a name makes an empty place, which can't be worn yet");
     const ctx = await context(browser, { mateId: chaerin.id });
     const p = await ctx.newPage();
     watch(p);
     await openTab(p);
-    await p.waitForSelector('[data-testid="outfit-wardrobe"]');
-    const tiles = p.locator('[data-testid="outfit-tile"]');
-    await until("three sets", async () => (await tiles.count()) === 3);
-    assert.equal(await tiles.nth(0).getAttribute("data-outfit"), "default");
-    assert.equal(await tiles.nth(0).getAttribute("data-worn"), "true");
-    await p.waitForSelector('[data-testid="outfit-preset-swimwear"]');
-    await p.screenshot({ path: path.join(SHOTS, "wardrobe-ko-dark.png") });
+    await until("her sets", async () => (await p.locator('[data-testid="outfit-tile"]').count()) === 4);
+    assert.equal(await tile(p, "default").getAttribute("data-worn"), "true");
+    await p.click('[data-testid="outfit-add"]');
+    await p.fill('[data-testid="outfit-add-name"]', "잠옷");
+    await p.click('[data-testid="outfit-add-ok"]');
+    const added = await until("the new outfit", async () => (await mate()).outfits.items.find((c) => c.name === "잠옷"));
+    assert.equal(added.kind, "none");
+    await until("selected", async () => (await tile(p, added.id).getAttribute("aria-pressed")) === "true");
+    assert.equal(await tile(p, added.id).getAttribute("data-empty"), "true");
+    assert.ok(await p.locator('[data-testid="outfit-wear"]').isDisabled());
+    const refused = await boot.request.post(`${SERVER}/api/mates/${chaerin.id}/outfits/${added.id}/wear`);
+    assert.equal(refused.status(), 400);
+    await p.waitForSelector('[data-testid="outfit-ai-open"]');
+    assert.equal((await mate()).avatar.rig.home, homeBefore);
+    await p.screenshot({ path: path.join(SHOTS, "add-outfit-ko-dark.png") });
 
-    step("the other window, to see the change arrive");
-    const other = await ctx.newPage();
-    watch(other);
-    await other.goto(`${SERVER}/?view=mate`);
-    await other.waitForSelector('[data-mate-kind="video"]', { timeout: 30000 });
-
-    step("wearing a set swaps it here and there at once");
-    const casual = (await mate()).outfits.items[1];
-    await p.click(`[data-testid="outfit-wear-${casual.id}"]`);
-    await until("worn", async () => (await tiles.nth(1).getAttribute("data-worn")) === "true");
-    assert.equal(await tiles.nth(0).getAttribute("data-worn"), "false");
-    const now = await mate();
-    assert.equal(now.outfits.worn, casual.id);
-    assert.equal(now.avatar.rig.home, casual.home);
-    await other.waitForSelector('[data-mate-kind="photo"]', { timeout: 15000 });
-    await other.screenshot({ path: path.join(SHOTS, "stage-casual-ko-dark.png") });
-
-    step("avatar settings say which set the edits go to");
-    await p.click('[data-testid="mate-tab-avatar"]');
-    await p.waitForSelector('[data-testid="mate-avatar-outfit-note"]');
-    await p.click('[data-testid="mate-tab-outfit"]');
-
-    step("swimwear is only offered for a mate with a stated adult age");
-    const presets = (await get(boot, `/api/mates/${chaerin.id}/outfits`)).presets.map((x) => x.id);
-    assert.ok(presets.includes("swimwear") && presets.includes("pajamas"));
-    if (mao) {
-      const mp = (await get(boot, `/api/mates/${mao.id}/outfits`)).presets.map((x) => x.id);
-      assert.ok(!mp.includes("swimwear") && mp.includes("pajamas"));
-      const refused = await boot.request.post(`${SERVER}/api/avatar/studio`, { data: { mate_id: mao.id, language: "ko", outfit: { preset: "swimwear" } } });
-      assert.equal(refused.status(), 409);
-    }
-
-    step("the finished project: Wear puts the whole video set on her");
-    const made = (await get(boot, "/api/avatar/projects")).find((x) => x.outfit && x.status === "ready");
-    assert.ok(made, "a finished outfit project");
-    assert.ok(await p.locator('[data-testid="outfit-making-item"]').count() === 0, "a finished project isn't 'being made'");
-    await p.goto(`${SERVER}/?view=mate&avatar=${chaerin.id}&project=${made.id}`);
-    await p.waitForSelector('[data-testid="outfit-finish"]', { timeout: 30000 });
-    assert.equal(await p.locator('[data-testid="avatar-new-name"], [data-testid="avatar-apply-mate"], [data-testid="avatar-restore"]').count(), 0);
-    await p.screenshot({ path: path.join(SHOTS, "studio-finish-ko-dark.png") });
-    await p.click('[data-testid="outfit-wear"]');
-    await p.waitForSelector('[data-testid="outfit-worn"]', { timeout: 15000 });
-    const dressed = await mate();
-    assert.equal(dressed.avatar.kind, "video");
-    assert.ok(dressed.avatar.rig.clips.length > 3 && dressed.avatar.rig.home.includes("/assets/pack-"));
-    assert.equal(dressed.outfits.items.length, 4);
-    await other.waitForSelector('[data-mate-kind="video"]', { timeout: 15000 });
-
-    step("a preset opens the studio and spends nothing");
-    const balance = await until("a project", async () => get(boot, "/api/avatar/projects"));
-    const before = balance.length;
-    await openTab(p);
-    await p.waitForSelector('[data-testid="outfit-preset-pajamas"]');
-    await p.click('[data-testid="outfit-preset-pajamas"]');
-    await p.waitForSelector('[data-testid="studio-back"]', { timeout: 20000 });
-    const opened = await until("the new project", async () => {
-      const all = await get(boot, "/api/avatar/projects");
-      return all.length === before + 1 && all.find((x) => x.outfit && x.outfit.preset === "pajamas");
+    step("a file goes into that outfit like into any avatar, and what she has on doesn't change");
+    await p.click('[data-testid="mate-avatar-kind-photo"]');
+    const picture = path.join(path.dirname(__filename), "..", "..", "..", "backend/app/mate/builtin/assets/chaerin/smile.webp");
+    await p.locator('[data-testid="mate-still-neutral"]').setInputFiles(picture);
+    await p.waitForSelector('img[alt="neutral"]', { timeout: 15000 });
+    await p.getByRole("button", { name: "저장" }).first().click();
+    const filled = await until("filled", async () => {
+      const o = await get(boot, `/api/mates/${chaerin.id}/outfits/${added.id}`);
+      return o.avatar.kind === "photo" && o.avatar.rig.home && o;
     });
-    assert.ok(["interview", "estimate"].includes(opened.status));
+    assert.ok(filled.avatar.rig.home.includes(`/assets/outfits/${added.id}/stills/`), `its own folder: ${filled.avatar.rig.home}`);
+    assert.equal((await mate()).avatar.rig.home, homeBefore);
+    assert.equal((await mate()).outfits.worn, "default");
+
+    step("wearing swaps the whole set here and in another window");
+    const second = await ctx.newPage();
+    watch(second);
+    await second.goto(`${SERVER}/?view=mate`);
+    await second.waitForSelector('[data-mate-kind="video"]', { timeout: 30000 });
+    await p.bringToFront();
+    await p.click('[data-testid="outfit-wear"]');
+    await p.waitForSelector('[data-testid="outfit-is-worn"]');
+    const now = await mate();
+    assert.equal(now.outfits.worn, added.id);
+    assert.equal(now.avatar.rig.home, filled.avatar.rig.home);
+    await second.waitForSelector('[data-mate-kind="photo"]', { timeout: 15000 });
+
+    step("her default set can be edited and worn again while another is on");
+    await tile(p, "default").click();
+    await until("default selected", async () => (await p.locator('[data-testid="outfit-wear"]').count()) === 1);
+    await p.waitForSelector('[data-testid="mate-avatar-ai-open"]');
+    assert.equal(await p.locator('[data-testid="mate-avatar-kind-video"]').getAttribute("class").then((c) => c.includes("border-accent")), true);
+
+    step("AI: that outfit's own project, nothing spent, her own picture as the reference");
+    const empty = (await mate()).outfits.items.find((c) => c.name === "출근복");
+    await tile(p, added.id).click();
+    await p.waitForSelector('[data-testid="outfit-ai-open"]');
+    const before = (await get(boot, "/api/avatar/projects")).length;
+    await p.click('[data-testid="outfit-ai-open"]');
+    await p.waitForSelector('[data-testid="studio-back"]', { timeout: 20000 });
+    const opened = await until("the project", async () => (await get(boot, "/api/avatar/projects")).find((x) => x.outfit?.id === added.id));
+    assert.equal((await get(boot, "/api/avatar/projects")).length, before + 1);
     await p.waitForFunction(() => document.body.innerText.includes("새 의상"), null, { timeout: 15000 });
-    await p.screenshot({ path: path.join(SHOTS, "studio-preset-ko-dark.png") });
+    await p.screenshot({ path: path.join(SHOTS, "studio-outfit-ko-dark.png") });
     const doc = await get(boot, `/api/avatar/projects/${opened.id}`);
     assert.equal(doc.ledger.committed, 0);
     assert.equal(doc.brief.reference.mode, "redraw");
     assert.ok(doc.files.refs[0].url.includes("ref-1.webp"));
+    assert.equal(await p.locator('[data-testid="studio-section-concept"], [data-section="concept"]').count(), 0);
+
+    step("the finished project goes into its outfit, and Wear puts the whole video set on her");
+    const made = (await get(boot, "/api/avatar/projects")).find((x) => x.outfit?.id === empty.id);
+    await p.goto(`${SERVER}/?view=mate&avatar=${chaerin.id}&project=${made.id}`);
+    await p.waitForSelector('[data-testid="outfit-finish"]', { timeout: 30000 });
+    assert.equal(await p.locator('[data-testid="avatar-new-name"], [data-testid="avatar-apply-mate"], [data-testid="avatar-restore"]').count(), 0);
+    await p.click('[data-testid="outfit-wear"]');
+    await p.waitForSelector('[data-testid="outfit-worn"]', { timeout: 15000 });
+    const dressed = await mate();
+    assert.equal(dressed.outfits.worn, empty.id);
+    assert.equal(dressed.avatar.kind, "video");
+    assert.ok(dressed.avatar.rig.clips.length > 3 && dressed.avatar.rig.home.includes("/assets/pack-"));
+    assert.equal(dressed.outfits.items.length, 5, "it filled its own place");
+    await second.waitForSelector('[data-mate-kind="video"]', { timeout: 15000 });
 
     step("rename, and delete what she has on: her default set comes back");
     await openTab(p);
-    await until("in making", async () => (await p.locator('[data-testid="outfit-making-item"]').count()) === 1);
-    const worn = p.locator('[data-testid="outfit-tile"][data-worn="true"]');
-    await worn.locator('[data-testid="outfit-rename"]').click();
+    await until("selected what she has on", async () => (await tile(p, empty.id).getAttribute("aria-pressed")) === "true");
+    await p.click('[data-testid="outfit-rename"]');
     await p.fill('[data-testid="outfit-rename-input"]', "출근 복장");
     await p.keyboard.press("Enter");
     await until("renamed", async () => (await mate()).outfits.items.some((c) => c.name === "출근 복장"));
-    assert.equal(await tiles.nth(0).locator('[data-testid="outfit-delete"]').count(), 0, "her default set can't be deleted");
+    await p.screenshot({ path: path.join(SHOTS, "wardrobe-ko-dark.png") });
     p.once("dialog", (d) => d.accept());
-    await worn.locator('[data-testid="outfit-delete"]').click();
+    await p.click('[data-testid="outfit-delete"]');
     await until("default back on", async () => {
       const m = await mate();
-      return m.outfits.worn === "default" && m.avatar.rig.home === homeBefore && m.outfits.items.length === 3;
+      return m.outfits.worn === "default" && m.avatar.rig.home === homeBefore && m.outfits.items.length === 4;
     });
+    await until("default selected", async () => (await tile(p, "default").getAttribute("aria-pressed")) === "true");
+    assert.equal(await p.locator('[data-testid="outfit-delete"]').count(), 0, "her default can't be deleted");
     await p.close();
+    await second.close();
 
     step("phone, English, light");
     const phone = await context(browser, { lang: "en", theme: "light", mateId: chaerin.id, phone: true });
-    const q = await phone.newPage();
-    watch(q);
-    await openTab(q);
-    await q.waitForSelector('[data-testid="outfit-preset-swimwear"]');
-    await q.screenshot({ path: path.join(SHOTS, "wardrobe-en-light-phone.png"), fullPage: false });
-    const overflow = await q.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    const r = await phone.newPage();
+    watch(r);
+    await openTab(r);
+    await r.waitForSelector('[data-testid="outfit-add"]');
+    await r.screenshot({ path: path.join(SHOTS, "wardrobe-en-light-phone.png") });
+    const overflow = await r.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     assert.ok(overflow <= 0, `no sideways scroll (${overflow}px)`);
 
     assert.deepEqual(errors, [], "no page errors");

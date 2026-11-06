@@ -273,7 +273,7 @@ export function ClipStage({ rig, clips, className = "", testId, label }: { rig: 
 
 // ── the library ──
 
-export function ClipLibrary({ mate, rig, onChange }: { mate: Mate; rig: Rig; onChange: (r: Rig) => void }) {
+export function ClipLibrary({ mate, rig, onChange, folder = "" }: { mate: Mate; rig: Rig; onChange: (r: Rig) => void; folder?: string }) {
   const t = useT();
   const [selected, setSelected] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
@@ -324,7 +324,7 @@ export function ClipLibrary({ mate, rig, onChange }: { mate: Mate; rig: Rig; onC
           />
         ))}
       </div>
-      {sel && <ClipEditor key={sel.id} mate={mate} rig={rig} clip={sel} onChange={onChange} onRenamed={setSelected} onRemoved={() => setSelected(null)} />}
+      {sel && <ClipEditor key={sel.id} mate={mate} rig={rig} clip={sel} folder={folder} onChange={onChange} onRenamed={setSelected} onRemoved={() => setSelected(null)} />}
       <div className="flex flex-wrap items-center gap-2">
         <button className="btn-ghost border border-border" onClick={add}>
           <Icon name="plus" size={14} /> {t("mateSettings.clipAdd")}
@@ -410,6 +410,7 @@ function ClipEditor({
   mate,
   rig,
   clip,
+  folder,
   onChange,
   onRenamed,
   onRemoved,
@@ -417,6 +418,8 @@ function ClipEditor({
   mate: Mate;
   rig: Rig;
   clip: RigClip;
+  /** an outfit's own folder for its uploads ("" for her default set) */
+  folder: string;
   onChange: (r: Rig) => void;
   onRenamed: (id: string) => void;
   onRemoved: () => void;
@@ -453,7 +456,7 @@ function ClipEditor({
     setBusy(true);
     setErr(null);
     try {
-      const r = await uploadAsset(mate.id, f, `clips/${clip.id.replace(/[^\w-]/g, "_") || "clip"}.${extOf(f, "mp4")}`);
+      const r = await uploadAsset(mate.id, f, `${folder}clips/${clip.id.replace(/[^\w-]/g, "_") || "clip"}.${extOf(f, "mp4")}`);
       setClip({ src: r.url, small: undefined });
     } catch (e) {
       setErr((e as Error).message);

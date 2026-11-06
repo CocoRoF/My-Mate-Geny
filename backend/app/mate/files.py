@@ -196,6 +196,11 @@ def import_dirs_of(avatar: dict[str, Any], mate_id: str) -> set[str]:
     return set(re.findall(rf"/api/mates/{re.escape(mate_id)}/assets/((?:pack|l2d)-[0-9a-f]+)/", blob))
 
 
+def outfit_upload_dir(mate_id: str, oid: str) -> Path:
+    """Where the files uploaded for one outfit live (stills and clips, not packs)."""
+    return assets_dir(mate_id) / "outfits" / safe_rel(oid)
+
+
 def avatar_picture(avatar: dict[str, Any], mate_id: str) -> Path | None:
     """The file of a video/photo avatar's base picture (a built-in's or an imported pack's), if it has one."""
     rig = avatar.get("rig") if isinstance(avatar.get("rig"), dict) else {}

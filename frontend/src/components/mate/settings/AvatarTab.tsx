@@ -1,11 +1,13 @@
 /**
- * Avatar: kind (none / video / photo / Live2D), imports (zip, a folder on the server), simple asset upload for photo
+ * Avatar and outfits. On top her wardrobe (OutfitBar): her default set and the outfits the user added; everything below
+ * edits the set picked there, whether she has it on or not. Avatar: kind (none / video / photo / Live2D), imports (zip, a folder on the server), simple asset upload for photo
  * stills and video clips, a note when the Live2D runtime is missing (installed in Global settings) and emotion → expression / motion mapping, with
  * a live preview and test buttons. Video/photo rigs get the clip library + trigger editor (ClipLibrary.tsx); built-ins a
  * "Reset to the bundled version".
  */
 import { useEffect, useRef, useState } from "react";
-import { coreStatus, importAvatarZip, importLocal, uploadAsset, type Mate } from "../../../api/mates";
+import { listProjects, type ProjectSummary } from "../../../api/avatar";
+import { coreStatus, DEFAULT_OUTFIT, getOutfit, importAvatarZip, importLocal, patchOutfit, uploadAsset, type Mate } from "../../../api/mates";
 import { MateAvatar } from "../../../mate/avatar/MateAvatar";
 import { EMOTIONS } from "../../../mate/emotion";
 import type { Avatar, BodyMood, Live2D, MateReact, Rig } from "../../../mate/types";
@@ -17,6 +19,7 @@ import { tr, useT, type MsgKey } from "../../../i18n";
 import { previewMateAvatar } from "../../../mate/livePreview";
 import { useStudio } from "../../../stores/studioStore";
 import { BundledReset, ClipLibrary, StillTriggers, TriggerPreview, type TriggerPick } from "./ClipLibrary";
+import OutfitBar from "./OutfitBar";
 import { Banner, ErrorLine, Field, SaveBar, Section, useSaver } from "./ui";
 
 const MOODS: BodyMood[] = ["idle", "listening", "thinking", "talking", "away"];
@@ -52,17 +55,68 @@ const extOf = (f: File, fallback: string) => (f.name.match(/\.([a-z0-9]{2,5})$/i
 
 export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConversation }) {
   const t = useT();
-  const [avatar, setAvatar] = useState<Avatar>(mate.avatar);
+  const worn = mate.outfits?.worn ?? DEFAULT_OUTFIT;
+  const [selected, setSelected] = useState(worn);
+  // (deleted, in this window or another: back to what she has on)
+  const exists = selected === worn || !!mate.outfits?.items.some((o) => o.id === selected);
+  const current = exists ? selected : worn;
+  // what she has on comes with the mate; any other set is asked for, again after every change
+  const [other, setOther] = useState<{ id: string; avatar: Avatar } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (current === worn) return;
+    let alive = true;
+    getOutfit(mate.id, current)
+      .then((o) => alive && setOther({ id: o.id, avatar: o.avatar }))
+      .catch((e) => alive && setError((e as Error).message));
+    return () => {
+      alive = false;
+    };
+  }, [mate.id, current, worn, mate.updated_at]);
+  const saved = current === worn ? mate.avatar : other?.id === current ? other.avatar : null;
+  const dirty = useRef(false);
+  const select = (id: string) => {
+    if (id !== current && dirty.current && !window.confirm(t("mateSettings.outfitUnsaved"))) return;
+    dirty.current = false;
+    setError(null);
+    setSelected(id);
+  };
+  return (
+    <>
+      <OutfitBar mate={mate} selected={current} onSelect={select} />
+      <ErrorLine text={error} />
+      {saved ? (
+        <AvatarEditor key={current} mate={mate} conv={conv} outfit={current} saved={saved} live={current === worn} dirtyRef={dirty} />
+      ) : (
+        <div className="grid h-24 place-items-center text-content-faint">
+          <Icon name="spinner" size={16} spin />
+        </div>
+      )}
+    </>
+  );
+}
+
+function AvatarEditor({ mate, conv, outfit, saved, live, dirtyRef }: { mate: Mate; conv: MateConversation; outfit: string; saved: Avatar; live: boolean; dirtyRef: { current: boolean } }) {
+  const t = useT();
+  const [avatar, setAvatar] = useState<Avatar>(saved);
   const saver = useSaver();
-  const dirty = JSON.stringify(avatar) !== JSON.stringify(mate.avatar);
-  const worn = mate.outfits && mate.outfits.worn !== "default" ? mate.outfits.items.find((o) => o.id === mate.outfits?.worn) : undefined;
+  const dirty = JSON.stringify(avatar) !== JSON.stringify(saved);
+  dirtyRef.current = dirty;
+  const isDefault = outfit === DEFAULT_OUTFIT;
+  /** an outfit's uploaded files stay apart from the other sets' */
+  const folder = isDefault ? "" : `outfits/${outfit}/`;
   // the server replaced the avatar (an import): start from it
-  const serverAvatar = JSON.stringify(mate.avatar);
+  const serverAvatar = JSON.stringify(saved);
   useEffect(() => setAvatar(JSON.parse(serverAvatar)), [serverAvatar]);
-  const save = () => saver.run(() => useMateStore.getState().patch(mate.id, { avatar }));
+  const save = () =>
+    saver.run(async () => {
+      if (live) await useMateStore.getState().patch(mate.id, { avatar });
+      else useMateStore.getState().upsert(await patchOutfit(mate.id, outfit, { avatar }));
+    });
   // the draft is live: every avatar of this browser (overlay, chat window, quick card, other tabs) shows it while it
-  // differs from the saved one; saving or leaving the tab puts the saved one back (mate/livePreview)
-  const draftKey = dirty ? JSON.stringify(avatar) : "";
+  // differs from the saved one; saving or leaving the tab puts the saved one back (mate/livePreview). Only for the set
+  // she has on: another set shows in the preview below, not on her.
+  const draftKey = dirty && live ? JSON.stringify(avatar) : "";
   useEffect(() => {
     previewMateAvatar(mate.id, draftKey ? (JSON.parse(draftKey) as Avatar) : null);
   }, [draftKey, mate.id]);
@@ -75,8 +129,8 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
     if (kind === avatar.kind) return;
     if (kind === "none") setAvatar({ kind: "none" });
     else if (kind === "photo") setAvatar({ kind: "photo", rig: { ...rigOf(avatar), clips: [] } });
-    else if (kind === "video") setAvatar({ kind: "video", rig: rigOf(avatar.kind === "video" ? avatar : mate.avatar) });
-    else setAvatar({ kind: "live2d", live2d: mate.avatar.kind === "live2d" ? mate.avatar.live2d : { model: "" } });
+    else if (kind === "video") setAvatar({ kind: "video", rig: rigOf(avatar.kind === "video" ? avatar : saved) });
+    else setAvatar({ kind: "live2d", live2d: saved.kind === "live2d" ? saved.live2d : { model: "" } });
   };
 
   return (
@@ -98,28 +152,27 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
           ))}
         </div>
       </Section>
-      {worn && (
-        <Banner tone="info" testId="mate-avatar-outfit-note">
-          {t("mateSettings.outfitEditing", { name: worn.name })}
-        </Banner>
+      {isDefault ? (
+        <Section title={t("avatar.createWithAi")} hint={t("avatar.createWithAiHint")} testId="mate-avatar-ai">
+          <button className="btn-primary" onClick={() => useStudio.getState().openAvatar(mate.id)} data-testid="mate-avatar-ai-open">
+            <Icon name="sparkles" size={14} /> {t("avatar.createWithAiBtn")}
+          </button>
+        </Section>
+      ) : (
+        <OutfitAi mate={mate} outfit={outfit} />
       )}
-      <Section title={t("avatar.createWithAi")} hint={t("avatar.createWithAiHint")} testId="mate-avatar-ai">
-        <button className="btn-primary" onClick={() => useStudio.getState().openAvatar(mate.id)} data-testid="mate-avatar-ai-open">
-          <Icon name="sparkles" size={14} /> {t("avatar.createWithAiBtn")}
-        </button>
-      </Section>
-      <ImportSection mate={mate} />
+      <ImportSection mate={mate} outfit={isDefault && live ? undefined : outfit} />
       {avatar.kind === "photo" && (
         <>
-          <StillsEditor mate={mate} rig={avatar.rig} onChange={(rig) => setAvatar({ kind: "photo", rig })} />
+          <StillsEditor mate={mate} rig={avatar.rig} folder={folder} onChange={(rig) => setAvatar({ kind: "photo", rig })} />
           <StillTriggers rig={avatar.rig} onChange={(rig) => setAvatar({ kind: "photo", rig })} onPoke={onPoke} video={false} />
         </>
       )}
       {avatar.kind === "video" && (
         <>
-          <ClipLibrary mate={mate} rig={avatar.rig} onChange={(rig) => setAvatar({ kind: "video", rig })} />
+          <ClipLibrary mate={mate} rig={avatar.rig} folder={folder} onChange={(rig) => setAvatar({ kind: "video", rig })} />
           <TriggerPreview rig={avatar.rig} onChange={(rig) => setAvatar({ kind: "video", rig })} onPoke={onPoke} />
-          <StillsEditor mate={mate} rig={avatar.rig} onChange={(rig) => setAvatar({ kind: "video", rig })} />
+          <StillsEditor mate={mate} rig={avatar.rig} folder={folder} onChange={(rig) => setAvatar({ kind: "video", rig })} />
           <StillTriggers rig={avatar.rig} onChange={(rig) => setAvatar({ kind: "video", rig })} onPoke={onPoke} video />
         </>
       )}
@@ -129,9 +182,33 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
           <Live2DEditor live2d={avatar.live2d} onChange={(live2d) => setAvatar({ kind: "live2d", live2d })} />
         </>
       )}
-      <BundledReset mate={mate} dirty={dirty} />
-      <SaveBar saver={saver} onSave={save} dirty={dirty} onReset={() => setAvatar(mate.avatar)} />
+      {isDefault && <BundledReset mate={mate} dirty={dirty} />}
+      <SaveBar saver={saver} onSave={save} dirty={dirty} onReset={() => setAvatar(saved)} />
     </>
+  );
+}
+
+/** Make this outfit with AI: its own project in the studio, opened again where it stopped */
+function OutfitAi({ mate, outfit }: { mate: Mate; outfit: string }) {
+  const t = useT();
+  const starting = useStudio((s) => s.starting);
+  const [project, setProject] = useState<ProjectSummary | null>(null);
+  useEffect(() => {
+    let alive = true;
+    listProjects()
+      .then((all) => alive && setProject(all.find((p) => p.outfit?.id === outfit && p.status !== "canceled") ?? null))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [outfit]);
+  return (
+    <Section title={t("mateSettings.outfitAi")} hint={t("mateSettings.outfitAiHint")} testId="outfit-ai">
+      <button className="btn-primary" disabled={starting} onClick={() => void useStudio.getState().openOutfit(mate.id, outfit)} data-testid="outfit-ai-open">
+        <Icon name={starting ? "spinner" : "sparkles"} size={14} spin={starting} /> {project ? t("mateSettings.outfitAiContinue") : t("mateSettings.outfitAiBtn")}
+      </button>
+      {project && <p className="text-[11.5px] text-content-faint" data-testid="outfit-ai-status">{t(`avatar.status_${project.status}` as MsgKey)}</p>}
+    </Section>
   );
 }
 
@@ -195,7 +272,7 @@ function Preview({ mate, avatar, conv, poke }: { mate: Mate; avatar: Avatar; con
   );
 }
 
-function ImportSection({ mate }: { mate: Mate }) {
+function ImportSection({ mate, outfit }: { mate: Mate; outfit?: string }) {
   const t = useT();
   const [path, setPath] = useState("");
   const [busy, setBusy] = useState<"zip" | "local" | null>(null);
@@ -211,7 +288,7 @@ function ImportSection({ mate }: { mate: Mate }) {
     setErr(null);
     setOk(null);
     try {
-      const r = await importAvatarZip(mate.id, f);
+      const r = await importAvatarZip(mate.id, f, outfit);
       done(r.mate, r.avatar.kind);
     } catch (e) {
       setErr((e as Error).message);
@@ -226,7 +303,7 @@ function ImportSection({ mate }: { mate: Mate }) {
     setErr(null);
     setOk(null);
     try {
-      const r = await importLocal({ path: path.trim(), mate_id: mate.id });
+      const r = await importLocal({ path: path.trim(), mate_id: mate.id, outfit });
       const all = r.mates?.length ? r.mates : [r.mate];
       if (all.length > 1) {
         // a whole content folder: every character came in as its own mate
@@ -261,7 +338,7 @@ function ImportSection({ mate }: { mate: Mate }) {
   );
 }
 
-function StillsEditor({ mate, rig, onChange }: { mate: Mate; rig: Rig; onChange: (r: Rig) => void }) {
+function StillsEditor({ mate, rig, onChange, folder = "" }: { mate: Mate; rig: Rig; onChange: (r: Rig) => void; folder?: string }) {
   const t = useT();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -269,7 +346,7 @@ function StillsEditor({ mate, rig, onChange }: { mate: Mate; rig: Rig; onChange:
     setBusy(name);
     setErr(null);
     try {
-      const r = await uploadAsset(mate.id, f, `stills/${name}.${extOf(f, "png")}`);
+      const r = await uploadAsset(mate.id, f, `${folder}stills/${name}.${extOf(f, "png")}`);
       const next: Rig = { ...rig, stills: { ...rig.stills, [name]: r.url } };
       if (name === "neutral" || !rig.home) {
         next.home = r.url;
@@ -297,7 +374,7 @@ function StillsEditor({ mate, rig, onChange }: { mate: Mate; rig: Rig; onChange:
           return (
             <div key={n} className="group relative overflow-hidden rounded-lg border border-border bg-surface/60">
               <label className="block cursor-pointer">
-                <input type="file" accept="image/*" hidden onChange={(e) => e.target.files?.[0] && up(n, e.target.files[0])} />
+                <input type="file" accept="image/*" hidden onChange={(e) => e.target.files?.[0] && up(n, e.target.files[0])} data-testid={`mate-still-${n}`} />
                 <div className="grid aspect-[3/4] place-items-center">
                   {busy === n ? (
                     <Icon name="spinner" size={16} spin className="text-content-faint" />

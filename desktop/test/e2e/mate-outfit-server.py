@@ -3,8 +3,8 @@
 
   python3 desktop/test/e2e/mate-outfit-server.py <port> <frontend dist> [<casual picture> <swimwear picture>]
 
-한채린 (the bundled mate) gets two picture-only sets in her wardrobe, and a finished project made of 서아's real clips:
-a whole video set, only to check that wearing it swaps everything. The agent is fake-claude.py.
+한채린 (the bundled mate) gets two outfits filled with one picture each, and an empty one with a finished project made of
+서아's real clips: a whole video set, only to check that wearing it swaps everything. The agent is fake-claude.py.
 """
 
 import os
@@ -57,11 +57,10 @@ async def seeded(app):
         mates, av = app.state.mate_service, app.state.avatar_service
         mid = mates.store.by_builtin("chaerin")["id"]
         srcs = [Path(p) for p in PICTURES] or [BUILTIN / "seoa/neutral.webp", BUILTIN / "estelle/neutral.webp"]
-        mates.add_outfit(mid, name="데일리 캐주얼", avatar=picture_set(mid, srcs[0], "a"), preset="casual",
-                         note="a white t-shirt and an open gray cardigan")
-        mates.add_outfit(mid, name="수영복", avatar=picture_set(mid, srcs[1], "b"), preset="swimwear",
-                         note="a black long-sleeve rash guard with a white towel")
-        pid = av.studio_open(mate_id=mid, language="ko", outfit={"preset": "office"})["id"]
+        for name, src, tag in (("캐주얼", srcs[0], "a"), ("여름옷", srcs[1], "b")):
+            mates.set_outfit_avatar(mid, mates.add_outfit(mid, name), picture_set(mid, src, tag))
+        made = mates.add_outfit(mid, "출근복")
+        pid = av.studio_open(mate_id=mid, language="ko", outfit={"id": made})["id"]
         doc = av.doc(pid)
         shutil.copytree(BUILTIN / "seoa", av.dir(pid) / "export")
         doc.update(status="ready", result={"at": "2026-11-06T00:00:00+00:00", "stills": 12, "clips": 15})

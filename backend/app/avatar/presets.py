@@ -116,53 +116,12 @@ FRAMING = ("Waist-up portrait of one character, facing the viewer, relaxed frien
 REDRAW = "The same character as the reference: exactly the same face, eyes, hair, outfit, colours and art style."
 #: an outfit set (docs/avatar-create.md §12): the mate's own picture redrawn in new clothes, she stays exactly herself
 OUTFIT = ("The same character as the reference: exactly the same face, eyes, hairstyle, hair colour, skin tone, body "
-          "proportions, art style and line work. Only the clothes change: nothing of the reference's clothes stays, a "
-          "hood it has is gone so the whole hair shows, and accessories like a headset or glasses stay.")
+          "proportions, art style and line work. Only the clothes change: nothing of the reference's clothes stays; "
+          "accessories like a headset or glasses do.")
 OUTFIT_CLOTHES_REFS = "The first reference picture is the character; the others only show the clothes to wear."
 OUTFIT_CROP = "Cropped at the waist: nothing below the waist is in the picture."
-#: built-in mates whose profile states an adult age: the only ones offered swimwear
+#: built-in mates whose profile states an adult age (what the outfit agent may make: app/avatar/prompt.py)
 STATED_ADULTS = ("chaerin", "seoa", "estelle")
-
-
-def _preset(ko: str, en: str, hint_ko: str, hint_en: str, wears: str, prompt: str, **kw: Any) -> dict[str, Any]:
-    return {"name": {"ko": ko, "en": en}, "hint": {"ko": hint_ko, "en": hint_en}, "wears": wears, "prompt": prompt, **kw}
-
-
-#: the wardrobe's presets. ``prompt`` (English, the clothes only) starts a project: the user still sees the price and
-#: confirms it. ``motions``: a smaller set of clips than the default; ``adult_only``: see STATED_ADULTS.
-OUTFITS: dict[str, dict[str, Any]] = {
-    "casual": _preset("데일리 캐주얼", "Everyday casual", "흰 티셔츠와 회색 가디건", "White tee and a gray cardigan",
-                      "a white t-shirt and an open gray cardigan",
-                      "Wearing a plain white crew-neck t-shirt under an open light gray cardigan."),
-    "office": _preset("오피스룩", "Office wear", "흰 블라우스와 남색 재킷", "White blouse and a navy blazer",
-                      "a white blouse and a navy blazer",
-                      "Wearing a neat white blouse under a tailored navy blazer, smart office wear."),
-    "pajamas": _preset("잠옷", "Pajamas", "포근한 파스텔 잠옷", "Cosy pastel pajamas", "soft pastel blue pajamas",
-                       "Wearing soft, loose, long-sleeved pastel blue button-up cotton pajamas, cosy at-home wear."),
-    "sporty": _preset("운동복", "Sportswear", "지퍼 트랙 재킷", "A zipped track jacket",
-                      "a zipped dark gray track jacket over a t-shirt",
-                      "Wearing a zipped dark gray track jacket over a plain t-shirt, comfortable gym wear."),
-    "outing": _preset("외출복", "Going out", "단정한 니트 원피스", "A neat knit dress", "a long-sleeved dark green knit dress",
-                      "Wearing a simple long-sleeved dark green knit dress with a modest neckline, neat going-out "
-                      "wear."),
-    "swimwear": _preset("수영복", "Swimwear", "하늘색 반팔 래시가드와 줄무늬 비치 타월",
-                        "A sky-blue short-sleeve rash guard and a striped beach towel",
-                        "a loose sky-blue short-sleeve rash guard with a striped beach towel around the shoulders",
-                        "An adult woman. Wearing a loose, boxy sky-blue short-sleeve surf rash guard with a large striped "
-                        "beach towel around the shoulders, a bright summer look. Calm, everyday, non-sexual.",
-                        motions="minimal", adult_only=True),
-}
-
-
-def outfit_allowed(preset: str, builtin: str | None) -> bool:
-    entry = OUTFITS.get(preset)
-    return bool(entry) and (not entry.get("adult_only") or builtin in STATED_ADULTS)
-
-
-def outfit_presets(builtin: str | None) -> list[dict[str, Any]]:
-    """The presets on offer for a mate (``builtin``: her bundled character's key, if any)."""
-    return [{"id": k, "name": v["name"], "hint": v["hint"], "motions": v.get("motions") or "standard"}
-            for k, v in OUTFITS.items() if outfit_allowed(k, builtin)]
 
 
 def words(pronoun: str | None) -> dict[str, str]:
@@ -364,23 +323,20 @@ def merge_brief(cur: dict[str, Any] | None, patch: dict[str, Any]) -> dict[str, 
     return b
 
 
-def outfit_brief(preset: str | None, base: dict[str, Any], refs: list[str], target: dict[str, Any]) -> dict[str, Any]:
+def outfit_brief(base: dict[str, Any], refs: list[str], target: dict[str, Any]) -> dict[str, Any]:
     """The brief an outfit set starts from: her own picture as the reference, the shape of her default set and its
     motions, without the clips the user switched off there (they would be paid for and never play)."""
-    entry = OUTFITS.get(preset or "") or {}
-    motions = entry.get("motions") or "standard"
     rig = base.get("rig") if base.get("kind") == "video" else {}
     off = {c.get("id") for c in rig.get("clips") or [] if c.get("disabled")}
-    clips = [c for c in preset_clips(motions) if c["id"] not in off]
+    clips = [c for c in preset_clips("standard") if c["id"] not in off]
     if not any(c["kind"] == "idle" for c in clips):
-        clips = preset_clips(motions)
+        clips = preset_clips("standard")
     size = rig.get("aspect") or []
     tall = len(size) == 2 and size[1] and size[0] / size[1] < 0.62
     return merge_brief(None, {
         "reference": {"mode": "redraw" if refs else "none", "files": refs},
-        "design": {"prompt": entry.get("prompt") or ""},
-        "candidates": 3, "aspect": "9:16" if tall else "1:1", "preset": motions, "clips": clips,
-        "stills": preset_stills(motions), "target": target,
+        "candidates": 3, "aspect": "9:16" if tall else "1:1", "preset": "standard", "clips": clips,
+        "stills": preset_stills("standard"), "target": target,
     })
 
 

@@ -23,8 +23,8 @@ interface StudioState {
   notice: string | null;
   openCreate: (draftId: string) => void;
   openAvatar: (mateId: string, projectId?: string | null) => void;
-  /** a new outfit set for her wardrobe (a preset, or null: made in the conversation) */
-  openOutfit: (mateId: string, preset: string | null) => Promise<void>;
+  /** the project filling one outfit of her wardrobe */
+  openOutfit: (mateId: string, outfitId: string) => Promise<void>;
   setProject: (projectId: string | null) => void;
   /** New mate: a fresh draft (the agent starts on it) and its studio */
   startNew: () => Promise<void>;
@@ -42,11 +42,11 @@ export const useStudio = create<StudioState>((set, get) => ({
   notice: null,
   openCreate: (draftId) => set({ open: true, kind: "create", mateId: draftId, projectId: null, startError: null }),
   openAvatar: (mateId, projectId = null) => set({ open: true, kind: "avatar", mateId, projectId, startError: null }),
-  openOutfit: async (mateId, preset) => {
+  openOutfit: async (mateId, outfitId) => {
     if (get().starting) return;
     set({ starting: true, startError: null });
     try {
-      const p = await openStudio({ mate_id: mateId, language: useI18n.getState().lang, outfit: { preset } });
+      const p = await openStudio({ mate_id: mateId, language: useI18n.getState().lang, outfit: { id: outfitId } });
       set({ open: true, kind: "avatar", mateId, projectId: p.id, starting: false });
     } catch (e) {
       set({ starting: false, startError: (e as Error).message || tr("studio.startFailed") });
