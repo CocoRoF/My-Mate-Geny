@@ -1160,7 +1160,9 @@ default set always stays.
 - **Bundled outfits**: `builtin/assets/<key>/outfits.json` lists `{items: [{id, name, note, rig}]}`; `rig` is a relative
   path to a rig pack in the character's asset folder. New entries enter the wardrobe once during built-in sync, without
   changing what she wears. The built-in snapshot remembers which were offered, so updates preserve the user's edits and
-  deletions; one she already has follows the bundle where it is still as bundled. Han Chaerin's **그레이 밴드** uses plain
+  deletions; one she already has follows the bundle where it is still as bundled, and an edited one keeps its edits on the
+  bundle's new files when they move to another folder (a replaced pack needs one: built-in files are cached for a day by
+  URL). Han Chaerin's **그레이 밴드** uses plain
   gray fabric and white bands without brand names or logos.
 - **Unlocks**: an entry may say `"unlock": {"affinity": 60}` (그레이 밴드 does). It is in the wardrobe from the start, but until
   her affinity (as the indicator rounds it) reaches that, its card only carries `locked: {affinity}` and the server answers

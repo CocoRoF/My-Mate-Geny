@@ -320,6 +320,56 @@ def test_a_bundled_outfit_she_has_follows_the_bundle_where_it_is_untouched(db, m
     assert mates.get(mid)["outfits"]["worn"] == oid and "locked" not in _card(mates, mid)
 
 
+def test_an_edited_outfit_keeps_its_edits_when_the_bundle_moves_its_files(db, monkeypatch):
+    def pack(folder, aspect):
+        clip = {"id": "idle_a", "kind": "idle", "src": f"/b/{folder}/idle_a.lg.mp4", "small": f"/b/{folder}/idle_a.sm.mp4"}
+        return {"kind": "video", "rig": {"aspect": aspect, "home": f"/b/{folder}/neutral.webp",
+                                         "stills": {"neutral": f"/b/{folder}/neutral.webp"}, "clips": [clip, {**clip, "id": "talk_b"}]}}
+    first = _locked_outfit(avatar=pack("v1", [10, 12]))
+    monkeypatch.setattr(files, "builtin_outfits", lambda key: [first] if key == "chaerin" else [])
+    mates = _service(db)
+    mid = mates.store.by_builtin("chaerin")["id"]
+    oid = "builtin-gray-band"
+    mates.relation_update(mid, {"affinity": 60})
+    seed = mates.store.seed_builtin_outfits
+    second = _locked_outfit(avatar=pack("v2", [11, 12]))
+    third = _locked_outfit(avatar=pack("v3", [13, 12]))
+    fourth = _locked_outfit(avatar=pack("v4", [14, 12]))
+
+    # untouched: the whole new set
+    seed(mid, [second], [first])
+    assert mates.outfit(mid, oid)["avatar"]["rig"]["home"] == "/b/v2/neutral.webp"
+
+    # a clip switched off stays off, on the new files and their crop
+    edited = mates.outfit(mid, oid)["avatar"]
+    edited["rig"]["clips"][1]["disabled"] = True
+    mates.set_outfit_avatar(mid, oid, edited)
+    seed(mid, [third], [second])
+    rig = mates.outfit(mid, oid)["avatar"]["rig"]
+    assert rig["home"] == "/b/v3/neutral.webp" and rig["aspect"] == [13, 12]
+    assert rig["clips"][1]["disabled"] is True and rig["clips"][1]["src"] == "/b/v3/idle_a.lg.mp4"
+    assert "/b/v2/" not in json.dumps(rig)
+
+    # on her: what she has on moves too, without taking it off
+    mates.wear_outfit(mid, oid)
+    seed(mid, [fourth], [third])
+    cha = mates.get(mid)
+    assert cha["outfits"]["worn"] == oid and cha["avatar"]["rig"]["home"] == "/b/v4/neutral.webp"
+    assert cha["avatar"]["rig"]["clips"][1]["disabled"] is True
+
+    # the same files again change nothing, and the user's own files elsewhere stay as they are
+    mates.wear_outfit(mid, "default")
+    seed(mid, [fourth], [fourth])
+    assert mates.outfit(mid, oid)["avatar"]["rig"]["home"] == "/b/v4/neutral.webp"
+    own = mates.outfit(mid, oid)["avatar"]
+    own["rig"]["stills"]["smile"] = "/mine/smile.webp"
+    mates.set_outfit_avatar(mid, oid, own)
+    fifth = _locked_outfit(avatar=pack("v5", [14, 12]))
+    seed(mid, [fifth], [fourth])
+    rig = mates.outfit(mid, oid)["avatar"]["rig"]
+    assert rig["stills"]["smile"] == "/mine/smile.webp" and rig["home"] == "/b/v5/neutral.webp"
+
+
 def test_the_real_bundle_is_named_and_locked_as_decided():
     [gray] = files.builtin_outfits("chaerin")
     assert gray["id"] == "builtin-gray-band" and gray["name"] == "그레이 밴드" and gray["unlock"] == {"affinity": 60}

@@ -599,6 +599,21 @@ def _loads(raw: Any, empty: Any) -> Any:
     return v if isinstance(v, type(empty)) else empty
 
 
+def _on_new_files(avatar: dict[str, Any], old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+    """A set the user edited, when the bundle's files moved to another folder: the edits stay (a clip switched off, her
+    triggers), on the new files. The old folder is gone with that bundle."""
+    def folder(doc: dict[str, Any]) -> str:
+        return str((doc.get("rig") or {}).get("home") or "").rpartition("/")[0]
+
+    was, now = folder(old), folder(new)
+    if not was or not now or was == now:
+        return avatar
+    moved = json.loads(json.dumps(avatar, ensure_ascii=False).replace(f"{was}/", f"{now}/"))
+    if isinstance(moved.get("rig"), dict) and (new.get("rig") or {}).get("aspect"):
+        moved["rig"]["aspect"] = new["rig"]["aspect"]  # (the new files' crop)
+    return moved
+
+
 def outfit_lock(item: dict[str, Any], affinity: int) -> int | None:
     """The affinity an outfit still waits for, None when it is open. Once reached it stays open (``unlock.at``), however
     the affinity moves later."""
@@ -945,9 +960,11 @@ class MateStore:
                     if cur["name"] == old["name"]:
                         cur["name"] = it["name"]
                     new = normalize_avatar(it["avatar"])
-                    if (self.get(mate_id)["avatar"] if worn else cur["avatar"]) == old["avatar"] and new != old["avatar"]:
-                        cur["avatar"] = new
-                        on = new if worn else on
+                    live = self.get(mate_id)["avatar"] if worn else cur["avatar"]
+                    follows = new if live == old["avatar"] else _on_new_files(live, old["avatar"], new)
+                    if follows != live:
+                        cur["avatar"] = follows
+                        on = follows if worn else on
                 need = (it.get("unlock") or {}).get("affinity")
                 # (an update never takes off what she has on: that one stays open)
                 at = (cur.get("unlock") or {}).get("at") or (now_iso() if worn and need else None)
