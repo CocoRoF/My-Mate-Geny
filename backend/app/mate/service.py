@@ -123,7 +123,8 @@ class MateService:
         self.sync_builtins()
         for m in store.list():
             try:
-                self.relation_doc(m["id"])  # (a mate from before relationships: seeded from its real history)
+                # (a mate from before relationships: seeded from its real history; every mate: the stage as of now)
+                self._advanced(m["id"], datetime.now(timezone.utc), store.tz())
             except Exception as exc:  # noqa: BLE001
                 self._log("warning", f"relationship seed for {m['id']}: {exc}")
 
@@ -446,8 +447,9 @@ class MateService:
         rel = self._advanced(mate_id, now_utc, tz) if mate_id else None
         relation = bool(rel and rel["enabled"])
         screen = self.capture.shared_client(session["id"], self._svc.last_client_device(session["id"])) is not None
+        stage = rel["stage"] if relation else None
         prompt = system_prompt(mate["name"], mate["persona"], core, prefs, more=len(memories) - len(core),
-                               relation=relation, screen=screen)
+                               relation=relation, stage=stage, screen=screen)
         # the per-turn context (docs/mate-memory-affinity.md §2): settings note (persona edited since the
         # conversation last ran), then the clock, recalled memories, the user's memory edits — prepended to
         # this message, never stored, never a restart
@@ -456,7 +458,7 @@ class MateService:
         req.preamble = "\n\n".join(x for x in (note, ctx, req.preamble) if x)
         # (see_screen on/off changes the prompt and the bridge's tool list: the engine restarts with it)
         req.prompt_key = prompt_key(mate["name"], mate["persona"], int(mate.get("memory_rev") or 0), prefs,
-                                    relation=relation, screen=screen)
+                                    relation=relation, stage=stage, screen=screen)
         if engine == "codex" and mate_id:
             prompt = self._codex_prompt(mate_id, prompt, req.prompt_key, resuming=bool(req.cli_session_id))
             req.engine_home = str(files.mate_dir(mate_id) / "codex")

@@ -203,7 +203,7 @@ export interface RelationView {
   stage: RelationStage;
   earned_stage: RelationStage;
   warmth_stage: RelationStage;
-  next: { stage: RelationStage; ratio: number; needs: { days: number; turns: number; memories: number } } | null;
+  next: { stage: RelationStage; ratio: number } | null;
   stats: { days_together: number; turns: number; active_days: number; streak_days: number; memories: number; idle_days: number | null; grace_days: number };
   milestones: { key: string; at: string }[];
   /** newest first: d = the change, v = the value after it */
@@ -236,15 +236,7 @@ export interface RelationJournal {
   /** what the next stage still needs; null at the last stage */
   requirements: {
     stage: RelationStage;
-    earned: {
-      stage: RelationStage;
-      met: boolean;
-      have: { days: number; turns: number; memories: number };
-      need: { days: number; turns: number; memories: number };
-      left: { days: number; turns: number; memories: number };
-      ratio: number;
-    };
-    warmth: { stage: RelationStage; met: boolean; value: number; target: number; left: number; ratio: number };
+    warmth: { value: number; target: number; left: number; ratio: number };
   } | null;
   stats: RelationView["stats"] & { longest_streak: number; memories_active: number; first_talk_at: string | null; last_talk_at: string | null };
   milestones: { key: string; at: string }[];

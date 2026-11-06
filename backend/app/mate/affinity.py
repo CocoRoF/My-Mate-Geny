@@ -7,8 +7,9 @@ Two numbers, as in memora:
 * **affinity** (0–100) — the warmth *now*: rises when you talk, cools when
   you stay away (after a few free days, faster each day, never below a floor).
 
-The stage is the lower of the two (new → familiar → trusted → companion), so
-neglect shows but the way back is short. Gains are credited the moment they
+The stage follows the affinity (new → familiar → trusted → companion), so what
+she is to the user is what the number says; earned only tells a long bond that
+cooled from one that never was. Gains are credited the moment they
 happen; losses only for **finished** days, settled in time order — the same
 functions for real time and for a recompute from history (memora plan/61:
 two rule sets drift; a timer that settles a day before its talk was counted
@@ -137,9 +138,9 @@ def _milestone(r: dict[str, Any], key: str, at: datetime) -> None:
 
 
 def refresh(r: dict[str, Any], at: datetime, tz: Any) -> None:
-    """Stage (min of earned and warmth, with hysteresis) and milestones."""
+    """Stage (the warmth band, with hysteresis) and milestones."""
     r["warm"] = warmth_index(r["affinity"], int(r.get("warm") or 0))
-    stage = STAGES[min(STAGES.index(earned_stage(r)), int(r["warm"]))]
+    stage = STAGES[int(r["warm"])]
     if stage != r["stage"]:
         if STAGES.index(stage) > STAGES.index(r["stage"]):
             _milestone(r, f"stage_{stage}", at)
@@ -351,16 +352,17 @@ def marks_of(r: dict[str, Any]) -> list[dict[str, Any]]:
 
 # ---- views ----
 
+def _next_target(r: dict[str, Any]) -> tuple[str, float] | None:
+    """The next stage and the affinity that reaches it (None at the last stage)."""
+    i = int(r.get("warm") or 0)
+    return None if i >= len(STAGES) - 1 else (STAGES[i + 1], BAND_FLOORS[i + 1] + HYST_UP)
+
+
 def next_stage(r: dict[str, Any]) -> dict[str, Any] | None:
-    i = STAGES.index(earned_stage(r))
-    if i >= len(STAGES) - 1:
+    target = _next_target(r)
+    if target is None:
         return None
-    nxt = STAGES[i + 1]
-    d, t, m = EARNED[nxt]
-    ratios = [min(1.0, r["active_days"] / d), min(1.0, r["turns"] / t), 1.0 if m == 0 else min(1.0, r["memories"] / m)]
-    return {"stage": nxt, "ratio": round(min(ratios), 3),
-            "needs": {"days": max(0, d - r["active_days"]), "turns": max(0, t - r["turns"]),
-                      "memories": max(0, m - r["memories"])}}
+    return {"stage": target[0], "ratio": round(min(1.0, r["affinity"] / target[1]), 3)}
 
 
 def view(r: dict[str, Any], now: datetime, tz: Any) -> dict[str, Any]:
@@ -430,28 +432,13 @@ def daily(log: list[dict[str, Any]], today: date, tz: Any, days: int) -> list[di
 
 
 def requirements(r: dict[str, Any]) -> dict[str, Any] | None:
-    """What the next stage still needs, in both parts: the **earned** part (days talked, talks, memories — it never
-    goes down) and the **warmth** part (the value now must reach the band; it cools when you're away). The stage
-    is the lower of the two. ``None`` at the last stage."""
-    i = STAGES.index(r["stage"]) if r["stage"] in STAGES else 0
-    if i >= len(STAGES) - 1:
+    """How far the affinity is from the next stage. ``None`` at the last stage."""
+    target = _next_target(r)
+    if target is None:
         return None
-    nxt = STAGES[i + 1]
-    d, t, m = EARNED[nxt]
-    have = {"days": r["active_days"], "turns": r["turns"], "memories": r["memories"]}
-    need = {"days": d, "turns": t, "memories": m}
-    earned = earned_stage(r)
-    warm = int(r.get("warm") or 0)
-    target = BAND_FLOORS[i + 1] + HYST_UP
-    ratios = [1.0 if need[k] == 0 else min(1.0, have[k] / need[k]) for k in need]
-    return {
-        "stage": nxt,
-        "earned": {"stage": earned, "met": STAGES.index(earned) > i, "have": have, "need": need,
-                   "left": {k: max(0, need[k] - have[k]) for k in need}, "ratio": round(min(ratios), 3)},
-        "warmth": {"stage": STAGES[warm], "met": warm > i, "value": round(r["affinity"], 1), "target": target,
-                   "left": 0.0 if warm > i else round(max(0.0, target - r["affinity"]), 1),
-                   "ratio": 1.0 if warm > i else round(min(1.0, r["affinity"] / target), 3)},
-    }
+    return {"stage": target[0], "warmth": {"value": round(r["affinity"], 1), "target": target[1],
+                                           "left": round(max(0.0, target[1] - r["affinity"]), 1),
+                                           "ratio": round(min(1.0, r["affinity"] / target[1]), 3)}}
 
 
 def anniversaries(r: dict[str, Any], today: date, tz: Any) -> list[dict[str, Any]]:

@@ -133,22 +133,23 @@ def test_pause_off_and_sensitivity():
     assert [e["d"] for e in half["log"] if e["why"].startswith("quiet")] == [-2.0]
 
 
-def test_hysteresis_and_earned_times_warmth():
+def test_hysteresis_and_the_stage_follows_the_affinity():
     assert A.warmth_index(21, 0) == 0 and A.warmth_index(22, 0) == 1  # in only 2 past the floor
     assert A.warmth_index(18, 1) == 1 and A.warmth_index(16.9, 1) == 0  # out only 3 below it
     assert A.warmth_index(90, 0) == 3 and A.warmth_index(5, 3) == 0
     r = A.new()
     talk(r, day(0))
     A.set_value(r, 90, day(0), TZ)
-    assert r["stage"] == "new"  # warm, but they've only just met (earned: new)
-    for n in range(1, 4):
-        for i in range(5):
-            talk(r, day(n, 10, i))
-    assert A.earned_stage(r) == "familiar" and r["stage"] == "familiar"
-    assert any(m["key"] == "stage_familiar" for m in r["milestones"])
-    A.set_value(r, 10, day(3), TZ)
-    assert r["stage"] == "new"  # min(earned, warmth); the milestone stays (history)
-    assert any(m["key"] == "stage_familiar" for m in r["milestones"])
+    assert r["stage"] == "companion" and A.earned_stage(r) == "new"  # (what the number says, however new they are)
+    assert any(m["key"] == "stage_companion" for m in r["milestones"])
+    A.set_value(r, 50, day(0), TZ)
+    assert r["stage"] == "trusted"
+    A.set_value(r, 10, day(0), TZ)
+    assert r["stage"] == "new"  # (the milestone stays: history)
+    assert any(m["key"] == "stage_companion" for m in r["milestones"])
+    assert A.next_stage(r) == {"stage": "familiar", "ratio": round(10 / 22, 3)}
+    A.set_value(r, 90, day(0), TZ)
+    assert A.next_stage(r) is None
 
 
 def test_the_avatar_follows_how_she_feels_unless_told_not_to():
@@ -233,7 +234,7 @@ def test_turns_and_memories_move_it_and_the_prompt_gets_lines_only_on_change(db)
     svc, store, mates = _svc(db)
     m = store.create(name="Rin", persona={"language": "ko"})
     req, prompt = _engine(mates, m["id"])
-    assert "## Between you and the user" in prompt and "never guilt-trip" in prompt.lower()
+    assert "## Between you and the user" in prompt and "never guilt-trip" in prompt.lower() and "You have only just met" in prompt
     assert "Relationship: new — day" not in req.preamble and "How you feel right now: " in req.preamble  # (no turn yet)
     mates._relation_turn(m["id"], {"input": "고마워!", "text": "[joy] 천만에요", "meta": None})
     mates._relation_turn(m["id"], {"input": "<delegation_result>", "text": "", "meta": {

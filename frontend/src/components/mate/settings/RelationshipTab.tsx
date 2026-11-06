@@ -135,15 +135,7 @@ export default function RelationshipTab({ mate }: { mate: Mate }) {
         {v.next && !off && (
           <Field label={t("mateSettings.relNext", { stage: t(STAGE_LABEL[v.next.stage]) })} as="div">
             <ProgressBar value={v.next.ratio} testId="mate-relation-next" />
-            <p className="text-[11.5px] text-content-faint">
-              {[
-                v.next.needs.days ? t("mateSettings.relNeedDays", { count: v.next.needs.days }) : "",
-                v.next.needs.turns ? t("mateSettings.relNeedTalks", { count: v.next.needs.turns }) : "",
-                v.next.needs.memories ? t("mateSettings.relNeedMemories", { count: v.next.needs.memories }) : "",
-              ]
-                .filter(Boolean)
-                .join(" · ") || t("mateSettings.relNeedWarmth")}
-            </p>
+            <p className="text-[11.5px] text-content-faint">{t("mateSettings.relNeedWarmth")}</p>
           </Field>
         )}
       </Section>

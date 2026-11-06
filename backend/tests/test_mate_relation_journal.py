@@ -92,21 +92,13 @@ def test_a_set_value_is_not_a_gain_and_kinds_of_changes():
     assert [c["why"] for c in ch if c["at"] == A._iso(day(1, 9, 0))] == ["warm", "streak", "talk"]
 
 
-def test_requirements_show_both_parts_and_the_stage_is_the_lower():
+def test_the_next_stage_needs_only_the_affinity():
     r = A.new()
-    r.update(active_days=5, turns=80, memories=12, affinity=30.0, warm=1, stage="familiar")
+    r.update(affinity=30.0, warm=1, stage="familiar")
     q = A.requirements(r)
     assert q["stage"] == "trusted"
-    # earned: trusted needs 10 days · 60 talks · 10 memories
-    assert q["earned"]["need"] == {"days": 10, "turns": 60, "memories": 10}
-    assert q["earned"]["left"] == {"days": 5, "turns": 0, "memories": 0} and q["earned"]["met"] is False
     assert q["warmth"]["target"] == A.BAND_FLOORS[2] + A.HYST_UP and q["warmth"]["left"] == 17.0
-    assert q["warmth"]["met"] is False
-    # earned all there, warmth behind: only warmth is missing
-    r.update(active_days=12)
-    q = A.requirements(r)
-    assert q["earned"]["met"] and q["earned"]["ratio"] == 1.0 and not q["warmth"]["met"]
-    r.update(stage="companion")
+    r.update(warm=3, stage="companion")
     assert A.requirements(r) is None
 
 
@@ -218,6 +210,6 @@ def test_journal_route(client):
     assert j["anniversaries"] == [] and j["memories"] == [] and j["stats"]["last_talk_at"] is None
     client.patch(f"/api/mates/{m['id']}/relation", json={"affinity": 40})
     j = client.get(f"/api/mates/{m['id']}/relation/journal").json()
-    assert j["days"] == 30 and j["series"][-1]["v"] == 40.0 and j["changes"][0]["kind"] == "manual"
+    assert j["days"] == 30 and j["series"][-1]["v"] == 40.0 and any(c["kind"] == "manual" for c in j["changes"])
     assert client.get("/api/mates/mate_nope/relation/journal").status_code == 404
     assert client.get(f"/api/mates/{m['id']}/relation/journal?days=x").status_code == 422

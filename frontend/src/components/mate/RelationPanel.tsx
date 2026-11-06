@@ -298,40 +298,16 @@ function NextStage({ j, mate }: { j: RelationJournal; mate: Mate }) {
       </Card>
     );
   }
-  const color = STAGE_COLOR[q.stage];
-  const e = q.earned;
-  const rows: [MsgKey, keyof typeof e.have][] = [
-    ["mate.relPanelReqDays", "days"],
-    ["mate.relPanelReqTalks", "turns"],
-    ["mate.relPanelReqMemories", "memories"],
-  ];
   return (
     <Card title={t("mate.relPanelNextTo", { stage: t(STAGE_LABEL[q.stage]) })} testId="mate-relation-panel-next">
-      <div className="space-y-3.5">
-        <div data-testid="mate-relation-panel-earned" data-met={e.met ? "true" : "false"}>
-          <PartHead label={t("mate.relPanelEarned")} hint={t("mate.relPanelEarnedHint")} met={e.met} />
-          <Bar ratio={e.met ? 1 : e.ratio} color={color} />
-          <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11.5px] tabular-nums">
-            {rows
-              .filter(([, k]) => e.need[k] > 0)
-              .map(([key, k]) => (
-                <li key={k} className={e.left[k] ? "text-content-dim" : "text-content-faint"}>
-                  {e.left[k] ? "" : "✓ "}
-                  {t(key, { have: e.have[k], need: e.need[k] })}
-                </li>
-              ))}
-          </ul>
+      <div className="space-y-2.5">
+        <div data-testid="mate-relation-panel-warmth">
+          <PartHead label={t("mate.relPanelWarmth")} hint={t("mate.relPanelWarmthHint", { days: v.stats.grace_days })} met={false} />
+          <Bar ratio={q.warmth.ratio} color={STAGE_COLOR[q.stage]} />
+          <p className="mt-1.5 text-[11.5px] tabular-nums text-content-dim">
+            {t("mate.relPanelWarmthNeed", { value: Math.round(q.warmth.value), target: Math.round(q.warmth.target), left: Math.ceil(q.warmth.left) })}
+          </p>
         </div>
-        <div data-testid="mate-relation-panel-warmth" data-met={q.warmth.met ? "true" : "false"}>
-          <PartHead label={t("mate.relPanelWarmth")} hint={t("mate.relPanelWarmthHint", { days: v.stats.grace_days })} met={q.warmth.met} />
-          <Bar ratio={q.warmth.ratio} color={color} />
-          {!q.warmth.met && (
-            <p className="mt-1.5 text-[11.5px] tabular-nums text-content-dim">
-              {t("mate.relPanelWarmthNeed", { value: Math.round(q.warmth.value), target: Math.round(q.warmth.target), left: Math.ceil(q.warmth.left) })}
-            </p>
-          )}
-        </div>
-        <p className="border-t border-border/60 pt-2.5 text-[11.5px] leading-relaxed text-content-faint">{t("mate.relPanelLowerRule")}</p>
         {distant && <p className="text-[11.5px] leading-relaxed text-content-faint">{t("mateSettings.relDistant", { name: mate.name })}</p>}
       </div>
     </Card>

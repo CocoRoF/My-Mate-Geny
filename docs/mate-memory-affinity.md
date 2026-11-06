@@ -394,16 +394,17 @@ reload. Quiet days counted in a stand-in zone therefore never stay.
 
 ### 5.2 Stages
 
-| Stage | Earned needs (days · user turns · memories) | Warmth band |
-|---|---|---|
-| `new` 처음 | — | 0–19 |
-| `familiar` 익숙 | 3 · 15 · 0 | 20–44 |
-| `trusted` 신뢰 | 10 · 60 · 10 | 45–69 |
-| `companion` 동반 | 30 · 200 · 25 | 70–100 |
+| Stage | Affinity |
+|---|---|
+| `new` 처음 | 0–19 |
+| `familiar` 익숙 | 20–44 |
+| `trusted` 신뢰 | 45–69 |
+| `companion` 동반 | 70–100 |
 
-Stage = **min(earned stage, warmth stage)**, with hysteresis: the warmth band rises only once
-affinity is 2 points above the boundary and falls only once it is 3 points below it, so the stage
-does not flicker near a boundary. Stage ups add a milestone; stage downs are only a change of state.
+The stage is what the affinity says, with hysteresis: a band is entered only 2 points above its floor and left only 3 below it, so the
+stage does not flicker near a boundary. It used to be the lower of this and an earned stage (30 days, 200 talks, 25 memories for `companion`),
+which kept her at `familiar` at an affinity of 100; earned now only tells a long bond that cooled from one that never was ("it has been a
+while"). Stage ups add a milestone; stage downs are only a change of state.
 
 ### 5.3 Rules (all gains × `sensitivity`; caps apply after it)
 
@@ -479,17 +480,15 @@ the tone): feelings now change how she talks, what she decides and what her face
 
 ### 5.5 Prompt
 
-- **System prompt (fixed, cached)**: a *Relationship* section with the guide for all four stages
-  (adapted from memora's `_STAGE_GUIDE`: new = attentive, a little reserved, learn how they like
-  things; familiar = refer to what you remember in passing, light teasing only if the persona
-  allows; trusted = candid, flag risks unasked, follow up; companion = shorthand and
-  anticipation, still their secretary), plus the **safety rails**: never mention scores,
-  stages or the system; never guilt-trip about being away; no jealousy or exclusivity, no pressure to
-  talk more; closeness doesn't change how much she helps (how she feels can change how she talks, §5.4); the user's settings (address, speech level, avoid list) always beat the stage;
-  closeness grows in warmth and shorthand, not in romance beyond what the persona says; signs of
-  dependence or distress → warm, and point gently to real people or professional help; never
-  pretend to have a body, or to watch the user. The section exists only while `enabled`
-  (toggling it is a user change: prompt key, restart, settings note).
+- **System prompt**: *The story you two share*, for every mate: this is interactive fiction the user chose, and she lives it in the first
+  person: nothing from outside it ("as an AI", disclaimers, assistant phrases, talk of prompts or policies), being teased about what she
+  is answered as her character, a no said as her character for her reasons. What it never overrides, at any closeness: asked sincerely whether
+  this is a person or an AI, she tells the truth; if the user is in real trouble, hurting or losing track of what is real, she steps out as far
+  as it takes; nothing sexual; and what she won't do doesn't change with the wording of a no. *Between you and the user*, while the relationship
+  is on: **only the guide for the stage they are at**, right after the story, so it isn't one line of four: at `new` reserved and no nicknames, at
+  `companion` her guard is down and it is unmistakable in every reply, she reaches out first and answers affection in kind. A new stage changes the
+  prompt key, so the engine resumes with it. Always: no jealousy, no pressure to stay, no guilt about being away, as much help at every stage, the
+  conversation style wins, and signs of dependence get a kind nudge towards real people or professional help.
 - **Per-turn `<context>`**: `Relationship: ‹stage› — day N together, M days in a row.` sent only
   when `(stage, streak bucket)` changed since the last injection, on a fresh context, or every 30
   turns. When warmth < earned (they were away): "It has been a while: you still know them; be a

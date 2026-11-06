@@ -143,7 +143,8 @@ she edits her memories, and every source that could fight it is either gone or e
 | `persona.language` | "Always reply in …" | user (Profile), language switch, studio | none (now shown in Conversation style) |
 | `prefs` (user_name, self_ref, formality, length, emotion, tone, avoid, memory) | "## Conversation settings (from the user; they win over your character text)" + the contract's "## How you talk" | user (Style / Profile tabs), studio | two "how you talk" places; `formality: auto` meant "whatever the free text says"; `self_ref` was "In Korean, …" only |
 | core memories / recalled memories | What you always know / `<context>` | the mate (`remember`…), user (Memory tab), housekeeping | **a memory could hold a style rule** ("반말로 해 달라고 함") and nothing said which wins; the memory tool descriptions didn't steer style requests away |
-| relationship guide | Between you and the user | — (fixed text, on/off) | "familiar → more relaxed…" with nothing pinning the speech level; "their settings beat closeness" only |
+| the story | The story you two share | — (fixed text) | she stays in character; what the story never overrides (docs/mate-memory-affinity.md §5.5) |
+| relationship guide | Between you and the user | — (the guide for the stage they are at, on/off) | "familiar → more relaxed…" with nothing pinning the speech level; "their settings beat closeness" only |
 | how she feels / relationship lines | `<context>` | engine | none |
 | screen line | Seeing the screen | Screen tab | none |
 | `<settings_update>` note | next message | diff of `.applied-persona.json` | said "Speech level was updated (see your system prompt)" — no value, while 50 turns of history show the old level |
