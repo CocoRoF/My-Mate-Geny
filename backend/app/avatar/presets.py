@@ -117,7 +117,7 @@ REDRAW = "The same character as the reference: exactly the same face, eyes, hair
 #: an outfit set (docs/avatar-create.md §12): the mate's own picture redrawn in new clothes, she stays exactly herself
 OUTFIT = ("The same character as the reference: exactly the same face, eyes, hairstyle, hair colour, skin tone, body "
           "proportions, art style and line work. Only the clothes change: nothing of the reference's clothes stays; "
-          "accessories like a headset or glasses do.")
+          "accessories like a headset or glasses do, unless the description below says otherwise.")
 OUTFIT_CLOTHES_REFS = "The first reference picture is the character; the others only show the clothes to wear."
 OUTFIT_CROP = "Cropped at the waist: nothing below the waist is in the picture."
 
@@ -162,6 +162,12 @@ def design_prompt(prompt: str, *, redraw: bool, outfit: bool = False, clothes_re
     if outfit:
         parts.append(OUTFIT_CROP)
     return " ".join(parts)
+
+
+def design_edit_prompt(change: str) -> str:
+    """A candidate the user likes, with one thing changed: the picture is the reference."""
+    return ("Keep this picture exactly as it is: the same character, face, eyes, hair, clothes, pose, framing, colours, "
+            f"art style and plain flat light gray background. Change only this: {' '.join(change.split()).rstrip('.')}.")
 
 
 def preset_clips(name: str) -> list[dict[str, Any]]:

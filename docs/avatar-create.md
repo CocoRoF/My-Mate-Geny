@@ -104,8 +104,11 @@ Buttons: **Confirm · N credits**, **Change plan**, **Cancel**.
 - Before EVERY job (`plan.check_spend`): a confirmation whose plan id and total are the plan on file, not paused or
   canceled, and room under the cap (confirmed cap + extras the user confirmed − credits counted). Every submitted try
   counts (failed ones too: Higgsfield usually refunds them, the cap stays conservative).
-- Redo: ≤ 5 credits and inside the cap → runs; more (or past the cap) → an **extra** card the user confirms
-  (`/extras/{xid}/confirm {total}` raises the cap by exactly that). A user's own Redo click is their OK when it fits
+- Redo: ≤ 5 credits and inside the cap → runs, also while a checkpoint waits (it comes again afterwards); a newer request
+  for the same thing replaces one still waiting. More (or past the cap) → an **extra** card, right above the message box
+  and in the panel, the user confirms (`/extras/{xid}/confirm {total}` raises the cap by exactly that).
+  `regenerate {item: design, from: c2, note}` makes one new candidate from that very picture, only what the note says
+  changed. A user's own Redo click is their OK when it fits
   the cap (the browser asks once more above 5 credits). Adding clips/stills after the confirmation (`extend`) is
   always an extra.
 - The run hitting the cap stops at a `cap` checkpoint with an extra for what is left.

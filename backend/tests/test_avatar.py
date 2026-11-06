@@ -667,3 +667,64 @@ def test_resume_rejoins_jobs_higgsfield_ran_and_retries_the_rest(db, tmp_path, m
     assert it["design:c2"]["status"] == "pending" and it["design:c2"]["tries"] == 0
     assert it["design:c3"]["status"] == "failed"
     assert it["design:c4"]["status"] == "done"
+
+
+async def test_a_redo_at_a_checkpoint_runs(db, tmp_path, monkeypatch):
+    """While a checkpoint waits for the user (status "waiting"), a redo inside the cap must start, not only say so."""
+    _, _, av = _services(db, tmp_path, monkeypatch)
+    events: list[tuple[str, str]] = []
+    monkeypatch.setattr(av, "_event", lambda pid, kind, text: events.append((kind, text)))
+    pid = av.create(language="ko")["id"]
+    await _ready_project(av, pid, events)
+    plan = av.doc(pid)["plan"]
+    await av.confirm(pid, plan["id"], plan["total"])
+    assert (await _settle(av, pid, ("waiting",)))["checkpoint"]["stage"] == "pick"
+    n = len(av.gen.created)
+    res = await av.user_redo(pid, "design")
+    assert res["result"]["started"]
+    doc = await _settle(av, pid, ("waiting",))
+    assert [jt for jt, _ in av.gen.created[n:]] == ["nano_banana_pro"] * 2
+    assert doc["checkpoint"]["stage"] == "pick"
+    assert sorted(k for k in doc["items"] if k.startswith("design:")) == [f"design:c{i}" for i in range(1, 5)]
+
+
+async def test_a_candidate_with_one_thing_changed(db, tmp_path, monkeypatch):
+    """"Number 2 without the headset": the model gets candidate 2 itself and only the change; one picture, so it runs at
+    once. A request past the cap waits on a card, a newer one replaces it, and the OK brings the checkpoint back."""
+    _, _, av = _services(db, tmp_path, monkeypatch)
+    events: list[tuple[str, str]] = []
+    monkeypatch.setattr(av, "_event", lambda pid, kind, text: events.append((kind, text)))
+    pid = av.create(language="ko")["id"]
+    ctx = await _ready_project(av, pid, events)
+    plan = av.doc(pid)["plan"]
+    await av.confirm(pid, plan["id"], plan["total"])
+    await _settle(av, pid, ("waiting",))
+    # the brief stays locked, and the refusal says what to do instead
+    text, err, _ = await av.call_tool(ctx, "update_brief", {"patch": {"design": {"prompt": "No headset."}}})
+    assert err and "regenerate with item design" in text
+    for args in ({"item": "design", "from": "c9", "note": "x"}, {"item": "design", "from": "c2"},
+                 {"item": "home", "from": "c2", "note": "x"}):
+        assert (await av.call_tool(ctx, "regenerate", args))[1], args
+    n = len(av.gen.created)
+    text, err, _ = await av.call_tool(ctx, "regenerate", {"item": "design", "from": "c2", "note": "Remove the headset."})
+    assert not err and "Redoing" in text, text
+    doc = await _settle(av, pid, ("waiting",))
+    assert doc["checkpoint"]["stage"] == "pick" and "design:c3" in doc["items"] and "design:c4" not in doc["items"]
+    [(jt, flags)] = av.gen.created[n:]
+    assert jt == "nano_banana_pro" and flags[flags.index("--image-references") + 1].endswith("c2-flat.jpg")
+    prompt = flags[flags.index("--prompt") + 1]
+    assert prompt.endswith("Change only this: Remove the headset.") and "Waist-up" not in prompt
+    assert ("flatten", [str(av.dir(pid) / "design/c2.png"), str(av.dir(pid) / "ref/c2-flat.jpg")]) in av.deps.calls
+    # past the cap: a card; a newer request replaces it; the OK runs that one and comes back to the checkpoint
+    doc["ledger"]["committed"] = PL.cap(doc)
+    av.save(doc)
+    await av.call_tool(ctx, "regenerate", {"item": "design", "note": "first try"})
+    await av.call_tool(ctx, "regenerate", {"item": "design", "from": "c1", "note": "Shorter sleeves."})
+    first, second = av.doc(pid)["extras"][-2:]
+    assert first["status"] == "declined" and second["status"] == "pending" and second["total"] == 2.0
+    n = len(av.gen.created)
+    await av.confirm_extra(pid, second["id"], second["total"])
+    doc = await _settle(av, pid, ("waiting",))
+    assert doc["checkpoint"]["stage"] == "pick"
+    [(_, flags)] = av.gen.created[n:]
+    assert flags[flags.index("--image-references") + 1].endswith("c1-flat.jpg")

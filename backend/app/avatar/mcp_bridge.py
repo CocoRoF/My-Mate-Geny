@@ -118,9 +118,11 @@ TOOLS = [
     {"name": "regenerate",
      "description": "Redo one item after the plan was confirmed: item = design (a new batch of candidates) | home "
                     "(the cut-out) | still:<name> | clip:<id>. note = a short English hint for the redo (e.g. "
-                    "'keep both hands on the desk'). Small redos inside the cap run at once; bigger ones show the "
-                    "user a card to confirm (then end your turn).",
-     "inputSchema": {"type": "object", "properties": {"item": {"type": "string"}, "note": {"type": "string"}},
+                    "'keep both hands on the desk'). from (item design only) = the candidate the user likes (c1, c2, "
+                    "...): one new candidate from that very picture, with only what note says changed. Small redos "
+                    "inside the cap run at once; bigger ones show the user a card to confirm (then end your turn).",
+     "inputSchema": {"type": "object", "properties": {"item": {"type": "string"}, "note": {"type": "string"},
+                                                      "from": {"type": "string"}},
                      "required": ["item"]}},
     {"name": "extend",
      "description": "Add clips and/or stills after the plan was confirmed (priced from the plan; the user confirms "

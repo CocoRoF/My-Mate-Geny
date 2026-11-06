@@ -898,8 +898,9 @@ class AvatarService:
     async def _tool_update_brief(self, pid: str, args: dict[str, Any]) -> Any:
         doc = self.doc(pid)
         if doc.get("confirmation"):
-            raise AvatarError("the plan is confirmed and running: the brief is locked (use extend to add clips or "
-                              "stills, regenerate to redo one)")
+            raise AvatarError("the plan is confirmed and running: the brief is locked (to change a candidate: "
+                              "regenerate with item design, from and note; to redo one: regenerate; to add clips or "
+                              "stills: extend)")
         patch = args.get("patch") if isinstance(args.get("patch"), dict) else {k: v for k, v in args.items()}
         if doc.get("studio"):
             patch = {k: v for k, v in patch.items() if k != "target"}  # (the studio's mate gets it)
@@ -1057,7 +1058,7 @@ class AvatarService:
     async def _tool_regenerate(self, pid: str, args: dict[str, Any]) -> Any:
         key = str(args.get("item") or "").strip()
         note = _clip(args.get("note") or "", 300)
-        return await self.redo(pid, key, note=note, by="agent")
+        return await self.redo(pid, key, note=note, base=str(args.get("from") or "").strip(), by="agent")
 
     async def _tool_extend(self, pid: str, args: dict[str, Any]) -> Any:
         return await self.extend(pid, clips=args.get("clips") or [], stills=args.get("stills") or [], by="agent")
@@ -1259,10 +1260,7 @@ class AvatarService:
             x = PL.confirm_extra(doc, xid, total)
             for it in x["items"]:
                 self._apply_redo(doc, it)
-            if doc["status"] in ("ready", "waiting", "failed", "paused"):
-                doc["status"] = "running"
-                doc["paused"] = False
-                doc["checkpoint"] = None if (doc.get("checkpoint") or {}).get("stage") == "cap" else doc.get("checkpoint")
+            self._back_to_work(doc)
             self._history(doc, "extra.confirmed", extra=xid, total=x["total"])
             self.save(doc)
         self._event(pid, "extra_confirmed", f"The user confirmed {x['reason']} ({x['total']:g} credits); it runs now.")
@@ -1288,17 +1286,28 @@ class AvatarService:
             raise AvatarError(f"no price known for {stage} jobs (estimate again)")
         return float(unit)
 
-    async def redo(self, pid: str, key: str, *, note: str = "", by: str = "agent") -> dict[str, Any]:
-        """Redo one item, or a new batch of candidates (``design``). Within AUTO_REDO_MAX and the cap it runs at once;
-        otherwise a request card waits for the user's OK (``by == "user"`` is that OK: their click)."""
+    async def redo(self, pid: str, key: str, *, note: str = "", base: str = "", by: str = "agent") -> dict[str, Any]:
+        """Redo one item, or a new batch of candidates (``design``; ``base``: one new one, that candidate with what the
+        note says changed). Within AUTO_REDO_MAX and the cap it runs at once; otherwise a request card waits for the
+        user's OK (``by == "user"`` is that OK: their click)."""
         doc = self.doc(pid)
         if not doc.get("confirmation"):
             raise PL.GateError("not_confirmed", "nothing can be redone before the user confirms the plan")
+        if base and key not in ("design", "candidates"):
+            raise AvatarError("from only goes with item design")
         if key in ("design", "candidates"):
             n = doc["brief"]["candidates"]
-            unit = self._stage_unit(doc, "design")
-            redo = {"kind": "reroll", "key": "design", "count": n, "credits": round(unit * n, 4), "note": note}
             label = f"{n} new candidates"
+            if base:
+                if (doc["items"].get(f"design:{base}") or {}).get("status") != "done":
+                    raise AvatarError(f"no finished candidate {base!r} (see look candidates: c1, c2, ...)")
+                if not note:
+                    raise AvatarError("say in note what changes in that candidate")
+                n = 1
+                label = f"a new version of candidate {base}"
+            unit = self._stage_unit(doc, "design")
+            redo = {"kind": "reroll", "key": "design", "count": n, "credits": round(unit * n, 4), "note": note,
+                    "base": base}
         else:
             it = doc["items"].get(key)
             if it is None:
@@ -1311,12 +1320,14 @@ class AvatarService:
                 extra = float(self._stage_unit(doc, "matte"))
             redo = {"kind": "item", "key": key, "credits": round(unit + extra, 4), "note": note}
             label = f"a redo of {key}"
+        # (a newer request for the same thing replaces one still waiting: two cards could pay for it twice)
+        for x in doc.get("extras") or []:
+            if x["status"] == "pending" and any(i.get("key") == redo["key"] for i in x["items"]):
+                x["status"] = "declined"
         decision = "auto" if by == "user" and self._fits(doc, redo["credits"]) else PL.redo_decision(doc, redo["credits"])
         if decision == "auto":
             self._apply_redo(doc, redo)
-            if doc["status"] in ("ready", "failed", "paused"):
-                doc["status"] = "running"
-                doc["paused"] = False
+            self._back_to_work(doc)
             self._history(doc, "redo", item=key, credits=redo["credits"], by=by)
             self.save(doc)
             self._kick(pid)
@@ -1327,6 +1338,14 @@ class AvatarService:
         self.save(doc)
         return {"started": False, "needs_confirmation": x["id"], "credits": x["total"],
                 "text": f"{label} costs {x['total']:g} credits: the user sees a card to confirm it. End your turn."}
+
+    @staticmethod
+    def _back_to_work(doc: dict[str, Any]) -> None:
+        """After a redo or an extra the run goes on, whatever it was waiting for (a checkpoint comes again in its turn)."""
+        if doc["status"] in ("ready", "waiting", "failed", "paused"):
+            doc["status"] = "running"
+            doc["paused"] = False
+            doc["checkpoint"] = None
 
     @staticmethod
     def _fits(doc: dict[str, Any], credits: float) -> bool:
@@ -1342,6 +1361,7 @@ class AvatarService:
             doc["design_batch"] = int(doc.get("design_batch") or 1) + 1
             doc["design_extra"] = int(doc.get("design_extra") or 0) + redo["count"]
             doc["design_note"] = redo.get("note") or ""
+            doc["design_base"] = redo.get("base") or ""
             doc["done"]["design"] = False
             doc["done"]["pick"] = False
             doc["_design_target"] = n0 + redo["count"]
@@ -1674,19 +1694,25 @@ class AvatarService:
         self.save(doc)
         ref = [str(self.dir(pid) / "ref" / f) for f in b["reference"].get("files") or []]
         note = doc.get("design_note") or ""
+        base = doc.get("design_base") or ""
         outfit = bool(doc.get("outfit"))
         if outfit and redraw and ref:  # (her own picture has no background: the model gets it on the known gray)
             flat = self.dir(pid) / "ref" / "her-flat.jpg"
             if not flat.is_file():
                 await self.deps.run("flatten", [ref[0], str(flat)], timeout=120)
             ref[0] = str(flat)
+        picture = self.dir(pid) / "ref" / f"{base}-flat.jpg"
+        if base and not picture.is_file():  # (a candidate to change: that picture alone is the reference)
+            await self.deps.run("flatten", [str(self.dir(pid) / doc["items"][f"design:{base}"]["out"]), str(picture)],
+                                timeout=120)
 
         def flags(d: dict[str, Any], it: dict[str, Any]) -> list[str]:
-            prompt = P.design_prompt(" ".join(x for x in (d["brief"]["design"]["prompt"], note) if x), redraw=redraw,
-                                     outfit=outfit, clothes_refs=len(ref) > 1)
+            prompt = P.design_edit_prompt(note) if base else P.design_prompt(
+                " ".join(x for x in (d["brief"]["design"]["prompt"], note) if x), redraw=redraw, outfit=outfit,
+                clothes_refs=len(ref) > 1)
             out = ["--prompt", prompt, "--aspect_ratio", PL.IMAGE_PARAMS["aspect_ratio"], "--resolution",
                    PL.IMAGE_PARAMS["resolution"]]
-            for r in (ref if redraw else []):
+            for r in ([str(picture)] if base else ref if redraw else []):
                 out += ["--image-references", r]
             return out
 
