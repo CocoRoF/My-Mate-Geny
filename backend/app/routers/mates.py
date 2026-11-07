@@ -344,6 +344,17 @@ async def get_life(mate_id: str, request: Request) -> dict:
         raise HTTPException(404, str(exc)) from exc
 
 
+@router.put("/{mate_id}/life/plan/{slot}")
+async def set_life_plan(mate_id: str, slot: str, body: dict, request: Request) -> dict:
+    """A suggestion for how she spends this slot of the week (activity null: it's up to her). -> her day as it is now."""
+    try:
+        return _svc(request).life.set_plan(mate_id, slot, body.get("activity"))
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @router.post("/{mate_id}/life/gift")
 async def send_gift(mate_id: str, body: dict, request: Request) -> dict:
     """They send her something (app/mate/life). -> her day as it is now."""

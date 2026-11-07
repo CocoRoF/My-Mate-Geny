@@ -232,9 +232,9 @@
     "hunger": -0.025
    },
    "stats": {
-    "work": 0.12
+    "work": 0.06
    },
-   "pay": 10000,
+   "pay": 8000,
    "doing": "testing builds and writing bug reports",
    "reply": "You answer between tasks, briefly.",
    "body": "work"
@@ -363,7 +363,7 @@
     "stress": -0.1
    },
    "stats": {
-    "cooking": 0.9
+    "cooking": 1.6
    },
    "cost": 5000,
    "likes": -0.3,
@@ -375,7 +375,9 @@
    "hours": [
     "09:00",
     "22:00"
-   ]
+   ],
+   "plannable": true,
+   "skill": "cooking"
   },
   "delivery": {
    "names": {
@@ -431,7 +433,8 @@
    "body": "drink",
    "feel": {
     "happy": 0.45
-   }
+   },
+   "plannable": true
   },
   "game": {
    "names": {
@@ -452,7 +455,7 @@
    "stats": {
     "gaming": 0.08
    },
-   "likes": 1.0,
+   "likes": 0.4,
    "doing": "playing “Continent of the Sky” on your PC",
    "reply": "You answer between pulls.",
    "body": "game",
@@ -462,7 +465,9 @@
    "hours": [
     "09:00",
     "04:00"
-   ]
+   ],
+   "plannable": true,
+   "skill": "gaming"
   },
   "raid": {
    "names": {
@@ -513,7 +518,9 @@
    "feel": {
     "happy": 0.4,
     "excited": 0.3
-   }
+   },
+   "plannable": true,
+   "skill": "courage"
   },
   "arcade": {
    "names": {
@@ -539,7 +546,9 @@
    "body": "game",
    "feel": {
     "excited": 0.4
-   }
+   },
+   "plannable": true,
+   "skill": "gaming"
   },
   "walk": {
    "names": {
@@ -562,7 +571,8 @@
    },
    "likes": 0.2,
    "doing": "walking around the pond, headphones on",
-   "body": "walk"
+   "body": "walk",
+   "plannable": true
   },
   "workout": {
    "names": {
@@ -581,13 +591,15 @@
     "stress": -0.25
    },
    "stats": {
-    "stamina": 0.9,
+    "stamina": 1.2,
     "courage": 0.1
    },
    "cost": 4000,
    "likes": -0.5,
    "doing": "working out, not very willingly",
-   "body": "workout"
+   "body": "workout",
+   "plannable": true,
+   "skill": "stamina"
   },
   "read": {
    "names": {
@@ -610,7 +622,9 @@
    },
    "likes": 0.3,
    "doing": "reading in the corner of the bookstore",
-   "body": "read"
+   "body": "read",
+   "plannable": true,
+   "skill": "sense"
   },
   "study": {
    "names": {
@@ -632,7 +646,9 @@
    },
    "likes": -0.1,
    "doing": "studying test automation at your desk",
-   "body": "read"
+   "body": "read",
+   "plannable": true,
+   "skill": "work"
   },
   "rest": {
    "names": {
@@ -651,7 +667,8 @@
     "sleep": -0.02
    },
    "likes": 0.3,
-   "doing": "lying on your bed with your phone"
+   "doing": "lying on your bed with your phone",
+   "plannable": true
   }
  },
  "routine": [

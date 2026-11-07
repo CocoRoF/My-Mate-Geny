@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from app.mate import affinity as A
 from app.mate.life import sim
@@ -22,9 +22,10 @@ def _prefs(raw: Any) -> dict[str, Any]:
 
 
 class LifeRuntime:
-    def __init__(self, store: Any, log: Any = None) -> None:
+    def __init__(self, store: Any, log: Any = None, on_events: Callable[[str, list[dict[str, Any]]], None] | None = None) -> None:
         self.store = store
         self._log = log
+        self.on_events = on_events  # (story events: how she takes them, and whether she writes first)
 
     def _row(self, mate_id: str) -> Any:
         row = self.store._db.query_one("SELECT builtin, prefs FROM mates WHERE id = ?", (mate_id,))
@@ -32,9 +33,10 @@ class LifeRuntime:
             raise KeyError(f"mate not found: {mate_id}")
         return row
 
-    def _closeness(self, mate_id: str) -> float:
+    def _bond(self, mate_id: str) -> tuple[float, str]:
+        """How close they are, and the stage they are at."""
         rel = self.store.relation_doc(mate_id) or A.new()
-        return float(rel.get("affinity") or 0) / 100 if rel.get("enabled") else 0.33
+        return (float(rel.get("affinity") or 0) / 100, str(rel.get("stage") or "new")) if rel.get("enabled") else (0.33, "new")
 
     def _played(self, mate_id: str, profile: dict[str, Any], now: datetime, tz: Any) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
         """Her day up to now. -> (doc, what showed before, what happened)."""
@@ -42,7 +44,8 @@ class LifeRuntime:
         if doc is None:
             return sim.new(profile, now, tz, mate_id), {"signature": [], "slot": ""}, [{"type": "began"}]
         before = {"signature": sim.signature(doc), "slot": sim.slot((A._t(doc["at"]) or now).astimezone(tz))}
-        return doc, before, sim.advance(doc, profile, now, tz, closeness=self._closeness(mate_id))
+        closeness, stage = self._bond(mate_id)
+        return doc, before, sim.advance(doc, profile, now, tz, closeness=closeness, stage=stage)
 
     def advance(self, mate_id: str) -> tuple[dict[str, Any], dict[str, Any]] | None:
         """Her day up to now, kept; every window hears when something shows. -> (doc, profile); None if she has no day."""
@@ -51,8 +54,15 @@ class LifeRuntime:
         if profile is None:
             return None
         now, tz = datetime.now(timezone.utc), self.store.tz()
-        doc, before, _ = self._played(mate_id, profile, now, tz)
+        doc, before, happened = self._played(mate_id, profile, now, tz)
         self.store.save_life(mate_id, doc)
+        events = [e for e in happened if e.get("type") == "event"]
+        if events and self.on_events:
+            try:
+                self.on_events(mate_id, events)
+            except Exception as exc:  # noqa: BLE001 - what happened to her stands, whoever hears about it
+                if self._log:
+                    self._log("warning", f"life: {mate_id}: {exc}")
         if sim.signature(doc) != before["signature"] or sim.slot(now.astimezone(tz)) != before["slot"]:
             self.store._changed("life", mate_id)
         return doc, profile
@@ -97,15 +107,25 @@ class LifeRuntime:
             self.store._changed("life", mate_id)
         return {**out, "asleep": sim.asleep(doc, profile, datetime.now(timezone.utc))}
 
+    def set_plan(self, mate_id: str, slot: Any, activity: Any) -> dict[str, Any]:
+        played = self.advance(mate_id)
+        if played is None:
+            return {"enabled": False}
+        doc, profile = played
+        if not sim.set_plan(doc, profile, slot, activity):
+            raise ValueError("no such slot or activity")
+        self.store.save_life(mate_id, doc)
+        return sim.view(doc, profile, datetime.now(timezone.utc), self.store.tz())
+
     def note(self, mate_id: str, text: str) -> None:
         """For her to hear with their next message."""
         played = self.advance(mate_id)
         if played is not None:
-            sim.note(played[0], text)
+            sim.note(played[0], text, datetime.now(timezone.utc))
             self.store.save_life(mate_id, played[0])
 
     def take_notes(self, mate_id: str, doc: dict[str, Any]) -> list[str]:
-        notes = sim.take_notes(doc)
+        notes = sim.take_notes(doc, datetime.now(timezone.utc))
         if notes:
             self.store.save_life(mate_id, doc)
         return notes

@@ -207,9 +207,9 @@
     "hunger": -0.025
    },
    "stats": {
-    "work": 0.12
+    "work": 0.06
    },
-   "pay": 10000,
+   "pay": 8000,
    "doing": "at work",
    "body": "work"
   },
@@ -337,7 +337,7 @@
     "stress": -0.1
    },
    "stats": {
-    "cooking": 0.9
+    "cooking": 1.6
    },
    "cost": 5000,
    "likes": -0.3,
@@ -349,7 +349,9 @@
    "hours": [
     "09:00",
     "22:00"
-   ]
+   ],
+   "plannable": true,
+   "skill": "cooking"
   },
   "delivery": {
    "names": {
@@ -405,7 +407,8 @@
    "body": "drink",
    "feel": {
     "happy": 0.45
-   }
+   },
+   "plannable": true
   },
   "game": {
    "names": {
@@ -426,7 +429,7 @@
    "stats": {
     "gaming": 0.08
    },
-   "likes": 0.4,
+   "likes": 0.2,
    "doing": "playing a game at home",
    "body": "game",
    "feel": {
@@ -435,7 +438,9 @@
    "hours": [
     "09:00",
     "04:00"
-   ]
+   ],
+   "plannable": true,
+   "skill": "gaming"
   },
   "walk": {
    "names": {
@@ -458,7 +463,8 @@
    },
    "likes": 0.4,
    "doing": "out for a walk",
-   "body": "walk"
+   "body": "walk",
+   "plannable": true
   },
   "workout": {
    "names": {
@@ -477,13 +483,15 @@
     "stress": -0.25
    },
    "stats": {
-    "stamina": 0.9,
+    "stamina": 1.2,
     "courage": 0.1
    },
    "cost": 4000,
    "likes": -0.5,
    "doing": "working out",
-   "body": "workout"
+   "body": "workout",
+   "plannable": true,
+   "skill": "stamina"
   },
   "read": {
    "names": {
@@ -506,7 +514,9 @@
    },
    "likes": 0.5,
    "doing": "reading at the bookstore",
-   "body": "read"
+   "body": "read",
+   "plannable": true,
+   "skill": "sense"
   },
   "study": {
    "names": {
@@ -528,7 +538,9 @@
    },
    "likes": -0.1,
    "doing": "learning something at home",
-   "body": "read"
+   "body": "read",
+   "plannable": true,
+   "skill": "work"
   },
   "rest": {
    "names": {
@@ -547,7 +559,8 @@
     "sleep": -0.02
    },
    "likes": 0.3,
-   "doing": "resting at home"
+   "doing": "resting at home",
+   "plannable": true
   }
  },
  "routine": [

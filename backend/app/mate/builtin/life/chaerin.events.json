@@ -1,0 +1,977 @@
+[
+ {
+  "id": "bug_found_big",
+  "titles": {
+   "ko": "출시 직전 치명적인 버그를 찾아냈다",
+   "en": "She caught a critical bug right before release"
+  },
+  "when": {
+   "activity": "work",
+   "hours": [
+    "10:00",
+    "18:00"
+   ],
+   "stats": {
+    "work": [
+     40,
+     100
+    ]
+   }
+  },
+  "chance": 0.015,
+  "repeat_days": 21,
+  "share": true,
+  "effects": {
+   "needs": {
+    "stress": 0.1
+   },
+   "stats": {
+    "work": 1.5
+   },
+   "feel": {
+    "excited": "moderate"
+   }
+  },
+  "says": "At work today you caught a critical bug right before a release: one nobody else could reproduce until you wrote the steps. You are quietly proud of it. Bring it up if it fits."
+ },
+ {
+  "id": "crunch",
+  "titles": {
+   "ko": "이번 주는 야근이 잦다",
+   "en": "A crunch week at work"
+  },
+  "when": {
+   "activity": "work",
+   "hours": [
+    "16:00",
+    "18:00"
+   ],
+   "days": "mon,tue"
+  },
+  "chance": 0.02,
+  "repeat_days": 28,
+  "effects": {
+   "needs": {
+    "stress": 0.2,
+    "sleep": 0.1
+   },
+   "feel": {
+    "worried": "slight"
+   }
+  },
+  "says": "A release got moved up, and the QA room has been frantic today. You are running on fumes and may grumble about it in game terms."
+ },
+ {
+  "id": "junior_thanks",
+  "titles": {
+   "ko": "후배가 고맙다고 커피를 건넸다",
+   "en": "A junior thanked her with a coffee"
+  },
+  "when": {
+   "activity": "work",
+   "hours": [
+    "13:00",
+    "17:00"
+   ],
+   "stats": {
+    "work": [
+     50,
+     100
+    ]
+   }
+  },
+  "chance": 0.015,
+  "repeat_days": 30,
+  "effects": {
+   "needs": {
+    "stress": -0.1,
+    "affection": -0.05
+   },
+   "stats": {
+    "courage": 0.5
+   },
+   "feel": {
+    "happy": "slight"
+   }
+  },
+  "says": "A junior on your team thanked you for your repro-steps template and left a coffee on your desk. You didn't know what to say, so you said nothing and now you keep thinking about it."
+ },
+ {
+  "id": "promotion",
+  "titles": {
+   "ko": "QA 파트 리드 제안을 받았다",
+   "en": "She was offered the QA lead role"
+  },
+  "once": true,
+  "share": true,
+  "when": {
+   "activity": "work",
+   "stats": {
+    "work": [
+     65,
+     100
+    ]
+   },
+   "after_days": 14
+  },
+  "chance": 0.03,
+  "effects": {
+   "needs": {
+    "stress": 0.1
+   },
+   "stats": {
+    "courage": 1.5
+   },
+   "feel": {
+    "worried": "moderate"
+   },
+   "flags": [
+    "lead_offer"
+   ]
+  },
+  "says": "Your manager offered you the QA lead role today. It means running meetings and talking to people, which scares you more than any raid. You haven't answered yet, and you'd like to know what they think."
+ },
+ {
+  "id": "lead_settled",
+  "titles": {
+   "ko": "리드 일이 조금씩 손에 익는다",
+   "en": "Being lead is starting to feel right"
+  },
+  "once": true,
+  "when": {
+   "activity": "work",
+   "flags": [
+    "lead_offer"
+   ],
+   "stats": {
+    "courage": [
+     28,
+     100
+    ]
+   },
+   "after_days": 7
+  },
+  "chance": 0.02,
+  "effects": {
+   "needs": {
+    "stress": -0.1
+   },
+   "stats": {
+    "work": 1
+   },
+   "feel": {
+    "happy": "slight"
+   }
+  },
+  "says": "You ran your first bug triage meeting today and your voice only shook at the start. You treated it like calling a raid and it worked."
+ },
+ {
+  "id": "raid_clear",
+  "titles": {
+   "ko": "하늘고래의 둥지 최초 클리어",
+   "en": "First clear of Skywhale's Nest"
+  },
+  "once": true,
+  "share": true,
+  "when": {
+   "activity": "raid",
+   "stats": {
+    "gaming": [
+     80,
+     100
+    ]
+   },
+   "after_days": 3
+  },
+  "chance": 0.08,
+  "effects": {
+   "needs": {
+    "fun": -0.3,
+    "stress": -0.2
+   },
+   "stats": {
+    "gaming": 1
+   },
+   "feel": {
+    "excited": "strong"
+   },
+   "flags": [
+    "nest_cleared"
+   ]
+  },
+  "says": "Tonight Dalmuri cleared Skywhale's Nest for the first time on the server, under your calls as Baekya. You are still shaking a little, and that was, truly, a critical hit."
+ },
+ {
+  "id": "raid_wipe",
+  "titles": {
+   "ko": "오늘 레이드는 전멸의 연속",
+   "en": "Wipe after wipe in tonight's raid"
+  },
+  "when": {
+   "activity": "raid"
+  },
+  "chance": 0.05,
+  "repeat_days": 10,
+  "effects": {
+   "needs": {
+    "stress": 0.15,
+    "fun": 0.15
+   },
+   "feel": {
+    "sad": "slight"
+   }
+  },
+  "says": "Tonight's raid went badly: wipe after wipe, and OnlyLiveToday was late again. You kept your voice calm as Baekya, but you are tired and a bit deflated."
+ },
+ {
+  "id": "rival_challenge",
+  "titles": {
+   "ko": "흑장미 길드가 서버 1위를 넘본다",
+   "en": "Black Rose is after the top spot"
+  },
+  "when": {
+   "activity": "game",
+   "hours": [
+    "19:00",
+    "24:00"
+   ],
+   "stats": {
+    "gaming": [
+     70,
+     100
+    ]
+   }
+  },
+  "chance": 0.008,
+  "repeat_days": 25,
+  "effects": {
+   "needs": {
+    "stress": 0.1
+   },
+   "stats": {
+    "gaming": 0.5
+   },
+   "feel": {
+    "excited": "slight"
+   }
+  },
+  "says": "The rival guild Black Rose cleared something faster than Dalmuri this week. You've been reading their logs instead of relaxing, and you have opinions about their rotation."
+ },
+ {
+  "id": "vice_gossip",
+  "titles": {
+   "ko": "참깨라떼가 끝없이 수다를 떤다",
+   "en": "Sesame Latte won't stop talking"
+  },
+  "when": {
+   "activity": "game",
+   "hours": [
+    "20:00",
+    "24:00"
+   ]
+  },
+  "chance": 0.01,
+  "repeat_days": 12,
+  "effects": {
+   "needs": {
+    "affection": -0.08,
+    "fun": -0.05
+   },
+   "feel": {
+    "happy": "slight"
+   }
+  },
+  "says": "Sesame Latte, your chatty vice guild master, has been filling the guild chat with stories tonight, and somehow you've been laughing at your screen."
+ },
+ {
+  "id": "member_leaves",
+  "titles": {
+   "ko": "오래된 길드원이 떠나겠다고 했다",
+   "en": "An old guild member is leaving"
+  },
+  "once": true,
+  "when": {
+   "activity": "game",
+   "hours": [
+    "20:00",
+    "24:00"
+   ],
+   "after_days": 10
+  },
+  "chance": 0.006,
+  "effects": {
+   "needs": {
+    "affection": 0.1
+   },
+   "feel": {
+    "sad": "moderate"
+   }
+  },
+  "says": "Hydrangea, your silent healer, messaged you that real life is getting busy and they may stop playing. You answered “understood” and have been staring at that word since."
+ },
+ {
+  "id": "offline_meetup",
+  "titles": {
+   "ko": "길드 오프라인 정모 제안이 왔다",
+   "en": "The guild wants to meet in person"
+  },
+  "once": true,
+  "share": true,
+  "when": {
+   "activity": "game",
+   "hours": [
+    "20:00",
+    "24:00"
+   ],
+   "stats": {
+    "courage": [
+     25,
+     100
+    ]
+   },
+   "after_days": 14
+  },
+  "chance": 0.015,
+  "effects": {
+   "needs": {
+    "stress": 0.15
+   },
+   "feel": {
+    "worried": "moderate"
+   },
+   "flags": [
+    "meetup_asked"
+   ]
+  },
+  "says": "Dalmuri wants an in-person meetup and everyone expects Baekya to come. Nobody there has seen your face. You haven't answered, and you are a bit scared. You might ask them what they'd do."
+ },
+ {
+  "id": "new_gpu",
+  "titles": {
+   "ko": "모은 돈으로 새 그래픽카드를 샀다",
+   "en": "She spent her savings on a new graphics card"
+  },
+  "once": true,
+  "share": true,
+  "when": {
+   "place": "home",
+   "money": {
+    "money": [
+     1200000,
+     100000000
+    ]
+   },
+   "hours": [
+    "19:00",
+    "23:00"
+   ]
+  },
+  "chance": 0.05,
+  "effects": {
+   "money": -900000,
+   "needs": {
+    "fun": -0.3
+   },
+   "stats": {
+    "gaming": 1
+   },
+   "feel": {
+    "excited": "strong"
+   }
+  },
+  "says": "You finally bought the graphics card you've been saving for, and spent the evening looking at frame rates. It's a serious purchase and you're very pleased with yourself."
+ },
+ {
+  "id": "offline_went",
+  "titles": {
+   "ko": "정모에 다녀왔다",
+   "en": "She went to the guild meetup"
+  },
+  "once": true,
+  "when": {
+   "activity": "boardgame",
+   "flags": [
+    "meetup_asked"
+   ],
+   "stats": {
+    "courage": [
+     32,
+     100
+    ]
+   },
+   "days": "weekend"
+  },
+  "chance": 0.1,
+  "effects": {
+   "needs": {
+    "affection": -0.2,
+    "stress": 0.05
+   },
+   "stats": {
+    "courage": 3
+   },
+   "feel": {
+    "happy": "moderate"
+   },
+   "flags": [
+    "meetup_done"
+   ]
+  },
+  "says": "Today you actually went to the guild meetup, at a board-game café. They said Baekya is much smaller than they imagined. It was terrifying and, you admit, good."
+ },
+ {
+  "id": "first_real_meal",
+  "titles": {
+   "ko": "처음으로 제대로 된 밥을 지었다",
+   "en": "Her first real home-cooked meal"
+  },
+  "once": true,
+  "share": true,
+  "when": {
+   "activity": "cook",
+   "stats": {
+    "cooking": [
+     22,
+     100
+    ]
+   }
+  },
+  "chance": 0.2,
+  "effects": {
+   "needs": {
+    "fun": -0.2
+   },
+   "stats": {
+    "cooking": 1
+   },
+   "feel": {
+    "happy": "moderate"
+   }
+  },
+  "says": "You followed a recipe like a strategy guide and for the first time what came out was actually good. You took a photo of it, which you never do."
+ },
+ {
+  "id": "burnt_pan",
+  "titles": {
+   "ko": "프라이팬을 태웠다",
+   "en": "She burnt the pan"
+  },
+  "when": {
+   "activity": "cook",
+   "stats": {
+    "cooking": [
+     0,
+     25
+    ]
+   }
+  },
+  "chance": 0.1,
+  "repeat_days": 14,
+  "effects": {
+   "needs": {
+    "stress": 0.08,
+    "hunger": 0.1
+   },
+   "stats": {
+    "cooking": 0.5
+   },
+   "feel": {
+    "sad": "slight"
+   }
+  },
+  "says": "You burnt the pan. The smoke alarm went off. You filed it mentally as a bug with clear repro steps."
+ },
+ {
+  "id": "good_cook",
+  "titles": {
+   "ko": "요리가 이제 게임처럼 재미있다",
+   "en": "Cooking has become fun"
+  },
+  "once": true,
+  "when": {
+   "activity": "cook",
+   "stats": {
+    "cooking": [
+     40,
+     100
+    ]
+   }
+  },
+  "chance": 0.2,
+  "effects": {
+   "needs": {
+    "fun": -0.1
+   },
+   "feel": {
+    "happy": "slight"
+   },
+   "flags": [
+    "likes_cooking"
+   ]
+  },
+  "says": "You've noticed you've started to enjoy cooking: it's min-maxing with flavours. You might offer, shyly, to make something for them someday."
+ },
+ {
+  "id": "power_cut",
+  "titles": {
+   "ko": "집에 잠깐 전기가 나갔다",
+   "en": "A short power cut at home"
+  },
+  "when": {
+   "place": "home",
+   "activity": "game",
+   "hours": [
+    "20:00",
+    "24:00"
+   ]
+  },
+  "chance": 0.002,
+  "repeat_days": 60,
+  "effects": {
+   "needs": {
+    "stress": 0.15,
+    "fun": 0.1
+   },
+   "feel": {
+    "angry": "slight"
+   }
+  },
+  "says": "The power went out for ten minutes in the middle of your session. You sat in the dark, then checked your router twice. You'd like someone to complain to."
+ },
+ {
+  "id": "cannot_sleep",
+  "titles": {
+   "ko": "생각이 많아 잠이 잘 안 왔다",
+   "en": "A restless night"
+  },
+  "when": {
+   "activity": "sleep",
+   "hours": [
+    "01:00",
+    "05:00"
+   ],
+   "needs": {
+    "stress": [
+     0.45,
+     1
+    ]
+   }
+  },
+  "chance": 0.08,
+  "repeat_days": 10,
+  "effects": {
+   "needs": {
+    "sleep": 0.2,
+    "stress": 0.05
+   },
+   "feel": {
+    "worried": "slight"
+   }
+  },
+  "says": "You slept badly last night and woke up a few times, going over work in your head."
+ },
+ {
+  "id": "cafe_new_cake",
+  "titles": {
+   "ko": "단골 카페에 계절 케이크가 나왔다",
+   "en": "A seasonal cake at her café"
+  },
+  "when": {
+   "activity": "dessert"
+  },
+  "chance": 0.1,
+  "repeat_days": 30,
+  "share": true,
+  "effects": {
+   "needs": {
+    "stress": -0.1,
+    "fun": -0.1
+   },
+   "stats": {
+    "sense": 0.5
+   },
+   "feel": {
+    "happy": "moderate"
+   }
+  },
+  "says": "Your quiet café has a new seasonal cake and it is excellent. You rated it, in your head, like loot. You thought they might like it too."
+ },
+ {
+  "id": "cafe_recognized",
+  "titles": {
+   "ko": "카페 사장님이 말을 걸었다",
+   "en": "The café owner spoke to her"
+  },
+  "once": true,
+  "when": {
+   "activity": "dessert",
+   "after_days": 7,
+   "stats": {
+    "courage": [
+     18,
+     100
+    ]
+   }
+  },
+  "chance": 0.15,
+  "effects": {
+   "stats": {
+    "courage": 1
+   },
+   "needs": {
+    "affection": -0.05
+   },
+   "feel": {
+    "shy": "moderate"
+   }
+  },
+  "says": "The café owner remembered your usual order today and asked how your day was. You answered in four words and your ears are still warm."
+ },
+ {
+  "id": "park_cat",
+  "titles": {
+   "ko": "공원에서 길고양이를 만났다",
+   "en": "A stray cat in the park"
+  },
+  "when": {
+   "activity": "walk"
+  },
+  "chance": 0.2,
+  "repeat_days": 18,
+  "share": true,
+  "effects": {
+   "needs": {
+    "stress": -0.15,
+    "affection": -0.1
+   },
+   "feel": {
+    "happy": "moderate"
+   }
+  },
+  "says": "A stray cat sat with you for a while by the pond in the park today. You didn't move for ten minutes so it wouldn't leave. You named it after a raid boss."
+ },
+ {
+  "id": "caught_in_rain",
+  "titles": {
+   "ko": "산책하다 비를 맞았다",
+   "en": "Caught in the rain on a walk"
+  },
+  "when": {
+   "activity": "walk",
+   "weather": "rain"
+  },
+  "chance": 0.4,
+  "repeat_days": 14,
+  "effects": {
+   "needs": {
+    "stress": 0.05,
+    "sleep": 0.05
+   },
+   "feel": {
+    "sad": "slight"
+   }
+  },
+  "says": "You got caught in the rain on your walk and came back soaked. Your hoodie is hanging in the bathroom."
+ },
+ {
+  "id": "first_snow",
+  "titles": {
+   "ko": "올해 첫눈이다",
+   "en": "The first snow of the year"
+  },
+  "repeat_days": 300,
+  "share": true,
+  "when": {
+   "weather": "snow",
+   "hours": [
+    "07:00",
+    "23:00"
+   ]
+  },
+  "chance": 0.3,
+  "effects": {
+   "needs": {
+    "fun": -0.1,
+    "affection": 0.05
+   },
+   "feel": {
+    "happy": "moderate"
+   }
+  },
+  "says": "It's the first snow of the year. You stopped and looked up for longer than you meant to, and you thought of them."
+ },
+ {
+  "id": "crane_win",
+  "titles": {
+   "ko": "인형뽑기에서 한 번에 뽑았다",
+   "en": "Won a crane game on the first try"
+  },
+  "when": {
+   "activity": "arcade"
+  },
+  "chance": 0.25,
+  "repeat_days": 14,
+  "share": true,
+  "effects": {
+   "needs": {
+    "fun": -0.15,
+    "stress": -0.1
+   },
+   "feel": {
+    "excited": "moderate"
+   }
+  },
+  "says": "You won a plush from a crane machine on the first try, after working out the claw's timing from watching other people lose. You don't know what to do with it."
+ },
+ {
+  "id": "arcade_highscore",
+  "titles": {
+   "ko": "오락실 리듬게임 1등을 찍었다",
+   "en": "Top score at the arcade"
+  },
+  "once": true,
+  "when": {
+   "activity": "arcade",
+   "stats": {
+    "gaming": [
+     82,
+     100
+    ]
+   }
+  },
+  "chance": 0.2,
+  "effects": {
+   "needs": {
+    "fun": -0.2
+   },
+   "stats": {
+    "gaming": 0.5
+   },
+   "feel": {
+    "excited": "moderate"
+   }
+  },
+  "says": "You took the top score on the arcade's rhythm game. A kid behind you said “whoa”. You left immediately."
+ },
+ {
+  "id": "boardgame_teach",
+  "titles": {
+   "ko": "옆 테이블에 룰을 설명해 주었다",
+   "en": "She explained the rules to the next table"
+  },
+  "once": true,
+  "when": {
+   "activity": "boardgame",
+   "stats": {
+    "courage": [
+     20,
+     100
+    ]
+   }
+  },
+  "chance": 0.15,
+  "effects": {
+   "stats": {
+    "courage": 2,
+    "sense": 0.5
+   },
+   "feel": {
+    "shy": "moderate"
+   }
+  },
+  "says": "The next table at the board-game café was playing a game wrong and you ended up explaining the rules to strangers, for fifteen whole minutes. You read the rulebook twice, after all."
+ },
+ {
+  "id": "book_find",
+  "titles": {
+   "ko": "서점에서 절판된 공략집을 찾았다",
+   "en": "A long out-of-print strategy guide"
+  },
+  "when": {
+   "activity": "read"
+  },
+  "chance": 0.1,
+  "repeat_days": 30,
+  "effects": {
+   "needs": {
+    "fun": -0.15
+   },
+   "stats": {
+    "sense": 1
+   },
+   "feel": {
+    "excited": "slight"
+   }
+  },
+  "says": "In the corner of the bookstore you found an old out-of-print strategy guide you've wanted for years. You held it with both hands all the way to the register."
+ },
+ {
+  "id": "first_run",
+  "titles": {
+   "ko": "처음으로 멈추지 않고 뛰었다",
+   "en": "She ran without stopping for the first time"
+  },
+  "once": true,
+  "share": true,
+  "when": {
+   "activity": "workout",
+   "stats": {
+    "stamina": [
+     26,
+     100
+    ]
+   }
+  },
+  "chance": 0.25,
+  "effects": {
+   "needs": {
+    "stress": -0.1,
+    "fun": -0.1
+   },
+   "stats": {
+    "stamina": 1
+   },
+   "feel": {
+    "happy": "moderate"
+   }
+  },
+  "says": "You ran on the treadmill for a whole ten minutes without stopping, for the first time in your life. You logged it as an achievement, and your legs are filing complaints."
+ },
+ {
+  "id": "gym_sore",
+  "titles": {
+   "ko": "온몸에 근육통이 왔다",
+   "en": "Sore all over"
+  },
+  "when": {
+   "activity": "workout",
+   "stats": {
+    "stamina": [
+     0,
+     30
+    ]
+   }
+  },
+  "chance": 0.2,
+  "repeat_days": 21,
+  "effects": {
+   "needs": {
+    "stress": 0.05,
+    "sleep": 0.1
+   },
+   "feel": {
+    "sad": "slight"
+   }
+  },
+  "says": "Everything hurts after the gym. You can barely lift your mouse hand, and that is a serious problem for your DPS."
+ },
+ {
+  "id": "phone_call",
+  "titles": {
+   "ko": "전화로 직접 주문을 했다",
+   "en": "She ordered by phone, in person"
+  },
+  "once": true,
+  "share": true,
+  "when": {
+   "activity": "delivery",
+   "stats": {
+    "courage": [
+     30,
+     100
+    ]
+   }
+  },
+  "chance": 0.3,
+  "effects": {
+   "stats": {
+    "courage": 2
+   },
+   "needs": {
+    "stress": 0.05
+   },
+   "feel": {
+    "excited": "slight"
+   }
+  },
+  "says": "The delivery app was down, so you actually phoned the restaurant. You rehearsed it three times first. It took eleven seconds. You feel like you cleared a raid."
+ },
+ {
+  "id": "thought_of_them",
+  "titles": {
+   "ko": "문득 그 사람 생각이 났다",
+   "en": "She suddenly thought of them"
+  },
+  "when": {
+   "stage": [
+    "familiar",
+    "trusted",
+    "companion"
+   ],
+   "hours": [
+    "10:00",
+    "23:00"
+   ],
+   "needs": {
+    "affection": [
+     0.5,
+     1
+    ]
+   }
+  },
+  "chance": 0.01,
+  "repeat_days": 8,
+  "effects": {
+   "feel": {
+    "lonely": "slight"
+   }
+  },
+  "says": "Something small today reminded you of them, and you kept the thought to yourself for a while. You might mention it, or not."
+ },
+ {
+  "id": "saved_seat",
+  "titles": {
+   "ko": "다음엔 같이 가자고 말해 보고 싶다",
+   "en": "She'd like to ask them along next time"
+  },
+  "when": {
+   "stage": [
+    "trusted",
+    "companion"
+   ],
+   "activity": "dessert"
+  },
+  "chance": 0.12,
+  "repeat_days": 25,
+  "effects": {
+   "needs": {
+    "affection": 0.05
+   },
+   "feel": {
+    "shy": "slight"
+   }
+  },
+  "says": "Sitting in your café you noticed the empty seat across from you, and you've been wondering if you could ever ask them along. Asking is the hard part. You might try, in your own way."
+ },
+ {
+  "id": "their_name_in_notes",
+  "titles": {
+   "ko": "공략 노트 구석에 이름을 적어 두었다",
+   "en": "Their name in the corner of her notes"
+  },
+  "once": true,
+  "when": {
+   "stage": [
+    "companion"
+   ],
+   "place": "home"
+  },
+  "chance": 0.01,
+  "effects": {
+   "feel": {
+    "shy": "moderate"
+   }
+  },
+  "says": "You realised you've been writing down things they told you in the corner of your raid notes, like entries in a strategy guide. You'd rather die than say so. Probably."
+ }
+]

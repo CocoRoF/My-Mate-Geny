@@ -1,23 +1,26 @@
 /**
  * The Life panel (docs/mate-life.md): her own day. Now: where she is, what she is doing, how she is, what she did today.
  * Map: her neighbourhood; asking her along is a message like any other, and she decides. Gifts: something sent to her.
- * Growth: what she is getting better at. It follows the server's pushes (mates.changed → the store).
+ * Plan: how they suggest she spends the week (she mostly goes along). Growth: what she is getting better at. Journal: her days.
+ * It follows the server's pushes (mates.changed → the store).
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { getLife, sendLifeGift, type LifeGift, type LifePlace, type LifeView, type Mate } from "../../../api/mates";
-import { fmtTime } from "../../../i18n/format";
+import { getLife, sendLifeGift, setLifePlan, type LifeDay, type LifeGift, type LifePlace, type LifeView, type Mate } from "../../../api/mates";
+import { fmtDate, fmtTime } from "../../../i18n/format";
 import { useLang, useT, type MsgKey } from "../../../i18n";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon, { type IconName } from "../../ui/Icon";
 import { lifeName, needStep, needTone, NEEDS, STATS } from "./needs";
 import "./life.css";
 
-type Tab = "now" | "map" | "gifts" | "growth";
+type Tab = "now" | "map" | "plan" | "gifts" | "growth" | "journal";
 const TABS: { id: Tab; icon: IconName; label: MsgKey }[] = [
   { id: "now", icon: "clock", label: "life.tabNow" },
   { id: "map", icon: "map", label: "life.tabMap" },
+  { id: "plan", icon: "calendar", label: "life.tabPlan" },
   { id: "gifts", icon: "gift", label: "life.tabGifts" },
   { id: "growth", icon: "trending-up", label: "life.tabGrowth" },
+  { id: "journal", icon: "book", label: "life.tabJournal" },
 ];
 const SLOT_LABEL: Record<string, MsgKey> = { morning: "life.slotMorning", day: "life.slotDay", evening: "life.slotEvening", night: "life.slotNight" };
 const SKY: Record<string, { icon: IconName; label: MsgKey }> = {
@@ -102,6 +105,10 @@ export default function LifePanel({ mate, onClose, onSay }: { mate: Mate; onClos
             <NowTab v={v} name={mate.name} onSay={onSay} />
           ) : tab === "map" ? (
             <MapTab v={v} onSay={onSay} />
+          ) : tab === "plan" ? (
+            <PlanTab v={v} mate={mate} onChange={setV} onError={setErr} />
+          ) : tab === "journal" ? (
+            <JournalTab v={v} />
           ) : tab === "gifts" ? (
             <GiftsTab v={v} mate={mate} onChange={setV} onError={setErr} />
           ) : (
@@ -271,6 +278,124 @@ function PlaceCard({ p, onSay }: { p: LifePlace; onSay?: (text: string) => void 
         )}
       </div>
     </li>
+  );
+}
+
+const DAY_LABEL: Record<string, MsgKey> = { mon: "life.dayMon", tue: "life.dayTue", wed: "life.dayWed", thu: "life.dayThu", fri: "life.dayFri", sat: "life.daySat", sun: "life.daySun" };
+
+function PlanTab({ v, mate, onChange, onError }: { v: LifeView; mate: Mate; onChange: (v: LifeView) => void; onError: (e: string | null) => void }) {
+  const t = useT();
+  const locale = useLang();
+  const [busy, setBusy] = useState<string | null>(null);
+  const plan = v.plan;
+  if (!plan) return null;
+  const choose = async (slot: string, activity: string) => {
+    setBusy(slot);
+    try {
+      onChange(await setLifePlan(mate.id, slot, activity || null));
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <>
+      <p className="px-1 text-[12.5px] leading-relaxed text-content-dim">{t("life.planNote", { name: mate.name })}</p>
+      <Card testId="life-plan">
+        <ul className="space-y-2">
+          {plan.slots.map((slot) => {
+            const [day, part] = slot.split("_");
+            return (
+              <li key={slot} className="flex items-center gap-2.5" data-testid={`life-plan-${slot}`} data-now={plan.now === slot || undefined}>
+                <span className={`w-[4.6rem] shrink-0 text-[12px] ${plan.now === slot ? "font-semibold text-accent" : "text-content-dim"}`}>
+                  {t(DAY_LABEL[day])} {t(part === "day" ? "life.slotDay" : "life.slotEvening")}
+                </span>
+                <select
+                  className="field min-w-0 flex-1 !py-1 text-[12.5px]"
+                  value={plan.week[slot] ?? ""}
+                  disabled={busy !== null}
+                  aria-label={`${t(DAY_LABEL[day])} ${t(part === "day" ? "life.slotDay" : "life.slotEvening")}`}
+                  onChange={(e) => void choose(slot, e.target.value)}
+                  data-testid={`life-plan-select-${slot}`}
+                >
+                  <option value="">{t("life.planFree")}</option>
+                  {plan.choices.map((c) => (
+                    <option key={c.id} value={c.id}>{lifeName(c.name, locale, c.id)}</option>
+                  ))}
+                </select>
+              </li>
+            );
+          })}
+        </ul>
+      </Card>
+    </>
+  );
+}
+
+function JournalTab({ v }: { v: LifeView }) {
+  const t = useT();
+  return (
+    <>
+      {!!v.happened?.length && <Happened v={v} />}
+      {!v.journal?.length ? (
+        <Card testId="life-journal-empty">
+          <p className="text-[12.5px] text-content-faint">{t("life.journalEmpty")}</p>
+        </Card>
+      ) : (
+        v.journal.map((d) => <DayCard key={d.day} d={d} />)
+      )}
+    </>
+  );
+}
+
+function Happened({ v }: { v: LifeView }) {
+  const t = useT();
+  const locale = useLang();
+  return (
+    <Card title={t("life.happened")} testId="life-happened">
+      <ul className="space-y-1.5">
+        {(v.happened ?? []).slice(0, 6).map((e) => (
+          <li key={e.at} className="flex items-baseline gap-2 text-[12px]">
+            <span className="w-[3.2rem] shrink-0 tabular-nums text-content-faint">{fmtDate(e.at, { month: "numeric", day: "numeric" })}</span>
+            <span className="min-w-0 flex-1 text-content-dim">{lifeName(e.title, locale)}</span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function DayCard({ d }: { d: LifeDay }) {
+  const t = useT();
+  const locale = useLang();
+  const grown = STATS.filter(({ stat }) => (d.grown?.[stat] ?? 0) > 0);
+  return (
+    <Card title={fmtDate(`${d.day}T12:00:00`, { month: "long", day: "numeric", weekday: "short" })} testId={`life-day-${d.day}`}>
+      {!!d.titles.length && (
+        <ul className="mb-2.5 space-y-1">
+          {d.titles.map((title, i) => (
+            <li key={i} className="flex items-start gap-1.5 text-[12.5px] text-content">
+              <Icon name="sparkles" size={12} className="mt-[3px] shrink-0 text-violet" />
+              <span className="min-w-0">{lifeName(title, locale)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-wrap gap-1.5">
+        {Object.entries(d.hours).filter(([k]) => k !== "commute").map(([k, h]) => (
+          <span key={k} className="rounded-full bg-surface-3 px-2 py-0.5 text-[11px] text-content-dim">
+            {lifeName(d.names[k], locale, k)} {t("life.hours", { n: h })}
+          </span>
+        ))}
+      </div>
+      {!!grown.length && (
+        <p className="mt-2 text-[11.5px] text-content-faint">
+          {grown.map(({ stat, label }) => `${t(label)} +${d.grown[stat]}`).join(" · ")}
+        </p>
+      )}
+    </Card>
   );
 }
 

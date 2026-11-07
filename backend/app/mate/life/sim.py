@@ -49,6 +49,16 @@ PLAN_MINUTES = (5, 480)
 #: what they can send her with, for talking to her: never taken away, and nothing they must keep up
 COINS_START, COINS_FIRST_MESSAGE, COINS_MESSAGE, COINS_A_DAY = 500, 200, 5, 300
 KEPT_MAX, NOTES_MAX = 20, 5
+#: her day ends and the next begins at this hour, whatever the calendar says
+DAY_TURNS = 4
+DAYS_KEPT, RECENT_KEPT = 60, 12
+#: how fast skills come overall: a year of her life, not a week
+GROWTH = 0.4
+#: a suggestion for her time: when it counts, and how much it leans her (what they ask for weighs more than a whim, not more than being exhausted)
+PLAN_SLOTS = {"evening": ("19:00", "23:00"), "day": ("11:00", "18:00")}
+PLAN_LEAN = 1.6
+#: story events: not on top of each other
+EVENT_GAP = timedelta(hours=3)
 
 
 # ---- the document ----
@@ -57,9 +67,10 @@ def new(profile: dict[str, Any], now: datetime, tz: Any, seed: str) -> dict[str,
     start = profile.get("start") or {}
     doc = {"seed": seed, "at": A._iso(now), "needs": dict(START_NEEDS), "stats": {s: float((start.get("stats") or {}).get(s) or 0) for s in STATS},
            "money": int(start.get("money") or 0), "place": start.get("place") or next(iter(profile["places"])), "activity": None,
-           "since": A._iso(now), "until": None, "going": None, "paid": None, "timeline": [], "day": now.astimezone(tz).strftime("%Y-%m-%d"),
+           "since": A._iso(now), "until": None, "going": None, "paid": None, "timeline": [], "day": _her_day(now, tz),
            "woken": None, "heard": None, "heard_at": None, "plan": None, "with_user": None, "coins": COINS_START, "coins_day": None, "coins_today": 0,
-           "kept": [], "notes": []}
+           "kept": [], "notes": [], "week": {}, "days": [], "recent": [], "fired": {}, "flags": [], "last_event": None, "born": A._iso(now),
+           "day_stats": None, "day_money": None}
     _next(doc, profile, now, tz, [], first=True)
     return doc
 
@@ -74,8 +85,12 @@ def normalized(doc: Any, profile: dict[str, Any]) -> dict[str, Any] | None:
     doc["stats"] = {s: float(stats.get(s) or 0) for s in STATS}
     doc["timeline"] = doc["timeline"] if isinstance(doc.get("timeline"), list) else []
     doc["coins"] = int(doc.get("coins", COINS_START) or 0)
-    for key in ("kept", "notes"):
+    for key in ("kept", "notes", "days", "recent", "flags"):
         doc[key] = doc[key] if isinstance(doc.get(key), list) else []
+    for key in ("week", "fired"):
+        doc[key] = doc[key] if isinstance(doc.get(key), dict) else {}
+    doc["week"] = {k: v for k, v in doc["week"].items() if v in profile["activities"]}
+    doc.setdefault("born", doc["at"])
     plan = doc.get("plan") if isinstance(doc.get("plan"), dict) else None
     doc["plan"] = plan if plan and A._t(plan.get("until")) is not None and plan.get("activity") in profile["activities"] else None
     if doc.get("place") not in profile["places"]:
@@ -83,6 +98,10 @@ def normalized(doc: Any, profile: dict[str, Any]) -> dict[str, Any] | None:
     if doc.get("activity") not in profile["activities"]:
         doc["activity"], doc["until"], doc["going"] = None, None, None
     return doc
+
+
+def _her_day(t: datetime, tz: Any) -> str:
+    return (t.astimezone(tz) - timedelta(hours=DAY_TURNS)).strftime("%Y-%m-%d")
 
 
 def _clamp(v: float, need: str) -> float:
@@ -235,10 +254,40 @@ def _score(doc: dict[str, Any], profile: dict[str, Any], key: str, act: dict[str
     shy = float(place.get("crowded") or 0) * (1 - doc["stats"]["courage"] / 100)
     dear = 0.5 if doc["money"] < int(act.get("cost") or 0) * 4 else 0.0
     wet = 1.0 if place.get("outdoor") and weather(doc, local) in ("rain", "snow") else 0.0
+    asked = PLAN_LEAN if doc["week"].get(plan_slot(local) or "") == key else 0.0
+    good_at = doc["stats"].get(act.get("skill") or "", 0.0) / 100 * 0.8
     noise = _rng(doc, "pick", local.strftime("%Y-%m-%d-%H"), key).uniform(-0.3, 0.3)
     again = min(1.2, _hours_today(doc, key, local, tz) * 0.3) + (1.0 if key == doc.get("activity") and act.get("cost") else 0.0)
     out = float((profile.get("outing") or {}).get("bonus") or 0) if act["place"] != (profile.get("start") or {}).get("place") and _feels_like_going_out(doc, profile, local, tz) else 0.0
-    return float(act.get("likes") or 0) + relief + noise + out - trip * 0.7 - shy - dear - again - wet
+    return float(act.get("likes") or 0) + relief + noise + out + asked + good_at - trip * 0.7 - shy - dear - again - wet
+
+
+def plan_slot(local: datetime) -> str | None:
+    """The slot of the week this moment belongs to: mon_evening … fri_evening, sat_day, sat_evening, sun_day, sun_evening."""
+    minute = local.hour * 60 + local.minute
+    day = WEEKDAYS[local.weekday()]
+    for name, window in PLAN_SLOTS.items():
+        if _in_window(list(window), minute) and (local.weekday() >= 5 or name == "evening"):
+            return f"{day}_{name}"
+    return None
+
+
+def plan_slots() -> list[str]:
+    return [f"{d}_evening" for d in WEEKDAYS[:5]] + ["sat_day", "sat_evening", "sun_day", "sun_evening"]
+
+
+def set_plan(doc: dict[str, Any], profile: dict[str, Any], slot_id: Any, activity: Any) -> bool:
+    """They suggest how she spends this slot of the week (None: it's up to her). She mostly goes along; it isn't an order."""
+    if slot_id not in plan_slots():
+        return False
+    if activity is None or activity == "":
+        doc["week"].pop(slot_id, None)
+        return True
+    act = profile["activities"].get(activity) if isinstance(activity, str) else None
+    if not act or not act.get("free"):
+        return False
+    doc["week"][slot_id] = activity
+    return True
 
 
 def _pick(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any) -> tuple[str, datetime | None]:
@@ -314,22 +363,100 @@ def _apply(doc: dict[str, Any], profile: dict[str, Any], dt: timedelta, t: datet
     for need in NEEDS:
         rate = DRIFT[need] + (AFFECTION_CLOSE * closeness if need == "affection" else 0.0) + float(rates.get(need) or 0)
         rate += TOGETHER.get(need, 0.0) if doc.get("with_user") else 0.0
+        if need == "sleep" and rate > 0:
+            rate *= 1.1 - doc["stats"]["stamina"] / 100 * 0.35  # (the fitter she gets, the slower she tires)
         doc["needs"][need] = _clamp(doc["needs"][need] + rate * hours, need)
     calm = 1 - 0.5 * doc["needs"]["stress"]  # (she learns less when frazzled, and a skill comes slower the higher it is)
     for stat, gain in (act.get("stats") or {}).items():
-        doc["stats"][stat] = min(100.0, doc["stats"][stat] + float(gain) * hours * calm * (1.25 - doc["stats"][stat] / 100))
-    doc["money"] += int(round(float(act.get("pay") or 0) * hours))
+        doc["stats"][stat] = min(100.0, doc["stats"][stat] + GROWTH * float(gain) * hours * calm * (1.25 - doc["stats"][stat] / 100))
+    doc["money"] += int(round(float(act.get("pay") or 0) * hours * (0.75 + doc["stats"]["work"] / 100 * 0.6)))
     if act.get("cost") and doc.get("paid") != doc.get("since"):
         doc["paid"] = doc.get("since")
         if not doc.get("with_user"):  # (together, it is on them)
             doc["money"] = max(0, doc["money"] - int(act["cost"]))
 
 
+def _day_summary(doc: dict[str, Any], day: str, t: datetime, tz: Any) -> dict[str, Any]:
+    """The day that just ended, for her journal."""
+    hours: dict[str, float] = {}
+    for e in doc["timeline"]:
+        a, b = A._t(e.get("from")), A._t(e.get("to"))
+        if a is None or b is None:
+            continue
+        if _her_day(b, tz) == day or _her_day(a, tz) == day:
+            hours[e["activity"]] = hours.get(e["activity"], 0.0) + (b - a).total_seconds() / 3600
+    was = doc.get("day_stats") or {}
+    grown = {s: round(doc["stats"][s] - float(was.get(s, doc["stats"][s])), 1) for s in STATS}
+    money = doc["money"] - int(doc["day_money"]) if doc.get("day_money") is not None else 0
+    return {"day": day, "hours": {k: round(v, 1) for k, v in sorted(hours.items(), key=lambda kv: -kv[1])[:6]}, "grown": {s: v for s, v in grown.items() if v >= 0.1},
+            "money": money, "events": [e["id"] for e in doc["recent"] if e.get("day") == day]}
+
+
 def _new_day(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any) -> None:
-    day = t.astimezone(tz).strftime("%Y-%m-%d")
-    if doc.get("day") != day:
-        doc["money"] = max(0, doc["money"] - int(profile.get("daily_cost") or 0))
-        doc["day"] = day
+    day = _her_day(t, tz)
+    if doc.get("day") == day:
+        return
+    if doc.get("day"):
+        doc["days"] = [*doc["days"], _day_summary(doc, doc["day"], t, tz)][-DAYS_KEPT:]
+    doc["money"] = max(0, doc["money"] - int(profile.get("daily_cost") or 0))
+    doc.update(day=day, day_stats=dict(doc["stats"]), day_money=doc["money"])
+
+
+def _event_fits(doc: dict[str, Any], event: dict[str, Any], local: datetime, stage: str, t: datetime, tz: Any) -> bool:
+    when = event.get("when") or {}
+    if when.get("place") and when["place"] != doc.get("place"):
+        return False
+    if when.get("activity") and when["activity"] != doc.get("activity"):
+        return False
+    if not _day_matches(when.get("days"), local) or not _in_window(when.get("hours"), local.hour * 60 + local.minute):
+        return False
+    if when.get("weather") and when["weather"] != weather(doc, local):
+        return False
+    if when.get("stage") and stage not in when["stage"]:
+        return False
+    for key, values in (("stats", doc["stats"]), ("needs", doc["needs"]), ("money", {"money": doc["money"]})):
+        for name, (low, high) in (when.get(key) or {}).items():
+            if not low <= values.get(name, 0.0) <= high:
+                return False
+    if not set(when.get("flags") or []) <= set(doc["flags"]) or set(when.get("not_flags") or []) & set(doc["flags"]):
+        return False
+    born = A._t(doc.get("born"))
+    if when.get("after_days") and born is not None and t - born < timedelta(days=int(when["after_days"])):
+        return False
+    return True
+
+
+def _fire(doc: dict[str, Any], event: dict[str, Any], t: datetime, tz: Any, out: list[dict[str, Any]]) -> None:
+    effects = event.get("effects") or {}
+    for need, delta in (effects.get("needs") or {}).items():
+        doc["needs"][need] = _clamp(doc["needs"][need] + float(delta), need)
+    for stat, gain in (effects.get("stats") or {}).items():
+        doc["stats"][stat] = min(100.0, doc["stats"][stat] + float(gain))
+    doc["money"] = max(0, doc["money"] + int(effects.get("money") or 0))
+    doc["flags"] = list(dict.fromkeys([*doc["flags"], *(effects.get("flags") or [])]))
+    doc["fired"][event["id"]] = A._iso(t)
+    doc["last_event"] = A._iso(t)
+    doc["recent"] = [*doc["recent"], {"id": event["id"], "at": A._iso(t), "day": _her_day(t, tz)}][-RECENT_KEPT:]
+    note(doc, event["says"], t)
+    out.append({"type": "event", "id": event["id"], "title": dict(event.get("titles") or {}), "share": bool(event.get("share")),
+                "says": event["says"], "feel": dict(effects.get("feel") or {})})
+
+
+def _events(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any, stage: str, out: list[dict[str, Any]]) -> None:
+    """At most one thing happens to her at a time: each has its chance per hour, while it can happen."""
+    last = A._t(doc.get("last_event"))
+    if last is not None and t - last < EVENT_GAP:
+        return
+    local = t.astimezone(tz)
+    for event in profile.get("events") or []:
+        fired = A._t(doc["fired"].get(event["id"]))
+        if fired is not None and (event.get("once") or t - fired < timedelta(days=int(event.get("repeat_days") or 7))):
+            continue
+        if not _event_fits(doc, event, local, stage, t, tz):
+            continue
+        if _rng(doc, "event", event["id"], local.strftime("%Y-%m-%d-%H-%M")).random() < float(event.get("chance") or 0) * STEP.total_seconds() / 3600:
+            _fire(doc, event, t, tz, out)
+            return
 
 
 def _switch(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any, out: list[dict[str, Any]]) -> None:
@@ -373,8 +500,8 @@ def _switch(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any, 
             _next(doc, profile, t, tz, out)
 
 
-def advance(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *, closeness: float = 0.33) -> list[dict[str, Any]]:
-    """Plays the time since it last ran. -> what happened, oldest first: {type: moved | started, …}."""
+def advance(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *, closeness: float = 0.33, stage: str = "new") -> list[dict[str, Any]]:
+    """Plays the time since it last ran. -> what happened, oldest first: {type: moved | started | event, …}."""
     t = A._t(doc.get("at")) or now
     if now - t > MAX_GAP:
         t = now - MAX_GAP
@@ -385,6 +512,7 @@ def advance(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any
         t += dt
         _new_day(doc, profile, t, tz)
         _switch(doc, profile, t, tz, out)
+        _events(doc, profile, t, tz, stage, out)
     doc["at"] = A._iso(now)
     return out
 
@@ -474,14 +602,21 @@ def give(doc: dict[str, Any], profile: dict[str, Any], item_id: Any) -> dict[str
     return {"code": "ok", "item": item}
 
 
-def note(doc: dict[str, Any], text: str) -> None:
-    """Something for her to hear with their next message."""
-    doc["notes"] = [*doc.get("notes", []), text][-NOTES_MAX:]
+def note(doc: dict[str, Any], text: str, at: datetime) -> None:
+    """Something for her to hear with their next message, however much later that is."""
+    doc["notes"] = [*doc.get("notes", []), {"text": text, "at": A._iso(at)}][-NOTES_MAX:]
 
 
-def take_notes(doc: dict[str, Any]) -> list[str]:
-    notes, doc["notes"] = list(doc.get("notes") or []), []
-    return notes
+def take_notes(doc: dict[str, Any], now: datetime) -> list[str]:
+    out = []
+    for n in doc.get("notes") or []:
+        at = A._t(n.get("at")) if isinstance(n, dict) else None
+        text = n.get("text") if isinstance(n, dict) else str(n)
+        hours = (now - at).total_seconds() / 3600 if at is not None else 0
+        when = "" if hours < 8 else "(Yesterday or so) " if hours < 36 else f"(About {max(2, round(hours / 24))} days ago) "
+        out.append(when + str(text))
+    doc["notes"] = []
+    return out
 
 
 def catalog(profile: dict[str, Any]) -> str:
@@ -568,6 +703,9 @@ def line(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *
         if coming["start"] - local <= timedelta(hours=4):
             what = profile["activities"][coming["activity"]]
             parts.append(f"Coming up at {coming['start'].strftime('%H:%M')}: {what.get('doing') or coming['activity']}.")
+    planned = doc["week"].get(plan_slot(local) or "")
+    if planned and planned != doc.get("activity") and planned in profile["activities"]:
+        parts.append(f"They suggested you spend this time {profile['activities'][planned].get('doing') or planned}: it is a suggestion, up to you.")
     feelings = [f"{w} {BODY_WORDS[n]}" for n, w in body(doc)]
     if feelings:
         parts.append("Your body: " + ", ".join(feelings) + ".")
@@ -597,7 +735,13 @@ def view(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any) -
     local = now.astimezone(tz)
     start = _midnight(local)
     coming = _upcoming(doc, profile, now, tz, other_than=doc.get("activity"))
-    return {**summary(doc, profile, now, tz), "stats": {s: round(doc["stats"][s], 1) for s in STATS}, "money": doc["money"],
+    events = {e["id"]: e for e in profile.get("events") or []}
+    return {**summary(doc, profile, now, tz), "plan": {"slots": plan_slots(), "week": dict(doc["week"]), "now": plan_slot(local),
+                                                      "choices": [{"id": k, "name": _names(profile, "activities", k)} for k, a in profile["activities"].items() if a.get("plannable")]},
+            "journal": [{**d, "names": {k: _names(profile, "activities", k) for k in d.get("hours") or {}},
+                         "titles": [dict(events.get(e, {}).get("titles") or {}) for e in d.get("events") or []]} for d in reversed(doc["days"][-30:])],
+            "happened": [{"at": e["at"], "title": dict(events.get(e["id"], {}).get("titles") or {})} for e in reversed(doc["recent"])],
+            "stats": {s: round(doc["stats"][s], 1) for s in STATS}, "money": doc["money"],
             "going": (doc.get("going") or {}).get("activity"),
             "next": {"activity": coming["activity"], "at": A._iso(coming["start"]), "name": _names(profile, "activities", coming["activity"])} if coming else None,
             "map": profile.get("map") or "", "coins": int(doc.get("coins") or 0),

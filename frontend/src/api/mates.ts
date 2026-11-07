@@ -178,6 +178,17 @@ export interface LifeView extends MateLifeSummary {
   today?: LifeEntry[];
   coins?: number;
   shop?: LifeGift[];
+  plan?: { slots: string[]; week: Record<string, string>; now: string | null; choices: { id: string; name: LifeNames }[] };
+  journal?: LifeDay[];
+  happened?: { at: string; title: LifeNames }[];
+}
+export interface LifeDay {
+  day: string;
+  hours: Record<string, number>;
+  names: Record<string, LifeNames>;
+  grown: Partial<Record<LifeStat, number>>;
+  money: number;
+  titles: LifeNames[];
 }
 export interface LifeGift {
   id: string;
@@ -621,6 +632,8 @@ export const getRelation = (id: string) => apiFetch<RelationView>(`/api/mates/${
 export const getRelationJournal = (id: string, days = 30) =>
   apiFetch<RelationJournal>(`/api/mates/${enc(id)}/relation/journal?days=${days}`);
 export const getLife = (id: string) => apiFetch<LifeView>(`/api/mates/${enc(id)}/life`);
+export const setLifePlan = (id: string, slot: string, activity: string | null) =>
+  apiFetch<LifeView>(`/api/mates/${enc(id)}/life/plan/${enc(slot)}`, { method: "PUT", body: JSON.stringify({ activity }) });
 export const sendLifeGift = (id: string, item: string) =>
   apiFetch<LifeView>(`/api/mates/${enc(id)}/life/gift`, { method: "POST", body: JSON.stringify({ item }) });
 export const getMateState = (id: string) => apiFetch<StateView>(`/api/mates/${enc(id)}/state`);

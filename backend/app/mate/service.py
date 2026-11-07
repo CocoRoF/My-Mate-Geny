@@ -104,7 +104,7 @@ class MateService:
         # every mate write is announced on /ws/sessions (mates.changed): open
         # windows and other devices refetch instead of keeping a stale copy
         store.on_change = sessions.mates_changed
-        self.life = LifeRuntime(store, self._log)
+        self.life = LifeRuntime(store, self._log, self._life_happened)
         self._housekept: dict[str, str] = {}               # mate id -> the local day its memory was tidied
         store.on_memory_added = self._memory_added
         store.on_memory_forgotten = self.forget_engine_context
@@ -665,6 +665,20 @@ class MateService:
             return "Already: you are doing that. It goes on for a while longer." + (" They are with you now." if with_user else "")
         together = " Together with them." if with_user else ""
         return f"Going: the user sees you heading there now.{together} Say so briefly, in your own voice."
+
+    def _life_happened(self, mate_id: str, events: list[dict[str, Any]]) -> None:
+        """Something happened in her day (app/mate/life): it moves how she feels, with itself as the reason."""
+        lang = ((self.store.get(mate_id).get("persona") or {}).get("language")) or "ko"
+
+        def change(doc: dict[str, Any], who: dict[str, Any], now: datetime, tz: Any) -> None:
+            for e in events:
+                reason = (e.get("title") or {}).get(lang) or (e.get("title") or {}).get("en") or ""
+                for emotion, strength in (e.get("feel") or {}).items():
+                    S.report(doc, who, emotion, strength, reason, now, tz)
+
+        self._state_event(mate_id, change)
+        for e in events:
+            self._log("info", f"life: {e.get('id')}", code="mate.life_event", detail={"event": e.get("id")})
 
     def life_gift(self, mate_id: str, item: Any) -> dict[str, Any]:
         """They sent her something: what it does happens at once, and how she takes it is hers: she hears now if she can, else with

@@ -373,11 +373,142 @@ def test_a_gift_does_what_it_does_and_coins_come_from_talking(world):
 
 def test_her_notes_are_heard_once(world):
     doc = sim.new(world, MONDAY, KST, "m")
-    sim.note(doc, "A delivery reached you.")
-    assert sim.take_notes(doc) == ["A delivery reached you."] and sim.take_notes(doc) == []
+    sim.note(doc, "A delivery reached you.", MONDAY)
+    assert sim.take_notes(doc, MONDAY) == ["A delivery reached you."] and sim.take_notes(doc, MONDAY) == []
 
 
 def test_the_catalog_lists_what_she_can_decide_on(world):
     text = sim.catalog(world)
     assert "- dessert:" in text and "open 10:00–22:00" in text
     assert "- work:" not in text and "- commute:" not in text
+
+
+# ---- raising her ----
+
+def test_the_events_are_sound_and_many():
+    world = P.load("chaerin")
+    assert len(world["events"]) >= 30
+    assert len({e["id"] for e in world["events"]}) == len(world["events"])
+    for e in world["events"]:
+        for emotion, strength in (e.get("effects") or {}).get("feel", {}).items():
+            assert emotion in S.EMOTIONS and strength in S.STRENGTHS, e["id"]
+        assert not any(ch.isdigit() for ch in e["says"].replace("ten", "")) or e["id"] in ("phone_call",), e["id"]
+    with pytest.raises(ValueError):
+        P.check({"places": {"home": {}}, "activities": {"rest": {"place": "home"}}, "events": [{"id": "x", "titles": {"ko": "a", "en": "b"}, "says": "s", "chance": 0.5, "when": {"activity": "nope"}}]})
+
+
+def test_things_happen_to_her_but_not_all_at_once(world):
+    doc = sim.new(world, MONDAY, KST, "m")
+    fired = []
+    for hours in range(24 * 7 * 12):
+        for e in sim.advance(doc, world, MONDAY + timedelta(hours=hours), KST, stage="trusted"):
+            if e["type"] == "event":
+                fired.append(e)
+    assert 10 < len(fired) < 12 * 7  # (a few a week)
+    assert len({e["id"] for e in fired}) >= 8
+    times = sorted(datetime.fromisoformat(r["at"]) for r in doc["recent"])
+    assert all(b - a >= sim.EVENT_GAP for a, b in zip(times, times[1:]))
+
+
+def test_an_event_happens_once_if_it_should_and_does_what_it_does(world):
+    event = next(e for e in world["events"] if e["id"] == "raid_clear")
+    one = {**world, "events": [{**event, "chance": 100.0}]}
+    t = datetime(2026, 11, 3, 21, 30, tzinfo=KST)
+    doc = sim.new(one, t, KST, "m")
+    doc["born"] = (t - timedelta(days=30)).isoformat()
+    assert doc["activity"] == "raid"
+    fired = [e for e in sim.advance(doc, one, t + timedelta(minutes=20), KST) if e["type"] == "event"]
+    assert [e["id"] for e in fired] == ["raid_clear"] and fired[0]["share"] and fired[0]["feel"] == {"excited": "strong"}
+    assert "nest_cleared" in doc["flags"]
+    assert "Skywhale" in doc["notes"][0]["text"]
+    doc["last_event"] = None
+    again = [e for e in sim.advance(doc, one, t + timedelta(minutes=40), KST) if e["type"] == "event"]
+    assert again == []
+
+
+@pytest.mark.parametrize("when,fits", [
+    ({"activity": "raid"}, True), ({"activity": "work"}, False), ({"place": "home"}, True), ({"place": "cafe"}, False),
+    ({"days": "tue"}, True), ({"days": "wed"}, False), ({"hours": ["21:00", "22:00"]}, True), ({"hours": ["10:00", "11:00"]}, False),
+    ({"stats": {"gaming": [70, 100]}}, True), ({"stats": {"gaming": [90, 100]}}, False), ({"needs": {"hunger": [0.9, 1]}}, False),
+    ({"money": {"money": [0, 100]}}, False), ({"stage": ["trusted"]}, True), ({"stage": ["companion"]}, False),
+    ({"flags": ["x"]}, False), ({"not_flags": ["x"]}, True), ({"after_days": 3}, False),
+])
+def test_the_conditions_of_an_event(world, when, fits):
+    t = datetime(2026, 11, 3, 21, 30, tzinfo=KST)  # (a raid night)
+    doc = sim.new(world, t, KST, "m")
+    assert sim._event_fits(doc, {"when": when}, t, "trusted", t, KST) is fits
+
+
+def test_a_note_says_how_long_ago_it_was(world):
+    doc = sim.new(world, MONDAY, KST, "m")
+    sim.note(doc, "A", MONDAY)
+    sim.note(doc, "B", MONDAY + timedelta(days=2, hours=23))
+    sim.note(doc, "C", MONDAY + timedelta(days=3))
+    assert sim.take_notes(doc, MONDAY + timedelta(days=3, hours=1)) == ["(About 3 days ago) A", "B", "C"]
+    sim.note(doc, "D", MONDAY)
+    assert sim.take_notes(doc, MONDAY + timedelta(hours=20)) == ["(Yesterday or so) D"]
+
+
+def test_what_they_suggest_leans_her_and_she_can_still_say_no(world):
+    doc0 = sim.new(world, MONDAY, KST, "plan")
+    assert sim.plan_slots()[0] == "mon_evening" and len(sim.plan_slots()) == 9
+    assert sim.set_plan(doc0, world, "mon_evening", "workout")
+    assert not sim.set_plan(doc0, world, "someday", "workout")
+    assert not sim.set_plan(doc0, world, "mon_evening", "work")  # (not hers to choose)
+    assert sim.set_plan(doc0, world, "mon_evening", None) and not doc0["week"]
+
+    def weeks(plan):
+        doc = sim.new(world, MONDAY, KST, "plan")
+        for s in sim.plan_slots():
+            if plan:
+                sim.set_plan(doc, world, s, "workout")
+        count = 0
+        for i in range(4 * 7 * 24 * 12):
+            sim.advance(doc, world, MONDAY + timedelta(minutes=5 * i), KST)
+            count += doc["activity"] == "workout"
+        return count, doc
+
+    without, _ = weeks(False)
+    planned, doc = weeks(True)
+    assert planned > without + 50
+    assert planned < 12 * 4 * 7 * 5  # (not every hour of every slot: she still eats, sleeps and does as she likes)
+    assert doc["stats"]["stamina"] > 22
+
+
+def test_a_plan_shows_in_what_she_is_told(world):
+    t = datetime(2026, 11, 3, 19, 30, tzinfo=KST)
+    doc = sim.new(world, t, KST, "m")
+    sim.set_plan(doc, world, "tue_evening", "study")
+    doc["activity"] = "rest"
+    assert sim.plan_slot(t) == "tue_evening"
+    assert "They suggested" in sim.line(doc, world, t, KST) and "up to you" in sim.line(doc, world, t, KST)
+    assert sim.plan_slot(datetime(2026, 11, 3, 12, 0, tzinfo=KST)) is None
+    assert sim.plan_slot(datetime(2026, 11, 7, 12, 0, tzinfo=KST)) == "sat_day"
+
+
+def test_a_day_ends_in_her_journal(world):
+    doc = sim.new(world, MONDAY, KST, "m")
+    sim.advance(doc, world, MONDAY + timedelta(days=3, hours=1), KST)
+    assert len(doc["days"]) >= 2
+    day = doc["days"][-1]
+    assert day["day"] and day["hours"]["work"] > 6 and "sleep" in day["hours"]
+    assert doc["days"][-1]["day"] == "2026-11-04"
+    v = sim.view(doc, world, MONDAY + timedelta(days=3, hours=1), KST)
+    assert v["journal"][0]["day"] == "2026-11-04" and v["journal"][0]["names"]["work"]["ko"]
+    assert v["plan"]["choices"] and all(world["activities"][c["id"]]["free"] for c in v["plan"]["choices"])
+
+
+def test_her_pay_and_her_stamina_grow_with_her(world):
+    a, b = sim.new(world, MONDAY, KST, "m"), sim.new(world, MONDAY, KST, "m")
+    a["stats"]["stamina"], b["stats"]["stamina"] = 10, 90
+    a["activity"], b["activity"] = "rest", "rest"
+    a["needs"]["sleep"], b["needs"]["sleep"] = 0.2, 0.2
+    sim._apply(a, world, timedelta(hours=1), MONDAY, 0.3)
+    sim._apply(b, world, timedelta(hours=1), MONDAY, 0.3)
+    assert b["needs"]["sleep"] < a["needs"]["sleep"]
+    a["activity"], b["activity"] = "work", "work"
+    a["stats"]["work"], b["stats"]["work"] = 20, 80
+    before = a["money"], b["money"]
+    sim._apply(a, world, timedelta(hours=1), MONDAY, 0.3)
+    sim._apply(b, world, timedelta(hours=1), MONDAY, 0.3)
+    assert b["money"] - before[1] > a["money"] - before[0]

@@ -64,6 +64,7 @@ async function goToMate(ctx) {
     // ---- on a desk
     const desk = await browser.newContext({ viewport: { width: 1400, height: 900 } });
     const page = await goToMate(desk);
+    const mateId = (await (await page.request.get(`${url}/api/mates`)).json()).find((m) => m.builtin === "chaerin").id;
     const errors = page.errors;
     const stage = page.locator('[data-testid="mate-stage"]');
     await until("her day to start and her world to show", async () => {
@@ -110,6 +111,17 @@ async function goToMate(ctx) {
     ok("what she is growing in shows", (await page.locator('[data-testid^="life-stat-"]').count()) === 6);
     if (shots) await page.screenshot({ path: shots + "/life-panel-growth.png" });
 
+    await page.locator('[data-testid="life-tab-plan"]').click();
+    await page.locator('[data-testid="life-plan-select-sat_day"]').waitFor();
+    ok("nine slots of the week", (await page.locator('[data-testid^="life-plan-select-"]').count()) === 9);
+    await page.locator('[data-testid="life-plan-select-sat_day"]').selectOption("workout");
+    await until("the suggestion to stay", async () => (await (await page.request.get(`${url}/api/mates/${mateId}/life`)).json()).plan.week.sat_day === "workout");
+    ok("a suggestion is kept", true);
+    if (shots) await page.screenshot({ path: shots + "/life-panel-plan.png" });
+    await page.locator('[data-testid="life-tab-journal"]').click();
+    await page.locator('[data-testid="life-journal-empty"]').waitFor();
+    ok("the journal starts empty", true);
+
     await page.locator('[data-testid="mate-life-panel-close"]').click();
     ok("the header button is there too", await page.locator('[data-testid="mate-life-open"]').isVisible());
     ok("no script errors on a desk", errors.length === 0, errors.join("\n"));
@@ -125,7 +137,7 @@ async function goToMate(ctx) {
     if (shots) await p.screenshot({ path: shots + "/life-phone.png" });
     await p.locator('[data-testid="mate-life-open"]').click();
     await p.locator('[data-testid="life-now-card"]').waitFor();
-    for (const tab of ["now", "map", "gifts", "growth"]) {
+    for (const tab of ["now", "map", "plan", "gifts", "growth", "journal"]) {
       await p.locator(`[data-testid="life-tab-${tab}"]`).click();
       await p.waitForTimeout(250);
       ok(`the ${tab} tab fits a phone`, !(await noSideways(p, '[data-testid="mate-life-panel"]')), await noSideways(p, '[data-testid="mate-life-panel"]'));

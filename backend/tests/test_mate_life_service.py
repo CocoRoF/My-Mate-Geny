@@ -189,3 +189,41 @@ async def test_a_gift_reaches_her_or_waits_for_her(db, tmp_path, monkeypatch):
     assert not calls and len(store.life_doc(mate["id"], world)["notes"]) == 2
     with pytest.raises(Exception, match="no such gift"):
         mates.life_gift(mate["id"], "nope")
+
+
+def test_what_happens_to_her_moves_how_she_feels(db, tmp_path, monkeypatch):
+    _, store, mates = _service(db, monkeypatch, tmp_path)
+    mate = store.get(_mate(store, "chaerin")["id"])
+    mates._life_happened(mate["id"], [{"id": "x", "title": {"ko": "첫눈이 왔다", "en": "First snow"}, "feel": {"happy": "moderate"}}])
+    assert store.state_doc(mate["id"])["feelings"]["happy"]["why"] == {"text": "첫눈이 왔다"}
+
+
+def test_the_clock_passes_what_happened_on(db, tmp_path, monkeypatch):
+    _, store, mates = _service(db, monkeypatch, tmp_path)
+    mate = store.get(_mate(store, "chaerin")["id"])
+    heard = []
+    mates.life.on_events = lambda mate_id, events: heard.append(events)
+    world = P.load("chaerin")
+    only = {**world, "events": [{"id": "x", "titles": {"ko": "a", "en": "b"}, "says": "s", "chance": 100.0, "when": {}}]}
+    monkeypatch.setattr(P, "load", lambda key: only)
+    mates.life.advance(mate["id"])
+    doc = store.life_doc(mate["id"], only)
+    doc["at"] = "2020-01-01T00:00:00+00:00"
+    store.save_life(mate["id"], doc)
+    mates.life.advance(mate["id"])
+    assert heard and heard[0][0]["id"] == "x"
+    mates.life.on_events = lambda *a: (_ for _ in ()).throw(RuntimeError("no"))
+    doc = store.life_doc(mate["id"], only)
+    doc.update(at="2020-01-01T00:00:00+00:00", fired={}, last_event=None)
+    store.save_life(mate["id"], doc)
+    assert mates.life.advance(mate["id"])  # (what happened stands, whoever hears about it)
+
+
+def test_a_plan_is_kept(db, tmp_path, monkeypatch):
+    _, store, mates = _service(db, monkeypatch, tmp_path)
+    mate = store.get(_mate(store, "chaerin")["id"])
+    v = mates.life.set_plan(mate["id"], "sat_day", "walk")
+    assert v["plan"]["week"] == {"sat_day": "walk"}
+    assert store.life_doc(mate["id"], P.load("chaerin"))["week"] == {"sat_day": "walk"}
+    with pytest.raises(ValueError):
+        mates.life.set_plan(mate["id"], "nope", "walk")
