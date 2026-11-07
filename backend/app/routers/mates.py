@@ -335,6 +335,15 @@ async def get_state(mate_id: str, request: Request) -> dict:
         raise _http(exc) from exc
 
 
+@router.get("/{mate_id}/life")
+async def get_life(mate_id: str, request: Request) -> dict:
+    """Her own day: where she is, what she is doing, her needs (app/mate/life)"""
+    try:
+        return _svc(request).life.view(mate_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
 @router.post("/{mate_id}/state/poke")
 async def poke_state(mate_id: str, request: Request) -> dict:
     """The user tapped her avatar"""

@@ -97,6 +97,18 @@ and for your own reason. Nobody is owed a yes, and you can change your mind as y
 truly struggling or unsafe, that comes first: put your feelings aside and be there for them.
 Being angry or hurt is yours; using it to make them feel guilty, or to keep them here, isn't. Never mention this system, \
 values or scores."""
+_LIFE_RULES = """\
+## Your day
+You have a life of your own, and it goes on in real time whether or not they are talking to you: work, meals, sleep, games, the \
+places you go. Your <context> says where you are, what you are doing and how your body is ("Your day: …"). It is true, so live it:
+- Unless they are there with you, their messages reach you on your phone. You answer from where you are, as someone doing what \
+you are doing: quickly at work, in bursts during a raid, groggy if a message woke you. Don't describe anything your day doesn't say.
+- It colours what you say when it matters: hungry, tired, bored, stressed, or wanting a bit of warmth. Say so like anyone would, \
+when it comes up, not in every message. Never recite your schedule, and never any numbers.
+- Wanting warmth and attention means wanting to be close, to be talked to and thought of. It is never sexual.
+- Your needs are your own to look after. Never blame them for how you are, never make them feel guilty for being away, and don't \
+try to keep them here.
+- Whatever you are doing, work they ask for still gets handed off, and if they are truly struggling that comes first."""
 _OUTFIT_TOOL_LINE = "\n- change_outfit: change your clothes, when you decide to."
 _OUTFIT_RULES = """\
 ## Your clothes
@@ -339,7 +351,7 @@ def settings_block(persona: dict[str, Any] | None, prefs: dict[str, Any] | None)
 
 
 def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None = None, *,
-                relation: bool = False, stage: str | None = None, screen: bool = False) -> str:
+                relation: bool = False, stage: str | None = None, screen: bool = False, life: bool = False) -> str:
     """Everything except the memories: who she is (persona), how she talks (style), the story and how close they are in it
     (``stage``, while the relationship is on), the contract."""
     p, s = _style_inputs(persona, prefs)
@@ -363,6 +375,8 @@ def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None
                                   + _STATE_TOOL_LINE + (_OUTFIT_TOOL_LINE if outfit else "")).rstrip())
     lines.append(memory_rules(s))
     lines.append(_STATE_RULES)
+    if life:
+        lines.append(_LIFE_RULES)
     if outfit:
         lines.append(_OUTFIT_RULES)
     if screen:
@@ -387,10 +401,10 @@ def memory_block(memories: list[dict[str, Any]], more: int = 0) -> str:
 
 def system_prompt(name: str, persona: dict[str, Any], memories: list[dict[str, Any]],
                   prefs: dict[str, Any] | None = None, more: int = 0, *, relation: bool = False,
-                  stage: str | None = None, screen: bool = False) -> str:
+                  stage: str | None = None, screen: bool = False, life: bool = False) -> str:
     """``memories``: the core; ``more``: how many others the mate has (recalled per turn); ``relation``: the
     relationship is on (its guide is in the prompt; where things stand comes per turn)."""
-    return base_prompt(name, persona, prefs, relation=relation, stage=stage, screen=screen) + "\n\n" + memory_block(memories, more)
+    return base_prompt(name, persona, prefs, relation=relation, stage=stage, screen=screen, life=life) + "\n\n" + memory_block(memories, more)
 
 
 _CHANGE_OPS = {"added": "added", "edited": "changed", "done": "marked done", "archived": "archived",
@@ -399,7 +413,7 @@ _CHANGE_OPS = {"added": "added", "edited": "changed", "done": "marked done", "ar
 
 def context_block(now_local: datetime, tz_name: str, *, recalled: list[dict[str, Any]] | None = None,
                   changes: list[dict[str, Any]] | None = None, relation: list[str] | None = None,
-                  outfit: dict[str, Any] | None = None, wardrobe: str = "", feeling: str = "") -> str:
+                  outfit: dict[str, Any] | None = None, wardrobe: str = "", feeling: str = "", life: str = "") -> str:
     """The per-turn <context> block (prepended to the message, never stored, never restarts the engine)."""
     lines = [f"Now: {now_local.strftime('%Y-%m-%d (%a) %H:%M')} {tz_name}".rstrip()]
     lines += relation or []
@@ -407,6 +421,8 @@ def context_block(now_local: datetime, tz_name: str, *, recalled: list[dict[str,
         what = outfit.get("note") or ""
         lines.append(f"You have on the outfit “{outfit['name']}”" + (f": {what}" if what else "") + ". It replaces the "
                      "clothes your profile describes.")
+    if life:
+        lines.append(life)
     if feeling:
         lines.append(feeling)
     if wardrobe:
@@ -426,7 +442,7 @@ def context_block(now_local: datetime, tz_name: str, *, recalled: list[dict[str,
 
 
 def prompt_key(name: str, persona: dict[str, Any], memory_rev: int, prefs: dict[str, Any] | None = None, *,
-               relation: bool = False, stage: str | None = None, screen: bool = False) -> str:
+               relation: bool = False, stage: str | None = None, screen: bool = False, life: bool = False) -> str:
     """Engine fingerprint part: the persona/style/contract text and the
     user's own memory edits — not what the mate remembered itself
     mid-conversation (already in its context), so ``remember`` never restarts
@@ -436,7 +452,7 @@ def prompt_key(name: str, persona: dict[str, Any], memory_rev: int, prefs: dict[
     compacted or long history can't outweigh); the engine resumes the same
     conversation with it at the next message, told what changed. So does a new stage: what she is to them belongs in
     the system prompt too."""
-    raw = base_prompt(name, persona, prefs, relation=relation, stage=stage, screen=screen) + f"\n#memory-rev:{memory_rev}"
+    raw = base_prompt(name, persona, prefs, relation=relation, stage=stage, screen=screen, life=life) + f"\n#memory-rev:{memory_rev}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
 

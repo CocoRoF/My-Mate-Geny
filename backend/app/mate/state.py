@@ -58,6 +58,11 @@ CONDUCT = {
     "sleepy": ((0.6, "You are drowsy: slower and shorter, the odd yawn."),),
 }
 TOLD_EVERY_TURN_FROM = 0.7
+#: a need past ``from`` keeps an emotion up: {emotion: ((need, from, how fast, reason), …)} (docs/mate-life.md)
+FROM_NEEDS = {"sleepy": (("sleep", 0.35, 1.35, "tired"),), "angry": (("hunger", 0.75, 1.75, "hungry"), ("stress", 0.8, 3.0, "stressed")),
+              "sad": (("fun", 0.8, 3.0, "bored"),), "lonely": (("affection", 0.35, 1.0, "wants_affection"),),
+              "worried": (("stress", 0.45, 1.33, "stressed"),)}
+ASLEEP = 0.85
 
 #: how each bundled mate usually is: ``base``: where she settles; ``rise``: how easily it moves; ``loves``: what lights her up
 TEMPERAMENTS: dict[str, dict[str, Any]] = {
@@ -109,7 +114,9 @@ _WHY_FOR_HER = {
     "returned": "they came back after a while", "answered": "they answered at last", "ignored": "you spoke and they didn't answer",
     "interrupted": "they cut you off", "poked": "they keep poking you", "pestered": "they keep pushing about your clothes",
     "late": "it's late", "work_ok": "work you passed on went well", "work_failed": "work you passed on went badly",
-    "nature": "it's how you are", "user_wore": "they put it on you",
+    "nature": "it's how you are", "user_wore": "they put it on you", "asleep": "you were asleep", "tired": "you're tired",
+    "hungry": "you're hungry", "stressed": "it has been a stressful stretch", "bored": "you've had nothing fun to do for a while",
+    "wants_affection": "you could do with some warmth and attention",
 }
 
 
@@ -131,11 +138,12 @@ def normalized(doc: Any) -> dict[str, Any]:
 
 
 def who(*, closeness: float = 0.33, sensitivity: float = 1.0, builtin: str | None = None, away: bool = False,
-        outfit: dict[str, Any] | None = None) -> dict[str, Any]:
+        outfit: dict[str, Any] | None = None, life: dict[str, Any] | None = None) -> dict[str, Any]:
     """``closeness``: 0 – 1. ``away``: the relationship is paused, so silence means nothing. ``outfit``: what she has on,
-    {id, name, feel, since}; None in her usual clothes or one that does nothing to her."""
+    {id, name, feel, since}; None in her usual clothes or one that does nothing to her. ``life``: her own day when she has one
+    (life/sim.py ``for_state``): {needs, feel, doing, asleep}."""
     return {"closeness": max(0.0, min(1.0, float(closeness))), "sensitivity": float(sensitivity), "away": bool(away),
-            "temperament": TEMPERAMENTS.get(builtin or "", {}), "outfit": outfit if (outfit or {}).get("feel") else None}
+            "temperament": TEMPERAMENTS.get(builtin or "", {}), "outfit": outfit if (outfit or {}).get("feel") else None, "life": life}
 
 
 def clean_feel(raw: Any) -> dict[str, float]:
@@ -187,6 +195,23 @@ def _worn(emotion: str, w: dict[str, Any], now: datetime) -> float:
     return start + (max(CLIMBS_TO, start) - start) * (1 - 0.5 ** (minutes / CLIMB_HALF_MIN))
 
 
+def _lived(emotion: str, w: dict[str, Any]) -> tuple[float, dict[str, Any]]:
+    """How far her body and what she is doing keep this emotion up, and why."""
+    life = w.get("life")
+    if not life:
+        return 0.0, {}
+    if emotion == "sleepy" and life.get("asleep"):
+        return ASLEEP, {"code": "asleep"}
+    best, why = float((life.get("feel") or {}).get(emotion) or 0.0), {"code": "doing", "doing": life.get("doing") or ""}
+    for need, start, rate, code in FROM_NEEDS.get(emotion, ()):
+        if emotion == "lonely" and w["away"]:
+            continue
+        v = (float(life["needs"].get(need) or 0.0) - start) * rate
+        if v > best:
+            best, why = v, {"code": code}
+    return best, why
+
+
 def levels(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> dict[str, dict[str, Any]]:
     """{emotion: {v: 0 – 1, why}} as of ``now``."""
     out = {}
@@ -200,8 +225,11 @@ def levels(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> di
             v = base + (float(f["v"]) - base) * 0.5 ** (hours / HALF_LIFE_H[e])
             if abs(float(f["v"]) - base) >= 0.01:
                 why = f.get("why") or why
-        if e == "sleepy" and _late(now, tz) > v:
+        if e == "sleepy" and not w.get("life") and _late(now, tz) > v:  # (with a day of her own, it is how she slept that counts)
             v, why = _late(now, tz), {"code": "late"}
+        lived, lived_why = _lived(e, w)
+        if lived > v:
+            v, why = lived, lived_why
         if e == "lonely" and _silence(doc, w, now) > v:
             v, why = _silence(doc, w, now), {"code": "ignored"}
         worn = _worn(e, w, now)
@@ -251,6 +279,8 @@ def why_for_her(why: dict[str, Any] | None) -> str:
         return f"you just had “{why.get('name') or ''}” on"
     if code == "said":
         return f"they said “{why.get('quote') or ''}”"
+    if code == "doing":
+        return f"you are {why.get('doing') or 'busy'}"
     return _WHY_FOR_HER.get(str(code), "")
 
 

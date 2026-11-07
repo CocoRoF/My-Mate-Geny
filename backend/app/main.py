@@ -170,6 +170,7 @@ async def lifespan(app: FastAPI):
             await asyncio.sleep(SESSION_CHECK_S)
 
     session_watcher = asyncio.create_task(session_watch())
+    life_clock = asyncio.create_task(app.state.mate_service.life.run())  # (her day goes on, on the real clock)
 
     # Host / container metrics, history and alerts (Admin -> System).
     system_monitor = None
@@ -195,6 +196,7 @@ async def lifespan(app: FastAPI):
     await app.state.screen_service.triggers.stop()
     housekeeper.cancel()
     session_watcher.cancel()
+    life_clock.cancel()
     higgsfield_keeper.cancel()
     await app.state.avatar_service.stop()
     await cli_tools.stop()

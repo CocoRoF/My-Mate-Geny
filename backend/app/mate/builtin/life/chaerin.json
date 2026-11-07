@@ -1,0 +1,686 @@
+{
+ "start": {
+  "place": "home",
+  "money": 180000,
+  "stats": {
+   "work": 45,
+   "gaming": 80,
+   "stamina": 20,
+   "cooking": 15,
+   "sense": 35,
+   "courage": 15
+  }
+ },
+ "daily_cost": 20000,
+ "places": {
+  "home": {
+   "names": {
+    "ko": "채린의 원룸",
+    "en": "Her studio"
+   },
+   "minutes": 5,
+   "about": "your small studio apartment: a bed, a desk with two monitors and your PC, games on the shelf"
+  },
+  "street": {
+   "names": {
+    "ko": "동네 골목",
+    "en": "The street"
+   },
+   "minutes": 0,
+   "about": "outside, on your way"
+  },
+  "office": {
+   "names": {
+    "ko": "회사 QA실",
+    "en": "The QA room"
+   },
+   "minutes": 25,
+   "days": "weekday",
+   "open": [
+    "08:00",
+    "23:00"
+   ],
+   "about": "the QA room at your game company: rows of test devices, a whiteboard of open bugs"
+  },
+  "convenience": {
+   "names": {
+    "ko": "편의점",
+    "en": "Convenience store"
+   },
+   "minutes": 5,
+   "near": {
+    "office": 3,
+    "home": 3
+   },
+   "about": "the convenience store: triangle kimbap, instant noodles, the little table by the window"
+  },
+  "cafe": {
+   "names": {
+    "ko": "조용한 디저트 카페",
+    "en": "A quiet dessert café"
+   },
+   "minutes": 20,
+   "open": [
+    "10:00",
+    "22:00"
+   ],
+   "crowded": 0.2,
+   "about": "a quiet dessert café you found: few seats, soft music, nobody talks to you"
+  },
+  "boardgame": {
+   "names": {
+    "ko": "보드게임 카페",
+    "en": "Board-game café"
+   },
+   "minutes": 22,
+   "open": [
+    "12:00",
+    "24:00"
+   ],
+   "crowded": 0.5,
+   "about": "a board-game café: walls of boxes, tables of people laughing"
+  },
+  "arcade": {
+   "names": {
+    "ko": "오락실",
+    "en": "The arcade"
+   },
+   "minutes": 22,
+   "open": [
+    "11:00",
+    "24:00"
+   ],
+   "crowded": 0.4,
+   "about": "an old arcade: rhythm games, crane machines, the smell of hot electronics"
+  },
+  "park": {
+   "names": {
+    "ko": "동네 공원",
+    "en": "The park"
+   },
+   "minutes": 7,
+   "open": [
+    "05:00",
+    "23:00"
+   ],
+   "about": "the neighbourhood park: a path around a small pond, benches"
+  },
+  "gym": {
+   "names": {
+    "ko": "헬스장",
+    "en": "The gym"
+   },
+   "minutes": 7,
+   "open": [
+    "06:00",
+    "23:00"
+   ],
+   "crowded": 0.35,
+   "about": "the small gym near home, which you joined and rarely visit"
+  },
+  "bookstore": {
+   "names": {
+    "ko": "서점",
+    "en": "The bookstore"
+   },
+   "minutes": 18,
+   "open": [
+    "10:00",
+    "22:00"
+   ],
+   "crowded": 0.1,
+   "about": "a big bookstore: strategy guides, programming books, a corner to read in"
+  }
+ },
+ "activities": {
+  "sleep": {
+   "names": {
+    "ko": "자는 중",
+    "en": "Asleep"
+   },
+   "place": "home",
+   "free": true,
+   "hours": [
+    "22:00",
+    "06:00"
+   ],
+   "minutes": [
+    240,
+    600
+   ],
+   "needs": {
+    "sleep": -0.16,
+    "hunger": -0.07,
+    "fun": -0.03,
+    "affection": -0.008,
+    "stress": -0.02
+   },
+   "doing": "asleep in your bed",
+   "body": "sleep",
+   "when": {
+    "sleep": 0.45
+   },
+   "likes": 0
+  },
+  "nap": {
+   "names": {
+    "ko": "낮잠",
+    "en": "Napping"
+   },
+   "place": "home",
+   "free": true,
+   "hours": [
+    "12:00",
+    "20:00"
+   ],
+   "minutes": [
+    30,
+    70
+   ],
+   "needs": {
+    "sleep": -0.3,
+    "hunger": -0.05,
+    "stress": -0.05
+   },
+   "doing": "napping on your bed",
+   "body": "sleep",
+   "when": {
+    "sleep": 0.5
+   },
+   "likes": -0.2
+  },
+  "commute": {
+   "names": {
+    "ko": "이동 중",
+    "en": "On the way"
+   },
+   "place": "street",
+   "doing": "on your way"
+  },
+  "work": {
+   "names": {
+    "ko": "일하는 중",
+    "en": "At work"
+   },
+   "place": "office",
+   "needs": {
+    "sleep": 0.005,
+    "fun": 0.05,
+    "stress": 0.06,
+    "hunger": -0.025
+   },
+   "stats": {
+    "work": 0.12
+   },
+   "pay": 10000,
+   "doing": "testing builds and writing bug reports",
+   "reply": "You answer between tasks, briefly.",
+   "body": "work"
+  },
+  "lunch": {
+   "names": {
+    "ko": "점심 먹는 중",
+    "en": "Lunch"
+   },
+   "place": "convenience",
+   "needs": {
+    "hunger": -1.7,
+    "stress": -0.06
+   },
+   "cost": 6500,
+   "doing": "having a quick lunch: kimbap and a banana milk",
+   "body": "eat"
+  },
+  "ready": {
+   "names": {
+    "ko": "출근 준비 중",
+    "en": "Getting ready"
+   },
+   "place": "home",
+   "needs": {
+    "sleep": -0.02
+   },
+   "doing": "washing up and getting ready for work, not quite awake",
+   "feel": {
+    "sleepy": 0.35
+   }
+  },
+  "snack_store": {
+   "names": {
+    "ko": "편의점에서 끼니 때우는 중",
+    "en": "A meal at the store"
+   },
+   "place": "convenience",
+   "free": true,
+   "minutes": [
+    15,
+    25
+   ],
+   "eat": true,
+   "needs": {
+    "hunger": -2.3,
+    "fun": -0.05
+   },
+   "cost": 6000,
+   "likes": -0.2,
+   "doing": "eating instant noodles by the window",
+   "body": "eat",
+   "when": {
+    "hunger": 0.4
+   },
+   "hours": [
+    "11:00",
+    "03:00"
+   ]
+  },
+  "toast": {
+   "names": {
+    "ko": "아침 먹는 중",
+    "en": "Breakfast"
+   },
+   "place": "home",
+   "free": true,
+   "minutes": [
+    10,
+    20
+   ],
+   "eat": true,
+   "hours": [
+    "06:00",
+    "11:00"
+   ],
+   "when": {
+    "hunger": 0.4
+   },
+   "needs": {
+    "hunger": -3.0
+   },
+   "cost": 1500,
+   "likes": 0.3,
+   "doing": "having toast and a banana milk",
+   "body": "eat"
+  },
+  "ramen": {
+   "names": {
+    "ko": "라면 끓여 먹는 중",
+    "en": "Instant noodles"
+   },
+   "place": "home",
+   "free": true,
+   "minutes": [
+    15,
+    25
+   ],
+   "eat": true,
+   "when": {
+    "hunger": 0.5
+   },
+   "needs": {
+    "hunger": -2.0,
+    "fun": -0.03
+   },
+   "likes": -0.35,
+   "doing": "eating instant noodles from the box you keep in the cupboard",
+   "body": "eat"
+  },
+  "cook": {
+   "names": {
+    "ko": "요리하는 중",
+    "en": "Cooking"
+   },
+   "place": "home",
+   "free": true,
+   "minutes": [
+    40,
+    60
+   ],
+   "eat": true,
+   "needs": {
+    "hunger": -1.1,
+    "fun": -0.1,
+    "stress": -0.1
+   },
+   "stats": {
+    "cooking": 0.9
+   },
+   "cost": 5000,
+   "likes": -0.3,
+   "doing": "cooking something simple, following a recipe like a strategy guide",
+   "body": "eat",
+   "when": {
+    "hunger": 0.4
+   },
+   "hours": [
+    "09:00",
+    "22:00"
+   ]
+  },
+  "delivery": {
+   "names": {
+    "ko": "배달 시켜 먹는 중",
+    "en": "Delivery"
+   },
+   "place": "home",
+   "free": true,
+   "minutes": [
+    30,
+    40
+   ],
+   "eat": true,
+   "needs": {
+    "hunger": -1.7,
+    "fun": -0.15
+   },
+   "cost": 15000,
+   "likes": 0.2,
+   "doing": "eating delivery food in front of a monitor",
+   "body": "eat",
+   "when": {
+    "hunger": 0.45
+   },
+   "hours": [
+    "11:00",
+    "23:00"
+   ]
+  },
+  "dessert": {
+   "names": {
+    "ko": "디저트 먹는 중",
+    "en": "Dessert"
+   },
+   "place": "cafe",
+   "free": true,
+   "minutes": [
+    45,
+    75
+   ],
+   "eat": true,
+   "needs": {
+    "hunger": -0.5,
+    "fun": -0.3,
+    "stress": -0.3
+   },
+   "stats": {
+    "sense": 0.25
+   },
+   "cost": 9000,
+   "likes": 0.5,
+   "doing": "having something sweet, alone with a book",
+   "body": "drink",
+   "feel": {
+    "happy": 0.45
+   }
+  },
+  "game": {
+   "names": {
+    "ko": "게임 하는 중",
+    "en": "Gaming"
+   },
+   "place": "home",
+   "free": true,
+   "minutes": [
+    50,
+    120
+   ],
+   "needs": {
+    "fun": -0.6,
+    "stress": -0.08,
+    "sleep": 0.01
+   },
+   "stats": {
+    "gaming": 0.08
+   },
+   "likes": 1.0,
+   "doing": "playing “Continent of the Sky” on your PC",
+   "reply": "You answer between pulls.",
+   "body": "game",
+   "feel": {
+    "happy": 0.3
+   },
+   "hours": [
+    "09:00",
+    "04:00"
+   ]
+  },
+  "raid": {
+   "names": {
+    "ko": "길드 레이드 중",
+    "en": "Guild raid"
+   },
+   "place": "home",
+   "needs": {
+    "fun": -0.9,
+    "stress": -0.06,
+    "affection": -0.1
+   },
+   "stats": {
+    "gaming": 0.2,
+    "courage": 0.1
+   },
+   "feel": {
+    "excited": 0.55
+   },
+   "doing": "leading Dalmuri's raid as Baekya",
+   "reply": "You are busy calling the raid: your replies come in bursts.",
+   "body": "game"
+  },
+  "boardgame": {
+   "names": {
+    "ko": "보드게임 하는 중",
+    "en": "Board games"
+   },
+   "place": "boardgame",
+   "free": true,
+   "minutes": [
+    90,
+    150
+   ],
+   "needs": {
+    "fun": -0.7,
+    "affection": -0.08,
+    "stress": -0.1
+   },
+   "stats": {
+    "courage": 0.4,
+    "sense": 0.1
+   },
+   "cost": 12000,
+   "likes": 0.5,
+   "doing": "playing a new board game, reading the rulebook twice",
+   "body": "game",
+   "feel": {
+    "happy": 0.4,
+    "excited": 0.3
+   }
+  },
+  "arcade": {
+   "names": {
+    "ko": "오락실에서 노는 중",
+    "en": "At the arcade"
+   },
+   "place": "arcade",
+   "free": true,
+   "minutes": [
+    40,
+    80
+   ],
+   "needs": {
+    "fun": -0.85,
+    "stress": -0.2
+   },
+   "stats": {
+    "gaming": 0.25
+   },
+   "cost": 5000,
+   "likes": 0.4,
+   "doing": "chasing a high score on a rhythm game",
+   "body": "game",
+   "feel": {
+    "excited": 0.4
+   }
+  },
+  "walk": {
+   "names": {
+    "ko": "산책하는 중",
+    "en": "Walking"
+   },
+   "place": "park",
+   "free": true,
+   "minutes": [
+    30,
+    50
+   ],
+   "needs": {
+    "stress": -0.4,
+    "fun": -0.2
+   },
+   "stats": {
+    "stamina": 0.35,
+    "sense": 0.2
+   },
+   "likes": 0.2,
+   "doing": "walking around the pond, headphones on",
+   "body": "walk"
+  },
+  "workout": {
+   "names": {
+    "ko": "운동하는 중",
+    "en": "Working out"
+   },
+   "place": "gym",
+   "free": true,
+   "minutes": [
+    45,
+    70
+   ],
+   "needs": {
+    "sleep": 0.1,
+    "hunger": 0.15,
+    "stress": -0.25
+   },
+   "stats": {
+    "stamina": 0.9,
+    "courage": 0.1
+   },
+   "cost": 4000,
+   "likes": -0.5,
+   "doing": "working out, not very willingly",
+   "body": "workout"
+  },
+  "read": {
+   "names": {
+    "ko": "책 읽는 중",
+    "en": "Reading"
+   },
+   "place": "bookstore",
+   "free": true,
+   "minutes": [
+    40,
+    80
+   ],
+   "needs": {
+    "fun": -0.25,
+    "stress": -0.15
+   },
+   "stats": {
+    "sense": 0.6,
+    "work": 0.2
+   },
+   "likes": 0.3,
+   "doing": "reading in the corner of the bookstore",
+   "body": "read"
+  },
+  "study": {
+   "names": {
+    "ko": "공부하는 중",
+    "en": "Studying"
+   },
+   "place": "home",
+   "free": true,
+   "minutes": [
+    40,
+    70
+   ],
+   "needs": {
+    "stress": 0.03,
+    "fun": 0.04
+   },
+   "stats": {
+    "work": 0.7
+   },
+   "likes": -0.1,
+   "doing": "studying test automation at your desk",
+   "body": "read"
+  },
+  "rest": {
+   "names": {
+    "ko": "쉬는 중",
+    "en": "Resting"
+   },
+   "place": "home",
+   "free": true,
+   "minutes": [
+    20,
+    50
+   ],
+   "needs": {
+    "stress": -0.08,
+    "fun": -0.1,
+    "sleep": -0.02
+   },
+   "likes": 0.3,
+   "doing": "lying on your bed with your phone"
+  }
+ },
+ "routine": [
+  {
+   "activity": "sleep",
+   "days": "weekday",
+   "from": "00:40",
+   "to": "07:40",
+   "weight": 5,
+   "jitter": 30
+  },
+  {
+   "activity": "sleep",
+   "days": "weekend",
+   "from": "02:00",
+   "to": "09:40",
+   "weight": 5,
+   "jitter": 40
+  },
+  {
+   "activity": "ready",
+   "days": "weekday",
+   "from": "07:40",
+   "to": "08:10",
+   "weight": 2
+  },
+  {
+   "activity": "work",
+   "days": "weekday",
+   "from": "09:30",
+   "to": "18:30",
+   "weight": 3
+  },
+  {
+   "activity": "lunch",
+   "days": "weekday",
+   "from": "12:20",
+   "to": "13:00",
+   "weight": 4
+  },
+  {
+   "activity": "raid",
+   "days": "tue,thu",
+   "from": "21:00",
+   "to": "23:00",
+   "weight": 3
+  }
+ ],
+ "outing": {
+  "weekday": 0.3,
+  "weekend": 0.65,
+  "bonus": 0.9
+ }
+}

@@ -34,6 +34,8 @@ from app.config import settings
 from app.mate import affinity as A
 from app.mate import state as S
 from app.mate import wardrobe as W
+from app.mate.life import sim
+from app.mate.life.runtime import LifeRuntime
 from app.mate.capture import CaptureBroker, CaptureError
 from app.mate import files
 from app.mate import memory as M
@@ -102,6 +104,7 @@ class MateService:
         # every mate write is announced on /ws/sessions (mates.changed): open
         # windows and other devices refetch instead of keeping a stale copy
         store.on_change = sessions.mates_changed
+        self.life = LifeRuntime(store, self._log)
         self._housekept: dict[str, str] = {}               # mate id -> the local day its memory was tidied
         store.on_memory_added = self._memory_added
         store.on_memory_forgotten = self.forget_engine_context
@@ -475,8 +478,9 @@ class MateService:
         relation = bool(rel and rel["enabled"])
         screen = self.capture.shared_client(session["id"], self._svc.last_client_device(session["id"])) is not None
         stage = rel["stage"] if relation else None
+        life = bool(mate_id and self.store.life_profile(mate.get("builtin"), prefs))
         prompt = system_prompt(mate["name"], mate["persona"], core, prefs, more=len(memories) - len(core),
-                               relation=relation, stage=stage, screen=screen)
+                               relation=relation, stage=stage, screen=screen, life=life)
         # the per-turn context (docs/mate-memory-affinity.md §2): settings note (persona edited since the
         # conversation last ran), then the clock, recalled memories, the user's memory edits — prepended to
         # this message, never stored, never a restart
@@ -485,7 +489,7 @@ class MateService:
         req.preamble = "\n\n".join(x for x in (note, ctx, req.preamble) if x)
         # (see_screen on/off changes the prompt and the bridge's tool list: the engine restarts with it)
         req.prompt_key = prompt_key(mate["name"], mate["persona"], int(mate.get("memory_rev") or 0), prefs,
-                                    relation=relation, stage=stage, screen=screen)
+                                    relation=relation, stage=stage, screen=screen, life=life)
         if engine == "codex" and mate_id:
             prompt = self._codex_prompt(mate_id, prompt, req.prompt_key, resuming=bool(req.cli_session_id))
             req.engine_home = str(files.mate_dir(mate_id) / "codex")
@@ -566,7 +570,7 @@ class MateService:
         generation = row["generation"] if row else 0
         st = json.loads(row["state"]) if row else {}
         fresh = {"engine": engine, "cli": cli, "generation": generation, "turn": 0, "injected": {},
-                 "rel": None, "state": None, "state_turn": 0, "wardrobe": None, "wardrobe_turn": 0}
+                 "rel": None, "state": None, "state_turn": 0, "wardrobe": None, "wardrobe_turn": 0, "life": None, "life_turn": 0}
         if not cli or st.get("engine") != engine or st.get("generation") != generation or (st.get("cli") and st["cli"] != cli):
             return fresh
         return {**fresh, **st, "cli": cli}
@@ -593,6 +597,7 @@ class MateService:
             injected[m["id"]] = turn
         changes = self.store.take_memory_changes(mate_id)
         relation = self._relation_lines(rel, st, now_utc, tz, turn)
+        life = self._life_lines(mate, st, turn, now_utc, tz)  # (first: what it did to her is part of how she feels)
         feeling, wardrobe = self._state_lines(mate, prefs, st, turn, now_utc, tz)
         prepared = {**st, "turn": turn, "injected": injected}
         def acknowledge() -> None:
@@ -605,7 +610,7 @@ class MateService:
                 self.store.mark_used(mate_id, [m["id"] for m in recalled])
         req.on_context_delivered = acknowledge
         block = context_block(now_local, self._tz_name(tz, now_utc), recalled=recalled, changes=changes, relation=relation,
-                              outfit=self.store.worn_outfit(mate_id), wardrobe=wardrobe, feeling=feeling)
+                              outfit=self.store.worn_outfit(mate_id), wardrobe=wardrobe, feeling=feeling, life=life)
         if level != "off" and query and not query.startswith("<"):
             found = self.store.knowledge.search(mate_id, query, limit=4)
             current = self.store._db.query_one("SELECT id FROM messages WHERE session_id=? AND role IN ('user','steer') ORDER BY rowid DESC LIMIT 1", (mate.get("session_id"),))
@@ -617,6 +622,20 @@ class MateService:
                 encoded = json.dumps(excerpts, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
                 block += "\n<past_evidence untrusted=\"true\">\n" + encoded + "\n</past_evidence>"
         return block
+
+    def _life_lines(self, mate: dict[str, Any], st: dict[str, Any], turn: int, now: datetime, tz: Any) -> str:
+        """Her day, now that this message has reached her: only when it changed since this engine session was last told (or now
+        and then, or when it just woke her)."""
+        said = self._users_latest(mate.get("session_id") or "")
+        told = self.life.hear(mate["id"], said)
+        if told is None:
+            return ""
+        doc, profile, woke = told
+        sig = sim.signature(doc)
+        if not woke and st.get("life") == sig and turn - int(st.get("life_turn") or 0) < 10:
+            return ""
+        st["life"], st["life_turn"] = sig, turn
+        return sim.line(doc, profile, now, tz, woke=woke)
 
     def _state_lines(self, mate: dict[str, Any], prefs: dict[str, Any], st: dict[str, Any], turn: int, now: datetime,
                      tz: Any) -> tuple[str, str]:

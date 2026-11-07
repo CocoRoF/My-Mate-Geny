@@ -295,6 +295,13 @@ CREATE TABLE IF NOT EXISTS mate_state (
     updated_at TEXT NOT NULL
 );
 
+-- Her own day, when she has one (app/mate/life): where she is, what she is doing, her needs. One JSON document per mate.
+CREATE TABLE IF NOT EXISTS mate_life (
+    mate_id    TEXT PRIMARY KEY,
+    doc        TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 -- Changes of a mate's conversation style made by the mate herself (update_conversation_style): applied or proposed,
 -- undone / applied / dismissed by the user (docs/mate.md "Prompt composition").
 CREATE TABLE IF NOT EXISTS mate_style_changes (

@@ -19,6 +19,8 @@ from app.db import Database
 from app.mate import affinity as A
 from app.mate import memory as M
 from app.mate import state as S
+from app.mate.life import profile as life_profile
+from app.mate.life import sim
 from app.mate.knowledge import Knowledge, digest, safe_text
 from app.providers.catalog import DEFAULT_MATE_MODEL, default_mate_model
 from app.services._ids import new_id, now_iso
@@ -260,6 +262,7 @@ TONE_KEYS = ("warmth", "humor", "initiative")
 TONE_LEVELS = ("auto", "low", "high")
 RECALL_LEVELS = ("off", "light", "normal", "rich")
 SELF_EDIT = ("auto", "ask", "off")   # may the mate change her own style: yes | as a proposal the user applies | no
+LIFE = ("auto", "on", "off")          # her own day (app/mate/life): auto = on for a mate who comes with a world of her own
 SELF_OUTFIT = ("auto", "off")        # may the mate change her clothes when the user asks (app/mate/wardrobe.py)
 MAX_AVOID = 500
 MAX_ADDRESS = 80
@@ -279,7 +282,7 @@ def default_style_defaults() -> dict[str, str]:
 def default_prefs() -> dict[str, Any]:
     return {"user_name": "", "address": "", "self_ref": "", "formality": "auto", "speech_style": "",
             "length": "normal", "emotion": 2, "tone": {k: "auto" for k in TONE_KEYS}, "avoid": "",
-            "memory": {"recall": "normal", "self_save": True}, "self_edit": "auto", "self_outfit": "auto",
+            "memory": {"recall": "normal", "self_save": True}, "self_edit": "auto", "self_outfit": "auto", "life": "auto",
             "defaults": default_style_defaults(), "proactive": {"enabled": False, "interval": 180, "guidance": "", "scope": "all", "preset": None}}
 
 
@@ -321,7 +324,7 @@ def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
     out = default_prefs()
     b = base if isinstance(base, dict) else {}
     for k in ("user_name", "address", "self_ref", "formality", "speech_style", "length", "emotion", "avoid",
-              "self_edit", "self_outfit"):
+              "self_edit", "self_outfit", "life"):
         if k in b:
             out[k] = b[k]
     if isinstance(b.get("tone"), dict):
@@ -377,6 +380,8 @@ def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
             out["self_edit"] = _enum(patch["self_edit"], SELF_EDIT, "self-edit setting")
         if "self_outfit" in patch:
             out["self_outfit"] = _enum(patch["self_outfit"], SELF_OUTFIT, "self-outfit setting")
+        if "life" in patch:
+            out["life"] = _enum(patch["life"], LIFE, "life setting")
         tone = patch.get("tone")
         if tone is not None:
             if not isinstance(tone, dict):
@@ -400,7 +405,7 @@ def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
     except (TypeError, ValueError):
         out["emotion"] = 2
     for k, allowed in (("formality", FORMALITIES), ("length", LENGTHS), ("self_edit", SELF_EDIT),
-                       ("self_outfit", SELF_OUTFIT)):
+                       ("self_outfit", SELF_OUTFIT), ("life", LIFE)):
         if out[k] not in allowed:
             out[k] = "normal" if k == "length" else allowed[0]
     if out["memory"].get("recall") not in RECALL_LEVELS:
@@ -703,7 +708,10 @@ class MateStore:
         relation = self.relation_summary(row["id"])
         raw_outfits = _loads(row["outfits"], {}) if "outfits" in row.keys() else {}
         builtin = row["builtin"] if "builtin" in row.keys() else None
-        who = self._who(builtin, raw_outfits, self.relation_doc(row["id"]) or A.new())
+        prefs = _loads(row["prefs"], {}) if "prefs" in row.keys() else {}
+        now = datetime.now(timezone.utc)
+        life = self.life_now(row["id"], builtin, prefs)
+        who = self._who(builtin, raw_outfits, self.relation_doc(row["id"]) or A.new(), sim.for_state(life[0], life[1], now) if life else None)
         return {
             "id": row["id"],
             "name": row["name"],
@@ -715,7 +723,7 @@ class MateStore:
             "outfits": outfits_view(raw_outfits, avatar, relation["affinity"]),
             "llm": normalize_llm(None, _loads(row["llm"], {})),
             "voice": normalize_voice(None, _loads(row["voice"], {})),
-            "prefs": normalize_prefs(None, _loads(row["prefs"], {}) if "prefs" in row.keys() else {}),
+            "prefs": normalize_prefs(None, prefs),
             "screen": normalize_screen(None, _loads(row["screen"], {}) if "screen" in row.keys() else {}),
             "session_id": row["session_id"],
             "memory_rev": row["memory_rev"],
@@ -723,7 +731,8 @@ class MateStore:
             "customized": bool(row["customized"]) if "customized" in row.keys() else False,
             "draft": bool(row["draft"]) if "draft" in row.keys() else False,
             "relation": relation,
-            "state": S.summary(self.state_doc(row["id"]), who, datetime.now(timezone.utc), self.tz()),
+            "state": S.summary(self.state_doc(row["id"]), who, now, self.tz()),
+            "life": sim.summary(life[0], life[1], now, self.tz()) if life else {"enabled": False},
         }
 
     def list(self) -> list[dict[str, Any]]:
@@ -1161,6 +1170,7 @@ class MateStore:
             self._db.execute("DELETE FROM mate_memories WHERE mate_id = ?", (mate_id,))
             self._db.execute("DELETE FROM mate_relation WHERE mate_id = ?", (mate_id,))
             self._db.execute("DELETE FROM mate_state WHERE mate_id = ?", (mate_id,))
+            self._db.execute("DELETE FROM mate_life WHERE mate_id = ?", (mate_id,))
             self._db.execute("DELETE FROM mate_style_changes WHERE mate_id = ?", (mate_id,))
             self._db.execute("DELETE FROM mate_settings WHERE key = ?", (f"styleok:{mate_id}",))
             self._db.execute("DELETE FROM mate_settings WHERE key = ?", (f"memchg:{mate_id}",))
@@ -1575,11 +1585,39 @@ class MateStore:
 
     def wipe_memory(self, mate_id: str) -> None:
         """What she knows and what she got from talking, in this database: memories, the record of how she changed her own
-        style (it quotes what was asked; the style itself stays), and how she feels (its reasons quote what was said)."""
+        style (it quotes what was asked; the style itself stays), how she feels (its reasons quote what was said), and the day she
+        has been living (it begins again)."""
         self.knowledge.wipe(mate_id)
         self._db.execute("DELETE FROM mate_style_changes WHERE mate_id = ?", (mate_id,))
         self._db.execute("DELETE FROM mate_settings WHERE key = ?", (f"memchg:{mate_id}",))
         self.save_state(mate_id, S.new())
+        self._db.execute("DELETE FROM mate_life WHERE mate_id = ?", (mate_id,))
+
+    # ---- her own day (app/mate/life) ----
+
+    @staticmethod
+    def life_profile(builtin: str | None, prefs: Any) -> dict[str, Any] | None:
+        """Her world, if she lives in one: on by default for a mate who comes with her own (``life``: auto), else on request."""
+        wanted = prefs.get("life") if isinstance(prefs, dict) else None
+        if wanted == "off" or (wanted != "on" and not life_profile.own(builtin)):
+            return None
+        return life_profile.load(builtin)
+
+    def life_doc(self, mate_id: str, profile: dict[str, Any]) -> dict[str, Any] | None:
+        row = self._db.query_one("SELECT doc FROM mate_life WHERE mate_id = ?", (mate_id,))
+        return sim.normalized(_loads(row["doc"], {}), profile) if row is not None else None
+
+    def save_life(self, mate_id: str, doc: dict[str, Any]) -> None:
+        self._db.execute(
+            "INSERT INTO mate_life (mate_id, doc, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(mate_id) DO UPDATE SET doc = excluded.doc, updated_at = excluded.updated_at",
+            (mate_id, json.dumps(doc, ensure_ascii=False), now_iso()))
+
+    def life_now(self, mate_id: str, builtin: str | None, prefs: Any) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        """Her day as last played (the runtime keeps it going; reading never writes): (doc, profile), or None without one."""
+        profile = self.life_profile(builtin, prefs)
+        doc = self.life_doc(mate_id, profile) if profile else None
+        return (doc, profile) if doc else None
 
     # ---- how she feels (app/mate/state.py) ----
 
@@ -1594,19 +1632,21 @@ class MateStore:
             (mate_id, json.dumps(doc, ensure_ascii=False), now_iso()))
 
     @staticmethod
-    def _who(builtin: str | None, wardrobe: dict[str, Any], relation: dict[str, Any]) -> dict[str, Any]:
+    def _who(builtin: str | None, wardrobe: dict[str, Any], relation: dict[str, Any], life: dict[str, Any] | None = None) -> dict[str, Any]:
         worn = wardrobe.get("worn") or DEFAULT_OUTFIT
         item = next((it for it in wardrobe.get("items") or [] if it["id"] == worn), None)
         outfit = {"id": worn, "name": item["name"], "feel": S.clean_feel(item.get("feel")), "since": wardrobe.get("worn_at")} if item else None
         on = relation["enabled"]
         return S.who(closeness=float(relation["affinity"]) / 100 if on else 0.33, sensitivity=relation["sensitivity"] if on else 1.0,
-                     builtin=builtin, away=on and relation["paused"], outfit=outfit)
+                     builtin=builtin, away=on and relation["paused"], outfit=outfit, life=life)
 
     def state_who(self, mate_id: str) -> dict[str, Any]:
-        row = self._db.query_one("SELECT builtin, outfits FROM mates WHERE id = ?", (mate_id,))
+        row = self._db.query_one("SELECT builtin, outfits, prefs FROM mates WHERE id = ?", (mate_id,))
         if row is None:
             raise KeyError(f"mate not found: {mate_id}")
-        return self._who(row["builtin"], _loads(row["outfits"], {}), self.relation_doc(mate_id) or A.new())
+        life = self.life_now(mate_id, row["builtin"], _loads(row["prefs"], {}))
+        return self._who(row["builtin"], _loads(row["outfits"], {}), self.relation_doc(mate_id) or A.new(),
+                         sim.for_state(life[0], life[1], datetime.now(timezone.utc)) if life else None)
 
     def relation_summary(self, mate_id: str) -> dict[str, Any]:
         doc = self.relation_doc(mate_id) or A.new()

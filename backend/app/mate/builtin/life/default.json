@@ -1,0 +1,574 @@
+{
+ "start": {
+  "place": "home",
+  "money": 150000,
+  "stats": {
+   "work": 40,
+   "gaming": 25,
+   "stamina": 30,
+   "cooking": 30,
+   "sense": 30,
+   "courage": 35
+  }
+ },
+ "daily_cost": 20000,
+ "outing": {
+  "weekday": 0.3,
+  "weekend": 0.65,
+  "bonus": 0.9
+ },
+ "places": {
+  "home": {
+   "names": {
+    "ko": "집",
+    "en": "Home"
+   },
+   "minutes": 5,
+   "about": "your home"
+  },
+  "street": {
+   "names": {
+    "ko": "동네 골목",
+    "en": "The street"
+   },
+   "minutes": 0,
+   "about": "outside, on your way"
+  },
+  "office": {
+   "names": {
+    "ko": "일터",
+    "en": "Work"
+   },
+   "minutes": 25,
+   "days": "weekday",
+   "open": [
+    "08:00",
+    "23:00"
+   ],
+   "about": "your workplace"
+  },
+  "convenience": {
+   "names": {
+    "ko": "편의점",
+    "en": "Convenience store"
+   },
+   "minutes": 5,
+   "near": {
+    "office": 3,
+    "home": 3
+   },
+   "about": "the convenience store near you"
+  },
+  "cafe": {
+   "names": {
+    "ko": "카페",
+    "en": "A café"
+   },
+   "minutes": 20,
+   "open": [
+    "10:00",
+    "22:00"
+   ],
+   "crowded": 0.1,
+   "about": "a quiet café you like"
+  },
+  "park": {
+   "names": {
+    "ko": "동네 공원",
+    "en": "The park"
+   },
+   "minutes": 7,
+   "open": [
+    "05:00",
+    "23:00"
+   ],
+   "about": "the neighbourhood park"
+  },
+  "gym": {
+   "names": {
+    "ko": "헬스장",
+    "en": "The gym"
+   },
+   "minutes": 7,
+   "open": [
+    "06:00",
+    "23:00"
+   ],
+   "crowded": 0.35,
+   "about": "the gym near home"
+  },
+  "bookstore": {
+   "names": {
+    "ko": "서점",
+    "en": "The bookstore"
+   },
+   "minutes": 18,
+   "open": [
+    "10:00",
+    "22:00"
+   ],
+   "crowded": 0.1,
+   "about": "a big bookstore"
+  }
+ },
+ "activities": {
+  "sleep": {
+   "names": {
+    "ko": "자는 중",
+    "en": "Asleep"
+   },
+   "place": "home",
+   "free": true,
+   "hours": [
+    "22:00",
+    "06:00"
+   ],
+   "minutes": [
+    240,
+    600
+   ],
+   "needs": {
+    "sleep": -0.16,
+    "hunger": -0.07,
+    "fun": -0.03,
+    "affection": -0.008,
+    "stress": -0.02
+   },
+   "doing": "asleep in your bed",
+   "body": "sleep",
+   "when": {
+    "sleep": 0.45
+   },
+   "likes": 0
+  },
+  "nap": {
+   "names": {
+    "ko": "낮잠",
+    "en": "Napping"
+   },
+   "place": "home",
+   "free": true,
+   "hours": [
+    "12:00",
+    "20:00"
+   ],
+   "minutes": [
+    30,
+    70
+   ],
+   "needs": {
+    "sleep": -0.3,
+    "hunger": -0.05,
+    "stress": -0.05
+   },
+   "doing": "napping",
+   "body": "sleep",
+   "when": {
+    "sleep": 0.5
+   },
+   "likes": -0.2
+  },
+  "commute": {
+   "names": {
+    "ko": "이동 중",
+    "en": "On the way"
+   },
+   "place": "street",
+   "doing": "on your way"
+  },
+  "work": {
+   "names": {
+    "ko": "일하는 중",
+    "en": "At work"
+   },
+   "place": "office",
+   "needs": {
+    "sleep": 0.005,
+    "fun": 0.05,
+    "stress": 0.06,
+    "hunger": -0.025
+   },
+   "stats": {
+    "work": 0.12
+   },
+   "pay": 10000,
+   "doing": "at work",
+   "body": "work"
+  },
+  "lunch": {
+   "names": {
+    "ko": "점심 먹는 중",
+    "en": "Lunch"
+   },
+   "place": "convenience",
+   "needs": {
+    "hunger": -1.7,
+    "stress": -0.06
+   },
+   "cost": 6500,
+   "doing": "having a quick lunch",
+   "body": "eat"
+  },
+  "ready": {
+   "names": {
+    "ko": "출근 준비 중",
+    "en": "Getting ready"
+   },
+   "place": "home",
+   "needs": {
+    "sleep": -0.02
+   },
+   "doing": "getting ready for the day",
+   "feel": {
+    "sleepy": 0.35
+   }
+  },
+  "snack_store": {
+   "names": {
+    "ko": "편의점에서 끼니 때우는 중",
+    "en": "A meal at the store"
+   },
+   "place": "convenience",
+   "free": true,
+   "minutes": [
+    15,
+    25
+   ],
+   "eat": true,
+   "needs": {
+    "hunger": -2.3,
+    "fun": -0.05
+   },
+   "cost": 6000,
+   "likes": -0.2,
+   "doing": "having something quick at the store",
+   "body": "eat",
+   "when": {
+    "hunger": 0.4
+   },
+   "hours": [
+    "11:00",
+    "03:00"
+   ]
+  },
+  "toast": {
+   "names": {
+    "ko": "아침 먹는 중",
+    "en": "Breakfast"
+   },
+   "place": "home",
+   "free": true,
+   "minutes": [
+    10,
+    20
+   ],
+   "eat": true,
+   "hours": [
+    "06:00",
+    "11:00"
+   ],
+   "when": {
+    "hunger": 0.4
+   },
+   "needs": {
+    "hunger": -3.0
+   },
+   "cost": 1500,
+   "likes": 0.3,
+   "doing": "having breakfast",
+   "body": "eat"
+  },
+  "ramen": {
+   "names": {
+    "ko": "라면 끓여 먹는 중",
+    "en": "Instant noodles"
+   },
+   "place": "home",
+   "free": true,
+   "minutes": [
+    15,
+    25
+   ],
+   "eat": true,
+   "when": {
+    "hunger": 0.5
+   },
+   "needs": {
+    "hunger": -2.0,
+    "fun": -0.03
+   },
+   "likes": -0.35,
+   "doing": "having instant noodles at home",
+   "body": "eat"
+  },
+  "cook": {
+   "names": {
+    "ko": "요리하는 중",
+    "en": "Cooking"
+   },
+   "place": "home",
+   "free": true,
+   "minutes": [
+    40,
+    60
+   ],
+   "eat": true,
+   "needs": {
+    "hunger": -1.1,
+    "fun": -0.1,
+    "stress": -0.1
+   },
+   "stats": {
+    "cooking": 0.9
+   },
+   "cost": 5000,
+   "likes": -0.3,
+   "doing": "cooking something simple",
+   "body": "eat",
+   "when": {
+    "hunger": 0.4
+   },
+   "hours": [
+    "09:00",
+    "22:00"
+   ]
+  },
+  "delivery": {
+   "names": {
+    "ko": "배달 시켜 먹는 중",
+    "en": "Delivery"
+   },
+   "place": "home",
+   "free": true,
+   "minutes": [
+    30,
+    40
+   ],
+   "eat": true,
+   "needs": {
+    "hunger": -1.7,
+    "fun": -0.15
+   },
+   "cost": 15000,
+   "likes": 0.2,
+   "doing": "eating delivery food at home",
+   "body": "eat",
+   "when": {
+    "hunger": 0.45
+   },
+   "hours": [
+    "11:00",
+    "23:00"
+   ]
+  },
+  "dessert": {
+   "names": {
+    "ko": "디저트 먹는 중",
+    "en": "Dessert"
+   },
+   "place": "cafe",
+   "free": true,
+   "minutes": [
+    45,
+    75
+   ],
+   "eat": true,
+   "needs": {
+    "hunger": -0.5,
+    "fun": -0.3,
+    "stress": -0.3
+   },
+   "stats": {
+    "sense": 0.25
+   },
+   "cost": 9000,
+   "likes": 0.5,
+   "doing": "having something sweet at the café",
+   "body": "drink",
+   "feel": {
+    "happy": 0.45
+   }
+  },
+  "game": {
+   "names": {
+    "ko": "게임 하는 중",
+    "en": "Gaming"
+   },
+   "place": "home",
+   "free": true,
+   "minutes": [
+    50,
+    120
+   ],
+   "needs": {
+    "fun": -0.6,
+    "stress": -0.08,
+    "sleep": 0.01
+   },
+   "stats": {
+    "gaming": 0.08
+   },
+   "likes": 0.4,
+   "doing": "playing a game at home",
+   "body": "game",
+   "feel": {
+    "happy": 0.3
+   },
+   "hours": [
+    "09:00",
+    "04:00"
+   ]
+  },
+  "walk": {
+   "names": {
+    "ko": "산책하는 중",
+    "en": "Walking"
+   },
+   "place": "park",
+   "free": true,
+   "minutes": [
+    30,
+    50
+   ],
+   "needs": {
+    "stress": -0.4,
+    "fun": -0.2
+   },
+   "stats": {
+    "stamina": 0.35,
+    "sense": 0.2
+   },
+   "likes": 0.4,
+   "doing": "out for a walk",
+   "body": "walk"
+  },
+  "workout": {
+   "names": {
+    "ko": "운동하는 중",
+    "en": "Working out"
+   },
+   "place": "gym",
+   "free": true,
+   "minutes": [
+    45,
+    70
+   ],
+   "needs": {
+    "sleep": 0.1,
+    "hunger": 0.15,
+    "stress": -0.25
+   },
+   "stats": {
+    "stamina": 0.9,
+    "courage": 0.1
+   },
+   "cost": 4000,
+   "likes": -0.5,
+   "doing": "working out",
+   "body": "workout"
+  },
+  "read": {
+   "names": {
+    "ko": "책 읽는 중",
+    "en": "Reading"
+   },
+   "place": "bookstore",
+   "free": true,
+   "minutes": [
+    40,
+    80
+   ],
+   "needs": {
+    "fun": -0.25,
+    "stress": -0.15
+   },
+   "stats": {
+    "sense": 0.6,
+    "work": 0.2
+   },
+   "likes": 0.5,
+   "doing": "reading at the bookstore",
+   "body": "read"
+  },
+  "study": {
+   "names": {
+    "ko": "공부하는 중",
+    "en": "Studying"
+   },
+   "place": "home",
+   "free": true,
+   "minutes": [
+    40,
+    70
+   ],
+   "needs": {
+    "stress": 0.03,
+    "fun": 0.04
+   },
+   "stats": {
+    "work": 0.7
+   },
+   "likes": -0.1,
+   "doing": "learning something at home",
+   "body": "read"
+  },
+  "rest": {
+   "names": {
+    "ko": "쉬는 중",
+    "en": "Resting"
+   },
+   "place": "home",
+   "free": true,
+   "minutes": [
+    20,
+    50
+   ],
+   "needs": {
+    "stress": -0.08,
+    "fun": -0.1,
+    "sleep": -0.02
+   },
+   "likes": 0.3,
+   "doing": "resting at home"
+  }
+ },
+ "routine": [
+  {
+   "activity": "sleep",
+   "days": "weekday",
+   "from": "00:40",
+   "to": "07:40",
+   "weight": 5,
+   "jitter": 30
+  },
+  {
+   "activity": "sleep",
+   "days": "weekend",
+   "from": "02:00",
+   "to": "09:40",
+   "weight": 5,
+   "jitter": 40
+  },
+  {
+   "activity": "ready",
+   "days": "weekday",
+   "from": "07:40",
+   "to": "08:10",
+   "weight": 2
+  },
+  {
+   "activity": "work",
+   "days": "weekday",
+   "from": "09:30",
+   "to": "18:30",
+   "weight": 3
+  },
+  {
+   "activity": "lunch",
+   "days": "weekday",
+   "from": "12:20",
+   "to": "13:00",
+   "weight": 4
+  }
+ ]
+}

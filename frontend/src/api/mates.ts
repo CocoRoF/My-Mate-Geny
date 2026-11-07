@@ -100,6 +100,8 @@ export interface MatePrefs {
   self_edit: SelfEdit;
   /** she changes her clothes herself, when she feels like it */
   self_outfit?: "auto" | "off";
+  /** her own day: auto = on for a mate who comes with a world of her own */
+  life?: "auto" | "on" | "off";
   defaults: StyleDefaults;
 }
 
@@ -116,8 +118,28 @@ export const DEFAULT_PREFS: MatePrefs = {
   memory: { recall: "normal", self_save: true },
   self_edit: "auto",
   self_outfit: "auto",
+  life: "auto",
   defaults: { formality: "", address: "", self_ref: "" },
 };
+
+export type LifeNeed = "hunger" | "sleep" | "affection" | "fun" | "stress";
+export type LifeNames = { ko?: string; en?: string };
+
+/** her own day, as the mate document carries it (app/mate/life/sim.py ``summary``) */
+export interface MateLifeSummary {
+  enabled: boolean;
+  place?: string;
+  place_name?: LifeNames;
+  activity?: string | null;
+  activity_name?: LifeNames;
+  /** which of her animations this calls for: sleep, eat, drink, game, read, walk, workout, work, or none */
+  body?: string;
+  since?: string | null;
+  until?: string | null;
+  slot?: "morning" | "day" | "evening" | "night";
+  asleep?: boolean;
+  needs?: Record<LifeNeed, number>;
+}
 
 /** a change of the conversation style she made herself (update_conversation_style) */
 export interface StyleChange {
@@ -302,6 +324,7 @@ export interface Mate {
   /** missing on documents from an older server */
   relation?: RelationSummary;
   state?: MateState;
+  life?: MateLifeSummary;
   /** missing on documents from an older server: DEFAULT_SCREEN */
   screen?: MateScreen;
   session_id: string | null;
