@@ -139,7 +139,7 @@ def _service(db):
 
 
 def _edited(rig):
-    return {**rig, "clips": [{**c, "disabled": True} if c["id"] == "talk_b" else c for c in rig["clips"]],
+    return {**rig, "clips": [{**c, "disabled": True} if c["id"] == "talk_a" else c for c in rig["clips"]],
             "emotions": {**rig.get("emotions", {}), "joy": ["smile"]}}
 
 
@@ -147,10 +147,10 @@ def test_edit_builtin_clips_then_reset_to_bundled(db):
     mates = _service(db)
     cha = mates.store.by_builtin("chaerin")
     bundled = cha["avatar"]
-    assert not cha["customized"] and "talk_b" in [c["id"] for c in bundled["rig"]["clips"]]
+    assert not cha["customized"] and "talk_a" in [c["id"] for c in bundled["rig"]["clips"]]
     m = mates.update(cha["id"], {"avatar": {"kind": "video", "rig": _edited(bundled["rig"])}})
     assert m["customized"]
-    assert next(c for c in m["avatar"]["rig"]["clips"] if c["id"] == "talk_b")["disabled"] is True
+    assert next(c for c in m["avatar"]["rig"]["clips"] if c["id"] == "talk_a")["disabled"] is True
     assert m["avatar"]["rig"]["emotions"]["joy"] == ["smile"]
     # a newer bundle no longer overwrites the user's version
     mates.store.mark_builtin(cha["id"], "chaerin", "old-version")

@@ -145,3 +145,29 @@ def test_the_real_sets_are_measured_and_line_up():
         assert usual["how"] == worn["how"] == "face" and usual["for"] == worn["for"] == "neutral.webp"
         assert 0.2 < usual["face"][1] < 0.4 and 0.2 < worn["face"][1] < 0.4  # (her face, not the chest a detector once took for it)
         assert abs(usual["face"][2] / worn["face"][2] - 1) < 0.1  # (lining them up hardly has to scale her)
+
+
+def test_a_clip_the_bundle_took_out_goes_from_an_edited_body_too():
+    def body(*clips):
+        return {"kind": "video", "rig": {"home": "/a/n.webp", "clips": [{"id": c, "src": f"/a/{c}.mp4"} for c in clips]}}
+
+    prev = {"persona": {}, "style": {}, "names": {}, "greetings": {}, "avatar": body("idle_a", "talk_a", "talk_b")}
+    new = {**prev, "avatar": body("idle_a", "talk_a")}
+    edited = body("idle_a", "talk_a", "talk_b")
+    edited["rig"]["clips"][1]["disabled"] = True
+    mate = {"name": "", "persona": {"language": "ko"}, "prefs": {}, "avatar": edited}
+    clips = files.merge_builtin(mate, prev, new)["avatar"]["rig"]["clips"]
+    assert [c["id"] for c in clips] == ["idle_a", "talk_a"] and clips[1]["disabled"] is True  # (the edit stays)
+
+    theirs = body("idle_a", "talk_a", "talk_b")
+    theirs["rig"]["clips"][2]["src"] = "/mine/talk.mp4"
+    mate = {"name": "", "persona": {"language": "ko"}, "prefs": {}, "avatar": theirs}
+    assert "avatar" not in files.merge_builtin(mate, prev, new)  # (their own clip under that name)
+
+
+def test_the_hoodie_has_no_talk_b_and_the_other_sets_keep_it():
+    usual = files.builtin_avatar("chaerin", files.builtin_doc("chaerin"))["rig"]
+    assert "talk_b" not in [c["id"] for c in usual["clips"]] and "talk_a" in [c["id"] for c in usual["clips"]]
+    for outfit in files.builtin_outfits("chaerin"):
+        clip = next(c for c in outfit["avatar"]["rig"]["clips"] if c["id"] == "talk_b")
+        assert not clip.get("disabled")

@@ -49,12 +49,6 @@
       "small": "asset:mate-chaerin/talk_a.sm.mp4"
     },
     {
-      "id": "talk_b",
-      "kind": "talk",
-      "src": "asset:mate-chaerin/talk_b.lg.mp4",
-      "small": "asset:mate-chaerin/talk_b.sm.mp4"
-    },
-    {
       "id": "listen",
       "kind": "listen",
       "src": "asset:mate-chaerin/listen.lg.mp4",

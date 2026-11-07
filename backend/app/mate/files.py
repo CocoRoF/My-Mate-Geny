@@ -1047,6 +1047,18 @@ def legacy_snapshot(mate: dict[str, Any], doc: dict[str, Any], avatar: dict[str,
     return {**legacy_bundle(doc), "avatar": avatar}
 
 
+def _without_dropped(avatar: dict[str, Any], old: dict[str, Any] | None, new: dict[str, Any]) -> dict[str, Any]:
+    """A body the user edited keeps the edits, but a clip the bundle took out is gone with its files. (One they put there
+    themselves, under the same name, stays.)"""
+    rig = avatar.get("rig")
+    if not isinstance(rig, dict):
+        return avatar
+    still = {c.get("id") for c in (new.get("rig") or {}).get("clips") or []}
+    gone = {c.get("id"): c.get("src") for c in ((old or {}).get("rig") or {}).get("clips") or [] if c.get("id") not in still}
+    clips = [c for c in rig.get("clips") or [] if c.get("id") not in gone or c.get("src") != gone[c.get("id")]]
+    return avatar if len(clips) == len(rig.get("clips") or []) else {**avatar, "rig": {**rig, "clips": clips}}
+
+
 def merge_builtin(mate: dict[str, Any], prev: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
     """The update a new bundle makes to a built-in mate, field by field: what
     still equals the previous bundle (``prev``: a snapshot) becomes the new
@@ -1089,8 +1101,11 @@ def merge_builtin(mate: dict[str, Any], prev: dict[str, Any], new: dict[str, Any
     if "avatar" in new and prev.get("avatar") is not None and mate["avatar"] == prev["avatar"] \
             and new["avatar"] != mate["avatar"]:
         patch["avatar"] = new["avatar"]
-    elif "avatar" in new and takes_frame(mate["avatar"], new["avatar"]) != mate["avatar"]:
-        patch["avatar"] = takes_frame(mate["avatar"], new["avatar"])  # (a body the user edited: still measured right)
+    elif "avatar" in new:
+        # (a body the user edited: still measured right, and nothing in it the bundle no longer has)
+        edited = takes_frame(_without_dropped(mate["avatar"], prev.get("avatar"), new["avatar"]), new["avatar"])
+        if edited != mate["avatar"]:
+            patch["avatar"] = edited
     return patch
 
 
