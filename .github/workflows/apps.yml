@@ -261,9 +261,10 @@ jobs:
             gh release create apps-latest out/* --title "Apps $VERSION (latest)" --notes-file notes.md --target "$GITHUB_SHA"
           fi
 
-          # Keep the 5 newest versioned releases.
+          # Keep the 5 newest versioned releases. By here everything is published: tidying up can't fail the run
+          # (a tag that is already gone answers HTTP 422, and that used to mark a good release as failed).
           for t in $(gh release list --limit 100 --json tagName --jq '.[].tagName' | grep '^apps-v' | sort -V -r | tail -n +6); do
-            gh release delete "$t" --yes --cleanup-tag
+            gh release delete "$t" --yes --cleanup-tag || echo "::warning::could not tidy up $t"
           done
 
   cleanup:
