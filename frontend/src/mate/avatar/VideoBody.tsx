@@ -129,6 +129,8 @@ export default function VideoBody({ rig, size, mood, doing, react, poster, name,
     const srcOf = (c: RigClip) => memory.get(clipUrl(c, size)) ?? clipUrl(c, size);
     void (async () => {
       for (const c of [...active].sort((a, b) => (RANK[a.kind] ?? 9) - (RANK[b.kind] ?? 9))) {
+        // (what she does in her own day only for what she is doing now: the others load when they come up)
+        if (c.kind === "life" && c.doing !== doingRef.current) continue;
         const url = clipUrl(c, size);
         if (!url || memory.has(url) || url.startsWith("blob:")) continue;
         try {

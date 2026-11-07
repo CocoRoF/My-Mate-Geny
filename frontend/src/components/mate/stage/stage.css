@@ -1,0 +1,23 @@
+/* the stage's own menu and windows (components/mate/stage): game-like, and cheap over a playing video: solid surfaces, no
+   backdrop blur, and what moves moves by transform and opacity only. */
+.stage-menu{display:flex;flex-direction:column;gap:8px}
+.stage-menu-btn{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:58px;height:58px;
+  border-radius:16px;color:#eef1fb;background:linear-gradient(180deg,rgba(38,42,70,.9),rgba(16,18,32,.9));
+  border:1px solid rgba(255,255,255,.16);box-shadow:0 6px 18px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.12);
+  transition:transform .15s ease,border-color .15s ease;-webkit-tap-highlight-color:transparent}
+.stage-menu-btn:hover{transform:translateY(-1px) scale(1.04);border-color:rgba(160,170,255,.55)}
+.stage-menu-btn:active{transform:scale(.96)}
+.stage-menu-btn[aria-pressed="true"]{border-color:rgba(150,160,255,.9);box-shadow:0 0 0 2px rgba(124,134,255,.45),0 6px 18px rgba(0,0,0,.35)}
+.stage-menu-btn span{font-size:10.5px;font-weight:600;letter-spacing:.02em;line-height:1}
+.stage-menu-btn:focus-visible{outline:2px solid rgba(150,160,255,.9);outline-offset:2px}
+.stage-menu.compact{gap:6px}
+.stage-menu.compact .stage-menu-btn{width:46px;height:46px;border-radius:13px;gap:2px}
+.stage-menu.compact .stage-menu-btn span{font-size:9.5px}
+
+.stage-window-scrim{position:absolute;inset:0;background:rgba(6,8,16,.5);animation:stage-fade .16s ease-out both}
+.stage-window{position:absolute;left:50%;top:16px;bottom:72px;width:min(560px,calc(100% - 96px));transform:translateX(-50%);display:flex;flex-direction:column;
+  border-radius:20px;background:linear-gradient(180deg,rgba(26,29,48,.97),rgba(15,17,29,.98));border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 24px 60px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.08);animation:stage-rise .2s ease-out both;overflow:hidden}
+@keyframes stage-fade{from{opacity:0}to{opacity:1}}
+@keyframes stage-rise{from{opacity:0;transform:translate(-50%,10px) scale(.985)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
+@media (prefers-reduced-motion:reduce){.stage-window,.stage-window-scrim{animation:none}.stage-menu-btn{transition:none}}

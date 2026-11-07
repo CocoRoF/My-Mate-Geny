@@ -76,6 +76,19 @@ idle she plays those for what she is doing, with her usual breathing among them;
 else she dozes. She changes into pajamas for bed and back in the morning, unless they are with her, she doesn't change clothes herself, or someone changed her
 meanwhile. The clips of an existing set are encoded into its own box, so what is out there under its URLs stays as it is.
 
+Her edges are her own colours (`pipeline.defringe`): a half-transparent edge pixel still holds some of the gray she was cut from, which on a
+dark place reads as a white rim around her arms and hair. Every pixel short of certainly her takes the colour of her nearest certain pixel
+(her outline, mostly), and so does a narrow band outside her, so the codec's colour blur and the browser's scaling only mix her colours.
+The pipeline does it to every set it makes; the bundled sets were redone with it. Bundled files are revalidated on every use (ETag, 304),
+so a set redone under the same names shows at once.
+
+## Keeping it light
+
+The stage sits under a video that changes 24 times a second, so nothing on it may repaint per frame: rain and snow move by transform only
+(the compositor slides a layer painted once), nothing on the stage blurs what is behind it, and the windows are solid. Measured on the same
+stage for four seconds: 404 repaints and about 3.9 s of raster work before, none after. Activity clips are fetched when they come up,
+not all at once.
+
 ## What she is told
 
 The system prompt says she has a life (stable, cached) and lists what she can do. The per-turn `<context>` says where she is, what she is doing, how her body is
@@ -85,5 +98,6 @@ reaches her by phone wherever she is, unless the user is with her. When reach-ou
 ## Files
 
 `app/mate/life/sim.py` (pure), `profile.py` (her world as data, checked), `runtime.py` (the clock, the one way in), `diary.py`; `builtin/life/*.json`;
-`components/mate/life/` (the backdrop, her status on the stage, the Life panel); `builtin/assets/chaerin/places/` (ten places at four times of day, her map).
+`components/mate/life/` (the backdrop, her status on the stage, the sections of her day), `components/mate/stage/` (her menu on the
+stage: Status, Places and Outfits, each a window over her on a desk and a sheet on a phone); `builtin/assets/chaerin/places/` (ten places at four times of day, her map).
 `prefs.life`: auto (on for a mate who comes with a world of her own), on (anyone else gets `default.json`), off. A memory wipe starts her day again.

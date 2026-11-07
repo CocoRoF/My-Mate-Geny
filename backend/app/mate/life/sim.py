@@ -23,7 +23,7 @@ DRIFT = {"hunger": 0.11, "sleep": 0.045, "affection": 0.008, "fun": 0.03, "stres
 AFFECTION_CLOSE = 0.01
 #: nobody starves in here
 CEILING = {"hunger": 0.95, "sleep": 0.95, "affection": 0.8, "fun": 0.9, "stress": 0.9}
-START_NEEDS = {"hunger": 0.25, "sleep": 0.2, "affection": 0.3, "fun": 0.3, "stress": 0.15}
+START_NEEDS = {"hunger": 0.25, "sleep": 0.2, "affection": 0.25, "fun": 0.25, "stress": 0.15}  # (none on the edge of a word: a fresh day mustn't flicker)
 STEP = timedelta(minutes=5)
 #: longer than this alone, only the end of it is played
 MAX_GAP = timedelta(days=14)

@@ -4,8 +4,10 @@ import { LiveMateAvatar } from "../../mate/avatar/MateAvatar";
 import type { BodyMood, MateReact } from "../../mate/types";
 import type { Caption } from "../../mate/useMateConversation";
 import { useT, type MsgKey, type TFunction } from "../../i18n";
+import type { ReactNode } from "react";
 import LifeBackdrop from "./life/LifeBackdrop";
 import LifeHud from "./life/LifeHud";
+import StageMenu, { type StageWindowKind } from "./stage/StageMenu";
 
 const MOOD_KEY: Record<BodyMood, MsgKey | null> = {
   idle: null,
@@ -78,6 +80,8 @@ export default function MateStage({
   showName = true,
   className = "",
   onLife,
+  menu,
+  window: overlay,
 }: {
   mate: Mate;
   mood: BodyMood;
@@ -88,8 +92,12 @@ export default function MateStage({
   onTap?: (area: string | null) => void;
   showName?: boolean;
   className?: string;
-  /** opens the Life panel from her status */
+  /** her status on the stage was tapped */
   onLife?: () => void;
+  /** her menu on the stage (Status, Places, Outfits), and which of its windows is open */
+  menu?: { open: StageWindowKind | null; onOpen: (k: StageWindowKind) => void; compact?: boolean };
+  /** the open window, drawn over her */
+  window?: ReactNode;
 }) {
   const t = useT();
   const life = mate.life?.enabled && mate.life.art ? mate.life : null;
@@ -99,7 +107,7 @@ export default function MateStage({
     <div className={`relative flex min-h-0 flex-col items-center ${life ? "overflow-hidden" : ""} ${className}`} data-testid="mate-stage" data-mood={mood}>
       {life && <LifeBackdrop life={life} />}
       {line && (
-        <div className="absolute inset-x-3 top-2 z-10 flex justify-center pointer-events-none">
+        <div className={`pointer-events-none absolute left-3 top-2 z-10 flex justify-center ${menu ? (menu.compact ? "right-[60px]" : "right-[76px]") : "right-3"}`}>
           <div
             key={line}
             className="max-w-[min(92%,380px)] rounded-2xl border border-border bg-surface-2/95 px-3 py-1.5 text-center text-[13px] text-content shadow-float animate-fade-in"
@@ -113,6 +121,12 @@ export default function MateStage({
         {/* keyed by the mate: switching mates never shows (or keeps playing) the previous mate's body */}
         <LiveMateAvatar key={mate.id} mate={mate} size={size} mood={mood} videoMood={videoMood} react={react} onTap={onTap} />
       </div>
+      {menu && (
+        <div className={`absolute z-20 ${menu.compact ? "right-2 top-2" : "right-3 top-1/2 -translate-y-1/2"}`}>
+          <StageMenu open={menu.open} onOpen={menu.onOpen} compact={menu.compact} />
+        </div>
+      )}
+      {overlay}
       {life ? (
         showName && <LifeHud mate={mate} life={life} mood={mood} moodText={ml} onOpen={onLife} />
       ) : showName && (

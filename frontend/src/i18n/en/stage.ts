@@ -1,0 +1,21 @@
+// The stage's menu and windows (components/mate/stage)
+export default {
+  menu: "Menu",
+  status: "Status",
+  places: "Places",
+  outfits: "Outfits",
+  statusTitle: "{name}'s status",
+  statusSub: "How close you are, how she feels, where she is and how she's doing",
+  tabNow: "Now",
+  bond: "Relationship",
+  bondOff: "Relationship off",
+  bondMore: "More",
+  placesTitle: "Places",
+  placesSub: "{name} is at {place} now",
+  outfitsTitle: "Outfits",
+  outfitsSub: "{name}'s wardrobe",
+  wearing: "Wearing",
+  wear: "Put on",
+  outfitNoNote: "No description for this outfit.",
+  outfitManage: "Edit the wardrobe",
+};

@@ -1,0 +1,21 @@
+// 무대의 메뉴와 창 (components/mate/stage)
+export default {
+  menu: "메뉴",
+  status: "상태",
+  places: "장소",
+  outfits: "의상",
+  statusTitle: "{name}의 상태",
+  statusSub: "호감도와 감정, 지금 있는 곳과 컨디션",
+  tabNow: "지금",
+  bond: "관계",
+  bondOff: "관계 기능 꺼짐",
+  bondMore: "자세히",
+  placesTitle: "장소",
+  placesSub: "{name:은} 지금 {place}에 있어요",
+  outfitsTitle: "의상",
+  outfitsSub: "{name}의 옷장",
+  wearing: "입는 중",
+  wear: "입히기",
+  outfitNoNote: "설명이 없는 의상이에요.",
+  outfitManage: "옷장 편집",
+};

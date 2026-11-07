@@ -123,6 +123,11 @@ def test_builtin_files_are_served_and_confined():
         clip = cha["avatar"]["rig"]["clips"][0]["src"]
         part = client.get(clip, headers={"Range": "bytes=0-99"})
         assert part.status_code == 206 and len(part.content) == 100
+        # (asked again every time, "not modified" while it is the same file: a redone clip shows at once)
+        assert home.headers["cache-control"] == "private, no-cache" and home.headers["etag"]
+        again = client.get(cha["avatar"]["rig"]["home"], headers={"If-None-Match": home.headers["etag"]})
+        assert again.status_code == 304 and not again.content
+        assert client.get(cha["avatar"]["rig"]["home"], headers={"If-None-Match": '"other"'}).status_code == 200
         assert client.get("/api/mates/builtin/chaerin/..%2F..%2Fmates%2Fchaerin.json").status_code == 404
         assert client.get("/api/mates/builtin/nobody/neutral.webp").status_code == 404
 

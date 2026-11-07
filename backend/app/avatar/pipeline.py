@@ -346,6 +346,31 @@ def solidify(rgb: np.ndarray, a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -
     return rgb, a
 
 
+#: from here a pixel is her for certain: what is less is an edge, coloured from her nearest certain pixel; this far past
+#: her (pixels of the clip) it is coloured too, so the codec's colour blur and the browser's scaling find her colours there
+DEFRINGE_SOLID, DEFRINGE_BAND = 0.95, 6
+
+
+def defringe(rgb: np.ndarray, a: np.ndarray, solid: float = DEFRINGE_SOLID, band: int = DEFRINGE_BAND) -> np.ndarray:
+    """The edge in her own colours. A half-transparent edge pixel still holds some of the gray she was cut from, and on a
+    dark page that reads as a light rim around her (her arms, her hair): every pixel short of ``solid``, up to ``band``
+    pixels out, takes the colour of the nearest one that is certainly her (her outline, mostly). Beyond that it is black,
+    as before (a flat field costs the codec nothing). Alpha stays as it is."""
+    s = a >= solid
+    if not s.any() or s.all():
+        return rgb
+    dist, (iy, ix) = ndimage.distance_transform_edt(~s, return_indices=True)
+    out = np.where(s[..., None], rgb, rgb[iy, ix])
+    return np.where(((dist > band) & (a < 0.02))[..., None], 0, out).astype(rgb.dtype)
+
+
+def defringe_image(im: Image.Image) -> Image.Image:
+    """A still with alpha, its edge in her own colours (``defringe``)."""
+    px = np.asarray(im.convert("RGBA"))
+    rgb = defringe(px[..., :3], px[..., 3].astype(np.float32) / 255.0)
+    return Image.fromarray(np.dstack([rgb, px[..., 3]]).astype(np.uint8), "RGBA")
+
+
 def choke(a: np.ndarray, seen: np.ndarray, bg: np.ndarray) -> np.ndarray:
     """The edge about a pixel in: the old gray in the outermost pixels reads as a light rim on a dark page, the
     remover's faint wisps as smoke. Solid parts stay, and so does what clearly isn't the gray (``seen``: the picture on it):
@@ -630,6 +655,7 @@ def cmd_encode(p: Path, only: list[str] | None = None) -> dict:
             rgb = colour(o, a, bg)
             rgb, a = solidify(rgb, a, o, bg)
             a = choke(a, o, bg)
+            rgb = defringe(rgb, a)
             crop = np.dstack([rgb, a * 255.0]).clip(0, 255).round().astype(np.uint8)
             for proc, (ww, hh), _ in procs.values():
                 small = cv2.resize(crop, (ww, hh), interpolation=cv2.INTER_AREA)
@@ -740,6 +766,7 @@ def cmd_export(p: Path, key: str) -> dict:
         canvas.alpha_composite(im.resize((round(im.width * s), round(im.height * s)), Image.LANCZOS), (ox, oy))
         crop = canvas.crop((round(x * k), round(y * k), round((x + w) * k), round((y + h) * k)))
         crop.thumbnail((10_000, box["sizes"]["lg"]), Image.LANCZOS)
+        crop = defringe_image(crop)
         crop.save(tmp / f"{name}.webp", quality=90, method=6)
         stills[name] = f"asset:{key}/{name}.webp"
     clips = []

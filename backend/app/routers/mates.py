@@ -4,6 +4,7 @@ imports, Live2D Cubism Core, voice (settings, speech, transcription, voices)."""
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import tempfile
 from typing import Any
@@ -589,14 +590,19 @@ async def upload_asset(mate_id: str, request: Request, file: UploadFile = File(.
 
 
 @router.get("/builtin/{key}/{rel:path}")
-async def get_builtin_asset(key: str, rel: str) -> FileResponse:
-    """Files of the bundled characters (shipped with the app, immutable per release)."""
+async def get_builtin_asset(key: str, rel: str, request: Request) -> Response:
+    """Files of the bundled characters (shipped with the app). Asked again every time and answered "not modified" while the
+    file is the same: an update that redoes a set's clips under the same names shows at once, not a day later."""
     try:
         p = files.resolve_builtin(key, rel)
     except MateError as exc:
         raise HTTPException(status_code=404, detail="asset not found") from exc
-    return FileResponse(p, media_type=files.content_type(p), headers={
-        **_ASSET_HEADERS, "Cache-Control": "private, max-age=86400"})
+    st = p.stat()
+    etag = '"' + hashlib.md5(f"{st.st_mtime}-{st.st_size}".encode(), usedforsecurity=False).hexdigest() + '"'
+    headers = {**_ASSET_HEADERS, "Cache-Control": "private, no-cache", "ETag": etag}
+    if etag in [t.strip() for t in (request.headers.get("if-none-match") or "").split(",")]:
+        return Response(status_code=304, headers=headers)
+    return FileResponse(p, media_type=files.content_type(p), headers=headers)
 
 
 @router.post("/builtin/restore")

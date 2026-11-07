@@ -20,6 +20,7 @@ import nav from "./nav.ts";
 import providers from "./providers.ts";
 import session from "./session.ts";
 import settings from "./settings.ts";
+import stage from "./stage.ts";
 import studio from "./studio.ts";
 import tasks from "./tasks.ts";
 import topbar from "./topbar.ts";
@@ -27,5 +28,5 @@ import turn from "./turn.ts";
 import usage from "./usage.ts";
 import workspace from "./workspace.ts";
 
-const ko: Locale = { mcp, setup, screen, admin, avatar, chat, cliTools, common, composer, connections, downloads, files, higgsfield, life, mate, mateSettings, nav, providers, session, settings, studio, tasks, topbar, turn, usage, workspace };
+const ko: Locale = { mcp, setup, screen, admin, avatar, chat, cliTools, common, composer, connections, downloads, files, higgsfield, life, mate, mateSettings, nav, providers, session, settings, stage, studio, tasks, topbar, turn, usage, workspace };
 export default ko;
