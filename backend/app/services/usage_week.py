@@ -15,6 +15,9 @@ json_extract(e.data,'$.usage') AS usage,
 json_extract(e.data,'$.cost_usd') AS cost_usd,json_type(e.data,'$.cost_usd') AS has_cost,
 json_extract(e.data,'$.cost_kind') AS cost_kind,json_extract(e.data,'$.provider') AS engine,
 json_extract(e.data,'$.model') AS turn_model,json_extract(e.data,'$.usage_source') AS usage_source"""
+#: what was spent: the chats' events, and those of turns rewound away (services/session_timeline.py)
+SPENT = """(SELECT id,session_id,type,data,created_at FROM events
+UNION ALL SELECT id,session_id,type,data,created_at FROM rewound_usage)"""
 KEYS = ('input', 'output', 'cache_read', 'cache_write')
 TOKENS = ('input_tokens', 'output_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens')
 
@@ -45,8 +48,9 @@ def week(db, tz='UTC', *, now=None):
     start = datetime.combine(first, time.min, zone).astimezone(timezone.utc)
     end = datetime.combine(current.date() + timedelta(days=1), time.min, zone).astimezone(timezone.utc)
     rows = db.query(f"""SELECT {FIELDS},s.kind,s.mate_id,s.title,s.provider,s.model,m.name AS mate_name
-        FROM events e JOIN sessions s ON s.id=e.session_id LEFT JOIN mates m ON m.id=s.mate_id
+        FROM {SPENT} e JOIN sessions s ON s.id=e.session_id LEFT JOIN mates m ON m.id=s.mate_id
         WHERE e.type IN ('turn.complete','error') AND e.created_at>=? AND e.created_at<? AND json_valid(e.data)
+        AND json_extract(e.data,'$.usage_copied') IS NULL
         ORDER BY e.id""", (start.isoformat(), end.isoformat()))
     norms = defaultdict(TurnCostNormalizer)
     # Legacy Claude costs are process cumulative. Cutting at midnight without priming
@@ -56,7 +60,7 @@ def week(db, tz='UTC', *, now=None):
         if not row['cost_kind'] and row['has_cost']:
             first_ids.setdefault(row['session_id'], row['id'])
     for sid, eid in first_ids.items():
-        prior = db.query(f"""SELECT {FIELDS} FROM events e
+        prior = db.query(f"""SELECT {FIELDS} FROM {SPENT} e
             WHERE e.session_id=? AND e.id<? AND e.type IN ('turn.complete','error') AND json_valid(e.data)
             ORDER BY e.id""", (sid, eid))
         for row in prior:

@@ -30,6 +30,8 @@ interface ComposerState {
   retry: (localId: string) => void;
   /** Drop the session's items after a send (keeps the server-side files). */
   clearSent: (sessionId: string) => void;
+  /** Files already on the server waiting to be sent again (a rewound message's). */
+  restore: (sessionId: string, attachments: Attachment[]) => void;
 }
 
 let seq = 0;
@@ -79,6 +81,12 @@ export const useComposerStore = create<ComposerState>((set, get) => {
   return {
     items: restoreDrafts(),
     limits: { max_mb: 50, max_files: 20 },
+
+    restore: (sessionId, attachments) =>
+      set((s) => {
+        const known = new Set(s.items.map((i) => i.attachment?.id));
+        return { items: [...s.items, ...attachments.filter((a) => !known.has(a.id)).map((a) => uploaded(sessionId, a))] };
+      }),
 
     add: (sessionId, files) => {
       if (!limitsLoaded) {
@@ -138,19 +146,23 @@ export const useComposerStore = create<ComposerState>((set, get) => {
 });
 
 /** Uploaded files of unsent drafts come back after a reload (thumbnails from the server). */
+function uploaded(sessionId: string, att: Attachment): PendingFile {
+  return {
+    localId: `p${++seq}`,
+    sessionId,
+    name: att.name,
+    size: att.size,
+    mime: att.mime,
+    kind: att.kind,
+    progress: 1,
+    status: "done",
+    attachment: att,
+  };
+}
+
 function restoreDrafts(): PendingFile[] {
   return Object.entries(useDraftStore.getState().drafts).flatMap(([sessionId, d]) =>
-    d.attachments.map((att) => ({
-      localId: `p${++seq}`,
-      sessionId,
-      name: att.name,
-      size: att.size,
-      mime: att.mime,
-      kind: att.kind,
-      progress: 1,
-      status: "done" as const,
-      attachment: att,
-    })),
+    d.attachments.map((att) => uploaded(sessionId, att)),
   );
 }
 

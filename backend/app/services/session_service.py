@@ -63,6 +63,7 @@ from app.services import changes as change_tracker
 from app.services import folder_routing
 from app.services import folders as folder_model
 from app.services.provider_service import ProviderService
+from app.services.session_timeline import SessionTimeline
 from app.services.workspace_service import WorkspaceService
 
 if TYPE_CHECKING:
@@ -80,7 +81,8 @@ def _inside(p: str, root: str) -> bool:
 # A stored provider session that no longer exists (deleted transcript, other
 # machine…): retry once from a full handoff instead of failing the turn.
 _STOPPED = re.compile(r"doesn't want to proceed|tool use was rejected|interrupted to apply", re.I)
-_STALE_RESUME = re.compile(r"no conversation found|no rollout found|thread/resume failed", re.I)
+_STALE_RESUME = re.compile(
+    r"no conversation found|no message found with message\.uuid|no rollout found|thread/(resume|fork) failed", re.I)
 # Task fields the engine reports for a running subagent (task_progress) that
 # bg_tasks doesn't keep: passed through on the live task.state message.
 _LIVE_TASK_FIELDS = ("subagent_type", "activity", "last_tool_name", "tool_uses", "total_tokens", "duration_ms",
@@ -120,6 +122,7 @@ class SessionService:
         # History pages' session-wide numbers, folded once per chat and extended
         # as events arrive (services/history_aggregates.py).
         self.history_aggregates = SessionAggregates()
+        self.timeline = SessionTimeline(self)
         # Turns currently executing (sid -> info), surfaced on the admin page.
         self.active_runs: dict[str, dict[str, Any]] = {}
         self._tasks: dict[str, asyncio.Task] = {}
@@ -877,6 +880,8 @@ class SessionService:
         made by the system, not typed."""
         if sid in self._tasks:
             raise TurnBusyError("a turn is already running in this session")
+        if sid in self.timeline.busy:
+            raise TurnBusyError("this chat is being rewound")
         self.get(sid)
         rows = (
             self._attachments.pending(sid, attachment_ids)
@@ -1122,6 +1127,10 @@ class SessionService:
         finally:
             self.active_runs.pop(sid, None)
 
+    @staticmethod
+    def title_from(text: str) -> str:
+        return _title_from(text)
+
     def _first_turn(self, sid: str) -> bool:
         row = self._db.query_one(
             "SELECT COUNT(*) AS c FROM messages WHERE session_id = ? AND role = 'user'", (sid,)
@@ -1234,6 +1243,8 @@ class SessionService:
         # Context: this engine's own session + whatever of the chat it hasn't
         # seen (full handoff after a provider switch, catch-up when returning).
         resume_id, preamble, ctx_kind, ctx_n = self._context_for(session, provider_name, msg_id)
+        # (a copied or rewound chat: the first turn continues from a copy of the engine's session)
+        own_cli = self._cli_state(session).get(provider_name, {}) if resume_id else {}
 
         uploads_dir = None
         if self._attachments is not None:
@@ -1251,6 +1262,8 @@ class SessionService:
             effort=session.get("effort") or "default",
             cwd=cwd,
             cli_session_id=resume_id,
+            fork_session=bool(own_cli.get("fork")),
+            resume_at=own_cli.get("at"),
             mcp_config=mcp_config,
             api_key=api_key,
             extra_env=extra_env,
@@ -1342,9 +1355,14 @@ class SessionService:
                         # whole conversation handed over, transparently.
                         self._log("warning", "provider", f"stale {provider_name} session, starting fresh: {ev.data.get('message')}",
                                   code="context.stale_session", detail=ctx, session_id=sid)
+                        if persistent:
+                            # (the process that said so may still be on its way out: the retry must not land on it)
+                            await self._engines.shutdown(sid, reason="stale session")
+                            holder.pop("slot", None)
                         self._drop_cli_session(sid, provider_name)
                         _, preamble2, kind2, n2 = self._context_for(self.get(sid), provider_name, msg_id, fresh=True)
                         req.cli_session_id, req.preamble = None, preamble2
+                        req.fork_session, req.resume_at = False, None
                         ctx_kind, ctx_n = kind2, n2
                         req.inbox = TurnInbox()
                         self._inboxes[sid] = req.inbox
@@ -1749,6 +1767,7 @@ class SessionService:
         if slot.engine.cli_session_id:
             self._set_cli_session(sid, slot.engine.cli_session_id, "claude")
             req.cli_session_id = slot.engine.cli_session_id
+            req.fork_session, req.resume_at = False, None  # (that one is this chat's own already)
         st["carry_cost"] = round(float(st.get("carry_cost") or 0) + float(ev.data.get("cost_usd") or 0), 6)
         await self._engines.shutdown(sid, reason="account limit")  # releases its lease
         holder["slot"] = None

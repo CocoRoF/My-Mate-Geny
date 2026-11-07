@@ -153,6 +153,15 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 
 -- Chat attachments. Uploaded first (message_id NULL = still in the composer),
 -- then linked to the user message they were sent with.
+-- What rewound turns spent (services/session_timeline.py): gone from the chat, still counted on the Usage page.
+CREATE TABLE IF NOT EXISTS rewound_usage (
+    id         INTEGER PRIMARY KEY,   -- the event's own id, so the order stays
+    session_id TEXT NOT NULL,
+    type       TEXT NOT NULL,
+    data       TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS attachments (
     id          TEXT PRIMARY KEY,
     session_id  TEXT NOT NULL,

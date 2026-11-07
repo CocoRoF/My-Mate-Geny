@@ -606,9 +606,16 @@ async def run_app_server(
             # Never ask for the history: the CLI already holds it, and for a long conversation the reply is one
             # JSON line over the reader's limit (17 MB seen), which closed the connection on every message.
             params["excludeTurns"] = True
-        reply = await client.request(
-            "thread/resume" if req.cli_session_id else "thread/start", params
-        )
+            if req.fork_session and req.resume_at:
+                params["lastTurnId"] = req.resume_at
+        method = "thread/start"
+        if req.cli_session_id:
+            method = "thread/fork" if req.fork_session else "thread/resume"
+        try:
+            reply = await client.request(method, params)
+        except RpcError as exc:
+            # (the session layer starts fresh with the conversation handed over, whatever the reason)
+            raise RpcError(f"thread/fork failed: {exc}" if method == "thread/fork" else str(exc)) from exc
         acc.thread_id = reply["thread"]["id"]
         turn = {
             "threadId": acc.thread_id,

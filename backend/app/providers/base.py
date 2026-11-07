@@ -163,6 +163,10 @@ class TurnRequest:
     cwd: str                              # working directory (local path or sshfs mount)
     effort: str = ""                      # reasoning/think level; "" or "default" => provider default
     cli_session_id: str | None = None     # resume a provider-side session when set
+    # ... or continue from a copy of it (a copied or rewound chat), which leaves the original alone: up to this point of
+    # it (Claude: an assistant message's uuid, Codex: a turn id), or all of it (services/session_timeline.py).
+    fork_session: bool = False
+    resume_at: str | None = None
     mcp_config: dict[str, Any] | None = None   # e.g. remote-bash bridge
     allow_tools: list[str] = field(default_factory=list)
     api_key: str | None = None            # when auth_mode == api_key

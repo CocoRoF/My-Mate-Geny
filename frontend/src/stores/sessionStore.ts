@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Session } from "../types";
 import {
+  copySession,
   createSession,
   deleteSession,
   listSessionsVersioned,
@@ -24,6 +25,8 @@ interface SessionState {
   patchLocal: (id: string, patch: Partial<Session>) => void;
   remove: (id: string) => Promise<void>;
   setActive: (id: string | null) => void;
+  /** A second chat that works exactly like this one; the open chat stays open. */
+  copy: (id: string) => Promise<Session>;
 }
 
 const LAST_KEY = "hrh_last_session";
@@ -70,6 +73,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   update: async (id, patch) => {
     const updated = await updateSession(id, patch);
     set((s) => ({ sessions: s.sessions.map((x) => (x.id === id ? { ...x, ...updated } : x)) }));
+  },
+  copy: async (id) => {
+    const s = await copySession(id);
+    await get().load();
+    return s;
   },
   remove: async (id) => {
     await deleteSession(id);

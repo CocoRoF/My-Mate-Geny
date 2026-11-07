@@ -171,6 +171,10 @@ class ClaudeCodeProvider(Provider):
 
         if req.cli_session_id:
             argv += ["--resume", req.cli_session_id]
+            if req.fork_session:
+                argv.append("--fork-session")
+                if req.resume_at:
+                    argv += ["--resume-session-at", req.resume_at]
 
         if req.mcp_config_file:
             argv += ["--mcp-config", req.mcp_config_file, "--strict-mcp-config"]
@@ -347,5 +351,6 @@ class ClaudeCodeProvider(Provider):
                         **accum.cost_fields(),
                         "stop_reason": accum.stop_reason or "end_turn",
                         "cli_session_id": accum.session_id,
+                        "cli_at": accum.assistant_uuid,
                     },
                 )

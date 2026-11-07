@@ -126,6 +126,15 @@ def test_limits_default_by_kind_and_an_explicit_one_wins(tmp_path):
     with pytest.raises(ValueError):limit(timeout_ms=-1)
 
 
+def test_a_rewind_cancels_only_the_jobs_started_from_that_moment_on(tmp_path):
+    c=manager(tmp_path,'chat');h=host(tmp_path)
+    old=c.prepare(h,'sleep 20',h['cwd'],background=True);time.sleep(.02);moment=time.time();time.sleep(.02)
+    new=c.prepare(h,'sleep 20',h['cwd'],background=True)
+    service=RemoteJobService(type('S',(),{'_db':None})(),tmp_path/'local',manager_factory=lambda root,sid:RemoteJobs(root,sid,prefix=lambda h:['sh','-c']))
+    assert service.cancel('chat',include_background=True,since=moment)
+    assert (c.path(new['job_id'])/'cancel').exists() and not (c.path(old['job_id'])/'cancel').exists()
+
+
 def test_stop_before_start_is_a_tombstone_and_never_runs(tmp_path):
     c=manager(tmp_path);h=host(tmp_path)
     job=c.prepare(h,'touch should-not-exist',h['cwd'])

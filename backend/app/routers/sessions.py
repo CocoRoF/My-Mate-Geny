@@ -8,6 +8,7 @@ from app.schemas.models import SessionCreate, SessionUpdate
 from app.services import folder_routing
 from app.services import folders as folder_model
 from app.services.session_service import SessionService, TurnBusyError
+from app.services.session_timeline import TimelineBusy
 from app.services.workspace_service import WorkspaceService
 
 router = APIRouter(prefix="/api/sessions")
@@ -159,6 +160,49 @@ async def reset_context(sid: str, svc: SessionService = Depends(session_service)
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except TurnBusyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+class RewindBody(BaseModel):
+    message_id: str
+    restore_files: bool = False
+
+
+@router.get("/{sid}/rewind")
+async def rewind_preview(sid: str, message_id: str = Query(..., max_length=80),
+                         svc: SessionService = Depends(session_service)) -> dict:
+    """What a rewind to this message would take back."""
+    try:
+        return svc.timeline.preview(sid, message_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{sid}/rewind")
+async def rewind(sid: str, body: RewindBody, svc: SessionService = Depends(session_service)) -> dict:
+    """This message and everything after it as if never sent. → its text and files, to send again."""
+    try:
+        return await svc.timeline.rewind(sid, body.message_id, restore_files=body.restore_files)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except TimelineBusy as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/{sid}/copy")
+async def copy_session(sid: str, svc: SessionService = Depends(session_service)) -> dict:
+    """A second chat that works exactly like this one from here on: ``{title}_copy_{n}``."""
+    try:
+        return await svc.timeline.copy(sid)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/{sid}")

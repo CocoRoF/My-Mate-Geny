@@ -5,6 +5,7 @@ import MessageAttachments from "../attachments/MessageAttachments";
 import AssistantTurn from "./turn/AssistantTurn";
 import CompactionDivider from "./CompactionDivider";
 import ViaBadge from "./ViaBadge";
+import RewindButton from "./RewindButton";
 
 // Memoized: a turn re-renders only when it changes (copy-on-write in the store)
 // — prepending older turns or streaming into the last one leaves the rest alone.
@@ -12,7 +13,7 @@ export default memo(function MessageItem({ turn }: { turn: Turn }) {
   if (turn.role === "user") {
     const atts = turn.attachments || [];
     return (
-      <div className="flex flex-col items-end gap-1.5 animate-fade-in">
+      <div className="group flex flex-col items-end gap-1.5 animate-fade-in">
         <ViaBadge meta={turn.meta} />
         {atts.length > 0 && <MessageAttachments attachments={atts} />}
         {turn.text && (
@@ -20,6 +21,7 @@ export default memo(function MessageItem({ turn }: { turn: Turn }) {
             {turn.text}
           </div>
         )}
+        <RewindButton messageId={turn.messageId} text={turn.text} meta={turn.meta} />
       </div>
     );
   }

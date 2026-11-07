@@ -64,13 +64,15 @@ class RemoteJobService:
         except ValueError:
             return False
 
-    def cancel(self, sid, *, include_background=False):
+    def cancel(self, sid, *, include_background=False, since=None):
+        """``since``: only the jobs started from that moment on (a rewind takes back what those turns started)."""
         changed = False
         try:directory=self.factory(self.root,sid).root
         except ValueError:return False
         for file in directory.glob('*/manifest.json'):
             try:
                 manifest=json.loads(file.read_text());state=self.state(file.parent)
+                if since is not None and float(manifest.get('started_at') or 0)<since:continue
                 if include_background:
                     self.active.add(file);self.next_poll.pop(file,None)
                 if state.get('status') not in TERMINAL and (include_background or not manifest.get('background')):
