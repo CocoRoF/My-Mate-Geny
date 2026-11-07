@@ -4,6 +4,8 @@ import { LiveMateAvatar } from "../../mate/avatar/MateAvatar";
 import type { BodyMood, MateReact } from "../../mate/types";
 import type { Caption } from "../../mate/useMateConversation";
 import { useT, type MsgKey, type TFunction } from "../../i18n";
+import LifeBackdrop from "./life/LifeBackdrop";
+import LifeHud from "./life/LifeHud";
 
 const MOOD_KEY: Record<BodyMood, MsgKey | null> = {
   idle: null,
@@ -75,6 +77,7 @@ export default function MateStage({
   onTap,
   showName = true,
   className = "",
+  onLife,
 }: {
   mate: Mate;
   mood: BodyMood;
@@ -85,12 +88,16 @@ export default function MateStage({
   onTap?: (area: string | null) => void;
   showName?: boolean;
   className?: string;
+  /** opens the Life panel from her status */
+  onLife?: () => void;
 }) {
   const t = useT();
+  const life = mate.life?.enabled && mate.life.art ? mate.life : null;
   const line = useFadingCaption(caption ?? null);
   const ml = moodLabel(t, mood);
   return (
-    <div className={`relative flex min-h-0 flex-col items-center ${className}`} data-testid="mate-stage" data-mood={mood}>
+    <div className={`relative flex min-h-0 flex-col items-center ${life ? "overflow-hidden" : ""} ${className}`} data-testid="mate-stage" data-mood={mood}>
+      {life && <LifeBackdrop life={life} />}
       {line && (
         <div className="absolute inset-x-3 top-2 z-10 flex justify-center pointer-events-none">
           <div
@@ -106,7 +113,9 @@ export default function MateStage({
         {/* keyed by the mate: switching mates never shows (or keeps playing) the previous mate's body */}
         <LiveMateAvatar key={mate.id} mate={mate} size={size} mood={mood} videoMood={videoMood} react={react} onTap={onTap} />
       </div>
-      {showName && (
+      {life ? (
+        showName && <LifeHud mate={mate} life={life} mood={mood} moodText={ml} onOpen={onLife} />
+      ) : showName && (
         <div className="flex shrink-0 items-center gap-2 pb-2 pt-1 text-[12.5px]">
           <span className="font-semibold text-content">{mate.name}</span>
           {ml && (

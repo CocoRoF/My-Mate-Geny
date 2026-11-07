@@ -261,8 +261,123 @@ def test_the_prompt_has_the_rules_only_with_a_day():
     from app.mate.prompt import base_prompt, context_block, prompt_key
 
     persona = {"description": "x"}
-    assert "## Your day" in base_prompt("A", persona, {}, life=True)
+    assert "## Your day" in base_prompt("A", persona, {}, life="- rest: resting")
     assert "## Your day" not in base_prompt("A", persona, {})
-    assert "never sexual" in base_prompt("A", persona, {}, life=True)
-    assert prompt_key("A", persona, 0, {}, life=True) != prompt_key("A", persona, 0, {})
+    assert "never sexual" in base_prompt("A", persona, {}, life="- rest: resting")
+    assert "- rest: resting" in base_prompt("A", persona, {}, life="- rest: resting")
+    assert "do_activity" in base_prompt("A", persona, {}, life="- rest: resting")
+    assert prompt_key("A", persona, 0, {}, life="- rest: resting") != prompt_key("A", persona, 0, {})
     assert "Your day: here." in context_block(datetime(2026, 1, 1), "UTC", life="Your day: here.")
+
+
+# ---- what she decides herself ----
+
+def test_she_goes_where_she_decides_and_the_routine_waits(world):
+    t = datetime(2026, 11, 7, 14, 0, tzinfo=KST)  # (a Saturday afternoon)
+    doc = sim.new(world, t, KST, "m")
+    doc["place"], doc["activity"] = "home", "rest"
+    out = sim.decide(doc, world, "dessert", t, KST, why="단 게 당겨서")
+    assert out["code"] == "ok" and doc["activity"] == "commute" and doc["place"] == "street"
+    assert doc["plan"]["why"] == "단 게 당겨서"
+    sim.advance(doc, world, t + timedelta(minutes=30), KST)
+    assert doc["activity"] == "dessert" and doc["place"] == "cafe"
+    sim.advance(doc, world, t + timedelta(minutes=60), KST)
+    assert doc["activity"] == "dessert"
+    sim.advance(doc, world, t + timedelta(hours=4), KST)
+    assert doc["plan"] is None and doc["activity"] != "dessert" or doc["since"] != out.get("since")
+
+
+def test_only_what_is_not_up_to_her_is_refused(world):
+    t = datetime(2026, 11, 7, 23, 30, tzinfo=KST)
+    doc = sim.new(world, t, KST, "m")
+    assert sim.decide(doc, world, "flying", t, KST)["code"] == "unknown"
+    assert sim.decide(doc, world, "commute", t, KST)["code"] == "unknown"
+    assert sim.decide(doc, world, "read", t, KST)["code"] == "closed"
+    doc["money"] = 0
+    noon = datetime(2026, 11, 7, 12, 0, tzinfo=KST)
+    assert sim.decide(doc, world, "dessert", noon, KST)["code"] == "money"
+    assert sim.decide(doc, world, "dessert", noon, KST, with_user=True)["code"] == "ok"  # (together, it is on them)
+    assert doc["money"] == 0
+
+
+def test_she_can_walk_out_of_work_but_it_is_hers_to_decide(world):
+    t = datetime(2026, 11, 4, 11, 0, tzinfo=KST)  # (a Wednesday morning, at work)
+    doc = sim.new(world, t, KST, "m")
+    assert doc["activity"] == "work"
+    assert sim.decide(doc, world, "dessert", t, KST, with_user=True, why="너무 보고 싶어서")["code"] == "ok"
+    sim.advance(doc, world, t + timedelta(minutes=30), KST)
+    assert doc["activity"] == "dessert"
+
+
+def test_together_the_way_is_short_and_it_warms_her(world):
+    t = datetime(2026, 11, 7, 14, 0, tzinfo=KST)
+    doc = sim.new(world, t, KST, "m")
+    doc["place"], doc["activity"] = "home", "rest"
+    doc["needs"]["affection"] = 0.7
+    sim.decide(doc, world, "boardgame", t, KST, with_user=True, why="같이")
+    assert doc["activity"] == "commute" and doc["with_user"]
+    assert A_minutes(doc, t) <= 6
+    sim.advance(doc, world, t + timedelta(minutes=10), KST)
+    assert doc["activity"] == "boardgame"
+    sim.advance(doc, world, t + timedelta(minutes=70), KST)
+    assert doc["needs"]["affection"] < 0.45
+    assert "in person" in sim.line(doc, world, t + timedelta(minutes=70), KST)
+    assert sim.summary(doc, world, t + timedelta(minutes=70), KST)["with_user"]
+
+
+def A_minutes(doc, t):
+    return (datetime.fromisoformat(doc["until"]) - t).total_seconds() / 60
+
+
+def test_while_they_keep_talking_she_stays(world):
+    t = datetime(2026, 11, 7, 14, 0, tzinfo=KST)
+    doc = sim.new(world, t, KST, "m")
+    doc["place"], doc["activity"] = "cafe", "rest"
+    sim.decide(doc, world, "dessert", t, KST, with_user=True, minutes=30, why="같이")
+    sim.advance(doc, world, t + timedelta(minutes=25), KST)
+    sim.heard(doc, world, "m1", t + timedelta(minutes=25))
+    sim.advance(doc, world, t + timedelta(minutes=35), KST)
+    assert doc["activity"] == "dessert" and doc["with_user"]
+    sim.advance(doc, world, t + timedelta(hours=2), KST)
+    assert not doc["with_user"] and doc["plan"] is None
+
+
+def test_going_alone_means_they_are_not_with_her(world):
+    t = datetime(2026, 11, 7, 14, 0, tzinfo=KST)
+    doc = sim.new(world, t, KST, "m")
+    sim.decide(doc, world, "dessert", t, KST, with_user=True, why="같이")
+    assert doc["with_user"]
+    sim.decide(doc, world, "rest", t + timedelta(minutes=10), KST, why="혼자")
+    assert not doc["with_user"]
+
+
+def test_a_gift_does_what_it_does_and_coins_come_from_talking(world):
+    t = datetime(2026, 11, 7, 14, 0, tzinfo=timezone.utc)
+    doc = sim.new(world, t, KST, "m")
+    start = doc["coins"]
+    doc["needs"]["hunger"] = 0.9
+    out = sim.give(doc, world, "chicken")
+    assert out["code"] == "ok" and doc["needs"]["hunger"] < 0.1 and doc["coins"] == start - 200
+    assert sim.give(doc, world, "nope")["code"] == "unknown"
+    doc["coins"] = 10
+    assert sim.give(doc, world, "chicken")["code"] == "coins" and doc["coins"] == 10
+    sim.heard(doc, world, "m1", t)
+    assert doc["coins"] == 10 + sim.COINS_FIRST_MESSAGE + sim.COINS_MESSAGE
+    for i in range(200):
+        sim.heard(doc, world, f"m{i + 2}", t)
+    assert doc["coins"] <= 10 + sim.COINS_FIRST_MESSAGE + sim.COINS_A_DAY
+    doc["coins"] = 1000
+    sim.give(doc, world, "plush")
+    assert "plush" in doc["kept"] and "plush cat" in sim.line(doc, world, t, KST)
+
+
+def test_her_notes_are_heard_once(world):
+    doc = sim.new(world, MONDAY, KST, "m")
+    sim.note(doc, "A delivery reached you.")
+    assert sim.take_notes(doc) == ["A delivery reached you."] and sim.take_notes(doc) == []
+
+
+def test_the_catalog_lists_what_she_can_decide_on(world):
+    text = sim.catalog(world)
+    assert "- dessert:" in text and "open 10:00–22:00" in text
+    assert "- work:" not in text and "- commute:" not in text

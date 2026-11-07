@@ -126,3 +126,66 @@ def test_she_is_told_about_her_day_when_it_changed(store, monkeypatch):
     mao = _mate(store, None)
     assert MateService._life_lines(Fake, mao, {}, 1, now, store.tz()) == ""
     assert sim.NEEDS
+
+
+def _service(db, monkeypatch, tmp_path):
+    from tests.test_mate_delegation import _setup
+
+    monkeypatch.setattr(P, "own", lambda key: key == "chaerin")
+    svc, store, mates = _setup(db, tmp_path, monkeypatch)
+    return svc, store, mates
+
+
+async def test_the_tool_holds_only_what_is_not_up_to_her(db, tmp_path, monkeypatch):
+    _, store, mates = _service(db, monkeypatch, tmp_path)
+    mate = _mate(store, "chaerin")
+    mate = store.get(mate["id"])
+    tool = mates._tool_do_activity
+    with pytest.raises(Exception, match="reason"):
+        await tool(mate, "sid", {"activity": "rest"})
+    with pytest.raises(Exception, match="no activity"):
+        await tool(mate, "sid", {"activity": "fly", "reason": "왜"})
+    text = await tool(mate, "sid", {"activity": "rest", "reason": "쉬고 싶어서"})
+    assert text.startswith(("Going", "Already"))
+    assert store.life_doc(mate["id"], P.load("chaerin"))["plan"]["why"] == "쉬고 싶어서"
+    off = _mate(store, None)
+    with pytest.raises(Exception, match="switched on"):
+        await tool(store.get(off["id"]), "sid", {"activity": "rest", "reason": "왜"})
+
+
+async def test_she_cannot_bring_them_along_on_a_turn_of_her_own(db, tmp_path, monkeypatch):
+    _, store, mates = _service(db, monkeypatch, tmp_path)
+    mate = store.get(_mate(store, "chaerin")["id"])
+    monkeypatch.setattr(mates, "_users_latest", lambda sid: None)
+    await mates._tool_do_activity(mate, "sid", {"activity": "rest", "with_user": True, "reason": "같이"})
+    assert not store.life_doc(mate["id"], P.load("chaerin"))["with_user"]
+
+
+async def test_a_gift_reaches_her_or_waits_for_her(db, tmp_path, monkeypatch):
+    svc, store, mates = _service(db, monkeypatch, tmp_path)
+    mate = store.get(_mate(store, "chaerin")["id"])
+    calls = []
+    monkeypatch.setattr(mates._svc, "start_turn", lambda sid, prompt, **kw: calls.append((sid, prompt, kw)))
+    store._db.execute("UPDATE mates SET session_id = 'S' WHERE id = ?", (mate["id"],))
+    world = P.load("chaerin")
+    monkeypatch.setattr(sim, "asleep", lambda *a: False)
+    v = mates.life_gift(mate["id"], "letter")
+    assert v["coins"] == 450 and calls and "delivery" in calls[0][1] and calls[0][2]["meta"]["internal"]
+    assert store.state_doc(mate["id"])["feelings"]["happy"]["why"]["code"] == "gift"
+    # busy: she hears with their next message
+    from app.services.session_service import TurnBusyError
+
+    def busy(*a, **k):
+        raise TurnBusyError("x")
+
+    monkeypatch.setattr(mates._svc, "start_turn", busy)
+    mates.life_gift(mate["id"], "coffee")
+    assert store.life_doc(mate["id"], world)["notes"]
+    # asleep: she doesn't get woken for it
+    monkeypatch.setattr(sim, "asleep", lambda *a: True)
+    calls.clear()
+    monkeypatch.setattr(mates._svc, "start_turn", lambda sid, prompt, **kw: calls.append(prompt))
+    mates.life_gift(mate["id"], "coffee")
+    assert not calls and len(store.life_doc(mate["id"], world)["notes"]) == 2
+    with pytest.raises(Exception, match="no such gift"):
+        mates.life_gift(mate["id"], "nope")

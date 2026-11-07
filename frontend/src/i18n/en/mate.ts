@@ -66,6 +66,7 @@ export default {
   stateWhy_said: "you said “{quote}”",
   stateWhy_late: "it's late",
   stateWhy_asleep: "she's asleep",
+  stateWhy_gift: "you sent her something",
   stateWhy_tired: "she's tired",
   stateWhy_hungry: "she's hungry",
   stateWhy_stressed: "it's been a stressful stretch",

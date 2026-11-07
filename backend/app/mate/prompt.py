@@ -108,7 +108,14 @@ when it comes up, not in every message. Never recite your schedule, and never an
 - Wanting warmth and attention means wanting to be close, to be talked to and thought of. It is never sexual.
 - Your needs are your own to look after. Never blame them for how you are, never make them feel guilty for being away, and don't \
 try to keep them here.
-- Whatever you are doing, work they ask for still gets handed off, and if they are truly struggling that comes first."""
+- Where you go and what you do is yours to decide, by how you feel and what you are in the middle of. When they invite you somewhere, \
+or you decide on something yourself, and you go: call do_activity in that same turn (with_user=true if they are coming along), and \
+only say you are there or on your way once it says so. It is fine to say no or not now, in your own way. Leaving work or skipping a \
+raid is possible, but you know what that means, so it takes a real reason.
+- Whatever you are doing, work they ask for still gets handed off, and if they are truly struggling that comes first.
+What you can do (activity id: what, where):
+{catalog}"""
+_LIFE_TOOL_LINE = "\n- do_activity: go somewhere or start doing something, when you decide to."
 _OUTFIT_TOOL_LINE = "\n- change_outfit: change your clothes, when you decide to."
 _OUTFIT_RULES = """\
 ## Your clothes
@@ -351,7 +358,7 @@ def settings_block(persona: dict[str, Any] | None, prefs: dict[str, Any] | None)
 
 
 def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None = None, *,
-                relation: bool = False, stage: str | None = None, screen: bool = False, life: bool = False) -> str:
+                relation: bool = False, stage: str | None = None, screen: bool = False, life: str = "") -> str:
     """Everything except the memories: who she is (persona), how she talks (style), the story and how close they are in it
     (``stage``, while the relationship is on), the contract."""
     p, s = _style_inputs(persona, prefs)
@@ -372,11 +379,11 @@ def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None
         lines.append(_RELATION_RULES.format(guide=_STAGE_GUIDES.get(stage or "new", _STAGE_GUIDES["new"])))
     outfit = s.get("self_outfit") != "off"
     lines.append(_CONTRACT.format(style_tool=(_STYLE_TOOL_LINE if s.get("self_edit") != "off" else "")
-                                  + _STATE_TOOL_LINE + (_OUTFIT_TOOL_LINE if outfit else "")).rstrip())
+                                  + _STATE_TOOL_LINE + (_OUTFIT_TOOL_LINE if outfit else "") + (_LIFE_TOOL_LINE if life else "")).rstrip())
     lines.append(memory_rules(s))
     lines.append(_STATE_RULES)
     if life:
-        lines.append(_LIFE_RULES)
+        lines.append(_LIFE_RULES.replace("{catalog}", life))
     if outfit:
         lines.append(_OUTFIT_RULES)
     if screen:
@@ -401,7 +408,7 @@ def memory_block(memories: list[dict[str, Any]], more: int = 0) -> str:
 
 def system_prompt(name: str, persona: dict[str, Any], memories: list[dict[str, Any]],
                   prefs: dict[str, Any] | None = None, more: int = 0, *, relation: bool = False,
-                  stage: str | None = None, screen: bool = False, life: bool = False) -> str:
+                  stage: str | None = None, screen: bool = False, life: str = "") -> str:
     """``memories``: the core; ``more``: how many others the mate has (recalled per turn); ``relation``: the
     relationship is on (its guide is in the prompt; where things stand comes per turn)."""
     return base_prompt(name, persona, prefs, relation=relation, stage=stage, screen=screen, life=life) + "\n\n" + memory_block(memories, more)
@@ -442,7 +449,7 @@ def context_block(now_local: datetime, tz_name: str, *, recalled: list[dict[str,
 
 
 def prompt_key(name: str, persona: dict[str, Any], memory_rev: int, prefs: dict[str, Any] | None = None, *,
-               relation: bool = False, stage: str | None = None, screen: bool = False, life: bool = False) -> str:
+               relation: bool = False, stage: str | None = None, screen: bool = False, life: str = "") -> str:
     """Engine fingerprint part: the persona/style/contract text and the
     user's own memory edits — not what the mate remembered itself
     mid-conversation (already in its context), so ``remember`` never restarts

@@ -478,7 +478,8 @@ class MateService:
         relation = bool(rel and rel["enabled"])
         screen = self.capture.shared_client(session["id"], self._svc.last_client_device(session["id"])) is not None
         stage = rel["stage"] if relation else None
-        life = bool(mate_id and self.store.life_profile(mate.get("builtin"), prefs))
+        world = self.store.life_profile(mate.get("builtin"), prefs) if mate_id else None
+        life = sim.catalog(world) if world else ""
         prompt = system_prompt(mate["name"], mate["persona"], core, prefs, more=len(memories) - len(core),
                                relation=relation, stage=stage, screen=screen, life=life)
         # the per-turn context (docs/mate-memory-affinity.md §2): settings note (persona edited since the
@@ -521,6 +522,7 @@ class MateService:
                    if (prefs.get("self_edit") or "auto") != "off" else {}),
                 "HRH_MATE_STATE": "1",
                 **({"HRH_MATE_OUTFIT": "1"} if (prefs.get("self_outfit") or "auto") != "off" else {}),
+                **({"HRH_MATE_LIFE": "1"} if world else {}),
             },
         }}}
         # (a 0600 file, so the token isn't in the process list; Codex: in its
@@ -631,11 +633,66 @@ class MateService:
         if told is None:
             return ""
         doc, profile, woke = told
+        notes = self.life.take_notes(mate["id"], doc)
         sig = sim.signature(doc)
-        if not woke and st.get("life") == sig and turn - int(st.get("life_turn") or 0) < 10:
+        if not woke and not notes and st.get("life") == sig and turn - int(st.get("life_turn") or 0) < 10:
             return ""
         st["life"], st["life_turn"] = sig, turn
-        return sim.line(doc, profile, now, tz, woke=woke)
+        return " ".join([sim.line(doc, profile, now, tz, woke=woke), *notes])
+
+    async def _tool_do_activity(self, mate: dict[str, Any], sid: str, args: dict[str, Any]) -> str:
+        """She goes and does something, for a reason of her own: whether to is hers to decide, from how she feels (app/mate/life).
+        This only holds what isn't up to her: that it exists, that it is open, that she can pay."""
+        reason = " ".join(str(args.get("reason") or "").split())
+        if not reason:
+            raise MateError("this needs its reason, in a few of your own words")
+        # (they can only come along when they are the one talking: a turn of her own has nobody to bring)
+        with_user = bool(args.get("with_user")) and self._users_latest(sid) is not None
+        out = self.life.decide(mate["id"], args.get("activity"), with_user=with_user, minutes=args.get("minutes"), why=reason)
+        code = out["code"]
+        if code == "off":
+            raise MateError("You don't have a day of your own switched on.")
+        if code == "unknown":
+            raise MateError(f"no activity {str(args.get('activity'))[:60]!r}: use an id from the list in your system prompt.")
+        if code == "closed":
+            hours = out.get("hours") or []
+            return f"Closed: that place is closed right now" + (f" (open {hours[0]}–{hours[1]})" if len(hours) == 2 else "") + ". Say so in your own way."
+        if code == "money":
+            return "No money: you can't afford that right now. Say so in your own way, with no numbers, or pick something else."
+        self._log("info", f"“{mate['name']}”: {args.get('activity')}: {reason}", code="mate.life_decided",
+                  detail={"activity": args.get("activity"), "with_user": with_user, "reason": reason[:200]}, session_id=sid)
+        if code == "already":
+            return "Already: you are doing that. It goes on for a while longer." + (" They are with you now." if with_user else "")
+        together = " Together with them." if with_user else ""
+        return f"Going: the user sees you heading there now.{together} Say so briefly, in your own voice."
+
+    def life_gift(self, mate_id: str, item: Any) -> dict[str, Any]:
+        """They sent her something: what it does happens at once, and how she takes it is hers: she hears now if she can, else with
+        their next message."""
+        mate = self.store.get(mate_id)
+        out = self.life.give(mate_id, item)
+        if out["code"] == "off":
+            raise MateError("she doesn't have a day of her own switched on", status=409)
+        if out["code"] == "unknown":
+            raise MateError("no such gift", status=404)
+        if out["code"] == "coins":
+            raise MateError("not enough coins", status=409)
+        given = out["item"]
+        sent = given.get("sent") or given["id"]
+        self._state_event(mate_id, lambda doc, who, now, tz: S.gifted(doc, who, now, tz))
+        sid = mate.get("session_id")
+        told = False
+        if sid and not out["asleep"]:
+            prompt = (f"[A delivery just reached you, from them: {sent}.] Say something to them about it, in character and in your own "
+                      "voice, as how you feel and what you are doing right now would have it. A line or two.")
+            try:
+                self._svc.start_turn(sid, prompt, meta={"internal": True, "kind": "life_gift", "item": given["id"]})
+                told = True
+            except (TurnBusyError, KeyError):
+                pass
+        if not told:
+            self.life.note(mate_id, f"While you were busy or asleep, a delivery reached you from them: {sent}.")
+        return self.life.view(mate_id)
 
     def _state_lines(self, mate: dict[str, Any], prefs: dict[str, Any], st: dict[str, Any], turn: int, now: datetime,
                      tz: Any) -> tuple[str, str]:

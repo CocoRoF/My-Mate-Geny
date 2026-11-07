@@ -36,13 +36,12 @@ class LifeRuntime:
         rel = self.store.relation_doc(mate_id) or A.new()
         return float(rel.get("affinity") or 0) / 100 if rel.get("enabled") else 0.33
 
-    def _played(self, mate_id: str, profile: dict[str, Any], now: datetime, tz: Any) -> tuple[dict[str, Any], list[Any], list[dict[str, Any]]]:
-        """Her day up to now. -> (doc, what she was told last, what happened)."""
+    def _played(self, mate_id: str, profile: dict[str, Any], now: datetime, tz: Any) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+        """Her day up to now. -> (doc, what showed before, what happened)."""
         doc = self.store.life_doc(mate_id, profile)
         if doc is None:
-            doc = sim.new(profile, now, tz, mate_id)
-            return doc, [], [{"type": "began"}]
-        before = sim.signature(doc)
+            return sim.new(profile, now, tz, mate_id), {"signature": [], "slot": ""}, [{"type": "began"}]
+        before = {"signature": sim.signature(doc), "slot": sim.slot((A._t(doc["at"]) or now).astimezone(tz))}
         return doc, before, sim.advance(doc, profile, now, tz, closeness=self._closeness(mate_id))
 
     def advance(self, mate_id: str) -> tuple[dict[str, Any], dict[str, Any]] | None:
@@ -54,7 +53,7 @@ class LifeRuntime:
         now, tz = datetime.now(timezone.utc), self.store.tz()
         doc, before, _ = self._played(mate_id, profile, now, tz)
         self.store.save_life(mate_id, doc)
-        if sim.signature(doc) != before:
+        if sim.signature(doc) != before["signature"] or sim.slot(now.astimezone(tz)) != before["slot"]:
             self.store._changed("life", mate_id)
         return doc, profile
 
@@ -73,6 +72,43 @@ class LifeRuntime:
             if sim.signature(doc) != before or woke:
                 self.store._changed("life", mate_id)
         return doc, profile, woke
+
+    def decide(self, mate_id: str, key: Any, *, with_user: bool = False, minutes: Any = None, why: str = "") -> dict[str, Any]:
+        """She decided to go and do this (do_activity). -> what happened (sim.decide), and every window sees it."""
+        played = self.advance(mate_id)
+        if played is None:
+            return {"code": "off"}
+        doc, profile = played
+        out = sim.decide(doc, profile, key, datetime.now(timezone.utc), self.store.tz(), with_user=with_user, minutes=minutes, why=why)
+        if out["code"] in ("ok", "already"):
+            self.store.save_life(mate_id, doc)
+            self.store._changed("life", mate_id)
+        return out
+
+    def give(self, mate_id: str, item: Any) -> dict[str, Any]:
+        """They send her something. -> {code, item, doc, profile}: how she takes it is for the service to bring to her."""
+        played = self.advance(mate_id)
+        if played is None:
+            return {"code": "off"}
+        doc, profile = played
+        out = sim.give(doc, profile, item)
+        if out["code"] == "ok":
+            self.store.save_life(mate_id, doc)
+            self.store._changed("life", mate_id)
+        return {**out, "asleep": sim.asleep(doc, profile, datetime.now(timezone.utc))}
+
+    def note(self, mate_id: str, text: str) -> None:
+        """For her to hear with their next message."""
+        played = self.advance(mate_id)
+        if played is not None:
+            sim.note(played[0], text)
+            self.store.save_life(mate_id, played[0])
+
+    def take_notes(self, mate_id: str, doc: dict[str, Any]) -> list[str]:
+        notes = sim.take_notes(doc)
+        if notes:
+            self.store.save_life(mate_id, doc)
+        return notes
 
     def view(self, mate_id: str) -> dict[str, Any]:
         played = self.advance(mate_id)

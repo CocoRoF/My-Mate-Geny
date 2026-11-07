@@ -13,6 +13,7 @@ import connections from "./connections.ts";
 import downloads from "./downloads.ts";
 import files from "./files.ts";
 import higgsfield from "./higgsfield.ts";
+import life from "./life.ts";
 import mate from "./mate.ts";
 import mateSettings from "./mateSettings.ts";
 import nav from "./nav.ts";
@@ -26,5 +27,5 @@ import turn from "./turn.ts";
 import usage from "./usage.ts";
 import workspace from "./workspace.ts";
 
-const ko: Locale = { mcp, setup, screen, admin, avatar, chat, cliTools, common, composer, connections, downloads, files, higgsfield, mate, mateSettings, nav, providers, session, settings, studio, tasks, topbar, turn, usage, workspace };
+const ko: Locale = { mcp, setup, screen, admin, avatar, chat, cliTools, common, composer, connections, downloads, files, higgsfield, life, mate, mateSettings, nav, providers, session, settings, studio, tasks, topbar, turn, usage, workspace };
 export default ko;

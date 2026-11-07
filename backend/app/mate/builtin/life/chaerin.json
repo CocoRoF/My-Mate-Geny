@@ -1,4 +1,6 @@
 {
+ "art": "/api/mates/builtin/chaerin/places",
+ "map": "/api/mates/builtin/chaerin/places/map.webp",
  "start": {
   "place": "home",
   "money": 180000,
@@ -19,7 +21,9 @@
     "en": "Her studio"
    },
    "minutes": 5,
-   "about": "your small studio apartment: a bed, a desk with two monitors and your PC, games on the shelf"
+   "about": "your small studio apartment: a bed, a desk with two monitors and your PC, games on the shelf",
+   "x": 14,
+   "y": 12
   },
   "street": {
    "names": {
@@ -27,7 +31,8 @@
     "en": "The street"
    },
    "minutes": 0,
-   "about": "outside, on your way"
+   "about": "outside, on your way",
+   "outdoor": true
   },
   "office": {
    "names": {
@@ -40,7 +45,9 @@
     "08:00",
     "23:00"
    ],
-   "about": "the QA room at your game company: rows of test devices, a whiteboard of open bugs"
+   "about": "the QA room at your game company: rows of test devices, a whiteboard of open bugs",
+   "x": 49,
+   "y": 15
   },
   "convenience": {
    "names": {
@@ -52,7 +59,9 @@
     "office": 3,
     "home": 3
    },
-   "about": "the convenience store: triangle kimbap, instant noodles, the little table by the window"
+   "about": "the convenience store: triangle kimbap, instant noodles, the little table by the window",
+   "x": 67,
+   "y": 9
   },
   "cafe": {
    "names": {
@@ -65,7 +74,9 @@
     "22:00"
    ],
    "crowded": 0.2,
-   "about": "a quiet dessert café you found: few seats, soft music, nobody talks to you"
+   "about": "a quiet dessert café you found: few seats, soft music, nobody talks to you",
+   "x": 86,
+   "y": 9
   },
   "boardgame": {
    "names": {
@@ -78,7 +89,9 @@
     "24:00"
    ],
    "crowded": 0.5,
-   "about": "a board-game café: walls of boxes, tables of people laughing"
+   "about": "a board-game café: walls of boxes, tables of people laughing",
+   "x": 86,
+   "y": 37
   },
   "arcade": {
    "names": {
@@ -91,7 +104,9 @@
     "24:00"
    ],
    "crowded": 0.4,
-   "about": "an old arcade: rhythm games, crane machines, the smell of hot electronics"
+   "about": "an old arcade: rhythm games, crane machines, the smell of hot electronics",
+   "x": 72,
+   "y": 58
   },
   "park": {
    "names": {
@@ -103,7 +118,10 @@
     "05:00",
     "23:00"
    ],
-   "about": "the neighbourhood park: a path around a small pond, benches"
+   "about": "the neighbourhood park: a path around a small pond, benches",
+   "outdoor": true,
+   "x": 48,
+   "y": 74
   },
   "gym": {
    "names": {
@@ -116,7 +134,9 @@
     "23:00"
    ],
    "crowded": 0.35,
-   "about": "the small gym near home, which you joined and rarely visit"
+   "about": "the small gym near home, which you joined and rarely visit",
+   "x": 13,
+   "y": 56
   },
   "bookstore": {
    "names": {
@@ -129,7 +149,9 @@
     "22:00"
    ],
    "crowded": 0.1,
-   "about": "a big bookstore: strategy guides, programming books, a corner to read in"
+   "about": "a big bookstore: strategy guides, programming books, a corner to read in",
+   "x": 31,
+   "y": 31
   }
  },
  "activities": {
@@ -682,5 +704,215 @@
   "weekday": 0.3,
   "weekend": 0.65,
   "bonus": 0.9
- }
+ },
+ "shop": [
+  {
+   "id": "letter",
+   "names": {
+    "ko": "손편지",
+    "en": "A hand-written letter"
+   },
+   "abouts": {
+    "ko": "마음을 담아 쓴 편지. 애정이 채워져요.",
+    "en": "A few honest lines. Warms her."
+   },
+   "price": 50,
+   "kind": "present",
+   "needs": {
+    "affection": -0.3
+   },
+   "stats": {},
+   "note": "a hand-written letter",
+   "keep": true,
+   "sent": "a hand-written letter"
+  },
+  {
+   "id": "coffee",
+   "names": {
+    "ko": "커피 쿠폰",
+    "en": "Coffee coupon"
+   },
+   "abouts": {
+    "ko": "잠이 조금 깨요.",
+    "en": "Wakes her up a little."
+   },
+   "price": 60,
+   "kind": "food",
+   "needs": {
+    "sleep": -0.15
+   },
+   "stats": {},
+   "sent": "coffee coupon"
+  },
+  {
+   "id": "dessert_box",
+   "names": {
+    "ko": "디저트 상자",
+    "en": "A box of desserts"
+   },
+   "abouts": {
+    "ko": "달콤한 걸로 스트레스를 풀어요.",
+    "en": "Something sweet, for the stress."
+   },
+   "price": 150,
+   "kind": "food",
+   "needs": {
+    "hunger": -0.3,
+    "stress": -0.2,
+    "fun": -0.1
+   },
+   "stats": {},
+   "sent": "a box of desserts"
+  },
+  {
+   "id": "chicken",
+   "names": {
+    "ko": "치킨 배달",
+    "en": "Fried chicken delivery"
+   },
+   "abouts": {
+    "ko": "든든하게 한 끼.",
+    "en": "A proper meal."
+   },
+   "price": 200,
+   "kind": "food",
+   "needs": {
+    "hunger": -0.85,
+    "fun": -0.1
+   },
+   "stats": {},
+   "sent": "fried chicken delivery"
+  },
+  {
+   "id": "cushion",
+   "names": {
+    "ko": "포근한 쿠션",
+    "en": "A soft cushion"
+   },
+   "abouts": {
+    "ko": "방에 두면 마음이 편해져요.",
+    "en": "For her room. She rests better."
+   },
+   "price": 300,
+   "kind": "present",
+   "needs": {
+    "stress": -0.2,
+    "sleep": -0.05
+   },
+   "stats": {},
+   "note": "a soft cushion on your bed",
+   "keep": true,
+   "sent": "a soft cushion on your bed"
+  },
+  {
+   "id": "cookbook",
+   "names": {
+    "ko": "왕초보 요리책",
+    "en": "A beginner's cookbook"
+   },
+   "abouts": {
+    "ko": "요리 실력이 조금 늘어요.",
+    "en": "Her cooking gets a little better."
+   },
+   "price": 350,
+   "kind": "present",
+   "needs": {
+    "fun": -0.1
+   },
+   "stats": {
+    "cooking": 3
+   },
+   "note": "a beginner's cookbook",
+   "keep": true,
+   "sent": "a beginner's cookbook"
+  },
+  {
+   "id": "plush",
+   "names": {
+    "ko": "고양이 인형",
+    "en": "A plush cat"
+   },
+   "abouts": {
+    "ko": "책상 위에 둘 작은 친구.",
+    "en": "A small friend for her desk."
+   },
+   "price": 400,
+   "kind": "present",
+   "needs": {
+    "affection": -0.3
+   },
+   "stats": {},
+   "note": "a plush cat on your desk",
+   "keep": true,
+   "sent": "a plush cat on your desk"
+  },
+  {
+   "id": "boardgame_new",
+   "names": {
+    "ko": "보드게임 신작",
+    "en": "A new board game"
+   },
+   "abouts": {
+    "ko": "룰북 읽는 재미가 있어요.",
+    "en": "She loves reading the rulebook."
+   },
+   "price": 500,
+   "kind": "present",
+   "needs": {
+    "fun": -0.4
+   },
+   "stats": {
+    "courage": 1,
+    "sense": 1
+   },
+   "note": "a new board game",
+   "keep": true,
+   "sent": "a new board game"
+  },
+  {
+   "id": "running_shoes",
+   "names": {
+    "ko": "러닝화",
+    "en": "Running shoes"
+   },
+   "abouts": {
+    "ko": "운동할 마음이 조금 생겨요.",
+    "en": "Maybe she'll go out for a run."
+   },
+   "price": 600,
+   "kind": "present",
+   "needs": {
+    "stress": -0.05
+   },
+   "stats": {
+    "stamina": 3
+   },
+   "note": "a pair of running shoes",
+   "keep": true,
+   "sent": "a pair of running shoes"
+  },
+  {
+   "id": "new_game",
+   "names": {
+    "ko": "새 게임 패키지",
+    "en": "A new game"
+   },
+   "abouts": {
+    "ko": "오늘 밤은 다 잤어요.",
+    "en": "That's tonight gone."
+   },
+   "price": 800,
+   "kind": "present",
+   "needs": {
+    "fun": -0.5,
+    "stress": -0.1
+   },
+   "stats": {
+    "gaming": 1
+   },
+   "note": "a new game for your PC",
+   "keep": true,
+   "sent": "a new game for your PC"
+  }
+ ]
 }

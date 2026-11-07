@@ -344,6 +344,17 @@ async def get_life(mate_id: str, request: Request) -> dict:
         raise HTTPException(404, str(exc)) from exc
 
 
+@router.post("/{mate_id}/life/gift")
+async def send_gift(mate_id: str, body: dict, request: Request) -> dict:
+    """They send her something (app/mate/life). -> her day as it is now."""
+    try:
+        return _svc(request).life_gift(mate_id, body.get("item"))
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except MateError as exc:
+        raise _http(exc) from exc
+
+
 @router.post("/{mate_id}/state/poke")
 async def poke_state(mate_id: str, request: Request) -> dict:
     """The user tapped her avatar"""

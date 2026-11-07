@@ -58,7 +58,7 @@ message wakes her. A message reaches her by phone wherever she is, unless the us
 
 1. **A day of her own** — needs, places, activities, routine, simulation, ticker, API, prompt, needs into emotions.
 2. **Places** — backgrounds for every place and slot, the stage behind her, weather, the status on the stage, the Life panel.
-3. **Together** — `go_to` and `do_activity` tools, inviting her from the map, feeding her, gifts, tucking her in.
+3. **Together** — the `do_activity` tool, inviting her from the map (a message like any other: she decides), a way there that is short together, gifts paid for with coins that come from talking.
 4. **Raising** — stats that grow, a weekly plan she mostly follows, money, story events with conditions, her diary and a daily report.
 5. **Her body** — clips for what she does (eating, playing, working out…) in every outfit, pajamas, dressing for where she goes.
 6. **Reaching out** — she writes first when something happens, the diary in her own words, the desktop app, a last pass over everything.

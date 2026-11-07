@@ -66,6 +66,7 @@ const ko: Messages<"mate"> = {
   stateWhy_said: "“{quote}” 라는 말을 듣고",
   stateWhy_late: "시간이 늦어서",
   stateWhy_asleep: "자고 있어서",
+  stateWhy_gift: "선물을 받아서",
   stateWhy_tired: "피곤해서",
   stateWhy_hungry: "배가 고파서",
   stateWhy_stressed: "스트레스가 쌓여서",

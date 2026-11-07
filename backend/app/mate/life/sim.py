@@ -41,6 +41,14 @@ WOKEN_FOR = timedelta(minutes=20)
 #: a message of theirs, on her needs
 HEARD_AFFECTION, HEARD_WARM, HEARD_FUN, HEARD_RUDE_STRESS = 0.05, 0.12, 0.015, 0.08
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+#: together: the way there goes this much faster, being there does this per hour on top, and while they keep talking she stays
+TOGETHER_FASTER = 5
+TOGETHER = {"affection": -0.3, "fun": -0.15, "stress": -0.05}
+STILL_TALKING, STAY_ON = timedelta(minutes=20), timedelta(minutes=15)
+PLAN_MINUTES = (5, 480)
+#: what they can send her with, for talking to her: never taken away, and nothing they must keep up
+COINS_START, COINS_FIRST_MESSAGE, COINS_MESSAGE, COINS_A_DAY = 500, 200, 5, 300
+KEPT_MAX, NOTES_MAX = 20, 5
 
 
 # ---- the document ----
@@ -50,7 +58,8 @@ def new(profile: dict[str, Any], now: datetime, tz: Any, seed: str) -> dict[str,
     doc = {"seed": seed, "at": A._iso(now), "needs": dict(START_NEEDS), "stats": {s: float((start.get("stats") or {}).get(s) or 0) for s in STATS},
            "money": int(start.get("money") or 0), "place": start.get("place") or next(iter(profile["places"])), "activity": None,
            "since": A._iso(now), "until": None, "going": None, "paid": None, "timeline": [], "day": now.astimezone(tz).strftime("%Y-%m-%d"),
-           "woken": None, "heard": None}
+           "woken": None, "heard": None, "heard_at": None, "plan": None, "with_user": None, "coins": COINS_START, "coins_day": None, "coins_today": 0,
+           "kept": [], "notes": []}
     _next(doc, profile, now, tz, [], first=True)
     return doc
 
@@ -64,6 +73,11 @@ def normalized(doc: Any, profile: dict[str, Any]) -> dict[str, Any] | None:
     doc["needs"] = {n: _clamp(float(needs.get(n, START_NEEDS[n])), n) for n in NEEDS}
     doc["stats"] = {s: float(stats.get(s) or 0) for s in STATS}
     doc["timeline"] = doc["timeline"] if isinstance(doc.get("timeline"), list) else []
+    doc["coins"] = int(doc.get("coins", COINS_START) or 0)
+    for key in ("kept", "notes"):
+        doc[key] = doc[key] if isinstance(doc.get(key), list) else []
+    plan = doc.get("plan") if isinstance(doc.get("plan"), dict) else None
+    doc["plan"] = plan if plan and A._t(plan.get("until")) is not None and plan.get("activity") in profile["activities"] else None
     if doc.get("place") not in profile["places"]:
         doc["place"] = (profile.get("start") or {}).get("place") or next(iter(profile["places"]))
     if doc.get("activity") not in profile["activities"]:
@@ -146,11 +160,21 @@ def _due(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any) -> 
     return best
 
 
-def _upcoming(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any) -> dict[str, Any] | None:
+def _upcoming(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any, *, other_than: str | None = None) -> dict[str, Any] | None:
     """The next obligation that hasn't started, today or tomorrow."""
     local = t.astimezone(tz)
-    ahead = [b for b in _blocks(doc, profile, local) + _blocks(doc, profile, local + timedelta(days=1)) if b["start"] > local]
+    ahead = [b for b in _blocks(doc, profile, local) + _blocks(doc, profile, local + timedelta(days=1)) if b["start"] > local and b["activity"] != other_than]
     return min(ahead, key=lambda b: b["start"]) if ahead else None
+
+
+def weather(doc: dict[str, Any], local: datetime) -> str:
+    """Today's sky: made up, the same all day (clear, cloudy, rain, or snow in winter)."""
+    r = _rng(doc, "weather", local.strftime("%Y-%m-%d")).random()
+    if r < 0.6:
+        return "clear"
+    if r < 0.8:
+        return "cloudy"
+    return "snow" if local.month in (12, 1, 2) else "rain"
 
 
 # ---- what she does next ----
@@ -210,10 +234,11 @@ def _score(doc: dict[str, Any], profile: dict[str, Any], key: str, act: dict[str
     trip = travel_minutes(profile, doc["place"], act["place"]) / 60
     shy = float(place.get("crowded") or 0) * (1 - doc["stats"]["courage"] / 100)
     dear = 0.5 if doc["money"] < int(act.get("cost") or 0) * 4 else 0.0
+    wet = 1.0 if place.get("outdoor") and weather(doc, local) in ("rain", "snow") else 0.0
     noise = _rng(doc, "pick", local.strftime("%Y-%m-%d-%H"), key).uniform(-0.3, 0.3)
     again = min(1.2, _hours_today(doc, key, local, tz) * 0.3) + (1.0 if key == doc.get("activity") and act.get("cost") else 0.0)
     out = float((profile.get("outing") or {}).get("bonus") or 0) if act["place"] != (profile.get("start") or {}).get("place") and _feels_like_going_out(doc, profile, local, tz) else 0.0
-    return float(act.get("likes") or 0) + relief + noise + out - trip * 0.7 - shy - dear - again
+    return float(act.get("likes") or 0) + relief + noise + out - trip * 0.7 - shy - dear - again - wet
 
 
 def _pick(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any) -> tuple[str, datetime | None]:
@@ -264,6 +289,7 @@ def _begin(doc: dict[str, Any], profile: dict[str, Any], key: str, until: dateti
         return
     doc["going"] = {"activity": key, "until": A._iso(until) if until else None, "room": A._iso(room) if room else None}
     street = profile["activities"]["commute"]["place"]
+    trip = max(1, round(trip / TOGETHER_FASTER)) if doc.get("with_user") else trip
     doc.update(activity="commute", place=street, since=A._iso(t), until=A._iso(t + timedelta(minutes=trip)))
     out.append({"type": "moved", "place": street, "activity": "commute", "to": target})
 
@@ -287,6 +313,7 @@ def _apply(doc: dict[str, Any], profile: dict[str, Any], dt: timedelta, t: datet
         rates = {}  # (a message woke her: no sleep goes on while she is up)
     for need in NEEDS:
         rate = DRIFT[need] + (AFFECTION_CLOSE * closeness if need == "affection" else 0.0) + float(rates.get(need) or 0)
+        rate += TOGETHER.get(need, 0.0) if doc.get("with_user") else 0.0
         doc["needs"][need] = _clamp(doc["needs"][need] + rate * hours, need)
     calm = 1 - 0.5 * doc["needs"]["stress"]  # (she learns less when frazzled, and a skill comes slower the higher it is)
     for stat, gain in (act.get("stats") or {}).items():
@@ -294,7 +321,8 @@ def _apply(doc: dict[str, Any], profile: dict[str, Any], dt: timedelta, t: datet
     doc["money"] += int(round(float(act.get("pay") or 0) * hours))
     if act.get("cost") and doc.get("paid") != doc.get("since"):
         doc["paid"] = doc.get("since")
-        doc["money"] = max(0, doc["money"] - int(act["cost"]))
+        if not doc.get("with_user"):  # (together, it is on them)
+            doc["money"] = max(0, doc["money"] - int(act["cost"]))
 
 
 def _new_day(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any) -> None:
@@ -319,6 +347,17 @@ def _switch(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any, 
             return
         doc["activity"] = None
         _settle(doc, profile, key, A._t(going.get("until")), A._t(going.get("room")), t, out)
+        return
+    plan = doc.get("plan")
+    if plan:
+        if t < (A._t(plan.get("until")) or t):
+            return
+        heard_at = A._t(doc.get("heard_at"))
+        if doc.get("with_user") and heard_at is not None and t - heard_at < STILL_TALKING:
+            plan["until"] = doc["until"] = A._iso(t + STAY_ON)  # (they are still talking: she doesn't get up and go)
+            return
+        doc["plan"], doc["with_user"] = None, None
+        _next(doc, profile, t, tz, out)
         return
     due = _due(doc, profile, t, tz)
     if due and due["activity"] == doc.get("activity"):
@@ -350,6 +389,41 @@ def advance(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any
     return out
 
 
+# ---- what she decides herself ----
+
+def decide(doc: dict[str, Any], profile: dict[str, Any], key: Any, now: datetime, tz: Any, *, with_user: bool = False, minutes: Any = None,
+           why: str = "") -> dict[str, Any]:
+    """She goes and does this, because she decided to (do_activity: the model proposes, this holds what isn't up to her: that it
+    exists, that it is open, that she can pay). -> {code: ok | already | unknown | closed | money, …}."""
+    acts = profile["activities"]
+    act = acts.get(key) if isinstance(key, str) else None
+    if act is None or key == "commute":
+        return {"code": "unknown"}
+    place = profile["places"][act["place"]]
+    trip = travel_minutes(profile, doc["place"], act["place"])
+    if with_user and trip >= WALK_MINUTES:
+        trip = max(1, round(trip / TOGETHER_FASTER))
+    arrive = now + timedelta(minutes=trip)
+    if not place_open(place, arrive.astimezone(tz)):
+        return {"code": "closed", "hours": place.get("open"), "place": act["place"]}
+    if not with_user and doc["money"] < int(act.get("cost") or 0):
+        return {"code": "money", "cost": int(act["cost"])}
+    low, high = act.get("minutes") or [45, 75]
+    try:
+        length = max(PLAN_MINUTES[0], min(PLAN_MINUTES[1], int(minutes)))
+    except (TypeError, ValueError):
+        length = (int(low) + int(high)) // 2
+    until = arrive + timedelta(minutes=length)
+    doc["with_user"] = A._iso(now) if with_user else None
+    doc["plan"] = {"activity": key, "until": A._iso(until), "why": " ".join(str(why or "").split())[:120], "at": A._iso(now)}
+    if doc.get("activity") == key:
+        doc["until"] = A._iso(until)
+        return {"code": "already", "activity": key, "place": act["place"]}
+    out: list[dict[str, Any]] = []
+    _begin(doc, profile, key, until, None, now, out)
+    return {"code": "ok", "activity": key, "place": act["place"], "minutes": trip, "happened": out}
+
+
 # ---- what comes from outside ----
 
 def heard(doc: dict[str, Any], profile: dict[str, Any], message: str, now: datetime, *, warm: bool = False, rude: bool = False) -> bool:
@@ -357,7 +431,8 @@ def heard(doc: dict[str, Any], profile: dict[str, Any], message: str, now: datet
     her if she sleeps. -> whether it just woke her."""
     if doc.get("heard") == message:
         return False
-    doc["heard"] = message
+    doc["heard"], doc["heard_at"] = message, A._iso(now)
+    _earn(doc, now)
     if not rude:
         doc["needs"]["affection"] = _clamp(doc["needs"]["affection"] - (HEARD_WARM if warm else HEARD_AFFECTION), "affection")
         doc["needs"]["fun"] = _clamp(doc["needs"]["fun"] - HEARD_FUN, "fun")
@@ -368,6 +443,57 @@ def heard(doc: dict[str, Any], profile: dict[str, Any], message: str, now: datet
     woken = A._t(doc.get("woken"))
     doc["woken"] = A._iso(now + WOKEN_FOR)
     return woken is None or now >= woken
+
+
+def _earn(doc: dict[str, Any], now: datetime) -> None:
+    """Talking to her is what these come from, a little a day."""
+    day = now.strftime("%Y-%m-%d")
+    if doc.get("coins_day") != day:
+        doc["coins_day"], doc["coins_today"] = day, 0
+        doc["coins"] = int(doc.get("coins") or 0) + COINS_FIRST_MESSAGE
+    if int(doc.get("coins_today") or 0) < COINS_A_DAY:
+        doc["coins_today"] = int(doc.get("coins_today") or 0) + COINS_MESSAGE
+        doc["coins"] = int(doc.get("coins") or 0) + COINS_MESSAGE
+
+
+def give(doc: dict[str, Any], profile: dict[str, Any], item_id: Any) -> dict[str, Any]:
+    """They send her something. -> {code: ok | unknown | coins, item}. What it does happens now; how she takes it is hers."""
+    item = next((x for x in profile.get("shop") or [] if x.get("id") == item_id), None)
+    if item is None:
+        return {"code": "unknown"}
+    price = int(item.get("price") or 0)
+    if int(doc.get("coins") or 0) < price:
+        return {"code": "coins", "item": item}
+    doc["coins"] = int(doc.get("coins") or 0) - price
+    for need, delta in (item.get("needs") or {}).items():
+        doc["needs"][need] = _clamp(doc["needs"][need] + float(delta), need)
+    for stat, gain in (item.get("stats") or {}).items():
+        doc["stats"][stat] = min(100.0, doc["stats"][stat] + float(gain))
+    if item.get("keep"):
+        doc["kept"] = [*doc["kept"], item["id"]][-KEPT_MAX:]
+    return {"code": "ok", "item": item}
+
+
+def note(doc: dict[str, Any], text: str) -> None:
+    """Something for her to hear with their next message."""
+    doc["notes"] = [*doc.get("notes", []), text][-NOTES_MAX:]
+
+
+def take_notes(doc: dict[str, Any]) -> list[str]:
+    notes, doc["notes"] = list(doc.get("notes") or []), []
+    return notes
+
+
+def catalog(profile: dict[str, Any]) -> str:
+    """What she can decide to do, for her system prompt."""
+    lines = []
+    for key, act in profile["activities"].items():
+        if not act.get("free"):
+            continue
+        place = profile["places"][act["place"]]
+        hours = f", open {place['open'][0]}–{place['open'][1]}" if place.get("open") else ""
+        lines.append(f"- {key}: {act.get('doing') or key} (at {place.get('about') or act['place']}{hours})")
+    return "\n".join(lines)
 
 
 # ---- what can be seen of it ----
@@ -401,7 +527,12 @@ def body(doc: dict[str, Any]) -> list[list[str]]:
 
 def signature(doc: dict[str, Any]) -> list[Any]:
     """Without the fine print: when this changes she is told again, and every window hears."""
-    return [doc.get("place"), doc.get("activity"), body(doc)]
+    return [doc.get("place"), doc.get("activity"), body(doc), bool(doc.get("with_user"))]
+
+
+def art(profile: dict[str, Any], place: str | None, when: str) -> str:
+    """The picture of a place at this time of day."""
+    return f"{profile['art']}/{place}-{when}.webp" if profile.get("art") and place else ""
 
 
 def line(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *, woke: bool = False) -> str:
@@ -420,21 +551,29 @@ def line(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *
         if minutes >= 10:
             where += f" (for {f'about {round(minutes / 60)} hours' if minutes >= 90 else f'{minutes} minutes'} now)"
     parts = [f"Your day: you are {where}."]
+    if doc.get("with_user"):
+        parts.append("They are here with you in person: this is not by phone, you can see each other.")
     if woke:
         parts.append("Their message just woke you up: you are groggy, you were asleep a moment ago.")
     elif asleep(doc, profile, now):
         parts.append("You were asleep until their message.")
-    elif act.get("reply"):
+    elif act.get("reply") and not doc.get("with_user"):
         parts.append(act["reply"])
-    coming = _upcoming(doc, profile, now, tz)
-    if coming and coming["activity"] != doc.get("activity"):
-        local = now.astimezone(tz)
+    local = now.astimezone(tz)
+    sky = weather(doc, local)
+    if sky != "clear":
+        parts.append({"cloudy": "It is cloudy today.", "rain": "It is raining today.", "snow": "It is snowing today."}[sky])
+    coming = _upcoming(doc, profile, now, tz, other_than=doc.get("activity"))
+    if coming:
         if coming["start"] - local <= timedelta(hours=4):
             what = profile["activities"][coming["activity"]]
             parts.append(f"Coming up at {coming['start'].strftime('%H:%M')}: {what.get('doing') or coming['activity']}.")
     feelings = [f"{w} {BODY_WORDS[n]}" for n, w in body(doc)]
     if feelings:
         parts.append("Your body: " + ", ".join(feelings) + ".")
+    names = [(next((x for x in profile.get("shop") or [] if x.get("id") == i), None) or {}).get("note") for i in doc.get("kept") or []]
+    if any(names):
+        parts.append("You have, from them: " + ", ".join(dict.fromkeys(n for n in names if n)) + ".")
     return " ".join(parts)
 
 
@@ -445,9 +584,11 @@ def _names(profile: dict[str, Any], kind: str, key: str | None) -> dict[str, str
 def summary(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any) -> dict[str, Any]:
     """What the mate document carries: enough for her stage and the status chips."""
     act = profile["activities"].get(doc.get("activity") or "") or {}
-    return {"enabled": True, "place": doc["place"], "place_name": _names(profile, "places", doc["place"]), "activity": doc.get("activity"),
+    local = now.astimezone(tz)
+    return {"enabled": True, "art": art(profile, doc["place"], slot(local)), "weather": weather(doc, local),
+            "outdoor": bool((profile["places"].get(doc["place"]) or {}).get("outdoor")), "place": doc["place"], "place_name": _names(profile, "places", doc["place"]), "activity": doc.get("activity"),
             "activity_name": _names(profile, "activities", doc.get("activity")), "body": act.get("body") or "", "since": doc.get("since"),
-            "until": doc.get("until"), "slot": slot(now.astimezone(tz)), "asleep": asleep(doc, profile, now),
+            "until": doc.get("until"), "slot": slot(local), "asleep": asleep(doc, profile, now), "with_user": bool(doc.get("with_user")),
             "needs": {n: round(doc["needs"][n], 3) for n in NEEDS}}
 
 
@@ -455,11 +596,15 @@ def view(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any) -
     """The whole of it, for the Life panel."""
     local = now.astimezone(tz)
     start = _midnight(local)
-    coming = _upcoming(doc, profile, now, tz)
+    coming = _upcoming(doc, profile, now, tz, other_than=doc.get("activity"))
     return {**summary(doc, profile, now, tz), "stats": {s: round(doc["stats"][s], 1) for s in STATS}, "money": doc["money"],
             "going": (doc.get("going") or {}).get("activity"),
             "next": {"activity": coming["activity"], "at": A._iso(coming["start"]), "name": _names(profile, "activities", coming["activity"])} if coming else None,
+            "map": profile.get("map") or "", "coins": int(doc.get("coins") or 0),
+            "shop": [{"id": x["id"], "name": dict(x.get("names") or {}), "about": dict(x.get("abouts") or {}), "price": int(x.get("price") or 0), "kind": x.get("kind") or "",
+                      "keep": bool(x.get("keep")), "have": x["id"] in (doc.get("kept") or [])} for x in profile.get("shop") or []],
             "places": [{"key": k, "name": dict(p.get("names") or {}), "open": place_open(p, local), "hours": p.get("open"), "here": k == doc["place"],
-                        "minutes": travel_minutes(profile, doc["place"], k)} for k, p in profile["places"].items()],
+                        "minutes": travel_minutes(profile, doc["place"], k), "art": art(profile, k, slot(local)), "x": p.get("x"), "y": p.get("y")}
+                       for k, p in profile["places"].items()],
             "today": [{**e, "name": _names(profile, "activities", e.get("activity")), "place_name": _names(profile, "places", e.get("place"))}
                       for e in doc["timeline"] if (A._t(e.get("to")) or now).astimezone(tz) >= start]}

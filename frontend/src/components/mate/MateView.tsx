@@ -29,6 +29,7 @@ import { useStudio } from "../../stores/studioStore";
 const MateSettings = lazy(() => import("./settings/MateSettings"));
 const GlobalSettings = lazy(() => import("./settings/GlobalSettings"));
 const RelationPanel = lazy(() => import("./RelationPanel"));
+const LifePanel = lazy(() => import("./life/LifePanel"));
 const MateStudio = lazy(() => import("./studio/MateStudio"));
 
 type SettingsTab = "relation" | "memory" | undefined;
@@ -62,12 +63,13 @@ export default function MateView() {
   const keyboard = useKeyboardOpen();
   // one panel slot: Mate settings or the Relationship panel (local), or Global settings (the store's: Mate settings
   // and anything else open it with openGlobal(section); inside Mate settings it swaps itself for Global settings)
-  const [panel, setPanel] = useState<"mate" | "relation" | null>(null);
+  const [panel, setPanel] = useState<"mate" | "relation" | "life" | null>(null);
   const [mateTab, setMateTab] = useState<"profile" | undefined>(undefined);
   const [bondTab, setBondTab] = useState<"memory" | "relation">("relation");
   const mateOpen = panel === "mate";
   const globalOpen = useMateStore((s) => s.globalOpen);
   const relationOpen = panel === "relation" && !globalOpen;
+  const lifeOpen = panel === "life" && !globalOpen;
   const settings = panel !== null || globalOpen;
   const closePanels = () => {
     setPanel(null);
@@ -96,6 +98,11 @@ export default function MateView() {
     if (relationOpen) return setPanel(null);
     useMateStore.getState().closeGlobal();
     setPanel("relation");
+  };
+  const toggleLife = () => {
+    if (lifeOpen) return setPanel(null);
+    useMateStore.getState().closeGlobal();
+    setPanel("life");
   };
   // Older settings-memory/settings-relation links now enter the heart panel.
   useEffect(() => {
@@ -352,6 +359,16 @@ export default function MateView() {
               </button>
             </>
           )}
+          {mate.life && <button
+            onClick={toggleLife}
+            className={`btn-ghost !px-2.5 ${lifeOpen ? "!bg-surface-3 !text-content" : ""}`}
+            title={t("life.openTitle", { name: mate.name })}
+            aria-label={t("life.open")}
+            aria-pressed={lifeOpen}
+            data-testid="mate-life-open"
+          >
+            <Icon name="map-pin" size={16} />
+          </button>}
           <button
             onClick={toggleRelation}
             className={`btn-ghost !px-2.5 ${relationOpen ? "!bg-surface-3 !text-content" : ""}`}
@@ -477,6 +494,16 @@ export default function MateView() {
         <MateSettings key={mateTab ?? ""} mate={mate} conv={conv} onClose={closePanels} initialTab={mateTab} />
       ) : relationOpen ? (
         <RelationPanel key={bondTab} mate={mate} onClose={closePanels} initialTab={bondTab} />
+      ) : lifeOpen ? (
+        <LifePanel
+          key={mate.id}
+          mate={mate}
+          onClose={closePanels}
+          onSay={(text) => {
+            closePanels();
+            conv.send(text);
+          }}
+        />
       ) : (
         <GlobalSettings onClose={() => useMateStore.getState().closeGlobal()} />
       )}
@@ -506,6 +533,7 @@ export default function MateView() {
                 size="sm"
                 className={`h-[36dvh] shrink-0 border-b border-border/60 bg-gradient-to-b from-surface-2/40 to-transparent pt-1 ${keyboard ? "!hidden" : ""}`}
                 onTap={() => conv.poke("greet")}
+                onLife={toggleLife}
               />
             )}
             {conversation}
@@ -527,6 +555,7 @@ export default function MateView() {
           caption={conv.caption}
           className="min-w-[300px] flex-1 basis-0 border-r border-border/60 bg-[radial-gradient(ellipse_at_50%_100%,rgb(var(--c-surface-2)/0.9),transparent_70%)] px-4 pt-4"
           onTap={() => conv.poke("greet")}
+          onLife={toggleLife}
         />
         <div className="relative flex min-h-0 min-w-[360px] flex-1 basis-0" data-testid="mate-chat-half">
           {conversation}

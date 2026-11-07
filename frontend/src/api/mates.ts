@@ -128,6 +128,10 @@ export type LifeNames = { ko?: string; en?: string };
 /** her own day, as the mate document carries it (app/mate/life/sim.py ``summary``) */
 export interface MateLifeSummary {
   enabled: boolean;
+  /** the picture of where she is, at this time of day */
+  art?: string;
+  weather?: "clear" | "cloudy" | "rain" | "snow";
+  outdoor?: boolean;
   place?: string;
   place_name?: LifeNames;
   activity?: string | null;
@@ -138,7 +142,52 @@ export interface MateLifeSummary {
   until?: string | null;
   slot?: "morning" | "day" | "evening" | "night";
   asleep?: boolean;
+  /** they are with her in person */
+  with_user?: boolean;
   needs?: Record<LifeNeed, number>;
+}
+
+export type LifeStat = "work" | "gaming" | "stamina" | "cooking" | "sense" | "courage";
+export interface LifePlace {
+  key: string;
+  name: LifeNames;
+  open: boolean;
+  hours?: [string, string] | null;
+  here: boolean;
+  minutes: number;
+  art: string;
+  x?: number | null;
+  y?: number | null;
+}
+export interface LifeEntry {
+  activity: string;
+  place: string;
+  from: string;
+  to: string;
+  name: LifeNames;
+  place_name: LifeNames;
+}
+/** GET /api/mates/{id}/life: all of it, for the Life panel */
+export interface LifeView extends MateLifeSummary {
+  stats?: Record<LifeStat, number>;
+  money?: number;
+  going?: string | null;
+  next?: { activity: string; at: string; name: LifeNames } | null;
+  map?: string;
+  places?: LifePlace[];
+  today?: LifeEntry[];
+  coins?: number;
+  shop?: LifeGift[];
+}
+export interface LifeGift {
+  id: string;
+  name: LifeNames;
+  about: LifeNames;
+  price: number;
+  kind: string;
+  keep: boolean;
+  /** she already has it */
+  have: boolean;
 }
 
 /** a change of the conversation style she made herself (update_conversation_style) */
@@ -571,6 +620,9 @@ export const bulkMemories = (id: string, ids: string[], action: "delete" | "arch
 export const getRelation = (id: string) => apiFetch<RelationView>(`/api/mates/${enc(id)}/relation`);
 export const getRelationJournal = (id: string, days = 30) =>
   apiFetch<RelationJournal>(`/api/mates/${enc(id)}/relation/journal?days=${days}`);
+export const getLife = (id: string) => apiFetch<LifeView>(`/api/mates/${enc(id)}/life`);
+export const sendLifeGift = (id: string, item: string) =>
+  apiFetch<LifeView>(`/api/mates/${enc(id)}/life/gift`, { method: "POST", body: JSON.stringify({ item }) });
 export const getMateState = (id: string) => apiFetch<StateView>(`/api/mates/${enc(id)}/state`);
 /** she was tapped: a bit of attention, until it is too much of it */
 export const pokeMate = (id: string) => apiFetch<MateState>(`/api/mates/${enc(id)}/state/poke`, { method: "POST" });

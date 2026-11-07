@@ -63,6 +63,7 @@ FROM_NEEDS = {"sleepy": (("sleep", 0.35, 1.35, "tired"),), "angry": (("hunger", 
               "sad": (("fun", 0.8, 3.0, "bored"),), "lonely": (("affection", 0.35, 1.0, "wants_affection"),),
               "worried": (("stress", 0.45, 1.33, "stressed"),)}
 ASLEEP = 0.85
+GIFT = 0.3
 
 #: how each bundled mate usually is: ``base``: where she settles; ``rise``: how easily it moves; ``loves``: what lights her up
 TEMPERAMENTS: dict[str, dict[str, Any]] = {
@@ -114,7 +115,7 @@ _WHY_FOR_HER = {
     "returned": "they came back after a while", "answered": "they answered at last", "ignored": "you spoke and they didn't answer",
     "interrupted": "they cut you off", "poked": "they keep poking you", "pestered": "they keep pushing about your clothes",
     "late": "it's late", "work_ok": "work you passed on went well", "work_failed": "work you passed on went badly",
-    "nature": "it's how you are", "user_wore": "they put it on you", "asleep": "you were asleep", "tired": "you're tired",
+    "nature": "it's how you are", "user_wore": "they put it on you", "gift": "they sent you something", "asleep": "you were asleep", "tired": "you're tired",
     "hungry": "you're hungry", "stressed": "it has been a stressful stretch", "bored": "you've had nothing fun to do for a while",
     "wants_affection": "you could do with some warmth and attention",
 }
@@ -486,6 +487,11 @@ def poked(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> Non
     else:
         _rise(doc, w, "happy", POKE, {"code": "poked"}, now, tz)
         _rise(doc, w, "shy", POKE, {"code": "poked"}, now, tz)
+
+
+def gifted(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> None:
+    """They sent her something (app/mate/life)."""
+    _rise(doc, w, "happy", GIFT, {"code": "gift"}, now, tz)
 
 
 def report(doc: dict[str, Any], w: dict[str, Any], emotion: str, strength: str, reason: str, now: datetime, tz: Any) -> None:

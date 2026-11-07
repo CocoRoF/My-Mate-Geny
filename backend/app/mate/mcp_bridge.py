@@ -13,7 +13,7 @@ HRH_MATE_SESSION; HRH_MATE_SCREEN=1 when the mate may look at the user's screen
 (``see_screen`` is listed only then; its picture comes back as MCP image content);
 HRH_MATE_STYLE=auto|ask when she may change her own conversation style
 (``update_conversation_style``; absent = not listed); HRH_MATE_OUTFIT=1 when she may change her clothes
-(``change_outfit``); HRH_MATE_STATE=1 for ``feel``.
+(``change_outfit``); HRH_MATE_STATE=1 for ``feel``; HRH_MATE_LIFE=1 for ``do_activity``.
 """
 
 from __future__ import annotations
@@ -313,6 +313,26 @@ CHANGE_OUTFIT = {
     },
 }
 
+# offered while she has a day of her own (HRH_MATE_LIFE=1, app/mate/life)
+DO_ACTIVITY = {
+    "name": "do_activity",
+    "description": (
+        "Go somewhere or start doing something, because you decided to: where you are and what you are doing change at once and the user "
+        "sees it. Whether to is yours to decide, from how you feel and what you are in the middle of. Your system prompt lists what you can do. "
+        "Returns what happened: Going, Already, Closed, No money or Unknown."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "activity": {"type": "string", "description": "The activity's id from the list in your system prompt."},
+            "with_user": {"type": "boolean", "description": "They are coming along in person (only if they said so). Default: you go alone."},
+            "minutes": {"type": "integer", "description": "About how long; default: as long as that usually takes."},
+            "reason": {"type": "string", "description": "Why, in a few of your own words, in the user's language."},
+        },
+        "required": ["activity", "reason"],
+    },
+}
+
 # offered only while the mate's Screen setting is on (HRH_MATE_SCREEN=1, app/mate/service.configure_engine)
 SEE_SCREEN = {
     "name": "see_screen",
@@ -339,6 +359,7 @@ def tools() -> list[dict]:
     return (base + ([UPDATE_STYLE] if os.environ.get("HRH_MATE_STYLE") in ("auto", "ask") else [])
             + ([FEEL] if os.environ.get("HRH_MATE_STATE") == "1" else [])
             + ([CHANGE_OUTFIT] if os.environ.get("HRH_MATE_OUTFIT") == "1" else [])
+            + ([DO_ACTIVITY] if os.environ.get("HRH_MATE_LIFE") == "1" else [])
             + ([SEE_SCREEN] if os.environ.get("HRH_MATE_SCREEN") == "1" else []))
 
 
