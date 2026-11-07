@@ -1296,7 +1296,7 @@ class SessionService:
             # Avatar Create: its own prompt and only its own tools (app.avatar.service)
             self.engine_hooks[session["kind"]](session, req)
         turn_meta=(self.active_runs.get(sid) or {}).get("meta") or {}
-        if turn_meta.get("internal") and turn_meta.get("kind") in ("screen_observation","thinking_trigger","device_greeting"):
+        if turn_meta.get("internal") and turn_meta.get("kind") in ("screen_observation","thinking_trigger","device_greeting","life_event"):
             req.timeout_s = 600 if turn_meta.get("trigger_kind")=="activity" else 180
         self._inboxes[sid] = req.inbox
 

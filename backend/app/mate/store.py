@@ -38,7 +38,7 @@ STT_ENGINES = ("off", "browser", "google", "openai", "whisper", "elevenlabs")
 # voice.stt.silence: how long a pause ends an utterance (ElevenLabs VAD, seconds; its API takes 0.192 – 3.0)
 STT_SILENCE = (0.3, 3.0, 1.2)
 AVATAR_KINDS = ("none", "video", "photo", "live2d")
-CLIP_KINDS = ("idle", "talk", "listen", "think", "react", "away")
+CLIP_KINDS = ("idle", "talk", "listen", "think", "react", "away", "life")
 # stills that make her blink / talk: mechanics, never shown for an emotion
 MECHANIC_STILLS = ("blink", "mouth_half", "mouth_open", "mouth_o")
 MAX_CLIPS = 200

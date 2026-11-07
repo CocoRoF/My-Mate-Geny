@@ -28,7 +28,8 @@ import { DropOverlay, useFileDrop } from "../../composer/useFileDrop";
 import MateComposer from "../MateComposer";
 import MateMessages from "../MateMessages";
 import { MateThumb, moodLabel, useFadingCaption } from "../MateStage";
-import { useT } from "../../../i18n";
+import { lifeName } from "../life/needs";
+import { useLang, useT } from "../../../i18n";
 
 const RelationPanel = lazy(() => import("../RelationPanel"));
 
@@ -476,6 +477,9 @@ function ChatWindow() {
   }
   const onTop = !!desk?.chatOnTop;
   const online = conv.connection === "open";
+  const lang = useLang();
+  // (what she is up to, in her own day)
+  const doing = mate.life?.enabled ? lifeName(mate.life.activity_name, lang) : "";
   const status = moodLabel(t, conv.mood) || (online ? t("mate.statusHere") : t("mate.statusConnecting"));
   const iconBtn = "grid h-8 w-8 place-items-center rounded-lg text-content-dim transition hover:bg-surface-3 hover:text-content";
   const menuItem = "flex w-full items-center gap-2 px-3 py-2 text-left text-[12.5px] text-content-dim transition hover:bg-surface-3 hover:text-content";
@@ -498,7 +502,7 @@ function ChatWindow() {
             <span
               className={`h-1.5 w-1.5 shrink-0 rounded-full ${online ? (conv.mood === "idle" ? "bg-success" : "bg-accent animate-pulse-dot") : "bg-content-faint"}`}
             />
-            <span className="truncate">{status}</span>
+            <span className="truncate">{status}{doing && conv.mood === "idle" ? ` · ${doing}` : ""}</span>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-0.5" style={win ? NO_DRAG : undefined}>

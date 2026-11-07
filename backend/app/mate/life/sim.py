@@ -438,7 +438,7 @@ def _fire(doc: dict[str, Any], event: dict[str, Any], t: datetime, tz: Any, out:
     doc["last_event"] = A._iso(t)
     doc["recent"] = [*doc["recent"], {"id": event["id"], "at": A._iso(t), "day": _her_day(t, tz)}][-RECENT_KEPT:]
     note(doc, event["says"], t)
-    out.append({"type": "event", "id": event["id"], "title": dict(event.get("titles") or {}), "share": bool(event.get("share")),
+    out.append({"type": "event", "at": A._iso(t), "id": event["id"], "title": dict(event.get("titles") or {}), "share": bool(event.get("share")),
                 "says": event["says"], "feel": dict(effects.get("feel") or {})})
 
 
@@ -699,14 +699,14 @@ def line(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *
     if sky != "clear":
         parts.append({"cloudy": "It is cloudy today.", "rain": "It is raining today.", "snow": "It is snowing today."}[sky])
     coming = _upcoming(doc, profile, now, tz, other_than=doc.get("activity"))
-    if coming:
+    if coming and profile["activities"][coming["activity"]].get("body") != "sleep":
         if coming["start"] - local <= timedelta(hours=4):
             what = profile["activities"][coming["activity"]]
             parts.append(f"Coming up at {coming['start'].strftime('%H:%M')}: {what.get('doing') or coming['activity']}.")
     planned = doc["week"].get(plan_slot(local) or "")
     if planned and planned != doc.get("activity") and planned in profile["activities"]:
         parts.append(f"They suggested you spend this time {profile['activities'][planned].get('doing') or planned}: it is a suggestion, up to you.")
-    feelings = [f"{w} {BODY_WORDS[n]}" for n, w in body(doc)]
+    feelings = [f"{BODY_WORDS[n]} ({w})" for n, w in body(doc)]
     if feelings:
         parts.append("Your body: " + ", ".join(feelings) + ".")
     names = [(next((x for x in profile.get("shop") or [] if x.get("id") == i), None) or {}).get("note") for i in doc.get("kept") or []]
@@ -737,7 +737,7 @@ def view(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any) -
     coming = _upcoming(doc, profile, now, tz, other_than=doc.get("activity"))
     events = {e["id"]: e for e in profile.get("events") or []}
     return {**summary(doc, profile, now, tz), "plan": {"slots": plan_slots(), "week": dict(doc["week"]), "now": plan_slot(local),
-                                                      "choices": [{"id": k, "name": _names(profile, "activities", k)} for k, a in profile["activities"].items() if a.get("plannable")]},
+                                                      "choices": [{"id": k, "name": dict(a.get("plan_names") or a.get("names") or {})} for k, a in profile["activities"].items() if a.get("plannable")]},
             "journal": [{**d, "names": {k: _names(profile, "activities", k) for k in d.get("hours") or {}},
                          "titles": [dict(events.get(e, {}).get("titles") or {}) for e in d.get("events") or []]} for d in reversed(doc["days"][-30:])],
             "happened": [{"at": e["at"], "title": dict(events.get(e["id"], {}).get("titles") or {})} for e in reversed(doc["recent"])],

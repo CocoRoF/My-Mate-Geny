@@ -18,9 +18,16 @@
   radial-gradient(circle at 45% 80%,rgba(255,255,255,.65) 0 2px,transparent 2.6px);
   background-size:130px 130px,190px 190px,260px 260px;animation:life-snow 11s linear infinite}
 @keyframes life-snow{to{background-position:30px 130px,-40px 190px,20px 260px}}
+/* she is asleep: the room goes dim, and something drifts up */
+.life-asleep{position:absolute;inset:0;background:rgba(10,12,30,.42);transition:opacity .8s}
+.life-asleep span{position:absolute;left:62%;top:34%;color:rgba(255,255,255,.75);font-weight:600;font-size:18px;opacity:0;animation:life-z 4.2s ease-out infinite}
+.life-asleep span:nth-child(2){animation-delay:1.4s;font-size:15px}
+.life-asleep span:nth-child(3){animation-delay:2.8s;font-size:12px}
+@keyframes life-z{0%{transform:translate(0,0);opacity:0}15%{opacity:.85}100%{transform:translate(26px,-64px);opacity:0}}
 /* a glass chip on the picture */
 .life-chip{background:rgba(14,16,28,.56);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.12);color:#f2f4fa}
 @media (prefers-reduced-motion:reduce){
   .life-backdrop-pic.incoming{animation-duration:.01s}
   .life-sky-rain,.life-sky-snow{animation:none}
+  .life-asleep span{animation:none;opacity:.7}
 }

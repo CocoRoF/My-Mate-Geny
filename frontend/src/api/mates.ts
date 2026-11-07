@@ -189,6 +189,8 @@ export interface LifeDay {
   grown: Partial<Record<LifeStat, number>>;
   money: number;
   titles: LifeNames[];
+  /** a few lines in her own words ("": none that day) */
+  diary?: string | null;
 }
 export interface LifeGift {
   id: string;

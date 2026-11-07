@@ -12,13 +12,15 @@ export type Avatar =
 
 export type AvatarKind = Avatar["kind"];
 
-export type ClipKind = "idle" | "talk" | "listen" | "think" | "react" | "away";
+export type ClipKind = "idle" | "talk" | "listen" | "think" | "react" | "away" | "life";
 
 export interface RigClip {
   id: string;
   kind: ClipKind;
   /** the emotion a `react` clip plays (matched with the aliases in emotion.ts) */
   emotion?: string;
+  /** what she is doing in a `life` clip (a mate's own day: eat, game, read …) */
+  doing?: string;
   /** the big clip (size "lg") */
   src: string;
   /** the small clip (size "sm"; falls back to `src`) */

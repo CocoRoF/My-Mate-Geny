@@ -31,8 +31,9 @@ export const KIND_WORDS: Record<ClipKind, MsgKey> = {
   think: "mateSettings.clipKindThink",
   react: "mateSettings.clipKindReact",
   away: "mateSettings.clipKindAway",
+  life: "mateSettings.clipKindLife",
 };
-const KINDS: ClipKind[] = ["idle", "talk", "listen", "think", "react", "away"];
+const KINDS: ClipKind[] = ["idle", "talk", "listen", "think", "react", "away", "life"];
 
 export const MOOD_WORDS: Record<BodyMood, MsgKey> = {
   idle: "mateSettings.clipKindIdle",

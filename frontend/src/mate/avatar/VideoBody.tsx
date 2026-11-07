@@ -21,6 +21,8 @@ export interface VideoBodyProps {
   rig: Rig;
   size: "lg" | "sm";
   mood: BodyMood;
+  /** what she is up to in her own day: what she does while nothing else is going on */
+  doing?: string;
   react: MateReact;
   poster: string | null;
   name: string;
@@ -31,7 +33,7 @@ export interface VideoBodyProps {
 /** a mood shorter than this never switches a clip */
 export const MOOD_SETTLE_MS = 600;
 
-const RANK: Record<string, number> = { idle: 0, talk: 1, think: 2, listen: 3, react: 4, away: 5 };
+const RANK: Record<string, number> = { idle: 0, talk: 1, think: 2, listen: 3, react: 4, away: 5, life: 6 };
 
 type State = {
   /** the mood that counts (held for MOOD_SETTLE_MS) */
@@ -43,7 +45,7 @@ type State = {
   upcoming: RigClip | null;
 };
 
-export default function VideoBody({ rig, size, mood, react, poster, name, onFail }: VideoBodyProps) {
+export default function VideoBody({ rig, size, mood, doing, react, poster, name, onFail }: VideoBodyProps) {
   const wrap = useRef<HTMLDivElement>(null);
   /** changes only prepare the next clip; onEnded is the sole transition clock */
   const changeRef = useRef<(() => void) | null>(null);
@@ -53,6 +55,8 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
   failRef.current = onFail;
   const moodRef = useRef(mood);
   moodRef.current = mood;
+  const doingRef = useRef(doing);
+  doingRef.current = doing;
   /** reactions older than this body belong to the previous mate/avatar */
   const born = useRef(Date.now());
   const [shown, setShown] = useState(false);
@@ -139,22 +143,22 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
         }
       }
     })();
-    /** the kind of clip a mood plays (breathing when the rig has none of that kind) */
-    const wanted = (m: BodyMood) => moodPool(active, m).kind;
+    /** this clip is one of those a mood plays (breathing when the rig has none of that kind) */
+    const suits = (c: RigClip | null | undefined, m: BodyMood) => !!c && moodPool(active, m, doingRef.current).clips.some((x) => x.id === c.id);
     const pickFrom = (list: RigClip[] | undefined) => {
       if (!list?.length) return null;
       const others = list.filter((c) => c.id !== s.last);
       const pool = others.length ? others : list;
       return pool[Math.floor(Math.random() * pool.length)];
     };
-    const forMood = (m: BodyMood): RigClip | null => pickFrom(moodPool(active, m).clips);
+    const forMood = (m: BodyMood): RigClip | null => pickFrom(moodPool(active, m, doingRef.current).clips);
     const moodNow = (): BodyMood => s.mood;
     /** load what plays when the clip on screen ends (a pending reaction, else a clip for the mood that counts) */
     const prepareNext = () => {
       let c: RigClip | null = s.react;
       if (!c) {
         const m = moodNow();
-        c = s.playing?.loop && s.playing.kind === wanted(m) ? s.playing : s.upcoming && s.upcoming.kind === wanted(m) ? s.upcoming : forMood(m);
+        c = s.playing?.loop && suits(s.playing, m) ? s.playing : suits(s.upcoming, m) ? s.upcoming : forMood(m);
         s.upcoming = c;
       }
       if (c && c.id !== s.playing?.id) p.prepare(srcOf(c));
@@ -167,7 +171,7 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
         s.react = null;
       } else {
         const m = moodNow();
-        c = s.playing?.loop && s.playing.kind === wanted(m) ? s.playing : s.upcoming && s.upcoming.kind === wanted(m) ? s.upcoming : forMood(m);
+        c = s.playing?.loop && suits(s.playing, m) ? s.playing : suits(s.upcoming, m) ? s.upcoming : forMood(m);
       }
       s.upcoming = null;
       if (!c) return;
@@ -179,7 +183,7 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
       // ever needs to edit the current media element's loop flag to leave one.
       p.show(srcOf(c), { loop: false });
       // have the likely next clip ready, so the switch at the end shows no seam
-      const after = c.loop && c.kind === wanted(moodNow()) ? c : forMood(moodNow());
+      const after = c.loop && suits(c, moodNow()) ? c : forMood(moodNow());
       if (after && after.id !== c.id) {
         s.upcoming = after;
         p.prepare(srcOf(after));
@@ -241,6 +245,10 @@ export default function VideoBody({ rig, size, mood, react, poster, name, onFail
     }, MOOD_SETTLE_MS);
     return () => clearTimeout(t);
   }, [mood]);
+  // (what she is doing only decides what comes next: a clip is never cut short for it)
+  useEffect(() => {
+    changeRef.current?.();
+  }, [doing]);
 
   // a reaction plays once, now and whole (only a newer one cuts it)
   const reactAt = react?.at;

@@ -43,6 +43,8 @@ export interface MateAvatarExtraProps {
   interactive?: boolean;
   /** the user's pan / zoom inside the box (mate/avatar/view.ts; the desktop overlay) */
   view?: AvatarViewT;
+  /** video: what she is up to in her own day (app/mate/life) */
+  doing?: string;
   /** her default set: this one stands where that one stands (framing.ts) */
   frameTo?: FramedSet;
 }
@@ -62,6 +64,7 @@ export const MateAvatar = memo(function MateAvatar({
   onTap,
   interactive,
   view,
+  doing,
 }: MateAvatarProps & MateAvatarExtraProps) {
   const webgl = useSyncExternalStore(noSubscribe, canVideo, () => false);
   const plainOk = useSyncExternalStore(noSubscribe, canPlainVideo, () => false);
@@ -115,6 +118,7 @@ export const MateAvatar = memo(function MateAvatar({
             rig={rig}
             size={size}
             mood={videoMood ?? mood}
+            doing={doing}
             react={react}
             poster={home}
             name={name}
@@ -163,7 +167,7 @@ export function LiveMateAvatar({
 }: Omit<MateAvatarProps, "avatar" | "name"> &
   MateAvatarExtraProps & {
     videoMood: BodyMood;
-    mate: { id: string; name: string; avatar: Avatar; state?: MateState; relation?: { avatar_mood?: boolean }; outfits?: { worn: string; items: OutfitCard[] } };
+    mate: { id: string; name: string; avatar: Avatar; state?: MateState; relation?: { avatar_mood?: boolean }; outfits?: { worn: string; items: OutfitCard[] }; life?: { enabled: boolean; body?: string; asleep?: boolean } };
   }) {
   const avatar = useLiveAvatar(mate) ?? mate.avatar;
   const { shown, phase } = useOutfitFade(mate.outfits?.worn ?? DEFAULT_OUTFIT, avatar);
@@ -177,7 +181,10 @@ export function LiveMateAvatar({
     () => (hasBody && wide && high ? { aspect: [wide, high], frame: JSON.parse(measured) } : undefined),
     [hasBody, wide, high, measured],
   );
-  return <MateAvatar avatar={shown} name={mate.name} look={restingLook(mate)} frameTo={frameTo} className={[className, fading].filter(Boolean).join(" ") || undefined} {...rest} />;
+  // (awake in bed because of a message: she is herself. The body names only what she is doing right now)
+  const life = mate.life;
+  const doing = life?.enabled ? (life.body === "sleep" && !life.asleep ? undefined : life.body || undefined) : undefined;
+  return <MateAvatar avatar={shown} name={mate.name} look={restingLook(mate)} frameTo={frameTo} doing={doing} className={[className, fading].filter(Boolean).join(" ") || undefined} {...rest} />;
 }
 
 export default MateAvatar;

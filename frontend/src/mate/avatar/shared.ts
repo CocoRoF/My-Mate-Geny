@@ -19,9 +19,17 @@ export const kindOfMood = (m: BodyMood): ClipKind =>
  * its kind, else the idle ones (breathing), else the first enabled clip. The video body and the clip editor's trigger
  * preview both use this, so the preview shows exactly what the stage plays.
  */
-export function moodPool(clips: RigClip[], mood: BodyMood): { kind: ClipKind; clips: RigClip[]; fallback: boolean } {
+export function moodPool(clips: RigClip[], mood: BodyMood, doing?: string): { kind: ClipKind; clips: RigClip[]; fallback: boolean } {
   const on = enabledClips(clips);
   const want = kindOfMood(mood);
+  // (idle only: talking and listening go on as ever. Only `life` clips for this activity, and her breathing among them.)
+  const busy = want === "idle" && doing ? on.filter((c) => c.kind === "life" && c.doing === doing) : [];
+  if (busy.length && doing === "sleep") return { kind: "idle", clips: busy, fallback: false };
+  if (busy.length) return { kind: "idle", clips: [...busy, ...busy, ...on.filter((c) => c.kind === "idle")], fallback: false };
+  if (want === "idle" && doing === "sleep") {
+    const dozing = on.filter((c) => c.kind === "away");
+    if (dozing.length) return { kind: "idle", clips: dozing, fallback: false };
+  }
   const own = on.filter((c) => c.kind === want);
   if (own.length) return { kind: want, clips: own, fallback: false };
   const idle = on.filter((c) => c.kind === "idle");

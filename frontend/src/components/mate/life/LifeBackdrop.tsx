@@ -40,6 +40,7 @@ export default function LifeBackdrop({ life }: { life: MateLifeSummary }) {
       {sky === "rain" && <div className="life-sky-rain" data-testid="mate-life-rain" />}
       {sky === "snow" && <div className="life-sky-snow" data-testid="mate-life-snow" />}
       <div className="life-backdrop-shade" />
+      {life.asleep && <div className="life-asleep" data-testid="mate-life-asleep"><span>z</span><span>z</span><span>z</span></div>}
     </div>
   );
 }

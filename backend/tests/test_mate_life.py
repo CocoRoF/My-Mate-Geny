@@ -213,7 +213,7 @@ def test_what_she_is_told_is_words_never_numbers(world):
     doc["needs"].update(hunger=0.8, sleep=0.55, fun=0.32)
     now = MONDAY + timedelta(days=2)
     text = sim.line(doc, world, now, KST)
-    assert "badly hungry" in text and "quite tired" in text and "a little bored" in text
+    assert "hungry (badly)" in text and "tired (quite)" in text and "bored (a little)" in text
     for need in doc["needs"].values():
         assert f"{need:.2f}" not in text and "0." not in text
 

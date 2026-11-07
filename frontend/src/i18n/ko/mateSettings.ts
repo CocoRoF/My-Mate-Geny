@@ -142,6 +142,7 @@ const ko: Messages<"mateSettings"> = {
   clipKindThink: "생각할 때",
   clipKindReact: "감정을 느낄 때…",
   clipKindAway: "오래 조용할 때",
+  clipKindLife: "일상에서 무언가 하는 동안",
   clipKindReactLong: "어떤 감정을 느낄 때 (반응)",
   clipMoodIdle: "대기",
   clipMoodListening: "입력 중",

@@ -182,7 +182,8 @@
    "when": {
     "sleep": 0.45
    },
-   "likes": 0
+   "likes": 0,
+   "wear": "builtin-pajamas"
   },
   "nap": {
    "names": {
@@ -377,7 +378,11 @@
     "22:00"
    ],
    "plannable": true,
-   "skill": "cooking"
+   "skill": "cooking",
+   "plan_names": {
+    "ko": "요리",
+    "en": "Cooking"
+   }
   },
   "delivery": {
    "names": {
@@ -429,12 +434,16 @@
    },
    "cost": 9000,
    "likes": 0.5,
-   "doing": "having something sweet, alone with a book",
+   "doing": "having something sweet and reading a little",
    "body": "drink",
    "feel": {
     "happy": 0.45
    },
-   "plannable": true
+   "plannable": true,
+   "plan_names": {
+    "ko": "디저트 카페",
+    "en": "Dessert café"
+   }
   },
   "game": {
    "names": {
@@ -467,7 +476,11 @@
     "04:00"
    ],
    "plannable": true,
-   "skill": "gaming"
+   "skill": "gaming",
+   "plan_names": {
+    "ko": "게임",
+    "en": "Gaming"
+   }
   },
   "raid": {
    "names": {
@@ -520,7 +533,11 @@
     "excited": 0.3
    },
    "plannable": true,
-   "skill": "courage"
+   "skill": "courage",
+   "plan_names": {
+    "ko": "보드게임 카페",
+    "en": "Board-game café"
+   }
   },
   "arcade": {
    "names": {
@@ -548,7 +565,11 @@
     "excited": 0.4
    },
    "plannable": true,
-   "skill": "gaming"
+   "skill": "gaming",
+   "plan_names": {
+    "ko": "오락실",
+    "en": "The arcade"
+   }
   },
   "walk": {
    "names": {
@@ -572,7 +593,11 @@
    "likes": 0.2,
    "doing": "walking around the pond, headphones on",
    "body": "walk",
-   "plannable": true
+   "plannable": true,
+   "plan_names": {
+    "ko": "산책",
+    "en": "A walk"
+   }
   },
   "workout": {
    "names": {
@@ -596,10 +621,14 @@
    },
    "cost": 4000,
    "likes": -0.5,
-   "doing": "working out, not very willingly",
+   "doing": "working out",
    "body": "workout",
    "plannable": true,
-   "skill": "stamina"
+   "skill": "stamina",
+   "plan_names": {
+    "ko": "운동",
+    "en": "Working out"
+   }
   },
   "read": {
    "names": {
@@ -624,7 +653,11 @@
    "doing": "reading in the corner of the bookstore",
    "body": "read",
    "plannable": true,
-   "skill": "sense"
+   "skill": "sense",
+   "plan_names": {
+    "ko": "서점에서 책 읽기",
+    "en": "Reading at the bookstore"
+   }
   },
   "study": {
    "names": {
@@ -648,7 +681,11 @@
    "doing": "studying test automation at your desk",
    "body": "read",
    "plannable": true,
-   "skill": "work"
+   "skill": "work",
+   "plan_names": {
+    "ko": "공부",
+    "en": "Studying"
+   }
   },
   "rest": {
    "names": {
@@ -668,7 +705,11 @@
    },
    "likes": 0.3,
    "doing": "lying on your bed with your phone",
-   "plannable": true
+   "plannable": true,
+   "plan_names": {
+    "ko": "푹 쉬기",
+    "en": "Resting"
+   }
   }
  },
  "routine": [

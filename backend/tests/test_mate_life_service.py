@@ -227,3 +227,145 @@ def test_a_plan_is_kept(db, tmp_path, monkeypatch):
     assert store.life_doc(mate["id"], P.load("chaerin"))["week"] == {"sat_day": "walk"}
     with pytest.raises(ValueError):
         mates.life.set_plan(mate["id"], "nope", "walk")
+
+
+def test_she_changes_for_bed_and_back_unless_someone_changed_her(store, monkeypatch):
+    monkeypatch.setattr(P, "own", lambda key: key == "chaerin")
+    mate = _mate(store, "chaerin")
+    worn = {"outfit": "default"}
+    calls = []
+
+    def wear(mate_id, oid, reason=None):
+        calls.append(oid)
+        worn["outfit"] = oid
+
+    monkeypatch.setattr(store, "get", lambda mate_id: {"outfits": {"worn": worn["outfit"]}})
+    life = LifeRuntime(store, None, None, wear)
+    world = {"activities": {"sleep": {"wear": "pj"}, "work": {}, "rest": {}}}
+    doc = {}
+    life._dress("m", doc, world, [{"type": "started", "activity": "sleep"}], {})
+    assert calls == ["pj"] and doc["dressed_from"] == {"outfit": "default", "into": "pj"}
+    life._dress("m", doc, world, [{"type": "started", "activity": "sleep"}], {})  # (already)
+    assert calls == ["pj"]
+    life._dress("m", doc, world, [{"type": "moved", "place": "x"}], {})  # (nothing started)
+    assert calls == ["pj"]
+    life._dress("m", doc, world, [{"type": "started", "activity": "work"}], {})
+    assert calls == ["pj", "default"] and not doc["dressed_from"]
+    # someone changed her meanwhile: that stays
+    calls.clear()
+    life._dress("m", doc, world, [{"type": "started", "activity": "sleep"}], {})
+    worn["outfit"] = "dress"
+    life._dress("m", doc, world, [{"type": "started", "activity": "work"}], {})
+    assert calls == ["pj"] and worn["outfit"] == "dress" and not doc["dressed_from"]
+    # she doesn't change herself, or they are with her
+    calls.clear()
+    life._dress("m", {}, world, [{"type": "started", "activity": "sleep"}], {"self_outfit": "off"})
+    life._dress("m", {"with_user": "x"}, world, [{"type": "started", "activity": "sleep"}], {})
+    assert calls == []
+
+
+def test_a_wardrobe_problem_never_stops_her_day(store, monkeypatch):
+    def wear(*a, **k):
+        raise RuntimeError("no such outfit")
+
+    logged = []
+    monkeypatch.setattr(store, "get", lambda mate_id: {"outfits": {"worn": "default"}})
+    life = LifeRuntime(store, lambda level, m: logged.append(m), None, wear)
+    life._dress("m", {}, {"activities": {"sleep": {"wear": "pj"}}}, [{"type": "started", "activity": "sleep"}], {})
+    assert logged
+
+
+# ---- reaching out, her diary ----
+
+def _news(mates, mate, **kw):
+    from datetime import datetime, timezone
+
+    return {"type": "event", "id": "x", "at": kw.pop("at", datetime.now(timezone.utc).isoformat()), "title": {"ko": "a", "en": "a"}, "share": kw.pop("share", True), "feel": {}, **kw}
+
+
+def _reaching(store, mates, monkeypatch, *, enabled=True, asleep=False, running=False):
+    mate = store.get(_mate(store, "chaerin")["id"])
+    store._db.execute("UPDATE mates SET session_id = 'S' WHERE id = ?", (mate["id"],))
+    store.update(mate["id"], {"prefs": {"proactive": {"enabled": enabled}}})
+    mates.life.advance(mate["id"])
+    monkeypatch.setattr(sim, "asleep", lambda *a: asleep)
+    monkeypatch.setattr(mates._svc, "is_running", lambda sid: running)
+    calls = []
+    monkeypatch.setattr(mates._svc, "start_turn", lambda sid, prompt, **kw: calls.append((prompt, kw)))
+    return mate, calls
+
+
+def test_she_writes_first_about_news_if_she_may(db, tmp_path, monkeypatch):
+    _, store, mates = _service(db, monkeypatch, tmp_path)
+    mate, calls = _reaching(store, mates, monkeypatch)
+    mates._life_reach_out(mate["id"], [_news(mates, mate, share=False)])
+    assert calls == []
+    mates._life_reach_out(mate["id"], [_news(mates, mate)])
+    assert len(calls) == 1 and "[SILENT]" in calls[0][0] and calls[0][1]["meta"] == {"internal": True, "kind": "life_event"}
+
+
+@pytest.mark.parametrize("kw", [{"enabled": False}, {"asleep": True}, {"running": True}])
+def test_she_keeps_it_for_later_when_she_may_not(db, tmp_path, monkeypatch, kw):
+    _, store, mates = _service(db, monkeypatch, tmp_path)
+    mate, calls = _reaching(store, mates, monkeypatch, **kw)
+    mates._life_reach_out(mate["id"], [_news(mates, mate)])
+    assert calls == []
+
+
+def test_old_news_is_not_news(db, tmp_path, monkeypatch):
+    _, store, mates = _service(db, monkeypatch, tmp_path)
+    mate, calls = _reaching(store, mates, monkeypatch)
+    mates._life_reach_out(mate["id"], [_news(mates, mate, at="2020-01-01T00:00:00+00:00")])
+    assert calls == []
+
+
+def test_a_diary_only_for_someone_who_still_talks_to_her():
+    from datetime import datetime, timedelta, timezone
+
+    from app.mate.life import diary
+
+    now = datetime(2026, 11, 7, 12, 0, tzinfo=timezone.utc)
+    day = {"day": "2026-11-06", "hours": {"work": 8}, "events": []}
+    assert diary.due({"days": [day], "heard_at": None}, now) is None
+    assert diary.due({"days": [day], "heard_at": (now - timedelta(days=9)).isoformat()}, now) is None
+    assert diary.due({"days": [], "heard_at": now.isoformat()}, now) is None
+    assert diary.due({"days": [day], "heard_at": now.isoformat()}, now) is day
+    assert diary.due({"days": [{**day, "diary": ""}], "heard_at": now.isoformat()}, now) is None  # (tried: once a day is enough)
+
+
+def test_what_goes_into_her_diary_is_words():
+    from app.mate.life import diary
+
+    world = P.load("chaerin")
+    got = diary.facts({"hours": {"work": 8.2, "commute": 1, "raid": 2}, "events": ["raid_clear"]}, world, True)
+    assert "testing builds" in got["did"][0] and len(got["did"]) == 2
+    assert "Skywhale" in got["what_happened"][0] and got["talked_with_the_user_today"] is True
+    assert "8.2" not in str(got)
+
+
+async def test_she_writes_her_diary_and_a_failure_costs_only_that_day(db, tmp_path, monkeypatch):
+    from app.mate.life import diary
+
+    _, store, mates = _service(db, monkeypatch, tmp_path)
+    mate = store.get(_mate(store, "chaerin")["id"])
+    mates.life.advance(mate["id"])
+    world = P.load("chaerin")
+    doc = store.life_doc(mate["id"], world)
+    doc["days"] = [{"day": "2026-11-05", "hours": {"work": 8}, "events": []}, {"day": "2026-11-06", "hours": {"game": 3}, "events": []}]
+    store.save_life(mate["id"], doc)
+
+    async def good(*a):
+        return "오늘도... 버그 잡았어요."
+
+    monkeypatch.setattr(diary, "write", good)
+    await mates._write_diary(mate, doc["days"][-1], world, True)
+    assert store.life_doc(mate["id"], world)["days"][-1]["diary"] == "오늘도... 버그 잡았어요."
+    assert "diary" not in store.life_doc(mate["id"], world)["days"][0]
+
+    async def bad(*a):
+        raise RuntimeError("no login")
+
+    monkeypatch.setattr(diary, "write", bad)
+    await mates._write_diary(mate, doc["days"][0], world, True)
+    assert store.life_doc(mate["id"], world)["days"][0]["diary"] == ""
+    assert mate["id"] not in mates._diaries

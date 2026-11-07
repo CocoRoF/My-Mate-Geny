@@ -34,7 +34,7 @@ from app.config import settings
 from app.mate import affinity as A
 from app.mate import state as S
 from app.mate import wardrobe as W
-from app.mate.life import sim
+from app.mate.life import diary, sim
 from app.mate.life.runtime import LifeRuntime
 from app.mate.capture import CaptureBroker, CaptureError
 from app.mate import files
@@ -86,6 +86,10 @@ def _norm(s: str) -> str:
     return re.sub(r"[\s_\-.]+", "", s.lower())
 
 
+#: news older than this, when the clock catches up after a while, isn't news: it waits for their next message
+LIFE_NEWS_WITHIN = timedelta(minutes=20)
+
+
 class MateService:
     def __init__(self, sessions: SessionService, store: MateStore, logs: Any = None) -> None:
         self.store = store
@@ -104,7 +108,9 @@ class MateService:
         # every mate write is announced on /ws/sessions (mates.changed): open
         # windows and other devices refetch instead of keeping a stale copy
         store.on_change = sessions.mates_changed
-        self.life = LifeRuntime(store, self._log, self._life_happened)
+        self.life = LifeRuntime(store, self._log, self._life_happened, self.wear_outfit)
+        self.life.on_tick = self._life_diaries
+        self._diaries: set[str] = set()                    # mates whose diary is being written
         self._housekept: dict[str, str] = {}               # mate id -> the local day its memory was tidied
         store.on_memory_added = self._memory_added
         store.on_memory_forgotten = self.forget_engine_context
@@ -679,6 +685,60 @@ class MateService:
         self._state_event(mate_id, change)
         for e in events:
             self._log("info", f"life: {e.get('id')}", code="mate.life_event", detail={"event": e.get("id")})
+        self._life_reach_out(mate_id, events)
+
+    def _life_reach_out(self, mate_id: str, events: list[dict[str, Any]]) -> None:
+        """Something worth telling happened just now, and she may write first (the reach-out setting is on): she decides whether to,
+        and says so in her own words or stays quiet. Otherwise it waits for their next message, as everything does."""
+        now = datetime.now(timezone.utc)
+        fresh = [e for e in events if e.get("share") and (A._t(e.get("at")) or now) >= now - LIFE_NEWS_WITHIN]
+        if not fresh:
+            return
+        mate = self.store.get(mate_id)
+        sid = mate.get("session_id")
+        life = mate.get("life") or {}
+        if not sid or not ((mate.get("prefs") or {}).get("proactive") or {}).get("enabled") or life.get("asleep") or self._svc.is_running(sid):
+            return
+        prompt = ("[Something just happened in your day: your <context> says what. If it is the kind of thing you would tell them, write them a line "
+                  "or two about it now, in your own voice, as you would by message. If not, or if you have nothing to say, reply with EXACTLY [SILENT].]")
+        try:
+            self._svc.start_turn(sid, prompt, meta={"internal": True, "kind": "life_event"})
+        except (TurnBusyError, KeyError, RuntimeError):
+            pass
+
+    def _life_diaries(self) -> None:
+        """A day has ended: she writes about it, one at a time, on the side."""
+        for row in self.store._db.query("SELECT id FROM mates WHERE draft = 0"):
+            mate_id = row["id"]
+            if mate_id in self._diaries:
+                continue
+            mate = self.store.get(mate_id)
+            life = self.store.life_now(mate_id, mate.get("builtin"), mate.get("prefs") or {})
+            if not life:
+                continue
+            day = diary.due(life[0], datetime.now(timezone.utc))
+            if day is None:
+                continue
+            self._diaries.add(mate_id)
+            asyncio.create_task(self._write_diary(mate, day, life[1], diary.talked_on(life[0], day, self.store.tz())))
+
+    async def _write_diary(self, mate: dict[str, Any], day: dict[str, Any], profile: dict[str, Any], talked: bool) -> None:
+        mate_id = mate["id"]
+        try:
+            try:
+                text = await diary.write(self, mate, day, profile, talked)
+            except Exception as exc:  # noqa: BLE001 - a day without an entry is still a day: she doesn't try again
+                self._log("warning", f"life: {mate_id}: the diary: {exc}")
+                text = ""
+            doc = self.store.life_doc(mate_id, profile)
+            for d in (doc or {}).get("days") or []:
+                if d.get("day") == day.get("day"):
+                    d["diary"] = text
+            if doc:
+                self.store.save_life(mate_id, doc)
+                self.store._changed("life", mate_id)
+        finally:
+            self._diaries.discard(mate_id)
 
     def life_gift(self, mate_id: str, item: Any) -> dict[str, Any]:
         """They sent her something: what it does happens at once, and how she takes it is hers: she hears now if she can, else with

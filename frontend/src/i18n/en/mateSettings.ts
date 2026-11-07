@@ -141,6 +141,7 @@ export default {
   clipKindThink: "while thinking",
   clipKindReact: "when she feels…",
   clipKindAway: "after a long silence",
+  clipKindLife: "while she does something in her day",
   clipKindReactLong: "when she feels a certain way (reaction)",
   clipMoodIdle: "Idle",
   clipMoodListening: "You type",

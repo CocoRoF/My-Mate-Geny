@@ -48,19 +48,42 @@ activities (where, how long, what they do per hour to needs and stats, cost, how
 What she does next is utility, not a script: obligations (work, sleep, a raid night) outweigh, and in the free time what relieves her
 needs, what she likes, what she can afford and a seeded bit of chance compete. Changing place takes time on the street.
 
+## What she decides
+
+`do_activity` (offered while she has a day) takes her anywhere she decides to go, ahead of her routine. The tool holds only what isn't up to
+her: that the activity exists, that the place is open, that she can pay. She can walk out of work; the prompt says she knows what that means.
+Asking her along from the map is a message like any other, and she decides. Together (`with_user`) the way there is five times shorter, it warms
+her, it is on them, her messages stop being by phone, and she stays while they keep talking.
+
+## Raising
+
+- **Skills** (`work`, `gaming`, `stamina`, `cooking`, `sense`, `courage`) grow slowly with what she does (`GROWTH`: a year of her life, not a week), less
+  when she is frazzled, and they matter: stamina tires her less, work pays more, what she is good at draws her, courage makes crowds easier.
+- **The plan** is nine slots of the week (each evening, weekend days and evenings). A suggestion leans her (`PLAN_LEAN`); she knows about it, and tired or
+  hungry she does as she likes. Workouts and cooking hardly happen without one: that is what raising her is.
+- **Story events** (`builtin/life/<key>.events.json`) have conditions on place, activity, day, hours, weather, skills, needs, money, relationship
+  stage, flags and how long she has had a day, a chance per hour, and `once` or `repeat_days`. They change her needs, skills, money and flags and move how she
+  feels with their title as the reason. She hears what happened (`says`) with the next message, told how long ago. Never one on top of another (`EVENT_GAP`).
+- **Her journal**: each day (ending at 04:00) is summed up, with a few lines she writes herself. That is a bounded tool-less model call, only while someone
+  still talks to her (`diary.TALKED_WITHIN`), and only tried once a day.
+- **Gifts** cost coins, and coins come only from talking to her, a little a day. What a gift does happens at once, and how she takes it is hers: she hears
+  right away if she can, else with their next message. What she keeps she is told she has.
+
+## Her body
+
+Clips of `kind: "life"` with a `doing` (eat, drink, game, read, walk, workout, work, sleep) leave her home pose and come back to it, in every set. While
+idle she plays those for what she is doing, with her usual breathing among them; talking and listening go on as ever; asleep she has a clip of her own,
+else she dozes. She changes into pajamas for bed and back in the morning, unless they are with her, she doesn't change clothes herself, or someone changed her
+meanwhile. The clips of an existing set are encoded into its own box, so what is out there under its URLs stays as it is.
+
 ## What she is told
 
-The system prompt says she has a life (stable, cached). The per-turn `<context>` says where she is, what she is doing, how her body is
-and what is next, only when it changed (like how she feels). She answers from there: briefly between tasks at work, groggily when a
-message wakes her. A message reaches her by phone wherever she is, unless the user is with her.
+The system prompt says she has a life (stable, cached) and lists what she can do. The per-turn `<context>` says where she is, what she is doing, how her body is
+and what is next, only when it changed (like how she feels). She answers from there: briefly between tasks at work, groggily when a message wakes her. A message
+reaches her by phone wherever she is, unless the user is with her. When reach-out is on she may write first about news (`share`), or stay `[SILENT]`.
 
-## Milestones
+## Files
 
-1. **A day of her own** — needs, places, activities, routine, simulation, ticker, API, prompt, needs into emotions.
-2. **Places** — backgrounds for every place and slot, the stage behind her, weather, the status on the stage, the Life panel.
-3. **Together** — the `do_activity` tool, inviting her from the map (a message like any other: she decides), a way there that is short together, gifts paid for with coins that come from talking.
-4. **Raising** — stats that grow, a weekly plan she mostly follows, money, story events with conditions, her diary and a daily report.
-5. **Her body** — clips for what she does (eating, playing, working out…) in every outfit, pajamas, dressing for where she goes.
-6. **Reaching out** — she writes first when something happens, the diary in her own words, the desktop app, a last pass over everything.
-
-Each one is deployed when it is done.
+`app/mate/life/sim.py` (pure), `profile.py` (her world as data, checked), `runtime.py` (the clock, the one way in), `diary.py`; `builtin/life/*.json`;
+`components/mate/life/` (the backdrop, her status on the stage, the Life panel); `builtin/assets/chaerin/places/` (ten places at four times of day, her map).
+`prefs.life`: auto (on for a mate who comes with a world of her own), on (anyone else gets `default.json`), off. A memory wipe starts her day again.

@@ -56,7 +56,7 @@ _EMOTION_ALIASES = {
     "neutral": "neutral", "shy": "shy", "thinking": "thinking", "agree": "agree",
     "greet": "greet", "sleepy": "sleepy", "smirk": "smile",
 }
-CLIP_KINDS = ("idle", "talk", "listen", "think", "react", "away")
+CLIP_KINDS = ("idle", "talk", "listen", "think", "react", "away", "life")
 _SIDECARS = ("avatar-editor.json", "avatar.json")
 
 
@@ -449,6 +449,8 @@ def rig_avatar(raw: Any, base: Path, url_for: Any) -> dict[str, Any]:
         clip: dict[str, Any] = {"id": str(c.get("id") or f"clip{len(clips) + 1}"), "kind": c["kind"], "src": src}
         if c.get("emotion"):
             clip["emotion"] = str(c["emotion"])
+        if c.get("doing"):
+            clip["doing"] = str(c["doing"])
         small = url(c.get("small"))
         if small:
             clip["small"] = small

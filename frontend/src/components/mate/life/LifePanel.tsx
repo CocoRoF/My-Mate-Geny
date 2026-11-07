@@ -373,6 +373,9 @@ function DayCard({ d }: { d: LifeDay }) {
   const grown = STATS.filter(({ stat }) => (d.grown?.[stat] ?? 0) > 0);
   return (
     <Card title={fmtDate(`${d.day}T12:00:00`, { month: "long", day: "numeric", weekday: "short" })} testId={`life-day-${d.day}`}>
+      {d.diary && (
+        <p className="mb-2.5 whitespace-pre-wrap rounded-lg bg-surface-2 px-3 py-2 text-[12.5px] italic leading-relaxed text-content" data-testid="life-diary">{d.diary}</p>
+      )}
       {!!d.titles.length && (
         <ul className="mb-2.5 space-y-1">
           {d.titles.map((title, i) => (
