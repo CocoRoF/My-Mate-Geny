@@ -17,6 +17,12 @@
       "name": "린넨 원피스",
       "note": "A muted sage-green linen A-line dress with a square neckline and wide straps, and a thin cream knit cardigan slipping off one shoulder. No black hoodie and no headset in this outfit.",
       "rig": "outfits/linen-dress/rig.json"
+    },
+    {
+      "id": "builtin-pajamas",
+      "name": "잠옷",
+      "note": "Soft oversized gray-blue pajamas with a rounded collar and a tiny cat pattern, buttoned up. No black hoodie and no headset in this outfit. What you wear to bed.",
+      "rig": "outfits/pajamas/rig.json"
     }
   ]
 }

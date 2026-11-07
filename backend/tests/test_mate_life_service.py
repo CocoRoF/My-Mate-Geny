@@ -369,3 +369,18 @@ async def test_she_writes_her_diary_and_a_failure_costs_only_that_day(db, tmp_pa
     await mates._write_diary(mate, doc["days"][0], world, True)
     assert store.life_doc(mate["id"], world)["days"][0]["diary"] == ""
     assert mate["id"] not in mates._diaries
+
+
+def test_new_clips_of_a_bundle_join_a_set_the_user_edited():
+    from app.mate.store import with_new_clips
+
+    clip = lambda i, **kw: {"id": i, "kind": "idle", "src": f"asset:x/{i}.mp4", **kw}  # noqa: E731
+    old = {"kind": "video", "rig": {"home": "asset:x/n.webp", "clips": [clip("a"), clip("b"), clip("gone")], "stills": {"neutral": "n"}}}
+    new = {"kind": "video", "rig": {"home": "asset:x/n.webp", "clips": [clip("a"), clip("b"), clip("gone"), clip("life_eat", kind="life", doing="eat")],
+                                    "stills": {"neutral": "n", "sleepy": "s"}}}
+    mine = {"kind": "video", "rig": {"home": "asset:x/n.webp", "clips": [clip("a", disabled=True), clip("b")], "stills": {"neutral": "n"}}}
+    got = with_new_clips(mine, old, new)
+    assert [c["id"] for c in got["rig"]["clips"]] == ["a", "b", "life_eat"]  # (what they took out stays out)
+    assert got["rig"]["clips"][0]["disabled"] and got["rig"]["clips"][2]["doing"] == "eat"
+    assert got["rig"]["stills"] == {"neutral": "n", "sleepy": "s"}
+    assert with_new_clips(got, new, new) == got  # (nothing new: nothing changes)

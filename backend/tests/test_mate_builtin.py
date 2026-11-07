@@ -426,18 +426,23 @@ def test_an_edited_outfit_keeps_its_edits_when_the_bundle_moves_its_files(db, mo
 
 
 def test_the_real_bundle_is_named_and_locked_as_decided():
-    gray, dress = files.builtin_outfits("chaerin")
+    gray, dress, pajamas = files.builtin_outfits("chaerin")
     assert gray["id"] == "builtin-gray-band" and gray["name"] == "크롭탑" and gray["unlock"] == {"affinity": 60}
     assert dress["id"] == "builtin-linen-dress" and dress["name"] == "린넨 원피스"
     assert "unlock" not in dress and "feel" not in dress and "no headset" in dress["note"]  # (everyday clothes: open, and nothing to it)
-    for item, folder in ((gray, "crop-top"), (dress, "linen-dress")):
+    assert pajamas["id"] == "builtin-pajamas" and pajamas["name"] == "잠옷" and "unlock" not in pajamas and "feel" not in pajamas
+    for item, folder in ((gray, "crop-top"), (dress, "linen-dress"), (pajamas, "pajamas")):
         rig = item["avatar"]["rig"]
-        assert len(rig["clips"]) == 16 and len(rig["stills"]) == 13
+        core = [c for c in rig["clips"] if c["kind"] != "life"]
+        assert len(core) == 16 and len(rig["stills"]) == 13
         assert rig["emotions"]["angry"] == ["angry"] and "angry" in rig["stills"]
+        # (what she does in her own day: each says what it is, app/mate/life)
+        assert all(c.get("doing") for c in rig["clips"] if c["kind"] == "life")
         urls = [rig["home"], *rig["stills"].values(), *(c["src"] for c in rig["clips"]), *(c["small"] for c in rig["clips"])]
         for url in urls:
             assert url.startswith(f"/api/mates/builtin/chaerin/outfits/{folder}/"), url
             assert files.resolve_builtin("chaerin", url.split("/chaerin/", 1)[1]).is_file()
+    assert any(c.get("doing") == "sleep" for c in pajamas["avatar"]["rig"]["clips"])  # (what she sleeps in)
 
 
 def test_a_bad_unlock_in_the_manifest_is_refused(tmp_path, monkeypatch):

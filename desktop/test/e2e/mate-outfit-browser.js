@@ -178,9 +178,9 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     await until("her sets", async () => (await p.locator('[data-testid="outfit-tile"]').count()) === initialOutfits);
     assert.equal(await tile(p, "default").getAttribute("data-worn"), "true");
     await p.click('[data-testid="outfit-add"]');
-    await p.fill('[data-testid="outfit-add-name"]', "잠옷");
+    await p.fill('[data-testid="outfit-add-name"]', "외출복");
     await p.click('[data-testid="outfit-add-ok"]');
-    const added = await until("the new outfit", async () => (await mate()).outfits.items.find((c) => c.name === "잠옷"));
+    const added = await until("the new outfit", async () => (await mate()).outfits.items.find((c) => c.name === "외출복"));
     assert.equal(added.kind, "none");
     await until("selected", async () => (await tile(p, added.id).getAttribute("aria-pressed")) === "true");
     assert.equal(await tile(p, added.id).getAttribute("data-empty"), "true");

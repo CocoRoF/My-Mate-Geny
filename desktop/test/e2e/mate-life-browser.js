@@ -135,6 +135,8 @@ async function goToMate(ctx) {
     const hud = await p.locator('[data-testid="mate-life-hud"]').boundingBox();
     ok("on a phone her status stays inside the stage", hud.y + hud.height <= box.y + box.height + 1 && hud.x >= box.x && hud.x + hud.width <= box.x + box.width + 1, JSON.stringify({ hud, box }));
     if (shots) await p.screenshot({ path: shots + "/life-phone.png" });
+    ok("on a phone the header keeps room for her name: her day is in the menu", (await p.locator('[data-testid="mate-life-open"]').count()) === 0);
+    await p.locator('[data-testid="mate-more"]').click();
     await p.locator('[data-testid="mate-life-open"]').click();
     await p.locator('[data-testid="life-now-card"]').waitFor();
     for (const tab of ["now", "map", "plan", "gifts", "growth", "journal"]) {

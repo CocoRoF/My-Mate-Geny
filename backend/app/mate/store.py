@@ -609,6 +609,26 @@ def _loads(raw: Any, empty: Any) -> Any:
     return v if isinstance(v, type(empty)) else empty
 
 
+def with_new_clips(avatar: dict[str, Any], old: dict[str, Any] | None, new: dict[str, Any]) -> dict[str, Any]:
+    """A body the user edited keeps the edits, and what the bundle brings for the first time joins it: a clip the old bundle
+    never had (one the user took out of the old set stays out), and stills or emotions it never had."""
+    rig = avatar.get("rig")
+    before, after = ((old or {}).get("rig") or {}), (new.get("rig") or {})
+    if not isinstance(rig, dict) or not after:
+        return avatar
+    had = {c.get("id") for c in before.get("clips") or []} | {c.get("id") for c in rig.get("clips") or []}
+    fresh = [c for c in after.get("clips") or [] if c.get("id") not in had]
+    extra = {f: {k: v for k, v in (after.get(f) or {}).items() if k not in (before.get(f) or {}) and k not in (rig.get(f) or {})}
+             for f in ("stills", "emotions")}
+    if not fresh and not any(extra.values()):
+        return avatar
+    rig = {**rig, "clips": [*(rig.get("clips") or []), *fresh]}
+    for f, more in extra.items():
+        if more:
+            rig[f] = {**(rig.get(f) or {}), **more}
+    return {**avatar, "rig": rig}
+
+
 def _on_new_files(avatar: dict[str, Any], old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
     """A set the user edited, when the bundle's files moved to another folder: the edits stay (a clip switched off, her
     triggers), on the new files, and what the new files bring for the first time joins them. The old folder is gone
@@ -618,7 +638,7 @@ def _on_new_files(avatar: dict[str, Any], old: dict[str, Any], new: dict[str, An
 
     was, now = folder(old), folder(new)
     if not was or not now or was == now:
-        return avatar
+        return with_new_clips(avatar, old, new)  # (the same folder: what is new in it still joins)
     moved = json.loads(json.dumps(avatar, ensure_ascii=False).replace(f"{was}/", f"{now}/"))
     rig, before, after = moved.get("rig"), old.get("rig") or {}, new.get("rig") or {}
     if not isinstance(rig, dict):

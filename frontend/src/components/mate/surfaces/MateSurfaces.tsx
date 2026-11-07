@@ -457,6 +457,7 @@ function ChatWindow() {
   useEffect(() => {
     loadConfig().catch(() => {});
   }, [loadConfig]);
+  const lang = useLang();
   // the desktop app without a system title bar: this header is the window's title bar (drag, min / max / close)
   const win = nativeWindow();
   const mac = win?.chrome === "mac";
@@ -477,7 +478,6 @@ function ChatWindow() {
   }
   const onTop = !!desk?.chatOnTop;
   const online = conv.connection === "open";
-  const lang = useLang();
   // (what she is up to, in her own day)
   const doing = mate.life?.enabled ? lifeName(mate.life.activity_name, lang) : "";
   const status = moodLabel(t, conv.mood) || (online ? t("mate.statusHere") : t("mate.statusConnecting"));

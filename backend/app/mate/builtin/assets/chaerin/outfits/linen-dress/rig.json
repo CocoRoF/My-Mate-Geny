@@ -129,6 +129,55 @@
       "src": "asset:chaerin-linen-dress/doze.lg.mp4",
       "small": "asset:chaerin-linen-dress/doze.sm.mp4",
       "loop": true
+    },
+    {
+      "id": "life_drink",
+      "kind": "life",
+      "doing": "drink",
+      "src": "asset:chaerin-linen-dress/life_drink.lg.mp4",
+      "small": "asset:chaerin-linen-dress/life_drink.sm.mp4"
+    },
+    {
+      "id": "life_game",
+      "kind": "life",
+      "doing": "game",
+      "src": "asset:chaerin-linen-dress/life_game.lg.mp4",
+      "small": "asset:chaerin-linen-dress/life_game.sm.mp4"
+    },
+    {
+      "id": "life_read",
+      "kind": "life",
+      "doing": "read",
+      "src": "asset:chaerin-linen-dress/life_read.lg.mp4",
+      "small": "asset:chaerin-linen-dress/life_read.sm.mp4"
+    },
+    {
+      "id": "life_walk",
+      "kind": "life",
+      "doing": "walk",
+      "src": "asset:chaerin-linen-dress/life_walk.lg.mp4",
+      "small": "asset:chaerin-linen-dress/life_walk.sm.mp4"
+    },
+    {
+      "id": "life_work",
+      "kind": "life",
+      "doing": "work",
+      "src": "asset:chaerin-linen-dress/life_work.lg.mp4",
+      "small": "asset:chaerin-linen-dress/life_work.sm.mp4"
+    },
+    {
+      "id": "life_eat",
+      "kind": "life",
+      "doing": "eat",
+      "src": "asset:chaerin-linen-dress/life_eat.lg.mp4",
+      "small": "asset:chaerin-linen-dress/life_eat.sm.mp4"
+    },
+    {
+      "id": "life_workout",
+      "kind": "life",
+      "doing": "workout",
+      "src": "asset:chaerin-linen-dress/life_workout.lg.mp4",
+      "small": "asset:chaerin-linen-dress/life_workout.sm.mp4"
     }
   ],
   "emotions": {

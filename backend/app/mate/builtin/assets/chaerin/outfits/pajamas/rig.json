@@ -1,0 +1,205 @@
+{
+  "version": 1,
+  "aspect": [
+    1164,
+    1288
+  ],
+  "anchor": [
+    0.5,
+    1.0
+  ],
+  "home": "asset:chaerin-pajamas/neutral.webp",
+  "stills": {
+    "neutral": "asset:chaerin-pajamas/neutral.webp",
+    "smile": "asset:chaerin-pajamas/smile.webp",
+    "laugh": "asset:chaerin-pajamas/laugh.webp",
+    "shy": "asset:chaerin-pajamas/shy.webp",
+    "surprised": "asset:chaerin-pajamas/surprised.webp",
+    "sad": "asset:chaerin-pajamas/sad.webp",
+    "angry": "asset:chaerin-pajamas/angry.webp",
+    "thinking": "asset:chaerin-pajamas/thinking.webp",
+    "sleepy": "asset:chaerin-pajamas/sleepy.webp",
+    "blink": "asset:chaerin-pajamas/blink.webp",
+    "mouth_half": "asset:chaerin-pajamas/mouth_half.webp",
+    "mouth_open": "asset:chaerin-pajamas/mouth_open.webp",
+    "mouth_o": "asset:chaerin-pajamas/mouth_o.webp"
+  },
+  "clips": [
+    {
+      "id": "idle_a",
+      "kind": "idle",
+      "src": "asset:chaerin-pajamas/idle_a.lg.mp4",
+      "small": "asset:chaerin-pajamas/idle_a.sm.mp4"
+    },
+    {
+      "id": "idle_b",
+      "kind": "idle",
+      "src": "asset:chaerin-pajamas/idle_b.lg.mp4",
+      "small": "asset:chaerin-pajamas/idle_b.sm.mp4"
+    },
+    {
+      "id": "idle_c",
+      "kind": "idle",
+      "src": "asset:chaerin-pajamas/idle_c.lg.mp4",
+      "small": "asset:chaerin-pajamas/idle_c.sm.mp4"
+    },
+    {
+      "id": "talk_a",
+      "kind": "talk",
+      "src": "asset:chaerin-pajamas/talk_a.lg.mp4",
+      "small": "asset:chaerin-pajamas/talk_a.sm.mp4"
+    },
+    {
+      "id": "talk_b",
+      "kind": "talk",
+      "src": "asset:chaerin-pajamas/talk_b.lg.mp4",
+      "small": "asset:chaerin-pajamas/talk_b.sm.mp4"
+    },
+    {
+      "id": "listen",
+      "kind": "listen",
+      "src": "asset:chaerin-pajamas/listen.lg.mp4",
+      "small": "asset:chaerin-pajamas/listen.sm.mp4"
+    },
+    {
+      "id": "think",
+      "kind": "think",
+      "src": "asset:chaerin-pajamas/think.lg.mp4",
+      "small": "asset:chaerin-pajamas/think.sm.mp4"
+    },
+    {
+      "id": "laugh",
+      "kind": "react",
+      "src": "asset:chaerin-pajamas/laugh.lg.mp4",
+      "small": "asset:chaerin-pajamas/laugh.sm.mp4",
+      "emotion": "joy"
+    },
+    {
+      "id": "smile",
+      "kind": "react",
+      "src": "asset:chaerin-pajamas/smile.lg.mp4",
+      "small": "asset:chaerin-pajamas/smile.sm.mp4",
+      "emotion": "happy"
+    },
+    {
+      "id": "shy",
+      "kind": "react",
+      "src": "asset:chaerin-pajamas/shy.lg.mp4",
+      "small": "asset:chaerin-pajamas/shy.sm.mp4",
+      "emotion": "shy"
+    },
+    {
+      "id": "surprised",
+      "kind": "react",
+      "src": "asset:chaerin-pajamas/surprised.lg.mp4",
+      "small": "asset:chaerin-pajamas/surprised.sm.mp4",
+      "emotion": "surprise"
+    },
+    {
+      "id": "sad",
+      "kind": "react",
+      "src": "asset:chaerin-pajamas/sad.lg.mp4",
+      "small": "asset:chaerin-pajamas/sad.sm.mp4",
+      "emotion": "sad"
+    },
+    {
+      "id": "angry",
+      "kind": "react",
+      "src": "asset:chaerin-pajamas/angry.lg.mp4",
+      "small": "asset:chaerin-pajamas/angry.sm.mp4",
+      "emotion": "angry"
+    },
+    {
+      "id": "nod",
+      "kind": "react",
+      "src": "asset:chaerin-pajamas/nod.lg.mp4",
+      "small": "asset:chaerin-pajamas/nod.sm.mp4",
+      "emotion": "agree"
+    },
+    {
+      "id": "wave",
+      "kind": "react",
+      "src": "asset:chaerin-pajamas/wave.lg.mp4",
+      "small": "asset:chaerin-pajamas/wave.sm.mp4",
+      "emotion": "greet"
+    },
+    {
+      "id": "doze",
+      "kind": "away",
+      "src": "asset:chaerin-pajamas/doze.lg.mp4",
+      "small": "asset:chaerin-pajamas/doze.sm.mp4",
+      "loop": true
+    },
+    {
+      "id": "life_sleep",
+      "kind": "life",
+      "doing": "sleep",
+      "src": "asset:chaerin-pajamas/life_sleep.lg.mp4",
+      "small": "asset:chaerin-pajamas/life_sleep.sm.mp4"
+    },
+    {
+      "id": "life_game",
+      "kind": "life",
+      "doing": "game",
+      "src": "asset:chaerin-pajamas/life_game.lg.mp4",
+      "small": "asset:chaerin-pajamas/life_game.sm.mp4"
+    },
+    {
+      "id": "life_read",
+      "kind": "life",
+      "doing": "read",
+      "src": "asset:chaerin-pajamas/life_read.lg.mp4",
+      "small": "asset:chaerin-pajamas/life_read.sm.mp4"
+    },
+    {
+      "id": "life_drink",
+      "kind": "life",
+      "doing": "drink",
+      "src": "asset:chaerin-pajamas/life_drink.lg.mp4",
+      "small": "asset:chaerin-pajamas/life_drink.sm.mp4"
+    }
+  ],
+  "emotions": {
+    "joy": [
+      "laugh"
+    ],
+    "happy": [
+      "smile"
+    ],
+    "shy": [
+      "shy"
+    ],
+    "surprise": [
+      "surprised"
+    ],
+    "sad": [
+      "sad"
+    ],
+    "angry": [
+      "angry"
+    ],
+    "agree": [
+      "nod"
+    ],
+    "greet": [
+      "wave"
+    ]
+  },
+  "packing": "stacked-alpha",
+  "portrait": "asset:chaerin-pajamas/portrait.webp",
+  "frame": {
+    "face": [
+      0.3786,
+      0.2666,
+      0.2878
+    ],
+    "outline": [
+      0.3797,
+      0.192,
+      0.1791
+    ],
+    "top": 0.0404,
+    "how": "face",
+    "for": "neutral.webp"
+  }
+}

@@ -359,7 +359,8 @@ export default function MateView() {
               </button>
             </>
           )}
-          {mate.life && <button
+          {/* (a phone has it in the menu, and on her status on the stage: the header keeps room for her name) */}
+          {mate.life && !phone && <button
             onClick={toggleLife}
             className={`btn-ghost !px-2.5 ${lifeOpen ? "!bg-surface-3 !text-content" : ""}`}
             title={t("life.openTitle", { name: mate.name })}
@@ -409,6 +410,7 @@ export default function MateView() {
                   {[
                     { icon: collapsed ? "chevron-down" : "chevron-up", label: collapsed ? t("mate.showAvatar") : t("mate.hideAvatar"), run: toggleCollapsed, id: "mate-avatar-toggle" },
                     { icon: "sparkles", label: t("avatar.title"), run: () => useStudio.getState().openAvatar(mate.id), id: "mate-avatar-create" },
+                    ...(mate.life ? [{ icon: "map-pin", label: t("life.open"), run: toggleLife, id: "mate-life-open" }] : []),
                     { icon: "sliders", label: t("mate.globalSettings"), run: toggleGlobal, id: "mate-global-settings-open" },
                     { icon: "rotate", label: t("mate.newConversation"), run: () => void reset(), id: "mate-reset", disabled: resetting || conv.streaming },
                   ].map((x) => (

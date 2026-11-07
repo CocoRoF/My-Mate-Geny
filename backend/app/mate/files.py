@@ -31,7 +31,7 @@ from typing import Any
 from urllib.parse import quote
 
 from app.config import settings
-from app.mate.store import DEFAULT_GREETINGS, MateError, normalize_avatar, takes_frame
+from app.mate.store import DEFAULT_GREETINGS, MateError, normalize_avatar, takes_frame, with_new_clips
 from app.services._ids import new_id
 
 CORE_URL = "https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"
@@ -1105,7 +1105,7 @@ def merge_builtin(mate: dict[str, Any], prev: dict[str, Any], new: dict[str, Any
         patch["avatar"] = new["avatar"]
     elif "avatar" in new:
         # (a body the user edited: still measured right, and nothing in it the bundle no longer has)
-        edited = takes_frame(_without_dropped(mate["avatar"], prev.get("avatar"), new["avatar"]), new["avatar"])
+        edited = takes_frame(with_new_clips(_without_dropped(mate["avatar"], prev.get("avatar"), new["avatar"]), prev.get("avatar"), new["avatar"]), new["avatar"])
         if edited != mate["avatar"]:
             patch["avatar"] = edited
     return patch

@@ -115,6 +115,55 @@
       "src": "asset:mate-chaerin/doze.lg.mp4",
       "small": "asset:mate-chaerin/doze.sm.mp4",
       "loop": true
+    },
+    {
+      "id": "life_eat",
+      "kind": "life",
+      "doing": "eat",
+      "src": "asset:mate-chaerin/life_eat.lg.mp4",
+      "small": "asset:mate-chaerin/life_eat.sm.mp4"
+    },
+    {
+      "id": "life_drink",
+      "kind": "life",
+      "doing": "drink",
+      "src": "asset:mate-chaerin/life_drink.lg.mp4",
+      "small": "asset:mate-chaerin/life_drink.sm.mp4"
+    },
+    {
+      "id": "life_game",
+      "kind": "life",
+      "doing": "game",
+      "src": "asset:mate-chaerin/life_game.lg.mp4",
+      "small": "asset:mate-chaerin/life_game.sm.mp4"
+    },
+    {
+      "id": "life_walk",
+      "kind": "life",
+      "doing": "walk",
+      "src": "asset:mate-chaerin/life_walk.lg.mp4",
+      "small": "asset:mate-chaerin/life_walk.sm.mp4"
+    },
+    {
+      "id": "life_workout",
+      "kind": "life",
+      "doing": "workout",
+      "src": "asset:mate-chaerin/life_workout.lg.mp4",
+      "small": "asset:mate-chaerin/life_workout.sm.mp4"
+    },
+    {
+      "id": "life_work",
+      "kind": "life",
+      "doing": "work",
+      "src": "asset:mate-chaerin/life_work.lg.mp4",
+      "small": "asset:mate-chaerin/life_work.sm.mp4"
+    },
+    {
+      "id": "life_read",
+      "kind": "life",
+      "doing": "read",
+      "src": "asset:mate-chaerin/life_read.lg.mp4",
+      "small": "asset:mate-chaerin/life_read.sm.mp4"
     }
   ],
   "emotions": {
