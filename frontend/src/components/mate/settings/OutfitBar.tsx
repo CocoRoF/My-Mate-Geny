@@ -74,7 +74,7 @@ export default function OutfitBar({ mate, selected, onSelect }: { mate: Mate; se
             data-empty={c.kind === "none" && !c.locked}
             data-locked={!!c.locked}
           >
-            <span className="relative block aspect-[4/5] w-full bg-[radial-gradient(ellipse_at_50%_100%,rgb(var(--c-surface-3)),transparent_75%)]">
+            <span className="relative block aspect-[4/5] w-full overflow-hidden bg-[radial-gradient(ellipse_at_50%_100%,rgb(var(--c-surface-3)),transparent_75%)]">
               {c.locked ? (
                 <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-content-faint">
                   <Icon name="lock" size={18} />

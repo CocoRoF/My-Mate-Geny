@@ -5,6 +5,10 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const { createUpdater, compareVersions, support, restartArgs, restartCommand } = require("../src/updater");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const { writeUpdateConfig } = require("../build/after-pack");
 
 // (a few turns of the event loop: the updater awaits the cookie, electron-updater and a fresh look at the feed)
 const settle = async () => {
@@ -287,4 +291,12 @@ test('Quit while updater initialization is pending cannot run an installer later
  const {up}=make({u,deps:{autoUpdater:()=>new Promise(r=>{release=r;})}});
  const check=up.check();up.shutdown();release(u);await check;
  assert.equal(u.autoInstallOnAppQuit,false);assert.equal(u.calls.some(x=>x[0]==='check'),false);
+});
+
+test("the Mac app carries the file electron-updater reads for its cache folder", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "update-config-"));
+  const text = fs.readFileSync(writeUpdateConfig(dir, "hr-harnessor-desktop"), "utf8");
+  assert.match(text, /^provider: generic$/m);
+  assert.match(text, /^updaterCacheDirName: hr-harnessor-desktop-updater$/m);
+  fs.rmSync(dir, { recursive: true, force: true });
 });

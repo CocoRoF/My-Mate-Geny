@@ -262,6 +262,21 @@ const offScreen = (page) =>
     await page.click(TEST("mate-relation-open"));
     await page.waitForSelector(TEST("mate-relation-panel"));
     await page.click(TEST("mate-relation-panel-close"));
+
+    step("her wardrobe: a set larger than its tile stays inside it, the name stays readable");
+    await page.click(TEST("mate-settings-open"));
+    await page.click(TEST("mate-tab-avatar"));
+    const dress = page.locator('[data-testid="outfit-tile"][data-outfit="builtin-linen-dress"]');
+    await dress.waitFor();
+    await dress.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(500);
+    const nameOnTop = await dress.evaluate((tile) => {
+      const name = tile.lastElementChild;
+      const box = name.getBoundingClientRect();
+      return name.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+    });
+    await page.screenshot({ path: path.join(SHOTS, "mate-wardrobe.png") });
+    assert(nameOnTop, "the picture runs over the name");
     await page.close();
 
     step("the Mate on a desktop: the heart, and neither of the two");

@@ -222,6 +222,8 @@ def app_path(directory: Path, arch: str) -> Path:
 
 def do_app(directory: Path, version: str, arch: str) -> None:
     app = app_path(directory, arch)
+    if not (app / "Contents/Resources/app-update.yml").is_file():
+        raise SystemExit("No app-update.yml in the app: it could not update itself (build/after-pack.js writes it)")
     precompile(app)
     with Signer() as signer:
         signer.sign_app(app)

@@ -41,6 +41,17 @@ function metainfo(version, date) {
   return fs.readFileSync(METAINFO, "utf8").replace(/\$\{(version|date)\}/g, (_m, k) => esc(k === "version" ? version : date));
 }
 
+/**
+ * What electron-updater reads for its cache folder, without which a download fails. electron-builder writes it only for
+ * a dmg or zip target, and the Mac app is built as a plain folder (macos-dmg.py makes the image): it goes in here, before
+ * signing seals the bundle. The feed itself is set at runtime (src/updater.js).
+ */
+function writeUpdateConfig(resources, name) {
+  const file = path.join(resources, "app-update.yml");
+  fs.writeFileSync(file, `provider: generic\nurl: https://updates.invalid/set-at-runtime\nupdaterCacheDirName: ${name}-updater\n`);
+  return file;
+}
+
 /** the release date: SOURCE_DATE_EPOCH (reproducible builds) or today, UTC */
 function buildDate(env = process.env) {
   const epoch = Number(env.SOURCE_DATE_EPOCH);
@@ -61,6 +72,7 @@ function addMetainfo(context) {
 }
 
 exports.installLinuxLauncher = installLinuxLauncher;
+exports.writeUpdateConfig = writeUpdateConfig;
 exports.metainfo = metainfo;
 exports.buildDate = buildDate;
 exports.addMetainfo = addMetainfo;
@@ -74,5 +86,6 @@ exports.default = async function afterPack(context) {
   }
   if (context.electronPlatformName !== "darwin") return;
   const app = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
+  writeUpdateConfig(path.join(app, "Contents/Resources"), context.packager.appInfo.name);
   execFileSync("codesign", ["--force", "--deep", "--sign", "-", app], { stdio: "inherit" });
 };
