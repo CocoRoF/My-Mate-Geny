@@ -122,7 +122,7 @@ export default function MateStage({
         <LiveMateAvatar key={mate.id} mate={mate} size={size} mood={mood} videoMood={videoMood} react={react} onTap={onTap} />
       </div>
       {menu && (
-        <div className={`absolute z-20 ${menu.compact ? "right-2 top-2" : "right-3 top-1/2 -translate-y-1/2"}`}>
+        <div className={`absolute z-20 ${menu.compact ? "right-2 top-2" : "right-3 top-3"}`}>
           <StageMenu open={menu.open} onOpen={menu.onOpen} compact={menu.compact} />
         </div>
       )}

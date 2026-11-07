@@ -454,6 +454,9 @@ def rig_avatar(raw: Any, base: Path, url_for: Any) -> dict[str, Any]:
         small = url(c.get("small"))
         if small:
             clip["small"] = small
+        thumb = url(c.get("thumb"))
+        if thumb:
+            clip["thumb"] = thumb
         if c.get("loop"):
             clip["loop"] = True
         if c.get("disabled"):

@@ -76,11 +76,11 @@ async function goToMate(ctx) {
     ok("she stands in a place, at this time of day", /places\/[a-z]+-(morning|day|evening|night)\.webp$/.test(art), art);
     ok("the picture really loaded", await page.evaluate(() => [...document.querySelectorAll(".life-backdrop-pic")].some((i) => i.complete && i.naturalWidth > 0)));
     ok("her status is on the stage", await page.locator(T("mate-life-where")).isVisible());
-    ok("and how she is doing", (await page.locator(`${T("mate-life-needs")} > span`).count()) === 5);
-    ok("her menu: status, places, outfits, on the right of the stage", (await page.locator(`${T("stage-menu")} button`).count()) === 3);
+    ok("no condition chip on the stage (it is in her Status)", (await page.locator(T("mate-life-needs")).count()) === 0);
+    ok("her menu: status, places, outfits", (await page.locator(`${T("stage-menu")} button`).count()) === 3);
     const stageBox = await page.locator(T("mate-stage")).boundingBox();
     const menuBox = await page.locator(T("stage-menu")).boundingBox();
-    ok("the menu sits at the stage's right edge", menuBox.x + menuBox.width <= stageBox.x + stageBox.width && menuBox.x > stageBox.x + stageBox.width * 0.75, JSON.stringify({ menuBox, stageBox }));
+    ok("the menu sits at the stage's top right", menuBox.x + menuBox.width <= stageBox.x + stageBox.width && menuBox.x > stageBox.x + stageBox.width * 0.75 && menuBox.y < stageBox.y + 40, JSON.stringify({ menuBox, stageBox }));
     ok("no header button for her day any more", (await page.locator(T("mate-life-open")).count()) === 0);
     if (shots) await page.screenshot({ path: shots + "/life-desk.png" });
 
@@ -140,6 +140,26 @@ async function goToMate(ctx) {
     await page.locator(T("stage-outfit-wear")).click();
     await until("back in her hoodie", async () => (await (await page.request.get(`${url}/api/mates`)).json()).find((m) => m.id === mateId).outfits.worn === "default");
     await page.keyboard.press("Escape");
+
+    // her clip library: stills only, a click plays the one clip in a window
+    await page.locator(T("mate-settings-open")).click();
+    await page.locator(T("mate-tab-avatar")).click();
+    await page.locator(T("mate-clip-library")).waitFor();
+    await page.locator('[data-testid^="mate-clip-card-"] img').first().waitFor();
+    const cards = await page.locator('[data-testid^="mate-clip-card-"]').count();
+    const stills = await page.evaluate(() => [...document.querySelectorAll('[data-testid^="mate-clip-card-"] img')].filter((i) => /\.thumb\.webp/.test(i.src)).length);
+    ok("every clip card is a still made with the set", cards >= 14 && stills === cards, `${stills}/${cards}`);
+    ok("no clip plays in the library", (await page.evaluate(() => document.querySelectorAll('[data-testid="mate-clip-library"] canvas, [data-testid="mate-clip-library"] video').length)) === 0);
+    await page.locator('[data-testid="mate-clip-card-idle_a"]').hover();
+    await page.waitForTimeout(400);
+    ok("hovering plays nothing", (await page.evaluate(() => document.querySelectorAll('[data-testid="mate-clip-library"] canvas').length)) === 0);
+    await page.locator('[data-testid="mate-clip-card-idle_a"]').click();
+    await page.locator(T("mate-clip-dialog")).waitFor();
+    ok("a click opens the clip in a window, with its settings", await page.locator(`${T("mate-clip-dialog")} ${T("mate-clip-editor")}`).isVisible());
+    ok("one player, in the window", (await page.evaluate(() => document.querySelectorAll('[data-testid="mate-clip-editor-stage"]').length)) === 1);
+    if (shots) await page.waitForTimeout(500), await page.screenshot({ path: shots + "/clip-dialog.png" });
+    await page.keyboard.press("Escape");
+    await until("the clip window to close", async () => (await page.locator(T("mate-clip-dialog")).count()) === 0);
     ok("no script errors on a desk", page.errors.length === 0, page.errors.join("\n"));
     await desk.close();
 

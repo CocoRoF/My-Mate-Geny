@@ -1,7 +1,7 @@
 /**
  * The clip / trigger editor of a video or photo avatar (Mate settings → Avatar):
  *
- * - ClipLibrary: every clip of the rig as a card (a thumbnail; hover / tap plays it with the stage's own stacked-alpha
+ * - ClipLibrary: every clip of the rig as a card (a still made with the set; a click opens it in a window, where it plays with the stage's own stacked-alpha
  *   player), what makes it play in plain words ("while talking", "when she feels joy"), and an editor for the selected
  *   clip: on/off (`disabled`), situation (kind), feelings (the rig's `emotions` map), its own feeling, loop.
  * - TriggerPreview: a button per situation (mood) and feeling (emotion) that plays exactly what the renderer would pick
@@ -11,7 +11,8 @@
  *
  * Nothing is saved until the Avatar tab's Save; the Preview above shows the unsaved rig on the real renderer.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { resetBuiltinAvatar, uploadAsset, type Mate } from "../../../api/mates";
 import { PlainPlayer, StackedPlayer, type ClipPlayer } from "../../../mate/avatar/player";
 import { clipsFor, clipUrl, MECHANIC_STILLS, moodPool, stillNameFor } from "../../../mate/avatar/shared";
@@ -97,93 +98,6 @@ function triggersOf(rig: Rig, clip: RigClip): string[] {
 
 const fileName = (url: string) => url.split("/").pop()?.split("?")[0] ?? "";
 const extOf = (f: File, fallback: string) => (f.name.match(/\.([a-z0-9]{2,5})$/i)?.[1] || fallback).toLowerCase();
-
-// ── thumbnails: one frame (mid-clip) of the small clip, its alpha applied, made one at a time ──
-
-const thumbs = new Map<string, Promise<string | null>>();
-let thumbChain: Promise<unknown> = Promise.resolve();
-
-function once(el: HTMLMediaElement, ev: string, ms = 10000): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error("timeout")), ms);
-    el.addEventListener(
-      ev,
-      () => {
-        clearTimeout(t);
-        resolve();
-      },
-      { once: true },
-    );
-    el.addEventListener("error", () => (clearTimeout(t), reject(new Error("media error"))), { once: true }); // i18n-ignore
-  });
-}
-
-async function makeThumb(url: string, stacked: boolean): Promise<string | null> {
-  const v = document.createElement("video");
-  v.muted = true;
-  v.playsInline = true;
-  v.preload = "auto";
-  v.src = url;
-  try {
-    await once(v, "loadeddata");
-    v.currentTime = Math.max(0, (v.duration || 0) * 0.5);
-    await once(v, "seeked");
-    const vw = v.videoWidth;
-    const half = stacked ? Math.floor(v.videoHeight / 2) : v.videoHeight;
-    if (!vw || !half) return null;
-    const W = 200;
-    const H = Math.round((W * half) / vw);
-    const cv = document.createElement("canvas");
-    cv.width = W;
-    cv.height = H;
-    const ctx = cv.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return null;
-    ctx.drawImage(v, 0, 0, vw, half, 0, 0, W, H);
-    if (stacked) {
-      // colour on top, alpha below (the stage's shader does the same: straight colour, alpha from the red channel)
-      const col = ctx.getImageData(0, 0, W, H);
-      ctx.clearRect(0, 0, W, H);
-      ctx.drawImage(v, 0, v.videoHeight - half, vw, half, 0, 0, W, H);
-      const al = ctx.getImageData(0, 0, W, H);
-      for (let i = 0; i < col.data.length; i += 4) {
-        const a = Math.max(0, Math.min(1, (al.data[i] / 255 - 0.03) / 0.94));
-        col.data[i + 3] = Math.round(a * 255);
-      }
-      ctx.putImageData(col, 0, 0);
-    }
-    return cv.toDataURL("image/webp", 0.85);
-  } catch {
-    return null;
-  } finally {
-    v.removeAttribute("src");
-    v.load();
-  }
-}
-
-function thumbOf(url: string, stacked: boolean): Promise<string | null> {
-  const key = `${stacked ? "s" : "p"}|${url}`;
-  let p = thumbs.get(key);
-  if (!p) {
-    p = thumbChain.then(() => makeThumb(url, stacked));
-    thumbChain = p.catch(() => null);
-    thumbs.set(key, p);
-  }
-  return p;
-}
-
-function useThumb(url: string, stacked: boolean): string | null {
-  const [src, setSrc] = useState<string | null>(null);
-  useEffect(() => {
-    setSrc(null);
-    if (!url) return;
-    let alive = true;
-    void thumbOf(url, stacked).then((s) => alive && setSrc(s));
-    return () => {
-      alive = false;
-    };
-  }, [url, stacked]);
-  return src;
-}
 
 // ── a clip player: the stage's own (StackedPlayer / PlainPlayer), playing a list of clips in turn ──
 
@@ -277,9 +191,7 @@ export function ClipStage({ rig, clips, className = "", testId, label }: { rig: 
 export function ClipLibrary({ mate, rig, onChange, folder = "" }: { mate: Mate; rig: Rig; onChange: (r: Rig) => void; folder?: string }) {
   const t = useT();
   const [selected, setSelected] = useState<string | null>(null);
-  const [hover, setHover] = useState<string | null>(null);
   const [filter, setFilter] = useState<ClipKind | "all" | "off">("all");
-  const stacked = (rig.packing ?? "stacked-alpha") === "stacked-alpha";
   const sel = rig.clips.find((c) => c.id === selected) ?? null;
   const shown = rig.clips.filter((c) => (filter === "all" ? true : filter === "off" ? c.disabled : c.kind === filter));
   const off = rig.clips.filter((c) => c.disabled).length;
@@ -313,19 +225,14 @@ export function ClipLibrary({ mate, rig, onChange, folder = "" }: { mate: Mate; 
       </div>
       <div className="grid grid-cols-2 gap-2 min-[480px]:grid-cols-3">
         {shown.map((c) => (
-          <ClipCard
-            key={c.id}
-            rig={rig}
-            clip={c}
-            stacked={stacked}
-            playing={hover === c.id || selected === c.id}
-            selected={selected === c.id}
-            onHover={(on) => setHover((h) => (on ? c.id : h === c.id ? null : h))}
-            onPick={() => setSelected((s) => (s === c.id ? null : c.id))}
-          />
+          <ClipCard key={c.id} rig={rig} clip={c} selected={selected === c.id} onPick={() => setSelected(c.id)} />
         ))}
       </div>
-      {sel && <ClipEditor key={sel.id} mate={mate} rig={rig} clip={sel} folder={folder} onChange={onChange} onRenamed={setSelected} onRemoved={() => setSelected(null)} />}
+      {sel && (
+        <ClipDialog clip={sel} onClose={() => setSelected(null)}>
+          <ClipEditor key={sel.id} mate={mate} rig={rig} clip={sel} folder={folder} onChange={onChange} onRenamed={setSelected} onRemoved={() => setSelected(null)} />
+        </ClipDialog>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <button className="btn-ghost border border-border" onClick={add}>
           <Icon name="plus" size={14} /> {t("mateSettings.clipAdd")}
@@ -341,33 +248,18 @@ export function ClipLibrary({ mate, rig, onChange, folder = "" }: { mate: Mate; 
   );
 }
 
-function ClipCard({
-  rig,
-  clip,
-  stacked,
-  playing,
-  selected,
-  onHover,
-  onPick,
-}: {
-  rig: Rig;
-  clip: RigClip;
-  stacked: boolean;
-  playing: boolean;
-  selected: boolean;
-  onHover: (on: boolean) => void;
-  onPick: () => void;
-}) {
+/**
+ * One clip as a card: a still of it (made with the set: pipeline.clip_thumb; a set without one shows her home picture) and
+ * what makes it play. Nothing plays here: the browser decodes no video for a card, and a click opens the clip in a window.
+ */
+function ClipCard({ rig, clip, selected, onPick }: { rig: Rig; clip: RigClip; selected: boolean; onPick: () => void }) {
   const t = useT();
-  const thumb = useThumb(clipUrl(clip, "sm"), stacked);
   const triggers = triggersOf(rig, clip);
-  const hoverable = typeof window !== "undefined" && !!window.matchMedia?.("(hover: hover)").matches;
+  const picture = clip.thumb || rig.home || "";
   return (
     <button
       type="button"
       onClick={onPick}
-      onMouseEnter={hoverable ? () => onHover(true) : undefined}
-      onMouseLeave={hoverable ? () => onHover(false) : undefined}
       className={`group relative flex min-w-0 flex-col overflow-hidden rounded-lg border text-left transition ${
         selected ? "border-accent/70 ring-1 ring-accent/40" : "border-border hover:border-border-strong"
       } ${clip.disabled ? "opacity-55" : ""}`}
@@ -377,18 +269,23 @@ function ClipCard({
       aria-pressed={selected}
     >
       <div className="relative h-36 w-full bg-[repeating-conic-gradient(#161a22_0%_25%,#11141b_0%_50%)] [background-size:16px_16px]">
-        {playing && clipUrl(clip, "sm") ? (
-          <ClipStage rig={rig} clips={[clip]} className="absolute inset-0 [&_.mate-avatar]:!h-full" />
-        ) : thumb ? (
-          <img src={thumb} alt="" className={`absolute inset-0 h-full w-full object-contain object-bottom ${clip.disabled ? "grayscale" : ""}`} draggable={false} />
+        {clipUrl(clip, "sm") && picture ? (
+          <img
+            src={picture}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className={`absolute inset-0 h-full w-full object-contain object-bottom ${clip.thumb ? "" : "opacity-50"} ${clip.disabled ? "grayscale" : ""}`}
+            draggable={false}
+          />
         ) : (
           <div className="absolute inset-0 grid place-items-center text-content-faint">
-            {clipUrl(clip, "sm") ? <Icon name="spinner" size={14} spin /> : <span className="text-[11px]">{t("mateSettings.clipNoVideoYet")}</span>}
+            <span className="text-[11px]">{t("mateSettings.clipNoVideoYet")}</span>
           </div>
         )}
-        {!playing && clipUrl(clip, "sm") && (
-          <span className="absolute bottom-1.5 right-1.5 grid h-6 w-6 place-items-center rounded-full bg-black/55 text-white opacity-80 group-hover:opacity-100">
-            <Icon name="play" size={10} />
+        {clipUrl(clip, "sm") && (
+          <span className="absolute bottom-1.5 right-1.5 grid h-7 w-7 place-items-center rounded-full bg-black/60 text-white opacity-85 transition group-hover:scale-110 group-hover:opacity-100">
+            <Icon name="play" size={11} />
           </span>
         )}
         {clip.disabled && <span className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-px text-[10.5px] font-medium text-white">{t("common.off")}</span>}
@@ -404,6 +301,37 @@ function ClipCard({
         </div>
       </div>
     </button>
+  );
+}
+
+/** A clip in a window: it plays there, once at a time (one player for the whole library), with its settings under it. */
+function ClipDialog({ clip, onClose, children }: { clip: RigClip; onClose: () => void; children: ReactNode }) {
+  const t = useT();
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      onClose();
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [onClose]);
+  return createPortal(
+    <div className="fixed inset-0 z-[80] flex items-end justify-center p-0 sm:items-center sm:p-4 animate-fade-in" data-testid="mate-clip-dialog">
+      <div className="absolute inset-0 bg-scrim/55" onClick={onClose} aria-hidden="true" />
+      <div role="dialog" aria-modal="true" aria-label={clip.id} className="relative flex max-h-[92dvh] w-full max-w-[560px] flex-col overflow-hidden rounded-t-2xl border border-border bg-surface-2 shadow-float sm:rounded-2xl">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+          <Icon name="play" size={13} className="text-content-faint" />
+          <span className="min-w-0 flex-1 truncate font-mono text-[13px] font-semibold text-content">{clip.id}</span>
+          <button onClick={onClose} className="btn-ghost !px-2" aria-label={t("common.close")} data-testid="mate-clip-dialog-close">
+            <Icon name="x" size={16} />
+          </button>
+        </div>
+        <div className="fit-fields min-h-0 flex-1 overflow-y-auto p-3 pb-safe">{children}</div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -467,8 +395,8 @@ function ClipEditor({
   };
   return (
     <div className="space-y-3 rounded-lg border border-accent/30 bg-surface/50 p-3" data-testid="mate-clip-editor" data-clip-id={clip.id}>
-      <div className="grid gap-3 min-[480px]:grid-cols-[150px_1fr]">
-        <div className="mx-auto h-48 w-full max-w-[180px] overflow-hidden rounded-lg border border-border bg-[repeating-conic-gradient(#161a22_0%_25%,#11141b_0%_50%)] [background-size:16px_16px]">
+      <div className="grid gap-3 min-[480px]:grid-cols-[200px_1fr]">
+        <div className="mx-auto h-64 w-full max-w-[220px] overflow-hidden rounded-lg border border-border bg-[repeating-conic-gradient(#161a22_0%_25%,#11141b_0%_50%)] [background-size:16px_16px] min-[480px]:h-72">
           <ClipStage rig={rig} clips={clipUrl(clip, "sm") ? [clip] : []} className="h-full [&_.mate-avatar]:!h-full" label={t("mateSettings.clipNoVideo")} testId="mate-clip-editor-stage" />
         </div>
         <div className="min-w-0 space-y-2.5">
@@ -598,12 +526,13 @@ export function TriggerPreview({ rig, onChange, onPoke }: { rig: Rig; onChange: 
       </div>
       <div className="grid gap-3 min-[480px]:grid-cols-[160px_1fr]">
         <div className="mx-auto h-52 w-full max-w-[200px] overflow-hidden rounded-lg border border-border bg-[repeating-conic-gradient(#161a22_0%_25%,#11141b_0%_50%)] [background-size:16px_16px]">
+          {/* (it plays once a trigger is picked: the tab opens without one more player running) */}
           <ClipStage
             key={n}
             rig={rig}
-            clips={clips}
+            clips={n ? clips : []}
             className="h-full [&_.mate-avatar]:!h-full"
-            label={pick.type === "emotion" ? t("mateSettings.trigNoClipGoesOn") : t("mateSettings.clipNoClip")}
+            label={!n ? t("mateSettings.trigPickToPlay") : pick.type === "emotion" ? t("mateSettings.trigNoClipGoesOn") : t("mateSettings.clipNoClip")}
             testId="mate-trigger-stage"
           />
         </div>

@@ -28,142 +28,163 @@
       "id": "idle_a",
       "kind": "idle",
       "src": "asset:mate-chaerin/idle_a.lg.mp4",
-      "small": "asset:mate-chaerin/idle_a.sm.mp4"
+      "small": "asset:mate-chaerin/idle_a.sm.mp4",
+      "thumb": "asset:mate-chaerin/idle_a.thumb.webp"
     },
     {
       "id": "idle_b",
       "kind": "idle",
       "src": "asset:mate-chaerin/idle_b.lg.mp4",
-      "small": "asset:mate-chaerin/idle_b.sm.mp4"
+      "small": "asset:mate-chaerin/idle_b.sm.mp4",
+      "thumb": "asset:mate-chaerin/idle_b.thumb.webp"
     },
     {
       "id": "idle_c",
       "kind": "idle",
       "src": "asset:mate-chaerin/idle_c.lg.mp4",
-      "small": "asset:mate-chaerin/idle_c.sm.mp4"
+      "small": "asset:mate-chaerin/idle_c.sm.mp4",
+      "thumb": "asset:mate-chaerin/idle_c.thumb.webp"
     },
     {
       "id": "talk_a",
       "kind": "talk",
       "src": "asset:mate-chaerin/talk_a.lg.mp4",
-      "small": "asset:mate-chaerin/talk_a.sm.mp4"
+      "small": "asset:mate-chaerin/talk_a.sm.mp4",
+      "thumb": "asset:mate-chaerin/talk_a.thumb.webp"
     },
     {
       "id": "listen",
       "kind": "listen",
       "src": "asset:mate-chaerin/listen.lg.mp4",
-      "small": "asset:mate-chaerin/listen.sm.mp4"
+      "small": "asset:mate-chaerin/listen.sm.mp4",
+      "thumb": "asset:mate-chaerin/listen.thumb.webp"
     },
     {
       "id": "think",
       "kind": "think",
       "src": "asset:mate-chaerin/think.lg.mp4",
-      "small": "asset:mate-chaerin/think.sm.mp4"
+      "small": "asset:mate-chaerin/think.sm.mp4",
+      "thumb": "asset:mate-chaerin/think.thumb.webp"
     },
     {
       "id": "laugh",
       "kind": "react",
       "src": "asset:mate-chaerin/laugh.lg.mp4",
       "small": "asset:mate-chaerin/laugh.sm.mp4",
-      "emotion": "joy"
+      "emotion": "joy",
+      "thumb": "asset:mate-chaerin/laugh.thumb.webp"
     },
     {
       "id": "smile",
       "kind": "react",
       "src": "asset:mate-chaerin/smile.lg.mp4",
       "small": "asset:mate-chaerin/smile.sm.mp4",
-      "emotion": "happy"
+      "emotion": "happy",
+      "thumb": "asset:mate-chaerin/smile.thumb.webp"
     },
     {
       "id": "shy",
       "kind": "react",
       "src": "asset:mate-chaerin/shy.lg.mp4",
       "small": "asset:mate-chaerin/shy.sm.mp4",
-      "emotion": "shy"
+      "emotion": "shy",
+      "thumb": "asset:mate-chaerin/shy.thumb.webp"
     },
     {
       "id": "surprised",
       "kind": "react",
       "src": "asset:mate-chaerin/surprised.lg.mp4",
       "small": "asset:mate-chaerin/surprised.sm.mp4",
-      "emotion": "surprise"
+      "emotion": "surprise",
+      "thumb": "asset:mate-chaerin/surprised.thumb.webp"
     },
     {
       "id": "sad",
       "kind": "react",
       "src": "asset:mate-chaerin/sad.lg.mp4",
       "small": "asset:mate-chaerin/sad.sm.mp4",
-      "emotion": "sad"
+      "emotion": "sad",
+      "thumb": "asset:mate-chaerin/sad.thumb.webp"
     },
     {
       "id": "nod",
       "kind": "react",
       "src": "asset:mate-chaerin/nod.lg.mp4",
       "small": "asset:mate-chaerin/nod.sm.mp4",
-      "emotion": "agree"
+      "emotion": "agree",
+      "thumb": "asset:mate-chaerin/nod.thumb.webp"
     },
     {
       "id": "wave",
       "kind": "react",
       "src": "asset:mate-chaerin/wave.lg.mp4",
       "small": "asset:mate-chaerin/wave.sm.mp4",
-      "emotion": "greet"
+      "emotion": "greet",
+      "thumb": "asset:mate-chaerin/wave.thumb.webp"
     },
     {
       "id": "doze",
       "kind": "away",
       "src": "asset:mate-chaerin/doze.lg.mp4",
       "small": "asset:mate-chaerin/doze.sm.mp4",
-      "loop": true
+      "loop": true,
+      "thumb": "asset:mate-chaerin/doze.thumb.webp"
     },
     {
       "id": "life_eat",
       "kind": "life",
       "doing": "eat",
       "src": "asset:mate-chaerin/life_eat.lg.mp4",
-      "small": "asset:mate-chaerin/life_eat.sm.mp4"
+      "small": "asset:mate-chaerin/life_eat.sm.mp4",
+      "thumb": "asset:mate-chaerin/life_eat.thumb.webp"
     },
     {
       "id": "life_drink",
       "kind": "life",
       "doing": "drink",
       "src": "asset:mate-chaerin/life_drink.lg.mp4",
-      "small": "asset:mate-chaerin/life_drink.sm.mp4"
+      "small": "asset:mate-chaerin/life_drink.sm.mp4",
+      "thumb": "asset:mate-chaerin/life_drink.thumb.webp"
     },
     {
       "id": "life_game",
       "kind": "life",
       "doing": "game",
       "src": "asset:mate-chaerin/life_game.lg.mp4",
-      "small": "asset:mate-chaerin/life_game.sm.mp4"
+      "small": "asset:mate-chaerin/life_game.sm.mp4",
+      "thumb": "asset:mate-chaerin/life_game.thumb.webp"
     },
     {
       "id": "life_walk",
       "kind": "life",
       "doing": "walk",
       "src": "asset:mate-chaerin/life_walk.lg.mp4",
-      "small": "asset:mate-chaerin/life_walk.sm.mp4"
+      "small": "asset:mate-chaerin/life_walk.sm.mp4",
+      "thumb": "asset:mate-chaerin/life_walk.thumb.webp"
     },
     {
       "id": "life_workout",
       "kind": "life",
       "doing": "workout",
       "src": "asset:mate-chaerin/life_workout.lg.mp4",
-      "small": "asset:mate-chaerin/life_workout.sm.mp4"
+      "small": "asset:mate-chaerin/life_workout.sm.mp4",
+      "thumb": "asset:mate-chaerin/life_workout.thumb.webp"
     },
     {
       "id": "life_work",
       "kind": "life",
       "doing": "work",
       "src": "asset:mate-chaerin/life_work.lg.mp4",
-      "small": "asset:mate-chaerin/life_work.sm.mp4"
+      "small": "asset:mate-chaerin/life_work.sm.mp4",
+      "thumb": "asset:mate-chaerin/life_work.thumb.webp"
     },
     {
       "id": "life_read",
       "kind": "life",
       "doing": "read",
       "src": "asset:mate-chaerin/life_read.lg.mp4",
-      "small": "asset:mate-chaerin/life_read.sm.mp4"
+      "small": "asset:mate-chaerin/life_read.sm.mp4",
+      "thumb": "asset:mate-chaerin/life_read.thumb.webp"
     }
   ],
   "emotions": {

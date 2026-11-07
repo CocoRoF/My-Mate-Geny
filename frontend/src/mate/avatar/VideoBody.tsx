@@ -1,7 +1,7 @@
 /**
  * The video body: motion clips by mood, one-shot emotions played whole (ported from ailism-mate `MateBody.tsx`
- * VideoBody). Every clip is fetched once into a Blob URL in the order she needs them (idle first, then talk, think,
- * listen, the reactions), so a switch starts at once. Paused while the tab is hidden or the body is off screen.
+ * VideoBody). The clips that play all the time are fetched once into Blob URLs (idle first, then talk, think,
+ * listen; the rest load when they come up), so a switch starts at once. Paused while the tab is hidden or the body is off screen.
  *
  * One player per avatar: MateAvatar keys this component by the rig (and MateStage by the mate), so another mate or
  * another size always gets a fresh player, canvas, videos and Blob URLs — nothing of the previous one is reused.
@@ -33,6 +33,7 @@ export interface VideoBodyProps {
 /** a mood shorter than this never switches a clip */
 export const MOOD_SETTLE_MS = 600;
 
+const EAGER = new Set(["idle", "talk", "listen", "think"]);
 const RANK: Record<string, number> = { idle: 0, talk: 1, think: 2, listen: 3, react: 4, away: 5, life: 6 };
 
 type State = {
@@ -129,8 +130,9 @@ export default function VideoBody({ rig, size, mood, doing, react, poster, name,
     const srcOf = (c: RigClip) => memory.get(clipUrl(c, size)) ?? clipUrl(c, size);
     void (async () => {
       for (const c of [...active].sort((a, b) => (RANK[a.kind] ?? 9) - (RANK[b.kind] ?? 9))) {
-        // (what she does in her own day only for what she is doing now: the others load when they come up)
-        if (c.kind === "life" && c.doing !== doingRef.current) continue;
+        // (only what plays all the time is kept in memory: a reaction, a long silence or what she does in her day loads when it
+        // comes up, while the clip on screen plays out, and the one she is doing now)
+        if (!EAGER.has(c.kind) && !(c.kind === "life" && c.doing === doingRef.current)) continue;
         const url = clipUrl(c, size);
         if (!url || memory.has(url) || url.startsWith("blob:")) continue;
         try {

@@ -501,11 +501,11 @@ def normalize_clip(c: Any) -> dict[str, Any]:
     if c.get("kind") not in CLIP_KINDS:
         raise MateError(f"clip {out['id']}: unknown kind {c.get('kind')!r} (one of {', '.join(CLIP_KINDS)})")
     out["src"] = _s(c.get("src"), 2000)
-    for k in ("small", "emotion"):
+    for k in ("small", "emotion", "thumb"):
         if c.get(k) in (None, ""):
             out.pop(k, None)
         else:
-            out[k] = _s(c[k], 2000 if k == "small" else 64).strip()
+            out[k] = _s(c[k], 64 if k == "emotion" else 2000).strip()
     for k in ("loop", "disabled"):  # flags: present only when on
         if c.get(k):
             out[k] = True
@@ -620,9 +620,13 @@ def with_new_clips(avatar: dict[str, Any], old: dict[str, Any] | None, new: dict
     fresh = [c for c in after.get("clips") or [] if c.get("id") not in had]
     extra = {f: {k: v for k, v in (after.get(f) or {}).items() if k not in (before.get(f) or {}) and k not in (rig.get(f) or {})}
              for f in ("stills", "emotions")}
-    if not fresh and not any(extra.values()):
+    # (a clip of theirs that is still the bundle's, on the same file, gets what the bundle adds to it: its still for the library)
+    bundled = {c.get("id"): c for c in after.get("clips") or []}
+    clips = [{**c, "thumb": bundled[c.get("id")]["thumb"]} if not c.get("thumb") and bundled.get(c.get("id"), {}).get("thumb")
+             and bundled[c.get("id")].get("src") == c.get("src") else c for c in rig.get("clips") or []]
+    if not fresh and not any(extra.values()) and clips == (rig.get("clips") or []):
         return avatar
-    rig = {**rig, "clips": [*(rig.get("clips") or []), *fresh]}
+    rig = {**rig, "clips": [*clips, *fresh]}
     for f, more in extra.items():
         if more:
             rig[f] = {**(rig.get(f) or {}), **more}

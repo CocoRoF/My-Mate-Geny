@@ -25,6 +25,8 @@ export interface RigClip {
   src: string;
   /** the small clip (size "sm"; falls back to `src`) */
   small?: string;
+  /** a small still of it, made with the set (the clip library shows it instead of decoding the clip) */
+  thumb?: string;
   loop?: boolean;
   /** switched off in the clip editor: the renderer never plays (or preloads) it */
   disabled?: boolean;

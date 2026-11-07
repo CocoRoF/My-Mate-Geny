@@ -89,6 +89,10 @@ The stage sits under a video that changes 24 times a second, so nothing on it ma
 stage for four seconds: 404 repaints and about 3.9 s of raster work before, none after. Activity clips are fetched when they come up,
 not all at once.
 
+Mate settings stay light too: a clip card is a still made with the set (`pipeline.clip_thumb`, the clip's `thumb`), so the library
+decodes no video; a click opens the clip in a window, the only player there. The trigger preview plays once a trigger is picked, the
+settings preview uses the small clips, and a body keeps in memory only the clips that play all the time.
+
 ## What she is told
 
 The system prompt says she has a life (stable, cached) and lists what she can do. The per-turn `<context>` says where she is, what she is doing, how her body is
@@ -98,6 +102,6 @@ reaches her by phone wherever she is, unless the user is with her. When reach-ou
 ## Files
 
 `app/mate/life/sim.py` (pure), `profile.py` (her world as data, checked), `runtime.py` (the clock, the one way in), `diary.py`; `builtin/life/*.json`;
-`components/mate/life/` (the backdrop, her status on the stage, the sections of her day), `components/mate/stage/` (her menu on the
-stage: Status, Places and Outfits, each a window over her on a desk and a sheet on a phone); `builtin/assets/chaerin/places/` (ten places at four times of day, her map).
+`components/mate/life/` (the backdrop, her status on the stage, the sections of her day), `components/mate/stage/` (her menu at the top
+right of the stage: Status, Places and Outfits, each a window over her on a desk and a sheet on a phone; how she is doing is in Status); `builtin/assets/chaerin/places/` (ten places at four times of day, her map).
 `prefs.life`: auto (on for a mate who comes with a world of her own), on (anyone else gets `default.json`), off. A memory wipe starts her day again.

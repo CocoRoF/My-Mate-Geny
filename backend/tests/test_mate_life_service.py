@@ -384,3 +384,9 @@ def test_new_clips_of_a_bundle_join_a_set_the_user_edited():
     assert got["rig"]["clips"][0]["disabled"] and got["rig"]["clips"][2]["doing"] == "eat"
     assert got["rig"]["stills"] == {"neutral": "n", "sleepy": "s"}
     assert with_new_clips(got, new, new) == got  # (nothing new: nothing changes)
+    # a still for the library comes to their clips too, while they are still on the bundle's file
+    stilled = {"kind": "video", "rig": {**new["rig"], "clips": [{**c, "thumb": c["src"] + ".thumb.webp"} for c in new["rig"]["clips"]]}}
+    mine2 = {"kind": "video", "rig": {**got["rig"], "clips": [*got["rig"]["clips"][:2], {**got["rig"]["clips"][2], "src": "asset:mine/x.mp4"}]}}
+    with_thumbs = with_new_clips(mine2, new, stilled)
+    assert [bool(c.get("thumb")) for c in with_thumbs["rig"]["clips"]] == [True, True, False]
+    assert with_thumbs["rig"]["clips"][0]["disabled"]

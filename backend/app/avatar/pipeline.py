@@ -364,6 +364,30 @@ def defringe(rgb: np.ndarray, a: np.ndarray, solid: float = DEFRINGE_SOLID, band
     return np.where(((dist > band) & (a < 0.02))[..., None], 0, out).astype(rgb.dtype)
 
 
+THUMB_HEIGHT = 240
+
+
+def clip_thumb(src: Path, dst: Path, height: int = THUMB_HEIGHT) -> bool:
+    """A small still of a stacked clip (its middle frame, alpha applied) for the clip library: the browser then never
+    downloads and decodes every clip just to show a card. -> whether there is one."""
+    w, h2, fps = probe(src)
+    h = h2 // 2
+    if not w or not h:
+        return False
+    out = subprocess.run([ffmpeg(), "-v", "error", "-ss", "2.4", "-i", str(src), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                         capture_output=True)
+    if len(out.stdout) < w * h2 * 3:
+        out = subprocess.run([ffmpeg(), "-v", "error", "-i", str(src), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True)
+    if len(out.stdout) < w * h2 * 3:
+        return False
+    fr = np.frombuffer(out.stdout[: w * h2 * 3], np.uint8).reshape(h2, w, 3)
+    a = np.clip((fr[h:, :, 0].astype(np.float32) / 255.0 - 0.03) / 0.94, 0, 1)
+    im = Image.fromarray(np.dstack([fr[:h], (a * 255).round().astype(np.uint8)]), "RGBA")
+    im.thumbnail((10_000, height), Image.LANCZOS)
+    im.save(dst, quality=82, method=6)
+    return True
+
+
 def defringe_image(im: Image.Image) -> Image.Image:
     """A still with alpha, its edge in her own colours (``defringe``)."""
     px = np.asarray(im.convert("RGBA"))
@@ -778,6 +802,8 @@ def cmd_export(p: Path, key: str) -> dict:
             shutil.copy2(p / "web" / f"{cl['id']}.{tag}.mp4", tmp / f"{cl['id']}.{tag}.mp4")
         clip = {"id": cl["id"], "kind": cl["kind"], "src": f"asset:{key}/{cl['id']}.lg.mp4",
                 "small": f"asset:{key}/{cl['id']}.sm.mp4"}
+        if clip_thumb(tmp / f"{cl['id']}.lg.mp4", tmp / f"{cl['id']}.thumb.webp"):
+            clip["thumb"] = f"asset:{key}/{cl['id']}.thumb.webp"
         if cl.get("emotion"):
             clip["emotion"] = cl["emotion"]
         if cl.get("loop"):

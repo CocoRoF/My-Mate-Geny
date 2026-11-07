@@ -248,7 +248,7 @@ function Preview({ mate, avatar, conv, poke }: { mate: Mate; avatar: Avatar; con
   return (
     <Section title={t("mateSettings.avPreview")} hint={t("mateSettings.avPreviewHint")}>
       <div ref={box} className="mx-auto h-64 w-full max-w-xs overflow-hidden rounded-xl border border-border bg-[repeating-conic-gradient(#161a22_0%_25%,#11141b_0%_50%)] [background-size:24px_24px]" data-testid="mate-avatar-preview">
-        <MateAvatar avatar={avatar} name={mate.name} mood={mood} react={react} />
+        <MateAvatar avatar={avatar} name={mate.name} mood={mood} react={react} size="sm" />
       </div>
       <div className="flex flex-wrap gap-1">
         {MOODS.map((m) => (
