@@ -32,6 +32,7 @@ The last line on stdout is a JSON object: {"ok": true, …} or {"ok": false, "er
 
 from __future__ import annotations
 
+import collections
 import json
 import os
 import re
@@ -364,6 +365,112 @@ def defringe(rgb: np.ndarray, a: np.ndarray, solid: float = DEFRINGE_SOLID, band
     return np.where(((dist > band) & (a < 0.02))[..., None], 0, out).astype(rgb.dtype)
 
 
+#: steady in time: each frame's alpha and colour are averaged with the frames around it (this many each way), as far as the
+#: picture there is the same picture (a moving arm keeps its own frame): the matte's per-frame noise and the source's compression
+#: shimmer stop crawling along her edges
+STEADY_RADIUS, STEADY_SIGMA = 3, 7.0
+#: a hole of her matte that is her or what she holds (fill_object_holes): at least this far from the gray and no more than this
+#: much darker than it; or this large with its colour's channels this far apart (the gray's are about 5)
+OBJECT_HOLE_KEY, OBJECT_HOLE_DARKER = 20.0, 10.0
+OBJECT_HOLE_COLOURED_MIN, OBJECT_HOLE_CHROMA = 30, 40.0
+#: the codec's quality for a set's clips: the alpha half shares it, and noise there is her edge crawling
+CRF = {"lg": "18", "sm": "20"}
+
+
+def steady(window: list[tuple[np.ndarray, np.ndarray]], mid: int) -> tuple[np.ndarray, np.ndarray]:
+    """``window``: (picture on the gray, alpha) of a few frames around ``mid``. -> that frame's picture and alpha, steadied."""
+    o0, a0 = window[mid]
+    num_o, num_a, den = o0.copy(), a0.copy(), np.ones(a0.shape, np.float32)
+    for k, (o, a) in enumerate(window):
+        if k == mid:
+            continue
+        d = cv2.blur(np.abs(o - o0).mean(-1), (5, 5))
+        wgt = np.exp(-(d / STEADY_SIGMA) ** 2).astype(np.float32)
+        num_o += o * wgt[..., None]
+        num_a += a * wgt
+        den += wgt
+    return num_o / den[..., None], num_a / den
+
+
+def fill_object_holes(a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -> np.ndarray:
+    """Holes inside her that are her, or something she holds: the remover keeps the person and can drop a flat object, or a light
+    part of her over it (her fingers on a cup, a book's pages, a white rim). Such a hole is about as light as the gray or lighter,
+    and yet not the gray itself; or it has a clear colour of its own. It is filled whatever rings it. A hole that is the gray
+    (between her fingers, her arm and her side) stays open, and so does one darker than the gray: the gray between strands of her
+    hair, mixed with them."""
+    solid = a > 0.5
+    lab, n = ndimage.label(ndimage.binary_fill_holes(solid) & ~solid)
+    if not n:
+        return a
+    dist = np.sqrt(((orig - bg) ** 2).sum(-1))
+    lum, bg_lum = orig.mean(-1), float(bg.mean())
+    chroma = orig.max(-1) - orig.min(-1)
+    out = a.copy()
+    for i, sl in enumerate(ndimage.find_objects(lab), 1):
+        hole = lab[sl] == i
+        size = int(hole.sum())
+        light = float(np.median(lum[sl][hole])) >= bg_lum - OBJECT_HOLE_DARKER and float(np.median(dist[sl][hole])) >= OBJECT_HOLE_KEY
+        coloured = size >= OBJECT_HOLE_COLOURED_MIN and float(np.median(chroma[sl][hole])) >= OBJECT_HOLE_CHROMA
+        if light or coloured:
+            g = ndimage.binary_dilation(hole, iterations=1)
+            out[sl][g] = np.maximum(out[sl][g], 1.0)
+    return out
+
+
+#: the light halo the source's sharpening leaves outside her dark outline: this far in from her edge, about the gray's lightness
+#: or lighter, with no colour of its own, next to a dark pixel
+HALO_DEPTH, HALO_DARKER, HALO_CHROMA, HALO_DARK = 2.5, 8.0, 14.0, 0.45
+
+
+def cut_halo(a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -> np.ndarray:
+    """The source is sharpened: every dark outline on the gray has a thin light line just outside it, lighter than the gray.
+    The matte counts that line as her, and on a dark page it is a white rim around her hair and her clothes. A pixel at her
+    edge, as light as the gray or lighter, with no colour of its own (skin and white clothes have some, or no dark outline
+    beside them), right next to something dark, is that line: it goes."""
+    inside = a >= 0.5
+    if not inside.any():
+        return a
+    depth = ndimage.distance_transform_edt(inside)
+    lum, chroma = orig.mean(-1), orig.max(-1) - orig.min(-1)
+    bg_lum = float(bg.mean())
+    dark = lum < HALO_DARK * bg_lum
+    near_dark = ndimage.binary_dilation(dark, iterations=2)
+    halo = inside & (depth <= HALO_DEPTH) & ~dark & near_dark & (lum >= bg_lum - HALO_DARKER) & (chroma < HALO_CHROMA)
+    if not halo.any():
+        return a
+    out = a.copy()
+    out[halo] = 0.0
+    return out
+
+
+#: her edge, measured again: this many pixels in from it, against her colour this many pixels further in, where that colour is
+#: at least this far from the gray (a dark strand of hair on the gray, yes; light skin on it, no: that can't be told apart)
+UNMIX_EDGE, UNMIX_DEEP, UNMIX_CONTRAST = 3.0, 3.0, 40.0
+
+
+def unmix_edge(a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -> np.ndarray:
+    """Her edge's alpha from its colour. An edge pixel is her colour mixed with the gray in some proportion: the matte often calls
+    it all her, and then the gray left in it is a light line around her hair on a dark page. Measured against the nearest pixel
+    well inside her (her colour there) and the known gray, the proportion is the alpha; lighter than the gray (the sharpening's
+    halo) comes out as none of her. Only where her colour differs enough from the gray to tell."""
+    inside = a >= 0.5
+    if not inside.any() or inside.all():
+        return a
+    depth = ndimage.distance_transform_edt(inside)
+    deep = (a >= 0.98) & (depth >= UNMIX_DEEP)
+    if not deep.any():
+        return a
+    edge = (depth <= UNMIX_EDGE) & (a > 0.02)
+    _, (iy, ix) = ndimage.distance_transform_edt(~deep, return_indices=True)
+    f = orig[iy, ix] - bg
+    denom = (f * f).sum(-1)
+    ok = edge & (denom >= UNMIX_CONTRAST ** 2)
+    est = np.clip(((orig - bg) * f).sum(-1) / np.maximum(denom, 1.0), 0.0, 1.0)
+    out = a.copy()
+    out[ok] = est[ok]
+    return out
+
+
 THUMB_HEIGHT = 240
 
 
@@ -389,10 +496,15 @@ def clip_thumb(src: Path, dst: Path, height: int = THUMB_HEIGHT) -> bool:
 
 
 def defringe_image(im: Image.Image) -> Image.Image:
-    """A still with alpha, its edge in her own colours (``defringe``)."""
-    px = np.asarray(im.convert("RGBA"))
-    rgb = defringe(px[..., :3], px[..., 3].astype(np.float32) / 255.0)
-    return Image.fromarray(np.dstack([rgb, px[..., 3]]).astype(np.uint8), "RGBA")
+    """A still with alpha, its edge cleaned the way a clip's is: the sharpening's halo cut (``cut_halo``), the edge's alpha measured
+    from its colour (``unmix_edge``) on the gray she was cut from, and the edge in her own colours (``defringe``)."""
+    px = np.asarray(im.convert("RGBA")).astype(np.float32)
+    a = px[..., 3] / 255.0
+    gray = np.array(GRAY, np.float32)
+    o = px[..., :3] * a[..., None] + gray * (1 - a[..., None])
+    a = unmix_edge(cut_halo(a, o, gray), o, gray)
+    rgb = defringe(colour(o, a, gray), a)
+    return Image.fromarray(np.dstack([rgb, a * 255.0]).clip(0, 255).round().astype(np.uint8), "RGBA")
 
 
 def choke(a: np.ndarray, seen: np.ndarray, bg: np.ndarray) -> np.ndarray:
@@ -668,13 +780,11 @@ def cmd_encode(p: Path, only: list[str] | None = None) -> dict:
             ww = round(w * hh / h) // 2 * 2
             mp4 = web / f"{cid}.{tag}.part.mp4"
             procs[tag] = (writer(mp4, ww, hh * 2, fps, "rgb24",
-                                 ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "21" if tag == "lg" else "23",
+                                 ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", CRF.get(tag, "20"), "-tune", "animation",
                                   "-preset", "slow", "-movflags", "+faststart"]), (ww, hh), mp4)
         bgs = meta["bg"]
-        for i, (o, a8) in enumerate(zip(frames(p / "clips" / f"{cid}.mp4"),
-                                        frames(p / "matte" / f"{cid}.alpha.mkv", "gray"))):
-            o = o[y:y + h, x:x + w].astype(np.float32)
-            a = a8[y:y + h, x:x + w].astype(np.float32) / 255.0
+
+        def emit(i: int, o: np.ndarray, a: np.ndarray) -> None:
             bg = np.array(bgs[min(i, len(bgs) - 1)], np.float32)
             rgb = colour(o, a, bg)
             rgb, a = solidify(rgb, a, o, bg)
@@ -686,6 +796,29 @@ def cmd_encode(p: Path, only: list[str] | None = None) -> dict:
                 alpha = np.repeat(small[..., 3:4], 3, axis=-1)
                 assert proc.stdin
                 proc.stdin.write(np.ascontiguousarray(np.concatenate([small[..., :3], alpha], axis=0)).tobytes())
+
+        # (a few frames ahead in memory: each frame is steadied with the ones around it, then made as before)
+        r = STEADY_RADIUS
+        buf: collections.deque[tuple[int, np.ndarray, np.ndarray]] = collections.deque()
+        nxt = 0
+
+        def flush(end: bool = False) -> None:
+            nonlocal nxt
+            while buf and nxt <= buf[-1][0] and (end or buf[-1][0] >= nxt + r):
+                near = [(k, o, al) for k, o, al in buf if abs(k - nxt) <= r]
+                mid = [k for k, _, _ in near].index(nxt)
+                emit(nxt, *steady([(o, al) for _, o, al in near], mid))
+                nxt += 1
+                while buf and buf[0][0] < nxt - r:
+                    buf.popleft()
+
+        for i, (o, a8) in enumerate(zip(frames(p / "clips" / f"{cid}.mp4"), frames(p / "matte" / f"{cid}.alpha.mkv", "gray"))):
+            o = o[y:y + h, x:x + w].astype(np.float32)
+            bg = np.array(bgs[min(i, len(bgs) - 1)], np.float32)
+            a = unmix_edge(cut_halo(fill_object_holes(a8[y:y + h, x:x + w].astype(np.float32) / 255.0, o, bg), o, bg), o, bg)
+            buf.append((i, o, a))
+            flush()
+        flush(end=True)
         for tag, (proc, _, mp4) in procs.items():
             close(proc, mp4)
             os.replace(mp4, web / f"{cid}.{tag}.mp4")

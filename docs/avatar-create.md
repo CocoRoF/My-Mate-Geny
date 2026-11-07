@@ -38,7 +38,16 @@ Exactly the official mates' body (docs/mate.md §2 `video`, packing `stacked-alp
    the remover covers (the gray between hair and a loose strand: its mask is a smooth hull there) opened again from the
    picture, with the coverage of the dark edges beside them, and what the remover itself doubts fades with how close it
    is to the gray (behind pale hair the gray picks up a tint); specks dropped; the inside made solid; the edge choked a
-   pixel in, except what clearly isn't the gray (a fine strand, an outline). The base picture's cut-out gets the same
+   pixel in, except what clearly isn't the gray (a fine strand, an outline). When a clip is encoded, each frame's matte first
+   gets back what the remover dropped of her or of what she holds (`fill_object_holes`: a hole about as light as the gray or
+   lighter, yet not the gray itself, or of a clear colour: her fingers on a cup, a book's pages; the gray between her fingers
+   and the gray between strands of her hair stay open), loses the sharpening's light line outside her outline (`cut_halo`), and
+   has its edge measured again from its colour (`unmix_edge`: an edge pixel is her colour, taken from the nearest pixel well
+   inside her, mixed with the known gray, and the proportion is its alpha, so the gray in a hair strand's edge doesn't stay as a
+   white line); then it is steadied in time (`steady`: averaged with three frames either way, as far as the picture there is
+   the same picture, so what is left of the matte's per-frame noise doesn't crawl along her edges, and a moving arm keeps its
+   own frame); and the edge is coloured from her nearest certain pixel (`defringe`). Clips are encoded at CRF 18 / 20 with `-tune animation` (the alpha half
+   shares the quality), and each gets a small still for the clip library (`clip_thumb`). The base picture's cut-out gets the same
    opening, so every way of making an avatar does: a new mate, an existing mate's avatar, an outfit, a redo. All of it only
    on one flat background (`flat_background`): a reference used as it is may stand on a room, and then the remover's
    answer stands. Pictures to judge a cut-out by (the base picture, the stills, a clip's sheet once it has a matte) stand

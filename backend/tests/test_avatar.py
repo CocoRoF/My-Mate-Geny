@@ -781,3 +781,70 @@ async def test_a_candidate_with_one_thing_changed(db, tmp_path, monkeypatch):
     assert doc["checkpoint"]["stage"] == "pick"
     [(_, flags)] = av.gen.created[n:]
     assert flags[flags.index("--image-references") + 1].endswith("c1-flat.jpg")
+
+
+@needs_venv
+def test_steady_edges_filled_objects_and_her_own_edge_colours(tmp_path):
+    """pipeline.steady / fill_object_holes / defringe / clip_thumb on made-up frames: the matte's flicker settles where the picture
+    holds still and not where it moves; a hole that shows something she holds is filled, the gray between her fingers stays open;
+    an edge takes her colour, never the gray."""
+    script = r'''
+import json, sys, importlib.util
+import numpy as np
+spec = importlib.util.spec_from_file_location("pipeline", sys.argv[1]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+rng = np.random.default_rng(1)
+H = W = 40
+pic = np.full((H, W, 3), 120.0, np.float32)
+win = []
+for k in range(7):
+    a = np.zeros((H, W), np.float32); a[:, :20] = 1.0
+    a[:, 20] = 0.5 + rng.uniform(-0.4, 0.4)            # an edge column that flickers from frame to frame
+    o = pic.copy()
+    if k != 3: o[:, 30:] = 10.0                          # where the picture changes, the middle frame keeps its own
+    a[:, 30:] = 1.0 if k == 3 else 0.0
+    win.append((o, a))
+_, steadied = m.steady(win, 3)
+out = {"edge_spread_before": float(np.std([w[1][0, 20] for w in win])), "edge_after": float(steadied[0, 20]),
+       "moving_kept": float(steadied[0, 35])}
+bg = np.array([213, 212, 217], np.float32)
+o = np.full((60, 60, 3), 213.0, np.float32); a = np.zeros((60, 60), np.float32)
+a[5:55, 5:55] = 1.0
+a[15:35, 15:35] = 0.0; o[15:35, 15:35] = 250.0           # a book's page the remover dropped: lighter than the gray
+a[40:50, 40:50] = 0.0                                    # a real gap: the gray shows
+a[40:50, 10:20] = 0.0; o[40:50, 10:20] = [120, 118, 122]  # the gray between strands of dark hair, mixed with them
+a[42:48, 26:32] = 0.0; o[42:48, 26:32] = [230, 140, 40]   # a bun the remover dropped: a colour of its own
+f = m.fill_object_holes(a, o, bg)
+out["page_filled"] = float(f[20:30, 20:30].min()); out["gap_open"] = float(f[42:48, 42:48].max())
+out["hair_gap_open"] = float(f[42:48, 12:18].max()); out["bun_filled"] = float(f[43:47, 27:31].min())
+rgb = np.zeros((30, 30, 3), np.float32); al = np.zeros((30, 30), np.float32)
+rgb[:, :10] = [20, 20, 30]; al[:, :10] = 1.0; rgb[:, 10] = [200, 200, 205]; al[:, 10] = 0.4   # a rim still holding the gray
+d = m.defringe(rgb, al)
+out["rim"] = d[5, 10].tolist(); out["far"] = d[5, 29].tolist()
+# her edge measured again from its colour: a dark strand's edge pixel half mixed with the gray is half her; the sharpening's
+# light line outside her outline is none of her; light skin against the gray can't be told apart and keeps its alpha
+o = np.full((20, 20, 3), 213.0, np.float32); a = np.zeros((20, 20), np.float32)
+o[:, :10] = [30, 25, 30]; a[:, :10] = 1.0
+o[:, 10] = [121, 118, 123]; a[:, 10] = 1.0                 # half hair, half gray, called all hair by the matte
+o[:, 11] = [235, 234, 238]; a[:, 11] = 1.0                 # the halo, lighter than the gray
+u = m.unmix_edge(a, o, bg)
+out["mixed"] = float(u[5, 10]); out["halo"] = float(u[5, 11]); out["inside"] = float(u[5, 3])
+o2 = np.full((20, 20, 3), 213.0, np.float32); a2 = np.zeros((20, 20), np.float32)
+o2[:, :10] = [236, 220, 220]; a2[:, :10] = 1.0; o2[:, 10] = [225, 216, 218]; a2[:, 10] = 0.8
+out["skin_kept"] = float(m.unmix_edge(a2, o2, bg)[5, 10])
+out["halo_cut"] = float(m.cut_halo(a, o, bg)[5, 11])
+out["thumb"] = m.clip_thumb(__import__("pathlib").Path(sys.argv[2]), __import__("pathlib").Path(sys.argv[3]))
+print(json.dumps(out))
+'''
+    clip = S.Path(S.__file__).parents[1] / "mate" / "builtin" / "assets" / "chaerin" / "outfits" / "pajamas" / "idle_a.sm.mp4"
+    (tmp_path / "t.py").write_text(script)
+    r = subprocess.run([str(_venv() / "bin" / "python"), "-I", str(tmp_path / "t.py"), str(S.Path(S.__file__).with_name("pipeline.py")), str(clip),
+                        str(tmp_path / "thumb.webp")], capture_output=True, text=True, timeout=120)
+    res = json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 else pytest.fail(r.stderr)
+    assert res["edge_spread_before"] > 0.1 and 0.3 < res["edge_after"] < 0.7  # (it settles towards its mean)
+    assert res["moving_kept"] > 0.9  # (no ghost of the frames around it where the picture moved)
+    assert res["page_filled"] == 1.0 and res["gap_open"] < 0.1
+    assert res["hair_gap_open"] < 0.1 and res["bun_filled"] == 1.0  # (filling that in some frames is what made her edge flicker)
+    assert res["rim"] == [20, 20, 30] and res["far"] == [0, 0, 0]
+    assert 0.4 < res["mixed"] < 0.6 and res["halo"] == 0.0 and res["inside"] == 1.0
+    assert res["skin_kept"] == pytest.approx(0.8) and res["halo_cut"] == 0.0
+    assert res["thumb"] and (tmp_path / "thumb.webp").stat().st_size > 1000
