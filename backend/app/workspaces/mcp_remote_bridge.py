@@ -9,7 +9,7 @@ connection's key — no sshfs/fuse (brittle inside containers).
 Tools (``host`` picks the server — its name as listed, default = the workspace's host):
   * remote_bash(command, host?, cwd?)   — run a shell command (cwd: an attached folder)
   * remote_read(path, host?)            — read a file
-  * remote_write(path, content, host?)  — create/overwrite a file
+  * remote_write(path, content, host?)  — create/overwrite a file (and the folders it needs)
   * remote_list(path?, host?)           — list a directory (ls -la)
 
 Allow-list: only the hosts given to this bridge, and on each host only paths inside its roots
@@ -25,6 +25,7 @@ JSON-RPC 2.0 over stdio per the MCP spec.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import posixpath
@@ -164,19 +165,57 @@ def pick_host(name: str | None) -> dict:
     raise ToolError(f"unknown host {name!r} — this chat's servers: " + ", ".join(h["name"] for h in HOSTS))
 
 
+#: a picture bigger than this is not sent to the model
+MAX_IMAGE_BYTES = 4 * 1024 * 1024
+
+
 def _ssh_prefix(h: dict) -> list[str]:
     return ssh_prefix(h)
 
 
+def _exec(h: dict, remote_cmd: str, timeout: int = 300, stdin: str | None = None) -> tuple[int, bytes, bytes]:
+    proc = subprocess.run(
+        [*_ssh_prefix(h), remote_cmd], capture_output=True, timeout=timeout,
+        input=None if stdin is None else stdin.encode("utf-8", "surrogateescape"),
+    )
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def _shown(out: bytes, err: bytes) -> str:
+    def text(raw: bytes) -> str:
+        return raw.decode("utf-8", "replace").replace("\r\n", "\n")
+
+    return text(out) + (("\n[stderr]\n" + text(err)) if err else "")
+
+
 def _run(h: dict, remote_cmd: str, timeout: int = 300, stdin: str | None = None) -> tuple[int, str]:
     try:
-        proc = subprocess.run(
-            [*_ssh_prefix(h), remote_cmd], capture_output=True, text=True, timeout=timeout, input=stdin,
-        )
-        out = proc.stdout + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
-        return proc.returncode, out
+        rc, out, err = _exec(h, remote_cmd, timeout, stdin)
+        return rc, _shown(out, err)
     except Exception as exc:  # noqa: BLE001
         return 1, f"remote exec failed: {exc}"
+
+
+def _image_type(raw: bytes) -> str | None:
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if raw.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if raw.startswith(b"GIF8"):
+        return "image/gif"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def _file_result(raw: bytes, path: str) -> dict:
+    """What remote_read answers for a file: a picture as a picture, anything else that isn't text says so."""
+    mime = _image_type(raw)
+    if mime and len(raw) <= MAX_IMAGE_BYTES:
+        return {"content": [{"type": "image", "data": base64.b64encode(raw).decode(), "mimeType": mime}], "isError": False}
+    if mime or b"\0" in raw:
+        return _text(f"{path} is not a text file ({len(raw)} bytes): nothing to show here, look at it with remote_bash", 1)
+    return _text(raw.decode("utf-8", "replace"), 0)
 
 
 def q(path: str) -> str:
@@ -251,12 +290,16 @@ def call(name: str, args: dict) -> dict:
                 return _text(json.dumps({'job_id':manifest['job_id'], 'status':'connection_lost', 'message':str(exc)}), 0)
         if name == "remote_read":
             p = resolve(h, args.get("path", ""))
-            rc, out = _run(h, guard(h, "__f", p) + 'cat -- "$__f"')
-            return _text(out, rc)
+            try:
+                rc, raw, err = _exec(h, guard(h, "__f", p) + 'cat -- "$__f"')
+            except Exception as exc:  # noqa: BLE001
+                return _text(f"remote exec failed: {exc}", 1)
+            return _file_result(raw, p) if rc == 0 and not err else _text(_shown(raw, err), rc)
         if name == "remote_write":
-            # Content goes over stdin: any size, any bytes/quotes.
+            # Content goes over stdin: any size, any bytes/quotes. A new folder is made for it, as the local Write does.
             p = resolve(h, args.get("path", ""))
-            rc, out = _run(h, guard(h, "__f", p) + 'cat > "$__f" && echo "WROTE $__f"', stdin=args.get("content", ""))
+            rc, out = _run(h, guard(h, "__f", p) + 'mkdir -p -- "$(dirname -- "$__f")" && cat > "$__f" && echo "WROTE $__f"',
+                           stdin=args.get("content", ""))
             return _text(out, rc)
         p = resolve(h, args.get("path") or ".")
         rc, out = _run(h, guard(h, "__f", p) + 'ls -la -- "$__f"')

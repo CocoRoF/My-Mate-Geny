@@ -32,6 +32,12 @@ METHODS = {
 BRIDGE = str(Path(__file__).with_name("bridge.py"))
 
 
+#: seconds before each try to connect again a server that went away
+COMEBACK_DELAYS = (5, 30, 120, 600)
+#: up for this long, it starts over: a server that dies now and then isn't one that can't stay up
+COMEBACK_RESET_S = 600
+
+
 class _SafeSdkLog(logging.Handler):
     """SDK parse errors can contain raw server output. Never forward their traceback."""
 
@@ -67,6 +73,7 @@ class McpService:
         self.directory = tempfile.TemporaryDirectory(prefix="geny-mcp-")
         self.startup = None
         self.closed = False
+        self.comebacks: dict[str, asyncio.Task] = {}
         self.installations = Installations(self.changed, self.log)
         self.setup = SetupTests(self)
         self.logger = logging.getLogger("mcp")
@@ -145,7 +152,9 @@ class McpService:
                 if client
                 else {}
             )
-            self.log(mid, "error" if event == "error" else "info", event, text, **info)
+            coming_back = event == "error" and self._come_back(mid, client)
+            level = "warning" if coming_back else "error" if event == "error" else "info"
+            self.log(mid, level, event, text, **info)
             self.changed()
 
     async def start(self):
@@ -180,6 +189,33 @@ class McpService:
                     self.log(mid, "error", "restore_failed", type(exc).__name__)
 
         self.startup = asyncio.create_task(restore())
+
+    def _come_back(self, mid, client) -> bool:
+        """A server that was up and went away (its process died, the network dropped) is connected again by itself, a few
+        times, more slowly each time; until now it stayed down until the next restart. -> whether it will be tried."""
+        stats = self.stats.setdefault(mid, {})
+        if client is None or self.closed or mid in self.comebacks:
+            return False
+        if client.connected_at and time.time() - client.connected_at >= COMEBACK_RESET_S:
+            stats["comebacks"] = 0  # (it held: this is a new story)
+        tries = stats.get("comebacks", 0)
+        if tries >= len(COMEBACK_DELAYS) or not (client.connected_at or tries):
+            return False  # (given up; or it never worked: that needs the user, not patience)
+        stats["comebacks"] = tries + 1
+
+        async def again():
+            try:
+                await asyncio.sleep(COMEBACK_DELAYS[tries])
+                self.comebacks.pop(mid, None)
+                if mid in self.store.ids():
+                    await self.connect(mid, force=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                self.log(mid, "error", "comeback_failed", type(exc).__name__)
+
+        self.comebacks[mid] = asyncio.create_task(again())
+        return True
 
     async def connect(self, mid, *, force=False):
         async with self.locks.setdefault(mid, asyncio.Lock()):
@@ -450,6 +486,8 @@ class McpService:
 
     async def stop(self):
         self.closed = True
+        for task in self.comebacks.values():
+            task.cancel()
         await self.setup.stop()
         await self.installations.stop()
         self.revoke()

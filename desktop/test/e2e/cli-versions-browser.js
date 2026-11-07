@@ -144,8 +144,9 @@ async function startLongChat(ctx) {
     assert.equal(await text(page, "cli-pill-higgsfield"), st0.tools.find((t) => t.id === "higgsfield").update_available ? "Update available" : "Up to date");
     const claude0 = st0.tools.find((t) => t.id === "claude");
     assert.equal(claude0.update_available, false, "the e2e Claude wrapper reports the latest version");
-    assert.equal(await page.locator('[data-testid="nav-settings-badge"]').getAttribute("title"), "A CLI update is available", "sidebar badge: codex can be upgraded");
-    assert.equal(await page.locator('[data-testid="settings-tab-providers"] [data-testid="settings-tab-badge"]').count(), 1);
+    assert.equal(await page.locator('[data-testid="nav-settings-badge"]').count(), 0, "an update is no warning, and nothing outside Settings");
+    assert.equal(await page.locator('[data-testid="settings-tab-providers"] [data-testid="settings-tab-badge"]').count(), 0);
+    assert.equal(await page.locator('[data-testid="settings-tab-providers"] [data-testid="settings-tab-update"]').getAttribute("title"), "A CLI update is available");
     await shot(page, "en-light-1-section.png", page.locator('[data-testid="cli-versions"]'));
 
     step("Check now");
@@ -184,7 +185,7 @@ async function startLongChat(ctx) {
     const w1 = await startJob(page, '[data-testid="cli-confirm-idle-codex"]');
     await waitState(page, "codex", ["waiting"], 60000, w1);
     assert.match(await text(page, "cli-job-line-codex"), /Waiting for 1 running chat to finish/);
-    assert.equal(await page.locator('[data-testid="nav-settings-badge"]').count(), 0, "no badge while an upgrade waits");
+    assert.equal(await page.locator('[data-testid="settings-tab-update"]').count(), 0, "no dot while an upgrade waits");
     await shot(page, "en-light-5-waiting.png", page.locator('[data-testid="cli-tool-codex"]'));
     await page.click('[data-testid="cli-cancel-codex"]');
     await waitState(page, "codex", ["cancelled"]);
@@ -214,7 +215,7 @@ async function startLongChat(ctx) {
     const span = (Date.now() - t0) / 1000;
     step(`  ${during.length} GET /api/cli-tools over ${span.toFixed(1)} s (pushed changes only), log lines seen mid-run: ${midLog}`);
     assert.ok(during.length <= 12, `too many status fetches: ${during.length}`);
-    await page.waitForFunction(() => !document.querySelector('[data-testid="nav-settings-badge"]'), null, { timeout: 10000 });
+    await page.waitForFunction(() => !document.querySelector('[data-testid="settings-tab-update"]'), null, { timeout: 10000 });
     await shot(page, "en-light-7-succeeded.png", page.locator('[data-testid="cli-tool-codex"]'));
     const st1 = await api(en, "GET", "/api/cli-tools");
     const codex1 = st1.tools.find((t) => t.id === "codex");
@@ -242,7 +243,7 @@ async function startLongChat(ctx) {
     await waitState(page, "codex", ["succeeded", "failed"], 120000, rb);
     assert.equal(await jobState(page, "codex"), "succeeded");
     assert.equal(await text(page, "cli-pill-codex"), "Update available");
-    await page.waitForSelector('[data-testid="nav-settings-badge"]', { timeout: 10000 });
+    await page.waitForSelector('[data-testid="settings-tab-update"]', { timeout: 10000 });
     const st2 = await api(en, "GET", "/api/cli-tools");
     assert.equal(st2.tools.find((t) => t.id === "codex").installed.version, codex0.installed.version);
 

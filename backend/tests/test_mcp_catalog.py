@@ -271,3 +271,47 @@ async def test_download_is_isolated_cancellable_and_survives_interpreter_path_ch
     await installs.cancel("atlassian")
     assert installs.state("atlassian")["phase"] == "cancelled"
     assert not installs.manifest("atlassian")
+
+
+async def test_a_server_that_went_away_comes_back_and_stops_trying(db, monkeypatch):
+    import app.mcp_runtime.service as service_module
+
+    monkeypatch.setattr(service_module, "COMEBACK_DELAYS", (0.01, 0.01))
+    logs = LogService(db)
+    service = McpService(db, SecretVault(db), _services(db), logs)
+    mid = "one"
+    service.store.save(mid, {**definition(), "enabled": True}, create=True)
+    made = []
+
+    class Fake:
+        def __init__(self, spec, event, prepare=None):
+            self.spec, self.event, self.tools, self.error, self.error_code = spec, event, [], "", ""
+            self.state, self.connected_at, self.protocol, self.server_info, self.capabilities = "connected", 1.0, "", {}, {}
+            self.task = asyncio.get_running_loop().create_future()
+            self.ready = asyncio.get_running_loop().create_future()
+            self.ready.set_result(True)
+            made.append(self)
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(service_module, "Connection", Fake)
+    monkeypatch.setattr(service_module.time, "time", lambda: 2.0)  # (it never held for long)
+    try:
+        await service.connect(mid)
+        assert len(made) == 1
+        for expected in (2, 3):
+            service._event(mid, "error", "BrokenResourceError:")
+            for _ in range(50):
+                if len(made) == expected:
+                    break
+                await asyncio.sleep(0.01)
+            assert len(made) == expected  # (connected again by itself)
+        made[-1].connected_at = None
+        service._event(mid, "error", "again")  # (out of tries)
+        await asyncio.sleep(0.05)
+        assert len(made) == 3 and not service.comebacks
+        levels = [r["level"] for r in logs.list(source="mcp")["items"] if r["code"] == "mcp.error"]
+        assert levels == ["error", "warning", "warning"]  # (newest first: only giving up is an error)
+    finally:
+        await service.stop()

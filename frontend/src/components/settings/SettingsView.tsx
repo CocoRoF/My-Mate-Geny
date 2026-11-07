@@ -16,7 +16,7 @@
  *     Providers · Connections · Usage · Admin — what used to be sidebar screens (`/?view=usage` … open these)
  * Each tab embeds the existing component, so the logic lives once.
  */
-import { cliUpdatesNeedAttention, providersNeedAttention, sessionsNeedAttention } from "../../lib/attention";
+import { cliUpdatesAvailable, providersNeedAttention, sessionsNeedAttention } from "../../lib/attention";
 import { useCliToolsStore } from "../../stores/cliToolsStore";
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import {
@@ -780,10 +780,11 @@ function TabButton({ tab, selected, list, onPick }: { tab: TabMeta; selected: bo
   const needsProvider = useProviderStore((s) => providersNeedAttention(s.providers));
   // …or an account's login needs a sign-in (its card's session row says which)
   const needsSession = useProviderStore((s) => sessionsNeedAttention(s.providers));
-  // …or a newer CLI version can be installed (Providers → CLI versions)
-  const needsCli = useCliToolsStore((s) => cliUpdatesNeedAttention(s.status?.tools.filter(tool => tool.id === "claude" || tool.id === "codex")));
-  const needsMediaCli = useCliToolsStore((s) => cliUpdatesNeedAttention(s.status?.tools.filter(tool => tool.id === "higgsfield")));
-  const badge = tab.id === "providers" ? (needsProvider || needsSession || needsCli) : tab.id === "media" && needsMediaCli;
+  // A newer CLI version that can be installed is news, not a warning: a dot
+  const needsCli = useCliToolsStore((s) => cliUpdatesAvailable(s.status?.tools.filter(tool => tool.id === "claude" || tool.id === "codex")));
+  const needsMediaCli = useCliToolsStore((s) => cliUpdatesAvailable(s.status?.tools.filter(tool => tool.id === "higgsfield")));
+  const badge = tab.id === "providers" && (needsProvider || needsSession);
+  const update = tab.id === "providers" ? needsCli : tab.id === "media" && needsMediaCli;
   return (
     <button
       id={`settings-tab-${tab.id}`}
@@ -797,7 +798,10 @@ function TabButton({ tab, selected, list, onPick }: { tab: TabMeta; selected: bo
     >
       <Icon name={tab.icon} size={16} className="shrink-0 text-content-faint group-hover:text-content-dim group-data-[active=true]:text-accent" />
       <span className="min-w-0 flex-1 truncate">{t(tab.label)}</span>
-      <Badge on={badge} title={t(tab.id !== "providers" ? "cliTools.badge" : needsProvider ? "nav.providersNone" : needsSession ? "nav.sessionsNeedLogin" : "cliTools.badge")} />
+      <Badge on={badge} title={t(needsProvider ? "nav.providersNone" : "nav.sessionsNeedLogin")} />
+      {update && !badge && (
+        <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={t("cliTools.badge")} aria-label={t("cliTools.badge")} data-testid="settings-tab-update" />
+      )}
       {list && <Icon name="chevron" size={14} className="shrink-0 text-content-faint" />}
     </button>
   );

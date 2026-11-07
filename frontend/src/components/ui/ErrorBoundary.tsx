@@ -8,7 +8,7 @@
  */
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { reportClientError } from "../../api/admin";
-import { canAutoReload, isChunkError, reloadNow, reloadOnce } from "../../lib/recover";
+import { canAutoReload, isChunkError, isReloading, reloadNow, reloadOnce } from "../../lib/recover";
 import Icon from "./Icon";
 import { tr } from "../../i18n";
 
@@ -36,7 +36,7 @@ export default class ErrorBoundary extends Component<Props, State> {
   private timer: number | undefined;
 
   static getDerivedStateFromError(error: unknown): Partial<State> {
-    return { error, reloading: isChunkError(error) && canAutoReload() };
+    return { error, reloading: isReloading() || (isChunkError(error) && canAutoReload()) };
   }
 
   static getDerivedStateFromProps(props: Props, state: State): Partial<State> | null {
@@ -45,6 +45,7 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: unknown, info: ErrorInfo) {
+    if (isReloading()) return; // (the cure is already on its way: nothing to report, nothing to retry)
     const chunk = isChunkError(error);
     if (chunk && this.state.reloading && reloadOnce("boundary")) return;
     if (chunk && this.state.reloading) this.setState({ reloading: false });

@@ -113,7 +113,7 @@ state silently.
 | swap used | ≥ 80 % | `MONITOR_SWAP_WARN_PCT` |
 | swap growth | +256 MB within 5 min (30 min cooldown) | `MONITOR_SWAP_GROWTH_MB` |
 | disk full | warn 90 %, critical 97 % per watched mount | `MONITOR_DISK_WARN_PCT`, `…_CRIT_PCT` |
-| engine RSS | one engine tree ≥ 2 GB (critical ×2) | `MONITOR_ENGINE_RSS_GB` |
+| engine RSS | one engine tree ≥ 4 GB, with what it runs: tests and builds (critical ×2) | `MONITOR_ENGINE_RSS_GB` |
 | CPU saturated | ≥ 95 % for 60 s | `MONITOR_CPU_SAT_PCT`, `MONITOR_CPU_SAT_S` |
 | GPU temperature | ≥ 85 °C (critical +7) | `MONITOR_GPU_TEMP_C` |
 | GPU memory | ≥ 95 % | |

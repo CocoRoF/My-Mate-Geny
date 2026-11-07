@@ -58,3 +58,20 @@ def test_failed_login_is_logged():
         _login(client)  # clears the failure so the test IP is not banned
         items = client.get("/api/admin/logs", params={"source": "auth"}).json()["items"]
         assert any(i["code"] == "auth.login_failed" for i in items)
+
+
+def test_a_browser_that_goes_away_is_not_a_server_error(db):
+    from starlette.requests import ClientDisconnect
+
+    @app.post("/__test/gone")
+    async def gone():
+        raise ClientDisconnect()
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            _login(client)
+            assert client.post("/__test/gone").status_code == 499
+            logged = client.get("/api/admin/logs", params={"level": "error"}).json()["items"]
+            assert not [r for r in logged if "/__test/gone" in r["message"]]
+    finally:
+        app.router.routes[:] = [r for r in app.router.routes if getattr(r, "path", "") != "/__test/gone"]

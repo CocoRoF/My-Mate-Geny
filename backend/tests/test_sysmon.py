@@ -406,7 +406,7 @@ def test_monitor_snapshot_and_events(db):
     assert row["level"] == "info" and row["detail"]["peak"] > 96
 
     # Engine over the RSS limit, CPU saturation for > 60 s, an OOM kill, a disk filling up.
-    col.engine_rss = int(2.5 * GB)
+    col.engine_rss = int(4.5 * GB)
     col.busy = 99.0
     col.oom_kill = 1
     col.disk_pct = 92.0

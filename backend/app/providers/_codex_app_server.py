@@ -108,7 +108,7 @@ class CodexConnection:
                 self.closed = True
                 for f in self.pending.values():
                     if not f.done():
-                        f.set_exception(RpcError("Codex app-server connection closed"))
+                        f.set_exception(RpcError(self.closed_message()))
                 self.pending.clear()
                 await self.events.put(None)
 
@@ -116,9 +116,17 @@ class CodexConnection:
         await asyncio.wait_for(future, 30)
         await self.runner.write(self.encode({"method": "initialized"}))
 
+    def closed_message(self) -> str:
+        """Says why, when the CLI left word: the same few words for every cause tell nobody what to do."""
+        result = self.runner.last_result
+        said = [ln.strip() for ln in (result.stderr if result else "").splitlines() if ln.strip()]
+        if not result:
+            return "Codex app-server connection closed"
+        return f"Codex app-server connection closed (exit {result.returncode})" + (f": {said[-1][:300]}" if said else "")
+
     async def request(self, method: str, params: dict) -> dict:
         if self.closed:
-            raise RpcError("Codex app-server connection closed")
+            raise RpcError(self.closed_message())
         self.sequence += 1
         iid = self.sequence
         f = asyncio.get_running_loop().create_future()

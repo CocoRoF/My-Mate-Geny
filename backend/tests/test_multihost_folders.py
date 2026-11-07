@@ -301,6 +301,17 @@ def test_bridge_routes_hosts_and_confines_paths(monkeypatch, tmp_path):
     assert _txt(mod.call("remote_read", {"path": "f.txt"})) == ("in a\n", False)  # default host, relative
     out, err = mod.call("remote_write", {"path": "new.txt", "content": "hello", "host": "srv-b"}).values()
     assert (b / "new.txt").read_text() == "hello"
+    assert not _txt(mod.call("remote_write", {"path": "made/for/it.txt", "content": "x", "host": "srv-b"}))[1]
+    assert (b / "made" / "for" / "it.txt").read_text() == "x"  # (a folder that isn't there yet, as the local Write)
+    png = b"\x89PNG\r\n\x1a\n" + bytes(range(256))
+    (a / "pic.png").write_bytes(png)
+    shown = mod.call("remote_read", {"path": "pic.png"})
+    assert not shown["isError"] and shown["content"][0]["type"] == "image" and shown["content"][0]["mimeType"] == "image/png"
+    (a / "blob.bin").write_bytes(b"\xff\xfe\0 not text")
+    text, is_err = _txt(mod.call("remote_read", {"path": "blob.bin"}))
+    assert is_err and "not a text file" in text and "codec" not in text
+    (a / "latin.txt").write_bytes("caf\xe9\n".encode("latin-1"))
+    assert _txt(mod.call("remote_read", {"path": "latin.txt"})) == ("caf\ufffd\n", False)  # (text with a bad byte is still text)
     assert _txt(mod.call("remote_read", {"path": str(b / "new.txt"), "host": "CONN_B"}))[0] == "hello"  # alias
     for bad in ({"path": str(outside / "s.txt")}, {"path": "../secret/s.txt"}, {"path": "link/s.txt"},
                 {"path": str(b / "new.txt")}):  # b's folder through a's host: not attached there

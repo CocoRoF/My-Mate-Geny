@@ -1571,8 +1571,10 @@ class SessionService:
             call = st["tool_calls"].get(str(ev.data.get("id")), {})
             output = str(ev.data.get("output") or "")
             first = next((ln for ln in output.splitlines() if ln.strip()), "tool returned an error")
+            # (a command that exits 1, a tool saying no: the agent's everyday work and it reads the answer itself. Kept
+            # for looking up, but it says nothing about the health of the app, so it isn't counted as a warning)
             self._log(
-                "warning", "tool", first[:300],
+                "info", "tool", first[:300],
                 code=str(call.get("name") or ev.data.get("name") or "tool"),
                 detail={**ctx, "tool_use_id": ev.data.get("id"), "input": call.get("input"), "output": output},
                 session_id=sid,

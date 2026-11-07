@@ -149,7 +149,7 @@ class Settings(BaseSettings):
     monitor_psi_full_warn: float = 5          # PSI memory "full" avg10 %
     monitor_disk_warn_pct: float = 90
     monitor_disk_crit_pct: float = 97
-    monitor_engine_rss_gb: float = 2.0        # one engine (incl. its child processes)
+    monitor_engine_rss_gb: float = 4.0        # one engine (incl. its child processes)
     monitor_cpu_sat_pct: float = 95
     monitor_cpu_sat_s: float = 60
     monitor_gpu_temp_c: float = 85

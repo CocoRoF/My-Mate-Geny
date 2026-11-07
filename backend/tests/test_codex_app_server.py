@@ -384,3 +384,16 @@ async def test_stop_closes_process_and_rejects_undelivered_steering(tmp_path):
             break
     await asyncio.wait_for(stream.aclose(), 10)
     assert not req.inbox.open
+
+
+async def test_a_codex_that_goes_away_says_why(tmp_path):
+    from app.providers._cli_runtime import CLIProcessRunner
+    from app.providers._codex_app_server import CodexConnection, RpcError
+
+    fake = tmp_path / "codex"
+    fake.write_text("#!/bin/sh\necho 'warming up' >&2\necho 'unsupported model: gpt-x' >&2\nexit 3\n")
+    fake.chmod(0o755)
+    connection = CodexConnection(CLIProcessRunner(binary=str(fake)), ["app-server"])
+    with pytest.raises(RpcError) as got:
+        await connection.start()
+    assert "exit 3" in str(got.value) and "unsupported model: gpt-x" in str(got.value)

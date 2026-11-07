@@ -15,6 +15,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import ClientDisconnect
+from starlette.responses import Response
 
 from app import __version__
 from app.auth import AuthManager, AuthMiddleware, OpenCORSMiddleware
@@ -216,6 +218,9 @@ class ErrorLogMiddleware(BaseHTTPMiddleware):
         ip = AuthManager.client_ip(request)
         try:
             response = await call_next(request)
+        except ClientDisconnect:
+            # (a tab closed or the connection lost in the middle of an upload: nothing went wrong here, nobody is listening)
+            return Response(status_code=499)
         except Exception as exc:  # noqa: BLE001
             log_id = logs.record(
                 "error", "http", f"{request.method} {request.url.path} -> {type(exc).__name__}: {exc}",

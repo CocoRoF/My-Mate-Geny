@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cliUpdatesNeedAttention, providersNeedAttention, sessionsNeedAttention } from "../src/lib/attention.ts";
+import { cliUpdatesAvailable, providersNeedAttention, sessionsNeedAttention } from "../src/lib/attention.ts";
 
 const p = (connected: boolean) => ({ provider: "x", connected, auth_mode: "", detail: "" });
 
@@ -19,15 +19,15 @@ const cli = (o: Partial<{ update_available: boolean; possible: boolean; auto_upg
 });
 
 test("CLI versions raise the badge only for a really newer version the user can install", () => {
-  assert.equal(cliUpdatesNeedAttention([cli()]), true);
-  assert.equal(cliUpdatesNeedAttention([cli({ update_available: false }), cli()]), true);
-  assert.equal(cliUpdatesNeedAttention([cli({ update_available: false })]), false); // up to date / channel behind / unknown
-  assert.equal(cliUpdatesNeedAttention([cli({ possible: false })]), false); // nothing to click here
-  assert.equal(cliUpdatesNeedAttention([cli({ auto_upgrade: true })]), false); // the app takes care of it
-  assert.equal(cliUpdatesNeedAttention([cli({ active: true })]), false); // already upgrading / waiting for idle
-  assert.equal(cliUpdatesNeedAttention([cli({ active: false })]), true); // the last one finished (or failed)
-  assert.equal(cliUpdatesNeedAttention(null), false); // still loading
-  assert.equal(cliUpdatesNeedAttention([]), false);
+  assert.equal(cliUpdatesAvailable([cli()]), true);
+  assert.equal(cliUpdatesAvailable([cli({ update_available: false }), cli()]), true);
+  assert.equal(cliUpdatesAvailable([cli({ update_available: false })]), false); // up to date / channel behind / unknown
+  assert.equal(cliUpdatesAvailable([cli({ possible: false })]), false); // nothing to click here
+  assert.equal(cliUpdatesAvailable([cli({ auto_upgrade: true })]), false); // the app takes care of it
+  assert.equal(cliUpdatesAvailable([cli({ active: true })]), false); // already upgrading / waiting for idle
+  assert.equal(cliUpdatesAvailable([cli({ active: false })]), true); // the last one finished (or failed)
+  assert.equal(cliUpdatesAvailable(null), false); // still loading
+  assert.equal(cliUpdatesAvailable([]), false);
 });
 
 const ps = (...health: string[]) => ({

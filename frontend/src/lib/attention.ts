@@ -18,7 +18,7 @@ export function sessionsNeedAttention(providers: ProviderStatus[]): boolean {
   return providers.some((p) => (p.session_attention || []).some((i) => i.health === "needs_login" || i.health === "refresh_failed"));
 }
 
-/** the part of a CLI's status (api/cliTools.ts) the badge looks at */
+/** the part of a CLI's status (api/cliTools.ts) the dot looks at */
 export interface CliToolAttention {
   update_available: boolean;
   upgrade: { possible: boolean };
@@ -27,10 +27,11 @@ export interface CliToolAttention {
 }
 
 /**
+ * Not something the user has to act on, so no warning, and nothing outside Settings: a dot on the tab where it can be installed.
  * Settings → Providers → CLI versions: a CLI has a really newer version (the server compares versions — never "a
  * check ran", "latest unknown" or a channel behind the installed copy) that the user can install here, and nothing
  * is taking care of it already (an upgrade in progress / waiting, or automatic upgrades on).
  */
-export function cliUpdatesNeedAttention(tools: CliToolAttention[] | null | undefined): boolean {
+export function cliUpdatesAvailable(tools: CliToolAttention[] | null | undefined): boolean {
   return !!tools?.some((t) => t.update_available && t.upgrade.possible && !t.auto_upgrade && !t.job?.active);
 }

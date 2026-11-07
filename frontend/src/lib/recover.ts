@@ -49,6 +49,12 @@ export function reloadOnce(reason = "chunk"): boolean {
   return true;
 }
 
+/** A reload for a chunk failure is under way. (What failed meanwhile is only the module the page didn't get: `vite:preloadError`
+ *  handled, the import resolves to nothing and React.lazy trips over it.) */
+export function isReloading(): boolean {
+  return !!(window as any).__hrhReloading;
+}
+
 /** Hard reload from a button: the guard is cleared (the user asked for it). */
 export function reloadNow(): void {
   try {
