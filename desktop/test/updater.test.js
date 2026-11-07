@@ -78,6 +78,7 @@ test("support: Windows / AppImage / deb yes; macOS (unsigned), dev runs and no s
   assert.equal(support({ isPackaged: true, platform: "linux", env: { APPIMAGE: "/a" }, server: "s" }).how, "appimage");
   assert.equal(support({ isPackaged: true, platform: "linux", env: {}, server: "s" }).how, "deb");
   assert.match(support({ isPackaged: true, platform: "darwin", server: "s" }).reason, /\.dmg/);
+  assert.equal(support({ isPackaged: true, platform: "darwin", server: "s", macSigned: true }).how, "mac");
   assert.equal(support({ isPackaged: false, platform: "win32", server: "s" }).ok, false);
   assert.equal(support({ isPackaged: false, platform: "win32", env: { HRH_UPDATER_DEV: "1" }, server: "s" }).ok, true);
   assert.equal(support({ isPackaged: true, platform: "win32", server: "" }).ok, false);

@@ -82,7 +82,7 @@ function createUpdateSource({readSettings,writeSettings,safeStorage,fetcher=glob
     if(!['GET','HEAD'].includes(req.method)||!pathname.startsWith(prefix)){res.writeHead(404);res.end();return;}
     let name;try{name=decodeURIComponent(pathname.slice(prefix.length));}catch{res.writeHead(400);res.end();return;}
     const m=await metadata(name.endsWith('.yml')),file=m.files.get(name);
-    if(!file||!(/^(latest(-linux|-mac)?\.yml)$/.test(name)||classify(name)||/\.blockmap$/.test(name))){res.writeHead(404);res.end();return;}
+    if(!file||!(/^(latest(-linux|-mac)?\.yml)$/.test(name)||classify(name)||/\.blockmap$/.test(name)||/macos-(arm64|x64)\.zip$/.test(name))){res.writeHead(404);res.end();return;}
     const controller=new AbortController();controllers.add(controller);res.once('close',()=>controller.abort());
     try{
       const range=/^bytes=\d*-\d*$/.test(req.headers.range||'')?req.headers.range:undefined;

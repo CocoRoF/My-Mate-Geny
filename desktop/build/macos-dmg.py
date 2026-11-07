@@ -46,7 +46,9 @@ def write_feed(directory: Path, version: str) -> Path:
         raise RuntimeError(
             "Both verified macOS architectures are required before publishing the feed"
         )
-    entries = [(f.name, digest(f), f.stat().st_size) for f in files]
+    # A signed build also has a zip per architecture, which is what a running app updates itself from: first in the feed.
+    zips = sorted(directory.glob(f"my-mate-geny-{version}-macos-*.zip"))
+    entries = [(f.name, digest(f), f.stat().st_size) for f in [*zips, *files]]
     lines = [f"version: {json.dumps(version)}", "files:"]
     for name, sha, size in entries:
         lines += [f"  - url: {json.dumps(name)}", f"    sha512: {sha}", f"    size: {size}"]

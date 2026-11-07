@@ -39,18 +39,19 @@ function compareVersions(a, b) {
 }
 
 /** what this install can do (`code`: the reason's message in i18n.js — the console shows it in the UI's language) */
-function support({ isPackaged, platform, env = {}, server }) {
+function support({ isPackaged, platform, env = {}, server, macSigned = false }) {
   if (!isPackaged && env.HRH_UPDATER_DEV !== "1") return { ok: false, code: "updDev", reason: "A development build does not update itself." };
-  if (platform === "darwin") return { ok: false, code: "updMac", reason: "macOS builds are not signed, so they cannot replace themselves — download the new .dmg below." };
-  if (platform !== "win32" && platform !== "linux") return { ok: false, code: "updOs", reason: "Updates are not available on this system." };
+  // (Squirrel.Mac only takes a signed app from a signed app: a build made without the release's certificate can't)
+  if (platform === "darwin" && !macSigned) return { ok: false, code: "updMac", reason: "This macOS build is not signed, so it cannot replace itself — download the new .dmg below." };
+  if (platform !== "win32" && platform !== "linux" && platform !== "darwin") return { ok: false, code: "updOs", reason: "Updates are not available on this system." };
   if (!server) return { ok: false, code: "updServer", reason: "Not connected to a server." };
-  return { ok: true, how: platform === "win32" ? "installer" : env.APPIMAGE ? "appimage" : "deb" };
+  return { ok: true, how: platform === "win32" ? "installer" : platform === "darwin" ? "mac" : env.APPIMAGE ? "appimage" : "deb" };
 }
 
 /**
  * deps: {
  *   autoUpdater()   → electron-updater's autoUpdater (lazy), CancellationToken class via cancelToken()
- *   version, platform, isPackaged, env, server(), cookieHeader(): Promise<string>,
+ *   version, platform, isPackaged, env, server(), cookieHeader(): Promise<string>, macSigned (the release's certificate),
  *   onState(state), beforeInstall(), now(), reasonText(code)? (the "can't update here" reason in the UI's language)
  *   restartAfter(file)? an AppImage's restart: start `file` with this app's arguments once this process has exited
  *   installFailed()? the install did not happen after all (beforeInstall undone)
@@ -66,7 +67,7 @@ function createUpdater(deps) {
   let instance = null;
 
   const view = () => {
-    const s = support({ isPackaged: deps.isPackaged, platform: deps.platform, env: deps.env || {}, server: deps.server() });
+    const s = support({ isPackaged: deps.isPackaged, platform: deps.platform, env: deps.env || {}, server: deps.server(), macSigned: deps.macSigned });
     const reason = s.ok ? undefined : (deps.reasonText && deps.reasonText(s.code)) || s.reason;
     return { ...state, current: deps.version, supported: s.ok, how: s.how || null, reason };
   };

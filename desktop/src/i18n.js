@@ -67,7 +67,7 @@ const MESSAGES = {
     pickFolder: "Choose a folder",
     // updater.js: why this install can't update itself
     updDev: "A development build does not update itself.",
-    updMac: "macOS builds are not signed, so they cannot replace themselves — download the new .dmg below.",
+    updMac: "This macOS build is not signed, so it cannot replace itself — download the new .dmg below.",
     updOs: "Updates are not available on this system.",
     updServer: "Not connected to a server.",
     // the local pages (preload → hrhNative.text)
@@ -216,7 +216,7 @@ const MESSAGES = {
     ctxCopyImage: "이미지 복사",
     pickFolder: "폴더 선택",
     updDev: "개발용 빌드는 스스로 업데이트하지 않아요.",
-    updMac: "macOS 빌드는 서명되지 않아 스스로 교체할 수 없어요 — 아래에서 새 .dmg를 받아 주세요.",
+    updMac: "이 macOS 빌드는 서명되지 않아 스스로 교체할 수 없어요 — 아래에서 새 .dmg를 받아 주세요.",
     updOs: "이 시스템에서는 업데이트를 쓸 수 없어요.",
     updServer: "서버에 연결되어 있지 않아요.",
     page: {

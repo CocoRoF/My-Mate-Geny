@@ -65,7 +65,7 @@ const ko: Messages<"downloads"> = {
   noteWin1: "설치 프로그램을 실행하세요. 코드 서명이 없는 빌드라서 Windows SmartScreen이 인식할 수 없는 앱이라고 경고할 수 있어요: “추가 정보” → “실행”을 고르세요.",
   noteWin2: "업데이트: 앱이 이 페이지에서 직접 업데이트해요 (다운로드하고 설치 → 다시 시작) — 설정과 로그인은 그대로예요.",
   noteMac1: ".dmg를 열고 {app}를 응용 프로그램 폴더로 끌어다 놓으세요.",
-  noteMac2: "처음 실행할 때: Apple 공증을 받지 않은 앱이라서 앱을 오른쪽 클릭 → 열기 → 열기를 고르세요. macOS가 “손상됐다”고 하면 다음을 실행하세요: {cmd}",
+  noteMac2: "처음 실행할 때: 인터넷에서 받은 앱을 열지 macOS가 한 번 물어봐요. 열기를 고르세요.",
   noteLinux1: "AppImage: {cmd} 후 실행하세요 (모든 배포판에서 동작해요).",
   noteLinux2: "Debian/Ubuntu: {cmd} — 앱 메뉴에 추가돼요.",
   noteAndroid1: "휴대폰에서 APK를 여세요. Android가 브라우저/파일 앱의 설치 허용을 한 번 물어보면 허용한 뒤 설치하세요.",

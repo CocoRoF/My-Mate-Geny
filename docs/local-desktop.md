@@ -115,13 +115,17 @@ fresh for every build. A successful runtime smoke test saves that cache before
 installer packaging, so a later packaging failure does not lose it. uv's own
 download cache is also preserved.
 
-macOS first builds the signed/ad-hoc .app directory with electron-builder and
-its existing afterPack hook. build/macos-dmg.py stages it with an Applications
+macOS first builds the ad-hoc .app directory with electron-builder and
+its existing afterPack hook. With the Developer ID secrets, build/macos-sign.py then
+signs every binary in it from the inside out (found by Mach-O header: the Python runtime's
+extension modules included), runs a copy, notarizes and staples it, and zips it for the
+updater; the image gets the same after it is made. build/macos-dmg.py stages it with an Applications
 shortcut and uses hdiutil create directly (read-only ULFO/LZFSE), then verifies
 the resulting image. It does not use Finder customization or the old attach /
 detach retry path. The runtime inside the actual .app is still smoke-tested.
 Publishing generates one latest-mac.yml with hashes and sizes for both CPU
-architectures. The unsigned app's manual DMG update policy stays the same.
+architectures, the zips first: a signed app updates itself from them. A build without the
+certificate stays on the manual DMG update.
 
 The change removes redundant work; actual cold/warm macOS timing must be
 measured on the Actions runners. A Linux packaging test is not a macOS build.

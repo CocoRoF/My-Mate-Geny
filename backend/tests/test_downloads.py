@@ -106,6 +106,8 @@ def test_update_feed_files_by_name(monkeypatch, tmp_path):
         asset(3, "my-mate-geny-0.4.12-windows-x64-setup.exe", "2026-10-31T10:00:00Z"),
         asset(4, "latest-linux.yml", "2026-10-31T10:00:00Z"),
         asset(5, "notes.txt", "2026-10-31T10:00:00Z"),
+        asset(6, "latest-mac.yml", "2026-10-31T10:00:00Z"),
+        asset(7, "my-mate-geny-0.4.12-macos-arm64.zip", "2026-10-31T10:00:00Z"),
     ]}
     svc = DownloadService()
     monkeypatch.setattr(svc, "_get", lambda url: rel)
@@ -114,7 +116,10 @@ def test_update_feed_files_by_name(monkeypatch, tmp_path):
     assert svc.update_path("latest.yml")[1] == "latest.yml" and got[-1] == 2
     assert svc.update_path("my-mate-geny-0.4.12-windows-x64-setup.exe")[1].endswith(".exe") and got[-1] == 3
     assert svc.update_path("latest-linux.yml") and got[-1] == 4
+    assert svc.update_path("latest-mac.yml") and got[-1] == 6
+    assert svc.update_path("my-mate-geny-0.4.12-macos-arm64.zip") and got[-1] == 7
+    assert not [a for a in svc.latest()["assets"] if a["name"].endswith(".zip")]  # (the update's own: not on the page)
     import pytest
-    for bad in ("notes.txt", "../latest.yml", "latest-mac.yml", "x/../../etc/passwd", ""):
+    for bad in ("notes.txt", "../latest.yml", "latest-win.yml", "x/../../etc/passwd", ""):
         with pytest.raises(KeyError):
             svc.update_path(bad)

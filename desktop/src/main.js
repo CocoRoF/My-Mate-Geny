@@ -543,6 +543,7 @@ const updater = createUpdater({
   platform: process.platform,
   isPackaged: app.isPackaged,
   env: process.env,
+  macSigned: !!require("../package.json").macSigned, // (the release build says so when it signs: apps.yml)
   server: () => updateSource.config().repository,
   // (development runs only: tests point the feed elsewhere and give electron-updater a config file)
   feedUrl: () => (!app.isPackaged && env.HRH_UPDATE_FEED) || updateSource.feedUrl(),

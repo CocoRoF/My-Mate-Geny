@@ -147,7 +147,8 @@ the main process, so a reloaded page shows the running download. The feed is
 the connected server's `/api/downloads/update/` (it serves `latest.yml` /
 `latest-linux.yml` and the installers from the `apps-latest` release, which CI
 uploads alongside the installers). Windows (NSIS) and Linux AppImage replace
-themselves, a .deb installs through a password prompt; unsigned macOS builds
+themselves, a .deb installs through a password prompt; a signed macOS build
+replaces itself from its zip (`latest-mac.yml`), one built without the certificate
 cannot (the page offers the .dmg). A background check runs 30 s after start
 and every 6 h (it only tells; downloading is the user's call). Help → *Check
 for updates…*.
@@ -239,5 +240,10 @@ Now:
   published to the `apps-latest` release and the console's Download page
   (`my-mate-geny-<version>-…`).
 - Local Linux build: `npm run dist:linux` (or in `electronuserland/builder`).
-- Unsigned: Windows SmartScreen and macOS Gatekeeper ask once (see the
-  Download page); macOS builds are ad-hoc signed so Apple Silicon can run them.
+- Signing: macOS release builds are signed with a Developer ID and notarized
+  (`build/macos-sign.py`, entitlements in `build/entitlements.mac.plist`; the secrets
+  are `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`, `APPLE_API_KEY_B64`, `APPLE_API_KEY_ID`,
+  `APPLE_API_ISSUER`). Without them a build is ad-hoc signed, so Apple Silicon can
+  still run it, and Gatekeeper asks. Windows is unsigned: SmartScreen asks once.
+- A signed bundle must never change: all the runtime's bytecode goes in before signing,
+  and the signing step runs a copy and checks its seal afterwards.

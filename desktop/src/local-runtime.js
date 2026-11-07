@@ -28,7 +28,7 @@ function createLocalRuntime({root,dataDir,cookies,log=()=>{},onCrash=()=>{},pref
       // Providers can create separate process groups. Kill descendants before their parent disappears.
       try{const m=manifest();spawnSync(path.join(root,m.python),['-c',
         'import psutil,sys\np=psutil.Process(int(sys.argv[1]))\nfor c in reversed(p.children(recursive=True)):\n try:c.kill()\n except psutil.NoSuchProcess:pass\np.kill()',String(proc.pid)],
-        {timeout:1800,stdio:'ignore',env:guiEnv()});}catch{}
+        {timeout:1800,stdio:'ignore',env:{...guiEnv(),...(process.platform==='darwin'?{PYTHONDONTWRITEBYTECODE:'1'}:{})}});}catch{}
       try{process.kill(-proc.pid,'SIGKILL');}catch{try{proc.kill('SIGKILL');}catch{}}}
   }
   async function stop(){
@@ -51,7 +51,7 @@ function createLocalRuntime({root,dataDir,cookies,log=()=>{},onCrash=()=>{},pref
       if(!available())throw new Error('The local runtime is missing. Install the complete My Mate Geny desktop package.');
       const m=manifest();secret=crypto.randomBytes(32).toString('hex');
       const proc=spawnProcess(path.join(root,m.python),[path.join(root,m.backend),'--port',String(preferredPort()||0),'--data-dir',dataDir,'--static-dir',path.join(root,m.web)],
-        {cwd:root,env:{...guiEnv(),LOCAL_BOOTSTRAP_SECRET:secret,GENY_NATIVE_PARENT_PID:String(process.pid)},
+        {cwd:root,env:{...guiEnv(),...(process.platform==='darwin'?{PYTHONDONTWRITEBYTECODE:'1'}:{}),LOCAL_BOOTSTRAP_SECRET:secret,GENY_NATIVE_PARENT_PID:String(process.pid)},
          detached:process.platform!=='win32',windowsHide:true,stdio:['ignore','pipe','pipe']});
       child=proc;let ready=false;
       proc.stderr.on('data',b=>log(String(b).slice(-3000)));

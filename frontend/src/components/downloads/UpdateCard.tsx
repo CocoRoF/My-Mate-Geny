@@ -27,7 +27,7 @@ export interface UpdateState {
   cancelled?: boolean;
   supported?: boolean;
   reason?: string;
-  how?: "installer" | "appimage" | "deb" | null;
+  how?: "installer" | "appimage" | "deb" | "mac" | null;
 }
 
 export interface UpdatesBridge {

@@ -57,9 +57,9 @@ class _NoAuthRedirect(urllib.request.HTTPRedirectHandler):
 
 # The desktop app's in-app updater (electron-updater, generic provider) reads its feed from this server
 # (/api/downloads/update/<name>): the update descriptions electron-builder writes next to the installers, and the
-# files they name. Never macOS (unsigned builds cannot self-update: the app offers the .dmg instead).
-UPDATE_FEEDS = {"windows": "latest.yml", "linux": "latest-linux.yml"}
-_UPDATE_FILE = re.compile(r"^(latest(-linux)?\.yml|[\w.+-]+\.(exe|AppImage|deb)(\.blockmap)?)$")
+# files they name. macOS: a signed app updates itself from the zips (never offered on the page: not in _PATTERNS).
+UPDATE_FEEDS = {"windows": "latest.yml", "linux": "latest-linux.yml", "macos": "latest-mac.yml"}
+_UPDATE_FILE = re.compile(r"^(latest(-linux|-mac)?\.yml|[\w.+-]+\.(exe|AppImage|deb|zip)(\.blockmap)?)$")
 
 
 class DownloadService:

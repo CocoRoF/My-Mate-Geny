@@ -65,7 +65,7 @@ export default {
   noteWin1: "Run the installer. Windows SmartScreen may warn about an unrecognised app (the build isn't code-signed): choose “More info” → “Run anyway”.",
   noteWin2: "Updates: the app updates itself from this page (Download & install, then Restart) — settings and login are kept.",
   noteMac1: "Open the .dmg and drag {app} into Applications.",
-  noteMac2: "First launch: the app isn't notarised by Apple, so right-click it → Open → Open. If macOS says it's “damaged”, run: {cmd}",
+  noteMac2: "First launch: macOS asks once whether to open an app from the internet. Choose Open.",
   noteLinux1: "AppImage: {cmd} and run it (works on any distro).",
   noteLinux2: "Debian/Ubuntu: {cmd} — adds it to your app menu.",
   noteAndroid1: "Open the APK on the phone. Android asks to allow installs from your browser/files app once — allow it, then install.",

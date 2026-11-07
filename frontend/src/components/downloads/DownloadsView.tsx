@@ -26,7 +26,7 @@ const notes = (legacy: boolean): Record<string, string[]> => {
   windows: [tr("downloads.noteWin1"), tr("downloads.noteWin2")],
   macos: [
     tr("downloads.noteMac1", { app }),
-    tr("downloads.noteMac2", { cmd: `xattr -dr com.apple.quarantine "/Applications/${app}.app"` }),
+    tr("downloads.noteMac2"),
   ],
   linux: [
     tr("downloads.noteLinux1", { cmd: `chmod +x ${file}-*.AppImage` }),
