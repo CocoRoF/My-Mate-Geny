@@ -108,6 +108,11 @@ chat, keeps an eye on it and tells you how it went.
 - **Delegation**: she can list and read your chats, start a chat in the right folder, send
   instructions to a running one, and gets each result back to report on.
 - **Memory**: things she should remember (she can add them herself; you can edit them).
+- **Her own day**: on the real clock she works, eats, sleeps, plays and goes out, with needs
+  (hunger, sleep, warmth, fun, stress) that move how she feels and how she talks. Ten places
+  stand behind her at four times of day, with weather; she decides where to go (you can ask
+  her along), what you suggest for her week leans her, her skills grow, story events happen
+  to her and she keeps a diary. Being away never costs anything ([docs/mate-life.md](docs/mate-life.md)).
 - **Her own engine**: she thinks with Claude Code (Sonnet 5.5 by default) or Codex
   (GPT-6.1-Sol by default), sealed either way: her persona and memory, only her delegation
   tools, no shell or file access, none of your CLI settings. Switch engines mid-conversation

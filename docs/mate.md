@@ -1147,6 +1147,13 @@ Mate settings → Reach out has one local device ON/OFF switch. The selected Mat
 device record. The fixed situation policy is product-owned; legacy presets/prompts remain archived unchanged
 and are ignored by fixed-policy clients. See [automatic conversation](mate-proactive.md).
 
+## Her own day
+
+A mate can live a day of her own on the real clock: where she is, what she is doing, her needs, the plan, story events, gifts
+and her journal. All of it is in [docs/mate-life.md](mate-life.md). API: `GET /api/mates/{id}/life` (the Life panel's view),
+`PUT /api/mates/{id}/life/plan/{slot}` `{activity}` (a suggestion for one slot of her week, null = up to her),
+`POST /api/mates/{id}/life/gift` `{item}`; `prefs.life` (auto, on, off) turns it on or off. Her tool: `do_activity`.
+
 ## Reset her memory
 
 **Mate settings → Danger zone → Reset memory** (`POST /api/mates/{id}/memory/wipe {confirm: her name}`) is as if they had never talked: her
