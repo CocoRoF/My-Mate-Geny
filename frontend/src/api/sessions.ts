@@ -1,5 +1,5 @@
 import { apiFetch, apiResponse } from "./client";
-import type { AccountRef, ChatMessage, Compaction, ContextInfo, PlanUsage, ProviderEvent, Session, TaskInfo } from "../types";
+import type { AccountRef, Attachment, ChatMessage, Compaction, ContextInfo, PlanUsage, ProviderEvent, Session, TaskInfo } from "../types";
 
 export type SessionPatch = {
   provider?: string;
@@ -43,6 +43,24 @@ export const updateSession = (id: string, patch: SessionPatch) =>
   apiFetch<Session>(`/api/sessions/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 
 export const stopTurn = (id: string) => apiFetch(`/api/sessions/${id}/stop`, { method: "POST" });
+
+/** What a rewind to this message would take back. */
+export interface RewindPreview {
+  messages: number;
+  running: boolean;
+  files: { path: string; root: string }[];
+  file_count: number;
+}
+export const rewindPreview = (id: string, messageId: string) =>
+  apiFetch<RewindPreview>(`/api/sessions/${id}/rewind?message_id=${encodeURIComponent(messageId)}`);
+/** This message and everything after it as if never sent. → its text and files, to send again. */
+export const rewindSession = (id: string, messageId: string, restoreFiles: boolean) =>
+  apiFetch<{ text: string; attachments: Attachment[]; restored_files: string[] }>(`/api/sessions/${id}/rewind`, {
+    method: "POST",
+    body: JSON.stringify({ message_id: messageId, restore_files: restoreFiles }),
+  });
+/** A second chat that works exactly like this one from here on: `{title}_copy_{n}`. */
+export const copySession = (id: string) => apiFetch<Session>(`/api/sessions/${id}/copy`, { method: "POST" });
 
 export const resetContext = (id: string) =>
   apiFetch(`/api/sessions/${id}/reset-context`, { method: "POST" });

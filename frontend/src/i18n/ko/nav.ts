@@ -1,6 +1,8 @@
 import type { Messages } from "..";
 
 const ko: Messages<"nav"> = {
+  copyChat: "복사",
+  copyFailed: "복사하지 못했어요: {error}",
   mate: "메이트",
   chat: "채팅",
   connections: "연결",

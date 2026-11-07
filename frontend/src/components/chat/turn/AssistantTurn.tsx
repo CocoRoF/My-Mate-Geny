@@ -13,6 +13,7 @@ import TurnChangesCard from "../../changes/TurnChangesCard";
 import { useT } from "../../../i18n";
 import { fmtDateTime, relTime } from "../../../i18n/format";
 import { useChatStore } from "../../../stores/chatStore";
+import RewindButton from "../RewindButton";
 import TurnCost from "../TurnCost";
 import CompactionDivider from "../CompactionDivider";
 import ViaBadge from "../ViaBadge";
@@ -177,7 +178,7 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
               return <SubagentCard key={i} tool={s.tool} allTools={turn.tools} />;
             case "steer":
               return (
-                <div key={i} className="flex flex-col items-end gap-1 py-0.5">
+                <div key={i} className="group flex flex-col items-end gap-1 py-0.5">
                   <span className="inline-flex items-center gap-1.5 text-[10.5px] text-content-faint">
                     <ViaBadge meta={s.item.meta} />
                     {s.item.pending ? (
@@ -200,6 +201,7 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
                       {s.item.text}
                     </div>
                   )}
+                  {!s.item.pending && <RewindButton messageId={s.item.messageId} text={s.item.text} meta={s.item.meta} />}
                 </div>
               );
             case "notice":

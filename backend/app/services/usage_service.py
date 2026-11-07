@@ -34,7 +34,9 @@ class UsageService:
             """
             SELECT e.type AS type, e.data AS data, e.created_at AS at,
                    s.provider AS provider, s.model AS model, s.title AS title, s.id AS sid
-            FROM events e JOIN sessions s ON e.session_id = s.id
+            FROM (SELECT id, session_id, type, data, created_at FROM events
+                  UNION ALL SELECT id, session_id, type, data, created_at FROM rewound_usage) e
+            JOIN sessions s ON e.session_id = s.id
             WHERE e.type IN ('turn.complete', 'error')
             ORDER BY e.id
             """
@@ -55,6 +57,8 @@ class UsageService:
             except Exception:
                 continue
             data = norms[r["sid"]].feed(data)
+            if data.get("usage_copied"):
+                continue  # (a copied chat's history: its original spent this)
             # An error counts only when it spent something (a failed/stopped
             # turn that still ran); plain errors carry no usage.
             if r["type"] == "error" and not data.get("cost_kind"):

@@ -265,12 +265,19 @@ def test_claude_reasoning_starts_without_waiting_for_text_and_closes_on_stop():
 FAKE = r"""
 import json, os, sys, time
 def out(obj): print(json.dumps(obj), flush=True)
-def event(method, **p): out({"method": method, "params": {"threadId": "root", "turnId": "turn", **p}})
+thread = ["root"]
+def event(method, **p): out({"method": method, "params": {"threadId": thread[0], "turnId": "turn", **p}})
 for line in sys.stdin:
     msg = json.loads(line)
     with open(sys.argv[0]+".log", "a") as f: f.write(json.dumps(msg)+"\n")
     method, p = msg.get("method"), msg.get("params", {})
     if method == "initialize": out({"id": msg["id"], "result": {"userAgent": "codex/0.166.0"}})
+    elif method == "thread/fork":
+        if os.environ.get("FAKE_FORK_FAILS"):
+            out({"id": msg["id"], "error": {"code": -32600, "message": "turn not found"}})
+            continue
+        thread[0] = "forked"
+        out({"id": msg["id"], "result": {"thread": {"id": "forked", "turns": []}}})
     elif method in ("thread/start", "thread/resume"):
         # the real server returns the whole history on resume unless told not to (one line, 17 MB seen)
         turns = [{"id": "old", "items": ["x" * (17 * 1024 * 1024)]}] if method == "thread/resume" and not p.get("excludeTurns") else []
@@ -355,6 +362,39 @@ async def test_resuming_a_long_conversation_does_not_load_its_history(tmp_path):
     messages = [json.loads(x) for x in script.with_suffix(".log").read_text().splitlines()]
     resume = next(m for m in messages if m.get("method") == "thread/resume")["params"]
     assert resume["threadId"] == "root" and resume["excludeTurns"] is True
+
+
+@pytest.mark.parametrize("at", [None, "turn-3"])
+async def test_a_copied_or_rewound_chat_forks_the_thread_and_records_where_it_stands(tmp_path, at):
+    script = fake_cli(tmp_path)
+    req = TurnRequest(messages=[{"role": "user", "content": "hi"}], model="default", cwd=str(tmp_path),
+                      cli_session_id="source", fork_session=True, resume_at=at, inbox=TurnInbox())
+    events = []
+    delivered = asyncio.get_running_loop().create_future()
+
+    async def run():
+        async for ev in CodexProvider(binary=str(script)).run_turn_stream(req):
+            events.append(ev)
+            if ev.type == "thinking.start":
+                assert req.inbox.offer(SteerMessage(text="next", delivered=delivered))
+
+    await asyncio.wait_for(run(), 15)
+    messages = [json.loads(x) for x in script.with_suffix(".log").read_text().splitlines()]
+    assert not any(m.get("method") == "thread/resume" for m in messages)
+    fork = next(m for m in messages if m.get("method") == "thread/fork")["params"]
+    assert fork["threadId"] == "source" and fork["excludeTurns"] is True and fork["cwd"] == str(tmp_path)
+    assert fork.get("lastTurnId") == at
+    assert next(m for m in messages if m.get("method") == "turn/start")["params"]["threadId"] == "forked"
+    done = events[-1]
+    assert done.type == "turn.complete" and done.data["cli_session_id"] == "forked" and done.data["cli_at"] == "turn"
+
+
+async def test_a_fork_that_fails_says_so_in_a_way_the_session_layer_recovers_from(tmp_path):
+    script = fake_cli(tmp_path)
+    req = TurnRequest(messages=[{"role": "user", "content": "hi"}], model="default", cwd=str(tmp_path),
+                      cli_session_id="source", fork_session=True, resume_at="x", extra_env={"FAKE_FORK_FAILS": "1"})
+    events = [ev async for ev in CodexProvider(binary=str(script)).run_turn_stream(req)]
+    assert events[-1].type == "error" and "thread/fork failed: turn not found" in events[-1].data["message"]
 
 
 async def test_dead_process_does_not_leave_thinking_or_wait_forever(tmp_path):

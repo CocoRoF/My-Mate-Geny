@@ -226,6 +226,7 @@ class CodexJsonAccumulator:
                 "cost_kind": "none",
                 "stop_reason": "end_turn",
                 "cli_session_id": self.thread_id or cli_session_id,
+                "cli_at": getattr(self, "turn_id", None),
             },
             seq=self._seq,
         )

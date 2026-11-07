@@ -38,6 +38,7 @@ export default function Sidebar() {
   const remove = useSessionStore((s) => s.remove);
   const updateSession = useSessionStore((s) => s.update);
   const patchLocal = useSessionStore((s) => s.patchLocal);
+  const copy = useSessionStore((s) => s.copy);
   const providers = useProviderStore((s) => s.providers);
   const reset = useChatStore((s) => s.reset);
 
@@ -305,6 +306,16 @@ export default function Sidebar() {
                       className="flex w-full items-center gap-2 px-3 py-2 touch:py-3 text-[13px] text-content-dim hover:bg-surface-3 hover:text-content"
                     >
                       <Icon name="pencil" size={14} /> {t("common.rename")}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setMenuId(null);
+                        copy(s.id).catch((e: Error) => window.alert(t("nav.copyFailed", { error: e.message })));
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 touch:py-3 text-[13px] text-content-dim hover:bg-surface-3 hover:text-content"
+                      data-testid="session-copy"
+                    >
+                      <Icon name="copy" size={14} /> {t("nav.copyChat")}
                     </button>
                     <button
                       onClick={() => {

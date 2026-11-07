@@ -1,5 +1,7 @@
 // The app shell: sidebar, top bars, title bar, banners, page-level error screens.
 export default {
+  copyChat: "Copy",
+  copyFailed: "Couldn't copy it: {error}",
   mate: "Mate",
   chat: "Chat",
   connections: "Connections",

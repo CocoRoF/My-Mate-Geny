@@ -59,6 +59,8 @@ or `POST /api/sessions/{sid}/seen`; a run that ends while its chat is on screen
 is seen as it ends. Every change moves the list version on `/ws/sessions`, so
 every device follows without polling. Mate conversations keep none.
 
+A chat can go back to before any message the user sent, and be copied: docs/session-timeline.md.
+
 ## Event schema
 
 ```json

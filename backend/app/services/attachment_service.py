@@ -72,6 +72,13 @@ def _safe_name(name: str | None) -> str:
     return name
 
 
+def _link_or_copy(src: str, dst: str) -> None:
+    try:
+        os.link(src, dst)
+    except OSError:  # (another filesystem, or links not allowed)
+        shutil.copy2(src, dst)
+
+
 def _sniff(head: bytes) -> str | None:
     for magic, offset, mime in _MAGIC:
         if head[offset: offset + len(magic)] == magic:
@@ -248,6 +255,55 @@ class AttachmentService:
              str(dest), model_path, row["model_mime"] if model_path else None, now_iso()),
         )
         return self.get(aid)  # type: ignore[return-value]
+
+    def clone(self, sid: str, new_sid: str, until: str | None = None) -> dict[str, dict[str, Any]]:
+        """Everything sent or made in this chat (up to ``until``) as files of another one, not yet in the database:
+        {old id: new row}. Hard links where possible: a chat's files are never changed in place, a copy costs no space and
+        either chat can go without touching the other's. A file gone from disk is left out. Blocking: run it in a thread."""
+        out: dict[str, dict[str, Any]] = {}
+        for raw in self._db.query(
+            "SELECT * FROM attachments WHERE session_id = ? AND message_id IS NOT NULL"
+            + (" AND created_at < ?" if until else "") + " ORDER BY created_at", (sid, *([until] if until else [])),
+        ):
+            row = dict(raw)
+            if not os.path.exists(row["path"]):
+                continue
+            aid = new_id("att_")
+            folder = self.session_dir(new_sid) / aid
+            folder.mkdir(parents=True, exist_ok=True)
+            row["id"], path = aid, row["path"]
+            row["path"] = str(folder / os.path.basename(path))
+            _link_or_copy(path, row["path"])
+            if row.get("model_path") and os.path.exists(row["model_path"]):
+                model = row["model_path"]
+                row["model_path"] = str(folder / os.path.basename(model))
+                _link_or_copy(model, row["model_path"])
+            else:
+                row["model_path"], row["model_mime"] = None, None
+            out[raw["id"]] = row
+        return out
+
+    def rewind(self, sid: str, message_id: str, gone: list[str], at: str) -> list[dict[str, Any]]:
+        """A rewind took these messages away: their attachments and what the turns made go with them; the rewound message's
+        own files are waiting to be sent again. → those files. (In the caller's transaction; files are removed at once: a
+        rollback can only leave a row whose file is gone, which every reader already handles.)"""
+        kept = [dict(r) for r in self._db.query(
+            "SELECT * FROM attachments WHERE session_id = ? AND message_id = ? AND origin != 'screen' ORDER BY created_at",
+            (sid, message_id))]
+        self._db.execute("UPDATE attachments SET message_id = NULL WHERE session_id = ? AND message_id = ? "
+                         "AND origin != 'screen'", (sid, message_id))
+        rows = [dict(r) for r in self._db.query(
+            "SELECT id, path FROM attachments WHERE session_id = ? AND message_id LIKE 'artifact:%' AND created_at >= ?",
+            (sid, at))]
+        for k in range(0, len(gone), 500):
+            chunk = gone[k:k + 500]
+            rows += [dict(r) for r in self._db.query(
+                f"SELECT id, path FROM attachments WHERE session_id = ? AND message_id IN ({','.join('?' * len(chunk))})",
+                (sid, *chunk))]
+        for row in rows:
+            self._db.execute("DELETE FROM attachments WHERE id = ?", (row["id"],))
+            shutil.rmtree(os.path.dirname(row["path"]), ignore_errors=True)
+        return [self.out({**row, "message_id": None}) for row in kept]
 
     # ---- read ----
 

@@ -36,6 +36,8 @@ class StreamJsonAccumulator:
     def __init__(self, *, cost_base: float = 0.0) -> None:
         self._seq = 0
         self.session_id: str | None = None
+        # The main conversation's latest assistant message: where a copy of this session can stop (--resume-session-at).
+        self.assistant_uuid: str | None = None
         self.final_text: str = ""
         self.usage: dict[str, Any] = {}
         self.cost_base = cost_base
@@ -101,6 +103,7 @@ class StreamJsonAccumulator:
 
         if kind == "assistant":
             if not parent:
+                self.assistant_uuid = obj.get("uuid") or self.assistant_uuid
                 yield from self._main_call(obj)
             yield from self._handle_assistant(obj.get("message", {}), parent)
             return
@@ -299,6 +302,7 @@ class StreamJsonAccumulator:
                 **self.cost_fields(),
                 "stop_reason": self.stop_reason,
                 "cli_session_id": self.session_id,
+                "cli_at": self.assistant_uuid,
                 "duration_ms": obj.get("duration_ms"),
                 "num_turns": obj.get("num_turns"),
             },

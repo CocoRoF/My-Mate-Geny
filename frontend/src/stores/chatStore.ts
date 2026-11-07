@@ -53,7 +53,7 @@ export type FlowItem =
   | { kind: "notice"; level: "info" | "warning"; message: string; code?: string; data?: Record<string, any> }
   // Instructions the user added while the agent was working (pending until
   // the runtime confirms delivery into the running turn).
-  | { kind: "steer"; text: string; attachments: Attachment[]; clientMsgId?: string; pending: boolean; meta?: MessageMeta };
+  | { kind: "steer"; text: string; attachments: Attachment[]; clientMsgId?: string; messageId?: string; pending: boolean; meta?: MessageMeta };
 
 /** What the backend says about a message beyond its text (docs/mate.md §3):
  * who sent it (`via` a mate) and internal messages (a mate's greeting,
@@ -107,6 +107,8 @@ export interface Turn {
   trigger?: string; // "background": Claude started this turn itself
   changes?: TurnChanges; // files the turn changed (git snapshots)
   meta?: MessageMeta; // user turns: via a mate, internal messages
+  messageId?: string; // user turns: the stored message (what a rewind goes back to)
+  clientMsgId?: string; // user turns sent from this tab: until the server says which message it became
 }
 
 /** Paged history (backend services/history_page.py): the newest turns are
@@ -359,12 +361,13 @@ function unlazyTurn(turn: Turn, ids: Set<string>, full: Map<number, ProviderEven
 }
 
 /** Update an accepted speech bubble in place, including a steer inside an earlier reply. */
-function updateSpeech(turns: Turn[], group: string, text: string | undefined, meta: MessageMeta, attachments?: Attachment[]): boolean {
+function updateSpeech(turns: Turn[], group: string, text: string | undefined, meta: MessageMeta, attachments?: Attachment[], messageId?: unknown): boolean {
+  const known=messageId?{messageId:String(messageId)}:{};
   for (let i=0;i<turns.length;i++) {
     const t=turns[i];
-    if(t.meta?.speech_group===group) {turns[i]={...t,...(text!==undefined?{text}:{}),...(attachments?{attachments}:{}),meta:{...t.meta,...meta}};return true;}
+    if(t.meta?.speech_group===group) {turns[i]={...t,...known,...(text!==undefined?{text}:{}),...(attachments?{attachments}:{}),meta:{...t.meta,...meta}};return true;}
     const index=t.flow.findIndex(f=>f.kind==='steer'&&f.meta?.speech_group===group);
-    if(index>=0) {turns[i]={...t,flow:t.flow.map((f,n)=>n===index&&f.kind==='steer'?{...f,...(text!==undefined?{text}:{}),...(attachments?{attachments}:{}),pending:false,meta:{...f.meta,...meta}}:f)};return true;}
+    if(index>=0) {turns[i]={...t,flow:t.flow.map((f,n)=>n===index&&f.kind==='steer'?{...f,...known,...(text!==undefined?{text}:{}),...(attachments?{attachments}:{}),pending:false,meta:{...f.meta,...meta}}:f)};return true;}
   }
   return false;
 }
@@ -560,25 +563,27 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
     case "speech.closed":
       updateSpeech(turns,String(data.group_id),data.accepted_text,{speech_pending:false},data.attachments);break;
     case "user.steer": {
-      if(data.speech_group && updateSpeech(turns,String(data.speech_group),String(data.text||""),metaOf(data)||{},data.attachments)) break;
+      if(data.speech_group && updateSpeech(turns,String(data.speech_group),String(data.text||""),metaOf(data)||{},data.attachments,data.message_id)) break;
       const cid = data.client_msg_id ? String(data.client_msg_id) : "";
       const item = {
         kind: "steer" as const,
         text: String(data.text || ""),
         attachments: (data.attachments as Attachment[]) || [],
         clientMsgId: cid || undefined,
+        messageId: data.message_id ? String(data.message_id) : undefined,
         pending: false,
         meta: metaOf(data),
       };
       if (!hasLiveTurn(turns)) {
         // Nothing running here (e.g. delivered just as the turn closed): plain user bubble.
-        turns.push({ key: newKey("u"), role: "user", text: item.text, flow: [], tools: [], complete: true, attachments: item.attachments, meta: item.meta });
+        turns.push({ key: newKey("u"), role: "user", messageId: item.messageId, text: item.text, flow: [], tools: [], complete: true, attachments: item.attachments, meta: item.meta });
         break;
       }
       const t = liveTurn(turns, at);
       const mine = cid ? t.flow.find((f) => f.kind === "steer" && f.clientMsgId === cid) : undefined;
       if (mine && mine.kind === "steer") {
         mine.pending = false;
+        mine.messageId = item.messageId;
         if (item.meta) mine.meta = item.meta;
       }
       else {
@@ -603,16 +608,20 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
       break;
     }
     case "user.message": {
-      if(data.speech_group && updateSpeech(turns,String(data.speech_group),String(data.text||""),metaOf(data)||{},data.attachments)) break;
+      if(data.speech_group && updateSpeech(turns,String(data.speech_group),String(data.text||""),metaOf(data)||{},data.attachments,data.message_id)) break;
       const cid = data.client_msg_id ? String(data.client_msg_id) : "";
       if (cid && ownMessages.has(cid)) {
         ownMessages.delete(cid);
+        // (already on screen: now it knows which message it is)
+        const i = turns.findIndex((t) => t.clientMsgId === cid);
+        if (i >= 0 && data.message_id) turns[i] = { ...turns[i], messageId: String(data.message_id) };
         break;
       }
       if (hasLiveTurn(turns)) finish(liveTurn(turns, at), at);
       turns.push({
         key: newKey("u"),
         role: "user",
+        messageId: data.message_id ? String(data.message_id) : undefined,
         text: String(data.text || ""),
         flow: [],
         tools: [],
@@ -673,6 +682,7 @@ function reconstruct(
       turns.push({
         key: newKey("u"),
         role: "user",
+        messageId: it.user.id,
         text: it.user.content,
         flow: [],
         tools: [],
@@ -913,7 +923,7 @@ export function createChatStore(opts: { lite?: boolean } = {}) {
     set((s) => ({
       turns: [
         ...s.turns,
-        { key: newKey("u"), role: "user", text, flow: [], tools: [], complete: true, attachments },
+        { key: newKey("u"), role: "user", clientMsgId, text, flow: [], tools: [], complete: true, attachments },
       ],
     }));
   },

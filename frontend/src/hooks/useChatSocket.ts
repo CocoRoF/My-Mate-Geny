@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { toLogin, wsUrl } from "../api/client";
 import { getHistoryPage } from "../api/sessions";
+import { reloadChat } from "../lib/rewind";
 import { onResync } from "../lib/sync";
 import { FIRST_TURNS, useChatStore } from "../stores/chatStore";
 import { useSessionStore } from "../stores/sessionStore";
@@ -118,6 +119,11 @@ export function useChatSocket(sessionId: string | null) {
         try {
           ev = JSON.parse(e.data);
         } catch {
+          return;
+        }
+        if (ev.type === "session.rewound") {
+          // (from any window or device: what is on screen is gone)
+          void reloadChat(sessionId).catch(() => {});
           return;
         }
         if (ev.type === "task.state") {
