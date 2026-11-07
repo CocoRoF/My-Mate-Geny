@@ -29,6 +29,7 @@ class Engine:
 
     def __init__(self, name):
         self.name, self.reqs, self.turns, self.hold, self.stale, self.asked = name, [], 0, None, [], []
+        self.work = None  # (what this turn does in its folder)
 
     async def run_turn_stream(self, req):
         self.reqs.append(req)
@@ -41,6 +42,9 @@ class Engine:
             return
         cli = req.cli_session_id if req.cli_session_id and not req.fork_session else f"{self.name}-{n}"
         yield ProviderEvent(type="tool.use", data={"id": f"t{n}", "name": "Bash", "input": {"command": f"step {n}"}})
+        work, self.work = self.work, None
+        if work is not None:
+            work()
         if self.hold is not None:
             await self.hold.wait()
         yield ProviderEvent(type="turn.complete", seq=9, data={
@@ -89,7 +93,8 @@ async def test_a_rewound_chat_holds_nothing_from_that_message_on(stack):
     assert res["text"] == "two" and res["attachments"] == [] and res["restored_files"] == []
     assert _roles(svc, sid) == [("user", "one"), ("assistant", "claude answer 1")]
     assert all(e["eid"] <= last_kept for e in svc.events(sid))
-    assert (await asyncio.wait_for(q.get(), 1))["type"] == "session.rewound"
+    # (other windows hear it before anything stops, so what they queued can't go out when the turn ends)
+    assert [(await asyncio.wait_for(q.get(), 1))["type"] for _ in range(2)] == ["session.rewinding", "session.rewound"]
     # the history pages agree (their numbers are folded once per chat)
     page = svc.history_page(sid, turns=10)
     assert [m["content"] for m in page["messages"]] == ["one", "claude answer 1"]
@@ -271,7 +276,7 @@ async def test_only_a_message_the_user_sent_can_be_rewound_to(stack):
         await svc.timeline.rewind(sid, "msg_nope")
     made = svc.seed_message(sid, "user", "from a mate", meta={"via": {"mate_id": "m"}})
     with pytest.raises(ValueError):
-        svc.timeline.preview(sid, made)
+        await svc.timeline.preview(sid, made)
     mate = svc.create(provider="claude", workspace_path=str(tmp), kind="mate", mate_id="m")["id"]
     mine = svc.seed_message(mate, "user", "hi")
     with pytest.raises(ValueError):
@@ -345,9 +350,9 @@ async def test_files_go_back_to_before_the_first_rewound_turn_and_only_those(sta
     second = await _changed_turn(svc, sid, repo, "second", lambda: (keep.write_text("v3\n"), new.write_text("new\n")))
     (repo / "other.txt").write_text("edited by someone else\n")
 
-    preview = svc.timeline.preview(sid, second)
+    preview = await svc.timeline.preview(sid, second)
     assert preview["messages"] == 1 and preview["file_count"] == 2 and {f["path"] for f in preview["files"]} == {"keep.txt", "new.txt"}
-    assert svc.timeline.preview(sid, first)["messages"] == 2
+    assert (await svc.timeline.preview(sid, first))["messages"] == 2
 
     res = await svc.timeline.rewind(sid, second, restore_files=True)
     assert sorted(res["restored_files"]) == ["keep.txt", "new.txt"]
@@ -374,6 +379,292 @@ async def test_without_being_asked_files_stay_and_a_failed_restore_changes_nothi
     assert [m for m in _roles(svc, sid)][0] == ("user", "first") and sid not in svc.timeline.busy
     await svc.timeline.rewind(sid, first)
     assert keep.read_text() == "v2\n" and svc.messages(sid) == []
+
+
+async def _working(svc, sid, turn):
+    for _ in range(200):
+        if any(e["type"] == "tool.use" and e["data"]["id"] == f"t{turn}" for e in svc.events(sid)):
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError("the turn never started working")
+
+
+def _message(svc, sid, text):
+    return next(m for m in svc.messages(sid) if m["content"] == text)["id"]
+
+
+async def _stopped_turn(svc, engines, sid, text, turn, work=None):
+    """A turn stopped midway, by cancelling: how a stop reaches an engine that isn't kept running."""
+    engines["claude"].hold, engines["claude"].work = asyncio.Event(), work
+    svc.start_turn(sid, text)
+    await _working(svc, sid, turn)
+    task = svc._tasks[sid]
+    svc.stop(sid)
+    await task
+    engines["claude"].hold = None
+    return _message(svc, sid, text)
+
+
+def _steer(svc, sid, text):
+    """A message added while a turn works, with the records its delivery leaves."""
+    mid = svc._add_message(sid, "steer", text)
+    svc._add_event(sid, ProviderEvent(type="user.steer", data={"text": text, "message_id": mid}))
+    return mid
+
+
+async def test_what_the_turn_at_work_changed_is_offered_and_goes_back(stack, repo):
+    svc, engines, _tmp = stack
+    sid = _new(svc, repo)
+    keep, new = repo / "keep.txt", repo / "new.txt"
+    engines["claude"].hold = asyncio.Event()
+    engines["claude"].work = lambda: (keep.write_text("half done\n"), new.write_text("new\n"))
+    svc.start_turn(sid, "working")
+    await _working(svc, sid, 1)
+    mid = _message(svc, sid, "working")
+
+    preview = await svc.timeline.preview(sid, mid)
+    assert preview["running"] and preview["file_count"] == 2 and not preview["joined"]
+
+    res = await svc.timeline.rewind(sid, mid, restore_files=True)
+    assert sorted(res["restored_files"]) == ["keep.txt", "new.txt"]
+    assert keep.read_text() == "v1\n" and not new.exists()
+    assert svc.messages(sid) == []
+
+
+async def test_a_stopped_turn_says_what_it_changed_and_what_came_after_it_stays(stack, repo):
+    svc, engines, _tmp = stack
+    sid = _new(svc, repo)
+    keep = repo / "keep.txt"
+    mid = await _stopped_turn(svc, engines, sid, "stopped", 1, lambda: keep.write_text("half done\n"))
+    types = [e["type"] for e in svc.events(sid)]
+    assert types.index("turn.changes") < types.index("error")
+    (repo / "by-hand.txt").write_text("mine\n")
+
+    res = await svc.timeline.rewind(sid, mid, restore_files=True)
+
+    assert res["restored_files"] == ["keep.txt"] and keep.read_text() == "v1\n"
+    assert (repo / "by-hand.txt").read_text() == "mine\n"
+
+
+async def test_a_stopped_turn_that_changed_nothing_doesnt_take_what_was_edited_after_it(stack, repo):
+    svc, engines, _tmp = stack
+    sid = _new(svc, repo)
+    mid = await _stopped_turn(svc, engines, sid, "stopped", 1)
+    (repo / "keep.txt").write_text("by hand\n")
+    await _say(svc, sid, "next")
+
+    res = await svc.timeline.rewind(sid, mid, restore_files=True)
+
+    assert res["restored_files"] == [] and (repo / "keep.txt").read_text() == "by hand\n"
+
+
+async def test_a_turn_that_crashed_goes_back_too(stack, repo):
+    svc, engines, _tmp = stack
+    sid = _new(svc, repo)
+    keep = repo / "keep.txt"
+
+    def work():
+        keep.write_text("half done\n")
+        raise RuntimeError("boom")
+
+    engines["claude"].work = work
+    mid = await _say(svc, sid, "crashes")
+    assert any(e["type"] == "error" and e["data"]["code"] == "exec.turn.crashed" for e in svc.events(sid))
+
+    res = await svc.timeline.rewind(sid, mid, restore_files=True)
+    assert res["restored_files"] == ["keep.txt"] and keep.read_text() == "v1\n"
+
+
+async def test_a_turn_the_server_went_down_under_is_read_from_its_snapshots(stack, repo):
+    svc, _engines, _tmp = stack
+    sid = _new(svc, repo)
+    keep = repo / "keep.txt"
+    top, before = await change_tracker.snapshot(change_tracker.local_runner(), str(repo))
+    mid = svc._add_message(sid, "user", "lost")
+    svc._add_event(sid, ProviderEvent(type="turn.snapshot", data={"repos": [{"root": top, "before": before, "connection_id": None}]}))
+    keep.write_text("half done\n")
+    await _say(svc, sid, "next")
+    (repo / "by-hand.txt").write_text("mine\n")
+
+    assert (await svc.timeline.preview(sid, mid))["file_count"] == 1
+    res = await svc.timeline.rewind(sid, mid, restore_files=True)
+    assert res["restored_files"] == ["keep.txt"] and keep.read_text() == "v1\n"
+    assert (repo / "by-hand.txt").exists()
+
+
+async def test_a_report_cut_at_its_limit_still_restores_every_file(stack, repo):
+    svc, engines, _tmp = stack
+    sid = _new(svc, repo)
+    names = [f"f{i}.txt" for i in range(change_tracker.MAX_FILES + 5)]
+    engines["claude"].work = lambda: [(repo / n).write_text("x\n") for n in names]
+    mid = await _say(svc, sid, "many files")
+    report = next(e for e in svc.events(sid) if e["type"] == "turn.changes")["data"]["repos"][0]
+    assert report["truncated"] and len(report["files"]) == change_tracker.MAX_FILES
+
+    assert (await svc.timeline.preview(sid, mid))["file_count"] == len(names)
+    res = await svc.timeline.rewind(sid, mid, restore_files=True)
+
+    assert sorted(res["restored_files"]) == sorted(names)
+    assert not any((repo / n).exists() for n in names)
+
+
+async def test_a_folder_that_cant_be_compared_stops_the_rewind_before_anything_is_gone(stack, repo):
+    svc, engines, _tmp = stack
+    sid = _new(svc, repo)
+    keep = repo / "keep.txt"
+    engines["claude"].work = lambda: keep.write_text("v2\n")
+    mid = await _say(svc, sid, "first")
+    for e in svc.events(sid):
+        if e["type"] in ("turn.snapshot", "turn.changes"):
+            repos = [{**r, "before": "0" * 40} for r in e["data"]["repos"]]
+            svc._db.execute("UPDATE events SET data = ? WHERE id = ?", (json.dumps({**e["data"], "repos": repos}), e["eid"]))
+
+    with pytest.raises(RuntimeError, match="could not compare"):
+        await svc.timeline.rewind(sid, mid, restore_files=True)
+
+    assert _roles(svc, sid)[0] == ("user", "first") and sid not in svc.timeline.busy
+    assert keep.read_text() == "v2\n"
+
+
+async def test_a_restore_git_refuses_is_a_failure(repo):
+    with pytest.raises(RuntimeError):
+        await change_tracker.revert(change_tracker.local_runner(), {
+            "root": str(repo), "before": "0" * 40, "files": [{"path": "keep.txt", "status": "M"}]})
+
+
+async def test_turns_recorded_before_snapshots_existed_go_back_too(stack, repo):
+    svc, _engines, tmp = stack
+    sid = _new(svc, tmp)  # (its folder isn't a repo: no snapshots, as in an older chat)
+    keep = repo / "keep.txt"
+    await _changed_turn(svc, sid, repo, "first", lambda: keep.write_text("v2\n"))
+    second = await _changed_turn(svc, sid, repo, "second", lambda: keep.write_text("v3\n"))
+
+    res = await svc.timeline.rewind(sid, second, restore_files=True)
+    assert res["restored_files"] == ["keep.txt"] and keep.read_text() == "v2\n"
+
+
+async def test_going_back_to_a_message_added_mid_turn_stops_that_turn_there(stack, repo):
+    svc, engines, _tmp = stack
+    sid = _new(svc, repo)
+    keep, other = repo / "keep.txt", repo / "other.txt"
+    engines["claude"].hold = asyncio.Event()
+    svc.start_turn(sid, "work")
+    await _working(svc, sid, 1)
+    added = _steer(svc, sid, "also this")
+    keep.write_text("that turn\n")
+    task = svc._tasks[sid]
+    engines["claude"].hold.set()
+    await task
+    engines["claude"].hold = None
+    engines["claude"].work = lambda: other.write_text("a later turn\n")
+    await _say(svc, sid, "later")
+
+    preview = await svc.timeline.preview(sid, added)
+    assert preview["joined"] and [f["path"] for f in preview["files"]] == ["other.txt"]
+
+    res = await svc.timeline.rewind(sid, added, restore_files=True)
+
+    assert res["text"] == "also this" and res["restored_files"] == ["other.txt"]
+    assert other.read_text() == "other\n" and keep.read_text() == "that turn\n"  # (that turn can't be split)
+    assert _roles(svc, sid) == [("user", "work")]
+    last = svc.events(sid)[-1]
+    assert last["type"] == "error" and last["data"]["code"] == "turn.interrupted"
+    assert not svc.is_running(sid)
+
+
+async def test_a_message_added_mid_turn_in_an_older_chat_keeps_that_turns_files(stack, repo):
+    svc, _engines, tmp = stack
+    sid = _new(svc, tmp)
+    keep, other = repo / "keep.txt", repo / "other.txt"
+    runner = change_tracker.local_runner()
+    await _say(svc, sid, "work")
+    added = _steer(svc, sid, "also this")
+    top, before = await change_tracker.snapshot(runner, str(repo))
+    keep.write_text("that turn\n")
+    _top, after = await change_tracker.snapshot(runner, str(repo))
+    summary = await change_tracker.summarize(runner, top, before, after)
+    svc._add_event(sid, ProviderEvent(type="turn.changes", data={"repos": [{**summary, "connection_id": None}]}))
+    svc._add_event(sid, ProviderEvent(type="turn.complete", data={"text": "done"}))
+    await _changed_turn(svc, sid, repo, "later", lambda: other.write_text("a later turn\n"))
+
+    res = await svc.timeline.rewind(sid, added, restore_files=True)
+
+    assert res["restored_files"] == ["other.txt"] and keep.read_text() == "that turn\n"
+
+
+async def test_a_message_added_mid_turn_can_be_rewound_in_a_copy(stack):
+    svc, _engines, tmp = stack
+    sid = _new(svc, tmp)
+    await _say(svc, sid, "work")
+    original = _steer(svc, sid, "also this")
+
+    new = (await svc.timeline.copy(sid))["id"]
+
+    event = next(e for e in svc.events(new) if e["type"] == "user.steer")
+    mine = _message(svc, new, "also this")
+    assert mine != original and event["data"]["message_id"] == mine
+    assert (await svc.timeline.rewind(new, mine))["text"] == "also this"
+    assert _message(svc, sid, "also this") == original  # (the original goes on as it was)
+
+
+async def test_an_engine_turn_arriving_during_a_rewind_is_dropped(stack):
+    svc, _engines, tmp = stack
+    sid = _new(svc, tmp)
+    read = []
+
+    async def stream():
+        read.append(True)
+        yield ProviderEvent(type="turn.complete", data={"text": "by itself"})
+
+    svc.timeline.busy.add(sid)
+    svc._on_auto_turn(sid, stream(), None)
+    await asyncio.sleep(0.01)
+    svc.timeline.busy.discard(sid)
+
+    assert read and sid not in svc._tasks and svc.events(sid) == []
+
+
+async def test_what_a_rewound_message_brings_back_waits_a_day_from_now(stack):
+    svc, _engines, tmp = stack
+    sid = _new(svc, tmp)
+    mine = await _attach(svc, sid, "mine.txt")
+    msg = await _say(svc, sid, "with a file", attachment_ids=[mine["id"]])
+    svc._db.execute("UPDATE attachments SET created_at = '2020-01-01T00:00:00+00:00' WHERE id = ?", (mine["id"],))
+
+    await svc.timeline.rewind(sid, msg)
+    svc._attachments.purge_abandoned()
+
+    assert svc._attachments.pending(sid, [mine["id"]])
+
+
+async def test_a_memory_only_the_rewound_messages_support_is_retracted(stack, db):
+    from tests.test_mate_memory_v2 import _svc
+
+    store, _ = _svc(db)
+    mate = store.create(name="기억")["id"]
+    svc, _engines, tmp = stack
+    sid = _new(svc, tmp)
+    one = await _say(svc, sid, "one")
+    two = await _say(svc, sid, "two")
+
+    def memory(text, *messages):
+        mem = store.add_memory(mate, text)
+        for m in messages:
+            db.execute("INSERT INTO memory_evidence VALUES(?,?,?,?,?,?,?,?)",
+                       (mem["id"], mem["revision"], "msg:" + m, 1, "q", 0, 1, "supports"))
+        return mem["id"]
+
+    only = memory("두 번째 메시지만의 사실", two)
+    both = memory("두 메시지 모두의 사실", one, two)
+    told = memory("메모리 탭에 적은 사실")
+
+    await svc.timeline.rewind(sid, two)
+
+    assert store.memory(mate, only)["status"] == "archived"
+    assert store.memory(mate, both)["status"] == "active"
+    assert store.memory(mate, told)["status"] == "active"
+    # as if never sent: saying it again teaches it again
+    assert store.add_memory(mate, "두 번째 메시지만의 사실")["status"] == "active"
 
 
 async def test_what_rewound_turns_spent_stays_on_the_usage_page(stack):

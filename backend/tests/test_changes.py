@@ -1,9 +1,11 @@
 """Per-turn file changes from git snapshots: exact stats, patches, revert,
 and the user's own index/working state left alone."""
+import os
 import pathlib
 import subprocess
 
 from app.providers.base import ProviderEvent
+from app.services import changes as change_tracker
 from app.services import session_service as ss_mod
 from app.services.connection_service import ConnectionService
 from app.services.provider_service import ProviderService
@@ -96,3 +98,25 @@ async def test_no_changes_event_outside_git_or_without_edits(db, tmp_path, monke
     sid = svc.create(provider="codex", workspace_path=str(plain))["id"]
     evs = [ev async for ev in svc.run_turn(sid, "hi")]
     assert "turn.changes" not in [e.type for e in evs]
+
+
+async def test_a_snapshot_sees_an_edit_of_the_same_size_at_the_same_time(tmp_path):
+    """Git only looks closer at a file whose time isn't older than the index's own."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    git(repo, "config", "core.trustctime", "false")
+    git(repo, "config", "core.checkStat", "minimal")
+    file, index, past = repo / "a.txt", repo / ".git" / "index", (1_700_000_000, 1_700_000_000)
+    file.write_text("v1\n")
+    os.utime(file, past)
+    git(repo, "add", "-A")
+    os.utime(index, past)
+    runner = change_tracker.local_runner()
+    _top, before = await change_tracker.snapshot(runner, str(repo))
+
+    file.write_text("v2\n")
+    os.utime(file, past)
+    _top, after = await change_tracker.snapshot(runner, str(repo))
+
+    assert after != before

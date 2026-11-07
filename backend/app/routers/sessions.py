@@ -172,7 +172,7 @@ async def rewind_preview(sid: str, message_id: str = Query(..., max_length=80),
                          svc: SessionService = Depends(session_service)) -> dict:
     """What a rewind to this message would take back."""
     try:
-        return svc.timeline.preview(sid, message_id)
+        return await svc.timeline.preview(sid, message_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

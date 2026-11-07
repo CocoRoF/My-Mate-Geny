@@ -670,10 +670,28 @@ class Knowledge:
         """Source corrections retract only the currently supported version,
         preserve its ledger, and invalidate cached prompts as well as citations.
         """
-        affected = self.db.query(
-            "SELECT DISTINCT m.* FROM mate_memories m JOIN memory_evidence e ON e.memory_id=m.id AND e.memory_revision=m.revision WHERE e.source_id=? AND e.source_revision!=? AND m.evidence_type='extracted' AND m.status='active'",
-            (source_id, revision),
+        return self._retract(
+            self.db.query(
+                "SELECT DISTINCT m.* FROM mate_memories m JOIN memory_evidence e ON e.memory_id=m.id AND e.memory_revision=m.revision WHERE e.source_id=? AND e.source_revision!=? AND m.evidence_type='extracted' AND m.status='active'",
+                (source_id, revision),
+            )
         )
+
+    def retract_messages_from(self, sid: str, at: str) -> set[str]:
+        """These messages of a chat are as if never sent (a rewind): a memory only they support is retracted, one that
+        something else supports too stays. Not forgotten: forgetting also bars it from being learned again, and saying the
+        same thing again should teach it again."""
+        gone = "SELECT s.id FROM memory_sources s JOIN messages x ON x.id=s.message_id WHERE s.session_id=? AND x.created_at>=?"
+        return self._retract(
+            self.db.query(
+                "SELECT DISTINCT m.* FROM mate_memories m JOIN memory_evidence e ON e.memory_id=m.id AND e.memory_revision=m.revision "
+                f"WHERE e.source_id IN ({gone}) AND m.status='active' AND NOT EXISTS (SELECT 1 FROM memory_evidence o "
+                f"WHERE o.memory_id=m.id AND o.memory_revision=m.revision AND o.source_id NOT IN ({gone}))",
+                (sid, at, sid, at),
+            )
+        )
+
+    def _retract(self, affected: list) -> set[str]:
         mates = set()
         for raw in affected:
             memory = dict(raw)

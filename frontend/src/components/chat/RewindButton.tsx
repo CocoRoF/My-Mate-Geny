@@ -37,11 +37,13 @@ function RewindDialog({ sid, messageId, text, onClose }: { sid: string; messageI
     return () => window.removeEventListener("keydown", onKey);
   }, [busy, onClose]);
 
+  // (a turn at work may have changed more by the time it stops; the server looks again then)
+  const offerFiles = !!preview && (preview.file_count > 0 || (preview.running && !preview.joined));
   const go = async () => {
     setBusy(true);
     setError(null);
     try {
-      await rewindTo(sid, messageId, restoreFiles && !!preview?.file_count);
+      await rewindTo(sid, messageId, restoreFiles && offerFiles);
       onClose();
     } catch (e) {
       setError(t("turn.rewindFailed", { error: (e as Error).message }));
@@ -66,11 +68,12 @@ function RewindDialog({ sid, messageId, text, onClose }: { sid: string; messageI
             <p data-testid="rewind-gone">{t("turn.rewindGone", { count: preview.messages })}</p>
             <p>{t("turn.rewindBack")}</p>
             {preview.running && <p className="text-warning">{t("turn.rewindRunning")}</p>}
-            {preview.file_count > 0 && (
+            {preview.joined && <p>{t("turn.rewindJoined")}</p>}
+            {offerFiles && (
               <div className="rounded-lg border border-border/70 px-3 py-2">
                 <label className="flex cursor-pointer items-start gap-2 text-content">
                   <input type="checkbox" className="mt-0.5" checked={restoreFiles} onChange={(e) => setRestoreFiles(e.target.checked)} data-testid="rewind-files" />
-                  <span>{t("turn.rewindFiles", { count: preview.file_count })}</span>
+                  <span>{preview.file_count > 0 ? t("turn.rewindFiles", { count: preview.file_count }) : t("turn.rewindFilesRunning")}</span>
                 </label>
                 <ul className="mt-1.5 space-y-0.5 pl-6 font-mono text-[11.5px] text-content-faint">
                   {preview.files.slice(0, SHOWN_FILES).map((f) => (

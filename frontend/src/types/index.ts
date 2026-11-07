@@ -146,11 +146,13 @@ export type EventType =
   | "speech.closed"
   | "speech.failed"
   | "user.steer"
+  | "session.rewinding"
   | "session.rewound"
   | "steer.rejected"
   | "task.update"
   | "task.state"
   | "usage.update"
+  | "turn.snapshot"
   | "turn.changes"
   | "context.update";
 

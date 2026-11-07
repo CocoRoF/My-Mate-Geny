@@ -4,10 +4,12 @@ Before and after every turn the working tree of each git root the agent can
 touch (workspace + additional folders) is written into a git *tree object*
 through a temporary index file:
 
-    cp .git/index $tmp; GIT_INDEX_FILE=$tmp git add -A; GIT_INDEX_FILE=$tmp git write-tree
+    cp -p .git/index $tmp; GIT_INDEX_FILE=$tmp git add -A; GIT_INDEX_FILE=$tmp git write-tree
 
-The user's real index, HEAD and working tree are never modified (only loose
-objects are added, which git prunes as usual). Diffing the two trees gives the
+(-p: the index's own time is how git knows to look closer at a file that changed
+right after it was written; without it, an edit of the same size in the same
+second goes unseen.) The user's real index, HEAD and working tree are never
+modified (only loose objects are added, which git prunes as usual). Diffing the two trees gives the
 exact files and line counts the turn changed — whether the edit came from
 Claude, Codex, or a `sed`/codegen command in a shell. The same scripts run
 locally (bash) or on a remote workspace (over SSH), so remote turns get it too.
@@ -21,6 +23,7 @@ import shlex
 from typing import Any
 
 MAX_FILES = 400
+_REVERT_BATCH = 200
 PATCH_LIMIT = 2 * 1024 * 1024
 _TIMEOUT = 20.0
 
@@ -30,7 +33,7 @@ top=$(git rev-parse --show-toplevel 2>/dev/null) || exit 3
 cd -- "$top" || exit 3
 tmp=$(mktemp) || exit 4
 idx=$(git rev-parse --git-path index)
-[ -f "$idx" ] && cp "$idx" "$tmp" || rm -f "$tmp"
+[ -f "$idx" ] && cp -p "$idx" "$tmp" || rm -f "$tmp"
 GIT_INDEX_FILE="$tmp" git add -A >/dev/null 2>&1
 tree=$(GIT_INDEX_FILE="$tmp" git write-tree 2>/dev/null) || {{ rm -f "$tmp"; exit 5; }}
 rm -f "$tmp"
@@ -51,7 +54,7 @@ git -c core.quotepath=false diff --no-color -M {a} {b} -- {paths}
 
 _REVERT = r'''
 cd -- {top} || exit 3
-{restore}
+{restore} || exit 4
 {remove}
 '''
 
@@ -149,17 +152,23 @@ def _parse_summary(raw: bytes) -> list[dict[str, Any]]:
     return [files[p] for p in order]
 
 
-async def summarize(runner: ShellRunner, top: str, before: str, after: str) -> dict[str, Any] | None:
+async def summarize(runner: ShellRunner, top: str, before: str, after: str, *, strict: bool = False,
+                    limit: int | None = MAX_FILES) -> dict[str, Any] | None:
+    """What changed between two snapshots, None if nothing did. ``strict``: a diff that fails raises instead of looking the
+    same as nothing having changed (tracking a turn can live with that, undoing one can't). ``limit``: None = every file."""
     if before == after:
         return None
-    rc, out = await runner.run(_SUMMARY.format(top=shlex.quote(top), a=before, b=after))
+    rc, out = await runner.run(_SUMMARY.format(top=shlex.quote(top), a=before, b=after), timeout=120.0 if strict else _TIMEOUT)
     if rc != 0:
+        if strict:
+            raise RuntimeError(f"could not compare the files in {top} with how they were")
         return None
     files = _parse_summary(out)
     if not files:
         return None
-    truncated = len(files) > MAX_FILES
-    files = files[:MAX_FILES]
+    truncated = limit is not None and len(files) > limit
+    if limit is not None:
+        files = files[:limit]
     return {
         "root": top,
         "before": before,
@@ -183,17 +192,19 @@ async def patch(runner: ShellRunner, top: str, before: str, after: str, paths: l
 async def revert(runner: ShellRunner, repo: dict[str, Any], paths: list[str] | None = None) -> list[str]:
     """Put the turn's files back to their before-state (working tree only)."""
     files = [f for f in repo["files"] if not paths or f["path"] in paths]
-    restore = [f["old_path"] if f.get("status") == "R" else f["path"] for f in files if f.get("status") != "A"]
-    remove = [f["path"] for f in files if f.get("status") in ("A", "R")]
-    script = _REVERT.format(
-        top=shlex.quote(repo["root"]),
-        restore=(f"git restore --source={repo['before']} --worktree -- " + " ".join(shlex.quote(p) for p in restore))
-        if restore else ":",
-        remove=("rm -f -- " + " ".join(shlex.quote(p) for p in remove)) if remove else ":",
-    )
-    rc, _ = await runner.run(script, timeout=30)
-    if rc != 0:
-        raise RuntimeError("revert failed")
+    for k in range(0, len(files), _REVERT_BATCH):  # (a command line has a limit; a restore may be every file there is)
+        batch = files[k:k + _REVERT_BATCH]
+        restore = [f["old_path"] if f.get("status") == "R" else f["path"] for f in batch if f.get("status") != "A"]
+        remove = [f["path"] for f in batch if f.get("status") in ("A", "R")]
+        script = _REVERT.format(
+            top=shlex.quote(repo["root"]),
+            restore=(f"git restore --source={repo['before']} --worktree -- " + " ".join(shlex.quote(p) for p in restore))
+            if restore else ":",
+            remove=("rm -f -- " + " ".join(shlex.quote(p) for p in remove)) if remove else ":",
+        )
+        rc, _ = await runner.run(script, timeout=30)
+        if rc != 0:
+            raise RuntimeError("revert failed")
     return [f["path"] for f in files]
 
 

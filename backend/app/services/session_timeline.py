@@ -18,14 +18,15 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import os
+import re
 from datetime import datetime
 from typing import Any
 
+from app.providers.base import ProviderEvent
 from app.services import changes as change_tracker
 from app.services._ids import new_id, now_iso
 
-TERMINAL = ("turn.complete", "error")
+_MESSAGE_ID = re.compile(r"msg_[0-9A-Za-z]+")
 #: how long a running turn gets to wind down when a rewind stops it
 HALT_S = 20
 
@@ -119,35 +120,103 @@ class SessionTimeline:
             raise ValueError("only a message you sent can be rewound to")
         return session, dict(row)
 
-    def preview(self, sid: str, message_id: str) -> dict[str, Any]:
+    async def preview(self, sid: str, message_id: str) -> dict[str, Any]:
         """What a rewind to this message would take back, for the dialog that asks first."""
-        _session, msg = self._target(sid, message_id)
+        session, msg = self._target(sid, message_id)
         eid = first_event_at(self.db, sid, msg["created_at"])
         sent = 0
         for row in self.db.query("SELECT role, meta FROM messages WHERE session_id = ? AND created_at >= ?",
                                  (sid, msg["created_at"])):
             if row["role"] in ("user", "steer") and not _meta(row["meta"]).get("internal"):
                 sent += 1
-        files: dict[tuple[Any, str], dict[str, Any]] = {}
-        for repo, file in self._changed_files(sid, eid):
-            files.setdefault((repo.get("connection_id"), file["path"]), {"path": file["path"], "root": repo["root"]})
-        return {"messages": sent, "running": self.s.is_running(sid), "files": list(files.values())[:200],
-                "file_count": len(files)}
+        files: list[dict[str, Any]] = []
+        try:
+            plan = await self._file_plan(session, eid, joined=msg["role"] == "steer")
+        except Exception:  # noqa: BLE001 - (a folder that can't be read right now: the rewind will say so, if asked to restore)
+            plan = {}
+        for (_host, root), entry in plan.items():
+            files += [{"path": p, "root": root} for p in sorted(entry["paths"])]
+        return {"messages": sent, "running": self.s.is_running(sid), "files": files[:200], "file_count": len(files),
+                "joined": msg["role"] == "steer"}
 
-    def _changed_files(self, sid: str, eid: int | None) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    def _recorded_turns(self, sid: str, eid: int | None, *, joined: bool) -> list[dict[str, Any]]:
+        """The turns from this event on, oldest first, as far as files go: what each started from (``start``), what it reported
+        (``changes``), and whether it never got to say (``open``): the turn at work, or one the server went down under. Any
+        other turn reports its files if it changed some, however it ended. ``joined``: the cut is inside a turn (a message
+        added while it worked): that turn's report covers what came before the cut too, so it isn't one of them."""
         if eid is None:
             return []
-        out = []
+        turns: list[dict[str, Any]] = []
+        current: dict[str, Any] | None = None
         for row in self.db.query(
-            "SELECT data FROM events INDEXED BY idx_events_sid_type WHERE session_id = ? AND type = 'turn.changes' AND id >= ? "
-            "ORDER BY id", (sid, eid),
+            "SELECT type, data FROM events WHERE session_id = ? AND id >= ? AND type IN "
+            "('turn.snapshot', 'turn.changes', 'turn.complete', 'error') ORDER BY id", (sid, eid),
         ):
-            for repo in json.loads(row["data"]).get("repos") or []:
-                out += [(repo, file) for file in repo.get("files") or []]
-        return out
+            data = json.loads(row["data"])
+            if row["type"] == "turn.snapshot":
+                joined, current = False, {"start": data.get("repos") or [], "changes": None, "open": True}
+                turns.append(current)
+            elif row["type"] == "turn.changes":
+                if current is not None:
+                    current.update(changes=data.get("repos") or [], open=False)
+                elif not joined:  # (a turn from before snapshots were recorded)
+                    turns.append({"start": [], "changes": data.get("repos") or [], "open": False})
+            else:
+                if current is not None:
+                    current["open"] = False
+                joined, current = False, None
+        return turns
+
+    async def _file_plan(self, session: dict[str, Any], eid: int | None, *, joined: bool) -> dict[tuple[Any, str], dict[str, Any]]:
+        """For each folder: how it was before the first of those turns, and the files they changed. A report cut at its limit,
+        or a turn that never reported, is read from the snapshots."""
+        turns = self._recorded_turns(session["id"], eid, joined=joined)
+        plan: dict[tuple[Any, str], dict[str, Any]] = {}
+
+        def entry(repo: dict[str, Any]) -> dict[str, Any]:
+            key = (self.s._repo_host(session, repo), repo["root"])
+            return plan.setdefault(key, {"before": repo["before"], "paths": set()})
+
+        def named(files: list[dict[str, Any]]) -> set[str]:
+            return {p for f in files for p in (f.get("path"), f.get("old_path")) if p}
+
+        for k, turn in enumerate(turns):
+            for repo in turn["start"]:
+                entry(repo)
+            for repo in turn["changes"] or []:
+                paths = entry(repo)["paths"]
+                if repo.get("truncated"):
+                    runner = self._runner(session, self.s._repo_host(session, repo))
+                    whole = await change_tracker.summarize(runner, repo["root"], repo["before"], repo["after"], strict=True, limit=None)
+                    paths |= named(whole["files"]) if whole else set()
+                else:
+                    paths |= named(repo.get("files") or [])
+            if not turn["open"]:
+                continue
+            following = next((t["start"] for t in turns[k + 1:] if t["start"]), [])
+            for repo in turn["start"]:
+                host = self.s._repo_host(session, repo)
+                runner = self._runner(session, host)
+                after = next((r["before"] for r in following if (self.s._repo_host(session, r), r["root"]) == (host, repo["root"])), None)
+                if after is None:
+                    now = await change_tracker.snapshot(runner, repo["root"])
+                    if now is None:
+                        raise RuntimeError(f"could not read {repo['root']}")
+                    after = now[1]
+                diff = await change_tracker.summarize(runner, repo["root"], repo["before"], after, strict=True, limit=None)
+                if diff:
+                    entry(repo)["paths"] |= named(diff["files"])
+        return {key: e for key, e in plan.items() if e["paths"]}
+
+    def _runner(self, session: dict[str, Any], host: Any) -> Any:
+        runner = self.s._change_runner(session, host)
+        if runner is None:
+            raise RuntimeError("the folder of those changes is unavailable")
+        return runner
 
     async def _halt(self, sid: str) -> None:
-        """No turn and no engine left: the engine holds the conversation being cut, and may be working on it."""
+        """No turn and no engine left: the engine holds the conversation being cut, and may be working on it. (Nothing new
+        starts meanwhile: ``busy`` is up.)"""
         task = self.s._tasks.get(sid)
         if task is not None and not task.done():
             self.s.stop(sid)
@@ -163,23 +232,16 @@ class SessionTimeline:
         if getattr(self.s, "speech_input", None):
             self.s.speech_input.cancel(sid)
 
-    async def _restore_files(self, session: dict[str, Any], eid: int | None) -> list[str]:
+    async def _restore_files(self, session: dict[str, Any], eid: int | None, *, joined: bool) -> list[str]:
         """The files those turns changed, back to how they were before the first of them. Only those files: anything else
         that happened in the folder stays. Done before anything is deleted: a failure leaves the chat as it was."""
-        repos: dict[tuple[Any, str], dict[str, Any]] = {}
-        for repo, file in self._changed_files(session["id"], eid):
-            key = (self.s._repo_host(session, repo), repo["root"])
-            entry = repos.setdefault(key, {"before": repo["before"], "paths": set()})
-            entry["paths"].update(p for p in (file.get("path"), file.get("old_path")) if p)
         restored: list[str] = []
-        for (host, root), entry in repos.items():
-            runner = self.s._change_runner(session, host)
-            if runner is None:
-                raise RuntimeError("the folder of those changes is unavailable")
+        for (host, root), entry in (await self._file_plan(session, eid, joined=joined)).items():
+            runner = self._runner(session, host)
             now = await change_tracker.snapshot(runner, root)
             if now is None:
                 raise RuntimeError(f"could not read {root}")
-            summary = await change_tracker.summarize(runner, root, entry["before"], now[1])
+            summary = await change_tracker.summarize(runner, root, entry["before"], now[1], strict=True, limit=None)
             if summary is None:
                 continue  # (already as it was)
             files = [f for f in summary["files"] if f["path"] in entry["paths"] or f.get("old_path") in entry["paths"]]
@@ -206,13 +268,10 @@ class SessionTimeline:
                 self.db.execute("DELETE FROM events WHERE session_id = ? AND id >= ?", (sid, eid))
             gone = [r["id"] for r in self.db.query(
                 "SELECT id FROM messages WHERE session_id = ? AND created_at >= ?", (sid, at))]
-            # (a mate that learned something from these messages forgets it)
+            # (what a mate learned only from these messages is retracted)
             from app.mate.knowledge import Knowledge
-            knowledge = Knowledge(self.db)
-            for source in self.db.query("SELECT m.id, m.revision FROM memory_sources m JOIN messages x ON x.id = m.message_id "
-                                        "WHERE m.session_id = ? AND x.created_at >= ?", (sid, at)):
-                for mate_id in knowledge.retract_source(source["id"], source["revision"]):
-                    self.s.mates_changed("memory", mate_id)
+            for mate_id in Knowledge(self.db).retract_messages_from(sid, at):
+                self.s.mates_changed("memory", mate_id)
             self.db.execute("DELETE FROM messages WHERE session_id = ? AND created_at >= ?", (sid, at))
             for k in range(0, len(gone), 500):
                 chunk = gone[k:k + 500]
@@ -232,6 +291,9 @@ class SessionTimeline:
                 "last_result_at = NULL, updated_at = ? WHERE id = ?",
                 (json.dumps(state), own.get("id"), floor, title, now_iso(), sid))
             back = attachments.rewind(sid, msg["id"], gone, at) if attachments is not None else []
+            if msg["role"] == "steer" and left:
+                # (a message added while a turn worked: what came before it stays, as a turn stopped there)
+                self.s._add_event(sid, ProviderEvent(type="error", data={"code": "turn.interrupted", "message": "Stopped by user"}))
         return back
 
     async def rewind(self, sid: str, message_id: str, *, restore_files: bool = False) -> dict[str, Any]:
@@ -240,11 +302,13 @@ class SessionTimeline:
             raise TimelineBusy("this chat is being rewound")
         self.busy.add(sid)
         try:
+            # (before anything stops: a window with messages queued must not send them when the turn ends)
+            self.s._publish(sid, {"type": "session.rewinding", "data": {"message_id": message_id}})
             await self._halt(sid)
             self.s.remote_jobs.cancel(sid, include_background=True, since=_epoch(msg["created_at"]))
             session = self.s.get(sid)  # (stopping the turn changed it)
             eid = first_event_at(self.db, sid, msg["created_at"])
-            restored = await self._restore_files(session, eid) if restore_files else []
+            restored = await self._restore_files(session, eid, joined=msg["role"] == "steer") if restore_files else []
             back = self._cut(session, msg, eid)
         finally:
             self.busy.discard(sid)
@@ -302,6 +366,11 @@ class SessionTimeline:
                 "INSERT INTO events (session_id, seq, type, data, created_at) SELECT ?, seq, type, data, created_at "
                 "FROM events WHERE session_id = ? " + ("AND id < ? " if eid is not None else "") + "ORDER BY id",
                 (new, sid, *([eid] if eid is not None else [])))
+            # An event naming a message names the copy's (a message added mid-turn is rewound by it).
+            for row in self.db.query("SELECT id, data FROM events WHERE session_id = ? AND instr(data, '\"message_id\"') > 0", (new,)):
+                data = _MESSAGE_ID.sub(lambda m: message_ids.get(m[0], m[0]), row["data"])
+                if data != row["data"]:
+                    self.db.execute("UPDATE events SET data = ? WHERE id = ?", (data, row["id"]))
             # Spent once, by the original: the copy shows the same costs, the Usage page counts them once.
             self.db.execute(
                 "UPDATE events SET data = json_set(data, '$.usage_copied', json('true')) WHERE session_id = ? "
