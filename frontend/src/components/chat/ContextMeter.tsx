@@ -184,7 +184,7 @@ export default function ContextMeter({ session, onCompact }: { session: Session;
   return (
     <HoverPopover
       label={t("chat.contextWindow")}
-      triggerClassName={`inline-flex items-center gap-1 rounded px-1 -mx-1 py-0.5 hover:bg-surface-3 transition ${ctxTone(m.toCompact)}`}
+      triggerClassName={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded px-1 -mx-1 py-0.5 hover:bg-surface-3 transition ${ctxTone(m.toCompact)}`}
       trigger={
         <>
           <span className="text-content-faint">ctx</span>

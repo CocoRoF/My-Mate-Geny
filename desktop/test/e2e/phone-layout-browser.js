@@ -6,8 +6,8 @@
 //     node desktop/test/e2e/phone-layout-browser.js http://127.0.0.1:18974 outfit-test-only <shots dir>
 //
 // With the Android app's system bars as safe areas. Every settings tab, at the width of a small phone: no sideways scrolling
-// in the page or the panel, nothing past the edge. A chat's bottom bar: its popovers are sheets on the whole screen width. Its
-// panels: their headers clear the status bar. The Mate's header: the heart is the one way into the relationship, on a phone
+// in the page or the panel, nothing past the edge. A chat's bottom bar: its popovers are sheets on the whole screen width that
+// go when pulled down, its meters span the message box's width. Its panels: their headers clear the status bar. The Mate's header: the heart is the one way into the relationship, on a phone
 // and on a desktop. Her small chat window, at its smallest and usual size with the desktop app's buttons: everything in the
 // header fits, her name has room, and what isn't about the conversation is in one menu.
 "use strict";
@@ -153,6 +153,90 @@ const offScreen = (page) =>
       await page.mouse.click(180, 8); // (its backdrop)
       await page.waitForSelector(TEST("popover-sheet"), { state: "detached" });
     }
+    step("the meters under the message box: across its width, nothing past the edge, also with a long account name");
+    await page.locator("textarea").first().fill("hi");
+    await page.locator("button.bg-accent-grad").last().click();
+    await page.waitForFunction(() => document.querySelector('[data-testid="chat-meters"]')?.textContent.includes("≈"), null, { timeout: 30000 });
+    const meters = () =>
+      page.evaluate(() => {
+        const row = document.querySelector('[data-testid="chat-meters"]');
+        const box = row.getBoundingClientRect();
+        const items = [...row.querySelectorAll("button")].map((b) => b.getBoundingClientRect());
+        return {
+          left: box.left, right: innerWidth - box.right, overflow: row.scrollWidth - row.clientWidth, count: items.length,
+          firstGap: items[0].left - box.left, lastGap: box.right - items.at(-1).right, end: items.at(-1).right, vw: innerWidth,
+        };
+      });
+    for (const width of [360, 320]) {
+      await page.setViewportSize({ width, height: 780 });
+      await page.evaluate(() => {
+        const name = document.querySelector('[data-testid="chat-meters"] button span.truncate');
+        if (name) name.textContent = "Primary · this machine";
+      });
+      await page.waitForTimeout(200);
+      const m = await meters();
+      await page.screenshot({ path: path.join(SHOTS, `chat-meters-${width}.png`), clip: { x: 0, y: 500, width, height: 280 } });
+      assert(m.count >= 2, `the meters: ${JSON.stringify(m)}`);
+      assert(Math.abs(m.left - m.right) <= 1, `not to one side at ${width}: ${JSON.stringify(m)}`);
+      assert(m.overflow <= 4 && m.end <= m.vw, `all inside at ${width}: ${JSON.stringify(m)}`); // (-mx-1: only the hover area)
+      assert(Math.abs(m.firstGap) <= 6 && Math.abs(m.lastGap) <= 6, `from edge to edge at ${width}: ${JSON.stringify(m)}`);
+    }
+    await page.setViewportSize({ width: 360, height: 780 });
+
+    step("a sheet goes when it is pulled down, and comes back when it is only tugged");
+    const finger = async (x, from, to, steps = 10) => {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: from }] });
+      for (let i = 1; i <= steps; i++) {
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: from + ((to - from) * i) / steps }] });
+        await page.waitForTimeout(24);
+      }
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    };
+    const sheet = TEST("popover-sheet");
+    const openSheet = async () => {
+      await page.locator("button[data-hover-popover]").first().tap();
+      await page.waitForSelector(sheet);
+      await page.waitForTimeout(300);
+    };
+    const handleY = async () => {
+      const b = await page.locator(TEST("sheet-handle")).boundingBox();
+      return b.y + b.height / 2;
+    };
+    await openSheet();
+    await finger(180, await handleY(), (await handleY()) + 40);
+    await page.waitForTimeout(350);
+    assert.equal(await page.locator(sheet).count(), 1, "a tug leaves it there");
+    assert.equal(await page.locator(`${sheet} [role="dialog"]`).evaluate((el) => el.style.transform), "", "and it comes back");
+    await finger(180, await handleY(), (await handleY()) + 260);
+    await page.waitForSelector(sheet, { state: "detached", timeout: 2000 });
+    await openSheet();
+    const body = await page.locator(`${sheet} [role="dialog"]`).boundingBox();
+    await finger(180, body.y + 90, body.y + 350);
+    await page.waitForSelector(sheet, { state: "detached", timeout: 2000 });
+
+    step("scrolled down, the finger scrolls it back first; the handle always pulls");
+    await page.setViewportSize({ width: 360, height: 300 });
+    await openSheet();
+    const scroller = page.locator(`${sheet} [role="dialog"]`);
+    assert(await scroller.evaluate((el) => el.scrollHeight > el.clientHeight), "a sheet that scrolls");
+    await scroller.evaluate((el) => (el.scrollTop = 120));
+    const low = await scroller.boundingBox();
+    await finger(180, low.y + 70, low.y + 170);
+    await page.waitForTimeout(350);
+    assert.equal(await page.locator(sheet).count(), 1, "still open");
+    assert((await scroller.evaluate((el) => el.scrollTop)) < 120, "it scrolled");
+    await finger(180, await handleY(), (await handleY()) + 130);
+    await page.waitForSelector(sheet, { state: "detached", timeout: 2000 });
+    await page.setViewportSize({ width: 360, height: 780 });
+
+    step("the chat's own settings sheet goes the same way");
+    await page.getByText("에이전트 ·").first().click();
+    await page.waitForSelector(TEST("settings-sheet"));
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: path.join(SHOTS, "chat-settings-sheet.png") });
+    await finger(180, await handleY(), (await handleY()) + 260);
+    await page.waitForSelector(TEST("settings-sheet"), { state: "detached", timeout: 2000 });
+
     const open = async (more, item) => {
       await page.click(more);
       await page.getByText(item, { exact: true }).first().click();

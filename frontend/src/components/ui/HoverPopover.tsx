@@ -9,6 +9,7 @@ import {
 import { createPortal } from "react-dom";
 import { useBackHandler } from "../../lib/back";
 import { usePhone } from "../../lib/device";
+import BottomSheet from "./BottomSheet";
 
 type Pos = {
   left?: number;
@@ -186,22 +187,10 @@ export default function HoverPopover({
       {open &&
         sheet &&
         createPortal(
-          <div
-            className="fixed inset-0 z-[70] flex items-end bg-scrim/45 animate-fade-in"
-            onClick={(e) => e.target === e.currentTarget && close()}
-            data-testid="popover-sheet"
-          >
-            <div
-              ref={panel}
-              role="dialog"
-              aria-label={label}
-              className="max-h-[80vh] w-full overflow-y-auto rounded-t-2xl border-t border-border bg-surface-2 pb-safe pt-1.5 shadow-float"
-            >
-              <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-border-strong" />
-              {/* (the panels are sized for the popover) */}
-              <div className="[&>*]:!w-full [&>*]:!max-w-none">{typeof children === "function" ? children() : children}</div>
-            </div>
-          </div>,
+          <BottomSheet onClose={close} label={label} panelRef={panel} testId="popover-sheet">
+            {/* (the panels are sized for the popover) */}
+            <div className="[&>*]:!w-full [&>*]:!max-w-none">{typeof children === "function" ? children() : children}</div>
+          </BottomSheet>,
           document.body,
         )}
       {open &&

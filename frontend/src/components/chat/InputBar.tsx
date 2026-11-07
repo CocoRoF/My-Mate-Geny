@@ -192,8 +192,9 @@ export default function InputBar({
           </div>
           <FileInputs photoRef={c.photoRef} cameraRef={c.cameraRef} fileRef={c.fileRef} onFiles={c.addFiles} />
         </div>
-        <div className="flex items-center justify-between gap-3 px-1.5 pt-1.5 text-[10px] text-content-faint">
-          <span className="truncate">
+        {/* (a phone: what's happening on a line of its own, the meters across the width of the message box) */}
+        <div className="flex flex-col gap-0.5 px-1.5 pt-1.5 text-[10px] text-content-faint sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+          <span className={`truncate ${notice || isStreaming ? "" : "hidden sm:inline"}`}>
             {notice ? (
               <span className="text-warning">{notice}</span>
             ) : isStreaming ? (
@@ -202,12 +203,12 @@ export default function InputBar({
                 {touch ? t("chat.workingTouch") : t("chat.workingKeys")}
               </span>
             ) : touch ? (
-              <span className="hidden sm:inline">{t("chat.hintTouch")}</span>
+              t("chat.hintTouch")
             ) : (
-              <span className="hidden sm:inline">{t("chat.hintKeys")}</span>
+              t("chat.hintKeys")
             )}
           </span>
-          <span className="flex shrink-0 items-center gap-2 font-mono">
+          <span className="flex min-w-0 items-center justify-between gap-2 font-mono sm:shrink-0 sm:justify-end" data-testid="chat-meters">
             <ContextMeter
               session={session}
               onCompact={() => {

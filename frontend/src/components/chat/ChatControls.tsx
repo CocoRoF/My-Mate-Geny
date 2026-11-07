@@ -5,6 +5,7 @@ import { useConfigStore } from "../../stores/configStore";
 import { useProviderStore } from "../../stores/providerStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import type { Session } from "../../types";
+import BottomSheet from "../ui/BottomSheet";
 import Icon, { type IconName } from "../ui/Icon";
 import { useT, type MsgKey } from "../../i18n";
 
@@ -68,6 +69,7 @@ function Menu({
 
   useEffect(() => {
     const h = (e: MouseEvent | TouchEvent) => {
+      if (mobile) return; // (the sheet's own backdrop: a tap there must not reach what is below)
       const t = e.target as Node;
       if (ref.current?.contains(t) || anchor.current?.parentElement?.contains(t)) return;
       onClose();
@@ -81,7 +83,7 @@ function Menu({
       window.removeEventListener("touchstart", h);
       window.removeEventListener("keydown", k);
     };
-  }, [onClose]);
+  }, [onClose, mobile]);
 
   const list = items.map((it) => (
     <button
@@ -107,12 +109,9 @@ function Menu({
       <span ref={anchor} className="hidden" />
       {createPortal(
         mobile ? (
-          <div className="fixed inset-0 z-[70] flex items-end bg-scrim/45 animate-fade-in">
-            <div ref={ref} className="w-full max-h-[70vh] overflow-y-auto rounded-t-2xl border-t border-border bg-surface-2 pb-safe pt-1.5 shadow-float">
-              <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-border-strong" />
-              {list}
-            </div>
-          </div>
+          <BottomSheet onClose={onClose} panelRef={ref} testId="choice-sheet">
+            {list}
+          </BottomSheet>
         ) : pos ? (
           <div
             ref={ref}
@@ -146,58 +145,52 @@ function SettingsSheet({
     return () => window.removeEventListener("keydown", k);
   }, [onClose]);
   return createPortal(
-    <div
-      className="fixed inset-0 z-[70] flex items-end bg-scrim/45 animate-fade-in"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="w-full max-h-[80vh] overflow-y-auto rounded-t-2xl border-t border-border bg-surface-2 pb-safe pt-1.5 shadow-float">
-        <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-border-strong" />
-        <div className="flex items-center px-4 pt-1">
-          <span className="text-[13px] font-semibold text-content">{t("chat.chatSettings")}</span>
-          <button onClick={onClose} className="ml-auto h-10 rounded-lg px-3 text-[13px] font-medium text-accent hover:bg-surface-3">
-            {t("common.done")}
-          </button>
-        </div>
-        {groups.map((g) => (
-          <div key={g.title} className="pb-2">
-            <div className="px-4 pb-1.5 pt-2 text-[10.5px] font-semibold uppercase tracking-wider text-content-faint">{g.title}</div>
-            {g.list ? (
-              g.items.map((it) => (
+    <BottomSheet onClose={onClose} testId="settings-sheet">
+      <div className="flex items-center px-4 pt-1">
+        <span className="text-[13px] font-semibold text-content">{t("chat.chatSettings")}</span>
+        <button onClick={onClose} className="ml-auto h-10 rounded-lg px-3 text-[13px] font-medium text-accent hover:bg-surface-3">
+          {t("common.done")}
+        </button>
+      </div>
+      {groups.map((g) => (
+        <div key={g.title} className="pb-2">
+          <div className="px-4 pb-1.5 pt-2 text-[10.5px] font-semibold uppercase tracking-wider text-content-faint">{g.title}</div>
+          {g.list ? (
+            g.items.map((it) => (
+              <button
+                key={it.id}
+                onClick={() => g.onPick(it.id)}
+                className={`flex w-full min-h-[44px] items-center gap-2 px-4 py-2 text-[14px] transition hover:bg-surface-3 ${
+                  it.id === g.current ? "text-accent" : "text-content"
+                }`}
+              >
+                <span className="w-3.5 shrink-0">{it.id === g.current && <Icon name="check" size={13} />}</span>
+                <span className="min-w-0 text-left">
+                  <span className="block truncate">{it.label}</span>
+                  {it.hint && <span className="block truncate text-[11px] text-content-faint">{it.hint}</span>}
+                </span>
+              </button>
+            ))
+          ) : (
+            <div className="flex flex-wrap gap-2 px-4">
+              {g.items.map((it) => (
                 <button
                   key={it.id}
                   onClick={() => g.onPick(it.id)}
-                  className={`flex w-full min-h-[44px] items-center gap-2 px-4 py-2 text-[14px] transition hover:bg-surface-3 ${
-                    it.id === g.current ? "text-accent" : "text-content"
+                  className={`h-10 rounded-lg border px-3.5 text-[13.5px] font-medium transition ${
+                    it.id === g.current
+                      ? "border-accent/50 bg-accent-soft text-accent"
+                      : "border-border bg-surface text-content-dim hover:text-content"
                   }`}
                 >
-                  <span className="w-3.5 shrink-0">{it.id === g.current && <Icon name="check" size={13} />}</span>
-                  <span className="min-w-0 text-left">
-                    <span className="block truncate">{it.label}</span>
-                    {it.hint && <span className="block truncate text-[11px] text-content-faint">{it.hint}</span>}
-                  </span>
+                  {it.label}
                 </button>
-              ))
-            ) : (
-              <div className="flex flex-wrap gap-2 px-4">
-                {g.items.map((it) => (
-                  <button
-                    key={it.id}
-                    onClick={() => g.onPick(it.id)}
-                    className={`h-10 rounded-lg border px-3.5 text-[13.5px] font-medium transition ${
-                      it.id === g.current
-                        ? "border-accent/50 bg-accent-soft text-accent"
-                        : "border-border bg-surface text-content-dim hover:text-content"
-                    }`}
-                  >
-                    {it.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>,
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </BottomSheet>,
     document.body,
   );
 }

@@ -233,7 +233,7 @@ export default function UsageFooter({ session }: { session: Session }) {
   const tokens = useMemo(() => sumTokens([...costed.map((x) => x.usage), older?.usage]), [costed, older]);
 
   return (
-    <span className="flex shrink-0 items-center gap-2 font-mono">
+    <span className="contents font-mono sm:flex sm:shrink-0 sm:items-center sm:gap-2">
       <HoverPopover
         label={t("chat.planByAccount")}
         onOpen={() => loadAccounts(provider, 0).catch(() => {})}
@@ -241,8 +241,8 @@ export default function UsageFooter({ session }: { session: Session }) {
         trigger={
           <>
             <Icon name="cpu" size={10} className="shrink-0 text-content-faint" />
-            <span className="truncate max-w-[6.5rem] sm:max-w-[10rem]">{current?.account || t("chat.planFallback")}</span>
-            {wl && <span className={worst >= 70 ? pctTone(worst) : ""}>· {wl}</span>}
+            <span className="min-w-0 max-w-[6.5rem] truncate sm:max-w-[10rem]">{current?.account || t("chat.planFallback")}</span>
+            {wl && <span className={`shrink-0 whitespace-nowrap ${worst >= 70 ? pctTone(worst) : ""}`}>· {wl}</span>}
           </>
         }
       >
@@ -251,10 +251,13 @@ export default function UsageFooter({ session }: { session: Session }) {
       {costedCount > 0 && (
         <HoverPopover
           label={t("chat.chatCostLabel")}
-          triggerClassName="rounded px-1 -mx-1 py-0.5 text-content-faint hover:bg-surface-3 hover:text-content-dim transition"
+          triggerClassName="shrink-0 whitespace-nowrap rounded px-1 -mx-1 py-0.5 text-content-faint hover:bg-surface-3 hover:text-content-dim transition"
           trigger={
             <>
-              ≈ {fmtUsd(cost)} API<span className="hidden sm:inline"> ({t("chat.thisChat")})</span>
+              ≈ {fmtUsd(cost)}
+              <span className="hidden sm:inline">
+                {" API "}({t("chat.thisChat")})
+              </span>
             </>
           }
         >
