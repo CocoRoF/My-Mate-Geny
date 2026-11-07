@@ -205,8 +205,34 @@ def rematte(a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -> np.ndarray:
     y0, y1 = max(0, rows[0] - 40), rows[-1] + 41
     x0, x1 = max(0, cols[0] - 40), cols[-1] + 41
     out = a.copy()
-    out[y0:y1, x0:x1] = _rematte(a[y0:y1, x0:x1], orig[y0:y1, x0:x1], bg, a.shape[1], a.size)
+    out[y0:y1, x0:x1] = close_body_holes(_rematte(a[y0:y1, x0:x1], orig[y0:y1, x0:x1], bg, a.shape[1], a.size),
+                                         orig[y0:y1, x0:x1], bg)
     return out
+
+
+def close_body_holes(a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -> np.ndarray:
+    """A light part of the body can pass for the background (the highlight on her nose, in some frames of a clip), and
+    the remover leaves a hole in the middle of her face. What shows through a real gap is the gray, or the gray mixed
+    with the dark around it; so a hole whose picture is lighter than the gray, or has a colour of its own, is body. Unless
+    dark hair rings it: there, a little lighter than the gray is the sharpening's overshoot."""
+    solid = a > 0.5
+    lab, n = ndimage.label(ndimage.binary_fill_holes(solid) & ~solid)
+    if not n:
+        return a
+    off = orig - bg
+    dark = orig.mean(-1) < 0.5 * bg.mean()
+    body = np.zeros_like(solid)
+    for i, (ys, xs) in enumerate(ndimage.find_objects(lab), 1):
+        ys, xs = slice(max(0, ys.start - 3), ys.stop + 3), slice(max(0, xs.start - 3), xs.stop + 3)
+        hole = lab[ys, xs] == i
+        mid = np.median(off[ys, xs][hole], axis=0)
+        level = float(mid.mean())
+        if np.linalg.norm(mid) < NEAR_KEY or (level <= GAP_KEY and np.linalg.norm(mid - level) <= GAP_KEY):
+            continue
+        grown = cv2.dilate(hole.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
+        if dark[ys, xs][grown & ~hole].mean() <= 0.25:
+            body[ys, xs] |= grown
+    return np.where(body, 1.0, a).astype(a.dtype)
 
 
 def _rematte(a: np.ndarray, orig: np.ndarray, bg: np.ndarray, W: int, size: int) -> np.ndarray:
@@ -820,6 +846,7 @@ def cmd_selftest(assets: str | None = None) -> dict:
         "fold_alpha_min": round(float(a[fold].min()), 4),
         "colour_mae": round(col_err, 3),
         **selftest_gaps(rng),
+        **selftest_holes(rng),
         **selftest_page(),
         **(selftest_art(Path(assets)) if assets else {}),
     }
@@ -889,6 +916,38 @@ def selftest_gaps(rng: np.random.Generator) -> dict:
         "strand_alpha_mean": round(float(a[(d > 86.5) & (d < 88.5) & side].mean()), 4),
         "light_patch_alpha_min": round(float(a[light].min()), 4),
         "deep_patch_alpha_min": round(float(a[deep].min()), 4),
+    }
+
+
+def selftest_holes(rng: np.random.Generator) -> dict:
+    """A face with the remover's mask cut open in four places: on the highlight of her nose and on a shadow with a colour of
+    its own (both body), where the gray really shows between two fingers, and in dark hair where the gray overshoots a
+    little lighter (both gaps)."""
+    H = W = 240
+    yy, xx = np.mgrid[0:H, 0:W]
+    bg = np.array(GRAY, np.float32)
+    orig = np.full((H, W, 3), bg, np.float32)
+    figure = (yy - 120.0) ** 2 + (xx - 120.0) ** 2 < 100.0 ** 2
+    orig[figure] = (238, 214, 210)  # skin
+    hair = figure & (yy < 80)
+    orig[hair] = (25, 22, 30)
+
+    def spot(y: int, x: int) -> np.ndarray:
+        return (yy - y) ** 2 + (xx - x) ** 2 < 6 ** 2
+
+    nose, shadow, fingers, gap = spot(120, 120), spot(160, 90), spot(160, 150), spot(50, 120)
+    orig[nose] = (247, 229, 228)
+    orig[shadow] = (205, 170, 168)
+    orig[fingers] = bg
+    orig[gap] = bg + 22
+    orig = (orig + rng.normal(0, 0.8, (H, W, 3))).clip(0, 255).astype(np.float32)
+    hull = figure & ~(nose | shadow | fingers | gap)
+    a, _ = recover(orig, (orig * hull[..., None]).astype(np.float32))
+    return {
+        "nose_alpha_min": round(float(a[nose].min()), 4),
+        "shadow_alpha_min": round(float(a[shadow].min()), 4),
+        "fingers_alpha_max": round(float(a[fingers].max()), 4),
+        "hair_gap_alpha_max": round(float(a[gap].max()), 4),
     }
 
 

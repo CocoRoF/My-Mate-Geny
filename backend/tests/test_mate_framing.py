@@ -140,9 +140,8 @@ def test_a_bundle_update_brings_the_measurement_to_an_edited_body():
 
 def test_the_real_sets_are_measured_and_line_up():
     usual = files.builtin_avatar("chaerin", files.builtin_doc("chaerin"))["rig"]["frame"]
-    [crop_top] = files.builtin_outfits("chaerin")
-    worn = crop_top["avatar"]["rig"]["frame"]
-    assert usual["how"] == worn["how"] == "face" and usual["for"] == worn["for"] == "neutral.webp"
-    for frame in (usual, worn):
-        assert 0.2 < frame["face"][1] < 0.4  # (her face, not the chest a detector once took for it)
-    assert abs(usual["face"][2] / worn["face"][2] - 1) < 0.1  # (lining them up hardly has to scale her)
+    for outfit in files.builtin_outfits("chaerin"):
+        worn = outfit["avatar"]["rig"]["frame"]
+        assert usual["how"] == worn["how"] == "face" and usual["for"] == worn["for"] == "neutral.webp"
+        assert 0.2 < usual["face"][1] < 0.4 and 0.2 < worn["face"][1] < 0.4  # (her face, not the chest a detector once took for it)
+        assert abs(usual["face"][2] / worn["face"][2] - 1) < 0.1  # (lining them up hardly has to scale her)

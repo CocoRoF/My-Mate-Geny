@@ -646,6 +646,6 @@ def test_on_since_before_anyone_noted_the_time_it_counts_from_the_update(db):
 
 
 def test_the_real_crop_top_is_named_and_made_shy():
-    [item] = files.builtin_outfits("chaerin")
+    item = files.builtin_outfits("chaerin")[0]
     assert item["id"] == "builtin-gray-band" and item["name"] == "크롭탑" and item["feel"] == {"shy": 0.6}
     assert item["unlock"] == {"affinity": 60} and "crop top" in item["note"] and "underwear" not in item["note"] and "no headset" in item["note"]

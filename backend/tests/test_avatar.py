@@ -651,6 +651,8 @@ def test_alpha_recovery_on_a_synthetic_frame():
     assert res["gap_alpha_max"] < 0.1 and res["strand_alpha_mean"] > 0.5  # the gray between hair and a loose strand
     assert res["light_patch_alpha_min"] > 0.9 and res["deep_patch_alpha_min"] > 0.9  # body in the gray's colour stays
     assert res["strand_shown_mean"] > 0.5  # a fine strand isn't eaten away at the edge
+    assert res["nose_alpha_min"] > 0.9 and res["shadow_alpha_min"] > 0.9  # the remover's hole in a light part of her closes
+    assert res["fingers_alpha_max"] < 0.5 and res["hair_gap_alpha_max"] < 0.5  # a real gap, in skin or in hair, stays open
     # real art, black hair, silver hair, pink hair: what is solid stays, what the remover covered opens
     assert set(res["art"]) == {"chaerin"}
     for who, m in res["art"].items():

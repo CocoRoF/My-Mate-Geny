@@ -33,10 +33,13 @@ sys.path.insert(0, str(REPO / "backend"))
 
 import uvicorn  # noqa: E402
 
+import app.mate.state as mate_state  # noqa: E402
 import app.providers.accounts as accounts  # noqa: E402
 from app.main import app  # noqa: E402
 from app.mate import files  # noqa: E402
 
+# (past 21:00 she gets sleepy: what the tests look at must not depend on the hour they run at)
+mate_state._late = lambda now, tz: 0.0
 accounts._host_config_dir = lambda p: ROOT / "empty-provider" / p
 accounts.AccountPool._host_cred_dir = staticmethod(lambda p: str(ROOT / "empty-provider" / p))
 original = app.router.lifespan_context

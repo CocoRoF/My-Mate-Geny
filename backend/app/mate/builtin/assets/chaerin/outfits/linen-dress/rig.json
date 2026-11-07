@@ -1,0 +1,177 @@
+{
+  "version": 1,
+  "aspect": [
+    1154,
+    1288
+  ],
+  "anchor": [
+    0.5,
+    1.0
+  ],
+  "home": "asset:chaerin-linen-dress/neutral.webp",
+  "stills": {
+    "neutral": "asset:chaerin-linen-dress/neutral.webp",
+    "smile": "asset:chaerin-linen-dress/smile.webp",
+    "laugh": "asset:chaerin-linen-dress/laugh.webp",
+    "shy": "asset:chaerin-linen-dress/shy.webp",
+    "surprised": "asset:chaerin-linen-dress/surprised.webp",
+    "sad": "asset:chaerin-linen-dress/sad.webp",
+    "angry": "asset:chaerin-linen-dress/angry.webp",
+    "thinking": "asset:chaerin-linen-dress/thinking.webp",
+    "sleepy": "asset:chaerin-linen-dress/sleepy.webp",
+    "blink": "asset:chaerin-linen-dress/blink.webp",
+    "mouth_half": "asset:chaerin-linen-dress/mouth_half.webp",
+    "mouth_open": "asset:chaerin-linen-dress/mouth_open.webp",
+    "mouth_o": "asset:chaerin-linen-dress/mouth_o.webp"
+  },
+  "clips": [
+    {
+      "id": "idle_a",
+      "kind": "idle",
+      "src": "asset:chaerin-linen-dress/idle_a.lg.mp4",
+      "small": "asset:chaerin-linen-dress/idle_a.sm.mp4"
+    },
+    {
+      "id": "idle_b",
+      "kind": "idle",
+      "src": "asset:chaerin-linen-dress/idle_b.lg.mp4",
+      "small": "asset:chaerin-linen-dress/idle_b.sm.mp4"
+    },
+    {
+      "id": "idle_c",
+      "kind": "idle",
+      "src": "asset:chaerin-linen-dress/idle_c.lg.mp4",
+      "small": "asset:chaerin-linen-dress/idle_c.sm.mp4"
+    },
+    {
+      "id": "talk_a",
+      "kind": "talk",
+      "src": "asset:chaerin-linen-dress/talk_a.lg.mp4",
+      "small": "asset:chaerin-linen-dress/talk_a.sm.mp4"
+    },
+    {
+      "id": "talk_b",
+      "kind": "talk",
+      "src": "asset:chaerin-linen-dress/talk_b.lg.mp4",
+      "small": "asset:chaerin-linen-dress/talk_b.sm.mp4"
+    },
+    {
+      "id": "listen",
+      "kind": "listen",
+      "src": "asset:chaerin-linen-dress/listen.lg.mp4",
+      "small": "asset:chaerin-linen-dress/listen.sm.mp4"
+    },
+    {
+      "id": "think",
+      "kind": "think",
+      "src": "asset:chaerin-linen-dress/think.lg.mp4",
+      "small": "asset:chaerin-linen-dress/think.sm.mp4"
+    },
+    {
+      "id": "laugh",
+      "kind": "react",
+      "src": "asset:chaerin-linen-dress/laugh.lg.mp4",
+      "small": "asset:chaerin-linen-dress/laugh.sm.mp4",
+      "emotion": "joy"
+    },
+    {
+      "id": "smile",
+      "kind": "react",
+      "src": "asset:chaerin-linen-dress/smile.lg.mp4",
+      "small": "asset:chaerin-linen-dress/smile.sm.mp4",
+      "emotion": "happy"
+    },
+    {
+      "id": "shy",
+      "kind": "react",
+      "src": "asset:chaerin-linen-dress/shy.lg.mp4",
+      "small": "asset:chaerin-linen-dress/shy.sm.mp4",
+      "emotion": "shy"
+    },
+    {
+      "id": "surprised",
+      "kind": "react",
+      "src": "asset:chaerin-linen-dress/surprised.lg.mp4",
+      "small": "asset:chaerin-linen-dress/surprised.sm.mp4",
+      "emotion": "surprise"
+    },
+    {
+      "id": "sad",
+      "kind": "react",
+      "src": "asset:chaerin-linen-dress/sad.lg.mp4",
+      "small": "asset:chaerin-linen-dress/sad.sm.mp4",
+      "emotion": "sad"
+    },
+    {
+      "id": "angry",
+      "kind": "react",
+      "src": "asset:chaerin-linen-dress/angry.lg.mp4",
+      "small": "asset:chaerin-linen-dress/angry.sm.mp4",
+      "emotion": "angry"
+    },
+    {
+      "id": "nod",
+      "kind": "react",
+      "src": "asset:chaerin-linen-dress/nod.lg.mp4",
+      "small": "asset:chaerin-linen-dress/nod.sm.mp4",
+      "emotion": "agree"
+    },
+    {
+      "id": "wave",
+      "kind": "react",
+      "src": "asset:chaerin-linen-dress/wave.lg.mp4",
+      "small": "asset:chaerin-linen-dress/wave.sm.mp4",
+      "emotion": "greet"
+    },
+    {
+      "id": "doze",
+      "kind": "away",
+      "src": "asset:chaerin-linen-dress/doze.lg.mp4",
+      "small": "asset:chaerin-linen-dress/doze.sm.mp4",
+      "loop": true
+    }
+  ],
+  "emotions": {
+    "joy": [
+      "laugh"
+    ],
+    "happy": [
+      "smile"
+    ],
+    "shy": [
+      "shy"
+    ],
+    "surprise": [
+      "surprised"
+    ],
+    "sad": [
+      "sad"
+    ],
+    "angry": [
+      "angry"
+    ],
+    "agree": [
+      "nod"
+    ],
+    "greet": [
+      "wave"
+    ]
+  },
+  "packing": "stacked-alpha",
+  "portrait": "asset:chaerin-linen-dress/portrait.webp",
+  "frame": {
+    "face": [
+      0.6195,
+      0.2655,
+      0.2795
+    ],
+    "outline": [
+      0.6241,
+      0.191,
+      0.1791
+    ],
+    "top": 0.0393,
+    "how": "face",
+    "for": "neutral.webp"
+  }
+}
