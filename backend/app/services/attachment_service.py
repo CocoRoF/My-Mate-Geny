@@ -290,8 +290,10 @@ class AttachmentService:
         kept = [dict(r) for r in self._db.query(
             "SELECT * FROM attachments WHERE session_id = ? AND message_id = ? AND origin != 'screen' ORDER BY created_at",
             (sid, message_id))]
-        self._db.execute("UPDATE attachments SET message_id = NULL WHERE session_id = ? AND message_id = ? "
-                         "AND origin != 'screen'", (sid, message_id))
+        # (waiting since now: an upload left waiting is cleaned up after a day, counted from this)
+        now = now_iso()
+        self._db.execute("UPDATE attachments SET message_id = NULL, created_at = ? WHERE session_id = ? AND message_id = ? "
+                         "AND origin != 'screen'", (now, sid, message_id))
         rows = [dict(r) for r in self._db.query(
             "SELECT id, path FROM attachments WHERE session_id = ? AND message_id LIKE 'artifact:%' AND created_at >= ?",
             (sid, at))]
@@ -303,7 +305,7 @@ class AttachmentService:
         for row in rows:
             self._db.execute("DELETE FROM attachments WHERE id = ?", (row["id"],))
             shutil.rmtree(os.path.dirname(row["path"]), ignore_errors=True)
-        return [self.out({**row, "message_id": None}) for row in kept]
+        return [self.out({**row, "message_id": None, "created_at": now}) for row in kept]
 
     # ---- read ----
 

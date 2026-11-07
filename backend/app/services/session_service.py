@@ -1315,6 +1315,7 @@ class SessionService:
         if hf is not None and hf.enabled:
             st["hf"] = {"account": hf.account_id, "since": hf.started_at}
         st["changes"] = await self._snapshot_before(session, connector)
+        self._note_snapshot(sid, st["changes"])
         noted = False
         stale_retried = failed_over = False
         worked = False  # the turn did something (tool call, text…) on any attempt
@@ -1432,6 +1433,7 @@ class SessionService:
             self._report_outcome(provider_name, outcome_lease, st, ctx, sid, release=not persistent)
             if self._pool is not None and outcome_lease is not None:
                 self._pool.end_turn(outcome_lease)  # the engine keeps its lease; the turn is over
+            await self._report_changes(sid, st)
 
     # ---- Higgsfield (app.higgsfield.agent) ----
 
@@ -1927,6 +1929,23 @@ class SessionService:
                 by_host[host] = {"runner": runner, "before": before}
         return {"by_host": by_host} if by_host else None
 
+    def _note_snapshot(self, sid: str, snap: dict[str, Any] | None) -> None:
+        """What this turn starts from, kept with the chat: a rewind has to undo the turn at work too, which hasn't reported
+        its changes yet, and one the server went down under, which never will (services/session_timeline.py)."""
+        if not snap:
+            return
+        repos = [{"root": root, "before": tree, "connection_id": host}
+                 for host, part in snap["by_host"].items() for root, tree in part["before"].items()]
+        self._add_event(sid, ProviderEvent(type="turn.snapshot", data={"repos": repos}))
+
+    async def _report_changes(self, sid: str, st: dict[str, Any]) -> None:
+        """A turn cancelled or crashed before it could say what it changed says it on its way out."""
+        with contextlib.suppress(Exception):
+            changed = await self._changes_event(st)
+            if changed is not None:
+                self._add_event(sid, changed)
+                self._publish(sid, changed.to_dict())
+
     async def _changes_event(self, st: dict[str, Any]) -> ProviderEvent | None:
         snap = st.pop("changes", None)  # once per turn
         if not snap:
@@ -2003,6 +2022,9 @@ class SessionService:
     # ---- engine callbacks: auto turns, background tasks, live usage ----
 
     def _on_auto_turn(self, sid: str, stream: AsyncIterator[ProviderEvent], inbox: TurnInbox) -> None:
+        if sid in self.timeline.busy:  # (being rewound: whatever this turn would add, the rewind takes back)
+            asyncio.create_task(_drain_quietly(stream))
+            return
         running = self._tasks.get(sid)
         if running is not None:
             # Never two drivers for one session. The previous turn's driver is
@@ -2018,7 +2040,7 @@ class SessionService:
                                 inbox: TurnInbox) -> None:
         with contextlib.suppress(Exception, asyncio.CancelledError):
             await asyncio.wait_for(asyncio.shield(running), timeout=30)
-        if sid in self._tasks:  # a user turn took over (it superseded this stream)
+        if sid in self._tasks or sid in self.timeline.busy:  # a user turn took over (it superseded this stream), or a rewind
             await _drain_quietly(stream)
             return
         self._inboxes[sid] = inbox
@@ -2048,6 +2070,7 @@ class SessionService:
             with contextlib.suppress(Exception):
                 st["changes"] = await self._snapshot_before(
                     session, self._workspaces.connector_for(session["connection_id"]))
+                self._note_snapshot(sid, st["changes"])
             async for ev in stream:
                 if ev.type == "session.info":
                     self._publish(sid, self._session_info(sid, ev, ctx).to_dict())
@@ -2065,6 +2088,7 @@ class SessionService:
                 _note_outcome(outcome, ev)
                 self._publish(sid, ev.to_dict())
         except asyncio.CancelledError:
+            await self._report_changes(sid, st)
             ev = ProviderEvent(type="error", data={"code": "turn.interrupted", "message": "Stopped by user"})
             _note_outcome(outcome, ev)
             self._add_event(sid, ev)
@@ -2073,6 +2097,7 @@ class SessionService:
             self._log("error", "ws", f"auto turn crashed: {exc}", code="exec.autoturn.crashed",
                       detail={"traceback": traceback.format_exc()}, session_id=sid)
             outcome.update(status="error", error=str(exc)[:1000])
+            await self._report_changes(sid, st)
         finally:
             if self._inboxes.get(sid) is inbox:
                 self._inboxes.pop(sid, None)

@@ -35,16 +35,22 @@ back. On any message the user sent (not one a mate sent, or the system made).
    engine is shut down (it holds the conversation being cut), which also ends its background tasks. Remote jobs started from
    that message on are cancelled; earlier background ones go on. No new turn starts until it is done.
 2. **Files, if asked.** The files those turns changed go back to how they were before the first of them, on each host, and
-   only those: `change_tracker.summarize` from the first turn's `before` to now, filtered by what those turns reported. This
-   comes before any deletion: if it fails, the chat is untouched and the error says so. Commands, commits, pushes and anything
-   else outside the files aren't undone; the dialog says so.
+   only those. Every turn records what it starts from (`turn.snapshot`) and, however it ends, what it changed (`turn.changes`).
+   The turn at work right now hasn't reported yet, and one the server went down under never will: those are read from the
+   snapshots. This comes before any deletion: if a folder can't be read or compared, the rewind fails with that reason and the
+   chat is untouched. Commands, commits, pushes and anything else outside the files aren't undone; the dialog says so.
 3. **The chat.** In one transaction: the messages and events from there on go, native task rows of those turns too, the
    `/clear` floor goes back if the rewind passed it, each engine's entry becomes where it stood, and the title resets if it was
-   made from the only message. A mate's memory citing those messages is retracted.
-4. **The composer.** The message's text returns with its files, which are unsent uploads again. What was queued comes back too:
+   made from the only message. A mate's memory that only those messages support is retracted (saying the same thing again teaches it again).
+4. **The composer.** The message's text returns with its files, which are unsent uploads again, waiting as of now. What was queued comes back too:
    it must not go out by itself when the stopped turn ends. Files of later messages and what the turns made are deleted.
 
-Other windows hear `session.rewound` and reload. Nothing is left behind in the chat: no divider, no notice.
+Other windows hear `session.rewinding` first (what they have queued goes back to their composer, so it can't go out when the
+turn stops) and `session.rewound` after (they reload). Nothing is left behind in the chat: no divider, no notice.
+
+**A message added while a turn worked** (a steer) is a point inside that turn. What came before it stays, as a turn stopped
+there. What that turn had already changed can't be told apart, so those files stay, and the dialog says so; turns after it are
+restored as usual.
 
 **What was spent stays spent.** The terminal events of those turns move to `rewound_usage`, which the Usage page counts with
 the rest. They are gone when the chat is deleted, like its events.

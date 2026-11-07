@@ -63,6 +63,8 @@ export default {
   rewindBack: "The message comes back to the input box, ready to edit and send again.",
   rewindRunning: "The work in progress stops.",
   rewindFiles: "Also put back the files the agent changed ({count})",
+  rewindFilesRunning: "Also put back the files the work in progress changed",
+  rewindJoined: "This message was added while a turn worked. What that turn already changed can't be told apart, so those files stay, and what came before stays as a stopped turn.",
   rewindFilesHint: "They go back to how they were before this message. Anything you edited in those files since goes too.",
   rewindNotUndone: "What happened outside the files, like commands, commits and pushes, isn't undone.",
   rewindMoreFiles: "and {count} more",

@@ -26,6 +26,16 @@ export function composerAfterRewind(text: string, queued: string[], draft: strin
   return [text, ...queued, draft].filter((x) => x.trim()).join("\n\n");
 }
 
+/** Any window, when a rewind begins: what it had queued goes back to its composer instead of going out when the turn stops. */
+export function queueBackToComposer(sid: string): void {
+  const drafts = useDraftStore.getState();
+  const queue = drafts.queues[sid] ?? [];
+  if (!queue.length) return;
+  drafts.setQueue(sid, []);
+  drafts.setText(sid, composerAfterRewind("", queue.map((q) => q.text), drafts.drafts[sid]?.text ?? ""));
+  useComposerStore.getState().restore(sid, queue.flatMap((q) => q.attachments));
+}
+
 export async function rewindTo(sid: string, messageId: string, restoreFiles: boolean): Promise<void> {
   const drafts = useDraftStore.getState();
   const queue = drafts.queues[sid] ?? [];

@@ -36,6 +36,22 @@ test("what goes back to the composer: the message, what was queued, what was bei
   assert.equal(composerAfterRewind("", [], "writing"), "writing");
 });
 
+test("a rewind begun elsewhere: what this window queued goes back to its composer instead of going out", async () => {
+  const { queueBackToComposer } = await import("../src/lib/rewind");
+  const { useDraftStore } = await import("../src/stores/draftStore");
+  const { useComposerStore } = await import("../src/stores/composerStore");
+  const att = { id: "att_q", name: "q.txt", size: 1, mime: "text/plain", kind: "file" } as any;
+  useDraftStore.getState().setText("s4", "writing");
+  useDraftStore.getState().setQueue("s4", [{ text: "queued", attachments: [att] } as any]);
+  queueBackToComposer("s4");
+  const drafts = useDraftStore.getState();
+  assert.equal(drafts.queues.s4, undefined);
+  assert.equal(drafts.drafts.s4.text, "queued\n\nwriting");
+  assert.equal(useComposerStore.getState().items.filter((i) => i.sessionId === "s4")[0].attachment?.id, "att_q");
+  queueBackToComposer("s4"); // (nothing queued: nothing changes)
+  assert.equal(useDraftStore.getState().drafts.s4.text, "queued\n\nwriting");
+});
+
 test("files of a rewound message wait in the composer once", async () => {
   const { useComposerStore } = await import("../src/stores/composerStore");
   const att = { id: "att_1", name: "a.txt", size: 1, mime: "text/plain", kind: "file" } as any;

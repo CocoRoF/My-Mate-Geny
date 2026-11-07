@@ -64,6 +64,8 @@ const ko: Messages<"turn"> = {
   rewindBack: "이 메시지의 내용은 입력창으로 돌아와요. 고쳐서 다시 보낼 수 있어요.",
   rewindRunning: "지금 진행 중인 작업은 멈춰요.",
   rewindFiles: "에이전트가 바꾼 파일도 되돌리기 ({count}개)",
+  rewindFilesRunning: "진행 중인 작업이 바꾼 파일도 되돌리기",
+  rewindJoined: "작업 도중에 추가한 메시지예요. 그 작업이 이미 바꾼 파일은 나눠서 되돌릴 수 없어 그대로 둬요. 앞부분은 멈춘 작업으로 남아요.",
   rewindFilesHint: "이 메시지 이전 상태로 돌아가요. 그동안 같은 파일을 직접 고쳤다면 그 내용도 사라져요.",
   rewindNotUndone: "명령 실행, 커밋, 푸시처럼 파일 밖에서 일어난 일은 되돌리지 않아요.",
   rewindMoreFiles: "외 {count}개",

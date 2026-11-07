@@ -5,9 +5,10 @@
 //     node desktop/test/e2e/session-rewind-browser.js http://127.0.0.1:18975 rewind-test-only <workspace> <shots dir>
 //
 // Checks: a message just sent can be rewound without a reload; the dialog says what goes; the message and all after it leave
-// this window and another one, its text returns to the composer and can be sent again; a running turn is stopped by it; a
-// turn's file change is put back when asked (and stays when not); the copy has a new name, the same settings and history, and
-// the open chat stays open. ko dark, en light, desktop, phone.
+// this window and another one, its text returns to the composer and can be sent again; a running turn is stopped by it, and
+// what it changed so far is offered and goes back, and what another device queued returns to its composer; a turn's file change
+// is put back when asked (and stays when not); the copy has a new name, the same settings and history, and the open chat stays
+// open. ko dark, en light, desktop, phone.
 "use strict";
 const assert = require("assert/strict");
 const fs = require("fs");
@@ -134,16 +135,31 @@ const texts = async (ctx, sid) => (await api(ctx, "GET", `/api/sessions/${sid}/m
     fs.writeFileSync(added, "new\n");
     await waitIdle(boot, sid);
     await until("the change on record", async () => (await api(boot, "GET", `/api/sessions/${sid}/events`)).some((e) => e.type === "turn.changes"));
+    const during = path.join(WORK, "during.txt");
+    const away = await (await context(browser, { sid })).newPage();
+    watch(away);
+    await openChat(away, sid);
+    const startedAgain = await starts();
     await send(p, "멈출 턴");
     await until("it runs", async () => (await api(boot, "GET", `/api/sessions/${sid}`)).running);
+    await until("the engine to start again", async () => (await starts()) > startedAgain);
     await until("its button", async () => (await bubbles(p).count()) === 4);
+    fs.writeFileSync(during, "written while it worked\n");
+    await composer(away).fill("다른 기기의 대기 메시지");
+    await away.getByRole("button", { name: "대기열" }).click();
+    await until("it to be queued there", async () => (await composer(away).inputValue()) === "");
     await bubbles(p).nth(3).click();
     await p.waitForSelector('[data-testid="rewind-confirm"]:not([disabled])');
-    assert.equal(await p.locator('[data-testid="rewind-files"]').count(), 0, "no file changed since that message");
+    assert.equal(await p.locator('[data-testid="rewind-files"]').isChecked(), true, "what the turn at work changed is offered");
+    await p.screenshot({ path: path.join(SHOTS, "dialog-running-ko-dark.png") });
     await p.click('[data-testid="rewind-confirm"]');
     await p.waitForSelector('[data-testid="rewind-dialog"]', { state: "detached", timeout: 30000 });
     assert.equal((await api(boot, "GET", `/api/sessions/${sid}`)).running, false);
-    assert.equal(fs.readFileSync(edited, "utf8"), "after\n");
+    assert.equal(fs.existsSync(during), false, "what it changed went back");
+    assert.equal(fs.readFileSync(edited, "utf8"), "after\n", "what the turn before it changed stays");
+    await until("what the other device queued to be back in its composer", async () => (await composer(away).inputValue()) === "다른 기기의 대기 메시지");
+    assert.ok(!(await texts(boot, sid)).includes("user: 다른 기기의 대기 메시지"), "it didn't go out when the turn stopped");
+    await away.close();
 
     await until("three buttons", async () => (await bubbles(p).count()) === 3);
     await bubbles(p).nth(2).click();

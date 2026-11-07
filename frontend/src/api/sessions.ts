@@ -50,6 +50,8 @@ export interface RewindPreview {
   running: boolean;
   files: { path: string; root: string }[];
   file_count: number;
+  /** the message was added while a turn worked: what that turn changed can't be told apart, and stays */
+  joined: boolean;
 }
 export const rewindPreview = (id: string, messageId: string) =>
   apiFetch<RewindPreview>(`/api/sessions/${id}/rewind?message_id=${encodeURIComponent(messageId)}`);
