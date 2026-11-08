@@ -851,6 +851,7 @@ print(json.dumps(out))
     assert res["thumb"] and (tmp_path / "thumb.webp").stat().st_size > 1000
 
 
+@needs_venv
 def test_what_she_holds_comes_back_when_the_remover_drops_it(tmp_path):
     """pipeline.held_objects / fill_object_holes on a made-up frame: a dark book held out in front of her, dropped whole by the
     remover, comes back with its light pages, however far it reaches; something dark that doesn't touch her stays out, and so
@@ -893,6 +894,7 @@ print(json.dumps(out))
     assert res["cup"] == 1.0 and res["gray_gap"] == 0.0
 
 
+@needs_venv
 def test_a_loose_strand_beside_her_hair_stays_dark(tmp_path):
     """pipeline.fill_object_holes / light_ridge / solidify / defringe on the gap between a loose strand and her hair: the gap is no
     hole to fill (its light pixels are the sharpening's line, its far-from-gray ones the gray mixed with the strands: no pixel is
