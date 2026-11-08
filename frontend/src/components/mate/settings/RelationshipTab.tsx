@@ -11,6 +11,7 @@ import { relTime } from "../../../i18n/format";
 import { useT, type TFunction } from "../../../i18n";
 import { RelationRing, STAGE_LABEL } from "../RelationRing";
 import { stateLine } from "../StateCard";
+import { whyText } from "../../../mate/reasons";
 import { ErrorLine, Field, ProgressBar, Section, Segmented, Toggle } from "./ui";
 
 const SENS: { id: string; v: number; label: "mateSettings.relSensGentle" | "mateSettings.styleNormal" | "mateSettings.relSensStrong" }[] = [
@@ -19,44 +20,7 @@ const SENS: { id: string; v: number; label: "mateSettings.relSensGentle" | "mate
   { id: "1.5", v: 1.5, label: "mateSettings.relSensStrong" },
 ];
 
-/** a log reason code → words */
-export function whyText(t: TFunction, why: string): string {
-  const quiet = /^quiet_(\d+)$/.exec(why);
-  if (quiet) return t("mateSettings.relWhyQuiet", { days: Number(quiet[1]) });
-  if (why.startsWith("timezone ")) return t("mateSettings.relWhyTimezone"); // (the days counted again in the user's zone)
-  switch (why) {
-    case "talk":
-      return t("mateSettings.relWhyTalk");
-    case "lively":
-      return t("mateSettings.relWhyLively");
-    case "streak":
-      return t("mateSettings.relWhyStreak");
-    case "streak_week":
-      return t("mateSettings.relWhyStreakWeek");
-    case "warm":
-      return t("mateSettings.relWhyWarm");
-    case "memory":
-      return t("mateSettings.relWhyMemory");
-    case "rude":
-      return t("mateSettings.relWhyRude");
-    case "manual":
-      return t("mateSettings.relWhyManual");
-    case "reset":
-      return t("mateSettings.relWhyReset");
-    case "recomputed":
-      return t("mateSettings.relWhyRecomputed");
-    case "paused_on":
-      return t("mateSettings.relWhyPausedOn");
-    case "paused_off":
-      return t("mateSettings.relWhyPausedOff");
-    case "enabled_on":
-      return t("mateSettings.relWhyEnabledOn");
-    case "enabled_off":
-      return t("mateSettings.relWhyEnabledOff");
-    default:
-      return why;
-  }
-}
+export { whyText };
 
 export function milestoneText(t: TFunction, key: string): string {
   const days = /^days_(\d+)$/.exec(key);

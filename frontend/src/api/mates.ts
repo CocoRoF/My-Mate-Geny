@@ -227,6 +227,8 @@ export interface StateWhy {
   code?: string;
   name?: string;
   quote?: string;
+  /** code "hostile": what was done to her (violence, coercion, threat, demeaning) */
+  kind?: string;
 }
 export interface StateFeeling {
   emotion: StateEmotion;

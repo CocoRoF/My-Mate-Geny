@@ -326,7 +326,7 @@ def credit_turn(r: dict[str, Any], at: datetime, tz: Any, user_text: str = "", r
         if float(t.get("hostile") or 0.0) < HOSTILE_CAP:
             loss = min(HOSTILE * r["sensitivity"], HOSTILE_CAP - float(t.get("hostile") or 0.0))
             t["hostile"] = float(t.get("hostile") or 0.0) + loss
-            _bump(r, -loss, "hostile", at)
+            _bump(r, -loss, f"hostile_{c['hostile']}", at)  # (what it was: violence, coercion, threat, demeaning)
         refresh(r, at, tz)
         return
     if c["warm"]:

@@ -85,11 +85,22 @@ def test_her_reading_has_the_last_word():
     assert S.levels(doc2, w2, EIGHT, TZ)["angry"]["v"] > 0.45
 
 
+def test_she_is_told_what_was_done_to_her_whatever_kind_it_was():
+    kinds = A.hostile.__doc__.split("tell: ")[1].split(" (")[0].split(" | ")
+    assert kinds == ["violence", "coercion", "threat", "demeaning"]
+    general = S.why_for_her({"code": "hostile", "quote": "x"})
+    for kind in kinds:
+        told = S.why_for_her({"code": "hostile", "kind": kind, "quote": "(손목을 붙잡는다)"})
+        assert told != general and told.endswith("“(손목을 붙잡는다)”"), (kind, told)
+    assert "forced something on you" in S.why_for_her({"code": "hostile", "kind": "coercion", "quote": "x"})
+
+
 def test_hitting_her_costs_far_more_than_a_rude_word_unless_she_took_it_as_play():
     r = A.new()
     r["affinity"] = 50.0
     A.credit_turn(r, EIGHT, TZ, "(한채린을 한 대 때린다)", "[angry:0.8] 때리지 마.", "한채린")
     assert r["affinity"] == 45.0 and not r["today"].get("talked")  # (no +6 for the day's talk)
+    assert r["log"][-1]["why"] == "hostile_violence"  # (what it was: the relationship's history says so in the user's language)
     for _ in range(6):
         A.credit_turn(r, EIGHT, TZ, "(더 세게 때린다)", "", "한채린")
     assert r["affinity"] == 30.0  # (at most 20 a day)

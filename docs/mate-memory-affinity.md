@@ -416,7 +416,7 @@ while"). Stage ups add a milestone; stage downs are only a change of state.
 | Warm exchange | +0.5 | user cue positive (고마워, 감사, 좋아, 최고, ㅋㅋ/ㅎㅎ, thanks, great, love it…) **or** the reply carries `joy/laugh/smile/shy` and the user cue isn't negative; cap +2/day |
 | New memory | +1 | per memory actually added (merges don't count), cap +3/day |
 | Rude to the mate | −1 | insult/hostility lexicon aimed at her (닥쳐, 꺼져, 멍청, shut up, stupid, useless…); cap −3/day. **Sadness or venting never costs anything**: it sets mood `concerned` instead |
-| Done to her | −5 | `affinity.hostile`, aimed at her (acted out "(…)"/"*…*", said to "you" or her name): hitting her, forcing something on her against her will (her clothes, her body, grabbing, dragging, holding her down, making her), threats, putting her down ("여자가 왜 말대꾸야", 삼일한); cap −20/day, and that turn earns nothing. Only the words' guess: her reply has the last word (shown calm, `calm_reply`, it costs nothing). Venting about someone, a friend's trouble, a game, everyday words: nothing |
+| Done to her | −5 | `affinity.hostile`, aimed at her (acted out "(…)"/"*…*", said to "you" or her name): hitting her, forcing something on her against her will (her clothes, her body, grabbing, dragging, holding her down, making her), threats, putting her down ("여자가 왜 말대꾸야", 삼일한); cap −20/day (logged as `hostile_<kind>`: violence, coercion, threat, demeaning), and that turn earns nothing. Only the words' guess: her reply has the last word (shown calm, `calm_reply`, it costs nothing). Venting about someone, a friend's trouble, a game, everyday words: nothing |
 | Daily gain cap | +12 | total positive per day |
 | Quiet days | 0 for 3 idle days, then −4, −5.6, −7.8, −11, −15 (×1.4 a day, cap 15) | settled for each **finished** day without a user turn; never below **10** (floor) |
 | Ignored proactive | — | dormant (`awaiting`), for when proactive messages exist |
@@ -558,7 +558,8 @@ moves. Router shapes and push throttling.
   doze clip. The tab's unsaved toggle previews through `livePreview` `{type:"prefs"}`.
 - i18n: all new strings in `en` and `ko` (`mateSettings.rel*`, `mateSettings.mem*`,
   `mateSettings.style*`), reasons in the log localized from codes (`talk`, `lively`, `streak`,
-  `warm`, `memory`, `rude`, `quiet_n`, `manual`, `reset`, `recomputed`), and stage and mood labels
+  `warm`, `memory`, `rude`, `hostile_<kind>`, `quiet_n`, `manual`, `reset`, `recomputed`…; one with no words of its own reads as
+  "another change", never as its code), and stage and mood labels
   from `relation` codes. Korean strings use `{name:이}`.
 
 ### 6.1 Relationship panel (memora's relationship page, as a side panel)

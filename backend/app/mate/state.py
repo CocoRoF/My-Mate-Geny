@@ -131,7 +131,7 @@ _WHY_FOR_HER = {
 
 
 #: what was done to her (affinity.hostile), as she is told it
-_DONE_TO_HER = {"violence": "they hit you", "sexual": "they tried something sexual on you that you never wanted",
+_DONE_TO_HER = {"violence": "they hit you", "coercion": "they forced something on you against your will",
                 "threat": "they threatened you", "demeaning": "they talked down to you for being a woman, or as if you were nothing"}
 
 

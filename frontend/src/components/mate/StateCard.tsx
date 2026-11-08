@@ -4,11 +4,14 @@
  * them lately. Every mate has this, with the relationship on or off.
  */
 import { useEffect, useState } from "react";
-import { getMateState, type Mate, type MateState, type StateEmotion, type StateLabel, type StateLogEntry, type StateView, type StateWhy } from "../../api/mates";
+import { getMateState, type Mate, type MateState, type StateEmotion, type StateLabel, type StateLogEntry, type StateView } from "../../api/mates";
 import { useT, type MsgKey, type TFunction } from "../../i18n";
 import { fmtTime } from "../../i18n/format";
 import { STATE_EMOJI } from "../../mate/relationJournal";
+import { stateWhy } from "../../mate/reasons";
 import { useMateStore } from "../../stores/mateStore";
+
+export { stateWhy };
 
 export const STATE_LABEL: Record<StateLabel, MsgKey> = {
   happy: "mate.stateHappy",
@@ -27,11 +30,6 @@ export function stateName(t: TFunction, s: MateState): string {
   return s.blend ? t(`mate.blend_${s.blend}` as MsgKey) : t(STATE_LABEL[s.label]);
 }
 
-/** why she feels it: her own words, or what happened in the user's language */
-export function stateWhy(t: TFunction, why?: StateWhy | null): string {
-  if (why?.text) return why.text;
-  return why?.code ? t(`mate.stateWhy_${why.code}` as MsgKey, { name: why.name ?? "", quote: why.quote ?? "" }) : "";
-}
 
 export function stateLine(t: TFunction, mate: Mate): string {
   const s = mate.state;
