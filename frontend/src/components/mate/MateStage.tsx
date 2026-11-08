@@ -56,7 +56,7 @@ export function BuiltinBadge({ mate }: { mate: Mate }) {
 /** a small round picture of a mate: its home still when it has one, else its initial */
 export function MateThumb({ mate, className = "h-7 w-7" }: { mate: Mate; className?: string }) {
   const a = mate.avatar;
-  const src = a.kind === "video" || a.kind === "photo" ? a.rig.home || a.rig.stills?.neutral || "" : "";
+  const src = a.kind === "video" || a.kind === "photo" ? a.rig.home || a.rig.stills?.neutral || "" : a.kind === "livliv" ? a.livliv.avatar || a.livliv.cover || "" : "";
   const ch = [...(mate.name.trim() || "?")][0].toUpperCase();
   return (
     <span className={`relative shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-accent to-violet ${className}`}>

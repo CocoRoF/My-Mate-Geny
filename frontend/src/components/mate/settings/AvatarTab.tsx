@@ -10,7 +10,7 @@ import { listProjects, type ProjectSummary } from "../../../api/avatar";
 import { coreStatus, DEFAULT_OUTFIT, getOutfit, importAvatarZip, importLocal, patchOutfit, uploadAsset, type Mate } from "../../../api/mates";
 import { MateAvatar } from "../../../mate/avatar/MateAvatar";
 import { EMOTIONS } from "../../../mate/emotion";
-import type { Avatar, BodyMood, Live2D, MateReact, Rig } from "../../../mate/types";
+import type { Avatar, BodyMood, Live2D, LivLiv, MateReact, Rig } from "../../../mate/types";
 import type { MateConversation } from "../../../mate/useMateConversation";
 import { end as voiceEnd, fakeLevel, level as voiceLevel, start as voiceStart } from "../../../mate/voiceBridge";
 import { useMateStore } from "../../../stores/mateStore";
@@ -132,6 +132,7 @@ function AvatarEditor({ mate, conv, outfit, saved, live, dirtyRef }: { mate: Mat
     if (kind === "none") setAvatar({ kind: "none" });
     else if (kind === "photo") setAvatar({ kind: "photo", rig: { ...rigOf(avatar), clips: [] } });
     else if (kind === "video") setAvatar({ kind: "video", rig: rigOf(avatar.kind === "video" ? avatar : saved) });
+    else if (kind === "livliv") setAvatar({ kind: "livliv", livliv: saved.kind === "livliv" ? saved.livliv : { model: "" } });
     else setAvatar({ kind: "live2d", live2d: saved.kind === "live2d" ? saved.live2d : { model: "" } });
   };
 
@@ -139,8 +140,8 @@ function AvatarEditor({ mate, conv, outfit, saved, live, dirtyRef }: { mate: Mat
     <>
       <Preview mate={mate} avatar={avatar} conv={conv} poke={poke} />
       <Section title={t("mateSettings.avKind")}>
-        <div className="grid grid-cols-4 gap-1.5">
-          {(["none", "photo", "video", "live2d"] as const).map((k) => (
+        <div className="grid grid-cols-5 gap-1.5">
+          {(["none", "photo", "video", "live2d", "livliv"] as const).map((k) => (
             <button
               key={k}
               onClick={() => setKind(k)}
@@ -149,7 +150,7 @@ function AvatarEditor({ mate, conv, outfit, saved, live, dirtyRef }: { mate: Mat
               }`}
               data-testid={`mate-avatar-kind-${k}`}
             >
-              {k === "none" ? t("common.none") : k === "photo" ? t("mateSettings.avPhoto") : k === "video" ? t("mateSettings.avVideo") : "Live2D"}
+              {k === "none" ? t("common.none") : k === "photo" ? t("mateSettings.avPhoto") : k === "video" ? t("mateSettings.avVideo") : k === "livliv" ? "LivLiv" : "Live2D"}
             </button>
           ))}
         </div>
@@ -178,6 +179,7 @@ function AvatarEditor({ mate, conv, outfit, saved, live, dirtyRef }: { mate: Mat
           <StillTriggers rig={avatar.rig} onChange={(rig) => setAvatar({ kind: "video", rig })} onPoke={onPoke} video />
         </>
       )}
+      {avatar.kind === "livliv" && <LivLivEditor livliv={avatar.livliv} onChange={(livliv) => setAvatar({ kind: "livliv", livliv })} />}
       {avatar.kind === "live2d" && (
         <>
           <CoreNotice />
@@ -321,7 +323,7 @@ function ImportSection({ mate, outfit }: { mate: Mate; outfit?: string }) {
   return (
     <Section title={t("mateSettings.avImport")} hint={t("mateSettings.avImportHint")}>
       <div className="flex flex-wrap gap-2">
-        <input ref={file} type="file" accept=".zip,application/zip" hidden onChange={(e) => e.target.files?.[0] && zip(e.target.files[0])} />
+        <input ref={file} type="file" accept=".zip,.livliv,application/zip" hidden onChange={(e) => e.target.files?.[0] && zip(e.target.files[0])} data-testid="mate-avatar-import-file" />
         <button className="btn-soft" onClick={() => file.current?.click()} disabled={!!busy}>
           {busy === "zip" ? <Icon name="spinner" size={14} spin /> : <Icon name="upload" size={14} />} {t("mateSettings.avUploadZip")}
         </button>
@@ -470,6 +472,82 @@ function useModelInfo(url: string): { info: ModelInfo | null; err: string | null
     };
   }, [url]);
   return { info, err };
+}
+
+/** A LivLiv body: what the package says about itself, which expression plays for each emotion of hers, and her eyes on the pointer */
+function LivLivEditor({ livliv, onChange }: { livliv: LivLiv; onChange: (l: LivLiv) => void }) {
+  const t = useT();
+  const have = livliv.expressions || [];
+  const setMap = (emotion: string, value: string) => {
+    const map = { ...(livliv.emotions || {}) };
+    if (value === "auto") delete map[emotion];
+    else map[emotion] = value === "none" ? "" : value;
+    onChange({ ...livliv, emotions: Object.keys(map).length ? map : undefined });
+  };
+  if (!livliv.model) {
+    return (
+      <Section title={t("mateSettings.avLvModel")} testId="mate-livliv-editor">
+        <p className="text-[12.5px] text-content-dim">{t("mateSettings.avLvNone")}</p>
+      </Section>
+    );
+  }
+  const mark = livliv.watermark === "livliv" ? t("mateSettings.avLvMarkLivliv") : livliv.watermark === "text" ? t("mateSettings.avLvMarkText") : t("mateSettings.avLvMarkNone");
+  return (
+    <Section title={t("mateSettings.avLvModel")} hint={t("mateSettings.avLvModelHint")} testId="mate-livliv-editor">
+      <dl className="grid grid-cols-[96px_1fr] gap-x-2 gap-y-1 text-[12.5px]" data-testid="mate-livliv-info">
+        <dt className="text-content-faint">{t("mateSettings.avLvName")}</dt>
+        <dd className="text-content">{livliv.name || "—"}</dd>
+        <dt className="text-content-faint">{t("mateSettings.avLvAuthor")}</dt>
+        <dd className="text-content">{livliv.author || "—"}</dd>
+        <dt className="text-content-faint">{t("mateSettings.avLvLicense")}</dt>
+        <dd className="text-content">
+          {livliv.license?.url ? (
+            <a href={livliv.license.url} target="_blank" rel="noreferrer noopener" className="text-accent hover:underline">
+              {livliv.license.id || livliv.license.url}
+            </a>
+          ) : (
+            livliv.license?.id || "—"
+          )}
+        </dd>
+        <dt className="text-content-faint">{t("mateSettings.avLvMark")}</dt>
+        <dd className="text-content">{mark}</dd>
+      </dl>
+      <label className="mt-1 flex items-center gap-2 text-[12.5px] text-content-dim">
+        <input
+          type="checkbox"
+          checked={livliv.follow !== "off"}
+          onChange={(e) => onChange({ ...livliv, follow: e.target.checked ? undefined : "off" })}
+          data-testid="mate-livliv-follow"
+        />
+        {t("mateSettings.avLvFollow")}
+      </label>
+      <div>
+        <div className="mb-1 grid grid-cols-[90px_1fr] gap-2 text-[11px] font-medium text-content-faint">
+          <span>{t("mateSettings.avColEmotion")}</span>
+          <span>{t("mateSettings.avColExpression")}</span>
+        </div>
+        <div className="space-y-1" data-testid="mate-livliv-map">
+          {EMOTIONS.filter((e) => e !== "neutral").map((e) => {
+            const chosen = livliv.emotions?.[e];
+            return (
+              <div key={e} className="grid grid-cols-[90px_1fr] items-center gap-2">
+                <span className="text-[12px] text-content-dim">{e}</span>
+                <select className="field !py-1 text-[12px]" value={chosen === undefined ? "auto" : chosen === "" ? "none" : chosen} onChange={(ev) => setMap(e, ev.target.value)}>
+                  <option value="auto">{t("mateSettings.avLvAuto")}</option>
+                  <option value="none">{t("mateSettings.avLvNoFace")}</option>
+                  {have.map((x) => (
+                    <option key={x} value={x}>
+                      {x}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </Section>
+  );
 }
 
 function Live2DEditor({ live2d, onChange }: { live2d: Live2D; onChange: (l: Live2D) => void }) {

@@ -36,7 +36,7 @@ from app.services._ids import new_id
 
 CORE_URL = "https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"
 MAX_ENTRIES = 5000
-IMPORT_DIR_RE = re.compile(r"^(pack|l2d)-[0-9a-f]{8,}$")
+IMPORT_DIR_RE = re.compile(r"^(pack|l2d|lv)-[0-9a-f]{8,}$")
 _MATE_ID_RE = re.compile(r"^mate_[0-9a-f]{8,32}$")
 
 # Served inline with these types; anything else is application/octet-stream
@@ -194,7 +194,7 @@ def drop_import_dirs(mate_id: str, keep: set[str]) -> None:
 def import_dirs_of(avatar: dict[str, Any], mate_id: str) -> set[str]:
     """Import folders an avatar document references."""
     blob = json.dumps(avatar)
-    return set(re.findall(rf"/api/mates/{re.escape(mate_id)}/assets/((?:pack|l2d)-[0-9a-f]+)/", blob))
+    return set(re.findall(rf"/api/mates/{re.escape(mate_id)}/assets/((?:pack|l2d|lv)-[0-9a-f]+)/", blob))
 
 
 def outfit_upload_dir(mate_id: str, oid: str) -> Path:
@@ -340,7 +340,7 @@ def _shallowest(paths: list[str]) -> str | None:
 
 
 def import_zip(mate_id: str, zip_path: str) -> dict[str, Any]:
-    """Unpack an avatar zip -> Avatar document (video/photo pack or Live2D)."""
+    """Unpack an avatar zip -> Avatar document (video/photo pack, Live2D, or a LivLiv package: a ``.livliv`` is a zip)."""
     try:
         zf = zipfile.ZipFile(zip_path)
     except zipfile.BadZipFile as exc:
@@ -350,9 +350,20 @@ def import_zip(mate_id: str, zip_path: str) -> dict[str, Any]:
         rels = [rel for _, rel in members]
         rig = _shallowest([r for r in rels if r.split("/")[-1] == "rig.json"])
         model = _shallowest([r for r in rels if r.endswith(".model3.json")])
-        if rig is None and model is None:
-            raise MateError("no rig.json (video/photo pack) or *.model3.json (Live2D) in the zip")
-        prefix = "pack" if rig is not None and (model is None or rig.count("/") <= model.count("/")) else "l2d"
+        lv = _shallowest([r for r in rels if r.split("/")[-1] == "model.json"]) if rig is None and model is None else None
+        if lv is not None:
+            info = next(i for i, r in members if r == lv)
+            if info.file_size > LIVLIV_MAX_MODEL_JSON:
+                raise MateError("model.json is larger than 4 MB")
+            try:
+                head = json.loads(zf.read(info).decode("utf-8-sig"))
+            except (ValueError, UnicodeDecodeError) as exc:
+                raise MateError(f"cannot read model.json: {exc}") from exc
+            if not is_livliv_model(head):
+                lv = None
+        if rig is None and model is None and lv is None:
+            raise MateError("no rig.json (video/photo pack), *.model3.json (Live2D) or a LivLiv model.json in the zip")
+        prefix = "lv" if lv is not None else "pack" if rig is not None and (model is None or rig.count("/") <= model.count("/")) else "l2d"
         dest, name = _new_import_dir(mate_id, prefix)
         try:
             budget = _limit_bytes()
@@ -369,6 +380,9 @@ def import_zip(mate_id: str, zip_path: str) -> dict[str, Any]:
                             raise MateError(f"the zip unpacks to more than {settings.mate_import_max_mb} MB",
                                             status=413)
                         out.write(chunk)
+            if prefix == "lv":
+                assert lv is not None
+                return build_livliv_avatar(mate_id, dest / lv)
             if prefix == "pack":
                 assert rig is not None
                 rig_dir = dest / rig.rsplit("/", 1)[0] if "/" in rig else dest
@@ -531,6 +545,97 @@ def _registry_entry(model_path: Path) -> dict[str, Any] | None:
     return None
 
 
+# ---- LivLiv (a 2.5D character in layers, played by LivLiv Player; its format: FORMAT.md of livliv-dev/player) ----
+
+#: the formats it reads, newest version of each (a newer one is refused, as the player would)
+LIVLIV_FORMATS = {"livliv-model": 4, "livemaker-puppet": 3}
+#: the player's own limits (src/runtime/format.ts LIMITS): refused here before anyone draws it
+LIVLIV_MAX_MODEL_JSON, LIVLIV_MAX_CANVAS, LIVLIV_MAX_LAYERS = 4 * 1024 * 1024, 8192, 512
+_LIVLIV_EXPR = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+
+
+def is_livliv_model(data: Any) -> bool:
+    """A LivLiv ``model.json`` (format 4, or the format 3 before it, which has no ``format`` field)."""
+    if not isinstance(data, dict):
+        return False
+    if "format" in data:
+        return data.get("format") in LIVLIV_FORMATS
+    return isinstance(data.get("layers"), list) and isinstance(data.get("anchors"), dict)
+
+
+def build_livliv_avatar(mate_id: str, model_path: Path) -> dict[str, Any]:
+    """A LivLiv ``model.json`` inside the mate's assets -> Avatar livliv. Checked as the player would before it draws (a newer
+    format, a canvas or layer count past its limits, a layer image that isn't there); what it says about itself is kept: name,
+    expressions (standard ids are the same on every model: smile, shy, angry, sad, surprised…), author, licence, the mark it asks
+    for, and its cover and avatar pictures."""
+    a_root = assets_dir(mate_id).resolve()
+    model_path = model_path.resolve()
+    if a_root not in model_path.parents:
+        raise MateError("model outside the mate's assets")
+    if model_path.stat().st_size > LIVLIV_MAX_MODEL_JSON:
+        raise MateError("model.json is larger than 4 MB")
+    data = _read_json(model_path)
+    if not is_livliv_model(data):
+        raise MateError("model.json is not a LivLiv model")
+    fmt = str(data.get("format") or "livemaker-puppet")
+    try:
+        version = int(data.get("version") or LIVLIV_FORMATS[fmt])
+    except (TypeError, ValueError) as exc:
+        raise MateError("model.json: version is not a number") from exc
+    if version > LIVLIV_FORMATS[fmt]:
+        raise MateError(f"a LivLiv model of format {version}: newer than this app reads")
+    canvas = data.get("canvas")
+    if (not isinstance(canvas, list) or len(canvas) != 2 or not all(isinstance(v, int) and 16 <= v <= LIVLIV_MAX_CANVAS for v in canvas)):
+        raise MateError(f"model.json: canvas must be [width, height], 16–{LIVLIV_MAX_CANVAS} px")
+    layers = data.get("layers")
+    if not isinstance(layers, list) or not layers or len(layers) > LIVLIV_MAX_LAYERS:
+        raise MateError(f"model.json: 1–{LIVLIV_MAX_LAYERS} layers")
+    base = model_path.parent
+
+    def in_package(ref: Any, what: str) -> str:
+        if not isinstance(ref, str) or not ref:
+            raise MateError(f"model.json: {what} names no file")
+        rel = safe_rel(ref)
+        if not (base / rel).is_file():
+            raise MateError(f"the package has no {rel} ({what})")
+        return rel
+
+    for layer in layers:
+        if not isinstance(layer, dict):
+            raise MateError("model.json: a layer is not an object")
+        lid = str(layer.get("id") or "?")
+        in_package(layer.get("texture"), f"layer {lid}")
+        for key in ("mask", "talk", "brow_tex"):
+            if layer.get(key) is not None:
+                in_package(layer[key], f"layer {lid} {key}")
+        for frame in layer.get("frames") or []:
+            in_package(frame, f"layer {lid} frames")
+    files_ = data.get("files") if isinstance(data.get("files"), dict) else {}
+
+    def picture(key: str) -> str:
+        try:
+            rel = in_package(files_.get(key), key) if files_.get(key) else ""
+        except MateError:
+            return ""
+        return asset_url(mate_id, (base / rel).relative_to(a_root).as_posix()) if rel else ""
+
+    exprs = [str(e.get("id")) for e in data.get("expressions") or [] if isinstance(e, dict) and _LIVLIV_EXPR.match(str(e.get("id") or ""))]
+    meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
+    lic = meta.get("license") if isinstance(meta.get("license"), dict) else {}
+    out = {
+        "model": asset_url(mate_id, model_path.relative_to(a_root).as_posix()),
+        "name": str(data.get("name") or "")[:64],
+        "canvas": list(canvas),
+        "expressions": exprs[:64],
+        "cover": picture("cover"),
+        "avatar": picture("avatar"),
+        "author": str((meta.get("author") or {}).get("name") or "")[:80] if isinstance(meta.get("author"), dict) else "",
+        "license": {k: str(lic[k])[:300] for k in ("id", "url") if isinstance(lic.get(k), str)},
+        "watermark": str((meta.get("watermark") or {}).get("kind") or "") if isinstance(meta.get("watermark"), dict) else "",
+    }
+    return {"kind": "livliv", "livliv": out}
+
+
 def build_live2d_avatar(mate_id: str, model_path: Path, *, sidecar: dict[str, Any] | None = None,
                         registry: dict[str, Any] | None = None) -> dict[str, Any]:
     """A ``*.model3.json`` inside the mate's assets -> Avatar live2d. Empty
@@ -659,6 +764,10 @@ def classify_local(path: str) -> dict[str, Any]:
     if p.is_file():
         if p.name.endswith(".model3.json"):
             return {"kind": "live2d", "model": p}
+        if p.suffix.lower() == ".livliv":
+            return {"kind": "livliv", "package": p, "name": p.stem}
+        if p.name == "model.json" and is_livliv_model(_read_json(p)):
+            return {"kind": "livliv", "folder": p.parent, "name": str(_read_json(p).get("name") or p.parent.name)}
         if p.name == "rig.json":
             return {"kind": "pack", "folder": p.parent}
         if p.suffix == ".json":
@@ -671,6 +780,8 @@ def classify_local(path: str) -> dict[str, Any]:
         raise MateError(f"{p.name}: not an ailism mate (.json), rig.json or *.model3.json")
     if (p / "rig.json").is_file():
         return {"kind": "pack", "folder": p}
+    if (p / "model.json").is_file() and is_livliv_model(data := _read_json(p / "model.json")):
+        return {"kind": "livliv", "folder": p, "name": str(data.get("name") or p.name)}
     model = _find_model3(p)
     if model is not None:
         return {"kind": "live2d", "model": model}
@@ -692,6 +803,19 @@ def import_folder_pack(mate_id: str, folder: Path, fallback_rig: dict[str, Any] 
         if raw is None:
             raise MateError(f"{folder}: no rig.json")
         return build_rig_avatar(mate_id, raw, dest)
+    except Exception:
+        shutil.rmtree(dest, ignore_errors=True)
+        raise
+
+
+def import_local_livliv(mate_id: str, info: dict[str, Any]) -> dict[str, Any]:
+    """A LivLiv package on this server: a ``.livliv`` file (unpacked like an upload) or its folder (copied)."""
+    if info.get("package") is not None:
+        return import_zip(mate_id, str(info["package"]))
+    dest, _ = _new_import_dir(mate_id, "lv")
+    try:
+        _copy_tree(info["folder"], dest)
+        return build_livliv_avatar(mate_id, dest / "model.json")
     except Exception:
         shutil.rmtree(dest, ignore_errors=True)
         raise

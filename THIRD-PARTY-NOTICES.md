@@ -51,11 +51,25 @@ themselves. In summary (read the originals; the Japanese text prevails):
   deems sexual/violent/discriminatory/political, implying the work is official
   Live2D content, selling/distributing models derived from the material.
 
-### 1.2 Not bundled (downloaded or installed separately)
+### 1.2 LivLiv models — not bundled, obligations when you import one
+
+LivLiv Player (above) plays `.livliv` packages (LivLiv's own format, not Live2D: it reads no
+`.moc3` and uses no Cubism SDK). The repository contains **no** LivLiv model: LivLiv's featured
+characters are free for non-commercial use only and may not be used to train AI or make other
+characters ([their licence](https://github.com/livliv-dev/player/blob/main/characters/LICENSE.md)),
+so they are not shipped. A user who imports a package (Mate settings → Avatar → Import) uses it
+under that package's own licence, shown there from its `meta.license` (packages made on
+livliv.ai: [livliv.ai/terms](https://livliv.ai/terms)). The player draws the mark a package asks
+for (`meta.watermark`, part of its licence) and the app never hides it. "LivLiv" and its logos are
+LivLiv's; this project is not affiliated with LivLiv or with Live2D Inc. ("Live2D" is a trademark
+of Live2D Inc.).
+
+### 1.3 Not bundled (downloaded or installed separately)
 
 | Component | How it gets there | Licence |
 |---|---|---|
 | **Live2D sample models** (Mao, Hiyori, …) | Downloaded by the user from [live2d.com](https://www.live2d.com/en/learn/sample/) and imported into a mate (stored under `~/.hr-harnessor/mates/<id>/assets/`) | Live2D Free Material License + Sample Data Terms (section 1.1) — never commit them |
+| **LivLiv models** (`.livliv`) | Made by the user (e.g. on livliv.ai) and imported into a mate (stored under `~/.hr-harnessor/mates/<id>/assets/lv-*/`) | Each package's own licence (section 1.2) — never commit them |
 | **Live2D Cubism Core** (`live2dcubismcore.min.js`) | Downloaded by the server from `cubism.live2d.com` only after the user ticks the licence checkbox in Mate settings; stored under `~/.hr-harnessor/mates/_runtime/` | Live2D Proprietary Software License Agreement — never commit it |
 | **Claude Code CLI** (`@anthropic-ai/claude-code`) | `npm install -g` in the Dockerfile, or installed by the user | Anthropic commercial terms. Building an image is fine; **publishing a prebuilt image** redistributes it — check Anthropic's terms first |
 | **OpenAI Codex CLI** (`@openai/codex`) | `npm install -g` in the Dockerfile | Apache-2.0 |
@@ -96,6 +110,9 @@ data, build-time only), `MIT OR GPL-3.0-or-later` 1 (jszip — used under MIT),
 Direct runtime dependencies: react, react-dom, react-markdown, remark-gfm,
 zustand, react-icons, lowlight, hast-util-to-text, unist-util-visit,
 qrcode-generator, pixi.js 7, pixi-live2d-display (MIT) — all MIT;
+**@livliv-dev/player** 0.3.0 (LivLiv Player, **Apache-2.0**, © 2026 LivLiv; its NOTICE:
+*"This product includes software developed by LivLiv (https://livliv.ai)."*; lazy-loaded
+only for a LivLiv mate);
 highlight.js (BSD-3-Clause); pdfjs-dist, docx-preview (Apache-2.0); **xlsx**
 0.20.3 (SheetJS Community Edition, Apache-2.0) vendored as
 `frontend/vendor/xlsx-0.20.3.tgz` because SheetJS no longer publishes to npm.

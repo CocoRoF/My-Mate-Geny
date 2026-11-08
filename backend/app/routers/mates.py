@@ -209,6 +209,8 @@ async def _import_one(svc: Any, info: dict[str, Any], target: Any, name: Any, ou
         voice = await asyncio.to_thread(files.ailism_voice, info["doc"], info.get("voice_dir"), mate["id"])
         if voice:
             mate = svc.update(mate["id"], {"voice": voice})
+    elif info["kind"] == "livliv":
+        mate, created = svc.create({"name": name or info.get("name") or "Mate"}), True
     else:
         base = info["folder"] if info["kind"] == "pack" else info["model"].parent
         label = base.name if base.name not in ("runtime", "model", "assets") else base.parent.name
@@ -216,6 +218,8 @@ async def _import_one(svc: Any, info: dict[str, Any], target: Any, name: Any, ou
     try:
         if info["kind"] == "live2d":
             avatar = await asyncio.to_thread(files.import_folder_live2d, mate["id"], info["model"])
+        elif info["kind"] == "livliv":
+            avatar = await asyncio.to_thread(files.import_local_livliv, mate["id"], info)
         elif info["kind"] == "pack":
             avatar = await asyncio.to_thread(files.import_folder_pack, mate["id"], info["folder"])
         elif info.get("assets") is not None:
@@ -629,8 +633,9 @@ async def get_asset(mate_id: str, rel: str, request: Request, v: str | None = No
 
 @router.post("/{mate_id}/avatar/import")
 async def import_avatar(mate_id: str, request: Request, file: UploadFile = File(...), outfit: str = Form("")) -> dict:
-    """A zip: an ailism-style pack (rig.json + files -> video/photo) or a
-    Live2D model (*.model3.json; geny-avatar's avatar-editor.json is read)."""
+    """A zip: an ailism-style pack (rig.json + files -> video/photo), a
+    Live2D model (*.model3.json; geny-avatar's avatar-editor.json is read) or
+    a LivLiv package (a .livliv is a zip: model.json + textures/)."""
     _mate(request, mate_id)
     limit = settings.mate_asset_max_mb * 1024 * 1024
     fd, tmp = tempfile.mkstemp(suffix=".zip", prefix="mate-import-")

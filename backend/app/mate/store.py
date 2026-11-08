@@ -37,7 +37,7 @@ TTS_ENGINES = ("off", "browser", "google", "openai", "elevenlabs", "omnivoice", 
 STT_ENGINES = ("off", "browser", "google", "openai", "whisper", "elevenlabs")
 # voice.stt.silence: how long a pause ends an utterance (ElevenLabs VAD, seconds; its API takes 0.192 – 3.0)
 STT_SILENCE = (0.3, 3.0, 1.2)
-AVATAR_KINDS = ("none", "video", "photo", "live2d")
+AVATAR_KINDS = ("none", "video", "photo", "live2d", "livliv")
 CLIP_KINDS = ("idle", "talk", "listen", "think", "react", "away", "life")
 # stills that make her blink / talk: mechanics, never shown for an emotion
 MECHANIC_STILLS = ("blink", "mouth_half", "mouth_open", "mouth_o")
@@ -595,10 +595,36 @@ def normalize_avatar(v: Any) -> dict[str, Any]:
         if not isinstance(rig, dict):
             raise MateError(f"a {kind} avatar needs a rig")
         return {"kind": kind, "rig": normalize_rig(rig, photo=kind == "photo")}
+    if kind == "livliv":
+        return {"kind": "livliv", "livliv": _clean_livliv(v.get("livliv"))}
     l2d = v.get("live2d")
     if not isinstance(l2d, dict) or not isinstance(l2d.get("model"), str) or not l2d["model"]:
         raise MateError("a live2d avatar needs live2d.model (URL of the *.model3.json)")
     return {"kind": "live2d", "live2d": dict(l2d)}
+
+
+def _clean_livliv(lv: Any) -> dict[str, Any]:
+    """A LivLiv body: its model (the ``model.json`` or ``.livliv`` URL), what the package says about itself, and the user's
+    own choices: which expression (or none) plays for an emotion of hers (``emotions``; unset, the standard ids that share her
+    emotion's name do), and whether her eyes follow the pointer over her (``follow``)."""
+    if not isinstance(lv, dict) or not isinstance(lv.get("model"), str) or not lv["model"].strip():
+        raise MateError("a livliv avatar needs livliv.model (URL of the model.json or .livliv)")
+    out: dict[str, Any] = {"model": lv["model"].strip()[:2000]}
+    for key in ("name", "cover", "avatar", "author", "watermark"):
+        if isinstance(lv.get(key), str):
+            out[key] = lv[key][:2000]
+    canvas = lv.get("canvas")
+    if isinstance(canvas, list) and len(canvas) == 2 and all(isinstance(x, int) and x > 0 for x in canvas):
+        out["canvas"] = list(canvas)
+    if isinstance(lv.get("expressions"), list):
+        out["expressions"] = [str(x)[:32] for x in lv["expressions"] if isinstance(x, str)][:64]
+    if isinstance(lv.get("license"), dict):
+        out["license"] = {k: str(lv["license"][k])[:300] for k in ("id", "url") if isinstance(lv["license"].get(k), str)}
+    if isinstance(lv.get("emotions"), dict):
+        out["emotions"] = {str(k)[:32]: (str(x)[:32] if isinstance(x, str) else "") for k, x in list(lv["emotions"].items())[:64]}
+    if lv.get("follow") in ("canvas", "off"):
+        out["follow"] = lv["follow"]
+    return out
 
 
 def _loads(raw: Any, empty: Any) -> Any:
@@ -683,9 +709,10 @@ def _outfit_card(oid: str, name: str, avatar: dict[str, Any], *, note: str = "",
         return {"id": oid, "name": name, "kind": "none", "home": "", "aspect": [3, 4], "clips": 0, "stills": 0, "note": "",
                 "locked": {"affinity": lock}}
     rig = avatar.get("rig") if isinstance(avatar.get("rig"), dict) else {}
+    lv = avatar.get("livliv") if isinstance(avatar.get("livliv"), dict) else {}  # (a LivLiv set: its cover, its canvas)
     return {"id": oid, "name": name, "kind": avatar.get("kind") or "none",
-            "home": rig.get("home") or (rig.get("stills") or {}).get("neutral") or "",
-            "aspect": rig.get("aspect") or [3, 4], "frame": rig.get("frame"), "clips": len(rig.get("clips") or []),
+            "home": rig.get("home") or (rig.get("stills") or {}).get("neutral") or lv.get("cover") or "",
+            "aspect": rig.get("aspect") or lv.get("canvas") or [3, 4], "frame": rig.get("frame"), "clips": len(rig.get("clips") or []),
             "stills": len(rig.get("stills") or {}), "note": note, "feel": S.clean_feel(feel)}
 
 

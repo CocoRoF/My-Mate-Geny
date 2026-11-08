@@ -8,7 +8,8 @@ export type Avatar =
   | { kind: "none" }
   | { kind: "video"; rig: Rig } // clip state machine (ailism-mate body)
   | { kind: "photo"; rig: Rig } // stills only (clips: [])
-  | { kind: "live2d"; live2d: Live2D }; // Cubism 4/5 model (Geny)
+  | { kind: "live2d"; live2d: Live2D } // Cubism 4/5 model (Geny)
+  | { kind: "livliv"; livliv: LivLiv }; // a 2.5D character in layers, played by LivLiv Player (avatar/LivLivBody.tsx)
 
 export type AvatarKind = Avatar["kind"];
 
@@ -87,6 +88,27 @@ export interface Live2D {
   /** hit area (Id or Name) -> motion */
   tap_motions?: Record<string, { group: string; index?: number }>;
   hidden_parts?: string[];
+}
+
+/** A LivLiv package (a ``.livliv`` imported into the mate's assets; backend files.build_livliv_avatar). */
+export interface LivLiv {
+  /** URL of its ``model.json`` (or of the ``.livliv`` itself) */
+  model: string;
+  /** what the package says about itself */
+  name?: string;
+  canvas?: [number, number];
+  /** its expression ids: standard ones (smile, shy, angry, sad, surprised, laugh, smirk…) mean the same on every model */
+  expressions?: string[];
+  cover?: string;
+  avatar?: string;
+  author?: string;
+  license?: { id?: string; url?: string };
+  /** the mark the package asks the player to draw ("livliv", "text", "none"): part of its licence, never hidden */
+  watermark?: string;
+  /** the user's choice per emotion of hers: an expression id, or "" for none (unset: the standard id of that name) */
+  emotions?: Record<string, string>;
+  /** her eyes follow the pointer over her (default) or not */
+  follow?: "canvas" | "off";
 }
 
 /** What the mate is doing now. A one-shot emotion (`react`) plays over it. */

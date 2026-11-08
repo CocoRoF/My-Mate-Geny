@@ -238,7 +238,7 @@ she edits her memories, and every source that could fight it is either gone or e
   불러" → `{address: 하렴}`, then "하렴"; "이번엔 짧게 말해줘" → a short answer and no tool call.
 - Tests: `backend/tests/test_mate_style.py`; browser: `desktop/test/e2e/mate-style-browser.js`.
 
-## 2. Avatar (three kinds + none)
+## 2. Avatar (four kinds + none)
 
 All asset URLs are server-relative: `/api/mates/{id}/assets/<path>`.
 
@@ -247,7 +247,8 @@ type Avatar =
   | { kind: "none" }
   | { kind: "video"; rig: Rig }          // clip state machine (ailism-mate body)
   | { kind: "photo"; rig: Rig }          // stills only (clips: [])
-  | { kind: "live2d"; live2d: Live2D };  // Cubism 4/5 model (Geny)
+  | { kind: "live2d"; live2d: Live2D }   // Cubism 4/5 model (Geny)
+  | { kind: "livliv"; livliv: LivLiv };  // a 2.5D character in layers, played by LivLiv Player
 
 interface Rig {
   aspect: [number, number];                  // w, h of one frame
@@ -271,6 +272,16 @@ interface Live2D {
   emotion_motions?: Record<string, string>;      // emotion -> motion group
   tap_motions?: Record<string, { group: string; index?: number }>;  // hit area -> motion
   hidden_parts?: string[];
+}
+
+interface LivLiv {
+  model: string;                 // URL of its model.json (an imported .livliv, unpacked into assets/lv-*/)
+  name?: string; canvas?: [number, number]; expressions?: string[];   // what the package says about itself
+  cover?: string; avatar?: string; author?: string;
+  license?: { id?: string; url?: string };
+  watermark?: string;            // the mark it asks the player to draw: part of its licence, never hidden
+  emotions?: Record<string, string>;   // the user's choice: emotion -> expression id, "" = none
+  follow?: "canvas" | "off";     // her eyes follow the pointer over her (default) or not
 }
 ```
 
@@ -509,6 +520,28 @@ served from `/api/mates/builtin/<key>/runtime/…`; the body renders once the
 Cubism Core is installed. The bundle hash covers nested files. Tests for Mao
 run only where it is present. Everyone else imports the sample like any other
 Live2D model (next section).
+
+- **LivLiv** (`avatar/LivLivBody.tsx`, a lazy chunk of `@livliv-dev/player`, Apache-2.0, WebGL2): a 2.5D character in
+  layers that moves by itself (breathing, blinking, glances, swinging hair). An emotion plays the model's expression: the
+  user's choice, else the standard id of that name or a near one (smile, shy, angry, sad, surprised, laugh, smirk… mean the
+  same on every LivLiv model; joy → laugh, worried → sad), held 6 s, then the face she rests on (`look`); what has no face
+  gets a move (agree → nod, greet → hop, thinking → tilt, shy → shy). Away, she dozes (`setAway`); thinking, she looks up and
+  aside. Her voice moves the mouth (voice bridge level, Live2D's mapping) and its shape from the characters being said
+  (ㅗ ㅜ o u round, ㅣ ㅔ i e wide). A tap flicks the swinging pieces near it. One player per canvas, released on unmount; a lost
+  WebGL context gets a new canvas; without WebGL2 the package's cover shows. The body exposes `data-mate-status` and
+  `data-mate-face`. The player draws the mark a package asks for, into the canvas.
+
+### Using your own LivLiv models
+
+A LivLiv model is a `.livliv` file (a zip: `model.json` + `textures/`, [FORMAT.md](https://github.com/livliv-dev/player/blob/main/FORMAT.md)),
+made for example on livliv.ai. **Mate settings → Avatar → Import → Upload a zip · .livliv** with the file, or enter a
+`.livliv` (or its unpacked folder) under **Folder on the server**. The importer checks it as the player would (format 4 or the
+older 3, at most 8192 px and 512 layers, every layer image present, safe paths), unpacks it into `assets/lv-*/` and keeps
+what it says about itself; **Avatar → LivLiv model** shows its name, maker, licence and mark, the expression for each of her
+emotions (automatic by default) and whether she looks at the pointer. Use a package as its licence allows; LivLiv's featured
+characters are for non-commercial use only and are not shipped with the app (THIRD-PARTY-NOTICES.md §1.2). Tests:
+`backend/tests/test_mate_livliv.py`, `frontend/test/livliv.test.ts`; browser: `desktop/test/e2e/mate-livliv-browser.js`
+(any `.livliv`; headless Chromium draws it with SwiftShader).
 
 ### Using Live2D's free sample models
 

@@ -5,6 +5,7 @@
  *            falls back to the photo body on the rig's stills
  * - photo  → PhotoBody (stills: blink, level-driven mouths, emotion stills; a single photo breathes)
  * - live2d → Live2DBody (lazy chunk; pixi is not in the main bundle)
+ * - livliv → LivLivBody (lazy chunk: LivLiv Player, a 2.5D character in layers; WebGL2)
  * - none   → the portrait, else the name's initial
  *
  * Photo/Live2D mouths follow the voice bridge. Video receives conversation activity separately from audio.
@@ -25,6 +26,7 @@ import PhotoBody from "./PhotoBody";
 import "./mateAvatar.css";
 
 const Live2DBody = lazy(() => import("./Live2DBody"));
+const LivLivBody = lazy(() => import("./LivLivBody"));
 
 export { setLive2DCoreUrl, getLive2DCoreUrl } from "./live2dCore";
 
@@ -85,6 +87,28 @@ export const MateAvatar = memo(function MateAvatar({
             name={name}
             size={size}
             coreUrl={live2dCoreUrl}
+            onTap={onTap}
+            interactive={interactive}
+            view={view}
+          />
+        </Suspense>
+      </div>
+    );
+  }
+
+  if (avatar.kind === "livliv") {
+    const c = avatar.livliv.canvas;
+    return (
+      <div className={cls} style={{ aspectRatio: c && c[0] > 0 && c[1] > 0 ? `${c[0]} / ${c[1]}` : "2 / 3" }} data-mate-kind="livliv">
+        <Suspense fallback={null}>
+          <LivLivBody
+            key={`lv|${avatar.livliv.model}`}
+            livliv={avatar.livliv}
+            mood={mood}
+            look={look}
+            react={react}
+            name={name}
+            size={size}
             onTap={onTap}
             interactive={interactive}
             view={view}

@@ -14,7 +14,8 @@ const READY_AT_MOST_MS = 1500;
 
 export type FadePhase = "idle" | "out" | "in";
 
-const pictureOf = (a: Avatar): string => (a.kind === "video" || a.kind === "photo" ? a.rig.home || a.rig.stills?.neutral || "" : "");
+const pictureOf = (a: Avatar): string =>
+  a.kind === "video" || a.kind === "photo" ? a.rig.home || a.rig.stills?.neutral || "" : a.kind === "livliv" ? a.livliv.cover || "" : "";
 
 function ready(url: string): Promise<void> {
   if (!url || typeof Image === "undefined") return Promise.resolve();

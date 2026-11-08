@@ -14,6 +14,11 @@ License, among them:
     sample data owned and copyrighted by Live2D Inc."
   - Live2D Cubism Core                       (Live2D Inc. - Live2D Proprietary
     Software License; NOT bundled, downloaded only after the user accepts it)
+  - LivLiv Player (@livliv-dev/player)      (LivLiv - Apache-2.0; bundled in the
+    web console. "This product includes software developed by LivLiv
+    (https://livliv.ai)." LivLiv models are NOT bundled: users import their
+    own .livliv packages, under each package's own licence (meta.license),
+    and the player draws the mark a package asks for)
   - Built-in mate character Chaerin (artwork, video, voice)
     (CocoRoF / Ailism - all rights reserved unless stated otherwise)
   - The Geny logo (assets/geny-logo.png) and every icon generated from it

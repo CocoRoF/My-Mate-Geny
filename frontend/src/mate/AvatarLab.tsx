@@ -73,6 +73,7 @@ function normalize(json: any, base: string, forceKind: string | null): Loaded {
   let avatar: Avatar;
   if (a && (a.kind === "video" || a.kind === "photo")) avatar = { kind: a.kind, rig: resolveRig(a.rig, base) };
   else if (a && a.kind === "live2d") avatar = { kind: "live2d", live2d: { ...a.live2d, model: resolveRef(a.live2d.model, base) } };
+  else if (a && a.kind === "livliv") avatar = { kind: "livliv", livliv: { ...a.livliv, model: resolveRef(a.livliv.model, base) } };
   else if (a && Array.isArray(a.clips) && a.aspect) avatar = { kind: "video", rig: resolveRig(a as Rig, base) };
   else avatar = { kind: "none" };
   if (forceKind === "photo" && (avatar.kind === "video" || avatar.kind === "photo")) avatar = { kind: "photo", rig: { ...avatar.rig, clips: [] } };
