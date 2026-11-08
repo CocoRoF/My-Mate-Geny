@@ -73,6 +73,14 @@ TEMPERAMENTS: dict[str, dict[str, Any]] = {
 
 # what the user says moves it, by this much
 RUDE, RUDE_MORE, RUDE_MOST, RUDE_DROP, RUDE_WINDOW = 0.3, 0.1, 0.5, 0.15, timedelta(hours=2)  # (keeping it up makes it worse)
+# something done to her (affinity.hostile: hitting her, stripping her, threats, putting her down): far worse than a rude word, and
+# it hurts; each time again (within the window) more; anything sexual takes her to the top at once. Sorry counts for less after it.
+HOSTILE, HOSTILE_MORE, HOSTILE_HURT, HOSTILE_DROP, HOSTILE_WINDOW = 0.45, 0.3, 0.25, 0.4, timedelta(hours=6)
+APOLOGY_AFTER_HOSTILE = 0.15
+#: from here she is too angry with them to answer at all (``silent``): the chat shows only that she doesn't. Only anger at what
+#: they did: hungry or stressed, she still answers, if snappily
+SILENT_FROM = 0.8
+AT_THEM = ("rude", "hostile", "dismissed", "pestered", "poked", "said", "interrupted", "ignored", "curt", "apology")
 APOLOGY, WARM, WARM_CALMS, LOVE, LOOKS, DISTRESS, RETURNED, ANSWERED, LOVES = 0.3, 0.12, 0.08, 0.15, 0.12, 0.35, 0.2, 0.1, 0.2
 # angry, the good things land less
 ANGRY_DULLS = {"happy": 0.7, "excited": 0.9}
@@ -121,11 +129,16 @@ _WHY_FOR_HER = {
 }
 
 
+#: what was done to her (affinity.hostile), as she is told it
+_DONE_TO_HER = {"violence": "they hit you", "sexual": "they tried something sexual on you that you never wanted",
+                "threat": "they threatened you", "demeaning": "they talked down to you for being a woman, or as if you were nothing"}
+
+
 # ---- the document ----
 
 def new() -> dict[str, Any]:
-    return {"feelings": {}, "heard": None, "heard_at": None, "asks": None, "rude": None, "curt": 0, "spoke": None, "pokes": None,
-            "changed_at": None, "log": []}
+    return {"feelings": {}, "heard": None, "heard_at": None, "asks": None, "rude": None, "hostile": None, "curt": 0, "spoke": None,
+            "pokes": None, "changed_at": None, "log": []}
 
 
 def normalized(doc: Any) -> dict[str, Any]:
@@ -280,6 +293,9 @@ def why_for_her(why: dict[str, Any] | None) -> str:
         return f"you just had “{why.get('name') or ''}” on"
     if code == "said":
         return f"they said “{why.get('quote') or ''}”"
+    if code == "hostile":
+        done = _DONE_TO_HER.get(str(why.get("kind") or ""), "they treated you badly")
+        return f"{done}: “{why.get('quote') or ''}”"
     if code == "doing":
         return f"you are {why.get('doing') or 'busy'}"
     return _WHY_FOR_HER.get(str(code), "")
@@ -315,6 +331,14 @@ def worth_repeating(s: dict[str, Any]) -> bool:
 
 
 # ---- how she leans on what is up to her ----
+
+def silent(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> bool:
+    """Too angry with them to answer at all: what they did (or said) made her furious, and it hasn't settled. Not a rule on top of
+    her: her anger. An apology or time brings it down, and she talks again, coldly at first."""
+    angry = levels(doc, w, now, tz)["angry"]
+    why = angry["why"] or {}
+    return angry["v"] >= SILENT_FROM and (why.get("code") in AT_THEM or bool(why.get("text")))
+
 
 def _lately(entry: Any, now: datetime, window: timedelta) -> int:
     entry = entry if isinstance(entry, dict) else {}
@@ -405,7 +429,14 @@ def hear(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, now: d
     doc["curt"] = int(doc.get("curt") or 0) + 1 if _CURT.fullmatch(re.sub(r"[\s.!?~]+", "", text)) else 0
     if doc["curt"] >= CURT_FROM:
         _rise(doc, w, "lonely", CURT, {"code": "curt"}, now, tz)
-    if c["rude"]:
+    if c["hostile"]:
+        n = _lately(doc.get("hostile"), now, HOSTILE_WINDOW) + 1
+        doc["hostile"] = {"n": n, "at": A._iso(now)}
+        why = {"code": "hostile", "kind": c["hostile"], "quote": " ".join(text.split())[:QUOTE_CHARS]}
+        _rise(doc, w, "angry", 1.0 if c["hostile"] == "sexual" else HOSTILE if n == 1 else HOSTILE_MORE, why, now, tz)
+        _rise(doc, w, "sad", HOSTILE_HURT, why, now, tz)
+        _fall(doc, w, "happy", HOSTILE_DROP, why, now, tz)
+    elif c["rude"]:
         n = _lately(doc.get("rude"), now, RUDE_WINDOW) + 1
         doc["rude"] = {"n": n, "at": A._iso(now)}
         _rise(doc, w, "angry", min(RUDE_MOST, RUDE + RUDE_MORE * (n - 1)), {"code": "rude"}, now, tz)
@@ -413,7 +444,8 @@ def hear(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, now: d
     else:
         if _APOLOGY.search(text):
             doc["rude"] = None
-            _fall(doc, w, "angry", APOLOGY, {"code": "apology"}, now, tz)
+            after = _lately(doc.get("hostile"), now, HOSTILE_WINDOW)  # (sorry doesn't undo being hit at once)
+            _fall(doc, w, "angry", APOLOGY_AFTER_HOSTILE if after else APOLOGY, {"code": "apology"}, now, tz)
             _fall(doc, w, "sad", APOLOGY / 3, {"code": "apology"}, now, tz)
         if _DISMISSED.search(text):
             _rise(doc, w, "sad", DISMISSED_SAD, {"code": "dismissed"}, now, tz)

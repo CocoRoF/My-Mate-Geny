@@ -152,6 +152,12 @@ class SessionService:
         # mate/voiceOwner.ts): where the user talks from — the mate's screen capture asks that device first
         self._last_client: dict[str, str] = {}
         self.mate_engine: Any = None
+        # a mate who is too angry with the user to answer (app.mate.service MateService.silence): (sid, message id, text)
+        # -> a line of narration for the chat instead of her engine's turn, or None
+        self.mate_silence: Any = None
+        # (sid) -> True while that mate is too angry with the user to talk: her own chatty turns (a look at the screen, a thought,
+        # something in her day) don't start (MateService.quiet)
+        self.mate_quiet: Any = None
         self._turn_end_listeners: list[Any] = []
         self.persistent_engines = True  # Claude: one long-lived CLI process per chat
         # Higgsfield for the chats' agents (app.higgsfield.agent; main.py sets it). None = not wired.
@@ -883,6 +889,8 @@ class SessionService:
         if sid in self.timeline.busy:
             raise TurnBusyError("this chat is being rewound")
         self.get(sid)
+        if (meta or {}).get("internal") and (meta or {}).get("kind") in _CHATTY and self.mate_quiet is not None and self.mate_quiet(sid):
+            raise TurnBusyError("she isn't talking to them right now")
         rows = (
             self._attachments.pending(sid, attachment_ids)
             if attachment_ids and self._attachments is not None
@@ -1104,6 +1112,17 @@ class SessionService:
             if user_input.strip() and self._first_turn(sid):
                 self.update(sid, title=_title_from(user_input))
 
+        if session.get("kind") == "mate" and self.mate_silence is not None and not (meta or {}).get("internal"):
+            # She doesn't answer: no engine turn, the chat shows only that she doesn't. Kept as her turn (marked silent) so
+            # history shows it and her engine hears of it with the next message she does answer.
+            line = self.mate_silence(sid, msg_id, user_input)
+            if line:
+                ev = ProviderEvent(type="turn.complete", data={"text": line, "silent": True, "provider": session["provider"],
+                                                               "usage_source": "mate"})
+                self._add_event(sid, ev)
+                self._add_message(sid, "assistant", line, session["provider"], session["model"], {"silent": True})
+                yield ev
+                return
         ctx = {
             "provider": session["provider"],
             "model": session["model"],
@@ -2298,12 +2317,18 @@ def _unseen(result: Any, result_at: Any, seen_at: Any) -> bool:
     return bool(result and result_at and (not seen_at or str(seen_at) < str(result_at)))
 
 
+#: a mate's own turns that are just her talking (not a result she owes them): none while she is too angry to talk
+_CHATTY = ("screen_observation", "thinking_trigger", "device_greeting", "life_event", "life_gift")
+
+
 def _note_outcome(outcome: dict[str, Any], ev: ProviderEvent) -> None:
     """Track how a turn ended (its last terminal event) for turn-end listeners."""
     if ev.type == "turn.complete":
         if ev.data.get("superseded"):
             return
         outcome.update(status="ok", text=ev.data.get("text") or "", error=None)
+        if ev.data.get("silent"):
+            outcome["silent"] = True  # (a mate who didn't answer: app.mate.service.silence)
     elif ev.type == "error":
         stopped = ev.data.get("code") == "turn.interrupted"
         outcome.update(status="stopped" if stopped else "error", error=ev.data.get("message") or ev.data.get("code"))

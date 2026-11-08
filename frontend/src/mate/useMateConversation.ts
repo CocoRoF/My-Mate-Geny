@@ -393,6 +393,15 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
         followRef.current = follow;
       }
       const f = follow;
+      if (t.silent) {
+        // (she didn't answer: nothing is read aloud or captioned, her face says it)
+        if (!f.quiet && !f.reacted) {
+          f.reacted++;
+          setReact({ name: "angry", at: Date.now() });
+        }
+        f.finished = true;
+        return;
+      }
       const e = f.emo.pushTag(withoutCode(t.text)); // ([ok] in a code block is no feeling)
       if (e && !f.quiet && reactsAt(emotionLevel.current, e.intensity, f.reacted)) {
         f.reacted++;

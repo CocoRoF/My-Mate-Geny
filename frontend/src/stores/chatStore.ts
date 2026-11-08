@@ -109,6 +109,8 @@ export interface Turn {
   meta?: MessageMeta; // user turns: via a mate, internal messages
   messageId?: string; // user turns: the stored message (what a rewind goes back to)
   clientMsgId?: string; // user turns sent from this tab: until the server says which message it became
+  /** a mate who didn't answer (too angry with the user to: backend MateService.silence): ``text`` is a line of narration */
+  silent?: boolean;
 }
 
 /** Paged history (backend services/history_page.py): the newest turns are
@@ -513,6 +515,7 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
       return { context: data as unknown as ContextInfo };
     case "turn.complete": {
       const t = liveTurn(turns, at);
+      if (data.silent) t.silent = true;
       if (data.text && !t.text.trim()) appendText(t, String(data.text), at);
       finish(t, at);
       t.status = "done";

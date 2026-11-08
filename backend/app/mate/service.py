@@ -20,6 +20,7 @@ import asyncio
 import base64
 import collections
 import json
+import random
 import os
 import re
 import secrets
@@ -90,6 +91,24 @@ def _norm(s: str) -> str:
 LIFE_NEWS_WITHIN = timedelta(minutes=20)
 
 
+#: what the chat shows when she doesn't answer (MateService.silence), in her language; {n}: her name (in Korean with 은/는)
+_SILENCE = {
+    "ko": ("({n} 대답하지 않는다)", "({n} 대답하고 싶지 않은 것처럼 보인다)", "({n} 고개를 돌린 채 아무 말도 하지 않는다)",
+           "({n} 들은 척도 하지 않는다)"),
+    "en": ("({n} doesn't answer.)", "({n} doesn't seem to want to answer.)", "({n} looks away and says nothing.)",
+           "({n} acts as if nothing was said.)"),
+    "ja": ("（{n}は答えない）", "（{n}は答えたくなさそうだ）", "（{n}は顔をそむけたまま何も言わない）", "（{n}は聞こえないふりをしている）"),
+}
+
+
+def _topic(name: str) -> str:
+    """A Korean name with its topic particle: 한채린은, 마오는 (a name not in Hangul: 은(는))."""
+    last = name[-1:] if name else ""
+    if not ("가" <= last <= "힣"):
+        return f"{name}은(는)" if name else "그녀는"
+    return name + ("은" if (ord(last) - 0xAC00) % 28 else "는")
+
+
 class MateService:
     def __init__(self, sessions: SessionService, store: MateStore, logs: Any = None) -> None:
         self.store = store
@@ -104,6 +123,9 @@ class MateService:
         # see_screen: requests to the user's desktop app windows (app/mate/capture.py; /ws/sessions registers them)
         self.capture = CaptureBroker()
         sessions.mate_engine = self.configure_engine
+        sessions.mate_silence = self.silence
+        sessions.mate_quiet = self.quiet
+        self._silence_last: dict[str, int] = {}  # mate id -> the line it showed last (the next one is another)
         sessions.add_turn_end_listener(self._on_turn_end)
         # every mate write is announced on /ws/sessions (mates.changed): open
         # windows and other devices refetch instead of keeping a stale copy
@@ -821,6 +843,41 @@ class MateService:
         now, tz = datetime.now(timezone.utc), self.store.tz()
         return S.view(self.store.state_doc(mate_id), self.store.state_who(mate_id), now, tz)
 
+    def silence(self, sid: str, message_id: str, text: str) -> str | None:
+        """SessionService hook, before a message of the user's reaches her engine: she hears it (how she feels moves now) and,
+        too angry with them to answer (state.silent: her anger at what they did, not a rule), she doesn't: the chat shows
+        only that, a line of narration in her language. None: she answers as ever."""
+        try:
+            mate_id = self._svc.get(sid).get("mate_id") or ""
+            mate = self.store.get(mate_id)
+        except KeyError:
+            return None
+        self._state_event(mate_id, lambda doc, who, now, tz: S.hear(doc, who, text, message_id, now, tz))
+        now, tz = datetime.now(timezone.utc), self.store.tz()
+        if not S.silent(self.store.state_doc(mate_id), self.store.state_who(mate_id), now, tz):
+            return None
+        return self._silence_line(mate)
+
+    def quiet(self, sid: str) -> bool:
+        """Whether this mate is too angry with them to talk at all (her own chatty turns wait for it to pass)."""
+        try:
+            mate_id = self._svc.get(sid).get("mate_id") or ""
+        except KeyError:
+            return False
+        if not mate_id:
+            return False
+        now, tz = datetime.now(timezone.utc), self.store.tz()
+        return S.silent(self.store.state_doc(mate_id), self.store.state_who(mate_id), now, tz)
+
+    def _silence_line(self, mate: dict[str, Any]) -> str:
+        lang = str(((mate.get("persona") or {}).get("language") or "ko"))[:2]
+        lines = _SILENCE.get(lang) or _SILENCE["en"]
+        name = str(mate.get("name") or "")
+        last = self._silence_last.get(mate["id"], -1)
+        i = random.choice([k for k in range(len(lines)) if k != last] or [0])
+        self._silence_last[mate["id"]] = i
+        return lines[i].format(n=_topic(name) if lang == "ko" else name)
+
     def _state_turn(self, mate_id: str, sid: str, outcome: dict[str, Any]) -> None:
         """A mate turn ended: what her reply showed, a steer she was sent meanwhile, how work she passed on went, whether
         they cut her off. Anything she said on her own counts as said to them, answered or not."""
@@ -845,7 +902,8 @@ class MateService:
                 S.hear(doc, who, said["content"], said["id"], now, tz)
             if outcome.get("status") == "stopped":
                 S.interrupted(doc, who, now, tz)
-            S.reply(doc, who, text, said["content"] if said else "", now, tz)
+            if not outcome.get("silent"):  # (she said nothing: no face, and nothing said to them)
+                S.reply(doc, who, text, said["content"] if said else "", now, tz)
 
         self._state_event(mate_id, change)
 

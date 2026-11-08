@@ -40,6 +40,7 @@ STREAK, STREAK_WEEK = 1.0, 2.0      # a talk day after a talk day; +2 more each 
 WARM, WARM_CAP = 0.5, 2.0           # a warm exchange; per day
 MEMORY, MEMORY_CAP = 1.0, 3.0       # a new memory; per day
 RUDE, RUDE_CAP = 1.0, 3.0           # rudeness aimed at the mate (never sadness or venting); per day
+HOSTILE, HOSTILE_CAP = 5.0, 20.0    # something done to her (hitting her, stripping her, threats, putting her down); per day
 GAIN_CAP = 12.0                     # all gains of one day
 GRACE_DAYS = 3                      # quiet days that cost nothing
 DECAY_BASE, DECAY_GROWTH, DECAY_CAP = 4.0, 1.4, 15.0
@@ -53,6 +54,36 @@ _POS = re.compile(r"고마워|고맙|감사|최고|사랑해|귀여|잘했|덕�
                   r"love (it|you|this)|\bnice\b|\bcool\b|perfect|haha|\blol\b|well done|amazing", re.I)
 _RUDE = re.compile(r"닥쳐|꺼져|멍청|병신|시발|씨발|ㅅㅂ|쓸모없|바보 ?같|shut up|stupid|useless|idiot|\bdumb\b|hate you|"
                    r"you suck|moron", re.I)
+# what is done to her, said or acted out ("(한채린을 때린다)", "*slaps her*"): hitting only counts aimed at her (in an acted-out
+# action, or at "you"), so a monster hit in a game or someone who hit the user doesn't; the rest counts wherever it stands
+_VIOLENT = re.compile(r"때리|때린|때려|때릴|때렸|때림|패\s?(버리|준|줄|죽)|팬다|폭행|발로\s?(차|찬|걷어)|걷어차|발길질|밀치|밀쳐|"
+                      r"목을?\s?(조르|졸라|조른)|뺨을?\s?(때|친|쳐|갈)|따귀|주먹(으로|질)|머리채|흉기|칼로|찌른|찌르|"
+                      r"\bhit(s|ting)?\b|\bslap|\bpunch|\bkick|\bchok(e|es|ing)\b|\bstrangl|\bbeat(s|ing)?\b|\bstab", re.I)
+_SEXUAL = re.compile(r"옷을?\s?(벗기|벗긴|벗겨|찢)|(가슴|엉덩이|허벅지|치마\s?속)\s?(을|를)?\s?(만지|만진|만져|더듬|움켜|주무르)|"
+                     r"더듬는다|더듬었|성추행|성폭행|강제로\s?(키스|안|만지|벗기|눕)|덮친|덮쳐|\bundress|\bstrip(s|ping)?\s(you|her)\b|"
+                     r"\bgrop|\bmolest|tear(s|ing)?\s(off\s)?(your|her)\sclothes", re.I)
+_THREAT = re.compile(r"죽여\s?버|죽인다|죽일\s?(거|까|래|테)|맞(을|고)\s?(래|싶)|kill you|i'?ll hurt you|you'?ll regret", re.I)
+_DEMEAN = re.compile(r"삼일한|삼일에\s?한\s?번|여자가\s?(왜|감히|어디서)|여자(는|들은|란)\s?(맞|닥치|입\s?다물|조용|시키)|말대꾸|"
+                     r"주제에|계집|년아|이년|저년|걸레|창녀|\bbitch|\bwhore|\bslut", re.I)
+_ACTED = re.compile(r"\(([^()]{1,120})\)|\*([^*]{1,120})\*|\[([^\[\]]{1,120})\]")
+_AT_HER = re.compile(r"너를|너한테|널|니가|너\s|너$|당신|\byou\b|\byour\b", re.I)
+
+
+def hostile(user_text: str) -> str | None:
+    """What was done to her in this message, if anything: sexual | violence | threat | demeaning (the worst of them)."""
+    u = user_text or ""
+    if _SEXUAL.search(u):
+        return "sexual"
+    acted = " ".join(next(g for g in m.groups() if g) for m in _ACTED.finditer(u))
+    if _VIOLENT.search(acted) or (_VIOLENT.search(u) and _AT_HER.search(u)):
+        return "violence"
+    if _THREAT.search(u):
+        return "threat"
+    if _DEMEAN.search(u):
+        return "demeaning"
+    return None
+
+
 _DISTRESS = re.compile(r"힘들|우울|슬퍼|슬프|외로|죽고 ?싶|지쳤|지친다|불안|무서워|\bstressed\b|depress|\bsad\b|lonely|"
                        r"anxious|exhausted|overwhelmed|can'?t cope", re.I)
 _REPLY_POS = re.compile(r"\[\s*(joy|laugh|smile|shy)\b", re.I)
@@ -175,7 +206,7 @@ def _bump(r: dict[str, Any], delta: float, why: str, at: datetime, *, floor: flo
 def _today(r: dict[str, Any], day: date) -> dict[str, Any]:
     if r["today"].get("day") != day.isoformat():
         r["today"] = {"day": day.isoformat(), "turns": 0, "talked": False, "lively": False, "warm": 0.0,
-                      "memory": 0.0, "rude": 0.0, "gained": 0.0}
+                      "memory": 0.0, "rude": 0.0, "hostile": 0.0, "gained": 0.0}
     return r["today"]
 
 
@@ -245,11 +276,12 @@ def advance(r: dict[str, Any], now: datetime, tz: Any) -> None:
     refresh(r, now, tz)
 
 
-def cues(user_text: str, reply_text: str = "") -> dict[str, bool]:
+def cues(user_text: str, reply_text: str = "") -> dict[str, Any]:
     u = user_text or ""
-    rude = bool(_RUDE.search(u))
+    done = hostile(u)
+    rude = done is not None or bool(_RUDE.search(u))
     return {"warm": not rude and (bool(_POS.search(u)) or bool(_REPLY_POS.search(reply_text or ""))),
-            "rude": rude, "distress": bool(_DISTRESS.search(u)), "pos": bool(_POS.search(u))}
+            "rude": rude, "hostile": done, "distress": bool(_DISTRESS.search(u)) and done is None, "pos": bool(_POS.search(u))}
 
 
 def credit_turn(r: dict[str, Any], at: datetime, tz: Any, user_text: str = "", reply_text: str = "") -> None:
@@ -267,7 +299,8 @@ def credit_turn(r: dict[str, Any], at: datetime, tz: Any, user_text: str = "", r
         r["streak_days"] = r["streak_days"] + 1 if last == day - timedelta(days=1) else 1
         r["active_days"] += 1
         r["last_active_day"] = day.isoformat()
-    if not t["talked"]:
+    c = cues(user_text, reply_text)
+    if not t["talked"] and not c["hostile"]:  # (a day that starts with hitting her is no day of talking together)
         t["talked"] = True
         r["talk_days"] = sorted({*r["talk_days"], day.isoformat()})[-30:]
         _gain(r, t, TALK, "talk", at)
@@ -275,10 +308,16 @@ def credit_turn(r: dict[str, Any], at: datetime, tz: Any, user_text: str = "", r
             _gain(r, t, STREAK, "streak", at)
             if r["streak_days"] % 7 == 0:
                 _gain(r, t, STREAK_WEEK, "streak_week", at)
-    if t["turns"] >= LIVELY_TURNS and not t["lively"]:
+    if t["turns"] >= LIVELY_TURNS and not t["lively"] and not c["hostile"]:
         t["lively"] = True
         _gain(r, t, LIVELY, "lively", at)
-    c = cues(user_text, reply_text)
+    if c["hostile"]:
+        if float(t.get("hostile") or 0.0) < HOSTILE_CAP:
+            loss = min(HOSTILE * r["sensitivity"], HOSTILE_CAP - float(t.get("hostile") or 0.0))
+            t["hostile"] = float(t.get("hostile") or 0.0) + loss
+            _bump(r, -loss, "hostile", at)
+        refresh(r, at, tz)
+        return
     if c["warm"]:
         _gain(r, t, WARM, "warm", at, "warm", WARM_CAP)
     if c["rude"] and float(t.get("rude") or 0.0) < RUDE_CAP:

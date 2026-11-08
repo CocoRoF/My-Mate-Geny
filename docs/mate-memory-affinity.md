@@ -416,6 +416,7 @@ while"). Stage ups add a milestone; stage downs are only a change of state.
 | Warm exchange | +0.5 | user cue positive (고마워, 감사, 좋아, 최고, ㅋㅋ/ㅎㅎ, thanks, great, love it…) **or** the reply carries `joy/laugh/smile/shy` and the user cue isn't negative; cap +2/day |
 | New memory | +1 | per memory actually added (merges don't count), cap +3/day |
 | Rude to the mate | −1 | insult/hostility lexicon aimed at her (닥쳐, 꺼져, 멍청, shut up, stupid, useless…); cap −3/day. **Sadness or venting never costs anything**: it sets mood `concerned` instead |
+| Done to her | −5 | `affinity.hostile`: hitting her (acted out, "(한채린을 때린다)", "*slaps her*", or aimed at "you"), anything sexual ("(옷을 벗긴다)"), threats, putting her down ("여자가 왜 말대꾸야", 삼일한); cap −20/day, and that turn earns nothing (no talk, lively or warm). A monster hit in a game, someone who hit the user, clothes in everyday talk: nothing |
 | Daily gain cap | +12 | total positive per day |
 | Quiet days | 0 for 3 idle days, then −4, −5.6, −7.8, −11, −15 (×1.4 a day, cap 15) | settled for each **finished** day without a user turn; never below **10** (floor) |
 | Ignored proactive | — | dormant (`awaiting`), for when proactive messages exist |
@@ -453,12 +454,19 @@ the tone): feelings now change how she talks, what she decides and what her face
 - **Left alone** each relaxes to where she settles (half-life per emotion: shy 30 min … sad 4 h), computed lazily as of now. Where
   she settles and how easily each moves: `TEMPERAMENTS` by bundled mate (others: nothing), happy also rises with closeness.
 - **What the user says**, every message, before she answers, once per message (`hear`): an insult makes her angry, and more each
-  time they keep it up; an apology takes the edge off and starts that over; kindness (which also calms her, though good things land less while she is angry), saying they care, her looks, brushing her off,
+  time they keep it up; something done to her (`affinity.hostile`) far more, and it hurts (sad): 0.45, then +0.3 each time again
+  within 6 h, anything sexual at once to the top; an apology takes the edge off and starts that over (after being hit, only 0.15); kindness (which also calms her, though good things land less while she is angry), saying they care, her looks, brushing her off,
   answering in a word three times running, their distress, what she loves (`TEMPERAMENTS.loves`), being back after a day. Most
   messages move nothing here; the lexical cues are only the backbone.
 - **What she shows and says herself**: her expression tags (`reply`) pull that emotion towards their strength (`[angry:0.8]`), for
   the reason of what was just said to her, and `feel(emotion, strength, reason)` sets one, in her words. This is how the real reading
   of the conversation comes in: the model's.
+- **Too angry to answer** (`silent`): her anger at what they did (not hunger or stress) at 0.8 or more, and she doesn't answer at
+  all: her engine isn't asked, the chat shows a line of narration in her language ("(한채린은 대답하지 않는다)", "(…대답하고 싶지
+  않은 것처럼 보인다)"…; `MateService.silence`, a hook before the session's turn), kept as her turn marked `silent` (history shows it
+  as narration, never read aloud; her face is angry), and her engine hears of it with the next message she answers ("you didn't answer
+  them"); her own chatty turns (a look at the screen, a thought, her day) wait (`quiet`). Not a counter: her anger, so an apology or
+  time (about half an hour from the top) brings her back, coldly at first. Insults alone get her there on the third.
 - **What the user does**: leaving her unanswered (`_silence`: what she said counts up until they answer, lonely grows with the wait
   and much sooner the more she said; if it went on, answering leaves her a little angry too; not while the relationship is paused),
   stopping her mid-reply, tapping her avatar (attention, until it is too much of it).
