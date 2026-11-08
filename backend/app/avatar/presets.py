@@ -102,8 +102,16 @@ PRESETS: dict[str, dict[str, list[str]]] = {
 MAX_CLIPS = 32
 MAX_STILLS = 16
 MAX_CANDIDATES = 4
-#: Kling O3 FLF clip length (the official mates: all 5 s, short loops)
+#: a clip is as long as its action takes (Kling O3 FLF: 3–10 s): a short action stretched over a longer clip comes out
+#: frame-held, the picture moving every second or third frame, slow and jerky. Clips are quoted at CLIP_SECONDS; the
+#: price goes by the second.
 CLIP_SECONDS = 5
+CLIP_SECONDS_MIN, CLIP_SECONDS_MAX = 3, 10
+#: the library's clips (one breath, a head tilt, two nods...) and, for a clip of one's own, its kind's
+CLIP_LENGTHS = {"idle_a": 5, "idle_b": 4, "idle_c": 3, "idle_d": 4, "talk_a": 5, "talk_b": 5, "talk_c": 5, "listen": 3,
+                "listen_b": 4, "think": 4, "think_b": 4, "laugh": 3, "smile": 3, "shy": 4, "surprised": 3, "sad": 4,
+                "worried": 4, "nod": 3, "wave": 3, "angry": 4, "yawn": 4, "doze": 5}
+KIND_SECONDS = {"idle": 4, "talk": 5, "listen": 3, "think": 4, "react": 4, "away": 5}
 ASPECTS = ("1:1", "9:16")
 #: quality tier -> Kling mode and the two encoded heights (the stacked video is twice as tall)
 TIERS = {
@@ -179,7 +187,7 @@ def preset_clips(name: str) -> list[dict[str, Any]]:
     out = []
     for cid in PRESETS[name]["clips"]:
         kind, action, emotion, loop = CLIPS[cid]
-        c: dict[str, Any] = {"id": cid, "kind": kind, "action": action}
+        c: dict[str, Any] = {"id": cid, "kind": kind, "action": action, "seconds": CLIP_LENGTHS[cid]}
         if emotion:
             c["emotion"] = emotion
         if loop:
@@ -241,7 +249,18 @@ def _clean_clip(c: Any, seen: set[str]) -> dict[str, Any]:
         raise BriefError(f"clip {cid}: a react clip names the emotion it plays for")
     if c.get("loop") or kind == "away":
         out["loop"] = True
+    seconds = c.get("seconds")
+    if seconds is None:
+        seconds = CLIP_LENGTHS.get(cid) if lib and action == " ".join(lib[1].split()) else KIND_SECONDS[kind]
+    if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not CLIP_SECONDS_MIN <= seconds <= CLIP_SECONDS_MAX:
+        raise BriefError(f"clip {cid}: seconds is how long its action takes, {CLIP_SECONDS_MIN}–{CLIP_SECONDS_MAX}")
+    out["seconds"] = int(round(seconds))
     return out
+
+
+def clip_seconds(c: dict[str, Any]) -> int:
+    """How long a brief's clip is (one from before clips had a length: its kind's)."""
+    return int(c.get("seconds") or CLIP_LENGTHS.get(c.get("id") or "") or KIND_SECONDS.get(c.get("kind") or "", CLIP_SECONDS))
 
 
 def _clean_still(s: Any, seen: set[str]) -> dict[str, str]:

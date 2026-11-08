@@ -62,9 +62,15 @@ def _parse(s: Any) -> datetime | None:
         return None
 
 
-def clip_params(brief: dict[str, Any]) -> dict[str, Any]:
-    return {"aspect_ratio": brief["aspect"], "duration": P.CLIP_SECONDS, "mode": P.TIERS[brief["tier"]]["mode"],
+def clip_params(brief: dict[str, Any], seconds: int | None = None) -> dict[str, Any]:
+    """A clip job's settings; without ``seconds`` the length clips are quoted at (the price goes by the second)."""
+    return {"aspect_ratio": brief["aspect"], "duration": seconds or P.CLIP_SECONDS, "mode": P.TIERS[brief["tier"]]["mode"],
             "sound": "off"}
+
+
+def clip_share(clip: dict[str, Any]) -> float:
+    """What one clip costs in quoted clips: its own length against the quoted one."""
+    return P.clip_seconds(clip) / P.CLIP_SECONDS
 
 
 def jobs_for(brief: dict[str, Any]) -> list[dict[str, Any]]:
@@ -80,7 +86,7 @@ def jobs_for(brief: dict[str, Any]) -> list[dict[str, Any]]:
                     "count": len(brief["stills"]), "what": "stills"})
     n = len(brief["clips"])
     out.append({"key": "clips", "stage": "clips", "job_type": CLIP_JOB, "params": clip_params(brief), "count": n,
-                "what": "clips"})
+                "what": "clips", "seconds": sum(P.clip_seconds(c) for c in brief["clips"])})
     out.append({"key": "matte", "stage": "matte", "job_type": MATTE_JOB, "params": {}, "count": n,
                 "what": "mattes"})
     return out
@@ -118,7 +124,9 @@ def price(brief: dict[str, Any], quotes: dict[str, Any], *, balance: float | Non
     for j in jobs:
         q = quotes.get(quote_key(j["job_type"], j["params"]))
         unit = q if isinstance(q, (int, float)) and not isinstance(q, bool) else None
-        line = {**j, "unit": unit, "credits": round(unit * j["count"], 4) if unit is not None else None}
+        # (clips: each as long as its action, the quote is for one of CLIP_SECONDS)
+        times = j["seconds"] / P.CLIP_SECONDS if "seconds" in j else j["count"]
+        line = {**j, "unit": unit, "credits": round(unit * times, 4) if unit is not None else None}
         if unit is None:
             err = q.get("error") if isinstance(q, dict) else "no quote"
             line["error"] = err
@@ -146,7 +154,8 @@ def price(brief: dict[str, Any], quotes: dict[str, Any], *, balance: float | Non
         "counts": {"candidates": brief["candidates"] if brief["reference"]["mode"] != "as_base" else 0,
                    "stills": len(brief["stills"]), "clips": len(brief["clips"])},
         "settings": {"aspect": brief["aspect"], "tier": brief["tier"], "preset": brief["preset"],
-                     "mode": P.TIERS[brief["tier"]]["mode"], "seconds": P.CLIP_SECONDS},
+                     "mode": P.TIERS[brief["tier"]]["mode"], "seconds": P.CLIP_SECONDS,
+                     "clip_seconds": {c["id"]: P.clip_seconds(c) for c in brief["clips"]}},
     }
     return plan
 

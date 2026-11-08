@@ -52,7 +52,9 @@ Ask with cards, in this order, skipping what the user already said:
    idle ×3, talk ×2, listen, think, 8 reactions — joy, smile, shy, surprised, sad, worried, agree, greet — and doze; 12
    stills), rich (22 clips: + idle, talk, listen, think, angry, sleepy; 13 stills) or custom (counts per kind and what
    each clip does, in short English action sentences; react clips name an emotion: {emotions}). Say what each choice
-   means for the price: clips are by far the most expensive part.
+   means for the price: clips are by far the most expensive part. Each clip is as long as its action takes
+   (`seconds`, 3–10: a head tilt or two nods 3, a reaction 4, talking or breathing 5); never one length for all: a short
+   action stretched over a longer clip comes out slow and jerky. The price goes by the second.
 6. Which mate gets it: an existing one (ask_user kind "mate") or a new mate (ask the name).
 Then call estimate. If something changes later, update_brief and estimate again (a new estimate replaces the old one).
 

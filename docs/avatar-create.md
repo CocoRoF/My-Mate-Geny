@@ -29,7 +29,11 @@ Exactly the official mates' body (docs/mate.md §2 `video`, packing `stacked-alp
 3. **Stills** — `nano_banana_pro` with the candidate as the reference: "Exactly the same picture … Change only her
    face: ‹face›. Nothing else changes." Only the face region is laid over the base picture (the model redraws the whole
    picture slightly; taken whole, the hair would shimmer).
-4. **Clips** — `kling_o3_flf`, start = end = `home-gray.jpg`, 5 s, `pro` (studio) or `std` (light), sound off:
+4. **Clips** — `kling_o3_flf`, start = end = `home-gray.jpg`, `pro` (studio) or `std` (light), sound off, each as
+   long as its action takes (`seconds`, 3–10: a head tilt or two nods 3, a reaction 4, talking or breathing 5;
+   `presets.CLIP_LENGTHS`, a clip of one's own by its kind). Never one length for all: Kling fills whatever length it is
+   given, and a short action over five seconds came out frame-held (the picture moving every second or third frame,
+   slow and jerky). Clips are quoted at 5 s and priced by the second. The prompt:
    "‹action›. Static camera. The plain gray background stays exactly the same. She ends in exactly the same pose as
    she starts." Every clip passes through the same frame, so any clip follows any other and each loops.
 5. **Mattes** — `video_background_remover` (one at a time), then the alpha is recovered mathematically from the known

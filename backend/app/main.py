@@ -20,6 +20,7 @@ from starlette.responses import Response
 
 from app import __version__
 from app.auth import AuthManager, AuthMiddleware, OpenCORSMiddleware
+from app.mate.asset_versions import BuiltinAssetVersions
 from app.config import settings
 from app.static_files import ConsoleStaticFiles, index_response
 from app.providers.oauth import OAuthManager
@@ -244,6 +245,8 @@ class ErrorLogMiddleware(BaseHTTPMiddleware):
 # Innermost first: error logging wraps the app, the auth gate wraps that, then
 # the credentialed CORS policy, and outermost the open (``*``, no credentials)
 # CORS for /health + /api/auth/login that native connect pages need.
+# (next to the app: a mate's JSON carries the bundled files under their own version, app/mate/asset_versions.py)
+app.add_middleware(BuiltinAssetVersions)
 app.add_middleware(ErrorLogMiddleware)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(

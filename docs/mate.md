@@ -376,6 +376,14 @@ Asset upload / import:
   ETag/Last-Modified; `Cache-Control: immutable` for imported files and URLs
   with `?v=`, `no-cache` otherwise. Only media/JSON types are served as such;
   anything else (HTML, SVG, JS…) is `application/octet-stream`.
+- Bundled files: `GET /api/mates/builtin/<key>/<path>`. A mate's JSON names each with
+  its version (`?v=<12 hex>`, from the file's time and size, like the ETag;
+  `app/mate/asset_versions.py`, a middleware on `/api/mates`): under that URL a file is
+  kept for good (`immutable`), and a set redone under the same names is a new URL, so
+  nothing anywhere plays an old copy (a browser held one under the older one-day cache
+  rule, and showed yesterday's clip). JSON coming back has the version taken off: what is
+  stored, and what the bundle sync compares, never carries it. Asked without it, a file is
+  asked again every time (`no-cache`, 304 while the same).
 - `POST /api/mates/{id}/avatar/import` (multipart `file` = zip) → `{mate, avatar}`
   (the avatar is applied): an ailism-style pack (`rig.json` + files →
   video/photo; `asset:<pack>/<file>` refs are rewritten to asset URLs, refs to

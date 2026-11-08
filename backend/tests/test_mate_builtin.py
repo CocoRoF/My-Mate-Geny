@@ -118,16 +118,31 @@ def test_builtin_files_are_served_and_confined():
     with TestClient(app) as client:
         assert client.post("/api/auth/login", json={"username": "admin", "password": "test-pass"}).status_code == 200
         cha = next(m for m in client.get("/api/mates").json() if m["builtin"] == "chaerin")
-        home = client.get(cha["avatar"]["rig"]["home"])
+        home_url = cha["avatar"]["rig"]["home"]
+        home = client.get(home_url)
         assert home.status_code == 200 and home.headers["content-type"] == "image/webp"
         clip = cha["avatar"]["rig"]["clips"][0]["src"]
         part = client.get(clip, headers={"Range": "bytes=0-99"})
         assert part.status_code == 206 and len(part.content) == 100
-        # (asked again every time, "not modified" while it is the same file: a redone clip shows at once)
-        assert home.headers["cache-control"] == "private, no-cache" and home.headers["etag"]
-        again = client.get(cha["avatar"]["rig"]["home"], headers={"If-None-Match": home.headers["etag"]})
+        # (a mate's JSON names every bundled file with its version: under it the file is kept for good, a redone file
+        # is another URL, and a copy a browser held under an older rule can never play again)
+        bare, _, v = home_url.partition("?v=")
+        assert len(v) == 12 and all("?v=" in c["src"] and "?v=" in c["small"] for c in cha["avatar"]["rig"]["clips"])
+        assert home.headers["cache-control"] == "private, max-age=31536000, immutable" and home.headers["etag"]
+        # (asked without it: again every time, "not modified" while it is the same file)
+        plain = client.get(bare)
+        assert plain.headers["cache-control"] == "private, no-cache" and plain.headers["etag"] == home.headers["etag"]
+        again = client.get(bare, headers={"If-None-Match": home.headers["etag"]})
         assert again.status_code == 304 and not again.content
-        assert client.get(cha["avatar"]["rig"]["home"], headers={"If-None-Match": '"other"'}).status_code == 200
+        assert client.get(bare, headers={"If-None-Match": '"other"'}).status_code == 200
+        # (what comes back, a rig the user saved, is stored without it)
+        saved = client.patch(f"/api/mates/{cha['id']}", json={"avatar": cha["avatar"]})
+        assert saved.status_code == 200 and saved.json()["avatar"]["rig"]["home"] == home_url
+        from app.mate import asset_versions
+        stored = json.dumps(app.state.mate_service.store.get(cha["id"])["avatar"])
+        assert "?v=" not in stored and bare in stored
+        body = json.dumps({"home": bare, "other": "/api/mates/x/assets/a.webp"}).encode()
+        assert asset_versions.unstamp(asset_versions.stamp(body)) == body and b"?v=" + v.encode() in asset_versions.stamp(body)
         assert client.get("/api/mates/builtin/chaerin/..%2F..%2Fmates%2Fchaerin.json").status_code == 404
         assert client.get("/api/mates/builtin/nobody/neutral.webp").status_code == 404
 

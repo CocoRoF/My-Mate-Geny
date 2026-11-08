@@ -28,6 +28,9 @@ _CLIP = {
         "action": {"type": "string", "description": "What happens, one short English sentence with {S} for the "
                                                     "subject and {pos} for the possessive, e.g. '{S} waves shyly'."},
         "emotion": {"type": "string", "description": "react clips: the emotion tag that plays it"},
+        "seconds": {"type": "integer", "minimum": 3, "maximum": 10,
+                    "description": "how long the clip is: what its action takes (a head tilt or two nods 3, a reaction 4, "
+                                   "talking or breathing 5; a short action in a long clip comes out slow and jerky)"},
     },
     "required": ["id", "kind", "action"],
 }

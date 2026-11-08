@@ -832,7 +832,7 @@ class AvatarService:
         return {
             "status": doc["status"], "phase": doc.get("phase"), "paused": doc.get("paused"),
             "checkpoint": doc.get("checkpoint"), "error": doc.get("error"),
-            "brief": {**b, "clips": [{k: c[k] for k in ("id", "kind", "emotion", "action") if k in c} for c in b["clips"]]},
+            "brief": {**b, "clips": [{k: c[k] for k in ("id", "kind", "emotion", "action", "seconds") if k in c} for c in b["clips"]]},
             "missing": P.problems(b),
             "plan": None if not plan else {k: plan[k] for k in ("id", "total", "reserve", "cap", "minutes", "complete",
                                                                   "errors", "balance", "usd", "counts")}
@@ -1421,7 +1421,7 @@ class AvatarService:
             raise AvatarError("nothing to add")
         if len(doc["brief"]["clips"]) + len(new_c) > P.MAX_CLIPS or len(doc["brief"]["stills"]) + len(new_s) > P.MAX_STILLS:
             raise AvatarError("that is more than a project may have")
-        credits = len(new_c) * (self._stage_unit(doc, "clips") + self._stage_unit(doc, "matte"))
+        credits = sum(self._stage_unit(doc, "clips") * PL.clip_share(c) + self._stage_unit(doc, "matte") for c in new_c)
         if new_s:
             credits += len(new_s) * self._stage_unit(doc, "stills")
         x = PL.new_extra(f"{len(new_c)} more clip(s) and {len(new_s)} more still(s)",
@@ -1792,16 +1792,18 @@ class AvatarService:
         keys = []
         for c in b["clips"]:
             key = f"clip:{c['id']}"
-            self._item(doc, key, "clips", PL.CLIP_JOB, f"clips/{c['id']}.mp4", unit)
+            self._item(doc, key, "clips", PL.CLIP_JOB, f"clips/{c['id']}.mp4", round(unit * PL.clip_share(c), 4))
             keys.append(key)
         self.save(doc)
         actions = {f"clip:{c['id']}": c["action"] for c in b["clips"]}
+        # (each as long as its action: a short one stretched over five seconds comes out slow and jerky)
+        lengths = {f"clip:{c['id']}": P.clip_seconds(c) for c in b["clips"]}
         home = str(d / "masters" / "home-gray.jpg")
 
         def flags(dd: dict[str, Any], it: dict[str, Any]) -> list[str]:
             action = actions[it["key"]] + (f", {it['note']}" if it.get("note") else "")
             return ["--prompt", P.clip_prompt(action, dd["brief"]["pronoun"]), "--start-image", home, "--end-image",
-                    home, "--aspect_ratio", params["aspect_ratio"], "--duration", str(params["duration"]), "--mode",
+                    home, "--aspect_ratio", params["aspect_ratio"], "--duration", str(lengths[it["key"]]), "--mode",
                     params["mode"], "--sound", params["sound"]]
 
         await self._jobs(pid, keys, flags, PARALLEL["clips"])

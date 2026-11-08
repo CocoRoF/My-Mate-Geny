@@ -74,8 +74,10 @@ def test_presets_and_plan_per_preset():
         # the same model + settings are quoted once: candidates and stills share a quote
         assert len(PL.quote_requests(PL.jobs_for(b))) == 4
         seen[preset] = PL.price(b, _quotes(b))["total"]
-    # 4 candidates·2 + 0.5 + stills·2 + clips·(9+1)
-    assert seen == {"minimal": 8 + 0.5 + 12 + 60, "standard": 8 + 0.5 + 24 + 160, "rich": 8 + 0.5 + 26 + 220}
+    # 4 candidates·2 + 0.5 + stills·2 + 9 a clip of 5 s, by the second (each clip as long as its action) + a matte each
+    assert seen == {"minimal": round(8 + 0.5 + 12 + 9 * 26 / 5 + 6, 4), "standard": round(8 + 0.5 + 24 + 9 * 61 / 5 + 16, 4),
+                    "rich": round(8 + 0.5 + 26 + 9 * 86 / 5 + 22, 4)}
+    assert {c["id"]: c["seconds"] for c in _brief()["clips"]}["idle_c"] == 3  # (a head tilt stretched over 5 s came out jerky)
     # the standard preset is 한채린's manifest without the retired pout, and with the worried face she has had since 2026-11-08
     manifest = json.loads((MASTERS / "chaerin" / "manifest.json").read_text()) if MASTERS.is_dir() else None
     if manifest:
@@ -117,11 +119,11 @@ def test_brief_checks_and_custom_motions():
 def test_price_aggregation_reserve_cap_and_missing_quotes():
     b = _brief(preset="minimal")
     plan = PL.price(b, _quotes(b), balance=1000.0, credit_usd=0.033)
-    assert plan["complete"] and plan["total"] == 80.5
-    assert plan["reserve"] == pytest.approx(12.075) and plan["cap"] == pytest.approx(92.575)
-    assert plan["balance_after"] == pytest.approx(919.5) and plan["usd"] == pytest.approx(2.66)
+    assert plan["complete"] and plan["total"] == 73.3  # (the minimal preset's clips are 26 s: 9 a clip of 5 s, by the second)
+    assert plan["reserve"] == pytest.approx(10.995) and plan["cap"] == pytest.approx(84.295)
+    assert plan["balance_after"] == pytest.approx(926.7) and plan["usd"] == pytest.approx(2.42)
     lines = {ln["stage"]: ln for ln in plan["lines"]}
-    assert lines["clips"]["unit"] == 9.0 and lines["clips"]["credits"] == 54.0
+    assert lines["clips"]["unit"] == 9.0 and lines["clips"]["credits"] == pytest.approx(46.8) and lines["clips"]["seconds"] == 26
     assert plan["minutes"] > 20
     q = _quotes(b)
     q[PL.quote_key("kling_o3_flf", PL.clip_params(b))] = {"error": "invalid_params: start_image"}
@@ -290,7 +292,7 @@ async def test_runner_state_machine(db, tmp_path, monkeypatch):
     pid = av.create(language="ko")["id"]
     ctx = await _ready_project(av, pid, events)
     doc = av.doc(pid)
-    assert doc["status"] == "estimate" and doc["plan"]["total"] == 2 * 2 + 0.5 + 6 * 2 + 6 * 10
+    assert doc["status"] == "estimate" and doc["plan"]["total"] == round(2 * 2 + 0.5 + 6 * 2 + 9 * 26 / 5 + 6, 4)
     # nothing spends before the user's confirmation — not even the agent's redo
     text, err, _ = await av.call_tool(ctx, "regenerate", {"item": "design"})
     assert err and "not_confirmed" in text
@@ -328,7 +330,10 @@ async def test_runner_state_machine(db, tmp_path, monkeypatch):
     assert len(kl) == 6
     home = str(av.dir(pid) / "masters" / "home-gray.jpg")
     assert kl[0][kl[0].index("--start-image") + 1] == home == kl[0][kl[0].index("--end-image") + 1]
-    assert kl[0][kl[0].index("--mode") + 1] == "pro" and kl[0][kl[0].index("--duration") + 1] == "5"
+    assert kl[0][kl[0].index("--mode") + 1] == "pro"
+    # (each clip as long as its action, not one length for all)
+    lengths = sorted(f[f.index("--duration") + 1] for f in kl)
+    assert lengths == sorted(str(c["seconds"]) for c in doc["brief"]["clips"]) and len(set(lengths)) > 1
     assert len([1 for jt, _ in av.gen.created if jt == "video_background_remover"]) == 6
     steps = [s for s, _ in av.deps.calls if s != "thumb"]
     assert steps == ["prep", "home", "stills", *["matte"] * 6, "encode", "check", "export"]
