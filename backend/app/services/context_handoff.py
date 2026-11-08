@@ -107,7 +107,7 @@ def build_blocks(messages: list[dict], events: list[dict]) -> list[Block]:
                     cur = Block()
                     blocks.append(cur)
                 # (a mate too angry to answer said nothing: the chat's line of narration is no reply of hers)
-                cur.answer = "(you didn't answer them: too angry to reply)" if (m.get("meta") or {}).get("silent") else m["content"]
+                cur.answer = "(you didn't answer them: too angry to reply)" if (m.get("meta") or {}).get("refused") else m["content"]
                 cur.engine = m.get("provider") or cur.engine
                 cur.model = m.get("model") or cur.model
             continue

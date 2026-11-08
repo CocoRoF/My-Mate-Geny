@@ -270,6 +270,11 @@ _EMOTION = {
     3: ("- Begin most sentences that carry a feeling with one emotion tag to set your expression: {tags}; you may give "
         "its strength, e.g. [joy:0.8]. Tags are not read aloud; never invent other tags."),
 }
+# how what they do to her reaches how she feels: her reply's tag is her own reading of it (app/mate/state.py ``reply``; the words' guess
+# at it, affinity.hostile, gives way to it)
+_DONE_TO_YOU = ("When they do something to you — hit you, force something on you against your will, threaten you, put you down — "
+                "it lands on you: show it in your reply's tag as strong as it really is for you ([angry:0.9], [sad]). If it didn't land "
+                "that way (play you took as play), show what it was instead.")
 # the speech level (prefs.formality, or the character's own: prefs.defaults.formality)
 _FORMALITY = {
     "haeyo": ("In Korean always use polite 해요체 (…요), never 반말 and not stiff 합쇼체. In English: warm and "
@@ -337,6 +342,8 @@ def settings_block(persona: dict[str, Any] | None, prefs: dict[str, Any] | None)
     tags = " ".join(f"[{t}]" for t in EMOTION_TAGS)
     emo = s.get("emotion", 2) if s.get("emotion", 2) in _EMOTION else 2
     lines.append(_EMOTION[emo].format(tags=tags)[2:])
+    if emo:
+        lines.append(_DONE_TO_YOU)
     for k in ("warmth", "humor", "initiative"):
         line = _TONE.get((k, (s.get("tone") or {}).get(k)))
         if line:

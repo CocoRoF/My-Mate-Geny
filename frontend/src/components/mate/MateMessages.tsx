@@ -292,7 +292,7 @@ function DelegationCards({ turn }: { turn: Turn }) {
 
 const AssistantBubbles = memo(function AssistantBubbles({ turn, compact }: { turn: Turn; compact?: boolean }) {
   const tt = useT();
-  if (turn.silent) {
+  if (turn.refused && turn.text.trim()) {
     // (she didn't answer: no bubble of hers, a line saying so)
     return (
       <div className={`w-full animate-fade-in px-1 italic text-content-faint ${compact ? "text-[11.5px]" : "text-[12.5px]"}`} data-testid="mate-silence">

@@ -73,12 +73,13 @@ TEMPERAMENTS: dict[str, dict[str, Any]] = {
 
 # what the user says moves it, by this much
 RUDE, RUDE_MORE, RUDE_MOST, RUDE_DROP, RUDE_WINDOW = 0.3, 0.1, 0.5, 0.15, timedelta(hours=2)  # (keeping it up makes it worse)
-# something done to her (affinity.hostile: hitting her, stripping her, threats, putting her down): far worse than a rude word, and
-# it hurts; each time again (within the window) more; anything sexual takes her to the top at once. Sorry counts for less after it.
+# something done to her (affinity.hostile: hitting her, forcing something on her, threats, putting her down): far worse than a rude
+# word, and it hurts; each time again (within the window) more. Sorry counts for less after it. Only the words' guess: her reply has
+# the last word (``reply``: shown calm, it is undone).
 HOSTILE, HOSTILE_MORE, HOSTILE_HURT, HOSTILE_DROP, HOSTILE_WINDOW = 0.45, 0.3, 0.25, 0.4, timedelta(hours=6)
 APOLOGY_AFTER_HOSTILE = 0.15
-#: from here she is too angry with them to answer at all (``silent``): the chat shows only that she doesn't. Only anger at what
-#: they did: hungry or stressed, she still answers, if snappily
+#: from here, angry at what they did, she may not answer at all (``REFUSE`` in how it comes out: she decides, and [SILENT] is
+#: how). Only anger at them: hungry or stressed, she still answers, if snappily
 SILENT_FROM = 0.8
 AT_THEM = ("rude", "hostile", "dismissed", "pestered", "poked", "said", "interrupted", "ignored", "curt", "apology")
 APOLOGY, WARM, WARM_CALMS, LOVE, LOOKS, DISTRESS, RETURNED, ANSWERED, LOVES = 0.3, 0.12, 0.08, 0.15, 0.12, 0.35, 0.2, 0.1, 0.2
@@ -152,12 +153,13 @@ def normalized(doc: Any) -> dict[str, Any]:
 
 
 def who(*, closeness: float = 0.33, sensitivity: float = 1.0, builtin: str | None = None, away: bool = False,
-        outfit: dict[str, Any] | None = None, life: dict[str, Any] | None = None) -> dict[str, Any]:
+        outfit: dict[str, Any] | None = None, life: dict[str, Any] | None = None, name: str = "") -> dict[str, Any]:
     """``closeness``: 0 – 1. ``away``: the relationship is paused, so silence means nothing. ``outfit``: what she has on,
     {id, name, feel, since}; None in her usual clothes or one that does nothing to her. ``life``: her own day when she has one
     (life/sim.py ``for_state``): {needs, feel, doing, asleep}."""
     return {"closeness": max(0.0, min(1.0, float(closeness))), "sensitivity": float(sensitivity), "away": bool(away),
-            "temperament": TEMPERAMENTS.get(builtin or "", {}), "outfit": outfit if (outfit or {}).get("feel") else None, "life": life}
+            "temperament": TEMPERAMENTS.get(builtin or "", {}), "outfit": outfit if (outfit or {}).get("feel") else None, "life": life,
+            "name": name}
 
 
 def clean_feel(raw: Any) -> dict[str, float]:
@@ -301,10 +303,25 @@ def why_for_her(why: dict[str, Any] | None) -> str:
     return _WHY_FOR_HER.get(str(code), "")
 
 
+#: furious at what they did: whether she answers at all is hers to decide, and [SILENT] is how she doesn't (the chat shows only that)
+REFUSE = ("You are furious with them for what they did, and you don't want to talk to them at all. Unless what they just said truly "
+          "changes that for you (an apology you believe, real trouble they are in), you don't answer: reply with exactly [SILENT] and "
+          "nothing else, and the chat shows that you don't answer. Whether you do is yours to decide.")
+
+
+def _at_them(why: dict[str, Any] | None) -> bool:
+    """Anger at something they did or said (her own face at what they said is ``said``); not a reason in words (her day's, a
+    report): a missed bus is nobody's fault of theirs."""
+    return (why or {}).get("code") in AT_THEM
+
+
 def conduct(s: dict[str, Any]) -> str:
     """How it comes out in the way she talks now."""
     lines = []
     for t in s["top"][:2]:
+        if t["emotion"] == "angry" and t["v"] >= SILENT_FROM and _at_them(t.get("why")):
+            lines.append(REFUSE)
+            continue
         how = next((text for floor, text in CONDUCT.get(t["emotion"], ()) if t["v"] >= floor), "")
         if how:
             lines.append(how)
@@ -332,12 +349,10 @@ def worth_repeating(s: dict[str, Any]) -> bool:
 
 # ---- how she leans on what is up to her ----
 
-def silent(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> bool:
-    """Too angry with them to answer at all: what they did (or said) made her furious, and it hasn't settled. Not a rule on top of
-    her: her anger. An apology or time brings it down, and she talks again, coldly at first."""
+def furious(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> bool:
+    """Angry enough at what they did (not at hunger or stress) that she is offered not answering at all (``REFUSE``): she decides."""
     angry = levels(doc, w, now, tz)["angry"]
-    why = angry["why"] or {}
-    return angry["v"] >= SILENT_FROM and (why.get("code") in AT_THEM or bool(why.get("text")))
+    return angry["v"] >= SILENT_FROM and _at_them(angry["why"])
 
 
 def _lately(entry: Any, now: datetime, window: timedelta) -> int:
@@ -422,7 +437,7 @@ def hear(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, now: d
     last = A._t(doc.get("heard_at"))
     doc["heard"], doc["heard_at"] = message, A._iso(now)
     text = (text or "").strip()
-    c = A.cues(text)
+    c = A.cues(text, name=w.get("name") or "")
     _they_are_back(doc, w, now, tz)
     if last is not None and now - last >= RETURN_AFTER:
         _rise(doc, w, "happy", RETURNED, {"code": "returned"}, now, tz)
@@ -431,9 +446,12 @@ def hear(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, now: d
         _rise(doc, w, "lonely", CURT, {"code": "curt"}, now, tz)
     if c["hostile"]:
         n = _lately(doc.get("hostile"), now, HOSTILE_WINDOW) + 1
-        doc["hostile"] = {"n": n, "at": A._iso(now)}
+        lv = levels(doc, w, now, tz)
+        # (the words' guess: what she shows in her reply has the last word, ``reply``)
+        doc["hostile"] = {"n": n, "at": A._iso(now), "message": message, "angry": lv["angry"]["v"], "sad": lv["sad"]["v"],
+                          "happy": lv["happy"]["v"]}
         why = {"code": "hostile", "kind": c["hostile"], "quote": " ".join(text.split())[:QUOTE_CHARS]}
-        _rise(doc, w, "angry", 1.0 if c["hostile"] == "sexual" else HOSTILE if n == 1 else HOSTILE_MORE, why, now, tz)
+        _rise(doc, w, "angry", HOSTILE if n == 1 else HOSTILE_MORE, why, now, tz)
         _rise(doc, w, "sad", HOSTILE_HURT, why, now, tz)
         _fall(doc, w, "happy", HOSTILE_DROP, why, now, tz)
     elif c["rude"]:
@@ -481,6 +499,14 @@ def reply(doc: dict[str, Any], w: dict[str, Any], text: str, heard_text: str, no
         shown[emotion] = max(shown.get(emotion, 0.0), float(value) if value else usual)
     quote = " ".join((heard_text or "").split())[:QUOTE_CHARS]
     why = {"code": "said", "quote": quote} if quote else {"code": "nature"}
+    done = doc.get("hostile") or {}
+    if done.get("message") and done.get("message") == doc.get("heard") and A.calm_reply(text):
+        # (the words looked like something done to her; she didn't take it so: her reading stands)
+        for emotion in ("angry", "sad", "happy"):
+            if emotion in done:
+                _set(doc, w, emotion, float(done[emotion]), {"code": "nature"}, now, tz, quiet=True)
+        n = int(done.get("n") or 1) - 1
+        doc["hostile"] = {"n": n, "at": done.get("at")} if n > 0 else None
     for emotion, strength in shown.items():
         was = levels(doc, w, now, tz)[emotion]["v"]
         if strength > was:

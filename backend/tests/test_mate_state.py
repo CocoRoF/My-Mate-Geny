@@ -61,7 +61,10 @@ def test_keeping_up_the_insults_makes_her_angrier_each_time():
         seen.append(_lv(doc, w)["angry"])
     assert seen == pytest.approx([0.3, 0.7, 1.0])
     assert S.levels(doc, w, NOON, TZ)["angry"]["why"] == {"code": "rude"}
-    assert "very few words" in S.conduct(S.summary(doc, w, NOON, TZ))
+    # (furious with them, whether she answers at all is hers: she is offered not to; short of that, very few words)
+    assert S.conduct(S.summary(doc, w, NOON, TZ)).startswith(S.REFUSE)
+    cold = {**S.new(), "feelings": {"angry": {"v": 0.75, "at": S.A._iso(NOON), "why": {"code": "rude"}}}}
+    assert "very few words" in S.conduct(S.summary(cold, w, NOON, TZ))
     S.hear(doc, w, "닥쳐, 쓸모없어", "m2", NOON, TZ)  # (the same message, looked at again)
     assert _lv(doc, w)["angry"] == 1.0
     fresh = S.new()  # (one now and then isn't keeping it up)

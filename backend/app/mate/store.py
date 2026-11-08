@@ -735,7 +735,8 @@ class MateStore:
         prefs = _loads(row["prefs"], {}) if "prefs" in row.keys() else {}
         now = datetime.now(timezone.utc)
         life = self.life_now(row["id"], builtin, prefs)
-        who = self._who(builtin, raw_outfits, self.relation_doc(row["id"]) or A.new(), sim.for_state(life[0], life[1], now) if life else None)
+        who = self._who(builtin, raw_outfits, self.relation_doc(row["id"]) or A.new(), sim.for_state(life[0], life[1], now) if life else None,
+                        row["name"] or "")
         return {
             "id": row["id"],
             "name": row["name"],
@@ -1656,21 +1657,22 @@ class MateStore:
             (mate_id, json.dumps(doc, ensure_ascii=False), now_iso()))
 
     @staticmethod
-    def _who(builtin: str | None, wardrobe: dict[str, Any], relation: dict[str, Any], life: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _who(builtin: str | None, wardrobe: dict[str, Any], relation: dict[str, Any], life: dict[str, Any] | None = None,
+             name: str = "") -> dict[str, Any]:
         worn = wardrobe.get("worn") or DEFAULT_OUTFIT
         item = next((it for it in wardrobe.get("items") or [] if it["id"] == worn), None)
         outfit = {"id": worn, "name": item["name"], "feel": S.clean_feel(item.get("feel")), "since": wardrobe.get("worn_at")} if item else None
         on = relation["enabled"]
         return S.who(closeness=float(relation["affinity"]) / 100 if on else 0.33, sensitivity=relation["sensitivity"] if on else 1.0,
-                     builtin=builtin, away=on and relation["paused"], outfit=outfit, life=life)
+                     builtin=builtin, away=on and relation["paused"], outfit=outfit, life=life, name=name)
 
     def state_who(self, mate_id: str) -> dict[str, Any]:
-        row = self._db.query_one("SELECT builtin, outfits, prefs FROM mates WHERE id = ?", (mate_id,))
+        row = self._db.query_one("SELECT builtin, outfits, prefs, name FROM mates WHERE id = ?", (mate_id,))
         if row is None:
             raise KeyError(f"mate not found: {mate_id}")
         life = self.life_now(mate_id, row["builtin"], _loads(row["prefs"], {}))
         return self._who(row["builtin"], _loads(row["outfits"], {}), self.relation_doc(mate_id) or A.new(),
-                         sim.for_state(life[0], life[1], datetime.now(timezone.utc)) if life else None)
+                         sim.for_state(life[0], life[1], datetime.now(timezone.utc)) if life else None, row["name"] or "")
 
     def relation_summary(self, mate_id: str) -> dict[str, Any]:
         doc = self.relation_doc(mate_id) or A.new()

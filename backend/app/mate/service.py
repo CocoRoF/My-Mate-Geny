@@ -123,8 +123,7 @@ class MateService:
         # see_screen: requests to the user's desktop app windows (app/mate/capture.py; /ws/sessions registers them)
         self.capture = CaptureBroker()
         sessions.mate_engine = self.configure_engine
-        sessions.mate_silence = self.silence
-        sessions.mate_quiet = self.quiet
+        sessions.mate_refusal = self.refusal_line
         self._silence_last: dict[str, int] = {}  # mate id -> the line it showed last (the next one is another)
         sessions.add_turn_end_listener(self._on_turn_end)
         # every mate write is announced on /ws/sessions (mates.changed): open
@@ -843,31 +842,14 @@ class MateService:
         now, tz = datetime.now(timezone.utc), self.store.tz()
         return S.view(self.store.state_doc(mate_id), self.store.state_who(mate_id), now, tz)
 
-    def silence(self, sid: str, message_id: str, text: str) -> str | None:
-        """SessionService hook, before a message of the user's reaches her engine: she hears it (how she feels moves now) and,
-        too angry with them to answer (state.silent: her anger at what they did, not a rule), she doesn't: the chat shows
-        only that, a line of narration in her language. None: she answers as ever."""
+    def refusal_line(self, sid: str) -> str:
+        """SessionService hook: she answered a message of theirs with [SILENT] (furious with them, she chose not to answer: state.REFUSE).
+        -> the line of narration the chat shows instead, in her language."""
         try:
-            mate_id = self._svc.get(sid).get("mate_id") or ""
-            mate = self.store.get(mate_id)
+            mate = self.store.get(self._svc.get(sid).get("mate_id") or "")
         except KeyError:
-            return None
-        self._state_event(mate_id, lambda doc, who, now, tz: S.hear(doc, who, text, message_id, now, tz))
-        now, tz = datetime.now(timezone.utc), self.store.tz()
-        if not S.silent(self.store.state_doc(mate_id), self.store.state_who(mate_id), now, tz):
-            return None
+            mate = {"id": sid, "name": "", "persona": {}}
         return self._silence_line(mate)
-
-    def quiet(self, sid: str) -> bool:
-        """Whether this mate is too angry with them to talk at all (her own chatty turns wait for it to pass)."""
-        try:
-            mate_id = self._svc.get(sid).get("mate_id") or ""
-        except KeyError:
-            return False
-        if not mate_id:
-            return False
-        now, tz = datetime.now(timezone.utc), self.store.tz()
-        return S.silent(self.store.state_doc(mate_id), self.store.state_who(mate_id), now, tz)
 
     def _silence_line(self, mate: dict[str, Any]) -> str:
         lang = str(((mate.get("persona") or {}).get("language") or "ko"))[:2]
@@ -902,7 +884,7 @@ class MateService:
                 S.hear(doc, who, said["content"], said["id"], now, tz)
             if outcome.get("status") == "stopped":
                 S.interrupted(doc, who, now, tz)
-            if not outcome.get("silent"):  # (she said nothing: no face, and nothing said to them)
+            if not outcome.get("refused"):  # (she didn't answer them: no face, and nothing said to them)
                 S.reply(doc, who, text, said["content"] if said else "", now, tz)
 
         self._state_event(mate_id, change)
@@ -1161,7 +1143,9 @@ class MateService:
         before = A.clone(doc)
         A.advance(doc, now, tz)
         if not (outcome.get("meta") or {}).get("internal"):
-            A.credit_turn(doc, now, tz, str(outcome.get("input") or ""), str(outcome.get("text") or ""))
+            name = (self.store.get(mate_id).get("name") if mate_id else "") or ""
+            # (her refusal's line is no reply of hers: she showed nothing, so the words' guess stands)
+            A.credit_turn(doc, now, tz, str(outcome.get("input") or ""), "" if outcome.get("refused") else str(outcome.get("text") or ""), name)
         self._save_relation(mate_id, doc, before)
 
     def _settings_note(self, mate_id: str, mate: dict[str, Any], relation: bool | None = None,

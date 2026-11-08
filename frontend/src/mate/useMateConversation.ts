@@ -393,7 +393,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
         followRef.current = follow;
       }
       const f = follow;
-      if (t.silent) {
+      if (t.refused) {
         // (she didn't answer: nothing is read aloud or captioned, her face says it)
         if (!f.quiet && !f.reacted) {
           f.reacted++;
