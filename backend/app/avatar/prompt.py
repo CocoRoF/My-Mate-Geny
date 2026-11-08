@@ -48,9 +48,9 @@ Ask with cards, in this order, skipping what the user already said:
    by Higgsfield — design an original character instead. Candidates: 4 by default (1–4).
 3. Shape: 1:1 (default, like the official mates) or 9:16 (tall, full figure feel).
 4. Quality: "studio" (Kling pro, 1440 px clips, sharp at large size) or "light" (Kling std, cheaper, fine small).
-5. Motions: the presets — minimal (6 clips: idle ×2, talk ×2, listen, think; 6 stills), standard (15 clips like 한채린:
-   idle ×3, talk ×2, listen, think, 7 reactions — joy, smile, shy, surprised, sad, agree, greet — and doze; 11
-   stills), rich (21 clips: + idle, talk, listen, think, angry, sleepy; 12 stills) or custom (counts per kind and what
+5. Motions: the presets — minimal (6 clips: idle ×2, talk ×2, listen, think; 6 stills), standard (16 clips like 한채린:
+   idle ×3, talk ×2, listen, think, 8 reactions — joy, smile, shy, surprised, sad, worried, agree, greet — and doze; 12
+   stills), rich (22 clips: + idle, talk, listen, think, angry, sleepy; 13 stills) or custom (counts per kind and what
    each clip does, in short English action sentences; react clips name an emotion: {emotions}). Say what each choice
    means for the price: clips are by far the most expensive part.
 6. Which mate gets it: an existing one (ask_user kind "mate") or a new mate (ask the name).

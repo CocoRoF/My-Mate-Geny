@@ -80,7 +80,7 @@ DISMISSED_SAD, DISMISSED_ANGRY, CURT, CURT_FROM = 0.2, 0.1, 0.08, 3
 RETURN_AFTER = timedelta(days=1)
 # what she showed herself: towards this strength, unless the tag says ([angry:0.8])
 SHOWN_ON_FACE = {"joy": ("happy", 0.6), "laugh": ("happy", 0.6), "smile": ("happy", 0.4), "shy": ("shy", 0.5), "sad": ("sad", 0.5),
-                 "angry": ("angry", 0.55), "surprised": ("excited", 0.3), "sleepy": ("sleepy", 0.4)}
+                 "worried": ("worried", 0.45), "angry": ("angry", 0.55), "surprised": ("excited", 0.3), "sleepy": ("sleepy", 0.4)}
 SHOWN_PULL = 0.5
 QUOTE_CHARS = 40
 # what the user does
@@ -105,7 +105,7 @@ _DISMISSED = re.compile(r"됐어|됐고|관심 ?없|귀찮|말 ?걸지|저리 ?�
 _CURT = re.compile(r"[ㅇㄴㄱㅎㅋ]{1,3}|응|네|넹|엉|어|아니|몰라|그래|ok|okay|k|yes|no|nah|yep|nope", re.I)
 _ASK = re.compile(r"갈아 ?입|옷 ?(좀 ?)?(바꿔|입어)|입어 ?(봐|줘|줄|주|라|요)|\bchange (your |into|clothes|outfit)|\bput on\b|"
                   r"\bwear (this|that|it|the|your)\b", re.I)
-_TAGS = re.compile(r"\[\s*(joy|laugh|smile|shy|surprised|sad|angry|sleepy)\s*(?::\s*([01](?:\.\d+)?))?\s*\]", re.I)
+_TAGS = re.compile(r"\[\s*(joy|laugh|smile|shy|surprised|sad|worried|angry|sleepy)\s*(?::\s*([01](?:\.\d+)?))?\s*\]", re.I)
 
 #: why, as she is told it ({code} reasons; one she gave herself is {text})
 _WHY_FOR_HER = {

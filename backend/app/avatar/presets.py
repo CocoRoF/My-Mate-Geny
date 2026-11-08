@@ -7,7 +7,8 @@ The templates are the ones the official mates were made with (ailism-mate ``orig
 * a clip = Kling O3 first/last frame with start = end = the base picture on a flat gray, "… ends in exactly the same
   pose as she starts", so every clip loops and any clip follows any other.
 
-Standard = 한채린's manifest (15 clips after the owner retired ``pout`` on 2026-10-28, 11 stills). The texts are written
+Standard = 한채린's manifest (15 clips after the owner retired ``pout`` on 2026-10-28, 11 stills; ``worried`` joined both on
+2026-11-08: she is worried as often as she is sad, and her worry had no face). The texts are written
 for any character: ``{S}`` / ``{s}`` subject, ``{pos}`` possessive, ``{obj}`` object, filled per the brief's pronoun.
 """
 
@@ -21,7 +22,7 @@ GRAY = (213, 212, 217)
 
 CLIP_KINDS = ("idle", "talk", "listen", "think", "react", "away")
 #: the emotion tags the mate writes ([joy] [smile] …, app/mate/prompt.py) — what react clips are keyed by
-EMOTIONS = ("joy", "smile", "laugh", "shy", "surprised", "sad", "angry", "thinking", "agree", "greet", "sleepy")
+EMOTIONS = ("joy", "smile", "laugh", "shy", "surprised", "sad", "worried", "angry", "thinking", "agree", "greet", "sleepy")
 #: stills the player uses for its mechanics (blink, mouth while speaking) — never an emotion's still
 MECHANICS = ("blink", "mouth_half", "mouth_open", "mouth_o")
 
@@ -38,6 +39,7 @@ STILLS: dict[str, str] = {
     "shy": "shy and blushing, eyes looking a little away",
     "surprised": "surprised, eyes wide, mouth slightly open",
     "sad": "sad and sympathetic, eyes lowered",
+    "worried": "worried and caring, brows drawn up together, eyes soft and a little anxious, lips pressed together",
     "thinking": "thinking, eyes looking up",
     "sleepy": "sleepy, eyes half closed",
     "angry": "annoyed, brows drawn together, mouth in a small frown",
@@ -66,6 +68,9 @@ CLIPS: dict[str, tuple[str, str, str | None, bool]] = {
     "shy": ("react", "{S} blushes and looks away shyly, then peeks back", "shy", False),
     "surprised": ("react", "{Pos} eyes go wide and {s} freezes for a moment, then relaxes", "surprised", False),
     "sad": ("react", "{S} looks down sadly, then looks back with a small reassuring nod", "sad", False),
+    "worried": ("react", "{S} looks at the viewer with a worried face, {pos} brows drawing up together and {pos} lips pressing "
+                "together, leaning in a little with concern, then {pos} face softens and {s} gives a small, gentle nod", "worried",
+                False),
     "nod": ("react", "{S} nods twice firmly, determined", "agree", False),
     "wave": ("react", "{S} lifts a hand and gives a small friendly wave, then lowers it", "greet", False),
     "angry": ("react", "{S} frowns, annoyed for a moment, then lets it go with a small sigh", "angry", False),
@@ -81,14 +86,14 @@ PRESETS: dict[str, dict[str, list[str]]] = {
     # 한채린 (original_content/mate/chaerin/manifest.json) without the retired pout
     "standard": {
         "clips": ["idle_a", "idle_b", "idle_c", "talk_a", "talk_b", "listen", "think", "laugh", "smile", "shy",
-                  "surprised", "sad", "nod", "wave", "doze"],
-        "stills": ["smile", "laugh", "shy", "surprised", "sad", "thinking", "sleepy", "blink", "mouth_half",
+                  "surprised", "sad", "worried", "nod", "wave", "doze"],
+        "stills": ["smile", "laugh", "shy", "surprised", "sad", "worried", "thinking", "sleepy", "blink", "mouth_half",
                    "mouth_open", "mouth_o"],
     },
     "rich": {
         "clips": ["idle_a", "idle_b", "idle_c", "idle_d", "talk_a", "talk_b", "talk_c", "listen", "listen_b", "think",
-                  "think_b", "laugh", "smile", "shy", "surprised", "sad", "nod", "wave", "angry", "yawn", "doze"],
-        "stills": ["smile", "laugh", "shy", "surprised", "sad", "thinking", "sleepy", "angry", "blink", "mouth_half",
+                  "think_b", "laugh", "smile", "shy", "surprised", "sad", "worried", "nod", "wave", "angry", "yawn", "doze"],
+        "stills": ["smile", "laugh", "shy", "surprised", "sad", "worried", "thinking", "sleepy", "angry", "blink", "mouth_half",
                    "mouth_open", "mouth_o"],
     },
 }

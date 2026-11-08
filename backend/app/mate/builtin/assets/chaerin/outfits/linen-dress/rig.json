@@ -22,7 +22,8 @@
     "blink": "asset:chaerin-linen-dress/blink.webp",
     "mouth_half": "asset:chaerin-linen-dress/mouth_half.webp",
     "mouth_open": "asset:chaerin-linen-dress/mouth_open.webp",
-    "mouth_o": "asset:chaerin-linen-dress/mouth_o.webp"
+    "mouth_o": "asset:chaerin-linen-dress/mouth_o.webp",
+    "worried": "asset:chaerin-linen-dress/worried.webp"
   },
   "clips": [
     {
@@ -113,6 +114,14 @@
       "small": "asset:chaerin-linen-dress/sad.sm.mp4",
       "emotion": "sad",
       "thumb": "asset:chaerin-linen-dress/sad.thumb.webp"
+    },
+    {
+      "id": "worried",
+      "kind": "react",
+      "src": "asset:chaerin-linen-dress/worried.lg.mp4",
+      "small": "asset:chaerin-linen-dress/worried.sm.mp4",
+      "emotion": "worried",
+      "thumb": "asset:chaerin-linen-dress/worried.thumb.webp"
     },
     {
       "id": "angry",
@@ -227,6 +236,9 @@
     ],
     "greet": [
       "wave"
+    ],
+    "worried": [
+      "worried"
     ]
   },
   "packing": "stacked-alpha",

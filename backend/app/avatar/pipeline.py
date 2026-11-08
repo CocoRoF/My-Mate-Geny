@@ -303,6 +303,29 @@ def doubted_gray(a: np.ndarray, dist: np.ndarray, size: int) -> np.ndarray:
     return a * (1 - doubt * (1 - np.clip((dist - GAP_KEY) / (NEAR_KEY - GAP_KEY), 0, 1)))
 
 
+def held_objects(a: np.ndarray, orig: np.ndarray, bg: np.ndarray, dist: np.ndarray, near: np.ndarray) -> np.ndarray:
+    """What she holds, when the remover drops it whole: it keeps the person, and a book held up in front of her or a cup on
+    its way out of the frame can go entirely, in some frames of a clip and not in others. On the flat gray, whatever is
+    clearly not the gray and joined to her (``near``) through more of it is hers, however far it reaches. Its inside counts
+    in full (a ramp from the gray would leave a book's light pages see-through); its outline is the edge steps' work. Only
+    when the rest is the flat gray (what was dropped is no background to judge by) and it is smaller than she is: on a room
+    the walls and the furniture would join her."""
+    strong = dist > KEY_FROM
+    lab, n = ndimage.label(strong, structure=np.ones((3, 3)))
+    if not n:
+        return a
+    hers = np.zeros(n + 1, bool)
+    hers[np.unique(lab[strong & near])] = True
+    hers[0] = False
+    far = hers[lab] & ~near
+    if not far.any():
+        return a
+    out = np.where(far, 1.0, a).astype(a.dtype)
+    if far.sum() > (a > 0.5).sum() or not flat_background(orig, out, bg):
+        return a
+    return out
+
+
 def recover(orig: np.ndarray, masked: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """One frame's alpha (0..1) from the original on the flat gray and the remover's subject-on-black, and the
     background colour of this frame (the light may drift a little)."""
@@ -319,6 +342,7 @@ def recover(orig: np.ndarray, masked: np.ndarray) -> tuple[np.ndarray, np.ndarra
     key = np.clip((dist - KEY_FROM) / (KEY_TO - KEY_FROM), 0, 1)
     near = ndimage.binary_dilation(a > 0.5, structure=np.ones((3, 3)), iterations=12)
     a = np.where(near, np.maximum(a, key), a)
+    a = held_objects(a, orig, bg, dist, near)
     # solid inside the body — but holes that ARE the background (gray seen through a ponytail's loop) stay open
     solid = ndimage.binary_fill_holes(a > 0.5)
     a = np.where(solid & (a < 0.5) & (dist > KEY_FROM), np.maximum(a, 0.98), a)
@@ -332,12 +356,40 @@ def colour(orig: np.ndarray, a: np.ndarray, bg: np.ndarray) -> np.ndarray:
     return np.where(aa > 0.02, (orig - (1 - aa) * bg) / np.maximum(aa, 0.02), 0).clip(0, 255)
 
 
+#: a gap between strands: lighter than what lies on both sides of it, this much, within this many pixels; and no lighter than
+#: the gray by more than this (the sharpening's overshoot)
+RIDGE_DARKER, RIDGE_REACH, GAP_LIGHTER = 25.0, 3, 12.0
+
+
+def light_ridge(orig: np.ndarray) -> np.ndarray:
+    """Pixels lighter than something on both sides of them (across, down or along a diagonal): the gray seen between two
+    dark strands, however mixed with them. Where a dark part of her meets a light one, one side is lighter: no ridge."""
+    lum = orig.mean(-1).astype(np.float32)
+    pad = np.pad(lum, RIDGE_REACH, mode="edge")
+    H, W = lum.shape
+    out = np.zeros(lum.shape, bool)
+    for dy, dx in ((0, 1), (1, 0), (1, 1), (1, -1)):
+        sides = []
+        for sign in (1, -1):
+            side = np.full(lum.shape, np.inf, np.float32)
+            for k in range(1, RIDGE_REACH + 1):
+                oy, ox = RIDGE_REACH + sign * k * dy, RIDGE_REACH + sign * k * dx
+                side = np.minimum(side, pad[oy:oy + H, ox:ox + W])
+            sides.append(side <= lum - RIDGE_DARKER)
+        out |= sides[0] & sides[1]
+    return out
+
+
 def solidify(rgb: np.ndarray, a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Full opacity well inside the body (dark cloth gives a noisy ratio matte): small holes closed, pixels two
     steps inside get alpha 1 and their original colour back. Gaps that show the background gray between dark strands
-    stay open, and so do their edges."""
+    stay open, and so do their edges; also where the gray is mixed with them, a gap a pixel or two wide beside a loose strand
+    (made solid, her hair's outline there would keep its gray: a light line, and the strand's colour)."""
     body = ndimage.binary_closing(a > 0.5, structure=np.ones((3, 3)), iterations=2)
-    body &= ~((a < 0.5) & (np.sqrt(((orig - bg) ** 2).sum(-1)) < KEY_FROM) & near_dark(orig, bg, 4))
+    # (a gap shows the gray, mixed with the dark beside it: never much lighter than the gray, a book's white page between its cover
+    # and a page line is)
+    gap_ridge = light_ridge(orig) & (orig.mean(-1) <= float(bg.mean()) + GAP_LIGHTER)
+    body &= ~((a < 0.5) & ((np.sqrt(((orig - bg) ** 2).sum(-1)) < KEY_FROM) | gap_ridge) & near_dark(orig, bg, 4))
     inner = ndimage.binary_erosion(body, structure=np.ones((3, 3)), iterations=2) & (a < 1.0)
     if inner.any():
         rgb = rgb.copy()
@@ -350,18 +402,24 @@ def solidify(rgb: np.ndarray, a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -
 #: from here a pixel is her for certain: what is less is an edge, coloured from her nearest certain pixel; this far past
 #: her (pixels of the clip) it is coloured too, so the codec's colour blur and the browser's scaling find her colours there
 DEFRINGE_SOLID, DEFRINGE_BAND = 0.95, 6
+#: from here an edge pixel holds enough of her for its own colour to say what she is there (below it the gray's noise decides)
+DEFRINGE_OWN = 0.25
 
 
 def defringe(rgb: np.ndarray, a: np.ndarray, solid: float = DEFRINGE_SOLID, band: int = DEFRINGE_BAND) -> np.ndarray:
     """The edge in her own colours. A half-transparent edge pixel still holds some of the gray she was cut from, and on a
     dark page that reads as a light rim around her (her arms, her hair): every pixel short of ``solid``, up to ``band``
-    pixels out, takes the colour of the nearest one that is certainly her (her outline, mostly). Beyond that it is black,
-    as before (a flat field costs the codec nothing). Alpha stays as it is."""
+    pixels out, takes the colour of the nearest one that is certainly her (her outline, mostly), unless its own colour is
+    darker. Beyond that it is black, as before (a flat field costs the codec nothing). Alpha stays as it is."""
     s = a >= solid
     if not s.any() or s.all():
         return rgb
     dist, (iy, ix) = ndimage.distance_transform_edt(~s, return_indices=True)
-    out = np.where(s[..., None], rgb, rgb[iy, ix])
+    near = rgb[iy, ix]
+    # (the nearest certain pixel can be a mix itself, her hair's outline made solid beside a loose strand: its gray would light
+    # the strand up. What holds enough of her keeps its own colour where that is the darker one; a rim is the lighter one)
+    own = (a >= DEFRINGE_OWN) & (rgb.mean(-1) < near.mean(-1))
+    out = np.where((s | own)[..., None], rgb, near)
     return np.where(((dist > band) & (a < 0.02))[..., None], 0, out).astype(rgb.dtype)
 
 
@@ -395,21 +453,33 @@ def steady(window: list[tuple[np.ndarray, np.ndarray]], mid: int) -> tuple[np.nd
 def fill_object_holes(a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -> np.ndarray:
     """Holes inside her that are her, or something she holds: the remover keeps the person and can drop a flat object, or a light
     part of her over it (her fingers on a cup, a book's pages, a white rim). Such a hole is about as light as the gray or lighter,
-    and yet not the gray itself; or it has a clear colour of its own. It is filled whatever rings it. A hole that is the gray
-    (between her fingers, her arm and her side) stays open, and so does one darker than the gray: the gray between strands of her
-    hair, mixed with them."""
+    and yet not the gray itself; or it has a clear colour of its own. A hole that is the gray (between her fingers, her arm and her
+    side) stays open, and so does one darker than the gray: the gray between strands of her hair, mixed with them, even where the
+    sharpening's light line in it makes it pass as light on the medians (dark hair rings it). The bottom of the frame closes a hole
+    like her body does: she is cut off there."""
     solid = a > 0.5
-    lab, n = ndimage.label(ndimage.binary_fill_holes(solid) & ~solid)
+    # (she is cut off at the bottom of the frame: what her body and that edge close in is inside her too, a cup on its way out)
+    closed = ndimage.binary_fill_holes(np.vstack([solid, np.ones((1, solid.shape[1]), bool)]))[:-1]
+    lab, n = ndimage.label(closed & ~solid)
     if not n:
         return a
     dist = np.sqrt(((orig - bg) ** 2).sum(-1))
     lum, bg_lum = orig.mean(-1), float(bg.mean())
     chroma = orig.max(-1) - orig.min(-1)
     out = a.copy()
-    for i, sl in enumerate(ndimage.find_objects(lab), 1):
+    H, W = a.shape
+    for i, box in enumerate(ndimage.find_objects(lab), 1):
+        sl = (slice(max(0, box[0].start - 3), min(H, box[0].stop + 3)), slice(max(0, box[1].start - 3), min(W, box[1].stop + 3)))
         hole = lab[sl] == i
         size = int(hole.sum())
-        light = float(np.median(lum[sl][hole])) >= bg_lum - OBJECT_HOLE_DARKER and float(np.median(dist[sl][hole])) >= OBJECT_HOLE_KEY
+        lum_h, dist_h = lum[sl][hole], dist[sl][hole]
+        light = float(np.median(lum_h)) >= bg_lum - OBJECT_HOLE_DARKER and float(np.median(dist_h)) >= OBJECT_HOLE_KEY
+        if light and float(((lum_h >= bg_lum - OBJECT_HOLE_DARKER) & (dist_h >= OBJECT_HOLE_KEY)).mean()) < 0.5:
+            # (it passes only on the two medians taken apart, most of its pixels failing one test or the other: a gap between
+            # strands of her hair does, its light line about as light as the gray and its gray mixed with the strands far from it,
+            # and so do a book's page lines, darker than the gray between white paper. Dark hair rings the gap; paper the lines)
+            ring = ndimage.binary_dilation(hole, iterations=2) & ~hole
+            light = float((lum[sl][ring] < 0.5 * bg_lum).mean()) <= 0.25
         coloured = size >= OBJECT_HOLE_COLOURED_MIN and float(np.median(chroma[sl][hole])) >= OBJECT_HOLE_CHROMA
         if light or coloured:
             g = ndimage.binary_dilation(hole, iterations=1)

@@ -34,19 +34,29 @@ Exactly the official mates' body (docs/mate.md §2 `video`, packing `stacked-alp
    she starts." Every clip passes through the same frame, so any clip follows any other and each loops.
 5. **Mattes** — `video_background_remover` (one at a time), then the alpha is recovered mathematically from the known
    gray: α = removed / original, colour = (original − (1 − α)·bg) / α; near the body, colours clearly not the gray are
-   body (the remover cracks along dark folds); holes inside the body are filled unless they are the gray itself; gaps
+   body (the remover cracks along dark folds), and so is whatever clearly isn't the gray and is joined to her through more of
+   it, however far it reaches (`held_objects`: the remover keeps the person and can drop a book held up in front of her whole,
+   in some frames and not in others; its inside counts in full, so light pages aren't see-through; only on the flat gray and
+   never more than her own size); holes inside the body are filled unless they are the gray itself; gaps
    the remover covers (the gray between hair and a loose strand: its mask is a smooth hull there) opened again from the
    picture, with the coverage of the dark edges beside them, and what the remover itself doubts fades with how close it
    is to the gray (behind pale hair the gray picks up a tint); specks dropped; the inside made solid; the edge choked a
    pixel in, except what clearly isn't the gray (a fine strand, an outline). When a clip is encoded, each frame's matte first
    gets back what the remover dropped of her or of what she holds (`fill_object_holes`: a hole about as light as the gray or
-   lighter, yet not the gray itself, or of a clear colour: her fingers on a cup, a book's pages; the gray between her fingers
-   and the gray between strands of her hair stay open), loses the sharpening's light line outside her outline (`cut_halo`), and
+   lighter and yet not the gray itself, or of a clear colour: her fingers on a cup, a book's pages; the bottom of the frame
+   closes a hole like her body does, since she is cut off there, so a cup on its way out counts; the gray between her fingers
+   and the gray between strands of her hair stay open; where a hole passes only because its light pixels and its
+   far-from-gray ones are different pixels, what rings it decides: dark hair, a gap beside a loose strand; white paper, a
+   book's page lines), loses the sharpening's light line outside her outline (`cut_halo`), and
    has its edge measured again from its colour (`unmix_edge`: an edge pixel is her colour, taken from the nearest pixel well
    inside her, mixed with the known gray, and the proportion is its alpha, so the gray in a hair strand's edge doesn't stay as a
    white line); then it is steadied in time (`steady`: averaged with three frames either way, as far as the picture there is
    the same picture, so what is left of the matte's per-frame noise doesn't crawl along her edges, and a moving arm keeps its
-   own frame); and the edge is coloured from her nearest certain pixel (`defringe`). Clips are encoded at CRF 18 / 20 with `-tune animation` (the alpha half
+   own frame); the inside is made solid, but not across a gap beside a loose strand (`light_ridge`: lighter than something on
+   both sides, and no lighter than the gray; where a dark part of her meets a light one there is no ridge, and a white page
+   is lighter than the gray); and the edge is coloured from her nearest
+   certain pixel (`defringe`), unless its own colour is the darker one where enough of her is there (the nearest certain
+   pixel can be a mix itself, and its gray lit loose strands up as light specks on a dark place). Clips are encoded at CRF 18 / 20 with `-tune animation` (the alpha half
    shares the quality), and each gets a small still for the clip library (`clip_thumb`). The base picture's cut-out gets the same
    opening, so every way of making an avatar does: a new mate, an existing mate's avatar, an outfit, a redo. All of it only
    on one flat background (`flat_background`): a reference used as it is may stand on a room, and then the remover's
@@ -66,8 +76,8 @@ Exactly the official mates' body (docs/mate.md §2 `video`, packing `stacked-alp
 | preset | clips | stills |
 |---|---|---|
 | minimal | 6: idle ×2, talk ×2, listen, think | 6: smile, surprised, sad, thinking, blink, mouth_open |
-| standard (= 한채린's manifest without the retired pout) | 15: idle ×3, talk ×2, listen, think, react ×7 (joy, smile, shy, surprised, sad, agree, greet), doze | 11: smile, laugh, shy, surprised, sad, thinking, sleepy, blink, mouth_half, mouth_open, mouth_o |
-| rich | 21: + idle, talk, listen, think, angry, sleepy (yawn) | 12: + angry |
+| standard (= 한채린's manifest without the retired pout) | 16: idle ×3, talk ×2, listen, think, react ×8 (joy, smile, shy, surprised, sad, worried, agree, greet), doze | 12: smile, laugh, shy, surprised, sad, worried, thinking, sleepy, blink, mouth_half, mouth_open, mouth_o |
+| rich | 22: + idle, talk, listen, think, angry, sleepy (yawn) | 13: + angry |
 | custom | any (≤ 32; at least one idle; react clips name an emotion tag) | any (≤ 16) |
 
 ## 2. Where

@@ -215,6 +215,9 @@ def test_what_her_face_shows_is_how_she_feels_for_what_was_said():
     before = _lv(doc, w)
     S.reply(doc, w, "[neutral] 그냥요. [ok]", "", NOON, TZ)  # (a blank face and non-feelings say nothing)
     assert _lv(doc, w) == before
+    # (worried is a face of her own now: [worried] was shown to the user as text, and said nothing about how she felt)
+    S.reply(doc, w, "[worried] ...요즘 많이 힘들어?", "요즘 한국 20~30대 삶이 왜케 힘들지?", NOON, TZ)
+    assert _lv(doc, w)["worried"] == pytest.approx(0.225)
 
 
 def test_a_strong_feeling_makes_room():

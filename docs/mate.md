@@ -253,7 +253,7 @@ interface Rig {
   aspect: [number, number];                  // w, h of one frame
   packing?: "stacked-alpha" | "plain";       // video only; stacked-alpha = colour top / alpha bottom (H.264)
   home: string;                              // still of the shared home frame (poster / fallback)
-  stills: Record<string, string>;            // neutral, smile, laugh, shy, surprised, sad, thinking, sleepy,
+  stills: Record<string, string>;            // neutral, smile, laugh, shy, surprised, sad, worried, thinking, sleepy,
                                              // + mechanics: blink, mouth_half, mouth_open, mouth_o
   clips: { id: string; kind: "idle"|"talk"|"listen"|"think"|"react"|"away";
            emotion?: string; src: string; small?: string; loop?: boolean;
@@ -624,9 +624,12 @@ Live2D content. The originals are authoritative; see
   blocks; anything else (archives, binaries, a scanned PDF) is only described.
 - Reply format the prompt asks for: short conversational text in the mate's
   language, no heavy markdown; optional inline emotion tags at the start of a
-  sentence: `[neutral] [joy] [smile] [laugh] [shy] [surprised] [sad] [angry]
-  [thinking] [agree] [greet] [sleepy]`. The client strips tags for display and
-  speech, and turns the latest one into the avatar's `react`.
+  sentence: `[neutral] [joy] [smile] [laugh] [shy] [surprised] [sad] [worried]
+  [angry] [thinking] [agree] [greet] [sleepy]`. The client strips tags for display and
+  speech, and turns the latest one into the avatar's `react`. `worried` is also one of
+  her state emotions, which is why she reaches for it; the client takes her other state
+  words too (`lonely` → sad, `nervous`/`anxious` → worried, `happy`, `excited`), so no tag
+  she writes ever shows as text. A body without a worried clip or still shows sad.
 - **Replies: bubbles, captions, speech** (the model may still write markdown,
   and a delegated chat's answer often has some). One reply text, three views:
   - *Bubbles* (`frontend/src/mate/markdown.ts` `segmentReply` →

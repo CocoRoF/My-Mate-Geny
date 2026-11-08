@@ -54,7 +54,8 @@ _EMOTION_ALIASES = {
     "anger": "angry", "angry": "angry", "sadness": "sad", "sad": "sad", "surprise": "surprised",
     "surprised": "surprised", "joy": "joy", "happy": "smile", "smile": "smile", "laugh": "laugh",
     "neutral": "neutral", "shy": "shy", "thinking": "thinking", "agree": "agree",
-    "greet": "greet", "sleepy": "sleepy", "smirk": "smile",
+    "greet": "greet", "sleepy": "sleepy", "smirk": "smile", "worried": "worried", "worry": "worried", "anxious": "worried",
+    "nervous": "worried",
 }
 CLIP_KINDS = ("idle", "talk", "listen", "think", "react", "away", "life")
 _SIDECARS = ("avatar-editor.json", "avatar.json")

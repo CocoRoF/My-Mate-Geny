@@ -60,7 +60,7 @@ def _quotes(brief):
 
 def test_presets_and_plan_per_preset():
     seen = {}
-    for preset, clips, stills in (("minimal", 6, 6), ("standard", 15, 11), ("rich", 21, 12)):
+    for preset, clips, stills in (("minimal", 6, 6), ("standard", 16, 12), ("rich", 22, 13)):
         b = _brief(preset=preset)
         assert len(b["clips"]) == clips and len(b["stills"]) == stills
         jobs = {j["stage"]: j for j in PL.jobs_for(b)}
@@ -75,11 +75,12 @@ def test_presets_and_plan_per_preset():
         assert len(PL.quote_requests(PL.jobs_for(b))) == 4
         seen[preset] = PL.price(b, _quotes(b))["total"]
     # 4 candidates·2 + 0.5 + stills·2 + clips·(9+1)
-    assert seen == {"minimal": 8 + 0.5 + 12 + 60, "standard": 8 + 0.5 + 22 + 150, "rich": 8 + 0.5 + 24 + 210}
-    # the standard preset is 한채린's manifest without the retired pout
+    assert seen == {"minimal": 8 + 0.5 + 12 + 60, "standard": 8 + 0.5 + 24 + 160, "rich": 8 + 0.5 + 26 + 220}
+    # the standard preset is 한채린's manifest without the retired pout, and with the worried face she has had since 2026-11-08
     manifest = json.loads((MASTERS / "chaerin" / "manifest.json").read_text()) if MASTERS.is_dir() else None
     if manifest:
-        assert [c["id"] for c in _brief()["clips"]] == [c["id"] for c in manifest["clips"] if c["id"] != "pout"]
+        ids = [c["id"] for c in manifest["clips"] if c["id"] != "pout"]
+        assert [c["id"] for c in _brief()["clips"]] == [*ids[:ids.index("sad") + 1], "worried", *ids[ids.index("sad") + 1:]]
     # a reference used as the base: no candidates; light tier: Kling std; 9:16
     b = _brief(reference={"mode": "as_base", "files": ["ref-1.png"]}, tier="light", aspect="9:16", preset="minimal")
     stages = [j["stage"] for j in PL.jobs_for(b)]
@@ -848,3 +849,89 @@ print(json.dumps(out))
     assert 0.4 < res["mixed"] < 0.6 and res["halo"] == 0.0 and res["inside"] == 1.0
     assert res["skin_kept"] == pytest.approx(0.8) and res["halo_cut"] == 0.0
     assert res["thumb"] and (tmp_path / "thumb.webp").stat().st_size > 1000
+
+
+def test_what_she_holds_comes_back_when_the_remover_drops_it(tmp_path):
+    """pipeline.held_objects / fill_object_holes on a made-up frame: a dark book held out in front of her, dropped whole by the
+    remover, comes back with its light pages, however far it reaches; something dark that doesn't touch her stays out, and so
+    does the gray. A cup in front of her, leaving the frame, is filled; the gray between her arm and her side, open at the
+    bottom of the frame like it, stays open."""
+    script = r'''
+import json, sys, importlib.util
+import numpy as np
+from scipy import ndimage
+spec = importlib.util.spec_from_file_location("pipeline", sys.argv[1]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+bg = np.array([213, 212, 217], np.float32)
+o = np.empty((120, 120, 3), np.float32); o[:] = bg; a = np.zeros((120, 120), np.float32)
+o[10:120, 40:80] = [30, 28, 34]; a[10:120, 40:80] = 1.0       # her
+o[50:80, 10:110] = [20, 24, 60]                               # the book's navy cover, out to both sides, alpha 0
+o[44:50, 12:108] = [255, 244, 228]                            # its pages on top, about 54 from the gray
+o[100:110, 2:8] = [20, 24, 60]                                # something dark that doesn't touch her
+dist = np.sqrt(((o - bg) ** 2).sum(-1))
+near = ndimage.binary_dilation(a > 0.5, structure=np.ones((3, 3)), iterations=12)
+h = m.held_objects(a, o, bg, dist, near)
+out = {"cover_far": float(h[65, 12]), "pages_far": float(h[46, 14]), "loose": float(h[105, 5]), "gray": float(h[30, 10])}
+room = o.copy(); room[::8] = [120, 90, 60]; room[:, ::8] = [60, 90, 120]   # her and the book on a busy room instead of the gray
+rd = np.sqrt(((room - bg) ** 2).sum(-1))
+out["room_unchanged"] = bool((m.held_objects(a, room, bg, rd, near) == a).all())
+o2 = np.empty((60, 60, 3), np.float32); o2[:] = bg; a2 = np.zeros((60, 60), np.float32)
+o2[10:60, 10:50] = [30, 28, 34]; a2[10:60, 10:50] = 1.0                                         # her, down to the edge
+o2[45:60, 22:38] = [246, 246, 248]; a2[45:60, 22:38] = 0.0                                      # a white cup in front, alpha 0
+out["cup"] = float(m.fill_object_holes(a2, o2, bg)[47:60, 24:36].min())
+o3 = np.empty((60, 60, 3), np.float32); o3[:] = bg; a3 = np.zeros((60, 60), np.float32)
+o3[10:60, 10:20] = o3[10:60, 40:50] = [30, 28, 34]; a3[10:60, 10:20] = a3[10:60, 40:50] = 1.0   # her arm and her side
+a3[10:20, 10:50] = 1.0; o3[10:20, 10:50] = [30, 28, 34]                                         # joined above
+out["gray_gap"] = float(m.fill_object_holes(a3, o3, bg)[25:55, 22:38].max())
+print(json.dumps(out))
+'''
+    (tmp_path / "t.py").write_text(script)
+    r = subprocess.run([str(_venv() / "bin" / "python"), "-I", str(tmp_path / "t.py"), str(S.Path(S.__file__).with_name("pipeline.py"))],
+                       capture_output=True, text=True, timeout=120)
+    res = json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 else pytest.fail(r.stderr)
+    assert res["cover_far"] == 1.0 and res["pages_far"] == 1.0
+    assert res["loose"] == 0.0 and res["gray"] == 0.0 and res["room_unchanged"]
+    assert res["cup"] == 1.0 and res["gray_gap"] == 0.0
+
+
+def test_a_loose_strand_beside_her_hair_stays_dark(tmp_path):
+    """pipeline.fill_object_holes / light_ridge / solidify / defringe on the gap between a loose strand and her hair: the gap is no
+    hole to fill (its light pixels are the sharpening's line, its far-from-gray ones the gray mixed with the strands: no pixel is
+    both, and dark hair rings it; a book's page lines are the same mix, ringed by paper, and filled), solidify doesn't close it, and the strand keeps its dark colour, not the gray of a mixed pixel beside it. Where a dark
+    part of her meets a light one there is no ridge, and a light rim still takes the colour inside it."""
+    script = r'''
+import json, sys, importlib.util
+import numpy as np
+spec = importlib.util.spec_from_file_location("pipeline", sys.argv[1]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+bg = np.array([213, 212, 217], np.float32)
+# a hole that passes on its two medians taken apart and hardly on its pixels: the sharpening's light line (about the gray, a little
+# lighter here and there) and the gray mixed with dark (far from it). Dark hair rings it: a gap; white paper: a book's page lines
+def hole_in(ring):
+    o = np.empty((40, 40, 3), np.float32); o[:] = ring; a = np.ones((40, 40), np.float32)
+    o[10:30, 16:18] = [222, 221, 226]; o[10:30, 18] = [232, 231, 236]; o[10:30, 19:21] = [170, 169, 174]; a[10:30, 16:21] = 0.2
+    return m.fill_object_holes(a, o, bg)[15:25, 16:21]
+out = {"mixed_gap_filled": float(hole_in([30, 28, 34]).max()), "page_lines_filled": float(hole_in([250, 248, 240]).min())}
+# her hair (columns 11 on), a gap (9-10) and a loose strand (8): the gap is a ridge, the edge of a light part of her is not
+o = np.empty((20, 20, 3), np.float32); o[:] = bg
+o[:, 11:] = [30, 28, 34]; o[:, 9:11] = [175, 174, 179]; o[:, 8] = [105, 104, 109]
+o2 = np.empty((20, 20, 3), np.float32); o2[:] = [30, 28, 34]; o2[:, 10:] = [225, 222, 230]; o2[:, 9] = [130, 128, 135]
+r1, r2 = m.light_ridge(o), m.light_ridge(o2)
+out["gap_ridge"] = bool(r1[10, 9] and r1[10, 10]); out["junction_ridge"] = bool(r2[10, 9])
+a = np.zeros((20, 20), np.float32); a[:, 11:] = 1.0; a[:, 10] = 0.7; a[:, 9] = 0.3; a[:, 8] = 0.55
+rgb = m.colour(o, a, bg); rgb, a2 = m.solidify(rgb, a, o, bg)
+out["gap_closed"] = float(a2[10, 9]); out["outline_solid"] = float(a2[10, 10])
+d = m.defringe(rgb, a2)
+out["strand_lum"] = float(d[10, 8].mean())
+rgb = np.zeros((30, 30, 3), np.float32); al = np.zeros((30, 30), np.float32)
+rgb[:, :10] = [20, 20, 30]; al[:, :10] = 1.0; rgb[:, 10] = [200, 200, 205]; al[:, 10] = 0.6   # a rim still holding the gray
+out["rim"] = m.defringe(rgb, al)[5, 10].tolist()
+print(json.dumps(out))
+'''
+    (tmp_path / "t.py").write_text(script)
+    r = subprocess.run([str(_venv() / "bin" / "python"), "-I", str(tmp_path / "t.py"), str(S.Path(S.__file__).with_name("pipeline.py"))],
+                       capture_output=True, text=True, timeout=120)
+    res = json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 else pytest.fail(r.stderr)
+    assert res["mixed_gap_filled"] < 0.5 and res["page_lines_filled"] == 1.0
+    assert res["gap_ridge"] and not res["junction_ridge"]
+    assert res["gap_closed"] < 0.5 and res["outline_solid"] < 0.95
+    assert res["strand_lum"] < 60  # (it was the gray of the outline beside it, about 120: a light line on a dark page)
+    assert res["rim"] == [20, 20, 30]

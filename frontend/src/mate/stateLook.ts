@@ -13,7 +13,7 @@ const STATE_LOOK: Partial<Record<StateLabel, string>> = {
   angry: "angry",
   sad: "sad",
   lonely: "sad",
-  worried: "sad",
+  worried: "worried",
   sleepy: "sleepy",
 };
 /** from here she looks it all the time, and shows it more often */

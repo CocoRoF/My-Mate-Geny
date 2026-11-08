@@ -22,7 +22,8 @@
     "blink": "asset:chaerin-pajamas/blink.webp",
     "mouth_half": "asset:chaerin-pajamas/mouth_half.webp",
     "mouth_open": "asset:chaerin-pajamas/mouth_open.webp",
-    "mouth_o": "asset:chaerin-pajamas/mouth_o.webp"
+    "mouth_o": "asset:chaerin-pajamas/mouth_o.webp",
+    "worried": "asset:chaerin-pajamas/worried.webp"
   },
   "clips": [
     {
@@ -115,6 +116,14 @@
       "thumb": "asset:chaerin-pajamas/sad.thumb.webp"
     },
     {
+      "id": "worried",
+      "kind": "react",
+      "src": "asset:chaerin-pajamas/worried.lg.mp4",
+      "small": "asset:chaerin-pajamas/worried.sm.mp4",
+      "emotion": "worried",
+      "thumb": "asset:chaerin-pajamas/worried.thumb.webp"
+    },
+    {
       "id": "angry",
       "kind": "react",
       "src": "asset:chaerin-pajamas/angry.lg.mp4",
@@ -203,6 +212,9 @@
     ],
     "greet": [
       "wave"
+    ],
+    "worried": [
+      "worried"
     ]
   },
   "packing": "stacked-alpha",

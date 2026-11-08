@@ -30,7 +30,7 @@ const MOOD_LABEL: Record<BodyMood, MsgKey> = {
   talking: "mateSettings.clipMoodTalking",
   away: "mateSettings.clipMoodAway",
 };
-const STILLS = ["neutral", "smile", "laugh", "shy", "surprised", "sad", "thinking", "sleepy", "blink", "mouth_half", "mouth_open", "mouth_o"];
+const STILLS = ["neutral", "smile", "laugh", "shy", "surprised", "sad", "worried", "thinking", "sleepy", "blink", "mouth_half", "mouth_open", "mouth_o"];
 
 const emptyRig = (): Rig => ({ aspect: [3, 4], home: "", stills: {}, clips: [] });
 const rigOf = (a: Avatar): Rig => (a.kind === "video" || a.kind === "photo" ? a.rig : emptyRig());

@@ -79,6 +79,12 @@ meanwhile. The clips of an existing set are encoded into its own box, so what is
 Her edges are her own colours (`pipeline.defringe`): a half-transparent edge pixel still holds some of the gray she was cut from, which on a
 dark place reads as a white rim around her arms and hair. Every pixel short of certainly her takes the colour of her nearest certain pixel
 (her outline, mostly), and so does a narrow band outside her, so the codec's colour blur and the browser's scaling only mix her colours.
+A pixel whose own colour is darker keeps it (a loose strand beside her hair would otherwise take the gray of the hair's outline).
+What she holds comes back when the remover drops it (`pipeline.held_objects`, docs/avatar-create.md §5), and so does a loose strand of
+hair it dropped. Every bundled clip with a source was matted again with it and checked frame by frame; three of the reading clips were
+made again with the book lifted open and held steady (the crop top's swung in from the side and turned; the dress kept its own, which
+measured better). She has a worried face too (`worried`: a reaction clip and a still in every set), since worry is one of her feelings
+and she wrote `[worried]` before there was one.
 The pipeline does it to every set it makes; the bundled sets were redone with it. Bundled files are revalidated on every use (ETag, 304),
 so a set redone under the same names shows at once.
 

@@ -207,7 +207,7 @@ def resolve_emotion_ref(profile: dict[str, Any], emotion: str) -> tuple[str | No
 
 # Emotion tags of the mate (docs/mate.md §3) -> OmniVoice profile emotions.
 _OMNI_EMOTION = {"joy": "joy", "smile": "joy", "laugh": "joy", "greet": "joy", "agree": "neutral",
-                 "surprised": "surprise", "sad": "sadness", "angry": "anger", "shy": "neutral",
+                 "surprised": "surprise", "sad": "sadness", "worried": "sadness", "angry": "anger", "shy": "neutral",
                  "thinking": "neutral", "sleepy": "neutral", "neutral": "neutral"}
 
 

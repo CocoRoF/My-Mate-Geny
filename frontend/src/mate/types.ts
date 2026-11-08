@@ -53,7 +53,7 @@ export interface Rig {
   /** still of the shared home frame (poster / fallback) */
   home: string;
   /**
-   * neutral, smile, laugh, shy, surprised, sad, thinking, sleepy,
+   * neutral, smile, laugh, shy, surprised, sad, worried, thinking, sleepy,
    * + mechanics: blink, mouth_half, mouth_open, mouth_o
    */
   stills: Record<string, string>;

@@ -439,8 +439,9 @@ def test_the_real_bundle_is_named_and_locked_as_decided():
     for item, folder in ((gray, "crop-top"), (dress, "linen-dress"), (pajamas, "pajamas")):
         rig = item["avatar"]["rig"]
         core = [c for c in rig["clips"] if c["kind"] != "life"]
-        assert len(core) == 16 and len(rig["stills"]) == 13
+        assert len(core) == 17 and len(rig["stills"]) == 14
         assert rig["emotions"]["angry"] == ["angry"] and "angry" in rig["stills"]
+        assert rig["emotions"]["worried"] == ["worried"] and "worried" in rig["stills"]  # (her worry has a face, 2026-11-08)
         # (what she does in her own day: each says what it is, app/mate/life)
         assert all(c.get("doing") for c in rig["clips"] if c["kind"] == "life")
         urls = [rig["home"], *rig["stills"].values(), *(c["src"] for c in rig["clips"]), *(c["small"] for c in rig["clips"])]

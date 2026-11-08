@@ -21,7 +21,8 @@
     "blink": "asset:mate-chaerin/blink.webp",
     "mouth_half": "asset:mate-chaerin/mouth_half.webp",
     "mouth_open": "asset:mate-chaerin/mouth_open.webp",
-    "mouth_o": "asset:mate-chaerin/mouth_o.webp"
+    "mouth_o": "asset:mate-chaerin/mouth_o.webp",
+    "worried": "asset:mate-chaerin/worried.webp"
   },
   "clips": [
     {
@@ -105,6 +106,14 @@
       "small": "asset:mate-chaerin/sad.sm.mp4",
       "emotion": "sad",
       "thumb": "asset:mate-chaerin/sad.thumb.webp"
+    },
+    {
+      "id": "worried",
+      "kind": "react",
+      "src": "asset:mate-chaerin/worried.lg.mp4",
+      "small": "asset:mate-chaerin/worried.sm.mp4",
+      "emotion": "worried",
+      "thumb": "asset:mate-chaerin/worried.thumb.webp"
     },
     {
       "id": "nod",
@@ -211,6 +220,9 @@
     ],
     "greet": [
       "wave"
+    ],
+    "worried": [
+      "worried"
     ]
   },
   "packing": "stacked-alpha",

@@ -20,7 +20,7 @@ from typing import Any
 from app.mate import memory as M
 from app.mate.store import effective_style, normalize_prefs, split_persona
 
-EMOTION_TAGS = ("neutral", "joy", "smile", "laugh", "shy", "surprised", "sad", "angry", "thinking", "agree",
+EMOTION_TAGS = ("neutral", "joy", "smile", "laugh", "shy", "surprised", "sad", "worried", "angry", "thinking", "agree",
                 "greet", "sleepy")
 
 LANGUAGES = {
