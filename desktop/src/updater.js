@@ -292,10 +292,10 @@ function createUpdater(deps) {
       if (!u.install(silent, silent)) throw new Error("The installer could not be started.");
       let last = null;
       for (let seen = 0; seen < starts.length; ) {
-        const now = starts.slice(seen);
+        const batch = starts.slice(seen);
         seen = starts.length;
         try {
-          await Promise.any(now);
+          await Promise.any(batch);
           return;
         } catch (e) {
           last = e.errors?.at(-1) || e;
