@@ -355,6 +355,8 @@ async function main() {
         const run = spawnSync(older.file, ["/S"], { stdio: "ignore", windowsHide: true, timeout: 600000 });
         say(`${label}: the older setup ran ${Math.round((Date.now() - began) / 1000)} s (exit ${run.status}${run.error ? `, ${run.error.message}` : ""})`);
         if (run.status === 0) break;
+        // which module fell over (Windows' Application Error event)
+        console.log(ps(`Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Id = 1000; StartTime = (Get-Date).AddMinutes(-2) } -MaxEvents 1 -ErrorAction SilentlyContinue | ForEach-Object { ($_.Message -split '\\r?\\n' | Select-Object -First 8) -join ' | ' }`).replace(/^/gm, "      "));
         await sleep(15000);
       }
       const k = await until("the older build installed", () => installed()?.DisplayVersion === older.version && installed(), 180000, 1000).catch((e) => {
