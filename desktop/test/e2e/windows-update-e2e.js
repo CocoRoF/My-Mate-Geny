@@ -96,6 +96,20 @@ while ($true) {
     } catch {}
   };
 }
+/** the screen as it is (PNG): what a user sees while the installer runs */
+function screenshot(file) {
+  return ps(`Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+$b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+$bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+$g = [System.Drawing.Graphics]::FromImage($bmp)
+$g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
+$bmp.Save(${q(file)}, [System.Drawing.Imaging.ImageFormat]::Png)
+'saved'`);
+}
+/** the installer's windows (title) while it runs */
+function installerWindows() {
+  return ps(`Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like 'my-mate-geny-*' -and $_.MainWindowTitle } | ForEach-Object { $_.ProcessName + ': ' + $_.MainWindowTitle }`);
+}
 function killApp(dir) {
   spawnSync("taskkill", ["/f", "/t", "/im", EXE], { stdio: "ignore", windowsHide: true });
   if (dir) for (const p of runningFrom(dir)) spawnSync("taskkill", ["/f", "/t", "/pid", String(p.ProcessId)], { stdio: "ignore", windowsHide: true });
@@ -309,6 +323,14 @@ async function attempt({ dir, mode, feed, newer, label }) {
     r.quitMs = Date.now() - pressed;
     if (!gone) throw new Error("the old app did not quit");
     say(`${label}: the old app quit after ${r.quitMs} ms`);
+    // what is on screen while it installs: the installer's progress (an update: no pages to click, build/installer.nsh)
+    const win = await until("the installer's window", () => installerWindows(), 30000, 500).catch(() => "");
+    r.installerWindow = win || "(none)";
+    say(`${label}: on screen while installing: ${r.installerWindow}`);
+    if (win) {
+      await sleep(3000);
+      say(`${label}: screenshot ${screenshot(path.join(OUT, `${label}-installing.png`))}`);
+    }
     const done = await until(`the installer to register ${newer}`, () => installed()?.DisplayVersion === newer, 180000, 1000).catch(() => false);
     r.installedMs = Date.now() - pressed;
     if (!done) throw new Error(`no install: the app's entry still says ${installed()?.DisplayVersion}`);
