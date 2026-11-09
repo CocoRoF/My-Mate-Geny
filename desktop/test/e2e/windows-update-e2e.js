@@ -106,8 +106,9 @@ async function uninstallAll() {
     killApp(k.InstallLocation);
     const cmd = k.QuietUninstallString || `${k.UninstallString} /S`;
     spawnSync("cmd.exe", ["/d", "/s", "/c", `"${cmd}"`], { stdio: "ignore", windowsHide: true, timeout: 120000, windowsVerbatimArguments: true });
-    // (the uninstaller copies itself away and returns at once: its uninstall entry going is the end)
+    // (the uninstaller copies itself away and returns at once: its entry gone and no uninstaller left is the end)
     await until("the uninstall", () => !installed(), 120000, 500);
+    await until("the uninstaller to end", () => !ps(`@(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'Un_*' -or $_.Name -eq 'Au_' -or $_.Name -like 'Uninstall*' }).Count -gt 0`).includes("True"), 120000, 1000);
     if (k.InstallLocation) await removeDir(k.InstallLocation);
   }
   await removeDir(PROFILE);
@@ -204,13 +205,18 @@ class App {
     this.proc.unref();
   }
   async main(body) {
-    const t = await until("the main-process inspector", async () => (await (await fetch(`http://127.0.0.1:${this.iport}/json/list`)).json())[0], 90000);
-    const c = await new Cdp(t.webSocketDebuggerUrl).open();
-    try {
-      return await c.eval(`(async () => { const req = process.mainModule.require; const electron = req("electron"); ${body} })()`);
-    } finally {
-      // (a Node inspector still attached keeps a quitting app waiting for it)
-      c.close();
+    for (let n = 1; ; n++) {
+      const t = await until("the main-process inspector", async () => (await (await fetch(`http://127.0.0.1:${this.iport}/json/list`)).json())[0], 90000);
+      const c = await new Cdp(t.webSocketDebuggerUrl).open();
+      try {
+        return await c.eval(`(async () => { const req = process.mainModule.require; const electron = req("electron"); ${body} })()`);
+      } catch (e) {
+        if (n >= 3 || !/Promise was collected|closed/.test(e.message)) throw e;
+      } finally {
+        // (a Node inspector still attached keeps a quitting app waiting for it)
+        c.close();
+      }
+      await sleep(1000);
     }
   }
   async page(match, ms = 90000) {
@@ -238,10 +244,13 @@ async function attempt({ dir, mode, feed, newer, label }) {
   try {
     app.start();
     say(`${label}: the app starts (${mode})`);
+    const con = await app.page(mode === "local" ? /^http:\/\/127\.0\.0\.1:\d+\// : /^file:/);
+    await until("the page's bridge", () => con.eval(`!!(window.hrhNative && window.hrhNative.updates)`), 90000, 500);
+    // (the app's own electron-updater — the same module, by its path in the app: it is loaded at the first check)
     const facts = await app.main(`
       const fs = req("fs");
       const log = (m) => fs.appendFileSync(${JSON.stringify(quitLog)}, new Date().toISOString().slice(11, 23) + " " + String(m).split("\\n").slice(0, 3).join(" | ") + "\\n");
-      const au = req("electron-updater").autoUpdater;
+      const au = req(req("path").join(electron.app.getAppPath(), "node_modules", "electron-updater")).autoUpdater;
       const set = au.setFeedURL.bind(au);
       au.setFeedURL = () => set({ provider: "generic", url: ${JSON.stringify(feed.url)} });
       set({ provider: "generic", url: ${JSON.stringify(feed.url)} });
@@ -255,8 +264,6 @@ async function attempt({ dir, mode, feed, newer, label }) {
       return { pid: process.pid, version: electron.app.getVersion(), packaged: electron.app.isPackaged };`);
     r.from = facts.version;
     say(`${label}: running ${facts.version} (pid ${facts.pid}, packaged ${facts.packaged})`);
-    const con = await app.page(mode === "local" ? /^http:\/\/127\.0\.0\.1:\d+\// : /^file:/);
-    await until("the page's bridge", () => con.eval(`!!(window.hrhNative && window.hrhNative.updates)`), 90000, 500);
     if (mode === "local") {
       const backend = await until("the local backend, from the app's folder", () => {
         const p = runningFrom(dir).filter((x) => !/^my mate geny\.exe$/i.test(x.Name));
@@ -271,6 +278,7 @@ async function attempt({ dir, mode, feed, newer, label }) {
 
     // the press: Download & install (what the card's button does), not waited for — the app may be gone before it answers
     r.presses = 1;
+    r.pressed = true;
     await con.eval(`window.hrhNative.updates.download().then((s) => (window.__hrhDone = s)), true`);
     let seen = "";
     const state = async () => {
@@ -341,9 +349,13 @@ async function main() {
     for (let round = 1; round <= ROUNDS; round++) {
       const label = `${mode}-${round}`;
       await uninstallAll();
-      const began = Date.now();
-      const run = spawnSync(older.file, ["/S"], { stdio: "ignore", windowsHide: true, timeout: 600000 });
-      say(`${label}: the older setup ran ${Math.round((Date.now() - began) / 1000)} s (exit ${run.status}${run.error ? `, ${run.error.message}` : ""})`);
+      for (let n = 1; n <= 3; n++) {
+        const began = Date.now();
+        const run = spawnSync(older.file, ["/S"], { stdio: "ignore", windowsHide: true, timeout: 600000 });
+        say(`${label}: the older setup ran ${Math.round((Date.now() - began) / 1000)} s (exit ${run.status}${run.error ? `, ${run.error.message}` : ""})`);
+        if (run.status === 0) break;
+        await sleep(10000);
+      }
       const k = await until("the older build installed", () => installed()?.DisplayVersion === older.version && installed(), 180000, 1000).catch((e) => {
         console.log(`    uninstall entries:\n${ps(`Get-ChildItem HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall, HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall, HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall -ErrorAction SilentlyContinue | ForEach-Object { $p = Get-ItemProperty $_.PSPath; if ($p.DisplayName -like '*Mate*' -or $p.DisplayName -like '*harnessor*') { $_.Name + ' = ' + $p.DisplayName + ' ' + $p.DisplayVersion + ' @ ' + $p.InstallLocation } }`)}`);
         console.log(`    %LOCALAPPDATA%\\Programs: ${fs.readdirSync(path.join(process.env.LOCALAPPDATA, "Programs")).join(", ")}`);
@@ -354,7 +366,7 @@ async function main() {
       fs.writeFileSync(path.join(PROFILE, "settings.json"), JSON.stringify(mode === "local" ? { launchMode: "local" } : {}, null, 2));
       const first = await attempt({ dir: k.InstallLocation, mode, feed, newer: newer.version, label });
       results.push(first);
-      if (!first.ok && installed()?.DisplayVersion === older.version) {
+      if (!first.ok && first.pressed && installed()?.DisplayVersion === older.version) {
         // as a user would: open the app again and update once more
         const again = await attempt({ dir: k.InstallLocation, mode, feed, newer: newer.version, label: `${label}-again` });
         results.push(again);
