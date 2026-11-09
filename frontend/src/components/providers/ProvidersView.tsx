@@ -109,8 +109,9 @@ export default function ProvidersView() {
         )}
         {tab && !isApiProvider(tab) && <ProviderPanel key={tab} provider={tab} label={catalog[tab]?.label || tab} />}
       </div>
-      {/* every CLI the chats run (Claude Code, Codex, Higgsfield): installed vs latest, upgrades */}
-      <CliVersionsSection ids={["claude", "codex"]} />
+      {/* every CLI the chats run (Claude Code, Codex): installed vs latest, upgrades — on their tabs only: an API-key
+          provider runs no CLI (app/harness calls the vendor's API itself) */}
+      {(tab === "claude" || tab === "codex") && <CliVersionsSection ids={["claude", "codex"]} />}
     </div>
   );
 }

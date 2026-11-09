@@ -88,7 +88,7 @@ export default {
   title: "MCP",
   llmTitle: "Language model providers",
   llmIntro:
-    "Set up Claude Code and Codex installations, sign-ins, accounts and usage limits.",
+    "Claude Code and Codex: installations, sign-ins, accounts and usage limits. Anthropic, OpenAI and Google: API keys, models and prices.",
   mediaTitle: "Image and voice providers",
   mediaIntro:
     "Connect services for image/video generation, speech recognition (STT) and speech (TTS).",
