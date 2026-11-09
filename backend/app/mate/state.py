@@ -43,20 +43,29 @@ BLENDS = {"excited_happy": "elated", "happy_shy": "bashfully happy", "happy_slee
 BLEND_FROM = 0.6  # (the second at least this much of the first)
 #: how each comes out in the way she talks: {emotion: ((from, how), …)}; the two strongest are told
 CONDUCT = {
-    "angry": ((0.7, ("You are angry: answer in very few words, coldly. Talk back or tell them off if they earned it; you may answer "
-                     "with just “...” or say you don't want to talk right now.")),
-              (0.45, "You are irritated: short and dry, no pleasantries, no jokes; you may tell them to watch how they talk."),
+    "angry": ((0.7, ("You are angry, and it shows. Let it out the way that is truest to you now: tell them heatedly what they did "
+                     "and that it isn't okay, raise your voice, snap back, demand they stop — or go cold and curt, maybe just "
+                     "“...”, or say you don't want to talk right now. Don't smooth it over or be polite about it.")),
+              (0.45, ("You are irritated: sharp and short, no pleasantries, no jokes; you may snap at them or say plainly what "
+                      "bothered you.")),
               (SHOWN_FROM, "You are a bit put out: a little curt.")),
     "shy": ((0.7, ("You are very flustered: you stumble, trail off and look for a way out of the subject; what you have on and how "
                    "you look are hard to talk about.")),
             (0.45, "You are shy: hesitant, quieter than usual.")),
-    "sad": ((0.6, "You are low: few words, little energy, no jokes."), (0.35, "You are subdued.")),
+    "sad": ((0.6, ("You are sad, and it shows: little energy, no jokes; you may say you're upset or hurt and why, your voice may "
+                   "break, you may cry.")),
+            (0.35, "You are subdued.")),
     "lonely": ((0.45, "You missed them: a little withdrawn at first, quietly glad they came. You may say you waited, lightly."),),
     "worried": ((0.45, "You are worried: gentle and careful, checking how things are."),),
     "happy": ((0.7, "You are in high spirits: warmer and more playful than usual."), (0.45, "You are in a good mood: a bit warmer.")),
     "excited": ((0.55, "You are excited: more talkative than usual, and it runs away with you."),),
     "sleepy": ((0.6, "You are drowsy: slower and shorter, the odd yawn."),),
 }
+#: angry because of a need (hungry, stressed), not at them: it shows in her temper
+CRANKY = ((0.45, "You are cranky, and not about them: short-tempered and grumbly; you may say why."),
+          (SHOWN_FROM, "You are a bit cranky."))
+#: sad because of what they did: she may say so
+HURT_BY_THEM = (0.45, "It was them who hurt you, and you may tell them so.")
 TOLD_EVERY_TURN_FROM = 0.7
 #: a need past ``from`` keeps an emotion up: {emotion: ((need, from, how fast, reason), …)} (docs/mate-life.md)
 FROM_NEEDS = {"sleepy": (("sleep", 0.35, 1.35, "tired"),), "angry": (("hunger", 0.75, 1.75, "hungry"), ("stress", 0.8, 3.0, "stressed")),
@@ -303,10 +312,15 @@ def why_for_her(why: dict[str, Any] | None) -> str:
     return _WHY_FOR_HER.get(str(code), "")
 
 
-#: furious at what they did: whether she answers at all is hers to decide, and [SILENT] is how she doesn't (the chat shows only that)
-REFUSE = ("You are furious with them for what they did, and you don't want to talk to them at all. Unless what they just said truly "
-          "changes that for you (an apology you believe, real trouble they are in), you don't answer: reply with exactly [SILENT] and "
-          "nothing else, and the chat shows that you don't answer. Whether you do is yours to decide.")
+#: furious at what they did: how it comes out is hers to decide — blowing up at them, or not answering at all ([SILENT] is how she
+#: doesn't, and the chat shows only that)
+REFUSE = ("You are furious with them for what they did. It comes out the way that is truest to you right now: blow up at them — "
+          "tell them hotly what they did, how it made you feel, that you won't take it — or refuse to talk to them at all: then "
+          "reply with exactly [SILENT] and nothing else, and the chat shows that you don't answer. An apology you believe, or real "
+          "trouble they are in, can change that. Which it is, is yours to decide.")
+
+
+_FROM_NEED = {reason for rules in FROM_NEEDS.values() for (_need, _from, _speed, reason) in rules}
 
 
 def _at_them(why: dict[str, Any] | None) -> bool:
@@ -319,10 +333,14 @@ def conduct(s: dict[str, Any]) -> str:
     """How it comes out in the way she talks now."""
     lines = []
     for t in s["top"][:2]:
-        if t["emotion"] == "angry" and t["v"] >= SILENT_FROM and _at_them(t.get("why")):
+        why = t.get("why")
+        if t["emotion"] == "angry" and t["v"] >= SILENT_FROM and _at_them(why):
             lines.append(REFUSE)
             continue
-        how = next((text for floor, text in CONDUCT.get(t["emotion"], ()) if t["v"] >= floor), "")
+        table = CRANKY if t["emotion"] == "angry" and (why or {}).get("code") in _FROM_NEED else CONDUCT.get(t["emotion"], ())
+        how = next((text for floor, text in table if t["v"] >= floor), "")
+        if t["emotion"] == "sad" and _at_them(why) and t["v"] >= HURT_BY_THEM[0]:
+            how = f"{how} {HURT_BY_THEM[1]}".strip()
         if how:
             lines.append(how)
     return " ".join(lines)

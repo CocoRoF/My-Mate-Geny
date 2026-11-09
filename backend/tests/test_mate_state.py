@@ -61,10 +61,12 @@ def test_keeping_up_the_insults_makes_her_angrier_each_time():
         seen.append(_lv(doc, w)["angry"])
     assert seen == pytest.approx([0.3, 0.7, 1.0])
     assert S.levels(doc, w, NOON, TZ)["angry"]["why"] == {"code": "rude"}
-    # (furious with them, whether she answers at all is hers: she is offered not to; short of that, very few words)
+    # (furious with them: blowing up at them or not answering at all, hers to decide; short of that, angry out loud or cold)
     assert S.conduct(S.summary(doc, w, NOON, TZ)).startswith(S.REFUSE)
-    cold = {**S.new(), "feelings": {"angry": {"v": 0.75, "at": S.A._iso(NOON), "why": {"code": "rude"}}}}
-    assert "very few words" in S.conduct(S.summary(cold, w, NOON, TZ))
+    assert "blow up at them" in S.REFUSE and "reply with exactly [SILENT]" in S.REFUSE
+    hot = {**S.new(), "feelings": {"angry": {"v": 0.75, "at": S.A._iso(NOON), "why": {"code": "rude"}}}}
+    said = S.conduct(S.summary(hot, w, NOON, TZ))
+    assert "tell them heatedly what they did" in said and "raise your voice" in said and "go cold and curt" in said
     S.hear(doc, w, "닥쳐, 쓸모없어", "m2", NOON, TZ)  # (the same message, looked at again)
     assert _lv(doc, w)["angry"] == 1.0
     fresh = S.new()  # (one now and then isn't keeping it up)
@@ -260,8 +262,8 @@ def test_every_blend_is_of_real_emotions():
 
 
 @pytest.mark.parametrize(("emotion", "strength", "says"), [
-    ("angry", "strong", "very few words"), ("angry", "moderate", "short and dry"), ("angry", "slight", "a little curt"),
-    ("shy", "strong", "flustered"), ("happy", "strong", "playful"), ("sad", "strong", "few words"), ("sleepy", "strong", "drowsy"),
+    ("angry", "strong", "raise your voice"), ("angry", "moderate", "snap at them"), ("angry", "slight", "a little curt"),
+    ("shy", "strong", "flustered"), ("happy", "strong", "playful"), ("sad", "strong", "you may cry"), ("sleepy", "strong", "drowsy"),
 ])
 def test_how_she_feels_comes_out_in_how_she_talks(emotion, strength, says):
     w, doc = S.who(closeness=0.0), S.new()
@@ -589,7 +591,7 @@ def test_the_rules_leave_it_to_her():
     text = base_prompt("Haru", {}, {})
     feelings, clothes = text.split("## How you feel")[1], text.split("## Your clothes")[1]
     assert "Nobody is owed a yes" in feelings and "Work still gets done" in feelings and "guilt" in feelings
-    assert "talk back" in feelings and "truly struggling or unsafe, that comes first" in feelings
+    assert "tell them off" in feelings and "truly struggling or unsafe, that comes first" in feelings
     assert "How it comes out now" in feelings and "[angry:0.8]" in feelings
     assert "you decide" in clothes and "on a whim" in clothes and "Never say you changed unless" in clothes
     assert "glad to, you do" in clothes and "rather not, you don't" in clothes
@@ -655,3 +657,29 @@ def test_the_real_crop_top_is_named_and_made_shy():
     item = files.builtin_outfits("chaerin")[0]
     assert item["id"] == "builtin-gray-band" and item["name"] == "크롭탑" and item["feel"] == {"shy": 0.6}
     assert item["unlock"] == {"affinity": 60} and "crop top" in item["note"] and "underwear" not in item["note"] and "no headset" in item["note"]
+
+
+def test_angry_from_hunger_or_stress_is_temper_not_at_them():
+    w = S.who()
+    for code in ("hungry", "stressed"):
+        doc = {**S.new(), "feelings": {"angry": {"v": 0.75, "at": S.A._iso(NOON), "why": {"code": code}}}}
+        said = S.conduct(S.summary(doc, w, NOON, TZ))
+        assert "cranky, and not about them" in said and "raise your voice" not in said
+        assert S.REFUSE not in said  # (never furious at them over her own hunger)
+
+
+def test_hurt_by_them_she_may_say_so():
+    w = S.who()
+    by_them = {**S.new(), "feelings": {"sad": {"v": 0.7, "at": S.A._iso(NOON), "why": {"code": "hostile", "kind": "hit",
+                                                                                          "quote": "x"}}}}
+    assert "It was them who hurt you" in S.conduct(S.summary(by_them, w, NOON, TZ))
+    her_day = {**S.new(), "feelings": {"sad": {"v": 0.7, "at": S.A._iso(NOON), "why": {"code": "bored"}}}}
+    said = S.conduct(S.summary(her_day, w, NOON, TZ))
+    assert "you may cry" in said and "It was them" not in said
+
+
+def test_the_prompt_lets_anger_and_hurt_out():
+    from app.mate import prompt as P
+
+    assert "raise your voice" in P._STATE_RULES and "let your voice break or cry" in P._STATE_RULES
+    assert "don't hide it behind politeness" in P._STATE_RULES

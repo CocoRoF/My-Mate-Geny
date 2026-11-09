@@ -462,8 +462,9 @@ the tone): feelings now change how she talks, what she decides and what her face
 - **What she shows and says herself**: her expression tags (`reply`) pull that emotion towards their strength (`[angry:0.8]`), for
   the reason of what was just said to her, and `feel(emotion, strength, reason)` sets one, in her words. This is how the real reading
   of the conversation comes in: the model's.
-- **Not answering** is hers: furious at what they did (anger at them, not hunger, stress or her day, at 0.8 or more:
-  `furious`), "How it comes out now" tells her so and that she may not answer at all (`REFUSE`). She decides: a reply of `[SILENT]`
+- **Blowing up, or not answering**, is hers: furious at what they did (anger at them, not hunger, stress or her day, at 0.8 or
+  more: `furious`), "How it comes out now" tells her so: she may blow up at them — what they did, how it made her feel, that she
+  won't take it — or not answer at all (`REFUSE`). She decides: a reply of `[SILENT]`
   (`app/mate/trigger/silence.deliver_reply`, her text held only while it could still be that) becomes a line of narration in her
   language ("(한채린은 대답하지 않는다)", "(…대답하고 싶지 않은 것처럼 보인다)"…; `MateService.refusal_line`), kept as her turn marked
   `refused`: shown as narration, never read aloud, her face angry; her engine remembers its own [SILENT], and a handoff says "you
@@ -477,9 +478,11 @@ the tone): feelings now change how she talks, what she decides and what her face
 - **What she has on**: an outfit's `feel` makes that emotion climb for as long as it is on (towards 0.95, half-way in 25 minutes),
   whichever way it got on, from a start that closeness eases, and rises in it are stronger. Only 크롭탑 has one: `{shy: 0.6}`. Taking it
   off, the feeling starts fading from where it was (`was_outfit`).
-- **How it comes out** (`conduct`): the two strongest give the line "How it comes out now" in her `<context>`: angry and strong is very
-  few words, coldly, talking back, maybe just "..."; shy and strong is stumbling and trailing off; happy is warmer. It outweighs her
-  usual warmth and reply length; her speech level stays. She is told when what stands out changed, every 10 turns, and every turn
+- **How it comes out** (`conduct`): the two strongest give the line "How it comes out now" in her `<context>`: angry and strong is
+  letting it out — telling them heatedly what they did and that it isn't okay, raising her voice — or going cold and curt, whichever
+  is truer to her then; angry from hunger or stress is crankiness, not at them (`CRANKY`); sad and strong shows (upset, her voice
+  breaking, tears), and sad because of them she may tell them they hurt her (`HURT_BY_THEM`); shy and strong is stumbling and
+  trailing off; happy is warmer. It outweighs her usual warmth and reply length; her speech level stays. She is told when what stands out changed, every 10 turns, and every turn
   while something is strong.
 - **What it decides**: nothing by itself. `leaning(doc, who, feel)` turns feelings, closeness and how exposed an outfit is into
   glad / maybe / rather_not, told to her as how she leans; asking again in the last 30 minutes leans her towards yes, and from
