@@ -141,8 +141,9 @@ otherwise derive it from the productName: settings, the login cookie, logs).
 ## Updates
 
 The Download page of the console updates the app in place (`src/updater.js`,
-electron-updater): check → download with progress (percent, speed, time left,
-Cancel) → *Restart & install*; errors say why, with Retry. The state lives in
+electron-updater): check → *Download & install* — the download with progress
+(percent, speed, time left, Cancel), then the install at once and the app back
+in the new version, one press; errors say why, with Retry. The state lives in
 the main process, so a reloaded page shows the running download. The feed is
 the connected server's `/api/downloads/update/` (it serves `latest.yml` /
 `latest-linux.yml` and the installers from the `apps-latest` release, which CI
@@ -153,6 +154,11 @@ cannot (the page offers the .dmg). A background check runs 30 s after start
 and every 6 h (it only tells; downloading is the user's call). Help → *Check
 for updates…*.
 
+- The install: what runs from the app's folder (the local backend and the
+  engines it started) is asked to stop and waited for first, and the app quits
+  once the installer is running (electron-updater would quit on its next turn
+  whether the installer started or not); a failed start keeps the app, with
+  Retry.
 - A download first reads the feed again (the release is rolling: an hour-old
   "available" may name a build the server no longer has) and, on a 404 mid-way,
   once more.
@@ -229,11 +235,16 @@ Now:
   Download service reads the real `apps-latest`:
   `xvfb-run -a node test/e2e/update-e2e.js <server> <password> <shots dir> -- <older AppImage> [--full] [--readonly-install]`
   (Settings → Updates and the Download page; each updater request with its
-  status and whether the session went along; Restart & install and the app the
-  updater restarts; `--full`: a whole-file download through a slow proxy with a
+  status and whether the session went along; the install the download goes on
+  to and the app the updater restarts; `--full`: a whole-file download through a slow proxy with a
   500 → Retry, a 404 → automatic re-check, reload and Cancel;
   `--readonly-install`: the install error and Retry). `-- <newest AppImage>
   --expect-latest`: the "up to date" state.
+- In-app update on Windows with the real NSIS installers (CI:
+  `.github/workflows/windows-update.yml`): `node test/e2e/windows-update-e2e.js
+  <older dist> <newer dist> [--rounds N] [--modes local,server]` — the older
+  build installed silently, one press of Download & install, then the newer
+  build must be the one running (in Local execution and on the connect screen).
 - The Android app's update flow in a browser (stand-in Capacitor bridge):
   `node test/e2e/apk-update-browser.js <server> <password> <app version>`.
 - Builds: CI (`.github/workflows/apps.yml`) on every push touching `desktop/`,

@@ -140,7 +140,7 @@ if (readSettings().softwareRendering || env.HRH_DISABLE_GPU === "1") app.disable
 
 let win = null;
 let quitting = false;
-let installingUpdate = false;
+let installingUpdate = false, localWasRunning = false;
 let runtimeTimer = null, updateTimer = null, updateInterval = null;
 const hiddenStart = process.argv.includes("--hidden");
 
@@ -554,11 +554,15 @@ const updater = createUpdater({
     return f;
   },
   cookieHeader: async () => "",
-  beforeInstall: () => {
+  // The installer replaces the app's folder, and the local backend (with the engines it started) runs from it: asked to
+  // stop and waited for here, before the installer starts, rather than killed as the app quits while it already runs.
+  beforeInstall: async () => {
     installingUpdate = true;
     quitting = true;
     deviceRuntime.destroy();
     mate.setQuitting(true);
+    localWasRunning = !!localRuntime.origin();
+    await localRuntime.stop();
   },
   installFailed: () => {
     if(quitController.isQuitting())return;
@@ -566,7 +570,9 @@ const updater = createUpdater({
     quitting = false;
     mate.setQuitting(false);
     deviceRuntime.start();
+    if (localWasRunning) enterLocal().catch((e) => { mainLog.warn(`[local] ${e.message}`); showConnect({ notice: "local-failed" }); });
   },
+  quit: () => app.quit(),
   // an AppImage's restart after the update: the new file with this app's arguments (`--no-sandbox` on Ubuntu 24.04+),
   // once this process — and its single-instance lock — is gone
   restartAfter: (file) => {

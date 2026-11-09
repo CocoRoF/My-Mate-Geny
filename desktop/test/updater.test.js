@@ -26,7 +26,7 @@ class FakeToken {
   }
 }
 
-function fakeUpdater({ latest = "0.4.20", size = 1000, fail = null } = {}) {
+function fakeUpdater({ latest = "0.4.20", size = 1000, fail = null, start = null } = {}) {
   const u = new EventEmitter();
   u.calls = [];
   u.setFeedURL = (o) => {
@@ -46,7 +46,33 @@ function fakeUpdater({ latest = "0.4.20", size = 1000, fail = null } = {}) {
       u.pending = { resolve, reject, token };
       token.onCancel = () => reject(new Error("cancelled"));
     });
-  u.quitAndInstall = (silent, run) => u.calls.push(["install", silent, run]);
+  // electron-updater 6.3.9's BaseUpdater.install / quitAndInstall with NsisUpdater.doInstall, as far as the updater
+  // sees them: the installer is started, not waited for; a start Windows refuses (EACCES / UNKNOWN) is tried again
+  // through elevate.exe, any other failure is an "error" event. `start`: the error code a start fails with (by file)
+  u.spawned = [];
+  u.quits = 0;
+  u.app = { quit: () => u.quits++ };
+  u.spawnLog = async (cmd, args) => {
+    u.spawned.push([cmd, args]);
+    const code = typeof start === "function" ? start(cmd) : start;
+    if (code) throw Object.assign(new Error(`spawn ${cmd} ${code}`), { code });
+    return true;
+  };
+  u.install = (silent, run) => {
+    u.calls.push(["install", silent, run]);
+    if (u.quitAndInstallCalled) return false; // ("install call ignored: quitAndInstallCalled is set to true")
+    u.quitAndInstallCalled = true;
+    const args = ["--updated", ...(silent ? ["/S"] : []), ...(run ? ["--force-run"] : [])];
+    u.spawnLog("setup.exe", args).catch((e) => {
+      if (e.code === "EACCES" || e.code === "UNKNOWN") u.spawnLog("elevate.exe", ["setup.exe", ...args]).catch((err) => u.emit("error", err));
+      else u.emit("error", e);
+    });
+    return true;
+  };
+  u.quitAndInstall = (silent, run) => {
+    if (u.install(silent, run)) setImmediate(() => u.app.quit());
+    else u.quitAndInstallCalled = false;
+  };
   return u;
 }
 
@@ -64,6 +90,7 @@ function make(opts = {}) {
     server: () => (opts.server === undefined ? "https://srv" : opts.server),
     cookieHeader: async () => "hrh_session=abc",
     beforeInstall: () => states.push("before-install"),
+    quit: () => states.push("quit"),
     onState: (s) => states.push(s),
     now: () => t,
     ...(opts.deps || {}),
@@ -88,7 +115,7 @@ test("support: Windows / AppImage / deb yes; macOS (unsigned), dev runs and no s
   assert.equal(support({ isPackaged: true, platform: "win32", server: "" }).ok, false);
 });
 
-test("check → available → download with progress (speed, ETA) → ready → install", async () => {
+test("check → available → download with progress (speed, ETA) → ready → installed at once: one press", async () => {
   const { up, u, states, tick } = make();
   const s1 = await up.check();
   assert.equal(s1.status, "available");
@@ -108,11 +135,15 @@ test("check → available → download with progress (speed, ETA) → ready → 
   u.emit("update-downloaded", { version: "0.4.20" });
   u.pending.resolve();
   const done = await p;
-  assert.equal(done.status, "ready");
-  await up.install();
+  assert.ok(states.some((s) => s.status === "ready"), "ready on the way");
+  assert.equal(done.status, "installing", "Download & install needs no second press");
   assert.ok(states.includes("before-install"), "the app is told it is quitting for real");
   assert.deepEqual(u.calls.at(-1), ["install", true, true]);
-  assert.equal(up.state.status, "installing");
+  assert.deepEqual(u.spawned, [["setup.exe", ["--updated", "/S", "--force-run"]]]);
+  assert.ok(states.indexOf("quit") > states.indexOf("before-install"), "the app quits once the installer runs");
+  assert.equal(u.quits, 0, "and it is the app that quits, not electron-updater on its next turn");
+  await up.install();
+  assert.equal(u.calls.filter((c) => c[0] === "install").length, 1, "a second press does nothing more");
 });
 
 test("cancel → back to available (retry downloads again); the state survives for a page that asks later", async () => {
@@ -131,7 +162,7 @@ test("cancel → back to available (retry downloads again); the state survives f
   await settle();
   assert.equal(up.state.status, "downloading");
   u.pending.resolve();
-  assert.equal((await again).status, "ready");
+  assert.equal((await again).status, "installing");
 });
 
 test("errors say what happened, and Retry repeats what failed", async () => {
@@ -153,7 +184,7 @@ test("errors say what happened, and Retry repeats what failed", async () => {
   await settle();
   assert.equal(up.state.status, "downloading", "retry goes straight back to downloading");
   u.pending.resolve();
-  assert.equal((await r).status, "ready");
+  assert.equal((await r).status, "installing");
 });
 
 test("up to date; unsupported platforms never touch electron-updater; Linux .deb installs without silent/force-run", async () => {
@@ -170,7 +201,6 @@ test("up to date; unsupported platforms never touch electron-updater; Linux .deb
   await settle();
   d.u.pending.resolve();
   await p;
-  await d.up.install();
   assert.deepEqual(d.u.calls.at(-1), ["install", false, false]);
 });
 
@@ -185,7 +215,7 @@ test("a download looks at the feed again first: an hour-old 'available' takes th
   assert.equal(up.state.status, "downloading");
   assert.equal(up.state.version, "0.4.15", "the download is the current build");
   u.pending.resolve();
-  assert.equal((await p).status, "ready");
+  assert.equal((await p).status, "installing");
 });
 
 test("a 404 mid-download (the build was replaced): one more look, then the newer build; twice: a clear error", async () => {
@@ -213,34 +243,39 @@ test("the feed declines (not an AppImage / .deb / installer it knows): an error,
   assert.match(s.error, /cannot replace itself/);
 });
 
-// electron-updater 6.3.9's BaseUpdater.quitAndInstall / AppImageUpdater.doInstall, as far as the updater sees them
-function installingUpdater(fail) {
+// electron-updater 6.3.9's BaseUpdater.install / AppImageUpdater.doInstall, as far as the updater sees them
+function appImageUpdater(fail) {
   const u = fakeUpdater();
-  u.spawned = [];
-  u.spawnLog = async (cmd, args) => u.spawned.push([cmd, args]);
-  u.quitAndInstall = (silent, run) => {
+  u.install = (silent, run) => {
     u.calls.push(["install", silent, run]);
-    if (fail) return u.emit("error", new Error(fail)); // install() → dispatchError, returns false: no quit
-    u.spawnLog("/home/me/Apps/my-mate-geny-0.4.16-linux-x86_64.AppImage", [], {});
+    if (u.quitAndInstallCalled) return false;
+    u.quitAndInstallCalled = true;
+    if (fail) {
+      u.emit("error", new Error(fail)); // doInstall threw → dispatchError, install returns false
+      return false;
+    }
+    if (run) u.spawnLog("/home/me/Apps/my-mate-geny-0.4.16-linux-x86_64.AppImage", [], {});
+    return true;
   };
   return u;
 }
 
-async function readyToInstall(opts) {
+/** check, then Download & install: the download, and the install it goes on to */
+async function downloadAndInstall(opts) {
   const m = make(opts);
   await m.up.check();
   const p = m.up.download();
   await settle();
   m.u.pending.resolve();
-  await p;
+  m.result = await p;
   return m;
 }
 
 test("AppImage: the restart is ours — the new file with this app's arguments, after this process exits", async () => {
   const restarted = [];
-  const { up, u } = await readyToInstall({ u: installingUpdater(), platform: "linux", env: { APPIMAGE: "/home/me/Apps/my-mate-geny-0.4.14-linux-x86_64.AppImage" }, deps: { restartAfter: (f) => restarted.push(f) } });
+  const u = appImageUpdater();
   const own = u.spawnLog;
-  await up.install();
+  const { up } = await downloadAndInstall({ u, platform: "linux", env: { APPIMAGE: "/home/me/Apps/my-mate-geny-0.4.14-linux-x86_64.AppImage" }, deps: { restartAfter: (f) => restarted.push(f) } });
   assert.deepEqual(u.calls.at(-1), ["install", true, true]);
   assert.deepEqual(restarted, ["/home/me/Apps/my-mate-geny-0.4.16-linux-x86_64.AppImage"], "the file electron-updater put in place");
   assert.deepEqual(u.spawned, [], "electron-updater's own argument-less start did not happen");
@@ -250,8 +285,7 @@ test("AppImage: the restart is ours — the new file with this app's arguments, 
 
 test("Windows keeps electron-updater's own restart (the NSIS installer's --force-run)", async () => {
   const restarted = [];
-  const { up, u } = await readyToInstall({ u: installingUpdater(), platform: "win32", deps: { restartAfter: (f) => restarted.push(f) } });
-  await up.install();
+  const { u } = await downloadAndInstall({ platform: "win32", deps: { restartAfter: (f) => restarted.push(f) } });
   assert.deepEqual(u.calls.at(-1), ["install", true, true]);
   assert.deepEqual(restarted, []);
   assert.equal(u.spawned.length, 1);
@@ -259,16 +293,71 @@ test("Windows keeps electron-updater's own restart (the NSIS installer's --force
 
 test("an install that fails says so (not 'Installing…' forever); Retry installs again", async () => {
   const undone = [];
-  const u = installingUpdater("EACCES: permission denied, unlink '/opt/my-mate-geny.AppImage'");
-  const { up } = await readyToInstall({ u, platform: "linux", env: { APPIMAGE: "/opt/my-mate-geny.AppImage" }, deps: { restartAfter: () => {}, installFailed: () => undone.push(1) } });
-  const s = await up.install();
+  const u = appImageUpdater("EACCES: permission denied, unlink '/opt/my-mate-geny.AppImage'");
+  const { up, result: s, states } = await downloadAndInstall({ u, platform: "linux", env: { APPIMAGE: "/opt/my-mate-geny.AppImage" }, deps: { restartAfter: () => {}, installFailed: () => undone.push(1) } });
   assert.equal(s.status, "error");
+  assert.ok(!states.includes("quit"), "the app stays");
   assert.equal(s.during, "install");
   assert.match(s.error, /EACCES/);
   assert.equal(undone.length, 1, "the app is no longer 'quitting'");
   const r = await up.retry();
   assert.equal(u.calls.filter((c) => c[0] === "install").length, 2, "Retry installs again");
   assert.equal(r.status, "error");
+});
+
+test("Windows refuses the installer's start (EACCES): electron-updater's elevate.exe start counts, then the app quits", async () => {
+  const { u, result, states } = await downloadAndInstall({ u: fakeUpdater({ start: (cmd) => (cmd === "setup.exe" ? "EACCES" : null) }) });
+  assert.equal(result.status, "installing");
+  assert.deepEqual(u.spawned.map((x) => x[0]), ["setup.exe", "elevate.exe"]);
+  assert.ok(states.includes("quit"));
+});
+
+test("an installer that does not start keeps the app and says why (no quit with nothing installed); Retry starts it", async () => {
+  const undone = [];
+  let code = "EBUSY";
+  const u = fakeUpdater({ start: () => code });
+  const { up, result, states } = await downloadAndInstall({ u, deps: { installFailed: () => undone.push(1) } });
+  assert.equal(result.status, "error");
+  assert.equal(result.during, "install");
+  assert.match(result.error, /EBUSY/);
+  assert.ok(!states.includes("quit"), "the app stays");
+  assert.equal(u.quits, 0);
+  assert.equal(undone.length, 1, "the app is no longer 'quitting' (once)");
+  code = null;
+  const r = await up.retry();
+  assert.equal(r.status, "installing");
+  assert.equal(u.spawned.length, 2, "electron-updater's guard against a second start does not swallow Retry");
+  assert.ok(states.includes("quit"));
+});
+
+test("the app's own processes stop first: the installer starts once beforeInstall is done", async () => {
+  const order = [];
+  let release;
+  const u = fakeUpdater();
+  const own = u.spawnLog;
+  u.spawnLog = (...a) => (order.push("installer"), own(...a));
+  const m = make({ u, deps: { beforeInstall: () => new Promise((r) => { order.push("stopping"); release = () => (order.push("stopped"), r()); }) } });
+  await m.up.check();
+  const p = m.up.download();
+  await settle();
+  u.pending.resolve();
+  await settle();
+  assert.equal(m.up.state.status, "installing");
+  assert.deepEqual(order, ["stopping"]);
+  release();
+  assert.equal((await p).status, "installing");
+  assert.deepEqual(order, ["stopping", "stopped", "installer"]);
+  assert.ok(m.states.includes("quit"));
+});
+
+test("macOS: Squirrel.Mac's own quitAndInstall (it quits once it has the update)", async () => {
+  const u = fakeUpdater();
+  delete u.install;
+  u.quitAndInstall = (silent, run) => u.calls.push(["quitAndInstall", silent, run]);
+  const { result, states } = await downloadAndInstall({ u, platform: "darwin", deps: { macSigned: true } });
+  assert.equal(result.status, "installing");
+  assert.deepEqual(u.calls.at(-1), ["quitAndInstall", true, true]);
+  assert.ok(!states.includes("quit"));
 });
 
 test("restart arguments: this app's own, never a hidden start; the command waits for this process", () => {

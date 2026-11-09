@@ -1,7 +1,7 @@
 // In-app updates (Project-Geny's updater.ts, adapted): the Download page shows the progress of a new desktop build
-// (percent, speed, time left), then Restart & install. The state lives here in the main process — a page that
-// reloads (or another window) reads it again and follows it — and every path ends somewhere definite: up to date,
-// ready, unsupported (with what to do instead) or an error with its reason, and Retry.
+// (percent, speed, time left), then installs it and the app restarts in the new version. The state lives here in the
+// main process — a page that reloads (or another window) reads it again and follows it — and every path ends
+// somewhere definite: up to date, ready, unsupported (with what to do instead) or an error with its reason, and Retry.
 //
 //   idle → checking → latest | available → downloading (percent, bytes/s, ETA; Cancel) → ready → installing
 //                              ↘ error (Retry)                    ↘ cancelled → available
@@ -22,7 +22,12 @@
 //   it also starts while the old app still holds the single-instance lock. The restart is ours instead (relaunch):
 //   the same arguments, after this process has exited;
 // - an install that fails (e.g. an AppImage in a folder the user cannot write to) is reported by an "error" event,
-//   not by quitAndInstall: without listening the page sat on "Installing…" forever.
+//   not by quitAndInstall: without listening the page sat on "Installing…" forever;
+// - Windows: "Download & install" stopped at "ready" and wanted a second press, and electron-updater quits the app on
+//   the next turn after asking for the installer, whether it started or not. A download now goes straight on to the
+//   install; the app's own processes (the local backend and the engines it runs, all from the app's folder) are
+//   stopped and waited for first, and the app quits once the installer is running — a failed start keeps the app
+//   and says why, with Retry.
 "use strict";
 
 const STATUS = ["idle", "checking", "latest", "available", "downloading", "ready", "installing", "unsupported", "error"];
@@ -52,7 +57,9 @@ function support({ isPackaged, platform, env = {}, server, macSigned = false }) 
  * deps: {
  *   autoUpdater()   → electron-updater's autoUpdater (lazy), CancellationToken class via cancelToken()
  *   version, platform, isPackaged, env, server(), cookieHeader(): Promise<string>, macSigned (the release's certificate),
- *   onState(state), beforeInstall(), now(), reasonText(code)? (the "can't update here" reason in the UI's language)
+ *   onState(state), beforeInstall(): Promise? (the app quitting for real, its own processes stopped), now(),
+ *   reasonText(code)? (the "can't update here" reason in the UI's language)
+ *   quit() the app quits for the installer (which is running by then)
  *   restartAfter(file)? an AppImage's restart: start `file` with this app's arguments once this process has exited
  *   installFailed()? the install did not happen after all (beforeInstall undone)
  * }
@@ -220,7 +227,8 @@ function createUpdater(deps) {
         await u.downloadUpdate(mine);
         if (state.status === "downloading") set({ status: "ready", percent: 100, eta: 0 }); // (no event on some paths)
         token = null;
-        return view();
+        // "Download & install" is one step: the update is here, so it goes in now (the app restarts in the new version)
+        return state.status === "ready" ? install() : view();
       } catch (e) {
         const cancelled = !!mine.cancelled || /cancel/i.test(String(e?.message || e));
         if (!cancelled && attempt === 0 && /\b404\b/.test(String(e?.message || e))) continue;
@@ -244,30 +252,63 @@ function createUpdater(deps) {
     try {
       const u = await deps.autoUpdater();
       if(shuttingDown)return view();
-      deps.beforeInstall?.();
+      // what runs from the app's folder ends first, waited for: the installer replaces those files
+      await deps.beforeInstall?.();
+      if(shuttingDown)return view();
       const env = deps.env || {};
       const appImage = deps.platform === "linux" && !!env.APPIMAGE;
       // Linux .deb: no silent / force-run (the relauncher's NoNewPrivs breaks the SUID sandbox — Project-Geny)
       const pkg = deps.platform === "linux" && !appImage;
+      // (macOS: Squirrel.Mac installs as the app quits, and quitAndInstall quits once it has the update)
+      if (typeof u.install !== "function") {
+        u.quitAndInstall(!pkg, !pkg);
+        return view();
+      }
       // AppImage: electron-updater swaps the file, then would start the new one itself — with no arguments and while
       // this app still runs; the restart is ours (the new file, this app's arguments, after this process exits)
-      let spawn = null;
-      if (appImage && deps.restartAfter && typeof u.spawnLog === "function") {
-        spawn = u.spawnLog;
-        u.spawnLog = async (file) => {
-          deps.restartAfter(file);
-          return true;
-        };
-      }
-      try {
-        u.quitAndInstall(!pkg, !pkg);
-      } finally {
-        if (spawn) u.spawnLog = spawn;
-      }
+      await runInstaller(u, !pkg, appImage && deps.restartAfter ? deps.restartAfter : null);
+      if (state.status !== "installing") return view(); // (the "error" event said why)
+      deps.quit();
     } catch (e) {
-      set({ status: "error", ...failure(e, "install"), during: "install" });
+      if (state.status === "installing") {
+        deps.installFailed?.();
+        set({ status: "error", ...failure(e, "install"), during: "install" });
+      }
     }
     return view();
+  }
+
+  /** electron-updater's install, resolved once the installer is running: the first start, or the one electron-updater
+   *  tries after it (elevate.exe when Windows refused); a .deb installs synchronously, with nothing to start */
+  async function runInstaller(u, silent, restart) {
+    const own = u.spawnLog;
+    const starts = [];
+    u.spawnLog = function (file, ...rest) {
+      const p = restart ? Promise.resolve().then(() => (restart(file), true)) : own.call(this, file, ...rest);
+      starts.push(p);
+      return p;
+    };
+    try {
+      if (!u.install(silent, silent)) throw new Error("The installer could not be started.");
+      let last = null;
+      for (let seen = 0; seen < starts.length; ) {
+        const now = starts.slice(seen);
+        seen = starts.length;
+        try {
+          await Promise.any(now);
+          return;
+        } catch (e) {
+          last = e.errors?.at(-1) || e;
+        }
+        await new Promise((r) => setTimeout(r, 300)); // (electron-updater's next try, if it has one, starts now)
+      }
+      if (last) throw last;
+    } catch (e) {
+      u.quitAndInstallCalled = false; // (electron-updater's guard against a second start: Retry must be able to)
+      throw e;
+    } finally {
+      u.spawnLog = own;
+    }
   }
 
   /** a retry from the error state: whatever was attempted, again */
