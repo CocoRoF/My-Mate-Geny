@@ -75,6 +75,8 @@ function metaOf(data: Record<string, any>): MessageMeta | undefined {
   return out;
 }
 
+/** A message the server didn't take — a steer the turn could no longer take, a send while a run was still on: the
+ * composer puts it first in its queue (it was meant to go now). */
 export interface Bounced {
   clientMsgId: string;
   text: string;
@@ -133,6 +135,10 @@ interface ChatState {
   sid: string | null; // the session this store shows
   turns: Turn[];
   isStreaming: boolean; // a turn is running server-side (any tab)
+  /** the server's own word on whether a run is on (run.state; true from the moment this tab sends): a turn's answer
+   * can be complete while the server is still closing it, and a background turn can start without one — the
+   * composer's queue sends its next message only once this is false (components/composer/useComposer.ts) */
+  runActive: boolean;
   runningCostUsd: number;
   lastEid: number;
   info: CliInfo | null;
@@ -528,10 +534,19 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
     case "error": {
       const code = String(data.code || "error");
       const message = String(data.message || "");
-      if (code === "turn.busy") break; // the composer queues instead
+      const cid = data.client_msg_id ? String(data.client_msg_id) : "";
+      if (code === "turn.busy") {
+        // A run was still on: the message didn't start a turn. Off the screen, back first in this tab's queue.
+        const i = cid ? turns.findIndex((t) => t.role === "user" && t.clientMsgId === cid && !t.messageId) : -1;
+        if (i < 0) break;
+        const [t] = turns.splice(i, 1);
+        ownMessages.delete(cid);
+        return { bounced: [{ clientMsgId: cid, text: t.text, attachments: t.attachments || [], reason: "busy" }] };
+      }
       if (code === "attachment.invalid" || code === "session.not_found") {
         systemTurn(turns, message, "warning");
-        break;
+        // (a send that started nothing: no run is on because of it)
+        return cid ? { runActive: hasLiveTurn(turns), isStreaming: hasLiveTurn(turns) } : {};
       }
       const t = liveTurn(turns, at);
       finish(t, at);
@@ -555,7 +570,7 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
         t.status = "interrupted";
         t.error = t.error || { code: "turn.lost", message: tr("turn.runLost") };
       }
-      return { isStreaming: running };
+      return { isStreaming: running, runActive: running };
     }
     case "speech.pending": {
       const meta={speech_group:String(data.group_id),speech_pending:true,speech_at:data.at};
@@ -806,6 +821,7 @@ export function createChatStore(opts: { lite?: boolean } = {}) {
   sid: null,
   turns: [],
   isStreaming: false,
+  runActive: false,
   runningCostUsd: 0,
   lastEid: 0,
   info: null,
@@ -827,6 +843,7 @@ export function createChatStore(opts: { lite?: boolean } = {}) {
       sid,
       turns: [],
       isStreaming: false,
+      runActive: false,
       runningCostUsd: 0,
       lastEid: 0,
       info: null,
@@ -862,6 +879,7 @@ export function createChatStore(opts: { lite?: boolean } = {}) {
       turns,
       lastEid,
       isStreaming: h.running,
+      runActive: h.running,
       runningCostUsd: (older?.cost_usd || 0) + totalCost(turns),
       info: (h.session?.cli_info as CliInfo) || null,
       ...(page
@@ -948,7 +966,8 @@ export function createChatStore(opts: { lite?: boolean } = {}) {
     return b;
   },
 
-  setStreaming: (v) => set({ isStreaming: v }),
+  // (this tab just started a run: on until the server says it ended)
+  setStreaming: (v) => set(v ? { isStreaming: true, runActive: true } : { isStreaming: false }),
   setConnection: (c) => set({ connection: c }),
 
   applyEvent: (ev) =>

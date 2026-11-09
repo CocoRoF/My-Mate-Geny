@@ -26,6 +26,8 @@ the client was away), then streams live; ``eid`` lets the client drop dupes.
 
 from __future__ import annotations
 
+from typing import Any
+
 import asyncio
 import json
 import contextlib
@@ -93,8 +95,11 @@ async def chat_stream(websocket: WebSocket, sid: str) -> None:
             with contextlib.suppress(Exception):
                 await send({"type": "steer.rejected", "data": {"client_msg_id": client_msg_id, "reason": reason}})
 
-    async def error(code: str, message: str) -> None:
-        await send({"type": "error", "seq": 0, "data": {"code": code, "message": message}})
+    async def error(code: str, message: str, client_msg_id: Any = None) -> None:
+        data = {"code": code, "message": message}
+        if client_msg_id:  # (which message it refused: the client puts it back in its queue instead of losing it)
+            data["client_msg_id"] = str(client_msg_id)
+        await send({"type": "error", "seq": 0, "data": data})
 
     try:
         while True:
@@ -145,13 +150,15 @@ async def chat_stream(websocket: WebSocket, sid: str) -> None:
                 try:
                     svc.start_turn(sid, text, ids, client_msg_id=msg.get("client_msg_id"))
                 except TurnBusyError as exc:
-                    await error("turn.busy", str(exc))
+                    # a turn still runs (or is closing, or a background one started): the client sends it again once
+                    # the run has ended — first in its queue
+                    await error("turn.busy", str(exc), msg.get("client_msg_id"))
                 except AttachmentError as exc:
                     logs.record(
                         "warning", "upload", str(exc), code="upload.invalid_on_send",
                         detail={"attachments": ids}, session_id=sid, ip=ip,
                     )
-                    await error("attachment.invalid", str(exc))
+                    await error("attachment.invalid", str(exc), msg.get("client_msg_id"))
 
             elif kind == "steer":
                 if pump_task is None:

@@ -5,7 +5,9 @@
  *   session id): switching views or reloading keeps them;
  * - files: the + menu pickers (Photos, Camera on touch screens, Files), paste (Ctrl/⌘+V, named like `pasted-<stamp>.png`), drops — each uploads at once;
  * - sending: idle → a new turn; while a turn runs Enter steers it ("Add now"), Queue holds it for after the turn;
- *   a steer the turn could no longer take comes back (bounced) and is queued; queued messages go one per turn end;
+ *   queued messages go one at a time, each once the run before has ended (lib/queue.ts) — by the server's word
+ *   (run.state), not when an answer looks done: a message the server didn't take (a steer the turn could no longer
+ *   take, a send while a run was still closing) comes back (bounced) and goes first, it was meant to go now;
  * - keys: Enter sends on a desktop, Shift+Enter is a newline; on touch screens Enter is a newline (lib/device.ts)
  *   and Ctrl/⌘+Enter sends; the Enter that commits an IME composition is never a send; Escape stops the turn;
  * - `/` commands (and `@` file mentions where the conversation has a workspace) through ComposerMenu;
@@ -20,6 +22,7 @@ import type { Attachment } from "../../types";
 import { triggerAt, type MenuItem } from "../chat/ComposerMenu";
 import type { PickKind } from "./ComposerParts";
 import { filesFromClipboard } from "./files";
+import { putFirst, putLast, readyToSend } from "../../lib/queue";
 import { tr } from "../../i18n";
 
 export type ComposerAction = NonNullable<MenuItem["action"]>;
@@ -91,6 +94,7 @@ export function useComposer(o: ComposerOptions) {
   const viewportCap = o.viewportCap ?? true;
 
   const isStreaming = store((s) => s.isStreaming);
+  const runActive = store((s) => s.runActive);
   const connection = store((s) => s.connection);
   const bounced = store((s) => s.bounced);
   const allItems = useComposerStore((s) => s.items);
@@ -183,31 +187,38 @@ export function useComposer(o: ComposerOptions) {
   };
 
   const enqueue = useCallback(
-    (text: string, atts: Attachment[]) => setQueue((q) => [...q, { id: `q${Date.now()}${q.length}`, text, attachments: atts }]),
+    (text: string, atts: Attachment[]) => setQueue((q) => putLast(q, { text, attachments: atts })),
     [setQueue],
   );
 
   // While a turn runs, Enter steers it (Claude Code style); "Queue" holds the message until the turn is done.
   const dispatch = (text: string, atts: Attachment[], how: "auto" | "queue" = "auto") => {
-    if (store.getState().isStreaming) {
+    const st = store.getState();
+    if (st.isStreaming) {
       if (how === "queue") {
         enqueue(text, atts);
         return true;
       }
       return onSteer(text, atts);
     }
+    if (st.runActive) {
+      // (the answer is in but the server is still closing the run, or a background turn runs: nothing to steer and
+      // no new turn yet — it goes as soon as the run ends: first, or after the queue when queued on purpose)
+      setQueue((q) => (how === "queue" ? putLast(q, { text, attachments: atts }) : putFirst(q, [{ text, attachments: atts }])));
+      return true;
+    }
     return onSend(text, atts);
   };
 
-  // A steer the turn could no longer take (it was finishing): send it next.
+  // A message the server didn't take (a steer the turn could no longer take, a send while a run was still on): it
+  // goes next, ahead of the queue.
   useEffect(() => {
     if (!bounced.length) return;
-    store
-      .getState()
-      .takeBounced()
-      .forEach((b) => enqueue(b.text, b.attachments));
+    const back = store.getState().takeBounced();
+    if (!back.length) return;
+    setQueue((q) => putFirst(q, back));
     setNotice(tr("composer.bouncedNext"));
-  }, [bounced, store, enqueue]);
+  }, [bounced, store, setQueue]);
 
   /** send what is in the box (or `spoken`, e.g. a voice transcript) with the ready files */
   const submit = (how: "auto" | "queue" = "auto", spoken?: string): boolean => {
@@ -240,12 +251,13 @@ export function useComposer(o: ComposerOptions) {
     return true;
   };
 
-  // Deliver queued messages one at a time as each turn finishes.
+  // Queued messages, one at a time: the next goes once the run before has ended by the server's word (run.state). Its
+  // answer alone isn't enough — the server may still be closing the turn, and a send then is refused.
   useEffect(() => {
-    if (isStreaming || !queue.length || connection !== "open") return;
+    if (!readyToSend({ isStreaming, runActive, connection, queued: queue.length })) return;
     const [next, ...rest] = queue;
     if (onSend(next.text, next.attachments)) setQueue(rest);
-  }, [isStreaming, queue, connection, onSend, setQueue]);
+  }, [isStreaming, runActive, queue, connection, onSend, setQueue]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // IME (Korean, Japanese…): the Enter that commits the composition is not a send.
