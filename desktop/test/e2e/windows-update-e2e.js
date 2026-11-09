@@ -64,12 +64,15 @@ const json = (s) => (s && s !== "null" ? JSON.parse(s) : null);
 const list = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]);
 const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
 
-/** the installed app as Windows' "Apps" list has it (the per-user uninstall entry NSIS writes) */
+/** the installed app as Windows' "Apps" list has it (the per-user uninstall entry NSIS writes; its folder is the
+ *  uninstaller's — electron-builder leaves InstallLocation out of that entry) */
 function installed() {
-  return json(
+  const k = json(
     ps(`$k = Get-ChildItem HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -eq ${q(PRODUCT)} } | Select-Object -First 1 DisplayVersion,InstallLocation,QuietUninstallString,UninstallString
 if ($k) { $k | ConvertTo-Json -Compress } else { 'null' }`),
   );
+  if (k && !k.InstallLocation) k.InstallLocation = path.dirname((/^"([^"]+)"/.exec(k.UninstallString || "") || [])[1] || "") || null;
+  return k;
 }
 /** processes started from `dir` (the app's folder) */
 function runningFrom(dir) {
