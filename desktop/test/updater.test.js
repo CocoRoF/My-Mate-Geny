@@ -138,8 +138,8 @@ test("check → available → download with progress (speed, ETA) → ready → 
   assert.ok(states.some((s) => s.status === "ready"), "ready on the way");
   assert.equal(done.status, "installing", "Download & install needs no second press");
   assert.ok(states.includes("before-install"), "the app is told it is quitting for real");
-  assert.deepEqual(u.calls.at(-1), ["install", true, true]);
-  assert.deepEqual(u.spawned, [["setup.exe", ["--updated", "/S", "--force-run"]]]);
+  assert.deepEqual(u.calls.at(-1), ["install", false, true], "Windows: the installer's progress on screen, then the app");
+  assert.deepEqual(u.spawned, [["setup.exe", ["--updated", "--force-run"]]]);
   assert.ok(states.indexOf("quit") > states.indexOf("before-install"), "the app quits once the installer runs");
   assert.equal(u.quits, 0, "and it is the app that quits, not electron-updater on its next turn");
   await up.install();
@@ -283,10 +283,10 @@ test("AppImage: the restart is ours — the new file with this app's arguments, 
   assert.equal(up.state.status, "installing");
 });
 
-test("Windows keeps electron-updater's own restart (the NSIS installer's --force-run)", async () => {
+test("Windows keeps the installer's own restart (it shows its progress, then starts the app: build/installer.nsh)", async () => {
   const restarted = [];
   const { u } = await downloadAndInstall({ platform: "win32", deps: { restartAfter: (f) => restarted.push(f) } });
-  assert.deepEqual(u.calls.at(-1), ["install", true, true]);
+  assert.deepEqual(u.calls.at(-1), ["install", false, true]);
   assert.deepEqual(restarted, []);
   assert.equal(u.spawned.length, 1);
 });

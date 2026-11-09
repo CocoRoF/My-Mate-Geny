@@ -158,7 +158,9 @@ for updates…*.
   engines it started) is asked to stop and waited for first, and the app quits
   once the installer is running (electron-updater would quit on its next turn
   whether the installer started or not); a failed start keeps the app, with
-  Retry.
+  Retry. On Windows the installer shows its progress and starts the app when it
+  is done — no pages to click on an update (`build/installer.nsh`); a silent one
+  left a minute with nothing on screen.
 - A download first reads the feed again (the release is rolling: an hour-old
   "available" may name a build the server no longer has) and, on a 404 mid-way,
   once more.
