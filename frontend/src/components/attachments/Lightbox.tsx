@@ -62,7 +62,7 @@ export default function Lightbox({
   if (!img) return null;
 
   return createPortal(
-    <div ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label={img.name} data-testid="image-lightbox" className="fixed inset-0 z-[100] flex flex-col pt-safe pb-safe text-white bg-black/90 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+    <div ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label={img.name} data-testid="image-lightbox" className="fixed inset-0 top-[var(--window-chrome-height,0px)] z-[100] flex flex-col pt-safe pb-safe text-white bg-black/90 backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div className="flex items-center gap-3 px-4 h-14 shrink-0 text-sm" onClick={(e) => e.stopPropagation()}>
         <span className="min-w-0 truncate font-medium text-white">{img.name}</span>
         <span className="hidden sm:inline shrink-0 text-xs text-white/60">

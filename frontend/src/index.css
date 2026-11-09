@@ -680,5 +680,7 @@ html[data-keyboard="open"] .pb-safe { padding-bottom: 0; }
   .studio-glow { animation: none; box-shadow: 0 0 0 2px rgb(var(--c-success) / 0.35); }
 }
 
-/* Fixed console drawers begin below the native app title bar. */
+/* Drawers and full-screen views begin below the desktop app's title bar: it stays where the window is moved, its buttons and
+   the macOS traffic lights stay usable and nothing is drawn under them. The chat window's header is its title bar. */
 html[data-hrh-chrome] { --window-chrome-height: 36px; }
+html[data-hrh-chrome][data-hrh-window="chat"] { --window-chrome-height: 52px; }
