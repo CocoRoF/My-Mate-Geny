@@ -12,6 +12,16 @@ export default {
   filter: "filter",
   noSubfolders: "No subfolders.",
   noSubfoldersMatch: "No subfolders match.",
+  // a new folder (the tree's first row)
+  newFolder: "New folder",
+  newFolderName: "Folder name",
+  newFolderIn: "In {path} — Enter to create, Esc to cancel",
+  create: "Create",
+  nameEmpty: "Give the folder a name.",
+  nameDots: "“.” and “..” can't be folder names.",
+  nameSlash: "A folder name can't contain / or \\ (one folder at a time).",
+  nameLong: "That name is too long.",
+  nameTaken: "“{name}” already exists here.",
   // repositories
   searchRepos: "Search repositories…",
   loadingRepos: "Loading repositories…",

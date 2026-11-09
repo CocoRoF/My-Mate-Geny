@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.config import settings
-from app.workspaces.base import DirEntry, WorkspaceConnector, WorkspaceError
+from app.workspaces.base import DirEntry, FolderExists, WorkspaceConnector, WorkspaceError, folder_name_error
 
 
 @dataclass
@@ -186,6 +186,44 @@ class RemoteSshConnector(WorkspaceConnector):
                         is_dir = False
                     entries.append(DirEntry(name=name, path=full, is_dir=is_dir))
                 return entries
+        finally:
+            conn.close()
+            await conn.wait_closed()
+
+    async def mkdir(self, parent: str, name: str) -> DirEntry:
+        """Create a folder on the remote host over SFTP (the folder pickers' New folder)."""
+        import posixpath
+
+        import asyncssh
+
+        name = (name or "").strip()
+        why = folder_name_error(name)
+        if why:
+            raise WorkspaceError(why)
+        remote = parent or self._spec.default_path or "~"
+        conn = await self._asyncssh_connect()
+        try:
+            async with conn.start_sftp_client() as sftp:
+                if remote.startswith("~"):
+                    remote = "." + remote[1:]
+                try:
+                    base = await sftp.realpath(remote)
+                    if not await sftp.isdir(base):
+                        raise WorkspaceError(f"not a directory: {base}")
+                except asyncssh.SFTPError as exc:
+                    raise WorkspaceError(f"not a directory: {remote} ({exc.reason})") from exc
+                target = posixpath.join(base, name)
+                if await sftp.exists(target):
+                    raise FolderExists(f"“{name}” already exists in {base}")
+                try:
+                    await sftp.mkdir(target)
+                except asyncssh.SFTPPermissionDenied as exc:
+                    raise WorkspaceError(f"permission denied: {base}") from exc
+                except asyncssh.SFTPError as exc:
+                    if await sftp.exists(target):
+                        raise FolderExists(f"“{name}” already exists in {base}") from exc
+                    raise WorkspaceError(f"could not create the folder: {exc.reason}") from exc
+                return DirEntry(name=name, path=target, is_dir=True)
         finally:
             conn.close()
             await conn.wait_closed()

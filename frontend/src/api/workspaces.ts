@@ -13,6 +13,13 @@ export const listDir = (path: string, connectionId: string | null = null) => {
   return apiFetch<ListDirResult>(`/api/workspaces/list?${q.toString()}`);
 };
 
+/** New folder ``name`` in ``parent`` (on this server, or the connection's host) → where it is. 409: the name is taken. */
+export const makeFolder = (parent: string, name: string, connectionId: string | null = null) =>
+  apiFetch<{ connection_id: string | null; name: string; path: string }>("/api/workspaces/mkdir", {
+    method: "POST",
+    body: JSON.stringify({ parent, name, connection_id: connectionId }),
+  });
+
 export interface GitInfo {
   is_repo: boolean;
   remote?: string;

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { listDir } from "../../api/workspaces";
+import { listDir, makeFolder } from "../../api/workspaces";
+import { folderNameProblem } from "../../lib/folderName";
 import type { DirEntry } from "../../types";
 import Icon from "../ui/Icon";
 import { useT } from "../../i18n";
@@ -44,6 +45,41 @@ export default function FileTree({ connectionId, initialPath, onPick, selected }
   const [draft, setDraft] = useState(path);
   const recents = useMemo(() => loadRecents(connectionId), [connectionId, selected]);
   const editRef = useRef<HTMLInputElement>(null);
+  // New folder: a name typed in the list, made where the tree stands, then opened (so "use this" is one click away)
+  const [making, setMaking] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [makeError, setMakeError] = useState("");
+  const [makeBusy, setMakeBusy] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const startMaking = () => {
+    setNewName(query.trim()); // (a filter that found nothing is often the name wanted)
+    setMakeError("");
+    setMaking(true);
+  };
+  const stopMaking = () => {
+    setMaking(false);
+    setMakeError("");
+  };
+  const make = async () => {
+    const problem = folderNameProblem(newName);
+    if (problem) return setMakeError(t(problem));
+    setMakeBusy(true);
+    setMakeError("");
+    try {
+      const made = await makeFolder(path, newName.trim(), connectionId);
+      setMaking(false);
+      setNewName("");
+      setPath(made.path);
+    } catch (e) {
+      const err = e as Error & { status?: number };
+      setMakeError(err.status === 409 ? t("workspace.nameTaken", { name: newName.trim() }) : String(err.message || err));
+    } finally {
+      setMakeBusy(false);
+    }
+  };
+  useEffect(() => {
+    if (making) nameRef.current?.focus();
+  }, [making]);
 
   useEffect(() => {
     let alive = true;
@@ -179,6 +215,51 @@ export default function FileTree({ connectionId, initialPath, onPick, selected }
 
       {/* Folder list */}
       <div className="max-h-56 overflow-y-auto p-1">
+        {making ? (
+          <div className="rounded-md bg-surface-3/60 px-2 py-1.5" data-testid="new-folder-form">
+            <div className="flex items-center gap-2">
+              <Icon name="folder-plus" size={15} className="shrink-0 text-accent" />
+              <input
+                ref={nameRef}
+                value={newName}
+                onChange={(e) => {
+                  setNewName(e.target.value);
+                  setMakeError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing) void make();
+                  if (e.key === "Escape") {
+                    e.stopPropagation();
+                    stopMaking();
+                  }
+                }}
+                placeholder={t("workspace.newFolderName")}
+                maxLength={255}
+                className="min-w-0 flex-1 bg-transparent text-sm text-content outline-none placeholder:text-content-faint"
+                data-testid="new-folder-name"
+              />
+              <button onClick={() => void make()} disabled={makeBusy || !newName.trim()} className="pill shrink-0 bg-accent text-white disabled:opacity-50" data-testid="new-folder-create">
+                {makeBusy ? <Icon name="spinner" size={11} spin /> : t("workspace.create")}
+              </button>
+              <button onClick={stopMaking} className="shrink-0 p-0.5 text-content-faint hover:text-content" aria-label={t("common.cancel")} title={t("common.cancel")}>
+                <Icon name="x" size={13} />
+              </button>
+            </div>
+            <p className={`mt-1 pl-6 text-[11px] ${makeError ? "text-danger" : "text-content-faint"}`} data-testid="new-folder-note">
+              {makeError || t("workspace.newFolderIn", { path })}
+            </p>
+          </div>
+        ) : (
+          !error && (
+            <button
+              onClick={startMaking}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-accent hover:bg-surface-3 transition"
+              data-testid="new-folder"
+            >
+              <Icon name="folder-plus" size={15} /> {t("workspace.newFolder")}
+            </button>
+          )
+        )}
         {path !== "/" && (
           <button
             onClick={() => go("/" + segments.slice(0, -1).join("/"))}
