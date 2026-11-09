@@ -6,6 +6,8 @@ import AssistantTurn from "./turn/AssistantTurn";
 import CompactionDivider from "./CompactionDivider";
 import ViaBadge from "./ViaBadge";
 import RewindButton from "./RewindButton";
+import DeleteMessageButton from "./DeleteMessageButton";
+import { useChatStore } from "../../stores/chatStore";
 import { tr } from "../../i18n";
 
 // Memoized: a turn re-renders only when it changes (copy-on-write in the store)
@@ -24,6 +26,7 @@ export default memo(function MessageItem({ turn }: { turn: Turn }) {
       </div>
     );
   }
+  if (turn.role === "user" && turn.meta?.hidden) return null; // (the user deleted it)
   if (turn.role === "user") {
     const atts = turn.attachments || [];
     return (
@@ -35,7 +38,10 @@ export default memo(function MessageItem({ turn }: { turn: Turn }) {
             {turn.text}
           </div>
         )}
-        <RewindButton messageId={turn.messageId} text={turn.text} meta={turn.meta} />
+        <div className="flex items-center gap-0.5">
+          <DeleteMessageButton messageId={turn.messageId} text={turn.text} attachments={atts} meta={turn.meta} store={useChatStore} />
+          <RewindButton messageId={turn.messageId} text={turn.text} meta={turn.meta} />
+        </div>
       </div>
     );
   }

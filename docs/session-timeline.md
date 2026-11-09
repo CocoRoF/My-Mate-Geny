@@ -3,7 +3,8 @@
 Code: `backend/app/services/session_timeline.py`; the engines' side in `providers/claude_code.py` and
 `providers/_codex_app_server.py`; on screen `components/chat/RewindButton.tsx`, `lib/rewind.ts` and the chat menu in
 `components/layout/Sidebar.tsx`. Tests: `backend/tests/test_session_timeline.py`, `frontend/test/rewind.test.ts`,
-`desktop/test/e2e/session-rewind-browser.js` (+ `session-rewind-server.py`). Chats only: a mate's conversation has neither.
+`desktop/test/e2e/session-rewind-browser.js` (+ `session-rewind-server.py`). Chats only: a mate's conversation has neither
+(deleting a message, the last section, works in both).
 
 ## Where an engine stands
 
@@ -67,3 +68,23 @@ until then, which is why copying is instant. A running turn isn't copied: the co
 engine state as of then. What still runs belongs to the original.
 
 Copied terminal events carry `usage_copied`: the copy shows the same costs, the Usage page counts them once.
+
+## Deleting a message
+
+Code: `backend/app/services/hidden_messages.py`, `SessionService.hide_message` (`POST
+/api/sessions/{sid}/messages/{mid}/hide`); on screen `components/chat/DeleteMessageButton.tsx`, in a chat (under the
+user's bubble, like Rewind) and in a mate's conversation (beside the bubble, on hover or once it is tapped). Tests:
+`backend/tests/test_hidden_messages.py`, `frontend/test/hidden-message.test.ts`, `desktop/test/e2e/message-delete-browser.js`.
+
+Unlike Rewind this takes nothing back and works in a mate's conversation too: what the user wrote — a message, or a steer
+— leaves their view, with the photos and files sent along, and nothing else changes. The engine already has it in its
+context and a mate in her memory, and both keep it (the dialog says so); only what the user wrote can go, not what a mate
+sent, the app made, or speech still being heard.
+
+- The message gets `meta.hidden` (when). Every read a chat window makes — the paged and the full history, the messages and
+  events endpoints, the replay on (re)attach — hands it out empty: no text, no attachments, `meta = {"hidden": …}`. It
+  stays where it was, so a history page still starts its turn at it; the client draws nothing for it.
+- A steer is also its `user.steer` event (which places it inside its turn, with its text and files): emptied the same way.
+- The engine's and a mate's reads (`messages()` / `events()` without `view`) are whole: the next turn's handoff, her
+  `read_session`, her memory.
+- Every window of the chat drops it at once: `message.hidden` goes to the chat's subscribers.

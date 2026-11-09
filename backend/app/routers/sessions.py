@@ -7,6 +7,7 @@ from app.routers._deps import session_service, workspace_service
 from app.schemas.models import SessionCreate, SessionUpdate
 from app.services import folder_routing
 from app.services import folders as folder_model
+from app.services import hidden_messages
 from app.services.session_service import SessionService, TurnBusyError
 from app.services.session_timeline import TimelineBusy
 from app.services.workspace_service import WorkspaceService
@@ -215,12 +216,23 @@ async def get_session(sid: str, svc: SessionService = Depends(session_service)) 
 
 @router.get("/{sid}/messages")
 async def get_messages(sid: str, svc: SessionService = Depends(session_service)) -> list[dict]:
-    return svc.messages(sid)
+    return svc.messages(sid, view=True)
+
+
+@router.post("/{sid}/messages/{mid}/hide")
+async def hide_message(sid: str, mid: str, svc: SessionService = Depends(session_service)) -> dict:
+    """Delete what the user wrote from their view — with what they sent along (services/hidden_messages.py)."""
+    try:
+        return svc.hide_message(sid, mid)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="no such message in this chat") from exc
+    except hidden_messages.NotYours as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/{sid}/events")
 async def get_events(sid: str, svc: SessionService = Depends(session_service)) -> list[dict]:
-    return svc.events(sid)
+    return svc.events(sid, view=True)
 
 
 @router.delete("/{sid}")

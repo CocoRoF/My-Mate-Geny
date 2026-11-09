@@ -59,6 +59,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from app.db import Database
+from app.services.hidden_messages import redact_events, redact_message
 from app.services.history_aggregates import SessionAggregates
 from app.services.history_lite import LITE_VERSION, lite_events, lite_payloads
 from app.services.turn_cost import COST_EVENTS, turn_cost
@@ -228,7 +229,7 @@ class HistoryPager:
                 meta = json.loads(meta) if meta else None
             except (TypeError, ValueError):
                 meta = None
-            out.append({**dict(r), "meta": meta, "attachments": by_msg.get(r["id"], [])})
+            out.append(redact_message({**dict(r), "meta": meta, "attachments": by_msg.get(r["id"], [])}))
         return out
 
     def _events(self, sid: str, start: str | None, until: str | None, max_eid: int | None) -> list[dict[str, Any]]:
@@ -238,8 +239,8 @@ class HistoryPager:
             (sid, start or "", until if until is not None else "￿",
              max_eid if max_eid is not None else 2 ** 62),
         )
-        return [{"eid": r["id"], "seq": r["seq"], "type": r["type"], "data": json.loads(r["data"]),
-                 "timestamp": r["created_at"]} for r in rows]
+        return redact_events(self._db, sid, ({"eid": r["id"], "seq": r["seq"], "type": r["type"],
+                                              "data": json.loads(r["data"]), "timestamp": r["created_at"]} for r in rows))
 
     # ---- cost (turn_cost needs the session's terminal events from the start) ----
 

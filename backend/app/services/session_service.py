@@ -60,6 +60,7 @@ from app.services.history_page import HistoryPager
 from app.services.context_handoff import build_blocks, catchup_preamble, handoff_preamble, ENGINE_LABEL
 from app.services.engines import EngineManager
 from app.services import changes as change_tracker
+from app.services import hidden_messages
 from app.services import folder_routing
 from app.services import folders as folder_model
 from app.services.provider_service import ProviderService
@@ -472,16 +473,26 @@ class SessionService:
         self._mate_sids.discard(sid)
         self._avatar_sids.discard(sid)
 
-    def messages(self, sid: str) -> list[dict[str, Any]]:
+    def messages(self, sid: str, *, view: bool = False) -> list[dict[str, Any]]:
+        """``view``: as the user's chat view gets them — what they deleted, empty (services/hidden_messages.py);
+        otherwise whole, as the engine and a mate know them."""
         rows = self._db.query(
             "SELECT id, role, content, provider, model, meta, created_at FROM messages WHERE session_id = ? "
             "ORDER BY created_at",
             (sid,),
         )
         by_msg = self._attachments.by_message(sid) if self._attachments is not None else {}
-        return [{**dict(r), "meta": _json_or_none(r["meta"]), "attachments": by_msg.get(r["id"], [])} for r in rows]
+        out = [{**dict(r), "meta": _json_or_none(r["meta"]), "attachments": by_msg.get(r["id"], [])} for r in rows]
+        return [hidden_messages.redact_message(m) for m in out] if view else out
 
-    def events(self, sid: str, after: int = 0) -> list[dict[str, Any]]:
+    def hide_message(self, sid: str, mid: str) -> dict[str, Any]:
+        """The user deletes what they wrote from their view (services/hidden_messages.py): every window of this chat
+        drops it at once. ``KeyError``: no such message here; ``hidden_messages.NotYours``: not theirs to delete."""
+        hidden_messages.hide(self._db, sid, mid)
+        self._publish(sid, {"type": "message.hidden", "data": {"message_id": mid}})
+        return {"message_id": mid, "hidden": True}
+
+    def events(self, sid: str, after: int = 0, *, view: bool = False) -> list[dict[str, Any]]:
         # Insertion order (row id), NOT seq: seq restarts at 1 every turn.
         rows = self._db.query(
             "SELECT id, seq, type, data, created_at FROM events WHERE session_id = ? AND id > ? ORDER BY id",
@@ -504,7 +515,7 @@ class SessionService:
                 )
             ]
             normalize_events(out, prior)
-        return out
+        return hidden_messages.redact_events(self._db, sid, out) if view else out
 
     def history_page(self, sid: str, *, turns: int | None = None, before: str | None = None,
                      since: str | None = None, lite: bool = False) -> dict[str, Any]:
@@ -523,8 +534,8 @@ class SessionService:
                           lite=lite, running=self.is_running(sid))
 
     def events_by_id(self, sid: str, eids: list[int]) -> list[dict[str, Any]]:
-        """These events of this chat as stored (what a lite page previewed),
-        terminal events normalized per turn like every history read."""
+        """These events of this chat as stored (what a lite page previewed), terminal events normalized per turn like
+        every history read — for the chat view (a deleted steer empty)."""
         out: list[dict[str, Any]] = []
         want = sorted({int(e) for e in eids})
         terminal: dict[int, dict[str, Any]] | None = None
@@ -542,7 +553,7 @@ class SessionService:
                     data = dict(terminal.get(r["id"], data))
                 out.append({"eid": r["id"], "seq": r["seq"], "type": r["type"], "data": data,
                             "timestamp": r["created_at"]})
-        return out
+        return hidden_messages.redact_events(self._db, sid, out)
 
     def reset_context(self, sid: str) -> dict[str, Any]:
         """``/clear``: the next turn starts a fresh provider conversation."""
