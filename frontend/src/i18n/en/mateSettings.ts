@@ -273,6 +273,8 @@ export default {
   avNoExpressions: "This model lists no expressions.",
 
   // ModelTab
+  modelApiHint: "{vendor} models on your API keys, run by this app's own engine (billed per token).",
+  modelApplyApi: "A model or effort change applies from the next message (same conversation).",
   modelClaudeHint: "Anthropic's Claude, on the Claude accounts of your chats.",
   modelCodexHint: "OpenAI's GPT models, on your Codex (ChatGPT) login.",
   effortDefaultHint: "The engine's own default for the model.",

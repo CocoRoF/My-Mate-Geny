@@ -25,10 +25,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 
 # git: repo clones + per-turn change snapshots; openssh-client: remote
 # workspaces (SSH-backed MCP bridge); nodejs: the provider CLIs; tini: reaps
-# the CLI subprocesses.
+# the CLI subprocesses; ripgrep: the API-key engines' Grep / Glob (app/harness).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       git openssh-client curl ca-certificates gnupg tini \
+       git openssh-client curl ca-certificates gnupg tini ripgrep \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*

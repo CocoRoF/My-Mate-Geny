@@ -221,8 +221,15 @@ OAuth; the host login: the provider-level one, which writes `~/.claude` /
 endpoint); browser run: `desktop/test/e2e/login-sessions-browser.js` (seeded by
 `login-sessions-seed.py`, fake tokens, a dead HTTPS proxy).
 
+## Anthropic, OpenAI, Google with API keys — `app/providers/api_engine.py` + `app/harness/`
+
+Models used with an API key run on the app's own agent loop (no CLI): keys in the provider's account pool (tested,
+balanced, swapped within a turn), the vendor's model list with on/off and prices, the same tools, events, rewind and
+copy as Claude Code / Codex. See [api-engines.md](api-engines.md).
+
 ## Adding a provider
 
 1. Subclass `Provider`, implement `auth_status` + `run_turn_stream`.
 2. Register it in `app/providers/registry.py`.
-3. It appears automatically in `/api/config`, `/api/providers`, and the UI.
+3. Give it a catalog entry (`providers/catalog.py::build_catalog`) — the New chat menu and the composer are built from
+   it — and a Settings panel (`frontend/src/components/providers/ProvidersView.tsx`).

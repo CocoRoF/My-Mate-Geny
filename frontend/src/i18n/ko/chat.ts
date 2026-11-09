@@ -19,6 +19,7 @@ const ko: Messages<"chat"> = {
   cmdPlanHint: "계획 모드 — 읽기 전용, 에이전트가 계획을 제안해요",
   cmdAgentHint: "에이전트 모드 — 완전 자율 (편집, 명령 실행)",
   cmdStopHint: "진행 중인 턴을 중지해요",
+  taskNotificationTurn: "백그라운드 작업이 끝나 에이전트가 이어서 진행해요",
   cmdCompactHint: "대화를 요약해서 컨텍스트 공간을 비워요",
   badgeSkill: "스킬",
   badgeCommand: "명령",

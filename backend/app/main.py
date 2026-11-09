@@ -27,6 +27,7 @@ from app.providers.oauth import OAuthManager
 from app.providers.accounts import SESSION_CHECK_S, AccountPool, AccountStore
 from app.db import Database
 from app.routers import (
+    api_providers,
     mcp as mcp_router,
     screen as screen_router,
     local_runtime,
@@ -268,6 +269,7 @@ for r in (
     config_router.router,
     providers.router,
     accounts.router,
+    api_providers.router,
     higgsfield_router.router,
     connections.router,
     workspaces.router,

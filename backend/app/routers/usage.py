@@ -36,6 +36,10 @@ async def subscription(request: Request, provider: str = "claude", account_id: s
     minutes, Retry-After / backoff on errors, the last numbers served with
     ``fetched_at`` + ``stale_reason`` / ``retry_at`` when they're old.
     ``refresh`` asks now unless that account is backing off."""
+    from app.harness.vendors import is_api_provider
+
+    if is_api_provider(provider):  # (billed per token: no plan windows)
+        return {"available": False, "auth_method": "api_key", "reason": "api_key"}
     if provider not in ("claude", "codex"):
         raise HTTPException(status_code=400, detail=f"unsupported provider: {provider}")
     pool = request.app.state.account_pool

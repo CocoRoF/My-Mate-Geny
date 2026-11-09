@@ -274,6 +274,8 @@ const ko: Messages<"mateSettings"> = {
   avNoExpressions: "이 모델에는 표정 목록이 없어요.",
 
   // ModelTab
+  modelApiHint: "내 API 키로 쓰는 {vendor} 모델 — 이 앱의 자체 엔진으로 돌아요(토큰 단위 과금).",
+  modelApplyApi: "모델·추론 강도 변경은 다음 메시지부터 적용돼요(대화는 그대로).",
   modelClaudeHint: "Anthropic의 Claude — 채팅에 쓰는 Claude 계정으로 동작해요.",
   modelCodexHint: "OpenAI의 GPT 모델 — Codex(ChatGPT) 로그인으로 동작해요.",
   effortDefaultHint: "엔진이 이 모델에 쓰는 기본값이에요.",

@@ -50,6 +50,16 @@ DEFAULT_MATE_MODELS = {"claude": DEFAULT_MATE_MODEL, "codex": DEFAULT_CODEX_MODE
 
 
 def default_mate_model(provider: str) -> str:
+    from app.harness import state
+    from app.harness.vendors import MATE_MODELS, is_api_provider
+
+    if is_api_provider(provider):  # (what this app may use is the user's choice: the catalog's switched-on models)
+        if not state.bound():
+            return MATE_MODELS[provider]
+        from app.harness.models import ModelCatalog
+
+        on = [m["id"] for m in ModelCatalog(state.db()).enabled(provider)]
+        return MATE_MODELS[provider] if MATE_MODELS[provider] in on or not on else on[0]
     return DEFAULT_MATE_MODELS.get(provider, DEFAULT_MATE_MODEL)
 
 _STATIC: dict[str, dict] = {
@@ -351,6 +361,19 @@ def build_catalog(
         "claude": claude,
         "codex": _codex_catalog(codex_dir),
     }
+    # API keys (app.harness): the models switched on in each provider's catalog
+    from app.harness import state
+    from app.harness.vendors import API_PROVIDERS
+
+    if state.bound():
+        from app.harness.models import ModelCatalog
+
+        cat = ModelCatalog(state.db())
+        for name in API_PROVIDERS:
+            entry = cat.catalog_entry(name)
+            entry["auto_compact_presets"] = list(AUTO_COMPACT_PRESETS)
+            entry["auto_compact_buffer"] = AUTOCOMPACT_BUFFER
+            catalog[name] = entry
     return catalog
 
 

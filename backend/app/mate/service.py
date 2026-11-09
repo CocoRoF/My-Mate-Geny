@@ -1403,7 +1403,7 @@ class MateService:
         try:
             get_provider(provider)
         except KeyError as exc:
-            raise MateError(f"unknown provider: {provider} (claude or codex)") from exc
+            raise MateError(f"unknown provider: {provider} (claude, codex, anthropic, openai or google)") from exc
         title = _clip(str(args.get("title") or "").strip(), 120) or os.path.basename(path.rstrip("/")) or path
         msg = str(args.get("message") or "").strip()
         rows = self._forwarded(mate_sid, args.get("attachments"))

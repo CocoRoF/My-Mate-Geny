@@ -1,3 +1,4 @@
+import { isApiProvider } from "../../api/apiProviders";
 import { useState } from "react";
 import { useProviderStore } from "../../stores/providerStore";
 import { useSessionStore } from "../../stores/sessionStore";
@@ -98,7 +99,10 @@ export default function NewSessionPanel() {
               >
                 <Icon name="cpu" size={18} className={sel ? "text-accent" : "text-content-faint"} />
                 <div className="min-w-0">
-                  <div className="text-sm font-medium">{catalog[id]?.label || id}</div>
+                  <div className="text-sm font-medium">
+                    {catalog[id]?.label || id}
+                    {isApiProvider(id) && <span className="ml-1.5 text-[10px] font-semibold text-content-faint">API</span>}
+                  </div>
                   <div className={`text-[10px] ${connected ? "text-success" : "text-content-faint"}`}>
                     {connected ? t("chat.connectedLower") : t("chat.notConnected")}
                   </div>

@@ -6,10 +6,24 @@ import AssistantTurn from "./turn/AssistantTurn";
 import CompactionDivider from "./CompactionDivider";
 import ViaBadge from "./ViaBadge";
 import RewindButton from "./RewindButton";
+import { tr } from "../../i18n";
 
 // Memoized: a turn re-renders only when it changes (copy-on-write in the store)
 // — prepending older turns or streaming into the last one leaves the rest alone.
 export default memo(function MessageItem({ turn }: { turn: Turn }) {
+  if (turn.role === "user" && turn.meta?.internal && turn.meta?.kind === "task_notification") {
+    // (background work ended while no turn ran and the agent went on by itself: a note, not something the user said)
+    return (
+      <div className="flex items-center gap-3 py-1 text-[11.5px] text-content-faint animate-fade-in" data-testid="task-notification-turn">
+        <span className="h-px flex-1 bg-border" />
+        <span className="inline-flex items-center gap-1.5">
+          <Icon name="activity" size={12} />
+          {tr("chat.taskNotificationTurn")}
+        </span>
+        <span className="h-px flex-1 bg-border" />
+      </div>
+    );
+  }
   if (turn.role === "user") {
     const atts = turn.attachments || [];
     return (

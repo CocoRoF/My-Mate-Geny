@@ -19,6 +19,11 @@ dependencies = [
     "uv>=0.13,<1",               # explicit, isolated MCP package installation; bundled on each desktop OS
     "pywinpty>=2; sys_platform == 'win32'",
     "Pillow>=10.0",             # downscale image attachments for the model
+    # API-key engines (app.harness): each vendor's official SDK, and PDFs for the Read tool
+    "anthropic>=2.6,<3",
+    "openai>=3.46,<4",
+    "google-genai>=3.0,<4",
+    "pypdf>=5",
 ]
 
 [project.optional-dependencies]

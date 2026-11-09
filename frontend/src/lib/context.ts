@@ -20,9 +20,11 @@ export function modelWindow(model: string | null | undefined): number {
 }
 
 /** Window + auto-compact point the CLI uses for a model and a configured
- * auto-compact window (0 = the model's full window). */
-export function limitsFor(model: string | null | undefined, autoCompact: number, buffer = COMPACT_BUFFER) {
-  const full = modelWindow(model);
+ * auto-compact window (0 = the model's full window). ``known``: the model's window when the catalog says it (an
+ * API-key model: the vendor reports it). */
+export function limitsFor(model: string | null | undefined, autoCompact: number, buffer = COMPACT_BUFFER,
+                          known?: number | null) {
+  const full = known || modelWindow(model);
   const window = autoCompact > 0 ? Math.min(full, autoCompact) : full;
   return { window, threshold: Math.max(0, window - buffer), full };
 }

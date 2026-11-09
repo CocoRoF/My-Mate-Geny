@@ -1,9 +1,11 @@
 /**
- * Language model (this mate): which engine it thinks with (Claude Code or Codex), which of that engine's models and
+ * Language model (this mate): which engine it thinks with (Claude Code, Codex, or an API key run by the app's own
+ * engine: Anthropic, OpenAI, Google), which of that engine's models and
  * how much it reasons. Defaults: Claude Sonnet 5.5 / GPT-6.1-Sol, low effort.
  */
 import { useEffect, useState } from "react";
 import { DEFAULT_MATE_MODELS, MATE_EFFORTS, type Mate, type MateEngine } from "../../../api/mates";
+import { API_PROVIDERS, isApiProvider } from "../../../api/apiProviders";
 import { currentSurface, desktopMate } from "../../../mate/desktop";
 import { useConfigStore } from "../../../stores/configStore";
 import { useMateStore } from "../../../stores/mateStore";
@@ -15,7 +17,7 @@ import Icon from "../../ui/Icon";
 import { tr, useT, type MsgKey } from "../../../i18n";
 import { Banner, Field, LinkButton, SaveBar, Section, Segmented, useFollowSaved, useSaver } from "./ui";
 
-const ENGINES: { id: MateEngine; label: string; hint: MsgKey; fallback: string }[] = [
+const CLI_ENGINES: { id: MateEngine; label: string; hint: MsgKey; fallback: string }[] = [
   {
     id: "claude",
     label: "Claude Code",
@@ -76,25 +78,41 @@ export default function ModelTab({ mate }: { mate: Mate }) {
   const t = useT();
   const catalog = useConfigStore((s) => s.catalog);
   const providers = useProviderStore((s) => s.providers);
+  // Claude Code and Codex, then each API-key provider (the app's own engine) that has a model switched on
+  const ENGINES = [
+    ...CLI_ENGINES,
+    ...API_PROVIDERS.filter((id) => catalog[id]?.models.length).map((id) => ({
+      id: id as MateEngine,
+      label: `${catalog[id]?.label || id} API`,
+      hint: "mateSettings.modelApiHint" as MsgKey,
+      fallback: catalog[id]?.default_model || DEFAULT_MATE_MODELS[id as MateEngine],
+    })),
+  ];
+  const engineName = (id: string) => ENGINES.find((e) => e.id === id)?.label || id;
+  const mateDefault = (id: MateEngine): string => {
+    if (!isApiProvider(id)) return DEFAULT_MATE_MODELS[id];
+    const on = catalog[id]?.models || [];
+    return on.some((m) => m.id === DEFAULT_MATE_MODELS[id]) ? DEFAULT_MATE_MODELS[id] : catalog[id]?.default_model || DEFAULT_MATE_MODELS[id];
+  };
   useEffect(() => {
     if (!catalog.claude) void useConfigStore.getState().load().catch(() => {});
     if (!providers.length) void useProviderStore.getState().load().catch(() => {});
   }, [catalog.claude, providers.length]);
 
-  const storedEngine: MateEngine = mate.llm.provider === "codex" ? "codex" : "claude";
+  const storedEngine: MateEngine = mate.llm.provider === "codex" || isApiProvider(mate.llm.provider) ? mate.llm.provider : "claude";
   // an empty model talks on the engine's mate default, so show that as selected
-  const storedModel = mate.llm.model || DEFAULT_MATE_MODELS[storedEngine];
+  const storedModel = mate.llm.model || mateDefault(storedEngine);
   const storedEffort = mate.llm.effort || "low";
   const [engine, setEngine] = useState<MateEngine>(storedEngine);
   const [model, setModel] = useState(storedModel);
   const [effort, setEffort] = useState(storedEffort);
   const saver = useSaver();
 
-  const def = DEFAULT_MATE_MODELS[engine];
+  const def = mateDefault(engine);
   const entry = catalog[engine];
   const listed: CatalogModel[] = (entry?.models ?? []).filter((m) => !(engine === "codex" && m.id === "default"));
   const models: CatalogModel[] = [
-    ...(listed.some((m) => m.id === def) ? [] : [{ id: def, label: ENGINES.find((e) => e.id === engine)!.fallback }]),
+    ...(listed.some((m) => m.id === def) ? [] : [{ id: def, label: ENGINES.find((e) => e.id === engine)?.fallback || def }]),
     ...listed,
     ...(model && !listed.some((m) => m.id === model) && model !== def ? [{ id: model, label: model }] : []),
   ].sort((a, b) => Number(b.id === def) - Number(a.id === def));
@@ -112,7 +130,7 @@ export default function ModelTab({ mate }: { mate: Mate }) {
       setModel(storedModel);
       setEffort(storedEffort);
     } else {
-      setModel(DEFAULT_MATE_MODELS[id]);
+      setModel(mateDefault(id));
       setEffort("low");
     }
   };
@@ -157,10 +175,10 @@ export default function ModelTab({ mate }: { mate: Mate }) {
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium text-content">
-                      <Icon name={e.id === "codex" ? "terminal" : "brain"} size={13} className="text-accent" /> {e.label}
+                      <Icon name={e.id === "codex" ? "terminal" : isApiProvider(e.id) ? "key" : "brain"} size={13} className="text-accent" /> {e.label}
                       {st && !st.connected && <span className="rounded bg-warning/15 px-1.5 py-px text-[10px] font-medium text-warning">{t("mateSettings.modelNotConnected")}</span>}
                     </span>
-                    <span className="block text-[11.5px] text-content-faint">{t(e.hint)}</span>
+                    <span className="block text-[11.5px] text-content-faint">{t(e.hint, { vendor: catalog[e.id]?.label || e.id })}</span>
                   </span>
                 </button>
               );
@@ -172,12 +190,12 @@ export default function ModelTab({ mate }: { mate: Mate }) {
             testId="mate-engine-disconnected"
             action={<LinkButton onClick={openProviders} testId="mate-engine-providers">{t("mateSettings.modelOpenProviders")}</LinkButton>}
           >
-            {t(status?.detail ? "mateSettings.modelDisconnectedDetail" : "mateSettings.modelDisconnected", { engine: engine === "codex" ? "Codex" : "Claude Code", detail: status?.detail ?? "" })}
+            {t(status?.detail ? "mateSettings.modelDisconnectedDetail" : "mateSettings.modelDisconnected", { engine: engineName(engine), detail: status?.detail ?? "" })}
           </Banner>
         )}
         {engine !== storedEngine && (
           <Banner tone="info" testId="mate-engine-switch">
-            {t("mateSettings.modelSwitchNote", { engine: engine === "codex" ? "Codex" : "Claude Code" })}
+            {t("mateSettings.modelSwitchNote", { engine: engineName(engine) })}
           </Banner>
         )}
         <Field label={t("mateSettings.voiceModel")} as="div">
@@ -222,7 +240,7 @@ export default function ModelTab({ mate }: { mate: Mate }) {
           </Field>
         )}
         <p className="text-[11.5px] text-content-faint">
-          {engine === "codex" ? t("mateSettings.modelApplyCodex") : t("mateSettings.modelApplyClaude")}
+          {engine === "codex" ? t("mateSettings.modelApplyCodex") : isApiProvider(engine) ? t("mateSettings.modelApplyApi") : t("mateSettings.modelApplyClaude")}
         </p>
       </Section>
       <SaveBar saver={saver} onSave={save} dirty={dirty} onReset={reset} />

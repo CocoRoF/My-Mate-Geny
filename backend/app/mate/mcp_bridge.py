@@ -107,8 +107,9 @@ TOOLS = [
                 "message": {"type": "string", "description": "Optional first instruction for the new chat."},
                 "attachments": _ATTACHMENTS_PARAM,
                 "title": {"type": "string", "description": "Optional chat title (default: from the message)."},
-                "provider": {"type": "string", "enum": ["claude", "codex"],
-                             "description": "Agent engine (default claude)."},
+                "provider": {"type": "string", "enum": ["claude", "codex", "anthropic", "openai", "google"],
+                             "description": "Agent engine (default claude; anthropic / openai / google run on the "
+                                            "user's API keys)."},
                 "model": {"type": "string", "description": "Optional model id (default: the engine's default)."},
             },
             "required": ["workspace_path"],

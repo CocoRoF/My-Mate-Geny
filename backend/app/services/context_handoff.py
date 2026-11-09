@@ -18,7 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-ENGINE_LABEL = {"claude": "Claude Code", "codex": "Codex"}
+ENGINE_LABEL = {"claude": "Claude Code", "codex": "Codex", "anthropic": "Anthropic (API)", "openai": "OpenAI (API)",
+                "google": "Google (API)"}
 
 _BUDGET = 60_000          # total characters of transcript
 _PER_MESSAGE = 6_000      # cap for any single message

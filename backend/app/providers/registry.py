@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.harness.vendors import API_PROVIDERS
+from app.providers.api_engine import ApiEngineProvider
 from app.providers.base import Provider
 from app.providers.claude_code import ClaudeCodeProvider
 from app.providers.codex import CodexProvider
@@ -9,6 +11,8 @@ from app.providers.codex import CodexProvider
 _PROVIDERS: dict[str, Provider] = {
     "claude": ClaudeCodeProvider(),
     "codex": CodexProvider(),
+    # API keys, the app's own agent loop (app.harness, docs/api-engines.md)
+    **{name: ApiEngineProvider(name) for name in API_PROVIDERS},
 }
 
 

@@ -366,6 +366,8 @@ class Database:
         self._migrate()
         from app.mate.knowledge import bootstrap
         bootstrap(self)
+        from app.harness.store import bootstrap as harness_bootstrap
+        harness_bootstrap(self)
 
     def _migrate(self) -> None:
         """Additive, idempotent column migrations for pre-existing databases."""

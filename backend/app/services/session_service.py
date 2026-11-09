@@ -65,6 +65,9 @@ from app.services import folders as folder_model
 from app.services.provider_service import ProviderService
 from app.services.session_timeline import SessionTimeline
 from app.services.workspace_service import WorkspaceService
+from app.harness import runtime as harness_runtime
+from app.harness import state as harness_state
+from app.harness.vendors import API_PROVIDERS, is_api_provider
 
 if TYPE_CHECKING:
     from app.services.attachment_service import AttachmentService
@@ -167,6 +170,10 @@ class SessionService:
         self._live_usage_by_session: dict[str, dict[str, Any]] = {}
         # Context window + auto-compact point each chat's engine last reported.
         self._ctx_limits: dict[str, dict[str, Any]] = {}
+        # API-key engines (app.harness) run in this process and keep their conversations in this database.
+        harness_state.bind(db)
+        self._spent: dict[str, dict[str, Any]] = {}  # sid -> what the running harness turn spent so far
+        self._harness_reaper: asyncio.Task | None = None
         self._engines = EngineManager(
             on_task=self._on_task,
             on_usage=self._on_usage,
@@ -457,6 +464,8 @@ class SessionService:
         if self.mcp is not None:
             self.mcp.revoke(sid=sid)
         self._db.execute("DELETE FROM sessions WHERE id = ?", (sid,))
+        from app.harness.store import TranscriptStore
+        TranscriptStore(self._db).delete_chat(sid)
         if self._attachments is not None:
             self._attachments.purge_session(sid)
         self.list_changed("deleted", sid)
@@ -1003,6 +1012,7 @@ class SessionService:
         return True
 
     def _retire_engine(self, sid: str, reason: str) -> None:
+        self._end_harness(sid)
         if self._engines.slot(sid) is None:
             return
         try:
@@ -1032,7 +1042,8 @@ class SessionService:
                 _note_outcome(outcome, ev)
                 self._publish(sid, ev.to_dict())
         except asyncio.CancelledError:
-            ev = ProviderEvent(type="error", data={"code": "turn.interrupted", "message": "Stopped by user"})
+            ev = ProviderEvent(type="error", data={"code": "turn.interrupted", "message": "Stopped by user",
+                                                   **self._stopped_spend(sid)})
             _note_outcome(outcome, ev)
             self._add_event(sid, ev)
             self._publish(sid, ev.to_dict())
@@ -1207,6 +1218,8 @@ class SessionService:
         # credentials dir differs per account — HOME stays the real one and
         # everything else is shared with the host config (link_shared_state).
         lease = None
+        key_source = None
+        api = is_api_provider(provider_name)
         extra_env: dict[str, str] = {}
         holder: dict[str, Any] = {"notices": []}
         if not persistent and self._pool is not None:
@@ -1230,7 +1243,7 @@ class SessionService:
         if not persistent:  # (an engine says which account it holds once it's up)
             ctx.update(self._account_ref(provider_name, lease, api_key))
         if lease is not None:
-            if not lease.is_primary:
+            if not lease.is_primary and not api:
                 await asyncio.to_thread(link_shared_state, provider_name, lease.account_id)
                 if provider_name == "claude":
                     extra_env["CLAUDE_CONFIG_DIR"] = lease.config_dir
@@ -1238,6 +1251,10 @@ class SessionService:
                     extra_env["CODEX_HOME"] = lease.config_dir
             if lease.auth_mode == "api_key" and lease.api_key:
                 api_key = lease.api_key
+        if api and lease is not None:
+            from app.services.harness_keys import PoolKeys
+
+            key_source = PoolKeys(self, provider_name, lease, sid, ctx)
         run = self.active_runs.get(sid)
         if run is not None and ctx.get("account"):
             run["account"] = ctx["account"]
@@ -1277,11 +1294,18 @@ class SessionService:
             preamble="\n\n".join(x for x in (preamble, existing_jobs) if x),
             uploads_dir=uploads_dir,
             inline_files=session.get("kind") in ("mate", "avatar"),
-            auto_compact_window=self.auto_compact_window(session) if provider_name == "claude" else 0,
+            auto_compact_window=self.auto_compact_window(session) if provider_name == "claude" or api else 0,
             tool_env=dict(hf.env) if hf is not None else {},
             system_append=hf.prompt if hf is not None else "",
             plugin_dirs=list(hf.plugin_dirs) if hf is not None else [],
         )
+        if api:
+            req.session_id = sid
+            req.key_source = key_source
+            req.on_usage = lambda spent, _sid=sid: self._spent.__setitem__(_sid, spent)
+            req.background_event = lambda ev, _sid=sid: self._harness_event(_sid, ev)
+            self._spent.pop(sid, None)
+            self._watch_harness(sid)
         if self.mcp is not None and session.get("kind") not in ("mate", "avatar"):
             self.mcp.configure(sid, req)
         if self.screen is not None and session.get("kind") not in ("mate", "avatar"):
@@ -1435,11 +1459,71 @@ class SessionService:
                 # A live engine has seen this turn whatever its outcome (stopped,
                 # failed): its session is current — no handoff to itself next time.
                 self._set_cli_session(sid, slot.engine.cli_session_id, provider_name)
-            outcome_lease = slot.lease if slot is not None else lease
+            outcome_lease = slot.lease if slot is not None else (key_source.lease if key_source is not None else lease)
             self._report_outcome(provider_name, outcome_lease, st, ctx, sid, release=not persistent)
             if self._pool is not None and outcome_lease is not None:
                 self._pool.end_turn(outcome_lease)  # the engine keeps its lease; the turn is over
             await self._report_changes(sid, st)
+
+    # ---- API-key engines (app.harness) ----
+
+    def _stopped_spend(self, sid: str) -> dict[str, Any]:
+        """What a stopped harness turn spent (a CLI's stop event carries its own; a cancelled harness can't speak)."""
+        spent = self._spent.pop(sid, None)
+        if not spent:
+            return {}
+        try:
+            provider = self.get(sid)["provider"]
+        except KeyError:
+            provider = None
+        source = "mate" if sid in self._mate_sids else "internal" if sid in self._avatar_sids else "chat"
+        return {**spent, "provider": provider, "usage_source": source}
+
+    def _harness_event(self, sid: str, ev: ProviderEvent) -> None:
+        """Background work of a harness chat changed state outside a turn: the task list follows."""
+        if ev.type == "task.update":
+            self._on_task(sid, ev.data)
+
+    def _end_harness(self, sid: str) -> None:
+        if harness_runtime.peek(sid) is None:
+            return
+        try:
+            asyncio.get_running_loop().create_task(harness_runtime.shutdown(sid))
+        except RuntimeError:
+            pass
+
+    def _watch_harness(self, sid: str) -> None:
+        """Idle harness chats let go of their shells and connections (``harness.runtime.reap``); background work that
+        ends while no turn runs continues the chat by itself, as a Claude engine does."""
+        rt = harness_runtime.get(sid)
+        rt.on_idle_notice = lambda _sid=sid: self._harness_wake(_sid)
+        if self._harness_reaper is None or self._harness_reaper.done():
+            async def reap() -> None:
+                while True:
+                    await asyncio.sleep(60)
+                    with contextlib.suppress(Exception):
+                        await harness_runtime.reap()
+
+            self._harness_reaper = asyncio.create_task(reap())
+
+    def _harness_wake(self, sid: str) -> None:
+        def start() -> None:
+            rt = harness_runtime.peek(sid)
+            if rt is None or not rt.notices or sid in self._tasks or sid in self.timeline.busy:
+                return
+            with contextlib.suppress(Exception):
+                self.start_turn(sid, "Background work you started has finished (see the notification above). "
+                                     "Continue with what it means for the task.",
+                                meta={"internal": True, "kind": "task_notification"})
+
+        try:
+            asyncio.get_running_loop().call_later(0.5, start)
+        except RuntimeError:
+            pass
+
+    def providers_changed(self) -> None:
+        """Keys or models of a provider changed: open pages reload what they offer (New chat, the composer)."""
+        self._publish_list({"type": "providers.changed", "data": {}})
 
     # ---- Higgsfield (app.higgsfield.agent) ----
 
@@ -1496,8 +1580,9 @@ class SessionService:
 
     def _session_info(self, sid: str, ev: ProviderEvent, ctx: dict[str, Any]) -> ProviderEvent:
         info = {**ev.data, "account": ctx.get("account")}
-        if ev.data.get("provider") == "codex" and ev.data.get("cli_session_id"):
-            self._set_cli_session(sid, str(ev.data["cli_session_id"]), "codex")
+        if ev.data.get("provider") in ("codex", *API_PROVIDERS) and ev.data.get("cli_session_id"):
+            # (known before the turn ends: a stopped first turn can be continued)
+            self._set_cli_session(sid, str(ev.data["cli_session_id"]), ev.data["provider"])
         self._db.execute("UPDATE sessions SET cli_info = ? WHERE id = ?", (json.dumps(info), sid))
         return ProviderEvent(type="session.info", data=info, seq=ev.seq, timestamp=ev.timestamp)
 
@@ -1573,7 +1658,7 @@ class SessionService:
             # Which account ran this turn — kept with the chat, so it's auditable.
             ev.data = {**ev.data, "account": ctx.get("account"), "account_id": ctx.get("account_id")}
         self._add_event(sid, ev)
-        if ev.type == "task.update" and st["provider"] == "codex":
+        if ev.type == "task.update" and (st["provider"] == "codex" or is_api_provider(st["provider"])):
             # Codex app-server uses the same persistent task registry and live
             # sidebar updates as Claude's background-task callback.
             self._on_task(sid, ev.data)
@@ -1647,7 +1732,8 @@ class SessionService:
         if own is not None:
             return int(own)
         if self._pool is not None:
-            return int(self._pool.settings("claude").get("auto_compact_window") or 0)
+            provider = session.get("provider") if is_api_provider(session.get("provider")) else "claude"
+            return int(self._pool.settings(provider).get("auto_compact_window") or 0)
         return 0
 
     def _context_data(self, sid: str, data: dict[str, Any], model: str) -> dict[str, Any]:
@@ -2298,6 +2384,9 @@ class SessionService:
     async def shutdown(self) -> None:
         await self.remote_jobs.close()
         await self._engines.shutdown_all()
+        if self._harness_reaper is not None:
+            self._harness_reaper.cancel()
+        await harness_runtime.shutdown_all()
 
 
 def _unseen(result: Any, result_at: Any, seen_at: Any) -> bool:
@@ -2361,6 +2450,9 @@ def _default_model(provider: str, model: str | None) -> str:
             return DEFAULT_CLAUDE_MODEL
         if provider == "codex":
             return DEFAULT_CODEX_MODEL
+        if is_api_provider(provider) and harness_state.bound():
+            from app.harness.models import ModelCatalog
+            return ModelCatalog(harness_state.db()).default_model(provider)
     return model or ""
 
 

@@ -4,6 +4,8 @@ import { sharingSnapshot, stopOwnedSharing, resumeSharing } from "../mate/localS
 import { useEffect } from "react";
 import { toLogin, wsUrl } from "../api/client";
 import { onResync } from "../lib/sync";
+import { useConfigStore } from "../stores/configStore";
+import { useProviderStore } from "../stores/providerStore";
 import { useMcpStore } from "../stores/mcpStore";
 import { useCliToolsStore } from "../stores/cliToolsStore";
 import { useMateStore } from "../stores/mateStore";
@@ -89,6 +91,11 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
           return;
         }
         if (msg.type === "mcp.changed" || msg.type === "hello") void useMcpStore.getState().load();
+        if (msg.type === "providers.changed") {
+          // (keys or models of an API-key provider changed: New chat and the composer offer what is on now)
+          void useConfigStore.getState().load().catch(() => {});
+          void useProviderStore.getState().load().catch(() => {});
+        }
         if (msg.type === "cli.changed" || msg.type === "cli.log") {
           // Settings → Providers → CLI versions: a status change / an upgrade's new log lines (stores/cliToolsStore.ts)
           useCliToolsStore.getState().remote(msg as { type: string; data?: Record<string, unknown> });

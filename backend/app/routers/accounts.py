@@ -17,7 +17,9 @@ from app.providers.catalog import clean_auto_compact_window
 
 router = APIRouter(prefix="/api/providers")
 
-_SUPPORTED = {"claude", "codex"}
+from app.harness.vendors import API_PROVIDERS, is_api_provider
+
+_SUPPORTED = {"claude", "codex", *API_PROVIDERS}
 
 
 class AccountCreate(BaseModel):
@@ -88,7 +90,8 @@ async def create_account(provider: str, body: AccountCreate, request: Request) -
         max_concurrency=body.max_concurrency,
         api_key=body.api_key,
     )
-    ensure_account_dirs(provider, acc["id"])
+    if not is_api_provider(provider):  # (a key needs no login folder)
+        ensure_account_dirs(provider, acc["id"])
     # First account added -> enable the pool for convenience.
     if len(store.list(provider)) == 1:
         store.set_pool(provider, enabled=True)
