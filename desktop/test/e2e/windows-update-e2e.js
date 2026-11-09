@@ -338,9 +338,15 @@ async function main() {
     for (let round = 1; round <= ROUNDS; round++) {
       const label = `${mode}-${round}`;
       await uninstallAll();
-      const run = spawnSync(older.file, ["/S"], { stdio: "ignore", windowsHide: true, timeout: 300000 });
-      const k = await until("the older build installed", () => installed()?.DisplayVersion === older.version && installed(), 120000, 1000);
-      say(`${label}: installed ${k.DisplayVersion} in ${k.InstallLocation} (setup exit ${run.status})`);
+      const began = Date.now();
+      const run = spawnSync(older.file, ["/S"], { stdio: "ignore", windowsHide: true, timeout: 600000 });
+      say(`${label}: the older setup ran ${Math.round((Date.now() - began) / 1000)} s (exit ${run.status}${run.error ? `, ${run.error.message}` : ""})`);
+      const k = await until("the older build installed", () => installed()?.DisplayVersion === older.version && installed(), 180000, 1000).catch((e) => {
+        console.log(`    uninstall entries:\n${ps(`Get-ChildItem HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall, HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall, HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall -ErrorAction SilentlyContinue | ForEach-Object { $p = Get-ItemProperty $_.PSPath; if ($p.DisplayName -like '*Mate*' -or $p.DisplayName -like '*harnessor*') { $_.Name + ' = ' + $p.DisplayName + ' ' + $p.DisplayVersion + ' @ ' + $p.InstallLocation } }`)}`);
+        console.log(`    %LOCALAPPDATA%\\Programs: ${fs.readdirSync(path.join(process.env.LOCALAPPDATA, "Programs")).join(", ")}`);
+        throw e;
+      });
+      say(`${label}: installed ${k.DisplayVersion} in ${k.InstallLocation}`);
       fs.mkdirSync(PROFILE, { recursive: true });
       fs.writeFileSync(path.join(PROFILE, "settings.json"), JSON.stringify(mode === "local" ? { launchMode: "local" } : {}, null, 2));
       const first = await attempt({ dir: k.InstallLocation, mode, feed, newer: newer.version, label });

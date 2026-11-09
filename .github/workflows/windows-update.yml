@@ -57,7 +57,7 @@ jobs:
           cache-dependency-glob: backend/pyproject.toml
       - name: The two installers (cached by their sources)
         id: installers
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             desktop/dist-old/*.exe
@@ -79,6 +79,18 @@ jobs:
             rm -rf dist-${v%%:*}/win-unpacked
           done
           ls -la dist-old dist-new
+      # (saved now, not at the end: a failing test does not build them again)
+      - name: Keep the installers
+        if: steps.installers.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            desktop/dist-old/*.exe
+            desktop/dist-old/*.yml
+            desktop/dist-new/*.exe
+            desktop/dist-new/*.yml
+            desktop/dist-new/*.blockmap
+          key: ${{ steps.installers.outputs.cache-primary-key }}
       - name: One press of Download & install
         working-directory: desktop
         env:
