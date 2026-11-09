@@ -349,12 +349,13 @@ async function main() {
     for (let round = 1; round <= ROUNDS; round++) {
       const label = `${mode}-${round}`;
       await uninstallAll();
-      for (let n = 1; n <= 3; n++) {
+      // (on the CI machine a setup now and then falls over at its start — 0xC0000005 within a second — and runs the next time)
+      for (let n = 1; n <= 6; n++) {
         const began = Date.now();
         const run = spawnSync(older.file, ["/S"], { stdio: "ignore", windowsHide: true, timeout: 600000 });
         say(`${label}: the older setup ran ${Math.round((Date.now() - began) / 1000)} s (exit ${run.status}${run.error ? `, ${run.error.message}` : ""})`);
         if (run.status === 0) break;
-        await sleep(10000);
+        await sleep(15000);
       }
       const k = await until("the older build installed", () => installed()?.DisplayVersion === older.version && installed(), 180000, 1000).catch((e) => {
         console.log(`    uninstall entries:\n${ps(`Get-ChildItem HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall, HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall, HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall -ErrorAction SilentlyContinue | ForEach-Object { $p = Get-ItemProperty $_.PSPath; if ($p.DisplayName -like '*Mate*' -or $p.DisplayName -like '*harnessor*') { $_.Name + ' = ' + $p.DisplayName + ' ' + $p.DisplayVersion + ' @ ' + $p.InstallLocation } }`)}`);

@@ -264,9 +264,12 @@ function createUpdater(deps) {
         u.quitAndInstall(!pkg, !pkg);
         return view();
       }
+      // Windows: the installer shows its progress, then starts the app (build/installer.nsh) — a silent one left a
+      // minute with nothing on screen, long enough to open the app again over the files being replaced.
       // AppImage: electron-updater swaps the file, then would start the new one itself — with no arguments and while
       // this app still runs; the restart is ours (the new file, this app's arguments, after this process exits)
-      await runInstaller(u, !pkg, appImage && deps.restartAfter ? deps.restartAfter : null);
+      const silent = !pkg && deps.platform !== "win32";
+      await runInstaller(u, silent, !pkg, appImage && deps.restartAfter ? deps.restartAfter : null);
       if (state.status !== "installing") return view(); // (the "error" event said why)
       deps.quit();
     } catch (e) {
@@ -280,7 +283,7 @@ function createUpdater(deps) {
 
   /** electron-updater's install, resolved once the installer is running: the first start, or the one electron-updater
    *  tries after it (elevate.exe when Windows refused); a .deb installs synchronously, with nothing to start */
-  async function runInstaller(u, silent, restart) {
+  async function runInstaller(u, silent, run, restart) {
     const own = u.spawnLog;
     const starts = [];
     u.spawnLog = function (file, ...rest) {
@@ -289,7 +292,7 @@ function createUpdater(deps) {
       return p;
     };
     try {
-      if (!u.install(silent, silent)) throw new Error("The installer could not be started.");
+      if (!u.install(silent, run)) throw new Error("The installer could not be started.");
       let last = null;
       for (let seen = 0; seen < starts.length; ) {
         const batch = starts.slice(seen);
