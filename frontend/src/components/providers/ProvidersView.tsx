@@ -23,6 +23,8 @@ import Icon from "../ui/Icon";
 import ProviderOAuthModal from "./ProviderOAuthModal";
 import AccountSession, { PlanStaleNote } from "./AccountSession";
 import CliVersionsSection from "./CliVersionsSection";
+import ApiProviderPanel from "./ApiProviderPanel";
+import { isApiProvider } from "../../api/apiProviders";
 import PlanWindowBars from "../usage/PlanWindowBars";
 import UsageModal from "../usage/UsageModal";
 
@@ -60,10 +62,12 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 export default function ProvidersView() {
+  const t = useT();
   const providers = useProviderStore((s) => s.providers);
   const catalog = useConfigStore((s) => s.catalog);
   const [tab, setTab] = useState("");
-  const providerIds = useMemo(() => Object.keys(catalog).filter(id => id === "claude" || id === "codex"), [catalog]);
+  // the CLIs (Claude Code, Codex), then the API-key providers (Anthropic, OpenAI, Google: app/harness)
+  const providerIds = useMemo(() => Object.keys(catalog).filter((id) => id === "claude" || id === "codex" || isApiProvider(id)), [catalog]);
 
   useEffect(() => {
     if (!tab && providerIds.length) setTab(providerIds[0]);
@@ -74,14 +78,14 @@ export default function ProvidersView() {
     <div className="max-w-2xl">
       <div>
         {/* Provider tabs */}
-        <div className="flex gap-1.5 mb-5 border-b border-border">
+        <div className="flex gap-1.5 mb-5 border-b border-border overflow-x-auto no-scrollbar">
           {providerIds.map((id) => {
             const connected = providers.find((p) => p.provider === id)?.connected;
             return (
               <button
                 key={id}
                 onClick={() => setTab(id)}
-                className={`relative px-4 py-2 text-sm font-medium transition -mb-px border-b-2 ${
+                className={`relative shrink-0 whitespace-nowrap px-4 py-2 text-sm font-medium transition -mb-px border-b-2 ${
                   tab === id
                     ? "border-accent text-content"
                     : "border-transparent text-content-dim hover:text-content"
@@ -89,6 +93,7 @@ export default function ProvidersView() {
               >
                 <span className="inline-flex items-center gap-2">
                   {catalog[id]?.label || id}
+                  {isApiProvider(id) && <span className="text-[10px] font-semibold text-content-faint">{t("providers.apiTab")}</span>}
                   <span className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-success" : "bg-content-faint/50"}`} />
                 </span>
               </button>
@@ -96,7 +101,13 @@ export default function ProvidersView() {
           })}
         </div>
 
-        {tab && <ProviderPanel key={tab} provider={tab} label={catalog[tab]?.label || tab} />}
+        {tab && isApiProvider(tab) && (
+          <>
+            <p className="mb-4 text-[12.5px] text-content-faint">{t("providers.apiIntro", { vendor: catalog[tab]?.label || tab })}</p>
+            <ApiProviderPanel key={tab} provider={tab} label={catalog[tab]?.label || tab} />
+          </>
+        )}
+        {tab && !isApiProvider(tab) && <ProviderPanel key={tab} provider={tab} label={catalog[tab]?.label || tab} />}
       </div>
       {/* every CLI the chats run (Claude Code, Codex, Higgsfield): installed vs latest, upgrades */}
       <CliVersionsSection ids={["claude", "codex"]} />

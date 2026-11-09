@@ -1,3 +1,4 @@
+import { isApiProvider } from "../../api/apiProviders";
 import { useState } from "react";
 import {
   COMPACT_BUFFER,
@@ -175,11 +176,14 @@ export default function ContextMeter({ session, onCompact }: { session: Session;
   const ctx = useChatStore((s) => s.context);
   const last = useChatStore((s) => s.lastCompaction);
   const globalDefault = useUsageStore((s) => s.accounts[session.provider]?.pool?.auto_compact_window) ?? 0;
-  const buffer = useConfigStore((s) => s.catalog.claude?.auto_compact_buffer) || COMPACT_BUFFER;
-  if (session.provider !== "claude") return null;
+  const entry = useConfigStore((s) => s.catalog[session.provider]);
+  const buffer = entry?.auto_compact_buffer || COMPACT_BUFFER;
+  // Claude Code reports its context; so does the app's own engine (API keys: Anthropic, OpenAI, Google)
+  if (session.provider !== "claude" && !isApiProvider(session.provider)) return null;
 
   const configured = session.auto_compact_window ?? globalDefault;
-  const m = meterOf(ctx, limitsFor(ctx?.model || session.model, configured, buffer));
+  const known = isApiProvider(session.provider) ? entry?.models.find((x) => x.id === session.model)?.context_window : null;
+  const m = meterOf(ctx, limitsFor(ctx?.model || session.model, configured, buffer, known));
 
   return (
     <HoverPopover

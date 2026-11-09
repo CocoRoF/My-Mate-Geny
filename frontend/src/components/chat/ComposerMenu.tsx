@@ -1,3 +1,4 @@
+import { isApiProvider } from "../../api/apiProviders";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listDir } from "../../api/workspaces";
 import { hostName, sameHost, sessionFolders, strip } from "../../lib/hosts";
@@ -33,6 +34,11 @@ const HIDE = new Set(["clear", "exit", "quit", "resume", "login", "logout", "con
 
 export function slashItems(info: CliInfo | null, provider: string): MenuItem[] {
   const items = builtin();
+  if (isApiProvider(provider)) {
+    // the app's own engine (API keys) compacts on /compact like Claude Code
+    items.splice(1, 0, { key: "c:compact", label: "/compact", insert: "/compact ", hint: tr("chat.cmdCompactHint"), icon: "file-text" });
+    return items;
+  }
   if (provider !== "claude" || !info?.slash_commands) return items;
   const terminal = new Set(info.terminal_slash_commands || []);
   const skills = new Set(info.skills || []);

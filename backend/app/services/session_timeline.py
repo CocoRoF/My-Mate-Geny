@@ -229,6 +229,8 @@ class SessionTimeline:
             if not task.done():
                 raise TimelineBusy("the running turn did not stop")
         await self.s._engines.shutdown(sid, reason="rewound")
+        from app.harness import runtime as harness_runtime
+        await harness_runtime.shutdown(sid)  # (an API-key engine's shells and subagents work on what is cut)
         if getattr(self.s, "speech_input", None):
             self.s.speech_input.cancel(sid)
 

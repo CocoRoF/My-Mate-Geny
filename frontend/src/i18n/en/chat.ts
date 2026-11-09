@@ -18,6 +18,7 @@ export default {
   cmdPlanHint: "Plan mode — read-only, the agent proposes a plan",
   cmdAgentHint: "Agent mode — full autonomy (edits, commands)",
   cmdStopHint: "Stop the running turn",
+  taskNotificationTurn: "Background work finished — the agent continues",
   cmdCompactHint: "Summarize the conversation to free up context",
   badgeSkill: "skill",
   badgeCommand: "command",

@@ -476,7 +476,8 @@ class HiggsfieldAgent:
             "HIGGSFIELD_NO_UPDATE_CHECK": "1",
         }
         host = self.host_skills()
-        plugin_dirs = [] if host or provider != "claude" or not self.bundled_skills() else [str(self.plugin_dir)]
+        # (skills: Claude Code reads them as a plugin, the app's own engine with its Skill tool — app.harness)
+        plugin_dirs = [] if host or not _reads_skills(provider) or not self.bundled_skills() else [str(self.plugin_dir)]
         email = self.service._row(aid).get("email")
         prompt = self.prompt(provider=provider, remote=remote, email=email, max_credits=cfg["max_credits"],
                              has_skills=bool(host or self.bundled_skills()))
@@ -494,7 +495,7 @@ class HiggsfieldAgent:
             "update it, never buy credits or change the plan."
         ]
         sd = self.skills_dir()
-        if has_skills and provider == "claude":
+        if has_skills and _reads_skills(provider):
             lines.append("Use the higgsfield-* skills for generation work.")
         elif has_skills and sd is not None:
             lines.append(f"Before the first generation read {sd}/higgsfield-generate/SKILL.md (other guides: "
@@ -557,3 +558,9 @@ class HiggsfieldAgent:
             return ""
         key = json.dumps({"env": launch.env, "prompt": launch.prompt, "plugins": launch.plugin_dirs}, sort_keys=True)
         return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def _reads_skills(provider: str) -> bool:
+    from app.harness.vendors import is_api_provider
+
+    return provider == "claude" or is_api_provider(provider)

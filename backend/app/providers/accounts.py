@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.harness.vendors import is_api_provider
 from app.config import settings
 from app.db import Database
 from app.providers import login_session
@@ -521,6 +522,8 @@ def classify_error(code: str | None, message: str | None, api_error: dict | None
         return "not_implemented"
     if code.startswith(("exec.workspace", "attachment", "turn.", "upload", "account.")):
         return "failed"
+    if api_error and api_error.get("outcome") in ACCOUNT_OUTCOMES:
+        return api_error["outcome"]  # (an API-key engine says it outright: app.harness)
     if api_error:
         kind, err = api_error.get("kind"), api_error.get("error")
         if kind == "usage_limit_reached" or err == "billing_error":
@@ -877,6 +880,8 @@ class AccountPool:
         return os.path.join(os.path.expanduser("~"), sub)
 
     def _host_usable(self, provider: str) -> bool:
+        if is_api_provider(provider):
+            return False  # (an API provider is only its keys: there is no login on this machine to fall back on)
         cfg = self._host_cred_dir(provider)
         if any(os.path.exists(os.path.join(cfg, f)) for f in (".credentials.json", "credentials.json", "auth.json")):
             return True
@@ -1337,7 +1342,7 @@ class AccountPool:
         Raises :class:`AccountUnavailable` when it's on and nothing is usable.
         """
         cfg = self._store.pool(provider)
-        if not cfg["enabled"]:
+        if not cfg["enabled"] and not is_api_provider(provider):
             return None
         snaps_all, by_id = self._snapshots(provider, cfg)
         limits = LimitPolicy(cfg.get("near_5h", NEAR_LIMIT_5H), cfg.get("near_7d", NEAR_LIMIT_7D),
@@ -1398,8 +1403,17 @@ class AccountPool:
                 waits.append(s.cooldown_until)
             parts.append(f"{s.label or s.id} {describe_reason(why, s, now=now, limit=self.limit_info(s.id))}")
         earliest = min(waits) if waits else None
-        name = "Claude" if provider == "claude" else provider.capitalize()
-        msg = f"No {name} account can take this turn right now"
+        if is_api_provider(provider):
+            from app.harness.vendors import VENDORS
+
+            if not snaps:
+                return AccountUnavailable(f"No {VENDORS[provider].label} API key yet. Add one in Settings → Providers → "
+                                          f"{VENDORS[provider].label}.")
+            name = f"{VENDORS[provider].label} API"
+            msg = f"No {name} key can take this turn right now"
+        else:
+            name = "Claude" if provider == "claude" else provider.capitalize()
+            msg = f"No {name} account can take this turn right now"
         if parts:
             msg += ": " + "; ".join(parts)
         if earliest:
@@ -1567,6 +1581,11 @@ class AccountPool:
             else:
                 self._bound.pop(lease.account_id, None)
 
+    def record_check(self, provider: str, account_id: str, *, ok: bool, code: str | None = None,
+                     error: str | None = None) -> None:
+        """A key was tested (Settings): its health follows, as after a turn."""
+        self._apply(provider, account_id, ok=ok, code=code, error=error)
+
     def labels(self, provider: str) -> dict[str, str]:
         """id -> label of every account of the provider (no network)."""
         out = {self._primary_id(provider): PRIMARY_LABEL} if self._host_usable(provider) else {}
@@ -1574,7 +1593,7 @@ class AccountPool:
         return out
 
     def enabled(self, provider: str) -> bool:
-        return bool(self._store.pool(provider)["enabled"])
+        return is_api_provider(provider) or bool(self._store.pool(provider)["enabled"])
 
     def settings(self, provider: str) -> dict[str, Any]:
         return self._store.pool(provider)

@@ -8,6 +8,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Any
 
+from app.harness.vendors import is_api_provider
 from app.mate import affinity as A
 from app.mate import files
 from app.mate.life import sim
@@ -48,7 +49,7 @@ async def write(mates: Any, mate: dict[str, Any], day: dict[str, Any], profile: 
         if svc._pool is not None:
             lease = await asyncio.to_thread(svc._pool.select, name, begin_turn=True)
             if lease is not None:
-                if not lease.is_primary:
+                if not lease.is_primary and not is_api_provider(name):
                     env["CLAUDE_CONFIG_DIR" if name == "claude" else "CODEX_HOME"] = lease.config_dir
                 if lease.auth_mode == "api_key":
                     key = lease.api_key

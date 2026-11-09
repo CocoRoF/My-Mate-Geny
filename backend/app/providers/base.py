@@ -231,6 +231,11 @@ class TurnRequest:
     note_in_prompt: bool = False
     # Claude: plugins for this session only (``--plugin-dir``), e.g. skills.
     plugin_dirs: list[str] = field(default_factory=list)
+    # ---- API-key engines (app.harness), which run in this process ----
+    session_id: str = ""                  # the chat (its background work and connections outlive the turn)
+    key_source: Any = None                # the key to call with, and another one when it fails (harness.engine.KeySource)
+    on_usage: Callable[[dict[str, Any]], None] | None = None  # what the turn spent so far (kept when it is stopped)
+    background_event: Callable[[Any], None] | None = None     # a background task's state change outside the turn
 
 
 class ProviderTurnError(RuntimeError):

@@ -1,3 +1,4 @@
+import { isApiProvider } from "../../../api/apiProviders";
 import { useMemo, useState } from "react";
 import { apiCostHint, fmtUsd } from "../../../lib/usage";
 import { ctxBar, fmtCtx, fmtWindow, limitsFor, meterOf } from "../../../lib/context";
@@ -85,8 +86,9 @@ export default function SessionPanel({ session, onClose }: { session: Session; o
   // the whole context), NOT a turn's usage, which sums every call of the turn.
   const context = useChatStore((s) => s.context);
   const poolDefault = useUsageStore((s) => s.accounts[session.provider]?.pool?.auto_compact_window) ?? 0;
-  const fallback = limitsFor(session.model, session.auto_compact_window ?? poolDefault);
-  const ctxMeter = session.provider === "claude" ? meterOf(context, fallback) : null;
+  const known = isApiProvider(session.provider) ? catalog[session.provider]?.models.find((m) => m.id === session.model)?.context_window : null;
+  const fallback = limitsFor(session.model, session.auto_compact_window ?? poolDefault, undefined, known);
+  const ctxMeter = session.provider === "claude" || isApiProvider(session.provider) ? meterOf(context, fallback) : null;
   const ctxTokens = ctxMeter?.tokens || 0;
   const ctxWindow = ctxMeter?.window || catalog[session.provider]?.models.find((m) => m.id === session.model)?.context_window || null;
   const live = info || session.cli_info;

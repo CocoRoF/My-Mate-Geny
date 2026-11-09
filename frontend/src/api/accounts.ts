@@ -35,6 +35,7 @@ export interface Account {
   cooldown_until: string | null;
   last_used_at: string | null;
   last_error: string | null;
+  last_ok_at?: string | null; // it last served a turn or passed a test
 }
 
 export type SessionHealth = "valid" | "expiring" | "expired" | "refresh_failed" | "needs_login" | "no_credentials";

@@ -53,7 +53,7 @@ export interface MateVoice {
 }
 
 /** the engines that can run a mate (sealed: own prompt, only the mate tools) */
-export type MateEngine = "claude" | "codex";
+export type MateEngine = "claude" | "codex" | "anthropic" | "openai" | "google";
 
 export interface MateLlm {
   provider: MateEngine;
@@ -782,7 +782,14 @@ function toCoreEvent(raw: unknown): CoreEvent | null {
 /** the model a mate talks on when none is set (backend DEFAULT_MATE_MODEL) */
 export const DEFAULT_MATE_MODEL = "claude-sonnet-5-5";
 /** ... per engine (backend catalog.DEFAULT_MATE_MODELS) */
-export const DEFAULT_MATE_MODELS: Record<MateEngine, string> = { claude: DEFAULT_MATE_MODEL, codex: "gpt-6.1-sol" };
+export const DEFAULT_MATE_MODELS: Record<MateEngine, string> = {
+  claude: DEFAULT_MATE_MODEL,
+  codex: "gpt-6.1-sol",
+  // API keys (backend harness.vendors.MATE_MODELS): the vendor's mid model, when it is switched on
+  anthropic: "claude-sonnet-5-5",
+  openai: "gpt-6.1-terra",
+  google: "gemini-3.8-flash",
+};
 /** the reasoning levels a mate can store (backend store.EFFORTS) */
 export const MATE_EFFORTS = ["default", "low", "medium", "high", "xhigh", "max"];
 

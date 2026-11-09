@@ -25,6 +25,7 @@ from app.mate.knowledge import Knowledge, digest, safe_text
 from app.providers.catalog import DEFAULT_MATE_MODEL, default_mate_model
 from app.services._ids import new_id, now_iso
 from app.vault import SecretVault
+from app.harness.vendors import API_PROVIDERS
 
 # The persona is the character only — who she is (docs/mate.md §1 "Prompt composition"). How she talks (speech level,
 # how she calls the user, speech habits …) lives in the conversation style (``prefs``) and nowhere else.
@@ -44,7 +45,7 @@ MECHANIC_STILLS = ("blink", "mouth_half", "mouth_open", "mouth_o")
 MAX_CLIPS = 200
 MAX_VOLUME = 3.0          # voice.volume: 0.0 – 3.0 (300 %), 1.0 = as synthesized
 EFFORTS = ("default", "low", "medium", "high", "xhigh", "max")
-LLM_PROVIDERS = ("claude", "codex")  # engines that can run sealed (own prompt, only the mate MCP bridge)
+LLM_PROVIDERS = ("claude", "codex", *API_PROVIDERS)  # engines that can run sealed (own prompt, only the mate MCP bridge)
 
 MAX_FIELD = 8000          # one persona field
 MAX_AVATAR_JSON = 256 * 1024

@@ -26,7 +26,7 @@ def test_config_after_login():
         _login(client)
         r = client.get("/api/config")
         assert r.status_code == 200
-        assert set(r.json()["providers"]) == {"claude", "codex"}
+        assert set(r.json()["providers"]) == {"claude", "codex", "anthropic", "openai", "google"}
 
 
 def test_bad_password_rejected():
