@@ -1,0 +1,93 @@
+# The in-app update on Windows, end to end with the real NSIS installers (desktop/test/e2e/windows-update-e2e.js):
+# an older build installed as a user installs it, one press of Download & install, and the newer build must be the
+# one running afterwards — in Local execution (the bundled backend running from the folder being replaced) and on the
+# connect screen. Two versions of the same commit are built; they are cached by the sources they come from, so a
+# change to the test alone does not build them again.
+name: windows-update
+
+on:
+  pull_request:
+    paths:
+      - "desktop/src/updater.js"
+      - "desktop/src/main.js"
+      - "desktop/src/quit.js"
+      - "desktop/src/local-runtime.js"
+      - "desktop/package.json"
+      - "desktop/package-lock.json"
+      - "desktop/test/e2e/windows-update-e2e.js"
+      - ".github/workflows/windows-update.yml"
+  push:
+    branches: ["e2e/windows-update**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-update-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LOCAL_PYTHON_VERSION: '3.12.16'
+  UV_VERSION: '0.13.6'
+
+jobs:
+  update:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            desktop/package-lock.json
+            frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/pyproject.toml
+      - name: The two installers (cached by their sources)
+        id: installers
+        uses: actions/cache@v4
+        with:
+          path: |
+            desktop/dist-old/*.exe
+            desktop/dist-old/*.yml
+            desktop/dist-new/*.exe
+            desktop/dist-new/*.yml
+            desktop/dist-new/*.blockmap
+          key: windows-update-${{ hashFiles('desktop/src/**', 'desktop/build/**', 'desktop/package.json', 'desktop/package-lock.json', 'backend/**', 'frontend/src/**', 'frontend/index.html', 'frontend/package-lock.json', 'frontend/vite.config.*') }}
+      - run: npm ci --prefix desktop --no-audit --no-fund
+      - name: Build an older and a newer installer
+        if: steps.installers.outputs.cache-hit != 'true'
+        run: |
+          npm ci --prefix frontend --no-audit --no-fund
+          (cd frontend && npx vite build --outDir dist-local --emptyOutDir)
+          cd desktop
+          BUILD_COMMIT=$GITHUB_SHA python build/local-runtime.py --python-version "$LOCAL_PYTHON_VERSION"
+          for v in old:0.9.1 new:0.9.2; do
+            npx electron-builder --win nsis --x64 --publish never -c.extraMetadata.version=${v#*:} -c.directories.output=dist-${v%%:*}
+            rm -rf dist-${v%%:*}/win-unpacked
+          done
+          ls -la dist-old dist-new
+      - name: One press of Download & install
+        working-directory: desktop
+        env:
+          # (the app's update source reads the release list from the GitHub API on the way: no anonymous rate limit)
+          GH_TOKEN: ${{ github.token }}
+        run: node test/e2e/windows-update-e2e.js dist-old dist-new --rounds 3 --modes local,server --out e2e-out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-update-e2e
+          path: desktop/e2e-out
+          if-no-files-found: ignore

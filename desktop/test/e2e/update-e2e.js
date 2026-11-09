@@ -8,8 +8,8 @@
 // The AppImage is copied into a throwaway HOME (the "installed" app the updater replaces). Steps: sign in through
 // the connect screen; Settings → Updates shows this app's version and finds the newer build; Download & install
 // with progress (percent, size, speed, time left), a page reload in the middle (the download is still shown), the
-// Download page showing the same state; Restart & install → the app quits, the AppImage file is replaced and
-// starts again in the new version, which says "up to date". `--expect-latest`: the given AppImage is already the
+// Download page showing the same state; the download done, it installs at once (no second press) → the app quits,
+// the AppImage file is replaced and starts again in the new version, which says "up to date". `--expect-latest`: the given AppImage is already the
 // newest — only the "up to date" state is checked. Every request the updater makes is recorded in the main
 // process (URL, status, whether it carried the session) and printed.
 "use strict";
@@ -29,8 +29,8 @@ const EXPECT_LATEST = flags.includes("--expect-latest");
 // embedded block map can't be read and electron-updater falls back from the differential download. The app then
 // talks to the server through a proxy that sends the installer at ~8 MB/s (progress to watch) and can fail it.
 const FULL = flags.includes("--full");
-// --readonly-install: the first Restart & install meets a read-only folder (as an AppImage kept where the user cannot
-// write): the error must be said, with Retry
+// --readonly-install: the install the download goes on to meets a read-only folder (as an AppImage kept where the
+// user cannot write): the error must be said, with Retry
 const READONLY = flags.includes("--readonly-install");
 
 /** a proxy in front of the server: the update's installer slowed down; `fail` answers it with 500 */
@@ -308,6 +308,37 @@ async function requests(app, since = 0) {
   return list;
 }
 
+/** what electron-updater and the app do on the way out (printed if the app stays), and the restart's output */
+async function watchQuit(app, home) {
+  await app.main(`
+      const fs = req("fs");
+      const log = (m) => fs.appendFileSync(${JSON.stringify(path.join(home, "quit.log"))}, new Date().toISOString().slice(11, 23) + " " + String(m).split("\\n").slice(0, 3).join(" ⏎ ") + "\\n");
+      // (the app's own instance: from the module cache — it was loaded by the first check)
+      const cache = process.mainModule.constructor._cache;
+      const au = cache[Object.keys(cache).find((k) => /electron-updater[\\\\/]out[\\\\/]main\\.js$/.test(k))].exports.autoUpdater;
+      au.logger = { info: (m) => log("info: " + m), warn: (m) => log("warn: " + m), error: (m) => log("error: " + m), debug: () => {} };
+      au.on("error", (e) => log("error event: " + (e && e.message)));
+      for (const ev of ["before-quit", "will-quit", "quit", "window-all-closed"]) electron.app.on(ev, () => log("app " + ev));
+      const q = electron.app.quit.bind(electron.app);
+      electron.app.quit = () => { log("app.quit()"); return q(); };
+      // the restart (desktop/src/main.js restartAfter): what it starts, and its output into restart.log
+      const cp = req("child_process");
+      const spawn = cp.spawn;
+      cp.spawn = (cmd, args, opts = {}) => {
+        if (cmd === "/bin/sh" || /\.AppImage$/.test(cmd)) {
+          log("restart: " + (cmd === "/bin/sh" ? JSON.stringify(args.slice(2)) : cmd + " " + JSON.stringify(args)));
+          const fd = fs.openSync(${JSON.stringify(path.join(home, "restart.log"))}, "a");
+          opts = { ...opts, stdio: ["ignore", fd, fd] };
+        }
+        return spawn(cmd, args, opts);
+      };
+      log("env: " + ["DISPLAY", "APPIMAGE", "APPDIR", "APPIMAGE_EXTRACT_AND_RUN", "TMPDIR"].map((k) => k + "=" + process.env[k]).join(" "));
+      return true;`);
+  // (a Node inspector still attached keeps a quitting app waiting for it to disconnect)
+  app.mainCdp.close();
+  app.mainCdp = null;
+}
+
 async function main() {
   const proxy = FULL ? await startProxy(SERVER) : null;
   const server = (proxy ? proxy.url : SERVER).replace(/\/+$/, "");
@@ -400,6 +431,9 @@ async function main() {
     console.log(`  offered: ${newVersion}`);
 
     const t2 = Date.now();
+    // the download goes straight on to the install: watched from here on (no main-process calls until the restart)
+    if (READONLY) fs.chmodSync(path.dirname(installed), 0o555); // (the install it goes on to meets a read-only folder)
+    await watchQuit(app, home);
     if (FULL) {
       step("the server failing the download (500): a clear error with Retry");
       proxy.fail = true;
@@ -447,7 +481,7 @@ async function main() {
     con = await app.page(consoleRe);
     const d2 = await until("still downloading after the reload", async () => {
       const c = await con.eval(CARD);
-      return c && (c.status === "downloading" || c.status === "ready") ? c : null;
+      return c && ["downloading", "ready", "installing"].includes(c.status) ? c : null;
     }, 20000);
     console.log(`  after reload: ${d2.status} ${d2.pct}`);
 
@@ -455,7 +489,7 @@ async function main() {
     await openView(con, "Download");
     const d3 = await until("the Download page's card", async () => {
       const c = await con.eval(CARD);
-      return c && (c.status === "downloading" || c.status === "ready") ? c : null;
+      return c && ["downloading", "ready", "installing"].includes(c.status) ? c : null;
     }, 15000);
     console.log(`  Download page: ${d3.status} — ${d3.text}`);
     await con.shot(`${facts.version}-downloads-2-${d3.status}.png`);
@@ -478,73 +512,35 @@ async function main() {
       console.log(`  ${d4.text}`);
     }
 
-    const r1 = await until("ready", async () => {
-      const c = await con.eval(CARD);
-      if (c && c.status === "error") return c;
-      return c && c.status === "ready" ? c : null;
+    step("the download done: it installs at once (no second press) — the app quits, the AppImage is replaced, the new version starts");
+    const oldPid = app.proc.pid;
+    console.log(`  before: ${procs(home).join(" | ")}`);
+    const gone = () => app.proc.exitCode !== null || app.proc.signalCode !== null;
+    let r1 = await until("the install (or an error)", async () => {
+      if (gone()) return { status: "gone", text: "" };
+      const c = await con.eval(CARD).catch(() => null);
+      return c && (c.status === "installing" || c.status === "error") ? c : null;
     }, 600000);
-    console.log(`  ${r1.status}: ${r1.text}`);
-    await requests(app, t2);
-    if (r1.status !== "ready") {
-      failures.push(`download: ${r1.text}`);
+    console.log(`  ${r1.status}${r1.text ? `: ${r1.text}` : ""}`);
+    if (READONLY) {
+      step("an install that cannot happen (the AppImage's folder is read-only): an error with Retry — the app stays");
+      if (r1.status === "installing") r1 = await until("the install error", async () => {
+        const c = await con.eval(CARD);
+        return c && c.status === "error" ? c : null;
+      }, 20000).catch(() => r1);
+      if (r1.status !== "error") failures.push(`a failed install: ${r1.status} (expected an error)`);
+      else if (!/could not be installed/.test(r1.text)) failures.push(`a failed install says: ${r1.text}`);
+      await sleep(300);
+      await con.shot(`${facts.version}-install-error.png`).catch(() => {});
+      fs.chmodSync(path.dirname(installed), 0o755);
+      if (r1.status !== "error") return finish(failures);
+      step("the folder writable again: Retry → installs");
+      await click(con, "update-retry");
+    } else if (r1.status === "error") {
+      failures.push(`download / install: ${r1.text}`);
       await con.shot(`${facts.version}-downloads-3-error.png`);
       return finish(failures);
     }
-    await sleep(300);
-    await con.shot(`${facts.version}-downloads-3-ready.png`);
-
-    step("Restart & install → the app quits, the AppImage is replaced, the new version starts");
-    const oldPid = app.proc.pid;
-    console.log(`  before: ${procs(home).join(" | ")}`);
-    // what electron-updater and the app do on the way out (printed if the app stays)
-    await app.main(`
-      const fs = req("fs");
-      const log = (m) => fs.appendFileSync(${JSON.stringify(path.join(home, "quit.log"))}, new Date().toISOString().slice(11, 23) + " " + String(m).split("\\n").slice(0, 3).join(" ⏎ ") + "\\n");
-      // (the app's own instance: from the module cache — it was loaded by the first check)
-      const cache = process.mainModule.constructor._cache;
-      const au = cache[Object.keys(cache).find((k) => /electron-updater[\\\\/]out[\\\\/]main\\.js$/.test(k))].exports.autoUpdater;
-      au.logger = { info: (m) => log("info: " + m), warn: (m) => log("warn: " + m), error: (m) => log("error: " + m), debug: () => {} };
-      au.on("error", (e) => log("error event: " + (e && e.message)));
-      for (const ev of ["before-quit", "will-quit", "quit", "window-all-closed"]) electron.app.on(ev, () => log("app " + ev));
-      const q = electron.app.quit.bind(electron.app);
-      electron.app.quit = () => { log("app.quit()"); return q(); };
-      // the restart (desktop/src/main.js restartAfter): what it starts, and its output into restart.log
-      const cp = req("child_process");
-      const spawn = cp.spawn;
-      cp.spawn = (cmd, args, opts = {}) => {
-        if (cmd === "/bin/sh" || /\.AppImage$/.test(cmd)) {
-          log("restart: " + (cmd === "/bin/sh" ? JSON.stringify(args.slice(2)) : cmd + " " + JSON.stringify(args)));
-          const fd = fs.openSync(${JSON.stringify(path.join(home, "restart.log"))}, "a");
-          opts = { ...opts, stdio: ["ignore", fd, fd] };
-        }
-        return spawn(cmd, args, opts);
-      };
-      log("env: " + ["DISPLAY", "APPIMAGE", "APPDIR", "APPIMAGE_EXTRACT_AND_RUN", "TMPDIR"].map((k) => k + "=" + process.env[k]).join(" "));
-      return true;`);
-    // (a Node inspector still attached keeps a quitting app waiting for it to disconnect)
-    app.mainCdp.close();
-    app.mainCdp = null;
-    let installButton = "update-install";
-    if (READONLY) {
-      step("an install that cannot happen (the AppImage's folder is read-only): an error with Retry — the app stays");
-      fs.chmodSync(path.dirname(installed), 0o555);
-      await click(con, "update-install");
-      const e = await until("the install error", async () => {
-        const c = await con.eval(CARD);
-        return c && c.status === "error" ? c : null;
-      }, 20000).catch(() => null);
-      const c = e || (await con.eval(CARD));
-      console.log(`  ${c ? `${c.status} — ${c.text}` : "(no card)"}`);
-      if (!e) failures.push(`a failed install: ${c ? c.status : "no card"} (expected an error)`);
-      else if (!/could not be installed/.test(e.text)) failures.push(`a failed install says: ${e.text}`);
-      await sleep(300);
-      await con.shot(`${facts.version}-install-error.png`);
-      fs.chmodSync(path.dirname(installed), 0o755);
-      if (!e) return finish(failures);
-      step("the folder writable again: Retry → installs");
-      installButton = "update-retry";
-    }
-    await click(con, installButton);
     let lastSeen = "";
     const quit = await until("the old app to quit", async () => {
       const now = procs(home).join(" | ");
