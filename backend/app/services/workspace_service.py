@@ -23,6 +23,11 @@ class WorkspaceService:
             return self._local
         return self._connections.build_connector(connection_id)
 
+    async def mkdir(self, connection_id: str | None, parent: str, name: str) -> dict[str, Any]:
+        """A new folder in ``parent`` (on this server, or the connection's host)."""
+        entry = await self.connector_for(connection_id).mkdir(parent, name)
+        return {"connection_id": connection_id, "name": entry.name, "path": entry.path}
+
     async def list_dir(self, connection_id: str | None, path: str) -> dict[str, Any]:
         connector = self.connector_for(connection_id)
         entries = await connector.list_dir(path)

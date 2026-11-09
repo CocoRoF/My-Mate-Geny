@@ -157,7 +157,8 @@ function registerIpc({ ipcMain, dialog, BrowserWindow, app, allowed, pickTitle }
     const w = BrowserWindow.fromWebContents(e.sender);
     // (pickTitle: the dialog title in the app's language — main.js / i18n.js)
     const title = (typeof pickTitle === "function" && pickTitle()) || "Choose a folder";
-    const r = await dialog.showOpenDialog(w, { title, properties: ["openDirectory", "dontAddToRecent"] });
+    // createDirectory: macOS shows "New Folder" only when asked (Windows' and Linux's dialogs always have it)
+    const r = await dialog.showOpenDialog(w, { title, properties: ["openDirectory", "createDirectory", "dontAddToRecent"] });
     if (r.canceled || !r.filePaths || !r.filePaths[0]) return null;
     return folders.grant(owner(e), r.filePaths[0]);
   });

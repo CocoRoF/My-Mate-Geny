@@ -24,6 +24,35 @@ class WorkspaceError(RuntimeError):
     pass
 
 
+class FolderExists(WorkspaceError):
+    """A new folder's name is already taken there."""
+
+
+_WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+
+
+def folder_name_error(name: str, *, windows: bool = False) -> str | None:
+    """Why ``name`` can't be a new folder's name (one level, no path), or None."""
+    if not name:
+        return "Give the folder a name."
+    if name in (".", ".."):
+        return f"“{name}” can't be a folder name."
+    if "/" in name or "\0" in name or (windows and "\\" in name):
+        return "A folder name can't contain a slash."
+    if any(ord(c) < 32 for c in name):
+        return "A folder name can't contain control characters."
+    if len(name.encode("utf-8")) > 255:
+        return "That name is too long."
+    if windows:
+        if any(c in '<>:"|?*' for c in name):
+            return 'A folder name can\'t contain < > : " | ? *'
+        if name.endswith((".", " ")):
+            return "A folder name can't end with a dot or a space."
+        if name.split(".")[0].upper() in _WINDOWS_RESERVED:
+            return f"“{name}” is a reserved name."
+    return None
+
+
 @dataclass
 class DirEntry:
     name: str
@@ -44,6 +73,11 @@ class WorkspaceConnector(abc.ABC):
     @abc.abstractmethod
     async def list_dir(self, path: str) -> list[DirEntry]:
         """List directory entries for the folder picker."""
+
+    async def mkdir(self, parent: str, name: str) -> DirEntry:
+        """Create the folder ``name`` in ``parent`` (the folder pickers' New folder). Raises :class:`FolderExists`
+        when the name is taken, :class:`WorkspaceError` otherwise."""
+        raise WorkspaceError("this connection can't create folders")
 
     @abc.abstractmethod
     async def status(self) -> dict[str, Any]:
