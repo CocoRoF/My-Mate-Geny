@@ -63,10 +63,12 @@ export interface MessageMeta {
   internal?: boolean;
   kind?: string; // greeting | delegation_result
   delegations?: { session_id: string; title: string; status: string }[];
+  /** the user deleted it (backend services/hidden_messages.py): nothing is drawn for it */
+  hidden?: string | boolean;
   [k: string]: unknown;
 }
 
-const META_KEYS = ["via", "internal", "kind", "delegations", "speech_group", "speech_pending", "speech_at"] as const;
+const META_KEYS = ["via", "internal", "kind", "delegations", "speech_group", "speech_pending", "speech_at", "hidden"] as const;
 
 /** The meta keys a live user.message / user.steer event carries in `data`. */
 function metaOf(data: Record<string, any>): MessageMeta | undefined {
@@ -623,6 +625,18 @@ function reduce(turns: Turn[], ev: ProviderEvent): Partial<ChatState> {
             bounced: [{ clientMsgId: cid, text: item.text, attachments: item.attachments, reason: String(data.reason || "") }],
           };
         }
+      }
+      break;
+    }
+    case "message.hidden": {
+      // (deleted in this window or another: the bubble goes, with its files)
+      const mid = String(data.message_id || "");
+      const gone = { hidden: true as const };
+      for (let i = 0; i < turns.length; i++) {
+        const t = turns[i];
+        if (t.role === "user" && t.messageId === mid) turns[i] = { ...t, text: "", attachments: [], meta: gone };
+        else if (t.flow.some((f) => f.kind === "steer" && f.messageId === mid))
+          turns[i] = { ...t, flow: t.flow.map((f) => (f.kind === "steer" && f.messageId === mid ? { ...f, text: "", attachments: [], meta: gone } : f)) };
       }
       break;
     }

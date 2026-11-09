@@ -147,6 +147,7 @@ export type EventType =
   | "speech.failed"
   | "user.steer"
   | "session.rewinding"
+  | "message.hidden"
   | "session.rewound"
   | "steer.rejected"
   | "task.update"

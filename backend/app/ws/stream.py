@@ -119,7 +119,7 @@ async def chat_stream(websocket: WebSocket, sid: str) -> None:
                 after = int(msg.get("after") or 0)
                 # Subscribed before reading the backlog, so nothing falls in the
                 # gap; the eid check in send() drops the overlap.
-                for ev in svc.events(sid, after=after):
+                for ev in svc.events(sid, after=after, view=True):
                     await send(ev)
                 await send({"type": "run.state", "data": {"running": svc.is_running(sid), "speech_protocol": 2 if speech else 0}})
                 if speech:

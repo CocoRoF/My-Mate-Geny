@@ -60,8 +60,8 @@ async def get_history(
             "session_id": sid,
             "session": session,
             "running": svc.is_running(sid),
-            "messages": svc.messages(sid),
-            "events": svc.events(sid),  # turn costs normalized to per turn
+            "messages": svc.messages(sid, view=True),
+            "events": svc.events(sid, view=True),  # turn costs normalized to per turn
             # Which account this chat runs on + the plan usage its engine last
             # reported (this chat's only; None until known).
             "account": svc.session_account(sid),

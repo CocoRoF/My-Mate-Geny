@@ -14,6 +14,7 @@ import { useT } from "../../../i18n";
 import { fmtDateTime, relTime } from "../../../i18n/format";
 import { useChatStore } from "../../../stores/chatStore";
 import RewindButton from "../RewindButton";
+import DeleteMessageButton from "../DeleteMessageButton";
 import TurnCost from "../TurnCost";
 import CompactionDivider from "../CompactionDivider";
 import ViaBadge from "../ViaBadge";
@@ -177,6 +178,7 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
             case "agent":
               return <SubagentCard key={i} tool={s.tool} allTools={turn.tools} />;
             case "steer":
+              if (s.item.meta?.hidden) return null; // (the user deleted it)
               return (
                 <div key={i} className="group flex flex-col items-end gap-1 py-0.5">
                   <span className="inline-flex items-center gap-1.5 text-[10.5px] text-content-faint">
@@ -201,7 +203,12 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
                       {s.item.text}
                     </div>
                   )}
-                  {!s.item.pending && <RewindButton messageId={s.item.messageId} text={s.item.text} meta={s.item.meta} />}
+                  {!s.item.pending && (
+                    <div className="flex items-center gap-0.5">
+                      <DeleteMessageButton messageId={s.item.messageId} text={s.item.text} attachments={s.item.attachments} meta={s.item.meta} store={useChatStore} />
+                      <RewindButton messageId={s.item.messageId} text={s.item.text} meta={s.item.meta} />
+                    </div>
+                  )}
                 </div>
               );
             case "notice":

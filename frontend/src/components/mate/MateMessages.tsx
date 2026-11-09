@@ -4,7 +4,7 @@
  * the worker chat.
  */
 import { memo, useState } from "react";
-import type { FlowItem, ToolActivity, Turn } from "../../stores/chatStore";
+import type { FlowItem, MessageMeta, ToolActivity, Turn } from "../../stores/chatStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUIStore } from "../../stores/uiStore";
 import { parseEmotionText } from "../../mate/emotion";
@@ -14,6 +14,7 @@ import Icon, { type IconName } from "../ui/Icon";
 import MateReply from "./MateReply";
 import { visibleAttachments } from "../../lib/attachmentVisibility";
 import MessageAttachments from "../attachments/MessageAttachments";
+import DeleteMessageButton from "../chat/DeleteMessageButton";
 import type { Attachment } from "../../types";
 import { useMateChat } from "../../mate/useMateConversation";
 import { useHistoryScroll } from "../../hooks/useHistoryScroll";
@@ -217,26 +218,38 @@ function ActivityChip({ tool }: { tool: ToolActivity }) {
   );
 }
 
-/** what the user said: the files they attached (thumbnails / file cards, like the Chat view), then the text */
-function UserBubble({ text, attachments, pending, collecting, compact }: { text: string; attachments?: Attachment[]; pending?: boolean; collecting?: boolean; compact?: boolean }) {
+/** what the user said: the files they attached (thumbnails / file cards, like the Chat view), then the text — and
+ *  Delete just left of the last of them, on hover or once the bubble is tapped (beside it, not under it: no gap below
+ *  every bubble; not always there: under every bubble it would crowd a phone) */
+function UserBubble({ text, attachments, pending, collecting, compact, messageId, meta }: { text: string; attachments?: Attachment[]; pending?: boolean; collecting?: boolean; compact?: boolean; messageId?: string; meta?: MessageMeta }) {
   const t=useT();
+  const [actions, setActions] = useState(false);
+  if (meta?.hidden) return null; // (the user deleted it)
   attachments = visibleAttachments(attachments);
+  const hasText = !!text.trim();
+  const del = !pending && <DeleteMessageButton messageId={messageId} text={text} attachments={attachments} meta={meta} store={useMateChat} shown={actions} />;
   return (
-    <div className={`flex w-full min-w-0 flex-col items-end gap-1.5 ${pending ? "opacity-70" : ""}`} data-testid="mate-user-message">
+    <div className={`group flex w-full min-w-0 flex-col items-end gap-1.5 ${pending ? "opacity-70" : ""}`} onClick={() => setActions((v) => !v)} data-testid="mate-user-message">
       {!!attachments?.length && (
-        // (the full width: three thumbnails in a row don't fit 85 % of a phone)
-        <div className="max-w-full" data-testid="mate-user-attachments">
-          <MessageAttachments attachments={attachments} />
+        <div className="flex w-full min-w-0 items-end justify-end gap-1">
+          {!hasText && del}
+          {/* (the full width: three thumbnails in a row don't fit 85 % of a phone) */}
+          <div className="min-w-0 max-w-full" data-testid="mate-user-attachments">
+            <MessageAttachments attachments={attachments} />
+          </div>
         </div>
       )}
-      {text.trim() && (
-        <div
-          className={`max-w-[85%] rounded-2xl rounded-br-md border text-content whitespace-pre-wrap break-words shadow-bubble ${
-            compact ? "px-3 py-[7px] text-[13px] leading-[1.55]" : "px-3.5 py-2 text-sm leading-relaxed"
-          } ${pending ? "border-border bg-surface-2/60" : "border-accent/30 bg-gradient-to-br from-accent/[0.22] to-accent/[0.12]"}`}
-          data-testid="mate-user-bubble"
-        >
-          {text}
+      {hasText && (
+        <div className="flex w-full min-w-0 items-end justify-end gap-1">
+          {del}
+          <div
+            className={`max-w-[85%] rounded-2xl rounded-br-md border text-content whitespace-pre-wrap break-words shadow-bubble ${
+              compact ? "px-3 py-[7px] text-[13px] leading-[1.55]" : "px-3.5 py-2 text-sm leading-relaxed"
+            } ${pending ? "border-border bg-surface-2/60" : "border-accent/30 bg-gradient-to-br from-accent/[0.22] to-accent/[0.12]"}`}
+            data-testid="mate-user-bubble"
+          >
+            {text}
+          </div>
         </div>
       )}
       {collecting&&<span className="text-[10px] text-content-faint" data-testid="speech-received-label">{t("mate.speechReceived")}</span>}
@@ -314,7 +327,7 @@ const AssistantBubbles = memo(function AssistantBubbles({ turn, compact }: { tur
       const t = toolsById.get(f.toolId);
       if (t) items.push(<ActivityChip key={i} tool={t} />);
     } else if (f.kind === "steer") {
-      items.push(<UserBubble key={i} text={f.text} attachments={f.attachments} pending={f.pending} collecting={!!f.meta?.speech_pending} compact={compact} />);
+      items.push(<UserBubble key={i} text={f.text} attachments={f.attachments} pending={f.pending} collecting={!!f.meta?.speech_pending} compact={compact} messageId={f.messageId} meta={f.meta} />);
     } else if (f.kind === "notice") {
       items.push(
         <div key={i} className={`text-[11.5px] ${f.level === "warning" ? "text-warning" : "text-content-faint"}`}>
@@ -368,7 +381,7 @@ export default function MateMessages({
             if (t.role === "user") {
               if (t.meta?.internal && t.meta.kind === "delegation_result") return <DelegationCards key={t.key} turn={t} />;
               if (t.meta?.internal) return null;
-              return <UserBubble key={t.key} text={t.text} attachments={t.attachments} collecting={!!t.meta?.speech_pending} compact={compact} />;
+              return <UserBubble key={t.key} text={t.text} attachments={t.attachments} collecting={!!t.meta?.speech_pending} compact={compact} messageId={t.messageId} meta={t.meta} />;
             }
             if (t.role === "system") {
               const reset = t.code === "context.reset";

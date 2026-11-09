@@ -61,6 +61,9 @@ export const rewindSession = (id: string, messageId: string, restoreFiles: boole
     method: "POST",
     body: JSON.stringify({ message_id: messageId, restore_files: restoreFiles }),
   });
+/** What the user wrote, out of the chat on every device with the files sent along (the engine and a mate keep it). */
+export const hideMessage = (id: string, messageId: string) =>
+  apiFetch<{ message_id: string; hidden: boolean }>(`/api/sessions/${id}/messages/${encodeURIComponent(messageId)}/hide`, { method: "POST" });
 /** A second chat that works exactly like this one from here on: `{title}_copy_{n}`. */
 export const copySession = (id: string) => apiFetch<Session>(`/api/sessions/${id}/copy`, { method: "POST" });
 
