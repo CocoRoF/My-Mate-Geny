@@ -85,7 +85,7 @@ export default function App() {
         <Sidebar />
       </div>
       {sidebarOpen && (
-        <div className="md:hidden [@media(max-height:500px)]:!flex fixed inset-0 z-[60] flex">
+        <div className="md:hidden [@media(max-height:500px)]:!flex fixed inset-0 top-[var(--window-chrome-height,0px)] z-[60] flex" data-testid="sidebar-drawer">
           <div className="absolute inset-0 bg-scrim/55 animate-fade-in" onClick={() => setSidebar(false)} />
           <div className="relative h-full w-[min(86vw,300px)] shadow-float animate-fade-in">
             <Sidebar />

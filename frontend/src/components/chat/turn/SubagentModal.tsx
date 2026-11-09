@@ -27,11 +27,11 @@ const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}
 function Sheet({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return createPortal(
     <div
-      className="fixed inset-0 z-[80] flex items-stretch justify-center bg-scrim/50 backdrop-blur-[2px] sm:items-center sm:p-6"
+      className="fixed inset-0 top-[var(--window-chrome-height,0px)] z-[80] flex items-stretch justify-center bg-scrim/50 backdrop-blur-[2px] sm:items-center sm:p-6"
       onClick={onClose}
     >
       <div
-        className="flex h-full w-full flex-col bg-surface pt-safe pb-safe shadow-float animate-fade-in sm:h-auto sm:max-h-[88vh] sm:max-w-3xl sm:rounded-2xl sm:border sm:border-border sm:pt-0"
+        className="flex h-full w-full flex-col bg-surface pt-safe pb-safe shadow-float animate-fade-in sm:h-auto sm:max-h-full sm:max-w-3xl sm:rounded-2xl sm:border sm:border-border sm:pt-0"
         onClick={(e) => e.stopPropagation()}
       >
         {children}

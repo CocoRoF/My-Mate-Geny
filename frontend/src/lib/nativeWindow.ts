@@ -32,6 +32,7 @@ export function claimWindowChrome(): boolean {
   const w = nativeWindow();
   if (!w) return false;
   document.documentElement.dataset.hrhChrome = w.chrome;
+  if (w.kind) document.documentElement.dataset.hrhWindow = w.kind; // (its bar's height: index.css --window-chrome-height)
   return true;
 }
 
