@@ -192,3 +192,25 @@ def test_seen_endpoint_and_socket(tmp_path):
             time.sleep(0.02)
         assert svc.is_viewed(s["id"]) is False
         client.delete(f"/api/sessions/{s['id']}")
+
+
+def test_a_send_refused_while_a_run_is_on_names_the_message(tmp_path):
+    """The client puts it back first in its queue instead of losing it (frontend lib/queue.ts)."""
+    from types import SimpleNamespace
+
+    with TestClient(app) as client:
+        assert client.post("/api/auth/login", json={"username": "admin", "password": "test-pass"}).status_code == 200
+        svc = app.state.session_service
+        s = client.post("/api/sessions", json={"provider": "claude", "model": "", "connection_id": None,
+                                               "workspace_path": str(tmp_path), "title": "busy"}).json()
+        with client.websocket_connect(f"/ws/chat/{s['id']}") as ws:
+            ws.send_json({"type": "attach", "after": 0})
+            assert ws.receive_json()["type"] == "run.state"
+            svc._tasks[s["id"]] = SimpleNamespace(done=lambda: False)  # (a run is on — closing, or a background turn)
+            try:
+                ws.send_json({"type": "chat", "input": "too early", "client_msg_id": "c42"})
+                err = ws.receive_json()
+            finally:
+                svc._tasks.pop(s["id"], None)
+            assert err["type"] == "error" and err["data"]["code"] == "turn.busy"
+            assert err["data"]["client_msg_id"] == "c42"

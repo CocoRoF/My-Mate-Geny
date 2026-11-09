@@ -115,5 +115,20 @@ export function useAgentChat(sid: string | null, onToolResult?: () => void): Age
     [store],
   );
   const stop = useCallback(() => wsRef.current?.send(JSON.stringify({ type: "stop" })), []);
+
+  // A message the server didn't take (a run was still on): sent again, first, once the run has ended (lib/queue.ts).
+  const bounced = store((s) => s.bounced);
+  const runActive = store((s) => s.runActive);
+  const [again, setAgain] = useState<{ text: string; attachments: Attachment[] }[]>([]);
+  useEffect(() => {
+    if (!bounced.length) return;
+    const back = store.getState().takeBounced();
+    if (back.length) setAgain((q) => [...back.map((b) => ({ text: b.text, attachments: b.attachments })), ...q]);
+  }, [bounced, store]);
+  useEffect(() => {
+    if (!again.length || streaming || runActive || connection !== "open") return;
+    const [next, ...rest] = again;
+    if (send(next.text, next.attachments)) setAgain(rest);
+  }, [again, streaming, runActive, connection, send]);
   return { connection, error, streaming, send, stop };
 }
