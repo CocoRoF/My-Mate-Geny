@@ -4,7 +4,7 @@
 //   NODE_PATH=<dir with playwright-core> CHROME=<chromium binary> \
 //     node desktop/test/e2e/api-providers-browser.js http://127.0.0.1:18977 http://127.0.0.1:18978 api-test-only <workspace> <shots>
 //
-// Checks: Settings → Providers → Anthropic: a key is added and tested, a refused key says so, the model list comes from
+// Checks: Settings → Providers → Anthropic (no CLI versions there: those are the CLI tabs'): a key is added and tested, a refused key says so, the model list comes from
 // the API with the main models on, a model can be switched on and priced; New chat offers the provider; a chat on it runs
 // a tool and answers, with the tool card, the context meter and the turn's cost. English light and Korean dark, desktop
 // and phone.
@@ -70,6 +70,13 @@ const fake = async (ctx, url, data) => (await ctx.request.post(FAKE + url, { dat
     const panel = p.locator('[data-testid="api-provider-anthropic"]');
     await panel.waitFor();
     assert.match(await panel.textContent(), /No Anthropic key yet/);
+    // (an API-key provider runs no CLI: the CLI versions are on the Claude Code / Codex tabs only)
+    assert.equal(await p.locator('[data-testid="cli-versions"]').count(), 0, "no CLI versions on an API tab");
+    await p.getByRole("button", { name: /Claude Code/ }).first().click();
+    await p.locator('[data-testid="cli-versions"]').waitFor();
+    await p.getByRole("button", { name: /Anthropic/ }).first().click();
+    await panel.waitFor();
+    assert.equal(await p.locator('[data-testid="cli-versions"]').count(), 0);
 
     step("a key is added and tested; the model list comes from the API, the main models on");
     await p.click('[data-testid="api-key-add"]');

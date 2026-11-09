@@ -86,7 +86,7 @@ export default {
 
   title: "MCP",
   llmTitle: "언어모델 공급자",
-  llmIntro: "Claude Code와 Codex의 설치·로그인·계정과 사용 한도를 설정해요.",
+  llmIntro: "Claude Code·Codex는 설치·로그인·계정과 사용 한도를, Anthropic·OpenAI·Google은 API 키·모델·단가를 설정해요.",
   mediaTitle: "이미지 및 음성 공급자",
   mediaIntro:
     "이미지·영상 생성과 듣기(STT)·말하기(TTS)에 사용할 서비스를 연결해요.",
