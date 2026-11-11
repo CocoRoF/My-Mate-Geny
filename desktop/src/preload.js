@@ -147,6 +147,9 @@ contextBridge.exposeInMainWorld("hrhNative", {
   deviceIdentity: i18n?.device || null,
   executionMode: i18n?.executionMode || "server",
   onQuitting:cb=>listen("app:quitting",cb),
+  // the pointer anywhere on the desktop while her avatar looks at it: follow(true) / follow(false), and the points
+  // outside this window (its CSS px)
+  cursor: { follow: (on) => ipcRenderer.send("cursor:follow", on === true), onPoint: (cb) => listen("cursor:point", cb) },
   notify: (title, body) => ipcRenderer.invoke("hrh:notify", { title, body }),
   openExternal: (url) => ipcRenderer.invoke("hrh:openExternal", url),
   retry: () => ipcRenderer.invoke("hrh:retry"),

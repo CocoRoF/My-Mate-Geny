@@ -679,6 +679,12 @@ const captures = capture.createCapture({
   },
 });
 const fromServerPage = (e) => ours(e) && sameOrigin((e.senderFrame && e.senderFrame.url) || "");
+// her Live2D / LivLiv avatar looks at the pointer anywhere on the desktop, not only over its window (cursor-feed.js)
+const cursorFeed = require("./cursor-feed").createCursorFeed({
+  screen: { getCursorScreenPoint: () => require("electron").screen.getCursorScreenPoint() },
+  fromWebContents: (wc) => BrowserWindow.fromWebContents(wc),
+});
+ipcMain.on("cursor:follow", (e, on) => { if (fromServerPage(e)) cursorFeed.follow(e.sender, on === true); });
 const captureSharing = require("./capture-sharing").createSharing({
   preferences:devicePreferences,
   cancel: () => { captures.cancel("*"); for(const w of BrowserWindow.getAllWindows()) if(!w.isDestroyed())w.webContents.send("capture:control",{type:"cancel-captures"}); },

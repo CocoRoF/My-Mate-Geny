@@ -245,7 +245,7 @@ export default {
   avLvMarkLivliv: "LivLiv logo (the package asks for it: it can't be removed)",
   avLvMarkText: "The maker's text mark",
   avLvMarkNone: "None",
-  avLvFollow: "Look at the pointer (over the character)",
+  avLvFollow: "Look at the pointer (anywhere on the screen)",
   avLvAuto: "Automatic (the expression of that name)",
   avLvNoFace: "No expression",
   avServerFolder: "Folder on the server",

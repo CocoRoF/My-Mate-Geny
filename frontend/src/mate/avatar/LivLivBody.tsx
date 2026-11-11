@@ -13,6 +13,7 @@
  *
  * One player per canvas, released on unmount (a page has room for about 16 WebGL contexts); a lost context gets a new canvas.
  */
+import { followDesktopCursor } from "./desktopCursor";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Player, type ActionId } from "@livliv-dev/player";
 import type { BodyMood, LivLiv, MateReact } from "../types";
@@ -82,7 +83,8 @@ export default function LivLivBody({ livliv, mood, react, look, name, size = "lg
     let p: Player;
     try {
       p = new Player(canvas, {
-        followPointer: interactive && livliv.follow !== "off" ? "canvas" : false,
+        // (anywhere: the page, and on the desktop the whole screen — desktopCursor.ts)
+        followPointer: interactive && livliv.follow !== "off" ? "page" : false,
         maxPixelRatio: size === "sm" ? 1.5 : 2,
       });
     } catch (e) {
@@ -92,6 +94,7 @@ export default function LivLivBody({ livliv, mood, react, look, name, size = "lg
     }
     player.current = p;
     let alive = true;
+    const unfollow = interactive && livliv.follow !== "off" ? followDesktopCursor() : () => {};
     p.onContextLost = () => {
       if (!alive) return;
       // (a phone reclaiming memory, a driver restart: a new canvas when someone is there to see it)
@@ -147,6 +150,7 @@ export default function LivLivBody({ livliv, mood, react, look, name, size = "lg
     raf = requestAnimationFrame(frame);
     return () => {
       alive = false;
+      unfollow();
       cancelAnimationFrame(raf);
       off();
       player.current = null;

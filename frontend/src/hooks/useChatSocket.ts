@@ -31,6 +31,8 @@ declare global {
       device?: import("../stores/devicePreferences").DeviceBridge;
       deviceIdentity?:{deviceId:string;bootId:string;startReason:string};
       onQuitting?:(cb:()=>void)=>()=>void;
+      /** desktop: the pointer anywhere on the desktop, for an avatar that looks at it (mate/avatar/desktopCursor.ts) */
+      cursor?: { follow: (on: boolean) => void; onPoint: (cb: (p: { x: number; y: number }) => void) => () => void };
       capture?: import("../mate/screenCapture").CaptureBridge;
       /** desktop: the window draws its own title bar (lib/nativeWindow.ts) */
       window?: import("../lib/nativeWindow").WindowBridge;
