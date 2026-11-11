@@ -89,8 +89,19 @@ next to it:
   permissions besides clipboard writes/fullscreen are refused.
 - Linux runs as X11 (XWayland on Wayland) — a Wayland window cannot place
   itself. `HRH_OZONE_PLATFORM=wayland` opts out. Transparency needs a
-  compositor. Repeated GPU crashes switch the next start to software
-  rendering (`HRH_DISABLE_GPU=1` forces it).
+  compositor.
+- Repeated GPU-process crashes switch the next start to software rendering
+  (`HRH_DISABLE_GPU=1` forces it): SwiftShader, the GPU's work on the CPU — not
+  `disableHardwareAcceleration()`, which on Windows turned the transparent Mate
+  windows black and could take WebGL (her videos) away. It holds for the
+  version that crashed; a new version tries the GPU again.
+- Local execution chosen once starts by itself at the next start; until the
+  runtime is up (minutes, the first time after an install or update on Windows)
+  the connect screen says it is starting, with Cancel.
+- Windows end to end (CI `.github/workflows/windows-update.yml`):
+  `node test/e2e/windows-local-e2e.js <dist>` — Local execution from the connect
+  screen, remembered across a restart, her avatar as a video in the console and
+  her small window, and the same in software rendering.
 
 Bridge for the pages: `window.hrhNative.mate` (see `src/preload.js`), every
 call checked in the main process (sender window + top frame + server origin).
