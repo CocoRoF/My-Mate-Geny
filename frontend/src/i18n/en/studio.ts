@@ -130,6 +130,7 @@ export default {
   avatarUnskip: "Make an avatar after all",
   avatarBring: "Bring a file (zip · livliv)",
   avatarBringHint: "A Live2D model, a LivLiv package or a video / photo pack in a zip — it becomes her avatar right away",
+  avatarBroughtHint: "Her avatar from your file. The agent maps the model's expressions to her emotions.",
   emotionMap: "Expressions for her emotions",
   emotionMapNone: "No expressions mapped yet — ask the agent to map them",
   avatarSumInterview: "Not started",

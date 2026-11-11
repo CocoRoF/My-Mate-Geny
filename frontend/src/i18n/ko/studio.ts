@@ -131,6 +131,7 @@ const studio: Messages<"studio"> = {
   avatarUnskip: "아바타도 만들래요",
   avatarBring: "파일로 넣기 (zip · livliv)",
   avatarBringHint: "Live2D 모델, LivLiv 패키지, 영상·사진 팩 zip — 바로 이 메이트의 아바타가 돼요",
+  avatarBroughtHint: "파일에서 가져온 아바타예요. 에이전트가 모델의 표정을 이 메이트의 감정에 맞춰 연결해 줘요.",
   emotionMap: "표정 연결",
   emotionMapNone: "연결된 표정이 아직 없어요 — 에이전트에게 맞춰 달라고 해 보세요",
   avatarSumInterview: "시작 전",
