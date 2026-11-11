@@ -2,7 +2,8 @@
 # an older build installed as a user installs it, one press of Download & install, and the newer build must be the
 # one running afterwards — in Local execution (the bundled backend running from the folder being replaced) and on the
 # connect screen. Two versions of the same commit are built; they are cached by the sources they come from, so a
-# change to the test alone does not build them again.
+# change to the test alone does not build them again. Run by hand with two release tags (older, newer), the published
+# installers themselves are checked instead: what a user on the older one gets, and the newer one installed fresh.
 name: windows-update
 
 on:
@@ -20,6 +21,16 @@ on:
   push:
     branches: ["e2e/windows-update**"]
   workflow_dispatch:
+    inputs:
+      older:
+        description: "Release tag of the older installer (e.g. apps-v0.4.103); empty: build both from this commit"
+        default: ""
+      newer:
+        description: "Release tag of the newer installer (e.g. apps-v0.4.106)"
+        default: ""
+      rounds:
+        description: "Updates per mode"
+        default: "3"
 
 permissions:
   contents: read
@@ -56,7 +67,17 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
           cache-dependency-glob: backend/pyproject.toml
+      - name: The published installers (release check)
+        if: inputs.newer != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for d in old:${{ inputs.older }} new:${{ inputs.newer }}; do
+            gh release download "${d#*:}" --repo "$GITHUB_REPOSITORY" -p '*-windows-x64-setup.exe' -p 'latest.yml' -D "desktop/dist-${d%%:*}"
+          done
+          ls -la desktop/dist-old desktop/dist-new
       - name: The two installers (cached by their sources)
+        if: inputs.newer == ''
         id: installers
         uses: actions/cache/restore@v4
         with:
@@ -69,7 +90,7 @@ jobs:
           key: windows-update-${{ hashFiles('desktop/src/**', 'desktop/build/**', 'desktop/package.json', 'desktop/package-lock.json', 'backend/**', 'frontend/src/**', 'frontend/index.html', 'frontend/package-lock.json', 'frontend/vite.config.*') }}
       - run: npm ci --prefix desktop --no-audit --no-fund
       - name: Build an older and a newer installer
-        if: steps.installers.outputs.cache-hit != 'true'
+        if: inputs.newer == '' && steps.installers.outputs.cache-hit != 'true'
         run: |
           npm ci --prefix frontend --no-audit --no-fund
           (cd frontend && npx vite build --outDir dist-local --emptyOutDir)
@@ -82,7 +103,7 @@ jobs:
           ls -la dist-old dist-new
       # (saved now, not at the end: a failing test does not build them again)
       - name: Keep the installers
-        if: steps.installers.outputs.cache-hit != 'true'
+        if: inputs.newer == '' && steps.installers.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -101,7 +122,7 @@ jobs:
         env:
           # (the app's update source reads the release list from the GitHub API on the way: no anonymous rate limit)
           GH_TOKEN: ${{ github.token }}
-        run: node test/e2e/windows-update-e2e.js dist-old dist-new --rounds 3 --modes local,server --out e2e-out
+        run: node test/e2e/windows-update-e2e.js dist-old dist-new --rounds "${{ inputs.rounds || '3' }}" --modes local,server --out e2e-out
       - uses: actions/upload-artifact@v4
         if: always()
         with:
