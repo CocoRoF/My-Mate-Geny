@@ -246,7 +246,7 @@ const ko: Messages<"mateSettings"> = {
   avLvMarkLivliv: "LivLiv 로고 (패키지가 요구하는 표시라 지울 수 없어요)",
   avLvMarkText: "만든 사람의 글자 표시",
   avLvMarkNone: "없음",
-  avLvFollow: "포인터를 따라 쳐다보기 (캐릭터 위에서)",
+  avLvFollow: "포인터를 따라 쳐다보기 (화면 어디서든)",
   avLvAuto: "자동 (같은 이름의 표정)",
   avLvNoFace: "표정 없음",
   avServerFolder: "서버의 폴더",

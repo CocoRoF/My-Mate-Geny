@@ -6,11 +6,13 @@
  *   "runtime not installed" state when it is missing;
  * - emotions → expression (name or index) and/or motion group; the expression holds ~6 s, then the mood's face;
  * - tap motions by hit area (Id or Name, from `tap_motions`; fixes Geny's hard-coded TapBody);
- * - pointer focus inside the canvas, idle saccades otherwise;
+ * - she looks at the pointer anywhere on the page (on the desktop: the whole screen, desktopCursor.ts), idle saccades
+ *   otherwise;
  * - lip-sync from the voice bridge (smoothing 0.3, threshold 0.015, scale 1.8 as in Geny) written to
  *   `ParamMouthOpenY` and the model's LipSync group (e.g. mao_pro's `ParamA`) every frame;
  * - transparent background, resize to the container, paused while hidden, everything destroyed on unmount.
  */
+import { followDesktopCursor } from "./desktopCursor";
 import { useEffect, useRef, useState } from "react";
 import { emotionCandidates, lookupEmotion } from "../emotion";
 import type { BodyMood, Live2D, MateReact } from "../types";
@@ -300,7 +302,8 @@ export default function Live2DBody({ live2d, mood, react, look, name, coreUrl, o
       internal.on("beforeModelUpdate", beforeUpdate);
       cleanups.push(() => internal.off?.("beforeModelUpdate", beforeUpdate));
 
-      // ── pointer: focus inside the canvas, taps by hit area ──
+      // ── pointer: she looks at it anywhere on the page (on the desktop: the whole screen, desktopCursor.ts); taps by
+      // hit area on her ──
       const toLocal = (ev: PointerEvent) => {
         const r = el.getBoundingClientRect();
         return { x: ((ev.clientX - r.left) / (r.width || 1)) * app.screen.width, y: ((ev.clientY - r.top) / (r.height || 1)) * app.screen.height };
@@ -317,6 +320,7 @@ export default function Live2DBody({ live2d, mood, react, look, name, coreUrl, o
         pointerAt = 0;
         internal.focusController?.focus(0, 0, false);
       };
+      const unfollow = interactive ? followDesktopCursor() : () => {};
       const pdown = (ev: PointerEvent) => {
         if (!interactive || ev.button > 0) return;
         down = { x: ev.clientX, y: ev.clientY, id: ev.pointerId };
@@ -331,13 +335,14 @@ export default function Live2DBody({ live2d, mood, react, look, name, coreUrl, o
         if (motion) void model.motion(motion.group, motion.index, MotionPriority.NORMAL).catch(() => {});
         tapRef.current?.(area ? area.id || area.name : null);
       };
-      el.addEventListener("pointermove", move);
-      el.addEventListener("pointerleave", leave);
+      window.addEventListener("pointermove", move);
+      document.addEventListener("pointerleave", leave);
       el.addEventListener("pointerdown", pdown);
       el.addEventListener("pointerup", pup);
       cleanups.push(() => {
-        el.removeEventListener("pointermove", move);
-        el.removeEventListener("pointerleave", leave);
+        unfollow();
+        window.removeEventListener("pointermove", move);
+        document.removeEventListener("pointerleave", leave);
         el.removeEventListener("pointerdown", pdown);
         el.removeEventListener("pointerup", pup);
       });

@@ -281,7 +281,7 @@ interface LivLiv {
   license?: { id?: string; url?: string };
   watermark?: string;            // the mark it asks the player to draw: part of its licence, never hidden
   emotions?: Record<string, string>;   // the user's choice: emotion -> expression id, "" = none
-  follow?: "canvas" | "off";     // her eyes follow the pointer over her (default) or not
+  follow?: "canvas" | "off";     // her eyes follow the pointer anywhere (default; the desktop app: the whole screen) or not
 }
 ```
 
@@ -342,7 +342,9 @@ threshold 0.015 / scale 1.8 as in Geny). Video motion has no audio-event subscri
 - **Live2D**: pixi.js 7 + pixi-live2d-display 0.5 (cubism4) as in Geny's
   `Live2DCanvas`; idle group, expressions/emotion motions, auto-blink, tap
   motions (hit area → group from `tap_motions`, fixing Geny's hard-coded
-  `TapBody`), pointer focus inside the canvas.
+  `TapBody`), her eyes on the pointer anywhere on the page — in the desktop app on the whole screen: while a
+  Live2D or LivLiv body is shown, the app sends where the pointer is outside its window (desktop `src/cursor-feed.js`)
+  and it comes in as the page's own pointer moves (`mate/avatar/desktopCursor.ts`).
 - **Cubism Core is not bundled** (Live2D licence, see project-geny-app
   `live2d-runtime.ts`). Binding contract:
   - `GET /api/mates/live2d/core` →
