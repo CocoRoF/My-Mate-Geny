@@ -84,11 +84,13 @@ const STEPS: { id: StepId; label: MsgKey; section: SectionId | null }[] = [
 function stepsDone(p: AvatarProject, m: Mate): Record<StepId, boolean> {
   const st = p.studio!;
   const skipped = st.avatar_skipped;
+  // (a new mate has no avatar until one is made or the user brings their own file)
+  const own = m.avatar.kind !== "none";
   return {
     concept: !!(st.concept.pitch || (m.name.trim() && m.persona.description.trim())),
     personality: !!(m.persona.personality.trim() && prefsOf(m).speech_style.trim()),
-    look: skipped || !!p.brief.design.prompt || p.brief.reference.files.length > 0 || p.status !== "interview",
-    avatar: skipped || p.status === "ready" || p.status === "applied",
+    look: skipped || own || !!p.brief.design.prompt || p.brief.reference.files.length > 0 || p.status !== "interview",
+    avatar: skipped || own || p.status === "ready" || p.status === "applied",
     voice: st.voice_ok,
     done: !!st.finished_at,
   };

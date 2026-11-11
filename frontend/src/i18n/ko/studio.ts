@@ -129,6 +129,10 @@ const studio: Messages<"studio"> = {
   avatarSkippedHint: "나중에 언제든 만들 수 있어요 (메이트 화면의 ✨).",
   avatarSkip: "아바타는 나중에",
   avatarUnskip: "아바타도 만들래요",
+  avatarBring: "파일로 넣기 (zip · livliv)",
+  avatarBringHint: "Live2D 모델, LivLiv 패키지, 영상·사진 팩 zip — 바로 이 메이트의 아바타가 돼요",
+  emotionMap: "표정 연결",
+  emotionMapNone: "연결된 표정이 아직 없어요 — 에이전트에게 맞춰 달라고 해 보세요",
   avatarSumInterview: "시작 전",
   avatarOnHer: "그녀에게 입혔어요",
   avatarApplying: "그녀에게 입히는 중…",
@@ -157,5 +161,6 @@ const studio: Messages<"studio"> = {
   evCreated: "메이트를 만들었어요",
   evSkipped: "아바타 건너뜀",
   evAvatarBack: "다시 아바타로",
+  evAvatarBrought: "아바타 파일을 넣었어요",
 };
 export default studio;

@@ -128,6 +128,10 @@ export default {
   avatarSkippedHint: "You can make one any time later (✨ in the Mate view).",
   avatarSkip: "Skip the avatar for now",
   avatarUnskip: "Make an avatar after all",
+  avatarBring: "Bring a file (zip · livliv)",
+  avatarBringHint: "A Live2D model, a LivLiv package or a video / photo pack in a zip — it becomes her avatar right away",
+  emotionMap: "Expressions for her emotions",
+  emotionMapNone: "No expressions mapped yet — ask the agent to map them",
   avatarSumInterview: "Not started",
   avatarOnHer: "It's on her",
   avatarApplying: "Putting it on her…",
@@ -156,4 +160,5 @@ export default {
   evCreated: "Mate created",
   evSkipped: "Avatar skipped",
   evAvatarBack: "Back to the avatar",
+  evAvatarBrought: "Her avatar came from a file",
 };

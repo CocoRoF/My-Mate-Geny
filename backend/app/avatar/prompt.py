@@ -162,6 +162,13 @@ _TOOL = ("- update_mate_draft: write the mate's settings on the right — name, 
          "formality, speech_style, length, emotion, tone, avoid}, concept {pitch, role, interests, backstory, voice, "
          "style, look, outfit, palette, mood}. Checked by the server; the user sees each field you filled highlighted "
          "and can undo it.\n")
+# an avatar of her own the user brings instead (docs/avatar-create.md §11): what it has, and mapping it to her emotions
+_BROUGHT = ("- map_avatar_emotions: which of her Live2D model's / LivLiv package's expressions (and Live2D motion groups) "
+            "answer to her emotion tags — only the model's own names.\n"
+            "If the user brings her avatar as a file (a Live2D model or a LivLiv package, in the Avatar section on the "
+            "right or in her settings), get_project → studio.avatar shows what it has and what is mapped: then there is "
+            "nothing to generate unless they ask. Map its expressions (and motions) to her emotions by what the names "
+            "mean, and say in a line what you mapped — they can change it in her settings.\n")
 _ASK_MATE = ('6. Which mate gets it: an existing one (ask_user kind "mate") or a new mate (ask the name).\n')
 
 
@@ -181,14 +188,14 @@ def system_prompt(*, language: str, state: str, emotions: list[str], studio: str
         # the studio's intro and the concept first; then the avatar part of the normal prompt (its tools, the credit
         # rule, the interview, the run)
         rest = base[base.index("## Your tools"):]
-        rest = rest.replace("- pause / resume / cancel.\n", "- pause / resume / cancel.\n" + _TOOL, 1)
+        rest = rest.replace("- pause / resume / cancel.\n", "- pause / resume / cancel.\n" + _TOOL + _BROUGHT, 1)
         rest = rest.replace(_ASK_MATE, "6. (The mate is the one being made here: skip this.)\n", 1)
         rest = rest.replace("the user can preview it and press Apply (to the mate) or create a new mate —\nyou don't "
                             "do that yourself.", "it goes on the new mate by itself and plays in the Avatar section "
                             "on the right.", 1)
         return STUDIO_NEW.format(language=lang) + "\n" + rest
     if studio == "existing":
-        base = base.replace("- pause / resume / cancel.\n", "- pause / resume / cancel.\n" + _TOOL, 1)
+        base = base.replace("- pause / resume / cancel.\n", "- pause / resume / cancel.\n" + _TOOL + _BROUGHT, 1)
         base = base.replace(_ASK_MATE, f"6. (The avatar is for “{mate}”: skip this.)\n", 1)
         return base.replace("## Your tools", STUDIO_EXISTING.format(mate=mate) + "\n## Your tools", 1)
     return base
