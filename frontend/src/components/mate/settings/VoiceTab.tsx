@@ -1,6 +1,6 @@
 import { useReplySpeech } from "../../../mate/useReplySpeech";
 import { voiceSettingsDraft } from "../../../mate/replySpeechControl";
-import { useDevicePreferences, patchDevicePreferences } from "../../../stores/devicePreferences";
+import { useDevicePreferences } from "../../../stores/devicePreferences";
 /**
  * Voice (this mate): how it speaks (TTS) and hears (STT). Only engines that work are offered — Off, the browser and
  * the providers Global settings has verified; the rest are listed disabled with a way to set them up. Voices and
@@ -25,6 +25,7 @@ import { previewMateFlags } from "../../../mate/livePreview";
 import { bcp47, type MateConversation } from "../../../mate/useMateConversation";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
+import { openAppSettings } from "../../../lib/openAppSettings";
 import { useT, type MsgKey } from "../../../i18n";
 import { availability, playPreview, setPreviewVolume, speakPreview, stopPreview, STT_ENGINES, TTS_ENGINES, usable, usePreviewPlaying, type Availability, type EngineInfo } from "./engines";
 import { Banner, ErrorLine, Field, LinkButton, SaveBar, SearchSelect, Section, Segmented, Toggle, useFollowSaved, useSaver, type PickOption } from "./ui";
@@ -213,8 +214,10 @@ export default function VoiceTab({ mate, conv, onTest }: { mate: Mate; conv: Mat
           testId="mate-tts-engine"
         />
         {v.tts.engine !== "off" && <TtsDetails key={v.tts.engine} mate={mate} tts={v.tts} set={tts} ready={ttsAvail(v.tts.engine).state === "ready"} />}
-        <p className="text-xs text-content-faint">{t("screen.deviceVolume")}</p>
-        <VolumeField value={volume} engine={v.tts.engine} onChange={(x) => { void patchDevicePreferences({ volume: x }); }} />
+        <p className="text-xs text-content-faint">
+          {t("mateSettings.voiceVolumeWhere", { pct: Math.round(volume * 100) })}{" "}
+          <LinkButton onClick={() => openAppSettings("mate")} testId="mate-volume-settings">{t("mateSettings.voiceVolumeOpen")}</LinkButton>
+        </p>
         <Toggle
           on={speech.enabled}
           onChange={(on) => { void speech.setEnabled(on); }}
@@ -246,7 +249,8 @@ export default function VoiceTab({ mate, conv, onTest }: { mate: Mate; conv: Mat
 }
 
 /** 0–300 % in 5 % steps, 100 % marked; the browser voice stops at 100 % */
-function VolumeField({ value, engine, onChange }: { value: number; engine: TtsEngine; onChange: (v: number) => void }) {
+/** this device's volume for the mates' voices (Settings → Mate; docs/settings.md) */
+export function VolumeField({ value, engine, onChange }: { value: number; engine?: TtsEngine; onChange: (v: number) => void }) {
   const t = useT();
   const pct = Math.round(value * 100);
   const capped = engine === "browser" && pct > 100;
@@ -338,7 +342,7 @@ function FallbackNote({ kind, engine, avail }: { kind: "tts" | "stt"; engine: st
       testId={`mate-${kind}-fallback`}
       action={
         avail.state !== "unsupported" ? (
-          <button className="btn-soft !px-2.5 !py-1 text-[12px]" onClick={() => useMateStore.getState().openGlobal("voice")}>
+          <button className="btn-soft !px-2.5 !py-1 text-[12px]" onClick={() => openAppSettings("media")}>
             {t("mateSettings.voiceSetUp")}
           </button>
         ) : undefined
@@ -384,14 +388,14 @@ function EnginePicker<T extends string>({ kind, engines, value, avail, onChange,
               {a.state === "missing" ? (
                 <>
                   {t("mateSettings.voiceNotSetUp")} ·{" "}
-                  <LinkButton onClick={() => useMateStore.getState().openGlobal("voice")} testId={`mate-${kind}-setup-${e.id}`}>
+                  <LinkButton onClick={() => openAppSettings("media")} testId={`mate-${kind}-setup-${e.id}`}>
                     {t("mateSettings.voiceSetUpGlobal")}
                   </LinkButton>
                 </>
               ) : a.state === "error" ? (
                 <>
                   <span className="text-danger">{t("mateSettings.voiceNotWorking")}</span> ·{" "}
-                  <LinkButton onClick={() => useMateStore.getState().openGlobal("voice")}>{t("mateSettings.voiceFixGlobal")}</LinkButton>
+                  <LinkButton onClick={() => openAppSettings("media")}>{t("mateSettings.voiceFixGlobal")}</LinkButton>
                 </>
               ) : a.state === "unsupported" ? (
                 a.why

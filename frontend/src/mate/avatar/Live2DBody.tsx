@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import { emotionCandidates, lookupEmotion } from "../emotion";
 import type { BodyMood, Live2D, MateReact } from "../types";
 import { subscribe as subscribeVoice, voiceBridge } from "../voiceBridge";
-import { getLive2DCoreUrl, loadCubismCore, openGlobalSettings, useLive2DCoreInstalls } from "../live2dCore";
+import { getLive2DCoreUrl, loadCubismCore, openLive2DSettings, useLive2DCoreInstalls } from "../live2dCore";
 import { VIEW_HOME, type AvatarViewT } from "./view";
 import { tr, useT } from "../../i18n";
 
@@ -467,10 +467,10 @@ export default function Live2DBody({ live2d, mood, react, look, name, coreUrl, o
             <button
               type="button"
               className="rounded-md bg-accent/90 px-2.5 py-1 text-[11.5px] font-medium text-white hover:bg-accent"
-              onClick={() => openGlobalSettings("live2d")}
+              onClick={openLive2DSettings}
               data-testid="mate-live2d-open-settings"
             >
-              {t("mate.openGlobalSettings")}
+              {t("mate.openLive2DSettings")}
             </button>
             <button
               type="button"

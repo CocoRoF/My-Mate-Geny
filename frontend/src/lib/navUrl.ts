@@ -20,6 +20,7 @@ export type SettingsTab =
   | "appearance"
   | "notifications"
   | "mate"
+  | "screen"
   | "desktop"
   | "media"
   | "mcp"
@@ -35,6 +36,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   "appearance",
   "notifications",
   "mate",
+  "screen",
   "desktop",
   "providers",
   "media",
@@ -123,8 +125,8 @@ export function studioUrl(s: StudioLoc): string {
 /** the URL of a Settings tab (links that open another window: the desktop Mate's "Open Providers") */
 export const settingsUrl = (tab: SettingsTab | null): string => urlOf({ view: "settings", session: null, tab });
 
-/** a panel of the Mate view to open on arrival (the desktop Mate chat window's "Adjust in settings"):
- *  `relation` (the Relationship panel) or a Mate settings tab */
+/** a panel of the Mate view to open on arrival (the desktop Mate chat window's ♥ panel → its settings):
+ *  `relation` (the ♥ panel) or Mate settings → 관계와 기억 (`settings-relation`, `settings-memory`: the same tab) */
 export type MatePanel = "relation" | "settings-relation" | "settings-memory";
 const MATE_PANELS: readonly string[] = ["relation", "settings-relation", "settings-memory"];
 

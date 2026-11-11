@@ -25,7 +25,13 @@ def client():
         # (the test database is shared: start every test from "only ElevenLabs is set up")
         assert c.put("/api/mates/settings", json={"openai_key": "", "whisper_url": "", "elevenlabs_key": KEY}).status_code == 200
         app.state.voice_service._minted.clear()
-        yield c
+        # (nor a language-model provider's OpenAI key standing in: other tests add accounts)
+        store = app.state.mate_service.store
+        shared, store.shared_key = store.shared_key, None
+        try:
+            yield c
+        finally:
+            store.shared_key = shared
 
 
 class Recorder:

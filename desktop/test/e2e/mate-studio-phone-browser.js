@@ -172,7 +172,7 @@ const NAV_BAR = 48;
     await page.waitForSelector('[data-testid="mate-settings-open"]');
     assert.equal(await page.locator('[data-testid="mate-reset"]').count(), 0);
     await page.click('[data-testid="mate-more"]');
-    for (const id of ["mate-avatar-toggle", "mate-avatar-create", "mate-global-settings-open", "mate-reset"]) assert(await page.locator(`[data-testid="${id}"]`).isVisible(), id);
+    for (const id of ["mate-avatar-toggle", "mate-avatar-create", "mate-status-open", "mate-reset"]) assert(await page.locator(`[data-testid="${id}"]`).isVisible(), id);
     await page.click('[data-testid="mate-more"]');
     await page.waitForSelector('[data-testid="mate-more-menu"]', { state: "detached" });
 

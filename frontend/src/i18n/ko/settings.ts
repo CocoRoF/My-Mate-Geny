@@ -2,16 +2,16 @@ import type { Messages } from "..";
 
 const ko: Messages<"settings"> = {
   title: "설정",
-  subtitle: "업데이트, 계정, 언어, 화면, 이 기기 설정과 에이전트(공급자, 연결, 사용량, 관리자)를 한곳에서 관리해요.",
+  subtitle: "한 번 정해 두는 것들이에요: 나와 앱, 모든 메이트 공통, 에이전트 서비스. 메이트마다 다른 설정은 메이트 설정에 있어요.",
   secAccount: "계정",
   secLanguage: "언어",
-  secAppearance: "화면",
+  secAppearance: "테마",
   secNotifications: "알림",
-  secMate: "메이트 & 음성",
+  secMate: "메이트",
   secDesktop: "데스크톱 앱",
   tabUpdates: "업데이트 & 다운로드",
   groupGeneral: "일반",
-  groupSystem: "에이전트 & 시스템",
+  groupSystem: "에이전트와 서비스",
   usageHint: "연결된 계정마다 요금제가 얼마나 남았는지, 이 서버가 센 토큰은 얼마인지 보여 줘요.",
   backToList: "설정으로 돌아가기",
 
@@ -84,7 +84,7 @@ const ko: Messages<"settings"> = {
   langSaving: "저장 중…",
   langSaved: "저장했어요 — 다른 기기도 따라가요.",
   langLocal: "이 기기에서만 바뀌었어요. 서버가 응답하지 않아 계정에 저장하지 못했어요.",
-  mateLangNote: "메이트의 답장은 메이트마다 정한 언어를 그대로 써요 (메이트 설정 → 프로필).",
+  mateLangNote: "메이트는 메이트마다 정한 언어로 답해요 (메이트 설정 → 대화 방식).",
 
   // 화면 (라이트 / 다크)
   appearanceHint: "라이트, 다크, 또는 이 기기 설정을 따라가요 — 열린 모든 창에 바로 적용돼요.",
@@ -112,10 +112,19 @@ const ko: Messages<"settings"> = {
   testTitle: "My Mate Geny",
   testBody: "알림이 잘 작동해요.",
 
-  mateHint: "기본 메이트와 이 기기에서 답장을 소리 내어 읽을지 정해요. 음성, Live2D, 메이트별 설정은 메이트 화면에 있어요.",
-  openMateGlobal: "음성 서비스 & Live2D",
-  openMate: "메이트 열기",
+  mateHint: "모든 메이트 공통이에요: 기본 메이트, 이 기기의 소리와 먼저 말 걸기, Live2D 런타임, 기본 제공 메이트 되살리기.",
 
-  desktopHint: "이 컴퓨터에만 적용돼요: 데스크톱 위의 메이트, 빠른 채팅 단축키, 로그인 시 시작.",
+  desktopHint: "이 컴퓨터에만 적용돼요: 바탕화면의 메이트, 채팅 창, 빠른 채팅 단축키, 로그인 시 시작.",
+  groupMate: "메이트",
+  secScreen: "화면 공유",
+  screenHint: "이 기기의 캡처 설정이에요: 캡처 전에 묻기, 사진의 크기와 형식. 공유를 시작하는 건 입력창에서 해요.",
+  screenShareHow: "공유를 켜고 끄기, 어떤 화면을 언제 볼지는 입력창의 화면 버튼에서 정해요. 매번 똑같이 쓰는 설정은 여기에 있어요.",
+  speakFirstOn: "이 기기에서 메이트가 먼저 말 걸기",
+  speakFirstWho: "누가",
+  mateServices: "이미지·음성 서비스",
+  yourName: "메이트가 부를 내 이름",
+  yourNameHint: "모든 메이트가 이 이름으로 나를 알아요. 메이트마다 부르는 호칭(“현석 씨”, “주인님”)은 메이트 설정 → 대화 방식에서 정해요.",
+  yourNamePh: "예: 현석",
+  yourNameSaved: "저장했어요 — 이제 모든 메이트가 알아요.",
 };
 export default ko;

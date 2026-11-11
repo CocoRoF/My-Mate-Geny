@@ -15,7 +15,6 @@ import Icon from "../ui/Icon";
 import { STAGE_COLOR, STAGE_LABEL } from "./RelationRing";
 import { StateCard, stateName, stateWhy } from "./StateCard";
 import MemoryNotebook from "./MemoryNotebook";
-import RelationshipTab from "./settings/RelationshipTab";
 import { milestoneText, whyText } from "./settings/RelationshipTab";
 import { CHANGE_FILTERS, chartSummary, deltaText, filterChanges, groupByDay, localDay, nextAnniversary, STATE_EMOJI, type ChangeFilter } from "../../mate/relationJournal";
 
@@ -43,15 +42,15 @@ const KIND_LABEL: Record<string, MsgKey> = {
 };
 const PAGE = 25;
 
-export default function RelationPanel({ mate, onClose, initialTab = "relation" }: { mate: Mate; onClose: () => void; initialTab?: RelationLink }) {
+/** `onSettings`: Mate settings → 관계와 기억, where the relationship and her memory are set (this panel is for looking) */
+export default function RelationPanel({ mate, onClose, onSettings, initialTab = "relation" }: { mate: Mate; onClose: () => void; onSettings: () => void; initialTab?: RelationLink }) {
   const t = useT();
   const [tab, setTab] = useState<RelationLink>(initialTab);
-  const [adjusting, setAdjusting] = useState(false);
-  // the other tab or view starts at its top
+  // the other tab starts at its top
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => {
     body.current?.scrollTo(0, 0);
-  }, [tab, adjusting]);
+  }, [tab]);
   const [j, setJ] = useState<RelationJournal | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -93,16 +92,15 @@ export default function RelationPanel({ mate, onClose, initialTab = "relation" }
           <h2 className="truncate text-[14px] font-semibold">{t("mate.bondTitle")}</h2>
           <p className="truncate text-[11px] text-content-faint">{t("mate.relPanelSub", { name: mate.name })}</p>
         </div>
-        {tab === "relation" && <button
-          onClick={() => setAdjusting(v => !v)}
-          aria-pressed={adjusting}
+        <button
+          onClick={onSettings}
           className="btn-ghost shrink-0 !px-2.5 !py-1 text-[12px]"
           title={t("mate.bondAdjust")}
           aria-label={t("mate.bondAdjust")}
           data-testid="mate-relation-panel-adjust"
         >
           <Icon name="sliders" size={13} /> <span className="hidden min-[400px]:inline">{t("mate.bondAdjust")}</span>
-        </button>}
+        </button>
         <button onClick={onClose} className="btn-ghost !px-2" aria-label={t("common.close")} data-testid="mate-relation-panel-close">
           <Icon name="x" size={16} />
         </button>
@@ -118,7 +116,7 @@ export default function RelationPanel({ mate, onClose, initialTab = "relation" }
       </div>
       <div ref={body} className="fit-fields min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
         <div className="mx-auto max-w-xl space-y-4 pb-6">
-          {tab === "memory" ? <MemoryNotebook key={mate.id} mate={mate} /> : adjusting ? <RelationshipTab key={mate.id} mate={mate} /> : <>
+          {tab === "memory" ? <MemoryNotebook key={mate.id} mate={mate} onSettings={onSettings} /> : <>
           {err && <p className="rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{t("mate.relPanelError", { error: err })}</p>}
           {!j || !v ? (
             !err && <p className="text-[12px] text-content-faint">{t("common.loading")}</p>

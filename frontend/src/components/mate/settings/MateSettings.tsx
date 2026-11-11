@@ -1,12 +1,11 @@
 /**
- * Mate settings (this mate only): Profile · Conversation style · Avatar and outfits · Language model · Voice · Screen · Danger zone.
- * Memory and relationship management live in the header's heart panel.
- * App-wide things (voice service keys / URLs, the Live2D runtime, the desktop app, the default mate) are in Global
- * settings — opened from here ("Global settings", "Set up in Global settings") in place of this panel.
+ * Mate settings (this mate only, docs/settings.md): Profile · Conversation style · Avatar and outfits · Voice ·
+ * Language model · Relationship and memory · Delete. What she is like and how she talks — changed now and then.
+ * App-wide things set once (your name, the default mate, voice services, the Live2D runtime, this device's sound and
+ * screen sharing, the desktop app) are in Settings: `openAppSettings(tab)`.
  */
 import { useEffect, useRef, useState } from "react";
 import type { Mate } from "../../../api/mates";
-import { useBackHandler } from "../../../lib/back";
 import { useCenteredChild } from "../../../lib/scrollRow";
 import type { MateConversation } from "../../../mate/useMateConversation";
 import { useMateStore } from "../../../stores/mateStore";
@@ -18,22 +17,20 @@ import AvatarTab from "./AvatarTab";
 import ModelTab from "./ModelTab";
 import VoiceTab from "./VoiceTab";
 import { SaveBarSlot } from "./ui";
-import ScreenTab from "./ScreenTab";
-import ProactiveTab from "./ProactiveTab";
+import BondTab from "./BondTab";
 import DangerTab from "./DangerTab";
-import GlobalSettings from "./GlobalSettings";
+import { openAppSettings } from "../../../lib/openAppSettings";
 import { useT, type MsgKey } from "../../../i18n";
 
-export type Tab = "profile" | "style" | "avatar" | "model" | "voice" | "proactive" | "screen" | "danger";
+export type Tab = "profile" | "style" | "avatar" | "voice" | "model" | "bond" | "danger";
 
 const TABS: { id: Tab; label: MsgKey }[] = [
   { id: "profile", label: "mateSettings.tabProfile" },
   { id: "style", label: "mateSettings.tabStyle" },
   { id: "avatar", label: "mateSettings.tabAvatar" },
-  { id: "model", label: "mateSettings.modelTitle" },
   { id: "voice", label: "mateSettings.voiceVoice" },
-  { id: "proactive", label: "screen.proactiveTitle" },
-  { id: "screen", label: "mateSettings.tabScreen" },
+  { id: "model", label: "mateSettings.modelTitle" },
+  { id: "bond", label: "mateSettings.tabBond" },
   { id: "danger", label: "mateSettings.tabDanger" },
 ];
 
@@ -47,17 +44,10 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
   useEffect(() => {
     body.current?.scrollTo(0, 0);
   }, [tab]);
-  const globalOpen = useMateStore((s) => s.globalOpen);
-  const closeGlobal = useMateStore((s) => s.closeGlobal);
-  useBackHandler(globalOpen, closeGlobal);
-  // the voice tab needs to know what Global settings has working; refresh it whenever settings open
+  // the voice tab needs to know which voice services work; refresh it whenever settings open
   useEffect(() => {
     void useMateStore.getState().loadProviders();
   }, []);
-  // closing the mate settings closes a Global settings opened from them
-  useEffect(() => () => useMateStore.getState().closeGlobal(), []);
-
-  if (globalOpen) return <GlobalSettings onClose={closeGlobal} />;
 
   return (
     <div className="flex h-full flex-col" data-testid="mate-settings">
@@ -71,12 +61,12 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
           <p className="truncate text-[11px] text-content-faint">{t("mateSettings.settingsSub")}</p>
         </div>
         <button
-          onClick={() => useMateStore.getState().openGlobal()}
+          onClick={() => openAppSettings("mate")}
           className="btn-ghost shrink-0 !px-2.5 !py-1 text-[12px]"
-          title={t("mateSettings.globalTitleHint")}
-          data-testid="mate-open-global"
+          title={t("mateSettings.appSettingsHint")}
+          data-testid="mate-open-app-settings"
         >
-          <Icon name="sparkles" size={13} /> <span className="hidden min-[400px]:inline">{t("mateSettings.globalTitle")}</span>
+          <Icon name="external" size={13} /> <span className="hidden min-[400px]:inline">{t("mateSettings.appSettings")}</span>
         </button>
         <button onClick={onClose} className="btn-ghost !px-2" aria-label={t("mateSettings.closeSettings")} data-testid="mate-settings-close">
           <Icon name="x" size={16} />
@@ -106,8 +96,7 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
           {tab === "avatar" && <AvatarTab key={mate.id} mate={mate} conv={conv} />}
           {tab === "model" && <ModelTab key={mate.id} mate={mate} />}
           {tab === "voice" && <VoiceTab key={mate.id} mate={mate} conv={conv} />}
-          {tab === "proactive" && <ProactiveTab key={mate.id} mate={mate} />}
-          {tab === "screen" && <ScreenTab key={mate.id} mate={mate} sid={conv.sessionId} />}
+          {tab === "bond" && <BondTab key={mate.id} mate={mate} />}
           {tab === "danger" && <DangerTab key={mate.id} mate={mate} onDeleted={onClose} />}
         </div>
       </div>

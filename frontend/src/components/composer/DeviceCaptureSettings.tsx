@@ -10,7 +10,13 @@ import {
   type CaptureInfo,
 } from "../../mate/screenCapture";
 import { useT } from "../../i18n";
-export default function DeviceCaptureSettings({mate}: {mate?:Mate}) {
+import { openAppSettings } from "../../lib/openAppSettings";
+/**
+ * This device's screen capture (docs/settings.md). `part`: "share" — what a share shows and when she looks (the
+ * composer's share dialog: changed now and then); "device" — what is set once (Settings → Screen sharing: asking
+ * first, the picture's size and format).
+ */
+export default function DeviceCaptureSettings({mate, part}: {mate?:Mate; part:"share"|"device"}) {
   const t = useT(),
     prefs = useDevicePreferences(),
     s = prefs.screen;
@@ -33,9 +39,10 @@ export default function DeviceCaptureSettings({mate}: {mate?:Mate}) {
       className="space-y-3 rounded-xl border border-border p-3 text-xs"
       data-testid="device-capture-settings"
     >
-      <p className="font-medium">{t("screen.deviceSettings")}</p>
+      <p className="font-medium">{t(part === "share" ? "screen.shareSettings" : "screen.deviceSettings")}</p>
       <p className="text-content-faint">{t("screen.deviceSettingsHint")}</p>
 
+      {part === "share" && <>
       <label className="flex flex-wrap items-center gap-2">
         {t("screen.mode")}
         <select value={prefs.sharing.mode} onChange={e=>void patchDevicePreferences({sharing:{mode:e.target.value as typeof prefs.sharing.mode}})} className="min-w-0 flex-1 basis-40 rounded border border-border bg-surface px-2 py-1" data-testid="screen-mode">
@@ -76,6 +83,11 @@ export default function DeviceCaptureSettings({mate}: {mate?:Mate}) {
           <button type="button" className="btn-ghost !px-2" onClick={refreshSources} data-testid="device-capture-refresh">{t("common.refresh")}</button>
         </label>
       )}
+      <button type="button" className="text-left text-accent hover:underline" onClick={() => openAppSettings("screen")} data-testid="device-capture-settings-link">
+        {t("screen.moreInSettings")}
+      </button>
+      </>}
+      {part === "device" && <>
       <label className="flex flex-wrap items-center gap-2">
         {t("screen.approval")}
         <select
@@ -130,6 +142,7 @@ export default function DeviceCaptureSettings({mate}: {mate?:Mate}) {
         </label>
       )}
       <p className="text-content-faint">{t("screen.asVisible")}</p>
+      </>}
       {info?.permission === "denied" && (
         <button
           type="button"

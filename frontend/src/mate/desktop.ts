@@ -39,6 +39,8 @@ export interface MateBridge {
   openChat(): Promise<void>;
   closeChat(): Promise<void>;
   setChatOnTop(on: boolean): Promise<void>;
+  /** her window back to its default place and size — desktop 0.4.107+ */
+  resetPlacement?(): Promise<void>;
   openConsole(url?: string): Promise<void>;
   setMate(mateId: string): Promise<void>;
   setHotkey(accel: string): Promise<boolean>;

@@ -5,9 +5,8 @@ export type { MateAvatarExtraProps } from "./avatar/MateAvatar";
 export {
   markLive2DCoreInstalled,
   useLive2DCoreInstalls,
-  openGlobalSettings,
+  openLive2DSettings,
   LIVE2D_CORE_INSTALLED_EVENT,
-  OPEN_GLOBAL_SETTINGS_EVENT,
 } from "./live2dCore";
 export {
   voiceBridge,

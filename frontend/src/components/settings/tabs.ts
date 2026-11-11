@@ -8,7 +8,7 @@ export interface TabMeta {
   label: MsgKey;
   icon: IconName;
   hint?: MsgKey;
-  group: "general" | "system";
+  group: "general" | "mate" | "system";
   /** shown here? (Desktop app: only inside the desktop app) */
   when?: () => boolean;
   /** the content is wide (Admin's system charts) */
@@ -20,13 +20,16 @@ export const isDesktopApp = () => /^desktop-/.test(platform());
 export const isAndroidApp = () => platform() === "android";
 
 export const TABS: readonly TabMeta[] = [
+  // the app and you: set once (docs/settings.md)
   { id: "updates", label: "settings.tabUpdates", icon: "download", hint: "settings.updatesHint", group: "general" },
   { id: "account", label: "settings.secAccount", icon: "user", hint: "settings.accountHint", group: "general" },
   { id: "language", label: "settings.secLanguage", icon: "languages", hint: "settings.languageHint", group: "general" },
   { id: "appearance", label: "settings.secAppearance", icon: "appearance", hint: "settings.appearanceHint", group: "general" },
   { id: "notifications", label: "settings.secNotifications", icon: "bell", hint: "settings.notifHint", group: "general" },
-  { id: "mate", label: "settings.secMate", icon: "volume", hint: "settings.mateHint", group: "general" },
-  { id: "desktop", label: "settings.secDesktop", icon: "monitor", hint: "settings.desktopHint", group: "general", when: isDesktopApp },
+  // what holds for every mate (her own settings are hers: Mate settings)
+  { id: "mate", label: "settings.secMate", icon: "sparkles", hint: "settings.mateHint", group: "mate" },
+  { id: "screen", label: "settings.secScreen", icon: "monitor", hint: "settings.screenHint", group: "mate" },
+  { id: "desktop", label: "settings.secDesktop", icon: "laptop", hint: "settings.desktopHint", group: "mate", when: isDesktopApp },
   { id: "providers", label: "mcp.llmTitle", icon: "cpu", hint: "mcp.llmIntro", group: "system" },
   { id: "media", label: "mcp.mediaTitle", icon: "volume", hint: "mcp.mediaIntro", group: "system" },
   { id: "mcp", label: "mcp.title", icon: "plug", hint: "mcp.intro", group: "system" },
@@ -37,6 +40,7 @@ export const TABS: readonly TabMeta[] = [
 
 export const GROUPS: readonly { id: TabMeta["group"]; label: MsgKey }[] = [
   { id: "general", label: "settings.groupGeneral" },
+  { id: "mate", label: "settings.groupMate" },
   { id: "system", label: "settings.groupSystem" },
 ];
 

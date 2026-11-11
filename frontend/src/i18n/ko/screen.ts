@@ -1,18 +1,10 @@
 const screen = {
-  "simpleReachOut": "먼저 말걸기",
+  "simpleReachOut": "먼저 말 걸기",
   "fixedReachOutHint": "이 기기에서 사용하는 메이트가 상황에 맞게 먼저 말을 걸어요. 시작·접속·작업·화면 변화와 대화 맥락은 앱이 판단해요.",
-  "reachOutSwitch": "{name}의 먼저 말걸기",
-  "oneSharingHint": "화면 공유를 켜면 이 기기에서 선택한 화면을 메이트가 볼 수 있어요. 끄기 전까지 설정을 유지하며, 연결이나 권한 문제는 대기 상태로 표시해요.",
-  "waitConnection": "켜짐 · 연결을 기다리고 있어요. 설정은 유지돼요.",
-  "waitAuth": "켜짐 · 로그인이 필요해요. 설정은 유지돼요.",
-  "waitTarget": "켜짐 · 선택한 화면이나 창을 기다리고 있어요. 다른 화면을 대신 찍지 않아요.",
-  "waitPermission": "켜짐 · 화면 기록 권한 또는 시스템 화면 선택이 필요해요.",
   "waitSession": "켜짐 · 공유할 대화를 기다리고 있어요.",
-  "reconnect": "대상 선택·다시 연결",
   "targetUnavailable": "이전 대상을 다시 선택하세요",
 
   "sourceChangeStopped": "캡처 대상이 바뀌어 이전 요청을 취소하고 새 대상에 다시 연결해요. 공유 켜짐은 유지돼요.",
-  "restorePending": "저장된 화면 공유를 다시 연결하는 중이에요. 중지를 누르면 다음 실행에도 꺼져 있어요.",
 
   "restoreMissing": "선택한 대상이 없어 공유는 대기 중이에요. 켜 둔 설정은 유지돼요.",
   "restorePermission": "화면 기록 권한 또는 시스템 선택이 필요해 공유가 대기 중이에요. 켜 둔 설정은 유지돼요.",
@@ -20,11 +12,6 @@ const screen = {
 
   "setup": "화면 공유 시작 설정",
   "whenRequested": "요청할 때 화면 보기",
-
-  "proactiveTitle": "말걸기",
-
-
-  "deviceVolume": "이 기기의 앱 음량이에요. 모든 메이트·창에 즉시 적용되며 다른 기기에는 영향을 주지 않아요.",
   "deviceSettings": "이 앱의 화면 공유 설정",
   "deviceSettingsHint": "모든 창에서 이 기기의 설정을 함께 사용해요. 대상을 바꾸면 기존 요청을 취소하고 새 대상으로 공유를 이어가요.",
   "source": "캡처 대상",
@@ -47,11 +34,9 @@ const screen = {
   "allowRequest": "{name}에 선택한 화면을 지금 캡처해서 보낼까요?",
   "requestFailed": "캡처 또는 업로드하지 못했어요. 연결과 화면 기록 권한을 확인하세요.",
   "thisConversation": "이 대화",
-  "sharing": "화면 공유 중: {source}",
   "localHint": "워크스페이스 서버와 관계없이 지금 사용하는 기기의 화면을 캡처해요.",
   "once": "한 번 캡처하기",
   "start": "화면 공유 켜기",
-  "stop": "공유 중지",
   "mode": "캡처 시점",
   "ask": "에이전트 요청 시 · 매번 확인",
   "onTurn": "내가 메시지를 보낼 때마다",
@@ -60,6 +45,8 @@ const screen = {
   "seconds": "{count}초",
   "retention": "전송한 이미지는 대화 첨부로 남아요. 공유는 이 기기에 저장되어 앱을 다시 열어도 이어지며, 직접 끄면 꺼진 상태로 남아요. 브라우저는 다시 화면을 선택해야 해요. 이미지 본문은 앱 로그에 복사하지 않아요.",
   "costHint": "관찰 시 모델이 답하며 토큰이 사용될 수 있어요. 작업 중인 세션과 완전히 동일한 화면은 건너뛰어요.",
-  "capturing": "화면 캡처 중…"
+  "capturing": "화면 캡처 중…",
+  "shareSettings": "이번 공유",
+  "moreInSettings": "먼저 묻기, 사진 크기와 형식: 설정 → 화면 공유"
 };
 export default screen;

@@ -59,6 +59,8 @@ const mate = {
   openChat: () => ipcRenderer.invoke("mate:openChat"),
   closeChat: () => ipcRenderer.invoke("mate:closeChat"),
   setChatOnTop: (on) => ipcRenderer.invoke("mate:chatOnTop", !!on),
+  // (Settings → Desktop app, as the tray's Reset): her place and size back to the start
+  resetPlacement: () => ipcRenderer.invoke("mate:resetPlacement"),
   openConsole: (url) => ipcRenderer.invoke("mate:openConsole", typeof url === "string" ? url : undefined),
   setMate: (mateId) => ipcRenderer.invoke("mate:setMate", String(mateId || "")),
   setHotkey: (accel) => ipcRenderer.invoke("mate:setHotkey", String(accel ?? "")),

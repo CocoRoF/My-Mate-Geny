@@ -1,16 +1,16 @@
 // Settings (components/settings/SettingsView.tsx).
 export default {
   title: "Settings",
-  subtitle: "Updates, your account, language, appearance and this device — and the agents: providers, connections, usage, admin.",
+  subtitle: "What you set once: you and the app, what holds for every mate, and the agents' services. A mate's own settings are in her Mate settings.",
   secAccount: "Account",
   secLanguage: "Language",
-  secAppearance: "Appearance",
+  secAppearance: "Theme",
   secNotifications: "Notifications",
-  secMate: "Mate & voice",
+  secMate: "Mate",
   secDesktop: "Desktop app",
   tabUpdates: "Updates & Download",
   groupGeneral: "General",
-  groupSystem: "Agents & system",
+  groupSystem: "Agents & services",
   usageHint: "What each connected account's plan has left, and the tokens this server counted.",
   backToList: "Back to Settings",
 
@@ -86,7 +86,7 @@ export default {
   langSaving: "Saving…",
   langSaved: "Saved — your other devices follow.",
   langLocal: "Changed on this device. It couldn't be saved to your account (the server didn't answer).",
-  mateLangNote: "A mate's replies keep the mate's own language (Mate settings → Profile).",
+  mateLangNote: "A mate replies in her own language (Mate settings → Conversation style).",
 
   // appearance (light / dark)
   appearanceHint: "Light, dark, or this device's setting — applied at once in every open window.",
@@ -116,10 +116,19 @@ export default {
   testBody: "Notifications work.",
 
   // mate
-  mateHint: "The default mate and reading replies aloud on this device. Voices, Live2D and each mate's own settings are in Mate.",
-  openMateGlobal: "Voice services & Live2D",
-  openMate: "Open Mate",
+  mateHint: "What holds for every mate: the default mate, sound and speaking first on this device, the Live2D runtime, the built-in mates.",
 
   // desktop
-  desktopHint: "This computer only: the mate on your desktop, the quick-chat shortcut and start at login.",
+  desktopHint: "This computer only: the mate on your desktop, her chat window, the quick-chat shortcut and start at login.",
+  groupMate: "Mate",
+  secScreen: "Screen sharing",
+  screenHint: "This device's capture settings: asking first, the picture's size and format. Starting a share is in the message box.",
+  screenShareHow: "Start or stop sharing, pick the screen and when she looks — from the screen button in the message box. What stays the same every time is here.",
+  speakFirstOn: "Let a mate speak first on this device",
+  speakFirstWho: "Who",
+  mateServices: "Image & voice services",
+  yourName: "Your name for your mates",
+  yourNameHint: "Every mate knows you by this name. How each one calls you (“Hyunsuk-ssi”, “boss”) is in her Mate settings → Conversation style.",
+  yourNamePh: "e.g. Alex",
+  yourNameSaved: "Saved — every mate knows it now.",
 };

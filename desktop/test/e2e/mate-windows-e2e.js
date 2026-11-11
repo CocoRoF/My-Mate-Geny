@@ -925,10 +925,10 @@ async function main() {
     await con.eval(`localStorage.setItem("hrh_mate_active", ${JSON.stringify(mate.id)}); location.href = "/?view=mate"; true`).catch(() => {});
     await sleep(1500);
     con = await app.page(consoleRe);
-    await until("the Mate view", () => con.eval(`!!document.querySelector('[data-testid="mate-settings-open"]')`));
-    await con.eval(`document.querySelector('[data-testid="mate-settings-open"]').click(), true`);
-    await until("Mate settings", () => con.eval(`!!document.querySelector('[data-testid="mate-tab-voice"]')`));
-    await con.eval(`document.querySelector('[data-testid="mate-tab-voice"]').click(), true`);
+    // (the volume is this device's: Settings → Mate)
+    await con.eval(`location.href = "/?view=settings&tab=mate"; true`).catch(() => {});
+    await sleep(800);
+    con = await app.page(consoleRe);
     await until("the volume slider", () => con.eval(`!!document.querySelector('[data-testid="mate-volume-slider"]')`));
     const setSlider = (v) => con.eval(`(() => { const el = document.querySelector('[data-testid="mate-volume-slider"]');
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, ${JSON.stringify(String(v))});

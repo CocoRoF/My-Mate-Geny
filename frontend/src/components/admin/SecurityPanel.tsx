@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { revokeAllSessions, securityInfo, unbanIp, type SecurityInfo } from "../../api/admin";
 import Icon from "../ui/Icon";
-import CredentialsCard from "./CredentialsCard";
+import { openSettings } from "../../stores/uiStore";
 import { absTime, relTime } from "./format";
 import { useT } from "../../i18n";
 
@@ -40,7 +40,12 @@ export default function SecurityPanel() {
 
   return (
     <div className="space-y-3">
-      <CredentialsCard />
+      <div className="card flex flex-wrap items-center gap-3 p-4">
+        <div className="min-w-0 flex-1 basis-60 text-[12.5px] text-content-dim">{t("admin.credentialsInAccount")}</div>
+        <button onClick={() => openSettings("account")} className="btn-ghost border border-border" data-testid="admin-open-account">
+          <Icon name="key" size={14} /> {t("admin.openAccount")}
+        </button>
+      </div>
       <div className="card flex flex-wrap items-center gap-3 p-4">
         <div className="min-w-0 flex-1 text-[12.5px] text-content-dim">
           {t("admin.revokeHint")}

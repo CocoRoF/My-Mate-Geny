@@ -5,11 +5,8 @@ import Icon from "../../ui/Icon";
 import { ErrorLine, Section } from "./ui";
 import { useT } from "../../../i18n";
 
-/** the characters bundled with the app (backend/app/mate/builtin) */
-const BUILTINS: Record<string, string> = { chaerin: "Chaerin" };
-
-/** [Reset her memory]: as if they had never talked. She stays who she is. */
-function WipeMemory({ mate }: { mate: Mate }) {
+/** [Reset her memory]: as if they had never talked. She stays who she is. (Mate settings → 관계와 기억) */
+export function WipeMemory({ mate }: { mate: Mate }) {
   const t = useT();
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -63,12 +60,6 @@ export default function DangerTab({ mate, onDeleted }: { mate: Mate; onDeleted: 
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [restored, setRestored] = useState<string | null>(null);
-  const mates = useMateStore((s) => s.mates);
-  const present = new Set(mates.map((m) => m.builtin).filter(Boolean));
-  const missing = Object.entries(BUILTINS)
-    .filter(([k]) => !present.has(k))
-    .map(([, n]) => n);
   const del = async () => {
     setBusy(true);
     setErr(null);
@@ -80,18 +71,7 @@ export default function DangerTab({ mate, onDeleted }: { mate: Mate; onDeleted: 
       setBusy(false);
     }
   };
-  const restore = async () => {
-    setErr(null);
-    try {
-      const n = await useMateStore.getState().restoreBuiltins();
-      setRestored(n ? t("mateSettings.dangerRestored", { count: n }) : t("mateSettings.dangerAllHere"));
-    } catch (e) {
-      setErr((e as Error).message);
-    }
-  };
   return (
-    <>
-      <WipeMemory mate={mate} />
       <Section
         title={t("mateSettings.dangerDeleteTitle", { name: mate.name })}
         hint={
@@ -122,16 +102,5 @@ export default function DangerTab({ mate, onDeleted }: { mate: Mate; onDeleted: 
           </button>
         </div>
       </Section>
-      <Section title={t("mateSettings.dangerBuiltins")} hint={t("mateSettings.dangerBuiltinsHint")}>
-        <div className="flex flex-wrap items-center justify-end gap-3">
-          <span className="min-w-0 flex-1 text-[12px] text-content-faint" data-testid="mate-builtins-missing">
-            {restored ? <span className="text-success">{restored}</span> : missing.length ? t("mateSettings.dangerMissing", { list: missing.join(", ") }) : t("mateSettings.dangerAllOfThem")}
-          </span>
-          <button className="btn-soft" onClick={restore} data-testid="mate-restore-builtins-settings">
-            <Icon name="rotate" size={13} /> {t("mateSettings.dangerRestoreBtn")}
-          </button>
-        </div>
-      </Section>
-    </>
   );
 }

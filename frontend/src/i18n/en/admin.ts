@@ -75,28 +75,6 @@ export default {
   unblock: "Unblock",
 
   // ---- credentials
-  strengthStrong: "Strong",
-  strengthOk: "OK",
-  strengthWeak: "Weak",
-  sourceDefault: "Built-in default (admin / geny-admin)",
-  sourceEnv: "Server environment (AUTH_USERNAME / AUTH_PASSWORD)",
-  sourceDb: "Set here",
-  credSaved: "Saved. Every other browser, desktop and mobile app was signed out — sign in there with the new credentials.",
-  credTitle: "Sign-in credentials",
-  credUsername: "Username",
-  credSource: "source:",
-  credChanged: "changed {when}",
-  credDefaultWarn: "<b>Default password in use.</b> It is public — anyone who can reach this server can sign in. Choose your own password below.",
-  credEnvNote: "Saving here overrides the server's AUTH_PASSWORD (stored as a salted scrypt hash in the database).",
-  currentPassword: "Current password",
-  newPassword: "New password",
-  emptyKeep: "(empty = keep)",
-  confirmNewPassword: "Confirm new password",
-  pwHint: "At least {min} characters; a passphrase of 3–4 random words (12+ characters) is best.",
-  pwTooShort: "Too short — at least {min} characters.",
-  pwMismatch: "The new passwords don't match.",
-  updateCredentials: "Update credentials",
-  credSignsOut: "Signs out every other device and app; this browser stays signed in.",
 
   // ---- system: toolbar / status
   rangeLive: "Live",
@@ -309,4 +287,6 @@ export default {
   memoryHint: "Originals remain in conversations; this diagnostic summary records no content or API keys. Background extraction runs one job at a time while foreground work is idle.",
   memoryCounts: "{sources} sources · {episodes} episodes · {pending} queued · {failed} failed · {unindexed} awaiting index",
   memoryBudget: "One extraction at a time · at most {limit} calls/min · average {ms}ms · reported API equivalent ${cost}",
+  credentialsInAccount: "The username and password are in Settings → Account (changing them signs out every other device).",
+  openAccount: "Open Account",
 };

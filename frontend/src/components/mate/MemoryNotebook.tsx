@@ -1,4 +1,7 @@
-/** Source-backed memories and shared experiences, managed from the header's heart panel. */
+/**
+ * Source-backed memories and shared experiences, managed from the header's heart panel. How she keeps and recalls
+ * them is in Mate settings → 관계와 기억 (`onSettings`).
+ */
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addMemory,
@@ -15,7 +18,6 @@ import {
   type Memory,
   type MemoryEpisode,
   type MemoryKind,
-  type RecallLevel,
   type RecallPreview,
 } from "../../api/mates";
 import { useMateStore } from "../../stores/mateStore";
@@ -26,7 +28,7 @@ import KnowledgePanel, {
   Evidence,
   MemoryHistoryDetails,
 } from "./settings/KnowledgePanel";
-import { ErrorLine, Segmented, Toggle } from "./settings/ui";
+import { ErrorLine } from "./settings/ui";
 
 const KINDS: Record<MemoryKind, MsgKey> = {
   profile: "mateSettings.memKindProfile",
@@ -364,7 +366,7 @@ function EpisodeCard({
   );
 }
 
-export default function MemoryNotebook({ mate }: { mate: Mate }) {
+export default function MemoryNotebook({ mate, onSettings }: { mate: Mate; onSettings?: () => void }) {
   const t = useT(),
     rev = useMateStore((s) => s.memoryRev[mate.id] ?? 0),
     prefs = prefsOf(mate);
@@ -460,18 +462,6 @@ export default function MemoryNotebook({ mate }: { mate: Mate }) {
       setSaving(false);
     }
   };
-  const updatePrefs = async (patch: {
-    self_save?: boolean;
-    recall?: RecallLevel;
-  }) => {
-    try {
-      await useMateStore
-        .getState()
-        .patch(mate.id, { prefs: { memory: patch } });
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
   const retry = async () => {
     setRetrying(true);
     try {
@@ -544,6 +534,11 @@ export default function MemoryNotebook({ mate }: { mate: Mate }) {
                       episodes: last.episodes,
                     })
                   : t("mate.notebookReady")}
+          {onSettings && (
+            <button className="ml-2 text-accent hover:underline" onClick={onSettings} data-testid="memory-settings-link">
+              {t("mate.notebookSettings")}
+            </button>
+          )}
           {failed > 0 && prefs.memory.self_save && (
             <button
               className="btn-ghost mt-2 !px-0"
@@ -664,36 +659,6 @@ export default function MemoryNotebook({ mate }: { mate: Mate }) {
           {t("mate.notebookOptions")}
         </summary>
         <div className="mt-4 space-y-4">
-          <Toggle
-            on={prefs.memory.self_save}
-            onChange={(on) => void updatePrefs({ self_save: on })}
-            label={t("mate.notebookAutomatic")}
-            hint={t("mate.notebookAutomaticHint")}
-          />
-          <div className="space-y-2">
-            <p className="text-[12px] text-content-dim">
-              {t("mateSettings.memRecall")}
-            </p>
-            <Segmented
-              value={prefs.memory.recall}
-              options={(
-                ["off", "light", "normal", "rich"] as RecallLevel[]
-              ).map((id) => ({
-                id,
-                label: t(
-                  (
-                    {
-                      off: "mateSettings.memRecallOff",
-                      light: "mateSettings.memRecallLight",
-                      normal: "mateSettings.styleNormal",
-                      rich: "mateSettings.memRecallRich",
-                    } as const
-                  )[id],
-                ),
-              }))}
-              onChange={(v) => void updatePrefs({ recall: v })}
-            />
-          </div>
           <label className="block space-y-2 text-[12px] text-content-dim">
             {t("mateSettings.memShow")}
             <select
