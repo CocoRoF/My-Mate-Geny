@@ -372,14 +372,14 @@ async function main() {
       const label = `${mode}-${round}`;
       await uninstallAll();
       // (on the CI machine a setup now and then falls over at its start — 0xC0000005 within a second — and runs the next time)
-      for (let n = 1; n <= 6; n++) {
+      for (let n = 1; n <= 10; n++) {
         const began = Date.now();
         const run = spawnSync(older.file, ["/S"], { stdio: "ignore", windowsHide: true, timeout: 600000 });
         say(`${label}: the older setup ran ${Math.round((Date.now() - began) / 1000)} s (exit ${run.status}${run.error ? `, ${run.error.message}` : ""})`);
         if (run.status === 0) break;
         // which module fell over (Windows' Application Error event)
         console.log(ps(`Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Id = 1000; StartTime = (Get-Date).AddMinutes(-2) } -MaxEvents 1 -ErrorAction SilentlyContinue | ForEach-Object { ($_.Message -split '\\r?\\n' | Select-Object -First 8) -join ' | ' }`).replace(/^/gm, "      "));
-        await sleep(15000);
+        await sleep(15000 * Math.min(n, 4)); // (longer each time: it has run on a later try every time so far)
       }
       const k = await until("the older build installed", () => installed()?.DisplayVersion === older.version && installed(), 180000, 1000).catch((e) => {
         console.log(`    uninstall entries:\n${ps(`Get-ChildItem HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall, HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall, HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall -ErrorAction SilentlyContinue | ForEach-Object { $p = Get-ItemProperty $_.PSPath; if ($p.DisplayName -like '*Mate*' -or $p.DisplayName -like '*harnessor*') { $_.Name + ' = ' + $p.DisplayName + ' ' + $p.DisplayVersion + ' @ ' + $p.InstallLocation } }`)}`);
