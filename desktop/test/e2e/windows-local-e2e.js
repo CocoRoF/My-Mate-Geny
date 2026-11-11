@@ -145,6 +145,36 @@ class App {
   }
 }
 
+/** the page as on a desktop with Windows' animations on (the CI machine has them off: prefers-reduced-motion), again */
+async function withMotion(c) {
+  await c.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
+  await c.send("Page.reload", {}).catch(() => {});
+  await sleep(1500);
+}
+
+/** her avatar in the console and in her small window: facts + a picture of the screen */
+async function look(app, label, note) {
+  const con = await app.page(/^http:\/\/127\.0\.0\.1:\d+\/.*view=mate/, 90000).catch(() => null);
+  if (con) {
+    await withMotion(con);
+    await until("the mate's avatar", () => con.eval(`document.querySelectorAll("[data-mate-kind]").length > 0`), 60000).catch((e) => say(e.message));
+    await sleep(8000);
+    note(`${label}.console`, await con.eval(AVATAR_FACTS).catch((e) => ({ error: e.message })));
+    const shot = await con.send("Page.captureScreenshot", { format: "png" }).catch(() => null);
+    if (shot) fs.writeFileSync(path.join(OUT, `${label}-console.png`), Buffer.from(shot.data, "base64"));
+    note(`${label}.consoleErrors`, con.events.filter((e) => e.method === "Log.entryAdded" && e.params.entry.level === "error").map((e) => e.params.entry.text.slice(0, 300)).slice(0, 12));
+  } else note(`${label}.console`, "(no mate view)");
+  const small = await app.page(/surface=mate-overlay/, 30000).catch(() => null);
+  if (small) {
+    await withMotion(small);
+    await sleep(8000);
+    note(`${label}.window`, await small.eval(AVATAR_FACTS).catch((e) => ({ error: e.message })));
+    note(`${label}.windowBackground`, await small.eval(`[getComputedStyle(document.documentElement).backgroundColor, getComputedStyle(document.body).backgroundColor]`).catch((e) => e.message));
+  } else note(`${label}.window`, "(no small window)");
+  note(`${label}.gpu`, await app.main(`return { webgl: electron.app.getGPUFeatureStatus().webgl, compositing: electron.app.getGPUFeatureStatus().gpu_compositing, switches: ["disable-gpu", "use-gl", "use-angle"].map((k) => k + "=" + electron.app.commandLine.hasSwitch(k) + ":" + electron.app.commandLine.getSwitchValue(k)) };`).catch((e) => e.message));
+  say(`screen: ${screenshot(path.join(OUT, `${label}-desktop.png`))}`);
+}
+
 // what a page knows about the mate's avatar: which body, the clips (their state and errors), WebGL, reduced motion
 const AVATAR_FACTS = `(async () => {
   const kinds = [...document.querySelectorAll("[data-mate-kind]")].map((e) => e.dataset.mateKind);
@@ -203,28 +233,8 @@ async function main() {
   note("settingsAfterLocal", settings());
   await con.eval(`localStorage.setItem("hrh_setup_seen_v2", "1"), true`).catch(() => {});
   await con.eval(`location.href = location.origin + "/?view=mate", true`).catch(() => {});
-  await sleep(4000);
-  const con2 = await app.page(/^http:\/\/127\.0\.0\.1:\d+\/.*view=mate/, 60000);
-  await until("the mate's avatar", () => con2.eval(`document.querySelectorAll("[data-mate-kind]").length > 0`), 60000).catch((e) => say(e.message));
-  await sleep(8000);
-  note("consoleAvatar", await con2.eval(AVATAR_FACTS).catch((e) => ({ error: e.message })));
-  const shot = await con2.send("Page.captureScreenshot", { format: "png" }).catch(() => null);
-  if (shot) fs.writeFileSync(path.join(OUT, "console-mate.png"), Buffer.from(shot.data, "base64"));
-  note("consoleErrors", con2.events.filter((e) => e.method === "Log.entryAdded" && e.params.entry.level === "error").map((e) => e.params.entry.text.slice(0, 300)).slice(0, 20));
-
-  // her small window (the desktop Mate), if it is out — and if not, put it out
-  let avatar = (await app.targets()).find((t) => /surface=mate-avatar/.test(t.url));
-  if (!avatar) {
-    note("showMate", await app.main(`const w = electron.BrowserWindow.getAllWindows().map((x) => x.webContents.getURL()); return w;`).catch((e) => e.message));
-  }
-  avatar = await app.page(/surface=mate-avatar/, 30000).catch(() => null);
-  if (avatar) {
-    await sleep(8000);
-    note("windowAvatar", await avatar.eval(AVATAR_FACTS).catch((e) => ({ error: e.message })));
-    note("windowErrors", avatar.events.filter((e) => e.method === "Log.entryAdded" && e.params.entry.level === "error").map((e) => e.params.entry.text.slice(0, 300)).slice(0, 20));
-  } else note("windowAvatar", "(no small window)");
-  say(`screen: ${screenshot(path.join(OUT, "desktop-first.png"))}`);
-  note("gpu", await app.main(`return { feature: electron.app.getGPUFeatureStatus(), info: (await electron.app.getGPUInfo("basic")).gpuDevice };`).catch((e) => e.message));
+  await sleep(3000);
+  await look(app, "first", note);
 
   say("quit as a user does (Quit), then start again");
   await app.main(`setTimeout(() => electron.app.quit(), 100); return true;`).catch(() => {});
@@ -233,6 +243,8 @@ async function main() {
   note("settingsAfterQuit", settings());
   app = new App(k.dir);
   app.start();
+  const firstShown = await until("the second start's first page", async () => (await app.targets()).find((t) => !/surface=/.test(t.url)), 120000, 200).catch(() => null);
+  note("secondStartFirstPage", firstShown && firstShown.url.replace(/^file:.*\//, "file:…/"));
   const back = await until("the second start's page", async () => (await app.targets()).find((t) => !/surface=/.test(t.url) && (/^http:\/\/127\.0\.0\.1/.test(t.url) || /connect\.html/.test(t.url))), 180000, 1000).catch(() => null);
   await sleep(6000);
   const pages = (await app.targets().catch(() => [])).map((t) => t.url);
@@ -240,15 +252,38 @@ async function main() {
   note("settingsSecondStart", settings());
   const local = pages.some((u) => /^http:\/\/127\.0\.0\.1:\d+\//.test(u) && !/surface=/.test(u));
   note("localRemembered", local);
-  say(`screen: ${screenshot(path.join(OUT, "desktop-second.png"))}`);
+  if (local) {
+    const c2 = await app.page(/^http:\/\/127\.0\.0\.1:\d+\/(?!.*surface=)/, 30000);
+    await c2.eval(`location.href = location.origin + "/?view=mate", true`).catch(() => {});
+    await sleep(3000);
+    await look(app, "second", note);
+  }
+
+  say("third start: software rendering (what the app falls back to after the GPU process kept crashing)");
+  await app.main(`setTimeout(() => electron.app.quit(), 100); return true;`).catch(() => {});
+  await sleep(8000);
+  killApp();
+  fs.writeFileSync(path.join(PROFILE, "settings.json"), JSON.stringify({ ...settings(), softwareRendering: true }, null, 2));
+  app = new App(k.dir);
+  app.start();
+  await until("the third start's local console", async () => (await app.targets()).find((t) => /^http:\/\/127\.0\.0\.1:\d+\/(?!.*surface=)/.test(t.url)), 180000, 1000).catch(() => null);
+  const c3 = await app.page(/^http:\/\/127\.0\.0\.1:\d+\/(?!.*surface=)/, 30000).catch(() => null);
+  if (c3) {
+    await c3.eval(`location.href = location.origin + "/?view=mate", true`).catch(() => {});
+    await sleep(3000);
+    await look(app, "software", note);
+  }
   console.log(`  main.log:\n${tail(path.join(PROFILE, "logs", "main.log"), 80)}`);
   killApp();
   fs.writeFileSync(path.join(OUT, "local-facts.json"), JSON.stringify(facts, null, 2));
   const problems = [];
   if (!local) problems.push("Local execution was not remembered");
-  for (const key of ["consoleAvatar", "windowAvatar"]) {
+  if (facts.secondStartFirstPage && /connect\.html/.test(facts.secondStartFirstPage) && !/starting=local/.test(facts.secondStartFirstPage))
+    problems.push("the second start showed the mode chooser while Local execution was starting");
+  for (const key of Object.keys(facts).filter((k) => /\.(console|window)$/.test(k))) {
     const f = facts[key];
-    if (f && typeof f === "object" && !f.error && !(f.canvases > 0 && f.videos.some((v) => v.ready >= 2 && !v.error))) problems.push(`${key}: no video playing`);
+    if (f && typeof f === "object" && !f.error && !(f.canvases > 0 && f.videos.some((v) => v.ready >= 2 && !v.error))) problems.push(`${key}: no video playing (webgl: ${f.gl})`);
+    if (typeof f === "string") problems.push(`${key}: ${f}`);
   }
   console.log(problems.length ? `\nPROBLEMS:\n  ${problems.join("\n  ")}` : "\nlocal execution: remembered, her videos play");
   process.exit(problems.length ? 1 : 0);
