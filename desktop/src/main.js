@@ -57,6 +57,9 @@ const localRuntime = require("./local-runtime").createLocalRuntime({
   preferredPort:()=>{try{return new URL(readSettings().localOrigin).port;}catch{return 0;}},
   log:m=>mainLog.info(`[local] ${m}`),
   onCrash:message=>{mainLog.warn(message);if(!quitting)showConnect({notice:"local-failed"});},
+  // (a first start after an install or update can take long on Windows — the antivirus reads every file of the
+  // runtime; the connect screen says it is starting and can cancel it)
+  timeout:180_000,
 });
 function envRuntimeRoot(){return process.env.HRH_LOCAL_RUNTIME_ROOT || (app.isPackaged?path.join(process.resourcesPath,"local-runtime"):path.join(__dirname,"..","local-runtime"));}
 async function enterLocal(){
@@ -134,9 +137,16 @@ function relaunchOnX11() {
 }
 
 const restartOnX11 = linux ? linuxSwitches() : false;
-// Repeated GPU-process crashes switch the next start to software rendering
-// (slow beats a crash loop); HRH_DISABLE_GPU=1 does it by hand.
-if (readSettings().softwareRendering || env.HRH_DISABLE_GPU === "1") app.disableHardwareAcceleration();
+// Repeated GPU-process crashes switch the next start to software rendering (slow beats a crash loop); HRH_DISABLE_GPU=1
+// does it by hand. Software rendering is SwiftShader (the GPU's work done on the CPU), not disableHardwareAcceleration():
+// on Windows that turned the transparent Mate windows black and took WebGL away, so her videos fell back to stills. A
+// new version of the app tries the GPU again (a crash loop it causes was perhaps a bug of the old one).
+if (readSettings().softwareRendering && readSettings().softwareRendering !== app.getVersion()) writeSettings({ softwareRendering: undefined });
+if (readSettings().softwareRendering || env.HRH_DISABLE_GPU === "1") {
+  app.commandLine.appendSwitch("use-gl", "angle");
+  app.commandLine.appendSwitch("use-angle", "swiftshader");
+  app.commandLine.appendSwitch("enable-unsafe-swiftshader");
+}
 
 let win = null;
 let quitting = false;
@@ -258,7 +268,8 @@ function createWindow(url) {
 
   if (url) w.loadURL(url);
   else if (serverUrl()) w.loadURL(`${serverUrl()}/`);
-  else loadConnect(w);
+  // (Local execution chosen before: it is starting — the connect screen says so instead of offering the choice again)
+  else loadConnect(w, readSettings().launchMode === "local" ? { starting: "local" } : {});
   return w;
 }
 
@@ -765,11 +776,11 @@ function setupPermissions() {
 let gpuCrashes = [];
 app.on("child-process-gone", (_e, d) => {
   if (d.reason !== "clean-exit") mainLog.warn(`${d.type} process gone: ${d.reason} (exit ${d.exitCode})`);
-  if (d.type !== "GPU" || d.reason === "clean-exit" || readSettings().softwareRendering) return;
+  if (d.type !== "GPU" || d.reason === "clean-exit" || readSettings().softwareRendering || quitting) return;
   const t = Date.now();
   gpuCrashes = [...gpuCrashes.filter((x) => t - x < 120_000), t];
   if (gpuCrashes.length >= 3) {
-    writeSettings({ softwareRendering: true });
+    writeSettings({ softwareRendering: app.getVersion() });
     if (Notification.isSupported()) {
       new Notification({ title: PRODUCT, body: t("gpuBody") }).show();
     }
