@@ -26,6 +26,10 @@ def call(args):
 
 
 def main():
+    # MCP over stdio is UTF-8. On Windows a pipe is the ANSI code page (cp949, cp1252…) instead, and -I ignores
+    # PYTHONUTF8: a tool list or an answer with characters it lacks killed the bridge (no tools for the engine).
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
     for line in sys.stdin:
         try:
             msg = json.loads(line)

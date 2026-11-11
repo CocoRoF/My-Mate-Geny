@@ -19,6 +19,7 @@ export default {
   cmdAgentHint: "Agent mode — full autonomy (edits, commands)",
   cmdStopHint: "Stop the running turn",
   taskNotificationTurn: "Background work finished — the agent continues",
+  toolsFailed: "Couldn't start the tool server ({names}) — this goes on without those tools.",
   cmdCompactHint: "Summarize the conversation to free up context",
   badgeSkill: "skill",
   badgeCommand: "command",

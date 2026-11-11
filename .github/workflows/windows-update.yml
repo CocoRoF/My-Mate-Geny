@@ -15,6 +15,7 @@ on:
       - "desktop/package.json"
       - "desktop/package-lock.json"
       - "desktop/test/e2e/windows-update-e2e.js"
+      - "desktop/test/e2e/windows-local-e2e.js"
       - ".github/workflows/windows-update.yml"
   push:
     branches: ["e2e/windows-update**"]
@@ -91,7 +92,11 @@ jobs:
             desktop/dist-new/*.yml
             desktop/dist-new/*.blockmap
           key: ${{ steps.installers.outputs.cache-primary-key }}
+      - name: Local execution (remembered; her videos play)
+        working-directory: desktop
+        run: node test/e2e/windows-local-e2e.js dist-new --out e2e-out
       - name: One press of Download & install
+        if: success() || failure()
         working-directory: desktop
         env:
           # (the app's update source reads the release list from the GitHub API on the way: no anonymous rate limit)

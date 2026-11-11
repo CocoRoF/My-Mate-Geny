@@ -20,6 +20,7 @@ const ko: Messages<"chat"> = {
   cmdAgentHint: "에이전트 모드 — 완전 자율 (편집, 명령 실행)",
   cmdStopHint: "진행 중인 턴을 중지해요",
   taskNotificationTurn: "백그라운드 작업이 끝나 에이전트가 이어서 진행해요",
+  toolsFailed: "도구 서버를 시작하지 못했어요 ({names}). 이번에는 그 도구 없이 진행해요.",
   cmdCompactHint: "대화를 요약해서 컨텍스트 공간을 비워요",
   badgeSkill: "스킬",
   badgeCommand: "명령",

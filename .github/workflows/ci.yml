@@ -27,6 +27,21 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: python -m pytest -q -p no:cacheprovider -n auto
 
+  # The app's stdio MCP servers on Windows, started as the app starts them (backend/tests/test_stdio_bridges.py): a pipe there
+  # is the system's code page, not UTF-8. Stdlib + pytest only, no app import.
+  bridges-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest
+      - run: python -m pytest -q -p no:cacheprovider --noconftest tests/test_stdio_bridges.py
+
   # The avatar pipeline runs in a venv of its own (app/avatar/deps.py), so the job above skips it: cut-outs are checked here.
   avatar-processing:
     runs-on: ubuntu-latest

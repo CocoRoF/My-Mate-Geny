@@ -175,6 +175,10 @@ def _reply(msg_id, result=None, error=None) -> None:
 
 
 def main() -> None:
+    # MCP over stdio is UTF-8. On Windows a pipe is the ANSI code page (cp949, cp1252…) instead, and -I ignores
+    # PYTHONUTF8: a tool list or an answer with characters it lacks killed the bridge (no tools for the engine).
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
     for raw in sys.stdin:
         raw = raw.strip()
         if not raw:
