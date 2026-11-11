@@ -179,7 +179,8 @@ async function look(app, label, note) {
   const small = await app.page(/surface=mate-overlay/, 30000).catch(() => null);
   if (small) {
     await withMotion(small);
-    await sleep(8000);
+    await until("her small window's avatar", () => small.eval(`document.querySelectorAll(".mate-layer canvas").length > 0`), 90000).catch((e) => say(e.message));
+    await sleep(3000);
     note(`${label}.window`, await small.eval(AVATAR_FACTS).catch((e) => ({ error: e.message })));
     note(`${label}.windowBackground`, await small.eval(`[getComputedStyle(document.documentElement).backgroundColor, getComputedStyle(document.body).backgroundColor]`).catch((e) => e.message));
   } else note(`${label}.window`, "(no small window)");
@@ -292,11 +293,15 @@ async function main() {
   if (!local) problems.push("Local execution was not remembered");
   if (facts.secondStartFirstPage && /connect\.html/.test(facts.secondStartFirstPage) && !/starting=local/.test(facts.secondStartFirstPage))
     problems.push("the second start showed the mode chooser while Local execution was starting");
+  // her avatar: the video body (a WebGL canvas — a still would be an <img>), its clips answered (the player's videos are
+  // textures, not in the page)
   for (const key of Object.keys(facts).filter((k) => /\.(console|window)$/.test(k))) {
     const f = facts[key];
-    if (f && typeof f === "object" && !f.error && !(f.canvases > 0 && f.videos.some((v) => v.ready >= 2 && !v.error))) problems.push(`${key}: no video playing (webgl: ${f.gl})`);
     if (typeof f === "string") problems.push(`${key}: ${f}`);
+    else if (f && !f.error && !(f.canvases > 0 && !f.imgs.length)) problems.push(`${key}: no video body (webgl: ${f.gl}; stills: ${f.imgs.join(", ")})`);
   }
+  for (const key of Object.keys(facts).filter((k) => /\.network$/.test(k)))
+    if (!facts[key].some((l) => /^20[06] video\/mp4 /.test(l))) problems.push(`${key}: no clip was loaded`);
   console.log(problems.length ? `\nPROBLEMS:\n  ${problems.join("\n  ")}` : "\nlocal execution: remembered, her videos play");
   process.exit(problems.length ? 1 : 0);
 }
