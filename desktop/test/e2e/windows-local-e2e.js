@@ -50,6 +50,13 @@ if ($k) { $k | ConvertTo-Json -Compress } else { 'null' }`);
   return k;
 }
 function screenshot(file) {
+  for (let n = 0; n < 3; n++) {
+    const r = shootOnce(file);
+    if (r.includes("saved")) return r;
+  }
+  return "(failed)";
+}
+function shootOnce(file) {
   return ps(`Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
 $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
@@ -131,6 +138,7 @@ class App {
     const c = await new Cdp(t.webSocketDebuggerUrl).open();
     await c.send("Runtime.enable");
     await c.send("Log.enable").catch(() => {});
+    await c.send("Network.enable").catch(() => {});
     c.target = t;
     return c;
   }
@@ -148,6 +156,8 @@ class App {
 /** the page as on a desktop with Windows' animations on (the CI machine has them off: prefers-reduced-motion), again */
 async function withMotion(c) {
   await c.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "no-preference" }] });
+  await c.send("Page.addScriptToEvaluateOnNewDocument", { source: `(() => { const all = (window.__hrhVideos = []); const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function () { if (!all.includes(this)) all.push(this); return play.apply(this, arguments); }; })();` });
   await c.send("Page.reload", {}).catch(() => {});
   await sleep(1500);
 }
@@ -162,7 +172,9 @@ async function look(app, label, note) {
     note(`${label}.console`, await con.eval(AVATAR_FACTS).catch((e) => ({ error: e.message })));
     const shot = await con.send("Page.captureScreenshot", { format: "png" }).catch(() => null);
     if (shot) fs.writeFileSync(path.join(OUT, `${label}-console.png`), Buffer.from(shot.data, "base64"));
-    note(`${label}.consoleErrors`, con.events.filter((e) => e.method === "Log.entryAdded" && e.params.entry.level === "error").map((e) => e.params.entry.text.slice(0, 300)).slice(0, 12));
+    note(`${label}.consoleErrors`, con.events.filter((e) => e.method === "Log.entryAdded" && e.params.entry.level === "error").map((e) => `${e.params.entry.text.slice(0, 200)} ${e.params.entry.url || ""}`).slice(0, 12));
+    note(`${label}.network`, con.events.filter((e) => e.method === "Network.responseReceived" && (e.params.response.status >= 400 || /\.(mp4|webm|webp|png)(\?|$)/.test(e.params.response.url)))
+      .map((e) => `${e.params.response.status} ${e.params.response.mimeType} ${e.params.response.url.replace(/^http:\/\/127\.0\.0\.1:\d+/, "")}`).slice(0, 25));
   } else note(`${label}.console`, "(no mate view)");
   const small = await app.page(/surface=mate-overlay/, 30000).catch(() => null);
   if (small) {
@@ -179,7 +191,7 @@ async function look(app, label, note) {
 const AVATAR_FACTS = `(async () => {
   const kinds = [...document.querySelectorAll("[data-mate-kind]")].map((e) => e.dataset.mateKind);
   const layer = document.querySelector(".mate-layer");
-  const videos = [...document.querySelectorAll("video")].map((v) => ({ src: (v.currentSrc || v.src || "").replace(location.origin, ""), ready: v.readyState, paused: v.paused, time: v.currentTime, error: v.error ? { code: v.error.code, message: v.error.message } : null, w: v.videoWidth, h: v.videoHeight }));
+  const videos = [...new Set([...document.querySelectorAll("video"), ...(window.__hrhVideos || [])])].map((v) => ({ src: (v.currentSrc || v.src || "").replace(location.origin, ""), ready: v.readyState, paused: v.paused, time: v.currentTime, error: v.error ? { code: v.error.code, message: v.error.message } : null, w: v.videoWidth, h: v.videoHeight }));
   const canvases = layer ? layer.querySelectorAll("canvas").length : 0;
   const imgs = layer ? [...layer.querySelectorAll("img")].map((i) => (i.currentSrc || i.src || "").replace(location.origin, "")) : [];
   const gl = (() => { try { const c = document.createElement("canvas"); const g = c.getContext("webgl"); if (!g) return null; const d = g.getExtension("WEBGL_debug_renderer_info"); return d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : "webgl"; } catch (e) { return "error: " + e.message; } })();

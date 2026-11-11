@@ -216,6 +216,8 @@
     $("cancel").hidden = !s.server;
     const notice = q.get("notice");
     if(notice==="local-failed"){status("err",say("localInterrupted","Local execution stopped. Press Start to try again."));}
+    // the app starts Local execution by itself (chosen last time): this page shows it starting, until the console comes
+    if(q.get("starting")==="local"&&s.localAvailable){choose("local");setBusy(true);$("cancel").hidden=false;status("busy",say("localPreparing","Starting local execution…"));return;}
     if (notice === "signed-out") {
       $("notice").textContent = say("signedOut", "You're signed out.");
       $("notice").hidden = false;
