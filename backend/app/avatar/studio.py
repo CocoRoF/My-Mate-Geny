@@ -5,12 +5,18 @@ to become a mate.
 
 Pure helpers; the service (app/avatar/service.py) owns the documents. The agent can write the profile (the character:
 who she is), the conversation style (how she talks: speech level, address, speech habits …) and the concept — never the voice, the language model, the avatar, the default flag or any key.
+Of an avatar the user brought (a Live2D model, a LivLiv package) it sees what the model has (``avatar_view``) and maps
+those expressions and motions to her emotions (``emotion_map``).
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any
+from urllib.parse import unquote
 
+from app.mate import files
+from app.mate.prompt import EMOTION_TAGS
 from app.mate.store import FORMALITIES, LENGTHS, TONE_KEYS, TONE_LEVELS, MateError, normalize_persona, \
     normalize_prefs
 
@@ -140,6 +146,100 @@ def user_concept(c: Any) -> dict[str, str]:
     return {k: str(v or "")[:CONCEPT_MAX] for k, v in c.items() if k in CONCEPT and isinstance(v, (str, int, float))}
 
 
+def _model3(url: Any, mate_id: str) -> dict[str, Any]:
+    """The ``*.model3.json`` behind a Live2D avatar's URL (her assets or a bundled character's), or {}."""
+    path = unquote(str(url or "").split("?")[0])
+    try:
+        own, builtin = f"/api/mates/{mate_id}/assets/", "/api/mates/builtin/"
+        if path.startswith(own):
+            f = files.resolve_asset(mate_id, path[len(own):])
+        elif path.startswith(builtin):
+            key, _, rel = path[len(builtin):].partition("/")
+            f = files.resolve_builtin(key, rel)
+        else:
+            return {}
+        out = json.loads(f.read_text(encoding="utf-8-sig"))
+    except (KeyError, OSError, ValueError, files.MateError):
+        return {}
+    return out if isinstance(out, dict) else {}
+
+
+def avatar_view(mate: dict[str, Any]) -> dict[str, Any]:
+    """Her avatar as the agent sees it: the kind, and for a Live2D model or a LivLiv package what it has — the
+    expressions (and Live2D's motion groups) — and which of her emotions each answers to now."""
+    a = mate.get("avatar") or {}
+    kind = a.get("kind") or "none"
+    out: dict[str, Any] = {"kind": kind}
+    if kind == "live2d":
+        l2 = a.get("live2d") or {}
+        refs = _model3(l2.get("model"), mate.get("id") or "").get("FileReferences") or {}
+        out["expressions"] = [str(e["Name"]) for e in refs.get("Expressions") or []
+                              if isinstance(e, dict) and e.get("Name")]
+        out["motion_groups"] = [str(g) for g in (refs.get("Motions") or {})]
+        out["idle_group"] = l2.get("idle_group") or ""
+        out["emotions"] = dict(l2.get("emotions") or {})
+        out["emotion_motions"] = dict(l2.get("emotion_motions") or {})
+    elif kind == "livliv":
+        lv = a.get("livliv") or {}
+        out["name"] = lv.get("name") or ""
+        out["expressions"] = [str(x) for x in lv.get("expressions") or []]
+        out["emotions"] = dict(lv.get("emotions") or {})
+    return out
+
+
+def avatar_line(view: dict[str, Any]) -> str:
+    """One line of it (the change note: the user brought another avatar, or remapped one)."""
+    parts = [view["kind"]]
+    if view.get("expressions") is not None:
+        parts.append(f"expressions: {', '.join(view['expressions'][:30]) or '(none)'}")
+    if view.get("motion_groups"):
+        parts.append(f"motions: {', '.join(view['motion_groups'][:20])}")
+    mapped = {**{k: v for k, v in (view.get("emotions") or {}).items() if v not in ("", None)},
+              **{f"{k} (motion)": v for k, v in (view.get("emotion_motions") or {}).items() if v}}
+    if mapped:
+        parts.append("mapped: " + ", ".join(f"{k}→{v}" for k, v in mapped.items()))
+    return " · ".join(parts)
+
+
+def emotion_map(view: dict[str, Any], avatar: dict[str, Any], expressions: Any, motions: Any) -> dict[str, Any]:
+    """Her avatar with these emotions mapped (merged over what is mapped): ``expressions`` {emotion tag: one of the
+    model's expressions, or "" to unmap}, ``motions`` {emotion tag: a motion group, or ""} (Live2D only). Only the
+    model's own names and her emotion tags; nothing half-applied."""
+    kind = view["kind"]
+    if kind not in ("live2d", "livliv"):
+        raise StudioError("her avatar is not a Live2D model or a LivLiv package: it has no expressions to map")
+    if not isinstance(expressions, dict) or not isinstance(motions, dict) or not (expressions or motions):
+        raise StudioError("give expressions {emotion: expression} and/or motions {emotion: motion group}")
+    if motions and kind != "live2d":
+        raise StudioError("motions are a Live2D model's; a LivLiv package maps expressions only")
+    for k in (*expressions, *motions):
+        if k not in EMOTION_TAGS:
+            raise StudioError(f"not one of her emotions: {k!r} (they are: {', '.join(EMOTION_TAGS)})")
+    for k, v in expressions.items():
+        if v not in ("", None) and str(v) not in view["expressions"]:
+            raise StudioError(f"{k}: the model has no expression {v!r} (it has: {', '.join(view['expressions']) or 'none'})")
+    for k, v in motions.items():
+        if v not in ("", None) and str(v) not in view["motion_groups"]:
+            raise StudioError(f"{k}: the model has no motion group {v!r} (it has: {', '.join(view['motion_groups'])})")
+    body = dict(avatar.get(kind) or {})
+    emotions = dict(body.get("emotions") or {})
+    for k, v in expressions.items():
+        if v in ("", None) and kind == "live2d":
+            emotions.pop(k, None)
+        else:
+            emotions[k] = "" if v is None else str(v)  # (LivLiv: "" = none for that emotion)
+    body["emotions"] = emotions
+    if motions:
+        moves = dict(body.get("emotion_motions") or {})
+        for k, v in motions.items():
+            if v in ("", None):
+                moves.pop(k, None)
+            else:
+                moves[k] = str(v)
+        body["emotion_motions"] = moves
+    return {**avatar, kind: body}
+
+
 def snapshot(mate: dict[str, Any], concept: dict[str, Any] | None) -> dict[str, Any]:
     """The draft's fields as flat paths (what the agent compares with what it last saw)."""
     p = mate.get("persona") or {}
@@ -157,6 +257,7 @@ def snapshot(mate: dict[str, Any], concept: dict[str, Any] | None) -> dict[str, 
         out[f"concept.{k}"] = (concept or {}).get(k) or ""
     out["voice"] = " · ".join(x for x in (tts.get("engine") or "", tts.get("voice") or "") if x)
     out["llm"] = " · ".join(x for x in (llm.get("provider") or "", llm.get("model") or "") if x)
+    out["avatar"] = avatar_line(avatar_view(mate))
     return out
 
 
@@ -206,7 +307,8 @@ def update_note(seen: dict[str, Any] | None, now: dict[str, Any]) -> str:
         return ""
     lines = []
     for k, v in now.items():
-        if k in seen and seen[k] != v:
+        # (a field tracked since: set now, it shows once)
+        if seen.get(k, "") != v and (k in seen or v not in ("", None, "none")):
             lines.append(f"- {k}: {_short(seen[k]) or '(empty)'} → {_short(v) or '(empty)'}")
     if not lines:
         return ""

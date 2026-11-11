@@ -260,6 +260,8 @@ export const patchStudioFields = (pid: string, patch: StudioFieldsPatch) =>
 export const undoStudioField = (pid: string, field: string) => post<AvatarProject>(`${SP(pid)}/undo`, { field });
 export const finishStudio = (pid: string) => post<{ mate: Mate; project: AvatarProject }>(`${SP(pid)}/finish`);
 export const skipAvatar = (pid: string, skip: boolean) => post<AvatarProject>(`${SP(pid)}/skip-avatar`, { skip });
+/** the user put her avatar in from a file (the mate's own import): the agent hears what she has */
+export const broughtAvatar = (pid: string) => post<AvatarProject>(`${SP(pid)}/brought-avatar`, {});
 export const studioTemplate = (pid: string, mateId: string) => post<AvatarProject>(`${SP(pid)}/template`, { mate_id: mateId });
 export const studioVoiceOk = (pid: string) => post<AvatarProject>(`${SP(pid)}/voice-ok`);
 export const discardDraft = (pid: string) => apiFetch<{ ok: boolean }>(SP(pid), { method: "DELETE" });

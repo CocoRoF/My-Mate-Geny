@@ -421,6 +421,26 @@ class AvatarService:
                 "missing_to_create": ST.missing(mate),
                 "note": "The user sees these fields highlighted on the right and can edit or undo each."}
 
+    async def _tool_map_avatar_emotions(self, pid: str, args: dict[str, Any]) -> Any:
+        """The avatar the user brought (Live2D / LivLiv): which of its expressions (and Live2D motions) answer to her
+        emotions. Her avatar is the user's own, so only this mapping — never the model itself."""
+        doc = self.doc(pid)
+        st, mate = self._studio_mate(doc)
+        view = ST.avatar_view(mate)
+        try:
+            avatar = ST.emotion_map(view, mate.get("avatar") or {}, args.get("expressions") or {}, args.get("motions") or {})
+        except ST.StudioError as exc:
+            raise AvatarError(str(exc)) from None
+        mate = self.mates.update(st["mate_id"], {"avatar": avatar})
+        after = ST.avatar_view(mate)
+        st.setdefault("seen", {})["avatar"] = ST.avatar_line(after)  # (the agent knows what it mapped)
+        self._history(doc, "avatar_emotions", emotions=after.get("emotions"), motions=after.get("emotion_motions"))
+        self.save(doc)
+        return {"emotions": after.get("emotions"), **({"emotion_motions": after["emotion_motions"]}
+                                                      if after["kind"] == "live2d" else {}),
+                "unmapped": [e for e in ST.EMOTION_TAGS if e not in (after.get("emotions") or {})],
+                "note": "The user sees her avatar on the right and can change any of it in her settings (Avatar)."}
+
     def _studio_view(self, doc: dict[str, Any]) -> dict[str, Any] | None:
         st = self._studio(doc)
         if st is None:
@@ -498,6 +518,20 @@ class AvatarService:
         self._event(pid, "avatar_skipped" if skip else "avatar_back",
                     "The user skipped the avatar for now: she gets the plain default avatar. Don't push it; they can "
                     "come back to it." if skip else "The user wants to make the avatar after all: continue with it.")
+        return self.view(pid)
+
+    async def studio_brought_avatar(self, pid: str) -> dict[str, Any]:
+        """The user put her avatar in from a file (Avatar section → Bring a file; the import itself is the mate's,
+        POST /api/mates/{id}/avatar/import): the agent hears what she has now and answers to it."""
+        async with self._lock(pid):
+            doc = self.doc(pid)
+            st, mate = self._studio_mate(doc)
+            view = ST.avatar_view(mate)
+            st.setdefault("seen", {})["avatar"] = ST.avatar_line(view)  # (told now: not again as a change)
+            self.save(doc)
+        self._event(pid, "avatar_brought", "The user put her avatar in from a file: " + ST.avatar_line(view) + "."
+                    + (" Map its expressions to her emotions now (map_avatar_emotions) and say in a line what you "
+                       "mapped." if view["kind"] in ("live2d", "livliv") else " Nothing to generate unless they ask."))
         return self.view(pid)
 
     async def studio_template(self, pid: str, source_id: str) -> dict[str, Any]:
@@ -856,6 +890,8 @@ class AvatarService:
         except KeyError:
             return {"kind": st["kind"], "error": "the mate no longer exists"}
         return {"kind": st["kind"], "mate": ST.compact(mate, st.get("concept")),
+                # her avatar now — of a Live2D model or a LivLiv package the user brought, what it has to map
+                "avatar": ST.avatar_view(mate),
                 "missing_to_create": ST.missing(mate) if st["kind"] == "new" else [],
                 "avatar_skipped": bool(st.get("avatar_skipped")),
                 "created": bool(st.get("finished_at")) or st["kind"] == "existing"}

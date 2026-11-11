@@ -6,8 +6,9 @@
  * themselves; the Avatar section is the avatar project (estimate, checkpoints, progress, what was made, the player).
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { CONCEPT_KEYS, type AvatarEnv, type AvatarProject, type ConceptKey, type StudioInfo } from "../../../api/avatar";
-import { fillAddress, prefsOf, type Mate } from "../../../api/mates";
+import { broughtAvatar, CONCEPT_KEYS, type AvatarEnv, type AvatarProject, type ConceptKey, type StudioInfo } from "../../../api/avatar";
+import { fillAddress, importAvatarZip, prefsOf, type Mate } from "../../../api/mates";
+import { useMateStore } from "../../../stores/mateStore";
 import { addressForms, isBareKoreanName } from "../../../lib/josa";
 import { MateAvatar } from "../../../mate/avatar/MateAvatar";
 import type { MateConversation } from "../../../mate/useMateConversation";
@@ -293,6 +294,61 @@ function StyleSection({ mate }: { mate: Mate }) {
   );
 }
 
+/** her avatar from a file the user has (a Live2D model, a LivLiv package or a video/photo pack in a zip, the same
+ *  import as Mate settings → Avatar): it goes on her at once, and the agent sees what it has (studio.avatar) */
+function BringAvatar({ mate, pid }: { mate: Mate; pid: string }) {
+  const t = useT();
+  const file = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const take = async (f: File) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      useMateStore.getState().upsert((await importAvatarZip(mate.id, f)).mate);
+      void broughtAvatar(pid).catch(() => {}); // (the agent answers to it: maps a model's expressions to her emotions)
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+      if (file.current) file.current.value = "";
+    }
+  };
+  return (
+    <div className="mt-1.5">
+      <input ref={file} type="file" accept=".zip,.livliv,application/zip" hidden onChange={(e) => e.target.files?.[0] && void take(e.target.files[0])} data-testid="studio-avatar-file" />
+      <button type="button" className="btn-ghost !px-2 !py-1 text-[12px]" disabled={busy} onClick={() => file.current?.click()} title={t("studio.avatarBringHint")} data-testid="studio-avatar-bring">
+        <Icon name={busy ? "spinner" : "upload"} size={12} spin={busy} /> {t("studio.avatarBring")}
+      </button>
+      {err && <p className="mt-1 text-[11.5px] text-danger" data-testid="studio-avatar-bring-error">{err}</p>}
+    </div>
+  );
+}
+
+/** a Live2D model's / LivLiv package's expressions that answer to her emotions (the agent maps them; Mate settings →
+ *  Avatar changes them) */
+function EmotionMap({ mate }: { mate: Mate }) {
+  const t = useT();
+  const a = mate.avatar;
+  const map = a.kind === "live2d" ? a.live2d.emotions : a.kind === "livliv" ? a.livliv.emotions : undefined;
+  if (a.kind !== "live2d" && a.kind !== "livliv") return null;
+  const pairs = Object.entries(map || {}).filter(([, v]) => v !== "" && v !== undefined && v !== null);
+  return (
+    <div className="mt-1.5" data-testid="studio-emotion-map">
+      <p className="text-[11px] text-content-faint">{pairs.length ? t("studio.emotionMap") : t("studio.emotionMapNone")}</p>
+      {pairs.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-1">
+          {pairs.map(([emotion, expression]) => (
+            <span key={emotion} className="rounded-full border border-border/70 px-2 py-[1px] text-[11px] text-content-dim">
+              {emotion} → {String(expression)}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** before the avatar is ready: what she looks like now (or an empty stage of the same size — no jump later) */
 function AvatarStage({ project, mate, kind, onSkip }: { project: AvatarProject; mate: Mate; kind: "new" | "existing"; onSkip?: (skip: boolean) => void }) {
   const t = useT();
@@ -324,6 +380,8 @@ function AvatarStage({ project, mate, kind, onSkip }: { project: AvatarProject; 
             <Icon name={skipped ? "sparkles" : "x"} size={12} /> {skipped ? t("studio.avatarUnskip") : t("studio.avatarSkip")}
           </button>
         )}
+        {!live && !project.outfit && <BringAvatar mate={mate} pid={project.id} />}
+        <EmotionMap mate={mate} />
       </div>
     </div>
   );

@@ -309,6 +309,7 @@ const EVENT_LABEL: Record<string, MsgKey> = {
   mate_created: "studio.evCreated",
   avatar_skipped: "studio.evSkipped",
   avatar_back: "studio.evAvatarBack",
+  avatar_brought: "studio.evAvatarBrought",
 };
 
 function EventDivider({ text }: { text: string }) {

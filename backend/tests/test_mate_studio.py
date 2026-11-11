@@ -285,3 +285,71 @@ def test_studio_helpers():
     assert ST.patch_for("prefs.tone.humor", "high") == ({"prefs": {"tone": {"humor": "high"}}}, {})
     assert ST.missing({"name": " ", "persona": {}}) == ["name", "persona.description or persona.personality"]
     assert ST.missing({"name": "A", "persona": {"personality": "kind"}}) == []
+
+
+def _live2d_zip(tmp_path) -> str:
+    """a Live2D model in a zip as a user has one: model3.json (two expressions, two motion groups) + its .moc3"""
+    import json
+    import zipfile
+    z = tmp_path / "hiyori.zip"
+    model = {"Version": 3, "FileReferences": {
+        "Moc": "hiyori.moc3", "Textures": [],
+        "Expressions": [{"Name": "F01_smile", "File": "exp/f01.exp3.json"}, {"Name": "F05_cry", "File": "exp/f05.exp3.json"}],
+        "Motions": {"Idle": [{"File": "m/idle.motion3.json"}], "TapBody": [{"File": "m/tap.motion3.json"}]}}}
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("hiyori/hiyori.model3.json", json.dumps(model))
+        zf.writestr("hiyori/hiyori.moc3", b"MOC3")
+        for f in ("exp/f01.exp3.json", "exp/f05.exp3.json", "m/idle.motion3.json", "m/tap.motion3.json"):
+            zf.writestr(f"hiyori/{f}", "{}")
+    return str(z)
+
+
+async def test_an_avatar_the_user_brings_the_agent_sees_and_maps(db, tmp_path, monkeypatch):
+    from app.mate import files
+    svc, mates, av = _services(db, tmp_path, monkeypatch)
+    events = []
+    monkeypatch.setattr(av, "_event", lambda pid, kind, text: events.append((kind, text)))
+    view = av.studio_open(language="ko")
+    pid, mid = view["id"], view["studio"]["mate"]["id"]
+    assert (await av.call_tool(_ctx(av, pid), "map_avatar_emotions", {"expressions": {"joy": "x"}}))[1], \
+        "no model yet: nothing to map"
+    # the user brings a Live2D model in the Avatar section (the mate's own import), and the studio tells the agent
+    mates.update(mid, {"avatar": files.import_zip(mid, _live2d_zip(tmp_path))})
+    await av.studio_brought_avatar(pid)
+    kind, text = events[-1]
+    assert kind == "avatar_brought" and "live2d" in text and "F01_smile" in text and "map_avatar_emotions" in text
+    assert "<studio_update>" not in _turn(av, svc, pid), "told once, as the event"
+    import json
+    seen = json.loads((await av.call_tool(_ctx(av, pid), "get_project", {}))[0])["studio"]["avatar"]
+    assert seen["kind"] == "live2d" and seen["expressions"] == ["F01_smile", "F05_cry"]
+    assert seen["motion_groups"] == ["Idle", "TapBody"] and seen["emotions"] == {}
+    # only the model's own names and her emotions; nothing half-applied
+    for bad in ({"expressions": {"joy": "F09_wink"}}, {"expressions": {"ecstatic": "F01_smile"}},
+                {"motions": {"joy": "Dance"}}, {}):
+        text, is_error, _ = await av.call_tool(_ctx(av, pid), "map_avatar_emotions", bad)
+        assert is_error, (bad, text)
+    assert not mates.get(mid)["avatar"]["live2d"].get("emotions")
+    text, is_error, _ = await av.call_tool(_ctx(av, pid), "map_avatar_emotions",
+                                           {"expressions": {"joy": "F01_smile", "sad": "F05_cry"}, "motions": {"greet": "TapBody"}})
+    assert not is_error, text
+    l2 = mates.get(mid)["avatar"]["live2d"]
+    assert l2["emotions"] == {"joy": "F01_smile", "sad": "F05_cry"} and l2["emotion_motions"] == {"greet": "TapBody"}
+    assert "<studio_update>" not in _turn(av, svc, pid), "what the agent mapped is no news to it"
+    # "" unmaps; the user remapping in her settings is news to it
+    await av.call_tool(_ctx(av, pid), "map_avatar_emotions", {"expressions": {"sad": ""}})
+    assert mates.get(mid)["avatar"]["live2d"]["emotions"] == {"joy": "F01_smile"}
+    a = mates.get(mid)["avatar"]
+    mates.update(mid, {"avatar": {**a, "live2d": {**a["live2d"], "emotions": {"joy": "F05_cry"}}}})
+    note = _turn(av, svc, pid)
+    assert "avatar: live2d" in note and "joy→F05_cry" in note
+
+
+def test_a_livliv_package_maps_expressions_only():
+    view = {"kind": "livliv", "expressions": ["smile", "shy", "angry"], "emotions": {}}
+    avatar = {"kind": "livliv", "livliv": {"model": "/m.json", "expressions": ["smile", "shy", "angry"]}}
+    out = ST.emotion_map(view, avatar, {"joy": "smile", "worried": ""}, {})
+    assert out["livliv"]["emotions"] == {"joy": "smile", "worried": ""}, "a LivLiv \"\" is a choice: none"
+    with pytest.raises(ST.StudioError):
+        ST.emotion_map(view, avatar, {}, {"joy": "Idle"})
+    with pytest.raises(ST.StudioError):
+        ST.emotion_map({"kind": "video"}, {"kind": "video"}, {"joy": "smile"}, {})

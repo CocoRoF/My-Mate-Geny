@@ -105,6 +105,17 @@ TOOLS = [
          "concept": {"type": "object", "properties": {k: {"type": "string"} for k in (
              "pitch", "role", "interests", "backstory", "voice", "style", "look", "outfit", "palette", "mood")}}}}},
          "required": ["fields"]}},
+    {"name": "map_avatar_emotions",
+     "description": "Her avatar is a Live2D model or a LivLiv package the user brought (get_project → studio.avatar "
+                    "lists its expressions, a Live2D model's motion groups too, and what is mapped): which of them "
+                    "answer to her emotion tags. Merged over what is mapped; \"\" unmaps one. Only the model's own names "
+                    "and her emotion tags (neutral, joy, smile, laugh, shy, surprised, sad, worried, angry, thinking, "
+                    "agree, greet, sleepy). Returns the mapping and the emotions left without an expression.",
+     "inputSchema": {"type": "object", "properties": {
+         "expressions": {"type": "object", "additionalProperties": {"type": "string"},
+                         "description": "emotion tag → one of the model's expressions"},
+         "motions": {"type": "object", "additionalProperties": {"type": "string"},
+                     "description": "emotion tag → one of a Live2D model's motion groups (Live2D only)"}}}},
     {"name": "use_reference",
      "description": "Make a picture the user attached in this chat (its [att_…] id) the character reference.",
      "inputSchema": {"type": "object", "properties": {"attachment_id": {"type": "string"}},

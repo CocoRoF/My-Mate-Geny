@@ -278,6 +278,17 @@ The system prompt for a new mate (`prompt.py` STUDIO_NEW) starts with the concep
 speech level / address / tone), then the avatar part as in §3 (no "which mate"); for an existing mate the avatar part
 with a note that her profile changes only when the user asks. The brief's target is always the studio's mate.
 
+**An avatar the user brings.** Instead of a generated avatar she can have one from a file: the Avatar section's
+**Bring a file (zip · livliv)** — a Live2D model, a LivLiv package or a video / photo pack, the same import as Mate
+settings → Avatar (`POST /api/mates/{id}/avatar/import`) — goes on her at once and counts as the Look and Avatar steps.
+The agent hears of it (`POST …/studio/{pid}/brought-avatar` → an `avatar_brought` event, a divider in the chat) and
+sees what the model has: `get_project` → `studio.avatar` = `{kind, expressions, motion_groups (Live2D), emotions,
+emotion_motions}` (read from the model's `model3.json` / the package's `expressions`); an avatar changed elsewhere
+reaches it as an `avatar:` line of `<studio_update>`. With `map_avatar_emotions {expressions {emotion: expression},
+motions {emotion: motion group}}` it maps those to her emotion tags (`app/avatar/studio.py` `emotion_map`: only the
+model's own names and her tags, merged, `""` unmaps; never the model itself) and says what it mapped; the section shows
+the mapping, Mate settings → Avatar changes it.
+
 **Credits.** Unchanged (§4): nothing that spends runs before the user's Confirm; `update_mate_draft`, Create mate and
 the concept never touch the plan or the gate.
 

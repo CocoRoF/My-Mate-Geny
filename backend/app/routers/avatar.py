@@ -197,6 +197,8 @@ async def studio_action(pid: str, action: str, request: Request) -> dict:
             return await svc.studio_template(pid, str(b.get("mate_id") or ""))
         if action == "voice-ok":
             return await svc.studio_voice_ok(pid)
+        if action == "brought-avatar":
+            return await svc.studio_brought_avatar(pid)
     except Exception as exc:  # noqa: BLE001
         raise _http(exc) from None
     raise HTTPException(status_code=404, detail="unknown action")
