@@ -1,18 +1,10 @@
 const screen = {
   "simpleReachOut": "Speak first",
   "fixedReachOutHint": "Your mate speaks first on this device when appropriate. The app considers startup, connection, work, screen changes and conversation context.",
-  "reachOutSwitch": "Let {name} speak first",
-  "oneSharingHint": "Enable sharing to let your mate see the selected screen on this device. It stays enabled until you stop it; connection or permission problems pause access.",
-  "waitConnection": "Enabled · waiting for connection. Your setting is retained.",
-  "waitAuth": "Enabled · sign in to resume. Your setting is retained.",
-  "waitTarget": "Enabled · waiting for the selected source. Another screen will not be substituted.",
-  "waitPermission": "Enabled · screen-recording permission or system source selection is required.",
   "waitSession": "Enabled · waiting for the sharing conversation.",
-  "reconnect": "Select source · reconnect",
   "targetUnavailable": "Select the previous source again",
 
   "sourceChangeStopped": "Capture source changed. Old requests were cancelled; reconnecting to the new source with sharing still enabled.",
-  "restorePending": "Waiting to restore saved sharing. Stop also disables it for future launches.",
 
   "restoreMissing": "Sharing is waiting for the selected source. Your enabled setting is retained.",
   "restorePermission": "Sharing is waiting for screen-recording permission or source selection. Your setting is retained.",
@@ -20,11 +12,6 @@ const screen = {
 
   "setup": "Set up screen sharing",
   "whenRequested": "Look when requested",
-
-  "proactiveTitle": "Reach out",
-
-
-  "deviceVolume": "Output volume for this device. Applies immediately to all mates and windows, without changing other devices.",
   "deviceSettings": "Screen sharing on this device",
   "deviceSettingsHint": "All windows use these device settings. Changing the target cancels old requests and reconnects sharing to the selected source.",
   "source": "Capture source",
@@ -47,11 +34,9 @@ const screen = {
   "allowRequest": "Allow {name} to capture your selected screen now?",
   "requestFailed": "Screen capture or upload failed. Check your connection and screen permission.",
   "thisConversation": "this conversation",
-  "sharing": "Sharing: {source}",
   "localHint": "Capture this device’s screen, regardless of which server hosts your workspace.",
   "once": "Capture once",
   "start": "Enable sharing",
-  "stop": "Stop sharing",
   "mode": "When to capture",
   "ask": "When requested · ask each time",
   "onTurn": "With each message I send",
@@ -60,6 +45,8 @@ const screen = {
   "seconds": "{count} seconds",
   "retention": "Sharing stays on for this device until you stop it, including after restart. Browsers require selecting a screen again. Sent images stay as conversation attachments; image bytes are not copied into application logs.",
   "costHint": "Observation can start a model reply and use tokens. Busy sessions are skipped; identical frames are skipped.",
-  "capturing": "Capturing screen…"
+  "capturing": "Capturing screen…",
+  "shareSettings": "This share",
+  "moreInSettings": "Asking first, picture size and format: Settings → Screen sharing"
 };
 export default screen;

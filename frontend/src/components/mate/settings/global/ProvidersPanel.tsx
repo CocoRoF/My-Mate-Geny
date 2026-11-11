@@ -124,6 +124,8 @@ function ProviderCard({ spec, settings, status, onSettings }: { spec: CardSpec; 
   const t = useT();
   const savedUrl = spec.url ? settings[spec.url.name] || "" : "";
   const keySet = spec.key ? settings[`${spec.key.name}_set` as const] : false;
+  // (no key of its own: the language-model providers' key of that vendor is used — app/main.py shared_key)
+  const keyShared = spec.key && (spec.key.name === "openai_key" || spec.key.name === "google_key") ? !!settings[`${spec.key.name}_shared` as const] : false;
   const [url, setUrl] = useState(savedUrl);
   const [key, setKey] = useState("");
   const [show, setShow] = useState(false);
@@ -223,7 +225,10 @@ function ProviderCard({ spec, settings, status, onSettings }: { spec: CardSpec; 
         </Field>
       )}
       {spec.key && (
-        <Field label={spec.key.optional ? t("mateSettings.provOptional", { label: t(spec.key.label) }) : t(spec.key.label)}>
+        <Field
+          label={spec.key.optional ? t("mateSettings.provOptional", { label: t(spec.key.label) }) : t(spec.key.label)}
+          hint={keyShared ? <span data-testid={`mate-provider-${spec.engine}-shared`}>{t("mateSettings.provKeyShared")}</span> : undefined}
+        >
           <div className="relative">
             <input
               className="field pr-9 font-mono text-[12.5px]"
@@ -233,7 +238,7 @@ function ProviderCard({ spec, settings, status, onSettings }: { spec: CardSpec; 
               value={key}
               onChange={(e) => setKey(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && dirty && save()}
-              placeholder={keySet ? t("mateSettings.provKeySaved") : spec.key.placeholderKey ? t(spec.key.placeholderKey) : spec.key.placeholder || t("mateSettings.provNotSet")}
+              placeholder={keySet ? t("mateSettings.provKeySaved") : keyShared ? t("mateSettings.provKeySharedPh") : spec.key.placeholderKey ? t(spec.key.placeholderKey) : spec.key.placeholder || t("mateSettings.provNotSet")}
               data-testid={`mate-provider-${spec.engine}-key`}
             />
             {key && (

@@ -1,6 +1,7 @@
 /**
- * Desktop app (Global settings, this computer only): the avatar window, click-through, the quick-chat shortcut,
- * start at login and which mate the desktop shows. Only inside the desktop app (`window.hrhNative.mate`).
+ * Settings → 데스크톱 앱 (this computer only, docs/settings.md): whether she is on the desktop and which mate, the mate
+ * chat window on top, putting her back in place, the quick-chat shortcut, start at login. Click-through and moving
+ * her are the moment's: the tray and her bar. Only inside the desktop app (`window.hrhNative.mate`).
  */
 import { useEffect, useState } from "react";
 import { desktopMate, useDesktopMate } from "../../../../mate/desktop";
@@ -85,7 +86,6 @@ export default function DesktopPanel() {
     <>
       <Section title={t("mateSettings.deskOnDesktop")} hint={t("mateSettings.deskOnDesktopHint")}>
         <Toggle on={state.visible} onChange={(on) => act(on ? m.showAvatar(desktopMateId || undefined) : m.hideAvatar())} label={t("mateSettings.deskShowAvatar")} testId="mate-desktop-visible" />
-        <Toggle on={state.clickThrough} onChange={(on) => act(m.setClickThrough(on))} label={t("mateSettings.deskClickThrough")} hint={t("mateSettings.deskClickThroughHint")} />
         <Field label={t("mateSettings.deskMate")} hint={t("mateSettings.deskMateHint")}>
           <select className="field" value={desktopMateId || ""} onChange={(e) => act(m.setMate(e.target.value))} data-testid="mate-desktop-mate">
             {mates.map((x) => (
@@ -96,14 +96,15 @@ export default function DesktopPanel() {
             ))}
           </select>
         </Field>
-        <div className="flex flex-wrap gap-2">
-          <button className="btn-ghost border border-border" onClick={() => act(m.setMoveMode(true))}>
-            <Icon name="move" size={14} /> {t("mateSettings.deskMove")}
-          </button>
-          <button className="btn-ghost border border-border" onClick={() => act(m.openChat())}>
-            <Icon name="chat" size={14} /> {t("mateSettings.deskOpenChat")}
-          </button>
-        </div>
+        <Toggle on={!!state.chatOnTop} onChange={(on) => act(m.setChatOnTop(on))} label={t("mateSettings.deskChatOnTop")} hint={t("mateSettings.deskChatOnTopHint")} testId="mate-desktop-chat-on-top" />
+        {m.resetPlacement && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <button className="btn-ghost border border-border" onClick={() => act(m.resetPlacement!())} data-testid="mate-desktop-reset">
+              <Icon name="rotate" size={14} /> {t("mateSettings.deskReset")}
+            </button>
+            <span className="min-w-0 flex-1 basis-48 text-[12px] text-content-faint">{t("mateSettings.deskResetHint")}</span>
+          </div>
+        )}
       </Section>
       <Section title={t("mateSettings.deskQuick")} hint={t("mateSettings.deskQuickHint")}>
         <Field label={t("mateSettings.deskShortcut")} hint={recording ? t("mateSettings.deskRecording") : t("mateSettings.deskClickField")} as="div">

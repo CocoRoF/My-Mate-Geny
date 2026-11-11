@@ -1,4 +1,3 @@
-import { openSettings } from "./uiStore";
 import { migrateDevicePreferences, installDevicePreferences } from "./devicePreferences";
 import { create } from "zustand";
 import {
@@ -17,13 +16,9 @@ import {
   type ProviderStatus,
 } from "../api/mates";
 
-/** Sections of the Global (app-wide) Mate settings. */
-export type GlobalSection = "voice" | "live2d" | "desktop" | "defaults";
-
 /** The mates (default first) and which one the Mate view shows. Per-device
  * prefs (the chosen mate, mute) live in localStorage. Also: the voice
- * providers set up in Global settings (shared by every mate) and whether the
- * Global settings panel is open. */
+ * providers set up in Settings → Image & voice services (shared by every mate). */
 interface MateState {
   /** voice providers (GET /api/mates/providers); null until loaded */
   providers: Providers | null;
@@ -34,11 +29,6 @@ interface MateState {
   setProviders: (p: Providers) => void;
   /** re-check one provider now */
   verifyProvider: (engine: string) => Promise<ProviderStatus>;
-  /** Global settings: open (on a section) / closed. The Mate view and Mate settings both open it. */
-  globalOpen: boolean;
-  globalSection: GlobalSection;
-  openGlobal: (section?: GlobalSection) => void;
-  closeGlobal: () => void;
   mates: Mate[];
   /** mates being made in the Mate Create studio (never in `mates`: hidden from the picker until Create mate), the
    *  latest copy a settings tab saved */
@@ -128,8 +118,8 @@ export const browserTimezone = (): string => {
 };
 
 // The mates' clock (the "Now" line, plan dates, relationship days) runs in the user's timezone: when none is set
-// yet, the first console (any screen — App.tsx) or Mate window to start sets this browser's (Global settings →
-// Defaults changes it). Until then the server counts in its own zone; setting it recounts the relationships.
+// yet, the first console (any screen — App.tsx) or Mate window to start sets this browser's (Settings → 언어
+// changes it). Until then the server counts in its own zone; setting it recounts the relationships.
 let tzChecked = false;
 export function fillTimezone() {
   if (tzChecked) return;
@@ -184,10 +174,6 @@ export const useMateStore = create<MateState>((set, get) => ({
     });
     return st;
   },
-  globalOpen: false,
-  globalSection: "voice",
-  openGlobal: (section) => { if (section === "voice") { set({ globalOpen: false });openSettings("media"); } else set((s) => ({ globalOpen: true, globalSection: section ?? s.globalSection })); },
-  closeGlobal: () => set({ globalOpen: false }),
 
   load: async () => {
     try {

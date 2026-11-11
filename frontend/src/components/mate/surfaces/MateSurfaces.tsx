@@ -15,6 +15,7 @@ import { useSessionSync } from "../../../hooks/useSessionSync";
 import { useConfigStore } from "../../../stores/configStore";
 import { useMateStore } from "../../../stores/mateStore";
 import { desktopMate, useDesktopMate, type DesktopCommand, type DesktopMateState } from "../../../mate/desktop";
+import { matePanelUrl } from "../../../lib/navUrl";
 import { useMateConversation } from "../../../mate/useMateConversation";
 import { parseEmotionText } from "../../../mate/emotion";
 import { plainText } from "../../../mate/markdown";
@@ -588,7 +589,11 @@ function ChatWindow() {
         {relOpen && (
           <div className="absolute inset-0 z-20 bg-surface animate-fade-in" data-testid="mate-chat-relation-panel">
             <Suspense fallback={null}>
-              <RelationPanel mate={mate} onClose={() => setRelOpen(false)} />
+              <RelationPanel
+                mate={mate}
+                onClose={() => setRelOpen(false)}
+                onSettings={() => void desktopMate()?.openConsole(`${window.location.origin}${matePanelUrl(mate.id, "settings-relation")}`)}
+              />
             </Suspense>
           </div>
         )}

@@ -6,7 +6,7 @@ const avatar: Messages<"avatar"> = {
   close: "메이트로 돌아가기",
   projects: "프로젝트",
   createWithAi: "AI로 만들기",
-  createWithAiHint: "에이전트가 묻고, Higgsfield 작업마다 가격을 받아 보여 준 뒤, 확인하면 기본 메이트처럼 영상 아바타를 만들어요: 기준 그림, 표정 그림, 반복되는 움직임 영상.",
+  createWithAiHint: "에이전트가 묻고, Higgsfield 작업마다 가격을 받아 보여 준 뒤, 확인하면 기본 제공 메이트처럼 영상 아바타를 만들어요: 기준 그림, 표정 그림, 반복되는 움직임 영상.",
   createWithAiBtn: "아바타 만들기 열기",
   deleteConfirm: "프로젝트 “{name}”와 그 그림·영상을 지울까요?",
   chatEmpty: "에이전트가 준비하고 있어요…",

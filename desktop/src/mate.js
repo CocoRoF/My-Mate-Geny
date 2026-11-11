@@ -1252,6 +1252,7 @@ function registerIpc() {
   handle("mate:screenHandled", () => {screenPicker=false;});
   handle("mate:closeChat", () => hideChat());
   handle("mate:chatOnTop", (_e, on) => setChatOnTop(!!on));
+  handle("mate:resetPlacement", () => resetPlacement());
   handle("mate:openConsole", (_e, url) => deps.openConsole(typeof url === "string" && sameOrigin(url) ? url : undefined));
   handle("mate:setMate", (_e, id) => setMate(id));
   handle("mate:setHotkey", (_e, acc) => setHotkey(acc));

@@ -20,6 +20,7 @@ import { previewMateAvatar } from "../../../mate/livePreview";
 import { useStudio } from "../../../stores/studioStore";
 import { BundledReset, ClipLibrary, StillTriggers, TriggerPreview, type TriggerPick } from "./ClipLibrary";
 import OutfitBar from "./OutfitBar";
+import { openAppSettings } from "../../../lib/openAppSettings";
 import { Banner, ErrorLine, Field, SaveBar, Section, useSaver } from "./ui";
 
 const MOODS: BodyMood[] = ["idle", "listening", "thinking", "talking", "away"];
@@ -431,7 +432,7 @@ function CoreNotice() {
       tone="warn"
       testId="mate-core-missing"
       action={
-        <button className="btn-soft !px-2.5 !py-1 text-[12px]" onClick={() => useMateStore.getState().openGlobal("live2d")} data-testid="mate-core-open-global">
+        <button className="btn-soft !px-2.5 !py-1 text-[12px]" onClick={() => openAppSettings("mate")} data-testid="mate-core-open-settings">
           <Icon name="download" size={12} /> {t("mateSettings.avInstallGlobal")}
         </button>
       }

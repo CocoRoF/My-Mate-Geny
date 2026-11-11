@@ -7,14 +7,13 @@
  *
  * After an install, the settings UI calls `markLive2DCoreInstalled()`: every Live2D body showing "runtime not
  * installed" (in this tab, and in other tabs/windows of the app via a BroadcastChannel) loads right away, no reload.
- * `openGlobalSettings()` asks the Mate view to open Global settings (where the install lives).
+ * `openLive2DSettings()` opens Settings → 메이트 (where the install lives).
  */
 import { useEffect, useState } from "react";
+import { openAppSettings } from "../lib/openAppSettings";
 
 /** window event: the Cubism Core was installed (detail: { at }) */
 export const LIVE2D_CORE_INSTALLED_EVENT = "hrh:live2d-core-installed";
-/** window event: open the Mate view's Global settings panel */
-export const OPEN_GLOBAL_SETTINGS_EVENT = "hrh:open-global-settings";
 
 const CHANNEL = "hrh-live2d-core";
 
@@ -114,7 +113,7 @@ export function useLive2DCoreInstalls(): number {
   return n;
 }
 
-/** ask the Mate view to open Global settings (e.g. from a body's "runtime not installed" state) */
-export function openGlobalSettings(section?: string): void {
-  window.dispatchEvent(new CustomEvent(OPEN_GLOBAL_SETTINGS_EVENT, { detail: { section: section ?? "live2d" } }));
+/** open Settings → 메이트, where the runtime is installed (a body's "runtime not installed" state) */
+export function openLive2DSettings(): void {
+  openAppSettings("mate");
 }

@@ -149,9 +149,6 @@ export default {
     "켠 MCP는 다음 대화부터 사용할 수 있어요. 끄면 실행 중인 연결의 추가 호출도 즉시 차단돼요.",
   useInSession: "이 세션에서 {name} 사용",
   manage: "MCP 설정 열기",
-  mediaManage: "이미지 및 음성 공급자 설정 열기",
-  mediaMoved:
-    "서비스 연결과 API 키는 설정의 이미지 및 음성 공급자에서 관리해요.",
   google: "Google Gemini",
   googleHint: "Gemini API 키로 음성 인식·음성 합성과 이미지 모델을 연결해요.",
   googleTtsHint: "Gemini의 음성 모델로 답장을 읽어요.",

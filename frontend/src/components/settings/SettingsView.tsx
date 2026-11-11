@@ -35,14 +35,15 @@ import { useTheme, type Theme, type ThemeMode } from "../../lib/theme";
 import { chooseTheme, setThemeDeviceOnly, type ThemeSaved } from "../../lib/themeSync";
 import { Toggle } from "../mate/settings/ui";
 import { useConfigStore } from "../../stores/configStore";
-import { useMateStore } from "../../stores/mateStore";
 import { useProviderStore } from "../../stores/providerStore";
 import { openSettings, useUIStore, type SettingsTab } from "../../stores/uiStore";
 import { APP_VERSION, BUILD_COMMIT, BUILD_TIME } from "../../version";
 import { requestAdminTab } from "../admin/adminTab";
 import UpdateCard, { useUpdateState } from "../downloads/UpdateCard";
-import DefaultsPanel from "../mate/settings/global/DefaultsPanel";
 import DesktopPanel from "../mate/settings/global/DesktopPanel";
+import MateTab from "./MateTab";
+import ScreenShareTab from "./ScreenShareTab";
+import { TimeZone, YourName } from "./PersonalFields";
 import Icon, { type IconName } from "../ui/Icon";
 import PageLoading from "../ui/Loading";
 import MobileTopBar from "../layout/MobileTopBar";
@@ -398,6 +399,10 @@ function AccountSection() {
       )}
       {st.source === "env" && <p className="text-[12px] text-content-faint">{t("settings.envOverride")}</p>}
 
+      <YourName />
+
+      <div className="border-t border-border/60" />
+
       <form onSubmit={saveName} className="space-y-3" data-testid="settings-username-form">
         <h3 className="text-[13px] font-semibold text-content">{t("settings.changeUsername")}</h3>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -522,6 +527,8 @@ function LanguageSection() {
       {state === "saved" && <Status tone="ok" testId="settings-lang-msg">{t("settings.langSaved")}</Status>}
       {state === "local" && <Status tone="error" testId="settings-lang-msg">{t("settings.langLocal")}</Status>}
       <p className="text-[12px] text-content-faint">{t("settings.mateLangNote")}</p>
+      <div className="border-t border-border/60" />
+      <TimeZone />
     </Card>
   );
 }
@@ -676,34 +683,7 @@ function NotificationsSection() {
   );
 }
 
-// ---- Mate & voice, Desktop app (the existing Global-settings panels) -------------------------------------------
-
-function MateSection() {
-  const t = useT();
-  useEffect(() => {
-    const st = useMateStore.getState();
-    if (!st.loaded) void st.load().catch(() => {});
-  }, []);
-  const openGlobal = () => {
-    useMateStore.getState().openGlobal("voice");
-    useUIStore.getState().setView("mate");
-  };
-  return (
-    <Card id="mate">
-      <div className="space-y-3">
-        <DefaultsPanel />
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <button className="btn-ghost border border-border !py-1.5 text-[12.5px]" onClick={openGlobal} data-testid="settings-open-mate-global">
-          <Icon name="sliders" size={13} /> {t("settings.openMateGlobal")}
-        </button>
-        <button className="btn-ghost !py-1.5 text-[12.5px]" onClick={() => useUIStore.getState().setView("mate")}>
-          <Icon name="sparkles" size={13} /> {t("settings.openMate")}
-        </button>
-      </div>
-    </Card>
-  );
-}
+// ---- Mate, Screen sharing, Desktop app -------------------------------------------------------------------------
 
 function DesktopSection() {
   return (
@@ -748,7 +728,9 @@ function TabContent({ id }: { id: SettingsTab }) {
     case "notifications":
       return <NotificationsSection />;
     case "mate":
-      return <MateSection />;
+      return <MateTab />;
+    case "screen":
+      return <ScreenShareTab />;
     case "desktop":
       return <DesktopSection />;
     case "mcp":

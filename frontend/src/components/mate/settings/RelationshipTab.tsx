@@ -1,18 +1,16 @@
 /**
- * Relationship (this mate, docs/mate-memory-affinity.md §5–6): how close you two are (stage + warmth now), what
- * the next stage needs, her mood; on/off, pause, sensitivity, the indicator, the avatar's idle look following her
- * mood, setting the value by hand, a fresh start or a recompute from your real history; why it changed (collapsed).
- * Every change is saved at once and reaches every window by the server's push.
+ * The relationship's settings (this mate, docs/mate-memory-affinity.md §5–6; Mate settings → 관계와 기억): on/off,
+ * pause, sensitivity, the avatar's idle look following her mood, setting the value by hand, a fresh start or a
+ * recompute from your real history. How close you are and why it changed: the ♥ panel. Every change is saved at once
+ * and reaches every window by the server's push.
  */
 import { useEffect, useRef, useState } from "react";
-import { getRelation, patchRelation, RELATION_STAGES, resetRelation, type Mate, type RelationPatch, type RelationView } from "../../../api/mates";
+import { getRelation, patchRelation, resetRelation, type Mate, type RelationPatch, type RelationView } from "../../../api/mates";
 import { useMateStore } from "../../../stores/mateStore";
-import { relTime } from "../../../i18n/format";
 import { useT, type TFunction } from "../../../i18n";
-import { RelationRing, STAGE_LABEL } from "../RelationRing";
-import { stateLine } from "../StateCard";
+import { STAGE_LABEL } from "../RelationRing";
 import { whyText } from "../../../mate/reasons";
-import { ErrorLine, Field, ProgressBar, Section, Segmented, Toggle } from "./ui";
+import { ErrorLine, Field, Section, Segmented, Toggle } from "./ui";
 
 const SENS: { id: string; v: number; label: "mateSettings.relSensGentle" | "mateSettings.styleNormal" | "mateSettings.relSensStrong" }[] = [
   { id: "0.5", v: 0.5, label: "mateSettings.relSensGentle" },
@@ -69,41 +67,12 @@ export default function RelationshipTab({ mate }: { mate: Mate }) {
       </Section>
     );
   }
-  const stage = t(STAGE_LABEL[v.stage]);
   const off = !v.enabled;
-  const distant = RELATION_STAGES.indexOf(v.warmth_stage) < RELATION_STAGES.indexOf(v.earned_stage);
   const value = manual ?? Math.round(v.affinity);
 
   return (
-    <>
-      <Section title={t("mateSettings.relTitle")} hint={t("mateSettings.relHint", { name: mate.name })} testId="mate-relation">
+    <Section title={t("mateSettings.relTitle")} hint={`${t("mateSettings.relHint", { name: mate.name })} ${t("mateSettings.relControlsHint", { days: v.stats.grace_days })}`} testId="mate-relation">
         <Toggle on={v.enabled} onChange={(on) => void patch({ enabled: on })} label={t("mateSettings.relEnabled")} hint={t("mateSettings.relEnabledHint")} testId="mate-relation-enabled" />
-        <div className={`flex items-center gap-3 rounded-xl border border-border bg-surface-2/40 p-3 ${off ? "opacity-50" : ""}`} data-testid="mate-relation-status">
-          <span className="text-content">
-            <RelationRing value={v.affinity} stage={v.stage} size={44} />
-          </span>
-          <div className="min-w-0 flex-1 space-y-0.5">
-            <p className="text-[14px] font-semibold text-content">
-              {stage} <span className="text-[12px] font-normal text-content-faint">· {Math.round(v.affinity)} / 100</span>
-            </p>
-            <p className="text-[11.5px] text-content-dim">
-              {t("mateSettings.relStats", { days: v.stats.days_together, talks: v.stats.turns, memories: v.stats.memories })}
-              {v.stats.streak_days >= 2 ? ` · ${t("mateSettings.relStreak", { count: v.stats.streak_days })}` : ""}
-            </p>
-            <p className="text-[11.5px] text-content-faint" data-testid="mate-relation-mood">
-              {v.paused ? t("mate.relPaused") : stateLine(t, mate)}
-            </p>
-          </div>
-        </div>
-        {distant && !off && <p className="text-[11.5px] text-content-faint">{t("mateSettings.relDistant", { name: mate.name })}</p>}
-        {v.next && !off && (
-          <Field label={t("mateSettings.relNext", { stage: t(STAGE_LABEL[v.next.stage]) })} as="div">
-            <ProgressBar value={v.next.ratio} testId="mate-relation-next" />
-            <p className="text-[11.5px] text-content-faint">{t("mateSettings.relNeedWarmth")}</p>
-          </Field>
-        )}
-      </Section>
-      <Section title={t("mateSettings.relControls")} hint={t("mateSettings.relControlsHint", { days: v.stats.grace_days })}>
         <Toggle on={v.paused} onChange={(on) => void patch({ paused: on })} disabled={off} label={t("mateSettings.relPause")} hint={t("mateSettings.relPauseHint")} testId="mate-relation-pause" />
         <Field label={t("mateSettings.relSensitivity")} hint={t("mateSettings.relSensitivityHint")} as="div">
           <Segmented
@@ -150,39 +119,6 @@ export default function RelationshipTab({ mate }: { mate: Mate }) {
           </button>
         </div>
         <ErrorLine text={err} />
-      </Section>
-      <Section title={t("mateSettings.relHistory")}>
-        <details className="group" data-testid="mate-relation-log">
-          <summary className="cursor-pointer select-none text-[12.5px] text-content-dim hover:text-content">{t("mateSettings.relWhy", { count: v.log.length })}</summary>
-          {v.log.length === 0 ? (
-            <p className="mt-2 text-[12px] text-content-faint">{t("mateSettings.memEmpty")}</p>
-          ) : (
-            <ul className="mt-2 max-h-64 divide-y divide-border/60 overflow-y-auto rounded-lg border border-border text-[12px]">
-              {v.log.map((e, i) => (
-                <li key={`${e.at}-${i}`} className="flex items-center gap-2 px-2.5 py-1.5">
-                  <span className={`w-12 shrink-0 text-right tabular-nums ${e.d > 0 ? "text-success" : e.d < 0 ? "text-danger" : "text-content-faint"}`}>
-                    {e.d > 0 ? "+" : ""}
-                    {e.d === 0 ? "·" : e.d.toFixed(1)}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-content-dim">{whyText(t, e.why)}</span>
-                  <span className="shrink-0 tabular-nums text-content-faint">{Math.round(e.v)}</span>
-                  <span className="w-20 shrink-0 text-right text-content-faint">{relTime(e.at)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </details>
-        {v.milestones.length > 0 && (
-          <ul className="space-y-1 text-[12px] text-content-dim" data-testid="mate-relation-milestones">
-            {v.milestones.slice(0, 8).map((m) => (
-              <li key={m.key} className="flex gap-2">
-                <span className="flex-1">{milestoneText(t, m.key)}</span>
-                <span className="text-content-faint">{relTime(m.at)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-    </>
+    </Section>
   );
 }

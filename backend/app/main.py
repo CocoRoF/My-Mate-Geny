@@ -125,6 +125,16 @@ async def lifespan(app: FastAPI):
     app.state.folder_uploads = FolderUploadService(session_service, workspace_service)
     app.state.session_git = SessionGit(session_service, workspace_service, app.state.git_service)
     mate_store = MateStore(db, vault)
+
+    def shared_key(name: str) -> str:
+        """an enabled API key of that vendor from the language-model providers (OpenAI / Google)"""
+        vendor = {"openai_key": "openai", "google_key": "google"}.get(name)
+        for acc in account_store.list(vendor) if vendor else []:
+            if acc.get("enabled") and acc.get("auth_mode") == "api_key" and (key := account_store.api_key(acc)):
+                return key
+        return ""
+
+    mate_store.shared_key = shared_key
     app.state.mate_service = MateService(session_service, mate_store, logs=logs)
     from app.mate.consolidation import Consolidator
     app.state.memory_worker = Consolidator(app.state.mate_service)

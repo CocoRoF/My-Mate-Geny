@@ -152,9 +152,6 @@ export default {
     "Enabled MCPs are available from the next turn. Disabling immediately blocks further calls, including a running connection.",
   useInSession: "Use {name} in this session",
   manage: "Open MCP settings",
-  mediaManage: "Open image and voice provider settings",
-  mediaMoved:
-    "Manage service connections and API keys in Settings → Image and voice providers.",
   google: "Google Gemini",
   googleHint:
     "Connect speech recognition, speech generation and image models with a Gemini API key.",

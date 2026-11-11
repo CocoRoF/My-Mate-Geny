@@ -105,10 +105,16 @@ async function main() {
     const a = await openMate(en);
     const b = await openMate(en); // a second window of the same browser (and the server's push for other devices)
 
-    step("Conversation style → How she calls you: your name, an address chip, the Korean forms preview; saved and kept");
+    step("Settings → Account: your name for every mate; Conversation style shows it, an address chip, the Korean forms preview");
     await a.bringToFront();
+    await a.goto(`${SERVER}/?view=settings&tab=account`);
+    await a.fill('[data-testid="settings-your-name-input"]', "현석");
+    await a.click('[data-testid="settings-your-name-save"]');
+    await until("your name saved", async () => (await (await a.request.get(`${SERVER}/api/mates/settings`)).json()).user_name === "현석");
+    await a.goto(`${SERVER}/?view=mate`);
+    await a.waitForSelector('[data-testid="mate-settings-open"]');
     await settingsTab(a, "style");
-    await a.fill('[data-testid="mate-user-name"]', "현석");
+    assert.equal((await a.textContent('[data-testid="mate-user-name"]')).trim(), "현석");
     await a.locator('[data-testid="mate-address-chips"] button', { hasText: /^현석$/ }).click();
     const forms = await a.textContent('[data-testid="mate-address-forms"]');
     assert.match(forms, /현석이|현석은/, forms);
@@ -217,11 +223,9 @@ async function main() {
     const t2 = turns().at(-1).text;
     console.log(`  next context: ${JSON.stringify(t2.split("</context>")[0])}`);
 
-    step("Relationship: the tab, set by hand → the server has it and the second window's mate follows");
-    await settingsTab(a, "relation");
-    await a.waitForSelector('[data-testid="mate-relation-status"]');
-    const status = await a.textContent('[data-testid="mate-relation-status"]');
-    assert.match(status, /day 1 together/, status);
+    step("Relationship: Mate settings → Relationship & memory, set by hand → the server has it and the second window's mate follows");
+    await settingsTab(a, "bond");
+    await a.waitForSelector('[data-testid="mate-relation-set"]');
     await a.$eval('[data-testid="mate-relation-slider"]', (el, v) => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, v);
       el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -235,8 +239,6 @@ async function main() {
     await b.bringToFront();
     await until("second window follows", async () => (await affinityIn(b)) === 62, 15000);
     await a.bringToFront();
-    await a.locator('[data-testid="mate-relation-log"] summary').click();
-    assert.match(await a.textContent('[data-testid="mate-relation-log"]'), /Set by hand/);
     await shot(a, "en-desktop-relationship");
     await a.click('[data-testid="mate-settings-close"]');
     await shot(a, "en-desktop-header");
@@ -249,10 +251,9 @@ async function main() {
       const p = await openMate(ctx);
       await sleep(800);
       await shot(p, `${tag}-header`);
-      for (const tab of ["profile", "style", "memory", "relation"]) {
+      for (const tab of ["profile", "style", "bond"]) {
         await settingsTab(p, tab);
         await sleep(500);
-        if (tab === "relation") await p.locator('[data-testid="mate-relation-log"] summary').click();
         await shot(p, `${tag}-${tab}`);
       }
       if (lang === "ko") {

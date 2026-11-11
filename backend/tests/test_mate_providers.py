@@ -51,7 +51,13 @@ def client():
         # a clean slate: no keys/URLs (other tests share the DB)
         c.put("/api/mates/settings", json={"google_key": None, "openai_key": None, "elevenlabs_key": None, "http_tts_key": None,
                                            "omnivoice_url": "", "whisper_url": "", "http_tts_url": ""})
-        yield c
+        # (nor a language-model provider's key standing in: other tests add accounts — test_mate_shared_settings.py)
+        store = app.state.mate_service.store
+        shared, store.shared_key = store.shared_key, None
+        try:
+            yield c
+        finally:
+            store.shared_key = shared
 
 
 @pytest.fixture

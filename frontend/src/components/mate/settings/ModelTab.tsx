@@ -6,12 +6,10 @@
 import { useEffect, useState } from "react";
 import { DEFAULT_MATE_MODELS, MATE_EFFORTS, type Mate, type MateEngine } from "../../../api/mates";
 import { API_PROVIDERS, isApiProvider } from "../../../api/apiProviders";
-import { currentSurface, desktopMate } from "../../../mate/desktop";
 import { useConfigStore } from "../../../stores/configStore";
 import { useMateStore } from "../../../stores/mateStore";
 import { useProviderStore } from "../../../stores/providerStore";
-import { openSettings } from "../../../stores/uiStore";
-import { settingsUrl } from "../../../lib/navUrl";
+import { openAppSettings } from "../../../lib/openAppSettings";
 import type { CatalogModel } from "../../../types";
 import Icon from "../../ui/Icon";
 import { tr, useT, type MsgKey } from "../../../i18n";
@@ -60,19 +58,7 @@ function blurb(id: string, label: string): string {
   return "";
 }
 
-/** Settings → Providers: in this window, or (desktop Mate windows / extra surfaces) in the console */
-function openProviders() {
-  const url = settingsUrl("providers");
-  if (currentSurface() === "console" || !desktopMate()) {
-    if (new URLSearchParams(window.location.search).get("surface")) {
-      window.open(url, "_blank");
-      return;
-    }
-    openSettings("providers");
-    return;
-  }
-  void desktopMate()!.openConsole(`${window.location.origin}${url}`);
-}
+const openProviders = () => openAppSettings("providers");
 
 export default function ModelTab({ mate }: { mate: Mate }) {
   const t = useT();

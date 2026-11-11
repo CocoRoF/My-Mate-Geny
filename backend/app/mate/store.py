@@ -739,6 +739,9 @@ class MateStore:
         self._lock = db._lock
         self.knowledge = Knowledge(db)
         self.last_changed: set[str] = set()  # the settings the last update_settings() changed
+        # the same vendor's key from the language-model providers (Settings → Language model providers), for a
+        # voice service whose own key is not set: one OpenAI / Google key is entered once (app/main.py)
+        self.shared_key: Any = None
         # told (reason, mate_id) after every write a client can see: MateService
         # wires it to the /ws/sessions feed so every window refetches its mates
         self.on_change: Callable[[str, str | None], None] | None = None
@@ -776,7 +779,8 @@ class MateStore:
             "outfits": outfits_view(raw_outfits, avatar, relation["affinity"]),
             "llm": normalize_llm(None, _loads(row["llm"], {})),
             "voice": normalize_voice(None, _loads(row["voice"], {})),
-            "prefs": normalize_prefs(None, prefs),
+            # (the user's name is one for all mates: Settings → Account; docs/settings.md)
+            "prefs": {**normalize_prefs(None, prefs), "user_name": self.user_name()},
             "screen": normalize_screen(None, _loads(row["screen"], {}) if "screen" in row.keys() else {}),
             "session_id": row["session_id"],
             "memory_rev": row["memory_rev"],
@@ -840,6 +844,8 @@ class MateStore:
             prefs = {**moved, **(prefs if isinstance(prefs, dict) else {})}
         doc = (normalize_persona(persona), normalize_avatar(avatar), normalize_llm(llm), normalize_voice(voice),
                normalize_prefs(prefs))
+        if doc[4].get("user_name"):  # (the user's name, one for all mates)
+            self.set_user_name(doc[4]["user_name"])
         mid = new_id("mate_")
         now = now_iso()
         with self._lock:
@@ -897,6 +903,12 @@ class MateStore:
                 sets.append("name = ?")
                 params.append(name)
                 changed.add("name")
+        if isinstance(patch.get("prefs"), dict) and "user_name" in patch["prefs"]:
+            # the user's name is one for all mates (Settings → Account): whoever writes it here — the style tab of an
+            # older page, her own style change and its undo, the studio — writes that one
+            if self.set_user_name(patch["prefs"]["user_name"]):
+                changed.add("prefs")
+            patch = {**patch, "prefs": {k: v for k, v in patch["prefs"].items() if k != "user_name"}}
         for key, fn in (("persona", normalize_persona), ("llm", normalize_llm), ("voice", normalize_voice),
                         ("prefs", normalize_prefs), ("screen", normalize_screen)):
             if key in patch and patch[key] is not None:
@@ -1737,7 +1749,17 @@ class MateStore:
         return local.tzinfo, f"local:{local.tzname()}{local.strftime('%z')}"
 
     def secret(self, name: str) -> str:
-        """A voice-service key (server side only); "" when not set."""
+        """A voice-service key (server side only): its own, else the same vendor's language-model key; "" when
+        neither is set."""
+        own = self._own_secret(name)
+        if own or self.shared_key is None:
+            return own
+        try:
+            return self.shared_key(name) or ""
+        except Exception:  # noqa: BLE001 - the pool unavailable: as unset
+            return ""
+
+    def _own_secret(self, name: str) -> str:
         if self._vault is None:
             return ""
         ref = SecretVault.make_id(_VAULT_SCOPE, name)
@@ -1748,12 +1770,41 @@ class MateStore:
         except Exception:  # noqa: BLE001 - key mismatch: treat as unset
             return ""
 
+    def user_name(self) -> str:
+        """The user's name, one for all mates (Settings → Account). Until it is set once, what the mates had each:
+        the default mate's, else the one most of them had (read once from before the name was one)."""
+        row = self._db.query_one("SELECT value FROM mate_settings WHERE key = 'user_name'")
+        if row is not None:
+            return row["value"] or ""
+        names: dict[str, int] = {}
+        first = ""
+        for r in self._db.query("SELECT prefs, is_default FROM mates ORDER BY is_default DESC, updated_at DESC"):
+            n = _one_line(str((_loads(r["prefs"], {}) or {}).get("user_name") or ""), 80).strip()
+            if n:
+                names[n] = names.get(n, 0) + 1
+                if r["is_default"] and not first:
+                    first = n
+        name = first or (max(names, key=names.get) if names else "")
+        self._put_setting("user_name", name)
+        return name
+
+    def set_user_name(self, value: Any) -> bool:
+        """→ whether it changed."""
+        name = _one_line(str(value or ""), 80).strip()
+        if name == self.user_name():
+            return False
+        self._put_setting("user_name", name)
+        return True
+
     def settings(self) -> dict[str, Any]:
         out: dict[str, Any] = {k: self._setting(k) for k in SETTING_URLS}
         out["timezone"] = self._setting("timezone")
+        out["user_name"] = self.user_name()
         for k in SETTING_KEYS:
-            out[f"{k}_set"] = bool(self._vault is not None
-                                   and self._vault.exists(SecretVault.make_id(_VAULT_SCOPE, k)))
+            own = bool(self._vault is not None and self._vault.exists(SecretVault.make_id(_VAULT_SCOPE, k)))
+            out[f"{k}_set"] = own
+            # (not its own: the language-model providers' key of that vendor stands in — said, not hidden)
+            out[f"{k}_shared"] = not own and bool(self.secret(k))
         return out
 
     def update_settings(self, patch: dict[str, Any]) -> dict[str, Any]:
@@ -1776,6 +1827,8 @@ class MateStore:
                 except (ZoneInfoNotFoundError, ValueError) as exc:
                     raise MateError(f"unknown timezone: {tzname}") from exc
         changed: set[str] = set()
+        if patch.get("user_name") is not None and self.set_user_name(patch["user_name"]):
+            changed.add("user_name")
         if tzname is not None and tzname != self._setting("timezone"):
             self._put_setting("timezone", tzname)
             changed.add("timezone")

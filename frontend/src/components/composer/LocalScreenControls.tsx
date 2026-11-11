@@ -119,7 +119,7 @@ export function useLocalScreenControls(
             <div className="space-y-3 overflow-y-auto p-4 text-xs">
               <p className="text-content-faint">{t("screen.localHint")}</p>
               {captureBridge() && !captureBridge()?.resume && <p className="text-warning">{t("screen.updateApp")}</p>}
-              <DeviceCaptureSettings mate={mate}/>
+              <DeviceCaptureSettings mate={mate} part="share"/>
               <p className="text-content-faint">{t("screen.retention")}</p>
               {mode === "observe" && (
                 <p className="text-warning">{t("screen.costHint")}</p>

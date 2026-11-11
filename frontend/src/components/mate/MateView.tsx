@@ -1,7 +1,7 @@
 /**
  * The Mate view (sidebar → Mate): switcher, avatar stage, conversation, composer, settings.
  * Desktop: like Geny's VTuber tab — the avatar gets half the width (big, bottom-anchored, scaled to the height), the
- * conversation the other half; Mate settings / Global settings open over the conversation half.
+ * conversation the other half; Mate settings and the ♥ panel open over the conversation half.
  * Phone: a compact (collapsible) stage on top, the conversation below, settings full screen. While the on-screen
  * keyboard is up the stage steps aside (the header keeps her picture, name and mood) so the conversation gets the
  * room; it comes back when the keyboard goes.
@@ -15,7 +15,6 @@ import { useKeyboardOpen } from "../../lib/keyboard";
 import { useBackHandler } from "../../lib/back";
 import { useMateStore } from "../../stores/mateStore";
 import { useMateConversation } from "../../mate/useMateConversation";
-import { OPEN_GLOBAL_SETTINGS_EVENT } from "../../mate/live2dCore";
 import { MenuButton } from "../layout/MobileTopBar";
 import Icon, { type IconName } from "../ui/Icon";
 import { DropOverlay, useFileDrop } from "../composer/useFileDrop";
@@ -28,7 +27,6 @@ import { useT } from "../../i18n";
 import { useStudio } from "../../stores/studioStore";
 
 const MateSettings = lazy(() => import("./settings/MateSettings"));
-const GlobalSettings = lazy(() => import("./settings/GlobalSettings"));
 const RelationPanel = lazy(() => import("./RelationPanel"));
 const StatusWindow = lazy(() => import("./stage/StatusWindow"));
 const PlacesWindow = lazy(() => import("./stage/PlacesWindow"));
@@ -36,8 +34,6 @@ const OutfitsWindow = lazy(() => import("./stage/OutfitsWindow"));
 const MateStudio = lazy(() => import("./studio/MateStudio"));
 
 type SettingsTab = "relation" | "memory" | undefined;
-
-type GlobalSection = Parameters<ReturnType<typeof useMateStore.getState>["openGlobal"]>[0];
 
 const COLLAPSE_KEY = "hrh_mate_stage_collapsed";
 /** the stage's and the conversation's least widths, side by side */
@@ -64,28 +60,17 @@ export default function MateView() {
   const touch = useTouchFirst();
   const short = useShortScreen();
   const keyboard = useKeyboardOpen();
-  // one panel slot: Mate settings or the Relationship panel (local), or Global settings (the store's: Mate settings
-  // and anything else open it with openGlobal(section); inside Mate settings it swaps itself for Global settings)
+  // one panel slot: Mate settings or the ♥ panel (app-wide settings are Settings' own: openAppSettings)
   const [panel, setPanel] = useState<"mate" | "relation" | null>(null);
   // her menu on the stage: one window at a time, over her (a sheet on a phone)
   const [stageWindow, setStageWindow] = useState<StageWindowKind | null>(null);
-  const [mateTab, setMateTab] = useState<"profile" | "avatar" | undefined>(undefined);
+  const [mateTab, setMateTab] = useState<"profile" | "avatar" | "bond" | undefined>(undefined);
   const [bondTab, setBondTab] = useState<"memory" | "relation">("relation");
   const mateOpen = panel === "mate";
-  const globalOpen = useMateStore((s) => s.globalOpen);
-  const relationOpen = panel === "relation" && !globalOpen;
-  const settings = panel !== null || globalOpen;
-  const closePanels = () => {
-    setPanel(null);
-    useMateStore.getState().closeGlobal();
-  };
-  const toggleGlobal = () => {
-    const st = useMateStore.getState();
-    if (st.globalOpen) st.closeGlobal();
-    else st.openGlobal();
-  };
+  const relationOpen = panel === "relation";
+  const settings = panel !== null;
+  const closePanels = () => setPanel(null);
   const openMate = (tab?: SettingsTab) => {
-    useMateStore.getState().closeGlobal();
     if (tab) {
       setBondTab(tab);
       setPanel("relation");
@@ -95,23 +80,24 @@ export default function MateView() {
     setPanel("mate");
   };
   const toggleMate = () => {
-    if (mateOpen && !globalOpen) return setPanel(null);
+    if (mateOpen) return setPanel(null);
     openMate();
   };
   const toggleRelation = () => {
     if (relationOpen) return setPanel(null);
-    useMateStore.getState().closeGlobal();
     setPanel("relation");
   };
   const openWindow = (k: StageWindowKind) => setStageWindow((w) => (w === k ? null : k));
-  // Older settings-memory/settings-relation links now enter the heart panel.
+  // a link from another window: the ♥ panel, or Mate settings → 관계와 기억 (settings-relation / settings-memory)
   useEffect(() => {
     const link = takeMatePanelLink();
     if (!link) return;
     if (link.mate) useMateStore.getState().setActive(link.mate);
     if (link.panel === "relation") setPanel("relation");
-    else openMate(link.panel === "settings-memory" ? "memory" : "relation");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    else {
+      setMateTab("bond");
+      setPanel("mate");
+    }
   }, []);
   // Esc closes the open panel (not while typing in a field: those use Esc themselves)
   useEffect(() => {
@@ -125,17 +111,6 @@ export default function MateView() {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [settings]);
-  // leaving the Mate view closes Global settings (it isn't shown anywhere else)
-  useEffect(() => () => useMateStore.getState().closeGlobal(), []);
-  // a Live2D body without its runtime (or anything else) asks for Global settings
-  useEffect(() => {
-    const open = (e: Event) => {
-      const section = ((e as CustomEvent).detail?.section as GlobalSection) || "live2d";
-      useMateStore.getState().openGlobal(section);
-    };
-    window.addEventListener(OPEN_GLOBAL_SETTINGS_EVENT, open);
-    return () => window.removeEventListener(OPEN_GLOBAL_SETTINGS_EVENT, open);
-  }, []);
   const [switcher, setSwitcher] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
   // phones: the header keeps what is used all the time, the rest is one press away
@@ -369,20 +344,9 @@ export default function MateView() {
           >
             <Icon name="heart" size={16} />
           </button>
-          {!phone && (
-            <button
-              onClick={toggleGlobal}
-              className={`btn-ghost !px-2.5 ${globalOpen ? "!bg-surface-3 !text-content" : ""}`}
-              title={t("mate.globalSettingsTitle")}
-              aria-label={t("mate.globalSettings")}
-              data-testid="mate-global-settings-open"
-            >
-              <Icon name="sliders" size={16} />
-            </button>
-          )}
           <button
             onClick={toggleMate}
-            className={`btn-ghost !px-2.5 ${mateOpen && !globalOpen ? "!bg-surface-3 !text-content" : ""}`}
+            className={`btn-ghost !px-2.5 ${mateOpen ? "!bg-surface-3 !text-content" : ""}`}
             title={t("mate.mateSettingsTitle", { name: mate.name })}
             aria-label={t("mate.mateSettings")}
             data-testid="mate-settings-open"
@@ -400,7 +364,6 @@ export default function MateView() {
                     { icon: collapsed ? "chevron-down" : "chevron-up", label: collapsed ? t("mate.showAvatar") : t("mate.hideAvatar"), run: toggleCollapsed, id: "mate-avatar-toggle" },
                     { icon: "sparkles", label: t("avatar.title"), run: () => useStudio.getState().openAvatar(mate.id), id: "mate-avatar-create" },
                     { icon: "heart", label: t("stage.status"), run: () => setStageWindow("status"), id: "mate-status-open" },
-                    { icon: "sliders", label: t("mate.globalSettings"), run: toggleGlobal, id: "mate-global-settings-open" },
                     { icon: "rotate", label: t("mate.newConversation"), run: () => void reset(), id: "mate-reset", disabled: resetting || conv.streaming },
                   ].map((x) => (
                     <button
@@ -481,12 +444,18 @@ export default function MateView() {
   const settingsPanel = settings && (
     <Suspense fallback={<PageLoading />}>
       {mateOpen ? (
-        // shows Global settings itself while those are open (and closes them when it goes)
         <MateSettings key={mateTab ?? ""} mate={mate} conv={conv} onClose={closePanels} initialTab={mateTab} />
-      ) : relationOpen ? (
-        <RelationPanel key={bondTab} mate={mate} onClose={closePanels} initialTab={bondTab} />
       ) : (
-        <GlobalSettings onClose={() => useMateStore.getState().closeGlobal()} />
+        <RelationPanel
+          key={bondTab}
+          mate={mate}
+          onClose={closePanels}
+          initialTab={bondTab}
+          onSettings={() => {
+            setMateTab("bond");
+            setPanel("mate");
+          }}
+        />
       )}
     </Suspense>
   );
@@ -507,7 +476,6 @@ export default function MateView() {
           onSay={say}
           onRelation={() => {
             closeWindow();
-            useMateStore.getState().closeGlobal();
             setPanel("relation");
           }}
         />
@@ -521,7 +489,6 @@ export default function MateView() {
           onClose={closeWindow}
           onManage={() => {
             closeWindow();
-            useMateStore.getState().closeGlobal();
             setMateTab("avatar");
             setPanel("mate");
           }}

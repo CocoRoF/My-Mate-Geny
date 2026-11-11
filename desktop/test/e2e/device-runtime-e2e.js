@@ -26,16 +26,17 @@ const launch=async()=>{
  await con.eval(`window.hrhNative.device.patch({screen:{source:${JSON.stringify(source)},format:'jpeg',max_edge:1280,proactive_enabled:false},sharing:{mode:'on_turn',interval:60}})`);
  await con.eval(`window.hrhNative.mate.setMate(${JSON.stringify(mate.id)}).then(()=>window.hrhNative.mate.showAvatar(${JSON.stringify(mate.id)})).then(()=>window.hrhNative.mate.openChat())`);
  let chat=await app.page(/surface=mate-chat/);
- await con.eval("location.href='/?view=mate',true");await until('settings',()=>con.eval("!!document.querySelector('[data-testid=mate-settings-open]')"));await click(con,'[data-testid=mate-settings-open]');
- await until('tabs',()=>con.eval("!!document.querySelector('[data-testid=mate-tab-proactive]')"));await click(con,'[data-testid=mate-tab-proactive]');
+ // speaking first is this device's, set once: Settings → Mate (docs/settings.md)
+ await con.eval("location.href='/?view=settings&tab=mate',true");
  await until('one reachout toggle',()=>con.eval("!!document.querySelector('[data-testid=proactive-enabled]')"));
  assert.equal(await con.eval("document.querySelectorAll('[data-testid=mate-proactive] button[role=switch], [data-testid=mate-proactive] input[type=checkbox]').length"),1);
  assert.equal(await con.eval("document.querySelectorAll('[data-testid=mate-proactive] textarea, [data-testid=mate-proactive] input[type=range], [data-testid=mate-proactive] input[type=number]').length"),0);
  await shot(con,'reachout-one-switch');
- await click(con,'[data-testid=mate-tab-screen]');await until('screen section',()=>con.eval("!!document.querySelector('[data-testid=settings-screen-start]')"));
- assert.equal(await con.eval("document.querySelectorAll('[data-testid=mate-screen-enabled]').length"),0);
+ // sharing itself starts from the message box (+ → Share screen)
+ await con.eval("location.href='/?view=mate',true");await until('composer',()=>con.eval("!!document.querySelector('[data-testid=mate-attach]')"));
+ await click(con,'[data-testid=mate-attach]');await until('share entry',()=>con.eval("!!document.querySelector('[data-testid=attach-share-screen]')"));
  await shot(con,'screen-one-switch-before');
- await click(con,'[data-testid=settings-screen-start]');await until('setup',()=>con.eval("!!document.querySelector('[data-testid=screen-start]')"));await click(con,'[data-testid=screen-start]');
+ await click(con,'[data-testid=attach-share-screen]');await until('setup',()=>con.eval("!!document.querySelector('[data-testid=screen-start]')"));await click(con,'[data-testid=screen-start]');
  await until('source picker',()=>con.eval("!!document.querySelector('[data-testid=share-source]')"));await click(con,'[data-testid=share-source]');await click(con,'[data-testid=share-go]');
  await until('first ready',async()=>!!(await con.eval('window.hrhNative.capture.sharing.get()')).state);
  let hidden=await app.page(/surface=device-runtime/);assert.equal((await hidden.eval('window.hrhNative.capture.sharing.get()')).owner,true);assert.equal((await con.eval('window.hrhNative.capture.sharing.get()')).owner,false);

@@ -221,14 +221,8 @@ const setRange = (p, selector, value) =>
       "PASS toolbar start/stop, small-width fit, Esc/outside cancel, all-window settings sync; server values unchanged",
     );
     await con.eval(`location.href='/?view=mate',true`);
-    await until("console mate settings", () =>
-      con.eval("!!document.querySelector('[data-testid=mate-settings-open]')"),
-    );
-    await click(con, "[data-testid=mate-settings-open]");
-    await until("native settings tabs", () =>
-      con.eval("!!document.querySelector('[data-testid=mate-tab-voice]')"),
-    );
-    await click(con, "[data-testid=mate-tab-voice]");
+    // the volume is this device's, for every mate: Settings → Mate (docs/settings.md)
+    await con.eval(`location.href='/?view=settings&tab=mate',true`);
     await until("native volume slider", () =>
       con.eval("!!document.querySelector('[data-testid=mate-volume-slider]')"),
     );
@@ -250,8 +244,8 @@ const setRange = (p, selector, value) =>
     await until("quick device volume", () => quick.eval("window.hrhNative.device.get().then(p=>p.volume===1.8)"));
     await app.main("win('surface=mate-quick').hide();return true");
     await shot(con, "app-volume-settings.png");
-    await click(con, "[data-testid=mate-tab-screen]");
-    await sleep(200);
+    await con.eval(`location.href='/?view=settings&tab=screen',true`);
+    await until("screen sharing settings", () => con.eval("!!document.querySelector('[data-testid=device-capture-approval]')"));
     await shot(con, "app-screen-settings.png");
     assert.equal(
       JSON.parse(fs.readFileSync(path.join(settingsDir, "settings.json")))
@@ -325,10 +319,7 @@ const setRange = (p, selector, value) =>
       localStorage.setItem("hrh_lang", "en");
     }, b.id);
     const page = await context.newPage();
-    await page.goto(server + "/?view=mate");
-    await page.waitForSelector("[data-testid=mate-settings-open]");
-    await page.click("[data-testid=mate-settings-open]");
-    await page.click("[data-testid=mate-tab-voice]");
+    await page.goto(server + "/?view=settings&tab=mate");
     await page.waitForSelector("[data-testid=mate-volume-slider]");
     await page.evaluate(() => {
       const e = document.querySelector("[data-testid=mate-volume-slider]");
@@ -344,10 +335,7 @@ const setRange = (p, selector, value) =>
         ?.textContent.includes("150"),
     );
     const tab = await context.newPage();
-    await tab.goto(server + "/?view=mate");
-    await tab.waitForSelector("[data-testid=mate-settings-open]");
-    await tab.click("[data-testid=mate-settings-open]");
-    await tab.click("[data-testid=mate-tab-voice]");
+    await tab.goto(server + "/?view=settings&tab=mate");
     await tab.waitForFunction(() =>
       document
         .querySelector("[data-testid=mate-volume-value]")
@@ -362,10 +350,7 @@ const setRange = (p, selector, value) =>
       b.id,
     );
     const independent = await separate.newPage();
-    await independent.goto(server + "/?view=mate");
-    await independent.waitForSelector("[data-testid=mate-settings-open]");
-    await independent.click("[data-testid=mate-settings-open]");
-    await independent.click("[data-testid=mate-tab-voice]");
+    await independent.goto(server + "/?view=settings&tab=mate");
     await independent.waitForFunction(() =>
       document
         .querySelector("[data-testid=mate-volume-value]")
@@ -432,15 +417,11 @@ const setRange = (p, selector, value) =>
       "PASS actual streamed reply + two steers stay right aligned; before/after and phone screenshots saved",
     );
     // Opt-in through the actual settings UI; wait for a real automatic native frame, not a manual API trigger.
+    // (speaking first is this device's: Settings → Mate, one switch)
     await page.setViewportSize({width:1200,height:900});
-    await page.click('[data-testid=mate-settings-open]');
-    await page.click('[data-testid=mate-tab-proactive]');
+    await page.goto(server + "/?view=settings&tab=mate");
     await page.waitForSelector('[data-testid=proactive-enabled]');
     assert.equal(await page.getAttribute('[data-testid=proactive-enabled]','aria-checked'),'false');
-    await page.selectOption('[data-testid=proactive-scope]','screen');
-    await page.selectOption('[data-testid=proactive-interval]','60');
-    await page.fill('[data-testid=proactive-guidance]','Offer help if I seem stuck. Stay quiet when there is nothing useful to say.');
-    await page.click('[data-testid=mate-proactive] h3');
     await page.click('[data-testid=proactive-enabled]');
     await page.waitForFunction(()=>document.querySelector('[data-testid=proactive-enabled]').getAttribute('aria-checked')==='true');
     await page.evaluate(()=>window.dispatchEvent(new StorageEvent('storage',{key:'hrh_lang',newValue:'ko'})));
@@ -448,9 +429,8 @@ const setRange = (p, selector, value) =>
     await page.screenshot({path:path.join(shots,'proactive-settings.png')});
     // The browser above is a different device: its local switch must not enable native observation.
     assert.equal(await con.eval("window.hrhNative.device.get().then(p=>p.screen.proactive_enabled)"),false);
-    await click(con,'[data-testid=mate-tab-proactive]');
+    await con.eval(`location.href='/?view=settings&tab=mate',true`);
     await until('native proactive settings',()=>con.eval("!!document.querySelector('[data-testid=proactive-enabled]')"));
-    await con.eval("(()=>{const e=document.querySelector('[data-testid=proactive-interval]');e.value='60';e.dispatchEvent(new Event('change',{bubbles:true}));return true})()");
     await click(con,'[data-testid=proactive-enabled]');
     await until('native reach-out enabled locally',()=>con.eval("window.hrhNative.device.get().then(p=>p.screen.proactive_enabled && p.screen.proactive_interval===60)"));
     const conversation=await (await context.request.post(server+'/api/mates/'+b.id+'/conversation')).json();

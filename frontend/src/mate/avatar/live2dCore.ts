@@ -8,7 +8,6 @@ export {
   loadCubismCore,
   useLive2DCoreInstalls,
   live2dCoreInstalls,
-  openGlobalSettings,
+  openLive2DSettings,
   LIVE2D_CORE_INSTALLED_EVENT,
-  OPEN_GLOBAL_SETTINGS_EVENT,
 } from "../live2dCore";

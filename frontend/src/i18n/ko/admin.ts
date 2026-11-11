@@ -76,28 +76,6 @@ const ko: Messages<"admin"> = {
   unblock: "차단 해제",
 
   // ---- credentials
-  strengthStrong: "강함",
-  strengthOk: "보통",
-  strengthWeak: "약함",
-  sourceDefault: "기본 제공값 (admin / geny-admin)",
-  sourceEnv: "서버 환경 변수 (AUTH_USERNAME / AUTH_PASSWORD)",
-  sourceDb: "여기서 설정함",
-  credSaved: "저장했어요. 다른 모든 브라우저, 데스크톱 앱, 모바일 앱은 로그아웃됐어요 — 그곳에서는 새 로그인 정보로 로그인하세요.",
-  credTitle: "로그인 정보",
-  credUsername: "사용자 이름",
-  credSource: "출처:",
-  credChanged: "{when} 변경",
-  credDefaultWarn: "<b>기본 비밀번호를 쓰고 있어요.</b> 공개된 비밀번호라서 이 서버에 접속할 수 있는 누구나 로그인할 수 있어요. 아래에서 나만의 비밀번호를 정하세요.",
-  credEnvNote: "여기서 저장하면 서버의 AUTH_PASSWORD 대신 쓰여요 (데이터베이스에 솔트를 넣은 scrypt 해시로 저장돼요).",
-  currentPassword: "현재 비밀번호",
-  newPassword: "새 비밀번호",
-  emptyKeep: "(비우면 그대로)",
-  confirmNewPassword: "새 비밀번호 확인",
-  pwHint: "{min}자 이상이어야 해요. 무작위 단어 3–4개로 만든 문구(12자 이상)가 가장 좋아요.",
-  pwTooShort: "너무 짧아요 — {min}자 이상이어야 해요.",
-  pwMismatch: "새 비밀번호가 서로 달라요.",
-  updateCredentials: "로그인 정보 변경",
-  credSignsOut: "다른 모든 기기와 앱은 로그아웃되고, 이 브라우저는 로그인 상태로 남아요.",
 
   // ---- system: toolbar / status
   rangeLive: "실시간",
@@ -307,5 +285,7 @@ const ko: Messages<"admin"> = {
   memoryHint: "원문은 대화에 보관하며, 이 집계에는 내용·API 키를 기록하지 않아요. 자동 정리는 대화가 쉬는 동안 한 건씩 실행해요.",
   memoryCounts: "원문 {sources}개 · 사건 {episodes}개 · 정리 대기 {pending}개 · 실패 {failed}개 · 인덱스 대기 {unindexed}개",
   memoryBudget: "한 번에 1개 정리 · 최대 {limit}회/분 · 평균 정리 {ms}ms · 기록된 API 환산 비용 ${cost}",
+  credentialsInAccount: "사용자 이름과 비밀번호는 설정 → 계정에서 바꿔요 (바꾸면 다른 모든 기기에서 로그아웃돼요).",
+  openAccount: "계정 열기",
 };
 export default ko;

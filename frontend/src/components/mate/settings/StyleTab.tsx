@@ -29,6 +29,7 @@ import type { MateConversation } from "../../../mate/useMateConversation";
 import { useMateStore } from "../../../stores/mateStore";
 import { useT, type MsgKey } from "../../../i18n";
 import Icon from "../../ui/Icon";
+import { openAppSettings } from "../../../lib/openAppSettings";
 import { Field, SaveBar, Section, Segmented, useFollowSaved, useSaver } from "./ui";
 
 const LEVELS: { id: Exclude<Formality, "auto">; label: MsgKey }[] = [
@@ -64,11 +65,10 @@ const SAMPLE: { emotion: string; intensity: number }[] = [
   { emotion: "laugh", intensity: 1 },
 ];
 
-type Draft = Pick<MatePrefs, "user_name" | "address" | "self_ref" | "formality" | "speech_style" | "length" | "emotion" | "tone" | "avoid" | "self_edit"> & { language: string };
+type Draft = Pick<MatePrefs, "address" | "self_ref" | "formality" | "speech_style" | "length" | "emotion" | "tone" | "avoid" | "self_edit"> & { language: string };
 const draftOf = (m: Mate): Draft => {
   const p = prefsOf(m);
   return {
-    user_name: p.user_name,
     address: p.address,
     self_ref: p.self_ref,
     formality: p.formality,
@@ -174,11 +174,12 @@ export default function StyleTab({ mate, conv }: { mate: Mate; conv: MateConvers
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((x) => ({ ...x, [k]: v }));
   const korean = (d.language || "ko").toLowerCase().startsWith("ko");
-  const nm = d.user_name.trim();
+  // your name is every mate's (Settings → 계정): shown here, changed there
+  const nm = p.user_name.trim();
   const chips = nm ? (korean ? [`${nm}님`, `${nm} 씨`, nm, "주인님"] : [nm, "boss"]) : korean ? ["주인님", "사장님"] : ["boss"];
   const eff = effectiveStyle({ ...p, formality: d.formality, address: d.address, self_ref: d.self_ref });
   const forms = korean && d.address ? addressForms(d.address, eff.formality === "banmal" && isBareKoreanName(d.address, nm)) : null;
-  const charAddress = p.defaults.address ? fillAddress(p.defaults.address, d.user_name, t("mateSettings.styleNamePh")) : "";
+  const charAddress = p.defaults.address ? fillAddress(p.defaults.address, p.user_name, t("mateSettings.styleNamePh")) : "";
   const charLevel = LEVELS.find((l) => l.id === p.defaults.formality);
   const known = d.language in LANG_NAMES;
 
@@ -189,8 +190,15 @@ export default function StyleTab({ mate, conv }: { mate: Mate; conv: MateConvers
       </p>
       <Section title={t("mateSettings.styleCallGroup")} hint={t("mateSettings.styleSpeechHint", { name: mate.name })} testId="mate-style-call">
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label={t("mateSettings.profUserName")} hint={t("mateSettings.profUserNameHint")}>
-            <input className="field" value={d.user_name} onChange={(e) => set("user_name", e.target.value)} maxLength={80} placeholder={t("mateSettings.profUserNamePh")} data-testid="mate-user-name" />
+          <Field label={t("mateSettings.profUserName")} hint={t("mateSettings.profUserNameHint")} as="div">
+            <div className="flex items-center gap-2">
+              <span className={`field min-w-0 flex-1 truncate ${nm ? "" : "text-content-faint"}`} data-testid="mate-user-name">
+                {nm || t("mateSettings.profUserNameUnset")}
+              </span>
+              <button type="button" className="btn-ghost shrink-0 !px-2 !py-1 text-[12px]" onClick={() => openAppSettings("account")} data-testid="mate-user-name-edit">
+                {t("mateSettings.profUserNameEdit")}
+              </button>
+            </div>
           </Field>
           <Field label={t("mateSettings.profSelfRef")} hint={t("mateSettings.profSelfRefHint")}>
             <input className="field" value={d.self_ref} onChange={(e) => set("self_ref", e.target.value)} maxLength={40} placeholder={p.defaults.self_ref || t("mateSettings.profSelfRefPh")} data-testid="mate-self-ref" />

@@ -506,10 +506,16 @@ export interface VoiceSettings {
   http_tts_key_set: boolean;
   /** the user's IANA timezone ("" = the server's): the mate's clock, plan dates, relationship days */
   timezone?: string;
+  /** the name every mate knows you by (Settings → 계정) */
+  user_name?: string;
+  /** an OpenAI / Google key comes from Settings → Providers (a vendor account with an API key), not one of its own */
+  openai_key_shared?: boolean;
+  google_key_shared?: boolean;
 }
 
 export type VoiceSettingsPatch = Partial<{
   timezone: string;
+  user_name: string;
   google_key: string | null;
   openai_key: string | null;
   elevenlabs_key: string | null;
