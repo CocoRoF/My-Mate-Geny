@@ -222,11 +222,11 @@ async function main() {
     await until("the uninstall", () => !installed(), 120000, 1000);
   }
   fs.rmSync(PROFILE, { recursive: true, force: true });
-  for (let n = 1; n <= 6; n++) {
+  for (let n = 1; n <= 10; n++) {
     const r = spawnSync(path.join(DIST, setup), ["/S"], { stdio: "ignore", windowsHide: true, timeout: 600000 });
     say(`setup exit ${r.status}`);
     if (r.status === 0) break;
-    await sleep(15000);
+    await sleep(15000 * Math.min(n, 4));
   }
   const k = await until("installed", () => installed(), 180000, 1000);
   say(`installed ${k.DisplayVersion} in ${k.dir}`);
