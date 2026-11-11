@@ -49,11 +49,12 @@ def api():
     srv.shutdown()
 
 
-def _run(bridge: str, env: dict, requests: list[dict]) -> list[dict]:
-    """The bridge as the app starts it (``-I``); off Windows the pipe's code page is forced to cp949 instead."""
+def _run(bridge: str, env: dict, requests: list[dict], isolated: bool = True) -> list[dict]:
+    """The bridge as the app starts it (``-I``, but the remote-hosts one, which imports its neighbour, without); off
+    Windows the pipe's code page is forced to cp949 instead."""
     env = {**os.environ, **env}
     if sys.platform == "win32":
-        args = [sys.executable, "-I", str(APP / bridge)]
+        args = [sys.executable, *(["-I"] if isolated else []), str(APP / bridge)]
     else:
         args = [sys.executable, str(APP / bridge)]
         env["PYTHONIOENCODING"] = "cp949"
@@ -109,5 +110,5 @@ def test_the_screen_bridge(api, tmp_path):
 def test_the_remote_bridge():
     hosts = json.dumps([{"name": "서버", "connection_id": "c1", "host": "h", "user": "u", "port": 22}], ensure_ascii=False)
     _init_reply, listed = _run("workspaces/mcp_remote_bridge.py", {"HRH_REMOTE_HOSTS": hosts},
-                               [_init(), {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}])
+                               [_init(), {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}], isolated=False)
     assert listed["result"]["tools"]
