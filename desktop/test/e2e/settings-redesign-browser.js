@@ -5,7 +5,7 @@
 //     node desktop/test/e2e/settings-redesign-browser.js http://127.0.0.1:18982 rewind-test-only <shots dir>
 //
 // Checks: Settings has 일반 / 메이트 / 에이전트와 서비스; Settings → 메이트 holds the default mate, this device's sound and
-// speaking first, Live2D and the built-in mates; 화면 공유 only what is set once (no "when to capture"); 계정 the name
+// speaking first, Live2D and the built-in mates; 화면 공유 only what is set once (no "when to capture"; not on a phone); 계정 the name
 // every mate knows you by (and her 대화 방식 shows it, read-only, with a link); 언어 the time zone. The Mate view has no
 // second "Global settings"; Mate settings' tabs are profile · style · avatar · voice · model · 관계와 기억 · 삭제, the
 // ♥ panel's 설정 opens 관계와 기억, and her links ("Settings", the volume) open Settings at the right tab. The share
@@ -229,8 +229,10 @@ async function phone(browser, lang, theme) {
   step(`${tag}: Settings → Mate and Screen sharing, Mate settings → 관계와 기억`);
   await settingsAt(page, "mate");
   await shot(page, `${tag}-settings-mate`);
-  await settingsAt(page, "screen");
-  await shot(page, `${tag}-settings-screen`);
+  // (a phone has no screen to share: no Screen sharing tab)
+  await page.goto(`${SERVER}/?view=settings`);
+  await page.waitForSelector('[data-testid="settings-tab-mate"]', { timeout: 20000 });
+  assert.equal(await count(page, '[data-testid="settings-tab-screen"]'), 0, "no Screen sharing on a phone");
   await openMateSettings(page);
   const row = await page.$eval('[data-testid="mate-settings"] [role="tablist"]', (el) => ({ w: el.scrollWidth, c: el.clientWidth }));
   console.log(`  tab row ${row.w}/${row.c}px (scrolls sideways when wider)`);
