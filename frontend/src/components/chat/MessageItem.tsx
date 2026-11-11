@@ -9,6 +9,7 @@ import RewindButton from "./RewindButton";
 import DeleteMessageButton from "./DeleteMessageButton";
 import { useChatStore } from "../../stores/chatStore";
 import { tr } from "../../i18n";
+import { noticeText } from "../../lib/notices";
 
 // Memoized: a turn re-renders only when it changes (copy-on-write in the store)
 // — prepending older turns or streaming into the last one leaves the rest alone.
@@ -53,7 +54,7 @@ export default memo(function MessageItem({ turn }: { turn: Turn }) {
         <span className="h-px flex-1 bg-border" />
         <span className={`inline-flex items-center gap-1.5 ${turn.level === "warning" ? "text-warning" : ""}`}>
           <Icon name={turn.level === "warning" ? "warning" : "info"} size={12} />
-          {turn.text}
+          {noticeText(turn.code, turn.data, turn.text)}
         </span>
         <span className="h-px flex-1 bg-border" />
       </div>

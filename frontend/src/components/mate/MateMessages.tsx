@@ -13,6 +13,7 @@ import { currentSurface, desktopMate } from "../../mate/desktop";
 import Icon, { type IconName } from "../ui/Icon";
 import MateReply from "./MateReply";
 import { visibleAttachments } from "../../lib/attachmentVisibility";
+import { noticeText } from "../../lib/notices";
 import MessageAttachments from "../attachments/MessageAttachments";
 import DeleteMessageButton from "../chat/DeleteMessageButton";
 import type { Attachment } from "../../types";
@@ -331,7 +332,7 @@ const AssistantBubbles = memo(function AssistantBubbles({ turn, compact }: { tur
     } else if (f.kind === "notice") {
       items.push(
         <div key={i} className={`text-[11.5px] ${f.level === "warning" ? "text-warning" : "text-content-faint"}`}>
-          {f.code === "screen.capture_failed" ? tr("screen.messageWithoutScreen") : f.message}
+          {noticeText(f.code, f.data, f.message)}
         </div>,
       );
     }
@@ -389,7 +390,7 @@ export default function MateMessages({
                 <div key={t.key} className="flex items-center gap-3 py-1 text-[11px] text-content-faint">
                   <span className="h-px flex-1 bg-border" />
                   <span className={`text-center ${t.level === "warning" ? "text-warning" : ""}`}>
-                    {reset ? tt("mate.resetDivider") : t.text}
+                    {reset ? tt("mate.resetDivider") : noticeText(t.code, t.data, t.text)}
                   </span>
                   <span className="h-px flex-1 bg-border" />
                 </div>

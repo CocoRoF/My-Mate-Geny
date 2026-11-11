@@ -141,6 +141,7 @@ class SessionService:
         # mates (persona / avatar / voice / memories) changed: same feed, own version
         self._mates_version = int(time.time() * 1000)
         self._inboxes: dict[str, TurnInbox] = {}  # running turns that accept steering
+        self._tools_failed: dict[str, str] = {}  # chat → the tool servers its engine last said it couldn't start
         # Chat sockets showing their chat on screen right now (sid -> socket keys): a run ending there is seen at
         # once — no "Complete" badge for the chat the user is looking at (docs/architecture.md).
         self._viewers: dict[str, set[Any]] = {}
@@ -1378,6 +1379,10 @@ class SessionService:
                         ack()
                     if ev.type == "session.info":
                         yield self._session_info(sid, ev, ctx)
+                        note = self._tools_failed_notice(sid, ev)
+                        if note is not None:
+                            await self._record_event(sid, note, st)
+                            yield note
                         continue
                     if ev.type == "error" and persistent and not failed_over:
                         moved = await self._failover(sid, req, holder, ev, ctx, st, worked)
@@ -1596,6 +1601,23 @@ class SessionService:
             self._set_cli_session(sid, str(ev.data["cli_session_id"]), ev.data["provider"])
         self._db.execute("UPDATE sessions SET cli_info = ? WHERE id = ?", (json.dumps(info), sid))
         return ProviderEvent(type="session.info", data=info, seq=ev.seq, timestamp=ev.timestamp)
+
+    def _tools_failed_notice(self, sid: str, ev: ProviderEvent) -> ProviderEvent | None:
+        """Tool servers the engine could not start (Claude Code and the API harness say so as they start): said in the
+        chat — once, until that changes — and logged. Without it the model works on without them unseen; a mate, whose
+        tools are all MCP, wrote her calls out as text."""
+        failed = sorted({str(m["name"]) for m in ev.data.get("mcp_servers") or []
+                         if isinstance(m, dict) and m.get("name") and m.get("status") == "failed"})
+        key = ",".join(failed)
+        if self._tools_failed.get(sid, "") == key:
+            return None
+        self._tools_failed[sid] = key
+        if not failed:
+            return None
+        self._log("warning", "mcp", f"tool server(s) could not start: {key}", code="mcp.failed", session_id=sid)
+        return ProviderEvent(type="notice", data={
+            "level": "warning", "code": "mcp.failed", "servers": failed,
+            "message": f"Couldn't start the tool server ({', '.join(failed)}) — this goes on without those tools."})
 
     def _screen_result(self, sid: str, ev: ProviderEvent, st: dict[str, Any]) -> bool:
         """A mate's ``see_screen`` result (docs/mate.md §4 "Seeing the screen"): the picture is already the
@@ -2178,6 +2200,10 @@ class SessionService:
             async for ev in stream:
                 if ev.type == "session.info":
                     self._publish(sid, self._session_info(sid, ev, ctx).to_dict())
+                    note = self._tools_failed_notice(sid, ev)
+                    if note is not None:
+                        await self._record_event(sid, note, st)
+                        self._publish(sid, note.to_dict())
                     continue
                 if ev.type in ("turn.complete", "error"):
                     changed = await self._changes_event(st)
