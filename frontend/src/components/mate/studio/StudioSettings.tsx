@@ -374,8 +374,8 @@ function AvatarStage({ project, mate, kind, onSkip }: { project: AvatarProject; 
         <p className="font-medium text-content">
           {skipped ? t("studio.avatarSkipped") : live ? t("studio.avatarMaking") : has ? t("studio.avatarCurrent") : t("studio.avatarNone")}
         </p>
-        <p className="mt-0.5 text-[11.5px] text-content-faint">{skipped ? t("studio.avatarSkippedHint") : live ? t("studio.avatarMakingHint") : project.outfit ? t("studio.outfitStageHint") : kind === "existing" ? t("studio.avatarCurrentHint") : t("studio.avatarNoneHint")}</p>
-        {kind === "new" && onSkip && !project.confirmation && (
+        <p className="mt-0.5 text-[11.5px] text-content-faint">{skipped ? t("studio.avatarSkippedHint") : live ? t("studio.avatarMakingHint") : project.outfit ? t("studio.outfitStageHint") : kind === "existing" ? t("studio.avatarCurrentHint") : has ? t("studio.avatarBroughtHint") : t("studio.avatarNoneHint")}</p>
+        {kind === "new" && onSkip && !project.confirmation && (!has || skipped) && (
           <button type="button" className="btn-ghost mt-1.5 !px-2 !py-1 text-[12px]" onClick={() => onSkip(!skipped)} data-testid="studio-skip-avatar">
             <Icon name={skipped ? "sparkles" : "x"} size={12} /> {skipped ? t("studio.avatarUnskip") : t("studio.avatarSkip")}
           </button>
