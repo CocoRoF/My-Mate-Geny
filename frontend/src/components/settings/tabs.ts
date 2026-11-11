@@ -2,6 +2,7 @@
 import type { MsgKey } from "../../i18n";
 import type { SettingsTab } from "../../lib/navUrl";
 import type { IconName } from "../ui/Icon";
+import { isTouchFirst } from "../../lib/device";
 
 export interface TabMeta {
   id: SettingsTab;
@@ -18,6 +19,10 @@ export interface TabMeta {
 const platform = () => (typeof window !== "undefined" ? window.hrhNative?.platform ?? "" : "");
 export const isDesktopApp = () => /^desktop-/.test(platform());
 export const isAndroidApp = () => platform() === "android";
+/** this device can share its screen (the desktop app, a desktop browser) — mate/screenCapture.ts canShareScreen, kept light */
+const canCapture = () =>
+  typeof window !== "undefined" &&
+  (!!window.hrhNative?.capture || (!window.hrhNative && !isTouchFirst() && typeof navigator.mediaDevices?.getDisplayMedia === "function"));
 
 export const TABS: readonly TabMeta[] = [
   // the app and you: set once (docs/settings.md)
@@ -28,7 +33,7 @@ export const TABS: readonly TabMeta[] = [
   { id: "notifications", label: "settings.secNotifications", icon: "bell", hint: "settings.notifHint", group: "general" },
   // what holds for every mate (her own settings are hers: Mate settings)
   { id: "mate", label: "settings.secMate", icon: "sparkles", hint: "settings.mateHint", group: "mate" },
-  { id: "screen", label: "settings.secScreen", icon: "monitor", hint: "settings.screenHint", group: "mate" },
+  { id: "screen", label: "settings.secScreen", icon: "monitor", hint: "settings.screenHint", group: "mate", when: canCapture },
   { id: "desktop", label: "settings.secDesktop", icon: "laptop", hint: "settings.desktopHint", group: "mate", when: isDesktopApp },
   { id: "providers", label: "mcp.llmTitle", icon: "cpu", hint: "mcp.llmIntro", group: "system" },
   { id: "media", label: "mcp.mediaTitle", icon: "volume", hint: "mcp.mediaIntro", group: "system" },
