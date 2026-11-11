@@ -300,8 +300,11 @@ async function main() {
     if (typeof f === "string") problems.push(`${key}: ${f}`);
     else if (f && !f.error && !(f.canvases > 0 && !f.imgs.length)) problems.push(`${key}: no video body (webgl: ${f.gl}; stills: ${f.imgs.join(", ")})`);
   }
-  for (const key of Object.keys(facts).filter((k) => /\.network$/.test(k)))
+  for (const key of Object.keys(facts).filter((k) => /\.network$/.test(k))) {
     if (!facts[key].some((l) => /^20[06] video\/mp4 /.test(l))) problems.push(`${key}: no clip was loaded`);
+    // (the local server refusing the console: e.g. its time zone, without the IANA zones on Windows)
+    for (const l of facts[key].filter((l) => /^[45]\d\d \S+ \/api\//.test(l))) problems.push(`${key}: ${l}`);
+  }
   console.log(problems.length ? `\nPROBLEMS:\n  ${problems.join("\n  ")}` : "\nlocal execution: remembered, her videos play");
   process.exit(problems.length ? 1 : 0);
 }

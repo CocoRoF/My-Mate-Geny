@@ -18,6 +18,7 @@ dependencies = [
     "mcp>=1.30,<2",              # managed stdio / Streamable HTTP / SSE MCP clients (stable v1 API)
     "uv>=0.13,<1",               # explicit, isolated MCP package installation; bundled on each desktop OS
     "pywinpty>=2; sys_platform == 'win32'",
+    "tzdata>=2024.1; sys_platform == 'win32'",  # zoneinfo's IANA zones: Windows has none of its own (the mates' clock)
     "Pillow>=10.0",             # downscale image attachments for the model
     # API-key engines (app.harness): each vendor's official SDK, and PDFs for the Read tool
     "anthropic>=2.6,<3",
