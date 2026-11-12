@@ -382,6 +382,9 @@ def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None
         who.append(p["description"].strip())
     if p.get("personality"):
         who.append("Personality:\n" + p["personality"].strip())
+    if p.get("birthday"):  # ("MM-DD": store.birthday)
+        month, day = (int(x) for x in str(p["birthday"]).split("-"))
+        who.append(f"Your birthday is {('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December')[month - 1]} {day}.")
     if who:
         lines.append("## Who you are\n" + "\n\n".join(who))
     lines.append(settings_block(p, s))

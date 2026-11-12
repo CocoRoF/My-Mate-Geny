@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from app.mate.life import days as D
 from app.mate.life import sim
 
 ROOT = Path(__file__).resolve().parents[1] / "builtin" / "life"
@@ -27,6 +28,35 @@ def _check_event(event: dict[str, Any], doc: dict[str, Any]) -> None:
         for key in group or {}:
             if key not in known:
                 raise ValueError(f"life: event {name} names an unknown {key}")
+
+
+#: what a gift of hers can be for (``for``): their birthday, a milestone of theirs, now and then just because, after one of her
+#: story events (event:<id>), on a day she knows (day:<id>, life/days.py)
+GIFT_FOR = ("birthday", "milestone", "random")
+
+
+def _check_more(doc: dict[str, Any]) -> None:
+    """Her job, what she gives them, how the week and the sky lean her."""
+    job = doc.get("job")
+    if job is not None and (not isinstance(job, dict) or not job.get("about") or not (job.get("names") or {}).get("ko")
+                            or not (job.get("names") or {}).get("en")):
+        raise ValueError("life: her job needs what it is (about) and its names")
+    events = {e.get("id") for e in doc.get("events") or []}
+    known_days = {d["id"] for days in D.CALENDAR.values() for d in days}
+    for gift in doc.get("gifts_to_user") or []:
+        name = gift.get("id") or "?"
+        if not gift.get("id") or not (gift.get("names") or {}).get("ko") or not (gift.get("names") or {}).get("en") or not gift.get("about"):
+            raise ValueError(f"life: a gift of hers needs its id, names and what it is (about): {name}")
+        note = (gift.get("notes") or {}).get("default") or {}
+        if not note.get("ko") or not note.get("en"):
+            raise ValueError(f"life: a gift of hers needs its default note: {name}")
+        for what in gift.get("for") or []:
+            kind, _, key = str(what).partition(":")
+            if not (what in GIFT_FOR or (kind == "event" and key in events) or (kind == "day" and key in known_days)):
+                raise ValueError(f"life: {name} is for something unknown: {what}")
+    for name, feel in (doc.get("moods") or {}).items():
+        if name not in sim.MOODS or not isinstance(feel, dict) or any(e not in sim.MOOD_EMOTIONS for e in feel):
+            raise ValueError(f"life: an unknown mood or emotion: {name}")
 
 
 def check(doc: dict[str, Any]) -> dict[str, Any]:
@@ -52,8 +82,11 @@ def check(doc: dict[str, Any]) -> dict[str, Any]:
         for stat in item.get("stats") or {}:
             if stat not in sim.STATS:
                 raise ValueError(f"life: {item['id']} grows an unknown stat: {stat}")
+        if item.get("taste") and item["taste"] not in activities:
+            raise ValueError(f"life: {item['id']} goes with an unknown activity: {item['taste']}")
     for event in doc.get("events") or []:
         _check_event(event, doc)
+    _check_more(doc)
     if "rest" not in activities:
         raise ValueError("life: there must be a `rest` she can always fall back on")
     return doc

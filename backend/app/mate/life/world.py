@@ -1,6 +1,7 @@
 """The real world around her day (docs/mate-life.md): the weather where the user is and the public holidays of their country,
-from open APIs without a key — Open-Meteo (weather) and Nager.Date (holidays). What it finds goes into ``sim.REAL``; without a
-network her day goes on as before (a made-up sky, weekends off).
+from open APIs without a key — Open-Meteo (weather) and Nager.Date (holidays, with their names: Seollal and Chuseok move every
+year). What it finds goes into ``sim.REAL``, with the user's country (the days of the year she knows there: life/days.py); without
+a network her day goes on as before (a made-up sky, weekends and the calendar's days off).
 
 Where the user is: ``MateStore.location()`` (the console finds it from their connection, or they pick a city in Settings →
 Language). Without one, the country is read from their time zone, for the holidays.
@@ -20,6 +21,8 @@ from app.mate.life import sim
 
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 HOLIDAYS_URL = "https://date.nager.at/api/v3/PublicHolidays/{year}/{country}"
+#: where a country's holidays of a year are kept once found: [{date, en, local}]
+HOLIDAYS_KEY = "holidays.named:{country}:{year}"
 WEATHER_EVERY_S = 30 * 60
 RETRY_S = 10 * 60
 #: when no location is set: the country a time zone belongs to (for its holidays)
@@ -65,6 +68,7 @@ class World:
         """Weather every half hour, holidays once a year per country; failures are quiet and retried later."""
         if not settings.life_world:
             return
+        sim.REAL["country"] = self.country()  # (no network needed: the days of the year she knows there come with it)
         try:
             if self._client is not None:
                 await self._refresh(self._client, force)
@@ -112,22 +116,34 @@ class World:
     async def _holidays(self, client: Any) -> None:
         country = self.country()
         if not country:
-            sim.REAL["holidays"] = set()
+            sim.REAL["holidays"], sim.REAL["holiday_names"] = set(), {}
             return
         year = datetime.now(timezone.utc).year
-        days: set[str] = set()
+        found: list[dict[str, str]] = []
         for y in (year, year + 1):
-            key = f"holidays:{country}:{y}"
+            key = HOLIDAYS_KEY.format(country=country, year=y)
             raw = self.store._setting(key)
             if not raw and time.monotonic() - self._tried.get(key, -1e9) > RETRY_S:
                 self._tried[key] = time.monotonic()
                 r = await client.get(HOLIDAYS_URL.format(year=y, country=country))
                 if r.status_code == 200:
-                    found = sorted({h["date"] for h in r.json() if isinstance(h, dict) and h.get("date") and (h.get("global", True) or not h.get("counties"))})
-                    raw = json.dumps(found)
+                    raw = json.dumps(self.named(r.json()), ensure_ascii=False)
                     self.store._put_setting(key, raw)
                 elif r.status_code in (204, 404):  # (a country it doesn't know: weekends only)
                     raw = "[]"
                     self.store._put_setting(key, raw)
-            days |= set(json.loads(raw or "[]"))
-        sim.REAL["holidays"] = days
+            found += [h for h in json.loads(raw or "[]") if isinstance(h, dict) and h.get("date")]
+        sim.REAL["holidays"] = {h["date"] for h in found}
+        names: dict[str, list[dict[str, str]]] = {}
+        for h in found:
+            names.setdefault(h["date"], []).append({"en": str(h.get("en") or ""), "local": str(h.get("local") or "")})
+        sim.REAL["holiday_names"] = names
+
+    @staticmethod
+    def named(doc: Any) -> list[dict[str, str]]:
+        """Nager.Date's answer → the country-wide holidays, with their names: [{date, en, local}] (a regional one is not hers)."""
+        out = []
+        for h in doc if isinstance(doc, list) else []:
+            if isinstance(h, dict) and h.get("date") and (h.get("global", True) or not h.get("counties")):
+                out.append({"date": str(h["date"]), "en": str(h.get("name") or ""), "local": str(h.get("localName") or "")})
+        return sorted(out, key=lambda h: h["date"])

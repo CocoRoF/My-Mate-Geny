@@ -31,6 +31,7 @@ from typing import Any
 from urllib.parse import quote
 
 from app.config import settings
+from app.mate.life.days import is_mmdd
 from app.mate.store import DEFAULT_GREETINGS, GENDERS, MateError, normalize_avatar, takes_frame, with_new_clips
 from app.services._ids import new_id
 
@@ -963,14 +964,16 @@ BUILTIN_ORDER = ("chaerin", "mao")  # the first is the default mate on a new ins
 #: bundled once, no longer shipped: what an install still has of them is settled at startup (MateService._retire_builtins)
 RETIRED_BUILTINS = ("estelle", "seoa")
 # persona fields a bundle sets for every language (greeting and name are per language) — the character only
-BUNDLE_FIELDS = ("description", "personality", "instructions", "gender")
+BUNDLE_FIELDS = ("description", "personality", "instructions", "gender", "birthday")
 #: who a bundled character is when her personas/<key>.json doesn't say (Mao's files are not in the repository)
 BUILTIN_GENDERS = {"chaerin": "female", "mao": "female"}
+#: her birthday (MM-DD) when her personas/<key>.json doesn't say (Mao's: Walpurgis Night, a trainee witch's)
+BUILTIN_BIRTHDAYS = {"mao": "04-30"}
 # conversation-style fields (prefs) a bundle sets and later updates merge field by field like the persona's; the
 # character's own speech level / address (``prefs.defaults``) are bundle data and always follow the bundle
 BUNDLE_STYLE_FIELDS = ("speech_style", "address")
 # bumped when the way bundles are composed changes (part of builtin_hash: every built-in is merged again once)
-BUNDLE_FORMAT = "3"  # (3: persona.gender)
+BUNDLE_FORMAT = "4"  # (3: persona.gender; 4: persona.birthday)
 
 
 def builtin_keys() -> list[str]:
@@ -1005,7 +1008,8 @@ def _text(src: dict[str, Any], k: str) -> str:
 def compose_persona(src: dict[str, Any]) -> dict[str, str]:
     """A personas/<key>.json document -> the persona fields all languages share: who she is.
     tagline/profile/appearance/background/relationship/knowledge/world (+ interests) -> description;
-    personality; the author's note -> instructions; gender (female | male) as it is. How she talks is compose_style()."""
+    personality; the author's note -> instructions; gender (female | male) and birthday (MM-DD) as they are. How she talks is
+    compose_style()."""
     sections = [
         ("", _text(src, "tagline")),
         ("", _text(src, "profile")),
@@ -1017,11 +1021,13 @@ def compose_persona(src: dict[str, Any]) -> dict[str, str]:
         ("Things you like to talk about", ", ".join(_lines(src.get("interests")))),
     ]
     gender = str(src.get("gender") or "").strip().lower()
+    born = str(src.get("birthday") or "").strip()
     return {
         "description": "\n\n".join(f"{t}:\n{x}" if t else x for t, x in sections if x),
         "personality": _text(src, "personality"),
         "instructions": _text(src, "note"),
         "gender": gender if gender in GENDERS else "",
+        "birthday": born if is_mmdd(born) else "",
     }
 
 
@@ -1082,6 +1088,7 @@ def builtin_bundle(key: str, doc: dict[str, Any] | None = None) -> dict[str, Any
         out = {"language": str(src.get("language") or "ko"), "names": names,
                "greetings": _per_lang(src.get("greetings")), "persona": compose_persona(src), "style": compose_style(src)}
     out["persona"]["gender"] = out["persona"].get("gender") or BUILTIN_GENDERS.get(key, "")
+    out["persona"]["birthday"] = out["persona"].get("birthday") or BUILTIN_BIRTHDAYS.get(key, "")
     return out
 
 

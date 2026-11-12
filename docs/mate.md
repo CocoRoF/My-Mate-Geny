@@ -32,7 +32,8 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
     "greeting": "",         // first line when a conversation starts
     "language": "ko",       // reply language (edited in Conversation style; also picks the localized name/greeting)
     "instructions": "",     // extra standing instructions
-    "gender": "female"      // who she is: female | male | "" (not known) — character data, never shown or set in the app
+    "gender": "female",     // who she is: female | male | "" (not known) — character data, never shown or set in the app
+    "birthday": ""          // "MM-DD" or "": she knows it (Who you are), her day has it (docs/mate-life.md "The days of her year")
   },
   "avatar": Avatar,         // §2
   "llm":   { "provider": "claude", "model": "claude-sonnet-5-5", "effort": "low" },   // new mates talk on Sonnet ("" falls back to it too); or "codex" / "gpt-6.1-sol"

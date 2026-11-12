@@ -5,16 +5,22 @@ nothing: needs have a ceiling, and she looks after herself.
 
 What she does next: an obligation that is due (work, sleep, a raid night), else what relieves her most, what she likes and what she
 can afford, with a seeded bit of chance. Nothing here is about what she says or decides in a conversation: this is the world around her.
+
+The days of her year: weekends, public holidays and the observances where the user lives (life/days.py), her birthday and theirs
+(``doc["birthdays"]``, kept by the runtime), what she has come to like by doing it with them (``tastes``), what she gave them
+(``given``: their keepsakes) and the moments they shared (``moments``).
 """
 
 from __future__ import annotations
 
+import calendar
 import hashlib
 import random
 from datetime import datetime, timedelta
 from typing import Any
 
 from app.mate import affinity as A
+from app.mate.life import days as D
 
 NEEDS = ("hunger", "sleep", "affection", "fun", "stress")
 STATS = ("work", "gaming", "stamina", "cooking", "sense", "courage")
@@ -59,6 +65,27 @@ PLAN_SLOTS = {"evening": ("19:00", "23:00"), "day": ("11:00", "18:00")}
 PLAN_LEAN = 1.6
 #: story events: not on top of each other
 EVENT_GAP = timedelta(hours=3)
+#: the week, the sky and the day lean how she feels a little: floors for state.py ({emotion: strength}), never above MOOD_MAX.
+#: A profile's ``moods`` can say otherwise for her ({name: {emotion: strength}})
+MOOD_MAX = 0.3
+MOODS = {"monday": {"sad": 0.26}, "sunday_night": {"worried": 0.2}, "friday": {"happy": 0.3}, "bright_off": {"happy": 0.26},
+         "wet": {"sad": 0.2, "sleepy": 0.2}, "wet_out": {"sad": 0.28}, "festive": {"happy": 0.25}, "her_birthday": {"happy": 0.3},
+         "user_birthday": {"happy": 0.25, "excited": 0.2}}
+MOOD_EMOTIONS = ("happy", "excited", "shy", "angry", "sad", "lonely", "worried", "sleepy")  # (state.EMOTIONS)
+#: what she likes grows with what they do together and what they send her: per hour together, per gift, at most this much on top
+#: of how much she likes it anyway; past NOTABLE it is a new favourite, and she is told so for a few days
+TASTE_TOGETHER, TASTE_GIFT, TASTE_MAX, TASTE_NOTABLE, TASTE_TOLD = 0.03, 0.05, 0.5, 0.25, timedelta(days=3)
+FAVOURITE_GIFT_AT, FAVOURITES_MAX = 3, 12
+#: her birthday: a message of theirs warms her this much more
+BIRTHDAY_WARMS = 2.0
+#: what she gives them (``gifts_to_user``): one a day at most, while she is up; on their birthday, for a milestone of theirs (one that
+#: came lately), on a day she knows, now and then after something that happened to her, and rarely just because, once close
+GIFT_HOURS, GIFT_FRESH, GIVEN_MAX = (8, 22), timedelta(hours=36), 60
+GIFT_MILESTONES, GIFT_MILESTONE_WITHIN = ("days_100", "days_365", "stage_trusted", "stage_companion"), timedelta(days=3)
+GIFT_DAY_CHANCE, GIFT_EVENT_CHANCE, GIFT_EVENT_GAP = 0.7, 0.5, timedelta(days=14)
+GIFT_RANDOM, GIFT_RANDOM_GAP = {"trusted": 0.015, "companion": 0.03}, timedelta(days=30)
+GIFT_STAGES = ("familiar", "trusted", "companion")
+MOMENTS_MAX = 40
 
 
 # ---- the document ----
@@ -70,7 +97,8 @@ def new(profile: dict[str, Any], now: datetime, tz: Any, seed: str) -> dict[str,
            "since": A._iso(now), "until": None, "going": None, "paid": None, "timeline": [], "day": _her_day(now, tz),
            "woken": None, "heard": None, "heard_at": None, "plan": None, "with_user": None, "coins": COINS_START, "coins_day": None, "coins_today": 0,
            "kept": [], "notes": [], "week": {}, "days": [], "recent": [], "fired": {}, "flags": [], "last_event": None, "born": A._iso(now),
-           "day_stats": None, "day_money": None}
+           "day_stats": None, "day_money": None, "tastes": {}, "received": {}, "favourites": [], "given": [], "moments": [],
+           "occasions": {}, "birthdays": {"her": "", "user": ""}}
     _next(doc, profile, now, tz, [], first=True)
     return doc
 
@@ -85,11 +113,19 @@ def normalized(doc: Any, profile: dict[str, Any]) -> dict[str, Any] | None:
     doc["stats"] = {s: float(stats.get(s) or 0) for s in STATS}
     doc["timeline"] = doc["timeline"] if isinstance(doc.get("timeline"), list) else []
     doc["coins"] = int(doc.get("coins", COINS_START) or 0)
-    for key in ("kept", "notes", "days", "recent", "flags"):
+    for key in ("kept", "notes", "days", "recent", "flags", "favourites", "given", "moments"):
         doc[key] = doc[key] if isinstance(doc.get(key), list) else []
-    for key in ("week", "fired"):
+    for key in ("week", "fired", "tastes", "received", "occasions", "birthdays"):
         doc[key] = doc[key] if isinstance(doc.get(key), dict) else {}
     doc["week"] = {k: v for k, v in doc["week"].items() if v in profile["activities"]}
+    doc["tastes"] = {k: max(0.0, min(TASTE_MAX, float(v))) for k, v in doc["tastes"].items()
+                     if k in profile["activities"] and isinstance(v, (int, float))}
+    shop = {x.get("id") for x in profile.get("shop") or []}
+    doc["received"] = {k: int(v) for k, v in doc["received"].items() if k in shop and isinstance(v, int)}
+    doc["given"] = [g for g in doc["given"] if isinstance(g, dict) and g.get("id") and A._t(g.get("at")) is not None][-GIVEN_MAX:]
+    doc["moments"] = [m for m in doc["moments"] if isinstance(m, dict) and A._t(m.get("at")) is not None][-MOMENTS_MAX:]
+    doc["favourites"] = [f for f in doc["favourites"] if isinstance(f, dict) and f.get("id")][-FAVOURITES_MAX:]
+    doc["birthdays"] = {who: str(doc["birthdays"].get(who) or "") for who in ("her", "user")}
     doc.setdefault("born", doc["at"])
     plan = doc.get("plan") if isinstance(doc.get("plan"), dict) else None
     doc["plan"] = plan if plan and A._t(plan.get("until")) is not None and plan.get("activity") in profile["activities"] else None
@@ -108,14 +144,43 @@ def _clamp(v: float, need: str) -> float:
     return max(0.0, min(CEILING[need], v))
 
 
-#: the real world around her (life/world.py fills it in): {"skies": {date: {sky, temp, low, high, city}}, "holidays": {date, …}}
-#: — today's weather where the user is and the public holidays of their country. Empty: a made-up sky, weekends off.
-REAL: dict[str, Any] = {"skies": {}, "holidays": set()}
+#: the real world around her (life/world.py fills it in): {"skies": {date: {sky, temp, low, high, city}}, "holidays": {date, …},
+#: "holiday_names": {date: [{en, local}]}, "country": "KR"} — today's weather where the user is, the public holidays of their
+#: country and the country (the days of the year she knows there: life/days.py). Empty: a made-up sky, weekends off.
+REAL: dict[str, Any] = {"skies": {}, "holidays": set(), "holiday_names": {}, "country": ""}
 
 
 def off_day(local: datetime) -> bool:
-    """A day off: a weekend, or a public holiday where the user lives (in their time zone)."""
-    return local.weekday() >= 5 or local.strftime("%Y-%m-%d") in REAL["holidays"]
+    """A day off: a weekend, a public holiday where the user lives (in their time zone), or a day off there for an office worker
+    the holidays don't list (Labor Day in Korea: life/days.py)."""
+    return local.weekday() >= 5 or local.strftime("%Y-%m-%d") in REAL["holidays"] or D.off(local, REAL.get("country") or "")
+
+
+def observances(local: datetime) -> list[dict[str, Any]]:
+    """What this day is where the user lives (life/days.py): {id, names, tone, about, off?}, the one that counts most first."""
+    return D.on(local, REAL.get("country") or "", REAL.get("holiday_names") or {})
+
+
+def holiday_name(local: datetime) -> dict[str, str]:
+    """The public holiday of this day by its names ({en, local}), when the holidays had one."""
+    found = (REAL.get("holiday_names") or {}).get(local.strftime("%Y-%m-%d")) or []
+    return dict(found[0]) if found else {}
+
+
+def _is_day(mmdd: Any, local: datetime) -> bool:
+    """A day of the year (MM-DD) is today; 02-29 is the 28th when there is none."""
+    if not isinstance(mmdd, str) or not mmdd:
+        return False
+    if mmdd == "02-29" and not calendar.isleap(local.year):
+        mmdd = "02-28"
+    return local.strftime("%m-%d") == mmdd
+
+
+def birthdays(doc: dict[str, Any], local: datetime) -> list[str]:
+    """Whose birthday it is today: "her", "user" (``doc["birthdays"]``: {her, user} as MM-DD, kept by the runtime). A flag for
+    whoever weighs what they do that day (the relationship): a greeting or a gift on her birthday means more."""
+    known = doc.get("birthdays") or {}
+    return [who for who in ("her", "user") if _is_day(known.get(who), local)]
 
 
 def _rng(doc: dict[str, Any], *parts: Any) -> random.Random:
@@ -275,7 +340,8 @@ def _score(doc: dict[str, Any], profile: dict[str, Any], key: str, act: dict[str
     noise = _rng(doc, "pick", local.strftime("%Y-%m-%d-%H"), key).uniform(-0.3, 0.3)
     again = min(1.2, _hours_today(doc, key, local, tz) * 0.3) + (1.0 if key == doc.get("activity") and act.get("cost") else 0.0)
     out = float((profile.get("outing") or {}).get("bonus") or 0) if act["place"] != (profile.get("start") or {}).get("place") and _feels_like_going_out(doc, profile, local, tz) else 0.0
-    return float(act.get("likes") or 0) + relief + noise + out + asked + good_at - trip * 0.7 - shy - dear - again - wet
+    likes = float(act.get("likes") or 0) + float((doc.get("tastes") or {}).get(key) or 0)  # (and what she came to like with them)
+    return likes + relief + noise + out + asked + good_at - trip * 0.7 - shy - dear - again - wet
 
 
 def plan_slot(local: datetime) -> str | None:
@@ -390,6 +456,23 @@ def _apply(doc: dict[str, Any], profile: dict[str, Any], dt: timedelta, t: datet
         doc["paid"] = doc.get("since")
         if not doc.get("with_user"):  # (together, it is on them)
             doc["money"] = max(0, doc["money"] - int(act["cost"]))
+    if doc.get("with_user") and act.get("free") and act.get("body") != "sleep":
+        _taste(doc, doc["activity"], TASTE_TOGETHER * hours, t)  # (what they do together, she comes to like)
+
+
+def _taste(doc: dict[str, Any], key: str, delta: float, at: datetime) -> None:
+    """She likes this a little more (never more than TASTE_MAX on top); the moment it passes NOTABLE it is a new favourite."""
+    tastes = doc.setdefault("tastes", {})
+    was = float(tastes.get(key) or 0)
+    tastes[key] = round(min(TASTE_MAX, was + delta), 4)
+    if was < TASTE_NOTABLE <= tastes[key]:
+        _favourite(doc, "activity", key, at)
+
+
+def _favourite(doc: dict[str, Any], kind: str, key: str, at: datetime) -> None:
+    favourites = doc.setdefault("favourites", [])
+    if not any(f.get("kind") == kind and f.get("id") == key for f in favourites):
+        doc["favourites"] = [*favourites, {"kind": kind, "id": key, "at": A._iso(at)}][-FAVOURITES_MAX:]
 
 
 def _day_summary(doc: dict[str, Any], day: str, t: datetime, tz: Any) -> dict[str, Any]:
@@ -453,16 +536,18 @@ def _fire(doc: dict[str, Any], event: dict[str, Any], t: datetime, tz: Any, out:
     doc["fired"][event["id"]] = A._iso(t)
     doc["last_event"] = A._iso(t)
     doc["recent"] = [*doc["recent"], {"id": event["id"], "at": A._iso(t), "day": _her_day(t, tz)}][-RECENT_KEPT:]
+    if doc.get("with_user"):  # (it happened with them there: something they share)
+        _moment(doc, {"kind": "event", "id": event["id"]}, t)
     note(doc, event["says"], t)
     out.append({"type": "event", "at": A._iso(t), "id": event["id"], "title": dict(event.get("titles") or {}), "share": bool(event.get("share")),
                 "says": event["says"], "feel": dict(effects.get("feel") or {})})
 
 
-def _events(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any, stage: str, out: list[dict[str, Any]]) -> None:
-    """At most one thing happens to her at a time: each has its chance per hour, while it can happen."""
+def _events(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any, stage: str, out: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """At most one thing happens to her at a time: each has its chance per hour, while it can happen. -> what just happened."""
     last = A._t(doc.get("last_event"))
     if last is not None and t - last < EVENT_GAP:
-        return
+        return None
     local = t.astimezone(tz)
     for event in profile.get("events") or []:
         fired = A._t(doc["fired"].get(event["id"]))
@@ -472,7 +557,118 @@ def _events(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any, 
             continue
         if _rng(doc, "event", event["id"], local.strftime("%Y-%m-%d-%H-%M")).random() < float(event.get("chance") or 0) * STEP.total_seconds() / 3600:
             _fire(doc, event, t, tz, out)
-            return
+            return event
+    return None
+
+
+def _moment(doc: dict[str, Any], what: dict[str, Any], at: datetime) -> None:
+    """Something memorable they shared, for the both of them ("추억"): {kind: event | milestone | birthday, …, at}."""
+    doc["moments"] = [*doc.setdefault("moments", []), {**what, "at": A._iso(at)}][-MOMENTS_MAX:]
+
+
+def _milestones(doc: dict[str, Any], milestones: list[dict[str, Any]]) -> None:
+    """The relationship's milestones (affinity.py: {key, at}) are moments too, each once."""
+    have = {m.get("key") for m in doc.get("moments") or [] if m.get("kind") == "milestone"}
+    for m in milestones:
+        at = A._t(m.get("at")) if isinstance(m, dict) else None
+        if at is not None and m.get("key") and m["key"] not in have:
+            _moment(doc, {"kind": "milestone", "key": str(m["key"])}, at)
+            have.add(m["key"])
+    doc["moments"] = sorted(doc.get("moments") or [], key=lambda m: A._t(m["at"]))[-MOMENTS_MAX:]
+
+
+def _occasions(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any, out: list[dict[str, Any]]) -> None:
+    """Her birthday as her day begins; theirs once she is up: each once a year, for whoever takes it from here (how she feels,
+    the relationship, whether she writes first)."""
+    local = t.astimezone(tz)
+    year = str(local.year)
+    seen = doc.setdefault("occasions", {})
+    for who in birthdays(doc, local):
+        key = f"{who}_birthday"
+        if seen.get(key) == year:
+            continue
+        if who == "user" and (_sleeping(doc, profile) or not GIFT_HOURS[0] <= local.hour < GIFT_HOURS[1]):
+            continue  # (she wishes them a happy birthday once she is up)
+        seen[key] = year
+        out.append({"type": "occasion", "id": key, "at": A._iso(t), "share": who == "user", "feel": {"happy": "slight"} if who == "her" else {},
+                    "title": {"ko": "생일" if who == "her" else "상대의 생일", "en": "Her birthday" if who == "her" else "Their birthday"}})
+
+
+def _sleeping(doc: dict[str, Any], profile: dict[str, Any]) -> bool:
+    return (profile["activities"].get(doc.get("activity") or "") or {}).get("body") == "sleep"
+
+
+def _given_this_year(doc: dict[str, Any], why: str, local: datetime, tz: Any) -> bool:
+    return any(g.get("why") == why and (A._t(g["at"]) or local).astimezone(tz).year == local.year for g in doc.get("given") or [])
+
+
+def _last_given(doc: dict[str, Any], *, prefix: str = "") -> datetime | None:
+    ats = [A._t(g["at"]) for g in doc.get("given") or [] if str(g.get("why") or "").startswith(prefix)]
+    return max((a for a in ats if a is not None), default=None)
+
+
+def _occasion(doc: dict[str, Any], t: datetime, tz: Any, stage: str, milestones: list[dict[str, Any]], fired: dict[str, Any] | None,
+              gifts: list[dict[str, Any]]) -> tuple[str, str] | None:
+    """Whether now is a moment she gives them something, and for what: (what her gifts are for, why) or None."""
+    local = t.astimezone(tz)
+    year = local.strftime("%Y")
+    if fired and stage in GIFT_STAGES:  # (right after something happened to her: now or never)
+        tag = f"event:{fired['id']}"
+        last = _last_given(doc, prefix="event:")
+        if (any(tag in (g.get("for") or []) for g in gifts) and (last is None or t - last >= GIFT_EVENT_GAP)
+                and _rng(doc, "gift after", fired["id"], A._iso(t)).random() < GIFT_EVENT_CHANCE):
+            return tag, tag
+    if not GIFT_HOURS[0] <= local.hour < GIFT_HOURS[1]:
+        return None
+    if "user" in birthdays(doc, local) and not _given_this_year(doc, "birthday", local, tz):
+        return "birthday", "birthday"
+    for m in milestones:
+        at = A._t(m.get("at")) if isinstance(m, dict) else None
+        key = f"milestone:{m.get('key')}" if at is not None else ""
+        if key and m["key"] in GIFT_MILESTONES and timedelta(0) <= t - at <= GIFT_MILESTONE_WITHIN \
+                and not any(g.get("why") == key for g in doc.get("given") or []):
+            return "milestone", key
+    if stage in GIFT_STAGES:
+        for o in observances(local):
+            tag = f"day:{o['id']}"
+            if (any(tag in (g.get("for") or []) for g in gifts) and not _given_this_year(doc, tag, local, tz)
+                    and _rng(doc, "gift day", o["id"], year).random() < GIFT_DAY_CHANCE):
+                return tag, tag
+    chance = GIFT_RANDOM.get(stage, 0.0)
+    day = local.strftime("%Y-%m-%d")
+    if chance and local.hour == _rng(doc, "gift hour", day).randint(10, 20) and _rng(doc, "gift random", day).random() < chance:
+        last = _last_given(doc)
+        if last is None or t - last >= GIFT_RANDOM_GAP:
+            return "random", "random"
+    return None
+
+
+def _gifts(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any, stage: str, milestones: list[dict[str, Any]],
+           fired: dict[str, Any] | None, out: list[dict[str, Any]]) -> None:
+    """Sometimes she gives them something (``gifts_to_user``): what she gave stays with them (``given``, their keepsakes)."""
+    gifts = profile.get("gifts_to_user") or []
+    if not gifts or _sleeping(doc, profile):
+        return
+    given = doc.get("given") or []
+    if given and _her_day(A._t(given[-1]["at"]) or t, tz) == _her_day(t, tz):
+        return  # (one a day at most)
+    found = _occasion(doc, t, tz, stage, milestones, fired, gifts)
+    if found is None:
+        return
+    kind, why = found
+    choices = [g for g in gifts if kind in (g.get("for") or [])]
+    if not choices:
+        return
+    times = {}
+    for g in doc.get("given") or []:
+        times[g["id"]] = times.get(g["id"], 0) + 1
+    fewest = min(times.get(g["id"], 0) for g in choices)
+    gift = _rng(doc, "gift", why, A._iso(t)).choice([g for g in choices if times.get(g["id"], 0) == fewest])
+    notes = gift.get("notes") or {}
+    entry = {"id": gift["id"], "name": dict(gift["names"]), "note": dict(notes.get(kind.split(":")[0]) or notes.get("default") or {}),
+             "kind": gift.get("kind") or "", "at": A._iso(t), "why": why}
+    doc["given"] = [*doc.get("given", []), entry][-GIVEN_MAX:]
+    out.append({"type": "gave", **entry, "share": True, "title": {"ko": f"{entry['name']['ko']} 선물", "en": f"Gave {entry['name']['en']}"}})
 
 
 def _switch(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any, out: list[dict[str, Any]]) -> None:
@@ -516,8 +712,14 @@ def _switch(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any, 
             _next(doc, profile, t, tz, out)
 
 
-def advance(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *, closeness: float = 0.33, stage: str = "new") -> list[dict[str, Any]]:
-    """Plays the time since it last ran. -> what happened, oldest first: {type: moved | started | event, …}."""
+def advance(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *, closeness: float = 0.33, stage: str = "new",
+            milestones: list[dict[str, Any]] | None = None, birthdays: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    """Plays the time since it last ran. -> what happened, oldest first: {type: moved | started | event | occasion | gave, …}.
+    ``milestones``: the relationship's ({key, at}); ``birthdays``: {her, user} as MM-DD ("" unknown), kept in the document."""
+    if birthdays is not None:
+        doc["birthdays"] = {who: str(birthdays.get(who) or "") for who in ("her", "user")}
+    milestones = list(milestones or [])
+    _milestones(doc, milestones)
     t = A._t(doc.get("at")) or now
     if now - t > MAX_GAP:
         t = now - MAX_GAP
@@ -528,7 +730,9 @@ def advance(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any
         t += dt
         _new_day(doc, profile, t, tz)
         _switch(doc, profile, t, tz, out)
-        _events(doc, profile, t, tz, stage, out)
+        fired = _events(doc, profile, t, tz, stage, out)
+        _occasions(doc, profile, t, tz, out)
+        _gifts(doc, profile, t, tz, stage, milestones, fired, out)
     doc["at"] = A._iso(now)
     return out
 
@@ -570,15 +774,23 @@ def decide(doc: dict[str, Any], profile: dict[str, Any], key: Any, now: datetime
 
 # ---- what comes from outside ----
 
-def heard(doc: dict[str, Any], profile: dict[str, Any], message: str, now: datetime, *, warm: bool = False, rude: bool = False) -> bool:
+def heard(doc: dict[str, Any], profile: dict[str, Any], message: str, now: datetime, *, warm: bool = False, rude: bool = False,
+          tz: Any = None) -> bool:
     """A message of theirs reached her, once however often it is looked at: being talked to is part of what she wanted, and it wakes
-    her if she sleeps. -> whether it just woke her."""
+    her if she sleeps; on her birthday it means more, and a birthday they talk on is a moment of theirs. -> whether it just woke her."""
     if doc.get("heard") == message:
         return False
     doc["heard"], doc["heard_at"] = message, A._iso(now)
     _earn(doc, now)
+    local = now.astimezone(tz) if tz is not None else None
+    whose = birthdays(doc, local) if local is not None else []
+    for who in whose:
+        if not any(m.get("kind") == "birthday" and m.get("who") == who and (A._t(m["at"]) or now).astimezone(tz).year == local.year
+                   for m in doc.get("moments") or []):
+            _moment(doc, {"kind": "birthday", "who": who}, now)
     if not rude:
-        doc["needs"]["affection"] = _clamp(doc["needs"]["affection"] - (HEARD_WARM if warm else HEARD_AFFECTION), "affection")
+        warms = (HEARD_WARM if warm else HEARD_AFFECTION) * (BIRTHDAY_WARMS if "her" in whose else 1.0)
+        doc["needs"]["affection"] = _clamp(doc["needs"]["affection"] - warms, "affection")
         doc["needs"]["fun"] = _clamp(doc["needs"]["fun"] - HEARD_FUN, "fun")
     else:
         doc["needs"]["stress"] = _clamp(doc["needs"]["stress"] + HEARD_RUDE_STRESS, "stress")
@@ -600,14 +812,17 @@ def _earn(doc: dict[str, Any], now: datetime) -> None:
         doc["coins"] = int(doc.get("coins") or 0) + COINS_MESSAGE
 
 
-def give(doc: dict[str, Any], profile: dict[str, Any], item_id: Any) -> dict[str, Any]:
-    """They send her something. -> {code: ok | unknown | coins, item}. What it does happens now; how she takes it is hers."""
+def give(doc: dict[str, Any], profile: dict[str, Any], item_id: Any, now: datetime | None = None, tz: Any = None) -> dict[str, Any]:
+    """They send her something. -> {code: ok | unknown | coins, item, birthday, favourite}. What it does happens now; how she takes
+    it is hers. On her birthday it warms her more (``birthday``: for whoever weighs it); one they keep sending becomes a favourite
+    of hers (``favourite``: just now), and what it goes with (an item's ``taste``: an activity) she comes to like a little more."""
     item = next((x for x in profile.get("shop") or [] if x.get("id") == item_id), None)
     if item is None:
         return {"code": "unknown"}
     price = int(item.get("price") or 0)
     if int(doc.get("coins") or 0) < price:
         return {"code": "coins", "item": item}
+    now = now or A._t(doc.get("at")) or datetime.now().astimezone()
     doc["coins"] = int(doc.get("coins") or 0) - price
     for need, delta in (item.get("needs") or {}).items():
         doc["needs"][need] = _clamp(doc["needs"][need] + float(delta), need)
@@ -615,7 +830,17 @@ def give(doc: dict[str, Any], profile: dict[str, Any], item_id: Any) -> dict[str
         doc["stats"][stat] = min(100.0, doc["stats"][stat] + float(gain))
     if item.get("keep"):
         doc["kept"] = [*doc["kept"], item["id"]][-KEPT_MAX:]
-    return {"code": "ok", "item": item}
+    birthday = tz is not None and "her" in birthdays(doc, now.astimezone(tz))
+    if birthday:
+        doc["needs"]["affection"] = _clamp(doc["needs"]["affection"] - HEARD_WARM * BIRTHDAY_WARMS, "affection")
+    if item.get("taste") in profile["activities"]:
+        _taste(doc, item["taste"], TASTE_GIFT, now)
+    received = doc.setdefault("received", {})
+    received[item["id"]] = int(received.get(item["id"]) or 0) + 1
+    favourite = received[item["id"]] == FAVOURITE_GIFT_AT
+    if favourite:
+        _favourite(doc, "gift", item["id"], now)
+    return {"code": "ok", "item": item, "birthday": birthday, "favourite": favourite}
 
 
 def note(doc: dict[str, Any], text: str, at: datetime) -> None:
@@ -664,10 +889,70 @@ def asleep(doc: dict[str, Any], profile: dict[str, Any], now: datetime) -> bool:
     return woken is None or now >= woken
 
 
-def for_state(doc: dict[str, Any], profile: dict[str, Any], now: datetime) -> dict[str, Any]:
-    """What state.py reads of it: her needs and what she is doing does to how she feels."""
+def _festive(local: datetime) -> dict[str, Any] | None:
+    """A day to be glad of: a festive one she knows, else a weekday off (a holiday)."""
+    found = next((o for o in observances(local) if o["tone"] == "festive"), None)
+    if found:
+        return found
+    if any(o["tone"] == "solemn" for o in observances(local)):
+        return None
+    return {"id": "holiday", "names": {"en": "a public holiday", "ko": "공휴일"}} if off_day(local) and local.weekday() < 5 else None
+
+
+def mood(doc: dict[str, Any], profile: dict[str, Any], local: datetime) -> list[tuple[str, dict[str, float]]]:
+    """What the week, the sky and the day do to how she feels, a little: [(name, {emotion: strength ≤ MOOD_MAX})] — a Monday
+    morning a bit low, a Friday evening lighter (any evening before days off), the end of the weekend, rain or snow calmer and a
+    little gloomy (more so out in it), a clear day off brighter, a day to celebrate, a birthday."""
+    found = []
+    working, h = not off_day(local), local.hour
+    tomorrow_off = off_day(local + timedelta(days=1))
+    if working and local.weekday() == 0 and 5 <= h < 12:
+        found.append("monday")
+    if working and tomorrow_off and h >= 17:
+        found.append("friday")
+    if not working and not tomorrow_off and h >= 18:
+        found.append("sunday_night")
+    sky = weather(doc, local)
+    if sky in ("rain", "snow"):
+        out = doc.get("activity") == "commute" or (profile["places"].get(doc.get("place") or "") or {}).get("outdoor")
+        found.append("wet_out" if out else "wet")
+    elif sky == "clear" and not working and 9 <= h < 18:
+        found.append("bright_off")
+    if _festive(local):
+        found.append("festive")
+    found += [f"{who}_birthday" for who in birthdays(doc, local)]
+    own = profile.get("moods") or {}
+    return [(name, {e: min(MOOD_MAX, float(v)) for e, v in (own.get(name, MOODS[name]) or {}).items() if e in MOOD_EMOTIONS})
+            for name in found]
+
+
+def _mood_words(name: str, doc: dict[str, Any], local: datetime) -> str:
+    sky = {"rain": "rainy", "snow": "snowy"}.get(weather(doc, local), "grey")
+    day = _festive(local) or {}
+    return {"monday": "on a Monday morning", "friday": "with days off ahead", "sunday_night": "with the days off ending",
+            "wet": f"on a {sky} day", "wet_out": f"out on a {sky} day", "bright_off": "on a clear day off",
+            "festive": f"on {(day.get('names') or {}).get('en') or 'a good day'}", "her_birthday": "on your birthday",
+            "user_birthday": "on their birthday"}.get(name, "")
+
+
+def for_state(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any = None) -> dict[str, Any]:
+    """What state.py reads of it: her needs, and what she is doing does to how she feels; with ``tz``, the week, the sky and the
+    day too (``mood``: floors, as subtle as that), the reason going with what she is doing."""
     act = profile["activities"].get(doc.get("activity") or "") or {}
-    return {"needs": dict(doc["needs"]), "feel": dict(act.get("feel") or {}), "doing": act.get("doing") or "", "asleep": asleep(doc, profile, now)}
+    feel = {e: float(v) for e, v in (act.get("feel") or {}).items()}
+    doing = act.get("doing") or ""
+    if tz is not None:
+        local = now.astimezone(tz)
+        best, why = 0.0, ""
+        for name, nudge in mood(doc, profile, local):
+            for e, v in nudge.items():
+                if v > feel.get(e, 0.0):
+                    feel[e] = v
+                    if v > best:
+                        best, why = v, _mood_words(name, doc, local)
+        if why:
+            doing = f"{doing or 'taking it easy'}, {why}"
+    return {"needs": dict(doc["needs"]), "feel": feel, "doing": doing, "asleep": asleep(doc, profile, now)}
 
 
 def body(doc: dict[str, Any]) -> list[list[str]]:
@@ -677,8 +962,10 @@ def body(doc: dict[str, Any]) -> list[list[str]]:
 
 
 def signature(doc: dict[str, Any]) -> list[Any]:
-    """Without the fine print: when this changes she is told again, and every window hears."""
-    return [doc.get("place"), doc.get("activity"), body(doc), bool(doc.get("with_user"))]
+    """Without the fine print: when this changes she is told again, and every window hears (a new day of hers: what the day is;
+    a gift she gave, a new favourite)."""
+    return [doc.get("place"), doc.get("activity"), body(doc), bool(doc.get("with_user")), doc.get("day"),
+            (doc.get("given") or [{}])[-1].get("at"), (doc.get("favourites") or [{}])[-1].get("at")]
 
 
 def art(profile: dict[str, Any], place: str | None, when: str) -> str:
@@ -686,8 +973,104 @@ def art(profile: dict[str, Any], place: str | None, when: str) -> str:
     return f"{profile['art']}/{place}-{when}.webp" if profile.get("art") and place else ""
 
 
-def line(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *, woke: bool = False) -> str:
-    """Her day, as she is told it in her <context>."""
+def job(profile: dict[str, Any]) -> str:
+    """What she does for a living, said plainly (a profile's ``job``), with her working hours from the routine."""
+    about = str((profile.get("job") or {}).get("about") or "").strip()
+    if not about:
+        return ""
+    work = next((b for b in profile.get("routine") or [] if b.get("activity") == "work"), None)
+    hours = f" (on working days, {work['from']}–{work['to']})" if work else ""
+    return f"Your job: {about}{hours}. You can tell them what you do and talk about your workday."
+
+
+_TONE_HINT = {"festive": "you can greet them with it or bring it up, lightly, once",
+              "solemn": "a day remembered quietly: no cheerful greeting, only if it comes up",
+              "plain": "you may mention it if it fits"}
+
+
+def _day_lines(doc: dict[str, Any], local: datetime) -> list[str]:
+    """What today is, by what counts most: birthdays, then the observances, then a public holiday."""
+    out = []
+    whose = birthdays(doc, local)
+    if "her" in whose:
+        out.append("Today is your birthday. If they remember it, it means a lot to you; whether you bring it up yourself, and how, "
+                   "is up to you.")
+    if "user" in whose:
+        out.append("Today is their birthday, and you remembered: wish them a happy birthday first thing, in your own way.")
+    days = observances(local)
+    for o in days[:2]:
+        out.append(f"Today is {o['names']['en']} ({o['names']['ko']}): {o['about']} — {_TONE_HINT[o['tone']]}.")
+    if off_day(local) and local.weekday() < 5:
+        name = holiday_name(local)
+        if days:
+            out.append("It is a day off for you.")
+        else:
+            out.append(f"Today is a public holiday{' (' + (name.get('en') or name.get('local')) + ')' if name.get('en') or name.get('local') else ''}: "
+                       "a day off for you.")
+    return out
+
+
+def _gloom(doc: dict[str, Any], profile: dict[str, Any], local: datetime) -> list[str]:
+    """What makes the day a gloomy one, in words."""
+    out = []
+    sky = weather(doc, local)
+    if sky in ("rain", "snow"):
+        out.append("it is raining" if sky == "rain" else "it is snowing")
+    if any(name == "monday" for name, _ in mood(doc, profile, local)):
+        out.append("it is Monday morning")
+    n = doc["needs"]
+    if n["stress"] >= 0.5 or n["fun"] >= 0.6 or n["sleep"] >= 0.6:
+        out.append("you feel run down")
+    return out
+
+
+_WHY_GAVE = {"birthday": "for their birthday", "random": "just because", "milestone:days_100": "for your hundredth day together",
+             "milestone:days_365": "for your first year together", "milestone:stage_trusted": "because you have grown close",
+             "milestone:stage_companion": "because they have become someone very dear to you"}
+
+
+def why_gave(profile: dict[str, Any], why: str) -> str:
+    """Why she gave it, in words for her."""
+    if why in _WHY_GAVE:
+        return _WHY_GAVE[why]
+    if why.startswith("day:"):
+        found = next((d for days in D.CALENDAR.values() for d in days if d["id"] == why[4:]), None)
+        return f"for {found['names']['en']}" if found else "for the day"
+    if why.startswith("event:"):
+        event = next((e for e in profile.get("events") or [] if e.get("id") == why[6:]), None)
+        return f"after what happened ({(event or {}).get('titles', {}).get('en') or why[6:]})"
+    return "for a moment of yours"
+
+
+def _gave_lines(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, lang: str) -> list[str]:
+    out = []
+    gifts = {g["id"]: g for g in profile.get("gifts_to_user") or [] if g.get("id")}
+    for g in [g for g in doc.get("given") or [] if now - (A._t(g["at"]) or now) <= GIFT_FRESH][-2:]:
+        at = (A._t(g["at"]) or now).astimezone(tz)
+        when = "Today" if at.date() == now.astimezone(tz).date() else "Yesterday"
+        about = (gifts.get(g["id"]) or {}).get("about") or (g.get("name") or {}).get("en") or g["id"]
+        note = (g.get("note") or {}).get(lang) or (g.get("note") or {}).get("ko") or (g.get("note") or {}).get("en") or ""
+        out.append(f"{when} you gave them {about}, {why_gave(profile, str(g.get('why') or ''))}: it is theirs to keep, and you can talk "
+                   "about it." + (f" Your note with it: “{note}”" if note else ""))
+    return out
+
+
+def _favourite_lines(doc: dict[str, Any], profile: dict[str, Any], now: datetime) -> list[str]:
+    out = []
+    shop = {x["id"]: x for x in profile.get("shop") or [] if x.get("id")}
+    for f in [f for f in doc.get("favourites") or [] if now - (A._t(f.get("at")) or now) <= TASTE_TOLD][-2:]:
+        if f.get("kind") == "activity" and f["id"] in profile["activities"]:
+            out.append(f"Lately you have come to like {profile['activities'][f['id']].get('doing') or f['id']} more than before, "
+                       "from doing it with them.")
+        elif f.get("kind") == "gift" and f["id"] in shop:
+            out.append(f"{(shop[f['id']].get('sent') or shop[f['id']]['id']).capitalize()} has become a favourite of yours: they keep sending it.")
+    return out
+
+
+def line(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *, woke: bool = False, lang: str = "ko") -> str:
+    """Her day, as she is told it in her <context>: where she is and what she is doing, her job, what today is (her birthday or
+    theirs, then a day she knows, then a public holiday, then the sky: a good day and a gloomy one at once is both), what is next,
+    her body, what she has from them and what she gave them."""
     act = profile["activities"].get(doc.get("activity") or "") or {}
     place = profile["places"].get(doc.get("place") or "") or {}
     going = (doc.get("going") or {}).get("activity")
@@ -702,6 +1085,8 @@ def line(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *
         if minutes >= 10:
             where += f" (for {f'about {round(minutes / 60)} hours' if minutes >= 90 else f'{minutes} minutes'} now)"
     parts = [f"Your day: you are {where}."]
+    if job(profile):
+        parts.append(job(profile))
     if doc.get("with_user"):
         parts.append("They are here with you in person: this is not by phone, you can see each other.")
     if woke:
@@ -711,6 +1096,7 @@ def line(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *
     elif act.get("reply") and not doc.get("with_user"):
         parts.append(act["reply"])
     local = now.astimezone(tz)
+    parts += _day_lines(doc, local)
     sky = weather(doc, local)
     real = REAL["skies"].get(local.strftime("%Y-%m-%d")) or {}
     if real.get("temp") is not None:
@@ -719,8 +1105,10 @@ def line(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *
                      + (f" (today {real['low']}–{real['high']}°C)." if real.get("low") is not None else "."))
     elif sky != "clear":
         parts.append({"cloudy": "It is cloudy today.", "rain": "It is raining today.", "snow": "It is snowing today."}[sky])
-    if off_day(local) and local.weekday() < 5:
-        parts.append("Today is a public holiday.")
+    gloom = _gloom(doc, profile, local)
+    if (birthdays(doc, local) or _festive(local)) and gloom:
+        parts.append(f"A good day and a gloomy one at once ({' and '.join(gloom)}): both are true, so let them mix the way you would — "
+                     "some cheer you put on, or honest about it.")
     coming = _upcoming(doc, profile, now, tz, other_than=doc.get("activity"))
     if coming and profile["activities"][coming["activity"]].get("body") != "sleep":
         if coming["start"] - local <= timedelta(hours=4):
@@ -735,6 +1123,8 @@ def line(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *
     names = [(next((x for x in profile.get("shop") or [] if x.get("id") == i), None) or {}).get("note") for i in doc.get("kept") or []]
     if any(names):
         parts.append("You have, from them: " + ", ".join(dict.fromkeys(n for n in names if n)) + ".")
+    parts += _favourite_lines(doc, profile, now)
+    parts += _gave_lines(doc, profile, now, tz, lang)
     return " ".join(parts)
 
 
@@ -743,11 +1133,22 @@ def _names(profile: dict[str, Any], kind: str, key: str | None) -> dict[str, str
 
 
 def summary(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any) -> dict[str, Any]:
-    """What the mate document carries: enough for her stage and the status chips."""
+    """What the mate document carries: enough for her stage and the status chips. ``observance``: what today is (a day she knows,
+    else the public holiday by its name); ``birthday``: her | user | both (a flag for whoever weighs what they do today); ``gift``:
+    what she just gave them (for a notice)."""
     act = profile["activities"].get(doc.get("activity") or "") or {}
     local = now.astimezone(tz)
     real = REAL["skies"].get(local.strftime("%Y-%m-%d")) or {}
+    day = next(iter(observances(local)), None)
+    held = holiday_name(local) if off_day(local) and local.weekday() < 5 else {}
+    observance = ({"id": day["id"], "name": dict(day["names"]), "tone": day["tone"]} if day else
+                  {"id": "holiday", "name": {"en": held.get("en") or held.get("local"), "ko": held.get("local") or held.get("en")}, "tone": "plain"}
+                  if held.get("en") or held.get("local") else None)
+    whose = birthdays(doc, local)
+    fresh = next((g for g in reversed(doc.get("given") or []) if now - (A._t(g["at"]) or now) <= GIFT_FRESH), None)
     return {"enabled": True, "art": art(profile, doc["place"], slot(local)), "weather": weather(doc, local),
+            "observance": observance, "birthday": ("both" if len(whose) == 2 else whose[0]) if whose else None,
+            "gift": {"id": fresh["id"], "name": dict(fresh.get("name") or {}), "at": fresh["at"]} if fresh else None,
             "temp": real.get("temp"), "city": real.get("city") or "", "holiday": off_day(local) and local.weekday() < 5,
             "outdoor": bool((profile["places"].get(doc["place"]) or {}).get("outdoor")), "place": doc["place"], "place_name": _names(profile, "places", doc["place"]), "activity": doc.get("activity"),
             "activity_name": _names(profile, "activities", doc.get("activity")), "body": act.get("body") or "", "since": doc.get("since"),
@@ -776,4 +1177,27 @@ def view(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any) -
                         "minutes": travel_minutes(profile, doc["place"], k), "art": art(profile, k, slot(local)), "x": p.get("x"), "y": p.get("y")}
                        for k, p in profile["places"].items()],
             "today": [{**e, "name": _names(profile, "activities", e.get("activity")), "place_name": _names(profile, "places", e.get("place"))}
-                      for e in doc["timeline"] if (A._t(e.get("to")) or now).astimezone(tz) >= start]}
+                      for e in doc["timeline"] if (A._t(e.get("to")) or now).astimezone(tz) >= start],
+            "job": dict((profile.get("job") or {}).get("names") or {}),
+            "given": [{**g, "for": _given_for(profile, str(g.get("why") or ""))} for g in reversed(doc.get("given") or [])],
+            "moments": [_moment_view(m, events) for m in reversed(doc.get("moments") or [])],
+            "tastes": [{"activity": k, "name": _names(profile, "activities", k), "v": round(v, 2)}
+                       for k, v in sorted((doc.get("tastes") or {}).items(), key=lambda kv: -kv[1]) if v >= 0.05][:6]}
+
+
+def _given_for(profile: dict[str, Any], why: str) -> dict[str, Any]:
+    """Why she gave it, for the UI: {kind: birthday | milestone | day | event | random, key, name}."""
+    kind, _, key = why.partition(":")
+    name: dict[str, str] = {}
+    if kind == "day":
+        name = dict(next((d["names"] for days in D.CALENDAR.values() for d in days if d["id"] == key), {}))
+    elif kind == "event":
+        name = dict(next((e.get("titles") or {} for e in profile.get("events") or [] if e.get("id") == key), {}))
+    return {"kind": kind or "random", "key": key, "name": name}
+
+
+def _moment_view(m: dict[str, Any], events: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    out = {k: m[k] for k in ("kind", "at", "key", "who", "id") if m.get(k)}
+    if m.get("kind") == "event":
+        out["title"] = dict((events.get(m.get("id") or "") or {}).get("titles") or {})
+    return out

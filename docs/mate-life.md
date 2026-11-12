@@ -69,6 +69,36 @@ her, it is on them, her messages stop being by phone, and she stays while they k
 - **Gifts** cost coins, and coins come only from talking to her, a little a day. What a gift does happens at once, and how she takes it is hers: she hears
   right away if she can, else with their next message. What she keeps she is told she has.
 
+## The days of her year
+
+- **Her job, plainly**: a profile's `job` (`about`, `names`) goes into what she is told, with her working hours from the routine, so she can say what
+  she does and talk about her workday (한채린: QA engineer at a game company; `default.json`: an office worker).
+- **Days off and days she knows**: weekends, the public holidays where the user lives (Nager.Date, with their names) and `builtin/days.json`:
+  per country (its code; only `KR` so far, a list per code for more), fixed dates (빼빼로데이, 크리스마스 …) and the holidays that are one by
+  name (설날, 추석: their dates move). `off: true` is a day off for her as an office worker whatever the holidays say (노동절, May 1). What
+  today is goes into her context by what counts most — her birthday or theirs, then the day she knows (a festive one to greet with
+  lightly, a solemn one only quietly), then a public holiday, then the sky; a good day that is also a gloomy one (rain, a Monday, run
+  down) is told as both, for her to mix as she would. Her status shows it (`summary.observance`).
+- **The week and the sky**: small floors on how she feels (`sim.mood`, at most `MOOD_MAX`): a Monday morning a bit low, an evening before
+  days off lighter, the end of the weekend, rain or snow calmer and a little gloomy (more so out in it), a clear day off brighter, a day
+  to celebrate, a birthday. They reach `state.py` through `for_state`'s `feel`, the reason going with what she is doing; a profile's
+  `moods` can say otherwise for her (한채린: rain at home is cosy more than gloomy).
+- **Birthdays**: hers is `persona.birthday` (Mao's is in `files.BUILTIN_BIRTHDAYS`: her persona is not in the repo), theirs the app-wide
+  `user_birthday`; the runtime keeps both in her day (`doc.birthdays`). On hers, her day begins with an `occasion` (`her_birthday`: a
+  little happy, logged `mate.life_occasion`), their message warms her twice as much and a gift more (`give().birthday`), and the mate
+  document says so (`summary.birthday`) for whoever weighs that day. On theirs, once she is up, she wishes them a happy birthday first
+  (an `occasion` she may write first about, all morning, when reach-out is on; else first thing in their next conversation) and gives
+  them something.
+- **What she comes to like**: what they do together grows a little `likes` of her own (`tastes`, per hour together, at most `TASTE_MAX`),
+  and so does what a gift they send goes with (an item's `taste`); a gift they keep sending becomes a favourite. Past `TASTE_NOTABLE` it
+  is a new favourite, and she is told so for a few days.
+- **What she gives them**: from her profile's `gifts_to_user` (names, what it is, a note per occasion, what it is for): on their birthday,
+  for a milestone of theirs that just came, on a day she knows (`day:<id>`), now and then right after something that happened to her
+  (`event:<id>`), and rarely just because once close; one a day at most, never asleep. It stays with them (`given`: their keepsakes, in
+  the Status window's 추억 tab), she is told she gave it, the chat shows a notice (`life.gave`) and she may write first about it.
+- **Moments they share** (`moments`): story events that happened while they were together, the relationship's milestones, birthdays they
+  talked on. Shown beside the keepsakes.
+
 ## Her body
 
 Clips of `kind: "life"` with a `doing` (eat, drink, game, read, walk, workout, work, sleep) leave her home pose and come back to it, in every set. While
@@ -107,7 +137,8 @@ reaches her by phone wherever she is, unless the user is with her. When reach-ou
 
 ## Files
 
-`app/mate/life/sim.py` (pure), `profile.py` (her world as data, checked), `runtime.py` (the clock, the one way in), `diary.py`; `builtin/life/*.json`;
+`app/mate/life/sim.py` (pure), `profile.py` (her world as data, checked), `runtime.py` (the clock, the one way in), `diary.py`, `days.py` (the
+days of the year she knows, `builtin/days.json`), `world.py` (the weather, the holidays and the country); `builtin/life/*.json`;
 `components/mate/life/` (the backdrop, her status on the stage, the sections of her day), `components/mate/stage/` (her menu at the top
 right of the stage: Status, Places and Outfits, each a window over her on a desk and a sheet on a phone; how she is doing is in Status); `builtin/assets/chaerin/places/` (ten places at four times of day, her map).
 `prefs.life`: auto (on for a mate who comes with a world of her own), on (anyone else gets `default.json`), off. A memory wipe starts her day again.

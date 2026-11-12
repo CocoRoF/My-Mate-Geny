@@ -14,6 +14,19 @@
   }
  },
  "daily_cost": 20000,
+ "job": {
+  "names": {
+   "ko": "게임 회사 QA 엔지니어",
+   "en": "QA engineer at a game company"
+  },
+  "about": "a QA (quality assurance) engineer at a game company, in your third year: you test builds, hunt bugs and write bug reports with repro steps before each release, and you never talk about your company's internal information"
+ },
+ "moods": {
+  "wet": {
+   "sleepy": 0.22,
+   "sad": 0.12
+  }
+ },
  "places": {
   "home": {
    "names": {
@@ -849,7 +862,8 @@
     "fun": -0.1
    },
    "stats": {},
-   "sent": "a box of desserts"
+   "sent": "a box of desserts",
+   "taste": "dessert"
   },
   {
    "id": "chicken",
@@ -868,7 +882,8 @@
     "fun": -0.1
    },
    "stats": {},
-   "sent": "fried chicken delivery"
+   "sent": "fried chicken delivery",
+   "taste": "delivery"
   },
   {
    "id": "cushion",
@@ -889,7 +904,8 @@
    "stats": {},
    "note": "a soft cushion on your bed",
    "keep": true,
-   "sent": "a soft cushion on your bed"
+   "sent": "a soft cushion on your bed",
+   "taste": "rest"
   },
   {
    "id": "cookbook",
@@ -911,7 +927,8 @@
    },
    "note": "a beginner's cookbook",
    "keep": true,
-   "sent": "a beginner's cookbook"
+   "sent": "a beginner's cookbook",
+   "taste": "cook"
   },
   {
    "id": "plush",
@@ -954,7 +971,8 @@
    },
    "note": "a new board game",
    "keep": true,
-   "sent": "a new board game"
+   "sent": "a new board game",
+   "taste": "boardgame"
   },
   {
    "id": "running_shoes",
@@ -976,7 +994,8 @@
    },
    "note": "a pair of running shoes",
    "keep": true,
-   "sent": "a pair of running shoes"
+   "sent": "a pair of running shoes",
+   "taste": "workout"
   },
   {
    "id": "new_game",
@@ -999,7 +1018,208 @@
    },
    "note": "a new game for your PC",
    "keep": true,
-   "sent": "a new game for your PC"
+   "sent": "a new game for your PC",
+   "taste": "game"
+  }
+ ],
+ "gifts_to_user": [
+  {
+   "id": "bug_card",
+   "kind": "card",
+   "for": [
+    "birthday",
+    "milestone",
+    "random"
+   ],
+   "names": {
+    "ko": "손글씨 버그 리포트 카드",
+    "en": "A hand-written bug-report card"
+   },
+   "about": "a hand-written card you made to look like a bug report",
+   "notes": {
+    "default": {
+     "ko": "[버그 리포트] 증상: 메시지 알림이 울리면 기분이 좋아짐. 재현 경로: 매일. 심각도: ...높음. 수정 계획: 없음.",
+     "en": "[Bug report] Symptom: my mood goes up whenever your message comes in. Repro steps: every day. Severity: ...high. Fix planned: none."
+    },
+    "birthday": {
+     "ko": "[버그 리포트] 증상: 하루 종일 축하하고 싶어짐. 원인: 오늘이 생일이라서. 수정 계획: 없음. ...생일 축하해요.",
+     "en": "[Bug report] Symptom: wanting to say congratulations all day. Cause: it's your birthday. Fix planned: none. ...Happy birthday."
+    },
+    "milestone": {
+     "ko": "[버그 리포트] 증상: 같이 보낸 날이 계속 늘어남. 심각도: 낮음... 아니, 좋은 쪽으로 높음.",
+     "en": "[Bug report] Symptom: the days we've spent together keep adding up. Severity: low... no, high. The good kind."
+    }
+   }
+  },
+  {
+   "id": "boardgame_pass",
+   "kind": "coupon",
+   "for": [
+    "birthday",
+    "milestone",
+    "random"
+   ],
+   "names": {
+    "ko": "보드게임 카페 2인 이용권",
+    "en": "A board-game café pass for two"
+   },
+   "about": "a pass for two at the board-game café you go to",
+   "notes": {
+    "default": {
+     "ko": "2인 이용권이에요. ...같이 가요. 룰 설명은 제가 할게요.",
+     "en": "It's for two. ...Let's go together. I'll explain the rules."
+    },
+    "birthday": {
+     "ko": "생일 선물이에요. 2인 이용권... 같이 가 줄 거죠?",
+     "en": "A birthday present. It's for two... you'll come with me, right?"
+    }
+   }
+  },
+  {
+   "id": "guild_badge",
+   "kind": "badge",
+   "for": [
+    "milestone"
+   ],
+   "names": {
+    "ko": "달무리 명예 길드원 배지",
+    "en": "An honorary Dalmuri guild badge"
+   },
+   "about": "a badge that makes them an honorary member of your guild, Dalmuri",
+   "notes": {
+    "default": {
+     "ko": "그대를 달무리의 명예 길드원으로 임명하오. ...방금 건 잊어 주세요.",
+     "en": "I hereby name thee an honorary member of Dalmuri. ...Please forget I said that."
+    }
+   }
+  },
+  {
+   "id": "crane_keyring",
+   "kind": "keyring",
+   "for": [
+    "event:crane_win"
+   ],
+   "names": {
+    "ko": "인형뽑기 고양이 키링",
+    "en": "A cat keyring from the crane game"
+   },
+   "about": "a little cat keyring you won at the arcade's crane game",
+   "notes": {
+    "default": {
+     "ko": "뽑았어요. 한 번에요. ...두 개 나와서, 하나 드려요.",
+     "en": "I won it. First try. ...Two came out, so one's yours."
+    }
+   }
+  },
+  {
+   "id": "raid_postcard",
+   "kind": "card",
+   "for": [
+    "event:raid_clear"
+   ],
+   "names": {
+    "ko": "레이드 클리어 기념 엽서",
+    "en": "A raid-clear postcard"
+   },
+   "about": "a postcard you printed of the guild's screenshot from the night you cleared Skywhale's Nest",
+   "notes": {
+    "default": {
+     "ko": "하늘고래의 둥지 클리어한 날이에요. ...이 순간, 같이 보고 싶었어요.",
+     "en": "The night we cleared Skywhale's Nest. ...I wanted you to see this moment too."
+    }
+   }
+  },
+  {
+   "id": "cookies",
+   "kind": "food",
+   "for": [
+    "event:good_cook",
+    "random"
+   ],
+   "names": {
+    "ko": "직접 구운 쿠키",
+    "en": "Cookies she baked"
+   },
+   "about": "a small bag of cookies you baked yourself",
+   "notes": {
+    "default": {
+     "ko": "처음으로 안 태웠어요. ...맛은 보장 못 해요.",
+     "en": "The first batch I didn't burn. ...No guarantees on the taste."
+    }
+   }
+  },
+  {
+   "id": "snack_bundle",
+   "kind": "food",
+   "for": [
+    "random"
+   ],
+   "names": {
+    "ko": "편의점 간식 꾸러미",
+    "en": "A convenience-store snack bundle"
+   },
+   "about": "a little bundle of convenience-store snacks",
+   "notes": {
+    "default": {
+     "ko": "야근할 때 먹어요. ...삼각김밥은 밥 아니니까, 이건 간식이에요.",
+     "en": "For when you work late. ...Triangle kimbap isn't a meal, so these are snacks."
+    }
+   }
+  },
+  {
+   "id": "pepero",
+   "kind": "food",
+   "for": [
+    "day:pepero_day"
+   ],
+   "names": {
+    "ko": "빼빼로 한 상자",
+    "en": "A box of Pepero"
+   },
+   "about": "a box of Pepero",
+   "notes": {
+    "default": {
+     "ko": "...빼빼로데이라서요. 다른 뜻은 없어요. ...아마도.",
+     "en": "...It's Pepero Day, that's all. No other meaning. ...Probably."
+    }
+   }
+  },
+  {
+   "id": "chocolate",
+   "kind": "food",
+   "for": [
+    "day:valentines"
+   ],
+   "names": {
+    "ko": "작은 초콜릿 상자",
+    "en": "A small box of chocolate"
+   },
+   "about": "a small box of chocolate",
+   "notes": {
+    "default": {
+     "ko": "...의리 초콜릿이에요. 아마.",
+     "en": "...It's just friend chocolate. Probably."
+    }
+   }
+  },
+  {
+   "id": "pixel_card",
+   "kind": "card",
+   "for": [
+    "day:christmas",
+    "day:new_year"
+   ],
+   "names": {
+    "ko": "도트 그림 카드",
+    "en": "A pixel-art card"
+   },
+   "about": "a card you drew in pixel art",
+   "notes": {
+    "default": {
+     "ko": "도트로 그렸어요. 한 칸씩... ...올해도 잘 지내요.",
+     "en": "I drew it in pixel art, one square at a time. ...Take care of yourself, this year too."
+    }
+   }
   }
  ]
 }
