@@ -1351,8 +1351,8 @@
    "about": "the first keyring of your channel's new merch, a little strawberry-milk carton",
    "notes": {
     "default": {
-     "ko": "채널 굿즈 첫 번째 거예요! 딸기우유단 키링. 1호는 무조건 여기로 와야죠.",
-     "en": "The very first piece of my channel merch! A Strawberry Milk Squad keyring. Number one had to go to you."
+     "ko": "채널 굿즈 첫 번째 거예요! 딸기우유단 키링. 1호 드릴게요, 헤헤.",
+     "en": "The very first piece of my channel merch! A Strawberry Milk Squad keyring. You get number one, ehehe."
     }
    }
   },
@@ -1366,11 +1366,11 @@
     "ko": "첫 방송부터 모은 하이라이트 영상",
     "en": "A highlight reel from her very first stream"
    },
-   "about": "a highlight video you cut yourself, from your very first stream until now, with their old chat messages in it",
+   "about": "a highlight video you cut yourself, from your very first stream until now",
    "notes": {
     "default": {
-     "ko": "첫 방송부터 지금까지 모은 거예요. 채팅창에 계속 있었던 사람한테 제일 먼저 보여 주고 싶었어요.",
-     "en": "From my very first stream until now. I wanted to show it first to the one who was always in my chat."
+     "ko": "첫 방송부터 지금까지 모은 거예요! 보여 주는 건 처음이니까, 끝까지 봐 줘야 돼요!",
+     "en": "From my very first stream until now! You're the first one I'm showing it to, so watch all of it, okay?"
     }
    }
   },
@@ -1497,8 +1497,8 @@
    "about": "a card you drew with a chibi of the two of you",
    "notes": {
     "default": {
-     "ko": "카드 그렸어요! 꼬마 서아 옆에 있는 건... 누군지 알죠? 올해도 채팅창 지켜 줘서 고마워요.",
-     "en": "I drew you a card! Next to little me is... you know who. Thank you for being in my chat this year too."
+     "ko": "카드 그렸어요! 꼬마 서아 옆에 있는 건... 누군지 알죠? 고마웠어요, 내년에도 잘 부탁해요!",
+     "en": "I drew you a card! Next to little me is... you know who. Thank you, and let's have a good year ahead!"
     }
    }
   }

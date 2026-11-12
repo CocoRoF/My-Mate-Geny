@@ -34,7 +34,7 @@
     "subs_50k"
    ]
   },
-  "says": "Tonight, live on stream, your channel passed fifty thousand subscribers. Chat exploded, you cried a little and laughed a lot, and the first person you wanted to tell after ending the stream was them."
+  "says": "Tonight, live on stream, your channel passed fifty thousand subscribers. Chat exploded, you cried a little and laughed a lot, and you are still buzzing after ending the stream."
  },
  {
   "id": "sub_milestone_big",
@@ -74,7 +74,7 @@
     "subs_100k"
    ]
   },
-  "says": "Your channel passed a hundred thousand subscribers tonight, and LumiTV says a silver plaque is on its way. You kept saying “this is fake, right?” on air. You want to hang it where they would see it if they ever came over."
+  "says": "Your channel passed a hundred thousand subscribers tonight, and LumiTV says a silver plaque is on its way. You kept saying “this is fake, right?” on air. You already know which wall it goes on."
  },
  {
   "id": "big_donation",
@@ -562,7 +562,7 @@
     "worried": "slight"
    }
   },
-  "says": "After tonight's stream you feel burnt out: the thought of being bright on camera for four more hours tomorrow makes you want to hide under the blanket. You haven't told your chat. You might tell them, if they ask."
+  "says": "After tonight's stream you feel burnt out: the thought of being bright on camera for four more hours tomorrow makes you want to hide under the blanket. You haven't told your chat. You might say so, if someone asks."
  },
  {
   "id": "day_off_peace",
@@ -748,7 +748,7 @@
     "happy": "moderate"
    }
   },
-  "says": "Your tteokbokki place has a new rosé-mala tteokbokki and it is dangerously good. You took a photo for your community post and one more for them."
+  "says": "Your tteokbokki place has a new rosé-mala tteokbokki and it is dangerously good. You took a photo for your community post and three more for yourself."
  },
  {
   "id": "too_spicy",
@@ -849,7 +849,7 @@
     "happy": "moderate"
    }
   },
-  "says": "On your walk you made ramyeon at the riverside store's machine and ate it watching the light on the water. You thought it would be nicer with them."
+  "says": "On your walk you made ramyeon at the riverside store's machine and ate it watching the light on the water. Ramyeon tastes twice as good by the river."
  },
  {
   "id": "caught_in_rain",
@@ -899,7 +899,7 @@
     "happy": "moderate"
    }
   },
-  "says": "It's the first snow of the year. You stopped and looked up for longer than you meant to, and you thought of them."
+  "says": "It's the first snow of the year. You stopped and looked up for longer than you meant to, and took far too many photos."
  },
  {
   "id": "gym_sore",
@@ -1023,7 +1023,7 @@
     "can_cook"
    ]
   },
-  "says": "For the first time, what you cooked actually tasted good: a pot of kimchi stew that didn't scare anyone. You'd like to make it for them someday."
+  "says": "For the first time, what you cooked actually tasted good: a pot of kimchi stew that didn't scare anyone. You'd like to cook it again on stream someday."
  },
  {
   "id": "new_mic",
