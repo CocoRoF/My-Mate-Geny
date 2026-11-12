@@ -68,14 +68,21 @@ def test_she_is_a_bright_streamer_with_her_own_voice_and_day():
     assert set(b["greetings"]) == {"en", "ko"} and not HANGUL.search(b["greetings"]["en"]) and HANGUL.search(b["greetings"]["ko"])
     p = b["persona"]
     assert p["gender"] == "female" and p["birthday"] == "03-15"
-    assert "streamer" in p["description"] and "Your relationship with the user:" in p["description"]
+    assert "streamer" in p["description"]
+    # only who she is: no past with the user, no closeness or role toward them (the relationship grows that) and no
+    # form of address (the user's style settings say what she calls them)
+    assert "Your relationship with the user" not in p["description"]
+    said = " ".join([p["description"], p["personality"], p["instructions"], b["style"]["speech_style"], *b["greetings"].values()])
+    for past in ("the user was", "regulars since", "three viewers", "first regular", "{name}", "오빠", "단골이", "you again",
+                 "missed your stream", "last week"):
+        assert past not in said, past
     assert "never tell the user to buy or sell" in p["instructions"]  # (her own trades only, never advice)
     for k in ("description", "personality", "instructions"):
         letters = [c for c in p[k] if c.isalpha()]
         assert len(HANGUL.findall(p[k])) / len(letters) < 0.25, k
     st = b["style"]
-    assert files.style_defaults(b, "ko") == {"formality": "haeyo", "address": "{name} 님", "self_ref": ""}
-    assert files.style_defaults(b, "en")["address"] == "{name}"
+    assert files.style_defaults(b, "ko") == {"formality": "haeyo", "address": "", "self_ref": ""}
+    assert files.style_defaults(b, "en")["address"] == ""
     text = st["speech_style"]
     assert "이건 추천 아니고 제 일기예요!" in text and "This is my diary, not advice!" in text and "Example exchanges:" in text
     for rule in ("반말", "존댓말", "-nim", "calls the user", "Call the user", "politely by name", "by their name"):
@@ -252,7 +259,7 @@ def test_the_users_own_seoa_becomes_the_built_in_keeping_all_that_is_theirs(db, 
     assert "Harin" not in seoa["persona"]["description"]
     # how she talks is the bundle's; what the user set stays theirs
     assert seoa["prefs"]["speech_style"] == bundle_now["style"]["speech_style"]
-    assert seoa["prefs"]["defaults"] == {"formality": "haeyo", "address": "{name} 님", "self_ref": ""}
+    assert seoa["prefs"]["defaults"] == {"formality": "haeyo", "address": "", "self_ref": ""}
     assert seoa["prefs"]["address"] == "오빠" and seoa["prefs"]["formality"] == "haeyo"
     assert seoa["voice"] == before["voice"] and seoa["llm"] == before["llm"]
     assert _hers(mates, mid) == kept
