@@ -32,6 +32,7 @@ import { fmtWindow } from "../../lib/context";
 import { relTime } from "../../i18n/format";
 import { useT, type MsgKey } from "../../i18n";
 import Icon from "../ui/Icon";
+import { ifConfirmed } from "../ui/ConfirmDialog";
 
 const STRATEGIES: { id: string; label: MsgKey }[] = [
   { id: "least_busy", label: "providers.stratLeastBusy" },
@@ -278,7 +279,7 @@ function KeysCard({ provider, label, pool, onChanged }: { provider: string; labe
                 <NumberInput value={a.max_concurrency} min={1} max={64} onSave={(v) => updateAccount(provider, a.id, { max_concurrency: v }).then(onChanged)} />
               </label>
               <button
-                onClick={() => window.confirm(t("providers.apiRemoveConfirm", { label: a.label })) && deleteAccount(provider, a.id).then(onChanged)}
+                onClick={() => ifConfirmed({ body: t("providers.apiRemoveConfirm", { label: a.label }), confirmLabel: t("providers.apiRemoveKey"), danger: true }, () => deleteAccount(provider, a.id).then(onChanged))}
                 className="btn-ghost py-1 text-danger hover:text-danger ml-auto"
                 title={t("providers.apiRemoveKey")}
                 aria-label={t("providers.apiRemoveKey")}

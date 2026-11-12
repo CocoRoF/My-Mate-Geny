@@ -7,6 +7,7 @@ import { useBackHandler } from "../../lib/back";
 import { parsePatch, type PatchFile } from "./parsePatch";
 import PatchView from "./PatchView";
 import { useT } from "../../i18n";
+import { confirmDialog } from "../ui/ConfirmDialog";
 
 export const STATUS: Record<string, { label: string; cls: string }> = {
   A: { label: "A", cls: "text-success" },
@@ -88,7 +89,7 @@ export default function ChangesModal({
     const ask = paths
       ? t("files.revertConfirmPaths", { what: paths.map(base).join(", "), count: paths.length })
       : t("files.revertConfirmAll", { count: changes.files });
-    if (!window.confirm(ask)) return;
+    if (!(await confirmDialog({ body: ask, confirmLabel: t(paths ? "files.undoFile" : "files.undoTurn"), danger: true }))) return;
     setBusy(paths ? paths[0] : "all");
     try {
       const r = await revertChanges(sid, changes.eid, { repo, paths });

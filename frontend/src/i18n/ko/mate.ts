@@ -373,5 +373,18 @@ const ko: Messages<"mate"> = {
   notebookOptions: "보기 · 떠올리기 시험",
   notebookOriginals: "대화 원문 · 작업 기록 찾기",
   notebookSettings: "기억하는 방식",
+  emotion_neutral: "기본",
+  emotion_joy: "기쁨",
+  emotion_smile: "미소",
+  emotion_laugh: "웃음",
+  emotion_shy: "수줍음",
+  emotion_surprised: "놀람",
+  emotion_sad: "슬픔",
+  emotion_worried: "걱정",
+  emotion_angry: "화남",
+  emotion_thinking: "생각 중",
+  emotion_agree: "동의",
+  emotion_greet: "인사",
+  emotion_sleepy: "졸림",
 };
 export default ko;

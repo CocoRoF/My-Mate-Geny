@@ -3,6 +3,7 @@ export default {
   save: "Save",
   saved: "Saved",
   cancel: "Cancel",
+  confirm: "OK",
   close: "Close",
   delete: "Delete",
   remove: "Remove",

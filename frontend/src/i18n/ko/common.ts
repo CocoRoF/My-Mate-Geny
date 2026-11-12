@@ -4,6 +4,7 @@ const ko: Messages<"common"> = {
   save: "저장",
   saved: "저장됨",
   cancel: "취소",
+  confirm: "확인",
   close: "닫기",
   delete: "삭제",
   remove: "제거",

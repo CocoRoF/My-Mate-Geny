@@ -20,6 +20,7 @@ import { fromAccount } from "../../lib/usage";
 import { COMPACT_BUFFER, DEFAULT_PRESETS, fmtWindow } from "../../lib/context";
 import { useT, type MsgKey } from "../../i18n";
 import Icon from "../ui/Icon";
+import ScrollRow from "../ui/ScrollRow";
 import ProviderOAuthModal from "./ProviderOAuthModal";
 import AccountSession, { PlanStaleNote } from "./AccountSession";
 import CliVersionsSection from "./CliVersionsSection";
@@ -77,13 +78,15 @@ export default function ProvidersView() {
     // (Settings → Providers: the tab's title and intro are Settings' — settings/SettingsView.tsx)
     <div className="max-w-2xl">
       <div>
-        {/* Provider tabs */}
-        <div className="flex gap-1.5 mb-5 border-b border-border overflow-x-auto no-scrollbar">
+        {/* Provider tabs (a narrow window: the row scrolls — wheel, drag, the picked one in view) */}
+        <ScrollRow className="gap-1.5 mb-5 border-b border-border" role="tablist" aria-label={t("mcp.llmTitle")} watch={tab}>
           {providerIds.map((id) => {
             const connected = providers.find((p) => p.provider === id)?.connected;
             return (
               <button
                 key={id}
+                role="tab"
+                aria-selected={tab === id}
                 onClick={() => setTab(id)}
                 className={`relative shrink-0 whitespace-nowrap px-4 py-2 text-sm font-medium transition -mb-px border-b-2 ${
                   tab === id
@@ -99,7 +102,7 @@ export default function ProvidersView() {
               </button>
             );
           })}
-        </div>
+        </ScrollRow>
 
         {tab && isApiProvider(tab) && (
           <>

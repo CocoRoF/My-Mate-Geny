@@ -25,6 +25,7 @@ import type { StageWindowKind } from "./stage/StageMenu";
 import { takeMatePanelLink } from "../../lib/nav";
 import { useT } from "../../i18n";
 import { useStudio } from "../../stores/studioStore";
+import { confirmDialog } from "../ui/ConfirmDialog";
 
 const MateSettings = lazy(() => import("./settings/MateSettings"));
 const RelationPanel = lazy(() => import("./RelationPanel"));
@@ -190,7 +191,7 @@ export default function MateView() {
 
   const reset = async () => {
     if (!mate || resetting) return;
-    if (!window.confirm(t("mate.resetConfirm", { name: mate.name }))) return;
+    if (!(await confirmDialog({ body: t("mate.resetConfirm", { name: mate.name }), confirmLabel: t("mate.newConversation") }))) return;
     setResetting(true);
     try {
       await conv.reset();

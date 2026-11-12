@@ -39,7 +39,7 @@ export default function MessageList() {
 
   return (
     <div className="relative flex-1 min-h-0">
-      <div ref={ref} onScroll={onScroll} className="h-full overflow-y-auto" data-testid="message-scroll">
+      <div ref={ref} onScroll={onScroll} className="scrollbar-stable h-full overflow-y-auto" data-testid="message-scroll">
         <div className="mx-auto max-w-3xl px-4 sm:px-5 py-6 space-y-6">
           <HistoryEdge paging={paging} empty={turns.length === 0} onRetry={loadOlder} />
           {turns.length === 0 && (

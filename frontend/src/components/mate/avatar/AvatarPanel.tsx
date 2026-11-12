@@ -33,6 +33,7 @@ import type { BodyMood, MateReact } from "../../../mate/types";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon, { type IconName } from "../../ui/Icon";
 import { useT, type MsgKey } from "../../../i18n";
+import { confirmDialog, ifConfirmed } from "../../ui/ConfirmDialog";
 
 const fmt = (n: number | null | undefined) => (n === null || n === undefined ? "—" : Number(n.toFixed(2)).toLocaleString());
 
@@ -287,8 +288,8 @@ function RedoButton({ project, item, credits, act, label }: { project: AvatarPro
   return (
     <button
       className="inline-flex items-center gap-0.5 rounded px-1 text-[10.5px] text-content-faint hover:bg-surface-3 hover:text-content"
-      onClick={() => {
-        if (credits !== null && credits > 5 && !window.confirm(t("avatar.redoConfirm", { item, n: fmt(credits) }))) return;
+      onClick={async () => {
+        if (credits !== null && credits > 5 && !(await confirmDialog({ body: t("avatar.redoConfirm", { item, n: fmt(credits) }), confirmLabel: t("avatar.redo") }))) return;
         void act(() => redoItem(project.id, item));
       }}
       data-testid={`avatar-redo-${item}`}
@@ -403,7 +404,7 @@ function Progress({ project, act }: { project: AvatarProject; act: Act }) {
           {(live || project.status === "paused" || project.status === "failed") && (
             <button
               className="btn-ghost !px-2 !py-1 text-[11.5px] text-danger"
-              onClick={() => window.confirm(t("avatar.cancelConfirm")) && act(() => cancelRun(project.id))}
+              onClick={() => ifConfirmed({ body: t("avatar.cancelConfirm"), confirmLabel: t("common.stop"), cancelLabel: t("common.back"), danger: true }, () => act(() => cancelRun(project.id)))}
               data-testid="avatar-cancel"
             >
               {t("common.cancel")}
@@ -565,14 +566,14 @@ function Finish({ project, act, studio }: { project: AvatarProject; act: Act; st
       ) : studio ? (
         <div className="mt-3 flex flex-wrap justify-end gap-2">
           {!!applied?.backup && !applied.restored_at && applied.mate_id === studio.mateId && (
-            <button className="btn-ghost text-[12px]" onClick={() => window.confirm(t("avatar.restoreConfirm", { name: applied.name })) && act(() => restoreAvatar(project.id))} data-testid="avatar-restore">
+            <button className="btn-ghost text-[12px]" onClick={() => ifConfirmed({ body: t("avatar.restoreConfirm", { name: applied.name }), confirmLabel: t("avatar.restore", { name: applied.name }) }, () => act(() => restoreAvatar(project.id)))} data-testid="avatar-restore">
               <Icon name="rotate" size={12} /> {t("avatar.restore", { name: applied.name })}
             </button>
           )}
           {!(applied && !applied.restored_at && applied.mate_id === studio.mateId) && (
             <button
               className="btn-primary"
-              onClick={() => window.confirm(t("avatar.applyConfirm", { name: studio.mateName })) && act(() => applyAvatar(project.id, { mate_id: studio.mateId }))}
+              onClick={() => ifConfirmed({ body: t("avatar.applyConfirm", { name: studio.mateName }), confirmLabel: t("avatar.apply") }, () => act(() => applyAvatar(project.id, { mate_id: studio.mateId })))}
               data-testid="avatar-apply"
             >
               <Icon name="check" size={14} /> {t("studio.applyTo", { name: studio.mateName })}
@@ -593,7 +594,7 @@ function Finish({ project, act, studio }: { project: AvatarProject; act: Act; st
           <button
             className="btn-primary shrink-0"
             disabled={!mateId}
-            onClick={() => window.confirm(t("avatar.applyConfirm", { name: mates.find((m) => m.id === mateId)?.name || "" })) && act(() => applyAvatar(project.id, { mate_id: mateId }))}
+            onClick={() => ifConfirmed({ body: t("avatar.applyConfirm", { name: mates.find((m) => m.id === mateId)?.name || "" }), confirmLabel: t("avatar.apply") }, () => act(() => applyAvatar(project.id, { mate_id: mateId })))}
             data-testid="avatar-apply"
           >
             {t("avatar.apply")}
@@ -606,7 +607,7 @@ function Finish({ project, act, studio }: { project: AvatarProject; act: Act; st
           </button>
         </div>
         {applied?.backup && !applied.restored_at ? (
-          <button className="btn-ghost w-full text-[12px]" onClick={() => window.confirm(t("avatar.restoreConfirm", { name: applied.name })) && act(() => restoreAvatar(project.id))} data-testid="avatar-restore">
+          <button className="btn-ghost w-full text-[12px]" onClick={() => ifConfirmed({ body: t("avatar.restoreConfirm", { name: applied.name }), confirmLabel: t("avatar.restore", { name: applied.name }) }, () => act(() => restoreAvatar(project.id)))} data-testid="avatar-restore">
             <Icon name="rotate" size={12} /> {t("avatar.restore", { name: applied.name })}
           </button>
         ) : null}

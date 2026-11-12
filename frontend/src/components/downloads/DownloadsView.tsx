@@ -216,7 +216,7 @@ export default function DownloadsView() {
           <div className="mt-5 flex flex-wrap items-center gap-2.5">
             {rel === null && !error && <Icon name="spinner" size={18} spin className="text-content-faint" />}
             {primary && (
-              <div className="w-full sm:w-auto sm:min-w-[320px]">
+              <div className="w-full min-w-0 max-w-full sm:w-auto sm:min-w-[min(320px,100%)]">
                 <AssetButton a={primary} primary onPick={onPick} />
               </div>
             )}
@@ -224,7 +224,7 @@ export default function DownloadsView() {
               mine
                 .filter((a) => a !== primary)
                 .map((a) => (
-                  <div key={a.id} className="w-full sm:w-auto sm:min-w-[260px]">
+                  <div key={a.id} className="w-full min-w-0 max-w-full sm:w-auto sm:min-w-[min(260px,100%)]">
                     <AssetButton a={a} onPick={onPick} />
                   </div>
                 ))}
@@ -277,15 +277,16 @@ export default function DownloadsView() {
           {error && <p className="mt-3 text-xs text-danger">{error}</p>}
         </div>
 
-        {assets.length>0&&<div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {/* (as many columns as the tab has room for: a narrow window beside the sidebar gets one) */}
+        {assets.length>0&&<div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(min(100%,16rem),1fr))] gap-3">
           {PLATFORMS.map((p) => {
             const list = forPlatform(p.id);
             const isMine = p.id === platform;
             return (
               <section key={p.id} className={`card min-w-0 p-4 ${isMine ? "ring-1 ring-accent/40" : ""}`}>
-                <div className="flex items-start gap-3">
-                  <div className="min-w-0 flex-1">
-                    <h2 className="flex items-center gap-2 text-[15px] font-semibold">
+                <div className="flex flex-wrap items-start gap-3">
+                  <div className="min-w-0 flex-1 basis-[8rem]">
+                    <h2 className="flex flex-wrap items-center gap-2 text-[15px] font-semibold">
                       {p.name}
                       {isMine && <span className="pill bg-accent-soft text-accent">{t("downloads.thisDevice")}</span>}
                     </h2>

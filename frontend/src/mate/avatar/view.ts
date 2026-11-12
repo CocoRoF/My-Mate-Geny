@@ -3,7 +3,8 @@
  * pointer, persisted under a view storage key, a reset). One transform for every body: a point q of the box is drawn
  * at `t + z·q` (t = x·width, y·height — fractions of the box, so a resized window keeps the framing). Video and photo
  * bodies get it as a CSS transform (origin 0 0); Live2D applies the same mapping inside its renderer (crisp at any
- * zoom).
+ * zoom). The desktop overlay (surfaces/MateSurfaces.tsx) and the console's Mate stage (MateStage.tsx) each keep their
+ * own, per mate.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -18,8 +19,25 @@ export interface AvatarViewT {
 export const VIEW_HOME: AvatarViewT = { x: 0, y: 0, z: 1 };
 export const MIN_ZOOM = 0.3;
 export const MAX_ZOOM = 4;
-const WHEEL_SPEED = 0.0015; // exponential, per wheel deltaY unit (Geny)
+// exponential, per wheel deltaY px: a mouse-wheel notch (100 px) ≈ 5.5 %, with Ctrl or Shift ≈ 2 % (the last bit);
+// a trackpad pinch (Ctrl + small fractional deltas, as Chromium sends it) follows the fingers. (Geny's 0.0015 made a
+// notch ≈ 14 %: too coarse to frame her face.)
+export const NOTCH_SPEED = 0.00055;
+export const FINE_SPEED = 0.0002;
+const PINCH_SPEED = 0.01;
 export const DRAG_PX = 4; // below this a press is still a tap
+
+type WheelLike = Pick<WheelEvent, "deltaX" | "deltaY" | "deltaMode" | "ctrlKey" | "shiftKey">;
+
+/** a wheel event as a zoom: its delta in px (lines / pages converted) and the speed for it */
+export function wheelZoom(e: WheelLike): { delta: number; speed: number } {
+  // (Shift + wheel arrives sideways: Chromium turns it into deltaX on Windows / Linux, macOS does itself)
+  let d = e.deltaY || (e.shiftKey ? e.deltaX : 0);
+  if (e.deltaMode === 1) d *= 33;
+  else if (e.deltaMode === 2) d *= 800;
+  const pinch = e.ctrlKey && !e.shiftKey && Math.abs(d) < 20 && !Number.isInteger(d);
+  return { delta: d, speed: pinch ? PINCH_SPEED : e.ctrlKey || e.shiftKey ? FINE_SPEED : NOTCH_SPEED };
+}
 
 export const isHome = (v: AvatarViewT) => v.z === 1 && v.x === 0 && v.y === 0;
 
@@ -35,8 +53,8 @@ export function clampView(v: AvatarViewT): AvatarViewT {
 }
 
 /** zoom by a wheel delta around the pointer at (px, py) (fractions of the box): the point under it stays put */
-export function zoomAt(v: AvatarViewT, deltaY: number, px: number, py: number): AvatarViewT {
-  const z = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.z * Math.exp(-deltaY * WHEEL_SPEED)));
+export function zoomAt(v: AvatarViewT, deltaY: number, px: number, py: number, speed = NOTCH_SPEED): AvatarViewT {
+  const z = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.z * Math.exp(-deltaY * speed)));
   if (z === v.z) return v;
   const r = z / v.z;
   return clampView({ x: px - (px - v.x) * r, y: py - (py - v.y) * r, z });
@@ -72,8 +90,15 @@ export const viewTransform = (v: AvatarViewT) =>
  * Pan / zoom gestures on `ref`'s element while `enabled`: a left-button drag past DRAG_PX pans (the click that follows
  * is swallowed, so a drag is never also a tap), the wheel zooms around the pointer. Persisted under `storageKey` (per
  * mate); `reset()` goes back to the fitted view. Other windows with the same key follow (the storage event).
+ * `touch: false` leaves a finger alone (a phone's page scrolls, a tap pokes her); `doubleClickReset`: a double click
+ * goes back to the fitted view (the console's stage).
  */
-export function useAvatarView(ref: React.RefObject<HTMLElement | null>, storageKey: string | null, enabled: boolean) {
+export function useAvatarView(
+  ref: React.RefObject<HTMLElement | null>,
+  storageKey: string | null,
+  enabled: boolean,
+  { touch = true, doubleClickReset = false }: { touch?: boolean; doubleClickReset?: boolean } = {},
+) {
   const [view, setView] = useState<AvatarViewT>(() => readView(storageKey));
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -109,13 +134,20 @@ export function useAvatarView(ref: React.RefObject<HTMLElement | null>, storageK
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const p = frac(e.clientX, e.clientY);
-      const next = zoomAt(viewRef.current, e.deltaY, p.x, p.y);
+      const { delta, speed } = wheelZoom(e);
+      const next = zoomAt(viewRef.current, delta, p.x, p.y, speed);
       if (next === viewRef.current) return;
       put(next, false);
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => writeView(storageKey, viewRef.current), 250);
     };
+    const onDouble = (e: MouseEvent) => {
+      if ((e.target as HTMLElement).closest("button, a, input, textarea, select, [data-no-pan]")) return;
+      clearTimeout(saveTimer);
+      put(VIEW_HOME, true);
+    };
     const onDown = (e: PointerEvent) => {
+      if (!touch && e.pointerType === "touch") return;
       if (e.button !== 0 || (e.target as HTMLElement).closest("button, a, input, textarea, select, [data-no-pan]")) return;
       drag = { id: e.pointerId, x: e.clientX, y: e.clientY, vx: viewRef.current.x, vy: viewRef.current.y, moved: false };
     };
@@ -166,8 +198,10 @@ export function useAvatarView(ref: React.RefObject<HTMLElement | null>, storageK
     el.addEventListener("pointerup", onUp, true);
     el.addEventListener("pointercancel", onUp, true);
     el.addEventListener("click", onClick, true);
+    if (doubleClickReset) el.addEventListener("dblclick", onDouble);
     return () => {
       clearTimeout(saveTimer);
+      el.removeEventListener("dblclick", onDouble);
       el.removeEventListener("wheel", onWheel);
       el.removeEventListener("pointerdown", onDown, true);
       el.removeEventListener("pointermove", onMove, true);
@@ -176,7 +210,7 @@ export function useAvatarView(ref: React.RefObject<HTMLElement | null>, storageK
       el.removeEventListener("click", onClick, true);
       setDragging(false);
     };
-  }, [ref, enabled, storageKey, put]);
+  }, [ref, enabled, storageKey, put, touch, doubleClickReset]);
 
   return { view, reset, dragging };
 }

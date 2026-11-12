@@ -263,8 +263,8 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     await p.keyboard.press("Enter");
     await until("renamed", async () => (await mate()).outfits.items.some((c) => c.name === "출근 복장"));
     await p.screenshot({ path: path.join(SHOTS, "wardrobe-ko-dark.png") });
-    p.once("dialog", (d) => d.accept());
     await p.click('[data-testid="outfit-delete"]');
+    await p.click('[data-testid="confirm-ok"]'); // (the app's confirm dialog: a red Delete)
     await until("default back on", async () => {
       const m = await mate();
       return m.outfits.worn === "default" && m.avatar.rig.home === homeBefore && m.outfits.items.length === initialOutfits;

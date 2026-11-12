@@ -333,6 +333,7 @@ async function main() {
   await until("resumed", async () => (await page.inputValue('[data-testid="studio-name"]').catch(() => "")) === "Bomi", 20000);
   await page.click('[data-testid="studio-more"]');
   await page.click('[data-testid="studio-discard"]');
+  await page.click('[data-testid="confirm-ok"]'); // (the app's confirm dialog)
   await page.waitForSelector('[data-testid="mate-view"]');
   assert.equal((await api(ctx, "GET", `/api/mates/${d2}`)).status, 404, "the discarded draft is gone");
   assert.ok(!(await api(ctx, "GET", "/api/avatar/studio/drafts")).body.some((d) => d.mate_id === d2));

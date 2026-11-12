@@ -6,6 +6,7 @@ import Icon, { type IconName } from "../ui/Icon";
 import HourlyChart from "./HourlyChart";
 import { absTime, compact, relTime } from "./format";
 import { useT, type MsgKey } from "../../i18n";
+import { confirmDialog } from "../ui/ConfirmDialog";
 
 const SOURCES = ["provider", "tool", "workspace", "account", "upload", "http", "ws", "auth", "client", "system", "monitor", "mcp"];
 
@@ -193,7 +194,7 @@ export default function LogsPanel() {
   };
 
   const clearAll = async () => {
-    if (!window.confirm(t("admin.confirmClearLogs"))) return;
+    if (!(await confirmDialog({ body: t("admin.confirmClearLogs"), confirmLabel: t("admin.deleteAllLogs"), danger: true }))) return;
     await clearLogs();
     load();
   };

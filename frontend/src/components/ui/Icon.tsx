@@ -104,6 +104,8 @@ import {
   LuSun,
   LuMoon,
   LuLock,
+  LuPanelLeftClose,
+  LuPanelLeftOpen,
 } from "react-icons/lu";
 
 const MAP = {
@@ -209,6 +211,8 @@ const MAP = {
   appearance: LuSunMoon,
   sun: LuSun,
   moon: LuMoon,
+  "panel-close": LuPanelLeftClose,
+  "panel-open": LuPanelLeftOpen,
 } satisfies Record<string, IconType>;
 
 export type IconName = keyof typeof MAP;
