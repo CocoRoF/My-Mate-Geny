@@ -3,6 +3,7 @@
   "source": "mates/chaerin.json (ailism content by its authors), written in English; Korean lines kept verbatim",
   "language": "ko",
   "gender": "female",
+  "birthday": "06-21",
   "style": {"formality": "haeyo", "address": {"ko": "{name} 님", "en": "{name}"}},
   "names": {"en": "Han Chaerin", "ko": "한채린"},
   "greetings": {

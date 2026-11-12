@@ -14,6 +14,13 @@
   }
  },
  "daily_cost": 20000,
+ "job": {
+  "names": {
+   "ko": "회사원",
+   "en": "Office worker"
+  },
+  "about": "an office worker at a company: on working days you go to the office and do your job there, with your colleagues"
+ },
  "outing": {
   "weekday": 0.3,
   "weekend": 0.65,
@@ -720,7 +727,8 @@
     "fun": -0.1
    },
    "stats": {},
-   "sent": "a box of desserts"
+   "sent": "a box of desserts",
+   "taste": "dessert"
   },
   {
    "id": "chicken",
@@ -739,7 +747,8 @@
     "fun": -0.1
    },
    "stats": {},
-   "sent": "fried chicken delivery"
+   "sent": "fried chicken delivery",
+   "taste": "delivery"
   },
   {
    "id": "cushion",
@@ -760,7 +769,8 @@
    "stats": {},
    "note": "a soft cushion on your bed",
    "keep": true,
-   "sent": "a soft cushion on your bed"
+   "sent": "a soft cushion on your bed",
+   "taste": "rest"
   },
   {
    "id": "cookbook",
@@ -782,7 +792,8 @@
    },
    "note": "a beginner's cookbook",
    "keep": true,
-   "sent": "a beginner's cookbook"
+   "sent": "a beginner's cookbook",
+   "taste": "cook"
   },
   {
    "id": "plush",
@@ -825,7 +836,8 @@
    },
    "note": "a new board game",
    "keep": true,
-   "sent": "a new board game"
+   "sent": "a new board game",
+   "taste": "game"
   },
   {
    "id": "running_shoes",
@@ -847,7 +859,131 @@
    },
    "note": "a pair of running shoes",
    "keep": true,
-   "sent": "a pair of running shoes"
+   "sent": "a pair of running shoes",
+   "taste": "workout"
+  }
+ ],
+ "gifts_to_user": [
+  {
+   "id": "card",
+   "kind": "card",
+   "for": [
+    "birthday",
+    "milestone",
+    "random"
+   ],
+   "names": {
+    "ko": "손편지 카드",
+    "en": "A hand-written card"
+   },
+   "about": "a card you wrote by hand",
+   "notes": {
+    "default": {
+     "ko": "늘 고마워요. 말로 하긴 쑥스러워서, 글로 남겨요.",
+     "en": "Thank you, always. It's awkward to say out loud, so I wrote it down."
+    },
+    "birthday": {
+     "ko": "생일 축하해요. 오늘은 마음껏 행복한 하루 보내요.",
+     "en": "Happy birthday. Have the happiest day today."
+    },
+    "milestone": {
+     "ko": "벌써 이만큼 함께했네요. 앞으로도 잘 부탁해요.",
+     "en": "We've come this far together already. Here's to more."
+    }
+   }
+  },
+  {
+   "id": "coffee_coupon",
+   "kind": "coupon",
+   "for": [
+    "birthday",
+    "random"
+   ],
+   "names": {
+    "ko": "커피 쿠폰",
+    "en": "A coffee coupon"
+   },
+   "about": "a coupon for a coffee",
+   "notes": {
+    "default": {
+     "ko": "피곤한 날 써요. 제가 사는 거예요.",
+     "en": "For a tired day. It's on me."
+    }
+   }
+  },
+  {
+   "id": "plant",
+   "kind": "present",
+   "for": [
+    "milestone",
+    "random"
+   ],
+   "names": {
+    "ko": "작은 화분",
+    "en": "A small plant"
+   },
+   "about": "a small potted plant",
+   "notes": {
+    "default": {
+     "ko": "책상에 두면 좋을 것 같아서요. 물은 일주일에 한 번이에요.",
+     "en": "I thought it would look nice on your desk. Water it once a week."
+    }
+   }
+  },
+  {
+   "id": "bookmark",
+   "kind": "present",
+   "for": [
+    "random"
+   ],
+   "names": {
+    "ko": "책갈피",
+    "en": "A bookmark"
+   },
+   "about": "a pretty bookmark you found at the bookstore",
+   "notes": {
+    "default": {
+     "ko": "서점에서 보고 생각나서요.",
+     "en": "I saw it at the bookstore and thought of you."
+    }
+   }
+  },
+  {
+   "id": "pepero",
+   "kind": "food",
+   "for": [
+    "day:pepero_day"
+   ],
+   "names": {
+    "ko": "빼빼로 한 상자",
+    "en": "A box of Pepero"
+   },
+   "about": "a box of Pepero",
+   "notes": {
+    "default": {
+     "ko": "빼빼로데이라서요. 같이 먹어요.",
+     "en": "It's Pepero Day. Let's share them."
+    }
+   }
+  },
+  {
+   "id": "season_card",
+   "kind": "card",
+   "for": [
+    "day:christmas",
+    "day:new_year"
+   ],
+   "names": {
+    "ko": "계절 인사 카드",
+    "en": "A season's greetings card"
+   },
+   "about": "a card for the season",
+   "notes": {
+    "default": {
+     "ko": "올해도 고마웠어요. 따뜻하게 보내요.",
+     "en": "Thank you for this year too. Stay warm."
+    }
+   }
   }
  ]
 }

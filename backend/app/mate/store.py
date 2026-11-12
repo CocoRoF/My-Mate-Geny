@@ -19,6 +19,7 @@ from app.db import Database
 from app.mate import affinity as A
 from app.mate import memory as M
 from app.mate import state as S
+from app.mate.life import days as life_days
 from app.mate.life import profile as life_profile
 from app.mate.life import sim
 from app.mate.knowledge import Knowledge, digest, safe_text
@@ -29,10 +30,11 @@ from app.harness.vendors import API_PROVIDERS
 
 # The persona is the character only — who she is (docs/mate.md §1 "Prompt composition"). How she talks (speech level,
 # how she calls the user, speech habits …) lives in the conversation style (``prefs``) and nowhere else.
-PERSONA_FIELDS = ("description", "personality", "greeting", "language", "instructions", "gender")
+PERSONA_FIELDS = ("description", "personality", "greeting", "language", "instructions", "gender", "birthday")
 #: ``persona.gender``: who she is, as the character's data — nothing in the app shows it or sets it (a bundle says it, the
 #: Mate Create studio writes it, an older mate's is read from her text once: ``infer_gender``); "" = not known
 GENDERS = ("female", "male")
+#: ``persona.birthday``: "MM-DD" or "" (``birthday``): she knows it, and her day has it (app/mate/life)
 # persona fields of older documents / clients / imports and where they live now (prefs): moved, never dropped
 LEGACY_STYLE_FIELDS = {"speech": "speech_style", "address": "address"}
 TTS_ENGINES = ("off", "browser", "google", "openai", "elevenlabs", "omnivoice", "http")
@@ -132,7 +134,7 @@ def normalize_persona(patch: Any, base: dict[str, Any] | None = None) -> dict[st
         raise MateError("persona must be an object")
     for k in PERSONA_FIELDS:
         if k in patch:
-            out[k] = _s(patch[k], 32).strip() if k in ("language", "gender") else _s(patch[k])
+            out[k] = _s(patch[k], 32).strip() if k in ("language", "gender") else birthday(patch[k]) if k == "birthday" else _s(patch[k])
     out["language"] = out["language"] or "ko"
     out["gender"] = out["gender"].lower() if str(out["gender"]).lower() in GENDERS else ""
     return out
@@ -159,6 +161,14 @@ def infer_gender(persona: dict[str, Any] | None, speech: Any = "") -> str:
     if m and m >= 2 * f:
         return "male"
     return ""
+
+
+def birthday(v: Any) -> str:
+    """A birthday: "MM-DD" (02-29 too), "" for none; anything else is refused."""
+    s = _s(v, 10).strip()
+    if s and not life_days.is_mmdd(s):
+        raise MateError("a birthday is MM-DD, e.g. 06-21")
+    return s
 
 
 def normalize_llm(patch: Any, base: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -780,7 +790,8 @@ class MateStore:
         now = datetime.now(timezone.utc)
         life = self.life_now(row["id"], builtin, prefs)
         persona = normalize_persona(_loads(row["persona"], {}))
-        who = self._who(builtin, raw_outfits, self.relation_doc(row["id"]) or A.new(), sim.for_state(life[0], life[1], now) if life else None,
+        who = self._who(builtin, raw_outfits, self.relation_doc(row["id"]) or A.new(),
+                        sim.for_state(life[0], life[1], now, self.tz()) if life else None,
                         row["name"] or "", gender=persona["gender"], created_at=row["created_at"], seed=row["id"])
         return {
             "id": row["id"],
@@ -1748,7 +1759,7 @@ class MateStore:
             raise KeyError(f"mate not found: {mate_id}")
         life = self.life_now(mate_id, row["builtin"], _loads(row["prefs"], {}))
         return self._who(row["builtin"], _loads(row["outfits"], {}), self.relation_doc(mate_id) or A.new(),
-                         sim.for_state(life[0], life[1], datetime.now(timezone.utc)) if life else None, row["name"] or "",
+                         sim.for_state(life[0], life[1], datetime.now(timezone.utc), self.tz()) if life else None, row["name"] or "",
                          gender=normalize_persona(_loads(row["persona"], {}))["gender"], created_at=row["created_at"], seed=mate_id)
 
     def relation_summary(self, mate_id: str) -> dict[str, Any]:
@@ -1854,10 +1865,15 @@ class MateStore:
         self._put_setting("user_name", name)
         return True
 
+    def user_birthday(self) -> str:
+        """The user's birthday, one for all mates: "MM-DD", "" unknown (their mates know it: app/mate/life)."""
+        return self._setting("user_birthday")
+
     def settings(self) -> dict[str, Any]:
         out: dict[str, Any] = {k: self._setting(k) for k in SETTING_URLS}
         out["timezone"] = self._setting("timezone")
         out["user_name"] = self.user_name()
+        out["user_birthday"] = self.user_birthday()
         out["location"] = self.location()
         for k in SETTING_KEYS:
             own = bool(self._vault is not None and self._vault.exists(SecretVault.make_id(_VAULT_SCOPE, k)))
@@ -1886,9 +1902,13 @@ class MateStore:
                 except (ZoneInfoNotFoundError, ValueError) as exc:
                     raise MateError(f"unknown timezone: {tzname}") from exc
         location = self._clean_location(patch["location"]) if patch.get("location") is not None else None
+        born = birthday(patch["user_birthday"]) if patch.get("user_birthday") is not None else None
         changed: set[str] = set()
         if patch.get("user_name") is not None and self.set_user_name(patch["user_name"]):
             changed.add("user_name")
+        if born is not None and born != self.user_birthday():
+            self._put_setting("user_birthday", born)
+            changed.add("user_birthday")
         if location is not None:
             self._put_setting("location", json.dumps(location, ensure_ascii=False))
             changed.add("location")

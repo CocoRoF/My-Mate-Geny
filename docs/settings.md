@@ -52,6 +52,7 @@ off where it lives: the stage's status window.
 |---|---|---|
 | Default mate | Profile toggle · Global settings → Defaults · Settings → Mate & voice | Settings → 메이트 |
 | Your name (`prefs.user_name`, per mate) | each mate's 대화 방식 | Settings → 계정, one for all mates (a mate's old value is used until it is set) |
+| Your birthday (`user_birthday`, "MM-DD") | — | one for all mates, in the mate settings (`PUT /api/mates/settings`; no input yet): a mate with a day of her own knows it |
 | Time zone | Settings → Mate & voice · Global settings → Defaults | Settings → 언어 |
 | Volume | each mate's 음성 tab (it was this device's anyway) | Settings → 메이트 (this device) |
 | Speaking first (먼저 말 걸기) | a tab of each mate (it was this device's, one mate) | Settings → 메이트 (this device, which mate) |

@@ -14,6 +14,8 @@ export interface Persona {
   instructions: string;
   /** who she is, as the character's data: nothing in the app shows or sets it ("" = not known) */
   gender?: "female" | "male" | "";
+  /** her birthday, "MM-DD" ("" none; missing on documents from an older server): her day knows it (app/mate/life) */
+  birthday?: string;
 }
 
 export type TtsEngine = "google" | "off" | "browser" | "openai" | "elevenlabs" | "omnivoice" | "http";
@@ -152,6 +154,45 @@ export interface MateLifeSummary {
   /** they are with her in person */
   with_user?: boolean;
   needs?: Record<LifeNeed, number>;
+  /** what today is where the user lives: a day she knows (Pepero Day, Chuseok …), else the public holiday by its name */
+  observance?: LifeObservance | null;
+  /** whose birthday it is today */
+  birthday?: "her" | "user" | "both" | null;
+  /** what she just gave them (the last day and a half): for a notice */
+  gift?: { id: string; name: LifeNames; at: string } | null;
+}
+
+export interface LifeObservance {
+  /** a day of builtin/days.json, or "holiday" (a public holiday the calendar doesn't know) */
+  id: string;
+  name: LifeNames;
+  tone: "festive" | "solemn" | "plain";
+}
+
+/** what she gave them: theirs to keep */
+export interface LifeKeepsake {
+  id: string;
+  name: LifeNames;
+  /** the few words that came with it */
+  note: LifeNames;
+  kind: string;
+  at: string;
+  why: string;
+  /** why, for the UI: their birthday, a milestone of theirs (key), a day she knows (name), after something that happened to her (name) */
+  for: { kind: "birthday" | "milestone" | "day" | "event" | "random"; key: string; name: LifeNames };
+}
+
+/** a moment they shared: a story event while together, a milestone of theirs, a birthday they talked on */
+export interface LifeMoment {
+  kind: "event" | "milestone" | "birthday";
+  at: string;
+  /** milestone: affinity's key (days_100, stage_trusted …) */
+  key?: string;
+  /** birthday: whose */
+  who?: "her" | "user";
+  /** event: its id and title */
+  id?: string;
+  title?: LifeNames;
 }
 
 export type LifeStat = "work" | "gaming" | "stamina" | "cooking" | "sense" | "courage";
@@ -188,6 +229,14 @@ export interface LifeView extends MateLifeSummary {
   plan?: { slots: string[]; week: Record<string, string>; now: string | null; choices: { id: string; name: LifeNames }[] };
   journal?: LifeDay[];
   happened?: { at: string; title: LifeNames }[];
+  /** what she does for a living */
+  job?: LifeNames;
+  /** what she gave them, newest first */
+  given?: LifeKeepsake[];
+  /** the moments they shared, newest first */
+  moments?: LifeMoment[];
+  /** what she has come to like by doing it with them (and from what they send her), most first; v: 0 – 0.5 */
+  tastes?: { activity: string; name: LifeNames; v: number }[];
 }
 export interface LifeDay {
   day: string;
@@ -513,6 +562,8 @@ export interface VoiceSettings {
   timezone?: string;
   /** the name every mate knows you by (Settings → 계정) */
   user_name?: string;
+  /** the user's birthday, "MM-DD" ("" unknown): every mate with a day of her own knows it */
+  user_birthday?: string;
   /** where the user is: her weather, their public holidays (Settings → 언어) */
   location?: UserLocation | null;
   /** an OpenAI / Google key comes from Settings → Providers (a vendor account with an API key), not one of its own */
@@ -533,6 +584,8 @@ export interface UserLocation {
 export type VoiceSettingsPatch = Partial<{
   timezone: string;
   user_name: string;
+  /** "MM-DD", "" clears */
+  user_birthday: string;
   location: Omit<UserLocation, "at">;
   google_key: string | null;
   openai_key: string | null;

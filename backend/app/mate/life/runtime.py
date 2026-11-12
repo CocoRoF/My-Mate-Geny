@@ -33,24 +33,37 @@ class LifeRuntime:
         self.world = World(store, log)  # (the weather where the user is, their public holidays)
 
     def _row(self, mate_id: str) -> Any:
-        row = self.store._db.query_one("SELECT builtin, prefs FROM mates WHERE id = ?", (mate_id,))
+        row = self.store._db.query_one("SELECT builtin, prefs, persona FROM mates WHERE id = ?", (mate_id,))
         if row is None:
             raise KeyError(f"mate not found: {mate_id}")
         return row
 
-    def _bond(self, mate_id: str) -> tuple[float, str]:
-        """How close they are, and the stage they are at."""
+    def _bond(self, mate_id: str) -> tuple[float, str, list[dict[str, Any]]]:
+        """How close they are, the stage they are at and the milestones they passed."""
         rel = self.store.relation_doc(mate_id) or A.new()
-        return (float(rel.get("affinity") or 0) / 100, str(rel.get("stage") or "new")) if rel.get("enabled") else (0.33, "new")
+        if not rel.get("enabled"):
+            return 0.33, "new", []
+        return float(rel.get("affinity") or 0) / 100, str(rel.get("stage") or "new"), list(rel.get("milestones") or [])
 
-    def _played(self, mate_id: str, profile: dict[str, Any], now: datetime, tz: Any) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    def _birthdays(self, row: Any) -> dict[str, str]:
+        """Hers (her persona) and theirs (the app-wide settings): what she knows of the days that are theirs."""
+        try:
+            her = str((json.loads(row["persona"] or "{}") or {}).get("birthday") or "")
+        except (ValueError, AttributeError):
+            her = ""
+        return {"her": her, "user": self.store.user_birthday()}
+
+    def _played(self, mate_id: str, profile: dict[str, Any], now: datetime, tz: Any, birthdays: dict[str, str] | None = None
+                ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
         """Her day up to now. -> (doc, what showed before, what happened)."""
         doc = self.store.life_doc(mate_id, profile)
         if doc is None:
-            return sim.new(profile, now, tz, mate_id), {"signature": [], "slot": ""}, [{"type": "began"}]
+            doc = sim.new(profile, now, tz, mate_id)
+            doc["birthdays"] = dict(birthdays or doc["birthdays"])
+            return doc, {"signature": [], "slot": ""}, [{"type": "began"}]
         before = {"signature": sim.signature(doc), "slot": sim.slot((A._t(doc["at"]) or now).astimezone(tz))}
-        closeness, stage = self._bond(mate_id)
-        return doc, before, sim.advance(doc, profile, now, tz, closeness=closeness, stage=stage)
+        closeness, stage, milestones = self._bond(mate_id)
+        return doc, before, sim.advance(doc, profile, now, tz, closeness=closeness, stage=stage, milestones=milestones, birthdays=birthdays)
 
     def _dress(self, mate_id: str, doc: dict[str, Any], profile: dict[str, Any], happened: list[dict[str, Any]], prefs: dict[str, Any]) -> None:
         """She changes for bed and back when she gets up: what an activity asks for, unless they are with her or she doesn't change
@@ -83,10 +96,11 @@ class LifeRuntime:
         if profile is None:
             return None
         now, tz = datetime.now(timezone.utc), self.store.tz()
-        doc, before, happened = self._played(mate_id, profile, now, tz)
+        doc, before, happened = self._played(mate_id, profile, now, tz, self._birthdays(row))
         self._dress(mate_id, doc, profile, happened, _prefs(row["prefs"]))
         self.store.save_life(mate_id, doc)
-        events = [e for e in happened if e.get("type") == "event"]
+        # (story events, her birthday and theirs, what she gave them: how she takes them, whether she writes first)
+        events = [e for e in happened if e.get("type") in ("event", "occasion", "gave")]
         if events and self.on_events:
             try:
                 self.on_events(mate_id, events)
@@ -107,7 +121,8 @@ class LifeRuntime:
         if said and said.get("id"):
             before = sim.signature(doc)
             cues = A.cues((said.get("content") or "").strip())
-            woke = sim.heard(doc, profile, said["id"], datetime.now(timezone.utc), warm=bool(cues["warm"]), rude=bool(cues["rude"]))
+            woke = sim.heard(doc, profile, said["id"], datetime.now(timezone.utc), warm=bool(cues["warm"]), rude=bool(cues["rude"]),
+                             tz=self.store.tz())
             self.store.save_life(mate_id, doc)
             if sim.signature(doc) != before or woke:
                 self.store._changed("life", mate_id)
@@ -131,7 +146,7 @@ class LifeRuntime:
         if played is None:
             return {"code": "off"}
         doc, profile = played
-        out = sim.give(doc, profile, item)
+        out = sim.give(doc, profile, item, datetime.now(timezone.utc), self.store.tz())
         if out["code"] == "ok":
             self.store.save_life(mate_id, doc)
             self.store._changed("life", mate_id)

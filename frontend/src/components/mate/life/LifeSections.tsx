@@ -1,13 +1,15 @@
 /**
  * The pieces of her day the stage's windows are made of (docs/mate-life.md): her condition, what she did today, the map and
- * its places, the plan for her week, gifts, what she is growing in and her journal. Each reads one LifeView (useLifeView).
+ * its places, the plan for her week, gifts, what she is growing in, her journal, and what she gave them and the moments they
+ * shared. Each reads one LifeView (useLifeView).
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { getLife, sendLifeGift, setLifePlan, type LifeDay, type LifeGift, type LifePlace, type LifeView, type Mate } from "../../../api/mates";
+import { getLife, sendLifeGift, setLifePlan, type LifeDay, type LifeGift, type LifeKeepsake, type LifeMoment, type LifePlace, type LifeView, type Mate } from "../../../api/mates";
 import { fmtDate, fmtTime } from "../../../i18n/format";
 import { useLang, useT, type MsgKey } from "../../../i18n";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon, { type IconName } from "../../ui/Icon";
+import { milestoneText } from "../settings/RelationshipTab";
 import { lifeName, needStep, needTone, NEEDS, STATS } from "./needs";
 import "./life.css";
 
@@ -389,10 +391,78 @@ export function GiftsSection({ v, mate, onChange, onError }: { v: LifeView; mate
   );
 }
 
-export function GrowthSection({ v }: { v: LifeView }) {
+/** what she gave them (their keepsakes) and the moments they shared */
+export function KeepsakesSection({ v, mate }: { v: LifeView; mate: Mate }) {
   const t = useT();
+  const locale = useLang();
+  const day = (at: string) => fmtDate(at, { year: "numeric", month: "numeric", day: "numeric" });
+  const why = (g: LifeKeepsake): string => {
+    const f = g.for;
+    if (f.kind === "birthday") return t("life.gaveForBirthday");
+    if (f.kind === "milestone") return t("life.gaveForMilestone", { what: milestoneText(t, f.key) });
+    if (f.kind === "day") return t("life.gaveForDay", { day: lifeName(f.name, locale, f.key) });
+    if (f.kind === "event") return t("life.gaveForEvent", { what: lifeName(f.name, locale, f.key) });
+    return t("life.gaveForRandom");
+  };
+  const moment = (m: LifeMoment): string => {
+    if (m.kind === "milestone") return milestoneText(t, m.key ?? "");
+    if (m.kind === "birthday") return m.who === "her" ? t("life.momentBirthdayHer", { name: mate.name }) : t("life.momentBirthdayUser");
+    return lifeName(m.title, locale, m.id);
+  };
   return (
     <>
+      <Card title={t("life.keepsakes", { name: mate.name })} testId="life-keepsakes">
+        {!v.given?.length ? (
+          <p className="text-[12.5px] leading-relaxed text-content-faint">{t("life.keepsakesEmpty", { name: mate.name })}</p>
+        ) : (
+          <ul className="space-y-2.5">
+            {v.given.map((g) => (
+              <li key={`${g.id}-${g.at}`} className="flex items-start gap-2.5" data-testid={`life-keepsake-${g.id}`}>
+                <Icon name="gift" size={15} className="mt-0.5 shrink-0 text-violet" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[12.5px] font-medium text-content">{lifeName(g.name, locale, g.id)}</p>
+                  {lifeName(g.note, locale) && <p className="mt-0.5 whitespace-pre-wrap text-[12px] italic leading-snug text-content-dim">{lifeName(g.note, locale)}</p>}
+                  <p className="mt-0.5 text-[11px] text-content-faint">
+                    {day(g.at)} · {why(g)}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+      <Card title={t("life.moments")} testId="life-moments">
+        {!v.moments?.length ? (
+          <p className="text-[12.5px] text-content-faint">{t("life.momentsEmpty")}</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {v.moments.slice(0, 20).map((m) => (
+              <li key={`${m.kind}-${m.key ?? m.id ?? m.who}-${m.at}`} className="flex items-baseline gap-2 text-[12px]">
+                <span className="w-[5.5rem] shrink-0 tabular-nums text-content-faint">{day(m.at)}</span>
+                <span className="min-w-0 flex-1 text-content-dim">{moment(m)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </>
+  );
+}
+
+export function GrowthSection({ v }: { v: LifeView }) {
+  const t = useT();
+  const locale = useLang();
+  return (
+    <>
+      {lifeName(v.job, locale) && (
+        <Card testId="life-job">
+          <div className="flex items-center gap-2 text-[12.5px]">
+            <Icon name="terminal" size={14} className="text-content-faint" />
+            <span className="flex-1 text-content-dim">{t("life.job")}</span>
+            <span className="font-medium text-content">{lifeName(v.job, locale)}</span>
+          </div>
+        </Card>
+      )}
       <Card title={t("life.growthTitle")} testId="life-stats">
         <ul className="space-y-2.5">
           {STATS.map(({ stat, icon, label }) => {
@@ -410,6 +480,18 @@ export function GrowthSection({ v }: { v: LifeView }) {
           })}
         </ul>
       </Card>
+      {!!v.tastes?.length && (
+        <Card title={t("life.tastes")} testId="life-tastes">
+          <div className="flex flex-wrap gap-1.5">
+            {v.tastes.map((x) => (
+              <span key={x.activity} className="flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-0.5 text-[11.5px] text-content-dim">
+                <Icon name="heart" size={10} className={x.v >= 0.25 ? "text-violet" : "text-content-faint"} />
+                {lifeName(x.name, locale, x.activity)}
+              </span>
+            ))}
+          </div>
+        </Card>
+      )}
       <Card testId="life-money">
         <div className="flex items-center gap-2 text-[12.5px]">
           <Icon name="wallet" size={14} className="text-content-faint" />

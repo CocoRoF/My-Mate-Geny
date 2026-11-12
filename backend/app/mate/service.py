@@ -89,6 +89,7 @@ def _norm(s: str) -> str:
 
 #: news older than this, when the clock catches up after a while, isn't news: it waits for their next message
 LIFE_NEWS_WITHIN = timedelta(minutes=20)
+BIRTHDAY_NEWS_WITHIN = timedelta(hours=12)  # (their birthday is news for longer: she may still write first once the app is on)
 
 
 #: what the chat shows when she doesn't answer (MateService.silence), in her language; {n}: her name (in Korean with 은/는)
@@ -671,7 +672,8 @@ class MateService:
         if not woke and not notes and st.get("life") == sig and turn - int(st.get("life_turn") or 0) < 10:
             return ""
         st["life"], st["life_turn"] = sig, turn
-        return " ".join([sim.line(doc, profile, now, tz, woke=woke), *notes])
+        lang = (mate.get("persona") or {}).get("language") or "ko"
+        return " ".join([sim.line(doc, profile, now, tz, woke=woke, lang=lang), *notes])
 
     async def _tool_do_activity(self, mate: dict[str, Any], sid: str, args: dict[str, Any]) -> str:
         """She goes and does something, for a reason of her own: whether to is hers to decide, from how she feels (app/mate/life).
@@ -700,7 +702,9 @@ class MateService:
         return f"Going: the user sees you heading there now.{together} Say so briefly, in your own voice."
 
     def _life_happened(self, mate_id: str, events: list[dict[str, Any]]) -> None:
-        """Something happened in her day (app/mate/life): it moves how she feels, with itself as the reason."""
+        """Something happened in her day (app/mate/life): it moves how she feels, with itself as the reason. Her birthday and theirs
+        (``occasion``) are logged for whoever weighs that day (``mate.life_occasion``); what she gave them (``gave``) shows in her
+        chat as a notice and stays with them (the life view's ``given``)."""
         lang = ((self.store.get(mate_id).get("persona") or {}).get("language")) or "ko"
 
         def change(doc: dict[str, Any], who: dict[str, Any], now: datetime, tz: Any) -> None:
@@ -711,14 +715,37 @@ class MateService:
 
         self._state_event(mate_id, change)
         for e in events:
-            self._log("info", f"life: {e.get('id')}", code="mate.life_event", detail={"event": e.get("id")})
+            kind = e.get("type") or "event"
+            if kind == "gave":
+                self._life_gave(mate_id, e)
+            code = {"occasion": "mate.life_occasion", "gave": "mate.life_gave"}.get(kind, "mate.life_event")
+            detail = {"event": e.get("id")} if kind == "event" else {"event": e.get("id"), "type": kind, "why": e.get("why") or ""}
+            self._log("info", f"life: {e.get('id')}", code=code, detail=detail)
         self._life_reach_out(mate_id, events)
+
+    def _life_gave(self, mate_id: str, gift: dict[str, Any]) -> None:
+        """She gave them something: a notice in her chat (the UI says it in its language: ``life.gave``)."""
+        mate = self.store.get(mate_id)
+        sid = mate.get("session_id")
+        if not sid:
+            return
+        name = gift.get("name") or {}
+        try:
+            self._svc.add_notice(sid, "life.gave", f"{mate['name']} gave you a gift: {name.get('en') or gift.get('id')}.",
+                                 name=mate["name"], gift=dict(name), item=gift.get("id"), why=gift.get("why") or "")
+        except Exception as exc:  # noqa: BLE001 - the gift is hers to have given, whoever sees the notice
+            self._log("warning", f"life: {mate_id}: the gift notice: {exc}")
 
     def _life_reach_out(self, mate_id: str, events: list[dict[str, Any]]) -> None:
         """Something worth telling happened just now, and she may write first (the reach-out setting is on): she decides whether to,
-        and says so in her own words or stays quiet. Otherwise it waits for their next message, as everything does."""
+        and says so in her own words or stays quiet. Otherwise it waits for their next message, as everything does. Their birthday
+        is news all morning: she wishes them a happy birthday first (and tells them what she gave them)."""
         now = datetime.now(timezone.utc)
-        fresh = [e for e in events if e.get("share") and (A._t(e.get("at")) or now) >= now - LIFE_NEWS_WITHIN]
+
+        def birthday(e: dict[str, Any]) -> bool:
+            return e.get("id") == "user_birthday" or e.get("why") == "birthday"
+
+        fresh = [e for e in events if e.get("share") and (A._t(e.get("at")) or now) >= now - (BIRTHDAY_NEWS_WITHIN if birthday(e) else LIFE_NEWS_WITHIN)]
         if not fresh:
             return
         mate = self.store.get(mate_id)
@@ -726,10 +753,22 @@ class MateService:
         life = mate.get("life") or {}
         if not sid or not ((mate.get("prefs") or {}).get("proactive") or {}).get("enabled") or life.get("asleep") or self._svc.is_running(sid):
             return
-        prompt = ("[Something just happened in your day: your <context> says what. If it is the kind of thing you would tell them, write them a line "
-                  "or two about it now, in your own voice, as you would by message. If not, or if you have nothing to say, reply with EXACTLY [SILENT].]")
+        gave = any(e.get("type") == "gave" for e in fresh)
+        if any(birthday(e) for e in fresh):
+            kind = "life_birthday"
+            prompt = ("[Today is their birthday, and you remembered: your <context> says so" + (", and what you gave them" if gave else "")
+                      + ". Write to them first now: wish them a happy birthday in your own voice, a line or two, as you would by message"
+                      + (", and tell them about your gift" if gave else "") + ". If you really would not, reply with EXACTLY [SILENT].]")
+        elif gave:
+            kind = "life_gave"
+            prompt = ("[You just gave them something: your <context> says what, and why. Tell them about it now, in your own voice, a line "
+                      "or two, as you would by message. If you would rather say nothing, reply with EXACTLY [SILENT].]")
+        else:
+            kind = "life_event"
+            prompt = ("[Something just happened in your day: your <context> says what. If it is the kind of thing you would tell them, write them a line "
+                      "or two about it now, in your own voice, as you would by message. If not, or if you have nothing to say, reply with EXACTLY [SILENT].]")
         try:
-            self._svc.start_turn(sid, prompt, meta={"internal": True, "kind": "life_event"})
+            self._svc.start_turn(sid, prompt, meta={"internal": True, "kind": kind})
         except (TurnBusyError, KeyError, RuntimeError):
             pass
 
@@ -780,15 +819,18 @@ class MateService:
             raise MateError("not enough coins", status=409)
         given = out["item"]
         sent = given.get("sent") or given["id"]
+        # (on her birthday it means more; one they keep sending has become a favourite of hers)
+        more = (" It is your birthday today: they remembered." if out.get("birthday") else "") + \
+               (" They keep sending you this: it has become a favourite of yours." if out.get("favourite") else "")
         self._state_event(mate_id, lambda doc, who, now, tz: S.gifted(doc, who, now, tz))
         try:
-            self._relation_gift(mate_id)
+            self._relation_gift(mate_id, birthday=bool(out.get("birthday")))
         except Exception as exc:  # noqa: BLE001 - counting never fails the gift
             self._log("warning", f"relationship gift for {mate_id}: {exc}")
         sid = mate.get("session_id")
         told = False
         if sid and not out["asleep"]:
-            prompt = (f"[A delivery just reached you, from them: {sent}.] Say something to them about it, in character and in your own "
+            prompt = (f"[A delivery just reached you, from them: {sent}.{more}] Say something to them about it, in character and in your own "
                       "voice, as how you feel and what you are doing right now would have it. A line or two.")
             try:
                 self._svc.start_turn(sid, prompt, meta={"internal": True, "kind": "life_gift", "item": given["id"]})
@@ -796,7 +838,7 @@ class MateService:
             except (TurnBusyError, KeyError):
                 pass
         if not told:
-            self.life.note(mate_id, f"While you were busy or asleep, a delivery reached you from them: {sent}.")
+            self.life.note(mate_id, f"While you were busy or asleep, a delivery reached you from them: {sent}.{more}")
         return self.life.view(mate_id)
 
     def _state_lines(self, mate: dict[str, Any], prefs: dict[str, Any], st: dict[str, Any], turn: int, now: datetime,
@@ -1150,13 +1192,14 @@ class MateService:
         A.credit_memory(doc, now, tz)
         self._save_relation(mate_id, doc, before)
 
-    def _relation_gift(self, mate_id: str) -> None:
-        """They sent her something: it counts for them, a little each (capped per day)."""
+    def _relation_gift(self, mate_id: str, *, birthday: bool = False) -> None:
+        """They sent her something: it counts for them, a little each (capped per day); on her birthday as two."""
         now, tz = datetime.now(timezone.utc), self.store.tz()
         doc = self.relation_doc(mate_id)
         before = A.clone(doc)
         A.advance(doc, now, tz)
-        A.credit_gift(doc, now, tz)
+        for _ in range(2 if birthday else 1):  # (each kept in ``gifts``: the replay counts it the same)
+            A.credit_gift(doc, now, tz)
         self._save_relation(mate_id, doc, before)
 
     def _relation_turn(self, mate_id: str, outcome: dict[str, Any]) -> None:

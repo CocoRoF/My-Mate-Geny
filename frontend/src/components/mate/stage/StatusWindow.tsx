@@ -1,24 +1,27 @@
-/** Status: how close you are and how she feels, where she is and how she is, and the rest of her day (plan, growth, journal, gifts). */
+/** Status: how close you are and how she feels, where she is and how she is (what today is, a gift she just gave), and the rest of
+ * her day (plan, growth, journal, gifts, what she gave and the moments you shared). */
 import { useState } from "react";
 import type { Mate } from "../../../api/mates";
-import { useLang, useT } from "../../../i18n";
+import { useLang, useT, type MsgKey } from "../../../i18n";
 import { fmtTime } from "../../../i18n/format";
 import { STATE_EMOJI } from "../../../mate/relationJournal";
 import Icon from "../../ui/Icon";
 import { RelationRing, STAGE_LABEL } from "../RelationRing";
 import { stateName, stateWhy, STATE_LABEL } from "../StateCard";
-import { Card, GiftsSection, GrowthSection, JournalSection, LifeOff, NeedsList, PlanSection, SayChips, SKY, SLOT_LABEL, TodayList, useLifeView } from "../life/LifeSections";
+import { Card, GiftsSection, GrowthSection, JournalSection, KeepsakesSection, LifeOff, NeedsList, PlanSection, SayChips, SKY, SLOT_LABEL, TodayList, useLifeView } from "../life/LifeSections";
 import { lifeName } from "../life/needs";
 import StageWindow, { type WindowTab } from "./StageWindow";
 
-type Tab = "now" | "plan" | "growth" | "journal" | "gifts";
+type Tab = "now" | "plan" | "growth" | "journal" | "gifts" | "keepsakes";
 const TABS: WindowTab<Tab>[] = [
   { id: "now", icon: "heart", label: "stage.tabNow" },
   { id: "plan", icon: "calendar", label: "life.tabPlan" },
   { id: "growth", icon: "trending-up", label: "life.tabGrowth" },
   { id: "journal", icon: "book", label: "life.tabJournal" },
   { id: "gifts", icon: "gift", label: "life.tabGifts" },
+  { id: "keepsakes", icon: "sparkles", label: "life.tabKeepsakes" },
 ];
+const BIRTHDAY: Record<"her" | "user" | "both", MsgKey> = { her: "life.birthdayHer", user: "life.birthdayUser", both: "life.birthdayBoth" };
 
 export default function StatusWindow({ mate, phone, onClose, onSay, onRelation }: { mate: Mate; phone: boolean; onClose: () => void; onSay: (text: string) => void; onRelation: () => void }) {
   const t = useT();
@@ -79,6 +82,26 @@ export default function StatusWindow({ mate, phone, onClose, onSay, onRelation }
             <LifeOff mate={mate} onOn={setV} />
           ) : (
             <>
+              {(life.gift || life.birthday) && (
+                <Card testId="stage-status-today">
+                  {life.birthday && (
+                    <p className="flex items-center gap-2 text-[12.5px] font-medium text-content" data-testid="life-birthday" data-who={life.birthday}>
+                      <Icon name="sparkles" size={14} className="shrink-0 text-violet" /> {t(BIRTHDAY[life.birthday], { name: mate.name })}
+                    </p>
+                  )}
+                  {life.gift && (
+                    <div className={`flex items-center gap-2 text-[12.5px] ${life.birthday ? "mt-2" : ""}`} data-testid="life-gift-new">
+                      <Icon name="gift" size={14} className="shrink-0 text-violet" />
+                      <span className="min-w-0 flex-1 truncate text-content-dim">
+                        {t("life.giftNew", { name: mate.name })}: <span className="text-content">{lifeName(life.gift.name, locale, life.gift.id)}</span>
+                      </span>
+                      <button type="button" className="btn-soft shrink-0 !px-2.5 !py-1 text-[12px]" onClick={() => setTab("keepsakes")} data-testid="life-gift-see">
+                        {t("life.giftSee")}
+                      </button>
+                    </div>
+                  )}
+                </Card>
+              )}
               <Card testId="stage-status-where">
                 <div className="flex items-center gap-3">
                   {life.art && <img src={life.art} alt="" className="h-14 w-24 shrink-0 rounded-lg object-cover" draggable={false} />}
@@ -91,7 +114,11 @@ export default function StatusWindow({ mate, phone, onClose, onSay, onRelation }
                     <p className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] text-content-faint">
                       {t(SLOT_LABEL[life.slot ?? "day"])} <Icon name={sky.icon} size={11} /> {t(sky.label)}
                       {life.temp != null && <span data-testid="life-now-temp">{life.temp}°{life.city ? ` · ${life.city}` : ""}</span>}
-                      {life.holiday && <span className="text-accent">· {t("life.holiday")}</span>}
+                      {life.observance ? (
+                        <span className="text-accent" data-testid="life-observance" data-id={life.observance.id}>· {lifeName(life.observance.name, locale, life.observance.id)}</span>
+                      ) : (
+                        life.holiday && <span className="text-accent">· {t("life.holiday")}</span>
+                      )}
                       {life.next && <span className="truncate">· {t("life.next", { time: fmtTime(life.next.at), what: lifeName(life.next.name, locale) })}</span>}
                     </p>
                   </div>
@@ -116,6 +143,8 @@ export default function StatusWindow({ mate, phone, onClose, onSay, onRelation }
         <GrowthSection v={life} />
       ) : tab === "journal" ? (
         <JournalSection v={life} />
+      ) : tab === "keepsakes" ? (
+        <KeepsakesSection v={life} mate={mate} />
       ) : (
         <GiftsSection v={life} mate={mate} onChange={setV} onError={setErr} />
       )}
