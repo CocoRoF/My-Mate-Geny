@@ -1,5 +1,6 @@
 import { migrateDevicePreferences, installDevicePreferences, devicePreferences, patchDevicePreferences } from "./devicePreferences";
 import { currentSurface, desktopMate } from "../mate/desktop";
+import { useUserIcon } from "./userIcon";
 import { create } from "zustand";
 import {
   createMate,
@@ -309,6 +310,7 @@ export const useMateStore = create<MateState>((set, get) => ({
     }
     if (reason === "style" && mateId) get().bumpStyle(mateId);
     if (reason === "settings" && get().providers) void get().loadProviders();
+    if (reason === "settings") void useUserIcon.getState().load(); // (the user's picture is a mate setting)
     scheduleReload();
   },
 }));

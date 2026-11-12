@@ -452,6 +452,8 @@ export interface Mate {
   customized?: boolean;
   /** still being made in the Mate Create studio (hidden from the mate list until Create mate) */
   draft?: boolean;
+  /** her profile picture, a square (POST /api/mates/{id}/icon); "" or missing: her avatar's face (MateThumb) */
+  icon?: string;
 }
 
 export interface MatePatch {
@@ -564,6 +566,8 @@ export interface VoiceSettings {
   user_name?: string;
   /** the user's birthday, "MM-DD" ("" unknown): every mate with a day of her own knows it */
   user_birthday?: string;
+  /** the user's own picture, a square (Settings → 계정; the sidebar shows it): its URL, "" none */
+  user_icon?: string;
   /** where the user is: her weather, their public holidays (Settings → 언어) */
   location?: UserLocation | null;
   /** an OpenAI / Google key comes from Settings → Providers (a vendor account with an API key), not one of its own */
@@ -898,6 +902,22 @@ export function uploadAsset(id: string, file: Blob, path: string) {
   f.append("path", path);
   return upload<{ path: string; url: string; size: number }>(`/api/mates/${enc(id)}/assets`, f);
 }
+
+/** her profile picture (a square the crop dialog made) → the mate */
+export function uploadMateIcon(id: string, picture: Blob) {
+  const f = new FormData();
+  f.append("file", picture, picture.type === "image/png" ? "icon.png" : "icon.webp");
+  return upload<Mate>(`/api/mates/${enc(id)}/icon`, f);
+}
+/** back to her avatar's face → the mate */
+export const clearMateIcon = (id: string) => apiFetch<Mate>(`/api/mates/${enc(id)}/icon`, { method: "DELETE" });
+/** the user's own picture → the settings */
+export function uploadUserIcon(picture: Blob) {
+  const f = new FormData();
+  f.append("file", picture, picture.type === "image/png" ? "icon.png" : "icon.webp");
+  return upload<VoiceSettings>("/api/mates/settings/user-icon", f);
+}
+export const clearUserIcon = () => apiFetch<VoiceSettings>("/api/mates/settings/user-icon", { method: "DELETE" });
 
 export function importAvatarZip(id: string, file: File, outfit?: string) {
   const f = new FormData();

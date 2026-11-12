@@ -82,6 +82,12 @@ const draftOf = (m: Mate): Draft => {
   };
 };
 
+/** what she could call you, one press each (your name is every mate's: Settings → 계정) */
+export const addressChips = (userName: string, korean: boolean): string[] => {
+  const nm = userName.trim();
+  return nm ? (korean ? [`${nm}님`, `${nm} 씨`, nm, "주인님"] : [nm, "boss"]) : korean ? ["주인님", "사장님"] : ["boss"];
+};
+
 /** one of her own changes: what, when, why — Undo (applied) or Apply / Dismiss (proposed) */
 function ChangeRow({ mateId, c }: { mateId: string; c: StyleChange }) {
   const t = useT();
@@ -176,7 +182,7 @@ export default function StyleTab({ mate, conv }: { mate: Mate; conv: MateConvers
   const korean = (d.language || "ko").toLowerCase().startsWith("ko");
   // your name is every mate's (Settings → 계정): shown here, changed there
   const nm = p.user_name.trim();
-  const chips = nm ? (korean ? [`${nm}님`, `${nm} 씨`, nm, "주인님"] : [nm, "boss"]) : korean ? ["주인님", "사장님"] : ["boss"];
+  const chips = addressChips(nm, korean);
   const eff = effectiveStyle({ ...p, formality: d.formality, address: d.address, self_ref: d.self_ref });
   const forms = korean && d.address ? addressForms(d.address, eff.formality === "banmal" && isBareKoreanName(d.address, nm)) : null;
   const charAddress = p.defaults.address ? fillAddress(p.defaults.address, p.user_name, t("mateSettings.styleNamePh")) : "";

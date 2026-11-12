@@ -1,7 +1,8 @@
 /**
  * Mate settings (docs/settings.md): Profile · Conversation style · Avatar and outfits · Voice · Language model ·
  * Relationship and memory (this mate) · Common (every mate: the same as Settings → 메이트 — her on the desktop, reading
- * aloud, speaking first, screen sharing, Live2D; done by the mate picked here) · Delete.
+ * aloud, speaking first, screen sharing, Live2D; done by the mate picked here) · Delete. The header's 가이드 opens her
+ * step-by-step guide again (guide/MateGuide).
  */
 import { useEffect, useRef, useState } from "react";
 import type { Mate } from "../../../api/mates";
@@ -36,7 +37,7 @@ const TABS: { id: Tab; label: MsgKey }[] = [
   { id: "danger", label: "mateSettings.tabDanger" },
 ];
 
-export default function MateSettings({ mate, conv, onClose, initialTab = "profile" }: { mate: Mate; conv: MateConversation; onClose: () => void; initialTab?: Tab }) {
+export default function MateSettings({ mate, conv, onClose, initialTab = "profile", onGuide }: { mate: Mate; conv: MateConversation; onClose: () => void; initialTab?: Tab; onGuide?: () => void }) {
   const t = useT();
   const [tab, setTab] = useState<Tab>(initialTab);
   const [saveSlot, setSaveSlot] = useState<HTMLDivElement | null>(null);
@@ -62,6 +63,11 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
           </h2>
           <p className="truncate text-[11px] text-content-faint">{t("mateSettings.settingsSub")}</p>
         </div>
+        {onGuide && (
+          <button onClick={onGuide} className="btn-ghost shrink-0 !px-2.5 !py-1 text-[12px]" title={t("guide.openTitle", { name: mate.name })} data-testid="mate-guide-open">
+            <Icon name="book" size={13} /> <span className="hidden min-[400px]:inline">{t("guide.open")}</span>
+          </button>
+        )}
         <button
           onClick={() => openAppSettings("mate")}
           className="btn-ghost shrink-0 !px-2.5 !py-1 text-[12px]"

@@ -253,6 +253,7 @@ CREATE TABLE IF NOT EXISTS mates (
     draft       INTEGER NOT NULL DEFAULT 0,   -- being made in the Mate Create studio: hidden until finished
     persona_legacy TEXT,                      -- JSON: the persona before speech/address moved into prefs (backup)
     outfits     TEXT NOT NULL DEFAULT '{}',   -- her wardrobe: the avatar sets she doesn't have on (docs/mate.md "Outfits")
+    icon        TEXT NOT NULL DEFAULT '',     -- her profile picture: a cropped square of her assets (profile/), '' = her face
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -413,7 +414,8 @@ class Database:
             for col, ddl in (("builtin", "TEXT"), ("builtin_hash", "TEXT"), ("builtin_snapshot", "TEXT"),
                              ("customized", "INTEGER NOT NULL DEFAULT 0"), ("prefs", "TEXT NOT NULL DEFAULT '{}'"),
                              ("screen", "TEXT NOT NULL DEFAULT '{}'"), ("draft", "INTEGER NOT NULL DEFAULT 0"),
-                             ("persona_legacy", "TEXT"), ("outfits", "TEXT NOT NULL DEFAULT '{}'")):
+                             ("persona_legacy", "TEXT"), ("outfits", "TEXT NOT NULL DEFAULT '{}'"),
+                             ("icon", "TEXT NOT NULL DEFAULT ''")):
                 if matecols and col not in matecols:
                     self._conn.execute(f"ALTER TABLE mates ADD COLUMN {col} {ddl}")
             self._conn.execute(

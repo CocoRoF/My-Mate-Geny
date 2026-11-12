@@ -6,6 +6,8 @@ import Icon from "../ui/Icon";
 import type { BodyMood, MateReact } from "../../mate/types";
 import type { Caption } from "../../mate/useMateConversation";
 import { useT, type MsgKey, type TFunction } from "../../i18n";
+import { cropBoxStyle, faceCrop } from "../../lib/iconCrop";
+import type { IconPicture } from "../ui/IconCropDialog";
 import type { ReactNode } from "react";
 import LifeBackdrop from "./life/LifeBackdrop";
 import LifeHud from "./life/LifeHud";
@@ -55,15 +57,37 @@ export function BuiltinBadge({ mate }: { mate: Mate }) {
   );
 }
 
-/** a small round picture of a mate: its home still when it has one, else its initial */
-export function MateThumb({ mate, className = "h-7 w-7" }: { mate: Mate; className?: string }) {
+/** her avatar's picture to make an icon of (the set she has on): a still's face (its rig says where), a LivLiv
+ *  package's own portrait or cover; null: none (no avatar, Live2D) */
+export function avatarPicture(mate: Mate): (IconPicture & { aspect?: number[] }) | null {
   const a = mate.avatar;
-  const src = a.kind === "video" || a.kind === "photo" ? a.rig.home || a.rig.stills?.neutral || "" : a.kind === "livliv" ? a.livliv.avatar || a.livliv.cover || "" : "";
+  if (a.kind === "video" || a.kind === "photo") {
+    const src = a.rig.home || a.rig.stills?.neutral || "";
+    return src ? { src, face: a.rig.frame?.face ?? null, aspect: a.rig.aspect } : null;
+  }
+  if (a.kind === "livliv") {
+    if (a.livliv.avatar) return { src: a.livliv.avatar, centre: true };
+    return a.livliv.cover ? { src: a.livliv.cover } : null;
+  }
+  return null;
+}
+
+/** a small round picture of a mate: her icon (her Profile tab), else her avatar's face, else her initial */
+export function MateThumb({ mate, className = "h-7 w-7" }: { mate: Mate; className?: string }) {
+  const [failed, setFailed] = useState("");
+  const icon = mate.icon && failed !== mate.icon ? mate.icon : "";
+  const pic = icon ? null : avatarPicture(mate);
+  const [w, h] = pic?.aspect?.[0] && pic.aspect[1] ? pic.aspect : [0, 0];
   const ch = [...(mate.name.trim() || "?")][0].toUpperCase();
   return (
-    <span className={`relative shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-accent to-violet ${className}`}>
-      {src ? (
-        <img src={src} alt="" className="h-full w-full object-cover object-top" draggable={false} />
+    <span className={`relative shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-accent to-violet ${className}`} data-testid="mate-thumb">
+      {icon ? (
+        <img src={icon} alt="" className="h-full w-full object-cover" draggable={false} onError={() => setFailed(icon)} />
+      ) : pic && w ? (
+        // (her face, by the rig's frame: the same crop the icon dialog starts on)
+        <img src={pic.src} alt="" className="absolute max-w-none" style={cropBoxStyle(faceCrop(w, h, pic.face), w, h)} draggable={false} />
+      ) : pic ? (
+        <img src={pic.src} alt="" className={`h-full w-full object-cover ${pic.centre ? "" : "object-top"}`} draggable={false} />
       ) : (
         <span className="grid h-full w-full place-items-center text-[12px] font-semibold text-white">{ch}</span>
       )}
