@@ -11,13 +11,14 @@ Steps (files are relative to the project dir; ``pipeline.json`` there holds the 
     prep               masters/candidate.png → candidate.cutin.jpg (1600px, for the cut-out) + candidate.ref.jpg
                        (2048px, the stills' reference) + info.json
     home               + masters/candidate.cut.png (the remover's) → home.png (clean alpha, colour without the old
-                       background), place.json (where it sits on the canvas), home-gray.jpg (the clips' first and
+                       background: its edge measured from the picture, see edge_matte), place.json (where it sits on the canvas), home-gray.jpg (the clips' first and
                        last frame), face.json + face-mask.png (the region the stills may change)
     stills             stills/<n>.raw.png → stills/<n>.png (only the face region laid over the home picture)
     matte <id>         clips/<id>.mp4 + clips/<id>.nobg.mp4 → matte/<id>.alpha.mkv (lossless gray) + matte/<id>.json
                        (alpha recovered from the known flat gray: α = removed / original, colour = (orig − (1−α)·bg) / α;
                        gaps the remover covers opened again, see rematte)
-    encode             all mattes → web/<id>.lg.mp4, web/<id>.sm.mp4 (stacked alpha: colour above, alpha below) +
+    encode             all mattes → web/<id>.lg.mp4, web/<id>.sm.mp4 (stacked alpha: colour above, alpha below; each frame's
+                       edge measured from the picture and the gray taken out of its colour, see edge_matte) +
                        web/box.json (one crop for every clip and still)
     check              → check.json: loop seam, first frame vs the base picture, background drift, alpha quality
     export <key>       → export/: rig.json, <still>.webp, <clip>.{lg,sm}.mp4, portrait.webp (an ailism-style pack)
@@ -171,12 +172,6 @@ def clean_alpha(a: np.ndarray) -> np.ndarray:
 def border_bg(orig: np.ndarray, k: int) -> np.ndarray:
     border = np.concatenate([orig[:k].reshape(-1, 3), orig[:, :k].reshape(-1, 3), orig[:, -k:].reshape(-1, 3)])
     return np.median(border, axis=0)
-
-
-def near_dark(orig: np.ndarray, bg: np.ndarray, px: int) -> np.ndarray:
-    """Where something as dark as hair lies within ``px`` pixels."""
-    size = 2 * px + 1
-    return cv2.erode(orig.mean(-1).astype(np.float32), np.ones((size, size), np.uint8)) < 0.5 * bg.mean()
 
 
 def flat_background(orig: np.ndarray, a: np.ndarray, bg: np.ndarray) -> bool:
@@ -356,71 +351,387 @@ def colour(orig: np.ndarray, a: np.ndarray, bg: np.ndarray) -> np.ndarray:
     return np.where(aa > 0.02, (orig - (1 - aa) * bg) / np.maximum(aa, 0.02), 0).clip(0, 255)
 
 
-#: a gap between strands: lighter than what lies on both sides of it, this much, within this many pixels; and no lighter than
-#: the gray by more than this (the sharpening's overshoot)
-RIDGE_DARKER, RIDGE_REACH, GAP_LIGHTER = 25.0, 3, 12.0
+# ---------------------------------------------------------------- her edge
+
+#: Her edge, measured from the picture (``edge_matte``). Pixels are a clip's of this width: ``scale`` stretches them for a
+#: picture at another scale. EDGE_VERSION marks a cut-out whose edge is measured so (place.json "edge")
+EDGE_CLIP, EDGE_VERSION = 1440, 1
+#: up to EDGE_NOISE from the gray a pixel is the gray itself, video noise (under ~5) and the codec's colour blur at her edge;
+#: her alpha grows in over EDGE_FADE more
+EDGE_NOISE, EDGE_FADE = 6.0, 8.0
+#: how far into her the gray is mixed with her at an edge (the line drawn round her and its anti-aliasing), and how far away her
+#: own colour is looked for: a loose strand's pixels are all mixes, its colour is that of the outline a little further on
+EDGE_MIX, EDGE_REACH = 3, 12
+#: the gray between strands that the remover covered: a patch inside her matte (a patch bigger than this share of her and
+#: wider than EDGE_REACH is a part of her in the gray's own colour: a gray hood); closed in by her, no further from her outline
+#: than this many times EDGE_REACH
+EDGE_GAP_AREA, EDGE_GAP_REACH = 0.004, 4
+#: such a patch: its pixels closer to the gray than the first, at least the share (third) of them closer than the second (the
+#: gray seen through a gap a few pixels wide takes on a tint of the strands round it: the codec keeps colour at half the
+#: resolution); closed in by her, this share of what lies two to four pixels round it clearly not the gray (her lines)
+EDGE_GAP_KEY, EDGE_GAP_DRAWN = (18.0, 9.0, 0.3), 0.25
+#: a gap a few pixels wide between two of her lines (clearly not the gray: KEY_TO) gets no closer to the gray than this
+EDGE_VALLEY = 24.0
+#: a colour off the line from the gray through a pixel by no more than this (plus this share of its own distance from the gray)
+#: is that pixel's colour, mixed with the gray in some other proportion
+EDGE_LINE = (6.0, 0.1)
+#: the noise of her colour where it is measured (plus this share of its distance from the gray)
+EDGE_KNEE = (3.0, 0.03)
+#: the sharpening's light line just outside her outline: no colour of its own, the gray's or lighter, no further from it than
+#: this, within EDGE_HALO_NEAR pixels of something clearly not the gray
+EDGE_HALO, EDGE_HALO_CHROMA, EDGE_HALO_NEAR = 40.0, 8.0, 2
+#: past her, this many pixels take the colour of her nearest pixel (and black beyond: a flat field costs the codec nothing), so
+#: the codec's colour blur and the browser's scaling find her colours there and not a dark rim
+EDGE_FILL = 6
 
 
-def light_ridge(orig: np.ndarray) -> np.ndarray:
-    """Pixels lighter than something on both sides of them (across, down or along a diagonal): the gray seen between two
-    dark strands, however mixed with them. Where a dark part of her meets a light one, one side is lighter: no ridge."""
-    lum = orig.mean(-1).astype(np.float32)
-    pad = np.pad(lum, RIDGE_REACH, mode="edge")
-    H, W = lum.shape
-    out = np.zeros(lum.shape, bool)
+def _rings(near: int, far: int) -> np.ndarray:
+    """Where around a pixel her colour is looked for: every pixel up to ``near`` away, then rings out to ``far``, two pixels
+    apart along each (a ring a pixel further on is turned half a step, so a fine line crossing them is met)."""
+    offs = {(dy, dx) for dy in range(-near, near + 1) for dx in range(-near, near + 1) if 0 < dy * dy + dx * dx <= near * near}
+    for r in range(near + 1, far + 1):
+        n = max(8, int(round(np.pi * r)))
+        for k in range(n):
+            t = 2 * np.pi * (k + 0.5 * (r % 2)) / n
+            offs.add((int(round(r * np.sin(t))), int(round(r * np.cos(t)))))
+    offs.discard((0, 0))
+    return np.array(sorted(offs, key=lambda o: o[0] * o[0] + o[1] * o[1]), np.int32)
+
+
+def _her_colour(v: np.ndarray, sure: np.ndarray, ys: np.ndarray, xs: np.ndarray, far_too: np.ndarray, near: int,
+                far: int) -> tuple[np.ndarray, np.ndarray]:
+    """For the pixels (ys, xs): her colour there, as an offset from the gray. A pixel at her edge is her colour mixed with the
+    gray, so it lies on the line from the gray to her colour: of the pixels around it that are surely her (``sure``) and lie on
+    that line, the one furthest out along it, among the nearest of them (the nearest one and what lies up to ``near`` pixels
+    further: right behind an edge, her colour there, not a darker fold of it further on); for the pixels ``far_too``, among all
+    up to ``far`` away (a loose strand's own pixels are all mixes: its colour is the line it is drawn in). The pixel's own colour
+    counts if it is sure. → (that colour, whether there was one)."""
+    H, W = sure.shape
+    Wp = W + 2 * far
+    vp = np.zeros((H + 2 * far, Wp, 3), np.float32)
+    vp[far:far + H, far:far + W] = np.where(sure[..., None], v, 0.0)  # (only what is surely her can be chosen)
+    flat = vp.reshape(-1, 3)
+    n2 = (flat * flat).sum(-1)
+    base = ((ys + far) * Wp + xs + far).astype(np.int64)
+    vb = v[ys, xs]
+    db = np.sqrt((vb * vb).sum(-1))
+    u = (vb / np.maximum(db, 1e-3)[:, None]).astype(np.float32)
+    own = sure[ys, xs] & (db > EDGE_NOISE)
+    best = np.where(own, db, 0.0).astype(np.float32)
+    pick = np.where(own, base, 0)
+    first = np.where(own, 0.0, np.inf).astype(np.float32)
+    a_tol, r_tol = EDGE_LINE
+    # (the pixels still looking: one that is the gray itself has no colour to look for; one at her body's edge stops a few
+    # pixels past the first it found)
+    live = np.flatnonzero(db > EDGE_NOISE)
+    lu, lb, lfar = u[live], base[live], far_too[live]
+    radius = 0.0
+    for dy, dx in _rings(near, far):
+        r = float(np.hypot(dy, dx))
+        if not len(live):
+            break
+        if r > radius + 0.99:
+            radius = r
+            keep = lfar | (first[live] + near >= r)
+            if keep.mean() < 0.8:
+                live, lu, lb, lfar = live[keep], lu[keep], lb[keep], lfar[keep]
+        idx = lb + (int(dy) * Wp + int(dx))
+        proj = np.einsum("ij,ij->i", flat[idx], lu)
+        tol = a_tol + r_tol * proj
+        on = (proj > EDGE_NOISE) & (n2[idx] - proj * proj <= tol * tol)
+        fl = first[live]
+        ok = on & (proj > best[live]) & (lfar | (r <= np.minimum(fl, r) + near))
+        np.minimum(fl, np.where(on, r, np.inf), out=fl)
+        first[live] = fl
+        j = live[ok]
+        best[j] = proj[ok]
+        pick[j] = idx[ok]
+    found = best > EDGE_NOISE
+    return np.where(found[:, None], flat[pick], 0.0), found
+
+
+def _valley(d: np.ndarray, reach: int, floor: float, wall: float) -> np.ndarray:
+    """Pixels closer to the gray than ``floor`` with something at least ``wall`` from it within ``reach`` pixels on both
+    sides of them, along two of the four lines through them (across, down, the diagonals): the gray in a channel between two
+    lines, however mixed with them. (Where two lines meet in a corner only one line through it has them on both sides.)"""
+    H, W = d.shape
+    pad = np.pad(d, reach, mode="edge")
+    walled = np.zeros(d.shape, np.uint8)
     for dy, dx in ((0, 1), (1, 0), (1, 1), (1, -1)):
-        sides = []
+        both = np.ones(d.shape, bool)
         for sign in (1, -1):
-            side = np.full(lum.shape, np.inf, np.float32)
-            for k in range(1, RIDGE_REACH + 1):
-                oy, ox = RIDGE_REACH + sign * k * dy, RIDGE_REACH + sign * k * dx
-                side = np.minimum(side, pad[oy:oy + H, ox:ox + W])
-            sides.append(side <= lum - RIDGE_DARKER)
-        out |= sides[0] & sides[1]
-    return out
+            side = np.zeros(d.shape, d.dtype)
+            for k in range(1, reach + 1):
+                oy, ox = reach + sign * k * dy, reach + sign * k * dx
+                np.maximum(side, pad[oy:oy + H, ox:ox + W], out=side)
+            both &= side >= wall
+        walled += both
+    return (walled >= 2) & (d < floor)
 
 
-def solidify(rgb: np.ndarray, a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Full opacity well inside the body (dark cloth gives a noisy ratio matte): small holes closed, pixels two
-    steps inside get alpha 1 and their original colour back. Gaps that show the background gray between dark strands
-    stay open, and so do their edges; also where the gray is mixed with them, a gap a pixel or two wide beside a loose strand
-    (made solid, her hair's outline there would keep its gray: a light line, and the strand's colour)."""
-    body = ndimage.binary_closing(a > 0.5, structure=np.ones((3, 3)), iterations=2)
-    # (a gap shows the gray, mixed with the dark beside it: never much lighter than the gray, a book's white page between its cover
-    # and a page line is)
-    gap_ridge = light_ridge(orig) & (orig.mean(-1) <= float(bg.mean()) + GAP_LIGHTER)
-    body &= ~((a < 0.5) & ((np.sqrt(((orig - bg) ** 2).sum(-1)) < KEY_FROM) | gap_ridge) & near_dark(orig, bg, 4))
-    inner = ndimage.binary_erosion(body, structure=np.ones((3, 3)), iterations=2) & (a < 1.0)
-    if inner.any():
-        rgb = rgb.copy()
-        a = a.copy()
-        rgb[inner] = orig[inner]
-        a[inner] = 1.0
-    return rgb, a
+def _march(her: np.ndarray, d: np.ndarray, v: np.ndarray, gap_id: np.ndarray, opened: np.ndarray, start: np.ndarray,
+           hers_gray: np.ndarray, mix: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """From ``start`` (outside her, and the gray opened in her) into her, a pixel at a time (four ways): into a patch of the gray
+    (``gap_id`` > 0) whole, and then on into her for ``mix`` pixels as long as the picture keeps moving away from the gray and
+    the same way (past a mix of hers, a pixel turning another way is another colour of hers, a light one the march came in
+    through, not the gray). → (marched, the step that reached each pixel (0: start), the patches opened)."""
+    H, W = her.shape
+    n = H * W
+    herf, df, gf, hgf = her.ravel(), d.ravel(), gap_id.ravel(), hers_gray.ravel()
+    uf = (v / np.maximum(d, 1e-3)[..., None]).reshape(-1, 3).astype(np.float32)
+    out = start.ravel().copy()
+    order = np.where(out, 0, 0x7FFF).astype(np.int16)
+    depth = np.where(out, 0, 0x7FFF).astype(np.int16)  # steps of mix since the gray
+    way = np.zeros(n, bool)  # marched pixels of hers with a colour clear enough to tell its way
+    # (each patch's pixels, to open it whole)
+    gp = np.flatnonzero(gf)
+    gp = gp[np.argsort(gf[gp], kind="stable")]
+    bounds = np.searchsorted(gf[gp], np.arange(len(opened) + 1))
+    xs = np.arange(n) % W
+
+    def around(p: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
+        """For each of the four ways: (index into ``p``, that pixel's neighbour), inside the picture."""
+        x = xs[p]
+        res = []
+        for sel, off in ((x > 0, -1), (x < W - 1, 1), (p >= W, -W), (p < n - W, W)):
+            i = np.flatnonzero(sel)
+            res.append((i, p[i] + off))
+        return res
+
+    front = np.flatnonzero((start & (_step4((her & ~start).astype(np.uint8), np.maximum) > 0)).ravel())
+    for k in range(1, 0x7FFF):
+        cand = np.unique(np.concatenate([q for _, q in around(front)]))
+        cand = cand[herf[cand] & ~out[cand]]
+        if not len(cand):
+            break
+        ids = np.unique(gf[cand])
+        ids = ids[(ids > 0) & ~opened[ids]]
+        opened[ids] = True
+        g = np.concatenate([gp[bounds[i]:bounds[i + 1]] for i in ids]) if len(ids) else np.zeros(0, np.int64)
+        c = cand[(gf[cand] == 0) & ~hgf[cand]]
+        last = np.full(len(c), -1.0, np.float32)
+        low = np.full(len(c), 0x7FFF, np.int32)
+        same = np.zeros(len(c), bool)
+        for i, q in around(c):
+            hit = out[q]
+            j, q = i[hit], q[hit]
+            np.maximum.at(last, j, df[q])
+            np.minimum.at(low, j, depth[q])
+            same[j] |= ~way[q] | ((uf[c[j]] * uf[q]).sum(-1) >= 0.8)
+        dc = df[c]
+        m = c[(low < mix) & (dc >= last - (EDGE_NOISE + 0.1 * last)) & same]
+        mdepth = (low + 1)[(low < mix) & (dc >= last - (EDGE_NOISE + 0.1 * last)) & same]
+        g = g[~out[g]]
+        if not len(g) and not len(m):
+            break
+        out[g] = True
+        out[m] = True
+        order[g] = k
+        order[m] = k
+        depth[g] = 0
+        depth[m] = mdepth
+        # (a way is told by a clear colour; not by the sharpening's light line, which turns the other way from a dark outline)
+        vm = uf[m] * df[m][:, None]
+        way[m[(df[m] >= EDGE_NOISE + EDGE_FADE) & ~((vm.min(-1) >= -4) & (np.ptp(vm, -1) < EDGE_HALO_CHROMA))]] = True
+        front = np.concatenate([g, m])
+    return out.reshape(H, W), order.reshape(H, W), opened
 
 
-#: from here a pixel is her for certain: what is less is an edge, coloured from her nearest certain pixel; this far past
-#: her (pixels of the clip) it is coloured too, so the codec's colour blur and the browser's scaling find her colours there
-DEFRINGE_SOLID, DEFRINGE_BAND = 0.95, 6
-#: from here an edge pixel holds enough of her for its own colour to say what she is there (below it the gray's noise decides)
-DEFRINGE_OWN = 0.25
+def _step4(m: np.ndarray, op) -> np.ndarray:
+    """``op`` (np.maximum / np.minimum) of each pixel and its four neighbours."""
+    r = m.copy()
+    op(r[1:], m[:-1], out=r[1:])
+    op(r[:-1], m[1:], out=r[:-1])
+    op(r[:, 1:], m[:, :-1], out=r[:, 1:])
+    op(r[:, :-1], m[:, 1:], out=r[:, :-1])
+    return r
 
 
-def defringe(rgb: np.ndarray, a: np.ndarray, solid: float = DEFRINGE_SOLID, band: int = DEFRINGE_BAND) -> np.ndarray:
-    """The edge in her own colours. A half-transparent edge pixel still holds some of the gray she was cut from, and on a
-    dark page that reads as a light rim around her (her arms, her hair): every pixel short of ``solid``, up to ``band``
-    pixels out, takes the colour of the nearest one that is certainly her (her outline, mostly), unless its own colour is
-    darker. Beyond that it is black, as before (a flat field costs the codec nothing). Alpha stays as it is."""
-    s = a >= solid
-    if not s.any() or s.all():
-        return rgb
-    dist, (iy, ix) = ndimage.distance_transform_edt(~s, return_indices=True)
-    near = rgb[iy, ix]
-    # (the nearest certain pixel can be a mix itself, her hair's outline made solid beside a loose strand: its gray would light
-    # the strand up. What holds enough of her keeps its own colour where that is the darker one; a rim is the lighter one)
-    own = (a >= DEFRINGE_OWN) & (rgb.mean(-1) < near.mean(-1))
-    out = np.where((s | own)[..., None], rgb, near)
-    return np.where(((dist > band) & (a < 0.02))[..., None], 0, out).astype(rgb.dtype)
+def edge_matte(o: np.ndarray, a0: np.ndarray, bg: np.ndarray, scale: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
+    """Her alpha and her colour, from the picture on the known flat gray (``o``) and her matte (``a0``: what is her, 0..1).
+
+    The matte says where she is; at her edge the picture says how much. An edge pixel is her colour mixed with the gray,
+    C = α·F + (1 − α)·B, and on the gray the mix is all there is to see; on a dark page a pixel called all her while it still
+    holds gray is a light rim round her (her hair's strands, her arms). So, from the outside in, through the gray her matte
+    covers (between strands: patches of it, and channels between two of her lines too narrow to ever show it unmixed) and then
+    a few pixels on, as long as the picture keeps moving away from the gray and the same way (past her outline it comes back
+    towards it: that is her inside, and the matte's word stands there), and over all of what is thinner than two edges (a
+    strand), each pixel's alpha is measured: how far its colour lies from the gray along the line to her colour there
+    (``_her_colour``), the gray's noise faded out. Her colour is then the mix undone, F = (C − (1 − α)·B) / α, and where little
+    of her is left her colour from nearby. The sharpening's light line outside a strong outline is none of her. Past her, her
+    colours carried out a few pixels (``EDGE_FILL``).
+
+    Whatever the page: on the gray she looks exactly as she was made; on a dark or a light one no gray shows at her edge, a
+    fine strand stays a strand (its mix measured, no threshold to break it into dots), her inside stays solid, light clothes
+    included (only her outermost pixels are ever measured, and a colour like the gray's in a big wide patch is hers).
+    ``scale``: the picture's pixels per pixel of an EDGE_CLIP-wide clip. → (alpha 0..1, colour 0..255), float32."""
+    H, W = a0.shape
+    alpha = np.zeros((H, W), np.float32)
+    rgb = np.zeros((H, W, 3), np.float32)
+    seen = a0 > 0.02
+    if not seen.any():
+        return alpha, rgb
+    mix = max(2, int(round(EDGE_MIX * scale)))
+    reach = max(mix + 2, int(round(EDGE_REACH * scale)))
+    fill = max(2, int(round(EDGE_FILL * scale)))
+    # (only around her: most of a frame is empty)
+    rows, cols = np.flatnonzero(seen.any(1)), np.flatnonzero(seen.any(0))
+    pad = reach + fill + 2
+    y0, y1 = max(0, rows[0] - pad), min(H, rows[-1] + pad + 1)
+    x0, x1 = max(0, cols[0] - pad), min(W, cols[-1] + pad + 1)
+    al, col = _edge_matte(o[y0:y1, x0:x1].astype(np.float32), a0[y0:y1, x0:x1].astype(np.float32),
+                          np.asarray(bg, np.float32), mix, reach, fill)
+    alpha[y0:y1, x0:x1] = al
+    rgb[y0:y1, x0:x1] = col
+    return alpha, rgb
+
+
+def _dist(mask: np.ndarray) -> np.ndarray:
+    """For each pixel of ``mask``, how far the nearest pixel outside it is (0 outside)."""
+    return cv2.distanceTransform(mask.astype(np.uint8), cv2.DIST_L2, 5)
+
+
+def _grow(mask: np.ndarray, px: int) -> np.ndarray:
+    return cv2.dilate(mask.astype(np.uint8), np.ones((2 * px + 1, 2 * px + 1), np.uint8)).astype(bool)
+
+
+def _edge_matte(o: np.ndarray, a0: np.ndarray, bg: np.ndarray, mix: int, reach: int, fill: int) -> tuple[np.ndarray, np.ndarray]:
+    her = a0 >= 0.5
+    v = o - bg
+    d = np.sqrt((v * v).sum(-1))
+    if not her.any():
+        return np.zeros_like(a0), np.zeros_like(o)
+    depth_in = _dist(her)
+    gap_reach = EDGE_GAP_REACH * reach
+    # the gray inside her matte, in patches no bigger than a gap and of the gray's very colour: opened whole once reached from
+    # outside her; or, closed in by her, when it lies near her outline and is a sliver or her lines run round it (the gray
+    # seen between two strands, where they cross). A gray part of her keeps her matte: too big, or set deep in her (an eye's
+    # light), or a round patch in her light colours (on a badge)
+    gray = her & (d < EDGE_GAP_KEY[0])
+    lab, n = ndimage.label(gray, structure=np.ones((3, 3)))
+    gap = np.zeros(n + 1, bool)
+    seed = np.zeros(n + 1, bool)
+    big = np.zeros(n + 1, bool)
+    if n:
+        ids = np.arange(1, n + 1)
+        lg = lab[gray]  # (the patches' own pixels only: the rest of the picture has nothing to say)
+        size = np.bincount(lg, minlength=n + 1)[1:].astype(np.float64)
+        thick = np.asarray(ndimage.maximum(_dist(gray)[gray], lg, ids))
+        # (a long thin band of it is no part of her however long: the gray the remover's hull keeps all along her outline)
+        big[1:] = (size > EDGE_GAP_AREA * her.sum()) & (thick > reach / 2)
+        # (a line of it a pixel or two wide is no gap the gray shows through: where two colours of hers meet, a light one and a
+        # dark one, the mix can pass for the gray; a gap that narrow between two of her lines is a valley, below)
+        gap[1:] = ~big[1:] & (thick >= 1.5) & (
+            np.bincount(lg, d[gray] <= EDGE_GAP_KEY[1], minlength=n + 1)[1:] >= EDGE_GAP_KEY[2] * size)
+        near = np.asarray(ndimage.minimum(depth_in[gray], lg, ids)) <= gap_reach
+        sliver = size >= 2.5 * np.pi * thick ** 2
+        if n < 0xFFFF:
+            gl = np.where(gap[lab], lab, 0).astype(np.uint16)
+            ring = np.where(_grow(gray, 1), 0, cv2.dilate(gl, np.ones((9, 9), np.uint8)))
+            with np.errstate(invalid="ignore", divide="ignore"):
+                drawn = np.nan_to_num(np.asarray(ndimage.mean(d >= KEY_FROM, ring, ids))) >= EDGE_GAP_DRAWN
+        else:
+            drawn = np.zeros(n, bool)
+        seed[1:] = gap[1:] & near & (sliver | drawn)
+    gap_id = np.where(gap[lab], lab, 0)
+    hers_gray = big[lab] & gray  # (a part of her in the gray's colour: never measured)
+    # a gap only a few pixels wide never shows the gray itself: what lies between two of her lines and comes close to the gray
+    # there, near her outline, is the gray mixed with the strands beside it
+    valley = her & ~hers_gray & (depth_in <= gap_reach) & _valley(d, 2 * mix, EDGE_VALLEY, KEY_TO)
+    # the march from the outside in
+    opened = seed.copy()
+    out, order, opened = _march(her, d, v, gap_id, opened, ~her | (opened[gap_id] & (gap_id > 0)) | valley, hers_gray, mix)
+    gapped = (opened[gap_id] & (gap_id > 0)) | valley
+    # (what is thinner than two edges has no inside: a loose strand is her line, the gray and a little of her colour, mixed)
+    # (thin: nothing around it lies deeper in her than an edge reaches; a corner of her is no strand)
+    disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * mix + 1, 2 * mix + 1))
+    thin = her & (cv2.dilate(depth_in, disk) <= mix + 0.5) & ~hers_gray
+    inner = her & ~out & ~thin
+    measure = ((out | thin) & her) | (~her & ((_dist(~her) <= mix + 0.5) | _grow(a0 > 0.02, 1)))
+    # (her colour is one that can be told from the gray: a pixel next to her edge whose own tint says next to nothing can't take
+    # a near-gray pixel of her for her colour and so pass for all her)
+    sure = (inner & (d >= EDGE_NOISE + EDGE_FADE)) | (d >= KEY_TO)
+    ys, xs = np.nonzero(measure)
+    # (at the edge of her body her colour right behind it; for a strand, or what lies past her matte, the line it is drawn in)
+    hc, found = _her_colour(v, sure, ys, xs, (thin | ~her)[ys, xs], mix, reach)
+    vb, db = v[ys, xs], d[ys, xs]
+    fn = np.sqrt((hc * hc).sum(-1))
+    share = (vb * hc).sum(-1) / np.maximum(fn * fn, 1e-3)
+    # (her colour is the furthest of a few noisy pixels, a little further than she really is: within the noise of it a pixel is
+    # all her, and it reaches that over twice the noise. Below that the share is the alpha)
+    knee = (EDGE_KNEE[0] + EDGE_KNEE[1] * fn) / np.maximum(fn, 1e-3)
+    lo = np.clip(1 - 2 * knee, 0, 1)
+    share = np.where(share > lo, lo + (share - lo) * 2, share)
+    fade = np.clip((db - EDGE_NOISE) / EDGE_FADE, 0, 1)
+    am = np.where(found, np.clip(share, 0, 1) * fade,
+                  np.clip((db - EDGE_NOISE) / (KEY_TO - EDGE_NOISE), 0, 1)).astype(np.float32)
+    strong = _grow(d >= KEY_TO, EDGE_HALO_NEAR)
+    # (unless she has that colour herself nearby: silver hair, a white collar beside a dark line)
+    halo = (vb.min(-1) >= -4) & (vb.max(-1) - vb.min(-1) < EDGE_HALO_CHROMA) & (db < EDGE_HALO) & strong[ys, xs] & ~found
+    am[halo] = 0.0
+    # (the gray opened between strands is all gray: what tint it has is the codec's colour blur from the strands round it)
+    am[gapped[ys, xs]] = 0.0
+    alpha = np.zeros(a0.shape, np.float32)
+    alpha[inner] = 1.0
+    # (a part of her in the gray's own colour keeps the remover's edge)
+    keep = hers_gray & (depth_in <= mix)
+    alpha[keep] = np.clip(a0[keep], 0, 1)
+    alpha[ys, xs] = am
+    # (past the line drawn round her she is all her: her line against a lighter colour of hers looks much like it against the
+    # gray, so a pixel the march reached from a pixel that is all her, mostly her itself, is all her too)
+    for k in range(1, int(order[out & her].max(initial=0)) + 1):
+        at = (order == k) & (alpha >= 0.5) & ~gapped
+        if at.any():
+            alpha[at] = np.maximum(alpha[at], _step4(np.where(order < k, alpha, 0.0).astype(np.float32), np.maximum)[at])
+    am = alpha[ys, xs]
+    rgb = o.copy()
+    # her colour: the mix undone, and where little of her is left the colour of her found nearby
+    undone = bg + vb / np.maximum(am, 1e-3)[:, None]
+    near_c = np.where(found[:, None], bg + hc, bg + vb / np.maximum(am, 0.15)[:, None])
+    w = np.clip((am - 0.15) / 0.35, 0, 1)[:, None]
+    rgb[ys, xs] = (w * undone + (1 - w) * near_c).clip(0, 255)
+    # past her, her colours carried out (an average of her nearest pixels, weighted by how near)
+    solid = (alpha >= 0.5).astype(np.float32)
+    sigma = fill / 2.0
+    den = cv2.GaussianBlur(solid, (0, 0), sigma)
+    num = cv2.GaussianBlur(rgb * solid[..., None], (0, 0), sigma)
+    carried = num / np.maximum(den, 1e-6)[..., None]
+    empty = alpha < 0.02
+    rgb = np.where(empty[..., None], np.where((den > 1e-3)[..., None], carried, 0.0), rgb)
+    return alpha, rgb.astype(np.float32)
+
+
+def clean_cutout(im: Image.Image, scale: float = 1.0) -> Image.Image:
+    """A cut-out made before its edge was measured (``edge_matte``), measured now: put back on the known gray it was cut from,
+    its alpha standing for her matte."""
+    px = np.asarray(im.convert("RGBA")).astype(np.float32)
+    a, rgb = edge_matte(on_gray(px), px[..., 3] / 255.0, np.array(GRAY, np.float32), scale)
+    return Image.fromarray(np.dstack([rgb, a * 255.0]).clip(0, 255).round().astype(np.uint8), "RGBA")
+
+
+def edge_extend(rgba: np.ndarray, fill: int = EDGE_FILL) -> np.ndarray:
+    """A picture with alpha (uint8) whose empty pixels near her take her nearest colour (scaled or compressed, her edge then
+    mixes only with her own colours)."""
+    a = rgba[..., 3]
+    solid = a >= 128
+    if not solid.any() or solid.all():
+        return rgba
+    dist, (iy, ix) = ndimage.distance_transform_edt(~solid, return_indices=True)
+    out_ = rgba.copy()
+    empty = a == 0
+    out_[..., :3] = np.where(empty[..., None], np.where((dist <= fill)[..., None], rgba[iy, ix, :3], 0), rgba[..., :3])
+    return out_
+
+
+def shrink(rgb: np.ndarray, a: np.ndarray, size: tuple[int, int]) -> tuple[np.ndarray, np.ndarray]:
+    """Colour and alpha scaled down to ``size`` (w, h) as one picture: the colour weighted by its alpha (else an edge pixel takes
+    the colour of what lies under the empty pixels beside it), and where nothing of her is left her colour carried out."""
+    if (rgb.shape[1], rgb.shape[0]) == tuple(size):
+        return rgb, a
+    sa = cv2.resize(a, size, interpolation=cv2.INTER_AREA)
+    sp = cv2.resize(rgb * a[..., None], size, interpolation=cv2.INTER_AREA)
+    carried = cv2.resize(rgb, size, interpolation=cv2.INTER_AREA)
+    return np.where(sa[..., None] > 1e-3, sp / np.maximum(sa, 1e-3)[..., None], carried).clip(0, 255), sa
 
 
 #: steady in time: each frame's alpha and colour are averaged with the frames around it (this many each way), as far as the
@@ -487,60 +798,6 @@ def fill_object_holes(a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -> np.nda
     return out
 
 
-#: the light halo the source's sharpening leaves outside her dark outline: this far in from her edge, about the gray's lightness
-#: or lighter, with no colour of its own, next to a dark pixel
-HALO_DEPTH, HALO_DARKER, HALO_CHROMA, HALO_DARK = 2.5, 8.0, 14.0, 0.45
-
-
-def cut_halo(a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -> np.ndarray:
-    """The source is sharpened: every dark outline on the gray has a thin light line just outside it, lighter than the gray.
-    The matte counts that line as her, and on a dark page it is a white rim around her hair and her clothes. A pixel at her
-    edge, as light as the gray or lighter, with no colour of its own (skin and white clothes have some, or no dark outline
-    beside them), right next to something dark, is that line: it goes."""
-    inside = a >= 0.5
-    if not inside.any():
-        return a
-    depth = ndimage.distance_transform_edt(inside)
-    lum, chroma = orig.mean(-1), orig.max(-1) - orig.min(-1)
-    bg_lum = float(bg.mean())
-    dark = lum < HALO_DARK * bg_lum
-    near_dark = ndimage.binary_dilation(dark, iterations=2)
-    halo = inside & (depth <= HALO_DEPTH) & ~dark & near_dark & (lum >= bg_lum - HALO_DARKER) & (chroma < HALO_CHROMA)
-    if not halo.any():
-        return a
-    out = a.copy()
-    out[halo] = 0.0
-    return out
-
-
-#: her edge, measured again: this many pixels in from it, against her colour this many pixels further in, where that colour is
-#: at least this far from the gray (a dark strand of hair on the gray, yes; light skin on it, no: that can't be told apart)
-UNMIX_EDGE, UNMIX_DEEP, UNMIX_CONTRAST = 3.0, 3.0, 40.0
-
-
-def unmix_edge(a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -> np.ndarray:
-    """Her edge's alpha from its colour. An edge pixel is her colour mixed with the gray in some proportion: the matte often calls
-    it all her, and then the gray left in it is a light line around her hair on a dark page. Measured against the nearest pixel
-    well inside her (her colour there) and the known gray, the proportion is the alpha; lighter than the gray (the sharpening's
-    halo) comes out as none of her. Only where her colour differs enough from the gray to tell."""
-    inside = a >= 0.5
-    if not inside.any() or inside.all():
-        return a
-    depth = ndimage.distance_transform_edt(inside)
-    deep = (a >= 0.98) & (depth >= UNMIX_DEEP)
-    if not deep.any():
-        return a
-    edge = (depth <= UNMIX_EDGE) & (a > 0.02)
-    _, (iy, ix) = ndimage.distance_transform_edt(~deep, return_indices=True)
-    f = orig[iy, ix] - bg
-    denom = (f * f).sum(-1)
-    ok = edge & (denom >= UNMIX_CONTRAST ** 2)
-    est = np.clip(((orig - bg) * f).sum(-1) / np.maximum(denom, 1.0), 0.0, 1.0)
-    out = a.copy()
-    out[ok] = est[ok]
-    return out
-
-
 THUMB_HEIGHT = 240
 
 
@@ -563,30 +820,6 @@ def clip_thumb(src: Path, dst: Path, height: int = THUMB_HEIGHT) -> bool:
     im.thumbnail((10_000, height), Image.LANCZOS)
     im.save(dst, quality=82, method=6)
     return True
-
-
-def defringe_image(im: Image.Image) -> Image.Image:
-    """A still with alpha, its edge cleaned the way a clip's is: the sharpening's halo cut (``cut_halo``), the edge's alpha measured
-    from its colour (``unmix_edge``) on the gray she was cut from, and the edge in her own colours (``defringe``)."""
-    px = np.asarray(im.convert("RGBA")).astype(np.float32)
-    a = px[..., 3] / 255.0
-    gray = np.array(GRAY, np.float32)
-    o = px[..., :3] * a[..., None] + gray * (1 - a[..., None])
-    a = unmix_edge(cut_halo(a, o, gray), o, gray)
-    rgb = defringe(colour(o, a, gray), a)
-    return Image.fromarray(np.dstack([rgb, a * 255.0]).clip(0, 255).round().astype(np.uint8), "RGBA")
-
-
-def choke(a: np.ndarray, seen: np.ndarray, bg: np.ndarray) -> np.ndarray:
-    """The edge about a pixel in: the old gray in the outermost pixels reads as a light rim on a dark page, the
-    remover's faint wisps as smoke. Solid parts stay, and so does what clearly isn't the gray (``seen``: the picture on it):
-    a fine strand or an outline is no rim, and eaten away it breaks into dashes."""
-    was = a
-    a = np.where(a < 1.0, a ** 1.4, a).astype(np.float32)
-    inner = cv2.erode(a, np.ones((3, 3), np.uint8))
-    out = np.minimum(a, cv2.GaussianBlur(inner, (0, 0), 0.8))
-    clear = np.clip((np.sqrt(((seen - bg) ** 2).sum(-1)) - KEY_FROM) / (KEY_TO - KEY_FROM), 0, 1) * np.clip((was - 0.1) / 0.3, 0, 1)
-    return (out + clear * (was - out)).astype(np.float32)
 
 
 def on_gray(rgba: np.ndarray) -> np.ndarray:
@@ -728,17 +961,19 @@ def cmd_home(p: Path) -> dict:
     # the canvas: the figure fills 86% of the height (or 92% of the width), bottom-aligned, centred on its bbox
     ys, xs = np.nonzero(a > 0.1)
     x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
-    a = clean_alpha(rematte(a, orig, bg))
-    fg = colour(orig, a, bg)
-    home = Image.fromarray(np.dstack([fg, a * 255]).astype(np.uint8), "RGBA")
-    atomic_save(home, m / "home.png")
     aspect = c.get("aspect", "1:1")
     W, H = CANVASES[aspect]
     s = min(0.92 * W / (x1 - x0 + 1), 0.86 * H / (y1 - y0 + 1))
+    a = clean_alpha(rematte(a, orig, bg))
+    # her edge measured from the picture, at this picture's own scale (a clip shows her at s · EDGE_CLIP / W of it)
+    a, fg = edge_matte(orig, a, bg, scale=W / (s * EDGE_CLIP))
+    home = Image.fromarray(np.dstack([fg, a * 255]).clip(0, 255).round().astype(np.uint8), "RGBA")
+    atomic_save(home, m / "home.png")
     w, h = round(home.width * s), round(home.height * s)
     ox = round(W / 2 - ((x0 + x1) / 2) * s)
     oy = round(H - (y1 + 1) * s)
-    write_json(m / "place.json", {"aspect": aspect, "canvas": [W, H], "scale": s, "x": ox, "y": oy})
+    # ("edge": the cut-out's edge is measured already; a set made before that has it measured when it is exported)
+    write_json(m / "place.json", {"aspect": aspect, "canvas": [W, H], "scale": s, "x": ox, "y": oy, "edge": EDGE_VERSION})
     canvas = Image.new("RGBA", (W, H), GRAY + (255,))
     canvas.alpha_composite(home.resize((w, h), Image.LANCZOS), (ox, oy))
     atomic_save(canvas.convert("RGB"), m / "home-gray.jpg", quality=95)
@@ -763,11 +998,14 @@ def cmd_stills(p: Path) -> dict:
     m = p / "masters"
     mask = np.asarray(Image.open(m / "face-mask.png")).astype(np.float32)[..., None] / 255.0
     home = np.asarray(Image.open(m / "home.png")).astype(np.float32)
+    al = home[..., 3] / 255.0
     done = []
     for raw in sorted((p / "stills").glob("*.raw.png")):
         name = raw.name[: -len(".raw.png")]
         v = np.asarray(Image.open(raw).convert("RGB").resize((home.shape[1], home.shape[0]), Image.LANCZOS),
                        np.float32)
+        # (where the face's region reaches her edge, its picture's gray is taken out the way the home picture's was)
+        v = np.where((al > 0.02)[..., None], colour(v, al, border_bg(v, 16)), home[..., :3])
         rgb = home[..., :3] * (1 - mask) + v * mask
         img = Image.fromarray(np.dstack([rgb, home[..., 3]]).clip(0, 255).astype(np.uint8), "RGBA")
         atomic_save(img, p / "stills" / f"{name}.png")
@@ -853,19 +1091,17 @@ def cmd_encode(p: Path, only: list[str] | None = None) -> dict:
                                  ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", CRF.get(tag, "20"), "-tune", "animation",
                                   "-preset", "slow", "-movflags", "+faststart"]), (ww, hh), mp4)
         bgs = meta["bg"]
+        scale = cw / EDGE_CLIP
 
         def emit(i: int, o: np.ndarray, a: np.ndarray) -> None:
             bg = np.array(bgs[min(i, len(bgs) - 1)], np.float32)
-            rgb = colour(o, a, bg)
-            rgb, a = solidify(rgb, a, o, bg)
-            a = choke(a, o, bg)
-            rgb = defringe(rgb, a)
-            crop = np.dstack([rgb, a * 255.0]).clip(0, 255).round().astype(np.uint8)
+            a, rgb = edge_matte(o, a, bg, scale)
             for proc, (ww, hh), _ in procs.values():
-                small = cv2.resize(crop, (ww, hh), interpolation=cv2.INTER_AREA)
-                alpha = np.repeat(small[..., 3:4], 3, axis=-1)
+                col, al = shrink(rgb, a, (ww, hh))
+                col8 = col.clip(0, 255).round().astype(np.uint8)
+                alpha = np.repeat((al * 255.0).clip(0, 255).round().astype(np.uint8)[..., None], 3, axis=-1)
                 assert proc.stdin
-                proc.stdin.write(np.ascontiguousarray(np.concatenate([small[..., :3], alpha], axis=0)).tobytes())
+                proc.stdin.write(np.ascontiguousarray(np.concatenate([col8, alpha], axis=0)).tobytes())
 
         # (a few frames ahead in memory: each frame is steadied with the ones around it, then made as before)
         r = STEADY_RADIUS
@@ -885,7 +1121,7 @@ def cmd_encode(p: Path, only: list[str] | None = None) -> dict:
         for i, (o, a8) in enumerate(zip(frames(p / "clips" / f"{cid}.mp4"), frames(p / "matte" / f"{cid}.alpha.mkv", "gray"))):
             o = o[y:y + h, x:x + w].astype(np.float32)
             bg = np.array(bgs[min(i, len(bgs) - 1)], np.float32)
-            a = unmix_edge(cut_halo(fill_object_holes(a8[y:y + h, x:x + w].astype(np.float32) / 255.0, o, bg), o, bg), o, bg)
+            a = fill_object_holes(a8[y:y + h, x:x + w].astype(np.float32) / 255.0, o, bg)
             buf.append((i, o, a))
             flush()
         flush(end=True)
@@ -949,10 +1185,9 @@ def cmd_check(p: Path) -> dict:
 # ---------------------------------------------------------------- export
 
 def portrait(home: Image.Image, box: list[int]) -> Image.Image:
-    """Head and shoulders from the home picture, 3:4 (768×1024), on a soft two-tone of the character's own colours."""
+    """Head and shoulders from the home picture (its edge measured: ``edge_matte``), 3:4 (768×1024), on a soft two-tone of
+    the character's own colours."""
     px = np.asarray(home).astype(np.float32)
-    px[..., 3] = choke(px[..., 3] / 255.0, on_gray(px), np.array(GRAY, np.float32)) * 255.0
-    home = Image.fromarray(px.clip(0, 255).astype(np.uint8), "RGBA")
     fx, fy, fw, fh = box
     top = max(0, round(fy - fh * 0.8))
     ch = max(8, min(round(fw * 3.0 * 4 / 3), home.height - top))
@@ -980,21 +1215,27 @@ def cmd_export(p: Path, key: str) -> dict:
     pl = json.loads((m / "place.json").read_text())
     s, ox, oy, canvas_size = pl["scale"], pl["x"], pl["y"], tuple(pl["canvas"])
     k = canvas_size[0] / float(box["clip_width"])
+    # (a cut-out made before its edge was measured is measured now, at its own scale: see cmd_home)
+    measured = bool(pl.get("edge"))
+    own_scale = canvas_size[0] / (s * EDGE_CLIP)
+
+    def cutout(src: Path) -> Image.Image:
+        im = Image.open(src).convert("RGBA")
+        return im if measured else clean_cutout(im, own_scale)
+
     stills = {}
     for name in ["neutral", *[st for st in c.get("stills") or []]]:
         src = m / "home.png" if name == "neutral" else p / "stills" / f"{name}.png"
         if not src.exists():
             continue
-        im = Image.open(src).convert("RGBA")
-        px = np.asarray(im).astype(np.float32)
-        px[..., 3] = choke(px[..., 3] / 255.0, on_gray(px), np.array(GRAY, np.float32)) * 255.0
-        im = Image.fromarray(px.clip(0, 255).astype(np.uint8), "RGBA")
+        im = cutout(src)
+        # (Pillow scales a picture with alpha weighted by it: no colour of what lies under the empty pixels creeps in)
         canvas = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
         canvas.alpha_composite(im.resize((round(im.width * s), round(im.height * s)), Image.LANCZOS), (ox, oy))
         crop = canvas.crop((round(x * k), round(y * k), round((x + w) * k), round((y + h) * k)))
         crop.thumbnail((10_000, box["sizes"]["lg"]), Image.LANCZOS)
-        crop = defringe_image(crop)
-        crop.save(tmp / f"{name}.webp", quality=90, method=6)
+        crop = Image.fromarray(edge_extend(np.asarray(crop), max(2, round(EDGE_FILL * crop.width / w))), "RGBA")
+        crop.save(tmp / f"{name}.webp", quality=90, method=6, exact=True)
         stills[name] = f"asset:{key}/{name}.webp"
     clips = []
     for cl in c.get("clips") or []:
@@ -1018,7 +1259,7 @@ def cmd_export(p: Path, key: str) -> dict:
     for cl in clips:
         if cl.get("emotion"):
             emotions.setdefault(cl["emotion"], []).append(cl["id"])
-    home = Image.open(m / "home.png").convert("RGBA")
+    home = cutout(m / "home.png")
     face = json.loads((m / "face.json").read_text())
     portrait(home, face["box"]).save(tmp / "portrait.webp", quality=90, method=6)
     names = [Path(v).name for v in stills.values()]
@@ -1056,9 +1297,9 @@ def cmd_sheet(p: Path, cid: str, dst: str) -> dict:
         page = np.array(REVIEW_PAGE, np.float32)
         shown = []
         for i in picks:
-            a = a8[min(i, len(a8) - 1)].astype(np.float32) / 255.0
             o = allf[i].astype(np.float32)
-            rgb = colour(o, a, np.array(bgs[min(i, len(bgs) - 1)], np.float32))
+            a, rgb = edge_matte(o, a8[min(i, len(a8) - 1)].astype(np.float32) / 255.0,
+                                np.array(bgs[min(i, len(bgs) - 1)], np.float32), size[0] / EDGE_CLIP)
             shown.append((rgb * a[..., None] + page * (1 - a[..., None])).clip(0, 255).astype(np.uint8))
     sheet = Image.fromarray(np.concatenate(shown, axis=1))
     atomic_save(sheet, Path(dst), quality=85)
@@ -1096,7 +1337,7 @@ def cmd_selftest(assets: str | None = None) -> dict:
         "bg": [round(float(v), 2) for v in bg_est],
         "alpha_inside_min": round(float(a[inside].min()), 4),
         "alpha_inside_mean": round(float(a[inside].mean()), 4),
-        "alpha_shipped_inside_min": round(float(solidify(rgb, a, orig, bg_est)[1][inside].min()), 4),
+        "alpha_shipped_inside_min": round(float(edge_matte(orig, a, bg_est)[0][inside].min()), 4),
         "alpha_outside_max": round(float(a[outside].max()), 4),
         "alpha_edge_mae": round(float(np.abs(a - a_true)[edge].mean()), 4),
         "fold_alpha_min": round(float(a[fold].min()), 4),
@@ -1163,9 +1404,9 @@ def selftest_gaps(rng: np.random.Generator) -> dict:
             + rng.normal(0, 0.8, (H, W, 3))).clip(0, 255).astype(np.float32)
     hull = (d < 82) | ((d < 92) & arc) | (badge < 20)
     a, bg_est = recover(orig, (orig * hull[..., None]).astype(np.float32))
-    _, a = solidify(colour(orig, a, bg_est), a, orig, bg_est)
+    shown, _ = edge_matte(orig, a, bg_est)
+    a = shown  # (what ships)
     side = np.abs(np.arctan2(yy - 120.0, 120.0 - xx)) < 0.5
-    shown = choke(a, orig, bg_est)
     return {
         "strand_shown_mean": round(float(shown[(d > 86.5) & (d < 88.5) & side].mean()), 4),
         "gap_alpha_max": round(float(a[(d >= 82) & (d < 84) & side].max()), 4),
