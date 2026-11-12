@@ -2,11 +2,15 @@ import { toast } from "../lib/toast";
 import { devicePreferences, patchDevicePreferences, loadDevicePreferences, subscribeDevicePreferences } from "../stores/devicePreferences";
 /** One runtime owner restores explicit sharing intent stored only on this device. */
 import {
+  ALL_SCREENS,
+  CAPTURE_ALL_SCREENS,
+  allScreensSource,
   captureBridge,
   captureError,
-  shotFile,
+  shotPictures,
   type CaptureSource,
   type CaptureRequest,
+  type SharedPicture,
 } from "./screenCapture";
 import { apiFetch } from "../api/client";
 import { deviceId } from "./voiceOwner";
@@ -222,6 +226,7 @@ export async function beginSharing(
   if (native) {
     if (native.version < 3) throw new Error(tr("screen.updateApp"));
     if (!source) throw new Error(tr("screen.selectSource"));
+    if (source.id === ALL_SCREENS && native.version < CAPTURE_ALL_SCREENS) throw new Error(tr("screen.updateApp"));
     // Restore reads the saved source; it must never overwrite a newer source choice from another window.
     if(!restoring)await native.setChoice(`session:${sid}`, source);
     if(native.runtime && !restoring){
@@ -287,12 +292,22 @@ export function cancelLocalCapture(id: string) {
   if (approval?.id === id) answerApproval(false);
   if (cancelled.size > 128) cancelled.delete(cancelled.values().next().value!);
 }
+/** one frame of this session's share (the main picture) */
 export async function localFrame(
   sid: string,
   id = "",
   ask = false,
   options: Partial<CaptureRequest> = {},
 ): Promise<File> {
+  return (await localFrames(sid, id, ask, options))[0].file;
+}
+/** this session's share, now: its pictures, main first (all screens and `options.multi`: one per screen) */
+export async function localFrames(
+  sid: string,
+  id = "",
+  ask = false,
+  options: Partial<CaptureRequest> = {},
+): Promise<SharedPicture[]> {
   const current = sharing;
   const gen = generation;
   options = { ...options, ...devicePreferences().screen };
@@ -307,7 +322,7 @@ export async function localFrame(
   sharing = { ...current, capturing: true, error: "" };
   emit();
   try {
-    let result: File;
+    let result: SharedPicture[];
     const native = captureBridge();
     if (native) {
       const shot = id
@@ -322,6 +337,7 @@ export async function localFrame(
             timeout_ms: options.timeout_ms || 45000,
             reason: options.reason,
             automatic: options.automatic,
+            multi: options.multi === true,
           })
         : await native.grab({
             mateId: `session:${sid}`,
@@ -333,7 +349,7 @@ export async function localFrame(
         if (["source_gone","permission"].includes(shot.code || "")) {pauseSharing(shot.code==="permission"?"waiting_permission":"waiting_target");if(lastRestoreNotice!==shot.code){lastRestoreNotice=shot.code||"";reportRestoreFailure(tr("screen.restoreMissing"));}}
         throw new Error(captureError(shot.code));
       }
-      result = shotFile(shot);
+      result = shotPictures(shot);
     } else {
       if (!video || !stream?.active) throw new Error(tr("screen.notSharing"));
       const canvas = document.createElement("canvas");
@@ -349,11 +365,11 @@ export async function localFrame(
         .drawImage(video, 0, 0, canvas.width, canvas.height);
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!blob) throw new Error(tr("mate.shareEmpty"));
-      result = new File(
-        [blob],
-        `screen-${Date.now()}.png`,
-        { type: "image/png" },
-      );
+      result = [{
+        file: new File([blob], `screen-${Date.now()}.png`, { type: "image/png" }),
+        role: "main",
+        source: null,
+      }];
     }
     if (cancelled.has(id) || gen !== generation)
       throw new Error(tr("screen.notSharing"));
@@ -486,7 +502,8 @@ export async function resumeSharing() {
     if (info.wayland || info.permission !== "granted") throw new Error(tr("screen.restorePermission"));
     const rows = await native.sources();
     const pref = devicePreferences().screen.source;
-    let source = pref ? rows.find(r=>r.id===pref.id) : rows.find(r=>r.primary) || rows.find(r=>r.kind==="screen");
+    const all = devicePreferences().screen.all_screens && native.version >= CAPTURE_ALL_SCREENS && rows.some(r=>r.kind==="screen");
+    let source = all ? allScreensSource() : pref ? rows.find(r=>r.id===pref.id) : rows.find(r=>r.primary) || rows.find(r=>r.kind==="screen");
     if (source && pref?.kind==="window" && source.name!==pref.name) source=undefined;
     if (!source && pref?.kind==="screen" && pref.display_id) source=rows.find(r=>r.kind==="screen" && r.display_id===pref.display_id);
     if (!source && pref?.kind==="window") {const matches=rows.filter(r=>r.kind==="window" && r.name===pref.name);if(matches.length===1)source=matches[0];}
@@ -499,11 +516,12 @@ export async function resumeSharing() {
     if(lastRestoreNotice!==message){lastRestoreNotice=message;reportRestoreFailure(message);}
   } finally {resuming=false;}
 }
-let previousSource = JSON.stringify(devicePreferences().screen.source);
+const sourceKey = () => JSON.stringify([devicePreferences().screen.source, !!devicePreferences().screen.all_screens]);
+let previousSource = sourceKey();
 let sourceReady = false;
 subscribeDevicePreferences(() => {
   const prefs=devicePreferences();
-  const source = JSON.stringify(prefs.screen.source);
+  const source = sourceKey();
   if (sourceReady && source!==previousSource && sharing && ownsSharing)
     reportRestoreFailure(tr("screen.sourceChangeStopped"));
   previousSource=source;sourceReady=true;

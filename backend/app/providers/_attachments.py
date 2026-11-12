@@ -36,6 +36,8 @@ class Attachment:
     # the message (None = not readable) and how it was read / what it is.
     extracted: str | None = None
     extract_note: str = ""
+    # what it is, when that is more than its name (one of several screen pictures: "main screen (the one in use)")
+    label: str = ""
 
     @property
     def is_image(self) -> bool:
@@ -69,7 +71,8 @@ def attachment_note(atts: list[Attachment], *, inline_images: bool) -> str:
         if a.remote_path:
             where = f"on the remote host: {a.remote_path} (local copy: {a.path})"
         tag = " [image, shown inline]" if a.is_image and inline_images else ""
-        lines.append(f"- {a.name} — {a.mime}, {human_size(a.size)}{tag} — {where}")
+        what = f" — {a.label}" if a.label else ""
+        lines.append(f"- {a.name} — {a.mime}, {human_size(a.size)}{tag}{what} — {where}")
     lines.append(
         "Open them with your tools when you need their contents (e.g. Read for text, "
         "PDFs and images)."
@@ -102,7 +105,8 @@ def inline_note(atts: list[Attachment], *, inline_images: bool) -> str:
         else:
             what = (f"{a.extract_note or 'a binary file'} — its contents are not available to you; "
                     "forward it to a chat if it needs to be opened")
-        lines.append(f"- [{a.id}] {a.name} — {a.mime}, {human_size(a.size)} — {what}")
+        label = f" — {a.label}" if a.label else ""
+        lines.append(f"- [{a.id}] {a.name} — {a.mime}, {human_size(a.size)} — {what}{label}")
     lines.append("</attachments>")
     for a in atts:
         if a.extracted is not None:

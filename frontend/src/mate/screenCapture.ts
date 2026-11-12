@@ -11,13 +11,16 @@ import { devicePreferences } from "../stores/devicePreferences";
  *   Every path answers — a failure too — so the mate's tool call never waits for nothing.
  * - The user's Share screen (the composer's + menu): the desktop app's own capture (a picker of screens and windows),
  *   or in a browser `getDisplayMedia` (the browser's picker) → one frame; phones have neither (the item is hidden).
+ * - All screens (desktop app ≥ CAPTURE_ALL_SCREENS, more than one display): every screen its own picture, never
+ *   stitched, the one in use first ("main", the others "sub"). Each is uploaded with the request's proof; the answer
+ *   lists them in that order — only when the server asked for them (`multi`), else the main one alone.
  * - Completed captures are silent: no toast, banner, tray alert or completion listener.
  */
 import {
   sharedScopes,
   sharingSnapshot,
   finishLocalCapture,
-  localFrame,
+  localFrames,
   cancelLocalCapture,
 } from "./localScreen";
 import { uploadAttachment } from "../api/attachments";
@@ -47,6 +50,16 @@ export type CaptureFailure =
   | "stopped"
   | "error";
 
+/** one picture of an all-screens capture */
+export interface CapturePicture {
+  data: Uint8Array;
+  mime: string;
+  width: number;
+  height: number;
+  source: CaptureSource | null;
+  role: "main" | "sub";
+}
+
 export type CaptureShot =
   | {
       ok: true;
@@ -55,6 +68,8 @@ export type CaptureShot =
       width: number;
       height: number;
       source: CaptureSource | null;
+      /** asked with `multi` (bridge ≥ 4): every picture, main first (the fields above are the main one) */
+      shots?: CapturePicture[];
     }
   | { ok: false; code: CaptureFailure; message?: string };
 
@@ -111,6 +126,8 @@ export interface CaptureBridge {
     maxEdge?: number;
     hideAvatar?: boolean;
     hideConsole?: boolean;
+    /** every screen of an all-screens share (`shots`) */
+    multi?: boolean;
   }): Promise<CaptureShot>;
   request(req: CaptureRequest): Promise<CaptureShot>;
   cancel(id: string): Promise<void>;
@@ -132,9 +149,21 @@ export interface CaptureRequest {
   max_edge: number;
   timeout_ms: number;
   reason?: string;
+  /** the server takes every screen of an all-screens share (app/mate/capture.py MULTI_BRIDGE) */
+  multi?: boolean;
+  max_pictures?: number;
 }
 
 export const CAPTURE_VERSION = 1;
+/** the bridge that shares all screens, each its own picture (desktop/src/capture.js) */
+export const CAPTURE_ALL_SCREENS = 4;
+/** the pseudo source "All screens" (desktop: device preference screen.all_screens) */
+export const ALL_SCREENS = "screen:all";
+export const allScreensSource = (): CaptureSource => ({ id: ALL_SCREENS, name: tr("screen.allScreens"), kind: "screen" });
+/** "All screens" is offered: a desktop app that can, and more than one screen */
+export const canShareAllScreens = (sources: CaptureSource[]): boolean =>
+  Number(captureBridge()?.version) >= CAPTURE_ALL_SCREENS &&
+  sources.filter((s) => s.kind === "screen" && s.id !== ALL_SCREENS).length > 1;
 
 /** the desktop app's capture bridge (null: a browser, the Android app, an older desktop app) */
 export function captureBridge(): CaptureBridge | null {
@@ -193,12 +222,34 @@ const stamp = () => {
 export function shotFile(
   shot: { data: Uint8Array; mime: string },
   prefix = "screen",
+  at = stamp(),
 ): File {
   const ext = shot.mime === "image/jpeg" ? "jpg" : "png";
   // (a copy: the IPC buffer may be a view of a larger one)
-  return new File([new Uint8Array(shot.data)], `${prefix}-${stamp()}.${ext}`, {
+  return new File([new Uint8Array(shot.data)], `${prefix}-${at}.${ext}`, {
     type: shot.mime,
   });
+}
+
+/** one picture of a capture as a file: its role (main = the screen in use) and source */
+export interface SharedPicture {
+  file: File;
+  role: "main" | "sub";
+  source: CaptureSource | null;
+}
+
+/** a capture's pictures as files, main first (one picture: one file, named as before) */
+export function shotPictures(
+  shot: Extract<CaptureShot, { ok: true }>,
+  prefix = "screen",
+): SharedPicture[] {
+  const list = shot.shots?.length ? shot.shots : [shot];
+  const at = stamp();
+  return list.map((s, i) => ({
+    file: shotFile(s, list.length > 1 ? `${prefix}-${i ? `other-${i}` : "main"}` : prefix, at),
+    role: i ? "sub" : "main",
+    source: s.source,
+  }));
 }
 
 /** what a failed capture means, in words */
@@ -252,8 +303,8 @@ export async function handleCaptureRequest(raw: unknown): Promise<void> {
     cancelled: false,
   };
   operations.set(req.id, op);
-  let aid: string | undefined,
-    committed = false;
+  const aids: string[] = [];
+  let committed = false;
   const respond = async (body: Record<string, unknown>) => {
     if (req.scope === "session")
       return apiFetch(
@@ -267,33 +318,41 @@ export async function handleCaptureRequest(raw: unknown): Promise<void> {
   };
   try {
     if(!devicePreferences().sharing.enabled && captureBridge()?.runtime)throw new Error(tr("screen.notSharing"));
-    let file: File,
-      source: CaptureSource | null = null;
+    let pictures: SharedPicture[];
     if (req.scope === "session") {
       const shared = sharingSnapshot();
-      file = await localFrame(req.session_id, req.id, req.ask, req);
-      if (shared) source = { id: "", name: shared.source, kind: shared.kind };
+      pictures = await localFrames(req.session_id, req.id, req.ask, req);
+      // (one picture: named as the share is; all screens: each by its own screen)
+      if (shared && pictures.length === 1) pictures[0].source = { id: "", name: shared.source, kind: shared.kind };
     } else {
       const bridge = captureBridge();
       if (!bridge) throw new Error(captureError("error"));
       const shot = await bridge.request({...req,hide_avatar:false});
       if (!shot.ok) throw new Error(captureError(shot.code));
-      file = shotFile(shot);
-      source = shot.source;
+      pictures = shotPictures(shot);
     }
-    if (op.cancelled) throw new Error(captureError("stopped"));
-    const upload = uploadAttachment(
-      req.session_id,
-      file,
-      () => {},
-      req.proof ? { id: req.id, proof: req.proof } : undefined,
-    );
-    op.abort = upload.abort;
-    const att = await upload.promise;
-    aid = att.id;
-    op.abort = undefined;
-    if (op.cancelled) throw new Error(captureError("stopped"));
-    await respond({ ok: true, attachment_id: aid, source });
+    // (an older server takes one picture: the main one)
+    pictures = pictures.slice(0, req.multi ? Math.max(1, req.max_pictures || 6) : 1);
+    if (op.cancelled || !pictures.length) throw new Error(captureError("stopped"));
+    const answer: { id: string; role: string; source: { name: string; kind: string } | null }[] = [];
+    for (const p of pictures) {
+      const upload = uploadAttachment(
+        req.session_id,
+        p.file,
+        () => {},
+        req.proof ? { id: req.id, proof: req.proof } : undefined,
+      );
+      op.abort = upload.abort;
+      const att = await upload.promise;
+      aids.push(att.id);
+      op.abort = undefined;
+      if (op.cancelled) throw new Error(captureError("stopped"));
+      answer.push({ id: att.id, role: p.role, source: p.source && { name: p.source.name, kind: p.source.kind } });
+    }
+    await respond({
+      ok: true, attachment_id: answer[0].id, source: pictures[0].source,
+      ...(req.multi ? { attachments: answer } : {}),
+    });
     committed = true;
   } catch (e) {
     try {
@@ -304,10 +363,11 @@ export async function handleCaptureRequest(raw: unknown): Promise<void> {
       });
     } catch {}
   } finally {
-    if (aid && !committed)
-      void apiFetch(`/api/attachments/${encodeURIComponent(aid)}`, {
-        method: "DELETE",
-      }).catch(() => {});
+    if (!committed)
+      for (const aid of aids)
+        void apiFetch(`/api/attachments/${encodeURIComponent(aid)}`, {
+          method: "DELETE",
+        }).catch(() => {});
     operations.delete(req.id);
     finishLocalCapture(req.session_id);
   }

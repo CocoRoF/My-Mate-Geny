@@ -143,7 +143,7 @@ async def test_manual_image_named_like_capture_remains_visible_next_to_hidden_fr
     seen = []
 
     async def capture(*args):
-        return atts.get(frame["id"])
+        return [atts.get(frame["id"])]
 
     async def fake_run(sid, session, attachments, ctx, msg_id):
         seen.extend(attachments)

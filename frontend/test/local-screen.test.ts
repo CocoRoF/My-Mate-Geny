@@ -67,3 +67,31 @@ test("older native bridge cannot silently substitute an unavailable selected sou
   assert.deepEqual(screen.sharedScopes(), {});
   native.version = 3;
 });
+
+test("all screens: every picture of a share, the one in use first; asked for one, the bridge is told so", async () => {
+  const original = native.request;
+  const picture = (n: number, name: string, role: string) => ({ data: new Uint8Array([n]), mime: "image/png", width: 2, height: 1, source: { id: `screen:${n}:0`, name, kind: "screen" }, role });
+  native.request = async (req: any) => {
+    calls.push(["request", req]);
+    const shots = [picture(1, "Display 2", "main"), picture(0, "Display 1", "sub")];
+    return { ok: true, ...shots[0], ...(req.multi ? { shots } : {}) };
+  };
+  native.version = 4;
+  const all = { id: "screen:all", name: "All screens", kind: "screen" as const };
+  await screen.beginSharing("sid", "Test", all);
+  assert.deepEqual(calls.at(-1), ["choice", "session:sid", all]);
+  assert.equal(screen.sharingSnapshot()?.source, "All screens");
+  const pics = await screen.localFrames("sid", "req4", false, { multi: true });
+  assert.equal(calls.at(-1)[1].multi, true);
+  assert.deepEqual(pics.map((p) => [p.role, p.source?.name, p.file.name.split("-").slice(0, 2).join("-")]),
+    [["main", "Display 2", "screen-main"], ["sub", "Display 1", "screen-other"]]);
+  // one frame (observation, an older server): one picture, named as before
+  const one = await screen.localFrame("sid", "req5");
+  assert.equal(calls.at(-1)[1].multi, false);
+  assert.match(one.name, /^screen-\d{8}-\d{6}\.png$/);
+  native.request = original;
+  // an older app cannot share all screens: it says so instead of sharing one
+  native.version = 3;
+  await assert.rejects(screen.beginSharing("sid", "Test", all));
+  assert.deepEqual(screen.sharedScopes(), {});
+});

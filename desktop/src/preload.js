@@ -71,9 +71,10 @@ const mate = {
 
 // Screen capture (capture.js, docs/mate.md §4 "Seeing the screen"): what to capture for a mate on this computer, the
 // user's own Share screen, and the mate's see_screen requests (the page hands them over from the server). The
-// picture comes back as bytes (Uint8Array) — the page uploads it; nothing is saved on this computer.
+// picture comes back as bytes (Uint8Array) — the page uploads it; nothing is saved on this computer. Version 4: all
+// screens ("screen:all"), each its own picture — `shots`, main first, when the page passes `multi`.
 const capture = {
-  version: 3,
+  version: 4,
   notifications: 1,
   resume: 1,
   runtime: 1,
@@ -85,7 +86,7 @@ const capture = {
   grab: (o = {}) => ipcRenderer.invoke("capture:grab", {
     id: String((o && o.id) || ""),
     mateId: String((o && o.mateId) || ""), sourceId: String((o && o.sourceId) || ""), maxEdge: num(o && o.maxEdge),
-    hideAvatar: false, hideConsole: false,
+    hideAvatar: false, hideConsole: false, multi: !!(o && o.multi === true),
   }),
   request: (req = {}) => ipcRenderer.invoke("capture:request", JSON.parse(JSON.stringify(req || {}))),
   cancel: (id) => ipcRenderer.invoke("capture:cancel", String(id || "")),

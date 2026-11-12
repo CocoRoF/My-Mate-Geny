@@ -1,11 +1,13 @@
 // Device-owned settings and explicit persistent sharing intent; never image data.
 "use strict";
 const {isDeepStrictEqual} = require("node:util");
+const LEGACY_EDGE = 1920; // (the picture size every mate had before it was this device's: not a choice of its own)
 const DEFAULT_SCREEN = {
   source: null,
   source_invalid: false,
+  all_screens: false, // every screen, each its own picture (capture.js); a chosen source ends it
   approval: "ask",
-  max_edge: 1920,
+  max_edge: 0, // a new device sends the picture as it is; saved sizes stay
   hide_avatar: false,
   proactive_enabled: null,
   proactive_mate: "",
@@ -27,12 +29,20 @@ function cleanScreen(raw, base = DEFAULT_SCREEN) {
   if(typeof v.proactive_mate === "string") out.proactive_mate=v.proactive_mate.slice(0,100);
   if (typeof v.proactive_enabled === "boolean") out.proactive_enabled = v.proactive_enabled;
   if (Number.isFinite(v.proactive_interval)) out.proactive_interval = Math.max(60, Math.min(600, v.proactive_interval));
-  if ("source" in v) {out.source = cleanSource(v.source);out.source_invalid=(v.source!=null&&!out.source)||(v.source==null&&v.source_invalid===true);}
+  if ("source" in v) {out.source = cleanSource(v.source);out.source_invalid=(v.source!=null&&!out.source)||(v.source==null&&v.source_invalid===true);out.all_screens=false;}
   else if(typeof v.source_invalid === "boolean") out.source_invalid=v.source_invalid;
+  if (typeof v.all_screens === "boolean") out.all_screens = v.all_screens;
+  if (out.all_screens) { out.source = null; out.source_invalid = false; }
   if (["ask", "allow"].includes(v.approval)) out.approval = v.approval;
   if ([0, 1280, 1920, 2560].includes(v.max_edge)) out.max_edge = v.max_edge;
   if (typeof v.hide_avatar === "boolean") out.hide_avatar = v.hide_avatar;
   return out;
+}
+// a mate's old screen settings for a device that takes them over: its size only when it was changed from the old default
+function legacyScreen(raw) {
+  if (!raw || typeof raw !== "object") return raw;
+  const { max_edge, ...rest } = raw;
+  return max_edge === LEGACY_EDGE ? rest : raw;
 }
 const DEFAULT_SHARING = {enabled:false,origin:"",sid:"",name:"",mate_id:"",mode:"ask",interval:180};
 function cleanSharing(raw) {
@@ -122,7 +132,7 @@ function createDevicePreferences({
     let screen = cur.screen,
       volume = cur.volume;
     if (!migration.imported && chosen) {
-      if (!migration.screenEdited) screen = cleanScreen(chosen.screen, screen);
+      if (!migration.screenEdited) screen = cleanScreen(legacyScreen(chosen.screen), screen);
       if (!migration.volumeEdited && Number.isFinite(chosen.volume))
         volume = Math.max(0, Math.min(3, chosen.volume));
       migration.imported = true;

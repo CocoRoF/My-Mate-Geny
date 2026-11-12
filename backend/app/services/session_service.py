@@ -954,12 +954,12 @@ class SessionService:
             if attachment_ids and self._attachments is not None
             else []
         )
-        screen_row = None
+        screen_rows = None
         if self.screen is not None:
             try:
-                screen_row = await self.screen.for_turn(sid, client_msg_id, meta)
-                if screen_row:
-                    rows = [*rows, screen_row]
+                screen_rows = await self.screen.for_turn(sid, client_msg_id, meta)  # (all screens: main first)
+                if screen_rows:
+                    rows = [*rows, *screen_rows]
             except CaptureError:
                 warning = ProviderEvent(type="notice", data={"level": "warning", "code": "screen.capture_failed",
                                         "message": "Screen capture failed; this message was sent without a screenshot."})
@@ -998,7 +998,7 @@ class SessionService:
         fut: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
         msg = SteerMessage(text=text, attachments=atts, delivered=fut, on_delivered=record, inline_files=inline)
         if not inbox.offer(msg):
-            if screen_row is not None:
+            for screen_row in screen_rows or []:
                 self._attachments.delete_pending(screen_row["id"])
             return False
         try:
@@ -1100,9 +1100,9 @@ class SessionService:
         if self.screen is not None:
             self._note_client(sid, client_msg_id)
             try:
-                screen_row = await self.screen.for_turn(sid, client_msg_id, meta)
-                if screen_row:
-                    rows = [*(rows or []), screen_row]
+                screen_rows = await self.screen.for_turn(sid, client_msg_id, meta)  # (all screens: main first)
+                if screen_rows:
+                    rows = [*(rows or []), *screen_rows]
             except CaptureError:
                 screen_failed = True
         msg_id = self._add_message(sid, "user", user_input, meta=meta)

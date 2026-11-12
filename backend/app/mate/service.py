@@ -37,7 +37,7 @@ from app.mate import state as S
 from app.mate import wardrobe as W
 from app.mate.life import diary, sim
 from app.mate.life.runtime import LifeRuntime
-from app.mate.capture import CaptureBroker, CaptureError
+from app.mate.capture import CaptureBroker, CaptureError, pictures, screen_labels
 from app.mate import files
 from app.mate import memory as M
 from app.mate import style as STY
@@ -1711,27 +1711,41 @@ class MateService:
             raise MateError("see_screen works only in your own conversation")
         reason = str(args.get("reason") or "").strip()
         device = self._svc.last_client_device(sid)
-        res = await self.capture.request(mate=mate, session_id=sid, device=device, reason=reason,shared_only=True)
-        row = self._capture_row(sid, res.get("attachment_id"))
-        row = self._svc._attachments.mark_screen(row["id"])
-        # (the conversation's own copy: never a pending composer upload, gone with the conversation)
-        self._svc._attachments.link([row["id"]], f"artifact:capture:{res['id']}")
-        use_model = bool(row.get("model_path")) and os.path.exists(row["model_path"])
-        path = row["model_path"] if use_model else row["path"]
-        mime = (row.get("model_mime") if use_model else None) or row["mime"]
-        data = await asyncio.to_thread(Path(path).read_bytes)
-        src = res.get("source") if isinstance(res.get("source"), dict) else {}
-        what = "window" if src.get("kind") == "window" else "screen"
-        name = " ".join(str(src.get("name") or "").split())[:120]
+        res = await self.capture.request(mate=mate, session_id=sid, device=device, reason=reason, shared_only=True, multi=True)
+        # (all screens: one picture per screen, the one in use first — capture.pictures)
+        pics = res.get("attachments") or [{"id": res.get("attachment_id"), "role": "main", "source": res.get("source") or {}}]
+        rows = [self._capture_row(sid, p["id"]) for p in pics]
+        rows = [self._svc._attachments.mark_screen(r["id"]) for r in rows]
+        # (the conversation's own copies: never pending composer uploads, gone with the conversation)
+        self._svc._attachments.link([r["id"] for r in rows], f"artifact:capture:{res['id']}")
+        images = []
+        for row in rows:
+            use_model = bool(row.get("model_path")) and os.path.exists(row["model_path"])
+            path = row["model_path"] if use_model else row["path"]
+            data = await asyncio.to_thread(Path(path).read_bytes)
+            images.append({"data": base64.b64encode(data).decode(), "mime": (row.get("model_mime") if use_model else None) or row["mime"]})
         elsewhere = bool(device) and res["client"].device != device
         where = (" (on the computer where the desktop app was used last — the user's last message came from "
                  "another device)") if elsewhere else ""
-        size = f", {row['width']}×{row['height']}" if row.get("width") else ""
-        label = f" “{name}”" if name else ""
-        text = (f"Screen captured: the {what}{label}{size}{where} — [{row['id']}] {row['name']}. The picture is "
-                "attached below for visual context and hidden from the chat transcript. Talk only about what matters for "
-                "what they asked; don't remember what you saw unless they ask you to.")
-        return ToolImages(text, [{"data": base64.b64encode(data).decode(), "mime": mime}])
+
+        def about(row: dict[str, Any], src: Any) -> tuple[str, str]:
+            src = src if isinstance(src, dict) else {}
+            name = " ".join(str(src.get("name") or "").split())[:120]
+            size = f", {row['width']}×{row['height']}" if row.get("width") else ""
+            return ("window" if src.get("kind") == "window" else "screen"), (f" “{name}”" if name else "") + size
+
+        after = ("Talk only about what matters for what they asked; don't remember what you saw unless they ask you to.")
+        if len(rows) == 1:
+            what, label = about(rows[0], pics[0].get("source"))
+            text = (f"Screen captured: the {what}{label}{where} — [{rows[0]['id']}] {rows[0]['name']}. The picture is "
+                    f"attached below for visual context and hidden from the chat transcript. {after}")
+        else:
+            lines = [f"{k}. {label}{about(row, p.get('source'))[1]} — [{row['id']}] {row['name']}"
+                     for k, (row, p, label) in enumerate(zip(rows, pics, screen_labels(len(rows))), 1)]
+            text = "\n".join([f"Screens captured{where}: all {len(rows)} of the user's screens, one picture each, attached "
+                              "below in this order:", *lines,
+                              f"The pictures are for visual context and hidden from the chat transcript. {after}"])
+        return ToolImages(text, images)
 
     def _capture_row(self, sid: str, aid: Any) -> dict[str, Any]:
         att = self._svc._attachments
@@ -1742,18 +1756,21 @@ class MateService:
 
     def capture_result(self, mate_id: str, rid: str, body: dict[str, Any]) -> bool:
         """The desktop app's answer to a capture request (``POST /api/mates/{id}/capture/{rid}``):
-        ``{ok: true, attachment_id, source?: {name, kind}}`` or ``{ok: false, code, message?}``.
+        ``{ok: true, attachment_id, source?: {name, kind}}`` (all screens: ``attachments: [{id, role, source}]``,
+        main first) or ``{ok: false, code, message?}``.
         False: no such request waiting (answered, timed out, another mate's)."""
         sid = self.capture.pending_session(rid)
         if sid is None:
             return False
         if body.get("ok") is True:
-            row = self._capture_row(sid, body.get("attachment_id"))  # (an upload of that conversation)
-            if row["message_id"] is not None:
-                raise CaptureError("error", "That attachment was sent already.")
-            src = body.get("source") if isinstance(body.get("source"), dict) else {}
-            payload = {"ok": True, "attachment_id": row["id"],
-                       "source": {"name": str(src.get("name") or "")[:200], "kind": str(src.get("kind") or "")[:20]}}
+            pics = pictures(body)
+            if not pics:
+                raise CaptureError("error", "The desktop app's capture did not arrive as an image.")
+            for pic in pics:
+                row = self._capture_row(sid, pic["id"])  # (an upload of that conversation)
+                if row["message_id"] is not None:
+                    raise CaptureError("error", "That attachment was sent already.")
+            payload = {"ok": True, "attachment_id": pics[0]["id"], "attachments": pics, "source": pics[0]["source"]}
         else:
             payload = {"ok": False, "code": str(body.get("code") or "error")[:40],
                        "message": str(body.get("message") or "")[:400]}

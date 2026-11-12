@@ -187,8 +187,8 @@ export function useLocalScreenControls(
           onClose={() => setPicker(null)}
           onShot={
             picker !== "ongoing"
-              ? (f) => {
-                  addFiles([f]);
+              ? (files) => {
+                  addFiles(files);
                   setPicker(null);
                   setOpen(false);
                 }

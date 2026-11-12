@@ -136,7 +136,37 @@ test("persistent intent survives restart and owner destruction; explicit stop ca
 });
 test("malformed device settings recover safe defaults while preserving valid legacy values",()=>{
   const x=store({devicePreferences:{version:1,revision:"bad",screen:{format:"jpeg",quality:NaN,max_edge:-1},volume:2.5,sharing:{enabled:true,sid:42,origin:[]}}});
-  const p=x.prefs.get();assert.equal(p.screen.format,undefined);assert.equal(p.screen.max_edge,1920);assert.equal(p.screen.quality,undefined);assert.equal(p.volume,2.5);assert.equal(p.sharing.enabled,true);assert.equal(p.sharing.sid,"");assert.equal(p.sharing.origin,"");assert.equal(p.revision,0);
+  const p=x.prefs.get();assert.equal(p.screen.format,undefined);assert.equal(p.screen.max_edge,0);assert.equal(p.screen.quality,undefined);assert.equal(p.volume,2.5);assert.equal(p.sharing.enabled,true);assert.equal(p.sharing.sid,"");assert.equal(p.sharing.origin,"");assert.equal(p.revision,0);
   x.prefs.migrate({origin:"https://one",activeId:"a",mates:[{id:"a",proactive:{enabled:true,interval:60}}]});
   assert.equal(x.prefs.get().screen.proactive_enabled,true);assert.equal(x.prefs.get().screen.proactive_interval,60);
+});
+
+test("a new device sends pictures as they are; a saved size stays; a mate's old default size is not taken over", () => {
+  assert.equal(store().prefs.get().screen.max_edge, 0);
+  const saved = store({ devicePreferences: { version: 1, revision: 3, screen: { max_edge: 1920, approval: "allow" }, sharing: {}, volume: 1, migration: {} } });
+  assert.equal(saved.prefs.get().screen.max_edge, 1920);
+  assert.equal(store(saved.data()).prefs.get().screen.max_edge, 1920, "and after a restart");
+  const fresh = store();
+  fresh.prefs.migrate({ origin: "https://one", activeId: "a", mates: [{ id: "a", volume: 1, screen: { approval: "allow", max_edge: 1920 } }] });
+  assert.equal(fresh.prefs.get().screen.max_edge, 0);
+  assert.equal(fresh.prefs.get().screen.approval, "allow", "the rest of the mate's settings still comes along");
+});
+
+test("all screens: turning it on clears the chosen source; choosing a source (or the primary screen) turns it off", () => {
+  const x = store();
+  assert.equal(x.prefs.get().screen.all_screens, false);
+  x.prefs.patch({ screen: { source: { id: "window:1:0", name: "A", kind: "window" } } });
+  x.prefs.patch({ screen: { source: null, all_screens: true } });
+  assert.deepEqual([x.prefs.get().screen.all_screens, x.prefs.get().screen.source], [true, null]);
+  x.prefs.patch({ screen: { max_edge: 1280 } });
+  assert.equal(x.prefs.get().screen.all_screens, true, "other settings leave it");
+  assert.equal(store(x.data()).prefs.get().screen.all_screens, true, "it survives a restart");
+  x.prefs.patch({ screen: { source: { id: "screen:0:0", name: "S" } } });
+  assert.deepEqual([x.prefs.get().screen.all_screens, x.prefs.get().screen.source.id], [false, "screen:0:0"]);
+  x.prefs.patch({ screen: { all_screens: true } });
+  assert.equal(x.prefs.get().screen.source, null);
+  x.prefs.patch({ screen: { source: null } });
+  assert.equal(x.prefs.get().screen.all_screens, false);
+  x.prefs.patch({ screen: { all_screens: "yes" } });
+  assert.equal(x.prefs.get().screen.all_screens, false);
 });

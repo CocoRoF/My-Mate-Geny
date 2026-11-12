@@ -1,12 +1,13 @@
 // Screen capture for the Mate (src/capture.js, docs/mate.md §4 "Seeing the screen"): the size a picture gets, which
 // source is captured (and when a remembered one is gone), the mate's request (ask → allow / deny / no answer, the
-// avatar windows hidden and shown again, allowed without asking), the user's own grab, and the preload bridge.
+// avatar windows hidden and shown again, allowed without asking), the user's own grab, all screens (one picture per
+// screen, the one in use first; only the main one for an older server) and the preload bridge.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
-const { fitWithin, displayPixels, resolveSource, cleanOptions, createCapture, kindOf } = require("../src/capture");
+const { fitWithin, displayPixels, resolveSource, orderScreens, cleanOptions, createCapture, kindOf, ALL_SCREENS } = require("../src/capture");
 
 test("fitWithin: the long side at most maxEdge, never upscaled, 0 = as it is", () => {
   assert.deepEqual(fitWithin(3840, 2160, 1920), { width: 1920, height: 1080 });
@@ -185,7 +186,7 @@ test("grab (Share screen) and the picker's sources", async () => {
   assert.deepEqual(list.map((s) => s.id), ["screen:1:0", "screen:0:0", "window:77:0", "window:89:0"]); // (not our own windows)
   assert.equal(list.find((s) => s.id === "screen:0:0").primary, true);
   assert.ok(list.every((s) => s.thumbnail.startsWith("data:image/png")));
-  assert.deepEqual(cap.info(), { version: 3, platform: "linux", wayland: false, permission: "granted" });
+  assert.deepEqual(cap.info(), { version: 4, platform: "linux", wayland: false, permission: "granted" });
   assert.equal(rig({ deps: { env: { XDG_SESSION_TYPE: "wayland" } } }).cap.info().wayland, true);
 });
 
@@ -218,18 +219,22 @@ function loadPreload(surface) {
 test("preload: hrhNative.capture sends only clean arguments; hrhCaptureAsk exists only in the prompt window", async () => {
   const { exposed, plain } = loadPreload("mate-chat");
   const cap = exposed.hrhNative.capture;
-  assert.equal(cap.version, 3);
+  assert.equal(cap.version, 4);
   await cap.sources({ thumbnails: 1, size: "320" });
   await cap.grab({ sourceId: 5, maxEdge: "1280", format: "bmp", hideAvatar: false, extra: "x" });
   await cap.setChoice("mate_a", { id: "window:1:0", name: "A", kind: "window", evil: () => 1 });
-  await cap.request({ id: "cap_1", ask: true, nested: { a: 1 } });
+  await cap.request({ id: "cap_1", ask: true, nested: { a: 1 }, multi: true });
   await cap.cancel(7);
+  await cap.grab({ sourceId: ALL_SCREENS, multi: true });
+  await cap.grab({ multi: "yes" });
   const calls = plain();
   assert.deepEqual(calls[0], ["capture:sources", { thumbnails: true, size: 320 }]);
-  assert.deepEqual(calls[1], ["capture:grab", { id:"", mateId: "", sourceId: "5", maxEdge: 1280, hideAvatar: false, hideConsole: false }]);
+  assert.deepEqual(calls[1], ["capture:grab", { id:"", mateId: "", sourceId: "5", maxEdge: 1280, hideAvatar: false, hideConsole: false, multi: false }]);
   assert.deepEqual(calls[2], ["capture:setChoice", "mate_a", { id: "window:1:0", name: "A", kind: "window", display_id: "" }]);
-  assert.deepEqual(calls[3], ["capture:request", { id: "cap_1", ask: true, nested: { a: 1 } }]);
+  assert.deepEqual(calls[3], ["capture:request", { id: "cap_1", ask: true, nested: { a: 1 }, multi: true }]);
   assert.deepEqual(calls[4], ["capture:cancel", "7"]);
+  assert.deepEqual(calls[5], ["capture:grab", { id:"", mateId: "", sourceId: ALL_SCREENS, maxEdge: 0, hideAvatar: false, hideConsole: false, multi: true }]);
+  assert.equal(calls[6][1].multi, false); // (only a real true)
   assert.equal(exposed.hrhCaptureAsk, undefined);
   const ask = loadPreload("capture-ask");
   ask.exposed.hrhCaptureAsk.answer("yes");
@@ -274,4 +279,121 @@ test("legacy hide options never hide or restore windows across repeated captures
  const {cap,log}=rig();
  for(let i=0;i<3;i++)assert.equal((await cap.grab({sourceId:'screen:0:0',hideAvatar:true,hideConsole:true})).ok,true);
  assert.ok(!log.some(x=>['hide','show'].includes(x[0])));
+});
+
+// ── all screens: one picture per screen, the one in use first ──
+
+test("orderScreens: the display in use first, else the primary, else the first; the others left to right", () => {
+  const displays = [{ id: 11, bounds: { x: 0, y: 0 } }, { id: 22, bounds: { x: 2560, y: 0 } }, { id: 33, bounds: { x: -1920, y: 0 } }];
+  const list = [
+    { id: "screen:0:0", display_id: "11" }, { id: "screen:1:0", display_id: "22" }, { id: "window:7:0", name: "W" },
+    { id: "screen:2:0", display_id: "33" }, { id: ALL_SCREENS },
+  ];
+  const ids = (a) => a.map((s) => s.id);
+  assert.deepEqual(ids(orderScreens(list, displays, "22", "11")), ["screen:1:0", "screen:2:0", "screen:0:0"]);
+  assert.deepEqual(ids(orderScreens(list, displays, "", "11")), ["screen:0:0", "screen:2:0", "screen:1:0"]);
+  assert.deepEqual(ids(orderScreens(list, displays, "99", "")), ["screen:0:0", "screen:2:0", "screen:1:0"]);
+  // (no display ids — some Linux setups: the first screen is the main one, the rest in the system's order)
+  assert.deepEqual(ids(orderScreens([{ id: "screen:5:0" }, { id: "screen:6:0" }], [], "22", "11")), ["screen:5:0", "screen:6:0"]);
+  assert.deepEqual(orderScreens([], displays, "11", "11"), []);
+  const many = Array.from({ length: 9 }, (_, i) => ({ id: `screen:${i}:0`, display_id: String(i) }));
+  assert.equal(orderScreens(many, [], "3", "0").length, 6);
+});
+
+function allScreens(over = {}) {
+  let screen = { source: null, all_screens: true, approval: "ask", max_edge: 0, ...over.screen };
+  const asked = [];
+  const preferences = { get: () => ({ screen }), patch: (p) => { screen = { ...screen, ...p.screen }; } };
+  const r = rig({ ...over, deps: { preferences, activeDisplay: () => "22", ask: async (info) => (asked.push(info), over.answer || "allow"), ...over.deps } });
+  return { ...r, asked, screen: () => screen };
+}
+const shotsOf = (r) => r.shots.map((s) => [s.role, s.source.id, `${s.width}x${s.height}`]);
+const pictureCalls = (log) => log.filter((x) => x[0] === "getSources" && x[1] === "screen" && x[2] !== "360x220");
+
+test("all screens, a server that takes them: every screen its own picture, the one in use first, asked once", async () => {
+  const { cap, log, asked } = allScreens();
+  const r = await cap.request({ ...REQ, multi: true });
+  assert.equal(r.ok, true);
+  // display 22 is in use: its screen is the main picture; display 11 (3840×2160 device pixels) at its own size
+  assert.deepEqual(shotsOf(r), [["main", "screen:1:0", "1920x1080"], ["sub", "screen:0:0", "3840x2160"]]);
+  assert.ok(r.shots.every((s) => s.mime === "image/png" && String(s.data) === `PNG ${s.width}x${s.height}`));
+  // the one-picture shape is the main one (what an older page reads)
+  assert.equal(r.source.id, "screen:1:0");
+  assert.equal(String(r.data), "PNG 1920x1080");
+  assert.equal(r.role, undefined);
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0].screens, 2);
+  assert.equal(asked[0].source.id, "screen:1:0"); // (the preview: the main one)
+  assert.deepEqual(log.filter((x) => x[0] === "indicate").map((x) => x[1]), ["start", "done"]);
+  // max_edge applies to each picture
+  const small = allScreens({ screen: { max_edge: 1280 } });
+  assert.deepEqual(shotsOf(await small.cap.request({ ...REQ, multi: true })), [["main", "screen:1:0", "1280x720"], ["sub", "screen:0:0", "1280x720"]]);
+  // nobody in use (no pointer): the primary display's screen is the main one
+  const idle = allScreens({ deps: { activeDisplay: () => "" } });
+  assert.deepEqual(shotsOf(await idle.cap.request({ ...REQ, multi: true })).map((s) => s[1]), ["screen:0:0", "screen:1:0"]);
+  // denied: nothing at all
+  const no = allScreens({ answer: "deny" });
+  assert.equal((await no.cap.request({ ...REQ, multi: true })).code, "denied");
+  assert.equal(pictureCalls(no.log).length, 0);
+});
+
+test("all screens, an older server (no multi): only the main picture, in the one-picture shape", async () => {
+  const { cap, log, asked } = allScreens();
+  const r = await cap.request(REQ);
+  assert.equal(r.ok, true);
+  assert.equal(r.shots, undefined);
+  assert.equal(r.source.id, "screen:1:0");
+  assert.equal(asked[0].screens, 1);
+  assert.equal(pictureCalls(log).length, 1);
+  // allowed without asking (the device setting): no prompt, still every screen when the server takes them
+  const quiet = allScreens({ screen: { approval: "allow" } });
+  assert.equal((await quiet.cap.request({ ...REQ, multi: true })).shots.length, 2);
+  assert.equal(quiet.asked.length, 0);
+});
+
+test("all screens: an empty other screen is left out; an empty main one is a failed capture", async () => {
+  const blank = (id) => ({ desktopCapturer: { getSources: async ({ types, thumbnailSize }) => SOURCES.filter((s) => types.includes(kindOf(s.id))).map((s) => ({
+    ...s, thumbnail: s.id === id && thumbnailSize.width > 400 ? image(0, 0, { empty: true }) : image(thumbnailSize.width, Math.round((thumbnailSize.width * 9) / 16)),
+  })) } });
+  const sub = allScreens({ deps: blank("screen:0:0") });
+  assert.deepEqual(shotsOf(await sub.cap.request({ ...REQ, multi: true })), [["main", "screen:1:0", "1920x1080"]]);
+  const main = allScreens({ deps: blank("screen:1:0") });
+  assert.deepEqual(await main.cap.request({ ...REQ, multi: true }), { ok: false, code: "empty", message: "" });
+});
+
+test("all screens: cancelled between two pictures → nothing is delivered", async () => {
+  let release, entered;
+  const second = new Promise((r) => (entered = r));
+  let pictures = 0;
+  const { cap } = allScreens({ screen: { approval: "allow" }, deps: { desktopCapturer: { getSources: async ({ types, thumbnailSize }) => {
+    if (thumbnailSize.width > 640 && ++pictures === 2) { entered(); await new Promise((r) => (release = r)); }
+    return SOURCES.filter((s) => types.includes(kindOf(s.id))).map((s) => ({ ...s, thumbnail: image(thumbnailSize.width, thumbnailSize.height) }));
+  } } } });
+  const req = cap.request({ ...REQ, id: "cap_all", multi: true });
+  await second;
+  cap.cancel("cap_all");
+  release();
+  assert.deepEqual(await req, { ok: false, code: "stopped", message: "" });
+});
+
+test("all screens: the user's own grab, the choice it is saved as, and the per-mate fallback", async () => {
+  const { cap, screen } = allScreens();
+  const r = await cap.grab({ sourceId: ALL_SCREENS, multi: true });
+  assert.deepEqual(shotsOf(r).map((s) => s.slice(0, 2)), [["main", "screen:1:0"], ["sub", "screen:0:0"]]);
+  assert.equal((await cap.grab({ sourceId: ALL_SCREENS })).shots, undefined); // (an older page: the main one)
+  assert.deepEqual(cap.getChoice("x"), { id: ALL_SCREENS, name: "", kind: "screen", display_id: "" });
+  cap.setChoice("x", SOURCES[2]);
+  assert.equal(screen().all_screens, false);
+  assert.equal(screen().source.id, "window:77:0");
+  assert.equal((await cap.grab({ sourceId: ALL_SCREENS, multi: true })).code, "source_gone"); // (not the choice any more)
+  cap.setChoice("x", { id: ALL_SCREENS, name: "All", kind: "screen" });
+  assert.deepEqual([screen().all_screens, screen().source], [true, null]);
+  // without device preferences (older settings): remembered per mate like any source
+  const old = rig({ deps: { activeDisplay: () => "11" } });
+  old.cap.setChoice("mate_a", { id: ALL_SCREENS, name: "" });
+  assert.deepEqual(shotsOf(await old.cap.request({ ...REQ, ask: false, multi: true })).map((s) => s[1]), ["screen:0:0", "screen:1:0"]);
+  // one display only: one picture, main
+  const one = allScreens({ deps: { screen: { getPrimaryDisplay: () => ({ id: 11 }), getAllDisplays: () => [{ id: 11 }] },
+    desktopCapturer: { getSources: async ({ types, thumbnailSize }) => SOURCES.filter((s) => s.id === "screen:0:0" && types.includes("screen")).map((s) => ({ ...s, thumbnail: image(thumbnailSize.width, thumbnailSize.height) })) } } });
+  assert.deepEqual(shotsOf(await one.cap.grab({ sourceId: ALL_SCREENS, multi: true })).map((s) => s.slice(0, 2)), [["main", "screen:0:0"]]);
 });
