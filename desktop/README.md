@@ -90,11 +90,14 @@ next to it:
 - Linux runs as X11 (XWayland on Wayland) — a Wayland window cannot place
   itself. `HRH_OZONE_PLATFORM=wayland` opts out. Transparency needs a
   compositor.
-- Repeated GPU-process crashes switch the next start to software rendering
-  (`HRH_DISABLE_GPU=1` forces it): SwiftShader, the GPU's work on the CPU — not
-  `disableHardwareAcceleration()`, which on Windows turned the transparent Mate
-  windows black and could take WebGL (her videos) away. It holds for the
-  version that crashed; a new version tries the GPU again.
+- Repeated GPU-process crashes (or Chromium giving up on the GPU mid-session,
+  which draws the transparent Mate windows black) switch to software rendering
+  and restart the app right away (`HRH_DISABLE_GPU=1` forces it): SwiftShader,
+  the GPU's work on the CPU — not `disableHardwareAcceleration()`, which on
+  Windows turned the transparent Mate windows black and could take WebGL (her
+  videos) away. It is kept across updates (`HRH_DISABLE_GPU=0` forgets it and
+  tries the GPU again). The first start of a new version clears Chromium's GPU
+  caches (`src/gpu.js`).
 - Local execution chosen once starts by itself at the next start; until the
   runtime is up (minutes, the first time after an install or update on Windows)
   the connect screen says it is starting, with Cancel.

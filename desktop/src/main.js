@@ -89,6 +89,7 @@ const { launchCommand } = require("./launch");
 const rename = require("./rename");
 const oauthCatch = require("./oauth-catch");
 const capture = require("./capture");
+const gpu = require("./gpu");
 
 const RETRY_PAGE = path.join(__dirname, "offline.html");
 
@@ -139,12 +140,13 @@ function relaunchOnX11() {
 }
 
 const restartOnX11 = linux ? linuxSwitches() : false;
-// Repeated GPU-process crashes switch the next start to software rendering (slow beats a crash loop); HRH_DISABLE_GPU=1
-// does it by hand. Software rendering is SwiftShader (the GPU's work done on the CPU), not disableHardwareAcceleration():
-// on Windows that turned the transparent Mate windows black and took WebGL away, so her videos fell back to stills. A
-// new version of the app tries the GPU again (a crash loop it causes was perhaps a bug of the old one).
-if (readSettings().softwareRendering && readSettings().softwareRendering !== app.getVersion()) writeSettings({ softwareRendering: undefined });
-if (readSettings().softwareRendering || env.HRH_DISABLE_GPU === "1") {
+// A GPU-process crash loop (or Chromium giving up on the GPU) switches to software rendering and restarts the app at
+// once (slow beats a crash loop, and beats black Mate windows for the rest of the session — see child-process-gone).
+// The choice stays across updates; HRH_DISABLE_GPU=1 forces it, =0 forgets it (gpu.js). The first start of a new
+// version also drops Chromium's GPU caches (below, once this is the only instance).
+const gpuStart = gpu.startMode({ settings: readSettings(), env, version: app.getVersion() });
+if ("softwareRendering" in gpuStart.patch) writeSettings({ softwareRendering: undefined });
+if (gpuStart.software) {
   app.commandLine.appendSwitch("use-gl", "angle");
   app.commandLine.appendSwitch("use-angle", "swiftshader");
   app.commandLine.appendSwitch("enable-unsafe-swiftshader");
@@ -170,8 +172,9 @@ function createWindow(url) {
   const bounds = s.bounds || { width: 1360, height: 880 };
   win = new BrowserWindow({
     ...bounds,
-    minWidth: 380,
-    minHeight: 520,
+    // (below 768 px the console takes its phone layout; smaller than this its top bars and the composer crowd)
+    minWidth: 420,
+    minHeight: 560,
     backgroundColor: theme.backgroundFor(nativeTheme.shouldUseDarkColors), // (light / dark: theme.js)
     title: PRODUCT,
     icon: path.join(__dirname, "..", "build", "icon.png"),
@@ -782,19 +785,49 @@ function setupPermissions() {
   });
 }
 
-// GPU process crash loop → software rendering from the next start.
-let gpuCrashes = [];
+// GPU process crash loop, or Chromium composing in software after one (black transparent windows) → software
+// rendering, and a restart right away into it (the same arguments; the choice is kept — gpu.js).
+const gpuWatch = gpu.createGpuWatch();
+let gpuRecheck = null;
+const gpuStatus = () => {
+  try {
+    return app.getGPUFeatureStatus();
+  } catch {
+    return null;
+  }
+};
+function restartInSoftware(why) {
+  if (quitting || readSettings().softwareRendering) return;
+  clearTimeout(gpuRecheck);
+  mainLog.warn(`GPU: ${why} — restarting with software rendering`);
+  writeSettings({ softwareRendering: app.getVersion() });
+  const args = process.argv.slice(1);
+  if (linux) {
+    // (an AppImage's own binary is gone with its mount once this process ends: start the file again, as the X11 restart
+    // does, once this process and its single-instance lock are gone)
+    const childEnv = { ...env };
+    for (const k of ["APPDIR", "APPIMAGE", "ARGV0", "OWD"]) delete childEnv[k];
+    const [cmd, cmdArgs] = restartCommand(process.pid, launchCommand(env, process.execPath), args);
+    try {
+      spawn(cmd, cmdArgs, { detached: true, stdio: "ignore", env: childEnv }).unref();
+    } catch (e) {
+      // (no restart: this session goes on as it is, the next start is in software rendering)
+      return mainLog.warn(`GPU: could not restart: ${e.message}`);
+    }
+  } else app.relaunch({ args });
+  if (Notification.isSupported()) new Notification({ title: PRODUCT, body: t("gpuBody") }).show();
+  quit("gpu");
+}
 app.on("child-process-gone", (_e, d) => {
   if (d.reason !== "clean-exit") mainLog.warn(`${d.type} process gone: ${d.reason} (exit ${d.exitCode})`);
-  if (d.type !== "GPU" || d.reason === "clean-exit" || readSettings().softwareRendering || quitting) return;
-  const t = Date.now();
-  gpuCrashes = [...gpuCrashes.filter((x) => t - x < 120_000), t];
-  if (gpuCrashes.length >= 3) {
-    writeSettings({ softwareRendering: app.getVersion() });
-    if (Notification.isSupported()) {
-      new Notification({ title: PRODUCT, body: t("gpuBody") }).show();
-    }
-  }
+  if (d.type !== "GPU" || d.reason === "clean-exit" || readSettings().softwareRendering || env.HRH_DISABLE_GPU === "1" || quitting) return;
+  if (gpuWatch(d, gpuStatus())) return restartInSoftware(`${d.reason}, repeatedly or with software compositing`);
+  // (Chromium decides about falling back while it restarts the GPU process: look again once it has)
+  clearTimeout(gpuRecheck);
+  gpuRecheck = setTimeout(() => {
+    if (gpu.softwareComposited(gpuStatus())) restartInSoftware("software compositing after a crash");
+  }, 3000);
+  gpuRecheck.unref?.();
 });
 
 function buildMenu() {
@@ -861,6 +894,12 @@ if (restartOnX11 && relaunchOnX11()) {
     openConsole();
   });
   app.setAppUserModelId("me.hrletsgo.harnessor"); // Windows notifications (unchanged id)
+  // the first start of a new version: without the previous one's GPU caches (before the GPU process opens them)
+  if (gpuStart.clearCaches) {
+    const failed = gpu.clearGpuCaches(app.getPath("userData"));
+    mainLog.info(`new version ${app.getVersion()}: GPU caches cleared${failed.length ? ` (not: ${failed.join(", ")})` : ""}`);
+    writeSettings({ lastVersion: app.getVersion() });
+  }
   app.whenReady().then(async () => {
     setupHistory.migrate();
     theme.applyTheme(nativeTheme, readSettings().theme); // before any window: its background and menus match
