@@ -251,14 +251,17 @@ async function captureCheck(con, note) {
   await step("start", () => until("Enable sharing", () => click('[data-testid="screen-start"]'), 10000));
   await step("source", () => until("a source", () => click('[data-testid="share-source"]'), 20000));
   await step("go", () => until("Share", () => click('[data-testid="share-go"]'), 10000));
-  await sleep(4000);
-  await step("sharing", () => con.eval(`window.hrhNative.capture.sharing.get()`));
+  // (the hidden window that owns sharing takes it over: "ready" with its state)
+  const ready = await until("sharing ready", async () => { const v = await con.eval(`window.hrhNative.capture.sharing.get()`); return v && v.state ? v : null; }, 45000, 1000)
+    .catch(async () => ({ never: await con.eval(`window.hrhNative.capture.sharing.get()`).catch((e) => e.message) }));
+  steps.push(["sharing", ready]);
   note("capture.shareSteps", steps);
+  note("capture.sharing", ready);
   // a message from this window while sharing: the server asks this page for the picture before her turn
   const before = await con.eval(`fetch("/api/sessions/${facts.sid}/messages").then((r) => r.json()).then((m) => m.length)`).catch(() => 0);
   await con.eval(`(() => { const t = document.querySelector('[data-testid="mate-input"]'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
-    set.call(t, "e2e: what is on my screen?"); t.dispatchEvent(new Event("input", { bubbles: true }));
-    t.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true })); return true; })()`).catch(() => {});
+    set.call(t, "e2e: what is on my screen?"); t.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`).catch(() => {});
+  await until("Send", () => click('[data-testid="mate-send"]:not([disabled])'), 15000).catch((e) => say(e.message));
   const sent = await until("the message with its picture", async () => {
     const ms = await con.eval(`fetch("/api/sessions/${facts.sid}/messages").then((r) => r.json())`);
     const mine = ms.slice(before).find((m) => m.role === "user");
@@ -376,6 +379,7 @@ async function main() {
   if (local) {
     if (!cb || !cb.grab || !cb.grab.ok) problems.push(`capture: no picture (${JSON.stringify(cb && (cb.grab || cb)).slice(0, 300)})`);
     else if (!cb.upload || cb.upload.status !== 200) problems.push(`capture: the local server refused the picture (${JSON.stringify(cb.upload)})`);
+    if (!facts["capture.sharing"] || facts["capture.sharing"].never) problems.push(`capture: sharing never became ready (${JSON.stringify(facts["capture.sharing"]).slice(0, 300)})`);
     const ot = facts["capture.onTurn"];
     if (!ot || ot.missing) problems.push(`capture: a message while sharing carried no picture (${JSON.stringify(ot).slice(0, 300)})`);
   }
