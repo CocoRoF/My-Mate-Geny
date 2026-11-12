@@ -208,6 +208,71 @@ const AVATAR_FACTS = `(async () => {
   return { url: location.href.replace(location.origin, ""), kinds, canvases, imgs, videos, gl, reduced, probe };
 })()`;
 
+
+// Seeing the screen on this computer in Local execution (docs/mate.md §4): the app's capture bridge takes a picture,
+// the local server takes it as an attachment of her conversation, and a message sent while sharing "with each message"
+// carries one (the server asks this page for it — the same way as when she looks with see_screen).
+const CAPTURE_BRIDGE_CHECK = `(async () => {
+  const out = {};
+  const cap = window.hrhNative && window.hrhNative.capture;
+  out.bridge = !!cap;
+  if (!cap) return out;
+  out.info = await cap.info().catch((e) => ({ error: e.message }));
+  const src = await cap.sources({}).catch((e) => ({ error: e.message }));
+  out.sources = Array.isArray(src) ? src.map((s) => s.id.split(":")[0] + " " + String(s.name || "").slice(0, 30)).slice(0, 6) : src;
+  const g = await cap.grab({ id: "e2e-grab", maxEdge: 1280, format: "png" }).catch((e) => ({ ok: false, code: "throw", message: e.message }));
+  out.grab = { ok: g.ok, code: g.code, message: g.message, mime: g.mime, width: g.width, height: g.height, bytes: g.data ? (g.data.byteLength ?? g.data.length) : 0 };
+  const mates = await (await fetch("/api/mates")).json();
+  const mate = mates.find((m) => m.is_default) || mates[0];
+  const conv = await (await fetch("/api/mates/" + mate.id + "/conversation", { method: "POST" })).json();
+  out.mate = mate.id;
+  out.sid = conv.session_id;
+  if (g.ok) {
+    const fd = new FormData();
+    fd.append("files", new File([g.data], "screen.png", { type: g.mime }));
+    const r = await fetch("/api/sessions/" + conv.session_id + "/attachments", { method: "POST", body: fd });
+    out.upload = { status: r.status, body: (await r.text()).slice(0, 300) };
+  }
+  return out;
+})()`;
+
+async function captureCheck(con, note) {
+  const facts = await con.eval(CAPTURE_BRIDGE_CHECK, 90000).catch((e) => ({ error: e.message }));
+  note("capture.bridge", facts);
+  if (!facts || !facts.sid) return facts;
+  // the user's way: + → Share screen → with each message → Enable sharing → the source → Share; then a message
+  const click = (sel) => con.eval(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
+  const steps = [];
+  const step = async (what, fn) => { try { steps.push([what, await fn()]); } catch (e) { steps.push([what, "error: " + e.message]); } };
+  await step("attach", () => until("the + button", () => click('[data-testid="mate-attach"]'), 30000));
+  await step("share entry", () => until("Share screen", () => click('[data-testid="attach-share-screen"]'), 10000));
+  await step("mode", () => until("the mode", () => con.eval(`(() => { const s = document.querySelector('[data-testid="screen-mode"]'); if (!s) return false;
+    const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set; set.call(s, "on_turn"); s.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`), 10000));
+  await step("start", () => until("Enable sharing", () => click('[data-testid="screen-start"]'), 10000));
+  await step("source", () => until("a source", () => click('[data-testid="share-source"]'), 20000));
+  await step("go", () => until("Share", () => click('[data-testid="share-go"]'), 10000));
+  await sleep(4000);
+  await step("sharing", () => con.eval(`window.hrhNative.capture.sharing.get()`));
+  note("capture.shareSteps", steps);
+  // a message from this window while sharing: the server asks this page for the picture before her turn
+  const before = await con.eval(`fetch("/api/sessions/${facts.sid}/messages").then((r) => r.json()).then((m) => m.length)`).catch(() => 0);
+  await con.eval(`(() => { const t = document.querySelector('[data-testid="mate-input"]'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+    set.call(t, "e2e: what is on my screen?"); t.dispatchEvent(new Event("input", { bubbles: true }));
+    t.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true })); return true; })()`).catch(() => {});
+  const sent = await until("the message with its picture", async () => {
+    const ms = await con.eval(`fetch("/api/sessions/${facts.sid}/messages").then((r) => r.json())`);
+    const mine = ms.slice(before).find((m) => m.role === "user");
+    return mine && (mine.attachments || []).length ? mine : null;
+  }, 60000, 1000).catch(async () => {
+    const ms = await con.eval(`fetch("/api/sessions/${facts.sid}/messages").then((r) => r.json())`).catch(() => []);
+    return { missing: true, user: ms.slice(before).filter((m) => m.role === "user").map((m) => ({ text: String(m.content).slice(0, 60), attachments: (m.attachments || []).length })) };
+  });
+  note("capture.onTurn", sent && sent.missing ? sent : { attachments: sent.attachments.map((a) => ({ name: a.name, mime: a.mime, size: a.size, width: a.width, height: a.height })) });
+  note("capture.errors", con.events.filter((e) => e.method === "Log.entryAdded" && e.params.entry.level === "error").map((e) => `${e.params.entry.text.slice(0, 200)} ${e.params.entry.url || ""}`).slice(-8));
+  await con.eval(`window.hrhNative.capture.sharing.stop()`).catch(() => {});
+  return facts;
+}
+
 async function main() {
   const setup = fs.readdirSync(DIST).find((f) => /setup\.exe$/.test(f));
   const facts = { steps: [] };
@@ -270,6 +335,7 @@ async function main() {
     await c2.eval(`location.href = location.origin + "/?view=mate", true`).catch(() => {});
     await sleep(3000);
     await look(app, "second", note);
+    await captureCheck(c2, note);
   }
 
   say("third start: software rendering (what the app falls back to after the GPU process kept crashing)");
@@ -305,7 +371,15 @@ async function main() {
     // (the local server refusing the console: e.g. its time zone, without the IANA zones on Windows)
     for (const l of facts[key].filter((l) => /^[45]\d\d \S+ \/api\//.test(l))) problems.push(`${key}: ${l}`);
   }
-  console.log(problems.length ? `\nPROBLEMS:\n  ${problems.join("\n  ")}` : "\nlocal execution: remembered, her videos play");
+  // seeing the screen: the picture taken, the local server taking it, and a message while sharing carrying one
+  const cb = facts["capture.bridge"];
+  if (local) {
+    if (!cb || !cb.grab || !cb.grab.ok) problems.push(`capture: no picture (${JSON.stringify(cb && (cb.grab || cb)).slice(0, 300)})`);
+    else if (!cb.upload || cb.upload.status !== 200) problems.push(`capture: the local server refused the picture (${JSON.stringify(cb.upload)})`);
+    const ot = facts["capture.onTurn"];
+    if (!ot || ot.missing) problems.push(`capture: a message while sharing carried no picture (${JSON.stringify(ot).slice(0, 300)})`);
+  }
+  console.log(problems.length ? `\nPROBLEMS:\n  ${problems.join("\n  ")}` : "\nlocal execution: remembered, her videos play, the screen is seen");
   process.exit(problems.length ? 1 : 0);
 }
 main().catch((e) => {
