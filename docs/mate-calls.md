@@ -89,8 +89,9 @@ log line `mate.call`).
   user can delete it like their own words (`hidden_messages`).
 - That message starts **her own engine's turn** (her usual model and tools): it reads the whole call
   (`calls.follow_up_prompt`: `<phone_call caller="user|you" duration="m:ss">User: … / <name>: …</phone_call>` + the
-  rules: a short "통화 정리" — what they talked about and agreed — then do what was asked with her tools, as for a
-  message; nothing to add → a warm line, or `[SILENT]` → nothing beyond the card). The turn waits for one she is in the
+  rules: the turn is hers — she takes the call in and does what was asked with her tools, as for a message; she writes
+  only when they need to hear something (what came of it, a question, something she didn't get to say), never a recap of
+  the call; otherwise `[SILENT]` → nothing beyond the card). The turn waits for one she is in the
   middle of; what waited for the call (a chat's result) comes after it.
 - A call nobody spoke on (missed, declined, cancelled, failed, or only her hello) is a card only: an internal message
   (`meta.internal`), left out of handoffs and memory.

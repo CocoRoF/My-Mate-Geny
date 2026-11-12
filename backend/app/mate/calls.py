@@ -11,8 +11,9 @@
   her what they actually heard.
 * During a call she only talks: no tools exist, and anything else she would do on her own (delegation results, her own
   messages, screen comments) waits. When it ends the call is one entry in her conversation (a card: who called, how long,
-  the transcript); her own engine then gets it as a turn — the whole transcript and the call's rules — and writes a short
-  "통화 정리", then does what was asked with her usual tools.
+  the transcript); her own engine then gets it as a turn of her own — the whole transcript and the call's rules: she takes
+  it in, does what was asked with her usual tools, and writes only when there is something they need to hear (a result, a
+  question); otherwise [SILENT] and the card is all that shows. She never recaps the call to them.
 * She can call them too (:meth:`CallService.consider`): rarely, by day, not while they chat, only to the Android app when it
   is connected and lets her speak first there. A call they turn down or miss moves how she feels and keeps her from calling
   for a good while (a cooldown that doubles with every one in a row; picking up resets it).
@@ -861,12 +862,13 @@ class CallService:
         return (f"<phone_call caller=\"{'user' if theirs else 'you'}\" duration=\"{dur // 60}:{dur % 60:02d}\">\n{lines}\n"
                 "</phone_call>\n"
                 f"[That was a phone call between you and the user that just ended ({who}).{ended} It is in the chat now as one "
-                "call entry, and you remember it. On the call you could only talk: nothing they asked for has been done yet. "
-                "Now write to them as in a message: first a short note on what you two talked about and agreed (a line or "
-                "three, in your own words — like \"통화 정리\" in Korean), then do what they asked you to do on the call with "
-                "your tools, exactly as you would for a message (hand work to a chat, remember something, change your style…), "
-                "and say what you did. If nothing was asked and there is nothing worth adding, a short warm line is enough; "
-                "if not even that, reply with EXACTLY [SILENT].]")
+                "call entry, and you remember it. This turn is for you, not a message to them: take in what was said. On the "
+                "call you could only talk, so nothing they asked for has been done yet — if they asked you to do something "
+                "(hand work to a chat, remember something, change your style…), do it now with your tools, exactly as you "
+                "would for a message. Write to them only if there is something they need to hear: what came of what you did, a "
+                "question you must ask, or something that matters you didn't get to say on the call — briefly, in your own "
+                "voice, like a message. Never recap or summarize the call for them: they were there. Otherwise — nothing was "
+                "asked, or it's done and there's nothing to tell — reply with EXACTLY [SILENT].]")
 
     # ---- what she is told later ----
 
