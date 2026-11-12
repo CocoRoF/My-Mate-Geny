@@ -462,6 +462,48 @@ def test_restart_detection(db):
     assert row["detail"]["downtime_s"] >= 100
 
 
+def test_monitor_snapshot_with_portable_collector(db, tmp_path, monkeypatch):
+    """Windows/macOS collector: no run queue there, so the snapshot carries None instead of failing."""
+    from app.services.sysmon import portable
+    clock = [1_800_000_000.0]
+    col = portable.Collector(disk_paths=[("data", str(tmp_path))])
+    mon = SystemMonitor(db, LogService(db), None, cfg=_cfg(), collector=col, gpu=NoGpu(), clock=lambda: clock[0])
+    mon._on_start()
+    mon._tick(clock[0], [], [], True)
+    snap = _ticks(mon, clock, 2, engines=[])
+    assert snap is not None and mon.latest is snap
+    assert snap["cpu"]["runnable"] is None and snap["cpu"]["blocked"] is None
+    assert isinstance(snap["cpu"]["threads"], int) and snap["cpu"]["threads"] > 0
+    assert snap["procs"][0]["kind"] == "backend" and snap["sampler"]["ticks"] == 2
+
+    # An older portable reading without those keys at all still builds a snapshot.
+    full = col.cpu
+    monkeypatch.setattr(col, "cpu", lambda: {k: v for k, v in full().items()
+                                             if k not in ("runnable", "threads", "procs_blocked", "btime")})
+    snap = _ticks(mon, clock, 1, engines=[])
+    assert snap["cpu"]["runnable"] is None and snap["cpu"]["threads"] is None and snap["cpu"]["btime"] is None
+
+
+def test_portable_thread_count_is_cached(monkeypatch):
+    from app.services.sysmon import portable
+    calls, now = [], [100.0]
+    monkeypatch.setattr(portable.sys, "platform", "darwin")
+    monkeypatch.setattr(portable.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(portable, "_summed_threads", lambda: calls.append(1) or 321)
+    col = portable.Collector()
+    assert col.threads() == 321 and col.threads() == 321 and len(calls) == 1
+    now[0] += portable.THREADS_TTL_S + 1
+    assert col.threads() == 321 and len(calls) == 2
+    # Windows asks the kernel first and only sums processes when that fails.
+    monkeypatch.setattr(portable.sys, "platform", "win32")
+    monkeypatch.setattr(portable, "_windows_threads", lambda: 4000)
+    now[0] += portable.THREADS_TTL_S + 1
+    assert col.threads() == 4000 and len(calls) == 2
+    monkeypatch.setattr(portable, "_windows_threads", lambda: (_ for _ in ()).throw(OSError("no psapi")))
+    now[0] += portable.THREADS_TTL_S + 1
+    assert col.threads() == 321 and len(calls) == 3
+
+
 # ------------------------------------------------------------------ API
 
 

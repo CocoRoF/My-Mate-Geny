@@ -120,7 +120,8 @@ export interface Snapshot {
   interval: number;
   m: Metrics;
   cores: number[];
-  cpu: { count: number; model: string; runnable: number; threads: number; blocked: number | null; btime: number | null; quota: number | null };
+  /** runnable / threads / blocked come from Linux procfs; null on Windows and macOS. */
+  cpu: { count: number; model: string; runnable: number | null; threads: number | null; blocked: number | null; btime: number | null; quota: number | null };
   mem: {
     total: number; available: number; used: number; free: number; cache: number; shmem: number; dirty: number;
     occupied?: number; non_cache?: number;

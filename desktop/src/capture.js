@@ -16,7 +16,14 @@
 // as its own picture, never stitched — the one the user works on (deps.activeDisplay: where the pointer moved last,
 // cursor-feed.js) first as the main one, the others after it. Only a page that says it takes them all (`multi`: the
 // server asked for them) gets them; otherwise — an older server — just the main one, in the usual one-picture shape.
+//
+// Light on the main process (the mouse on Windows waits for it: png.js): a list of sources asks for no thumbnails
+// (0×0: nothing is captured) and only for the kinds it needs; a picture is encoded in a worker thread (png.js); the
+// screens of one all-screens share come from as few captures as their sizes allow (desktopCapturer always captures
+// every source of a kind), one picture after another.
 "use strict";
+
+const png = require("./png");
 
 // the bridge version the page reports to the server (app/mate/capture.py CAPTURE_BRIDGE; ≥ 4: all screens, MULTI_BRIDGE)
 const CAPTURE_VERSION = 4;
@@ -99,11 +106,13 @@ const describe = (s) => (s ? { id: s.id, name: String(s.name || ""), kind: kindO
  * The capture service. deps: { desktopCapturer, screen, systemPreferences, shell?, readSettings, writeSettings,
  * platform, env (captures never change application window visibility),
  * ask: (info) => Promise<"allow"|"deny"|"timeout">, indicate: (state, info) => void, delay?: (ms) => Promise,
- * activeDisplay?: () => the id of the display in use (all screens: its picture is the main one) }
+ * activeDisplay?: () => the id of the display in use (all screens: its picture is the main one),
+ * encodePng?: (nativeImage) => Promise<Buffer> (default: png.imagePng, off the main thread) }
  */
 function createCapture(d) {
   const platform = d.platform || process.platform;
   const env = d.env || process.env;
+  const encodePng = d.encodePng || ((img) => png.imagePng(img));
   const wayland = platform === "linux" && String(env.XDG_SESSION_TYPE || "").toLowerCase() === "wayland";
   let manualSequence = 0;
   let busy = null; // the request in progress (one at a time)
@@ -148,21 +157,28 @@ function createCapture(d) {
   async function getSources(types, size) {
     return d.desktopCapturer.getSources({ types, thumbnailSize: size, fetchWindowIcons: false });
   }
+  /** what a list without pictures asks for: Electron captures nothing for a 0×0 thumbnail (1×1 captured every screen
+   *  and window). (A Wayland desktop's portal keeps what it had.) */
+  const NO_THUMBNAILS = wayland ? { width: 1, height: 1 } : { width: 0, height: 0 };
+  /** a turn of the main thread's event loop for everything else (the mouse hook, the cursor feed, window drags) */
+  const breathe = () => new Promise((r) => setImmediate(r));
 
   /** the sources for a picker: [{id, name, kind, display_id, thumbnail?}] (thumbnail: a small data URL) */
   async function sources({ thumbnails = false, size = 320 } = {}) {
-    const box = thumbnails ? { width: Math.max(64, Math.min(640, size | 0)), height: Math.max(36, Math.min(400, Math.round(((size | 0) * 9) / 16))) } : { width: 1, height: 1 };
+    const box = thumbnails ? { width: Math.max(64, Math.min(640, size | 0)), height: Math.max(36, Math.min(400, Math.round(((size | 0) * 9) / 16))) } : NO_THUMBNAILS;
     const list = await getSources(["screen", "window"], box);
     const primary = primaryId();
     // (not our own see-through windows — the avatar, its bar, the quick card: nothing to look at)
     const own = new Set((d.ownSourceIds && d.ownSourceIds()) || []);
-    return list
-      .filter((s) => s && s.id && !own.has(s.id))
-      .map((s) => ({
-        ...describe(s),
-        primary: kindOf(s.id) === "screen" && String(s.display_id) === primary,
-        ...(thumbnails && s.thumbnail && !s.thumbnail.isEmpty() ? { thumbnail: s.thumbnail.toDataURL() } : {}),
-      }));
+    const out = [];
+    for (const s of list) {
+      if (!s || !s.id || own.has(s.id)) continue;
+      const shown = thumbnails && s.thumbnail && !s.thumbnail.isEmpty();
+      // (each thumbnail is a PNG encoded on this thread: one at a time, with a turn for the rest in between)
+      if (shown && out.length) await breathe();
+      out.push({ ...describe(s), primary: kindOf(s.id) === "screen" && String(s.display_id) === primary, ...(shown ? { thumbnail: s.thumbnail.toDataURL() } : {}) });
+    }
+    return out;
   }
 
   const appPrefs = () => d.preferences ? d.preferences.get().screen : null;
@@ -196,35 +212,44 @@ function createCapture(d) {
     return true;
   }
 
-  /** one picture of `source` (a {id, kind, display_id} resolved just now) */
-  async function shoot(source, o) {
+  /**
+   * one picture of `source` (a {id, kind, display_id} resolved just now). `taken`: the captures of this share by kind
+   * and size — every source of a kind comes back from one capture, so a screen of the same size as one already taken
+   * is in it (all screens: not one capture of every screen per screen).
+   */
+  async function shoot(source, o, taken = new Map()) {
     const display = displayFor(source);
     const full = display ? displayPixels(display) : { width: 1920, height: 1080 };
     const box = fitWithin(full.width, full.height, o.maxEdge);
-    const list = await getSources([kindOf(source.id)], box);
-    const hit = list.find((s) => s.id === source.id);
+    const key = `${kindOf(source.id)} ${box.width}x${box.height}`;
+    if (!taken.has(key)) taken.set(key, await getSources([kindOf(source.id)], box));
+    const hit = taken.get(key).find((s) => s.id === source.id);
     const img = hit && hit.thumbnail;
     if (!img || img.isEmpty()) return null;
     let size = img.getSize();
     let out = img;
     const fit = fitWithin(size.width, size.height, o.maxEdge);
     if (fit.width !== size.width || fit.height !== size.height) {
+      // (not expected: Electron fits the thumbnail inside the box asked for, which is already within maxEdge)
       out = img.resize({ width: fit.width, height: fit.height, quality: "best" });
       size = out.getSize();
     }
-    return { data: out.toPNG(), mime: "image/png", width: size.width, height: size.height, source: describe(hit) };
+    return { data: await encodePng(out), mime: "image/png", width: size.width, height: size.height, source: describe(hit) };
   }
 
   /**
    * The pictures of `r` (resolve()): its source — or, all screens and a page that takes them (`multi`), every screen,
    * each at its own size, main first ([] when the main one failed; another screen that came back empty is left out).
+   * One at a time, with a turn of the event loop between them (never one long burst on the main thread).
    */
   async function shootAll(r, o, id, multi) {
     const list = multi && r.screens ? r.screens : [r.source];
     const shots = [];
+    const taken = new Map();
     for (const [i, src] of list.entries()) {
       if (cancelled.has(id)) break;
-      const shot = await shoot(src, o);
+      if (i) await breathe();
+      const shot = await shoot(src, o, taken);
       if (!shot && !i) return [];
       if (shot) shots.push({ ...shot, role: i ? "sub" : "main" });
     }
@@ -250,14 +275,16 @@ function createCapture(d) {
 
   async function resolve(mateId, sourceId) {
     if (platform === "darwin" && permission() === "denied") return { error: fail("permission") };
+    const pref = sourceId ? { id: sourceId, kind: kindOf(sourceId) } : getChoice(mateId);
+    // (the windows only for a chosen window — the screens always: the fallback is the primary one)
+    const windows = !!pref && pref.id !== ALL_SCREENS && (pref.kind || kindOf(pref.id)) === "window";
     let list;
     try {
-      list = await getSources(["screen", "window"], { width: 1, height: 1 });
+      list = await getSources(windows ? ["screen", "window"] : ["screen"], NO_THUMBNAILS);
     } catch (e) {
       return { error: fail(wayland ? "empty" : "error", String((e && e.message) || e)) };
     }
     if (!list || !list.length) return { error: fail(wayland ? "empty" : platform === "darwin" ? "permission" : "empty") };
-    const pref = sourceId ? { id: sourceId, kind: kindOf(sourceId) } : getChoice(mateId);
     if (pref && pref.id === ALL_SCREENS) {
       let displays = [];
       try {
