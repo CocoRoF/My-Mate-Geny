@@ -20,6 +20,8 @@ const WHY: Record<string, MsgKey> = {
   streak: "mateSettings.relWhyStreak",
   streak_week: "mateSettings.relWhyStreakWeek",
   warm: "mateSettings.relWhyWarm",
+  smiled: "mateSettings.relWhySmiled",
+  gift: "mateSettings.relWhyGift",
   memory: "mateSettings.relWhyMemory",
   rude: "mateSettings.relWhyRude",
   hostile: "mateSettings.relWhyHostile",
@@ -36,6 +38,8 @@ const WHY: Record<string, MsgKey> = {
 export function whyText(t: TFunction, why: string): string {
   const quiet = /^quiet_(\d+)$/.exec(why);
   if (quiet) return t("mateSettings.relWhyQuiet", { days: Number(quiet[1]) });
+  const anniversary = /^anniversary_(\d+)$/.exec(why); // (talking on their 7th, 30th … day together)
+  if (anniversary) return t("mateSettings.relWhyAnniversary", { days: Number(anniversary[1]) });
   if (why.startsWith("timezone ")) return t("mateSettings.relWhyTimezone"); // (the days counted again in the user's zone)
   if (why.startsWith("hostile_")) return t(HOSTILE[why.slice(8)] ?? WHY.hostile);
   return t(WHY[why] ?? "mateSettings.relWhyOther");

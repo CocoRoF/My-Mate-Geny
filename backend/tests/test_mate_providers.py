@@ -222,7 +222,7 @@ def test_model_listings(client, http):
     doc = client.get("/api/mates/models?engine=elevenlabs&kind=tts").json()
     assert [m["id"] for m in doc["models"]] == ["eleven_multilingual_v2", "eleven_flash_v2_5"]
     assert doc["models"][0]["languages"] == ["ko", "en"] and doc["models"][1]["description"] == "fast"
-    assert doc["default"] == "eleven_multilingual_v2"
+    assert doc["default"] == "eleven_v4_turbo"  # (Eleven v4 Turbo, whatever the account lists)
     assert http.calls[-1]["headers"]["xi-api-key"] == "xi-2"
     client.get("/api/mates/models?engine=elevenlabs&kind=tts")
     assert len(http.calls) == 1  # cached

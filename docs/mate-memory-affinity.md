@@ -245,6 +245,17 @@ Jaccard on tokens:
 - 0.55–0.85: save, and return the similar ones (`similar: [...]` in the API, a hint in the tool
   result).
 
+**Habits** (`app/mate/consolidation.py`, the extractor's `habits`): what the user keeps doing or coming back to — the games,
+sites and apps she keeps seeing on their shared screen, things they regularly do, topics they often talk about ("often plays
+League of Legends", "often talks about work"). The extractor gets each turn that carried their screen marked
+`"note": "[the user shared their screen]"` (never the picture), her reply right after a turn (`saw_screen`: what she saw there,
+the only thing a quote of hers is evidence of), and before the window her replies to earlier shared screens and earlier
+messages about the same thing (`earlier`, other days, the last 60). A habit is kept only with sightings on two different days
+or as a confirmation of one she knows (`existing_id`; known habits are always offered): its words may be enriched, its
+sightings add up (evidence `observed`, carried across revisions), and its importance follows the days it was seen on (2 → 3,
+4 → 4, 8 → 5; from 4 it is in the core). A one-off glimpse stays a glimpse; a habit that doesn't hold up is left out while the
+rest of the batch stands. In the prompt it reads `(kind, habit)`, and she may bring it up in passing.
+
 **User edits** (Memory tab): add (with kind / importance / due / pin), edit text inline, change
 kind/importance/due, pin/unpin, mark done, archive, delete, bulk delete/archive.
 
@@ -372,7 +383,7 @@ Table `mate_relation` (one row per mate, deleted with it):
 | `affinity` REAL 0–100 | warmth now |
 | `started_at`, `turns`, `active_days`, `last_active_day`, `streak_days`, `memories` | **earned** counters (never decrease) |
 | `settled_day` | the last *finished* local day already settled |
-| `state` JSON | today: `{day, turns, talked, lively, warm, memory, hostile, gained}`; `talk_days` (last 30); `awaiting` (dormant, for future proactive messages) |
+| `state` JSON | today: `{day, turns, talked, lively (how many of the 10th / 25th turns), warm, smiled, gift, memory, hostile, gained}`; `talk_days` (last 30); `gifts` (when, last 200); `awaiting` (dormant, for future proactive messages) |
 | `mood` JSON | `{valence −1..1, energy 0..1, label, concern_until, updated_at}` |
 | `stage`, `stage_changed_at`, `milestones` JSON | stage with hysteresis; milestones (stage ups, 7/30/100/365 days, first memory) are never deleted |
 | `log` JSON | last 200 changes `{at, d, why, v}` |
@@ -410,10 +421,13 @@ while"). Stage ups add a milestone; stage downs are only a change of state.
 
 | Event | Δ | When / cap |
 |---|---|---|
-| Talked today | +6 | the day's first user turn (credited when the turn ends) |
-| Lively day | +3 | at the day's 12th user turn, once a day |
+| Talked today | +2 | the day's first user turn (credited when the turn ends): showing up alone is worth little |
+| Lively day | +2.5 | at the day's 10th and again at its 25th user turn (a conversation that keeps going) |
 | Streak | +1 | first turn of a day that follows a talk day (streak ≥ 2); +2 more on each 7th day |
-| Warm exchange | +0.5 | user cue positive (고마워, 감사, 좋아, 최고, ㅋㅋ/ㅎㅎ, thanks, great, love it…) **or** the reply carries `joy/laugh/smile/shy` and the user cue isn't negative; cap +2/day |
+| Warm word | +0.5 | user cue positive (고마워, 감사, 좋아, 최고, ㅋㅋ/ㅎㅎ, thanks, great, love it…); cap +2/day |
+| She smiled | +0.5 | her reply carries `joy/laugh/smile/shy` and the user cue isn't negative (`smiled`); cap +2/day |
+| A gift | +2 | something they sent her (life `give`, `credit_gift`), cap +4/day; its time is kept in `gifts`, since no message records it, so a recompute counts it again |
+| Anniversary | +3 | talking on the 7th, 30th, 100th or 365th day together (`anniversary_<n>`), on the day itself |
 | New memory | +1 | per memory actually added (merges don't count), cap +3/day |
 | Rude to the mate | −1 | insult/hostility lexicon aimed at her (닥쳐, 꺼져, 멍청, shut up, stupid, useless…); cap −3/day. **Sadness or venting never costs anything**: it sets mood `concerned` instead |
 | Done to her | −5 | `affinity.hostile`, aimed at her (acted out "(…)"/"*…*", said to "you" or her name): hitting her, forcing something on her against her will (her clothes, her body, grabbing, dragging, holding her down, making her), threats, putting her down ("여자가 왜 말대꾸야", 삼일한); cap −20/day (logged as `hostile_<kind>`: violence, coercion, threat, demeaning), and that turn earns nothing. Only the words' guess: her reply has the last word (shown calm, `calm_reply`, it costs nothing). Venting about someone, a friend's trouble, a game, everyday words: nothing |
@@ -478,6 +492,15 @@ the tone): feelings now change how she talks, what she decides and what her face
 - **What she has on**: an outfit's `feel` makes that emotion climb for as long as it is on (towards 0.95, half-way in 25 minutes),
   whichever way it got on, from a start that closeness eases, and rises in it are stronger. Only 크롭탑 has one: `{shy: 0.6}`. Taking it
   off, the feeling starts fading from where it was (`was_outfit`).
+- **Her off day** ("그날"; only a mate whose `persona.gender` is `female`; no setting, nothing stored, nothing shown but how she
+  is): the first at some moment in the 5 days after they first met (the relationship's `started_at`, else her `created_at`), each
+  next one 21–28 days after the last, drawn from her id so every look sees the same days; 2 days long. Day 1 puts a floor under
+  angry from 0.90 and under sleepy from 0.70, day 2 under angry from 0.70 and sleepy from 0.70; each eases off slowly (half of
+  what is above 0.60 every 16 h) and never below 0.60 (`OFF_DAY_*`, reason `off_day`). Only floors: everything that moves her
+  starts from where her feelings are of themselves (`levels(off=False)`), so the off day dulls nothing (`ANGRY_DULLS`), carries
+  into nothing and anything else she feels rises over it. She is told she is irritable and drowsy today for no reason she could
+  name and that it isn't about them (`OUT_OF_SORTS`) — never why; no hurt-by-them line, no refusing to answer, no outfit
+  leaning, nothing on the relationship. The panel calls it "Just an off day" / "왠지 기분이 안 좋은 날".
 - **How it comes out** (`conduct`): the two strongest give the line "How it comes out now" in her `<context>`: angry and strong is
   letting it out — telling them heatedly what they did and that it isn't okay, raising her voice — or going cold and curt, whichever
   is truer to her then; angry from hunger or stress is crankiness, not at them (`CRANKY`); sad and strong shows (upset, her voice

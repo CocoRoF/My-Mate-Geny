@@ -79,7 +79,8 @@ TOOLS = [
     {"name": "update_mate_draft",
      "description": "Mate Create studio: write the settings of the mate on the right of the user's screen (merged "
                     "field by field, checked; the user sees each field you filled highlighted and can edit or undo "
-                    "it). name (a first name, at most 40 characters); persona = who she is, never how she talks "
+                    "it). name (a first name, at most 40 characters); gender (female|male: who the character is — "
+                    "write it once you know; nothing shows it, the app uses it); persona = who she is, never how she talks "
                     "{description (role and relationship to the user, background, interests — second person 'You are "
                     "…'), personality, greeting (her first line, in the reply language), instructions, language "
                     "(ko|en|ja|zh|es|fr|de|it|pt|vi)}; prefs = how she talks (her conversation style) {user_name, "
@@ -91,6 +92,7 @@ TOOLS = [
                     "avatar. Returns what was written and what the mate still needs before the user can create her.",
      "inputSchema": {"type": "object", "properties": {"fields": {"type": "object", "properties": {
          "name": {"type": "string"},
+         "gender": {"type": "string", "enum": ["female", "male", ""]},
          "persona": {"type": "object", "properties": {k: {"type": "string"} for k in (
              "description", "personality", "greeting", "instructions", "language")}},
          "prefs": {"type": "object", "properties": {

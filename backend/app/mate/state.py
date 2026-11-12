@@ -10,11 +10,14 @@ would.
 What she has on can be part of it: an outfit's ``feel`` ({emotion: strength}) keeps that emotion climbing for as long as she
 has it on, and rises in it are stronger. Her crop top does that to shy, however she came to be in it.
 
+So can her body: a woman has her off day now and then (``off_day``), irritable and drowsy for no reason she could name.
+
 Pure functions over one JSON document (``new()``); no I/O. ``who`` is everything else they read about her (``who()``).
 """
 
 from __future__ import annotations
 
+import random
 import re
 from datetime import datetime, timedelta
 from typing import Any
@@ -64,6 +67,12 @@ CONDUCT = {
 #: angry because of a need (hungry, stressed), not at them: it shows in her temper
 CRANKY = ((0.45, "You are cranky, and not about them: short-tempered and grumbly; you may say why."),
           (SHOWN_FROM, "You are a bit cranky."))
+#: angry on her off day: a mood she can't put a reason to, and not about them
+OUT_OF_SORTS = ((0.7, ("You are irritable today for no reason you could name, and it isn't about them: short-tempered and "
+                       "grumbly, easily put out by little things. You may say you're just in a mood today; don't blame them "
+                       "for it.")),
+                (0.45, "You are a bit grumpy and short today, for no clear reason; it isn't about them."),
+                (SHOWN_FROM, "You are a little out of sorts today."))
 #: sad because of what they did: she may say so
 HURT_BY_THEM = (0.45, "It was them who hurt you, and you may tell them so.")
 TOLD_EVERY_TURN_FROM = 0.7
@@ -73,6 +82,14 @@ FROM_NEEDS = {"sleepy": (("sleep", 0.35, 1.35, "tired"),), "angry": (("hunger", 
               "worried": (("stress", 0.45, 1.33, "stressed"),)}
 ASLEEP = 0.85
 GIFT = 0.3
+# her off day (a woman's: ``who(gender="female")``), as it comes — no setting, nothing stored, nothing to see but how she is:
+# the first some moment in the 5 days after they first met, each next one 21–28 days after the last (real time; drawn from
+# her id, so every look sees the same days); 2 days long. Floors under angry and sleepy — {emotion: (day 1, day 2)} as
+# (where it starts, how low it goes) — easing off slowly (half of what is above the low every OFF_DAY_EASES_H hours). Only
+# floors: whatever else she feels rises over them as ever, they dull nothing, and nothing in them is at the user.
+OFF_DAY_FIRST, OFF_DAY_EVERY, OFF_DAY_LONG = timedelta(days=5), (timedelta(days=21), timedelta(days=28)), timedelta(days=2)
+OFF_DAY_FLOORS = {"angry": ((0.90, 0.60), (0.70, 0.60)), "sleepy": ((0.70, 0.60), (0.70, 0.60))}
+OFF_DAY_EASES_H = 16.0
 
 #: how each bundled mate usually is: ``base``: where she settles; ``rise``: how easily it moves; ``loves``: what lights her up
 TEMPERAMENTS: dict[str, dict[str, Any]] = {
@@ -136,6 +153,7 @@ _WHY_FOR_HER = {
     "nature": "it's how you are", "user_wore": "they put it on you", "gift": "they sent you something", "asleep": "you were asleep", "tired": "you're tired",
     "hungry": "you're hungry", "stressed": "it has been a stressful stretch", "bored": "you've had nothing fun to do for a while",
     "wants_affection": "you could do with some warmth and attention",
+    "off_day": "it's just one of those days: you're irritable and drowsy, for no reason you could name",
 }
 
 
@@ -162,13 +180,15 @@ def normalized(doc: Any) -> dict[str, Any]:
 
 
 def who(*, closeness: float = 0.33, sensitivity: float = 1.0, builtin: str | None = None, away: bool = False,
-        outfit: dict[str, Any] | None = None, life: dict[str, Any] | None = None, name: str = "") -> dict[str, Any]:
+        outfit: dict[str, Any] | None = None, life: dict[str, Any] | None = None, name: str = "", gender: str = "",
+        met: Any = None, seed: str = "") -> dict[str, Any]:
     """``closeness``: 0 – 1. ``away``: the relationship is paused, so silence means nothing. ``outfit``: what she has on,
     {id, name, feel, since}; None in her usual clothes or one that does nothing to her. ``life``: her own day when she has one
-    (life/sim.py ``for_state``): {needs, feel, doing, asleep}."""
+    (life/sim.py ``for_state``): {needs, feel, doing, asleep}. ``gender``: her persona's; ``met``: when they first met (ISO);
+    ``seed``: her id — with these, her off days (``off_day``)."""
     return {"closeness": max(0.0, min(1.0, float(closeness))), "sensitivity": float(sensitivity), "away": bool(away),
             "temperament": TEMPERAMENTS.get(builtin or "", {}), "outfit": outfit if (outfit or {}).get("feel") else None, "life": life,
-            "name": name}
+            "name": name, "gender": gender or "", "met": A._iso(met) if isinstance(met, datetime) else met, "seed": seed or ""}
 
 
 def clean_feel(raw: Any) -> dict[str, float]:
@@ -237,9 +257,34 @@ def _lived(emotion: str, w: dict[str, Any]) -> tuple[float, dict[str, Any]]:
     return best, why
 
 
-def levels(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> dict[str, dict[str, Any]]:
-    """{emotion: {v: 0 – 1, why}} as of ``now``."""
+def _off_day(w: dict[str, Any], now: datetime) -> datetime | None:
+    """When the off day she is in at ``now`` began, or None (not a woman, not met yet, not now)."""
+    met = A._t(w.get("met"))
+    if w.get("gender") != "female" or not w.get("seed") or met is None or now < met:
+        return None
+    draw = random.Random(f"off_day:{w['seed']}")  # (str seeds are hashed the same in every process)
+    start = met + OFF_DAY_FIRST * draw.random()
+    lo, hi = OFF_DAY_EVERY
+    while start + OFF_DAY_LONG <= now:
+        start += lo + (hi - lo) * draw.random()
+    return start if start <= now else None
+
+
+def off_day(emotion: str, start: datetime | None, now: datetime) -> float:
+    """Where her off day (begun at ``start``) keeps this emotion now: 0 when it doesn't."""
+    if start is None or emotion not in OFF_DAY_FLOORS:
+        return 0.0
+    hours = max(0.0, (now - start).total_seconds() / 3600)
+    day = min(1, int(hours // 24))
+    top, low = OFF_DAY_FLOORS[emotion][day]
+    return low + (top - low) * 0.5 ** ((hours - 24 * day) / OFF_DAY_EASES_H)
+
+
+def levels(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any, *, off: bool = True) -> dict[str, dict[str, Any]]:
+    """{emotion: {v: 0 – 1, why}} as of ``now``. ``off``: with her off day's floors — what she feels; without, where her
+    feelings are of themselves (what moves them starts from there, so the off day neither dulls nor carries over into them)."""
     out = {}
+    started = _off_day(w, now) if off else None
     for e in EMOTIONS:
         base = _base(e, w)
         v, why = base, {"code": "nature"}
@@ -260,6 +305,9 @@ def levels(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> di
         worn = _worn(e, w, now)
         if worn > v:
             v, why = worn, {"code": "outfit", "name": w["outfit"].get("name") or ""}
+        mood = off_day(e, started, now)
+        if mood > v:
+            v, why = mood, {"code": "off_day"}
         out[e] = {"v": round(v, 3), "why": why}
     return out
 
@@ -337,7 +385,9 @@ def conduct(s: dict[str, Any]) -> str:
         if t["emotion"] == "angry" and t["v"] >= SILENT_FROM and _at_them(why):
             lines.append(REFUSE)
             continue
-        table = CRANKY if t["emotion"] == "angry" and (why or {}).get("code") in _FROM_NEED else CONDUCT.get(t["emotion"], ())
+        code = (why or {}).get("code")
+        table = (CRANKY if code in _FROM_NEED else OUT_OF_SORTS if code == "off_day" else CONDUCT["angry"]) \
+            if t["emotion"] == "angry" else CONDUCT.get(t["emotion"], ())
         how = next((text for floor, text in table if t["v"] >= floor), "")
         if t["emotion"] == "sad" and _at_them(why) and t["v"] >= HURT_BY_THEM[0]:
             how = f"{how} {HURT_BY_THEM[1]}".strip()
@@ -384,8 +434,9 @@ def asks_lately(doc: dict[str, Any], now: datetime) -> int:
 
 
 def leaning(doc: dict[str, Any], w: dict[str, Any], feel: dict[str, float] | None, now: datetime, tz: Any) -> str:
-    """Whether she feels like putting on an outfit: glad | maybe | rather_not. A leaning, not a rule: she decides."""
-    lv = {e: x["v"] for e, x in levels(doc, w, now, tz).items()}
+    """Whether she feels like putting on an outfit: glad | maybe | rather_not. A leaning, not a rule: she decides. (Her off
+    day is no reason to turn them down.)"""
+    lv = {e: x["v"] for e, x in levels(doc, w, now, tz, off=False).items()}
     x = 0.55 + 0.35 * lv["happy"] + 0.25 * lv["excited"] - 0.8 * lv["angry"] - 0.5 * lv["sad"] - 0.3 * lv["lonely"] \
         - 0.35 * lv["worried"] - 0.25 * lv["sleepy"] + min(ASK_LEAN_MAX, ASK_LEAN * max(0, asks_lately(doc, now) - 1))
     exposure = float((feel or {}).get("shy") or 0.0)
@@ -416,7 +467,7 @@ def _give_way(doc: dict[str, Any], w: dict[str, Any], emotion: str, rose: float,
     if rose <= 0:
         return
     for other, share in GIVES_WAY.get(emotion, {}).items():
-        was = levels(doc, w, now, tz)[other]
+        was = levels(doc, w, now, tz, off=False)[other]
         if was["v"] > _base(other, w):
             _set(doc, w, other, max(_base(other, w), was["v"] - share * rose), was["why"], now, tz, quiet=True)
 
@@ -424,14 +475,14 @@ def _give_way(doc: dict[str, Any], w: dict[str, Any], emotion: str, rose: float,
 def _rise(doc: dict[str, Any], w: dict[str, Any], emotion: str, amount: float, why: dict[str, Any], now: datetime, tz: Any) -> None:
     worn = float(((w["outfit"] or {}).get("feel") or {}).get(emotion) or 0.0)
     gain = amount * w["sensitivity"] * float((w["temperament"].get("rise") or {}).get(emotion) or 1.0) * (1 + worn)
-    lv = levels(doc, w, now, tz)
+    lv = levels(doc, w, now, tz, off=False)
     gain *= 1 - ANGRY_DULLS.get(emotion, 0.0) * lv["angry"]["v"]
     _set(doc, w, emotion, lv[emotion]["v"] + gain, why, now, tz)
     _give_way(doc, w, emotion, gain, now, tz)
 
 
 def _fall(doc: dict[str, Any], w: dict[str, Any], emotion: str, amount: float, why: dict[str, Any], now: datetime, tz: Any) -> None:
-    _set(doc, w, emotion, max(_base(emotion, w), levels(doc, w, now, tz)[emotion]["v"] - amount), why, now, tz)
+    _set(doc, w, emotion, max(_base(emotion, w), levels(doc, w, now, tz, off=False)[emotion]["v"] - amount), why, now, tz)
 
 
 def _they_are_back(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> None:
@@ -464,7 +515,7 @@ def hear(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, now: d
         _rise(doc, w, "lonely", CURT, {"code": "curt"}, now, tz)
     if c["hostile"]:
         n = _lately(doc.get("hostile"), now, HOSTILE_WINDOW) + 1
-        lv = levels(doc, w, now, tz)
+        lv = levels(doc, w, now, tz, off=False)
         # (the words' guess: what she shows in her reply has the last word, ``reply``)
         doc["hostile"] = {"n": n, "at": A._iso(now), "message": message, "angry": lv["angry"]["v"], "sad": lv["sad"]["v"],
                           "happy": lv["happy"]["v"]}
@@ -488,7 +539,7 @@ def hear(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, now: d
             _rise(doc, w, "angry", DISMISSED_ANGRY, {"code": "dismissed"}, now, tz)
         if c["warm"]:
             _rise(doc, w, "happy", WARM, {"code": "warm"}, now, tz)
-            if levels(doc, w, now, tz)["angry"]["v"] > _base("angry", w):
+            if levels(doc, w, now, tz, off=False)["angry"]["v"] > _base("angry", w):
                 _fall(doc, w, "angry", WARM_CALMS, {"code": "warm"}, now, tz)
         if _LOVE.search(text):
             _rise(doc, w, "happy", LOVE, {"code": "love"}, now, tz)
@@ -526,7 +577,7 @@ def reply(doc: dict[str, Any], w: dict[str, Any], text: str, heard_text: str, no
         n = int(done.get("n") or 1) - 1
         doc["hostile"] = {"n": n, "at": done.get("at")} if n > 0 else None
     for emotion, strength in shown.items():
-        was = levels(doc, w, now, tz)[emotion]["v"]
+        was = levels(doc, w, now, tz, off=False)[emotion]["v"]
         if strength > was:
             pulled = (strength - was) * SHOWN_PULL * w["sensitivity"]
             _set(doc, w, emotion, was + pulled, why, now, tz)
@@ -572,7 +623,7 @@ def gifted(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> No
 
 def report(doc: dict[str, Any], w: dict[str, Any], emotion: str, strength: str, reason: str, now: datetime, tz: Any) -> None:
     """She says how she feels (the ``feel`` tool), and why."""
-    was = levels(doc, w, now, tz)[emotion]["v"]
+    was = levels(doc, w, now, tz, off=False)[emotion]["v"]
     _set(doc, w, emotion, STRENGTHS[strength], {"text": " ".join(str(reason).split())[:REASON_CHARS]}, now, tz)
     _give_way(doc, w, emotion, STRENGTHS[strength] - was, now, tz)
 
@@ -582,7 +633,7 @@ def wore(doc: dict[str, Any], before: dict[str, Any], after: dict[str, Any], rea
     when she did it herself; None when the user did it in the app."""
     was = before["outfit"]
     if was:
-        lv = levels(doc, before, now, tz)
+        lv = levels(doc, before, now, tz, off=False)
         for e in was["feel"]:
             doc["feelings"][e] = {"v": lv[e]["v"], "at": A._iso(now), "why": {"code": "was_outfit", "name": was.get("name") or ""}}
     doc["asks"] = None

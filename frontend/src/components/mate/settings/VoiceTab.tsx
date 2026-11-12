@@ -567,7 +567,7 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
                 sub: [m.description?.split(/(?<=\.)\s/)[0], m.languages?.length ? t("mateSettings.voiceNLanguages", { count: m.languages.length }) : ""].filter(Boolean).join(" · "),
                 keywords: (m.languages ?? []).join(" "),
               }))}
-              noneLabel={t("mateSettings.voiceDefaultX", { x: models.data?.models.find((m) => m.id === models.data?.default)?.name || "Multilingual v2" })}
+              noneLabel={t("mateSettings.voiceDefaultX", { x: models.data?.models.find((m) => m.id === models.data?.default)?.name || "Eleven v4 Turbo" })}
               loading={models.busy}
               testId="mate-tts-model"
             />

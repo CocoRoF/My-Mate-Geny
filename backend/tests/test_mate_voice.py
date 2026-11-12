@@ -100,7 +100,7 @@ def test_elevenlabs_tts_request(client, http):
     assert r.status_code == 200
     call = http.calls[-1]
     assert call["url"] == "https://api.elevenlabs.io/v1/text-to-speech/v123?output_format=mp3_44100_128"
-    assert call["headers"]["xi-api-key"] == "xi-key" and call["json"]["model_id"] == "eleven_multilingual_v2"
+    assert call["headers"]["xi-api-key"] == "xi-key" and call["json"]["model_id"] == "eleven_v4_turbo"
     http.on(lambda m, u: "/v1/voices" in u, netio.Response(200, json.dumps({"voices": [
         {"voice_id": "v1", "name": "Rachel", "labels": {"accent": "american"}, "preview_url": "https://x/p.mp3"}]}).encode(),
         {"content-type": "application/json"}))

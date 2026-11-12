@@ -64,23 +64,75 @@ def test_a_talk_late_in_the_day_is_never_lost_to_settling():
     talk(r, day(0, 23, 59))
     A.advance(r, day(1, 0, 1), TZ)
     A.advance(r, day(1, 0, 16), TZ)
-    assert whys(r) == ["talk"] and r["affinity"] == 6
+    assert whys(r) == ["talk"] and r["affinity"] == A.TALK
 
 
-def test_daily_gains_lively_warm_cap_and_streaks():
+def test_showing_up_is_worth_little_and_what_happens_between_them_more():
+    """A hello a day barely moves it; a conversation that keeps going, her laughing with them, a gift do."""
+    hello = A.new()
+    talk(hello, day(0))
+    for i in range(3):
+        talk(hello, day(0, 13, i), "ok")
+    assert hello["affinity"] == A.TALK == 2.0  # (the turns after the first: nothing)
     r = A.new()
-    for i in range(14):
-        talk(r, day(0, 9, i), "고마워!" if i < 6 else "ok")
-    assert whys(r).count("talk") == 1 and whys(r).count("lively") == 1
-    assert sum(e["d"] for e in r["log"] if e["why"] == "warm") == A.WARM_CAP  # four warm turns, capped
-    assert r["affinity"] == 6 + 3 + 2
+    for i in range(26):
+        talk(r, day(0, 9, i), "고마워!" if i < 6 else "ok", "[laugh] 하하" if i < 3 else "")
+    assert whys(r).count("talk") == 1 and whys(r).count("lively") == 2  # (the 10th and the 25th turn)
+    assert sum(e["d"] for e in r["log"] if e["why"] == "warm") == A.WARM_CAP  # six warm turns, capped
+    assert sum(e["d"] for e in r["log"] if e["why"] == "smiled") == 3 * A.SMILED  # she laughed three times
+    assert r["affinity"] == A.TALK + 2 * A.LIVELY + A.WARM_CAP + 3 * A.SMILED == 10.5
     s = A.new()
     for n in range(7):
         talk(s, day(n))
     assert s["streak_days"] == 7 and whys(s).count("streak") == 6 and whys(s).count("streak_week") == 1
-    assert s["affinity"] == 7 * 6 + 6 * 1 + 2
+    assert whys(s).count("anniversary_7") == 1  # (talking on their 7th day together)
+    assert s["affinity"] == 7 * A.TALK + 6 * A.STREAK + A.STREAK_WEEK + A.ANNIVERSARY
     talk(s, day(9))  # a gap: the streak starts over
     assert s["streak_days"] == 1
+
+
+def test_her_smiles_count_only_up_to_a_point_and_never_after_something_done_to_her():
+    r = A.new()
+    for i in range(8):
+        talk(r, day(0, 9, i), "응", "[smile] 그렇구나")
+    assert sum(e["d"] for e in r["log"] if e["why"] == "smiled") == A.SMILED_CAP
+    s = A.new()
+    talk(s, day(0))
+    talk(s, day(0, 13), "닥쳐", "[smile] 네?")  # (a rude word: her smile doesn't make it a good turn)
+    assert "smiled" not in whys(s)
+
+
+def test_gifts_count_capped_per_day_and_a_recompute_keeps_them():
+    r = A.new()
+    talk(r, day(0))
+    for i in range(3):
+        A.advance(r, day(0, 15, i), TZ)
+        A.credit_gift(r, day(0, 15, i), TZ)
+    assert sum(e["d"] for e in r["log"] if e["why"] == "gift") == A.GIFT_CAP and len(r["gifts"]) == 3
+    A.advance(r, day(1, 9), TZ)
+    A.credit_gift(r, day(1, 9), TZ)  # (a new day: counted again, before any talk that day)
+    assert [e["d"] for e in r["log"] if e["why"] == "gift"][-1] == A.GIFT
+    events = [(day(0).astimezone(timezone.utc), "turn", ("hello", ""))]
+    events += [(A._t(g), "gift", None) for g in r["gifts"]]
+    again = A.replay(events, day(2), TZ)
+    assert again["affinity"] == r["affinity"] and again["gifts"] == r["gifts"]
+    paused = A.new()
+    talk(paused, day(0))
+    A.set_switch(paused, "paused", True, day(0, 13), TZ)
+    A.credit_gift(paused, day(0, 14), TZ)
+    assert "gift" not in whys(paused) and paused["gifts"] == []  # (paused: nothing moves, nothing kept)
+
+
+def test_anniversaries_count_on_the_day_itself():
+    r = A.new()
+    talk(r, day(0))
+    talk(r, day(29))  # the 30th day together
+    talk(r, day(29, 18))
+    assert whys(r).count("anniversary_30") == 1 and [e["d"] for e in r["log"] if e["why"] == "anniversary_30"] == [3.0]
+    late = A.new()
+    talk(late, day(0))
+    talk(late, day(7))  # the day after the 7th: not the day
+    assert not any(w.startswith("anniversary") for w in whys(late))
 
 
 def test_the_daily_gain_cap():
@@ -89,10 +141,10 @@ def test_the_daily_gain_cap():
     A.set_value(r, 30, day(0), TZ)
     for _ in range(5):
         A.credit_memory(r, day(0, 13), TZ)
-    for i in range(14):
-        talk(r, day(0, 14, i), "thanks, great!")
-    gained = sum(e["d"] for e in r["log"] if e["why"] in ("talk", "lively", "warm", "memory", "streak"))
-    assert gained == A.GAIN_CAP  # 6 + 3 (memories) + 2 (warm) + 3 (lively) = 14 → 12
+    for i in range(26):
+        talk(r, day(0, 14, i), "thanks, great!", "[joy] :)")
+    gained = sum(e["d"] for e in r["log"] if e["why"] in ("talk", "lively", "warm", "smiled", "memory", "streak"))
+    assert gained == A.GAIN_CAP  # 2 + 3 (memories) + 2 (warm) + 2 (her smiles) + 5 (lively) = 14 → 12
 
 
 def test_rudeness_costs_a_little_sadness_never():
@@ -119,7 +171,7 @@ def test_pause_off_and_sensitivity():
     assert r["affinity"] == 60 and r["turns"] == 1  # nothing moved, nothing counted
     A.set_switch(r, "paused", False, day(20, 13), TZ)
     talk(r, day(21))
-    assert r["affinity"] == 66  # (the days of the pause cost nothing afterwards either)
+    assert r["affinity"] == 60 + A.TALK  # (the days of the pause cost nothing afterwards either)
     off = A.new()
     off["enabled"] = False
     talk(off, day(0))
@@ -129,7 +181,7 @@ def test_pause_off_and_sensitivity():
     talk(half, day(0))
     A.set_value(half, 80, day(0), TZ)
     A.advance(half, day(5), TZ)
-    assert [e["d"] for e in half["log"] if e["why"] == "talk"] == [3.0]
+    assert [e["d"] for e in half["log"] if e["why"] == "talk"] == [A.TALK / 2]
     assert [e["d"] for e in half["log"] if e["why"].startswith("quiet")] == [-2.0]
 
 
@@ -240,7 +292,7 @@ def test_turns_and_memories_move_it_and_the_prompt_gets_lines_only_on_change(db)
     mates._relation_turn(m["id"], {"input": "<delegation_result>", "text": "", "meta": {
         "internal": True, "kind": "delegation_result", "delegations": [{"status": "ok"}]}})
     v = mates.relation_view(m["id"])
-    assert v["stats"]["turns"] == 1 and v["affinity"] == 6.5
+    assert v["stats"]["turns"] == 1 and v["affinity"] == A.TALK + A.WARM + A.SMILED  # (her [joy]: she smiled)
     store.add_memory(m["id"], "고양이 이름은 나비", kind="fact")
     assert mates.relation_view(m["id"])["stats"]["memories"] == 1
     req2, _ = _engine(mates, m["id"], cli="c1")
@@ -264,6 +316,19 @@ def test_turning_it_off_removes_the_guide_and_says_so(db):
     assert mates.relation_view(m["id"])["stats"]["turns"] == 0  # off: nothing tracked
     assert "relationship" not in base_prompt("R", {}, None).lower()
     assert prompt_key("R", {}, 0, None, relation=True) != prompt_key("R", {}, 0, None)
+
+
+def test_a_gift_she_gets_counts_and_a_recount_keeps_it(db, monkeypatch):
+    svc, store, mates = _svc(db)
+    m = store.create(name="Gift")
+    monkeypatch.setattr(mates.life, "give", lambda mate_id, item: {"code": "ok", "item": {"id": item}, "asleep": True})
+    monkeypatch.setattr(mates.life, "note", lambda mate_id, text: None)
+    monkeypatch.setattr(mates.life, "view", lambda mate_id: {"enabled": True})
+    mates.life_gift(m["id"], "letter")
+    v = mates.relation_view(m["id"])
+    assert v["log"][0]["why"] == "gift" and v["affinity"] == A.GIFT
+    again = mates.relation_reset(m["id"], "recompute")  # (no message says she got it: the relationship kept when)
+    assert again["affinity"] == A.GIFT and any(e["why"] == "gift" for e in again["log"])
 
 
 @pytest.fixture

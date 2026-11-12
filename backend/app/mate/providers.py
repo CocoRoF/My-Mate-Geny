@@ -45,6 +45,8 @@ ELEVEN_REALTIME_MODELS = [
      "description": "Live transcript while you speak (~150 ms), 90+ languages"},
 ]
 ELEVEN_BATCH_STT = "scribe_v2"
+# the TTS model a mate speaks with when her voice names none (Eleven v4 Turbo)
+ELEVEN_DEFAULT_MODEL = "eleven_v4_turbo"
 
 # Fixed OpenAI catalogues (no listing API tells TTS models / voices apart).
 OPENAI_TTS_MODELS = [
@@ -340,7 +342,7 @@ class Providers:
                         for m in items if isinstance(m, dict) and m.get("model_id")
                         and m.get("can_do_text_to_speech", True)] if isinstance(items, list) else []
             out["models"] = await self._cached_list("eleven-models:" + key[-6:], fetch, ttl=600)
-            out["default"] = "eleven_multilingual_v2"
+            out["default"] = ELEVEN_DEFAULT_MODEL
             return out
         if engine == "omnivoice":
             url = self.value("omnivoice_url").rstrip("/")

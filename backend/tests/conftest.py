@@ -52,6 +52,8 @@ def _whatever_time_it_really_is(monkeypatch):
     from app.mate import state
 
     monkeypatch.setattr(state, "_late", lambda now, tz: 0.0)
+    # (nor whether a bundled woman's off day happens to fall on it: test_mate_off_day.py is about that)
+    monkeypatch.setattr(state, "_off_day", lambda w, now: None)
     # (nor what she happens to be doing at that hour: a test about her day turns it on)
     from app.mate.life import profile
 

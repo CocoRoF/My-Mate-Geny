@@ -411,7 +411,8 @@ class AvatarService:
         at = now_iso()
         filled = st.setdefault("filled", {})
         for k in changed:
-            filled[k] = {"at": at, "prev": before.get(k)}
+            if k not in ST.HIDDEN:  # (what the right doesn't show never glows there)
+                filled[k] = {"at": at, "prev": before.get(k)}
         seen = st.setdefault("seen", {})
         for k in ST.paths_of(patch, concept):
             seen[k] = after.get(k)  # (the agent knows what it wrote)

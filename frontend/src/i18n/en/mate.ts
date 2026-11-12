@@ -84,6 +84,7 @@ export default {
   stateWhy_outfit: "she has “{name}” on",
   stateWhy_was_outfit: "she just had “{name}” on",
   stateWhy_user_wore: "you put it on her in settings",
+  stateWhy_off_day: "Just an off day",
   toolFeel: "{emotion}: {why}",
   toolFeelPassed: "No longer {emotion}: {why}",
   toolFeelPlain: "Checking how she feels",

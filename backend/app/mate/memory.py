@@ -9,8 +9,9 @@ the service builds the prompt and the per-turn context block from these.
 * **Recall**: BM25 relevance + importance + recency + use + a boost for plans
   that are due soon and fresh short-term context. No lexical match, no recall —
   except plans due within 48 h, which are always offered.
-* **Core**: pinned + profile + important preferences, always in the system
-  prompt; while a mate has few memories all of them are core (as before).
+* **Core**: pinned + profile + important preferences + habits seen often (what
+  the user keeps doing or talking about), always in the system prompt; while a
+  mate has few memories all of them are core (as before).
 """
 
 from __future__ import annotations
@@ -178,6 +179,8 @@ def line(m: dict[str, Any]) -> str:
     tag = m.get("kind") or "fact"
     if m.get("kind") == "plan" and m.get("due_at"):
         tag += f", due {m['due_at'].replace('T', ' ')}"
+    if m.get("predicate") == "habit":  # (something they keep doing or coming back to: consolidation ``habit``)
+        tag += ", habit"
     source = m.get("evidence_type")
     provenance = f" {{source={source}; verify original}}" if source in ("legacy", "reported") else ""
     return f"[{m['id']}] ({tag}) {m['text']}{provenance}"
@@ -190,7 +193,8 @@ def core(active: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return sorted(rows, key=lambda m: (m.get("created_at") or "", m["id"]))
     pick = [m for m in rows if m.get("pinned")
             or (m.get("kind") == "profile" and int(m.get("importance") or 3) >= 3)
-            or (m.get("kind") == "preference" and int(m.get("importance") or 3) >= 4)]
+            or (m.get("kind") == "preference" and int(m.get("importance") or 3) >= 4)
+            or (m.get("predicate") == "habit" and int(m.get("importance") or 3) >= 4)]  # (seen often: she can bring it up)
     pick.sort(key=lambda m: (0 if m.get("pinned") else 1, -int(m.get("importance") or 3), m.get("updated_at") or ""),
               reverse=False)
     out, chars = [], 0

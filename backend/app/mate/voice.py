@@ -28,8 +28,8 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 from app.mate import files, netio
-from app.mate.providers import (ELEVEN_BATCH_STT, ELEVEN_REALTIME_MODELS, Providers, elevenlabs_api, openai_api,
-                                openai_voices)
+from app.mate.providers import (ELEVEN_BATCH_STT, ELEVEN_DEFAULT_MODEL, ELEVEN_REALTIME_MODELS, Providers, elevenlabs_api,
+                                openai_api, openai_voices)
 from app.mate.store import MateError, MateStore, normalize_voice
 
 log = logging.getLogger(__name__)
@@ -37,7 +37,6 @@ log = logging.getLogger(__name__)
 # API bases: app.mate.providers.openai_api() / elevenlabs_api() (settings.mate_*_base)
 OPENAI_TTS_DEFAULT = "gpt-4o-mini-tts"
 OPENAI_STT_DEFAULT = "gpt-4o-mini-transcribe"
-ELEVEN_DEFAULT_MODEL = "eleven_multilingual_v2"
 MINT_PER_MINUTE = 20      # realtime STT tokens per mate and minute (a client stuck reconnecting can't loop)
 MAX_TEXT = 4000
 MAX_AUDIO_IN = 25 * 1024 * 1024   # the OpenAI transcription limit
