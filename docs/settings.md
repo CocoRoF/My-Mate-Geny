@@ -19,9 +19,7 @@ changes** — the mate (Mate settings), the chat (its controls), the moment (the
 | | 언어 | the app's language · **time zone** (the mates' clock) · **where you are** (her weather, your public holidays: from your connection, or a city you pick) |
 | | 테마 | system / light / dark · this device only |
 | | 알림 | notifications on this device |
-| 메이트 | 메이트 | **default mate** · (this device) **reading replies aloud and the volume** · (this device) **which mate may speak first** · **Live2D runtime** · **bring back the built-in mates** · → image & voice services |
-| | 화면 공유 | (this device) asking before a capture, picture size (always a PNG) |
-| | 데스크톱 앱 | (the desktop app) her on the desktop and which mate, the mate chat window on top, reset her place and size, the quick-chat shortcut, start at login |
+| | 메이트 | (the desktop app) her on the desktop, the mate chat window on top, reset her place, the quick-chat shortcut, start at login · (this device) reading replies aloud and the volume · speaking first · screen sharing (asking first, picture size; always a PNG) · Live2D runtime · bring back the built-in mates · → image & voice services. **Who** is never asked: the mate picked in the Mate view does all of it (the built-in mate until another is picked) — there is no "default mate" and no "the desktop's mate". The Mate panel's 공통 tab shows the same. |
 | 에이전트와 서비스 | 언어모델 공급자 · 이미지·음성 서비스 · MCP · 연결 · 사용량 · 관리자 | as before; an OpenAI / Google API key in 언어모델 공급자 also serves 이미지·음성 서비스 (said there; a key of its own wins); 관리자 → 보안 links to 계정 instead of repeating its password form |
 
 ## Mate settings (메이트 설정) — her, now and then

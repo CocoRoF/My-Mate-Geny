@@ -1,8 +1,8 @@
 /**
- * Settings → 메이트 (docs/settings.md): what holds for every mate, set once — the default mate, reading replies aloud
- * and the volume on this device, which mate may speak first on this device, the Live2D runtime her avatar may need,
- * the bundled mates. Her own settings are in
- * Mate settings; the voice and transcription services in Image & voice services.
+ * Settings → 메이트, and the Mate panel's 공통 tab (the same, docs/settings.md): what holds for every mate. Who does it
+ * is never asked — the mate picked in the Mate view is the one on the desktop, who speaks and who speaks first (the
+ * built-in mate until another is picked). Here: her on this desktop (the desktop app), reading replies aloud and the
+ * volume on this device, speaking first, this device's screen sharing, the Live2D runtime, the built-in mates.
  */
 import { useEffect, useState } from "react";
 import { useMateStore } from "../../stores/mateStore";
@@ -10,49 +10,15 @@ import { patchDevicePreferences, useDevicePreferences } from "../../stores/devic
 import { openSettings } from "../../stores/uiStore";
 import { useT } from "../../i18n";
 import Icon from "../ui/Icon";
-import { ErrorLine, Field, Section, Toggle } from "../mate/settings/ui";
+import { ErrorLine, Section, Toggle } from "../mate/settings/ui";
 import { VolumeField } from "../mate/settings/VoiceTab";
 import Live2DPanel from "../mate/settings/global/Live2DPanel";
+import DesktopPanel from "../mate/settings/global/DesktopPanel";
+import DeviceCaptureSettings from "../composer/DeviceCaptureSettings";
+import { canShareScreen } from "../../mate/screenCapture";
 
 /** the characters bundled with the app (backend/app/mate/builtin) */
 const BUILTINS: Record<string, string> = { chaerin: "Chaerin" };
-
-function DefaultMate() {
-  const t = useT();
-  const mates = useMateStore((s) => s.mates);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [ok, setOk] = useState<string | null>(null);
-  const def = mates.find((m) => m.is_default) ?? mates[0];
-  const pick = async (id: string) => {
-    if (!id || id === def?.id) return;
-    setBusy(true);
-    setErr(null);
-    setOk(null);
-    try {
-      const m = await useMateStore.getState().patch(id, { is_default: true });
-      setOk(t("mateSettings.defNowDefault", { name: m.name }));
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Section title={t("mateSettings.defTitle")} hint={t("mateSettings.defHint")} testId="settings-default-mate">
-      <select className="field" value={def?.id ?? ""} disabled={busy || !mates.length} onChange={(e) => void pick(e.target.value)} aria-label={t("mateSettings.defTitle")} data-testid="mate-default-select">
-          {mates.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-              {m.builtin ? ` · ${t("mateSettings.defBuiltin")}` : ""}
-            </option>
-          ))}
-      </select>
-      <ErrorLine text={err} />
-      {ok && <p className="text-[12px] text-success">{ok}</p>}
-    </Section>
-  );
-}
 
 function DeviceSound() {
   const t = useT();
@@ -66,29 +32,19 @@ function DeviceSound() {
   );
 }
 
-/** speaking first on this device (startup, coming back, while you share): one mate, this device only */
+/** speaking first on this device (startup, coming back, while you share): the picked mate, this device only */
 function SpeakFirst() {
   const t = useT();
-  const mates = useMateStore((s) => s.mates);
-  const screen = useDevicePreferences().screen;
-  const on = !!screen.proactive_enabled;
-  const who = mates.find((m) => m.id === screen.proactive_mate) ?? mates.find((m) => m.is_default) ?? mates[0];
-  const set = (enabled: boolean, mateId = who?.id) =>
-    void patchDevicePreferences({ screen: { proactive_enabled: enabled, proactive_mate: mateId, proactive_interval: 60 } });
+  const activeId = useMateStore((s) => s.activeId);
+  const on = !!useDevicePreferences().screen.proactive_enabled;
   return (
     <Section title={t("screen.simpleReachOut")} hint={t("screen.fixedReachOutHint")} testId="mate-proactive">
-      <Toggle on={on} onChange={(x) => set(x)} label={t("settings.speakFirstOn")} testId="proactive-enabled" />
-      {on && mates.length > 1 && (
-        <Field label={t("settings.speakFirstWho")}>
-          <select className="field" value={who?.id ?? ""} onChange={(e) => set(true, e.target.value)} data-testid="proactive-mate">
-            {mates.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-      )}
+      <Toggle
+        on={on}
+        onChange={(x) => void patchDevicePreferences({ screen: { proactive_enabled: x, proactive_mate: activeId || undefined, proactive_interval: 60 } })}
+        label={t("settings.speakFirstOn")}
+        testId="proactive-enabled"
+      />
     </Section>
   );
 }
@@ -132,19 +88,19 @@ export default function MateTab() {
   }, []);
   return (
     <div className="space-y-4" data-testid="settings-mate">
-      <DefaultMate />
+      <DesktopPanel />
       <DeviceSound />
       <SpeakFirst />
+      {canShareScreen() && (
+        <div data-testid="settings-screen">
+          <DeviceCaptureSettings part="device" />
+        </div>
+      )}
       <Live2DPanel />
       <Builtins />
-      <div className="flex flex-wrap gap-2">
-        <button className="btn-ghost border border-border !py-1.5 text-[12.5px]" onClick={() => openSettings("media")} data-testid="settings-mate-services">
-          <Icon name="volume" size={13} /> {t("settings.mateServices")}
-        </button>
-        <button className="btn-ghost !py-1.5 text-[12.5px]" onClick={() => openSettings("screen")}>
-          <Icon name="monitor" size={13} /> {t("settings.secScreen")}
-        </button>
-      </div>
+      <button className="btn-ghost border border-border !py-1.5 text-[12.5px]" onClick={() => openSettings("media")} data-testid="settings-mate-services">
+        <Icon name="volume" size={13} /> {t("settings.mateServices")}
+      </button>
     </div>
   );
 }

@@ -1,7 +1,8 @@
 /**
  * The first start (docs/settings.md): 1. the language-model tools (Claude Code, Codex: install, sign in) — 2. the
- * mate: what she calls you, whether she is on the desktop (the default mate, Chaerin), reading replies aloud. Done →
- * the Mate view. (No folder or chat to start here: a chat is started from Chat when it is wanted.)
+ * mate: what she calls you, whether she is on the desktop (the picked mate: the built-in one at first), reading replies
+ * aloud. Done → the Mate view. "Later" is always there (and ×): it ends the assistant for good, like going anywhere
+ * else does (App.tsx); the sidebar's 시작 도우미 brings it back. No folder or chat to start here.
  */
 import { useT } from "../../i18n";
 import { useEffect, useState } from 'react';
@@ -26,6 +27,8 @@ export async function setupCompleted():Promise<boolean>{
   try{if(nativeSetup())return await nativeSetup().state()===true;return localStorage.getItem(SEEN_KEY)==='1'||localStorage.getItem(SETUP_KEY)==='1'||!!localStorage.getItem('hrh_last_session')||!!localStorage.getItem('hrh_last_conversation');}catch{return false;}
 }
 async function complete(){if(nativeSetup())await nativeSetup().complete();localStorage.setItem(SETUP_KEY,'1');}
+/** the assistant is done (finished, later, closed or left): it doesn't come back by itself */
+export const markSetupDone=complete;
 
 function Steps({step}:{step:1|2}){
   const t=useT();
@@ -38,7 +41,12 @@ function Steps({step}:{step:1|2}){
   </ol>;
 }
 
-function ToolsStep({onNext}:{onNext:()=>void}){
+function Later({onLater}:{onLater:()=>void}){
+  const t=useT();
+  return <button className="min-h-11 rounded-lg px-1 text-sm text-content-muted hover:text-content hover:underline" onClick={onLater} data-testid="setup-later">{t("setup.later")}</button>;
+}
+
+function ToolsStep({onNext,onLater}:{onNext:()=>void;onLater:()=>void}){
   const t=useT();
   const [data,setData]=useState<Setup|null>(null),[error,setError]=useState('');
   const [login,setLogin]=useState(''),[refresh,setRefresh]=useState(0);
@@ -49,7 +57,6 @@ function ToolsStep({onNext}:{onNext:()=>void}){
   },[refresh]);
   const local=data?.execution_mode==='local';
   const action=async(tool:string,cancel=false)=>{setError('');try{await apiFetch(`/api/setup/${tool}/${cancel?'cancel':'install'}`,{method:'POST',...(cancel?{}:{body:JSON.stringify({dependencies:true})})});setRefresh(x=>x+1);}catch(e:any){setError(e.message);}};
-  const connected=!!data?.tools.some(tool=>tool.connected);
   return <>
     <header><h1 className="text-xl font-semibold">{t("setup.title")}</h1>
       <p className="mt-2 text-sm text-content-muted">{local?t("setup.localIntro"):t("setup.serverIntro")}</p>
@@ -70,18 +77,19 @@ function ToolsStep({onNext}:{onNext:()=>void}){
     </section>
     {error&&<p role="alert" className="rounded-xl border border-danger/30 p-3 text-sm text-danger">{error}</p>}
     <div className="flex flex-wrap items-center justify-end gap-4">
-      {!connected&&<button className="min-h-11 rounded-lg px-1 text-sm text-content-muted hover:text-content hover:underline" onClick={onNext} data-testid="setup-later">{t("setup.later")}</button>}
-      <button className="btn-primary min-h-11" disabled={!connected} onClick={onNext} data-testid="setup-next">{t("setup.next")}</button>
+      <Later onLater={onLater}/>
+      <button className="btn-primary min-h-11" onClick={onNext} data-testid="setup-next">{t("setup.next")}</button>
     </div>
     {login&&<ProviderOAuthModal provider={login} onClose={()=>setLogin('')} onConnected={()=>{void useProviderStore.getState().load();setRefresh(x=>x+1);}}/>}
   </>;
 }
 
-function MateStep({onBack,onDone}:{onBack:()=>void;onDone:()=>void}){
+function MateStep({onBack,onDone,onLater}:{onBack:()=>void;onDone:()=>void;onLater:()=>void}){
   const t=useT();
   const mates=useMateStore(s=>s.mates);
   const muted=useMateStore(s=>s.muted);
-  const mate=mates.find(m=>m.is_default)??mates[0];
+  const activeId=useMateStore(s=>s.activeId);
+  const mate=mates.find(m=>m.id===activeId)??mates[0];
   const desk=desktopMate();
   const [name,setName]=useState(''),[show,setShow]=useState(true),[read,setRead]=useState(!muted);
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -119,19 +127,27 @@ function MateStep({onBack,onDone}:{onBack:()=>void;onDone:()=>void}){
     {error&&<p role="alert" className="rounded-xl border border-danger/30 p-3 text-sm text-danger">{error}</p>}
     <div className="flex flex-wrap items-center justify-between gap-4">
       <button className="min-h-11 rounded-lg px-1 text-sm text-content-muted hover:text-content hover:underline" onClick={onBack}>{t("setup.back")}</button>
-      <button className="btn-primary min-h-11" disabled={busy} onClick={()=>void finish()} data-testid="setup-finish">{busy?t("setup.starting"):t("setup.finish")}</button>
+      <div className="flex flex-wrap items-center gap-4">
+        <Later onLater={onLater}/>
+        <button className="btn-primary min-h-11" disabled={busy} onClick={()=>void finish()} data-testid="setup-finish">{busy?t("setup.starting"):t("setup.finish")}</button>
+      </div>
     </div>
   </>;
 }
 
 export default function SetupAssistant({onDone}:{onDone:()=>void}){
+  const t=useT();
   const [step,setStep]=useState<1|2>(1);
   useEffect(()=>{try{localStorage.setItem(SEEN_KEY,'1');}catch{}void nativeSetup()?.seen?.().catch(()=>{});},[]);
-  const done=()=>{useUIStore.getState().setView("mate");onDone();};
+  const done=()=>{onDone();useUIStore.getState().setView("mate");};
+  // later / ×: nothing is saved, the assistant ends for good, the Mate view (not a chat to start)
+  const later=()=>{void complete().catch(()=>{});done();};
   return <div className="h-full overflow-y-auto p-4 md:p-8" data-testid="setup-assistant">
     <div className="mx-auto w-full max-w-2xl space-y-5 pb-10">
-      <div className="flex items-center gap-3"><div className="inline-flex rounded-xl bg-accent-soft p-2.5 text-accent"><Icon name="sparkles" size={20}/></div><Steps step={step}/></div>
-      {step===1?<ToolsStep onNext={()=>setStep(2)}/>:<MateStep onBack={()=>setStep(1)} onDone={done}/>}
+      <div className="flex items-center gap-3"><div className="inline-flex rounded-xl bg-accent-soft p-2.5 text-accent"><Icon name="sparkles" size={20}/></div><Steps step={step}/>
+        <button className="btn-ghost ml-auto !px-2" onClick={later} aria-label={t("setup.close")} title={t("setup.close")} data-testid="setup-close"><Icon name="x" size={16}/></button>
+      </div>
+      {step===1?<ToolsStep onNext={()=>setStep(2)} onLater={later}/>:<MateStep onBack={()=>setStep(1)} onDone={done} onLater={later}/>}
     </div>
   </div>;
 }

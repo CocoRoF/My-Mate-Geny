@@ -22,7 +22,7 @@ import { nativeWindow } from "./lib/nativeWindow";
 import { useT, type MsgKey } from "./i18n";
 import { installLanguageSync } from "./i18n/sync";
 import { tabMeta } from "./components/settings/tabs";
-import SetupAssistant, {setupCompleted} from "./components/setup/SetupAssistant";
+import SetupAssistant, {markSetupDone, setupCompleted} from "./components/setup/SetupAssistant";
 import { fillLocation, fillTimezone } from "./stores/mateStore";
 
 // Secondary views load on demand: the chat (first screen) stays light.
@@ -40,6 +40,14 @@ export default function App() {
   const t = useT();
   const [setup,setSetup]=useState<boolean|null>(null);
   useEffect(()=>{void setupCompleted().then(done=>setSetup(!done));const reopen=()=>setSetup(true);window.addEventListener("geny:setup",reopen);return()=>window.removeEventListener("geny:setup",reopen);},[]);
+  // going somewhere else while the assistant shows (another screen, a chat) is the same as "later": it goes, for good
+  useEffect(()=>{
+    if(!setup)return;
+    const leave=()=>{void markSetupDone().catch(()=>{});setSetup(false);};
+    const offUi=useUIStore.subscribe((s,p)=>{if(s.view!==p.view||s.settingsTab!==p.settingsTab)leave();});
+    const offChat=useSessionStore.subscribe((s,p)=>{if(s.activeId!==p.activeId)leave();});
+    return()=>{offUi();offChat();};
+  },[setup]);
   const view = useUIStore((s) => s.view);
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const setSidebar = useUIStore((s) => s.setSidebar);

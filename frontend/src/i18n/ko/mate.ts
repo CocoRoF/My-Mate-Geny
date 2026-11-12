@@ -159,7 +159,6 @@ const ko: Messages<"mate"> = {
   loadFailed: "메이트를 불러오지 못했어요: {error}",
   noMateYet: "아직 메이트가 없어요.",
   noMate: "메이트가 없어요.",
-  defaultPill: "기본",
   newMate: "새 메이트",
   restoreBuiltins: "기본 제공 메이트 복원",
   restoredBuiltins: "기본 제공 메이트 {count}명을 복원했어요",

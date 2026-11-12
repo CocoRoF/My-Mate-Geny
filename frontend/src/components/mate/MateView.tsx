@@ -254,7 +254,6 @@ export default function MateView() {
                       <MateThumb mate={m} className="h-6 w-6" />
                       <span className="min-w-0 flex-1 truncate">{m.name}</span>
                       <BuiltinBadge mate={m} />
-                      {m.is_default && <span className="pill bg-surface-3 text-content-faint">{t("mate.defaultPill")}</span>}
                       {m.id === mate.id && <Icon name="check" size={13} className="text-accent" />}
                     </button>
                   ))}

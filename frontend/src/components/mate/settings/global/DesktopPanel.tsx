@@ -1,12 +1,12 @@
 /**
- * Settings → 데스크톱 앱 (this computer only, docs/settings.md): whether she is on the desktop and which mate, the mate
- * chat window on top, putting her back in place, the quick-chat shortcut, start at login. Click-through and moving
- * her are the moment's: the tray and her bar. Only inside the desktop app (`window.hrhNative.mate`).
+ * Settings → 메이트, the desktop part (this computer only, docs/settings.md): whether she is on the desktop — the mate
+ * picked in the Mate view, nobody else —, the mate chat window on top, putting her back in place, the quick-chat
+ * shortcut, start at login. Click-through and moving her are the moment's: the tray and her bar. Only inside the
+ * desktop app (`window.hrhNative.mate`); elsewhere nothing.
  */
 import { useEffect, useState } from "react";
 import { desktopMate, useDesktopMate } from "../../../../mate/desktop";
 import { useMateStore } from "../../../../stores/mateStore";
-import { openSettings } from "../../../../stores/uiStore";
 import Icon from "../../../ui/Icon";
 import { Banner, ErrorLine, Field, Section, Toggle } from "../ui";
 import { useT } from "../../../../i18n";
@@ -40,6 +40,7 @@ export default function DesktopPanel() {
   const m = desktopMate();
   const state = useDesktopMate();
   const mates = useMateStore((s) => s.mates);
+  const activeId = useMateStore((s) => s.activeId);
   const [hotkey, setHotkey] = useState("");
   const [recording, setRecording] = useState(false);
   const [hkMsg, setHkMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -48,24 +49,10 @@ export default function DesktopPanel() {
     if (state) setHotkey(state.hotkey);
   }, [state?.hotkey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!m) {
-    return (
-      <Section title={t("mateSettings.deskTitle")} hint={t("mateSettings.deskHint")}>
-        <Banner
-          tone="info"
-          action={
-            <button className="btn-soft !px-2.5 !py-1 text-[12px]" onClick={() => openSettings("updates", "downloads")}>
-              <Icon name="download" size={12} /> {t("mateSettings.deskGetApp")}
-            </button>
-          }
-        >
-          {t("mateSettings.deskNoApp")}
-        </Banner>
-      </Section>
-    );
-  }
+  if (!m) return null;
   if (!state) return <p className="text-[12px] text-content-faint">{t("common.loading")}</p>;
-  const desktopMateId = state.mateId || mates.find((x) => x.is_default)?.id || mates[0]?.id || null;
+  // (the mate picked in the Mate view: mateStore keeps the desktop on her)
+  const shown = mates.find((x) => x.id === activeId) ?? mates[0];
   const act = (p: Promise<unknown>) => p.then(() => setErr(null)).catch((e) => setErr((e as Error).message));
 
   const saveHotkey = async (accel: string) => {
@@ -85,17 +72,7 @@ export default function DesktopPanel() {
   return (
     <>
       <Section title={t("mateSettings.deskOnDesktop")} hint={t("mateSettings.deskOnDesktopHint")}>
-        <Toggle on={state.visible} onChange={(on) => act(on ? m.showAvatar(desktopMateId || undefined) : m.hideAvatar())} label={t("mateSettings.deskShowAvatar")} testId="mate-desktop-visible" />
-        <Field label={t("mateSettings.deskMate")} hint={t("mateSettings.deskMateHint")}>
-          <select className="field" value={desktopMateId || ""} onChange={(e) => act(m.setMate(e.target.value))} data-testid="mate-desktop-mate">
-            {mates.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.name}
-                {x.is_default ? ` ${t("mateSettings.defaultSuffix")}` : ""}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <Toggle on={state.visible} onChange={(on) => act(on ? m.showAvatar(shown?.id) : m.hideAvatar())} label={t("mateSettings.deskShowAvatar")} hint={shown ? t("mateSettings.deskShowsPicked", { name: shown.name }) : undefined} testId="mate-desktop-visible" />
         <Toggle on={!!state.chatOnTop} onChange={(on) => act(m.setChatOnTop(on))} label={t("mateSettings.deskChatOnTop")} hint={t("mateSettings.deskChatOnTopHint")} testId="mate-desktop-chat-on-top" />
         {m.resetPlacement && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">

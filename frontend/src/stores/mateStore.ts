@@ -1,4 +1,5 @@
-import { migrateDevicePreferences, installDevicePreferences } from "./devicePreferences";
+import { migrateDevicePreferences, installDevicePreferences, devicePreferences, patchDevicePreferences } from "./devicePreferences";
+import { currentSurface, desktopMate } from "../mate/desktop";
 import { create } from "zustand";
 import {
   createMate,
@@ -170,6 +171,18 @@ export async function locateByConnection(): Promise<Omit<UserLocation, "at"> | n
   return null;
 }
 
+/**
+ * The mate picked in the Mate view is the one: on the desktop (her window, the quick card, the chat window) and the one
+ * who may speak first on this device — there is no "default mate" or "the desktop's mate" to set apart (the first
+ * pick is the built-in mate). Only the console picks; the desktop's own windows follow it.
+ */
+function follow(id: string | null) {
+  if (!id || (typeof window !== "undefined" && currentSurface() !== "console")) return;
+  const m = desktopMate();
+  if (m) void m.getState().then((s) => (s.mateId !== id ? m.setMate(id) : undefined)).catch(() => {});
+  if (devicePreferences().screen.proactive_mate !== id) void patchDevicePreferences({ screen: { proactive_mate: id } }).catch(() => {});
+}
+
 const RELOAD_MS = 150;
 let reloadTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -219,7 +232,7 @@ export const useMateStore = create<MateState>((set, get) => ({
       const keep = activeId && mates.some((m) => m.id === activeId) ? activeId : mates[0]?.id ?? null;
       set((s) => ({ mates: share(s.mates, mates), loaded: true, error: null, activeId: keep }));
       installDevicePreferences();
-      void migrateDevicePreferences(mates, keep);
+      void migrateDevicePreferences(mates, keep).then(() => follow(keep), () => follow(keep));
       fillTimezone();
       fillLocation();
     } catch (e) {
@@ -230,6 +243,7 @@ export const useMateStore = create<MateState>((set, get) => ({
   setActive: (id) => {
     write(ACTIVE_KEY, id);
     set({ activeId: id });
+    follow(id);
   },
 
   upsert: (m) =>
