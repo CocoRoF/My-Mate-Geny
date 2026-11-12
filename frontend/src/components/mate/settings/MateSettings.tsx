@@ -6,10 +6,10 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { Mate } from "../../../api/mates";
-import { useCenteredChild } from "../../../lib/scrollRow";
 import type { MateConversation } from "../../../mate/useMateConversation";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
+import ScrollRow from "../../ui/ScrollRow";
 import { BuiltinBadge } from "../MateStage";
 import ProfileTab from "./ProfileTab";
 import StyleTab from "./StyleTab";
@@ -41,7 +41,6 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
   const t = useT();
   const [tab, setTab] = useState<Tab>(initialTab);
   const [saveSlot, setSaveSlot] = useState<HTMLDivElement | null>(null);
-  const tabs = useCenteredChild<HTMLDivElement>(TABS.findIndex((x) => x.id === tab));
   // another tab starts at its top, not where the last one was scrolled to
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -80,7 +79,7 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
           <Icon name="x" size={16} />
         </button>
       </div>
-      <div ref={tabs} className="no-scrollbar flex shrink-0 gap-1 overflow-x-auto overscroll-x-contain border-b border-border/70 px-3 py-2" role="tablist">
+      <ScrollRow className="shrink-0 gap-1 border-b border-border/70 px-3 py-2" role="tablist" watch={tab}>
         {TABS.map((x) => (
           <button
             key={x.id}
@@ -94,7 +93,7 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
             {t(x.label)}
           </button>
         ))}
-      </div>
+      </ScrollRow>
       <SaveBarSlot.Provider value={saveSlot}>
       <div ref={body} className="fit-fields scrollbar-stable min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
         <div className="mx-auto max-w-xl space-y-4 pb-6">

@@ -4,6 +4,7 @@ import Icon from "../ui/Icon";
 import Lightbox from "./Lightbox";
 import { useT } from "../../i18n";
 import { extOf, fileVisual, formatBytes } from "./fileMeta";
+import ScrollRow from "../ui/ScrollRow";
 
 function Ring({ value }: { value: number }) {
   const r = 13;
@@ -119,7 +120,7 @@ export default function AttachmentTray({ items }: { items: PendingFile[] }) {
   if (!items.length) return null;
   return (
     <>
-      <div className="flex gap-2.5 overflow-x-auto px-1.5 pt-2.5 pb-1.5">
+      <ScrollRow className="gap-2.5 px-1.5 pb-1.5 pt-2.5">
         {items.map((it) =>
           it.kind === "image" ? (
             <ImageTile
@@ -131,7 +132,7 @@ export default function AttachmentTray({ items }: { items: PendingFile[] }) {
             <FileChip key={it.localId} it={it} />
           ),
         )}
-      </div>
+      </ScrollRow>
       {viewing !== null && viewing >= 0 && (
         <Lightbox images={doneImages.map((d) => d.attachment!)} start={viewing} onClose={() => setViewing(null)} />
       )}

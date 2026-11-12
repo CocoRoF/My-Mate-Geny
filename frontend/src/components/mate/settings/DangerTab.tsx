@@ -5,7 +5,8 @@ import Icon from "../../ui/Icon";
 import { ErrorLine, Section } from "./ui";
 import { useT } from "../../../i18n";
 
-/** [Reset her memory]: as if they had never talked. She stays who she is. (Mate settings → 관계와 기억) */
+/** [Start over]: back to the day they first met, as if they had never talked. She stays who she is. (Mate settings →
+ *  관계와 기억; the words are gentle on purpose: it is her they start over with, not a test subject wiped) */
 export function WipeMemory({ mate }: { mate: Mate }) {
   const t = useT();
   const [typed, setTyped] = useState("");
@@ -27,9 +28,9 @@ export function WipeMemory({ mate }: { mate: Mate }) {
     }
   };
   return (
-    <Section title={t("mateSettings.dangerWipeTitle", { name: mate.name })} hint={t("mateSettings.dangerWipeHint")} testId="mate-wipe">
+    <Section title={t("mateSettings.dangerWipeTitle", { name: mate.name })} hint={t("mateSettings.dangerWipeHint", { name: mate.name })} testId="mate-wipe">
       <label className="block text-[12px] text-content-dim">
-        {t.rich("mateSettings.dangerTypeToConfirm", { b: (s) => <b className="text-content">{s}</b>, name: mate.name })}
+        {t.rich("mateSettings.dangerWipeType", { b: (s) => <b className="text-content">{s}</b>, name: mate.name })}
         <input
           className="field mt-1"
           value={typed}

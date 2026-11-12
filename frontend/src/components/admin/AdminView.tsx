@@ -5,6 +5,7 @@ import LogsPanel from "./LogsPanel";
 import SecurityPanel from "./SecurityPanel";
 import SystemPanel from "./SystemPanel";
 import { useT, type MsgKey } from "../../i18n";
+import ScrollRow from "../ui/ScrollRow";
 
 type Tab = AdminTab;
 
@@ -22,10 +23,12 @@ export default function AdminView() {
     // (Settings → Admin: the tab's title and intro are Settings')
     <div>
       <div className={tab === "system" ? "" : "max-w-4xl"}>
-        <div className="no-scrollbar flex gap-1.5 mb-5 overflow-x-auto border-b border-border">
+        <ScrollRow className="mb-5 gap-1.5 border-b border-border" role="tablist" watch={tab}>
           {TABS.map((tb) => (
             <button
               key={tb.id}
+              role="tab"
+              aria-selected={tab === tb.id}
               onClick={() => setTab(tb.id)}
               className={`-mb-px shrink-0 border-b-2 px-4 py-2 text-sm font-medium transition inline-flex items-center gap-2 ${
                 tab === tb.id ? "border-accent text-content" : "border-transparent text-content-dim hover:text-content"
@@ -35,7 +38,7 @@ export default function AdminView() {
               {t(tb.label)}
             </button>
           ))}
-        </div>
+        </ScrollRow>
         {tab === "logs" && <LogsPanel />}
         {tab === "system" && <SystemPanel />}
         {tab === "security" && <SecurityPanel />}

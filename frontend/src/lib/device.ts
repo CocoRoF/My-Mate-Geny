@@ -59,6 +59,25 @@ export function useNarrowerThan(px: number): [boolean, (el: HTMLElement | null) 
   return [narrow, ref];
 }
 
+/** An element's size, whatever the viewport (0 × 0 until it is in the page). → [size, its ref] */
+export function useBoxSize(): [{ w: number; h: number }, (el: HTMLElement | null) => void] {
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  const observer = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((el: HTMLElement | null) => {
+    observer.current?.disconnect();
+    if (!el) return;
+    const measure = () => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      setSize((s) => (s.w === w && s.h === h ? s : { w, h }));
+    };
+    measure();
+    observer.current = new ResizeObserver(measure);
+    observer.current.observe(el);
+  }, []);
+  return [size, ref];
+}
+
 /** Phone-width viewport (below Tailwind's `sm`). */
 export function usePhone(): boolean {
   return useMedia(PHONE_QUERY, () => matches(PHONE_QUERY));

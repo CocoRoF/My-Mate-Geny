@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  anyToShow,
   avatarPatch,
   deviceDraft,
   devicePatch,
@@ -14,6 +15,7 @@ import {
   guideMove,
   guideSeen,
   guideTts,
+  live2DPick,
   markGuideSeen,
   profileDraft,
   profilePatch,
@@ -23,6 +25,7 @@ import {
   voicePatch,
   withEmotionShown,
   withEmotionToggles,
+  withLive2DPicks,
   withTtsEngine,
   type GuidePage,
 } from "../src/mate/guide";
@@ -171,4 +174,19 @@ test("a LivLiv avatar: its expressions; Live2D and no avatar have nothing to swi
   assert.deepEqual(withEmotionShown(off, "angry", true, a), { ...a, livliv: { ...a.livliv, emotions: undefined } });
   assert.equal(emotionList({ kind: "none" }), null);
   assert.equal(emotionList({ kind: "live2d", live2d: { model: "/x.model3.json" } }), null);
+});
+
+test("a Live2D model: each feeling picks one of its expressions (automatic: none chosen); nothing picked saves nothing", () => {
+  const a: Avatar = { kind: "live2d", live2d: { model: "/x.model3.json", emotions: { Sad: "cry" } } };
+  assert.equal(live2DPick(a, "sad"), "cry");
+  assert.equal(live2DPick(a, "joy"), "");
+  const picked = withLive2DPicks(a, { joy: "happy", sad: "" });
+  assert.deepEqual(picked.kind === "live2d" && picked.live2d.emotions, { joy: "happy" });
+  assert.equal(avatarPatch(a, withLive2DPicks(a, {})), null);
+  const bare: Avatar = { kind: "live2d", live2d: { model: "/x.model3.json" } };
+  assert.equal(avatarPatch(bare, withLive2DPicks(bare, { joy: "" })), null, "automatic, as it was: no change");
+  // (a photo avatar with only her resting face: nothing to show, the step says so)
+  const plain: Avatar = { kind: "photo", rig: { aspect: [3, 4], home: "/n.png", stills: { neutral: "/n.png", blink: "/b.png" }, clips: [] } };
+  assert.equal(anyToShow(emotionList(plain)!), false);
+  assert.equal(anyToShow(emotionList({ kind: "photo", rig: { ...plain.rig, stills: { ...plain.rig.stills, smile: "/s.png" } } })!), true);
 });

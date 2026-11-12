@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { baseName } from "../../lib/fileView";
 import { useSessionTabs, useWorkbench } from "../../stores/workbenchStore";
 import Icon from "../ui/Icon";
 import { fileIcon } from "./fileIcon";
 import { useT } from "../../i18n";
+import ScrollRow from "../ui/ScrollRow";
 
 /**
  * [Chat] [file tabs…] — the chat is always the first, fixed tab. Preview tabs
  * (italic) are reused by the next single-click open; double-click pins one.
- * Middle-click closes; drag reorders.
+ * Middle-click closes; drag reorders. The strip scrolls like every row (ScrollRow: the wheel, the open tab in view),
+ * without the mouse-drag pull — a drag here moves a tab.
  */
 export default function TabBar({ sid }: { sid: string }) {
   const t = useT();
@@ -16,12 +18,6 @@ export default function TabBar({ sid }: { sid: string }) {
   const { activate, closeTab, pinTab, moveTab, closeOthers } = useWorkbench.getState();
   const [drag, setDrag] = useState<number | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
-  const strip = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    strip.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [active]);
-
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
@@ -33,7 +29,7 @@ export default function TabBar({ sid }: { sid: string }) {
   const dup = (name: string) => tabs.filter((t) => baseName(t.path) === name).length > 1;
 
   return (
-    <div ref={strip} className="no-scrollbar flex h-9 touch:h-11 shrink-0 items-stretch overflow-x-auto border-b border-border/70 bg-surface/30">
+    <ScrollRow className="h-9 shrink-0 items-stretch border-b border-border/70 bg-surface/30 touch:h-11" watch={active} drag={false}>
       <button
         data-tab="chat"
         data-active={active === null}
@@ -115,6 +111,6 @@ export default function TabBar({ sid }: { sid: string }) {
           ))}
         </div>
       )}
-    </div>
+    </ScrollRow>
   );
 }

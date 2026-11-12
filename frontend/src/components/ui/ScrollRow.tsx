@@ -1,20 +1,27 @@
 /**
- * A row that scrolls sideways (tabs that don't fit): no scrollbar, the mouse wheel scrolls it, a mouse drag pulls it
- * (a press that doesn't move stays a click), a fade at an edge that has more, and the selected child (aria-selected /
- * data-active) is scrolled into view when `watch` changes. Touch scrolls it natively.
+ * A row that scrolls sideways (tabs, steps, chips that don't fit) — the one way every such row in the app scrolls: no
+ * scrollbar, the mouse wheel scrolls it, a mouse drag pulls it (a press that doesn't move stays a click), a fade at an
+ * edge that has more, and the selected child (aria-selected / data-active / aria-current) is scrolled into view when
+ * `watch` changes. Touch scrolls it natively. It never moves up and down (a child a pixel taller — a tab's underline
+ * over the row's border — made the wheel at an end nudge the whole row), and the wheel over a row that scrolls stays
+ * with it at its ends too: nothing else jumps when it runs out. `drag={false}`: no pulling (a row whose children are
+ * dragged themselves, the file tabs).
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type HTMLAttributes, type ReactNode } from "react";
 
 const DRAG_PX = 5; // below this a press is still a click
 const FADE = 28; // px
+const SELECTED = '[aria-selected="true"], [data-active="true"], [aria-current]:not([aria-current="false"])';
 
 export default function ScrollRow({
   children,
   className = "",
   watch,
+  as: Tag = "div",
+  drag: pull = true,
   ...rest
-}: { children: ReactNode; className?: string; watch?: unknown } & Omit<HTMLAttributes<HTMLDivElement>, "children" | "className">) {
-  const ref = useRef<HTMLDivElement>(null);
+}: { children: ReactNode; className?: string; watch?: unknown; as?: "div" | "ol" | "ul"; drag?: boolean } & Omit<HTMLAttributes<HTMLElement>, "children" | "className">) {
+  const ref = useRef<HTMLElement | null>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
 
   const measure = useCallback(() => {
@@ -32,7 +39,7 @@ export default function ScrollRow({
   // the selected one in view (only this row moves: scrollIntoView would scroll the page too)
   useLayoutEffect(() => {
     const el = ref.current;
-    const sel = el?.querySelector<HTMLElement>('[aria-selected="true"], [data-active="true"]');
+    const sel = el?.querySelector<HTMLElement>(SELECTED);
     if (!el || !sel || el.scrollWidth <= el.clientWidth) return measure();
     const b = el.getBoundingClientRect();
     const c = sel.getBoundingClientRect();
@@ -47,22 +54,22 @@ export default function ScrollRow({
     const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
     ro?.observe(el);
     for (const c of el.children) ro?.observe(c);
-    // the wheel: up / down scrolls the row (a sideways swipe is the trackpad's own); at an end the page scrolls on
+    // the wheel: up / down scrolls the row (a sideways swipe is the trackpad's own). A row with nothing to scroll lets
+    // it through to the page; one that scrolls keeps it, at its ends too (no page jumping under the pointer)
     const onWheel = (e: WheelEvent) => {
       if (e.ctrlKey || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
       const max = el.scrollWidth - el.clientWidth;
       if (max <= 0) return;
+      e.preventDefault();
       const d = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaMode === 2 ? e.deltaY * el.clientWidth : e.deltaY;
       const next = Math.max(0, Math.min(max, el.scrollLeft + d));
-      if (Math.abs(next - el.scrollLeft) < 0.5) return;
-      e.preventDefault();
-      el.scrollLeft = next;
+      if (Math.abs(next - el.scrollLeft) >= 0.5) el.scrollLeft = next;
     };
     // a mouse drag pulls the row; the click that ends a drag is swallowed
     let drag: { id: number; x: number; left: number; moved: boolean } | null = null;
     let swallow = false;
     const onDown = (e: PointerEvent) => {
-      if (e.pointerType !== "mouse" || e.button !== 0 || el.scrollWidth <= el.clientWidth) return;
+      if (!pull || e.pointerType !== "mouse" || e.button !== 0 || el.scrollWidth <= el.clientWidth) return;
       drag = { id: e.pointerId, x: e.clientX, left: el.scrollLeft, moved: false };
     };
     const onMove = (e: PointerEvent) => {
@@ -112,21 +119,23 @@ export default function ScrollRow({
       el.removeEventListener("pointercancel", onUp);
       el.removeEventListener("click", onClick, true);
     };
-  }, [measure]);
+  }, [measure, pull]);
 
   const mask =
     edges.left || edges.right
       ? `linear-gradient(to right, ${edges.left ? "transparent" : "#000"} 0, #000 ${edges.left ? FADE : 0}px, #000 calc(100% - ${edges.right ? FADE : 0}px), ${edges.right ? "transparent" : "#000"} 100%)`
       : undefined;
   return (
-    <div
-      ref={ref}
+    <Tag
+      ref={(el: HTMLElement | null) => {
+        ref.current = el;
+      }}
       {...rest}
-      className={`no-scrollbar flex overflow-x-auto overscroll-x-contain ${className}`}
+      className={`no-scrollbar flex overflow-x-auto overflow-y-hidden overscroll-x-contain ${className}`}
       style={{ ...rest.style, maskImage: mask, WebkitMaskImage: mask }}
       data-scroll-row=""
     >
       {children}
-    </div>
+    </Tag>
   );
 }

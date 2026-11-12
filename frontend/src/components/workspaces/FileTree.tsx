@@ -4,6 +4,7 @@ import { folderNameProblem } from "../../lib/folderName";
 import type { DirEntry } from "../../types";
 import Icon from "../ui/Icon";
 import { useT } from "../../i18n";
+import ScrollRow from "../ui/ScrollRow";
 
 interface Props {
   connectionId: string | null;
@@ -138,7 +139,7 @@ export default function FileTree({ connectionId, initialPath, onPick, selected }
             className="flex-1 bg-transparent font-mono text-[12px] text-content outline-none"
           />
         ) : (
-          <div className="flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto text-[12px]">
+          <ScrollRow className="min-w-0 flex-1 items-center gap-0.5 text-[12px]" watch={path}>
             <button onClick={() => go("/")} className="text-content-faint hover:text-content px-1">/</button>
             {segments.map((seg, i) => {
               const sp = "/" + segments.slice(0, i + 1).join("/");
@@ -146,6 +147,7 @@ export default function FileTree({ connectionId, initialPath, onPick, selected }
                 <span key={sp} className="flex items-center">
                   <button
                     onClick={() => go(sp)}
+                    aria-current={i === segments.length - 1 ? "location" : undefined}
                     className={`px-1 rounded hover:bg-surface-3 hover:text-content transition ${
                       i === segments.length - 1 ? "text-content font-medium" : "text-content-dim"
                     }`}
@@ -156,7 +158,7 @@ export default function FileTree({ connectionId, initialPath, onPick, selected }
                 </span>
               );
             })}
-          </div>
+          </ScrollRow>
         )}
         <button
           onClick={() => {
@@ -187,7 +189,7 @@ export default function FileTree({ connectionId, initialPath, onPick, selected }
 
       {/* Quick access + search */}
       <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-border/60">
-        <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto">
+        <ScrollRow className="min-w-0 flex-1 items-center gap-1.5">
           <button onClick={() => setPath("/home")} className="pill bg-surface-3 text-content-dim hover:text-content shrink-0">
             /home
           </button>
@@ -201,7 +203,7 @@ export default function FileTree({ connectionId, initialPath, onPick, selected }
               {r.split("/").pop() || r}
             </button>
           ))}
-        </div>
+        </ScrollRow>
         <div className="flex items-center gap-1.5 rounded-md bg-surface px-2 py-1 shrink-0">
           <Icon name="search" size={12} className="text-content-faint" />
           <input

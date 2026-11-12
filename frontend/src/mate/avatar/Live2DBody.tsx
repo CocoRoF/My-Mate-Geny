@@ -10,7 +10,12 @@
  *   otherwise;
  * - lip-sync from the voice bridge (smoothing 0.3, threshold 0.015, scale 1.8 as in Geny) written to
  *   `ParamMouthOpenY` and the model's LipSync group (e.g. mao_pro's `ParamA`) every frame;
- * - transparent background, resize to the container, paused while hidden, everything destroyed on unmount.
+ * - transparent background, resize to the container, paused while hidden, everything destroyed on unmount;
+ * - more than one at a time (the stage and Settings → Avatar's preview, each its own canvas and WebGL context): the
+ *   Cubism renderer keeps one set of shader programs for the whole page, and pixi shares a picture's texture between
+ *   models of the same URL. Each context gets its own programs, put in place around each of its draws, and a texture
+ *   goes only with the last body using it — before, the stage's model drew with the preview's programs (and lost its
+ *   textures when the preview went) and was gone until the view was opened again.
  */
 import { followDesktopCursor } from "./desktopCursor";
 import { useEffect, useRef, useState } from "react";
@@ -75,6 +80,58 @@ const SACCADE_P: [number, number][] = (() => {
   }
   return p;
 })();
+// ── more than one body at a time ──
+
+/** each WebGL context's own Cubism shader programs (the renderer's singleton holds one set, for one context) */
+const shaderSets = new WeakMap<object, unknown[]>();
+
+/** `model` draws with its own context's programs, whatever another body drew with last */
+function ownShaders(Shader: AnyModel, model: AnyModel): void {
+  const render = model?._render;
+  if (typeof render !== "function" || typeof Shader?.getInstance !== "function") return;
+  model._render = function (this: AnyModel, renderer: AnyModel) {
+    const s = Shader.getInstance();
+    const gl = renderer.gl;
+    s.setGl?.(gl);
+    s._shaderSets = shaderSets.get(gl) ?? [];
+    try {
+      return render.call(this, renderer);
+    } finally {
+      // (made on the first draw, made again when the model met a new context: kept for this context)
+      shaderSets.set(gl, s._shaderSets);
+    }
+  };
+}
+
+/** the bodies drawing with a base texture (pixi hands every model of one URL the same one) */
+const textureUsers = new Map<object, number>();
+
+function holdTextures(model: AnyModel): void {
+  for (const tex of model?.textures ?? []) {
+    const base = tex?.baseTexture;
+    if (base) textureUsers.set(base, (textureUsers.get(base) ?? 0) + 1);
+  }
+}
+
+/** let go of `model`'s textures: destroyed with the last body that used them, left to the others until then */
+function releaseTextures(model: AnyModel): void {
+  for (const tex of model?.textures ?? []) {
+    const base = tex?.baseTexture;
+    if (!base) continue;
+    const left = (textureUsers.get(base) ?? 1) - 1;
+    if (left > 0) {
+      textureUsers.set(base, left);
+      continue;
+    }
+    textureUsers.delete(base);
+    try {
+      tex.destroy(true);
+    } catch {
+      /* gone already */
+    }
+  }
+}
+
 function saccadeInterval(): number {
   const r = Math.random();
   for (const [p, ms] of SACCADE_P) if (r <= p) return ms + Math.random() * SACCADE_STEP;
@@ -182,6 +239,9 @@ export default function Live2DBody({ live2d, mood, react, look, name, coreUrl, o
         }
         return;
       }
+      // (another body may be on the page: its own shader programs, the textures shared — see the top)
+      holdTextures(model);
+      ownShaders((L2D as AnyModel).CubismShader_WebGL, model);
       const internal = model.internalModel;
       const core = internal.coreModel;
       model.anchor.set(0.5, 0.5);
@@ -401,14 +461,16 @@ export default function Live2DBody({ live2d, mood, react, look, name, coreUrl, o
       if (model) {
         try {
           model.parent?.removeChild(model);
-          model.destroy({ children: true, texture: true, baseTexture: true });
+          // (its textures only when no other body draws with them)
+          releaseTextures(model);
+          model.destroy({ children: true });
         } catch {
           /* ignore */
         }
       }
       if (app) {
         try {
-          app.destroy(true, { children: true, texture: true, baseTexture: true });
+          app.destroy(true, { children: true });
         } catch {
           /* ignore */
         }

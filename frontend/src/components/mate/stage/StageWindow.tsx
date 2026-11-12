@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 import { useT, type MsgKey } from "../../../i18n";
 import BottomSheet from "../../ui/BottomSheet";
 import Icon, { type IconName } from "../../ui/Icon";
+import ScrollRow from "../../ui/ScrollRow";
 import "./stage.css";
 
 export interface WindowTab<T extends string> {
@@ -64,7 +65,7 @@ export default function StageWindow<T extends string>({
     </div>
   );
   const tabBar = tabs && tabs.length > 1 && (
-    <div className="no-scrollbar flex shrink-0 gap-1 overflow-x-auto border-b border-white/10 px-3 py-2" role="tablist" aria-label={title}>
+    <ScrollRow className="shrink-0 gap-1 border-b border-white/10 px-3 py-2" role="tablist" aria-label={title} watch={tab}>
       {tabs.map((x) => (
         <button
           key={x.id}
@@ -79,7 +80,7 @@ export default function StageWindow<T extends string>({
           {t(x.label)}
         </button>
       ))}
-    </div>
+    </ScrollRow>
   );
   const body = <div className="fit-fields scrollbar-stable min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 pb-safe">{children}</div>;
   if (phone) {

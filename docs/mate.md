@@ -960,14 +960,23 @@ the mate chat window and the quick card — the overlay has no mic):
 
 The web console gains a **Mate** item above **Chat** in the sidebar (mate list,
 avatar stage, conversation, mic, Mate settings: Profile · Avatar · Language
-model · Voice · Memory). Layout as in Geny's VTuber tab: on desktop the avatar
-gets half the width (big, bottom-anchored, scaled to the height) and the
-conversation the other half; Mate settings / Global settings (header buttons:
-sliders = Global, gear = this mate) open over the conversation half, so the
-stage never moves or overflows (1280 / 1440 / 1600 px alike). Phones: the stage
-on top (36 dvh, collapsible), the conversation below, settings full screen.
-Whether the split fits is measured on the main area (`useNarrowerThan`): beside
-the sidebar a tablet or a small window gets the phone layout too. On a phone the
+model · Voice · Memory). Two layouts (`mate/layout.ts`), picked in the header —
+자동 / 위아래 / 좌우, kept on the device. Side by side, as in Geny's VTuber tab: the
+avatar gets half the width (big, bottom-anchored, fitted whole) and the
+conversation the other half; Mate settings and the ♥ panel open over the
+conversation half, so the stage never moves or overflows (1280 / 1440 / 1600 px
+alike). Stacked: the stage on top (40 dvh), the conversation below, and the panels
+open below the stage in the conversation's place — she stays in sight. Automatic
+goes by the view's own box (beside the sidebar, folded into its rail or not): side
+by side only when both halves fit (660 px) and the view isn't standing up (width ≥
+height, back to stacked below 0.9 × height — a little room either way against
+flicker), so a narrow, tall window keeps her on top. A change of layout moves the
+same stage (her body isn't made again) and fits her whole again; a set wider than
+her default one makes her fitted box wider, so a narrow stage shows her smaller,
+never cut at its sides. Phones: always stacked (36 dvh, collapsible), the panels
+full screen (so on a very short screen, or under a stacked stage with too little
+height left). Beside the sidebar a small window (under 660 px) also gets the
+phone's header. On a phone the
 header keeps her picture and name, her ring (or the heart when the ring is
 hidden: both open the same panel), read aloud and the gear; the rest
 (hide the avatar, Avatar Create, Global settings, New conversation) is in one
@@ -1211,9 +1220,11 @@ and her journal. All of it is in [docs/mate-life.md](mate-life.md). API: `GET /a
 `PUT /api/mates/{id}/life/plan/{slot}` `{activity}` (a suggestion for one slot of her week, null = up to her),
 `POST /api/mates/{id}/life/gift` `{item}`; `prefs.life` (auto, on, off) turns it on or off. Her tool: `do_activity`.
 
-## Reset her memory
+## Starting over with her
 
-**Mate settings → Danger zone → Reset memory** (`POST /api/mates/{id}/memory/wipe {confirm: her name}`) is as if they had never talked: her
+**Mate settings → 관계와 기억 → 처음부터 다시 시작하기** (Start over; `POST /api/mates/{id}/memory/wipe {confirm: her name}`) goes back
+to the day they first met — the words say so on purpose, it is her they start over with, not a record being wiped. It is as if they had
+never talked: her
 memories and all that goes with them, the whole conversation with its attachments, the relationship (a fresh start: outfits her affinity
 opened lock again, and she goes back to her default set if she had one on), how she feels now, and the record of how she changed her own
 style go, along with the files the engines keep (Claude Code's transcripts for her folder in every login, her Codex home, her compiled

@@ -1,7 +1,8 @@
 /**
  * The Mate panel's guide: a few steps with only what matters most for one mate, each saved as it is left (mate/guide.ts
  * decides what): 1 프로필 (name, a short intro, personality, birthday) · 2 대화 방식 (what she calls you, warmth, humour)
- * · 3 아바타·의상 (the feelings her avatar shows) · 4 음성 (engine and voice) · 5 화면 공유와 먼저 말 걸기 (this
+ * · 3 아바타·의상 (the feelings her avatar shows — a Live2D model: which of its expressions each one is; an avatar with
+ * nothing to pick says so) · 4 음성 (engine and voice) · 5 화면 공유와 먼저 말 걸기 (this
  * device: asking before a capture, the picture's size, speaking first, the volume — the 공통 tab's store) · then a
  * closing page. Everything else stays in Mate settings.
  *
@@ -14,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { fillAddress, prefsOf, type Mate, type MateVoice, type MatePrefs, type ToneLevel } from "../../../api/mates";
 import {
+  anyToShow,
   avatarPatch,
   deviceDraft,
   devicePatch,
@@ -22,6 +24,7 @@ import {
   GUIDE_STEPS,
   guideMove,
   guideTts,
+  live2DPick,
   profileDraft,
   profilePatch,
   stepNumber,
@@ -29,6 +32,7 @@ import {
   stylePatch,
   voicePatch,
   withEmotionToggles,
+  withLive2DPicks,
   withTtsEngine,
   type DeviceDraft,
   type GuideAction,
@@ -38,6 +42,7 @@ import {
   type StyleDraft,
 } from "../../../mate/guide";
 import { emotionLabel } from "../../../mate/emotionLabel";
+import { useLive2DModelInfo } from "../../../mate/avatar/live2dInfo";
 import { canShareScreen } from "../../../mate/screenCapture";
 import { patchDevicePreferences, useDevicePreferences } from "../../../stores/devicePreferences";
 import { useMateStore } from "../../../stores/mateStore";
@@ -76,6 +81,8 @@ export default function MateGuide({ mate, onClose }: { mate: Mate; onClose: () =
   const [profile, setProfile] = useState<ProfileDraft | null>(null);
   const [style, setStyle] = useState<StyleDraft | null>(null);
   const [toggles, setToggles] = useState<Record<string, boolean>>({});
+  // (a Live2D model: feeling → expression, "" automatic — only what differs from what is saved)
+  const [l2d, setL2d] = useState<Record<string, string>>({});
   const [tts, setTts] = useState<Tts | null>(null);
   const [dev, setDev] = useState<DeviceDraft | null>(null);
   const [busy, setBusy] = useState(false);
@@ -85,7 +92,7 @@ export default function MateGuide({ mate, onClose }: { mate: Mate; onClose: () =
   const savedStyle = styleDraft(prefs);
   const shownProfile = profile ?? savedProfile;
   const shownStyle = style ?? savedStyle;
-  const avatar = withEmotionToggles(mate.avatar, toggles);
+  const avatar = withLive2DPicks(withEmotionToggles(mate.avatar, toggles), l2d);
   const shownTts = tts ?? guideTts(mate.voice.tts);
   const shownDev = dev ?? deviceDraft(device);
 
@@ -107,7 +114,10 @@ export default function MateGuide({ mate, onClose }: { mate: Mate; onClose: () =
   const forget = (p: GuidePage) => {
     if (p === "profile") setProfile(null);
     if (p === "style") setStyle(null);
-    if (p === "avatar") setToggles({});
+    if (p === "avatar") {
+      setToggles({});
+      setL2d({});
+    }
     if (p === "voice") setTts(null);
     if (p === "device") setDev(null);
   };
@@ -188,7 +198,8 @@ export default function MateGuide({ mate, onClose }: { mate: Mate; onClose: () =
           e.preventDefault();
           if (!busy) go("later");
         }}
-        className="flex max-h-[min(92dvh,760px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface-2 shadow-xl outline-none"
+        // (one size for every step: its buttons stay where they are; a small screen scrolls the step inside it)
+        className="flex h-[min(92dvh,760px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface-2 shadow-xl outline-none"
       >
         <div className="flex shrink-0 items-center gap-3 border-b border-border/70 px-5 pb-3 pt-4">
           <MateThumb mate={mate} className="h-9 w-9" />
@@ -212,11 +223,11 @@ export default function MateGuide({ mate, onClose }: { mate: Mate; onClose: () =
 
         <div ref={body} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
           {done ? (
-            <div className="py-6 text-center" data-testid="mate-guide-done">
+            <div className="flex min-h-full flex-col items-center justify-center py-6 text-center" data-testid="mate-guide-done">
               <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-accent-soft text-accent">
                 <Icon name="heart" size={24} />
               </div>
-              <p className="mx-auto mt-4 max-w-sm text-[15px] font-semibold leading-relaxed text-content">{t("guide.doneTitle", { name })}</p>
+              <p className="mx-auto mt-4 max-w-sm whitespace-pre-line text-[15px] font-semibold leading-relaxed text-content">{t("guide.doneTitle", { name })}</p>
               <p className="mx-auto mt-2 max-w-sm text-[12px] leading-relaxed text-content-faint">{t("guide.doneHint")}</p>
             </div>
           ) : (
@@ -236,6 +247,14 @@ export default function MateGuide({ mate, onClose }: { mate: Mate; onClose: () =
                 <AvatarStep
                   mate={mate}
                   avatar={avatar}
+                  onPick={(e, expression) =>
+                    setL2d((x) => {
+                      const next = { ...x };
+                      if (expression === live2DPick(mate.avatar, e)) delete next[e];
+                      else next[e] = expression;
+                      return next;
+                    })
+                  }
                   onToggle={(e, on) =>
                     setToggles((x) => {
                       const was = emotionList(mate.avatar)?.find((y) => y.emotion === e)?.on;
@@ -282,7 +301,7 @@ export default function MateGuide({ mate, onClose }: { mate: Mate; onClose: () =
                 {t("guide.skip")}
               </button>
             )}
-            <button type="button" className="btn-primary" onClick={() => void next()} disabled={busy} data-testid="mate-guide-next">
+            <button type="button" className="btn-primary min-w-[8.5rem] justify-center" onClick={() => void next()} disabled={busy} data-testid="mate-guide-next">
               {busy && <Icon name="spinner" size={14} spin />}
               {done ? t("guide.finish") : pending ? t("guide.saveNext") : t("guide.next")}
               {!done && !busy && <Icon name="chevron" size={14} />}
@@ -356,7 +375,17 @@ function StyleStep({ mate, prefs, d, set }: { mate: Mate; prefs: MatePrefs; d: S
   );
 }
 
-function AvatarStep({ mate, avatar, onToggle }: { mate: Mate; avatar: Mate["avatar"]; onToggle: (emotion: string, on: boolean) => void }) {
+function AvatarStep({
+  mate,
+  avatar,
+  onToggle,
+  onPick,
+}: {
+  mate: Mate;
+  avatar: Mate["avatar"];
+  onToggle: (emotion: string, on: boolean) => void;
+  onPick: (emotion: string, expression: string) => void;
+}) {
   const t = useT();
   const list = emotionList(avatar, mate.avatar);
   if (avatar.kind === "none")
@@ -368,25 +397,12 @@ function AvatarStep({ mate, avatar, onToggle }: { mate: Mate; avatar: Mate["avat
         </button>
       </div>
     );
-  if (!list) {
-    // (a Live2D model: which expression goes with a feeling is its own editor's — shown here, changed there)
-    const map = avatar.kind === "live2d" ? avatar.live2d.emotions ?? {} : {};
-    return (
-      <div className="space-y-2" data-testid="mate-guide-avatar-live2d">
-        <p className="text-[12px] text-content-faint">{t("guide.avatarLive2d")}</p>
-        <ul className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-          {GUIDE_EMOTIONS.map((e) => (
-            <li key={e} className="flex items-center justify-between gap-2 rounded-lg border border-border/70 px-2.5 py-1.5 text-[12px]">
-              <span className="truncate text-content">{emotionLabel(t, e)}</span>
-              <span className="truncate text-[11px] text-content-faint">{map[e] !== undefined ? String(map[e]) : t("guide.avatarAuto")}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    );
-  }
+  if (avatar.kind === "live2d") return <Live2DPicks mate={mate} avatar={avatar} onPick={onPick} />;
+  // (every feeling would be a greyed-out tile: say why instead, and where faces come from)
+  if (!list || !anyToShow(list)) return <NothingToPick mate={mate} />;
   return (
     <div className="space-y-2" data-testid="mate-guide-avatar">
+      <p className="text-[12px] leading-relaxed text-content-faint">{t("guide.avatarToggle")}</p>
       <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
         {list.map((x) => (
           <button
@@ -409,6 +425,59 @@ function AvatarStep({ mate, avatar, onToggle }: { mate: Mate; avatar: Mate["avat
             <Icon name={x.on ? "check" : "eye-off"} size={12} className={`shrink-0 ${x.on ? "text-accent" : ""}`} />
           </button>
         ))}
+      </div>
+      <p className="text-[11px] leading-relaxed text-content-faint">{t("guide.avatarMore")}</p>
+    </div>
+  );
+}
+
+/** her avatar has one face for everything: nothing to pick here, and where more come from */
+function NothingToPick({ mate, live2d = false }: { mate: Mate; live2d?: boolean }) {
+  const t = useT();
+  return (
+    <div className="space-y-1.5 rounded-xl border border-border bg-surface/50 p-4 text-[12.5px] leading-relaxed text-content-dim" data-testid="mate-guide-avatar-nothing">
+      <p>{live2d ? t("guide.avatarNothingLive2d", { name: mate.name }) : t("guide.avatarNothing", { name: mate.name })}</p>
+      <p className="text-[11.5px] text-content-faint">{live2d ? t("guide.avatarNothingLive2dHint") : t("guide.avatarNothingHint")}</p>
+    </div>
+  );
+}
+
+/** a Live2D model: which of its expressions each feeling shows (the Avatar tab's choice; automatic is the one named
+ *  like the feeling) */
+function Live2DPicks({ mate, avatar, onPick }: { mate: Mate; avatar: Extract<Mate["avatar"], { kind: "live2d" }>; onPick: (emotion: string, expression: string) => void }) {
+  const t = useT();
+  const { info, err } = useLive2DModelInfo(avatar.live2d.model);
+  if (err) return <p className="text-[12px] text-danger break-words">{err}</p>;
+  if (!info)
+    return (
+      <p className="flex items-center gap-2 text-[12px] text-content-faint">
+        <Icon name="spinner" size={13} spin /> {t("common.loading")}
+      </p>
+    );
+  if (!info.expressions.length) return <NothingToPick mate={mate} live2d />;
+  return (
+    <div className="space-y-2" data-testid="mate-guide-avatar-live2d">
+      <p className="text-[12px] leading-relaxed text-content-faint">{t("guide.avatarLive2d")}</p>
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        {GUIDE_EMOTIONS.map((e) => {
+          const v = live2DPick(avatar, e);
+          return (
+            <label key={e} className="flex min-w-0 items-center gap-2 rounded-lg border border-border/70 px-2.5 py-1">
+              <span className="w-16 shrink-0 truncate text-[12px] text-content" title={e}>
+                {emotionLabel(t, e)}
+              </span>
+              <select className="field min-w-0 flex-1 !py-0.5 text-[12px]" value={v} onChange={(ev) => onPick(e, ev.target.value)} data-testid={`mate-guide-l2d-${e}`}>
+                <option value="">{t("guide.avatarAuto")}</option>
+                {info.expressions.map((x) => (
+                  <option key={x} value={x}>
+                    {x}
+                  </option>
+                ))}
+                {v && !info.expressions.includes(v) && <option value={v}>{v}</option>}
+              </select>
+            </label>
+          );
+        })}
       </div>
       <p className="text-[11px] leading-relaxed text-content-faint">{t("guide.avatarMore")}</p>
     </div>

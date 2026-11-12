@@ -108,6 +108,7 @@ export default function MateStage({
   onLife,
   menu,
   window: overlay,
+  layout,
 }: {
   mate: Mate;
   mood: BodyMood;
@@ -124,6 +125,8 @@ export default function MateStage({
   menu?: { open: StageWindowKind | null; onOpen: (k: StageWindowKind) => void; compact?: boolean };
   /** the open window, drawn over her */
   window?: ReactNode;
+  /** the view's layout (side by side, stacked): another one is another shape of stage, and she is fitted whole again */
+  layout?: string;
 }) {
   const t = useT();
   const life = mate.life?.enabled && mate.life.art ? mate.life : null;
@@ -134,6 +137,15 @@ export default function MateStage({
   // as before; a tap is still a poke.
   const area = useRef<HTMLDivElement>(null);
   const { view, reset, dragging } = useAvatarView(area, `hrh.mate.stageView.${mate.id}`, true, { touch: false, doubleClickReset: true });
+  // (a pan / zoom made for the other shape would crop her in this one)
+  // (undefined: not measured yet — the first layout it gets is where it starts, the user's view kept)
+  const shapedFor = useRef(layout);
+  useEffect(() => {
+    if (layout === undefined || shapedFor.current === layout) return;
+    const first = shapedFor.current === undefined;
+    shapedFor.current = layout;
+    if (!first) reset();
+  }, [layout, reset]);
   return (
     <div className={`relative flex min-h-0 flex-col items-center ${life ? "overflow-hidden" : ""} ${className}`} data-testid="mate-stage" data-mood={mood}>
       {life && <LifeBackdrop life={life} />}

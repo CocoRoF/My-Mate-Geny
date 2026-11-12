@@ -36,6 +36,19 @@ function matching(a?: RigFrame | null, b?: RigFrame | null): [number[], number[]
   return usable(x) && usable(y) ? [x, y] : null;
 }
 
+/**
+ * The box fitted to the stage: her default set's, widened evenly on both sides when the set placed in it reaches past
+ * them (a wider picture). Fitted whole, a narrow stage then makes her a little smaller instead of cutting her off at
+ * its sides; her default set stays centred. → how much wider than her default box (≥ 1), and the set in the widened box.
+ * (Above and below stay as placeSet decided: her head is on the page, her feet on its bottom edge.)
+ */
+export function widenFor(place: Placement): { span: number; place: Placement } {
+  const reach = Math.max(0.5, 0.5 - place.left, place.left + place.width - 0.5);
+  const span = 2 * reach;
+  if (span <= 1 + 1e-6) return { span: 1, place };
+  return { span, place: { ...place, left: (place.left - (0.5 - reach)) / span, width: place.width / span } };
+}
+
 /** `set`, placed in a box the shape of `to` */
 export function placeSet(set: FramedSet, to: FramedSet): Placement {
   const own = shape(set.aspect);

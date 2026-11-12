@@ -5,7 +5,6 @@
  * made so far (candidates, stills, clips with their checks), and at the end the avatar playing with Apply / Restore
  * (a new mate's avatar goes on her by itself).
  */
-import { useCenteredChild } from "../../../lib/scrollRow";
 import { useEffect, useRef, useState } from "react";
 import {
   applyAvatar,
@@ -31,6 +30,7 @@ import {
 import { MateAvatar } from "../../../mate/avatar/MateAvatar";
 import type { BodyMood, MateReact } from "../../../mate/types";
 import { useMateStore } from "../../../stores/mateStore";
+import ScrollRow from "../../ui/ScrollRow";
 import Icon, { type IconName } from "../../ui/Icon";
 import { useT, type MsgKey } from "../../../i18n";
 import { confirmDialog, ifConfirmed } from "../../ui/ConfirmDialog";
@@ -66,21 +66,26 @@ function stepOf(p: AvatarProject): string {
 export function StepBar({ project, nowrap = false }: { project: AvatarProject; nowrap?: boolean }) {
   const t = useT();
   const cur = STEPS.findIndex((s) => s.id === stepOf(project));
-  const row = useCenteredChild<HTMLOListElement>(cur);
-  return (
-    <ol ref={row} className={`flex gap-1 ${nowrap ? "no-scrollbar -mx-3 overflow-x-auto overscroll-x-contain px-3" : "flex-wrap"}`} data-testid="avatar-steps">
-      {STEPS.map((s, i) => (
-        <li
-          key={s.id}
-          className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] ${
-            i === cur ? "border-accent/60 bg-accent-soft text-content" : i < cur ? "border-border text-content-dim" : "border-border/60 text-content-faint"
-          }`}
-          data-active={i === cur}
-        >
-          {i < cur && <Icon name="check" size={10} className="mr-0.5 inline text-success" />}
-          {t(s.label)}
-        </li>
-      ))}
+  const items = STEPS.map((s, i) => (
+    <li
+      key={s.id}
+      className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] ${
+        i === cur ? "border-accent/60 bg-accent-soft text-content" : i < cur ? "border-border text-content-dim" : "border-border/60 text-content-faint"
+      }`}
+      data-active={i === cur}
+    >
+      {i < cur && <Icon name="check" size={10} className="mr-0.5 inline text-success" />}
+      {t(s.label)}
+    </li>
+  ));
+  // (one row that scrolls where there is no room for a second line; elsewhere they wrap)
+  return nowrap ? (
+    <ScrollRow as="ol" watch={cur} className="-mx-3 gap-1 px-3" data-testid="avatar-steps">
+      {items}
+    </ScrollRow>
+  ) : (
+    <ol className="flex flex-wrap gap-1" data-testid="avatar-steps">
+      {items}
     </ol>
   );
 }

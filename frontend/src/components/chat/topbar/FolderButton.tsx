@@ -13,6 +13,7 @@ import Popover from "../../ui/Popover";
 import FolderPicker from "../panel/FolderPicker";
 import { loadRecents, pushRecent } from "../../workspaces/FileTree";
 import LocalFolderSection from "./LocalFolderSection";
+import ScrollRow from "../../ui/ScrollRow";
 
 const base = (p: string) => p.split("/").filter(Boolean).pop() || p;
 const parentOf = (p: string) => {
@@ -340,11 +341,12 @@ export default function FolderButton({ session, compact }: { session: Session; c
           <div className="mt-2.5 border-t border-border/70 px-3.5 pb-3 pt-2.5">
             <div className="mb-1.5 text-[10.5px] uppercase tracking-wide text-content-faint">{t("topbar.addFolder")}</div>
             {/* where: this server, each SSH host, this computer */}
-            <div
-              className="-mx-1 mb-2 flex gap-1 overflow-x-auto px-1 pb-0.5 text-[11.5px] [scrollbar-width:none]"
+            <ScrollRow
+              className="-mx-1 mb-2 gap-1 px-1 pb-0.5 text-[11.5px]"
               role="tablist"
               aria-label={t("topbar.whereFolder")}
               data-testid="folders-hosts"
+              watch={tab}
             >
               {chips.map((c) => {
                 const on = tab !== "computer" && cur?.key === c.key;
@@ -385,7 +387,7 @@ export default function FolderButton({ session, compact }: { session: Session; c
                 <span className="truncate">{t("topbar.thisComputer")}</span>
                 {job && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
               </button>
-            </div>
+            </ScrollRow>
 
             {cur ? (
               <>

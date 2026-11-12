@@ -195,10 +195,12 @@ export default function StyleTab({ mate, conv }: { mate: Mate; conv: MateConvers
         {t("mateSettings.styleIntro", { name: mate.name })}
       </p>
       <Section title={t("mateSettings.styleCallGroup")} hint={t("mateSettings.styleSpeechHint", { name: mate.name })} testId="mate-style-call">
-        <div className="grid gap-3 sm:grid-cols-2">
+        {/* (two columns only when the panel itself has the room for them — beside the stage it often hasn't, and the
+            name went down to a few letters next to its button) */}
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(15.5rem,100%),1fr))]">
           <Field label={t("mateSettings.profUserName")} hint={t("mateSettings.profUserNameHint")} as="div">
-            <div className="flex items-center gap-2">
-              <span className={`field min-w-0 flex-1 truncate ${nm ? "" : "text-content-faint"}`} data-testid="mate-user-name">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className={`field min-w-[8rem] flex-1 truncate ${nm ? "" : "text-content-faint"}`} data-testid="mate-user-name">
                 {nm || t("mateSettings.profUserNameUnset")}
               </span>
               <button type="button" className="btn-ghost shrink-0 !px-2 !py-1 text-[12px]" onClick={() => openAppSettings("account")} data-testid="mate-user-name-edit">

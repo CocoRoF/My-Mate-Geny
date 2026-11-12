@@ -9,6 +9,7 @@ import { useUIStore } from "../../../stores/uiStore";
 import { useT, type MsgKey } from "../../../i18n";
 import { relTime } from "../../../i18n/format";
 import { ErrorLine, Section } from "./ui";
+import ScrollRow from "../../ui/ScrollRow";
 
 export function Evidence({ mateId, source, revision, offset = 0, onForgot }: { mateId: string; source: string; revision?: number; offset?: number; onForgot?: () => void }) {
   const t = useT();
@@ -119,9 +120,9 @@ export default function KnowledgePanel({ mateId, rev }: { mateId: string; rev: n
     catch (e) { setErr((e as Error).message); }
   };
   return <Section title={t("mateSettings.knowledgeTitle")} hint={t("mateSettings.knowledgeHint")} testId="mate-knowledge">
-    <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("mateSettings.knowledgeTitle")}>
-      {["history", "tasks"].map(id => <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? "btn-soft" : "btn-ghost"} onClick={() => setTab(id)}>{t(id === "history" ? "mateSettings.knowledgeSearch" : "mateSettings.knowledgeTasks")}</button>)}
-    </div>
+    <ScrollRow className="gap-2" role="tablist" aria-label={t("mateSettings.knowledgeTitle")} watch={tab}>
+      {["history", "tasks"].map(id => <button key={id} type="button" role="tab" aria-selected={tab === id} className={`shrink-0 whitespace-nowrap ${tab === id ? "btn-soft" : "btn-ghost"}`} onClick={() => setTab(id)}>{t(id === "history" ? "mateSettings.knowledgeSearch" : "mateSettings.knowledgeTasks")}</button>)}
+    </ScrollRow>
     <ErrorLine text={err} />
     {tab === "history" ? <div className="space-y-3" role="tabpanel">
       <form className="flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); void search(); }}>
