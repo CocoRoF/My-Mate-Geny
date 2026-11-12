@@ -109,8 +109,6 @@ export default function ScreenSharePicker({
         mateId: mate?.id,
         sourceId,
         maxEdge: s.max_edge,
-        format: s.format,
-        quality: s.quality,
         hideAvatar: false,
         hideConsole: false,
       });

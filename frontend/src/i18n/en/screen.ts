@@ -19,7 +19,6 @@ const screen = {
   "approval": "Request approval",
   "allow": "Allow without asking",
   "imageSize": "Image size",
-  "imageFormat": "Image format",
   "asVisible": "Capture the screen as it appears, without hiding or moving Geny windows.",
   "savedLocally": "Saved on this device immediately. Server settings are unchanged.",
 
@@ -47,6 +46,6 @@ const screen = {
   "costHint": "Observation can start a model reply and use tokens. Busy sessions are skipped; identical frames are skipped.",
   "capturing": "Capturing screen…",
   "shareSettings": "This share",
-  "moreInSettings": "Asking first, picture size and format: Settings → Screen sharing"
+  "moreInSettings": "Asking first, picture size: Settings → Screen sharing"
 };
 export default screen;

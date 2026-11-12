@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from app.mate import affinity as A
 from app.mate.life import sim
+from app.mate.life.world import World
 
 TICK_S = 60
 
@@ -29,6 +30,7 @@ class LifeRuntime:
         self.on_events = on_events  # (story events: how she takes them, and whether she writes first)
         self.wear = wear  # (what she has on goes the usual way, so every window follows)
         self.on_tick: Callable[[], None] | None = None  # (what else goes with the clock: her diary)
+        self.world = World(store, log)  # (the weather where the user is, their public holidays)
 
     def _row(self, mate_id: str) -> Any:
         row = self.store._db.query_one("SELECT builtin, prefs FROM mates WHERE id = ?", (mate_id,))
@@ -175,6 +177,7 @@ class LifeRuntime:
 
     async def run(self) -> None:
         while True:
+            await self.world.refresh()
             self.tick()
             if self.on_tick:
                 self.on_tick()

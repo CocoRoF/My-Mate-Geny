@@ -90,6 +90,8 @@ export default function StatusWindow({ mate, phone, onClose, onSay, onRelation }
                     </p>
                     <p className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] text-content-faint">
                       {t(SLOT_LABEL[life.slot ?? "day"])} <Icon name={sky.icon} size={11} /> {t(sky.label)}
+                      {life.temp != null && <span data-testid="life-now-temp">{life.temp}°{life.city ? ` · ${life.city}` : ""}</span>}
+                      {life.holiday && <span className="text-accent">· {t("life.holiday")}</span>}
                       {life.next && <span className="truncate">· {t("life.next", { time: fmtTime(life.next.at), what: lifeName(life.next.name, locale) })}</span>}
                     </p>
                   </div>

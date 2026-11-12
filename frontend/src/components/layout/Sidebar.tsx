@@ -31,7 +31,9 @@ export default function Sidebar() {
   const t = useT();
   const view = useUIStore((s) => s.view);
   const setView = useUIStore((s) => s.setView);
-  const user = useAuthStatus()?.username ?? "";
+  const auth = useAuthStatus();
+  // (Local execution: the person's own name, changed in Settings → Account — no sign-in name or password there)
+  const user = (auth?.local ? auth.display_name : "") || auth?.username || "";
   const sessions = useSessionStore((s) => s.sessions);
   const activeId = useSessionStore((s) => s.activeId);
   const setActive = useSessionStore((s) => s.setActive);
@@ -360,7 +362,13 @@ export default function Sidebar() {
         <div className="grid place-items-center w-6 h-6 rounded-full bg-surface-3 text-[11px] font-semibold text-content-dim">
           {(user || "?").slice(0, 1).toUpperCase()}
         </div>
-        <span className="min-w-0 truncate text-xs" title={t("nav.signedInAs", { user })}>{user}</span>
+        {auth?.local ? (
+          <button type="button" onClick={() => openSettings("account")} className="min-w-0 truncate text-xs hover:text-content" title={t("nav.editName")} data-testid="nav-local-name">
+            {user}
+          </button>
+        ) : (
+          <span className="min-w-0 truncate text-xs" title={t("nav.signedInAs", { user })}>{user}</span>
+        )}
         <span className="ml-auto text-[10px]">v{nativeVersion||APP_VERSION}</span>
         <button data-testid="nav-signout" onClick={signOutHere} className="rounded-md p-1 touch:p-2.5 touch:-mr-1.5 hover:text-danger hover:bg-surface-3 transition" title={t("nav.logOut")} aria-label={t("nav.logOut")}>
           <Icon name="logout" size={15} />

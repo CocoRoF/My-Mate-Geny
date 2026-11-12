@@ -36,7 +36,7 @@ test("migrate active mate volume, archive all alternatives and legacy sources; n
   const p = x.prefs.get();
   assert.equal(p.volume, 2.65);
   assert.equal(p.screen.source.id, "window:b");
-  assert.equal(p.screen.format, "jpeg");
+  assert.equal(p.screen.max_edge, 2560);
   assert.equal(p.screen.hide_avatar, false);
   assert.equal(p.migration.mates["https://one:a"].volume, 0);
   assert.equal(p.migration.sources.a.id, "screen:a");
@@ -57,16 +57,16 @@ test("migrate active mate volume, archive all alternatives and legacy sources; n
 test("explicit edits win over later migration; partial updates keep volume and capture in one revision stream", () => {
   const x = store();
   x.prefs.patch({ volume: 0 });
-  x.prefs.patch({ screen: { format: "jpeg" } });
+  x.prefs.patch({ screen: { max_edge: 1280 } });
   x.prefs.migrate({
     activeId: "a",
     mates: [{ id: "a", volume: 3, screen: { format: "png" } }],
   });
   assert.equal(x.prefs.get().volume, 0);
-  assert.equal(x.prefs.get().screen.format, "jpeg");
-  x.prefs.patch({ volume: 99, screen: { quality: 0 } });
+  assert.equal(x.prefs.get().screen.max_edge, 1280);
+  x.prefs.patch({ volume: 99, screen: { max_edge: 7 } });
   assert.equal(x.prefs.get().volume, 3);
-  assert.equal(x.prefs.get().screen.quality, 40);
+  assert.equal(x.prefs.get().screen.max_edge, 1280);
   x.prefs.patch({ volume: NaN });
   assert.equal(x.prefs.get().volume, 3);
   assert.equal(x.prefs.get().screen.approval, "ask");
@@ -136,7 +136,7 @@ test("persistent intent survives restart and owner destruction; explicit stop ca
 });
 test("malformed device settings recover safe defaults while preserving valid legacy values",()=>{
   const x=store({devicePreferences:{version:1,revision:"bad",screen:{format:"jpeg",quality:NaN,max_edge:-1},volume:2.5,sharing:{enabled:true,sid:42,origin:[]}}});
-  const p=x.prefs.get();assert.equal(p.screen.format,"jpeg");assert.equal(p.screen.max_edge,1920);assert.equal(p.screen.quality,85);assert.equal(p.volume,2.5);assert.equal(p.sharing.enabled,true);assert.equal(p.sharing.sid,"");assert.equal(p.sharing.origin,"");assert.equal(p.revision,0);
+  const p=x.prefs.get();assert.equal(p.screen.format,undefined);assert.equal(p.screen.max_edge,1920);assert.equal(p.screen.quality,undefined);assert.equal(p.volume,2.5);assert.equal(p.sharing.enabled,true);assert.equal(p.sharing.sid,"");assert.equal(p.sharing.origin,"");assert.equal(p.revision,0);
   x.prefs.migrate({origin:"https://one",activeId:"a",mates:[{id:"a",proactive:{enabled:true,interval:60}}]});
   assert.equal(x.prefs.get().screen.proactive_enabled,true);assert.equal(x.prefs.get().screen.proactive_interval,60);
 });

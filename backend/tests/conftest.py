@@ -28,6 +28,7 @@ os.environ.setdefault("AVATAR_ROOT", tempfile.mkdtemp(prefix="hrh_test_avatars_"
 # no registry / GitHub lookups from the CLI-versions service (tests/test_cli_tools.py fakes them)
 os.environ.setdefault("CLI_UPDATE_CHECK", "false")
 os.environ.setdefault("MEMORY_CONSOLIDATION_ENABLED", "false")
+os.environ.setdefault("LIFE_WORLD", "false")  # (no weather / holiday lookups: app/mate/life/world.py)
 
 from app.db import Database  # noqa: E402
 

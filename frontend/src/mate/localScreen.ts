@@ -319,8 +319,6 @@ export async function localFrame(
             ask,
             hide_avatar: false,
             max_edge: options.max_edge ?? 1920,
-            format: options.format || "jpeg",
-            quality: options.quality || 85,
             timeout_ms: options.timeout_ms || 45000,
             reason: options.reason,
             automatic: options.automatic,
@@ -328,8 +326,6 @@ export async function localFrame(
         : await native.grab({
             mateId: `session:${sid}`,
             maxEdge: 1920,
-            format: "jpeg",
-            quality: 85,
             hideAvatar: false,
             hideConsole: false,
           });
@@ -351,15 +347,12 @@ export async function localFrame(
       canvas
         .getContext("2d")!
         .drawImage(video, 0, 0, canvas.width, canvas.height);
-      const mime = options.format === "png" ? "image/png" : "image/jpeg";
-      const blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, mime, (options.quality || 85) / 100),
-      );
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!blob) throw new Error(tr("mate.shareEmpty"));
       result = new File(
         [blob],
-        `screen-${Date.now()}.${mime === "image/png" ? "png" : "jpg"}`,
-        { type: mime },
+        `screen-${Date.now()}.png`,
+        { type: "image/png" },
       );
     }
     if (cancelled.has(id) || gen !== generation)

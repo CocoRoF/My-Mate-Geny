@@ -598,7 +598,6 @@ const ko: Messages<"mateSettings"> = {
   // GlobalSettings
   // screen capture (docs/mate.md §4 "Seeing the screen")
   screenSizeFull: "찍힌 그대로",
-  screenQuality: "품질 {n}",
   screenOpenPrivacy: "시스템 설정 열기",
   screenWayland: "Wayland: 매번 시스템의 공유 창이 어떤 화면이나 창을 공유할지 물어봐요.",
   screenPlatforms: "내 시스템",

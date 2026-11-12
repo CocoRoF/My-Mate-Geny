@@ -18,9 +18,9 @@ test("fitWithin: the long side at most maxEdge, never upscaled, 0 = as it is", (
   assert.deepEqual(displayPixels({ size: { width: 1920, height: 1080 } }), { width: 1920, height: 1080 });
 });
 
-test("cleanOptions: sizes and formats from the page are checked", () => {
-  assert.deepEqual(cleanOptions({ max_edge: 2560, format: "jpeg", quality: 12, hide_avatar: false }), { maxEdge: 2560, format: "jpeg", quality: 40, hideAvatar: false });
-  assert.deepEqual(cleanOptions({ maxEdge: 99999, format: "gif" }), { maxEdge: 1920, format: "png", quality: 85, hideAvatar: false });
+test("cleanOptions: sizes from the page are checked; the picture is always a PNG", () => {
+  assert.deepEqual(cleanOptions({ max_edge: 2560, format: "jpeg", quality: 12, hide_avatar: false }), { maxEdge: 2560, hideAvatar: false });
+  assert.deepEqual(cleanOptions({ maxEdge: 99999, format: "gif" }), { maxEdge: 1920, hideAvatar: false });
   assert.equal(cleanOptions({ maxEdge: 0 }).maxEdge, 0);
 });
 
@@ -129,7 +129,7 @@ test("request: denied / no answer → nothing is captured; not hidden when that 
   }
   const { cap, log } = rig();
   const r = await cap.request({ ...REQ, hide_avatar: false, format: "jpeg", quality: 70, max_edge: 0 });
-  assert.equal(String(r.data), "JPEG 3840x2160 q70");
+  assert.equal(String(r.data), "PNG 3840x2160");
   assert.ok(!log.some((x) => x[0] === "hide"));
 });
 
@@ -226,7 +226,7 @@ test("preload: hrhNative.capture sends only clean arguments; hrhCaptureAsk exist
   await cap.cancel(7);
   const calls = plain();
   assert.deepEqual(calls[0], ["capture:sources", { thumbnails: true, size: 320 }]);
-  assert.deepEqual(calls[1], ["capture:grab", { id:"", mateId: "", sourceId: "5", maxEdge: 1280, format: "png", quality: 85, hideAvatar: false, hideConsole: false }]);
+  assert.deepEqual(calls[1], ["capture:grab", { id:"", mateId: "", sourceId: "5", maxEdge: 1280, hideAvatar: false, hideConsole: false }]);
   assert.deepEqual(calls[2], ["capture:setChoice", "mate_a", { id: "window:1:0", name: "A", kind: "window", display_id: "" }]);
   assert.deepEqual(calls[3], ["capture:request", { id: "cap_1", ask: true, nested: { a: 1 } }]);
   assert.deepEqual(calls[4], ["capture:cancel", "7"]);
@@ -266,7 +266,7 @@ test('app settings override stale per-mate capture request options', async () =>
   let screen={source:SOURCES[1],approval:'allow',max_edge:1280,format:'jpeg',quality:70,hide_avatar:false};
   const {cap,log}=rig({deps:{preferences:{get:()=>({screen}),patch:p=>{screen={...screen,...p.screen};}}}});
   const shot=await cap.request({...REQ,ask:true,max_edge:2560,format:'png',hide_avatar:true});
-  assert.equal(shot.mime,'image/jpeg');assert.equal(String(shot.data),'JPEG 1280x720 q70');assert.ok(!log.some(x=>x[0]==='ask'));assert.ok(!log.some(x=>x[0]==='hide'));
+  assert.equal(shot.mime,'image/png');assert.equal(String(shot.data),'PNG 1280x720');assert.ok(!log.some(x=>x[0]==='ask'));assert.ok(!log.some(x=>x[0]==='hide'));
   cap.setChoice('different-mate',SOURCES[0]);assert.equal(cap.getChoice('another-mate').id,SOURCES[0].id);
 });
 

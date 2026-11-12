@@ -15,12 +15,12 @@ changes** — the mate (Mate settings), the chat (its controls), the moment (the
 | Group | Tab | What is there |
 |---|---|---|
 | 일반 | 업데이트와 다운로드 | the web console, the desktop and Android apps, the update source |
-| | 계정 | user name and password · **the name your mates know you by** · sign out here / everywhere |
-| | 언어 | the app's language · **time zone** (the mates' clock) |
+| | 계정 | user name and password · **the name your mates know you by** · sign out here / everywhere (Local execution: only your name — the app signs itself in; the sidebar shows it) |
+| | 언어 | the app's language · **time zone** (the mates' clock) · **where you are** (her weather, your public holidays: from your connection, or a city you pick) |
 | | 테마 | system / light / dark · this device only |
 | | 알림 | notifications on this device |
 | 메이트 | 메이트 | **default mate** · (this device) **reading replies aloud and the volume** · (this device) **which mate may speak first** · **Live2D runtime** · **bring back the built-in mates** · → image & voice services |
-| | 화면 공유 | (this device) asking before a capture, picture size / format / quality |
+| | 화면 공유 | (this device) asking before a capture, picture size (always a PNG) |
 | | 데스크톱 앱 | (the desktop app) her on the desktop and which mate, the mate chat window on top, reset her place and size, the quick-chat shortcut, start at login |
 | 에이전트와 서비스 | 언어모델 공급자 · 이미지·음성 서비스 · MCP · 연결 · 사용량 · 관리자 | as before; an OpenAI / Google API key in 언어모델 공급자 also serves 이미지·음성 서비스 (said there; a key of its own wins); 관리자 → 보안 links to 계정 instead of repeating its password form |
 
@@ -65,3 +65,9 @@ off where it lives: the stage's status window.
 | Mate chat window on top, reset her place | the tray only | Settings → 데스크톱 앱 (and the tray) |
 | Click-through, moving her, opening the chat | Settings → 데스크톱 앱 and the tray | the tray and her bar (the moment's) |
 | Global settings (전체 설정) | the Mate view's header | gone |
+
+## The first start
+
+1. 언어모델 연결 — Claude Code / Codex: install, sign in (or later).
+2. 메이트 — what she calls you, her on the desktop (the default mate), reading replies aloud. Done → the Mate view; no folder
+   or chat to start.

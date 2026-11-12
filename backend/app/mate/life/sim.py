@@ -108,6 +108,16 @@ def _clamp(v: float, need: str) -> float:
     return max(0.0, min(CEILING[need], v))
 
 
+#: the real world around her (life/world.py fills it in): {"skies": {date: {sky, temp, low, high, city}}, "holidays": {date, …}}
+#: — today's weather where the user is and the public holidays of their country. Empty: a made-up sky, weekends off.
+REAL: dict[str, Any] = {"skies": {}, "holidays": set()}
+
+
+def off_day(local: datetime) -> bool:
+    """A day off: a weekend, or a public holiday where the user lives (in their time zone)."""
+    return local.weekday() >= 5 or local.strftime("%Y-%m-%d") in REAL["holidays"]
+
+
 def _rng(doc: dict[str, Any], *parts: Any) -> random.Random:
     raw = "|".join(str(p) for p in (doc.get("seed"), *parts))
     return random.Random(int(hashlib.sha256(raw.encode()).hexdigest()[:16], 16))
@@ -123,12 +133,11 @@ def _minutes(text: str) -> int:
 def _day_matches(spec: str | None, local: datetime) -> bool:
     if not spec or spec == "all":
         return True
-    day = local.weekday()
     if spec == "weekday":
-        return day < 5
+        return not off_day(local)
     if spec == "weekend":
-        return day >= 5
-    return WEEKDAYS[day] in spec.split(",")
+        return off_day(local)
+    return WEEKDAYS[local.weekday()] in spec.split(",")
 
 
 def _in_window(window: list[str] | None, minute: int) -> bool:
@@ -155,12 +164,15 @@ def travel_minutes(profile: dict[str, Any], a: str, b: str) -> int:
 
 
 def _blocks(doc: dict[str, Any], profile: dict[str, Any], local: datetime) -> list[dict[str, Any]]:
-    """Her obligations on this day: {activity, place, start, end, weight}."""
+    """Her obligations on this day: {activity, place, start, end, weight}. A block with a ``chance`` happens on some of its days
+    only (weekend overtime: now and then, never every weekend)."""
     day = _midnight(local)
     date = day.strftime("%Y-%m-%d")
     out = []
     for b in profile.get("routine") or []:
         if not _day_matches(b.get("days"), day):
+            continue
+        if b.get("chance") is not None and _rng(doc, "some days", date, b["activity"]).random() >= float(b["chance"]):
             continue
         late = _rng(doc, "block", date, b["activity"]).randint(0, int(b["jitter"])) if b.get("jitter") else 0
         out.append({"activity": b["activity"], "place": profile["activities"][b["activity"]]["place"], "weight": int(b.get("weight") or 0),
@@ -187,7 +199,11 @@ def _upcoming(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any
 
 
 def weather(doc: dict[str, Any], local: datetime) -> str:
-    """Today's sky: made up, the same all day (clear, cloudy, rain, or snow in winter)."""
+    """The sky that day: the real one where the user is (life/world.py), else made up — the same all day (clear, cloudy, rain,
+    or snow in winter)."""
+    real = REAL["skies"].get(local.strftime("%Y-%m-%d"))
+    if real and real.get("sky"):
+        return real["sky"]
     r = _rng(doc, "weather", local.strftime("%Y-%m-%d")).random()
     if r < 0.6:
         return "clear"
@@ -239,7 +255,7 @@ def _feels_like_going_out(doc: dict[str, Any], profile: dict[str, Any], local: d
     home, today = (profile.get("start") or {}).get("place"), local.strftime("%Y-%m-%d")
     outings = {e.get("place") for e in doc["timeline"][-12:] if e.get("place") not in (home, "street") and profile["activities"].get(e.get("activity"), {}).get("free")
                and (A._t(e.get("to")) or local).astimezone(tz).strftime("%Y-%m-%d") == today}
-    return len(outings) < OUTINGS_A_DAY and _rng(doc, "out", today).random() < float(outing.get("weekend" if local.weekday() >= 5 else "weekday") or 0)
+    return len(outings) < OUTINGS_A_DAY and _rng(doc, "out", today).random() < float(outing.get("weekend" if off_day(local) else "weekday") or 0)
 
 
 def _score(doc: dict[str, Any], profile: dict[str, Any], key: str, act: dict[str, Any], t: datetime, tz: Any) -> float:
@@ -696,8 +712,15 @@ def line(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *
         parts.append(act["reply"])
     local = now.astimezone(tz)
     sky = weather(doc, local)
-    if sky != "clear":
+    real = REAL["skies"].get(local.strftime("%Y-%m-%d")) or {}
+    if real.get("temp") is not None:
+        how = {"clear": "clear", "cloudy": "cloudy", "rain": "raining", "snow": "snowing"}[sky]
+        parts.append(f"Outside{' in ' + real['city'] if real.get('city') else ''} it is {real['temp']}°C and {how}"
+                     + (f" (today {real['low']}–{real['high']}°C)." if real.get("low") is not None else "."))
+    elif sky != "clear":
         parts.append({"cloudy": "It is cloudy today.", "rain": "It is raining today.", "snow": "It is snowing today."}[sky])
+    if off_day(local) and local.weekday() < 5:
+        parts.append("Today is a public holiday.")
     coming = _upcoming(doc, profile, now, tz, other_than=doc.get("activity"))
     if coming and profile["activities"][coming["activity"]].get("body") != "sleep":
         if coming["start"] - local <= timedelta(hours=4):
@@ -723,7 +746,9 @@ def summary(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any
     """What the mate document carries: enough for her stage and the status chips."""
     act = profile["activities"].get(doc.get("activity") or "") or {}
     local = now.astimezone(tz)
+    real = REAL["skies"].get(local.strftime("%Y-%m-%d")) or {}
     return {"enabled": True, "art": art(profile, doc["place"], slot(local)), "weather": weather(doc, local),
+            "temp": real.get("temp"), "city": real.get("city") or "", "holiday": off_day(local) and local.weekday() < 5,
             "outdoor": bool((profile["places"].get(doc["place"]) or {}).get("outdoor")), "place": doc["place"], "place_name": _names(profile, "places", doc["place"]), "activity": doc.get("activity"),
             "activity_name": _names(profile, "activities", doc.get("activity")), "body": act.get("body") or "", "since": doc.get("since"),
             "until": doc.get("until"), "slot": slot(local), "asleep": asleep(doc, profile, now), "with_user": bool(doc.get("with_user")),

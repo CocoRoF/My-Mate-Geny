@@ -430,19 +430,17 @@ def effective_style(prefs: dict[str, Any] | None) -> dict[str, Any]:
 
 
 SCREEN_APPROVALS = ("ask", "allow")   # ask every time (default) | allow without asking
-SCREEN_FORMATS = ("png", "jpeg")
 SCREEN_EDGES = (1280, 1920, 2560, 0)  # the long side at most (0 = as captured)
 
 
 def default_screen() -> dict[str, Any]:
-    return {"enabled": False, "approval": "ask", "hide_avatar": True, "max_edge": 1920, "format": "png",
-            "quality": 85}
+    return {"enabled": False, "approval": "ask", "hide_avatar": True, "max_edge": 1920}
 
 
 def normalize_screen(patch: Any, base: dict[str, Any] | None = None) -> dict[str, Any]:
     """``mate.screen`` (docs/mate.md §4 "Seeing the screen"): may the mate look at the user's screen
-    (``see_screen``, off by default), ask first or not, hide the avatar windows while capturing, the size and
-    format of the picture. What to capture (a screen / a window) is chosen on each computer in the desktop app.
+    (``see_screen``, off by default), ask first or not, hide the avatar windows while capturing, the size of
+    the picture (always a PNG). What to capture (a screen / a window) is chosen on each computer in the desktop app.
     Merged field by field; unknown keys dropped; wrong types / values → 400."""
     out = default_screen()
     b = base if isinstance(base, dict) else {}
@@ -459,31 +457,18 @@ def normalize_screen(patch: Any, base: dict[str, Any] | None = None) -> dict[str
                 out[k] = patch[k]
         if "approval" in patch:
             out["approval"] = _enum(patch["approval"], SCREEN_APPROVALS, "screen.approval")
-        if "format" in patch:
-            out["format"] = _enum(patch["format"], SCREEN_FORMATS, "screen.format")
         if "max_edge" in patch:
             v = patch["max_edge"]
             if isinstance(v, bool) or not isinstance(v, int) or v not in SCREEN_EDGES:
                 raise MateError(f"screen.max_edge must be one of {', '.join(map(str, SCREEN_EDGES))}")
             out["max_edge"] = v
-        if "quality" in patch:
-            v = patch["quality"]
-            if isinstance(v, bool) or not isinstance(v, (int, float)):
-                raise MateError("screen.quality must be a number (40 – 100)")
-            out["quality"] = int(max(40, min(100, round(v))))
     # (a stored document from an older/newer version: keep it well-typed)
     out["enabled"] = out["enabled"] is True
     out["hide_avatar"] = out["hide_avatar"] is not False
     if out["approval"] not in SCREEN_APPROVALS:
         out["approval"] = "ask"
-    if out["format"] not in SCREEN_FORMATS:
-        out["format"] = "png"
     if out["max_edge"] not in SCREEN_EDGES:
         out["max_edge"] = 1920
-    try:
-        out["quality"] = int(max(40, min(100, int(out["quality"]))))
-    except (TypeError, ValueError):
-        out["quality"] = 85
     return out
 
 
@@ -1729,6 +1714,27 @@ class MateStore:
             "INSERT INTO mate_settings (key, value) VALUES (?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
 
+    def location(self) -> dict[str, Any] | None:
+        """Where the user is (Settings → Language: found from their connection, or a city they picked): her weather and
+        the public holidays of their country (life/world.py). {lat, lon, city, country, source, at} or None."""
+        doc = _loads(self._setting("location"), None) if self._setting("location") else None
+        return doc if isinstance(doc, dict) and isinstance(doc.get("lat"), (int, float)) else None
+
+    @staticmethod
+    def _clean_location(v: Any) -> dict[str, Any]:
+        if not isinstance(v, dict):
+            raise MateError("location must be an object")
+        try:
+            lat, lon = float(v.get("lat")), float(v.get("lon"))
+        except (TypeError, ValueError) as exc:
+            raise MateError("location needs lat and lon") from exc
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            raise MateError("location: lat / lon out of range")
+        country = _s(v.get("country") or "", 2).upper()
+        return {"lat": round(lat, 3), "lon": round(lon, 3), "city": _one_line(_s(v.get("city") or "", 80), 80).strip(),
+                "country": country if re.fullmatch(r"[A-Z]{2}", country) else "",
+                "source": "manual" if v.get("source") == "manual" else "ip", "at": datetime.now(timezone.utc).isoformat()}
+
     def tz(self) -> Any:
         """The user's timezone (Global settings → Defaults; the console fills it from the browser), else the
         server's local zone."""
@@ -1800,6 +1806,7 @@ class MateStore:
         out: dict[str, Any] = {k: self._setting(k) for k in SETTING_URLS}
         out["timezone"] = self._setting("timezone")
         out["user_name"] = self.user_name()
+        out["location"] = self.location()
         for k in SETTING_KEYS:
             own = bool(self._vault is not None and self._vault.exists(SecretVault.make_id(_VAULT_SCOPE, k)))
             out[f"{k}_set"] = own
@@ -1826,9 +1833,13 @@ class MateStore:
                     ZoneInfo(tzname)
                 except (ZoneInfoNotFoundError, ValueError) as exc:
                     raise MateError(f"unknown timezone: {tzname}") from exc
+        location = self._clean_location(patch["location"]) if patch.get("location") is not None else None
         changed: set[str] = set()
         if patch.get("user_name") is not None and self.set_user_name(patch["user_name"]):
             changed.add("user_name")
+        if location is not None:
+            self._put_setting("location", json.dumps(location, ensure_ascii=False))
+            changed.add("location")
         if tzname is not None and tzname != self._setting("timezone"):
             self._put_setting("timezone", tzname)
             changed.add("timezone")

@@ -211,8 +211,7 @@ class CaptureBroker:
                 "id": rid, "mate_id": mate["id"], "mate_name": mate.get("name") or "", "session_id": session_id,
                 "source_key": f"session:{session_id}" if shared else mate["id"],
                 "automatic": automatic, "ask": ask, "hide_avatar": screen.get("hide_avatar") is not False,
-                "max_edge": int(screen.get("max_edge") or 0), "format": screen.get("format") or "png",
-                "quality": int(screen.get("quality") or 85), "timeout_ms": int(self.ask_timeout * 1000),
+                "max_edge": int(screen.get("max_edge") or 0), "format": "png", "timeout_ms": int(self.ask_timeout * 1000),
                 "reason": _str(reason, 300), "same_device": bool(device and client.device == device),
             }})
         except Exception as exc:  # noqa: BLE001 - the socket just went away

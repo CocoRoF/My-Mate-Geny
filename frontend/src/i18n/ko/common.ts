@@ -48,5 +48,6 @@ const ko: Messages<"common"> = {
   durS: "{s}초",
   somethingWrong: "문제가 생겼어요.",
   couldNotSave: "저장하지 못했어요",
+  search: "검색",
 };
 export default ko;

@@ -91,7 +91,7 @@ class ScreenService:
         session = self.sessions.get(sid)
         device = device or self.sessions.last_client_device(sid)
         result = await self.broker.request(
-            mate={"id": f"session:{sid}", "name": session.get("title") or "Geny", "screen": {"max_edge": 1920, "format": "jpeg", "quality": 85}},
+            mate={"id": f"session:{sid}", "name": session.get("title") or "Geny", "screen": {"max_edge": 1920}},
             session_id=sid, device=device, reason=reason[:300] or "Current screen for this conversation", shared_only=True,
             automatic=automatic)
         row = self.sessions._attachments.get(str(result.get("attachment_id") or ""))

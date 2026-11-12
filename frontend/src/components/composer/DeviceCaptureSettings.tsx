@@ -117,30 +117,6 @@ export default function DeviceCaptureSettings({mate, part}: {mate?:Mate; part:"s
           ))}
         </select>
       </label>
-      <label className="flex flex-wrap items-center gap-2">
-        {t("screen.imageFormat")}
-        <select
-          value={s.format}
-          onChange={(e) => patch({ format: e.target.value as typeof s.format })}
-          className="min-w-0 flex-1 basis-40 rounded border border-border bg-surface px-2 py-1"
-          data-testid="device-capture-format"
-        >
-          <option value="png">PNG</option>
-          <option value="jpeg">JPEG</option>
-        </select>
-      </label>
-      {s.format === "jpeg" && (
-        <label className="flex items-center gap-2">
-          {t("mateSettings.screenQuality", { n: s.quality })}
-          <input
-            type="range"
-            min="40"
-            max="100"
-            value={s.quality}
-            onChange={(e) => patch({ quality: Number(e.target.value) })}
-          />
-        </label>
-      )}
       <p className="text-content-faint">{t("screen.asVisible")}</p>
       </>}
       {info?.permission === "denied" && (

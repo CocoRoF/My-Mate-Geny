@@ -19,7 +19,6 @@ const screen = {
   "approval": "요청 승인",
   "allow": "묻지 않고 허용",
   "imageSize": "이미지 크기",
-  "imageFormat": "이미지 형식",
   "asVisible": "Geny 창을 숨기거나 이동하지 않고, 보이는 화면을 그대로 캡처해요.",
   "savedLocally": "이 기기에 바로 저장돼요. 서버 설정을 바꾸지 않아요.",
 
@@ -47,6 +46,6 @@ const screen = {
   "costHint": "관찰 시 모델이 답하며 토큰이 사용될 수 있어요. 작업 중인 세션과 완전히 동일한 화면은 건너뛰어요.",
   "capturing": "화면 캡처 중…",
   "shareSettings": "이번 공유",
-  "moreInSettings": "먼저 묻기, 사진 크기와 형식: 설정 → 화면 공유"
+  "moreInSettings": "먼저 묻기, 사진 크기: 설정 → 화면 공유"
 };
 export default screen;

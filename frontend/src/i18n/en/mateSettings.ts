@@ -597,7 +597,6 @@ export default {
   // GlobalSettings
   // screen capture (docs/mate.md §4 "Seeing the screen")
   screenSizeFull: "As captured",
-  screenQuality: "Quality {n}",
   screenOpenPrivacy: "Open System Settings",
   screenWayland: "Wayland: the system's own dialog asks which screen or window to share each time.",
   screenPlatforms: "Your system",

@@ -59,14 +59,11 @@ function resolveSource(sources, pref, primaryDisplayId) {
   return { source: primary, fallback: true, missing: pref };
 }
 
-/** a request from the page, made safe: numbers in range, known formats */
+/** a request from the page, made safe: the size in range (the picture is always a PNG) */
 function cleanOptions(o = {}) {
   const edge = Number(o.maxEdge ?? o.max_edge);
-  const q = Number(o.quality);
   return {
     maxEdge: MAX_EDGES.has(edge) ? edge : 1920,
-    format: o.format === "jpeg" ? "jpeg" : "png",
-    quality: Number.isFinite(q) ? Math.max(40, Math.min(100, Math.round(q))) : 85,
     hideAvatar: false, // legacy flags cannot hide, move or refocus any app window
   };
 }
@@ -143,7 +140,7 @@ function createCapture(d) {
   }
 
   const appPrefs = () => d.preferences ? d.preferences.get().screen : null;
-  const options = o => { const p=appPrefs();return cleanOptions(p ? { ...o, maxEdge:p.max_edge,format:p.format,quality:p.quality,hideAvatar:p.hide_avatar,hide_avatar:p.hide_avatar } : o); };
+  const options = o => { const p=appPrefs();return cleanOptions(p ? { ...o, maxEdge:p.max_edge,hideAvatar:p.hide_avatar,hide_avatar:p.hide_avatar } : o); };
   const prefs = () => {
     const all = (d.readSettings() || {}).captureSources;
     return all && typeof all === "object" ? all : {};
@@ -185,8 +182,7 @@ function createCapture(d) {
       out = img.resize({ width: fit.width, height: fit.height, quality: "best" });
       size = out.getSize();
     }
-    const data = o.format === "jpeg" ? out.toJPEG(o.quality) : out.toPNG();
-    return { data, mime: o.format === "jpeg" ? "image/jpeg" : "image/png", width: size.width, height: size.height, source: describe(hit) };
+    return { data: out.toPNG(), mime: "image/png", width: size.width, height: size.height, source: describe(hit) };
   }
 
   const fail = (code, message = "") => ({ ok: false, code, message });
