@@ -106,6 +106,9 @@ export interface AuthStatus {
   default_password: boolean;
   updated_at: string | null;
   min_password_length: number;
+  /** Local execution: no account to manage — the person's name (every mate's user_name; the OS login name until set) */
+  local?: boolean;
+  display_name?: string;
 }
 export const authStatus = () => apiFetch<AuthStatus>("/api/auth/status");
 /** Change username and/or password (empty new_password = keep it). Signs out

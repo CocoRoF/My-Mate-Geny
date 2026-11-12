@@ -7,8 +7,6 @@ export interface DeviceScreen {
   source_invalid?: boolean;
   approval: "ask" | "allow";
   max_edge: number;
-  format: "png" | "jpeg";
-  quality: number;
   hide_avatar: boolean;
   proactive_enabled: boolean | null;
   proactive_mate?: string;
@@ -52,8 +50,6 @@ const defaults: DevicePreferences = {
     source: null,
     approval: "ask",
     max_edge: 1920,
-    format: "png",
-    quality: 85,
     hide_avatar: false,
     proactive_enabled: null,
     proactive_interval: 180,
@@ -76,8 +72,6 @@ function normalize(raw: unknown): DevicePreferences {
   const screen = {...defaults.screen,...r,hide_avatar:false};
   if (!["ask","allow"].includes(screen.approval)) screen.approval="ask";
   if (![0,1280,1920,2560].includes(screen.max_edge)) screen.max_edge=1920;
-  if (!["png","jpeg"].includes(screen.format)) screen.format="png";
-  screen.quality=Number.isFinite(screen.quality)?Math.max(40,Math.min(100,screen.quality)):85;
   screen.proactive_enabled=typeof screen.proactive_enabled==="boolean"?screen.proactive_enabled:null;
   screen.proactive_interval=Number.isFinite(screen.proactive_interval)?Math.max(60,Math.min(600,screen.proactive_interval)):180;
   const invalidSource = screen.source != null && (typeof screen.source.id!=="string" || !screen.source.id);

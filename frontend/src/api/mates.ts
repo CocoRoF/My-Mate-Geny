@@ -131,6 +131,11 @@ export interface MateLifeSummary {
   /** the picture of where she is, at this time of day */
   art?: string;
   weather?: "clear" | "cloudy" | "rain" | "snow";
+  /** the real weather where the user is (life/world.py): °C now, the city; none without a location */
+  temp?: number | null;
+  city?: string;
+  /** a public holiday where the user lives (a weekday off) */
+  holiday?: boolean;
   outdoor?: boolean;
   place?: string;
   place_name?: LifeNames;
@@ -341,11 +346,9 @@ export interface MateScreen {
   hide_avatar: boolean;
   /** the picture's long side at most (0: as captured) */
   max_edge: 0 | 1280 | 1920 | 2560;
-  format: "png" | "jpeg";
-  quality: number;
 }
 
-export const DEFAULT_SCREEN: MateScreen = { enabled: false, approval: "ask", hide_avatar: true, max_edge: 1920, format: "png", quality: 85 };
+export const DEFAULT_SCREEN: MateScreen = { enabled: false, approval: "ask", hide_avatar: true, max_edge: 1920 };
 
 /** the mate's screen settings, complete (an older server sends none) */
 export const screenOf = (m: Pick<Mate, "screen"> | null | undefined): MateScreen => ({ ...DEFAULT_SCREEN, ...(m?.screen ?? {}) });
@@ -508,14 +511,27 @@ export interface VoiceSettings {
   timezone?: string;
   /** the name every mate knows you by (Settings → 계정) */
   user_name?: string;
+  /** where the user is: her weather, their public holidays (Settings → 언어) */
+  location?: UserLocation | null;
   /** an OpenAI / Google key comes from Settings → Providers (a vendor account with an API key), not one of its own */
   openai_key_shared?: boolean;
   google_key_shared?: boolean;
 }
 
+export interface UserLocation {
+  lat: number;
+  lon: number;
+  city: string;
+  country: string;
+  /** found from the connection, or picked */
+  source: "ip" | "manual";
+  at?: string;
+}
+
 export type VoiceSettingsPatch = Partial<{
   timezone: string;
   user_name: string;
+  location: Omit<UserLocation, "at">;
   google_key: string | null;
   openai_key: string | null;
   elevenlabs_key: string | null;

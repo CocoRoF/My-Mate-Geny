@@ -6,8 +6,6 @@ const DEFAULT_SCREEN = {
   source_invalid: false,
   approval: "ask",
   max_edge: 1920,
-  format: "png",
-  quality: 85,
   hide_avatar: false,
   proactive_enabled: null,
   proactive_mate: "",
@@ -33,9 +31,6 @@ function cleanScreen(raw, base = DEFAULT_SCREEN) {
   else if(typeof v.source_invalid === "boolean") out.source_invalid=v.source_invalid;
   if (["ask", "allow"].includes(v.approval)) out.approval = v.approval;
   if ([0, 1280, 1920, 2560].includes(v.max_edge)) out.max_edge = v.max_edge;
-  if (["png", "jpeg"].includes(v.format)) out.format = v.format;
-  if (Number.isFinite(v.quality))
-    out.quality = Math.max(40, Math.min(100, Math.round(v.quality)));
   if (typeof v.hide_avatar === "boolean") out.hide_avatar = v.hide_avatar;
   return out;
 }

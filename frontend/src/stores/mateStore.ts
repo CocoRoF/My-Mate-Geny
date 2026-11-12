@@ -14,6 +14,7 @@ import {
   type MatePatch,
   type Providers,
   type ProviderStatus,
+  type UserLocation,
 } from "../api/mates";
 
 /** The mates (default first) and which one the Mate view shows. Per-device
@@ -133,6 +134,42 @@ export function fillTimezone() {
     });
 }
 
+// Her weather and the public holidays need where the user is (life/world.py): when none is set yet, this browser's
+// connection says roughly (an open IP-location API, no key); Settings → 언어 picks a city instead.
+let locationChecked = false;
+export function fillLocation() {
+  if (locationChecked) return;
+  locationChecked = true;
+  getVoiceSettings()
+    .then(async (s) => {
+      if (s.location || !("location" in s)) return; // (set, or an older server)
+      const found = await locateByConnection();
+      if (found) await putVoiceSettings({ location: found });
+    })
+    .catch(() => {
+      /* offline: next load */
+    });
+}
+
+/** roughly where this connection is (city level), from open IP-location APIs; null when none answers */
+export async function locateByConnection(): Promise<Omit<UserLocation, "at"> | null> {
+  const tries: [string, (d: any) => Omit<UserLocation, "at"> | null][] = [
+    ["https://ipwho.is/", (d) => (d && d.success !== false && typeof d.latitude === "number" ? { lat: d.latitude, lon: d.longitude, city: d.city || "", country: d.country_code || "", source: "ip" } : null)],
+    ["https://ipapi.co/json/", (d) => (d && typeof d.latitude === "number" ? { lat: d.latitude, lon: d.longitude, city: d.city || "", country: d.country_code || "", source: "ip" } : null)],
+  ];
+  for (const [url, read] of tries) {
+    try {
+      const r = await fetch(url, { credentials: "omit", signal: AbortSignal.timeout(6000) });
+      if (!r.ok) continue;
+      const found = read(await r.json());
+      if (found) return found;
+    } catch {
+      /* the next one */
+    }
+  }
+  return null;
+}
+
 const RELOAD_MS = 150;
 let reloadTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -184,6 +221,7 @@ export const useMateStore = create<MateState>((set, get) => ({
       installDevicePreferences();
       void migrateDevicePreferences(mates, keep);
       fillTimezone();
+      fillLocation();
     } catch (e) {
       set({ loaded: true, error: (e as Error).message });
     }

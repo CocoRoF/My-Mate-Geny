@@ -43,7 +43,7 @@ import UpdateCard, { useUpdateState } from "../downloads/UpdateCard";
 import DesktopPanel from "../mate/settings/global/DesktopPanel";
 import MateTab from "./MateTab";
 import ScreenShareTab from "./ScreenShareTab";
-import { TimeZone, YourName } from "./PersonalFields";
+import { Location, TimeZone, YourName } from "./PersonalFields";
 import Icon, { type IconName } from "../ui/Icon";
 import PageLoading from "../ui/Loading";
 import MobileTopBar from "../layout/MobileTopBar";
@@ -311,6 +311,13 @@ function AccountSection() {
   const [revokeMsg, setRevokeMsg] = useState<Msg>(null);
 
   if (!st) return <Card id="account"><Icon name="spinner" size={16} spin className="text-content-faint" /></Card>;
+  // Local execution: the app signs itself in (a key nobody types) — only the person's name is theirs to change
+  if (st.local)
+    return (
+      <Card id="account">
+        <YourName />
+      </Card>
+    );
 
   const min = st.min_password_length;
   const source = { default: t("settings.sourceDefault"), env: t("settings.sourceEnv"), db: t("settings.sourceDb") }[st.source];
@@ -529,6 +536,8 @@ function LanguageSection() {
       <p className="text-[12px] text-content-faint">{t("settings.mateLangNote")}</p>
       <div className="border-t border-border/60" />
       <TimeZone />
+      <div className="border-t border-border/60" />
+      <Location />
     </Card>
   );
 }
@@ -946,10 +955,10 @@ export default function SettingsView() {
                     <Icon name={meta.icon} size={20} className="text-accent" />
                     <h2 className="text-lg font-semibold">{t(meta.label)}</h2>
                   </div>
-                  {meta.hint && <p className="mt-1 text-sm text-content-dim">{t(local&&shown==="updates"?"settings.localUpdatesHint":meta.hint)}</p>}
+                  {meta.hint && <p className="mt-1 text-sm text-content-dim">{t(local&&shown==="updates"?"settings.localUpdatesHint":local&&shown==="account"?"settings.localAccountHint":meta.hint)}</p>}
                 </div>
               )}
-              {!wide && meta.hint && <p className="mb-4 text-[13px] text-content-dim">{t(local&&shown==="updates"?"settings.localUpdatesHint":meta.hint)}</p>}
+              {!wide && meta.hint && <p className="mb-4 text-[13px] text-content-dim">{t(local&&shown==="updates"?"settings.localUpdatesHint":local&&shown==="account"?"settings.localAccountHint":meta.hint)}</p>}
               <Suspense fallback={<PageLoading />}>
                 <TabContent id={shown} />
               </Suspense>

@@ -60,4 +60,5 @@ export default {
   errSomethingWrong: "Something went wrong",
   errStoppedMsg: "This part of the app stopped working. Reloading usually fixes it — what you wrote is kept.",
   errUpdating: "Updating to the latest version…",
+  editName: "Change your name",
 };

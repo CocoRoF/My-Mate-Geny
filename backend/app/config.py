@@ -167,6 +167,10 @@ class Settings(BaseSettings):
     # Retry-After respected). false = no requests; cached / live numbers only.
     plan_usage_fetch: bool = True
 
+    # her day's real world (app/mate/life/world.py): the weather where the user is (Open-Meteo) and their public holidays
+    # (Nager.Date) — off: a made-up sky and weekends only (tests, no network)
+    life_world: bool = True
+
     # ---- CLI versions (Settings -> Providers -> CLI versions; app/services/cli_tools) ----
     # Look up the newest Claude Code / Codex / Higgsfield CLI on the npm registry
     # (and their release notes on GitHub). false = no outbound checks.

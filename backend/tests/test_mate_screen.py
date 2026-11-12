@@ -85,13 +85,12 @@ async def _wait(pred, timeout=5.0):
 # ---- the setting ----
 
 def test_screen_setting_defaults_and_validation(db):
-    assert normalize_screen(None) == {"enabled": False, "approval": "ask", "hide_avatar": True, "max_edge": 1920,
-                                      "format": "png", "quality": 85}
+    assert normalize_screen(None) == {"enabled": False, "approval": "ask", "hide_avatar": True, "max_edge": 1920}
+    # (the picture is always a PNG: an old format / quality is dropped like any unknown key)
     s = normalize_screen({"enabled": True, "approval": "allow", "max_edge": 0, "format": "jpeg", "quality": 7, "x": 1})
-    assert s == {"enabled": True, "approval": "allow", "hide_avatar": True, "max_edge": 0, "format": "jpeg", "quality": 40}
+    assert s == {"enabled": True, "approval": "allow", "hide_avatar": True, "max_edge": 0}
     assert normalize_screen({"hide_avatar": False}, s)["approval"] == "allow"  # merged field by field
-    for bad in ({"enabled": "yes"}, {"approval": "never"}, {"max_edge": 1000}, {"max_edge": True}, {"format": "gif"},
-                {"quality": "high"}, "on"):
+    for bad in ({"enabled": "yes"}, {"approval": "never"}, {"max_edge": 1000}, {"max_edge": True}, "on"):
         with pytest.raises(MateError):
             normalize_screen(bad)
     assert normalize_screen(None, {"enabled": 1, "approval": "?", "max_edge": 7, "quality": "x"})["enabled"] is False
@@ -370,12 +369,12 @@ async def test_denied_timeout_disabled_no_app_and_bad_answers(db, tmp_path):
     text, err, _ = await mates.call_tool_full(ctx, "see_screen", {})
     assert err and text == ERRORS["not_shared"] and len(win2.sent) == n
     # "allow without asking" travels with the request
-    store.update(m["id"], {"screen": {"enabled": True, "approval": "allow", "format": "jpeg", "hide_avatar": False}})
+    store.update(m["id"], {"screen": {"enabled": True, "approval": "allow", "hide_avatar": False}})
     mates.capture.hello(win2.conn, {"device":"dev-a", "desktop":"0.4.38", "capture":1, "shares":{msid:"on_turn"}})
     task = asyncio.create_task(mates.call_tool_full(ctx, "see_screen", {}))
     await _wait(lambda: len(win2.requests()) == 2)
     req = win2.requests()[-1]
-    assert req["ask"] is False and req["format"] == "jpeg" and req["hide_avatar"] is False
+    assert req["ask"] is False and req["format"] == "png" and req["hide_avatar"] is False
     mates.capture_result(m["id"], req["id"], {"ok": False, "code": "denied"})
     await asyncio.wait_for(task, 5)
     assert not logs.rows  # expected outcomes are not admin errors

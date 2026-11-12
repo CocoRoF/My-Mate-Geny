@@ -33,6 +33,7 @@ from app.auth import (
     safe_next,
     username_problem,
 )
+from app.config import settings
 from app.preferences import LANG_COOKIE, request_language, request_theme
 
 router = APIRouter()
@@ -305,9 +306,22 @@ async def exchange(request: Request, code: str | None = None, next: str | None =
 
 @router.get("/api/auth/status")
 async def status(request: Request) -> dict:
-    """Who is signed in and where the credentials come from (behind the gate)."""
+    """Who is signed in and where the credentials come from (behind the gate). Local execution: the sign-in is the
+    app's own (a random key, never typed); the person is shown by their name — the one every mate knows them by,
+    changed in Settings → Account without a password (``PUT /api/mates/settings`` ``user_name``)."""
     auth: AuthManager = request.app.state.auth
-    return auth.credentials_info()
+    info = auth.credentials_info()
+    if settings.execution_mode == "local":
+        ms = getattr(request.app.state, "mate_service", None)
+        name = ms.store.user_name() if ms is not None else ""
+        if not name:
+            try:
+                import getpass
+                name = getpass.getuser()
+            except Exception:  # noqa: BLE001 - no login name to be had
+                name = ""
+        info |= {"local": True, "display_name": name}
+    return info
 
 
 @router.post("/api/auth/credentials")

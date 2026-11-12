@@ -109,8 +109,6 @@ export interface CaptureBridge {
     mateId?: string;
     sourceId?: string;
     maxEdge?: number;
-    format?: "png" | "jpeg";
-    quality?: number;
     hideAvatar?: boolean;
     hideConsole?: boolean;
   }): Promise<CaptureShot>;
@@ -132,8 +130,6 @@ export interface CaptureRequest {
   ask: boolean;
   hide_avatar: boolean;
   max_edge: number;
-  format: "png" | "jpeg";
-  quality: number;
   timeout_ms: number;
   reason?: string;
 }

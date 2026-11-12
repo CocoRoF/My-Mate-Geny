@@ -84,4 +84,5 @@ export default {
   happened: "최근에 있었던 일",
   hours: "{n}시간",
   mapNote: "어디로 갈지는 채팅에서 함께 정할 수 있어요.",
+  holiday: "공휴일",
 };

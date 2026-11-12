@@ -213,6 +213,26 @@
    "doing": "at work",
    "body": "work"
   },
+  "overtime": {
+   "names": {
+    "ko": "주말 추가 근무 중",
+    "en": "Weekend overtime"
+   },
+   "place": "office",
+   "needs": {
+    "sleep": 0.005,
+    "fun": 0.06,
+    "stress": 0.084,
+    "hunger": -0.025
+   },
+   "stats": {
+    "work": 0.06
+   },
+   "pay": 12000,
+   "doing": "a weekend overtime shift: an extra day at work, a little grumpy about losing the weekend",
+   "reply": "You answer between tasks, briefly.",
+   "body": "work"
+  },
   "lunch": {
    "names": {
     "ko": "점심 먹는 중",
@@ -625,6 +645,15 @@
    "from": "09:30",
    "to": "18:30",
    "weight": 3
+  },
+  {
+   "activity": "overtime",
+   "days": "weekend",
+   "from": "10:00",
+   "to": "16:00",
+   "weight": 3,
+   "jitter": 60,
+   "chance": 0.1
   },
   {
    "activity": "lunch",

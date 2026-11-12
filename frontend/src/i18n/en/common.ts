@@ -47,4 +47,5 @@ export default {
   durS: "{s}s",
   somethingWrong: "Something went wrong.",
   couldNotSave: "Could not save",
+  search: "Search",
 };

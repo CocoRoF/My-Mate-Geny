@@ -84,4 +84,5 @@ export default {
   happened: "Lately",
   hours: "{n} h",
   mapNote: "You can decide together in the chat where to go.",
+  holiday: "Holiday",
 };

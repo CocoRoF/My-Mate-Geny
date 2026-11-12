@@ -85,7 +85,7 @@ const capture = {
   grab: (o = {}) => ipcRenderer.invoke("capture:grab", {
     id: String((o && o.id) || ""),
     mateId: String((o && o.mateId) || ""), sourceId: String((o && o.sourceId) || ""), maxEdge: num(o && o.maxEdge),
-    format: (o && o.format) === "jpeg" ? "jpeg" : "png", quality: num(o && o.quality) || 85, hideAvatar: false, hideConsole: false,
+    hideAvatar: false, hideConsole: false,
   }),
   request: (req = {}) => ipcRenderer.invoke("capture:request", JSON.parse(JSON.stringify(req || {}))),
   cancel: (id) => ipcRenderer.invoke("capture:cancel", String(id || "")),
