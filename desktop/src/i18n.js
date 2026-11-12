@@ -34,7 +34,7 @@ const MESSAGES = {
     hotkeyBody: "{key} is used by another program. Change it in Settings → Desktop app.",
     updateTitle: "{product} {version} is available",
     updateBody: "Open Settings or Download to update — it installs and restarts in one go.",
-    gpuBody: "The graphics process keeps crashing — software rendering will be used from the next start.",
+    gpuBody: "The graphics process keeps failing — restarting with software rendering.",
     startFailedTitle: "{product} could not start",
     startFailedBody: "{error}\n\nDetails are in the log:\n{log}\n\nPlease try again; if it keeps failing, send the log with your report.",
     // screen capture (capture.js): the prompt's window title, the tray while a picture is taken
@@ -187,7 +187,7 @@ const MESSAGES = {
     hotkeyBody: "{key}는 다른 프로그램이 쓰고 있어요. 설정 → 데스크톱 앱에서 바꿔 주세요.",
     updateTitle: "{product} {version} 버전을 받을 수 있어요",
     updateBody: "설정이나 다운로드에서 업데이트하세요 — 설치와 재시작이 한 번에 진행돼요.",
-    gpuBody: "그래픽 프로세스가 계속 멈춰요 — 다음 실행부터 소프트웨어 렌더링을 사용해요.",
+    gpuBody: "그래픽 프로세스가 계속 멈춰서 소프트웨어 렌더링으로 다시 시작해요.",
     startFailedTitle: "{product}을(를) 시작하지 못했어요",
     startFailedBody: "{error}\n\n자세한 내용은 로그에 있어요:\n{log}\n\n다시 실행해 보시고, 계속 안 되면 이 로그를 함께 알려 주세요.",
     captureAskTitle: "{name}이(가) 화면을 보고 싶어 해요",
