@@ -164,16 +164,19 @@ export function Location() {
     setBusy("search");
     setErr(null);
     try {
-      // (Open-Meteo's open geocoding: no key; names in the UI's language)
-      const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?count=6&format=json&language=${lang}&name=${encodeURIComponent(query.trim())}`, { credentials: "omit" });
+      // (OpenStreetMap's open search, Nominatim: no key, cities only, names in the UI's language — "서울", "부산" find them)
+      const r = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&addressdetails=1&featureType=settlement&accept-language=${lang}&q=${encodeURIComponent(query.trim())}`,
+        { credentials: "omit" },
+      );
       const d = await r.json();
       setFound(
-        (d.results || []).map((x: any) => ({
-          lat: x.latitude,
-          lon: x.longitude,
-          city: x.name,
-          country: x.country_code || "",
-          label: [x.name, x.admin1, x.country].filter(Boolean).join(", "),
+        (Array.isArray(d) ? d : []).map((x: any) => ({
+          lat: Number(x.lat),
+          lon: Number(x.lon),
+          city: x.name || x.display_name.split(",")[0],
+          country: String(x.address?.country_code || "").toUpperCase(),
+          label: x.display_name,
         })),
       );
     } catch (e) {
