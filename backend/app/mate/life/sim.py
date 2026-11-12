@@ -974,12 +974,14 @@ def art(profile: dict[str, Any], place: str | None, when: str) -> str:
 
 
 def job(profile: dict[str, Any]) -> str:
-    """What she does for a living, said plainly (a profile's ``job``), with her working hours from the routine."""
+    """What she does for a living, said plainly (a profile's ``job``), with her working hours: the job's own ``hours`` (a week
+    no single block says, a streamer's), else the routine's ``work``."""
     about = str((profile.get("job") or {}).get("about") or "").strip()
     if not about:
         return ""
     work = next((b for b in profile.get("routine") or [] if b.get("activity") == "work"), None)
-    hours = f" (on working days, {work['from']}–{work['to']})" if work else ""
+    own = str((profile.get("job") or {}).get("hours") or "").strip()
+    hours = f" ({own})" if own else f" (on working days, {work['from']}–{work['to']})" if work else ""
     return f"Your job: {about}{hours}. You can tell them what you do and talk about your workday."
 
 

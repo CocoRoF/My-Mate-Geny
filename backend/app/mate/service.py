@@ -209,6 +209,11 @@ class MateService:
         the new version, whatever the user changed stays theirs. The reply
         language, voice, model, memories and default flag are never touched."""
         self._retire_builtins()
+        for key, missing in files.builtin_waiting().items():
+            if missing != ["rig.json"]:  # (no pack at all is a character still to come; part of one is a mistake)
+                self._log("warning", f"built-in mate {key} doesn't ship: her pack lacks {', '.join(missing[:6])}"
+                          + (f" and {len(missing) - 6} more" if len(missing) > 6 else ""), code="mate.builtin_waiting")
+        self._adopt_builtins()
         removed = self.store.builtin_removed()
         for key in files.builtin_keys():
             try:
@@ -251,8 +256,12 @@ class MateService:
 
     def _retire_builtins(self) -> None:
         """Bundled mates the app no longer ships: nothing can be lost with one nobody ever used, so she goes; one the user
-        talked to, taught something or changed stays on as their own mate, without the bundle's body."""
+        talked to, taught something or changed stays on as their own mate, without the bundle's body. A key that ships again
+        is a built-in like any other: her mate from before is updated by the sync."""
+        shipped = set(files.builtin_keys())
         for key in files.RETIRED_BUILTINS:
+            if key in shipped:
+                continue
             mate = self.store.by_builtin(key)
             try:
                 if mate is not None:
@@ -265,6 +274,112 @@ class MateService:
                 self.store._db.execute("DELETE FROM mate_builtin_removed WHERE key = ?", (key,))
             except Exception as exc:  # noqa: BLE001 - one mate must not stop the app
                 self._log("warning", f"retiring built-in mate {key}: {exc}")
+
+    #: what her body from before is called in her wardrobe once she is adopted, per reply language
+    _OLD_LOOK = {"ko": "예전 모습", "en": "Her old look", "ja": "前の姿"}
+
+    def _adopt_builtins(self) -> None:
+        """A bundled character the user may already have made by hand (files.ADOPTED_BUILTINS: Seoa) becomes that mate the
+        first time she ships on this install. Decided once, at that moment, whatever comes of it, and only beyond doubt
+        (``_adoption``): exactly one mate of theirs — not a built-in, not a draft, not a man — goes by one of her bundled
+        names, no mate is that built-in yet, and the user never deleted it. She stays the same mate: her id, conversation,
+        memories, relationship, how she feels, her day, voice, model, default flag, icon, outfits and the user's own style
+        settings (what she calls them, her speech level…); she takes the bundle's name, persona, speech habits, body and
+        bundled outfits (``_adopt``). Her body from before stays in her wardrobe (“예전 모습”), and what she was is kept in
+        the setting ``builtin.adopted:<key>``, the record of the decision (logged ``mate.builtin_adopted``). A start that
+        stopped half-way finishes it the next time."""
+        shipped = set(files.builtin_keys())
+        for key in files.ADOPTED_BUILTINS:
+            if key not in shipped:
+                continue  # (her pack isn't there yet: it is decided the first time she ships)
+            setting = f"builtin.adopted:{key}"
+
+            def save(record: dict[str, Any], setting: str = setting) -> None:
+                self.store._put_setting(setting, json.dumps(record, ensure_ascii=False))
+
+            try:
+                record = json.loads(self.store._setting(setting) or "null")
+                if not isinstance(record, dict):
+                    record = self._adoption(key)
+                    save(record)
+                    if not record.get("mate_id") and record.get("doubt"):
+                        self._log("info", f"built-in mate {key} ships: no mate of the user's becomes her ({record['why']})",
+                                  code="mate.builtin_adopted", detail=record)
+                if record.get("status") == "adopting":
+                    done = self._adopt(key, record, save)
+                    record["status"] = "done" if done else "dropped"
+                    save(record)
+                    if not done:
+                        self._log("info", f"“{record['name']}” ({record['mate_id']}) doesn't become the built-in {key}: "
+                                  f"{record['why']}", code="mate.builtin_adopted",
+                                  detail={k: v for k, v in record.items() if k != "before"})
+                        continue
+                    self._log("info", f"“{record['name']}” ({record['mate_id']}), the user's own mate, is the built-in {key} "
+                              "now: her conversation, memories, relationship, day, voice and style settings stay; persona, "
+                              "speech habits and body are the bundle's" + ("; her old body is in her wardrobe"
+                                                                           if record.get("kept") else ""),
+                              code="mate.builtin_adopted", detail={k: v for k, v in record.items() if k != "before"})
+            except Exception as exc:  # noqa: BLE001 - one mate must not stop the app
+                self._log("warning", f"adopting built-in mate {key}: {exc}")
+
+    def _adoption(self, key: str) -> dict[str, Any]:
+        """Whether one of the user's own mates becomes the built-in ``key`` -> the record of the decision: ``mate_id`` (None:
+        nobody, ``why``), and for her ``status: adopting`` with what she was (``before``)."""
+        at = now_iso()
+        if self.store.by_builtin(key) is not None:
+            return {"at": at, "mate_id": None, "why": "she is here already"}
+        names = {n.strip().casefold() for n in (files.builtin_bundle(key).get("names") or {}).values() if n.strip()}
+        found = [m for m in self.store.list() if not m.get("builtin") and m["name"].strip().casefold() in names
+                 and m["persona"].get("gender") != "male"]
+        if key in self.store.builtin_removed():  # (``doubt``: one of theirs might have been her: worth a line in the log)
+            return {"at": at, "mate_id": None, "why": "the user deleted her", "doubt": bool(found)}
+        if len(found) != 1:
+            return {"at": at, "mate_id": None, "why": f"{len(found)} mates go by her name" if found else "no mate goes by her name",
+                    "doubt": bool(found)}
+        m = found[0]
+        return {"at": at, "mate_id": m["id"], "name": m["name"], "status": "adopting",
+                "before": {"name": m["name"], "persona": m["persona"], "speech_style": m["prefs"]["speech_style"],
+                           "defaults": m["prefs"]["defaults"], "avatar": self.store.base_avatar(m["id"])}}
+
+    def _adopt(self, key: str, record: dict[str, Any], save: Callable[[dict[str, Any]], None]) -> bool:
+        """The decided mate becomes the built-in ``key`` (each step can be done again). False: she can't any more (``why``)."""
+        mid = record["mate_id"]
+        try:
+            mate = self.store.get(mid)
+        except KeyError:
+            record["why"] = "she was deleted before it was done"
+            return False
+        if mate.get("builtin") not in (None, key):
+            record["why"] = f"she is the built-in {mate['builtin']}"
+            return False
+        snapshot = files.builtin_snapshot(key, files.builtin_doc(key))
+        lang = mate["persona"].get("language") or str(snapshot.get("language") or "ko")
+        name, persona = files.localized(snapshot, lang)
+        old, bundled = (record.get("before") or {}).get("avatar") or {"kind": "none"}, snapshot["avatar"]
+        if bundled.get("kind") != "none" and old.get("kind", "none") != "none" and old != bundled:
+            # (her body from before, as an outfit: nothing of hers is lost, and its files stay in use)
+            try:
+                if "kept" not in record:
+                    record["kept"] = self.store.add_outfit(mid, self._OLD_LOOK.get(lang.split("-")[0], self._OLD_LOOK["en"]))
+                    save(record)
+                if record["kept"] and self.store.outfit_avatar(mid, record["kept"]).get("kind") == "none":
+                    self.store.set_outfit_avatar(mid, record["kept"], files.framed(old, mid))
+            except (MateError, KeyError) as exc:
+                record.setdefault("kept", "")
+                self._log("warning", f"{mate['name']}'s body from before stays only in the record ({exc})")
+        bp = files.bundle_prefs(snapshot, lang)
+        patch: dict[str, Any] = {"name": name, "persona": {k: persona.get(k, "") for k in (*files.BUNDLE_FIELDS, "greeting")},
+                                 "prefs": {"speech_style": bp["speech_style"], "defaults": bp["defaults"]}, "_sync": True}
+        if bundled.get("kind") != "none":
+            patch["avatar"] = bundled
+        after, _changed = self.store.update(mid, patch)
+        self.store.seed_builtin_outfits(mid, snapshot.get("outfits", []), [])
+        self.store.mark_builtin(mid, key, files.builtin_hash(key), snapshot)
+        self.store.set_customized(mid, False)
+        sid = self._live_session(after)
+        if sid and after["name"] != mate["name"]:
+            self._svc.update(sid, title=after["name"])
+        return True
 
     def _ever_used(self, mate: dict[str, Any]) -> bool:
         """Whether the user did anything with her: changed her, she remembers something, or they wrote to her (what the app

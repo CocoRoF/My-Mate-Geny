@@ -12,8 +12,8 @@ the lockfiles / installed package metadata; re-check before each release.
 
 | Content | Path | Owner / licence | Notes |
 |---|---|---|---|
-| Built-in mate **Chaerin** — persona text, cover/still images (`.webp`), idle/reaction video clips (`.mp4`), rig files | `backend/app/mate/builtin/mates/{estelle,chaerin,seoa}.json`, `backend/app/mate/builtin/assets/{estelle,chaerin,seoa}/` (~39 MB) | CocoRoF / Ailism — **all rights reserved**, no licence granted by this repository | Produced for the Ailism mate apps. Images/videos/voices were AI-generated with third-party services (e.g. Higgsfield); their output terms apply to the owner, not to downstream users. Forks must not reuse these characters without the owner's permission. |
-| Chaerin's reference voice clip | `backend/app/mate/builtin/voices/chaerin/ref.wav` | CocoRoF / Ailism — all rights reserved | Synthetic voice (Higgsfield Seed Audio, per `voice.json`), not a recording of a real person. Estelle/Seoa only carry OmniVoice voice-design prompts. |
+| Built-in mates **Chaerin** and **Seoa** — persona and life text, cover/still images (`.webp`), idle/reaction video clips (`.mp4`), place art, rig files | `backend/app/mate/builtin/{mates,personas,life}/{chaerin,seoa}*.json`, `backend/app/mate/builtin/assets/{chaerin,seoa}/` | CocoRoF / Ailism — **all rights reserved**, no licence granted by this repository | Produced for the Ailism mate apps. Images/videos/voices were AI-generated with third-party services (e.g. Higgsfield); their output terms apply to the owner, not to downstream users. Forks must not reuse these characters without the owner's permission. |
+| Chaerin's reference voice clip | `backend/app/mate/builtin/voices/chaerin/ref.wav` | CocoRoF / Ailism — all rights reserved | Synthetic voice (Higgsfield Seed Audio, per `voice.json`), not a recording of a real person. Seoa's voice is an ElevenLabs voice id in her `mates/seoa.json` (no audio in the repository). |
 | Anime face detector `lbpcascade_animeface.xml` (finds the face for Avatar Create's expression stills) | `backend/app/avatar/lbpcascade_animeface.xml` | © 2011 nagadomi — **MIT** (the licence text is at the top of the file) | Used unchanged, as the ailism mate pipeline did. |
 | **Geny logo** (hooded girl with headphones + "Geny" lettering) and every icon generated from it — favicons, PWA/maskable icons, in-app logo, desktop and Android app icons | master `assets/geny-logo.png`; generated into `assets/`, `frontend/public/`, `desktop/build/`, `mobile/assets/` (+ Android `mipmap-*`) by `scripts/make-icons.py` | CocoRoF — project artwork, **all rights reserved** unless the owner states otherwise | Same owner decision as the characters. Forks should rebrand: replace the master (square, transparent PNG) and run `python3 scripts/make-icons.py`. |
 
@@ -133,7 +133,7 @@ Gradle (Apache-2.0).
 
 ## 4. Notes for forks and redistributors
 
-1. The built-in character (Han Chaerin) and the Geny logo are
+1. The built-in characters (Han Chaerin, Seoa) and the Geny logo are
    **all rights reserved**: they are in this repository so My Mate Geny works
    out of the box, not under the Apache License. A fork that publishes its own
    builds should remove or replace them (`backend/app/mate/builtin/`,

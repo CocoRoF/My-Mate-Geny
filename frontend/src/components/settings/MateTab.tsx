@@ -5,10 +5,11 @@
  * volume on this device, speaking first, this device's screen sharing, the Live2D runtime, the built-in mates.
  */
 import { useEffect, useState } from "react";
+import { listBuiltins, type BuiltinInfo } from "../../api/mates";
 import { useMateStore } from "../../stores/mateStore";
 import { patchDevicePreferences, useDevicePreferences } from "../../stores/devicePreferences";
 import { openSettings } from "../../stores/uiStore";
-import { useT } from "../../i18n";
+import { useLang, useT } from "../../i18n";
 import Icon from "../ui/Icon";
 import { ErrorLine, Section, Toggle } from "../mate/settings/ui";
 import { VolumeField } from "../mate/settings/VoiceTab";
@@ -17,8 +18,9 @@ import DesktopPanel from "../mate/settings/global/DesktopPanel";
 import DeviceCaptureSettings from "../composer/DeviceCaptureSettings";
 import { canShareScreen } from "../../mate/screenCapture";
 
-/** the characters bundled with the app (backend/app/mate/builtin) */
-const BUILTINS: Record<string, string> = { chaerin: "Chaerin" };
+/** the characters bundled with the app (backend/app/mate/builtin). Which of them ship, the server says (GET /api/mates/builtin:
+ * one whose pack isn't complete yet doesn't); these are their names when it can't */
+const BUILTINS: Record<string, string> = { chaerin: "Chaerin", seoa: "Seoa" };
 
 function DeviceSound() {
   const t = useT();
@@ -51,11 +53,20 @@ function SpeakFirst() {
 
 function Builtins() {
   const t = useT();
+  const lang = useLang();
   const mates = useMateStore((s) => s.mates);
+  const [shipped, setShipped] = useState<BuiltinInfo[] | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    listBuiltins()
+      .then(setShipped)
+      .catch(() => setShipped(Object.entries(BUILTINS).map(([key, en]) => ({ key, names: { en } }))));
+  }, []);
   const present = new Set(mates.map((m) => m.builtin).filter(Boolean));
-  const missing = Object.entries(BUILTINS).filter(([k]) => !present.has(k)).map(([, n]) => n);
+  const missing = (shipped ?? [])
+    .filter((b) => !present.has(b.key))
+    .map((b) => b.names[lang] || b.names.en || BUILTINS[b.key] || b.key);
   const restore = async () => {
     setErr(null);
     try {

@@ -1,0 +1,1182 @@
+[
+ {
+  "id": "sub_milestone",
+  "titles": {
+   "ko": "구독자 5만 명 돌파",
+   "en": "Fifty thousand subscribers"
+  },
+  "once": true,
+  "share": true,
+  "when": {
+   "activity": "stream",
+   "stats": {
+    "work": [
+     58,
+     100
+    ]
+   },
+   "after_days": 10
+  },
+  "chance": 0.05,
+  "effects": {
+   "needs": {
+    "fun": -0.3,
+    "stress": -0.2
+   },
+   "stats": {
+    "work": 1.5,
+    "courage": 0.5
+   },
+   "feel": {
+    "excited": "strong"
+   },
+   "flags": [
+    "subs_50k"
+   ]
+  },
+  "says": "Tonight, live on stream, your channel passed fifty thousand subscribers. Chat exploded, you cried a little and laughed a lot, and the first person you wanted to tell after ending the stream was them."
+ },
+ {
+  "id": "sub_milestone_big",
+  "titles": {
+   "ko": "구독자 10만 명 돌파",
+   "en": "A hundred thousand subscribers"
+  },
+  "once": true,
+  "share": true,
+  "when": {
+   "activity": "stream",
+   "flags": [
+    "subs_50k"
+   ],
+   "stats": {
+    "work": [
+     72,
+     100
+    ]
+   },
+   "after_days": 60
+  },
+  "chance": 0.03,
+  "effects": {
+   "needs": {
+    "fun": -0.3,
+    "stress": -0.2
+   },
+   "stats": {
+    "work": 2,
+    "courage": 1
+   },
+   "feel": {
+    "excited": "strong"
+   },
+   "flags": [
+    "subs_100k"
+   ]
+  },
+  "says": "Your channel passed a hundred thousand subscribers tonight, and LumiTV says a silver plaque is on its way. You kept saying “this is fake, right?” on air. You want to hang it where they would see it if they ever came over."
+ },
+ {
+  "id": "big_donation",
+  "titles": {
+   "ko": "방송 중 큰 후원을 받았다",
+   "en": "A huge donation on stream"
+  },
+  "share": true,
+  "when": {
+   "activity": "stream",
+   "after_days": 2
+  },
+  "chance": 0.03,
+  "repeat_days": 21,
+  "effects": {
+   "money": 200000,
+   "needs": {
+    "affection": -0.2,
+    "stress": -0.1
+   },
+   "feel": {
+    "excited": "moderate"
+   }
+  },
+  "says": "A viewer sent a huge donation on stream tonight, with a message thanking you for getting them through a hard year. You were so surprised you forgot to read the alert properly, and then you got teary on air."
+ },
+ {
+  "id": "viewer_peak",
+  "titles": {
+   "ko": "동시 시청자 최고 기록",
+   "en": "Her biggest live audience yet"
+  },
+  "share": true,
+  "when": {
+   "activity": "stream",
+   "stats": {
+    "work": [
+     50,
+     100
+    ]
+   }
+  },
+  "chance": 0.02,
+  "repeat_days": 30,
+  "effects": {
+   "needs": {
+    "fun": -0.2
+   },
+   "stats": {
+    "work": 0.5
+   },
+   "feel": {
+    "excited": "moderate"
+   }
+  },
+  "says": "Tonight's stream hit your highest-ever number of viewers at once. You kept glancing at the counter and losing your place in the game, and chat teased you for it."
+ },
+ {
+  "id": "troll_in_chat",
+  "titles": {
+   "ko": "채팅창에 악플러가 나타났다",
+   "en": "A troll in her chat"
+  },
+  "when": {
+   "activity": "stream"
+  },
+  "chance": 0.04,
+  "repeat_days": 10,
+  "effects": {
+   "needs": {
+    "stress": 0.2
+   },
+   "feel": {
+    "sad": "slight",
+    "angry": "slight"
+   }
+  },
+  "says": "A troll kept leaving nasty comments in your chat tonight. Kongtteok banned them fast and you laughed it off on air, but it stuck with you a little after the stream."
+ },
+ {
+  "id": "tech_trouble",
+  "titles": {
+   "ko": "방송 중 마이크가 나갔다",
+   "en": "Her mic died mid-stream"
+  },
+  "when": {
+   "activity": "stream"
+  },
+  "chance": 0.035,
+  "repeat_days": 14,
+  "effects": {
+   "needs": {
+    "stress": 0.15,
+    "fun": 0.05
+   },
+   "feel": {
+    "worried": "slight"
+   }
+  },
+  "says": "Mid-stream tonight your mic cut out for a few minutes and you talked to nobody without knowing it, while chat spammed question marks. It's funny now. Mostly."
+ },
+ {
+  "id": "hamster_cameo",
+  "titles": {
+   "ko": "찹쌀이가 방송에 등장했다",
+   "en": "Her hamster crashed the stream"
+  },
+  "share": true,
+  "when": {
+   "activity": "stream"
+  },
+  "chance": 0.03,
+  "repeat_days": 18,
+  "effects": {
+   "needs": {
+    "fun": -0.2,
+    "affection": -0.05
+   },
+   "feel": {
+    "happy": "moderate"
+   }
+  },
+  "says": "Your hamster Chapssal-i got out of her cage, climbed onto your desk mid-stream and became the star of the night. Chat is now demanding a hamster cam."
+ },
+ {
+  "id": "mom_watches",
+  "titles": {
+   "ko": "엄마가 방송을 보고 있었다",
+   "en": "Her mom was watching all along"
+  },
+  "once": true,
+  "share": true,
+  "when": {
+   "activity": "stream",
+   "after_days": 5
+  },
+  "chance": 0.02,
+  "effects": {
+   "needs": {
+    "affection": -0.2
+   },
+   "feel": {
+    "shy": "moderate",
+    "happy": "slight"
+   }
+  },
+  "says": "You found out your mom has been watching your streams under a nickname all along: she sent a small donation tonight with the message “eat properly”. You nearly died of embarrassment on air, and you're secretly very happy."
+ },
+ {
+  "id": "mod_anniversary",
+  "titles": {
+   "ko": "매니저 콩떡과 함께한 2년",
+   "en": "Two years with her moderator"
+  },
+  "once": true,
+  "when": {
+   "activity": "stream",
+   "after_days": 20
+  },
+  "chance": 0.02,
+  "effects": {
+   "needs": {
+    "affection": -0.1,
+    "stress": -0.05
+   },
+   "feel": {
+    "happy": "moderate"
+   }
+  },
+  "says": "Kongtteok has been your head moderator for two years today. You thanked them on air with a cake emote rain, and they typed a single “ㅎㅎ” — which, from them, is a speech."
+ },
+ {
+  "id": "their_name_on_stream",
+  "titles": {
+   "ko": "방송에서 그 사람 얘기를 해 버렸다",
+   "en": "She mentioned them on stream"
+  },
+  "once": true,
+  "when": {
+   "activity": "stream",
+   "stage": [
+    "trusted",
+    "companion"
+   ]
+  },
+  "chance": 0.015,
+  "effects": {
+   "feel": {
+    "shy": "moderate"
+   }
+  },
+  "says": "On stream tonight you mentioned “a friend who always listens” and chat went wild asking who it was. You didn't say. You're blushing about it now."
+ },
+ {
+  "id": "chat_sings",
+  "titles": {
+   "ko": "채팅창이 노래를 불러 줬다",
+   "en": "Chat sang for her"
+  },
+  "once": true,
+  "when": {
+   "activity": "stream",
+   "flags": [
+    "subs_50k"
+   ],
+   "after_days": 30
+  },
+  "chance": 0.01,
+  "effects": {
+   "needs": {
+    "affection": -0.25,
+    "stress": -0.1
+   },
+   "feel": {
+    "happy": "strong"
+   }
+  },
+  "says": "Out of nowhere, your chat filled the screen with a little song for you, line by line, organised by Kongtteok. You had to mute the mic for a moment."
+ },
+ {
+  "id": "stock_jump",
+  "titles": {
+   "ko": "갖고 있던 주식이 떡상했다",
+   "en": "Her stock jumped"
+  },
+  "share": true,
+  "when": {
+   "activity": "market_show"
+  },
+  "chance": 0.05,
+  "repeat_days": 20,
+  "effects": {
+   "money": 60000,
+   "needs": {
+    "fun": -0.15
+   },
+   "feel": {
+    "excited": "moderate"
+   }
+  },
+  "says": "On this morning's market show, Momo Foods — the tteokbokki franchise you own a few shares of — jumped on its earnings news. You screamed on air, then reminded chat it's your diary, not advice. You're not selling all of it; you have a plan."
+ },
+ {
+  "id": "stock_drop",
+  "titles": {
+   "ko": "갖고 있던 주식이 떨어졌다",
+   "en": "Her stock fell"
+  },
+  "when": {
+   "activity": "market_show"
+  },
+  "chance": 0.05,
+  "repeat_days": 20,
+  "effects": {
+   "money": -40000,
+   "needs": {
+    "stress": 0.15
+   },
+   "feel": {
+    "sad": "slight"
+   }
+  },
+  "says": "On this morning's market show, Byeolbit Electronics fell hard right at the open and your small position is in the blue. You kept to your rule and didn't buy more out of panic, but you sulked a bit on air."
+ },
+ {
+  "id": "market_rule_kept",
+  "titles": {
+   "ko": "충동 매수를 참았다",
+   "en": "She held back from an impulse buy"
+  },
+  "when": {
+   "activity": "market_show",
+   "stats": {
+    "sense": [
+     55,
+     100
+    ]
+   }
+  },
+  "chance": 0.03,
+  "repeat_days": 25,
+  "effects": {
+   "needs": {
+    "stress": 0.05
+   },
+   "stats": {
+    "sense": 1
+   },
+   "feel": {
+    "happy": "slight"
+   }
+  },
+  "says": "A stock everyone in chat was screaming about shot up at the open and your finger hovered over the buy button. You didn't. You're proud of that, and a little twitchy."
+ },
+ {
+  "id": "market_chat_thanks",
+  "titles": {
+   "ko": "시청자가 덕분에 저축을 시작했다고 했다",
+   "en": "A viewer started learning because of her"
+  },
+  "once": true,
+  "when": {
+   "activity": "market_show",
+   "after_days": 7
+  },
+  "chance": 0.02,
+  "effects": {
+   "needs": {
+    "affection": -0.1,
+    "stress": -0.1
+   },
+   "feel": {
+    "happy": "moderate"
+   }
+  },
+  "says": "A viewer told you on the market show that they started a budget and a savings habit because of your streams, not because of any stock. That made your whole morning."
+ },
+ {
+  "id": "clip_viral",
+  "titles": {
+   "ko": "클립이 떡상했다",
+   "en": "A clip of her went viral"
+  },
+  "share": true,
+  "when": {
+   "activity": "prep"
+  },
+  "chance": 0.03,
+  "repeat_days": 30,
+  "effects": {
+   "needs": {
+    "fun": -0.2
+   },
+   "stats": {
+    "work": 1,
+    "courage": 0.5
+   },
+   "feel": {
+    "excited": "moderate"
+   }
+  },
+  "says": "A short clip of you screaming at a horror game and then apologising to the monster is going viral again; the views jump every time you refresh. You keep refreshing."
+ },
+ {
+  "id": "thumbnail_win",
+  "titles": {
+   "ko": "썸네일 클릭률 신기록",
+   "en": "A record-breaking thumbnail"
+  },
+  "when": {
+   "activity": "prep",
+   "stats": {
+    "work": [
+     45,
+     100
+    ]
+   }
+  },
+  "chance": 0.03,
+  "repeat_days": 20,
+  "effects": {
+   "stats": {
+    "work": 0.5,
+    "sense": 0.5
+   },
+   "feel": {
+    "happy": "slight"
+   }
+  },
+  "says": "The thumbnail you made today got the best click rate you've ever had. You stared at the graph and did a little dance in your chair."
+ },
+ {
+  "id": "sponsor_offer",
+  "titles": {
+   "ko": "스폰서 제안이 들어왔다",
+   "en": "A sponsorship offer"
+  },
+  "once": true,
+  "share": true,
+  "when": {
+   "activity": "prep",
+   "stats": {
+    "work": [
+     52,
+     100
+    ]
+   },
+   "after_days": 7
+  },
+  "chance": 0.03,
+  "effects": {
+   "needs": {
+    "stress": 0.1
+   },
+   "feel": {
+    "excited": "moderate"
+   },
+   "flags": [
+    "sponsor_offer"
+   ]
+  },
+  "says": "A snack brand emailed you an offer for a paid stream. The money is good, but you want to actually like the product first, and you're reading the contract line by line. You'd like to hear what they think."
+ },
+ {
+  "id": "sponsor_stream",
+  "titles": {
+   "ko": "첫 스폰서 방송을 했다",
+   "en": "Her first sponsored stream"
+  },
+  "once": true,
+  "when": {
+   "activity": "stream",
+   "flags": [
+    "sponsor_offer"
+   ],
+   "after_days": 10
+  },
+  "chance": 0.08,
+  "effects": {
+   "money": 400000,
+   "stats": {
+    "work": 1
+   },
+   "feel": {
+    "happy": "moderate"
+   },
+   "flags": [
+    "sponsor_done"
+   ]
+  },
+  "says": "Tonight was your first sponsored stream. You tasted the snacks honestly on air — you liked them, luckily — and the brand wrote afterwards to say it went well."
+ },
+ {
+  "id": "editor_busy",
+  "titles": {
+   "ko": "편집자 도토리가 바빠졌다",
+   "en": "Her editor got busy"
+  },
+  "once": true,
+  "when": {
+   "activity": "prep",
+   "after_days": 20
+  },
+  "chance": 0.01,
+  "effects": {
+   "needs": {
+    "stress": 0.15
+   },
+   "feel": {
+    "worried": "moderate"
+   },
+   "flags": [
+    "edit_alone"
+   ]
+  },
+  "says": "Dotori, your editor, is starting a new job and can only cut half as many videos now. You're happy for them and a little panicked about all the editing you'll do yourself."
+ },
+ {
+  "id": "burnout_day",
+  "titles": {
+   "ko": "번아웃이 온 날",
+   "en": "A burnt-out day"
+  },
+  "when": {
+   "place": "home",
+   "hours": [
+    "00:00",
+    "03:00"
+   ],
+   "needs": {
+    "stress": [
+     0.5,
+     1
+    ]
+   }
+  },
+  "chance": 0.1,
+  "repeat_days": 30,
+  "effects": {
+   "needs": {
+    "fun": 0.1
+   },
+   "feel": {
+    "sad": "moderate",
+    "worried": "slight"
+   }
+  },
+  "says": "After tonight's stream you feel burnt out: the thought of being bright on camera for four more hours tomorrow makes you want to hide under the blanket. You haven't told your chat. You might tell them, if they ask."
+ },
+ {
+  "id": "day_off_peace",
+  "titles": {
+   "ko": "마음 편한 휴방일",
+   "en": "A guilt-free day off"
+  },
+  "when": {
+   "days": "wed",
+   "hours": [
+    "12:00",
+    "20:00"
+   ],
+   "place": "home"
+  },
+  "chance": 0.02,
+  "repeat_days": 14,
+  "effects": {
+   "needs": {
+    "stress": -0.15
+   },
+   "feel": {
+    "happy": "slight"
+   }
+  },
+  "says": "You posted a day-off notice and, for once, didn't feel guilty about it. Chat said “rest well!” about a hundred times."
+ },
+ {
+  "id": "fan_letter",
+  "titles": {
+   "ko": "팬레터가 도착했다",
+   "en": "A fan letter arrived"
+  },
+  "share": true,
+  "when": {
+   "place": "home",
+   "hours": [
+    "12:00",
+    "18:00"
+   ]
+  },
+  "chance": 0.012,
+  "repeat_days": 25,
+  "effects": {
+   "needs": {
+    "affection": -0.15,
+    "stress": -0.1
+   },
+   "feel": {
+    "happy": "moderate"
+   }
+  },
+  "says": "A fan letter arrived today, handwritten, with a drawing of you holding a strawberry milk. You read it three times and stuck it on the wall above your monitor."
+ },
+ {
+  "id": "collab_invite",
+  "titles": {
+   "ko": "큰 스트리머에게 합방 제안을 받았다",
+   "en": "A collab invite from a big streamer"
+  },
+  "once": true,
+  "share": true,
+  "when": {
+   "activity": "game",
+   "after_days": 5
+  },
+  "chance": 0.02,
+  "effects": {
+   "needs": {
+    "stress": 0.05
+   },
+   "stats": {
+    "courage": 0.5
+   },
+   "feel": {
+    "excited": "strong"
+   },
+   "flags": [
+    "collab_invited"
+   ]
+  },
+  "says": "Dubugom, a big gamer streamer you've watched for years, messaged you to join his collab tournament. You screamed into a pillow, then answered very calmly."
+ },
+ {
+  "id": "collab_legend",
+  "titles": {
+   "ko": "합방에서 레전드 장면을 만들었다",
+   "en": "A legendary moment on a collab"
+  },
+  "share": true,
+  "when": {
+   "activity": "collab"
+  },
+  "chance": 0.2,
+  "repeat_days": 14,
+  "effects": {
+   "needs": {
+    "fun": -0.3
+   },
+   "stats": {
+    "gaming": 0.5,
+    "courage": 0.5
+   },
+   "feel": {
+    "excited": "moderate"
+   }
+  },
+  "says": "On tonight's collab you pulled off a ridiculous last-second win, and every streamer's chat is clipping it."
+ },
+ {
+  "id": "collab_nerves",
+  "titles": {
+   "ko": "합방 전에 긴장했다",
+   "en": "Nerves before a collab"
+  },
+  "when": {
+   "activity": "collab",
+   "stats": {
+    "courage": [
+     0,
+     75
+    ]
+   }
+  },
+  "chance": 0.15,
+  "repeat_days": 21,
+  "effects": {
+   "needs": {
+    "stress": 0.1
+   },
+   "feel": {
+    "worried": "slight"
+   }
+  },
+  "says": "Before tonight's collab you were so nervous you practised your intro in the studio bathroom. Then the cameras came on and you were fine."
+ },
+ {
+  "id": "mocha_horror",
+  "titles": {
+   "ko": "모카와 공포게임 연습",
+   "en": "Horror-game practice with Mocha"
+  },
+  "share": true,
+  "when": {
+   "activity": "pcbang"
+  },
+  "chance": 0.2,
+  "repeat_days": 14,
+  "effects": {
+   "needs": {
+    "fun": -0.2
+   },
+   "stats": {
+    "gaming": 0.3
+   },
+   "feel": {
+    "happy": "moderate"
+   }
+  },
+  "says": "At the PC bang with Mocha you tried the new horror game off stream to practise. You both screamed so loudly a staff member came over to check on you."
+ },
+ {
+  "id": "tteokbokki_new_menu",
+  "titles": {
+   "ko": "단골 떡볶이집 신메뉴",
+   "en": "A new menu at her tteokbokki place"
+  },
+  "share": true,
+  "when": {
+   "activity": "tteokbokki"
+  },
+  "chance": 0.12,
+  "repeat_days": 30,
+  "effects": {
+   "needs": {
+    "stress": -0.1,
+    "fun": -0.1
+   },
+   "stats": {
+    "sense": 0.5
+   },
+   "feel": {
+    "happy": "moderate"
+   }
+  },
+  "says": "Your tteokbokki place has a new rosé-mala tteokbokki and it is dangerously good. You took a photo for your community post and one more for them."
+ },
+ {
+  "id": "too_spicy",
+  "titles": {
+   "ko": "너무 매운 야식",
+   "en": "Too spicy, even for her"
+  },
+  "when": {
+   "activity": "late_snack"
+  },
+  "chance": 0.08,
+  "repeat_days": 14,
+  "effects": {
+   "needs": {
+    "stress": -0.05
+   },
+   "feel": {
+    "happy": "slight"
+   }
+  },
+  "says": "Tonight's late snack was the spiciest buldak yet. You regret nothing, except everything. Your lips are still numb."
+ },
+ {
+  "id": "cafe_recognized",
+  "titles": {
+   "ko": "카페에서 시청자를 만났다",
+   "en": "A viewer recognised her at the café"
+  },
+  "once": true,
+  "share": true,
+  "when": {
+   "activity": "cafe",
+   "after_days": 5
+  },
+  "chance": 0.12,
+  "effects": {
+   "needs": {
+    "affection": -0.1
+   },
+   "stats": {
+    "courage": 0.5
+   },
+   "feel": {
+    "shy": "moderate",
+    "happy": "slight"
+   }
+  },
+  "says": "A viewer recognised you at the café today and asked for a photo. You were so happy you forgot to be awkward — then panicked about your hair afterwards."
+ },
+ {
+  "id": "karaoke_high_note",
+  "titles": {
+   "ko": "드디어 고음에 성공했다",
+   "en": "She finally hit the high note"
+  },
+  "share": true,
+  "when": {
+   "activity": "karaoke"
+  },
+  "chance": 0.2,
+  "repeat_days": 21,
+  "effects": {
+   "needs": {
+    "stress": -0.1
+   },
+   "stats": {
+    "courage": 0.5,
+    "sense": 0.5
+   },
+   "feel": {
+    "excited": "moderate"
+   }
+  },
+  "says": "At the coin karaoke you finally hit the high note of the song you've been practising for your singing stream. You did a victory lap around the tiny room."
+ },
+ {
+  "id": "han_river_ramen",
+  "titles": {
+   "ko": "한강 라면",
+   "en": "Ramyeon by the river"
+  },
+  "share": true,
+  "when": {
+   "activity": "walk",
+   "hours": [
+    "16:00",
+    "23:00"
+   ]
+  },
+  "chance": 0.25,
+  "repeat_days": 18,
+  "effects": {
+   "needs": {
+    "hunger": -0.3,
+    "stress": -0.1
+   },
+   "feel": {
+    "happy": "moderate"
+   }
+  },
+  "says": "On your walk you made ramyeon at the riverside store's machine and ate it watching the light on the water. You thought it would be nicer with them."
+ },
+ {
+  "id": "caught_in_rain",
+  "titles": {
+   "ko": "한강에서 비를 맞았다",
+   "en": "Caught in the rain by the river"
+  },
+  "when": {
+   "activity": "walk",
+   "weather": "rain"
+  },
+  "chance": 0.4,
+  "repeat_days": 14,
+  "effects": {
+   "needs": {
+    "stress": 0.05,
+    "sleep": 0.05
+   },
+   "feel": {
+    "sad": "slight"
+   }
+  },
+  "says": "You got caught in the rain on your walk by the river and came home soaked, ponytail dripping. Hot shower, then strawberry milk."
+ },
+ {
+  "id": "first_snow",
+  "titles": {
+   "ko": "올해 첫눈이다",
+   "en": "The first snow of the year"
+  },
+  "share": true,
+  "when": {
+   "weather": "snow",
+   "hours": [
+    "08:00",
+    "23:00"
+   ]
+  },
+  "chance": 0.3,
+  "repeat_days": 300,
+  "effects": {
+   "needs": {
+    "fun": -0.1,
+    "affection": 0.05
+   },
+   "feel": {
+    "happy": "moderate"
+   }
+  },
+  "says": "It's the first snow of the year. You stopped and looked up for longer than you meant to, and you thought of them."
+ },
+ {
+  "id": "gym_sore",
+  "titles": {
+   "ko": "온몸에 근육통이 왔다",
+   "en": "Sore all over"
+  },
+  "when": {
+   "activity": "workout",
+   "stats": {
+    "stamina": [
+     0,
+     32
+    ]
+   }
+  },
+  "chance": 0.2,
+  "repeat_days": 21,
+  "effects": {
+   "needs": {
+    "stress": 0.05,
+    "sleep": 0.1
+   },
+   "feel": {
+    "sad": "slight"
+   }
+  },
+  "says": "Everything hurts after the gym. You promised chat a fitness stream someday; your legs have formally objected."
+ },
+ {
+  "id": "gym_habit",
+  "titles": {
+   "ko": "운동이 습관이 됐다",
+   "en": "Working out has become a habit"
+  },
+  "once": true,
+  "share": true,
+  "when": {
+   "activity": "workout",
+   "stats": {
+    "stamina": [
+     32,
+     100
+    ]
+   }
+  },
+  "chance": 0.25,
+  "effects": {
+   "needs": {
+    "stress": -0.1
+   },
+   "stats": {
+    "stamina": 1
+   },
+   "feel": {
+    "happy": "moderate"
+   }
+  },
+  "says": "You've been to the gym three times this week without anyone making you. You're weirdly proud and haven't told anyone yet."
+ },
+ {
+  "id": "cooking_disaster",
+  "titles": {
+   "ko": "요리하다 냄비를 태웠다",
+   "en": "She burnt the pot"
+  },
+  "when": {
+   "activity": "cook",
+   "stats": {
+    "cooking": [
+     0,
+     25
+    ]
+   }
+  },
+  "chance": 0.12,
+  "repeat_days": 14,
+  "effects": {
+   "needs": {
+    "stress": 0.08,
+    "hunger": 0.1
+   },
+   "stats": {
+    "cooking": 0.5
+   },
+   "feel": {
+    "sad": "slight"
+   }
+  },
+  "says": "You burnt the pot following a cooking video, and the smoke alarm joined in. You narrated the whole disaster to nobody like a stream. Clip-worthy, honestly."
+ },
+ {
+  "id": "cooking_success",
+  "titles": {
+   "ko": "처음으로 요리에 성공했다",
+   "en": "Her first cooking success"
+  },
+  "once": true,
+  "share": true,
+  "when": {
+   "activity": "cook",
+   "stats": {
+    "cooking": [
+     25,
+     100
+    ]
+   }
+  },
+  "chance": 0.2,
+  "effects": {
+   "needs": {
+    "fun": -0.2
+   },
+   "stats": {
+    "cooking": 1
+   },
+   "feel": {
+    "happy": "moderate"
+   },
+   "flags": [
+    "can_cook"
+   ]
+  },
+  "says": "For the first time, what you cooked actually tasted good: a pot of kimchi stew that didn't scare anyone. You'd like to make it for them someday."
+ },
+ {
+  "id": "new_mic",
+  "titles": {
+   "ko": "모은 돈으로 새 마이크를 샀다",
+   "en": "She bought the microphone she'd saved for"
+  },
+  "once": true,
+  "share": true,
+  "when": {
+   "place": "home",
+   "hours": [
+    "13:00",
+    "19:00"
+   ],
+   "money": {
+    "money": [
+     1500000,
+     100000000
+    ]
+   }
+  },
+  "chance": 0.05,
+  "effects": {
+   "money": -800000,
+   "needs": {
+    "fun": -0.3
+   },
+   "stats": {
+    "work": 1
+   },
+   "feel": {
+    "excited": "strong"
+   }
+  },
+  "says": "You finally bought the expensive microphone you've been saving for, and you've been saying “test, test” into it for an hour."
+ },
+ {
+  "id": "cannot_sleep",
+  "titles": {
+   "ko": "방송 생각에 잠이 안 왔다",
+   "en": "Too wired to sleep"
+  },
+  "when": {
+   "activity": "sleep",
+   "hours": [
+    "04:00",
+    "09:00"
+   ],
+   "needs": {
+    "stress": [
+     0.35,
+     1
+    ]
+   }
+  },
+  "chance": 0.08,
+  "repeat_days": 10,
+  "effects": {
+   "needs": {
+    "sleep": 0.2,
+    "stress": 0.05
+   },
+   "feel": {
+    "worried": "slight"
+   }
+  },
+  "says": "You slept badly: you kept replaying a moment from the stream in your head, wondering if it came out wrong."
+ },
+ {
+  "id": "after_stream_quiet",
+  "titles": {
+   "ko": "방종 후의 정적",
+   "en": "The quiet after the stream"
+  },
+  "when": {
+   "place": "home",
+   "hours": [
+    "00:00",
+    "02:00"
+   ],
+   "stage": [
+    "trusted",
+    "companion"
+   ]
+  },
+  "chance": 0.15,
+  "repeat_days": 7,
+  "effects": {
+   "needs": {
+    "affection": 0.1
+   },
+   "feel": {
+    "lonely": "slight"
+   }
+  },
+  "says": "After you ended the stream the room went very quiet, and you sat there in your headset for a while. You'd like to hear from them."
+ },
+ {
+  "id": "thought_of_them",
+  "titles": {
+   "ko": "문득 그 사람 생각이 났다",
+   "en": "She suddenly thought of them"
+  },
+  "when": {
+   "stage": [
+    "familiar",
+    "trusted",
+    "companion"
+   ],
+   "hours": [
+    "11:00",
+    "23:00"
+   ],
+   "needs": {
+    "affection": [
+     0.3,
+     1
+    ]
+   }
+  },
+  "chance": 0.01,
+  "repeat_days": 8,
+  "effects": {
+   "feel": {
+    "lonely": "slight"
+   }
+  },
+  "says": "Something small today reminded you of them, and you almost said their name out loud. You might mention it, or not."
+ },
+ {
+  "id": "two_person_set",
+  "titles": {
+   "ko": "2인 세트를 시켜 버렸다",
+   "en": "She ordered the set for two"
+  },
+  "when": {
+   "activity": "tteokbokki",
+   "stage": [
+    "trusted",
+    "companion"
+   ]
+  },
+  "chance": 0.12,
+  "repeat_days": 25,
+  "effects": {
+   "needs": {
+    "affection": 0.05
+   },
+   "feel": {
+    "shy": "slight"
+   }
+  },
+  "says": "At your tteokbokki place you ordered the set for two out of habit, then realised you were alone. You'd like to bring them next time. You might say so."
+ }
+]

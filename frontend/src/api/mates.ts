@@ -689,6 +689,13 @@ export const wearOutfit = (id: string, oid: string) => apiFetch<Mate>(`/api/mate
 export const patchOutfit = (id: string, oid: string, patch: { name?: string; avatar?: Avatar }) =>
   apiFetch<Mate>(`/api/mates/${enc(id)}/outfits/${enc(oid)}`, { method: "PATCH", ...j(patch) });
 export const deleteOutfit = (id: string, oid: string) => apiFetch<Mate>(`/api/mates/${enc(id)}/outfits/${enc(oid)}`, { method: "DELETE" });
+/** a character bundled with the app that this install ships (one whose pack isn't complete yet is not listed) */
+export interface BuiltinInfo {
+  key: string;
+  /** her name per language code (en, ko) */
+  names: Record<string, string>;
+}
+export const listBuiltins = () => apiFetch<BuiltinInfo[]>("/api/mates/builtin");
 /** bring back deleted built-in mates → the whole list */
 export const restoreBuiltins = () => apiFetch<Mate[]>("/api/mates/builtin/restore", { method: "POST" });
 /** a built-in mate: the bundled avatar back (clip / trigger edits undone) → the mate */

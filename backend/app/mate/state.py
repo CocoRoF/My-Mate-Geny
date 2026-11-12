@@ -91,10 +91,18 @@ OFF_DAY_FIRST, OFF_DAY_EVERY, OFF_DAY_LONG = timedelta(days=5), (timedelta(days=
 OFF_DAY_FLOORS = {"angry": ((0.90, 0.60), (0.70, 0.60)), "sleepy": ((0.70, 0.60), (0.70, 0.60))}
 OFF_DAY_EASES_H = 16.0
 
-#: how each bundled mate usually is: ``base``: where she settles; ``rise``: how easily it moves; ``loves``: what lights her up
+#: how each bundled mate usually is: ``base``: where she settles; ``rise``: how easily it moves; ``settle``: how soon it passes
+#: (times the usual half-life: below 1, she gets over it sooner); ``loves``: what lights her up
 TEMPERAMENTS: dict[str, dict[str, Any]] = {
     "chaerin": {"base": {"shy": 0.15}, "rise": {"shy": 1.2, "excited": 1.3},
                 "loves": r"게임|버그|레이드|길드|코드|디버그|재현|\braid\b|\bgame|\bbug"},  # quiet, until games come up
+    # bright and bouncy: a little happy and lively at rest; quick to light up, to blush, to pout and to feel left out — and quick
+    # to get over the pouting, the hurt and the blushing, while the excitement lasts a little longer
+    "seoa": {"base": {"happy": 0.12, "excited": 0.1},
+             "rise": {"happy": 1.3, "excited": 1.4, "shy": 1.3, "angry": 1.2, "sad": 1.15, "lonely": 1.2},
+             "settle": {"angry": 0.55, "sad": 0.6, "shy": 0.7, "lonely": 0.75, "worried": 0.8, "excited": 1.2},
+             "loves": r"방송|생방|스트리밍|구독|후원|도네|클립|떡볶이|마라탕|딸기|주식|차트|노래방|\bstream|\bsubscri|\bdonat|"
+                      r"tteokbokki|\bmalatang|strawberr|\bstocks?\b|\bcharts?\b|karaoke"},
 }
 
 # what the user says moves it, by this much
@@ -221,6 +229,11 @@ def _base(emotion: str, w: dict[str, Any]) -> float:
     return own
 
 
+def _half_life(emotion: str, w: dict[str, Any]) -> float:
+    """How long it takes this emotion to settle halfway back, in hours: hers (her temperament's ``settle``)."""
+    return HALF_LIFE_H[emotion] * float((w["temperament"].get("settle") or {}).get(emotion) or 1.0)
+
+
 def _late(now: datetime, tz: Any) -> float:
     return min(0.85, max(0.0, (0.55 - CIRCADIAN[now.astimezone(tz).hour]) / 0.3))
 
@@ -300,7 +313,7 @@ def levels(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any, *, of
         at = A._t(f.get("at"))
         if at is not None and isinstance(f.get("v"), (int, float)):
             hours = max(0.0, (now - at).total_seconds() / 3600)
-            v = base + (float(f["v"]) - base) * 0.5 ** (hours / HALF_LIFE_H[e])
+            v = base + (float(f["v"]) - base) * 0.5 ** (hours / _half_life(e, w))
             if abs(float(f["v"]) - base) >= 0.01:
                 why = f.get("why") or why
         if e == "sleepy" and not w.get("life") and _late(now, tz) > v:  # (with a day of her own, it is how she slept that counts)

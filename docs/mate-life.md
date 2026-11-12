@@ -5,7 +5,12 @@ falls asleep; she is somewhere, doing something, and that shows behind her, in h
 You look after her, spend time with her and help her grow, in the spirit of a raising sim. Chat and avatar stay exactly what they
 are: this is what is around them.
 
-Designed for 한채린 (a QA engineer by day, a guild master by night), and data-driven so that any mate can have it.
+Designed for 한채린 (a QA engineer by day, a guild master by night), and data-driven so that any mate can have it: 서아 (a streamer)
+has a week of her own in the same engine — late mornings, prep in the afternoon, evening streams four days and Saturday, a chill
+stream on some Sundays, a market-open show (“서아의 장보기”) on some weekday mornings, Wednesday off, now and then a collab in a
+studio across town — ten places of her own (her officetel, the convenience store downstairs, her café, a tteokbokki place, a PC bang,
+coin karaoke, the collab studio, the gym, the Han river) and her own story events (subscriber milestones, donations, trolls, a dead
+mic, sponsors, collabs, her stocks on the market show, burnout after a stream, fan letters…).
 
 ## What it must never be
 
@@ -72,7 +77,8 @@ her, it is on them, her messages stop being by phone, and she stays while they k
 ## The days of her year
 
 - **Her job, plainly**: a profile's `job` (`about`, `names`) goes into what she is told, with her working hours from the routine, so she can say what
-  she does and talk about her workday (한채린: QA engineer at a game company; `default.json`: an office worker).
+  she does and talk about her workday (한채린: QA engineer at a game company; `default.json`: an office worker). A week no single
+  `work` block says has its own words for the hours (`job.hours`: 서아's streams, her market show, her day off).
 - **Days off and days she knows**: weekends, the public holidays where the user lives (Nager.Date, with their names) and `builtin/days.json`:
   per country (its code; only `KR` so far, a list per code for more), fixed dates (빼빼로데이, 크리스마스 …) and the holidays that are one by
   name (설날, 추석: their dates move). `off: true` is a day off for her as an office worker whatever the holidays say (노동절, May 1). What
@@ -82,7 +88,8 @@ her, it is on them, her messages stop being by phone, and she stays while they k
 - **The week and the sky**: small floors on how she feels (`sim.mood`, at most `MOOD_MAX`): a Monday morning a bit low, an evening before
   days off lighter, the end of the weekend, rain or snow calmer and a little gloomy (more so out in it), a clear day off brighter, a day
   to celebrate, a birthday. They reach `state.py` through `for_state`'s `feel`, the reason going with what she is doing; a profile's
-  `moods` can say otherwise for her (한채린: rain at home is cosy more than gloomy).
+  `moods` can say otherwise for her (한채린: rain at home is cosy more than gloomy; 서아: a Monday means nothing to a streamer, and a
+  clear day off makes her bounce).
 - **Birthdays**: hers is `persona.birthday` (Mao's is in `files.BUILTIN_BIRTHDAYS`: her persona is not in the repo), theirs the app-wide
   `user_birthday`; the runtime keeps both in her day (`doc.birthdays`). On hers, her day begins with an `occasion` (`her_birthday`: a
   little happy, logged `mate.life_occasion`), their message warms her twice as much and a gift more (`give().birthday`), and the mate
@@ -101,10 +108,13 @@ her, it is on them, her messages stop being by phone, and she stays while they k
 
 ## Her body
 
-Clips of `kind: "life"` with a `doing` (eat, drink, game, read, walk, workout, work, sleep) leave her home pose and come back to it, in every set. While
+Clips of `kind: "life"` with a `doing` (eat, drink, game, read, walk, workout, work, sleep; 서아's stream and sing) leave her home
+pose and come back to it, in every set. While
 idle she plays those for what she is doing, with her usual breathing among them; talking and listening go on as ever; asleep she has a clip of her own,
-else she dozes. She changes into pajamas for bed and back in the morning, unless they are with her, she doesn't change clothes herself, or someone changed her
-meanwhile. The clips of an existing set are encoded into its own box, so what is out there under its URLs stays as it is.
+else she dozes. She changes for what she does and back after (an activity's `wear`, an outfit id, and `wear_why` {on, off}, what she
+is told: else “it's time for bed” / “the day has started”): pajamas for bed, 서아's stream outfit to go live (her prep for it, the
+stream, the market show and a collab), from one straight into the next, back to what she had on before — unless they are with her,
+she doesn't change clothes herself, or someone changed her meanwhile (then that is what she comes back to). The clips of an existing set are encoded into its own box, so what is out there under its URLs stays as it is.
 
 Her edges are her own colours (`pipeline.defringe`): a half-transparent edge pixel still holds some of the gray she was cut from, which on a
 dark place reads as a white rim around her arms and hair. Every pixel short of certainly her takes the colour of her nearest certain pixel
@@ -140,5 +150,5 @@ reaches her by phone wherever she is, unless the user is with her. When reach-ou
 `app/mate/life/sim.py` (pure), `profile.py` (her world as data, checked), `runtime.py` (the clock, the one way in), `diary.py`, `days.py` (the
 days of the year she knows, `builtin/days.json`), `world.py` (the weather, the holidays and the country); `builtin/life/*.json`;
 `components/mate/life/` (the backdrop, her status on the stage, the sections of her day), `components/mate/stage/` (her menu at the top
-right of the stage: Status, Places and Outfits, each a window over her on a desk and a sheet on a phone; how she is doing is in Status); `builtin/assets/chaerin/places/` (ten places at four times of day, her map).
+right of the stage: Status, Places and Outfits, each a window over her on a desk and a sheet on a phone; how she is doing is in Status); `builtin/assets/<key>/places/` (ten places each at four times of day, and a map: 한채린's, 서아's).
 `prefs.life`: auto (on for a mate who comes with a world of her own), on (anyone else gets `default.json`), off. A memory wipe starts her day again.
