@@ -65,3 +65,31 @@ async def deliver_reply(stream,narrate):
                 yield ProviderEvent(type='text.delta',data={'text':''.join(held)},timestamp=ev.timestamp)
             held,flowing=[],False
         yield ev
+
+
+async def deliver_quiet(stream):
+    """A turn that may have nothing to say (her note after a phone call, app/mate/calls.py): her text flows as ever once it
+    can no longer be [SILENT] — streamed, around the tools she uses — and a reply of exactly [SILENT] shows nothing at all
+    (``silent``, like an autonomous turn), never the line that she doesn't answer."""
+    held,flowing=[],False
+    async for ev in stream:
+        if ev.type=='text.delta' and not flowing:
+            held.append(str(ev.data.get('text') or ''))
+            if _could_be_silence(''.join(held)):continue
+            flowing=True
+            yield ProviderEvent(type='text.delta',data={'text':''.join(held)},timestamp=ev.timestamp)
+            held=[]
+            continue
+        if ev.type in ('tool.start','tool.use') and held:
+            # (she is doing something: what she wrote before it was no silence)
+            flowing=True
+            yield ProviderEvent(type='text.delta',data={'text':''.join(held)},timestamp=ev.timestamp)
+            held=[]
+        if ev.type=='turn.complete':
+            text=ev.data.get('text') or ''.join(held)
+            if not flowing and is_silence_text(text):
+                ev.data={**ev.data,'text':'','silent':True}
+            elif held:
+                yield ProviderEvent(type='text.delta',data={'text':''.join(held)},timestamp=ev.timestamp)
+            held,flowing=[],False
+        yield ev

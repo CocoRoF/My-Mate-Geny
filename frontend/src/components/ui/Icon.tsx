@@ -109,6 +109,12 @@ import {
   LuLayoutPanelTop,
   LuLayoutPanelLeft,
   LuLayoutDashboard,
+  LuPhone,
+  LuPhoneOff,
+  LuPhoneIncoming,
+  LuPhoneOutgoing,
+  LuPhoneMissed,
+  LuMinimize2,
 } from "react-icons/lu";
 
 const MAP = {
@@ -220,6 +226,13 @@ const MAP = {
   "layout-auto": LuLayoutDashboard,
   "layout-stacked": LuLayoutPanelTop,
   "layout-split": LuLayoutPanelLeft,
+  // a phone call with her (components/mate/call)
+  phone: LuPhone,
+  "phone-off": LuPhoneOff,
+  "phone-incoming": LuPhoneIncoming,
+  "phone-outgoing": LuPhoneOutgoing,
+  "phone-missed": LuPhoneMissed,
+  minimize: LuMinimize2,
 } satisfies Record<string, IconType>;
 
 export type IconName = keyof typeof MAP;

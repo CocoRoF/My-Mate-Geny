@@ -1,6 +1,6 @@
 const screen = {
   "simpleReachOut": "Speak first",
-  "fixedReachOutHint": "Your mate speaks first on this device when appropriate. The app considers startup, connection, work, screen changes and conversation context.",
+  "fixedReachOutHint": "Your mate speaks first on this device when appropriate. The app considers startup, connection, work, screen changes and conversation context. In the phone app she may now and then call you, by day.",
   "waitSession": "Enabled · waiting for the sharing conversation.",
 
   "sourceChangeStopped": "Capture source changed. Old requests were cancelled; reconnecting to the new source with sharing still enabled.",

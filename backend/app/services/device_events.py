@@ -47,6 +47,8 @@ class DeviceEvents:
                 clients=[c for c in self.screen.broker.clients() if c.device==device and c.screen_policy.get('enabled') and (not c.screen_policy.get('mate_id') or c.screen_policy['mate_id']==mid)]
                 if not clients:continue
                 if any(c.device==device and c.user_busy and time.monotonic()-c.busy_at<10 for c in self.screen.broker.clients()):continue
+                calls=getattr(self.screen.mate_service,'calls',None)
+                if calls is not None and calls.in_call(mid):continue  # (on the phone: her greeting waits)
                 try:conv=self.screen.mate_service.conversation(mid)
                 except (KeyError,AttributeError):continue
                 sid=conv['session_id']

@@ -1,4 +1,6 @@
 import {deviceEventHello} from "./deviceEvents";
+/** the phone-call screen this page has (backend app/mate/calls.py CALL_CLIENT) */
+const CALL_CLIENT = 1;
 import { devicePreferences } from "../stores/devicePreferences";
 /**
  * Screen capture for the Mate (docs/mate.md §4 "Seeing the screen"), the page's part.
@@ -199,6 +201,10 @@ export function clientHello(active: boolean): Record<string, unknown> {
     shares: sharedScopes(),
     screen_policy: {enabled:devicePreferences().screen.proactive_enabled,interval:60,mate_id:devicePreferences().screen.proactive_mate||"",fixed:true},
     screen_ready: true,
+    // (her phone calls ring the Android app: app/mate/calls.py)
+    native: typeof window !== "undefined" ? window.hrhNative?.platform || "" : "",
+    calls: CALL_CLIENT,
+    visible: typeof document === "undefined" || document.visibilityState === "visible",
     active,
   };
 }

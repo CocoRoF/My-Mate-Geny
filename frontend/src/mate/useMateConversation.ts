@@ -21,6 +21,7 @@ import { openConversation, prefsOf, resetConversation, speech as synthesizeSpeec
 import { onResync } from "../lib/sync";
 import { createChatStore, FIRST_TURNS, type Turn } from "../stores/chatStore";
 import { useMateStore } from "../stores/mateStore";
+import { callBusy, useCallStore } from "../stores/callStore";
 import type { Attachment, ProviderEvent } from "../types";
 import { getMateAudioQueue, useMateAudio } from "./audioQueue";
 import { usePreviewFlags } from "./livePreview";
@@ -188,7 +189,9 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
   const [blockedTurn, setBlockedTurn] = useState<string | null>(null);
   const rank = opts.voice === false || blockedTurn ? 0 : voiceRank(surface, desk, pageVisible);
   const owner = useVoiceElection(mateId, rank, speakingTurn);
-  const voiceEnabled = opts.voice !== false && !muted && !!mate?.voice.auto_read && engine !== "off";
+  // (on the phone with her, her chat is quiet: the call has her voice — docs/mate-calls.md)
+  const onCall = useCallStore(callBusy);
+  const voiceEnabled = opts.voice !== false && !muted && !!mate?.voice.auto_read && engine !== "off" && !onCall;
   const voiceEnabledRef = useRef(voiceEnabled);
   voiceEnabledRef.current = voiceEnabled;
   const speaks = owner && voiceEnabled;

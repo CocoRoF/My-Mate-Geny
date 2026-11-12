@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useReducer } from "react";
 import type { Mate } from "../../api/mates";
 import { clientMsgId } from "../../mate/voiceOwner";
 import { useComposerStore } from "../../stores/composerStore";
+import { callBusy, useCallStore } from "../../stores/callStore";
 import { useDraftStore } from "../../stores/draftStore";
 import { useMateChat, type MateConversation } from "../../mate/useMateConversation";
 import AttachmentTray from "../attachments/AttachmentTray";
@@ -269,7 +270,7 @@ function Composer({
   const pressAt = useRef(0);
   const onMicDown = (e: React.PointerEvent) => {
     e.preventDefault();
-    if (mic.unavailable) return;
+    if (mic.unavailable || callBusy(useCallStore.getState())) return; // (on a call the call has the mic)
     if (recording) {
       pressAt.current = 0;
       mic.stop();

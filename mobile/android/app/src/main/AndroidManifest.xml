@@ -65,6 +65,10 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- The mate calling you (GenyCallPlugin, docs/mate-calls.md): her ringing as a call notification that comes up
+         over the lock screen while the app is in the background, and the phone's vibration while it rings -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Download page: open the installer for a new version downloaded in the app (GenyServerPlugin.installApk) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>

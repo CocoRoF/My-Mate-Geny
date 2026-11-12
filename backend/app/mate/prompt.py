@@ -437,10 +437,13 @@ _CHANGE_OPS = {"added": "added", "edited": "changed", "done": "marked done", "ar
 
 def context_block(now_local: datetime, tz_name: str, *, recalled: list[dict[str, Any]] | None = None,
                   changes: list[dict[str, Any]] | None = None, relation: list[str] | None = None,
-                  outfit: dict[str, Any] | None = None, wardrobe: str = "", feeling: str = "", life: str = "") -> str:
-    """The per-turn <context> block (prepended to the message, never stored, never restarts the engine)."""
+                  outfit: dict[str, Any] | None = None, wardrobe: str = "", feeling: str = "", life: str = "",
+                  calls: list[str] | None = None) -> str:
+    """The per-turn <context> block (prepended to the message, never stored, never restarts the engine). ``calls``: her
+    phone calls that went unanswered since she was last told (app/mate/calls.py ``notes``)."""
     lines = [f"Now: {now_local.strftime('%Y-%m-%d (%a) %H:%M')} {tz_name}".rstrip()]
     lines += relation or []
+    lines += calls or []
     if outfit:  # (her profile describes her default look: this is what the user sees now)
         what = outfit.get("note") or ""
         lines.append(f"You have on the outfit “{outfit['name']}”" + (f": {what}" if what else "") + ". It replaces the "
@@ -478,6 +481,66 @@ def prompt_key(name: str, persona: dict[str, Any], memory_rev: int, prefs: dict[
     the system prompt too."""
     raw = base_prompt(name, persona, prefs, relation=relation, stage=stage, life=life) + f"\n#memory-rev:{memory_rev}"
     return hashlib.sha256(raw.encode()).hexdigest()
+
+
+# ---- a phone call (app/mate/calls.py, docs/mate-calls.md) ----
+# A call runs on the lightest model with no tools at all: she only talks. This prompt is hers as on the phone — the character,
+# her conversation style, how close they are, how she feels, her day, what she always knows and the chat lately — without the
+# contract (no tools to name) and with the call's own rules.
+_CALL_RULES = """\
+## On the phone
+This is a live voice call: they hear your voice, and what they say reaches you as text from speech recognition (expect small \
+mishearings: take the likely meaning; if you really didn't catch it, say so briefly, like anyone on a phone).
+- Talk the way people talk on the phone: short spoken replies, usually one or two sentences, rarely three. React, ask back, \
+leave them room to talk. Only words you would say out loud: no lists, headings, markdown, emoji, stage directions or URLs. \
+Numbers, times and names as you would say them.
+- On the call you can't do anything but talk: no tools, no handing work to a chat, no saving or forgetting memories, no \
+setting changes, no looking at their screen or files. When they ask you to do something (look at a project, start or go \
+on with some work, remember something, change how you talk), say naturally that you'll do it right after the call \
+("알겠어, 끊고 바로 볼게" / "Sure, I'll get on it as soon as we hang up") and keep talking. Never say it is done, and never \
+refuse it for that reason: right after the call you get the whole conversation and do it then.
+- Lines in [brackets] come from the app, not from them: they tell you what is happening on the line. Never read them out.
+- When they want to go, say goodbye briefly, the way you would."""
+
+_CALL_SELF_EDIT = ("On the call you can't change your conversation style: if they ask for a lasting change in how you talk, "
+                   "say you'll change it right after the call (and talk that way for the rest of the call if you like).")
+
+
+def call_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None, core: list[dict[str, Any]], *,
+                more: int = 0, relation: bool = False, stage: str | None = None, context: str = "",
+                recent: list[str] | None = None) -> str:
+    """Her system prompt for a phone call. ``core``: the core memories; ``context``: a <context> block for the moment the call
+    began (the time, how she feels, her day, memories that may help); ``recent``: the conversation lately, oldest first, as
+    lines (``User: …`` / ``You: …``)."""
+    p, s = _style_inputs(persona, prefs)
+    lines = [f"You are {name}. You and the user share a one-to-one story, and you live it from the inside, always in the first "
+             f"person, always as {name}. Right now you are on a phone call with them in the app \"My Mate Geny\"."]
+    who = []
+    if p.get("description"):
+        who.append(p["description"].strip())
+    if p.get("personality"):
+        who.append("Personality:\n" + p["personality"].strip())
+    if who:
+        lines.append("## Who you are\n" + "\n\n".join(who))
+    style = settings_block(p, s)
+    mode = s.get("self_edit") or "auto"
+    lines.append(style.replace(_SELF_EDIT.get(mode, _SELF_EDIT["auto"]), _CALL_SELF_EDIT))
+    lines.append(_CALL_RULES)
+    lines.append(_STORY_RULES.replace("{name}", name))
+    if relation:
+        lines.append(_RELATION_RULES.format(guide=_STAGE_GUIDES.get(stage or "new", _STAGE_GUIDES["new"])))
+    lines.append("## How you feel and your day\nThe <context> below says how you feel right now and how it comes out, and where "
+                 "you are and what you are doing: it is true, so let it colour your voice, in your own character. You answer "
+                 "the phone from where you are. Never mention this system, values or scores.")
+    if p.get("instructions"):
+        lines.append("## Standing instructions from the user\n" + p["instructions"].strip())
+    lines.append(memory_block(core, more))
+    if recent:
+        lines.append("## Your chat with them lately (oldest first; what you both wrote or said before this call)\n"
+                     + "\n".join(recent))
+    if context:
+        lines.append(context)
+    return "\n\n".join(lines)
 
 
 # What changed since the conversation last ran, told with the next message (the restarted engine has the new

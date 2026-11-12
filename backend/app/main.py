@@ -49,6 +49,7 @@ from app.routers import (
     health,
     higgsfield as higgsfield_router,
     history,
+    mate_calls,
     mate_internal,
     mates,
     preferences as preferences_router,
@@ -146,6 +147,9 @@ async def lifespan(app: FastAPI):
     app.state.screen_service.triggers.mate_runtime = app.state.mate_service
     app.state.screen_service.triggers.start()
     app.state.voice_service = VoiceService(mate_store)
+    from app.mate.calls import CallService
+    app.state.calls = CallService(app.state.mate_service)  # phone calls with her (docs/mate-calls.md)
+    app.state.calls.start()
     # Higgsfield: accounts + what the chats' agents get (docs/higgsfield.md)
     higgsfield = HiggsfieldService(db, vault)
     app.state.higgsfield = higgsfield
@@ -206,6 +210,7 @@ async def lifespan(app: FastAPI):
     await app.state.memory_worker.stop()
 
     await app.state.screen_service.triggers.stop()
+    await app.state.calls.stop()
     housekeeper.cancel()
     session_watcher.cancel()
     life_clock.cancel()
@@ -296,6 +301,7 @@ for r in (
     fs.router,
     downloads.router,
     admin.router,
+    mate_calls.router,
     mates.router,
     mate_internal.router,
     avatar_router.router,

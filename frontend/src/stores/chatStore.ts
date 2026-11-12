@@ -68,7 +68,7 @@ export interface MessageMeta {
   [k: string]: unknown;
 }
 
-const META_KEYS = ["via", "internal", "kind", "delegations", "speech_group", "speech_pending", "speech_at", "hidden"] as const;
+const META_KEYS = ["via", "internal", "kind", "delegations", "speech_group", "speech_pending", "speech_at", "hidden", "call"] as const;
 
 /** The meta keys a live user.message / user.steer event carries in `data`. */
 function metaOf(data: Record<string, any>): MessageMeta | undefined {

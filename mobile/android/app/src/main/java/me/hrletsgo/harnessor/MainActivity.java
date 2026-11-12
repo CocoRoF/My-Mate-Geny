@@ -14,6 +14,7 @@ import android.webkit.URLUtil;
 import android.webkit.WebView;
 import android.widget.Toast;
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.PluginHandle;
 import java.net.URLDecoder;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -35,7 +36,13 @@ public class MainActivity extends BridgeActivity {
             if (savedInstanceState == null) GenyServerPlugin.forgetServer(this, false);
             setIntent(new Intent(Intent.ACTION_MAIN)); // handled once (BridgeActivity re-delivers it below)
         }
+        if (GenyCallPlugin.isCallIntent(intent)) {
+            // her call notification brought the app up: the page hears it once the plugin is there
+            GenyCallPlugin.deliverLater(intent);
+            setIntent(new Intent(Intent.ACTION_MAIN));
+        }
         registerPlugin(GenyServerPlugin.class);
+        registerPlugin(GenyCallPlugin.class);
         config = GenyServerPlugin.buildConfig(this);
         super.onCreate(savedInstanceState);
         // The Mate reads replies aloud when they arrive (not inside a tap), so
@@ -109,6 +116,14 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     protected void onNewIntent(Intent intent) {
+        if (GenyCallPlugin.isCallIntent(intent)) {
+            // a tap on her call notification (open / 수락 / 거절): to the page (docs/mate-calls.md)
+            PluginHandle h = getBridge() != null ? getBridge().getPlugin("GenyCall") : null;
+            if (h != null && h.getInstance() instanceof GenyCallPlugin) ((GenyCallPlugin) h.getInstance()).deliver(intent);
+            else GenyCallPlugin.deliverLater(intent);
+            setIntent(new Intent(Intent.ACTION_MAIN));
+            return;
+        }
         if (intent != null && ACTION_SWITCH_SERVER.equals(intent.getAction())) {
             GenyServerPlugin.forgetServer(this, false);
             setIntent(new Intent(Intent.ACTION_MAIN));
