@@ -2,7 +2,6 @@ const screen = {
   "simpleReachOut": "Speak first",
   "fixedReachOutHint": "Your mate speaks first on this device when appropriate. The app considers startup, connection, work, screen changes and conversation context.",
   "waitSession": "Enabled · waiting for the sharing conversation.",
-  "targetUnavailable": "Select the previous source again",
 
   "sourceChangeStopped": "Capture source changed. Old requests were cancelled; reconnecting to the new source with sharing still enabled.",
 
@@ -10,22 +9,18 @@ const screen = {
   "restorePermission": "Sharing is waiting for screen-recording permission or source selection. Your setting is retained.",
   "restoreBrowser": "Select your screen again in the browser. Sharing remains enabled and your settings are retained.",
 
-  "setup": "Set up screen sharing",
-  "whenRequested": "Look when requested",
   "deviceSettings": "Screen sharing on this device",
-  "deviceIntro": "Shows your screen to your mate. While you share, she looks at it and talks with you about it.",
-  "deviceSettingsHint": "All windows use these device settings. Changing the target cancels old requests and reconnects sharing to the selected source.",
-  "source": "Capture source",
-  "primaryScreen": "Primary screen",
+  "deviceIntro": "With screen sharing on, your mate sees your screen with each message you send. With it off, she can still take one look when you ask her to.",
+  "deviceSettingsHint": "Every window on this device uses these settings. What to share is picked when you press Share screen.",
   "allScreens": "All screens",
   "allScreensCount": "All screens ({count})",
   "allScreensHint": "Each screen goes as its own picture, and the one you're using comes first.",
-  "approval": "Request approval",
+  "approval": "Ask before capturing",
+  "ask": "Every time",
   "allow": "Allow without asking",
-  "imageSize": "Image size",
+  "imageSize": "Picture size",
   "asVisible": "Capture the screen as it appears, without hiding or moving Geny windows.",
   "savedLocally": "Saved on this device immediately. Server settings are unchanged.",
-
 
   "deny": "Deny",
   "allowOnce": "Allow once",
@@ -37,19 +32,9 @@ const screen = {
   "allowRequest": "Allow {name} to capture your selected screen now?",
   "requestFailed": "Screen capture or upload failed. Check your connection and screen permission.",
   "thisConversation": "this conversation",
-  "localHint": "Capture this device’s screen, regardless of which server hosts your workspace.",
-  "once": "Capture once",
-  "start": "Enable sharing",
-  "mode": "When to capture",
-  "ask": "When requested · ask each time",
-  "onTurn": "With each message I send",
-  "observe": "Periodic screen observation",
-  "interval": "Observation interval",
-  "seconds": "{count} seconds",
-  "retention": "Sharing stays on for this device until you stop it, including after restart. Browsers require selecting a screen again. Sent images stay as conversation attachments; image bytes are not copied into application logs.",
-  "costHint": "Observation can start a model reply and use tokens. Busy sessions are skipped; identical frames are skipped.",
-  "capturing": "Capturing screen…",
-  "shareSettings": "This share",
-  "moreInSettings": "Asking first, picture size: Settings → Screen sharing"
+  "sharingTitle": "Sharing your screen",
+  "sharingNow": "Sharing now: {source}",
+  "stop": "Stop sharing",
+  "change": "Change"
 };
 export default screen;

@@ -41,8 +41,9 @@ off where it lives: the stage's status window.
 ## In the moment
 
 - Reading a reply aloud for this mate: the composer's speaker (and the avatar's bar on the desktop).
-- Sharing the screen, what with, and when she looks: the composer's screen control (+ → Share screen); the set-once
-  part links to Settings → 화면 공유.
+- Sharing the screen and what with: + → Share screen (the desktop bar's screen button, the chat window's toolbar)
+  opens only the picker — a browser's own — and the pick turns it on, "with each message"; pressed again it stops
+  or changes it. Asking first and the picture's size stay in Settings → 메이트.
 - The chat's engine, model, reasoning, mode, folders, MCP and Higgsfield: the chat's own controls.
 - Showing the mate on the desktop, click-through, moving her: the tray and her bar.
 

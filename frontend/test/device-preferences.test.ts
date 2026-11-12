@@ -8,7 +8,7 @@ test('broken local JSON recovers safely; valid partial settings survive normaliz
  data.set('hrh_device_preferences_v1','broken JSON');
  const p=await prefs.loadDevicePreferences();assert.equal(p.sharing.enabled,false);assert.equal(p.screen.approval,'ask');
  data.set('hrh_device_preferences_v1',JSON.stringify({version:1,screen:{format:'jpeg',max_edge:-1},volume:2.75,sharing:{enabled:true,origin:'https://device-test',sid:'s',mode:'invalid'}}));
- const q=await prefs.loadDevicePreferences();assert.equal(q.screen.format,'jpeg');assert.equal(q.screen.max_edge,0);assert.equal(q.volume,2.75);assert.equal(q.sharing.mode,'ask');
+ const q=await prefs.loadDevicePreferences();assert.equal(q.screen.format,'jpeg');assert.equal(q.screen.max_edge,0);assert.equal(q.volume,2.75);assert.equal(q.sharing.mode,'on_turn');
 });
 test('browser intent and settings persist locally, stop survives reload, and active legacy mate is migrated once',async()=>{
  await prefs.patchDevicePreferences({sharing:{enabled:true,origin:'https://device-test',sid:'s',mode:'on_turn',interval:60},screen:{proactive_enabled:true,proactive_interval:60}});

@@ -17,11 +17,11 @@ let chrome;
 let webBrowser;
 const req = (url, body, method = "POST") => `fetch(${JSON.stringify(url)}, {method:${JSON.stringify(method)},headers:{'Content-Type':'application/json'},body:${JSON.stringify(JSON.stringify(body))}}).then(async r=>{if(!r.ok)throw new Error(r.status+':'+await r.text());return r.json()})`;
 const evalClick = (page, selector) => page.eval(`document.querySelector(${JSON.stringify(selector)}).click(), true`);
-async function openSetup(page) {
+// + → Share screen: the desktop app's picker, or a browser's own dialog (no setup step; sharing is "with each message")
+async function openShare(page) {
   await evalClick(page,'button[title="Attach photos or files"]');
   await until("attach menu",()=>page.eval("!!document.querySelector('[data-testid=attach-share-screen]')"));
   await evalClick(page,'[data-testid=attach-share-screen]');
-  await until("sharing settings",()=>page.eval("!!document.querySelector('[data-testid=screen-setup]')"));
 }
 async function screenshot(page, name) { const r = await page.send("Page.captureScreenshot", { format: "png" }); fs.writeFileSync(path.join(shots, name), Buffer.from(r.data, "base64")); }
 async function send(page, sid, text) {
@@ -60,8 +60,7 @@ async function finished(page, sid, marker = "") {
     const session = await con.eval(req("/api/sessions", spec));
     await con.eval(`location.href='/?view=chat&session=${session.id}',true`);
     await until("composer", () => con.eval("!!document.querySelector('textarea')"));
-    await openSetup(con);
-    await evalClick(con, '[data-testid="screen-start"]');
+    await openShare(con);
     await until("native source picker", () => con.eval("!!document.querySelector('[data-testid=share-source]')"));
     await con.eval(`Array.from(document.querySelectorAll('[data-testid=share-source]')).find(e=>e.textContent.includes('GENY-LOCAL-KNOWN')).click(),true`);
     await evalClick(con, '[data-testid="share-go"]');
@@ -82,10 +81,6 @@ async function finished(page, sid, marker = "") {
     assert.ok(Math.abs(sample.px[0][0]-216)<30 && Math.abs(sample.px[0][2]-156)<30, "captures the chosen pink local window");
     fs.writeFileSync(path.join(shots,"desktop-proof.json"),JSON.stringify({sample,sha}));
     console.log("PASS real Electron source → normal session MCP → model bytes → conversation image");
-    await openSetup(con);
-    await con.eval(`(()=>{const s=document.querySelector('[data-testid=screen-mode]');s.value='on_turn';s.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
-    await evalClick(con,'[data-testid=screen-apply]');
-    await sleep(300);
     await send(con, session.id, "auto frame message");
     const h2 = await until("auto-frame user message", async()=>{
       const h=await history(con,session.id);return h.messages?.find(m=>m.content==='auto frame message'&&m.attachments?.length) ? h : null;
@@ -108,9 +103,8 @@ async function finished(page, sid, marker = "") {
     const cdp = await context.newCDPSession(page);
     const browserPage = { eval: expression => page.evaluate(s=>eval(s), expression), send: (method,args)=>cdp.send(method,args), close: ()=>context.close() };
     await browserPage.eval(`window.__captures=0;window.__stopped=0;navigator.mediaDevices.getDisplayMedia=async()=>{window.__captures++;const c=document.createElement('canvas');c.width=1280;c.height=720;const g=c.getContext('2d');g.fillStyle='#12ab34';g.fillRect(0,0,1280,720);g.fillStyle='white';g.font='48px sans-serif';g.fillText('BROWSER-STREAM-739',40,100);const s=c.captureStream(2);window.__displayStream=s;const tr=s.getVideoTracks()[0];const old=tr.stop.bind(tr);tr.stop=()=>{window.__stopped++;old()};return s};true`);
-    await openSetup(browserPage);
-    await evalClick(browserPage,'[data-testid="screen-start"]');
-    await until("browser sharing",()=>browserPage.eval("window.__captures===1 && !document.querySelector('[data-testid=screen-setup]')"));
+    await openShare(browserPage);
+    await until("browser sharing",()=>browserPage.eval("window.__captures===1 && !document.querySelector('[data-testid=screen-sharing]')"));
     await send(browserPage,session.id,"look at my local screen");
     await until("browser approval",()=>browserPage.eval("!!document.querySelector('[data-testid=screen-approval]')"));
     await screenshot(browserPage,"browser-approval.png");
@@ -118,15 +112,7 @@ async function finished(page, sid, marker = "") {
     await until("second model screen result",async()=>{const h=await history(browserPage,session.id);return h.events.filter(e=>e.type==='tool.result'&&e.data.images?.length).length>=2});
     assert.equal(await browserPage.eval("window.__captures"),1);
     await until("browser turn finished",async()=>{const h=await history(browserPage,session.id);return h.events.filter(e=>e.type==='turn.complete').length>=3});
-    await openSetup(browserPage);
-    await browserPage.eval(`(()=>{const s=document.querySelector('[data-testid=screen-mode]');s.value='observe';s.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
-    await evalClick(browserPage,'[data-testid=screen-apply]');
-    await sleep(300);
-    const observed = await browserPage.eval(req(`/api/sessions/${session.id}/screen/observe`, { device: await browserPage.eval("localStorage.getItem('hrh_device_id')") }));
-    assert.equal(observed.status, "sent");
-    const throttled = await browserPage.eval(req(`/api/sessions/${session.id}/screen/observe`, { device: await browserPage.eval("localStorage.getItem('hrh_device_id')") }));
-    assert.equal(throttled.status, "busy"); // the observation's reply is still running; never queue another
-    console.log("PASS periodic observation captures a current frame and skips a busy conversation");
+    // (periodic observation is no longer offered: a share is "with each message"; the server keeps the mode)
 
     await browserPage.eval("window.__displayStream.getVideoTracks()[0].dispatchEvent(new Event('ended'));true");
     assert.equal(await browserPage.eval("window.__stopped"),1);

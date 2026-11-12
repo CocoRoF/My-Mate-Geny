@@ -134,8 +134,6 @@ const setRange = (p, selector, value) =>
     await shot(bar, "toolbar-small.png");
     const before = countAttachments();
     await click(bar, "[data-act=screen]");
-    await until("toolbar setup",()=>chat.eval("!!document.querySelector('[data-testid=screen-setup]')"));
-    await click(chat,"[data-testid=screen-start]");
     await until("toolbar picker", () =>
       chat.eval("!!document.querySelector('[data-testid=share-picker]')"),
     );
@@ -151,8 +149,6 @@ const setRange = (p, selector, value) =>
     );
     assert.equal(countAttachments(), before);
     await click(bar, "[data-act=screen]");
-    await until("toolbar setup",()=>chat.eval("!!document.querySelector('[data-testid=screen-setup]')"));
-    await click(chat,"[data-testid=screen-start]");
     await until("picker again", () =>
       chat.eval("!!document.querySelector('[data-testid=share-picker]')"),
     );
@@ -164,8 +160,6 @@ const setRange = (p, selector, value) =>
     );
     assert.equal(countAttachments(), before);
     await click(bar, "[data-act=screen]");
-    await until("toolbar setup",()=>chat.eval("!!document.querySelector('[data-testid=screen-setup]')"));
-    await click(chat,"[data-testid=screen-start]");
     await until("picker for sharing", () =>
       chat.eval("!!document.querySelector('[data-testid=share-source]')"),
     );
@@ -281,26 +275,21 @@ const setRange = (p, selector, value) =>
     await app.main(
       `global.__originalCapture=require('electron').desktopCapturer.getSources;global.__captureEntered=false;require('electron').desktopCapturer.getSources=async function(o){const result=await global.__originalCapture.call(this,o);if(o.thumbnailSize.width>640){global.__captureEntered=true;await new Promise(r=>global.__releaseCapture=r);}return result;};return true`,
     );
-    await click(bar, "[data-act=screen]");
-    await until("toolbar setup",()=>chat.eval("!!document.querySelector('[data-testid=screen-setup]')"));
-    await click(chat,"[data-testid=screen-once]");
-    await until("picker for in-flight cancel", () =>
-      chat.eval("!!document.querySelector('[data-testid=share-source]')"),
-    );
-    await click(chat, "[data-testid=share-source]");
+    // (Share screen has no one-off picture any more: the bridge's own capture is held instead)
     await app.main("global.__captureWindowEvents=[];global.__watchCapture=true;return true");
-    await click(chat, "[data-testid=share-go]");
+    const held = chat.eval("window.hrhNative.capture.grab({id:'held-capture',maxEdge:1280}).then(r=>r.ok?'ok':r.code)");
     await until("native capture held", () =>
       app.main("return global.__captureEntered"),
     );
+    // the toolbar's screen button while a capture is in flight: stop, nothing delivered
     await bar.eval("window.hrhBar.act('screen'),true");
     await until("cancel leaves avatar continuously visible", () =>
       app.main("return win('surface=mate-overlay').isVisible()"),
     );
-    await click(chat, "[data-testid=share-cancel]");
     await app.main(
       "global.__releaseCapture();require('electron').desktopCapturer.getSources=global.__originalCapture;return true",
     );
+    assert.equal(await held, "stopped");
     await sleep(500);
     assert.deepEqual(await app.main("global.__watchCapture=false;return global.__captureWindowEvents"),[],'capture/cancel must never hide/show or refocus app windows');
     assert.equal(countAttachments(), before);
@@ -437,12 +426,11 @@ const setRange = (p, selector, value) =>
     await until('previous reply done',async()=>!(await (await context.request.post(server+'/api/mates/'+b.id+'/conversation')).json()).running);
     await chat.eval("window.dispatchEvent(new StorageEvent('storage',{key:'hrh_lang',newValue:'ko'})),true");
     await click(bar,'[data-act=screen]');
-    await shot(chat,'sharing-start-setup.png');
-    await click(chat,'[data-testid=screen-start]');
     await until('automatic source picker',()=>chat.eval("!!document.querySelector('[data-testid=share-source]')"));
+    await shot(chat,'sharing-start-picker.png');
     await click(chat,'[data-testid=share-source]');
     await click(chat,'[data-testid=share-go]');
-    await until('shared without expanded settings',()=>chat.eval("!document.querySelector('[data-testid=screen-setup]')"));
+    await until('shared, the picker closed',()=>chat.eval("!document.querySelector('[data-testid=share-picker]')"));
     assert.equal(await chat.eval("document.querySelectorAll('[data-testid=local-screen-controls],[data-testid=screen-sharing-banner]').length"),0);
     await shot(chat,'sharing-compact.png');
     assert.equal(await app.main("return win('surface=mate-chat').webContents.getBackgroundThrottling()"),false);

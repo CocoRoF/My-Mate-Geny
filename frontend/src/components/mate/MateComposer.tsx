@@ -177,7 +177,7 @@ function Composer({
     trigger,
   } = c;
 
-  const screen = useLocalScreenControls(sid, mate.name, c.addFiles, mate);
+  const screen = useLocalScreenControls(sid, mate.name, mate);
   const contentRef = useRef(onContentChange);
   contentRef.current = onContentChange;
 
@@ -361,7 +361,7 @@ function Composer({
             >
               <Icon name="plus" size={compact ? 16 : 18} />
             </button>
-            {c.attachOpen && <AttachMenu onPick={c.pickFile} onClose={() => c.setAttachOpen(false)} onShareScreen={screen.open} />}
+            {c.attachOpen && <AttachMenu onPick={c.pickFile} onClose={() => c.setAttachOpen(false)} onShareScreen={screen.open} screenShared={screen.active} />}
           </div>
           {showVoiceToggle && <ReadAloudToggle mate={mate} conv={conv} className={btn} size={compact ? 15 : 17} />}
           <textarea

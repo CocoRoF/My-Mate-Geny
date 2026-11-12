@@ -43,23 +43,25 @@ test('store policy events update a sharing owner without a mounted composer and 
   assert.ok([...intervals.values()].some(t=>t.ms===180000));
   policy(false,180);
   assert.ok(![...intervals.values()].some(t=>t.ms===180000));
-  assert.deepEqual(screen.sharedScopes(),{s2:'ask'});
+  assert.deepEqual(screen.sharedScopes(),{s2:'on_turn'});
   screen.stopSharing();
 });
 
-test('device mode edits immediately change the live owner without an Apply button',async()=>{
+test('a share is always "with each message": an older saved mode changes nothing',async()=>{
  const prefs=await import('../src/stores/devicePreferences.ts');
  await screen.beginSharing('sync','Mate',{id:'screen:1:0',kind:'screen',name:'Screen'});
- await prefs.patchDevicePreferences({sharing:{mode:'on_turn',interval:300}});
- assert.equal(screen.sharingSnapshot()?.mode,'on_turn');assert.equal(screen.sharingSnapshot()?.interval,300);
+ assert.equal(prefs.devicePreferences().sharing.mode,'on_turn');
+ await prefs.patchDevicePreferences({sharing:{mode:'observe',interval:300}});
+ assert.equal(screen.sharingSnapshot()?.mode,'on_turn');
  assert.deepEqual(screen.sharedScopes(),{sync:'on_turn'});
+ assert.equal([...intervals.values()].filter(t=>t.ms===300000).length,0,'no periodic observation');
  screen.stopSharing();
 });
 
 test('changing the saved conversation releases its old grant without turning sharing OFF',async()=>{
  const prefs=await import('../src/stores/devicePreferences.ts');
  await screen.beginSharing('previous','Mate',{id:'screen:1:0',kind:'screen',name:'Screen'});
- assert.deepEqual(screen.sharedScopes(),{previous:prefs.devicePreferences().sharing.mode});
+ assert.deepEqual(screen.sharedScopes(),{previous:'on_turn'});
  await prefs.patchDevicePreferences({sharing:{sid:'recreated'}});
  assert.deepEqual(screen.sharedScopes(),{});
  assert.equal(prefs.devicePreferences().sharing.enabled,true);

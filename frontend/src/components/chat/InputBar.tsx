@@ -54,7 +54,7 @@ export default function InputBar({
     [sid, updateSession, onStop],
   );
   const c = useComposer({ sid, store: useChatStore, onSend, onSteer, onStop, actions: ACTIONS, runAction, slash: true, mentions: true });
-  const screen = useLocalScreenControls(sid, session.title, c.addFiles);
+  const screen = useLocalScreenControls(sid, session.title);
   const { items, uploading, failed, hasContent, notice, setNotice, isStreaming, touch, trigger } = c;
 
   // "Mention in chat" from the explorer appends `@path ` here.
@@ -134,7 +134,7 @@ export default function InputBar({
               >
                 <Icon name="plus" size={18} />
               </button>
-              {c.attachOpen && <AttachMenu onPick={c.pickFile} onClose={() => c.setAttachOpen(false)} onShareScreen={screen.open} />}
+              {c.attachOpen && <AttachMenu onPick={c.pickFile} onClose={() => c.setAttachOpen(false)} onShareScreen={screen.open} screenShared={screen.active} />}
             </div>
             {/* while a turn runs, Queue / Add now need the room */}
             {phone && !(isStreaming && hasContent) && <ChatControls session={session} compact />}

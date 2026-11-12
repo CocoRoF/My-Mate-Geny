@@ -16,7 +16,10 @@ import { apiFetch } from "../api/client";
 import { deviceId } from "./voiceOwner";
 import { tr } from "../i18n";
 
+/** (the server and the desktop app still take the older "ask" / "observe": a share is always "on_turn" here) */
 export type ScreenMode = "ask" | "on_turn" | "observe";
+/** what sharing is: she sees the screen with each message sent (docs/screen-capture.md) */
+export const SHARE_MODE: ScreenMode = "on_turn";
 export interface LocalSharing {
   sid: string;
   name: string;
@@ -166,24 +169,6 @@ export const sharingOwned = () => ownsSharing;
 export function stopOwnedSharing() {
   if (ownsSharing) { stopSharing(false); void captureBridge()?.sharing?.publish(null); }
 }
-export function setSharingMode(mode: ScreenMode, interval = 180) {
-  void patchDevicePreferences({sharing:{mode,interval}});
-  if (!sharing) return;
-  if (!ownsSharing && captureBridge()?.sharing) {
-    void captureBridge()!.sharing!.mode(mode, interval);
-    return;
-  }
-  sharing = {
-    ...sharing,
-    mode,
-    interval: Math.max(60, Math.min(600, interval)),
-    error: "",
-  };
-  if (timer) clearInterval(timer);
-  timer = null;
-  emit();
-  scheduleObservation();
-}
 async function observe() {
   const current = sharing;
   if (
@@ -230,7 +215,7 @@ export async function beginSharing(
     // Restore reads the saved source; it must never overwrite a newer source choice from another window.
     if(!restoring)await native.setChoice(`session:${sid}`, source);
     if(native.runtime && !restoring){
-      await patchDevicePreferences({sharing:{enabled:true,origin:location.origin,sid,name,mate_id:mateId}});
+      await patchDevicePreferences({sharing:{enabled:true,origin:location.origin,sid,name,mate_id:mateId,mode:SHARE_MODE}});
       return;
     }
   } else {
@@ -266,7 +251,7 @@ export async function beginSharing(
   sharing = {
     sid,
     name,
-    mode: devicePreferences().sharing.mode,
+    mode: SHARE_MODE, // (an older saved mode too: sharing is "with each message")
     source: label,
     kind:
       source?.kind ||
@@ -282,7 +267,7 @@ export async function beginSharing(
     if (gen !== generation) return;
     if (!(result as {owner?:boolean})?.owner) { stopSharing(false); return; }
   }
-  if (!restoring && (!native || native.resume) && typeof location !== "undefined") await patchDevicePreferences({sharing:{enabled:true,origin:location.origin,sid,name,mate_id:mateId}});
+  if (!restoring && (!native || native.resume) && typeof location !== "undefined") await patchDevicePreferences({sharing:{enabled:true,origin:location.origin,sid,name,mate_id:mateId,mode:SHARE_MODE}});
   runtimeStatus="ready";lastRestoreNotice="";
   emit();
   scheduleObservation();
@@ -423,11 +408,6 @@ queueMicrotask(() => {
       if (cmd.type === "cancel-captures")
         window.dispatchEvent(new Event("hrh:cancel-captures"));
       if (cmd.type === "stop" || cmd.type === "pause") stopSharing(false);
-      if (
-        cmd.type === "mode" &&
-        ["ask", "on_turn", "observe"].includes(cmd.mode || "")
-      )
-        setSharingMode(cmd.mode as ScreenMode, cmd.interval);
     });
     void nativeSharing.get().then(receive);
   }
@@ -529,12 +509,6 @@ subscribeDevicePreferences(() => {
   // then let the sole owner validate and reconnect to the new binding.
   if(sharing&&ownsSharing&&prefs.sharing.enabled&&
       (prefs.sharing.sid!==sharing.sid||prefs.sharing.origin!==location.origin))pauseSharing("waiting_session");
-  // Persisted mode is authoritative; changing it in either settings UI immediately updates the sole owner.
-  if (sharing && ownsSharing && prefs.sharing.enabled &&
-      (sharing.mode!==prefs.sharing.mode || sharing.interval!==prefs.sharing.interval)) {
-    sharing={...sharing,mode:prefs.sharing.mode,interval:prefs.sharing.interval};
-    scheduleObservation();emit();
-  }
   for(const [sid,p] of proactive)configureProactive(sid,p.enabled,p.interval);
   if (sharing && !prefs.sharing.enabled && (!captureBridge() || captureBridge()?.resume)) stopOwnedSharing();
   window.dispatchEvent(new Event("hrh:screen-sharing"));

@@ -21,7 +21,7 @@ from PIL import Image
 from fastapi.testclient import TestClient
 from starlette.datastructures import Headers, UploadFile
 
-from app.mate import mcp_bridge
+from app.mate import files, mcp_bridge
 from app.mate.capture import ERRORS, CaptureBroker
 from app.mate.service import MateService
 from app.mate.store import MateError, MateStore, normalize_screen
@@ -135,9 +135,9 @@ def test_screen_setting_over_the_api():
         c.delete(f"/api/mates/{mid}")
 
 
-# ---- offered only while it is on ----
+# ---- always offered: she looks when asked, shared or not ----
 
-async def test_see_screen_only_when_enabled(db, tmp_path, monkeypatch):
+async def test_see_screen_is_always_offered_and_sharing_never_restarts_her(db, tmp_path, monkeypatch):
     svc, store, mates = _setup(db, tmp_path, monkeypatch)
     mate = store.create(name="Geny", llm={"model": "m1"})
     msid = mates.conversation(mate["id"])["session_id"]
@@ -151,38 +151,33 @@ async def test_see_screen_only_when_enabled(db, tmp_path, monkeypatch):
     try:
         await _turn(svc, q, msid, "hello")
         argv, env = launch()
-        assert "HRH_MATE_SCREEN" not in env and "see_screen" not in _prompt(argv)
-        pid = _mate_calls(tmp_path)[-1]["pid"]
-        # A legacy per-Mate flag cannot grant device access. Only an actual device share can.
-        mates.update(mate["id"], {"screen": {"enabled": True}})
-        await _turn(svc, q, msid, "still not sharing")
-        assert "HRH_MATE_SCREEN" not in launch()[1]
-        mates.update(mate["id"], {"screen": {"enabled": False}})
-        svc._last_client[msid] = "m1~dev-a"
-        win = _Window(mates.capture, device="dev-a", desktop="0.4.38", capture=1, shares={msid: "ask"})
-        seen = await _turn(svc, q, msid, "look")
-        argv, env = launch()
         assert env["HRH_MATE_SCREEN"] == "1"
-        assert "## Seeing the screen" in _prompt(argv) and "see_screen" in _prompt(argv)
-        assert _mate_calls(tmp_path)[-1]["pid"] != pid  # restarted: the bridge's tool list changed
-        sent = next(m for m in seen if m["type"] == "user.message")
-        assert sent  # (the settings note goes to the engine, not the history)
+        rules = _prompt(argv).split("## Seeing the screen")[1]
+        assert "whether or not they share" in rules and "Never claim to see their screen" in rules
+        pid = _mate_calls(tmp_path)[-1]["pid"]
+        # turning sharing on or off changes neither the prompt nor the tools: the engine keeps running
+        svc._last_client[msid] = "m1~dev-a"
+        win = _Window(mates.capture, device="dev-a", desktop="0.4.38", capture=1, shares={msid: "on_turn"})
+        await _turn(svc, q, msid, "look")
+        assert launch()[1]["HRH_MATE_SCREEN"] == "1" and _mate_calls(tmp_path)[-1]["pid"] == pid
         mates.capture.disconnect(win.conn)
         await _turn(svc, q, msid, "and now")
-        argv, env = launch()
-        assert "HRH_MATE_SCREEN" not in env and "see_screen" not in _prompt(argv)
+        assert launch()[1]["HRH_MATE_SCREEN"] == "1" and _mate_calls(tmp_path)[-1]["pid"] == pid
     finally:
         svc.unsubscribe(msid, q)
 
 
-def test_settings_note_mentions_the_change(db, tmp_path):
+def test_settings_note_tells_a_conversation_without_see_screen_once(db, tmp_path):
     svc, atts, store, mates, _ = _services(db)
     m = store.create(name="Geny")
-    assert mates._settings_note(m["id"], m, None, False) == ""  # first run: the prompt says it all
-    note = mates._settings_note(m["id"], m, None, True)
-    assert "<settings_update>" in note and "see_screen" in note
-    assert "no longer" in mates._settings_note(m["id"], m, None, False)
-    assert mates._settings_note(m["id"], m, None, False) == ""
+    assert mates._settings_note(m["id"], m) == ""  # first run: the prompt says it all
+    assert mates._settings_note(m["id"], m) == ""
+    # (a conversation that last ran without the tool — sharing was off — hears it is back, once)
+    path = files.home_dir(m["id"]) / ".applied-persona.json"
+    path.write_text(json.dumps({**json.loads(path.read_text()), "screen": False}))
+    note = mates._settings_note(m["id"], m)
+    assert "<settings_update>" in note and "see_screen" in note and "whether or not they share" in note
+    assert mates._settings_note(m["id"], m) == ""
 
 
 class _Backend(BaseHTTPRequestHandler):
@@ -242,24 +237,27 @@ def test_bridge_lists_see_screen_only_when_on_and_returns_the_image():
 
 # ---- where to ask ----
 
-def test_routing_to_the_device_the_user_talks_from():
+def test_routing_only_to_the_device_the_user_talks_from():
     b = CaptureBroker()
     assert b.pick("dev-a") == (None, "no_app")
-    _Window(b, device="dev-p", surface="console", desktop=None, capture=0)  # a phone / browser
-    assert b.pick("dev-p") == (None, "no_app")
+    _Window(b, device="dev-p", surface="console", desktop=None, capture=0)  # a browser / the phone app
+    assert b.pick("dev-p") == (None, "browser")  # (no capture of its own without a share)
     old = _Window(b, device="dev-o", surface="console", desktop="0.4.10", capture=0)  # a desktop app without capture
-    assert b.pick("dev-p") == (None, "outdated")
+    assert b.pick("dev-o") == (None, "outdated")
     a_overlay = _Window(b, device="dev-a", surface="mate-overlay", desktop="0.4.30", capture=1)
     a_chat = _Window(b, device="dev-a", surface="mate-chat", desktop="0.4.30", capture=1)
-    c_console = _Window(b, device="dev-c", surface="console", desktop="0.4.30", capture=1, active=True)
-    # the device of the user's last message wins, its chat window over its avatar window
+    _Window(b, device="dev-c", surface="console", desktop="0.4.30", capture=1, active=True)
+    # the device of the user's last message, its chat window over its avatar window (even one used later)
     assert b.pick("dev-a")[0].conn == a_chat.conn
-    # Unknown devices and ambiguous multi-device callers never fall back to another computer.
-    assert b.pick("dev-p") == (None, "no_app")
-    assert b.pick(None) == (None, "not_shared")
-    b.hello(a_overlay.conn, {"type": "client", "device": "dev-a", "surface": "mate-overlay", "capture": 1, "active": True})
-    assert b.pick(None) == (None, "not_shared")
+    b.hello(a_overlay.conn, {"type": "client", "device": "dev-a", "surface": "mate-overlay", "desktop": "0.4.30",
+                             "capture": 1, "active": True})
+    assert b.pick("dev-a")[0].conn == a_chat.conn
+    # another computer's desktop app never stands in: not for a browser, an unknown device or no device at all
+    assert b.pick("dev-p") == (None, "browser")
+    assert b.pick("dev-x") == (None, "no_app")
+    assert b.pick(None) == (None, "no_app")
     b.disconnect(a_chat.conn)
+    assert b.pick("dev-a")[0].conn == a_overlay.conn
     b.disconnect(a_overlay.conn)
     assert b.pick("dev-a") == (None, "no_app")
     assert old.conn in {c.conn for c in b.clients()}
@@ -310,10 +308,10 @@ async def test_denied_timeout_disabled_no_app_and_bad_answers(db, tmp_path):
     svc, atts, store, mates, logs, m, msid, ctx = await _start(db, tmp_path)
     # no desktop app at all
     text, err, imgs = await mates.call_tool_full(ctx, "see_screen", {})
-    assert err and text == ERRORS["not_shared"] and imgs == []
+    assert err and text == ERRORS["no_app"] and imgs == []
     old = _Window(mates.capture, device="dev-a", surface="console", desktop="0.4.10", capture=0)
     text, err, _ = await mates.call_tool_full(ctx, "see_screen", {})
-    assert err and text == ERRORS["not_shared"]
+    assert err and text == ERRORS["outdated"]
     mates.capture.disconnect(old.conn)
     win = _Window(mates.capture, device="dev-a", surface="mate-chat", desktop="0.4.30", capture=1, shares={msid:"ask"})
 
@@ -363,11 +361,12 @@ async def test_denied_timeout_disabled_no_app_and_bad_answers(db, tmp_path):
     text, err, _ = await asyncio.wait_for(task, 5)
     assert err and text == ERRORS["stopped"] and win2.sent[-1]["type"] == "capture.cancel"
 
-    # switched off: refused before anything is asked
-    mates.capture.hello(win2.conn, {"shares":{}})
+    # a browser that stops sharing can't look: nothing is asked, she is told why
+    mates.capture.hello(win2.conn, {"device": "dev-a", "capture": 0, "shares": {}})
     n = len(win2.sent)
     text, err, _ = await mates.call_tool_full(ctx, "see_screen", {})
-    assert err and text == ERRORS["not_shared"] and len(win2.sent) == n
+    assert err and text == ERRORS["browser"] and len(win2.sent) == n
+    assert "turn on screen sharing" in text
     # "allow without asking" travels with the request
     store.update(m["id"], {"screen": {"enabled": True, "approval": "allow", "hide_avatar": False}})
     mates.capture.hello(win2.conn, {"device":"dev-a", "desktop":"0.4.38", "capture":1, "shares":{msid:"on_turn"}})
@@ -378,6 +377,59 @@ async def test_denied_timeout_disabled_no_app_and_bad_answers(db, tmp_path):
     mates.capture_result(m["id"], req["id"], {"ok": False, "code": "denied"})
     await asyncio.wait_for(task, 5)
     assert not logs.rows  # expected outcomes are not admin errors
+
+
+async def test_not_shared_she_looks_once_through_the_desktop_app_she_is_talked_to_from(db, tmp_path):
+    svc, atts, store, mates, logs, m, msid, ctx = await _start(db, tmp_path)
+    here = _Window(mates.capture, device="dev-a", surface="mate-chat", desktop="0.5.0", capture=4)  # sharing off
+    there = _Window(mates.capture, device="dev-b", surface="console", desktop="0.5.0", capture=4, active=True)
+    task = asyncio.create_task(mates.call_tool_full(ctx, "see_screen", {"reason": "the build log"}))
+    await _wait(lambda: here.requests())
+    req = here.requests()[0]
+    # the desktop app itself: the device's chosen source, asking first (its own setting decides there)
+    assert req["scope"] == "mate" and req["source_key"] == m["id"] and req["mate_id"] == m["id"]
+    assert req["ask"] is True and req["same_device"] is True and req["multi"] is True
+    assert req["reason"] == "the build log" and there.requests() == []  # never another computer
+    att = await _upload(atts, msid, "screen-20261112-101010.png", _png())
+    assert mates.capture_result(m["id"], req["id"], {"ok": True, "attachment_id": att["id"],
+                                                     "source": {"name": "Display 1", "kind": "screen"}})
+    text, err, images = await asyncio.wait_for(task, 5)
+    assert err is False and f"[{att['id']}]" in text and "“Display 1”" in text and len(images) == 1
+    assert atts.get(att["id"])["message_id"] == f"artifact:capture:{req['id']}"
+    # allowed without asking: it just captures
+    store.update(m["id"], {"screen": {"approval": "allow"}})
+    task = asyncio.create_task(mates.call_tool_full(ctx, "see_screen", {}))
+    await _wait(lambda: len(here.requests()) == 2)
+    assert here.requests()[1]["ask"] is False
+    assert mates.capture_result(m["id"], here.requests()[1]["id"], {"ok": False, "code": "denied"})
+    assert (await asyncio.wait_for(task, 5))[0] == ERRORS["denied"]
+    # the user talks from the other computer now: that one is asked, never this one
+    svc._last_client[msid] = "m2~dev-b"
+    task = asyncio.create_task(mates.call_tool_full(ctx, "see_screen", {}))
+    await _wait(lambda: there.requests())
+    assert mates.capture_result(m["id"], there.requests()[0]["id"], {"ok": False, "code": "denied"})
+    await asyncio.wait_for(task, 5)
+    # a device that isn't connected, or none known: nobody is asked
+    for last in ("m3~dev-x", None):
+        svc._last_client.pop(msid, None)
+        if last:
+            svc._last_client[msid] = last
+        text, err, _ = await mates.call_tool_full(ctx, "see_screen", {})
+        assert err and text == ERRORS["no_app"]
+    assert len(here.requests()) == 2 and len(there.requests()) == 1
+    # a browser without a share: the short reason, nothing asked
+    svc._last_client[msid] = "m4~dev-p"
+    browser = _Window(mates.capture, device="dev-p", surface="console", desktop=None, capture=0)
+    text, err, _ = await mates.call_tool_full(ctx, "see_screen", {})
+    assert err and text == ERRORS["browser"] and browser.requests() == []
+    # … and with its share on, she sees what it shares
+    mates.capture.hello(browser.conn, {"device": "dev-p", "capture": 1, "shares": {msid: "on_turn"}})
+    task = asyncio.create_task(mates.call_tool_full(ctx, "see_screen", {}))
+    await _wait(lambda: browser.requests())
+    assert browser.requests()[0]["scope"] == "session"
+    mates.capture_result(m["id"], browser.requests()[0]["id"], {"ok": False, "code": "denied"})
+    await asyncio.wait_for(task, 5)
+    assert not logs.rows
 
 
 # ---- the engine's echo of the picture ----

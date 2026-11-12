@@ -9,7 +9,7 @@
 // prompt (source, preview), Allow → a picture of the screen with the known content, the avatar windows NOT in it,
 // attached to the conversation, shown there, the same bytes the model got; Deny → denied; allowed without asking and
 // "hide" off → no prompt, the avatar windows in the picture; a chosen window → only that window; the user's Share
-// screen (picker with thumbnails) → an image attached to the message. English pinned.
+// screen (picker with thumbnails, no setup step) → sharing on, then Stop in the same picker. English pinned.
 "use strict";
 const { spawn, execFileSync } = require("child_process");
 const fs = require("fs");
@@ -398,32 +398,31 @@ async function main() {
     }
 
     // ── 7. the user's Share screen ──
-    step("Share screen in the composer's + menu: the picker (thumbnails), Share → an image attached to the message");
-    await patch({ screen: { hide_avatar: true } });
+    step("Share screen in the composer's + menu: the picker (thumbnails) at once, Share → sharing on, with each message");
     await chatw.eval(`document.querySelector('[data-testid="mate-attach"]').click(), true`);
     await until("the menu item", () => chatw.eval(`!!document.querySelector('[data-testid="attach-share-screen"]')`));
     await chatw.eval(`document.querySelector('[data-testid="attach-share-screen"]').click(), true`);
-    await chatw.eval(`document.querySelector('[data-testid="screen-once"]').click(), true`);
     await until("the picker's sources", () => chatw.eval(`document.querySelectorAll('[data-testid="share-source"] img').length > 0`));
     const tiles = await chatw.eval(`[...document.querySelectorAll('[data-testid="share-source"]')].map((e) => e.dataset.sourceId + " " + e.innerText)`);
     console.log(`  picker: ${JSON.stringify(tiles)}`);
     await chatw.shot("share-picker.png");
     await chatw.eval(`[...document.querySelectorAll('[data-testid="share-source"]')].find((e) => e.dataset.sourceId.startsWith("screen:")).click(), true`);
     await chatw.eval(`document.querySelector('[data-testid="share-go"]').click(), true`);
-    await until("the picture in the tray", () => chatw.eval(`!document.querySelector('[data-testid="share-picker"]') && !!document.querySelector('[data-testid="mate-composer"] img')`), 30000);
-    await sleep(1500); // (uploaded)
+    await until("sharing on", () => chatw.eval(`!document.querySelector('[data-testid="share-picker"]') && window.hrhNative.capture.sharing.get().then((v) => v && v.state && v.state.mode === "on_turn")`), 30000);
     await chatw.eval(`document.querySelector('[data-testid="mate-input"]').focus(), true`);
     await chatw.send("Input.insertText", { text: "here is my screen" });
     await chatw.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
     await chatw.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
-    await until("my message with the picture", () => chatw.eval(`(() => { const all = [...document.querySelectorAll('[data-testid="mate-user-message"]')]; const last = all[all.length - 1]; return !!last && /here is my screen/.test(last.innerText) && !!last.querySelector('[data-testid="mate-user-attachments"] img'); })()`), 30000);
+    await until("my message", () => chatw.eval(`(() => { const all = [...document.querySelectorAll('[data-testid="mate-user-message"]')]; const last = all[all.length - 1]; return !!last && /here is my screen/.test(last.innerText); })()`), 30000);
     await sleep(1200);
     await chatw.shot("chat-user-shared.png");
-    const userAtt = await con.eval(`fetch("/api/history/${conv.session_id}").then((r) => r.json()).then((h) => { const m = (h.messages || []).filter((x) => x.role === "user").pop(); return m && m.attachments && m.attachments[0]; })`);
-    console.log(`  sent: ${JSON.stringify(userAtt && { name: userAtt.name, kind: userAtt.kind, w: userAtt.width, h: userAtt.height })}`);
-    assert.ok(userAtt && userAtt.kind === "image" && /^screen-\d{8}-\d{6}\.png$/.test(userAtt.name), "a PNG of the screen went with the message");
-    const s4 = await con.eval(SAMPLE(`/api/attachments/${userAtt.id}/content`, [POINTS.root, POINTS.overlay]));
-    assert.ok(close(s4.px[0], ROOT) && close(s4.px[1], ROOT), "the screen, without the avatar window");
+    // pressed again while sharing: the same picker, with Stop
+    await chatw.eval(`document.querySelector('[data-testid="mate-attach"]').click(), true`);
+    await until("the menu item", () => chatw.eval(`!!document.querySelector('[data-testid="attach-share-screen"]')`));
+    await chatw.eval(`document.querySelector('[data-testid="attach-share-screen"]').click(), true`);
+    await until("Stop in the picker", () => chatw.eval(`!!document.querySelector('[data-testid="share-stop"]')`));
+    await chatw.eval(`document.querySelector('[data-testid="share-stop"]').click(), true`);
+    await until("sharing off", () => chatw.eval(`window.hrhNative.capture.sharing.get().then((v) => !v.state)`), 15000);
 
     const log = fs.readFileSync(path.join(home, ".config", "hr-harnessor", "logs", "main.log"), "utf8");
     assert.match(log, /screen shared with a mate/);

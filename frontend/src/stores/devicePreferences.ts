@@ -58,7 +58,7 @@ const defaults: DevicePreferences = {
     proactive_enabled: null,
     proactive_interval: 180,
   },
-  sharing: {enabled:false,origin:"",sid:"",name:"",mode:"ask",interval:180},
+  sharing: {enabled:false,origin:"",sid:"",name:"",mode:"on_turn",interval:180},
   volume: 1,
   migration: {
     imported: false,
@@ -88,7 +88,7 @@ function normalize(raw: unknown): DevicePreferences {
   sharing.sid=typeof sharing.sid==="string"?sharing.sid.slice(0,100):"";
   sharing.name=typeof sharing.name==="string"?sharing.name.slice(0,100):"";
   sharing.enabled=sharing.enabled===true;
-  if (!["ask","on_turn","observe"].includes(sharing.mode)) sharing.mode="ask";
+  if (!["ask","on_turn","observe"].includes(sharing.mode)) sharing.mode="on_turn"; // (older modes are kept: a share is "on_turn")
   sharing.interval=Number.isFinite(sharing.interval)?Math.max(60,Math.min(600,sharing.interval)):180;
   return {...defaults,...v,screen,sharing,volume:Number.isFinite(v.volume)?Math.max(0,Math.min(3,v.volume!)):1,
     revision:Number.isSafeInteger(v.revision)?v.revision!:0,migration:{...defaults.migration,...v.migration}};

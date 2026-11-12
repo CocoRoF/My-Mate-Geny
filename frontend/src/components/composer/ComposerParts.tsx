@@ -12,12 +12,15 @@ export function AttachMenu({
   onPick,
   onClose,
   onShareScreen,
+  screenShared = false,
   className = "bottom-[calc(100%+8px)] left-0",
 }: {
   onPick: (kind: PickKind) => void;
   onClose: () => void;
   /** offered only when given (mate/screenCapture.ts canShareScreen: the desktop app or a desktop browser) */
   onShareScreen?: () => void;
+  /** sharing is on for this conversation (the item then changes or stops it) */
+  screenShared?: boolean;
   className?: string;
 }) {
   const t = useT();
@@ -82,7 +85,7 @@ export function AttachMenu({
           </span>
           <span className="text-left">
             <span className="block font-medium">{t("composer.shareScreen")}</span>
-            <span className="block text-[11px] text-content-faint">{t("composer.shareScreenHint")}</span>
+            <span className={`block text-[11px] ${screenShared ? "text-danger" : "text-content-faint"}`}>{t(screenShared ? "composer.shareScreenOn" : "composer.shareScreenHint")}</span>
           </span>
         </button>
       )}

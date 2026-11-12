@@ -1,12 +1,9 @@
-import {
-  useDevicePreferences,
-  patchDevicePreferences,
-} from "../../stores/devicePreferences";
+import { useDevicePreferences } from "../../stores/devicePreferences";
 /**
- * Share screen in the desktop app (the Mate composer's + menu): the screens and windows of this computer with small
- * previews, the one shared last preselected (this device), Share → one picture (the device's size setting) attached
- * to the message. With more than one screen (desktop app ≥ 4) also "All screens": one picture per screen, the one in
- * use first. mate/screenCapture.ts, docs/mate.md §4.
+ * Share screen in the desktop app (composer/LocalScreenControls): the screens and windows of this computer with
+ * small previews, the one shared last preselected (this device), Share → sharing on with it (she sees it with each
+ * message sent). With more than one screen (desktop app ≥ 4) also "All screens": one picture per screen, the one in
+ * use first. While sharing: what is shared, Stop, and a pick changes it. mate/screenCapture.ts, docs/mate.md §4.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { type Mate } from "../../api/mates";
@@ -15,10 +12,8 @@ import {
   allScreensSource,
   canShareAllScreens,
   captureBridge,
-  captureError,
   lastShared,
   rememberShared,
-  shotPictures,
   type CaptureInfo,
   type CaptureSource,
 } from "../../mate/screenCapture";
@@ -28,31 +23,27 @@ import Icon from "../ui/Icon";
 
 export default function ScreenSharePicker({
   mate,
-  onShot,
+  current = "",
   onSelect,
+  onStop,
   onClose,
 }: {
   mate?: Mate;
-  /** the pictures taken (all screens: one per screen, the one in use first) */
-  onShot?: (files: File[]) => void;
-  onSelect?: (source: CaptureSource) => void;
+  /** what is shared now (its name; "" while it reconnects) — shown with onStop */
+  current?: string;
+  /** share this source: resolves once sharing is on (the parent closes the picker); a failure is shown here */
+  onSelect: (source: CaptureSource) => Promise<void>;
+  /** sharing is on for this conversation: Stop */
+  onStop?: () => void;
   onClose: () => void;
 }) {
   const t = useT();
   const settings = useDevicePreferences().screen;
   const alive = useRef(true);
-  const captureId = useRef(`manual-${crypto.randomUUID()}`);
-  const [operation, setOperation] = useState<"once" | "ongoing">("once");
-  const close = () => {
-    alive.current = false;
-    void captureBridge()?.cancel(captureId.current);
-    onClose();
-  };
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
-      void captureBridge()?.cancel(captureId.current);
     };
   }, []);
   const [list, setList] = useState<CaptureSource[] | null>(null);
@@ -60,7 +51,7 @@ export default function ScreenSharePicker({
   const [pick, setPick] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useBackHandler(true, close);
+  useBackHandler(true, onClose);
 
   const load = () => {
     const b = captureBridge();
@@ -87,51 +78,21 @@ export default function ScreenSharePicker({
   };
   useEffect(load, []);
   useEffect(() => {
-    const k = (e: KeyboardEvent) => e.key === "Escape" && close();
+    const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
   });
 
   const share = async (sourceId = pick) => {
-    const b = captureBridge();
-    if (!b || !sourceId) return;
+    const selected = sourceId === ALL_SCREENS ? allScreensSource() : list?.find((s) => s.id === sourceId);
+    if (!selected || busy) return;
     setBusy(true);
     setError("");
-    const all = sourceId === ALL_SCREENS;
-    const selected = all ? allScreensSource() : list?.find((s) => s.id === sourceId);
-    if (onSelect && selected && (!onShot || operation === "ongoing")) {
-      onSelect(selected);
-      return;
-    }
-    const s = settings;
     try {
-      await patchDevicePreferences({
-        screen: all ? { source: null, all_screens: true } : { source: selected || null, all_screens: false },
-      });
-      if (!alive.current) return;
-      // Close the source chooser as normal UI; never hide/move the application window.
-      await new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      );
-      if (!alive.current) return;
-      const shot = await b.grab({
-        id: captureId.current,
-        mateId: mate?.id,
-        sourceId,
-        maxEdge: s.max_edge,
-        hideAvatar: false,
-        hideConsole: false,
-        multi: all,
-      });
-      if (!alive.current) return;
-      if (!shot.ok) {
-        setError(captureError(shot.code));
-        return;
-      }
+      await onSelect(selected);
       rememberShared(sourceId);
-      onShot?.(shotPictures(shot).map((p) => p.file));
-    } catch {
-      if (alive.current) setError(t("mate.shareFailed"));
+    } catch (e) {
+      if (alive.current) setError(String((e as Error)?.message || t("mate.shareFailed")));
     } finally {
       if (alive.current) setBusy(false);
     }
@@ -193,27 +154,10 @@ export default function ScreenSharePicker({
       t("screen.allScreensCount", { count: screens.length }),
     );
 
-  if (busy)
-    return (
-      <div
-        className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-border bg-surface-2 px-4 py-2 text-xs shadow-float"
-        data-testid="share-picker"
-      >
-        <Icon name="spinner" size={14} spin />
-        <span>{t("screen.capturing")}</span>
-        <button
-          className="text-danger"
-          onClick={close}
-          data-testid="share-cancel"
-        >
-          {t("common.cancel")}
-        </button>
-      </div>
-    );
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] animate-fade-in"
-      onMouseDown={(e) => e.target === e.currentTarget && close()}
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
       data-testid="share-picker"
     >
       <div
@@ -237,7 +181,7 @@ export default function ScreenSharePicker({
             <Icon name="refresh" size={14} />
           </button>
           <button
-            onClick={close}
+            onClick={onClose}
             className="btn-ghost !px-2"
             aria-label={t("common.close")}
           >
@@ -245,25 +189,13 @@ export default function ScreenSharePicker({
           </button>
         </div>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
-          {onShot && onSelect && (
-            <div className="flex gap-2" data-testid="share-operation">
-              <button
-                type="button"
-                className={operation === "once" ? "btn-primary" : "btn-ghost"}
-                onClick={() => setOperation("once")}
-              >
-                {t("screen.once")}
-              </button>
-              <button
-                type="button"
-                className={
-                  operation === "ongoing" ? "btn-primary" : "btn-ghost"
-                }
-                onClick={() => setOperation("ongoing")}
-              >
-                {t("screen.start")}
-              </button>
-            </div>
+          {onStop && (
+            <p className="flex items-center gap-2 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger" data-testid="share-current">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-danger" />
+              <span className="min-w-0 flex-1 break-all">
+                {current ? t("screen.sharingNow", { source: current }) : t("screen.sharingTitle")}
+              </span>
+            </p>
           )}
           {info &&
             info.permission !== "granted" &&
@@ -322,6 +254,9 @@ export default function ScreenSharePicker({
               )}
             </>
           )}
+          {captureBridge() && !captureBridge()?.resume && (
+            <p className="text-[11.5px] text-warning">{t("screen.updateApp")}</p>
+          )}
           {error && (
             <p
               className="rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger"
@@ -335,8 +270,17 @@ export default function ScreenSharePicker({
           <span className="min-w-0 flex-1 basis-full text-[11px] text-content-faint sm:basis-0">
             {t("mate.shareNote")}
           </span>
+          {onStop && (
+            <button
+              onClick={onStop}
+              className="btn-ghost !py-1.5 text-[12.5px] text-danger"
+              data-testid="share-stop"
+            >
+              {t("screen.stop")}
+            </button>
+          )}
           <button
-            onClick={close}
+            onClick={onClose}
             className="btn-ghost !py-1.5 text-[12.5px]"
             data-testid="share-cancel"
           >

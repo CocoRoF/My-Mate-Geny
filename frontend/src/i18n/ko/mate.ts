@@ -349,7 +349,7 @@ const ko: Messages<"mate"> = {
   shareScreens: "화면",
   shareWindows: "창",
   shareMainScreen: "{name} (주 화면)",
-  shareNote: "사진 한 장이 메시지에 첨부돼요 — 녹화하지 않아요.",
+  shareNote: "공유하는 동안 메시지를 보낼 때마다 화면 사진이 함께 가요. 녹화하지 않아요.",
   shareGo: "공유",
   // the conversation style (docs/mate.md "Prompt composition")
   toolStyleChanging: "대화 방식을 바꾸는 중…",

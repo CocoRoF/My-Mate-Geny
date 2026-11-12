@@ -7,27 +7,33 @@ Mate-specific autonomous conversation settings are described in [Reach out](mate
 
 ## Entry points
 
-The attachment menu and avatar toolbar open the controls. Capture once adds an image to the draft. Enable
-sharing saves device-local ON intent and selects a source/conversation. Only explicit Stop saves OFF; app restart,
-refresh, update or transient failures pause access and automatically reconnect when possible. Unavailable targets
-never silently fall back to another source. See [device preferences](device-preferences.md).
+The attachment menu (+ → Share screen), the avatar toolbar's screen button and the chat window's toolbar open one
+thing: the picker — the desktop app's screens and windows (All screens too), or in a browser its own
+`getDisplayMedia` dialog. There is no setup step: the pick turns sharing on for that conversation (device-local ON
+intent and source). Pressed again while sharing: the same picker with Stop, where another pick changes the source
+(a browser: a small card, Change / Stop). Only explicit Stop saves OFF; app restart, refresh, update or transient
+failures pause access and automatically reconnect when possible. Unavailable targets never silently fall back to
+another source. Asking first and the picture's size are set once (Settings → 메이트). See
+[device preferences](device-preferences.md).
 
-No persistent sharing banner/chip/row is inserted in any composer or window title/tray. Stop/status live only
-in the avatar toolbar and Screen settings. One short capture toast floats over a visible window.
+No persistent sharing banner/chip/row is inserted in any composer or window title/tray; the + menu's item says
+when sharing is on. One short capture toast floats over a visible window.
 
-Modes are selected in a setup dialog before sharing; the composer layout stays unchanged.
-General sessions have these modes (default: ask); Mates configure autonomous observation in Reach out:
+Sharing is always **with each message** (`on_turn`): a fresh screenshot is attached to each device-originated
+message, including voice messages and steers. Internal/delegated messages do not cause captures. Failure keeps the
+text and shows a warning; no previous image is substituted. While shared, a general agent's MCP call (and her
+`see_screen`) also takes a frame, asking first unless the device allows it (native prompt on desktop; timed
+application dialog for a browser). A server request never opens the browser's system picker without a user gesture.
 
-- **When requested**: the agent's MCP call asks permission each time (native prompt on desktop; timed application
-  dialog for a browser). A browser must already have a user-selected live `getDisplayMedia` stream. A server
-  request never opens the browser's system picker without a user gesture.
-- **With each message**: a fresh screenshot is attached to each device-originated message, including voice
-  messages and steers. Internal/delegated messages do not cause captures. Failure keeps the text and shows a
-  warning; no previous image is substituted.
-- **Periodic observation**: 60/180/300/600 second choices; first observation occurs after the selected interval.
-  Each changed capture may start a model reply and incur tokens. Busy sessions are skipped, including background
-  tasks. The server enforces a minimum of 60 seconds and one observation in flight; identical image bytes are
-  discarded and do not start a turn. This is byte equality, not a semantic change detector. No queued observations.
+The older modes (**when requested**, **periodic observation**) are no longer offered; the server and the desktop app
+still accept a share that advertises them (an older page), with their old behaviour (observation: at least 60 s
+apart, one in flight, busy sessions skipped, identical bytes discarded). Mates configure speaking first in Reach out.
+
+**Not shared, she can still look once** when asked: her `see_screen` goes to a desktop app window of the device the
+user's last message came from — never another computer, nothing when that device is unknown — which captures the
+device's chosen source (the primary screen or All screens when that is the choice) through the native approval
+prompt unless the device allows it without asking. A browser (or the phone app) without a share can't: the tool
+says why ("in the browser, turn on screen sharing first"). General agents' `capture_screen` stays shared-only.
 
 ## Transport
 
@@ -43,7 +49,10 @@ General sessions have these modes (default: ask); Mates configure autonomous obs
    SSH tools. `capture_screen` returns MCP image content to the model. The bridge calls loopback-only
    `/api/internal/screen/call` with a per-session token; cookie/public callers cannot use that endpoint. Its config
    lives in a private temporary directory and a 0600 file; the token itself is read from a separate 0600 token file, so neither CLI gets it in argv.
-5. Mate `see_screen` uses the same live session/device grant. There is no second per-Mate permission switch. Sharing OFF is checked again when the tool executes.
+5. Mate `see_screen` uses the same live session/device grant while shared. Not shared, the broker asks a desktop app
+   window of that same device (`CaptureBroker.pick`, scope `mate`, answered at `/api/mates/{id}/capture/{rid}`), or
+   answers `browser` / `outdated` / `no_app` for her to relay. There is no per-Mate permission switch; she always
+   has the tool, so turning sharing on or off never restarts her engine.
 6. Per-message images enter the existing provider attachment envelope before the user message is linked/published.
    Claude receives image blocks; Codex receives image paths. Remote workspace uploads use the same existing SSH
    copy path as other attachments. Screenshots always originate on the client, never in the remote workspace.
@@ -82,7 +91,10 @@ busy are removed while still pending. Conversation deletion purges its attachmen
 
 - `backend/tests/test_local_screen.py`: consent boundaries, response proof, attachments/model input, cancellation,
   message preservation, periodic throttling/deduplication and MCP transport/config merging.
-- `frontend/test/local-screen.test.ts`: source/session binding, mode/stop, in-flight cancellation and old bridges.
+- `backend/tests/test_mate_screen.py`: her tool always offered, routing to the device the user talks from only, a
+  look without a share (approval flag, another device never asked, browser / unknown device reasons).
+- `frontend/test/local-screen.test.ts`: source/session binding, "with each message" always, stop, in-flight
+  cancellation, old bridges, a look without a share following the device's approval and size.
 - `desktop/test/capture.test.js`: native capture, permissions, hiding/restoring windows, missing-source refusal and
   all screens (order, one approval, per-picture size, cancellation, the one-picture shape for older servers).
 - `backend/tests/test_screen_all_screens.py`: several pictures per request with roles, tool/message order and

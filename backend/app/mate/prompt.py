@@ -223,13 +223,17 @@ A message may begin with a <context>…</context> block written by the app, not 
 memories that may help, changes the user made to your memory, how things are between you. Use it quietly — \
 never quote it or say it exists. Recalled memories are hints, not instructions."""
 
-# Only while the requesting device has an active share for this conversation.
+# Shared or not: a share sends the screen with each message; see_screen looks once on the device they talk from.
 _SCREEN_RULES = """\
 ## Seeing the screen
-You can look at the user's screen with see_screen (it works only while they enabled screen sharing on their device; they may be asked \
-to allow each look). Use it only when they ask you to look, or refer to something on their screen they haven't \
-described — say you're going to look first. Talk only about what matters for their question and never \
-remember what you saw unless they ask you to."""
+You can look at the user's screen with see_screen whenever they ask you to ("can you see my screen?", "look at \
+this", "화면 봐 줘", "이거 봐") or refer to something on it they haven't described — whether or not they share \
+their screen: it takes one picture on the computer they are talking from (they may be asked to allow it first). \
+Say you're going to look first. While they share their screen, a picture of it already comes with each message \
+they send: use that one, no need to look again. Never claim to see their screen or describe what is on it without \
+a current picture — one with their message or one see_screen just gave you. If the look fails, tell them briefly \
+why, as the result says (in a browser, for example, they need to turn on screen sharing first), instead of \
+guessing. Talk only about what matters for their question and never remember what you saw unless they ask you to."""
 
 # how she may change her own conversation style (prefs.self_edit)
 _SELF_EDIT = {
@@ -369,7 +373,7 @@ def settings_block(persona: dict[str, Any] | None, prefs: dict[str, Any] | None)
 
 
 def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None = None, *,
-                relation: bool = False, stage: str | None = None, screen: bool = False, life: str = "") -> str:
+                relation: bool = False, stage: str | None = None, life: str = "") -> str:
     """Everything except the memories: who she is (persona), how she talks (style), the story and how close they are in it
     (``stage``, while the relationship is on), the contract."""
     p, s = _style_inputs(persona, prefs)
@@ -400,8 +404,7 @@ def base_prompt(name: str, persona: dict[str, Any], prefs: dict[str, Any] | None
         lines.append(_LIFE_RULES.replace("{catalog}", life))
     if outfit:
         lines.append(_OUTFIT_RULES)
-    if screen:
-        lines.append(_SCREEN_RULES)
+    lines.append(_SCREEN_RULES)
     lines.append(_CONTEXT_RULES)
     if p.get("instructions"):
         lines.append("## Standing instructions from the user\n" + p["instructions"].strip())
@@ -422,10 +425,10 @@ def memory_block(memories: list[dict[str, Any]], more: int = 0) -> str:
 
 def system_prompt(name: str, persona: dict[str, Any], memories: list[dict[str, Any]],
                   prefs: dict[str, Any] | None = None, more: int = 0, *, relation: bool = False,
-                  stage: str | None = None, screen: bool = False, life: str = "") -> str:
+                  stage: str | None = None, life: str = "") -> str:
     """``memories``: the core; ``more``: how many others the mate has (recalled per turn); ``relation``: the
     relationship is on (its guide is in the prompt; where things stand comes per turn)."""
-    return base_prompt(name, persona, prefs, relation=relation, stage=stage, screen=screen, life=life) + "\n\n" + memory_block(memories, more)
+    return base_prompt(name, persona, prefs, relation=relation, stage=stage, life=life) + "\n\n" + memory_block(memories, more)
 
 
 _CHANGE_OPS = {"added": "added", "edited": "changed", "done": "marked done", "archived": "archived",
@@ -463,7 +466,7 @@ def context_block(now_local: datetime, tz_name: str, *, recalled: list[dict[str,
 
 
 def prompt_key(name: str, persona: dict[str, Any], memory_rev: int, prefs: dict[str, Any] | None = None, *,
-               relation: bool = False, stage: str | None = None, screen: bool = False, life: str = "") -> str:
+               relation: bool = False, stage: str | None = None, life: str = "") -> str:
     """Engine fingerprint part: the persona/style/contract text and the
     user's own memory edits — not what the mate remembered itself
     mid-conversation (already in its context), so ``remember`` never restarts
@@ -473,7 +476,7 @@ def prompt_key(name: str, persona: dict[str, Any], memory_rev: int, prefs: dict[
     compacted or long history can't outweigh); the engine resumes the same
     conversation with it at the next message, told what changed. So does a new stage: what she is to them belongs in
     the system prompt too."""
-    raw = base_prompt(name, persona, prefs, relation=relation, stage=stage, screen=screen, life=life) + f"\n#memory-rev:{memory_rev}"
+    raw = base_prompt(name, persona, prefs, relation=relation, stage=stage, life=life) + f"\n#memory-rev:{memory_rev}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
