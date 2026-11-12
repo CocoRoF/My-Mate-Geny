@@ -650,7 +650,7 @@ def test_alpha_recovery_on_a_synthetic_frame():
     res = json.loads(r.stdout.strip().splitlines()[-1])
     assert res["ok"], res
     assert res["bg"] == pytest.approx([213, 212, 217], abs=1.0)
-    # (a stray pixel where two parts meet may dip before solidify; what ships is solid)
+    # (a stray pixel where two parts meet may dip in the matte; what ships, its edge measured, is solid)
     assert res["alpha_inside_mean"] > 0.995 and res["alpha_inside_min"] > 0.85 and res["alpha_shipped_inside_min"] > 0.99
     assert res["fold_alpha_min"] > 0.9  # the remover's crack along a dark fold is closed
     assert res["alpha_edge_mae"] < 0.3 and res["colour_mae"] < 3.0
@@ -791,7 +791,7 @@ async def test_a_candidate_with_one_thing_changed(db, tmp_path, monkeypatch):
 
 @needs_venv
 def test_steady_edges_filled_objects_and_her_own_edge_colours(tmp_path):
-    """pipeline.steady / fill_object_holes / defringe / clip_thumb on made-up frames: the matte's flicker settles where the picture
+    """pipeline.steady / fill_object_holes / edge_matte / clip_thumb on made-up frames: the matte's flicker settles where the picture
     holds still and not where it moves; a hole that shows something she holds is filled, the gray between her fingers stays open;
     an edge takes her colour, never the gray."""
     script = r'''
@@ -822,22 +822,21 @@ a[42:48, 26:32] = 0.0; o[42:48, 26:32] = [230, 140, 40]   # a bun the remover dr
 f = m.fill_object_holes(a, o, bg)
 out["page_filled"] = float(f[20:30, 20:30].min()); out["gap_open"] = float(f[42:48, 42:48].max())
 out["hair_gap_open"] = float(f[42:48, 12:18].max()); out["bun_filled"] = float(f[43:47, 27:31].min())
-rgb = np.zeros((30, 30, 3), np.float32); al = np.zeros((30, 30), np.float32)
-rgb[:, :10] = [20, 20, 30]; al[:, :10] = 1.0; rgb[:, 10] = [200, 200, 205]; al[:, 10] = 0.4   # a rim still holding the gray
-d = m.defringe(rgb, al)
-out["rim"] = d[5, 10].tolist(); out["far"] = d[5, 29].tolist()
-# her edge measured again from its colour: a dark strand's edge pixel half mixed with the gray is half her; the sharpening's
-# light line outside her outline is none of her; light skin against the gray can't be told apart and keeps its alpha
-o = np.full((20, 20, 3), 213.0, np.float32); a = np.zeros((20, 20), np.float32)
+# her edge measured from the picture (edge_matte): a dark strand's edge pixel half mixed with the gray, called all hair by the
+# matte, is half her and in her colour, not the gray's; the sharpening's light line outside her outline is none of her; her
+# colour is carried a few pixels past her (the codec's colour blur), and beyond it is black
+o = np.full((20, 40, 3), 213.0, np.float32); a = np.zeros((20, 40), np.float32)
 o[:, :10] = [30, 25, 30]; a[:, :10] = 1.0
-o[:, 10] = [121, 118, 123]; a[:, 10] = 1.0                 # half hair, half gray, called all hair by the matte
+o[:, 10] = [121, 118, 123]; a[:, 10] = 1.0                 # half hair, half gray
 o[:, 11] = [235, 234, 238]; a[:, 11] = 1.0                 # the halo, lighter than the gray
-u = m.unmix_edge(a, o, bg)
-out["mixed"] = float(u[5, 10]); out["halo"] = float(u[5, 11]); out["inside"] = float(u[5, 3])
+al, rgb = m.edge_matte(o, a, bg)
+out["mixed"] = float(al[5, 10]); out["rim"] = rgb[5, 10].round().tolist(); out["halo"] = float(al[5, 11])
+out["inside"] = float(al[5, 3]); out["carried"] = rgb[5, 13].round().tolist(); out["far"] = rgb[5, 39].tolist()
+# light skin against the gray: its rim is measured as well, half her in her own colour (the matte said 0.8)
 o2 = np.full((20, 20, 3), 213.0, np.float32); a2 = np.zeros((20, 20), np.float32)
 o2[:, :10] = [236, 220, 220]; a2[:, :10] = 1.0; o2[:, 10] = [225, 216, 218]; a2[:, 10] = 0.8
-out["skin_kept"] = float(m.unmix_edge(a2, o2, bg)[5, 10])
-out["halo_cut"] = float(m.cut_halo(a, o, bg)[5, 11])
+al2, rgb2 = m.edge_matte(o2, a2, bg)
+out["skin"] = float(al2[5, 10]); out["skin_rgb"] = rgb2[5, 10].round().tolist(); out["skin_inside"] = float(al2[5, 4])
 out["thumb"] = m.clip_thumb(__import__("pathlib").Path(sys.argv[2]), __import__("pathlib").Path(sys.argv[3]))
 print(json.dumps(out))
 '''
@@ -850,10 +849,87 @@ print(json.dumps(out))
     assert res["moving_kept"] > 0.9  # (no ghost of the frames around it where the picture moved)
     assert res["page_filled"] == 1.0 and res["gap_open"] < 0.1
     assert res["hair_gap_open"] < 0.1 and res["bun_filled"] == 1.0  # (filling that in some frames is what made her edge flicker)
-    assert res["rim"] == [20, 20, 30] and res["far"] == [0, 0, 0]
     assert 0.4 < res["mixed"] < 0.6 and res["halo"] == 0.0 and res["inside"] == 1.0
-    assert res["skin_kept"] == pytest.approx(0.8) and res["halo_cut"] == 0.0
+    assert res["rim"] == pytest.approx([30, 25, 30], abs=4) and res["carried"] == pytest.approx([30, 25, 30], abs=4)
+    assert res["far"] == [0, 0, 0]
+    assert 0.3 < res["skin"] < 0.65 and res["skin_rgb"] == pytest.approx([236, 220, 220], abs=8) and res["skin_inside"] == 1.0
     assert res["thumb"] and (tmp_path / "thumb.webp").stat().st_size > 1000
+
+
+@needs_venv
+def test_edge_matte_takes_the_gray_out_of_her_edge(tmp_path):
+    """pipeline.edge_matte on a made-up frame drawn large and scaled down (real anti-aliased edges) on the known gray, with
+    noise: pink hair inside a dark line, a loose strand a pixel wide beside it, a cream sweater with rib shadows nearly the gray's
+    colour, and the remover's smooth hull over all of it and the gray between strand and hair. On a dark and on a white page she
+    looks as drawn: her edge's colour is the colour she was drawn in (the gray taken out: F = (C − (1 − α)·B) / α), no gray left
+    at her edge, the strand whole (no dots), the gray in the hull open, the sweater and its near-gray shadows solid, and two
+    frames that differ only by noise get the same edge."""
+    script = r'''
+import json, sys, importlib.util
+import numpy as np
+import cv2
+spec = importlib.util.spec_from_file_location("pipeline", sys.argv[1]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+bg = np.array([213, 212, 217], np.float32)
+S, H, W = 4, 160, 200
+yy, xx = np.mgrid[0:H * S, 0:W * S] / S
+LINE, PINK, CREAM, RIB, NAVY = (130, 100, 107), (240, 190, 205), (245, 238, 230), (225, 218, 215), (60, 64, 100)
+col = np.zeros((H * S, W * S, 3), np.float32); cov = np.zeros((H * S, W * S), np.float32)
+def put(mask, c):
+    col[mask] = c; cov[mask] = 1.0
+r = np.hypot(yy - 62, xx - 100); t = np.arctan2(yy - 62, xx - 100)
+put(r < 45, LINE); put(r < 43, PINK)
+strand = (np.abs(r - 50 - 6 * np.sin(3 * t)) < 0.6) & (t > 0.3) & (t < 1.6)
+put(strand, LINE)
+body = (yy > 120) & (xx > 50) & (xx < 150)
+put(body & ((xx < 52) | (xx > 148) | (yy < 122)), NAVY)
+put(body & (xx >= 52) & (xx <= 148) & (yy >= 122), CREAM)
+put(body & (xx >= 52) & (xx <= 148) & (yy >= 124) & (np.mod(xx, 6) < 1), RIB)
+down = lambda x: cv2.resize(x, (W, H), interpolation=cv2.INTER_AREA)
+a_true = down(cov); f_true = down(col * cov[..., None]) / np.maximum(a_true, 1e-6)[..., None]
+rng = np.random.default_rng(3)
+shot = lambda: (f_true * a_true[..., None] + bg * (1 - a_true[..., None]) + rng.normal(0, 1.5, (H, W, 3))).clip(0, 255).astype(np.float32)
+o = shot()
+k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+hull = cv2.dilate(cv2.morphologyEx((a_true > 0.3).astype(np.uint8), cv2.MORPH_CLOSE, k), np.ones((3, 3), np.uint8))
+a0 = cv2.GaussianBlur(hull.astype(np.float32), (0, 0), 0.8)
+al, rgb = m.edge_matte(o, a0, bg)
+inside = cv2.erode((a_true > 0.99).astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
+edge = (a_true > 0.02) & ~inside
+out = {}
+for name, page in (("dark", (28, 30, 40)), ("white", (255, 255, 255))):
+    pg = np.array(page, np.float32)
+    e = np.abs(rgb * al[..., None] + pg * (1 - al[..., None]) - (f_true * a_true[..., None] + pg * (1 - a_true[..., None]))).mean(-1)[edge]
+    out[name] = [float(e.mean()), float(np.percentile(e, 99))]
+    # (the picture's own colour at the remover's alpha, the gray left in it: how it looked)
+    out["raw_" + name] = float(np.abs(o * a0[..., None] + pg * (1 - a0[..., None]) - (f_true * a_true[..., None] + pg * (1 - a_true[..., None]))).mean(-1)[edge].mean())
+out["alpha_mae"] = float(np.abs(al - a_true)[edge].mean())
+near_out = cv2.dilate((a_true < 0.5).astype(np.uint8), np.ones((7, 7), np.uint8)).astype(bool)
+out["gray_left"] = int((near_out & (al > 0.25) & (np.sqrt(((rgb - bg) ** 2).sum(-1)) < 15)).sum())
+mixed = edge & (a_true > 0.3)
+out["colour_err"] = float(np.abs(rgb - f_true).mean(-1)[mixed].mean())
+core = strand[S // 2::S, S // 2::S] & (a_true > 0.45)
+out["strand_min"] = float(al[core].min()); out["strand_mean"] = float(al[core].mean()); out["strand_true"] = float(a_true[core].mean())
+out["gap_max"] = float(al[(hull > 0) & (a_true == 0)].max())
+sweater = cv2.erode(body[S // 2::S, S // 2::S].astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
+ribs = sweater & (np.abs(f_true - np.array(RIB, np.float32)).max(-1) < 3)
+out["sweater_min"] = float(al[sweater].min()); out["ribs"] = int(ribs.sum()); out["inside_min"] = float(al[inside].min())
+out["rib_colour"] = float(np.abs(rgb - f_true).max(-1)[ribs].max())
+al2, _ = m.edge_matte(shot(), a0, bg)
+out["flicker"] = float(np.abs(al2 - al)[edge].mean())
+print(json.dumps(out))
+'''
+    (tmp_path / "t.py").write_text(script)
+    r = subprocess.run([str(_venv() / "bin" / "python"), "-I", str(tmp_path / "t.py"), str(S.Path(S.__file__).with_name("pipeline.py"))],
+                       capture_output=True, text=True, timeout=240)
+    res = json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 else pytest.fail(r.stderr)
+    # on a dark page the gray left at her edge was a light rim: now within a few levels of how she was drawn, everywhere
+    assert res["dark"][0] < 4 and res["dark"][1] < 25 and res["raw_dark"] > 20, res
+    assert res["white"][0] < 4 and res["white"][1] < 25, res
+    assert res["alpha_mae"] < 0.05 and res["colour_err"] < 6 and res["gray_left"] == 0, res
+    assert res["strand_min"] > 0.3 and abs(res["strand_mean"] - res["strand_true"]) < 0.1, res  # whole, not dotted, not fattened
+    assert res["gap_max"] < 0.05, res  # the gray between the strand and her hair, under the hull
+    assert res["ribs"] > 100 and res["sweater_min"] == 1.0 and res["inside_min"] == 1.0 and res["rib_colour"] < 6, res
+    assert res["flicker"] < 0.02, res
 
 
 @needs_venv
@@ -901,10 +977,12 @@ print(json.dumps(out))
 
 @needs_venv
 def test_a_loose_strand_beside_her_hair_stays_dark(tmp_path):
-    """pipeline.fill_object_holes / light_ridge / solidify / defringe on the gap between a loose strand and her hair: the gap is no
-    hole to fill (its light pixels are the sharpening's line, its far-from-gray ones the gray mixed with the strands: no pixel is
-    both, and dark hair rings it; a book's page lines are the same mix, ringed by paper, and filled), solidify doesn't close it, and the strand keeps its dark colour, not the gray of a mixed pixel beside it. Where a dark
-    part of her meets a light one there is no ridge, and a light rim still takes the colour inside it."""
+    """pipeline.fill_object_holes / edge_matte on the gap between a loose strand and her hair: the gap is no hole to fill (its
+    light pixels are the sharpening's line, its far-from-gray ones the gray mixed with the strands: no pixel is both, and dark hair
+    rings it; a book's page lines are the same mix, ringed by paper, and filled); at her edge it stays open, measured as the little
+    of her it holds, in her colour, and the strand keeps its dark colour, not the gray of the mix. A gap a few pixels wide between
+    two strands, which never shows the gray itself, opens though the remover covered it; a light part of her beside a dark one
+    stays whole."""
     script = r'''
 import json, sys, importlib.util
 import numpy as np
@@ -917,20 +995,25 @@ def hole_in(ring):
     o[10:30, 16:18] = [222, 221, 226]; o[10:30, 18] = [232, 231, 236]; o[10:30, 19:21] = [170, 169, 174]; a[10:30, 16:21] = 0.2
     return m.fill_object_holes(a, o, bg)[15:25, 16:21]
 out = {"mixed_gap_filled": float(hole_in([30, 28, 34]).max()), "page_lines_filled": float(hole_in([250, 248, 240]).min())}
-# her hair (columns 11 on), a gap (9-10) and a loose strand (8): the gap is a ridge, the edge of a light part of her is not
-o = np.empty((20, 20, 3), np.float32); o[:] = bg
+# her hair (columns 11 on), a gap (9-10: the gray mixed with the dark beside it) and a loose strand (8)
+o = np.empty((20, 30, 3), np.float32); o[:] = bg
 o[:, 11:] = [30, 28, 34]; o[:, 9:11] = [175, 174, 179]; o[:, 8] = [105, 104, 109]
-o2 = np.empty((20, 20, 3), np.float32); o2[:] = [30, 28, 34]; o2[:, 10:] = [225, 222, 230]; o2[:, 9] = [130, 128, 135]
-r1, r2 = m.light_ridge(o), m.light_ridge(o2)
-out["gap_ridge"] = bool(r1[10, 9] and r1[10, 10]); out["junction_ridge"] = bool(r2[10, 9])
-a = np.zeros((20, 20), np.float32); a[:, 11:] = 1.0; a[:, 10] = 0.7; a[:, 9] = 0.3; a[:, 8] = 0.55
-rgb = m.colour(o, a, bg); rgb, a2 = m.solidify(rgb, a, o, bg)
-out["gap_closed"] = float(a2[10, 9]); out["outline_solid"] = float(a2[10, 10])
-d = m.defringe(rgb, a2)
-out["strand_lum"] = float(d[10, 8].mean())
-rgb = np.zeros((30, 30, 3), np.float32); al = np.zeros((30, 30), np.float32)
-rgb[:, :10] = [20, 20, 30]; al[:, :10] = 1.0; rgb[:, 10] = [200, 200, 205]; al[:, 10] = 0.6   # a rim still holding the gray
-out["rim"] = m.defringe(rgb, al)[5, 10].tolist()
+a = np.zeros((20, 30), np.float32); a[:, 11:] = 1.0; a[:, 10] = 0.7; a[:, 9] = 0.3; a[:, 8] = 0.55
+al, rgb = m.edge_matte(o, a, bg)
+out["gap"] = float(al[10, 9]); out["outline"] = float(al[10, 10]); out["gap_lum"] = float(rgb[10, 9:11].mean())
+out["strand"] = float(al[10, 8]); out["strand_lum"] = float(rgb[10, 8].mean()); out["hair"] = float(al[10, 20])
+# two strands (5-7, 11 on) with a gap of three pixels the remover covered: tinted by them, never the gray itself
+o = np.empty((20, 30, 3), np.float32); o[:] = bg
+o[:, 5:8] = [40, 30, 36]; o[:, 11:] = [40, 30, 36]; o[:, 8:11] = [225, 206, 212]
+a = np.zeros((20, 30), np.float32); a[:, 5:] = 1.0
+al, _ = m.edge_matte(o, a, bg)
+out["narrow_gap"] = float(al[5:15, 8:11].max()); out["strands"] = float(min(al[10, 6], al[10, 20]))
+# a light part of her (10-14) beside a dark one, against the gray: no gap between two lines, it stays
+o = np.empty((20, 30, 3), np.float32); o[:] = bg
+o[:, :9] = [30, 28, 34]; o[:, 9] = [130, 128, 135]; o[:, 10:15] = [225, 222, 230]
+a = np.zeros((20, 30), np.float32); a[:, :15] = 1.0
+al, _ = m.edge_matte(o, a, bg)
+out["light_kept"] = float(al[5:15, 10:14].min())
 print(json.dumps(out))
 '''
     (tmp_path / "t.py").write_text(script)
@@ -938,7 +1021,7 @@ print(json.dumps(out))
                        capture_output=True, text=True, timeout=120)
     res = json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 else pytest.fail(r.stderr)
     assert res["mixed_gap_filled"] < 0.5 and res["page_lines_filled"] == 1.0
-    assert res["gap_ridge"] and not res["junction_ridge"]
-    assert res["gap_closed"] < 0.5 and res["outline_solid"] < 0.95
-    assert res["strand_lum"] < 60  # (it was the gray of the outline beside it, about 120: a light line on a dark page)
-    assert res["rim"] == [20, 20, 30]
+    assert res["gap"] < 0.35 and res["outline"] < 0.35 and res["gap_lum"] < 60  # (the gray's ~175 would be a light line)
+    assert 0.4 < res["strand"] < 0.8 and res["strand_lum"] < 60 and res["hair"] == 1.0
+    assert res["narrow_gap"] < 0.1 and res["strands"] > 0.95
+    assert res["light_kept"] > 0.95

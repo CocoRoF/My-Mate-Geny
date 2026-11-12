@@ -44,23 +44,34 @@ Exactly the official mates' body (docs/mate.md §2 `video`, packing `stacked-alp
    never more than her own size); holes inside the body are filled unless they are the gray itself; gaps
    the remover covers (the gray between hair and a loose strand: its mask is a smooth hull there) opened again from the
    picture, with the coverage of the dark edges beside them, and what the remover itself doubts fades with how close it
-   is to the gray (behind pale hair the gray picks up a tint); specks dropped; the inside made solid; the edge choked a
-   pixel in, except what clearly isn't the gray (a fine strand, an outline). When a clip is encoded, each frame's matte first
+   is to the gray (behind pale hair the gray picks up a tint); specks dropped; the inside made solid. When a clip is
+   encoded, each frame's matte first
    gets back what the remover dropped of her or of what she holds (`fill_object_holes`: a hole about as light as the gray or
    lighter and yet not the gray itself, or of a clear colour: her fingers on a cup, a book's pages; the bottom of the frame
    closes a hole like her body does, since she is cut off there, so a cup on its way out counts; the gray between her fingers
    and the gray between strands of her hair stay open; where a hole passes only because its light pixels and its
    far-from-gray ones are different pixels, what rings it decides: dark hair, a gap beside a loose strand; white paper, a
-   book's page lines), loses the sharpening's light line outside her outline (`cut_halo`), and
-   has its edge measured again from its colour (`unmix_edge`: an edge pixel is her colour, taken from the nearest pixel well
-   inside her, mixed with the known gray, and the proportion is its alpha, so the gray in a hair strand's edge doesn't stay as a
-   white line); then it is steadied in time (`steady`: averaged with three frames either way, as far as the picture there is
-   the same picture, so what is left of the matte's per-frame noise doesn't crawl along her edges, and a moving arm keeps its
-   own frame); the inside is made solid, but not across a gap beside a loose strand (`light_ridge`: lighter than something on
-   both sides, and no lighter than the gray; where a dark part of her meets a light one there is no ridge, and a white page
-   is lighter than the gray); and the edge is coloured from her nearest
-   certain pixel (`defringe`), unless its own colour is the darker one where enough of her is there (the nearest certain
-   pixel can be a mix itself, and its gray lit loose strands up as light specks on a dark place). Clips are encoded at CRF 18 / 20 with `-tune animation` (the alpha half
+   book's page lines); then it is steadied in time (`steady`: averaged with three frames either way, as far as the picture
+   there is the same picture, so the matte's per-frame noise doesn't crawl along her edges, and a moving arm keeps its own
+   frame); then her edge is measured from the picture (`edge_matte`). On the gray an edge pixel is her colour mixed with the
+   known gray, C = α·F + (1 − α)·B; a pixel the matte calls all her while it still holds gray is a light rim round her on a
+   dark page (her hair's strands, her arms), so the matte only says where she is and the picture how much. From the outside
+   in — through the gray her matte covers (a patch of the gray's own colour reached from outside her, or closed in by her near
+   her outline as a sliver or ringed by her lines; and a channel a few pixels wide between two of her lines that comes close to
+   the gray, which the codec's colour blur keeps from ever showing the gray itself), and then a few pixels on, as long as the
+   picture moves away from the gray and the same way (past her outline it turns back: that is her inside, and the matte's word
+   stands there) — each pixel's alpha is measured: how far it lies from the gray along the line to her colour there (the
+   furthest-out colour of hers on that line among the nearest pixels surely hers; for a loose strand, whose own pixels are
+   all mixes, the line it is drawn in, up to 12 px away), the gray's noise faded out. Her colour is the mix undone,
+   F = (C − (1 − α)·B) / α, and where little of her is left the colour found; the sharpening's light line outside a strong
+   outline is none of her; past her a few pixels carry her colours (the codec's colour blur and the browser's scaling then
+   find hers there). A patch of the gray's very colour bigger and wider than a gap is a part of her (a gray hood) and keeps
+   the matte; light clothes, a cream sweater whose shadows come near the gray, are never measured past their outline. The
+   clip is then scaled to its sizes weighted by alpha. On the gray she looks exactly as she was made; on a dark or a white
+   page no gray shows at her edge and a fine strand stays whole (no threshold breaks it into dots). The stills get the same:
+   the base picture's edge is measured when it is cut out (`home`, at its own scale; `place.json` marks it), a set made
+   before that is measured when it is exported, and the stills are scaled weighted by alpha, their edge's colour carried a
+   few pixels out (`edge_extend`). Clips are encoded at CRF 18 / 20 with `-tune animation` (the alpha half
    shares the quality), and each gets a small still for the clip library (`clip_thumb`). The base picture's cut-out gets the same
    opening, so every way of making an avatar does: a new mate, an existing mate's avatar, an outfit, a redo. All of it only
    on one flat background (`flat_background`): a reference used as it is may stand on a room, and then the remover's
