@@ -1,7 +1,7 @@
 // Every set of one mate stands in the same place at the same size (src/mate/avatar/framing.ts)
 import assert from "node:assert/strict";
 import test from "node:test";
-import { placeSet } from "../src/mate/avatar/framing";
+import { placeSet, widenFor } from "../src/mate/avatar/framing";
 import type { RigFrame } from "../src/mate/types";
 
 // han Chaerin as measured: her default set and her crop top, cut with other margins and another head height
@@ -59,4 +59,22 @@ test("what can't be compared, or looks wrong, only shares her height and her spo
     near(p.width, 1046 / 964 / box);
   }
   near(placeSet(usual, { aspect: [848, 970] }).width, 1);
+});
+
+test("a wider set widens the fitted box evenly: never cut off at the sides, her default set still centred", () => {
+  // her default set: nothing to widen
+  const own = widenFor(placeSet(usual, usual));
+  near(own.span, 1);
+  near(own.place.left, 0);
+  // her crop top reaches past both sides (more on the left)
+  const p = placeSet(cropTop, usual);
+  const { span, place } = widenFor(p);
+  assert.ok(span > 1);
+  near(span, 2 * Math.max(0.5 - p.left, p.left + p.width - 0.5));
+  assert.ok(place.left >= -1e-9 && place.left + place.width <= 1 + 1e-9, "inside the widened box");
+  // her default box stays in the middle of the widened one: the set sits where it sat, next to it
+  const frameLeft = (1 - 1 / span) / 2;
+  near(frameLeft + p.left / span, place.left);
+  near(place.width, p.width / span);
+  near(place.top, p.top);
 });

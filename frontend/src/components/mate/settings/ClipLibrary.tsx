@@ -19,6 +19,7 @@ import { clipsFor, clipUrl, MECHANIC_STILLS, moodPool, stillNameFor } from "../.
 import { EMOTIONS } from "../../../mate/emotion";
 import type { BodyMood, ClipKind, Rig, RigClip } from "../../../mate/types";
 import { useMateStore } from "../../../stores/mateStore";
+import ScrollRow from "../../ui/ScrollRow";
 import Icon from "../../ui/Icon";
 import { tr, useT, type MsgKey } from "../../../i18n";
 import { ErrorLine, Field, Section, Toggle } from "./ui";
@@ -210,7 +211,7 @@ export function ClipLibrary({ mate, rig, onChange, folder = "" }: { mate: Mate; 
       hint={t("mateSettings.clipLibraryHint")}
       right={<span className="pill shrink-0 border border-border text-content-faint">{t("mateSettings.clipCount", { count: rig.clips.length })}{off ? ` · ${t("mateSettings.clipOffCount", { n: off })}` : ""}</span>}
     >
-      <div className="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1" role="tablist">
+      <ScrollRow className="-mx-1 gap-1 px-1" role="tablist" watch={filter}>
         {(["all", ...KINDS, ...(off ? ["off" as const] : [])] as const).map((k) => {
           const n = k === "all" ? rig.clips.length : k === "off" ? off : rig.clips.filter((c) => c.kind === k).length;
           if (k !== "all" && k !== "off" && !n) return null;
@@ -224,7 +225,7 @@ export function ClipLibrary({ mate, rig, onChange, folder = "" }: { mate: Mate; 
             </button>
           );
         })}
-      </div>
+      </ScrollRow>
       <div className="grid grid-cols-2 gap-2 min-[480px]:grid-cols-3">
         {shown.map((c) => (
           <ClipCard key={c.id} rig={rig} clip={c} selected={selected === c.id} onPick={() => setSelected(c.id)} />

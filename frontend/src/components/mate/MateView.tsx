@@ -1,10 +1,13 @@
 /**
  * The Mate view (sidebar → Mate): switcher, avatar stage, conversation, composer, settings.
- * Desktop: like Geny's VTuber tab — the avatar gets half the width (big, bottom-anchored, scaled to the height), the
- * conversation the other half; Mate settings and the ♥ panel open over the conversation half.
- * Phone: a compact (collapsible) stage on top, the conversation below, settings full screen. While the on-screen
- * keyboard is up the stage steps aside (the header keeps her picture, name and mood) so the conversation gets the
- * room; it comes back when the keyboard goes.
+ * Two layouts (mate/layout.ts), picked in the header (자동 / 위아래 / 좌우, kept on this device):
+ * - side by side, like Geny's VTuber tab — the avatar gets half the width (big, bottom-anchored, fitted whole), the
+ *   conversation the other half; Mate settings and the ♥ panel open over the conversation half.
+ * - stacked — the stage on top, the conversation below; the panels open below the stage, in the conversation's place,
+ *   and she stays in sight. Automatic stacks a narrow or tall view (sidebar folded or not); a phone is always stacked.
+ * Phone (and a very short screen): a compact (collapsible) stage, the panels full screen. While the on-screen keyboard
+ * is up the stage steps aside (the header keeps her picture, name and mood) so the conversation gets the room; it
+ * comes back when the keyboard goes. A change of layout keeps her body as it is (the same stage, moved).
  * The picker's New mate (and ✨ Avatar Create) open the Mate Create studio over the whole view (studio/MateStudio).
  * Her guide (guide/MateGuide) opens over it the first time the Mate view opens (once per account on this device), after
  * a mate is created in the studio, and from Mate settings' header (the phone's ⋯).
@@ -12,7 +15,8 @@
 import PageLoading from "../ui/Loading";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { listDrafts, type DraftSummary } from "../../api/avatar";
-import { useNarrowerThan, usePhone, useShortScreen, useTouchFirst } from "../../lib/device";
+import { useBoxSize, usePhone, useShortScreen, useTouchFirst } from "../../lib/device";
+import { LAYOUT_KEY, readLayout, SPLIT_MIN, splitFits, splitNow, type LayoutPref } from "../../mate/layout";
 import { useKeyboardOpen } from "../../lib/keyboard";
 import { useBackHandler } from "../../lib/back";
 import { useMateStore } from "../../stores/mateStore";
@@ -42,8 +46,22 @@ const MateGuide = lazy(() => import("./guide/MateGuide"));
 type SettingsTab = "relation" | "memory" | undefined;
 
 const COLLAPSE_KEY = "hrh_mate_stage_collapsed";
-/** the stage's and the conversation's least widths, side by side */
-const SPLIT_MIN = 660;
+/** stacked, below this height a panel takes the whole view (under the stage it would have too little room) */
+const PANEL_UNDER_MIN = 560;
+
+const LAYOUTS: { id: LayoutPref; icon: IconName; label: "mate.layoutAuto" | "mate.layoutStacked" | "mate.layoutSplit" }[] = [
+  { id: "auto", icon: "layout-auto", label: "mate.layoutAuto" },
+  { id: "stacked", icon: "layout-stacked", label: "mate.layoutStacked" },
+  { id: "split", icon: "layout-split", label: "mate.layoutSplit" },
+];
+
+const readPref = (): LayoutPref => {
+  try {
+    return readLayout(localStorage.getItem(LAYOUT_KEY));
+  } catch {
+    return "auto";
+  }
+};
 
 export default function MateView() {
   const t = useT();
@@ -60,9 +78,24 @@ export default function MateView() {
   const conv = useMateConversation(studio ? null : mate);
   // drop files on the conversation, or paste them anywhere on the page: they go to the composer
   const { dragging, dropProps } = useFileDrop(conv.sessionId);
-  // the split needs its stage and conversation side by side: beside the sidebar a tablet or a small window has less
-  const [narrow, rootRef] = useNarrowerThan(SPLIT_MIN);
-  const phone = usePhone() || narrow;
+  // the layout goes by the view's own box (beside the sidebar, folded or not), not the window's
+  const [box, rootRef] = useBoxSize();
+  const phoneScreen = usePhone();
+  // compact: a phone, or a view too narrow for the halves side by side (the phone's header, sheets, smaller clips)
+  const compact = phoneScreen || box.w < SPLIT_MIN;
+  const [layoutPref, setLayoutPref] = useState<LayoutPref>(readPref);
+  const wasSplit = useRef(false);
+  const split = !phoneScreen && splitNow(layoutPref, box.w, box.h, wasSplit.current);
+  wasSplit.current = split;
+  const pickLayout = (p: LayoutPref) => {
+    setLayoutPref(p);
+    try {
+      if (p === "auto") localStorage.removeItem(LAYOUT_KEY);
+      else localStorage.setItem(LAYOUT_KEY, p);
+    } catch {
+      /* private mode: for this visit */
+    }
+  };
   const touch = useTouchFirst();
   const short = useShortScreen();
   const keyboard = useKeyboardOpen();
@@ -130,6 +163,22 @@ export default function MateView() {
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, [more]);
+  // the layout menu (자동 / 위아래 / 좌우)
+  const [layoutMenu, setLayoutMenu] = useState(false);
+  const layoutRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!layoutMenu) return;
+    const onDown = (e: PointerEvent) => {
+      if (!layoutRef.current?.contains(e.target as Node)) setLayoutMenu(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setLayoutMenu(false);
+    document.addEventListener("pointerdown", onDown, true);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [layoutMenu]);
   // a press anywhere outside the switcher closes it (a fixed backdrop would be
   // clipped to the header: backdrop-filter makes it the containing block)
   useEffect(() => {
@@ -150,8 +199,8 @@ export default function MateView() {
     if (switcher) listDrafts().then(setDrafts).catch(() => setDrafts([]));
   }, [switcher]);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === "1");
-  // phones: the stage is out of the way (hidden by the user, or the keyboard is up)
-  const stageAway = collapsed || keyboard;
+  // compact: the stage is out of the way (hidden by the user — the ⋯ menu — or the keyboard is up)
+  const stageAway = compact && (collapsed || keyboard);
   const [resetting, setResetting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -163,6 +212,7 @@ export default function MateView() {
   useBackHandler(settings, closePanels);
   useBackHandler(switcher, () => setSwitcher(false));
   useBackHandler(more, () => setMore(false));
+  useBackHandler(layoutMenu, () => setLayoutMenu(false));
   // the studio closed with something to say (created, discarded, imported)
   const studioNotice = useStudio((s) => s.notice);
   useEffect(() => {
@@ -264,7 +314,7 @@ export default function MateView() {
         <MenuButton />
         {/* (flex: a long name truncates instead of running under the indicator) */}
         {/* (phones: the menu takes the header's width, not this button's) */}
-        <div className={`flex min-w-0 ${phone ? "" : "relative"}`} ref={switcherRef}>
+        <div className={`flex min-w-0 ${compact ? "" : "relative"}`} ref={switcherRef}>
           <button
             onClick={() => setSwitcher((v) => !v)}
             className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-surface-2"
@@ -273,11 +323,11 @@ export default function MateView() {
             <MateThumb mate={mate} />
             <span className="truncate text-[14.5px] font-semibold">{mate.name}</span>
             {/* (phones: no room for it next to the indicator — her picture and name open the switcher) */}
-            {!phone && <Icon name="chevron-down" size={14} className="shrink-0 text-content-faint" />}
+            {!compact && <Icon name="chevron-down" size={14} className="shrink-0 text-content-faint" />}
           </button>
           {switcher && (
             <>
-              <div className={`absolute z-40 overflow-hidden rounded-xl border border-border bg-surface-2 shadow-float animate-fade-in ${phone ? "inset-x-3 top-[calc(100%+4px)]" : "left-0 top-11 w-80 max-w-[calc(100vw-1.5rem)]"}`} data-testid="mate-switcher-menu">
+              <div className={`absolute z-40 overflow-hidden rounded-xl border border-border bg-surface-2 shadow-float animate-fade-in ${compact ? "inset-x-3 top-[calc(100%+4px)]" : "left-0 top-11 w-80 max-w-[calc(100vw-1.5rem)]"}`} data-testid="mate-switcher-menu">
                 <div className="max-h-72 overflow-y-auto py-1">
                   {mates.map((m) => (
                     <button
@@ -347,14 +397,14 @@ export default function MateView() {
             </>
           )}
         </div>
-        {phone && stageAway && moodLabel(t, conv.mood) && (
+        {stageAway && moodLabel(t, conv.mood) && (
           <span className="min-w-0 truncate text-[11.5px] text-content-faint" data-testid="mate-header-mood">
             {moodLabel(t, conv.mood)}
           </span>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {(phone || touch) && <ReadAloudToggle mate={mate} conv={conv} className="btn-ghost !px-2.5" size={16} />}
-          {!phone && (
+          {(compact || touch) && <ReadAloudToggle mate={mate} conv={conv} className="btn-ghost !px-2.5" size={16} />}
+          {!compact && (
             <>
               <button
                 onClick={() => useStudio.getState().openAvatar(mate.id)}
@@ -370,6 +420,47 @@ export default function MateView() {
                 <Icon name="rotate" size={15} spin={resetting} />
               </button>
             </>
+          )}
+          {/* the layout: 자동 / 위아래 / 좌우 (a phone has only the one) */}
+          {!phoneScreen && (
+            <div ref={layoutRef} className="relative flex">
+              <button
+                onClick={() => setLayoutMenu((v) => !v)}
+                className={`btn-ghost !px-2.5 ${layoutMenu ? "!bg-surface-3 !text-content" : ""}`}
+                title={t("mate.layoutTitle")}
+                aria-label={t("mate.layoutTitle")}
+                aria-haspopup="menu"
+                aria-expanded={layoutMenu}
+                data-testid="mate-layout"
+                data-pref={layoutPref}
+              >
+                <Icon name={LAYOUTS.find((x) => x.id === layoutPref)!.icon} size={16} />
+              </button>
+              {layoutMenu && (
+                <div className="absolute right-0 top-[calc(100%+6px)] z-40 w-60 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-border bg-surface-2 py-1 shadow-float animate-fade-in" role="menu" aria-label={t("mate.layoutTitle")} data-testid="mate-layout-menu">
+                  {LAYOUTS.map((x) => (
+                    <button
+                      key={x.id}
+                      role="menuitemradio"
+                      aria-checked={layoutPref === x.id}
+                      onClick={() => {
+                        setLayoutMenu(false);
+                        pickLayout(x.id);
+                      }}
+                      className={`flex min-h-[40px] w-full items-center gap-2.5 px-3 text-left text-[13px] hover:bg-surface-3 ${layoutPref === x.id ? "text-content" : "text-content-dim"}`}
+                      data-testid={`mate-layout-${x.id}`}
+                    >
+                      <Icon name={x.icon} size={15} className="shrink-0 text-content-faint" />
+                      <span className="min-w-0 flex-1 truncate">{t(x.label)}</span>
+                      {layoutPref === x.id && <Icon name="check" size={13} className="shrink-0 text-accent" />}
+                    </button>
+                  ))}
+                  <p className="border-t border-border/60 px-3 pb-1.5 pt-2 text-[11px] leading-relaxed text-content-faint" data-testid="mate-layout-note">
+                    {layoutPref === "split" && !splitFits(box.w) ? t("mate.layoutSplitNarrow") : t("mate.layoutHint")}
+                  </p>
+                </div>
+              )}
+            </div>
           )}
           <button
             onClick={toggleRelation}
@@ -390,7 +481,7 @@ export default function MateView() {
           >
             <Icon name="settings" size={16} />
           </button>
-          {phone && (
+          {compact && (
             <div ref={moreRef} className="flex">
               <button onClick={() => setMore((v) => !v)} className={`btn-ghost !px-2.5 ${more ? "!bg-surface-3 !text-content" : ""}`} aria-label={t("mate.moreActions")} aria-expanded={more} data-testid="mate-more">
                 <Icon name="more" size={16} />
@@ -471,10 +562,10 @@ export default function MateView() {
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" {...dropProps} data-testid="mate-conversation">
       {dragging && <DropOverlay hint={t("mate.dropHint", { name: mate.name })} />}
       {banners}
-      <MateMessages turns={conv.turns} compact={phone} emptyText={conv.connection === "open" ? t("mate.sayHi", { name: mate.name }) : t("common.loading")} />
+      <MateMessages turns={conv.turns} compact={compact} emptyText={conv.connection === "open" ? t("mate.sayHi", { name: mate.name }) : t("common.loading")} />
       <div className={`shrink-0 px-3 pt-1 sm:px-4 ${keyboard ? "pb-2" : "pb-3"}`}>
         {/* phones: read-aloud lives in the header, the composer row is + · text · mic · send */}
-        <MateComposer mate={mate} conv={conv} showVoiceToggle={!phone && !touch} />
+        <MateComposer mate={mate} conv={conv} showVoiceToggle={!compact && !touch} />
       </div>
     </div>
   );
@@ -515,7 +606,7 @@ export default function MateView() {
         <StatusWindow
           key={mate.id}
           mate={mate}
-          phone={phone}
+          phone={compact}
           onClose={closeWindow}
           onSay={say}
           onRelation={() => {
@@ -524,12 +615,12 @@ export default function MateView() {
           }}
         />
       ) : stageWindow === "places" ? (
-        <PlacesWindow key={mate.id} mate={mate} phone={phone} onClose={closeWindow} onSay={say} />
+        <PlacesWindow key={mate.id} mate={mate} phone={compact} onClose={closeWindow} onSay={say} />
       ) : (
         <OutfitsWindow
           key={mate.id}
           mate={mate}
-          phone={phone}
+          phone={compact}
           onClose={closeWindow}
           onManage={() => {
             closeWindow();
@@ -541,68 +632,57 @@ export default function MateView() {
     </Suspense>
   );
 
-  // (a phone on its side keeps the stage beside the conversation, but a panel needs all of its little height)
-  if (phone || (short && settings)) {
-    return (
-      <div ref={rootRef} className="touch-ui flex h-full flex-col" data-testid="mate-view">
-        {/* (a panel takes the whole screen: its own title bar closes it, and Android's Back) */}
-        {!settings && header}
-        {settings ? (
-          <div className="relative min-h-0 flex-1 pt-safe">
-            {settingsPanel}
-            {infoOverPanel}
-          </div>
-        ) : (
-          <>
-            {/* (the keyboard only hides it: her body stays loaded for when it goes) */}
-            {!collapsed && (
-              <MateStage
-                mate={mate}
-                mood={conv.mood} videoMood={conv.videoMood}
-                react={conv.react}
-                caption={conv.caption}
-                size="sm"
-                className={`h-[36dvh] shrink-0 border-b border-border/60 bg-gradient-to-b from-surface-2/40 to-transparent pt-1 ${keyboard ? "!hidden" : ""}`}
-                onTap={() => conv.poke("greet")}
-                onLife={() => openWindow("status")}
-                menu={{ open: stageWindow, onOpen: openWindow, compact: true }}
-              />
-            )}
-            {conversation}
-          </>
-        )}
-        {phone && stageWindowNode}
-        {guideNode}
-      </div>
-    );
-  }
+  // a panel takes the whole view on a phone and on a very short screen (a phone on its side keeps the stage beside the
+  // conversation, but a panel needs all of its little height); elsewhere it opens where the conversation is, she stays
+  const fullPanel = settings && (phoneScreen || short || (!split && box.h > 0 && box.h < PANEL_UNDER_MIN));
 
   return (
-    <div ref={rootRef} className={`flex h-full flex-col ${touch ? "touch-ui" : ""}`} data-testid="mate-view">
-      {header}
-      {/* half avatar, half conversation (Geny's VTuber tab); settings cover the conversation half */}
-      <div className="flex min-h-0 flex-1" data-testid="mate-split">
-        <MateStage
-          mate={mate}
-          mood={conv.mood} videoMood={conv.videoMood}
-          react={conv.react}
-          caption={conv.caption}
-          className="min-w-[300px] flex-1 basis-0 border-r border-border/60 bg-[radial-gradient(ellipse_at_50%_100%,rgb(var(--c-surface-2)/0.9),transparent_70%)] px-4 pt-4"
-          onTap={() => conv.poke("greet")}
-          onLife={() => openWindow("status")}
-          menu={{ open: stageWindow, onOpen: openWindow }}
-          window={!phone && stageWindowNode}
-        />
-        <div className="relative flex min-h-0 min-w-[360px] flex-1 basis-0" data-testid="mate-chat-half">
-          {conversation}
-          {settings && (
-            <div className="absolute inset-0 z-20 border-l border-border bg-surface animate-fade-in" data-testid="mate-panel">
-              {settingsPanel}
-              {infoOverPanel}
-            </div>
-          )}
+    <div ref={rootRef} className={`flex h-full flex-col ${compact || touch ? "touch-ui" : ""}`} data-testid="mate-view" data-layout={split ? "split" : "stacked"}>
+      {/* (a panel over everything: its own title bar closes it, and Android's Back) */}
+      {!fullPanel && header}
+      {fullPanel ? (
+        <div className="relative min-h-0 flex-1 pt-safe">
+          {settingsPanel}
+          {infoOverPanel}
         </div>
-      </div>
+      ) : (
+        // side by side: half avatar, half conversation (Geny's VTuber tab) · stacked: the stage on top. Either way the
+        // panels cover the conversation's part. (One tree for both: a change of layout moves her stage, never remakes it.)
+        <div className={`flex min-h-0 flex-1 ${split ? "" : "flex-col"}`} data-testid={split ? "mate-split" : "mate-stack"}>
+          {/* (the keyboard only hides it: her body stays loaded for when it goes. Not before the view is measured: her
+              body is made once, at the size it will have) */}
+          {box.w > 0 && !(compact && collapsed) && (
+            <MateStage
+              mate={mate}
+              mood={conv.mood}
+              videoMood={conv.videoMood}
+              react={conv.react}
+              caption={conv.caption}
+              size={compact ? "sm" : "lg"}
+              layout={split ? "split" : "stacked"}
+              className={
+                split
+                  ? "min-w-[300px] flex-1 basis-0 border-r border-border/60 bg-[radial-gradient(ellipse_at_50%_100%,rgb(var(--c-surface-2)/0.9),transparent_70%)] px-4 pt-4"
+                  : `${phoneScreen ? "h-[36dvh]" : "h-[40dvh]"} shrink-0 border-b border-border/60 bg-gradient-to-b from-surface-2/40 to-transparent pt-1 ${keyboard ? "!hidden" : ""}`
+              }
+              onTap={() => conv.poke("greet")}
+              onLife={() => openWindow("status")}
+              menu={{ open: stageWindow, onOpen: openWindow, compact }}
+              window={!compact && stageWindowNode}
+            />
+          )}
+          <div className={`relative flex min-h-0 flex-1 ${split ? "min-w-[360px] basis-0" : "min-w-0"}`} data-testid="mate-chat-half">
+            {conversation}
+            {settings && (
+              <div className={`absolute inset-0 z-20 bg-surface animate-fade-in ${split ? "border-l border-border" : ""}`} data-testid="mate-panel">
+                {settingsPanel}
+                {infoOverPanel}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {compact && stageWindowNode}
       {guideNode}
     </div>
   );

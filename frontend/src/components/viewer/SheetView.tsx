@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { read, utils, type WorkBook } from "xlsx";
 import DataTable from "./DataTable";
 import { useT } from "../../i18n";
+import ScrollRow from "../ui/ScrollRow";
 
 const MAX_ROWS = 50000; // parse cap per sheet
 
@@ -52,11 +53,12 @@ export default function SheetView({ data, wrap }: { data: ArrayBuffer; wrap: boo
           <p className="p-6 text-sm text-content-faint">{t("files.sheetEmpty")}</p>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-t border-border bg-surface/60 px-2 py-1">
+      <ScrollRow className="shrink-0 items-center gap-0.5 border-t border-border bg-surface/60 px-2 py-1" watch={active}>
         {sheets.map((s, i) => (
           <button
             key={s.name}
             onClick={() => setActive(i)}
+            data-active={i === active}
             className={`shrink-0 rounded-md px-3 py-1 text-[12px] transition ${
               i === active ? "bg-surface-3 text-content font-medium shadow-card" : "text-content-dim hover:bg-surface-2"
             } ${s.hidden ? "italic opacity-60" : ""}`}
@@ -68,7 +70,7 @@ export default function SheetView({ data, wrap }: { data: ArrayBuffer; wrap: boo
         {sheet && sheet.rows.length > MAX_ROWS && (
           <span className="ml-auto shrink-0 px-2 text-[11px] text-warning">{t("files.firstNRows", { n: MAX_ROWS })}</span>
         )}
-      </div>
+      </ScrollRow>
     </div>
   );
 }

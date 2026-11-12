@@ -91,7 +91,10 @@ export default function OutfitBar({ mate, selected, onSelect }: { mate: Mate; se
                   <img src={c.home} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-contain object-bottom" />
                 )
               ) : (
-                <span className="absolute inset-0 grid place-items-center text-[11px] text-content-faint">{t("mateSettings.outfitEmpty")}</span>
+                // (a Live2D / LivLiv set has a body but no picture to show here: it isn't empty)
+                <span className="absolute inset-0 grid place-items-center text-[11px] text-content-faint">
+                  {c.kind === "none" ? t("mateSettings.outfitEmpty") : c.kind === "live2d" ? "Live2D" : c.kind === "livliv" ? "LivLiv" : t("mateSettings.outfitNoPicture")}
+                </span>
               )}
               {c.id === worn && (
                 <span className="pill absolute left-1 top-1 bg-accent !px-1.5 text-[10px] text-white">
@@ -168,7 +171,11 @@ export default function OutfitBar({ mate, selected, onSelect }: { mate: Mate; se
               </div>
             )}
             <div className={`truncate text-[11px] text-content-faint ${card.locked ? "hidden" : ""}`}>
-              {card.kind === "none" && card.id !== DEFAULT_OUTFIT ? t("mateSettings.outfitEmptyHint") : card.kind === "none" ? "" : t("mateSettings.outfitMeta", { clips: card.clips, stills: card.stills })}
+              {card.kind === "none" && card.id !== DEFAULT_OUTFIT
+                ? t("mateSettings.outfitEmptyHint")
+                : card.kind === "video" || card.kind === "photo"
+                  ? t("mateSettings.outfitMeta", { clips: card.clips, stills: card.stills })
+                  : ""}
             </div>
           </div>
           {card.id !== DEFAULT_OUTFIT && !card.locked && renaming === null && (

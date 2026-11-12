@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { listProjects, type ProjectSummary } from "../../../api/avatar";
 import { coreStatus, DEFAULT_OUTFIT, getOutfit, importAvatarZip, importLocal, patchOutfit, uploadAsset, type Mate } from "../../../api/mates";
 import { MateAvatar } from "../../../mate/avatar/MateAvatar";
+import { useLive2DModelInfo } from "../../../mate/avatar/live2dInfo";
 import { EMOTIONS } from "../../../mate/emotion";
 import { confirmDialog } from "../../ui/ConfirmDialog";
 import { emotionLabel } from "../../../mate/emotionLabel";
@@ -17,7 +18,7 @@ import type { MateConversation } from "../../../mate/useMateConversation";
 import { end as voiceEnd, fakeLevel, level as voiceLevel, start as voiceStart } from "../../../mate/voiceBridge";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
-import { tr, useT, type MsgKey } from "../../../i18n";
+import { useT, type MsgKey } from "../../../i18n";
 import { previewMateAvatar } from "../../../mate/livePreview";
 import { useStudio } from "../../../stores/studioStore";
 import { BundledReset, ClipLibrary, StillTriggers, TriggerPreview, type TriggerPick } from "./ClipLibrary";
@@ -444,39 +445,6 @@ function CoreNotice() {
   );
 }
 
-interface ModelInfo {
-  expressions: string[];
-  motions: string[];
-  hitAreas: string[];
-}
-
-function useModelInfo(url: string): { info: ModelInfo | null; err: string | null } {
-  const [info, setInfo] = useState<ModelInfo | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    setInfo(null);
-    setErr(null);
-    if (!url) return;
-    let alive = true;
-    fetch(url)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((j) => {
-        if (!alive) return;
-        const refs = j?.FileReferences || {};
-        setInfo({
-          expressions: (refs.Expressions || []).map((e: any) => String(e.Name ?? "")).filter(Boolean),
-          motions: Object.keys(refs.Motions || {}),
-          hitAreas: (j?.HitAreas || []).map((h: any) => String(h.Name || h.Id || "")).filter(Boolean),
-        });
-      })
-      .catch((e) => alive && setErr(tr("mateSettings.avModelErr", { error: (e as Error).message })));
-    return () => {
-      alive = false;
-    };
-  }, [url]);
-  return { info, err };
-}
-
 /** A LivLiv body: what the package says about itself, which expression plays for each emotion of hers, and her eyes on the pointer */
 function LivLivEditor({ livliv, onChange }: { livliv: LivLiv; onChange: (l: LivLiv) => void }) {
   const t = useT();
@@ -555,7 +523,7 @@ function LivLivEditor({ livliv, onChange }: { livliv: LivLiv; onChange: (l: LivL
 
 function Live2DEditor({ live2d, onChange }: { live2d: Live2D; onChange: (l: Live2D) => void }) {
   const t = useT();
-  const { info, err } = useModelInfo(live2d.model);
+  const { info, err } = useLive2DModelInfo(live2d.model);
   const set = (patch: Partial<Live2D>) => onChange({ ...live2d, ...patch });
   const setMap = (k: "emotions" | "emotion_motions", emotion: string, value: string) => {
     const map = { ...(live2d[k] || {}) } as Record<string, string | number>;

@@ -12,6 +12,7 @@ import { useT } from "../../i18n";
 import Icon from "../ui/Icon";
 
 import { McpStatus } from "./McpStatus";
+import ScrollRow from "../ui/ScrollRow";
 
 export default function McpView() {
   const t = useT(),
@@ -60,10 +61,11 @@ export default function McpView() {
           {t("mcp.registrationDone")}
         </div>
       )}
-      <div
+      <ScrollRow
         role="tablist"
         aria-label={t("mcp.title")}
-        className="flex gap-1 border-b border-border overflow-x-auto pb-1"
+        className="gap-1 border-b border-border pb-1"
+        watch={tab}
       >
         {(["manage", "catalog", "direct"] as const).map((id, index, all) => (
           <button
@@ -102,7 +104,7 @@ export default function McpView() {
             )}
           </button>
         ))}
-      </div>
+      </ScrollRow>
       <div className="card grid grid-cols-[auto_minmax(0,1fr)] gap-3 p-4 sm:flex sm:flex-wrap sm:items-center">
         <Icon
           name={local ? "monitor" : "server"}

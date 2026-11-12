@@ -12,6 +12,7 @@ import { useMateStore } from "../../stores/mateStore";
 import { fmtDate, fmtTime, relTime } from "../../i18n/format";
 import { useT, type MsgKey, type TFunction } from "../../i18n";
 import Icon from "../ui/Icon";
+import ScrollRow from "../ui/ScrollRow";
 import { STAGE_COLOR, STAGE_LABEL } from "./RelationRing";
 import { StateCard, stateName, stateWhy } from "./StateCard";
 import MemoryNotebook from "./MemoryNotebook";
@@ -105,15 +106,15 @@ export default function RelationPanel({ mate, onClose, onSettings, initialTab = 
           <Icon name="x" size={16} />
         </button>
       </div>
-      <div className="flex shrink-0 gap-1 border-b border-border px-4 py-2" role="tablist" aria-label={t("mate.bondTitle")}>
+      <ScrollRow className="shrink-0 gap-1 border-b border-border px-4 py-2" role="tablist" aria-label={t("mate.bondTitle")} watch={tab}>
         {(["relation", "memory"] as const).map(id => (
           <button type="button" role="tab" key={id} aria-selected={tab === id}
-            className={tab === id ? "btn-soft" : "btn-ghost"} data-testid={`bond-tab-${id}`} onClick={() => setTab(id)}>
+            className={`shrink-0 whitespace-nowrap ${tab === id ? "btn-soft" : "btn-ghost"}`} data-testid={`bond-tab-${id}`} onClick={() => setTab(id)}>
             <Icon name={id === "relation" ? "heart" : "brain"} size={14} />
             {t(id === "relation" ? "mateSettings.relTitle" : "mateSettings.memTitle")}
           </button>
         ))}
-      </div>
+      </ScrollRow>
       <div ref={body} className="fit-fields min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
         <div className="mx-auto max-w-xl space-y-4 pb-6">
           {tab === "memory" ? <MemoryNotebook key={mate.id} mate={mate} onSettings={onSettings} /> : <>

@@ -95,7 +95,7 @@ const studio: Messages<"studio"> = {
   f_persona_instructions: "늘 지킬 지시",
   f_persona_language: "답하는 언어",
   f_prefs_user_name: "내 이름",
-  f_prefs_self_ref: "자기를 부르는 말",
+  f_prefs_self_ref: "자신을 부르는 말",
   f_prefs_formality: "말의 높임",
   f_prefs_length: "답 길이",
   f_prefs_emotion: "감정 표현",

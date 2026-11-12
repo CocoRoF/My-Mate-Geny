@@ -106,6 +106,9 @@ import {
   LuLock,
   LuPanelLeftClose,
   LuPanelLeftOpen,
+  LuLayoutPanelTop,
+  LuLayoutPanelLeft,
+  LuLayoutDashboard,
 } from "react-icons/lu";
 
 const MAP = {
@@ -213,6 +216,10 @@ const MAP = {
   moon: LuMoon,
   "panel-close": LuPanelLeftClose,
   "panel-open": LuPanelLeftOpen,
+  // the Mate view's layout: automatic, the stage on top, side by side
+  "layout-auto": LuLayoutDashboard,
+  "layout-stacked": LuLayoutPanelTop,
+  "layout-split": LuLayoutPanelLeft,
 } satisfies Record<string, IconType>;
 
 export type IconName = keyof typeof MAP;

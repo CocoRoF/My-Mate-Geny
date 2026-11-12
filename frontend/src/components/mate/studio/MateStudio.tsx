@@ -36,12 +36,12 @@ import {
 } from "../../../api/avatar";
 import { prefsOf, type Mate } from "../../../api/mates";
 import { useNarrowerThan, usePhone, useTouchFirst } from "../../../lib/device";
-import { useCenteredChild } from "../../../lib/scrollRow";
 import { cameFrom, goBack } from "../../../lib/nav";
 import { useMateConversation } from "../../../mate/useMateConversation";
 import { useMateStore } from "../../../stores/mateStore";
 import { useStudio } from "../../../stores/studioStore";
 import { useLang, useT, type MsgKey } from "../../../i18n";
+import ScrollRow from "../../ui/ScrollRow";
 import Icon, { type IconName } from "../../ui/Icon";
 import { SaveBarSlot } from "../settings/ui";
 import AvatarChat from "../avatar/AvatarChat";
@@ -101,9 +101,8 @@ function Steps({ project, mate, onPick, compact }: { project: AvatarProject; mat
   const t = useT();
   const done = stepsDone(project, mate);
   const cur = STEPS.findIndex((s) => !done[s.id]);
-  const row = useCenteredChild<HTMLOListElement>(cur);
   return (
-    <ol ref={row} className={`no-scrollbar flex items-center gap-1 overflow-x-auto ${compact ? "-mx-3 overscroll-x-contain px-3" : "justify-center"}`} data-testid="studio-steps" aria-label={t("studio.stepsLabel")}>
+    <ScrollRow as="ol" watch={cur} className={`items-center gap-1 ${compact ? "-mx-3 px-3" : "justify-center"}`} data-testid="studio-steps" aria-label={t("studio.stepsLabel")}>
       {STEPS.map((s, i) => {
         const state = done[s.id] ? "done" : i === cur ? "current" : "todo";
         return (
@@ -130,7 +129,7 @@ function Steps({ project, mate, onPick, compact }: { project: AvatarProject; mat
           </li>
         );
       })}
-    </ol>
+    </ScrollRow>
   );
 }
 

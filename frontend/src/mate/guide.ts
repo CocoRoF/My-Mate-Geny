@@ -4,8 +4,8 @@
  * user changed there of what is saved now, nothing for a step skipped or left as it was.
  *
  * Steps: profile (name, intro, personality, birthday) · conversation style (what she calls you, warmth, humour) · her
- * avatar's emotions (the ones she shows) · her voice · this device (asking before a capture, the picture's size,
- * speaking first, the volume) — then the closing page.
+ * avatar's emotions (the ones she shows; a Live2D model: which of its expressions each one is) · her voice · this
+ * device (asking before a capture, the picture's size, speaking first, the volume) — then the closing page.
  */
 import type { Mate, MatePatch, MatePrefs, MateVoice, Persona, ToneLevel, TtsEngine } from "../api/mates";
 import type { DevicePreferences, DeviceScreen } from "../stores/devicePreferences";
@@ -142,7 +142,8 @@ const without = <T>(map: Record<string, T> | undefined, e: string): Record<strin
 };
 
 /**
- * Each feeling, shown or not (null: nothing to switch here — no avatar, or a Live2D model: its own editor). `base`: the
+ * Each feeling, shown or not (null: nothing to switch here — no avatar, or a Live2D model: picked per feeling instead,
+ * withLive2DPicks). `base`: the
  * avatar as saved, while switches are being made — a feeling switched off can be switched on again (as it was).
  */
 export function emotionList(a: Avatar, base?: Avatar): EmotionShow[] | null {
@@ -213,6 +214,31 @@ export function withEmotionToggles(a: Avatar, toggles: Record<string, boolean>):
   for (const [e, on] of Object.entries(toggles)) out = withEmotionShown(out, e, on, a);
   return out;
 }
+
+/** something to pick for at least one feeling (else the step says so instead of a list of nothing) */
+export const anyToShow = (list: EmotionShow[]): boolean => list.some((x) => x.can);
+
+/**
+ * A Live2D model: which of its expressions a feeling shows — the same choice as the Avatar tab's (no key: automatic,
+ * the expression named like the feeling). `picks`: the user's choices here (feeling → expression, "" automatic).
+ */
+export function withLive2DPicks(a: Avatar, picks: Record<string, string>): Avatar {
+  if (a.kind !== "live2d" || !Object.keys(picks).length) return a;
+  const map: Record<string, string | number> = { ...(a.live2d.emotions ?? {}) };
+  for (const [e, v] of Object.entries(picks)) {
+    const k = keyOf(map, e);
+    if (k !== undefined) delete map[k];
+    if (v) map[e] = v;
+  }
+  return { ...a, live2d: { ...a.live2d, emotions: Object.keys(map).length || a.live2d.emotions ? map : undefined } };
+}
+
+/** the expression a Live2D model shows for a feeling as chosen ("" automatic) */
+export const live2DPick = (a: Avatar, e: string): string => {
+  if (a.kind !== "live2d") return "";
+  const k = keyOf(a.live2d.emotions, e);
+  return k === undefined ? "" : String(a.live2d.emotions![k]);
+};
 
 export const avatarPatch = (saved: Avatar, d: Avatar): MatePatch | null => (JSON.stringify(saved) === JSON.stringify(d) ? null : { avatar: d });
 

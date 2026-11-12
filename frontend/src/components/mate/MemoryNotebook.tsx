@@ -24,6 +24,7 @@ import { useMateStore } from "../../stores/mateStore";
 import { useT, type MsgKey } from "../../i18n";
 import { relTime } from "../../i18n/format";
 import Icon from "../ui/Icon";
+import ScrollRow from "../ui/ScrollRow";
 import KnowledgePanel, {
   Evidence,
   MemoryHistoryDetails,
@@ -580,10 +581,11 @@ export default function MemoryNotebook({ mate, onSettings }: { mate: Mate; onSet
           />
         </div>
       )}
-      <div
-        className="no-scrollbar flex gap-1 overflow-x-auto"
+      <ScrollRow
+        className="gap-1"
         role="tablist"
         aria-label={t("mateSettings.memKind")}
+        watch={filter}
       >
         {FILTERS.map((f) => (
           <button
@@ -597,7 +599,7 @@ export default function MemoryNotebook({ mate, onSettings }: { mate: Mate; onSet
             {t(f.label)}
           </button>
         ))}
-      </div>
+      </ScrollRow>
       {loading && !status ? (
         <p className="text-sm text-content-faint">{t("common.loading")}</p>
       ) : (
