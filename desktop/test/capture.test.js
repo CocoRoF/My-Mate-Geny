@@ -308,7 +308,7 @@ function allScreens(over = {}) {
   return { ...r, asked, screen: () => screen };
 }
 const shotsOf = (r) => r.shots.map((s) => [s.role, s.source.id, `${s.width}x${s.height}`]);
-const pictureCalls = (log) => log.filter((x) => x[0] === "getSources" && x[1] === "screen" && x[2] !== "360x220");
+const pictureCalls = (log) => log.filter((x) => x[0] === "getSources" && x[1] === "screen" && x[2] !== "360x220" && x[2] !== "0x0");
 
 test("all screens, a server that takes them: every screen its own picture, the one in use first, asked once", async () => {
   const { cap, log, asked } = allScreens();
@@ -396,4 +396,48 @@ test("all screens: the user's own grab, the choice it is saved as, and the per-m
   const one = allScreens({ deps: { screen: { getPrimaryDisplay: () => ({ id: 11 }), getAllDisplays: () => [{ id: 11 }] },
     desktopCapturer: { getSources: async ({ types, thumbnailSize }) => SOURCES.filter((s) => s.id === "screen:0:0" && types.includes("screen")).map((s) => ({ ...s, thumbnail: image(thumbnailSize.width, thumbnailSize.height) })) } } });
   assert.deepEqual(shotsOf(await one.cap.grab({ sourceId: ALL_SCREENS, multi: true })).map((s) => s.slice(0, 2)), [["main", "screen:0:0"]]);
+});
+
+// ── light on the main process (png.js: the mouse on Windows waits for it) ──
+
+test("a list asks for no thumbnails (0×0: nothing captured) and only the kinds it needs", async () => {
+  const { cap, log } = rig();
+  assert.equal((await cap.request({ ...REQ, ask: false })).ok, true);
+  assert.deepEqual(log[0], ["getSources", "screen", "0x0"]); // (the primary screen: no windows)
+  const win = rig();
+  win.cap.setChoice("mate_a", { id: "window:77:0", name: "Terminal — build" });
+  assert.equal((await win.cap.request({ ...REQ, ask: false })).ok, true);
+  assert.deepEqual(win.log[0], ["getSources", "screen,window", "0x0"]); // (a chosen window: windows too)
+  const picker = rig();
+  await picker.cap.sources();
+  assert.deepEqual(picker.log[0], ["getSources", "screen,window", "0x0"]);
+  // a Wayland desktop's portal keeps the list it had
+  const wl = rig({ deps: { env: { XDG_SESSION_TYPE: "wayland" } } });
+  await wl.cap.grab({});
+  assert.deepEqual(wl.log[0], ["getSources", "screen", "1x1"]);
+});
+
+test("all screens: screens of the same size come from one capture; each picture is encoded off the main thread, one after another", async () => {
+  const encoded = [];
+  let open = 0;
+  const encodePng = async (img) => {
+    assert.equal(open++, 0, "one picture at a time");
+    await new Promise((r) => setTimeout(r, 5));
+    encoded.push(`${img.w}x${img.h}`);
+    open--;
+    return Buffer.from(`ENC ${img.w}x${img.h}`);
+  };
+  // max_edge 1280: both screens (3840×2160 and 1920×1080 device pixels) are 1280×720 pictures
+  const same = allScreens({ screen: { approval: "allow", max_edge: 1280 }, deps: { encodePng } });
+  const r = await same.cap.request({ ...REQ, multi: true });
+  assert.deepEqual(shotsOf(r), [["main", "screen:1:0", "1280x720"], ["sub", "screen:0:0", "1280x720"]]);
+  assert.equal(pictureCalls(same.log).length, 1, "one capture for both");
+  assert.deepEqual(encoded, ["1280x720", "1280x720"]);
+  assert.ok(r.shots.every((s) => String(s.data) === "ENC 1280x720"));
+  // their own sizes (max_edge 0): one capture per size
+  const own = allScreens({ screen: { approval: "allow" }, deps: { encodePng } });
+  assert.deepEqual(shotsOf(await own.cap.request({ ...REQ, multi: true })).map((s) => s[2]), ["1920x1080", "3840x2160"]);
+  assert.deepEqual(pictureCalls(own.log).map((x) => x[2]), ["1920x1080", "3840x2160"]);
+  // the default encoder: a picture that is no plain bitmap (these fakes) is NativeImage.toPNG(), as before
+  assert.equal(String((await rig().cap.request({ ...REQ, ask: false })).data), "PNG 1920x1080");
 });

@@ -84,6 +84,8 @@ let gaveUp = false;
 let failDelay = 0;
 let failTimer = null;
 let overlayFailed = false;
+let overlayClear = false; // the avatar's page is the see-through overlay (theme.seeThrough): it may be shown
+let overlayLoad = 0; // its loads, so a late answer about an earlier page is dropped
 let screenPicker = false;
 let screenSharing = false;
 let screenStatus = "off";
@@ -319,8 +321,12 @@ function saveAvatarSoon() {
   }, 400);
 }
 
+// One avatar window. A Local execution start with the console out made two: the console landing on the local server
+// (consoleNavigated) made one, mate.start() another over it. The first, no longer `avatar`, was not among the
+// transparent windows, so the next theme message gave it the theme's colour: her avatar on a black (dark) or
+// light-gray (light) box that Hide / Move left behind — the first start after an update is such a start.
 function createAvatar() {
-  if(quitting)return;
+  if (quitting || alive(avatar)) return;
   const b = clampAvatar(S().mateBounds || defaultAvatarBounds(AVATAR_DEFAULT));
   avatar = new BrowserWindow({
     ...b,
@@ -339,7 +345,7 @@ function createAvatar() {
     icon: ICON,
     webPreferences: webPrefs("mate-overlay", { backgroundThrottling: false }),
   });
-  const win = avatar;
+  const win = theme.keepTransparent(avatar);
   floating(win);
   armAlwaysOnTop(win, raiseBar);
   applyInput();
@@ -347,16 +353,31 @@ function createAvatar() {
   const wc = win.webContents;
   wc.on("did-start-loading", () => {
     overlayFailed = false;
+    overlayClear = false;
+    overlayLoad++;
     replySpeech = null;
     barState();
   });
   wc.on("did-finish-load", () => {
     if(quitting)return;
     if (overlayFailed || !onSurface(win, "overlay")) return;
-    failDelay = 0;
-    if (S().mateVisible && !gaveUp) win.showInactive();
-    if (moveMode) injectDrag(true);
-    command(win, { type: "state", ...getState() });
+    // shown once the page is the see-through overlay (theme.seeThrough): the server's "Updating…" page, an error page
+    // or an old page whose code is gone stays hidden and is retried, never an opaque card in the corner
+    const load = overlayLoad;
+    void theme.seeThrough(wc).then((clear) => {
+      if (quitting || !alive(win) || avatar !== win || load !== overlayLoad || overlayFailed) return;
+      overlayClear = clear;
+      if (!clear) {
+        win.hide();
+        alive(bar) && bar.hide();
+        return retryOverlaySoon();
+      }
+      failDelay = 0;
+      clearTimeout(failTimer); // (the page got there by itself: no reload over it)
+      if (S().mateVisible && !gaveUp) win.showInactive();
+      if (moveMode) injectDrag(true);
+      command(win, { type: "state", ...getState() });
+    });
   });
   // a hung avatar page: reload it quietly (no retry card in a see-through corner window)
   let hang = null;
@@ -380,6 +401,10 @@ function createAvatar() {
       broadcast();
       return;
     }
+    // (hidden meanwhile: a window whose page died draws whatever it likes; the reload shows it again)
+    overlayClear = false;
+    win.hide();
+    alive(bar) && bar.hide();
     setTimeout(() => loadSurface(win, "overlay"), 3000);
   });
   win.on("move", () => {
@@ -421,7 +446,8 @@ function showAvatar(id) {
     loadSurface(avatar, "overlay"); // shown by did-finish-load
   } else {
     avatar.setBounds(clampAvatar(avatar.getBounds()));
-    if (!avatar.webContents.isLoading()) avatar.showInactive();
+    // (a page still being checked shows itself once it passes; one that failed is being retried)
+    if (!avatar.webContents.isLoading() && overlayClear) avatar.showInactive();
   }
   broadcast();
 }
@@ -608,6 +634,7 @@ function createBar() {
     title: PRODUCT,
     webPreferences: webPrefs("bar"),
   });
+  theme.keepTransparent(bar);
   floating(bar);
   if (!linux) bar.setIgnoreMouseEvents(true, { forward: true });
   bar.webContents.on("will-navigate", (e) => e.preventDefault());
@@ -730,7 +757,7 @@ function createQuick() {
     icon: ICON,
     webPreferences: webPrefs("mate-quick", { spellcheck: true }),
   });
-  const win = quick;
+  const win = theme.keepTransparent(quick);
   floating(win);
   guard(win, "quick");
   // a launcher, not a window to clean up after: gone when focus leaves — unless
@@ -1304,7 +1331,7 @@ function start() {
   } else if (acc && !registerHotkey(acc)) {
     notify(t("hotkeyTitle"), t("hotkeyBody", { key: prettyAccel(acc) }));
   }
-  if (S().mateVisible && connected()) createAvatar();
+  if (S().mateVisible && connected()) createAvatar(); // (none when the console's landing made it already)
   tickTimer=setInterval(tick, 120);
   const reclamp = () => {
     if (!alive(avatar) || moveRect) return;

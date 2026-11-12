@@ -538,10 +538,11 @@ ipcMain.on("hrh:setLanguage", (e, lang) => {
 
 // ── light / dark (theme.js): the console tells its mode; native menus / dialogs, the windows' background and the
 // local pages (prefers-color-scheme follows nativeTheme) follow ──
-/** the windows that paint a background (not the Mate's see-through avatar, quick card and action bar) */
+/** the windows that paint a background (not the Mate's see-through avatar, quick card and action bar — each marked
+ *  transparent when made, theme.keepTransparent) */
 const opaqueWindows = () => {
   const clear = new Set(mate.transparentWindows ? mate.transparentWindows() : []);
-  return BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed() && !clear.has(w));
+  return BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed() && !clear.has(w) && !theme.isTransparent(w));
 };
 ipcMain.on("hrh:setTheme", (e, mode) => {
   if (!ours(e) || !fileOrServer(e) || !theme.isThemeMode(mode)) return;

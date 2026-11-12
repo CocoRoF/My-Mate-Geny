@@ -1,8 +1,32 @@
 """Host metrics on native Windows/macOS; the Linux server keeps its procfs collector."""
 import os
 import platform
+import sys
+import time
 import psutil
 from .procfs import ProcView
+
+THREADS_TTL_S=30.0   # the host thread count moves slowly; summing it every tick is not worth it
+
+def _windows_threads():
+    """One kernel call (GetPerformanceInfo); psutil's num_threads() walks every process per call there."""
+    import ctypes
+    from ctypes import wintypes
+    class Info(ctypes.Structure):
+        _fields_=[('cb',wintypes.DWORD)]+[(n,ctypes.c_size_t) for n in
+                  ('commit_total','commit_limit','commit_peak','physical_total','physical_available',
+                   'system_cache','kernel_total','kernel_paged','kernel_nonpaged','page_size')]+\
+                 [('handles',wintypes.DWORD),('processes',wintypes.DWORD),('threads',wintypes.DWORD)]
+    info=Info();info.cb=ctypes.sizeof(Info)
+    if not ctypes.windll.psapi.GetPerformanceInfo(ctypes.byref(info),info.cb):return None
+    return int(info.threads) or None
+
+def _summed_threads():
+    n=0
+    for p in psutil.process_iter():
+        try:n+=p.num_threads()
+        except psutil.Error:pass   # other users' processes on macOS
+    return n or None
 
 class Collector:
     def __init__(self, *, disk_paths=None):
@@ -11,14 +35,29 @@ class Collector:
         self.disk_paths=disk_paths or []
         self.prev_io=self.prev_net=None
         self.proc_cache={}
+        self._threads=(None,-1e18)
+
+    def threads(self):
+        n,at=self._threads;now=time.monotonic()
+        if now-at<THREADS_TTL_S:return n
+        n=None
+        if sys.platform=='win32':
+            try:n=_windows_threads()
+            except Exception:n=None
+        if n is None:
+            try:n=_summed_threads()
+            except Exception:n=None
+        self._threads=(n,now);return n
 
     def cpu(self):
         t=psutil.cpu_times_percent()
         cores=psutil.cpu_percent(percpu=True)
         load=psutil.getloadavg() if hasattr(psutil,'getloadavg') else (0,0,0)
         return dict(busy=100-t.idle,user=t.user,system=t.system,iowait=getattr(t,'iowait',0),steal=getattr(t,'steal',0),
-                    cores=cores,count=len(cores),btime=int(psutil.boot_time()),procs_blocked=0,
-                    load1=load[0],load5=load[1],load15=load[2],first=False)
+                    cores=cores,count=len(cores),btime=int(psutil.boot_time()),procs_blocked=None,
+                    load1=load[0],load5=load[1],load15=load[2],
+                    runnable=None,threads=self.threads(),   # no run queue length off Linux
+                    first=False)
 
     def memory(self):
         m=psutil.virtual_memory(); s=psutil.swap_memory()

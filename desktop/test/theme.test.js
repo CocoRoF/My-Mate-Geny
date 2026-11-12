@@ -4,7 +4,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
 const path = require("path");
-const { BG, isThemeMode, modeOf, backgroundFor, applyTheme } = require("../src/theme");
+const { BG, isThemeMode, modeOf, backgroundFor, applyTheme, keepTransparent, isTransparent, seeThrough } = require("../src/theme");
 
 function fakeNativeTheme(osDark) {
   const nt = {
@@ -49,6 +49,21 @@ test("applying a mode sets nativeTheme and repaints the windows", () => {
   assert.equal(a.bg, BG.light);
   applyTheme(nt, "nonsense", [a]);
   assert.equal(nt.themeSource, "system");
+});
+
+test("a see-through window is never painted, even when it is handed in", async () => {
+  const nt = fakeNativeTheme(false);
+  const clear = keepTransparent(fakeWindow());
+  const plain = fakeWindow();
+  assert.ok(isTransparent(clear) && !isTransparent(plain) && !isTransparent(null));
+  applyTheme(nt, "light", [clear, plain]);
+  assert.equal(clear.bg, null);
+  assert.equal(plain.bg, BG.light);
+  // seeThrough: the page's answer, false when it throws or does not answer in time
+  assert.equal(await seeThrough({ executeJavaScript: async () => true }), true);
+  assert.equal(await seeThrough({ executeJavaScript: async () => "yes" }), false);
+  assert.equal(await seeThrough({ executeJavaScript: async () => { throw new Error("gone"); } }), false);
+  assert.equal(await seeThrough({ executeJavaScript: () => new Promise(() => {}) }, { timeoutMs: 10 }), false);
 });
 
 test("the app's colours match the console's (frontend/src/lib/themeCore.ts)", () => {

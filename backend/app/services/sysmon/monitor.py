@@ -327,8 +327,9 @@ class SystemMonitor:
                 "interval": self.interval,
                 "m": m,
                 "cores": [round(x, 1) for x in cpu["cores"]],
-                "cpu": {"count": cpu["count"], "model": col.cpu_model, "runnable": cpu["runnable"],
-                        "threads": cpu["threads"], "blocked": cpu["procs_blocked"], "btime": cpu["btime"],
+                # Run queue / thread / blocked counts are Linux procfs readings; other hosts give None.
+                "cpu": {"count": cpu["count"], "model": col.cpu_model, "runnable": cpu.get("runnable"),
+                        "threads": cpu.get("threads"), "blocked": cpu.get("procs_blocked"), "btime": cpu.get("btime"),
                         "quota": cg.cpu_quota if cg else None},
                 "mem": mem,
                 "cgroup": self._cg_dict(cg),

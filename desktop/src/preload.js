@@ -3,11 +3,22 @@
 // Mate surfaces (overlay / quick / chat, docs/mate.md §6–7), the local pages
 // (connect, offline) and the action bar. The main process checks every
 // message's sender, so exposing a call here grants nothing by itself.
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webFrame } = require("electron");
 
 // Sandboxed preload: no require() of app files — facts come in argv.
 const arg = (name) => (process.argv.find((a) => a.startsWith(`--${name}=`)) || "").split("=").slice(1).join("=");
 const surface = arg("hrh-surface") || "console";
+
+// The see-through windows (avatar, quick card, action bar) paint no page colour, from a document's first frame on:
+// until the console's code marks a page see-through (html.mate-transparent) its body has the theme's colour — a
+// reload while shown, the server's "Updating…" page or an error page would flash or sit as a dark / light-gray box.
+if (surface === "mate-overlay" || surface === "mate-quick" || surface === "bar") {
+  try {
+    webFrame.insertCSS("html,body{background:transparent!important}");
+  } catch {
+    /* an older Electron: the page's own rules still apply */
+  }
+}
 
 const listen = (channel, cb) => {
   if (typeof cb !== "function") return () => {};
