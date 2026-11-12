@@ -120,10 +120,11 @@ function Overlay() {
   }, []);
 
   // The avatar takes the mouse when the window does: click-through off, or move mode (Geny: unlocked). Then a drag
-  // pans her inside the window, the wheel zooms, a tap still pokes her — per mate, remembered (Geny's viewStorageKey).
+  // pans her inside the window, the wheel zooms, a tap still pokes her — per mate, remembered (Geny's viewStorageKey),
+  // against her fitted figure: a window resized to another shape shows the same of her, never pushed out of it.
   const interactive = moveMode || (desk ? !desk.clickThrough : true);
   const area = useRef<HTMLDivElement>(null);
-  const { view, reset, dragging } = useAvatarView(area, mate ? `hrh.mate.view.${mate.id}` : null, interactive);
+  const { view, reset, dragging, setFigure } = useAvatarView(area, mate ? `hrh.mate.view.${mate.id}` : null, interactive);
   resetRef.current = () => {
     reset();
     setSizeKey((k) => k + 1);
@@ -167,7 +168,7 @@ function Overlay() {
         style={interactive ? { cursor: dragging ? "grabbing" : "grab", touchAction: "none" } : undefined}
         data-testid="mate-avatar-area"
       >
-        <LiveMateAvatar key={mate.id} mate={mate} mood={conv.mood} videoMood={conv.videoMood} react={conv.react} onTap={() => conv.poke("greet")} view={view} />
+        <LiveMateAvatar key={mate.id} mate={mate} mood={conv.mood} videoMood={conv.videoMood} react={conv.react} onTap={() => conv.poke("greet")} view={view} onFigure={setFigure} />
       </div>
       {interactive && !moveMode && !isHome(view) && (
         <button
