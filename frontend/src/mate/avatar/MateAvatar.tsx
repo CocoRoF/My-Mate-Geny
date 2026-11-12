@@ -10,18 +10,18 @@
  *
  * Photo/Live2D mouths follow the voice bridge. Video receives conversation activity separately from audio.
  */
-import { lazy, memo, Suspense, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { lazy, memo, Suspense, useLayoutEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useLiveAvatar } from "../livePreview";
 import type { Avatar, BodyMood, MateAvatarProps } from "../types";
 import { DEFAULT_OUTFIT, type MateState, type OutfitCard } from "../../api/mates";
 import { restingLook } from "../stateLook";
 import AlignedBox from "./AlignedBox";
-import type { FramedSet } from "./framing";
+import { figureOf, type FramedSet } from "./framing";
 import { useOutfitFade } from "./outfitFade";
 import { StackedPlayer } from "./player";
 import { reducedMotion } from "./shared";
 import VideoBody from "./VideoBody";
-import { viewTransform, type AvatarViewT } from "./view";
+import { viewTransform, type AvatarViewT, type FigureShape } from "./view";
 import PhotoBody from "./PhotoBody";
 import "./mateAvatar.css";
 
@@ -49,6 +49,9 @@ export interface MateAvatarExtraProps {
   doing?: string;
   /** her default set: this one stands where that one stands (framing.ts) */
   frameTo?: FramedSet;
+  /** what the body fits in the box, for a pan / zoom kept against her figure (view.ts useAvatarView's setFigure).
+   *  Live2D says once its model is in; null: not known (the initial) */
+  onFigure?: (figure: FigureShape | null) => void;
 }
 
 export const MateAvatar = memo(function MateAvatar({
@@ -67,12 +70,20 @@ export const MateAvatar = memo(function MateAvatar({
   interactive,
   view,
   doing,
+  onFigure,
 }: MateAvatarProps & MateAvatarExtraProps) {
   const webgl = useSyncExternalStore(noSubscribe, canVideo, () => false);
   const plainOk = useSyncExternalStore(noSubscribe, canPlainVideo, () => false);
   /** the video player could not start: show the stills instead */
   const [videoFailed, setVideoFailed] = useState(false);
   const cls = `mate-avatar mate-avatar-${size}${className ? " " + className : ""}`;
+  const figure = figureOf(avatar, frameTo);
+  const figureKey = figure ? `${figure.aspect}|${figure.anchorY ?? 1}` : String(figure);
+  // (before the first paint, as the stage measures its box: a kept view is never drawn against the wrong figure)
+  useLayoutEffect(() => {
+    if (figure !== undefined) onFigure?.(figure);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [figureKey, onFigure]);
 
   if (avatar.kind === "live2d") {
     return (
@@ -90,6 +101,7 @@ export const MateAvatar = memo(function MateAvatar({
             onTap={onTap}
             interactive={interactive}
             view={view}
+            onFigure={onFigure}
           />
         </Suspense>
       </div>

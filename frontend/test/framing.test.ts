@@ -1,8 +1,8 @@
 // Every set of one mate stands in the same place at the same size (src/mate/avatar/framing.ts)
 import assert from "node:assert/strict";
 import test from "node:test";
-import { placeSet, widenFor } from "../src/mate/avatar/framing";
-import type { RigFrame } from "../src/mate/types";
+import { figureOf, frameBox, placeSet, widenFor } from "../src/mate/avatar/framing";
+import type { Avatar, RigFrame } from "../src/mate/types";
 
 // han Chaerin as measured: her default set and her crop top, cut with other margins and another head height
 const usual = { aspect: [848, 970], frame: { face: [0.481, 0.314, 0.308], top: 0.042, how: "face" } as RigFrame };
@@ -77,4 +77,20 @@ test("a wider set widens the fitted box evenly: never cut off at the sides, her 
   near(frameLeft + p.left / span, place.left);
   near(place.width, p.width / span);
   near(place.top, p.top);
+});
+
+test("what the stage keeps her pan / zoom against is the box she is fitted in: her default set's, widened for this one", () => {
+  const rig = (r: typeof usual) => ({ aspect: r.aspect as [number, number], frame: r.frame, home: "", stills: {}, clips: [] });
+  const wearing: Avatar = { kind: "video", rig: rig(cropTop) };
+  const fb = frameBox(cropTop, usual);
+  near(fb.shape, (usual.aspect[0] / usual.aspect[1]) * widenFor(placeSet(cropTop, usual)).span);
+  near(figureOf(wearing, usual)!.aspect, fb.shape);
+  assert.equal(figureOf(wearing, usual)!.anchorY, undefined); // (on the bottom edge)
+  // no default set to stand in: the picture itself
+  near(figureOf({ kind: "photo", rig: rig(usual) })!.aspect, 848 / 970);
+  near(figureOf({ kind: "photo", rig: { ...rig(usual), aspect: [0, 0] } })!.aspect, 3 / 4);
+  // LivLiv: its drawing, in the middle; Live2D: its body says; nothing: nothing to say
+  assert.deepEqual(figureOf({ kind: "livliv", livliv: { model: "m", canvas: [1024, 1536] } }), { aspect: 1024 / 1536, anchorY: 0.5 });
+  assert.equal(figureOf({ kind: "live2d", live2d: { model: "m" } }), undefined);
+  assert.equal(figureOf({ kind: "none" }), null);
 });

@@ -4,7 +4,8 @@
  * with each change of clothes. So the box is always her default set's shape, and any other set is placed in it so that its
  * face lands on her default face (`rig.frame`, measured when the set is made).
  */
-import type { RigFrame } from "../types";
+import type { Avatar, RigFrame } from "../types";
+import type { FigureShape } from "./view";
 
 export interface FramedSet {
   aspect: number[];
@@ -47,6 +48,31 @@ export function widenFor(place: Placement): { span: number; place: Placement } {
   const span = 2 * reach;
   if (span <= 1 + 1e-6) return { span: 1, place };
   return { span, place: { ...place, left: (place.left - (0.5 - reach)) / span, width: place.width / span } };
+}
+
+/** the box `set` stands in, her default set being `to` (AlignedBox): its shape (width : height — her default set's,
+ *  widened for this one) and where the set goes in it */
+export function frameBox(set: FramedSet, to: FramedSet): { shape: number; place: Placement } {
+  const { span, place } = widenFor(placeSet(set, to));
+  return { shape: shape(to.aspect) * span, place };
+}
+
+/**
+ * What a body of `avatar` fits in its box (MateAvatar → the stage's pan / zoom, view.ts): a picture or her framed box
+ * contained at the bottom centre, a LivLiv drawing in the middle. undefined: Live2D (its body says, once its model is
+ * in); null: nothing to say (the initial).
+ */
+export function figureOf(avatar: Avatar, frameTo?: FramedSet): FigureShape | null | undefined {
+  if (avatar.kind === "video" || avatar.kind === "photo") {
+    const a = avatar.rig.aspect;
+    const aspect = a?.length === 2 && a[0] > 0 && a[1] > 0 ? a : [3, 4];
+    return { aspect: frameTo ? frameBox({ aspect, frame: avatar.rig.frame }, frameTo).shape : aspect[0] / aspect[1] };
+  }
+  if (avatar.kind === "livliv") {
+    const c = avatar.livliv.canvas;
+    return { aspect: c && c[0] > 0 && c[1] > 0 ? c[0] / c[1] : 2 / 3, anchorY: 0.5 };
+  }
+  return avatar.kind === "live2d" ? undefined : null;
 }
 
 /** `set`, placed in a box the shape of `to` */

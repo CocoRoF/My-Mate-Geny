@@ -977,7 +977,14 @@ height, back to stacked below 0.9 × height — a little room either way against
 flicker), so a narrow, tall window keeps her on top. A change of layout moves the
 same stage (her body isn't made again) and fits her whole again; a set wider than
 her default one makes her fitted box wider, so a narrow stage shows her smaller,
-never cut at its sides. Phones: always stacked (36 dvh, collapsible), the panels
+never cut at its sides. Her pan / zoom on the stage (the wheel, a mouse drag, a
+double click back) is kept per mate (`hrh.mate.stageView.<id>`) against her fitted
+figure, not as fractions of the stage (`mate/avatar/view.ts`): another size of
+stage shows the same of her, a pan keeps at least half of her middle in sight, and
+a stage of quite another shape than the one it was made on (1.3 × wider or taller:
+a window turned tall, a reload in another size) shows her fitted whole again — a
+zoom kept as the stage's fractions put her, made on a wide stage, twice the width
+of a narrow one and off to its side. Phones: always stacked (36 dvh, collapsible), the panels
 full screen (so on a very short screen, or under a stacked stage with too little
 height left). Beside the sidebar a small window (under 660 px) also gets the
 phone's header. On a phone the
@@ -1032,8 +1039,9 @@ Extra full-page surfaces (no sidebar), used by the desktop app:
   bubble only; plays the voice. When the window takes the mouse (click-through
   off, or move mode) a drag pans the avatar inside it and the wheel zooms
   (around the pointer), kept per mate in localStorage `hrh.mate.view.<id>`
-  (`mate/avatar/view.ts`; video/photo: a CSS transform, Live2D: in its
-  renderer). Move mode: a move bar on top (drag = move the window, Reset view,
+  against her fitted figure, so a window resized to another shape shows the same
+  of her, never pushed out of it (`mate/avatar/view.ts`; video/photo: a CSS
+  transform, Live2D: in its renderer). Move mode: a move bar on top (drag = move the window, Reset view,
   Done) and a resize frame (8 handles → `resizeBy`); the page marks
   `<html data-hrh-own-move>` so the desktop app does not make the whole page a
   drag area.

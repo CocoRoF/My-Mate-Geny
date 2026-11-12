@@ -23,7 +23,7 @@ import { emotionCandidates, lookupEmotion } from "../emotion";
 import type { BodyMood, Live2D, MateReact } from "../types";
 import { subscribe as subscribeVoice, voiceBridge } from "../voiceBridge";
 import { getLive2DCoreUrl, loadCubismCore, openLive2DSettings, useLive2DCoreInstalls } from "../live2dCore";
-import { VIEW_HOME, type AvatarViewT } from "./view";
+import { VIEW_HOME, type AvatarViewT, type FigureShape } from "./view";
 import { tr, useT } from "../../i18n";
 
 export interface Live2DBodyProps {
@@ -42,6 +42,8 @@ export interface Live2DBodyProps {
   interactive?: boolean;
   /** the user's pan / zoom (mate/avatar/view.ts), applied in the renderer so the model stays crisp */
   view?: AvatarViewT;
+  /** what is fitted, once the model is in: its own shape, at its scale, in the middle (view.ts FigureShape) */
+  onFigure?: (figure: FigureShape) => void;
 }
 
 type Status = { kind: "loading" } | { kind: "ready" } | { kind: "no-runtime" } | { kind: "error"; message: string };
@@ -138,11 +140,13 @@ function saccadeInterval(): number {
   return SACCADE_P[SACCADE_P.length - 1][1] + Math.random() * SACCADE_STEP;
 }
 
-export default function Live2DBody({ live2d, mood, react, look, name, coreUrl, onTap, interactive = true, view }: Live2DBodyProps) {
+export default function Live2DBody({ live2d, mood, react, look, name, coreUrl, onTap, interactive = true, view, onFigure }: Live2DBodyProps) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
   const viewRef = useRef<AvatarViewT>(view ?? VIEW_HOME);
   viewRef.current = view ?? VIEW_HOME;
+  const figureRef = useRef(onFigure);
+  figureRef.current = onFigure;
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const [retry, setRetry] = useState(0);
   // the core was just installed (settings, another window): load now, no reload needed
@@ -257,6 +261,8 @@ export default function Live2DBody({ live2d, mood, react, look, name, coreUrl, o
         model.scale.set(Math.min(sw / natW, sh / natH) * (c.scale ?? 0.85) * v.z);
         model.x = v.x * sw + v.z * (sw / 2 + (c.x ?? 0));
         model.y = v.y * sh + v.z * (sh / 2 + (c.y ?? 0));
+        // (contained, in the middle: the stage keeps a pan / zoom against that — view.ts)
+        figureRef.current?.({ aspect: natW / natH, scale: c.scale ?? 0.85, anchorY: 0.5 });
       };
       layout();
       app.stage.addChild(model);

@@ -134,10 +134,12 @@ export default function MateStage({
   const ml = moodLabel(t, mood);
   // her pan / zoom on the stage: the wheel at the pointer, a mouse drag, a double click back to her whole figure — per
   // mate, apart from the desktop overlay's (mate/avatar/view.ts). A finger is left alone: a phone scrolls and pokes her
-  // as before; a tap is still a poke.
+  // as before; a tap is still a poke. Kept against her fitted figure, never more than half of her middle out of sight; a
+  // stage of quite another shape than the one it was made on (a window turned tall, a reload in another size) shows her
+  // whole again.
   const area = useRef<HTMLDivElement>(null);
-  const { view, reset, dragging } = useAvatarView(area, `hrh.mate.stageView.${mate.id}`, true, { touch: false, doubleClickReset: true });
-  // (a pan / zoom made for the other shape would crop her in this one)
+  const { view, reset, dragging, setFigure } = useAvatarView(area, `hrh.mate.stageView.${mate.id}`, true, { touch: false, doubleClickReset: true, refit: true });
+  // (a pan / zoom made for the other layout is let go: she is fitted whole in this one)
   // (undefined: not measured yet — the first layout it gets is where it starts, the user's view kept)
   const shapedFor = useRef(layout);
   useEffect(() => {
@@ -168,7 +170,7 @@ export default function MateStage({
         data-view={`${view.x.toFixed(4)},${view.y.toFixed(4)},${view.z.toFixed(4)}`}
       >
         {/* keyed by the mate: switching mates never shows (or keeps playing) the previous mate's body */}
-        <LiveMateAvatar key={mate.id} mate={mate} size={size} mood={mood} videoMood={videoMood} react={react} onTap={onTap} view={view} />
+        <LiveMateAvatar key={mate.id} mate={mate} size={size} mood={mood} videoMood={videoMood} react={react} onTap={onTap} view={view} onFigure={setFigure} />
         {!isHome(view) && (
           <button
             className="absolute bottom-2 right-2 z-10 grid h-7 w-7 place-items-center rounded-full border border-border bg-surface-2/90 text-content-dim opacity-0 shadow-float transition hover:text-content focus-visible:opacity-100 group-hover/stage:opacity-100 touch:opacity-100"
