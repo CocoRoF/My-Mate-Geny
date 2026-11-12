@@ -37,4 +37,5 @@ export default {
   "showMate": "Show {name} on the desktop",
   "showMateHint": "Your mate stays on the desktop over other windows. Hide or move her from the tray.",
   "readHint": "Your mate reads her replies aloud on this device.",
+  "close": "Close the assistant (set up later)",
 } as const;

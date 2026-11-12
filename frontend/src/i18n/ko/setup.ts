@@ -39,4 +39,5 @@ export default {
   "showMate": "바탕화면에 {name} 보이기",
   "showMateHint": "메이트가 다른 창들 위, 바탕화면에 떠 있어요. 트레이에서 숨기거나 옮길 수 있어요.",
   "readHint": "이 기기에서 메이트가 답장을 소리 내어 읽어요.",
+  "close": "도우미 닫기 (나중에 설정)",
 } satisfies Messages<"setup">;

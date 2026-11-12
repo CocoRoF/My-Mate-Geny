@@ -20,8 +20,6 @@ export type SettingsTab =
   | "appearance"
   | "notifications"
   | "mate"
-  | "screen"
-  | "desktop"
   | "media"
   | "mcp"
   | "providers"
@@ -36,8 +34,6 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   "appearance",
   "notifications",
   "mate",
-  "screen",
-  "desktop",
   "providers",
   "media",
   "mcp",
@@ -79,6 +75,9 @@ const LEGACY: Record<string, { tab: SettingsTab; anchor?: SettingsAnchor }> = {
 const TAB_ALIAS: Record<string, { tab: SettingsTab; anchor?: SettingsAnchor }> = {
   downloads: { tab: "updates", anchor: "downloads" },
   download: { tab: "updates", anchor: "downloads" },
+  // (one Mate tab now: the Screen sharing and Desktop app tabs' old links)
+  screen: { tab: "mate" },
+  desktop: { tab: "mate" },
 };
 
 const isTab = (v: string | null): v is SettingsTab => !!v && (SETTINGS_TABS as readonly string[]).includes(v);

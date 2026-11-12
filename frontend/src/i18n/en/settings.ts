@@ -7,7 +7,6 @@ export default {
   secAppearance: "Theme",
   secNotifications: "Notifications",
   secMate: "Mate",
-  secDesktop: "Desktop app",
   tabUpdates: "Updates & Download",
   groupGeneral: "General",
   groupSystem: "Agents & services",
@@ -116,16 +115,10 @@ export default {
   testBody: "Notifications work.",
 
   // mate
-  mateHint: "What holds for every mate: the default mate, sound and speaking first on this device, the Live2D runtime, the built-in mates.",
+  mateHint: "For every mate. The mate picked in the Mate view is the one on the desktop, who reads aloud and who speaks first.",
 
   // desktop
-  desktopHint: "This computer only: the mate on your desktop, her chat window, the quick-chat shortcut and start at login.",
-  groupMate: "Mate",
-  secScreen: "Screen sharing",
-  screenHint: "This device's capture settings: asking first, the picture's size. Starting a share is in the message box.",
-  screenShareHow: "Start or stop sharing, pick the screen and when she looks — from the screen button in the message box. What stays the same every time is here.",
-  speakFirstOn: "Let a mate speak first on this device",
-  speakFirstWho: "Who",
+  speakFirstOn: "Let your mate speak first on this device",
   mateServices: "Image & voice services",
   yourName: "Your name for your mates",
   yourNameHint: "Every mate knows you by this name. How each one calls you (“Hyunsuk-ssi”, “boss”) is in her Mate settings → Conversation style.",

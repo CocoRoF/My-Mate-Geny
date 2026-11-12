@@ -40,9 +40,7 @@ import { openSettings, useUIStore, type SettingsTab } from "../../stores/uiStore
 import { APP_VERSION, BUILD_COMMIT, BUILD_TIME } from "../../version";
 import { requestAdminTab } from "../admin/adminTab";
 import UpdateCard, { useUpdateState } from "../downloads/UpdateCard";
-import DesktopPanel from "../mate/settings/global/DesktopPanel";
 import MateTab from "./MateTab";
-import ScreenShareTab from "./ScreenShareTab";
 import { Location, TimeZone, YourName } from "./PersonalFields";
 import Icon, { type IconName } from "../ui/Icon";
 import PageLoading from "../ui/Loading";
@@ -692,18 +690,6 @@ function NotificationsSection() {
   );
 }
 
-// ---- Mate, Screen sharing, Desktop app -------------------------------------------------------------------------
-
-function DesktopSection() {
-  return (
-    <Card id="desktop">
-      <div className="space-y-3">
-        <DesktopPanel />
-      </div>
-    </Card>
-  );
-}
-
 // ---- the view ----------------------------------------------------------------------------------------------------
 
 const WIDE = "(min-width: 768px)"; // Tailwind's md: the sidebar is on screen, so is the tab list
@@ -738,10 +724,6 @@ function TabContent({ id }: { id: SettingsTab }) {
       return <NotificationsSection />;
     case "mate":
       return <MateTab />;
-    case "screen":
-      return <ScreenShareTab />;
-    case "desktop":
-      return <DesktopSection />;
     case "mcp":
       return <McpView />;
     case "media":

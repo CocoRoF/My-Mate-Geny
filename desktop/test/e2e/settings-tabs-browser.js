@@ -80,7 +80,7 @@ async function showing(page, tab) {
 const sidebarNav = (page) =>
   page.evaluate(() => [...document.querySelectorAll("aside nav button")].filter((b) => b.offsetParent).map((b) => b.textContent.trim()));
 
-const TABS = ["updates", "account", "language", "appearance", "notifications", "mate", "screen", "providers", "media", "mcp", "connections", "usage", "admin"];
+const TABS = ["updates", "account", "language", "appearance", "notifications", "mate", "providers", "media", "mcp", "connections", "usage", "admin"];
 // what each tab must show (and what belongs to the others it must not)
 const MARK = {
   updates: '[data-testid="settings-updates"]',

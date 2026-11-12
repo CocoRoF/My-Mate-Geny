@@ -160,7 +160,6 @@ export default {
   loadFailed: "Couldn't load your mates: {error}",
   noMateYet: "No mate yet.",
   noMate: "No mate.",
-  defaultPill: "default",
   newMate: "New mate",
   restoreBuiltins: "Restore built-in mates",
   restoredBuiltins: { one: "Restored {count} built-in mate", other: "Restored {count} built-in mates" },

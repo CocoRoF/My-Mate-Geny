@@ -83,7 +83,7 @@ export default function DeviceCaptureSettings({mate, part}: {mate?:Mate; part:"s
           <button type="button" className="btn-ghost !px-2" onClick={refreshSources} data-testid="device-capture-refresh">{t("common.refresh")}</button>
         </label>
       )}
-      <button type="button" className="text-left text-accent hover:underline" onClick={() => openAppSettings("screen")} data-testid="device-capture-settings-link">
+      <button type="button" className="text-left text-accent hover:underline" onClick={() => openAppSettings("mate")} data-testid="device-capture-settings-link">
         {t("screen.moreInSettings")}
       </button>
       </>}

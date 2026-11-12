@@ -553,19 +553,12 @@ export default {
   provSaveVerify: "Save & verify",
 
   // global/DesktopPanel
-  deskTitle: "Desktop app",
-  deskHint: "These settings live in the desktop app, per computer.",
-  deskGetApp: "Get the app",
-  deskNoApp: "Open My Mate Geny's desktop app to put a mate on your desktop: an always-on-top avatar, a quick-chat shortcut and start at login. These settings are per computer.",
   deskHotkeyOk: "Quick chat opens with {key}",
   deskHotkeyOff: "Shortcut turned off",
   deskHotkeyTaken: "{key} is already used by another app or by the system — pick another.",
   deskOnDesktop: "On your desktop",
   deskOnDesktopHint: "This computer only. The mate sits on top of your windows; clicks pass through it unless you turn that off.",
   deskShowAvatar: "Show the avatar",
-  deskMate: "Mate on the desktop",
-  deskMateHint: "The avatar window, quick chat and the mate chat window use this mate.",
-  defaultSuffix: "(default)",
   deskQuick: "Quick chat",
   deskQuickHint: "A one-line card over everything: press the shortcut, type, Enter.",
   deskShortcut: "Shortcut",
@@ -581,14 +574,10 @@ export default {
   deskAutostartHint: "The desktop app starts with your computer (with the avatar, if it was shown).",
 
   // global/DefaultsPanel
-  defNowDefault: "{name} is now the default mate.",
   defTimezone: "Timezone",
   defTimezoneHint: "The mates' clock: what “today” and “Tuesday 3 pm” mean, and when a day of your relationship ends. Empty: the server's.",
   defTimezoneUse: "Use {tz}",
   defTimezoneSaved: "Saved — from their next message.",
-  defTitle: "Default mate",
-  defHint: "Shown first in the switcher, on a new device and in the desktop app until you pick another there.",
-  defBuiltin: "built-in",
   defDevice: "Sound on this device",
   defDeviceHint: "This browser / app only, for every mate.",
   defReadHere: "Read replies aloud here",
@@ -681,4 +670,6 @@ export default {
   deskResetHint: "Back to the corner of the main screen, at her usual size.",
   provKeyShared: "Using the API key from Language model providers. A key entered here is used instead.",
   provKeySharedPh: "Shared from Language model providers",
+  tabCommon: "Common",
+  deskShowsPicked: "{name} — the mate picked in the Mate view.",
 };

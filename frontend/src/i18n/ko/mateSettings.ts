@@ -554,19 +554,12 @@ const ko: Messages<"mateSettings"> = {
   provSaveVerify: "저장하고 확인",
 
   // global/DesktopPanel
-  deskTitle: "데스크톱 앱",
-  deskHint: "이 설정은 데스크톱 앱에 컴퓨터별로 저장돼요.",
-  deskGetApp: "앱 받기",
-  deskNoApp: "My Mate Geny 데스크톱 앱을 열면 메이트를 바탕화면에 둘 수 있어요: 항상 위에 떠 있는 아바타, 빠른 채팅 단축키, 로그인 시 시작. 이 설정은 컴퓨터마다 따로예요.",
   deskHotkeyOk: "{key:으로} 빠른 채팅이 열려요",
   deskHotkeyOff: "단축키를 껐어요",
   deskHotkeyTaken: "{key:은} 다른 앱이나 시스템이 이미 쓰고 있어요 — 다른 키를 고르세요.",
   deskOnDesktop: "바탕화면에서",
   deskOnDesktopHint: "이 컴퓨터만 해당돼요. 메이트가 창들 위에 떠 있고, 끄지 않으면 클릭이 메이트를 통과해요.",
   deskShowAvatar: "아바타 보이기",
-  deskMate: "바탕화면의 메이트",
-  deskMateHint: "아바타 창, 빠른 채팅, 메이트 채팅 창이 이 메이트를 써요.",
-  defaultSuffix: "(기본)",
   deskQuick: "빠른 채팅",
   deskQuickHint: "모든 창 위에 뜨는 한 줄 카드예요: 단축키를 누르고, 입력하고, Enter.",
   deskShortcut: "단축키",
@@ -582,14 +575,10 @@ const ko: Messages<"mateSettings"> = {
   deskAutostartHint: "컴퓨터를 켜면 데스크톱 앱이 함께 시작돼요(아바타를 보이고 있었다면 아바타도).",
 
   // global/DefaultsPanel
-  defNowDefault: "이제 {name:이} 기본 메이트예요.",
   defTimezone: "시간대",
   defTimezoneHint: "메이트의 시계예요: “오늘”, “화요일 오후 3시”가 언제인지, 관계의 하루가 언제 끝나는지 정해요. 비워 두면 서버 시간대를 써요.",
   defTimezoneUse: "{tz} 쓰기",
   defTimezoneSaved: "저장했어요 — 다음 메시지부터 적용돼요.",
-  defTitle: "기본 메이트",
-  defHint: "메이트 전환 목록 맨 앞, 새 기기, 데스크톱 앱(거기서 다른 메이트를 고르기 전까지)에 나와요.",
-  defBuiltin: "기본 제공",
   defDevice: "이 기기의 소리",
   defDeviceHint: "이 브라우저 / 앱에만, 모든 메이트에 적용돼요.",
   defReadHere: "이 기기에서 답장 소리 내어 읽기",
@@ -682,5 +671,7 @@ const ko: Messages<"mateSettings"> = {
   deskResetHint: "주 화면 구석, 원래 크기로 돌아가요.",
   provKeyShared: "언어모델 공급자에 넣은 API 키를 같이 쓰고 있어요. 여기에 넣으면 이 키를 대신 써요.",
   provKeySharedPh: "언어모델 공급자의 키 사용 중",
+  tabCommon: "공통",
+  deskShowsPicked: "{name} — 메이트 화면에서 고른 메이트예요.",
 };
 export default ko;
