@@ -9,6 +9,7 @@ import { requestResync } from "../../lib/sync";
 import { useNativeVersion } from "../../lib/nativeVersion";
 import { APP_VERSION } from "../../version";
 import Icon, { type IconName } from "../ui/Icon";
+import UserIcon from "../ui/UserIcon";
 import { useAuthStatus } from "../admin/useAuthStatus";
 import { useT, type MsgKey } from "../../i18n";
 import { sessionBadge, unseenCount } from "../../lib/sessionStatus";
@@ -150,7 +151,6 @@ export default function Sidebar({ collapsible = false }: { collapsible?: boolean
 
   const attention = needsProvider || needsSession;
   const attentionText = t(needsProvider ? "nav.providersNone" : "nav.sessionsNeedLogin");
-  const initial = (user || "?").slice(0, 1).toUpperCase();
 
   if (rail)
     return (
@@ -196,16 +196,16 @@ export default function Sidebar({ collapsible = false }: { collapsible?: boolean
           <button
             type="button"
             onClick={() => openSettings("account")}
-            className="grid h-8 w-8 place-items-center rounded-full bg-surface-3 text-[12px] font-semibold text-content-dim transition hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/70"
+            className="rounded-full transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/70"
             title={`${user} — ${t("nav.editName")}`}
             aria-label={t("nav.editName")}
             data-testid="nav-local-name"
           >
-            {initial}
+            <UserIcon name={user} className="h-8 w-8 text-[12px]" />
           </button>
         ) : (
-          <span className="grid h-8 w-8 place-items-center rounded-full bg-surface-3 text-[12px] font-semibold text-content-dim" title={t("nav.signedInAs", { user })}>
-            {initial}
+          <span title={t("nav.signedInAs", { user })}>
+            <UserIcon name={user} className="h-8 w-8 text-[12px]" />
           </span>
         )}
         <button data-testid="nav-signout" onClick={signOutHere} className={`${RAIL_BTN} hover:!text-danger`} title={t("nav.logOut")} aria-label={t("nav.logOut")}>
@@ -471,9 +471,7 @@ export default function Sidebar({ collapsible = false }: { collapsible?: boolean
 
       {/* Footer */}
       <div className="flex items-center gap-2 px-3 h-12 border-t border-border/70 text-content-faint">
-        <div className="grid place-items-center w-6 h-6 rounded-full bg-surface-3 text-[11px] font-semibold text-content-dim">
-          {initial}
-        </div>
+        <UserIcon name={user} className="h-6 w-6 text-[11px]" />
         {auth?.local ? (
           <button type="button" onClick={() => openSettings("account")} className="min-w-0 truncate text-xs hover:text-content" title={t("nav.editName")} data-testid="nav-local-name">
             {user}

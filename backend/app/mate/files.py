@@ -32,7 +32,8 @@ from urllib.parse import quote
 
 from app.config import settings
 from app.mate.life.days import is_mmdd
-from app.mate.store import DEFAULT_GREETINGS, GENDERS, MateError, normalize_avatar, takes_frame, with_new_clips
+from app.mate.store import (DEFAULT_GREETINGS, GENDERS, ICON_FOLDER, MateError, normalize_avatar, takes_frame,
+                            with_new_clips)
 from app.services._ids import new_id
 
 CORE_URL = "https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"
@@ -180,6 +181,110 @@ async def save_upload(mate_id: str, rel: str, upload: Any) -> dict[str, Any]:
             tmp.unlink()
     st = dest.stat()
     return {"path": rel, "url": f"{asset_url(mate_id, rel)}?v={int(st.st_mtime)}", "size": size}
+
+
+# ---- profile pictures: a mate's (her assets, profile/) and the user's (<root>/_profile/) ----
+
+ICON_MAX_BYTES = 8 * 1024 * 1024   # what may come in (the page sends a small square; a phone's photo is bigger)
+ICON_EDGE = 512                    # what is kept: a square at most this big
+_ICON_FORMATS = {"PNG", "JPEG", "WEBP", "GIF", "BMP"}
+_USER_ICON_RE = re.compile(r"^user-icon-[0-9a-f]{12}\.(?:webp|png)$")
+
+
+def make_icon(data: bytes) -> tuple[bytes, str]:
+    """A picture -> (the bytes, the extension) of a square profile picture: what the crop dialog sent, checked and
+    written again (a picture's own metadata and anything else in the file stay behind), the middle of a picture that
+    isn't square, at most :data:`ICON_EDGE` px. WebP where Pillow writes it, else PNG."""
+    import io
+
+    from PIL import Image, ImageOps, UnidentifiedImageError, features
+
+    if not data:
+        raise MateError("no picture")
+    if len(data) > ICON_MAX_BYTES:
+        raise MateError(f"the picture is larger than {ICON_MAX_BYTES // (1024 * 1024)} MB", status=413)
+    try:
+        with Image.open(io.BytesIO(data)) as probe:
+            if probe.format not in _ICON_FORMATS:
+                raise MateError("not a picture (PNG, JPEG, WebP, GIF or BMP)")
+            if probe.width * probe.height > 50_000_000:
+                raise MateError("the picture is too large")
+            probe.verify()
+        with Image.open(io.BytesIO(data)) as im:
+            im = ImageOps.exif_transpose(im).convert("RGBA")
+    except (OSError, UnidentifiedImageError, Image.DecompressionBombError, SyntaxError) as exc:
+        raise MateError("not a picture (PNG, JPEG, WebP, GIF or BMP)") from exc
+    side = min(im.size)
+    if not side:
+        raise MateError("an empty picture")
+    left, top = (im.width - side) // 2, (im.height - side) // 2
+    im = im.crop((left, top, left + side, top + side))
+    if side > ICON_EDGE:
+        im = im.resize((ICON_EDGE, ICON_EDGE), Image.LANCZOS)
+    out = io.BytesIO()
+    if features.check("webp"):
+        im.save(out, "WEBP", quality=90, method=4)
+        return out.getvalue(), "webp"
+    im.save(out, "PNG", optimize=True)
+    return out.getvalue(), "png"
+
+
+def _write(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".part")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+
+
+def save_mate_icon(mate_id: str, data: bytes) -> str:
+    """Her profile picture among her assets (``profile/icon-<hash>.<ext>``: a new picture, a new URL) -> its URL. The
+    one before it goes."""
+    icon, ext = make_icon(data)
+    digest = hashlib.sha256(icon).hexdigest()[:12]
+    name = f"icon-{digest}.{ext}"
+    _write(assets_dir(mate_id) / ICON_FOLDER / name, icon)
+    drop_mate_icons(mate_id, keep=name)
+    # (named by what is in it: the URL is kept for good, and ``?v`` tells the asset route so)
+    return f"{asset_url(mate_id, f'{ICON_FOLDER}/{name}')}?v={digest}"
+
+
+def drop_mate_icons(mate_id: str, keep: str = "") -> None:
+    folder = assets_dir(mate_id) / ICON_FOLDER
+    if folder.is_dir():
+        for p in folder.glob("icon-*"):
+            if p.name != keep:
+                p.unlink(missing_ok=True)
+
+
+def user_icon_dir() -> Path:
+    return root() / "_profile"
+
+
+def save_user_icon(data: bytes) -> str:
+    """The user's own picture (one for the app) -> its file name; the one before it goes."""
+    icon, ext = make_icon(data)
+    name = f"user-icon-{hashlib.sha256(icon).hexdigest()[:12]}.{ext}"
+    _write(user_icon_dir() / name, icon)
+    drop_user_icons(keep=name)
+    return name
+
+
+def drop_user_icons(keep: str = "") -> None:
+    folder = user_icon_dir()
+    if folder.is_dir():
+        for p in folder.glob("user-icon-*"):
+            if p.name != keep:
+                p.unlink(missing_ok=True)
+
+
+def resolve_user_icon(name: str) -> Path:
+    """The file behind the user's picture URL (KeyError if there is none)."""
+    if not _USER_ICON_RE.match(name or ""):
+        raise KeyError("no such picture")
+    p = user_icon_dir() / name
+    if not p.is_file():
+        raise KeyError("no such picture")
+    return p
 
 
 def drop_import_dirs(mate_id: str, keep: set[str]) -> None:

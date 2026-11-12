@@ -108,6 +108,41 @@ async def put_settings(request: Request, verify: bool = False) -> dict:
     return out
 
 
+async def _picture(file: UploadFile) -> bytes:
+    """An uploaded picture, read up to the icon limit (app/mate/files.py make_icon checks the rest)."""
+    data = await file.read(files.ICON_MAX_BYTES + 1)
+    if len(data) > files.ICON_MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"the picture is larger than {files.ICON_MAX_BYTES // (1024 * 1024)} MB")
+    return data
+
+
+@router.post("/settings/user-icon")
+async def put_user_icon(request: Request, file: UploadFile = File(...)) -> dict:
+    """The user's own picture (Settings → Account; the sidebar shows it): a square, kept as a small WebP/PNG
+    → the settings (``user_icon``: its URL)."""
+    data = await _picture(file)
+    try:
+        return await asyncio.to_thread(_svc(request).set_user_icon, data)
+    except MateError as exc:
+        raise _http(exc) from exc
+
+
+@router.delete("/settings/user-icon")
+async def delete_user_icon(request: Request) -> dict:
+    return _svc(request).set_user_icon(None)
+
+
+@router.get("/settings/user-icon/{name}")
+async def get_user_icon(name: str) -> FileResponse:
+    try:
+        p = files.resolve_user_icon(name)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="no such picture") from exc
+    # (named by what is in it: another picture has another name)
+    return FileResponse(p, media_type=files.content_type(p), headers={
+        **_ASSET_HEADERS, "Cache-Control": "private, max-age=31536000, immutable"})
+
+
 @router.get("/providers")
 async def list_providers(request: Request, refresh: bool = False) -> dict:
     """``{tts: [...], stt: [...]}``, each ``{engine, label, configured, ok,
@@ -590,6 +625,27 @@ async def upload_asset(mate_id: str, request: Request, file: UploadFile = File(.
     try:
         return await files.save_upload(mate_id, path or (file.filename or ""), file)
     except MateError as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/{mate_id}/icon")
+async def put_icon(mate_id: str, request: Request, file: UploadFile = File(...)) -> dict:
+    """Her profile picture (switcher, chat, the desktop's windows): a square of her avatar's picture or of one the
+    user picked, kept among her assets (``profile/``) as a small WebP/PNG → the mate (``icon``: its URL)."""
+    _mate(request, mate_id)
+    data = await _picture(file)
+    try:
+        return await asyncio.to_thread(_svc(request).set_icon, mate_id, data)
+    except (KeyError, MateError) as exc:
+        raise _http(exc) from exc
+
+
+@router.delete("/{mate_id}/icon")
+async def delete_icon(mate_id: str, request: Request) -> dict:
+    """Back to her avatar's face."""
+    try:
+        return _svc(request).clear_icon(mate_id)
+    except (KeyError, MateError) as exc:
         raise _http(exc) from exc
 
 

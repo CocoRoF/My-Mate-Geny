@@ -1,18 +1,54 @@
 /**
- * Profile (this mate): who she is — the character only (docs/mate.md "Prompt composition"). How she talks (speech
+ * Profile (this mate): who she is — the character only (docs/mate.md "Prompt composition"), her birthday and her icon
+ * (a square of her avatar's face or of a picture of one's own: IconCropDialog, saved at once). How she talks (speech
  * level, what she calls you, speech habits, reply language…) is the Conversation style tab. Changes reach the mate at
  * its next message.
  */
 import { useState } from "react";
-import type { Mate, Persona } from "../../../api/mates";
+import { clearMateIcon, uploadMateIcon, type Mate, type Persona } from "../../../api/mates";
 import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
+import BirthdayPicker from "../../ui/BirthdayPicker";
+import IconCropDialog from "../../ui/IconCropDialog";
+import { avatarPicture, MateThumb } from "../MateStage";
 import { Field, SaveBar, Section, useFollowSaved, useSaver } from "./ui";
 import { useT } from "../../../i18n";
 
-type Draft = Pick<Persona, "description" | "personality" | "greeting" | "instructions">;
-const KEYS: (keyof Draft)[] = ["description", "personality", "greeting", "instructions"];
-const draftOf = (p: Persona): Draft => ({ description: p.description, personality: p.personality, greeting: p.greeting, instructions: p.instructions });
+type Draft = Pick<Persona, "description" | "personality" | "greeting" | "instructions"> & { birthday: string };
+const KEYS: (keyof Draft)[] = ["description", "personality", "greeting", "instructions", "birthday"];
+const draftOf = (p: Persona): Draft => ({ description: p.description, personality: p.personality, greeting: p.greeting, instructions: p.instructions, birthday: p.birthday ?? "" });
+
+/** her icon: what the switcher, the chat and the desktop's windows show — "아이콘 바꾸기" opens the crop dialog */
+function IconField({ mate }: { mate: Mate }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const picture = avatarPicture(mate);
+  const done = (m: Mate) => useMateStore.getState().upsert(m);
+  return (
+    <div className="flex flex-wrap items-center gap-3" data-testid="mate-icon">
+      <MateThumb mate={mate} className="h-14 w-14" />
+      <div className="min-w-[10rem] flex-1">
+        <div className="text-[12px] font-medium text-content-dim">{t("profile.mateIcon")}</div>
+        <p className="mt-0.5 text-[11px] leading-relaxed text-content-faint">{mate.icon ? t("profile.mateIconOwn") : t(picture ? "profile.mateIconFace" : "profile.mateIconNone", { name: mate.name })}</p>
+      </div>
+      <button type="button" className="btn-soft shrink-0" onClick={() => setOpen(true)} data-testid="mate-icon-change">
+        <Icon name="image" size={13} /> {t("profile.changeIcon")}
+      </button>
+      {open && (
+        <IconCropDialog
+          title={t("profile.mateIconTitle", { name: mate.name })}
+          avatar={picture}
+          avatarLabel={t("profile.cropFromHerAvatar")}
+          onSave={async (blob) => done(await uploadMateIcon(mate.id, blob))}
+          onReset={mate.icon ? async () => done(await clearMateIcon(mate.id)) : undefined}
+          resetLabel={t("profile.mateIconReset")}
+          onClose={() => setOpen(false)}
+          testId="mate-icon-crop"
+        />
+      )}
+    </div>
+  );
+}
 
 export default function ProfileTab({ mate, onOpenStyle }: { mate: Mate; onOpenStyle?: () => void }) {
   const t = useT();
@@ -20,7 +56,8 @@ export default function ProfileTab({ mate, onOpenStyle }: { mate: Mate; onOpenSt
   const [p, setP] = useState<Draft>(draftOf(mate.persona));
   const saver = useSaver();
   const set = (k: keyof Draft) => (e: React.ChangeEvent<HTMLTextAreaElement>) => setP((x) => ({ ...x, [k]: e.target.value }));
-  const dirty = name !== mate.name || KEYS.some((k) => p[k] !== mate.persona[k]);
+  const saved = draftOf(mate.persona);
+  const dirty = name !== mate.name || KEYS.some((k) => p[k] !== saved[k]);
 
   const save = () =>
     saver.run(async () => {
@@ -59,8 +96,12 @@ export default function ProfileTab({ mate, onOpenStyle }: { mate: Mate; onOpenSt
         )}
       </div>
       <Section title={t("mateSettings.profIdentity")}>
+        <IconField mate={mate} />
         <Field label={t("mateSettings.profName")}>
           <input className="field" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} data-testid="mate-name" />
+        </Field>
+        <Field label={t("profile.mateBirthday")} hint={t("profile.mateBirthdayHint", { name: mate.name })} as="div">
+          <BirthdayPicker value={p.birthday} onChange={(birthday) => setP((x) => ({ ...x, birthday }))} testId="mate-birthday" />
         </Field>
       </Section>
       <Section title={t("mateSettings.profWho")} hint={t("mateSettings.profWhoHint")}>

@@ -63,7 +63,7 @@ const LANGS: [string, string][] = [
 const langName = (code: string) => LANGS.find(([c]) => c === code.toLowerCase().split("-")[0])?.[1] ?? code;
 
 /** sensible speed range per engine (what the provider accepts) */
-const SPEED: Record<string, [number, number]> = {
+export const SPEED: Record<string, [number, number]> = {
   openai: [0.25, 4],
   elevenlabs: [0.7, 1.2],
   omnivoice: [0.5, 2],
@@ -245,6 +245,26 @@ export default function VoiceTab({ mate, conv, onTest }: { mate: Mate; conv: Mat
       </Section>
       <SaveBar saver={saver} onSave={save} dirty={dirty} onReset={() => setV(mate.voice)} />
     </>
+  );
+}
+
+/**
+ * The guide's voice step (components/mate/guide/MateGuide.tsx): how she speaks — the engine and her voice, with a
+ * preview; nothing else (the model, speed and language are this tab's). `onEngine`: another engine was picked
+ * (mate/guide.ts withTtsEngine: ElevenLabs gets its model picked).
+ */
+export function QuickVoice({ mate, tts, set, onEngine }: { mate: Mate; tts: Tts; set: (p: Partial<Tts>) => void; onEngine: (engine: TtsEngine) => void }) {
+  const providers = useMateStore((s) => s.providers);
+  useEffect(() => {
+    if (!useMateStore.getState().providers) void useMateStore.getState().loadProviders();
+    return () => stopPreview();
+  }, []);
+  const avail = (id: string) => availability(providers, "tts", id);
+  return (
+    <div className="space-y-3" data-testid="mate-guide-voice">
+      <EnginePicker kind="tts" engines={TTS_ENGINES} value={tts.engine} avail={avail} onChange={onEngine} testId="mate-tts-engine" />
+      {tts.engine !== "off" && <TtsDetails key={tts.engine} mate={mate} tts={tts} set={set} ready={avail(tts.engine).state === "ready"} simple />}
+    </div>
   );
 }
 
@@ -470,7 +490,8 @@ function LanguageField({ value, onChange, mate, extra, hint }: { value: string; 
   );
 }
 
-function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: Partial<Tts>) => void; ready: boolean }) {
+/** `simple`: the voice only (the guide's voice step) — its model, speed and language stay as they are */
+function TtsDetails({ mate, tts, set, ready, simple }: { mate: Mate; tts: Tts; set: (p: Partial<Tts>) => void; ready: boolean; simple?: boolean }) {
   const t = useT();
   const engine = tts.engine;
   const lang = (tts.language || mate.persona.language || "ko").toLowerCase();
@@ -500,7 +521,7 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
 
       {(engine === "openai" || engine === "google") && (
         <>
-          <Field label={t("mateSettings.voiceModel")} as="div">
+          {!simple && <Field label={t("mateSettings.voiceModel")} as="div">
             <SearchSelect
               value={tts.model}
               onChange={(model) => set({ model })}
@@ -509,7 +530,7 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
               loading={models.busy}
               testId="mate-tts-model"
             />
-          </Field>
+          </Field>}
           <VoicePicker
             label={t("mateSettings.voiceVoice")}
             value={tts.voice}
@@ -557,7 +578,7 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
             }}
             required
           />
-          <Field label={t("mateSettings.voiceModel")} as="div">
+          {!simple && <><Field label={t("mateSettings.voiceModel")} as="div">
             <SearchSelect
               value={tts.model}
               onChange={(model) => set({ model })}
@@ -579,7 +600,7 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
             return m?.languages?.length && !m.languages.some((x) => x.toLowerCase().startsWith(code)) ? (
               <p className="text-[12px] text-warning">{t("mateSettings.voiceModelNoLang", { model: m.name, lang: langName(code) })}</p>
             ) : null;
-          })()}
+          })()}</>}
         </>
       )}
 
@@ -587,7 +608,7 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
 
       {engine === "http" && (
         <>
-          <Field label={t("mateSettings.voiceModel")} as="div" hint={models.data && !models.data.models.length ? t("mateSettings.voiceNoModelsTts") : undefined}>
+          {!simple && <Field label={t("mateSettings.voiceModel")} as="div" hint={models.data && !models.data.models.length ? t("mateSettings.voiceNoModelsTts") : undefined}>
             <SearchSelect
               value={tts.model}
               onChange={(model) => set({ model })}
@@ -598,14 +619,14 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
               testId="mate-tts-model"
             />
             <ErrorLine text={models.err} />
-          </Field>
+          </Field>}
           <Field label={t("mateSettings.voiceVoice")} hint={t("mateSettings.voiceHttpVoiceHint")}>
             <input className="field" value={tts.voice} onChange={(e) => set({ voice: e.target.value })} placeholder={t("mateSettings.voiceDefaultPh")} data-testid="mate-tts-voice-text" />
           </Field>
         </>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      {!simple && <div className="grid gap-3 sm:grid-cols-2">
         <Field label={t("mateSettings.voiceSpeed", { x: tts.speed.toFixed(2) })} hint={engine === "elevenlabs" ? t("mateSettings.voiceElevenSpeed") : undefined}>
           <input
             type="range"
@@ -625,7 +646,7 @@ function TtsDetails({ mate, tts, set, ready }: { mate: Mate; tts: Tts; set: (p: 
           extra={engine === "omnivoice" ? models.data?.languages : undefined}
           hint={engine === "elevenlabs" ? t("mateSettings.voiceElevenLangHint") : undefined}
         />
-      </div>
+      </div>}
 
       {engine !== "browser" && (
         <div className="flex flex-wrap items-center gap-2">

@@ -323,6 +323,26 @@ class MateService:
             self._drop_unused_imports(mate_id)
         return mate
 
+    def set_icon(self, mate_id: str, data: bytes) -> dict[str, Any]:
+        """Her profile picture: a square the crop dialog made (of her avatar's picture, or one the user picked)."""
+        self.store.get(mate_id)
+        return self.store.set_icon(mate_id, files.save_mate_icon(mate_id, data))
+
+    def clear_icon(self, mate_id: str) -> dict[str, Any]:
+        """Back to her avatar's face."""
+        mate = self.store.set_icon(mate_id, "")
+        files.drop_mate_icons(mate_id)
+        return mate
+
+    def set_user_icon(self, data: bytes | None) -> dict[str, Any]:
+        """The user's own picture (None: none again) -> the settings."""
+        if data is None:
+            self.store.set_user_icon("")
+            files.drop_user_icons()
+        else:
+            self.store.set_user_icon(files.save_user_icon(data))
+        return self.store.settings()
+
     def _drop_unused_imports(self, mate_id: str) -> None:
         """Imported packs/models no avatar of hers uses any more (the whole wardrobe counts)."""
         keep: set[str] = set()

@@ -442,6 +442,7 @@ export default function MateStudio() {
       st.upsert(r.mate);
       st.setActive(r.mate.id);
       useStudio.getState().note(t("studio.createdInfo", { name: r.mate.name }));
+      useStudio.getState().askGuide(r.mate.id); // (her guide, once the Mate view is back)
       exit();
     } catch (e) {
       setError((e as Error).message);

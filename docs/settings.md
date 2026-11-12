@@ -52,7 +52,10 @@ off where it lives: the stage's status window.
 |---|---|---|
 | Default mate | Profile toggle · Global settings → Defaults · Settings → Mate & voice | Settings → 메이트 |
 | Your name (`prefs.user_name`, per mate) | each mate's 대화 방식 | Settings → 계정, one for all mates (a mate's old value is used until it is set) |
-| Your birthday (`user_birthday`, "MM-DD") | — | one for all mates, in the mate settings (`PUT /api/mates/settings`; no input yet): a mate with a day of her own knows it |
+| Your birthday (`user_birthday`, "MM-DD") | — | Settings → 계정 (a month/day picker under your name), one for all mates: a mate with a day of her own knows it |
+| Your picture (`user_icon`) | — (your initial) | Settings → 계정 (the crop dialog), one for the app: the sidebar's footer and rail show it |
+| Her birthday (`persona.birthday`) and icon (`icon`) | — (her home still) | 메이트 설정 → 프로필; the icon is a square of her avatar's face or of a picture of one's own (the same crop dialog) |
+| First steps with a mate | — | the Mate panel's guide (프로필 · 대화 방식 · 아바타·의상 · 음성 · 화면 공유와 먼저 말 걸기): by itself once per account on a device and after a mate is created in the studio; 메이트 설정's 가이드 (the phone's ⋯) opens it again |
 | Time zone | Settings → Mate & voice · Global settings → Defaults | Settings → 언어 |
 | Volume | each mate's 음성 tab (it was this device's anyway) | Settings → 메이트 (this device) |
 | Speaking first (먼저 말 걸기) | a tab of each mate (it was this device's, one mate) | Settings → 메이트 (this device, which mate) |

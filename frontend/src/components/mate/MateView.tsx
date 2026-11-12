@@ -6,6 +6,8 @@
  * keyboard is up the stage steps aside (the header keeps her picture, name and mood) so the conversation gets the
  * room; it comes back when the keyboard goes.
  * The picker's New mate (and ✨ Avatar Create) open the Mate Create studio over the whole view (studio/MateStudio).
+ * Her guide (guide/MateGuide) opens over it the first time the Mate view opens (once per account on this device), after
+ * a mate is created in the studio, and from Mate settings' header (the phone's ⋯).
  */
 import PageLoading from "../ui/Loading";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -26,6 +28,8 @@ import { takeMatePanelLink } from "../../lib/nav";
 import { useT } from "../../i18n";
 import { useStudio } from "../../stores/studioStore";
 import { confirmDialog } from "../ui/ConfirmDialog";
+import { sharedAuthStatus } from "../../api/admin";
+import { automated, GUIDE_SEEN_KEY, guideSeen, markGuideSeen } from "../../mate/guide";
 
 const MateSettings = lazy(() => import("./settings/MateSettings"));
 const RelationPanel = lazy(() => import("./RelationPanel"));
@@ -33,6 +37,7 @@ const StatusWindow = lazy(() => import("./stage/StatusWindow"));
 const PlacesWindow = lazy(() => import("./stage/PlacesWindow"));
 const OutfitsWindow = lazy(() => import("./stage/OutfitsWindow"));
 const MateStudio = lazy(() => import("./studio/MateStudio"));
+const MateGuide = lazy(() => import("./guide/MateGuide"));
 
 type SettingsTab = "relation" | "memory" | undefined;
 
@@ -166,6 +171,38 @@ export default function MateView() {
     useStudio.getState().note(null);
   }, [studioNotice, studio]);
   const startError = useStudio((s) => s.startError);
+  // her guide: for which mate it is open
+  const [guide, setGuide] = useState<string | null>(null);
+  const guideChecked = useRef(false);
+  useEffect(() => {
+    if (!loaded || !mate || studio || guideChecked.current) return;
+    guideChecked.current = true;
+    if (automated()) return;
+    const id = mate.id;
+    void sharedAuthStatus()
+      .then((a) => a.username || "")
+      .catch(() => "")
+      .then((account) => {
+        try {
+          const raw = localStorage.getItem(GUIDE_SEEN_KEY);
+          if (guideSeen(raw, account)) return;
+          localStorage.setItem(GUIDE_SEEN_KEY, markGuideSeen(raw, account));
+        } catch {
+          return; // (no storage: it would come back every time)
+        }
+        setGuide((g) => g ?? id);
+      });
+  }, [loaded, mate, studio]);
+  // a mate just created in the studio: her guide, once the studio closed
+  const guideFor = useStudio((s) => s.guideFor);
+  useEffect(() => {
+    if (!guideFor || studio) return;
+    useStudio.getState().askGuide(null);
+    if (!automated()) setGuide(guideFor);
+  }, [guideFor, studio]);
+  const guideMate = guide ? mates.find((m) => m.id === guide) ?? null : null;
+  // (Android's Back: 나중에 할래요, like any way out of it)
+  useBackHandler(!!guideMate, () => setGuide(null));
   // her affinity just opened an outfit
   const waiting = useRef<{ mate: string; ids: Set<string> } | null>(null);
   useEffect(() => {
@@ -365,6 +402,7 @@ export default function MateView() {
                     { icon: "sparkles", label: t("avatar.title"), run: () => useStudio.getState().openAvatar(mate.id), id: "mate-avatar-create" },
                     { icon: "heart", label: t("stage.status"), run: () => setStageWindow("status"), id: "mate-status-open" },
                     { icon: "rotate", label: t("mate.newConversation"), run: () => void reset(), id: "mate-reset", disabled: resetting || conv.streaming },
+                    { icon: "book", label: t("guide.open"), run: () => setGuide(mate.id), id: "mate-guide-open" },
                   ].map((x) => (
                     <button
                       key={x.id}
@@ -444,7 +482,7 @@ export default function MateView() {
   const settingsPanel = settings && (
     <Suspense fallback={<PageLoading />}>
       {mateOpen ? (
-        <MateSettings key={mateTab ?? ""} mate={mate} conv={conv} onClose={closePanels} initialTab={mateTab} />
+        <MateSettings key={mateTab ?? ""} mate={mate} conv={conv} onClose={closePanels} initialTab={mateTab} onGuide={() => setGuide(mate.id)} />
       ) : (
         <RelationPanel
           key={bondTab}
@@ -457,6 +495,12 @@ export default function MateView() {
           }}
         />
       )}
+    </Suspense>
+  );
+
+  const guideNode = guideMate && (
+    <Suspense fallback={null}>
+      <MateGuide key={guideMate.id} mate={guideMate} onClose={() => setGuide(null)} />
     </Suspense>
   );
 
@@ -528,6 +572,7 @@ export default function MateView() {
           </>
         )}
         {phone && stageWindowNode}
+        {guideNode}
       </div>
     );
   }
@@ -558,6 +603,7 @@ export default function MateView() {
           )}
         </div>
       </div>
+      {guideNode}
     </div>
   );
 }

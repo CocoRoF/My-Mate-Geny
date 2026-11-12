@@ -1,17 +1,22 @@
 /**
- * What every mate shares, set once (docs/settings.md): the name they know you by (Settings → 계정; a mate's own way
- * of calling you is in her 대화 방식), the time zone their clock runs in and where you are — her weather, your public
- * holidays (Settings → 언어).
- * Both are the mate settings' (`/api/mates/settings`).
+ * What every mate shares, set once (docs/settings.md): the name they know you by, your birthday and your own picture
+ * (Settings → 계정; a mate's own way of calling you is in her 대화 방식), the time zone their clock runs in and where you
+ * are — her weather, your public holidays (Settings → 언어).
+ * All of them are the mate settings' (`/api/mates/settings`).
  */
 import { useEffect, useState, type FormEvent } from "react";
-import { getVoiceSettings, putVoiceSettings, type UserLocation } from "../../api/mates";
+import { clearUserIcon, getVoiceSettings, putVoiceSettings, uploadUserIcon, type UserLocation } from "../../api/mates";
 import { AUTH_CHANGED_EVENT } from "../../api/admin";
 import { browserTimezone, locateByConnection, useMateStore } from "../../stores/mateStore";
+import { useUserIcon, useUserIconUrl } from "../../stores/userIcon";
+import { useAuthStatus } from "../admin/useAuthStatus";
 import { useLang, useT } from "../../i18n";
 import Icon from "../ui/Icon";
+import BirthdayPicker from "../ui/BirthdayPicker";
+import IconCropDialog from "../ui/IconCropDialog";
+import UserIcon from "../ui/UserIcon";
 
-function useSetting(key: "user_name" | "timezone") {
+function useSetting(key: "user_name" | "timezone" | "user_birthday") {
   const [saved, setSaved] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [state, setState] = useState<"saving" | "saved" | { error: string } | null>(null);
@@ -84,6 +89,84 @@ export function YourName() {
         </button>
       </form>
       <Line state={s.state} ok={t("settings.yourNameSaved")} />
+    </div>
+  );
+}
+
+/** your birthday: every mate with a day of her own knows it (app/mate/life) */
+export function YourBirthday() {
+  const t = useT();
+  const s = useSetting("user_birthday");
+  const changed = s.saved !== null && s.draft !== s.saved;
+  return (
+    <div className="space-y-2" data-testid="settings-your-birthday">
+      <div>
+        <h3 className="text-[13px] font-semibold text-content">{t("profile.yourBirthday")}</h3>
+        <p className="mt-0.5 text-[12px] text-content-faint">{t("profile.yourBirthdayHint")}</p>
+      </div>
+      <form
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (changed) void s.save(s.draft);
+        }}
+      >
+        <BirthdayPicker value={s.draft} onChange={s.setDraft} disabled={s.saved === null} testId="settings-your-birthday-input" />
+        <button className="btn-soft shrink-0" disabled={!changed || s.state === "saving"} data-testid="settings-your-birthday-save">
+          {s.state === "saving" && <Icon name="spinner" size={13} spin />} {t("common.save")}
+        </button>
+      </form>
+      <Line state={s.state} ok={t("profile.yourBirthdaySaved")} />
+    </div>
+  );
+}
+
+/** your own picture: the sidebar shows it instead of your initial (one for the app, kept on the server) */
+export function YourIcon() {
+  const t = useT();
+  const auth = useAuthStatus();
+  const name = (auth?.local ? auth.display_name : "") || auth?.username || "";
+  const url = useUserIconUrl();
+  const [open, setOpen] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const clear = async () => {
+    setErr(null);
+    try {
+      useUserIcon.getState().set((await clearUserIcon()).user_icon ?? "");
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
+  return (
+    <div className="space-y-2" data-testid="settings-your-icon">
+      <div className="flex flex-wrap items-center gap-3">
+        <UserIcon name={name} className="h-12 w-12 text-[17px]" />
+        <div className="min-w-[10rem] flex-1">
+          <h3 className="text-[13px] font-semibold text-content">{t("profile.yourIcon")}</h3>
+          <p className="mt-0.5 text-[12px] text-content-faint">{t("profile.yourIconHint")}</p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <button type="button" className="btn-soft" onClick={() => setOpen(true)} data-testid="settings-your-icon-change">
+            <Icon name="image" size={13} /> {t("profile.changeIcon")}
+          </button>
+          {url && (
+            <button type="button" className="btn-ghost" onClick={() => void clear()} data-testid="settings-your-icon-clear">
+              {t("common.remove")}
+            </button>
+          )}
+        </div>
+      </div>
+      {err && <p className="text-[12.5px] text-danger" role="alert">{err}</p>}
+      {open && (
+        <IconCropDialog
+          title={t("profile.yourIcon")}
+          onSave={async (picture) => useUserIcon.getState().set((await uploadUserIcon(picture)).user_icon ?? "")}
+          onReset={url ? async () => useUserIcon.getState().set((await clearUserIcon()).user_icon ?? "") : undefined}
+          resetLabel={t("profile.yourIconClear")}
+          onClose={() => setOpen(false)}
+          testId="user-icon-crop"
+        />
+      )}
     </div>
   );
 }

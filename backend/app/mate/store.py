@@ -69,6 +69,9 @@ SETTING_PROVIDERS = {"google_key": "google", "openai_key": "openai", "elevenlabs
                      "whisper_url": "whisper", "http_tts_url": "http", "http_tts_key": "http"}
 _VERIFY_PREFIX = "verify:"
 _VAULT_SCOPE = "mate"
+# profile pictures (app/mate/files.py make_icon): a mate's among her assets, the user's apart from every mate
+ICON_FOLDER = "profile"
+USER_ICON_URL = "/api/mates/settings/user-icon"
 
 _MODEL_RE = re.compile(r"^[A-Za-z0-9._:\-\[\]/]{0,120}$")
 
@@ -812,6 +815,8 @@ class MateStore:
             "builtin": builtin,
             "customized": bool(row["customized"]) if "customized" in row.keys() else False,
             "draft": bool(row["draft"]) if "draft" in row.keys() else False,
+            # her profile picture (switcher, chat, the desktop's windows): "" = her avatar's face
+            "icon": (row["icon"] or "") if "icon" in row.keys() else "",
             "relation": relation,
             "state": S.summary(self.state_doc(row["id"]), who, now, self.tz()),
             "life": sim.summary(life[0], life[1], now, self.tz()) if life else {"enabled": False},
@@ -976,6 +981,18 @@ class MateStore:
         if sets:
             self._changed("draft" if cur.get("draft") else "updated", mate_id)
         return self.get(mate_id), changed
+
+    def set_icon(self, mate_id: str, url: str) -> dict[str, Any]:
+        """Her profile picture: a file of her own assets under ``profile/`` (files.save_mate_icon), "" for her avatar's
+        face again."""
+        url = _s(url, 500).strip()
+        if url and not url.startswith(f"/api/mates/{mate_id}/assets/{ICON_FOLDER}/"):
+            raise MateError("an icon is one of her own pictures")
+        cur = self.get(mate_id)
+        if cur["icon"] != url:
+            self._db.execute("UPDATE mates SET icon = ?, updated_at = ? WHERE id = ?", (url, now_iso(), mate_id))
+            self._changed("draft" if cur.get("draft") else "updated", mate_id)
+        return self.get(mate_id)
 
     # ---- the wardrobe (docs/mate.md "Outfits") ----
     # The avatar column is always the set she has on, so everything that reads a mate just works. ``outfits`` holds the
@@ -1869,11 +1886,23 @@ class MateStore:
         """The user's birthday, one for all mates: "MM-DD", "" unknown (their mates know it: app/mate/life)."""
         return self._setting("user_birthday")
 
+    def user_icon(self) -> str:
+        """The user's own picture, one for the app (Settings → Account; the sidebar shows it): the file's name, "" none."""
+        return self._setting("user_icon")
+
+    def set_user_icon(self, name: str) -> None:
+        if name == self.user_icon():
+            return
+        self._put_setting("user_icon", name)
+        self._changed("settings")
+
     def settings(self) -> dict[str, Any]:
         out: dict[str, Any] = {k: self._setting(k) for k in SETTING_URLS}
         out["timezone"] = self._setting("timezone")
         out["user_name"] = self.user_name()
         out["user_birthday"] = self.user_birthday()
+        icon = self.user_icon()
+        out["user_icon"] = f"{USER_ICON_URL}/{icon}" if icon else ""
         out["location"] = self.location()
         for k in SETTING_KEYS:
             own = bool(self._vault is not None and self._vault.exists(SecretVault.make_id(_VAULT_SCOPE, k)))

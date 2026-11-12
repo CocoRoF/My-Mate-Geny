@@ -21,6 +21,9 @@ interface StudioState {
   startError: string | null;
   /** a line for the Mate view once the studio closed ("Harin is ready", "Draft discarded") */
   notice: string | null;
+  /** a mate just created here: the Mate view opens her guide once the studio closed (components/mate/guide) */
+  guideFor: string | null;
+  askGuide: (mateId: string | null) => void;
   openCreate: (draftId: string) => void;
   openAvatar: (mateId: string, projectId?: string | null) => void;
   /** the project filling one outfit of her wardrobe */
@@ -40,6 +43,8 @@ export const useStudio = create<StudioState>((set, get) => ({
   starting: false,
   startError: null,
   notice: null,
+  guideFor: null,
+  askGuide: (guideFor) => set({ guideFor }),
   openCreate: (draftId) => set({ open: true, kind: "create", mateId: draftId, projectId: null, startError: null }),
   openAvatar: (mateId, projectId = null) => set({ open: true, kind: "avatar", mateId, projectId, startError: null }),
   openOutfit: async (mateId, outfitId) => {

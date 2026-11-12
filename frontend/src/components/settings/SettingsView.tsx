@@ -42,7 +42,8 @@ import { APP_VERSION, BUILD_COMMIT, BUILD_TIME } from "../../version";
 import { requestAdminTab } from "../admin/adminTab";
 import UpdateCard, { useUpdateState } from "../downloads/UpdateCard";
 import MateTab from "./MateTab";
-import { Location, TimeZone, YourName } from "./PersonalFields";
+import { Location, TimeZone, YourBirthday, YourIcon, YourName } from "./PersonalFields";
+import UserIcon from "../ui/UserIcon";
 import Icon, { type IconName } from "../ui/Icon";
 import PageLoading from "../ui/Loading";
 import MobileTopBar from "../layout/MobileTopBar";
@@ -317,7 +318,9 @@ function AccountSection() {
   if (st.local)
     return (
       <Card id="account">
+        <YourIcon />
         <YourName />
+        <YourBirthday />
       </Card>
     );
 
@@ -387,9 +390,7 @@ function AccountSection() {
   return (
     <Card id="account">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-border bg-surface-2/50 px-3.5 py-3">
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-surface-3 text-[14px] font-semibold text-content-dim">
-          {(st.username || "?").slice(0, 1).toUpperCase()}
-        </div>
+        <UserIcon name={st.username} className="h-9 w-9 text-[14px]" />
         <div className="min-w-[8rem] flex-1">
           <div className="text-[11.5px] text-content-faint">{t("settings.signedInAs")}</div>
           <div className="truncate font-mono text-[14px] text-content" data-testid="settings-username">{st.username}</div>
@@ -408,7 +409,9 @@ function AccountSection() {
       )}
       {st.source === "env" && <p className="text-[12px] text-content-faint">{t("settings.envOverride")}</p>}
 
+      <YourIcon />
       <YourName />
+      <YourBirthday />
 
       <div className="border-t border-border/60" />
 

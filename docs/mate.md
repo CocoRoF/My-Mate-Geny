@@ -390,6 +390,12 @@ Asset upload / import:
   `url` carries `?v=<mtime>`. `path` is relative (no `..`, no hidden parts);
   `pack-*` / `l2d-*` top folders are reserved for imports. Max
   `MATE_ASSET_MAX_MB` (200).
+- Profile pictures (squares the crop dialog made, `components/ui/IconCropDialog.tsx`; checked and written again
+  as a small WebP/PNG, at most 512 px, by `files.make_icon`): `POST /api/mates/{id}/icon` (multipart `file`) → the
+  mate, whose `icon` is then `/api/mates/{id}/assets/profile/icon-<hash>.<ext>?v=<hash>` (the one before it goes;
+  gone with her); `DELETE` → `icon: ""` (MateThumb shows her avatar's face: the home still cropped on `rig.frame`).
+  The user's: `POST` / `DELETE /api/mates/settings/user-icon` → the settings (`user_icon`: its URL under
+  `GET /api/mates/settings/user-icon/<name>`, kept in `MATES_ROOT/_profile/`).
 - `GET /api/mates/{id}/assets/<path>`: Range requests (video seeking),
   ETag/Last-Modified; `Cache-Control: immutable` for imported files and URLs
   with `?v=`, `no-cache` otherwise. Only media/JSON types are served as such;
