@@ -6,7 +6,10 @@ back button (closes the top overlay, then backgrounds the app), status
 bar/safe areas, file chooser + camera for uploads, downloads (DownloadManager
 with the login cookie → Downloads folder), microphone for talking to the Mate
 (RECORD_AUDIO, asked when the page requests it; media plays without a tap so
-replies can be read aloud), offline page.
+replies can be read aloud), phone calls with the mate (`GenyCallPlugin.java`: call
+mode — loudspeaker or earpiece, the screen kept on — and her ringing as a call
+notification over the lock screen while the app is in the background; see
+`docs/mate-calls.md`), offline page.
 
 ## Connecting to a server
 

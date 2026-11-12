@@ -689,6 +689,8 @@ class SessionService:
         msgs = [
             m for m in self.messages(session["id"])
             if m["id"] != current_msg_id and m["created_at"] > floor and not (m.get("meta") or {}).get("speech_pending")
+            # (a mate's call nobody spoke on — missed, declined: nothing was said; app/mate/calls.py)
+            and not ((m.get("meta") or {}).get("kind") == "call" and (m.get("meta") or {}).get("internal"))
         ]
         resume_id = own.get("id")
         if resume_id:
@@ -1369,6 +1371,10 @@ class SessionService:
                 if turn_meta.get("internal") and turn_meta.get("kind") in ("screen_observation","thinking_trigger","device_greeting"):
                     from app.mate.trigger.silence import deliver_autonomous
                     stream=deliver_autonomous(stream)
+                elif session.get("kind") == "mate" and turn_meta.get("kind") == "call":
+                    # (after a phone call her note may be nothing at all: [SILENT] then shows nothing, not a refusal)
+                    from app.mate.trigger.silence import deliver_quiet
+                    stream = deliver_quiet(stream)
                 elif session.get("kind") == "mate" and not turn_meta.get("internal") and self.mate_refusal is not None:
                     # (whether she answers them is hers: a reply of [SILENT] is shown as the line that she doesn't)
                     from app.mate.trigger.silence import deliver_reply

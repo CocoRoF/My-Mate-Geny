@@ -24,11 +24,14 @@ import { installLanguageSync } from "./i18n/sync";
 import { tabMeta } from "./components/settings/tabs";
 import SetupAssistant, {markSetupDone, setupCompleted} from "./components/setup/SetupAssistant";
 import { fillLocation, fillTimezone } from "./stores/mateStore";
+import { installCallActions, useCallStore } from "./stores/callStore";
 
 // Secondary views load on demand: the chat (first screen) stays light.
 // (Providers, Connections, Usage, Admin and Download are Settings tabs, loaded with their tab — settings/SettingsView)
 const MateView = lazy(() => import("./components/mate/MateView"));
 const SettingsView = lazy(() => import("./components/settings/SettingsView"));
+// a phone call with her (docs/mate-calls.md): over every view, loaded once there is one
+const CallLayer = lazy(() => import("./components/mate/call/CallLayer"));
 
 const TITLES: Record<string, MsgKey> = {
   mate: "nav.mate",
@@ -59,6 +62,11 @@ export default function App() {
   const loadSessions = useSessionStore((s) => s.load);
   const loadConfig = useConfigStore((s) => s.load);
   useSessionSync(); // every device's session list follows server-pushed changes
+  const calling = useCallStore((s) => s.phase !== "idle");
+  useEffect(() => {
+    installCallActions(); // (her call notification's buttons, in the Android app)
+    void useCallStore.getState().resume(); // (her ringing, when the app is opened from it)
+  }, []);
 
   // Screens ↔ URL + history (lib/nav.ts): deep links (/?view=settings&tab=… — and the old /?view=downloads from
   // the desktop menu and update banners —, /?view=mate, /?view=chat&session=<id> from a mate's activity chip) open
@@ -103,6 +111,11 @@ export default function App() {
         </div>
       )}
       <ScreenCaptureApproval />
+      {calling && (
+        <Suspense fallback={null}>
+          <CallLayer />
+        </Suspense>
+      )}
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
         <UpdateBanner />
         <DefaultPasswordBanner />

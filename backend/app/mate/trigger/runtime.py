@@ -119,6 +119,9 @@ class GenyTriggers:
                 'base_threshold_seconds':p.manifest.timing.base_idle_seconds,'max_threshold_seconds':p.manifest.timing.max_idle_seconds}
 
     async def consider(self,sid,*,force=False):
+        # (on the phone she only talks: app/mate/calls.py)
+        call=getattr(getattr(self.mate_runtime,'calls',None),'active',lambda:None)()
+        if call is not None and call.session_id==sid:return {'status':'in_call'}
         frame=self.active_frame(sid)
         config=self.screen.proactive(sid,frame.device if frame else None)
         if not config or not config.get('enabled'):self.expire(sid);return {'status':'disabled'}

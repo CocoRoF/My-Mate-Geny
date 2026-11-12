@@ -38,6 +38,7 @@ log = logging.getLogger(__name__)
 OPENAI_TTS_DEFAULT = "gpt-4o-mini-tts"
 OPENAI_STT_DEFAULT = "gpt-4o-mini-transcribe"
 MINT_PER_MINUTE = 20      # realtime STT tokens per mate and minute (a client stuck reconnecting can't loop)
+CALL_SILENCE = 0.7        # a phone call's end of a sentence: this much quiet at most (realtime_token(call=True))
 MAX_TEXT = 4000
 MAX_AUDIO_IN = 25 * 1024 * 1024   # the OpenAI transcription limit
 CACHE_MAX_BYTES = 300 * 1024 * 1024
@@ -355,13 +356,15 @@ class VoiceService:
             return "google"
         return None
 
-    async def realtime_token(self, mate: dict[str, Any]) -> dict[str, Any]:
+    async def realtime_token(self, mate: dict[str, Any], *, call: bool = False) -> dict[str, Any]:
         """A single-use ElevenLabs token for the mate's mic (Scribe v2 Realtime, docs/mate.md §5).
 
         The page connects to ElevenLabs itself with the returned ``url`` (the token rides in it; it is consumed
         on use and expires after 15 minutes): the API key never leaves this server, and is never logged. Every
         (re)connect asks for a fresh token. Failure → :class:`RealtimeError` with a ``code`` (``missing`` /
-        ``auth`` / ``quota`` / ``busy`` / ``network`` / ``upstream``) and the ``fallback`` engine to use."""
+        ``auth`` / ``quota`` / ``busy`` / ``network`` / ``upstream``) and the ``fallback`` engine to use.
+        ``call``: for a phone call (app/mate/calls.py) — the end of a sentence is told sooner (at most
+        :data:`CALL_SILENCE` s of quiet), so she answers like on the phone."""
         stt = mate["voice"]["stt"]
         if (stt.get("engine") or "browser") != "elevenlabs":
             raise MateError("this mate's speech recognition is not ElevenLabs realtime")
@@ -392,7 +395,9 @@ class VoiceService:
         self._minted[mate["id"]] = recent
         language = (stt.get("language") or mate["persona"].get("language") or "").split("-")[0].lower()
         silence = float(stt.get("silence") or 1.2)
-        query = {"model_id": ELEVEN_REALTIME_MODELS[0]["id"], "token": token, "audio_format": "pcm_16000",
+        if call:
+            silence = min(silence, CALL_SILENCE)
+        query ={"model_id": ELEVEN_REALTIME_MODELS[0]["id"], "token": token, "audio_format": "pcm_16000",
                  "commit_strategy": "vad", "vad_silence_threshold_secs": f"{silence:g}"}
         if language:
             query["language_code"] = language

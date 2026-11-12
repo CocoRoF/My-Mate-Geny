@@ -107,7 +107,8 @@ APOLOGY_AFTER_HOSTILE = 0.15
 #: from here, angry at what they did, she may not answer at all (``REFUSE`` in how it comes out: she decides, and [SILENT] is
 #: how). Only anger at them: hungry or stressed, she still answers, if snappily
 SILENT_FROM = 0.8
-AT_THEM = ("rude", "hostile", "dismissed", "pestered", "poked", "said", "interrupted", "ignored", "curt", "apology")
+AT_THEM = ("rude", "hostile", "dismissed", "pestered", "poked", "said", "interrupted", "ignored", "curt", "apology", "declined_call",
+           "missed_call")
 APOLOGY, WARM, WARM_CALMS, LOVE, LOOKS, DISTRESS, RETURNED, ANSWERED, LOVES = 0.3, 0.12, 0.08, 0.15, 0.12, 0.35, 0.2, 0.1, 0.2
 # angry, the good things land less
 ANGRY_DULLS = {"happy": 0.7, "excited": 0.9}
@@ -122,6 +123,11 @@ QUOTE_CHARS = 40
 IGNORED_AFTER_H, IGNORED_ANGRY, IGNORED_ANGRY_FROM = 0.25, 0.08, 3  # (and what she does when it has gone on)
 INTERRUPTED, WORK_OK, WORK_FAILED = 0.04, 0.05, 0.10
 POKE, POKED_TOO_MUCH, POKE_TOO_MANY, POKE_WINDOW = 0.03, 0.08, 6, timedelta(minutes=1)
+# her phone calls (app/mate/calls.py): talking on the phone warms her; a call they turn down stings, one they don't pick up leaves
+# her lonelier, and each one in a row more so — from the second on she sulks a little
+CALL_TALKED_HAPPY, CALL_TALKED_LONELY = 0.12, 0.25
+CALL_DECLINED_SAD, CALL_DECLINED_LONELY, CALL_MISSED_SAD, CALL_MISSED_LONELY = 0.15, 0.1, 0.06, 0.15
+CALL_SULK, CALL_SULK_MAX = 0.08, 0.3
 # an outfit: closeness takes the edge off where it starts; from there it climbs for as long as she has it on
 CLOSE_EASES, CLIMBS_TO, CLIMB_HALF_MIN = 0.35, 0.95, 25.0
 # being asked to change clothes: asking again leans her towards yes, for a while; too much of it makes her angry
@@ -153,6 +159,8 @@ _WHY_FOR_HER = {
     "nature": "it's how you are", "user_wore": "they put it on you", "gift": "they sent you something", "asleep": "you were asleep", "tired": "you're tired",
     "hungry": "you're hungry", "stressed": "it has been a stressful stretch", "bored": "you've had nothing fun to do for a while",
     "wants_affection": "you could do with some warmth and attention",
+    "call_talked": "you talked on the phone with them", "declined_call": "you called them and they turned the call down",
+    "missed_call": "you called them and they didn't pick up",
     "off_day": "it's just one of those days: you're irritable and drowsy, for no reason you could name",
 }
 
@@ -614,6 +622,23 @@ def poked(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> Non
     else:
         _rise(doc, w, "happy", POKE, {"code": "poked"}, now, tz)
         _rise(doc, w, "shy", POKE, {"code": "poked"}, now, tz)
+
+
+def call_talked(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> None:
+    """They talked on the phone (either of them called, and the other picked up)."""
+    _rise(doc, w, "happy", CALL_TALKED_HAPPY, {"code": "call_talked"}, now, tz)
+    if levels(doc, w, now, tz)["lonely"]["v"] > _base("lonely", w):
+        _fall(doc, w, "lonely", CALL_TALKED_LONELY, {"code": "call_talked"}, now, tz)
+
+
+def call_unanswered(doc: dict[str, Any], w: dict[str, Any], declined: bool, in_a_row: int, now: datetime, tz: Any) -> None:
+    """She called and they turned it down (``declined``) or didn't pick up; ``in_a_row``: how many of her calls in a row went
+    so, this one included. A missed call is lonely more than hurtful, a declined one stings; again and again, she sulks."""
+    code = "declined_call" if declined else "missed_call"
+    _rise(doc, w, "sad", CALL_DECLINED_SAD if declined else CALL_MISSED_SAD, {"code": code}, now, tz)
+    _rise(doc, w, "lonely", CALL_DECLINED_LONELY if declined else CALL_MISSED_LONELY, {"code": code}, now, tz)
+    if in_a_row >= 2:
+        _rise(doc, w, "angry", min(CALL_SULK_MAX, CALL_SULK * (in_a_row - 1)), {"code": code}, now, tz)
 
 
 def gifted(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> None:

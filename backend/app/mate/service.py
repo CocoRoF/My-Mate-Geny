@@ -123,6 +123,7 @@ class MateService:
         self._depth: dict[str, int] = {}                  # mate sid -> chain depth of its running turn
         # see_screen: requests to the user's desktop app windows (app/mate/capture.py; /ws/sessions registers them)
         self.capture = CaptureBroker()
+        self.calls: Any = None  # phone calls (app/mate/calls.py CallService sets itself here)
         sessions.mate_engine = self.configure_engine
         sessions.mate_refusal = self.refusal_line
         self._silence_last: dict[str, int] = {}  # mate id -> the line it showed last (the next one is another)
@@ -541,6 +542,13 @@ class MateService:
         note = self._settings_note(mate_id, mate, relation)
         ctx = self._context(mate, req, engine, memories, core, prefs, now_utc, now_local, tz, rel) if mate_id else ""
         req.preamble = "\n\n".join(x for x in (note, ctx, req.preamble) if x)
+        turn_meta = (self._svc.active_runs.get(session["id"]) or {}).get("meta") or {}
+        if turn_meta.get("kind") == "call" and isinstance(turn_meta.get("call"), dict) and self.calls is not None:
+            # a call that just ended (app/mate/calls.py): the message is what they said on it; she reads the whole call
+            for m in reversed(req.messages):
+                if m.get("role") == "user":
+                    m["content"] = self.calls.follow_up_prompt(mate["name"], turn_meta["call"])
+                    break
         req.prompt_key = prompt_key(mate["name"], mate["persona"], int(mate.get("memory_rev") or 0), prefs,
                                     relation=relation, stage=stage, life=life)
         if engine == "codex" and mate_id:
@@ -653,6 +661,8 @@ class MateService:
         relation = self._relation_lines(rel, st, now_utc, tz, turn)
         life = self._life_lines(mate, st, turn, now_utc, tz)  # (first: what it did to her is part of how she feels)
         feeling, wardrobe = self._state_lines(mate, prefs, st, turn, now_utc, tz)
+        # (her calls they didn't take since she was last told: app/mate/calls.py)
+        call_notes, calls_told = self.calls.notes(mate_id) if self.calls is not None else ([], lambda: None)
         prepared = {**st, "turn": turn, "injected": injected}
         def acknowledge() -> None:
             current = self.store._db.query_one("SELECT generation FROM memory_context WHERE mate_id=?", (mate_id,))
@@ -662,9 +672,11 @@ class MateService:
                 self._save_context_state(mate_id, prepared)
                 self.store.ack_memory_changes(mate_id, changes)
                 self.store.mark_used(mate_id, [m["id"] for m in recalled])
+                calls_told()
         req.on_context_delivered = acknowledge
         block = context_block(now_local, self._tz_name(tz, now_utc), recalled=recalled, changes=changes, relation=relation,
-                              outfit=self.store.worn_outfit(mate_id), wardrobe=wardrobe, feeling=feeling, life=life)
+                              outfit=self.store.worn_outfit(mate_id), wardrobe=wardrobe, feeling=feeling, life=life,
+                              calls=call_notes)
         if level != "off" and query and not query.startswith("<"):
             found = self.store.knowledge.search(mate_id, query, limit=4)
             current = self.store._db.query_one("SELECT id FROM messages WHERE session_id=? AND role IN ('user','steer') ORDER BY rowid DESC LIMIT 1", (mate.get("session_id"),))
@@ -771,6 +783,8 @@ class MateService:
         life = mate.get("life") or {}
         if not sid or not ((mate.get("prefs") or {}).get("proactive") or {}).get("enabled") or life.get("asleep") or self._svc.is_running(sid):
             return
+        if self.calls is not None and self.calls.in_call(mate_id):
+            return  # (on the phone she only talks: it waits for their next message)
         gave = any(e.get("type") == "gave" for e in fresh)
         if any(birthday(e) for e in fresh):
             kind = "life_birthday"
@@ -1904,6 +1918,9 @@ class MateService:
         items = self._pending.get(mate_sid)
         if not items or self._svc.is_running(mate_sid):
             return  # (delivered when the mate's current turn ends)
+        call = self.calls.active() if self.calls is not None else None
+        if call is not None and call.session_id == mate_sid:
+            return  # (on the phone she only talks: delivered once the call is over — app/mate/calls.py)
         self._pending.pop(mate_sid, None)
         depth = max(int(e["depth"]) for e in items) + 1
         delegs = [{"session_id": e["session_id"], "title": e["title"], "status": e["status"]} for e in items]

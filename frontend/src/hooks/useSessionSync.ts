@@ -11,6 +11,8 @@ import { useCliToolsStore } from "../stores/cliToolsStore";
 import { useMateStore } from "../stores/mateStore";
 import { cancelCaptureRequest, clientHello, handleCaptureRequest } from "../mate/screenCapture";
 import { useSessionStore } from "../stores/sessionStore";
+import { useCallStore } from "../stores/callStore";
+import type { CallInfo } from "../api/calls";
 
 const SETTLE_MS = 250; // a turn start = message + title + run state: one fetch
 const PROBE_MS = 5000; // no answer to "sync" this long → the socket is dead
@@ -88,6 +90,15 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
         }
         if (msg.type === "capture.cancel") {
           cancelCaptureRequest(msg.data);
+          return;
+        }
+        // a phone call with her (docs/mate-calls.md): she rings this phone; where a call stands
+        if (msg.type === "call.ring" || msg.type === "call.update") {
+          const call = msg.data as unknown as CallInfo;
+          if (call && typeof call.id === "string") {
+            if (msg.type === "call.ring") useCallStore.getState().incoming(call);
+            else useCallStore.getState().remote(call);
+          }
           return;
         }
         if (msg.type === "mcp.changed" || msg.type === "hello") void useMcpStore.getState().load();

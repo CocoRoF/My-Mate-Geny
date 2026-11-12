@@ -88,6 +88,9 @@ class Client:
     screen_policy: dict[str, Any] = field(default_factory=dict)
     user_busy: bool = False
     busy_at: float = 0.0
+    native: str = ""             # the app around the page: "android" (the phone app), "desktop-…", "" (a browser)
+    calls: int = 0               # the phone-call screen this window has (app/mate/calls.py CALL_CLIENT; 0: none)
+    visible: bool = True         # the page is on screen (an app sent to the background isn't)
 
 
 @dataclass
@@ -180,6 +183,10 @@ class CaptureBroker:
             c.screen_policy['fixed']=policy.get('fixed') is True
         c.user_busy=msg.get('user_busy') is True
         c.busy_at=time.monotonic()
+        c.native = _str(msg.get("native"), 40)
+        calls = msg.get("calls")
+        c.calls = calls if isinstance(calls, int) and not isinstance(calls, bool) and 0 <= calls < 1000 else 0
+        c.visible = msg.get("visible") is not False
         for p in list(self._pending.values()):
             if p.conn == conn and p.shared and p.session_id not in c.shares:
                 self._revoke(p,"stopped")

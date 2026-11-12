@@ -25,6 +25,7 @@ import type { StateEmotion } from "../../api/mates";
 import { STATE_LABEL } from "./StateCard";
 import { useMateStore } from "../../stores/mateStore";
 import { changeIdOf, describeChanges, flatArgs, resolveChange, useStyleChanges } from "../../mate/styleChanges";
+import CallCard from "./call/CallCard";
 
 /** open a worker chat: in the console's Chat view, or (desktop Mate windows) in the console window */
 export function openWorkerChat(sid: string) {
@@ -372,6 +373,9 @@ export default function MateMessages({
   const tt = useT();
   // (the mate's store: older turns load as the reader scrolls up)
   const { ref, onScroll, showJump, jump, paging, loadOlder } = useHistoryScroll(useMateChat, 100);
+  // (her name on a call's card)
+  const sid = useMateChat((s) => s.sid);
+  const mateName = useMateStore((s) => s.mates.find((m) => m.session_id && m.session_id === sid)?.name ?? "");
 
   return (
     <div className={`relative min-h-0 flex-1 ${className}`}>
@@ -381,6 +385,7 @@ export default function MateMessages({
           {turns.length === 0 && emptyText && <p className="pt-10 text-center text-sm text-content-faint">{emptyText}</p>}
           {turns.map((t) => {
             if (t.role === "user") {
+              if (t.meta?.kind === "call") return <CallCard key={t.key} meta={t.meta} name={mateName} messageId={t.messageId} text={t.text} />;
               if (t.meta?.internal && t.meta.kind === "delegation_result") return <DelegationCards key={t.key} turn={t} />;
               if (t.meta?.internal) return null;
               return <UserBubble key={t.key} text={t.text} attachments={t.attachments} collecting={!!t.meta?.speech_pending} compact={compact} messageId={t.messageId} meta={t.meta} />;

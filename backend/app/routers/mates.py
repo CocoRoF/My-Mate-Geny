@@ -757,13 +757,14 @@ async def transcribe(mate_id: str, request: Request, file: UploadFile = File(...
 
 
 @router.post("/{mate_id}/stt/realtime")
-async def realtime_stt(mate_id: str, request: Request) -> Response:
+async def realtime_stt(mate_id: str, request: Request, call: bool = False) -> Response:
     """A single-use ElevenLabs token for this mate's mic: ``{url, model, sample_rate, language,
     commit_strategy, silence, expires_in, fallback}`` — the page opens ``url`` (wss, the token inside) itself;
-    the API key stays here. Failing: 4xx/502 ``{detail, code, fallback}`` (docs/mate.md §5)."""
+    the API key stays here. Failing: 4xx/502 ``{detail, code, fallback}`` (docs/mate.md §5). ``?call=1``: for a
+    phone call (docs/mate-calls.md): a shorter pause ends a sentence."""
     mate = _mate(request, mate_id)
     try:
-        out = await _voice(request).realtime_token(mate)
+        out = await _voice(request).realtime_token(mate, call=call)
     except RealtimeError as exc:
         return JSONResponse({"detail": str(exc), "code": exc.code, "fallback": exc.fallback}, status_code=exc.status,
                             headers={"Cache-Control": "no-store"})

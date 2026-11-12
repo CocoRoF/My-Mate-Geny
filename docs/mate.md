@@ -901,6 +901,8 @@ captures are deleted and no image bytes are copied into app logs or long-term me
   one-ahead prefetch, played through the voice bridge (level → avatar). Mic:
   push-to-talk button (tap to start / tap to stop, or hold); with the realtime engine and
   auto-send also hands-free.
+- Phone calls (📞 on a phone, and her calling the Android app): Claude Haiku on its own line, her voice, the call in her
+  conversation and her own engine's turn after it — docs/mate-calls.md.
 
 ### Realtime mic (ElevenLabs Scribe v2 Realtime)
 
