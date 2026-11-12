@@ -72,7 +72,9 @@ async function enterLocal(){
   if(previous&&prefs.sharing.origin===previous)devicePreferences.patch({sharing:{origin}});
   refreshMenus();
   if(win&&!win.isDestroyed())await win.loadURL(origin+"/");
-  deviceRuntime.ensure();return {ok:true,server:origin};
+  // (start, not ensure: the destroy above stops it for good — ensure alone left Local execution without the hidden
+  // window that owns screen sharing, so sharing stayed "waiting for the connection" and she never saw the screen)
+  deviceRuntime.start();return {ok:true,server:origin};
 }
 
 const mate = require("./mate");
@@ -454,6 +456,8 @@ ipcMain.handle("connect:signIn", async (e, o = {}) => {
   refreshMenus();
   flushCookies = true;
   win.loadURL(r.exchangeUrl);
+  // the hidden window that owns screen sharing, for this server (after a sign-out it was stopped)
+  deviceRuntime.start();
   return { ok: true, server };
 });
 ipcMain.handle("connect:cancel", (e) => {

@@ -23,6 +23,11 @@ test('background runtime does not open UI, survives no user windows and does not
  runtime.ensure();runtime.ensure();assert.equal(made.length,1);assert.equal(made[0].options.show,false);assert.equal(made[0].options.webPreferences.backgroundThrottling,false);assert.equal(made[0].options.webPreferences.autoplayPolicy,'no-user-gesture-required');assert.match(made[0].url,/surface=device-runtime/);
  made[0].destroy();runtime.ensure();assert.equal(made.length,2);
  runtime.destroy();runtime.ensure();assert.equal(made.length,2);
+ // a new connection (Local execution's own origin, a server after a sign-out) starts it again: start, not ensure
+ let base='https://one';
+ const again=createRuntimeWindow({BrowserWindow:Win,preload:'/preload',version:'x',serverUrl:()=>base,allowed:()=>true});
+ again.ensure();again.destroy();base='http://127.0.0.1:5000';again.ensure();assert.equal(made.length,3,'stopped: ensure alone does nothing');
+ again.start();assert.equal(made.length,4);assert.equal(made[3].url,'http://127.0.0.1:5000/?surface=device-runtime');
 });
 test('permission, source, transport and owner loss pause runtime while only explicit Stop persists OFF',()=>{
  const disk=storage(),prefs=createDevicePreferences(disk);prefs.patch({sharing:{enabled:true,origin:'https://one',sid:'s',mate_id:'m'}});
