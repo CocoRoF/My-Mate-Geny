@@ -182,7 +182,8 @@ ffmpeg with libx264 when the system has none — the Docker image has none). Ins
 progress streamed) with `uv` when present (the image has it), else venv + pip, else a pip bootstrap. Each step is
 memory-capped (`capped -m $AVATAR_MEM` where a systemd user scope can be made, else an address-space limit) and
 serialized: one avatar's processing at a time on the machine (an fcntl lock under the avatar root). Measured on
-한채린's real 1440² clips: matte ≈ 60 s and ≈ 0.4 GB per clip, encode ≈ 15 s per clip at ≈ 1 GB peak.
+한채린's real 1440² clips: matte ≈ 60 s and ≈ 0.4 GB per clip; encode (every frame's edge measured, `edge_matte`) ≈ 1.5 min
+per 5 s clip at ≈ 1 GB peak (서아's talk_a, 2026-11-13).
 
 Project folder `<AVATAR_ROOT>/<id>/` (default `~/.hr-harnessor/avatars`): `ref/`, `design/`, `masters/`
 (candidate, cut-out, home, place, face), `stills/`, `clips/` (+ `.nobg.mp4`), `matte/` (lossless alpha as FFV1 +
