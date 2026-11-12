@@ -104,7 +104,7 @@ My Mate Geny는 **Claude Code**와 **Codex** CLI를 내 컴퓨터나 서버에�
   사용자의 CLI 설정도 읽지 않습니다. 대화 중에 엔진을 바꿔도 대화는 그대로 이어집니다.
 - **전역 설정 vs 메이트 설정**: 음성 서비스, Live2D 런타임, 데스크톱 옵션은 **Global settings**에서 한 번만
   설정하고, 프로필·아바타·언어 모델·음성·기억은 메이트마다 **Mate settings**에서 설정합니다.
-- 내장 캐릭터 한채린이 기본으로 들어 있고, 직접 메이트를 만들 수도 있습니다.
+- 내장 캐릭터 한채린(말수 적은 QA 엔지니어)과 서아(통통 튀는 스트리머)가 들어 있고, 직접 메이트를 만들 수도 있습니다.
 
 **앱 · 운영 · 보안**
 
@@ -283,7 +283,7 @@ npx tsc -p . --noEmit                  # 타입 체크
 - [CONTRIBUTING.md](CONTRIBUTING.md): 변경을 제안하는 방법
 - [SECURITY.md](SECURITY.md): 취약점 제보 방법(공개 이슈로는 올리지 말아 주세요)
 - 코드: [Apache-2.0](LICENSE) ([NOTICE](NOTICE))
-- 내장 캐릭터(한채린)와 Geny 로고는 프로젝트 아트워크로 **모든 권리가 보유**되어 있으며
+- 내장 캐릭터(한채린, 서아)와 Geny 로고는 프로젝트 아트워크로 **모든 권리가 보유**되어 있으며
   Apache 라이선스 대상이 아닙니다. 빌드를 배포하는 포크는 리브랜딩해 주세요. `assets/geny-logo.png`(정사각형
   투명 PNG)를 바꾸고 `python3 scripts/make-icons.py` 를 실행하면 됩니다. 자세한 내용과 모든 서드파티
   라이선스는 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)에 있습니다.

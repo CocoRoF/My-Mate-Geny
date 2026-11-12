@@ -660,7 +660,8 @@ def test_alpha_recovery_on_a_synthetic_frame():
     assert res["nose_alpha_min"] > 0.9 and res["shadow_alpha_min"] > 0.9  # the remover's hole in a light part of her closes
     assert res["fingers_alpha_max"] < 0.5 and res["hair_gap_alpha_max"] < 0.5  # a real gap, in skin or in hair, stays open
     # real art, black hair, silver hair, pink hair: what is solid stays, what the remover covered opens
-    assert set(res["art"]) == {"chaerin"}
+    assets = S.Path(S.__file__).parents[1] / "mate" / "builtin" / "assets"
+    assert set(res["art"]) == {f.parent.name for f in assets.glob("*/neutral.webp")} >= {"chaerin"}  # (Seoa's too, once it is there)
     for who, m in res["art"].items():
         assert m["lost"] < 1 and m["opened"] > 30, (who, m)
     assert res["wall_changed"] == 0  # not on one flat colour: the picture says nothing about the background

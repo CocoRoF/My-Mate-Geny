@@ -271,6 +271,12 @@ async def _import_one(svc: Any, info: dict[str, Any], target: Any, name: Any, ou
     return mate
 
 
+@router.get("/builtin")
+async def list_builtins() -> list[dict]:
+    """The bundled characters this install ships (a character whose pack isn't complete yet is not one): [{key, names}]."""
+    return [{"key": k, "names": files.builtin_bundle(k)["names"]} for k in files.builtin_keys()]
+
+
 # ---- one mate ----
 
 @router.get("/{mate_id}")

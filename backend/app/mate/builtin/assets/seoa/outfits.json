@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "id": "builtin-crop-top",
+      "name": "크롭탑",
+      "note": "A fitted pastel-pink sleeveless ribbed crop top with a round neckline that bares her midriff, and high-waisted light-blue denim shorts with a thin white belt. Same face, the same long pink hair in its high ponytail with the black scrunchie, the same small red bead earrings. No cream knit, no navy cardigan, no hoodie and no headset in this outfit; she stands holding her left elbow with her right hand in front of her, a little shy.",
+      "feel": {
+        "shy": 0.6
+      },
+      "unlock": {
+        "affinity": 60
+      },
+      "rig": "outfits/crop-top/rig.json"
+    },
+    {
+      "id": "builtin-stream-hoodie",
+      "name": "방송복",
+      "note": "Her on-air look: an oversized pastel strawberry-pink hoodie with one big cute strawberry printed on the chest (no letters, no logo) and white drawstrings, the sleeves falling past her wrists, and a white cat-ear gaming headset with pink inner ears worn over her head, its small boom mic by her left cheek. Same face, the same long pink hair in its high ponytail with the black scrunchie, the same small red bead earrings. No cream knit and no navy cardigan in this outfit; she faces the viewer as if her stream camera were there, both hands resting in her sleeves. What you wear when you go live.",
+      "rig": "outfits/stream-hoodie/rig.json"
+    },
+    {
+      "id": "builtin-pajamas",
+      "name": "잠옷",
+      "note": "Soft pastel-pink fleece pajamas with a rounded white collar, a tiny strawberry pattern and white buttons down the front, buttoned up. Same face, the same long pink hair in its high ponytail with the black scrunchie, the same small red bead earrings. No cream knit, no navy cardigan, no hoodie and no headset in this outfit. What you wear to bed.",
+      "rig": "outfits/pajamas/rig.json"
+    }
+  ]
+}

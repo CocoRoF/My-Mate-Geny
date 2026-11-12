@@ -24,7 +24,9 @@ from app.vault import SecretVault
 # install may add it locally (docs/mate.md). Its tests run only where it is.
 HAS_MAO = (files.BUILTIN_DIR / "mates" / "mao.json").is_file()
 needs_mao = pytest.mark.skipif(not HAS_MAO, reason="Live2D Mao sample not bundled on this install")
-KEYS = ["chaerin"] + (["mao"] if HAS_MAO else [])
+# Seoa ships once her pack is in the checkout (tests/test_mate_builtin_seoa.py)
+HAS_SEOA = not files.builtin_missing("seoa")
+KEYS = ["chaerin"] + (["seoa"] if HAS_SEOA else []) + (["mao"] if HAS_MAO else [])
 
 
 def _service(db):
@@ -98,16 +100,16 @@ def test_a_bundle_no_longer_shipped_goes_if_she_was_never_used(db):
 @pytest.mark.parametrize("used", ["talked", "memory", "changed"])
 def test_a_bundle_no_longer_shipped_stays_as_their_own_mate_if_she_was_used(db, used):
     mates = _service(db)
-    mid, sid = _once_bundled(mates, "seoa", "서아")
+    mid, sid = _once_bundled(mates, "estelle", "에스텔")
     if used == "talked":
-        mates._svc.seed_message(sid, "user", "안녕 서아", provider="claude")
+        mates._svc.seed_message(sid, "user", "안녕 에스텔", provider="claude")
     elif used == "memory":
         mates.store.add_memory(mid, "고양이 이름은 나비", kind="fact")
     else:
         mates.store.set_customized(mid, True)
     mates.sync_builtins()
     mate = mates.get(mid)
-    assert mate["builtin"] is None and mate["name"] == "서아" and mate["persona"]["description"] == "그 사람"
+    assert mate["builtin"] is None and mate["name"] == "에스텔" and mate["persona"]["description"] == "그 사람"
     assert mate["avatar"] == {"kind": "none"}  # (her files are gone with the bundle)
     assert mate["session_id"] == sid and len(mates.store.memories(mid)) == (1 if used == "memory" else 0)
     mates.sync_builtins()  # (settled once: she is simply theirs now)

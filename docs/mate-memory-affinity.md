@@ -466,7 +466,9 @@ the tone): feelings now change how she talks, what she decides and what her face
   when they are close (shy + happy = bashfully happy, angry + sad = hurt, angry + lonely = sulking: `BLENDS`); `valence` and `arousal`,
   how good and how lively it all feels. When one rises the others make room (`GIVES_WAY`).
 - **Left alone** each relaxes to where she settles (half-life per emotion: shy 30 min … sad 4 h), computed lazily as of now. Where
-  she settles and how easily each moves: `TEMPERAMENTS` by bundled mate (others: nothing), happy also rises with closeness.
+  she settles, how easily each moves and how soon it passes: `TEMPERAMENTS` by bundled mate (`base`, `rise`, `settle` — times the
+  half-life; others: nothing), happy also rises with closeness. 한채린 is a little shy at rest and lights up at games; 서아 is a
+  little happy and lively at rest, quick to light up, blush, pout and feel left out, and quick to get over the pout and the hurt.
 - **What the user says**, every message, before she answers, once per message (`hear`): an insult makes her angry, and more each
   time they keep it up; something done to her (`affinity.hostile`) far more, and it hurts (sad): 0.45, then +0.3 each time again
   within 6 h, forcing something on her the same as hitting her. That is the words' guess: her reply has the last word (shown

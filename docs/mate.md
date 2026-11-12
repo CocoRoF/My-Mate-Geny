@@ -461,14 +461,54 @@ puts it on a mate (the old avatar is backed up and can be restored) or **New mat
 
 ### Built-in mates (shipped with the app)
 
-**Han Chaerin** (한채린, the default on a new install) is bundled in `backend/app/mate/builtin/`, a video mate
-(`mates/<key>.json` = the authors' original ailism content, `assets/<key>/` video clips + stills + `rig.json`,
-`voices/<key>/voice.json`). Order: `files.BUILTIN_ORDER` (chaerin, then the optional `mao`, see below); the first one created on a
-new install is the default — an existing install keeps the user's default.
+**Han Chaerin** (한채린, the default on a new install) and **Seoa** (서아, a bright, bouncy streamer) are bundled in
+`backend/app/mate/builtin/`, video mates (`mates/<key>.json` = the original content in ailism's shape, `assets/<key>/` video
+clips + stills + `rig.json`, `voices/<key>/voice.json`; Seoa's voice is an ElevenLabs voice named in `mates/seoa.json`). Order:
+`files.BUILTIN_ORDER` (chaerin, seoa, then the optional `mao`, see below); the first one created on a new install is the default —
+an existing install keeps the user's default.
 
-Bundles no longer shipped (`files.RETIRED_BUILTINS`: Estelle and Seoa) are settled at startup: one nobody ever used is removed; one the
-user talked to, taught something or changed stays on as their own mate, with all that is hers but without the bundle's body, whose files
-are gone with it.
+**A character ships whole or not at all** (`files.builtin_missing` / `builtin_keys`): her body (`live2d.json`, else `rig.json` with
+its home picture and every file it names) and every outfit her `outfits.json` lists, with every file of its rig. Until then she is
+no built-in — not created, not listed by `GET /api/mates/builtin` (`[{key, names}]`, what Settings → Mate's "restore" line reads),
+and her life profile serves nobody; a pack that is there but incomplete is logged (`mate.builtin_waiting`, what is missing). Seoa's
+text came first (2026-11): her pack follows (below).
+
+Bundles no longer shipped (`files.RETIRED_BUILTINS`: Estelle, and the Seoa bundled before) are settled at startup: one nobody ever
+used is removed; one the user talked to, taught something or changed stays on as their own mate, with all that is hers but without
+the bundle's body, whose files are gone with it. A key that ships again is left alone: an install that still has the old Seoa gets
+the new one as a bundle update, field by field like any other.
+
+**The user's own 서아 becomes the built-in** (`files.ADOPTED_BUILTINS`, `MateService._adopt_builtins`, before the sync creates
+anyone): the first time Seoa ships on an install, and only then, a mate of the user's becomes her when it is beyond doubt — exactly
+one non-draft mate that is no built-in, not a man, and goes by one of her bundled names (서아 / Seoa, any case); no mate is built-in
+`seoa` yet; the user never deleted it. She stays the same mate: id, conversation, memories, relationship, how she feels, her day,
+voice, model, default flag, icon, outfits and the user's own style settings (what she calls them, the speech level, length…). She
+takes the bundle's name for her reply language, persona, speech habits (`speech_style`), `prefs.defaults`, body and bundled outfits,
+and is marked as synced (snapshot, hash, not customized), so later bundles merge as usual. Her body from before stays in her
+wardrobe as an outfit (“예전 모습”, so its pack files stay in use). The decision is kept, whatever it was, in the setting
+`builtin.adopted:<key>` (`{at, mate_id | null, why, status, kept, before: {name, persona, speech_style, defaults, avatar}}`) and
+never taken again: a later 서아 of theirs stays theirs, even after a restore. An adoption that stopped half-way finishes at the
+next start (each step can be done again). Logged `mate.builtin_adopted` (also when a 서아 of theirs was passed over, and why).
+
+**Seoa's pack** (`assets/seoa/`, made the way Chaerin's was; `tests/test_mate_builtin_seoa.py` holds the list and checks it once
+the pack is there):
+
+- `rig.json` (`stacked-alpha`, a measured `frame`, `emotions` with `angry` and `pout` → `angry`), `cover.webp`, `portrait.webp`.
+- Stills: neutral, smile, laugh, shy, surprised, sad, worried, angry (a cute pout), thinking, sleepy, blink, mouth_half,
+  mouth_open, mouth_o.
+- Clips (`<id>.lg.mp4`, `.sm.mp4`, `.thumb.webp`): idle_a, idle_b, idle_c; talk_a, talk_b; listen; think; react laugh (joy),
+  smile (happy), shy, surprised (surprise), sad, worried, angry (a puffed-cheek pout that melts into a smile), nod (agree),
+  wave (greet); away doze (loop); and her day's `life_<body>` with `doing: <body>`: life_stream (live at her mic, talking to
+  the camera and waving at chat), life_work (editing at her desk), life_game, life_eat, life_drink, life_walk, life_workout,
+  life_sing (karaoke, mic in hand).
+- `outfits/<name>/rig.json` for the three outfits of `outfits.json` (each with every still and clip above but life): crop-top
+  (크롭탑, opens at affinity 60, makes her shy; life_stream, work, game, eat, drink, walk, workout, sing), stream-hoodie (방송복,
+  what she goes live in; life_stream, work, game, eat, drink), pajamas (잠옷; life_sleep, game, eat, drink). Each `note` is
+  the exact description it was made from: her face, hair, ponytail and earrings never change.
+- `places/<place>-{morning,day,evening,night}.webp` for her ten places (home, street, convenience, cafe, tteokbokki, pcbang,
+  noraebang, studio, gym, hanriver; each place's `about` in `life/seoa.json` is what it looks like) and `places/map.webp` (their
+  `x`/`y` in percent).
+- Optional: `voices/seoa/voice.json` + a short reference clip in her voice, for the local voice engines.
 
 **Personas are English** (`personas/<key>.json`): everything the authors wrote
 (tagline, profile, appearance, background, relationship, knowledge, world,
@@ -1278,8 +1318,10 @@ default set always stays.
   deletions; one she already has follows the bundle where it is still as bundled, and an edited one keeps its edits on the
   bundle's new files when they move to another folder (a replaced pack needs one: built-in files are cached for a day by
   URL). Han Chaerin's **그레이 밴드** uses plain
-  gray fabric and white bands without brand names or logos.
-- **Unlocks**: an entry may say `"unlock": {"affinity": 60}` (그레이 밴드 does). It is in the wardrobe from the start, but until
+  gray fabric and white bands without brand names or logos. Seoa's are a crop top, her stream outfit (방송복: a strawberry-pink
+  hoodie and a cat-ear headset) and pajamas; her day puts her into the stream outfit to go live and into pajamas for bed
+  (docs/mate-life.md "Her body").
+- **Unlocks**: an entry may say `"unlock": {"affinity": 60}` (그레이 밴드 and Seoa's 크롭탑 do). It is in the wardrobe from the start, but until
   her affinity (rounded) reaches that, its card only carries `locked: {affinity}` and the server answers
   403 to wearing, reading, changing and deleting it, and to opening it in the studio. Once reached it stays open
   (`unlock.at`, set whenever the relationship is saved), however the affinity moves later; **Start over**

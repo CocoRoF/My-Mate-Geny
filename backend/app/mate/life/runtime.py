@@ -65,26 +65,38 @@ class LifeRuntime:
         closeness, stage, milestones = self._bond(mate_id)
         return doc, before, sim.advance(doc, profile, now, tz, closeness=closeness, stage=stage, milestones=milestones, birthdays=birthdays)
 
+    #: why she changes, as she is told it, when the activity doesn't say (``wear_why``: {on, off}): for bed and back
+    WEAR_WHY = {"on": "it's time for bed", "off": "the day has started"}
+
     def _dress(self, mate_id: str, doc: dict[str, Any], profile: dict[str, Any], happened: list[dict[str, Any]], prefs: dict[str, Any]) -> None:
-        """She changes for bed and back when she gets up: what an activity asks for, unless they are with her or she doesn't change
-        clothes herself. If someone changed her clothes meanwhile, those stay."""
+        """She changes for what she does and back after: what an activity asks for (``wear``: pajamas for bed, her stream outfit
+        to go live), from one such outfit straight into the next, unless they are with her or she doesn't change clothes
+        herself. ``dressed_from``: what she had on before her day dressed her, what it put her in and for what. If someone
+        changed her clothes meanwhile, those stay, and are what she comes back to."""
         started = [e for e in happened if e.get("type") == "started"]
         if not started or not self.wear or prefs.get("self_outfit") == "off" or doc.get("with_user"):
             return
-        target = (profile["activities"].get(started[-1].get("activity")) or {}).get("wear")
+        key = started[-1].get("activity")
+        act = profile["activities"].get(key) or {}
+        target = act.get("wear")
         came_from = doc.get("dressed_from")
-        if bool(target) == bool(came_from):
+        if not target and not came_from:
             return
         try:
             worn = self.store.get(mate_id)["outfits"]["worn"]
+            if came_from and worn != came_from.get("into"):
+                came_from = doc["dressed_from"] = None  # (someone changed her meanwhile: that is hers now)
             if target:
                 if worn != target:
-                    self.wear(mate_id, target, reason="it's time for bed")
-                    doc["dressed_from"] = {"outfit": worn, "into": target}
+                    why = {**self.WEAR_WHY, **(act.get("wear_why") or {})}["on"]
+                    self.wear(mate_id, target, reason=why)
+                    doc["dressed_from"] = {"outfit": came_from["outfit"] if came_from else worn, "into": target, "for": key}
+                return
+            if not came_from:
                 return
             doc["dressed_from"] = None
-            if worn == came_from.get("into"):
-                self.wear(mate_id, came_from.get("outfit"), reason="the day has started")
+            was = (profile["activities"].get(came_from.get("for") or "") or {}).get("wear_why") or {}
+            self.wear(mate_id, came_from.get("outfit"), reason={**self.WEAR_WHY, **was}["off"])
         except Exception as exc:  # noqa: BLE001 - nothing in her wardrobe is worth stopping her day for
             if self._log:
                 self._log("warning", f"life: {mate_id}: {exc}")

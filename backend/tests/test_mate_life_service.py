@@ -244,7 +244,7 @@ def test_she_changes_for_bed_and_back_unless_someone_changed_her(store, monkeypa
     world = {"activities": {"sleep": {"wear": "pj"}, "work": {}, "rest": {}}}
     doc = {}
     life._dress("m", doc, world, [{"type": "started", "activity": "sleep"}], {})
-    assert calls == ["pj"] and doc["dressed_from"] == {"outfit": "default", "into": "pj"}
+    assert calls == ["pj"] and doc["dressed_from"] == {"outfit": "default", "into": "pj", "for": "sleep"}
     life._dress("m", doc, world, [{"type": "started", "activity": "sleep"}], {})  # (already)
     assert calls == ["pj"]
     life._dress("m", doc, world, [{"type": "moved", "place": "x"}], {})  # (nothing started)

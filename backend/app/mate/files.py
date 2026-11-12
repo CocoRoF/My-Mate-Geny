@@ -1065,13 +1065,17 @@ def ailism_voice(doc: dict[str, Any], voice_dir: Path | None, mate_id: str) -> d
 # first migration compares against it to tell the user's edits from bundled text.
 
 BUILTIN_DIR = Path(__file__).resolve().parent / "builtin"
-BUILTIN_ORDER = ("chaerin", "mao")  # the first is the default mate on a new install
-#: bundled once, no longer shipped: what an install still has of them is settled at startup (MateService._retire_builtins)
+BUILTIN_ORDER = ("chaerin", "seoa", "mao")  # the first is the default mate on a new install
+#: bundled once, no longer shipped: what an install still has of them is settled at startup (MateService._retire_builtins).
+#: A key that ships again is left alone (Seoa, 2026-11: a new character under that name, once her pack is there)
 RETIRED_BUILTINS = ("estelle", "seoa")
+#: bundled characters the user may already have made by hand before they shipped: when one first ships on an install, the
+#: user's own mate of her name becomes her (MateService._adopt_builtins: once, only beyond doubt)
+ADOPTED_BUILTINS = ("seoa",)
 # persona fields a bundle sets for every language (greeting and name are per language) — the character only
 BUNDLE_FIELDS = ("description", "personality", "instructions", "gender", "birthday")
 #: who a bundled character is when her personas/<key>.json doesn't say (Mao's files are not in the repository)
-BUILTIN_GENDERS = {"chaerin": "female", "mao": "female"}
+BUILTIN_GENDERS = {"chaerin": "female", "seoa": "female", "mao": "female"}
 #: her birthday (MM-DD) when her personas/<key>.json doesn't say (Mao's: Walpurgis Night, a trainee witch's)
 BUILTIN_BIRTHDAYS = {"mao": "04-30"}
 # conversation-style fields (prefs) a bundle sets and later updates merge field by field like the persona's; the
@@ -1081,9 +1085,70 @@ BUNDLE_STYLE_FIELDS = ("speech_style", "address")
 BUNDLE_FORMAT = "4"  # (3: persona.gender; 4: persona.birthday)
 
 
-def builtin_keys() -> list[str]:
+def _bundled() -> list[str]:
+    """Every character with a ``mates/<key>.json``, shipped or still waiting for her pack."""
     keys = [x.stem for x in (BUILTIN_DIR / "mates").glob("*.json")] if (BUILTIN_DIR / "mates").is_dir() else []
     return sorted(keys, key=lambda k: (BUILTIN_ORDER.index(k) if k in BUILTIN_ORDER else len(BUILTIN_ORDER), k))
+
+
+def builtin_keys() -> list[str]:
+    """The bundled characters that ship: those whose pack is complete (builtin_missing)."""
+    return [k for k in _bundled() if not builtin_missing(k)]
+
+
+def builtin_waiting() -> dict[str, list[str]]:
+    """Bundled characters that don't ship yet -> what their pack still lacks."""
+    return {k: missing for k in _bundled() if (missing := builtin_missing(k))}
+
+
+def _rig_refs(raw: dict[str, Any]) -> list[str]:
+    """Every file a rig names: its home and portrait pictures, its stills, its clips with their small copies and thumbs."""
+    refs = [raw.get("home"), raw.get("portrait"), *((raw.get("stills") or {}).values() if isinstance(raw.get("stills"), dict) else [])]
+    for c in raw.get("clips") or []:
+        if isinstance(c, dict):
+            refs += [c.get("src"), c.get("small"), c.get("thumb")]
+    return [r.strip() for r in refs if isinstance(r, str) and r.strip()]
+
+
+def _ref_name(ref: str) -> str:
+    """A rig reference as a path in its folder (ailism's ``asset:<pack>/`` dropped)."""
+    r = ref[len("asset:"):] if ref.startswith("asset:") else ref
+    return r.split("/", 1)[1] if ref.startswith("asset:") and "/" in r else r
+
+
+def builtin_missing(key: str) -> list[str]:
+    """What a bundled character still lacks before she ships, as paths in ``assets/<key>/``: her body — ``live2d.json``, else
+    ``rig.json`` with its home picture and every file it names — and each outfit ``outfits.json`` lists, with every file of
+    its rig. [] = complete. Nothing half-made shows up: until then she is no built-in (Seoa's pack comes after her text)."""
+    folder = BUILTIN_DIR / "assets" / key
+    if (folder / "live2d.json").is_file():
+        return []
+    try:
+        raw = _read_json(folder / "rig.json") if (folder / "rig.json").is_file() else \
+            (((builtin_doc(key).get("doc") or {}).get("mate") or {}).get("body"))
+    except MateError:
+        return ["rig.json"]
+    if not isinstance(raw, dict) or not (raw.get("home") or (raw.get("stills") or {}).get("neutral")):
+        return ["rig.json"]
+    missing = [_ref_name(r) for r in _rig_refs(raw) if _ref_rel(r, folder) is None]
+    manifest = folder / "outfits.json"
+    try:
+        items = (_read_json(manifest).get("items") or []) if manifest.is_file() else []
+    except (MateError, AttributeError):
+        return [*missing, "outfits.json"]
+    for item in (i for i in items if isinstance(i, dict)):
+        rel = str(item.get("rig") or "")
+        try:
+            path = (folder / safe_rel(rel)) if rel else None
+            sub = _read_json(path) if path is not None and path.is_file() else None
+        except MateError:
+            sub = None
+        if not isinstance(sub, dict):
+            missing.append(rel or f"outfits.json: {item.get('id')}")
+            continue
+        here = path.parent.relative_to(folder).as_posix()
+        missing += [f"{here}/{_ref_name(r)}" for r in _rig_refs(sub) if _ref_rel(r, path.parent) is None]
+    return list(dict.fromkeys(missing))
 
 
 def builtin_doc(key: str) -> dict[str, Any]:
