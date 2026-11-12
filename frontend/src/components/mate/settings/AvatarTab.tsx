@@ -10,6 +10,8 @@ import { listProjects, type ProjectSummary } from "../../../api/avatar";
 import { coreStatus, DEFAULT_OUTFIT, getOutfit, importAvatarZip, importLocal, patchOutfit, uploadAsset, type Mate } from "../../../api/mates";
 import { MateAvatar } from "../../../mate/avatar/MateAvatar";
 import { EMOTIONS } from "../../../mate/emotion";
+import { confirmDialog } from "../../ui/ConfirmDialog";
+import { emotionLabel } from "../../../mate/emotionLabel";
 import type { Avatar, BodyMood, Live2D, LivLiv, MateReact, Rig } from "../../../mate/types";
 import type { MateConversation } from "../../../mate/useMateConversation";
 import { end as voiceEnd, fakeLevel, level as voiceLevel, start as voiceStart } from "../../../mate/voiceBridge";
@@ -78,8 +80,8 @@ export default function AvatarTab({ mate, conv }: { mate: Mate; conv: MateConver
   }, [mate.id, current, worn, locked, mate.updated_at]);
   const saved = current === worn ? mate.avatar : other?.id === current ? other.avatar : null;
   const dirty = useRef(false);
-  const select = (id: string) => {
-    if (id !== current && dirty.current && !window.confirm(t("mateSettings.outfitUnsaved"))) return;
+  const select = async (id: string) => {
+    if (id !== current && dirty.current && !(await confirmDialog({ body: t("mateSettings.outfitUnsaved"), confirmLabel: t("mateSettings.uiDiscard"), danger: true }))) return;
     dirty.current = false;
     setError(null);
     setSelected(id);
@@ -268,8 +270,8 @@ function Preview({ mate, avatar, conv, poke }: { mate: Mate; avatar: Avatar; con
       </div>
       <div className="flex flex-wrap gap-1">
         {EMOTIONS.map((e) => (
-          <button key={e} onClick={() => setReact({ name: e, at: Date.now() })} className="pill border border-border text-content-faint hover:text-content" data-testid={`mate-preview-emotion-${e}`}>
-            {e}
+          <button key={e} onClick={() => setReact({ name: e, at: Date.now() })} className="pill border border-border text-content-faint hover:text-content" title={e} data-testid={`mate-preview-emotion-${e}`}>
+            {emotionLabel(t, e)}
           </button>
         ))}
       </div>
@@ -532,7 +534,7 @@ function LivLivEditor({ livliv, onChange }: { livliv: LivLiv; onChange: (l: LivL
             const chosen = livliv.emotions?.[e];
             return (
               <div key={e} className="grid grid-cols-[90px_1fr] items-center gap-2">
-                <span className="text-[12px] text-content-dim">{e}</span>
+                <span className="truncate text-[12px] text-content-dim" title={e}>{emotionLabel(t, e)}</span>
                 <select className="field !py-1 text-[12px]" value={chosen === undefined ? "auto" : chosen === "" ? "none" : chosen} onChange={(ev) => setMap(e, ev.target.value)}>
                   <option value="auto">{t("mateSettings.avLvAuto")}</option>
                   <option value="none">{t("mateSettings.avLvNoFace")}</option>
@@ -598,7 +600,7 @@ function Live2DEditor({ live2d, onChange }: { live2d: Live2D; onChange: (l: Live
         <div className="space-y-1" data-testid="mate-l2d-map">
           {EMOTIONS.map((e) => (
             <div key={e} className="grid grid-cols-[90px_1fr_1fr] items-center gap-2">
-              <span className="text-[12px] text-content-dim">{e}</span>
+              <span className="truncate text-[12px] text-content-dim" title={e}>{emotionLabel(t, e)}</span>
               <select className="field !py-1 text-[12px]" value={String(live2d.emotions?.[e] ?? "")} onChange={(ev) => setMap("emotions", e, ev.target.value)}>
                 <option value="">{info?.expressions.length ? t("mateSettings.avByName") : "—"}</option>
                 {(info?.expressions || []).map((x) => (

@@ -3,6 +3,18 @@ import type { SettingsAnchor, SettingsTab, View } from "../lib/navUrl";
 
 export type { SettingsTab, View } from "../lib/navUrl";
 
+/** the sidebar beside the screen (not the phone's drawer): the user's choice, or null — a rail in a narrow window */
+export type SidebarPref = "rail" | "full" | null;
+const SIDEBAR_KEY = "hrh.sidebar";
+function storedSidebar(): SidebarPref {
+  try {
+    const v = localStorage.getItem(SIDEBAR_KEY);
+    return v === "rail" || v === "full" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 interface UIState {
   view: View;
   /** Settings: the open tab (null: none picked — the list on a phone, the first tab on a wide screen) */
@@ -10,10 +22,12 @@ interface UIState {
   /** a part of the tab to scroll to once shown (consumed by Settings) */
   settingsAnchor: SettingsAnchor | null;
   sidebarOpen: boolean; // mobile drawer
+  sidebarPref: SidebarPref;
   setView: (v: View) => void;
   /** Settings at a tab (one history entry — lib/nav.ts); also what the screens that became tabs open */
   openSettings: (tab?: SettingsTab | null, anchor?: SettingsAnchor | null) => void;
   setSidebar: (open: boolean) => void;
+  setSidebarPref: (pref: SidebarPref) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -21,10 +35,20 @@ export const useUIStore = create<UIState>((set) => ({
   settingsTab: null,
   settingsAnchor: null,
   sidebarOpen: false,
+  sidebarPref: storedSidebar(),
   setView: (v) => set({ view: v, sidebarOpen: false }),
   openSettings: (tab = null, anchor = null) =>
     set({ view: "settings", settingsTab: tab, settingsAnchor: anchor, sidebarOpen: false }),
   setSidebar: (open) => set({ sidebarOpen: open }),
+  setSidebarPref: (pref) => {
+    try {
+      if (pref) localStorage.setItem(SIDEBAR_KEY, pref);
+      else localStorage.removeItem(SIDEBAR_KEY);
+    } catch {
+      /* private mode: this session only */
+    }
+    set({ sidebarPref: pref });
+  },
 }));
 
 /** Settings at a tab, from anywhere (no hook) */

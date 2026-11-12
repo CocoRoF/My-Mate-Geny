@@ -153,7 +153,6 @@ async function main() {
   // ── the main run: English, dark, desktop ──
   const ctx = await device(browser, { lang: "en", theme: "dark" });
   const page = await ctx.newPage();
-  page.on("dialog", (d) => d.accept());
   page.on("pageerror", (e) => console.log("  pageerror:", e.message));
   step("open Avatar Create from the Mate view");
   await page.goto(`${SERVER}/?view=mate`);
@@ -269,6 +268,7 @@ async function main() {
 
   step("apply to the mate, then restore");
   await page.click('[data-testid="avatar-apply"]');
+  await page.click('[data-testid="confirm-ok"]'); // (the app's confirm dialog)
   await page.waitForSelector('[data-testid="avatar-applied"]');
   let m = (await api(ctx, "GET", `/api/mates/${chaerin.id}`)).body;
   assert.equal(m.avatar.kind, "video");
@@ -285,8 +285,10 @@ async function main() {
   await page.click('[data-testid="mate-avatar-create"]');
   await page.waitForSelector('[data-testid="avatar-restore"]');
   await page.click('[data-testid="avatar-restore"]');
+  await page.click('[data-testid="confirm-ok"]'); // (the app's confirm dialog)
   await until("restored", async () => JSON.stringify((await api(ctx, "GET", `/api/mates/${chaerin.id}`)).body.avatar) === oldAvatar, 20000);
   await page.click('[data-testid="avatar-apply"]');
+  await page.click('[data-testid="confirm-ok"]'); // (the app's confirm dialog)
   await page.waitForSelector('[data-testid="avatar-applied"]');
 
   step("a second project, left at the estimate (for the other screenshots)");
@@ -310,7 +312,6 @@ async function main() {
         step(`screens: ${tag}`);
         const c = await device(browser, { lang, theme, phone });
         const pg = await c.newPage();
-        pg.on("dialog", (d) => d.accept());
         // the estimate project (newest first in the list)
         await openAvatarCreate(pg, { pick: 0 });
         if (phone) {

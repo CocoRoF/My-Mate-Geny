@@ -380,4 +380,18 @@ export default {
   notebookOptions: "View & test recall",
   notebookOriginals: "Find original conversations & work records",
   notebookSettings: "How she remembers",
+  // her emotions (the vocabulary of mate/emotion.ts), as Settings → Avatar & outfits shows them (mate/emotionLabel.ts)
+  emotion_neutral: "Neutral",
+  emotion_joy: "Joy",
+  emotion_smile: "Smile",
+  emotion_laugh: "Laugh",
+  emotion_shy: "Shy",
+  emotion_surprised: "Surprised",
+  emotion_sad: "Sad",
+  emotion_worried: "Worried",
+  emotion_angry: "Angry",
+  emotion_thinking: "Thinking",
+  emotion_agree: "Agree",
+  emotion_greet: "Greeting",
+  emotion_sleepy: "Sleepy",
 };

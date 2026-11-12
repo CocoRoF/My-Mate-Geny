@@ -1,6 +1,7 @@
 /**
- * Settings (sidebar → Settings): a tab list (left on a wide screen; on a phone a list that opens one tab) and only
- * the chosen tab. Every tab is its own address and history entry, `/?view=settings&tab=<tab>` (lib/navUrl.ts).
+ * Settings (sidebar → Settings): a tab list (beside the tab when the view itself is wide enough, a row above it when
+ * it isn't — the window minus the sidebar, not the screen; on a phone a list that opens one tab) and only the chosen
+ * tab. Every tab is its own address and history entry, `/?view=settings&tab=<tab>` (lib/navUrl.ts).
  *   General
  *     Updates & Download  this web console's build (+ a check for a newer one on the server), the desktop app's
  *                         in-app updater (downloads/UpdateCard.tsx ↔ desktop/src/updater.js), the Android app's
@@ -50,6 +51,9 @@ import { useNativeVersion } from "../../lib/nativeVersion";
 import { cameFrom, goBack } from "../../lib/nav";
 import { settingsUrl } from "../../lib/navUrl";
 import { GROUPS, isAndroidApp, isDesktopApp, visibleTabs, type TabMeta } from "./tabs";
+import { confirmDialog } from "../ui/ConfirmDialog";
+import ScrollRow from "../ui/ScrollRow";
+import { useNarrowerThan } from "../../lib/device";
 
 // the tabs that were screens of their own: loaded with their tab
 const DownloadsView = lazy(() => import("../downloads/DownloadsView"));
@@ -364,7 +368,7 @@ function AccountSection() {
   };
 
   const revokeOthers = async () => {
-    if (!window.confirm(t("settings.signOutOthersConfirm"))) return;
+    if (!(await confirmDialog({ body: t("settings.signOutOthersConfirm"), confirmLabel: t("settings.signOutOthers"), danger: true }))) return;
     setRevokeBusy(true);
     setRevokeMsg(null);
     try {
@@ -692,7 +696,9 @@ function NotificationsSection() {
 
 // ---- the view ----------------------------------------------------------------------------------------------------
 
-const WIDE = "(min-width: 768px)"; // Tailwind's md: the sidebar is on screen, so is the tab list
+const WIDE = "(min-width: 768px)"; // Tailwind's md: the sidebar is on screen (not the phone's list → tab)
+// the view's own width (the window minus the sidebar): below it the tab list is a row above the tab, not a column beside
+const SIDE_LIST_MIN = 760;
 
 function useWide(): boolean {
   const [wide, setWide] = useState(() => typeof window === "undefined" || window.matchMedia(WIDE).matches);
@@ -747,7 +753,8 @@ function Badge({ on, title }: { on: boolean; title: string }) {
   ) : null;
 }
 
-function TabButton({ tab, selected, list, onPick }: { tab: TabMeta; selected: boolean; list: boolean; onPick: () => void }) {
+/** `list`: a phone's list entry (opens the tab); `row`: a tab in the row above the tab (a narrow view) */
+function TabButton({ tab, selected, list, row = false, onPick }: { tab: TabMeta; selected: boolean; list: boolean; row?: boolean; onPick: () => void }) {
   const t = useT();
   // Providers: only when none is connected (lib/attention.ts; the sidebar's Settings item shows it too)
   const needsProvider = useProviderStore((s) => providersNeedAttention(s.providers));
@@ -765,12 +772,12 @@ function TabButton({ tab, selected, list, onPick }: { tab: TabMeta; selected: bo
       data-active={selected}
       {...(list ? {} : { role: "tab", "aria-selected": selected, "aria-controls": "settings-panel", tabIndex: selected ? 0 : -1 })}
       onClick={onPick}
-      className={`group flex w-full items-center gap-3 rounded-lg px-3 text-left font-medium text-content-dim transition hover:bg-surface-2 hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/70 data-[active=true]:bg-surface-3 data-[active=true]:text-content ${
-        list ? "py-3 text-[14px]" : "py-2 text-[13px]"
+      className={`group flex items-center rounded-lg text-left font-medium text-content-dim transition hover:bg-surface-2 hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/70 data-[active=true]:bg-surface-3 data-[active=true]:text-content ${
+        row ? "shrink-0 gap-1.5 whitespace-nowrap px-2.5 py-1.5 text-[13px]" : list ? "w-full gap-3 px-3 py-3 text-[14px]" : "w-full gap-3 px-3 py-2 text-[13px]"
       }`}
     >
-      <Icon name={tab.icon} size={16} className="shrink-0 text-content-faint group-hover:text-content-dim group-data-[active=true]:text-accent" />
-      <span className="min-w-0 flex-1 truncate">{t(tab.label)}</span>
+      <Icon name={tab.icon} size={row ? 14 : 16} className="shrink-0 text-content-faint group-hover:text-content-dim group-data-[active=true]:text-accent" />
+      <span className={row ? "" : "min-w-0 flex-1 truncate"}>{t(tab.label)}</span>
       <Badge on={badge} title={t(needsProvider ? "nav.providersNone" : "nav.sessionsNeedLogin")} />
       {update && !badge && (
         <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={t("cliTools.badge")} aria-label={t("cliTools.badge")} data-testid="settings-tab-update" />
@@ -824,10 +831,48 @@ function TabList({ tabs, selected, list }: { tabs: TabMeta[]; selected: Settings
   );
 }
 
+/** a view too narrow for the list beside the tab: the tabs as one row above it (it scrolls sideways; ← → move) */
+function TabRow({ tabs, selected }: { tabs: TabMeta[]; selected: SettingsTab | null }) {
+  const t = useT();
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(e.key)) return;
+    const btns = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    const i = btns.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      e.key === "Home" ? 0 : e.key === "End" ? btns.length - 1 : (i + (e.key === "ArrowRight" ? 1 : -1) + btns.length) % btns.length;
+    e.preventDefault();
+    btns[next]?.focus();
+  };
+  return (
+    <ScrollRow
+      role="tablist"
+      aria-orientation="horizontal"
+      aria-label={t("settings.title")}
+      onKeyDown={onKeyDown}
+      watch={selected}
+      className="shrink-0 items-center gap-1 border-b border-border/70 bg-surface/60 px-3 py-2"
+      data-testid="settings-tabs"
+      data-layout="row"
+    >
+      {GROUPS.map((g, gi) => {
+        const mine = tabs.filter((x) => x.group === g.id);
+        if (!mine.length) return null;
+        return [
+          gi > 0 && <span key={`${g.id}-sep`} role="presentation" className="mx-1 h-5 w-px shrink-0 bg-border" />,
+          ...mine.map((x) => <TabButton key={x.id} tab={x} selected={selected === x.id} list={false} row onPick={() => openSettings(x.id)} />),
+        ];
+      })}
+    </ScrollRow>
+  );
+}
+
 export default function SettingsView() {
   const local=useConfigStore(s=>s.executionMode)==="local";
   const t = useT();
   const wide = useWide();
+  // (beside the sidebar: the list beside the tab only when the view itself has the room — a row above it otherwise)
+  const [narrow, rootRef] = useNarrowerThan(SIDE_LIST_MIN);
+  const side = wide && !narrow;
   const asked = useUIStore((s) => s.settingsTab);
   const anchor = useUIStore((s) => s.settingsAnchor);
   const tabs = visibleTabs();
@@ -880,7 +925,7 @@ export default function SettingsView() {
   const backToList = () => (cameFrom(settingsUrl(null)) ? goBack() : openSettings(null));
 
   return (
-    <div className="flex h-full flex-col" data-testid="settings-view" data-tab={shown ?? ""}>
+    <div ref={rootRef} className="flex h-full flex-col" data-testid="settings-view" data-tab={shown ?? ""} data-layout={wide ? (side ? "side" : "row") : "phone"}>
       {/* phone: the app's top bar over the list, a back bar over a tab */}
       {!wide &&
         (shown && meta ? (
@@ -903,13 +948,15 @@ export default function SettingsView() {
           <MobileTopBar title={t("nav.settings")} />
         ))}
 
+      {wide && !side && <TabRow tabs={tabs} selected={shown} />}
+
       <div className="flex min-h-0 flex-1">
-        {(wide || !shown) && (
+        {(side || !shown) && (
           <nav
-            className={wide ? "w-60 shrink-0 overflow-y-auto border-r border-border/70 px-2 py-5" : "flex-1 overflow-y-auto px-3 py-4 pb-safe"}
+            className={`scrollbar-stable overflow-y-auto ${side ? "w-60 shrink-0 border-r border-border/70 px-2 py-5" : "flex-1 px-3 py-4 pb-safe"}`}
             aria-label={t("settings.title")}
           >
-            {wide && (
+            {side && (
               <div className="mb-4 flex items-center gap-2.5 px-3">
                 <Icon name="settings" size={18} className="text-accent" />
                 <h1 className="text-base font-semibold">{t("settings.title")}</h1>
@@ -927,7 +974,7 @@ export default function SettingsView() {
             role={wide ? "tabpanel" : "region"}
             aria-labelledby={wide ? `settings-tab-${shown}` : undefined}
             aria-label={wide ? undefined : t(meta.label)}
-            className="min-w-0 flex-1 overflow-y-auto animate-fade-in"
+            className="scrollbar-stable min-w-0 flex-1 overflow-y-auto animate-fade-in"
             data-testid={`settings-panel-${shown}`}
           >
             <div className={`mx-auto ${meta.wide ? "max-w-6xl" : "max-w-3xl"} px-3 py-5 pb-safe sm:px-6 sm:py-8`}>

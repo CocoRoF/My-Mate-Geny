@@ -1,6 +1,6 @@
 import { signOutHere } from "../../lib/authNavigation";
 import { providersNeedAttention, sessionsNeedAttention } from "../../lib/attention";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useSessionStore } from "../../stores/sessionStore";
 import { openSettings, useUIStore, type View } from "../../stores/uiStore";
 import { useProviderStore } from "../../stores/providerStore";
@@ -26,7 +26,33 @@ const NAV: { id: View; label: MsgKey; icon: IconName }[] = [
   { id: "chat", label: "nav.chat", icon: "chat" },
 ];
 
-export default function Sidebar() {
+// A narrow window (the desktop app, a browser beside something else) has the sidebar as a rail of icons; the user's own
+// choice (the toggle) wins and is remembered (uiStore → localStorage). Never the phone's drawer.
+const NARROW = "(max-width: 1099px)";
+const narrowNow = () => typeof window !== "undefined" && !!window.matchMedia?.(NARROW).matches;
+function useSidebarRail(): [boolean, () => void] {
+  const narrow = useSyncExternalStore(
+    (cb) => {
+      const mq = window.matchMedia?.(NARROW);
+      mq?.addEventListener?.("change", cb);
+      return () => mq?.removeEventListener?.("change", cb);
+    },
+    narrowNow,
+    () => false,
+  );
+  const pref = useUIStore((s) => s.sidebarPref);
+  const setPref = useUIStore((s) => s.setSidebarPref);
+  const rail = pref ? pref === "rail" : narrow;
+  // (back to what this width does by itself: nothing to remember)
+  const toggle = () => setPref(!rail === narrow ? null : rail ? "full" : "rail");
+  return [rail, toggle];
+}
+
+const RAIL_BTN =
+  "relative grid h-10 w-10 shrink-0 place-items-center rounded-lg text-content-faint transition hover:bg-surface-2 hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/70 data-[active=true]:bg-surface-3 data-[active=true]:text-accent";
+
+/** `collapsible`: the sidebar beside the screen, which can be a rail (not the phone's drawer) */
+export default function Sidebar({ collapsible = false }: { collapsible?: boolean }) {
   const nativeVersion=useNativeVersion();
   const t = useT();
   const view = useUIStore((s) => s.view);
@@ -101,6 +127,14 @@ export default function Sidebar() {
   const loadSessions = useSessionStore((s) => s.load);
   const loadProviders = useProviderStore((s) => s.load);
   const [refreshing, setRefreshing] = useState(false);
+  const [railed, toggleRail] = useSidebarRail();
+  const rail = collapsible && railed;
+  // (the toggle is another button once flipped: the keyboard's focus moves on to it)
+  const flipRail = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const focused = document.activeElement === e.currentTarget;
+    toggleRail();
+    if (focused) requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="sidebar-toggle"]')?.focus());
+  };
   const refresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
@@ -113,6 +147,72 @@ export default function Sidebar() {
       setTimeout(() => setRefreshing(false), 400); // let the spin read as feedback
     }
   };
+
+  const attention = needsProvider || needsSession;
+  const attentionText = t(needsProvider ? "nav.providersNone" : "nav.sessionsNeedLogin");
+  const initial = (user || "?").slice(0, 1).toUpperCase();
+
+  if (rail)
+    return (
+      <aside className="flex h-full w-[60px] shrink-0 flex-col items-center gap-1 border-r border-border bg-surface/80 pb-2 pt-safe backdrop-blur-xl" data-testid="sidebar" data-rail="true">
+        <div className="grid h-14 shrink-0 place-items-center">
+          <img src="/logo.png" alt="" width={32} height={32} className="h-8 w-8 select-none drop-shadow" draggable={false} />
+        </div>
+        <button onClick={flipRail} className={RAIL_BTN} title={t("nav.expandSidebar")} aria-label={t("nav.expandSidebar")} aria-expanded={false} data-testid="sidebar-toggle">
+          <Icon name="panel-open" size={17} />
+        </button>
+        <button onClick={newChat} className="btn-primary my-1 h-10 w-10 !p-0" title={t("nav.newChat")} aria-label={t("nav.newChat")} data-testid="rail-new-chat">
+          <Icon name="plus" size={17} />
+        </button>
+        <nav className="flex flex-col items-center gap-1">
+          {NAV.map((n) => (
+            <button key={n.id} onClick={() => setView(n.id)} data-active={view === n.id} className={RAIL_BTN} title={t(n.label)} aria-label={t(n.label)} aria-current={view === n.id ? "page" : undefined}>
+              <Icon name={n.icon} size={17} />
+              {n.id === "chat" && unseen > 0 && (
+                <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-success ring-2 ring-surface" title={t("nav.unseenCount", { count: unseen })} data-testid="rail-unseen" />
+              )}
+            </button>
+          ))}
+        </nav>
+        <div className="flex-1" />
+        <button
+          onClick={() => openSettings(null)}
+          data-active={view === "settings"}
+          data-testid="nav-settings"
+          className={RAIL_BTN}
+          title={attention ? `${t("nav.settings")} — ${attentionText}` : t("nav.settings")}
+          aria-label={t("nav.settings")}
+          aria-current={view === "settings" ? "page" : undefined}
+        >
+          <Icon name="settings" size={17} />
+          {attention && (
+            <span className="absolute right-1 top-1 grid h-3.5 w-3.5 place-items-center rounded-full bg-warning text-[9px] font-bold text-stage-ink" aria-label={attentionText} data-testid="nav-settings-badge">
+              !
+            </span>
+          )}
+        </button>
+        <div className="my-1 h-px w-8 bg-border/70" />
+        {auth?.local ? (
+          <button
+            type="button"
+            onClick={() => openSettings("account")}
+            className="grid h-8 w-8 place-items-center rounded-full bg-surface-3 text-[12px] font-semibold text-content-dim transition hover:text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/70"
+            title={`${user} — ${t("nav.editName")}`}
+            aria-label={t("nav.editName")}
+            data-testid="nav-local-name"
+          >
+            {initial}
+          </button>
+        ) : (
+          <span className="grid h-8 w-8 place-items-center rounded-full bg-surface-3 text-[12px] font-semibold text-content-dim" title={t("nav.signedInAs", { user })}>
+            {initial}
+          </span>
+        )}
+        <button data-testid="nav-signout" onClick={signOutHere} className={`${RAIL_BTN} hover:!text-danger`} title={t("nav.logOut")} aria-label={t("nav.logOut")}>
+          <Icon name="logout" size={16} />
+        </button>
+      </aside>
+    );
 
   return (
     <aside className="w-full md:w-[268px] [@media(max-height:500px)]:!w-full h-full shrink-0 flex flex-col border-r border-border bg-surface md:bg-surface/80 [@media(max-height:500px)]:!bg-surface backdrop-blur-xl pt-safe pb-safe">
@@ -134,6 +234,18 @@ export default function Sidebar() {
         >
           <Icon name="refresh" size={15} spin={refreshing} />
         </button>
+        {collapsible && (
+          <button
+            onClick={flipRail}
+            title={t("nav.collapseSidebar")}
+            aria-label={t("nav.collapseSidebar")}
+            aria-expanded
+            className="-ml-1.5 grid h-8 w-8 touch:h-10 touch:w-10 place-items-center rounded-lg text-content-faint transition hover:bg-surface-2 hover:text-content"
+            data-testid="sidebar-toggle"
+          >
+            <Icon name="panel-close" size={16} />
+          </button>
+        )}
       </div>
 
       {/* New chat */}
@@ -207,7 +319,7 @@ export default function Sidebar() {
       </div>
 
       {showSessions && (
-        <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5" onMouseLeave={() => setMenuId(null)}>
+        <div className="scrollbar-stable flex-1 overflow-y-auto px-2 pb-2 space-y-0.5" onMouseLeave={() => setMenuId(null)}>
           {filtered.length === 0 && (
             <p className="px-2 py-3 text-xs text-content-faint">
               {sessions.length === 0 ? t("nav.noSessions") : t("common.noMatches")}
@@ -349,8 +461,8 @@ export default function Sidebar() {
           <Icon name="settings" size={16} className="text-content-faint group-hover:text-content-dim group-data-[active=true]:text-accent" />
           {t("nav.settings")}
           {/* only what needs the user (lib/attention.ts) — never a plain count */}
-          {(needsProvider || needsSession) && (
-            <span className="ml-auto pill bg-warning/15 text-warning" title={t(needsProvider ? "nav.providersNone" : "nav.sessionsNeedLogin")} aria-label={t(needsProvider ? "nav.providersNone" : "nav.sessionsNeedLogin")} data-testid="nav-settings-badge">
+          {attention && (
+            <span className="ml-auto pill bg-warning/15 text-warning" title={attentionText} aria-label={attentionText} data-testid="nav-settings-badge">
               !
             </span>
           )}
@@ -360,7 +472,7 @@ export default function Sidebar() {
       {/* Footer */}
       <div className="flex items-center gap-2 px-3 h-12 border-t border-border/70 text-content-faint">
         <div className="grid place-items-center w-6 h-6 rounded-full bg-surface-3 text-[11px] font-semibold text-content-dim">
-          {(user || "?").slice(0, 1).toUpperCase()}
+          {initial}
         </div>
         {auth?.local ? (
           <button type="button" onClick={() => openSettings("account")} className="min-w-0 truncate text-xs hover:text-content" title={t("nav.editName")} data-testid="nav-local-name">

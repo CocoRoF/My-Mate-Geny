@@ -11,6 +11,7 @@ import { useT, type TFunction } from "../../../i18n";
 import { STAGE_LABEL } from "../RelationRing";
 import { whyText } from "../../../mate/reasons";
 import { ErrorLine, Field, Section, Segmented, Toggle } from "./ui";
+import { ifConfirmed } from "../../ui/ConfirmDialog";
 
 const SENS: { id: string; v: number; label: "mateSettings.relSensGentle" | "mateSettings.styleNormal" | "mateSettings.relSensStrong" }[] = [
   { id: "0.5", v: 0.5, label: "mateSettings.relSensGentle" },
@@ -105,14 +106,14 @@ export default function RelationshipTab({ mate }: { mate: Mate }) {
           <button
             className="btn-ghost !py-1 text-[12px]"
             disabled={off}
-            onClick={() => window.confirm(t("mateSettings.relRecomputeConfirm", { name: mate.name })) && void apply(() => resetRelation(mate.id, "recompute"))}
+            onClick={() => ifConfirmed({ body: t("mateSettings.relRecomputeConfirm", { name: mate.name }), confirmLabel: t("mateSettings.relRecompute") }, () => apply(() => resetRelation(mate.id, "recompute")))}
             data-testid="mate-relation-recompute"
           >
             {t("mateSettings.relRecompute")}
           </button>
           <button
             className="btn-ghost !py-1 text-[12px] text-danger"
-            onClick={() => window.confirm(t("mateSettings.relResetConfirm", { name: mate.name })) && void apply(() => resetRelation(mate.id, "zero"))}
+            onClick={() => ifConfirmed({ body: t("mateSettings.relResetConfirm", { name: mate.name }), confirmLabel: t("mateSettings.relReset"), danger: true }, () => apply(() => resetRelation(mate.id, "zero")))}
             data-testid="mate-relation-reset"
           >
             {t("mateSettings.relReset")}

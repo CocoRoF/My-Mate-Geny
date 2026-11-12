@@ -100,7 +100,8 @@ export default function McpCatalog({
           {t("mcp.noCatalogMatches")}
         </p>
       )}
-      <div className="grid gap-3 lg:grid-cols-2">
+      {/* (two columns once the tab itself has the room — not the screen: beside the sidebar and the tab list it may not) */}
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),1fr))] gap-3">
         {shown.map((r) => (
           <section
             className="card flex flex-col p-4"

@@ -184,19 +184,20 @@ function ActivityChip({ tool }: { tool: ToolActivity }) {
   if (tool.name.replace(/^mcp__mate__/, "") === "update_conversation_style") return <StyleChip tool={tool} />;
   const d = describeTool(tool);
   const running = tool.durationMs === undefined;
-  const cls = `inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] ${
+  // (never wider than the column: a long one wraps to a second line and ends there with …)
+  const cls = `inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-xl border px-2.5 py-1 text-left text-[11.5px] leading-snug ${
     tool.isError ? "border-danger/30 bg-danger/10 text-danger" : "border-border bg-surface-2/80 text-content-dim"
   }`;
   const body = (
     <>
-      <Icon name={running ? "spinner" : tool.isError ? "warning" : d.icon} size={11} spin={running} />
-      <span className="truncate">{d.label}</span>
+      <Icon name={running ? "spinner" : tool.isError ? "warning" : d.icon} size={11} spin={running} className="shrink-0" />
+      <span className="line-clamp-2 min-w-0 [overflow-wrap:anywhere]">{d.label}</span>
       {d.sessionId && !tool.isError && <Icon name="external" size={10} className="shrink-0 opacity-60" />}
     </>
   );
   const shot = visibleAttachments(tool.images).length > 0 && tool.name.endsWith("see_screen");
   return (
-    <div className={shot ? "flex flex-col items-start gap-1.5" : "flex"} data-testid="mate-activity">
+    <div className={`flex min-w-0 max-w-full ${shot ? "flex-col items-start gap-1.5" : ""}`} data-testid="mate-activity">
       {d.sessionId && !tool.isError ? (
         <button
           className={`${cls} hover:text-content hover:border-border-strong transition`}
@@ -206,7 +207,7 @@ function ActivityChip({ tool }: { tool: ToolActivity }) {
           {body}
         </button>
       ) : (
-        <span className={cls} title={tool.isError ? tool.output : undefined}>
+        <span className={cls} title={tool.isError ? tool.output : d.label}>
           {body}
         </span>
       )}
@@ -374,7 +375,7 @@ export default function MateMessages({
 
   return (
     <div className={`relative min-h-0 flex-1 ${className}`}>
-      <div ref={ref} onScroll={onScroll} className="h-full overflow-y-auto overscroll-contain">
+      <div ref={ref} onScroll={onScroll} className="scrollbar-stable h-full overflow-y-auto overscroll-contain">
         <div className={`mx-auto flex max-w-2xl flex-col ${compact ? "gap-2.5 px-3 py-3" : "gap-3.5 px-4 py-5"}`}>
           <HistoryEdge paging={paging} empty={turns.length === 0} onRetry={loadOlder} />
           {turns.length === 0 && emptyText && <p className="pt-10 text-center text-sm text-content-faint">{emptyText}</p>}

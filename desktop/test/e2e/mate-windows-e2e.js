@@ -896,7 +896,8 @@ async function main() {
     let view = (await ov.eval(`document.querySelector('[data-testid="mate-overlay"]').dataset.view`)).split(",").map(Number);
     near(view[0], 40 / area.w, 0.01, "panned right");
     near(view[1], 30 / area.h, 0.01, "panned down");
-    await ov.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: area.x, y: area.y, deltaX: 0, deltaY: -300 });
+    // (a notch zooms ≈ 5.5 %: six of them)
+    for (let i = 0; i < 6; i++) await ov.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: area.x, y: area.y, deltaX: 0, deltaY: -100 });
     await sleep(500);
     view = (await ov.eval(`document.querySelector('[data-testid="mate-overlay"]').dataset.view`)).split(",").map(Number);
     console.log(`  view after pan + zoom: ${view}`);

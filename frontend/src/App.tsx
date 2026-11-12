@@ -90,8 +90,9 @@ export default function App() {
     // the visible height: 100dvh, or what the keyboard leaves where the layout viewport doesn't shrink (lib/keyboard.ts)
     // (a phone on its side: no room for the sidebar, which opens as on a phone; its notch and bar are on the sides)
     <div className={`${chrome ? "min-h-0 flex-1" : "h-[var(--app-h,100dvh)]"} flex overflow-hidden pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] text-content`}>
+      {/* (beside the screen it can be a rail of icons — a narrow window starts that way; the drawer never is) */}
       <div className="hidden md:flex [@media(max-height:500px)]:!hidden">
-        <Sidebar />
+        <Sidebar collapsible />
       </div>
       {sidebarOpen && (
         <div className="md:hidden [@media(max-height:500px)]:!flex fixed inset-0 top-[var(--window-chrome-height,0px)] z-[60] flex" data-testid="sidebar-drawer">

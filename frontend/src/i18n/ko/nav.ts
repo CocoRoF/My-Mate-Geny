@@ -59,5 +59,7 @@ const ko: Messages<"nav"> = {
   errStoppedMsg: "앱의 이 부분이 멈췄어요. 보통 새로고침하면 해결돼요 — 작성 중인 내용은 그대로 남아요.",
   errUpdating: "최신 버전으로 업데이트하는 중…",
   editName: "이름 바꾸기",
+  collapseSidebar: "사이드바 접기",
+  expandSidebar: "사이드바 펼치기",
 };
 export default ko;

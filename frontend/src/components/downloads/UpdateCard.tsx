@@ -103,9 +103,9 @@ export default function UpdateCard({ s }: { s: UpdateState }) {
   if (s.status === "downloading") {
     return (
       <div className={`${box} border-accent/30 bg-accent-soft`} data-testid="update-card" data-status="downloading">
-        <div className="flex items-center gap-2 text-content">
+        <div className="flex flex-wrap items-center gap-2 text-content">
           <Icon name="download" size={14} className="text-accent" />
-          <span className="min-w-0 flex-1 font-medium">
+          <span className="min-w-0 flex-1 basis-[14rem] break-words font-medium">
             {t("downloads.downloadingVersion", { version: s.version })} <span className="font-mono text-accent" data-testid="update-percent">{pct}%</span>
           </span>
           <button className="btn-ghost !px-2.5 !py-1 text-[12px]" onClick={() => void b.cancel()} data-testid="update-cancel">
@@ -126,7 +126,7 @@ export default function UpdateCard({ s }: { s: UpdateState }) {
       <div className={`${box} border-success/30 bg-success/10`} data-testid="update-card" data-status={s.status}>
         <div className="flex flex-wrap items-center gap-2 text-success">
           <Icon name={s.status === "installing" ? "spinner" : "check"} size={14} spin={s.status === "installing"} />
-          <span className="min-w-0 flex-1">
+          <span className="min-w-0 flex-1 basis-[14rem] break-words">
             {s.status === "installing" ? t("downloads.installing", { version: s.version }) : t("downloads.readyToRestart", { version: s.version })}
           </span>
           {s.status === "ready" && (
@@ -144,7 +144,7 @@ export default function UpdateCard({ s }: { s: UpdateState }) {
       <div className={`${box} border-warning/30 bg-warning/10`} data-testid="update-card" data-status="available">
         <div className="flex flex-wrap items-center gap-2 text-warning">
           <Icon name="sparkles" size={14} />
-          <span className="min-w-0 flex-1">
+          <span className="min-w-0 flex-1 basis-[14rem] break-words">
             {t.rich("downloads.versionAvailable", { version: <b className="font-mono">{s.version}</b>, current: s.current, size: s.total ? ` · ${formatBytes(s.total)}` : "" })}
             {s.cancelled && <span className="text-content-faint">{t("downloads.cancelled")}</span>}
           </span>
@@ -160,7 +160,7 @@ export default function UpdateCard({ s }: { s: UpdateState }) {
       <div className={`${box} border-danger/30 bg-danger/10`} data-testid="update-card" data-status="error">
         <div className="flex flex-wrap items-center gap-2 text-danger">
           <Icon name="warning" size={14} />
-          <span className="min-w-0 flex-1 break-words" data-testid="update-error">
+          <span className="min-w-0 flex-1 basis-[14rem] break-words" data-testid="update-error">
             {updateErrorText(t, s)}
           </span>
           <button className="btn-ghost !py-1.5" onClick={() => void b.retry()} data-testid="update-retry">
@@ -174,7 +174,7 @@ export default function UpdateCard({ s }: { s: UpdateState }) {
     <div className={`${box} border-success/25 bg-success/10`} data-testid="update-card" data-status={s.status}>
       <div className="flex flex-wrap items-center gap-2 text-success">
         <Icon name={s.status === "checking" ? "spinner" : "check"} size={14} spin={s.status === "checking"} />
-        <span className="min-w-0 flex-1">
+        <span className="min-w-0 flex-1 basis-[14rem] break-words">
           {s.status === "checking" ? t("downloads.checking") : t("downloads.upToDateApp", { version: s.current })}
         </span>
         {s.status !== "checking" && (

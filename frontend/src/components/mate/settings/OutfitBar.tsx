@@ -10,6 +10,7 @@ import { useMateStore } from "../../../stores/mateStore";
 import AlignedBox from "../../../mate/avatar/AlignedBox";
 import Icon from "../../ui/Icon";
 import { ErrorLine, ProgressBar, Section, Toggle } from "./ui";
+import { confirmDialog } from "../../ui/ConfirmDialog";
 
 export default function OutfitBar({ mate, selected, onSelect }: { mate: Mate; selected: string; onSelect: (id: string) => void }) {
   const t = useT();
@@ -50,8 +51,8 @@ export default function OutfitBar({ mate, selected, onSelect }: { mate: Mate; se
     setRenaming(null);
     if (name && card && name !== card.name) void run(async () => upsert(await patchOutfit(mate.id, card.id, { name })));
   };
-  const remove = () => {
-    if (!card || !window.confirm(t("mateSettings.outfitDeleteConfirm", { name: card.name }))) return;
+  const remove = async () => {
+    if (!card || !(await confirmDialog({ body: t("mateSettings.outfitDeleteConfirm", { name: card.name }), confirmLabel: t("mateSettings.outfitDelete"), danger: true }))) return;
     void run(async () => {
       upsert(await deleteOutfit(mate.id, card.id));
       onSelect(DEFAULT_OUTFIT);
@@ -175,7 +176,7 @@ export default function OutfitBar({ mate, selected, onSelect }: { mate: Mate; se
               <button className="btn-ghost !px-1.5 !py-1" onClick={() => setRenaming(card.name)} aria-label={t("mateSettings.outfitRename")} title={t("mateSettings.outfitRename")} data-testid="outfit-rename">
                 <Icon name="pencil" size={13} />
               </button>
-              <button className="btn-ghost !px-1.5 !py-1 text-content-faint" onClick={remove} aria-label={t("mateSettings.outfitDelete")} title={t("mateSettings.outfitDelete")} data-testid="outfit-delete">
+              <button className="btn-ghost !px-1.5 !py-1 text-danger hover:bg-danger/10 hover:!text-danger" onClick={() => void remove()} aria-label={t("mateSettings.outfitDelete")} title={t("mateSettings.outfitDelete")} data-testid="outfit-delete">
                 <Icon name="trash" size={13} />
               </button>
             </>

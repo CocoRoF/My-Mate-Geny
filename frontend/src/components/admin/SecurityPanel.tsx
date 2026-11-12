@@ -4,6 +4,7 @@ import Icon from "../ui/Icon";
 import { openSettings } from "../../stores/uiStore";
 import { absTime, relTime } from "./format";
 import { useT } from "../../i18n";
+import { confirmDialog } from "../ui/ConfirmDialog";
 
 export default function SecurityPanel() {
   const t = useT();
@@ -28,7 +29,7 @@ export default function SecurityPanel() {
   };
 
   const revokeAll = async () => {
-    if (!window.confirm(t("admin.confirmRevokeAll"))) return;
+    if (!(await confirmDialog({ body: t("admin.confirmRevokeAll"), confirmLabel: t("admin.signOutAllDevices"), danger: true }))) return;
     setBusy("__all__");
     try {
       await revokeAllSessions();

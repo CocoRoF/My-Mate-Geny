@@ -3,6 +3,7 @@ import { useT, type MsgKey } from "../../i18n";
 import ProvidersPanel from "../mate/settings/global/ProvidersPanel";
 import HiggsfieldPanel, { HiggsfieldTab } from "./HiggsfieldPanel";
 import CliVersionsSection from "./CliVersionsSection";
+import ScrollRow from "../ui/ScrollRow";
 
 const SERVICES: { id: string; label: string | MsgKey; translated?: boolean }[] =
   [
@@ -16,11 +17,7 @@ export default function MediaProvidersView() {
     [tab, setTab] = useState("higgsfield");
   return (
     <div className="max-w-2xl" data-testid="media-providers">
-      <div
-        className="mb-5 flex gap-1.5 overflow-x-auto border-b border-border"
-        role="tablist"
-        aria-label={t("mcp.mediaTitle")}
-      >
+      <ScrollRow className="mb-5 gap-1.5 border-b border-border" role="tablist" aria-label={t("mcp.mediaTitle")} watch={tab}>
         <HiggsfieldTab
           selected={tab === "higgsfield"}
           onPick={() => setTab("higgsfield")}
@@ -31,13 +28,13 @@ export default function MediaProvidersView() {
             role="tab"
             aria-selected={tab === service.id}
             onClick={() => setTab(service.id)}
-            className={`-mb-px shrink-0 border-b-2 px-3 py-2 text-sm font-medium ${tab === service.id ? "border-accent text-content" : "border-transparent text-content-dim hover:text-content"}`}
+            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${tab === service.id ? "border-accent text-content" : "border-transparent text-content-dim hover:text-content"}`}
             data-testid={`media-tab-${service.id}`}
           >
             {service.translated ? t(service.label as MsgKey) : service.label}
           </button>
         ))}
-      </div>
+      </ScrollRow>
       {tab === "higgsfield" ? (
         <>
           <HiggsfieldPanel />

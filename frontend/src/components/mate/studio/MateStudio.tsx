@@ -51,6 +51,7 @@ import { MateThumb } from "../MateStage";
 import NewMateDialog, { type NewMateTab } from "../NewMateDialog";
 import type { FieldsApi } from "./fields";
 import StudioSettings, { type SectionId } from "./StudioSettings";
+import { confirmDialog, ifConfirmed } from "../../ui/ConfirmDialog";
 
 const LIVE = new Set(["running", "waiting"]);
 const SPLIT_KEY = "hrh_studio_split";
@@ -449,7 +450,7 @@ export default function MateStudio() {
     }
   };
   const discard = async () => {
-    if (!pid || !window.confirm(t("studio.discardConfirm", { name: mate?.name || t("studio.untitled") }))) return;
+    if (!pid || !(await confirmDialog({ body: t("studio.discardConfirm", { name: mate?.name || t("studio.untitled") }), confirmLabel: t("studio.discard"), danger: true }))) return;
     try {
       await discardDraft(pid);
       useStudio.getState().note(t("studio.discarded"));
@@ -559,7 +560,7 @@ export default function MateStudio() {
                     <button
                       className="btn-ghost !px-2 text-content-faint"
                       aria-label={t("common.delete")}
-                      onClick={() => window.confirm(t("avatar.deleteConfirm", { name: p.title })) && deleteProject(p.id).then(loadProjects)}
+                      onClick={() => ifConfirmed({ body: t("avatar.deleteConfirm", { name: p.title }), confirmLabel: t("common.delete"), danger: true }, () => deleteProject(p.id).then(loadProjects))}
                     >
                       <Icon name="trash" size={12} />
                     </button>
@@ -852,7 +853,7 @@ export default function MateStudio() {
         <div className={`min-h-0 flex-1 flex-col ${tab === "agent" ? "flex" : "hidden"}`}>{agent}</div>
         <div className={`min-h-0 flex-1 flex-col ${tab === "settings" ? "flex" : "hidden"}`}>
           <SaveBarSlot.Provider value={saveSlot}>
-            <div className="fit-fields min-h-0 flex-1 overflow-y-auto pb-safe">{settings}</div>
+            <div className="fit-fields scrollbar-stable min-h-0 flex-1 overflow-y-auto pb-safe">{settings}</div>
           </SaveBarSlot.Provider>
           <div ref={setSaveSlot} className="shrink-0" />
         </div>
@@ -871,7 +872,7 @@ export default function MateStudio() {
         <Splitter value={split} onChange={onSplit} container={box} />
         <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-[linear-gradient(to_bottom,rgb(var(--c-surface-2)/0.35),transparent_240px)]" style={{ minWidth: MIN_RIGHT }} aria-label={t("studio.tabSettings")} data-testid="studio-right">
           <SaveBarSlot.Provider value={saveSlot}>
-            <div className="min-h-0 flex-1 overflow-y-auto">{settings}</div>
+            <div className="scrollbar-stable min-h-0 flex-1 overflow-y-auto">{settings}</div>
           </SaveBarSlot.Provider>
           <div ref={setSaveSlot} className="shrink-0" />
         </section>

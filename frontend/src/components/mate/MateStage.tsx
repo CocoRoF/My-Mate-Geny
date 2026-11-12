@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Mate } from "../../api/mates";
 import { LiveMateAvatar } from "../../mate/avatar/MateAvatar";
+import { isHome, useAvatarView } from "../../mate/avatar/view";
+import Icon from "../ui/Icon";
 import type { BodyMood, MateReact } from "../../mate/types";
 import type { Caption } from "../../mate/useMateConversation";
 import { useT, type MsgKey, type TFunction } from "../../i18n";
@@ -103,6 +105,11 @@ export default function MateStage({
   const life = mate.life?.enabled && mate.life.art ? mate.life : null;
   const line = useFadingCaption(caption ?? null);
   const ml = moodLabel(t, mood);
+  // her pan / zoom on the stage: the wheel at the pointer, a mouse drag, a double click back to her whole figure — per
+  // mate, apart from the desktop overlay's (mate/avatar/view.ts). A finger is left alone: a phone scrolls and pokes her
+  // as before; a tap is still a poke.
+  const area = useRef<HTMLDivElement>(null);
+  const { view, reset, dragging } = useAvatarView(area, `hrh.mate.stageView.${mate.id}`, true, { touch: false, doubleClickReset: true });
   return (
     <div className={`relative flex min-h-0 flex-col items-center ${life ? "overflow-hidden" : ""} ${className}`} data-testid="mate-stage" data-mood={mood}>
       {life && <LifeBackdrop life={life} />}
@@ -117,9 +124,26 @@ export default function MateStage({
           </div>
         </div>
       )}
-      <div className="relative min-h-0 w-full flex-1">
+      <div
+        ref={area}
+        className="group/stage relative min-h-0 w-full flex-1"
+        style={{ cursor: dragging ? "grabbing" : "grab" }}
+        data-testid="mate-stage-area"
+        data-view={`${view.x.toFixed(4)},${view.y.toFixed(4)},${view.z.toFixed(4)}`}
+      >
         {/* keyed by the mate: switching mates never shows (or keeps playing) the previous mate's body */}
-        <LiveMateAvatar key={mate.id} mate={mate} size={size} mood={mood} videoMood={videoMood} react={react} onTap={onTap} />
+        <LiveMateAvatar key={mate.id} mate={mate} size={size} mood={mood} videoMood={videoMood} react={react} onTap={onTap} view={view} />
+        {!isHome(view) && (
+          <button
+            className="absolute bottom-2 right-2 z-10 grid h-7 w-7 place-items-center rounded-full border border-border bg-surface-2/90 text-content-dim opacity-0 shadow-float transition hover:text-content focus-visible:opacity-100 group-hover/stage:opacity-100 touch:opacity-100"
+            onClick={reset}
+            title={t("mate.resetViewTitle")}
+            aria-label={t("mate.resetViewTitle")}
+            data-testid="mate-stage-view-reset"
+          >
+            <Icon name="refresh" size={13} />
+          </button>
+        )}
       </div>
       {menu && (
         <div className={`absolute z-20 ${menu.compact ? "right-2 top-2" : "right-3 top-3"}`}>

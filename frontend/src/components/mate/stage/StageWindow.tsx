@@ -81,7 +81,7 @@ export default function StageWindow<T extends string>({
       ))}
     </div>
   );
-  const body = <div className="fit-fields min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 pb-safe">{children}</div>;
+  const body = <div className="fit-fields scrollbar-stable min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 pb-safe">{children}</div>;
   if (phone) {
     return createPortal(
       <BottomSheet onClose={onClose} label={title} testId={testId}>

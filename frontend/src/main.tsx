@@ -9,6 +9,7 @@ import { installChunkRecovery } from "./lib/recover";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import TitleBar from "./components/layout/TitleBar";
 import { Spinner } from "./components/ui/Loading";
+import { ConfirmHost } from "./components/ui/ConfirmDialog";
 import { claimWindowChrome } from "./lib/nativeWindow";
 import { i18nReady, tr, useI18n } from "./i18n";
 import { installTheme } from "./lib/theme";
@@ -62,6 +63,8 @@ const render = () =>
       <App />
     )}
     </ErrorBoundary>
+    {/* the app's confirm dialogs (components/ui/ConfirmDialog.tsx), on every surface */}
+    <ConfirmHost />
   </React.StrictMode>,
   );
 

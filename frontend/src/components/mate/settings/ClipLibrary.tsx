@@ -22,6 +22,8 @@ import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
 import { tr, useT, type MsgKey } from "../../../i18n";
 import { ErrorLine, Field, Section, Toggle } from "./ui";
+import { confirmDialog } from "../../ui/ConfirmDialog";
+import { emotionLabel } from "../../../mate/emotionLabel";
 
 // ── words ──
 
@@ -328,7 +330,7 @@ function ClipDialog({ clip, onClose, children }: { clip: RigClip; onClose: () =>
             <Icon name="x" size={16} />
           </button>
         </div>
-        <div className="fit-fields min-h-0 flex-1 overflow-y-auto p-3 pb-safe">{children}</div>
+        <div className="fit-fields scrollbar-stable min-h-0 flex-1 overflow-y-auto p-3 pb-safe">{children}</div>
       </div>
     </div>,
     document.body,
@@ -437,9 +439,10 @@ function ClipEditor({
                 onClick={() => onChange(toggleEmotion(rig, clip.id, e, !on))}
                 className={`pill border transition disabled:opacity-40 ${on ? "border-accent/60 bg-accent-soft text-accent" : "border-border text-content-faint hover:text-content"}`}
                 aria-pressed={on}
+                title={e}
                 data-emotion={e}
               >
-                {on && <Icon name="check" size={10} />} {e}
+                {on && <Icon name="check" size={10} />} {emotionLabel(t, e)}
               </button>
             );
           })}
@@ -451,7 +454,7 @@ function ClipEditor({
             <option value="">{t("mateSettings.clipNoneOpt")}</option>
             {words.map((w) => (
               <option key={w} value={w}>
-                {w}
+                {emotionLabel(t, w)}
                 {VOCAB.includes(w) ? "" : ` ${t("mateSettings.clipRigWord")}`}
               </option>
             ))}
@@ -517,7 +520,7 @@ export function TriggerPreview({ rig, onChange, onPoke }: { rig: Rig; onChange: 
             const r = clipsFor(rig, e);
             return (
               <button key={e} className={btn(pick.type === "emotion" && pick.name === e)} onClick={() => choose({ type: "emotion", name: e })} data-testid={`mate-trigger-emotion-${e}`} title={r.clips.length ? ids(r.clips).join(", ") : t("mateSettings.clipNoClip")}>
-                {e}
+                {emotionLabel(t, e)}
                 {!r.clips.length && <span className="text-content-faint">·–</span>}
               </button>
             );
@@ -694,8 +697,8 @@ export function StillTriggers({ rig, onChange, onPoke, video }: { rig: Rig; onCh
                 {shown ? <img src={rig.stills[shown]} alt="" className="h-full w-full object-cover object-top" /> : <span className="text-[10px] text-content-faint">–</span>}
               </button>
               <div className="min-w-0 flex-1">
-                <div className="text-[12px] text-content">
-                  {e}
+                <div className="text-[12px] text-content" title={e}>
+                  {emotionLabel(t, e)}
                   {e === "thinking" && <span className="text-content-faint"> · {t("mateSettings.stillAlsoThinking")}</span>}
                   {e === "sleepy" && <span className="text-content-faint"> · {t("mateSettings.stillAlsoAway")}</span>}
                 </div>
@@ -727,7 +730,7 @@ export function BundledReset({ mate, dirty }: { mate: Mate; dirty: boolean }) {
   if (!mate.builtin) return null;
   const reset = async () => {
     const msg = t(dirty ? "mateSettings.bundledConfirmDirty" : "mateSettings.bundledConfirm", { name: mate.name });
-    if (!window.confirm(msg)) return;
+    if (!(await confirmDialog({ body: msg, confirmLabel: t("mateSettings.bundledReset"), danger: true }))) return;
     setBusy(true);
     setErr(null);
     setDone(false);

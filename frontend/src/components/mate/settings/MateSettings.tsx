@@ -90,7 +90,7 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
         ))}
       </div>
       <SaveBarSlot.Provider value={saveSlot}>
-      <div ref={body} className="fit-fields min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
+      <div ref={body} className="fit-fields scrollbar-stable min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
         <div className="mx-auto max-w-xl space-y-4 pb-6">
           {/* key: a different mate starts from its own values */}
           {tab === "profile" && <ProfileTab key={mate.id} mate={mate} onOpenStyle={() => setTab("style")} />}

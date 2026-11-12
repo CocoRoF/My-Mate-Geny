@@ -36,8 +36,10 @@ export function HiggsfieldTab({ selected, onPick }: { selected: boolean; onPick:
   return (
     <button
       onClick={onPick}
+      role="tab"
+      aria-selected={selected}
       data-testid="providers-tab-higgsfield"
-      className={`relative px-4 py-2 text-sm font-medium transition -mb-px border-b-2 ${
+      className={`relative shrink-0 whitespace-nowrap px-4 py-2 text-sm font-medium transition -mb-px border-b-2 ${
         selected ? "border-accent text-content" : "border-transparent text-content-dim hover:text-content"
       }`}
     >
