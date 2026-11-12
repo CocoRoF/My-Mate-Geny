@@ -339,7 +339,8 @@ SEE_SCREEN = {
     "name": "see_screen",
     "description": (
         "Look at the user's screen: their desktop app captures it (the screen or the window they chose in your "
-        "settings) and the picture comes back to you; it also appears in your conversation. They may be asked to "
+        "settings) and the picture comes back to you — when they share all their screens, one picture per screen, the "
+        "one they are using first; it also appears in your conversation. They may be asked to "
         "allow it first — if they say no, or don't answer, you get no picture. Use it when they ask you to look, "
         "or talk about something on their screen they haven't described. Works only while the desktop app is "
         "open on their computer."

@@ -17,6 +17,10 @@ clients/new devices; new clients never use them after migrating.
 - Capture source: prefer the desktop's selected Mate's old `captureSources` entry, otherwise the first stored source.
 - Volume and capture quality/approval/hiding: prefer the app's selected Mate, then the active Mate supplied by the
   renderer, then the first available Mate. Zero is a valid volume. Existing explicit device edits always win.
+  A Mate's picture size is taken over only when it is not the old default 1920: a new device starts with the
+  original size (`max_edge` 0); sizes already saved on a device stay.
+- `screen.all_screens` (All screens, [screen capture](screen-capture.md#all-screens)) clears `source`; choosing a
+  source or the primary screen turns it off. Older apps drop the key and keep their one source.
 - Archive every old source and every Mate's screen/volume values, keyed by server origin and Mate id, in
   `devicePreferences.migration`. The legacy server records and old local source map are not deleted.
 - Import settings once. Switching Mate/server or refetching metadata never replaces an established device value.

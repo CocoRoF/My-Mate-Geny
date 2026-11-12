@@ -48,6 +48,23 @@ General sessions have these modes (default: ask); Mates configure autonomous obs
    Claude receives image blocks; Codex receives image paths. Remote workspace uploads use the same existing SSH
    copy path as other attachments. Screenshots always originate on the client, never in the remote workspace.
 
+## All screens
+
+With more than one display the picker and the share settings offer **All screens** (desktop app with capture
+bridge ≥ 4; device preference `screen.all_screens`). Every capture then takes each screen as its own picture,
+never stitched: the screen in use is `main` — the display where the pointer last moved within ~30 s, else the one
+under the pointer, else the primary (`cursor-feed.js createPointerActivity`, sampled only while All screens is
+chosen) — the others are `sub`, left to right. One approval covers the set; `max_edge` applies to each picture;
+cancellation between pictures delivers nothing; an empty other screen is left out, an empty main one fails.
+
+The server asks for them with `multi: true` (`app/mate/capture.py MULTI_BRIDGE`; the window's `capture` version
+decides) and takes at most `MAX_PICTURES`, each uploaded with the request's proof. The page answers
+`attachments: [{id, role, source}]` (main first) plus the main `attachment_id`. Her `see_screen` / `capture_screen`
+result and a message's attachments list them in that order, labelled "main screen (the one in use)", "other screen
+1"… — by role only, nothing looks at the pictures to name them. Observation and the thinking trigger compare one
+frame and ask for the main picture only. Back-compat: an older app answers one `attachment_id`; an older server's
+request has no `multi`, so the app sends only the main picture in the one-picture shape.
+
 ## Privacy and retention
 
 Capture never hides, moves or restores Geny windows. Legacy hiding flags are ignored; the selected visible source is captured directly. Losing the selected source refuses capture instead of substituting a full screen. Browser capture is confined to the stream selected in the system
@@ -66,9 +83,13 @@ busy are removed while still pending. Conversation deletion purges its attachmen
 - `backend/tests/test_local_screen.py`: consent boundaries, response proof, attachments/model input, cancellation,
   message preservation, periodic throttling/deduplication and MCP transport/config merging.
 - `frontend/test/local-screen.test.ts`: source/session binding, mode/stop, in-flight cancellation and old bridges.
-- `desktop/test/capture.test.js`: native capture, permissions, hiding/restoring windows, and missing-source refusal.
+- `desktop/test/capture.test.js`: native capture, permissions, hiding/restoring windows, missing-source refusal and
+  all screens (order, one approval, per-picture size, cancellation, the one-picture shape for older servers).
+- `backend/tests/test_screen_all_screens.py`: several pictures per request with roles, tool/message order and
+  labels, one-picture clients and requests, upload caps.
 - `desktop/test/e2e/local-screen-e2e.js`: real Electron/X11 selected-window capture through a general session and
   actual MCP; compares model and attachment hashes, checks on-turn capture; browser stream permission/approval and
   cleanup. Uses a fake model and an isolated backend. Browser picker is replaced by a known canvas stream.
 
 Windows/macOS/Wayland require real-device testing; successful CI packaging is not proof of screen permissions.
+All screens on real multi-monitor hardware (display ids, mixed scale factors, the pointer on Wayland) too.

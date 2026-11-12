@@ -77,7 +77,9 @@
     $("reason").textContent = info.reason ? "“" + info.reason + "”" : "";
     const src = info.source || {};
     const kind = src.kind === "window" ? say("captureKindWindow", "Window") : say("captureKindScreen", "Screen");
-    $("source").textContent = kind + (src.name ? " — " + src.name : "");
+    $("source").textContent = info.screens > 1
+      ? say("captureAllScreens", "All screens ({n}) — the one in use first", { n: info.screens })
+      : kind + (src.name ? " — " + src.name : "");
     $("source").title = $("source").textContent;
     if (info.missing) $("missing").textContent = say("captureMissing", "The window chosen for {name} ({window}) is closed — this would share the whole screen instead.", { name, window: info.missing.name || "?" });
     $("note").textContent = info.hideAvatar

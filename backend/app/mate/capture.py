@@ -14,6 +14,11 @@ the session-list feed every window keeps open (``/ws/sessions``):
   conversation and answers ``POST /api/mates/{id}/capture/{request id}`` (:meth:`resolve`);
 * every request ends: an answer, a timeout (``capture.cancel`` is sent so the prompt goes away), the window
   closing, or the mate's turn ending. Nothing here ever holds image data.
+
+All screens (desktop app ≥ :data:`MULTI_BRIDGE`, the user chose "All screens"): a request that may take them
+(``multi``) gets one picture per screen — each uploaded with the request's proof, answered as ``attachments:
+[{id, role: main | sub, source}]``, the screen in use (``main``) first. The other side's version decides: an older
+app answers one ``attachment_id``, and an older server's request has no ``multi`` (the app then sends the main one).
 """
 
 from __future__ import annotations
@@ -25,6 +30,8 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 CAPTURE_BRIDGE = 1        # the desktop capture bridge this server speaks (hrhNative.capture.version)
+MULTI_BRIDGE = 4          # … and from which one it sends every screen of an all-screens share, the main one first
+MAX_PICTURES = 6          # pictures per capture (screens; the desktop app takes at most as many: MAX_SCREENS)
 ASK_TIMEOUT_S = 45        # the desktop app's "may she look?" prompt: no answer → no
 GRAB_TIMEOUT_S = 30       # capture + upload, once allowed
 SURFACE_RANK = {"mate-chat": 3, "console": 3, "mate-quick": 2, "mate-overlay": 1}
@@ -87,12 +94,43 @@ class Pending:
     revoked: bool = False
     revoked_code: str = ""
     shared: bool = False
+    multi: bool = False   # every screen of an all-screens share may come back (the window can send them)
     proof: str = field(default_factory=lambda: secrets.token_urlsafe(24))
     created_at: float = field(default_factory=time.monotonic)
 
 
 def _str(v: Any, limit: int) -> str:
     return v[:limit] if isinstance(v, str) else ""
+
+
+def _source(v: Any) -> dict[str, str]:
+    s = v if isinstance(v, dict) else {}
+    return {"name": " ".join(_str(s.get("name"), 200).split()), "kind": "window" if s.get("kind") == "window" else "screen"}
+
+
+def pictures(body: dict[str, Any]) -> list[dict[str, Any]]:
+    """The pictures of a window's answer, main first — ``[{id, role: main | sub, source: {name, kind}}]``:
+    ``attachments`` (a desktop app sharing all screens) or the one ``attachment_id`` (one screen or window, older
+    apps). At most :data:`MAX_PICTURES`, each once; exactly one ``main``: the first one marked so, else the first."""
+    rows = body.get("attachments") if isinstance(body.get("attachments"), list) else []
+    if not rows and body.get("attachment_id"):
+        rows = [{"id": body.get("attachment_id"), "role": "main", "source": body.get("source")}]
+    out: list[dict[str, Any]] = []
+    for it in rows:
+        aid = _str(it.get("id"), 80) if isinstance(it, dict) else ""
+        if aid and aid not in {p["id"] for p in out}:
+            out.append({"id": aid, "role": "main" if it.get("role") == "main" else "sub", "source": _source(it.get("source"))})
+    main = next((i for i, p in enumerate(out) if p["role"] == "main"), 0)
+    out = (out[main:main + 1] + out[:main] + out[main + 1:])[:MAX_PICTURES]
+    for i, p in enumerate(out):
+        p["role"] = "sub" if i else "main"
+    return out
+
+
+def screen_labels(n: int) -> list[str]:
+    """What each of ``n`` pictures of one capture is, in order — the screen in use first; one picture: no label
+    (the roles only: nothing looks at the pictures to name them)."""
+    return [""] * n if n <= 1 else ["main screen (the one in use)"] + [f"other screen {k}" for k in range(1, n)]
 
 
 class CaptureBroker:
@@ -188,9 +226,11 @@ class CaptureBroker:
         return any(p.mate_id == mate_id and not p.future.done() for p in self._pending.values())
 
     async def request(self, *, mate: dict[str, Any], session_id: str, device: str | None,
-                      reason: str = "", shared_only: bool = False, automatic: bool = False) -> dict[str, Any]:
+                      reason: str = "", shared_only: bool = False, automatic: bool = False,
+                      multi: bool = False) -> dict[str, Any]:
         """Ask a desktop app window for one capture. -> the window's answer: ``{"ok": True, "attachment_id",
-        "source"?, "width"?, "height"?, "client": Client}``; raises :class:`CaptureError` otherwise."""
+        "attachments": pictures(), "source"?, "client": Client}``; raises :class:`CaptureError` otherwise.
+        ``multi``: every screen may come back (when the window can send them; otherwise only the main one)."""
         if self.busy(mate["id"]) or any(p.session_id == session_id and not p.future.done() for p in self._pending.values()):
             raise CaptureError("busy")
         shared = self.shared_client(session_id, device)
@@ -203,7 +243,8 @@ class CaptureBroker:
             ask = False
         rid = "cap_" + secrets.token_urlsafe(12)
         loop = asyncio.get_running_loop()
-        p = Pending(id=rid, mate_id=mate["id"], session_id=session_id, conn=client.conn, future=loop.create_future(), shared=bool(shared))
+        p = Pending(id=rid, mate_id=mate["id"], session_id=session_id, conn=client.conn, future=loop.create_future(),
+                    shared=bool(shared), multi=bool(multi) and client.capture >= MULTI_BRIDGE)
         self._pending[rid] = p
         try:
             client.send({"type": "capture.request", "data": {
@@ -213,6 +254,7 @@ class CaptureBroker:
                 "automatic": automatic, "ask": ask, "hide_avatar": screen.get("hide_avatar") is not False,
                 "max_edge": int(screen.get("max_edge") or 0), "format": "png", "timeout_ms": int(self.ask_timeout * 1000),
                 "reason": _str(reason, 300), "same_device": bool(device and client.device == device),
+                "multi": p.multi, "max_pictures": MAX_PICTURES if p.multi else 1,
             }})
         except Exception as exc:  # noqa: BLE001 - the socket just went away
             self._pending.pop(rid, None)
@@ -237,7 +279,16 @@ class CaptureBroker:
                 self._cancel_on(client, rid)
             code = str(res.get("code") or "error")
             raise CaptureError(code if code in ERRORS else "error", _str(res.get("message"), 400))
-        return {**res, "id": rid, "client": client}
+        # (one picture unless more were asked for; an upload of this request that is not in the answer is dropped)
+        every = pictures(res)
+        pics = every[:MAX_PICTURES if p.multi else 1]
+        keep = {x["id"] for x in pics}
+        for aid in (p.uploads | {x["id"] for x in every}) - keep:
+            self.discard_upload(aid)
+        if not pics:
+            raise CaptureError("error", "The capture did not arrive as a picture.")
+        return {**res, "attachment_id": pics[0]["id"], "attachments": pics, "source": pics[0]["source"],
+                "id": rid, "client": client}
 
     def _cancel_on(self, client: Client, rid: str) -> None:
         try:
@@ -262,6 +313,8 @@ class CaptureBroker:
         p = self._pending.get(rid)
         if not p or p.session_id != sid or p.revoked or p.future.done() or not secrets.compare_digest(p.proof, proof):
             return False
+        if len(p.uploads - {aid}) >= MAX_PICTURES:
+            return False  # (one picture per screen, no more)
         if aid: p.uploads.add(aid)
         return True
 

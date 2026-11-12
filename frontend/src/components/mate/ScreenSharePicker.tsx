@@ -4,17 +4,21 @@ import {
 } from "../../stores/devicePreferences";
 /**
  * Share screen in the desktop app (the Mate composer's + menu): the screens and windows of this computer with small
- * previews, the one shared last preselected (this device), Share → one picture (the mate's size / format settings;
- * the avatar windows hide for it when that is on) attached to the message. mate/screenCapture.ts, docs/mate.md §4.
+ * previews, the one shared last preselected (this device), Share → one picture (the device's size setting) attached
+ * to the message. With more than one screen (desktop app ≥ 4) also "All screens": one picture per screen, the one in
+ * use first. mate/screenCapture.ts, docs/mate.md §4.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { type Mate } from "../../api/mates";
 import {
+  ALL_SCREENS,
+  allScreensSource,
+  canShareAllScreens,
   captureBridge,
   captureError,
   lastShared,
   rememberShared,
-  shotFile,
+  shotPictures,
   type CaptureInfo,
   type CaptureSource,
 } from "../../mate/screenCapture";
@@ -29,7 +33,8 @@ export default function ScreenSharePicker({
   onClose,
 }: {
   mate?: Mate;
-  onShot?: (f: File) => void;
+  /** the pictures taken (all screens: one per screen, the one in use first) */
+  onShot?: (files: File[]) => void;
   onSelect?: (source: CaptureSource) => void;
   onClose: () => void;
 }) {
@@ -65,11 +70,13 @@ export default function ScreenSharePicker({
     b.sources({ thumbnails: true, size: 320 }).then(
       (all) => {
         setList(all);
-        const last = settings.source?.id || lastShared();
+        const many = canShareAllScreens(all);
+        const last = settings.all_screens && many ? ALL_SCREENS : settings.source?.id || lastShared();
         setPick((cur) =>
-          cur && all.some((s) => s.id === cur)
+          cur && (all.some((s) => s.id === cur) || (cur === ALL_SCREENS && many))
             ? cur
-            : all.find((s) => s.id === last)?.id ||
+            : (last === ALL_SCREENS && many ? ALL_SCREENS : "") ||
+              all.find((s) => s.id === last)?.id ||
               all.find((s) => s.primary)?.id ||
               all[0]?.id ||
               "",
@@ -90,14 +97,17 @@ export default function ScreenSharePicker({
     if (!b || !sourceId) return;
     setBusy(true);
     setError("");
-    const selected = list?.find((s) => s.id === sourceId);
+    const all = sourceId === ALL_SCREENS;
+    const selected = all ? allScreensSource() : list?.find((s) => s.id === sourceId);
     if (onSelect && selected && (!onShot || operation === "ongoing")) {
       onSelect(selected);
       return;
     }
     const s = settings;
     try {
-      await patchDevicePreferences({ screen: { source: selected || null } });
+      await patchDevicePreferences({
+        screen: all ? { source: null, all_screens: true } : { source: selected || null, all_screens: false },
+      });
       if (!alive.current) return;
       // Close the source chooser as normal UI; never hide/move the application window.
       await new Promise<void>((resolve) =>
@@ -111,6 +121,7 @@ export default function ScreenSharePicker({
         maxEdge: s.max_edge,
         hideAvatar: false,
         hideConsole: false,
+        multi: all,
       });
       if (!alive.current) return;
       if (!shot.ok) {
@@ -118,7 +129,7 @@ export default function ScreenSharePicker({
         return;
       }
       rememberShared(sourceId);
-      onShot?.(shotFile(shot));
+      onShot?.(shotPictures(shot).map((p) => p.file));
     } catch {
       if (alive.current) setError(t("mate.shareFailed"));
     } finally {
@@ -128,7 +139,8 @@ export default function ScreenSharePicker({
 
   const screens = (list ?? []).filter((s) => s.kind === "screen");
   const windows = (list ?? []).filter((s) => s.kind === "window");
-  const tile = (s: CaptureSource) => (
+  const many = canShareAllScreens(list ?? []);
+  const tile = (s: CaptureSource, preview?: ReactNode, label?: string) => (
     <button
       key={s.id}
       onClick={() => setPick(s.id)}
@@ -146,7 +158,7 @@ export default function ScreenSharePicker({
       data-source-id={s.id}
     >
       <span className="grid aspect-video w-full place-items-center overflow-hidden rounded-md bg-surface-3">
-        {s.thumbnail ? (
+        {preview ?? (s.thumbnail ? (
           <img
             src={s.thumbnail}
             alt=""
@@ -154,17 +166,32 @@ export default function ScreenSharePicker({
           />
         ) : (
           <Icon name="monitor" size={18} className="text-content-faint" />
-        )}
+        ))}
       </span>
-      <span className="truncate text-[11.5px] text-content-dim" title={s.name}>
-        {s.kind === "screen"
+      <span className="truncate text-[11.5px] text-content-dim" title={label ?? s.name}>
+        {label ?? (s.kind === "screen"
           ? s.primary
             ? t("mate.shareMainScreen", { name: s.name })
             : s.name
-          : s.name}
+          : s.name)}
       </span>
     </button>
   );
+  // every screen side by side (each is its own picture)
+  const allTile = () =>
+    tile(
+      allScreensSource(),
+      <span className="flex h-full w-full items-center justify-center gap-0.5 p-0.5" data-testid="share-all-screens">
+        {screens.slice(0, 4).map((x) =>
+          x.thumbnail ? (
+            <img key={x.id} src={x.thumbnail} alt="" className="min-w-0 max-h-full flex-1 object-contain" />
+          ) : (
+            <Icon key={x.id} name="monitor" size={14} className="text-content-faint" />
+          ),
+        )}
+      </span>,
+      t("screen.allScreensCount", { count: screens.length }),
+    );
 
   if (busy)
     return (
@@ -275,8 +302,12 @@ export default function ScreenSharePicker({
                     {t("mate.shareScreens")}
                   </p>
                   <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3">
-                    {screens.map(tile)}
+                    {many && allTile()}
+                    {screens.map((s) => tile(s))}
                   </div>
+                  {pick === ALL_SCREENS && (
+                    <p className="mt-1.5 text-[11px] text-content-faint">{t("screen.allScreensHint")}</p>
+                  )}
                 </div>
               )}
               {!!windows.length && (
@@ -285,7 +316,7 @@ export default function ScreenSharePicker({
                     {t("mate.shareWindows")}
                   </p>
                   <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3">
-                    {windows.map(tile)}
+                    {windows.map((s) => tile(s))}
                   </div>
                 </div>
               )}

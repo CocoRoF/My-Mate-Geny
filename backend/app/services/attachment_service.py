@@ -374,6 +374,7 @@ class AttachmentService:
             path=row["path"],
             model_path=row["model_path"],
             model_mime=row["model_mime"],
+            label=str(row.get("screen_label") or ""),  # (one of several screen pictures: app/services/screen.py)
         )
 
     # ---- link / delete ----

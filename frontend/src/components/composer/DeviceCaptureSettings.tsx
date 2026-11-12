@@ -5,6 +5,8 @@ import {
   patchDevicePreferences,
 } from "../../stores/devicePreferences";
 import {
+  ALL_SCREENS,
+  canShareAllScreens,
   captureBridge,
   type CaptureSource,
   type CaptureInfo,
@@ -13,8 +15,9 @@ import { useT } from "../../i18n";
 import { openAppSettings } from "../../lib/openAppSettings";
 /**
  * This device's screen capture (docs/settings.md). `part`: "share" — what a share shows and when she looks (the
- * composer's share dialog: changed now and then); "device" — what is set once (Settings → Screen sharing: asking
- * first, the picture's size and format).
+ * composer's share dialog: changed now and then; with more than one screen also "All screens", each its own
+ * picture); "device" — what is set once (Settings → Screen sharing: what sharing is, asking first, the picture's
+ * size — the original by default).
  */
 export default function DeviceCaptureSettings({mate, part}: {mate?:Mate; part:"share"|"device"}) {
   const t = useT(),
@@ -34,12 +37,14 @@ export default function DeviceCaptureSettings({mate, part}: {mate?:Mate; part:"s
   const patch = (p: Partial<typeof s>) => {
     void patchDevicePreferences({ screen: p });
   };
+  const many = canShareAllScreens(sources);
   return (
     <div
       className="space-y-3 rounded-xl border border-border p-3 text-xs"
       data-testid="device-capture-settings"
     >
       <p className="font-medium">{t(part === "share" ? "screen.shareSettings" : "screen.deviceSettings")}</p>
+      {part === "device" && <p data-testid="device-capture-intro">{t("screen.deviceIntro")}</p>}
       <p className="text-content-faint">{t("screen.deviceSettingsHint")}</p>
 
       {part === "share" && <>
@@ -61,15 +66,17 @@ export default function DeviceCaptureSettings({mate, part}: {mate?:Mate; part:"s
           {t("screen.source")}
           <select
             className="min-w-0 max-w-full flex-1 basis-40 rounded border border-border bg-surface px-2 py-1"
-            value={s.source_invalid?"__invalid__":s.source?.id || ""}
+            value={s.all_screens?ALL_SCREENS:s.source_invalid?"__invalid__":s.source?.id || ""}
             onChange={(e) =>
-              patch({
+              patch(e.target.value === ALL_SCREENS ? { source: null, all_screens: true } : {
                 source: sources.find((x) => x.id === e.target.value) || null,
+                all_screens: false,
               })
             }
             data-testid="device-capture-source"
           >
             <option value="">{t("screen.primaryScreen")}</option>
+            {(many || s.all_screens) && <option value={ALL_SCREENS}>{t("screen.allScreens")}</option>}
             {s.source_invalid&&<option value="__invalid__" disabled>{t("screen.targetUnavailable")}</option>}
             {s.source && !sources.some((x) => x.id === s.source?.id) && (
               <option value={s.source.id}>{s.source.name}</option>
@@ -83,6 +90,7 @@ export default function DeviceCaptureSettings({mate, part}: {mate?:Mate; part:"s
           <button type="button" className="btn-ghost !px-2" onClick={refreshSources} data-testid="device-capture-refresh">{t("common.refresh")}</button>
         </label>
       )}
+      {!!captureBridge() && s.all_screens && <p className="text-content-faint">{t("screen.allScreensHint")}</p>}
       <button type="button" className="text-left text-accent hover:underline" onClick={() => openAppSettings("mate")} data-testid="device-capture-settings-link">
         {t("screen.moreInSettings")}
       </button>
@@ -110,7 +118,7 @@ export default function DeviceCaptureSettings({mate, part}: {mate?:Mate; part:"s
           className="min-w-0 flex-1 basis-40 rounded border border-border bg-surface px-2 py-1"
           data-testid="device-capture-size"
         >
-          {[1280, 1920, 2560, 0].map((n) => (
+          {[0, 2560, 1920, 1280].map((n) => (
             <option key={n} value={n}>
               {n ? `${n} px` : t("mateSettings.screenSizeFull")}
             </option>

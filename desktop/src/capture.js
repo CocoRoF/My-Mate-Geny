@@ -11,11 +11,19 @@
 // What to capture is remembered per mate on this computer (settings.json `captureSources`): "" = the primary
 // screen. A remembered window that is gone is never silently replaced by the whole screen — the prompt says so
 // (and asks), and a mate allowed to look without asking gets nothing.
+//
+// All screens (device preference `screen.all_screens`, the page's pseudo source ALL_SCREENS): every screen is taken
+// as its own picture, never stitched — the one the user works on (deps.activeDisplay: where the pointer moved last,
+// cursor-feed.js) first as the main one, the others after it. Only a page that says it takes them all (`multi`: the
+// server asked for them) gets them; otherwise — an older server — just the main one, in the usual one-picture shape.
 "use strict";
 
-const CAPTURE_VERSION = 3; // the bridge version the page reports to the server (app/mate/capture.py CAPTURE_BRIDGE)
+// the bridge version the page reports to the server (app/mate/capture.py CAPTURE_BRIDGE; ≥ 4: all screens, MULTI_BRIDGE)
+const CAPTURE_VERSION = 4;
 const ASK = { w: 440, h: 430 };
 const MAX_EDGES = new Set([0, 1280, 1920, 2560]);
+const ALL_SCREENS = "screen:all";
+const MAX_SCREENS = 6; // (the server takes at most this many pictures per capture: MAX_PICTURES)
 
 const kindOf = (id) => (String(id || "").startsWith("screen:") ? "screen" : "window");
 
@@ -59,6 +67,23 @@ function resolveSource(sources, pref, primaryDisplayId) {
   return { source: primary, fallback: true, missing: pref };
 }
 
+/**
+ * Every screen of an all-screens share, the main one first: the screen of `activeId` (the display in use), else the
+ * primary one, else the first; the others left to right, top to bottom (`displays`: screen.getAllDisplays()).
+ */
+function orderScreens(sources, displays, activeId, primaryDisplayId) {
+  const screens = (Array.isArray(sources) ? sources : []).filter((s) => s && s.id !== ALL_SCREENS && kindOf(s.id) === "screen");
+  const on = (id) => (s) => !!s.display_id && !!id && String(s.display_id) === String(id);
+  const main = screens.find(on(activeId)) || screens.find(on(primaryDisplayId)) || screens[0];
+  if (!main) return [];
+  const where = new Map((Array.isArray(displays) ? displays : []).map((d) => [String(d.id), d.bounds || {}]));
+  const pos = (s) => where.get(String(s.display_id)) || {};
+  const rest = screens.filter((s) => s !== main).map((s, i) => ({ s, i, x: pos(s).x, y: pos(s).y }));
+  const num = (v) => (Number.isFinite(v) ? v : Infinity);
+  rest.sort((a, b) => num(a.x) - num(b.x) || num(a.y) - num(b.y) || a.i - b.i);
+  return [main, ...rest.map((r) => r.s)].slice(0, MAX_SCREENS);
+}
+
 /** a request from the page, made safe: the size in range (the picture is always a PNG) */
 function cleanOptions(o = {}) {
   const edge = Number(o.maxEdge ?? o.max_edge);
@@ -73,7 +98,8 @@ const describe = (s) => (s ? { id: s.id, name: String(s.name || ""), kind: kindO
 /**
  * The capture service. deps: { desktopCapturer, screen, systemPreferences, shell?, readSettings, writeSettings,
  * platform, env (captures never change application window visibility),
- * ask: (info) => Promise<"allow"|"deny"|"timeout">, indicate: (state, info) => void, delay?: (ms) => Promise }
+ * ask: (info) => Promise<"allow"|"deny"|"timeout">, indicate: (state, info) => void, delay?: (ms) => Promise,
+ * activeDisplay?: () => the id of the display in use (all screens: its picture is the main one) }
  */
 function createCapture(d) {
   const platform = d.platform || process.platform;
@@ -146,17 +172,21 @@ function createCapture(d) {
     return all && typeof all === "object" ? all : {};
   };
   const validMate = (id) => (typeof id === "string" && /^[\w.:-]{1,100}$/.test(id) ? id : null);
+  const ALL = { id: ALL_SCREENS, name: "", kind: "screen", display_id: "" };
 
-  /** the source chosen for a mate on this computer (null: the primary screen) */
+  /** the source chosen for a mate on this computer (null: the primary screen; ALL_SCREENS: every screen) */
   function getChoice(mateId) {
-    if (d.preferences) return appPrefs().source;
+    if (d.preferences) return appPrefs().all_screens ? ALL : appPrefs().source;
     const id = validMate(mateId);
     const p = id ? prefs()[id] : null;
     return p && typeof p === "object" && typeof p.id === "string" ? p : null;
   }
 
   function setChoice(mateId, src) {
-    if (d.preferences) { d.preferences.patch({screen:{source:src}}); return true; }
+    if (d.preferences) {
+      d.preferences.patch({ screen: src && src.id === ALL_SCREENS ? { source: null, all_screens: true } : { source: src, all_screens: false } });
+      return true;
+    }
     const id = validMate(mateId);
     if (!id) return false;
     const next = { ...prefs() };
@@ -185,7 +215,38 @@ function createCapture(d) {
     return { data: out.toPNG(), mime: "image/png", width: size.width, height: size.height, source: describe(hit) };
   }
 
+  /**
+   * The pictures of `r` (resolve()): its source — or, all screens and a page that takes them (`multi`), every screen,
+   * each at its own size, main first ([] when the main one failed; another screen that came back empty is left out).
+   */
+  async function shootAll(r, o, id, multi) {
+    const list = multi && r.screens ? r.screens : [r.source];
+    const shots = [];
+    for (const [i, src] of list.entries()) {
+      if (cancelled.has(id)) break;
+      const shot = await shoot(src, o);
+      if (!shot && !i) return [];
+      if (shot) shots.push({ ...shot, role: i ? "sub" : "main" });
+    }
+    return shots;
+  }
+  // (the main picture in the one-picture shape every page knows; `shots`: all of them, main first, for a page that
+  // takes them)
+  const answer = (shots, multi) => {
+    const { role, ...main } = shots[0];
+    return { ok: true, ...main, ...(multi ? { shots } : {}) };
+  };
+
   const fail = (code, message = "") => ({ ok: false, code, message });
+  const noPicture = () => fail(wayland ? "empty" : platform === "darwin" && permission() !== "granted" ? "permission" : "empty");
+
+  function activeId() {
+    try {
+      return d.activeDisplay ? String(d.activeDisplay() || "") : "";
+    } catch {
+      return "";
+    }
+  }
 
   async function resolve(mateId, sourceId) {
     if (platform === "darwin" && permission() === "denied") return { error: fail("permission") };
@@ -197,30 +258,44 @@ function createCapture(d) {
     }
     if (!list || !list.length) return { error: fail(wayland ? "empty" : platform === "darwin" ? "permission" : "empty") };
     const pref = sourceId ? { id: sourceId, kind: kindOf(sourceId) } : getChoice(mateId);
+    if (pref && pref.id === ALL_SCREENS) {
+      let displays = [];
+      try {
+        displays = d.screen.getAllDisplays();
+      } catch {
+        /* headless */
+      }
+      const screens = orderScreens(list, displays, activeId(), primaryId());
+      if (!screens.length) return { error: fail("empty") };
+      return { source: screens[0], screens, fallback: false, missing: null };
+    }
     const r = resolveSource(list, pref, primaryId());
     if (!r.source) return { error: fail("empty") };
     return r;
   }
 
-  /** the user's own capture (Share screen): {ok, data, mime, width, height, source} | {ok: false, code} */
+  /**
+   * the user's own capture (Share screen): {ok, data, mime, width, height, source, shots?} | {ok: false, code}
+   * (o.multi: the page takes every screen of an all-screens share — `shots`, main first)
+   */
   async function grab(o = {}) {
     if (busy) return fail("busy");
     const opts = options(o);
     const id = String(o.id || `grab_${++manualSequence}`);
+    const multi = o.multi === true;
     busy = { id };
     try {
-      if(d.preferences && o.sourceId && appPrefs().source?.id !== o.sourceId) return fail("source_gone");
+      if (d.preferences && o.sourceId && (o.sourceId === ALL_SCREENS ? !appPrefs().all_screens : appPrefs().source?.id !== o.sourceId)) return fail("source_gone");
       const r = await resolve(o.mateId, typeof o.sourceId === "string" ? o.sourceId : "");
       if (r.error) return r.error;
       if(cancelled.has(id))return fail("stopped");
       if (r.fallback && o.sourceId) return fail("source_gone");
       d.indicate && d.indicate("start", {mateName:"Geny"});
-      const shot = await shoot(r.source, opts);
+      const shots = await shootAll(r, opts, id, multi);
       if(cancelled.has(id))return fail("stopped");
-      if (!shot) return fail(wayland ? "empty" : platform === "darwin" && permission() !== "granted" ? "permission" : "empty");
-      if (cancelled.has(id)) return fail("stopped");
-      d.indicate && d.indicate("done",{id,mateName:"Geny",source:shot.source});
-      return { ok: true, ...shot };
+      if (!shots.length) return noPicture();
+      d.indicate && d.indicate("done",{id,mateName:"Geny",source:shots[0].source,count:shots.length});
+      return answer(shots, multi);
     } catch (e) {
       return fail("error", String((e && e.message) || e));
     } finally {
@@ -231,14 +306,16 @@ function createCapture(d) {
 
   /**
    * The mate asked to see the screen (a capture.request from the server, handed over by the page):
-   * {id, mate_id, mate_name, ask, hide_avatar, max_edge, format, quality, timeout_ms, reason}
-   * → {ok: true, data, mime, width, height, source} | {ok: false, code: denied|timeout|busy|permission|empty|source_gone|error}
+   * {id, mate_id, mate_name, ask, hide_avatar, max_edge, format, quality, timeout_ms, reason, multi?}
+   * → {ok: true, data, mime, width, height, source, shots?} | {ok: false, code: denied|timeout|busy|permission|empty|source_gone|error}
+   * (multi: the server takes every screen of an all-screens share; asking once covers them all)
    */
   async function request(req = {}) {
     const id = String(req.id || "");
     if (!id) return fail("error", "no request id");
     if (busy) return fail("busy");
     let opts = options(req);
+    const multi = req.multi === true;
     busy = { id };
     const mateName = String(req.mate_name || "").slice(0, 80) || "Mate";
     try {
@@ -256,27 +333,27 @@ function createCapture(d) {
         } catch {
           /* no preview */
         }
-        const answer = await d.ask({
+        const said = await d.ask({
           id, mateName, reason: String(req.reason || "").slice(0, 300), source: describe(r.source), preview,
+          screens: multi && r.screens ? r.screens.length : 1,
           missing: r.fallback ? r.missing : null, hideAvatar: opts.hideAvatar, timeoutMs: Math.max(5000, Math.min(120000, Number(req.timeout_ms) || 45000)),
         });
         if (cancelled.has(id)) return fail("stopped");
-        if (answer !== "allow") return fail(answer === "timeout" ? "timeout" : answer === "stopped" ? "stopped" : "denied");
+        if (said !== "allow") return fail(said === "timeout" ? "timeout" : said === "stopped" ? "stopped" : "denied");
       } else if (r.fallback && r.missing && r.missing.kind === "window") {
         // allowed to look without asking — but only at what the user chose: never the whole screen instead
         return fail("source_gone");
       }
       opts = options(req);
       d.indicate && d.indicate("start", { mateName });
-      const shot = await shoot(r.source, opts);
+      const shots = await shootAll(r, opts, id, multi);
       if(cancelled.has(id))return fail("stopped");
-      if (!shot) {
+      if (!shots.length) {
         d.indicate && d.indicate("error", { mateName });
-        return fail(wayland ? "empty" : platform === "darwin" && permission() !== "granted" ? "permission" : "empty");
+        return noPicture();
       }
-      if (cancelled.has(id)) return fail("stopped");
-      d.indicate && d.indicate("done", { id,mateName, source: shot.source });
-      return { ok: true, ...shot };
+      d.indicate && d.indicate("done", { id,mateName, source: shots[0].source, count: shots.length });
+      return answer(shots, multi);
     } catch (e) {
       return fail("error", String((e && e.message) || e));
     } finally {
@@ -366,4 +443,4 @@ function createAsker(d) {
   return { ask, cancel, isOpen: () => !!current };
 }
 
-module.exports = { CAPTURE_VERSION, kindOf, fitWithin, displayPixels, resolveSource, cleanOptions, createCapture, createAsker };
+module.exports = { CAPTURE_VERSION, ALL_SCREENS, MAX_SCREENS, kindOf, fitWithin, displayPixels, resolveSource, orderScreens, cleanOptions, createCapture, createAsker };

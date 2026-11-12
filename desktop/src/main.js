@@ -661,11 +661,20 @@ const asker = capture.createAsker({
   BrowserWindow, screen: require("electron").screen, ipcMain, t,
   preload: path.join(__dirname, "preload.js"), file: path.join(__dirname, "capture-ask.html"), version: app.getVersion(),
 });
+// all screens shared: the screen in use (where the pointer moved last) is the main picture — sampled only while that
+// is chosen (cursor-feed.js createPointerActivity)
+const pointerActivity = require("./cursor-feed").createPointerActivity({ screen: {
+  getCursorScreenPoint: () => require("electron").screen.getCursorScreenPoint(),
+  getDisplayNearestPoint: (pt) => require("electron").screen.getDisplayNearestPoint(pt),
+  getAllDisplays: () => require("electron").screen.getAllDisplays(),
+  getPrimaryDisplay: () => require("electron").screen.getPrimaryDisplay(),
+} });
 const devicePreferences = require("./device-preferences").createDevicePreferences({
   readSettings, writeSettings:p=>writeSettings(p,{strict:true}),
   changed: (value,prev) => {
+    pointerActivity.run(value.screen.all_screens === true);
     if (prev && (captureSharing.active()||captureSharing.pending())) {
-      if(JSON.stringify(prev.screen.source)!==JSON.stringify(value.screen.source))captureSharing.pause("waiting_target");
+      if(JSON.stringify([prev.screen.source,!!prev.screen.all_screens])!==JSON.stringify([value.screen.source,!!value.screen.all_screens]))captureSharing.pause("waiting_target");
       else if(prev.sharing.sid!==value.sharing.sid||prev.sharing.origin!==value.sharing.origin)captureSharing.pause("waiting_session");
     }
     if(value.screen.proactive_enabled === true && (prev?.screen.proactive_enabled !== true || prev?.screen.proactive_mate!==value.screen.proactive_mate) && deviceEditOrigin) deviceLifecycle.add("enabled",deviceEditOrigin,value.screen.proactive_mate || readSettings().mateId);
@@ -675,6 +684,7 @@ const devicePreferences = require("./device-preferences").createDevicePreference
 const captures = capture.createCapture({
   desktopCapturer, screen: require("electron").screen, systemPreferences, readSettings, writeSettings, preferences: devicePreferences,
   ownSourceIds: () => mate.ownSourceIds(),
+  activeDisplay: () => pointerActivity.displayId(),
   ask: (info) => asker.ask(info),
   cancelAsk: (id) => asker.cancel(id),
   indicate: (state, info) => {
@@ -705,6 +715,7 @@ const quitController=require("./quit").createQuitController({
     if(!update)clean("updater",()=>updater.shutdown());
     for(const w of BrowserWindow.getAllWindows())if(!w.isDestroyed())clean("renderer",()=>w.webContents.send("app:quitting"));
     clean("capture",()=>captureSharing.pause("waiting_connection"));
+    clean("pointer",()=>pointerActivity.run(false));
     clean("runtime",()=>deviceRuntime.destroy());
     clean("mate",()=>mate.stop());
     clean("local runtime",()=>localRuntime.stopNow());
@@ -897,6 +908,7 @@ if (restartOnX11 && relaunchOnX11()) {
     }else if (!startedHidden) createWindow();
     mate.start();
     mate.setCaptureSharing(devicePreferences.get().sharing.enabled,false,captureSharing.snapshot().status);
+    pointerActivity.run(devicePreferences.get().screen.all_screens === true);
     deviceRuntime.ensure();
     runtimeTimer=setInterval(()=>deviceRuntime.ensure(),5000);
     startup.started();

@@ -1,8 +1,9 @@
-// src/cursor-feed.js: the pointer anywhere on the desktop for a page whose avatar looks at it.
+// src/cursor-feed.js: the pointer anywhere on the desktop for a page whose avatar looks at it, and the display in use
+// (all screens shared: its picture is the main one).
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createCursorFeed } = require("../src/cursor-feed");
+const { createCursorFeed, createPointerActivity } = require("../src/cursor-feed");
 
 function setup() {
   let pt = { x: 0, y: 0 };
@@ -62,4 +63,46 @@ test("stops when nobody follows, and forgets a page that is gone", () => {
   assert.equal(feed.size(), 0);
   feed.tick();
   assert.equal(timers.length, 0, "and stops then");
+});
+
+test("the display in use: where the pointer last moved (30 s), else the one under it, else the primary", () => {
+  let pt = { x: 10, y: 10 }, now = 1000, broken = false;
+  // display 1: x < 100; display 2: x ≥ 100 (the primary one)
+  let displays = [{ id: 1 }, { id: 2 }];
+  const timers = [];
+  const activity = createPointerActivity({
+    screen: {
+      getCursorScreenPoint: () => { if (broken) throw new Error("no pointer"); return pt; },
+      getDisplayNearestPoint: (p) => (p.x < 100 ? { id: 1 } : { id: 2 }),
+      getAllDisplays: () => displays,
+      getPrimaryDisplay: () => ({ id: 2 }),
+    },
+    now: () => now,
+    setInterval: (fn) => (timers.push(fn), { unref() {} }),
+    clearInterval: () => timers.splice(0),
+  });
+  assert.equal(activity.displayId(), "1", "never moved: the display under the pointer");
+  activity.run(true);
+  assert.equal(timers.length, 1);
+  activity.run(true);
+  assert.equal(timers.length, 1, "one sampler");
+  pt = { x: 150, y: 10 };
+  activity.tick();
+  pt = { x: 50, y: 10 }; // (it went back, not sampled yet)
+  now += 20_000;
+  assert.equal(activity.displayId(), "2", "it moved on display 2 within 30 s");
+  now += 11_000;
+  assert.equal(activity.displayId(), "1", "too long ago: the display under it");
+  activity.tick();
+  assert.equal(activity.displayId(), "1");
+  displays = [{ id: 2 }];
+  assert.equal(activity.displayId(), "2", "a display that is gone: the primary one");
+  displays = [{ id: 1 }, { id: 2 }];
+  broken = true;
+  activity.tick();
+  now += 60_000;
+  assert.equal(activity.displayId(), "2", "no pointer: the primary display");
+  activity.run(false);
+  assert.equal(timers.length, 0);
+  assert.equal(activity.running(), false);
 });

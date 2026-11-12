@@ -5,6 +5,8 @@ import type { CaptureSource } from "../mate/screenCapture";
 export interface DeviceScreen {
   source: CaptureSource | null;
   source_invalid?: boolean;
+  /** every screen, each its own picture, the one in use first (desktop app ≥ 4); a chosen source ends it */
+  all_screens?: boolean;
   approval: "ask" | "allow";
   max_edge: number;
   hide_avatar: boolean;
@@ -43,13 +45,15 @@ export interface DeviceBridge {
   onChanged(cb: (v: DevicePreferences) => void): () => void;
 }
 const KEY = "hrh_device_preferences_v1";
+const LEGACY_EDGE = 1920; // the size every mate had before it was this device's (desktop/src/device-preferences.js)
 const defaults: DevicePreferences = {
   version: 1,
   revision: 0,
   screen: {
     source: null,
+    all_screens: false,
     approval: "ask",
-    max_edge: 1920,
+    max_edge: 0, // a new device sends the picture as it is; saved sizes stay
     hide_avatar: false,
     proactive_enabled: null,
     proactive_interval: 180,
@@ -71,12 +75,14 @@ function normalize(raw: unknown): DevicePreferences {
   const r = v.screen || {}, q = v.sharing || {};
   const screen = {...defaults.screen,...r,hide_avatar:false};
   if (!["ask","allow"].includes(screen.approval)) screen.approval="ask";
-  if (![0,1280,1920,2560].includes(screen.max_edge)) screen.max_edge=1920;
+  if (![0,1280,1920,2560].includes(screen.max_edge)) screen.max_edge=defaults.screen.max_edge;
   screen.proactive_enabled=typeof screen.proactive_enabled==="boolean"?screen.proactive_enabled:null;
   screen.proactive_interval=Number.isFinite(screen.proactive_interval)?Math.max(60,Math.min(600,screen.proactive_interval)):180;
   const invalidSource = screen.source != null && (typeof screen.source.id!=="string" || !screen.source.id);
   if (!screen.source || invalidSource) screen.source=null;
   screen.source_invalid=!!screen.source_invalid||invalidSource;
+  screen.all_screens=screen.all_screens===true;
+  if (screen.all_screens) {screen.source=null;screen.source_invalid=false;}
   const sharing={...defaults.sharing,...q};
   sharing.origin=typeof sharing.origin==="string"&&/^https?:\/\//.test(sharing.origin)?sharing.origin.slice(0,300):"";
   sharing.sid=typeof sharing.sid==="string"?sharing.sid.slice(0,100):"";
@@ -183,6 +189,8 @@ export async function patchDevicePreferences(p: {
     if (p.screen) {
       next.screen = { ...prev.screen, ...p.screen };
       if("source" in p.screen)next.screen.source_invalid=false;
+      // (as on the desktop app: choosing a source — or the primary screen — ends all screens)
+      if("source" in p.screen && p.screen.all_screens!==true)next.screen.all_screens=false;
       next.migration.screenEdited = true;
     }
     if (typeof p.volume === "number" && Number.isFinite(p.volume)) {
@@ -232,8 +240,11 @@ export async function migrateDevicePreferences(
   if (!migration.imported) {
     if (!migration.volumeEdited)
       volume = Math.max(0, Math.min(3, chosen.volume));
-    if (!migration.screenEdited && chosen.screen)
-      screen = { ...screen, ...(chosen.screen as Partial<DeviceScreen>) };
+    if (!migration.screenEdited && chosen.screen) {
+      // (a mate's old default size is not a choice: a new device keeps the original size)
+      const { max_edge, ...rest } = chosen.screen as Partial<DeviceScreen>;
+      screen = { ...screen, ...rest, ...(max_edge === undefined || max_edge === LEGACY_EDGE ? {} : { max_edge }) } as DeviceScreen;
+    }
     migration.imported = true;
   }
   if (screen.proactive_enabled === null && chosen.proactive) screen = {...screen,proactive_enabled:!!chosen.proactive.enabled,proactive_interval:chosen.proactive.interval || 180};
