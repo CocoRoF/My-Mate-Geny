@@ -12,6 +12,8 @@ export interface Persona {
   /** the reply language (stored here: it also picks the localized name/greeting); edited in Conversation style */
   language: string;
   instructions: string;
+  /** who she is, as the character's data: nothing in the app shows or sets it ("" = not known) */
+  gender?: "female" | "male" | "";
 }
 
 export type TtsEngine = "google" | "off" | "browser" | "openai" | "elevenlabs" | "omnivoice" | "http";

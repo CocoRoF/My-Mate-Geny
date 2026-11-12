@@ -29,7 +29,10 @@ from app.harness.vendors import API_PROVIDERS
 
 # The persona is the character only — who she is (docs/mate.md §1 "Prompt composition"). How she talks (speech level,
 # how she calls the user, speech habits …) lives in the conversation style (``prefs``) and nowhere else.
-PERSONA_FIELDS = ("description", "personality", "greeting", "language", "instructions")
+PERSONA_FIELDS = ("description", "personality", "greeting", "language", "instructions", "gender")
+#: ``persona.gender``: who she is, as the character's data — nothing in the app shows it or sets it (a bundle says it, the
+#: Mate Create studio writes it, an older mate's is read from her text once: ``infer_gender``); "" = not known
+GENDERS = ("female", "male")
 # persona fields of older documents / clients / imports and where they live now (prefs): moved, never dropped
 LEGACY_STYLE_FIELDS = {"speech": "speech_style", "address": "address"}
 TTS_ENGINES = ("off", "browser", "google", "openai", "elevenlabs", "omnivoice", "http")
@@ -123,14 +126,39 @@ def normalize_persona(patch: Any, base: dict[str, Any] | None = None) -> dict[st
     out["language"] = "ko"
     out.update({k: v for k, v in (base or {}).items() if k in PERSONA_FIELDS})
     if patch is None:
+        out["gender"] = out["gender"] if out["gender"] in GENDERS else ""
         return out
     if not isinstance(patch, dict):
         raise MateError("persona must be an object")
     for k in PERSONA_FIELDS:
         if k in patch:
-            out[k] = _s(patch[k], 32).strip() if k == "language" else _s(patch[k])
+            out[k] = _s(patch[k], 32).strip() if k in ("language", "gender") else _s(patch[k])
     out["language"] = out["language"] or "ko"
+    out["gender"] = out["gender"].lower() if str(out["gender"]).lower() in GENDERS else ""
     return out
+
+
+# what her persona text says she is (``infer_gender``): words for a woman or a man, Korean and English. A Korean one counts
+# only where a word starts (체형 is no 형, 인형 no 형) and a compound like 남자친구 not at all (whose friend is it?).
+_KO_WORD = r"(?<![가-힣])"
+_FEMALE_CUES = re.compile(_KO_WORD + r"(?:그녀|여자(?!\s?친구)|여성|소녀|언니|누나|아가씨)"
+                          r"|\b(?:she|her|hers|herself|girl|woman|women|lady|female)\b", re.I)
+_MALE_CUES = re.compile(_KO_WORD + r"(?:그(?:는|가|의|를|에게)(?![가-힣])|남자(?!\s?친구)|남성|소년"
+                        r"|(?:형|오빠)(?:님|이|은|을|의|도|에게|한테|처럼|이랑)?(?![가-힣]))"
+                        r"|\b(?:he|him|his|himself|boy|man|men|guy|male)\b", re.I)
+
+
+def infer_gender(persona: dict[str, Any] | None, speech: Any = "") -> str:
+    """Who she is, as far as her own text tells (description, personality, how she talks): female | male when one side
+    clearly outweighs the other, else "" — never a guess."""
+    p = persona or {}
+    text = "\n".join(str(x or "") for x in (p.get("description"), p.get("personality"), p.get("speech"), speech))
+    f, m = len(_FEMALE_CUES.findall(text)), len(_MALE_CUES.findall(text))
+    if f and f >= 2 * m:
+        return "female"
+    if m and m >= 2 * f:
+        return "male"
+    return ""
 
 
 def normalize_llm(patch: Any, base: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -751,15 +779,16 @@ class MateStore:
         prefs = _loads(row["prefs"], {}) if "prefs" in row.keys() else {}
         now = datetime.now(timezone.utc)
         life = self.life_now(row["id"], builtin, prefs)
+        persona = normalize_persona(_loads(row["persona"], {}))
         who = self._who(builtin, raw_outfits, self.relation_doc(row["id"]) or A.new(), sim.for_state(life[0], life[1], now) if life else None,
-                        row["name"] or "")
+                        row["name"] or "", gender=persona["gender"], created_at=row["created_at"], seed=row["id"])
         return {
             "id": row["id"],
             "name": row["name"],
             "is_default": bool(row["is_default"]),
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
-            "persona": normalize_persona(_loads(row["persona"], {})),
+            "persona": persona,
             "avatar": avatar,
             "outfits": outfits_view(raw_outfits, avatar, relation["affinity"]),
             "llm": normalize_llm(None, _loads(row["llm"], {})),
@@ -794,12 +823,15 @@ class MateStore:
             return cur
         if not cur["name"].strip():
             raise MateError("a mate needs a name")
+        # (the studio says who she is; one it didn't: her own text, once)
+        persona = {**cur["persona"], "gender": cur["persona"]["gender"]
+                   or infer_gender(cur["persona"], (cur.get("prefs") or {}).get("speech_style"))}
         with self._lock:
             first = self._db.query_one("SELECT COUNT(*) AS c FROM mates WHERE draft = 0")["c"] == 0
             if first:
                 self._db.execute("UPDATE mates SET is_default = 0")
-            self._db.execute("UPDATE mates SET draft = 0, is_default = ?, created_at = ?, updated_at = ? WHERE id = ?",
-                             (1 if first else 0, now_iso(), now_iso(), mate_id))
+            self._db.execute("UPDATE mates SET draft = 0, is_default = ?, persona = ?, created_at = ?, updated_at = ? WHERE id = ?",
+                             (1 if first else 0, json.dumps(persona, ensure_ascii=False), now_iso(), now_iso(), mate_id))
         self._changed("created", mate_id)
         return self.get(mate_id)
 
@@ -829,6 +861,8 @@ class MateStore:
             prefs = {**moved, **(prefs if isinstance(prefs, dict) else {})}
         doc = (normalize_persona(persona), normalize_avatar(avatar), normalize_llm(llm), normalize_voice(voice),
                normalize_prefs(prefs))
+        if not (isinstance(persona, dict) and "gender" in persona):  # (an import, an older client: her own text tells)
+            doc[0]["gender"] = infer_gender(doc[0], doc[4].get("speech_style"))
         if doc[4].get("user_name"):  # (the user's name, one for all mates)
             self.set_user_name(doc[4]["user_name"])
         mid = new_id("mate_")
@@ -1258,6 +1292,21 @@ class MateStore:
                            "kept": [new for old, new in LEGACY_STYLE_FIELDS.items() if old in raw and new not in moved]})
         return report
 
+    def migrate_gender(self) -> list[dict[str, str]]:
+        """Once per mate, idempotent: a mate from before ``persona.gender`` gets it from her own text (``infer_gender``;
+        not known stays "" — never female by default). Drafts too; not a bundled mate: her bundle says, at the sync
+        (files.merge_builtin). → [{id, name, gender}] of those it was read for."""
+        out = []
+        for r in self._db.query("SELECT id, name, persona, prefs, builtin FROM mates"):
+            raw = _loads(r["persona"], {})
+            if not isinstance(raw, dict) or "gender" in raw or r["builtin"]:
+                continue
+            gender = infer_gender(raw, (_loads(r["prefs"], {}) or {}).get("speech_style"))
+            self._db.execute("UPDATE mates SET persona = ? WHERE id = ?",
+                             (json.dumps({**raw, "gender": gender}, ensure_ascii=False), r["id"]))
+            out.append({"id": r["id"], "name": r["name"] or "", "gender": gender})
+        return out
+
     def persona_legacy(self, mate_id: str) -> dict[str, Any] | None:
         row = self._db.query_one("SELECT persona_legacy FROM mates WHERE id = ?", (mate_id,))
         return _loads(row["persona_legacy"], {}) or None if row is not None else None
@@ -1683,21 +1732,24 @@ class MateStore:
 
     @staticmethod
     def _who(builtin: str | None, wardrobe: dict[str, Any], relation: dict[str, Any], life: dict[str, Any] | None = None,
-             name: str = "") -> dict[str, Any]:
+             name: str = "", *, gender: str = "", created_at: str | None = None, seed: str = "") -> dict[str, Any]:
+        """``created_at``: the mate's (when they first met, until the relationship knows it); ``seed``: her id (her own days)."""
         worn = wardrobe.get("worn") or DEFAULT_OUTFIT
         item = next((it for it in wardrobe.get("items") or [] if it["id"] == worn), None)
         outfit = {"id": worn, "name": item["name"], "feel": S.clean_feel(item.get("feel")), "since": wardrobe.get("worn_at")} if item else None
         on = relation["enabled"]
         return S.who(closeness=float(relation["affinity"]) / 100 if on else 0.33, sensitivity=relation["sensitivity"] if on else 1.0,
-                     builtin=builtin, away=on and relation["paused"], outfit=outfit, life=life, name=name)
+                     builtin=builtin, away=on and relation["paused"], outfit=outfit, life=life, name=name, gender=gender,
+                     met=relation.get("started_at") or created_at, seed=seed)
 
     def state_who(self, mate_id: str) -> dict[str, Any]:
-        row = self._db.query_one("SELECT builtin, outfits, prefs, name FROM mates WHERE id = ?", (mate_id,))
+        row = self._db.query_one("SELECT builtin, outfits, prefs, name, persona, created_at FROM mates WHERE id = ?", (mate_id,))
         if row is None:
             raise KeyError(f"mate not found: {mate_id}")
         life = self.life_now(mate_id, row["builtin"], _loads(row["prefs"], {}))
         return self._who(row["builtin"], _loads(row["outfits"], {}), self.relation_doc(mate_id) or A.new(),
-                         sim.for_state(life[0], life[1], datetime.now(timezone.utc)) if life else None, row["name"] or "")
+                         sim.for_state(life[0], life[1], datetime.now(timezone.utc)) if life else None, row["name"] or "",
+                         gender=normalize_persona(_loads(row["persona"], {}))["gender"], created_at=row["created_at"], seed=mate_id)
 
     def relation_summary(self, mate_id: str) -> dict[str, Any]:
         doc = self.relation_doc(mate_id) or A.new()

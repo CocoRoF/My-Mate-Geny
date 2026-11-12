@@ -31,7 +31,8 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
     "personality": "",
     "greeting": "",         // first line when a conversation starts
     "language": "ko",       // reply language (edited in Conversation style; also picks the localized name/greeting)
-    "instructions": ""      // extra standing instructions
+    "instructions": "",     // extra standing instructions
+    "gender": "female"      // who she is: female | male | "" (not known) — character data, never shown or set in the app
   },
   "avatar": Avatar,         // §2
   "llm":   { "provider": "claude", "model": "claude-sonnet-5-5", "effort": "low" },   // new mates talk on Sonnet ("" falls back to it too); or "codex" / "gpt-6.1-sol"
@@ -160,7 +161,10 @@ she edits her memories, and every source that could fight it is either gone or e
   localized with the bundle — it is said once, not a rule), `instructions` (standing instructions; the UI copy
   steers speech rules away from them), `language` (*stored* here because it also picks the localized name and
   greeting, the STT language and the built-in sync; *edited* in Conversation style and rendered in How you talk).
-  `persona.speech` / `persona.address` no longer exist.
+  `persona.speech` / `persona.address` no longer exist. `gender` (female | male | ""): the character's data — a bundle
+  says it (`personas/<key>.json`, else `files.BUILTIN_GENDERS`), the studio agent writes it (`update_mate_draft`'s
+  `gender`), an older or imported mate's is read once from her own text (`store.infer_gender`: Korean/English words for a
+  woman or a man; unclear stays ""); nothing in the app shows or edits it (her off days: docs/mate-memory-affinity.md §5.4).
 - **Conversation style (`prefs`) — how she talks, the only source:** `user_name`; `address` (what she calls the
   user, "" = her character's way); `self_ref` ("" = her character's way); `formality` (`auto` = her character's own
   level); `speech_style` (말버릇·말투 특징: rhythm, catchphrases, sample lines, the example exchanges and her
@@ -812,7 +816,7 @@ captures are deleted and no image bytes are copied into app logs or long-term me
 - `POST /api/mates/{id}/speech` `{text, emotion?}` → audio (cached by content
   hash on disk; header `X-Speech-Cache: hit|miss`); engines openai
   (`gpt-4o-mini-tts` default, voice default `alloy`; emotion → `instructions`) /
-  elevenlabs (`voice` required, `eleven_multilingual_v2` default) / omnivoice
+  elevenlabs (`voice` required, `eleven_v4_turbo` — Eleven v4 Turbo — default) / omnivoice
   (`/tts`; profile = `tts.profile` or `tts.voice`; emotion →
   `ref_audio_path`/`ref_text` of that emotion's clip, else neutral, else the
   first, resolved through the service's `GET /voices` like Geny's

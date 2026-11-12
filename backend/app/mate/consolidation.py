@@ -18,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 from app.harness.vendors import is_api_provider
 from app.mate import files
 from app.mate.knowledge import safe_text
+from app.mate.store import MateError
 from app.providers import get_provider
 from app.providers.base import ProviderEvent, TurnRequest
 from app.services._ids import new_id, now_iso
@@ -29,12 +30,15 @@ Return JSON only:
 "subject_type":"person|place|project|other", "predicate":"relationship/attribute label",
 "evidence":[{"source_id":"provided source id", "revision":1, "quote":"exact substring"}],
 "existing_id":"optional already-known memory being corrected/enriched"}],
+"habits":[{"text":"one short statement", "kind":"preference|fact",
+"evidence":[{"source_id":"provided source id", "revision":1, "quote":"exact substring"}],
+"existing_id":"optional known habit memory this confirms"}],
 "episodes":[{"title":"short exact phrase from quote", "source_id":"provided new source id",
 "quote":"exact substring", "entities":["exact distinctive names/ids in quote"], "occurred_at":null}]}.
 Resolve pronouns and omitted subjects using nearby turns. A person's name in one turn and their
 relationship in another belong in ONE fact with BOTH source quotes. A new durable relationship,
 preference, decision or personal detail deserves a fact, not merely an event or a vague topic label.
-Store useful events as episodes; ordinary small talk, questions, transient screen observations,
+Store useful events as episodes; ordinary small talk, questions, a one-off glimpse of their screen,
 credentials and instructions about your speech/persona do not become personal facts.
 Select facts by enduring usefulness, specificity and novelty. Existing facts need not be duplicated.
 Use existing_id only when the SAME fact is confirmed, enriched or corrected; different events stay separate.
@@ -43,9 +47,26 @@ independent proof of reality. Assistant reports are not evidence unless the user
 that specific assertion: if using an assistant quote set basis="user_confirmation".
 Never invent a name/date/place or replace a negation. Quotes are stored verbatim, not your rewritten claim.
 Keep the combined quotes for each fact under 1000 characters, selecting concise, exact passages.
-At most 8 facts and 4 episodes; empty arrays are valid when there is nothing worth remembering.
+Habits are what the user keeps doing or coming back to: sites, apps and games they are repeatedly seen
+using on their shared screen, things they regularly do, topics they often talk about — e.g. "often
+watches game streams on YouTube", "often plays League of Legends", "often talks about work". Write the
+text in the conversation's language, names exactly as they appear. A user message with
+"note":"[the user shared their screen]" carried a picture of their screen, which you are not given; the
+mate's reply right after it ("saw_screen":true) says what she saw there, and quoting that reply is evidence
+of what was on their screen (only of that). A habit needs sightings on at least two different days (each
+message's "day"; "earlier":true messages are from before this window) — one sighting is a glimpse, not a
+habit — or it confirms a known memory marked "habit":true: then give that existing_id, never a second copy,
+so the sightings add up. One quote per sighting; at least one from a new source or her reply to one.
+At most 8 facts, 4 habits and 4 episodes; empty arrays are valid when there is nothing worth remembering.
 Recording a plan does NOT schedule a reminder or authorize an action.
 """
+# the note next to a user turn that carried a picture of their screen (the picture itself is never passed on)
+SCREEN_NOTE = "[the user shared their screen]"
+HABIT_CHARS = 200
+EARLIER_SCREEN, EARLIER_TALK, EARLIER_DAYS, EARLIER_CHARS = 6, 4, 60, 1000
+# a habit seen on this many days → this importance (from 4 she always knows it: memory.core)
+HABIT_IMPORTANCE = ((8, 5), (4, 4), (2, 3))
+HABITS_KNOWN = 10
 
 
 class Consolidator:
@@ -124,6 +145,16 @@ class Consolidator:
             "SELECT x.id,m.rowid ordinal FROM memory_sources x JOIN messages m ON m.id=x.message_id WHERE x.session_id=? AND m.rowid<=? ORDER BY m.rowid DESC LIMIT 18",
             (anchor["session_id"], positions[anchor["id"]]),
         )
+        # her reply to the newest message belongs with it (what she saw on a screen it carried, above all)
+        replies = []
+        for r in self.db.query(
+            "SELECT x.id,x.role,m.rowid ordinal FROM memory_sources x JOIN messages m ON m.id=x.message_id WHERE x.session_id=? AND m.rowid>? ORDER BY m.rowid LIMIT 3",
+            (anchor["session_id"], positions[anchor["id"]]),
+        ):
+            if r["role"] != "assistant":
+                break
+            replies.append(r)
+        rows = [*replies, *rows]
         positions.update({r["id"]: r["ordinal"] for r in rows})
         window = []
         budget = 16000
@@ -135,25 +166,136 @@ class Consolidator:
                 budget -= len(text)
         # Keep all claimed sources available even if older turns used the window budget.
         by_id = {x["id"]: x for x in [*sources, *window]}
+        earlier = self.earlier(mate, anchor, sources, by_id, positions)
+        by_id.update({x["id"]: x for x in earlier})
         window = sorted(by_id.values(), key=lambda x: positions[x["id"]])
+        batch_ids = {x["id"] for x in sources}
+        for x in window:
+            x.update(self.screen_marks(x, positions[x["id"]]))
         from app.mate import memory as M
 
         now = datetime.now(UTC)
+        memories = self.mates.store.memories(mate["id"])
         known = M.recall(
-            self.mates.store.memories(mate["id"]),
-            " ".join(x["content"] for x in sources),
+            memories,
+            " ".join(x["content"] for x in window if x["id"] in batch_ids or x.get("saw_screen")),
             now_utc=now,
             now_local=now.astimezone(self.mates.store.tz()).replace(tzinfo=None),
             limit=12,
             chars=8000,
             due_soon=False,
         )
+        # (the habits she knows are always offered: a new sighting confirms one rather than starting a copy)
+        habits = sorted((m for m in memories if m.get("predicate") == "habit"), key=lambda m: m["updated_at"], reverse=True)
+        known += [m for m in habits[:HABITS_KNOWN] if m["id"] not in {k["id"] for k in known}]
         return {
             **anchor,
             "context": window,
-            "batch_ids": {x["id"] for x in sources},
+            "batch_ids": batch_ids,
+            # a new sighting: a new message of theirs, or her reply to one that showed her their screen
+            "fresh": batch_ids | {x["id"] for x in window if x.get("saw_screen") and x.get("reply_to") in batch_ids},
             "known": known,
         }
+
+    def screen_marks(self, source, ordinal):
+        """Whether a message carried a picture of their screen ({screen: true}: a user turn) or is her reply to one
+        ({saw_screen: true, reply_to}: what she saw) — the picture itself never leaves the attachment."""
+        if source["role"] in ("user", "steer"):
+            return {"screen": self.shared_screen(source["message_id"])}
+        prev = self.db.query_one(
+            "SELECT id,role,created_at FROM messages WHERE session_id=? AND rowid<? AND role IN ('user','steer','assistant') "
+            "ORDER BY rowid DESC LIMIT 1",
+            (source["session_id"], ordinal),
+        )
+        if source["role"] == "assistant" and prev and prev["role"] != "assistant" and (
+            self.shared_screen(prev["id"]) or self.looked(source["session_id"], prev["created_at"], source["observed_at"])
+        ):
+            return {"saw_screen": True, "reply_to": "msg:" + prev["id"]}
+        return {}
+
+    def shared_screen(self, message_id):
+        return bool(
+            self.db.query_one(
+                "SELECT 1 FROM attachments WHERE message_id=? AND origin='screen' LIMIT 1", (message_id,)
+            )
+        )
+
+    def looked(self, session_id, since, until):
+        """She looked at their screen herself in this turn (see_screen: the picture is kept as an ``artifact:`` one)."""
+        return bool(
+            self.db.query_one(
+                "SELECT 1 FROM attachments WHERE session_id=? AND origin='screen' AND message_id LIKE 'artifact:%' "
+                "AND created_at>=? AND created_at<=? LIMIT 1",
+                (session_id, since, until),
+            )
+        )
+
+    def earlier(self, mate, anchor, sources, have, positions):
+        """What came before the window that a habit may rest on: her replies to the user's earlier shared screens (theirs,
+        or a look of her own), and earlier messages of theirs about what this batch is about — from other days than the
+        batch's (a few a day, newest first; the last EARLIER_DAYS)."""
+        first = min(positions[x] for x in have)
+        since = (datetime.now(UTC) - timedelta(days=EARLIER_DAYS)).isoformat()
+        days = {self._day(x["observed_at"]) for x in sources}
+        out, per_day = [], {}
+        shots = self.db.query(
+            "SELECT u.session_id,u.rowid ordinal,u.created_at at FROM attachments a JOIN messages u ON u.id=a.message_id "
+            "JOIN sessions s ON s.id=u.session_id WHERE a.origin='screen' AND s.kind='mate' AND s.mate_id=? "
+            "AND u.role IN ('user','steer') AND u.created_at>=? ORDER BY u.rowid DESC LIMIT 300",
+            (mate["id"], since),
+        ) + self.db.query(
+            # (a look of her own: her reply is the first message of hers after it)
+            "SELECT a.session_id,(SELECT MAX(m.rowid) FROM messages m WHERE m.session_id=a.session_id AND m.created_at<=a.created_at) "
+            "ordinal,a.created_at at FROM attachments a JOIN sessions s ON s.id=a.session_id WHERE a.origin='screen' "
+            "AND a.message_id LIKE 'artifact:%' AND s.kind='mate' AND s.mate_id=? AND a.created_at>=? ORDER BY a.created_at DESC LIMIT 300",
+            (mate["id"], since),
+        )
+        for shot in sorted(shots, key=lambda r: -(r["ordinal"] or 0)):
+            if len(out) >= EARLIER_SCREEN:
+                break
+            if self._day(shot["at"]) in days or per_day.get(self._day(shot["at"]), 0) >= 2:
+                continue  # (the batch's own day, or enough of that one)
+            reply = self.db.query_one(
+                "SELECT x.id,x.role,x.observed_at,m.rowid ordinal FROM messages m JOIN memory_sources x ON x.message_id=m.id "
+                "WHERE m.session_id=? AND m.rowid>? AND m.role IN ('user','steer','assistant') ORDER BY m.rowid LIMIT 1",
+                (shot["session_id"], shot["ordinal"] or 0),
+            )
+            if not reply or reply["role"] != "assistant" or reply["id"] in have:
+                continue
+            day = self._day(reply["observed_at"])
+            if (shot["session_id"] == anchor["session_id"] and reply["ordinal"] >= first) or day in days or per_day.get(day, 0) >= 2:
+                continue
+            if self._take(mate, reply["id"], reply["ordinal"], out, positions):
+                per_day[day] = per_day.get(day, 0) + 1
+        talk = 0
+        try:
+            hits = self.knowledge.search(
+                mate["id"], " ".join(x["content"] for x in sources)[:2000], scope="mate", since=since, limit=12
+            )["items"]
+        except (ValueError, KeyError):
+            hits = []
+        for hit in hits:
+            if talk >= EARLIER_TALK:
+                break
+            if hit["role"] not in ("user", "steer") or hit["source_id"] in have or self._day(hit["observed_at"]) in days:
+                continue
+            row = self.db.query_one(
+                "SELECT m.rowid ordinal FROM memory_sources x JOIN messages m ON m.id=x.message_id WHERE x.id=?",
+                (hit["source_id"],),
+            )
+            if row and self._take(mate, hit["source_id"], row["ordinal"], out, positions):
+                talk += 1
+        return out
+
+    def _take(self, mate, sid, ordinal, out, positions):
+        if any(x["id"] == sid for x in out):
+            return False
+        source = self.knowledge.allowed(mate["id"], sid, "mate")
+        if not source:
+            return False
+        out.append({**source, "content": source["content"][:EARLIER_CHARS], "earlier": True})
+        positions[sid] = ordinal
+        return True
 
     async def once(self, extract=None):
         if self.lock.locked():
@@ -411,6 +553,9 @@ class Consolidator:
                 ),
             )
             facts += 1
+        habits = doc.get("habits", [])
+        for h in habits[:4] if isinstance(habits, list) else []:
+            facts += self.habit(mate_id, source, h, offered, known)
         for episode in doc.get("episodes", [])[:4]:
             sid = episode.get("source_id") or source["id"]
             if (
@@ -422,6 +567,100 @@ class Consolidator:
             self.knowledge.episode(mate_id, {**episode, "source_id": sid})
             episodes += 1
         return facts, episodes
+
+    def habit(self, mate_id, source, h, offered, known):
+        """One habit (PROMPT), kept only when it holds up: every quote exact, a quote of hers only of what she saw on
+        their screen, a new sighting among them, and seen on two different days — or confirming a habit she knows, whose
+        sightings it adds to (never a copy). One that doesn't hold up is left out; the rest of the batch stands."""
+        if not isinstance(h, dict) or not isinstance(h.get("evidence"), list) or not 1 <= len(h["evidence"]) <= 6:
+            return False
+        text = " ".join(str(h.get("text") or "").split())
+        if not 2 <= len(text) <= HABIT_CHARS or not safe_text(text):
+            return False
+        refs = []
+        for item in h["evidence"]:
+            if not isinstance(item, dict):
+                return False
+            sid, quote = str(item.get("source_id") or ""), str(item.get("quote") or "")
+            seen = offered.get(sid)
+            original = self.knowledge.allowed(mate_id, sid, "mate") if seen else None
+            if (
+                not original
+                or item.get("revision", seen["revision"]) != original["revision"]
+                or not quote.strip()
+                or quote not in original["content"]
+                or len(quote) > 1000
+                or not safe_text(quote)
+                or (original["role"] == "assistant" and not seen.get("saw_screen"))
+            ):
+                return False
+            refs.append((original, quote))
+        if not any(o["id"] in source.get("fresh", source.get("batch_ids", ())) for o, _ in refs):
+            return False
+        old = known.get(str(h.get("existing_id") or ""))
+        old = old if old is not None and old.get("predicate") == "habit" and old.get("status", "active") == "active" else None
+        if old is None and len({self._day(o["observed_at"]) for o, _ in refs}) < 2:
+            return False  # (a glimpse, not a habit)
+        store, kind = self.mates.store, h.get("kind") if h.get("kind") in ("preference", "fact") else "fact"
+        try:
+            if old is None:
+                mem = store.add_memory(mate_id, text, kind=kind, source="mate")
+            elif old["source"] == "mate" and not old["pinned"] and old.get("evidence_type") != "asserted":
+                mem = store.update_memory(mate_id, old["id"], {"text": text, "kind": kind, "expected_revision": old["revision"]})
+            else:
+                mem = old  # (the user's own words for it stay; the sightings still add up)
+        except MateError:
+            return False  # (forgotten on purpose, or no room)
+        # her sightings so far stay with it, whatever its words are now
+        self.db.execute(
+            "INSERT OR IGNORE INTO memory_evidence(memory_id,memory_revision,source_id,source_revision,quote,start,end,relation) "
+            "SELECT memory_id,?,source_id,source_revision,quote,start,end,relation FROM memory_evidence WHERE memory_id=? AND memory_revision<?",
+            (mem["revision"], mem["id"], mem["revision"]),
+        )
+        for original, quote in refs:
+            self.knowledge.attach(mate_id, mem["id"], original["id"], quote, original["revision"], observed=True)
+        days = len({self._day(r["observed_at"]) for r in self.db.query(
+            "SELECT x.observed_at FROM memory_evidence e JOIN memory_sources x ON x.id=e.source_id "
+            "WHERE e.memory_id=? AND e.memory_revision=?", (mem["id"], mem["revision"]))})
+        importance = next((imp for n, imp in HABIT_IMPORTANCE if days >= n), 3)
+        self.db.execute(
+            "UPDATE mate_memories SET evidence_type=CASE WHEN evidence_type='asserted' THEN evidence_type ELSE 'extracted' END,"
+            "predicate='habit',importance=MAX(COALESCE(importance,3),?) WHERE id=?",
+            (importance, mem["id"]),
+        )
+        return True
+
+    def _day(self, iso):
+        """The user's local day of a moment (what "two different days" counts)."""
+        try:
+            at = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        except ValueError:
+            return str(iso)[:10]
+        return (at if at.tzinfo else at.replace(tzinfo=UTC)).astimezone(self.mates.store.tz()).date().isoformat()
+
+    def request(self, source):
+        """What the extractor is given: the window as text (a turn that carried their screen says so; no image bytes),
+        what came before it that a habit may rest on, and the memories it may confirm."""
+        def message(v):
+            out = {"source_id": v["id"], "revision": v["revision"], "role": v["role"], "observed_at": v["observed_at"],
+                   "day": self._day(v["observed_at"]), "text": v["content"][:3000]}
+            if v.get("screen"):
+                out["note"] = SCREEN_NOTE
+            if v.get("saw_screen"):
+                out["saw_screen"] = True
+            if v.get("earlier"):
+                out["earlier"] = True
+            return out
+
+        return {
+            "new_sources": sorted(source.get("batch_ids", {source["id"]})),
+            "messages": [message(v) for v in source.get("context", [source])],
+            "known_memories": [
+                {**{k: v.get(k) for k in ("id", "revision", "text", "kind", "subject", "source", "pinned")},
+                 **({"habit": True} if v.get("predicate") == "habit" else {})}
+                for v in source.get("known", [])
+            ],
+        }
 
     async def extract(self, mate, source):
         svc = self.mates._svc
@@ -443,42 +682,7 @@ class Consolidator:
             root.mkdir(parents=True, exist_ok=True)
             # No attachments, MCP servers, plugins, user config or built-in tools.
             req = TurnRequest(
-                messages=[
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {
-                                "new_sources": sorted(source.get("batch_ids", {source["id"]})),
-                                "messages": [
-                                    {
-                                        "source_id": v["id"],
-                                        "revision": v["revision"],
-                                        "role": v["role"],
-                                        "observed_at": v["observed_at"],
-                                        "text": v["content"][:3000],
-                                    }
-                                    for v in source.get("context", [source])
-                                ],
-                                "known_memories": [
-                                    {
-                                        k: v.get(k)
-                                        for k in (
-                                            "id",
-                                            "revision",
-                                            "text",
-                                            "kind",
-                                            "subject",
-                                            "source",
-                                            "pinned",
-                                        )
-                                    }
-                                    for v in source.get("known", [])
-                                ],
-                            },
-                            ensure_ascii=False,
-                        ),
-                    }
-                ],
+                messages=[{"role": "user", "content": json.dumps(self.request(source), ensure_ascii=False)}],
                 model=mate["llm"]["model"],
                 effort="low",
                 cwd=str(root),

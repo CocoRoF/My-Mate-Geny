@@ -23,6 +23,10 @@ from app.mate.store import FORMALITIES, LENGTHS, TONE_KEYS, TONE_LEVELS, MateErr
 # persona fields the agent may write — the character only — with their length limits (a mate's own limit is 8000 per
 # field); how she talks goes into prefs (the conversation style): the speech level, the address, the speech habits
 PERSONA = {"description": 4000, "personality": 1500, "greeting": 600, "instructions": 2000, "language": 8}
+# who she is (``gender``: female | male, "" = not said): character data the app uses and nothing shows — so it is written at
+# the top of the fields, not as a persona text, and never shows as a filled field on the right
+GENDERS = ("female", "male", "")
+HIDDEN = ("gender",)
 PREFS_TEXT = {"user_name": 40, "address": 40, "self_ref": 40, "speech_style": 2000, "avoid": 500}
 # where the fields the persona had before live now
 _MOVED = {"speech": "prefs.speech_style", "address": "prefs.address"}
@@ -55,12 +59,12 @@ def agent_patch(args: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
     if not isinstance(args, dict):
         raise StudioError("expected an object")
     f = args.get("fields") if isinstance(args.get("fields"), dict) else args
-    allowed = {"name", "persona", "prefs", "concept"}
+    allowed = {"name", "gender", "persona", "prefs", "concept"}
     unknown = sorted(set(f) - allowed)
     if unknown:
-        raise StudioError(f"unknown field(s): {', '.join(unknown)} — you may write name, persona {{{', '.join(PERSONA)}}}, "
-                          f"prefs {{{', '.join(PREFS_TEXT)}, formality, length, emotion, tone}}, concept "
-                          f"{{{', '.join(CONCEPT)}}}. The voice, the language model and the avatar are the user's.")
+        raise StudioError(f"unknown field(s): {', '.join(unknown)} — you may write name, gender (female|male), persona "
+                          f"{{{', '.join(PERSONA)}}}, prefs {{{', '.join(PREFS_TEXT)}, formality, length, emotion, tone}}, "
+                          f"concept {{{', '.join(CONCEPT)}}}. The voice, the language model and the avatar are the user's.")
     patch: dict[str, Any] = {}
     if "name" in f:
         name = _text(f["name"], NAME_MAX, "name")
@@ -77,7 +81,8 @@ def agent_patch(args: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
                               + " — write it there (nothing was written)")
         bad = sorted(set(p) - set(PERSONA))
         if bad:
-            raise StudioError(f"unknown persona field(s): {', '.join(bad)} (one of {', '.join(PERSONA)})")
+            raise StudioError(f"unknown persona field(s): {', '.join(bad)} (one of {', '.join(PERSONA)})"
+                              + ("; gender is written at the top: fields.gender" if "gender" in bad else ""))
         out = {k: _text(v, PERSONA[k], f"persona.{k}") for k, v in p.items()}
         if "language" in out and out["language"] not in LANGS:
             raise StudioError(f"persona.language: one of {', '.join(LANGS)}")
@@ -87,6 +92,11 @@ def agent_patch(args: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
             raise StudioError(str(exc)) from None
         if out:
             patch["persona"] = out
+    if "gender" in f:
+        g = _text(f["gender"], 8, "gender").lower()
+        if g not in GENDERS:
+            raise StudioError("gender: female or male (or \"\" when the character has none)")
+        patch["persona"] = {**(patch.get("persona") or {}), "gender": g}
     if "prefs" in f:
         p = f["prefs"]
         if not isinstance(p, dict):
@@ -246,7 +256,7 @@ def snapshot(mate: dict[str, Any], concept: dict[str, Any] | None) -> dict[str, 
     pr = mate.get("prefs") or {}
     tts = ((mate.get("voice") or {}).get("tts") or {})
     llm = mate.get("llm") or {}
-    out: dict[str, Any] = {"name": mate.get("name") or ""}
+    out: dict[str, Any] = {"name": mate.get("name") or "", "gender": p.get("gender") or ""}
     for k in PERSONA:
         out[f"persona.{k}"] = p.get(k) or ""
     for k in ("user_name", "address", "self_ref", "formality", "speech_style", "length", "emotion", "avoid"):
@@ -266,7 +276,7 @@ def paths_of(patch: dict[str, Any], concept: dict[str, Any]) -> list[str]:
     if "name" in patch:
         out.append("name")
     for k in (patch.get("persona") or {}):
-        out.append(f"persona.{k}")
+        out.append("gender" if k == "gender" else f"persona.{k}")
     for k, v in (patch.get("prefs") or {}).items():
         if k == "tone" and isinstance(v, dict):
             out += [f"prefs.tone.{t}" for t in v]
@@ -284,6 +294,8 @@ def patch_for(path: str, value: Any) -> tuple[dict[str, Any], dict[str, str]]:
     """One flat path back to (a mate patch, a concept patch) — the per-field undo."""
     if path == "name":
         return {"name": value}, {}
+    if path == "gender":
+        return {"persona": {"gender": value or ""}}, {}
     head, _, rest = path.partition(".")
     if head == "persona" and rest in PERSONA:
         return {"persona": {rest: value}}, {}
@@ -307,6 +319,8 @@ def update_note(seen: dict[str, Any] | None, now: dict[str, Any]) -> str:
         return ""
     lines = []
     for k, v in now.items():
+        if k in HIDDEN and k not in seen:  # (not on the right: nothing the user changed there)
+            continue
         # (a field tracked since: set now, it shows once)
         if seen.get(k, "") != v and (k in seen or v not in ("", None, "none")):
             lines.append(f"- {k}: {_short(seen[k]) or '(empty)'} → {_short(v) or '(empty)'}")

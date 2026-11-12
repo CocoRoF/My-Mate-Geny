@@ -786,7 +786,10 @@ class Knowledge:
         revision: int | None = None,
         *,
         contextual: bool = False,
+        observed: bool = False,
     ) -> None:
+        """``observed``: one sighting of a habit (consolidation ``habit``) — what its words sum up, so the quote need not be
+        them."""
         source = self.allowed(mate_id, source_id)
         memory = self.db.query_one(
             "SELECT * FROM mate_memories WHERE id=? AND mate_id=?", (memory_id, mate_id)
@@ -795,7 +798,7 @@ class Knowledge:
             raise ValueError("An exact quote from accessible original evidence is required")
         if revision is not None and revision != source["revision"]:
             raise ValueError("Source revision changed")
-        if M.normalized(memory["text"]) != M.normalized(quote) and not (
+        if not observed and M.normalized(memory["text"]) != M.normalized(quote) and not (
             contextual and " ".join(quote.split()) in memory["text"]
         ):
             raise ValueError(
@@ -812,7 +815,7 @@ class Knowledge:
                 quote[:2000],
                 start,
                 start + len(quote[:2000]),
-                "context" if contextual else "supports",
+                "observed" if observed else "context" if contextual else "supports",
             ),
         )
 

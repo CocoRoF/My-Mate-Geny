@@ -84,6 +84,7 @@ const ko: Messages<"mate"> = {
   stateWhy_outfit: "“{name}” 차림이라서",
   stateWhy_was_outfit: "방금까지 “{name}” 차림이어서",
   stateWhy_user_wore: "설정에서 입혀 줘서",
+  stateWhy_off_day: "왠지 기분이 안 좋은 날",
   toolFeel: "{emotion}: {why}",
   toolFeelPassed: "{emotion} 가라앉음: {why}",
   toolFeelPlain: "마음을 살피는 중",

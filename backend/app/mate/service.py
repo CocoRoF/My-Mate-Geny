@@ -150,6 +150,12 @@ class MateService:
                           + "; the old persona is kept in persona_legacy", code="mate.style_migrated", detail=r)
         except Exception as exc:  # noqa: BLE001 - never stops the app
             self._log("warning", f"conversation style migration: {exc}")
+        try:
+            for r in store.migrate_gender():  # (who she is, from her own text, once; a bundle's own say comes with the sync)
+                self._log("info", f"“{r['name']}” ({r['id']}): gender read from her persona: {r['gender'] or 'not known'}",
+                          code="mate.gender_read", detail=r)
+        except Exception as exc:  # noqa: BLE001 - never stops the app
+            self._log("warning", f"gender migration: {exc}")
         self.sync_builtins()
         for m in store.list():
             try:
@@ -775,6 +781,10 @@ class MateService:
         given = out["item"]
         sent = given.get("sent") or given["id"]
         self._state_event(mate_id, lambda doc, who, now, tz: S.gifted(doc, who, now, tz))
+        try:
+            self._relation_gift(mate_id)
+        except Exception as exc:  # noqa: BLE001 - counting never fails the gift
+            self._log("warning", f"relationship gift for {mate_id}: {exc}")
         sid = mate.get("session_id")
         told = False
         if sid and not out["asleep"]:
@@ -947,6 +957,10 @@ class MateService:
             at = A._t(r["created_at"])
             if at is not None:
                 events.append((at, "memory", None))
+        for g in (self.store.relation_doc(mate["id"]) or {}).get("gifts") or []:  # (no message says she got them)
+            at = A._t(g)
+            if at is not None:
+                events.append((at, "gift", None))
         return events
 
     def _recompute(self, mate_id: str, settings: dict[str, Any] | None = None,
@@ -1134,6 +1148,15 @@ class MateService:
         before = A.clone(doc)
         A.advance(doc, now, tz)
         A.credit_memory(doc, now, tz)
+        self._save_relation(mate_id, doc, before)
+
+    def _relation_gift(self, mate_id: str) -> None:
+        """They sent her something: it counts for them, a little each (capped per day)."""
+        now, tz = datetime.now(timezone.utc), self.store.tz()
+        doc = self.relation_doc(mate_id)
+        before = A.clone(doc)
+        A.advance(doc, now, tz)
+        A.credit_gift(doc, now, tz)
         self._save_relation(mate_id, doc, before)
 
     def _relation_turn(self, mate_id: str, outcome: dict[str, Any]) -> None:

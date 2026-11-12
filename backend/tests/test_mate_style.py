@@ -96,7 +96,7 @@ def test_migration_moves_speech_and_address_keeps_what_the_user_set_and_backs_up
     report = {r["id"]: r for r in store.migrate_style()}
     own = store.get("mate_0a40000000000001")
     assert own["persona"] == {"description": "a fox", "personality": "", "greeting": "", "language": "en",
-                              "instructions": ""}
+                              "instructions": "", "gender": ""}
     assert own["prefs"]["speech_style"] == "Says ‘kon’." and own["prefs"]["address"] == "boss"
     assert own["prefs"]["user_name"] == "Kim"
     assert store.persona_legacy(own["id"])["speech"] == "Says ‘kon’." and store.persona_legacy(own["id"])["address"] == "boss"

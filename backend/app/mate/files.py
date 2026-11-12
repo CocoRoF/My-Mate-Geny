@@ -31,7 +31,7 @@ from typing import Any
 from urllib.parse import quote
 
 from app.config import settings
-from app.mate.store import DEFAULT_GREETINGS, MateError, normalize_avatar, takes_frame, with_new_clips
+from app.mate.store import DEFAULT_GREETINGS, GENDERS, MateError, normalize_avatar, takes_frame, with_new_clips
 from app.services._ids import new_id
 
 CORE_URL = "https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"
@@ -963,12 +963,14 @@ BUILTIN_ORDER = ("chaerin", "mao")  # the first is the default mate on a new ins
 #: bundled once, no longer shipped: what an install still has of them is settled at startup (MateService._retire_builtins)
 RETIRED_BUILTINS = ("estelle", "seoa")
 # persona fields a bundle sets for every language (greeting and name are per language) — the character only
-BUNDLE_FIELDS = ("description", "personality", "instructions")
+BUNDLE_FIELDS = ("description", "personality", "instructions", "gender")
+#: who a bundled character is when her personas/<key>.json doesn't say (Mao's files are not in the repository)
+BUILTIN_GENDERS = {"chaerin": "female", "mao": "female"}
 # conversation-style fields (prefs) a bundle sets and later updates merge field by field like the persona's; the
 # character's own speech level / address (``prefs.defaults``) are bundle data and always follow the bundle
 BUNDLE_STYLE_FIELDS = ("speech_style", "address")
 # bumped when the way bundles are composed changes (part of builtin_hash: every built-in is merged again once)
-BUNDLE_FORMAT = "2"
+BUNDLE_FORMAT = "3"  # (3: persona.gender)
 
 
 def builtin_keys() -> list[str]:
@@ -1003,7 +1005,7 @@ def _text(src: dict[str, Any], k: str) -> str:
 def compose_persona(src: dict[str, Any]) -> dict[str, str]:
     """A personas/<key>.json document -> the persona fields all languages share: who she is.
     tagline/profile/appearance/background/relationship/knowledge/world (+ interests) -> description;
-    personality; the author's note -> instructions. How she talks is compose_style()."""
+    personality; the author's note -> instructions; gender (female | male) as it is. How she talks is compose_style()."""
     sections = [
         ("", _text(src, "tagline")),
         ("", _text(src, "profile")),
@@ -1014,10 +1016,12 @@ def compose_persona(src: dict[str, Any]) -> dict[str, str]:
         ("Your world", _text(src, "world")),
         ("Things you like to talk about", ", ".join(_lines(src.get("interests")))),
     ]
+    gender = str(src.get("gender") or "").strip().lower()
     return {
         "description": "\n\n".join(f"{t}:\n{x}" if t else x for t, x in sections if x),
         "personality": _text(src, "personality"),
         "instructions": _text(src, "note"),
+        "gender": gender if gender in GENDERS else "",
     }
 
 
@@ -1069,13 +1073,16 @@ def builtin_bundle(key: str, doc: dict[str, Any] | None = None) -> dict[str, Any
     the user edited from the ones still as bundled."""
     path = BUILTIN_DIR / "personas" / f"{key}.json"
     if not path.is_file():
-        return legacy_bundle(doc if doc is not None else builtin_doc(key))
-    src = _read_json(path)
-    if not isinstance(src, dict):
-        raise MateError(f"built-in {key}: personas/{key}.json must be an object")
-    names = _per_lang(src.get("names")) or {"en": key}
-    return {"language": str(src.get("language") or "ko"), "names": names,
-            "greetings": _per_lang(src.get("greetings")), "persona": compose_persona(src), "style": compose_style(src)}
+        out = legacy_bundle(doc if doc is not None else builtin_doc(key))
+    else:
+        src = _read_json(path)
+        if not isinstance(src, dict):
+            raise MateError(f"built-in {key}: personas/{key}.json must be an object")
+        names = _per_lang(src.get("names")) or {"en": key}
+        out = {"language": str(src.get("language") or "ko"), "names": names,
+               "greetings": _per_lang(src.get("greetings")), "persona": compose_persona(src), "style": compose_style(src)}
+    out["persona"]["gender"] = out["persona"].get("gender") or BUILTIN_GENDERS.get(key, "")
+    return out
 
 
 def legacy_bundle(doc: dict[str, Any]) -> dict[str, Any]:

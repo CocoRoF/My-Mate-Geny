@@ -31,6 +31,7 @@ const codes = [
   ...kinds.map((k) => `hostile_${k}`),
   "hostile", // (logged before its kind was)
   "quiet_4",
+  "anniversary_30",
   "timezone UTC → Asia/Seoul",
 ];
 
@@ -49,6 +50,8 @@ test("every reason in her affinity log reads as words, in both languages", () =>
   assert.equal(whyText(ko_, "hostile"), "함부로 대함");
   assert.equal(whyText(ko_, "hostile_something_new"), "함부로 대함");
   assert.equal(whyText(ko_, "quiet_4"), "4일째 대화 없음");
+  assert.equal(whyText(ko_, "anniversary_100"), "함께한 지 100일");
+  assert.ok(codes.includes("smiled") && codes.includes("gift"), codes.join(" "));
   assert.equal(whyText(ko_, "a_code_from_later"), "그 밖의 변화");
 });
 
@@ -67,6 +70,9 @@ test("why she feels it: what was done to her by its kind, and a code with no wor
   assert.equal(stateWhy(t, { code: "rude" }), "거친 말을 들어서");
   assert.equal(stateWhy(t, { code: "said", quote: "안녕" }), "“안녕” 라는 말을 듣고");
   assert.equal(stateWhy(t, { text: "비가 와서" }), "비가 와서");
+  // (her off day: a neutral word for it, never why)
+  assert.equal(stateWhy(t, { code: "off_day" }), "왠지 기분이 안 좋은 날");
+  assert.equal(stateWhy(LANGS.en, { code: "off_day" }), "Just an off day");
   assert.equal(stateWhy(t, { code: "a_code_from_later" }), "");
   assert.equal(stateWhy(t, null), "");
 });

@@ -76,9 +76,9 @@ def test_daily_values_from_the_log_match_real_time_end_of_day_values():
 
 def test_a_set_value_is_not_a_gain_and_kinds_of_changes():
     r = A.replay(_history(), day(30), TZ)
-    A.set_value(r, 90, day(30, 13), TZ)
+    A.set_value(r, 50, day(30, 13), TZ)  # (back to trusted: reached before, lost in the quiet days)
     s = A.daily(r["log"], day(30).date(), TZ, 7)
-    assert s[-1]["v"] == 90.0 and s[-1]["up"] == 0  # (a value set by hand moves it, but it isn't "earned")
+    assert s[-1]["v"] == 50.0 and s[-1]["up"] == 0  # (a value set by hand moves it, but it isn't "earned")
     ch = A.changes(r)
     # the value set by hand, and the stage it moved to at that moment (shown first: it followed from it)
     assert [(c["why"], c["kind"]) for c in ch[:2]] == [("stage_now", "stage"), ("manual", "manual")]
@@ -88,8 +88,8 @@ def test_a_set_value_is_not_a_gain_and_kinds_of_changes():
     assert {c["stage"] for c in ups} >= {"familiar"}
     assert all(c["kind"] == "gain" for c in ch if c["why"] in ("talk", "memory", "lively"))
     assert all(c["kind"] == "loss" for c in ch if c["why"].startswith("quiet_"))
-    # newest first, also within one moment (day 1's first talk: the talk, its streak, a warm word — shown reversed)
-    assert [c["why"] for c in ch if c["at"] == A._iso(day(1, 9, 0))] == ["warm", "streak", "talk"]
+    # newest first, also within one moment (day 1's first talk: the talk, its streak, a warm word, her smile — reversed)
+    assert [c["why"] for c in ch if c["at"] == A._iso(day(1, 9, 0))] == ["smiled", "warm", "streak", "talk"]
 
 
 def test_the_next_stage_needs_only_the_affinity():
