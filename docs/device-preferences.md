@@ -26,22 +26,25 @@ clients/new devices; new clients never use them after migrating.
 - Import settings once. Switching Mate/server or refetching metadata never replaces an established device value.
   Additional legacy alternatives are archived. Recreating the store reads the persisted result.
 
-The **Mate screen-tool enabled flag remains per Mate, off by default**. It is an independent capability gate.
-Explicit screenshots/sharing are user actions; enabling sharing does not silently enable a Mate's `see_screen` tool.
+The legacy per-Mate screen flag (`mate.screen.enabled`) is archived data only, not a gate: a mate always has
+`see_screen`, and without a share it takes one look on the device the user talks from, through the desktop app,
+following this device's approval and size ([screen capture](screen-capture.md#entry-points)).
 Capture target, approval policy, size, format and JPEG quality are device-wide. The legacy avatar-hiding field is retained only for compatibility and is ignored; capture never hides app windows. Native v3 ignores
-stale per-Mate request quality settings. Automatic per-message/periodic captures use the user's explicit sharing
-mode; requested looks follow the app approval setting. Changing the global capture target stops an existing share.
+stale per-Mate request quality settings. A share's automatic per-message captures need no approval; requested looks
+follow the app approval setting. `sharing.mode` is written as `on_turn` (older values are kept and read, never
+offered). The capture target is what the Share screen picker picked last; changing it stops an existing share's old
+requests.
 
 ## Sharing ownership and avatar toolbar
 
 `desktop/src/capture-sharing.js` owns ephemeral sharing state and one renderer owner. Other windows mirror the
-state but never advertise a second server capture owner. Controls in any window send stop/mode changes to the
+state but never advertise a second server capture owner. Controls in any window send Stop to the
 owner. Closing the owning renderer or losing its server connection revokes live access; explicit sharing intent remains
 on disk for restoration. A server switch never carries live sharing into another origin.
 
-The hover toolbar's screen button opens the selected Mate chat with the same screen/window picker; that picker
-allows a single draft screenshot or persistent sharing. Active sharing has a blue button and red dot; pressing
-again stops it. Toolbar width includes all seven controls, independently of a small avatar's width. The Screen settings also expose start/stop. There are no persistent sharing bars in any composer,
+The hover toolbar's screen button opens the selected Mate chat with the same screen/window picker (no setup step);
+the pick turns sharing on. Active sharing has a blue button and red dot; pressing again stops it. The composer's
+Share screen, pressed while sharing, opens the picker with Stop. Toolbar width includes all seven controls, independently of a small avatar's width. There are no persistent sharing bars in any composer,
 window-title suffixes, or tray sharing entries/tooltips. Native capture completion targets one visible app
 window; one floating toast fades after 1.2 seconds and is removed after 1.5 seconds. Repeated completion ids
 are deduplicated and overlapping toasts are replaced. Older apps use one owner-local fallback toast.

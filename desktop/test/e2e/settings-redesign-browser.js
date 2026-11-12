@@ -201,19 +201,24 @@ async function desktop(browser, lang, theme) {
   await page.waitForSelector('[data-testid="mate-settings"]');
   assert.equal(await page.getAttribute('[data-testid="mate-tab-bond"]', "aria-selected"), "true");
 
-  step(`${tag}: the share dialog — what a share shows, and a link for the rest`);
+  step(`${tag}: Share screen — no setup dialog: in a browser its own picker is the picker`);
   await page.click('[data-testid="mate-settings-close"]');
   await page.click('[data-testid="mate-attach"]');
   const share = page.locator('[data-testid="attach-share-screen"]');
   if (await share.count()) {
+    // (the system picker can't be driven here: count it, and cancel it as a user would)
+    await page.evaluate(() => {
+      window.__pickers = 0;
+      navigator.mediaDevices.getDisplayMedia = async () => {
+        window.__pickers++;
+        throw new DOMException("cancelled", "NotAllowedError");
+      };
+    });
     await share.click();
-    await page.waitForSelector('[data-testid="screen-setup"]');
-    assert.equal(await count(page, '[data-testid="screen-setup"] [data-testid="screen-mode"]'), 1);
-    assert.equal(await count(page, '[data-testid="screen-setup"] [data-testid="device-capture-approval"]'), 0);
-    assert.equal(await count(page, '[data-testid="screen-setup"] [data-testid="device-capture-settings-link"]'), 1);
-    await shot(page, `${tag}-share-dialog`);
-    await page.click('[data-testid="device-capture-settings-link"]');
-    await until("Settings → Screen sharing", async () => new URL(page.url()).search === "?view=settings&tab=screen");
+    await until("the browser's picker", async () => (await page.evaluate(() => window.__pickers)) === 1);
+    for (const id of ["screen-setup", "screen-mode", "device-capture-settings-link", "share-picker", "screen-sharing"])
+      assert.equal(await count(page, `[data-testid="${id}"]`), 0, id);
+    await shot(page, `${tag}-share-browser-picker`);
   } else console.log("  (this browser can't share a screen: no Share screen entry)");
 
   assert.deepEqual(errors, [], "no page errors");

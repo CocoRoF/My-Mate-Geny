@@ -9,8 +9,8 @@ backend does the work (list/read/steer chats, create chats, find folders,
 memory) and returns the text the model sees.
 
 Env: HRH_MATE_API (e.g. http://127.0.0.1:8080), HRH_MATE_TOKEN, HRH_MATE_ID,
-HRH_MATE_SESSION; HRH_MATE_SCREEN=1 when the mate may look at the user's screen
-(``see_screen`` is listed only then; its picture comes back as MCP image content);
+HRH_MATE_SESSION; HRH_MATE_SCREEN=1 for ``see_screen`` (a mate's conversation always sets it; its picture
+comes back as MCP image content);
 HRH_MATE_STYLE=auto|ask when she may change her own conversation style
 (``update_conversation_style``; absent = not listed); HRH_MATE_OUTFIT=1 when she may change her clothes
 (``change_outfit``); HRH_MATE_STATE=1 for ``feel``; HRH_MATE_LIFE=1 for ``do_activity``.
@@ -334,16 +334,17 @@ DO_ACTIVITY = {
     },
 }
 
-# offered only while the mate's Screen setting is on (HRH_MATE_SCREEN=1, app/mate/service.configure_engine)
+# a mate's conversation always has it (HRH_MATE_SCREEN=1, app/mate/service.configure_engine), shared or not
 SEE_SCREEN = {
     "name": "see_screen",
     "description": (
-        "Look at the user's screen: their desktop app captures it (the screen or the window they chose in your "
-        "settings) and the picture comes back to you — when they share all their screens, one picture per screen, the "
-        "one they are using first; it also appears in your conversation. They may be asked to "
-        "allow it first — if they say no, or don't answer, you get no picture. Use it when they ask you to look, "
-        "or talk about something on their screen they haven't described. Works only while the desktop app is "
-        "open on their computer."
+        "Look at the user's screen now, whether or not they share it: one picture from the computer they are "
+        "talking from (the screen or window they chose; with all their screens, one picture per screen, the one "
+        "they are using first), and it also appears in your conversation. They may be asked to allow it first — if "
+        "they say no, or don't answer, you get no picture. Use it when they ask you to look (\"can you see my "
+        "screen?\", \"화면 봐 줘\", \"이거 봐\") or talk about something on their screen they haven't described; never "
+        "claim to see it without a picture. When it can't look (a browser without a share, no desktop app), the "
+        "result says why: tell them that briefly."
     ),
     "inputSchema": {
         "type": "object",

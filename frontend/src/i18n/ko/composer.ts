@@ -20,6 +20,7 @@ const ko: Messages<"composer"> = {
   tooMany: "메시지 하나에 파일은 최대 {count}개까지예요",
   // screen capture (docs/mate.md §4 "Seeing the screen")
   shareScreen: "화면 공유",
-  shareScreenHint: "화면이나 창 하나를 사진으로",
+  shareScreenHint: "메시지를 보낼 때마다 화면을 함께 보여 줘요",
+  shareScreenOn: "공유 중이에요 · 바꾸거나 끌 수 있어요",
 };
 export default ko;

@@ -240,15 +240,12 @@ async function captureCheck(con, note) {
   const facts = await con.eval(CAPTURE_BRIDGE_CHECK, 90000).catch((e) => ({ error: e.message }));
   note("capture.bridge", facts);
   if (!facts || !facts.sid) return facts;
-  // the user's way: + → Share screen → with each message → Enable sharing → the source → Share; then a message
+  // the user's way: + → Share screen → the source → Share (sharing is "with each message"); then a message
   const click = (sel) => con.eval(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
   const steps = [];
   const step = async (what, fn) => { try { steps.push([what, await fn()]); } catch (e) { steps.push([what, "error: " + e.message]); } };
   await step("attach", () => until("the + button", () => click('[data-testid="mate-attach"]'), 30000));
   await step("share entry", () => until("Share screen", () => click('[data-testid="attach-share-screen"]'), 10000));
-  await step("mode", () => until("the mode", () => con.eval(`(() => { const s = document.querySelector('[data-testid="screen-mode"]'); if (!s) return false;
-    const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set; set.call(s, "on_turn"); s.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`), 10000));
-  await step("start", () => until("Enable sharing", () => click('[data-testid="screen-start"]'), 10000));
   await step("source", () => until("a source", () => click('[data-testid="share-source"]'), 20000));
   await step("go", () => until("Share", () => click('[data-testid="share-go"]'), 10000));
   // (the hidden window that owns sharing takes it over: "ready" with its state)

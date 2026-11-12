@@ -93,7 +93,7 @@ export default function MateTab() {
       <SpeakFirst />
       {canShareScreen() && (
         <div data-testid="settings-screen">
-          <DeviceCaptureSettings part="device" />
+          <DeviceCaptureSettings />
         </div>
       )}
       <Live2DPanel />

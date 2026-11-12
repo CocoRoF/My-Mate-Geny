@@ -5,12 +5,14 @@ import { devicePreferences } from "../stores/devicePreferences";
  *
  * - Every window tells the server who it is on /ws/sessions (`clientHello`): the device (mate/voiceOwner `deviceId`),
  *   the window, the desktop app's version and its capture bridge (`window.hrhNative.capture`, desktop/src/capture.js).
- * - The mate's `see_screen`: the server sends `capture.request` to one desktop app window (the device the user talks
- *   from); `handleCaptureRequest` hands it to the app (it asks the user, hides the avatar windows, captures), uploads
- *   the picture as a normal attachment of the mate's conversation and answers `POST /api/mates/{id}/capture/{rid}`.
+ * - The mate's `see_screen`, on the device the user talks from: shared, the window sharing that conversation takes
+ *   a frame of the share (scope "session", mate/localScreen.ts); not shared, a desktop app window hands it to the app
+ *   (scope "mate": this device's chosen source, asking first unless this device allows it — a browser can't, the
+ *   server tells her why). `handleCaptureRequest` uploads the picture as a normal attachment of the mate's
+ *   conversation and answers `POST /api/mates/{id}/capture/{rid}` (shared: `/api/sessions/{sid}/screen/{rid}/result`).
  *   Every path answers — a failure too — so the mate's tool call never waits for nothing.
- * - The user's Share screen (the composer's + menu): the desktop app's own capture (a picker of screens and windows),
- *   or in a browser `getDisplayMedia` (the browser's picker) → one frame; phones have neither (the item is hidden).
+ * - The user's Share screen (the composer's + menu): the desktop app's picker of screens and windows, or in a browser
+ *   `getDisplayMedia` (the browser's picker) → sharing on, "with each message"; phones have neither (no item).
  * - All screens (desktop app ≥ CAPTURE_ALL_SCREENS, more than one display): every screen its own picture, never
  *   stitched, the one in use first ("main", the others "sub"). Each is uploaded with the request's proof; the answer
  *   lists them in that order — only when the server asked for them (`multi`), else the main one alone.
@@ -317,7 +319,6 @@ export async function handleCaptureRequest(raw: unknown): Promise<void> {
     );
   };
   try {
-    if(!devicePreferences().sharing.enabled && captureBridge()?.runtime)throw new Error(tr("screen.notSharing"));
     let pictures: SharedPicture[];
     if (req.scope === "session") {
       const shared = sharingSnapshot();
@@ -325,9 +326,13 @@ export async function handleCaptureRequest(raw: unknown): Promise<void> {
       // (one picture: named as the share is; all screens: each by its own screen)
       if (shared && pictures.length === 1) pictures[0].source = { id: "", name: shared.source, kind: shared.kind };
     } else {
+      // Not shared: she asked to look once — this app's chosen source, asking first and size as this device says.
       const bridge = captureBridge();
       if (!bridge) throw new Error(captureError("error"));
-      const shot = await bridge.request({...req,hide_avatar:false});
+      const screen = devicePreferences().screen;
+      const shot = await bridge.request({
+        ...req, hide_avatar: false, ask: !req.automatic && screen.approval === "ask", max_edge: screen.max_edge,
+      });
       if (!shot.ok) throw new Error(captureError(shot.code));
       pictures = shotPictures(shot);
     }
@@ -385,41 +390,6 @@ export function cancelCaptureRequest(raw: unknown): void {
 }
 
 // ── the user shares (Share screen) ────────────────────────────────────────
-
-/** a browser: one frame of what the user picks in the browser's own dialog */
-export async function grabWithBrowser(maxEdge = 1920): Promise<File> {
-  const stream = await navigator.mediaDevices.getDisplayMedia({
-    video: true,
-    audio: false,
-  });
-  try {
-    const video = document.createElement("video");
-    video.muted = true;
-    video.playsInline = true;
-    video.srcObject = stream;
-    await video.play();
-    // (the first frames can be blank while the capture starts)
-    await new Promise((r) => setTimeout(r, 250));
-    const w = video.videoWidth || 1280;
-    const h = video.videoHeight || 720;
-    const k =
-      maxEdge && Math.max(w, h) > maxEdge ? maxEdge / Math.max(w, h) : 1;
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(w * k));
-    canvas.height = Math.max(1, Math.round(h * k));
-    canvas
-      .getContext("2d")!
-      .drawImage(video, 0, 0, canvas.width, canvas.height);
-    video.srcObject = null;
-    const blob = await new Promise<Blob | null>((r) =>
-      canvas.toBlob(r, "image/png"),
-    );
-    if (!blob) throw new Error(tr("mate.shareFailed"));
-    return new File([blob], `screen-${stamp()}.png`, { type: "image/png" });
-  } finally {
-    stream.getTracks().forEach((t) => t.stop());
-  }
-}
 
 const SHARE_KEY = "hrh.mate.shareSource";
 /** the source the user shared last on this device (the picker preselects it) */

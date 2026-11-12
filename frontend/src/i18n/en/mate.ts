@@ -356,7 +356,7 @@ export default {
   shareScreens: "Screens",
   shareWindows: "Windows",
   shareMainScreen: "{name} (main)",
-  shareNote: "One picture, attached to your message — nothing is recorded.",
+  shareNote: "While you share, a picture of it goes with each message you send — nothing is recorded.",
   shareGo: "Share",
   // the conversation style (docs/mate.md "Prompt composition")
   toolStyleChanging: "Changing how she talks…",

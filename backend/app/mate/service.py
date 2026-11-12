@@ -530,21 +530,19 @@ class MateService:
         prefs = mate.get("prefs") or {}
         rel = self._advanced(mate_id, now_utc, tz) if mate_id else None
         relation = bool(rel and rel["enabled"])
-        screen = self.capture.shared_client(session["id"], self._svc.last_client_device(session["id"])) is not None
         stage = rel["stage"] if relation else None
         world = self.store.life_profile(mate.get("builtin"), prefs) if mate_id else None
         life = sim.catalog(world) if world else ""
         prompt = system_prompt(mate["name"], mate["persona"], core, prefs, more=len(memories) - len(core),
-                               relation=relation, stage=stage, screen=screen, life=life)
+                               relation=relation, stage=stage, life=life)
         # the per-turn context (docs/mate-memory-affinity.md §2): settings note (persona edited since the
         # conversation last ran), then the clock, recalled memories, the user's memory edits — prepended to
         # this message, never stored, never a restart
-        note = self._settings_note(mate_id, mate, relation, screen)
+        note = self._settings_note(mate_id, mate, relation)
         ctx = self._context(mate, req, engine, memories, core, prefs, now_utc, now_local, tz, rel) if mate_id else ""
         req.preamble = "\n\n".join(x for x in (note, ctx, req.preamble) if x)
-        # (see_screen on/off changes the prompt and the bridge's tool list: the engine restarts with it)
         req.prompt_key = prompt_key(mate["name"], mate["persona"], int(mate.get("memory_rev") or 0), prefs,
-                                    relation=relation, stage=stage, screen=screen, life=life)
+                                    relation=relation, stage=stage, life=life)
         if engine == "codex" and mate_id:
             prompt = self._codex_prompt(mate_id, prompt, req.prompt_key, resuming=bool(req.cli_session_id))
             req.engine_home = str(files.mate_dir(mate_id) / "codex")
@@ -570,7 +568,7 @@ class MateService:
                 "HRH_MATE_ID": mate_id,
                 "HRH_MATE_SESSION": session["id"],
                 "HRH_MATE_MEMORY": "1",
-                **({"HRH_MATE_SCREEN": "1"} if screen else {}),  # the bridge offers see_screen only then
+                "HRH_MATE_SCREEN": "1",  # see_screen, shared or not (the capture says why it can't look)
                 # update_conversation_style — unless she may not change her own style
                 **({"HRH_MATE_STYLE": prefs.get("self_edit") or "auto"}
                    if (prefs.get("self_edit") or "auto") != "off" else {}),
@@ -1234,15 +1232,15 @@ class MateService:
             A.credit_turn(doc, now, tz, str(outcome.get("input") or ""), "" if outcome.get("refused") else str(outcome.get("text") or ""), name)
         self._save_relation(mate_id, doc, before)
 
-    def _settings_note(self, mate_id: str, mate: dict[str, Any], relation: bool | None = None,
-                       screen: bool | None = None) -> str:
+    def _settings_note(self, mate_id: str, mate: dict[str, Any], relation: bool | None = None) -> str:
         """Compare the persona with the one the conversation last ran with
         (kept next to the mate's engine files) and remember the new one."""
         if not mate_id:
             return ""
         path = files.home_dir(mate_id) / ".applied-persona.json"
+        # ("screen": see_screen is always there now; a conversation that ran without it is told once)
         now = {"name": mate.get("name") or "", "persona": mate.get("persona") or {}, "prefs": mate.get("prefs") or {},
-               "relation": relation, "screen": screen}
+               "relation": relation, "screen": True}
         try:
             before = json.loads(path.read_text("utf-8"))
         except (OSError, ValueError):
@@ -1260,11 +1258,9 @@ class MateService:
                                     now["prefs"],
                                     old_relation=before.get("relation") if isinstance(before.get("relation"), bool)
                                     else None, new_relation=relation)
-        was = before.get("screen")
-        if isinstance(was, bool) and screen is not None and was != screen:
-            line = ("- You can now look at the user's screen with see_screen (when it helps; the user may be "
-                    "asked to allow it each time)." if screen else
-                    "- You can no longer look at the user's screen (see_screen is gone).")
+        if before.get("screen") is False:
+            line = ("- You can look at the user's screen with see_screen again: whenever they ask you to, whether or "
+                    "not they share it (they may be asked to allow each look).")
             note = (note.replace("</settings_update>", line + "\n</settings_update>") if note else
                     f"<settings_update>\nThe user changed your settings:\n{line}\n</settings_update>")
         return note
@@ -1791,13 +1787,13 @@ class MateService:
     # ---- seeing the screen (app/mate/capture.py; docs/mate.md §4 "Seeing the screen") ----
 
     async def _tool_see_screen(self, mate: dict[str, Any], sid: str, args: dict[str, Any]) -> "ToolImages":
-        if self.capture.shared_client(sid,self._svc.last_client_device(sid)) is None:
-            raise CaptureError("not_shared")
         if not self._svc.is_mate_session(sid):
             raise MateError("see_screen works only in your own conversation")
         reason = str(args.get("reason") or "").strip()
         device = self._svc.last_client_device(sid)
-        res = await self.capture.request(mate=mate, session_id=sid, device=device, reason=reason, shared_only=True, multi=True)
+        # Shared: the share. Not shared: one look through the desktop app of the device the user talks from (its
+        # chosen source; asked first unless it allows it) — never another computer; a browser says why it can't.
+        res = await self.capture.request(mate=mate, session_id=sid, device=device, reason=reason, multi=True)
         # (all screens: one picture per screen, the one in use first — capture.pictures)
         pics = res.get("attachments") or [{"id": res.get("attachment_id"), "role": "main", "source": res.get("source") or {}}]
         rows = [self._capture_row(sid, p["id"]) for p in pics]
@@ -1810,9 +1806,6 @@ class MateService:
             path = row["model_path"] if use_model else row["path"]
             data = await asyncio.to_thread(Path(path).read_bytes)
             images.append({"data": base64.b64encode(data).decode(), "mime": (row.get("model_mime") if use_model else None) or row["mime"]})
-        elsewhere = bool(device) and res["client"].device != device
-        where = (" (on the computer where the desktop app was used last — the user's last message came from "
-                 "another device)") if elsewhere else ""
 
         def about(row: dict[str, Any], src: Any) -> tuple[str, str]:
             src = src if isinstance(src, dict) else {}
@@ -1823,12 +1816,12 @@ class MateService:
         after = ("Talk only about what matters for what they asked; don't remember what you saw unless they ask you to.")
         if len(rows) == 1:
             what, label = about(rows[0], pics[0].get("source"))
-            text = (f"Screen captured: the {what}{label}{where} — [{rows[0]['id']}] {rows[0]['name']}. The picture is "
+            text = (f"Screen captured: the {what}{label} — [{rows[0]['id']}] {rows[0]['name']}. The picture is "
                     f"attached below for visual context and hidden from the chat transcript. {after}")
         else:
             lines = [f"{k}. {label}{about(row, p.get('source'))[1]} — [{row['id']}] {row['name']}"
                      for k, (row, p, label) in enumerate(zip(rows, pics, screen_labels(len(rows))), 1)]
-            text = "\n".join([f"Screens captured{where}: all {len(rows)} of the user's screens, one picture each, attached "
+            text = "\n".join([f"Screens captured: all {len(rows)} of the user's screens, one picture each, attached "
                               "below in this order:", *lines,
                               f"The pictures are for visual context and hidden from the chat transcript. {after}"])
         return ToolImages(text, images)

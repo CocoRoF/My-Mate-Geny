@@ -23,11 +23,14 @@ const native = {
 (win as any).hrhNative = { capture: native };
 const screen = await import("../src/mate/localScreen.ts");
 
-test("runtime sharing is explicit and session scoped; source, mode and stop follow immediately", async () => {
+test("sharing is explicit, session scoped and always \"with each message\"; stop follows immediately", async () => {
+  const prefs = await import("../src/stores/devicePreferences.ts");
   assert.deepEqual(screen.sharedScopes(), {});
   await assert.rejects(screen.localFrame("other"));
+  // (a mode saved by an older version is not what a share is any more)
+  await prefs.patchDevicePreferences({ sharing: { mode: "ask" } });
   await screen.beginSharing("sid", "Test conversation", { id: "screen:1:0", name: "Display 1", kind: "screen" });
-  assert.deepEqual(screen.sharedScopes(), { sid: "ask" });
+  assert.deepEqual(screen.sharedScopes(), { sid: "on_turn" });
   assert.deepEqual(calls[0], ["choice", "session:sid", { id: "screen:1:0", name: "Display 1", kind: "screen" }]);
   await assert.rejects(screen.localFrame("other"));
   const file = await screen.localFrame("sid", "req1", true);
@@ -36,13 +39,39 @@ test("runtime sharing is explicit and session scoped; source, mode and stop foll
   assert.equal(calls[1][1].ask, true);
   assert.equal(calls[1][1].hide_avatar, false);
   assert.equal(screen.sharingSnapshot()?.capturing, false);
-  screen.setSharingMode("on_turn");
-  assert.deepEqual(screen.sharedScopes(), { sid: "on_turn" });
-  screen.setSharingMode("observe", 1);
-  assert.equal(screen.sharingSnapshot()?.interval, 60);
   screen.stopSharing();
   assert.deepEqual(screen.sharedScopes(), {});
   await assert.rejects(screen.localFrame("sid"));
+});
+
+test("not shared, she still looks once: the desktop app's own capture, asking first as this device says", async () => {
+  const { handleCaptureRequest } = await import("../src/mate/screenCapture.ts");
+  const prefs = await import("../src/stores/devicePreferences.ts");
+  const posted: [string, any][] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    posted.push([url, JSON.parse(String(init.body))]);
+    return { ok: true, status: 200, json: async () => ({}) };
+  }) as unknown as typeof fetch;
+  const original = native.request;
+  native.request = async (req: any) => { calls.push(["request", req]); return { ok: false, code: "denied" } as any; };
+  (native as any).runtime = 1; // (the app-lifetime owner of a share — and sharing is off)
+  try {
+    assert.equal(prefs.devicePreferences().sharing.enabled, false);
+    for (const [approval, ask] of [["ask", true], ["allow", false]] as const) {
+      await prefs.patchDevicePreferences({ screen: { approval, max_edge: 1280 } });
+      await handleCaptureRequest({ id: `cap_${approval}`, mate_id: "m1", mate_name: "Geny", session_id: "sid", scope: "mate",
+        proof: "p", ask: !ask, hide_avatar: true, max_edge: 1920, timeout_ms: 45000 });
+      const req = calls.at(-1)[1];
+      assert.deepEqual([req.id, req.ask, req.max_edge, req.hide_avatar], [`cap_${approval}`, ask, 1280, false]);
+      assert.equal(posted.at(-1)![0], `/api/mates/m1/capture/cap_${approval}`);
+      assert.equal(posted.at(-1)![1].ok, false); // (every request is answered — here: no)
+    }
+  } finally {
+    native.request = original;
+    delete (native as any).runtime;
+    globalThis.fetch = realFetch;
+  }
 });
 
 test("a stopped or cancelled in-flight capture cannot deliver an image", async () => {

@@ -7,11 +7,13 @@ the session-list feed every window keeps open (``/ws/sessions``):
 * each window says who it is on that socket — ``{"type": "client", "device", "surface", "desktop", "capture",
   "active"}`` (``device`` = the browser profile's id, the one in ``client_msg_id``; ``desktop`` = the desktop
   app's version or null; ``capture`` = its capture bridge version, 0 = none; ``active`` = it was just focused);
-* :meth:`CaptureBroker.pick` chooses where to ask: a capture-capable window of the device the user's latest
-  message came from, else the most recently active capture-capable window (another computer of theirs);
-* the window gets ``{"type": "capture.request", "data": {...}}``; the desktop app asks the user (unless the mate
-  may look without asking), captures, the page uploads the picture as a normal attachment of the mate's
-  conversation and answers ``POST /api/mates/{id}/capture/{request id}`` (:meth:`resolve`);
+* :meth:`CaptureBroker.shared_client`: the window sharing this conversation on the device the user's latest
+  message came from (scope ``session``: what is shared). Not shared, :meth:`CaptureBroker.pick` chooses a desktop
+  app window of that same device (scope ``mate``: one look at the device's chosen source) — never another computer,
+  never a guess; a browser (or the phone app) can't capture without a share and says so (``browser``);
+* the window gets ``{"type": "capture.request", "data": {...}}``; the desktop app asks the user (unless the
+  device's setting allows it without asking), captures, the page uploads the picture as a normal attachment of the
+  mate's conversation and answers ``POST /api/mates/{id}/capture/{request id}`` (:meth:`resolve`);
 * every request ends: an answer, a timeout (``capture.cancel`` is sent so the prompt goes away), the window
   closing, or the mate's turn ending. Nothing here ever holds image data.
 
@@ -37,13 +39,17 @@ GRAB_TIMEOUT_S = 30       # capture + upload, once allowed
 SURFACE_RANK = {"mate-chat": 3, "console": 3, "mate-quick": 2, "mate-overlay": 1}
 
 ERRORS = {
-    "denied": "The user said no: they did not share their screen. Don't ask again right away; ask them to "
+    "denied": "The user said no: they did not let you see their screen. Don't ask again right away; ask them to "
               "describe what they see, or to share it themselves (Share screen in the + menu).",
     "timeout": "Nobody answered the screen-sharing prompt in time (counted as no). The user may be away from "
                "that computer.",
-    "no_app": "No desktop app is connected: looking at the screen only works while the user has the My Mate Geny "
-              "desktop app (Windows, macOS, Linux) open and signed in. In a browser or on a phone they can share "
-              "a screenshot themselves (the + menu).",
+    "no_app": "No desktop app is connected on the device the user is talking from, so nothing was looked at (never "
+              "another computer's screen). Looking works there with the My Mate Geny desktop app (Windows, macOS, "
+              "Linux) open and signed in, or in a browser while they share their screen (Share screen in the + menu).",
+    "browser": "The user is talking from a web browser (or the phone app), which can't take a picture of the screen "
+               "by itself: you can only see a screen they share. Tell them in a few words that in the browser they "
+               "need to turn on screen sharing (Share screen in the + menu) for you to see it, or use the desktop "
+               "app; on a phone it isn't possible.",
     "outdated": "The user's desktop app is too old for screen capture: ask them to update it (Settings → Updates "
                 "& Download in the app) and try again.",
     "busy": "Another screen capture is still waiting for the user's answer.",
@@ -54,8 +60,9 @@ ERRORS = {
     "empty": "The capture came back empty. On Linux with Wayland the system's share dialog must be allowed; on "
              "macOS the app needs Screen Recording permission.",
     "source_gone": "The window chosen for you to see is not open any more, so nothing was captured. The user "
-                   "can pick another one in your settings (Mate settings → Screen).",
-    "not_shared": "Screen sharing is not enabled for this session on the device you are talking from. Ask the user to open Screen capture in the attachment menu and enable sharing.",
+                   "can pick another one with Share screen (the + menu).",
+    "not_shared": "Screen sharing is not enabled for this conversation on the device the user is talking from. Ask "
+                  "them to turn it on: Share screen in the + menu, then pick a screen or window.",
     "error": "The screen capture failed on the user's computer.",
 }
 
@@ -194,24 +201,17 @@ class CaptureBroker:
     # ---- where to ask ----
 
     def pick(self, device: str | None) -> tuple[Client | None, str]:
-        """(the window to ask, "") or (None, why: no_app | outdated). The device the user talks from first;
-        within it (or overall) the most recently used window, mate chat / console over the quick card over
-        the avatar window."""
-        able = [c for c in self._clients.values() if c.desktop and c.capture >= CAPTURE_BRIDGE]
-        if not able:
-            old = any(c.desktop for c in self._clients.values())
-            return None, "outdated" if old else "no_app"
-        here = [c for c in able if device and c.device == device]
-        if device and not here:
-            return None, "no_app"
-        if not device and len({c.device for c in able}) > 1:
-            return None, "not_shared"
-        pool = here or able
-        best = max(pool, key=lambda c: (c.active_at, SURFACE_RANK.get(c.surface, 0), c.connected_at))
-        # (one device: every window shares the device's last use — prefer the window the user works in)
-        same = [c for c in pool if c.device == best.device]
-        best = max(same, key=lambda c: (SURFACE_RANK.get(c.surface, 0), c.active_at))
-        return best, ""
+        """(the desktop app window to ask, "") or (None, why). Only the device the user talks from — never another
+        computer, never a guess when it is unknown: mate chat / console over the quick card over the avatar window,
+        then the most recently used. why: no_app (nothing of that device is connected, or no device) | outdated (its
+        desktop app has no capture) | browser (a browser or the phone app: no capture without a share)."""
+        here = [c for c in self._clients.values() if device and c.device == device]
+        able = [c for c in here if c.desktop and c.capture >= CAPTURE_BRIDGE]
+        if able:
+            return max(able, key=lambda c: (SURFACE_RANK.get(c.surface, 0), c.active_at, c.connected_at)), ""
+        if any(c.desktop for c in here):
+            return None, "outdated"
+        return None, "browser" if here else "no_app"
 
     def shared_client(self, sid: str, device: str | None) -> Client | None:
         # Session consent belongs to one connection and device. Never guess a different computer.
@@ -228,9 +228,11 @@ class CaptureBroker:
     async def request(self, *, mate: dict[str, Any], session_id: str, device: str | None,
                       reason: str = "", shared_only: bool = False, automatic: bool = False,
                       multi: bool = False) -> dict[str, Any]:
-        """Ask a desktop app window for one capture. -> the window's answer: ``{"ok": True, "attachment_id",
-        "attachments": pictures(), "source"?, "client": Client}``; raises :class:`CaptureError` otherwise.
-        ``multi``: every screen may come back (when the window can send them; otherwise only the main one)."""
+        """Ask for one capture: the window sharing this conversation on ``device`` (scope "session"), else — unless
+        ``shared_only`` — that device's desktop app (scope "mate": its chosen source, asked first unless its setting
+        allows it; :meth:`pick`). -> the window's answer: ``{"ok": True, "attachment_id", "attachments": pictures(),
+        "source"?, "client": Client}``; raises :class:`CaptureError` otherwise. ``multi``: every screen may come
+        back (when the window can send them; otherwise only the main one)."""
         if self.busy(mate["id"]) or any(p.session_id == session_id and not p.future.done() for p in self._pending.values()):
             raise CaptureError("busy")
         shared = self.shared_client(session_id, device)

@@ -36,20 +36,20 @@ const launch=async()=>{
  await con.eval("location.href='/?view=mate',true");await until('composer',()=>con.eval("!!document.querySelector('[data-testid=mate-attach]')"));
  await click(con,'[data-testid=mate-attach]');await until('share entry',()=>con.eval("!!document.querySelector('[data-testid=attach-share-screen]')"));
  await shot(con,'screen-one-switch-before');
- await click(con,'[data-testid=attach-share-screen]');await until('setup',()=>con.eval("!!document.querySelector('[data-testid=screen-start]')"));await click(con,'[data-testid=screen-start]');
+ await click(con,'[data-testid=attach-share-screen]');
  await until('source picker',()=>con.eval("!!document.querySelector('[data-testid=share-source]')"));await click(con,'[data-testid=share-source]');await click(con,'[data-testid=share-go]');
  await until('first ready',async()=>!!(await con.eval('window.hrhNative.capture.sharing.get()')).state);
  let hidden=await app.page(/surface=device-runtime/);assert.equal((await hidden.eval('window.hrhNative.capture.sharing.get()')).owner,true);assert.equal((await con.eval('window.hrhNative.capture.sharing.get()')).owner,false);
  assert.equal((await con.eval('window.hrhNative.device.get()')).sharing.mate_id,mate.id);
  await shot(con,'screen-one-switch-on');
- // The same component in two UI windows, changes immediately reach sole background owner.
- await until('chat input',()=>chat.eval("!!document.querySelector('[data-testid=mate-attach]')"));await click(chat,'[data-testid=mate-attach]');await click(chat,'[data-testid=attach-share-screen]');await until('chat setup',()=>chat.eval("!!document.querySelector('[data-testid=screen-setup]')"));
- await select(chat,'[data-testid=screen-mode]','ask');await until('running mode changed',async()=>(await con.eval('window.hrhNative.capture.sharing.get()')).state?.mode==='ask');
- await select(con,'[data-testid=device-capture-format]','png');await until('format synced',()=>chat.eval("document.querySelector('[data-testid=device-capture-format]').value==='png'"));
- await select(chat,'[data-testid=device-capture-size]','2560');await until('size synced',()=>con.eval("document.querySelector('[data-testid=device-capture-size]').value==='2560'"));
+ // The other UI window shows the same share (Stop, or a pick changes it), owned by the background window; a device
+ // setting changed in one window reaches the others at once.
+ await until('chat input',()=>chat.eval("!!document.querySelector('[data-testid=mate-attach]')"));await click(chat,'[data-testid=mate-attach]');await click(chat,'[data-testid=attach-share-screen]');await until('chat picker, sharing',()=>chat.eval("!!document.querySelector('[data-testid=share-stop]')"));
+ assert.equal((await con.eval('window.hrhNative.capture.sharing.get()')).state?.mode,'on_turn');
+ await chat.eval('window.hrhNative.device.patch({screen:{max_edge:2560}}).then(()=>true)');await until('size synced',async()=>(await con.eval('window.hrhNative.device.get()')).screen.max_edge===2560);
  await app.main("cwin().setBounds({x:0,y:0,width:1000,height:900});win('surface=mate-chat').setBounds({x:1010,y:0,width:850,height:900});return true");rootShot('two-windows-synchronized');
  // An actual MCP see_screen request works while the old per-Mate permission is OFF.
- await click(chat,'[data-testid=screen-apply]');
+ await click(chat,'[data-testid=share-cancel]');
  await app.main("global.__captureVisibility=[];for(const w of BrowserWindow.getAllWindows())if(!w.webContents.getURL().includes('device-runtime'))for(const kind of ['show','hide','minimize','restore'])w.on(kind,()=>global.__captureVisibility.push(kind));return true");
  const ask=async()=>{await chat.eval("document.querySelector('[data-testid=mate-input]').focus(),true");await chat.send('Input.insertText',{text:'look at my screen'});await chat.send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:'\r'});await chat.send('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});};
  await ask();let prompt=await app.page(/capture-ask\.html/,30000);await until('capture preview',()=>prompt.eval("!!document.querySelector('[data-testid=capture-ask-preview]')"));await shot(prompt,'request-approval-one-switch');
@@ -62,9 +62,9 @@ const launch=async()=>{
  await app.stop();con=await launch();
  await until('process restart ready',async()=>!!(await con.eval('window.hrhNative.capture.sharing.get()')).state);hidden=await app.page(/surface=device-runtime/);
  assert.equal((await con.eval('window.hrhNative.device.context()')).deviceId,identity);
- let prefs=await con.eval('window.hrhNative.device.get()');assert.equal(prefs.screen.max_edge,2560);assert.equal(prefs.screen.format,'png');assert.equal(prefs.sharing.mode,'ask');
+ let prefs=await con.eval('window.hrhNative.device.get()');assert.equal(prefs.screen.max_edge,2560);assert.equal(prefs.sharing.mode,'on_turn');
  await con.send('Page.reload');await until('reload bridge',()=>con.eval('!!window.hrhNative?.device'));await until('reload still ready',async()=>!!(await con.eval('window.hrhNative.capture.sharing.get()')).state);
- console.log('PASS actual start UI has one switch; two-way quality/mode sync; app restart/reload resumes and stable device identity persists');
+ console.log('PASS the start UI is the picker alone; device settings sync; app restart/reload resumes and stable device identity persists');
  // Close every visible app window. Background connection remains the actual share owner.
  await app.main("setTimeout(()=>{for(const w of BrowserWindow.getAllWindows())if(!w.webContents.getURL().includes('surface=device-runtime')&&!w.isDestroyed())w.destroy();},50);return true");await sleep(400);console.log('all user windows closed');
  console.log('remaining windows',await app.main("return BrowserWindow.getAllWindows().map(w=>({id:w.id,url:w.webContents.getURL(),visible:w.isVisible()}))"));

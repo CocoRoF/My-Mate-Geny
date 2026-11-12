@@ -61,7 +61,7 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
   "relation": { "enabled", "paused", "stage", "affinity", "show_indicator", "avatar_mood" },  // read-only summary (§5 below)
   "state": { "label", "level", "top": [{ "emotion", "v", "word", "why" }] },  // how she feels, read-only (app/mate/state.py)
   "screen": {               // may she look at the screen (§4 "Seeing the screen")
-    "enabled": false,       // off: see_screen does not exist for her
+    "enabled": false,       // (legacy, archived: she always has see_screen — device settings decide)
     "approval": "ask",      // ask (every time, in the desktop app) | allow (without asking)
     "hide_avatar": true,    // the mate windows hide while the picture is taken
     "max_edge": 1920,       // 1280 | 1920 | 2560 | 0 (as captured): the picture's long side at most
@@ -148,7 +148,7 @@ she edits her memories, and every source that could fight it is either gone or e
 | the story | The story you two share | — (fixed text) | she stays in character; what the story never overrides (docs/mate-memory-affinity.md §5.5) |
 | relationship guide | Between you and the user | — (the guide for the stage they are at, on/off) | "familiar → more relaxed…" with nothing pinning the speech level; "their settings beat closeness" only |
 | how she feels / relationship lines | `<context>` | engine | none |
-| screen line | Seeing the screen | Screen tab | none |
+| screen line | Seeing the screen | — (always; shared or not) | none |
 | `<settings_update>` note | next message | diff of `.applied-persona.json` | said "Speech level was updated (see your system prompt)" — no value, while 50 turns of history show the old level |
 | prompt key | engine fingerprint | `base_prompt` + `memory_rev` | — (restart rule unchanged) |
 | studio agent (`STUDIO_NEW`, `update_mate_draft`) | writes the draft's fields | the model | wrote speech level into `persona.speech` *and* `prefs.formality` ("keep them consistent") and the address into the persona |
@@ -761,7 +761,7 @@ lists each message's `files` (names).
 | `update_conversation_style(formality?, address?, user_name?, self_ref?, language?, length?, emotion?, tone?, speech_style?, avoid?, reason)` | unless `prefs.self_edit` is off: change her own conversation style when the user asks for a lasting change (applied, or proposed with "ask me first"; recorded, undoable — §1a) |
 | `feel(emotion, strength, reason)` | say how she feels and why, when it changed noticeably (docs/mate-memory-affinity.md §5.4) |
 | `change_outfit(outfit, reason)` | unless `prefs.self_outfit` is off: change her clothes, when she decides to (see "Outfits") |
-| `see_screen(reason?)` | only while this device shares the conversation: a picture of the user's screen from their desktop app (below) |
+| `see_screen(reason?)` | always: a picture of the user's screen — the share while they share, else one look through the desktop app of the device they talk from (below) |
 
 Policy in the prompt: find the chat already working on that project and send
 there; if none, find the folder and create a chat; if the folder is unknown or
@@ -792,11 +792,15 @@ user's cookie (404 / 401 otherwise). `find_folders` searches
 ### Seeing the screen (`see_screen`)
 
 The mate runs on the server; pixels come from the user's local device. There is one sharing switch per
-installation/browser profile, off until the user enables it. `mate.screen.enabled` is retained only as legacy
-archived data and is neither a permission gate nor an extra UI control. `see_screen` is offered when
-`CaptureBroker.shared_client(session_id, last_client_device)` grants access to that conversation on that device.
-The bridge environment/prompt key changes on the next turn when the live grant changes. Execution rechecks the
-grant, so a previously offered tool cannot capture after Stop. An unknown/other device never supplies a fallback.
+installation/browser profile, off until the user picks a source with Share screen; sharing is always "with each
+message" (each device-originated message carries the screen). `mate.screen.enabled` is retained only as legacy
+archived data and is neither a permission gate nor an extra UI control. `see_screen` is always offered (her prompt's
+"Seeing the screen": look when asked — "내 화면 보여?", "이거 봐" — shared or not; never claim to see the screen
+without a current picture; relay why a look failed), so sharing on/off never changes her prompt key or restarts her.
+At execution: shared (`CaptureBroker.shared_client(session_id, last_client_device)`), a frame of the share; not
+shared, one look through a desktop app window of that same device (`CaptureBroker.pick`: its chosen source,
+the native approval prompt unless the device allows it). An unknown/other device never supplies a fallback; a
+browser without a share answers `browser` ("turn on screen sharing in the browser first").
 
 The native app-lifetime hidden `device-runtime` renderer owns the live grant, WS connection, frame timer and
 fallback voice listener independently of visible windows. Device intent lives in the same atomic native settings
@@ -810,7 +814,7 @@ new user gesture for `getDisplayMedia` after the stream ends. See [device prefer
 Request routing/upload, unpredictable response proof, source selection and approval share the general
 [screen capture pipeline](screen-capture.md). The default per-request approval remains. A capture never hides or
 moves Geny windows. One short floating toast appears in one visible window; no persistent composer rows, title
-suffixes or tray sharing text exist. The avatar toolbar's active/waiting dot and Screen settings expose Stop.
+suffixes or tray sharing text exist. The avatar toolbar's active/waiting dot and Share screen (its picker) expose Stop.
 Completed captures never display a notification: neither agent requests, automatic sampling nor manual captures
 produce a success toast. The frontend has no capture-completion listener or fallback notification. Legacy native
 completion IPC remains wire-compatible for older servers and is ignored here. Errors/approval prompts use their
