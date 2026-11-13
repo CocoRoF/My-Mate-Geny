@@ -30,12 +30,14 @@ Exactly the official mates' body (docs/mate.md §2 `video`, packing `stacked-alp
    face: ‹face›. Nothing else changes." Only the face region is laid over the base picture (the model redraws the whole
    picture slightly; taken whole, the hair would shimmer).
 4. **Clips** — `kling_o3_flf`, start = end = `home-gray.jpg`, `pro` (studio) or `std` (light), sound off, each as
-   long as its action takes (`seconds`, 3–10: a head tilt or two nods 3, a reaction 4, talking or breathing 5;
+   long as its action takes (`seconds`, 3–10: a head tilt, two nods or a reaction 3, talking or breathing 5;
    `presets.CLIP_LENGTHS`, a clip of one's own by its kind). Never one length for all: Kling fills whatever length it is
-   given, and a short action over five seconds came out frame-held (the picture moving every second or third frame,
-   slow and jerky). Clips are quoted at 5 s and priced by the second. The prompt:
-   "‹action›. Static camera. The plain gray background stays exactly the same. She ends in exactly the same pose as
-   she starts." Every clip passes through the same frame, so any clip follows any other and each loops.
+   given — a short action over five seconds came out frame-held (the picture moving every second or third frame), and
+   a reaction given 4–5 s came out in slow motion (a smile forming over 2 s, a sad look over 3 s; measured on the
+   official mates with `artifacts/mate-life/qa/facepace.py`). Clips are quoted at 5 s and priced by the second. The
+   prompt: "‹action›. It happens at a natural, real-time speed, never in slow motion. Static camera. The plain gray
+   background stays exactly the same. She ends in exactly the same pose as she starts." Every clip passes through the
+   same frame, so any clip follows any other and each loops.
 5. **Mattes** — `video_background_remover` (one at a time), then the alpha is recovered mathematically from the known
    gray: α = removed / original, colour = (original − (1 − α)·bg) / α; near the body, colours clearly not the gray are
    body (the remover cracks along dark folds), and so is whatever clearly isn't the gray and is joined to her through more of
@@ -66,8 +68,14 @@ Exactly the official mates' body (docs/mate.md §2 `video`, packing `stacked-alp
    F = (C − (1 − α)·B) / α, and where little of her is left the colour found; the sharpening's light line outside a strong
    outline is none of her; past her a few pixels carry her colours (the codec's colour blur and the browser's scaling then
    find hers there). A patch of the gray's very colour bigger and wider than a gap is a part of her (a gray hood) and keeps
-   the matte; light clothes, a cream sweater whose shadows come near the gray, are never measured past their outline. The
-   clip is then scaled to its sizes weighted by alpha. On the gray she looks exactly as she was made; on a dark or a white
+   the matte; light clothes, a cream sweater whose shadows come near the gray, are never measured past their outline. Those
+   decisions are taken frame by frame, and on long pink hair one can turn over and stay turned for a second or two while
+   nothing there moves (a little gap between strands clear, then solid, then clear: her edge sparkles). So the whole clip is
+   measured first and then settled (`settle_still`): a pixel whose picture holds still keeps one alpha, the middle of what
+   its frames said over each stretch in which its picture neither changes from one frame to the next nor drifts from where
+   the stretch began; where she moves a new stretch begins (서아's clips: 60–150 such flips a frame before, 6–18 after,
+   `qa` flicker3; 한채린's older sets, encoded before `edge_matte`, have none). The clip is then scaled to its sizes weighted
+   by alpha. On the gray she looks exactly as she was made; on a dark or a white
    page no gray shows at her edge and a fine strand stays whole (no threshold breaks it into dots). The stills get the same:
    the base picture's edge is measured when it is cut out (`home`, at its own scale; `place.json` marks it), a set made
    before that is measured when it is exported, and the stills are scaled weighted by alpha, their edge's colour carried a

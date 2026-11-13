@@ -122,6 +122,19 @@ def test_rig_import_keeps_disabled(tmp_path):
     assert av["rig"]["emotion_stills"] == {"joy": "neutral"}
 
 
+def test_a_clip_that_starts_on_its_own_face_keeps_saying_so(tmp_path):
+    """서아's pout starts on the pout (Kling can't draw it from words): `fade_in` tells the stage to dissolve into it."""
+    from app.mate.store import normalize_clip
+
+    (tmp_path / "p.mp4").write_bytes(b"x")
+    (tmp_path / "n.webp").write_bytes(b"x")
+    av = files.rig_avatar({"stills": {"neutral": "n.webp"}, "clips": [{"id": "angry", "kind": "react", "src": "p.mp4", "fade_in": True}]},
+                          tmp_path, lambda rel: f"/x/{rel}")
+    assert av["rig"]["clips"][0]["fade_in"] is True
+    assert "fade_in" not in normalize_clip({"id": "a", "kind": "idle", "src": "/a.mp4", "fade_in": False})
+    assert normalize_clip({"id": "a", "kind": "react", "src": "/a.mp4", "fade_in": 1})["fade_in"] is True
+
+
 # ---- built-ins: edit, then back to the bundled version ----
 
 def _service(db):

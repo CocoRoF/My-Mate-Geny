@@ -31,6 +31,9 @@ export interface RigClip {
   loop?: boolean;
   /** switched off in the clip editor: the renderer never plays (or preloads) it */
   disabled?: boolean;
+  /** it starts on its own expression, not on her rest face (서아's pout: the face Kling can't draw from words is its first
+   *  frame): the stage dissolves into it instead of switching at the seam */
+  fade_in?: boolean;
 }
 
 /** where her face sits in a set's pictures, in fractions of the picture: every set of a mate is lined up by it (avatar/framing.ts) */

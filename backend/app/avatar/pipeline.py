@@ -761,6 +761,48 @@ def steady(window: list[tuple[np.ndarray, np.ndarray]], mid: int) -> tuple[np.nd
     return num_o / den[..., None], num_a / den
 
 
+#: and once her edge is measured: edge_matte decides frame by frame whether a little patch of the gray between her strands is the
+#: gray or her, and that decision can turn over and stay turned for a second or two while nothing there moves (a pixel jumping
+#: between clear and solid: her edge sparkles). A pixel whose picture holds still keeps one alpha: over each stretch of frames in
+#: which its picture doesn't change from one frame to the next (mean change, 5x5, under STEADY_EDGE_STILL) nor drift from where
+#: the stretch began (STEADY_EDGE_DRIFT), it takes the middle of what those frames said. Where she moves, a new stretch begins
+STEADY_EDGE_STILL, STEADY_EDGE_DRIFT = 6.0, 10.0
+
+
+def settle_still(pics: np.ndarray, alphas: np.ndarray) -> np.ndarray:
+    """``pics`` (T, H, W, 3) uint8: a clip's pictures; ``alphas`` (T, H, W) uint8: its measured alpha. -> the alpha, every pixel
+    one value over each stretch in which its picture holds still (only pixels whose alpha changes at all are looked at)."""
+    T = len(alphas)
+    band = (alphas.max(0).astype(np.int16) - alphas.min(0)) > 12
+    if T < 2 or not band.any():
+        return alphas
+    ys, xs = np.nonzero(band)
+    runs = np.zeros((T, len(ys)), np.int32)
+    ref = pics[0].astype(np.float32)
+    prev = ref.copy()
+    cur = np.zeros(len(ys), np.int32)
+    for t in range(1, T):
+        o = pics[t].astype(np.float32)
+        new = (cv2.blur(np.abs(o - prev).mean(-1), (5, 5)) >= STEADY_EDGE_STILL) | \
+              (cv2.blur(np.abs(o - ref).mean(-1), (5, 5)) >= STEADY_EDGE_DRIFT)
+        ref[new] = o[new]
+        prev = o
+        cur += new[ys, xs]
+        runs[t] = cur
+    vals = alphas[:, ys, xs]
+    group = (np.arange(len(ys), dtype=np.int64)[None, :] * (int(runs.max()) + 1) + runs).ravel()
+    order = np.lexsort((vals.ravel(), group))
+    g_sorted = group[order]
+    starts = np.flatnonzero(np.r_[True, g_sorted[1:] != g_sorted[:-1]])
+    ends = np.r_[starts[1:], len(order)]
+    med = vals.ravel()[order][(starts + ends - 1) // 2]  # (each stretch's middle value)
+    out_vals = np.empty(len(order), np.uint8)
+    out_vals[order] = np.repeat(med, ends - starts)
+    out = alphas.copy()
+    out[:, ys, xs] = out_vals.reshape(T, len(ys))
+    return out
+
+
 def fill_object_holes(a: np.ndarray, orig: np.ndarray, bg: np.ndarray) -> np.ndarray:
     """Holes inside her that are her, or something she holds: the remover keeps the person and can drop a flat object, or a light
     part of her over it (her fingers on a cup, a book's pages, a white rim). Such a hole is about as light as the gray or lighter,
@@ -1093,15 +1135,25 @@ def cmd_encode(p: Path, only: list[str] | None = None) -> dict:
         bgs = meta["bg"]
         scale = cw / EDGE_CLIP
 
-        def emit(i: int, o: np.ndarray, a: np.ndarray) -> None:
-            bg = np.array(bgs[min(i, len(bgs) - 1)], np.float32)
-            a, rgb = edge_matte(o, a, bg, scale)
+        def write(rgb: np.ndarray, a: np.ndarray) -> None:
             for proc, (ww, hh), _ in procs.values():
                 col, al = shrink(rgb, a, (ww, hh))
                 col8 = col.clip(0, 255).round().astype(np.uint8)
                 alpha = np.repeat((al * 255.0).clip(0, 255).round().astype(np.uint8)[..., None], 3, axis=-1)
                 assert proc.stdin
                 proc.stdin.write(np.ascontiguousarray(np.concatenate([col8, alpha], axis=0)).tobytes())
+
+        # (her edge measured in each steadied frame; the whole clip kept, 8-bit, to be settled where it holds still: settle_still)
+        pics: list[np.ndarray] = []
+        measured: list[np.ndarray] = []
+        colours: list[np.ndarray] = []
+
+        def emit(i: int, o: np.ndarray, a: np.ndarray) -> None:
+            bg = np.array(bgs[min(i, len(bgs) - 1)], np.float32)
+            a, rgb = edge_matte(o, a, bg, scale)
+            pics.append(o.round().clip(0, 255).astype(np.uint8))
+            measured.append((a * 255.0).round().clip(0, 255).astype(np.uint8))
+            colours.append(rgb.round().clip(0, 255).astype(np.uint8))
 
         # (a few frames ahead in memory: each frame is steadied with the ones around it, then made as before)
         r = STEADY_RADIUS
@@ -1125,6 +1177,10 @@ def cmd_encode(p: Path, only: list[str] | None = None) -> dict:
             buf.append((i, o, a))
             flush()
         flush(end=True)
+        settled = settle_still(np.stack(pics), np.stack(measured))
+        del pics, measured
+        for k, rgb in enumerate(colours):
+            write(rgb.astype(np.float32), settled[k].astype(np.float32) / 255.0)
         for tag, (proc, _, mp4) in procs.items():
             close(proc, mp4)
             os.replace(mp4, web / f"{cid}.{tag}.mp4")

@@ -520,7 +520,7 @@ def _name(v: Any, what: str, limit: int = 64) -> str:
 
 
 def normalize_clip(c: Any) -> dict[str, Any]:
-    """One rig clip: ``{id, kind, src, small?, emotion?, loop?, disabled?}`` (unknown keys are kept)."""
+    """One rig clip: ``{id, kind, src, small?, emotion?, loop?, disabled?, fade_in?}`` (unknown keys are kept)."""
     if not isinstance(c, dict):
         raise MateError("every rig clip must be an object")
     out = dict(c)
@@ -533,7 +533,7 @@ def normalize_clip(c: Any) -> dict[str, Any]:
             out.pop(k, None)
         else:
             out[k] = _s(c[k], 64 if k == "emotion" else 2000).strip()
-    for k in ("loop", "disabled"):  # flags: present only when on
+    for k in ("loop", "disabled", "fade_in"):  # flags: present only when on
         if c.get(k):
             out[k] = True
         else:

@@ -582,6 +582,8 @@ def rig_avatar(raw: Any, base: Path, url_for: Any) -> dict[str, Any]:
             clip["loop"] = True
         if c.get("disabled"):
             clip["disabled"] = True
+        if c.get("fade_in"):  # (it starts on its own face, not her rest one: the stage dissolves into it)
+            clip["fade_in"] = True
         clips.append(clip)
     ids = {c["id"] for c in clips}
     emotions = {}

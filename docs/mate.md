@@ -263,7 +263,8 @@ interface Rig {
                                              // + mechanics: blink, mouth_half, mouth_open, mouth_o
   clips: { id: string; kind: "idle"|"talk"|"listen"|"think"|"react"|"away";
            emotion?: string; src: string; small?: string; loop?: boolean;
-           disabled?: boolean }[];           // disabled: never played, picked or preloaded
+           disabled?: boolean,               // disabled: never played, picked or preloaded
+           fade_in?: boolean }[];            // starts on its own face, not her rest one (서아's pout): dissolved into, 0.2 s
   emotions?: Record<string, string[]>;       // emotion -> clip ids (react); several = one at random,
                                              // [] = no clip for that emotion (aliases not tried)
   emotion_stills?: Record<string, string>;   // emotion -> still name ("" = none); never blink/mouth_*

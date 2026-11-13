@@ -108,10 +108,12 @@ MAX_CANDIDATES = 4
 CLIP_SECONDS = 5
 CLIP_SECONDS_MIN, CLIP_SECONDS_MAX = 3, 10
 #: the library's clips (one breath, a head tilt, two nods...) and, for a clip of one's own, its kind's
+#: (a reaction is one change of face and back: given 4–5 s, Kling spread it out — a smile forming over 2 s, a sad look over
+#: 3 s, measured on 한채린's and 서아's sets with artifacts/mate-life/qa/facepace.py; at 3 s it forms in a fraction of one)
 CLIP_LENGTHS = {"idle_a": 5, "idle_b": 4, "idle_c": 3, "idle_d": 4, "talk_a": 5, "talk_b": 5, "talk_c": 5, "listen": 3,
-                "listen_b": 4, "think": 4, "think_b": 4, "laugh": 3, "smile": 3, "shy": 4, "surprised": 3, "sad": 4,
-                "worried": 4, "nod": 3, "wave": 3, "angry": 4, "yawn": 4, "doze": 5}
-KIND_SECONDS = {"idle": 4, "talk": 5, "listen": 3, "think": 4, "react": 4, "away": 5}
+                "listen_b": 4, "think": 4, "think_b": 4, "laugh": 3, "smile": 3, "shy": 3, "surprised": 3, "sad": 3,
+                "worried": 3, "nod": 3, "wave": 3, "angry": 3, "yawn": 4, "doze": 5}
+KIND_SECONDS = {"idle": 4, "talk": 5, "listen": 3, "think": 4, "react": 3, "away": 5}
 ASPECTS = ("1:1", "9:16")
 #: quality tier -> Kling mode and the two encoded heights (the stacked video is twice as tall)
 TIERS = {
@@ -121,7 +123,9 @@ TIERS = {
 
 FACE = ("Exactly the same picture as the reference: same pose, framing, hair, clothes and lighting. Change only {pos} "
         "face: {face}. Nothing else changes. Clean face, no wrinkles.")
-CLIP = "{action}. Static camera. The plain gray background stays exactly the same. {end}"
+#: (the pace line: what a clip shows happens at its own speed, never drawn out to fill the clip)
+CLIP = ("{action}. It happens at a natural, real-time speed, never in slow motion. Static camera. The plain gray "
+        "background stays exactly the same. {end}")
 #: the base picture every candidate must be (ailism MATE.md §3.5: waist-up, front, relaxed, flat gray)
 FRAMING = ("Waist-up portrait of one character, facing the viewer, relaxed friendly pose, arms and hands natural "
            "(no floating or extra hands), centred, the whole head and hair inside the frame with space above, plain "

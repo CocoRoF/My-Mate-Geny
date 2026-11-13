@@ -33,6 +33,8 @@ export interface VideoBodyProps {
 /** a mood shorter than this never switches a clip */
 export const MOOD_SETTLE_MS = 600;
 
+/** a clip that starts on its own expression (`fade_in`) comes on with this dissolve from her rest face: a quick change of face */
+const FADE_IN_MS = 200;
 const EAGER = new Set(["idle", "talk", "listen", "think"]);
 const RANK: Record<string, number> = { idle: 0, talk: 1, think: 2, listen: 3, react: 4, away: 5, life: 6 };
 
@@ -185,7 +187,7 @@ export default function VideoBody({ rig, size, mood, doing, react, poster, name,
       box.dataset.mateClip = c.id;
       // Repeat looping clips in this controller at their natural end. No event
       // ever needs to edit the current media element's loop flag to leave one.
-      p.show(srcOf(c), { loop: false });
+      p.show(srcOf(c), { loop: false, fadeMs: c.fade_in ? FADE_IN_MS : 0 });
       // have the likely next clip ready, so the switch at the end shows no seam
       const after = c.loop && suits(c, moodNow()) ? c : forMood(moodNow());
       if (after && after.id !== c.id) {

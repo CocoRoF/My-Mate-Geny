@@ -75,8 +75,9 @@ def test_presets_and_plan_per_preset():
         assert len(PL.quote_requests(PL.jobs_for(b))) == 4
         seen[preset] = PL.price(b, _quotes(b))["total"]
     # 4 candidates·2 + 0.5 + stills·2 + 9 a clip of 5 s, by the second (each clip as long as its action) + a matte each
-    assert seen == {"minimal": round(8 + 0.5 + 12 + 9 * 26 / 5 + 6, 4), "standard": round(8 + 0.5 + 24 + 9 * 61 / 5 + 16, 4),
-                    "rich": round(8 + 0.5 + 26 + 9 * 86 / 5 + 22, 4)}
+    # (a reaction is 3 s: one change of face and back, never drawn out — qa/facepace.py on the official mates)
+    assert seen == {"minimal": round(8 + 0.5 + 12 + 9 * 26 / 5 + 6, 4), "standard": round(8 + 0.5 + 24 + 9 * 58 / 5 + 16, 4),
+                    "rich": round(8 + 0.5 + 26 + 9 * 82 / 5 + 22, 4)}
     assert {c["id"]: c["seconds"] for c in _brief()["clips"]}["idle_c"] == 3  # (a head tilt stretched over 5 s came out jerky)
     # the standard preset is 한채린's manifest without the retired pout, and with the worried face she has had since 2026-11-08
     manifest = json.loads((MASTERS / "chaerin" / "manifest.json").read_text()) if MASTERS.is_dir() else None
@@ -108,8 +109,9 @@ def test_brief_checks_and_custom_motions():
         "target.name: the new mate's name"]
     # the prompts the official mates were made with, for any pronoun
     assert P.clip_prompt(P.CLIPS["wave"][1], "she") == (
-        "She lifts a hand and gives a small friendly wave, then lowers it. Static camera. The plain gray background "
-        "stays exactly the same. She ends in exactly the same pose as she starts.")
+        "She lifts a hand and gives a small friendly wave, then lowers it. It happens at a natural, real-time speed, never in "
+        "slow motion. Static camera. The plain gray background stays exactly the same. She ends in exactly the same pose as "
+        "she starts.")
     assert P.face_prompt(P.STILLS["laugh"], "he").startswith(
         "Exactly the same picture as the reference: same pose, framing, hair, clothes and lighting. Change only his "
         "face: laughing happily with his eyes closed")
@@ -815,6 +817,17 @@ for k in range(7):
 _, steadied = m.steady(win, 3)
 out = {"edge_spread_before": float(np.std([w[1][0, 20] for w in win])), "edge_after": float(steadied[0, 20]),
        "moving_kept": float(steadied[0, 35])}
+# her measured edge over a whole clip (settle_still): a pixel whose picture holds still while the decision on it turns over and
+# stays turned for 6-8 frames keeps one value; a pixel whose picture changes (her arm comes in at frame 12) follows it
+T = 30
+pics = np.full((T, 24, 24, 3), 120, np.uint8); al = np.zeros((T, 24, 24), np.uint8)
+for t in range(T):
+    al[t, :, :8] = 255 if (t // 7) % 3 != 1 else 0          # still: solid two thirds of the time, clear in runs of 7
+    if t >= 12:
+        pics[t, :, 16:] = 30; al[t, :, 16:] = 255          # moving: something arrives
+settled = m.settle_still(pics, al)
+out["still_values"] = sorted(set(int(v) for v in settled[:, 5, 4]))
+out["moving_before"] = int(settled[5, 5, 20]); out["moving_after"] = int(settled[20, 5, 20])
 bg = np.array([213, 212, 217], np.float32)
 o = np.full((60, 60, 3), 213.0, np.float32); a = np.zeros((60, 60), np.float32)
 a[5:55, 5:55] = 1.0
@@ -850,6 +863,8 @@ print(json.dumps(out))
     res = json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 else pytest.fail(r.stderr)
     assert res["edge_spread_before"] > 0.1 and 0.3 < res["edge_after"] < 0.7  # (it settles towards its mean)
     assert res["moving_kept"] > 0.9  # (no ghost of the frames around it where the picture moved)
+    assert res["still_values"] == [255]  # (a still pixel keeps one alpha: her edge never sparkles)
+    assert res["moving_before"] == 0 and res["moving_after"] == 255
     assert res["page_filled"] == 1.0 and res["gap_open"] < 0.1
     assert res["hair_gap_open"] < 0.1 and res["bun_filled"] == 1.0  # (filling that in some frames is what made her edge flicker)
     assert 0.4 < res["mixed"] < 0.6 and res["halo"] == 0.0 and res["inside"] == 1.0
