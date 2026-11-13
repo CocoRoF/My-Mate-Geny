@@ -128,9 +128,22 @@ public class GenyServerPlugin extends Plugin {
         }
     }
 
+    /** The connected server ("https://host[:port][/path]"), or null — the background link's (GenyLink). */
+    static String server(Context c) {
+        return cleanBase(prefs(c).getString(K_SERVER, null));
+    }
+
+    /** connected without "remember": the sign-in goes at the next start, and nothing runs in the background for it */
+    static boolean ephemeral(Context c) {
+        return prefs(c).getBoolean(K_EPHEMERAL, false);
+    }
+
     /** Forget the connected server (kept: lastServer/username for prefill, if remembered). */
     static void forgetServer(Context c, boolean signOut) {
         android.util.Log.i("GenyServer", signOut ? "signing out" : "switching server");
+        // (her calls came from that server: the background link goes with it)
+        GenyLink.forget(c);
+        GenyLinkService.stop();
         SharedPreferences p = prefs(c);
         SharedPreferences.Editor e = p.edit().remove(K_SERVER).remove(K_PENDING).remove(K_EPHEMERAL);
         if (!p.getBoolean(K_REMEMBER, true)) e.remove(K_LAST).remove(K_USER);

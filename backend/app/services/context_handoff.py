@@ -29,6 +29,7 @@ _MAX_ACTIONS = 15         # action lines per agent turn
 @dataclass
 class Block:
     user: list[str] = field(default_factory=list)       # user + mid-turn messages
+    note: str | None = None                              # what happened rather than was written (a mate's phone call)
     engine: str | None = None
     model: str | None = None
     answer: str | None = None
@@ -98,6 +99,9 @@ def build_blocks(messages: list[dict], events: list[dict]) -> list[Block]:
             if role == "user":
                 cur = Block(user=[m["content"]])
                 blocks.append(cur)
+            elif role == "note":
+                cur = Block(note=m["content"])
+                blocks.append(cur)
             elif role == "steer":
                 if cur is None:
                     cur = Block()
@@ -133,7 +137,7 @@ def build_blocks(messages: list[dict], events: list[dict]) -> list[Block]:
 
 
 def render_block(b: Block) -> str:
-    lines: list[str] = []
+    lines: list[str] = [_clip(b.note)] if b.note else []
     for u in b.user:
         lines.append(f"[User]\n{_clip(u)}")
     who = ENGINE_LABEL.get(b.engine or "", "Agent")
@@ -191,10 +195,11 @@ def handoff_preamble(engine: str, blocks: list[Block]) -> str:
 def catchup_preamble(engine: str, blocks: list[Block]) -> str:
     text, _ = transcript(blocks)
     others = sorted({ENGINE_LABEL.get(b.engine or "", "another agent") for b in blocks if b.engine and b.engine != engine})
-    by = ", ".join(others) or "another agent"
+    # (no other agent's turns: only things that happened — a mate's phone call)
+    since = f"Since your last turn the conversation continued with {', '.join(others)}." if others else "Since your last turn:"
     return (
         "<meanwhile>\n"
-        f"Since your last turn the conversation continued with {by}. "
+        f"{since} "
         "What happened, oldest first:\n\n"
         f"{text}\n"
         "</meanwhile>\n\n"

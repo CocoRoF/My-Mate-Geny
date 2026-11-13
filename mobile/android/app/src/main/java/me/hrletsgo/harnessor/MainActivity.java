@@ -36,8 +36,10 @@ public class MainActivity extends BridgeActivity {
             if (savedInstanceState == null) GenyServerPlugin.forgetServer(this, false);
             setIntent(new Intent(Intent.ACTION_MAIN)); // handled once (BridgeActivity re-delivers it below)
         }
-        if (GenyCallPlugin.isCallIntent(intent)) {
+        boolean ringing = GenyCallPlugin.isCallIntent(intent);
+        if (ringing) {
             // her call notification brought the app up: the page hears it once the plugin is there
+            answering(intent);
             GenyCallPlugin.deliverLater(intent);
             setIntent(new Intent(Intent.ACTION_MAIN));
         }
@@ -49,6 +51,10 @@ public class MainActivity extends BridgeActivity {
         // media may start without a user gesture. Microphone requests are
         // handled by Capacitor's BridgeWebChromeClient (runtime permission).
         getBridge().getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
+        // (her ringing brought it up over the lock screen: it stays there until the page takes or ends the call)
+        if (ringing) GenyCallPlugin.overLock(this, true);
+        // the background link, so her calls ring with the app closed (GenyLinkService): on if it should be
+        GenyLinkService.sync(this);
         // light / dark as the console last chose (ThemeBars): the window, the WebView behind the page and the bars,
         // before the page draws (the console says it again once loaded: GenyServer.setTheme)
         ThemeBars.apply(this, getBridge().getWebView(), ThemeBars.mode(this));
@@ -117,6 +123,9 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onNewIntent(Intent intent) {
         if (GenyCallPlugin.isCallIntent(intent)) {
+            answering(intent);
+            // her ringing (its full-screen intent on a locked phone, or a tap): the app over the lock screen, the screen on
+            GenyCallPlugin.overLock(this, true);
             // a tap on her call notification (open / 수락 / 거절): to the page (docs/mate-calls.md)
             PluginHandle h = getBridge() != null ? getBridge().getPlugin("GenyCall") : null;
             if (h != null && h.getInstance() instanceof GenyCallPlugin) ((GenyCallPlugin) h.getInstance()).deliver(intent);
@@ -131,6 +140,14 @@ public class MainActivity extends BridgeActivity {
             return;
         }
         super.onNewIntent(intent);
+    }
+
+    /** 받기 on her ringing: the server holds the call while the page comes up to take it (it would go missed meanwhile) */
+    private void answering(Intent intent) {
+        String id = intent.getStringExtra(GenyCallPlugin.EXTRA_ID);
+        if (!GenyCallPlugin.ACTION_ACCEPT.equals(intent.getAction()) || id == null || !id.matches("[A-Za-z0-9_-]{1,80}")) return;
+        CallNotifier.cancelRing(this, id);
+        GenyLink.post(this, "/api/mate-calls/" + id + "/answering", null);
     }
 
     /** Name from Content-Disposition (RFC 5987 first, so Korean names survive), else guessed. */

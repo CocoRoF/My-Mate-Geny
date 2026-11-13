@@ -139,7 +139,7 @@ export class CallSession {
       this.unduck();
     };
     q.onError = () => {};
-    void callNative.begin(this.speaker);
+    void callNative.begin(this.speaker, { id: this.call.id, mate: this.mate.id, name: this.mate.name });
     void keepScreenOn(true);
     if (this.call.direction === "outgoing" && this.call.status === "dialing") {
       this.stopRing = this.tones.play("ringback", Math.min(1, this.volume));

@@ -31,7 +31,8 @@ export interface CallState extends CallMachine {
   error: string | null;
 
   dial: (mate: Mate) => Promise<void>;
-  incoming: (call: CallInfo) => void;
+  /** her ringing on this page (`quiet`: the phone rings already — the app came up from her call notification) */
+  incoming: (call: CallInfo, quiet?: boolean) => void;
   remote: (call: CallInfo) => void;
   accept: () => Promise<void>;
   decline: () => Promise<void>;
@@ -40,8 +41,8 @@ export interface CallState extends CallMachine {
   toggleSpeaker: () => void;
   minimize: (on: boolean) => void;
   dismiss: () => void;
-  /** a page that came back (reload, the app reopened): the call it was on, or her ringing */
-  resume: () => Promise<void>;
+  /** a page that came back (reload, the app reopened): the call it was on, or her ringing (`quiet`: the phone rings) */
+  resume: (quiet?: boolean) => Promise<void>;
 }
 
 /** a call is on (or ringing) on this page */
@@ -139,7 +140,7 @@ export const useCallStore = create<CallState>((set, get) => {
       }
     },
 
-    incoming: (call) => {
+    incoming: (call, quiet = false) => {
       if (call.device && call.device !== deviceId) return;
       const before = get();
       if (callBusy(before)) return;
@@ -147,12 +148,19 @@ export const useCallStore = create<CallState>((set, get) => {
       step({ type: "ring", callId: call.id, mateId: call.mate_id, at: Date.now() });
       const mate = mateOf(call.mate_id);
       set({ ...CLEARED, call, mate, plan: null });
-      // the ring: in the page, and the phone's call notification while the app is in the background
-      ringStop = tones.play("ringtone");
-      vibrate(true);
-      buzz = setInterval(() => vibrate(true), 3200);
+      // the ring: the phone's own (a call notification, while the app is in the background or the phone locked), else
+      // the page's — never both
       const name = mate?.name || call.name;
-      void callNative.ring(call.id, name, tr("mate.callRingBody", { name }), tr("mate.callAccept"), tr("mate.callDecline"));
+      const own = () => {
+        if (get().callId !== call.id || get().phase !== "incoming" || ringStop) return;
+        ringStop = tones.play("ringtone");
+        vibrate(true);
+        buzz = setInterval(() => vibrate(true), 3200);
+      };
+      if (!onAndroid()) return own();
+      void callNative.ring(call.id, call.mate_id, name, tr("mate.callRingBody", { name })).then((phone) => {
+        if (!phone && !quiet) own();
+      });
     },
 
     remote: (call) => {
@@ -215,7 +223,7 @@ export const useCallStore = create<CallState>((set, get) => {
       if (next !== get()) set({ ...next, ...CLEARED, call: null, mate: null, plan: null });
     },
 
-    resume: async () => {
+    resume: async (quiet = false) => {
       if (callBusy(get())) return;
       let call: CallInfo | null = null;
       try {
@@ -225,7 +233,7 @@ export const useCallStore = create<CallState>((set, get) => {
       }
       if (!call || (call.device && call.device !== deviceId)) return;
       if (call.status === "ringing") {
-        if (onAndroid()) get().incoming(call);
+        if (onAndroid()) get().incoming(call, quiet);
         return;
       }
       // (a call this page was on before it went away: it can't carry on without its sound — it ends cleanly)
@@ -247,10 +255,45 @@ export function installCallActions(): void {
     const s = useCallStore.getState();
     if (s.callId !== id) {
       if (action === "decline") void declineCall(id).catch(() => {});
-      else void s.resume(); // (the app came up from it: her ringing shows)
+      // (the app came up from it — started for it, perhaps: her ringing shows, and 받기 takes it at once)
+      else
+        void s.resume(true).then(() => {
+          const now = useCallStore.getState();
+          if (action === "accept" && now.callId === id && now.phase === "incoming") void now.accept();
+        });
       return;
     }
     if (action === "accept") void s.accept();
     else if (action === "decline") void s.decline();
   });
+  linkPhone();
+  if (typeof document !== "undefined")
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") linkPhone();
+    });
+}
+
+let linking = false;
+let facesSent = "";
+/**
+ * The Android app's background link (docs/mate-calls.md "On Android"): this page is `deviceId` there, signed in as the
+ * page is, and her face rings with her calls — so she calls with the app closed, like a phone. Again whenever the app
+ * comes back (a fresh sign-in, new faces).
+ */
+export function linkPhone(): void {
+  if (!onAndroid() || linking) return;
+  linking = true;
+  void (async () => {
+    try {
+      const st = useMateStore.getState();
+      if (!st.loaded) await st.load().catch(() => {});
+      const { facesOf } = await import("../mate/call/faces");
+      const faces = await facesOf(useMateStore.getState().mates);
+      const key = JSON.stringify(faces);
+      await callNative.link(deviceId, key === facesSent ? {} : faces);
+      facesSent = key;
+    } finally {
+      linking = false;
+    }
+  })();
 }

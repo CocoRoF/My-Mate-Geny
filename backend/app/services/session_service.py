@@ -159,6 +159,8 @@ class SessionService:
         self.mate_engine: Any = None
         # a mate who chose not to answer the user ([SILENT]; app.mate.service MateService.refusal_line): (sid) -> the chat's line
         self.mate_refusal: Any = None
+        # a mate's phone call as she remembers it, for handoffs and catch-ups (app/mate/calls.py sets it): card -> text
+        self.call_note: Any = None
         self._turn_end_listeners: list[Any] = []
         self.persistent_engines = True  # Claude: one long-lived CLI process per chat
         # Higgsfield for the chats' agents (app.higgsfield.agent; main.py sets it). None = not wired.
@@ -680,6 +682,18 @@ class SessionService:
                 state[session["provider"]] = {"id": session["cli_session_id"], "seen": now_iso()}
         return state
 
+    def _as_call_note(self, m: dict[str, Any]) -> dict[str, Any]:
+        """A mate's phone call (its card, app/mate/calls.py) is told as the call it was — who called whom, when, how it
+        went, both sides of what was said — not as the user's words alone; one nobody spoke on too (missed, declined):
+        she knows it happened."""
+        meta = m.get("meta") or {}
+        if meta.get("kind") != "call" or not isinstance(meta.get("call"), dict) or self.call_note is None:
+            return m
+        try:
+            return {**m, "role": "note", "content": self.call_note(meta["call"])}
+        except Exception:  # noqa: BLE001 - never a reason a turn can't start
+            return m
+
     def _context_for(
         self, session: dict[str, Any], provider: str, current_msg_id: str, *, fresh: bool = False
     ) -> tuple[str | None, str, str, int]:
@@ -687,10 +701,8 @@ class SessionService:
         own = {} if fresh else self._cli_state(session).get(provider, {})
         floor = session.get("context_floor") or ""
         msgs = [
-            m for m in self.messages(session["id"])
+            self._as_call_note(m) for m in self.messages(session["id"])
             if m["id"] != current_msg_id and m["created_at"] > floor and not (m.get("meta") or {}).get("speech_pending")
-            # (a mate's call nobody spoke on — missed, declined: nothing was said; app/mate/calls.py)
-            and not ((m.get("meta") or {}).get("kind") == "call" and (m.get("meta") or {}).get("internal"))
         ]
         resume_id = own.get("id")
         if resume_id:

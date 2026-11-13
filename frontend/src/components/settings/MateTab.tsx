@@ -2,7 +2,8 @@
  * Settings → 메이트, and the Mate panel's 공통 tab (the same, docs/settings.md): what holds for every mate. Who does it
  * is never asked — the mate picked in the Mate view is the one on the desktop, who speaks and who speaks first (the
  * built-in mate until another is picked). Here: her on this desktop (the desktop app), reading replies aloud and the
- * volume on this device, speaking first, this device's screen sharing, the Live2D runtime, the built-in mates.
+ * volume on this device, speaking first, her calls on this phone (the Android app), this device's screen sharing, the
+ * Live2D runtime, the built-in mates.
  */
 import { useEffect, useState } from "react";
 import { listBuiltins, type BuiltinInfo } from "../../api/mates";
@@ -17,6 +18,8 @@ import Live2DPanel from "../mate/settings/global/Live2DPanel";
 import DesktopPanel from "../mate/settings/global/DesktopPanel";
 import DeviceCaptureSettings from "../composer/DeviceCaptureSettings";
 import { canShareScreen } from "../../mate/screenCapture";
+import { callNative, onAndroid, type PhoneLink } from "../../mate/call/native";
+import { linkPhone } from "../../stores/callStore";
 
 /** the characters bundled with the app (backend/app/mate/builtin). Which of them ship, the server says (GET /api/mates/builtin:
  * one whose pack isn't complete yet doesn't); these are their names when it can't */
@@ -47,6 +50,81 @@ function SpeakFirst() {
         label={t("settings.speakFirstOn")}
         testId="proactive-enabled"
       />
+    </Section>
+  );
+}
+
+/**
+ * Her calls on this phone (the Android app, docs/mate-calls.md "On Android"): it stays reachable with the app closed
+ * (on unless switched off), what the line is doing, and what the phone still has to allow for a call to ring like one.
+ */
+function PhoneCalls() {
+  const t = useT();
+  const [link, setLink] = useState<PhoneLink | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const read = () => void callNative.linkStatus().then((s) => alive && setLink(s));
+    linkPhone();
+    read();
+    // (it changes on its own: connecting, a permission granted in the phone's settings and back)
+    const timer = setInterval(read, 2500);
+    const back = () => document.visibilityState === "visible" && read();
+    document.addEventListener("visibilitychange", back);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", back);
+    };
+  }, []);
+  if (!link) return null; // (an app without the background link)
+  const state = !link.background
+    ? t("settings.phoneStateOff")
+    : link.state === "connected"
+      ? link.calls
+        ? link.mate
+          ? t("settings.phoneStateOn", { name: link.mate })
+          : t("settings.phoneStateOnAny")
+        : t("settings.phoneStateNoCalls")
+      : link.state === "signed_out"
+        ? t("settings.phoneStateSignedOut")
+        : link.state === "offline"
+          ? t("settings.phoneStateOffline")
+          : t("settings.phoneStateConnecting");
+  const good = link.background && link.state === "connected" && link.calls;
+  const needs: { key: string; text: string; what: "notifications" | "fullscreen" | "battery" }[] = [
+    ...(!link.notifications ? [{ key: "n", text: t("settings.phoneNeedNotifications"), what: "notifications" as const }] : []),
+    ...(!link.fullScreen ? [{ key: "f", text: t("settings.phoneNeedFullScreen"), what: "fullscreen" as const }] : []),
+    ...(link.background && !link.batteryExempt ? [{ key: "b", text: t("settings.phoneNeedBattery"), what: "battery" as const }] : []),
+  ];
+  return (
+    <Section title={t("settings.phoneTitle")} hint={t("settings.phoneHint")} testId="settings-phone-calls">
+      <Toggle
+        on={link.background}
+        disabled={busy}
+        onChange={(on) => {
+          setBusy(true);
+          void callNative.setBackground(on).then((s) => {
+            if (s) setLink(s);
+            setBusy(false);
+          });
+        }}
+        label={t("settings.phoneBackground")}
+        hint={t("settings.phoneBackgroundHint")}
+        testId="phone-background"
+      />
+      <p className={`mt-3 flex items-center gap-1.5 text-[12px] ${good ? "text-success" : "text-content-faint"}`} data-testid="phone-link-state">
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${good ? "bg-success" : "bg-content-faint"}`} />
+        {state}
+      </p>
+      {needs.map((n) => (
+        <div key={n.key} className="mt-2 flex flex-wrap items-center justify-end gap-2 rounded-lg border border-border bg-surface-1/60 px-3 py-2" data-testid={`phone-need-${n.what}`}>
+          <span className="min-w-0 flex-1 text-[12px] text-content-dim">{n.text}</span>
+          <button className="btn-soft !py-1 text-[12px]" onClick={() => void callNative.openSettings(n.what)}>
+            {t("settings.phoneAllow")}
+          </button>
+        </div>
+      ))}
     </Section>
   );
 }
@@ -102,6 +180,7 @@ export default function MateTab() {
       <DesktopPanel />
       <DeviceSound />
       <SpeakFirst />
+      {onAndroid() && <PhoneCalls />}
       {canShareScreen() && (
         <div data-testid="settings-screen">
           <DeviceCaptureSettings />

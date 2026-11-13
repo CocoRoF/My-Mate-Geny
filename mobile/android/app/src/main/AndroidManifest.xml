@@ -28,6 +28,26 @@
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         </activity>
 
+        <!-- Her calls with the app closed (docs/mate-calls.md "On Android"): one line held open to the user's own server
+             (there is no push service), and during a call the microphone kept with the screen locked. -->
+        <service
+            android:name=".GenyLinkService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse|microphone">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps a connection to the user's own self-hosted server so their companion can ring them like a phone call; the app has no push service." />
+        </service>
+        <!-- 거절 / 끊기 on a call's notification, without opening the app -->
+        <receiver android:name=".CallActionReceiver" android:exported="false" />
+        <!-- the link comes back after a reboot and after an update -->
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -69,6 +89,15 @@
          over the lock screen while the app is in the background, and the phone's vibration while it rings -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- …and with the app closed: the background link (GenyLinkService) — a foreground service, back after a reboot,
+         awake for a moment to ring, the microphone kept during a call, and the user may let it skip battery optimisation -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Download page: open the installer for a new version downloaded in the app (GenyServerPlugin.installApk) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>

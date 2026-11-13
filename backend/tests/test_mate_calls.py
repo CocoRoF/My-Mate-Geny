@@ -238,7 +238,7 @@ async def test_a_dropped_line_ends_the_call_and_her_turn_still_comes(db, tmp_pat
         await svc.shutdown()
 
 
-async def test_a_call_nobody_spoke_on_is_only_a_card_and_hidden_from_handoffs(db, tmp_path, monkeypatch):
+async def test_a_call_nobody_picked_up_is_only_a_card_and_she_still_knows_it_happened(db, tmp_path, monkeypatch):
     svc, store, mates, calls, line = _stack(db, tmp_path, monkeypatch)
     mate = store.create(name="Haru", persona={"language": "en"}, llm={"model": "m1"})
     sid = mates.conversation(mate["id"])["session_id"]
@@ -247,12 +247,75 @@ async def test_a_call_nobody_spoke_on_is_only_a_card_and_hidden_from_handoffs(db
         await calls.hangup(call.id)  # (gone before she picked up)
         msgs = [m for m in svc.messages(sid) if (m.get("meta") or {}).get("kind") == "call"]
         assert len(msgs) == 1 and msgs[0]["meta"]["internal"] is True and msgs[0]["meta"]["call"]["status"] == "cancelled"
-        assert not svc.is_running(sid)
-        _resume, preamble, _kind, n = svc._context_for(svc.get(sid), "claude", "none")
-        assert n == 0 and preamble == ""
+        assert not svc.is_running(sid)  # (nothing was said: no turn of hers)
+        # …but her next turn on a fresh engine knows there was a call (and the next call's prompt too)
+        _resume, preamble, kind, n = svc._context_for(svc.get(sid), "claude", "none")
+        assert kind == "handoff" and n == 1
+        assert "[Phone call — They phoned you at " in preamble and "they hung up before you picked up." in preamble
+        assert "[User]" not in preamble
+        assert any("They phoned you" in x for x in calls.recent(sid))
     finally:
         await calls.stop()
         await svc.shutdown()
+
+
+async def test_she_remembers_calling_them_when_they_picked_up_and_said_nothing(db, tmp_path, monkeypatch):
+    svc, store, mates, calls, line = _stack(db, tmp_path, monkeypatch)
+    sent_envelopes: list[str] = []
+    real = ClaudeCodeProvider._build_stdin
+
+    def capture(self, req):
+        out = real(self, req)
+        sent_envelopes.append(json.loads(out)["message"]["content"])
+        return out
+
+    monkeypatch.setattr(ClaudeCodeProvider, "_build_stdin", capture)
+    mate = store.create(name="서아", persona={"language": "ko"}, llm={"model": "m1"})
+    sid = mates.conversation(mate["id"])["session_id"]
+    q = svc.subscribe(sid)
+    try:
+        call = await calls.ring(mate["id"], "phone-1", "question", "저녁 뭐 드실 거예요?")
+        await calls.accept(call.id, "phone-1")
+        sent: list = []
+        calls.attach(call, sent.append)
+        await _wait(lambda: any(m["type"] == "done" for m in sent))  # (her hello…)
+        await calls.receive(call, {"type": "hangup"})  # (…and they hung up without a word)
+        seen = await _until(q, _ended)
+        um = next(m for m in seen if m["type"] == "user.message")
+        assert um["data"]["kind"] == "call" and um["data"]["call"]["status"] == "talked" and not um["data"].get("internal")
+        assert um["data"]["call"]["about"] == "저녁 뭐 드실 거예요?"
+        # her own engine took the call in: that she called, why, what she said, that they said nothing
+        env = sent_envelopes[-1]
+        assert '<phone_call caller="you"' in env and "You phoned them at " in env
+        assert "still waiting for the answer: “저녁 뭐 드실 거예요?”" in env and "they picked up and you talked for 0:" in env
+        assert "서아: 그렇구나." in env and "(They didn't say a word, and the call ended.)" in env
+        assert "never said a word" in env and "[SILENT]" in env
+        # a later handoff tells it as the call it was, not as an empty message of theirs
+        _resume, preamble, _kind, _n = svc._context_for(svc.get(sid), "codex", "none", fresh=True)
+        assert "[Phone call — You phoned them at " in preamble and "You: 그렇구나." in preamble
+    finally:
+        await calls.stop()
+        await svc.shutdown()
+
+
+def test_a_call_as_she_remembers_it():
+    base = {"direction": "incoming", "reason": "lonely", "about": "", "started_at": "2026-11-13T08:02:01+00:00",
+            "duration_s": 0, "transcript": [], "end_reason": ""}
+    seoul = timezone(timedelta(hours=9))
+    d = calls_mod.describe({**base, "status": "missed"}, seoul)
+    assert d == ("[Phone call — You phoned them at 2026-11-13 17:02 (you missed them and wanted to hear their voice); "
+                 "they didn't pick up (a missed call).]")
+    assert "they turned the call down" in calls_mod.describe({**base, "status": "declined"}, seoul)
+    talked = {**base, "status": "talked", "duration_s": 75, "end_reason": "network",
+              "transcript": [{"who": "mate", "text": "여보세요"}, {"who": "user", "text": "응", "cut": False},
+                             {"who": "mate", "text": "있잖아", "cut": True}]}
+    out = calls_mod.describe(talked, seoul, name="하루")
+    assert "they picked up and you talked for 1:15" in out and "하루: 있잖아 (cut off)" in out
+    assert "User: 응" in out and out.endswith("(The line dropped at the end.)")
+    theirs = calls_mod.describe({**base, "direction": "outgoing", "status": "talked", "duration_s": 5,
+                                 "transcript": [{"who": "mate", "text": "여보세요"}]}, seoul)
+    assert theirs.startswith("[Phone call — They phoned you at 2026-11-13 17:02; you picked up")
+    assert "(They didn't say a word, and the call ended.)" in theirs
 
 
 # ---- no tools during a call ----
@@ -376,6 +439,83 @@ async def test_she_calls_only_by_day_not_while_they_chat_and_only_a_phone_that_l
         assert any(m["type"] == "call.ring" and m["data"]["id"] == call.id for m in rings)
         assert await calls.consider(other["id"]) == "line_busy"
         await calls.decline(call.id)
+    finally:
+        await calls.stop()
+        await svc.shutdown()
+
+
+async def test_with_the_app_closed_her_call_still_rings_the_phone_through_its_background_link(db, tmp_path, monkeypatch):
+    monkeypatch.setattr(calls_mod, "CALL_HOURS", (0, 24))
+    monkeypatch.setattr(calls_mod, "RING_S", 0.2)
+    svc, store, mates, calls, line = _stack(db, tmp_path, monkeypatch)
+    mate = store.create(name="Haru", persona={"language": "en"}, llm={"model": "m1"})
+    other = store.create(name="Other", llm={"model": "m1"})
+    sid = mates.conversation(mate["id"])["session_id"]
+    broker = mates.capture
+    try:
+        # the app's page said it lets her speak first; then it went away (the app closed), its service stayed
+        _phone(mates, mate["id"], device="phone-1")
+        page = broker.clients()[-1]
+        calls.saw(page)
+        broker.disconnect(page.conn)
+        assert calls.phones["phone-1"]["enabled"] is True and calls.phones["phone-1"]["mate_id"] == mate["id"]
+        assert calls.phone(mate) is None  # (no link yet: nothing to ring)
+        heard: list = []
+        lk = calls.link("phone-1", heard.append)
+        assert heard[0] == {"type": "hello", "calls": True, "mate": "Haru", "ring": None}
+        assert calls.phone(mate) == "phone-1" and calls.phone(store.get(other["id"])) is None
+        # what the page said is kept: a restarted server still knows the phone
+        assert CallService(mates).phones["phone-1"]["mate_id"] == mate["id"]
+        mates.calls = calls
+
+        doc = store.state_doc(mate["id"])
+        doc["feelings"]["lonely"] = {"v": 0.9, "at": datetime.now(timezone.utc).isoformat(), "why": {"code": "wants_affection"}}
+        store.save_state(mate["id"], doc)
+        assert await calls.consider(mate["id"]) == "ringing"
+        call = calls.active()
+        assert any(m["type"] == "call.ring" and m["data"]["id"] == call.id for m in heard)
+        # picked up on the phone's ringing: it holds while the app comes up (no missed call meanwhile)…
+        await asyncio.sleep(0.15)
+        await calls.answering(call.id)
+        await asyncio.sleep(0.1)  # (past the ring's own RING_S)
+        assert call.status == "ringing"
+        # …and the page takes it
+        await calls.accept(call.id, "phone-1")
+        assert any(m["type"] == "call.update" and m["data"]["status"] == "active" for m in heard)
+        await calls.hangup(call.id)
+        assert any(m["type"] == "call.update" and m["data"]["status"] == "ended" for m in heard)
+
+        # a page turning speaking-first off there tells the link (its notification says so)
+        _phone(mates, mate["id"], device="phone-1", on=False)
+        calls.saw(broker.clients()[-1])
+        assert heard[-1] == {"type": "policy", "calls": False, "mate": ""}
+        assert calls.phone(mate) is None
+        calls.unlink(lk.id)
+        assert calls.links == {}
+    finally:
+        await calls.stop()
+        await svc.shutdown()
+
+
+async def test_a_ring_picked_up_on_the_phone_that_the_app_never_takes_is_still_missed(db, tmp_path, monkeypatch):
+    monkeypatch.setattr(calls_mod, "RING_S", 0.05)
+    svc, store, mates, calls, line = _stack(db, tmp_path, monkeypatch)
+    mate = store.create(name="Haru", llm={"model": "m1"})
+    mates.conversation(mate["id"])
+    try:
+        heard: list = []
+        calls.link("phone-1", heard.append)
+        call = await calls.ring(mate["id"], "phone-1", "lonely")
+        await calls.answering(call.id)
+        await _wait(lambda: call.status == "ended")
+        assert call.end_reason == "missed"
+        with pytest.raises(CallError):
+            await calls.answering(call.id)
+        # a link that connects while she rings hears it at once
+        late: list = []
+        call2 = await calls.ring(mate["id"], "phone-1", "lonely")
+        calls.link("phone-1", late.append)
+        assert late[0]["ring"]["id"] == call2.id
     finally:
         await calls.stop()
         await svc.shutdown()

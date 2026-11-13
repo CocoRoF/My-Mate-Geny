@@ -87,14 +87,24 @@ log line `mate.call`).
   whose `meta` is `{kind: "call", call: {id, direction, status, duration_s, transcript: [{who, text, cut?}], latency,
   engine, model, …}}`. So her memory extractor (a user message) and recall index see what the user said, and the
   user can delete it like their own words (`hidden_messages`).
-- That message starts **her own engine's turn** (her usual model and tools): it reads the whole call
-  (`calls.follow_up_prompt`: `<phone_call caller="user|you" duration="m:ss">User: … / <name>: …</phone_call>` + the
-  rules: the turn is hers — she takes the call in and does what was asked with her tools, as for a message; she writes
-  only when they need to hear something (what came of it, a question, something she didn't get to say), never a recap of
-  the call; otherwise `[SILENT]` → nothing beyond the card). The turn waits for one she is in the
-  middle of; what waited for the call (a chat's result) comes after it.
-- A call nobody spoke on (missed, declined, cancelled, failed, or only her hello) is a card only: an internal message
-  (`meta.internal`), left out of handoffs and memory.
+- That message starts **her own engine's turn** (her usual model and tools) — for every call that was picked up, a word
+  from them or not: it reads the whole call (`calls.follow_up_prompt`: `<phone_call caller="user|you" duration="m:ss">`
+  with the call as she remembers it — `calls.describe`: who called whom and when, why she called (`reason`, `about`), how
+  it went, both sides of what was said — + the rules: the turn is hers — she takes the call in and does what was asked
+  with her tools, as for a message; she writes only when they need to hear something (what came of it, a question,
+  something she didn't get to say), never a recap of the call; otherwise `[SILENT]` → nothing beyond the card). Picked
+  up without a word from them (busy, a tap by mistake), she may send one short message — what she called about, or that
+  it's fine — or nothing. The turn waits for one she is in the middle of; what waited for the call (a chat's result)
+  comes after it.
+- A call nobody picked up (missed, declined, cancelled, failed) is a card only: an internal message (`meta.internal`),
+  left out of memory — and no turn of hers.
+- **She never forgets a call happened.** Wherever her conversation is retold to her engine — a handoff to a fresh
+  session, a catch-up of what happened since her last turn — a call is told as the call it was (`calls.describe`, through
+  `SessionService.call_note`), never as the user's words alone, and one nobody picked up too ("[Phone call — You phoned
+  them at 2026-11-13 17:02 (…); they didn't pick up (a missed call).]"). A later call's prompt has them the same way
+  (`recent`), and a call of hers they turned down or missed is in her next message's `<context>` once (below). (Before,
+  a call she made that they picked up without a word was only a card she never saw: asked "why did you call?", she said
+  she hadn't.)
 - The conversation draws a card: "음성 통화 3:12 · 한채린에게 걸었어요 · 15:02", "부재중 전화", "거절한 전화",
   "취소한 전화", "연결되지 않은 전화"; **대화 내용** unfolds the transcript.
 
@@ -123,27 +133,62 @@ if it fits…"). A call they take warms her (`call_talked`) and resets the count
 
 ## On Android
 
+**She calls like a phone, with the app closed.** There is no push service (FCM) in this app, so the app keeps one line
+to the user's own server running in the background — `GenyLinkService` (`mobile/android/…`), a foreground service:
+
+- **The line**: `GET /api/mate-calls/link?device=` (server-sent events, signed in with `Authorization: Bearer` — the
+  page's login cookie, handed over by `GenyCallPlugin.link`, kept fresh by the server's sliding cookie on every answer).
+  It hears `hello {calls, mate, ring}` (a ring already on comes at once), `call.ring`, `call.update` (every call),
+  `policy {calls, mate}` (speaking first switched here) and a `ping` at least every `calls.LINK_PING_S` = 45 s (under a
+  proxy's 60 s idle; two missed — 120 s — is a dead line). A dropped line comes back at once when the network does,
+  else after 2 s … 5 min; signed out (a stale token) it waits for the page to sign it in again, or tries every 15 min.
+- **On the server**: `CallService.link` / `unlink`; `CallService.phones` keeps what each phone's page last said it lets
+  her do (speaking first, to whom: `saw()` from its `/ws/sessions` hello, in the setting `call_phones`), so with the page
+  gone the link still counts: `phone()` takes an open page first, else a linked phone that lets her. `ring()` and
+  `_announce()` reach the links too. Nothing else on the server sees a link (screen sharing, speaking first on a
+  screen, the device's presence): only calls.
+- **Her ringing** (`CallNotifier`, from the link or the page alike — one ring per call): a call notification
+  (`CallStyle.forIncomingCall`: her face — the page hands over each mate's, `mate/call/faces.ts` — her name, **거절** /
+  **받기**), the "Calls" channel's ringtone, insistent, a full-screen intent that brings the app up over the lock screen.
+  While the app is in front and unlocked the page rings itself instead (never both: `ring` says whether the phone rings).
+  **거절** is done without opening the app (`CallActionReceiver` → `…/decline`); **받기** opens the app and tells the
+  server at once (`…/answering`: the ring holds another `RING_S` so it isn't missed while the app comes up), and the
+  page, even one started just for it, takes the call. A call of hers nobody took leaves **부재중 전화** in the shade.
+- **During a call** the service also holds the microphone (foreground service type `microphone`, started while the call
+  screen is in front), so the call goes on with the screen locked or another app in front, and shows it: her face, the
+  clock, **끊기** (`…/hangup`).
+- **Always there**: on unless switched off (Settings → 메이트 → 전화 → 앱을 닫아도 전화 받기); started by the page,
+  after a reboot and after an update (`BootReceiver`); gone with a sign-out or another server. Its own notification is
+  quiet (a minimum-importance channel) and says how it stands ("서아의 전화를 받을 수 있어요", "먼저 말 걸기가 꺼져 있어
+  전화는 오지 않아요", "다시 연결하는 중", "다시 로그인하면…"). The settings section says the same and what the phone
+  still has to allow: notifications, full-screen notifications (Android 14+), no battery optimisation (the line lasts).
+- Type `specialUse` (Android 14+: the subtype says why — the app has no push service) plus `microphone` in a call;
+  permissions `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE`, `FOREGROUND_SERVICE_MICROPHONE`,
+  `RECEIVE_BOOT_COMPLETED`, `WAKE_LOCK` (a moment awake to ring), `ACCESS_NETWORK_STATE`,
+  `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`.
+
 `GenyCallPlugin` (`mobile/android/…/GenyCallPlugin.java`, registered in `MainActivity`):
 
-- `begin({speaker})` / `setSpeaker({on})` / `end()`: `MODE_IN_COMMUNICATION` for the call, the loudspeaker or the
-  earpiece (`setCommunicationDevice` on Android 12+, `setSpeakerphoneOn` before), the screen kept on; back after. (The
-  WebView opening the mic switches the phone to call mode by itself, often turning her down or onto the earpiece: this
-  keeps her where the screen says.)
-- `ring({id, title, body, accept, decline})` / `cancelRing`: while the app is in the background (or the phone locked),
-  her ringing as a call notification — channel "Calls" (ringtone, vibration, high importance), category CALL, insistent,
-  a full-screen intent over the lock screen, 수락 / 거절. Taps come to the page as `callAction` (kept until it listens).
-- Permissions: `USE_FULL_SCREEN_INTENT`, `VIBRATE` (plus the existing `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`,
-  `POST_NOTIFICATIONS`). An app without the plugin still calls (the page's own ring; no notification).
+- `begin({speaker, id, mate, name})` / `setSpeaker({on})` / `end()`: `MODE_IN_COMMUNICATION` for the call, the
+  loudspeaker or the earpiece (`setCommunicationDevice` on Android 12+, `setSpeakerphoneOn` before), the screen kept on
+  and over the lock screen; back after. (The WebView opening the mic switches the phone to call mode by itself, often
+  turning her down or onto the earpiece: this keeps her where the screen says.) The link holds the microphone meanwhile.
+- `ring({id, mate, title, body})` → `{shown}` / `cancelRing({id})`: her ringing (above). Taps come to the page as
+  `callAction` (kept until it listens).
+- `link({device, faces})` / `status()` / `setBackground({on})` / `openSettings({what})`: the background link.
+- Permissions for a call: `USE_FULL_SCREEN_INTENT`, `VIBRATE`, `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`,
+  `POST_NOTIFICATIONS`. An app without the plugin still calls (the page's own ring; no notification).
 
-**Limits**: there is no push service (FCM) in this app, so a fully closed app can't ring — she calls only a page that is
-alive: the app open, or in the background while Android keeps it (it may freeze a background app after a while; then the
-call is missed). Earpiece routing of the WebView's media playback depends on the phone; where it doesn't follow,
-"speaker off" is only quieter.
+**Limits**: a phone maker's own battery manager can still stop a background app (some do whatever the app asks); letting
+the app skip battery optimisation is the remedy, and the settings section asks for it. In deep sleep the line notices it
+dropped only when the phone wakes. Earpiece routing of the WebView's media playback depends on the phone; where it
+doesn't follow, "speaker off" is only quieter.
 
 ## APIs
 
 - `POST /api/mates/{id}/calls {device}` → `{call, plan}` (409 `code: busy`) · `GET /api/mate-calls/active` →
-  `{call | null}` · `POST /api/mate-calls/{cid}/accept {device}` → `{call, plan}` · `…/decline` · `…/hangup`.
+  `{call | null}` · `POST /api/mate-calls/{cid}/accept {device}` → `{call, plan}` · `…/answering` · `…/decline` ·
+  `…/hangup` · `GET /api/mate-calls/link?device=` (the app's background link, above).
 - `/ws/mate-calls/{cid}`: client `say {text}`, `barge {rid, heard}`, `metric {rid, first_audio_ms, stt}`, `hangup`,
   `ping`; server `state {call}`, `reply {rid, greeting}`, `delta {rid, text}`, `done {rid, text, ttft_ms}`,
   `ended {reason, call}`, `pong`.
