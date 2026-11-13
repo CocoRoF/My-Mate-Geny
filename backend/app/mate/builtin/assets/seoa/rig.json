@@ -129,7 +129,8 @@
       "src": "asset:mate-seoa/angry.lg.mp4",
       "small": "asset:mate-seoa/angry.sm.mp4",
       "thumb": "asset:mate-seoa/angry.thumb.webp",
-      "emotion": "angry"
+      "emotion": "angry",
+      "fade_in": true
     },
     {
       "id": "nod",

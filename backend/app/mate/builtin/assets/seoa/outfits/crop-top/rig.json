@@ -129,7 +129,8 @@
       "src": "asset:seoa-crop-top/angry.lg.mp4",
       "small": "asset:seoa-crop-top/angry.sm.mp4",
       "thumb": "asset:seoa-crop-top/angry.thumb.webp",
-      "emotion": "angry"
+      "emotion": "angry",
+      "fade_in": true
     },
     {
       "id": "nod",

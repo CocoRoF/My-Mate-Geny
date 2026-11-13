@@ -129,7 +129,8 @@
       "src": "asset:seoa-pajamas/angry.lg.mp4",
       "small": "asset:seoa-pajamas/angry.sm.mp4",
       "thumb": "asset:seoa-pajamas/angry.thumb.webp",
-      "emotion": "angry"
+      "emotion": "angry",
+      "fade_in": true
     },
     {
       "id": "nod",
