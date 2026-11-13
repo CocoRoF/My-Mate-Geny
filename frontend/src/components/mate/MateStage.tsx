@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Mate } from "../../api/mates";
 import { LiveMateAvatar } from "../../mate/avatar/MateAvatar";
-import { isHome, useAvatarView } from "../../mate/avatar/view";
+import { isHome, useAvatarView, type Bleed } from "../../mate/avatar/view";
 import Icon from "../ui/Icon";
 import type { BodyMood, MateReact } from "../../mate/types";
 import type { Caption } from "../../mate/useMateConversation";
@@ -95,6 +95,37 @@ export function MateThumb({ mate, className = "h-7 w-7" }: { mate: Mate; classNa
   );
 }
 
+/**
+ * How far the stage reaches past the box she is fitted in (its padding, the name under her): she is drawn that far, so
+ * the only edge that cuts her is the stage's own — the edge of the place behind her — never a line inside it.
+ */
+function useStageBleed(stage: React.RefObject<HTMLElement | null>, area: React.RefObject<HTMLElement | null>): Bleed | undefined {
+  const [bleed, setBleed] = useState<Bleed | undefined>(undefined);
+  useLayoutEffect(() => {
+    const s = stage.current;
+    const a = area.current;
+    if (!s || !a) return;
+    const take = () => {
+      const sr = s.getBoundingClientRect();
+      const ar = a.getBoundingClientRect();
+      if (!sr.width || !ar.width) return;
+      // (the stage's padding box: it clips at the inside of its border)
+      const left = sr.left + s.clientLeft;
+      const top = sr.top + s.clientTop;
+      const px = (n: number) => Math.max(0, Math.round(n));
+      const next = { l: px(ar.left - left), r: px(left + s.clientWidth - ar.right), t: px(ar.top - top), b: px(top + s.clientHeight - ar.bottom) };
+      setBleed((was) => (was && was.l === next.l && was.r === next.r && was.t === next.t && was.b === next.b ? was : next));
+    };
+    take();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(take);
+    ro.observe(s);
+    ro.observe(a);
+    return () => ro.disconnect();
+  }, [stage, area]);
+  return bleed;
+}
+
 export default function MateStage({
   mate,
   mood,
@@ -134,10 +165,12 @@ export default function MateStage({
   const ml = moodLabel(t, mood);
   // her pan / zoom on the stage: the wheel at the pointer, a mouse drag, a double click back to her whole figure — per
   // mate, apart from the desktop overlay's (mate/avatar/view.ts). A finger is left alone: a phone scrolls and pokes her
-  // as before; a tap is still a poke. Kept against her fitted figure, never more than half of her middle out of sight; a
-  // stage of quite another shape than the one it was made on (a window turned tall, a reload in another size) shows her
-  // whole again.
+  // as before; a tap is still a poke. Kept against her fitted figure; she goes wherever she is put (only never all the
+  // way out of sight); a stage of quite another shape than the one it was made on (a window turned tall, a reload in
+  // another size) shows her whole again.
   const area = useRef<HTMLDivElement>(null);
+  const stage = useRef<HTMLDivElement>(null);
+  const bleed = useStageBleed(stage, area);
   const { view, reset, dragging, setFigure } = useAvatarView(area, `hrh.mate.stageView.${mate.id}`, true, { touch: false, doubleClickReset: true, refit: true });
   // (a pan / zoom made for the other layout is let go: she is fitted whole in this one)
   // (undefined: not measured yet — the first layout it gets is where it starts, the user's view kept)
@@ -149,7 +182,8 @@ export default function MateStage({
     if (!first) reset();
   }, [layout, reset]);
   return (
-    <div className={`relative flex min-h-0 flex-col items-center ${life ? "overflow-hidden" : ""} ${className}`} data-testid="mate-stage" data-mood={mood}>
+    // (she is fitted in the stage's padded box but drawn to its own edges — the place behind her — and cut only there)
+    <div ref={stage} className={`relative flex min-h-0 flex-col items-center overflow-hidden ${className}`} data-testid="mate-stage" data-mood={mood}>
       {life && <LifeBackdrop life={life} />}
       {line && (
         <div className={`pointer-events-none absolute left-3 top-2 z-10 flex justify-center ${menu ? (menu.compact ? "right-[60px]" : "right-[76px]") : "right-3"}`}>
@@ -170,7 +204,7 @@ export default function MateStage({
         data-view={`${view.x.toFixed(4)},${view.y.toFixed(4)},${view.z.toFixed(4)}`}
       >
         {/* keyed by the mate: switching mates never shows (or keeps playing) the previous mate's body */}
-        <LiveMateAvatar key={mate.id} mate={mate} size={size} mood={mood} videoMood={videoMood} react={react} onTap={onTap} view={view} onFigure={setFigure} />
+        <LiveMateAvatar key={mate.id} mate={mate} size={size} mood={mood} videoMood={videoMood} react={react} onTap={onTap} view={view} onFigure={setFigure} bleed={bleed} />
         {!isHome(view) && (
           <button
             className="absolute bottom-2 right-2 z-10 grid h-7 w-7 place-items-center rounded-full border border-border bg-surface-2/90 text-content-dim opacity-0 shadow-float transition hover:text-content focus-visible:opacity-100 group-hover/stage:opacity-100 touch:opacity-100"

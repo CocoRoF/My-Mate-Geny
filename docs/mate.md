@@ -1024,11 +1024,16 @@ her default one makes her fitted box wider, so a narrow stage shows her smaller,
 never cut at its sides. Her pan / zoom on the stage (the wheel, a mouse drag, a
 double click back) is kept per mate (`hrh.mate.stageView.<id>`) against her fitted
 figure, not as fractions of the stage (`mate/avatar/view.ts`): another size of
-stage shows the same of her, a pan keeps at least half of her middle in sight, and
+stage shows the same of her, she goes wherever she is dragged or zoomed (only never
+all the way out: a sliver of her stays in sight, so she can't be lost), and
 a stage of quite another shape than the one it was made on (1.3 × wider or taller:
 a window turned tall, a reload in another size) shows her fitted whole again — a
 zoom kept as the stage's fractions put her, made on a wide stage, twice the width
-of a narrow one and off to its side. Phones: always stacked (36 dvh, collapsible), the panels
+of a narrow one and off to its side. She is fitted in the stage's padded box but
+drawn to the stage's own edges — the edges of the place behind her — so nothing
+inside the stage ever cuts her (`MateStage` measures how far the stage reaches past
+that box and the bodies draw that far: the pictures and LivLiv past their box, a
+Live2D canvas made that much bigger). Phones: always stacked (36 dvh, collapsible), the panels
 full screen (so on a very short screen, or under a stacked stage with too little
 height left). Beside the sidebar a small window (under 660 px) also gets the
 phone's header. On a phone the

@@ -1,6 +1,6 @@
 // The avatar's pan / zoom (src/mate/avatar/view.ts): a mouse-wheel notch ≈ 5–6 %, Ctrl / Shift + wheel ≈ 2 %, a pinch
 // follows the fingers; the point under the pointer stays put. Her fitted figure: whole in every shape of stage; a pan /
-// zoom kept against it, kept in reach, and let go on a stage of quite another shape.
+// zoom kept against it, free to go anywhere but all the way out, and let go on a stage of quite another shape.
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -8,11 +8,11 @@ import {
   fitRect,
   fromKept,
   isHome,
-  KEEP,
   MARGIN,
   readKept,
   REFIT_SHAPE,
   shapeMoved,
+  SLIVER,
   toKept,
   viewIn,
   VIEW_HOME,
@@ -85,11 +85,11 @@ const drawn = (v: AvatarViewT, f: FitRect, w: number, h: number) => ({
 });
 /** a point of her figure (fractions of it) as drawn, in px */
 const at = (v: AvatarViewT, f: FitRect, w: number, h: number, u: number, s: number) => ({ x: (v.x + v.z * (f.x + u * f.w)) * w, y: (v.y + v.z * (f.y + s * f.h)) * h });
-/** at least KEEP of her middle (her box without MARGIN on each side), or of the stage once it is bigger, in sight */
+/** a sliver of her middle (her box without MARGIN on each side) — SLIVER of the stage, or all of it when smaller — in sight */
 const inSight = (a: number, b: number, size: number) => {
   const m0 = a + MARGIN * (b - a);
   const m1 = b - MARGIN * (b - a);
-  return Math.max(0, Math.min(m1, size) - Math.max(m0, 0)) >= KEEP * Math.min(m1 - m0, size) - 1e-6;
+  return Math.max(0, Math.min(m1, size) - Math.max(m0, 0)) >= Math.min(SLIVER * size, m1 - m0) - 1e-6;
 };
 
 test("fitted, she is whole in every shape of stage: the smaller of the two scales, centred, a picture on the bottom edge", () => {
@@ -117,7 +117,7 @@ test("a tall, narrow stage fits her by its width, not by its height (the report:
   near(f.y + f.h, 1);
 });
 
-test("a pan / zoom never takes more than half of her middle out of sight — half the stage stays her, zoomed past it", () => {
+test("a pan / zoom goes anywhere but all the way out: a sliver of her middle always stays in sight", () => {
   for (const [w, h] of STAGES) {
     for (const fig of FIGURES) {
       const f = fitRect(fig, w, h);
@@ -134,6 +134,34 @@ test("a pan / zoom never takes more than half of her middle out of sight — hal
       }
       // (fitted is in reach as it is)
       assert.deepEqual(clampView(VIEW_HOME, f), VIEW_HOME);
+    }
+  }
+});
+
+test("she is put wherever she is dragged: most of her past an edge is kept as it is (the report: she couldn't be moved)", () => {
+  for (const [w, h] of STAGES) {
+    const f = fitRect({ aspect: 0.873 }, w, h);
+    for (const z of [0.6, 1, 2.2]) {
+      // her middle left with only a fifth of it inside the stage, on each side in turn, and up and down
+      const midW = z * f.w * (1 - 2 * MARGIN);
+      const midH = z * f.h * (1 - 2 * MARGIN);
+      const midX = z * (f.x + MARGIN * f.w);
+      const midY = z * (f.y + MARGIN * f.h);
+      const keepX = Math.max(0.2 * Math.min(midW, 1), SLIVER + 0.01);
+      const keepY = Math.max(0.2 * Math.min(midH, 1), SLIVER + 0.01);
+      // (the other axis: her middle centred in the stage)
+      const cx = 0.5 - z * (f.x + f.w / 2);
+      const cy = 0.5 - z * (f.y + f.h / 2);
+      for (const v of [
+        { x: 1 - keepX - midX, y: cy, z },
+        { x: keepX - midW - midX, y: cy, z },
+        { x: cx, y: 1 - keepY - midY, z },
+        { x: cx, y: keepY - midH - midY, z },
+      ]) {
+        const c = clampView(v, f);
+        near(c.x, v.x, 1e-9);
+        near(c.y, v.y, 1e-9);
+      }
     }
   }
 });

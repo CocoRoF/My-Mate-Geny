@@ -23,7 +23,7 @@ import { emotionCandidates, lookupEmotion } from "../emotion";
 import type { BodyMood, Live2D, MateReact } from "../types";
 import { subscribe as subscribeVoice, voiceBridge } from "../voiceBridge";
 import { getLive2DCoreUrl, loadCubismCore, openLive2DSettings, useLive2DCoreInstalls } from "../live2dCore";
-import { VIEW_HOME, type AvatarViewT, type FigureShape } from "./view";
+import { VIEW_HOME, type AvatarViewT, type Bleed, type FigureShape } from "./view";
 import { tr, useT } from "../../i18n";
 
 export interface Live2DBodyProps {
@@ -44,7 +44,11 @@ export interface Live2DBodyProps {
   view?: AvatarViewT;
   /** what is fitted, once the model is in: its own shape, at its scale, in the middle (view.ts FigureShape) */
   onFigure?: (figure: FigureShape) => void;
+  /** drawn this far past its box (the console's stage): the canvas reaches that far, the model is fitted in the box */
+  bleed?: Bleed;
 }
+
+const NO_BLEED: Bleed = { l: 0, r: 0, t: 0, b: 0 };
 
 type Status = { kind: "loading" } | { kind: "ready" } | { kind: "no-runtime" } | { kind: "error"; message: string };
 
@@ -140,11 +144,13 @@ function saccadeInterval(): number {
   return SACCADE_P[SACCADE_P.length - 1][1] + Math.random() * SACCADE_STEP;
 }
 
-export default function Live2DBody({ live2d, mood, react, look, name, coreUrl, onTap, interactive = true, view, onFigure }: Live2DBodyProps) {
+export default function Live2DBody({ live2d, mood, react, look, name, coreUrl, onTap, interactive = true, view, onFigure, bleed }: Live2DBodyProps) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
   const viewRef = useRef<AvatarViewT>(view ?? VIEW_HOME);
   viewRef.current = view ?? VIEW_HOME;
+  const bleedRef = useRef<Bleed>(bleed ?? NO_BLEED);
+  bleedRef.current = bleed ?? NO_BLEED;
   const figureRef = useRef(onFigure);
   figureRef.current = onFigure;
   const [status, setStatus] = useState<Status>({ kind: "loading" });
@@ -253,14 +259,16 @@ export default function Live2DBody({ live2d, mood, react, look, name, coreUrl, o
       const natH = model.height || 1;
       const layout = () => {
         if (!app || !model) return;
-        const sw = app.screen.width;
-        const sh = app.screen.height;
+        // (the canvas may reach past the box — bleed —: the model is fitted in the box, drawn to the canvas's edges)
+        const e = bleedRef.current;
+        const sw = Math.max(1, app.screen.width - e.l - e.r);
+        const sh = Math.max(1, app.screen.height - e.t - e.b);
         const c = cfg.current;
         // the view maps a point q of the box to t + z·q (the same as the other bodies' CSS transform)
         const v = viewRef.current;
         model.scale.set(Math.min(sw / natW, sh / natH) * (c.scale ?? 0.85) * v.z);
-        model.x = v.x * sw + v.z * (sw / 2 + (c.x ?? 0));
-        model.y = v.y * sh + v.z * (sh / 2 + (c.y ?? 0));
+        model.x = e.l + v.x * sw + v.z * (sw / 2 + (c.x ?? 0));
+        model.y = e.t + v.y * sh + v.z * (sh / 2 + (c.y ?? 0));
         // (contained, in the middle: the stage keeps a pan / zoom against that — view.ts)
         figureRef.current?.({ aspect: natW / natH, scale: c.scale ?? 0.85, anchorY: 0.5 });
       };
@@ -489,7 +497,7 @@ export default function Live2DBody({ live2d, mood, react, look, name, coreUrl, o
   // framing changes without a reload
   useEffect(() => {
     api.current?.layout();
-  }, [live2d.scale, live2d.x, live2d.y, status.kind, view?.x, view?.y, view?.z]);
+  }, [live2d.scale, live2d.x, live2d.y, status.kind, view?.x, view?.y, view?.z, bleed?.l, bleed?.r, bleed?.t, bleed?.b]);
 
   // ── mood face (thinking / away) when no reaction holds ──
   const applyMood = () => {
@@ -521,11 +529,12 @@ export default function Live2DBody({ live2d, mood, react, look, name, coreUrl, o
     <div
       ref={box}
       className="mate-layer"
+      // (past the box by the bleed: the canvas reaches the stage's edges)
+      style={{ ...(bleed ? { inset: `${-bleed.t}px ${-bleed.r}px ${-bleed.b}px ${-bleed.l}px` } : {}), touchAction: interactive ? "none" : undefined, cursor: interactive ? "pointer" : undefined }}
       role="img"
       aria-label={name}
       data-mate-body="live2d"
       data-mate-status={status.kind}
-      style={{ touchAction: interactive ? "none" : undefined, cursor: interactive ? "pointer" : undefined }}
     >
       {status.kind === "no-runtime" ? (
         <div className="mate-status" data-testid="mate-live2d-no-runtime">
