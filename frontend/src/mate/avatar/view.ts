@@ -7,9 +7,9 @@
  *
  * What is kept is not that transform but where she is against her fitted figure (KeptView). Kept as fractions of the
  * box, a zoom made on a wide stage, where she stands small in its middle, came back on a narrow one twice its width and
- * off to a side, her face cut by its edge. Against her figure another shape of box shows the same of her; a pan never
- * takes more than half of her middle out of sight (half of the box stays her, once she is zoomed past it); and the
- * console's stage fits her whole again when its shape changes a lot.
+ * off to a side, her face cut by its edge. Against her figure another shape of box shows the same of her; she goes
+ * wherever she is dragged — only never all the way out of the box (a sliver of her stays in sight, so she can't be lost);
+ * and the console's stage fits her whole again when its shape changes a lot.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
@@ -31,8 +31,9 @@ export const NOTCH_SPEED = 0.00055;
 export const FINE_SPEED = 0.0002;
 const PINCH_SPEED = 0.01;
 export const DRAG_PX = 4; // below this a press is still a tap
-/** a pan keeps at least this much of her middle in sight on each axis (of it, or of the box once it is bigger) */
-export const KEEP = 0.5;
+/** a pan or zoom goes anywhere, only never all the way out: this much of the box (or all of her middle, once it is
+ *  smaller) stays her on each axis — enough to find her again, no limit to where she is put */
+export const SLIVER = 0.06;
 /** her middle: her fitted box without this much of it on each side — a picture's margins and a model's canvas around
  *  her are empty, and half of her box in a corner of the stage can be nothing of her */
 export const MARGIN = 0.25;
@@ -64,6 +65,17 @@ export interface FigureShape {
   anchorY?: number;
 }
 
+/**
+ * How far past its box (px, each side) a body may be drawn: the console's stage fits her in its padded box but lets her
+ * reach its very edges — the edges of the place behind her — rather than cutting her at the padding (MateStage).
+ */
+export interface Bleed {
+  l: number;
+  r: number;
+  t: number;
+  b: number;
+}
+
 /** until the body says (a Live2D model still loading) */
 export const FIGURE_GUESS: FigureShape = { aspect: 3 / 4 };
 
@@ -93,8 +105,8 @@ export function fitRect(fig: FigureShape, w: number, h: number): FitRect {
 const zoomOf = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Number.isFinite(z) ? z : 1));
 
 /**
- * Keep her in reach: of her figure (`fit`: where it stands fitted), zoomed, at least KEEP of her middle — or of the box,
- * once her middle is bigger than it — stays inside the box on each axis. (No figure: the whole box is her.)
+ * Never lose her: of her figure (`fit`: where it stands fitted), zoomed, a SLIVER of her middle stays inside the box on
+ * each axis — nothing more is held back. (No figure: the whole box is her.)
  */
 export function clampView(v: AvatarViewT, fit: FitRect = WHOLE): AvatarViewT {
   const z = zoomOf(v.z);
@@ -102,7 +114,7 @@ export function clampView(v: AvatarViewT, fit: FitRect = WHOLE): AvatarViewT {
     // her middle spans [t + z·mid, t + z·mid + span]
     const mid = at + MARGIN * size;
     const span = z * size * (1 - 2 * MARGIN);
-    const keep = KEEP * Math.min(span, 1);
+    const keep = Math.min(SLIVER, span);
     const from = (Number.isFinite(t) ? t : 0) + z * mid;
     return Math.min(1 - keep, Math.max(keep - span, from)) - z * mid;
   };

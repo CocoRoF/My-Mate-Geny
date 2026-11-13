@@ -21,7 +21,7 @@ import { useOutfitFade } from "./outfitFade";
 import { StackedPlayer } from "./player";
 import { reducedMotion } from "./shared";
 import VideoBody from "./VideoBody";
-import { viewTransform, type AvatarViewT, type FigureShape } from "./view";
+import { viewTransform, type AvatarViewT, type Bleed, type FigureShape } from "./view";
 import PhotoBody from "./PhotoBody";
 import "./mateAvatar.css";
 
@@ -37,6 +37,8 @@ const canPlainVideo = () => !reducedMotion();
 const noSubscribe = () => () => {};
 
 export interface MateAvatarExtraProps {
+  /** drawn this far past its box (the console's stage: to the stage's edges, not its padding — view.ts Bleed) */
+  bleed?: Bleed;
   /** Live2D: Cubism Core script URL (default `/api/mates/live2d/core.js`, or setLive2DCoreUrl) */
   live2dCoreUrl?: string;
   /** Live2D: a tap on the model (hit area Id/Name, or null) */
@@ -71,12 +73,13 @@ export const MateAvatar = memo(function MateAvatar({
   view,
   doing,
   onFigure,
+  bleed,
 }: MateAvatarProps & MateAvatarExtraProps) {
   const webgl = useSyncExternalStore(noSubscribe, canVideo, () => false);
   const plainOk = useSyncExternalStore(noSubscribe, canPlainVideo, () => false);
   /** the video player could not start: show the stills instead */
   const [videoFailed, setVideoFailed] = useState(false);
-  const cls = `mate-avatar mate-avatar-${size}${className ? " " + className : ""}`;
+  const cls = `mate-avatar mate-avatar-${size}${bleed ? " mate-avatar-bleed" : ""}${className ? " " + className : ""}`;
   const figure = figureOf(avatar, frameTo);
   const figureKey = figure ? `${figure.aspect}|${figure.anchorY ?? 1}` : String(figure);
   // (before the first paint, as the stage measures its box: a kept view is never drawn against the wrong figure)
@@ -102,6 +105,7 @@ export const MateAvatar = memo(function MateAvatar({
             interactive={interactive}
             view={view}
             onFigure={onFigure}
+            bleed={bleed}
           />
         </Suspense>
       </div>
