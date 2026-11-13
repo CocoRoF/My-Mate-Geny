@@ -471,7 +471,7 @@ an existing install keeps the user's default.
 its home picture and every file it names) and every outfit her `outfits.json` lists, with every file of its rig. Until then she is
 no built-in — not created, not listed by `GET /api/mates/builtin` (`[{key, names}]`, what Settings → Mate's "restore" line reads),
 and her life profile serves nobody; a pack that is there but incomplete is logged (`mate.builtin_waiting`, what is missing). Seoa's
-text came first (2026-11): her pack follows (below).
+text came first (2026-11), her pack right after it (below).
 
 Bundles no longer shipped (`files.RETIRED_BUILTINS`: Estelle, and the Seoa bundled before) are settled at startup: one nobody ever
 used is removed; one the user talked to, taught something or changed stays on as their own mate, with all that is hers but without
@@ -490,8 +490,10 @@ wardrobe as an outfit (“예전 모습”, so its pack files stay in use). The 
 never taken again: a later 서아 of theirs stays theirs, even after a restore. An adoption that stopped half-way finishes at the
 next start (each step can be done again). Logged `mate.builtin_adopted` (also when a 서아 of theirs was passed over, and why).
 
-**Seoa's pack** (`assets/seoa/`, made the way Chaerin's was; `tests/test_mate_builtin_seoa.py` holds the list and checks it once
-the pack is there):
+**Seoa's pack** (`assets/seoa/`, made the way Chaerin's was — the studio's recipe and `app/avatar/pipeline.py` (`edge_matte`) run
+by a driver outside the repo, 2026-11-13: her own picture, faces laid over it, Kling clips from and back to it on the known gray,
+each outfit's picture redrawn from hers first; the places by day first and each time of day from that picture; ~0.75k credits;
+`tests/test_mate_builtin_seoa.py` holds the list and checks it):
 
 - `rig.json` (`stacked-alpha`, a measured `frame`, `emotions` with `angry` and `pout` → `angry`), `cover.webp`, `portrait.webp`.
 - Stills: neutral, smile, laugh, shy, surprised, sad, worried, angry (a cute pout), thinking, sleepy, blink, mouth_half,
@@ -499,7 +501,7 @@ the pack is there):
 - Clips (`<id>.lg.mp4`, `.sm.mp4`, `.thumb.webp`): idle_a, idle_b, idle_c; talk_a, talk_b; listen; think; react laugh (joy),
   smile (happy), shy, surprised (surprise), sad, worried, angry (a puffed-cheek pout that melts into a smile), nod (agree),
   wave (greet); away doze (loop); and her day's `life_<body>` with `doing: <body>`: life_stream (live at her mic, talking to
-  the camera and waving at chat), life_work (editing at her desk), life_game, life_eat, life_drink, life_walk, life_workout,
+  the camera and waving at chat), life_work (editing on her tablet), life_game, life_eat, life_drink, life_walk, life_workout,
   life_sing (karaoke, mic in hand).
 - `outfits/<name>/rig.json` for the three outfits of `outfits.json` (each with every still and clip above but life): crop-top
   (크롭탑, opens at affinity 60, makes her shy; life_stream, work, game, eat, drink, walk, workout, sing), stream-hoodie (방송복,
