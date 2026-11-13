@@ -68,6 +68,12 @@ log line `mate.call`).
   of the call's own, one ahead synthesized while one plays) and becomes the caption. Engine `browser` / `off`, or a
   server engine that isn't set up: the browser's voice; no voice at all on the device: her words show (the screen says
   so).
+- **The line before her first words** (`CallSession.prepareLine`): her first sentence waits until the phone is in call
+  mode (`GenyCall.begin`: its route set), the microphone is open (from the start of the call — while it rings when they
+  call her; nothing heard before she picks up counts), and her voice's output is ready (`MateAudioQueue.warm`: the
+  page's AudioContext running, her audio element routed through it, a moment of silence played) — then 300 ms more,
+  at most 3 s in all. Each of these, done while her first sentence played (the mic used to open at her first sound,
+  her element was routed into the context on its first play), garbled the start of her hello on a phone.
 - **Barge-in**: their own words while she speaks → she stops and the server is told what of the reply was said
   (`barge {rid, heard}`); a VAD start that may be her echo only turns her down until the transcript says. Her next
   message starts "[They talked over you; of what you were saying they heard only: “…”]".

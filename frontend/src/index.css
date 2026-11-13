@@ -329,6 +329,32 @@ html.light,
   border: 1px solid rgb(var(--c-border));
   padding: 0.35rem 0.6rem;
 }
+/* Nothing in a reply widens the page (on a phone a wide table, a long link or a long word made the whole chat scroll
+   sideways): words break where they must, a table scrolls on its own, a code block too (CodeBlock) */
+.md {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.md table {
+  display: block;
+  max-width: 100%;
+  width: max-content;
+  overflow-x: auto;
+}
+.md :is(th, td) {
+  overflow-wrap: normal;
+  min-width: 3.5rem;
+  max-width: 24rem;
+  vertical-align: top;
+}
+.md pre code {
+  overflow-wrap: normal;
+  white-space: pre;
+}
+.md :where(img, video) {
+  max-width: 100%;
+  height: auto;
+}
 
 /* A mate's bubbles (components/mate/MateReply.tsx): conversational, compact; nothing inside widens the page. */
 .mate-md {
