@@ -271,17 +271,16 @@ function defaultAvatarBounds(size) {
   return { x: a.x + a.width - size.width - MARGIN, y: a.y + a.height - size.height - MARGIN, ...size };
 }
 
-/** Keep remembered bounds on a display that still exists (an unplugged
- *  monitor must not leave an un-clickable avatar somewhere off-screen). */
+/** Where the avatar's window stays once let go: where it was put — past an edge, over the taskbar, mostly off the
+ *  screen — with a piece of it on a display (geometry.reachable), so it can be grabbed again. Remembered bounds on a
+ *  display that no longer exists (an unplugged monitor) come back to the corner. */
 function clampAvatar(b) {
   const size = { width: clamp(Math.round(Number(b.width) || AVATAR_DEFAULT.width), 60, 2400),
                  height: clamp(Math.round(Number(b.height) || AVATAR_DEFAULT.height), 60, 2400) };
   let r = { x: Math.round(Number(b.x) || 0), y: Math.round(Number(b.y) || 0), ...size };
-  if (!Number.isFinite(b.x) || !Number.isFinite(b.y) || !onSomeDisplay(r)) r = defaultAvatarBounds(size);
-  const a = screen.getDisplayMatching(r).workArea;
-  const width = Math.min(r.width, a.width);
-  const height = Math.min(r.height, a.height);
-  return { x: clamp(r.x, a.x, a.x + a.width - width), y: clamp(r.y, a.y, a.y + a.height - height), width, height };
+  const shown = screen.getAllDisplays().some((d) => geo.overlaps(r, d.bounds, Math.min(geo.REACH, r.width, r.height) - 1));
+  if (!Number.isFinite(b.x) || !Number.isFinite(b.y) || !shown) r = defaultAvatarBounds(size);
+  return geo.reachable(r, screen.getDisplayMatching(r).bounds);
 }
 
 // ── commands to the pages ──────────────────────────────────────

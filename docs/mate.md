@@ -1144,8 +1144,13 @@ bar, the quick chat card on a global shortcut (**Ctrl/Cmd+Shift+G**), the mate
 chat window, start at login, Linux forced to X11/XWayland. The renderer surface
 is the web app (§6), so features update without reinstalling.
 
-Geometry (`desktop/src/geometry.js`, unit-tested): the avatar's resize keeps
-an authoritative rect like move-by, the dragged edge stops at the work area,
+Geometry (`desktop/src/geometry.js`, unit-tested): the avatar's window stays
+where it is put — past an edge of the screen, over the taskbar, mostly off it —
+with only a piece of it (80 px) kept on a display so it can be grabbed again
+(`reachable`; it used to be pushed back inside the work area, so she could never
+go lower than the taskbar's top). Its resize keeps an authoritative rect like
+move-by, the dragged edge stops at the work area (a window already past it isn't
+pulled back),
 the size is kept per mate (`settings.json` `mateSizes`; it wins over the page's
 suggested size); the quick card opens where it was last dropped
 (`mateQuickPos`, pulled onto a live display), else centred under the pointer.
