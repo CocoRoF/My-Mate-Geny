@@ -731,7 +731,7 @@ def outfit_lock(item: dict[str, Any], affinity: int) -> int | None:
 
 
 def _outfit_card(oid: str, name: str, avatar: dict[str, Any], *, note: str = "", lock: int | None = None,
-                 feel: Any = None) -> dict[str, Any]:
+                 feel: Any = None, indoors: bool = False) -> dict[str, Any]:
     if lock:  # (only that it is there and what opens it: nothing of the set itself)
         return {"id": oid, "name": name, "kind": "none", "home": "", "aspect": [3, 4], "clips": 0, "stills": 0, "note": "",
                 "locked": {"affinity": lock}}
@@ -740,7 +740,7 @@ def _outfit_card(oid: str, name: str, avatar: dict[str, Any], *, note: str = "",
     return {"id": oid, "name": name, "kind": avatar.get("kind") or "none",
             "home": rig.get("home") or (rig.get("stills") or {}).get("neutral") or lv.get("cover") or "",
             "aspect": rig.get("aspect") or lv.get("canvas") or [3, 4], "frame": rig.get("frame"), "clips": len(rig.get("clips") or []),
-            "stills": len(rig.get("stills") or {}), "note": note, "feel": S.clean_feel(feel)}
+            "stills": len(rig.get("stills") or {}), "note": note, "feel": S.clean_feel(feel), **({"indoors": True} if indoors else {})}
 
 
 def outfits_view(raw: dict[str, Any], on: dict[str, Any], affinity: int = 0) -> dict[str, Any]:
@@ -751,7 +751,8 @@ def outfits_view(raw: dict[str, Any], on: dict[str, Any], affinity: int = 0) -> 
     return {"worn": worn, "items": [
         _outfit_card(DEFAULT_OUTFIT, "", base),
         *(_outfit_card(it["id"], it["name"], on if it["id"] == worn else it["avatar"], note=it.get("note") or "",
-                       lock=None if it["id"] == worn else outfit_lock(it, affinity), feel=it.get("feel"))
+                       lock=None if it["id"] == worn else outfit_lock(it, affinity), feel=it.get("feel"),
+                       indoors=bool(it.get("indoors")))
           for it in raw.get("items") or []),
     ]}
 
@@ -1123,6 +1124,10 @@ class MateStore:
                         cur["avatar"] = follows
                         on = follows if worn else on
                 cur["feel"] = S.clean_feel(it.get("feel"))  # (what it does to her comes with the outfit)
+                if it.get("indoors"):  # (and whether it is only worn at home)
+                    cur["indoors"] = True
+                else:
+                    cur.pop("indoors", None)
                 if worn and not w.get("worn_at"):
                     w["worn_at"] = now_iso()  # (on since before anyone noted the time: it counts from here)
                 need = (it.get("unlock") or {}).get("affinity")

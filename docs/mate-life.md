@@ -114,7 +114,7 @@ idle she plays those for what she is doing, with her usual breathing among them;
 else she dozes. She changes for what she does and back after (an activity's `wear`, an outfit id, and `wear_why` {on, off}, what she
 is told: else “it's time for bed” / “the day has started”): pajamas for bed, 서아's stream outfit to go live (her prep for it, the
 stream, the market show and a collab), from one straight into the next, back to what she had on before — unless they are with her,
-she doesn't change clothes herself, or someone changed her meanwhile (then that is what she comes back to). The clips of an existing set are encoded into its own box, so what is out there under its URLs stays as it is.
+she doesn't change clothes herself, or someone changed her meanwhile (then that is what she comes back to). What is only worn at home (an outfit's `indoors` in `outfits.json`: pajamas, 서아's underwear set) never goes out of the house: going out in it she puts on her own clothes (“you're going out”), stays dressed from one place to the next, and is back in it once home (“you're home again”). The clips of an existing set are encoded into its own box, so what is out there under its URLs stays as it is.
 
 Her edges are her own colours (`pipeline.defringe`): a half-transparent edge pixel still holds some of the gray she was cut from, which on a
 dark place reads as a white rim around her arms and hair. Every pixel short of certainly her takes the colour of her nearest certain pixel

@@ -1333,6 +1333,7 @@ def builtin_outfits(key: str) -> list[dict[str, Any]]:
         outfits.append({"id": oid, "name": item["name"], "note": item.get("note", ""),
                         **({"unlock": {"affinity": need}} if need else {}),
                         **({"feel": item["feel"]} if item.get("feel") else {}),
+                        **({"indoors": True} if item.get("indoors") is True else {}),  # (only worn at home: life/runtime._dress)
                         "avatar": normalize_avatar(avatar)})
     return outfits
 

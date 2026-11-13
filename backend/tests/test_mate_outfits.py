@@ -265,3 +265,21 @@ async def test_an_outfit_waiting_for_her_affinity_cant_be_opened_in_the_studio(d
     assert av.store.ids() == []
     mates.relation_update(m["id"], {"affinity": 60})
     assert av.studio_open(mate_id=m["id"], language="ko", outfit={"id": "builtin-x"})["outfit"]["id"] == "builtin-x"
+
+
+def test_what_is_only_worn_at_home_comes_with_the_bundle(db, tmp_path, monkeypatch):
+    from app.mate import files
+
+    _svc, mates, _av = _services(db, tmp_path, monkeypatch)
+    m = _mate(mates)
+    pj = {"id": "builtin-pj", "name": "PJ", "note": "", "avatar": _rig("pj"), "indoors": True}
+    mates.store.seed_builtin_outfits(m["id"], [pj], [])
+    card = next(c for c in mates.store.get(m["id"])["outfits"]["items"] if c["id"] == "builtin-pj")
+    assert card["indoors"] is True  # (her day reads it: life/runtime._dress)
+    mates.store.seed_builtin_outfits(m["id"], [{**pj, "indoors": False}], [pj])  # (it follows the bundle, like feel)
+    assert "indoors" not in next(c for c in mates.store.get(m["id"])["outfits"]["items"] if c["id"] == "builtin-pj")
+    # the bundles: pajamas stay at home, the rest go out
+    for key in ("chaerin", "seoa"):
+        if files.builtin_outfits(key):
+            home = {o["id"] for o in files.builtin_outfits(key) if o.get("indoors")}
+            assert "builtin-pajamas" in home and "builtin-stream-hoodie" not in home, (key, home)

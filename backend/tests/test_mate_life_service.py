@@ -264,6 +264,45 @@ def test_she_changes_for_bed_and_back_unless_someone_changed_her(store, monkeypa
     assert calls == []
 
 
+def test_what_is_only_worn_at_home_never_goes_out(store, monkeypatch):
+    worn, calls = {"outfit": "uw"}, []
+
+    def wear(mate_id, oid, reason=None):
+        calls.append((oid, reason))
+        worn["outfit"] = oid
+
+    items = [{"id": "uw", "indoors": True}, {"id": "pj", "indoors": True}, {"id": "hoodie"}]
+    monkeypatch.setattr(store, "get", lambda mate_id: {"outfits": {"worn": worn["outfit"], "items": items}})
+    life = LifeRuntime(store, None, None, wear)
+    world = {"start": {"place": "home"},
+             "activities": {"cafe": {"place": "cafe"}, "walk": {"place": "park"}, "dinner": {"place": "home"},
+                            "sleep": {"place": "home", "wear": "pj"},
+                            "collab": {"place": "studio", "wear": "hoodie", "wear_why": {"on": "live", "off": "over"}}}}
+    doc: dict = {}
+
+    def day(*keys):
+        for key in keys:
+            life._dress("m", doc, world, [{"type": "started", "activity": key}], {})
+
+    # put in it at home: out in her own clothes, still dressed from one place to the next, back in it once home
+    day("dinner", "cafe", "walk", "dinner")
+    assert calls == [("default", "you're going out"), ("uw", "you're home again")] and not doc.get("dressed_from")
+    # from a stream outfit straight out: her own clothes, and home again what she had on before all of it
+    calls.clear()
+    day("collab", "walk", "dinner")
+    assert calls == [("hoodie", "live"), ("default", "you're going out"), ("uw", "you're home again")]
+    # out of bed straight out of the house: the clothes she slept in come off as her day starts, as always
+    calls.clear()
+    worn["outfit"] = "default"
+    day("sleep", "cafe")
+    assert calls == [("pj", "it's time for bed"), ("default", "the day has started")]
+    # what can go out stays on
+    calls.clear()
+    worn["outfit"] = "hoodie"
+    day("cafe", "dinner")
+    assert calls == [] and worn["outfit"] == "hoodie"
+
+
 def test_a_wardrobe_problem_never_stops_her_day(store, monkeypatch):
     def wear(*a, **k):
         raise RuntimeError("no such outfit")

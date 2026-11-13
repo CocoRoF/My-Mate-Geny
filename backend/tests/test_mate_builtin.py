@@ -181,6 +181,8 @@ def test_builtin_hash_sees_nested_live2d_files(db, monkeypatch, tmp_path):
     root = tmp_path / "builtin"
     shutil.copytree(files.BUILTIN_DIR / "mates", root / "mates")
     shutil.copytree(files.BUILTIN_DIR / "assets" / "mao", root / "assets" / "mao")
+    # (a built-in ships only with her pack: Chaerin's, as it is, so that she is one of the others)
+    (root / "assets" / "chaerin").symlink_to(files.BUILTIN_DIR / "assets" / "chaerin")
     monkeypatch.setattr(files, "BUILTIN_DIR", root)
     before = files.builtin_hash("mao")
     (root / "assets" / "mao" / "runtime" / "motions" / "mtn_02.motion3.json").write_text("{}", "utf-8")
