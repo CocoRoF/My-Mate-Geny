@@ -19,6 +19,7 @@ import {
   level as voiceLevel,
   MAX_VOLUME,
   outputGain,
+  routeOutput,
   setOutputVolume,
   start as voiceStart,
   unlockAudio,
@@ -200,6 +201,37 @@ export class MateAudioQueue {
   private publish(): void {
     this.state = { ...this.state, current: this.playing?.item ?? null, pending: this.jobs.length };
     for (const l of [...this.listeners]) l();
+  }
+
+  /**
+   * The output made ready before a first clip: the page's AudioContext running, this element routed through it, and a
+   * moment of silence played on it. Done at the start of a phone call: her first words used to start on a path still
+   * being set up — the element routed into the context on its first play, the context resumed then, the phone just
+   * switched to call mode — and came out garbled. Nothing happens if a clip is playing.
+   */
+  async warm(): Promise<void> {
+    const el = this.element();
+    if (this.playing || !el.paused) return;
+    await routeOutput(el).catch(() => false);
+    if (this.playing || !el.paused) return;
+    el.dataset.mateSilent = "1"; // (the voice bridge ignores it: no talking for silence)
+    el.src = silentWav();
+    await new Promise<void>((done) => {
+      let over = false;
+      const end = () => {
+        if (over) return;
+        over = true;
+        el.removeEventListener("ended", end);
+        done();
+      };
+      el.addEventListener("ended", end);
+      setTimeout(end, 800);
+      void el.play().catch(end);
+    });
+    if (!this.playing && el.src.startsWith("data:audio/wav")) {
+      el.removeAttribute("src");
+      delete el.dataset.mateSilent;
+    }
   }
 
   private element(): HTMLAudioElement {

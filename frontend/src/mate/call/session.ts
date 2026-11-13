@@ -63,6 +63,11 @@ interface Reply {
 const RING_AT_LEAST_MS = 1700;
 /** the click of picking up, before her first words */
 const CLICK_MS = 140;
+/** her first words wait for the line: the phone in call mode, the microphone open, her voice's output warmed — then
+ *  this much more for the phone's audio to settle (a mode switch or a mic opening under her voice garbled it) */
+const LINE_SETTLE_MS = 300;
+/** …but never longer than this (a microphone prompt still open, a slow phone): she speaks anyway */
+const LINE_READY_MAX_MS = 3000;
 const RETRY_MS = [500, 1500, 3000];
 /** speaker off where the page can't route to the earpiece: she is only turned down */
 const EARPIECE = 0.4;
@@ -99,6 +104,8 @@ export class CallSession {
   private ducked = false;
   private volume = 1;
   private listening = false;
+  /** the line is ready for her voice (prepareLine) */
+  private lineReady = false;
 
   constructor(call: CallInfo, mate: Mate, plan: CallPlan, ev: SessionEvents, opts: { muted: boolean; speaker: boolean }) {
     this.call = call;
@@ -139,12 +146,16 @@ export class CallSession {
       this.unduck();
     };
     q.onError = () => {};
-    void callNative.begin(this.speaker, { id: this.call.id, mate: this.mate.id, name: this.mate.name });
+    const callMode = callNative.begin(this.speaker, { id: this.call.id, mate: this.mate.id, name: this.mate.name });
     void keepScreenOn(true);
     if (this.call.direction === "outgoing" && this.call.status === "dialing") {
       this.stopRing = this.tones.play("ringback", Math.min(1, this.volume));
       this.holdUntil = Date.now() + RING_AT_LEAST_MS;
-    } else this.startListening(); // (they picked up her call: they may talk at once)
+    }
+    // the microphone opens now — while it rings when they call her (nothing heard counts before she picks up) — never
+    // under her first words: a phone opening its mic switches its audio and garbles what plays at that moment
+    const mic = this.startListening();
+    void this.prepareLine(callMode, mic);
     this.connect();
     this.pingTimer = setInterval(() => this.send({ type: "ping" }), 15_000);
   }
@@ -236,6 +247,22 @@ export class CallSession {
 
   // ── her voice ──
 
+  /**
+   * The line made ready for her voice before her first words play: the phone in call mode (its route set), the
+   * microphone open, her voice's output path running and warmed with a moment of silence — then a short settle. Each of
+   * these, done while her first sentence played, garbled it. At most LINE_READY_MAX_MS: she speaks anyway after that.
+   */
+  private async prepareLine(callMode: Promise<unknown>, mic: Promise<void>): Promise<void> {
+    const deadline = Date.now() + LINE_READY_MAX_MS;
+    const capped = (p: Promise<unknown>) =>
+      Promise.race([p.catch(() => {}), new Promise((r) => setTimeout(r, Math.max(0, deadline - Date.now())))]);
+    await capped(Promise.all([callMode, mic]));
+    await capped(this.queue.warm());
+    await new Promise((r) => setTimeout(r, LINE_SETTLE_MS));
+    this.lineReady = true;
+    if (!this.over && this.held.length && !this.holdTimer) this.release();
+  }
+
   private say(r: Reply, s: Sentence): void {
     if (r.hushed || this.over) return;
     // (the caption is what she says now — when her voice can't play here, what she says at all)
@@ -246,6 +273,11 @@ export class CallSession {
     }
     const level = this.mate.prefs?.emotion ?? 2;
     const item: AudioQueueItem = { text: s.speech, emotion: voiceEmotionAt(level, s.emotion), meta: { rid: r.rid, display: s.text } };
+    // (the line isn't ready for her voice yet: her words wait — prepareLine lets them go)
+    if (!this.lineReady) {
+      this.held.push(item);
+      return;
+    }
     // (her first words wait for the click of picking up — and, when they called her, for one ring at least)
     if (!this.clicked && this.holdUntil <= Date.now()) this.holdUntil = Date.now() + CLICK_MS;
     const wait = this.holdUntil - Date.now();
@@ -269,6 +301,7 @@ export class CallSession {
 
   private release(): void {
     this.holdTimer = undefined;
+    if (!this.lineReady) return; // (prepareLine releases them once it is)
     const items = this.held;
     this.held = [];
     if (this.over) return;
@@ -306,7 +339,7 @@ export class CallSession {
     this.stopRing?.();
     this.stopRing = null;
     this.ev.connected(at);
-    this.startListening();
+    void this.startListening();
   }
 
   /** she is speaking (her voice playing now) */
@@ -355,10 +388,13 @@ export class CallSession {
 
   // ── their voice ──
 
-  private startListening(): void {
-    if (this.listening || this.over) return;
+  /** the microphone and the recognition (from the start of the call) → once the microphone is open */
+  private startListening(): Promise<void> {
+    if (this.listening || this.over) return Promise.resolve();
     this.listening = true;
     const mate = this.mate;
+    // (they called her: what is heard while it rings — the ring-back itself — is no word of theirs)
+    const early = () => this.call.direction === "outgoing" && !this.through;
     this.listener = listen(
       {
         mateId: mate.id,
@@ -370,9 +406,10 @@ export class CallSession {
       },
       {
         onUtterance: (text, endAt, how) => {
-          if (!this.muted) this.utter(text, endAt, how);
+          if (!this.muted && !early()) this.utter(text, endAt, how);
         },
         onSpeech: (sure) => {
+          if (early()) return;
           this.ev.userTalking(true);
           if (sure) this.interrupt();
           else this.duck();
@@ -387,7 +424,7 @@ export class CallSession {
         onFail: (text) => this.ev.deaf(text),
       },
     );
-    void this.listener.start();
+    return this.listener.start();
   }
 
   /** one finished utterance of theirs goes to her */
