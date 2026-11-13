@@ -5,8 +5,13 @@ HTTP::
     POST /api/mates/{id}/calls {device}        → {call, plan}   the user calls her (409 code=busy: a call is on)
     GET  /api/mate-calls/active                → {call | null}  (a page that comes back finds the call it was on)
     POST /api/mate-calls/{cid}/accept {device} → {call, plan}   she is calling: they pick up
+    POST /api/mate-calls/{cid}/answering       → {call}         …on the phone's ringing: the app is coming up to take it
     POST /api/mate-calls/{cid}/decline         → {call}         …or turn it down
     POST /api/mate-calls/{cid}/hangup          → {call}
+    GET  /api/mate-calls/link?device=          → text/event-stream: the Android app's background link (its foreground
+         service): ``data: {"type": "hello", "calls", "mate", "ring"}`` · ``{"type": "call.ring", "data"}`` ·
+         ``{"type": "call.update", "data"}`` · ``{"type": "policy", "calls", "mate"}`` · ``{"type": "ping"}`` (every
+         calls.LINK_PING_S at least, so a dead line is noticed) · ``{"type": "bye"}`` (the server is stopping)
 
 The line, ``/ws/mate-calls/{cid}`` (one screen at a time; a newer one takes over, a dropped one may come back within
 calls.RESUME_S)::
@@ -30,9 +35,9 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.mate.calls import CallError, CallService
+from app.mate.calls import LINK_PING_S, CallError, CallService
 from app.mate.store import MateError
 from app.ws.gate import admit
 
@@ -79,6 +84,34 @@ async def dial(mate_id: str, request: Request) -> Any:
         return _fail(exc)
 
 
+@router.get("/api/mate-calls/link")
+async def link(request: Request, device: str = "") -> Any:
+    """The phone app's background link: her ringing for this device and where every call stands, as server-sent events,
+    for as long as it stays open."""
+    calls = _calls(request)
+    device = device.strip()[:80]
+    if not device:
+        return JSONResponse({"detail": "device is required", "code": "error"}, status_code=400)
+
+    async def events() -> Any:
+        queue: asyncio.Queue = asyncio.Queue(maxsize=256)
+        lk = calls.link(device, queue.put_nowait)
+        try:
+            while True:
+                try:
+                    msg = await asyncio.wait_for(queue.get(), timeout=LINK_PING_S)
+                except asyncio.TimeoutError:
+                    msg = {"type": "ping"}
+                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                if msg.get("type") == "bye":
+                    return  # (the server is stopping: the app comes back to the next one)
+        finally:
+            calls.unlink(lk.id)
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
+
+
 @router.get("/api/mate-calls/active")
 async def active(request: Request) -> Any:
     call = _calls(request).active()
@@ -93,6 +126,8 @@ async def act(cid: str, action: str, request: Request) -> Any:
         if action == "accept":
             call = await calls.accept(cid, str(body.get("device") or ""))
             return {"call": call.public(), "plan": _plan(request, calls, call.mate_id)}
+        if action == "answering":
+            return {"call": (await calls.answering(cid)).public()}
         if action == "decline":
             return {"call": (await calls.decline(cid)).public()}
         if action == "hangup":

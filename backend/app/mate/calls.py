@@ -60,6 +60,8 @@ AFTER_ANY_CALL = timedelta(hours=3)       # after any call at all
 ASKED_AFTER, NEWS_AFTER, STALE = timedelta(minutes=40), timedelta(minutes=20), timedelta(hours=8)
 LONELY_FROM, LONELY_CHANCE = 0.55, 0.08   # missing them this much, she calls now and then (per scan, once a minute)
 SCAN_S = 60
+LINK_PING_S = 45                  # the phone app's background link hears something at least this often (under proxies' 60 s idle)
+PHONES_KEY = "call_phones"        # what each phone app last said it lets her do (its device → {enabled, mate_id, at})
 
 _TAG = re.compile(r"\[\s*[A-Za-z_]+(?:\s*:\s*[0-9.]+)?\s*\]")
 _SPACE = re.compile(r"[ \t]+")
@@ -102,6 +104,46 @@ def _t(iso: str | None) -> datetime | None:
     except ValueError:
         return None
     return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+#: why she called (``Call.reason``), as she remembers it
+WHY = {"question": "you had asked them something and were still waiting for the answer",
+       "work": "you had news for them from work you'd handed off",
+       "lonely": "you missed them and wanted to hear their voice"}
+
+
+def describe(card: dict[str, Any], tz: Any = timezone.utc, *, name: str = "You", lines: int = 40) -> str:
+    """A call as she remembers it — who called whom and when, why (hers), how it went, what was said — from its card
+    (``CallService.card``): for her chat's handoffs and catch-ups and a later call's prompt, so no call of hers, taken or
+    not, is ever something she knows nothing about. ``name``: how her own lines are labelled."""
+    mine = card.get("direction") == "incoming"
+    at = _t(card.get("started_at"))
+    when = f" at {at.astimezone(tz).strftime('%Y-%m-%d %H:%M')}" if at else ""
+    head = f"You phoned them{when}" if mine else f"They phoned you{when}"
+    if mine and card.get("reason") in WHY:
+        about = clip(card.get("about") or "", 200)
+        head += f" ({WHY[card['reason']]}" + (f": “{about}”" if about else "") + ")"
+    status = card.get("status") or ""
+    dur = int(card.get("duration_s") or 0)
+    took = f"{dur // 60}:{dur % 60:02d}"
+    outcome = {
+        "talked": f"{'they' if mine else 'you'} picked up and you talked for {took}",
+        "declined": "they turned the call down",
+        "missed": "they didn't pick up (a missed call)",
+        "cancelled": "the call was cut off before they picked up" if mine else "they hung up before you picked up",
+        "failed": "the call didn't connect",
+    }.get(status, status or "it ended")
+    said = [x for x in card.get("transcript") or [] if x.get("text")]
+    body = [f"{'User' if x.get('who') == 'user' else name}: {clip(x.get('text'), 600)}" + (" (cut off)" if x.get("cut") else "")
+            for x in said[-lines:]]
+    if status == "talked":
+        if not any(x.get("who") == "user" for x in said):
+            body.append({"network": "(The line dropped before they said anything.)",
+                         "limit": "(It ran out of time.)"}.get(card.get("end_reason") or "",
+                                                              "(They didn't say a word, and the call ended.)"))
+        elif card.get("end_reason") == "network":
+            body.append("(The line dropped at the end.)")
+    return f"[Phone call — {head}; {outcome}.]" + ("\n" + "\n".join(body) if body else "")
 
 
 # ---- the engines ----
@@ -294,6 +336,7 @@ class Call:
     reply_task: asyncio.Task | None = None
     ready: asyncio.Event = field(default_factory=asyncio.Event)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    answering: bool = False   # picked up on the phone's ringing; the app is coming up to take it
 
     def public(self) -> dict[str, Any]:
         return {"id": self.id, "mate_id": self.mate_id, "name": self.name, "session_id": self.session_id,
@@ -305,6 +348,16 @@ class Call:
         return [x["text"] for x in self.transcript if x["who"] == who and x["text"]]
 
 
+@dataclass
+class Link:
+    """The Android app's background link (``GET /api/mate-calls/link``, its foreground service): her ringing reaches the
+    phone with the app closed, the way a call would."""
+    id: str
+    device: str
+    send: Callable[[dict[str, Any]], None]
+    connected_at: float
+
+
 class CallService:
     def __init__(self, mates: Any, *, clock: Callable[[], float] = time.time,
                  rng: Callable[[], float] = random.random) -> None:
@@ -314,6 +367,7 @@ class CallService:
         self.broker = mates.capture
         self.clock, self.rng = clock, rng
         self.calls: dict[str, Call] = {}
+        self.links: dict[str, Link] = {}
         self.task: asyncio.Task | None = None
         self._followups: set[asyncio.Task] = set()
         db = self.store._db
@@ -326,7 +380,9 @@ class CallService:
         # (a call that was on when the server stopped: it ended then)
         db.execute("UPDATE mate_calls SET status='ended', end_reason='restart', ended_at=COALESCE(ended_at, ?) "
                    "WHERE status IN ('ringing','dialing','active')", (now_iso(),))
+        self.phones = self._load_phones()
         mates.calls = self
+        self.svc.call_note = lambda card: describe(card, self.store.tz())  # (her chat's handoffs and catch-ups)
 
     # ---- what is on ----
 
@@ -388,10 +444,15 @@ class CallService:
                     direction="incoming", status="ringing", device=device, reason=reason, about=about,
                     created_at=self._now_iso())
         self._open(call)
+        ring = {"type": "call.ring", "data": call.public()}
         for c in self.broker.clients():
             if c.device == device:
-                self._tell(c, {"type": "call.ring", "data": call.public()})
-        self._later(call, RING_S, lambda: self._spawn(call, self.end(call, "missed")) if call.status == "ringing" else None)
+                self._tell(c, ring)
+        for lk in list(self.links.values()):
+            if lk.device == device:
+                self._tell(lk, ring)  # (the app's ringing with the page itself gone: the phone rings like a call)
+        self._later(call, RING_S, lambda: self._spawn(call, self.end(call, "missed"))
+                    if call.status == "ringing" and not call.answering else None)
         self._spawn(call, self._prepare(call))  # (warm: her hello is ready the moment they pick up)
         self.mates._log("info", f"“{mate['name']}” is calling ({reason})", code="mate.call_ring",
                         detail={"call": call.id, "reason": reason, "device": device})
@@ -407,6 +468,17 @@ class CallService:
         self._save(call)
         self._announce(call)
         self._later(call, DIAL_S, lambda: self._spawn(call, self.end(call, "network")) if call.send is None else None)
+        return call
+
+    async def answering(self, cid: str) -> Call:
+        """They picked up on the phone's ringing (the notification) and the app is coming up to take the call: it doesn't
+        go missed meanwhile — the ring holds another :data:`RING_S` for the page to accept."""
+        call = self.get(cid)
+        if call.status != "ringing":
+            raise CallError("this call isn't ringing", status=409, code="state")
+        if not call.answering:
+            call.answering = True
+            self._later(call, RING_S, lambda: self._spawn(call, self.end(call, "missed")) if call.status == "ringing" else None)
         return call
 
     async def decline(self, cid: str) -> Call:
@@ -527,10 +599,7 @@ class CallService:
             if msg["created_at"] <= floor or meta.get("hidden") or meta.get("speech_pending") or meta.get("refused"):
                 continue
             if meta.get("kind") == "call" and isinstance(meta.get("call"), dict):
-                lines = [f"{'User' if x.get('who') == 'user' else 'You'}: {clip(x.get('text'), 300)}"
-                         for x in (meta["call"].get("transcript") or [])[-8:] if x.get("text")]
-                if lines:
-                    out.append("(a phone call)\n" + "\n".join(lines))
+                out.append(describe(meta["call"], self.store.tz(), lines=8))  # (taken or not: she knows it happened)
                 continue
             if meta.get("internal"):
                 continue
@@ -789,7 +858,7 @@ class CallService:
         latency = {"n": len(lat), "first_audio_ms": round(statistics.median(lat)) if lat else None,
                    "ttft_ms": round(statistics.median(ttft)) if ttft else None}
         return {"id": call.id, "direction": call.direction, "status": status, "reason": call.reason,
-                "started_at": call.created_at, "answered_at": call.answered_at, "ended_at": call.ended_at,
+                "about": clip(call.about, 300), "started_at": call.created_at, "answered_at": call.answered_at, "ended_at": call.ended_at,
                 "end_reason": call.end_reason, "duration_s": round((ended - begun).total_seconds()) if begun and ended else 0,
                 # (a call nobody picked up has nothing said on it: her hello, made while it rang, was never heard)
                 "transcript": [{k: x[k] for k in ("who", "text", "at", "cut") if k in x} for x in call.transcript]
@@ -816,7 +885,8 @@ class CallService:
             self.mates._state_event(call.mate_id, lambda doc, who, at, tz: S.call_unanswered(doc, who, status == "declined",
                                                                                               n, at, tz))
         said = call.said("user")
-        if status == "talked" and said:
+        if status == "talked":
+            # (picked up, even without a word from them: a call happened between them — hers to take in, like any)
             task = asyncio.create_task(self._follow_up(call, card, said))
             self._followups.add(task)
             task.add_done_callback(self._followups.discard)
@@ -855,20 +925,26 @@ class CallService:
         """What her engine reads for the call's turn (the stored message is only what the user said on it)."""
         dur = int(card.get("duration_s") or 0)
         theirs = card.get("direction") == "outgoing"
-        who = "they called you" if theirs else "you called them"
-        lines = "\n".join(f"{'User' if x.get('who') == 'user' else mate_name}: {x.get('text')}" + (" (cut off)" if x.get("cut") else "")
-                          for x in card.get("transcript") or [] if x.get("text"))
-        ended = {"network": " The line dropped at the end.", "limit": " It ran out of time."}.get(card.get("end_reason") or "", "")
-        return (f"<phone_call caller=\"{'user' if theirs else 'you'}\" duration=\"{dur // 60}:{dur % 60:02d}\">\n{lines}\n"
+        record = describe(card, self.store.tz(), name=mate_name, lines=MAX_TRANSCRIPT)
+        silent = not any(x.get("who") == "user" and x.get("text") for x in card.get("transcript") or [])
+        if silent:
+            rules = ("They picked up but never said a word before it ended — busy, somewhere they couldn't talk, or a tap by "
+                     "mistake; you can't know which. You may send one short message the way you would after a call like that "
+                     "(what you called about, if it still matters, or just that it's fine) — or nothing, if that fits better: "
+                     "then reply with EXACTLY [SILENT].")
+        else:
+            rules = ("On the call you could only talk, so nothing they asked for has been done yet — if they asked you to do "
+                     "something (hand work to a chat, remember something, change your style…), do it now with your tools, "
+                     "exactly as you would for a message. Write to them only if there is something they need to hear: what "
+                     "came of what you did, a question you must ask, or something that matters you didn't get to say on the "
+                     "call — briefly, in your own voice, like a message. Never recap or summarize the call for them: they were "
+                     "there. Otherwise — nothing was asked, or it's done and there's nothing to tell — reply with EXACTLY "
+                     "[SILENT].")
+        return (f"<phone_call caller=\"{'user' if theirs else 'you'}\" duration=\"{dur // 60}:{dur % 60:02d}\">\n{record}\n"
                 "</phone_call>\n"
-                f"[That was a phone call between you and the user that just ended ({who}).{ended} It is in the chat now as one "
-                "call entry, and you remember it. This turn is for you, not a message to them: take in what was said. On the "
-                "call you could only talk, so nothing they asked for has been done yet — if they asked you to do something "
-                "(hand work to a chat, remember something, change your style…), do it now with your tools, exactly as you "
-                "would for a message. Write to them only if there is something they need to hear: what came of what you did, a "
-                "question you must ask, or something that matters you didn't get to say on the call — briefly, in your own "
-                "voice, like a message. Never recap or summarize the call for them: they were there. Otherwise — nothing was "
-                "asked, or it's done and there's nothing to tell — reply with EXACTLY [SILENT].]")
+                f"[That was a phone call between you and the user that just ended ({'they' if theirs else 'you'} called). It is "
+                "in the chat now as one call entry, and you remember it — that it happened, who called and why. This turn is "
+                f"for you, not a message to them: take in what was said. {rules}]")
 
     # ---- what she is told later ----
 
@@ -905,19 +981,85 @@ class CallService:
 
     # ---- whether she calls them now ----
 
+    @staticmethod
+    def _hers(pol: dict[str, Any], mate: dict[str, Any]) -> bool:
+        """a phone's policy lets this mate speak first (set to her, or to nobody and she is the default)"""
+        if pol.get("enabled") is not True:
+            return False
+        chosen = pol.get("mate_id") or ""
+        return chosen == mate["id"] or (not chosen and bool(mate.get("is_default")))
+
     def phone(self, mate: dict[str, Any]) -> str | None:
-        """The connected Android app that lets her speak first (and is set to her, or to nobody and she is the default)."""
+        """The Android app she may call: one whose page is open (in front or in the background) and lets her speak first
+        there, the most recently used; else one whose background link is up (the app closed, its service running), as its
+        page last said — the most recently seen."""
         best = None
         for c in self.broker.clients():
-            pol = c.screen_policy or {}
-            if c.native != "android" or c.calls < CALL_CLIENT or not c.device or pol.get("enabled") is not True:
-                continue
-            chosen = pol.get("mate_id") or ""
-            if chosen != mate["id"] and not (not chosen and mate.get("is_default")):
+            if c.native != "android" or c.calls < CALL_CLIENT or not c.device or not self._hers(c.screen_policy or {}, mate):
                 continue
             if best is None or c.active_at > best.active_at:
                 best = c
-        return best.device if best else None
+        if best is not None:
+            return best.device
+        linked = {lk.device for lk in self.links.values()}
+        able = [(str(self.phones[d].get("at") or ""), d) for d in linked if d in self.phones and self._hers(self.phones[d], mate)]
+        return max(able)[1] if able else None
+
+    # ---- the phone app's background link ----
+
+    def _load_phones(self) -> dict[str, dict[str, Any]]:
+        try:
+            doc = json.loads(self.store._setting(PHONES_KEY) or "{}")
+        except ValueError:
+            doc = {}
+        return {str(k): v for k, v in doc.items() if isinstance(v, dict)} if isinstance(doc, dict) else {}
+
+    def saw(self, client: Any) -> None:
+        """A phone app's page said who it is (``/ws/sessions`` hello): whether it lets her speak first, and to whom, is
+        kept for its device — so once the page is gone (the app closed) its background link still knows."""
+        if getattr(client, "native", "") != "android" or not client.device or client.calls < CALL_CLIENT:
+            return
+        pol = client.screen_policy or {}
+        want = {"enabled": pol.get("enabled") is True, "mate_id": str(pol.get("mate_id") or "")}
+        have = self.phones.get(client.device) or {}
+        stale = (_t(have.get("at")) or datetime.min.replace(tzinfo=timezone.utc)) < datetime.now(timezone.utc) - timedelta(hours=1)
+        if {k: have.get(k) for k in want} == want and not stale:
+            return
+        self.phones[client.device] = {**want, "at": self._now_iso()}
+        if len(self.phones) > 20:  # (the newest twenty phones)
+            self.phones = dict(sorted(self.phones.items(), key=lambda kv: str(kv[1].get("at") or ""))[-20:])
+        self.store._put_setting(PHONES_KEY, json.dumps(self.phones))
+        if {k: have.get(k) for k in want} != want:
+            for lk in list(self.links.values()):
+                if lk.device == client.device:
+                    self._tell(lk, {"type": "policy", **self.reach(lk.device)})
+
+    def reach(self, device: str) -> dict[str, Any]:
+        """What a phone's link is for right now: whether she may call it, and who she is (the app says so in its
+        notification)."""
+        pol = self.phones.get(device) or {}
+        if pol.get("enabled") is not True:
+            return {"calls": False, "mate": ""}
+        name = ""
+        try:
+            mid = pol.get("mate_id") or ""
+            mate = self.store.get(mid) if mid else next((m for m in self.store.list() if m.get("is_default")), None)
+            name = (mate or {}).get("name") or ""
+        except Exception:  # noqa: BLE001 - a mate gone or a store hiccup: the line still holds
+            name = ""
+        return {"calls": True, "mate": name}
+
+    def link(self, device: str, send: Callable[[dict[str, Any]], None]) -> Link:
+        """The phone app's service connected: it hears her ringing for its device (a ring already on comes at once) and
+        where every call stands."""
+        lk = Link(id=secrets.token_hex(6), device=str(device)[:80], send=send, connected_at=time.monotonic())
+        self.links[lk.id] = lk
+        ringing = next((c for c in self.calls.values() if c.status == "ringing" and c.device == lk.device), None)
+        self._tell(lk, {"type": "hello", **self.reach(lk.device), "ring": ringing.public() if ringing else None})
+        return lk
+
+    def unlink(self, lid: str) -> None:
+        self.links.pop(lid, None)
 
     def _last_user(self, sid: str) -> datetime | None:
         for r in self.store._db.query("SELECT created_at, meta FROM messages WHERE session_id=? AND role IN ('user','steer') "
@@ -1029,6 +1171,34 @@ class CallService:
 
     def start(self) -> None:
         self.task = asyncio.create_task(self.run())
+        self._end_links_on_exit()
+
+    def end_links(self) -> None:
+        """The server is going: every phone's link ends now (``bye``: the app comes back to the new one in seconds)."""
+        for lk in list(self.links.values()):
+            self._tell(lk, {"type": "bye"})
+
+    def _end_links_on_exit(self) -> None:
+        """A link is a response that never ends, and the server's graceful stop waits for every response — so a stop
+        (SIGTERM, Ctrl+C) would hang with a phone linked (until docker kills it, the phone still on the old server). The
+        server's own handlers are wrapped: the links end first, then it stops as it would."""
+        import signal
+        import threading
+
+        if threading.current_thread() is not threading.main_thread():
+            return  # (tests: no signals here)
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            prev = signal.getsignal(sig)
+            if not callable(prev) or getattr(prev, "_ends_links", False):
+                continue  # (no server's handler to wrap)
+
+            def handler(s: int, frame: Any, prev: Callable[..., Any] = prev) -> None:
+                loop.call_soon_threadsafe(self.end_links)
+                prev(s, frame)
+
+            handler._ends_links = True  # type: ignore[attr-defined]
+            signal.signal(sig, handler)
 
     async def stop(self) -> None:
         if self.task is not None:
@@ -1084,5 +1254,6 @@ class CallService:
 
     def _announce(self, call: Call) -> None:
         """Every window hears where a call stands (a ringing screen elsewhere goes away once it is taken or over)."""
-        for c in self.broker.clients():
-            self._tell(c, {"type": "call.update", "data": call.public()})
+        msg = {"type": "call.update", "data": call.public()}
+        for c in [*self.broker.clients(), *self.links.values()]:
+            self._tell(c, msg)

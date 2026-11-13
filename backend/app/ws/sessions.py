@@ -67,6 +67,9 @@ async def sessions_feed(websocket: WebSocket) -> None:
                 continue
             if msg.get("type") == "client" and conn is not None:
                 broker.hello(conn, msg)
+                calls = getattr(websocket.app.state, "calls", None)
+                if calls is not None:
+                    calls.saw(broker._clients[conn])  # (a phone app: what it lets her do, for its background link)
                 screen=getattr(websocket.app.state,'screen_service',None)
                 if screen:
                     screen.mate_service=mates

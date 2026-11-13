@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="shortcut_switch_server">서버 바꾸기</string>
+    <string name="shortcut_switch_server_long">서버 바꾸기 / 다시 로그인</string>
+    <!-- 메이트의 전화 (CallNotifier, GenyLinkService) -->
+    <string name="call_mate">메이트</string>
+    <string name="call_channel_calls">전화</string>
+    <string name="call_channel_calls_about">메이트가 거는 전화</string>
+    <string name="call_channel_link">연결 유지</string>
+    <string name="call_channel_link_about">앱을 닫아도 메이트의 전화를 받을 수 있게 연결을 유지해요</string>
+    <string name="call_channel_ongoing">통화 중</string>
+    <string name="call_channel_missed">부재중 전화</string>
+    <string name="call_ring_text">전화가 왔어요</string>
+    <string name="call_answer">받기</string>
+    <string name="call_decline">거절</string>
+    <string name="call_hangup">끊기</string>
+    <string name="call_ongoing_text">통화 중</string>
+    <string name="call_missed_title">부재중 전화</string>
+    <string name="call_missed_text">%1$s에게서 온 전화</string>
+    <string name="link_title">전화 기다리는 중</string>
+    <string name="link_on">%1$s의 전화를 받을 수 있어요</string>
+    <string name="link_on_any">메이트의 전화를 받을 수 있어요</string>
+    <string name="link_on_text">앱을 닫아도 전화가 와요</string>
+    <string name="link_off_text">이 기기에서 먼저 말 걸기가 꺼져 있어 전화는 오지 않아요</string>
+    <string name="link_connecting">서버에 연결하는 중…</string>
+    <string name="link_offline">연결이 끊겼어요 · 다시 연결하는 중</string>
+    <string name="link_signed_out">앱을 열어 다시 로그인하면 전화를 받을 수 있어요</string>
+</resources>

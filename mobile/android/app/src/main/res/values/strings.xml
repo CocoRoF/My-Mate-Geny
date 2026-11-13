@@ -1,9 +1,33 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">My Mate Geny</string>
-    <string name="title_activity_main">My Mate Geny</string>
-    <string name="package_name">me.hrletsgo.harnessor</string>
-    <string name="custom_url_scheme">me.hrletsgo.harnessor</string>
+    <string name="app_name" translatable="false">My Mate Geny</string>
+    <string name="title_activity_main" translatable="false">My Mate Geny</string>
+    <string name="package_name" translatable="false">me.hrletsgo.harnessor</string>
+    <string name="custom_url_scheme" translatable="false">me.hrletsgo.harnessor</string>
     <string name="shortcut_switch_server">Switch server</string>
     <string name="shortcut_switch_server_long">Switch server / sign in again</string>
+
+    <!-- her calls (CallNotifier, GenyLinkService) -->
+    <string name="call_mate">Your mate</string>
+    <string name="call_channel_calls">Calls</string>
+    <string name="call_channel_calls_about">Your mate calling you</string>
+    <string name="call_channel_link">Staying reachable</string>
+    <string name="call_channel_link_about">Keeps the app connected so your mate can call with it closed</string>
+    <string name="call_channel_ongoing">Ongoing call</string>
+    <string name="call_channel_missed">Missed calls</string>
+    <string name="call_ring_text">Calling you</string>
+    <string name="call_answer">Answer</string>
+    <string name="call_decline">Decline</string>
+    <string name="call_hangup">Hang up</string>
+    <string name="call_ongoing_text">On a call</string>
+    <string name="call_missed_title">Missed call</string>
+    <string name="call_missed_text">%1$s called you</string>
+    <string name="link_title">Waiting for calls</string>
+    <string name="link_on">%1$s can call you</string>
+    <string name="link_on_any">Your mate can call you</string>
+    <string name="link_on_text">Even with the app closed</string>
+    <string name="link_off_text">Speaking first is off here, so no calls come</string>
+    <string name="link_connecting">Connecting to your server…</string>
+    <string name="link_offline">Not connected — trying again</string>
+    <string name="link_signed_out">Open the app and sign in again to get calls</string>
 </resources>

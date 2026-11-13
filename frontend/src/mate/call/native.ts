@@ -28,14 +28,35 @@ export function nativeCalls(): boolean {
 }
 
 async function call(method: string, options: Record<string, unknown> = {}): Promise<boolean> {
+  return (await ask(method, options)) !== null;
+}
+
+/** the plugin's answer, or null (no plugin, an app from before this method, a failure) */
+async function ask<T = Record<string, unknown>>(method: string, options: Record<string, unknown> = {}): Promise<T | null> {
   const c = cap();
-  if (!c || !nativeCalls()) return false;
+  if (!c || !nativeCalls()) return null;
   try {
-    await c.nativePromise("GenyCall", method, options);
-    return true;
+    return ((await c.nativePromise("GenyCall", method, options)) ?? {}) as T;
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** the app's background link (GenyLinkService): her calls ring with the app closed, like a phone's */
+export interface PhoneLink {
+  /** the user lets it run with the app closed */
+  background: boolean;
+  /** signed in to a server it remembers, this page's device known */
+  ready: boolean;
+  running: boolean;
+  state: "off" | "connecting" | "connected" | "offline" | "signed_out";
+  /** she may call this phone (speaking first is on here), and who */
+  calls: boolean;
+  mate: string;
+  /** what the phone still has to allow */
+  notifications: boolean;
+  fullScreen: boolean;
+  batteryExempt: boolean;
 }
 
 let wake: { release: () => Promise<void> } | null = null;
@@ -71,14 +92,22 @@ export async function keepScreenOn(on: boolean): Promise<void> {
 }
 
 export const callNative = {
-  /** call mode: the route (loudspeaker or earpiece), the screen kept on */
-  begin: (speaker: boolean) => call("begin", { speaker }),
+  /** call mode: the route (loudspeaker or earpiece), the screen kept on; the app holds the microphone and shows the call */
+  begin: (speaker: boolean, about?: { id: string; mate: string; name: string }) => call("begin", { speaker, ...about }),
   setSpeaker: (on: boolean) => call("setSpeaker", { on }),
   end: () => call("end"),
-  /** her ringing as a call notification (shown while the app is in the background) */
-  ring: (id: string, title: string, body: string, accept: string, decline: string) =>
-    call("ring", { id, title, body, accept, decline }),
+  /** her ringing as a call notification (shown while the app is in the background or the phone is locked) → shown:
+   *  the phone rings, so the page doesn't */
+  ring: async (id: string, mate: string, title: string, body: string): Promise<boolean> =>
+    !!(await ask<{ shown?: boolean }>("ring", { id, mate, title, body }))?.shown,
   cancelRing: (id: string) => call("cancelRing", { id }),
+  /** this page is `device`; her faces (data URLs by mate id) ring with her calls → the link's status (null: an app
+   *  without the background link) */
+  link: (device: string, faces: Record<string, string>) => ask<PhoneLink>("link", { device, faces }),
+  linkStatus: () => ask<PhoneLink>("status"),
+  setBackground: (on: boolean) => ask<PhoneLink>("setBackground", { on }),
+  /** the phone's own page: battery (no optimisation) · fullscreen (calls over the lock screen) · notifications */
+  openSettings: (what: "battery" | "fullscreen" | "notifications") => call("openSettings", { what }),
   /** what was tapped on her call notification: open (the app came up) · accept · decline */
   onAction(cb: (a: { action: string; id: string }) => void): void {
     const c = cap();
