@@ -2,7 +2,7 @@
 // card's remembered place (clamped to a live display) and its growth.
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { resizeRect, quickPlacement, quickGrow } = require("../src/geometry");
+const { REACH, reachable, resizeRect, quickPlacement, quickGrow } = require("../src/geometry");
 
 const MIN = { width: 120, height: 140 };
 const AREA = { x: 0, y: 0, width: 1920, height: 1040 };
@@ -68,4 +68,25 @@ test("near the bottom of the screen the card moves up just enough to stay on it"
   const g = quickGrow(b, 200, 640, AREA, 56, 640);
   assert.equal(g.height, 200);
   assert.equal(g.y + g.height, 1040);
+});
+
+test("the avatar's window stays where it is put — past the bottom, over the taskbar, off a side (the report: it wouldn't go lower)", () => {
+  const SCREEN = { x: 0, y: 0, width: 1920, height: 1080 };
+  // (lower than the work area's bottom — over the taskbar, half below the screen: kept)
+  for (const b of [{ x: 1500, y: 700, width: 400, height: 500 }, { x: 1500, y: 900, width: 400, height: 500 }, { x: -250, y: 300, width: 400, height: 500 }, { x: 1700, y: -300, width: 400, height: 500 }]) {
+    assert.deepEqual(reachable(b, SCREEN), b);
+  }
+  // only never all the way out: a piece of it (REACH px) stays on the screen to grab
+  assert.deepEqual(reachable({ x: 1500, y: 2000, width: 400, height: 500 }, SCREEN), { x: 1500, y: 1080 - REACH, width: 400, height: 500 });
+  assert.deepEqual(reachable({ x: -900, y: 100, width: 400, height: 500 }, SCREEN), { x: -400 + REACH, y: 100, width: 400, height: 500 });
+  // a window bigger than the screen is the screen's size at most
+  assert.deepEqual(reachable({ x: 0, y: 0, width: 4000, height: 300 }, SCREEN).width, 1920);
+});
+
+test("a window put past the work area's edge isn't pulled back in by a resize there", () => {
+  // (its bottom over the taskbar, below the work area's: the south edge grows it, never snaps it shorter)
+  const r = resizeRect({ x: 100, y: 800, w: 300, h: 400 }, "s", 0, 20, MIN, AREA);
+  assert.deepEqual(r, { x: 100, y: 800, w: 300, h: 400 });
+  const shrink = resizeRect({ x: 100, y: 800, w: 300, h: 400 }, "s", 0, -50, MIN, AREA);
+  assert.equal(shrink.h, 350);
 });
