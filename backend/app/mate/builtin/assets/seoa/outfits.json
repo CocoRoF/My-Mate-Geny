@@ -24,6 +24,19 @@
       "note": "Soft pastel-pink fleece pajamas with a rounded white collar, a tiny strawberry pattern and white buttons down the front, buttoned up. Same face, the same long pink hair in its high ponytail with the black scrunchie, the same small red bead earrings. No cream knit, no navy cardigan, no hoodie and no headset in this outfit. What you wear to bed.",
       "rig": "outfits/pajamas/rig.json",
       "indoors": true
+    },
+    {
+      "id": "builtin-underwear",
+      "name": "속옷",
+      "note": "A pastel-pink lace lingerie set: a low-cut balconette bra with scalloped lace along its edges and a tiny satin bow at the centre, and matching lace-trimmed briefs. Opaque fabric, no letters, no logo. Same face, the same long pink hair in its high ponytail with the black scrunchie, the same small red bead earrings. No cream knit, no navy cardigan, no hoodie and no headset in this outfit; she stands with both hands behind her back, shoulders back, with a soft, confident smile. What you wear at home.",
+      "feel": {
+        "shy": 0.7
+      },
+      "unlock": {
+        "affinity": 80
+      },
+      "indoors": true,
+      "rig": "outfits/underwear/rig.json"
     }
   ]
 }

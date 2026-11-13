@@ -40,7 +40,7 @@ CLIPS = {"idle_a": ("idle", ""), "idle_b": ("idle", ""), "idle_c": ("idle", ""),
 LIFE = ("stream", "work", "game", "eat", "drink", "walk", "workout", "sing")
 #: per outfit folder: the life clips it has (each also has every clip of CLIPS and every still)
 OUTFIT_LIFE = {"crop-top": LIFE, "stream-hoodie": ("stream", "work", "game", "eat", "drink"),
-               "pajamas": ("sleep", "game", "eat", "drink")}
+               "pajamas": ("sleep", "game", "eat", "drink"), "underwear": ("work", "game", "eat", "drink")}
 SLOTS = ("morning", "day", "evening", "night")
 HAS_PACK = (REAL / "assets" / "seoa" / "rig.json").is_file()
 needs_pack = pytest.mark.skipif(not HAS_PACK, reason="Seoa's pack is not in this checkout yet")
