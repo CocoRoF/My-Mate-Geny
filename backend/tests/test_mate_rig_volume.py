@@ -132,6 +132,11 @@ def test_a_clip_that_starts_on_its_own_face_keeps_saying_so(tmp_path):
                           tmp_path, lambda rel: f"/x/{rel}")
     assert av["rig"]["clips"][0]["fade_in"] is True
     assert "fade_in" not in normalize_clip({"id": "a", "kind": "idle", "src": "/a.mp4", "fade_in": False})
+    # a mood family's clip says which face it starts and ends on
+    av2 = files.rig_avatar({"stills": {"neutral": "n.webp"}, "clips": [{"id": "angry_idle_a", "kind": "idle", "src": "p.mp4", "face": "angry"}]},
+                           tmp_path, lambda rel: f"/x/{rel}")
+    assert av2["rig"]["clips"][0]["face"] == "angry"
+    assert "face" not in normalize_clip({"id": "a", "kind": "idle", "src": "/a.mp4", "face": ""})
     assert normalize_clip({"id": "a", "kind": "react", "src": "/a.mp4", "fade_in": 1})["fade_in"] is True
 
 

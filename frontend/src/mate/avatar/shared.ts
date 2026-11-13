@@ -19,9 +19,18 @@ export const kindOfMood = (m: BodyMood): ClipKind =>
  * its kind, else the idle ones (breathing), else the first enabled clip. The video body and the clip editor's trigger
  * preview both use this, so the preview shows exactly what the stage plays.
  */
-export function moodPool(clips: RigClip[], mood: BodyMood, doing?: string): { kind: ClipKind; clips: RigClip[]; fallback: boolean } {
-  const on = enabledClips(clips);
+export function moodPool(clips: RigClip[], mood: BodyMood, doing?: string, face?: string): { kind: ClipKind; clips: RigClip[]; fallback: boolean } {
+  const all = enabledClips(clips);
   const want = kindOfMood(mood);
+  // (in a mood: that mood's own clips, its breathing for a kind it hasn't; dozing off is her rest face's)
+  if (face && want !== "away") {
+    const family = all.filter((c) => c.face === face);
+    const own = family.filter((c) => c.kind === want);
+    if (own.length) return { kind: want, clips: own, fallback: false };
+    const breathing = family.filter((c) => c.kind === "idle");
+    if (breathing.length) return { kind: "idle", clips: breathing, fallback: want !== "idle" };
+  }
+  const on = all.filter((c) => !c.face);
   // (idle only: talking and listening go on as ever. Only `life` clips for this activity, and her breathing among them.)
   const busy = want === "idle" && doing ? on.filter((c) => c.kind === "life" && c.doing === doing) : [];
   if (busy.length && doing === "sleep") return { kind: "idle", clips: busy, fallback: false };
@@ -35,6 +44,22 @@ export function moodPool(clips: RigClip[], mood: BodyMood, doing?: string): { ki
   const idle = on.filter((c) => c.kind === "idle");
   if (idle.length) return { kind: "idle", clips: idle, fallback: want !== "idle" };
   return { kind: want, clips: on.slice(0, 1), fallback: true };
+}
+
+/** looks that her rest face (a smile) already shows: no mood family for them */
+const RESTFUL = new Set(["smile", "joy", "happy", "excited", "laugh", "shy", "neutral", "sleepy"]);
+
+/**
+ * The mood family a held look plays (clips with that `face`): the look's own (or a near feeling's: emotion.ts), else 무표정
+ * (`calm`) for a look her smile doesn't fit, else none — her rest face. A rig without families: none, as before.
+ */
+export function faceFor(clips: RigClip[], look?: string): string | undefined {
+  if (!look) return undefined;
+  const faces = new Set(enabledClips(clips).map((c) => c.face).filter((f): f is string => !!f));
+  if (!faces.size) return undefined;
+  for (const n of emotionCandidates(look)) if (faces.has(n)) return n;
+  if (RESTFUL.has(look)) return undefined;
+  return faces.has("calm") ? "calm" : undefined;
 }
 
 export interface EmotionClips {

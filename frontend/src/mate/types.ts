@@ -34,6 +34,9 @@ export interface RigClip {
   /** it starts on its own expression, not on her rest face (서아's pout: the face Kling can't draw from words is its first
    *  frame): the stage dissolves into it instead of switching at the seam */
   fade_in?: boolean;
+  /** the face it starts and ends on, when not her rest face: a mood family (angry, sad, worried, calm = 무표정) that the stage
+   *  stays in while she feels it (shared.faceFor), so she doesn't smile between one sulk and the next */
+  face?: string;
 }
 
 /** where her face sits in a set's pictures, in fractions of the picture: every set of a mate is lined up by it (avatar/framing.ts) */

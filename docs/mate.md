@@ -264,7 +264,11 @@ interface Rig {
   clips: { id: string; kind: "idle"|"talk"|"listen"|"think"|"react"|"away";
            emotion?: string; src: string; small?: string; loop?: boolean;
            disabled?: boolean,               // disabled: never played, picked or preloaded
-           fade_in?: boolean }[];            // starts on its own face, not her rest one (서아's pout): dissolved into, 0.2 s
+           fade_in?: boolean,                // starts on its own face, not her rest one: dissolved into, 0.2 s
+           face?: string }[];                // a mood family: starts and ends on that mood's face (angry, sad, worried,
+                                             // calm = 무표정); the stage stays in it while she feels it (shared.faceFor:
+                                             // the look's own, a near feeling's, else calm for a look her smile doesn't
+                                             // fit), only that mood's reaction plays in it, 0.3 s dissolve between faces
   emotions?: Record<string, string[]>;       // emotion -> clip ids (react); several = one at random,
                                              // [] = no clip for that emotion (aliases not tried)
   emotion_stills?: Record<string, string>;   // emotion -> still name ("" = none); never blink/mouth_*

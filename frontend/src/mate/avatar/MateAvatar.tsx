@@ -160,6 +160,7 @@ export const MateAvatar = memo(function MateAvatar({
             mood={videoMood ?? mood}
             doing={doing}
             react={react}
+            look={look}
             poster={home}
             name={name}
             onFail={() => setVideoFailed(true)}

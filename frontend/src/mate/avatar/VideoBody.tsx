@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BodyMood, MateReact, Rig, RigClip } from "../types";
 import { PlainPlayer, StackedPlayer, type ClipPlayer } from "./player";
-import { clipFor, clipUrl, enabledClips, moodPool } from "./shared";
+import { clipFor, clipUrl, enabledClips, faceFor, moodPool } from "./shared";
 
 export interface VideoBodyProps {
   rig: Rig;
@@ -24,6 +24,8 @@ export interface VideoBodyProps {
   /** what she is up to in her own day: what she does while nothing else is going on */
   doing?: string;
   react: MateReact;
+  /** the face she rests on, from how she feels (mate/stateLook.ts): a rig with mood families stays in that mood (faceFor) */
+  look?: string;
   poster: string | null;
   name: string;
   /** the player could not start (no WebGL): the caller shows the still body instead */
@@ -35,6 +37,8 @@ export const MOOD_SETTLE_MS = 600;
 
 /** a clip that starts on its own expression (`fade_in`) comes on with this dissolve from her rest face: a quick change of face */
 const FADE_IN_MS = 200;
+/** from one face to another at a seam (her rest face into a mood family's, and back): only her face differs, quickly */
+const FACE_FADE_MS = 300;
 const EAGER = new Set(["idle", "talk", "listen", "think"]);
 const RANK: Record<string, number> = { idle: 0, talk: 1, think: 2, listen: 3, react: 4, away: 5, life: 6 };
 
@@ -46,20 +50,26 @@ type State = {
   last: string;
   /** the clip loaded ahead for when the one on screen ends (used then if it still suits what she is doing) */
   upcoming: RigClip | null;
+  /** the mood family she stays in (faceFor her resting look), none: her rest face */
+  face: string | undefined;
 };
 
-export default function VideoBody({ rig, size, mood, doing, react, poster, name, onFail }: VideoBodyProps) {
+export default function VideoBody({ rig, size, mood, doing, react, look, poster, name, onFail }: VideoBodyProps) {
   const wrap = useRef<HTMLDivElement>(null);
   /** changes only prepare the next clip; onEnded is the sole transition clock */
   const changeRef = useRef<(() => void) | null>(null);
   /** a reaction queued for the next natural clip boundary */
   const reactRef = useRef<((c: RigClip) => void) | null>(null);
+  /** the mood family she stays in changed: what comes next is from it (the clip on screen plays out) */
+  const faceRef = useRef<((face: string | undefined) => void) | null>(null);
   const failRef = useRef(onFail);
   failRef.current = onFail;
   const moodRef = useRef(mood);
   moodRef.current = mood;
   const doingRef = useRef(doing);
   doingRef.current = doing;
+  const lookRef = useRef(look);
+  lookRef.current = look;
   /** reactions older than this body belong to the previous mate/avatar */
   const born = useRef(Date.now());
   const [shown, setShown] = useState(false);
@@ -86,6 +96,7 @@ export default function VideoBody({ rig, size, mood, doing, react, poster, name,
       playing: null,
       last: "",
       upcoming: null,
+      face: faceFor(active, lookRef.current),
     };
     st.current = s;
     let p: ClipPlayer;
@@ -130,8 +141,8 @@ export default function VideoBody({ rig, size, mood, doing, react, poster, name,
     let alive = true;
     const memory = new Map<string, string>();
     const srcOf = (c: RigClip) => memory.get(clipUrl(c, size)) ?? clipUrl(c, size);
-    void (async () => {
-      for (const c of [...active].sort((a, b) => (RANK[a.kind] ?? 9) - (RANK[b.kind] ?? 9))) {
+    const warm = (face: string | undefined) => void (async () => {
+      for (const c of [...active].filter((x) => (x.face ?? undefined) === face).sort((a, b) => (RANK[a.kind] ?? 9) - (RANK[b.kind] ?? 9))) {
         // (only what plays all the time is kept in memory: a reaction, a long silence or what she does in her day loads when it
         // comes up, while the clip on screen plays out, and the one she is doing now)
         if (!EAGER.has(c.kind) && !(c.kind === "life" && c.doing === doingRef.current)) continue;
@@ -149,15 +160,17 @@ export default function VideoBody({ rig, size, mood, doing, react, poster, name,
         }
       }
     })();
-    /** this clip is one of those a mood plays (breathing when the rig has none of that kind) */
-    const suits = (c: RigClip | null | undefined, m: BodyMood) => !!c && moodPool(active, m, doingRef.current).clips.some((x) => x.id === c.id);
+    warm(s.face);
+    /** this clip is one of those a mood plays (breathing when the rig has none of that kind), in the mood family she is in */
+    const suits = (c: RigClip | null | undefined, m: BodyMood) =>
+      !!c && moodPool(active, m, doingRef.current, s.face).clips.some((x) => x.id === c.id);
     const pickFrom = (list: RigClip[] | undefined) => {
       if (!list?.length) return null;
       const others = list.filter((c) => c.id !== s.last);
       const pool = others.length ? others : list;
       return pool[Math.floor(Math.random() * pool.length)];
     };
-    const forMood = (m: BodyMood): RigClip | null => pickFrom(moodPool(active, m, doingRef.current).clips);
+    const forMood = (m: BodyMood): RigClip | null => pickFrom(moodPool(active, m, doingRef.current, s.face).clips);
     const moodNow = (): BodyMood => s.mood;
     /** load what plays when the clip on screen ends (a pending reaction, else a clip for the mood that counts) */
     const prepareNext = () => {
@@ -181,13 +194,16 @@ export default function VideoBody({ rig, size, mood, doing, react, poster, name,
       }
       s.upcoming = null;
       if (!c) return;
+      // (from one face to another — into a mood and out of it — a quick dissolve; a clip that starts on its own face, its own)
+      const before = s.playing;
+      const fadeMs = !before ? 0 : (before.face ?? "") !== (c.face ?? "") ? FACE_FADE_MS : c.fade_in ? FADE_IN_MS : 0;
       s.playing = c;
       s.last = c.id;
       // which clip is on (tests, the clip editor's checks); a DOM attribute, not state: no re-render per clip
       box.dataset.mateClip = c.id;
       // Repeat looping clips in this controller at their natural end. No event
       // ever needs to edit the current media element's loop flag to leave one.
-      p.show(srcOf(c), { loop: false, fadeMs: c.fade_in ? FADE_IN_MS : 0 });
+      p.show(srcOf(c), { loop: false, fadeMs });
       // have the likely next clip ready, so the switch at the end shows no seam
       const after = c.loop && suits(c, moodNow()) ? c : forMood(moodNow());
       if (after && after.id !== c.id) {
@@ -202,6 +218,12 @@ export default function VideoBody({ rig, size, mood, doing, react, poster, name,
     changeRef.current = prepareNext;
     reactRef.current = (c) => {
       s.react = c;
+      prepareNext();
+    };
+    faceRef.current = (face) => {
+      if (face === s.face) return;
+      s.face = face;
+      warm(face);
       prepareNext();
     };
     next();
@@ -235,6 +257,7 @@ export default function VideoBody({ rig, size, mood, doing, react, poster, name,
       for (const url of memory.values()) URL.revokeObjectURL(url);
       changeRef.current = null;
       reactRef.current = null;
+      faceRef.current = null;
       if (st.current === s) st.current = null;
       delete box.dataset.mateClip;
       setShown(false);
@@ -255,6 +278,10 @@ export default function VideoBody({ rig, size, mood, doing, react, poster, name,
   useEffect(() => {
     changeRef.current?.();
   }, [doing]);
+  // how she feels holds her face: a mood family while she feels it, her rest face when it passes
+  useEffect(() => {
+    faceRef.current?.(faceFor(active, look));
+  }, [look, active]);
 
   // a reaction plays once, now and whole (only a newer one cuts it)
   const reactAt = react?.at;
@@ -262,7 +289,9 @@ export default function VideoBody({ rig, size, mood, doing, react, poster, name,
   useEffect(() => {
     if (!reactName || !reactAt || reactAt < born.current) return;
     const c = clipFor({ clips, emotions }, reactName);
-    if (c) reactRef.current?.(c);
+    // (in a mood only that mood's own reaction plays: a laugh between two sulks would be a mood swing, not her)
+    const held = st.current?.face;
+    if (c && (!held || (c.face ?? undefined) === held)) reactRef.current?.(c);
   }, [reactAt, reactName, clips, emotions]);
 
   return (
