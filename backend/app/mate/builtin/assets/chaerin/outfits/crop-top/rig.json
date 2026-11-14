@@ -108,30 +108,6 @@
       "thumb": "asset:chaerin-crop-top/surprised.thumb.webp"
     },
     {
-      "id": "sad",
-      "kind": "react",
-      "src": "asset:chaerin-crop-top/sad.lg.mp4",
-      "small": "asset:chaerin-crop-top/sad.sm.mp4",
-      "emotion": "sad",
-      "thumb": "asset:chaerin-crop-top/sad.thumb.webp"
-    },
-    {
-      "id": "worried",
-      "kind": "react",
-      "src": "asset:chaerin-crop-top/worried.lg.mp4",
-      "small": "asset:chaerin-crop-top/worried.sm.mp4",
-      "emotion": "worried",
-      "thumb": "asset:chaerin-crop-top/worried.thumb.webp"
-    },
-    {
-      "id": "angry",
-      "kind": "react",
-      "src": "asset:chaerin-crop-top/angry.lg.mp4",
-      "small": "asset:chaerin-crop-top/angry.sm.mp4",
-      "emotion": "angry",
-      "thumb": "asset:chaerin-crop-top/angry.thumb.webp"
-    },
-    {
       "id": "nod",
       "kind": "react",
       "src": "asset:chaerin-crop-top/nod.lg.mp4",
@@ -210,6 +186,129 @@
       "src": "asset:chaerin-crop-top/life_workout.lg.mp4",
       "small": "asset:chaerin-crop-top/life_workout.sm.mp4",
       "thumb": "asset:chaerin-crop-top/life_workout.thumb.webp"
+    },
+    {
+      "id": "angry",
+      "kind": "react",
+      "src": "asset:chaerin-crop-top/angry.lg.mp4",
+      "small": "asset:chaerin-crop-top/angry.sm.mp4",
+      "face": "angry",
+      "emotion": "angry",
+      "thumb": "asset:chaerin-crop-top/angry.thumb.webp"
+    },
+    {
+      "id": "angry_idle_a",
+      "kind": "idle",
+      "src": "asset:chaerin-crop-top/angry_idle_a.lg.mp4",
+      "small": "asset:chaerin-crop-top/angry_idle_a.sm.mp4",
+      "face": "angry",
+      "thumb": "asset:chaerin-crop-top/angry_idle_a.thumb.webp"
+    },
+    {
+      "id": "angry_idle_b",
+      "kind": "idle",
+      "src": "asset:chaerin-crop-top/angry_idle_b.lg.mp4",
+      "small": "asset:chaerin-crop-top/angry_idle_b.sm.mp4",
+      "face": "angry",
+      "thumb": "asset:chaerin-crop-top/angry_idle_b.thumb.webp"
+    },
+    {
+      "id": "angry_talk",
+      "kind": "talk",
+      "src": "asset:chaerin-crop-top/angry_talk.lg.mp4",
+      "small": "asset:chaerin-crop-top/angry_talk.sm.mp4",
+      "face": "angry",
+      "thumb": "asset:chaerin-crop-top/angry_talk.thumb.webp"
+    },
+    {
+      "id": "angry_listen",
+      "kind": "listen",
+      "src": "asset:chaerin-crop-top/angry_listen.lg.mp4",
+      "small": "asset:chaerin-crop-top/angry_listen.sm.mp4",
+      "face": "angry",
+      "thumb": "asset:chaerin-crop-top/angry_listen.thumb.webp"
+    },
+    {
+      "id": "sad",
+      "kind": "react",
+      "src": "asset:chaerin-crop-top/sad.lg.mp4",
+      "small": "asset:chaerin-crop-top/sad.sm.mp4",
+      "face": "sad",
+      "emotion": "sad",
+      "thumb": "asset:chaerin-crop-top/sad.thumb.webp"
+    },
+    {
+      "id": "sad_idle_a",
+      "kind": "idle",
+      "src": "asset:chaerin-crop-top/sad_idle_a.lg.mp4",
+      "small": "asset:chaerin-crop-top/sad_idle_a.sm.mp4",
+      "face": "sad",
+      "thumb": "asset:chaerin-crop-top/sad_idle_a.thumb.webp"
+    },
+    {
+      "id": "sad_idle_b",
+      "kind": "idle",
+      "src": "asset:chaerin-crop-top/sad_idle_b.lg.mp4",
+      "small": "asset:chaerin-crop-top/sad_idle_b.sm.mp4",
+      "face": "sad",
+      "thumb": "asset:chaerin-crop-top/sad_idle_b.thumb.webp"
+    },
+    {
+      "id": "sad_talk",
+      "kind": "talk",
+      "src": "asset:chaerin-crop-top/sad_talk.lg.mp4",
+      "small": "asset:chaerin-crop-top/sad_talk.sm.mp4",
+      "face": "sad",
+      "thumb": "asset:chaerin-crop-top/sad_talk.thumb.webp"
+    },
+    {
+      "id": "sad_listen",
+      "kind": "listen",
+      "src": "asset:chaerin-crop-top/sad_listen.lg.mp4",
+      "small": "asset:chaerin-crop-top/sad_listen.sm.mp4",
+      "face": "sad",
+      "thumb": "asset:chaerin-crop-top/sad_listen.thumb.webp"
+    },
+    {
+      "id": "worried",
+      "kind": "react",
+      "src": "asset:chaerin-crop-top/worried.lg.mp4",
+      "small": "asset:chaerin-crop-top/worried.sm.mp4",
+      "face": "worried",
+      "emotion": "worried",
+      "thumb": "asset:chaerin-crop-top/worried.thumb.webp"
+    },
+    {
+      "id": "worried_idle_a",
+      "kind": "idle",
+      "src": "asset:chaerin-crop-top/worried_idle_a.lg.mp4",
+      "small": "asset:chaerin-crop-top/worried_idle_a.sm.mp4",
+      "face": "worried",
+      "thumb": "asset:chaerin-crop-top/worried_idle_a.thumb.webp"
+    },
+    {
+      "id": "worried_idle_b",
+      "kind": "idle",
+      "src": "asset:chaerin-crop-top/worried_idle_b.lg.mp4",
+      "small": "asset:chaerin-crop-top/worried_idle_b.sm.mp4",
+      "face": "worried",
+      "thumb": "asset:chaerin-crop-top/worried_idle_b.thumb.webp"
+    },
+    {
+      "id": "worried_talk",
+      "kind": "talk",
+      "src": "asset:chaerin-crop-top/worried_talk.lg.mp4",
+      "small": "asset:chaerin-crop-top/worried_talk.sm.mp4",
+      "face": "worried",
+      "thumb": "asset:chaerin-crop-top/worried_talk.thumb.webp"
+    },
+    {
+      "id": "worried_listen",
+      "kind": "listen",
+      "src": "asset:chaerin-crop-top/worried_listen.lg.mp4",
+      "small": "asset:chaerin-crop-top/worried_listen.sm.mp4",
+      "face": "worried",
+      "thumb": "asset:chaerin-crop-top/worried_listen.thumb.webp"
     }
   ],
   "emotions": {

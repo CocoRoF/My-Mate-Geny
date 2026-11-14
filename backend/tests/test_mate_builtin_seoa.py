@@ -400,6 +400,10 @@ def test_her_pack_holds_all_she_needs():
             assert clips[f"life_{body}"]["kind"] == "life" and clips[f"life_{body}"]["doing"] == body, body
         assert rig["emotions"].get("angry") == ["angry"] and rig["emotions"].get("pout") == ["angry"]
         assert rig.get("frame")
+        # (moods she stays in, each on its own face: breathing, talking, listening, and its reaction — 무표정 has none)
+        for face, n in (("angry", 5), ("sad", 5), ("worried", 5), ("calm", 4)):
+            family = [c for c in rig["clips"] if c.get("face") == face]
+            assert len(family) == n and {c["kind"] for c in family} >= {"idle", "talk", "listen"}, (face, [c["id"] for c in family])
 
     check(json.loads((folder / "rig.json").read_text("utf-8")), LIFE)
     for name, life in OUTFIT_LIFE.items():

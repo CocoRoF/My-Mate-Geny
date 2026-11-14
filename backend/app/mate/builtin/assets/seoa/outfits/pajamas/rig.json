@@ -108,31 +108,6 @@
       "emotion": "surprise"
     },
     {
-      "id": "sad",
-      "kind": "react",
-      "src": "asset:seoa-pajamas/sad.lg.mp4",
-      "small": "asset:seoa-pajamas/sad.sm.mp4",
-      "thumb": "asset:seoa-pajamas/sad.thumb.webp",
-      "emotion": "sad"
-    },
-    {
-      "id": "worried",
-      "kind": "react",
-      "src": "asset:seoa-pajamas/worried.lg.mp4",
-      "small": "asset:seoa-pajamas/worried.sm.mp4",
-      "thumb": "asset:seoa-pajamas/worried.thumb.webp",
-      "emotion": "worried"
-    },
-    {
-      "id": "angry",
-      "kind": "react",
-      "src": "asset:seoa-pajamas/angry.lg.mp4",
-      "small": "asset:seoa-pajamas/angry.sm.mp4",
-      "thumb": "asset:seoa-pajamas/angry.thumb.webp",
-      "emotion": "angry",
-      "fade_in": true
-    },
-    {
       "id": "nod",
       "kind": "react",
       "src": "asset:seoa-pajamas/nod.lg.mp4",
@@ -187,6 +162,161 @@
       "src": "asset:seoa-pajamas/life_drink.lg.mp4",
       "small": "asset:seoa-pajamas/life_drink.sm.mp4",
       "thumb": "asset:seoa-pajamas/life_drink.thumb.webp"
+    },
+    {
+      "id": "angry",
+      "kind": "react",
+      "src": "asset:seoa-pajamas/angry.lg.mp4",
+      "small": "asset:seoa-pajamas/angry.sm.mp4",
+      "face": "angry",
+      "emotion": "angry",
+      "thumb": "asset:seoa-pajamas/angry.thumb.webp"
+    },
+    {
+      "id": "angry_idle_a",
+      "kind": "idle",
+      "src": "asset:seoa-pajamas/angry_idle_a.lg.mp4",
+      "small": "asset:seoa-pajamas/angry_idle_a.sm.mp4",
+      "face": "angry",
+      "thumb": "asset:seoa-pajamas/angry_idle_a.thumb.webp"
+    },
+    {
+      "id": "angry_idle_b",
+      "kind": "idle",
+      "src": "asset:seoa-pajamas/angry_idle_b.lg.mp4",
+      "small": "asset:seoa-pajamas/angry_idle_b.sm.mp4",
+      "face": "angry",
+      "thumb": "asset:seoa-pajamas/angry_idle_b.thumb.webp"
+    },
+    {
+      "id": "angry_talk",
+      "kind": "talk",
+      "src": "asset:seoa-pajamas/angry_talk.lg.mp4",
+      "small": "asset:seoa-pajamas/angry_talk.sm.mp4",
+      "face": "angry",
+      "thumb": "asset:seoa-pajamas/angry_talk.thumb.webp"
+    },
+    {
+      "id": "angry_listen",
+      "kind": "listen",
+      "src": "asset:seoa-pajamas/angry_listen.lg.mp4",
+      "small": "asset:seoa-pajamas/angry_listen.sm.mp4",
+      "face": "angry",
+      "thumb": "asset:seoa-pajamas/angry_listen.thumb.webp"
+    },
+    {
+      "id": "sad",
+      "kind": "react",
+      "src": "asset:seoa-pajamas/sad.lg.mp4",
+      "small": "asset:seoa-pajamas/sad.sm.mp4",
+      "face": "sad",
+      "emotion": "sad",
+      "thumb": "asset:seoa-pajamas/sad.thumb.webp"
+    },
+    {
+      "id": "sad_idle_a",
+      "kind": "idle",
+      "src": "asset:seoa-pajamas/sad_idle_a.lg.mp4",
+      "small": "asset:seoa-pajamas/sad_idle_a.sm.mp4",
+      "face": "sad",
+      "thumb": "asset:seoa-pajamas/sad_idle_a.thumb.webp"
+    },
+    {
+      "id": "sad_idle_b",
+      "kind": "idle",
+      "src": "asset:seoa-pajamas/sad_idle_b.lg.mp4",
+      "small": "asset:seoa-pajamas/sad_idle_b.sm.mp4",
+      "face": "sad",
+      "thumb": "asset:seoa-pajamas/sad_idle_b.thumb.webp"
+    },
+    {
+      "id": "sad_talk",
+      "kind": "talk",
+      "src": "asset:seoa-pajamas/sad_talk.lg.mp4",
+      "small": "asset:seoa-pajamas/sad_talk.sm.mp4",
+      "face": "sad",
+      "thumb": "asset:seoa-pajamas/sad_talk.thumb.webp"
+    },
+    {
+      "id": "sad_listen",
+      "kind": "listen",
+      "src": "asset:seoa-pajamas/sad_listen.lg.mp4",
+      "small": "asset:seoa-pajamas/sad_listen.sm.mp4",
+      "face": "sad",
+      "thumb": "asset:seoa-pajamas/sad_listen.thumb.webp"
+    },
+    {
+      "id": "worried",
+      "kind": "react",
+      "src": "asset:seoa-pajamas/worried.lg.mp4",
+      "small": "asset:seoa-pajamas/worried.sm.mp4",
+      "face": "worried",
+      "emotion": "worried",
+      "thumb": "asset:seoa-pajamas/worried.thumb.webp"
+    },
+    {
+      "id": "worried_idle_a",
+      "kind": "idle",
+      "src": "asset:seoa-pajamas/worried_idle_a.lg.mp4",
+      "small": "asset:seoa-pajamas/worried_idle_a.sm.mp4",
+      "face": "worried",
+      "thumb": "asset:seoa-pajamas/worried_idle_a.thumb.webp"
+    },
+    {
+      "id": "worried_idle_b",
+      "kind": "idle",
+      "src": "asset:seoa-pajamas/worried_idle_b.lg.mp4",
+      "small": "asset:seoa-pajamas/worried_idle_b.sm.mp4",
+      "face": "worried",
+      "thumb": "asset:seoa-pajamas/worried_idle_b.thumb.webp"
+    },
+    {
+      "id": "worried_talk",
+      "kind": "talk",
+      "src": "asset:seoa-pajamas/worried_talk.lg.mp4",
+      "small": "asset:seoa-pajamas/worried_talk.sm.mp4",
+      "face": "worried",
+      "thumb": "asset:seoa-pajamas/worried_talk.thumb.webp"
+    },
+    {
+      "id": "worried_listen",
+      "kind": "listen",
+      "src": "asset:seoa-pajamas/worried_listen.lg.mp4",
+      "small": "asset:seoa-pajamas/worried_listen.sm.mp4",
+      "face": "worried",
+      "thumb": "asset:seoa-pajamas/worried_listen.thumb.webp"
+    },
+    {
+      "id": "calm_idle_a",
+      "kind": "idle",
+      "src": "asset:seoa-pajamas/calm_idle_a.lg.mp4",
+      "small": "asset:seoa-pajamas/calm_idle_a.sm.mp4",
+      "face": "calm",
+      "thumb": "asset:seoa-pajamas/calm_idle_a.thumb.webp"
+    },
+    {
+      "id": "calm_idle_b",
+      "kind": "idle",
+      "src": "asset:seoa-pajamas/calm_idle_b.lg.mp4",
+      "small": "asset:seoa-pajamas/calm_idle_b.sm.mp4",
+      "face": "calm",
+      "thumb": "asset:seoa-pajamas/calm_idle_b.thumb.webp"
+    },
+    {
+      "id": "calm_talk",
+      "kind": "talk",
+      "src": "asset:seoa-pajamas/calm_talk.lg.mp4",
+      "small": "asset:seoa-pajamas/calm_talk.sm.mp4",
+      "face": "calm",
+      "thumb": "asset:seoa-pajamas/calm_talk.thumb.webp"
+    },
+    {
+      "id": "calm_listen",
+      "kind": "listen",
+      "src": "asset:seoa-pajamas/calm_listen.lg.mp4",
+      "small": "asset:seoa-pajamas/calm_listen.sm.mp4",
+      "face": "calm",
+      "thumb": "asset:seoa-pajamas/calm_listen.thumb.webp"
     }
   ],
   "emotions": {
