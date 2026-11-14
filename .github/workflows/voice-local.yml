@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-14]
+        os: [windows-latest, macos-15]
         set:
           - { name: omni, models: "--model omnivoice" }
           - { name: qwen, models: "--model qwen3-tts-0.6b-base --model whisper-large-v3-turbo" }
