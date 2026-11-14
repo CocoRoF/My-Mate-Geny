@@ -11,6 +11,8 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from app.portability import subprocess_flags
+
 REF_SR = 24000  # references are stored as 24 kHz mono float WAV: every engine here reads that natively
 
 
@@ -33,7 +35,8 @@ def decode(data: bytes, target_sr: int | None = None) -> tuple[np.ndarray, int]:
             raise AudioError("This audio format can't be read here (use wav, flac, ogg or mp3)") from None
         sr = target_sr or 48000
         p = subprocess.run([ff, "-hide_banner", "-loglevel", "error", "-i", "pipe:0", "-ac", "1", "-ar", str(sr),
-                            "-f", "f32le", "pipe:1"], input=data, capture_output=True, timeout=120)
+                            "-f", "f32le", "pipe:1"], input=data, capture_output=True, timeout=120,
+                           **subprocess_flags())
         if p.returncode != 0 or not p.stdout:
             raise AudioError("Could not read the audio: " + p.stderr.decode(errors="replace")[-300:]) from None
         wav = np.frombuffer(p.stdout, dtype=np.float32).reshape(-1, 1)
@@ -203,21 +206,31 @@ def write_wav(path: Path, x: np.ndarray, sr: int) -> None:
 FORMATS = {"wav": "audio/wav", "mp3": "audio/mpeg", "ogg": "audio/ogg", "flac": "audio/flac"}
 
 
+def _libsndfile_mp3() -> bool:
+    try:
+        return "MP3" in sf.available_formats()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def encode(path: Path, fmt: str) -> bytes:
-    """A stored WAV in another container. mp3 needs ffmpeg; flac/ogg go through libsndfile."""
+    """A stored WAV in another container, through libsndfile (MP3 too since libsndfile 1.1 — the soundfile wheels
+    bundle it, so a desktop without ffmpeg can); ffmpeg only for an MP3 where libsndfile is older."""
     if fmt == "wav":
         return path.read_bytes()
-    if fmt in ("flac", "ogg"):
+    if fmt in ("flac", "ogg") or (fmt == "mp3" and _libsndfile_mp3()):
         x, sr = sf.read(str(path), dtype="float32")
         buf = io.BytesIO()
-        sf.write(buf, x, sr, format=fmt.upper(), subtype="VORBIS" if fmt == "ogg" else "PCM_16")
+        subtype = {"ogg": "VORBIS", "mp3": "MPEG_LAYER_III", "flac": "PCM_16"}[fmt]
+        sf.write(buf, x, sr, format=fmt.upper(), subtype=subtype)
         return buf.getvalue()
     if fmt == "mp3":
         ff = _ffmpeg()
         if not ff:
             raise AudioError("mp3 needs ffmpeg on this server")
         p = subprocess.run([ff, "-hide_banner", "-loglevel", "error", "-i", str(path), "-codec:a", "libmp3lame",
-                            "-q:a", "2", "-f", "mp3", "pipe:1"], capture_output=True, timeout=120)
+                            "-q:a", "2", "-f", "mp3", "pipe:1"], capture_output=True, timeout=120,
+                           **subprocess_flags())
         if p.returncode != 0:
             raise AudioError("mp3 encoding failed")
         return p.stdout

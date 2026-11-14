@@ -78,7 +78,7 @@ def test_the_gate_refuses_a_machine_without_a_suitable_gpu(monkeypatch):
     monkeypatch.setattr(G, "PYTHON", (3, 99))
     g = G.check("real")
     assert g.code == "python" and g.detail["need"] == "3.99" and g.gpu is not None
-    monkeypatch.setattr(system, "platform_key", lambda: "macos-arm64")
+    monkeypatch.setattr(system, "platform_key", lambda: "macos-x86_64")  # (an Intel Mac: no torch for it)
     assert G.check("real").code == "platform"
     assert G.check("off").code == "off" and G.check("fake").ok
 

@@ -22,11 +22,15 @@ import time
 from pathlib import Path
 from typing import Any
 
+from app.portability import subprocess_flags
+
 log = logging.getLogger("app.voicehost.worker")
 
 # the directory holding the `app` package: the worker imports app.voicehost.worker from here, and nothing else of ours
 SRC_ROOT = Path(__file__).resolve().parents[2]
-CONNECT_TIMEOUT = 60.0  # a cold Python + torch import on a slow disk
+# a cold Python + torch import on a slow disk; on Windows the first start after an install also waits for the virus
+# scanner to read torch's ~3 GB of DLLs
+CONNECT_TIMEOUT = 180.0 if os.name == "nt" else 60.0
 
 
 class WorkerError(Exception):
@@ -101,6 +105,8 @@ class WorkerProcess:
         env.setdefault("TOKENIZERS_PARALLELISM", "false")
         env.setdefault("TQDM_DISABLE", "1")
         env.setdefault("HF_HUB_OFFLINE", "1")  # weights are local; never let a library phone home mid-request
+        # (Apple Silicon: the few ops Metal lacks run on the CPU instead of failing the line)
+        env.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
         # (-s: no user site-packages — the engine's environment only, plus our source on PYTHONPATH)
         argv = _capped([self.python, "-s", "-m", "app.voicehost.worker", "--engine", self.engine], self.mem_gb)
         if argv[0] != self.python:
@@ -108,7 +114,7 @@ class WorkerProcess:
         try:
             self.proc = await asyncio.create_subprocess_exec(
                 *argv, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE, env=env, cwd=str(SRC_ROOT))
+                stderr=asyncio.subprocess.PIPE, env=env, cwd=str(SRC_ROOT), **subprocess_flags())
             self._log_tasks = [asyncio.create_task(self._pump(self.proc.stdout)),
                                asyncio.create_task(self._pump(self.proc.stderr))]
             waiter = asyncio.ensure_future(self.proc.wait())

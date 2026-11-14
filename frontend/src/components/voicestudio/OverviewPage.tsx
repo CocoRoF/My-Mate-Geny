@@ -73,16 +73,20 @@ function Tile({ label, value, sub, testId }: { label: string; value: string; sub
 
 function GpuCard({ g, series, residents }: { g: GpuOverview; series: GpuSample[]; residents: ResidentEx[] }) {
   const t = useT();
-  const ours = g.usage.ours.reduce((a, b) => a + b.bytes, 0);
-  const pct = (n: number) => `${Math.max(0, (n / g.total) * 100)}%`;
+  const apple = g.kind === "apple";
+  const ours = g.usage.ours.reduce((a, b) => a + (b.bytes ?? 0), 0);
+  const pct = (n: number | null) => `${Math.max(0, ((n ?? 0) / g.total) * 100)}%`;
   const color = (i: number) => OUR_COLORS[i % OUR_COLORS.length];
+  const unseen = apple ? t("voiceStudio.ovUnseenApple") : t("voiceStudio.ovUnseen");
+  // (a process' executable with its folder: bin/python3, Games/x.exe)
+  const exe = (path: string) => path.split(/[\\/]/).slice(-2).join("/");
   return (
     <Card
       title={
         <span className="flex flex-wrap items-center gap-x-2">
           <Icon name="cpu" size={14} /> {g.name}
           <span className="text-[11.5px] font-normal text-content-faint">
-            {t("voiceStudio.ovDriver", { driver: g.driver, cap: g.capability || "?" })}
+            {apple ? t("voiceStudio.ovDriverApple", { driver: g.driver }) : t("voiceStudio.ovDriver", { driver: g.driver, cap: g.capability || "?" })}
           </span>
         </span>
       }
@@ -90,7 +94,7 @@ function GpuCard({ g, series, residents }: { g: GpuOverview; series: GpuSample[]
     >
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Tile label={t("voiceStudio.ovUtil")} value={g.util != null ? `${g.util}%` : "–"} sub={g.mem_util != null ? t("voiceStudio.ovMemUtil", { n: g.mem_util }) : undefined} testId="vs-gpu-util" />
-        <Tile label={t("voiceStudio.ovVram")} value={`${gb(g.used)} / ${gb(g.total)} GB`} sub={t("voiceStudio.ovVramOurs", { gb: gb(ours, 2) })} testId="vs-gpu-vram" />
+        <Tile label={apple ? t("voiceStudio.ovUnified") : t("voiceStudio.ovVram")} value={`${gb(g.used)} / ${gb(g.total)} GB`} sub={t("voiceStudio.ovVramOurs", { gb: gb(ours, 2) })} testId="vs-gpu-vram" />
         <Tile label={t("voiceStudio.ovTemp")} value={g.temperature != null ? `${g.temperature}°C` : "–"} sub={g.fan != null ? t("voiceStudio.ovFan", { n: g.fan }) : undefined} />
         <Tile
           label={t("voiceStudio.ovPower")}
@@ -105,10 +109,10 @@ function GpuCard({ g, series, residents }: { g: GpuOverview; series: GpuSample[]
           {g.usage.ours.map((m, i) => (
             <span key={m.pid} style={{ width: pct(m.bytes), background: color(i) }} title={t("voiceStudio.ovOwnerTitle", { name: m.name, gb: gb(m.bytes, 2) })} />
           ))}
-          {g.usage.others.map((m) => (
+          {g.usage.others.filter((m) => m.bytes).map((m) => (
             <span key={m.pid} className="bg-content-faint/60" style={{ width: pct(m.bytes) }} title={t("voiceStudio.ovOwnerTitle", { name: m.name, gb: gb(m.bytes, 2) })} />
           ))}
-          {g.usage.unseen > 0 && <span className="bg-content-faint/30" style={{ width: pct(g.usage.unseen) }} title={t("voiceStudio.ovUnseen")} />}
+          {g.usage.unseen > 0 && <span className="bg-content-faint/30" style={{ width: pct(g.usage.unseen) }} title={unseen} />}
         </div>
         <ul className="mt-2 grid gap-x-4 gap-y-1 text-[12px] sm:grid-cols-2" data-testid="vs-gpu-owners">
           {g.usage.ours.map((m, i) => {
@@ -125,14 +129,18 @@ function GpuCard({ g, series, residents }: { g: GpuOverview; series: GpuSample[]
           {g.usage.others.map((m) => (
             <li key={m.pid} className="flex items-center gap-1.5" data-testid="vs-owner-other">
               <span className="h-2.5 w-2.5 shrink-0 rounded-sm bg-content-faint/60" />
-              <span className="min-w-0 flex-1 truncate text-content" title={m.name}>{t("voiceStudio.ovOther", { name: m.name.split("/").slice(-2).join("/"), pid: String(m.pid) })}</span>
-              <span className="tabular-nums text-content-dim">{gb(m.bytes, 2)} GB</span>
+              <span className="min-w-0 flex-1 truncate text-content" title={m.name}>{t("voiceStudio.ovOther", { name: exe(m.name), pid: String(m.pid) })}</span>
+              {m.bytes != null ? (
+                <span className="tabular-nums text-content-dim">{gb(m.bytes, 2)} GB</span>
+              ) : (
+                <span className="text-content-faint" title={t("voiceStudio.ovUnknownBytes")}>?</span>
+              )}
             </li>
           ))}
           {g.usage.unseen > 64 * 1024 ** 2 && (
             <li className="flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 shrink-0 rounded-sm bg-content-faint/30" />
-              <span className="min-w-0 flex-1 truncate text-content-dim">{t("voiceStudio.ovUnseen")}</span>
+              <span className="min-w-0 flex-1 truncate text-content-dim">{unseen}</span>
               <span className="tabular-nums text-content-dim">{gb(g.usage.unseen, 2)} GB</span>
             </li>
           )}

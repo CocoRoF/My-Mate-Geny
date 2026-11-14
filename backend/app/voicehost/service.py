@@ -196,6 +196,8 @@ class VoiceHost:
 
     # -- settings Voice Studio can change -------------------------------------------------------------------------------
     def _apply_settings(self) -> None:
+        # (the server's own values — its environment, this platform's defaults — before any set in Voice Studio)
+        self._server_values = {k: getattr(self.s, k) for k in RUNTIME}
         for key, (kind, lo, hi) in RUNTIME.items():
             v = self.store.setting(f"runtime:{key}")
             if v is not None:
@@ -205,9 +207,8 @@ class VoiceHost:
                     pass
 
     def settings_doc(self) -> dict[str, Any]:
-        base = VoiceSettings(home=self.s.home)
         return {"values": {k: getattr(self.s, k) for k in RUNTIME},
-                "defaults": {k: getattr(base, k) for k in RUNTIME},
+                "defaults": dict(self._server_values),
                 "bounds": {k: [lo, hi] for k, (_, lo, hi) in RUNTIME.items()},
                 "default_tts": self.store.setting("default:tts") or "", "default_stt": self.store.setting("default:stt") or "",
                 "default_voice": self.store.setting("default:voice") or "",
@@ -222,7 +223,7 @@ class VoiceHost:
             v = patch[key]
             if v is None:  # (back to the server's own value)
                 self.store.put_setting(f"runtime:{key}", None)
-                setattr(self.s, key, getattr(VoiceSettings(home=self.s.home), key))
+                setattr(self.s, key, self._server_values[key])
                 continue
             if isinstance(v, bool) or not isinstance(v, (int, float)):
                 raise VoiceError(f"{key} must be a number", code="bad_input")
@@ -750,13 +751,37 @@ class VoiceHost:
     def _our_pids(self) -> dict[int, str]:
         return {r.worker.pid: r.spec.id for r in self.engines.residents.values() if r.worker.pid}
 
+    def _ownership(self) -> dict[int, dict[str, list[dict[str, Any]]]]:
+        """GPU index → whose its memory is: this app's workers (what the driver says each holds — or, where it can't
+        say, Windows' WDDM mode and Apple Silicon, what the worker measured itself) and other programs (bytes None:
+        the driver won't say)."""
+        ours = self._our_pids()
+        names = {m.id: m.name for m in catalog.CATALOG}
+        by: dict[int, dict[str, list[dict[str, Any]]]] = {}
+        seen: set[int] = set()
+        for a in system.gpu_apps():
+            slot = by.setdefault(a["gpu"], {"ours": [], "others": []})
+            if a["pid"] not in ours:
+                slot["others"].append({"pid": a["pid"], "name": a["name"], "bytes": a["used"]})
+            elif a["used"] is not None:
+                mid = ours[a["pid"]]
+                slot["ours"].append({"model_id": mid, "name": names.get(mid, mid), "pid": a["pid"], "bytes": a["used"]})
+                seen.add(a["pid"])
+        idx = G.device_index(self.s.device)
+        for r in self.engines.residents.values():
+            pid = r.worker.pid
+            if not pid or pid in seen or r.state not in ("ready", "loading", "starting"):
+                continue
+            held = int(r.last_memory.get("reserved") or r.last_memory.get("allocated") or 0)
+            if held:
+                by.setdefault(idx, {"ours": [], "others": []})["ours"].append(
+                    {"model_id": r.spec.id, "name": names.get(r.spec.id, r.spec.id), "pid": pid, "bytes": held,
+                     "measured": "worker"})
+        return by
+
     def _sample(self) -> list[dict[str, Any]]:
         tel = {t["index"]: t for t in system.telemetry()}
-        ours = self._our_pids()
-        mine: dict[int, int] = {}
-        for a in system.gpu_apps():
-            if a["pid"] in ours:
-                mine[a["gpu"]] = mine.get(a["gpu"], 0) + a["used"]
+        mine = {i: sum(m["bytes"] for m in o["ours"]) for i, o in self._ownership().items()}
         now = time.time()
         return [{"t": round(now, 1), "gpu": g.index, "util": tel.get(g.index, {}).get("util"), "used": g.used,
                  "temperature": tel.get(g.index, {}).get("temperature"), "power": tel.get(g.index, {}).get("power"),
@@ -779,18 +804,14 @@ class VoiceHost:
         self._watch_until = time.monotonic() + 120
         g = self.gate()
         tel = {t["index"]: t for t in system.telemetry()}
-        apps = system.gpu_apps()
-        ours = self._our_pids()
+        owners = self._ownership()
         names = {m.id: m.name for m in catalog.CATALOG}
         gpus = []
         for x in system.gpus(max_age=1.0):
-            mine = [{"model_id": ours[a["pid"]], "name": names.get(ours[a["pid"]], ours[a["pid"]]), "pid": a["pid"],
-                     "bytes": a["used"]} for a in apps if a["gpu"] == x.index and a["pid"] in ours]
-            others = [{"pid": a["pid"], "name": a["name"], "bytes": a["used"]} for a in apps
-                      if a["gpu"] == x.index and a["pid"] not in ours]
-            seen = sum(m["bytes"] for m in mine) + sum(o["bytes"] for o in others)
+            o = owners.get(x.index, {"ours": [], "others": []})
+            seen = sum(m["bytes"] for m in o["ours"]) + sum(m["bytes"] or 0 for m in o["others"])
             gpus.append({**x.to_dict(), **{k: v for k, v in tel.get(x.index, {}).items() if k != "index"},
-                         "usage": {"ours": mine, "others": others, "unseen": max(0, x.used - seen)}})
+                         "usage": {"ours": o["ours"], "others": o["others"], "unseen": max(0, x.used - seen)}})
         residents = []
         for r in self.engines.status():
             spec = catalog.BY_ID.get(r["model_id"])

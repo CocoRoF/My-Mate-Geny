@@ -55,7 +55,13 @@ export function gateText(t: ReturnType<typeof useT>, g: Gate): string {
     case "old_gpu":
       return t("localVoice.gate_old_gpu", { gpu: gpu?.name ?? "GPU", cap: gpu?.capability ?? "?" });
     case "small_gpu":
-      return t("localVoice.gate_small_gpu", { gpu: gpu?.name ?? "GPU", gb: gb(gpu?.total), min: gb(g.requirements.vram, 0) });
+      return t("localVoice.gate_small_gpu", {
+        gpu: gpu?.name ?? "GPU",
+        gb: gb(gpu?.total),
+        min: gb(gpu?.kind === "apple" ? g.requirements.unified ?? g.requirements.vram : g.requirements.vram, 0),
+      });
+    case "old_os":
+      return t("localVoice.gate_old_os", { os: String(g.detail.os ?? "?"), need: g.requirements.macos ?? "14.0" });
     case "platform":
       return t("localVoice.gate_platform", { platform: String(g.detail.platform ?? "?") });
     case "python":
@@ -296,6 +302,59 @@ export function PlayButton({ url, testId, small }: { url: string; testId?: strin
       <Icon name={on ? "pause" : "play"} size={small ? 12 : 14} />
     </button>
   );
+}
+
+// ---- audio the backend reads ------------------------------------------------------------------------------------------
+
+const NATIVE_NAME = /\.(wav|wave|flac|ogg|oga|mp3)$/i;
+const NATIVE_TYPE = /^audio\/(wav|wave|x-wav|vnd\.wave|flac|x-flac|ogg|mpeg|mp3)$/i;
+
+/** audio the backend reads without ffmpeg (the desktop app's local backend has none): WAV, FLAC, OGG and MP3 as they
+ *  are; anything else the browser can play — a recording's WebM, an M4A, a video's sound — decoded here into a WAV.
+ *  (Undecodable: sent as it is — a server with ffmpeg may still read it.) */
+export async function readableAudio(blob: Blob, name: string): Promise<{ blob: Blob; name: string }> {
+  if (NATIVE_NAME.test(name) || NATIVE_TYPE.test(blob.type)) return { blob, name };
+  const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  const ctx = new Ctor();
+  try {
+    const audio = await ctx.decodeAudioData(await blob.arrayBuffer());
+    return { blob: wavOf(audio), name: `${name.replace(/\.[^./\\]+$/, "") || "audio"}.wav` };
+  } catch {
+    return { blob, name };
+  } finally {
+    void ctx.close();
+  }
+}
+
+/** 16-bit mono PCM WAV at the audio's own rate */
+function wavOf(a: AudioBuffer): Blob {
+  const n = a.length;
+  const mono = new Float32Array(n);
+  for (let c = 0; c < a.numberOfChannels; c++) {
+    const d = a.getChannelData(c);
+    for (let i = 0; i < n; i++) mono[i] += d[i] / a.numberOfChannels;
+  }
+  const buf = new ArrayBuffer(44 + n * 2);
+  const v = new DataView(buf);
+  const tag = (at: number, s: string) => [...s].forEach((ch, i) => v.setUint8(at + i, ch.charCodeAt(0)));
+  tag(0, "RIFF");
+  v.setUint32(4, 36 + n * 2, true);
+  tag(8, "WAVE");
+  tag(12, "fmt ");
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true);
+  v.setUint32(24, a.sampleRate, true);
+  v.setUint32(28, a.sampleRate * 2, true);
+  v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true);
+  tag(36, "data");
+  v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) {
+    const x = Math.max(-1, Math.min(1, mono[i]));
+    v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true);
+  }
+  return new Blob([buf], { type: "audio/wav" });
 }
 
 // ---- the waveform ------------------------------------------------------------------------------------------------

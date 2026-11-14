@@ -1,7 +1,7 @@
 import type { Messages } from "..";
 
 const ko: Messages<"localVoice"> = {
-  gpuTitle: "이 서버",
+  gpuTitle: "이 머신",
   gateOk: "로컬 모델을 돌릴 수 있어요",
   gate_no_gpu: "이 머신에는 NVIDIA GPU 가 없어요 (또는 드라이버가 설치되어 있지 않아요). 로컬 음성 모델에는 NVIDIA GPU 가 필요해요.",
   gate_gpu_not_passed:
@@ -9,13 +9,15 @@ const ko: Messages<"localVoice"> = {
   gate_old_driver: "NVIDIA 드라이버 {driver} 는 너무 오래됐어요. 엔진에는 CUDA 12.8 (드라이버 {min} 이상) 이 필요해요.",
   gate_old_gpu: "{gpu} (compute capability {cap}) 는 엔진이 지원하는 GPU 보다 오래됐어요 (7.0 Volta 이상).",
   gate_small_gpu: "{gpu} 의 메모리는 {gb} GB 예요. 로컬 음성 모델에는 {min} GB 이상이 필요해요.",
-  gate_platform: "{platform} 에는 아직 로컬 음성 모델을 설치할 수 없어요.",
-  gate_python: "이 서버는 Python {python} 으로 돌고 있어요. 엔진 환경은 서버의 Python 으로 만들어지고 Python {need} 이 필요해요 (Docker 이미지에는 들어 있어요).",
-  gate_packages: "이 서버에 로컬 음성에 필요한 패키지가 없어요: {list}",
-  gate_off: "이 서버에서 로컬 음성 모델이 꺼져 있어요 (VOICE_ENGINE_MODE=off).",
+  gate_platform: "{platform} 에는 로컬 음성 모델을 설치할 수 없어요. Linux · Windows (x86-64, NVIDIA GPU) 와 Apple Silicon Mac 에서 돌아가요.",
+  gate_old_os: "macOS {os} 에서는 엔진이 돌지 않아요. macOS {need} 이상으로 업데이트해 주세요.",
+  gate_python: "이 백엔드는 Python {python} 으로 돌고 있어요. 엔진 환경은 백엔드의 Python 으로 만들어지고 Python {need} 이 필요해요 (Docker 이미지와 데스크톱 앱에는 들어 있어요).",
+  gate_packages: "이 머신의 백엔드에 로컬 음성에 필요한 패키지가 없어요: {list}",
+  gate_off: "이 머신에서 로컬 음성 모델이 꺼져 있어요 (VOICE_ENGINE_MODE=off).",
   gate_fake: "테스트용 가짜 엔진이에요. GPU 를 쓰지 않아요.",
-  requirements: "compute capability {cap} 이상의 NVIDIA GPU, 드라이버 {driver} 이상 (CUDA 12.8), GPU 메모리 {vram} GB 이상, {platforms} 에서 돌아가요.",
+  requirements: "Linux · Windows: compute capability {cap} 이상의 NVIDIA GPU, 드라이버 {driver} 이상 (CUDA 12.8), GPU 메모리 {vram} GB 이상. Mac: Apple Silicon, macOS {macos} 이상, 메모리 {unified} GB 이상.",
   gpuLine: "{name} · {total} GB 중 {used} GB 사용 중 · 드라이버 {driver} · compute {cap}",
+  gpuLineApple: "{name} · Metal · 통합 메모리 {total} GB 중 {used} GB 사용 중 · {driver}",
   hostLine: "RAM {total} GB 중 {free} GB 여유 · 모델 디스크 {disk} GB 여유",
   modelsDir: "모델 위치: {path}",
   modelsHint:
@@ -63,7 +65,7 @@ const ko: Messages<"localVoice"> = {
   pinned: "통화 중이라 유지",
   vramUsed: "GPU 에서 {gb} GB",
   needDisk: "디스크 약 {gb} GB 필요",
-  notHere: "이 서버에서는 쓸 수 없어요",
+  notHere: "이 머신에서는 쓸 수 없어요",
   builtin: "기본 제공",
   rights: "사용권: {x}",
   feeling_neutral: "기본",
@@ -88,7 +90,7 @@ const ko: Messages<"localVoice"> = {
   warn_quiet: "소리가 아주 작아요",
   warn_silent: "대부분 무음이에요",
   warn_empty: "비어 있어요",
-  trySample: "안녕하세요! 오늘은 이 서버의 GPU 로 말하고 있어요. 어떻게 들려요?",
+  trySample: "안녕하세요! 오늘은 이 머신의 GPU 로 말하고 있어요. 어떻게 들려요?",
   tryInstructPh: "female, low pitch, calm",
   noTts: "설치된 음성 합성 모델이 없어요.",
 };
