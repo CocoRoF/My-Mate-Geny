@@ -64,6 +64,21 @@ docker compose down               # stop (state stays in the volumes)
 Machine-specific tweaks (extra mounts, a host home directory, ...) go in a
 `deploy/docker-compose.override.yml` (gitignored, merged automatically).
 
+### Local voice models (an NVIDIA GPU)
+
+To serve speech and recognition models from the host's own GPU
+([local-voice.md](local-voice.md)), give the container the GPU: install the
+NVIDIA driver (570 or newer) and the NVIDIA Container Toolkit on the host, then
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+```
+
+Nothing else changes in the image; the engines and models are installed by the
+app into the home volume (`~/.hr-harnessor/voice`, about 20 GB for all of them)
+when a model is downloaded in Settings → 이미지 및 음성 공급자 → 로컬 음성 모델.
+Without a GPU (or without the toolkit) that tab says why and nothing installs.
+
 ## 3. What to mount
 
 | Container path | Default | What |
@@ -93,6 +108,8 @@ deploy/start-tunnel.sh         # optional, needs deploy/cloudflared/config.yml
 ```
 
 This runs as your user, so the CLIs use your own `~/.claude` / `~/.codex`.
+Local voice models need the backend on Python 3.12 (the engines' environments
+are made from its interpreter) and an NVIDIA GPU ([local-voice.md](local-voice.md)).
 Server state goes to `~/.hr-harnessor/` and `DB_PATH` (default
 `backend/data/harnessor.db`).
 
@@ -137,6 +154,7 @@ usually touch in production:
 | `UPLOAD_MAX_MB`, `MATE_IMPORT_MAX_MB` | size limits (keep your proxy's body limit above them) |
 | `APPS_REPO`, `APPS_RELEASE_TAG`, `GITHUB_TOKEN` | where the Download page finds app builds |
 | `CORS_ORIGINS` | only for front-ends on another origin (the console itself is same-origin) |
+| `VOICE_ENGINE_MODE`, `VOICE_HOME`, `VOICE_MODELS_DIR`, `VOICE_VRAM_BUDGET` | local voice models: `off` switches them off; where the models and engines go; the GPU share they may fill ([local-voice.md](local-voice.md)) |
 
 ## 6. Secrets (never commit)
 

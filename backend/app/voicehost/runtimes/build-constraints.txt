@@ -1,0 +1,2 @@
+# Build-time pins for source-only packages in the engine lock files (openai-whisper still imports pkg_resources).
+setuptools<81

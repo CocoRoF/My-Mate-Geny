@@ -75,10 +75,12 @@ def _by(doc, kind, engine):
 
 def test_nothing_configured(client, http):
     doc = client.get("/api/mates/providers").json()
-    assert [p["engine"] for p in doc["tts"]] == ["openai", "google", "elevenlabs", "omnivoice", "http"]
-    assert [p["engine"] for p in doc["stt"]] == ["openai", "google", "whisper", "elevenlabs"]
+    # (local first: this server's own GPU — not usable without one, and it says why)
+    assert [p["engine"] for p in doc["tts"]] == ["local", "openai", "google", "elevenlabs", "omnivoice", "http"]
+    assert [p["engine"] for p in doc["stt"]] == ["local", "openai", "google", "whisper", "elevenlabs"]
     for p in doc["tts"] + doc["stt"]:
         assert p["configured"] is False and p["ok"] is False and p["error"] is None and p["checked_at"] is None
+    assert doc["tts"][0]["reason"]
     assert http.calls == []
     assert client.get("/api/mates/models?engine=elevenlabs&kind=tts").status_code == 400
     assert client.get("/api/mates/voices?engine=omnivoice").status_code == 400

@@ -71,11 +71,12 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
 }
 ```
 
-- `tts.engine`: `off | browser | openai | elevenlabs | omnivoice | http`
+- `tts.engine`: `off | browser | google | openai | elevenlabs | omnivoice | http | local`
   (`browser` = Web Speech `speechSynthesis`, synthesized in the page; the rest
-  are synthesized by the backend). `voice` = provider voice id / OmniVoice
-  profile id.
-- `stt.engine`: `off | browser | openai | whisper | elevenlabs` (`browser` = Web Speech
+  are synthesized by the backend; `local` = a model on this server's own GPU,
+  [local-voice](local-voice.md)). `voice` = provider voice id / OmniVoice
+  profile id / a local voice id (`builtin:chaerin`, …).
+- `stt.engine`: `off | browser | google | openai | whisper | elevenlabs | local` (`local` = the local Whisper; `browser` = Web Speech
   recognition where available; `whisper` = an OpenAI-compatible
   `/v1/audio/transcriptions` server such as geny-audio-services; `elevenlabs` =
   Scribe v2 Realtime, a live transcript while speaking, with the ElevenLabs key of
@@ -950,6 +951,10 @@ captures are deleted and no image bytes are copied into app logs or long-term me
   one-ahead prefetch, played through the voice bridge (level → avatar). Mic:
   push-to-talk button (tap to start / tap to stop, or hold); with the realtime engine and
   auto-send also hands-free.
+- **Local voice models** (`tts.engine` / `stt.engine` = `local`): OmniVoice, Qwen3-TTS, CosyVoice3 and Whisper served
+  from this server's own NVIDIA GPU (refused without one), downloaded by the user after accepting each license;
+  `tts.model`, `tts.voice` (built-in 한채린 / 메스가키 or the user's own clips by feeling), `tts.instruct`. Not
+  available → 204 + `X-Speech-Fallback: browser`. The whole contract: [local-voice](local-voice.md).
 - Phone calls (📞 on a phone, and her calling the Android app): Claude Haiku on its own line, her voice, the call in her
   conversation and her own engine's turn after it — docs/mate-calls.md.
 

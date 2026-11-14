@@ -57,6 +57,7 @@ from app.routers import (
     session_git,
     sessions,
     usage,
+    voice_local,
     workspaces,
 )
 from app.avatar.service import AvatarService
@@ -147,8 +148,15 @@ async def lifespan(app: FastAPI):
     app.state.screen_service.triggers.mate_runtime = app.state.mate_service
     app.state.screen_service.triggers.start()
     app.state.voice_service = VoiceService(mate_store)
+    # local voice models on this machine's GPU (app/voicehost, docs/local-voice.md): refused up front without one
+    from app.voicehost.service import VoiceHost
+    app.state.voice_host = VoiceHost(db)
+    app.state.voice_host.on_change = lambda what: session_service.mates_changed("voice")  # (every window refetches)
+    await app.state.voice_host.start()
+    app.state.voice_service.local = app.state.voice_host  # (a mate's "local" engine speaks and hears through it)
     from app.mate.calls import CallService
     app.state.calls = CallService(app.state.mate_service)  # phone calls with her (docs/mate-calls.md)
+    app.state.calls.voice = app.state.voice_service
     app.state.calls.start()
     # Higgsfield: accounts + what the chats' agents get (docs/higgsfield.md)
     higgsfield = HiggsfieldService(db, vault)
@@ -211,6 +219,7 @@ async def lifespan(app: FastAPI):
 
     await app.state.screen_service.triggers.stop()
     await app.state.calls.stop()
+    await app.state.voice_host.stop()
     housekeeper.cancel()
     session_watcher.cancel()
     life_clock.cancel()
@@ -310,6 +319,7 @@ for r in (
     cli_tools_router.router,
     local_runtime.router,
     setup.router,
+    voice_local.router,
 ):
     app.include_router(r)
 

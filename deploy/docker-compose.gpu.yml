@@ -1,0 +1,25 @@
+# Local voice models (docs/local-voice.md) on a host with an NVIDIA GPU: gives the container the GPU.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# Needs, on the host: the NVIDIA driver 570 or newer (CUDA 12.8; `nvidia-smi` works) and the NVIDIA Container Toolkit
+# (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), then
+# `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker`. Check it with
+# `docker run --rm --gpus all ubuntu nvidia-smi`.
+#
+# Nothing else changes in the image: the engines (torch with its CUDA libraries) are installed by the app into
+# <data home>/voice/runtimes on the first download, the models into <data home>/voice/models — both on the geny-home
+# volume, so they survive a rebuild. About 20 GB for all five models and their three engines. Settings → 이미지 및 음성
+# 공급자 → 로컬 음성 모델 shows the GPU, or why it can't be used.
+
+services:
+  geny:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1                 # or device_ids: ["1"] for a particular GPU (then VOICE_DEVICE stays cuda:0)
+              capabilities: [gpu]
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility   # CUDA, and nvidia-smi for the GPU check

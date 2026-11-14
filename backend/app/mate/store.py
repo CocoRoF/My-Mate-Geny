@@ -37,10 +37,10 @@ GENDERS = ("female", "male")
 #: ``persona.birthday``: "MM-DD" or "" (``birthday``): she knows it, and her day has it (app/mate/life)
 # persona fields of older documents / clients / imports and where they live now (prefs): moved, never dropped
 LEGACY_STYLE_FIELDS = {"speech": "speech_style", "address": "address"}
-TTS_ENGINES = ("off", "browser", "google", "openai", "elevenlabs", "omnivoice", "http")
+TTS_ENGINES = ("off", "browser", "google", "openai", "elevenlabs", "omnivoice", "http", "local")
 # elevenlabs = Scribe v2 Realtime: the page streams the mic straight to ElevenLabs with a single-use token the
 # backend mints (app/mate/voice.py realtime_token); the key never leaves the server.
-STT_ENGINES = ("off", "browser", "google", "openai", "whisper", "elevenlabs")
+STT_ENGINES = ("off", "browser", "google", "openai", "whisper", "elevenlabs", "local")
 # voice.stt.silence: how long a pause ends an utterance (ElevenLabs VAD, seconds; its API takes 0.192 – 3.0)
 STT_SILENCE = (0.3, 3.0, 1.2)
 AVATAR_KINDS = ("none", "video", "photo", "live2d", "livliv")

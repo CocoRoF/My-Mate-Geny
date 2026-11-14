@@ -27,6 +27,7 @@ import { useMateStore } from "../../../stores/mateStore";
 import Icon from "../../ui/Icon";
 import { openAppSettings } from "../../../lib/openAppSettings";
 import { useT, type MsgKey } from "../../../i18n";
+import { listLocalVoices, type LocalVoice } from "../../../api/voice";
 import { availability, playPreview, setPreviewVolume, speakPreview, stopPreview, STT_ENGINES, TTS_ENGINES, usable, usePreviewPlaying, type Availability, type EngineInfo } from "./engines";
 import { Banner, ErrorLine, Field, LinkButton, SaveBar, SearchSelect, Section, Segmented, Toggle, useFollowSaved, useSaver, type PickOption } from "./ui";
 
@@ -500,7 +501,7 @@ function TtsDetails({ mate, tts, set, ready, simple }: { mate: Mate; tts: Tts; s
   const [lo, hi] = SPEED[engine] ?? [0.5, 2];
 
   const server = engine !== "browser";
-  const voices = useFetched<VoiceOption[]>(ready && server && engine !== "http" ? `voices:${engine}` : null, () => listVoices(engine).then((r) => r.voices));
+  const voices = useFetched<VoiceOption[]>(ready && server && engine !== "http" && engine !== "local" ? `voices:${engine}` : null, () => listVoices(engine).then((r) => r.voices));
   const models = useFetched<ModelList>(ready && server ? `models:${engine}:tts` : null, () => listModels(engine, "tts"));
 
   const previewKey = `tts:${engine}:${tts.voice}:${tts.profile}:${tts.model}:${tts.speed}:${tts.instruct}:${tts.language}`;
@@ -606,6 +607,8 @@ function TtsDetails({ mate, tts, set, ready, simple }: { mate: Mate; tts: Tts; s
 
       {engine === "omnivoice" && <OmniVoice mate={mate} tts={tts} set={set} voices={voices} />}
 
+      {engine === "local" && <LocalTts mate={mate} tts={tts} set={set} models={models} simple={simple} />}
+
       {engine === "http" && (
         <>
           {!simple && <Field label={t("mateSettings.voiceModel")} as="div" hint={models.data && !models.data.models.length ? t("mateSettings.voiceNoModelsTts") : undefined}>
@@ -656,6 +659,62 @@ function TtsDetails({ mate, tts, set, ready, simple }: { mate: Mate; tts: Tts; s
         </div>
       )}
     </div>
+  );
+}
+
+/** a mate on a local model (this server's GPU): the model, the voice its lines are cloned from (clips by feeling — a
+ *  built-in voice, one of the user's, her own clip), and for OmniVoice / CosyVoice3 an instruction */
+function LocalTts({ mate, tts, set, models, simple }: { mate: Mate; tts: Tts; set: (p: Partial<Tts>) => void; models: ReturnType<typeof useFetched<ModelList>>; simple?: boolean }) {
+  const t = useT();
+  const voices = useFetched<LocalVoice[]>("local-voices", () => listLocalVoices());
+  const current = models.data?.models.find((m) => m.id === (tts.model || models.data?.default));
+  const features = current?.features ?? [];
+  const builtin = mate.builtin ? voices.data?.find((v) => v.id === `builtin:${mate.builtin}`) : undefined;
+  const fallback = builtin
+    ? t("mateSettings.voiceLocalBuiltinDefault", { name: builtin.name })
+    : tts.ref
+      ? t("mateSettings.voiceLocalHerOwn")
+      : features.includes("auto_voice")
+        ? t("mateSettings.voiceLocalOwnVoice")
+        : t("mateSettings.voiceLocalHerOwn");
+  return (
+    <>
+      {!simple && (
+        <Field label={t("mateSettings.voiceModel")} as="div">
+          <SearchSelect
+            value={tts.model}
+            onChange={(model) => set({ model })}
+            options={(models.data?.models ?? []).map((m) => ({ value: m.id, label: m.name }))}
+            noneLabel={t("mateSettings.voiceDefaultX", { x: models.data?.models.find((m) => m.id === models.data?.default)?.name || models.data?.default || "—" })}
+            loading={models.busy}
+            testId="mate-tts-model"
+          />
+          <ErrorLine text={models.err} />
+        </Field>
+      )}
+      <Field label={t("mateSettings.voiceLocalVoice")} hint={t("mateSettings.voiceLocalVoiceHint")} as="div">
+        <select className="field" value={tts.voice} onChange={(e) => set({ voice: e.target.value })} data-testid="mate-tts-local-voice">
+          <option value="">{fallback}</option>
+          {(voices.data ?? [])
+            .filter((v) => v.references.length)
+            .map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+        </select>
+        <div className="mt-1">
+          <LinkButton onClick={() => openAppSettings("media")} testId="mate-tts-local-manage">
+            {t("mateSettings.voiceLocalModels")}
+          </LinkButton>
+        </div>
+      </Field>
+      {(features.includes("design") || features.includes("instruct")) && (
+        <Field label={t("mateSettings.voiceLocalInstruct")} hint={t("mateSettings.voiceLocalInstructHint")}>
+          <input className="field" value={tts.instruct ?? ""} onChange={(e) => set({ instruct: e.target.value })} data-testid="mate-tts-local-instruct" />
+        </Field>
+      )}
+    </>
   );
 }
 
@@ -821,10 +880,10 @@ function OmniVoice({ mate, tts, set, voices }: { mate: Mate; tts: Tts; set: (p: 
 function SttDetails({ mate, stt, set, ready }: { mate: Mate; stt: Stt; set: (p: Partial<Stt>) => void; ready: boolean }) {
   const t = useT();
   const engine = stt.engine;
-  const models = useFetched<ModelList>(ready && (engine === "openai" || engine === "whisper" || engine === "google") ? `models:${engine}:stt` : null, () => listModels(engine, "stt"));
+  const models = useFetched<ModelList>(ready && (engine === "openai" || engine === "whisper" || engine === "google" || engine === "local") ? `models:${engine}:stt` : null, () => listModels(engine, "stt"));
   return (
     <div className="space-y-3 rounded-lg border border-border/70 bg-surface/40 p-3" data-testid={`mate-stt-details-${engine}`}>
-      {(engine === "openai" || engine === "whisper" || engine === "google") && (
+      {(engine === "openai" || engine === "whisper" || engine === "google" || engine === "local") && (
         <Field label={t("mateSettings.voiceModel")} as="div" hint={engine === "whisper" && models.data && !models.data.models.length ? t("mateSettings.voiceNoModelsStt") : undefined}>
           <SearchSelect
             value={stt.model}

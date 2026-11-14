@@ -35,9 +35,12 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     "omnivoice": {"label": "OmniVoice", "kinds": ("tts",), "needs": ("omnivoice_url",)},
     "http": {"label": "OpenAI-compatible TTS server", "kinds": ("tts",), "needs": ("http_tts_url",)},
     "whisper": {"label": "Whisper server", "kinds": ("stt",), "needs": ("whisper_url",)},
+    # models served from this server's own GPU (app/voicehost, docs/local-voice.md): no key, no URL — usable once
+    # the machine passes the GPU check and a model of that kind is installed
+    "local": {"label": "Local models", "kinds": ("tts", "stt"), "needs": ()},
 }
-TTS_ORDER = ("openai", "google", "elevenlabs", "omnivoice", "http")
-STT_ORDER = ("openai", "google", "whisper", "elevenlabs")
+TTS_ORDER = ("local", "openai", "google", "elevenlabs", "omnivoice", "http")
+STT_ORDER = ("local", "openai", "google", "whisper", "elevenlabs")
 # The realtime model a mate's mic streams to (ElevenLabs …/speech-to-text/realtime) and the batch model the same
 # key transcribes a recording with when the stream can't be used (docs/mate.md §5).
 ELEVEN_REALTIME_MODELS = [
@@ -124,6 +127,7 @@ def _fail(resp: netio.Response, service: str) -> str:
 class Providers:
     def __init__(self, store: MateStore) -> None:
         self.store = store
+        self.local: Any = None  # the local voice models (app/voicehost VoiceHost), when the server runs them
         self._inflight: dict[str, asyncio.Task] = {}
         # short-lived listings (model lists of self-hosted servers), by URL
         self._lists: dict[str, tuple[float, Any]] = {}
@@ -135,11 +139,24 @@ class Providers:
             return self.store.secret(name)
         return str(self.store.settings().get(name) or "")
 
-    def configured(self, provider: str) -> bool:
+    def configured(self, provider: str, kind: str | None = None) -> bool:
+        if provider == "local":
+            h = self.local
+            return bool(h) and (h.usable(kind) if kind else (h.usable("tts") or h.usable("stt")))
         spec = PROVIDERS.get(provider)
         return bool(spec) and all(self.value(n) for n in spec["needs"])
 
-    def missing_reason(self, provider: str) -> str:
+    def missing_reason(self, provider: str, kind: str | None = None) -> str:
+        if provider == "local":
+            h = self.local
+            if h is None:
+                return "Local voice models aren't available on this server"
+            g = h.gate()
+            if not g.ok:
+                return g.message
+            what = {"tts": "speech", "stt": "speech recognition"}.get(kind or "", "voice")
+            return (f"No local {what} model is installed — download one in Settings → Image and voice providers → "
+                    "Local voice models")
         label = PROVIDERS[provider]["label"]
         what = "API key" if PROVIDERS[provider]["needs"][0].endswith("_key") else "URL"
         return f"{label} isn't set up (no {what}) — add it in Settings → Image and voice providers"
@@ -157,6 +174,8 @@ class Providers:
         return await asyncio.shield(task)
 
     async def _verify(self, provider: str) -> dict[str, Any]:
+        if provider == "local":
+            return self.entry(provider)  # (nothing to call: the machine and its installed models say it)
         if not self.configured(provider):
             self.store.set_verification(provider, None)
             return self.entry(provider)
@@ -176,6 +195,16 @@ class Providers:
 
     def entry(self, provider: str, kind: str | None = None) -> dict[str, Any]:
         spec = PROVIDERS[provider]
+        if provider == "local":
+            ok = self.configured("local", kind)
+            # (like a provider not set up: no error, no check — ``reason`` says what it is missing: a GPU, a model)
+            out = {"engine": "local", "label": spec["label"], "configured": ok, "ok": ok, "error": None,
+                   "detail": self.local.gate().message if ok and self.local else None,
+                   "checked_at": _now_iso() if ok else None, "media_models": {},
+                   "reason": None if ok else self.missing_reason("local", kind)}
+            if kind:
+                out["kind"] = kind
+            return out
         configured = self.configured(provider)
         v = self.store.verification(provider) if configured else None
         out = {"engine": provider, "label": spec["label"], "configured": configured,
@@ -188,7 +217,7 @@ class Providers:
         return out
 
     def _stale(self, provider: str) -> bool:
-        if not self.configured(provider):
+        if provider == "local" or not self.configured(provider):
             return False
         v = self.store.verification(provider)
         return v is None or time.time() - float(v.get("at") or 0) > TTL
@@ -311,6 +340,17 @@ class Providers:
             return out
         if engine not in PROVIDERS or kind not in PROVIDERS[engine]["kinds"]:
             raise MateError(f"{engine} has no {kind.upper()} models")
+        if engine == "local":
+            h = self.local
+            if h is None:
+                raise MateError(self.missing_reason("local", kind))
+            from app.voicehost import catalog as vc
+
+            have = set(h.installed(kind))
+            out["models"] = [{"id": m.id, "name": m.name, "languages": list(m.languages),
+                              "features": list(m.features)} for m in vc.CATALOG if m.id in have]
+            out["default"] = h.default_model(kind)
+            return out
         if engine == "openai":
             out["models"] = OPENAI_TTS_MODELS if kind == "tts" else OPENAI_STT_MODELS
             out["default"] = out["models"][0]["id"]
