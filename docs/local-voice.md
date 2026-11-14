@@ -55,7 +55,7 @@ environments); a desktop has no ffmpeg, so nothing needs it — MP3 is written b
 1.2), and a browser recording (WebM) or another format the server can't read (M4A, a video's sound) is decoded in the
 page and sent as WAV. On Windows no probe or worker opens a console window, and a worker gets 3 minutes to start (the
 virus scanner reads torch's DLLs on the first start after an install). On a Mac the engines run on Metal in bf16, Whisper in
-fp16 (`GENY_VOICE_DTYPE` for another), the few ops Metal lacks fall back to the CPU (`PYTORCH_ENABLE_MPS_FALLBACK`), the
+fp32 (in fp16 there it only repeats a token; `GENY_VOICE_DTYPE` for another), the few ops Metal lacks fall back to the CPU (`PYTORCH_ENABLE_MPS_FALLBACK`), the
 models may take 60 % of the machine's memory by default and are never parked (the same memory either way); Voice
 Studio's overview shows the GPU as unified memory, what this app's workers hold (each measures itself: no driver lists
 per-process memory there — nor does Windows' WDDM mode), and the rest as other programs and the system.
