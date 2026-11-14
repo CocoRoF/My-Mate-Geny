@@ -456,6 +456,23 @@ async def test_keeper_refreshes_due_tokens_and_drops_idle_chats(agent, svc, fake
     assert not agent.session_dir("sess_live").exists()  # deleted chat: folder gone
 
 
+async def test_a_live_chats_refresh_never_keeps_an_idle_chat_of_the_same_account(agent, svc, fake, monkeypatch):
+    """The keeper visits the live chat first (the folder order the CI runner had): its refresh rewrites every chat of that account,
+    and that must not reset the idle chat's clock."""
+    acc = await _connect(svc, fake)
+    agent.is_live = lambda sid: sid == "sess_live"
+    await agent.launch("sess_live", _session("sess_live"), provider="claude")
+    idle = await agent.launch("sess_idle", _session("sess_idle"), provider="codex")
+    old = svc.tokens_of(acc["id"])
+    svc._put_tokens(acc["id"], {**old, "issued_at": (datetime.now(timezone.utc) - timedelta(hours=23, minutes=30)).isoformat(),
+                                "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()})
+    os.utime(agent.session_dir("sess_idle") / "account", (time.time() - 3600, time.time() - 3600))
+    real = Path.iterdir
+    monkeypatch.setattr(Path, "iterdir", lambda self: iter(sorted(real(self), key=lambda d: d.name != "sess_live")))
+    await agent.keep_fresh()
+    assert not Path(idle.env["HIGGSFIELD_CREDENTIALS_PATH"]).exists()
+
+
 async def test_prompt_variants(agent, svc, fake):
     await _connect(svc, fake)
     remote = await agent.launch("s", _session(connection_id="conn_1", higgsfield={"max_credits": 25}), provider="claude")

@@ -378,7 +378,11 @@ class HiggsfieldAgent:
                 self.revoke(d.name)
             else:
                 try:
+                    # (a refresh is not a use: the chat's idle clock — its account file's time — keeps running, or a live chat's
+                    # refresh would keep every idle chat of the same account from ever losing its file)
+                    st = (d / "account").stat()
                     self._write_files(d.name, aid, tokens["access"])
+                    os.utime(d / "account", ns=(st.st_atime_ns, st.st_mtime_ns))
                 except (OSError, HiggsfieldError):
                     pass
 
