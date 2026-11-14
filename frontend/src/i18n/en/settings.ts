@@ -10,6 +10,7 @@ export default {
   tabUpdates: "Updates & Download",
   groupGeneral: "General",
   groupSystem: "Agents & services",
+  groupLocal: "Local model hosting",
   usageHint: "What each connected account's plan has left, and the tokens this server counted.",
   backToList: "Back to Settings",
 

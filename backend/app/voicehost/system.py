@@ -128,6 +128,62 @@ def gpu_processes() -> dict[int, int]:
     return out
 
 
+def _opt(v: str) -> float | None:
+    try:
+        return float(v)
+    except ValueError:
+        return None  # ("[N/A]": a laptop's power, a passive card's fan)
+
+
+def telemetry() -> list[dict]:
+    """What each GPU is doing right now (Voice Studio's overview): load, memory load, temperature, power, clock, fan,
+    performance state. Fields the card doesn't report are None."""
+    exe = smi()
+    if not exe:
+        return []
+    q = "index,utilization.gpu,utilization.memory,temperature.gpu,power.draw,power.limit,clocks.sm,clocks.max.sm,fan.speed,pstate"
+    try:
+        p = subprocess.run([exe, f"--query-gpu={q}", "--format=csv,noheader,nounits"], capture_output=True, text=True,
+                           timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    out = []
+    for line in p.stdout.strip().splitlines():
+        f = [x.strip() for x in line.split(",")]
+        if len(f) < 10 or not f[0].isdigit():
+            continue
+        out.append({"index": int(f[0]), "util": _opt(f[1]), "mem_util": _opt(f[2]), "temperature": _opt(f[3]),
+                    "power": _opt(f[4]), "power_limit": _opt(f[5]), "clock": _opt(f[6]), "clock_max": _opt(f[7]),
+                    "fan": _opt(f[8]), "pstate": f[9]})
+    return out
+
+
+def gpu_apps() -> list[dict]:
+    """The CUDA processes the driver shows here: pid (in this container's namespace), executable, GPU memory. Other
+    containers' and the host's own processes may be missing (and graphics-only ones, Xorg, never appear)."""
+    exe = smi()
+    if not exe:
+        return []
+    try:
+        p = subprocess.run([exe, "--query-compute-apps=gpu_uuid,pid,process_name,used_memory", "--format=csv,noheader,nounits"],
+                           capture_output=True, text=True, timeout=10)
+        u = subprocess.run([exe, "--query-gpu=index,uuid", "--format=csv,noheader"], capture_output=True, text=True,
+                           timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    index_of = {}
+    for line in u.stdout.strip().splitlines():
+        f = [x.strip() for x in line.split(",")]
+        if len(f) == 2 and f[0].isdigit():
+            index_of[f[1]] = int(f[0])
+    out = []
+    for line in p.stdout.strip().splitlines():
+        f = [x.strip() for x in line.split(",")]
+        if len(f) >= 4 and f[1].isdigit():
+            out.append({"gpu": index_of.get(f[0], 0), "pid": int(f[1]), "name": f[2], "used": _num(f[3]) * MiB})
+    return out
+
+
 def _read(path: str) -> str:
     try:
         return Path(path).read_text().strip()

@@ -270,6 +270,7 @@ class VoiceService:
             # (her model, her voice's clip for this feeling, its instruction: a new clip is a new line)
             lv = self._local_voice(mate, tts, emotion)
             tts["_local_ref"] = lv["ref"]
+            tts["_source"] = f"mate:{mate.get('name') or mate.get('id', '')}"  # (Voice Studio's GPU queue: for whom)
             shape.update(model=lv["model"], ref=lv["key"], instruct=lv["instruct"], url="")
         key = hashlib.sha256(json.dumps(shape, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:40]
         cache = self._cache_dir()
@@ -355,7 +356,8 @@ class VoiceService:
         language = (shape.get("language") or (ref or {}).get("language") or "auto").split("-")[0]
         try:
             wav, _info = await h.synthesize(shape["model"], text, reference=ref, language=language,
-                                            instruct=shape.get("instruct") or "", params=params)
+                                            instruct=shape.get("instruct") or "", params=params,
+                                            source=str(tts.get("_source") or "mate"))
         except VoiceError as e:
             raise MateError(str(e), status=e.status if e.status < 500 else 502) from None
         return wav, "audio/wav"
@@ -506,7 +508,8 @@ class VoiceService:
 
             model = self._local.model_for("stt", str((stt.get("model") if engine == mine else "") or ""))
             try:
-                heard = await self._local.transcribe(audio, language=language or "auto", model_id=model)
+                heard = await self._local.transcribe(audio, language=language or "auto", model_id=model,
+                                                     source=f"mate:{mate.get('name') or mate.get('id', '')}")
             except VoiceError as e:
                 raise MateError(str(e), status=e.status if e.status < 500 else 502) from None
             return {"text": heard["text"], "language": heard.get("language") or language, "engine": "local"}

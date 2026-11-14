@@ -15,6 +15,8 @@
  *     Desktop app         (in the desktop app) the mate on the desktop, quick-chat shortcut, start at login
  *   Agents & system
  *     Providers · Connections · Usage · Admin — what used to be sidebar screens (`/?view=usage` … open these)
+ *   Local model hosting
+ *     Voice Studio        models served from this machine's own GPU (voicestudio/VoiceStudio.tsx, docs/local-voice.md)
  * Each tab embeds the existing component, so the logic lives once.
  */
 import { cliUpdatesAvailable, providersNeedAttention, sessionsNeedAttention } from "../../lib/attention";
@@ -64,6 +66,7 @@ const ProvidersView = lazy(() => import("../providers/ProvidersView"));
 const ConnectionsView = lazy(() => import("../connections/ConnectionsView"));
 const UsageView = lazy(() => import("../usage/UsageView"));
 const AdminView = lazy(() => import("../admin/AdminView"));
+const VoiceStudio = lazy(() => import("../voicestudio/VoiceStudio"));
 
 /** a tab's card (the tab's title is the page's — SettingsView) */
 function Card({ id, children }: { id: string; children: ReactNode }) {
@@ -745,6 +748,8 @@ function TabContent({ id }: { id: SettingsTab }) {
       return <UsageView />;
     case "admin":
       return <AdminView />;
+    case "voice-studio":
+      return <VoiceStudio />;
   }
 }
 

@@ -98,8 +98,9 @@ My Mate Geny는 **Claude Code**와 **Codex** CLI를 내 컴퓨터나 서버에�
   HTTP TTS를 지원합니다. 음성 인식은 Whisper 호환 서버, OpenAI, ElevenLabs 실시간(말하는 동안 글자가 바로 나오고, 핸즈프리 자동 전송과 말로 끼어들기 지원)을 씁니다. 마이크를 누르고 말하면 됩니다.
 - **로컬 음성 모델 내장**: NVIDIA GPU 가 있는 머신이면 앱이 직접 OmniVoice, Qwen3-TTS, CosyVoice3, Whisper 를
   서빙합니다. GPU 를 확인하고, 라이선스에 동의한 모델만 내려받고, 필요할 때 GPU 에 올리고, 감정별 레퍼런스
-  클립으로 목소리를 복제합니다 (기본 제공 한채린·메스가키 목소리 또는 내 목소리). 알맞은 GPU 가 없는 머신에서는
-  막혀 있습니다 ([docs/local-voice.md](docs/local-voice.md)).
+  클립으로 목소리를 복제합니다 (기본 제공 한채린·메스가키 목소리 또는 내 목소리). **Voice Studio** 에서 GPU 에
+  무엇이 누구를 위해 올라가 있는지 보고, 음성·일괄 생성·목소리 프로필을 만들고, 만든 것을 히스토리로 남깁니다.
+  알맞은 GPU 가 없는 머신에서는 막혀 있습니다 ([docs/local-voice.md](docs/local-voice.md)).
 - **위임**: 채팅 목록을 살펴보고, 알맞은 폴더에 채팅을 열고, 진행 중인 채팅에 지시를 보내고, 결과를
   받아 알려줍니다.
 - **기억**: 기억해야 할 것들을 저장합니다. 메이트가 직접 추가하기도 하고, 사용자가 고칠 수도 있습니다.
@@ -173,7 +174,7 @@ Docker 볼륨에 들어 있습니다. 이 볼륨을 백업해 두시고, 처음�
    **Mate settings → Voice** 에서 목소리를 고릅니다.
    - `browser`: 무료이고 내장되어 있어 설정이 필요 없습니다
    - `openai` / `elevenlabs`: API 키가 필요합니다(암호화되어 저장)
-   - `local`: 이 서버의 NVIDIA GPU 에서 도는 모델을 씁니다. **설정 → 이미지 및 음성 공급자 → 로컬 음성 모델** 에서
+   - `local`: 이 서버의 NVIDIA GPU 에서 도는 모델을 씁니다. **설정 → 로컬 모델 호스팅 → Voice Studio** 에서
      각 모델의 라이선스에 동의한 뒤 내려받으면 되고, 내장 캐릭터는 자기 레퍼런스 목소리로 말합니다
      ([docs/local-voice.md](docs/local-voice.md)).
    - `omnivoice`: [geny-audio-services](https://github.com/CocoRoF/geny-audio-services) 로 띄운 내 서버를

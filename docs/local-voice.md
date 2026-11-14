@@ -2,9 +2,10 @@
 
 My Mate Geny serves speech (TTS) and speech-recognition (STT) models on the NVIDIA GPU of the machine it runs on — a
 server (`docker compose`, [deploy](deploy.md)) or the computer of a desktop install. It is part of the app
-(`backend/app/voicehost`), not a separate service: Settings → **이미지 및 음성 공급자** → **로컬 음성 모델** shows the GPU,
-downloads the models, puts them on the GPU and tries them; a mate's Voice tab then offers the engine **로컬 (이 서버의
-GPU)** for her voice and for hearing the user, and her phone calls use it too.
+(`backend/app/voicehost`), not a separate service: Settings → **로컬 모델 호스팅** → **Voice Studio** shows the GPU and
+who is using it, downloads and serves the models, builds voice profiles and makes lines with them ([below](#voice-studio));
+a mate's Voice tab then offers the engine **로컬 (이 서버의 GPU)** for her voice and for hearing the user, and her
+phone calls use it too.
 
 What the app provides is the framework that serves the models: the engines' environments, the installer, the GPU
 placement, the voices. **No model weights are shipped.** Each model is downloaded by the user from its authors' Hugging
@@ -90,28 +91,64 @@ There must be room for it plus 2 GB on the disk (else 409 `no_room` before anyth
   back on the GPU in a moment) or stopped. A model leaves the GPU after `VOICE_IDLE_UNLOAD_SECONDS` (10 min) unused; a
   parked one's process stops after `VOICE_PARKED_TTL_SECONDS` (30 min). A **pinned** model (a call's) is never moved
   out or idled out.
-- **One GPU job at a time** (`GpuQueue`), by priority: a mate's line or the user's words first, previews in Settings
-  next, loads and warm-ups last.
+- **One GPU job at a time** (`GpuQueue`), by priority: a mate's line or the user's words first, the studio's lines
+  next, loads, warm-ups and batches last. Every job keeps a record — what (`speak`, `hear`, `load`, `warm`), which
+  model, for whom (`source`: `mate:<name>`, `call:<name>`, `studio`, `compare`, `seed`, `batch`, `settings`), how long
+  it waited and took, the audio's length and real-time factor — the last 120 are in the studio's 개요.
 - Where it lives: `<data home>/voice/` (`VOICE_HOME`) — `models/` (`VOICE_MODELS_DIR`; a fast local disk: loading is
-  mostly reading it), `runtimes/` (`VOICE_RUNTIMES_DIR`), `references/` (the users' clips), `tmp/`. About 20 GB for
-  all five models and their three runtimes.
+  mostly reading it), `runtimes/` (`VOICE_RUNTIMES_DIR`), `references/` (the users' clips), `history/` (the studio's
+  lines, by day), `tmp/`. About 20 GB for all five models and their three runtimes.
+- The GPU limits and idle times above, the history's limits and the default models can also be set in Voice Studio →
+  설정 (kept in `voice_settings`; "back to the server's value" removes the override).
 
 ## Voices
 
-A voice is reference clips **by feeling** — `neutral`, `joy`, `sadness`, `anger`, `surprise` — each with its exact
-words. A cloning model speaks a line like the clip of its feeling (a mate's emotion tag picks it: `[joy]` `[smile]`
-`[laugh]` `[greet]` → joy, `[sad]` `[worried]` → sadness, `[angry]` → anger, `[surprised]` → surprise; the rest neutral), else like the neutral clip, else the first.
+A voice (a **profile** in Voice Studio) is reference clips **by feeling** — `neutral`, `joy`, `sadness`, `anger`,
+`surprise`, `fear`, `disgust`, `smile` — each with its exact words, plus a description, tags, a default model and its
+parameters, and a voice description (`instruct`) for when there is no clip. A cloning model speaks a line like the clip
+of its feeling; a feeling without one falls back along a chain, then to neutral, then to the first clip
+(`voices.py` `_CHAIN`):
+
+| A mate's tag / the feeling asked | Clips tried |
+|---|---|
+| `joy`, `laugh` | joy |
+| `smile`, `greet` | smile → joy |
+| `shy` | smile |
+| `surprised`, `surprise` | surprise |
+| `sad`, `sadness` | sadness |
+| `worried`, `fear`, `scared` | fear → sadness |
+| `angry`, `anger` | anger |
+| `disgust` | disgust → anger |
 
 - **Built in** (`backend/app/mate/builtin/voices/<key>/voice.json`, id `builtin:<key>`, read-only): **한채린**
-  (`builtin:chaerin`) and **메스가키** (`builtin:seoa`), five clips each (8 – 12 s, 24 kHz mono, levelled to −20 dBFS).
+  (`builtin:chaerin`) and **메스가키** (`builtin:seoa`), five clips each (8 – 12 s, 24 kHz mono, levelled to −20 dBFS;
+  the other three feelings fall back as above). Duplicate one to make your own version.
   Made by the owner with their own ElevenLabs voices (each line generated twice, the take whose transcript matched the
   line kept); the owner holds all rights to them (`rights` in `voice.json`; THIRD-PARTY-NOTICES.md).
-- **The user's own**: Settings → 로컬 음성 모델 → 목소리 → 새 목소리, then a clip per feeling (WAV / MP3 / M4A / WebM …,
-  ≤ 50 MB; silence trimmed, at most 30 s kept). Leave the words empty and the local Whisper writes them. Each clip is
-  checked: too short (< 3 s), too long (> 20 s), clipped, very quiet or mostly silence is said on the clip (5 – 15 s
-  of one speaker with little noise clones best). Stored in `voice_voices` / `voice_refs` and `references/`.
+- **The user's own**: Voice Studio → 프로필 → +, then a clip per feeling — uploaded (WAV / MP3 / M4A / WebM …,
+  ≤ 50 MB), recorded in the browser, or a line made in the studio — cut to the stretch kept (the editor suggests the
+  best 5 – 15 s; without a cut the silence is trimmed; at most 30 s, at least 0.5 s kept). A new clip of a feeling
+  replaces the one it had. Leave the words empty and the local Whisper writes them. Each clip is checked: too short
+  (< 3 s), too long (> 20 s), clipped, very quiet or mostly silence is said on the clip (5 – 15 s of one speaker with
+  little noise clones best). Stored in `voice_voices` / `voice_refs` and `references/`.
 - **No voice**: OmniVoice speaks in a voice of its own, or one made from a description (`instruct`, e.g.
   `female, low pitch, calm` — it was trained on English and Chinese descriptions).
+
+## Voice Studio
+
+Settings → 로컬 모델 호스팅 → **Voice Studio** (`frontend/src/components/voicestudio/`; the page is in the address,
+`/?view=settings&tab=voice-studio&page=history`). Its pages:
+
+| Page | What |
+|---|---|
+| 개요 | each GPU — load, temperature, power, clock, fan — and **whose its memory is**: this app's models (each worker's process, measured by the driver), other programs (`nvidia-smi --query-compute-apps`), and what no process here accounts for (the host's display, other containers); the last 30 minutes (sampled every 5 s while someone looks, else every 30 s); the models on the GPU (park, unload, load); the GPU queue — running, waiting, the last jobs and for whom; engine events; the machine's RAM and disk |
+| 모델 | the gate, each model's card (license, install, load / unload, default model), its default parameters (what every line made with it starts from: a mate's, the studio's, a batch's), the engines' environments |
+| 프로필 | the profiles (search, mine / built-in, ★), the eight clips (play, upload, record, trim, words and language), details (description, tags, default model and parameters, voice description), duplicate, delete |
+| 생성 | a line: profile, model, mode (자동 / 복제 / 설계 — what the model and the profile allow), feeling (a dot where the profile has the clip), language, description presets, parameters, seed (random, or kept to make the same line again) → waveform, timings, download (WAV / MP3 / OGG / FLAC), ★, same seed again, save as a profile's clip |
+| 일괄 생성 | text (a line each, `[joy] …`), CSV (`text` + any of `profile`, `feeling`, `seed`, `language`, `instruct`, `model`) or JSON, ≤ 500 lines, shared settings (a line's own columns win), one seed for all or one each; run at the lowest priority, one line at a time; progress, cancel, retry failed, resume one a restart stopped (`interrupted`), each line playable, a ZIP in a format with `manifest.json` |
+| 히스토리 | every line made here with everything that made it: search, filter (profile, model, where from, ★), play, download, make again (opens 생성 with its settings and seed), save as a clip, delete (one or many). Over `history_max_entries` (2000) or `history_max_gb` (5) the oldest go first; ★ lines and batches' lines stay |
+| 도구 | A/B comparison (one line, up to five settings, the same seed), seed search (one line, 2 – 12 seeds), a clip's analysis (format, level, silence, warnings, the best stretches → add one to a profile, its words and language), transcription |
+| 설정 | GPU share, idle unload, parked time, parking RAM, history limits; the default speech / recognition model and the profile the studio starts with; paths and engine mode (from the environment) |
 
 ## A mate on the local engine
 
@@ -143,8 +180,19 @@ Mate settings → Voice → engine **로컬**:
 | `POST /voices/{vid}/references` (multipart `file`, `label`, `transcript`) · `PATCH/DELETE /references/{rid}` · `GET /voices/{vid}/references/{rid}/audio` | clips |
 | `POST /preview` `{model_id, voice_id?, text, emotion?, language?, instruct?, params?}` | a WAV; `X-Voice-Info`: ready / generate seconds, real-time factor |
 | `POST /transcribe` (multipart `file`, `language`) | `{text, language, model_id, seconds, elapsed}` |
+| `GET/PUT /models/{id}/defaults` `{params}` | a model's default parameters |
+| `POST /voices/{vid}/duplicate` `{name?}` · `POST /references/{rid}/trim` `{start, end}` | a profile's copy (built-ins too) · cut a clip |
+| `POST /voices/{vid}/references` + `start`, `end`, `replace` | cut on upload; replace the feeling's clip (default) |
+| `GET /overview?lang=` | 개요: GPUs with telemetry and `usage {ours, others, unseen}`, `series`, residents, `queue {running, waiting, recent}`, events, host, history usage, running batches, settings |
+| `GET/PUT /settings` | the runtime values (`null`: back to the server's), `default_tts`, `default_stt`, `default_voice` |
+| `POST /generate` `{text, model_id?, voice_id?, feeling?, mode?, language?, instruct?, params?, seed?, source?}` | a line, kept in the history → the entry (seed, timings, `info`) |
+| `GET /history?q&voice_id&model_id&source&starred&batch_id&limit&offset` · `/history/facets` | the history, its filters |
+| `GET /history/{id}/audio?format=wav\|mp3\|ogg\|flac&download=1` · `PATCH /history/{id}` `{starred, note}` · `POST /history/delete` `{ids}` · `POST /history/{id}/save-as-reference` `{voice_id, label, transcript}` | a line's audio, ★, delete, as a clip |
+| `POST /analyze` (multipart `file`, `transcribe`, `window`) | a clip's probe, stats, best windows, words |
+| `GET/POST /batches` · `GET/DELETE /batches/{id}` · `/cancel` · `/retry {failed_only}` · `GET /batches/{id}/zip?format=` | batches |
 
-Changes (installs, loads, voices) are pushed to every open window like other settings (`mates_changed("voice")`).
+Changes (installs, loads, voices, history, batches) are pushed to every open window like other settings
+(`mates_changed("voice")`).
 
 ## Measured
 
@@ -173,6 +221,10 @@ OmniVoice spoke in 메스가키's joy clip at 0.18, and Whisper heard the line b
   URL in 이미지 및 음성 공급자 → 직접 호스팅한 음성 서비스).
 
 ## Tests
+
+`backend/tests/test_voice_studio.py` (the same stand-in engine): generate and the history (search, ★, limits, ★ kept),
+save as a clip, duplicate and trim, the feelings' chains, settings, the overview's attribution (ours / others /
+unseen), batch input, a batch run → ZIP → retry, an interrupted batch resumed, the analysis, a too-short upload refused.
 
 `backend/tests/test_voicehost.py` (no GPU, no downloads: `VOICE_ENGINE_MODE=fake` and a stand-in engine in a real
 worker process): the gate for each refusal, the license before any download, disk room, placement (LRU, pinned, other
