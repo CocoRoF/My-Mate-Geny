@@ -21,6 +21,7 @@ export interface EngineInfo<T extends string> {
 export const TTS_ENGINES: EngineInfo<TtsEngine>[] = [
   { id: "off", label: "common.off", hint: "mateSettings.engTtsOffHint", provider: false },
   { id: "browser", label: "mateSettings.engTtsBrowser", hint: "mateSettings.engTtsBrowserHint", provider: false },
+  { id: "local", label: "mateSettings.engLocal", hint: "mateSettings.engTtsLocalHint", provider: true },
   { id: "openai", label: "mateSettings.engOpenai", hint: "mateSettings.engTtsOpenaiHint", provider: true },
   { id: "google", label: "mcp.google", hint: "mcp.googleTtsHint", provider: true },
   { id: "elevenlabs", label: "mateSettings.engElevenlabs", hint: "mateSettings.engTtsElevenHint", provider: true },
@@ -31,6 +32,7 @@ export const TTS_ENGINES: EngineInfo<TtsEngine>[] = [
 export const STT_ENGINES: EngineInfo<SttEngine>[] = [
   { id: "off", label: "common.off", hint: "mateSettings.engSttOffHint", provider: false },
   { id: "browser", label: "mateSettings.engSttBrowser", hint: "mateSettings.engSttBrowserHint", provider: false },
+  { id: "local", label: "mateSettings.engLocal", hint: "mateSettings.engSttLocalHint", provider: true },
   { id: "openai", label: "mateSettings.engOpenai", hint: "mateSettings.engSttOpenaiHint", provider: true },
   { id: "google", label: "mcp.google", hint: "mcp.googleSttHint", provider: true },
   { id: "whisper", label: "mateSettings.engWhisper", hint: "mateSettings.engSttWhisperHint", provider: true },
@@ -59,6 +61,8 @@ export function availability(providers: Providers | null, kind: "tts" | "stt", e
   }
   if (!providers) return { state: "checking" };
   const p = providerOf(providers, kind, engine);
+  // (local models: not a key to add but a GPU or a model to download — say which)
+  if (engine === "local" && p && !p.configured) return { state: "unsupported", why: p.reason || tr("mateSettings.engLocalMissing") };
   if (!p || !p.configured) return { state: "missing" };
   if (p.ok === null) return { state: "checking" };
   if (!p.ok) return { state: "error", error: p.error || tr("mateSettings.engVerifyFailed") };

@@ -25,6 +25,12 @@ dependencies = [
     "openai>=3.46,<4",
     "google-genai>=3.0,<4",
     "pypdf>=5",
+    # local voice models (app/voicehost): audio in and out, and the Hugging Face downloads — the engines themselves
+    # (torch, CUDA) live in environments of their own, installed on demand, never in this one
+    "numpy>=1.26",
+    "soundfile>=0.12",
+    "soxr>=0.4",
+    "huggingface_hub>=0.30",
 ]
 
 [project.optional-dependencies]

@@ -1,0 +1,35 @@
+{
+ "name": "메스가키",
+ "language": "ko",
+ "ref": "neutral.wav",
+ "text": "자, 오늘 방송은 여기까지예요! 내일은 저녁 여덟 시에 새 게임 들고 올게요. 다들 밥 잘 챙겨 먹고, 늦게 자지 말기예요?",
+ "emotions": {
+  "neutral": {
+   "ref": "neutral.wav",
+   "text": "자, 오늘 방송은 여기까지예요! 내일은 저녁 여덟 시에 새 게임 들고 올게요. 다들 밥 잘 챙겨 먹고, 늦게 자지 말기예요?",
+   "seconds": 10.24
+  },
+  "joy": {
+   "ref": "joy.wav",
+   "text": "와아~ 대박! 진짜 이겼어요? 봤죠, 봤죠? 이건 완전 클립각이에요! 오늘 차트도 장대양봉이에요!",
+   "seconds": 9.18
+  },
+  "sadness": {
+   "ref": "sadness.wav",
+   "text": "에휴... 또 졌어요. 이번엔 진짜 될 줄 알았는데. 오늘 기분은 완전 수직 하락이에요. 그래도... 조금 쉬었다가 다시 해 볼게요.",
+   "seconds": 12.04
+  },
+  "anger": {
+   "ref": "anger.wav",
+   "text": "흥! 지금 일부러 그런 거죠? 방금 그거 반칙이잖아요! 이제 삐졌어요. 말 걸지 마요, 진짜로!",
+   "seconds": 8.08
+  },
+  "surprise": {
+   "ref": "surprise.wav",
+   "text": "잠깐잠깐잠깐, 뭐예요? 방금 후원 백만 원이요? 말도 안 돼! 손이 떨려서 말이 안 나와요. 진짜 고마워요!",
+   "seconds": 9.66
+  }
+ },
+ "source": "ElevenLabs voice v3EOFtkby3I668mHkwMa (the owner's generated ElevenLabs voice '메스가키'), eleven_v4_turbo, 24 kHz PCM, 2026-11-14: each line twice (two seeds), the take whose Scribe transcript matched the line, silence trimmed, levelled to -20 dBFS RMS",
+ "rights": "Made by the owner from their own ElevenLabs voice; the owner confirmed holding all rights to it (2026-11-14)."
+}

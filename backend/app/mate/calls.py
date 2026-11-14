@@ -331,6 +331,7 @@ class Call:
     cut_note: str | None = None
     restarted: bool = False
     tool_attempts: int = 0    # times the model reached for a tool it doesn't have (never run)
+    local_models: list[str] = field(default_factory=list)  # her local voice models held on the GPU for this call
     tasks: set[asyncio.Task] = field(default_factory=set)
     timers: list[asyncio.TimerHandle] = field(default_factory=list)
     reply_task: asyncio.Task | None = None
@@ -368,6 +369,7 @@ class CallService:
         self.clock, self.rng = clock, rng
         self.calls: dict[str, Call] = {}
         self.links: dict[str, Link] = {}
+        self.voice: Any = None  # the app's VoiceService (her local voice models are warmed for a call: app/main.py)
         self.task: asyncio.Task | None = None
         self._followups: set[asyncio.Task] = set()
         db = self.store._db
@@ -409,12 +411,39 @@ class CallService:
         fallback = voice.stt_fallback()
         if engine == "elevenlabs" and providers.configured("elevenlabs"):
             listen = {"mode": "realtime", "engine": "elevenlabs", "fallback": fallback}
-        elif engine in ("openai", "whisper", "google", "elevenlabs") and providers.configured(engine):
+        elif engine in ("openai", "whisper", "google", "elevenlabs", "local") and providers.configured(engine, "stt"):
             listen = {"mode": "record", "engine": engine, "fallback": fallback}
         else:
             listen = {"mode": "browser", "engine": "browser", "fallback": fallback}
         tts = ((mate.get("voice") or {}).get("tts") or {}).get("engine") or "browser"
         return {"stt": listen, "tts": {"engine": tts}, "model": CALL_MODEL}
+
+    # ---- her local voice on a call (app/voicehost) ----
+
+    def _hold_local(self, call: Call, mate: dict[str, Any]) -> None:
+        """She speaks or hears with this server's own GPU: those models go on the GPU while it rings — her first words
+        don't wait for a model to load — and stay there until the call ends (pinned: never idled out or moved out)."""
+        host = getattr(self.voice, "local", None) if self.voice is not None else None
+        if host is None or not host.ready():
+            return
+        v = mate.get("voice") or {}
+        held = []
+        if (v.get("tts") or {}).get("engine") == "local":
+            held.append(host.model_for("tts", str(v["tts"].get("model") or "")))
+        if (v.get("stt") or {}).get("engine") == "local":
+            held.append(host.model_for("stt", str(v["stt"].get("model") or "")))
+        held = [m for m in dict.fromkeys(held) if m]
+        for m in held:
+            host.pin(m)
+            self._spawn(call, host.prewarm(m))
+        call.local_models = held
+
+    def _release_local(self, call: Call) -> None:
+        host = getattr(self.voice, "local", None) if self.voice is not None else None
+        for m in getattr(call, "local_models", []) or []:
+            if host is not None:
+                host.unpin(m)
+        call.local_models = []
 
     # ---- the user calls her ----
 
@@ -428,6 +457,7 @@ class CallService:
         call = Call(id="call_" + secrets.token_hex(8), mate_id=mate_id, name=mate["name"], session_id=sid,
                     direction="outgoing", status="dialing", device=str(device or "")[:80], created_at=self._now_iso())
         self._open(call)
+        self._hold_local(call, mate)
         self._later(call, DIAL_S, lambda: self._spawn(call, self.end(call, "failed", error="the call screen never connected"))
                     if call.send is None and call.status == "dialing" else None)
         self._spawn(call, self._prepare(call))
@@ -444,6 +474,7 @@ class CallService:
                     direction="incoming", status="ringing", device=device, reason=reason, about=about,
                     created_at=self._now_iso())
         self._open(call)
+        self._hold_local(call, mate)
         ring = {"type": "call.ring", "data": call.public()}
         for c in self.broker.clients():
             if c.device == device:
@@ -817,6 +848,7 @@ class CallService:
             return
         was = call.status
         call.status, call.end_reason, call.ended_at = "ended", reason, self._now_iso()
+        self._release_local(call)
         if error:
             call.error = error
         for t in call.timers:

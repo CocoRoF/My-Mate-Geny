@@ -5,7 +5,7 @@ My Mate Geny's own source code is licensed under Apache-2.0 (see `LICENSE`,
 installs at build/run time, and what it only talks to. Bundled **content**
 (characters, models, voices) is not covered by the Apache License.
 
-Status of this inventory: 2026-10-31. Licences of dependencies were read from
+Status of this inventory: 2026-10-31 (local voice models added 2026-11-14). Licences of dependencies were read from
 the lockfiles / installed package metadata; re-check before each release.
 
 ## 1. Bundled content
@@ -13,7 +13,8 @@ the lockfiles / installed package metadata; re-check before each release.
 | Content | Path | Owner / licence | Notes |
 |---|---|---|---|
 | Built-in mates **Chaerin** and **Seoa** — persona and life text, cover/still images (`.webp`), idle/reaction video clips (`.mp4`), place art, rig files | `backend/app/mate/builtin/{mates,personas,life}/{chaerin,seoa}*.json`, `backend/app/mate/builtin/assets/{chaerin,seoa}/` | CocoRoF / Ailism — **all rights reserved**, no licence granted by this repository | Produced for the Ailism mate apps. Images/videos/voices were AI-generated with third-party services (e.g. Higgsfield); their output terms apply to the owner, not to downstream users. Forks must not reuse these characters without the owner's permission. |
-| Chaerin's reference voice clip | `backend/app/mate/builtin/voices/chaerin/ref.wav` | CocoRoF / Ailism — all rights reserved | Synthetic voice (Higgsfield Seed Audio, per `voice.json`), not a recording of a real person. Seoa's voice is an ElevenLabs voice id in her `mates/seoa.json` (no audio in the repository). |
+| Built-in reference voices **한채린** and **메스가키** (Seoa) — five clips each, one per feeling | `backend/app/mate/builtin/voices/{chaerin,seoa}/*.wav` + `voice.json` | CocoRoF / Ailism — **all rights reserved** | Made by the owner on 2026-11-14 with their own cloned ElevenLabs voices (voice ids and model in each `voice.json` → `source`); the owner confirmed holding all rights to them (`rights`). Synthetic, not recordings of a real person. They are the reference clips the local voice models clone (docs/local-voice.md) and the bundled mates' `tts.ref`. Seoa's ElevenLabs voice id stays in her `mates/seoa.json`. |
+| Local voice engines (worker engines, runtime lock files, GPU placement) | `backend/app/voicehost/` | Apache-2.0 — copied and adapted from [geny-audio-module](https://github.com/CocoRoF/geny-audio-module) (© 2026 CocoRoF, Apache-2.0) | `worker/engines/qwen_fast.py` re-implements the call pattern of Qwen3-TTS's code-predictor generation (Apache-2.0) to run it as a CUDA graph. The engines import each model's own package (qwen-tts, omnivoice, CosyVoice), installed at run time (section 1.3). |
 | Anime face detector `lbpcascade_animeface.xml` (finds the face for Avatar Create's expression stills) | `backend/app/avatar/lbpcascade_animeface.xml` | © 2011 nagadomi — **MIT** (the licence text is at the top of the file) | Used unchanged, as the ailism mate pipeline did. |
 | **Geny logo** (hooded girl with headphones + "Geny" lettering) and every icon generated from it — favicons, PWA/maskable icons, in-app logo, desktop and Android app icons | master `assets/geny-logo.png`; generated into `assets/`, `frontend/public/`, `desktop/build/`, `mobile/assets/` (+ Android `mipmap-*`) by `scripts/make-icons.py` | CocoRoF — project artwork, **all rights reserved** unless the owner states otherwise | Same owner decision as the characters. Forks should rebrand: replace the master (square, transparent PNG) and run `python3 scripts/make-icons.py`. |
 
@@ -73,7 +74,10 @@ of Live2D Inc.).
 | **Live2D Cubism Core** (`live2dcubismcore.min.js`) | Downloaded by the server from `cubism.live2d.com` only after the user ticks the licence checkbox in Mate settings; stored under `~/.hr-harnessor/mates/_runtime/` | Live2D Proprietary Software License Agreement — never commit it |
 | **Claude Code CLI** (`@anthropic-ai/claude-code`) | `npm install -g` in the Dockerfile, or installed by the user | Anthropic commercial terms. Building an image is fine; **publishing a prebuilt image** redistributes it — check Anthropic's terms first |
 | **OpenAI Codex CLI** (`@openai/codex`) | `npm install -g` in the Dockerfile | Apache-2.0 |
-| **OmniVoice** TTS service + model weights | Separate service ([geny-audio-services](https://github.com/CocoRoF/geny-audio-services)), reached over HTTP (`omnivoice_url`) | Service code: Apache-2.0. Model weights: non-commercial licence (CC BY-NC per upstream model card) — users running it are bound by it |
+| **OmniVoice** TTS service | Separate service ([geny-audio-services](https://github.com/CocoRoF/geny-audio-services)), reached over HTTP (`omnivoice_url`) | Service code: Apache-2.0. The model it runs: as for the local model below — users running it are bound by it |
+| **Local voice model weights** — OmniVoice (`k2-fsa/OmniVoice`), Qwen3-TTS 12Hz 0.6B / 1.7B Base (`Qwen/…`), Fun-CosyVoice3 0.5B (`FunAudioLLM/Fun-CosyVoice3-0.5B-2512`), Whisper large-v3-turbo (`openai/whisper-large-v3-turbo`) | **Never bundled.** Downloaded by the server from Hugging Face only after the user accepts the model's licence in Settings → 이미지 및 음성 공급자 → 로컬 음성 모델 (recorded: `voice_licenses`); stored under `~/.hr-harnessor/voice/models/` | OmniVoice: Apache-2.0 code; its audio tokenizer is under the **Boson Higgs Audio 2 Community License** (based on the Meta Llama 3 Community License: output not to be used to improve other LLMs, a licence from Boson AI above 100,000 annual active users, "Built with Higgs Materials" / the Llama 3 and Boson notices with a distribution, the Llama 3 Acceptable Use Policy). Qwen3-TTS, CosyVoice3: Apache-2.0. Whisper: MIT. The model card shows each one's terms, attribution and links before the download |
+| **Local voice engine environments** (torch 2.8 + CUDA 12.8 libraries, transformers, qwen-tts, omnivoice, CosyVoice's dependencies — `backend/app/voicehost/runtimes/*.txt`) | Installed by the server with `uv` into `~/.hr-harnessor/voice/runtimes/` on the first download of a model of that engine, from PyPI and `download.pytorch.org` | Their own licences, read from the installed metadata (qwen runtime, 2026-11-14): torch BSD-3-Clause, triton MIT, transformers / qwen-tts Apache-2.0, soxr LGPL-2.1-or-later; the `nvidia-*` CUDA / cuDNN wheels "NVIDIA Proprietary Software" (NVIDIA's CUDA / cuDNN licence terms, installed unmodified from PyPI by the user's server; nccl BSD-3, nvtx Apache-2.0); the rest MIT / BSD / Apache-2.0 / PSF. Never committed or put in the image |
+| **CosyVoice source** (FunAudioLLM/CosyVoice) and its **Matcha-TTS** submodule | Downloaded by the server as GitHub archives at pinned commits when CosyVoice3 is installed (`runtimes/src/cosy/`) | CosyVoice: Apache-2.0; Matcha-TTS: MIT |
 | **Avatar Create processing venv** (numpy, SciPy, `opencv-python-headless` <5, Pillow, `imageio-ffmpeg`) | Installed by the server on the user's request (Avatar Create → Install) into `~/.hr-harnessor/avatar-venv/` from PyPI | BSD-3 (numpy, SciPy), Apache-2.0 (OpenCV), MIT-CMU (Pillow), BSD-2 (imageio-ffmpeg; its bundled **ffmpeg build is GPL** — run as a separate program, not linked) |
 | Whisper STT / other HTTP TTS | Optional services the user points the mate at | Their own licences |
 | Google Fonts (Inter, JetBrains Mono, Noto Sans KR) | Loaded by the browser from `fonts.googleapis.com` | SIL Open Font License 1.1 (browser fetch also discloses the visitor's IP to Google) |
@@ -96,6 +100,10 @@ GitHub (git remotes, release downloads for the Download page), Live2D
 | cryptography | Apache-2.0 OR BSD-3-Clause |
 | python-multipart, pytest-asyncio (dev) | Apache-2.0 |
 | Pillow | MIT-CMU (HPND) |
+| numpy | BSD-3-Clause (bundled parts: 0BSD, MIT, Zlib, CC0-1.0) |
+| soundfile | BSD-3-Clause (its wheels carry libsndfile, LGPL-2.1, as a shared library) |
+| **soxr** | **LGPL-2.1-or-later** (with libsoxr) — used unmodified as a dependency (a dynamically loaded extension); compatible with distributing this project under Apache-2.0 |
+| huggingface_hub | Apache-2.0 |
 | **asyncssh** | **EPL-2.0 OR GPL-2.0-or-later** — weak copyleft; used unmodified as a dependency, compatible with distributing this project under Apache-2.0. Modifications to asyncssh itself would have to be published under EPL-2.0 |
 | pytest, ruff (dev) | MIT |
 

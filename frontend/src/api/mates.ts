@@ -18,9 +18,10 @@ export interface Persona {
   birthday?: string;
 }
 
-export type TtsEngine = "google" | "off" | "browser" | "openai" | "elevenlabs" | "omnivoice" | "http";
+/** local = a model served from this server's own GPU (docs/local-voice.md) */
+export type TtsEngine = "google" | "off" | "browser" | "openai" | "elevenlabs" | "omnivoice" | "http" | "local";
 /** elevenlabs = Scribe v2 Realtime (live transcript while speaking; the page streams with a server-minted token) */
-export type SttEngine = "google" | "off" | "browser" | "openai" | "whisper" | "elevenlabs";
+export type SttEngine = "google" | "off" | "browser" | "openai" | "whisper" | "elevenlabs" | "local";
 
 export interface MateVoice {
   auto_read: boolean;
@@ -625,6 +626,8 @@ export interface ModelOption {
   name: string;
   description?: string | null;
   languages?: string[];
+  /** local models: what it can do (clone, design, instruct, auto_voice …) */
+  features?: string[];
 }
 
 export interface ModelList {
@@ -649,6 +652,8 @@ export interface ProviderStatus {
   ok: boolean | null;
   error: string | null;
   detail: string | null;
+  /** local models: why they can't be used here (no suitable GPU, no model of that kind installed) */
+  reason?: string | null;
   checked_at: string | null;
 }
 

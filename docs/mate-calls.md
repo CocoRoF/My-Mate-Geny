@@ -57,10 +57,10 @@ log line `mate.call`).
   - **realtime** — her STT engine is ElevenLabs: Scribe v2 Realtime (`mate/stt/realtime.ts`) with a call's shorter pause
     (`POST /api/mates/{id}/stt/realtime?call=1`: at most `voice.CALL_SILENCE` = 0.7 s), never stopping for quiet.
     Her echo is filtered by text (`echo.ts`); the user's own words while she speaks are a barge-in at once.
-  - **record** — a server engine (Whisper, OpenAI, Google, ElevenLabs batch): `vad.ts` cuts the utterances (an adaptive
-    noise floor after a short calibration, 90 ms to start, 0.65 s of quiet to end, blips < 260 ms dropped, 300 ms of
-    pre-roll; while she speaks it takes 2.2 × louder speech for 240 ms), each goes to `/transcribe` as a WAV; a
-    transcript that is just her is dropped.
+  - **record** — a server engine (Whisper, OpenAI, Google, ElevenLabs batch, the local Whisper on this server's GPU):
+    `vad.ts` cuts the utterances (an adaptive noise floor after a short calibration, 90 ms to start, 0.65 s of quiet to
+    end, blips < 260 ms dropped, 300 ms of pre-roll; while she speaks it takes 2.2 × louder speech for 240 ms), each
+    goes to `/transcribe` as a WAV; a transcript that is just her is dropped.
   - **browser** — Web Speech, continuous (desktop Chrome). The Android WebView has none: then the server's engine for a
     recording if there is one, else the call screen says plainly that speech recognition isn't available here (she can
     still be heard).
@@ -68,6 +68,9 @@ log line `mate.call`).
   of the call's own, one ahead synthesized while one plays) and becomes the caption. Engine `browser` / `off`, or a
   server engine that isn't set up: the browser's voice; no voice at all on the device: her words show (the screen says
   so).
+- **Her local models** ([local-voice](local-voice.md)): a mate who speaks or hears with this server's own GPU has those
+  models put on the GPU while it rings (`CallService._hold_local`: pinned, then warmed) — her hello doesn't wait for a
+  model to load — and they stay there, never idled out or moved for another model, until the call ends.
 - **The line before her first words** (`CallSession.prepareLine`): her first sentence waits until the phone is in call
   mode (`GenyCall.begin`: its route set), the microphone is open (from the start of the call — while it rings when they
   call her; nothing heard before she picks up counts), and her voice's output is ready (`MateAudioQueue.warm`: the

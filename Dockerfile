@@ -28,7 +28,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 # the CLI subprocesses; ripgrep: the API-key engines' Grep / Glob (app/harness).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       git openssh-client curl ca-certificates gnupg tini ripgrep \
+       git openssh-client curl ca-certificates gnupg tini ripgrep ffmpeg \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*

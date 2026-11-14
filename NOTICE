@@ -19,8 +19,20 @@ License, among them:
     (https://livliv.ai)." LivLiv models are NOT bundled: users import their
     own .livliv packages, under each package's own licence (meta.license),
     and the player draws the mark a package asks for)
-  - Built-in mate characters Chaerin and Seoa (text, artwork, video, voice)
+  - Built-in mate characters Chaerin and Seoa (text, artwork, video, voice,
+    including the reference voice clips of backend/app/mate/builtin/voices/)
     (CocoRoF / Ailism - all rights reserved unless stated otherwise)
+  - Local voice models (backend/app/voicehost; code adapted from
+    geny-audio-module, Copyright 2026 CocoRoF, Apache-2.0). NO model weights
+    are bundled: users download OmniVoice, Qwen3-TTS, Fun-CosyVoice3 and
+    Whisper from their authors' Hugging Face repositories after accepting each
+    licence in the app. When OmniVoice is used:
+      Meta Llama 3 is licensed under the Meta Llama 3 Community License,
+      Copyright (c) Meta Platforms, Inc. All Rights Reserved.
+      Boson Higgs Audio 2 is licensed under the Boson Community License,
+      Copyright (c) Boson AI USA, Inc. All Rights Reserved.
+    CosyVoice (Apache-2.0) and Matcha-TTS (MIT) source is downloaded when
+    CosyVoice3 is installed.
   - The Geny logo (assets/geny-logo.png) and every icon generated from it
     (CocoRoF - project artwork, all rights reserved unless stated otherwise)
   - Claude Code CLI                          (Anthropic - commercial terms;

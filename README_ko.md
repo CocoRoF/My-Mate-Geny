@@ -96,6 +96,10 @@ My Mate Geny는 **Claude Code**와 **Codex** CLI를 내 컴퓨터나 서버에�
   지원합니다. 답변 속 감정에 따라 표정이 바뀌고, 목소리에 맞춰 입을 움직입니다.
 - **음성 입출력**: 브라우저 음성(무료), OpenAI, ElevenLabs, OmniVoice(셀프 호스팅 음성 복제), OpenAI 호환
   HTTP TTS를 지원합니다. 음성 인식은 Whisper 호환 서버, OpenAI, ElevenLabs 실시간(말하는 동안 글자가 바로 나오고, 핸즈프리 자동 전송과 말로 끼어들기 지원)을 씁니다. 마이크를 누르고 말하면 됩니다.
+- **로컬 음성 모델 내장**: NVIDIA GPU 가 있는 머신이면 앱이 직접 OmniVoice, Qwen3-TTS, CosyVoice3, Whisper 를
+  서빙합니다. GPU 를 확인하고, 라이선스에 동의한 모델만 내려받고, 필요할 때 GPU 에 올리고, 감정별 레퍼런스
+  클립으로 목소리를 복제합니다 (기본 제공 한채린·메스가키 목소리 또는 내 목소리). 알맞은 GPU 가 없는 머신에서는
+  막혀 있습니다 ([docs/local-voice.md](docs/local-voice.md)).
 - **위임**: 채팅 목록을 살펴보고, 알맞은 폴더에 채팅을 열고, 진행 중인 채팅에 지시를 보내고, 결과를
   받아 알려줍니다.
 - **기억**: 기억해야 할 것들을 저장합니다. 메이트가 직접 추가하기도 하고, 사용자가 고칠 수도 있습니다.
@@ -169,9 +173,12 @@ Docker 볼륨에 들어 있습니다. 이 볼륨을 백업해 두시고, 처음�
    **Mate settings → Voice** 에서 목소리를 고릅니다.
    - `browser`: 무료이고 내장되어 있어 설정이 필요 없습니다
    - `openai` / `elevenlabs`: API 키가 필요합니다(암호화되어 저장)
+   - `local`: 이 서버의 NVIDIA GPU 에서 도는 모델을 씁니다. **설정 → 이미지 및 음성 공급자 → 로컬 음성 모델** 에서
+     각 모델의 라이선스에 동의한 뒤 내려받으면 되고, 내장 캐릭터는 자기 레퍼런스 목소리로 말합니다
+     ([docs/local-voice.md](docs/local-voice.md)).
    - `omnivoice`: [geny-audio-services](https://github.com/CocoRoF/geny-audio-services) 로 띄운 내 서버를
      씁니다. 내장 캐릭터에는 OmniVoice 목소리(참조 음성 또는 보이스 디자인)가 들어 있어서, 여기서 각자의
-     목소리로 말합니다. 모델 가중치는 비상업용 라이선스입니다.
+     목소리로 말합니다. 모델의 라이선스(오디오 토크나이저의 조건: THIRD-PARTY-NOTICES.md)를 확인하세요.
    - `http`: OpenAI 호환 TTS 서버를 씁니다
 
    말로 대화하려면 Whisper 호환 STT URL을 넣어 주세요(또는 OpenAI 키를 쓸 수 있습니다).
@@ -300,5 +307,9 @@ My Mate Geny는 Anthropic, OpenAI, Higgsfield, Live2D와 관계가 없습니다.
 - [FastAPI](https://fastapi.tiangolo.com/), [React](https://react.dev/), [Vite](https://vite.dev/),
   [Tailwind CSS](https://tailwindcss.com/), [Electron](https://www.electronjs.org/),
   [Capacitor](https://capacitorjs.com/).
-- 메이트의 목소리를 위한 [OmniVoice](https://github.com/CocoRoF/geny-audio-services)와 Whisper 호환 서버.
+- 메이트의 목소리를 위한 [OmniVoice](https://github.com/CocoRoF/geny-audio-services)와 Whisper 호환 서버, 그리고
+  로컬 음성 모델 [OmniVoice](https://huggingface.co/k2-fsa/OmniVoice) (k2-fsa),
+  [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS) (Qwen), [CosyVoice](https://github.com/FunAudioLLM/CosyVoice)
+  (FunAudioLLM), [Whisper](https://huggingface.co/openai/whisper-large-v3-turbo) (OpenAI) — 서빙 코드는
+  [geny-audio-module](https://github.com/CocoRoF/geny-audio-module) 에서 왔습니다.
 - 내장 캐릭터는 Ailism 메이트 앱을 위해 만들어졌습니다.

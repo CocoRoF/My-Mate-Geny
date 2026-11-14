@@ -215,7 +215,18 @@ class VoiceService:
     def __init__(self, store: MateStore) -> None:
         self.store = store
         self.providers = Providers(store)
+        self._local: Any = None
         self._minted: dict[str, list[float]] = {}   # realtime STT tokens per mate (monotonic times)
+
+    @property
+    def local(self) -> Any:
+        """the local voice models (app/voicehost VoiceHost) — the "local" engine — when the server runs them"""
+        return self._local
+
+    @local.setter
+    def local(self, host: Any) -> None:
+        self._local = host
+        self.providers.local = host
 
     # ---- TTS ----
 
@@ -239,8 +250,8 @@ class VoiceService:
         engine = tts.get("engine") or "browser"
         if engine in ("browser", "off"):
             return None
-        if not self.providers.configured(engine):
-            return Speech(b"", "", False, fallback=self.providers.missing_reason(engine))
+        if not self.providers.configured(engine, "tts"):
+            return Speech(b"", "", False, fallback=self.providers.missing_reason(engine, "tts"))
         text = speakable_text(text)
         if not re.search(r"\w", text):
             raise MateError("nothing to say")
@@ -255,6 +266,11 @@ class VoiceService:
                  "profile": tts.get("profile"), "language": tts.get("language") or mate["persona"].get("language"),
                  "emotion": emotion, "text": text,
                  "url": cfg.get("omnivoice_url") if engine == "omnivoice" else cfg.get("http_tts_url")}
+        if engine == "local":
+            # (her model, her voice's clip for this feeling, its instruction: a new clip is a new line)
+            lv = self._local_voice(mate, tts, emotion)
+            tts["_local_ref"] = lv["ref"]
+            shape.update(model=lv["model"], ref=lv["key"], instruct=lv["instruct"], url="")
         key = hashlib.sha256(json.dumps(shape, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:40]
         cache = self._cache_dir()
         for ext, mtype in _TYPE.items():
@@ -295,6 +311,54 @@ class VoiceService:
         resp = await netio.request("POST", f"{openai_api()}/audio/speech", json_body=body, timeout=90,
                                    headers={"Authorization": f"Bearer {key}"})
         return _audio(resp, "OpenAI", "audio/mpeg")
+
+    def _local_voice(self, mate: dict[str, Any], tts: dict, emotion: str | None) -> dict[str, Any]:
+        """What a local model speaks with (docs/local-voice.md "A mate's voice"): her model while it is installed (else the
+        default: VoiceHost.model_for), and the clip of this feeling from — her chosen voice (``tts.voice``: a built-in
+        voice like "builtin:chaerin" or one of the user's), else her built-in voice (a built-in mate), else her own
+        reference clip (``tts.ref``); none: a model that makes a voice itself (OmniVoice, with ``tts.instruct``)."""
+        h = self._local
+        model = h.model_for("tts", str(tts.get("model") or "")) if h else str(tts.get("model") or "")
+        ref = None
+        language = (tts.get("language") or mate.get("persona", {}).get("language") or "auto").split("-")[0]
+        if h is not None:
+            vid = str(tts.get("voice") or "")
+            if vid:
+                ref = h.voices.resolve(vid, emotion)
+            if ref is None and mate.get("builtin"):
+                ref = h.voices.resolve(f"builtin:{mate['builtin']}", emotion)
+        if ref is None and tts.get("ref"):
+            base = files.assets_dir(mate["id"]).resolve()
+            f = (base / str(tts["ref"])).resolve()
+            if f.is_file() and base in f.parents:
+                ref = {"path": str(f), "text": str(tts.get("ref_text") or ""), "language": language}
+        key = ""
+        if ref is not None:
+            try:
+                st = os.stat(ref["path"])
+                key = f"{ref['path']}:{st.st_mtime_ns}:{st.st_size}:{ref.get('text', '')}"
+            except OSError:
+                ref, key = None, ""
+        return {"model": model, "ref": ref, "key": key, "instruct": str(tts.get("instruct") or "")}
+
+    async def _tts_local(self, tts: dict, text: str, shape: dict, cfg: dict) -> tuple[bytes, str]:
+        from app.voicehost.service import VoiceError
+
+        h = self._local
+        if h is None:
+            raise MateError("Local voice models aren't available on this server")
+        params: dict[str, Any] = {}
+        speed = float(tts.get("speed") or 1.0)
+        if abs(speed - 1.0) > 1e-3:
+            params["speed"] = speed
+        ref = tts.get("_local_ref")
+        language = (shape.get("language") or (ref or {}).get("language") or "auto").split("-")[0]
+        try:
+            wav, _info = await h.synthesize(shape["model"], text, reference=ref, language=language,
+                                            instruct=shape.get("instruct") or "", params=params)
+        except VoiceError as e:
+            raise MateError(str(e), status=e.status if e.status < 500 else 502) from None
+        return wav, "audio/wav"
 
     async def _tts_elevenlabs(self, tts: dict, text: str, shape: dict, cfg: dict) -> tuple[bytes, str]:
         key = _need(self.store.secret("elevenlabs_key"), "The ElevenLabs API key")
@@ -347,6 +411,8 @@ class VoiceService:
         """The engine that transcribes a *recording* when the realtime stream can't be used: a Whisper server,
         else OpenAI, else ElevenLabs' batch model with the same key (``eleven=False``: not that one — the key or
         the credits are the problem); None = nothing on the server (the page may still have Web Speech)."""
+        if self.providers.configured("local", "stt"):
+            return "local"  # (this server's own GPU: no key, no network)
         for engine in ("whisper", "openai"):
             if self.providers.configured(engine):
                 return engine
@@ -421,7 +487,7 @@ class VoiceService:
                 raise MateError("no speech-to-text service on the server can transcribe a recording "
                                 "(set up Whisper, OpenAI, Google or ElevenLabs in Settings → Image and voice providers)")
         elif engine:
-            if engine not in ("openai", "whisper", "elevenlabs", "google"):
+            if engine not in ("openai", "whisper", "elevenlabs", "google", "local"):
                 raise MateError(f"unknown stt engine: {engine}")
         else:
             engine = mine
@@ -431,10 +497,19 @@ class VoiceService:
             raise MateError("no audio")
         if len(audio) > MAX_AUDIO_IN:
             raise MateError("audio is larger than 25 MB", status=413)
-        if not self.providers.configured(engine):
-            raise MateError(self.providers.missing_reason(engine))
+        if not self.providers.configured(engine, "stt"):
+            raise MateError(self.providers.missing_reason(engine, "stt"))
         cfg = self.store.settings()
         language = (stt.get("language") or mate["persona"].get("language") or "").split("-")[0]
+        if engine == "local":
+            from app.voicehost.service import VoiceError
+
+            model = self._local.model_for("stt", str((stt.get("model") if engine == mine else "") or ""))
+            try:
+                heard = await self._local.transcribe(audio, language=language or "auto", model_id=model)
+            except VoiceError as e:
+                raise MateError(str(e), status=e.status if e.status < 500 else 502) from None
+            return {"text": heard["text"], "language": heard.get("language") or language, "engine": "local"}
         if engine == "google":
             from app.mate.google import default_model, transcribe
             model = (stt.get("model") if engine == mine else "") or default_model(self.providers, "stt")

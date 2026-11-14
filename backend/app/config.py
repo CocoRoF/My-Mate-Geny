@@ -183,6 +183,20 @@ class Settings(BaseSettings):
     cli_upgrade_timeout_s: float = 900.0
     cli_upgrade_mem: str = "3G"      # memory cap for an upgrade (via `capped`, when available)
 
+    # ---- local voice models (app/voicehost, docs/local-voice.md) ----
+    # TTS / STT models served from this machine's NVIDIA GPU: downloaded on demand, never shipped. "real" (the GPU
+    # decides: a machine without a suitable one is refused), "off", or "fake" (a stand-in engine: tests).
+    voice_engine_mode: str = "real"
+    voice_home: str = ""             # default <data home>/voice: references, temp files
+    voice_models_dir: str = ""       # default <voice home>/models — the weights: a fast local disk (load time is reads)
+    voice_runtimes_dir: str = ""     # default <voice home>/runtimes — the engines' Python environments (torch, CUDA)
+    voice_device: str = "cuda:0"
+    voice_vram_budget: float = 0.85  # share of the GPU's memory our resident models may hold
+    voice_idle_unload_seconds: float = 600.0
+    voice_parked_ttl_seconds: float = 1800.0
+    voice_park_ram_gb: float = 6.0
+    voice_hf_endpoint: str = ""      # a Hugging Face mirror (HF_ENDPOINT); empty: huggingface.co
+
     # ---- derived helpers ----
 
     @property

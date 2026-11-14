@@ -23,6 +23,7 @@ export default function ScrollRow({
 }: { children: ReactNode; className?: string; watch?: unknown; as?: "div" | "ol" | "ul"; drag?: boolean } & Omit<HTMLAttributes<HTMLElement>, "children" | "className">) {
   const ref = useRef<HTMLElement | null>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
+  const shown = useRef(edges);
 
   const measure = useCallback(() => {
     const el = ref.current;
@@ -30,7 +31,11 @@ export default function ScrollRow({
     const max = el.scrollWidth - el.clientWidth;
     const left = el.scrollLeft > 1;
     const right = max > 1 && el.scrollLeft < max - 1;
-    setEdges((e) => (e.left === left && e.right === right ? e : { left, right }));
+    // (only a real change is an update: a setState per render — even one that keeps the same value — is scheduled
+    // work, and with the parent rendering again it ran into React's nested-update limit)
+    if (shown.current.left === left && shown.current.right === right) return;
+    shown.current = { left, right };
+    setEdges(shown.current);
   }, []);
 
   // (children come and go with a render: the fades follow)

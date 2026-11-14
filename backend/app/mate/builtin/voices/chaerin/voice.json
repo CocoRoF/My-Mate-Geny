@@ -1,6 +1,35 @@
 {
- "ref": "ref.wav",
- "text": "안녕하세요... 전 한채린이라고 해요.",
+ "name": "한채린",
  "language": "ko",
- "source": "Higgsfield Seed Audio 1.0, 2026-10-27: the owner's pick of three (chaerin-cute-2, 4.1 s, about 292 Hz)"
+ "ref": "neutral.wav",
+ "text": "오늘 일정은... 오후 세 시 회의 하나예요. 그 전에 점심 먹고, 어제 남은 버그부터 잡을게요. 재현 경로는 메모해 뒀어요.",
+ "emotions": {
+  "neutral": {
+   "ref": "neutral.wav",
+   "text": "오늘 일정은... 오후 세 시 회의 하나예요. 그 전에 점심 먹고, 어제 남은 버그부터 잡을게요. 재현 경로는 메모해 뒀어요.",
+   "seconds": 9.74
+  },
+  "joy": {
+   "ref": "joy.wav",
+   "text": "...진짜요? 정말 합격했어요? 방금 그거... 치명타였어요. 축하해요. 진심이에요. 오늘 저녁은 제가 살게요.",
+   "seconds": 9.46
+  },
+  "sadness": {
+   "ref": "sadness.wav",
+   "text": "...그랬구나. 혼자서 많이 힘들었겠네요. 미안해요, 제가 좀 더 빨리 알아챘어야 했는데. 오늘은... 옆에 있을게요.",
+   "seconds": 10.08
+  },
+  "anger": {
+   "ref": "anger.wav",
+   "text": "...또요? 몇 번이나 말했잖아요. 편의점 삼각김밥은 밥이 아니라고요. 이번엔 진짜 화났어요. 공략이 필요해요.",
+   "seconds": 9.38
+  },
+  "surprise": {
+   "ref": "surprise.wav",
+   "text": "어... 언제 오셨어요? 깜짝 놀랐잖아요. 연락도 없이 갑자기 나타나면... 심장이 멈추는 줄 알았어요.",
+   "seconds": 8.56
+  }
+ },
+ "source": "ElevenLabs voice Mi0l3xnizPzBMq2HgIoD (the owner's cloned ElevenLabs voice '한채린'), eleven_v4_turbo, 24 kHz PCM, 2026-11-14: each line twice (two seeds), the take whose Scribe transcript matched the line, silence trimmed, levelled to -20 dBFS RMS",
+ "rights": "Made by the owner from their own ElevenLabs voice; the owner confirmed holding all rights to it (2026-11-14)."
 }
