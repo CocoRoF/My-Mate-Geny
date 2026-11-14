@@ -1,6 +1,6 @@
 // Local voice models (docs/local-voice.md): the server, its models and their licenses, the voices — shown in Settings → Local model hosting → Voice Studio.
 export default {
-  gpuTitle: "This server",
+  gpuTitle: "This machine",
   gateOk: "Ready to serve local models",
   gate_no_gpu: "This machine has no NVIDIA GPU (or its driver isn't installed). Local voice models need one.",
   gate_gpu_not_passed:
@@ -8,14 +8,16 @@ export default {
   gate_old_driver: "The NVIDIA driver {driver} is too old: the engines need CUDA 12.8 (driver {min} or newer).",
   gate_old_gpu: "{gpu} (compute capability {cap}) is older than the engines support (7.0, Volta, or newer).",
   gate_small_gpu: "{gpu} has {gb} GB of memory; local voice models need at least {min} GB.",
-  gate_platform: "Local voice models can't be installed on {platform} yet.",
+  gate_platform: "Local voice models can't be installed on {platform}. They run on Linux and Windows (x86-64, with an NVIDIA GPU) and on Apple Silicon Macs.",
+  gate_old_os: "The engines don't run on macOS {os}: update to macOS {need} or newer.",
   gate_python:
-    "This server runs Python {python}; the engines' environments are made from it and need Python {need} (the Docker image has it).",
-  gate_packages: "This server is missing packages local voice needs: {list}.",
-  gate_off: "Local voice models are switched off on this server (VOICE_ENGINE_MODE=off).",
+    "This backend runs Python {python}; the engines' environments are made from it and need Python {need} (the Docker image and the desktop app have it).",
+  gate_packages: "This machine's backend is missing packages local voice needs: {list}.",
+  gate_off: "Local voice models are switched off on this machine (VOICE_ENGINE_MODE=off).",
   gate_fake: "A stand-in engine (tests): no GPU is used.",
-  requirements: "Needs an NVIDIA GPU with compute capability {cap} or newer, driver {driver}+ (CUDA 12.8), {vram} GB+ of GPU memory, on {platforms}.",
+  requirements: "Linux and Windows: an NVIDIA GPU with compute capability {cap} or newer, driver {driver}+ (CUDA 12.8), {vram} GB+ of GPU memory. Mac: Apple Silicon, macOS {macos}+, {unified} GB+ of memory.",
   gpuLine: "{name} · {used} / {total} GB in use · driver {driver} · compute {cap}",
+  gpuLineApple: "{name} · Metal · {used} / {total} GB of unified memory in use · {driver}",
   hostLine: "RAM {free} GB free of {total} GB · disk for models {disk} GB free",
   modelsDir: "Models: {path}",
   modelsHint:
@@ -63,7 +65,7 @@ export default {
   pinned: "Held for a call",
   vramUsed: "{gb} GB on the GPU",
   needDisk: "Needs about {gb} GB of disk",
-  notHere: "Not available on this server",
+  notHere: "Not available on this machine",
   builtin: "Built in",
   rights: "Rights: {x}",
   feeling_neutral: "Neutral",

@@ -74,16 +74,30 @@ class VoiceSettings:
 
     @classmethod
     def from_app(cls) -> "VoiceSettings":
-        from app.config import settings as s
+        from app.config import Settings, settings as s
 
+        from . import system
+
+        device, budget, park = s.voice_device, s.voice_vram_budget, s.voice_park_ram_gb
+        if system.apple_silicon():
+            # An Apple Silicon Mac (the desktop app's local mode): the engines run on its GPU through Metal, in the
+            # memory everything else on the machine uses too — a smaller share by default, and no parking (moving
+            # the weights "off the GPU" would keep them in the same memory).
+            default = {k: f.default for k, f in Settings.model_fields.items()}
+            if device == default["voice_device"]:
+                device = "mps"
+            if budget == default["voice_vram_budget"]:
+                budget = 0.6
+            if park == default["voice_park_ram_gb"]:
+                park = 0.0
         return cls(
             home=Path(s.voice_home).expanduser() if s.voice_home else s.home_dir / "voice",
             engine_mode=s.voice_engine_mode,
-            device=s.voice_device,
-            vram_budget_fraction=s.voice_vram_budget,
+            device=device,
+            vram_budget_fraction=budget,
             idle_unload_seconds=s.voice_idle_unload_seconds,
             parked_ttl_seconds=s.voice_parked_ttl_seconds,
-            park_ram_gb=s.voice_park_ram_gb,
+            park_ram_gb=park,
             hf_endpoint=s.voice_hf_endpoint,
             models_dir_override=s.voice_models_dir,
             runtimes_dir_override=s.voice_runtimes_dir,

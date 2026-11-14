@@ -1,5 +1,6 @@
 """What this machine has: NVIDIA GPUs (nvidia-smi — no CUDA in the server process), what each process holds on them,
-host memory and disk, and whether we run in a container that was given the GPU.
+or an Apple Silicon GPU (Metal: the machine's unified memory), host memory and disk, and whether we run in a container
+that was given the GPU. On Windows every probe runs without a console window (the desktop app's local backend has none).
 """
 
 from __future__ import annotations
@@ -27,10 +28,11 @@ class Gpu:
     util: int
     driver: str
     capability: str  # "8.6"; "" when the driver can't say
+    kind: str = "nvidia"  # nvidia | apple (Metal on Apple Silicon: total = the machine's unified memory)
 
     def to_dict(self) -> dict:
         return {"index": self.index, "name": self.name, "total": self.total, "used": self.used, "free": self.free,
-                "util": self.util, "driver": self.driver, "capability": self.capability}
+                "util": self.util, "driver": self.driver, "capability": self.capability, "kind": self.kind}
 
     @property
     def driver_major(self) -> int:
@@ -50,6 +52,39 @@ class Gpu:
 
 _cache: tuple[float, list[Gpu]] = (0.0, [])
 _smi_error = ""
+
+
+def _run(args: list[str], timeout: float = 10) -> subprocess.CompletedProcess:
+    """a probe's output (no console window on Windows: a windowless parent would flash one per call)"""
+    from app.portability import subprocess_flags
+
+    return subprocess.run(args, capture_output=True, text=True, timeout=timeout, **subprocess_flags())
+
+
+def apple_silicon() -> bool:
+    return sys.platform == "darwin" and platform.machine().lower() in ("arm64", "aarch64")
+
+
+def macos_version() -> tuple[int, ...]:
+    try:
+        return tuple(int(x) for x in platform.mac_ver()[0].split(".") if x.isdigit()) or (0,)
+    except ValueError:
+        return (0,)
+
+
+def _sysctl(name: str) -> str:
+    try:
+        return _run(["/usr/sbin/sysctl", "-n", name], timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def apple_gpu() -> Gpu:
+    """Apple Silicon's GPU: Metal, sharing the machine's memory (what the engines may take is the machine's RAM)"""
+    m = host_memory()
+    chip = _sysctl("machdep.cpu.brand_string") or "Apple Silicon"
+    return Gpu(0, chip, m["total"], m["used"], m["available"], 0, "macOS " + ".".join(map(str, macos_version())), "",
+               kind="apple")
 
 
 def smi() -> str | None:
@@ -78,12 +113,13 @@ def gpus(max_age: float = 1.0) -> list[Gpu]:
     exe = smi()
     out: list[Gpu] = []
     _smi_error = ""
-    if exe:
+    if exe is None and apple_silicon():
+        out = [apple_gpu()]
+    elif exe:
         base = "index,name,memory.total,memory.used,memory.free,utilization.gpu,driver_version"
         for fields in (base + ",compute_cap", base):  # (compute_cap: drivers from 2022 on)
             try:
-                p = subprocess.run([exe, f"--query-gpu={fields}", "--format=csv,noheader,nounits"],
-                                   capture_output=True, text=True, timeout=10)
+                p = _run([exe, f"--query-gpu={fields}", "--format=csv,noheader,nounits"])
             except (OSError, subprocess.SubprocessError) as e:
                 _smi_error = str(e)
                 break
@@ -116,14 +152,13 @@ def gpu_processes() -> dict[int, int]:
     if not exe:
         return {}
     try:
-        p = subprocess.run([exe, "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits"],
-                           capture_output=True, text=True, timeout=10)
+        p = _run([exe, "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits"])
     except (OSError, subprocess.SubprocessError):
         return {}
     out: dict[int, int] = {}
     for line in p.stdout.strip().splitlines():
         f = [x.strip() for x in line.split(",")]
-        if len(f) >= 2 and f[0].isdigit():
+        if len(f) >= 2 and f[0].isdigit() and _opt(f[1]) is not None:  # ("[N/A]": Windows' WDDM mode)
             out[int(f[0])] = out.get(int(f[0]), 0) + _num(f[1]) * MiB
     return out
 
@@ -143,8 +178,7 @@ def telemetry() -> list[dict]:
         return []
     q = "index,utilization.gpu,utilization.memory,temperature.gpu,power.draw,power.limit,clocks.sm,clocks.max.sm,fan.speed,pstate"
     try:
-        p = subprocess.run([exe, f"--query-gpu={q}", "--format=csv,noheader,nounits"], capture_output=True, text=True,
-                           timeout=10)
+        p = _run([exe, f"--query-gpu={q}", "--format=csv,noheader,nounits"])
     except (OSError, subprocess.SubprocessError):
         return []
     out = []
@@ -159,16 +193,15 @@ def telemetry() -> list[dict]:
 
 
 def gpu_apps() -> list[dict]:
-    """The CUDA processes the driver shows here: pid (in this container's namespace), executable, GPU memory. Other
-    containers' and the host's own processes may be missing (and graphics-only ones, Xorg, never appear)."""
+    """The CUDA processes the driver shows here: pid (in this container's namespace), executable, GPU memory (None where
+    the driver won't say: Windows' WDDM mode). Other containers' and the host's own processes may be missing (and
+    graphics-only ones, Xorg, never appear)."""
     exe = smi()
     if not exe:
         return []
     try:
-        p = subprocess.run([exe, "--query-compute-apps=gpu_uuid,pid,process_name,used_memory", "--format=csv,noheader,nounits"],
-                           capture_output=True, text=True, timeout=10)
-        u = subprocess.run([exe, "--query-gpu=index,uuid", "--format=csv,noheader"], capture_output=True, text=True,
-                           timeout=10)
+        p = _run([exe, "--query-compute-apps=gpu_uuid,pid,process_name,used_memory", "--format=csv,noheader,nounits"])
+        u = _run([exe, "--query-gpu=index,uuid", "--format=csv,noheader"])
     except (OSError, subprocess.SubprocessError):
         return []
     index_of = {}
@@ -180,7 +213,9 @@ def gpu_apps() -> list[dict]:
     for line in p.stdout.strip().splitlines():
         f = [x.strip() for x in line.split(",")]
         if len(f) >= 4 and f[1].isdigit():
-            out.append({"gpu": index_of.get(f[0], 0), "pid": int(f[1]), "name": f[2], "used": _num(f[3]) * MiB})
+            used = _opt(f[3])
+            out.append({"gpu": index_of.get(f[0], 0), "pid": int(f[1]), "name": f[2],
+                        "used": int(used * MiB) if used is not None else None})
     return out
 
 
@@ -243,6 +278,16 @@ def cpu() -> dict:
         if line.startswith("model name"):
             name = line.split(":", 1)[1].strip()
             break
+    if not name and sys.platform == "darwin":
+        name = _sysctl("machdep.cpu.brand_string")
+    if not name and os.name == "nt":
+        try:
+            import winreg
+
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as k:
+                name = str(winreg.QueryValueEx(k, "ProcessorNameString")[0]).strip()
+        except OSError:
+            pass
     return {"name": name or platform.processor() or platform.machine(), "count": os.cpu_count() or 1}
 
 

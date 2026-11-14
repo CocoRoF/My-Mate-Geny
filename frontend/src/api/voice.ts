@@ -5,8 +5,8 @@
 import { apiFetch, apiResponse } from "./client";
 
 export type GateCode =
-  | "ok" | "fake" | "off" | "platform" | "python" | "packages" | "no_gpu" | "gpu_not_passed" | "old_driver" | "old_gpu"
-  | "small_gpu";
+  | "ok" | "fake" | "off" | "platform" | "old_os" | "python" | "packages" | "no_gpu" | "gpu_not_passed" | "old_driver"
+  | "old_gpu" | "small_gpu";
 
 export interface Gpu {
   index: number;
@@ -17,6 +17,8 @@ export interface Gpu {
   util: number;
   driver: string;
   capability: string;
+  /** nvidia, or apple: an Apple Silicon Mac's GPU (Metal) — `total` is the machine's unified memory */
+  kind?: "nvidia" | "apple";
 }
 
 export interface Gate {
@@ -25,7 +27,7 @@ export interface Gate {
   message: string;
   gpu: Gpu | null;
   detail: Record<string, unknown>;
-  requirements: { driver: number; capability: string; vram: number; platforms: string[]; python: string };
+  requirements: { driver: number; capability: string; vram: number; platforms: string[]; python: string; macos?: string; unified?: number };
 }
 
 export interface ModelParam {
@@ -233,9 +235,12 @@ export type Mode = "clone" | "design" | "auto";
 
 export interface GpuUsageItem {
   pid: number;
-  bytes: number;
+  /** null: the driver won't say (Windows' WDDM mode) */
+  bytes: number | null;
   name: string;
   model_id?: string;
+  /** "worker": what the worker measured itself (where the driver can't say: Windows, a Mac) */
+  measured?: string;
 }
 
 export interface GpuOverview extends Gpu {

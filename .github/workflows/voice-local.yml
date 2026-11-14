@@ -1,0 +1,61 @@
+# Local voice models on the desktop app's other platforms (docs/local-voice.md "Who can run it"): each engine
+# environment installed from that platform's lock file (backend/app/voicehost/runtimes/*.windows-x86_64.txt,
+# *.macos-arm64.txt) and made to speak and hear through the app's own service (backend/tools/voice_smoke.py).
+# These runners have no NVIDIA GPU: on Windows the engines run on the CPU (the CUDA build of torch, as a user's PC
+# gets it), on macOS on Apple Silicon's GPU through Metal when the runner offers it, else the CPU.
+# Heavy (torch and the model weights, several GB per job): on changes to the engines or their lock files, and by hand.
+name: voice-local
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - backend/app/voicehost/**
+      - backend/tools/voice_smoke.py
+      - .github/workflows/voice-local.yml
+  push:
+    branches: [main]
+    paths:
+      - backend/app/voicehost/runtimes/**
+      - backend/app/voicehost/worker/**
+      - .github/workflows/voice-local.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: voice-local-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: ${{ matrix.os }} · ${{ matrix.set.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-14]
+        set:
+          - { name: omni, models: "--model omnivoice" }
+          - { name: qwen, models: "--model qwen3-tts-0.6b-base --model whisper-large-v3-turbo" }
+          - { name: cosy, models: "--model cosyvoice3-0.5b" }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    defaults:
+      run:
+        working-directory: backend
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # (the backend's own dependencies: uv, numpy, soundfile, soxr, huggingface_hub — as the desktop app bundles them)
+      - run: pip install -e .
+      - name: Install, speak, hear
+        env:
+          PYTHONUTF8: "1"
+        run: >
+          python tools/voice_smoke.py
+          --home "${{ runner.os == 'Windows' && 'C:\voice-smoke' || format('{0}/voice-smoke', runner.temp) }}"
+          --device "${{ runner.os == 'macOS' && 'mps' || 'cuda:0' }}"
+          ${{ matrix.set.models }}

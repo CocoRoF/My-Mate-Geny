@@ -77,7 +77,9 @@ function GateCard({ status }: { status: VoiceStatus }) {
       <div className="space-y-1.5 text-[12.5px]">
         {gpu && (
           <p className="text-content" data-testid="local-voice-gpu">
-            {t("localVoice.gpuLine", { name: gpu.name, used: gb(gpu.used), total: gb(gpu.total), driver: gpu.driver, cap: gpu.capability || "?" })}
+            {gpu.kind === "apple"
+              ? t("localVoice.gpuLineApple", { name: gpu.name, used: gb(gpu.used), total: gb(gpu.total), driver: gpu.driver })
+              : t("localVoice.gpuLine", { name: gpu.name, used: gb(gpu.used), total: gb(gpu.total), driver: gpu.driver, cap: gpu.capability || "?" })}
           </p>
         )}
         <p className="text-content-faint">{t("localVoice.hostLine", { free: gb(mem.available), total: gb(mem.total, 0), disk: gb(status.system.disk.models.free, 0) })}</p>
@@ -88,7 +90,13 @@ function GateCard({ status }: { status: VoiceStatus }) {
           <Banner tone="warn" testId="local-voice-gate-why">
             <span>{gateText(t, g)}</span>
             <span className="mt-1 block text-[11.5px] opacity-80">
-              {t("localVoice.requirements", { cap: g.requirements.capability, driver: g.requirements.driver, vram: gb(g.requirements.vram, 0), platforms: g.requirements.platforms.join(", ") })}
+              {t("localVoice.requirements", {
+                cap: g.requirements.capability,
+                driver: g.requirements.driver,
+                vram: gb(g.requirements.vram, 0),
+                macos: g.requirements.macos ?? "14.0",
+                unified: gb(g.requirements.unified ?? 8 * 1024 ** 3, 0),
+              })}
             </span>
           </Banner>
         )}

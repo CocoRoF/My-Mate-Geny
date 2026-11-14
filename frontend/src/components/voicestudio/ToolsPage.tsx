@@ -15,7 +15,7 @@ import { ErrorLine, Field, Segmented } from "../mate/settings/ui";
 import { ClipModal, type ClipSource } from "./clips";
 import { Result } from "./GeneratePage";
 import { LineForm, useDefaultLine, useTts, type LineSettings } from "./lineForm";
-import { Card, mb, secs, useLanguages, useStudio, Waveform } from "./shared";
+import { Card, mb, readableAudio, secs, useLanguages, useStudio, Waveform } from "./shared";
 
 type Tool = "compare" | "seeds" | "analyze" | "transcribe";
 
@@ -261,7 +261,9 @@ function Analyze() {
       setBusy(false);
     }
   };
-  const pick = (f: File) => {
+  const pick = async (picked: File) => {
+    const a = await readableAudio(picked, picked.name);
+    const f = a.blob === picked ? picked : new File([a.blob], a.name, { type: a.blob.type });
     if (url) URL.revokeObjectURL(url);
     setFile(f);
     setUrl(URL.createObjectURL(f));
@@ -277,7 +279,7 @@ function Analyze() {
     <Card title={t("voiceStudio.tlAnalyze")} testId="vs-analyze">
       <p className="mb-2 text-[12px] leading-snug text-content-dim">{t("voiceStudio.tlAnalyzeHint")}</p>
       <div className="flex flex-wrap items-center gap-2">
-        <input ref={input} type="file" accept="audio/*,video/*" className="hidden" onChange={(e) => e.target.files?.[0] && pick(e.target.files[0])} data-testid="vs-analyze-file" />
+        <input ref={input} type="file" accept="audio/*,video/*" className="hidden" onChange={(e) => e.target.files?.[0] && void pick(e.target.files[0])} data-testid="vs-analyze-file" />
         <button className="btn-primary !py-1.5 text-[12.5px]" onClick={() => input.current?.click()}>
           <Icon name="upload" size={12} /> {t("voiceStudio.tlChoose")}
         </button>
@@ -387,7 +389,8 @@ function Transcribe() {
     setErr(null);
     try {
       for (const f of Array.from(files)) {
-        const r = await transcribeLocal(f, language, f.name);
+        const a = await readableAudio(f, f.name);
+        const r = await transcribeLocal(a.blob, language, a.name);
         setOut((o) => [{ name: f.name, ...r }, ...o]);
       }
     } catch (e) {

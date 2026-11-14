@@ -23,7 +23,7 @@ import { confirmDialog } from "../ui/ConfirmDialog";
 import Icon from "../ui/Icon";
 import { ErrorLine, Field, Segmented } from "../mate/settings/ui";
 import { ClipModal, RecorderModal, type ClipSource } from "./clips";
-import { Card, FeelingDot, Modal, ParamControls, PlayButton, refUrl, secs, useLanguages, useStudio, Waveform } from "./shared";
+import { Card, FeelingDot, Modal, ParamControls, PlayButton, readableAudio, refUrl, secs, useLanguages, useStudio, Waveform } from "./shared";
 
 /** what a feeling without a clip speaks like (backend voicehost/voices.py _CHAIN) */
 const FALLBACK: Partial<Record<Feeling, Feeling>> = { smile: "joy", fear: "sadness", disgust: "anger" };
@@ -267,7 +267,8 @@ function Profile({ v, onGone, onPick }: { v: LocalVoice; onGone: () => void; onP
           data-testid="vs-profile-file"
           onChange={(e) => {
             const f = e.target.files?.[0];
-            if (f) setClip({ kind: "new", blob: f, name: f.name, voice: v, feeling: fileFor.current });
+            const feeling = fileFor.current;
+            if (f) void readableAudio(f, f.name).then((a) => setClip({ kind: "new", blob: a.blob, name: a.name, voice: v, feeling }));
             e.target.value = "";
           }}
         />

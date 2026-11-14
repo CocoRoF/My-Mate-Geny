@@ -21,7 +21,7 @@ import {
 import { useT, type MsgKey } from "../../i18n";
 import Icon from "../ui/Icon";
 import { ErrorLine, Field } from "../mate/settings/ui";
-import { FeelingDot, Modal, secs, usePeaks, usePlayer, useStudio, Waveform } from "./shared";
+import { FeelingDot, Modal, readableAudio, secs, usePeaks, usePlayer, useStudio, Waveform } from "./shared";
 
 const MAX_RECORD = 60;
 
@@ -81,7 +81,10 @@ export function RecorderModal({ onDone, onClose }: { onDone: (blob: Blob, name: 
         const type = r.mimeType || "audio/webm";
         const blob = new Blob(chunks.current, { type });
         cleanup();
-        onDone(blob, `recording.${type.includes("ogg") ? "ogg" : type.includes("mp4") ? "m4a" : "webm"}`);
+        // (a WAV: the recorder's WebM / MP4 needs ffmpeg on the backend, which the desktop app's has not)
+        void readableAudio(blob, `recording.${type.includes("ogg") ? "ogg" : type.includes("mp4") ? "m4a" : "webm"}`).then((a) =>
+          onDone(a.blob, a.name),
+        );
       };
       rec.current = r;
       started.current = performance.now();

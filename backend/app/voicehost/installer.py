@@ -29,12 +29,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.portability import subprocess_flags
+
 from . import catalog, system
 from .settings import VoiceSettings
 
 log = logging.getLogger("app.voicehost.installer")
 
-TORCH_INDEX = "https://download.pytorch.org/whl/cu128"
+TORCH_INDEX = "https://download.pytorch.org/whl/cu128"  # torch for CUDA 12.8: Linux and Windows (macOS: PyPI's)
 # CosyVoice's source and its Matcha-TTS submodule, pinned (the runtime was benchmarked with exactly these)
 COSYVOICE_REV = "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc"
 MATCHA_REV = "dd9105b34bf2be2230f4aa1e4769fb586a3c824e"
@@ -110,7 +112,9 @@ class Installer:
 
     # -- state --------------------------------------------------------------------------------------------------
     def lock_path(self, rt: Runtime) -> Path:
-        return self.s.runtimes_spec_dir / rt.lock
+        """this platform's lock file: runtimes/<name>.<platform>.txt (Windows, macOS), runtimes/<name>.txt (Linux)"""
+        own = self.s.runtimes_spec_dir / rt.lock.replace(".txt", f".{system.platform_key()}.txt")
+        return own if own.exists() else self.s.runtimes_spec_dir / rt.lock
 
     def _lock_hash(self, rt: Runtime) -> str:
         try:
@@ -294,8 +298,9 @@ class Installer:
 
         w = asyncio.create_task(watch())
         try:
-            cmd = [*uv, "pip", "install", "-p", str(venv_python(d)), "--no-deps",
-                   "--index-strategy", "unsafe-best-match", "--extra-index-url", TORCH_INDEX, "-r", str(lock)]
+            cmd = [*uv, "pip", "install", "-p", str(venv_python(d)), "--no-deps", "-r", str(lock)]
+            if "+cu" in lock.read_text():  # (CUDA builds of torch: their own index; a Mac's torch is on PyPI)
+                cmd += ["--index-strategy", "unsafe-best-match", "--extra-index-url", TORCH_INDEX]
             bc = self.s.runtimes_spec_dir / "build-constraints.txt"
             if bc.exists():
                 cmd += ["--build-constraint", str(bc)]
@@ -345,7 +350,7 @@ class Installer:
 
     async def _run(self, cmd: list[str], env: dict[str, str], p: Progress, model_id: str) -> None:
         proc = await asyncio.create_subprocess_exec(*cmd, env=env, stdout=asyncio.subprocess.PIPE,
-                                                    stderr=asyncio.subprocess.STDOUT)
+                                                    stderr=asyncio.subprocess.STDOUT, **subprocess_flags())
         self._procs[model_id] = proc
         tail: list[str] = []
         assert proc.stdout is not None
@@ -397,7 +402,7 @@ class Installer:
         for attempt in range(1, 6):
             proc = await asyncio.create_subprocess_exec(
                 sys.executable, "-c", code, repo.repo_id, name, revision, str(dest), self.s.hf_endpoint,
-                env=env, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+                env=env, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE, **subprocess_flags())
             self._procs[model_id] = proc
             seen, still = -1, 0.0
             while proc.returncode is None:
