@@ -435,7 +435,7 @@ class CallService:
         held = [m for m in dict.fromkeys(held) if m]
         for m in held:
             host.pin(m)
-            self._spawn(call, host.prewarm(m))
+            self._spawn(call, host.prewarm(m, source=f"call:{mate.get('name') or mate.get('id', '')}"))
         call.local_models = held
 
     def _release_local(self, call: Call) -> None:

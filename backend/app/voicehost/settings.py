@@ -24,6 +24,9 @@ class VoiceSettings:
     # host RAM parked weights may take in total; beyond it an evicted model is stopped instead
     park_ram_gb: float = 6.0
     max_text_chars: int = 5000
+    # Voice Studio's history: at most this many lines and this much audio (the oldest unstarred go first)
+    history_max_entries: int = 2000
+    history_max_gb: float = 5.0
     max_upload_mb: int = 50
     # longest reference kept after trimming (s): the engines clone best from 3–15 s
     max_reference_seconds: float = 30.0

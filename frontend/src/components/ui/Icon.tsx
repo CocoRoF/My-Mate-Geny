@@ -115,6 +115,15 @@ import {
   LuPhoneOutgoing,
   LuPhoneMissed,
   LuMinimize2,
+  LuStar,
+  LuDices,
+  LuScissors,
+  LuAudioWaveform,
+  LuHistory,
+  LuLayers,
+  LuWandSparkles,
+  LuCircle,
+  LuCopyPlus,
 } from "react-icons/lu";
 
 const MAP = {
@@ -233,6 +242,16 @@ const MAP = {
   "phone-outgoing": LuPhoneOutgoing,
   "phone-missed": LuPhoneMissed,
   minimize: LuMinimize2,
+  // Voice Studio (components/voicestudio)
+  star: LuStar,
+  dice: LuDices,
+  scissors: LuScissors,
+  waveform: LuAudioWaveform,
+  history: LuHistory,
+  layers: LuLayers,
+  wand: LuWandSparkles,
+  record: LuCircle,
+  duplicate: LuCopyPlus,
 } satisfies Record<string, IconType>;
 
 export type IconName = keyof typeof MAP;

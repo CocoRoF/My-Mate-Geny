@@ -108,8 +108,9 @@ chat, keeps an eye on it and tells you how it went.
 - **Local voice models, built in**: on a machine with an NVIDIA GPU the app itself serves OmniVoice,
   Qwen3-TTS, CosyVoice3 and Whisper — it checks the GPU, downloads each model after you accept its
   license, keeps them on the GPU as needed, and clones voices from reference clips by feeling (the
-  built-in 한채린 and 메스가키 voices, or your own). Refused on a machine without a suitable GPU
-  ([docs/local-voice.md](docs/local-voice.md)).
+  built-in 한채린 and 메스가키 voices, or your own). **Voice Studio** shows what is on the GPU and for
+  whom, and makes lines, batches and voice profiles, with a history of everything made. Refused on a
+  machine without a suitable GPU ([docs/local-voice.md](docs/local-voice.md)).
 - **Delegation**: she can list and read your chats, start a chat in the right folder, send
   instructions to a running one, and gets each result back to report on.
 - **Memory**: things she should remember (she can add them herself; you can edit them).
@@ -196,8 +197,8 @@ Nothing is required: the defaults boot a working server.
    pick the voice per mate in **Mate settings → Voice**:
    - `browser`: free and built in, no setup;
    - `openai` / `elevenlabs`: API key (stored encrypted);
-   - `local`: a model on this server's own NVIDIA GPU, downloaded in **Settings → Image and
-     voice providers → Local voice models** (each after its license); the built-in characters
+   - `local`: a model on this server's own NVIDIA GPU, downloaded in **Settings → Local model
+     hosting → Voice Studio** (each after its license); the built-in characters
      speak in their own reference voices ([docs/local-voice.md](docs/local-voice.md));
    - `omnivoice`: your own server from
      [geny-audio-services](https://github.com/CocoRoF/geny-audio-services). The built-in

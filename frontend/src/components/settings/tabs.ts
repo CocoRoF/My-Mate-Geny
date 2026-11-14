@@ -8,7 +8,7 @@ export interface TabMeta {
   label: MsgKey;
   icon: IconName;
   hint?: MsgKey;
-  group: "general" | "system";
+  group: "general" | "system" | "local";
   /** shown here? (Desktop app: only inside the desktop app) */
   when?: () => boolean;
   /** the content is wide (Admin's system charts) */
@@ -34,11 +34,14 @@ export const TABS: readonly TabMeta[] = [
   { id: "connections", label: "nav.connections", icon: "server", hint: "connections.intro", group: "system" },
   { id: "usage", label: "nav.usage", icon: "cpu", hint: "settings.usageHint", group: "system" },
   { id: "admin", label: "nav.admin", icon: "shield", hint: "admin.intro", group: "system", wide: true },
+  // models served from this machine's own GPU (docs/local-voice.md "Voice Studio")
+  { id: "voice-studio", label: "voiceStudio.tab", icon: "mic", hint: "voiceStudio.hint", group: "local", wide: true },
 ];
 
 export const GROUPS: readonly { id: TabMeta["group"]; label: MsgKey }[] = [
   { id: "general", label: "settings.groupGeneral" },
   { id: "system", label: "settings.groupSystem" },
+  { id: "local", label: "settings.groupLocal" },
 ];
 
 /** the tabs offered here, in order */

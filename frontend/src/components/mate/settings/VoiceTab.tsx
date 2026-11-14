@@ -704,7 +704,7 @@ function LocalTts({ mate, tts, set, models, simple }: { mate: Mate; tts: Tts; se
             ))}
         </select>
         <div className="mt-1">
-          <LinkButton onClick={() => openAppSettings("media")} testId="mate-tts-local-manage">
+          <LinkButton onClick={() => openAppSettings("voice-studio")} testId="mate-tts-local-manage">
             {t("mateSettings.voiceLocalModels")}
           </LinkButton>
         </div>

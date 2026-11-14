@@ -25,7 +25,8 @@ export type SettingsTab =
   | "providers"
   | "connections"
   | "usage"
-  | "admin";
+  | "admin"
+  | "voice-studio";
 
 export const SETTINGS_TABS: readonly SettingsTab[] = [
   "updates",
@@ -40,6 +41,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   "connections",
   "usage",
   "admin",
+  "voice-studio",
 ];
 
 /** a part of a tab to scroll to once it is shown (`/?view=downloads` → Updates & Download, at Download) */
@@ -78,6 +80,9 @@ const TAB_ALIAS: Record<string, { tab: SettingsTab; anchor?: SettingsAnchor }> =
   // (one Mate tab now: the Screen sharing and Desktop app tabs' old links)
   screen: { tab: "mate" },
   desktop: { tab: "mate" },
+  // (Voice Studio's other names)
+  "voice": { tab: "voice-studio" },
+  "local-voice": { tab: "voice-studio" },
 };
 
 const isTab = (v: string | null): v is SettingsTab => !!v && (SETTINGS_TABS as readonly string[]).includes(v);

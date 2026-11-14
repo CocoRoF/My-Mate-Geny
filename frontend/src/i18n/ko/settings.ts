@@ -11,6 +11,7 @@ const ko: Messages<"settings"> = {
   tabUpdates: "업데이트 & 다운로드",
   groupGeneral: "일반",
   groupSystem: "에이전트와 서비스",
+  groupLocal: "로컬 모델 호스팅",
   usageHint: "연결된 계정마다 요금제가 얼마나 남았는지, 이 서버가 센 토큰은 얼마인지 보여 줘요.",
   backToList: "설정으로 돌아가기",
 

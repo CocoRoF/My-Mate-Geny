@@ -4,7 +4,8 @@ import ProvidersPanel from "../mate/settings/global/ProvidersPanel";
 import HiggsfieldPanel, { HiggsfieldTab } from "./HiggsfieldPanel";
 import CliVersionsSection from "./CliVersionsSection";
 import ScrollRow from "../ui/ScrollRow";
-import LocalVoiceView from "./LocalVoiceView";
+import { openAppSettings } from "../../lib/openAppSettings";
+import { Banner, LinkButton } from "../mate/settings/ui";
 
 const SERVICES: { id: string; label: string | MsgKey; translated?: boolean }[] =
   [
@@ -12,7 +13,6 @@ const SERVICES: { id: string; label: string | MsgKey; translated?: boolean }[] =
     { id: "elevenlabs", label: "mateSettings.engElevenlabs", translated: true },
     { id: "google", label: "mcp.google", translated: true },
     { id: "self", label: "mcp.selfHosted", translated: true },
-    { id: "local", label: "localVoice.tab", translated: true },
   ];
 export default function MediaProvidersView() {
   const t = useT(),
@@ -42,10 +42,14 @@ export default function MediaProvidersView() {
           <HiggsfieldPanel />
           <CliVersionsSection ids={["higgsfield"]} />
         </>
-      ) : tab === "local" ? (
-        <LocalVoiceView />
       ) : (
         <div className="space-y-4" key={tab}>
+          {tab === "self" && (
+            // (models on this server's own GPU have their own place: 로컬 모델 호스팅 → Voice Studio)
+            <Banner tone="info" testId="media-local-moved" action={<LinkButton onClick={() => openAppSettings("voice-studio")} testId="media-open-voice-studio">{t("voiceStudio.open")}</LinkButton>}>
+              {t("voiceStudio.movedHere")}
+            </Banner>
+          )}
           <ProvidersPanel
             engines={tab === "self" ? ["omnivoice", "whisper", "http"] : [tab]}
           />

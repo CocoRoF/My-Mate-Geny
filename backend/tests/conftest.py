@@ -12,7 +12,7 @@ from cryptography.fernet import Fernet
 # DB to a temp file so the TestClient-based tests never touch the prod DB.
 # (pytest-xdist: a worker inherits these from the process that started it, and each must have its own)
 if os.environ.get("PYTEST_XDIST_WORKER"):
-    for _shared in ("DB_PATH", "UPLOADS_ROOT", "MATES_ROOT", "HIGGSFIELD_ROOT", "AVATAR_ROOT"):
+    for _shared in ("DB_PATH", "UPLOADS_ROOT", "MATES_ROOT", "HIGGSFIELD_ROOT", "AVATAR_ROOT", "VOICE_HOME"):
         os.environ.pop(_shared, None)
 os.environ.setdefault("VAULT_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("AUTH_PASSWORD", "test-pass")
@@ -25,6 +25,9 @@ os.environ.setdefault("UPLOADS_ROOT", tempfile.mkdtemp(prefix="hrh_test_uploads_
 os.environ.setdefault("MATES_ROOT", tempfile.mkdtemp(prefix="hrh_test_mates_"))
 os.environ.setdefault("HIGGSFIELD_ROOT", tempfile.mkdtemp(prefix="hrh_test_higgsfield_"))
 os.environ.setdefault("AVATAR_ROOT", tempfile.mkdtemp(prefix="hrh_test_avatars_"))
+# local voice models (app/voicehost): never the machine's own models, history or clips — on a GPU host the app under
+# test would otherwise find (and could load) the models installed there
+os.environ.setdefault("VOICE_HOME", tempfile.mkdtemp(prefix="hrh_test_voice_"))
 # no registry / GitHub lookups from the CLI-versions service (tests/test_cli_tools.py fakes them)
 os.environ.setdefault("CLI_UPDATE_CHECK", "false")
 os.environ.setdefault("MEMORY_CONSOLIDATION_ENABLED", "false")

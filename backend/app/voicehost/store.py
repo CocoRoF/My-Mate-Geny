@@ -23,6 +23,34 @@ class VoiceStore:
                    "language TEXT NOT NULL DEFAULT 'auto', duration REAL NOT NULL DEFAULT 0, stats TEXT NOT NULL "
                    "DEFAULT '{}', created_at TEXT NOT NULL)")
         db.execute("CREATE INDEX IF NOT EXISTS voice_refs_by_voice ON voice_refs(voice_id, created_at)")
+        # Voice Studio's profile fields (2026-11-14): added to a table that may already hold voices
+        have = {r[1] for r in db.query("PRAGMA table_info(voice_voices)")}
+        for col, decl in (("description", "TEXT NOT NULL DEFAULT ''"), ("default_model", "TEXT NOT NULL DEFAULT ''"),
+                          ("default_params", "TEXT NOT NULL DEFAULT '{}'"), ("tags", "TEXT NOT NULL DEFAULT '[]'"),
+                          ("starred", "INTEGER NOT NULL DEFAULT 0")):
+            if col not in have:
+                db.execute(f"ALTER TABLE voice_voices ADD COLUMN {col} {decl}")
+        # small settings (Voice Studio: GPU budget, idle times, history limits, each model's default parameters)
+        db.execute("CREATE TABLE IF NOT EXISTS voice_settings(key TEXT PRIMARY KEY, value TEXT NOT NULL, "
+                   "updated_at TEXT NOT NULL)")
+
+    # -- settings ---------------------------------------------------------------------------------------------------
+    def setting(self, key: str, default: Any = None) -> Any:
+        r = self.db.query_one("SELECT value FROM voice_settings WHERE key=?", (key,))
+        if r is None:
+            return default
+        try:
+            return json.loads(r["value"])
+        except ValueError:
+            return default
+
+    def put_setting(self, key: str, value: Any) -> None:
+        if value is None:
+            self.db.execute("DELETE FROM voice_settings WHERE key=?", (key,))
+            return
+        self.db.execute("INSERT INTO voice_settings(key, value, updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE "
+                        "SET value=excluded.value, updated_at=excluded.updated_at",
+                        (key, json.dumps(value, ensure_ascii=False), now_iso()))
 
     # -- licenses ---------------------------------------------------------------------------------------------------
     def accept_license(self, model_id: str, license_name: str, url: str) -> dict[str, Any]:
@@ -37,10 +65,21 @@ class VoiceStore:
         return dict(r) if r else None
 
     # -- voices -----------------------------------------------------------------------------------------------------
+    @staticmethod
+    def _voice_row(r) -> dict[str, Any]:
+        d = dict(r)
+        for k, empty in (("default_params", {}), ("tags", [])):
+            try:
+                d[k] = json.loads(d.get(k) or json.dumps(empty))
+            except ValueError:
+                d[k] = empty
+        d["starred"] = bool(d.get("starred"))
+        return d
+
     def voices(self) -> list[dict[str, Any]]:
         out = []
         for v in self.db.query("SELECT * FROM voice_voices ORDER BY created_at"):
-            d = dict(v)
+            d = self._voice_row(v)
             d["references"] = self.references(d["id"])
             out.append(d)
         return out
@@ -49,7 +88,7 @@ class VoiceStore:
         r = self.db.query_one("SELECT * FROM voice_voices WHERE id=?", (vid,))
         if r is None:
             return None
-        d = dict(r)
+        d = self._voice_row(r)
         d["references"] = self.references(vid)
         return d
 
@@ -60,7 +99,14 @@ class VoiceStore:
         return self.voice(vid) or {}
 
     def update_voice(self, vid: str, **fields: Any) -> dict[str, Any] | None:
-        allowed = {k: v for k, v in fields.items() if k in ("name", "language", "instruct") and v is not None}
+        allowed = {k: v for k, v in fields.items()
+                   if k in ("name", "language", "instruct", "description", "default_model", "default_params", "tags",
+                            "starred") and v is not None}
+        for k in ("default_params", "tags"):
+            if k in allowed:
+                allowed[k] = json.dumps(allowed[k], ensure_ascii=False)
+        if "starred" in allowed:
+            allowed["starred"] = 1 if allowed["starred"] else 0
         if allowed:
             sets = ", ".join(f"{k}=?" for k in allowed)
             self.db.execute(f"UPDATE voice_voices SET {sets}, updated_at=? WHERE id=?",
@@ -107,7 +153,10 @@ class VoiceStore:
         return self.reference(rid) or {}
 
     def update_reference(self, rid: str, **fields: Any) -> dict[str, Any] | None:
-        allowed = {k: v for k, v in fields.items() if k in ("label", "transcript", "language") and v is not None}
+        allowed = {k: v for k, v in fields.items()
+                   if k in ("label", "transcript", "language", "duration", "stats") and v is not None}
+        if "stats" in allowed:
+            allowed["stats"] = json.dumps(allowed["stats"])
         if allowed:
             sets = ", ".join(f"{k}=?" for k in allowed)
             self.db.execute(f"UPDATE voice_refs SET {sets} WHERE id=?", (*allowed.values(), rid))

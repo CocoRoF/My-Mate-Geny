@@ -108,6 +108,61 @@ def trim_silence(x: np.ndarray, sr: int, threshold_db: float = -45.0, pad: float
     return x[start:end]
 
 
+def cut(x: np.ndarray, sr: int, start: float | None, end: float | None) -> np.ndarray:
+    """x[start:end] in seconds (either may be None: from the start / to the end), clamped to the clip"""
+    a = 0 if start is None else max(0, int(float(start) * sr))
+    b = len(x) if end is None else min(len(x), int(float(end) * sr))
+    return x[a:b] if b > a else x[:0]
+
+
+def frame_db(x: np.ndarray, sr: int, hop_s: float = 0.02) -> np.ndarray:
+    hop = max(1, int(sr * hop_s))
+    if len(x) < hop:
+        return np.array([-120.0])
+    fr = x[: len(x) // hop * hop].reshape(-1, hop).astype(np.float64)
+    return 20 * np.log10(np.maximum(np.sqrt(np.mean(fr ** 2, axis=1)), 1e-6))
+
+
+def suggest_windows(x: np.ndarray, sr: int, length: float = 10.0, count: int = 3) -> list[dict]:
+    """The best stretches to clone from (Voice Studio's reference analysis): `length` seconds (5–15; the whole clip
+    if shorter), mostly speech, loud enough; at most `count`, not overlapping. Score: mean level − 30 dB × silence."""
+    dur = len(x) / sr if sr else 0.0
+    if dur <= 0:
+        return []
+    length = min(max(5.0, length), 15.0, dur)
+    db = frame_db(x, sr)
+    per = len(db) / dur  # frames per second
+    w = max(1, int(length * per))
+    step = max(1, int(0.5 * per))
+    cands = []
+    for i in range(0, max(1, len(db) - w + 1), step):
+        seg = db[i:i + w]
+        silence = float(np.mean(seg < -45))
+        if silence >= 0.55:
+            continue
+        level = float(np.mean(seg[seg >= -45])) if np.any(seg >= -45) else -120.0
+        cands.append((level - 30 * silence, i / per, (i + w) / per, level, silence))
+    cands.sort(key=lambda c: -c[0])
+    out: list[dict] = []
+    for score, a, b, level, silence in cands:
+        if all(b <= o["start"] or a >= o["end"] for o in out):
+            out.append({"start": round(a, 2), "end": round(b, 2), "level_db": round(level, 1),
+                        "silence": round(silence, 3), "score": round(score, 1)})
+        if len(out) >= count:
+            break
+    return sorted(out, key=lambda o: o["start"])
+
+
+def probe(data: bytes) -> dict:
+    """the file as it came: its sample rate, channels and format (libsndfile; webm/m4a: unknown until decoded)"""
+    try:
+        info = sf.info(io.BytesIO(data))
+        return {"sample_rate": info.samplerate, "channels": info.channels, "format": info.format,
+                "subtype": info.subtype, "seconds": round(info.duration, 3)}
+    except Exception:  # noqa: BLE001 - ffmpeg reads it later
+        return {"sample_rate": None, "channels": None, "format": "", "subtype": "", "seconds": None}
+
+
 def normalize(x: np.ndarray, target_db: float = -20.0, peak_limit: float = 0.95) -> np.ndarray:
     """Bring speech to a steady loudness (RMS) without letting peaks clip."""
     if len(x) == 0:

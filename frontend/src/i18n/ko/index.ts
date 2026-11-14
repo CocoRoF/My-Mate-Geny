@@ -29,7 +29,8 @@ import tasks from "./tasks.ts";
 import topbar from "./topbar.ts";
 import turn from "./turn.ts";
 import usage from "./usage.ts";
+import voiceStudio from "./voiceStudio.ts";
 import workspace from "./workspace.ts";
 
-const ko: Locale = { mcp, setup, screen, admin, avatar, chat, cliTools, common, composer, connections, downloads, files, guide, higgsfield, life, localVoice, mate, mateSettings, nav, profile, providers, session, settings, stage, studio, tasks, topbar, turn, usage, workspace };
+const ko: Locale = { mcp, setup, screen, admin, avatar, chat, cliTools, common, composer, connections, downloads, files, guide, higgsfield, life, localVoice, mate, mateSettings, nav, profile, providers, session, settings, stage, studio, tasks, topbar, turn, usage, voiceStudio, workspace };
 export default ko;
