@@ -173,7 +173,8 @@ function History({ series, total }: { series: GpuSample[]; total: number }) {
       return [(s.used / total) * 100, (s.ours / total) * 100];
     };
     const max = metric === "temperature" ? Math.max(90, ...series.map((s) => s.temperature ?? 0)) : 100;
-    const xy = (s: GpuSample, v: number) => `${((s.t - t0) / span) * 100},${40 - (v / max) * 40}`;
+    // (a little inside the box: an idle GPU — 0 % — still shows its line)
+    const xy = (s: GpuSample, v: number) => `${((s.t - t0) / span) * 100},${38.5 - (v / max) * 37}`;
     return {
       main: series.map((s) => xy(s, val(s)[0])).join(" "),
       ours: metric === "vram" ? series.map((s) => xy(s, val(s)[1] ?? 0)).join(" ") : null,

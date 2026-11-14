@@ -2,9 +2,10 @@
 
 Runs in the engine's own environment (torch is available here, never in the server process). The worker picks the
 device and dtype from what the GPU can do instead of trusting a config: bf16 on Ampere and newer, fp16 on Volta/Turing,
-fp32 on CPU or anything older. On an Apple Silicon Mac the device is its GPU through Metal (``mps``), in fp32 by default
-(fp16 / bf16 kernels are missing or emulated for some of the engines' ops on older chips; ``GENY_VOICE_DTYPE`` picks
-another), with the few ops Metal lacks falling back to the CPU (PYTORCH_ENABLE_MPS_FALLBACK, set by the server).
+fp32 on CPU or anything older. On an Apple Silicon Mac the device is its GPU through Metal (``mps``) in bf16 (macOS 14
+and newer: the same dtype as on a recent NVIDIA card, and the memory a Mac shares with everything else halves against
+fp32; ``GENY_VOICE_DTYPE`` picks another), with the few ops Metal lacks falling back to the CPU
+(PYTORCH_ENABLE_MPS_FALLBACK, set by the server).
 """
 
 from __future__ import annotations
@@ -60,7 +61,7 @@ def pick_device(requested: str = "cuda:0", dtype: str = "auto") -> Device:
         torch.backends.cudnn.allow_tf32 = True
         return Device(f"cuda:{idx}", dt, props.name, cap, props.total_memory)
     if requested.startswith("mps") and torch.backends.mps.is_available():
-        dt = getattr(torch, os.environ.get("GENY_VOICE_DTYPE") or ("float32" if dtype == "auto" else dtype))
+        dt = getattr(torch, os.environ.get("GENY_VOICE_DTYPE") or ("bfloat16" if dtype == "auto" else dtype))
         return Device("mps", dt, "Apple GPU (Metal)", None, int(torch.mps.recommended_max_memory()))
     threads = int(os.environ.get("GENY_VOICE_CPU_THREADS", "0")) or max(1, (os.cpu_count() or 2) - 1)
     torch.set_num_threads(threads)

@@ -42,8 +42,17 @@ async def main(args: argparse.Namespace) -> int:
     here = G.check("real", args.device)
     _say(f"platform {system.platform_key()} · gate here: {here.code} — {here.message}")
     _say(f"GPUs: {[g.to_dict() for g in system.gpus(max_age=0.0)]}")
-    if not here.ok:  # (no NVIDIA GPU on these machines: the engines run on what there is)
+    if not here.ok:
+        # (no NVIDIA GPU on these machines, or a virtual Mac with 7 GB: the engines run on what there is — the gate
+        # and the room the GPU placement would want are passed over; what is checked is the environment and the engine)
+        from app.voicehost.host import EngineManager
+
         G.check = lambda engine_mode="real", device="": G.Gate(True, "ok", "smoke: the gate is passed over")
+
+        async def no_room_check(self, need, exclude):
+            return None
+
+        EngineManager._make_room = no_room_check
     db = Database(home / "smoke.db")
     db.bootstrap()
     h = VoiceHost(db, s)
@@ -101,7 +110,8 @@ async def main(args: argparse.Namespace) -> int:
                 _say(f"HEAR FAILED {mid}: {x}")
                 failed.append(f"hear {mid}")
                 continue
-            _say(f"heard with {mid} in {time.monotonic() - t0:.0f}s: {r['text']!r} ({r.get('language')})")
+            dev = next((x["device"] for x in h.engines.status() if x["model_id"] == mid), {})
+            _say(f"heard with {mid} in {time.monotonic() - t0:.0f}s on {dev}: {r['text']!r} ({r.get('language')})")
             if not r["text"].strip():
                 failed.append(f"hear {mid}: nothing")
     finally:
