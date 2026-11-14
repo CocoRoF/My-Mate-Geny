@@ -429,3 +429,11 @@ def test_new_clips_of_a_bundle_join_a_set_the_user_edited():
     with_thumbs = with_new_clips(mine2, new, stilled)
     assert [bool(c.get("thumb")) for c in with_thumbs["rig"]["clips"]] == [True, True, False]
     assert with_thumbs["rig"]["clips"][0]["disabled"]
+    # a reaction of theirs whose file became a mood family's (its first and last face is the mood's): the face comes with it,
+    # their switch stays; a dissolve the bundle dropped goes
+    moody = {"kind": "video", "rig": {**stilled["rig"], "clips": [{**c, "face": "angry"} if c["id"] == "a" else c for c in stilled["rig"]["clips"]]}}
+    mine3 = {"kind": "video", "rig": {**with_thumbs["rig"], "clips": [{**c, "fade_in": True} if c["id"] == "a" else c for c in with_thumbs["rig"]["clips"]]}}
+    got3 = with_new_clips(mine3, stilled, moody)
+    a = got3["rig"]["clips"][0]
+    assert a["face"] == "angry" and a["disabled"] and "fade_in" not in a
+    assert "face" not in got3["rig"]["clips"][2]  # (their own file: theirs)

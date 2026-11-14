@@ -673,10 +673,25 @@ def with_new_clips(avatar: dict[str, Any], old: dict[str, Any] | None, new: dict
     fresh = [c for c in after.get("clips") or [] if c.get("id") not in had]
     extra = {f: {k: v for k, v in (after.get(f) or {}).items() if k not in (before.get(f) or {}) and k not in (rig.get(f) or {})}
              for f in ("stills", "emotions")}
-    # (a clip of theirs that is still the bundle's, on the same file, gets what the bundle adds to it: its still for the library)
+    # (a clip of theirs that is still the bundle's, on the same file, gets what the bundle adds to it and what the bundle says the
+    # file is: its still for the library, the face it starts and ends on — a mood family's — and a dissolve into it)
     bundled = {c.get("id"): c for c in after.get("clips") or []}
-    clips = [{**c, "thumb": bundled[c.get("id")]["thumb"]} if not c.get("thumb") and bundled.get(c.get("id"), {}).get("thumb")
-             and bundled[c.get("id")].get("src") == c.get("src") else c for c in rig.get("clips") or []]
+
+    def follows(c: dict[str, Any]) -> dict[str, Any]:
+        b = bundled.get(c.get("id"))
+        if not b or b.get("src") != c.get("src"):
+            return c
+        out = dict(c)
+        if not out.get("thumb") and b.get("thumb"):
+            out["thumb"] = b["thumb"]
+        for k in ("face", "fade_in"):
+            if b.get(k):
+                out[k] = b[k]
+            else:
+                out.pop(k, None)
+        return out
+
+    clips = [follows(c) for c in rig.get("clips") or []]
     if not fresh and not any(extra.values()) and clips == (rig.get("clips") or []):
         return avatar
     rig = {**rig, "clips": [*clips, *fresh]}
