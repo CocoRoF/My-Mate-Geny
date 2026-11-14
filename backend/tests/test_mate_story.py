@@ -40,10 +40,16 @@ def test_only_the_stage_they_are_at_is_in_her_prompt(stage):
     assert set(_STAGE_GUIDES) == set(GUIDES)
 
 
-def test_at_the_top_it_shows_in_every_reply_and_stays_affection():
+def test_at_the_top_she_is_still_herself_and_it_stays_affection():
+    # (closeness shows the way it would with someone like her: it never makes her someone else, or agreeable)
     guide = _STAGE_GUIDES["companion"]
-    assert "unmistakable in every reply" in guide and "You reach out first" in guide and "nothing sexual" in guide
+    assert "not as if you were someone else" in guide and "It needn't be in every reply" in guide
+    assert "doesn't make you agreeable" in guide and "nothing sexual" in guide and "never syrupy or clingy" in guide
+    assert "unmistakable" not in guide and "soft, open and at ease" not in guide
+    assert "including when you disagree" in _STAGE_GUIDES["trusted"]
     assert "you aren't there" in _STAGE_GUIDES["new"]  # (it has to be earned)
+    between = base_prompt("채린", {}, {}, relation=True, stage="companion").split("## Between you and the user")[1]
+    assert "never who you are" in between and "how much you help" not in between
 
 
 def test_with_the_relationship_off_there_is_no_closeness_but_still_the_story():

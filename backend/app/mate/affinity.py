@@ -6,8 +6,11 @@ Two numbers, as in memora:
 * **earned** — days talked, turns, memories: cumulative, never goes down;
 * **affinity** (0–100) — the warmth *now*: rises with what happens between them
   (a conversation that keeps going, her laughing with them, gifts, their
-  anniversaries — showing up alone only a little), cools when you stay away
-  (after a few free days, faster each day, never below a floor).
+  anniversaries — showing up alone only a little), slowly, and more slowly
+  the closer they are; it drops with what they do that she minds (rudeness,
+  worse done to her, brushing her off, leaving her unanswered …) and cools
+  when you stay away (after a few free days, faster each day, never below a
+  floor).
 
 The stage follows the affinity (new → familiar → trusted → companion), so what
 she is to the user is what the number says; earned only tells a long bond that
@@ -37,20 +40,31 @@ BAND_FLOORS = (0.0, 20.0, 45.0, 70.0)
 HYST_UP, HYST_DOWN = 2.0, 3.0      # a band is entered 2 above its floor, left 3 below it
 
 # Showing up alone is worth little; what moves it is what happens between them: a conversation that keeps going, her
-# laughing with them, what they give her, the days that mark their time together.
-TALK = 2.0                          # the day's first user turn
-LIVELY_TURNS, LIVELY = (10, 25), 2.5  # a conversation that keeps going: the day's 10th and 25th user turns, each once
-STREAK, STREAK_WEEK = 1.0, 2.0      # a talk day after a talk day; +2 more each 7th day in a row
-WARM, WARM_CAP = 0.5, 2.0           # a warm word of theirs; per day
-SMILED, SMILED_CAP = 0.5, 2.0       # a reply of hers that laughs or smiles (her face's tags); per day
-GIFT, GIFT_CAP = 2.0, 4.0           # something they sent her (app/mate/life); per day
-ANNIVERSARY = 3.0                   # talking on one of the ANNIVERSARIES (the 7th, 30th … day together)
-MEMORY, MEMORY_CAP = 1.0, 3.0       # a new memory; per day
-RUDE, RUDE_CAP = 1.0, 3.0           # rudeness aimed at the mate (never sadness or venting); per day
-HOSTILE, HOSTILE_CAP = 5.0, 20.0    # something done to her (hitting her, forcing something on her, threats, putting her down); per day
-GAIN_CAP = 12.0                     # all gains of one day
-GRACE_DAYS = 3                      # quiet days that cost nothing
-DECAY_BASE, DECAY_GROWTH, DECAY_CAP = 4.0, 1.4, 15.0
+# laughing with them, what they give her, the days that mark their time together. It is slow on purpose: talking every day
+# and doing everything right, 100 takes a month or more (each day's gains are capped, and the closer they are the less each
+# one adds: ``climb``); an ordinary day of talk, a good deal longer.
+TALK = 0.8                          # the day's first user turn
+LIVELY_TURNS, LIVELY = (10, 25), 0.8  # a conversation that keeps going: the day's 10th and 25th user turns, each once
+STREAK, STREAK_WEEK = 0.4, 1.0      # a talk day after a talk day; +1 more each 7th day in a row
+WARM, WARM_CAP = 0.25, 0.75         # a warm word of theirs; per day
+SMILED, SMILED_CAP = 0.25, 0.75     # a reply of hers that laughs or smiles (her face's tags); per day
+GIFT, GIFT_CAP = 0.8, 1.2           # something they sent her (app/mate/life); per day
+ANNIVERSARY = 2.0                   # talking on one of the ANNIVERSARIES (the 7th, 30th … day together)
+MEMORY, MEMORY_CAP = 0.4, 0.8       # a new memory; per day
+GAIN_CAP = 3.2                      # all gains of one day
+CLIMB_FROM, CLIMB_LOW = 40.0, 0.4   # from 40 each gain adds less, down to 0.4 of it at 100
+RUDE, RUDE_CAP = 1.5, 4.5           # rudeness aimed at the mate (never sadness or venting); per day
+HOSTILE, HOSTILE_CAP = 6.0, 20.0    # something done to her (hitting her, forcing something on her, threats, putting her down); per day
+# what else they do that she minds (app/mate/state.py notices it and hands it on: ``take_owed``): {code: (each time, per day)}
+LOSSES = {"dismissed": (0.8, 1.6),      # they brushed her off
+          "curt": (0.3, 0.9),           # a word or two, again and again
+          "ignored": (1.0, 2.0),        # she spoke, again and again, and they didn't answer
+          "pestered": (0.5, 1.0),       # they kept on at her about her clothes
+          "poked": (0.3, 0.9),          # they wouldn't stop poking her
+          "interrupted": (0.2, 0.6),    # they cut her off
+          "declined_call": (0.6, 1.2)}  # she called and they turned it down
+GRACE_DAYS = 2                      # quiet days that cost nothing
+DECAY_BASE, DECAY_GROWTH, DECAY_CAP = 2.0, 1.4, 8.0
 FLOOR = 10.0                        # quiet days never take it below this
 CATCHUP_DAYS = 90
 LOG_MAX = 200
@@ -120,6 +134,7 @@ def new() -> dict[str, Any]:
         "tz": None,  # the zone its days were counted in (store.tz_and_key); another → computed again from history
         "marks": [],  # what the user did by hand ({at, kind: set | reset, v}): a recompute in another zone keeps them
         "gifts": [],  # when they sent her something (credit_gift): no message records it, so a recompute reads it here
+        "costs": [],  # what else they did that she minded ({at, code}: ``cost``), for a recompute the same way
     }
 
 
@@ -229,9 +244,15 @@ def _today(r: dict[str, Any], day: date) -> dict[str, Any]:
     return r["today"]
 
 
+def climb(a: float) -> float:
+    """What a gain is worth at affinity ``a``: all of it below CLIMB_FROM, then less and less, CLIMB_LOW of it at 100 — the
+    closer they are, the more it takes."""
+    return 1.0 if a < CLIMB_FROM else max(CLIMB_LOW, 1 - (1 - CLIMB_LOW) * (a - CLIMB_FROM) / (100 - CLIMB_FROM))
+
+
 def _gain(r: dict[str, Any], day: dict[str, Any], amount: float, why: str, at: datetime,
           cap_key: str | None = None, cap: float | None = None) -> None:
-    pts = amount * r["sensitivity"]
+    pts = amount * r["sensitivity"] * climb(r["affinity"])
     if cap_key:
         pts = min(pts, max(0.0, cap - float(day.get(cap_key) or 0.0)))
     pts = min(pts, max(0.0, GAIN_CAP - float(day.get("gained") or 0.0)))
@@ -372,6 +393,22 @@ def credit_gift(r: dict[str, Any], at: datetime, tz: Any) -> None:
     r["gifts"] = [*(r.get("gifts") or []), _iso(at)][-200:]
     t = _today(r, at.astimezone(tz).date())
     _gain(r, t, GIFT, "gift", at, "gift", GIFT_CAP)
+    refresh(r, at, tz)
+
+
+def cost(r: dict[str, Any], code: str, at: datetime, tz: Any) -> None:
+    """Something else they did that she minded (``LOSSES``; app/mate/state.py noticed it): it costs, up to the day's limit
+    for it. Kept in ``costs`` too, since no message records it (``replay``)."""
+    if code not in LOSSES or not r["enabled"] or r["paused"] or r["started_at"] is None:
+        return
+    r["costs"] = [*(r.get("costs") or []), {"at": _iso(at), "code": code}][-200:]
+    each, cap = LOSSES[code]
+    t = _today(r, at.astimezone(tz).date())
+    key = f"cost_{code}"
+    loss = min(each * r["sensitivity"], max(0.0, cap - float(t.get(key) or 0.0)))
+    if loss > 0:
+        t[key] = float(t.get(key) or 0.0) + loss
+        _bump(r, -loss, code, at)
     refresh(r, at, tz)
 
 
@@ -579,7 +616,7 @@ def _traced(trace: list[dict[str, Any]] | None, r: dict[str, Any], seen: Any) ->
 def replay(events: list[tuple[datetime, str, Any]], now: datetime, tz: Any,
            settings: dict[str, Any] | None = None, marks: list[dict[str, Any]] | None = None,
            trace: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    """``events``: (time, "turn", (user_text, reply_text)) | (time, "memory" | "gift", None) — rebuilt from scratch with the
+    """``events``: (time, "turn", (user_text, reply_text)) | (time, "memory" | "gift", None) | (time, "cost", code) — rebuilt from scratch with the
     current settings (enabled / sensitivity …; pauses in the past aren't known, so none). ``marks``: the user's
     own changes (a value set by hand, a fresh start — ``marks_of``), applied when they happened. ``trace``: gets
     every change in order (the log without its 200-entry limit; the Relationship panel's daily values)."""
@@ -595,7 +632,7 @@ def replay(events: list[tuple[datetime, str, Any]], now: datetime, tz: Any,
         at = _t(m.get("at"))
         if at is not None and m.get("kind") in ("set", "reset"):
             timeline.append((at, m["kind"], m.get("v")))
-    order = {"turn": 0, "memory": 1, "gift": 1, "set": 2, "reset": 2}
+    order = {"turn": 0, "memory": 1, "gift": 1, "cost": 1, "set": 2, "reset": 2}
     seen = None
     for at, what, arg in sorted(timeline, key=lambda e: (e[0], order.get(e[1], 3))):
         advance(r, at, tz)
@@ -606,6 +643,8 @@ def replay(events: list[tuple[datetime, str, Any]], now: datetime, tz: Any,
             credit_memory(r, at, tz)
         elif what == "gift":
             credit_gift(r, at, tz)
+        elif what == "cost" and arg:
+            cost(r, str(arg), at, tz)
         elif what == "set" and arg is not None:
             set_value(r, float(arg), at, tz)
         elif what == "reset":

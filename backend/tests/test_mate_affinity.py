@@ -43,14 +43,15 @@ def whys(r):
 
 
 def test_grace_days_then_accelerating_decay_with_cap_and_floor():
-    assert [A.decay_for(n) for n in range(1, 10)] == [0, 0, 0, 4.0, 5.6, 7.84, 10.98, 15.0, 15.0]
+    assert [A.decay_for(n) for n in range(1, 10)] == [0, 0, 2.0, 2.8, 3.92, 5.49, 7.68, 8.0, 8.0]
     r = A.new()
     talk(r, day(0))
     A.set_value(r, 80, day(0), TZ)
-    A.advance(r, day(9), TZ)  # days 1–3 free, 4..8 cost
+    A.advance(r, day(9), TZ)  # days 1–2 free, 3..8 cost
     losses = [(e["why"], e["d"]) for e in r["log"] if e["why"].startswith("quiet")]
-    assert losses == [("quiet_4", -4.0), ("quiet_5", -5.6), ("quiet_6", -7.84), ("quiet_7", -10.98), ("quiet_8", -15.0)]
-    assert r["affinity"] == pytest.approx(80 - 43.42)
+    assert losses == [("quiet_3", -2.0), ("quiet_4", -2.8), ("quiet_5", -3.92), ("quiet_6", -5.49), ("quiet_7", -7.68),
+                      ("quiet_8", -8.0)]
+    assert r["affinity"] == pytest.approx(80 - 29.89)
     A.advance(r, day(40), TZ)
     assert r["affinity"] == A.FLOOR  # never below the floor
     again = A.clone(r)
@@ -73,20 +74,22 @@ def test_showing_up_is_worth_little_and_what_happens_between_them_more():
     talk(hello, day(0))
     for i in range(3):
         talk(hello, day(0, 13, i), "ok")
-    assert hello["affinity"] == A.TALK == 2.0  # (the turns after the first: nothing)
+    assert hello["affinity"] == A.TALK == 0.8  # (the turns after the first: nothing)
     r = A.new()
     for i in range(26):
         talk(r, day(0, 9, i), "고마워!" if i < 6 else "ok", "[laugh] 하하" if i < 3 else "")
     assert whys(r).count("talk") == 1 and whys(r).count("lively") == 2  # (the 10th and the 25th turn)
     assert sum(e["d"] for e in r["log"] if e["why"] == "warm") == A.WARM_CAP  # six warm turns, capped
     assert sum(e["d"] for e in r["log"] if e["why"] == "smiled") == 3 * A.SMILED  # she laughed three times
-    assert r["affinity"] == A.TALK + 2 * A.LIVELY + A.WARM_CAP + 3 * A.SMILED == 10.5
+    # (all of it would be more than a day can give: the day's cap)
+    assert r["affinity"] == pytest.approx(min(A.GAIN_CAP, A.TALK + 2 * A.LIVELY + A.WARM_CAP + 3 * A.SMILED)) == A.GAIN_CAP
     s = A.new()
     for n in range(7):
         talk(s, day(n))
     assert s["streak_days"] == 7 and whys(s).count("streak") == 6 and whys(s).count("streak_week") == 1
     assert whys(s).count("anniversary_7") == 1  # (talking on their 7th day together)
-    assert s["affinity"] == 7 * A.TALK + 6 * A.STREAK + A.STREAK_WEEK + A.ANNIVERSARY
+    assert s["affinity"] == pytest.approx(A.TALK + 5 * (A.TALK + A.STREAK)
+                                          + min(A.GAIN_CAP, A.TALK + A.STREAK + A.STREAK_WEEK + A.ANNIVERSARY))
     talk(s, day(9))  # a gap: the streak starts over
     assert s["streak_days"] == 1
 
@@ -108,7 +111,7 @@ def test_gifts_count_capped_per_day_and_a_recompute_keeps_them():
     for i in range(3):
         A.advance(r, day(0, 15, i), TZ)
         A.credit_gift(r, day(0, 15, i), TZ)
-    assert sum(e["d"] for e in r["log"] if e["why"] == "gift") == A.GIFT_CAP and len(r["gifts"]) == 3
+    assert sum(e["d"] for e in r["log"] if e["why"] == "gift") == pytest.approx(A.GIFT_CAP) and len(r["gifts"]) == 3
     A.advance(r, day(1, 9), TZ)
     A.credit_gift(r, day(1, 9), TZ)  # (a new day: counted again, before any talk that day)
     assert [e["d"] for e in r["log"] if e["why"] == "gift"][-1] == A.GIFT
@@ -128,7 +131,7 @@ def test_anniversaries_count_on_the_day_itself():
     talk(r, day(0))
     talk(r, day(29))  # the 30th day together
     talk(r, day(29, 18))
-    assert whys(r).count("anniversary_30") == 1 and [e["d"] for e in r["log"] if e["why"] == "anniversary_30"] == [3.0]
+    assert whys(r).count("anniversary_30") == 1 and [e["d"] for e in r["log"] if e["why"] == "anniversary_30"] == [A.ANNIVERSARY]
     late = A.new()
     talk(late, day(0))
     talk(late, day(7))  # the day after the 7th: not the day
@@ -144,7 +147,7 @@ def test_the_daily_gain_cap():
     for i in range(26):
         talk(r, day(0, 14, i), "thanks, great!", "[joy] :)")
     gained = sum(e["d"] for e in r["log"] if e["why"] in ("talk", "lively", "warm", "smiled", "memory", "streak"))
-    assert gained == A.GAIN_CAP  # 2 + 3 (memories) + 2 (warm) + 2 (her smiles) + 5 (lively) = 14 → 12
+    assert gained == pytest.approx(A.GAIN_CAP)  # 0.8 + 0.8 (memories) + 0.75 (warm) + 0.75 (her smiles) + 1.6 (lively) = 4.7 → 3.2
 
 
 def test_rudeness_costs_a_little_sadness_never():
@@ -161,6 +164,76 @@ def test_rudeness_costs_a_little_sadness_never():
     assert "rude" not in whys(s) and s["affinity"] == 50
 
 
+def test_the_closer_they_are_the_more_it_takes():
+    assert [A.climb(a) for a in (0, 39.9, 40, 70, 100)] == pytest.approx([1.0, 1.0, 1.0, 0.7, 0.4])
+    r = A.new()
+    talk(r, day(0))
+    A.set_value(r, 90, day(0), TZ)
+    talk(r, day(1))
+    assert [e["d"] for e in r["log"] if e["why"] == "talk"][-1] == pytest.approx(A.TALK * A.climb(90))
+
+
+def _effort(per_day, days=120):
+    """Day by day what someone does (``per_day(n)``: (turns, warm ones, her smiles, memories, gifts) or None) → the day 100 is
+    first reached (None: never) and the affinity at the end."""
+    r = A.new()
+    for n in range(days):
+        plan = per_day(n)
+        if plan:
+            turns, warm, smiles, memories, gifts = plan
+            for i in range(turns):
+                talk(r, day(n, 9, i), "고마워, 최고야" if i < warm else "응 그렇구나", "[smile] 헤헤" if i < smiles else "그랬구나")
+            for i in range(memories):
+                A.credit_memory(r, day(n, 11, i), TZ)
+            for i in range(gifts):
+                A.credit_gift(r, day(n, 12, i), TZ)
+        A.advance(r, day(n, 23, 59), TZ)
+        if r["affinity"] >= 100:
+            return n + 1, r["affinity"]
+    return None, r["affinity"]
+
+
+def test_even_doing_everything_right_100_takes_a_month():
+    """Talking every day, at length, warmly, with her laughing, memories and gifts: more than 30 days to 100; a good everyday talk
+    takes longer still, and every other day never gets there."""
+    best, _ = _effort(lambda n: (30, 5, 5, 3, 2))
+    everyday, _ = _effort(lambda n: (15, 2, 2, 1, 0))
+    assert best is not None and 30 < best <= 40
+    assert everyday is not None and everyday > best
+    assert _effort(lambda n: (8, 0, 1, 0, 0) if n % 2 == 0 else None)[0] is None
+
+
+def test_what_she_minds_costs_too_each_up_to_a_day_and_a_recompute_keeps_it():
+    r = A.new()
+    talk(r, day(0))
+    A.set_value(r, 50, day(0), TZ)
+    for i in range(4):
+        A.cost(r, "dismissed", day(0, 13, i), TZ)
+    each, cap = A.LOSSES["dismissed"]
+    assert [e["d"] for e in r["log"] if e["why"] == "dismissed"] == [-each, -each]  # (two of them reach the day's limit)
+    assert r["affinity"] == pytest.approx(50 - cap)
+    A.cost(r, "ignored", day(0, 14), TZ)
+    A.cost(r, "no_such_thing", day(0, 14), TZ)
+    assert whys(r)[-1] == "ignored" and len(r["costs"]) == 5  # (only what she minds; the over-limit ones are kept as they were)
+    A.advance(r, day(1, 9), TZ)
+    A.cost(r, "dismissed", day(1, 9), TZ)  # (a new day: it costs again)
+    assert [e["d"] for e in r["log"] if e["why"] == "dismissed"][-1] == -each
+    events = [(day(0).astimezone(timezone.utc), "turn", ("hello", ""))]
+    events += [(A._t(c["at"]), "cost", c["code"]) for c in r["costs"]]
+    again = A.replay(events, day(1, 10), TZ, marks=A.marks_of(r))
+    assert again["affinity"] == r["affinity"] and again["costs"] == r["costs"]
+    paused = A.new()
+    talk(paused, day(0))
+    A.set_switch(paused, "paused", True, day(0, 13), TZ)
+    A.cost(paused, "dismissed", day(0, 14), TZ)
+    assert "dismissed" not in whys(paused) and paused["costs"] == []
+    half = A.new()
+    half["sensitivity"] = 0.5
+    talk(half, day(0))
+    A.cost(half, "declined_call", day(0, 13), TZ)
+    assert [e["d"] for e in half["log"] if e["why"] == "declined_call"] == [-A.LOSSES["declined_call"][0] / 2]
+
+
 def test_pause_off_and_sensitivity():
     r = A.new()
     talk(r, day(0))
@@ -171,7 +244,7 @@ def test_pause_off_and_sensitivity():
     assert r["affinity"] == 60 and r["turns"] == 1  # nothing moved, nothing counted
     A.set_switch(r, "paused", False, day(20, 13), TZ)
     talk(r, day(21))
-    assert r["affinity"] == 60 + A.TALK  # (the days of the pause cost nothing afterwards either)
+    assert r["affinity"] == pytest.approx(60 + A.TALK * A.climb(60))  # (the days of the pause cost nothing afterwards either)
     off = A.new()
     off["enabled"] = False
     talk(off, day(0))
@@ -182,7 +255,7 @@ def test_pause_off_and_sensitivity():
     A.set_value(half, 80, day(0), TZ)
     A.advance(half, day(5), TZ)
     assert [e["d"] for e in half["log"] if e["why"] == "talk"] == [A.TALK / 2]
-    assert [e["d"] for e in half["log"] if e["why"].startswith("quiet")] == [-2.0]
+    assert [e["d"] for e in half["log"] if e["why"].startswith("quiet")] == [-1.0, -1.4]
 
 
 def test_hysteresis_and_the_stage_follows_the_affinity():
@@ -240,7 +313,7 @@ def test_recompute_equals_real_time():
 def test_view_and_summary_shapes():
     r = A.replay(_history(), day(30), TZ)
     v = A.view(r, day(30), TZ)
-    assert v["stats"]["turns"] == 57 and v["stats"]["grace_days"] == 3 and v["next"]["stage"] in A.STAGES
+    assert v["stats"]["turns"] == 57 and v["stats"]["grace_days"] == 2 and v["next"]["stage"] in A.STAGES
     assert v["log"][0]["why"] == "recomputed" and "mood" not in v
     s = A.summary(r, day(30), TZ)
     assert set(s) == {"enabled", "paused", "stage", "affinity", "show_indicator", "avatar_mood"}
@@ -318,6 +391,35 @@ def test_turning_it_off_removes_the_guide_and_says_so(db):
     assert prompt_key("R", {}, 0, None, relation=True) != prompt_key("R", {}, 0, None)
 
 
+def test_what_she_minds_costs_the_relationship_and_what_she_shows_has_the_last_word(db):
+    from app.mate import state as S
+    svc, store, mates = _svc(db)
+    m = store.create(name="Rin")
+    mates._relation_turn(m["id"], {"input": "hi", "text": "", "meta": None})
+    mates.relation_update(m["id"], {"affinity": 50})
+
+    def why0():
+        return mates.relation_view(m["id"])["log"][0]["why"]
+
+    # no message says so: a call she made that they turned down
+    mates._state_event(m["id"], lambda doc, who, now, tz: S.call_unanswered(doc, who, True, 1, now, tz))
+    assert why0() == "declined_call"
+    assert mates.relation_view(m["id"])["affinity"] == pytest.approx(50 - A.LOSSES["declined_call"][0], abs=0.05)
+    # their words brushed her off: it waits for her reply, which shows it landed
+    hear = lambda said, mid: (lambda doc, who, now, tz: S.hear(doc, who, said, mid, now, tz))  # noqa: E731
+    reply = lambda text, said: (lambda doc, who, now, tz: S.reply(doc, who, text, said, now, tz))  # noqa: E731
+    mates._state_event(m["id"], hear("됐어, 관심 없어", "msg_1"))
+    assert why0() == "declined_call"
+    mates._state_event(m["id"], reply("[sad] ...그래요.", "됐어, 관심 없어"))
+    assert why0() == "dismissed"
+    # …or that it didn't: she laughed it off, so it costs nothing
+    before = mates.relation_view(m["id"])["affinity"]
+    mates._state_event(m["id"], hear("됐고 밥이나 먹자", "msg_2"))
+    mates._state_event(m["id"], reply("[laugh] 좋아요!", "됐고 밥이나 먹자"))
+    assert mates.relation_view(m["id"])["affinity"] == before and why0() == "dismissed"
+    assert store.state_doc(m["id"])["owed"] == []
+
+
 def test_a_gift_she_gets_counts_and_a_recount_keeps_it(db, monkeypatch):
     svc, store, mates = _svc(db)
     m = store.create(name="Gift")
@@ -343,7 +445,7 @@ def test_relation_routes(client):
     assert m["relation"]["stage"] == "new" and m["relation"]["show_indicator"] is True
     base = f"/api/mates/{m['id']}/relation"
     v = client.get(base).json()
-    assert v["enabled"] and v["affinity"] == 0 and v["stats"]["grace_days"] == 3
+    assert v["enabled"] and v["affinity"] == 0 and v["stats"]["grace_days"] == 2
     v = client.patch(base, json={"affinity": 55, "sensitivity": 9, "show_indicator": False}).json()
     assert v["affinity"] == 55 and v["sensitivity"] == 1.5 and v["show_indicator"] is False
     assert v["log"][0]["why"] == "manual"

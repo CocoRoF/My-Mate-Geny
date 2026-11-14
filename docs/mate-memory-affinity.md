@@ -417,22 +417,28 @@ stage does not flicker near a boundary. It used to be the lower of this and an e
 which kept her at `familiar` at an affinity of 100; earned now only tells a long bond that cooled from one that never was ("it has been a
 while"). Stage ups add a milestone; stage downs are only a change of state.
 
-### 5.3 Rules (all gains × `sensitivity`; caps apply after it)
+### 5.3 Rules (all gains × `sensitivity` × `climb`; caps apply after it)
+
+It is slow on purpose: talking every day and doing everything right (30 turns, warm words, her laughing, memories, gifts),
+100 is reached only after 30-odd days (`test_even_doing_everything_right_100_takes_a_month`: day 32 today); a good everyday
+talk (15 turns) takes about 39, every other day never gets there. Two things hold it back: the day's gains are capped (+3.2),
+and from 40 up every gain adds less (`climb`: all of it below 40, 0.7 of it at 70, 0.4 at 100). Losses are not climbed.
 
 | Event | Δ | When / cap |
 |---|---|---|
-| Talked today | +2 | the day's first user turn (credited when the turn ends): showing up alone is worth little |
-| Lively day | +2.5 | at the day's 10th and again at its 25th user turn (a conversation that keeps going) |
-| Streak | +1 | first turn of a day that follows a talk day (streak ≥ 2); +2 more on each 7th day |
-| Warm word | +0.5 | user cue positive (고마워, 감사, 좋아, 최고, ㅋㅋ/ㅎㅎ, thanks, great, love it…); cap +2/day |
-| She smiled | +0.5 | her reply carries `joy/laugh/smile/shy` and the user cue isn't negative (`smiled`); cap +2/day |
-| A gift | +2 | something they sent her (life `give`, `credit_gift`), cap +4/day; its time is kept in `gifts`, since no message records it, so a recompute counts it again |
-| Anniversary | +3 | talking on the 7th, 30th, 100th or 365th day together (`anniversary_<n>`), on the day itself |
-| New memory | +1 | per memory actually added (merges don't count), cap +3/day |
-| Rude to the mate | −1 | insult/hostility lexicon aimed at her (닥쳐, 꺼져, 멍청, shut up, stupid, useless…); cap −3/day. **Sadness or venting never costs anything**: it sets mood `concerned` instead |
-| Done to her | −5 | `affinity.hostile`, aimed at her (acted out "(…)"/"*…*", said to "you" or her name): hitting her, forcing something on her against her will (her clothes, her body, grabbing, dragging, holding her down, making her), threats, putting her down ("여자가 왜 말대꾸야", 삼일한); cap −20/day (logged as `hostile_<kind>`: violence, coercion, threat, demeaning), and that turn earns nothing. Only the words' guess: her reply has the last word (shown calm, `calm_reply`, it costs nothing). Venting about someone, a friend's trouble, a game, everyday words: nothing |
-| Daily gain cap | +12 | total positive per day |
-| Quiet days | 0 for 3 idle days, then −4, −5.6, −7.8, −11, −15 (×1.4 a day, cap 15) | settled for each **finished** day without a user turn; never below **10** (floor) |
+| Talked today | +0.8 | the day's first user turn (credited when the turn ends): showing up alone is worth little |
+| Lively day | +0.8 | at the day's 10th and again at its 25th user turn (a conversation that keeps going) |
+| Streak | +0.4 | first turn of a day that follows a talk day (streak ≥ 2); +1 more on each 7th day |
+| Warm word | +0.25 | user cue positive (고마워, 감사, 좋아, 최고, ㅋㅋ/ㅎㅎ, thanks, great, love it…); cap +0.75/day |
+| She smiled | +0.25 | her reply carries `joy/laugh/smile/shy` and the user cue isn't negative (`smiled`); cap +0.75/day |
+| A gift | +0.8 | something they sent her (life `give`, `credit_gift`), cap +1.2/day; its time is kept in `gifts`, since no message records it, so a recompute counts it again |
+| Anniversary | +2 | talking on the 7th, 30th, 100th or 365th day together (`anniversary_<n>`), on the day itself |
+| New memory | +0.4 | per memory actually added (merges don't count), cap +0.8/day |
+| Daily gain cap | +3.2 | total positive per day |
+| Rude to the mate | −1.5 | insult/hostility lexicon aimed at her (닥쳐, 꺼져, 멍청, shut up, stupid, useless…); cap −4.5/day. **Sadness or venting never costs anything**: it sets mood `concerned` instead |
+| Done to her | −6 | `affinity.hostile`, aimed at her (acted out "(…)"/"*…*", said to "you" or her name): hitting her, forcing something on her against her will (her clothes, her body, grabbing, dragging, holding her down, making her), threats, putting her down ("여자가 왜 말대꾸야", 삼일한); cap −20/day (logged as `hostile_<kind>`: violence, coercion, threat, demeaning), and that turn earns nothing. Only the words' guess: her reply has the last word (shown calm, `calm_reply`, it costs nothing). Venting about someone, a friend's trouble, a game, everyday words: nothing |
+| What else she minds | `LOSSES` | noticed by how she feels (app/mate/state.py) and handed on (`take_owed` → `cost`): brushing her off (`dismissed` −0.8, cap −1.6/day), a word or two again and again (`curt` −0.3, cap −0.9), leaving her unanswered after she spoke again and again (`ignored` −1, cap −2), going on at her about her clothes (`pestered` −0.5, cap −1), poking her too much (`poked` −0.3, cap −0.9), cutting her off (`interrupted` −0.2, cap −0.6), turning her call down (`declined_call` −0.6, cap −1.2). What their words told (dismissed, curt, pestered) waits for her reply: shown calm, it didn't land and costs nothing. Kept in `costs`, since no message records them, so a recompute counts them again |
+| Quiet days | 0 for 2 idle days, then −2, −2.8, −3.9, −5.5, −7.7, −8 (×1.4 a day, cap 8) | settled for each **finished** day without a user turn; never below **10** (floor) |
 | Ignored proactive | — | dormant (`awaiting`), for when proactive messages exist |
 | Paused | nothing moves | no gains, no decay; the days still pass (`settled_day` advances) |
 | Manual set / reset | set value | logged `manual` / `reset` |
@@ -523,10 +529,14 @@ the tone): feelings now change how she talks, what she decides and what her face
   is answered as her character, a no said as her character for her reasons. What it never overrides, at any closeness: asked sincerely whether
   this is a person or an AI, she tells the truth; if the user is in real trouble, hurting or losing track of what is real, she steps out as far
   as it takes; nothing sexual; and what she won't do doesn't change with the wording of a no. *Between you and the user*, while the relationship
-  is on: **only the guide for the stage they are at**, right after the story, so it isn't one line of four: at `new` reserved and no nicknames, at
-  `companion` her guard is down and it is unmistakable in every reply, she reaches out first and answers affection in kind. A new stage changes the
-  prompt key, so the engine resumes with it. Always: no jealousy, no pressure to stay, no guilt about being away, as much help at every stage, the
-  conversation style wins, and signs of dependence get a kind nudge towards real people or professional help.
+  is on: **only the guide for the stage they are at**, right after the story, so it isn't one line of four: at `new` as she is with someone new
+  (open or guarded, as her character is) and no nicknames, at `trusted` candid (disagreeing included), at `companion` they are her person and it
+  shows the way it would with someone like her — a reserved character's warmth in small, quiet things, a bubbly one's out loud, not in every
+  reply — and she answers affection in kind and sometimes starts it, never syrupy or clingy. Closeness shapes how she treats them, never who she
+  is: it never makes her agreeable, and she keeps her opinions, moods and life. A new stage changes the prompt key, so the engine resumes with it.
+  Always: no jealousy, no pressure to stay, no guilt about being away, the conversation style wins, and signs of dependence get a kind nudge
+  towards real people or professional help. What she does for them (work for a chat included) is hers to decide by how she feels: angry or
+  hurt with them she may refuse, put it off, or want an apology first — real trouble they are in still comes first.
 - **Per-turn `<context>`**: `Relationship: ‹stage› — day N together, M days in a row.` sent only
   when `(stage, streak bucket)` changed since the last injection, on a fresh context, or every 30
   turns. When warmth < earned (they were away): "It has been a while: you still know them; be a

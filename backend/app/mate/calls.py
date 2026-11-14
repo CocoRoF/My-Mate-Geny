@@ -934,8 +934,8 @@ class CallService:
                      "then reply with EXACTLY [SILENT].")
         else:
             rules = ("On the call you could only talk, so nothing they asked for has been done yet — if they asked you to do "
-                     "something (hand work to a chat, remember something, change your style…), do it now with your tools, "
-                     "exactly as you would for a message. Write to them only if there is something they need to hear: what "
+                     "something (hand work to a chat, remember something, change your style…) and you said you would, do it now "
+                     "with your tools, exactly as you would for a message. Write to them only if there is something they need to hear: what "
                      "came of what you did, a question you must ask, or something that matters you didn't get to say on the "
                      "call — briefly, in your own voice, like a message. Never recap or summarize the call for them: they were "
                      "there. Otherwise — nothing was asked, or it's done and there's nothing to tell — reply with EXACTLY "

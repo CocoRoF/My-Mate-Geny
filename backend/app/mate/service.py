@@ -1018,18 +1018,34 @@ class MateService:
 
     def _state_event(self, mate_id: str, change: Callable[..., None] | None) -> dict[str, Any]:
         """Something moved how she feels (``change(doc, who, now, tz)``): kept, and every window hears when what stands out
-        changed. -> how she feels now."""
+        changed; what they did that she minds costs the relationship too (``_relation_costs``). -> how she feels now."""
         now, tz = datetime.now(timezone.utc), self.store.tz()
         doc, who = self.store.state_doc(mate_id), self.store.state_who(mate_id)
         before = S.summary(doc, who, now, tz)
         if change is None:
             return before
         change(doc, who, now, tz)
+        owed = S.take_owed(doc)
         self.store.save_state(mate_id, doc)
+        if owed:
+            self._relation_costs(mate_id, owed, now, tz)
         after = S.summary(doc, who, now, tz)
         if S.signature(before) != S.signature(after):
             self.store._changed("relation", mate_id)  # (the indicator and the Relationship panel refetch)
         return after
+
+    def _relation_costs(self, mate_id: str, owed: list[dict[str, Any]], now: datetime, tz: Any) -> None:
+        """What they did that she minded (state.take_owed: brushing her off, leaving her unanswered …) costs the relationship."""
+        try:
+            doc = self.relation_doc(mate_id)
+        except KeyError:
+            return
+        before = A.clone(doc)
+        A.advance(doc, now, tz)
+        for e in owed:
+            A.cost(doc, str(e.get("code") or ""), now, tz)
+        if doc != before:
+            self._save_relation(mate_id, doc, before)
 
     def state_poke(self, mate_id: str) -> dict[str, Any]:
         """The user tapped her avatar. -> how she feels now."""
@@ -1146,10 +1162,15 @@ class MateService:
             at = A._t(r["created_at"])
             if at is not None:
                 events.append((at, "memory", None))
-        for g in (self.store.relation_doc(mate["id"]) or {}).get("gifts") or []:  # (no message says she got them)
+        kept = self.store.relation_doc(mate["id"]) or {}
+        for g in kept.get("gifts") or []:  # (no message says she got them)
             at = A._t(g)
             if at is not None:
                 events.append((at, "gift", None))
+        for c in kept.get("costs") or []:  # (nor what she minded: A.cost)
+            at = A._t(c.get("at")) if isinstance(c, dict) else None
+            if at is not None and c.get("code"):
+                events.append((at, "cost", c["code"]))
         return events
 
     def _recompute(self, mate_id: str, settings: dict[str, Any] | None = None,

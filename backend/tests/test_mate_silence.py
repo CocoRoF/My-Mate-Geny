@@ -99,7 +99,7 @@ def test_hitting_her_costs_far_more_than_a_rude_word_unless_she_took_it_as_play(
     r = A.new()
     r["affinity"] = 50.0
     A.credit_turn(r, EIGHT, TZ, "(한채린을 한 대 때린다)", "[angry:0.8] 때리지 마.", "한채린")
-    assert r["affinity"] == 45.0 and not r["today"].get("talked")  # (no gain for the day's talk)
+    assert r["affinity"] == 50.0 - A.HOSTILE and not r["today"].get("talked")  # (no gain for the day's talk)
     assert r["log"][-1]["why"] == "hostile_violence"  # (what it was: the relationship's history says so in the user's language)
     for _ in range(6):
         A.credit_turn(r, EIGHT, TZ, "(더 세게 때린다)", "", "한채린")
@@ -111,7 +111,7 @@ def test_hitting_her_costs_far_more_than_a_rude_word_unless_she_took_it_as_play(
     rude = A.new()
     rude["affinity"] = 50.0
     A.credit_turn(rude, EIGHT, TZ, "닥쳐", "")
-    assert rude["affinity"] == 50.0 + A.TALK - A.RUDE  # (a rude word: the day's talk, less one)
+    assert rude["affinity"] == pytest.approx(50.0 + A.TALK * A.climb(50.0) - A.RUDE)  # (a rude word: the day's talk, less it)
 
 
 def test_her_engine_hears_she_said_nothing_not_a_line_she_wrote():

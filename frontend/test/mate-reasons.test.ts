@@ -28,6 +28,8 @@ const kinds = /What was done to her in this message, as far as the words tell: (
 const codes = [
   ...[...affinity.matchAll(/_(?:gain|bump)\([^)\n]*?"([a-z_]+)"/g)].map((m) => m[1]),
   ...[.../USER_WHYS = \(([^)]*)\)/.exec(affinity)![1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]),
+  // (what else she minded: each a code of its own)
+  ...[.../LOSSES = \{([^}]*)\}/.exec(affinity)![1].matchAll(/"([a-z_]+)": \(/g)].map((m) => m[1]),
   ...kinds.map((k) => `hostile_${k}`),
   "hostile", // (logged before its kind was)
   "quiet_4",
@@ -52,6 +54,8 @@ test("every reason in her affinity log reads as words, in both languages", () =>
   assert.equal(whyText(ko_, "quiet_4"), "4일째 대화 없음");
   assert.equal(whyText(ko_, "anniversary_100"), "함께한 지 100일");
   assert.ok(codes.includes("smiled") && codes.includes("gift"), codes.join(" "));
+  assert.ok(codes.includes("dismissed") && codes.includes("declined_call"), codes.join(" "));
+  assert.equal(whyText(ko_, "ignored"), "말을 걸어도 대답 없음");
   assert.equal(whyText(ko_, "a_code_from_later"), "그 밖의 변화");
 });
 

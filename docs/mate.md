@@ -844,6 +844,8 @@ message" (each device-originated message carries the screen). `mate.screen.enabl
 archived data and is neither a permission gate nor an extra UI control. `see_screen` is always offered (her prompt's
 "Seeing the screen": look when asked — "내 화면 보여?", "이거 봐" — shared or not; never claim to see the screen
 without a current picture; relay why a look failed), so sharing on/off never changes her prompt key or restarts her.
+A shared screen's picture is only a glance at what they have in front of them, never something they showed her: she
+doesn't describe it or make it the topic, and it reaches her as a `<screen>` block, apart from what the user attached.
 At execution: shared (`CaptureBroker.shared_client(session_id, last_client_device)`), a frame of the share; not
 shared, one look through a desktop app window of that same device (`CaptureBroker.pick`: its chosen source,
 the native approval prompt unless the device allows it). An unknown/other device never supplies a fallback; a

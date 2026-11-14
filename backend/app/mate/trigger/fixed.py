@@ -1,6 +1,21 @@
 """Product-owned event rules. User presets are archived data, not live scheduling inputs."""
 from .policy import GenyPolicy, _category_eligible, _resolve_time_window
-from .schemas import render_prompt
+
+# What each moment is, and only that: whether she speaks up, and about what, is hers (runtime.SPEAK_UP). The screen is
+# only there so she knows what they are up to; it is never the topic.
+FIXED_CONTENT={
+    'screen_observation':'It has gone quiet; they are at their computer (the picture shows what they have in front of them).',
+    'sub_worker_working':'It has gone quiet; a chat you passed work on to is still on it.',
+    'first_idle':'It has gone quiet for a bit.',
+    'continued_idle':'Still quiet: they haven\'t answered what you said last.',
+    'long_idle':'It has been quiet for a long while.',
+    'time':'A new part of the day has begun.',
+}
+
+def moment(key):
+    """The message of a moment with no message from them: what the moment is, nothing about what to say (the time is in her
+    <context>)."""
+    return FIXED_CONTENT.get(key) or FIXED_CONTENT['time']
 
 class FixedPolicy(GenyPolicy):
     def _pick_category_and_prompt(self,sid,is_executing_fn):
@@ -21,12 +36,5 @@ class FixedPolicy(GenyPolicy):
             cooldown=21600 if key.startswith('time_') else 300 if key=='sub_worker_working' else cat.cooldown_seconds
             if now-fires.get(key,-1e12)<cooldown:continue
             fires[key]=now
-            content={
-                'screen_observation':'현재 공유 화면과 최근 대화를 확인하고, 새롭게 도움이 될 내용이 있을 때만 짧게 말을 건다.',
-                'sub_worker_working':'연결된 작업이 진행 중이다. 확인된 진행 상황이 도움이 될 때만 짧게 전한다.',
-                'first_idle':'최근 대화가 잠시 멈췄다. 맥락에 맞게 자연스럽게 말을 건넬 필요가 있는지 판단한다.',
-                'continued_idle':'사용자의 답이 없는 상태다. 반복하거나 재촉하지 말고 필요할 때만 말을 건다.',
-                'long_idle':'오랫동안 답이 없다. 방해하지 않는 것을 우선하고 특별한 이유가 없으면 조용히 있는다.',
-            }.get(key,'현재 시간대와 최근 대화에 맞는 짧은 안부가 필요한지 판단한다.')
-            return render_prompt(cat,content,time_context=self._time_context(self._get_locale())), cat
+            return moment(key), cat
         return None

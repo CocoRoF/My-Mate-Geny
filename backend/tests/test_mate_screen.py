@@ -153,7 +153,8 @@ async def test_see_screen_is_always_offered_and_sharing_never_restarts_her(db, t
         argv, env = launch()
         assert env["HRH_MATE_SCREEN"] == "1"
         rules = _prompt(argv).split("## Seeing the screen")[1]
-        assert "whether or not they share" in rules and "Never claim to see their screen" in rules
+        assert "shared or not" in rules and "Never claim to see their screen" in rules
+        assert "not something they showed you" in rules and "Don't describe it" in rules  # (a share is only a glance)
         pid = _mate_calls(tmp_path)[-1]["pid"]
         # turning sharing on or off changes neither the prompt nor the tools: the engine keeps running
         svc._last_client[msid] = "m1~dev-a"

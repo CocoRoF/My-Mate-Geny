@@ -38,6 +38,8 @@ class Attachment:
     extract_note: str = ""
     # what it is, when that is more than its name (one of several screen pictures: "main screen (the one in use)")
     label: str = ""
+    # a picture of their screen the app sent along (a share, a trigger's look), not a file the user gave
+    screen: bool = False
 
     @property
     def is_image(self) -> bool:
@@ -85,11 +87,27 @@ def _file_attr(v: str) -> str:
     return v.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace("\n", " ")
 
 
+def _screen_note(shots: list[Attachment], *, inline_images: bool) -> str:
+    """The pictures of their screen the app sent along: what they have in front of them, never something they showed."""
+    lines = ["<screen>",
+             "Their screen right now, sent along by the app because they share it: not something they sent you, only so "
+             "you know what they have in front of them. (To hand it to a chat, pass its id like a file's.)"]
+    for a in shots:
+        what = "shown to you" if inline_images else "could not be shown to you"
+        lines.append(f"- [{a.id}] {what}" + (f" — {a.label}" if a.label else ""))
+    lines.append("</screen>")
+    return "\n".join(lines)
+
+
 def inline_note(atts: list[Attachment], *, inline_images: bool) -> str:
     """Manifest for an engine that can't open files (a Mate): ids to forward
-    files with, what each one is, and the readable contents."""
+    files with, what each one is, and the readable contents. Pictures of their
+    screen are told apart (``screen``): the user didn't give those."""
+    shots = [a for a in atts if a.screen]
+    atts = [a for a in atts if not a.screen]
+    screen = _screen_note(shots, inline_images=inline_images) if shots else ""
     if not atts:
-        return ""
+        return screen
     lines = [
         "<attachments>",
         "The user attached these files to this message. You can't open files yourself: images are shown "
@@ -111,14 +129,14 @@ def inline_note(atts: list[Attachment], *, inline_images: bool) -> str:
     for a in atts:
         if a.extracted is not None:
             lines.append(f'<file id="{a.id}" name="{_file_attr(a.name)}">\n{a.extracted}\n</file>')
-    return "\n".join(lines)
+    return "\n".join(lines) + (f"\n{screen}" if screen else "")
 
 
 def compose_text(text: str, atts: list[Attachment], *, inline_images: bool, inline_files: bool = False) -> str:
     note = (inline_note(atts, inline_images=inline_images) if inline_files
             else attachment_note(atts, inline_images=inline_images))
-    body = text.strip() or ("(No message text — see the attached files.)" if atts else "")
-    return f"{body}\n\n{note}" if note else body
+    body = text.strip() or ("(No message text — see the attached files.)" if any(not a.screen for a in atts) else "")
+    return "\n\n".join(x for x in (body, note) if x)
 
 
 def claude_image_block(a: Attachment) -> dict:

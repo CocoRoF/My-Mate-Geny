@@ -76,9 +76,11 @@ def test_daily_values_from_the_log_match_real_time_end_of_day_values():
 
 def test_a_set_value_is_not_a_gain_and_kinds_of_changes():
     r = A.replay(_history(), day(30), TZ)
-    A.set_value(r, 50, day(30, 13), TZ)  # (back to trusted: reached before, lost in the quiet days)
+    A.set_value(r, 30, day(30, 12), TZ)  # (familiar, by hand: the first time)
+    A.set_value(r, 10, day(30, 12, 30), TZ)
+    A.set_value(r, 30, day(30, 13), TZ)  # (back to familiar: reached before)
     s = A.daily(r["log"], day(30).date(), TZ, 7)
-    assert s[-1]["v"] == 50.0 and s[-1]["up"] == 0  # (a value set by hand moves it, but it isn't "earned")
+    assert s[-1]["v"] == 30.0 and s[-1]["up"] == 0  # (a value set by hand moves it, but it isn't "earned")
     ch = A.changes(r)
     # the value set by hand, and the stage it moved to at that moment (shown first: it followed from it)
     assert [(c["why"], c["kind"]) for c in ch[:2]] == [("stage_now", "stage"), ("manual", "manual")]

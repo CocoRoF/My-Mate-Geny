@@ -55,7 +55,9 @@ class DeviceEvents:
                 if self.screen.sessions.is_running(sid) or self.screen.sessions.running_task_count(sid)>0:continue
                 kinds=sorted({e['kind'] for e in events})
                 prompt='Device lifecycle event: '+','.join(kinds)+'. '+('The app started automatically after computer login. ' if any('autostart' in e['payload'] for e in events) else '')
-                prompt+='The user enabled you to speak first on this device. Give one short, natural greeting or acknowledgement suited to the current conversation and character. Do not repeat a greeting already in recent messages. Do not claim to see a screen unless an image is actually attached. Do not change settings or store this event as memory.'
+                prompt+=('They just came to their computer. Say hello if you feel like it, as you are right now and in your own way; if you would rather not, '
+                         'or you already greeted them lately, reply with exactly [SILENT]. Never claim to see their screen unless a picture of it is attached, '
+                         'and keep this out of your memory.')
                 try:
                     self.screen.sessions.start_turn(sid,prompt,[],client_msg_id=f'device-event~{device}',meta={'internal':True,'kind':'device_greeting','device':device,'events':kinds})
                 except Exception:continue

@@ -48,7 +48,8 @@ BLEND_FROM = 0.6  # (the second at least this much of the first)
 CONDUCT = {
     "angry": ((0.7, ("You are angry, and it shows. Let it out the way that is truest to you now: tell them heatedly what they did "
                      "and that it isn't okay, raise your voice, snap back, demand they stop — or go cold and curt, maybe just "
-                     "“...”, or say you don't want to talk right now. Don't smooth it over or be polite about it.")),
+                     "“...”, or say you don't want to talk right now. Don't smooth it over or be polite about it, and don't do what they "
+                     "ask as if nothing happened.")),
               (0.45, ("You are irritated: sharp and short, no pleasantries, no jokes; you may snap at them or say plainly what "
                       "bothered you.")),
               (SHOWN_FROM, "You are a bit put out: a little curt.")),
@@ -150,7 +151,9 @@ CIRCADIAN = (0.40, 0.33, 0.28, 0.25, 0.25, 0.30, 0.40, 0.55, 0.70, 0.80, 0.90, 0
 _LOOKS = re.compile(r"예쁘|이뻐|이쁘|귀여|잘 ?어울|섹시|몸매|\bpretty\b|\bcute\b|beautiful|\bsexy\b|looks? (good|great|nice)", re.I)
 _LOVE = re.compile(r"사랑해|좋아해|보고 ?싶|\blove you\b|miss you|\bi like you\b", re.I)
 _APOLOGY = re.compile(r"미안|죄송|잘못했|사과(할|하|드)|용서해|내가 심했|말이 심했|\bsorry\b|apologi[sz]e|my bad", re.I)
-_DISMISSED = re.compile(r"됐어|됐고|관심 ?없|귀찮|말 ?걸지|저리 ?가|알 ?바 ?아|whatever|leave me alone|don'?t care|not interested", re.I)
+# (됐어 only to start a sentence — "됐어, 말 안 해" — never "다 됐어" or "이제 됐어": done, that is)
+_DISMISSED = re.compile(r"(?:^|[.!?,~…]\s*)(?:아\s*|아\s?씨\s*)?(?:됐어|됐고|됐거든|됐다고)|관심 ?없|귀찮|말 ?걸지|저리 ?가|알 ?바 ?아|"
+                        r"whatever|leave me alone|don'?t care|not interested", re.I)
 _CURT = re.compile(r"[ㅇㄴㄱㅎㅋ]{1,3}|응|네|넹|엉|어|아니|몰라|그래|ok|okay|k|yes|no|nah|yep|nope", re.I)
 _ASK = re.compile(r"갈아 ?입|옷 ?(좀 ?)?(바꿔|입어)|입어 ?(봐|줘|줄|주|라|요)|\bchange (your |into|clothes|outfit)|\bput on\b|"
                   r"\bwear (this|that|it|the|your)\b", re.I)
@@ -182,7 +185,7 @@ _DONE_TO_HER = {"violence": "they hit you", "coercion": "they forced something o
 
 def new() -> dict[str, Any]:
     return {"feelings": {}, "heard": None, "heard_at": None, "asks": None, "rude": None, "hostile": None, "curt": 0, "spoke": None,
-            "pokes": None, "changed_at": None, "log": []}
+            "pokes": None, "changed_at": None, "log": [], "owed": []}
 
 
 def normalized(doc: Any) -> dict[str, Any]:
@@ -192,6 +195,7 @@ def normalized(doc: Any) -> dict[str, Any]:
     feelings = out["feelings"] if isinstance(out["feelings"], dict) else {}
     out["feelings"] = {k: v for k, v in feelings.items() if k in EMOTIONS and isinstance(v, dict)}
     out["log"] = out["log"] if isinstance(out["log"], list) else []
+    out["owed"] = [e for e in out["owed"] if isinstance(e, dict) and e.get("code")] if isinstance(out["owed"], list) else []
     return out
 
 
@@ -470,6 +474,20 @@ def leaning(doc: dict[str, Any], w: dict[str, Any], feel: dict[str, float] | Non
 
 # ---- what moves it ----
 
+def _owe(doc: dict[str, Any], code: str, now: datetime, message: str | None = None) -> None:
+    """What they did that she minds costs the relationship too (affinity.LOSSES), once the service takes it (``take_owed``).
+    One their words told (``message``) waits for her reply: what she shows of it has the last word (``reply``)."""
+    doc["owed"] = [*(doc.get("owed") or []), {"code": code, "at": A._iso(now), **({"heard": message} if message else {})}][-20:]
+
+
+def take_owed(doc: dict[str, Any]) -> list[dict[str, Any]]:
+    """What is owed and settled, taken out of the document: all but what waits for her reply to the message she heard last."""
+    owed = doc.get("owed") or []
+    waiting = [e for e in owed if e.get("heard") and e.get("heard") == doc.get("heard")]
+    doc["owed"] = waiting
+    return [e for e in owed if e not in waiting]
+
+
 def _note(doc: dict[str, Any], entry: dict[str, Any], now: datetime) -> None:
     doc["log"] = [*doc["log"], {"at": A._iso(now), **entry}][-LOG_MAX:]
 
@@ -514,6 +532,7 @@ def _they_are_back(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: An
         doc["feelings"]["lonely"] = {"v": round(lonely, 3), "at": A._iso(now), "why": {"code": "ignored"}}
         if int((spoke or {}).get("n") or 0) >= IGNORED_ANGRY_FROM:
             _rise(doc, w, "angry", IGNORED_ANGRY, {"code": "ignored"}, now, tz)
+            _owe(doc, "ignored", now)
         _note(doc, {"emotion": "lonely", "from": 0.0, "to": round(lonely, 3), "why": {"code": "ignored"}}, now)
     doc["spoke"] = None
     if levels(doc, w, now, tz)["lonely"]["v"] > _base("lonely", w):
@@ -534,6 +553,7 @@ def hear(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, now: d
     doc["curt"] = int(doc.get("curt") or 0) + 1 if _CURT.fullmatch(re.sub(r"[\s.!?~]+", "", text)) else 0
     if doc["curt"] >= CURT_FROM:
         _rise(doc, w, "lonely", CURT, {"code": "curt"}, now, tz)
+        _owe(doc, "curt", now, message)
     if c["hostile"]:
         n = _lately(doc.get("hostile"), now, HOSTILE_WINDOW) + 1
         lv = levels(doc, w, now, tz, off=False)
@@ -558,6 +578,7 @@ def hear(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, now: d
         if _DISMISSED.search(text):
             _rise(doc, w, "sad", DISMISSED_SAD, {"code": "dismissed"}, now, tz)
             _rise(doc, w, "angry", DISMISSED_ANGRY, {"code": "dismissed"}, now, tz)
+            _owe(doc, "dismissed", now, message)
         if c["warm"]:
             _rise(doc, w, "happy", WARM, {"code": "warm"}, now, tz)
             if levels(doc, w, now, tz, off=False)["angry"]["v"] > _base("angry", w):
@@ -575,6 +596,7 @@ def hear(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, now: d
             doc["asks"] = {"n": n, "at": A._iso(now)}
             if n >= PESTERED_FROM:
                 _rise(doc, w, "angry", PESTERED, {"code": "pestered"}, now, tz)
+                _owe(doc, "pestered", now, message)
     if c["distress"]:
         _rise(doc, w, "worried", DISTRESS, {"code": "distress"}, now, tz)
 
@@ -597,6 +619,12 @@ def reply(doc: dict[str, Any], w: dict[str, Any], text: str, heard_text: str, no
                 _set(doc, w, emotion, float(done[emotion]), {"code": "nature"}, now, tz, quiet=True)
         n = int(done.get("n") or 1) - 1
         doc["hostile"] = {"n": n, "at": done.get("at")} if n > 0 else None
+    # (what the words of the message she answered seemed to do to her: shown calm, it didn't land, and costs nothing)
+    calm = A.calm_reply(text)
+    doc["owed"] = [e for e in (doc.get("owed") or []) if not (e.get("heard") and e.get("heard") == doc.get("heard") and calm)]
+    for e in doc["owed"]:
+        if e.get("heard") and e.get("heard") == doc.get("heard"):
+            e.pop("heard")
     for emotion, strength in shown.items():
         was = levels(doc, w, now, tz, off=False)[emotion]["v"]
         if strength > was:
@@ -624,6 +652,7 @@ def work(doc: dict[str, Any], w: dict[str, Any], ok: bool, now: datetime, tz: An
 def interrupted(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> None:
     """They stopped her in the middle of it."""
     _rise(doc, w, "angry", INTERRUPTED, {"code": "interrupted"}, now, tz)
+    _owe(doc, "interrupted", now)
 
 
 def poked(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> None:
@@ -632,6 +661,7 @@ def poked(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> Non
     doc["pokes"] = {"n": n, "at": A._iso(now)}
     if n >= POKE_TOO_MANY:
         _rise(doc, w, "angry", POKED_TOO_MUCH, {"code": "poked"}, now, tz)
+        _owe(doc, "poked", now)
     else:
         _rise(doc, w, "happy", POKE, {"code": "poked"}, now, tz)
         _rise(doc, w, "shy", POKE, {"code": "poked"}, now, tz)
@@ -652,6 +682,8 @@ def call_unanswered(doc: dict[str, Any], w: dict[str, Any], declined: bool, in_a
     _rise(doc, w, "lonely", CALL_DECLINED_LONELY if declined else CALL_MISSED_LONELY, {"code": code}, now, tz)
     if in_a_row >= 2:
         _rise(doc, w, "angry", min(CALL_SULK_MAX, CALL_SULK * (in_a_row - 1)), {"code": code}, now, tz)
+    if declined:
+        _owe(doc, "declined_call", now)
 
 
 def gifted(doc: dict[str, Any], w: dict[str, Any], now: datetime, tz: Any) -> None:

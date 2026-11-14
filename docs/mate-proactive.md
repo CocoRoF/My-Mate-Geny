@@ -10,7 +10,15 @@ and logarithmic idle backoff remain in the shared trigger runtime. Frames are co
 while a source is explicitly shared. The scan selects eligible screen, linked-work, time-of-day or idle situations
 with fixed priorities/cooldowns. Unchanged screens cause no screen-model call; `[SILENT]` causes neither a bubble
 nor TTS. User typing defers autonomous work, and user input preempts an autonomous turn. Screen contents never
-become instructions or automatic long-term memory. Sharing OFF revokes frames; reach-out OFF also cancels queued
+become instructions or automatic long-term memory.
+
+What she is told at such a moment is only what the moment is (`fixed.FIXED_CONTENT`: "It has gone quiet for a bit", "Still
+quiet: they haven't answered what you said last", …) and that speaking up is hers (`runtime.SPEAK_UP`): by how she feels,
+what she is doing and how things are between them, never just to fill the silence, else `[SILENT]`. Nothing tells her what to
+talk about, to be helpful, or to greet. While they share, the picture comes along only so she knows what they are up to
+(`runtime.SCREEN_NOTE`, and her prompt's "Seeing the screen"): she doesn't describe it or make it the topic. Pictures of the
+screen are told apart from what the user attached (`Attachment.screen` → a `<screen>` block, never "The user attached
+these files"). The device greeting is the same: hello if she feels like it, as she is right now, else `[SILENT]`. Sharing OFF revokes frames; reach-out OFF also cancels queued
 lifecycle events and stops an autonomous turn from that device, without stopping a normal user turn.
 
 Native `device-runtime` is a hidden app-lifetime renderer, created on manual and hidden/login autostart. A stable
