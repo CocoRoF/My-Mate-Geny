@@ -79,7 +79,7 @@ def check(engine_mode: str = "real", device: str = "cuda:0") -> Gate:
             v = ".".join(map(str, have))
             return Gate(False, "old_os", f"macOS {v} is too old for the engines: they need macOS "
                                          f"{'.'.join(map(str, MIN_MACOS))} or newer.", detail={"os": v})
-        gpu = system.gpus(max_age=0.0)[0]
+        gpu = (system.gpus(max_age=0.0) or [system.apple_gpu()])[0]
         if gpu.total < MIN_UNIFIED:
             return Gate(False, "small_gpu", f"{gpu.name} has {gpu.total / system.GiB:.0f} GB of memory; local voice "
                                             f"models need at least {MIN_UNIFIED / system.GiB:.0f} GB.", gpu,

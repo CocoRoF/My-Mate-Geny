@@ -18,19 +18,28 @@ copied and adapted into the app (THIRD-PARTY-NOTICES.md).
 
 ## Who can run it
 
-The engines are torch 2.8 built for CUDA 12.8. Anything short of what they need is refused before a download starts —
-the models list still shows what could be had, and the card says why not (`app/voicehost/gate.py`, checked in this
-order, `GET /api/voice/status` → `gate.code`):
+A server, or the desktop app's **local mode** (the app's own backend, on the computer it runs on): the same code and
+the same Voice Studio either way, on that machine's own GPU. The engines are torch 2.8 —
+
+| Platform | GPU | Engine environments |
+|---|---|---|
+| Linux x86-64 | NVIDIA, CUDA 12.8 | `runtimes/<name>.txt` (benchmarked on an RTX 5070) |
+| Windows x86-64 | NVIDIA, CUDA 12.8 | `runtimes/<name>.windows-x86_64.txt`: the same pins without the Linux-only CUDA wheels (`nvidia-*`, `triton`: torch for Windows carries its CUDA libraries), plus `colorama` / `win32-setctime` |
+| macOS on Apple Silicon | the Mac's GPU through Metal (`mps`), in its unified memory | `runtimes/<name>.macos-arm64.txt`: the same pins with PyPI's torch; macOS 14+ |
+
+Anything short of what they need is refused before a download starts — the models list still shows what could be had,
+and the card says why not (`app/voicehost/gate.py`, checked in this order, `GET /api/voice/status` → `gate.code`):
 
 | Code | Refused when | |
 |---|---|---|
 | `off` | `VOICE_ENGINE_MODE=off` | switched off by the admin |
-| `platform` | not Linux x86-64 | the lock files are for Linux (Windows needs its own: triton and friends; macOS has no CUDA) |
+| `platform` | not one of the three above | an Intel Mac (no torch for it any more), Windows / Linux on ARM |
+| `old_os` | macOS < 14 | MPS with bf16, and the onnxruntime the engines pin |
 | `gpu_not_passed` | in a container that sees no NVIDIA device | the host has none, or it wasn't given to the container: [`deploy/docker-compose.gpu.yml`](../deploy/docker-compose.gpu.yml) |
 | `no_gpu` | no NVIDIA GPU / `nvidia-smi` | |
 | `old_driver` | driver < 570 | CUDA 12.8 |
 | `old_gpu` | compute capability < 7.0 | the wheels carry sm_70 – sm_120 (Volta … Blackwell) |
-| `small_gpu` | GPU memory < 4 GB | the smallest useful set (Whisper + OmniVoice) with headroom |
+| `small_gpu` | GPU memory < 4 GB (a Mac: < 8 GB of memory) | the smallest useful set (Whisper + OmniVoice) with headroom |
 | `python` | the backend isn't CPython 3.12 | the engines' environments are made from its interpreter (the Docker image has 3.12; without Docker, run the backend on 3.12) |
 | `packages` | the server lacks numpy, soundfile, soxr or huggingface_hub | part of the backend's dependencies; checked last, so a machine without a GPU says that |
 
@@ -41,8 +50,15 @@ the mate engine `local` is "not available" with that reason (her voice falls bac
 `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`. The engines and models then go into the
 `geny-home` volume (`<data home>/voice`), so they survive rebuilds.
 
-**Desktop**: the same code runs in the desktop app's local backend; on Linux with a suitable GPU it works as on a
-server, on Windows and macOS the gate says `platform` for now.
+**Desktop (local mode)**: the bundled CPython 3.12 has everything the backend needs (uv included: it makes the engine
+environments); a desktop has no ffmpeg, so nothing needs it — MP3 is written by libsndfile (the soundfile wheels bundle
+1.2), and a browser recording (WebM) or another format the server can't read (M4A, a video's sound) is decoded in the
+page and sent as WAV. On Windows no probe or worker opens a console window, and a worker gets 3 minutes to start (the
+virus scanner reads torch's DLLs on the first start after an install). On a Mac the engines run on Metal in bf16, Whisper in
+fp16 (`GENY_VOICE_DTYPE` for another), the few ops Metal lacks fall back to the CPU (`PYTORCH_ENABLE_MPS_FALLBACK`), the
+models may take 60 % of the machine's memory by default and are never parked (the same memory either way); Voice
+Studio's overview shows the GPU as unified memory, what this app's workers hold (each measures itself: no driver lists
+per-process memory there — nor does Windows' WDDM mode), and the rest as other programs and the system.
 
 ## Models
 
@@ -214,13 +230,21 @@ OmniVoice spoke in 메스가키's joy clip at 0.18, and Whisper heard the line b
 
 ## Not yet
 
-- **Windows / macOS** local mode (`platform`): needs per-OS lock files (Windows CUDA wheels; macOS would need MPS
-  engines).
+- **GPU telemetry on a Mac**: load, temperature and power need `powermetrics` (root): the overview shows memory only.
+- **AMD / Intel GPUs** (ROCm, DirectML, XPU): no lock files for them.
 - **A GPU elsewhere**: a server without a GPU can't use another machine's GPU for these models yet (a remote voice
   node). Until then: run My Mate Geny on the GPU machine, or point the mate at an HTTP service (OmniVoice URL / Whisper
   URL in 이미지 및 음성 공급자 → 직접 호스팅한 음성 서비스).
 
 ## Tests
+
+`backend/tests/test_voice_local.py`: the gate on Windows and on Apple Silicon (and what it refuses), a Mac's defaults,
+each platform's lock with the benchmarked pins (and the CUDA index only for CUDA builds), MP3 without ffmpeg, the GPU's
+owners where the driver can't say, a setting back to the server's own value. **For real** on Windows and macOS:
+`.github/workflows/voice-local.yml` installs each engine environment from that platform's lock and makes it speak and
+hear through the service (`backend/tools/voice_smoke.py`; those runners have no NVIDIA GPU, so the CPU there — or
+Metal on the Mac when the runner offers it). The same script runs on any machine:
+`python tools/voice_smoke.py --home /tmp/voice-smoke --model omnivoice --model whisper-large-v3-turbo`.
 
 `backend/tests/test_voice_studio.py` (the same stand-in engine): generate and the history (search, ★, limits, ★ kept),
 save as a clip, duplicate and trim, the feelings' chains, settings, the overview's attribution (ours / others /

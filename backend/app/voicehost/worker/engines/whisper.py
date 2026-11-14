@@ -22,7 +22,7 @@ class WhisperEngine(Engine):
         from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
 
         # fp16 is Whisper's native inference precision; bf16 costs accuracy on some GPUs for no speed gain.
-        self.dtype = torch.float16 if self.dev.is_cuda else torch.float32
+        self.dtype = torch.float16 if self.dev.is_cuda or self.dev.device == "mps" else torch.float32
         self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
             str(self.model_dir), dtype=self.dtype, low_cpu_mem_usage=True, attn_implementation="sdpa"
         ).to(self.dev.device)
