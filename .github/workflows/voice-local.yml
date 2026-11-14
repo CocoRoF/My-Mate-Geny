@@ -35,9 +35,10 @@ jobs:
       matrix:
         os: [windows-latest, macos-15]
         set:
-          - { name: omni, models: "--model omnivoice" }
+          # (each with Whisper: every line is heard back and must say what it was asked to)
+          - { name: omni, models: "--model omnivoice --model whisper-large-v3-turbo" }
           - { name: qwen, models: "--model qwen3-tts-0.6b-base --model whisper-large-v3-turbo" }
-          - { name: cosy, models: "--model cosyvoice3-0.5b" }
+          - { name: cosy, models: "--model cosyvoice3-0.5b --model whisper-large-v3-turbo" }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 100
     defaults:

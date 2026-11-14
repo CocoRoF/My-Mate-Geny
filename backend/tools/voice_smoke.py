@@ -26,6 +26,23 @@ def _say(*a: object) -> None:
     print(*a, flush=True)
 
 
+def cer(heard: str, want: str) -> float:
+    """character error rate, letters and digits only (spacing and punctuation differ between engines)"""
+    a = [c for c in heard if c.isalnum()]
+    b = [c for c in want if c.isalnum()]
+    if not b:
+        return 0.0
+    row = list(range(len(a) + 1))
+    for i, cb in enumerate(b, 1):
+        prev, row[0] = row[0], i
+        for j, ca in enumerate(a, 1):
+            prev, row[j] = row[j], min(row[j] + 1, row[j - 1] + 1, prev + (ca != cb))
+    return row[len(a)] / len(b)
+
+
+MAX_CER = 0.35  # (numbers and spelling come out differently now and then; a line that isn't speech is far above)
+
+
 async def main(args: argparse.Namespace) -> int:
     import numpy as np
     import soundfile as sf
@@ -79,7 +96,7 @@ async def main(args: argparse.Namespace) -> int:
                 continue
             _say(f"installed {mid} in {time.monotonic() - t0:.0f}s (lock {h.installer.lock_path(RUNTIME_OF[spec.engine]).name})")
 
-        spoken: bytes | None = None
+        spoken: list[tuple[str, bytes, str]] = []  # (who said it, the audio, what it should say)
         for mid in [m for m in args.model if catalog.BY_ID[m].kind == "tts" and f"install {m}" not in failed]:
             t0 = time.monotonic()
             try:
@@ -97,23 +114,30 @@ async def main(args: argparse.Namespace) -> int:
                  f"(RTF {e['rtf']}) on {dev} · wall {time.monotonic() - t0:.0f}s")
             if len(x) / sr < 1.0 or rms < 0.005:
                 failed.append(f"speech {mid}: {len(x) / sr:.2f}s rms {rms:.4f}")
-            spoken = spoken or data
+            spoken.append((mid, data, LINE))
             await h.engines.unload(mid)  # (one model at a time: a CI machine's memory is small)
 
+        # every line heard back: it must say what it was asked to (and Whisper must hear a built-in voice's clip)
+        import json
+
+        voice = Path(__file__).resolve().parents[1] / "app/mate/builtin/voices/chaerin"
+        joy = json.loads((voice / "voice.json").read_text(encoding="utf-8"))["emotions"]["joy"]
+        clips = [("built-in clip (joy)", (voice / joy["ref"]).read_bytes(), joy["text"]), *spoken]
         for mid in [m for m in args.model if catalog.BY_ID[m].kind == "stt" and f"install {m}" not in failed]:
-            if spoken is None:  # (no speech model here: a built-in voice's clip)
-                spoken = (Path(__file__).resolve().parents[1] / "app/mate/builtin/voices/chaerin/joy.wav").read_bytes()
-            t0 = time.monotonic()
-            try:
-                r = await h.transcribe(spoken, language="ko", model_id=mid, source="smoke")
-            except Exception as x:  # noqa: BLE001
-                _say(f"HEAR FAILED {mid}: {x}")
-                failed.append(f"hear {mid}")
-                continue
-            dev = next((x["device"] for x in h.engines.status() if x["model_id"] == mid), {})
-            _say(f"heard with {mid} in {time.monotonic() - t0:.0f}s on {dev}: {r['text']!r} ({r.get('language')})")
-            if not r["text"].strip():
-                failed.append(f"hear {mid}: nothing")
+            for who, data, want in clips:
+                t0 = time.monotonic()
+                try:
+                    r = await h.transcribe(data, language="ko", model_id=mid, source="smoke")
+                except Exception as x:  # noqa: BLE001
+                    _say(f"HEAR FAILED {mid} ({who}): {x}")
+                    failed.append(f"hear {mid}")
+                    break
+                dev = next((x["device"] for x in h.engines.status() if x["model_id"] == mid), {})
+                err = cer(r["text"], want)
+                _say(f"heard {who} with {mid} in {time.monotonic() - t0:.0f}s on {dev.get('device')}/{dev.get('dtype')}: "
+                     f"{r['text'][:120]!r} — CER {err:.2f}")
+                if err > MAX_CER:
+                    failed.append(f"{who}: heard {r['text'][:60]!r} (CER {err:.2f})")
     finally:
         await h.stop()
     _say("RESULT: " + ("ok" if not failed else "FAILED — " + "; ".join(failed)))
