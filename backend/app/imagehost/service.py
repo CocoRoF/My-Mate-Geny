@@ -35,6 +35,16 @@ from .store import ImageStore
 
 log = logging.getLogger("app.imagehost")
 
+#: a model file that failed to load once — ComfyUI's fast loader (comfy_aimdo) reads it straight to the GPU, and a read
+#: can fail while the disk is busy (another model being downloaded): the same job right after runs fine, so it is run
+#: once more before it counts as failed
+TRANSIENT = ("hostbuf_file_reader_read failed", "HostBuffer allocation failed", "HostBuffer.read_file_slice failed")
+RETRY_AFTER = 2.0
+
+
+def transient(e: Exception) -> bool:
+    return isinstance(e, ComfyError) and e.kind == "failed" and any(t in str(e) for t in TRANSIENT)
+
 KINDS = ("draft", "edit", "loop", "cutout", "matte")
 USE_OF = {"draft": "draft", "edit": "edit", "loop": "loop", "cutout": "cutout", "matte": "cutout"}
 # the avatar maker's stages and the use each needs here
@@ -457,7 +467,14 @@ class ImageHost:
             m = catalog.get(job["model_id"])
             if isinstance(self.engine, ComfyEngine):
                 await self._room(m)
-            params, extra = await self._execute(job, m)
+            try:
+                params, extra = await self._execute(job, m)
+            except ComfyError as e:
+                if not transient(e) or jid in self._canceled:
+                    raise
+                log.warning("image job %s: %s — running it once more", jid, e)
+                await asyncio.sleep(RETRY_AFTER)
+                params, extra = await self._execute(job, m)
             if jid in self._canceled:
                 raise Canceled()
             self.store.update_job(jid, state="done", outputs=_files(self.s.history_dir / jid), seconds=round(time.time() - t0, 1),

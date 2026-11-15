@@ -108,6 +108,9 @@ ComfyUI logs that they are missing and runs.
   - Each job is recorded in `image_jobs`: what was asked, the model, for whom, how long it took, what it made.
   - Its files are in `<image home>/history/<job id>/`, inputs as `in-*`.
   - A restart marks unfinished jobs failed; their caller asks again.
+  - A model file that fails to read once — ComfyUI's fast loader (comfy_aimdo) reads it straight to the GPU, and a
+    read failed once on the live server while another model was being downloaded to the same disk — runs the job
+    once more before it counts as failed (`hostbuf_file_reader_read failed` and the like; any other error fails at once).
 - **Sharing the GPU with the voice models:**
   - Before a job, idle voice models step aside until the job's measured peak, less the room for speech, is free:
     parked when the host has RAM for them, else stopped. A model a phone call holds stays.
@@ -123,7 +126,7 @@ official template's settings.
 | Kind | Graph | Finishing (`media.py`) |
 |---|---|---|
 | `draft` | Anima: text encoder through `CLIPLoader` type `stable_diffusion`. The model card's prefix (`masterpiece, best quality, score_7, safe,`) and negative. `er_sde` sampler; Turbo 10 steps CFG 1, base 30 steps CFG 5 | none |
-| `edit` | FLUX.2 Klein (distilled): the picture scaled to about 1 MP is the `ReferenceLatent` of both the prompt and the empty negative. Up to 3 more pictures are chained on as references. 4 steps, CFG 1, euler | **colour match**: the edit at the original's size, its colours fitted per channel to the original's where the edit left it alone. Without it, the face put back by the avatar's stills step would show a darker patch |
+| `edit` | FLUX.2 Klein (distilled): the picture scaled to about 1 MP is the `ReferenceLatent` of both the prompt and the empty negative. Up to 3 more pictures are chained on as references. 4 steps, CFG 1, euler | **colour match**: the edit at the original's size, its colours fitted per channel to the original's where the edit left it alone — only the pixels that still look the same (summed RGB difference ≤ 48), a gentle slope (0.9–1.1) only where those pixels span enough tones, else just an offset (±25). An edit that redrew the picture (less than 30% left alone: a new pose, a photo turned into a drawing) is kept as it came. Without the fit, the face put back by the avatar's stills step would show a darker patch; with a looser one (measured on the live server, 2026-11-16) a new pose or a chain of edits came out flattened, blacks lifted by 40 |
 | `loop` | Wan 2.2 Fun InP 5B, `WanFunInpaintToVideo` with the base picture first and last. Shift 8, 20 steps, CFG 6, `uni_pc`, 24 fps, 4k+1 frames. **Frames saved as pictures** | **the loop** (below) |
 | `cutout` | `LoadBackgroundRemovalModel` → `RemoveBackground` → the mask | the cut-out: the picture with the mask as its alpha (only the alpha comes from the model) |
 | `matte` | `LoadVideo` → `GetVideoComponents` → `RemoveBackground` on every frame | the subject on black, the same file a hosted video background remover returns |

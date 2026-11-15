@@ -138,6 +138,25 @@ def test_the_colour_fit_finds_a_decoders_drift():
     assert np.abs(media.apply_colour(drifted, a, b) - ref).mean() < 0.5
 
 
+def test_an_edits_colours_are_fitted_only_where_it_left_the_picture_alone(tmp_path):
+    rng = np.random.default_rng(2)
+    orig = rng.uniform(20, 230, (96, 96, 3)).astype(np.float32)
+    Image.fromarray(orig.astype(np.uint8)).save(tmp_path / "orig.png")
+    # an expression: a corner changed, the rest drifted a little by the decoder → the drift comes back off
+    ed = (orig - 9) / 1.02
+    ed[:30, :30] = rng.uniform(20, 230, (30, 30, 3))
+    Image.fromarray(np.clip(ed, 0, 255).astype(np.uint8)).save(tmp_path / "ed.png")
+    r = media.cmd_match({"image": str(tmp_path / "ed.png"), "original": str(tmp_path / "orig.png"), "out": str(tmp_path / "a.png")})
+    out = np.asarray(Image.open(tmp_path / "a.png")).astype(np.float32)
+    assert r["colour"] and r["left_alone"] > 0.8 and np.abs(out[40:, 40:] - orig[40:, 40:]).mean() < 1.5
+    # a new pose / a redraw: nothing corresponds, so nothing is fitted (no flattened, lifted picture)
+    other = rng.uniform(0, 255, (96, 96, 3)).astype(np.uint8)
+    Image.fromarray(other).save(tmp_path / "redrawn.png")
+    r = media.cmd_match({"image": str(tmp_path / "redrawn.png"), "original": str(tmp_path / "orig.png"), "out": str(tmp_path / "b.png")})
+    assert r["colour"] is None and r["left_alone"] < 0.3
+    assert np.array_equal(np.asarray(Image.open(tmp_path / "b.png")), other)
+
+
 @pytest.mark.skipif(not CAN_ENCODE, reason="no video encoder here")
 def test_a_loops_ends_are_the_base_picture(tmp_path):
     base = base_picture(tmp_path / "base.png", 128)
@@ -238,6 +257,35 @@ async def test_a_loop_and_its_matte(ih, tmp_path):
     assert m["state"] == "done", m["error"]
     frames, _ = media.read_video(ih.job_file(m["id"], "nobg.mp4"))
     assert frames[0][5, 5].sum() < 30 and frames[0][200, 128].sum() < 200  # (the gray gone, her kept)
+
+
+async def test_a_model_file_that_fails_to_load_once_is_read_again(ih, monkeypatch):
+    """ComfyUI's fast loader can fail a read while the disk is busy: the job runs once more; a real failure stays one"""
+    from app.imagehost import service as S
+    from app.imagehost.comfy import ComfyError
+
+    await installed(ih, "anima-turbo")
+    monkeypatch.setattr(S, "RETRY_AFTER", 0.0)
+    real, calls = ih.engine.draft, []
+
+    async def flaky(m, **kw):
+        calls.append(1)
+        if len(calls) == 1:
+            raise ComfyError("hostbuf_file_reader_read failed")
+        return await real(m, **kw)
+
+    monkeypatch.setattr(ih.engine, "draft", flaky)
+    j = await ih.run("draft", inputs={"prompt": "1girl, solo"})
+    assert j["state"] == "done" and len(calls) == 2
+
+    async def broken(m, **kw):
+        calls.append(1)
+        raise ComfyError("CUDA error: an illegal memory access")
+
+    monkeypatch.setattr(ih.engine, "draft", broken)
+    calls.clear()
+    j = await ih.run("draft", inputs={"prompt": "1girl, solo"})
+    assert j["state"] == "failed" and len(calls) == 1 and "illegal memory access" in j["error"]
 
 
 async def test_a_queued_job_can_be_canceled(ih, tmp_path):
