@@ -111,6 +111,10 @@ chat, keeps an eye on it and tells you how it went.
   built-in 한채린 and 메스가키 voices, or your own). **Voice Studio** shows what is on the GPU and for
   whom, and makes lines, batches and voice profiles, with a history of everything made. Refused on a
   machine without a suitable GPU ([docs/local-voice.md](docs/local-voice.md)).
+- **Local image models, built in**: **Image Studio** downloads picture and clip models (each after you
+  accept its license) and runs them on the same GPU with ComfyUI — character drafts, a picture changed
+  by words, loops that start and end on a picture, cut-outs. The avatar maker can then run any stage on
+  your own GPU for 0 credits instead of Higgsfield ([docs/local-image.md](docs/local-image.md)).
 - **Delegation**: she can list and read your chats, start a chat in the right folder, send
   instructions to a running one, and gets each result back to report on.
 - **Memory**: things she should remember (she can add them herself; you can edit them).

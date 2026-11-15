@@ -164,6 +164,14 @@ Buttons: **Confirm · N credits**, **Change plan**, **Cancel**.
   always an extra.
 - The run hitting the cap stops at a `cap` checkpoint with an extra for what is left.
 
+**On this computer instead** ([local-image.md](local-image.md#the-avatar-maker)): any stage whose model is installed
+in Image Studio can run on this machine's GPU — the estimate shows **어디서** per line (이 컴퓨터 / Higgsfield, a switch
+where both can: `POST /api/avatar/projects/{id}/engines {engines: {stage: "local" | "higgsfield"}}` → a new
+estimate). A local line is `local:<kind>`, 0 credits, never quoted, its time measured; it passes the same gate and is
+recorded and retried like a hosted job, and makes the same file, so the processing after it is unchanged. A plan
+with no hosted line needs no Higgsfield account and its prices don't age. Image Studio → 설정 says where each stage
+starts.
+
 Higgsfield jobs are run by the server with the official CLI and an **access-only** credentials file written per call
 under the project (`.hf/<random>/`, 0600, removed right after; no refresh token, so the CLI can never rotate the
 login — docs/higgsfield.md). No purchase call exists anywhere.

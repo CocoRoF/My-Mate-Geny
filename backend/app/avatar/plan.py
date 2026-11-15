@@ -3,7 +3,8 @@
 Pure functions over the project document (no I/O), so the rules are tested on their own:
 
 * :func:`jobs_for` — the jobs a brief needs, stage by stage (model, params, count), exactly the jobs the runner
-  submits later (``params`` are the ones quoted: the same model + settings cost the same).
+  submits later (``params`` are the ones quoted: the same model + settings cost the same). A stage the user runs on
+  this machine's GPU instead (Image Studio: ``local:*``) costs 0 credits and is not quoted.
 * :func:`price` — per-job quotes (``POST /jobs/{jt}/cost``: free) → item credits, stage subtotals, total, the reserve
   for redos and the hard cap.
 * the gate — nothing that spends credits runs without a confirmation the USER made (``confirm``: the plan id and its
@@ -35,6 +36,13 @@ CLIP_JOB = "kling_o3_flf"
 MATTE_JOB = "video_background_remover"
 
 STAGES = ("design", "home", "stills", "clips", "matte")
+#: a stage the user runs on this machine's GPU (Image Studio, app/imagehost): no credits, no quote
+LOCAL = {"design": "local:design", "home": "local:cutout", "stills": "local:edit", "clips": "local:loop",
+         "matte": "local:matte"}
+#: minutes per local job, measured on a 12 GB RTX 5070 (docs/local-image.md "Measured"), one at a time, plus reading
+#: the stage's model from disk once
+LOCAL_MINUTES = {"design": 0.3, "home": 0.3, "stills": 1.2, "clips": 6.0, "matte": 1.2}
+LOCAL_LOAD_MIN = 1.5
 #: rough minutes per job when running (seen on the official mates: stills ~40 s, Kling pro ~4 min, the
 #: video remover ~1.3 min, our own matte+encode ~1 min per 1440px clip) and how many run at once
 MINUTES = {"design": (1.5, 4), "home": (1.0, 1), "stills": (0.8, 3), "clips": (4.0, 2), "matte": (1.4, 1)}
@@ -73,22 +81,33 @@ def clip_share(clip: dict[str, Any]) -> float:
     return P.clip_seconds(clip) / P.CLIP_SECONDS
 
 
-def jobs_for(brief: dict[str, Any]) -> list[dict[str, Any]]:
-    """The plan's lines: one per stage and job kind, with the count."""
+def is_local(job_type: str) -> bool:
+    return str(job_type).startswith("local:")
+
+
+def job_type(stage: str, engines: dict[str, Any] | None, hosted: str) -> str:
+    """the job a stage runs: on this machine when the user chose it for that stage, else the hosted one"""
+    return LOCAL[stage] if (engines or {}).get(stage) == "local" else hosted
+
+
+def jobs_for(brief: dict[str, Any], engines: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """The plan's lines: one per stage and job kind, with the count (``engines``: stage → "local" | "higgsfield")."""
     out: list[dict[str, Any]] = []
     ref = brief["reference"]["mode"]
+
+    def line(key: str, hosted: str, params: dict[str, Any], **kw: Any) -> dict[str, Any]:
+        jt = job_type(key, engines, hosted)
+        return {"key": key, "stage": key, "job_type": jt, "params": {} if is_local(jt) else params, **kw}
+
     if ref != "as_base":
-        out.append({"key": "design", "stage": "design", "job_type": IMAGE_JOB, "params": dict(IMAGE_PARAMS),
-                    "count": brief["candidates"], "what": "candidates"})
-    out.append({"key": "home", "stage": "home", "job_type": CUTOUT_JOB, "params": {}, "count": 1, "what": "cutout"})
+        out.append(line("design", IMAGE_JOB, dict(IMAGE_PARAMS), count=brief["candidates"], what="candidates"))
+    out.append(line("home", CUTOUT_JOB, {}, count=1, what="cutout"))
     if brief["stills"]:
-        out.append({"key": "stills", "stage": "stills", "job_type": IMAGE_JOB, "params": dict(IMAGE_PARAMS),
-                    "count": len(brief["stills"]), "what": "stills"})
+        out.append(line("stills", IMAGE_JOB, dict(IMAGE_PARAMS), count=len(brief["stills"]), what="stills"))
     n = len(brief["clips"])
-    out.append({"key": "clips", "stage": "clips", "job_type": CLIP_JOB, "params": clip_params(brief), "count": n,
-                "what": "clips", "seconds": sum(P.clip_seconds(c) for c in brief["clips"])})
-    out.append({"key": "matte", "stage": "matte", "job_type": MATTE_JOB, "params": {}, "count": n,
-                "what": "mattes"})
+    out.append(line("clips", CLIP_JOB, clip_params(brief), count=n, what="clips",
+                    seconds=sum(P.clip_seconds(c) for c in brief["clips"])))
+    out.append(line("matte", MATTE_JOB, {}, count=n, what="mattes"))
     return out
 
 
@@ -97,9 +116,12 @@ def quote_key(job_type: str, params: dict[str, Any]) -> str:
 
 
 def quote_requests(jobs: list[dict[str, Any]]) -> list[tuple[str, str, dict[str, Any]]]:
-    """The distinct (key, job_type, params) to quote — the same model + settings are quoted once."""
+    """The distinct (key, job_type, params) to quote — the same model + settings are quoted once; a local job costs
+    nothing and is never quoted."""
     seen: dict[str, tuple[str, str, dict[str, Any]]] = {}
     for j in jobs:
+        if is_local(j["job_type"]):
+            continue
         k = quote_key(j["job_type"], j["params"])
         seen.setdefault(k, (k, j["job_type"], j["params"]))
     return list(seen.values())
@@ -108,21 +130,27 @@ def quote_requests(jobs: list[dict[str, Any]]) -> list[tuple[str, str, dict[str,
 def minutes(jobs: list[dict[str, Any]]) -> float:
     total = 0.0
     for j in jobs:
-        per, par = MINUTES.get(j["stage"], (1.0, 1))
-        total += math.ceil(j["count"] / par) * per
+        if is_local(j["job_type"]):  # (one GPU: one job at a time)
+            per = LOCAL_MINUTES.get(j["stage"], 1.0)
+            if j["stage"] == "clips":
+                per = per * (j.get("seconds", j["count"] * P.CLIP_SECONDS) / max(1, j["count"])) / P.CLIP_SECONDS
+            total += LOCAL_LOAD_MIN + j["count"] * per
+        else:
+            per, par = MINUTES.get(j["stage"], (1.0, 1))
+            total += math.ceil(j["count"] / par) * per
         if j["stage"] == "matte":
             total += j["count"] * PROCESS_MIN_PER_CLIP
     return round(total, 1)
 
 
 def price(brief: dict[str, Any], quotes: dict[str, Any], *, balance: float | None = None,
-          credit_usd: float | None = None) -> dict[str, Any]:
+          credit_usd: float | None = None, engines: dict[str, Any] | None = None) -> dict[str, Any]:
     """A plan from the brief and the quotes (``quotes[key]`` = credits per job, or ``{"error": text}``)."""
-    jobs = jobs_for(brief)
+    jobs = jobs_for(brief, engines)
     lines, errors = [], []
     total = 0.0
     for j in jobs:
-        q = quotes.get(quote_key(j["job_type"], j["params"]))
+        q = 0.0 if is_local(j["job_type"]) else quotes.get(quote_key(j["job_type"], j["params"]))
         unit = q if isinstance(q, (int, float)) and not isinstance(q, bool) else None
         # (clips: each as long as its action, the quote is for one of CLIP_SECONDS)
         times = j["seconds"] / P.CLIP_SECONDS if "seconds" in j else j["count"]
@@ -151,6 +179,7 @@ def price(brief: dict[str, Any], quotes: dict[str, Any], *, balance: float | Non
         "credit_usd": credit_usd,
         "usd": round(total * credit_usd, 2) if credit_usd else None,
         "balance_after": round(balance - total, 4) if isinstance(balance, (int, float)) and not errors else None,
+        "engines": {j["stage"]: "local" if is_local(j["job_type"]) else "higgsfield" for j in jobs},
         "counts": {"candidates": brief["candidates"] if brief["reference"]["mode"] != "as_base" else 0,
                    "stills": len(brief["stills"]), "clips": len(brief["clips"])},
         "settings": {"aspect": brief["aspect"], "tier": brief["tier"], "preset": brief["preset"],
@@ -200,7 +229,8 @@ def confirm(doc: dict[str, Any], plan_id: Any, total: Any, *, now: datetime | No
     if abs(t - float(plan["total"])) > 1e-6:
         raise GateError("total_mismatch", f"the confirmed total ({t:g}) is not the plan's ({plan['total']:g})")
     quoted = _parse(plan.get("quoted_at"))
-    if quoted is None or (now or _now()) - quoted > QUOTE_TTL:
+    hosted = any(not is_local(ln["job_type"]) for ln in plan.get("lines") or [])  # (a local plan has no prices to age)
+    if hosted and (quoted is None or (now or _now()) - quoted > QUOTE_TTL):
         raise GateError("stale_quote", "the prices are older than 30 minutes — estimate again first")
     return {"plan_id": plan["id"], "total": plan["total"], "cap": plan["cap"], "at": _iso(now)}
 

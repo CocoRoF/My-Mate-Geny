@@ -93,6 +93,21 @@ test("a clip drawn but not matted yet is finishing; a failed matte fails it", ()
   assert.equal(tiles["clip:talk_a"].state, "failed");
 });
 
+test("a local job waiting for the GPU behind another shows as queued, not running", () => {
+  const p = project({
+    confirmation: { plan_id: "p", total: 0, cap: 0, at: "" },
+    items: {
+      "clip:idle_a": { ...item("clips", "running"), gpu_queued: false },
+      "clip:talk_a": { ...item("clips", "running"), gpu_queued: true },
+      "design:c1": { ...item("design", "running"), gpu_queued: true },
+    },
+  });
+  const tiles = Object.fromEntries(rowsOf(p).flatMap((r) => r.tiles).map((t) => [t.key, t]));
+  assert.equal(tiles["clip:idle_a"].state, "running");
+  assert.equal(tiles["clip:talk_a"].state, "queued");
+  assert.equal(candidatesOf(p)[0].state, "queued");
+});
+
 test("candidates: empty places before the run, then the items, the picked one marked", () => {
   assert.deepEqual(candidatesOf(project()).map((c) => c.state), ["empty", "empty", "empty", "empty"]);
   assert.deepEqual(candidatesOf(project({ brief: { ...project().brief, reference: { mode: "as_base", files: ["a.png"] } } })), []);

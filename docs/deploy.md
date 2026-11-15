@@ -67,8 +67,8 @@ Machine-specific tweaks (extra mounts, a host home directory, ...) go in a
 ### Local voice models (an NVIDIA GPU)
 
 To serve speech and recognition models from the host's own GPU
-([local-voice.md](local-voice.md)), give the container the GPU: install the
-NVIDIA driver (570 or newer) and the NVIDIA Container Toolkit on the host, then
+([local-voice.md](local-voice.md)) and picture and clip models ([local-image.md](local-image.md)),
+give the container the GPU: install the NVIDIA driver (570 or newer; 580 or newer for the image models) and the NVIDIA Container Toolkit on the host, then
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
@@ -155,6 +155,7 @@ usually touch in production:
 | `APPS_REPO`, `APPS_RELEASE_TAG`, `GITHUB_TOKEN` | where the Download page finds app builds |
 | `CORS_ORIGINS` | only for front-ends on another origin (the console itself is same-origin) |
 | `VOICE_ENGINE_MODE`, `VOICE_HOME`, `VOICE_MODELS_DIR`, `VOICE_VRAM_BUDGET` | local voice models: `off` switches them off; where the models and engines go; the GPU share they may fill ([local-voice.md](local-voice.md)) |
+| `IMAGE_ENGINE_MODE`, `IMAGE_HOME`, `IMAGE_MODELS_DIR`, `IMAGE_IDLE_STOP_SECONDS` | local image models: `off` switches them off; where the models, the engine and the history go; how long the engine stays up without a job ([local-image.md](local-image.md)) |
 
 ## 6. Secrets (never commit)
 

@@ -34,8 +34,10 @@ export const TABS: readonly TabMeta[] = [
   { id: "connections", label: "nav.connections", icon: "server", hint: "connections.intro", group: "system" },
   { id: "usage", label: "nav.usage", icon: "cpu", hint: "settings.usageHint", group: "system" },
   { id: "admin", label: "nav.admin", icon: "shield", hint: "admin.intro", group: "system", wide: true },
-  // models served from this machine's own GPU (docs/local-voice.md "Voice Studio")
+  // models served from this machine's own GPU (docs/local-voice.md "Voice Studio", docs/local-image.md)
   { id: "voice-studio", label: "voiceStudio.tab", icon: "mic", hint: "voiceStudio.hint", group: "local", wide: true },
+  // (docs/local-image.md "Image Studio": set up here, used by the avatar maker)
+  { id: "image-studio", label: "imageStudio.tab", icon: "image", hint: "imageStudio.hint", group: "local", wide: true },
 ];
 
 export const GROUPS: readonly { id: TabMeta["group"]; label: MsgKey }[] = [

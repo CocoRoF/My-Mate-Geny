@@ -58,6 +58,7 @@ from app.routers import (
     sessions,
     usage,
     voice_local,
+    image_local,
     workspaces,
 )
 from app.avatar.service import AvatarService
@@ -154,6 +155,16 @@ async def lifespan(app: FastAPI):
     app.state.voice_host.on_change = lambda what: session_service.mates_changed("voice")  # (every window refetches)
     await app.state.voice_host.start()
     app.state.voice_service.local = app.state.voice_host  # (a mate's "local" engine speaks and hears through it)
+    # local image models (app/imagehost, docs/local-image.md): Image Studio sets them up, the avatar maker uses them;
+    # the two share the GPU — each asks the other to make room
+    from app.imagehost.service import ImageHost
+    app.state.image_host = ImageHost(db)
+    app.state.image_host.on_change = lambda what: session_service.broadcast_list(
+        {"type": "image.changed", "data": {"what": what}})
+    app.state.image_host.make_room.append(app.state.voice_host.engines.make_room_for)
+    app.state.image_host.voice_room = app.state.voice_host.room_for_speech
+    app.state.voice_host.engines.others.append(app.state.image_host.release_gpu)
+    await app.state.image_host.start()
     from app.mate.calls import CallService
     app.state.calls = CallService(app.state.mate_service)  # phone calls with her (docs/mate-calls.md)
     app.state.calls.voice = app.state.voice_service
@@ -167,6 +178,7 @@ async def lifespan(app: FastAPI):
     higgsfield_keeper = asyncio.create_task(app.state.higgsfield_agent.run_keeper())
     # Avatar Create (docs/avatar-create.md): the agent in the Mate window that makes video avatars
     app.state.avatar_service = AvatarService(session_service, app.state.mate_service, higgsfield, logs=logs)
+    app.state.avatar_service.images = app.state.image_host  # (the stages the user runs on this machine's GPU)
     await app.state.avatar_service.start()  # (projects that were running go on)
     # Settings -> Providers -> CLI versions: installed vs latest, upgrades (services/cli_tools)
     cli_tools = CliToolsService(session_service, logs)
@@ -225,6 +237,7 @@ async def lifespan(app: FastAPI):
     life_clock.cancel()
     higgsfield_keeper.cancel()
     await app.state.avatar_service.stop()
+    await app.state.image_host.stop()
     await cli_tools.stop()
     if system_monitor is not None:
         await system_monitor.stop()  # flushes the partial minute, marks a clean shutdown
@@ -320,6 +333,7 @@ for r in (
     local_runtime.router,
     setup.router,
     voice_local.router,
+    image_local.router,
 ):
     app.include_router(r)
 

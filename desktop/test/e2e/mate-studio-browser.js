@@ -24,6 +24,11 @@ const path = require("path");
 const { chromium } = require("playwright-core");
 
 const [SERVER, PASSWORD, STUB, SHOTS, JOBS] = process.argv.slice(2);
+// LOCAL_IMAGES=1: every stage on this computer instead (Image Studio, docs/local-image.md) — the server's stand-in image
+// engine (IMAGE_ENGINE_MODE=fake) with its models installed first: the estimate is 0 credits with a switch per stage,
+// and the whole run makes no Higgsfield job at all (its pictures and clips come from the image host, the processing is
+// the same real pipeline)
+const LOCAL = process.env.LOCAL_IMAGES === "1";
 if (!SERVER || !PASSWORD || !STUB || !SHOTS || !JOBS) {
   console.error("usage: node mate-studio-browser.js <server url> <password> <stub url> <shots dir> <jobs log>");
   process.exit(2);
@@ -135,6 +140,14 @@ async function main() {
   assert.ok(env.higgsfield.connected && env.higgsfield.cli, "higgsfield ready " + JSON.stringify(env.higgsfield));
   assert.ok(env.deps.ready, "processing venv ready (AVATAR_VENV)");
   const matesBefore = (await api(setup, "GET", "/api/mates")).body;
+  if (LOCAL) {
+    // (the stand-in engine: installing is instant — the license is still accepted first)
+    for (const id of ["anima-turbo", "flux2-klein-4b", "wan22-fun-5b", "lucida"]) {
+      const r = await api(setup, "POST", `/api/image/models/${id}/install`, { accept_license: true });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+    }
+    await until("models installed", async () => (await api(setup, "GET", "/api/image/status")).body.avatar.stages.clips.ready);
+  }
 
   // ── the main run: English, dark, desktop ──
   const ctx = await device(browser, { lang: "en", theme: "dark" });
@@ -239,9 +252,25 @@ async function main() {
   p = await projectOf(ctx, pid);
   assert.equal(p.status, "estimate");
   assert.equal(p.brief.target.mate_id, draft, "the avatar is for the draft");
-  // (2 candidates 4 + the cut-out 0.5 + 6 faces 12 + the clips by the second: the minimal set is 26 s at the stub's 9
-  //  per 5 s = 46.8 + their 6 cut-outs 6)
-  assert.equal(p.plan.total, Math.round((4 + 0.5 + 12 + (9 / 5) * 26 + 6) * 10) / 10);
+  if (LOCAL) {
+    assert.deepEqual(Object.values(p.plan.engines), ["local", "local", "local", "local", "local"], JSON.stringify(p.plan.engines));
+    assert.equal(p.plan.total, 0, "nothing to pay");
+    // a stage switched to Higgsfield is quoted, and back
+    await page.click('[data-testid="sc-estimate-open"]');
+    await page.waitForSelector('[data-testid="node-sheet"] [data-testid="avatar-engine-clips-higgsfield"]');
+    await page.click('[data-testid="node-sheet"] [data-testid="avatar-engine-clips-higgsfield"]');
+    await until("clips on Higgsfield", async () => (await projectOf(ctx, pid)).plan.engines.clips === "higgsfield");
+    assert.ok((await projectOf(ctx, pid)).plan.total > 0, "the clips are quoted");
+    await page.click('[data-testid="node-sheet"] [data-testid="avatar-engine-clips-local"]');
+    await until("clips local again", async () => (await projectOf(ctx, pid)).plan.engines.clips === "local");
+    await page.waitForSelector('[data-testid="sc-estimate-local"]');
+    p = await projectOf(ctx, pid);
+    assert.equal(p.plan.total, 0);
+  } else {
+    // (2 candidates 4 + the cut-out 0.5 + 6 faces 12 + the clips by the second: the minimal set is 26 s at the stub's 9
+    //  per 5 s = 46.8 + their 6 cut-outs 6)
+    assert.equal(p.plan.total, Math.round((4 + 0.5 + 12 + (9 / 5) * 26 + 6) * 10) / 10);
+  }
   await page.waitForSelector('[data-testid="studio-credits"]');
   assert.equal(jobs().length, 0, "no Higgsfield job before the confirmation");
   await say(page, 'atool:regenerate {"item":"design"}');
@@ -260,7 +289,13 @@ async function main() {
   step("Confirm → candidates → base → faces → clips + real processing, on the canvas");
   await page.click('[data-testid="node-sheet"] [data-testid="avatar-estimate-confirm"]');
   await page.waitForSelector('[data-testid="studio-run"][data-wait="pick"]', { timeout: 120000 });
-  assert.equal(jobs().filter((j) => j.job_type === "nano_banana_pro").length, 2);
+  if (LOCAL) {
+    const made = (await api(ctx, "GET", `/api/image/jobs?source=avatar:${pid}`)).body.items;
+    assert.equal(made.filter((j) => j.kind === "draft" && j.state === "done").length, 2, "the candidates were drawn here");
+    assert.equal(jobs().length, 0, "no Higgsfield job");
+  } else {
+    assert.equal(jobs().filter((j) => j.job_type === "nano_banana_pro").length, 2);
+  }
   await page.waitForSelector('[data-testid="sc-node-candidates"].is-wait');
   await page.click('[data-testid="node-sheet-close"]').catch(() => {});
   await sleep(800);
@@ -294,6 +329,12 @@ async function main() {
   assert.ok(p.check.passed, JSON.stringify(p.check));
   assert.equal(p.applied.mate_id, draft, "the avatar went on the new mate by itself");
   assert.ok(p.ledger.committed <= p.confirmation.cap);
+  if (LOCAL) {
+    const kinds = (await api(ctx, "GET", `/api/image/jobs?source=avatar:${pid}&limit=200`)).body.items.map((j) => j.kind);
+    for (const k of ["draft", "cutout", "edit", "loop", "matte"]) assert.ok(kinds.includes(k), `a ${k} job ran here`);
+    assert.equal(jobs().length, 0, "still no Higgsfield job");
+    assert.equal(p.ledger.committed, 0);
+  }
   await until("the preview plays", async () => page.locator('[data-testid="avatar-preview"] [data-mate-clip]').count(), 30000);
   await sleep(1500);
   await shot(page, "08-avatar-ready-dark-en");

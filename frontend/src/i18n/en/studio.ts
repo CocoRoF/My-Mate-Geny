@@ -218,6 +218,7 @@ export default {
   cvSpent: "Credits used",
   cvTotal: "Total",
   cvCredits: "{n} credits",
+  cvLocal: "{n} stage(s) on this computer · 0 credits",
   cvMinutes: "Time",
   cvAbout: "about {n} min",
   cvReview: "Review and confirm",

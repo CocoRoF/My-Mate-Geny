@@ -118,6 +118,8 @@ async def _act(request: Request, pid: str, action: str) -> dict:
             return await svc.estimate(pid)
         if action == "confirm":
             return await svc.confirm(pid, b.get("plan_id"), b.get("total"))
+        if action == "engines":
+            return await svc.set_engines(pid, b.get("engines") or {})
         if action in ("change", "decline"):
             return await svc.decline(pid)
         if action == "discard":
@@ -146,8 +148,8 @@ async def _act(request: Request, pid: str, action: str) -> dict:
         raise _http(exc) from None
 
 
-for _a in ("answer", "estimate", "confirm", "change", "discard", "pause", "resume", "cancel", "checkpoint", "redo",
-           "apply", "restore"):
+for _a in ("answer", "estimate", "confirm", "engines", "change", "discard", "pause", "resume", "cancel", "checkpoint",
+           "redo", "apply", "restore"):
     async def _route(pid: str, request: Request, _action: str = _a) -> dict:
         return await _act(request, pid, _action)
     router.add_api_route(f"/projects/{{pid}}/{_a}", _route, methods=["POST"], name=f"avatar_{_a}")

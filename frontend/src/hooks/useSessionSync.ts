@@ -3,6 +3,7 @@ import { observeSharingReady } from "../mate/localScreen";
 import { sharingSnapshot, stopOwnedSharing, resumeSharing } from "../mate/localScreen";
 import { useEffect } from "react";
 import { toLogin, wsUrl } from "../api/client";
+import { IMAGE_CHANGED } from "../api/image";
 import { onResync } from "../lib/sync";
 import { useConfigStore } from "../stores/configStore";
 import { useProviderStore } from "../stores/providerStore";
@@ -110,6 +111,11 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
         if (msg.type === "cli.changed" || msg.type === "cli.log") {
           // Settings → Providers → CLI versions: a status change / an upgrade's new log lines (stores/cliToolsStore.ts)
           useCliToolsStore.getState().remote(msg as { type: string; data?: Record<string, unknown> });
+          return;
+        }
+        if (msg.type === "image.changed") {
+          // Image Studio (a job's progress, an install, the settings): whoever shows them refetches (api/image.ts)
+          window.dispatchEvent(new CustomEvent(IMAGE_CHANGED, { detail: msg.data ?? {} }));
           return;
         }
         if (msg.type === "mates.changed") {
