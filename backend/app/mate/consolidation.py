@@ -77,6 +77,9 @@ class Consolidator:
         self.task = None
         self.closed = False
         self.lock = asyncio.Lock()
+        from app.mate.linker import Linker
+
+        self.linker = Linker(self)  # (her memories and episodes into the memory network, in the background)
 
     def start(self):
         # A killed extractor never counts as completed. Claims are transactional
@@ -121,7 +124,8 @@ class Consolidator:
                         self.mates.store._changed("memory", mate_id)
                     if indexed:
                         delay = 1
-                await self.once()
+                if not await self.once() and not self.mates._svc.active_runs:
+                    await self.linker.once()
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001 - never log personal input
@@ -552,6 +556,7 @@ class Consolidator:
                     mem["id"],
                 ),
             )
+            self.link_now(mate_id, mem["id"], subject, subject_type, str(f.get("predicate") or ""))
             facts += 1
         habits = doc.get("habits", [])
         for h in habits[:4] if isinstance(habits, list) else []:
@@ -567,6 +572,21 @@ class Consolidator:
             self.knowledge.episode(mate_id, {**episode, "source_id": sid})
             episodes += 1
         return facts, episodes
+
+    def link_now(self, mate_id, mem_id, subject, subject_type, predicate):
+        """A new memory in her network at once: about the user, and its grounded subject (the linker adds the rest)."""
+        from app.mate.linker import user_name
+
+        ents = [{"kind": "user", "role": "about", "label": predicate[:40]}]
+        if subject:
+            ents.append({"name": subject, "kind": {"person": "person", "place": "place", "project": "topic"}.get(
+                subject_type, "concept"), "role": "about", "label": predicate[:40]})
+        try:
+            mate = self.mates.store.get(mate_id)
+            self.mates.store.graph.link_entities(mate_id, f"mem:{mem_id}", ents, user_name=user_name(mate),
+                                                 self_name=mate["name"], final=False)
+        except Exception:  # noqa: BLE001 - the memory stands without its links
+            pass
 
     def habit(self, mate_id, source, h, offered, known):
         """One habit (PROMPT), kept only when it holds up: every quote exact, a quote of hers only of what she saw on
@@ -663,6 +683,10 @@ class Consolidator:
         }
 
     async def extract(self, mate, source):
+        return await self.sealed_json(mate, PROMPT, self.request(source), "extractor")
+
+    async def sealed_json(self, mate, system, payload, kind, *, timeout=90):
+        """One tool-less, sealed, ephemeral call on the mate's own engine and account → (JSON doc | None, usage)."""
         svc = self.mates._svc
         name = mate["llm"]["provider"]
         provider = get_provider(name)
@@ -682,14 +706,14 @@ class Consolidator:
             root.mkdir(parents=True, exist_ok=True)
             # No attachments, MCP servers, plugins, user config or built-in tools.
             req = TurnRequest(
-                messages=[{"role": "user", "content": json.dumps(self.request(source), ensure_ascii=False)}],
+                messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
                 model=mate["llm"]["model"],
                 effort="low",
                 cwd=str(root),
                 api_key=key,
                 extra_env=env,
-                timeout_s=90,
-                system_prompt=PROMPT,
+                timeout_s=timeout,
+                system_prompt=system,
                 sealed=True,
                 ephemeral=True,
                 require_sealed_catalog=True,
@@ -699,11 +723,11 @@ class Consolidator:
                 engine_home=str(root / "codex"),
             )
             if name == "codex":
-                req.system_prompt_file = files.engine_file(mate["id"], "extractor", "md", PROMPT)
+                req.system_prompt_file = files.engine_file(mate["id"], kind, "md", system)
             text, usage, completed = "", {}, False
-            async with asyncio.timeout(100):
+            async with asyncio.timeout(timeout + 10):
                 async for ev in provider.run_turn_stream(req):
-                    if ev.type == "tool.start":
+                    if ev.type in ("tool.use", "tool.start"):  # (tool.use: what the providers emit)
                         raise ValueError("Extractor attempted tool use")
                     if ev.type == "text.delta":
                         text += str(ev.data.get("text") or "")

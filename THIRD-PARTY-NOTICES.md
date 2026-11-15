@@ -92,6 +92,12 @@ Anthropic (Claude OAuth, `claude.ai`, `platform.claude.com`), OpenAI
 GitHub (git remotes, release downloads for the Download page), Live2D
 (Cubism Core download). Their terms apply to the accounts users connect.
 
+A mate's studies ([docs/mate-memory-graph.md](docs/mate-memory-graph.md)) read the
+public web pages the user hands her or her search finds, and search Wikipedia
+and DuckDuckGo. They are fetched at runtime for that user; the text is kept in
+that mate's memory with its URL and never bundled or redistributed. Her own
+(curiosity) studies honour robots.txt.
+
 ## 3. Dependencies
 
 ### Backend (Python, `backend/pyproject.toml`)
@@ -112,15 +118,16 @@ GitHub (git remotes, release downloads for the Download page), Live2D
 
 Transitive: MIT / BSD / Apache / PSF / MIT-0 only.
 
-### Web console (`frontend/package-lock.json`, 381 packages)
+### Web console (`frontend/package-lock.json`, 387 packages)
 
-MIT 354, ISC 13, Apache-2.0 7, BSD-3-Clause 4, CC-BY-4.0 1 (caniuse-lite
+MIT 355, ISC 17, Apache-2.0 8, BSD-3-Clause 4, CC-BY-4.0 1 (caniuse-lite
 data, build-time only), `MIT OR GPL-3.0-or-later` 1 (jszip — used under MIT),
 `MIT AND Zlib` 1 (pako).
 
 Direct runtime dependencies: react, react-dom, react-markdown, remark-gfm,
 zustand, react-icons, lowlight, hast-util-to-text, unist-util-visit,
 qrcode-generator, pixi.js 7, pixi-live2d-display (MIT) — all MIT;
+d3-force 3 (ISC, with d3-dispatch, d3-quadtree, d3-timer: ISC) for the memory network map;
 **@livliv-dev/player** 0.3.0 (LivLiv Player, **Apache-2.0**, © 2026 LivLiv; its NOTICE:
 *"This product includes software developed by LivLiv (https://livliv.ai)."*; lazy-loaded
 only for a LivLiv mate);

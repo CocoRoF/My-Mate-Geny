@@ -115,6 +115,11 @@ tags, lip-sync, delegation, overlay/quick chat), `geny-audio-services`
   `DELETE …/memories/{mid}`, `POST …/memories/bulk {ids, action: delete|archive|restore|pin|unpin}`,
   `GET …/memories/stats`, `POST …/memories/preview {text}` → `{core, recalled, level, block}` (the
   Memory tab's Test recall). The mate edits the same memories with its tools (§4).
+- Memory network and studies (docs/mate-memory-graph.md): `GET /api/mates/{id}/graph` (the map),
+  `…/graph/search?q=`, `…/graph/nodes/{nid}` (facts with their page and quote, memories, neighbours; `PATCH`, `POST
+  …/merge {into}`, `DELETE`), `DELETE …/graph/facts/{fid}`, `…/graph/docs[/{did}]`, `GET|POST …/studies`
+  `{kind: topic|url, topic?, url?, goal?, depth?}`, `…/studies/{sid}` (`POST …/cancel`, `DELETE`). The memory pref
+  `curiosity` (off | sometimes | often) sets how often she studies what the user cares about on her own.
 - Relationship (docs/mate-memory-affinity.md §5): `GET /api/mates/{id}/relation` → stage, affinity,
   earned/warmth stage, next stage needs, stats, milestones, log; `GET /api/mates/{id}/state`: every feeling with its reason
   and what moved them; `PATCH …/relation {enabled?, paused?,

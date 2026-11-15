@@ -27,6 +27,9 @@ async def call_tool(request: Request) -> dict:
         raise HTTPException(status_code=400, detail="expected JSON") from exc
     if not isinstance(body, dict) or not isinstance(body.get("name"), str):
         raise HTTPException(status_code=400, detail="expected {name, arguments}")
+    if ctx.get("study_id"):  # (a study session: only its own tools — app/mate/study.py)
+        text, is_error = await svc.studies.tool(ctx, body["name"], body.get("arguments") or {})
+        return {"text": text, "is_error": is_error}
     text, is_error, images = await svc.call_tool_full(ctx, body["name"], body.get("arguments") or {})
     # (images: see_screen's picture, base64 — answered to the bridge only, never logged)
     return {"text": text, "is_error": is_error, **({"images": images} if images else {})}

@@ -906,3 +906,191 @@ async def memory_episodes(mate_id: str, request: Request, before: str | None = N
         return _svc(request).store.knowledge.episodes(mate_id, before=before, limit=max(1, min(100, limit)), q=q)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+# ---- her memory network and studies (app/mate/graph.py, app/mate/study.py, docs/mate-memory-graph.md) ----
+#
+#   GET    /api/mates/{id}/graph?focus=&depth=&limit=&origin=all|personal|knowledge   the map: nodes (+ strength now) and links
+#   GET    /api/mates/{id}/graph/search?q=                                             nodes, facts, page passages
+#   GET    /api/mates/{id}/graph/nodes/{nid}                                           a node: facts with sources, memories, neighbours
+#   PATCH  /api/mates/{id}/graph/nodes/{nid} {name?, aliases?, summary?, kind?, importance?, pinned?}
+#   POST   /api/mates/{id}/graph/nodes/{nid}/merge {into}
+#   DELETE /api/mates/{id}/graph/nodes/{nid} · DELETE /api/mates/{id}/graph/facts/{fid}
+#   GET    /api/mates/{id}/graph/docs · GET/DELETE /api/mates/{id}/graph/docs/{did}?chunk=
+#   GET    /api/mates/{id}/studies · POST /api/mates/{id}/studies {kind: topic|url, topic?, url?, goal?, depth?}
+#   GET    /api/mates/{id}/studies/{sid} · POST …/{sid}/cancel · DELETE …/{sid}
+
+from app.mate.graph import GraphError  # noqa: E402
+from app.mate.study import StudyError  # noqa: E402
+
+
+def _g(request: Request, mate_id: str):
+    _mate(request, mate_id)
+    return _svc(request).store.graph
+
+
+def _gerr(exc: Exception) -> HTTPException:
+    return HTTPException(status_code=404 if "no such" in str(exc) else 400, detail=str(exc))
+
+
+@router.get("/{mate_id}/graph")
+async def memory_graph(mate_id: str, request: Request, focus: str | None = None, depth: int = 2, limit: int = 400,
+                       origin: str = "all") -> dict:
+    g = _g(request, mate_id)
+    if origin not in ("all", "personal", "knowledge"):
+        raise HTTPException(400, "origin: all | personal | knowledge")
+    store = _svc(request).store
+    mems = store.memories(mate_id)
+    out = await asyncio.to_thread(g.snapshot, mate_id, focus=focus, depth=depth, limit=max(20, min(1500, limit)),
+                                  origin=origin, memories=mems)
+    linked = g.stats(mate_id)["linked"]
+    out["stats"]["unlinked"] = max(0, len(mems) - linked) if linked < len(mems) else 0
+    return out
+
+
+@router.get("/{mate_id}/graph/search")
+async def memory_graph_search(mate_id: str, request: Request, q: str = "") -> dict:
+    g = _g(request, mate_id)
+    if not q.strip():
+        return {"nodes": [], "facts": [], "passages": []}
+    return await asyncio.to_thread(g.search, mate_id, q, limit=20)
+
+
+@router.get("/{mate_id}/graph/nodes/{nid}")
+async def memory_graph_node(mate_id: str, nid: str, request: Request) -> dict:
+    g = _g(request, mate_id)
+    try:
+        d = await asyncio.to_thread(g.detail, mate_id, nid)
+    except GraphError as exc:
+        raise _gerr(exc) from exc
+    store = _svc(request).store
+    d["memories"] = []
+    for m in d["mentions"]:
+        if m["ref"].startswith("mem:"):
+            mem = store.memory(mate_id, m["ref"][4:])
+            if mem:
+                d["memories"].append({k: mem.get(k) for k in ("id", "text", "kind", "status", "importance", "pinned",
+                                                               "created_at", "predicate")})
+    d["studies"] = [s for s in _svc(request).studies.list(mate_id, 50) if s.get("node_id") == d["node"]["id"]]
+    return d
+
+
+@router.patch("/{mate_id}/graph/nodes/{nid}")
+async def edit_memory_graph_node(mate_id: str, nid: str, request: Request) -> dict:
+    g = _g(request, mate_id)
+    body = await request.json()
+    try:
+        node = g.edit(mate_id, nid, body if isinstance(body, dict) else {})
+    except (GraphError, ValueError, TypeError) as exc:
+        raise _gerr(exc) from exc
+    _svc(request).store._changed("graph", mate_id)
+    return node
+
+
+@router.post("/{mate_id}/graph/nodes/{nid}/merge")
+async def merge_memory_graph_node(mate_id: str, nid: str, request: Request) -> dict:
+    g = _g(request, mate_id)
+    body = await request.json()
+    try:
+        node = g.merge(mate_id, nid, str((body or {}).get("into") or ""))
+    except GraphError as exc:
+        raise _gerr(exc) from exc
+    _svc(request).store._changed("graph", mate_id)
+    return node
+
+
+@router.delete("/{mate_id}/graph/nodes/{nid}")
+async def forget_memory_graph_node(mate_id: str, nid: str, request: Request) -> dict:
+    g = _g(request, mate_id)
+    try:
+        n = g.forget_node(mate_id, nid)
+    except GraphError as exc:
+        raise _gerr(exc) from exc
+    _svc(request).forget_engine_context(mate_id)
+    _svc(request).store._changed("graph", mate_id)
+    return {"forgotten": True, "facts": n}
+
+
+@router.delete("/{mate_id}/graph/facts/{fid}")
+async def forget_memory_graph_fact(mate_id: str, fid: str, request: Request) -> dict:
+    g = _g(request, mate_id)
+    if not g.forget_fact(mate_id, fid):
+        raise HTTPException(404, "no such fact")
+    _svc(request).store._changed("graph", mate_id)
+    return {"forgotten": True}
+
+
+@router.get("/{mate_id}/graph/docs")
+async def memory_graph_docs(mate_id: str, request: Request, limit: int = 50, offset: int = 0) -> list[dict]:
+    return _g(request, mate_id).docs(mate_id, max(1, min(200, limit)), max(0, offset))
+
+
+@router.get("/{mate_id}/graph/docs/{did}")
+async def memory_graph_doc(mate_id: str, did: str, request: Request, chunk: str | None = None) -> dict:
+    g = _g(request, mate_id)
+    d = g.doc(mate_id, did)
+    if d is None:
+        raise HTTPException(404, "no such page")
+    if chunk:
+        c = g.chunk(mate_id, chunk)
+        if c is None or c["doc_id"] != did:
+            raise HTTPException(404, "no such chunk")
+        d["chunk"] = {k: c[k] for k in ("id", "ordinal", "start", "end", "text")}
+    return d
+
+
+@router.delete("/{mate_id}/graph/docs/{did}")
+async def forget_memory_graph_doc(mate_id: str, did: str, request: Request) -> dict:
+    g = _g(request, mate_id)
+    if g.doc(mate_id, did, with_text=False) is None:
+        raise HTTPException(404, "no such page")
+    n = g.forget_doc(mate_id, did)
+    _svc(request).store._changed("graph", mate_id)
+    return {"forgotten": True, "facts": n}
+
+
+@router.get("/{mate_id}/studies")
+async def list_studies(mate_id: str, request: Request) -> list[dict]:
+    _mate(request, mate_id)
+    return _svc(request).studies.list(mate_id, 50)
+
+
+@router.post("/{mate_id}/studies")
+async def request_study(mate_id: str, request: Request) -> dict:
+    _mate(request, mate_id)
+    b = await request.json()
+    b = b if isinstance(b, dict) else {}
+    try:
+        return _svc(request).studies.request(mate_id, kind=str(b.get("kind") or "topic"), topic=str(b.get("topic") or ""),
+                                             url=str(b.get("url") or ""), goal=str(b.get("goal") or ""),
+                                             depth=str(b.get("depth") or "normal"), by="user")
+    except StudyError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/{mate_id}/studies/{sid}")
+async def get_study(mate_id: str, sid: str, request: Request) -> dict:
+    _mate(request, mate_id)
+    try:
+        return _svc(request).studies.get(mate_id, sid)
+    except StudyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.post("/{mate_id}/studies/{sid}/cancel")
+async def cancel_study(mate_id: str, sid: str, request: Request) -> dict:
+    _mate(request, mate_id)
+    try:
+        return _svc(request).studies.cancel(mate_id, sid)
+    except StudyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.delete("/{mate_id}/studies/{sid}")
+async def delete_study(mate_id: str, sid: str, request: Request) -> dict:
+    _mate(request, mate_id)
+    try:
+        _svc(request).studies.delete(mate_id, sid)
+    except StudyError as exc:
+        raise HTTPException(409 if "cancel" in str(exc) else 404, str(exc)) from exc
+    return {"deleted": True}

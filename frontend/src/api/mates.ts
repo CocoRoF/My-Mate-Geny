@@ -101,7 +101,7 @@ export interface MatePrefs {
   emotion: EmotionLevel;
   tone: { warmth: ToneLevel; humor: ToneLevel; initiative: ToneLevel };
   avoid: string;
-  memory: { recall: RecallLevel; self_save: boolean };
+  memory: { recall: RecallLevel; self_save: boolean; curiosity?: Curiosity };
   self_edit: SelfEdit;
   /** she changes her clothes herself, when she feels like it */
   self_outfit?: "auto" | "off";
@@ -120,7 +120,7 @@ export const DEFAULT_PREFS: MatePrefs = {
   emotion: 2,
   tone: { warmth: "auto", humor: "auto", initiative: "auto" },
   avoid: "",
-  memory: { recall: "normal", self_save: true },
+  memory: { recall: "normal", self_save: true, curiosity: "sometimes" },
   self_edit: "auto",
   self_outfit: "auto",
   life: "auto",
@@ -1079,3 +1079,159 @@ export const listMemoryEpisodes = (id: string, before?: string, q?: string) => {
   if (q) search.set("q", q);
   return apiFetch<{items: MemoryEpisode[]; next_cursor: string | null}>(`/api/mates/${enc(id)}/knowledge/episodes?${search}`);
 };
+
+
+// ---- her memory network and studies (backend app/mate/graph.py, app/mate/study.py, docs/mate-memory-graph.md) ----
+
+export type Curiosity = "off" | "sometimes" | "often";
+export type GraphKind = "user" | "self" | "person" | "place" | "org" | "work" | "game" | "thing" | "concept" | "topic" | "event";
+export const GRAPH_KINDS: GraphKind[] = ["person", "place", "org", "work", "game", "thing", "concept", "topic", "event"];
+
+export interface GraphNode {
+  id: string;
+  kind: GraphKind;
+  name: string;
+  summary: string;
+  aliases: string[];
+  origin: "chat" | "document" | "study" | "user";
+  importance: number;
+  pinned: boolean;
+  /** how readily it comes to her mind now: 1 just used … → 0 fading */
+  strength: number;
+  last_access: string | null;
+  created_at: string;
+  facts: number;
+  memories: number;
+  degree: number;
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+  kind: "fact" | "memory" | "episode";
+  label: string;
+  weight: number;
+  count: number;
+  ref: string;
+}
+
+export interface GraphSnapshot {
+  nodes: GraphNode[];
+  links: GraphLink[];
+  stats: { nodes: number; facts: number; memories_linked: number; docs: number; shown: number; unlinked?: number };
+}
+
+export interface GraphFact {
+  id: string;
+  subject: string;
+  subject_name: string;
+  object: string | null;
+  object_name: string | null;
+  predicate: string;
+  statement: string;
+  origin: string;
+  doc_id: string | null;
+  doc_title: string | null;
+  doc_url: string | null;
+  chunk_id: string | null;
+  source_id: string | null;
+  quote: string;
+  valid_from: string | null;
+  valid_until: string | null;
+  recorded_at: string;
+  invalidated_at: string | null;
+  superseded_by: string | null;
+  status: "active" | "superseded";
+  importance: number;
+  strength: number;
+}
+
+export interface GraphNodeDetail {
+  node: GraphNode & { stability: number; access_count: number; updated_at: string };
+  facts: GraphFact[];
+  mentions: { ref: string; role: string; label: string }[];
+  neighbors: { id: string; name: string; kind: GraphKind; weight: number }[];
+  docs: { id: string; title: string; url: string; fetched_at: string }[];
+  memories: { id: string; text: string; kind: MemoryKind; status: string; importance: number; pinned: boolean; created_at: string; predicate: string | null }[];
+  studies: Study[];
+}
+
+export interface GraphSearch {
+  nodes: GraphNode[];
+  facts: GraphFact[];
+  passages: { chunk_id: string; doc_id: string; title: string; url: string; text: string }[];
+}
+
+export interface KnowledgeDoc {
+  id: string;
+  url: string;
+  title: string;
+  site: string;
+  origin: string;
+  study_id: string | null;
+  chars: number;
+  published: string | null;
+  fetched_at: string;
+  facts: number;
+  chunk?: { id: string; ordinal: number; start: number; end: number; text: string };
+}
+
+export type StudyState = "queued" | "running" | "done" | "failed" | "canceled" | "interrupted";
+export interface StudyEvent {
+  at: string;
+  kind: "queued" | "started" | "search" | "reading" | "read" | "unreadable" | "filed" | "note" | "summary" | "timeout" | StudyState;
+  text: string;
+  data: Record<string, unknown>;
+}
+export interface Study {
+  id: string;
+  kind: "topic" | "url" | "curiosity";
+  topic: string;
+  url: string;
+  goal: string;
+  depth: "quick" | "normal" | "deep";
+  requested_by: "user" | "mate" | "self";
+  node_id: string | null;
+  state: StudyState;
+  summary: string;
+  open_questions: string[];
+  pages: number;
+  facts: number;
+  nodes: number;
+  cost: number;
+  error: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  events?: StudyEvent[];
+}
+
+const G = (id: string) => `/api/mates/${enc(id)}/graph`;
+export function getMemoryGraph(id: string, q: { focus?: string; depth?: number; limit?: number; origin?: "all" | "personal" | "knowledge" } = {}) {
+  const p = new URLSearchParams();
+  if (q.focus) p.set("focus", q.focus);
+  if (q.depth) p.set("depth", String(q.depth));
+  if (q.limit) p.set("limit", String(q.limit));
+  if (q.origin) p.set("origin", q.origin);
+  return apiFetch<GraphSnapshot>(`${G(id)}?${p}`);
+}
+export const searchMemoryGraph = (id: string, q: string) => apiFetch<GraphSearch>(`${G(id)}/search?q=${enc(q)}`);
+export const getGraphNode = (id: string, nid: string) => apiFetch<GraphNodeDetail>(`${G(id)}/nodes/${enc(nid)}`);
+export const editGraphNode = (id: string, nid: string, patch: Partial<Pick<GraphNode, "name" | "aliases" | "summary" | "kind" | "importance" | "pinned">>) =>
+  apiFetch<GraphNode>(`${G(id)}/nodes/${enc(nid)}`, { method: "PATCH", ...j(patch) });
+export const mergeGraphNode = (id: string, nid: string, into: string) =>
+  apiFetch<GraphNode>(`${G(id)}/nodes/${enc(nid)}/merge`, { method: "POST", ...j({ into }) });
+export const forgetGraphNode = (id: string, nid: string) => apiFetch<{ forgotten: boolean; facts: number }>(`${G(id)}/nodes/${enc(nid)}`, { method: "DELETE" });
+export const forgetGraphFact = (id: string, fid: string) => apiFetch<{ forgotten: boolean }>(`${G(id)}/facts/${enc(fid)}`, { method: "DELETE" });
+export const listKnowledgeDocs = (id: string) => apiFetch<KnowledgeDoc[]>(`${G(id)}/docs`);
+export const getKnowledgeDoc = (id: string, did: string, chunk?: string) =>
+  apiFetch<KnowledgeDoc>(`${G(id)}/docs/${enc(did)}${chunk ? `?chunk=${enc(chunk)}` : ""}`);
+export const forgetKnowledgeDoc = (id: string, did: string) => apiFetch<{ forgotten: boolean; facts: number }>(`${G(id)}/docs/${enc(did)}`, { method: "DELETE" });
+
+const ST = (id: string) => `/api/mates/${enc(id)}/studies`;
+export const listStudies = (id: string) => apiFetch<Study[]>(ST(id));
+export const requestStudy = (id: string, body: { kind: "topic" | "url"; topic?: string; url?: string; goal?: string; depth?: Study["depth"] }) =>
+  apiFetch<Study>(ST(id), { method: "POST", ...j(body) });
+export const getStudy = (id: string, sid: string) => apiFetch<Study>(`${ST(id)}/${enc(sid)}`);
+export const cancelStudy = (id: string, sid: string) => apiFetch<Study>(`${ST(id)}/${enc(sid)}/cancel`, { method: "POST" });
+export const deleteStudy = (id: string, sid: string) => apiFetch<{ deleted: boolean }>(`${ST(id)}/${enc(sid)}`, { method: "DELETE" });

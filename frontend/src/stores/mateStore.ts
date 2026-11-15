@@ -59,6 +59,8 @@ interface MateState {
   syncVersion: number | null;
   /** per mate: bumped when its memories changed elsewhere (the Memory tab refetches) */
   memoryRev: Record<string, number>;
+  /** her memory network / studies changed (a study filed something, the user edited a node): the map refetches */
+  graphRev: Record<string, number>;
   /** per mate: bumped when its relationship changed elsewhere (the Relationship tab refetches) */
   relationRev: Record<string, number>;
   /** per mate: bumped when her own conversation-style changes changed (chips and the style tab's history refetch) */
@@ -190,6 +192,7 @@ let reloadTimer: ReturnType<typeof setTimeout> | undefined;
 export const useMateStore = create<MateState>((set, get) => ({
   syncVersion: null,
   memoryRev: {},
+  graphRev: {},
   relationRev: {},
   styleRev: {},
   bumpStyle: (mateId) => set((s) => ({ styleRev: { ...s.styleRev, [mateId]: (s.styleRev[mateId] ?? 0) + 1 } })),
@@ -304,6 +307,10 @@ export const useMateStore = create<MateState>((set, get) => ({
     if (seen === null && !reason) return;
     if (reason === "memory" && mateId) {
       set((s) => ({ memoryRev: { ...s.memoryRev, [mateId]: (s.memoryRev[mateId] ?? 0) + 1 } }));
+    }
+    if ((reason === "memory" || reason === "graph" || reason === "study") && mateId) {
+      set((s) => ({ graphRev: { ...s.graphRev, [mateId]: (s.graphRev[mateId] ?? 0) + 1 } }));
+      if (reason !== "memory") return; // (nothing else about the mate changed: no full reload)
     }
     if (reason === "relation" && mateId) {
       set((s) => ({ relationRev: { ...s.relationRev, [mateId]: (s.relationRev[mateId] ?? 0) + 1 } }));

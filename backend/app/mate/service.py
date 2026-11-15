@@ -39,9 +39,11 @@ from app.mate.life import diary, sim
 from app.mate.life.runtime import LifeRuntime
 from app.mate.capture import CaptureBroker, CaptureError, pictures, screen_labels
 from app.mate import files
+from app.mate import graph as G
 from app.mate import memory as M
 from app.mate import style as STY
 from app.mate.prompt import LANGUAGES, context_block, prompt_key, settings_change_note, system_prompt
+from app.mate.study import StudyError, Studies, study_hint
 from app.mate.task_memory import TaskMemory
 from app.mate.store import DEFAULT_OUTFIT, MateError, MateStore, normalize_persona, normalize_prefs
 from app.providers import accounts
@@ -120,6 +122,11 @@ class MateService:
         self._token_by_sid: dict[str, str] = {}
         self._delegations: dict[str, dict[str, Any]] = {}  # worker sid -> who delegated (mate) + chain depth
         self._pending: dict[str, list[dict[str, Any]]] = {}  # mate sid -> results waiting for the mate
+        # her studies (app/mate/study.py): a topic, a page, her own curiosity — run in the background, the result back
+        # to her as a <study_result> (queued like a delegation's while she is busy)
+        self.studies: Studies | None = Studies(self)
+        self.studies.deliver = self.deliver_study
+        self._study_pending: dict[str, list[dict[str, Any]]] = {}
         self._depth: dict[str, int] = {}                  # mate sid -> chain depth of its running turn
         # see_screen: requests to the user's desktop app windows (app/mate/capture.py; /ws/sessions registers them)
         self.capture = CaptureBroker()
@@ -605,12 +612,13 @@ class MateService:
         return tok
 
     def token_info(self, token: str | None) -> dict[str, str] | None:
+        """A conversation's bridge token → {mate_id, session_id}; a running study's → {mate_id, study_id, …}."""
         if not token:
             return None
         for known, info in self._tokens.items():
             if secrets.compare_digest(known, token):
                 return info
-        return None
+        return self.studies.token_info(token) if self.studies is not None else None
 
     def configure_engine(self, session: dict[str, Any], req: TurnRequest) -> None:
         """SessionService hook for a kind="mate" turn: everything that makes
@@ -768,10 +776,25 @@ class MateService:
             query = query[:600]
         core_ids = {m["id"] for m in core}
         level = (prefs.get("memory") or {}).get("recall") or "normal"
-        recalled = M.recall([m for m in memories if m["id"] not in core_ids], query, now_utc=now_utc,
+        # her memory network (app/mate/graph.py): the names in the message (and, weaker, the last turns) light up what
+        # she knows; their other names widen the memory recall (a memory saying "Path of Exile" for "엑자일")
+        graph = self.store.graph
+        recent = self._recent_user_texts(mate.get("session_id") or "", 3) if query and not query.startswith("<") else []
+        recall_query = query
+        knowledge: dict[str, Any] = {"nodes": [], "facts": [], "seeds": []}
+        if level != "off" and query and not query.startswith("<"):
+            try:
+                recall_query = graph.expand(mate_id, query)
+                knowledge = graph.recall(mate_id, query, recent, level=level,
+                                         skip={k[2:] for k in injected if k.startswith("f:")}, now=now_utc)
+            except Exception as exc:  # noqa: BLE001 - a turn never fails for the network
+                self._log("warning", f"memory network: {exc}")
+        recalled = M.recall([m for m in memories if m["id"] not in core_ids], recall_query, now_utc=now_utc,
                             now_local=now_local, level=level)
         for m in recalled:
             injected[m["id"]] = turn
+        for f in knowledge["facts"]:
+            injected["f:" + f["id"]] = turn
         changes = self.store.take_memory_changes(mate_id)
         relation = self._relation_lines(rel, st, now_utc, tz, turn)
         life = self._life_lines(mate, st, turn, now_utc, tz)  # (first: what it did to her is part of how she feels)
@@ -779,6 +802,8 @@ class MateService:
         # (her calls they didn't take since she was last told: app/mate/calls.py)
         call_notes, calls_told = self.calls.notes(mate_id) if self.calls is not None else ([], lambda: None)
         prepared = {**st, "turn": turn, "injected": injected}
+        # (a study of her own she hasn't mentioned yet: offered once, hers to bring up)
+        studied = self._untold_studies(mate_id) if query and not query.startswith("<") else []
         def acknowledge() -> None:
             current = self.store._db.query_one("SELECT generation FROM memory_context WHERE mate_id=?", (mate_id,))
             if current and current["generation"] != prepared["generation"]:
@@ -787,11 +812,21 @@ class MateService:
                 self._save_context_state(mate_id, prepared)
                 self.store.ack_memory_changes(mate_id, changes)
                 self.store.mark_used(mate_id, [m["id"] for m in recalled])
+                # (brought to mind and given to her: stronger — what the user named most of all)
+                graph.touch_facts(mate_id, [f["id"] for f in knowledge["facts"]])
+                graph.touch_nodes(mate_id, [*knowledge["seeds"], *[n["id"] for n in knowledge["nodes"]]])
+                if studied:
+                    self._told_studies(mate_id, studied)
                 calls_told()
         req.on_context_delivered = acknowledge
         block = context_block(now_local, self._tz_name(tz, now_utc), recalled=recalled, changes=changes, relation=relation,
                               outfit=self.store.worn_outfit(mate_id), wardrobe=wardrobe, feeling=feeling, life=life,
                               calls=call_notes)
+        lines = G.context_lines(knowledge)
+        if lines:
+            block += "\n" + lines
+        if studied:
+            block += "\n" + study_hint(studied)
         if level != "off" and query and not query.startswith("<"):
             found = self.store.knowledge.search(mate_id, query, limit=4)
             current = self.store._db.query_one("SELECT id FROM messages WHERE session_id=? AND role IN ('user','steer') ORDER BY rowid DESC LIMIT 1", (mate.get("session_id"),))
@@ -1744,6 +1779,83 @@ class MateService:
     async def _tool_get_episode(self, mate, _sid, args):
         return self.store.knowledge.get_episode(mate["id"], str(args.get("episode_id") or ""))
 
+    # ---- her memory network and studies (app/mate/graph.py, app/mate/study.py) ----
+
+    async def _tool_explore_memory(self, mate, _sid, args):
+        q = str(args.get("query") or "").strip()
+        if not q:
+            raise MateError("explore_memory needs a query")
+        g = self.store.graph
+        found = g.search(mate["id"], q, limit=12)
+        g.touch_nodes(mate["id"], [n["id"] for n in found["nodes"][:5]])
+        lines = []
+        for n in found["nodes"]:
+            lines.append(f"[{n['id']}] {n['name']} ({n['kind']})" + (f" aka {', '.join(n['aliases'][:4])}" if n["aliases"] else "")
+                         + (f": {n['summary'][:200]}" if n["summary"] else ""))
+        for f in found["facts"]:
+            src = f" — from {f['doc_title'] or f['doc_url']}" if f.get("doc_id") else " — from a conversation"
+            lines.append(f"[{f['id']}] {f['subject_name']}: {f['statement']}"
+                         + (f" (valid {f['valid_from']})" if f.get("valid_from") else "") + src)
+        for p in found["passages"]:
+            lines.append(f"[{p['chunk_id']}] page “{p['title']}”: {p['text'][:400]}")
+        return "\n".join(lines) or "Nothing in your memory network about that yet (you could study it: study_topic)."
+
+    async def _tool_open_memory_node(self, mate, _sid, args):
+        g = self.store.graph
+        ref = str(args.get("node") or "").strip()
+        node = g.node(mate["id"], ref) if ref.startswith("n_") else g.find(mate["id"], ref)
+        if node is None:
+            raise MateError(f"no node {ref!r} in your memory network")
+        d = g.detail(mate["id"], node["id"])
+        g.touch_nodes(mate["id"], [node["id"]])
+        n = d["node"]
+        out = [f"[{n['id']}] {n['name']} ({n['kind']})" + (f" aka {', '.join(n['aliases'])}" if n["aliases"] else "")]
+        if n["summary"]:
+            out.append(n["summary"])
+        for f in d["facts"][:40]:
+            if f["status"] != "active":
+                out.append(f"  (old, replaced) {f['statement']}")
+                continue
+            src = (f" — page “{f['doc_title']}”: “{f['quote'][:160]}”" if f.get("doc_id") else
+                   f" — conversation: “{f['quote'][:160]}”" if f.get("quote") else "")
+            out.append(f"  [{f['id']}] {f['statement']}" + (f" (valid {f['valid_from']})" if f.get("valid_from") else "") + src)
+        mems = [m["ref"][4:] for m in d["mentions"] if m["ref"].startswith("mem:")]
+        for mid in mems[:15]:
+            mem = self.store.memory(mate["id"], mid)
+            if mem and mem.get("status") == "active":
+                out.append(f"  memory [{mid}] {mem['text']}")
+        if d["neighbors"]:
+            out.append("Connected: " + ", ".join(f"{x['name']} [{x['id']}]" for x in d["neighbors"][:20]))
+        return "\n".join(out)
+
+    async def _tool_learn_url(self, mate, _sid, args):
+        try:
+            st = self.studies.request(mate["id"], kind="url", url=str(args.get("url") or ""),
+                                      goal=str(args.get("goal") or ""), by="mate")
+        except StudyError as exc:
+            raise MateError(str(exc)) from None
+        return (f"Reading it in the background (study {st['id']}); the result reaches you as a <study_result>. Tell the "
+                "user briefly and end your turn.")
+
+    async def _tool_study_topic(self, mate, _sid, args):
+        try:
+            st = self.studies.request(mate["id"], kind="topic", topic=str(args.get("topic") or ""),
+                                      goal=str(args.get("goal") or ""), depth=str(args.get("depth") or "normal"), by="mate")
+        except StudyError as exc:
+            raise MateError(str(exc)) from None
+        ahead = self.store._db.query_one("SELECT COUNT(*) n FROM know_studies WHERE state IN ('queued','running') AND "
+                                         "created_at<?", (st["created_at"],))["n"]
+        return (f"Study {st['id']} of “{st['topic']}” ({st['depth']}) is "
+                + ("starting" if not ahead else f"queued behind {ahead} other(s)")
+                + "; its result reaches you as a <study_result>. Tell the user briefly and end your turn.")
+
+    async def _tool_list_studies(self, mate, _sid, args):
+        rows = self.studies.list(mate["id"], 12)
+        if not rows:
+            return "No studies yet."
+        return "\n".join(f"[{r['id']}] {r['topic'] or r['url']} — {r['state']}, {r['pages']} pages, {r['facts']} facts"
+                         + (f": {r['summary'][:200]}" if r["summary"] else "") for r in rows)
+
     async def _tool_get_task_record(self, mate, _sid, args):
         return self.tasks.get(mate["id"], str(args.get("request_id") or ""))
 
@@ -1798,6 +1910,36 @@ class MateService:
                   + (f" — {reason}" if reason else ""), code="mate.style_changed", detail=rec, session_id=sid)
         return (f"Conversation style updated [{rec['id']}]: {STY.describe(changes)}. Talk this way from this reply "
                 f"on; the user sees the change and can undo it. Now: {STY.summary(mate)}")
+
+    def _recent_user_texts(self, sid: str, n: int) -> list[str]:
+        """The user's last few messages before this one, oldest first (what the conversation has been about)."""
+        if not sid:
+            return []
+        rows = self.store._db.query("SELECT content,meta FROM messages WHERE session_id=? AND role IN ('user','steer') "
+                                    "ORDER BY rowid DESC LIMIT ?", (sid, n + 1))
+        out = []
+        for r in rows[1:]:
+            try:
+                meta = json.loads(r["meta"] or "null") or {}
+            except ValueError:
+                meta = {}
+            if isinstance(meta, dict) and meta.get("internal"):
+                continue
+            out.append(str(r["content"] or "")[:1000])
+        return out[::-1]
+
+    def _untold_studies(self, mate_id: str) -> list[dict[str, Any]]:
+        if self.studies is None:
+            return []
+        rows = self.store._db.query("SELECT id,topic,summary,finished_at FROM know_studies WHERE mate_id=? AND "
+                                    "requested_by='self' AND state='done' AND delivered=0 AND finished_at>=? "
+                                    "ORDER BY finished_at DESC LIMIT 2",
+                                    (mate_id, (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()))
+        return [dict(r) for r in rows]
+
+    def _told_studies(self, mate_id: str, studied: list[dict[str, Any]]) -> None:
+        for st in studied:
+            self.store._db.execute("UPDATE know_studies SET delivered=1 WHERE id=? AND mate_id=?", (st["id"], mate_id))
 
     def _users_latest(self, sid: str) -> dict[str, Any] | None:
         """What the user wrote in this turn; None when something else started it (a delegation's result, her greeting,
@@ -2034,6 +2176,8 @@ class MateService:
             self._depth.pop(sid, None)  # the next turn is the user's unless a result starts it
             if self._pending.get(sid):
                 asyncio.get_running_loop().call_soon(self._flush, sid)
+            if self._study_pending.get(sid):
+                asyncio.get_running_loop().call_soon(self._flush_studies, sid)
 
     @staticmethod
     def _result_block(e: dict[str, Any]) -> str:
@@ -2079,6 +2223,50 @@ class MateService:
             self._pending.setdefault(mate_sid, [])[:0] = items  # retried when that turn ends
         except KeyError:
             pass  # the mate's conversation is gone
+
+    # ---- studies (app/mate/study.py) ----
+
+    @staticmethod
+    def _study_block(st: dict[str, Any]) -> str:
+        attrs = (f'study_id="{_attr(st["id"])}" topic="{_attr(st["topic"] or st["url"])}" status="{st["state"]}" '
+                 f'pages="{st["pages"]}" facts="{st["facts"]}" asked_by="{st["requested_by"]}"')
+        body = st["summary"] if st["state"] == "done" else (st.get("error") or "the study could not finish")
+        if st.get("open_questions"):
+            body += "\n\nStill open: " + "; ".join(st["open_questions"][:5])
+        return f"<study_result {attrs}>\n{body}\n</study_result>"
+
+    def deliver_study(self, st: dict[str, Any]) -> None:
+        """A study the user asked for is over: it goes back to her, now or when her turn ends (not on a call)."""
+        mate = self.store.get(st["mate_id"])
+        sid = mate.get("session_id")
+        if not sid:  # (asked from the panel before they ever talked: her conversation starts with it)
+            try:
+                sid = self.conversation(st["mate_id"])["session_id"]
+            except Exception:  # noqa: BLE001
+                return
+        self._study_pending.setdefault(sid, []).append(st)
+        try:
+            asyncio.get_running_loop().call_soon(self._flush_studies, sid)
+        except RuntimeError:
+            pass
+
+    def _flush_studies(self, mate_sid: str) -> None:
+        items = self._study_pending.get(mate_sid)
+        if not items or self._svc.is_running(mate_sid):
+            return
+        call = self.calls.active() if self.calls is not None else None
+        if call is not None and call.session_id == mate_sid:
+            return  # (delivered once the call is over)
+        self._study_pending.pop(mate_sid, None)
+        try:
+            self._svc.start_turn(mate_sid, "\n\n".join(self._study_block(st) for st in items),
+                                 meta={"internal": True, "kind": "study_result", "studies": [st["id"] for st in items]})
+            for st in items:
+                self.store._db.execute("UPDATE know_studies SET delivered=1 WHERE id=?", (st["id"],))
+        except TurnBusyError:
+            self._study_pending.setdefault(mate_sid, [])[:0] = items
+        except KeyError:
+            pass
 
     # ---- introspection (tests / admin) ----
 
