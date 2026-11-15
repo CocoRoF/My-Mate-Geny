@@ -123,6 +123,10 @@ export interface VoiceStatus {
 export type Feeling = "neutral" | "joy" | "sadness" | "anger" | "surprise" | "fear" | "disgust" | "smile";
 export const FEELINGS: Feeling[] = ["neutral", "joy", "sadness", "anger", "surprise", "fear", "disgust", "smile"];
 
+/** a profile's sound clips: put into a line where it laughs / yawns (backend app/voicehost/sounds.py), never cloned from */
+export type SoundLabel = "laugh" | "yawn";
+export const SOUND_LABELS: SoundLabel[] = ["laugh", "yawn"];
+
 export interface VoiceRef {
   id: string;
   label: Feeling;
@@ -145,7 +149,17 @@ export interface LocalVoice {
   default_params?: Record<string, unknown>;
   tags?: string[];
   starred?: boolean;
+  /** the clips it is cloned from (one per feeling) */
   references: VoiceRef[];
+  /** its sound clips (laugh, yawn: several of each) — apart from the feelings, so nothing clones from them */
+  sounds: (Omit<VoiceRef, "label"> & { label: SoundLabel })[];
+}
+
+/** the server lists a profile's sound clips among its clips: here they are kept apart */
+function withSounds(v: LocalVoice): LocalVoice {
+  const all = (v.references ?? []) as (VoiceRef | (Omit<VoiceRef, "label"> & { label: string }))[];
+  const isSound = (r: { label: string }) => (SOUND_LABELS as string[]).includes(r.label);
+  return { ...v, references: all.filter((r) => !isSound(r)) as VoiceRef[], sounds: all.filter(isSound) as LocalVoice["sounds"] };
 }
 
 const j = (body: unknown): RequestInit => ({ body: JSON.stringify(body) });
@@ -161,20 +175,20 @@ export const loadModel = (id: string) => apiFetch<{ resident: Resident }>(`/api/
 export const unloadModel = (id: string, park = false) =>
   apiFetch<{ unloaded: boolean }>(`/api/voice/models/${enc(id)}/unload`, { method: "POST", ...j({ park }) });
 
-export const listLocalVoices = () => apiFetch<{ voices: LocalVoice[] }>("/api/voice/voices").then((r) => r.voices);
+export const listLocalVoices = () => apiFetch<{ voices: LocalVoice[] }>("/api/voice/voices").then((r) => r.voices.map(withSounds));
 export const createLocalVoice = (name: string, language: string) =>
-  apiFetch<LocalVoice>("/api/voice/voices", { method: "POST", ...j({ name, language }) });
+  apiFetch<LocalVoice>("/api/voice/voices", { method: "POST", ...j({ name, language }) }).then(withSounds);
 export type VoicePatch = Partial<Pick<LocalVoice, "name" | "language" | "instruct" | "description" | "default_model" | "default_params" | "tags" | "starred">>;
 export const updateLocalVoice = (id: string, patch: VoicePatch) =>
-  apiFetch<LocalVoice>(`/api/voice/voices/${enc(id)}`, { method: "PATCH", ...j(patch) });
+  apiFetch<LocalVoice>(`/api/voice/voices/${enc(id)}`, { method: "PATCH", ...j(patch) }).then(withSounds);
 export const duplicateLocalVoice = (id: string, name = "") =>
-  apiFetch<LocalVoice>(`/api/voice/voices/${enc(id)}/duplicate`, { method: "POST", ...j({ name }) });
+  apiFetch<LocalVoice>(`/api/voice/voices/${enc(id)}/duplicate`, { method: "POST", ...j({ name }) }).then(withSounds);
 export const deleteLocalVoice = (id: string) => apiFetch<{ deleted: boolean }>(`/api/voice/voices/${enc(id)}`, { method: "DELETE" });
 
 export function addVoiceReference(
   id: string,
   file: Blob,
-  label: Feeling,
+  label: Feeling | SoundLabel,
   transcript: string,
   filename = "clip.wav",
   opts: { start?: number | null; end?: number | null; language?: string } = {},
@@ -194,6 +208,21 @@ export const updateVoiceReference = (rid: string, patch: { label?: Feeling; tran
   apiFetch<VoiceRef>(`/api/voice/references/${enc(rid)}`, { method: "PATCH", ...j(patch) });
 export const deleteVoiceReference = (rid: string) => apiFetch<{ deleted: boolean }>(`/api/voice/references/${enc(rid)}`, { method: "DELETE" });
 export const referenceAudioUrl = (vid: string, rid: string) => `/api/voice/voices/${enc(vid)}/references/${enc(rid)}/audio`;
+
+/** a profile's laughs: its own sound clips (how many of each), the ones made for it (backend VoiceHost.voice_sounds) */
+export interface VoiceSounds {
+  own: Partial<Record<SoundLabel, number>>;
+  made: { kinds: Record<string, string[]>; scores: Record<string, number | null>; model_id: string; made_at: number; checked: boolean } | null;
+  making: boolean;
+  /** the installed model that would make them ("": none can) */
+  maker: string;
+  auto: boolean;
+  heard?: (number | null)[];
+}
+export const getVoiceSounds = (vid: string) => apiFetch<VoiceSounds>(`/api/voice/voices/${enc(vid)}/sounds`);
+export const makeVoiceSounds = (vid: string) => apiFetch<VoiceSounds>(`/api/voice/voices/${enc(vid)}/sounds`, { method: "POST" });
+export const forgetVoiceSounds = (vid: string) => apiFetch<VoiceSounds>(`/api/voice/voices/${enc(vid)}/sounds`, { method: "DELETE" });
+export const voiceSoundUrl = (vid: string, name: string) => `/api/voice/voices/${enc(vid)}/sounds/${enc(name)}`;
 
 export interface PreviewInfo {
   [k: string]: string;
@@ -328,6 +357,9 @@ export interface StudioSettings {
   default_tts: string;
   default_stt: string;
   default_voice: string;
+  /** a voice's own laugh made the first time a line of it laughs */
+  auto_sounds: boolean;
+  sound_maker: string;
   paths: { home: string; models: string; runtimes: string; references: string; history: string };
   engine_mode: string;
   device: string;
@@ -359,7 +391,15 @@ export interface HistoryEntry {
   note: string;
   batch_id: string;
   batch_index: number | null;
-  info?: { segments?: number; device?: string; elapsed?: number };
+  info?: {
+    segments?: number;
+    device?: string;
+    elapsed?: number;
+    /** the sounds written in the line, as made (clip: the voice's own laugh put in) */
+    sounds?: { kind: string; said: string; clip?: string }[];
+    /** what the engine was given ([laugh]: a clip) */
+    spoken?: string;
+  };
 }
 
 export interface HistoryUsage {
@@ -387,6 +427,8 @@ export interface GenerateBody {
   seed?: number | null;
   text: string;
   source?: "studio" | "compare" | "seed";
+  /** false: the sounds written in it (헤헤, 하암~) read as written */
+  nonverbal?: boolean;
 }
 
 export type BatchState = "queued" | "running" | "done" | "done_with_errors" | "cancelled" | "interrupted" | "failed";
@@ -431,7 +473,7 @@ export const AUDIO_FORMATS: AudioFormat[] = ["wav", "mp3", "ogg", "flac"];
 
 export const getOverview = (lang: string) => apiFetch<Overview>(`/api/voice/overview?lang=${enc(lang)}`);
 export const getStudioSettings = () => apiFetch<StudioSettings>("/api/voice/settings");
-export const putStudioSettings = (patch: Partial<Record<RuntimeKey, number | null>> & { default_tts?: string; default_stt?: string; default_voice?: string }) =>
+export const putStudioSettings = (patch: Partial<Record<RuntimeKey, number | null>> & { default_tts?: string; default_stt?: string; default_voice?: string; auto_sounds?: boolean }) =>
   apiFetch<StudioSettings>("/api/voice/settings", { method: "PUT", ...j(patch) });
 export const getModelDefaults = (id: string) => apiFetch<{ params: Record<string, unknown> }>(`/api/voice/models/${enc(id)}/defaults`).then((r) => r.params);
 export const putModelDefaults = (id: string, params: Record<string, unknown>) =>

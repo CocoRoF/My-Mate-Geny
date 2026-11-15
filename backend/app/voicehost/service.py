@@ -18,11 +18,13 @@ import io
 import itertools
 import random
 import logging
+import re
 import shutil
 import time
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from . import catalog, gate as G, system, textsplit
+from . import catalog, gate as G, nonverbal as NV, sounds as S, system, textsplit
 from .batch import BatchInputError, BatchRunner, BatchStore, parse as parse_batch
 from .history import HistoryStore
 from .host import EngineManager, NoRoom
@@ -153,6 +155,9 @@ class VoiceHost:
         self.engines = EngineManager(self.s, self.installer.python_for, self.installer.worker_env)
         self.queue = GpuQueue(self.engines)
         self.voices = VoiceLibrary(self.s, self.store)
+        self.sounds = S.SoundBank(self.s.home)
+        self._making: dict[str, asyncio.Task] = {}      # a voice's laugh being made (by its clip's key)
+        self._made_none: dict[str, float] = {}           # … and when no take laughed (not tried again for a day)
         self.history = HistoryStore(db, self.s.home / "history")
         self.batches = BatchStore(db)
         self.batch_runner = BatchRunner(self, self.batches)
@@ -205,6 +210,9 @@ class VoiceHost:
                     setattr(self.s, key, kind(min(hi, max(lo, kind(v)))))
                 except (TypeError, ValueError):
                     pass
+        auto = self.store.setting("sounds:auto")
+        if isinstance(auto, bool):
+            self.s.auto_sounds = auto
 
     def settings_doc(self) -> dict[str, Any]:
         return {"values": {k: getattr(self.s, k) for k in RUNTIME},
@@ -212,6 +220,7 @@ class VoiceHost:
                 "bounds": {k: [lo, hi] for k, (_, lo, hi) in RUNTIME.items()},
                 "default_tts": self.store.setting("default:tts") or "", "default_stt": self.store.setting("default:stt") or "",
                 "default_voice": self.store.setting("default:voice") or "",
+                "auto_sounds": self.s.auto_sounds, "sound_maker": self.sound_maker(),
                 "paths": {"home": str(self.s.home), "models": str(self.s.models_dir), "runtimes": str(self.s.runtimes_dir),
                           "references": str(self.s.refs_dir), "history": str(self.history.root)},
                 "engine_mode": self.s.engine_mode, "device": self.s.device, "hf_endpoint": self.s.hf_endpoint}
@@ -242,6 +251,9 @@ class VoiceHost:
             if vid and self.voices.get(vid) is None:
                 raise VoiceError("No such profile", code="gone", status=404)
             self.store.put_setting("default:voice", vid or None)
+        if "auto_sounds" in patch:
+            self.s.auto_sounds = bool(patch["auto_sounds"])
+            self.store.put_setting("sounds:auto", self.s.auto_sounds)
         if any(k.startswith("history_") for k in patch):
             self._prune_history()
         self.on_change("settings")
@@ -414,10 +426,12 @@ class VoiceHost:
     async def synthesize(self, model_id: str, text: str, *, reference: dict[str, Any] | None = None,
                          language: str = "auto", instruct: str = "", params: dict[str, Any] | None = None,
                          seed: int | None = None, priority: int = INTERACTIVE,
-                         source: str = "") -> tuple[bytes, dict[str, Any]]:
+                         source: str = "", nonverbal: bool = True) -> tuple[bytes, dict[str, Any]]:
         """One line (or a long text) in a voice → (WAV bytes, what it took). ``reference``: {path, text, language}
         (voices.resolve), or None for a model that can make a voice of its own (OmniVoice: auto / design). The model's
-        default parameters (Voice Studio → 모델) are under ``params``; ``source``: who asked (the GPU job record)."""
+        default parameters (Voice Studio → 모델) are under ``params``; ``source``: who asked (the GPU job record).
+        ``nonverbal``: the sounds written in it (헤헤, 하암~, 후우…) made as sounds — the voice's own laugh put in where
+        it laughs, the rest as this engine makes them (nonverbal.py, sounds.py); off: read as written."""
         from . import audio
         import soundfile as sf
 
@@ -443,11 +457,24 @@ class VoiceHost:
                              code="needs_voice")
         if reference is not None and not (reference.get("text") or "").strip() and spec.engine == "omnivoice":
             raise VoiceError("OmniVoice clones from a clip with its transcript: this clip has none", code="needs_text")
+        # the sounds in it: a laugh the voice has a clip of becomes a part of its own, the rest is said as this engine
+        # makes it (the voice's laughs: its own clips, else the ones made for its neutral clip)
+        base = (self.voices.resolve(reference["voice_id"]) if reference and reference.get("voice_id") else None) \
+            or reference
+        clips = self.sounds.clips(base, self.voices.sound_clips(str((reference or {}).get("voice_id") or ""))) \
+            if reference is not None and nonverbal else {}
+        plan, made = NV.parts(text, spec.engine, frozenset(clips), on=nonverbal)
+        if not plan:
+            raise VoiceError("Nothing to say", code="empty")
+        if nonverbal and base is not None and any(m["kind"] in ("laugh", "giggle") and not m.get("clip") for m in made):
+            self._want_sounds(base)
         if reference is not None:  # (the worker takes the clip itself; which feeling it was is ours to know)
             reference = {k: reference[k] for k in ("path", "text", "language") if k in reference}
         engine = spec.engine if self.s.engine_mode != "fake" else "fake"
         strategy, batch = STRATEGY.get(engine, ("segments", 1))
-        segments = [text] if strategy == "whole" else (textsplit.split(text) or [text])
+        said = [p[1] for p in plan if p[0] == "say"]
+        per_part = [[t] if strategy == "whole" else (textsplit.split(t) or [t]) for t in said]
+        segments = [seg for segs in per_part for seg in segs]
         from app.services._ids import new_id
 
         tmp = self.s.tmp_dir / new_id("tts")
@@ -481,7 +508,8 @@ class VoiceHost:
 
         rec: dict[str, Any] = {"kind": "speak", "model_id": spec.id, "source": source, "chars": len(text)}
         try:
-            chunks, sr = await self.queue.run(priority, f"speak {spec.id}", job, rec)
+            chunks, sr = await self.queue.run(priority, f"speak {spec.id}", job, rec) if segments \
+                else ([], spec.sample_rate)  # (nothing but a laugh: the voice's clip is the line)
         except NoRoom as e:
             raise VoiceError(str(e), code="no_room", status=409, data=e.data) from None
         except WorkerError as e:
@@ -492,7 +520,22 @@ class VoiceHost:
                              status=400 if e.kind == "user" else 502) from None
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
-        wav = audio.normalize(audio.concat(chunks, sr, gap=0.22))
+        if any(p[0] == "sound" for p in plan):
+            pieces, at, k = [], 0, 0
+            for p in plan:
+                if p[0] == "say":
+                    n = len(per_part[at])
+                    pieces.append(audio.concat(chunks[sum(len(x) for x in per_part[:at]):][:n], sr, gap=0.22))
+                    at += 1
+                else:
+                    files = clips.get(p[1]) or clips.get("laugh") or []
+                    pieces.append((p[1], S.pick(files, k + (seed or 0))))
+                    k += 1
+            wav = audio.normalize(await asyncio.to_thread(S.splice, pieces, sr))
+        else:
+            wav = audio.normalize(audio.concat(chunks, sr, gap=0.22))
+        info["sounds"] = made
+        info["spoken"] = " ".join(p[1] if p[0] == "say" else f"[{p[1]}]" for p in plan)
         duration = len(wav) / sr if sr else 0
         info.update({"model_id": spec.id, "sample_rate": sr, "seconds": round(duration, 3), "segments": len(segments),
                      "elapsed": round(time.perf_counter() - t0, 3), "seed": seed, "params": params,
@@ -500,6 +543,105 @@ class VoiceHost:
                      "rtf": round(info.get("generate_seconds", 0) / duration, 3) if duration else None})
         rec.update(audio_seconds=info["seconds"], rtf=info["rtf"])
         return _wav_bytes(wav, sr), info
+
+    # -- a voice's own laugh (sounds.py) ------------------------------------------------------------------------
+    def sound_maker(self) -> str:
+        """the installed model that makes a voice's laugh best (measured: OmniVoice's laugh on its own), "" none"""
+        for mid in ("omnivoice", "cosyvoice3-0.5b", "qwen3-tts-1.7b-base", "qwen3-tts-0.6b-base"):
+            spec = catalog.BY_ID.get(mid)
+            if spec and self.installer.installed(spec) and (spec.engine in NV.BANK_TEXTS
+                                                            or self.s.engine_mode == "fake"):
+                return mid
+        return ""
+
+    def _want_sounds(self, ref: dict[str, Any]) -> None:
+        """a line of this voice laughed and it has no laugh yet: make it in the background (the next lines have it)"""
+        key = S.ref_key(ref)
+        if not self.s.auto_sounds or key in self._making or not self.sound_maker() or not ref.get("text"):
+            return
+        if time.time() - self._made_none.get(key, 0) < 86400:
+            return
+
+        async def run() -> None:
+            try:
+                await self.make_sounds(ref, priority=BACKGROUND)
+            except Exception as e:  # noqa: BLE001 - a laugh not made is the inline sound again
+                log.info("a voice's laugh not made: %s", e)
+            finally:
+                self._making.pop(key, None)
+
+        self._making[key] = asyncio.create_task(run())
+
+    async def make_sounds(self, ref: dict[str, Any], *, model_id: str = "", priority: int = PREVIEW,
+                          takes: int = 16, keep: int = 3) -> dict[str, Any]:
+        """A voice's own laugh: ``takes`` takes of a laugh in it (the lines that laugh best on the maker), the ``keep``
+        that an AudioSet classifier hears laughing most kept (sounds.py) → what was made (SoundBank.made)."""
+        from app.services._ids import new_id
+
+        model_id = model_id or self.sound_maker()
+        if not model_id:
+            raise VoiceError("No installed model can make a laugh (OmniVoice makes it best)", code="not_installed",
+                             status=409)
+        spec = self._spec(model_id)
+        self._need_gate()
+        if not (ref.get("text") or "").strip() and spec.engine == "omnivoice":
+            raise VoiceError("OmniVoice clones from a clip with its transcript: this clip has none", code="needs_text")
+        checked = await self.installer.ensure_sound_check()
+        texts = NV.BANK_TEXTS.get(spec.engine) or NV.BANK_TEXTS["omnivoice"]
+        tmp = self.s.tmp_dir / new_id("snd")
+        tmp.mkdir(parents=True, exist_ok=True)
+        worker_ref = {k: ref[k] for k in ("path", "text", "language") if k in ref}
+
+        async def job() -> dict[str, Any]:
+            r = await self.engines.acquire(spec.id)
+            try:
+                return await r.worker.call(
+                    "sounds", timeout=900, reference=worker_ref, texts=[list(t) for t in texts["laugh"]],
+                    takes=takes, keep=keep, min_score=0.2, check_dir=str(self.installer.sound_check_dir()) if checked
+                    else "", out_prefix=str(tmp / "t"), seed=random.randint(1, 10**6))
+            finally:
+                self.engines.release(r)
+
+        try:
+            out = await self.queue.run(priority, f"laugh {spec.id}", job,
+                                       {"kind": "speak", "model_id": spec.id, "source": "sounds"})
+            if not out.get("takes"):
+                self._made_none[S.ref_key(ref)] = time.time()
+                raise VoiceError("None of the takes laughed: try again, or record a laugh for this voice",
+                                 code="no_laugh", status=422, data={"heard": out.get("heard")})
+            made = await asyncio.to_thread(self.sounds.save, ref, out["takes"], model_id=spec.id,
+                                           checked=bool(out.get("checked")))
+        except NoRoom as e:
+            raise VoiceError(str(e), code="no_room", status=409, data=e.data) from None
+        except WorkerError as e:
+            raise VoiceError(str(e), code="engine", status=502) from None
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        self._made_none.pop(S.ref_key(ref), None)
+        self.on_change("voices")
+        return {**made, "heard": out.get("heard")}
+
+    def voice_sounds(self, vid: str) -> dict[str, Any]:
+        """a profile's laughs: its own clips (by kind: how many), the ones made for it, whether one is being made"""
+        base = self.voices.resolve(vid)
+        if base is None:
+            raise VoiceError("This profile has no clip yet", code="no_clip")
+        made = self.sounds.made(base)
+        return {"own": {k: len(v) for k, v in self.voices.sound_clips(vid).items()},
+                "made": None if made is None else {
+                    "kinds": {k: [Path(f).name for f in fs] for k, fs in made["kinds"].items()},
+                    "scores": made.get("scores") or {}, "model_id": made.get("model_id"),
+                    "made_at": made.get("made_at"), "checked": made.get("checked")},
+                "making": S.ref_key(base) in self._making, "maker": self.sound_maker(),
+                "auto": self.s.auto_sounds}
+
+    def made_sound_file(self, vid: str, name: str) -> Path | None:
+        base = self.voices.resolve(vid)
+        made = self.sounds.made(base) if base else None
+        if not made or not re.fullmatch(r"[a-z]+-\d+\.wav", name):
+            return None
+        f = Path(made["dir"]) / name
+        return f if f.is_file() else None
 
     # -- hearing ----------------------------------------------------------------------------------------------------
     async def transcribe(self, data: bytes, *, language: str = "auto", model_id: str = "",
@@ -604,7 +746,8 @@ class VoiceHost:
     async def generate(self, *, model_id: str = "", text: str, voice_id: str = "", feeling: str = "neutral",
                        mode: str = "auto", language: str = "auto", instruct: str = "",
                        params: dict[str, Any] | None = None, seed: int | None = None, source: str = "studio",
-                       batch_id: str = "", batch_index: int | None = None, priority: int = PREVIEW) -> dict[str, Any]:
+                       batch_id: str = "", batch_index: int | None = None, priority: int = PREVIEW,
+                       nonverbal: bool = True) -> dict[str, Any]:
         """A line in a profile's voice (``clone``: its clip of the feeling, else its neutral one), in a described voice
         (``design``: the instruction), or ``auto`` (the profile's clip when it has one, else the model's own voice) —
         then kept in the history with everything that made it. ``seed`` None: a random one, recorded."""
@@ -642,18 +785,20 @@ class VoiceHost:
             seed = random.randint(0, 2**31 - 1)
         wav, info = await self.synthesize(spec.id, text, reference=reference, language=language or "auto",
                                           instruct=instruct, params=merged, seed=int(seed), priority=priority,
-                                          source=source)
+                                          source=source, nonverbal=nonverbal)
         entry = self.history.add(wav, {
             "source": source, "model_id": spec.id, "voice_id": voice["id"] if voice else "",
             "voice_name": voice["name"] if voice else "", "feeling": feeling or "", "mode": mode,
             "ref_label": (reference or {}).get("label", ""), "language": info.get("language") or language or "auto",
-            "text": text, "instruct": info.get("instruct") or "", "params": info.get("params") or {},
+            "text": text, "instruct": info.get("instruct") or "",
+            # (read as written: kept with its settings, so the same line again is read as written too)
+            "params": {**(info.get("params") or {}), **({} if nonverbal else {"_nonverbal": False})},
             "seed": info.get("seed"), "sample_rate": info.get("sample_rate"), "seconds": info.get("seconds"),
             "ready_seconds": info.get("ready_seconds"), "generate_seconds": info.get("generate_seconds"),
             "rtf": info.get("rtf"), "batch_id": batch_id, "batch_index": batch_index})
         await asyncio.to_thread(self._prune_history)
         self.on_change("history")
-        entry["info"] = {k: info.get(k) for k in ("segments", "device", "elapsed")}
+        entry["info"] = {k: info.get(k) for k in ("segments", "device", "elapsed", "sounds", "spoken")}
         return entry
 
     def _prune_history(self) -> int:
@@ -712,6 +857,8 @@ class VoiceHost:
                 raise VoiceError(f"No model {x['model']}", code="unknown_model")
         keep = {k: settings.get(k) for k in ("model_id", "voice_id", "feeling", "mode", "language", "instruct",
                                              "params", "seed") if settings.get(k) not in (None, "")}
+        if settings.get("nonverbal") is False:
+            keep["nonverbal"] = False
         b = self.batches.create(label or "", keep, lines)
         self.batch_runner.start(b["id"])
         self.on_change(f"batch:{b['id']}")

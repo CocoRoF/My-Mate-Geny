@@ -24,6 +24,8 @@ class VoiceSettings:
     # host RAM parked weights may take in total; beyond it an evicted model is stopped instead
     park_ram_gb: float = 6.0
     max_text_chars: int = 5000
+    # a voice's own laugh made the first time a line of it laughs (app/voicehost/sounds.py; Voice Studio → 설정)
+    auto_sounds: bool = True
     # Voice Studio's history: at most this many lines and this much audio (the oldest unstarred go first)
     history_max_entries: int = 2000
     history_max_gb: float = 5.0

@@ -31,6 +31,7 @@ from app.mate import files, netio
 from app.mate.providers import (ELEVEN_BATCH_STT, ELEVEN_DEFAULT_MODEL, ELEVEN_REALTIME_MODELS, Providers, elevenlabs_api,
                                 openai_api, openai_voices)
 from app.mate.store import MateError, MateStore, normalize_voice
+from app.voicehost import nonverbal
 
 log = logging.getLogger(__name__)
 
@@ -205,6 +206,20 @@ def resolve_emotion_ref(profile: dict[str, Any], emotion: str) -> tuple[str | No
     return None, ""
 
 
+# How each engine is given the sounds written in a line (헤헤, 하암~, 후우…: app/voicehost/nonverbal.py): ElevenLabs v3 / v4
+# take audio tags ([laughs] 헤헤), an OmniVoice server its own ([laughter] 헤헤); the rest only what can be said (ㅋㅋ →
+# 크크, (웃음) → 하하하, ㅠㅠ not read). The version is in a line's cache key when it has a sound: such a line made before
+# is made again (the others stay as they were cached).
+NONVERBAL_VERSION = 1
+
+
+def _nonverbal_style(engine: str, tts: dict[str, Any]) -> str:
+    if engine == "elevenlabs":
+        model = str(tts.get("model") or ELEVEN_DEFAULT_MODEL)
+        return "elevenlabs" if model.startswith(("eleven_v3", "eleven_v4")) else "plain"
+    return "omnivoice" if engine == "omnivoice" else "plain"
+
+
 # Emotion tags of the mate (docs/mate.md §3) -> OmniVoice profile emotions.
 _OMNI_EMOTION = {"joy": "joy", "smile": "joy", "laugh": "joy", "greet": "joy", "agree": "neutral",
                  "surprised": "surprise", "sad": "sadness", "worried": "sadness", "angry": "anger", "shy": "neutral",
@@ -253,6 +268,9 @@ class VoiceService:
         if not self.providers.configured(engine, "tts"):
             return Speech(b"", "", False, fallback=self.providers.missing_reason(engine, "tts"))
         text = speakable_text(text)
+        sounds = bool(nonverbal.find(text))
+        if engine != "local" and sounds:  # (the local models: VoiceHost.synthesize, with the voice's own laugh)
+            text = nonverbal.render(text, _nonverbal_style(engine, tts)).text
         if not re.search(r"\w", text):
             raise MateError("nothing to say")
         if len(text) > MAX_TEXT:
@@ -266,6 +284,8 @@ class VoiceService:
                  "profile": tts.get("profile"), "language": tts.get("language") or mate["persona"].get("language"),
                  "emotion": emotion, "text": text,
                  "url": cfg.get("omnivoice_url") if engine == "omnivoice" else cfg.get("http_tts_url")}
+        if sounds:  # (a line with a laugh in it is made again when how sounds are made changes; the rest stay cached)
+            shape["nv"] = NONVERBAL_VERSION
         if engine == "local":
             # (her model, her voice's clip for this feeling, its instruction: a new clip is a new line)
             lv = self._local_voice(mate, tts, emotion)

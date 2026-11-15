@@ -22,6 +22,8 @@ from .settings import VoiceSettings
 from .store import VoiceStore
 
 FEELINGS = ("neutral", "joy", "sadness", "anger", "surprise", "fear", "disgust", "smile")
+# a profile's sound clips: put into a line where it laughs / yawns (app/voicehost/sounds.py), never cloned from
+SOUNDS = ("laugh", "yawn")
 # a mate's emotion tag (or a feeling) → the clips to try, in order; the neutral clip is always the last resort
 _CHAIN = {"joy": ("joy",), "laugh": ("joy",), "smile": ("smile", "joy"), "greet": ("smile", "joy"),
           "shy": ("smile",), "surprised": ("surprise",), "surprise": ("surprise",), "sad": ("sadness",),
@@ -59,10 +61,28 @@ def _builtin(key: str) -> dict[str, Any] | None:
                          "duration": float(e.get("seconds") or 0), "stats": {}})
     if not refs:
         return None
+    sounds = spec.get("sounds") if isinstance(spec.get("sounds"), dict) else {}
+    for kind, files in sounds.items():
+        for i, rel in enumerate(files if kind in SOUNDS else ()):
+            f = d / str(rel)
+            if f.is_file():
+                refs.append({"id": f"{BUILTIN}{key}:{kind}:{i + 1}", "voice_id": f"{BUILTIN}{key}", "label": kind,
+                             "file": str(f), "transcript": "", "language": spec.get("language", "ko"), "duration": 0.0,
+                             "stats": {}})
     return {"id": f"{BUILTIN}{key}", "name": spec.get("name") or key, "language": spec.get("language", "ko"),
             "instruct": spec.get("instruct", ""), "builtin": True, "source": spec.get("source", ""),
             "rights": spec.get("rights", ""), "description": spec.get("description", ""), "default_model": "",
             "default_params": {}, "tags": [], "starred": False, "references": refs}
+
+
+def _builtin_sounds(key: str) -> dict[str, list[str]]:
+    """a built-in voice's other sound clips (the short giggles cut from its laughs: voice.json "sounds")"""
+    d = BUILTIN_DIR / key
+    try:
+        sounds = json.loads((d / "voice.json").read_text("utf-8")).get("sounds") or {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+    return {k: [str(d / str(f)) for f in fs] for k, fs in sounds.items() if isinstance(fs, list) and k not in SOUNDS}
 
 
 def builtins() -> list[dict[str, Any]]:
@@ -113,7 +133,7 @@ class VoiceLibrary:
         else its first. → the worker's reference ({path, text, language, label: the clip's feeling, ref_id}) or None
         (no such voice / no clip)."""
         v = self.get(vid)
-        refs = (v or {}).get("references") or []
+        refs = [r for r in (v or {}).get("references") or [] if r["label"] not in SOUNDS]
         if not refs:
             return None
         by = {}
@@ -125,7 +145,22 @@ class VoiceLibrary:
             return None
         lang = ref.get("language") or (v or {}).get("language") or "auto"
         return {"path": str(f), "text": ref.get("transcript") or "", "language": lang, "label": ref["label"],
-                "ref_id": ref["id"]}
+                "ref_id": ref["id"], "voice_id": v["id"]}
+
+    def sound_clips(self, vid: str) -> dict[str, list[str]]:
+        """kind → the voice's own sound clips (its profile's laugh / yawn clips; a built-in voice's, with the short
+        giggles cut from its laughs)"""
+        v = self.get(vid) if vid else None
+        out: dict[str, list[str]] = {}
+        for r in (v or {}).get("references") or []:
+            if r["label"] in SOUNDS:
+                f = self._file(r)
+                if f.is_file():
+                    out.setdefault(r["label"], []).append(str(f))
+        if vid.startswith(BUILTIN):
+            for k, files in _builtin_sounds(vid[len(BUILTIN):]).items():
+                out.setdefault(k, [f for f in files if Path(f).is_file()])
+        return {k: fs for k, fs in out.items() if fs}
 
     # -- the user's voices ------------------------------------------------------------------------------------------
     def create(self, name: str, language: str = "auto", instruct: str = "", **more: Any) -> dict[str, Any]:
@@ -185,8 +220,10 @@ class VoiceLibrary:
             raise KeyError("no such voice")
         if len(data) > self.s.max_upload_mb * 1024 * 1024:
             raise ValueError(f"The clip is larger than {self.s.max_upload_mb} MB")
-        if label not in FEELINGS:
+        if label not in FEELINGS and label not in SOUNDS:
             label = "neutral"
+        if label in SOUNDS:
+            replace = False  # (several laughs: a line takes them in turn)
         x, sr = audio.decode(data, audio.REF_SR)
         if start is not None or end is not None:
             x = audio.cut(x, sr, start, end)

@@ -35,7 +35,7 @@ export default function UpdateBanner() {
         <span className="min-w-0 flex-1 truncate">
           {t("nav.updateAvailable", { latest, current: version })}
         </span>
-        <button onClick={() => openSettings("updates", "downloads")} className="rounded-md px-2 py-0.5 font-medium hover:bg-accent/15">
+        <button onClick={() => openSettings("updates", "top")} className="rounded-md px-2 py-0.5 font-medium hover:bg-accent/15">
           {t("nav.update")}
         </button>
         <button

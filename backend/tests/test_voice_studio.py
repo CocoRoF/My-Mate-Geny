@@ -105,12 +105,14 @@ async def test_a_line_becomes_a_profiles_clip_and_profiles_are_copied_and_trimme
         await vh.save_as_reference(e["id"], "builtin:chaerin", "joy")
     assert err.value.code == "builtin"
     copy = vh.duplicate_voice("builtin:chaerin", "채린 연습")
-    assert copy["builtin"] is False and len(copy["references"]) == 5 and copy["name"] == "채린 연습"
+    assert copy["builtin"] is False and copy["name"] == "채린 연습"
+    # (its five feelings, and its three laughs: the copy's own sound clips now)
+    assert sorted(r["label"] for r in copy["references"]).count("laugh") == 3 and len(copy["references"]) == 8
     ref = await vh.save_as_reference(e["id"], copy["id"], "smile")
     assert ref["label"] == "smile" and ref["transcript"] == "이건 레퍼런스로 쓸 문장이에요."
     v = vh.voices.get(copy["id"])
-    assert sorted(r["label"] for r in v["references"]) == sorted(["neutral", "joy", "sadness", "anger", "surprise",
-                                                                    "smile"])
+    assert sorted(r["label"] for r in v["references"] if r["label"] not in V.SOUNDS) == sorted(
+        ["neutral", "joy", "sadness", "anger", "surprise", "smile"])
     # a new clip for a feeling takes the old one's place
     await vh.add_reference(copy["id"], _speech(8), label="smile", transcript="다시")
     v = vh.voices.get(copy["id"])

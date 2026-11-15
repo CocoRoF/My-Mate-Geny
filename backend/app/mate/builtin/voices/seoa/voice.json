@@ -31,5 +31,18 @@
   }
  },
  "source": "ElevenLabs voice v3EOFtkby3I668mHkwMa (the owner's generated ElevenLabs voice '메스가키'), eleven_v4_turbo, 24 kHz PCM, 2026-11-14: each line twice (two seeds), the take whose Scribe transcript matched the line, silence trimmed, levelled to -20 dBFS RMS",
- "rights": "Made by the owner from their own ElevenLabs voice; the owner confirmed holding all rights to it (2026-11-14)."
+ "rights": "Made by the owner from their own ElevenLabs voice; the owner confirmed holding all rights to it (2026-11-14).",
+ "sounds": {
+  "laugh": [
+   "sounds/laugh-1.wav",
+   "sounds/laugh-2.wav",
+   "sounds/laugh-3.wav"
+  ],
+  "giggle": [
+   "sounds/giggle-1.wav",
+   "sounds/giggle-2.wav",
+   "sounds/giggle-3.wav"
+  ]
+ },
+ "sounds_source": "laughs made with OmniVoice from the neutral clip (2026-11-15): 48 takes of \"[laughter] 아하하하\" / \"[laughter] 하하하하\" / \"[laughter] hahaha\", the 3 an AudioSet classifier (AST) heard laughing most kept (scores 0.51, 0.45, 0.43); each giggle is the strongest second of a laugh"
 }

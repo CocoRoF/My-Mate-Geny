@@ -235,8 +235,10 @@ CATALOG: tuple[ModelSpec, ...] = (
         homepage="https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
         notes=(L("지시문 예: '천천히, 부드럽게 말해 주세요.' (지시문이 있으면 instruct 모드로 생성합니다)",
                  "Instruction example: 'Please speak slowly and softly.' (an instruction switches to instruct mode)"),
-               L("문장 안에 [breath], [laughter], <strong>강조</strong> 같은 태그를 쓸 수 있습니다.",
-                 "Tags like [breath], [laughter] and <strong>emphasis</strong> work inside the text."),
+               L("헤헤·ㅋㅋ 같은 웃음은 이 목소리의 웃음 소리를 그 자리에 넣어요. 이 모델의 [laughter] 태그는 복제 모드에서 거의 "
+                 "효과가 없었어요 (측정).",
+                 "A laugh written in a line (헤헤, ㅋㅋ) gets the voice's own laugh put in: this model's [laughter] tag "
+                 "hardly changes anything in its cloning mode (measured)."),
                L("레퍼런스와 다른 언어로 말하게 하면 발음이 흐려지는 경우가 있습니다 (한국어 레퍼런스 → 영어 문장에서 측정).",
                  "Speaking another language than the reference can blur the pronunciation (measured: Korean "
                  "reference → English text).")),
@@ -296,7 +298,11 @@ CATALOG: tuple[ModelSpec, ...] = (
         homepage="https://huggingface.co/k2-fsa/OmniVoice",
         notes=(L("목소리 설계 예: 'female, low pitch, british accent' (영어·중국어 지시문으로 학습됨)",
                  "Voice design example: 'female, low pitch, british accent' (trained on English and Chinese "
-                 "instructions)"),),
+                 "instructions)"),
+               L("후우…·하암~ 에는 [sigh], 헉! 에는 [surprise-ah] 를 붙여 소리로 내요. 웃음은 이 목소리의 웃음 소리를 넣고, "
+                 "목소리의 웃음 소리를 만드는 데도 이 모델을 써요 (가장 잘 웃어요).",
+                 "후우… and 하암~ get [sigh], 헉! gets [surprise-ah]; a laugh gets the voice's own laugh put in — and this "
+                 "model makes those laughs (it laughs best)."),),
     ),
     ModelSpec(
         id="whisper-large-v3-turbo",
@@ -324,6 +330,30 @@ CATALOG: tuple[ModelSpec, ...] = (
         homepage="https://huggingface.co/openai/whisper-large-v3-turbo",
         sample_rate=16000,
     ),
+)
+
+# Not a model to pick: the AudioSet classifier that hears which takes of a voice's laugh laugh (app/voicehost/sounds.py),
+# fetched once, the first time a voice's laugh is made (Installer.ensure_sound_check).
+SOUND_CHECK = ModelSpec(
+    id="sound-check",
+    name="AudioSet AST (sound check)",
+    kind="aux",
+    engine="",
+    description=L("목소리의 웃음 소리를 고를 때 쓰는 소리 분류 모델 (AudioSet 527종).",
+                  "The sound classifier that picks a voice's laughs (AudioSet, 527 classes)."),
+    repos=(RepoFiles("MIT/ast-finetuned-audioset-10-10-0.4593",
+                     include=("config.json", "preprocessor_config.json", "model.safetensors")),),
+    download_gb=0.35,
+    vram_gb=0.4,
+    host_gb=0.5,
+    load_peak_gb=0.8,
+    license=License(name="BSD-3-Clause", url="https://huggingface.co/MIT/ast-finetuned-audioset-10-10-0.4593",
+                    summary=(L("BSD-3-Clause: 상업적 사용, 수정, 재배포가 가능합니다.",
+                               "BSD-3-Clause: commercial use, modification and redistribution are allowed."),)),
+    languages=(),
+    features=(),
+    homepage="https://huggingface.co/MIT/ast-finetuned-audioset-10-10-0.4593",
+    sample_rate=16000,
 )
 
 BY_ID: dict[str, ModelSpec] = {m.id: m for m in CATALOG}

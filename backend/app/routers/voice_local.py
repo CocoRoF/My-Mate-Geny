@@ -278,6 +278,51 @@ async def reference_audio(vid: str, rid: str, request: Request) -> Any:
     return FileResponse(str(f), media_type="audio/wav", headers={"Cache-Control": "private, max-age=3600"})
 
 
+# ---- a profile's laughs (app/voicehost/sounds.py) ----
+
+@router.get("/voices/{vid}/sounds")
+async def voice_sounds(vid: str, request: Request) -> Any:
+    try:
+        return _host(request).voice_sounds(vid)
+    except VoiceError as e:
+        return _fail(e)
+
+
+@router.post("/voices/{vid}/sounds")
+async def make_voice_sounds(vid: str, request: Request) -> Any:
+    """make (again) this profile's laugh: the best takes of a laugh in its voice"""
+    h = _host(request)
+    base = h.voices.resolve(vid)
+    if base is None:
+        return JSONResponse({"detail": "This profile has no clip yet", "code": "no_clip"}, status_code=400)
+    try:
+        made = await h.make_sounds(base)
+        return {**h.voice_sounds(vid), "heard": made.get("heard")}
+    except VoiceError as e:
+        return _fail(e)
+
+
+@router.delete("/voices/{vid}/sounds")
+async def forget_voice_sounds(vid: str, request: Request) -> Any:
+    h = _host(request)
+    base = h.voices.resolve(vid)
+    if base is not None:
+        h.sounds.forget(base)
+        h.on_change("voices")
+    try:
+        return h.voice_sounds(vid)
+    except VoiceError as e:
+        return _fail(e)
+
+
+@router.get("/voices/{vid}/sounds/{name}")
+async def voice_sound_audio(vid: str, name: str, request: Request) -> Any:
+    f = _host(request).made_sound_file(vid, name)
+    if f is None:
+        raise HTTPException(status_code=404, detail="no such sound")
+    return FileResponse(str(f), media_type="audio/wav", headers={"Cache-Control": "private, max-age=300"})
+
+
 # ---- trying it ----
 
 @router.post("/preview")
@@ -349,7 +394,8 @@ async def generate(request: Request) -> Any:
                                 voice_id=str(b.get("voice_id") or ""), feeling=str(b.get("feeling") or "neutral"),
                                 mode=str(b.get("mode") or "auto"), language=str(b.get("language") or "auto"),
                                 instruct=str(b.get("instruct") or ""), params=b.get("params") or {},
-                                seed=None if seed is None else int(seed), source=source)
+                                seed=None if seed is None else int(seed), source=source,
+                                nonverbal=b.get("nonverbal") is not False)
     except VoiceError as e:
         return _fail(e)
 

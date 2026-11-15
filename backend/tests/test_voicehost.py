@@ -295,9 +295,11 @@ def test_the_built_in_voices_have_a_clip_and_its_words_for_every_feeling():
     assert {"builtin:chaerin", "builtin:seoa"} <= set(vs_)
     assert vs_["builtin:chaerin"]["name"] == "한채린" and vs_["builtin:seoa"]["name"] == "메스가키"
     for v in (vs_["builtin:chaerin"], vs_["builtin:seoa"]):
-        labels = {r["label"] for r in v["references"]}
+        labels = {r["label"] for r in v["references"] if r["label"] not in V.SOUNDS}
         assert labels == {"neutral", "joy", "sadness", "anger", "surprise"} and labels <= set(V.FEELINGS), v["id"]
-        for r in v["references"]:
+        # (and its own laugh: sounds/, put into a line where it laughs — tests/test_nonverbal.py)
+        assert sum(r["label"] == "laugh" for r in v["references"]) == 3, v["id"]
+        for r in (r for r in v["references"] if r["label"] not in V.SOUNDS):
             info = sf.info(r["file"])
             assert info.samplerate == 24000 and info.channels == 1 and 5 <= info.duration <= 15
             assert len(r["transcript"]) > 10

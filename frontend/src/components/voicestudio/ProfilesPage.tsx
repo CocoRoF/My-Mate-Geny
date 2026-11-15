@@ -3,6 +3,7 @@
  * 혐오, 미소 — upload, record, trim, the exact words, its language), a description, tags, and what lines made in it
  * start from (a model, its parameters, a design prompt). Built-in ones (한채린, 메스가키) can be heard and duplicated.
  * A feeling without a clip speaks like the nearest one that has (미소 → 기쁨, 두려움 → 슬픔, 혐오 → 화남), else like 기본.
+ * Its laughs (웃음 소리: sounds.tsx) are put into a line where it laughs.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -23,6 +24,7 @@ import { confirmDialog } from "../ui/ConfirmDialog";
 import Icon from "../ui/Icon";
 import { ErrorLine, Field, Segmented } from "../mate/settings/ui";
 import { ClipModal, RecorderModal, type ClipSource } from "./clips";
+import { SoundsCard } from "./sounds";
 import { Card, FeelingDot, Modal, ParamControls, PlayButton, readableAudio, refUrl, secs, useLanguages, useStudio, Waveform } from "./shared";
 
 /** what a feeling without a clip speaks like (backend voicehost/voices.py _CHAIN) */
@@ -274,6 +276,8 @@ function Profile({ v, onGone, onPick }: { v: LocalVoice; onGone: () => void; onP
         />
         {!sttReady && own && <p className="mt-2 text-[11.5px] text-content-faint">{t("voiceStudio.pfNoStt")}</p>}
       </Card>
+
+      <SoundsCard v={v} own={own} onChange={reloadVoices} />
 
       {own ? <Details v={v} /> : <BuiltinDetails v={v} />}
 
