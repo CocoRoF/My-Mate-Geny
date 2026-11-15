@@ -4,12 +4,15 @@
  * what she used lately glows, what she hasn't thought of in a long time fades. Links: facts (solid, labelled), her
  * memories of the user (dashed), things that happened together (dotted).
  *
- * Wheel / pinch zooms, dragging the background pans, dragging a node moves it, a click selects. Positions are kept per
- * mate (localStorage), so the map stays where it was between visits.
+ * Wheel / pinch or the + / − buttons zoom, dragging the background pans, dragging a node moves it, a click selects;
+ * hovering shows what a thing is. Names are placed so they never overlap: the selected / hovered / searched ones
+ * first, then the bigger and more vivid ones where there is room (zoom in for more). Positions are kept per mate
+ * (localStorage), so the map stays where it was between visits.
  */
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY, type Simulation, type SimulationLinkDatum, type SimulationNodeDatum } from "d3-force";
-import { useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from "react";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef, type ReactNode } from "react";
 import type { GraphKind, GraphLink, GraphNode } from "../../../api/mates";
+import Icon from "../../ui/Icon";
 
 export const KIND_COLOR: Record<GraphKind, string> = {
   user: "#6366f1",
@@ -32,6 +35,9 @@ export interface MemoryGraphHandle {
   fit: () => void;
   center: (id: string) => void;
 }
+
+type Box = [number, number, number, number];
+const overlaps = (a: Box, b: Box) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
 
 const radius = (n: GraphNode) =>
   n.kind === "user" ? 13 : n.kind === "self" ? 11 : Math.min(18, 4.5 + 2.6 * Math.sqrt(n.facts + n.memories + n.degree * 0.5));
@@ -56,7 +62,11 @@ const MemoryGraph = forwardRef<MemoryGraphHandle, {
   userLabel: string;
   selfLabel: string;
   label: string;
-}>(function MemoryGraph({ mateId, nodes, links, selected, onSelect, highlight, fade = true, height, userLabel, selfLabel, label }, ref) {
+  /** what hovering a node shows */
+  tooltip?: (n: GraphNode) => ReactNode;
+  /** the zoom buttons' labels, and more buttons after them (full screen) */
+  controls?: { zoomIn: string; zoomOut: string; fit: string; extra?: ReactNode };
+}>(function MemoryGraph({ mateId, nodes, links, selected, onSelect, highlight, fade = true, height, userLabel, selfLabel, label, tooltip, controls }, ref) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const sim = useRef<Simulation<N, L> | null>(null);
@@ -65,6 +75,7 @@ const MemoryGraph = forwardRef<MemoryGraphHandle, {
   const touched = useRef(false);
   const data = useRef<{ nodes: N[]; links: L[] }>({ nodes: [], links: [] });
   const hover = useRef<string | null>(null);
+  const [tip, setTip] = useState<{ node: GraphNode; x: number; top: number; bottom: number } | null>(null);
   const [width, setWidth] = useState(600);
   const size = useRef({ width, height });
   size.current = { width, height };
@@ -108,9 +119,9 @@ const MemoryGraph = forwardRef<MemoryGraphHandle, {
     const known = ns.filter((n) => kept[n.id] || old.has(n.id)).length;
     sim.current?.stop();
     const s = forceSimulation<N, L>(ns)
-      .force("link", forceLink<N, L>(ls).id((d) => d.id).distance((l) => (l.kind === "fact" ? 70 : 55) + ((l.source as N).r + (l.target as N).r)).strength((l) => (l.kind === "fact" ? 0.5 : 0.25)))
-      .force("charge", forceManyBody<N>().strength((d) => (d.kind === "user" ? -500 : -140)).distanceMax(500))
-      .force("collide", forceCollide<N>().radius((d) => d.r + 6))
+      .force("link", forceLink<N, L>(ls).id((d) => d.id).distance((l) => (l.kind === "fact" ? 80 : 64) + ((l.source as N).r + (l.target as N).r)).strength((l) => (l.kind === "fact" ? 0.5 : 0.22)))
+      .force("charge", forceManyBody<N>().strength((d) => (d.kind === "user" ? -560 : -190)).distanceMax(560))
+      .force("collide", forceCollide<N>().radius((d) => d.r + 10))
       .force("x", forceX<N>(0).strength(0.04))
       .force("y", forceY<N>(0).strength(0.04))
       .force("center", forceCenter(0, 0))
@@ -155,11 +166,23 @@ const MemoryGraph = forwardRef<MemoryGraphHandle, {
     draw.current();
   };
 
+  const zoomBy = (f: number) => {
+    touched.current = true;
+    const v = view.current;
+    const { width, height } = size.current;
+    const k = Math.min(4, Math.max(0.12, v.k * f));
+    v.x = width / 2 - ((width / 2 - v.x) / v.k) * k;
+    v.y = height / 2 - ((height / 2 - v.y) / v.k) * k;
+    v.k = k;
+    draw.current();
+  };
+  const refit = () => {
+    touched.current = false;
+    fit();
+  };
+
   useImperativeHandle(ref, () => ({
-    fit: () => {
-      touched.current = false;
-      fit();
-    },
+    fit: refit,
     center: (id: string) => {
       const n = data.current.nodes.find((x) => x.id === id);
       if (!n) return;
@@ -226,8 +249,6 @@ const MemoryGraph = forwardRef<MemoryGraphHandle, {
     }
     g.setLineDash([]);
     // nodes
-    const ranked = [...data.current.nodes].sort((a, b) => b.r - a.r);
-    const labelled = new Set(ranked.slice(0, k > 1.4 ? 80 : k > 0.8 ? 35 : 15).map((n) => n.id));
     for (const n of data.current.nodes) {
       if (n.x == null) continue;
       const a = alphaOf(n);
@@ -257,23 +278,39 @@ const MemoryGraph = forwardRef<MemoryGraphHandle, {
         g.fill();
       }
     }
-    // labels on top
-    g.textAlign = "center";
+    // names on top, never over each other: the ones that matter now first (always shown), then the bigger and more
+    // vivid where there is room — below the dot, else above, right or left of it
+    const must = (n: N) => n.id === focus || n.id === selected || !!(near && near.has(n.id)) || !!(highlight && highlight.size && highlight.has(n.id));
+    const rank = (n: N) => (n.id === focus ? 1e9 : n.id === selected ? 1e8 : must(n) ? 1e7 : 0) + (n.kind === "user" || n.kind === "self" ? 1e6 : 0) + n.r * 10 + n.strength * 8;
+    const order = data.current.nodes.filter((n) => n.x != null).sort((a, b) => rank(b) - rank(a));
+    const taken: Box[] = [];
+    const dots: Box[] = data.current.nodes.filter((n) => n.x != null).map((n) => [n.x! - n.r, n.y! - n.r, n.x! + n.r, n.y! + n.r]);
+    const pad = 3 / k;
     g.textBaseline = "top";
-    for (const n of data.current.nodes) {
-      if (n.x == null) continue;
-      const show = n.id === focus || n.id === selected || (near && near.has(n.id)) || labelled.has(n.id) || (highlight && highlight.has(n.id));
-      if (!show) continue;
+    for (const n of order) {
       const text = n.kind === "user" ? userLabel : n.kind === "self" ? selfLabel : n.name;
       const size = (n.id === focus ? 12.5 : 11) / Math.max(0.75, k);
-      g.font = `${n.id === focus ? "600 " : ""}${size}px ui-sans-serif, system-ui`;
+      g.font = `${n.id === focus || n.id === selected ? "600 " : ""}${size}px ui-sans-serif, system-ui`;
       const w = g.measureText(text).width;
-      const y = n.y! + n.r + 3 / k;
-      g.globalAlpha = Math.max(0.35, alphaOf(n));
+      const h = size + 2 / k;
+      const x = n.x!, y = n.y!;
+      const spots: Box[] = [
+        [x - w / 2 - pad, y + n.r + pad, x + w / 2 + pad, y + n.r + pad + h],
+        [x - w / 2 - pad, y - n.r - pad - h, x + w / 2 + pad, y - n.r - pad],
+        [x + n.r + pad, y - h / 2, x + n.r + pad * 3 + w, y + h / 2],
+        [x - n.r - pad * 3 - w, y - h / 2, x - n.r - pad, y + h / 2],
+      ];
+      const forced = must(n);
+      const free = (b: Box) => !taken.some((t) => overlaps(b, t)) && !dots.some((d, i) => data.current.nodes[i] !== n && overlaps(b, d));
+      const spot = spots.find(free) ?? (forced ? spots[0] : null);
+      if (!spot) continue;
+      taken.push(spot);
+      g.globalAlpha = Math.max(forced ? 0.85 : 0.4, alphaOf(n));
       g.fillStyle = paper;
-      g.fillRect(n.x - w / 2 - 3 / k, y - 1 / k, w + 6 / k, size + 3 / k);
+      g.fillRect(spot[0], spot[1], spot[2] - spot[0], spot[3] - spot[1]);
       g.fillStyle = ink;
-      g.fillText(text, n.x, y);
+      g.textAlign = "left";
+      g.fillText(text, spot[0] + pad, spot[1] + 1 / k);
     }
     g.globalAlpha = 1;
   };
@@ -354,11 +391,17 @@ const MemoryGraph = forwardRef<MemoryGraphHandle, {
           c.style.cursor = id ? "pointer" : "grab";
           draw.current();
         }
+        if (n) {
+          const v = view.current;
+          const cy = (n.y ?? 0) * v.k + v.y;
+          setTip({ node: n, x: (n.x ?? 0) * v.k + v.x, top: cy - n.r * v.k, bottom: cy + n.r * v.k });
+        } else setTip(null);
         return;
       }
       const dx = x - drag.x, dy = y - drag.y;
       if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
       if (drag.moved && !drag.node) touched.current = true;
+      if (drag.moved) setTip(null);
       if (drag.node) {
         const [wx, wy] = toWorld(x, y);
         drag.node.fx = wx;
@@ -395,10 +438,12 @@ const MemoryGraph = forwardRef<MemoryGraphHandle, {
     };
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
+      setTip(null);
       const r = c.getBoundingClientRect();
       zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
     };
     const leave = () => {
+      setTip(null);
       if (hover.current) {
         hover.current = null;
         draw.current();
@@ -425,6 +470,24 @@ const MemoryGraph = forwardRef<MemoryGraphHandle, {
   return (
     <div ref={wrap} className="mem-graph relative w-full overflow-hidden rounded-xl border border-border bg-surface/60" style={{ height }} data-testid="memory-graph">
       <canvas ref={canvas} style={{ width, height, touchAction: "none", cursor: "grab" }} aria-label={label} role="img" />
+      {controls && (
+        <div className="absolute right-2 top-2 flex flex-col gap-1" data-testid="memory-graph-controls">
+          {([["plus", controls.zoomIn, () => zoomBy(1.3), "memory-graph-zoom-in"], ["minus", controls.zoomOut, () => zoomBy(1 / 1.3), "memory-graph-zoom-out"],
+            ["crosshair", controls.fit, refit, "memory-graph-fit"]] as const).map(([icon, title, act, id]) => (
+            <button key={id} type="button" className="mem-graph-btn" onClick={act} title={title} aria-label={title} data-testid={id}>
+              <Icon name={icon} size={14} />
+            </button>
+          ))}
+          {controls.extra}
+        </div>
+      )}
+      {tip && tooltip && (
+        // (above the dot; below it when the dot is near the top)
+        <div className={`pointer-events-none absolute z-10 w-max max-w-[15rem] -translate-x-1/2 rounded-lg border border-border bg-surface-2/95 px-2.5 py-1.5 text-[11.5px] shadow-lg backdrop-blur ${tip.top > 96 ? "-translate-y-full" : ""}`}
+          style={{ left: Math.min(width - 100, Math.max(100, tip.x)), top: tip.top > 96 ? tip.top - 8 : tip.bottom + 8 }} data-testid="memory-graph-tooltip">
+          {tooltip(tip.node)}
+        </div>
+      )}
     </div>
   );
 });

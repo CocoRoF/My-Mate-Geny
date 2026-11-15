@@ -403,6 +403,36 @@ def test_her_curiosity_picks_what_the_user_cares_about_and_knows_little_of(db):
     assert studies.pick_topic(mid) is None  # (studied lately)
 
 
+def test_her_curiosity_never_searches_the_users_personal_things(db):
+    store, mates, mid, g = setup(db)
+    studies: Studies = mates.studies
+    # the user talks a lot about their own project, a friend, their office: none goes to a search engine
+    for name, kind in (("내일의 종 프로젝트", "thing"), ("민지", "person"), ("우리 회사", "org"), ("동네 카페", "place"),
+                       ("사이드 프로젝트", "topic")):
+        n = g.upsert(mid, name=name, kind=kind)
+        for i in range(3):
+            m = store.add_memory(mid, f"사용자는 {name} 얘기를 한다 {i}", kind="fact")
+            g.mention(mid, n["id"], f"mem:{m['id']}")
+    assert studies.pick_topic(mid) is None
+    # a topic she has already read about on the web is public: she may catch up on it
+    poe, ggg, *_ = doc_with_facts(g, mid)
+    m = store.add_memory(mid, "사용자는 Grinding Gear Games 소식을 챙겨 본다", kind="fact")
+    g.mention(mid, ggg["id"], f"mem:{m['id']}")
+    assert studies.pick_topic(mid) == "Grinding Gear Games"
+
+
+def test_a_study_of_her_own_that_found_nothing_is_not_brought_up(db):
+    store, mates, mid, g = setup(db)
+    studies: Studies = mates.studies
+    found = studies.request(mid, kind="curiosity", topic="원신", by="self")
+    empty = studies.request(mid, kind="curiosity", topic="아무것도 없는 주제", by="self")
+    db.execute("UPDATE know_studies SET state='done',facts=3,summary='x',finished_at=? WHERE id=?",
+               (datetime.now(UTC).isoformat(), found["id"]))
+    db.execute("UPDATE know_studies SET state='done',facts=0,summary='못 찾음',finished_at=? WHERE id=?",
+               (datetime.now(UTC).isoformat(), empty["id"]))
+    assert [s["id"] for s in mates._untold_studies(mid)] == [found["id"]]
+
+
 def test_a_url_study_and_bad_requests(db):
     store, mates, mid, g = setup(db)
     st = mates.studies.request(mid, kind="url", url="https://example.test/page")

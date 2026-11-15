@@ -4,7 +4,7 @@ Each mate has a memory network of her own. It holds the people, places, games, w
 about each and how they connect. It grows in two ways:
 
 - **from talking**: what the user's memories name is linked in;
-- **from studying**: the user hands her a page ("이거 읽어 둬") or a topic ("Path of Exile 공부해 놔"). She searches,
+- **from studying**: the user hands her a page ("이거 읽어 둬") or a topic ("제주도 등산 코스 공부해 놔"). She searches,
   reads and files what she learns with its source. She can also study, now and then, what the user cares about.
 
 What she used lately stays vivid. What she hasn't thought of in a long time fades from conversation, and comes back when
@@ -35,7 +35,7 @@ Code: `backend/app/mate/graph.py` (the network), `study.py` (studies), `webread.
 The choices that differ from those systems, and why:
 
 - **No embeddings.** The app has no embedding model or API, and a mate must work offline from any vector service.
-  - Names and aliases resolve entities, across languages: "패스 오브 엑자일" = "Path of Exile" = "PoE".
+  - Names and aliases resolve entities, across languages: "뉴욕" = "New York" = "NYC".
   - FTS5 over hashed word terms finds facts and passages.
   - The model expands names when it files a fact: it gives aliases in both languages.
 - **No model call per turn.** What comes to mind is computed in SQLite and Python, in milliseconds. Only studies and the
@@ -116,7 +116,7 @@ The result goes into the turn as a `<knowledge>` block:
 - A fact carries when it was true, if its source says so. A fact from a page also carries the day she learned it.
 
 When the turn is delivered, the nodes and facts given are reinforced. The names it found also widen the personal memory
-search (`graph.expand`), so "엑자일 얘기 했었나?" finds a memory written as "Path of Exile".
+search (`graph.expand`), so "뉴욕 얘기 했었나?" finds a memory written as "New York".
 
 The prompt (`prompt.py`, "## Your memory network") tells her how to use it:
 
@@ -198,7 +198,14 @@ of her own starts only when:
 
 - the mate's conversation has had no user message for 20 minutes and she isn't answering;
 - the topic is something the user's memories point at (by links and strength) that she knows little about;
+- the topic is **public**: a published game or work, or something she has already read about on the web (a fact from
+  a page). Her searches go to public search engines, so the user's personal things are never her topic: the people
+  around them, their workplace, their own projects (the linker files those as "thing", never "game" or "work");
 - she hasn't studied that topic in the last 14 days.
+
+The study prompt says the same for every study: no personal details in a search query. If a subject turns out to be
+private, or the web has nothing public on it, she stops without filing anything. A study of her own that found nothing
+is never brought up in conversation.
 
 It is always quick. Like any study it runs on the mate's engine, that is, on the user's Claude / Codex account.
 
@@ -222,13 +229,19 @@ Two tabs next to Relationship and Memory.
 **Network** — the map:
 
 - **Drawing.** d3-force on a canvas. Colour is what a thing is, size how much she knows about it, and opacity
-  (with "흐려짐" / Fading on) how readily it comes to mind now; what she used lately glows. Fact links are solid and
-  labelled; memories of the user are dashed.
-- **Moving around.** Wheel / pinch zooms, dragging pans or moves a node, a click selects. Positions are kept per mate.
-  The map fits itself in view until the user moves it; the crosshair fits it again.
-- **Filters and search.** Everything / about you / what she learned. The search box finds part of a name in either
-  language, facts and page passages.
-- **Full screen** shows the map with the details beside it.
+  (with "흐려짐 표시" / Show fading on) how readily it comes to mind now; what she used lately glows. Fact links are
+  solid and labelled; memories of the user are dashed.
+- **Names never overlap.** The selected, hovered and searched things and their neighbours are always named; the rest
+  are named, bigger and more vivid first, where there is room (below the dot, else above, right or left). Zooming in
+  names more.
+- **Moving around.** Wheel / pinch or the + / − buttons zoom, dragging pans or moves a node, a click selects, hovering
+  shows what a thing is (kind, how vivid, facts, memories, description). Positions are kept per mate. The map fits
+  itself in view until the user moves it; the crosshair fits it again.
+- **Filters and search.** Everything / about you / what she studied. The search box finds part of a name in either
+  language, facts and page passages. The legend lists only the kinds on the map, with counts; clicking one highlights
+  that kind.
+- **Room to see.** Where the panel is wide (the chat window's panel, full screen) the details sit beside the map;
+  otherwise under it. The map's height follows the window.
 - **Node details.** Its facts with the page and its exact quote, when it was true, and the facts it replaced. Also the
   memories about it, its neighbours, the pages and studies.
 - **Editing.** Edit names, aliases, kind and importance; keep fresh (pin); merge with the same thing; forget the node or
@@ -262,7 +275,7 @@ Everything is scoped to the mate: another mate's node, page or study is 404. Cha
 
 ## Checked
 
-**Tests** (`backend/tests/test_mate_graph.py`: 22 tests, synthetic data, no network, no model):
+**Tests** (`backend/tests/test_mate_graph.py`: 24 tests, synthetic data, no network, no model):
 
 - names and aliases across languages; merge;
 - quotes, and a newer fact superseding an older one;

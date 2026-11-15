@@ -777,7 +777,7 @@ class MateService:
         core_ids = {m["id"] for m in core}
         level = (prefs.get("memory") or {}).get("recall") or "normal"
         # her memory network (app/mate/graph.py): the names in the message (and, weaker, the last turns) light up what
-        # she knows; their other names widen the memory recall (a memory saying "Path of Exile" for "엑자일")
+        # she knows; their other names widen the memory recall (a memory saying "New York" for "뉴욕")
         graph = self.store.graph
         recent = self._recent_user_texts(mate.get("session_id") or "", 3) if query and not query.startswith("<") else []
         recall_query = query
@@ -1932,7 +1932,7 @@ class MateService:
         if self.studies is None:
             return []
         rows = self.store._db.query("SELECT id,topic,summary,finished_at FROM know_studies WHERE mate_id=? AND "
-                                    "requested_by='self' AND state='done' AND delivered=0 AND finished_at>=? "
+                                    "requested_by='self' AND state='done' AND delivered=0 AND facts>0 AND finished_at>=? "
                                     "ORDER BY finished_at DESC LIMIT 2",
                                     (mate_id, (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()))
         return [dict(r) for r in rows]

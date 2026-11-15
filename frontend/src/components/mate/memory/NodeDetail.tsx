@@ -27,6 +27,11 @@ export function kindLabel(t: ReturnType<typeof useT>, k: GraphKind) {
   return t(`memgraph.kind_${k}` as MsgKey);
 }
 
+export function strengthWord(t: ReturnType<typeof useT>, value: number) {
+  const pct = Math.round(value * 100);
+  return pct >= 85 ? t("memgraph.vivid") : pct >= 40 ? t("memgraph.clear") : pct >= 20 ? t("memgraph.fading") : t("memgraph.faded");
+}
+
 export function Strength({ value, testId }: { value: number; testId?: string }) {
   const t = useT();
   const pct = Math.round(value * 100);
@@ -35,7 +40,7 @@ export function Strength({ value, testId }: { value: number; testId?: string }) 
       <span className="h-1.5 w-12 overflow-hidden rounded-full bg-surface-3">
         <span className="block h-full rounded-full bg-accent" style={{ width: `${Math.max(4, pct)}%`, opacity: 0.35 + 0.65 * value }} />
       </span>
-      {pct >= 85 ? t("memgraph.vivid") : pct >= 40 ? t("memgraph.clear") : pct >= 20 ? t("memgraph.fading") : t("memgraph.faded")}
+      {strengthWord(t, value)}
     </span>
   );
 }
@@ -123,7 +128,7 @@ export default function NodeDetail({ mateId, nodeId, selfName, onNavigate, onClo
             </button>
           )}
           {!special && (
-            <button className="btn-ghost !py-1 text-[12px]" disabled={busy} onClick={() => act(() => editGraphNode(mateId, n.id, { pinned: !n.pinned }))} data-testid="memory-node-pin">
+            <button className="btn-ghost !py-1 text-[12px]" disabled={busy} title={t("memgraph.pinHint")} onClick={() => act(() => editGraphNode(mateId, n.id, { pinned: !n.pinned }))} data-testid="memory-node-pin">
               <Icon name="pin" size={12} /> {n.pinned ? t("memgraph.unpin") : t("memgraph.pin")}
             </button>
           )}

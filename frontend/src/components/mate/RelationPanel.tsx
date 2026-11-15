@@ -124,7 +124,7 @@ export default function RelationPanel({ mate, onClose, onSettings, initialTab = 
         ))}
       </ScrollRow>
       <div ref={body} className="fit-fields min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
-        <div className="mx-auto max-w-xl space-y-4 pb-6">
+        <div className={`mx-auto space-y-4 pb-6 ${tab === "network" ? "max-w-6xl" : "max-w-xl"}`}>
           {tab === "network" ? <MemoryNetwork key={mate.id} mate={mate} onStudy={() => setTab("study")} />
           : tab === "study" ? <StudyPanel key={mate.id} mate={mate} />
           : tab === "memory" ? <MemoryNotebook key={mate.id} mate={mate} onSettings={onSettings} /> : <>

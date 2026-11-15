@@ -120,7 +120,7 @@ chat, keeps an eye on it and tells you how it went.
 - **Memory**: things she should remember (she can add them herself; you can edit them).
 - **Memory network**: what she knows, drawn as a map: people, places, games and topics, the facts
   about each with their source, what fades and what stays vivid. Hand her a page or a topic
-  ("study Path of Exile") and she searches, reads and files it, then tells you about it; now and
+  ("study up on hiking trails in Jeju") and she searches, reads and files it, then tells you about it; now and
   then she studies what you care about on her own ([docs/mate-memory-graph.md](docs/mate-memory-graph.md)).
 - **Her own day**: on the real clock she works, eats, sleeps, plays and goes out, with needs
   (hunger, sleep, warmth, fun, stress) that move how she feels and how she talks. Ten places

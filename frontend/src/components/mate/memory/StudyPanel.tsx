@@ -92,15 +92,16 @@ export default function StudyPanel({ mate }: { mate: Mate }) {
         )}
         <input className="field text-[12.5px]" value={goal} onChange={(e) => setGoal(e.target.value)} placeholder={t("memgraph.goalPh")} data-testid="study-goal" />
         {mode === "topic" && (
-          <div className="flex flex-wrap items-center gap-2 text-[12px] text-content-dim">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-content-dim">
             {t("memgraph.depth")}
             <div className="flex overflow-hidden rounded-lg border border-border" role="group">
               {(["quick", "normal", "deep"] as const).map((d) => (
-                <button key={d} type="button" className={`px-2.5 py-1 ${depth === d ? "bg-accent text-white" : "hover:bg-surface-3"}`} aria-pressed={depth === d} onClick={() => setDepth(d)} title={t(`memgraph.depthHint_${d}` as MsgKey)} data-testid={`study-depth-${d}`}>
+                <button key={d} type="button" className={`px-2.5 py-1 ${depth === d ? "bg-accent text-white" : "hover:bg-surface-3"}`} aria-pressed={depth === d} onClick={() => setDepth(d)} data-testid={`study-depth-${d}`}>
                   {t(`memgraph.depth_${d}` as MsgKey)}
                 </button>
               ))}
             </div>
+            <span className="text-[11.5px] text-content-faint" data-testid="study-depth-hint">{t(`memgraph.depthHint_${depth}` as MsgKey)}</span>
           </div>
         )}
         <div className="flex items-center justify-end gap-2">
@@ -111,18 +112,21 @@ export default function StudyPanel({ mate }: { mate: Mate }) {
         </div>
       </form>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-2/40 px-3.5 py-2.5 text-[12px]" data-testid="study-curiosity">
-        <span className="min-w-[12rem] flex-1 text-content-dim">{t("memgraph.curiosity", { name: mate.name })}</span>
-        <select className="field !w-auto max-w-full !py-1 text-[12px]" value={curiosity} onChange={(e) => void setCuriosity(e.target.value as Curiosity)} aria-label={t("memgraph.curiosity", { name: mate.name })}>
-          {(["off", "sometimes", "often"] as const).map((c) => <option key={c} value={c}>{t(`memgraph.curiosity_${c}` as MsgKey)}</option>)}
-        </select>
+      <div className="space-y-1.5 rounded-xl border border-border bg-surface-2/40 px-3.5 py-3 text-[12px]" data-testid="study-curiosity">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="min-w-[8rem] flex-1 font-medium text-content">{t("memgraph.curiosity")}</span>
+          <select className="field !w-auto max-w-full !py-1 text-[12px]" value={curiosity} onChange={(e) => void setCuriosity(e.target.value as Curiosity)} aria-label={t("memgraph.curiosity")}>
+            {(["off", "sometimes", "often"] as const).map((c) => <option key={c} value={c}>{t(`memgraph.curiosity_${c}` as MsgKey)}</option>)}
+          </select>
+        </div>
+        <p className="text-[11.5px] leading-relaxed text-content-faint">{t("memgraph.curiosityHint", { name: mate.name })}</p>
       </div>
 
       {err && <p className="text-[12px] text-danger">{err}</p>}
       {!items ? (
         <p className="text-[12px] text-content-faint">{t("common.loading")}</p>
       ) : items.length === 0 ? (
-        <p className="text-[12px] text-content-faint" data-testid="study-none">{t("memgraph.noStudies", { name: mate.name })}</p>
+        <p className="rounded-xl border border-dashed border-border px-4 py-5 text-center text-[12px] text-content-faint" data-testid="study-none">{t("memgraph.noStudies", { name: mate.name })}</p>
       ) : (
         <ul className="space-y-2">
           {items.map((s) => (
