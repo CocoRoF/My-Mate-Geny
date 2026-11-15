@@ -93,8 +93,12 @@ function zip(files) {
     const mid = new URL(p.url()).searchParams.get("create");
     const state = (id) => p.locator(`[data-testid="studio-steps"] [data-step="${id}"]`).getAttribute("data-state");
     assert.notEqual(await state("avatar"), "done");
+    // (the canvas's Look node: its sheet has her avatar now, Bring a file, the emotion map)
     const openAvatar = async () => {
-      if ((await p.locator('[data-testid="studio-section-avatar"]').getAttribute("data-open")) !== "1") await p.locator('[data-testid="studio-section-toggle-avatar"]').click();
+      if (!(await p.locator('[data-testid="node-sheet"][data-node="brief"]').count())) {
+        await p.click('[data-testid="sc-node-brief"] .scn-hit');
+        await p.waitForSelector('[data-testid="node-sheet"][data-node="brief"]');
+      }
     };
     await openAvatar();
     await p.locator('[data-testid="studio-avatar-bring"]').waitFor();

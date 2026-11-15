@@ -3,6 +3,7 @@ import { providersNeedAttention, sessionsNeedAttention } from "../../lib/attenti
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { useSessionStore } from "../../stores/sessionStore";
 import { openSettings, useUIStore, type View } from "../../stores/uiStore";
+import { useStudio } from "../../stores/studioStore";
 import { useProviderStore } from "../../stores/providerStore";
 import { useChatStore } from "../../stores/chatStore";
 import { requestResync } from "../../lib/sync";
@@ -43,9 +44,14 @@ function useSidebarRail(): [boolean, () => void] {
   );
   const pref = useUIStore((s) => s.sidebarPref);
   const setPref = useUIStore((s) => s.setSidebarPref);
-  const rail = pref ? pref === "rail" : narrow;
+  // the Mate Create studio: a rail by default (its canvas wants the room), the toggle there only for this visit
+  const onMate = useUIStore((s) => s.view === "mate");
+  const studioOpen = useStudio((s) => s.open);
+  const studio = onMate && studioOpen;
+  const studioWide = useStudio((s) => s.sidebar);
+  const rail = studio ? !studioWide : pref ? pref === "rail" : narrow;
   // (back to what this width does by itself: nothing to remember)
-  const toggle = () => setPref(!rail === narrow ? null : rail ? "full" : "rail");
+  const toggle = () => (studio ? useStudio.getState().setSidebar(!studioWide) : setPref(!rail === narrow ? null : rail ? "full" : "rail"));
   return [rail, toggle];
 }
 

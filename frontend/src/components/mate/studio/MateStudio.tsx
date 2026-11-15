@@ -2,20 +2,23 @@
  * The Mate Create studio (메이트 만들기 — docs/avatar-create.md §11): a screen of the Mate view of its own
  * (`/?view=mate&create=<draft>` / `/?view=mate&avatar=<mate>`; back closes it, a reload resumes the draft).
  *
- * The creation agent on the LEFT (its conversation and cards: concept directions, choices, sliders, uploads, the
- * estimate with Confirm, progress, previews) — the settings of the mate being made on the RIGHT, live (Concept,
- * Profile, Conversation style, Avatar, Voice, Language model): the agent writes them (highlighted, undo per field),
- * the user edits any of them and the agent hears what changed before its next turn. Header: the title, the draft's
- * name, the steps (Concept → Personality → Look → Avatar → Voice → Done), the credits, drafts, Save draft & exit,
- * Discard, Create mate. The same layout for an existing mate's avatar (✨ in the Mate view, "Create with AI" in
- * Avatar settings), its Avatar section open.
+ * The making on the LEFT, as a canvas (StudioCanvas: who she is → what she will look like and what it costs → the
+ * candidates → the base picture → every set's pictures and clips, made at the same time → the checks → the mate) —
+ * the creation agent on the RIGHT (its conversation and cards: concept directions, choices, sliders, uploads, the
+ * estimate with Confirm). A click on a node opens its sheet over the canvas (NodeSheet: the settings of the mate being
+ * made — Concept, Profile, Conversation style, Voice, Language model — and the avatar's estimate, checkpoints,
+ * progress, clips and finish, one node at a time): the agent writes them (the node glows, words type themselves in,
+ * undo per field), the user edits any of them and the agent hears what changed before its next turn. Header: the
+ * title, the draft's name, the steps, the credits, drafts, Save draft & exit, Discard, Create mate. The same layout
+ * for an existing mate's avatar (✨ in the Mate view, "Create with AI" in Avatar settings) and an outfit.
  *
- * Desktop: two columns with a splitter (its position remembered). Phone: two tabs (Agent | Settings), Settings marked
- * when the agent changed something there or a decision waits.
+ * Desktop: the canvas and the agent with a splitter (the agent's width remembered; it folds to a rail). Phone: two tabs
+ * (Canvas | Agent), Canvas marked when the agent changed something there or a decision waits.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   avatarEnv,
+  checkpoint,
   deleteProject,
   discardDraft,
   finishStudio,
@@ -24,6 +27,8 @@ import {
   listProjects,
   openStudio,
   patchStudioFields,
+  pauseRun,
+  resumeRun,
   skipAvatar,
   studioTemplate,
   studioVoiceOk,
@@ -43,21 +48,25 @@ import { useStudio } from "../../../stores/studioStore";
 import { useLang, useT, type MsgKey } from "../../../i18n";
 import ScrollRow from "../../ui/ScrollRow";
 import Icon, { type IconName } from "../../ui/Icon";
-import { SaveBarSlot } from "../settings/ui";
 import AvatarChat from "../avatar/AvatarChat";
 import { StatusPill, StepBar, type Act } from "../avatar/AvatarPanel";
 import { useAgentChat } from "../avatar/useAgentChat";
 import { MateThumb } from "../MateStage";
 import NewMateDialog, { type NewMateTab } from "../NewMateDialog";
 import type { FieldsApi } from "./fields";
-import StudioSettings, { type SectionId } from "./StudioSettings";
+import type { SectionId } from "./StudioSettings";
+import StudioCanvas, { type CanvasActivity } from "./canvas/StudioCanvas";
+import NodeSheet from "./canvas/NodeSheet";
+import { nodesOfTool, progressOf, waitingFor, type NodeKey } from "./canvas/graph";
+import { useAvatarChat } from "../avatar/useAgentChat";
 import { confirmDialog, ifConfirmed } from "../../ui/ConfirmDialog";
 
 const LIVE = new Set(["running", "waiting"]);
-const SPLIT_KEY = "hrh_studio_split";
-const SPLIT_DEFAULT = 0.47;
-const MIN_LEFT = 340;
-const MIN_RIGHT = 380;
+const CHAT_KEY = "hrh_studio_chat";
+const CHAT_DEFAULT = 400;
+const CHAT_MIN = 340;
+const CANVAS_MIN = 420;
+const CHAT_FOLDED = "hrh_studio_chat_folded";
 
 const fmt = (n: number | null | undefined) => (n === null || n === undefined ? "—" : Number(n.toFixed(1)).toLocaleString());
 
@@ -173,53 +182,84 @@ function MenuItem({ icon, children, onClick, danger, testId, active }: { icon: I
   );
 }
 
-/** the run, above the conversation: what is being made, how far, and when it waits for the user */
-function RunStatus({ project, onShow }: { project: AvatarProject; onShow: () => void }) {
+/** the run, above the canvas: how far the making is, what happens now, what waits for the user (a press opens it),
+ *  and the run's own controls */
+function RunBar({ project, creating, activity, act, onShow }: { project: AvatarProject; creating: boolean; activity: CanvasActivity; act: Act; onShow: (node: string) => void }) {
   const t = useT();
-  if (!project.confirmation || !["running", "waiting", "paused", "failed"].includes(project.status)) return null;
-  const items = Object.values(project.items);
-  const done = items.filter((i) => i.status === "done").length;
-  const pct = items.length ? Math.round((done / items.length) * 100) : 0;
-  const waiting = project.status === "waiting";
-  const label = waiting
-    ? t(project.extras.some((x) => x.status === "pending") ? "studio.wait_extra" : (`studio.wait_${project.checkpoint?.stage ?? "pick"}` as MsgKey))
+  const studio = project.studio;
+  const missing = studio?.missing ?? [];
+  const needs = creating ? 2 : 0;
+  const prog = progressOf(project, { needs, filled: needs - Math.min(needs, missing.length), skipped: !!studio?.avatar_skipped });
+  const pct = prog.total ? Math.round((prog.done / prog.total) * 100) : 0;
+  const wait = waitingFor(project);
+  const running = project.status === "running";
+  const live = running || project.status === "waiting";
+  const label = wait
+    ? t(wait === "extra" ? "studio.wait_extra" : wait === "estimate" ? "studio.cvWaitEstimate" : (`studio.wait_${wait}` as MsgKey))
     : project.status === "paused"
       ? t("avatar.status_paused")
       : project.status === "failed"
         ? t("avatar.status_failed")
-        : t("studio.making", { what: t(`studio.phase_${project.phase || "design"}` as MsgKey) });
+        : running
+          ? t("studio.making", { what: t(`studio.phase_${project.phase || "design"}` as MsgKey) })
+          : project.status === "ready" || project.status === "applied"
+            ? t("studio.cvAllReady")
+            : activity.working.size
+              ? t("studio.cvAgentWriting")
+              : activity.thinking
+                ? t("studio.cvThinking")
+                : t("studio.cvIdle");
+  const waitNode = wait === "pick" ? "candidates" : wait === "home" ? "home" : wait === "stills" ? "set:faces" : wait ? "estimate" : null;
   return (
-    <div className={`shrink-0 border-b px-4 py-2 ${waiting ? "border-warning/30 bg-warning/[0.06]" : "border-border/60 bg-surface-2/40"}`} data-testid="studio-run" data-status={project.status}>
-      <div className="flex items-center gap-2 text-[12px]">
-        <Icon name={waiting ? "bell" : project.status === "running" ? "spinner" : "pause"} size={12} spin={project.status === "running"} className={waiting ? "text-warning" : "text-accent"} />
-        <span className="min-w-0 flex-1 truncate text-content">{label}</span>
-        <span className="tabular-nums text-content-faint">{t("studio.runCount", { done, total: items.length })}</span>
-        {waiting && (
-          <button className="rounded-md px-2.5 py-0.5 text-[11.5px] font-medium text-accent hover:bg-accent-soft" onClick={onShow} data-testid="studio-run-show">
-            {t("studio.filledShow")}
-          </button>
-        )}
-      </div>
-      <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-3">
-        <div className="h-full rounded-full bg-accent transition-[width] duration-700 ease-out" style={{ width: `${pct}%` }} />
-      </div>
+    <div className={`flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b px-3 py-1.5 sm:px-4 ${wait ? "border-warning/30 bg-warning/[0.06]" : "border-border/60 bg-surface/60"}`} data-testid="studio-run" data-status={project.status} data-wait={wait ?? ""}>
+      <span className="shrink-0 text-[12px] font-semibold tabular-nums text-content" data-testid="studio-progress">
+        {t("studio.cvProgress", { done: prog.done, total: prog.total })}
+      </span>
+      <span className="h-1 w-20 shrink-0 overflow-hidden rounded-full bg-surface-3 sm:w-32" aria-hidden>
+        <span className="block h-full rounded-full bg-success transition-[width] duration-700 ease-out" style={{ width: `${pct}%` }} />
+      </span>
+      <span className={`flex min-w-0 flex-1 items-center gap-1.5 text-[12px] ${wait ? "text-warning" : running ? "text-accent" : "text-content-dim"}`}>
+        <Icon name={wait ? "bell" : running ? "spinner" : project.status === "paused" ? "pause" : "sparkles"} size={12} spin={running && !wait} className="shrink-0" />
+        <span className="truncate" data-testid="studio-run-label">{label}</span>
+      </span>
+      {project.confirmation && (
+        <span className="hidden shrink-0 text-[11.5px] tabular-nums text-content-faint sm:inline">
+          {t("studio.creditsSpent", { spent: fmt(project.credits.committed), cap: fmt(project.credits.cap) })}
+        </span>
+      )}
+      {waitNode && (
+        <button className="shrink-0 rounded-md px-2.5 py-0.5 text-[11.5px] font-medium text-warning hover:bg-warning/10" onClick={() => onShow(waitNode)} data-testid="studio-run-show">
+          {t("studio.filledShow")}
+        </button>
+      )}
+      {live && !project.paused && (
+        <button className="btn-ghost shrink-0 !px-2 !py-0.5 text-[11.5px]" onClick={() => act(() => pauseRun(project.id))} data-testid="studio-run-pause">
+          <Icon name="pause" size={11} /> {t("avatar.pause")}
+        </button>
+      )}
+      {(project.status === "paused" || project.status === "failed") && project.confirmation && (
+        <button className="btn-soft shrink-0 !px-2 !py-0.5 text-[11.5px]" onClick={() => act(() => resumeRun(project.id))} data-testid="studio-run-resume">
+          <Icon name="play" size={11} /> {t("avatar.resume")}
+        </button>
+      )}
     </div>
   );
 }
 
-function Splitter({ value, onChange, container }: { value: number; onChange: (v: number, save?: boolean) => void; container: React.RefObject<HTMLDivElement> }) {
+/** the agent's width: dragged from its left edge (its width in pixels, remembered), double-click for the default */
+function ChatSplitter({ width, onChange, container }: { width: number; onChange: (w: number, save?: boolean) => void; container: React.RefObject<HTMLDivElement> }) {
   const t = useT();
-  const clamp = (v: number) => {
-    const w = container.current?.clientWidth || 1200;
-    return Math.min(1 - MIN_RIGHT / w, Math.max(MIN_LEFT / w, v));
+  const clamp = (w: number) => {
+    const total = container.current?.clientWidth || 1400;
+    return Math.round(Math.min(total - CANVAS_MIN, Math.max(CHAT_MIN, w)));
   };
   const down = (e: React.PointerEvent) => {
     e.preventDefault();
     const rect = container.current?.getBoundingClientRect();
     if (!rect) return;
-    let last = value;
+    let last = width;
     const move = (ev: PointerEvent) => {
-      last = clamp((ev.clientX - rect.left) / rect.width);
+      last = clamp(rect.right - ev.clientX);
       onChange(last);
     };
     const up = () => {
@@ -239,20 +279,18 @@ function Splitter({ value, onChange, container }: { value: number; onChange: (v:
       role="separator"
       aria-orientation="vertical"
       aria-label={t("studio.splitter")}
-      aria-valuenow={Math.round(value * 100)}
-      aria-valuemin={20}
-      aria-valuemax={80}
+      aria-valuenow={width}
       tabIndex={0}
       onPointerDown={down}
-      onDoubleClick={() => onChange(clamp(SPLIT_DEFAULT), true)}
+      onDoubleClick={() => onChange(clamp(CHAT_DEFAULT), true)}
       onKeyDown={(e) => {
-        const step = e.key === "ArrowLeft" ? -0.03 : e.key === "ArrowRight" ? 0.03 : 0;
+        const step = e.key === "ArrowLeft" ? 40 : e.key === "ArrowRight" ? -40 : 0;
         if (step) {
           e.preventDefault();
-          onChange(clamp(value + step), true);
+          onChange(clamp(width + step), true);
         } else if (e.key === "Home" || e.key === "Enter") {
           e.preventDefault();
-          onChange(clamp(SPLIT_DEFAULT), true);
+          onChange(clamp(CHAT_DEFAULT), true);
         }
       }}
       className="group relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize outline-none"
@@ -263,11 +301,41 @@ function Splitter({ value, onChange, container }: { value: number; onChange: (v:
   );
 }
 
+/** what the creation agent works on right now: its running tools' nodes, or thinking (a turn with no tool going) */
+function useActivity(streaming: boolean): CanvasActivity {
+  const turns = useAvatarChat((s) => s.turns);
+  return useMemo(() => {
+    const working = new Set<NodeKey>();
+    const last = [...turns].reverse().find((x) => x.role === "assistant");
+    let tools = 0;
+    if (streaming && last && !last.complete) {
+      for (const tool of last.tools) {
+        if (tool.durationMs !== undefined) continue;
+        tools++;
+        for (const k of nodesOfTool(tool.name, tool.input)) working.add(k);
+      }
+    }
+    return { working, thinking: streaming && tools === 0 };
+  }, [turns, streaming]);
+}
+
+/** a section of the old right side (the agent's "Show", a step) → its node on the canvas */
+function nodeOfSection(id: string, p: AvatarProject): string {
+  if (id !== "avatar") return id;
+  const w = waitingFor(p);
+  if (w === "pick") return "candidates";
+  if (w === "home") return "home";
+  if (w === "stills") return "set:faces";
+  if (w) return "estimate";
+  if (p.status === "ready" || p.status === "applied") return "mate";
+  return p.plan || p.confirmation ? "estimate" : "brief";
+}
+
 export default function MateStudio() {
   const t = useT();
   const lang = useLang();
   // (both columns' least widths: beside the sidebar a tablet or a small window has less, whatever the viewport)
-  const [narrow, rootRef] = useNarrowerThan(MIN_LEFT + MIN_RIGHT);
+  const [narrow, rootRef] = useNarrowerThan(CANVAS_MIN + CHAT_MIN);
   const phone = usePhone() || narrow;
   const touch = useTouchFirst();
   const kind = useStudio((s) => s.kind);
@@ -280,9 +348,9 @@ export default function MateStudio() {
   const [error, setError] = useState<string | null>(null);
   const [gone, setGone] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<"agent" | "settings">("agent");
-  const [saveSlot, setSaveSlot] = useState<HTMLDivElement | null>(null);
-  const [focus, setFocus] = useState<{ id: SectionId; n: number } | null>(null);
+  const [tab, setTab] = useState<"agent" | "canvas">("agent");
+  /** the node or tile whose sheet is open over the canvas */
+  const [sheet, setSheet] = useState<string | null>(null);
   const [dialog, setDialog] = useState<NewMateTab | null>(null);
   const [template, setTemplate] = useState(false);
   const [saving, setSaving] = useState<{ n: number; error: string | null }>({ n: 0, error: null });
@@ -341,6 +409,7 @@ export default function MateStudio() {
   }, [pid, live]);
 
   const chat = useAgentChat(project?.session_id ?? null, () => void loadRef.current());
+  const activity = useActivity(chat.streaming);
 
   // the mate: the newest copy of the server's view and the store's (a settings tab saved it)
   const storeDraft = useMateStore((s) => (project?.studio ? s.drafts[project.studio.mate_id] : undefined));
@@ -396,29 +465,36 @@ export default function MateStudio() {
     [pid, project?.studio?.filled, since, take],
   );
 
-  const show = (id: SectionId) => {
-    setFocus({ id, n: Date.now() });
-    if (phone) setTab("settings");
+  /** open a node's sheet (a node or tile key, or a section of the old right side: the agent's "Show", a step) */
+  const show = (id: SectionId | string) => {
+    if (!project) return;
+    setSheet(nodeOfSection(id, project));
+    if (phone) setTab("canvas");
   };
 
   // ── phone: the Settings tab is marked when the agent filled something there (or a decision waits) ──
   const fills = useMemo(() => Object.values(project?.studio?.filled ?? {}).map((e) => e.at), [project?.studio?.filled]);
   const [seenFills, setSeenFills] = useState<Set<string>>(new Set());
   useEffect(() => {
-    if (tab === "settings" || !phone) setSeenFills(new Set(fills));
+    if (tab === "canvas" || !phone) setSeenFills(new Set(fills));
   }, [tab, phone, fills]);
   const unseen = fills.filter((a) => !seenFills.has(a)).length;
   const waits = !!project && (project.status === "waiting" || project.extras.some((x) => x.status === "pending") || (project.status === "estimate" && !!project.plan && !project.confirmation));
 
-  // ── the splitter ──
+  // ── the agent's width (folds to a rail) ──
   const box = useRef<HTMLDivElement>(null);
-  const [split, setSplit] = useState(() => {
-    const v = Number(localStorage.getItem(SPLIT_KEY));
-    return v > 0.15 && v < 0.85 ? v : SPLIT_DEFAULT;
+  const [chatW, setChatW] = useState(() => {
+    const v = Number(localStorage.getItem(CHAT_KEY));
+    return v >= CHAT_MIN && v < 2400 ? v : CHAT_DEFAULT;
   });
-  const onSplit = (v: number, save?: boolean) => {
-    setSplit(v);
-    if (save) localStorage.setItem(SPLIT_KEY, String(Number(v.toFixed(3))));
+  const [folded, setFolded] = useState(() => localStorage.getItem(CHAT_FOLDED) === "1");
+  const onChatW = (w: number, save?: boolean) => {
+    setChatW(w);
+    if (save) localStorage.setItem(CHAT_KEY, String(w));
+  };
+  const fold = (on: boolean) => {
+    setFolded(on);
+    localStorage.setItem(CHAT_FOLDED, on ? "1" : "0");
   };
 
   // ── leaving ──
@@ -806,26 +882,49 @@ export default function MateStudio() {
       env={env}
       act={act}
       chat={chat}
-      onShow={(s) => show(s as SectionId)}
+      onShow={(sec) => show(sec)}
       placeholder={isNew ? t("studio.composerNew") : undefined}
-      top={<RunStatus project={project} onShow={() => show("avatar")} />}
     />
   );
-  const settings = (
-    <StudioSettings
+  const sheetEl = sheet && (
+    <NodeSheet
+      key={sheet}
+      node={sheet}
       project={project}
       mate={mate}
       env={env}
+      creating={isNew}
       act={act}
       reloadEnv={reloadEnv}
       conv={conv}
       api={api}
-      focus={focus}
-      creating={isNew}
+      busy={busy}
+      send={(text) => chat.send(text)}
+      onClose={() => setSheet(null)}
+      onOpen={setSheet}
       onVoiceTested={() => pid && void studioVoiceOk(pid).then(take).catch(() => {})}
       onSkip={(skip) => pid && void act(() => skipAvatar(pid, skip))}
-      saving={{ busy: saving.n > 0, error: saving.error }}
+      onCreate={isNew ? finish : undefined}
     />
+  );
+  const approve = () => pid && void act(() => checkpoint(pid, "approve"));
+  const canvas = (
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+      <RunBar project={project} creating={isNew} activity={activity} act={act} onShow={show} />
+      {(saving.n > 0 || saving.error) && (
+        <div className={`absolute right-3 top-12 z-[6] rounded-full border px-2.5 py-0.5 text-[11px] ${saving.error ? "border-danger/40 bg-danger/10 text-danger" : "border-border bg-surface-2 text-content-faint"}`} data-testid="studio-save-state" aria-live="polite">
+          {saving.error ? saving.error : t("studio.saving")}
+        </div>
+      )}
+      <div className="relative flex min-h-0 flex-1">
+        <StudioCanvas project={project} mate={mate} creating={isNew} activity={activity} open={sheet} busy={busy} onOpen={setSheet} onApprove={approve} onCreate={isNew ? finish : undefined} />
+        {sheetEl && (
+          <div className={`absolute inset-y-0 right-0 z-20 flex w-full animate-fade-in ${phone ? "" : "max-w-[460px]"}`} data-testid="studio-sheet-wrap">
+            {sheetEl}
+          </div>
+        )}
+      </div>
+    </div>
   );
 
   if (phone) {
@@ -837,26 +936,21 @@ export default function MateStudio() {
             <Icon name="sparkles" size={13} /> {t("studio.tabAgent")}
             {chat.streaming && <span className="ml-1 inline-block h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent" />}
           </button>
-          <button role="tab" aria-selected={tab === "settings"} className="nav-tab inline-flex flex-1 items-center justify-center gap-1.5" data-active={tab === "settings"} onClick={() => setTab("settings")} data-testid="studio-tab-settings">
-            <Icon name="settings" size={13} /> {t("studio.tabSettings")}
-            {tab !== "settings" && unseen > 0 ? (
-              <span className="ml-1 rounded-full bg-success px-1.5 text-[10px] font-semibold leading-4 text-white" data-testid="studio-settings-badge">
+          <button role="tab" aria-selected={tab === "canvas"} className="nav-tab inline-flex flex-1 items-center justify-center gap-1.5" data-active={tab === "canvas"} onClick={() => setTab("canvas")} data-testid="studio-tab-canvas">
+            <Icon name="layers" size={13} /> {t("studio.tabCanvas")}
+            {tab !== "canvas" && unseen > 0 ? (
+              <span className="ml-1 rounded-full bg-success px-1.5 text-[10px] font-semibold leading-4 text-white" data-testid="studio-canvas-badge">
                 {unseen}
               </span>
             ) : (
-              tab !== "settings" && waits && <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-warning" data-testid="studio-settings-dot" />
+              tab !== "canvas" && waits && <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-warning" data-testid="studio-canvas-dot" />
             )}
           </button>
         </div>
         {banner}
-        {/* (both stay mounted: switching tabs keeps the conversation's scroll and the fields being typed) */}
+        {/* (both stay mounted: switching tabs keeps the conversation's scroll and the canvas's camera) */}
         <div className={`min-h-0 flex-1 flex-col ${tab === "agent" ? "flex" : "hidden"}`}>{agent}</div>
-        <div className={`min-h-0 flex-1 flex-col ${tab === "settings" ? "flex" : "hidden"}`}>
-          <SaveBarSlot.Provider value={saveSlot}>
-            <div className="fit-fields scrollbar-stable min-h-0 flex-1 overflow-y-auto pb-safe">{settings}</div>
-          </SaveBarSlot.Provider>
-          <div ref={setSaveSlot} className="shrink-0" />
-        </div>
+        <div className={`min-h-0 flex-1 flex-col pb-safe ${tab === "canvas" ? "flex" : "hidden"}`}>{canvas}</div>
         {dialogs}
       </div>
     );
@@ -866,16 +960,28 @@ export default function MateStudio() {
       {header}
       {banner}
       <div className="flex min-h-0 flex-1" ref={box}>
-        <section className="flex min-h-0 shrink-0 flex-col bg-surface/30" style={{ width: `${(split * 100).toFixed(2)}%`, minWidth: MIN_LEFT }} aria-label={t("studio.tabAgent")} data-testid="studio-agent">
-          {agent}
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col" style={{ minWidth: CANVAS_MIN }} aria-label={t("studio.tabCanvas")} data-testid="studio-left">
+          {canvas}
         </section>
-        <Splitter value={split} onChange={onSplit} container={box} />
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-[linear-gradient(to_bottom,rgb(var(--c-surface-2)/0.35),transparent_240px)]" style={{ minWidth: MIN_RIGHT }} aria-label={t("studio.tabSettings")} data-testid="studio-right">
-          <SaveBarSlot.Provider value={saveSlot}>
-            <div className="scrollbar-stable min-h-0 flex-1 overflow-y-auto">{settings}</div>
-          </SaveBarSlot.Provider>
-          <div ref={setSaveSlot} className="shrink-0" />
-        </section>
+        {folded ? (
+          <section className="flex w-11 shrink-0 flex-col items-center gap-2 border-l border-border/70 bg-surface/40 py-3" aria-label={t("studio.tabAgent")} data-testid="studio-agent-rail">
+            <button className="btn-ghost !p-2" onClick={() => fold(false)} title={t("studio.chatUnfold")} aria-label={t("studio.chatUnfold")} data-testid="studio-agent-unfold">
+              <Icon name="chat" size={16} />
+            </button>
+            {chat.streaming && <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent" />}
+            {waits && <span className="h-1.5 w-1.5 rounded-full bg-warning" />}
+          </section>
+        ) : (
+          <>
+            <ChatSplitter width={chatW} onChange={onChatW} container={box} />
+            <section className="relative flex min-h-0 shrink-0 flex-col border-l border-border/50 bg-surface/30" style={{ width: chatW }} aria-label={t("studio.tabAgent")} data-testid="studio-agent">
+              <button className="btn-ghost absolute right-2 top-2 z-10 !p-1.5 text-content-faint" onClick={() => fold(true)} title={t("studio.chatFold")} aria-label={t("studio.chatFold")} data-testid="studio-agent-fold">
+                <Icon name="chevron-left" size={13} className="rotate-180" />
+              </button>
+              {agent}
+            </section>
+          </>
+        )}
       </div>
       {dialogs}
     </div>

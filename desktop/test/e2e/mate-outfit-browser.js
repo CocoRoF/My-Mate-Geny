@@ -239,7 +239,9 @@ const tile = (p, id) => p.locator(`[data-testid="outfit-tile"][data-outfit="${id
     assert.equal(doc.ledger.committed, 0);
     assert.equal(doc.brief.reference.mode, "redraw");
     assert.ok(doc.files.refs[0].url.includes("ref-1.webp"));
-    assert.equal(await p.locator('[data-testid="studio-section-concept"], [data-section="concept"]').count(), 0);
+    // (an outfit changes only her clothes: no concept or profile on the canvas, the outfit's node instead)
+    assert.equal(await p.locator('[data-testid="sc-node-concept"], [data-testid="sc-node-profile"]').count(), 0);
+    await p.waitForSelector('[data-testid="sc-node-outfit"]');
 
     step("the finished project goes into its outfit, and Wear puts the whole video set on her");
     const made = (await get(boot, "/api/avatar/projects")).find((x) => x.outfit?.id === empty.id);

@@ -85,7 +85,7 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /** Concept: the pitch, who she is to the user, the voice character and the visual concept */
-function ConceptSection({ studio }: { studio: StudioInfo }) {
+export function ConceptSection({ studio }: { studio: StudioInfo }) {
   const t = useT();
   const c = studio.concept;
   const v = (k: ConceptKey) => c[k] ?? "";
@@ -126,7 +126,7 @@ function ConceptSection({ studio }: { studio: StudioInfo }) {
   );
 }
 
-function ProfileSection({ mate }: { mate: Mate }) {
+export function ProfileSection({ mate }: { mate: Mate }) {
   const t = useT();
   const p = mate.persona;
   const [more, setMore] = useState(!!p.instructions);
@@ -162,7 +162,7 @@ function FieldsSave({ children }: { children: (save: FieldsApi["save"]) => React
   return <FieldsCtx.Consumer>{(api) => children(api ? api.save : async () => {})}</FieldsCtx.Consumer>;
 }
 
-function StyleSection({ mate }: { mate: Mate }) {
+export function StyleSection({ mate }: { mate: Mate }) {
   const t = useT();
   const p = prefsOf(mate);
   const lang = mate.persona.language;
@@ -296,7 +296,7 @@ function StyleSection({ mate }: { mate: Mate }) {
 
 /** her avatar from a file the user has (a Live2D model, a LivLiv package or a video/photo pack in a zip, the same
  *  import as Mate settings → Avatar): it goes on her at once, and the agent sees what it has (studio.avatar) */
-function BringAvatar({ mate, pid }: { mate: Mate; pid: string }) {
+export function BringAvatar({ mate, pid }: { mate: Mate; pid: string }) {
   const t = useT();
   const file = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -327,7 +327,7 @@ function BringAvatar({ mate, pid }: { mate: Mate; pid: string }) {
 
 /** a Live2D model's / LivLiv package's expressions that answer to her emotions (the agent maps them; Mate settings →
  *  Avatar changes them) */
-function EmotionMap({ mate }: { mate: Mate }) {
+export function EmotionMap({ mate }: { mate: Mate }) {
   const t = useT();
   const a = mate.avatar;
   const map = a.kind === "live2d" ? a.live2d.emotions : a.kind === "livliv" ? a.livliv.emotions : undefined;
@@ -350,7 +350,7 @@ function EmotionMap({ mate }: { mate: Mate }) {
 }
 
 /** before the avatar is ready: what she looks like now (or an empty stage of the same size — no jump later) */
-function AvatarStage({ project, mate, kind, onSkip }: { project: AvatarProject; mate: Mate; kind: "new" | "existing"; onSkip?: (skip: boolean) => void }) {
+export function AvatarStage({ project, mate, kind, onSkip }: { project: AvatarProject; mate: Mate; kind: "new" | "existing"; onSkip?: (skip: boolean) => void }) {
   const t = useT();
   const ready = !!project.preview && (project.status === "ready" || project.status === "applied");
   if (ready) return null;
