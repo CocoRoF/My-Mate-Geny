@@ -281,7 +281,8 @@ async function main() {
   await sleep(500);
   await shot(page, "07-making-on-canvas-dark-en");
   const t0 = Date.now();
-  await until("ready", async () => ["ready", "applied"].includes((await projectOf(ctx, pid)).status), 40 * 60000, 3000);
+  // (a request may drop while the processing keeps the server busy: the next poll asks again)
+  await until("ready", async () => ["ready", "applied"].includes((await projectOf(ctx, pid).catch(() => ({}))).status), 40 * 60000, 3000);
   console.log(`  processing took ${Math.round((Date.now() - t0) / 1000)} s`);
   await page.waitForSelector('[data-testid="sc-node-mate"].is-ready', { timeout: 30000 });
   await sleep(1200);
