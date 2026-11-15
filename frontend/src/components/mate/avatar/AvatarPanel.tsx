@@ -200,7 +200,7 @@ export function EstimateCard({ project, env, act, inline = false }: { project: A
   );
 }
 
-function DepsCard({ env, onDone }: { env: AvatarEnv; onDone: () => void }) {
+export function DepsCard({ env, onDone }: { env: AvatarEnv; onDone: () => void }) {
   const t = useT();
   const [lines, setLines] = useState<string[]>(env.deps.log || []);
   const [busy, setBusy] = useState(env.deps.installing);
@@ -236,7 +236,7 @@ function DepsCard({ env, onDone }: { env: AvatarEnv; onDone: () => void }) {
   );
 }
 
-function Thumb({ src, label, selected, onClick, testId, children }: { src: string | null; label: string; selected?: boolean; onClick?: () => void; testId?: string; children?: React.ReactNode }) {
+export function Thumb({ src, label, selected, onClick, testId, children }: { src: string | null; label: string; selected?: boolean; onClick?: () => void; testId?: string; children?: React.ReactNode }) {
   return (
     <div
       className={`group relative overflow-hidden rounded-lg border bg-[rgb(213,212,217)] ${selected ? "border-accent ring-2 ring-accent/40" : "border-border"}`}
@@ -288,7 +288,7 @@ export function ExtraCard({ project, x, act }: { project: AvatarProject; x: Extr
 }
 
 /** a redo: the price on the button; above the auto threshold the browser asks once more */
-function RedoButton({ project, item, credits, act, label }: { project: AvatarProject; item: string; credits: number | null; act: Act; label?: string }) {
+export function RedoButton({ project, item, credits, act, label }: { project: AvatarProject; item: string; credits: number | null; act: Act; label?: string }) {
   const t = useT();
   return (
     <button
@@ -304,9 +304,9 @@ function RedoButton({ project, item, credits, act, label }: { project: AvatarPro
   );
 }
 
-const unit = (p: AvatarProject, stage: PlanLine["stage"]) => p.plan?.lines.find((l) => l.stage === stage)?.unit ?? null;
+export const unit = (p: AvatarProject, stage: PlanLine["stage"]) => p.plan?.lines.find((l) => l.stage === stage)?.unit ?? null;
 
-function Checkpoint({ project, act }: { project: AvatarProject; act: Act }) {
+export function Checkpoint({ project, act }: { project: AvatarProject; act: Act }) {
   const t = useT();
   const cp = project.checkpoint;
   const f = project.files;
@@ -376,7 +376,7 @@ function Checkpoint({ project, act }: { project: AvatarProject; act: Act }) {
   return null;
 }
 
-function Progress({ project, act }: { project: AvatarProject; act: Act }) {
+export function Progress({ project, act }: { project: AvatarProject; act: Act }) {
   const t = useT();
   const c = project.credits;
   const pct = c.cap ? Math.min(100, (c.committed / c.cap) * 100) : 0;
@@ -460,15 +460,16 @@ function Progress({ project, act }: { project: AvatarProject; act: Act }) {
   );
 }
 
-function Clips({ project, act }: { project: AvatarProject; act: Act }) {
+export function Clips({ project, act, kinds, all = false }: { project: AvatarProject; act: Act; /** only these clip kinds (a set of the canvas) */ kinds?: string[]; /** planned ones too (the canvas's set sheet) */ all?: boolean }) {
   const t = useT();
-  const clips = project.files.clips.filter((c) => c.status !== "pending" || c.raw);
+  const mine = project.files.clips.filter((c) => !kinds || kinds.includes(c.kind));
+  const clips = mine.filter((c) => all || c.status !== "pending" || c.raw);
   if (!clips.length) return null;
   const cost = (unit(project, "clips") ?? 0) + (unit(project, "matte") ?? 0);
   return (
     <Card title={t("avatar.clipsTitle", { n: project.brief.clips.length })} icon="play" testId="avatar-clips">
       <ul className="divide-y divide-border/60">
-        {project.files.clips.map((c) => {
+        {(all ? mine : project.files.clips.filter((c) => !kinds || kinds.includes(c.kind))).map((c) => {
           const chk = c.check;
           return (
             <li key={c.id} className="flex items-center gap-2 py-1.5 text-[12px]" data-testid="avatar-clip">
@@ -511,7 +512,7 @@ export interface PanelStudio {
   mateName: string;
 }
 
-function Finish({ project, act, studio }: { project: AvatarProject; act: Act; studio?: PanelStudio }) {
+export function Finish({ project, act, studio }: { project: AvatarProject; act: Act; studio?: PanelStudio }) {
   const t = useT();
   const mates = useMateStore((s) => s.mates);
   const target = project.brief.target;
@@ -624,7 +625,7 @@ function Finish({ project, act, studio }: { project: AvatarProject; act: Act; st
 
 /** what was made so far (outside the checkpoints that show it): the candidates (the picked one marked), the base
  *  picture and the stills — fixed-ratio tiles, so nothing jumps when a picture arrives */
-function Gallery({ project }: { project: AvatarProject }) {
+export function Gallery({ project }: { project: AvatarProject }) {
   const t = useT();
   const f = project.files;
   const cp = project.checkpoint?.stage;
@@ -659,6 +660,61 @@ function Gallery({ project }: { project: AvatarProject }) {
   );
 }
 
+/** what the agent wrote down to make (the reference, the design, the shape, the motions; whose avatar) */
+export function BriefCard({ project, studio = false }: { project: AvatarProject; studio?: boolean }) {
+  const t = useT();
+  const b = project.brief;
+  return (
+    <Card title={t("avatar.briefTitle")} icon="file-text" testId="avatar-brief">
+      <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-[12px]">
+        <dt className="text-content-faint">{t("avatar.briefReference")}</dt>
+        <dd className="text-content-dim">{t(`avatar.ref_${b.reference.mode}` as MsgKey)}</dd>
+        {b.design.prompt && (
+          <>
+            <dt className="text-content-faint">{t("avatar.briefDesign")}</dt>
+            <dd className="text-content-dim">{b.design.prompt}</dd>
+          </>
+        )}
+        <dt className="text-content-faint">{t("avatar.briefShape")}</dt>
+        <dd className="text-content-dim">
+          {b.aspect} · {t(`avatar.tier_${b.tier}` as MsgKey)}
+        </dd>
+        <dt className="text-content-faint">{t("avatar.briefMotions")}</dt>
+        <dd className="text-content-dim">{t("avatar.briefMotionsValue", { preset: t(`avatar.preset_${b.preset}` as MsgKey), clips: b.clips.length, stills: b.stills.length })}</dd>
+        {!studio && (
+          <>
+            <dt className="text-content-faint">{t("avatar.briefTarget")}</dt>
+            <dd className="text-content-dim">{b.target.mode === "existing" ? b.target.name : t("avatar.newMateNamed", { name: b.target.name || "—" })}</dd>
+          </>
+        )}
+      </dl>
+      {project.files.refs.length > 0 && (
+        <div className="mt-2 flex gap-1.5">
+          {project.files.refs.map((r) => (
+            <img key={r.name} src={r.url} alt={r.name} className="h-16 w-12 rounded border border-border object-cover" />
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/** what a run needs before it can start: Higgsfield connected with its CLI, the processing tools installed */
+export function EnvNotice({ env, reloadEnv }: { env: AvatarEnv | null; reloadEnv: () => void }) {
+  const t = useT();
+  if (!env) return null;
+  return (
+    <>
+      {(!env.higgsfield.connected || !env.higgsfield.cli) && (
+        <div className="rounded-lg border border-warning/30 bg-warning/[0.07] px-3 py-2 text-[12px] text-warning" data-testid="avatar-no-higgsfield">
+          {!env.higgsfield.connected ? t("avatar.connectHiggsfield") : t("avatar.noCli")}
+        </div>
+      )}
+      {!env.deps.ready && <DepsCard env={env} onDone={reloadEnv} />}
+    </>
+  );
+}
+
 export default function AvatarPanel({ project, env, act, reloadEnv, studio, hideSteps = false }: {
   project: AvatarProject;
   env: AvatarEnv | null;
@@ -669,23 +725,16 @@ export default function AvatarPanel({ project, env, act, reloadEnv, studio, hide
   /** the steps are shown elsewhere (the studio's header) */
   hideSteps?: boolean;
 }) {
-  const t = useT();
   const top = useRef<HTMLDivElement>(null);
   const cp = project.checkpoint?.stage;
   useEffect(() => {
     if (cp) top.current?.scrollIntoView({ block: "nearest" });
   }, [cp]);
   const pending = project.extras.filter((x) => x.status === "pending");
-  const b = project.brief;
   return (
     <div className={`flex flex-col gap-3 ${studio ? "" : "p-3 sm:p-4"}`} ref={top} data-testid="avatar-panel">
       {!hideSteps && <StepBar project={project} />}
-      {env && (!env.higgsfield.connected || !env.higgsfield.cli) && (
-        <div className="rounded-lg border border-warning/30 bg-warning/[0.07] px-3 py-2 text-[12px] text-warning" data-testid="avatar-no-higgsfield">
-          {!env.higgsfield.connected ? t("avatar.connectHiggsfield") : t("avatar.noCli")}
-        </div>
-      )}
-      {env && !env.deps.ready && <DepsCard env={env} onDone={reloadEnv} />}
+      <EnvNotice env={env} reloadEnv={reloadEnv} />
       {pending.map((x) => (
         <ExtraCard key={x.id} project={project} x={x} act={act} />
       ))}
@@ -695,37 +744,7 @@ export default function AvatarPanel({ project, env, act, reloadEnv, studio, hide
       {project.confirmation && <Progress project={project} act={act} />}
       {project.confirmation && <Gallery project={project} />}
       <Clips project={project} act={act} />
-      <Card title={t("avatar.briefTitle")} icon="file-text" testId="avatar-brief">
-        <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-[12px]">
-          <dt className="text-content-faint">{t("avatar.briefReference")}</dt>
-          <dd className="text-content-dim">{t(`avatar.ref_${b.reference.mode}` as MsgKey)}</dd>
-          {b.design.prompt && (
-            <>
-              <dt className="text-content-faint">{t("avatar.briefDesign")}</dt>
-              <dd className="text-content-dim">{b.design.prompt}</dd>
-            </>
-          )}
-          <dt className="text-content-faint">{t("avatar.briefShape")}</dt>
-          <dd className="text-content-dim">
-            {b.aspect} · {t(`avatar.tier_${b.tier}` as MsgKey)}
-          </dd>
-          <dt className="text-content-faint">{t("avatar.briefMotions")}</dt>
-          <dd className="text-content-dim">{t("avatar.briefMotionsValue", { preset: t(`avatar.preset_${b.preset}` as MsgKey), clips: b.clips.length, stills: b.stills.length })}</dd>
-          {!studio && (
-            <>
-              <dt className="text-content-faint">{t("avatar.briefTarget")}</dt>
-              <dd className="text-content-dim">{b.target.mode === "existing" ? b.target.name : t("avatar.newMateNamed", { name: b.target.name || "—" })}</dd>
-            </>
-          )}
-        </dl>
-        {project.files.refs.length > 0 && (
-          <div className="mt-2 flex gap-1.5">
-            {project.files.refs.map((r) => (
-              <img key={r.name} src={r.url} alt={r.name} className="h-16 w-12 rounded border border-border object-cover" />
-            ))}
-          </div>
-        )}
-      </Card>
+      <BriefCard project={project} studio={!!studio} />
     </div>
   );
 }

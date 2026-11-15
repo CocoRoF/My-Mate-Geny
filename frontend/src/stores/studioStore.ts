@@ -11,6 +11,9 @@ export type StudioKind = "create" | "avatar";
 
 interface StudioState {
   open: boolean;
+  /** the app's sidebar shown beside the studio (it is a rail of icons there by default: the canvas wants the room) */
+  sidebar: boolean;
+  setSidebar: (on: boolean) => void;
   kind: StudioKind;
   /** the draft's id (create) or the mate's (avatar); "new" = make a draft first (a deep link from another window) */
   mateId: string | null;
@@ -37,6 +40,8 @@ interface StudioState {
 
 export const useStudio = create<StudioState>((set, get) => ({
   open: false,
+  sidebar: false,
+  setSidebar: (on) => set({ sidebar: on }),
   kind: "create",
   mateId: null,
   projectId: null,

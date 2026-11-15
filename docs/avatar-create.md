@@ -1,17 +1,20 @@
 # Mate Create studio (메이트 만들기) and Avatar Create (아바타 만들기)
 
-The **Mate Create studio** is where a mate is made: the creation agent on the left helps define who she is (concept,
-personality, speech, how she calls the user, voice character, visual concept) and fills her settings on the right as
-it goes; then it designs her **video avatar** with Higgsfield — the way the bundled mate (한채린) was
+The **Mate Create studio** is where a mate is made: the making on a canvas on the left (who she is → her look and its
+estimate → the candidates → the base picture → every set's pictures and clips → the checks → the mate), the creation
+agent on the right — it helps define who she is (concept, personality, speech, how she calls the user, voice character,
+visual concept) and fills her settings as it goes (their nodes glow on the canvas); then it designs her **video avatar**
+with Higgsfield — the way the bundled mate (한채린) was
 made by hand with Claude Code + Higgsfield (ailism-mate `original_content/tools/mate.py`). The same studio makes a new
 avatar for an existing mate. The agent has a conversation of its own, separate from the mate's chat. §11 is the
 studio; §1–§10 the avatar part (unchanged since Avatar Create); §12 outfit sets for a mate's wardrobe.
 
 Code: `backend/app/avatar/` (presets, plan, generator, pipeline, deps, store, service, prompt, mcp_bridge, studio),
-`backend/app/routers/avatar.py`, `frontend/src/components/mate/studio/*` (MateStudio, StudioSettings, fields),
+`backend/app/routers/avatar.py`, `frontend/src/components/mate/studio/*` (MateStudio, StudioSettings, fields; canvas/:
+StudioCanvas, NodeSheet, graph, useCanvas),
 `frontend/src/components/mate/avatar/*` (AvatarChat, AvatarPanel), `frontend/src/api/avatar.ts`,
 `frontend/src/stores/studioStore.ts`. Tests: `backend/tests/test_avatar.py`, `backend/tests/test_mate_studio.py`,
-`desktop/test/e2e/mate-studio-browser.js`, `desktop/test/e2e/avatar-create-browser.js` (+ `fake-higgsfield.py`,
+`frontend/test/studio-graph.test.ts`, `desktop/test/e2e/mate-studio-browser.js`, `desktop/test/e2e/avatar-create-browser.js` (+ `fake-higgsfield.py`,
 `higgsfield-stub.py`, `fake-claude.py`).
 
 ## 1. What it makes
@@ -107,7 +110,7 @@ Exactly the official mates' body (docs/mate.md §2 `video`, packing `stacked-alp
 
 - The mate picker → **New mate**: the studio for a new mate (§11).
 - Mate view header: **Avatar Create** (✨) and Mate settings → Avatar → **Create with AI**: the studio for the mate on
-  screen — the same layout (the agent left, her settings right, the Avatar section open), her latest avatar project
+  screen — the same layout (the canvas left, the agent right), her latest avatar project
   (Projects ▾: the others, a new one, delete).
 
 ## 3. The agent
@@ -247,31 +250,64 @@ reload come back to the same draft.
 credits (≈ estimate, then spent / cap), Drafts ▾ or Projects ▾, ⋯ (Start from a mate…, Import a mate pack…, Quick
 create (name only)…, Discard draft), **Save draft & exit**, **Create mate** (enabled with a name and a description or
 personality; its tooltip says what is missing). Below it the steps — Concept → Personality → Look → Avatar → Voice →
-Done (done ✓ / current / to do; a click shows that section) — or, for an existing mate, the avatar's own steps.
-Desktop: two columns, the agent ~47 % on the left and the settings on the right, a splitter (drag, ←/→, double-click
-or Home resets) remembered in localStorage `hrh_studio_split`. Phone: two tabs, **Agent | Settings**; Settings carries
-the number of fields the agent filled since you last looked (or a dot when an estimate / checkpoint / extra waits). Both
-stay mounted (no lost scroll or typing). The steps stay on one line that scrolls sideways, the current one in view; an
-extra's card is on the Agent tab too, right above the message box. `desktop/test/e2e/mate-studio-phone-browser.js`.
+Done (done ✓ / current / to do; a click opens that node's sheet) — or, for an existing mate, the avatar's own steps.
+Desktop: **the canvas on the left, the agent on the right** (owner 2026-11-15, after Ailism Mate's graph editor: a
+canvas and a chat, but every decision of ours — the estimate, the pick, the approvals — right on it); the agent's width
+is dragged from its edge (←/→, double-click or Home resets; localStorage `hrh_studio_chat`, 400 px by default, at least
+340, the canvas at least 420) and folds to a rail (`hrh_studio_chat_folded`). Phone: two tabs, **Agent | Canvas**;
+Canvas carries the number of fields the agent filled since you last looked (or a dot when an estimate / checkpoint /
+extra waits). Both stay mounted (no lost scroll, camera or typing). An extra's card is on the Agent tab too, right
+above the message box. `desktop/test/e2e/mate-studio-phone-browser.js`.
 
-**Left — the creation agent** (`AvatarChat`): its lines, its cards (distinct from plain messages: an accent frame and a
-label) — **concept directions** (`ask_user` kind `concepts`: 2–4 big cards with a name, a one-line pitch and a palette
-strip; "describe your own"), choices, sliders, uploads, text, the estimate with Confirm — **filled-in cards** for each
-`update_mate_draft` (which settings, Show), tool chips, the run's events as dividers, and above the conversation the
-run status (what is being made, done / total with a smooth bar, "Waiting for you: …" with Show).
+**The canvas** (`canvas/StudioCanvas.tsx`, its state pure in `canvas/graph.ts`, `frontend/test/studio-graph.test.ts`).
+Seven columns, left to right, nodes joined by curves that light up as things flow:
 
-**Right — the mate's settings, live** (`StudioSettings`): collapsible sections — **Concept** (pitch, her role for
-you, interests, backstory, the look: art style, mood, look, outfit, palette with swatches, voice character),
-**Profile** — who she is, the character only (name, who she is, personality, greeting, standing instructions),
-**Conversation style** — how she talks (your name, what she calls you with the chips and the Korean particle preview,
-what she calls herself, reply language, speech level — "As her character" when she has one —, speech habits, length,
-emotion, warmth / humor / initiative, topics to avoid; docs/mate.md "Prompt composition"), **Avatar** (her avatar now or an empty
-stage of the same size, Skip the avatar for now, then the project: estimate, checkpoints, progress, what was made so
-far — fixed-ratio tiles, nothing jumps — clips, the player when ready), **Voice** (the Voice tab itself: engine, voice,
-test — with the agent's voice character as a hint) and **Language model** (the Model tab). Every field saves itself
-(0.65 s after the last key or on leaving it; "Changes save automatically"). A field the agent filled glows for a moment
-and carries **Filled by the agent · Undo** (back to the value before it wrote); a section closed when the agent fills
-it opens; editing a field removes its badge.
+| Column | Nodes |
+|---|---|
+| 입력 · 누구인지 | Concept (pitch, style, palette swatches), Profile, Conversation style, References (thumbnails, how they are used), Voice (✓ once tested), Language model — an outfit project shows the outfit instead |
+| 외형·견적 · 무엇을, 얼마에 | Look (the agent's design prompt, aspect, quality, how many clips and faces), **Estimate** (none yet → the total, the time and **Review and confirm** → once confirmed, credits spent / cap with a bar; an extra waiting) |
+| 기준 그림 · 모든 영상의 출발점 | Candidates (a grid; drawing ones blurred and sweeping, the picked one marked; **Pick one** when it waits), **Base picture** (rules: waist up facing you, fixed camera, plain background; **Approve** right on it at its checkpoint) |
+| 세트 규칙 | one rule node per set — 표정과 눈·입 (the stills; **Faces OK, make the clips** at their checkpoint), 쉬는 상태, 대화 상태 (talk, listen, think), 반응, 자리 비움 — with when it plays and its rule, how many, making / failed / all done |
+| 동시 생성 | every still and clip of the set as a tile (3:4; planned → waiting → making (blurred, sweeping) → finishing (matte) → done (develops, a green line under it) / failed (red); a reaction's tile shows the face it turns to; a clip plays while hovered; a failed check is marked "Redo") |
+| 검사 · 쓸 수 있는지 | required fields, base 1/1, faces n/n, clips n/n, then the clip checks — same first and last frame, starts on the base, clean background — and how many should be made again |
+| 완성 · 메이트 하나로 | her name, her avatar playing (the finished one, the one she has, or the base picture dimmed), **Create mate** / Apply / Wear it |
+
+The camera: drag anywhere (a few pixels before it stops being a click), the wheel zooms where the pointer is (ctrl+wheel
+= a trackpad pinch), two fingers pinch, arrows move, + / - zoom, 0 or **Fit** fits (never below 70 %, the words stay
+readable); it fits itself until the user moves it, and glides to what matters — what waits for the user (the estimate,
+the pick, an approval), else what the agent's running tool works on (`update_mate_draft` → the field's node,
+`update_brief` → Look, `estimate` → Estimate, `use_reference` → References), else the clip being drawn — unless the
+user touched the canvas in the last 6 s. A node the agent is writing gets an accent ring; a node whose words changed
+glows and the words type themselves in; "The agent is thinking" floats over the canvas during a turn with no tool
+going. Above the canvas a bar: **n / m done** (required fields + the base + every tile) with a bar, what happens now
+(waiting for you: … / making … / the agent is writing), credits spent, **Show** (opens what waits), Pause / Resume.
+No graph library: the nodes are plain elements in a CSS grid, the lines one SVG measured from their boxes, so words of
+any length just fit.
+
+**A node's sheet** (`canvas/NodeSheet.tsx`): a click on a node or a tile opens it over the right of the canvas (the
+agent stays in view; Esc or × closes; full width on a phone): Concept / Profile / Conversation style (the fields
+below), References (upload — the agent is told — and how they are used), Voice (the Voice tab, the agent's voice
+character as a hint), Language model (the Model tab), Look (the brief, her avatar now, Skip the avatar), **Estimate**
+(the estimate card with Confirm — the ONLY place a run starts — extras, the processing tools, then the progress with
+Pause / Resume / Cancel), Candidates (pick at the checkpoint, else the gallery), Base picture (approve / back / redo),
+Faces (approve, each with its redo), a set (its clips with checks and redo), **a tile up close** (the still, or the clip
+playing, what it is, its check numbers, the error, redo at its price), Checks (what is missing, the rolled-up checks,
+the failed clips, the progress), the mate (the finished avatar with the moods to try, Apply / Restore, Bring a file,
+Create mate). The agent's **Show** opens the matching node.
+
+**The mate's settings, live** (the Concept, Profile and Conversation style sheets; `StudioSettings` sections):
+**Concept** (pitch, her role for you, interests, backstory, the look: art style, mood, look, outfit, palette with
+swatches, voice character), **Profile** — who she is, the character only (name, who she is, personality, greeting,
+standing instructions), **Conversation style** — how she talks (your name, what she calls you with the chips and the
+Korean particle preview, what she calls herself, reply language, speech level — "As her character" when she has one —,
+speech habits, length, emotion, warmth / humor / initiative, topics to avoid; docs/mate.md "Prompt composition"). Every
+field saves itself (0.65 s after the last key or on leaving it). A field the agent filled glows for a moment and
+carries **Filled by the agent · Undo** (back to the value before it wrote); editing a field removes its badge.
+
+**The creation agent** (`AvatarChat`, on the right): its lines, its cards (distinct from plain messages: an accent
+frame and a label) — **concept directions** (`ask_user` kind `concepts`: 2–4 big cards with a name, a one-line pitch
+and a palette strip; "describe your own"), choices, sliders, uploads, text, the estimate with Confirm — **filled-in
+cards** for each `update_mate_draft` (which settings, Show), tool chips and the run's events as dividers.
 
 **The draft.** A draft is a real mate row with `draft = 1` (the cleaner option than a second settings model: every
 settings tab works on it unchanged): hidden from `GET /api/mates` and the picker, never the default, no conversation
@@ -322,9 +358,12 @@ draft's own project; an existing mate's latest — `fresh`: a new one), `GET /dr
 the first one the default), the agent's fields validated and never voice / model / avatar, the user's edits reaching
 the agent once, undo, template, discard and dropping untouched drafts, the gate unchanged and the avatar landing on the
 new mate, an existing mate's studio. `desktop/test/e2e/mate-studio-browser.js`: the whole flow in a browser with the
-scripted fake agent (concepts → filled settings → the user's edit seen next turn → estimate → gate → Confirm → real
-processing → the avatar on her → Create mate), back / forward / reload, ✨ for an existing mate, drafts, discard, the
-splitter; en / ko, light / dark, desktop / phone.
+scripted fake agent (concepts → filled settings glowing on the canvas → the user's edit in a sheet seen next turn →
+the estimate waiting on the canvas → gate → Confirm in its sheet → pick in the candidates' sheet → approvals right on
+the canvas → the tiles filling during the real processing → the avatar in the mate node and on her → Create mate),
+back / forward / reload, ✨ for an existing mate, drafts, discard, the agent's width and fold; en / ko, light / dark,
+desktop / phone. `frontend/test/studio-graph.test.ts`: the canvas's state (sets, planned / queued / finishing,
+candidates, what waits, progress, checks, tools → nodes, the lines).
 
 ## 12. Outfits
 

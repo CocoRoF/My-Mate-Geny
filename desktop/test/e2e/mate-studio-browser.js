@@ -8,12 +8,15 @@
 //     node desktop/test/e2e/mate-studio-browser.js <server url> <password> <stub url> <shots dir> <jobs log>
 //
 // Checks: the picker's New mate opens the studio (its own URL; back returns to the Mate, forward and a reload
-// resume the same draft) with the agent on the left and the settings on the right; the agent proposes concepts →
-// picking one fills the right side (highlighted, "filled by the agent", undo per field) → the user edits a field →
-// the agent sees it in its next turn; the avatar flow to the estimate (nothing runs before Confirm: the agent's redo
-// and wrong totals are refused, no Higgsfield job) → Confirm → checkpoints → real processing → the avatar plays on
-// the right and is on her → Create mate → she is in the picker and the Mate view. The existing mate's ✨ opens the
-// same layout. Drafts: listed, discarded. Splitter remembered. Screenshots: en / ko, light / dark, desktop / phone.
+// resume the same draft) with the canvas on the left and the agent on the right; the agent proposes concepts →
+// picking one fills the mate's settings (their nodes on the canvas glow; a node's sheet shows the fields highlighted,
+// "filled by the agent", undo per field) → the user edits a field in a sheet → the agent sees it in its next turn; the
+// avatar flow to the estimate (the estimate node waits; nothing runs before Confirm: the agent's redo and wrong totals
+// are refused, no Higgsfield job) → Confirm in the estimate's sheet → the candidates (picked in their sheet) → the
+// base picture and the faces approved right on the canvas → real processing (the tiles fill in) → the avatar plays in
+// the mate node and is on her → Create mate → she is in the picker and the Mate view. The existing mate's ✨ opens the
+// same layout. Drafts: listed, discarded. The agent's width remembered. Screenshots: en / ko, light / dark,
+// desktop / phone.
 "use strict";
 const assert = require("assert/strict");
 const fs = require("fs");
@@ -57,6 +60,7 @@ async function device(browser, { lang = "en", theme = "dark", phone = false } = 
       try {
         localStorage.setItem("hrh_lang", l);
         localStorage.setItem("hrh_theme", th);
+        localStorage.setItem("hrh_setup_completed_v1", "1"); // (a fresh server opens with the setup assistant)
       } catch {}
     },
     [lang, theme],
@@ -100,6 +104,12 @@ async function say(page, text) {
   await idle(page);
 }
 
+/** a node of the canvas → its sheet */
+async function openNode(page, key) {
+  await page.click(`[data-testid="sc-node-${key}"] .scn-hit`);
+  await page.waitForSelector(`[data-testid="node-sheet"][data-node="${key}"]`);
+}
+
 const liveCard = (kind) => `[data-testid="avatar-question"][data-live="1"][data-kind="${kind}"]`;
 const draftIdOf = (page) => new URL(page.url()).searchParams.get("create");
 const projectOf = async (ctx, pid) => (await api(ctx, "GET", `/api/avatar/projects/${pid}`)).body;
@@ -132,7 +142,7 @@ async function main() {
   page.on("dialog", (d) => d.accept());
   page.on("pageerror", (e) => console.log("  pageerror:", e.message));
 
-  step("picker → New mate → the studio (agent left, settings right)");
+  step("picker → New mate → the studio (canvas left, agent right)");
   await page.goto(`${SERVER}/?view=mate`);
   await page.waitForSelector('[data-testid="mate-switcher"]', { timeout: 30000 });
   await page.click('[data-testid="mate-switcher"]');
@@ -143,10 +153,11 @@ async function main() {
   await until("the draft's address", async () => /\?view=mate&create=mate_/.test(page.url()));
   const draft = draftIdOf(page);
   assert.equal(await page.locator('[data-testid="studio-title"]').innerText(), "New mate");
-  // the agent on the left, the settings on the right
-  const L = await page.locator('[data-testid="studio-agent"]').boundingBox();
-  const R = await page.locator('[data-testid="studio-right"]').boundingBox();
-  assert.ok(L.x < R.x && L.width > 500 && R.width > 600, `columns ${JSON.stringify([L, R])}`);
+  // the canvas on the left, the agent on the right
+  const L = await page.locator('[data-testid="studio-left"]').boundingBox();
+  const R = await page.locator('[data-testid="studio-agent"]').boundingBox();
+  assert.ok(L.x < R.x && L.width > 700 && R.width >= 340, `columns ${JSON.stringify([L, R])}`);
+  await page.waitForSelector('[data-testid="studio-canvas"] [data-testid="sc-node-concept"]');
   await page.waitForSelector(liveCard("concepts"), { timeout: 30000 });
   await idle(page);
   assert.equal(await page.locator('[data-testid="studio-concept-option"]').count(), 3);
@@ -167,16 +178,22 @@ async function main() {
   assert.equal((await api(ctx, "GET", "/api/avatar/studio/drafts")).body.filter((d) => d.mate_id === draft).length, 1);
   const pid = (await api(ctx, "GET", "/api/avatar/studio/drafts")).body.find((d) => d.mate_id === draft).project_id;
 
-  step("pick a concept → the agent fills the settings (highlighted, filled by the agent)");
+  step("pick a concept → the agent fills the settings (their nodes glow; a sheet shows them filled by the agent)");
   await page.locator('[data-testid="studio-concept-option"]').first().click();
   await page.waitForSelector('[data-testid="studio-filled-card"]', { timeout: 30000 });
-  await until("the name on the right", async () => (await page.inputValue('[data-testid="studio-name"]')) === "Harin", 20000);
+  await until("the name on the canvas", async () => (await page.locator('[data-testid="sc-node-profile"]').innerText()).includes("Harin"), 20000);
+  await sleep(250);
+  await shot(page, "02-filled-on-canvas-dark-en");
+  await openNode(page, "profile");
+  assert.equal(await page.inputValue('[data-testid="studio-name"]'), "Harin");
   await page.waitForSelector('[data-testid="studio-filled-badge"][data-field="name"]');
   await page.waitForSelector('.studio-glow');
   await sleep(250);
-  await shot(page, "02-filled-by-agent-dark-en");
+  await shot(page, "02b-profile-sheet-dark-en");
   assert.match(await page.locator('[data-testid="studio-draft-name"]').innerText(), /Harin/);
+  await openNode(page, "style");
   assert.equal(await page.inputValue('[data-testid="studio-address"]'), "boss");
+  await openNode(page, "profile");
   await page.waitForSelector(liveCard("choice"));
   await idle(page);
   let p = await projectOf(ctx, pid);
@@ -185,7 +202,7 @@ async function main() {
   assert.equal(p.studio.concept.voice, "soft, warm, a little low");
   await page.waitForSelector('[data-testid="studio-steps"] [data-step="concept"][data-state="done"]');
 
-  step("the user edits a field on the right → saved, no badge; the agent sees it next turn");
+  step("the user edits a field in the sheet → saved, no badge; the agent sees it next turn");
   await page.fill('[data-testid="studio-persona-personality"]', "Cheerful and blunt, but kind.");
   await until("saved", async () => (await projectOf(ctx, pid)).studio.mate.persona.personality === "Cheerful and blunt, but kind.", 10000);
   await until("badge gone", async () => (await page.locator('[data-testid="studio-filled-badge"][data-field="persona.personality"]').count()) === 0);
@@ -217,11 +234,14 @@ async function main() {
   };
   await say(page, `atool:update_brief ${JSON.stringify(brief)}\natool:estimate {}`);
   await page.waitForSelector('[data-testid="avatar-estimate-inline"]');
-  await page.waitForSelector('[data-testid="studio-right"] [data-testid="avatar-estimate"]');
+  await page.waitForSelector('[data-testid="sc-node-estimate"].is-wait');
+  await page.waitForSelector('[data-testid="studio-run"][data-wait="estimate"]');
   p = await projectOf(ctx, pid);
   assert.equal(p.status, "estimate");
   assert.equal(p.brief.target.mate_id, draft, "the avatar is for the draft");
-  assert.equal(p.plan.total, 4 + 0.5 + 12 + 54 + 6);
+  // (2 candidates 4 + the cut-out 0.5 + 6 faces 12 + the clips by the second: the minimal set is 26 s at the stub's 9
+  //  per 5 s = 46.8 + their 6 cut-outs 6)
+  assert.equal(p.plan.total, Math.round((4 + 0.5 + 12 + (9 / 5) * 26 + 6) * 10) / 10);
   await page.waitForSelector('[data-testid="studio-credits"]');
   assert.equal(jobs().length, 0, "no Higgsfield job before the confirmation");
   await say(page, 'atool:regenerate {"item":"design"}');
@@ -231,28 +251,43 @@ async function main() {
   r = await api(ctx, "POST", `/api/avatar/projects/${pid}/redo`, { item: "design" });
   assert.equal(r.status, 409, "a redo before the confirmation is refused");
   assert.equal(jobs().length, 0, "still no job");
-  await page.locator('[data-testid="studio-right"] [data-testid="avatar-estimate"]').scrollIntoViewIfNeeded();
-  await shot(page, "04-estimate-dark-en");
+  await page.click('[data-testid="node-sheet-close"]');
+  await shot(page, "04-estimate-on-canvas-dark-en");
+  await page.click('[data-testid="sc-estimate-open"]');
+  await page.waitForSelector('[data-testid="node-sheet"][data-node="estimate"] [data-testid="avatar-estimate"]');
+  await shot(page, "04b-estimate-sheet-dark-en");
 
-  step("Confirm → candidates → base → stills → clips + real processing");
-  await page.click('[data-testid="studio-right"] [data-testid="avatar-estimate-confirm"]');
-  await page.waitForSelector('[data-testid="avatar-checkpoint-pick"]', { timeout: 120000 });
-  await page.waitForSelector('[data-testid="studio-run"][data-status="waiting"]');
+  step("Confirm → candidates → base → faces → clips + real processing, on the canvas");
+  await page.click('[data-testid="node-sheet"] [data-testid="avatar-estimate-confirm"]');
+  await page.waitForSelector('[data-testid="studio-run"][data-wait="pick"]', { timeout: 120000 });
   assert.equal(jobs().filter((j) => j.job_type === "nano_banana_pro").length, 2);
-  await sleep(600);
-  await shot(page, "05-pick-dark-en");
+  await page.waitForSelector('[data-testid="sc-node-candidates"].is-wait');
+  await page.click('[data-testid="node-sheet-close"]').catch(() => {});
+  await sleep(800);
+  await shot(page, "05-pick-on-canvas-dark-en");
+  await page.click('[data-testid="sc-pick-open"]');
+  await page.waitForSelector('[data-testid="node-sheet"] [data-testid="avatar-checkpoint-pick"]');
   await page.click('[data-testid="avatar-pick-c1"]');
-  await page.waitForSelector('[data-testid="avatar-checkpoint-home"]', { timeout: 180000 });
-  await page.click('[data-testid="avatar-approve-home"]');
-  await page.waitForSelector('[data-testid="avatar-checkpoint-stills"]', { timeout: 300000 });
+  await page.click('[data-testid="node-sheet-close"]');
+  await page.waitForSelector('[data-testid="sc-approve-home"]', { timeout: 180000 });
   await sleep(600);
-  await shot(page, "06-stills-dark-en");
-  await page.click('[data-testid="avatar-approve-stills"]');
-  await until("processing", async () => (await page.locator('[data-testid="avatar-processing"]').count()) > 0, 300000, 1000);
-  await shot(page, "07-progress-dark-en");
+  await shot(page, "05b-home-on-canvas-dark-en");
+  await page.click('[data-testid="sc-approve-home"]');
+  await page.waitForSelector('[data-testid="sc-approve-stills"]', { timeout: 300000 });
+  await sleep(600);
+  await shot(page, "06-faces-on-canvas-dark-en");
+  await page.click('[data-testid="sc-approve-stills"]');
+  await until("clips being made", async () => (await page.locator('[data-testid^="sc-tile-clip:"][data-state="running"], [data-testid^="sc-tile-clip:"][data-state="processing"]').count()) > 0, 300000, 1000);
+  await sleep(500);
+  await shot(page, "07-making-on-canvas-dark-en");
   const t0 = Date.now();
-  await page.waitForSelector('[data-testid="avatar-finish"]', { timeout: 40 * 60000 });
+  await until("ready", async () => ["ready", "applied"].includes((await projectOf(ctx, pid)).status), 40 * 60000, 3000);
   console.log(`  processing took ${Math.round((Date.now() - t0) / 1000)} s`);
+  await page.waitForSelector('[data-testid="sc-node-mate"].is-ready', { timeout: 30000 });
+  await sleep(1200);
+  await shot(page, "07b-done-on-canvas-dark-en");
+  await openNode(page, "mate");
+  await page.waitForSelector('[data-testid="avatar-finish"]');
   await page.waitForSelector('[data-testid="avatar-applied"]', { timeout: 30000 });
   p = await projectOf(ctx, pid);
   assert.ok(p.check.passed, JSON.stringify(p.check));
@@ -279,11 +314,12 @@ async function main() {
   assert.ok((await page.locator('[data-testid="mate-switcher-item"]').allInnerTexts()).some((x) => x.includes("Harin")));
   await page.keyboard.press("Escape");
 
-  step("the existing mate's ✨ → the same layout, Avatar section open");
+  step("the existing mate's ✨ → the same layout, her finished avatar in the mate node");
   await page.click('[data-testid="mate-avatar-create"]');
   await page.waitForSelector('[data-testid="mate-studio"][data-kind="avatar"][data-layout="split"]');
   assert.match(page.url(), /\?view=mate&avatar=/);
-  await page.waitForSelector('[data-testid="studio-section-avatar"][data-open="1"]');
+  await page.waitForSelector('[data-testid="sc-node-mate"].is-ready');
+  await openNode(page, "mate");
   await page.waitForSelector('[data-testid="avatar-finish"]');
   await sleep(1200);
   await shot(page, "10-existing-avatar-studio-dark-en");
@@ -298,28 +334,29 @@ async function main() {
   await idle(page);
   await shot(page, "11-existing-mate-start-dark-en");
 
-  step("the splitter: dragged, remembered");
+  step("the agent's width: dragged, remembered; folded to a rail and back");
   const sp = await page.locator('[data-testid="studio-splitter"]').boundingBox();
   await page.mouse.move(sp.x + sp.width / 2, sp.y + 200);
   await page.mouse.down();
   await page.mouse.move(sp.x - 160, sp.y + 200, { steps: 6 });
   await page.mouse.up();
-  const saved = Number(await page.evaluate(() => localStorage.getItem("hrh_studio_split")));
-  assert.ok(saved > 0.2 && saved < 0.47, `split ${saved}`);
+  const saved = Number(await page.evaluate(() => localStorage.getItem("hrh_studio_chat")));
+  assert.ok(saved > 500 && saved < 620, `agent width ${saved}`);
   await page.reload();
   await page.waitForSelector('[data-testid="studio-agent"]');
-  const [w, total] = await page.evaluate(() => {
-    const el = document.querySelector('[data-testid="studio-agent"]');
-    return [el.getBoundingClientRect().width, el.parentElement.getBoundingClientRect().width];
-  });
-  assert.ok(Math.abs(w - saved * total) < 4, `width ${w} vs ${saved} × ${total}`);
-  await page.evaluate(() => localStorage.removeItem("hrh_studio_split"));
+  const w = await page.evaluate(() => document.querySelector('[data-testid="studio-agent"]').getBoundingClientRect().width);
+  assert.ok(Math.abs(w - saved) < 3, `width ${w} vs ${saved}`);
+  await page.click('[data-testid="studio-agent-fold"]');
+  await page.waitForSelector('[data-testid="studio-agent-rail"]');
+  await page.click('[data-testid="studio-agent-unfold"]');
+  await page.waitForSelector('[data-testid="studio-agent"]');
+  await page.evaluate(() => localStorage.removeItem("hrh_studio_chat"));
 
   step("drafts: listed in the picker, discarded");
   await newMate(page);
   const d2 = draftIdOf(page);
   await page.locator('[data-testid="studio-concept-option"]').nth(1).click();
-  await until("filled", async () => (await page.inputValue('[data-testid="studio-name"]')) === "Bomi", 20000);
+  await until("filled", async () => (await page.locator('[data-testid="sc-node-profile"]').innerText()).includes("Bomi"), 20000);
   await idle(page);
   await page.click('[data-testid="studio-save-exit"]');
   await page.waitForSelector('[data-testid="mate-view"]');
@@ -330,6 +367,7 @@ async function main() {
   await page.locator('[data-testid="mate-draft-item"]', { hasText: "Bomi" }).click();
   await page.waitForSelector('[data-testid="mate-studio"]');
   assert.equal(draftIdOf(page), d2);
+  await openNode(page, "profile");
   await until("resumed", async () => (await page.inputValue('[data-testid="studio-name"]').catch(() => "")) === "Bomi", 20000);
   await page.click('[data-testid="studio-more"]');
   await page.click('[data-testid="studio-discard"]');
@@ -355,36 +393,43 @@ async function main() {
           await pg.waitForSelector('[data-testid="mate-studio"][data-layout="tabs"]');
           await shot(pg, `20-concepts-${tag}`);
           await pg.locator('[data-testid="studio-concept-option"]').first().click();
-          await pg.waitForSelector('[data-testid="studio-settings-badge"]', { timeout: 30000 });
+          await pg.waitForSelector('[data-testid="studio-canvas-badge"]', { timeout: 30000 });
           await idle(pg);
           await shot(pg, `21-agent-filled-badge-${tag}`);
-          await pg.click('[data-testid="studio-tab-settings"]');
-          await sleep(500);
-          await shot(pg, `22-settings-${tag}`);
-          assert.equal(await pg.locator('[data-testid="studio-settings-badge"]').count(), 0, "seen");
+          await pg.click('[data-testid="studio-tab-canvas"]');
+          await sleep(700);
+          await shot(pg, `22-canvas-${tag}`);
+          assert.equal(await pg.locator('[data-testid="studio-canvas-badge"]').count(), 0, "seen");
+          await openNode(pg, "profile");
+          await sleep(300);
+          await shot(pg, `22b-profile-sheet-${tag}`);
         } else {
           await shot(pg, `20-concepts-${tag}`);
           await pg.locator('[data-testid="studio-concept-option"]').first().click();
-          await pg.waitForSelector('[data-testid="studio-filled-badge"][data-field="name"]', { timeout: 30000 });
+          await until("filled", async () => (await pg.locator('[data-testid="sc-node-profile"]').innerText()).length > 20, 30000);
           await idle(pg);
           await sleep(300);
           await shot(pg, `21-filled-${tag}`);
-          // the right side scrolled to the style and voice sections
-          await pg.click('[data-testid="studio-section-toggle-style"]');
-          await pg.click('[data-testid="studio-section-toggle-voice"]');
-          await pg.locator('[data-testid="studio-section-style"]').scrollIntoViewIfNeeded();
-          await sleep(400);
-          await shot(pg, `22-style-voice-${tag}`);
+          await openNode(pg, "style");
+          await sleep(300);
+          await shot(pg, `22-style-sheet-${tag}`);
+          await openNode(pg, "voice");
+          await sleep(300);
+          await shot(pg, `22b-voice-sheet-${tag}`);
         }
         await api(c, "DELETE", `/api/avatar/studio/${(await api(c, "GET", "/api/avatar/studio/drafts")).body.find((d) => d.mate_id === dd).project_id}`);
         // the finished mate's avatar studio (Harin)
         await pg.goto(`${SERVER}/?view=mate&avatar=${draft}`);
         await pg.waitForSelector('[data-testid="mate-studio"][data-kind="avatar"]');
-        if (phone) await pg.click('[data-testid="studio-tab-settings"]');
+        if (phone) await pg.click('[data-testid="studio-tab-canvas"]');
+        await pg.waitForSelector('[data-testid="sc-node-mate"].is-ready');
+        await sleep(800);
+        await shot(pg, `23-avatar-canvas-${tag}`);
+        await openNode(pg, "mate");
         await pg.waitForSelector('[data-testid="avatar-finish"]');
         await until("preview clip", async () => pg.locator('[data-testid="avatar-preview"] [data-mate-clip]').count(), 30000);
         await sleep(1200);
-        await shot(pg, `23-avatar-studio-${tag}`);
+        await shot(pg, `23b-avatar-sheet-${tag}`);
         await c.close();
       }
     }

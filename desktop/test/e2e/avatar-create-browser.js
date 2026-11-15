@@ -16,8 +16,9 @@
 // 409; Confirm runs the plan: candidates → pick → base picture → approve → stills → approve → clips → real
 // processing → check → export; the finished avatar plays in the panel (talking picks a talk clip); Apply puts it on
 // the mate (the Mate view plays it), Restore puts the old one back. Screenshots: en / ko, light / dark, desktop /
-// phone. (Since the Mate Create studio, ✨ opens the studio for the mate: the agent on the left, her settings on the
-// right with the Avatar section open — desktop/test/e2e/mate-studio-browser.js covers the new-mate side.)
+// phone. (Since the Mate Create studio, ✨ opens the studio for the mate: the canvas on the left, the agent on the
+// right; the estimate, the pick and the finish in their nodes' sheets, the approvals right on the canvas —
+// desktop/test/e2e/mate-studio-browser.js covers the new-mate side.)
 "use strict";
 const assert = require("assert/strict");
 const fs = require("fs");
@@ -117,6 +118,12 @@ async function openAvatarCreate(page, { pick = null } = {}) {
   if (pick !== null) await pickProject(page, pick);
 }
 
+/** a node of the studio's canvas → its sheet */
+async function openNode(page, key) {
+  await page.click(`[data-testid="sc-node-${key}"] .scn-hit`);
+  await page.waitForSelector(`[data-testid="node-sheet"][data-node="${key}"]`);
+}
+
 /** the studio's Projects menu: one of this mate's projects (newest first) */
 async function pickProject(page, n) {
   await page.waitForSelector('[data-testid="studio-projects"]');
@@ -160,7 +167,7 @@ async function main() {
   await shot(page, "00-mate-view-button-dark-en");
   await page.click('[data-testid="mate-avatar-create"]');
   await page.waitForSelector('[data-testid="mate-studio"][data-kind="avatar"][data-layout="split"]');
-  await page.waitForSelector('[data-testid="studio-section-avatar"][data-open="1"] [data-testid="avatar-panel"]');
+  await page.waitForSelector('[data-testid="studio-canvas"] [data-testid="sc-node-estimate"]');
   await until("the agent's first turn", async () => (await page.locator('[data-testid="avatar-turn"]').count()) > 0, 30000);
   await idle(page);
   await shot(page, "01-studio-dark-en");
@@ -196,17 +203,20 @@ async function main() {
     },
   };
   await say(page, `atool:update_brief ${JSON.stringify(brief)}\natool:estimate {}`);
-  await page.waitForSelector('[data-testid="avatar-estimate"]');
+  await page.waitForSelector('[data-testid="sc-node-estimate"].is-wait');
   await page.waitForSelector('[data-testid="avatar-estimate-inline"]');
   let p = await project(page);
   assert.equal(p.status, "estimate");
   assert.ok(p.plan.complete, JSON.stringify(p.plan.errors));
-  // 2 candidates·2 + cut-out 0.5 + 6 stills·2 + 6 clips·9 + 6 mattes·1 (the stub's per-job prices)
-  assert.equal(p.plan.total, 4 + 0.5 + 12 + 54 + 6);
+  // 2 candidates·2 + cut-out 0.5 + 6 stills·2 + the clips by the second (the minimal set is 26 s at the stub's 9 per
+  // 5 s) + 6 mattes·1 (the stub's prices)
+  assert.equal(p.plan.total, Math.round((4 + 0.5 + 12 + (9 / 5) * 26 + 6) * 10) / 10);
   assert.equal(p.plan.usd, Number((p.plan.total * 0.033).toFixed(2)));
   const quotes = await (await fetch(STUB + "/e2e/quotes")).json();
   assert.deepEqual([...new Set(quotes.map((q) => q.job_type))].sort(), ["image_background_remover", "kling_o3_flf", "nano_banana_pro", "video_background_remover"]);
   await shot(page, "05-estimate-dark-en");
+  await page.click('[data-testid="sc-estimate-open"]');
+  await page.waitForSelector('[data-testid="node-sheet"] [data-testid="avatar-estimate"]');
   await shot(page, "05b-estimate-card-dark-en", '[data-testid="avatar-estimate"]');
 
   step("the gate: nothing runs before Confirm");
@@ -225,30 +235,37 @@ async function main() {
   await shot(page, "06-gate-refused-dark-en");
 
   step("Confirm → candidates");
-  await page.click('[data-testid="avatar-estimate-confirm"]');
-  await page.waitForSelector('[data-testid="avatar-checkpoint-pick"]', { timeout: 120000 });
+  await page.click('[data-testid="node-sheet"] [data-testid="avatar-estimate-confirm"]');
+  await page.waitForSelector('[data-testid="sc-pick-open"]', { timeout: 120000 });
   assert.equal(jobs().filter((j) => j.job_type === "nano_banana_pro").length, 2);
   await idle(page);
   await say(page, 'atool:look {"target":"candidates"}');
+  await page.click('[data-testid="node-sheet-close"]').catch(() => {});
   await shot(page, "07-pick-dark-en");
+  await page.click('[data-testid="sc-pick-open"]');
+  await page.waitForSelector('[data-testid="node-sheet"] [data-testid="avatar-checkpoint-pick"]');
   await page.click('[data-testid="avatar-pick-c1"]');
-  step("base picture");
-  await page.waitForSelector('[data-testid="avatar-checkpoint-home"]', { timeout: 180000 });
+  await page.click('[data-testid="node-sheet-close"]');
+  step("base picture (approved on the canvas)");
+  await page.waitForSelector('[data-testid="sc-approve-home"]', { timeout: 180000 });
   await sleep(800);
   await shot(page, "08-home-dark-en");
-  await page.click('[data-testid="avatar-approve-home"]');
-  step("stills");
-  await page.waitForSelector('[data-testid="avatar-checkpoint-stills"]', { timeout: 300000 });
+  await page.click('[data-testid="sc-approve-home"]');
+  step("stills (approved on the canvas)");
+  await page.waitForSelector('[data-testid="sc-approve-stills"]', { timeout: 300000 });
   await sleep(800);
   await shot(page, "09-stills-dark-en");
-  await page.click('[data-testid="avatar-approve-stills"]');
+  await page.click('[data-testid="sc-approve-stills"]');
 
   step("clips + real processing (minutes)");
-  await until("processing visible", async () => (await page.locator('[data-testid="avatar-processing"]').count()) > 0, 300000, 1000);
+  await until("clips being made", async () => (await page.locator('[data-testid^="sc-tile-clip:"][data-state="running"], [data-testid^="sc-tile-clip:"][data-state="processing"]').count()) > 0, 300000, 1000);
   await shot(page, "10-progress-dark-en");
   const t0 = Date.now();
-  await page.waitForSelector('[data-testid="avatar-finish"]', { timeout: 40 * 60000 });
+  await until("ready", async () => ["ready", "applied", "failed"].includes((await project(page)).status), 40 * 60000, 3000);
   console.log(`  processing took ${Math.round((Date.now() - t0) / 1000)} s`);
+  await page.waitForSelector('[data-testid="sc-node-mate"].is-ready', { timeout: 30000 });
+  await openNode(page, "mate");
+  await page.waitForSelector('[data-testid="avatar-finish"]');
   p = await project(page);
   assert.equal(p.status, "ready", p.error);
   assert.equal(jobs().filter((j) => j.job_type === "kling_o3_flf").length, 6);
@@ -283,6 +300,8 @@ async function main() {
   await sleep(2000);
   await shot(page, "12-mate-with-new-avatar-dark-en");
   await page.click('[data-testid="mate-avatar-create"]');
+  await page.waitForSelector('[data-testid="sc-node-mate"]');
+  await openNode(page, "mate");
   await page.waitForSelector('[data-testid="avatar-restore"]');
   await page.click('[data-testid="avatar-restore"]');
   await page.click('[data-testid="confirm-ok"]'); // (the app's confirm dialog)
@@ -295,12 +314,15 @@ async function main() {
   await page.click('[data-testid="studio-projects"]');
   await page.click('[data-testid="studio-project-new"]');
   await until("a new project", async () => /&project=av_/.test(page.url()));
-  await page.waitForSelector('[data-testid="avatar-panel"]');
+  await page.waitForSelector('[data-testid="studio-canvas"]');
   await until("first turn", async () => (await page.locator('[data-testid="avatar-turn"]').count()) > 0, 30000);
   await say(page, `atool:update_brief ${JSON.stringify({ patch: { ...brief.patch, preset: "standard", candidates: 4 } })}\natool:estimate {}\natool:ask_user ${JSON.stringify(Q_MOTIONS)}`);
-  await page.waitForSelector('[data-testid="avatar-estimate"]');
+  await page.waitForSelector('[data-testid="sc-node-estimate"].is-wait');
   const p2 = await project(page);
-  assert.equal(p2.plan.total, 8 + 0.5 + 22 + 150, "standard: 15 clips, 11 stills, 4 candidates");
+  // standard: 16 clips (58 s), 12 stills, 4 candidates — the plan adds up line by line
+  assert.equal(p2.plan.counts.clips, 16);
+  assert.equal(p2.plan.counts.stills, 12);
+  assert.equal(p2.plan.total, Math.round(p2.plan.lines.reduce((a, l) => a + (l.credits ?? 0), 0) * 100) / 100);
   await ctx.close();
 
   // ── the other looks: ko / en, light / dark, desktop / phone ──
@@ -316,9 +338,9 @@ async function main() {
         await openAvatarCreate(pg, { pick: 0 });
         if (phone) {
           await shot(pg, `20-estimate-chat-${tag}`);
-          await pg.click('[data-testid="studio-tab-settings"]');
-          await sleep(500);
-          await shot(pg, `21-estimate-panel-${tag}`);
+          await pg.click('[data-testid="studio-tab-canvas"]');
+          await sleep(700);
+          await shot(pg, `21-estimate-canvas-${tag}`);
         } else {
           await shot(pg, `20-estimate-${tag}`);
         }
@@ -328,7 +350,9 @@ async function main() {
         await shot(pg, `22-projects-${tag}`);
         await pg.locator('[data-testid="studio-project-item"]').nth(1).click();
         await sleep(1000);
-        if (phone) await pg.click('[data-testid="studio-tab-settings"]');
+        if (phone) await pg.click('[data-testid="studio-tab-canvas"]');
+        await pg.waitForSelector('[data-testid="sc-node-mate"].is-ready');
+        await openNode(pg, "mate");
         await pg.waitForSelector('[data-testid="avatar-finish"]');
         await until("preview clip", async () => pg.locator('[data-testid="avatar-preview"] [data-mate-clip]').count(), 30000);
         await sleep(1500);
