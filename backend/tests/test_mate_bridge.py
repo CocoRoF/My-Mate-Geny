@@ -63,7 +63,8 @@ def test_bridge_protocol_and_forwarding():
         names = [t["name"] for t in tools]
         assert names == ["list_sessions", "read_session", "send_to_session", "create_session", "find_folders",
                          "remember", "update_memory", "forget", "recall", "search_history", "read_evidence",
-                         "record_episode", "get_episode", "get_task_record", "read_task_receipt", "list_task_records"]
+                         "record_episode", "get_episode", "get_task_record", "read_task_receipt", "list_task_records",
+                         "explore_memory", "open_memory_node", "learn_url", "study_topic", "list_studies"]
         assert all(len(t["description"]) > 60 and t["inputSchema"]["type"] == "object" for t in tools)
         r = _rpc(proc, {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
                         "params": {"name": "send_to_session", "arguments": {"session_id": "s", "message": "hi"}}})
@@ -99,3 +100,17 @@ def test_bridge_protocol_and_forwarding():
     finally:
         proc.stdin.close()
         proc.wait(timeout=5)
+
+
+def test_a_study_session_bridge_offers_only_the_study_tools(tmp_path):
+    import json as _json
+    import subprocess as _sp
+    import sys as _sys
+    from pathlib import Path as _P
+
+    bridge = _P(__file__).resolve().parents[1] / "app" / "mate" / "mcp_bridge.py"
+    env = {"HRH_MATE_STUDY": "1", "HRH_MATE_MEMORY": "1", "PATH": "/usr/bin:/bin"}
+    proc = _sp.run([_sys.executable, "-I", str(bridge)], input=_json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}) + "\n",
+                   capture_output=True, text=True, env=env, timeout=30)
+    tools = _json.loads(proc.stdout.splitlines()[0])["result"]["tools"]
+    assert [t["name"] for t in tools] == ["read_page", "search_web", "search_memory", "add_knowledge", "note", "finish_study"]

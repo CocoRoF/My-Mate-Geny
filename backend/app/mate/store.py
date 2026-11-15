@@ -303,6 +303,8 @@ LENGTHS = ("short", "normal", "long")
 TONE_KEYS = ("warmth", "humor", "initiative")
 TONE_LEVELS = ("auto", "low", "high")
 RECALL_LEVELS = ("off", "light", "normal", "rich")
+# studies of her own (app/mate/study.py): off, about one a day, up to three
+CURIOSITY_LEVELS = ("off", "sometimes", "often")
 SELF_EDIT = ("auto", "ask", "off")   # may the mate change her own style: yes | as a proposal the user applies | no
 LIFE = ("auto", "on", "off")          # her own day (app/mate/life): auto = on for a mate who comes with a world of her own
 SELF_OUTFIT = ("auto", "off")        # may the mate change her clothes when the user asks (app/mate/wardrobe.py)
@@ -324,7 +326,7 @@ def default_style_defaults() -> dict[str, str]:
 def default_prefs() -> dict[str, Any]:
     return {"user_name": "", "address": "", "self_ref": "", "formality": "auto", "speech_style": "",
             "length": "normal", "emotion": 2, "tone": {k: "auto" for k in TONE_KEYS}, "avoid": "",
-            "memory": {"recall": "normal", "self_save": True}, "self_edit": "auto", "self_outfit": "auto", "life": "auto",
+            "memory": {"recall": "normal", "self_save": True, "curiosity": "sometimes"}, "self_edit": "auto", "self_outfit": "auto", "life": "auto",
             "defaults": default_style_defaults(), "proactive": {"enabled": False, "interval": 180, "guidance": "", "scope": "all", "preset": None}}
 
 
@@ -372,7 +374,7 @@ def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
     if isinstance(b.get("tone"), dict):
         out["tone"].update({k: v for k, v in b["tone"].items() if k in TONE_KEYS and v in TONE_LEVELS})
     if isinstance(b.get("memory"), dict):
-        out["memory"].update({k: v for k, v in b["memory"].items() if k in ("recall", "self_save")})
+        out["memory"].update({k: v for k, v in b["memory"].items() if k in ("recall", "self_save", "curiosity")})
     out["defaults"] = normalize_style_defaults(None, b.get("defaults") if isinstance(b.get("defaults"), dict) else None)
     proactive = {"enabled": False, "interval": 180, "guidance": ""}
     for source in (b.get("proactive"), patch.get("proactive") if isinstance(patch, dict) else None):
@@ -439,6 +441,8 @@ def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
                 out["memory"]["recall"] = _enum(mem["recall"], RECALL_LEVELS, "recall level")
             if "self_save" in mem:
                 out["memory"]["self_save"] = bool(mem["self_save"])
+            if "curiosity" in mem:
+                out["memory"]["curiosity"] = _enum(mem["curiosity"], CURIOSITY_LEVELS, "curiosity")
         if patch.get("defaults") is not None:
             out["defaults"] = normalize_style_defaults(patch["defaults"], out["defaults"])
     # (a stored document from an older/newer version: keep it well-typed)
@@ -453,6 +457,8 @@ def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
     if out["memory"].get("recall") not in RECALL_LEVELS:
         out["memory"]["recall"] = "normal"
     out["memory"]["self_save"] = bool(out["memory"].get("self_save", True))
+    if out["memory"].get("curiosity") not in CURIOSITY_LEVELS:
+        out["memory"]["curiosity"] = "sometimes"
     for k in ("user_name", "address", "self_ref", "avoid", "speech_style"):
         out[k] = str(out[k] or "")
     return out
@@ -780,6 +786,10 @@ class MateStore:
         # transaction and a store mutation (UI, background worker, imports).
         self._lock = db._lock
         self.knowledge = Knowledge(db)
+        # her memory network: entities, facts, the pages she read (app/mate/graph.py, docs/mate-memory-graph.md)
+        from app.mate.graph import Graph
+
+        self.graph = Graph(db)
         self.last_changed: set[str] = set()  # the settings the last update_settings() changed
         # the same vendor's key from the language-model providers (Settings → Language model providers), for a
         # voice service whose own key is not set: one OpenAI / Google key is entered once (app/main.py)
@@ -1666,6 +1676,7 @@ class MateStore:
         with self._lock, self._db.transaction():
             before = self._core_sig(mate_id) if by_user else ""
             self.knowledge.forget(mate_id, self.memory(mate_id, mem_id))
+            self.graph.unmention(mate_id, f"mem:{mem_id}")
             if by_user:
                 self._user_edit(mate_id, before, {"id": mem_id, "op": "deleted"})
         if self.on_memory_forgotten:
@@ -1735,6 +1746,9 @@ class MateStore:
         style (it quotes what was asked; the style itself stays), how she feels (its reasons quote what was said), and the day she
         has been living (it begins again)."""
         self.knowledge.wipe(mate_id)
+        self.graph.wipe(mate_id)
+        self._db.execute("DELETE FROM know_studies WHERE mate_id = ?", (mate_id,)) if self._db.query_one(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='know_studies'") else None
         self._db.execute("DELETE FROM mate_style_changes WHERE mate_id = ?", (mate_id,))
         self._db.execute("DELETE FROM mate_settings WHERE key = ?", (f"memchg:{mate_id}",))
         self.save_state(mate_id, S.new())

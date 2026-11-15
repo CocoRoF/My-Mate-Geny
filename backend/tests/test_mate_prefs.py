@@ -17,7 +17,8 @@ KO = {"language": "ko"}
 def test_normalize_merges_and_validates():
     p = normalize_prefs({"formality": "banmal", "tone": {"humor": "high"}, "user_name": "  현석  "})
     assert p["formality"] == "banmal" and p["tone"] == {"warmth": "auto", "humor": "high", "initiative": "auto"}
-    assert p["user_name"] == "현석" and p["emotion"] == 2 and p["memory"] == {"recall": "normal", "self_save": True}
+    assert p["user_name"] == "현석" and p["emotion"] == 2 and p["memory"] == {"recall": "normal", "self_save": True,
+                                                                                  "curiosity": "sometimes"}
     q = normalize_prefs({"length": "short", "memory": {"self_save": False}}, p)
     assert q["formality"] == "banmal" and q["length"] == "short" and q["memory"]["self_save"] is False
     assert normalize_prefs({"emotion": 9})["emotion"] == 3 and normalize_prefs({"emotion": -1})["emotion"] == 0

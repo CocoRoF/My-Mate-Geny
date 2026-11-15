@@ -13,7 +13,9 @@ HRH_MATE_SESSION; HRH_MATE_SCREEN=1 for ``see_screen`` (a mate's conversation al
 comes back as MCP image content);
 HRH_MATE_STYLE=auto|ask when she may change her own conversation style
 (``update_conversation_style``; absent = not listed); HRH_MATE_OUTFIT=1 when she may change her clothes
-(``change_outfit``); HRH_MATE_STATE=1 for ``feel``; HRH_MATE_LIFE=1 for ``do_activity``.
+(``change_outfit``); HRH_MATE_STATE=1 for ``feel``; HRH_MATE_LIFE=1 for ``do_activity``. HRH_MATE_MEMORY=1 adds
+her memory network and studying (``explore_memory`` … ``list_studies``); HRH_MATE_STUDY=1 is a study session's bridge
+instead: only the study tools (``read_page`` … ``finish_study``, app/mate/study.py).
 """
 
 from __future__ import annotations
@@ -235,6 +237,66 @@ for _t in TOOLS:
         _t["inputSchema"]["properties"]["expected_revision"] = {"type": "integer"}
 
 
+# her memory network (app/mate/graph.py) and studying (app/mate/study.py) — with HRH_MATE_MEMORY=1
+NETWORK_TOOLS = [
+    {"name": "explore_memory", "description": (
+        "Search your memory network: the people, places, games, works and topics you know (with their other names), "
+        "facts about them (from pages you read or what the user told you) and passages of pages you read. Use it when "
+        "the user asks about something you may have learned or when a <knowledge> line is too short. Returns node ids "
+        "[n_…] and fact ids [f_…]."),
+     "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}},
+    {"name": "open_memory_node", "description": (
+        "Open one thing in your memory network (a node id [n_…] or its name): its summary, every fact about it with "
+        "where it came from (a page and its quote, or a conversation), what it connects to, your memories about it."),
+     "inputSchema": {"type": "object", "properties": {"node": {"type": "string"}}, "required": ["node"]}},
+    {"name": "learn_url", "description": (
+        "Read a web page the user gives you and file what is worth knowing into your memory network. It runs in the "
+        "background (a minute or a few); the result comes back to you as a <study_result>. Tell the user you'll read "
+        "it and end your turn."),
+     "inputSchema": {"type": "object", "properties": {
+         "url": {"type": "string"}, "goal": {"type": "string", "description": "Optional: what the user wants from it."}},
+         "required": ["url"]}},
+    {"name": "study_topic", "description": (
+        "Study a topic on the web on your own (search, read, take notes into your memory network) — when the user "
+        "asks you to learn about something (\"Path of Exile 공부해 놔\"), or something they care about that you'd "
+        "need to know. Runs in the background (quick ≈ 5–10 min, normal ≈ 15–20, deep ≈ 30–40); the result comes "
+        "back as a <study_result>. Tell the user and end your turn."),
+     "inputSchema": {"type": "object", "properties": {
+         "topic": {"type": "string"}, "goal": {"type": "string", "description": "Optional: what to focus on."},
+         "depth": {"type": "string", "enum": ["quick", "normal", "deep"]}}, "required": ["topic"]}},
+    {"name": "list_studies", "description": "Your recent and running studies: topic, state, pages read, facts filed, summary.",
+     "inputSchema": {"type": "object", "properties": {}}},
+]
+
+# the study session's own tools (HRH_MATE_STUDY=1: app/mate/study.py runs it; nothing else is offered)
+STUDY_TOOLS = [
+    {"name": "read_page", "description": (
+        "Read a web page (the server fetches it; public web only). Its text comes in chunks, each after a [d_….c#] "
+        "marker — quote a chunk exactly in add_knowledge. Long pages continue with offset. Each new page counts "
+        "against the page budget."),
+     "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}, "offset": {"type": "integer", "minimum": 0}},
+                     "required": ["url"]}},
+    {"name": "search_web", "description": "A plain web search (Wikipedia + DuckDuckGo) → titles, links, snippets. Use your own web search when you have one.",
+     "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}},
+    {"name": "search_memory", "description": "What the memory network already holds about a query: nodes [n_…] and facts [f_…] (to avoid duplicates and to know what a new fact replaces).",
+     "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}},
+    {"name": "add_knowledge", "description": (
+        "File entities and facts. entities: [{name, kind, aliases[], summary}] (kind: person, place, org, work, game, "
+        "thing, concept, topic, event). facts: [{subject (entity name or n_ id), predicate (short relation label), "
+        "object (optional entity), statement (one claim, the user's language), quote (EXACT text from one chunk), "
+        "chunk (its [d_….c#] id), valid_from (optional: date/version the page states), importance 1–5, replaces "
+        "(optional f_ id it updates)}]. At most 25 facts a call. Unsupported quotes are refused."),
+     "inputSchema": {"type": "object", "properties": {
+         "entities": {"type": "array", "items": {"type": "object"}},
+         "facts": {"type": "array", "items": {"type": "object"}}}}},
+    {"name": "note", "description": "A short progress line the user sees (\"패치 노트 읽는 중\").",
+     "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}},
+    {"name": "finish_study", "description": "End the study: summary (5–10 sentences in the user's language, what is now known), open_questions[].",
+     "inputSchema": {"type": "object", "properties": {"summary": {"type": "string"},
+                                                       "open_questions": {"type": "array", "items": {"type": "string"}}},
+                     "required": ["summary"]}},
+]
+
 # offered unless the mate's "may change her own conversation style" setting is off (HRH_MATE_STYLE=auto|ask)
 _LEVEL = {"type": "string", "enum": ["low", "auto", "high"]}
 UPDATE_STYLE = {
@@ -358,7 +420,9 @@ _SLOW = {"see_screen": 150}  # (waits for the user's answer + the capture; the b
 
 
 def tools() -> list[dict]:
-    base = TOOLS if os.environ.get("HRH_MATE_MEMORY") == "1" else TOOLS[:9]
+    if os.environ.get("HRH_MATE_STUDY") == "1":
+        return STUDY_TOOLS
+    base = (TOOLS + NETWORK_TOOLS) if os.environ.get("HRH_MATE_MEMORY") == "1" else TOOLS[:9]
     return (base + ([UPDATE_STYLE] if os.environ.get("HRH_MATE_STYLE") in ("auto", "ask") else [])
             + ([FEEL] if os.environ.get("HRH_MATE_STATE") == "1" else [])
             + ([CHANGE_OUTFIT] if os.environ.get("HRH_MATE_OUTFIT") == "1" else [])

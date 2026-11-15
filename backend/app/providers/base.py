@@ -212,6 +212,9 @@ class TurnRequest:
     # here, and none of Codex's own tools (shell, apply_patch, web, images…).
     sealed: bool = False
     ephemeral: bool = False  # background extractors must not leave extra conversation copies
+    # a sealed engine that may search the web (a mate's study session, app/mate/study.py): Claude gets WebSearch in
+    # ``tools``; a sealed Codex keeps its model's search tool and ``web_search = "live"`` (otherwise "disabled")
+    web_search: bool = False
     require_sealed_catalog: bool = False
     # Codex, sealed: a private CODEX_HOME the provider owns (its config, the
     # threads to resume; the account's auth.json linked in). Required when

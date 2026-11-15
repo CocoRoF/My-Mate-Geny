@@ -195,6 +195,14 @@ def test_configure_engine_seals_a_codex_mate(db, tmp_path, monkeypatch):
     assert not (home / "auth.json").exists() and not (home / "auth.json").is_symlink()
     assert warnings and not (home / "sealed-models.json").exists()  # (no model list in that account's home)
 
+    # a study's turn may search the web: its own model search kept, live search on — nothing else opens
+    req.web_search = True
+    _codex_sealed.prepare(req, str(source))
+    cfg = (home / "config.toml").read_text()
+    assert 'web_search = "live"' in cfg and 'sandbox_mode = "read-only"' in cfg and "\nshell_tool = false\n" in cfg
+    sealed = json.loads((home / "sealed-models.json").read_text())["models"][0]
+    assert sealed["supports_search_tool"] is True and sealed["experimental_supported_tools"] == []
+
 
 def test_no_model_cache_still_seals_with_a_warning(tmp_path):
     req = TurnRequest(messages=[], model="gpt-6.1-sol", cwd=str(tmp_path), sealed=True,

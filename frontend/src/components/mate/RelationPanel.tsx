@@ -16,10 +16,18 @@ import ScrollRow from "../ui/ScrollRow";
 import { STAGE_COLOR, STAGE_LABEL } from "./RelationRing";
 import { StateCard, stateName, stateWhy } from "./StateCard";
 import MemoryNotebook from "./MemoryNotebook";
+import MemoryNetwork from "./memory/MemoryNetwork";
+import StudyPanel from "./memory/StudyPanel";
 import { milestoneText, whyText } from "./settings/RelationshipTab";
 import { CHANGE_FILTERS, chartSummary, deltaText, filterChanges, groupByDay, localDay, nextAnniversary, STATE_EMOJI, type ChangeFilter } from "../../mate/relationJournal";
 
-export type RelationLink = "relation" | "memory";
+export type RelationLink = "relation" | "memory" | "network" | "study";
+const TABS: { id: RelationLink; icon: "heart" | "brain" | "network" | "book"; label: MsgKey }[] = [
+  { id: "relation", icon: "heart", label: "mateSettings.relTitle" },
+  { id: "memory", icon: "brain", label: "mateSettings.memTitle" },
+  { id: "network", icon: "network", label: "memgraph.tab" },
+  { id: "study", icon: "book", label: "memgraph.studyTab" },
+];
 
 const STAGE_DESC: Record<RelationStage, MsgKey> = {
   new: "mate.relPanelStageDescNew",
@@ -107,17 +115,19 @@ export default function RelationPanel({ mate, onClose, onSettings, initialTab = 
         </button>
       </div>
       <ScrollRow className="shrink-0 gap-1 border-b border-border px-4 py-2" role="tablist" aria-label={t("mate.bondTitle")} watch={tab}>
-        {(["relation", "memory"] as const).map(id => (
+        {TABS.map(({ id, icon, label }) => (
           <button type="button" role="tab" key={id} aria-selected={tab === id}
             className={`shrink-0 whitespace-nowrap ${tab === id ? "btn-soft" : "btn-ghost"}`} data-testid={`bond-tab-${id}`} onClick={() => setTab(id)}>
-            <Icon name={id === "relation" ? "heart" : "brain"} size={14} />
-            {t(id === "relation" ? "mateSettings.relTitle" : "mateSettings.memTitle")}
+            <Icon name={icon} size={14} />
+            {t(label)}
           </button>
         ))}
       </ScrollRow>
       <div ref={body} className="fit-fields min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-safe">
         <div className="mx-auto max-w-xl space-y-4 pb-6">
-          {tab === "memory" ? <MemoryNotebook key={mate.id} mate={mate} onSettings={onSettings} /> : <>
+          {tab === "network" ? <MemoryNetwork key={mate.id} mate={mate} onStudy={() => setTab("study")} />
+          : tab === "study" ? <StudyPanel key={mate.id} mate={mate} />
+          : tab === "memory" ? <MemoryNotebook key={mate.id} mate={mate} onSettings={onSettings} /> : <>
           {err && <p className="rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{t("mate.relPanelError", { error: err })}</p>}
           {!j || !v ? (
             !err && <p className="text-[12px] text-content-faint">{t("common.loading")}</p>

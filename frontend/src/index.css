@@ -42,6 +42,10 @@
   --c-glass-deep: 17 20 27;
   --glass-line: rgba(255, 255, 255, 0.1);
   --checker: #161a22;
+  /* the memory network's map (components/mate/memory/MemoryGraph.tsx) */
+  --graph-ink: #e2e8f0;
+  --graph-faint: rgba(148, 163, 184, 0.4);
+  --graph-paper: rgba(15, 18, 25, 0.82);
   /* the mate's relationship stages (rings, bars, pills: --c-stage-ink is the text on a stage's fill) */
   --c-stage-new: 148 163 184;
   --c-stage-familiar: 110 139 255;
@@ -114,6 +118,9 @@ html.light,
   --c-glass-deep: 250 251 253;
   --glass-line: rgba(16, 24, 40, 0.1);
   --checker: #e3e7ee;
+  --graph-ink: #1e293b;
+  --graph-faint: rgba(100, 116, 139, 0.4);
+  --graph-paper: rgba(255, 255, 255, 0.85);
   --c-stage-new: 100 116 139;
   --c-stage-familiar: 52 80 220;
   --c-stage-trusted: 112 72 214;

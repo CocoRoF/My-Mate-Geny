@@ -142,6 +142,7 @@ async def lifespan(app: FastAPI):
     from app.mate.consolidation import Consolidator
     app.state.memory_worker = Consolidator(app.state.mate_service)
     app.state.memory_worker.start()
+    app.state.mate_service.studies.start()  # (her studies: docs/mate-memory-graph.md)
     app.state.mate_service.recover_memory_work()
     from app.services.screen import ScreenService
     app.state.screen_service = ScreenService(session_service, app.state.mate_service.capture, mates=mate_store)
@@ -228,6 +229,7 @@ async def lifespan(app: FastAPI):
     yield
     await setup.service.stop()
     await app.state.memory_worker.stop()
+    await app.state.mate_service.studies.stop()
 
     await app.state.screen_service.triggers.stop()
     await app.state.calls.stop()

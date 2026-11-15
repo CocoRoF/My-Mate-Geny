@@ -61,8 +61,9 @@ def _toml_str(v: Any) -> str:
     return json.dumps(str(v), ensure_ascii=False).replace("\x7f", "\\u007f")
 
 
-def sealed_catalog(models_cache: Path) -> dict[str, Any] | None:
-    """The account's model list without the tools models bring themselves."""
+def sealed_catalog(models_cache: Path, *, web_search: bool = False) -> dict[str, Any] | None:
+    """The account's model list without the tools models bring themselves (its web search kept for a session that may
+    search: a mate's study)."""
     try:
         data = json.loads(models_cache.read_text("utf-8"))
     except (OSError, ValueError):
@@ -73,21 +74,22 @@ def sealed_catalog(models_cache: Path) -> dict[str, Any] | None:
         if not isinstance(m, dict) or not m.get("slug"):
             continue
         m = {k: v for k, v in m.items() if k not in _MODEL_TOOL_FIELDS}
-        m.update(apply_patch_tool_type=None, experimental_supported_tools=[], supports_search_tool=False,
-                 node_repl_disabled=True)
+        m.update(apply_patch_tool_type=None, experimental_supported_tools=[], node_repl_disabled=True)
+        if not web_search:
+            m["supports_search_tool"] = False
         out.append(m)
     return {"models": out} if out else None
 
 
 def sealed_config(*, instructions_file: str | None, catalog_file: str | None,
-                  mcp_servers: dict[str, Any]) -> str:
+                  mcp_servers: dict[str, Any], web_search: bool = False) -> str:
     lines = [
         "# Written by My Mate Geny for a sealed Mate engine; regenerated every turn.",
         *([f"model_instructions_file = {_toml_str(instructions_file)}"] if instructions_file else []),
         *([f"model_catalog_json = {_toml_str(catalog_file)}"] if catalog_file else []),
         'approval_policy = "never"',
         'sandbox_mode = "read-only"',
-        'web_search = "disabled"',
+        f'web_search = "{"live" if web_search else "disabled"}"',
         "project_doc_max_bytes = 0",
         "check_for_update_on_startup = false",
         "include_permissions_instructions = false",
@@ -163,7 +165,8 @@ def prepare(req: TurnRequest, source_home: str) -> tuple[dict[str, str], list[st
     _link_auth(source, home)
     warnings: list[str] = []
     # (the engine's own cache, from an earlier turn, when the account has none)
-    catalog = sealed_catalog(source / "models_cache.json") or sealed_catalog(home / "models_cache.json")
+    catalog = (sealed_catalog(source / "models_cache.json", web_search=req.web_search)
+               or sealed_catalog(home / "models_cache.json", web_search=req.web_search))
     catalog_file = None
     if catalog is not None:
         catalog_file = str(home / CATALOG)
@@ -176,6 +179,6 @@ def prepare(req: TurnRequest, source_home: str) -> tuple[dict[str, str], list[st
                         "default tool set, held read-only by the sandbox. Open a Codex chat once to fetch it.")
     _write(home / CONFIG, sealed_config(
         instructions_file=req.system_prompt_file, catalog_file=catalog_file,
-        mcp_servers=(req.mcp_config or {}).get("mcpServers") or {},
+        mcp_servers=(req.mcp_config or {}).get("mcpServers") or {}, web_search=req.web_search,
     ))
     return {"CODEX_HOME": str(home), "HOME": str(home)}, warnings
