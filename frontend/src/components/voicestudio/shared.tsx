@@ -207,7 +207,7 @@ export function useLanguages(): string[] {
 }
 
 /** a profile's clip (its length in the address: a trimmed clip is read again) */
-export const refUrl = (v: LocalVoice, r: VoiceRef) => `${referenceAudioUrl(v.id, r.id)}?d=${r.duration}`;
+export const refUrl = (v: LocalVoice, r: Pick<VoiceRef, "id" | "duration">) => `${referenceAudioUrl(v.id, r.id)}?d=${r.duration}`;
 
 // ---- one player for the studio ---------------------------------------------------------------------------------
 

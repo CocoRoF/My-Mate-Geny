@@ -1,7 +1,8 @@
 /**
  * Voice Studio → 생성: a line in a profile's voice (or a described one, or the model's own) → its waveform, how long it
  * took, the seed it was made with (keep it to make the same line again), download in a format, keep it (★), save it as
- * one of a profile's clips. Every line is also in 히스토리. Ctrl+Enter makes it.
+ * one of a profile's clips. Every line is also in 히스토리. Ctrl+Enter makes it. The sounds written in a line (헤헤, ㅋㅋ,
+ * 하암~, 후우…) are made as sounds unless that is turned off (docs/local-voice.md "Laughs, sighs and yawns").
  */
 import { useEffect, useRef, useState } from "react";
 import { generateVoice, historyAudioUrl, updateHistory, type GenerateBody, type HistoryEntry } from "../../api/voice";
@@ -13,6 +14,18 @@ import { estimateSeconds, LineForm, useDefaultLine, useTts, type LineSettings } 
 import { Card, DownloadMenu, PlayButton, secs, sourceLabel, useStudio, usePlayer, Waveform } from "./shared";
 
 const MAX_CHARS = 2000;
+const NV_KEY = "vs_nonverbal";
+/** what the 넣기 chips write: a tag the server makes the sound of (backend app/voicehost/nonverbal.py) */
+const TAGS = ["laugh", "giggle", "sigh", "yawn", "gasp", "pout"] as const;
+
+/** the sounds a line was made with, in words ("웃음 (이 목소리의 웃음) · 한숨") */
+export function soundsMade(t: ReturnType<typeof useT>, e: HistoryEntry): string {
+  const list = (e.info?.sounds ?? []).map((x) => {
+    const kind = t(`voiceStudio.nvKind_${x.kind}` as MsgKey);
+    return x.clip ? t("voiceStudio.nvClip", { kind }) : kind;
+  });
+  return list.length ? t("voiceStudio.nvMade", { list: list.join(" · ") }) : "";
+}
 
 export default function GeneratePage() {
   const t = useT();
@@ -24,6 +37,37 @@ export default function GeneratePage() {
   const [text, setText] = useState(() => draft?.text || t("localVoice.trySample"));
   const [seed, setSeed] = useState<number | null>(() => draft?.seed ?? null);
   const [lockSeed, setLockSeed] = useState(() => draft?.seed != null);
+  const [nonverbal, setNonverbal] = useState(() => {
+    if (draft?.params && (draft.params as Record<string, unknown>)._nonverbal === false) return false;
+    try {
+      return localStorage.getItem(NV_KEY) !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const area = useRef<HTMLTextAreaElement>(null);
+  const keepNonverbal = (on: boolean) => {
+    setNonverbal(on);
+    try {
+      localStorage.setItem(NV_KEY, on ? "1" : "0");
+    } catch {
+      /* private mode: this page only */
+    }
+  };
+  const insert = (tag: string) => {
+    const el = area.current;
+    const at = el ? el.selectionStart : text.length;
+    const end = el ? el.selectionEnd : text.length;
+    const word = `[${t(`voiceStudio.nvTag_${tag}` as MsgKey)}]`;
+    const pad = (s: string, i: number) => (i > 0 && !/\s/.test(s[i - 1]) ? " " : "");
+    const next = text.slice(0, at) + pad(text, at) + word + " " + text.slice(end);
+    setText(next.slice(0, MAX_CHARS));
+    requestAnimationFrame(() => {
+      const c = at + pad(text, at).length + word.length + 1;
+      el?.focus();
+      el?.setSelectionRange(c, c);
+    });
+  };
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [results, setResults] = useState<HistoryEntry[]>([]);
@@ -35,6 +79,7 @@ export default function GeneratePage() {
     seen.current = draft.nonce;
     setLine((l) => withDraft(l, draft));
     if (draft.text) setText(draft.text);
+    if (draft.params && (draft.params as Record<string, unknown>)._nonverbal === false) setNonverbal(false);
     if (draft.seed != null) {
       setSeed(draft.seed);
       setLockSeed(true);
@@ -53,7 +98,7 @@ export default function GeneratePage() {
     setErr(null);
     try {
       const s = over && "seed" in over ? over.seed : lockSeed ? seed : null;
-      const e = await generateVoice({ ...line, voice_id: line.voice_id || undefined, text: text.trim(), seed: s, source: "studio" });
+      const e = await generateVoice({ ...line, voice_id: line.voice_id || undefined, text: text.trim(), seed: s, source: "studio", nonverbal });
       setResults((r) => [e, ...r].slice(0, 12));
       if (!lockSeed) setSeed(e.seed);
       player.play(historyAudioUrl(e.id));
@@ -79,6 +124,7 @@ export default function GeneratePage() {
       <div className="space-y-3">
         <Card title={t("voiceStudio.gnText")}>
           <textarea
+            ref={area}
             className="field min-h-[120px] text-[13.5px] leading-relaxed"
             value={text}
             maxLength={MAX_CHARS}
@@ -97,6 +143,29 @@ export default function GeneratePage() {
             <span className="flex-1" />
             <span>{t("voiceStudio.gnShortcut")}</span>
           </div>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="vs-gen-sounds">
+            <label className="flex items-center gap-1.5 text-[12px] text-content-dim" title={t("voiceStudio.nvToggleHint")}>
+              <input type="checkbox" checked={nonverbal} onChange={(e) => keepNonverbal(e.target.checked)} data-testid="vs-gen-nonverbal" />
+              {t("voiceStudio.nvToggle")}
+            </label>
+            {nonverbal && (
+              <>
+                <span className="ml-1 text-[11px] text-content-faint">{t("voiceStudio.nvInsert")}</span>
+                {TAGS.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    className="rounded-full border border-border px-2 py-0.5 text-[11.5px] text-content-dim hover:border-accent/50 hover:text-content"
+                    onClick={() => insert(tag)}
+                    data-testid={`vs-gen-tag-${tag}`}
+                  >
+                    {t(`voiceStudio.nvTag_${tag}` as MsgKey)}
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+          {nonverbal && <p className="mt-1 text-[11px] leading-snug text-content-faint">{t("voiceStudio.nvToggleHint")}</p>}
         </Card>
         <Card title={t("voiceStudio.gnVoice")}>
           <LineForm value={line} onChange={setLine} testId="vs-gen" />
@@ -220,6 +289,14 @@ export function Result({
           .filter(Boolean)
           .join(" · ")}
       </p>
+      {soundsMade(t, e) && (
+        <p className="mt-0.5 text-[11px] text-accent" title={e.info?.spoken} data-testid={first ? "vs-gen-made-sounds" : undefined}>
+          {soundsMade(t, e)}
+        </p>
+      )}
+      {first && (e.info?.sounds ?? []).some((x) => (x.kind === "laugh" || x.kind === "giggle") && !x.clip) && e.voice_id && (
+        <p className="mt-0.5 text-[11px] leading-snug text-content-faint" data-testid="vs-gen-no-laugh-yet">{t("voiceStudio.nvNoClipYet")}</p>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <button className="btn-ghost !p-1.5" onClick={() => void star()} title={e.starred ? t("voiceStudio.unstar") : t("voiceStudio.star")} data-testid={first ? "vs-gen-star" : undefined}>
           <Icon name="star" size={13} className={e.starred ? "fill-current text-warning" : ""} />

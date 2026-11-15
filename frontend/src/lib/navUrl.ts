@@ -45,7 +45,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
 ];
 
 /** a part of a tab to scroll to once it is shown (`/?view=downloads` → Updates & Download, at Download) */
-export type SettingsAnchor = "downloads";
+export type SettingsAnchor = "downloads" | "top";
 
 /** the Mate Create studio (docs/avatar-create.md §11): a draft being made, or an existing mate's avatar */
 export interface StudioLoc {

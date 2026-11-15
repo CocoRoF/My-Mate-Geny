@@ -158,6 +158,63 @@ class Worker:
         return {"paths": paths, "sample_rate": self.engine.sample_rate, "seconds": elapsed, "audio_seconds": total,
                 "seed": int(seed), "memory": self._mem()}
 
+    def op_sounds(self, msg: dict) -> dict:
+        """A voice's own laugh (app/voicehost/sounds.py): ``takes`` takes of the lines given (``texts``: [text,
+        language] — what laughs best on this engine: nonverbal.BANK_TEXTS), each heard by the sound check when its
+        weights are at ``check_dir``; the ``keep`` that laugh the most (at least ``min_score``) are kept, with the
+        strongest second of each as a giggle. → {takes: [{path, kind, score, seconds}], checked, heard: every score}"""
+        import numpy as np
+        import soundfile as sf
+
+        from .engines.base import Reference, SynthRequest
+
+        self._require_ready()
+        ref = msg.get("reference")
+        texts = [tuple(t) for t in msg["texts"]]
+        n, keep, floor = int(msg.get("takes", 12)), int(msg.get("keep", 3)), float(msg.get("min_score", 0.2))
+        per = max(1, int(msg.get("batch", 4)))
+        takes: list[np.ndarray] = []
+        i = 0
+        while len(takes) < n:
+            text, lang = texts[i % len(texts)]
+            if self.rt is not None:
+                self.rt.seed_everything(int(msg.get("seed", 7)) * 1000 + i)
+            req = SynthRequest(text=[text] * min(per, n - len(takes)), language=lang,
+                               reference=Reference(**ref) if ref else None, params=msg.get("params") or {})
+            takes += [np.asarray(w, dtype=np.float32).reshape(-1) for w in self.engine.synthesize(req)]
+            i += 1
+        sr = self.engine.sample_rate
+        check_dir = msg.get("check_dir") or ""
+        heard: list[dict | None] = [None] * len(takes)
+        if check_dir and os.path.isfile(os.path.join(check_dir, "model.safetensors")):
+            from .soundcheck import SoundCheck
+
+            sc = SoundCheck(check_dir, self.dev.device if self.dev is not None else "cpu")
+            try:
+                heard = [sc.score(w, sr, "laugh") for w in takes]
+                for w, h in sorted(zip(takes, heard), key=lambda wh: -wh[1]["score"])[:keep]:
+                    h["start"], h["end"] = sc.best_second(w, sr, "laugh")  # (its giggle)
+            finally:
+                sc.close()
+                self._sync()
+        checked = heard[0] is not None
+        order = sorted(range(len(takes)), key=lambda j: -(heard[j] or {"score": 0})["score"]) if checked else range(len(takes))
+        kept = [j for j in order if not checked or heard[j]["score"] >= floor][:keep]
+        out = []
+        for rank, j in enumerate(kept):
+            w = takes[j]
+            h = heard[j] or {"score": None, "start": 0.0, "end": min(len(w) / sr, 1.0)}
+            giggle = w[int(h["start"] * sr):int(min(h["end"], h["start"] + 1.0) * sr)].copy()
+            fade = min(len(giggle) // 3, int(0.12 * sr))  # (cut from a laugh: it fades out, not stops)
+            if fade:
+                giggle[-fade:] *= np.linspace(1, 0, fade, dtype=np.float32)
+            for kind, x in (("laugh", w), ("giggle", giggle)):
+                path = f"{msg['out_prefix']}.{kind}{rank}.wav"
+                sf.write(path, x, sr, subtype="FLOAT")
+                out.append({"path": path, "kind": kind, "score": h["score"], "seconds": round(len(x) / sr, 3)})
+        return {"takes": out, "checked": checked, "heard": [round(h["score"], 3) if h else None for h in heard],
+                "sample_rate": sr}
+
     def op_transcribe(self, msg: dict) -> dict:
         self._require_ready()
         t0 = time.perf_counter()

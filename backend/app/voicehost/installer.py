@@ -462,6 +462,34 @@ class Installer:
             "bytes": p.total_bytes, "at": time.time()}))
         p.log.append(f"weights {spec.id} ready ({p.total_bytes / system.GiB:.2f} GiB)")
 
+    # -- the sound check ----------------------------------------------------------------------------------------
+    def sound_check_dir(self) -> Path:
+        return self.model_dir(catalog.SOUND_CHECK)
+
+    def sound_check_ready(self) -> bool:
+        return self.weights_ready(catalog.SOUND_CHECK) or self.s.engine_mode == "fake"
+
+    async def ensure_sound_check(self) -> bool:
+        """the classifier that picks a voice's laughs (catalog.SOUND_CHECK, 350 MB): fetched the first time a laugh is
+        made, like a model's files (after an install in progress). → whether it is there"""
+        if self.sound_check_ready():
+            return True
+        spec = catalog.SOUND_CHECK
+        async with self._lock:
+            if self.sound_check_ready():
+                return True
+            p = Progress(state="weights", message="sound check", started_at=time.time())
+            self.progress[spec.id] = p
+            try:
+                await self._download(spec, p)
+                p.state = "done"
+            except Exception as e:  # noqa: BLE001 - a laugh made unchecked is still a laugh made
+                log.warning("sound check download failed: %s", e)
+                p.state, p.error = "error", str(e)
+            finally:
+                self._procs.pop(spec.id, None)
+        return self.sound_check_ready()
+
     # -- remove -------------------------------------------------------------------------------------------------
     def remove(self, spec: catalog.ModelSpec) -> dict[str, Any]:
         freed = 0

@@ -1,7 +1,8 @@
 /**
  * Voice Studio → 설정: how local models share this machine — the GPU share they may take, how long an idle model stays
  * on the GPU and in RAM, how much RAM parked models may hold — the history's limits, the models used when none is named
- * (a mate's voice, recognition) and the profile the studio starts from; where things live and how the engines run.
+ * (a mate's voice, recognition) and the profile the studio starts from; whether a voice's laugh is made by itself the first
+ * time a line of it laughs; where things live and how the engines run.
  * Each value can go back to the server's own (VOICE_* in the environment).
  */
 import { useEffect, useState } from "react";
@@ -84,6 +85,24 @@ export default function StudioSettingsPage() {
             </select>
           </Field>
         </div>
+      </Card>
+      <Card title={t("voiceStudio.stSounds")} testId="vs-settings-sounds">
+        <label className="flex items-start gap-2 text-[12.5px] text-content">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={doc.auto_sounds}
+            disabled={busy === "sounds"}
+            onChange={(e) => void put("sounds", { auto_sounds: e.target.checked })}
+            data-testid="vs-settings-auto-sounds"
+          />
+          <span>
+            {t("voiceStudio.stAutoSounds")}
+            <span className="mt-0.5 block text-[11.5px] leading-snug text-content-faint">
+              {doc.sound_maker ? t("voiceStudio.stAutoSoundsHint", { model: doc.sound_maker }) : t("voiceStudio.stAutoSoundsNone")}
+            </span>
+          </span>
+        </label>
       </Card>
       <Card title={t("voiceStudio.stWhere")} testId="vs-settings-paths">
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]">

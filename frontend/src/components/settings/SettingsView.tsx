@@ -892,6 +892,12 @@ export default function SettingsView() {
   // a part of the tab to show (`/?view=downloads` → Updates & Download, at Download): once it is drawn
   useEffect(() => {
     if (!anchor || !shown) return;
+    if (anchor === "top") {
+      // (the app's update banner: the tab from its top, where the app's own update is — even when it was open below)
+      document.getElementById("settings-panel")?.scrollTo({ top: 0 });
+      useUIStore.setState({ settingsAnchor: null });
+      return;
+    }
     let n = 0;
     let raf = 0;
     let stop = () => {};

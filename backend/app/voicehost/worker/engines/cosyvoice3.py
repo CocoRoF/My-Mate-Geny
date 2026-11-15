@@ -102,9 +102,7 @@ class CosyVoice3Engine(Engine):
         for text in req.text:
             fe = _wants_frontend(text, req.language)
             if instruct:
-                spk = self._spk(req, "cross_lingual")
-                gen = self.cosy.inference_instruct2(text, f"{PREFIX} {instruct}{END}", "", zero_shot_spk_id=spk,
-                                                    stream=False, speed=speed, text_frontend=fe)
+                gen = self._instruct(text, f"{PREFIX} {instruct}{END}", self._spk(req, "cross_lingual"), speed, fe)
             elif mode == "cross_lingual":
                 spk = self._spk(req, "cross_lingual")
                 gen = self.cosy.inference_cross_lingual(f"{PREFIX}{END}{text}", "", zero_shot_spk_id=spk,
@@ -116,6 +114,17 @@ class CosyVoice3Engine(Engine):
             pieces = [o["tts_speech"].float().cpu().numpy().reshape(-1) for o in gen]
             outs.append(np.concatenate(pieces) if pieces else np.zeros(0, dtype=np.float32))
         return outs
+
+    def _instruct(self, text: str, instruct_text: str, spk: str, speed: float, fe: bool):
+        """CosyVoice's inference_instruct2 with a kept speaker: upstream takes the instruction from the speaker's own
+        prompt text when it has one (the empty one of a cross-lingual speaker here: no <|endofprompt|>, an assertion),
+        so the instruction is put back after the frontend."""
+        front = self.cosy.frontend
+        tokens, n = front._extract_text_token(instruct_text)
+        for piece in front.text_normalize(text, split=True, text_frontend=fe):
+            model_input = front.frontend_instruct2(piece, instruct_text, "", self.sample_rate, spk)
+            model_input["prompt_text"], model_input["prompt_text_len"] = tokens, n
+            yield from self.cosy.model.tts(**model_input, stream=False, speed=speed)
 
     def warmup(self) -> None:
         import os

@@ -264,7 +264,8 @@ class BatchRunner:
                             instruct=over.get("instruct") if "instruct" in over else base.get("instruct") or "",
                             params=base.get("params") or {},
                             seed=over.get("seed") if "seed" in over else base.get("seed"),
-                            source="batch", batch_id=bid, batch_index=item["idx"], priority=BACKGROUND)
+                            source="batch", batch_id=bid, batch_index=item["idx"], priority=BACKGROUND,
+                            nonverbal=base.get("nonverbal") is not False)
                         self.store.set_item(bid, item["idx"], state="done", history_id=entry["id"],
                                             seconds=entry.get("seconds"), rtf=entry.get("rtf"), seed=entry.get("seed"))
                     except VoiceError as e:
