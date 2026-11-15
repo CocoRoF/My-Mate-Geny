@@ -21,6 +21,7 @@ import {
   redoItem,
   restoreAvatar,
   resumeRun,
+  setStageEngines,
   type AvatarEnv,
   type AvatarProject,
   type Extra,
@@ -34,6 +35,7 @@ import ScrollRow from "../../ui/ScrollRow";
 import Icon, { type IconName } from "../../ui/Icon";
 import { useT, type MsgKey } from "../../../i18n";
 import { confirmDialog, ifConfirmed } from "../../ui/ConfirmDialog";
+import { openAppSettings } from "../../../lib/openAppSettings";
 
 const fmt = (n: number | null | undefined) => (n === null || n === undefined ? "—" : Number(n.toFixed(2)).toLocaleString());
 
@@ -133,36 +135,71 @@ const LINE_LABEL: Record<PlanLine["stage"], MsgKey> = {
   matte: "avatar.lineMatte",
 };
 
-/** The estimate with Confirm / Change plan / Cancel — the only way a run starts. */
+const isLocal = (l: PlanLine) => l.job_type.startsWith("local:");
+
+/** The estimate with Confirm / Change plan / Cancel — the only way a run starts. Each stage runs on Higgsfield or,
+ *  when its model is installed (Image Studio), on this computer's GPU for 0 credits: the user picks per stage. */
 export function EstimateCard({ project, env, act, inline = false }: { project: AvatarProject; env: AvatarEnv | null; act: Act; inline?: boolean }) {
   const t = useT();
   const plan = project.plan as Plan;
-  const stale = Date.now() - Date.parse(plan.quoted_at) > 29 * 60_000;
+  const hosted = plan.lines.some((l) => !isLocal(l));
+  const stale = hosted && Date.now() - Date.parse(plan.quoted_at) > 29 * 60_000;
   const hfOk = !!env?.higgsfield.connected && !!env?.higgsfield.cli;
   const depsOk = !!env?.deps.ready;
-  const can = plan.complete && !stale && hfOk && depsOk;
+  const can = plan.complete && !stale && (hfOk || !hosted) && depsOk;
+  const stages = env?.local?.stages ?? {};
+  const anyLocal = Object.values(stages).some((s) => s?.ready);
+  const locals = plan.lines.filter(isLocal).length;
   return (
     <Card title={t("avatar.estimateTitle")} icon="sparkles" tone="accent" testId={inline ? "avatar-estimate-inline" : "avatar-estimate"}>
       <table className="w-full text-[12px]">
         <thead>
           <tr className="text-left text-content-faint">
             <th className="pb-1 font-normal">{t("avatar.colItem")}</th>
-            <th className="pb-1 font-normal">{t("avatar.colModel")}</th>
+            <th className="pb-1 font-normal">{t("avatar.colEngine")}</th>
             <th className="pb-1 text-right font-normal">{t("avatar.colCount")}</th>
             <th className="pb-1 text-right font-normal">{t("avatar.colCredits")}</th>
           </tr>
         </thead>
         <tbody>
-          {plan.lines.map((l) => (
-            <tr key={l.key} className="border-t border-border/60" data-testid="avatar-estimate-line">
-              <td className="py-1 pr-2 text-content">{t(LINE_LABEL[l.stage])}</td>
-              <td className="py-1 pr-2 font-mono text-[11px] text-content-dim">{l.job_type}</td>
-              <td className="py-1 text-right text-content-dim">
-                {l.count} × {l.unit === null ? "?" : fmt(l.unit)}
-              </td>
-              <td className={`py-1 text-right font-medium ${l.error ? "text-danger" : "text-content"}`}>{l.error ? t("avatar.noQuote") : fmt(l.credits)}</td>
-            </tr>
-          ))}
+          {plan.lines.map((l) => {
+            const local = isLocal(l);
+            const st = stages[l.stage];
+            return (
+              <tr key={l.key} className="border-t border-border/60" data-testid="avatar-estimate-line" data-stage={l.stage} data-engine={local ? "local" : "higgsfield"}>
+                <td className="py-1 pr-2 text-content">{t(LINE_LABEL[l.stage])}</td>
+                <td className="py-1 pr-2">
+                  <div className="flex flex-wrap items-center gap-1">
+                    {st?.ready ? (
+                      <span className="inline-flex overflow-hidden rounded-md border border-border text-[10.5px]" role="group">
+                        {(["local", "higgsfield"] as const).map((e) => (
+                          <button
+                            key={e}
+                            type="button"
+                            className={`px-1.5 py-0.5 ${(e === "local") === local ? "bg-accent text-white" : "text-content-dim hover:bg-surface-3"}`}
+                            aria-pressed={(e === "local") === local}
+                            onClick={() => (e === "local") !== local && act(() => setStageEngines(project.id, { [l.stage]: e }))}
+                            data-testid={`avatar-engine-${l.stage}-${e}`}
+                          >
+                            {t(e === "local" ? "avatar.engLocal" : "avatar.engHosted")}
+                          </button>
+                        ))}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-content-dim">{t("avatar.engHosted")}</span>
+                    )}
+                    <span className="truncate font-mono text-[10.5px] text-content-faint" title={local ? st?.seconds : l.job_type}>
+                      {local ? st?.model_name || "" : l.job_type}
+                    </span>
+                  </div>
+                </td>
+                <td className="py-1 text-right text-content-dim">
+                  {l.count} × {l.unit === null ? "?" : fmt(l.unit)}
+                </td>
+                <td className={`py-1 text-right font-medium ${l.error ? "text-danger" : "text-content"}`}>{l.error ? t("avatar.noQuote") : fmt(l.credits)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
       <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1 border-t border-border pt-2 text-[12px]">
@@ -173,17 +210,30 @@ export function EstimateCard({ project, env, act, inline = false }: { project: A
         </span>
         <span className="text-content-dim">{t("avatar.reserve")}</span>
         <span className="text-right text-content-dim">{t("avatar.credits", { n: fmt(plan.reserve) })}</span>
-        <span className="text-content-dim">{t("avatar.balance")}</span>
-        <span className="text-right text-content-dim">
-          {fmt(plan.balance)} → <span className={plan.balance_after !== null && plan.balance_after < 0 ? "text-danger" : "text-content"}>{fmt(plan.balance_after)}</span>
-        </span>
+        {hosted && (
+          <>
+            <span className="text-content-dim">{t("avatar.balance")}</span>
+            <span className="text-right text-content-dim">
+              {fmt(plan.balance)} → <span className={plan.balance_after !== null && plan.balance_after < 0 ? "text-danger" : "text-content"}>{fmt(plan.balance_after)}</span>
+            </span>
+          </>
+        )}
         <span className="text-content-dim">{t("avatar.time")}</span>
         <span className="text-right text-content-dim">{t("avatar.minutes", { n: Math.round(plan.minutes) })}</span>
       </div>
-      <p className="mt-2 text-[11.5px] leading-relaxed text-content-faint">{t("avatar.reserveHint", { cap: fmt(plan.cap) })}</p>
+      {hosted && <p className="mt-2 text-[11.5px] leading-relaxed text-content-faint">{t("avatar.reserveHint", { cap: fmt(plan.cap) })}</p>}
+      {locals > 0 && <p className="mt-1.5 text-[11.5px] leading-relaxed text-content-faint" data-testid="avatar-estimate-local">{t("avatar.localHint", { n: locals })}</p>}
+      {!anyLocal && (
+        <p className="mt-1.5 text-[11.5px] leading-relaxed text-content-faint">
+          {t("avatar.localSetup")}{" "}
+          <button type="button" className="text-link underline" onClick={() => openAppSettings("image-studio")} data-testid="avatar-open-image-studio">
+            {t("avatar.openImageStudio")}
+          </button>
+        </p>
+      )}
       {plan.errors.length > 0 && <p className="mt-1.5 text-[11.5px] text-danger">{t("avatar.quoteErrors", { errors: plan.errors.join("; ") })}</p>}
       {stale && <p className="mt-1.5 text-[11.5px] text-warning">{t("avatar.staleQuote")}</p>}
-      {!hfOk && <p className="mt-1.5 text-[11.5px] text-warning">{t("avatar.needHiggsfield")}</p>}
+      {hosted && !hfOk && <p className="mt-1.5 text-[11.5px] text-warning">{t("avatar.needHiggsfield")}</p>}
       {!depsOk && <p className="mt-1.5 text-[11.5px] text-warning">{t("avatar.needDeps")}</p>}
       <div className="mt-3 flex flex-wrap justify-end gap-2">
         <button className="btn-ghost" onClick={() => act(() => discardPlan(project.id))} data-testid="avatar-estimate-cancel">
@@ -699,17 +749,25 @@ export function BriefCard({ project, studio = false }: { project: AvatarProject;
   );
 }
 
-/** what a run needs before it can start: Higgsfield connected with its CLI, the processing tools installed */
+/** what a run needs before it can start: Higgsfield connected with its CLI (unless every stage can run on this
+ *  computer: Image Studio), the processing tools installed */
 export function EnvNotice({ env, reloadEnv }: { env: AvatarEnv | null; reloadEnv: () => void }) {
   const t = useT();
   if (!env) return null;
+  const stages = env.local?.stages ?? {};
+  const allLocal = !!env.local?.available && (["design", "home", "stills", "clips", "matte"] as const).every((s) => stages[s]?.ready);
   return (
     <>
-      {(!env.higgsfield.connected || !env.higgsfield.cli) && (
-        <div className="rounded-lg border border-warning/30 bg-warning/[0.07] px-3 py-2 text-[12px] text-warning" data-testid="avatar-no-higgsfield">
-          {!env.higgsfield.connected ? t("avatar.connectHiggsfield") : t("avatar.noCli")}
-        </div>
-      )}
+      {(!env.higgsfield.connected || !env.higgsfield.cli) &&
+        (allLocal ? (
+          <div className="rounded-lg border border-border bg-surface-2/60 px-3 py-2 text-[12px] text-content-dim" data-testid="avatar-all-local">
+            {t("avatar.allLocal")}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-warning/30 bg-warning/[0.07] px-3 py-2 text-[12px] text-warning" data-testid="avatar-no-higgsfield">
+            {!env.higgsfield.connected ? t("avatar.connectHiggsfield") : t("avatar.noCli")}
+          </div>
+        ))}
       {!env.deps.ready && <DepsCard env={env} onDone={reloadEnv} />}
     </>
   );

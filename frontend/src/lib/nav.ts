@@ -30,13 +30,13 @@ const fromUrl = (search = window.location.search): Loc | null => fromSearch(sear
 // (read before installNav makes the address canonical: `/?view=mate&mate=…&panel=…` → `/?view=mate`)
 let matePanelLink = typeof window !== "undefined" ? matePanelOf(window.location.search) : null;
 
-// (likewise a Settings tab's own page: Voice Studio's `/?view=settings&tab=voice-studio&page=history`)
+// (likewise a Settings tab's own page: Voice Studio's `/?view=settings&tab=voice-studio&page=history`, Image Studio's)
 let settingsPageLink =
-  typeof window !== "undefined" && fromSearch(window.location.search)?.tab === "voice-studio"
+  typeof window !== "undefined" && ["voice-studio", "image-studio"].includes(fromSearch(window.location.search)?.tab ?? "")
     ? new URLSearchParams(window.location.search).get("page")
     : null;
 
-/** the page of Voice Studio this window was opened at (once) */
+/** the page of Voice Studio / Image Studio this window was opened at (once) */
 export function takeSettingsPageLink(): string | null {
   const p = settingsPageLink;
   settingsPageLink = null;

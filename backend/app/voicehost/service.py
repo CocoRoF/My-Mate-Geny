@@ -308,6 +308,17 @@ class VoiceHost:
             return spec.id
         return self.default_model(kind)
 
+    def room_for_speech(self) -> int:
+        """the GPU memory another GPU user (the image engine) should leave free so the mates can still speak and
+        hear: the models a call holds, and the default speech model when local voice is in use (bytes)"""
+        if not self.ready():
+            return 0
+        need = sum(r.need for mid, r in self.engines.residents.items() if self.engines.pins.get(mid))
+        tts = self.default_model("tts")
+        if tts and not self.engines.pins.get(tts):
+            need += int(catalog.BY_ID[tts].vram_gb * _GIB)
+        return need
+
     def usable(self, kind: str) -> bool:
         """this server can speak (tts) / hear (stt) with a local model now"""
         return self.ready() and bool(self.installed(kind))

@@ -17,6 +17,7 @@
  *     Providers · Connections · Usage · Admin — what used to be sidebar screens (`/?view=usage` … open these)
  *   Local model hosting
  *     Voice Studio        models served from this machine's own GPU (voicestudio/VoiceStudio.tsx, docs/local-voice.md)
+ *     Image Studio        picture and clip models on it, used by the avatar maker (imagestudio/, docs/local-image.md)
  * Each tab embeds the existing component, so the logic lives once.
  */
 import { cliUpdatesAvailable, providersNeedAttention, sessionsNeedAttention } from "../../lib/attention";
@@ -67,6 +68,7 @@ const ConnectionsView = lazy(() => import("../connections/ConnectionsView"));
 const UsageView = lazy(() => import("../usage/UsageView"));
 const AdminView = lazy(() => import("../admin/AdminView"));
 const VoiceStudio = lazy(() => import("../voicestudio/VoiceStudio"));
+const ImageStudio = lazy(() => import("../imagestudio/ImageStudio"));
 
 /** a tab's card (the tab's title is the page's — SettingsView) */
 function Card({ id, children }: { id: string; children: ReactNode }) {
@@ -750,6 +752,8 @@ function TabContent({ id }: { id: SettingsTab }) {
       return <AdminView />;
     case "voice-studio":
       return <VoiceStudio />;
+    case "image-studio":
+      return <ImageStudio />;
   }
 }
 

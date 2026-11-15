@@ -35,6 +35,7 @@ from app.avatar import presets as P
 from app.avatar import studio as ST
 from app.avatar.deps import Deps
 from app.avatar.generator import Generator, JobError, job_id, result_url
+from app.avatar.local import LocalImages, clip_box, draft_prompt
 from app.avatar.prompt import system_prompt
 from app.avatar.store import AvatarError, AvatarStore, project_dir, safe_rel
 from app.config import settings
@@ -78,6 +79,8 @@ class AvatarService:
         self.store = AvatarStore(sessions._db)
         self.gen = generator or Generator(higgsfield)
         self.deps = deps or Deps()
+        self.images: Any = None  # the image host (app/imagehost): the stages the user runs on this machine's GPU
+        self.local = LocalImages(None)
         self._logs = logs
         self._tokens: dict[str, dict[str, str]] = {}
         self._token_by_sid: dict[str, str] = {}
@@ -637,6 +640,15 @@ class AvatarService:
         d = self.dir(pid)
         out = {k: v for k, v in doc.items() if k not in ("log",)}
         out["log"] = (doc.get("log") or [])[-30:]
+        if self.images is not None:  # (a local job still waiting for the GPU behind another: shown as waiting)
+            items = {}
+            for k, it in doc["items"].items():
+                if PL.is_local(it.get("job_type", "")) and it.get("status") == "running" and it.get("job_id"):
+                    j = self.images.job(str(it["job_id"]))
+                    if j is not None and j["state"] == "queued":
+                        it = {**it, "gpu_queued": True}
+                items[k] = it
+            out["items"] = items
         refs = [{"name": f, "url": self._url(doc, f"ref/{f}")} for f in (doc["brief"]["reference"].get("files") or [])
                 if (d / "ref" / f).is_file()]
         cands = []
@@ -699,7 +711,44 @@ class AvatarService:
             except HiggsfieldError:
                 acc = None
         return {"higgsfield": {"connected": bool(aid), "cli": bool(self.gen.cli()), "account": acc},
-                "deps": self.deps.status(), "root": str(settings.avatar_root_path)}
+                "deps": self.deps.status(), "root": str(settings.avatar_root_path),
+                "local": self.images.avatar_engines() if self.images is not None else {"available": False,
+                                                                                       "stages": {}}}
+
+    # ---------------------------------------------------------------- which stages run here (Image Studio)
+
+    def _engines(self, doc: dict[str, Any]) -> dict[str, str]:
+        """stage → "local" | "higgsfield" for the next estimate: the user's choice on this project, else Image
+        Studio's default — local only where this machine can run it now"""
+        self.local.host = self.images
+        av = self.images.avatar_engines()["stages"] if self.images is not None else {}
+        refs = doc["brief"]["reference"]["mode"] == "redraw" or bool(doc.get("outfit"))
+        out = {}
+        for stage in PL.STAGES:
+            want = (doc.get("engines") or {}).get(stage) or (av.get(stage) or {}).get("default") or "higgsfield"
+            ok = self.local.ready(PL.LOCAL[stage], refs=stage == "design" and refs)
+            out[stage] = "local" if want == "local" and ok else "higgsfield"
+        return out
+
+    async def set_engines(self, pid: str, engines: dict[str, Any]) -> dict[str, Any]:
+        """The user's engine per stage, from the estimate (a new estimate follows: the plan changes)."""
+        async with self._lock(pid):
+            doc = self.doc(pid)
+            if doc.get("confirmation"):
+                raise AvatarError("the plan is running: its engines are set", 409)
+            cur = dict(doc.get("engines") or {})
+            for stage, eng in (engines or {}).items():
+                if stage in PL.STAGES and eng in ("local", "higgsfield"):
+                    cur[stage] = eng
+            doc["engines"] = cur
+            self.save(doc)
+            if doc.get("plan") and not P.problems(doc["brief"]):
+                await self._estimate(doc)
+        return self.view(pid)
+
+    def _jt(self, doc: dict[str, Any], stage: str, hosted: str) -> str:
+        """the job type a stage's items get: what the confirmed plan says"""
+        return PL.job_type(stage, (doc.get("plan") or {}).get("engines"), hosted)
 
     # ---------------------------------------------------------------- the engine
 
@@ -869,8 +918,9 @@ class AvatarService:
             "checkpoint": doc.get("checkpoint"), "error": doc.get("error"),
             "brief": {**b, "clips": [{k: c[k] for k in ("id", "kind", "emotion", "action", "seconds") if k in c} for c in b["clips"]]},
             "missing": P.problems(b),
-            "plan": None if not plan else {k: plan[k] for k in ("id", "total", "reserve", "cap", "minutes", "complete",
-                                                                  "errors", "balance", "usd", "counts")}
+            "plan": None if not plan else {k: plan.get(k) for k in ("id", "total", "reserve", "cap", "minutes",
+                                                                      "complete", "errors", "balance", "usd",
+                                                                      "counts", "engines")}
             | {"lines": [{k: ln.get(k) for k in ("stage", "job_type", "count", "unit", "credits", "error")}
                          for ln in plan["lines"]]},
             "confirmed": doc.get("confirmation"),
@@ -1010,11 +1060,13 @@ class AvatarService:
                 if plan["complete"] else "Some prices could not be quoted (see errors); tell the user."}
 
     async def _estimate(self, doc: dict[str, Any]) -> dict[str, Any]:
-        if not self.gen.account_id():
-            raise AvatarError("Higgsfield is not connected: the user connects an account in Settings → Providers → "
-                              "Higgsfield first")
         brief = doc["brief"]
-        jobs = PL.jobs_for(brief)
+        engines = self._engines(doc)
+        jobs = PL.jobs_for(brief, engines)
+        hosted = any(not PL.is_local(j["job_type"]) for j in jobs)
+        if hosted and not self.gen.account_id():
+            raise AvatarError("Higgsfield is not connected: the user connects an account in Settings → Providers → "
+                              "Higgsfield first (or runs every stage on this computer: Image Studio)")
         quotes: dict[str, Any] = {}
         ph = await asyncio.to_thread(self._placeholders)
         for key, jt, params in PL.quote_requests(jobs):
@@ -1029,14 +1081,15 @@ class AvatarService:
                 quotes[key] = await self.gen.quote(jt, params, workdir=self.dir(doc["id"]), placeholders=media)
             except (HiggsfieldError, JobError) as exc:
                 quotes[key] = {"error": exc.text() if isinstance(exc, HiggsfieldError) else str(exc)}
-        bal = None
-        try:
-            acc = await self.gen.balance()
-            bal = acc.get("credits") if acc else None
-        except HiggsfieldError:
-            pass
-        usd = await self.gen.credit_usd()
-        plan = PL.price(brief, quotes, balance=bal, credit_usd=usd)
+        bal, usd = None, None
+        if hosted:
+            try:
+                acc = await self.gen.balance()
+                bal = acc.get("credits") if acc else None
+            except HiggsfieldError:
+                pass
+            usd = await self.gen.credit_usd()
+        plan = PL.price(brief, quotes, balance=bal, credit_usd=usd, engines=engines)
         doc["plan"] = plan
         doc["status"] = "estimate"
         doc["question"] = None
@@ -1159,8 +1212,16 @@ class AvatarService:
             doc = self.doc(pid)
             if not self.deps.ready():
                 raise PL.GateError("deps_missing", "install the processing tools first (the button on the card)")
-            if not self.gen.account_id() or not self.gen.cli():
-                raise PL.GateError("no_higgsfield", "Higgsfield (an account and its CLI) is not available")
+            plan_engines = (doc.get("plan") or {}).get("engines") or {}
+            if any(e != "local" for e in plan_engines.values()) or not plan_engines:
+                if not self.gen.account_id() or not self.gen.cli():
+                    raise PL.GateError("no_higgsfield", "Higgsfield (an account and its CLI) is not available")
+            self.local.host = self.images
+            refs = doc["brief"]["reference"]["mode"] == "redraw" or bool(doc.get("outfit"))
+            for stage, eng in plan_engines.items():
+                if eng == "local" and not self.local.ready(PL.LOCAL[stage], refs=stage == "design" and refs):
+                    raise PL.GateError("local_unavailable", f"the {stage} stage can't run on this computer now "
+                                                            "(Image Studio): estimate again")
             doc["confirmation"] = PL.confirm(doc, plan_id, total)
             doc["status"] = "running"
             doc["paused"] = False
@@ -1656,25 +1717,34 @@ class AvatarService:
                 it["started_at"] = now_iso()
                 self._history(doc, "job.submit", item=key, credits=it["credits"], attempt=it["tries"])
                 self.save(doc)
+                local = PL.is_local(it["job_type"])
                 try:
-                    job = await self.gen.create(it["job_type"], flags_for(doc, it), workdir=d)
+                    if local:  # (on this machine's GPU: the image host's job, Image Studio's history keeps it)
+                        self.local.host = self.images
+                        job = await self.local.create(it["job_type"], flags_for(doc, it), source=f"avatar:{pid}")
+                    else:
+                        job = await self.gen.create(it["job_type"], flags_for(doc, it), workdir=d)
                 except JobError as exc:
                     await self._job_failed(pid, key, exc)
                     continue
                 doc = self.doc(pid)
                 it = doc["items"][key]
-                jid = job_id(job)
+                jid = job["id"] if local else job_id(job)
                 it["job_id"] = jid or "direct"
                 self.save(doc)
                 if not jid:  # (an answer that already holds the result)
                     finished = job
             try:
-                if finished is None:
-                    finished = await self.gen.wait(jid, workdir=d)
-                url = result_url(finished)
-                if not url:
-                    raise JobError("the finished job has no result", code="no_result")
-                await self.gen.download(url, d / it["out"])
+                if PL.is_local(it["job_type"]):
+                    self.local.host = self.images
+                    await self.local.fetch(str(jid), d / it["out"])
+                else:
+                    if finished is None:
+                        finished = await self.gen.wait(jid, workdir=d)
+                    url = result_url(finished)
+                    if not url:
+                        raise JobError("the finished job has no result", code="no_result")
+                    await self.gen.download(url, d / it["out"])
             except JobError as exc:
                 await self._job_failed(pid, key, exc)
                 continue
@@ -1696,7 +1766,9 @@ class AvatarService:
         self._history(doc, "job.failed", item=key, error=it["error"], code=exc.code)
         self.save(doc)
         if it["status"] == "failed":
-            self._event(pid, "job_failed", f"{key} failed{' (refused by Higgsfield)' if refused else ''}: {it['error']}")
+            by = "" if not refused else " (not possible on this computer)" if PL.is_local(it["job_type"]) else \
+                " (refused by Higgsfield)"
+            self._event(pid, "job_failed", f"{key} failed{by}: {it['error']}")
         else:
             await asyncio.sleep(min(60, 10 * it["tries"]))
 
@@ -1732,7 +1804,7 @@ class AvatarService:
         n = len(have)
         while n < target:
             n += 1
-            self._item(doc, f"design:c{n}", "design", PL.IMAGE_JOB, f"design/c{n}.png", unit)
+            self._item(doc, f"design:c{n}", "design", self._jt(doc, "design", PL.IMAGE_JOB), f"design/c{n}.png", unit)
         self.save(doc)
         ref = [str(self.dir(pid) / "ref" / f) for f in b["reference"].get("files") or []]
         note = doc.get("design_note") or ""
@@ -1748,13 +1820,20 @@ class AvatarService:
             await self.deps.run("flatten", [str(self.dir(pid) / doc["items"][f"design:{base}"]["out"]), str(picture)],
                                 timeout=120)
 
-        def flags(d: dict[str, Any], it: dict[str, Any]) -> list[str]:
+        def flags(d: dict[str, Any], it: dict[str, Any]) -> list[str] | dict[str, Any]:
             prompt = P.design_edit_prompt(note) if base else P.design_prompt(
                 " ".join(x for x in (d["brief"]["design"]["prompt"], note) if x), redraw=redraw, outfit=outfit,
                 clothes_refs=len(ref) > 1)
+            pics = [str(picture)] if base else ref if redraw else []
+            if PL.is_local(it["job_type"]):  # (a picture to start from: the edit model; words only: the draft model)
+                if pics:
+                    return {"kind": "edit", "inputs": {"image": pics[0], "refs": pics[1:], "prompt": prompt},
+                            "params": {"megapixels": 1.0}}
+                return {"kind": "draft", "inputs": {"prompt": draft_prompt(prompt, d["brief"].get("pronoun", "she"))},
+                        "params": {"width": 864, "height": 1152, "count": 1}}
             out = ["--prompt", prompt, "--aspect_ratio", PL.IMAGE_PARAMS["aspect_ratio"], "--resolution",
                    PL.IMAGE_PARAMS["resolution"]]
-            for r in ([str(picture)] if base else ref if redraw else []):
+            for r in pics:
                 out += ["--image-references", r]
             return out
 
@@ -1782,11 +1861,14 @@ class AvatarService:
         else:
             src = d / doc["items"][f"design:{doc['picked']}"]["out"]
         await asyncio.to_thread(_to_png, src, m / "candidate.png", self.deps)
-        it = self._item(doc, "home", "home", PL.CUTOUT_JOB, "masters/candidate.cut.png", self._stage_unit(doc, "home"))
+        it = self._item(doc, "home", "home", self._jt(doc, "home", PL.CUTOUT_JOB), "masters/candidate.cut.png",
+                        self._stage_unit(doc, "home"))
         it.setdefault("source", str(src))
         self.save(doc)
         await self._process(pid, "prep", timeout=300)
-        await self._jobs(pid, ["home"], lambda _d, _i: ["--image-references", str(m / "candidate.cutin.jpg")], 1)
+        cutin = str(m / "candidate.cutin.jpg")
+        await self._jobs(pid, ["home"], lambda _d, i: {"kind": "cutout", "inputs": {"image": cutin}}
+                         if PL.is_local(i["job_type"]) else ["--image-references", cutin], 1)
         doc = self.doc(pid)
         if doc["items"]["home"]["status"] != "done":
             raise RuntimeError("the cut-out failed: " + str(doc["items"]["home"].get("error") or ""))
@@ -1806,13 +1888,17 @@ class AvatarService:
         keys = []
         for s in doc["brief"]["stills"]:
             key = f"still:{s['name']}"
-            self._item(doc, key, "stills", PL.IMAGE_JOB, f"stills/{s['name']}.raw.png", unit)
+            self._item(doc, key, "stills", self._jt(doc, "stills", PL.IMAGE_JOB), f"stills/{s['name']}.raw.png", unit)
             keys.append(key)
         self.save(doc)
         faces = {f"still:{s['name']}": s["face"] for s in doc["brief"]["stills"]}
 
-        def flags(dd: dict[str, Any], it: dict[str, Any]) -> list[str]:
+        def flags(dd: dict[str, Any], it: dict[str, Any]) -> list[str] | dict[str, Any]:
             face = faces[it["key"]] + (f"; {it['note']}" if it.get("note") else "")
+            if PL.is_local(it["job_type"]):  # (its colours fitted to the picture's: only the face is taken from it)
+                return {"kind": "edit", "inputs": {"image": str(d / "masters" / "candidate.ref.jpg"),
+                                                   "prompt": P.face_prompt(face, dd["brief"]["pronoun"])},
+                        "params": {"megapixels": 1.0, "match": True}}
             return ["--prompt", P.face_prompt(face, dd["brief"]["pronoun"]), "--aspect_ratio", job_aspect,
                     "--resolution", PL.IMAGE_PARAMS["resolution"], "--image-references",
                     str(d / "masters" / "candidate.ref.jpg")]
@@ -1829,7 +1915,8 @@ class AvatarService:
         keys = []
         for c in b["clips"]:
             key = f"clip:{c['id']}"
-            self._item(doc, key, "clips", PL.CLIP_JOB, f"clips/{c['id']}.mp4", round(unit * PL.clip_share(c), 4))
+            self._item(doc, key, "clips", self._jt(doc, "clips", PL.CLIP_JOB), f"clips/{c['id']}.mp4",
+                       round(unit * PL.clip_share(c), 4))
             keys.append(key)
         self.save(doc)
         actions = {f"clip:{c['id']}": c["action"] for c in b["clips"]}
@@ -1837,8 +1924,14 @@ class AvatarService:
         lengths = {f"clip:{c['id']}": P.clip_seconds(c) for c in b["clips"]}
         home = str(d / "masters" / "home-gray.jpg")
 
-        def flags(dd: dict[str, Any], it: dict[str, Any]) -> list[str]:
+        box = clip_box(d)
+
+        def flags(dd: dict[str, Any], it: dict[str, Any]) -> list[str] | dict[str, Any]:
             action = actions[it["key"]] + (f", {it['note']}" if it.get("note") else "")
+            if PL.is_local(it["job_type"]):  # (the model sees her, cropped, at its own resolution)
+                return {"kind": "loop", "inputs": {"image": home, "prompt": P.clip_prompt(action, dd["brief"]["pronoun"]),
+                                                   **({"box": box} if box else {})},
+                        "params": {"seconds": lengths[it["key"]]}}
             return ["--prompt", P.clip_prompt(action, dd["brief"]["pronoun"]), "--start-image", home, "--end-image",
                     home, "--aspect_ratio", params["aspect_ratio"], "--duration", str(lengths[it["key"]]), "--mode",
                     params["mode"], "--sound", params["sound"]]
@@ -1854,10 +1947,11 @@ class AvatarService:
             if not clip or clip["status"] != "done":
                 continue
             key = f"matte:{c['id']}"
-            self._item(doc, key, "matte", PL.MATTE_JOB, f"clips/{c['id']}.nobg.mp4", unit)
+            self._item(doc, key, "matte", self._jt(doc, "matte", PL.MATTE_JOB), f"clips/{c['id']}.nobg.mp4", unit)
             self.save(doc)
-            await self._jobs(pid, [key], lambda _d, _i, cid=c["id"]: ["--video-references",
-                                                                     str(d / "clips" / f"{cid}.mp4")], 1)
+            clip = str(d / "clips" / f"{c['id']}.mp4")
+            await self._jobs(pid, [key], lambda _d, i, clip=clip: {"kind": "matte", "inputs": {"clip": clip}}
+                             if PL.is_local(i["job_type"]) else ["--video-references", clip], 1)
             doc = self.doc(pid)
             it = doc["items"][key]
             if it["status"] == "done" and not it.get("processed"):

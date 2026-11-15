@@ -43,8 +43,8 @@ export interface Row {
   tiles: Tile[];
 }
 
-const itemState = (status: string | undefined | null): SlotState =>
-  status === "done" ? "done" : status === "running" ? "running" : status === "failed" ? "failed" : status === "pending" ? "queued" : "empty";
+const itemState = (status: string | undefined | null, gpuQueued = false): SlotState =>
+  status === "done" ? "done" : status === "running" ? (gpuQueued ? "queued" : "running") : status === "failed" ? "failed" : status === "pending" ? "queued" : "empty";
 
 /** the project's run has started (a Confirm was given): pending items are queued, before it they are only planned */
 const started = (p: AvatarProject) => !!p.confirmation;
@@ -56,7 +56,7 @@ export function rowsOf(p: AvatarProject): Row[] {
   const faces: Tile[] = p.brief.stills.map((s) => {
     const f = stillUrl.get(s.name);
     const it = p.items[`still:${s.name}`];
-    const st = itemState(it?.status ?? f?.status);
+    const st = itemState(it?.status ?? f?.status, !!it?.gpu_queued);
     return {
       key: `still:${s.name}`,
       id: s.name,
@@ -81,7 +81,7 @@ export function rowsOf(p: AvatarProject): Row[] {
     const f = files.get(c.id);
     const clip = p.items[`clip:${c.id}`];
     const matte = p.items[`matte:${c.id}`];
-    let st = itemState(clip?.status ?? f?.status);
+    let st = itemState(clip?.status ?? f?.status, !!clip?.gpu_queued);
     // drawn, then its background taken off and encoded: "processing" until the matte is done
     if (st === "done" && matte && matte.status !== "done") st = matte.status === "failed" ? "failed" : "processing";
     if (!run && st === "queued") st = "empty";
@@ -118,7 +118,7 @@ export function candidatesOf(p: AvatarProject): CandidateView[] {
     .sort((a, b) => Number(a.slice(8).replace(/\D/g, "")) - Number(b.slice(8).replace(/\D/g, "")));
   const out: CandidateView[] = keys.map((k) => {
     const id = k.slice(7);
-    return { id, state: itemState(p.items[k].status), src: drawn.get(id) ?? null, picked: p.picked === id };
+    return { id, state: itemState(p.items[k].status, !!p.items[k].gpu_queued), src: drawn.get(id) ?? null, picked: p.picked === id };
   });
   // planned but not started yet: empty places, as many as the brief asks for
   if (!out.length && p.brief.reference.mode !== "as_base") {
@@ -134,7 +134,7 @@ export function homeState(p: AvatarProject): HomeState {
   if (p.checkpoint?.stage === "home") return "waiting";
   const it = p.items.home;
   if (it) {
-    const st = itemState(it.status);
+    const st = itemState(it.status, !!it.gpu_queued);
     if (st === "done" && p.files.home) return "done";
     return st === "queued" && !started(p) ? "empty" : st;
   }

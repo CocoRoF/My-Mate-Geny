@@ -17,6 +17,9 @@ A model moved out is parked when the host has RAM to spare for its weights, othe
 same way after idle_unload_seconds, and parked ones are stopped after parked_ttl_seconds: an idle machine holds no
 GPU memory. A model can be pinned (a phone call with a mate who speaks with it): it stays on the GPU while pinned —
 never idled out, never moved out for another model.
+
+The image engine (app/imagehost) shares the GPU: before an image job our idle models move out of its way
+(make_room_for), and when one of ours can't fit, the image engine is asked to stop if it is idle (others).
 """
 
 from __future__ import annotations
@@ -25,7 +28,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from . import catalog, system
 from .settings import VoiceSettings
@@ -85,6 +88,9 @@ class EngineManager:
         self._lock = asyncio.Lock()  # one placement decision at a time
         self._task: asyncio.Task | None = None
         self.events: list[dict[str, Any]] = []  # recent load/park/stop decisions, shown in the UI
+        # other GPU users asked to give memory back when ours can't fit (the image engine: app/imagehost) → whether
+        # they gave any
+        self.others: list[Callable[[], Awaitable[bool]]] = []
 
     # -- lifecycle ----------------------------------------------------------------------------------------------
     def start(self) -> None:
@@ -145,6 +151,9 @@ class EngineManager:
             if fits_free and fits_budget:
                 return
             victims = sorted((r for r in ours if r.busy == 0 and not self.pins.get(r.spec.id)), key=lambda r: r.last_used)
+            if not victims and fits_budget and await self._ask_others():
+                await self._settle()
+                continue
             if not victims:
                 others = max(0, gpu.used - ours_used)
                 free = max(0, gpu.free - MARGIN)
@@ -156,6 +165,32 @@ class EngineManager:
             v = victims[0]
             await self._evict(v, "room for another model")
             await self._settle()
+
+    async def _ask_others(self) -> bool:
+        gave = False
+        for ask in self.others:
+            try:
+                gave = await ask() or gave
+            except Exception:  # noqa: BLE001 - another program's trouble is not ours
+                log.exception("asking another GPU user for room")
+        return gave
+
+    async def make_room_for(self, need: int, why: str = "room for an image job") -> None:
+        """Another GPU user (an image job) is about to need ``need`` bytes: our idle models move out of the way —
+        parked when the host has room for them, else stopped; those a call holds stay."""
+        if self._gpu() is None:
+            return
+        async with self._lock:
+            while True:
+                gpu = self._gpu()
+                if gpu is None or gpu.free - MARGIN >= need:
+                    return
+                victims = sorted((r for r in self.residents.values() if r.state == "ready" and r.busy == 0
+                                  and not self.pins.get(r.spec.id)), key=lambda r: r.last_used)
+                if not victims:
+                    return
+                await self._evict(victims[0], why)
+                await self._settle()
 
     async def _evict(self, r: Resident, why: str) -> None:
         if r.state == "ready" and self._host_can_park(r):

@@ -1,5 +1,6 @@
 /** /api/avatar — Avatar Create (docs/avatar-create.md). */
 import { apiFetch, apiResponse, toLogin } from "./client";
+import type { AvatarEngines } from "./image";
 import { tr } from "../i18n";
 import type { Avatar } from "../mate/types";
 import type { Mate } from "./mates";
@@ -54,7 +55,11 @@ export interface Plan {
   usd: number | null;
   counts: { candidates: number; stills: number; clips: number };
   settings: { aspect: string; tier: string; preset: string; mode: string; seconds: number };
+  /** where each stage runs: this computer's GPU (Image Studio, 0 credits) or Higgsfield */
+  engines?: Partial<Record<PlanLine["stage"], StageEngine>>;
 }
+
+export type StageEngine = "local" | "higgsfield";
 
 export interface Extra {
   id: string;
@@ -123,6 +128,8 @@ export interface Item {
   tries: number;
   credits: number;
   error?: string | null;
+  /** a local job (Image Studio) still waiting for the GPU behind another */
+  gpu_queued?: boolean;
 }
 
 export interface AvatarProject {
@@ -220,6 +227,8 @@ export interface ProjectSummary {
 export interface AvatarEnv {
   higgsfield: { connected: boolean; cli: boolean; account: { credits: number | null; plan: string | null; email: string | null; status: string } | null };
   deps: { ready: boolean; installing: boolean; phase: string | null; error: string | null; log: string[] };
+  /** what this computer's GPU can run, stage by stage (Image Studio) */
+  local?: AvatarEngines;
 }
 
 const P = (pid: string) => `/api/avatar/projects/${pid}`;
@@ -234,6 +243,9 @@ export const deleteProject = (pid: string) => apiFetch<{ ok: boolean }>(P(pid), 
 
 export const answered = (pid: string) => post<AvatarProject>(`${P(pid)}/answer`);
 export const reEstimate = (pid: string) => post<AvatarProject>(`${P(pid)}/estimate`);
+/** where a stage runs (a new estimate follows) */
+export const setStageEngines = (pid: string, engines: Partial<Record<PlanLine["stage"], StageEngine>>) =>
+  post<AvatarProject>(`${P(pid)}/engines`, { engines });
 export const confirmPlan = (pid: string, plan: Plan) => post<AvatarProject>(`${P(pid)}/confirm`, { plan_id: plan.id, total: plan.total });
 export const changePlan = (pid: string) => post<AvatarProject>(`${P(pid)}/change`);
 export const discardPlan = (pid: string) => post<AvatarProject>(`${P(pid)}/discard`);

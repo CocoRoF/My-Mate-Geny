@@ -219,6 +219,7 @@ const studio: Messages<"studio"> = {
   cvSpent: "쓴 크레딧",
   cvTotal: "합계",
   cvCredits: "{n} 크레딧",
+  cvLocal: "{n}개 단계는 이 컴퓨터에서 · 0 크레딧",
   cvMinutes: "걸리는 시간",
   cvAbout: "약 {n}분",
   cvReview: "견적 보고 확정",

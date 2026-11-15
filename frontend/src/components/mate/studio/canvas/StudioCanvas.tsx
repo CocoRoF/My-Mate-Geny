@@ -527,6 +527,11 @@ export default function StudioCanvas({ project: p, mate, creating, activity, ope
               ) : (
                 <p className="scn-text is-empty">{t("studio.cvEstimateEmpty")}</p>
               )}
+              {plan?.engines && Object.values(plan.engines).includes("local") && (
+                <p className="scn-note" data-testid="sc-estimate-local">
+                  <Icon name="cpu" size={10} /> {t("studio.cvLocal", { n: Object.values(plan.engines).filter((e) => e === "local").length })}
+                </p>
+              )}
               {p.extras.some((x) => x.status === "pending") && <p className="scn-note is-warn">{t("studio.wait_extra")}</p>}
             </Node>
           </div>

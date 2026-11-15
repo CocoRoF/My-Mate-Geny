@@ -196,6 +196,13 @@ class Settings(BaseSettings):
     voice_parked_ttl_seconds: float = 1800.0
     voice_park_ram_gb: float = 6.0
     voice_hf_endpoint: str = ""      # a Hugging Face mirror (HF_ENDPOINT); empty: huggingface.co
+    # Image Studio (docs/local-image.md): ComfyUI as the image engine on this machine's GPU
+    image_engine_mode: str = "real"  # real | fake (tests, no GPU) | off
+    image_home: str = ""             # default <data home>/image: the engine, its work folder, the history
+    image_models_dir: str = ""       # default <image home>/models
+    image_device: str = "cuda:0"
+    image_idle_stop_seconds: float = 120.0  # the engine is stopped after this long without a job (the VRAM back)
+    image_hf_endpoint: str = ""
 
     # ---- derived helpers ----
 
