@@ -22,7 +22,8 @@ instructions; no tools. Return JSON only:
 "aliases":["the same thing's other names: the other language's name (Korean/English), common abbreviations"],"role":"about|with|at|uses|likes|dislikes|plans|other"}],
 "about_user": true}]}
 Entities are specific, nameable things (a person, a pet, a place, a game, a book, a company, an app, a hobby as a
-topic, an event) — not vague words ("thing", "today"). The user themself is not an entity: set about_user (true when the item
+topic, an event) — not vague words ("thing", "today"). "game" and "work" are published titles anyone can look up;
+the user's own projects (a game they are making, a paper they are writing, their team's service) are "thing". The user themself is not an entity: set about_user (true when the item
 is about the user: their profile, likes, habits, plans, life). An item may have no entities. At most 6 per item.
 """
 

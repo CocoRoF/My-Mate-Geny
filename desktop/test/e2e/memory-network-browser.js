@@ -6,9 +6,10 @@
 //     node desktop/test/e2e/memory-network-browser.js <server url> <password> <shots dir> <seed command>
 //
 // <seed command> is run with the new mate's id appended (it writes the network into the server's database).
-// Checks: the heart panel's Network tab draws the map (canvas, stats, legend); a search finds a thing by its other-
-// language name and selecting it shows its facts with their page and exact quote; a neighbour opens; the filters and
-// fading switch; full screen opens and closes; pinning a node is saved. The Study tab lists the finished study (her
+// Checks: the heart panel's Network tab draws the map (canvas, stats, a legend of the kinds present); hovering a thing
+// shows what it is; the zoom buttons and a legend kind work; a search finds a thing by its other-language name and
+// selecting it shows its facts with their page and exact quote; a neighbour opens; the filters and fading switch; full
+// screen opens with the details beside the map and closes; pinning a node is saved. The Study tab lists the finished study (her
 // notes, open questions) and the running one (what she searched and read, live), takes a new topic and a page, and the
 // curiosity setting is saved. Screenshots: en / ko, dark / light, desktop / phone.
 "use strict";
@@ -102,6 +103,30 @@ async function main() {
     await sleep(1800); // (the layout settles)
     await shot(page, "01-network-dark-ko");
 
+    step("hovering a thing shows what it is; zoom; a legend kind");
+    const box = await page.locator('[data-testid="memory-network"] canvas').boundingBox();
+    const tip = await until("tooltip", async () => {
+      for (let y = 0.15; y < 0.9; y += 0.06)
+        for (let x = 0.1; x < 0.9; x += 0.04) {
+          await page.mouse.move(box.x + box.width * x, box.y + box.height * y);
+          if (await page.locator('[data-testid="memory-graph-tooltip"]').count()) return page.innerText('[data-testid="memory-graph-tooltip"]');
+        }
+      return null;
+    }, 30000, 10);
+    assert.ok(/생생함|또렷함|흐려지는 중|희미함/.test(tip), tip);
+    await shot(page, "01b-tooltip-dark-ko", '[data-testid="memory-network"]');
+    await page.mouse.move(box.x - 40, box.y - 40);
+    await page.click('[data-testid="memory-graph-zoom-in"]');
+    await page.click('[data-testid="memory-graph-zoom-out"]');
+    await page.click('[data-testid="memory-graph-fit"]');
+    assert.ok(await page.locator('[data-testid="memory-graph-kind-game"]').count(), "the game kind is in the legend");
+    assert.equal(await page.locator('[data-testid="memory-graph-kind-work"]').count(), 0, "kinds not on the map stay out of the legend");
+    await page.click('[data-testid="memory-graph-kind-event"]');
+    assert.equal(await page.getAttribute('[data-testid="memory-graph-kind-event"]', "aria-pressed"), "true");
+    await sleep(300);
+    await shot(page, "01c-kind-event-dark-ko", '[data-testid="memory-network"]');
+    await page.click('[data-testid="memory-graph-kind-event"]');
+
     step("a search finds it by its other-language name; its facts show their page and quote");
     await page.fill('[data-testid="memory-graph-search"]', "엑자일");
     await page.waitForSelector('[data-testid="memory-graph-results"]');
@@ -132,6 +157,12 @@ async function main() {
     await page.click('[data-testid="memory-graph-full"]');
     await page.waitForSelector('[data-testid="memory-graph-fullscreen"] canvas');
     await sleep(1500);
+    // (wide: the details sit beside the map)
+    const [mapBox, detailBox] = await Promise.all([
+      page.locator('[data-testid="memory-graph-fullscreen"] canvas').boundingBox(),
+      page.locator('[data-testid="memory-graph-fullscreen"] [data-testid="memory-node-detail"]').boundingBox(),
+    ]);
+    assert.ok(detailBox.x >= mapBox.x + mapBox.width - 1, JSON.stringify({ mapBox, detailBox }));
     await shot(page, "03-fullscreen-dark-ko");
     await page.click('[data-testid="memory-graph-full-close"]');
     await page.waitForSelector('[data-testid="memory-graph-fullscreen"]', { state: "detached" });

@@ -234,6 +234,10 @@ html.light,
   .bg-accent-grad {
     background: linear-gradient(135deg, rgb(var(--c-accent-grad-from)), rgb(var(--c-accent-grad-to)));
   }
+  /* the memory map's zoom / fit / full-screen buttons (components/mate/memory/MemoryGraph.tsx) */
+  .mem-graph-btn {
+    @apply flex h-7 w-7 items-center justify-center rounded-md border border-border bg-surface-2/90 text-content-dim shadow-sm backdrop-blur transition-colors hover:bg-surface-3 hover:text-content;
+  }
   .btn-ghost {
     @apply btn text-content-dim hover:text-content hover:bg-surface-3;
   }
@@ -664,6 +668,7 @@ code.hljs {
    and a long field grows with its text instead of scrolling inside the scrolling page. */
 .touch-ui :is(.btn-primary, .btn-soft, .btn-ghost, .nav-tab) { min-height: 40px; }
 .touch-ui .btn-ghost { min-width: 40px; }
+.touch-ui .mem-graph-btn { width: 36px; height: 36px; }
 .touch-ui .nav-tab { display: inline-flex; align-items: center; justify-content: center; }
 /* (the floor for everything else: :where keeps it below any size a control sets itself) */
 :where(.touch-ui) :where(button:not([role="switch"]), select) { min-height: 36px; }

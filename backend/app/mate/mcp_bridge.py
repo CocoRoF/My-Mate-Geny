@@ -258,7 +258,7 @@ NETWORK_TOOLS = [
          "required": ["url"]}},
     {"name": "study_topic", "description": (
         "Study a topic on the web on your own (search, read, take notes into your memory network) — when the user "
-        "asks you to learn about something (\"Path of Exile 공부해 놔\"), or something they care about that you'd "
+        "asks you to learn about something (\"제주도 여행지 공부해 놔\"), or something they care about that you'd "
         "need to know. Runs in the background (quick ≈ 5–10 min, normal ≈ 15–20, deep ≈ 30–40); the result comes "
         "back as a <study_result>. Tell the user and end your turn."),
      "inputSchema": {"type": "object", "properties": {

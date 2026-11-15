@@ -4,7 +4,7 @@ message) — and how strongly each one is held right now.
 
     mem_nodes       people, places, games, works, topics, concepts, events … (+ the user and herself)
     mem_node_keys   the normalized names and aliases a node answers to (entity resolution, cross-language:
-                    "Path of Exile" · "패스 오브 엑자일" · "PoE")
+                    "New York" · "뉴욕" · "NYC")
     mem_facts       subject —predicate→ object (or a literal in the statement), bi-temporal (valid_from/until as
                     the source says; recorded_at/invalidated_at as she learned it), exact quote of its source
     mem_mentions    what else talks about a node: a personal memory (mem:<id>), an episode (ep:<id>), a page
@@ -170,7 +170,7 @@ def reinforced(row: dict[str, Any], now: datetime | None = None) -> float:
 # ---- names ----
 
 def key(text: str) -> str:
-    """A name as it is matched: NFKC, lower case, no spaces / punctuation ("Path of Exile" → "pathofexile")."""
+    """A name as it is matched: NFKC, lower case, no spaces / punctuation ("New York City" → "newyorkcity")."""
     return M.normalized(text)[:120]
 
 
@@ -821,8 +821,8 @@ class Graph:
         return {"nodes": nodes, "facts": out, "seeds": list(direct)}
 
     def expand(self, mate_id: str, query: str) -> str:
-        """The query with the other names of the nodes it names (so a memory saying "Path of Exile" meets a message
-        saying "엑자일")."""
+        """The query with the other names of the nodes it names (so a memory saying "New York" meets a message
+        saying "뉴욕")."""
         extra = []
         for nid in list(self.seeds(mate_id, query))[:8]:
             n = self.node(mate_id, nid)
@@ -842,7 +842,7 @@ class Graph:
         """Nodes, facts and page passages for a query: names (and part of a name) first, then words."""
         now = datetime.now(UTC)
         act = self.activate(mate_id, query, hops=1, now=now)
-        # what the user types in the search box is often part of a name ("엑자일" for "패스 오브 엑자일 2")
+        # what the user types in the search box is often part of a name ("서울" for "서울숲")
         q = key(query)
         if len(q) >= 2:
             for k, nid in self._names(mate_id):
