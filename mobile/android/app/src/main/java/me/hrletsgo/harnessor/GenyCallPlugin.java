@@ -52,6 +52,12 @@ public class GenyCallPlugin extends Plugin {
     }
 
     private boolean inCall = false;
+
+    /** a call is on in this app (the page's call screen began it) */
+    static boolean calling() {
+        GenyCallPlugin p = current;
+        return p != null && p.inCall;
+    }
     private int modeBefore = AudioManager.MODE_NORMAL;
     /** the loaded plugin (one activity at a time): a ring that ends with no page to say so still lets the lock screen back */
     private static GenyCallPlugin current = null;
@@ -87,16 +93,24 @@ public class GenyCallPlugin extends Plugin {
         return (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
     }
 
+    /** speaker off: a headset when one is connected (Bluetooth, wired, USB), else the earpiece — as a phone call goes */
+    private static final int[] TO_THE_EAR = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? new int[] {
+            AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,
+    } : new int[0];
+
     private void route(boolean speaker) {
         AudioManager am = audio();
         if (am == null) return;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            int want = speaker ? AudioDeviceInfo.TYPE_BUILTIN_SPEAKER : AudioDeviceInfo.TYPE_BUILTIN_EARPIECE;
+            int[] want = speaker ? new int[] {AudioDeviceInfo.TYPE_BUILTIN_SPEAKER} : TO_THE_EAR;
             List<AudioDeviceInfo> devices = am.getAvailableCommunicationDevices();
-            for (AudioDeviceInfo d : devices) {
-                if (d.getType() == want) {
-                    am.setCommunicationDevice(d);
-                    return;
+            for (int type : want) {
+                for (AudioDeviceInfo d : devices) {
+                    if (d.getType() == type) {
+                        am.setCommunicationDevice(d);
+                        return;
+                    }
                 }
             }
         }
@@ -121,7 +135,8 @@ public class GenyCallPlugin extends Plugin {
                 am.setMode(AudioManager.MODE_IN_COMMUNICATION);
             }
             inCall = true;
-            route(Boolean.TRUE.equals(call.getBoolean("speaker", true)));
+            // (the earpiece unless they pressed the loudspeaker: a call is held to the ear like any other)
+            route(Boolean.TRUE.equals(call.getBoolean("speaker", false)));
             keepOn(true);
             showOverLock(true); // (like a phone's call screen: over the lock screen while it lasts)
             String id = call.getString("id", "");
@@ -136,7 +151,7 @@ public class GenyCallPlugin extends Plugin {
     @PluginMethod
     public void setSpeaker(PluginCall call) {
         try {
-            route(Boolean.TRUE.equals(call.getBoolean("on", true)));
+            route(Boolean.TRUE.equals(call.getBoolean("on", false)));
             call.resolve();
         } catch (Exception e) {
             call.reject("speaker: " + e.getMessage());
@@ -236,6 +251,7 @@ public class GenyCallPlugin extends Plugin {
                 // no WebView provider: the kept token stays
             }
             GenyLinkService.sync(c);
+            GenyCheck.schedule(c); // (signed in: the checks with the app closed)
             call.resolve(statusOf(c));
         });
     }
@@ -304,6 +320,11 @@ public class GenyCallPlugin extends Plugin {
             battery = pm == null || pm.isIgnoringBatteryOptimizations(c.getPackageName());
         }
         r.put("batteryExempt", battery);
+        // the checks with the app closed (GenyCheck): when the last one was, and how it went
+        JSObject check = new JSObject();
+        check.put("last", GenyLink.prefs(c).getLong(GenyCheck.K_LAST, 0));
+        check.put("result", GenyLink.prefs(c).getString(GenyCheck.K_RESULT, ""));
+        r.put("checks", check);
         return r;
     }
 

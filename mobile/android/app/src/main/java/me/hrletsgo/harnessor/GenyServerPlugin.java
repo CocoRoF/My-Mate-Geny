@@ -144,6 +144,7 @@ public class GenyServerPlugin extends Plugin {
         // (her calls came from that server: the background link goes with it)
         GenyLink.forget(c);
         GenyLinkService.stop();
+        GenyCheck.cancel(c);
         SharedPreferences p = prefs(c);
         SharedPreferences.Editor e = p.edit().remove(K_SERVER).remove(K_PENDING).remove(K_EPHEMERAL);
         if (!p.getBoolean(K_REMEMBER, true)) e.remove(K_LAST).remove(K_USER);

@@ -1,6 +1,6 @@
 {
   "name": "hr-harnessor-mobile",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "My Mate Geny — Android app (Capacitor shell around the live console)",
   "scripts": {

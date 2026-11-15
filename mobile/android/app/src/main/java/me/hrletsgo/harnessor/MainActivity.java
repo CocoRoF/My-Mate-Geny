@@ -55,6 +55,7 @@ public class MainActivity extends BridgeActivity {
         if (ringing) GenyCallPlugin.overLock(this, true);
         // the background link, so her calls ring with the app closed (GenyLinkService): on if it should be
         GenyLinkService.sync(this);
+        GenyCheck.schedule(this); // (her calls and messages with the app closed: checks now and then, no line held)
         // light / dark as the console last chose (ThemeBars): the window, the WebView behind the page and the bars,
         // before the page draws (the console says it again once loaded: GenyServer.setTheme)
         ThemeBars.apply(this, getBridge().getWebView(), ThemeBars.mode(this));
@@ -90,6 +91,20 @@ public class MainActivity extends BridgeActivity {
         super.onConfigurationChanged(newConfig);
         // the phone's dark theme switched (uiMode is handled here, no restart): "system" follows it
         if (getBridge() != null) ThemeBars.apply(this, getBridge().getWebView(), ThemeBars.mode(this));
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        GenyCheck.back(this); // (in front: the page has her messages and her ringing)
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        // Away (closed, another app, the screen off): the page goes quiet (lib/appState.ts) and nothing of it runs on —
+        // a call goes on (its service holds the microphone). Her answer on its way shows soon after (GenyCheck).
+        if (!GenyCallPlugin.calling()) GenyCheck.soon(this);
     }
 
     @Override

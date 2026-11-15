@@ -12,9 +12,10 @@ import java.util.Map;
 import org.json.JSONObject;
 
 /**
- * What the app's background link keeps (docs/mate-calls.md "On Android"): which device the page is (its id, as the
- * server knows it), the session token it signs in with — taken from the page's login cookie, kept fresh by the server's
- * sliding cookie on every answer — and whether it should run at all (the user can switch it off).
+ * What the app keeps for her calls and messages with the app closed (docs/mate-calls.md "On Android"): which device the
+ * page is (its id, as the server knows it), the session token it signs in with — taken from the page's login cookie,
+ * kept fresh by the server's sliding cookie on every answer — and whether a line is held open all the time (the
+ * real-time option: off unless switched on; without it the phone checks in now and then — GenyCheck).
  */
 final class GenyLink {
 
@@ -22,6 +23,8 @@ final class GenyLink {
     static final String K_DEVICE = "device";
     static final String K_BACKGROUND = "background";
     static final String K_TOKEN = "token";
+    /** 0.5: the always-on line (and its notification) went from on-by-default to an option — off for everyone once */
+    static final String K_REALTIME_RESET = "realtime_reset_050";
     static final String COOKIE = "hrh_session";
 
     private GenyLink() {}
@@ -34,9 +37,14 @@ final class GenyLink {
         return prefs(c).getString(K_DEVICE, null);
     }
 
-    /** the user's choice: the link runs with the app closed (on unless switched off) */
+    /** the user's choice: a line held open with the app closed, for her calls the moment she makes them — Android shows
+     *  a notification as long as it runs (off unless switched on) */
     static boolean background(Context c) {
-        return prefs(c).getBoolean(K_BACKGROUND, true);
+        SharedPreferences p = prefs(c);
+        if (!p.getBoolean(K_REALTIME_RESET, false)) {
+            p.edit().putBoolean(K_BACKGROUND, false).putBoolean(K_REALTIME_RESET, true).apply();
+        }
+        return p.getBoolean(K_BACKGROUND, false);
     }
 
     static String server(Context c) {

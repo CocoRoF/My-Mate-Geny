@@ -497,6 +497,59 @@ async def test_with_the_app_closed_her_call_still_rings_the_phone_through_its_ba
         await svc.shutdown()
 
 
+async def test_a_closed_app_checking_in_hears_her_call_and_what_she_said_that_nobody_saw(db, tmp_path, monkeypatch):
+    """0.5: no line held with the app closed (and no notification of its own) — the phone checks in now and then."""
+    monkeypatch.setattr(calls_mod, "CALL_HOURS", (0, 24))
+    svc, store, mates, calls, line = _stack(db, tmp_path, monkeypatch)
+    mate = store.create(name="Haru", persona={"language": "en"}, llm={"model": "m1"})
+    other = store.create(name="Other", llm={"model": "m1"})
+    sid = mates.conversation(mate["id"])["session_id"]
+    osid = mates.conversation(other["id"])["session_id"]
+    broker = mates.capture
+    try:
+        _phone(mates, mate["id"], device="phone-1")
+        page = broker.clients()[-1]
+        calls.saw(page)
+        broker.disconnect(page.conn)
+        assert await calls.checkin("phone-2") == "no_phone"  # (a phone whose page never said it lets anyone)
+        heard: list = []
+        lk = calls.link("phone-1", heard.append)  # (a check-in holds the link open while it lasts)
+        assert await calls.checkin("phone-1") == "nothing"  # (no reason of hers to call yet)
+        doc = store.state_doc(mate["id"])
+        doc["feelings"]["lonely"] = {"v": 0.9, "at": datetime.now(timezone.utc).isoformat(), "why": {"code": "wants_affection"}}
+        store.save_state(mate["id"], doc)
+        assert await calls.checkin("phone-1") == "ringing"
+        call = calls.active()
+        assert call.device == "phone-1" and any(m["type"] == "call.ring" and m["data"]["id"] == call.id for m in heard)
+        await calls.decline(call.id)
+        calls.unlink(lk.id)
+
+        # what the mates said that nobody saw, after the phone's last check
+        since = datetime.now(timezone.utc).isoformat()
+        await asyncio.sleep(0.01)
+        svc._add_message(sid, "assistant", "[smile] Did you finish the report?", provider="claude")
+        svc._add_message(sid, "assistant", "[SILENT]", provider="claude")
+        svc._add_message(osid, "assistant", "**Done** — the build is green.", provider="claude")
+        got = calls.notices(since)
+        assert [(n["name"], n["text"]) for n in got] == [("Haru", "Did you finish the report?"),
+                                                        ("Other", "**Done** — the build is green.")]
+        assert all(n["mate_id"] in (mate["id"], other["id"]) and n["at"] > since for n in got)
+        assert calls.notices(got[-1]["at"]) == []  # (the phone's cursor moves past what it showed)
+        # a conversation on screen somewhere: what came while it was there is seen
+        key = object()
+        svc.set_viewing(osid, key, True)
+        svc._add_message(osid, "assistant", "Looking at it now.", provider="claude")
+        assert [n["name"] for n in calls.notices(since)] == ["Haru"]  # (on screen now: not news)
+        svc.set_viewing(osid, key, False)
+        assert [n["name"] for n in calls.notices(since)] == ["Haru"]  # (it was seen as it came)
+        await asyncio.sleep(0.01)
+        svc._add_message(osid, "assistant", "One more thing.", provider="claude")
+        assert [n["text"] for n in calls.notices(since)] == ["Did you finish the report?", "One more thing."]
+    finally:
+        await calls.stop()
+        await svc.shutdown()
+
+
 async def test_a_ring_picked_up_on_the_phone_that_the_app_never_takes_is_still_missed(db, tmp_path, monkeypatch):
     monkeypatch.setattr(calls_mod, "RING_S", 0.05)
     svc, store, mates, calls, line = _stack(db, tmp_path, monkeypatch)
@@ -674,3 +727,29 @@ async def test_her_note_after_a_call_streams_and_silent_is_nothing():
 def test_spoken_words_leave_tags_out():
     assert spoken("[joy] 응! [laugh:0.8] 그래") == "응! 그래"
     assert spoken("[SILENT]") == ""
+
+
+def test_the_check_in_line_says_hello_what_was_said_and_bye(monkeypatch):
+    """The phone's check-in over HTTP (GET /api/mate-calls/link?checkin=1): a moment, then the line ends by itself."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as c:
+        assert c.post("/api/auth/login", json={"username": "admin", "password": "test-pass"}).status_code == 200
+        mate = c.post("/api/mates", json={"name": "CheckIn"}).json()
+        svc = app.state.mate_service
+        sid = svc.conversation(mate["id"])["session_id"]
+        since = datetime.now(timezone.utc).isoformat()
+        time.sleep(0.01)
+        svc._svc._add_message(sid, "assistant", "[joy] I found it!", provider="claude")
+        with c.stream("GET", "/api/mate-calls/link", params={"device": "phone-x", "checkin": 1, "since": since}) as r:
+            assert r.status_code == 200
+            msgs = [json.loads(x[5:]) for x in r.iter_lines() if x.startswith("data:")]
+        assert [m["type"] for m in msgs] == ["hello", "notices", "bye"]
+        assert [n["text"] for n in msgs[1]["items"] if n["name"] == "CheckIn"] == ["I found it!"]
+        assert msgs[1]["now"] > since and msgs[2]["reason"] == "checked"
+        # no cursor yet (a first check): nothing old is announced, only where to start
+        with c.stream("GET", "/api/mate-calls/link", params={"device": "phone-x", "checkin": 1}) as r:
+            msgs = [json.loads(x[5:]) for x in r.iter_lines() if x.startswith("data:")]
+        assert msgs[1]["type"] == "notices" and msgs[1]["items"] == []

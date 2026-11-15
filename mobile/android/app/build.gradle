@@ -10,7 +10,7 @@ android {
         // CI passes -PhrhVersionCode=<run number> -PhrhVersionName=<x.y.z>
         // (not -PversionCode: a project property of that name shadows the DSL's)
         versionCode = Integer.parseInt((project.findProperty("hrhVersionCode") ?: "4").toString())
-        versionName = (project.findProperty("hrhVersionName") ?: "0.4.0-dev").toString()
+        versionName = (project.findProperty("hrhVersionName") ?: "0.5.0-dev").toString()
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -53,6 +53,8 @@ dependencies {
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    // the checks with the app closed (GenyCheck: her calls and messages, no line held open)
+    implementation "androidx.work:work-runtime:2.10.0"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"

@@ -15,12 +15,23 @@ class ProviderConnect(BaseModel):
 # ---- connections (remote SSH) ----
 
 class ConnectionCreate(BaseModel):
-    name: str
+    name: str = ""                    # (empty: the host)
     host: str
     port: int = 22
     username: str
+    # one of: a password (used once to install a key made here — never kept), or a private key of their own
+    password: str | None = None
     private_key_pem: str | None = None
-    default_path: str = "."
+    default_path: str = ""            # (empty: the home folder there)
+
+
+class ConnectionPassword(BaseModel):
+    password: str
+
+
+class ConnectionPatch(BaseModel):
+    name: str | None = None
+    default_path: str | None = None
 
 
 class ConnectionOut(BaseModel):

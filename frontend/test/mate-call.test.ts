@@ -25,7 +25,7 @@ test("calling her: dialing until her first sound, then the clock runs; hanging u
   assert.equal(done.endReason, "hangup");
   const early = run([{ type: "dial", mateId: "m1", at: 1 }, { type: "hangup", at: 2 }]);
   assert.equal(early.endReason, "cancelled");
-  assert.deepEqual(reduceCall(done, { type: "dismiss" }), { ...IDLE, speaker: done.speaker });
+  assert.deepEqual(reduceCall(done, { type: "dismiss" }), IDLE);
 });
 
 test("she calls: ringing until it is taken, turned down, missed — or taken in another window", () => {
@@ -49,10 +49,10 @@ test("she calls: ringing until it is taken, turned down, missed — or taken in 
 
 test("on the line: mute, speaker, minimize, a dropped line", () => {
   let s = run([{ type: "dial", mateId: "m1", at: 0 }, { type: "dialed", callId: "c" }, { type: "connected", at: 10 }]);
-  assert.equal(s.speaker, true, "the loudspeaker by default: they look at her while they talk");
+  assert.equal(s.speaker, false, "the earpiece, like a phone call: the loudspeaker only when they press it");
   s = run([{ type: "mute" }, { type: "speaker" }, { type: "minimize", on: true }], s);
   assert.equal(s.muted, true);
-  assert.equal(s.speaker, false);
+  assert.equal(s.speaker, true);
   assert.equal(s.minimized, true);
   s = reduceCall(s, { type: "lost" });
   assert.equal(s.reconnecting, true);
@@ -62,7 +62,9 @@ test("on the line: mute, speaker, minimize, a dropped line", () => {
   assert.equal(gone.minimized, false, "the end is shown in full");
   assert.equal(gone.reconnecting, false);
   const after = run([{ type: "dismiss" }, { type: "dial", mateId: "m1", at: 200 }], gone);
-  assert.equal(after.speaker, false, "the speaker choice stays for the next call");
+  assert.equal(after.speaker, false, "every call starts on the earpiece again");
+  const rings = run([{ type: "dismiss" }, { type: "ring", callId: "c9", mateId: "m1", at: 300 }], gone);
+  assert.equal(rings.speaker, false, "hers too");
   assert.equal(reduceCall(IDLE, { type: "minimize", on: true }).minimized, false);
 });
 

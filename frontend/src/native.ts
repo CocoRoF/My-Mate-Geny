@@ -1,6 +1,7 @@
 import { goBack } from "./lib/nav";
 import { tr } from "./i18n";
 import { NATIVE_VERSION_EVENT } from "./lib/nativeVersion";
+import { setAppActive } from "./lib/appState";
 
 /** a short notice at the bottom of the screen (no app UI needed) */
 function toast(text: string) {
@@ -49,6 +50,13 @@ export function installNativeBridge(): void {
     })
     .catch(() => {});
   call("LocalNotifications", "requestPermissions").catch(() => {});
+
+  // In front or away — another app, the app closed, the screen off (lib/appState.ts): away, the page goes quiet.
+  try {
+    cap.nativeCallback("App", "addListener", { eventName: "appStateChange" }, (s: { isActive?: boolean }) => setAppActive(!!s?.isActive));
+  } catch {
+    /* (an older app: the page's visibility stands in) */
+  }
 
   // Back: close the top overlay, else the previous screen (lib/nav.ts); at the first screen a second press
   // within 2 s leaves — to the background, the session stays warm.

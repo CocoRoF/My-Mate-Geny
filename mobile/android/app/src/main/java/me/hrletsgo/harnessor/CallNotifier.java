@@ -39,6 +39,7 @@ final class CallNotifier {
     static final String CH_LINK = "geny_link";
     static final String CH_ONGOING = "geny_call_ongoing";
     static final String CH_MISSED = "geny_calls_missed";
+    static final String CH_MESSAGES = "geny_mate_messages";
     static final int RING = 0x6e11;
     static final int LINK = 0x6e12;
     static final int MISSED = 0x6e13;
@@ -91,6 +92,11 @@ final class CallNotifier {
         }
         if (nm.getNotificationChannel(CH_MISSED) == null) {
             NotificationChannel ch = new NotificationChannel(CH_MISSED, c.getString(R.string.call_channel_missed), NotificationManager.IMPORTANCE_DEFAULT);
+            nm.createNotificationChannel(ch);
+        }
+        if (nm.getNotificationChannel(CH_MESSAGES) == null) {
+            NotificationChannel ch = new NotificationChannel(CH_MESSAGES, c.getString(R.string.channel_messages), NotificationManager.IMPORTANCE_HIGH);
+            ch.setDescription(c.getString(R.string.channel_messages_about));
             nm.createNotificationChannel(ch);
         }
     }
@@ -276,6 +282,38 @@ final class CallNotifier {
         if (face != null) b.setLargeIcon(face);
         try {
             nm.notify(MISSED, b.build());
+        } catch (Exception ignored) {
+            // notifications off
+        }
+    }
+
+    // ---- what she said while the app was closed (GenyCheckWorker) ----
+
+    /** one of her messages nobody has seen: her face and name, the words; tapped → the app. `key`: the message's id
+     *  (the same message never shows twice) */
+    static void message(Context c, String key, String mateId, String name, String text, long when) {
+        NotificationManager nm = nm(c);
+        if (nm == null || text == null || text.isEmpty()) return;
+        channels(c);
+        String who = name == null || name.isEmpty() ? c.getString(R.string.call_mate) : name;
+        Person me = new Person.Builder().setName(c.getString(R.string.messages_me)).build();
+        NotificationCompat.MessagingStyle style = new NotificationCompat.MessagingStyle(me)
+                .addMessage(text, when, person(c, mateId, who));
+        NotificationCompat.Builder b = new NotificationCompat.Builder(c, CH_MESSAGES)
+                .setSmallIcon(android.R.drawable.stat_notify_chat)
+                .setContentTitle(who)
+                .setContentText(text)
+                .setStyle(style)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setGroup("mate:" + (mateId == null ? "" : mateId))
+                .setWhen(when)
+                .setShowWhen(true)
+                .setAutoCancel(true)
+                .setContentIntent(activity(c, Intent.ACTION_MAIN, "", 9));
+        Bitmap face = roundFace(c, mateId);
+        if (face != null) b.setLargeIcon(face);
+        try {
+            nm.notify("mate-message", key == null ? 0 : key.hashCode(), b.build());
         } catch (Exception ignored) {
             // notifications off
         }

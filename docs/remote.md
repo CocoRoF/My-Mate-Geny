@@ -54,23 +54,41 @@ host uses its own Git login.
 
 ## Connections
 
-Register a host in the UI (**Connections** tab) or via API:
+### Adding a server
+
+Settings → **Connections** → SSH hosts: the **host**, the **port**, the **user name** and the **password** — that is
+all. The server signs in **once** with the password, makes an SSH key of its own (ed25519), puts its public half into
+`~/.ssh/authorized_keys` there (made if missing; `~/.ssh` 700, the file 600; a key already there is not added twice),
+checks that the key signs in by itself, and keeps **only that key** (encrypted in the vault). The password is never
+stored. The server's host key, as met during that sign-in, is pinned for the connection (later connections must meet
+the same machine). The name is optional (the host) and so is the start folder (the home folder there, as `$HOME` says).
+
+A connection with **no key** (added without one, or whose key no longer signs in) shows a password field right on it:
+**키 설치** installs a new key the same way. Its name and start folder can be edited (✏).
+
+Errors say what to fix: a wrong user name or password, a host or port that can't be reached, or a server that takes
+passwords only (`PubkeyAuthentication no` in its sshd: the key would never sign in — turn it on there). A wrong SSH
+password answers 400 (`code: "auth"`), never 401 — that would mean the app's own session ended.
+
+A private key of their own can still be pasted instead (**SSH 키를 직접 붙여 넣기**).
 
 ```
-POST /api/connections
-{ "name": "build-box", "host": "build.example.com", "port": 22,
-  "username": "deploy", "private_key_pem": "-----BEGIN ...", "default_path": "." }
+POST  /api/connections            { "host", "port": 22, "username", "password" }     → a key installed, the password not kept
+POST  /api/connections            { "host", "port", "username", "private_key_pem" }  → a key of their own
+POST  /api/connections/{id}/password  { "password" }                                  → a new key for that connection
+PATCH /api/connections/{id}       { "name"?, "default_path"? }
 ```
+(`name` empty → the host; `default_path` empty → the home folder there.)
 
-The private key is stored **encrypted in the vault**; the public connection
-record only carries `has_key: true`. `GET /api/connections/{id}/status` probes
-reachability (asyncssh) and reports whether `sshfs` is available on the runtime.
+The private key is stored **encrypted in the vault**; the public connection record only carries `has_key: true`.
+`GET /api/connections/{id}/status` probes reachability (asyncssh) and reports whether `sshfs` is available on the
+runtime. Code: `app/workspaces/ssh_setup.py` (tests: `backend/tests/test_ssh_setup.py`, against a real SSH server).
 
 ## Requirements
 
-- Only an SSH key authorized on the remote host. No sshfs/fuse needed.
-- Either a key pasted in **Connections** (stored in the vault) or the runtime
-  user's own `~/.ssh` key authorized on the remote host.
+- A remote host that accepts SSH keys (the usual default). Adding it needs its password once — or a key already
+  authorized there, pasted in **Connections**, or the runtime user's own `~/.ssh` key authorized on the remote host.
+  No sshfs/fuse needed.
 
 ## Status
 

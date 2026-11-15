@@ -26,16 +26,16 @@ import java.nio.charset.StandardCharsets;
 import org.json.JSONObject;
 
 /**
- * The app kept running in the background so she can call like a phone does (docs/mate-calls.md "On Android"). There is
- * no push service: the user's own server holds one line open to this service — ``GET /api/mate-calls/link`` (server-sent
- * events: her ringing, where every call stands, a ping at least every 45 s) — and the service rings the phone the way a
- * call does (CallNotifier), with the app closed, the screen off or locked.
+ * During a call: the microphone kept with the screen locked or another app in front (a foreground service of that type,
+ * started while the call screen is in front), and the call shown — her face, the clock, 끊기. That is all it does by
+ * default (docs/mate-calls.md "On Android": since 0.5 the app checks in now and then instead — GenyCheck — and holds no
+ * line).
  *
- * - Runs while the user lets it (on by default: Settings → 메이트 → 전화) and the app is signed in to a server it
- *   remembers; started by the page (GenyCallPlugin.link), after a reboot and after an update (BootReceiver).
- * - During a call it also holds the microphone (a foreground service of that type, started while the call screen is in
- *   front), so a call goes on with the screen locked or another app in front — and shows the call: her face, the clock,
- *   끊기.
+ * - Real-time calls (an option, off unless switched on: Settings → 메이트 → 전화 → 실시간 전화): it also holds one line
+ *   open to the user's own server — ``GET /api/mate-calls/link`` (server-sent events: her ringing, where every call
+ *   stands, a ping at least every 45 s) — and rings the phone the moment she calls (CallNotifier), as a foreground
+ *   service of its own whose notification Android shows all the while. Started by the page (GenyCallPlugin.link), after
+ *   a reboot and after an update (BootReceiver).
  * - A dropped line comes back: at once when the network does, else after 2 s … 5 min; signed out (a stale token), it
  *   waits for the page to sign it in again (or tries every 15 min).
  */
@@ -66,7 +66,6 @@ public class GenyLinkService extends Service {
     private int restarting = 0;
     private volatile boolean bye = false;
     private ConnectivityManager.NetworkCallback network = null;
-    private PowerManager.WakeLock wake = null;
 
     /** the call on now (null: none): its id, her id and name, since when */
     private String callId = null;
@@ -172,7 +171,6 @@ public class GenyLinkService extends Service {
         state = "off";
         unwatchNetwork();
         drop();
-        if (wake != null && wake.isHeld()) wake.release();
         super.onDestroy();
     }
 
@@ -451,42 +449,57 @@ public class GenyLinkService extends Service {
         refresh();
     }
 
-    /** she is calling this phone: it rings like a call (the page rings itself while it is in front and unlocked) */
     private void ring(JSONObject call) {
-        if (call == null || !"ringing".equals(call.optString("status")) || !"incoming".equals(call.optString("direction"))) return;
-        String dev = call.optString("device", "");
-        if (!dev.isEmpty() && !dev.equals(GenyLink.device(this))) return;
-        hold();
-        if (GenyCallPlugin.front() && !CallNotifier.locked(this)) return;
-        CallNotifier.ring(this, call.optString("id"), call.optString("mate_id"), call.optString("name"), getString(R.string.call_ring_text));
+        ringFrom(this, call);
     }
 
     private void update(JSONObject call) {
-        if (call == null) return;
+        String ended = updateFrom(this, call);
+        // (a call whose screen is gone — the page closed mid-call: it is over here too)
+        if (ended != null && ended.equals(callId)) main.post(this::outOfCall);
+    }
+
+    // ---- her ringing, from this line or from a check-in (GenyCheckWorker) ----
+
+    private static PowerManager.WakeLock ringWake = null;
+
+    /** she is calling this phone: it rings like a call (the page rings itself while it is in front and unlocked) */
+    static void ringFrom(Context c, JSONObject call) {
+        if (call == null || !"ringing".equals(call.optString("status")) || !"incoming".equals(call.optString("direction"))) return;
+        String dev = call.optString("device", "");
+        if (!dev.isEmpty() && !dev.equals(GenyLink.device(c))) return;
+        hold(c);
+        if (GenyCallPlugin.front() && !CallNotifier.locked(c)) return;
+        CallNotifier.ring(c, call.optString("id"), call.optString("mate_id"), call.optString("name"), c.getString(R.string.call_ring_text));
+    }
+
+    /** where a call stands: her ringing goes when it is taken, turned down or missed (a missed one stays in the shade)
+     *  → the id of a call that ended, else null */
+    static String updateFrom(Context c, JSONObject call) {
+        if (call == null) return null;
         String id = call.optString("id");
         String status = call.optString("status");
-        if ("ringing".equals(status) || "dialing".equals(status)) return;
+        if ("ringing".equals(status) || "dialing".equals(status)) return null;
         boolean rangHere = id.equals(CallNotifier.ringing());
-        CallNotifier.cancelRing(this, id);
-        if (!"ended".equals(status)) return;
-        if (rangHere) main.post(GenyCallPlugin::ringOver); // (not taken: the app no longer comes up over the lock screen)
+        CallNotifier.cancelRing(c, id);
+        if (!"ended".equals(status)) return null;
+        if (rangHere) new Handler(Looper.getMainLooper()).post(GenyCallPlugin::ringOver); // (no longer over the lock screen)
         if (rangHere && "missed".equals(call.optString("end_reason"))) {
-            CallNotifier.missed(this, id, call.optString("mate_id"), call.optString("name"));
+            CallNotifier.missed(c, id, call.optString("mate_id"), call.optString("name"));
         }
-        // (a call whose screen is gone — the page closed mid-call: it is over here too)
-        if (id.equals(callId)) main.post(this::outOfCall);
+        return id;
     }
 
     /** a moment awake to ring (the phone may be asleep when the line wakes it) */
-    private void hold() {
+    private static synchronized void hold(Context c) {
         try {
-            if (wake == null) {
-                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (ringWake == null) {
+                PowerManager pm = (PowerManager) c.getApplicationContext().getSystemService(Context.POWER_SERVICE);
                 if (pm == null) return;
-                wake = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "geny:ring");
-                wake.setReferenceCounted(false);
+                ringWake = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "geny:ring");
+                ringWake.setReferenceCounted(false);
             }
-            wake.acquire(10_000);
+            ringWake.acquire(10_000);
         } catch (Exception ignored) {
             // it rings anyway
         }

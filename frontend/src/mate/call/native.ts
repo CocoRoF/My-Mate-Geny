@@ -44,7 +44,8 @@ async function ask<T = Record<string, unknown>>(method: string, options: Record<
 
 /** the app's background link (GenyLinkService): her calls ring with the app closed, like a phone's */
 export interface PhoneLink {
-  /** the user lets it run with the app closed */
+  /** real-time calls: a line held open with the app closed (Android shows a notification while it runs) — off unless
+   *  switched on; without it the phone checks in now and then */
   background: boolean;
   /** signed in to a server it remembers, this page's device known */
   ready: boolean;
@@ -57,6 +58,8 @@ export interface PhoneLink {
   notifications: boolean;
   fullScreen: boolean;
   batteryExempt: boolean;
+  /** the checks with the app closed (no line held: GenyCheck): when the last one ended (ms; 0: none yet) and how */
+  checks?: { last: number; result: "" | "ok" | "offline" | "signed_out" };
 }
 
 let wake: { release: () => Promise<void> } | null = null;
