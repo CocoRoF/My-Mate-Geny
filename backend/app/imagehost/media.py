@@ -46,9 +46,13 @@ def _save(arr: np.ndarray, path: Path, **kw) -> None:
 
 # ── colour ──
 
-def fit_colour(src: np.ndarray, ref: np.ndarray, weight: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+def fit_colour(src: np.ndarray, ref: np.ndarray, weight: np.ndarray | None = None, *,
+               slope: tuple[float, float] = (0.8, 1.25), offset: float = 40.0,
+               spread: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
     """per channel ``ref ≈ a · src + b``, least squares over the pixels `weight` keeps (the 15% that differ most are
-    left out: what changed is not a colour shift)"""
+    left out: what changed is not a colour shift). A channel whose kept pixels span less than `spread` (std) can't
+    tell a slope from noise — a flat background — so only its offset is fitted; a slope is held to `slope`, the
+    offset to ±`offset`."""
     s, r = src.reshape(-1, 3), ref.reshape(-1, 3)
     keep = np.ones(len(s), bool) if weight is None else weight.reshape(-1) > 0.5
     d = np.abs(s - r).sum(1)
@@ -57,11 +61,14 @@ def fit_colour(src: np.ndarray, ref: np.ndarray, weight: np.ndarray | None = Non
     a, b = np.ones(3, np.float32), np.zeros(3, np.float32)
     for c in range(3):
         x, y = s[keep, c], r[keep, c]
-        if len(x) < 100 or x.std() < 1:
-            b[c] = float((y - x).mean()) if len(x) else 0.0
+        if len(x) < 100 or x.std() < spread:
+            b[c] = float(np.clip((y - x).mean(), -offset, offset)) if len(x) else 0.0
             continue
         aa, bb = np.polyfit(x, y, 1)
-        a[c], b[c] = float(np.clip(aa, 0.8, 1.25)), float(np.clip(bb, -40, 40))
+        a[c] = float(np.clip(aa, *slope))
+        if a[c] != aa:  # (held: the offset that goes with the held slope)
+            bb = float((y - a[c] * x).mean())
+        b[c] = float(np.clip(bb, -offset, offset))
     return a, b
 
 
@@ -257,9 +264,18 @@ def cmd_cut(a: dict) -> dict:
     return {"size": list(im.size), "coverage": round(float((arr > 128).mean()), 4)}
 
 
+#: summed |RGB difference| (0–765) under which a pixel of an edit counts as left alone — a decoder's colour drift
+#: stays under it, a redrawn pixel doesn't
+LEFT_ALONE = 48.0
+#: less of the picture left alone than this: the edit redrew it (a new pose, a new style) and there is no drift to
+#: measure — fitting it anyway pairs pixels that don't correspond and flattens the picture (slope 0.8, blacks +40)
+MIN_LEFT_ALONE = 0.3
+
+
 def cmd_match(a: dict) -> dict:
-    """the edit's colours fitted to the original's outside `exclude` (where the change was asked for), at the
-    original's size"""
+    """the edit's colours fitted to the original's where the edit left the picture alone (outside `exclude`, where
+    the change was asked for, and only the pixels that still look the same), at the original's size; an edit that
+    redrew the picture is kept as it came"""
     orig = Image.open(a["original"]).convert("RGB")
     ed = _rgb(a["image"], orig.size)
     o = np.asarray(orig).astype(np.float32)
@@ -268,9 +284,15 @@ def cmd_match(a: dict) -> dict:
     if ex:
         x0, y0, x1, y1 = (int(v) for v in ex)
         weight[max(0, y0):y1, max(0, x0):x1] = 0
-    ca, cb = fit_colour(ed, o, weight)
+    alone = (weight > 0.5) & (np.abs(ed - o).sum(2) <= LEFT_ALONE)
+    share = round(float(alone.mean()), 3)
+    if share < MIN_LEFT_ALONE:
+        _save(ed, Path(a["out"]))
+        return {"size": list(orig.size), "colour": None, "left_alone": share}
+    # (a decoder's drift is small: a gentle slope at most, and only where the pixels left alone span enough tones)
+    ca, cb = fit_colour(ed, o, alone.astype(np.float32), slope=(0.9, 1.1), offset=25.0, spread=35.0)
     _save(apply_colour(ed, ca, cb), Path(a["out"]))
-    return {"size": list(orig.size), "colour": [ca.tolist(), cb.tolist()]}
+    return {"size": list(orig.size), "colour": [ca.tolist(), cb.tolist()], "left_alone": share}
 
 
 # ── stand-ins (tests) ──
