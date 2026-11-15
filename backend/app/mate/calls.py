@@ -60,6 +60,8 @@ AFTER_ANY_CALL = timedelta(hours=3)       # after any call at all
 ASKED_AFTER, NEWS_AFTER, STALE = timedelta(minutes=40), timedelta(minutes=20), timedelta(hours=8)
 LONELY_FROM, LONELY_CHANCE = 0.55, 0.08   # missing them this much, she calls now and then (per scan, once a minute)
 SCAN_S = 60
+NOTICE_MAX = 6                    # a check-in shows at most this many of the mates' unseen messages
+NOTICE_CHARS = 280
 LINK_PING_S = 45                  # the phone app's background link hears something at least this often (under proxies' 60 s idle)
 PHONES_KEY = "call_phones"        # what each phone app last said it lets her do (its device → {enabled, mate_id, at})
 
@@ -1092,6 +1094,43 @@ class CallService:
 
     def unlink(self, lid: str) -> None:
         self.links.pop(lid, None)
+
+    # ---- the phone app's check-in (the app closed, no line held: docs/mate-calls.md "On Android") ----
+
+    async def checkin(self, device: str) -> str:
+        """A phone checking in for a moment (its link open while it does): would one of the mates it lets speak first
+        call now? → what decided it (``ringing`` when one does)."""
+        pol = self.phones.get(str(device)[:80]) or {}
+        last = "no_phone"
+        for row in self.store._db.query("SELECT id FROM mates WHERE draft = 0"):
+            try:
+                mate = self.store.get(row["id"])
+            except KeyError:
+                continue
+            if not self._hers(pol, mate):
+                continue
+            last = await self.consider(row["id"])
+            if last in ("ringing", "line_busy"):
+                break
+        return last
+
+    def notices(self, since: str, limit: int = NOTICE_MAX) -> list[dict[str, Any]]:
+        """What the mates said that nobody has seen yet, after ``since`` (the phone's last check): their replies and the
+        messages they sent on their own — not what was on a screen as it came (a chat open on any device), nor [SILENT]."""
+        out: list[dict[str, Any]] = []
+        rows = self.store._db.query(
+            "SELECT m.id, m.session_id, m.content, m.created_at, t.id AS mate_id, t.name FROM messages m "
+            "JOIN mates t ON t.session_id = m.session_id LEFT JOIN sessions s ON s.id = m.session_id "
+            "WHERE m.role = 'assistant' AND t.draft = 0 AND m.created_at > ? "
+            "AND (s.last_seen_at IS NULL OR m.created_at > s.last_seen_at) ORDER BY m.created_at LIMIT ?",
+            (since, limit * 3))
+        for r in rows:
+            text = spoken(r["content"])
+            if not text or self.svc.is_viewed(r["session_id"]):
+                continue
+            out.append({"id": r["id"], "mate_id": r["mate_id"], "name": r["name"], "text": clip(text, NOTICE_CHARS),
+                        "at": r["created_at"]})
+        return out[-limit:]
 
     def _last_user(self, sid: str) -> datetime | None:
         for r in self.store._db.query("SELECT created_at, meta FROM messages WHERE session_id=? AND role IN ('user','steer') "

@@ -846,17 +846,26 @@ class SessionService:
 
     def set_viewing(self, sid: str, key: Any, visible: bool) -> None:
         """A chat socket says whether its chat is on screen (``key``: the socket). Shown → what ended there is
-        seen now; a run ending while it stays shown is seen as it ends."""
+        seen now; a run ending while it stays shown is seen as it ends. A mate's conversation (not a listed chat):
+        what she said up to when it was on screen last counts as seen (the phone's check-in notifies only the rest)."""
         if visible:
             self._viewers.setdefault(sid, set()).add(key)
             with contextlib.suppress(KeyError):  # (deleted meanwhile)
                 self.mark_seen(sid)
+            if self.is_hidden(sid):
+                self._seen_now(sid)
         else:
             keys = self._viewers.get(sid)
             if keys is not None:
                 keys.discard(key)
                 if not keys:
                     self._viewers.pop(sid, None)
+                    if self.is_hidden(sid):
+                        self._seen_now(sid)  # (what came while it was on screen was seen)
+
+    def _seen_now(self, sid: str) -> None:
+        with contextlib.suppress(Exception):  # (deleted meanwhile: nothing to mark)
+            self._db.execute("UPDATE sessions SET last_seen_at = ? WHERE id = ?", (now_iso(), sid))
 
     def is_viewed(self, sid: str) -> bool:
         return bool(self._viewers.get(sid))

@@ -11,6 +11,7 @@ import { useMateStore } from "../../stores/mateStore";
 import { patchDevicePreferences, useDevicePreferences } from "../../stores/devicePreferences";
 import { openSettings } from "../../stores/uiStore";
 import { useLang, useT } from "../../i18n";
+import { relTime } from "../../i18n/format";
 import Icon from "../ui/Icon";
 import { ErrorLine, Section, Toggle } from "../mate/settings/ui";
 import { VolumeField } from "../mate/settings/VoiceTab";
@@ -55,8 +56,9 @@ function SpeakFirst() {
 }
 
 /**
- * Her calls on this phone (the Android app, docs/mate-calls.md "On Android"): it stays reachable with the app closed
- * (on unless switched off), what the line is doing, and what the phone still has to allow for a call to ring like one.
+ * Her calls and messages on this phone (the Android app, docs/mate-calls.md "On Android"): with the app closed it checks
+ * in now and then (no line held, nothing in the shade) — or, switched on, holds a line for her calls the moment she
+ * makes them (Android then shows a notification all along); what that is doing, and what the phone still has to allow.
  */
 function PhoneCalls() {
   const t = useT();
@@ -78,8 +80,13 @@ function PhoneCalls() {
     };
   }, []);
   if (!link) return null; // (an app without the background link)
+  const checks = link.checks;
   const state = !link.background
-    ? t("settings.phoneStateOff")
+    ? checks?.result === "signed_out"
+      ? t("settings.phoneStateSignedOut")
+      : checks?.last
+        ? t("settings.phoneChecksLast", { ago: relTime(checks.last) })
+        : t("settings.phoneChecksNone")
     : link.state === "connected"
       ? link.calls
         ? link.mate
@@ -91,7 +98,7 @@ function PhoneCalls() {
         : link.state === "offline"
           ? t("settings.phoneStateOffline")
           : t("settings.phoneStateConnecting");
-  const good = link.background && link.state === "connected" && link.calls;
+  const good = link.background ? link.state === "connected" && link.calls : checks?.result === "ok";
   const needs: { key: string; text: string; what: "notifications" | "fullscreen" | "battery" }[] = [
     ...(!link.notifications ? [{ key: "n", text: t("settings.phoneNeedNotifications"), what: "notifications" as const }] : []),
     ...(!link.fullScreen ? [{ key: "f", text: t("settings.phoneNeedFullScreen"), what: "fullscreen" as const }] : []),

@@ -28,7 +28,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  VERSION: 0.4.${{ github.run_number }}
+  # The version: <line>.<builds since the line began> — 0.5.0 is the apps run APP_LINE_FROM; the run number itself keeps
+  # rising (Android's versionCode). The prepare job works it out once; every other job takes it from there.
+  APP_LINE: '0.5'
+  APP_LINE_FROM: '141'
   GH_TOKEN: ${{ github.token }}
   LOCAL_PYTHON_VERSION: '3.12.16'
   UV_VERSION: '0.13.6'
@@ -36,7 +39,16 @@ env:
 jobs:
   prepare:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
+      - id: version
+        name: Version
+        run: |
+          v="$APP_LINE.$(( ${{ github.run_number }} - APP_LINE_FROM ))"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+          echo "Apps $v (run ${{ github.run_number }})"
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
@@ -81,6 +93,8 @@ jobs:
   desktop:
     name: desktop (${{ matrix.name }})
     needs: prepare
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
     strategy:
       fail-fast: false
       matrix:
@@ -187,6 +201,8 @@ jobs:
 
   android:
     needs: prepare
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -231,7 +247,9 @@ jobs:
         run: gh release upload "apps-v$VERSION" "$RUNNER_TEMP/my-mate-geny-$VERSION-android.apk" --clobber
 
   publish:
-    needs: [desktop, android]
+    needs: [prepare, desktop, android]
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -280,8 +298,10 @@ jobs:
           done
 
   cleanup:
-    needs: [desktop, android, publish]
+    needs: [prepare, desktop, android, publish]
     if: failure() || cancelled()
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
     runs-on: ubuntu-latest
     steps:
       - name: Preserve unfinished artifacts for retry

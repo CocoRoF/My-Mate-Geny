@@ -1,7 +1,9 @@
-"""Remote SSH connection CRUD. Private keys live in the vault only."""
+"""Remote SSH connection CRUD. Private keys live in the vault only (a password is never kept: app/workspaces/ssh_setup.py
+turns it into a key)."""
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from app.db import Database
@@ -38,6 +40,36 @@ class ConnectionService:
             """,
             (cid, name, host, port, username, key_ref, default_path, now, now),
         )
+        return self.get(cid)
+
+    def set_key(self, cid: str, private_key_pem: str, *, home: str = "") -> dict[str, Any]:
+        """a key for a connection that had none (or another): kept in the vault; a start folder still unset becomes the
+        home folder there"""
+        row = self._db.query_one("SELECT key_ref, default_path FROM connections WHERE id = ?", (cid,))
+        if row is None:
+            raise KeyError(f"connection not found: {cid}")
+        if row["key_ref"]:
+            self._vault.delete(row["key_ref"])
+        ref = self._vault.put("connection", f"{cid}.key", private_key_pem)
+        path = row["default_path"]
+        if home and (not path or path == "."):
+            path = home
+        self._db.execute("UPDATE connections SET key_ref = ?, default_path = ?, updated_at = ? WHERE id = ?",
+                         (ref, path, now_iso(), cid))
+        # (the decrypted copy the connector wrote for the old key goes: the next use writes the new one)
+        from app.config import settings
+
+        with contextlib.suppress(OSError):
+            (settings.mount_root_path / cid / "id_key").unlink()
+        return self.get(cid)
+
+    def update(self, cid: str, *, name: str | None = None, default_path: str | None = None) -> dict[str, Any]:
+        self.get(cid)
+        if name is not None and name.strip():
+            self._db.execute("UPDATE connections SET name = ?, updated_at = ? WHERE id = ?", (name.strip()[:80], now_iso(), cid))
+        if default_path is not None:
+            self._db.execute("UPDATE connections SET default_path = ?, updated_at = ? WHERE id = ?",
+                             (default_path.strip() or ".", now_iso(), cid))
         return self.get(cid)
 
     def _row_to_public(self, row) -> dict[str, Any]:

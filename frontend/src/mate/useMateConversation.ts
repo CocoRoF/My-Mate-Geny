@@ -33,7 +33,8 @@ import { withoutCode } from "./markdown";
 import type { BodyMood, MateReact } from "./types";
 import { currentSurface, useDesktopMate, type DesktopMateState } from "./desktop";
 import { useVoiceSpeaking } from "./voiceBridge";
-import { announceStarted, clientMsgId, deviceId, deviceOf, noteSaid, onHush, RANK_OVERLAY, RANK_SURFACE, RANK_SURFACE_HIDDEN, setLocalVoicing, startedUpTo, useVoiceElection } from "./voiceOwner";
+import { announceStarted, clientMsgId, deviceId, deviceOf, hushDevice, noteSaid, onHush, RANK_OVERLAY, RANK_SURFACE, RANK_SURFACE_HIDDEN, setLocalVoicing, startedUpTo, useVoiceElection } from "./voiceOwner";
+import { onPhone, useAppActive } from "../lib/appState";
 
 /** the page's mate conversation (one mate at a time per page) */
 export const useMateChat = createChatStore();
@@ -63,7 +64,9 @@ export const bcp47 = (lang: string | undefined) => {
  * overlay while it is on screen, else the most recently focused Mate surface (mate chat window / console Mate view).
  * The quick card is never a candidate. This is a page's rank in that election (0: not a candidate).
  */
-export function voiceRank(surface: string, desk: DesktopMateState | null, pageVisible: boolean): number {
+export function voiceRank(surface: string, desk: DesktopMateState | null, pageVisible: boolean, phoneAway = false): number {
+  // (the phone app away — closed, another app in front, the screen off: it never reads aloud)
+  if (phoneAway) return 0;
   if (surface === "device-runtime") return 0.5;
   if (surface === "mate-quick") return 0; // it closes after sending; whoever is elected answers
   if (surface === "mate-overlay") return pageVisible && (desk ? desk.visible : true) ? RANK_OVERLAY : 0;
@@ -184,10 +187,17 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
   const muted = useMateStore((s) => s.muted);
   const engine = mate?.voice.tts.engine ?? "off";
   const pageVisible = usePageVisible();
+  const appOn = useAppActive();
+  // the phone app away (lib/appState.ts): no reading aloud, and the conversation isn't on screen
+  const phoneAway = onPhone() && !(appOn && pageVisible);
+  // on screen: what she says now is seen (the server tells the phone's check-in only about the rest)
+  const onScreen = pageVisible && appOn && surface !== "device-runtime";
+  const onScreenRef = useRef(onScreen);
+  onScreenRef.current = onScreen;
   // the turn this window is reading now (it keeps the voice until that reply is done)
   const [speakingTurn, setSpeakingTurn] = useState<string | null>(null);
   const [blockedTurn, setBlockedTurn] = useState<string | null>(null);
-  const rank = opts.voice === false || blockedTurn ? 0 : voiceRank(surface, desk, pageVisible);
+  const rank = opts.voice === false || blockedTurn ? 0 : voiceRank(surface, desk, pageVisible, phoneAway);
   const owner = useVoiceElection(mateId, rank, speakingTurn);
   // (on the phone with her, her chat is quiet: the call has her voice — docs/mate-calls.md)
   const onCall = useCallStore(callBusy);
@@ -313,6 +323,19 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
       setSpeakingTurn(null);
     });
   }, [mateId, queue]);
+
+  // The phone app went away (closed, another app, the screen off): a reply being read stops here and now, and isn't
+  // picked up again when it comes back — a call goes on (her voice there is the call's).
+  useEffect(() => {
+    if (!phoneAway || !mateId || callBusy(useCallStore.getState())) return;
+    if (queue.getState().current || queue.getState().pending > 0 || speakingTurn) hushDevice(mateId);
+  }, [phoneAway, mateId, queue, speakingTurn]);
+
+  // On screen or not, told as it changes: what she says while the conversation is on screen counts as seen.
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "view", visible: onScreen }));
+  }, [onScreen]);
 
   // The reply this window reads stays here until it is written AND said; then the voice is free for the next reply.
   const busy = !!qstate.current || qstate.pending > 0;
@@ -470,7 +493,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
       ws.onopen = () => {
         retry = 0;
         setConnection("open");
-        ws.send(JSON.stringify({ type: "attach", after: store.getState().lastEid }));
+        ws.send(JSON.stringify({ type: "attach", after: store.getState().lastEid, visible: onScreenRef.current }));
         for(const held of pendingSpeech(sid!)) {
           ws.send(JSON.stringify({type:'speech',...held.packet,attachments:held.attachments,idle_ms:Math.max(0,Date.now()-held.packet.activity_at)}));
         }
@@ -554,7 +577,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
       if (!ws) return reconnectNow();
       if (ws.readyState !== WebSocket.OPEN) return;
       try {
-        ws.send(JSON.stringify({ type: "attach", after: store.getState().lastEid }));
+        ws.send(JSON.stringify({ type: "attach", after: store.getState().lastEid, visible: onScreenRef.current }));
       } catch {
         return reconnectNow();
       }

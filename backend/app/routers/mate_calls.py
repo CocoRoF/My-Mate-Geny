@@ -12,6 +12,10 @@ HTTP::
          service): ``data: {"type": "hello", "calls", "mate", "ring"}`` · ``{"type": "call.ring", "data"}`` ·
          ``{"type": "call.update", "data"}`` · ``{"type": "policy", "calls", "mate"}`` · ``{"type": "ping"}`` (every
          calls.LINK_PING_S at least, so a dead line is noticed) · ``{"type": "bye"}`` (the server is stopping)
+    GET  /api/mate-calls/link?device=&checkin=1&since=   → the same, for a moment: the app closed checks in now and then
+         (no line held, no notification of its own). After the hello: ``{"type": "notices", "now", "items"}`` (what the
+         mates said that nobody has seen, after ``since``), then her call if she would call now (``call.ring`` …
+         ``call.update`` until it is taken, turned down or missed), then ``{"type": "bye", "reason": "checked"}``.
 
 The line, ``/ws/mate-calls/{cid}`` (one screen at a time; a newer one takes over, a dropped one may come back within
 calls.RESUME_S)::
@@ -32,13 +36,17 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.mate.calls import LINK_PING_S, CallError, CallService
+
+CHECKIN_MAX_S = 180  # a check-in stays open at most this long (her ring, the app coming up to take it)
 from app.mate.store import MateError
+from app.services._ids import now_iso
 from app.ws.gate import admit
 
 router = APIRouter()
@@ -85,18 +93,29 @@ async def dial(mate_id: str, request: Request) -> Any:
 
 
 @router.get("/api/mate-calls/link")
-async def link(request: Request, device: str = "") -> Any:
+async def link(request: Request, device: str = "", checkin: int = 0, since: str = "") -> Any:
     """The phone app's background link: her ringing for this device and where every call stands, as server-sent events,
-    for as long as it stays open."""
+    for as long as it stays open — or, ``checkin``, for a moment: what the mates said since ``since``, and her call if
+    she would call now."""
     calls = _calls(request)
     device = device.strip()[:80]
     if not device:
         return JSONResponse({"detail": "device is required", "code": "error"}, status_code=400)
 
+    def ringing_here() -> bool:
+        return any(c.status == "ringing" and c.device == device for c in calls.calls.values())
+
     async def events() -> Any:
         queue: asyncio.Queue = asyncio.Queue(maxsize=256)
         lk = calls.link(device, queue.put_nowait)
+        until = time.monotonic() + CHECKIN_MAX_S
         try:
+            if checkin:
+                now = now_iso()
+                queue.put_nowait({"type": "notices", "now": now, "items": calls.notices(since) if since else []})
+                await calls.checkin(device)
+                if not ringing_here():
+                    queue.put_nowait({"type": "bye", "reason": "checked"})
             while True:
                 try:
                     msg = await asyncio.wait_for(queue.get(), timeout=LINK_PING_S)
@@ -104,7 +123,11 @@ async def link(request: Request, device: str = "") -> Any:
                     msg = {"type": "ping"}
                 yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
                 if msg.get("type") == "bye":
-                    return  # (the server is stopping: the app comes back to the next one)
+                    return  # (the server is stopping — the app comes back to the next one — or a check-in is done)
+                if checkin and (time.monotonic() > until or (msg.get("type") == "call.update" and not ringing_here())):
+                    # (her call was taken, turned down or missed: the check-in is over)
+                    yield f"data: {json.dumps({'type': 'bye', 'reason': 'checked'})}\n\n"
+                    return
         finally:
             calls.unlink(lk.id)
 

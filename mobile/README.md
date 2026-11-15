@@ -7,9 +7,11 @@ bar/safe areas, file chooser + camera for uploads, downloads (DownloadManager
 with the login cookie → Downloads folder), microphone for talking to the Mate
 (RECORD_AUDIO, asked when the page requests it; media plays without a tap so
 replies can be read aloud), phone calls with the mate (`GenyCallPlugin.java`: call
-mode — loudspeaker or earpiece, the screen kept on — and her ringing as a call
-notification over the lock screen while the app is in the background; see
-`docs/mate-calls.md`), offline page.
+mode — the earpiece or a headset, the loudspeaker only when pressed, the screen kept on — and her ringing as a call
+notification over the lock screen), her calls and messages with the app closed by **checking in** every 15 minutes
+(`GenyCheck` / `GenyCheckWorker`, WorkManager: no line held, nothing in the shade; the real-time line `GenyLinkService`
+is an option, off by default) — see `docs/mate-calls.md` "On Android"; away (closed, another app, the screen off) the
+page goes quiet except for a call; offline page.
 
 ## Connecting to a server
 

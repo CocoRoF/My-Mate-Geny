@@ -142,39 +142,53 @@ if it fits…"). A call they take warms her (`call_talked`) and resets the count
 
 ## On Android
 
-**She calls like a phone, with the app closed.** There is no push service (FCM) in this app, so the app keeps one line
-to the user's own server running in the background — `GenyLinkService` (`mobile/android/…`), a foreground service:
+**Since 0.5: nothing runs in the background but her calls.** The app keeps no line open and nothing of it stays in the
+notification shade. With the app away — closed, another app in front, the screen off — the page goes quiet (a reply
+being read aloud stops and isn't picked up again: `lib/appState.ts` from Capacitor's `appStateChange`, `voiceRank` 0 and
+`hushDevice` in `useMateConversation`), and Android freezes the app soon after. What does run: **her ringing** and **a
+call** (it goes on with the screen off). There is no push service (FCM), so her calls and messages reach a closed app by
+**checking in** now and then:
 
-- **The line**: `GET /api/mate-calls/link?device=` (server-sent events, signed in with `Authorization: Bearer` — the
-  page's login cookie, handed over by `GenyCallPlugin.link`, kept fresh by the server's sliding cookie on every answer).
-  It hears `hello {calls, mate, ring}` (a ring already on comes at once), `call.ring`, `call.update` (every call),
-  `policy {calls, mate}` (speaking first switched here) and a `ping` at least every `calls.LINK_PING_S` = 45 s (under a
-  proxy's 60 s idle; two missed — 120 s — is a dead line). A dropped line comes back at once when the network does,
-  else after 2 s … 5 min; signed out (a stale token) it waits for the page to sign it in again, or tries every 15 min.
-- **On the server**: `CallService.link` / `unlink`; `CallService.phones` keeps what each phone's page last said it lets
-  her do (speaking first, to whom: `saw()` from its `/ws/sessions` hello, in the setting `call_phones`), so with the page
-  gone the link still counts: `phone()` takes an open page first, else a linked phone that lets her. `ring()` and
-  `_announce()` reach the links too. Nothing else on the server sees a link (screen sharing, speaking first on a
-  screen, the device's presence): only calls.
-- **Her ringing** (`CallNotifier`, from the link or the page alike — one ring per call): a call notification
-  (`CallStyle.forIncomingCall`: her face — the page hands over each mate's, `mate/call/faces.ts` — her name, **거절** /
-  **받기**), the "Calls" channel's ringtone, insistent, a full-screen intent that brings the app up over the lock screen.
-  While the app is in front and unlocked the page rings itself instead (never both: `ring` says whether the phone rings).
-  **거절** is done without opening the app (`CallActionReceiver` → `…/decline`); **받기** opens the app and tells the
-  server at once (`…/answering`: the ring holds another `RING_S` so it isn't missed while the app comes up), and the
-  page, even one started just for it, takes the call. A call of hers nobody took leaves **부재중 전화** in the shade.
-- **During a call** the service also holds the microphone (foreground service type `microphone`, started while the call
+- **The check-in** (`GenyCheck` / `GenyCheckWorker`, WorkManager): a minute and five minutes after the app goes away,
+  then every 15 minutes (Android may wait longer while the phone sleeps), only with a network — for a few seconds each:
+  `GET /api/mate-calls/link?device=&checkin=1&since=` (signed in with `Authorization: Bearer` — the page's login cookie,
+  handed over by `GenyCallPlugin.link`, kept fresh by the server's sliding cookie on every answer). The server sends the
+  hello, then `{"type": "notices", "now", "items"}` — what the mates said after `since` that nobody has seen — then
+  decides whether she would call now (`CallService.checkin` → `consider()` for the mates this phone lets speak first)
+  and, if she does, rings (`call.ring`, then `call.update` until it is taken, turned down or missed — the line stays
+  open that long, at most `CHECKIN_MAX_S`), then `{"type": "bye", "reason": "checked"}`. The phone keeps `now` as the
+  next `since` (nothing is announced twice; a first check announces nothing old). The app in front skips it (the page
+  has it all), and coming back cancels the soon ones.
+- **Her messages** (`CallService.notices`): her replies and what she sent on her own (`messages`, role `assistant`, tags
+  and `[SILENT]` out), not what was on a screen as it came — a mate's conversation counts as seen up to when it was last
+  on screen anywhere (`SessionService.set_viewing` keeps `sessions.last_seen_at` for mate conversations; the mate pages
+  report `visible` on attach and as it changes). Shown as **메이트의 메시지** (`CallNotifier.message`: her face and name,
+  the words, grouped by mate; high importance; tapped → the app).
+- **On the server**: `CallService.phones` keeps what each phone's page last said it lets her do (speaking first, to
+  whom: `saw()` from its `/ws/sessions` hello, in the setting `call_phones`), so with the page gone a check-in still
+  counts: `phone()` takes an open page first, else a linked phone (a check-in holds the link while it lasts).
+- **Her ringing** (`CallNotifier`, from a check-in, the real-time line or the page alike — one ring per call): a call
+  notification (`CallStyle.forIncomingCall`: her face — the page hands over each mate's, `mate/call/faces.ts` — her
+  name, **거절** / **받기**), the "Calls" channel's ringtone, insistent, a full-screen intent that brings the app up over
+  the lock screen. While the app is in front and unlocked the page rings itself instead. **거절** is done without opening
+  the app (`CallActionReceiver` → `…/decline`); **받기** opens the app and tells the server at once (`…/answering`: the
+  ring holds another `RING_S` so it isn't missed while the app comes up), and the page takes the call. A call of hers
+  nobody took leaves **부재중 전화** in the shade.
+- **During a call** `GenyLinkService` holds the microphone (foreground service type `microphone`, started while the call
   screen is in front), so the call goes on with the screen locked or another app in front, and shows it: her face, the
-  clock, **끊기** (`…/hangup`).
-- **Always there**: on unless switched off (Settings → 메이트 → 전화 → 앱을 닫아도 전화 받기); started by the page,
-  after a reboot and after an update (`BootReceiver`); gone with a sign-out or another server. Its own notification is
-  quiet (a minimum-importance channel) and says how it stands ("서아의 전화를 받을 수 있어요", "먼저 말 걸기가 꺼져 있어
-  전화는 오지 않아요", "다시 연결하는 중", "다시 로그인하면…"). The settings section says the same and what the phone
-  still has to allow: notifications, full-screen notifications (Android 14+), no battery optimisation (the line lasts).
-- Type `specialUse` (Android 14+: the subtype says why — the app has no push service) plus `microphone` in a call;
-  permissions `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE`, `FOREGROUND_SERVICE_MICROPHONE`,
-  `RECEIVE_BOOT_COMPLETED`, `WAKE_LOCK` (a moment awake to ring), `ACCESS_NETWORK_STATE`,
-  `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`.
+  clock, **끊기** (`…/hangup`). It is the only foreground service the app runs by default, and only for the call.
+- **The earpiece**: a call starts on the earpiece — or a connected headset (Bluetooth, wired, USB) — like any phone
+  call; the loudspeaker only when they press it, every call again (`mate/call/machine.ts`, `GenyCallPlugin.route`).
+- **Real-time calls** (an option, off by default — 0.5 turned it off for everyone once): Settings → 메이트 → 전화 →
+  실시간 전화 keeps the old always-on line (`GET /api/mate-calls/link?device=`, server-sent events: `hello {calls, mate,
+  ring}`, `call.ring`, `call.update`, `policy`, a `ping` every `calls.LINK_PING_S` = 45 s; back at once when the network
+  is, else after 2 s … 5 min) in `GenyLinkService` as a foreground service of type `specialUse` — her calls come the
+  moment she makes them, and Android shows its notification all the while ("실시간 전화" channel, minimum importance).
+- The settings section says how it stands (the last check and how it went; with the line: its state) and what the phone
+  still has to allow: notifications, full-screen notifications (Android 14+), and with the line no battery optimisation.
+- Permissions: `POST_NOTIFICATIONS`, `USE_FULL_SCREEN_INTENT`, `VIBRATE`, `RECEIVE_BOOT_COMPLETED`, `WAKE_LOCK` (a moment
+  awake to ring), `ACCESS_NETWORK_STATE`; `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_MICROPHONE` (a call),
+  `FOREGROUND_SERVICE_SPECIAL_USE` + `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` (the real-time line only).
 
 `GenyCallPlugin` (`mobile/android/…/GenyCallPlugin.java`, registered in `MainActivity`):
 
@@ -184,7 +198,8 @@ to the user's own server running in the background — `GenyLinkService` (`mobil
   turning her down or onto the earpiece: this keeps her where the screen says.) The link holds the microphone meanwhile.
 - `ring({id, mate, title, body})` → `{shown}` / `cancelRing({id})`: her ringing (above). Taps come to the page as
   `callAction` (kept until it listens).
-- `link({device, faces})` / `status()` / `setBackground({on})` / `openSettings({what})`: the background link.
+- `link({device, faces})` / `status()` (`checks: {last, result}` — the check-ins) / `setBackground({on})` (the
+  real-time line) / `openSettings({what})`. `link` also schedules the check-ins.
 - Permissions for a call: `USE_FULL_SCREEN_INTENT`, `VIBRATE`, `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`,
   `POST_NOTIFICATIONS`. An app without the plugin still calls (the page's own ring; no notification).
 

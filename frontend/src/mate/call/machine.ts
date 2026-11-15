@@ -49,7 +49,8 @@ export type CallEvent =
 
 export const IDLE: CallMachine = {
   phase: "idle", callId: null, mateId: null, direction: null, startedAt: null, connectedAt: null, endedAt: null,
-  endReason: null, reconnecting: false, minimized: false, muted: false, speaker: true,
+  // (the earpiece, like a phone call: the loudspeaker only when they press it — every call starts there again)
+  endReason: null, reconnecting: false, minimized: false, muted: false, speaker: false,
 };
 
 const END_REASONS = new Set<EndReason>(["hangup", "declined", "missed", "cancelled", "network", "failed", "limit", "busy", "gone", "elsewhere", "restart"]);
@@ -64,12 +65,12 @@ export function reduceCall(s: CallMachine, e: CallEvent): CallMachine {
   switch (e.type) {
     case "dial":
       if (s.phase !== "idle" && s.phase !== "ended") return s; // (one call at a time)
-      return { ...IDLE, phase: "dialing", mateId: e.mateId, direction: "outgoing", startedAt: e.at, speaker: s.speaker };
+      return { ...IDLE, phase: "dialing", mateId: e.mateId, direction: "outgoing", startedAt: e.at };
     case "dialed":
       return s.phase === "dialing" && !s.callId ? { ...s, callId: e.callId } : s;
     case "ring":
       if (s.phase !== "idle" && s.phase !== "ended") return s; // (busy here: the server keeps one call anyway)
-      return { ...IDLE, phase: "incoming", callId: e.callId, mateId: e.mateId, direction: "incoming", startedAt: e.at, speaker: s.speaker };
+      return { ...IDLE, phase: "incoming", callId: e.callId, mateId: e.mateId, direction: "incoming", startedAt: e.at };
     case "accept":
       return s.phase === "incoming" ? { ...s, phase: "active" } : s;
     case "connected":
@@ -104,7 +105,7 @@ export function reduceCall(s: CallMachine, e: CallEvent): CallMachine {
     case "minimize":
       return s.phase === "dialing" || s.phase === "active" ? { ...s, minimized: e.on } : { ...s, minimized: false };
     case "dismiss":
-      return s.phase === "ended" ? { ...IDLE, speaker: s.speaker } : s;
+      return s.phase === "ended" ? IDLE : s;
   }
 }
 
