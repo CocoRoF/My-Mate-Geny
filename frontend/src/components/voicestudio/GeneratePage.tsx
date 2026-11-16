@@ -281,7 +281,7 @@ export function Result({
           e.voice_name || t("voiceStudio.gnNoProfile"),
           t(`voiceStudio.mode_${e.mode}` as MsgKey),
           e.ref_label ? t(`localVoice.feeling_${e.ref_label}` as MsgKey) : "",
-          e.model_id,
+          e.adapter ? `${e.model_id} (${t("voiceStudio.trTrained")})` : e.model_id,
           t("voiceStudio.gnStat", { s: secs(e.seconds), gen: secs(e.generate_seconds), rtf: e.rtf != null ? e.rtf.toFixed(2) : "–" }),
           t("voiceStudio.gnSeedN", { n: String(e.seed ?? "–") }),
           e.source !== "studio" ? sourceLabel(t, e.source) : "",

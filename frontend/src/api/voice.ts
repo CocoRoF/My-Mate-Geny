@@ -153,6 +153,8 @@ export interface LocalVoice {
   references: VoiceRef[];
   /** its sound clips (laugh, yawn: several of each) — apart from the feelings, so nothing clones from them */
   sounds: (Omit<VoiceRef, "label"> & { label: SoundLabel })[];
+  /** the training whose adapter it speaks with on OmniVoice ("" none: Voice Studio → 학습) */
+  adapter?: string;
 }
 
 /** the server lists a profile's sound clips among its clips: here they are kept apart */
@@ -391,6 +393,8 @@ export interface HistoryEntry {
   note: string;
   batch_id: string;
   batch_index: number | null;
+  /** the voice's training whose adapter it was spoken with ("" none: Voice Studio → 학습) */
+  adapter?: string;
   info?: {
     segments?: number;
     device?: string;
@@ -514,3 +518,63 @@ export const deleteBatch = (id: string) => apiFetch<{ deleted: boolean }>(`/api/
 export const batchZipUrl = (id: string, format: AudioFormat = "wav") => `/api/voice/batches/${enc(id)}/zip?format=${format}`;
 export const loadModelFrom = (id: string, source: string) =>
   apiFetch<{ resident: Resident }>(`/api/voice/models/${enc(id)}/load`, { method: "POST", ...j({ source }) });
+
+// ── training a voice (docs/local-voice.md "Training a voice") ──
+
+export type TrainingState = "queued" | "waiting" | "running" | "released" | "done" | "failed" | "canceled" | "interrupted";
+export type TrainingStage = "" | "kit" | "prepare" | "transcribe" | "screen" | "tokens" | "baseline" | "train" | "eval" | "done";
+export const TRAINING_STAGES = ["prepare", "transcribe", "screen", "tokens", "baseline", "train", "done"] as const;
+/** how like her a condition sounds (CAM++ cosine to her own recordings), its worst line, and words heard back wrong */
+export interface TrainingScore {
+  similarity: number;
+  worst: number;
+  cer: number;
+}
+export type TrainingConditions = Record<"long" | "short" | "none", TrainingScore>;
+export interface TrainingRun {
+  id: string;
+  voice_id: string;
+  voice_name: string;
+  model_id: string;
+  state: TrainingState;
+  stage: TrainingStage;
+  language: string;
+  inputs: { name: string; file: string; seconds: number; clip?: boolean }[];
+  progress: { step?: number; steps?: number; loss?: number; eta_s?: number; done?: number; total?: number; found?: number;
+    found_s?: number; recorded_s?: number; waiting_for?: string; what?: string; stage?: string; done_bytes?: number;
+    total_bytes?: number };
+  data: { kept?: number; kept_s?: number; dropped?: { speaker: number; words: number; sound: number }; language?: string };
+  result: { improved?: boolean; best_step?: number; steps?: number; base?: TrainingConditions; tuned?: TrainingConditions;
+    evals?: { step: number; metrics: TrainingConditions; best: boolean }[]; kept_s?: number; minutes?: number };
+  error: string;
+  code: string;
+  created_at: string;
+  started_at: string;
+  finished_at: string;
+  applied: boolean;
+  samples: string[];
+  events?: Record<string, unknown>[];
+}
+export interface TrainingKit {
+  model: { id: string; installed: boolean };
+  stt: { id: string; ready: boolean; gb: number; license: string };
+  speaker: { ready: boolean; gb: number; license: string };
+  need_gb: number;
+  min_seconds: number;
+}
+export const listTrainings = (voiceId = "") =>
+  apiFetch<{ runs: TrainingRun[]; kit: TrainingKit }>(`/api/voice/trainings${voiceId ? `?voice_id=${enc(voiceId)}` : ""}`);
+export const getTraining = (id: string) => apiFetch<TrainingRun>(`/api/voice/trainings/${enc(id)}`);
+export function createTraining(voiceId: string, files: File[], opts: { language?: string; acceptLicenses?: boolean } = {}) {
+  const form = new FormData();
+  form.append("voice_id", voiceId);
+  for (const f of files) form.append("files", f, f.name);
+  if (opts.language) form.append("language", opts.language);
+  if (opts.acceptLicenses) form.append("accept_licenses", "1");
+  return apiFetch<TrainingRun>("/api/voice/trainings", { method: "POST", body: form, headers: {} });
+}
+export const cancelTraining = (id: string) => apiFetch<TrainingRun>(`/api/voice/trainings/${enc(id)}/cancel`, { method: "POST" });
+export const applyTraining = (id: string, on: boolean) =>
+  apiFetch<TrainingRun>(`/api/voice/trainings/${enc(id)}/apply`, { method: "POST", ...j({ on }) });
+export const deleteTraining = (id: string) => apiFetch<{ deleted: boolean }>(`/api/voice/trainings/${enc(id)}`, { method: "DELETE" });
+export const trainingSampleUrl = (id: string, name: string) => `/api/voice/trainings/${enc(id)}/samples/${enc(name)}`;

@@ -230,7 +230,7 @@ function Row({
               when.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
               e.voice_name || t("voiceStudio.gnNoProfile"),
               e.ref_label ? t(`localVoice.feeling_${e.ref_label}` as MsgKey) : t(`voiceStudio.mode_${e.mode}` as MsgKey),
-              e.model_id,
+              e.adapter ? `${e.model_id} (${t("voiceStudio.trTrained")})` : e.model_id,
               secs(e.seconds),
               sourceLabel(t, e.source),
             ]

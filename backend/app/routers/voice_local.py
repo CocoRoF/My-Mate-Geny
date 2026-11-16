@@ -30,6 +30,13 @@ Voice Studio (Settings → 로컬 모델 호스팅 → Voice Studio):
     POST   /api/voice/batches {label, settings, content, format} · GET /api/voice/batches · GET /batches/{id}
     POST   /api/voice/batches/{id}/cancel · /retry {failed_only?} · DELETE /api/voice/batches/{id}
     GET    /api/voice/batches/{id}/zip?format=wav|mp3|ogg|flac
+Training a voice (app/voicehost/training.py, docs/local-voice.md "Training a voice"):
+    GET    /api/voice/trainings?voice_id=        the runs, and what a run needs (kit)
+    POST   /api/voice/trainings                  multipart: voice_id, files[] (audio / video, any length), language?,
+                                                 accept_licenses? → the run (queued)
+    GET    /api/voice/trainings/{id}             a run: its stage, progress, data, result, recent events
+    POST   /api/voice/trainings/{id}/cancel · /apply {on} · DELETE /api/voice/trainings/{id}
+    GET    /api/voice/trainings/{id}/samples/{name}   its A/B samples (base-long-0.wav, tuned-none-1.wav, …)
 """
 
 from __future__ import annotations
@@ -155,7 +162,7 @@ def _public_voice(v: dict[str, Any]) -> dict[str, Any]:
             for r in v.get("references") or []]
     return {**{k: v.get(k) for k in ("id", "name", "language", "instruct", "builtin", "source", "rights",
                                      "description", "default_model", "default_params", "tags", "starred",
-                                     "created_at", "updated_at")}, "references": refs}
+                                     "created_at", "updated_at")}, "adapter": v.get("adapter") or "", "references": refs}
 
 
 @router.get("/voices")
@@ -567,3 +574,89 @@ async def batch_zip(bid: str, request: Request) -> Any:
     name = f"voice-batch-{_name_part(b['label'] or bid, 40)}.zip"
     return FileResponse(tmp, media_type="application/zip", filename=name,
                         background=BackgroundTask(lambda: Path(tmp).unlink(missing_ok=True)))
+
+
+# ---- training a voice ----
+
+TRAIN_FILE_MB = 300  # each recording (an hour of a video's sound is far less)
+TRAIN_FILES = 12
+
+
+def _train_fail(e: Exception) -> JSONResponse:
+    return JSONResponse({"detail": str(e), "code": getattr(e, "code", "error")}, status_code=getattr(e, "status", 400))
+
+
+@router.get("/trainings")
+async def list_trainings(request: Request, voice_id: str = "") -> Any:
+    h = _host(request)
+    return {"runs": h.trainings.list(voice_id), "kit": h.trainings.kit()}
+
+
+@router.post("/trainings")
+async def create_training(request: Request, voice_id: str = Form(...), language: str = Form(""),
+                          accept_licenses: str = Form(""), files: list[UploadFile] = File(...)) -> Any:
+    from app.voicehost.training import TrainingError
+
+    h = _host(request)
+    if len(files) > TRAIN_FILES:
+        return JSONResponse({"detail": f"At most {TRAIN_FILES} recordings at once", "code": "too_many"}, status_code=400)
+    got: list[tuple[str, bytes]] = []
+    for f in files:
+        data = await f.read(TRAIN_FILE_MB * 1024 * 1024 + 1)
+        if len(data) > TRAIN_FILE_MB * 1024 * 1024:
+            return JSONResponse({"detail": f"{f.filename}: larger than {TRAIN_FILE_MB} MB", "code": "too_large"},
+                                status_code=413)
+        got.append((f.filename or "recording", data))
+    try:
+        return await h.trainings.create(voice_id=voice_id, files=got, language=language,
+                                        accept_licenses=accept_licenses in ("1", "true", "yes"))
+    except TrainingError as e:
+        return _train_fail(e)
+
+
+@router.get("/trainings/{rid}")
+async def get_training(rid: str, request: Request) -> Any:
+    r = _host(request).trainings.get(rid)
+    if r is None:
+        raise HTTPException(404, "no such training")
+    return r
+
+
+@router.post("/trainings/{rid}/cancel")
+async def cancel_training(rid: str, request: Request) -> Any:
+    from app.voicehost.training import TrainingError
+
+    try:
+        return await _host(request).trainings.cancel(rid)
+    except TrainingError as e:
+        return _train_fail(e)
+
+
+@router.post("/trainings/{rid}/apply")
+async def apply_training(rid: str, request: Request) -> Any:
+    from app.voicehost.training import TrainingError
+
+    b = await _body(request)
+    try:
+        return _host(request).trainings.apply(rid, bool(b.get("on", True)))
+    except TrainingError as e:
+        return _train_fail(e)
+
+
+@router.delete("/trainings/{rid}")
+async def delete_training(rid: str, request: Request) -> Any:
+    from app.voicehost.training import TrainingError
+
+    try:
+        await _host(request).trainings.delete(rid)
+    except TrainingError as e:
+        return _train_fail(e)
+    return {"deleted": True}
+
+
+@router.get("/trainings/{rid}/samples/{name}")
+async def training_sample(rid: str, name: str, request: Request) -> Any:
+    p = _host(request).trainings.sample(rid, name)
+    if p is None:
+        raise HTTPException(404, "no such sample")
+    return FileResponse(p, media_type="audio/wav")

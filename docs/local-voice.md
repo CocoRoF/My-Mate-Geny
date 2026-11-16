@@ -212,12 +212,73 @@ Settings → 로컬 모델 호스팅 → **Voice Studio** (`frontend/src/compone
 |---|---|
 | 개요 | each GPU — load, temperature, power, clock, fan — and **whose its memory is**: this app's models (each worker's process, measured by the driver), other programs (`nvidia-smi --query-compute-apps`), and what no process here accounts for (the host's display, other containers); the last 30 minutes (sampled every 5 s while someone looks, else every 30 s); the models on the GPU (park, unload, load); the GPU queue — running, waiting, the last jobs and for whom; engine events; the machine's RAM and disk |
 | 모델 | the gate, each model's card (license, install, load / unload, default model), its default parameters (what every line made with it starts from: a mate's, the studio's, a batch's), the engines' environments |
+| 학습 | a profile taught its voice from recordings of the person: drop them in, start — the rest is the run's ([below](#training-a-voice)); each run's steps, progress, how much of the recordings it kept, before / after, A/B samples, on / off, delete |
 | 프로필 | the profiles (search, mine / built-in, ★), the eight clips (play, upload, record, trim, words and language), its laughs (웃음 소리: its own laugh / yawn clips, the made ones with how much each laughs, make again, delete — [above](#laughs-sighs-and-yawns)), details (description, tags, default model and parameters, voice description), duplicate, delete |
 | 생성 | a line: profile, model, mode (자동 / 복제 / 설계 — what the model and the profile allow), feeling (a dot where the profile has the clip), language, description presets, parameters, seed (random, or kept to make the same line again), 웃음·한숨을 소리로 (on: the sounds written in it made as sounds; chips insert `[웃음]` `[킥킥]` `[한숨]` `[하품]` `[헉]` `[흥]`) → waveform, timings, what became a sound, download (WAV / MP3 / OGG / FLAC), ★, same seed again, save as a profile's clip |
 | 일괄 생성 | text (a line each, `[joy] …`), CSV (`text` + any of `profile`, `feeling`, `seed`, `language`, `instruct`, `model`) or JSON, ≤ 500 lines, shared settings (a line's own columns win), one seed for all or one each; run at the lowest priority, one line at a time; progress, cancel, retry failed, resume one a restart stopped (`interrupted`), each line playable, a ZIP in a format with `manifest.json` |
 | 히스토리 | every line made here with everything that made it: search, filter (profile, model, where from, ★), play, download, make again (opens 생성 with its settings and seed), save as a clip, delete (one or many). Over `history_max_entries` (2000) or `history_max_gb` (5) the oldest go first; ★ lines and batches' lines stay |
 | 도구 | A/B comparison (one line, up to five settings, the same seed), seed search (one line, 2 – 12 seeds), a clip's analysis (format, level, silence, warnings, the best stretches → add one to a profile, its words and language), transcription |
 | 설정 | GPU share, idle unload, parked time, parking RAM, history limits; the default speech / recognition model and the profile the studio starts with; whether a voice's laugh is made by itself; paths and engine mode (from the environment) |
+
+## Training a voice
+
+Voice Studio → **학습** (`frontend/src/components/voicestudio/TrainPage.tsx`; the server: `app/voicehost/training.py`,
+the run: `app/voicehost/train/`). Cloning from a clip copies a voice; a profile taught by recordings of the person
+speaks like her with a short clip and with none. **What the user does: give the recordings** (any audio or video —
+a talk, a stream, voice notes — up to 12 files of 300 MB at once, one person) and start. Everything else is the run's:
+
+| Stage | |
+|---|---|
+| prepare | each recording at 24 kHz, cut into utterances at its pauses (1.5 – 12 s, `train/segment.py`) |
+| transcribe | each utterance's words by Whisper large-v3-turbo; the language found by OmniVoice's own detector unless given |
+| screen | only her: an utterance unlike the rest (CAM++ speaker embeddings, below the median − 0.18) is someone else; words that can't be right for its length, or the same words over and over; clipping, too quiet. At most 90 minutes are kept, at least 60 s must be |
+| tokens | the utterances as OmniVoice's audio tokens (25 a second) |
+| baseline | the profile as it clones now, measured on new sentences in her language with three references — a long clip (her own neutral clip, else her best 5 – 12 s utterance), a short one (~3 s) and none: how alike (CAM++ cosine to the centroid of her kept utterances) and how intelligible (Whisper's character error rate) |
+| train | LoRA (r 16, α 32) on the LLM's attention and MLP projections, the audio embedding and heads trained in full; bf16 autocast, gradient checkpointing, AdamW 1e-4 with warm-up and cosine. About 50 passes over her data (200 – 1500 steps); measured six times along the way |
+| done | the best checkpoint — the most alike over the three references, never less intelligible than before (CER at most +0.03 in each) — kept as an adapter (bf16, ~54 MB) with A/B samples, and put on the profile when it is better |
+
+- **On the profile**: a trained profile speaks with its adapter on OmniVoice — in the studio, in batches, as a mate's
+  voice (her speech cache's key includes the adapter: new lines for a new one). Other models clone from its clips as
+  before. The run's card turns it on and off; deleting the run takes it off and removes it. An adapter is for the
+  OmniVoice it was made with (the revision in `geny.json`): after a new OmniVoice the profile speaks without it.
+  A new profile gets her clearest utterance as its neutral clip. 프로필 marks a trained profile (학습됨), and 생성 /
+  히스토리 a line made with an adapter (`omnivoice (학습됨)`, the history's `adapter`).
+- **What it needs**: OmniVoice installed; Whisper large-v3-turbo's weights (MIT) and CAM++'s (`campplus.onnx` from
+  `FunAudioLLM/Fun-CosyVoice3-0.5B-2512`, 28 MB, Apache-2.0) — fetched for the first run after the user accepts them
+  in the form once; `peft` and `onnxruntime` in the omni runtime (in its lock: an omni runtime from an older lock keeps
+  speaking and is brought up to date in place — 30 s after the server starts, or before the first run). The GPU:
+  6 GB free (4.9 GB measured at most); its process is held to 12 GB of RAM (`capped`, where there is one).
+- **Sharing the GPU**: one run at a time. It waits while a call holds its models or a mate spoke in the last 20 s, and
+  while the GPU has less than 6 GB free. While a mate speaks (an interactive job in the GPU queue) it pauses: compute
+  stops, its memory stays. When the memory is wanted — a model that doesn't fit, an image job — it saves where it is
+  and leaves (`released`), and goes on from that step when the GPU is free again; a server restart goes on the same
+  way (a run cut off without a saved step starts over).
+- **What stays**: the recordings (to train again), the adapter, the samples and the report; the cut utterances and
+  the saved steps go when the run ends. Under `<voice home>/trainings/<run>/`. Nothing leaves the machine.
+- **License**: OmniVoice's audio tokenizer is under the Boson Higgs Audio 2 Community License (accepted with
+  OmniVoice). Its 1.b.v forbids using its output "to improve any other large language model (excluding Boson Higgs
+  Audio 2 or derivative works thereof)", and 1.b.i asks that a model fine-tuned with it that is *distributed or made
+  available* be named "Higgs Audio 2 …". Training here feeds the tokenizer's codes to OmniVoice's own LLM (which was
+  trained on them) and keeps the adapter on this machine; whether that falls under 1.b.v is the user's call (not
+  settled here). The adapters are never published by the app.
+
+| | |
+|---|---|
+| `GET /trainings?voice_id=` | `{runs, kit}`: every run (state, stage, progress, data — kept, dropped by reason —, result, samples, applied) and what a run needs (`model`, `stt`, `speaker` — ready, size, license —, `runtime`, `need_gb`) |
+| `POST /trainings` (multipart `voice_id`, `files`, `language`, `accept_licenses`) | a run (`queued`). Refused: `no_voice`, `busy` (the profile has one), `license` (the weights aren't accepted), `too_short` (under 60 s of sound), `bad_audio`, `too_many`, `too_large` |
+| `GET /trainings/{id}` · `POST /trainings/{id}/cancel` · `POST /trainings/{id}/apply` `{on}` · `DELETE /trainings/{id}` · `GET /trainings/{id}/samples/{name}` | one run, stop it, its adapter on / off, remove it, an A/B sample |
+
+Measured (RTX 5070, OmniVoice 0.2.1, peft 0.21.3), speaker similarity (CAM++) with a long clip / a short one / none:
+
+| Data | Steps | Before | After | CER | Time | GPU |
+|---|---|---|---|---|---|---|
+| KSS, 26 min (one speaker, read speech) | 1500 | 0.79 / 0.73 / 0.34 | 0.79 / 0.75 / 0.76 | 0 → 0 | 13 min | 4.9 GB |
+| KSS, 5 min (resumed once mid-run) | 200 | 0.83 / 0.80 / 0.40 | 0.84 / 0.80 / 0.81 | 0 → 0 | – | 4.9 GB |
+| KSS joined into one 12-minute recording, through 학습 (7:44 kept, 154 utterances; 4 left out by the speaker check — all hers: 2.5 % lost) | 300 | 0.85 / 0.79 / 0.39 | 0.85 / 0.85 / 0.83 | 0 → 0.008 (long clip) | 5.3 min; 8.5 min from upload with the first fetch of Whisper (2.6 min) | 4.8 GB |
+
+With no clip at all, the trained profile is as like her as the untrained one with a long clip; with a clip, about the
+same (the clip already carries most of it). 0.457 s a step; the run's process ~7 GB of RAM. A line in the trained voice afterwards: RTF 0.15 – 0.31, as
+before.
 
 ## A mate on the local engine
 
@@ -286,6 +347,9 @@ OmniVoice spoke in 메스가키's joy clip at 0.18, and Whisper heard the line b
 
 - **GPU telemetry on a Mac**: load, temperature and power need `powermetrics` (root): the overview shows memory only.
 - **AMD / Intel GPUs** (ROCm, DirectML, XPU): no lock files for them.
+- **Training on a Mac or on Windows**: the run is written for both (on Apple Silicon in fp32 on Metal), and their omni
+  locks carry its packages, but it has been measured only on an NVIDIA GPU under Linux.
+- **Training another model**: only OmniVoice learns a voice; Qwen3-TTS and CosyVoice3 clone from the profile's clips.
 - **A GPU elsewhere**: a server without a GPU can't use another machine's GPU for these models yet (a remote voice
   node). Until then: run My Mate Geny on the GPU machine, or point the mate at an HTTP service (OmniVoice URL / Whisper
   URL in 이미지 및 음성 공급자 → 직접 호스팅한 음성 서비스).
@@ -308,6 +372,14 @@ unseen), batch input, a batch run → ZIP → retry, an interrupted batch resume
 (and no engine reading another's tags), a line in parts, a built-in voice's laugh put in (and read as written when
 asked), a profile's laughs made / kept / used / forgotten, made by themselves the first time a line laughs, the routes,
 ElevenLabs' audio tags for a mate. The measurements above: `backend/tools/nonverbal_bench.py` on a real GPU.
+
+`backend/tests/test_voice_training.py` (the stand-in run in its own process, the stand-in engine): recordings cut at
+their pauses, how long a run trains, the server's word (pause, resume, release, stop), a run from upload to the adapter
+on the profile (the profile and its lines marked, off and on, another OmniVoice's adapter not used, removed), a new
+profile's clip, what is refused, a mate's words pausing a run and a model sending it away (and back from its step),
+the GPU queue's word, an omni runtime from an older lock brought up to date in place. In a browser (the stand-ins):
+`desktop/test/e2e/voice-training-browser.js` — the page without OmniVoice, a new profile from a picked recording, the
+licenses, the run to done, the report and samples, 학습됨 in 프로필 / 생성 / 히스토리, off / on, delete, en / ko, a phone.
 
 `backend/tests/test_voicehost.py` (no GPU, no downloads: `VOICE_ENGINE_MODE=fake` and a stand-in engine in a real
 worker process): the gate for each refusal, the license before any download, disk room, placement (LRU, pinned, other

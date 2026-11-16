@@ -30,8 +30,8 @@ export const mb = (n: number | null | undefined) => (n == null || !Number.isFini
 export const secs = (s: number | null | undefined, digits = 1) => (s == null || !Number.isFinite(s) ? "–" : `${s.toFixed(digits)}s`);
 export const clock = (t: number) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-export type Page = "overview" | "models" | "profiles" | "generate" | "batch" | "history" | "tools" | "settings";
-export const PAGES: Page[] = ["overview", "models", "profiles", "generate", "batch", "history", "tools", "settings"];
+export type Page = "overview" | "models" | "profiles" | "train" | "generate" | "batch" | "history" | "tools" | "settings";
+export const PAGES: Page[] = ["overview", "models", "profiles", "train", "generate", "batch", "history", "tools", "settings"];
 
 /** a feeling's dot */
 export const FEELING_COLOR: Record<Feeling, string> = {

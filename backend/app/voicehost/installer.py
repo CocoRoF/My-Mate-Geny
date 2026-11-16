@@ -132,17 +132,25 @@ class Installer:
         return self.s.runtimes_dir / "src" / rt.name
 
     def runtime_ready(self, rt: Runtime) -> bool:
+        """made from the lock file of this version"""
         marker = self.runtime_dir(rt) / ".ready"
         try:
             return marker.read_text().strip() == self._lock_hash(rt)
         except OSError:
             return False
 
+    def runtime_usable(self, rt: Runtime) -> bool:
+        """made, if perhaps from an older lock: it keeps speaking while refresh_runtimes brings it up to date"""
+        return (self.runtime_dir(rt) / ".ready").exists() and venv_python(self.runtime_dir(rt)).exists()
+
+    def runtime_of(self, engine: str) -> Runtime | None:
+        return RUNTIME_OF.get(engine)
+
     def python_for(self, engine: str) -> str | None:
         if engine in self.s.engine_python:
             return self.s.engine_python[engine]
         rt = RUNTIME_OF.get(engine)
-        if rt is None or not self.runtime_ready(rt):
+        if rt is None or not self.runtime_usable(rt):
             return None
         return str(venv_python(self.runtime_dir(rt)))
 
@@ -298,17 +306,83 @@ class Installer:
 
         w = asyncio.create_task(watch())
         try:
-            cmd = [*uv, "pip", "install", "-p", str(venv_python(d)), "--no-deps", "-r", str(lock)]
-            if "+cu" in lock.read_text():  # (CUDA builds of torch: their own index; a Mac's torch is on PyPI)
-                cmd += ["--index-strategy", "unsafe-best-match", "--extra-index-url", TORCH_INDEX]
-            bc = self.s.runtimes_spec_dir / "build-constraints.txt"
-            if bc.exists():
-                cmd += ["--build-constraint", str(bc)]
-            await self._run(cmd, env, p, model_id)
+            await self._run(self._uv_install(uv, rt, d), env, p, model_id)
         finally:
             w.cancel()
         (d / ".ready").write_text(self._lock_hash(rt))
         p.log.append(f"runtime {rt.name} ready")
+
+    def _uv_install(self, uv: list[str], rt: Runtime, d: Path) -> list[str]:
+        lock = self.lock_path(rt)
+        cmd = [*uv, "pip", "install", "-p", str(venv_python(d)), "--no-deps", "-r", str(lock)]
+        if "+cu" in lock.read_text():  # (CUDA builds of torch: their own index; a Mac's torch is on PyPI)
+            cmd += ["--index-strategy", "unsafe-best-match", "--extra-index-url", TORCH_INDEX]
+        bc = self.s.runtimes_spec_dir / "build-constraints.txt"
+        if bc.exists():
+            cmd += ["--build-constraint", str(bc)]
+        return cmd
+
+    async def refresh_runtimes(self) -> list[str]:
+        """Runtimes made from an older lock file (a new version of the app pinned something more — OmniVoice's gained
+        peft and onnxruntime for voice training): what the lock has now is installed into them in place. Never
+        rebuilt: a worker may be speaking from it meanwhile, and only packages are added or changed. → the runtimes
+        brought up to date"""
+        if self.s.engine_mode == "fake":
+            return []
+        uv = self.s.uv()
+        done = []
+        for rt in RUNTIMES:
+            if not self.runtime_usable(rt) or self.runtime_ready(rt) or any(e in self.s.engine_python for e in rt.engines):
+                continue
+            if not uv:
+                log.warning("runtime %s is out of date and uv is missing", rt.name)
+                continue
+            key = f"runtime:{rt.name}"
+            async with self._lock:
+                if self.runtime_ready(rt):
+                    continue
+                p = Progress(state="runtime", message=f"updating runtime {rt.name}", started_at=time.time())
+                self.progress[key] = p
+                cache = self.s.runtimes_dir / ".uv-cache"
+                env = dict(os.environ, UV_CACHE_DIR=str(cache), UV_LINK_MODE="hardlink", UV_PYTHON_DOWNLOADS="never")
+                env.pop("VIRTUAL_ENV", None)
+                try:
+                    if rt.name in SOURCES:
+                        await self._fetch_sources(rt, p)
+                    d = self.runtime_dir(rt)
+                    await self._run(self._uv_install(uv, rt, d), env, p, key)
+                    (d / ".ready").write_text(self._lock_hash(rt))
+                    p.state, p.message = "done", f"runtime {rt.name} up to date"
+                    done.append(rt.name)
+                    log.info("runtime %s brought up to date", rt.name)
+                except Exception as e:  # noqa: BLE001 - it keeps speaking from what it has
+                    log.warning("runtime %s couldn't be updated: %s", rt.name, e)
+                    p.state, p.error = "error", str(e)[:300]
+                finally:
+                    self._procs.pop(key, None)
+            self.on_change(key)
+        return done
+
+    async def ensure_weights(self, spec: catalog.ModelSpec) -> bool:
+        """a model's files without its runtime (Whisper's and the speaker check's for a voice training): fetched
+        like an install's (after an install in progress). → whether they are there"""
+        if self.weights_ready(spec) or self.s.engine_mode == "fake":
+            return True
+        async with self._lock:
+            if self.weights_ready(spec):
+                return True
+            p = Progress(state="weights", message=spec.name, started_at=time.time())
+            self.progress[spec.id] = p
+            try:
+                await self._download(spec, p)
+                p.state = "done"
+            except Exception as e:  # noqa: BLE001 - said by the caller
+                log.warning("%s download failed: %s", spec.id, e)
+                p.state, p.error = "error", str(e)
+            finally:
+                self._procs.pop(spec.id, None)
+            self.on_change(spec.id)
+        return self.weights_ready(spec)
 
     async def _fetch_sources(self, rt: Runtime, p: Progress) -> None:
         """the engine's own source, pinned: GitHub archives unpacked into runtimes/src/<runtime>"""

@@ -7,6 +7,7 @@ import shutil
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 
 @dataclass
@@ -35,6 +36,8 @@ class VoiceSettings:
     hf_endpoint: str = ""
     models_dir_override: str = ""
     runtimes_dir_override: str = ""
+    # a voice training's knobs (app/voicehost/train/run.py: epochs, min/max steps, lr, rank, max_minutes, …): its defaults
+    training_limits: dict[str, Any] = field(default_factory=dict)
     # engine name → interpreter (development: an environment made by hand); missing → the installed runtime
     engine_python: dict[str, str] = field(default_factory=dict)
 

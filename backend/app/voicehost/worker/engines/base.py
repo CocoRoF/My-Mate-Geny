@@ -29,6 +29,8 @@ class SynthRequest:
     reference: Reference | None = None
     instruct: str = ""
     params: dict[str, Any] = field(default_factory=dict)
+    # the voice's own trained adapter (app/voicehost/training.py): a LoRA directory, for the engines that take one
+    adapter: str = ""
 
 
 class PromptCache:

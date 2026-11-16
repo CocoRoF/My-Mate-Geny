@@ -79,6 +79,8 @@ class GpuQueue:
         self.current: dict[str, Any] | None = None
         self.waiting_jobs: dict[int, dict[str, Any]] = {}
         self.recent: collections.deque = collections.deque(maxlen=120)
+        # told when a mate's words start and end being made (a voice training pauses meanwhile)
+        self.on_interactive: Callable[[bool], None] | None = None
 
     def start(self) -> None:
         self._task = asyncio.create_task(self._loop())
@@ -118,6 +120,9 @@ class GpuQueue:
             self.running = label
             self.current = rec
             rec["started_at"] = time.time()
+            told = _prio == INTERACTIVE and self.on_interactive is not None
+            if told:
+                self.on_interactive(True)
             try:
                 result = await job()
                 rec["ok"] = True
@@ -128,6 +133,8 @@ class GpuQueue:
                 if not fut.cancelled():
                     fut.set_exception(e)
             finally:
+                if told:
+                    self.on_interactive(False)
                 rec["ended_at"] = time.time()
                 self.recent.append(rec)
                 self.running = ""
@@ -161,6 +168,11 @@ class VoiceHost:
         self.history = HistoryStore(db, self.s.home / "history")
         self.batches = BatchStore(db)
         self.batch_runner = BatchRunner(self, self.batches)
+        from .training import Trainings
+
+        self.trainings = Trainings(self)
+        self.engines.others.append(self.trainings.release_gpu)  # (a model that can't find room: a training leaves)
+        self.queue.on_interactive = self.trainings.speaking  # (a mate's words: a training pauses)
         self.on_change: Callable[[str], None] = lambda what: None  # (every open window refetches: app/main.py)
         self.installer.on_change = lambda model_id: self.on_change(f"model:{model_id}")
         self._gate: tuple[float, G.Gate] | None = None
@@ -186,13 +198,28 @@ class VoiceHost:
         stopped = self.batches.interrupted()
         if stopped:
             log.info("local voice: %d batch(es) a restart stopped can be resumed", len(stopped))
+        self.trainings.start()
+        self._refresher = asyncio.create_task(self._refresh_later())
         self._sampler = asyncio.create_task(self._sample_loop())
         await asyncio.to_thread(self._prune_history)
 
+    async def _refresh_later(self) -> None:
+        """runtimes made from an older lock (an update pinned something more): brought up to date in place, a moment
+        after the start (they keep speaking meanwhile)"""
+        await asyncio.sleep(30)
+        try:
+            await self.installer.refresh_runtimes()
+        except Exception:  # noqa: BLE001
+            log.exception("refreshing the runtimes")
+
     async def stop(self) -> None:
+        if self._started:
+            await self.trainings.close()  # (saves where it is: it goes on after the restart)
         await self.installer.close()
         if not self._started:
             return
+        if getattr(self, "_refresher", None):
+            self._refresher.cancel()
         await self.batch_runner.close()
         if self._sampler:
             self._sampler.cancel()
@@ -479,6 +506,9 @@ class VoiceHost:
             raise VoiceError("Nothing to say", code="empty")
         if nonverbal and base is not None and any(m["kind"] in ("laugh", "giggle") and not m.get("clip") for m in made):
             self._want_sounds(base)
+        # the voice's own trained adapter, where this model takes it (OmniVoice: training.py)
+        trained = self.trainings.adapter_for(str((reference or {}).get("voice_id") or ""), spec)
+        adapter = trained[1] if trained else ""
         if reference is not None:  # (the worker takes the clip itself; which feeling it was is ours to know)
             reference = {k: reference[k] for k in ("path", "text", "language") if k in reference}
         engine = spec.engine if self.s.engine_mode != "fake" else "fake"
@@ -503,7 +533,7 @@ class VoiceHost:
                     out = await r.worker.call(
                         "synthesize", timeout=900, text=group, language=language, reference=reference,
                         instruct=instruct, params=params, seed=None if seed is None else seed + gi,
-                        out_prefix=str(tmp / f"g{gi}"))
+                        out_prefix=str(tmp / f"g{gi}"), adapter=adapter)
                     gen += out["seconds"]
                     sr = out["sample_rate"]
                     for path in out["paths"]:
@@ -513,6 +543,8 @@ class VoiceHost:
                     r.host_rss = out.get("host_rss") or r.host_rss
                 info["generate_seconds"] = round(gen, 3)
                 info["device"] = r.device.get("name")
+                if trained:
+                    info["adapter"] = trained[0]
             finally:
                 self.engines.release(r)
             return chunks, sr
@@ -806,7 +838,7 @@ class VoiceHost:
             "params": {**(info.get("params") or {}), **({} if nonverbal else {"_nonverbal": False})},
             "seed": info.get("seed"), "sample_rate": info.get("sample_rate"), "seconds": info.get("seconds"),
             "ready_seconds": info.get("ready_seconds"), "generate_seconds": info.get("generate_seconds"),
-            "rtf": info.get("rtf"), "batch_id": batch_id, "batch_index": batch_index})
+            "rtf": info.get("rtf"), "batch_id": batch_id, "batch_index": batch_index, "adapter": info.get("adapter") or ""})
         await asyncio.to_thread(self._prune_history)
         self.on_change("history")
         entry["info"] = {k: info.get(k) for k in ("segments", "device", "elapsed", "sounds", "spoken")}

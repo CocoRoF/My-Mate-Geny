@@ -356,6 +356,30 @@ SOUND_CHECK = ModelSpec(
     sample_rate=16000,
 )
 
+# CAM++ (3D-Speaker), the speaker embedding a voice training keeps only her utterances with and measures itself by —
+# 28 MB, CPU (onnxruntime): fetched with a voice's first training (Installer.ensure_weights).
+SPEAKER_CHECK = ModelSpec(
+    id="speaker-check",
+    name="CAM++ (speaker check)",
+    kind="aux",
+    engine="",
+    description=L("목소리 학습에서 그 사람의 발화만 고르고, 학습 결과가 얼마나 그 사람 같은지 재는 화자 임베딩 모델.",
+                  "The speaker embedding a voice training keeps only her utterances with, and measures how like her "
+                  "it sounds."),
+    repos=(RepoFiles("FunAudioLLM/Fun-CosyVoice3-0.5B-2512", include=("campplus.onnx",)),),
+    download_gb=0.03,
+    vram_gb=0.0,
+    host_gb=0.2,
+    load_peak_gb=0.2,
+    license=License(name="Apache-2.0", url="https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
+                    summary=(L("Apache-2.0: 상업적 사용, 수정, 재배포가 가능합니다.",
+                               "Apache-2.0: commercial use, modification and redistribution are allowed."),)),
+    languages=(),
+    features=(),
+    homepage="https://github.com/modelscope/3D-Speaker",
+    sample_rate=16000,
+)
+
 BY_ID: dict[str, ModelSpec] = {m.id: m for m in CATALOG}
 
 LANGUAGE_NAMES = {
