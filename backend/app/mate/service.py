@@ -140,6 +140,12 @@ class MateService:
         store.on_change = sessions.mates_changed
         self.life = LifeRuntime(store, self._log, self._life_happened, self.wear_outfit)
         self.life.on_tick = self._life_diaries
+        # the Geny-State-System around her turns (app/mate/gss): a model's reading of each message before she answers,
+        # promises, what she remembers of them, not repeating herself, the journal
+        from app.mate.gss.runtime import GSSRuntime
+
+        self.gss = GSSRuntime(self)
+        sessions.mate_prepare = self.gss.prepare
         self._diaries: set[str] = set()                    # mates whose diary is being written
         self._housekept: dict[str, str] = {}               # mate id -> the local day its memory was tidied
         store.on_memory_added = self._memory_added
@@ -799,6 +805,7 @@ class MateService:
         relation = self._relation_lines(rel, st, now_utc, tz, turn)
         life = self._life_lines(mate, st, turn, now_utc, tz)  # (first: what it did to her is part of how she feels)
         feeling, wardrobe = self._state_lines(mate, prefs, st, turn, now_utc, tz)
+        relation = [*relation, *self.gss.context_lines(mate, st, turn, now_utc, tz, rel)]
         # (her calls they didn't take since she was last told: app/mate/calls.py)
         call_notes, calls_told = self.calls.notes(mate_id) if self.calls is not None else ([], lambda: None)
         prepared = {**st, "turn": turn, "injected": injected}
@@ -827,6 +834,7 @@ class MateService:
             block += "\n" + lines
         if studied:
             block += "\n" + study_hint(studied)
+        self.gss.journal.record(mate_id, "told", "context", {"turn": turn, "block": block[:3000]})
         if level != "off" and query and not query.startswith("<"):
             found = self.store.knowledge.search(mate_id, query, limit=4)
             current = self.store._db.query_one("SELECT id FROM messages WHERE session_id=? AND role IN ('user','steer') ORDER BY rowid DESC LIMIT 1", (mate.get("session_id"),))
@@ -1029,7 +1037,8 @@ class MateService:
         engine session was last told (or now and then)."""
         mate_id = mate["id"]
         said = self._users_latest(mate.get("session_id") or "")
-        summary = self._state_event(mate_id, (lambda doc, who, at, zone: S.hear(doc, who, said["content"], said["id"], at, zone))
+        reading = self.gss.appraiser.get(said["id"]) if said else None
+        summary = self._state_event(mate_id, (lambda doc, who, at, zone: S.hear(doc, who, said["content"], said["id"], at, zone, reading))
                                     if said else None)
         feeling = ""
         if (st.get("state") != S.signature(summary) or turn - int(st.get("state_turn") or 0) >= 10
@@ -1128,10 +1137,13 @@ class MateService:
             self._state_event(mate_id, own)
             return
         said = self._users_latest(sid)
+        reading = self.gss.appraiser.get(said["id"]) if said else None
 
         def change(doc: dict[str, Any], who: dict[str, Any], now: datetime, tz: Any) -> None:
             if said:
-                S.hear(doc, who, said["content"], said["id"], now, tz)
+                S.hear(doc, who, said["content"], said["id"], now, tz, reading)
+                if reading is not None:  # (it came after she heard the words: what they did is read again, before her face counts)
+                    S.reappraise(doc, who, said["content"], said["id"], reading, now, tz)
             if outcome.get("status") == "stopped":
                 S.interrupted(doc, who, now, tz)
             if not outcome.get("refused"):  # (she didn't answer them: no face, and nothing said to them)
@@ -1171,9 +1183,11 @@ class MateService:
         sid = mate.get("session_id")
         if sid:
             rows = self._svc._db.query(
-                "SELECT role, content, meta, created_at FROM messages WHERE session_id = ? AND role IN "
+                "SELECT id, role, content, meta, created_at FROM messages WHERE session_id = ? AND role IN "
                 "('user', 'assistant') ORDER BY created_at, rowid", (sid,))
-            pending: tuple[datetime, str] | None = None
+            readings = {e["data"].get("message"): e["data"] for e in self.gss.journal.recent(mate["id"], limit=1000, layers=["heard"])
+                        if e["kind"] == "reading"}  # (a model's reading of a message, while the journal still has it)
+            pending: tuple[datetime, str, Any] | None = None
             for r in rows:
                 try:
                     meta = json.loads(r["meta"] or "null") or {}
@@ -1186,14 +1200,15 @@ class MateService:
                     continue
                 if r["role"] == "user":
                     if pending:
-                        events.append((pending[0], "turn", (pending[1], "")))
-                    pending = None if meta.get("internal") else (at, r["content"] or "")
+                        events.append((pending[0], "turn", (pending[1], "", pending[2])))
+                    pending = None if meta.get("internal") else (at, r["content"] or "", readings.get(r["id"]))
                 elif pending:
-                    events.append((pending[0], "turn", (pending[1], r["content"] or "")))
+                    events.append((pending[0], "turn", (pending[1], r["content"] or "", pending[2])))
                     pending = None
             if pending:
-                events.append((pending[0], "turn", (pending[1], "")))
-        for r in self.store._db.query("SELECT created_at FROM mate_memories WHERE mate_id = ?", (mate["id"],)):
+                events.append((pending[0], "turn", (pending[1], "", pending[2])))
+        for r in self.store._db.query("SELECT created_at FROM mate_memories WHERE mate_id = ? AND COALESCE(source, '') != 'gss'",
+                                      (mate["id"],)):
             at = A._t(r["created_at"])
             if at is not None:
                 events.append((at, "memory", None))
@@ -1413,9 +1428,13 @@ class MateService:
         A.advance(doc, now, tz)
         if not (outcome.get("meta") or {}).get("internal"):
             name = (self.store.get(mate_id).get("name") if mate_id else "") or ""
-            # (her refusal's line is no reply of hers: she showed nothing, so the words' guess stands)
-            A.credit_turn(doc, now, tz, str(outcome.get("input") or ""), "" if outcome.get("refused") else str(outcome.get("text") or ""), name)
+            said = self._users_latest(self.store.get(mate_id).get("session_id") or "") if mate_id else None
+            reading = self.gss.appraiser.get(said["id"]) if said else None
+            # (her refusal's line is no reply of hers: she showed nothing, so the guess stands)
+            A.credit_turn(doc, now, tz, str(outcome.get("input") or ""), "" if outcome.get("refused") else str(outcome.get("text") or ""), name,
+                          reading)
         self._save_relation(mate_id, doc, before)
+        self._relation_before = before
 
     def _settings_note(self, mate_id: str, mate: dict[str, Any], relation: bool | None = None) -> str:
         """Compare the persona with the one the conversation last ran with
@@ -2169,8 +2188,10 @@ class MateService:
                 try:
                     mate_id = (self._svc.get(sid).get("mate_id") or "")
                     if mate_id:
+                        self._relation_before = None
                         self._relation_turn(mate_id, outcome)
                         self._state_turn(mate_id, sid, outcome)
+                        self.gss.after_turn(mate_id, outcome, self._relation_before)
                 except Exception as exc:  # noqa: BLE001 - never breaks the turn loop
                     self._log("warning", f"relationship: {exc}")
             self._depth.pop(sid, None)  # the next turn is the user's unless a result starts it

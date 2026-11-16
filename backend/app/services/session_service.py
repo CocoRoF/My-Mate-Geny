@@ -157,6 +157,8 @@ class SessionService:
         # mate/voiceOwner.ts): where the user talks from — the mate's screen capture asks that device first
         self._last_client: dict[str, str] = {}
         self.mate_engine: Any = None
+        # before a mate's turn, async (app/mate/gss/runtime.py GSSRuntime.prepare): (session) -> awaitable
+        self.mate_prepare: Any = None
         # a mate who chose not to answer the user ([SILENT]; app.mate.service MateService.refusal_line): (sid) -> the chat's line
         self.mate_refusal: Any = None
         # a mate's phone call as she remembers it, for handoffs and catch-ups (app/mate/calls.py sets it): card -> text
@@ -1349,6 +1351,12 @@ class SessionService:
             # Codex hears the note in its message: in a new thread, or when it changed since it was told
             req.note_in_prompt = not resume_id or self._hf_note.get(sid) != req.system_append
             self._hf_note[sid] = req.system_append
+        if session.get("kind") == "mate" and self.mate_prepare is not None:
+            # (the Geny-State-System reads the user's message first: waited for briefly, never for long — app/mate/gss)
+            try:
+                await asyncio.wait_for(self.mate_prepare(session), timeout=3.0)
+            except Exception:  # noqa: BLE001 - her turn goes on with the words' guess
+                pass
         if session.get("kind") == "mate" and self.mate_engine is not None:
             # A Mate's engine: its own system prompt, no built-in tools, only
             # the mate MCP bridge (see app.mate.service).

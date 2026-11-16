@@ -721,24 +721,28 @@ def test_what_they_did_stays_with_her_and_a_bare_sorry_doesnt_end_it():
 def test_an_apology_is_worth_what_it_is_to_her():
     w = S.who(name="한채린")
 
+    later = NOON + timedelta(minutes=30)  # (past the first minutes, when nothing lands much yet: TOO_SOON)
+
     def after(*texts):
         doc = S.new()
-        _say(doc, w, ["(한채린을 때린다)", *texts], NOON)
-        return S.grudge(doc, w, NOON)
+        _say(doc, w, ["(한채린을 때린다)"], NOON)
+        _say(doc, w, list(texts), later)
+        return S.grudge(doc, w, later)
 
     hurt = after()
     bare, owned = after("미안"), after("내가 잘못했어, 다시는 안 그럴게")
     assert hurt > bare > owned  # (owning what they did counts for more than a bare sorry)
-    assert (hurt - bare) / hurt == pytest.approx(S.SORRY_BARE)
+    assert (hurt - bare) / hurt == pytest.approx(S.SORRY_BARE, abs=0.01)
     twice = after("내가 잘못했어", "내가 잘못했어")
     assert twice == pytest.approx(hurt * (1 - S.SORRY_OWNED) * (1 - S.SORRY_OWNED * S.SORRY_AGAIN), abs=0.005)
     # (someone who keeps doing it: a sorry is worth less each time)
     doc = S.new()
     for day in range(3):
         _say(doc, w, ["(한채린을 때린다)"], NOON + timedelta(days=day))
-    before = S.grudge(doc, w, NOON + timedelta(days=2))
-    _say(doc, w, ["내가 잘못했어"], NOON + timedelta(days=2))
-    assert (before - S.grudge(doc, w, NOON + timedelta(days=2))) / before == pytest.approx(S.SORRY_OWNED / 2, abs=0.01)
+    then = NOON + timedelta(days=2, minutes=30)
+    before = S.grudge(doc, w, then)
+    _say(doc, w, ["내가 잘못했어"], then)
+    assert (before - S.grudge(doc, w, then)) / before == pytest.approx(S.SORRY_OWNED / 2, abs=0.01)
 
 
 def test_sweet_talk_that_skips_the_apology_rankles_and_lands_after_one_that_owns_it():

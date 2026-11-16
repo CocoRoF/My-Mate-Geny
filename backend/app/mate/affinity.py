@@ -63,6 +63,25 @@ LOSSES = {"dismissed": (0.8, 1.6),      # they brushed her off
           "poked": (0.3, 0.9),          # they wouldn't stop poking her
           "interrupted": (0.2, 0.6),    # they cut her off
           "declined_call": (0.6, 1.2)}  # she called and they turned it down
+# more than one number between them (docs/geny-state-system.md, roadmap 4): ``affinity`` is how close they are; beside it
+# ``trust`` (hurt and repair, promises), ``romance`` (only from romantic exchanges, and only on trust and closeness) and
+# ``respect`` (how they treat her: put-downs, pestering, brushing her off, thanks). 0 – 100 each; the stage follows closeness,
+# and she is told the others in words (``bond_words``).
+BONDS = {"trust": 50.0, "romance": 0.0, "respect": 60.0}  # where they start
+TRUST_DAY = 0.4                      # a day of talk with nothing done to her: trust grows, up to what closeness allows
+TRUST_ROOM = (55.0, 0.45)            # …that is up to 55 + 0.45 × affinity
+TRUST_HURT = {"violence": 8.0, "coercion": 8.0, "threat": 8.0, "demeaning": 5.0}
+TRUST_RUDE, TRUST_HURT_CAP = 1.5, 24.0
+ROMANCE_FROM = (45.0, 40.0)          # trust and affinity it takes before anything romantic can grow
+ROMANCE, ROMANCE_ANSWERED, ROMANCE_CAP = 0.3, 0.8, 1.6  # a romantic word of theirs; more when she answers it warmly; per day
+ROMANCE_HURT, ROMANCE_RUDE, ROMANCE_QUIET = 6.0, 1.0, 0.3
+RESPECT_THANKS, RESPECT_THANKS_CAP, RESPECT_SETTLES = 0.3, 0.6, 0.2
+RESPECT_HURT = {"demeaning": 6.0, "coercion": 4.0, "violence": 3.0, "threat": 3.0}
+RESPECT_RUDE = 0.5
+# what else moves them, handed on like LOSSES (``cost``): {code: {bond: change}}
+BOND_EVENTS = {"dismissed": {"trust": -0.5, "respect": -0.5}, "ignored": {"trust": -0.5}, "pestered": {"respect": -1.0},
+               "declined_call": {"trust": -0.3}, "promise_kept": {"trust": 1.5}, "promise_broken": {"trust": -3.0},
+               "made_up": {"trust": 2.0}}
 GRACE_DAYS = 2                      # quiet days that cost nothing
 DECAY_BASE, DECAY_GROWTH, DECAY_CAP = 2.0, 1.4, 8.0
 FLOOR = 10.0                        # quiet days never take it below this
@@ -116,6 +135,8 @@ def calm_reply(reply_text: str) -> bool:
     return bool(shown) and not shown & {"angry", "anger", "mad", "annoyed", "pout", "sad", "sadness", "cry", "crying", "hurt"}
 
 
+_ROMANTIC = re.compile(r"사랑해|좋아해|보고 ?싶|안아 ?줘|안고 ?싶|뽀뽀|자기야|\blove you\b|miss you|\bi like you\b|\bkiss\b|\bhug\b", re.I)
+_THANKS = re.compile(r"고마워|고맙|감사|덕분|\bthanks?\b|thank you", re.I)
 _DISTRESS = re.compile(r"힘들|우울|슬퍼|슬프|외로|죽고 ?싶|지쳤|지친다|불안|무서워|\bstressed\b|depress|\bsad\b|lonely|"
                        r"anxious|exhausted|overwhelmed|can'?t cope", re.I)
 _REPLY_POS = re.compile(r"\[\s*(joy|laugh|smile|shy)\b", re.I)
@@ -135,6 +156,7 @@ def new() -> dict[str, Any]:
         "marks": [],  # what the user did by hand ({at, kind: set | reset, v}): a recompute in another zone keeps them
         "gifts": [],  # when they sent her something (credit_gift): no message records it, so a recompute reads it here
         "costs": [],  # what else they did that she minded ({at, code}: ``cost``), for a recompute the same way
+        **BONDS, "bonds_log": [],  # the other bonds and their changes ({at, bond, d, why, v})
     }
 
 
@@ -142,6 +164,11 @@ def normalized(doc: Any) -> dict[str, Any]:
     out = new()
     if isinstance(doc, dict):
         out.update({k: v for k, v in doc.items() if k in out})
+    for b, start in BONDS.items():
+        try:
+            out[b] = max(0.0, min(100.0, float(out.get(b) if out.get(b) is not None else start)))
+        except (TypeError, ValueError):
+            out[b] = start
         if "avatar_v2" not in doc:  # (from when the avatar only followed how she feels if asked to; now unless told not to)
             out["avatar_mood"] = True
     out["sensitivity"] = max(SENSITIVITY[0], min(SENSITIVITY[1], float(out.get("sensitivity") or 1.0)))
@@ -264,6 +291,41 @@ def _gain(r: dict[str, Any], day: dict[str, Any], amount: float, why: str, at: d
     day["gained"] = float(day.get("gained") or 0.0) + got
 
 
+def bond(r: dict[str, Any], name: str, delta: float, why: str, at: datetime, tz: Any, cap_key: str | None = None,
+         cap: float | None = None) -> float:
+    """Move one of the other bonds (trust, romance, respect), up to a day's limit for the reason (``cap_key``). → the change."""
+    if not delta:
+        return 0.0
+    if cap_key:
+        t = _today(r, at.astimezone(tz).date())
+        room = max(0.0, cap - float(t.get(cap_key) or 0.0))
+        delta = max(-room, min(room, delta))
+        t[cap_key] = float(t.get(cap_key) or 0.0) + abs(delta)
+    before = float(r.get(name) or 0.0)
+    after = round(max(0.0, min(100.0, before + delta)), 2)
+    r[name] = after
+    if after != before:
+        r["bonds_log"] = [*(r.get("bonds_log") or []), {"at": _iso(at), "bond": name, "d": round(after - before, 2), "why": why,
+                                                         "v": after}][-LOG_MAX:]
+    return after - before
+
+
+def trust_room(r: dict[str, Any]) -> float:
+    return TRUST_ROOM[0] + TRUST_ROOM[1] * float(r["affinity"])
+
+
+def romance_open(r: dict[str, Any]) -> bool:
+    return float(r.get("trust") or 0.0) >= ROMANCE_FROM[0] and float(r["affinity"]) >= ROMANCE_FROM[1]
+
+
+def bond_words(r: dict[str, Any]) -> dict[str, str]:
+    """How the bonds are, in words (what she is told; never a number)."""
+    t, ro, re_ = float(r.get("trust") or 0), float(r.get("romance") or 0), float(r.get("respect") or 0)
+    return {"trust": "broken" if t < 25 else "shaken" if t < 40 else "steady" if t < 60 else "solid" if t < 80 else "deep",
+            "romance": "none" if ro < 5 else "a spark" if ro < 25 else "budding" if ro < 55 else "mutual" if ro < 80 else "deep love",
+            "respect": "low" if re_ < 35 else "uneasy" if re_ < 55 else "fine"}
+
+
 def decay_for(silence_days: int) -> float:
     """What a finished quiet day costs after ``silence_days`` days without talking (before sensitivity)."""
     if silence_days <= GRACE_DAYS:
@@ -298,6 +360,7 @@ def _settle_day(r: dict[str, Any], d: date, tz: Any) -> None:
     if loss > 0:
         end = datetime.combine(d + timedelta(days=1), time.min, tzinfo=tz)
         _bump(r, -loss, f"quiet_{(d - last).days}", end, floor=FLOOR)
+        bond(r, "romance", -ROMANCE_QUIET * r["sensitivity"], f"quiet_{(d - last).days}", end, tz)
 
 
 def advance(r: dict[str, Any], now: datetime, tz: Any) -> None:
@@ -316,16 +379,30 @@ def advance(r: dict[str, Any], now: datetime, tz: Any) -> None:
     refresh(r, now, tz)
 
 
-def cues(user_text: str, reply_text: str = "", name: str = "") -> dict[str, Any]:
+def cues(user_text: str, reply_text: str = "", name: str = "", reading: dict[str, Any] | None = None) -> dict[str, Any]:
+    """What a user turn did, from its words — or from a model's reading of it when there is one (app/mate/gss/appraisal.py);
+    either way what she showed of it in her reply has the last word on something done to her."""
     u = user_text or ""
+    if reading is not None:
+        from app.mate.gss.appraisal import cues as read_cues
+
+        c = read_cues(reading) or {}
+        done = None if reply_text and calm_reply(reply_text) else c.get("hostile")
+        rude = done is not None or bool(c.get("rude"))
+        return {"warm": not rude and bool(c.get("warm")), "smiled": not rude and bool(_REPLY_POS.search(reply_text or "")),
+                "rude": rude, "hostile": done, "distress": bool(c.get("distress")) and done is None, "pos": bool(c.get("warm")),
+                "romantic": not rude and bool(c.get("love") or c.get("flirt")), "thanks": not rude and "gratitude" in (reading.get("acts") or [])}
     done = None if reply_text and calm_reply(reply_text) else hostile(u, name)  # (what she showed of it decides, once she has)
     rude = done is not None or bool(_RUDE.search(u))
     return {"warm": not rude and bool(_POS.search(u)), "smiled": not rude and bool(_REPLY_POS.search(reply_text or "")),
-            "rude": rude, "hostile": done, "distress": bool(_DISTRESS.search(u)) and done is None, "pos": bool(_POS.search(u))}
+            "rude": rude, "hostile": done, "distress": bool(_DISTRESS.search(u)) and done is None, "pos": bool(_POS.search(u)),
+            "romantic": not rude and bool(_ROMANTIC.search(u)), "thanks": not rude and bool(_THANKS.search(u))}
 
 
-def credit_turn(r: dict[str, Any], at: datetime, tz: Any, user_text: str = "", reply_text: str = "", name: str = "") -> None:
-    """One user turn ended (call ``advance`` first). Paused or off: nothing moves."""
+def credit_turn(r: dict[str, Any], at: datetime, tz: Any, user_text: str = "", reply_text: str = "", name: str = "",
+                reading: dict[str, Any] | None = None) -> None:
+    """One user turn ended (call ``advance`` first). Paused or off: nothing moves. ``reading``: a model's reading of the
+    message (app/mate/gss/appraisal.py), when there was one."""
     if not r["enabled"] or r["paused"]:
         return
     day = at.astimezone(tz).date()
@@ -339,9 +416,11 @@ def credit_turn(r: dict[str, Any], at: datetime, tz: Any, user_text: str = "", r
         r["streak_days"] = r["streak_days"] + 1 if last == day - timedelta(days=1) else 1
         r["active_days"] += 1
         r["last_active_day"] = day.isoformat()
-    c = cues(user_text, reply_text, name)
+    c = cues(user_text, reply_text, name, reading)
     if not t["talked"] and not c["hostile"]:  # (a day that starts with hitting her is no day of talking together)
         t["talked"] = True
+        if float(r.get("trust") or 0.0) < trust_room(r) and not float(t.get("hostile") or 0.0):
+            bond(r, "trust", min(TRUST_DAY * r["sensitivity"], trust_room(r) - float(r["trust"])), "talk", at, tz)
         r["talk_days"] = sorted({*r["talk_days"], day.isoformat()})[-30:]
         _gain(r, t, TALK, "talk", at)
         if r["streak_days"] >= 2:
@@ -360,6 +439,10 @@ def credit_turn(r: dict[str, Any], at: datetime, tz: Any, user_text: str = "", r
             loss = min(HOSTILE * r["sensitivity"], HOSTILE_CAP - float(t.get("hostile") or 0.0))
             t["hostile"] = float(t.get("hostile") or 0.0) + loss
             _bump(r, -loss, f"hostile_{c['hostile']}", at)  # (what it was: violence, coercion, threat, demeaning)
+        why = f"hostile_{c['hostile']}"
+        bond(r, "trust", -TRUST_HURT.get(c["hostile"], 5.0) * r["sensitivity"], why, at, tz, "trust_hurt", TRUST_HURT_CAP)
+        bond(r, "romance", -ROMANCE_HURT * r["sensitivity"], why, at, tz)
+        bond(r, "respect", -RESPECT_HURT.get(c["hostile"], 3.0) * r["sensitivity"], why, at, tz)
         refresh(r, at, tz)
         return
     if c["warm"]:
@@ -370,6 +453,16 @@ def credit_turn(r: dict[str, Any], at: datetime, tz: Any, user_text: str = "", r
         loss = min(RUDE * r["sensitivity"], RUDE_CAP - float(t.get("rude") or 0.0))
         t["rude"] = float(t.get("rude") or 0.0) + loss
         _bump(r, -loss, "rude", at)
+        bond(r, "trust", -TRUST_RUDE * r["sensitivity"], "rude", at, tz, "trust_hurt", TRUST_HURT_CAP)
+        bond(r, "romance", -ROMANCE_RUDE * r["sensitivity"], "rude", at, tz)
+        bond(r, "respect", -RESPECT_RUDE * r["sensitivity"], "rude", at, tz)
+    if c.get("romantic") and romance_open(r):  # (only on trust and closeness: talking a lot never farms it)
+        gain = (ROMANCE_ANSWERED if c["smiled"] else ROMANCE) * r["sensitivity"] * climb(float(r.get("romance") or 0.0))
+        bond(r, "romance", gain, "romantic", at, tz, "romance_day", ROMANCE_CAP)
+    if c.get("thanks"):
+        bond(r, "respect", RESPECT_THANKS * r["sensitivity"], "thanks", at, tz, "respect_day", RESPECT_THANKS_CAP)
+    elif float(r.get("respect") or 0.0) < BONDS["respect"] and t["turns"] == 1:  # (a day of ordinary talk: it settles back)
+        bond(r, "respect", min(RESPECT_SETTLES, BONDS["respect"] - float(r["respect"])), "talk", at, tz)
     refresh(r, at, tz)
 
 
@@ -399,16 +492,19 @@ def credit_gift(r: dict[str, Any], at: datetime, tz: Any) -> None:
 def cost(r: dict[str, Any], code: str, at: datetime, tz: Any) -> None:
     """Something else they did that she minded (``LOSSES``; app/mate/state.py noticed it): it costs, up to the day's limit
     for it. Kept in ``costs`` too, since no message records it (``replay``)."""
-    if code not in LOSSES or not r["enabled"] or r["paused"] or r["started_at"] is None:
+    if (code not in LOSSES and code not in BOND_EVENTS) or not r["enabled"] or r["paused"] or r["started_at"] is None:
         return
     r["costs"] = [*(r.get("costs") or []), {"at": _iso(at), "code": code}][-200:]
-    each, cap = LOSSES[code]
-    t = _today(r, at.astimezone(tz).date())
-    key = f"cost_{code}"
-    loss = min(each * r["sensitivity"], max(0.0, cap - float(t.get(key) or 0.0)))
-    if loss > 0:
-        t[key] = float(t.get(key) or 0.0) + loss
-        _bump(r, -loss, code, at)
+    if code in LOSSES:
+        each, cap = LOSSES[code]
+        t = _today(r, at.astimezone(tz).date())
+        key = f"cost_{code}"
+        loss = min(each * r["sensitivity"], max(0.0, cap - float(t.get(key) or 0.0)))
+        if loss > 0:
+            t[key] = float(t.get(key) or 0.0) + loss
+            _bump(r, -loss, code, at)
+    for name, delta in BOND_EVENTS.get(code, {}).items():  # (promises, making up: they move trust; capped per day like the rest)
+        bond(r, name, delta * r["sensitivity"], code, at, tz, f"bond_{code}", abs(delta) * 2)
     refresh(r, at, tz)
 
 
@@ -491,6 +587,9 @@ def view(r: dict[str, Any], now: datetime, tz: Any) -> dict[str, Any]:
                   "idle_days": (today - last).days if last else None, "grace_days": GRACE_DAYS},
         "milestones": list(reversed(r["milestones"])),
         "log": list(reversed(r["log"][-100:])), "started_at": r["started_at"],
+        "bonds": {**{b: round(float(r.get(b) or 0.0), 1) for b in BONDS}, "words": bond_words(r), "romance_open": romance_open(r),
+                  "trust_room": round(min(100.0, trust_room(r)), 1)},
+        "bonds_log": list(reversed((r.get("bonds_log") or [])[-60:])),
     }
 
 
@@ -637,8 +736,8 @@ def replay(events: list[tuple[datetime, str, Any]], now: datetime, tz: Any,
     for at, what, arg in sorted(timeline, key=lambda e: (e[0], order.get(e[1], 3))):
         advance(r, at, tz)
         if what == "turn":
-            u, a = arg or ("", "")
-            credit_turn(r, at, tz, u, a)
+            u, a, *more = arg or ("", "")
+            credit_turn(r, at, tz, u, a, reading=more[0] if more else None)
         elif what == "memory":
             credit_memory(r, at, tz)
         elif what == "gift":

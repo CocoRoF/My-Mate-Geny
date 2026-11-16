@@ -371,6 +371,10 @@ def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
               "self_edit", "self_outfit", "life"):
         if k in b:
             out[k] = b[k]
+    from app.mate.gss.temperament import clean as clean_temperament
+
+    if isinstance(b.get("temperament"), dict):
+        out["temperament"] = clean_temperament(b["temperament"])
     if isinstance(b.get("tone"), dict):
         out["tone"].update({k: v for k, v in b["tone"].items() if k in TONE_KEYS and v in TONE_LEVELS})
     if isinstance(b.get("memory"), dict):
@@ -426,6 +430,10 @@ def normalize_prefs(patch: Any, base: dict[str, Any] | None = None) -> dict[str,
             out["self_outfit"] = _enum(patch["self_outfit"], SELF_OUTFIT, "self-outfit setting")
         if "life" in patch:
             out["life"] = _enum(patch["life"], LIFE, "life setting")
+        if "temperament" in patch:  # (her own, over a built-in's: app/mate/gss/temperament.py; null: back to the bundled one)
+            if patch["temperament"] is not None and not isinstance(patch["temperament"], dict):
+                raise MateError("prefs.temperament must be an object")
+            out["temperament"] = clean_temperament(patch["temperament"] or {})
         tone = patch.get("tone")
         if tone is not None:
             if not isinstance(tone, dict):
@@ -821,7 +829,8 @@ class MateStore:
         persona = normalize_persona(_loads(row["persona"], {}))
         who = self._who(builtin, raw_outfits, self.relation_doc(row["id"]) or A.new(),
                         sim.for_state(life[0], life[1], now, self.tz()) if life else None,
-                        row["name"] or "", gender=persona["gender"], created_at=row["created_at"], seed=row["id"])
+                        row["name"] or "", gender=persona["gender"], created_at=row["created_at"], seed=row["id"],
+                        temperament=(prefs or {}).get("temperament"))
         return {
             "id": row["id"],
             "name": row["name"],
@@ -1605,7 +1614,7 @@ class MateStore:
             if by_user:
                 self._user_edit(mate_id, before, {"id": mid, "op": "added", "text": text, "kind": kind})
         self._changed("memory", mate_id)
-        if self.on_memory_added is not None:
+        if self.on_memory_added is not None and source != "gss":  # (a moment between them she keeps: no new memory for the relationship)
             try:
                 self.on_memory_added(mate_id)
             except Exception:  # noqa: BLE001 - counting never fails a write
@@ -1747,6 +1756,7 @@ class MateStore:
         has been living (it begins again)."""
         self.knowledge.wipe(mate_id)
         self.graph.wipe(mate_id)
+        self._db.execute("DELETE FROM mate_gss_events WHERE mate_id = ?", (mate_id,))  # (it quotes what was said, too)
         self._db.execute("DELETE FROM know_studies WHERE mate_id = ?", (mate_id,)) if self._db.query_one(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='know_studies'") else None
         self._db.execute("DELETE FROM mate_style_changes WHERE mate_id = ?", (mate_id,))
@@ -1794,7 +1804,8 @@ class MateStore:
 
     @staticmethod
     def _who(builtin: str | None, wardrobe: dict[str, Any], relation: dict[str, Any], life: dict[str, Any] | None = None,
-             name: str = "", *, gender: str = "", created_at: str | None = None, seed: str = "") -> dict[str, Any]:
+             name: str = "", *, gender: str = "", created_at: str | None = None, seed: str = "",
+             temperament: dict[str, Any] | None = None) -> dict[str, Any]:
         """``created_at``: the mate's (when they first met, until the relationship knows it); ``seed``: her id (her own days)."""
         worn = wardrobe.get("worn") or DEFAULT_OUTFIT
         item = next((it for it in wardrobe.get("items") or [] if it["id"] == worn), None)
@@ -1802,7 +1813,7 @@ class MateStore:
         on = relation["enabled"]
         return S.who(closeness=float(relation["affinity"]) / 100 if on else 0.33, sensitivity=relation["sensitivity"] if on else 1.0,
                      builtin=builtin, away=on and relation["paused"], outfit=outfit, life=life, name=name, gender=gender,
-                     met=relation.get("started_at") or created_at, seed=seed)
+                     met=relation.get("started_at") or created_at, seed=seed, temperament=temperament)
 
     def state_who(self, mate_id: str) -> dict[str, Any]:
         row = self._db.query_one("SELECT builtin, outfits, prefs, name, persona, created_at FROM mates WHERE id = ?", (mate_id,))
@@ -1811,7 +1822,8 @@ class MateStore:
         life = self.life_now(mate_id, row["builtin"], _loads(row["prefs"], {}))
         return self._who(row["builtin"], _loads(row["outfits"], {}), self.relation_doc(mate_id) or A.new(),
                          sim.for_state(life[0], life[1], datetime.now(timezone.utc), self.tz()) if life else None, row["name"] or "",
-                         gender=normalize_persona(_loads(row["persona"], {}))["gender"], created_at=row["created_at"], seed=mate_id)
+                         gender=normalize_persona(_loads(row["persona"], {}))["gender"], created_at=row["created_at"], seed=mate_id,
+                         temperament=(_loads(row["prefs"], {}) or {}).get("temperament"))
 
     def relation_summary(self, mate_id: str) -> dict[str, Any]:
         doc = self.relation_doc(mate_id) or A.new()

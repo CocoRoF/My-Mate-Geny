@@ -381,6 +381,52 @@ async def get_state(mate_id: str, request: Request) -> dict:
         raise _http(exc) from exc
 
 
+@router.get("/{mate_id}/gss")
+async def get_gss(mate_id: str, request: Request, limit: int = 200, before: int | None = None) -> dict:
+    """The State Inspector (docs/geny-state-system.md): everything of her state now, and the journal of what happened"""
+    try:
+        return _svc(request).gss.inspect(mate_id, limit=limit, before=before)
+    except KeyError as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/{mate_id}/gss/simulate")
+async def gss_simulate(mate_id: str, request: Request) -> dict:
+    """A scripted conversation through the same engine, on copies: ``{preset}`` or ``{steps, then_hours}``, with
+    ``temperament`` to try one and ``affinity`` to start from"""
+    from app.mate.gss import simulate as sim_gss
+
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(400, "expected an object")
+    svc = _svc(request)
+    try:
+        w = svc.store.state_who(mate_id)
+    except KeyError as exc:
+        raise _http(exc) from exc
+    if isinstance(body.get("temperament"), dict):
+        from app.mate.gss.temperament import merged
+
+        w = {**w, "temperament": merged(w["temperament"], body["temperament"])}
+    script = sim_gss.PRESETS.get(str(body.get("preset") or "")) or body
+    rel = None
+    if isinstance(body.get("affinity"), (int, float)) and not isinstance(body.get("affinity"), bool):
+        from app.mate import affinity as A
+
+        rel = A.new()
+        rel["affinity"] = max(0.0, min(100.0, float(body["affinity"])))
+    return {**sim_gss.run(w, script, relation=rel), "presets": sorted(sim_gss.PRESETS)}
+
+
+@router.post("/{mate_id}/gss/temperament/derive")
+async def gss_derive_temperament(mate_id: str, request: Request) -> dict:
+    """Read her temperament from her persona (a model); kept in her prefs, hers to edit"""
+    try:
+        return {"temperament": await _svc(request).gss.derive_temperament(mate_id)}
+    except KeyError as exc:
+        raise _http(exc) from exc
+
+
 @router.get("/{mate_id}/life")
 async def get_life(mate_id: str, request: Request) -> dict:
     """Her own day: where she is, what she is doing, her needs (app/mate/life)"""

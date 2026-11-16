@@ -303,6 +303,18 @@ CREATE TABLE IF NOT EXISTS mate_life (
     updated_at TEXT NOT NULL
 );
 
+-- The Geny-State-System's journal (app/mate/gss/journal.py): everything that happened to a mate's state, in order — what a
+-- message was read as, how she felt, what stayed with her, the relationship, promises, episodes, what she was told.
+CREATE TABLE IF NOT EXISTS mate_gss_events (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    mate_id  TEXT NOT NULL,
+    at       TEXT NOT NULL,
+    layer    TEXT NOT NULL,
+    kind     TEXT NOT NULL,
+    data     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mate_gss_events ON mate_gss_events(mate_id, id);
+
 -- Changes of a mate's conversation style made by the mate herself (update_conversation_style): applied or proposed,
 -- undone / applied / dismissed by the user (docs/mate.md "Prompt composition").
 CREATE TABLE IF NOT EXISTS mate_style_changes (
