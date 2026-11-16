@@ -695,6 +695,7 @@ const ko: Messages<"mateSettings"> = {
   deskResetHint: "주 화면 구석, 원래 크기로 돌아가요.",
   provKeyShared: "언어모델 공급자에 넣은 API 키를 같이 쓰고 있어요. 여기에 넣으면 이 키를 대신 써요.",
   provKeySharedPh: "언어모델 공급자의 키 사용 중",
+  tabState: "상태",
   tabCommon: "공통",
   deskShowsPicked: "{name} — 메이트 화면에서 고른 메이트예요.",
 };

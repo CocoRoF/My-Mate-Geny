@@ -49,6 +49,9 @@ interface Props {
   mirrored?: boolean;
   label: string;
   extra?: (i: number) => { label: string; value: string }[];
+  /** the x axis's tick labels and the tooltip's time (default: the clock; a chart of time from a start, e.g. "+2h") */
+  xFmt?: (ts: number, span: number) => string;
+  tipFmt?: (ts: number, span: number) => string;
 }
 
 // Crosshair time shared by all charts (hovering one shows the line on all).
@@ -253,7 +256,7 @@ export default function TimeChart(p: Props) {
               <g key={a.v} style={{ transform: `translateX(${-offset}px)`, transition, willChange: live ? "transform" : undefined }}>
                 {ticks.filter((x) => X(x) - offset > 22 && X(x) - offset < plotW - 22).map((x) => (
                   <text key={x} x={X(x)} y={plotH + 13} textAnchor="middle" className="fill-content-faint text-[10px] tabular-nums">
-                    {clockLabel(x, span)}
+                    {(p.xFmt ?? clockLabel)(x, span)}
                   </text>
                 ))}
                 {paths.map((pp) => (
@@ -304,7 +307,7 @@ export default function TimeChart(p: Props) {
         </svg>
       )}
       {showHover && mine && (
-        <Tooltip x={PAD_L + hx} width={width} time={tooltipTime(t[idx], span)}
+        <Tooltip x={PAD_L + hx} width={width} time={(p.tipFmt ?? tooltipTime)(t[idx], span)}
           rows={[
             ...[...series].reverse().map((s) => ({ color: s.color, label: s.label, value: s.values[idx] === null || s.values[idx] === undefined ? "–" : (s.fmt || yFmt)(s.values[idx] as number),
               range: s.min && s.max && s.min[idx] !== null && s.max[idx] !== null && s.min[idx] !== s.max[idx]
@@ -314,6 +317,25 @@ export default function TimeChart(p: Props) {
           notes={markers.filter((m) => Math.abs(m.ts - t[idx]) <= Math.max(step * 1.5, span / 120)).slice(-3)}
         />
       )}
+    </div>
+  );
+}
+
+/** a chart's series by colour, with their values (a line for a line, a square for an area) */
+export function Legend({ items }: { items: { label: string; color: string; value?: string; kind?: "area" | "line" }[] }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-content-dim">
+      {items.map((it) => (
+        <span key={it.label} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          {it.kind === "line" ? (
+            <span className="h-[2px] w-3 rounded" style={{ background: it.color }} />
+          ) : (
+            <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: it.color }} />
+          )}
+          {it.label}
+          {it.value !== undefined && <span className="font-medium text-content tabular-nums">{it.value}</span>}
+        </span>
+      ))}
     </div>
   );
 }
