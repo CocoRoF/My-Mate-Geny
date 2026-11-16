@@ -12,6 +12,10 @@ transcribe a recording; ``elevenlabs`` is realtime (Scribe v2 Realtime): the
 page streams the mic to ElevenLabs itself with a single-use token minted here
 (:meth:`VoiceService.realtime_token`), so the key never reaches a browser.
 
+How she feels comes out in how she sounds, where an engine has a knob for it (:func:`delivery`): OpenAI's steerable
+models and Gemini are told a few words on how to say it, ElevenLabs leans her own voice settings a little, Eleven v3 / v4
+get an audio tag. Her voice and the speed of a clip are never touched.
+
 Synthesized audio is cached on disk by a hash of everything that shapes it.
 """
 
@@ -28,6 +32,7 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 from app.mate import files, netio
+from app.mate import state as S
 from app.mate.providers import (ELEVEN_BATCH_STT, ELEVEN_DEFAULT_MODEL, ELEVEN_REALTIME_MODELS, Providers, elevenlabs_api,
                                 openai_api, openai_voices)
 from app.mate.store import MateError, MateStore, normalize_voice
@@ -49,6 +54,9 @@ _TYPE = {v: k for k, v in _EXT.items() if k not in ("audio/mp3", "audio/x-wav", 
 
 # OmniVoice /voices is cheap but not free: remember it for a minute.
 _voices_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+# A voice's own settings in ElevenLabs, for her mood to lean them: (monotonic time, settings or None when unknown).
+_eleven_own_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
+ELEVEN_OWN_TTL, ELEVEN_OWN_RETRY = 600.0, 60.0
 
 
 # ── what reaches a TTS engine ──
@@ -226,6 +234,77 @@ _OMNI_EMOTION = {"joy": "joy", "smile": "joy", "laugh": "joy", "greet": "joy", "
                  "thinking": "neutral", "sleepy": "neutral", "neutral": "neutral"}
 
 
+# ── how she feels, in how she sounds ──
+# Her state as the mate document carries it (state.summary) at the moment she speaks, as a hint for an engine with a knob for
+# it. Subtle on purpose and scaled by how strongly she feels it: the line's own expression tag still says how this line goes,
+# her mood only colours it. Her voice and the speed of a clip are never touched; an engine without such a knob gets nothing.
+#: how the strongest feeling comes out in her voice, by how strong it is ((from, how), …): the words a steerable engine is told.
+#: Angry at something they did is curt and cold; angry at her day (hungry, stressed, her off day), grumpy
+VOICE_HOW = {
+    "angry": ((0.7, "curt, cold and clipped, the anger held just under it"), (0.45, "curt and cold"),
+              (S.SHOWN_FROM, "a little curt and cool")),
+    "cranky": ((0.45, "grumpy and short"), (S.SHOWN_FROM, "a little grumpy")),
+    "sad": ((0.7, "soft, low and slow, heavy, close to tears"), (0.45, "soft and slow, subdued"),
+            (S.SHOWN_FROM, "a little subdued and soft")),
+    "lonely": ((0.45, "quiet and a little wistful"), (S.SHOWN_FROM, "a little quiet")),
+    "worried": ((0.45, "gentle and careful, a little anxious"), (S.SHOWN_FROM, "gentle and a little careful")),
+    "excited": ((0.7, "bright, quick and bubbling over"), (0.45, "bright and quick"), (S.SHOWN_FROM, "a little brighter and quicker")),
+    "happy": ((0.7, "warm, bright and lively"), (0.45, "warm and cheerful"), (S.SHOWN_FROM, "a little warmer")),
+    "shy": ((0.7, "flustered, hesitant and quiet, stumbling a little"), (0.45, "a little hesitant and quiet"),
+            (S.SHOWN_FROM, "a touch hesitant")),
+    "sleepy": ((0.7, "very drowsy, slow and soft, half asleep"), (0.45, "drowsy and a bit slow"), (S.SHOWN_FROM, "a little drowsy")),
+}
+#: ElevenLabs (models with continuous settings): the livelier she is the less stable and the more styled her own settings, the
+#: calmer (sleepy, low) the steadier — by at most this much, times how strongly she feels it, in steps of DELTA_STEP
+ELEVEN_STABILITY, ELEVEN_STYLE, DELTA_STEP = 0.2, 0.25, 0.05
+#: Eleven v3 / v4 take a few fixed stabilities only, and a direction as an audio tag before the words (the ones nonverbal.py
+#: already gives them, and v3's sad): only for what clearly shows
+ELEVEN_TAG, ELEVEN_TAG_FROM = {"angry": "annoyed", "excited": "excited", "sad": "sad"}, 0.45
+
+
+def _step(x: float) -> float:
+    return round(round(x / DELTA_STEP) * DELTA_STEP, 2) + 0.0  # (+0.0: never -0.0)
+
+
+def _audio_tags(engine: str, model: str) -> bool:
+    return engine == "elevenlabs" and model.startswith(("eleven_v3", "eleven_v4"))
+
+
+def delivery(state: dict[str, Any] | None, engine: str, model: str = "") -> dict[str, Any]:
+    """How she feels, for this engine (``model``: the one it speaks with): ``how`` — a few words on how to say it (OpenAI's
+    gpt-4o models, Gemini); ``stability`` / ``style`` — how far to lean her own ElevenLabs settings; ``tag`` — an audio tag
+    before the words (Eleven v3 / v4). {} when she is calm, and for every other engine."""
+    top = ((state or {}).get("top") or [None])[0]
+    if not isinstance(top, dict) or top.get("emotion") not in VOICE_HOW:
+        return {}
+    emotion, v = str(top["emotion"]), float(top.get("v") or 0.0)
+    if v < S.SHOWN_FROM:
+        return {}
+    if engine == "elevenlabs":
+        if _audio_tags(engine, model):
+            return {"tag": ELEVEN_TAG[emotion]} if emotion in ELEVEN_TAG and v >= ELEVEN_TAG_FROM else {}
+        arousal = state.get("arousal")
+        arousal = float(arousal) if isinstance(arousal, (int, float)) else 0.4  # (0.4: how lively calm is)
+        lively = max(-1.0, min(1.0, (arousal - 0.4) / 0.6))
+        strength = min(1.0, v)
+        out = {"stability": _step(-ELEVEN_STABILITY * lively * strength), "style": _step(ELEVEN_STYLE * max(0.0, lively) * strength)}
+        return {k: x for k, x in out.items() if x}
+    if (engine == "openai" and model.startswith("gpt-4o")) or engine == "google":
+        if emotion == "angry" and not S._at_them(top.get("why")):
+            emotion = "cranky"
+        how = next((text for floor, text in VOICE_HOW[emotion] if v >= floor), "")
+        return {"how": how} if how else {}
+    return {}
+
+
+def openai_instructions(emotion: str, hint: dict[str, Any]) -> str:
+    """What a steerable OpenAI model is told: the line's own tone, and how her mood colours it."""
+    out = f"Speak in a natural, {emotion} tone." if emotion else ""
+    if hint.get("how"):
+        out = f"{out or 'Speak naturally.'} Your mood colours how you say it: {hint['how']}."
+    return out
+
+
 class VoiceService:
     def __init__(self, store: MateStore) -> None:
         self.store = store
@@ -286,6 +365,11 @@ class VoiceService:
                  "url": cfg.get("omnivoice_url") if engine == "omnivoice" else cfg.get("http_tts_url")}
         if sounds:  # (a line with a laugh in it is made again when how sounds are made changes; the rest stay cached)
             shape["nv"] = NONVERBAL_VERSION
+        # (how she feels right now colours how she says it; a preview of unsaved settings is her voice as it is)
+        model = tts.get("model") or {"openai": OPENAI_TTS_DEFAULT, "elevenlabs": ELEVEN_DEFAULT_MODEL}.get(engine, "")
+        hint = {} if override else delivery(mate.get("state"), engine, str(model))
+        if hint:
+            shape["delivery"] = hint
         if engine == "local":
             # (her model, her voice's clip for this feeling, its instruction: a new clip is a new line)
             lv = self._local_voice(mate, tts, emotion)
@@ -320,15 +404,17 @@ class VoiceService:
     async def _tts_google(self, tts, text, shape, cfg):
         from app.mate.google import speech
         return await speech(_need(self.store.secret("google_key"), "The Gemini API key"), tts["model"], text,
-                            tts.get("voice"), float(tts.get("speed") or 1))
+                            tts.get("voice"), float(tts.get("speed") or 1), how=(shape.get("delivery") or {}).get("how") or "")
 
     async def _tts_openai(self, tts: dict, text: str, shape: dict, cfg: dict) -> tuple[bytes, str]:
         key = _need(self.store.secret("openai_key"), "The OpenAI API key")
         model = tts.get("model") or OPENAI_TTS_DEFAULT
         body: dict[str, Any] = {"model": model, "voice": tts.get("voice") or "alloy", "input": text,
                                 "response_format": "mp3", "speed": float(tts.get("speed") or 1.0)}
-        if shape["emotion"] and model.startswith("gpt-4o"):
-            body["instructions"] = f"Speak in a natural, {shape['emotion']} tone."
+        if model.startswith("gpt-4o"):
+            told = openai_instructions(shape["emotion"], shape.get("delivery") or {})
+            if told:
+                body["instructions"] = told
         resp = await netio.request("POST", f"{openai_api()}/audio/speech", json_body=body, timeout=90,
                                    headers={"Authorization": f"Bearer {key}"})
         return _audio(resp, "OpenAI", "audio/mpeg")
@@ -392,15 +478,50 @@ class VoiceService:
 
     async def _tts_elevenlabs(self, tts: dict, text: str, shape: dict, cfg: dict) -> tuple[bytes, str]:
         key = _need(self.store.secret("elevenlabs_key"), "The ElevenLabs API key")
-        voice = quote(_need(tts.get("voice") or "", "The ElevenLabs voice", "this mate's settings → Voice"), safe="")
+        voice_id = _need(tts.get("voice") or "", "The ElevenLabs voice", "this mate's settings → Voice")
+        voice = quote(voice_id, safe="")
+        hint = shape.get("delivery") or {}
+        if hint.get("tag"):  # (Eleven v3 / v4: a direction before the words, the way nonverbal.py gives them a laugh)
+            text = f"[{hint['tag']}] {text}"
         body: dict[str, Any] = {"text": text, "model_id": tts.get("model") or ELEVEN_DEFAULT_MODEL}
         speed = float(tts.get("speed") or 1.0)
         if speed != 1.0:
             body["voice_settings"] = {"speed": max(0.7, min(1.2, speed))}
+        if hint.get("stability") or hint.get("style"):
+            # (her mood leans her own settings a little: everything else of them is sent as it is, so only that moves)
+            own = await self._eleven_own(key, voice_id)
+            if own:
+                lean = {k: round(max(0.0, min(1.0, float(own.get(k) or 0.0) + float(hint.get(k) or 0.0))), 2)
+                        for k in ("stability", "style")}
+                body["voice_settings"] = {**own, **lean, **body.get("voice_settings", {})}
         resp = await netio.request(
             "POST", f"{elevenlabs_api()}/text-to-speech/{voice}?output_format=mp3_44100_128", json_body=body,
             timeout=90, headers={"xi-api-key": key, "Accept": "audio/mpeg"})
         return _audio(resp, "ElevenLabs", "audio/mpeg")
+
+    @staticmethod
+    async def _eleven_own(key: str, voice_id: str) -> dict[str, Any] | None:
+        """Her voice's own settings in ElevenLabs (GET /voices/{id}/settings), remembered for a while; None when they can't
+        be read (her mood leans nothing then — she still speaks)."""
+        ck = f"{key[-6:]}:{voice_id}"
+        hit = _eleven_own_cache.get(ck)
+        if hit and time.monotonic() - hit[0] < (ELEVEN_OWN_TTL if hit[1] else ELEVEN_OWN_RETRY):
+            return hit[1]
+        own: dict[str, Any] | None = None
+        try:
+            resp = await netio.request("GET", f"{elevenlabs_api()}/voices/{quote(voice_id, safe='')}/settings", timeout=15,
+                                       headers={"xi-api-key": key})
+            data = resp.json() if resp.status < 400 else None
+            if isinstance(data, dict):
+                own = {k: data[k] for k in ("stability", "similarity_boost", "style", "speed")
+                       if isinstance(data.get(k), (int, float)) and not isinstance(data.get(k), bool)}
+                if isinstance(data.get("use_speaker_boost"), bool):
+                    own["use_speaker_boost"] = data["use_speaker_boost"]
+                own = own if "stability" in own else None
+        except (netio.UpstreamError, ValueError):
+            own = None
+        _eleven_own_cache[ck] = (time.monotonic(), own)
+        return own
 
     async def _tts_omnivoice(self, tts: dict, text: str, shape: dict, cfg: dict) -> tuple[bytes, str]:
         url = _need(cfg.get("omnivoice_url") or "", "The OmniVoice URL").rstrip("/")

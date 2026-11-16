@@ -14,7 +14,7 @@ import { lazy, memo, Suspense, useLayoutEffect, useMemo, useState, useSyncExtern
 import { useLiveAvatar } from "../livePreview";
 import type { Avatar, BodyMood, MateAvatarProps } from "../types";
 import { DEFAULT_OUTFIT, type MateState, type OutfitCard } from "../../api/mates";
-import { restingLook } from "../stateLook";
+import { restsOn, stateLook } from "../stateLook";
 import AlignedBox from "./AlignedBox";
 import { figureOf, type FramedSet } from "./framing";
 import { useOutfitFade } from "./outfitFade";
@@ -64,7 +64,8 @@ export const MateAvatar = memo(function MateAvatar({
   mood = "idle",
   videoMood,
   react = null,
-  look,
+  look: felt,
+  lookLevel,
   frameTo,
   className,
   live2dCoreUrl,
@@ -79,6 +80,8 @@ export const MateAvatar = memo(function MateAvatar({
   const plainOk = useSyncExternalStore(noSubscribe, canPlainVideo, () => false);
   /** the video player could not start: show the stills instead */
   const [videoFailed, setVideoFailed] = useState(false);
+  // (a video body plays her mood as much as she feels it; the others rest on it once she feels it enough)
+  const look = restsOn(felt, lookLevel);
   const cls = `mate-avatar mate-avatar-${size}${bleed ? " mate-avatar-bleed" : ""}${className ? " " + className : ""}`;
   const figure = figureOf(avatar, frameTo);
   const figureKey = figure ? `${figure.aspect}|${figure.anchorY ?? 1}` : String(figure);
@@ -160,7 +163,8 @@ export const MateAvatar = memo(function MateAvatar({
             mood={videoMood ?? mood}
             doing={doing}
             react={react}
-            look={look}
+            look={felt}
+            lookLevel={lookLevel}
             poster={home}
             name={name}
             onFail={() => setVideoFailed(true)}
@@ -225,7 +229,7 @@ export function LiveMateAvatar({
   // (awake in bed because of a message: she is herself. The body names only what she is doing right now)
   const life = mate.life;
   const doing = life?.enabled ? (life.body === "sleep" && !life.asleep ? undefined : life.body || undefined) : undefined;
-  return <MateAvatar avatar={shown} name={mate.name} look={restingLook(mate)} frameTo={frameTo} doing={doing} className={[className, fading].filter(Boolean).join(" ") || undefined} {...rest} />;
+  return <MateAvatar avatar={shown} name={mate.name} look={stateLook(mate)} lookLevel={mate.state?.level ?? 0} frameTo={frameTo} doing={doing} className={[className, fading].filter(Boolean).join(" ") || undefined} {...rest} />;
 }
 
 export default MateAvatar;

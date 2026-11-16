@@ -406,7 +406,7 @@ function Quick() {
             />
           </div>
         </div>
-        {(reply || (sentAt > 0 && !overlayOut && conv.streaming)) && (
+        {(reply || (sentAt > 0 && !overlayOut && (conv.streaming || conv.holding))) && (
           <div className="mt-2 flex max-h-48 flex-col gap-1.5 overflow-y-auto overflow-x-hidden rounded-xl bg-surface-2/80 px-3 py-2 text-[13px] text-content" style={NO_DRAG} data-testid="mate-quick-reply">
             {reply ? (
               <MateReply text={last!.text} streaming={!last!.complete} compact bare />
