@@ -463,7 +463,7 @@ export default {
   profSelfRef: "What she calls herself",
   profSelfRefHint: "In Korean, e.g. 저 or 나. Empty: as her character speaks.",
   profSelfRefPh: "e.g. 저",
-  profForms: "In Korean: {forms} · calling you: {call}",
+  profAddressUse: "What she calls you, not a word for every sentence: when and how is up to {name}.",
   styleSpeech: "How she talks",
   styleSpeechHint: "{name} applies a change from her next message.",
   styleFormality: "Speech level",

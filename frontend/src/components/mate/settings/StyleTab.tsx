@@ -9,7 +9,6 @@
  */
 import { useEffect, useRef, useState } from "react";
 import {
-  effectiveStyle,
   fillAddress,
   prefsOf,
   type EmotionLevel,
@@ -21,7 +20,6 @@ import {
   type StyleChange,
   type ToneLevel,
 } from "../../../api/mates";
-import { addressForms, isBareKoreanName } from "../../../lib/josa";
 import { previewMateFlags } from "../../../mate/livePreview";
 import { reactsAt } from "../../../mate/emotion";
 import { describeChanges, fieldLabel, LANG_NAMES, resolveChange, useStyleChanges } from "../../../mate/styleChanges";
@@ -183,8 +181,6 @@ export default function StyleTab({ mate, conv }: { mate: Mate; conv: MateConvers
   // your name is every mate's (Settings → 계정): shown here, changed there
   const nm = p.user_name.trim();
   const chips = addressChips(nm, korean);
-  const eff = effectiveStyle({ ...p, formality: d.formality, address: d.address, self_ref: d.self_ref });
-  const forms = korean && d.address ? addressForms(d.address, eff.formality === "banmal" && isBareKoreanName(d.address, nm)) : null;
   const charAddress = p.defaults.address ? fillAddress(p.defaults.address, p.user_name, t("mateSettings.styleNamePh")) : "";
   const charLevel = LEVELS.find((l) => l.id === p.defaults.formality);
   const known = d.language in LANG_NAMES;
@@ -227,11 +223,10 @@ export default function StyleTab({ mate, conv }: { mate: Mate; conv: MateConvers
             </button>
           ))}
         </div>
-        {forms && (
-          <p className="text-[11.5px] text-content-faint" data-testid="mate-address-forms">
-            {t("mateSettings.profForms", { forms: [forms.subject, forms.topic, forms.object, forms.with, forms.to].filter(Boolean).join(" · "), call: forms.call })}
-          </p>
-        )}
+        {/* (what she calls them, not a word for every sentence: when and how is hers — app/mate/prompt.ADDRESS_USE) */}
+        <p className="text-[11.5px] text-content-faint" data-testid="mate-address-use">
+          {t("mateSettings.profAddressUse", { name: mate.name })}
+        </p>
       </Section>
       <Section title={t("mateSettings.styleLevelGroup")} testId="mate-style">
         <Field label={t("mateSettings.profReplyLang")}>

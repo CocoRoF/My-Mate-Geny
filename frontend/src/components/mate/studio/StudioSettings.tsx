@@ -9,7 +9,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { broughtAvatar, CONCEPT_KEYS, type AvatarEnv, type AvatarProject, type ConceptKey, type StudioInfo } from "../../../api/avatar";
 import { fillAddress, importAvatarZip, prefsOf, type Mate } from "../../../api/mates";
 import { useMateStore } from "../../../stores/mateStore";
-import { addressForms, isBareKoreanName } from "../../../lib/josa";
 import { MateAvatar } from "../../../mate/avatar/MateAvatar";
 import type { MateConversation } from "../../../mate/useMateConversation";
 import { useT, type MsgKey } from "../../../i18n";
@@ -173,8 +172,6 @@ export function StyleSection({ mate }: { mate: Mate }) {
   const korean = (lang || "ko").toLowerCase().startsWith("ko");
   const nm = userName.trim();
   const chips = nm ? (korean ? [`${nm}님`, `${nm} 씨`, nm, "주인님"] : [nm, "boss"]) : korean ? ["주인님", "사장님", "선배"] : ["boss"];
-  const level = (p.formality !== "auto" ? p.formality : p.defaults.formality) || "";
-  const forms = korean ? addressForms(address, level === "banmal" && isBareKoreanName(address, nm)) : null;
   const known = LANGS.some(([c]) => c === lang);
   const charAddress = p.defaults.address ? fillAddress(p.defaults.address, userName, t("mateSettings.styleNamePh")) : "";
   const charLevel = ({ haeyo: "mateSettings.styleHaeyo", hapsyo: "mateSettings.styleHapsyo", banmal: "mateSettings.styleBanmal" } as Record<string, MsgKey>)[p.defaults.formality];
@@ -223,11 +220,10 @@ export function StyleSection({ mate }: { mate: Mate }) {
             </button>
           ))}
         </div>
-        {forms && (
-          <p className="rounded-lg bg-surface/70 px-2.5 py-1.5 text-[11.5px] text-content-faint" data-testid="studio-address-forms">
-            {t("mateSettings.profForms", { forms: [forms.subject, forms.topic, forms.object, forms.with, forms.to].filter(Boolean).join(" · "), call: forms.call })}
-          </p>
-        )}
+        {/* (what she calls them, not a word for every sentence: when and how is hers — app/mate/prompt.ADDRESS_USE) */}
+        <p className="rounded-lg bg-surface/70 px-2.5 py-1.5 text-[11.5px] text-content-faint" data-testid="studio-address-use">
+          {t("mateSettings.profAddressUse", { name: mate.name })}
+        </p>
       </Group>
       <FieldFrame path="persona.language" label={t("mateSettings.profReplyLang")}>
         <select className="field" value={known ? lang : "__other"} onChange={(e) => e.target.value !== "__other" && void save("persona.language", e.target.value)} data-testid="studio-language">

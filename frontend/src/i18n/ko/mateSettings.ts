@@ -464,7 +464,7 @@ const ko: Messages<"mateSettings"> = {
   profSelfRef: "자신을 부르는 말",
   profSelfRefHint: "예: 저, 나. 비워 두면 캐릭터 말투대로 해요.",
   profSelfRefPh: "예: 저",
-  profForms: "한국어로: {forms} · 부를 때: {call}",
+  profAddressUse: "부를 때 쓰는 말이에요. 문장마다 넣지 않고, 언제 어떻게 부를지는 {name:이} 자연스럽게 정해요.",
   styleSpeech: "말하는 방식",
   styleSpeechHint: "{name:은} 다음 메시지부터 바꿔서 말해요.",
   styleFormality: "말투 높낮이",

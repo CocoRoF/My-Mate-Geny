@@ -68,7 +68,7 @@ def _old_chaerin(db):
     old_speech = "\n".join([
         "- Short and polite. “...Yes.” “No.” “That's a bug.” The ends of her sentences fade out quietly.",
         "- She calls the user politely by name: “<their name> 님”.",
-        "When you speak Korean: short 존댓말 (해요체) with the user — never 반말. Call the user “<이름> 님”. "
+        "When you speak Korean: short 존댓말 (해요체) with the user — never 반말. What you call the user: “<이름> 님”. "
         "Your catchphrases are exactly “공략이 필요해요.”, “재현 경로가 어떻게 돼요?”.",
     ])
     persona = {"description": "old bundled description", "personality": "old bundled personality",
@@ -147,8 +147,8 @@ def test_chaerins_full_prompt_has_one_speech_level_and_no_contradiction(db, form
     lines = _level_lines(prompt)
     assert len(lines) == 1 and lines[0].startswith("- Speech level") and expect in lines[0], lines
     who = prompt[prompt.index("## Who you are"):prompt.index("## How you talk")]
-    assert "Speaking style" not in who and "Call the user" not in who and "님”" not in who
-    assert prompt.count("Call the user") == 1 and "Call the user by their name, as “<name> 님”." in prompt
+    assert "Speaking style" not in who and "What you call the user" not in who and "님”" not in who
+    assert prompt.count("What you call the user") == 1 and "What you call the user: their name, as “<name> 님”." in prompt
     assert "The user's name is 장하렴." in prompt
     if formality == "auto":
         assert "Speech level (your character's own)" in prompt
@@ -160,7 +160,7 @@ def test_users_address_and_name_win_and_stay_plain(db):
     cid = "mate_c4a0000000000001"
     mates.update(cid, {"prefs": {"address": "하렴", "formality": "banmal"}})
     _req, prompt = _turn(mates, cid)
-    assert prompt.count("Call the user") == 1 and "Call the user “하렴”." in prompt and "<name> 님" not in prompt
+    assert prompt.count("What you call the user") == 1 and "What you call the user: “하렴”." in prompt and "<name> 님" not in prompt
     for grammar in ("하렴아", "하렴이가", "particle"):
         assert grammar not in prompt
 
@@ -169,7 +169,7 @@ def test_the_reply_language_switch_takes_the_characters_address_for_that_languag
     mates = _service(db)
     cha = mates.store.by_builtin("chaerin")
     m = mates.update(cha["id"], {"persona": {"language": "en"}})
-    assert m["prefs"]["defaults"]["address"] == "{name}" and "Call the user by their name." in system_prompt(
+    assert m["prefs"]["defaults"]["address"] == "{name}" and "What you call the user: their name." in system_prompt(
         m["name"], m["persona"], [], m["prefs"])
     m = mates.update(cha["id"], {"persona": {"language": "ko"}})
     assert m["prefs"]["defaults"]["address"] == "{name} 님"
@@ -334,12 +334,12 @@ def test_style_changes_change_the_key_and_the_note_spells_them_out():
     new = normalize_prefs({"formality": "banmal", "address": "하렴", "self_ref": "나", "tone": {"humor": "high"},
                            "speech_style": "y", "self_edit": "ask"}, base)
     note = settings_change_note("한채린", {}, "한채린", {}, base, new)
-    for line in ("- Speech level: 반말 in Korean", "- Call the user “하렴”.", "- Refer to yourself as “나”.",
+    for line in ("- Speech level: 반말 in Korean", "- What you call the user: “하렴”.", "- Refer to yourself as “나”.",
                  "- Humor: playful", "- Your speech habits were updated", "proposals the user confirms"):
         assert line in note, line
     # back to her own way: the character's level and address are named, not just "updated"
     back = settings_change_note("한채린", {}, "한채린", {}, new, base)
-    assert "- Speech level: polite 해요체" in back and "- Call the user by their name, as “<name> 님”." in back
+    assert "- Speech level: polite 해요체" in back and "- What you call the user: their name, as “<name> 님”." in back
 
 
 def test_an_old_applied_persona_is_compared_as_style():

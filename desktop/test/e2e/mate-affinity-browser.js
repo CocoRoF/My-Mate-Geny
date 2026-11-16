@@ -116,12 +116,12 @@ async function main() {
     await settingsTab(a, "style");
     assert.equal((await a.textContent('[data-testid="mate-user-name"]')).trim(), "현석");
     await a.locator('[data-testid="mate-address-chips"] button', { hasText: /^현석$/ }).click();
-    const forms = await a.textContent('[data-testid="mate-address-forms"]');
-    assert.match(forms, /현석이|현석은/, forms);
+    const use = await a.textContent('[data-testid="mate-address-use"]');
+    assert.ok(!/현석이가|현석은/.test(use), use);  // (no particles on what she calls them: when and how is hers)
     await a.click('[data-testid="mate-settings-save"]');
     await until("profile saved", async () => (await (await a.request.get(`${SERVER}/api/mates/${mate.id}`)).json()).prefs.user_name === "현석");
 
-    step("Conversation style: casual speech, short replies, expressive emotion → saved; the forms follow the level");
+    step("Conversation style: casual speech, short replies, expressive emotion → saved");
     await settingsTab(a, "style");
     await a.click('[data-testid="mate-style-formality"] [data-value="banmal"]');
     await a.click('[data-testid="mate-style-length"] [data-value="short"]');
@@ -136,7 +136,6 @@ async function main() {
     await a.waitForSelector('[data-testid="mate-settings-open"]');
     await settingsTab(a, "style");
     assert.equal(await a.getAttribute('[data-testid="mate-style-formality"] [data-value="banmal"]', "aria-checked"), "true", "kept after a reload");
-    assert.match(await a.textContent('[data-testid="mate-address-forms"]'), /현석이가 · 현석이는 · 현석이를/);
 
     step("Memory: add with kinds, importance and a date; similar → merge banner; edit in place; search; pin");
     await settingsTab(a, "memory");

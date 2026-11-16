@@ -163,7 +163,7 @@ def test_migration_of_an_edited_builtin_keeps_the_users_fields(db):
     note = mates._settings_note(cid, cha)
     assert "Who you are was updated" in note and "Your speech habits were updated" in note
     assert "Speech level: polite 해요체" in note                                 # her own level, now as data
-    assert "Reply language" not in note and "Call the user" not in note        # (the address didn't change)
+    assert "Reply language" not in note and "What you call the user" not in note        # (the address didn't change)
     assert mates._settings_note(cid, cha) == ""  # only once
 
 

@@ -290,11 +290,11 @@ def test_persona_edit_reaches_the_next_message(db, tmp_path, monkeypatch):
     from app.mate.prompt import settings_change_note, system_prompt
 
     note = settings_change_note("한채린", {}, "한채린", {}, {"address": ""}, {"address": "하렴"})
-    assert "Call the user “하렴”" in note and note.startswith("<settings_update>")
+    assert "What you call the user: “하렴”" in note and note.startswith("<settings_update>")
     assert settings_change_note("A", {}, "A", {}, {"address": "x"}, {"address": "x"}) == ""
-    assert "Call the user “하렴”" in system_prompt("한채린", {}, [], {"address": "하렴"})
+    assert "What you call the user: “하렴”" in system_prompt("한채린", {}, [], {"address": "하렴"})
     # (an old persona document that still has its address: read as the style's)
-    assert "Call the user “하렴”" in system_prompt("한채린", {"address": "하렴"}, [])
+    assert "What you call the user: “하렴”" in system_prompt("한채린", {"address": "하렴"}, [])
 
     svc, store, mates = _setup(db, tmp_path, monkeypatch)
     m = store.create(name="Rin", prefs={"address": "사용자"})

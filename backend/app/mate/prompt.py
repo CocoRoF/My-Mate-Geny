@@ -318,14 +318,25 @@ _TONE = {
 
 
 def address_line(address: str, **_old: Any) -> str:
-    """How the mate calls the user: just the form, no grammar notes (the model uses a Korean name naturally). A
+    """What the mate calls the user: given as what it is, not as a word she must say (``ADDRESS_USE`` says how it is used). A
     character's own form may be built on the user's name (``{name}``: “{name} 님”)."""
     a = " ".join(str(address or "").split())
     if "{name}" in a:
         if a == "{name}":
-            return "Call the user by their name."
-        return f"Call the user by their name, as “{a.replace('{name}', '<name>')}”."
-    return f"Call the user “{a}”."
+            return "What you call the user: their name."
+        return f"What you call the user: their name, as “{a.replace('{name}', '<name>')}”."
+    return f"What you call the user: “{a}”."
+
+
+# how a name and a form of address are used (the user's word, 2026-11-16): they say who the user is and how she addresses them;
+# how she uses them in what she says is hers to judge, as a native speaker's — never a word forced into every sentence. General
+# examples only: no table of the user's own name with its particles
+ADDRESS_USE = ("Their name and what you call them say who they are and how you address them; how you use them is yours to "
+               "judge, the way a native speaker in your place would. You call them by it now and then, where people would, not "
+               "in every message. Most of the time the listener goes unsaid (in Korean above all: “뭐 하고 있었어?”), and when you "
+               "do refer to them you say what fits the sentence, never the calling form as if it were a name: “지수야, 뭐 해?” "
+               "calls someone, “지수야는 뭐 해?” is no Korean, and “지수는 뭐 하고 있었어요?” said to 지수 sounds like asking about "
+               "someone else. A full name with the surname (김지수) is stiff to someone's face: people use the given name.")
 
 
 def _style_inputs(persona: dict[str, Any] | None, prefs: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -352,6 +363,8 @@ def settings_block(persona: dict[str, Any] | None, prefs: dict[str, Any] | None)
         lines.append(f"The user's name is {user}.")
     if eff["address"]:
         lines.append(address_line(eff["address"]))
+    if user or eff["address"]:
+        lines.append(ADDRESS_USE)
     if eff["self_ref"]:
         lines.append(f"Refer to yourself as “{eff['self_ref']}”.")
     level = eff["formality"]
