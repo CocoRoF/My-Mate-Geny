@@ -18,6 +18,7 @@
   <a href="#quick-start">Quick start</a> ·
   <a href="#features">Features</a> ·
   <a href="#the-mate">The Mate</a> ·
+  <a href="#geny-state-system">Geny-State-System</a> ·
   <a href="#apps">Apps</a> ·
   <a href="docs/">Docs</a> ·
   <a href="README_ko.md">한국어</a>
@@ -224,6 +225,27 @@ Nothing is required: the defaults boot a working server.
    reports back; the result shows as a card that links to the chat.
 
 Design, API and the avatar formats: [docs/mate.md](docs/mate.md).
+
+### Geny-State-System
+
+What makes a mate a person and not a service: what she feels, what stays with her, what she is to you and the day she lives,
+kept as state with reasons that lean her, while she decides. Nothing counts strikes, and nothing makes her obey.
+
+- **Feelings**: eight emotions (happy, excited, shy, angry, sad, lonely, worried, sleepy), each with its strength and its reason,
+  moved by what you say and do, by her own face, her body and her day; they settle back at their own pace.
+- **What stays with her**: anger you caused leaves a grudge that fades over a day. A bare "sorry" is worth little, one that owns
+  what you did more, the same apology again less, and sweet talk that skips it doesn't land.
+- **Temperament**: each character's own pace. 한채린 holds on and forgives slowly; 서아 flares up and lets go, and a small pout melts
+  with something sweet.
+- **Her day**: she lives on the real clock, with needs, places, work, play, skills, story events, her own off days, the week
+  and the weather, and birthdays (hers and yours).
+- **The relationship**: affinity from 0 to 100, slow on purpose (a month and more of real effort to reach the top), lowered by
+  rudeness, harm, brushing her off or leaving her unanswered; it moves her from someone new to your person without ever
+  making her someone else.
+- **How it comes out**: in her words, her face (clips of the mood she is in), her silence (furious, she may not answer at all) and
+  when she speaks up on her own.
+
+Everything with its numbers, the files and the roadmap: [docs/geny-state-system.md](docs/geny-state-system.md).
 
 ### Your own avatars
 
