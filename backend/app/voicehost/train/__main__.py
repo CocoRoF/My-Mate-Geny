@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 import traceback
 from pathlib import Path
 
@@ -17,7 +18,7 @@ def main(argv: list[str]) -> int:
     job = json.loads((run_dir / "job.json").read_text())
 
     def emit(**kw) -> None:
-        sys.stdout.write(PREFIX + json.dumps(kw, ensure_ascii=False) + "\n")
+        sys.stdout.write(PREFIX + json.dumps({**kw, "t": round(time.time(), 1)}, ensure_ascii=False) + "\n")
         sys.stdout.flush()
 
     ctl = Control()

@@ -131,7 +131,7 @@ def test_the_servers_word_pauses_releases_and_stops_a_run():
 async def test_a_voice_trained_from_its_recordings_speaks_with_its_adapter(vh):
     v = vh.voices.create("하나")
     await vh.add_reference(v["id"], wav(talk(8, seed=3)), label="neutral", transcript="안녕하세요 반가워요")
-    r = await vh.trainings.create(voice_id=v["id"], files=[("녹음.m4a", wav(talk(90, seed=1)))])
+    r = (await vh.trainings.create(voice_id=v["id"], files=[("녹음.m4a", wav(talk(90, seed=1)))]))[0]
     assert r["state"] == "queued" and len(r["inputs"]) == 2 and r["inputs"][1]["clip"]  # (her clip is her too)
     r = await done(vh, r["id"])
     assert r["state"] == "done", r["error"]
@@ -148,12 +148,12 @@ async def test_a_voice_trained_from_its_recordings_speaks_with_its_adapter(vh):
     _, info = await vh.synthesize("omnivoice", "오늘은 정말 좋은 날이에요.", reference=ref, language="ko")
     assert info.get("adapter") == r["id"]
     # (the studio shows it: the voice is marked trained, a line made with it says so in the history)
-    assert _public_voice(vh.voices.get(v["id"]))["adapter"] == r["id"]
+    assert _public_voice(vh.voices.get(v["id"]), vh.trainings.adapters(v["id"]))["adapters"] == {"omnivoice": r["id"]}
     e = await vh.generate(model_id="omnivoice", text="오늘은 정말 좋은 날이에요.", voice_id=v["id"], mode="clone")
     assert e["adapter"] == r["id"] and vh.history.get(e["id"])["adapter"] == r["id"]
     vh.trainings.apply(r["id"], False)
     _, info = await vh.synthesize("omnivoice", "오늘은 정말 좋은 날이에요.", reference=ref, language="ko")
-    assert "adapter" not in info and _public_voice(vh.voices.get(v["id"]))["adapter"] == ""
+    assert "adapter" not in info and vh.trainings.adapters(v["id"]) == {}
     assert (await vh.generate(model_id="omnivoice", text="고마워요.", voice_id=v["id"], mode="clone"))["adapter"] == ""
     vh.trainings.apply(r["id"], True)
     # an adapter made from another OmniVoice doesn't fit the one installed now
@@ -166,12 +166,69 @@ async def test_a_voice_trained_from_its_recordings_speaks_with_its_adapter(vh):
     # removed: the voice no longer speaks with it, its files are gone
     await vh.trainings.delete(r["id"])
     assert not d.exists() and vh.trainings.get(r["id"]) is None
-    assert vh.store.db.query_one("SELECT adapter FROM voice_voices WHERE id=?", (v["id"],))["adapter"] == ""
+    assert vh.trainings.adapters(v["id"]) == {}
+
+
+async def test_every_model_learns_from_the_same_recordings_heard_once(db, vs):
+    mark_installed(vs, "qwen3-tts-0.6b-base", "cosyvoice3-0.5b")
+    h = VoiceHost(db, vs)
+    await h.start()
+    try:
+        v = h.voices.create("넷")
+        runs = await h.trainings.create(voice_id=v["id"], files=[("a.wav", wav(talk(90, seed=2)))])
+        # every installed model that learns (Qwen3-TTS 1.7B isn't installed), one run each, the recordings shared
+        assert [r["model_id"] for r in runs] == ["omnivoice", "qwen3-tts-0.6b-base", "cosyvoice3-0.5b"]
+        assert len({r["group_id"] for r in runs}) == 1 and runs[1]["model_name"] == "Qwen3-TTS 0.6B (Base)"
+        assert (h.trainings.run_dir(runs[2]["id"]) / "inputs" / runs[2]["inputs"][0]["file"]).is_file()
+        with pytest.raises(TrainingError) as e:  # (a model already learning this voice)
+            await h.trainings.create(voice_id=v["id"], files=[("a.wav", wav(talk(90)))], model_ids=["cosyvoice3-0.5b"])
+        assert e.value.code == "busy"
+        rs = [await done(h, r["id"]) for r in runs]
+        assert all(r["state"] == "done" and r["applied"] for r in rs), [r["error"] for r in rs]
+        # the others didn't listen again: they went on from what the first one heard
+        assert any(ev.get("stage") == "transcribe" for ev in h.trainings.get(rs[0]["id"])["events"])
+        assert not any(ev.get("stage") == "transcribe" for ev in h.trainings.get(rs[1]["id"])["events"])
+        assert rs[2]["result"]["conditions"] == ["long", "short"]  # (CosyVoice3 can't speak without a clip)
+        assert h.trainings.adapters(v["id"]) == {r["model_id"]: r["id"] for r in rs}
+        ref = h.voices.resolve(v["id"], "neutral")
+        for r in rs:  # each model speaks with its own adapter
+            assert h.trainings.adapter_for(v["id"], catalog.BY_ID[r["model_id"]])[0] == r["id"]
+            _, info = await h.synthesize(r["model_id"], "오늘은 정말 좋은 날이에요.", reference=ref, language="ko")
+            assert info.get("adapter") == r["id"]
+        assert h.trainings.adapter_for(v["id"], catalog.BY_ID["qwen3-tts-1.7b-base"]) is None
+        # one model again, alone; one that doesn't learn is refused
+        again = await h.trainings.create(voice_id=v["id"], files=[("b.wav", wav(talk(90, seed=4)))],
+                                         model_ids=["qwen3-tts-0.6b-base"])
+        assert [r["model_id"] for r in again] == ["qwen3-tts-0.6b-base"]
+        with pytest.raises(TrainingError) as e:
+            await h.trainings.create(voice_id=v["id"], files=[("b.wav", wav(talk(90)))], model_ids=["whisper-large-v3-turbo"])
+        assert e.value.code == "not_trainable"
+        r2 = await done(h, again[0]["id"])
+        assert h.trainings.adapters(v["id"])["qwen3-tts-0.6b-base"] == r2["id"]  # (the newer one put on)
+        assert not h.trainings.get(rs[1]["id"])["applied"]
+    finally:
+        await h.stop()
+
+
+async def test_an_omnivoice_adapter_from_before_stays_on(db, vs):
+    h = VoiceHost(db, vs)
+    await h.start()
+    v = h.voices.create("다섯")
+    await h.stop()
+    # (a voice's adapter as the first version kept it: one column, OmniVoice's)
+    db.execute("ALTER TABLE voice_voices ADD COLUMN adapter TEXT NOT NULL DEFAULT ''")
+    db.execute("UPDATE voice_voices SET adapter='vt-old' WHERE id=?", (v["id"],))
+    h = VoiceHost(db, vs)
+    await h.start()
+    try:
+        assert h.trainings.adapters(v["id"]) == {"omnivoice": "vt-old"}
+    finally:
+        await h.stop()
 
 
 async def test_a_new_voice_gets_its_clearest_utterance_as_its_clip(vh):
     v = vh.voices.create("새 목소리")
-    r = await vh.trainings.create(voice_id=v["id"], files=[("a.wav", wav(talk(80, seed=5)))])
+    r = (await vh.trainings.create(voice_id=v["id"], files=[("a.wav", wav(talk(80, seed=5)))]))[0]
     r = await done(vh, r["id"])
     assert r["state"] == "done"
     refs = vh.voices.get(v["id"])["references"]
@@ -183,7 +240,7 @@ async def test_a_run_fetching_what_it_needs_says_how_far(vh):
     from app.voicehost.installer import Progress
 
     v = vh.voices.create("셋")
-    row = {"id": "vt-x", "voice_id": v["id"], "state": "running", "stage": "kit", "inputs": "[]",
+    row = {"id": "vt-x", "voice_id": v["id"], "model_id": "omnivoice", "state": "running", "stage": "kit", "inputs": "[]",
            "progress": json.dumps({"what": "stt"}), "data": "{}", "result": "{}"}
     assert "total_bytes" not in vh.trainings._row(row)["progress"]  # (nothing fetched yet: no bar to show)
     vh.installer.progress["whisper-large-v3-turbo"] = Progress(state="weights", done_bytes=400, total_bytes=1600)
@@ -204,7 +261,7 @@ async def test_what_a_run_refuses(vh):
         await vh.trainings.create(voice_id=v["id"], files=[("a.wav", b"not audio")])
     assert e.value.code == "bad_audio"
     vh.s.training_limits = {"fake_delay": 0.2}
-    r = await vh.trainings.create(voice_id=v["id"], files=[("a.wav", wav(talk(90)))])
+    r = (await vh.trainings.create(voice_id=v["id"], files=[("a.wav", wav(talk(90)))]))[0]
     with pytest.raises(TrainingError) as e:  # (one run of a voice at a time)
         await vh.trainings.create(voice_id=v["id"], files=[("a.wav", wav(talk(90)))])
     assert e.value.code == "busy"
@@ -216,7 +273,7 @@ async def test_what_a_run_refuses(vh):
 async def test_a_mate_speaking_pauses_a_run_and_a_model_needing_room_sends_it_away(vh):
     vh.s.training_limits = {"fake_delay": 0.05}
     v = vh.voices.create("멈춤")
-    r = await vh.trainings.create(voice_id=v["id"], files=[("a.wav", wav(talk(90)))])
+    r = (await vh.trainings.create(voice_id=v["id"], files=[("a.wav", wav(talk(90)))]))[0]
     await done(vh, r["id"], states=("running",))
     for _ in range(100):
         if (vh.trainings.get(r["id"])["progress"] or {}).get("stage") == "train":

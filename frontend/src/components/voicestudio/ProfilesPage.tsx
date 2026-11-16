@@ -18,6 +18,7 @@ import {
   type LocalVoice,
   type VoicePatch,
   type VoiceRef,
+  type VoiceStatus,
 } from "../../api/voice";
 import { useT, type MsgKey } from "../../i18n";
 import { confirmDialog } from "../ui/ConfirmDialog";
@@ -30,11 +31,15 @@ import { Card, FeelingDot, Modal, ParamControls, PlayButton, readableAudio, refU
 /** what a feeling without a clip speaks like (backend voicehost/voices.py _CHAIN) */
 const FALLBACK: Partial<Record<Feeling, Feeling>> = { smile: "joy", fear: "sadness", disgust: "anger" };
 
+/** the models it has learned to speak on (Voice Studio → 학습), by name; "" none */
+const trainedOn = (v: LocalVoice, status: VoiceStatus | null) =>
+  Object.keys(v.adapters ?? {}).map((id) => status?.models.find((m) => m.id === id)?.name ?? id).join(", ");
+
 type Filter = "all" | "mine" | "builtin";
 
 export default function ProfilesPage() {
   const t = useT();
-  const { voices, reloadVoices } = useStudio();
+  const { voices, reloadVoices, status } = useStudio();
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [sel, setSel] = useState<string | null>(null);
@@ -84,7 +89,7 @@ export default function ProfilesPage() {
                     {v.starred && <Icon name="star" size={12} className="text-warning" />}
                     <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-content">{v.name}</span>
                     {v.builtin && <span className="pill border border-accent/30 bg-accent-soft text-[10px] text-accent">{t("localVoice.builtin")}</span>}
-                    {v.adapter && <span className="pill border border-success/30 bg-success/10 text-[10px] text-success" title={t("voiceStudio.trTrainedHint")}>{t("voiceStudio.trTrained")}</span>}
+                    {trainedOn(v, status) && <span className="pill border border-success/30 bg-success/10 text-[10px] text-success" title={t("voiceStudio.trTrainedHint", { models: trainedOn(v, status) })}>{t("voiceStudio.trTrained")}</span>}
                   </span>
                   <span className="mt-1 flex items-center gap-1">
                     {FEELINGS.map((f) => (
@@ -211,7 +216,7 @@ function Profile({ v, onGone, onPick }: { v: LocalVoice; onGone: () => void; onP
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="text-[15px]">{v.name}</span>
             {v.builtin && <span className="pill border border-accent/30 bg-accent-soft text-accent">{t("localVoice.builtin")}</span>}
-            {v.adapter && <span className="pill border border-success/30 bg-success/10 text-success" title={t("voiceStudio.trTrainedHint")} data-testid="vs-profile-trained">{t("voiceStudio.trTrained")}</span>}
+            {trainedOn(v, status) && <span className="pill border border-success/30 bg-success/10 text-success" title={t("voiceStudio.trTrainedHint", { models: trainedOn(v, status) })} data-testid="vs-profile-trained">{t("voiceStudio.trTrained")} · {trainedOn(v, status)}</span>}
             {(v.tags ?? []).map((tag) => (
               <span key={tag} className="pill border border-border bg-surface-3/50 text-content-dim">#{tag}</span>
             ))}

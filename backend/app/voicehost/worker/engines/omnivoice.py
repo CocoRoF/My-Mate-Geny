@@ -4,33 +4,19 @@ off for a voice without one."""
 
 from __future__ import annotations
 
-import hashlib
-from collections import OrderedDict
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
 
-from .base import Engine, SynthRequest
+from .base import Adapters, Engine, SynthRequest
 
 _GEN_KEYS = ("num_step", "guidance_scale", "t_shift", "denoise", "position_temperature", "class_temperature",
              "layer_penalty_factor", "audio_chunk_duration", "audio_chunk_threshold")
 
 
-KEEP_ADAPTERS = 4  # (≈ 55 MB each on the GPU)
-
-
-def _adapter_name(path: str) -> str:
-    """a name for peft: the adapter's directory and when its weights were written (a new training is a new name)"""
-    p = Path(path) / "adapter_model.safetensors"
-    stamp = p.stat().st_mtime_ns if p.exists() else 0
-    return "v" + hashlib.sha1(f"{path}:{stamp}".encode()).hexdigest()[:12]
-
-
 class OmniVoiceEngine(Engine):
     name = "omnivoice"
-    peft: Any = None
 
     def load(self) -> None:
         from omnivoice import OmniVoice
@@ -39,34 +25,10 @@ class OmniVoiceEngine(Engine):
         self.model = OmniVoice.from_pretrained(str(self.model_dir), device_map=self.dev.device, dtype=self.dev.dtype)
         self.model.eval()
         self.sample_rate = int(getattr(self.model, "sampling_rate", 24000))
+        self.adapters = Adapters()
 
     def modules(self) -> list:
         return [self.model]  # the audio tokenizer is a registered submodule (an adapter's layers are inside it too)
-
-    def _use_adapter(self, path: str) -> None:
-        """the voice's adapter on, or none: the model as it came"""
-        if not path:
-            if self.peft is not None:
-                self.peft.base_model.disable_adapter_layers()
-            return
-        from peft import PeftModel
-
-        name = _adapter_name(path)
-        if self.peft is None:
-            self._adapters: OrderedDict[str, str] = OrderedDict()
-            self.peft = PeftModel.from_pretrained(self.model, path, adapter_name=name, is_trainable=False,
-                                                  autocast_adapter_dtype=False)
-        elif name not in self.peft.peft_config:
-            self.peft.load_adapter(path, adapter_name=name, is_trainable=False, autocast_adapter_dtype=False)
-        self._adapters[name] = path
-        self._adapters.move_to_end(name)
-        while len(self._adapters) > KEEP_ADAPTERS:
-            old, _ = self._adapters.popitem(last=False)
-            if old != name:
-                self.peft.delete_adapter(old)
-        self.peft.set_adapter(name)
-        self.peft.base_model.enable_adapter_layers()
-        self.model.eval()
 
     def _prompt(self, req: SynthRequest):
         ref = req.reference
@@ -79,7 +41,7 @@ class OmniVoiceEngine(Engine):
 
     @torch.inference_mode()
     def synthesize(self, req: SynthRequest) -> list[np.ndarray]:
-        self._use_adapter(req.adapter)
+        self.adapters.use(self.model, req.adapter)
         p = req.params
         n = len(req.text)
         kwargs: dict[str, Any] = {k: p[k] for k in _GEN_KEYS if k in p}
