@@ -127,8 +127,9 @@ class LifeRuntime:
         doc, before, happened = self._played(mate_id, profile, now, tz, self._birthdays(row))
         self._dress(mate_id, doc, profile, happened, _prefs(row["prefs"]))
         self.store.save_life(mate_id, doc)
-        # (story events, her birthday and theirs, what she gave them: how she takes them, whether she writes first)
-        events = [e for e in happened if e.get("type") in ("event", "occasion", "gave")]
+        # (story events, her birthday and theirs, what she gave them, a goal of hers she reached: how she takes them, whether
+        # she writes first)
+        events = [e for e in happened if e.get("type") in ("event", "occasion", "gave", "goal")]
         if events and self.on_events:
             try:
                 self.on_events(mate_id, events)

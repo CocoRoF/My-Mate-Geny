@@ -1221,5 +1221,106 @@
     }
    }
   }
+ ],
+ "goals": [
+  {
+   "id": "nest_clear",
+   "names": {
+    "ko": "하늘고래의 둥지 첫 클리어",
+    "en": "Dalmuri's first clear of Skywhale's Nest"
+   },
+   "about": "Dalmuri's first clear of Skywhale's Nest, with you calling the raid as Baekya",
+   "target": 24,
+   "hours": {
+    "raid": 1,
+    "game": 0.1
+   },
+   "events": {
+    "raid_wipe": -3
+   },
+   "finish": "raid_clear",
+   "when": {
+    "not_flags": [
+     "nest_cleared"
+    ]
+   },
+   "days": 75,
+   "reached": {
+    "says": "That first clear of Skywhale's Nest was what you had wanted all month, and now it is done: every wipe on the way was worth it, and Baekya's calls held.",
+    "feel": {
+     "happy": "moderate"
+    }
+   },
+   "setback": {
+    "says": "A night of wipes sets the first clear of Skywhale's Nest back: the guild has the boss's patterns to drill again, and you want it all the more."
+   }
+  },
+  {
+   "id": "gpu_fund",
+   "names": {
+    "ko": "새 그래픽카드 장만",
+    "en": "Saving for a new graphics card"
+   },
+   "about": "saving up for a new graphics card, a little from every payday, so raids run smooth on full settings",
+   "save": 1000000,
+   "finish": "new_gpu",
+   "days": 150,
+   "reached": {
+    "says": "The graphics card you had been saving for is yours: months of putting a little aside, and it paid off.",
+    "feel": {
+     "happy": "moderate"
+    }
+   }
+  },
+  {
+   "id": "automation",
+   "names": {
+    "ko": "테스트 자동화 익히기",
+    "en": "Getting test automation down"
+   },
+   "about": "learning test automation properly at your desk in the evenings, so the regression checks before a release can run on their own",
+   "target": 30,
+   "hours": {
+    "study": 1,
+    "work": 0.02
+   },
+   "events": {
+    "bug_found_big": 2,
+    "crunch": -2
+   },
+   "days": 75,
+   "reached": {
+    "says": "The regression checks you automated ran clean on their own: what you studied for in the evenings works, and it feels like a level-up.",
+    "feel": {
+     "happy": "moderate"
+    }
+   },
+   "setback": {
+    "says": "A crunch week at work eats the evenings you had kept for studying test automation."
+   }
+  },
+  {
+   "id": "dessert_tour",
+   "names": {
+    "ko": "단골 카페 시즌 디저트 정복",
+    "en": "Every seasonal dessert at the café"
+   },
+   "about": "trying every one of this season's desserts at your café, one by one",
+   "target": 14,
+   "hours": {
+    "dessert": 1
+   },
+   "events": {
+    "cafe_new_cake": 2
+   },
+   "days": 75,
+   "repeat_days": 120,
+   "reached": {
+    "says": "You have now tried every dessert on your café's seasonal menu, one by one: a small quest completed, and you know which one is your favourite.",
+    "feel": {
+     "happy": "moderate"
+    }
+   }
+  }
  ]
 }

@@ -147,6 +147,8 @@ She lives on the real clock in the user's time zone ([mate-life.md](mate-life.md
 - **Her own life.** She keeps a journal, gives and receives gifts, and keeps both birthdays and the days she knows (holidays,
   빼빼로데이…).
 - **Small floors on her mood.** The week and the sky add a little: a Monday morning, the evening before days off, rain.
+- **Goals of her own.** Two things at a time she wants (a raid clear, a subscriber milestone, saving up for something), moved by her own
+  day; reaching one is a moment that lifts her, a setback lowers her a little ([mate-life.md](mate-life.md#her-goals)).
 - **Never a punishment.** She doesn't starve or sicken while they are away, and never guilt-trips.
 
 ## 5. The relationship

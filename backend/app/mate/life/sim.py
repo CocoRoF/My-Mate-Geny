@@ -9,6 +9,9 @@ can afford, with a seeded bit of chance. Nothing here is about what she says or 
 The days of her year: weekends, public holidays and the observances where the user lives (life/days.py), her birthday and theirs
 (``doc["birthdays"]``, kept by the runtime), what she has come to like by doing it with them (``tastes``), what she gave them
 (``given``: their keepsakes) and the moments they shared (``moments``).
+
+What she wants for herself (``goals``, from her profile's pool): a few things at a time that her own day moves, by the hours she
+gives them, what happens to her and what she saves. Reaching one is a moment of hers; one goes, and after a while another comes.
 """
 
 from __future__ import annotations
@@ -70,7 +73,8 @@ EVENT_GAP = timedelta(hours=3)
 MOOD_MAX = 0.3
 MOODS = {"monday": {"sad": 0.26}, "sunday_night": {"worried": 0.2}, "friday": {"happy": 0.3}, "bright_off": {"happy": 0.26},
          "wet": {"sad": 0.2, "sleepy": 0.2}, "wet_out": {"sad": 0.28}, "festive": {"happy": 0.25}, "her_birthday": {"happy": 0.3},
-         "user_birthday": {"happy": 0.25, "excited": 0.2}}
+         "user_birthday": {"happy": 0.25, "excited": 0.2}, "goal_reached": {"happy": 0.28}, "goal_progress": {"happy": 0.18},
+         "goal_setback": {"sad": 0.22}}
 MOOD_EMOTIONS = ("happy", "excited", "shy", "angry", "sad", "lonely", "worried", "sleepy")  # (state.EMOTIONS)
 #: what she likes grows with what they do together and what they send her: per hour together, per gift, at most this much on top
 #: of how much she likes it anyway; past NOTABLE it is a new favourite, and she is told so for a few days
@@ -86,6 +90,24 @@ GIFT_DAY_CHANCE, GIFT_EVENT_CHANCE, GIFT_EVENT_GAP = 0.7, 0.5, timedelta(days=14
 GIFT_RANDOM, GIFT_RANDOM_GAP = {"trusted": 0.015, "companion": 0.03}, timedelta(days=30)
 GIFT_STAGES = ("familiar", "trusted", "companion")
 MOMENTS_MAX = 40
+#: what she wants for herself (a profile's ``goals``): this many at a time. One she reached or let go of is followed by the next
+#: after a while (GOAL_REST, in days), never at once; one not reached in its ``days`` (else GOAL_DAYS) she lets go of, quietly,
+#: and it may come back after as long again. Nothing to want right now: she looks again the next day
+GOALS_AT_ONCE, GOAL_REST, GOAL_DAYS, GOAL_RETRY, GOALS_DONE_KEPT = 2, (14, 28), 60, timedelta(days=1), 30
+#: one with a last step (``finish``: the story event that is it) only comes this close before that happens
+GOAL_CLOSE = 0.9
+#: how far along she is, as she is told it: past each of these a step further (and only ever further: a bad night doesn't
+#: undo how far she has come; a setback is told as one)
+GOAL_STEPS = (0.3, 0.6, 0.9)
+GOAL_WORDS = ("just begun", "getting there", "well along", "nearly there")
+#: her goals are in what she is told for a day after one changed (begun, a step further, a setback, reached, let go), and on
+#: some of her days besides: never every turn
+GOAL_TOLD, GOAL_NOW_AND_THEN = timedelta(days=1), 0.2
+#: what she works towards leans her to it in her free time (this much for a point an hour or more), unless she is hungry or tired
+#: (quite: WORDS): that comes first
+GOAL_LEAN, GOAL_LEAN_UNTIL = 0.5, 0.5
+#: how long reaching one, a step further or a setback stays with her mood (``MOODS``: goal_*)
+GOAL_FELT = timedelta(days=1)
 
 
 # ---- the document ----
@@ -98,8 +120,9 @@ def new(profile: dict[str, Any], now: datetime, tz: Any, seed: str) -> dict[str,
            "woken": None, "heard": None, "heard_at": None, "plan": None, "with_user": None, "coins": COINS_START, "coins_day": None, "coins_today": 0,
            "kept": [], "notes": [], "week": {}, "days": [], "recent": [], "fired": {}, "flags": [], "last_event": None, "born": A._iso(now),
            "day_stats": None, "day_money": None, "tastes": {}, "received": {}, "favourites": [], "given": [], "moments": [],
-           "occasions": {}, "birthdays": {"her": "", "user": ""}}
+           "occasions": {}, "birthdays": {"her": "", "user": ""}, "goals": [], "goals_done": [], "goals_due": []}
     _next(doc, profile, now, tz, [], first=True)
+    _goals(doc, profile, now, [])
     return doc
 
 
@@ -113,7 +136,7 @@ def normalized(doc: Any, profile: dict[str, Any]) -> dict[str, Any] | None:
     doc["stats"] = {s: float(stats.get(s) or 0) for s in STATS}
     doc["timeline"] = doc["timeline"] if isinstance(doc.get("timeline"), list) else []
     doc["coins"] = int(doc.get("coins", COINS_START) or 0)
-    for key in ("kept", "notes", "days", "recent", "flags", "favourites", "given", "moments"):
+    for key in ("kept", "notes", "days", "recent", "flags", "favourites", "given", "moments", "goals", "goals_done", "goals_due"):
         doc[key] = doc[key] if isinstance(doc.get(key), list) else []
     for key in ("week", "fired", "tastes", "received", "occasions", "birthdays"):
         doc[key] = doc[key] if isinstance(doc.get(key), dict) else {}
@@ -126,6 +149,12 @@ def normalized(doc: Any, profile: dict[str, Any]) -> dict[str, Any] | None:
     doc["moments"] = [m for m in doc["moments"] if isinstance(m, dict) and A._t(m.get("at")) is not None][-MOMENTS_MAX:]
     doc["favourites"] = [f for f in doc["favourites"] if isinstance(f, dict) and f.get("id")][-FAVOURITES_MAX:]
     doc["birthdays"] = {who: str(doc["birthdays"].get(who) or "") for who in ("her", "user")}
+    specs = _goal_specs(profile)  # (a goal her profile no longer has is gone; a day from before goals has her first ones next step)
+    goals = [g for g in doc["goals"] if isinstance(g, dict) and g.get("id") in specs and A._t(g.get("since")) is not None]
+    doc["goals"] = list({g["id"]: {**g, "points": float(g.get("points") or 0), "step": int(g.get("step") or 0),
+                                   "from": int(g.get("from") or 0)} for g in goals}.values())[:GOALS_AT_ONCE]
+    doc["goals_done"] = [d for d in doc["goals_done"] if isinstance(d, dict) and d.get("id") and A._t(d.get("at")) is not None][-GOALS_DONE_KEPT:]
+    doc["goals_due"] = sorted(A._iso(A._t(d)) for d in doc["goals_due"] if A._t(d) is not None)[:GOALS_AT_ONCE]
     doc.setdefault("born", doc["at"])
     plan = doc.get("plan") if isinstance(doc.get("plan"), dict) else None
     doc["plan"] = plan if plan and A._t(plan.get("until")) is not None and plan.get("activity") in profile["activities"] else None
@@ -341,7 +370,8 @@ def _score(doc: dict[str, Any], profile: dict[str, Any], key: str, act: dict[str
     again = min(1.2, _hours_today(doc, key, local, tz) * 0.3) + (1.0 if key == doc.get("activity") and act.get("cost") else 0.0)
     out = float((profile.get("outing") or {}).get("bonus") or 0) if act["place"] != (profile.get("start") or {}).get("place") and _feels_like_going_out(doc, profile, local, tz) else 0.0
     likes = float(act.get("likes") or 0) + float((doc.get("tastes") or {}).get(key) or 0)  # (and what she came to like with them)
-    return likes + relief + noise + out + asked + good_at - trip * 0.7 - shy - dear - again - wet
+    toward = _goal_lean(doc, profile, key)
+    return likes + relief + noise + out + asked + good_at + toward - trip * 0.7 - shy - dear - again - wet
 
 
 def plan_slot(local: datetime) -> str | None:
@@ -458,6 +488,12 @@ def _apply(doc: dict[str, Any], profile: dict[str, Any], dt: timedelta, t: datet
             doc["money"] = max(0, doc["money"] - int(act["cost"]))
     if doc.get("with_user") and act.get("free") and act.get("body") != "sleep":
         _taste(doc, doc["activity"], TASTE_TOGETHER * hours, t)  # (what they do together, she comes to like)
+    if doc.get("goals"):  # (the hours she gives what she wants for herself)
+        specs = _goal_specs(profile)
+        for goal in doc["goals"]:
+            rate = float(((specs.get(goal["id"]) or {}).get("hours") or {}).get(doc.get("activity") or "") or 0)
+            if rate:
+                goal["points"] = float(goal.get("points") or 0) + rate * hours
 
 
 def _taste(doc: dict[str, Any], key: str, delta: float, at: datetime) -> None:
@@ -557,12 +593,13 @@ def _events(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any, 
             continue
         if _rng(doc, "event", event["id"], local.strftime("%Y-%m-%d-%H-%M")).random() < float(event.get("chance") or 0) * STEP.total_seconds() / 3600:
             _fire(doc, event, t, tz, out)
+            _goal_event(doc, profile, event, t)
             return event
     return None
 
 
 def _moment(doc: dict[str, Any], what: dict[str, Any], at: datetime) -> None:
-    """Something memorable they shared, for the both of them ("추억"): {kind: event | milestone | birthday, …, at}."""
+    """Something memorable they shared, for the both of them ("추억"): {kind: event | milestone | birthday | goal, …, at}."""
     doc["moments"] = [*doc.setdefault("moments", []), {**what, "at": A._iso(at)}][-MOMENTS_MAX:]
 
 
@@ -671,6 +708,148 @@ def _gifts(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any, s
     out.append({"type": "gave", **entry, "share": True, "title": {"ko": f"{entry['name']['ko']} 선물", "en": f"Gave {entry['name']['en']}"}})
 
 
+# ---- what she wants for herself ----
+
+def _goal_specs(profile: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {g["id"]: g for g in profile.get("goals") or [] if g.get("id")}
+
+
+def goal_progress(doc: dict[str, Any], spec: dict[str, Any], goal: dict[str, Any]) -> float:
+    """How far along she is with it, 0–1: its points against its ``target``, and what she has put by since she began wanting it
+    against ``save``. One with a last step (``finish``) only comes close until that happens."""
+    if goal.get("finished"):
+        return 1.0
+    p = float(goal.get("points") or 0) / float(spec["target"]) if spec.get("target") else 0.0
+    if spec.get("save"):
+        p += max(0, doc["money"] - int(goal.get("from") or 0)) / float(spec["save"])
+    return max(0.0, min(GOAL_CLOSE if spec.get("finish") else 1.0, p))
+
+
+def _step(p: float) -> int:
+    return sum(p >= s for s in GOAL_STEPS)
+
+
+def _goal_lean(doc: dict[str, Any], profile: dict[str, Any], key: str) -> float:
+    """How much what she works towards draws her to this, in her free time: nothing while she is hungry or tired."""
+    if not doc.get("goals") or doc["needs"]["hunger"] >= GOAL_LEAN_UNTIL or doc["needs"]["sleep"] >= GOAL_LEAN_UNTIL:
+        return 0.0
+    specs = _goal_specs(profile)
+    return sum(GOAL_LEAN * min(1.0, max(0.0, float(((specs.get(g["id"]) or {}).get("hours") or {}).get(key) or 0))) for g in doc["goals"])
+
+
+def _goal_fits(doc: dict[str, Any], spec: dict[str, Any], t: datetime) -> bool:
+    """She can want this now: what its ``when`` asks of her flags, her skills and how long she has had a day."""
+    when = spec.get("when") or {}
+    if not set(when.get("flags") or []) <= set(doc["flags"]) or set(when.get("not_flags") or []) & set(doc["flags"]):
+        return False
+    for name, (low, high) in (when.get("stats") or {}).items():
+        if not low <= doc["stats"].get(name, 0.0) <= high:
+            return False
+    born = A._t(doc.get("born"))
+    return not (when.get("after_days") and born is not None and t - born < timedelta(days=int(when["after_days"])))
+
+
+def _wanted(doc: dict[str, Any], profile: dict[str, Any], specs: dict[str, dict[str, Any]], t: datetime) -> list[str]:
+    """What she could come to want now, from her pool: not one she has, not one she reached (until its ``repeat_days`` have
+    passed), not one she let go of lately (as long again as she gave it), and not one whose last step happened once and for all."""
+    have = {g["id"] for g in doc["goals"]}
+    events = {e["id"]: e for e in profile.get("events") or []}
+    out = []
+    for key, spec in specs.items():
+        if key in have or not _goal_fits(doc, spec, t):
+            continue
+        last = next((d for d in reversed(doc["goals_done"]) if d.get("id") == key), None)
+        at = A._t((last or {}).get("at"))
+        if last and at is not None:
+            again = int(spec.get("repeat_days") or 0) if last.get("how") == "reached" else int(spec.get("days") or GOAL_DAYS)
+            if not again or t - at < timedelta(days=again):
+                continue
+        finish = events.get(spec.get("finish") or "")
+        if finish and finish.get("once") and finish["id"] in doc["fired"]:
+            continue
+        out.append(key)
+    return sorted(out)
+
+
+def _done(doc: dict[str, Any], goal: dict[str, Any], how: str, t: datetime) -> None:
+    """It is over, reached or let go of: its place fills again after a while (``goals_due``), not at once."""
+    doc["goals_done"] = [*doc["goals_done"], {"id": goal["id"], "how": how, "since": goal["since"], "at": A._iso(t)}][-GOALS_DONE_KEPT:]
+    rest = timedelta(days=_rng(doc, "goal rest", len(doc["goals_done"])).randint(*GOAL_REST))
+    doc["goals_due"] = sorted([*(doc.get("goals_due") or []), A._iso(t + rest)])
+
+
+def _reach(doc: dict[str, Any], spec: dict[str, Any], goal: dict[str, Any], t: datetime, out: list[dict[str, Any]]) -> None:
+    """She got there: a moment of hers, she hears what it means to her, and how she takes it (it lifts her) and whether she tells
+    them is for whoever takes it from here, as with a story event."""
+    _done(doc, goal, "reached", t)
+    _moment(doc, {"kind": "goal", "id": goal["id"]}, t)
+    reached = spec.get("reached") or {}
+    note(doc, reached["says"], t)
+    out.append({"type": "goal", "id": goal["id"], "at": A._iso(t), "share": True, "says": reached["says"],
+                "title": {"ko": f"목표 달성: {spec['names']['ko']}", "en": f"Reached a goal: {spec['names']['en']}"},
+                "feel": dict(reached.get("feel") or {"happy": "moderate"})})
+
+
+def _goal_event(doc: dict[str, Any], profile: dict[str, Any], event: dict[str, Any], t: datetime) -> None:
+    """Something that happened to her moves what she wants for herself: further, back (a setback, and she hears what it means to
+    her) or to its last step."""
+    specs = _goal_specs(profile)
+    for goal in doc.get("goals") or []:
+        spec = specs.get(goal["id"]) or {}
+        delta = float((spec.get("events") or {}).get(event["id"]) or 0)
+        if event["id"] == spec.get("finish"):
+            goal["finished"] = True
+        elif delta:
+            goal["points"] = float(goal.get("points") or 0) + delta
+            if delta < 0:
+                goal["setback"] = A._iso(t)
+                note(doc, spec["setback"]["says"], t)
+
+
+def _goals(doc: dict[str, Any], profile: dict[str, Any], t: datetime, out: list[dict[str, Any]]) -> None:
+    """What she wants for herself, at this step: how far along each is (in steps, only ever further), one she got to is a moment
+    of hers, one that went on too long she lets go of, and an empty place fills from her pool after a while (her first ones
+    at once)."""
+    specs = _goal_specs(profile)
+    if not specs:
+        return
+    keep: list[dict[str, Any]] = []
+    doc.setdefault("goals_done", [])
+    for goal in doc.setdefault("goals", []):
+        spec = specs.get(goal["id"])
+        if spec is None:
+            continue
+        p = goal_progress(doc, spec, goal)
+        if p >= 1.0:
+            _reach(doc, spec, goal, t, out)
+        elif t - (A._t(goal["since"]) or t) >= timedelta(days=int(spec.get("days") or GOAL_DAYS)):
+            _done(doc, goal, "let_go", t)
+            note(doc, f"You have let go of {spec['about']}, for now: it didn't come together this time, and that is all right.", t)
+        else:
+            if _step(p) > int(goal.get("step") or 0):
+                goal["step"], goal["moved"] = _step(p), A._iso(t)
+            keep.append(goal)
+    doc["goals"] = keep
+    room = min(GOALS_AT_ONCE, len(specs)) - len(keep)
+    if room <= 0:
+        doc["goals_due"] = []
+        return
+    dues = sorted(doc.get("goals_due") or [])[:room]
+    waiting = []
+    for due in [None] * (room - len(dues)) + dues:  # (None: a place with nothing to wait for)
+        if due is not None and t < (A._t(due) or t):
+            waiting.append(due)
+            continue
+        choices = _wanted(doc, profile, specs, t)
+        if not choices:  # (nothing she could want just now: she looks again tomorrow)
+            waiting.append(A._iso(t + GOAL_RETRY))
+            continue
+        key = _rng(doc, "goal", len(doc["goals_done"]), *sorted(g["id"] for g in doc["goals"])).choice(choices)
+        doc["goals"].append({"id": key, "since": A._iso(t), "points": 0.0, "from": int(doc["money"]), "step": 0, "moved": None,
+                             "setback": None})
+    doc["goals_due"] = sorted(waiting)
+
+
 def _switch(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any, out: list[dict[str, Any]]) -> None:
     """Whether what she is doing goes on, this step."""
     until = A._t(doc.get("until"))
@@ -714,8 +893,9 @@ def _switch(doc: dict[str, Any], profile: dict[str, Any], t: datetime, tz: Any, 
 
 def advance(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *, closeness: float = 0.33, stage: str = "new",
             milestones: list[dict[str, Any]] | None = None, birthdays: dict[str, str] | None = None) -> list[dict[str, Any]]:
-    """Plays the time since it last ran. -> what happened, oldest first: {type: moved | started | event | occasion | gave, …}.
-    ``milestones``: the relationship's ({key, at}); ``birthdays``: {her, user} as MM-DD ("" unknown), kept in the document."""
+    """Plays the time since it last ran. -> what happened, oldest first: {type: moved | started | event | occasion | gave | goal, …}
+    (``goal``: she reached one of hers). ``milestones``: the relationship's ({key, at}); ``birthdays``: {her, user} as MM-DD
+    ("" unknown), kept in the document."""
     if birthdays is not None:
         doc["birthdays"] = {who: str(birthdays.get(who) or "") for who in ("her", "user")}
     milestones = list(milestones or [])
@@ -733,6 +913,7 @@ def advance(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any
         fired = _events(doc, profile, t, tz, stage, out)
         _occasions(doc, profile, t, tz, out)
         _gifts(doc, profile, t, tz, stage, milestones, fired, out)
+        _goals(doc, profile, t, out)
     doc["at"] = A._iso(now)
     return out
 
@@ -899,10 +1080,29 @@ def _festive(local: datetime) -> dict[str, Any] | None:
     return {"id": "holiday", "names": {"en": "a public holiday", "ko": "공휴일"}} if off_day(local) and local.weekday() < 5 else None
 
 
+def _goal_felt(doc: dict[str, Any], local: datetime) -> list[tuple[str, str]]:
+    """What her goals do to how she feels for a while (GOAL_FELT): [(mood, the goal's id)] — one she just reached, one that just
+    came a step further, a setback."""
+    def fresh(at: Any) -> bool:
+        t = A._t(at)
+        return t is not None and timedelta(0) <= local - t <= GOAL_FELT
+
+    out = []
+    reached = [d for d in doc.get("goals_done") or [] if d.get("how") == "reached" and fresh(d.get("at"))]
+    if reached:
+        out.append(("goal_reached", reached[-1]["id"]))
+    for name, key in (("goal_progress", "moved"), ("goal_setback", "setback")):
+        found = sorted((g for g in doc.get("goals") or [] if fresh(g.get(key))), key=lambda g: g[key])
+        if found:
+            out.append((name, found[-1]["id"]))
+    return out
+
+
 def mood(doc: dict[str, Any], profile: dict[str, Any], local: datetime) -> list[tuple[str, dict[str, float]]]:
     """What the week, the sky and the day do to how she feels, a little: [(name, {emotion: strength ≤ MOOD_MAX})] — a Monday
     morning a bit low, a Friday evening lighter (any evening before days off), the end of the weekend, rain or snow calmer and a
-    little gloomy (more so out in it), a clear day off brighter, a day to celebrate, a birthday."""
+    little gloomy (more so out in it), a clear day off brighter, a day to celebrate, a birthday; and what she wants for herself:
+    one she just reached, one that came a step further, a setback."""
     found = []
     working, h = not off_day(local), local.hour
     tomorrow_off = off_day(local + timedelta(days=1))
@@ -921,12 +1121,19 @@ def mood(doc: dict[str, Any], profile: dict[str, Any], local: datetime) -> list[
     if _festive(local):
         found.append("festive")
     found += [f"{who}_birthday" for who in birthdays(doc, local)]
+    found += [name for name, _ in _goal_felt(doc, local)]
     own = profile.get("moods") or {}
     return [(name, {e: min(MOOD_MAX, float(v)) for e, v in (own.get(name, MOODS[name]) or {}).items() if e in MOOD_EMOTIONS})
             for name in found]
 
 
-def _mood_words(name: str, doc: dict[str, Any], local: datetime) -> str:
+def _mood_words(name: str, doc: dict[str, Any], profile: dict[str, Any], local: datetime) -> str:
+    if name.startswith("goal_"):
+        key = dict(_goal_felt(doc, local)).get(name)
+        what = ((_goal_specs(profile).get(key or "") or {}).get("names") or {}).get("en") or "something you want"
+        return {"goal_reached": f"glad to have reached something you wanted ({what})",
+                "goal_progress": f"pleased with how something you want is coming along ({what})",
+                "goal_setback": f"a little set back on something you want ({what})"}[name]
     sky = {"rain": "rainy", "snow": "snowy"}.get(weather(doc, local), "grey")
     day = _festive(local) or {}
     return {"monday": "on a Monday morning", "friday": "with days off ahead", "sunday_night": "with the days off ending",
@@ -936,8 +1143,8 @@ def _mood_words(name: str, doc: dict[str, Any], local: datetime) -> str:
 
 
 def for_state(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any = None) -> dict[str, Any]:
-    """What state.py reads of it: her needs, and what she is doing does to how she feels; with ``tz``, the week, the sky and the
-    day too (``mood``: floors, as subtle as that), the reason going with what she is doing."""
+    """What state.py reads of it: her needs, and what she is doing does to how she feels; with ``tz``, the week, the sky, the
+    day and her goals too (``mood``: floors, as subtle as that), the reason going with what she is doing."""
     act = profile["activities"].get(doc.get("activity") or "") or {}
     feel = {e: float(v) for e, v in (act.get("feel") or {}).items()}
     doing = act.get("doing") or ""
@@ -949,7 +1156,7 @@ def for_state(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: A
                 if v > feel.get(e, 0.0):
                     feel[e] = v
                     if v > best:
-                        best, why = v, _mood_words(name, doc, local)
+                        best, why = v, _mood_words(name, doc, profile, local)
         if why:
             doing = f"{doing or 'taking it easy'}, {why}"
     return {"needs": dict(doc["needs"]), "feel": feel, "doing": doing, "asleep": asleep(doc, profile, now)}
@@ -963,9 +1170,10 @@ def body(doc: dict[str, Any]) -> list[list[str]]:
 
 def signature(doc: dict[str, Any]) -> list[Any]:
     """Without the fine print: when this changes she is told again, and every window hears (a new day of hers: what the day is;
-    a gift she gave, a new favourite)."""
+    a gift she gave, a new favourite; a goal of hers begun, a step further, set back, reached or let go of)."""
     return [doc.get("place"), doc.get("activity"), body(doc), bool(doc.get("with_user")), doc.get("day"),
-            (doc.get("given") or [{}])[-1].get("at"), (doc.get("favourites") or [{}])[-1].get("at")]
+            (doc.get("given") or [{}])[-1].get("at"), (doc.get("favourites") or [{}])[-1].get("at"),
+            [[g.get("id"), g.get("step"), g.get("setback")] for g in doc.get("goals") or []], (doc.get("goals_done") or [{}])[-1].get("at")]
 
 
 def art(profile: dict[str, Any], place: str | None, when: str) -> str:
@@ -1069,10 +1277,44 @@ def _favourite_lines(doc: dict[str, Any], profile: dict[str, Any], now: datetime
     return out
 
 
+def goals_told(doc: dict[str, Any], now: datetime, tz: Any) -> bool:
+    """Whether her goals are in what she is told now: for a day after one changed (begun, a step further, a setback, reached,
+    let go of), and on some of her days besides — never every turn."""
+    ats = [g.get(k) for g in doc.get("goals") or [] for k in ("since", "moved", "setback")] + [d.get("at") for d in doc.get("goals_done") or []]
+    if any(timedelta(0) <= now - t <= GOAL_TOLD for t in (A._t(a) for a in ats) if t is not None):
+        return True
+    return bool(doc.get("goals")) and _rng(doc, "goals told", _her_day(now, tz)).random() < GOAL_NOW_AND_THEN
+
+
+def _goal_lines(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any) -> list[str]:
+    """What she wants for herself, in words: how far along, never how much."""
+    specs = _goal_specs(profile)
+    if not specs or not goals_told(doc, now, tz):
+        return []
+    out = []
+    last = (doc.get("goals_done") or [{}])[-1]
+    at = A._t(last.get("at"))
+    if last.get("how") == "reached" and last.get("id") in specs and at is not None and now - at <= GOAL_TOLD:
+        out.append(f"Lately you reached something you had wanted for yourself: {specs[last['id']]['about']}. It is yours to be glad "
+                   "of, and to bring up if it fits.")
+    wants = []
+    for g in doc.get("goals") or []:
+        if g["id"] not in specs:
+            continue
+        setback = A._t(g.get("setback"))
+        lately = ", after a setback lately" if setback is not None and now - setback <= GOAL_FELT else ""
+        wants.append(f"{specs[g['id']]['about']} ({GOAL_WORDS[min(int(g.get('step') or 0), len(GOAL_WORDS) - 1)]}{lately})")
+    if wants:
+        out.append("What you want for yourself these days, your own life apart from them: " + "; ".join(wants) + ". What you want "
+                   "colours what you bring up, and you might ask them along or for a hand with it, in your own way; never list these "
+                   "goals or say in numbers how far along you are.")
+    return out
+
+
 def line(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *, woke: bool = False, lang: str = "ko") -> str:
     """Her day, as she is told it in her <context>: where she is and what she is doing, her job, what today is (her birthday or
     theirs, then a day she knows, then a public holiday, then the sky: a good day and a gloomy one at once is both), what is next,
-    her body, what she has from them and what she gave them."""
+    her body, what she has from them, what she gave them and, now and then, what she wants for herself."""
     act = profile["activities"].get(doc.get("activity") or "") or {}
     place = profile["places"].get(doc.get("place") or "") or {}
     going = (doc.get("going") or {}).get("activity")
@@ -1127,6 +1369,7 @@ def line(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any, *
         parts.append("You have, from them: " + ", ".join(dict.fromkeys(n for n in names if n)) + ".")
     parts += _favourite_lines(doc, profile, now)
     parts += _gave_lines(doc, profile, now, tz, lang)
+    parts += _goal_lines(doc, profile, now, tz)
     return " ".join(parts)
 
 
@@ -1182,9 +1425,23 @@ def view(doc: dict[str, Any], profile: dict[str, Any], now: datetime, tz: Any) -
                       for e in doc["timeline"] if (A._t(e.get("to")) or now).astimezone(tz) >= start],
             "job": dict((profile.get("job") or {}).get("names") or {}),
             "given": [{**g, "for": _given_for(profile, str(g.get("why") or ""))} for g in reversed(doc.get("given") or [])],
-            "moments": [_moment_view(m, events) for m in reversed(doc.get("moments") or [])],
+            "moments": [_moment_view(m, events, _goal_specs(profile)) for m in reversed(doc.get("moments") or [])],
             "tastes": [{"activity": k, "name": _names(profile, "activities", k), "v": round(v, 2)}
-                       for k, v in sorted((doc.get("tastes") or {}).items(), key=lambda kv: -kv[1]) if v >= 0.05][:6]}
+                       for k, v in sorted((doc.get("tastes") or {}).items(), key=lambda kv: -kv[1]) if v >= 0.05][:6],
+            "goals": _goals_view(doc, profile, now)}
+
+
+def _goals_view(doc: dict[str, Any], profile: dict[str, Any], now: datetime) -> list[dict[str, Any]]:
+    """What she wants for herself, for the Status window: a bar for each (``progress`` 0–1) and how far along, as she is told it
+    (``step``: GOAL_WORDS)."""
+    specs = _goal_specs(profile)
+    out = []
+    for g in doc.get("goals") or []:
+        if g["id"] in specs:
+            setback = A._t(g.get("setback"))
+            out.append({"id": g["id"], "name": dict(specs[g["id"]]["names"]), "progress": round(goal_progress(doc, specs[g["id"]], g), 3),
+                        "step": int(g.get("step") or 0), "since": g["since"], "setback": setback is not None and now - setback <= GOAL_FELT})
+    return out
 
 
 def _given_for(profile: dict[str, Any], why: str) -> dict[str, Any]:
@@ -1198,8 +1455,10 @@ def _given_for(profile: dict[str, Any], why: str) -> dict[str, Any]:
     return {"kind": kind or "random", "key": key, "name": name}
 
 
-def _moment_view(m: dict[str, Any], events: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _moment_view(m: dict[str, Any], events: dict[str, dict[str, Any]], goals: dict[str, dict[str, Any]]) -> dict[str, Any]:
     out = {k: m[k] for k in ("kind", "at", "key", "who", "id") if m.get(k)}
     if m.get("kind") == "event":
         out["title"] = dict((events.get(m.get("id") or "") or {}).get("titles") or {})
+    elif m.get("kind") == "goal":
+        out["title"] = dict((goals.get(m.get("id") or "") or {}).get("names") or {})
     return out

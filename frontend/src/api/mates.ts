@@ -183,17 +183,28 @@ export interface LifeKeepsake {
   for: { kind: "birthday" | "milestone" | "day" | "event" | "random"; key: string; name: LifeNames };
 }
 
-/** a moment they shared: a story event while together, a milestone of theirs, a birthday they talked on */
+/** a moment they shared: a story event while together, a milestone of theirs, a birthday they talked on, a goal of hers she reached */
 export interface LifeMoment {
-  kind: "event" | "milestone" | "birthday";
+  kind: "event" | "milestone" | "birthday" | "goal";
   at: string;
   /** milestone: affinity's key (days_100, stage_trusted …) */
   key?: string;
   /** birthday: whose */
   who?: "her" | "user";
-  /** event: its id and title */
+  /** event, goal: its id and title */
   id?: string;
   title?: LifeNames;
+}
+
+/** something she wants for herself, and how far along she is: a bar (progress 0 – 1) and the words she is told (step 0 – 3) */
+export interface LifeGoal {
+  id: string;
+  name: LifeNames;
+  progress: number;
+  step: 0 | 1 | 2 | 3;
+  since: string;
+  /** it had a setback lately */
+  setback: boolean;
 }
 
 export type LifeStat = "work" | "gaming" | "stamina" | "cooking" | "sense" | "courage";
@@ -238,6 +249,8 @@ export interface LifeView extends MateLifeSummary {
   moments?: LifeMoment[];
   /** what she has come to like by doing it with them (and from what they send her), most first; v: 0 – 0.5 */
   tastes?: { activity: string; name: LifeNames; v: number }[];
+  /** what she wants for herself these days */
+  goals?: LifeGoal[];
 }
 export interface LifeDay {
   day: string;
