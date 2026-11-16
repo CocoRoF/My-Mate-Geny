@@ -1,9 +1,10 @@
 /**
- * Voice Studio → 학습 (docs/local-voice.md "Training a voice"): the recordings of one person → OmniVoice learns her
- * voice (a LoRA adapter). Only recordings are asked for: they are cut into utterances, transcribed, kept to her voice,
- * trained on, measured against the voice without it (with a long clip, a short one and none), and the result — when
- * it is better — is put on the voice. Runs one at a time, pausing while a mate speaks and stepping off the GPU when
- * it is needed; the run's report, A/B samples, and on / off / remove.
+ * Voice Studio → 학습 (docs/local-voice.md "Training a voice"): the recordings of one person → each chosen model
+ * (OmniVoice, Qwen3-TTS, CosyVoice3) learns her voice (a LoRA adapter). Only recordings are asked for: they are cut
+ * into utterances, transcribed and kept to her voice once, then each model is trained on them, measured against the
+ * voice without it (with a long clip, a short one and — where the model can — none), and the result, when it is
+ * better, is put on the voice for that model. Runs one at a time, pausing while a mate speaks and stepping off the GPU
+ * when it is needed; each run's report, A/B samples, and on / off / remove.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -15,6 +16,7 @@ import {
   listTrainings,
   TRAINING_STAGES,
   trainingSampleUrl,
+  type TrainingCondition,
   type TrainingConditions,
   type TrainingKit,
   type TrainingRun,
@@ -68,12 +70,12 @@ export default function TrainPage() {
   return (
     <div className="space-y-4" data-testid="vs-train">
       <p className="text-[13px] leading-relaxed text-content-dim">{t("voiceStudio.trHint")}</p>
-      {kit && !kit.model.installed && (
+      {kit && !kit.models.some((m) => m.installed) && (
         <Banner tone="warn" action={<button className="btn-soft !py-1 text-[12.5px]" onClick={() => go("models")}>{t("voiceStudio.trToModels")}</button>} testId="vs-train-needs-model">
           {t("voiceStudio.trNeedsModel")}
         </Banner>
       )}
-      <NewRun kit={kit} voices={mine} onStarted={async () => { await reloadVoices(); await load(); }} busyVoices={new Set((runs ?? []).filter((r) => ACTIVE.includes(r.state)).map((r) => r.voice_id))} />
+      <NewRun kit={kit} voices={mine} onStarted={async () => { await reloadVoices(); await load(); }} busy={new Set((runs ?? []).filter((r) => ACTIVE.includes(r.state)).map((r) => `${r.voice_id}|${r.model_id}`))} />
       <ErrorLine text={err} />
       {!runs ? (
         <ProgressBar indeterminate />
@@ -88,14 +90,19 @@ export default function TrainPage() {
   );
 }
 
-function NewRun({ kit, voices, onStarted, busyVoices }: { kit: TrainingKit | null; voices: { id: string; name: string; language: string }[]; onStarted: () => Promise<void>; busyVoices: Set<string> }) {
+function NewRun({ kit, voices, onStarted, busy }: { kit: TrainingKit | null; voices: { id: string; name: string; language: string }[]; onStarted: () => Promise<void>; busy: Set<string> }) {
   const t = useT();
   const [voice, setVoice] = useState<string>("");
+  const installed = useMemo(() => (kit?.models ?? []).filter((m) => m.installed), [kit]);
+  const [models, setModels] = useState<string[] | null>(null); // (null: every installed one, until one is unticked)
+  const chosen = models ?? installed.map((m) => m.id);
+  const busyVoice = (id: string) => installed.some((m) => busy.has(`${id}|${m.id}`));
+  const clash = chosen.some((m) => busy.has(`${voice}|${m}`));
   const [name, setName] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [lang, setLang] = useState<(typeof LANGS)[number]>("auto");
   const [accept, setAccept] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [working, setWorking] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -110,14 +117,15 @@ function NewRun({ kit, voices, onStarted, busyVoices }: { kit: TrainingKit | nul
     const picked = Array.from(list ?? []).filter((f) => f.type.startsWith("audio") || f.type.startsWith("video") || /\.(wav|mp3|m4a|flac|ogg|opus|aac|webm|mp4|mov|mkv)$/i.test(f.name));
     if (picked.length) setFiles((old) => [...old, ...picked].slice(0, 12));
   };
-  const can = !busy && files.length > 0 && (voice !== NEW || name.trim()) && (!fetches.length || accept) && !!kit?.model.installed && !busyVoices.has(voice);
+  const can = !working && files.length > 0 && (voice !== NEW || name.trim()) && (!fetches.length || accept) && chosen.length > 0 && !clash;
+  const needGb = Math.max(0, ...installed.filter((m) => chosen.includes(m.id)).map((m) => m.need_gb));
   const start = async () => {
-    setBusy(true);
+    setWorking(true);
     setErr(null);
     try {
       let vid = voice;
       if (vid === NEW) vid = (await createLocalVoice(name.trim(), lang === "auto" ? "auto" : lang)).id;
-      await createTraining(vid, files, { language: lang === "auto" ? "" : lang, acceptLicenses: accept });
+      await createTraining(vid, files, { language: lang === "auto" ? "" : lang, acceptLicenses: accept, models: chosen });
       setFiles([]);
       setName("");
       if (voice === NEW) setVoice(vid);
@@ -125,7 +133,7 @@ function NewRun({ kit, voices, onStarted, busyVoices }: { kit: TrainingKit | nul
     } catch (e) {
       setErr((e as Error).message);
     } finally {
-      setBusy(false);
+      setWorking(false);
     }
   };
   return (
@@ -134,12 +142,12 @@ function NewRun({ kit, voices, onStarted, busyVoices }: { kit: TrainingKit | nul
         <Field label={t("voiceStudio.trVoice")} as="div">
           <div className="flex flex-wrap items-center gap-2">
             <select className="field !w-auto min-w-[12rem]" value={voice} onChange={(e) => setVoice(e.target.value)} data-testid="vs-train-voice">
-              {voices.map((v) => <option key={v.id} value={v.id}>{v.name}{busyVoices.has(v.id) ? ` · ${t("voiceStudio.trBusyVoice")}` : ""}</option>)}
+              {voices.map((v) => <option key={v.id} value={v.id}>{v.name}{busyVoice(v.id) ? ` · ${t("voiceStudio.trBusyVoice")}` : ""}</option>)}
               <option value={NEW}>{t("voiceStudio.trNewVoice")}</option>
             </select>
             {voice === NEW && <input className="field !w-auto min-w-[12rem]" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("voiceStudio.trNewVoicePh")} data-testid="vs-train-name" />}
           </div>
-          {busyVoices.has(voice) && <p className="mt-1 text-[11.5px] text-content-faint" data-testid="vs-train-busy">{t("voiceStudio.trBusyHint")}</p>}
+          {clash && <p className="mt-1 text-[11.5px] text-content-faint" data-testid="vs-train-busy">{t("voiceStudio.trBusyHint")}</p>}
         </Field>
         <div
           className={`rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors ${drag ? "border-accent bg-accent-soft/30" : "border-border hover:border-accent/50"}`}
@@ -167,6 +175,22 @@ function NewRun({ kit, voices, onStarted, busyVoices }: { kit: TrainingKit | nul
             <li className="px-1 text-[11.5px] text-content-faint">{t("voiceStudio.trFilesTotal", { n: files.length, mb: totalMb.toFixed(0) })}</li>
           </ul>
         )}
+        {installed.length > 0 && (
+          <Field label={t("voiceStudio.trModels")} as="div">
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5" data-testid="vs-train-models">
+              {installed.map((m) => (
+                <label key={m.id} className="flex items-center gap-1.5 text-[12.5px] text-content">
+                  <input type="checkbox" checked={chosen.includes(m.id)} data-testid={`vs-train-model-${m.id}`}
+                    onChange={(e) => setModels(e.target.checked ? [...chosen, m.id] : chosen.filter((x) => x !== m.id))} />
+                  {m.name}
+                </label>
+              ))}
+            </div>
+            {kit && kit.models.some((m) => !m.installed) && (
+              <p className="mt-1 text-[11.5px] text-content-faint">{t("voiceStudio.trModelsMore", { names: kit.models.filter((m) => !m.installed).map((m) => m.name).join(", ") })}</p>
+            )}
+          </Field>
+        )}
         <Field label={t("voiceStudio.trLanguage")} as="div">
           <Segmented value={lang} onChange={setLang} options={LANGS.map((l) => ({ id: l, label: t(`voiceStudio.trLang_${l}` as MsgKey) }))} testId="vs-train-lang" />
         </Field>
@@ -177,9 +201,9 @@ function NewRun({ kit, voices, onStarted, busyVoices }: { kit: TrainingKit | nul
           </label>
         )}
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <span className="min-w-0 flex-1 text-[11.5px] text-content-faint">{t("voiceStudio.trCost", { gb: kit?.need_gb ?? 6 })}</span>
+          <span className="min-w-0 flex-1 text-[11.5px] text-content-faint">{t(chosen.length > 1 ? "voiceStudio.trCostMany" : "voiceStudio.trCost", { gb: needGb || 6, n: chosen.length })}</span>
           <button className="btn-primary !py-1.5 text-[13px]" disabled={!can} onClick={() => void start()} data-testid="vs-train-start">
-            {busy ? <Icon name="spinner" size={13} spin /> : <Icon name="sparkles" size={13} />} {t("voiceStudio.trStart")}
+            {working ? <Icon name="spinner" size={13} spin /> : <Icon name="sparkles" size={13} />} {t("voiceStudio.trStart")}
           </button>
         </div>
         <ErrorLine text={err} />
@@ -213,6 +237,7 @@ function RunCard({ run, onChanged }: { run: TrainingRun; onChanged: () => Promis
       title={
         <span className="flex flex-wrap items-center gap-2">
           <span className="font-semibold text-content">{run.voice_name || run.voice_id}</span>
+          <span className="pill border border-border bg-surface-3/50 text-content-dim" data-testid="vs-train-model" data-model={run.model_id}>{run.model_name || run.model_id}</span>
           <StatusBadge status={TONE[run.state]} testId="vs-train-state">{t(`voiceStudio.trState_${run.state}` as MsgKey)}</StatusBadge>
           {run.applied && <span className="pill border border-accent/40 bg-accent-soft text-accent" data-testid="vs-train-applied">{t("voiceStudio.trApplied")}</span>}
           <span className="text-[11.5px] font-normal text-content-faint">{relTime(run.created_at)}</span>
@@ -331,6 +356,9 @@ function Result({ run, busy, onApply }: { run: TrainingRun; busy: boolean; onApp
   const base = r.base as TrainingConditions | undefined;
   const tuned = r.tuned as TrainingConditions | undefined;
   const has = (n: string) => run.samples.includes(n);
+  // (what it was measured with — a model that can't speak without a clip has no "none")
+  const conds = (r.conditions ?? (["long", "short", "none"] as const).filter((c) => base?.[c] && tuned?.[c])) as TrainingCondition[];
+  const shown = conds.filter((c) => run.samples.some((n) => n.startsWith(`base-${c}-`)));
   return (
     <div className="space-y-3" data-testid="vs-train-result">
       <p className={`text-[13px] ${r.improved ? "text-success" : "text-content-dim"}`}>
@@ -348,16 +376,17 @@ function Result({ run, busy, onApply }: { run: TrainingRun; busy: boolean; onApp
               </tr>
             </thead>
             <tbody>
-              {(["long", "short", "none"] as const).map((c) => {
-                const d = Math.round((tuned[c].similarity - base[c].similarity) * 100);
+              {conds.filter((c) => base[c] && tuned[c]).map((c) => {
+                const [b0, t0] = [base[c]!, tuned[c]!];
+                const d = Math.round((t0.similarity - b0.similarity) * 100);
                 return (
                   <tr key={c} className="border-t border-border/50">
                     <td className="py-1.5 pr-2 text-content">{t(`voiceStudio.trCond_${c}` as MsgKey)}</td>
-                    <td className="py-1.5 pr-2 text-content-dim">{pct(base[c].similarity)}</td>
+                    <td className="py-1.5 pr-2 text-content-dim">{pct(b0.similarity)}</td>
                     <td className="py-1.5 pr-2 font-medium text-content">
-                      {pct(tuned[c].similarity)} <span className={`text-[11px] ${d > 0 ? "text-success" : d < 0 ? "text-danger" : "text-content-faint"}`}>{d > 0 ? `+${d}` : d}</span>
+                      {pct(t0.similarity)} <span className={`text-[11px] ${d > 0 ? "text-success" : d < 0 ? "text-danger" : "text-content-faint"}`}>{d > 0 ? `+${d}` : d}</span>
                     </td>
-                    <td className="py-1.5 text-content-dim">{pct(1 - tuned[c].cer)}%</td>
+                    <td className="py-1.5 text-content-dim">{pct(1 - t0.cer)}%</td>
                   </tr>
                 );
               })}
@@ -368,7 +397,7 @@ function Result({ run, busy, onApply }: { run: TrainingRun; busy: boolean; onApp
       )}
       {run.samples.length > 0 && (
         <div className="grid gap-2 sm:grid-cols-2" data-testid="vs-train-samples">
-          {(["long", "none"] as const).map((c) => (
+          {shown.map((c) => (
             <div key={c} className="rounded-lg border border-border/60 px-3 py-2">
               <p className="mb-1.5 text-[12px] font-medium text-content">{t(`voiceStudio.trCond_${c}` as MsgKey)}</p>
               {[0, 1].map((i) => (

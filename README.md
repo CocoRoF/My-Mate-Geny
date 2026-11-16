@@ -110,9 +110,9 @@ chat, keeps an eye on it and tells you how it went.
   license, keeps them on the GPU as needed, and clones voices from reference clips by feeling (the
   built-in 한채린 and 메스가키 voices, or your own). **Voice Studio** shows what is on the GPU and for
   whom, and makes lines, batches and voice profiles, with a history of everything made. Its **학습**
-  page teaches OmniVoice a person's voice from their recordings alone (a LoRA adapter: cut, transcribed,
-  kept to that person, trained, measured, put on the profile) — then it sounds like them with a short
-  clip or none. Refused on a machine without a suitable GPU ([docs/local-voice.md](docs/local-voice.md)).
+  page teaches every speech model (OmniVoice, Qwen3-TTS, CosyVoice3) a person's voice from their
+  recordings alone (a LoRA adapter each: cut, transcribed, kept to that person, trained, measured, put on
+  the profile) — then it sounds more like them from a short clip, or with none. Refused on a machine without a suitable GPU ([docs/local-voice.md](docs/local-voice.md)).
 - **Local image models, built in**: **Image Studio** downloads picture and clip models (each after you
   accept its license) and runs them on the same GPU with ComfyUI — character drafts, a picture changed
   by words, loops that start and end on a picture, cut-outs. The avatar maker can then run any stage on

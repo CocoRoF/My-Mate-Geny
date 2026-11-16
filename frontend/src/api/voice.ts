@@ -153,8 +153,8 @@ export interface LocalVoice {
   references: VoiceRef[];
   /** its sound clips (laugh, yawn: several of each) — apart from the feelings, so nothing clones from them */
   sounds: (Omit<VoiceRef, "label"> & { label: SoundLabel })[];
-  /** the training whose adapter it speaks with on OmniVoice ("" none: Voice Studio → 학습) */
-  adapter?: string;
+  /** {model id: the training whose adapter it speaks with on that model} (Voice Studio → 학습) */
+  adapters?: Record<string, string>;
 }
 
 /** the server lists a profile's sound clips among its clips: here they are kept apart */
@@ -530,12 +530,17 @@ export interface TrainingScore {
   worst: number;
   cer: number;
 }
-export type TrainingConditions = Record<"long" | "short" | "none", TrainingScore>;
+export type TrainingCondition = "long" | "short" | "none";
+/** what it was measured with: her long clip, a short one, none (a model that can't speak without one has no "none") */
+export type TrainingConditions = Partial<Record<TrainingCondition, TrainingScore>>;
 export interface TrainingRun {
   id: string;
   voice_id: string;
   voice_name: string;
   model_id: string;
+  model_name: string;
+  /** the runs started together (the same recordings, one per model) */
+  group_id: string;
   state: TrainingState;
   stage: TrainingStage;
   language: string;
@@ -545,7 +550,8 @@ export interface TrainingRun {
     total_bytes?: number };
   data: { kept?: number; kept_s?: number; dropped?: { speaker: number; words: number; sound: number }; language?: string };
   result: { improved?: boolean; best_step?: number; steps?: number; base?: TrainingConditions; tuned?: TrainingConditions;
-    evals?: { step: number; metrics: TrainingConditions; best: boolean }[]; kept_s?: number; minutes?: number };
+    evals?: { step: number; metrics: TrainingConditions; best: boolean }[]; kept_s?: number; minutes?: number;
+    conditions?: TrainingCondition[] };
   error: string;
   code: string;
   created_at: string;
@@ -556,22 +562,24 @@ export interface TrainingRun {
   events?: Record<string, unknown>[];
 }
 export interface TrainingKit {
-  model: { id: string; installed: boolean };
+  /** the models that learn a voice: installed or not, and the GPU each takes while it trains */
+  models: { id: string; name: string; installed: boolean; need_gb: number }[];
   stt: { id: string; ready: boolean; gb: number; license: string };
   speaker: { ready: boolean; gb: number; license: string };
-  need_gb: number;
   min_seconds: number;
 }
 export const listTrainings = (voiceId = "") =>
   apiFetch<{ runs: TrainingRun[]; kit: TrainingKit }>(`/api/voice/trainings${voiceId ? `?voice_id=${enc(voiceId)}` : ""}`);
 export const getTraining = (id: string) => apiFetch<TrainingRun>(`/api/voice/trainings/${enc(id)}`);
-export function createTraining(voiceId: string, files: File[], opts: { language?: string; acceptLicenses?: boolean } = {}) {
+/** a run for each of ``models`` (none: every installed one that learns), the recordings heard once */
+export function createTraining(voiceId: string, files: File[], opts: { language?: string; acceptLicenses?: boolean; models?: string[] } = {}) {
   const form = new FormData();
   form.append("voice_id", voiceId);
   for (const f of files) form.append("files", f, f.name);
   if (opts.language) form.append("language", opts.language);
   if (opts.acceptLicenses) form.append("accept_licenses", "1");
-  return apiFetch<TrainingRun>("/api/voice/trainings", { method: "POST", body: form, headers: {} });
+  if (opts.models?.length) form.append("models", opts.models.join(","));
+  return apiFetch<{ runs: TrainingRun[] }>("/api/voice/trainings", { method: "POST", body: form, headers: {} });
 }
 export const cancelTraining = (id: string) => apiFetch<TrainingRun>(`/api/voice/trainings/${enc(id)}/cancel`, { method: "POST" });
 export const applyTraining = (id: string, on: boolean) =>

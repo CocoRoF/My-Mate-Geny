@@ -33,6 +33,52 @@ class SynthRequest:
     adapter: str = ""
 
 
+class Adapters:
+    """A voice's own trained LoRA adapters (app/voicehost/train) on one module of an engine's model, switched per line:
+    loaded the first time (peft, in place: the module keeps its own attribute paths), the last few kept, off for a
+    voice without one. Off is peft's disable_adapter_layers — never unload(), which would swap the module's layers."""
+
+    KEEP = 4  # (tens of MB each on the GPU)
+
+    def __init__(self) -> None:
+        self.peft: Any = None
+        self.names: OrderedDict[str, str] = OrderedDict()
+
+    @staticmethod
+    def name_of(path: str) -> str:
+        """the adapter's directory and when its weights were written (a new training is a new name)"""
+        import hashlib
+
+        p = Path(path) / "adapter_model.safetensors"
+        stamp = p.stat().st_mtime_ns if p.exists() else 0
+        return "v" + hashlib.sha1(f"{path}:{stamp}".encode()).hexdigest()[:12]
+
+    def use(self, module: Any, path: str) -> bool:
+        """the adapter at ``path`` on ``module`` ("" none) → whether one is on"""
+        if not path:
+            if self.peft is not None:
+                self.peft.base_model.disable_adapter_layers()
+            return False
+        from peft import PeftModel
+
+        name = self.name_of(path)
+        if self.peft is None:
+            self.peft = PeftModel.from_pretrained(module, path, adapter_name=name, is_trainable=False,
+                                                  autocast_adapter_dtype=False)
+        elif name not in self.peft.peft_config:
+            self.peft.load_adapter(path, adapter_name=name, is_trainable=False, autocast_adapter_dtype=False)
+        self.names[name] = path
+        self.names.move_to_end(name)
+        while len(self.names) > self.KEEP:
+            old, _ = self.names.popitem(last=False)
+            if old != name:
+                self.peft.delete_adapter(old)
+        self.peft.set_adapter(name)
+        self.peft.base_model.enable_adapter_layers()
+        module.eval()
+        return True
+
+
 class PromptCache:
     """Keeps the engine-specific encoding of recent references (speaker embedding, codec tokens ...).
 

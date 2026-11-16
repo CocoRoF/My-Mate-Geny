@@ -4,14 +4,16 @@
 //   NODE_PATH=<playwright-core> CHROME=<chromium> \
 //     node desktop/test/e2e/voice-training-browser.js <server url> <password> <shots dir> <the server's VOICE_HOME>
 //
-// (a fresh voice home on this machine: OmniVoice is marked installed in it after the first check, as the backend's
+// (a fresh voice home on this machine: the models are marked installed in it after the first check, as the backend's
 // tests do — a stand-in install would still download the real weights.)
 //
-// Checks: with OmniVoice missing the page says so and can't start; installed, a new profile from one recording picked
-// with 파일 고르기 (the list shows it), start only once what it fetches is accepted; the run's card through its steps to
-// done — the report (with a long clip / a short one / none), A/B samples playing, the adapter on; 프로필 marks it
-// 학습됨; 생성 makes a line with it ("omnivoice (학습됨)", the history too) and without it once it is off; deleting the
-// run takes the adapter off. Screenshots: ko / en, light / dark, phone (no sideways scroll).
+// Checks: with no model that learns the page says so and can't start; with three installed, a new profile from one
+// recording picked with 파일 고르기 (the list shows it), every model ticked to begin with (one unticked), start only once
+// what it fetches is accepted; a run per model through its steps to done — the report (with a long clip / a short one /
+// none), A/B samples playing, each adapter on; 프로필 marks it 학습됨 with both models; 생성 makes a line with each
+// model's own ("… (학습됨)", the history too) and without one once it is off (the other stays on); deleting a run takes
+// only its adapter off; CosyVoice3 alone (no "none": it can't speak without a clip). Screenshots: ko / en, light /
+// dark, phone (no sideways scroll).
 "use strict";
 const assert = require("assert/strict");
 const fs = require("fs");
@@ -122,18 +124,20 @@ async function main() {
     page.on("pageerror", (e) => errors.push(String(e)));
     page.on("response", (res) => res.status() >= 500 && errors.push(`http ${res.status()} ${res.url()}`));
 
-    step("학습 without OmniVoice: says so, can't start");
+    step("학습 with no model that learns: says so, can't start");
     await open(page, "train");
     await page.waitForSelector('[data-testid="vs-train-needs-model"]');
     await page.selectOption('[data-testid="vs-train-voice"]', "__new");
     await page.fill('[data-testid="vs-train-name"]', NAME);
-    assert.ok(await page.isDisabled('[data-testid="vs-train-start"]'), "no start without OmniVoice");
+    assert.ok(await page.isDisabled('[data-testid="vs-train-start"]'), "no start without a model");
 
-    step("OmniVoice installed → a new profile from one recording picked with the button");
-    const marked = path.join(VOICE_HOME, "models", "omnivoice");
-    fs.mkdirSync(marked, { recursive: true });
-    fs.writeFileSync(path.join(marked, ".complete.json"), JSON.stringify({ bytes: 123, revisions: { "k2-fsa/OmniVoice": "e2e" } }));
-    await until("OmniVoice installed", async () => (await api(ctx, "GET", "/api/voice/status")).body.models.find((m) => m.id === "omnivoice")?.installed, 60000);
+    step("three models installed → a new profile from one recording picked with the button, two of them chosen");
+    for (const [id, repo] of [["omnivoice", "k2-fsa/OmniVoice"], ["qwen3-tts-0.6b-base", "Qwen/Qwen3-TTS-12Hz-0.6B-Base"], ["cosyvoice3-0.5b", "FunAudioLLM/Fun-CosyVoice3-0.5B-2512"]]) {
+      const marked = path.join(VOICE_HOME, "models", id);
+      fs.mkdirSync(marked, { recursive: true });
+      fs.writeFileSync(path.join(marked, ".complete.json"), JSON.stringify({ bytes: 123, revisions: { [repo]: "e2e" } }));
+    }
+    await until("installed", async () => (await api(ctx, "GET", "/api/voice/status")).body.models.filter((m) => m.installed).length >= 3, 60000);
     await open(page, "train");
     await until("the page knows", async () => !(await page.locator('[data-testid="vs-train-needs-model"]').count()), 15000);
     await page.selectOption('[data-testid="vs-train-voice"]', "__new");
@@ -142,82 +146,97 @@ async function main() {
     await chooser.setFiles(rec);
     await page.waitForSelector('[data-testid="vs-train-list"] li');
     assert.match(await page.innerText('[data-testid="vs-train-list"]'), /인터뷰 녹음\.wav/, "the picked file is listed");
+    for (const id of ["omnivoice", "qwen3-tts-0.6b-base", "cosyvoice3-0.5b"])
+      assert.ok(await page.isChecked(`[data-testid="vs-train-model-${id}"]`), `${id}: every installed model, to begin with`);
+    await page.uncheck('[data-testid="vs-train-model-cosyvoice3-0.5b"]');
     assert.ok(await page.isDisabled('[data-testid="vs-train-start"]'), "no start before what it fetches is accepted");
     await page.check('[data-testid="vs-train-accept"]');
     await shot(page, "01-new-light-ko");
     await page.click('[data-testid="vs-train-start"]');
 
-    step("the run: its steps to done, the report, samples, the adapter on");
-    const card = '[data-testid="vs-train-run"]';
-    await page.waitForSelector(card);
-    await until("the run is done", async () => {
-      const s = await page.getAttribute(`${card} [data-state]`, "data-state");
-      if (s === "failed") throw new Error(`failed: ${await page.innerText(card)}`);
-      return s === "done";
-    }, 90000);
-    await page.waitForSelector(`${card} [data-testid="vs-train-result"]`);
-    assert.equal(await page.locator(`${card} [data-testid="vs-train-table"] tbody tr`).count(), 3, "a long clip, a short one, none");
-    assert.ok(await page.locator(`${card} [data-testid="vs-train-applied"]`).count(), "put on the profile");
-    assert.ok(await page.isChecked(`${card} [data-testid="vs-train-apply"]`));
-    assert.match(await page.innerText(`${card} [data-testid="vs-train-data"]`), /\d/, "how much was kept");
-    await page.click('[data-testid="vs-train-play-tuned-none-0"]');
+    step("a run per model: through its steps to done, the report, samples, each adapter on");
+    const card = (model) => `[data-testid="vs-train-run"]:has([data-testid="vs-train-model"][data-model="${model}"])`;
+    for (const model of ["omnivoice", "qwen3-tts-0.6b-base"]) {
+      await page.waitForSelector(card(model));
+      await until(`${model} done`, async () => {
+        const s = await page.getAttribute(`${card(model)} [data-state]`, "data-state");
+        if (s === "failed") throw new Error(`failed: ${await page.innerText(card(model))}`);
+        return s === "done";
+      }, 90000);
+      await page.waitForSelector(`${card(model)} [data-testid="vs-train-result"]`);
+      assert.equal(await page.locator(`${card(model)} [data-testid="vs-train-table"] tbody tr`).count(), 3, "a long clip, a short one, none");
+      await page.waitForSelector(`${card(model)} [data-testid="vs-train-applied"]`);
+      assert.ok(await page.isChecked(`${card(model)} [data-testid="vs-train-apply"]`));
+      assert.match(await page.innerText(`${card(model)} [data-testid="vs-train-data"]`), /\d/, "how much was kept");
+    }
+    assert.equal(await page.locator(card("cosyvoice3-0.5b")).count(), 0, "the unticked model isn't trained");
+    await page.click(`${card("omnivoice")} [data-testid="vs-train-play-tuned-none-0"]`);
     await sleep(500);
     const runs = (await api(ctx, "GET", "/api/voice/trainings")).body.runs;
-    const run = runs.find((r) => r.voice_name === NAME);
-    assert.ok(run && run.state === "done", "the run");
+    const run = runs.find((r) => r.voice_name === NAME && r.model_id === "omnivoice");
+    const qrun = runs.find((r) => r.voice_name === NAME && r.model_id === "qwen3-tts-0.6b-base");
+    assert.ok(run && qrun && run.group_id === qrun.group_id, "one group: the recordings shared");
     const sample = await ctx.request.get(`${SERVER}/api/voice/trainings/${run.id}/samples/base-long-0.wav`);
     assert.ok(sample.ok() && /audio/.test(sample.headers()["content-type"]), "a sample plays");
     await shot(page, "02-done-light-ko");
 
-    step("프로필 marks it 학습됨, a new profile got a clip");
+    step("프로필 marks it 학습됨 on both, a new profile got a clip");
     await open(page, "profiles");
     await page.waitForSelector('[data-testid="vs-profile-trained"]');
+    assert.match(await page.innerText('[data-testid="vs-profile-trained"]'), /OmniVoice.*Qwen3-TTS 0\.6B|Qwen3-TTS 0\.6B.*OmniVoice/, "both models named");
     const v = (await api(ctx, "GET", "/api/voice/voices")).body.voices.find((x) => x.id === run.voice_id);
-    assert.equal(v.adapter, run.id, "the profile speaks with it");
+    assert.deepEqual(v.adapters, { omnivoice: run.id, "qwen3-tts-0.6b-base": qrun.id }, "the profile speaks with each");
     assert.ok(v.references.length >= 1, "a new profile got a clip");
     await shot(page, "03-profiles-light-ko");
 
-    step("생성: with the adapter (marked), and without it once off");
-    const gen = async () => {
+    step("생성: each model with its adapter (marked), and OmniVoice without it once off");
+    const gen = async (model) => {
       await open(page, "generate");
       await page.selectOption('[data-testid="vs-gen-voice"]', run.voice_id);
-      await page.selectOption('[data-testid="vs-gen-model"]', "omnivoice");
+      await page.selectOption('[data-testid="vs-gen-model"]', model);
       await page.fill('[data-testid="vs-gen-text"]', "다음 주에 다시 만나요.");
       const before = await page.locator('[data-testid="vs-gen-result"]').count();
       await page.click('[data-testid="vs-gen-go"]');
       await until("a line", async () => (await page.locator('[data-testid="vs-gen-result"]').count()) > before, 60000);
       return page.innerText('[data-testid="vs-gen-stats"]');
     };
-    assert.match(await gen(), /omnivoice \(학습됨\)/, "made with it");
+    assert.match(await gen("qwen3-tts-0.6b-base"), /qwen3-tts-0\.6b-base \(학습됨\)/, "Qwen made with its own");
+    assert.match(await gen("omnivoice"), /omnivoice \(학습됨\)/, "OmniVoice made with its own");
     await shot(page, "04-generate-trained-light-ko");
     await open(page, "train");
-    await page.uncheck(`${card} [data-testid="vs-train-apply"]`);
-    await until("off", async () => !(await page.locator(`${card} [data-testid="vs-train-applied"]`).count()), 10000);
-    assert.doesNotMatch(await gen(), /학습됨/, "made without it");
-    const h = (await api(ctx, "GET", "/api/voice/history?limit=2")).body;
+    await page.uncheck(`${card("omnivoice")} [data-testid="vs-train-apply"]`);
+    await until("off", async () => !(await page.locator(`${card("omnivoice")} [data-testid="vs-train-applied"]`).count()), 10000);
+    assert.ok(await page.locator(`${card("qwen3-tts-0.6b-base")} [data-testid="vs-train-applied"]`).count(), "the other model's stays on");
+    assert.doesNotMatch(await gen("omnivoice"), /학습됨/, "made without it");
+    const h = (await api(ctx, "GET", "/api/voice/history?limit=3")).body;
     const lines = h.entries ?? h.items ?? [];
-    assert.deepEqual(lines.map((e) => e.adapter), ["", run.id], "the history knows which");
+    assert.deepEqual(lines.map((e) => e.adapter), ["", run.id, qrun.id], "the history knows which");
 
-    step("on again; delete the run → the adapter comes off");
+    step("on again; delete the OmniVoice run → its adapter comes off, Qwen's stays");
     await open(page, "train");
-    await page.check(`${card} [data-testid="vs-train-apply"]`);
-    await page.waitForSelector(`${card} [data-testid="vs-train-applied"]`);
-    await page.click(`${card} [data-testid="vs-train-delete"]`);
+    await page.check(`${card("omnivoice")} [data-testid="vs-train-apply"]`);
+    await page.waitForSelector(`${card("omnivoice")} [data-testid="vs-train-applied"]`);
+    await page.click(`${card("omnivoice")} [data-testid="vs-train-delete"]`);
     await page.click('[data-testid="confirm-ok"]');
-    await until("deleted", async () => !(await page.locator(card).count()), 10000);
-    assert.equal((await api(ctx, "GET", "/api/voice/voices")).body.voices.find((x) => x.id === run.voice_id).adapter, "");
+    await until("deleted", async () => !(await page.locator(card("omnivoice")).count()), 10000);
+    assert.deepEqual((await api(ctx, "GET", "/api/voice/voices")).body.voices.find((x) => x.id === run.voice_id).adapters, { "qwen3-tts-0.6b-base": qrun.id });
 
-    step("a run of the profile again (to show it) → en / dark, phone");
-    const form = { multipart: { voice_id: run.voice_id, language: "ko", accept_licenses: "1", files: { name: "voice.wav", mimeType: "audio/wav", buffer: fs.readFileSync(rec) } } };
-    assert.ok((await ctx.request.post(`${SERVER}/api/voice/trainings`, form)).ok(), "a second run");
+    step("CosyVoice3 alone, by the API (to show it: no \"none\" row) → en / dark, phone");
+    const form = { multipart: { voice_id: run.voice_id, language: "ko", accept_licenses: "1", models: "cosyvoice3-0.5b", files: { name: "voice.wav", mimeType: "audio/wav", buffer: fs.readFileSync(rec) } } };
+    const made = await ctx.request.post(`${SERVER}/api/voice/trainings`, form);
+    assert.ok(made.ok(), "a CosyVoice3 run");
+    assert.deepEqual((await made.json()).runs.map((r) => r.model_id), ["cosyvoice3-0.5b"]);
     await until("done again", async () => (await api(ctx, "GET", "/api/voice/trainings")).body.runs.every((r) => r.state === "done"), 90000);
+    await open(page, "train");
+    await page.waitForSelector(`${card("cosyvoice3-0.5b")} [data-testid="vs-train-result"]`);
+    assert.equal(await page.locator(`${card("cosyvoice3-0.5b")} [data-testid="vs-train-table"] tbody tr`).count(), 2, "a long clip, a short one");
     for (const [lang, theme, phone, name] of [["en", "dark", false, "05-done-dark-en"], ["ko", "dark", true, "06-done-dark-ko-phone"]]) {
       const c = await device(browser, { lang, theme, phone });
       const p = await c.newPage();
       await open(p, "train");
       await p.waitForSelector('[data-testid="vs-train-result"]');
       if (phone) assert.ok(await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), "no sideways scroll on a phone");
-      await shot(p, name, phone ? '[data-testid="vs-train-run"]' : undefined);
+      await shot(p, name, phone ? card("cosyvoice3-0.5b") : undefined);
       await c.close();
     }
 
