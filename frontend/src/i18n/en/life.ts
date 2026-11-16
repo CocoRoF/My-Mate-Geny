@@ -105,4 +105,11 @@ export default {
   birthdayUser: "It's your birthday today",
   birthdayBoth: "It's both your birthdays today",
   tastes: "What she's come to like with you",
+  goalsTitle: "What she wants these days",
+  goalStep0: "Just begun",
+  goalStep1: "Getting there",
+  goalStep2: "Well along",
+  goalStep3: "Nearly there",
+  goalSetback: "A setback lately",
+  momentGoal: "Reached: {what}",
 };

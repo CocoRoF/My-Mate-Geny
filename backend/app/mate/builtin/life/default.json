@@ -985,5 +985,45 @@
     }
    }
   }
+ ],
+ "goals": [
+  {
+   "id": "exercise_habit",
+   "names": {
+    "ko": "운동 습관 들이기",
+    "en": "Getting into the habit of exercise"
+   },
+   "about": "getting into the habit of exercising, a walk or a workout a few times a week",
+   "target": 16,
+   "hours": {
+    "workout": 1,
+    "walk": 0.4
+   },
+   "days": 75,
+   "repeat_days": 120,
+   "reached": {
+    "says": "Exercising has quietly become a habit: you feel lighter for it, and a little proud.",
+    "feel": {
+     "happy": "moderate"
+    }
+   }
+  },
+  {
+   "id": "trip_fund",
+   "names": {
+    "ko": "여행 자금 모으기",
+    "en": "Saving for a short trip"
+   },
+   "about": "saving up for a short trip somewhere you have wanted to go",
+   "save": 600000,
+   "days": 120,
+   "repeat_days": 180,
+   "reached": {
+    "says": "You have put aside enough for that short trip: now it is only a matter of picking the dates.",
+    "feel": {
+     "happy": "moderate"
+    }
+   }
+  }
  ]
 }

@@ -104,7 +104,34 @@ her, it is on them, her messages stop being by phone, and she stays while they k
   (`event:<id>`), and rarely just because once close; one a day at most, never asleep. It stays with them (`given`: their keepsakes, in
   the Status window's 추억 tab), she is told she gave it, the chat shows a notice (`life.gave`) and she may write first about it.
 - **Moments they share** (`moments`): story events that happened while they were together, the relationship's milestones, birthdays they
-  talked on. Shown beside the keepsakes.
+  talked on, a goal of hers she reached. Shown beside the keepsakes.
+
+## Her goals
+
+Beyond her needs she wants a few things for herself (a profile's `goals`), so the relationship has two lives in it. 한채린 wants Dalmuri's
+first clear of Skywhale's Nest, a new graphics card, test automation down and every seasonal dessert at her café; 서아 fifty thousand
+subscribers, a new microphone, the high-note song for her singing stream and a month of keeping her trading-diary rule (her diary, never
+advice); anyone else a habit of exercise and a short trip.
+
+- **What moves one** is her own day, in the same pure, seeded steps: the hours she gives it (`hours`: points an hour of an activity, against
+  its `target`), what happens to her (`events`: points, below zero a setback) and what she saves (`save`: what she has put by since she began
+  wanting it). One whose last step is a story event (`finish`: the raid clear, buying the graphics card or the microphone, the subscriber
+  milestone) only comes close (`GOAL_CLOSE`) until that happens. In her free time it leans her to what moves it (`GOAL_LEAN`), unless she
+  is hungry or tired.
+- **Two at a time** (`GOALS_AT_ONCE`), drawn from her pool as `when` allows (flags, skills, how long she has had a day): never one whose
+  last step already happened for good, one she reached only after its `repeat_days`. A place one reached or let go of leaves fills again
+  after two to four weeks (`GOAL_REST`, `goals_due`), each place on its own: weeks to months of her life each, not a treadmill. One not
+  reached in its `days` she lets go of quietly.
+- **Reaching one is a moment**: it joins the `moments`, she hears what it means to her (`reached.says`), it lifts how she feels
+  (`reached.feel`, as a story event does) and she may write first about it (`advance` gives a `goal` with `share`). A setback she hears
+  about too (`setback.says`).
+- **Her mood**: for a day after it, reaching one, a step further and a setback are small floors in `sim.mood` (`goal_reached`,
+  `goal_progress`, `goal_setback`; a profile's `moods` may say otherwise), the reason going with what she is doing.
+- **What she is told**: words, never numbers ("just begun", "getting there", "well along", "nearly there", "after a setback lately"), in
+  her day's line, for a day after one changed and on some of her days besides (`GOAL_TOLD`, `GOAL_NOW_AND_THEN`): "What you want for
+  yourself these days, your own life apart from them: … What you want colours what you bring up, and you might ask them along or for a
+  hand with it, in your own way; never list these goals or say in numbers how far along you are."
+- **The Status window** shows each with a bar on its growth tab, and how far along in words (`view.goals`).
 
 ## Her body
 

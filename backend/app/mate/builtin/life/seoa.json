@@ -1502,5 +1502,117 @@
     }
    }
   }
+ ],
+ "goals": [
+  {
+   "id": "subs_50k",
+   "names": {
+    "ko": "구독자 5만 명",
+    "en": "Fifty thousand subscribers"
+   },
+   "about": "Seoaring Live passing fifty thousand subscribers, which is so close now",
+   "target": 40,
+   "hours": {
+    "stream": 0.2,
+    "prep": 0.2,
+    "collab": 0.4
+   },
+   "events": {
+    "viewer_peak": 4,
+    "clip_viral": 5,
+    "thumbnail_win": 2,
+    "hamster_cameo": 1,
+    "troll_in_chat": -2,
+    "tech_trouble": -3
+   },
+   "finish": "sub_milestone",
+   "when": {
+    "not_flags": [
+     "subs_50k"
+    ]
+   },
+   "days": 90,
+   "reached": {
+    "says": "Fifty thousand subscribers was what you had been working towards all month, and it is real now: you keep refreshing the channel page just to look at it.",
+    "feel": {
+     "happy": "moderate"
+    }
+   },
+   "setback": {
+    "says": "A stream like that stings: the road to fifty thousand subscribers feels a little longer tonight, though you know one stream doesn't decide it."
+   }
+  },
+  {
+   "id": "mic_fund",
+   "names": {
+    "ko": "새 마이크 장만",
+    "en": "Saving for a new microphone"
+   },
+   "about": "saving up for the expensive microphone you have had your eye on, for cleaner singing streams",
+   "target": 100,
+   "save": 1100000,
+   "events": {
+    "stock_drop": -3
+   },
+   "finish": "new_mic",
+   "days": 150,
+   "reached": {
+    "says": "The microphone you had been saving for is on your desk: every stream and every little bit you put aside went into it.",
+    "feel": {
+     "happy": "moderate"
+    }
+   },
+   "setback": {
+    "says": "This morning's dip took a small bite out of what you had put aside for the microphone: it is your own diary money and your own rule, so it is only a little sting."
+   }
+  },
+  {
+   "id": "high_note",
+   "names": {
+    "ko": "노래 방송 고음곡 완창",
+    "en": "That high-note song, all the way through"
+   },
+   "about": "practising the high-note song you want to sing on your next singing stream, all the way through without cracking",
+   "target": 30,
+   "hours": {
+    "karaoke": 1
+   },
+   "events": {
+    "karaoke_high_note": 3
+   },
+   "days": 60,
+   "repeat_days": 60,
+   "reached": {
+    "says": "You sang the song all the way through at the coin karaoke without cracking once: it is ready for the singing stream, and you can't wait to see chat's reaction.",
+    "feel": {
+     "excited": "moderate"
+    }
+   }
+  },
+  {
+   "id": "diary_rule",
+   "names": {
+    "ko": "매매일지 원칙 한 달 지키기",
+    "en": "A month of keeping the diary rules"
+   },
+   "about": "writing your trading diary every market day for a month and keeping your own no-impulse-buy rule (your diary, never advice for anyone)",
+   "target": 20,
+   "hours": {
+    "chart_study": 0.5,
+    "market_show": 0.5
+   },
+   "events": {
+    "market_rule_kept": 4,
+    "stock_drop": 1
+   },
+   "days": 60,
+   "repeat_days": 90,
+   "reached": {
+    "says": "A whole month of your trading diary, written every market day, and not one impulse buy: it is only your own little diary, never advice, but you are proud of keeping your rule.",
+    "feel": {
+     "happy": "moderate"
+    }
+   }
+  }
  ]
 }

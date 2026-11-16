@@ -1,5 +1,5 @@
 /** Status: how close you are and how she feels, where she is and how she is (what today is, a gift she just gave), and the rest of
- * her day (plan, growth, journal, gifts, what she gave and the moments you shared). */
+ * her day (plan, what she wants for herself and her growth, journal, gifts, what she gave and the moments you shared). */
 import { useState } from "react";
 import type { Mate } from "../../../api/mates";
 import { useLang, useT, type MsgKey } from "../../../i18n";

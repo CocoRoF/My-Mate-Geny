@@ -36,7 +36,7 @@ GIFT_FOR = ("birthday", "milestone", "random")
 
 
 def _check_more(doc: dict[str, Any]) -> None:
-    """Her job, what she gives them, how the week and the sky lean her."""
+    """Her job, what she gives them, how the week and the sky lean her, what she wants for herself."""
     job = doc.get("job")
     if job is not None and (not isinstance(job, dict) or not job.get("about") or not (job.get("names") or {}).get("ko")
                             or not (job.get("names") or {}).get("en")):
@@ -57,6 +57,45 @@ def _check_more(doc: dict[str, Any]) -> None:
     for name, feel in (doc.get("moods") or {}).items():
         if name not in sim.MOODS or not isinstance(feel, dict) or any(e not in sim.MOOD_EMOTIONS for e in feel):
             raise ValueError(f"life: an unknown mood or emotion: {name}")
+    _check_goals(doc)
+
+
+#: how strongly reaching a goal of hers moves a feeling (``reached.feel``: state.STRENGTHS)
+FEEL_STRENGTHS = ("slight", "moderate", "strong")
+
+
+def _check_goals(doc: dict[str, Any]) -> None:
+    """What she wants for herself: what it is, what moves it, and what reaching it and a setback mean to her."""
+    events = {e.get("id") for e in doc.get("events") or []}
+    seen = set()
+    for goal in doc.get("goals") or []:
+        name = goal.get("id") or "?"
+        if not goal.get("id") or name in seen or not (goal.get("names") or {}).get("ko") or not (goal.get("names") or {}).get("en") \
+                or not goal.get("about"):
+            raise ValueError(f"life: a goal of hers needs its own id, names and what it is (about): {name}")
+        seen.add(name)
+        if not float(goal.get("target") or 0) > 0 and not float(goal.get("save") or 0) > 0:
+            raise ValueError(f"life: goal {name} needs a target or what she saves for it (save)")
+        if (goal.get("hours") or goal.get("events")) and not float(goal.get("target") or 0) > 0:
+            raise ValueError(f"life: goal {name} counts hours or events, so it needs a target for them")
+        for key in goal.get("hours") or {}:
+            if key not in doc["activities"]:
+                raise ValueError(f"life: goal {name} counts an unknown activity: {key}")
+        for key in [*(goal.get("events") or {}), *([goal["finish"]] if goal.get("finish") else [])]:
+            if key not in events:
+                raise ValueError(f"life: goal {name} waits on an unknown event: {key}")
+        when = goal.get("when") or {}
+        for stat in when.get("stats") or {}:
+            if stat not in sim.STATS:
+                raise ValueError(f"life: goal {name} names an unknown {stat}")
+        reached = goal.get("reached") or {}
+        if not reached.get("says"):
+            raise ValueError(f"life: goal {name} needs what reaching it means to her (reached.says)")
+        for emotion, strength in (reached.get("feel") or {}).items():
+            if emotion not in sim.MOOD_EMOTIONS or strength not in FEEL_STRENGTHS:
+                raise ValueError(f"life: goal {name} feels an unknown way: {emotion} {strength}")
+        if any(float(v) < 0 for v in (goal.get("events") or {}).values()) and not (goal.get("setback") or {}).get("says"):
+            raise ValueError(f"life: goal {name} has setbacks, so it needs what one means to her (setback.says)")
 
 
 def check(doc: dict[str, Any]) -> dict[str, Any]:

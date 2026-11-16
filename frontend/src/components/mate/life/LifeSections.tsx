@@ -1,7 +1,7 @@
 /**
  * The pieces of her day the stage's windows are made of (docs/mate-life.md): her condition, what she did today, the map and
- * its places, the plan for her week, gifts, what she is growing in, her journal, and what she gave them and the moments they
- * shared. Each reads one LifeView (useLifeView).
+ * its places, the plan for her week, gifts, what she wants for herself and what she is growing in, her journal, and what she
+ * gave them and the moments they shared. Each reads one LifeView (useLifeView).
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { getLife, sendLifeGift, setLifePlan, type LifeDay, type LifeGift, type LifeKeepsake, type LifeMoment, type LifePlace, type LifeView, type Mate } from "../../../api/mates";
@@ -407,6 +407,7 @@ export function KeepsakesSection({ v, mate }: { v: LifeView; mate: Mate }) {
   const moment = (m: LifeMoment): string => {
     if (m.kind === "milestone") return milestoneText(t, m.key ?? "");
     if (m.kind === "birthday") return m.who === "her" ? t("life.momentBirthdayHer", { name: mate.name }) : t("life.momentBirthdayUser");
+    if (m.kind === "goal") return t("life.momentGoal", { what: lifeName(m.title, locale, m.id) });
     return lifeName(m.title, locale, m.id);
   };
   return (
@@ -449,11 +450,40 @@ export function KeepsakesSection({ v, mate }: { v: LifeView; mate: Mate }) {
   );
 }
 
+const GOAL_STEP: [MsgKey, MsgKey, MsgKey, MsgKey] = ["life.goalStep0", "life.goalStep1", "life.goalStep2", "life.goalStep3"];
+
+/** what she wants for herself: a bar each, and how far along in the words she is told (never the numbers) */
+function GoalsCard({ v }: { v: LifeView }) {
+  const t = useT();
+  const locale = useLang();
+  if (!v.goals?.length) return null;
+  return (
+    <Card title={t("life.goalsTitle")} testId="life-goals">
+      <ul className="space-y-3">
+        {v.goals.map((g) => (
+          <li key={g.id} data-testid={`life-goal-${g.id}`} data-step={g.step}>
+            <div className="flex items-center gap-2.5">
+              <Icon name="star" size={13} className="shrink-0 text-content-faint" />
+              <span className="min-w-0 flex-1 truncate text-[12px] text-content-dim">{lifeName(g.name, locale, g.id)}</span>
+              <span className="shrink-0 text-[11.5px] text-content-dim">{t(GOAL_STEP[g.step] ?? GOAL_STEP[0])}</span>
+            </div>
+            <span className="ml-[23px] mt-1.5 block h-1.5 overflow-hidden rounded-full bg-white/10">
+              <span className="block h-full rounded-full bg-violet transition-[width] duration-700" style={{ width: `${Math.max(4, Math.round(Math.min(1, g.progress) * 100))}%` }} />
+            </span>
+            {g.setback && <p className="ml-[23px] mt-1 text-[11px] text-content-faint">{t("life.goalSetback")}</p>}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 export function GrowthSection({ v }: { v: LifeView }) {
   const t = useT();
   const locale = useLang();
   return (
     <>
+      <GoalsCard v={v} />
       {lifeName(v.job, locale) && (
         <Card testId="life-job">
           <div className="flex items-center gap-2 text-[12.5px]">

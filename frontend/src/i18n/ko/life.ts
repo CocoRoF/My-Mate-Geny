@@ -105,4 +105,11 @@ export default {
   birthdayUser: "오늘은 내 생일이에요",
   birthdayBoth: "오늘은 둘 다 생일이에요",
   tastes: "함께하며 좋아진 것",
+  goalsTitle: "요즘 바라는 것",
+  goalStep0: "막 시작했어요",
+  goalStep1: "조금씩 다가가는 중",
+  goalStep2: "꽤 가까워졌어요",
+  goalStep3: "거의 다 왔어요",
+  goalSetback: "최근에 한 번 주춤했어요",
+  momentGoal: "{what}: 이뤘어요",
 };
