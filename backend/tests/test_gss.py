@@ -252,3 +252,21 @@ def test_a_judgement_is_parsed_clean_and_exchanges_are_hers_to_them():
     system, user = EV.request("서아", {"description": "a streamer"}, {"user_name": "장하렴", "address": "자기야"},
                               [{"user": "미안", "her": "[angry] 흥.", "refused": False}])
     assert "calls them: 자기야" in system and "[1] 서아: 흥." in user
+
+
+def test_reading_again_never_owes_twice_and_one_fight_is_one_memory():
+    w, doc = S.who(name="한채린"), S.new()
+    for _ in range(3):
+        S.spoke(doc, "저기요", NOON)
+    later = NOON + timedelta(hours=3)
+    S.hear(doc, w, "됐어", "m1", later, TZ)
+    assert [e["code"] for e in S.take_owed(doc)] == ["ignored"]  # (counted when she heard it)
+    S.reappraise(doc, w, "됐어", "m1", reading(acts=["venting"], aimed_at_her=False), later, TZ)
+    assert [e["code"] for e in S.take_owed(doc)] == []  # (not again)
+    fight = S.new()
+    S.hear(fight, w, "(한채린을 때린다)", "a", NOON, TZ)
+    fight["grudge"]["remembered"] = True
+    S.hear(fight, w, "(한채린을 또 때린다)", "b", NOON + timedelta(minutes=5), TZ)
+    assert fight["grudge"].get("remembered")  # (the same stretch: already remembered)
+    S.hear(fight, w, "(한채린을 때린다)", "c", NOON + timedelta(days=2), TZ)
+    assert not fight["grudge"].get("remembered")  # (another day, another fight)

@@ -645,11 +645,14 @@ def _hurt(doc: dict[str, Any], w: dict[str, Any], gain: float, why: dict[str, An
     was = doc.get("grudge") if isinstance(doc.get("grudge"), dict) and g >= 0.01 else {}
     worst = add >= float(was.get("worst") or 0.0)  # (what it is about: the worst of it, and when that was)
     new = add >= 0.05  # (a real new hurt: it wants its own apology, and it is one more lately; a twinge only adds)
+    last = A._t(was.get("at"))
+    same_stretch = last is not None and now - last <= EPISODE_GAP  # (one heated stretch: remembered once)
     doc["grudge"] = {"v": round(min(1.0, g + add), 3), "at": A._iso(now), "peak": round(max(min(1.0, g + add), float(was.get("peak") or 0.0)), 3),
                      "since": A._iso(now) if worst else was.get("since"), "why": why if worst else was.get("why"),
                      "worst": round(max(add, float(was.get("worst") or 0.0)), 3),
                      "sorry": 0 if new else int(was.get("sorry") or 0), "owned_n": 0 if new else int(was.get("owned_n") or 0),
-                     "owned": False if new else bool(was.get("owned"))}
+                     "owned": False if new else bool(was.get("owned")), "owned_at": None if new else was.get("owned_at"),
+                     **({"remembered": True} if was.get("remembered") and same_stretch else {})}
     if new:
         doc["offences"] = [*(doc.get("offences") or []), A._iso(now)][-OFFENCES_MAX:]
 
@@ -761,7 +764,7 @@ _READ_FLAGS = ("hostile", "rude", "apology", "owned", "dismissed", "warm", "love
 
 def _snapshot(doc: dict[str, Any]) -> dict[str, Any]:
     """What reacting to a message may change, as it was before (``reappraise`` sets it back)."""
-    return {k: copy.deepcopy(doc.get(k)) for k in ("feelings", "grudge", "offences", "rude", "hostile", "asks", "owed")}
+    return {k: copy.deepcopy(doc.get(k)) for k in ("feelings", "grudge", "offences", "rude", "hostile", "asks")}
 
 
 def hear(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, now: datetime, tz: Any,
@@ -798,6 +801,8 @@ def reappraise(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, 
     if all(bool(f[k]) == bool((doc.get("heard_read") or {}).get(k)) for k in _READ_FLAGS) and f["hostile"] == (doc.get("heard_read") or {}).get("hostile"):
         return False
     doc.update(copy.deepcopy(doc["before_heard"]))
+    # (what this message's words owed is read again; what was owed before it may have been counted already: it stays)
+    doc["owed"] = [e for e in doc.get("owed") or [] if e.get("heard") != message]
     doc["heard_read"] = {k: f[k] for k in _READ_FLAGS}
     _react(doc, w, (text or "").strip(), message, f, now, tz)
     _note(doc, {"reread": True, "why": {"code": "reread"}}, now)
