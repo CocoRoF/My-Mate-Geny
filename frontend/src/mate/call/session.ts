@@ -22,6 +22,7 @@ import { wsUrl } from "../../api/client";
 import { tr } from "../../i18n";
 import { devicePreferences, devicePreferencesLoaded } from "../../stores/devicePreferences";
 import { MateAudioQueue, type AudioQueueItem } from "../audioQueue";
+import { setCallRoute } from "../stt/capture";
 import { voiceEmotionAt } from "../emotion";
 import { SentenceStream, type Sentence } from "../sentences";
 import { bcp47 } from "../useMateConversation";
@@ -150,9 +151,12 @@ export class CallSession {
     };
     q.onError = () => {};
     const callMode = callNative.begin(this.speaker, { id: this.call.id, mate: this.mate.id, name: this.mate.name });
+    // (the microphone opens on the call's route — or the WebView would take the loudspeaker, as for a video call)
+    if (nativeCalls()) setCallRoute(this.speaker ? "speaker" : "ear");
     void keepScreenOn(true);
     if (this.call.direction === "outgoing" && this.call.status === "dialing") {
-      this.stopRing = this.tones.play("ringback", Math.min(1, this.volume));
+      // (in the app the ring-back waits for the route — the microphone open on it: prepareLine)
+      if (!nativeCalls()) this.stopRing = this.tones.play("ringback", Math.min(1, this.volume));
       this.holdUntil = Date.now() + RING_AT_LEAST_MS;
     }
     // the microphone opens now — while it rings when they call her (nothing heard counts before she picks up) — never
@@ -260,9 +264,10 @@ export class CallSession {
     const capped = (p: Promise<unknown>) =>
       Promise.race([p.catch(() => {}), new Promise((r) => setTimeout(r, Math.max(0, deadline - Date.now())))]);
     await capped(Promise.all([callMode, mic]));
-    // (the WebView switched the phone to call mode itself when it opened the microphone — and picked the
-    // loudspeaker, as for a video call: the route they chose goes back on)
+    // (the route asked for once more: the WebView sets one whenever it opens a microphone)
     this.reroute();
+    if (nativeCalls() && this.call.direction === "outgoing" && !this.through && !this.clicked && !this.stopRing && !this.over)
+      this.stopRing = this.tones.play("ringback", Math.min(1, this.volume));
     await capped(this.queue.warm());
     await new Promise((r) => setTimeout(r, LINE_SETTLE_MS));
     this.lineReady = true;
@@ -470,6 +475,7 @@ export class CallSession {
 
   setSpeaker(on: boolean): void {
     this.speaker = on;
+    if (nativeCalls()) setCallRoute(on ? "speaker" : "ear"); // (a microphone opened again keeps to it)
     void callNative.setSpeaker(on);
     this.applyVolume();
   }
@@ -493,6 +499,7 @@ export class CallSession {
     this.stopRing = null;
     for (const t of this.rerouteTimers) clearTimeout(t);
     this.rerouteTimers = [];
+    setCallRoute(null);
     this.queue.dispose();
     if (reason !== "elsewhere") this.tones.play("hangup", Math.min(1, this.volume));
     const ws = this.ws;

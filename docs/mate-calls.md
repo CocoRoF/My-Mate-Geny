@@ -179,17 +179,24 @@ call** (it goes on with the screen off). There is no push service (FCM), so her 
   clock, **끊기** (`…/hangup`). It is the only foreground service the app runs by default, and only for the call.
 - **The earpiece**: a call starts on the earpiece — or a connected headset (Bluetooth, wired, USB) — like any phone
   call; the loudspeaker only when they press it, every call again (`mate/call/machine.ts`, `GenyCallPlugin.route`).
-  Setting the route once at the start wasn't enough: 0.5 still spoke on the loudspeaker. **The WebView sets its own
-  route when it opens the microphone** — it treats a page's microphone as a video call, switches the phone to call
-  mode and asks for the loudspeaker (unless a headset is connected), after `begin` had asked for the earpiece; the
-  latest request wins. Seen on Android 14 (WebView 113): `begin` at 12:54:24.9, then
-  `setCommunicationDevice(speaker)` from the app's own process as the microphone opened, 0.8 s later (`dumpsys audio`).
-  So the route they chose is asked for again once the microphone is open (`CallSession.reroute`: at once, 0.5 s and
-  1.5 s later, and again when the listening falls back to another way and opens the mic anew), and the plugin holds it
-  for the whole call: when the communication device moves away from the chosen route it is put back (Android 12+, at
-  most 6 times in 10 s, so never a tug of war; logged as `GenyCall`), and a headset plugged in or out re-routes.
-  Her voice plays as media (also an output opened after the microphone, checked); during a call the phone's audio
-  policy sends media where the call's route goes.
+  Setting the route once at the start wasn't enough: 0.5 still spoke on the loudspeaker. **The WebView picks the
+  phone's route by the microphone a page opens**: its audio inputs are the routes — `Speakerphone`, `Headset
+  earpiece`, `Wired headset`, `Bluetooth headset`, `USB audio` — and with none asked for it takes the loudspeaker, as
+  for a video call, after `begin` had asked for the earpiece. Seen on Android 14 (WebView 113, `dumpsys audio`): the
+  inputs listed `default` and `Speakerphone` (the emulator has no earpiece), and opening the default one sent
+  `setCommunicationDevice(speaker)` from the app's own process 0.8 s after `begin`.
+  - So in a call the microphone opens **on the call's route** (`stt/capture.ts`: `setCallRoute`, `callRouteInput`):
+    a Bluetooth / USB / wired headset when the WebView lists one, else `Headset earpiece`; `Speakerphone` only after
+    they pressed the loudspeaker (a microphone opened again in the call — the listening falling back — keeps to it).
+    The inputs' labels show once the page may use the microphone: before the first call of a page, one short open
+    first. An input that is gone falls back to the default.
+  - The ring-back starts once the microphone is open (a fraction of a second after dialling), on that route.
+  - The route is also asked for again once the microphone is open (`CallSession.reroute`: at once, 0.5 s, 1.5 s), and
+    the plugin holds it for the whole call: when the communication device moves away from the chosen route it is put
+    back (Android 12+, at most 6 times in 10 s; logged as `GenyCall`), and a headset plugged in or out re-routes —
+    which also covers a Bluetooth headset the WebView doesn't list.
+  - Her voice plays as media (also an output opened after the microphone, checked); during a call the phone's audio
+    policy sends media where the call's route goes.
 - **Real-time calls** (an option, off by default — 0.5 turned it off for everyone once): Settings → 메이트 → 전화 →
   실시간 전화 keeps the old always-on line (`GET /api/mate-calls/link?device=`, server-sent events: `hello {calls, mate,
   ring}`, `call.ring`, `call.update`, `policy`, a `ping` every `calls.LINK_PING_S` = 45 s; back at once when the network
