@@ -481,6 +481,18 @@ the tone): feelings now change how she talks, what she decides and what her face
   calm, it is undone; shown angry, it stands and more); an apology takes the edge off and starts that over (after being hit, 0.15); kindness (which also calms her, though good things land less while she is angry), saying they care, her looks, brushing her off,
   answering in a word three times running, their distress, what she loves (`TEMPERAMENTS.loves`), being back after a day. Most
   messages move nothing here; the lexical cues are only the backbone.
+- **What they did stays with her** (`grudge`, the user's word 2026-11-17: no making her angry and fixing it with a quick sorry).
+  Anger they caused (`GRUDGE`: what was done to her all of it, a rude word 0.7 of it, her own angry face at what they said half…)
+  leaves a hurt that fades over a day, not an hour (half-life 16 h × her `holds`: 한채린 1.4, 서아 0.5). While it lasts her anger
+  at them doesn't settle below 0.6 of it, and her <context> says it: "Still with you: they threatened you: “…” (3 hours ago). They
+  said sorry 1 time, just a bare sorry." with how it comes out (`HELD`: cool and guarded while it stings, a little cooler after).
+  An apology takes off what it is worth to her (`_apology`): a bare sorry 0.2 of it, one that owns what they did (`_OWNED`: 내가
+  심했어, 잘못했어, 다시는…) 0.5, each next one of the same kind half the one before, divided by how many heated stretches they had
+  this week (`episodes`: one stretch is one, EPISODE_GAP 2 h), times her `forgives` (한채린 0.8, 서아 1.4); her anger falls by
+  the same measure. Sweet talk over it with no apology that owns it (사랑해, 예뻐, 고마워) doesn't land, and love or looks rankle
+  (`brushed_over`) — unless it is a sulk small enough for her (`sweet_until`: 서아's small pouts melt with something sweet). Her
+  calm reading of something done to her undoes its grudge too. Her prompt: an apology counts for what it is worth to her,
+  forgiving is hers and can be partial, and she never repeats the same line, stage direction or telling-off.
 - **What she shows and says herself**: her expression tags (`reply`) pull that emotion towards their strength (`[angry:0.8]`), for
   the reason of what was just said to her, and `feel(emotion, strength, reason)` sets one, in her words. This is how the real reading
   of the conversation comes in: the model's.
@@ -490,7 +502,7 @@ the tone): feelings now change how she talks, what she decides and what her face
   (`app/mate/trigger/silence.deliver_reply`, her text held only while it could still be that) becomes a line of narration in her
   language ("(한채린은 대답하지 않는다)", "(…대답하고 싶지 않은 것처럼 보인다)"…; `MateService.refusal_line`), kept as her turn marked
   `refused`: shown as narration, never read aloud, her face angry; her engine remembers its own [SILENT], and a handoff says "you
-  didn't answer them". An apology she believes, or time, and she talks again. Her own turns (a look at the screen, a thought, her
+  didn't answer them". An apology worth enough to her, or time, and she talks again. Her own turns (a look at the screen, a thought, her
   day) are hers too: [SILENT] as ever. Nothing counts strikes.
 - **What the user does**: leaving her unanswered (`_silence`: what she said counts up until they answer, lonely grows with the wait
   and much sooner the more she said; if it went on, answering leaves her a little angry too; not while the relationship is paused),

@@ -57,6 +57,7 @@ const ko: Messages<"mate"> = {
   stateWhy_hostile_threat: "위협을 받아서",
   stateWhy_hostile_demeaning: "깔보는 말을 들어서",
   stateWhy_apology: "사과를 받아서",
+  stateWhy_brushed_over: "아무 일 없던 것처럼 달래려 해서",
   stateWhy_dismissed: "차갑게 넘겨서",
   stateWhy_curt: "대답이 자꾸 짧아서",
   stateWhy_looks: "모습 이야기를 들어서",

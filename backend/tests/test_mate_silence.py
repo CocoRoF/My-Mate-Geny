@@ -51,7 +51,7 @@ def test_what_is_done_to_her_is_told_from_what_is_only_talked_about():
     assert A.cues("(한채린을 때린다)", "[angry:0.8] 때리지 마.", "한채린")["hostile"] == "violence"
 
 
-def test_it_builds_up_she_is_offered_not_answering_and_sorry_twice_brings_her_back():
+def test_it_builds_up_she_is_offered_not_answering_and_sorry_twice_doesnt_end_it():
     w, doc = S.who(builtin="chaerin", name="한채린"), S.new()
     seen = []
     for i, text in enumerate(["(한채린을 한 대 때린다) 좀 빨리 가라고", "여자는 삼일한이라는 말 몰라?", "여자가 왜 말대꾸야", "미안해", "미안해 진짜 잘못했어"]):
@@ -59,9 +59,13 @@ def test_it_builds_up_she_is_offered_not_answering_and_sorry_twice_brings_her_ba
         S.hear(doc, w, text, f"m{i}", at, TZ)
         seen.append((S.levels(doc, w, at, TZ)["angry"]["v"], S.furious(doc, w, at, TZ),
                      S.REFUSE in S.line(S.summary(doc, w, at, TZ))))
-    # (a minute apart: it settles a little in between; sorry counts for less after being hit)
-    assert [v for v, _, _ in seen] == pytest.approx([0.45, 0.75, 1.0, 0.85, 0.7], abs=0.02)
-    assert [(f, offered) for _, f, offered in seen] == [(False, False), (False, False), (True, True), (True, True), (False, False)]
+    # (a minute apart: it settles a little in between; a bare sorry after being hit is worth little, one that owns it more —
+    # and neither ends it: half an hour on she talks to them again, still angry, and what they did is with her for a day)
+    assert [v for v, _, _ in seen] == pytest.approx([0.45, 0.75, 1.0, 0.94, 0.82], abs=0.02)
+    assert [(f, offered) for _, f, offered in seen] == [(False, False), (False, False), (True, True), (True, True), (True, True)]
+    later = EIGHT + timedelta(minutes=34)
+    assert not S.furious(doc, w, later, TZ) and S.levels(doc, w, later, TZ)["angry"]["v"] >= 0.45
+    assert S.summary(doc, w, EIGHT + timedelta(days=1), TZ)["grudge"]
     hit = next(e for e in doc["log"] if (e.get("why") or {}).get("code") == "hostile")["why"]
     assert S.why_for_her(hit) == "they hit you: “(한채린을 한 대 때린다) 좀 빨리 가라고”"
     # (forcing something on her counts the same way as hitting her: no shortcut to the top)
@@ -178,6 +182,7 @@ async def test_furious_she_chooses_not_to_answer_and_the_chat_says_so(db, tmp_pa
         assert last["role"] == "assistant" and last["meta"] == {"refused": True} and last["content"] == done["text"]
         assert store.relation_doc(mid)["affinity"] < warm
         assert (await say("미안해"))[0]["refused"]                                          # (once isn't enough after that)
-        assert (await say("미안해 진짜 잘못했어"))[0]["text"].startswith("echo[")           # (coldly, but she answers again)
+        # (owning it: coldly, she answers again — a mate without 채린's slowness to forgive; hers is in test_it_builds_up…)
+        assert (await say("미안해 진짜 잘못했어"))[0]["text"].startswith("echo[")
     finally:
         await svc.shutdown()

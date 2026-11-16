@@ -57,6 +57,7 @@ export default {
   stateWhy_hostile_threat: "you threatened her",
   stateWhy_hostile_demeaning: "you put her down",
   stateWhy_apology: "you apologised",
+  stateWhy_brushed_over: "you sweet-talked past it",
   stateWhy_dismissed: "you brushed her off",
   stateWhy_curt: "you keep answering in a word or two",
   stateWhy_looks: "you talked about how she looks",

@@ -80,7 +80,7 @@ def test_saying_sorry_in_any_of_its_words_counts(text):
     w, doc = S.who(), S.new()
     S.hear(doc, w, "멍청아", "a", NOON, TZ)
     S.hear(doc, w, text, "b", NOON, TZ)
-    assert _lv(doc, w)["angry"] == 0 and doc["rude"] is None
+    assert _lv(doc, w)["angry"] < S.SHOWN_FROM and doc["rude"] is None  # (one rude word, and sorry: it no longer shows)
 
 
 def test_kindness_calms_her_but_good_things_land_less_while_she_is_angry():
@@ -88,7 +88,11 @@ def test_kindness_calms_her_but_good_things_land_less_while_she_is_angry():
     for i in range(3):
         S.hear(doc, w, "멍청아", f"m{i}", NOON, TZ)
     S.hear(doc, w, "고마워", "thanks", NOON, TZ)
-    assert _lv(doc, w)["angry"] == pytest.approx(1 - S.WARM_CALMS, abs=0.01)
+    assert _lv(doc, w)["angry"] == 1.0  # (a thank-you with no apology for it doesn't calm her)
+    S.hear(doc, w, "내가 말이 심했어, 미안해", "sorry", NOON, TZ)
+    eased = _lv(doc, w)["angry"]
+    S.hear(doc, w, "고마워", "thanks again", NOON, TZ)
+    assert _lv(doc, w)["angry"] <= eased - S.WARM_CALMS + 0.001  # (after one that owns it, kindness does)
     calm = S.new()
     S.hear(calm, w, "고마워", "thanks", NOON, TZ)
     assert _lv(doc, w)["happy"] < _lv(calm, w)["happy"]
@@ -102,8 +106,9 @@ def test_an_apology_takes_the_edge_off():
     for i in range(2):
         S.hear(doc, w, "멍청아", f"m{i}", NOON, TZ)
     S.hear(doc, w, "미안해, 내가 잘못했어", "sorry", NOON, TZ)
-    assert _lv(doc, w)["angry"] == pytest.approx(0.4)
-    assert S.levels(doc, w, NOON, TZ)["angry"]["why"] == {"code": "apology"}
+    # (owning it, the first time: half of the hurt goes, and her anger is still about what they said)
+    assert _lv(doc, w)["angry"] == pytest.approx(0.4, abs=0.01)
+    assert S.levels(doc, w, NOON, TZ)["angry"]["why"] == {"code": "rude"}
     S.hear(doc, w, "멍청아", "again", NOON, TZ)
     assert doc["rude"]["n"] == 1  # (and it starts over)
 
@@ -687,3 +692,79 @@ def test_the_prompt_lets_anger_and_hurt_out():
 
     assert "raise your voice" in P._STATE_RULES and "let your voice break or cry" in P._STATE_RULES
     assert "don't hide it behind politeness" in P._STATE_RULES
+
+
+# ---- what they did stays with her (grudge) ----
+
+_SAID = iter(range(10**6))
+
+
+def _say(doc, w, texts, at):
+    for text in texts:
+        S.hear(doc, w, text, f"m{next(_SAID)}", at, TZ)
+
+
+def test_what_they_did_stays_with_her_and_a_bare_sorry_doesnt_end_it():
+    w, doc = S.who(builtin="chaerin", name="한채린"), S.new()
+    _say(doc, w, ["죽여버린다 너", "미안"], NOON)
+    s = S.summary(doc, w, NOON, TZ)
+    assert s["grudge"] and s["grudge"]["sorry"] == 1 and not s["grudge"]["owned"]
+    line = S.line(s)
+    assert "Still with you: they threatened you: “죽여버린다 너”" in line and "just a bare sorry" in line and S.HELD[1] in line
+    assert _lv(doc, w)["angry"] >= S.SHOWN_FROM
+    # (hours later it hasn't settled the way a moment's anger does; days later it has)
+    later = S.summary(doc, w, NOON + timedelta(hours=6), TZ)
+    assert later["grudge"]["v"] >= S.GRUDGE_SHOWN and "Still with you" in S.line(later) and "(6 hours ago)" in S.line(later)
+    assert S.summary(doc, w, NOON + timedelta(days=3), TZ)["grudge"] is None
+
+
+def test_an_apology_is_worth_what_it_is_to_her():
+    w = S.who(name="한채린")
+
+    def after(*texts):
+        doc = S.new()
+        _say(doc, w, ["(한채린을 때린다)", *texts], NOON)
+        return S.grudge(doc, w, NOON)
+
+    hurt = after()
+    bare, owned = after("미안"), after("내가 잘못했어, 다시는 안 그럴게")
+    assert hurt > bare > owned  # (owning what they did counts for more than a bare sorry)
+    assert (hurt - bare) / hurt == pytest.approx(S.SORRY_BARE)
+    twice = after("내가 잘못했어", "내가 잘못했어")
+    assert twice == pytest.approx(hurt * (1 - S.SORRY_OWNED) * (1 - S.SORRY_OWNED * S.SORRY_AGAIN), abs=0.005)
+    # (someone who keeps doing it: a sorry is worth less each time)
+    doc = S.new()
+    for day in range(3):
+        _say(doc, w, ["(한채린을 때린다)"], NOON + timedelta(days=day))
+    before = S.grudge(doc, w, NOON + timedelta(days=2))
+    _say(doc, w, ["내가 잘못했어"], NOON + timedelta(days=2))
+    assert (before - S.grudge(doc, w, NOON + timedelta(days=2))) / before == pytest.approx(S.SORRY_OWNED / 2, abs=0.01)
+
+
+def test_sweet_talk_that_skips_the_apology_rankles_and_lands_after_one_that_owns_it():
+    w, doc = S.who(builtin="chaerin", name="한채린"), S.new()
+    _say(doc, w, ["죽여버린다 너", "미안"], NOON)
+    was = _lv(doc, w)
+    _say(doc, w, ["사랑해"], NOON)
+    assert _lv(doc, w)["happy"] == pytest.approx(was["happy"]) and _lv(doc, w)["angry"] > was["angry"]
+    assert any((e.get("why") or {}).get("code") == "brushed_over" for e in doc["log"])
+    _say(doc, w, ["내가 심했어, 진짜 미안해"], NOON + timedelta(minutes=1))
+    was = _lv(doc, w, NOON + timedelta(minutes=1))
+    _say(doc, w, ["사랑해"], NOON + timedelta(minutes=1))
+    assert _lv(doc, w, NOON + timedelta(minutes=1))["happy"] > was["happy"]
+
+
+def test_how_readily_she_lets_go_is_her_own():
+    def held(builtin, name, hours):
+        w, doc = S.who(builtin=builtin, name=name), S.new()
+        _say(doc, w, [f"(서아를 때린다)" if builtin == "seoa" else "(한채린을 때린다)", "내가 잘못했어"], NOON)
+        return S.grudge(doc, w, NOON + timedelta(hours=hours))
+
+    assert held("seoa", "서아", 0) < held("chaerin", "한채린", 0)  # (a sorry moves her more)
+    assert held("seoa", "서아", 10) < S.GRUDGE_SHOWN < held("chaerin", "한채린", 10)  # (and it is gone sooner)
+    # (서아's small sulk melts with something sweet, no apology needed)
+    w, doc = S.who(builtin="seoa", name="서아"), S.new()
+    _say(doc, w, ["됐어 관심 없어"], NOON)
+    was = _lv(doc, w)["happy"]
+    _say(doc, w, ["귀여워"], NOON)
+    assert _lv(doc, w)["happy"] > was
