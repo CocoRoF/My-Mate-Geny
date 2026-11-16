@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BodyMood, MateReact, Rig, RigClip } from "../types";
 import { PlainPlayer, StackedPlayer, type ClipPlayer } from "./player";
-import { clipFor, clipUrl, enabledClips, faceFor, moodPool } from "./shared";
+import { clipFor, clipUrl, enabledClips, faceMix, facesIn, moodPool, pickFace, sameMix, type FaceMix } from "./shared";
 
 export interface VideoBodyProps {
   rig: Rig;
@@ -26,6 +26,9 @@ export interface VideoBodyProps {
   react: MateReact;
   /** the face she rests on, from how she feels (mate/stateLook.ts): a rig with mood families stays in that mood (faceFor) */
   look?: string;
+  /** how strongly she feels it (0 – 1): a weak feeling plays that mood now and then, a strong one all the time (faceMix);
+   *  none: all the time */
+  lookLevel?: number;
   poster: string | null;
   name: string;
   /** the player could not start (no WebGL): the caller shows the still body instead */
@@ -50,18 +53,18 @@ type State = {
   last: string;
   /** the clip loaded ahead for when the one on screen ends (used then if it still suits what she is doing) */
   upcoming: RigClip | null;
-  /** the mood family she stays in (faceFor her resting look), none: her rest face */
-  face: string | undefined;
+  /** the faces she is in (faceMix her look): her mood family by how strongly she feels it, her calm face between */
+  mix: FaceMix;
 };
 
-export default function VideoBody({ rig, size, mood, doing, react, look, poster, name, onFail }: VideoBodyProps) {
+export default function VideoBody({ rig, size, mood, doing, react, look, lookLevel, poster, name, onFail }: VideoBodyProps) {
   const wrap = useRef<HTMLDivElement>(null);
   /** changes only prepare the next clip; onEnded is the sole transition clock */
   const changeRef = useRef<(() => void) | null>(null);
   /** a reaction queued for the next natural clip boundary */
   const reactRef = useRef<((c: RigClip) => void) | null>(null);
-  /** the mood family she stays in changed: what comes next is from it (the clip on screen plays out) */
-  const faceRef = useRef<((face: string | undefined) => void) | null>(null);
+  /** the faces she is in changed: what comes next is from them (the clip on screen plays out) */
+  const faceRef = useRef<((mix: FaceMix) => void) | null>(null);
   const failRef = useRef(onFail);
   failRef.current = onFail;
   const moodRef = useRef(mood);
@@ -70,6 +73,8 @@ export default function VideoBody({ rig, size, mood, doing, react, look, poster,
   doingRef.current = doing;
   const lookRef = useRef(look);
   lookRef.current = look;
+  const levelRef = useRef(lookLevel);
+  levelRef.current = lookLevel;
   /** reactions older than this body belong to the previous mate/avatar */
   const born = useRef(Date.now());
   const [shown, setShown] = useState(false);
@@ -96,7 +101,7 @@ export default function VideoBody({ rig, size, mood, doing, react, look, poster,
       playing: null,
       last: "",
       upcoming: null,
-      face: faceFor(active, lookRef.current),
+      mix: faceMix(active, lookRef.current, levelRef.current),
     };
     st.current = s;
     let p: ClipPlayer;
@@ -160,17 +165,18 @@ export default function VideoBody({ rig, size, mood, doing, react, look, poster,
         }
       }
     })();
-    warm(s.face);
-    /** this clip is one of those a mood plays (breathing when the rig has none of that kind), in the mood family she is in */
+    for (const face of facesIn(s.mix)) warm(face);
+    /** this clip is one of those a mood plays (breathing when the rig has none of that kind), in a face she is in */
     const suits = (c: RigClip | null | undefined, m: BodyMood) =>
-      !!c && moodPool(active, m, doingRef.current, s.face).clips.some((x) => x.id === c.id);
+      !!c && facesIn(s.mix).some((face) => moodPool(active, m, doingRef.current, face).clips.some((x) => x.id === c.id));
     const pickFrom = (list: RigClip[] | undefined) => {
       if (!list?.length) return null;
       const others = list.filter((c) => c.id !== s.last);
       const pool = others.length ? others : list;
       return pool[Math.floor(Math.random() * pool.length)];
     };
-    const forMood = (m: BodyMood): RigClip | null => pickFrom(moodPool(active, m, doingRef.current, s.face).clips);
+    // (each clip: her mood family as often as she feels it, else her calm face — mixed at random, clip by clip)
+    const forMood = (m: BodyMood): RigClip | null => pickFrom(moodPool(active, m, doingRef.current, pickFace(s.mix, Math.random())).clips);
     const moodNow = (): BodyMood => s.mood;
     /** load what plays when the clip on screen ends (a pending reaction, else a clip for the mood that counts) */
     const prepareNext = () => {
@@ -220,10 +226,10 @@ export default function VideoBody({ rig, size, mood, doing, react, look, poster,
       s.react = c;
       prepareNext();
     };
-    faceRef.current = (face) => {
-      if (face === s.face) return;
-      s.face = face;
-      warm(face);
+    faceRef.current = (mix) => {
+      if (sameMix(mix, s.mix)) return;
+      s.mix = mix;
+      for (const face of facesIn(mix)) warm(face);
       prepareNext();
     };
     next();
@@ -278,10 +284,10 @@ export default function VideoBody({ rig, size, mood, doing, react, look, poster,
   useEffect(() => {
     changeRef.current?.();
   }, [doing]);
-  // how she feels holds her face: a mood family while she feels it, her rest face when it passes
+  // how she feels holds her face: a mood family while she feels it (as much as she feels it), her rest face when it passes
   useEffect(() => {
-    faceRef.current?.(faceFor(active, look));
-  }, [look, active]);
+    faceRef.current?.(faceMix(active, look, lookLevel));
+  }, [look, lookLevel, active]);
 
   // a reaction plays once, now and whole (only a newer one cuts it)
   const reactAt = react?.at;
@@ -289,9 +295,9 @@ export default function VideoBody({ rig, size, mood, doing, react, look, poster,
   useEffect(() => {
     if (!reactName || !reactAt || reactAt < born.current) return;
     const c = clipFor({ clips, emotions }, reactName);
-    // (in a mood only that mood's own reaction plays: a laugh between two sulks would be a mood swing, not her)
-    const held = st.current?.face;
-    if (c && (!held || (c.face ?? undefined) === held)) reactRef.current?.(c);
+    // (in a mood only a reaction of a face she is in plays: a laugh between two sulks would be a mood swing, not her)
+    const mix = st.current?.mix;
+    if (c && (!mix?.face || facesIn(mix).includes(c.face ?? undefined))) reactRef.current?.(c);
   }, [reactAt, reactName, clips, emotions]);
 
   return (

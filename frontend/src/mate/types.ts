@@ -137,5 +137,8 @@ export interface MateAvatarProps {
   react?: MateReact;
   /** how she feels, as a face to rest on (mate/stateLook.ts) */
   look?: string;
+  /** how strongly she feels it (0 – 1): a video body plays that mood as much as she feels it (avatar/shared.ts faceMix), the
+   *  other bodies rest on it once she feels it enough (stateLook.ts restsOn); none: the look is held as it is */
+  lookLevel?: number;
   className?: string;
 }

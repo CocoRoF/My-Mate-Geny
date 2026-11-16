@@ -208,8 +208,9 @@ Losses aren't climbed. What their words told waits for her reply: shown calm, it
 
   Each turn's `<context>` carries what changed: "How you feel right now", "Still with you", "How it comes out now", "Relationship",
   "Your day".
-- **Her face.** Video clips carry a `face` family (calm, angry, sad, worried, 무표정…). The avatar plays only the family that fits
-  how she feels (`faceFor`, `moodPool`), with a 300 ms fade, so an angry mate stays angry between replies.
+- **Her face.** Video clips carry a `face` family (calm, angry, sad, worried, 무표정…). The avatar plays the family that fits how
+  she feels (`faceFor`, `moodPool`), as much as she feels it (below), with a 300 ms fade, so an angry mate stays angry between
+  replies.
 - **Not answering.** Furious at what they did (anger at them 0.8+), she is offered not answering at all (`REFUSE`). A reply of
   `[SILENT]` becomes a line of narration ("(한채린은 대답하지 않는다)"), kept as her turn and never read aloud.
 - **Speaking first** ([trigger/](../backend/app/mate/trigger/)):
@@ -217,6 +218,39 @@ Losses aren't climbed. What their words told waits for her reply: shown calm, it
     (`SPEAK_UP`), else `[SILENT]`.
   - A shared screen is only a glance at what they have in front of them, never the topic.
 - **Phone calls** ([mate-calls.md](mate-calls.md)): she calls them and they call her. The call shares the same state.
+
+### Beyond her words
+
+How she feels also shows in her voice, in how strongly her face shows it, and in when her reply comes.
+
+- **Her voice** ([`voice.py`](../backend/app/mate/voice.py) `delivery`). At the moment she speaks, the state summary in the mate
+  document becomes a hint for the engine. Only her strongest feeling counts, scaled by how strong it is. The line's own
+  expression tag still sets how that line goes. Her voice and the speed of a clip are never touched.
+
+  | Engine | What it gets |
+  |---|---|
+  | OpenAI `gpt-4o*`, Gemini | A few words in `instructions` or the prompt, by strength (`VOICE_HOW`). Angry at them: cool, then curt and cold, then clipped. Angry at her day: grumpy. Sad: soft and slow. Excited: bright and quick. Sleepy: drowsy. Shy: a little hesitant. Happy: warm. Lonely: quiet. Worried: gentle and careful. |
+  | ElevenLabs, other models (multilingual v2, flash, turbo) | Her own voice settings, read from ElevenLabs and leaned with arousal × strength. The livelier she is, the less stable and the more styled (at most −0.2 stability, +0.25 style). Drowsy or low, a little steadier. |
+  | Eleven v3, v4 | From "quite" (0.45), an audio tag before the words: `[annoyed]`, `[excited]` or `[sad]`. These models take only a few fixed stabilities. |
+  | OmniVoice, local, http, browser, `tts-1` | Nothing. |
+
+  A preview of unsaved voice settings uses her voice as it is.
+- **How strongly her face shows it** ([`shared.ts`](../frontend/src/mate/avatar/shared.ts) `familyShare`, `faceMix`). A video
+  body mixes her mood family in by `level`:
+  - 15 % of clips at 0.25, 35 % at 0.45, all of them from 0.7;
+  - the other clips come from 무표정 (`calm`) for a look her smile doesn't fit, else from her rest face;
+  - the face is drawn clip by clip;
+  - a reaction plays only from a face she is in.
+
+  Other bodies rest on the look from 0.45, as before.
+- **When her reply comes** ([`replyTiming.ts`](../frontend/src/mate/replyTiming.ts), held in `useMateConversation`).
+  - Angry at them (a reason in `state.AT_THEM`) from 0.45, her reply waits 1.5 s, rising to 5 s at 0.9. The wait counts from
+    when her turn began, and her typing dots show meanwhile.
+  - Her words, captions and voice are held together, so they stay in step. What has already arrived is never held longer
+    than the wait.
+  - There is no wait on a call, with her mood switched off the avatar, or when she refuses to answer.
+  - Quick bursts when excited are not done. The chat shows one bubble per line, not per sentence, and the text already
+    streams in as it comes.
 
 ## 7. Where to look
 

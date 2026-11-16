@@ -30,7 +30,11 @@ export function stateLook(mate: WithState | null | undefined, on?: boolean): str
   return STATE_LOOK[mate.state.label];
 }
 
+/** a look she keeps as her face only once she feels it enough (`level`: how strongly; none: the look is held as it is) */
+export const restsOn = (look: string | undefined, level?: number): string | undefined =>
+  level === undefined || level >= STATE_STRONG ? look : undefined;
+
 /** the same, only when she feels it enough to keep that face */
 export function restingLook(mate: WithState | null | undefined, on?: boolean): string | undefined {
-  return (mate?.state?.level ?? 0) >= STATE_STRONG ? stateLook(mate, on) : undefined;
+  return restsOn(stateLook(mate, on), mate?.state?.level ?? 0);
 }

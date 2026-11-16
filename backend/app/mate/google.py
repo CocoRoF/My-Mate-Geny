@@ -98,10 +98,12 @@ async def generate(key, model, body):
     return candidates[0].get("content", {}).get("parts", [])
 
 
-async def speech(key, model, text, voice, speed=1):
+async def speech(key, model, text, voice, speed=1, how=""):
     prompt = "Read exactly the following text, without adding words."
     if speed != 1:
         prompt += f" Use a speaking pace of about {speed:g} times normal."
+    if how:  # (how she feels colours how she says it: app/mate/voice.py delivery)
+        prompt += f" Say it {how}."
     parts = await generate(
         key,
         model,

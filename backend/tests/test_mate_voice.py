@@ -6,12 +6,14 @@ from __future__ import annotations
 
 import json
 import secrets
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.mate import netio, voice
+from app.mate import state as S
 
 
 @pytest.fixture
@@ -37,11 +39,18 @@ class Recorder:
         return netio.Response(404, b'{"detail": "no route"}', {"content-type": "application/json"})
 
 
+@pytest.fixture(autouse=True)
+def awake(monkeypatch):
+    """The hour never makes her sleepy here: how she feels is in how she sounds (delivery), and these requests are exact."""
+    monkeypatch.setattr(S, "_late", lambda now, tz: 0.0)
+
+
 @pytest.fixture
 def http(monkeypatch):
     rec = Recorder()
     monkeypatch.setattr(netio, "request", rec)
     voice._voices_cache.clear()
+    voice._eleven_own_cache.clear()
     return rec
 
 
@@ -200,3 +209,101 @@ def test_parallel_speech_window_cannot_be_shorter_than_send_pause(client):
     assert client.patch(url, json={'voice': {'stt': {'continuation_grace': 1.0}}}).status_code == 400
     row = client.patch(url, json={'voice': {'stt': {'silence': 3, 'continuation_grace': 4}}}).json()
     assert row['voice']['stt']['silence'] == 3 and row['voice']['stt']['continuation_grace'] == 4
+
+
+# ---- how she feels, in how she sounds (docs/geny-state-system.md §6) ----
+
+def _felt(emotion, v, code="rude", arousal=0.8):
+    return {"label": emotion, "level": v, "blend": None, "valence": -0.5, "arousal": arousal,
+            "top": [{"emotion": emotion, "v": v, "word": S.word(v), "why": {"code": code}}], "grudge": None}
+
+
+def test_delivery_follows_how_she_feels_and_how_strongly():
+    calm = {"label": "calm", "level": 0.0, "blend": None, "valence": 0.1, "arousal": 0.4, "top": [], "grudge": None}
+    for engine, model in (("openai", "gpt-4o-mini-tts"), ("elevenlabs", "eleven_multilingual_v2"), ("google", "")):
+        assert voice.delivery(calm, engine, model) == {} and voice.delivery(None, engine, model) == {}
+    # (steerable engines: a few words, by strength; angry at what they did is cold, angry at her day only grumpy)
+    assert voice.delivery(_felt("angry", 0.3), "openai", "gpt-4o-mini-tts") == {"how": "a little curt and cool"}
+    assert voice.delivery(_felt("angry", 0.5), "openai", "gpt-4o-mini-tts") == {"how": "curt and cold"}
+    assert "anger held" in voice.delivery(_felt("angry", 0.85), "openai", "gpt-4o-mini-tts")["how"]
+    assert voice.delivery(_felt("angry", 0.5, "hungry"), "openai", "gpt-4o-mini-tts") == {"how": "grumpy and short"}
+    assert voice.delivery(_felt("angry", 0.5, "off_day"), "google") == {"how": "grumpy and short"}
+    assert voice.delivery(_felt("sad", 0.5, "sad"), "openai", "gpt-4o-mini-tts") == {"how": "soft and slow, subdued"}
+    assert voice.delivery(_felt("excited", 0.6, "loves"), "google") == {"how": "bright and quick"}
+    assert voice.delivery(_felt("sleepy", 0.5, "late"), "openai", "gpt-4o-mini-tts") == {"how": "drowsy and a bit slow"}
+    assert voice.delivery(_felt("shy", 0.5, "looks"), "openai", "gpt-4o-mini-tts") == {"how": "a little hesitant and quiet"}
+    assert voice.delivery(_felt("angry", 0.9), "openai", "tts-1") == {}  # (no knob on tts-1)
+    # (ElevenLabs: her own settings lean with how lively it is, times how strongly — subtle, in steps)
+    assert voice.delivery(_felt("angry", 1.0, arousal=1.0), "elevenlabs", "eleven_multilingual_v2") == \
+        {"stability": -0.2, "style": 0.25}  # (the most it ever leans)
+    assert voice.delivery(_felt("angry", 0.3, arousal=0.7), "elevenlabs", "eleven_multilingual_v2") == \
+        {"stability": -0.05, "style": 0.05}
+    assert voice.delivery(_felt("sleepy", 0.8, "late", arousal=0.0), "elevenlabs", "eleven_flash_v2_5") == {"stability": 0.1}
+    # (Eleven v3 / v4: an audio tag, only for what clearly shows)
+    assert voice.delivery(_felt("angry", 0.5), "elevenlabs", "eleven_v4_turbo") == {"tag": "annoyed"}
+    assert voice.delivery(_felt("sad", 0.6, "sad"), "elevenlabs", "eleven_v3") == {"tag": "sad"}
+    assert voice.delivery(_felt("angry", 0.3), "elevenlabs", "eleven_v3") == {}
+    assert voice.delivery(_felt("sleepy", 0.9, "late"), "elevenlabs", "eleven_v3") == {}
+    # (no knob: her voice as it is)
+    for engine in ("omnivoice", "http", "local", "browser"):
+        assert voice.delivery(_felt("angry", 0.9), engine) == {}
+    assert voice.openai_instructions("joy", {}) == "Speak in a natural, joy tone."
+    assert voice.openai_instructions("", {}) == ""
+    assert voice.openai_instructions("", {"how": "curt and cold"}) == \
+        "Speak naturally. Your mood colours how you say it: curt and cold."
+
+
+def _angry_at_them(client, mid, v=0.6):
+    now = datetime.now(timezone.utc).isoformat()
+    client.app.state.mate_service.store.save_state(mid, {**S.new(), "feelings": {"angry": {"v": v, "at": now, "why": {"code": "rude"}}}})
+
+
+def test_her_state_reaches_the_voice_at_the_moment_she_speaks(client, http):
+    client.put("/api/mates/settings", json={"openai_key": "sk-test", "elevenlabs_key": "xi-key"})
+    http.on(lambda m, u: u.endswith("/audio/speech") or "text-to-speech" in u, MP3)
+    mid = _mate(client, {"engine": "openai", "voice": "nova"})
+    text = "그래 " + secrets.token_hex(4)
+    assert client.post(f"/api/mates/{mid}/speech", json={"text": text, "emotion": "smile"}).status_code == 200
+    assert http.calls[-1]["json"]["instructions"] == "Speak in a natural, smile tone."
+    _angry_at_them(client, mid)
+    r = client.post(f"/api/mates/{mid}/speech", json={"text": text, "emotion": "smile"})
+    assert r.headers["x-speech-cache"] == "miss"  # (the same line said angry is another clip)
+    assert http.calls[-1]["json"]["instructions"] == \
+        "Speak in a natural, smile tone. Your mood colours how you say it: curt and cold."
+    assert http.calls[-1]["json"]["speed"] == 1.0 and http.calls[-1]["json"]["voice"] == "nova"
+    # (a preview of unsaved settings is her voice as it is)
+    client.post(f"/api/mates/{mid}/speech", json={"text": text + "?", "emotion": "smile", "tts": {"voice": "nova"}})
+    assert http.calls[-1]["json"]["instructions"] == "Speak in a natural, smile tone."
+
+    # ElevenLabs: her own settings, leaned a little; everything else of them as it is
+    eid = _mate(client, {"engine": "elevenlabs", "voice": "v9", "model": "eleven_multilingual_v2"})
+    http.on(lambda m, u: u.endswith("/voices/v9/settings"), netio.Response(200, json.dumps({
+        "stability": 0.4, "similarity_boost": 0.8, "style": 0.1, "use_speaker_boost": True, "speed": 1.05}).encode(),
+        {"content-type": "application/json"}))
+    _angry_at_them(client, eid, 0.9)
+    client.post(f"/api/mates/{eid}/speech", json={"text": text})
+    sent = http.calls[-1]["json"]
+    assert sent["text"] == text and "text-to-speech/v9" in http.calls[-1]["url"]
+    assert {k: sent["voice_settings"][k] for k in ("similarity_boost", "speed", "use_speaker_boost")} == \
+        {"similarity_boost": 0.8, "speed": 1.05, "use_speaker_boost": True}
+    assert sent["voice_settings"]["stability"] < 0.4 and sent["voice_settings"]["style"] > 0.1
+    client.post(f"/api/mates/{eid}/speech", json={"text": text + "!"})
+    assert sum(1 for c in http.calls if c["url"].endswith("/settings")) == 1  # (remembered)
+    # (her settings can't be read: she speaks as ever)
+    voice._eleven_own_cache.clear()
+    http.routes = [(lambda m, u: "text-to-speech" in u, MP3)]
+    client.post(f"/api/mates/{eid}/speech", json={"text": text + "!!"})
+    assert "voice_settings" not in http.calls[-1]["json"]
+    # (Eleven v4: a direction before the words)
+    client.patch(f"/api/mates/{eid}", json={"voice": {"tts": {"model": "eleven_v4_turbo"}}})
+    client.post(f"/api/mates/{eid}/speech", json={"text": text})
+    assert http.calls[-1]["json"]["text"] == f"[annoyed] {text}" and "voice_settings" not in http.calls[-1]["json"]
+
+    # no knob: untouched
+    client.put("/api/mates/settings", json={"http_tts_url": "http://tts.local:8000/v1"})
+    hid = _mate(client, {"engine": "http", "voice": "alice"})
+    _angry_at_them(client, hid, 0.9)
+    http.routes = [(lambda m, u: True, MP3)]
+    client.post(f"/api/mates/{hid}/speech", json={"text": text})
+    assert http.calls[-1]["json"] == {"model": "tts-1", "voice": "alice", "input": text, "response_format": "mp3",
+                                      "speed": 1.0}

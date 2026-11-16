@@ -62,6 +62,50 @@ export function faceFor(clips: RigClip[], look?: string): string | undefined {
   return faces.has("calm") ? "calm" : undefined;
 }
 
+/**
+ * How much of what she plays comes from her mood family, by how strongly she feels it (state level, 0 – 1): a weak feeling
+ * now and then, a strong one all the time; in a straight line between these points (level, share).
+ */
+export const FAMILY_SHARE: ReadonlyArray<readonly [number, number]> = [[0.25, 0.15], [0.45, 0.35], [0.7, 1]];
+
+/** the share of her clips from her mood family at this strength (none given: all of them, a look held as it is) */
+export function familyShare(level?: number): number {
+  if (level === undefined) return 1;
+  const [first] = FAMILY_SHARE;
+  if (level < first[0]) return 0;
+  for (let i = 1; i < FAMILY_SHARE.length; i++) {
+    const [a, x] = FAMILY_SHARE[i - 1];
+    const [b, y] = FAMILY_SHARE[i];
+    if (level < b) return x + ((y - x) * (level - a)) / (b - a);
+  }
+  return 1;
+}
+
+/** the faces she is in: her mood family (`face`) `share` of the time, the rest `between` (무표정 for a look her smile
+ *  doesn't fit, when the rig has it; else her rest face, none) */
+export interface FaceMix {
+  face: string | undefined;
+  between: string | undefined;
+  share: number;
+}
+
+/** The faces a look of this strength plays (faceFor, mixed by familyShare). No family: her rest face, as before. */
+export function faceMix(clips: RigClip[], look?: string, level?: number): FaceMix {
+  const face = faceFor(clips, look);
+  if (!face) return { face: undefined, between: undefined, share: 0 };
+  const calm = face !== "calm" && !RESTFUL.has(look ?? "") && enabledClips(clips).some((c) => c.face === "calm");
+  return { face, between: calm ? "calm" : undefined, share: familyShare(level) };
+}
+
+/** the face the next clip comes from (`roll`: 0 – 1, at random): her family `share` of the time */
+export const pickFace = (mix: FaceMix, roll: number): string | undefined => (roll < mix.share ? mix.face : mix.between);
+
+/** the faces she may show now: those she plays at all (a reaction from any other would be a mood swing, not her) */
+export const facesIn = (mix: FaceMix): (string | undefined)[] =>
+  !mix.face ? [undefined] : mix.share >= 1 ? [mix.face] : mix.share > 0 ? [mix.face, mix.between] : [mix.between];
+
+export const sameMix = (a: FaceMix, b: FaceMix): boolean => a.face === b.face && a.between === b.between && a.share === b.share;
+
 export interface EmotionClips {
   /** the clips this emotion plays (one of them, at random); empty: no reaction (she goes on with what she does) */
   clips: RigClip[];

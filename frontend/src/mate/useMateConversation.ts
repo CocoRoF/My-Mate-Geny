@@ -28,6 +28,7 @@ import { usePreviewFlags } from "./livePreview";
 import { EmotionTracker, reactsAt, voiceEmotionAt } from "./emotion";
 import { pokeMate } from "../api/mates";
 import { STATE_STRONG, stateLook } from "./stateLook";
+import { heldBack, heldUntil, replyDelay } from "./replyTiming";
 import { SentenceStream } from "./sentences";
 import { withoutCode } from "./markdown";
 import type { BodyMood, MateReact } from "./types";
@@ -109,6 +110,8 @@ interface Follow {
   sentences: { idx: number; speech: string; emotion: string | null | undefined; text: string }[];
   /** sentences seen so far (the next one's index) */
   n: number;
+  /** a fresh reply she may take her time with (mate/replyTiming.ts): when it began, when this page first saw it */
+  hold?: { started?: number; seen: number };
 }
 
 function lastAssistant(turns: Turn[]): { turn: Turn; index: number } | null {
@@ -141,6 +144,8 @@ export interface MateConversation {
   speech: (packet: Record<string,unknown>, attachments?: Attachment[]) => boolean;
   speechReady: boolean;
   speechClosed: {id:string;revision:number;at:number}|null;
+  /** her reply is held back a moment (angry at them, she takes her time — mate/replyTiming.ts): her typing shows */
+  holding: boolean;
   stop: () => void;
   reset: () => Promise<void>;
   /** the user is typing / talking: the mate listens */
@@ -278,6 +283,19 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
   const emotionLevel = useRef(2);
   emotionLevel.current = flags?.emotion ?? prefsOf(mate).emotion;
 
+  // When her reply shows (mate/replyTiming.ts): angry at what they did, she takes her time — its words, captions and voice
+  // together. Not on the phone (the call has her voice as it comes), and not once the user switched her feelings off her avatar.
+  const replyWait = (flags?.avatarMood ?? mate?.relation?.avatar_mood ?? true) && !onCall ? replyDelay(mate?.state) : 0;
+  const replyWaitRef = useRef(replyWait);
+  replyWaitRef.current = replyWait;
+  /** the turn held back now (its key) */
+  const [heldKey, setHeldKey] = useState<string | null>(null);
+  /** look at the reply being held again (how she feels changed while she takes her time) */
+  const recheckRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    recheckRef.current?.();
+  }, [replyWait]);
+
   const device = useDevicePreferences();
   const volume = devicePreferencesLoaded() && (device.migration.imported || device.migration.volumeEdited) ? device.volume : 0;
   useEffect(() => {
@@ -390,6 +408,30 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
     followRef.current = null;
     lastSender.current = null;
     turnOrigin.current = null;
+    let release: ReturnType<typeof setTimeout> | undefined;
+    /** her reply held back while she takes her time: true while it is, and it is looked at again when it should show. What
+     * has shown stays shown: once there is something to show and its time is up, she isn't held again. */
+    const held = (f: Follow, t: Turn): boolean => {
+      if (!f.hold) return false;
+      clearTimeout(release);
+      const until = t.refused || t.error ? 0 : heldUntil(f.hold.started, f.hold.seen, replyWaitRef.current);
+      const left = until - Date.now();
+      if (left > 0) {
+        release = setTimeout(() => {
+          if (!alive) return;
+          setHeldKey(null); // (its time is up: whatever comes next, it shows)
+          followTurn(true);
+        }, left);
+        setHeldKey(f.key);
+        return true;
+      }
+      if (t.text.trim() || t.complete || t.refused || t.error) f.hold = undefined;
+      setHeldKey(null);
+      return false;
+    };
+    recheckRef.current = () => {
+      if (follow?.hold) followTurn(true);
+    };
     // Turns that came with the history are not read aloud (by key: older
     // pages prepended later shift the indexes).
     let quiet = new Set<string>();
@@ -415,10 +457,12 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
           queued: new Set(),
           sentences: [],
           n: 0,
+          hold: fresh ? { started: t.startedAt, seen: Date.now() } : undefined,
         };
         followRef.current = follow;
       }
       const f = follow;
+      if (held(f, t)) return;
       if (t.refused) {
         // (she didn't answer: nothing is read aloud or captioned, her face says it)
         if (!f.quiet && !f.reacted) {
@@ -593,6 +637,9 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
       alive = false;
       clearTimeout(timer);
       clearTimeout(probe);
+      clearTimeout(release);
+      recheckRef.current = null;
+      setHeldKey(null);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("online", onVisible);
       offResync();
@@ -700,13 +747,15 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
     }, 30_000);
     return () => clearInterval(t);
   }, []);
+  // (her reply held back: every surface shows her still writing it until it shows)
+  const shownTurns = useMemo(() => (heldKey ? turns.map((t) => (t.key === heldKey ? heldBack(t) : t)) : turns), [turns, heldKey]);
   // ── mood ──
   const speaking = useVoiceSpeaking() !== null || !!qstate.current;
-  const la = lastAssistant(turns);
+  const la = lastAssistant(shownTurns);
   const live = la && !la.turn.complete ? la.turn : null;
   const toolRunning = !!live && live.tools.some((t) => t.durationMs === undefined && !t.parent);
   const writing = !!live && !!live.text.trim() && !toolRunning;
-  const videoMood = activityMood(streaming, writing, listening, away);
+  const videoMood = activityMood(streaming || !!heldKey, writing, listening, away);
   const mood: BodyMood = speaking ? "talking" : videoMood;
 
   // What her face does comes from how she feels: while she is idle, the look for it now and then (shy in her crop top,
@@ -725,7 +774,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
 
   return {
     sessionId,
-    turns,
+    turns: shownTurns,
     streaming,
     connection,
     error,
@@ -741,6 +790,7 @@ export function useMateConversation(mate: Mate | null, opts: { voice?: boolean; 
     speech,
     speechReady,
     speechClosed,
+    holding: !!heldKey,
     stop,
     reset,
     setListening,
