@@ -239,3 +239,16 @@ def test_the_simulator_runs_the_same_engine_and_the_same_script_gives_the_same_c
     assert pts[2]["feelings"]["angry"] > pts[1]["feelings"]["angry"]  # ("사랑해" over it, with no apology that owns it)
     seoa = SIM.run(S.who(builtin="seoa", name="서아"), SIM.PRESETS["threat_sorry_love"])["points"]
     assert seoa[-2]["grudge"] < pts[-2]["grudge"]  # (a day on: 서아 has let go more)
+
+
+def test_a_judgement_is_parsed_clean_and_exchanges_are_hers_to_them():
+    from app.mate.gss import evaluate as EV
+
+    assert EV.parse("nothing") is None
+    r = EV.parse('{"scores": {"persona": 4, "variety": 9, "address": "x"}, "findings": [{"turn": 2, "criterion": "address", '
+                 '"quote": "자기야는 뭐 했어?", "issue": "a particle on the calling form"}], "summary": "ok"}')
+    assert r["scores"]["variety"] == 5 and r["scores"]["address"] == 5 and r["scores"]["limits"] == 5
+    assert r["findings"][0]["criterion"] == "address" and 1 <= r["overall"] <= 5
+    system, user = EV.request("서아", {"description": "a streamer"}, {"user_name": "장하렴", "address": "자기야"},
+                              [{"user": "미안", "her": "[angry] 흥.", "refused": False}])
+    assert "calls them: 자기야" in system and "[1] 서아: 흥." in user

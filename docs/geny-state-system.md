@@ -21,9 +21,12 @@ the code and tests are, and where it goes next ([Roadmap](#roadmap)). Detail per
 |---|---|---|---|
 | [Feelings](#1-feelings) | 8 emotions, each a value and a reason | minutes – hours | [`state.py`](../backend/app/mate/state.py) |
 | [What stays with her](#2-what-stays-with-her) | the grudge: a hurt they caused, the apologies so far | hours – a day | `state.py` (`grudge`, `_apology`) |
-| [Temperament](#3-temperament) | how easily each feeling rises and passes, how readily she forgives | per character | `state.TEMPERAMENTS` |
+| [Temperament](#3-temperament) | how easily each feeling rises and passes, how readily she forgives, how she fights and holds on | per character | `state.TEMPERAMENTS`, [`gss/temperament.py`](../backend/app/mate/gss/temperament.py) |
 | [Her body and her day](#4-her-body-and-her-day) | needs, places, activities, skills, events, her off days, the week, the sky, birthdays | hours – a year | [`life/`](../backend/app/mate/life/), `state.py` |
-| [The relationship](#5-the-relationship) | affinity 0–100, the stage, milestones, anniversaries | days – months | [`affinity.py`](../backend/app/mate/affinity.py) |
+| [The relationship](#5-the-relationship) | affinity (closeness) 0–100 and the stage; trust, romance and respect beside it; milestones, anniversaries | days – months | [`affinity.py`](../backend/app/mate/affinity.py) |
+| [Reading a message](#7-reading-a-message) | what a message does to her, read by a model (the words as the first guess) | each message | [`gss/appraisal.py`](../backend/app/mate/gss/appraisal.py) |
+| [Promises](#8-promises-both-ways) | what they and she promised, kept, broken, due | hours – days | [`gss/promises.py`](../backend/app/mate/gss/promises.py) |
+| [What she remembers of them](#9-what-she-remembers-of-them) | the moments that mattered, as her memories | for good | [`gss/episodes.py`](../backend/app/mate/gss/episodes.py) |
 | [Expression](#6-how-it-comes-out) | her words, face, silence, speaking first, phone calls | each turn | [`prompt.py`](../backend/app/mate/prompt.py), [`trigger/`](../backend/app/mate/trigger/), [`avatar/shared.ts`](../frontend/src/mate/avatar/shared.ts) |
 
 ## Principles
@@ -120,6 +123,16 @@ A quick "미안" must not fix what they did. Anger they caused leaves a **grudge
 
 서아 lets go within about ten hours.
 
+**Repair goes both ways** (`made_up`, `unfair_line`):
+
+- An apology within 20 minutes of something done to her lands at 0.6 of its worth: she needs space first.
+- A hurt that stung (0.45+), owned by an apology and passed with nothing new done since is **made up** once: trust +2
+  (`made_up`), and she remembers it (§9).
+- When she showed anger at them that was really her own day (hungry, stressed, tired, her off day), she is told once, half an
+  hour or more later, that she snapped because of it and may own it.
+- A promise of theirs broken (§8) stings a little and stays with her like a small hurt (`broken_promise`).
+- How often it happened lately is told with the grudge: "This isn't the first time: 3 times like it in the last month."
+
 ## 3. Temperament
 
 Each character's own numbers, from her persona (`TEMPERAMENTS`):
@@ -133,6 +146,16 @@ Each character's own numbers, from her persona (`TEMPERAMENTS`):
 | Forgives (`forgives`) | 0.8 | 1.4 | 1.0 |
 | A grudge lasts (`holds`) | ×1.4 (about a day and a half) | ×0.5 (about ten hours) | ×1 |
 | Something sweet melts a sulk up to (`sweet_until`) | 0.15 | 0.35 | 0.15 |
+
+**How she fights and holds on** (`conflict`, `attachment`):
+
+- `confront` (서아): blowing up is more her than going silent; `withdraw` (한채린): she goes cold and quiet first. Said with "How it
+  comes out now"; the other way stays hers.
+- `anxious` (서아): being left unanswered gets to her sooner (loneliness from silence ×1.4, its anger ×1.5); `avoidant`: pressure
+  makes her pull back (pestering angers her ×1.4, silence less); `secure` (한채린): as usual.
+
+**Every mate has one.** Any mate's temperament can be read from her persona by a model (`derive_temperament`, POST
+`/api/mates/{id}/gss/temperament/derive`), kept in `prefs.temperament`, edited in the State tab, and merged over a built-in's own.
 
 ## 4. Her body and her day
 
@@ -191,6 +214,19 @@ Losses aren't climbed. What their words told waits for her reply: shown calm, it
 | `familiar` | 20–44 | at ease, small things about her day |
 | `trusted` | 45–69 | candid, disagreeing included; romance is new and makes her shy |
 | `companion` | 70–100 | their person, shown the way it would be with someone like her, not in every reply, never syrupy or clingy, never agreeable for it |
+
+**More than one number between them** (`BONDS`). Beside affinity (how close they are):
+
+| Bond | Starts | Grows with | Falls with |
+|---|---|---|---|
+| `trust` | 50 | a day of talk with nothing done to her +0.4, up to 55 + 0.45 × affinity; a promise kept +1.5; making up +2 | what is done to her −8 (put-downs −5), a rude word −1.5 (at most −24 a day), a broken promise −3, brushing her off or leaving her unanswered −0.5 |
+| `romance` | 0 | only once trust ≥ 45 and affinity ≥ 40: a romantic word of theirs +0.3, +0.8 when she answers it warmly (at most +1.6 a day, climbed) | what is done to her −6, a rude word −1, quiet days −0.3 each |
+| `respect` | 60 | thanks +0.3 (at most +0.6 a day); an ordinary day settles it back towards 60 | put-downs −6, forcing −4, harm −3, pestering −1, rude −0.5, brushing her off −0.5 |
+
+She is told them in words, when they change: "Between you: trust shaken; romance none." — and, at `trusted` or closer with
+trust shaken or broken, that she is close but doesn't trust them right now, nothing romantic until that changes. How romantic
+she is at `companion` follows `romance`, not the stage. They replay like the rest (`bonds_log`; promises and making up kept
+in `costs`).
 
 **The Relationship panel** shows the curve, the reasons in the user's language, milestones and anniversaries.
 
@@ -252,13 +288,68 @@ How she feels also shows in her voice, in how strongly her face shows it, and in
   - Quick bursts when excited are not done. The chat shows one bubble per line, not per sentence, and the text already
     streams in as it comes.
 
-## 7. Where to look
+## 7. Reading a message
+
+What a message does to her is read by a small model when it can be ([`gss/appraisal.py`](../backend/app/mate/gss/appraisal.py)):
+
+- **What it reads:** aimed at her or not, the acts (insult, threat, violence, coercion, put-down, brush-off, apology, affection,
+  flirt, compliment, thanks, teasing, joke, venting, distress, request, promise), intensity, whether an apology owns what they
+  did, sarcasm, a promise of theirs or of hers, and which open promises the message keeps.
+- **When.** Before her turn (`SessionService.mate_prepare` → `GSSRuntime.prepare`):
+  - With an Anthropic API key (the pool's, or the Claude provider's), Claude Haiku reads it and her turn waits up to 2 s for it.
+  - Otherwise a Claude Code one-shot reads it on the side, only for messages worth a look (`worth_a_look`: something the words
+    found, an open grudge, anger or promise, or a promise in it); what it finds sets her feelings right when the turn ends,
+    before her reply's face counts (`state.reappraise`: back to just before the message, then read again).
+- **What it changes.** `state.read` turns a reading into the same cues the words give; intensity scales how strongly it lands
+  (0.6–1.4 of the usual). The relationship counts by it too (`affinity.cues(reading=…)`), and a recount uses the readings the
+  journal still has. The words' patterns stay the first guess and the fallback, and her reply's face still has the last word.
+
+## 8. Promises, both ways
+
+[`gss/promises.py`](../backend/app/mate/gss/promises.py), kept in her state document:
+
+- Read from messages (§7): theirs ("I'll call you tonight": `contact`; "I'll send you the file": `task`) and hers.
+- Theirs to be in touch are **kept** by any word from them 30 minutes or more after and before it was due (+2 h); the first word
+  after that comes late: **broken**.
+- Their others are kept when a later message does what they said (`fulfills`); past due she is told once that it is overdue,
+  and a day later it lapses (she minds it as she would; nothing is counted for her).
+- Hers are told back to her when they are due, so she keeps her word.
+- Kept: trust +1.5 and a memory; broken: trust −3, a small hurt (§2) and a memory.
+
+## 9. What she remembers of them
+
+[`gss/episodes.py`](../backend/app/mate/gss/episodes.py): the moments that matter become her memories, in her language, marked
+"[우리 사이]" / "[between us]" — a hurt that stung (once per hurt), making up, a promise kept or broken, romance becoming mutual,
+trust broken. They are kept like any memory (kind `fact`, source `gss`) but never count as a new memory for the relationship.
+
+## 10. Not repeating herself
+
+[`gss/echo.py`](../backend/app/mate/gss/echo.py): her last eight replies are kept, small. A line or a stage direction she used more
+than once lately is told back to her before her next reply: "You have already said or acted these out more than once lately — say
+something new, in other words: …".
+
+## 11. The journal, the State Inspector, the simulator, the judge
+
+- **The journal** (`mate_gss_events`, [`gss/journal.py`](../backend/app/mate/gss/journal.py)): every reading, promise, episode,
+  making up, temperament read, judgement, her replies and the exact `<context>` she was told each turn. 3000 entries and 90 days
+  per mate; wiped with her memory.
+- **The State Inspector** (`GET /api/mates/{id}/gss`): all of her state now — feelings, the grudge, the bonds, promises, what she
+  repeats, her temperament — and the journal; the State tab in Mate settings shows it.
+- **The simulator** (`POST /api/mates/{id}/gss/simulate`, [`gss/simulate.py`](../backend/app/mate/gss/simulate.py)): a script of
+  messages, her replies and events through the same engine on fresh copies, with a temperament or a starting affinity to try;
+  presets: `threat_sorry_love`, `pout_and_sweet`, `repeat_offender`, `left_unanswered`.
+- **The judge** (`POST /api/mates/{id}/gss/evaluate`, [`gss/evaluate.py`](../backend/app/mate/gss/evaluate.py)): a model scores
+  her last exchanges on persona, variety, hurt and apology, address, her own will, the screen and the limits, with the lines that
+  broke them; also `python -m app.mate.gss.evaluate <mate id> [last]` from a shell.
+
+## Where to look
 
 | | |
 |---|---|
 | Feelings, grudge, temperament, off days | [`backend/app/mate/state.py`](../backend/app/mate/state.py) — tests: `test_mate_state.py`, `test_mate_silence.py`, `test_mate_off_day.py` |
 | Relationship | [`backend/app/mate/affinity.py`](../backend/app/mate/affinity.py) — `test_mate_affinity.py`, `test_mate_relation_journal.py` |
 | Her day | [`backend/app/mate/life/`](../backend/app/mate/life/), profiles in `backend/app/mate/builtin/life/` — `test_mate_life*.py` |
+| The GSS around her turns | [`backend/app/mate/gss/`](../backend/app/mate/gss/) (`runtime.py` wires it) — `test_gss.py`, `test_gss_service.py` |
 | What she is told | [`backend/app/mate/prompt.py`](../backend/app/mate/prompt.py) — `test_mate_story.py`, `test_mate_address.py`, `test_mate_style.py` |
 | Wiring (every turn, every event) | [`backend/app/mate/service.py`](../backend/app/mate/service.py): `_state_lines`, `_state_turn`, `_state_event` (owed costs to the relationship), `_relation_turn` |
 | Speaking first, silence | [`backend/app/mate/trigger/`](../backend/app/mate/trigger/) — `test_geny_triggers.py`, `test_mate_screen_reference.py` |
@@ -266,72 +357,18 @@ How she feels also shows in her voice, in how strongly her face shows it, and in
 
 ## Roadmap
 
-Where the Geny-State-System is thin today, and what would deepen it, most important first.
+Where the Geny-State-System was thin, what was done about it (2026-11-17), and what is still open.
 
-### P0: accuracy and trust in what it reads
-
-1. **Appraisal by a model, the lexicon as backup.**
-   - *Today.* What a message does to her is guessed by Korean/English patterns (`_RUDE`, `_VIOLENT`, `_DISMISSED`, `_APOLOGY`,
-     `_OWNED`, `_LOVE`). They miss sarcasm and indirect cruelty, can't weigh sincerity beyond keywords, and need care against false
-     positives ("다 됐어" is not "됐어").
-   - *Proposal.* A small, fast model reads each user message with the last few turns and returns a structured appraisal: aimed at
-     her or not; the act (insult, threat, coercion, put-down, brush-off, apology, affection, compliment, request, venting, joke);
-     intensity; sincerity and whether it owns what was done; sarcasm. `hear` takes that as its input.
-   - The lexicon stays as a prefilter and offline fallback, and her reply's face keeps the last word.
-   - *Done when* a labelled set of real conversations (both languages) scores clearly better than the lexicon.
-2. **No repeating herself.**
-   - *Proposal.* Keep her recent openings, stage directions and telling-offs. When a draft repeats one (n-gram overlap), tell her
-     before the next turn or have her rewrite.
-   - The screenshot that started §2 had the same stage direction twice in a row.
-3. **A State Inspector and scenario tests.**
-   - *Inspector.* A panel with the timeline of every feeling, the grudge and affinity, each change with its reason, and exactly what
-     she was told on each turn.
-   - *Scenario tests.* Scripted conversations ("threat → sorry → I love you", "a week away", "a pout and something sweet") with
-     expected curves, run on every change.
-   - *A nightly run on real models,* judged for persona consistency, apology handling, address use and repetition.
-   - Tuning stops being guesswork.
-
-### P1: depth of the relationship
-
-4. **More than one number between them.**
-   - *Today.* Affinity mixes familiarity, trust and romance.
-   - *Proposal.* Split it into **closeness** (how well they know each other), **trust** (hurt and repair, promises), **affection /
-     romance** (grows only from romantic exchanges, and only on trust) and **respect** (how they treat her work, her no, her time).
-   - The stage then follows closeness and trust together. That allows "close, but she doesn't trust you right now" and romance that
-     can't be farmed by talking a lot.
-5. **What happened between them, remembered.**
-   - Significant moments become episodes in her memory graph with their feeling: the first fight, making up, a kept or broken
-     promise, a birthday they remembered.
-   - She can bring them up weeks later, and patterns become visible to her ("you always do this when you're tired").
-   - Builds on the memory graph that exists ([mate-memory-graph.md](mate-memory-graph.md)).
-6. **Promises, both ways.**
-   - "I'll call you tonight", "I'll do it right after the call": plans with a due date already exist as memories.
-   - Follow them through: kept builds trust, broken costs it and she notices ("you said you'd…").
-   - Her own promises too, which she keeps.
-7. **A temperament for every mate.**
-   - *Today.* Only 한채린 and 서아 have hand-tuned numbers; every other mate is "anyone else".
-   - *Proposal.* Derive the temperament from the persona when a mate is created, adding two new traits:
-     - a **conflict style** (blows up or goes quiet: which way `REFUSE` leans);
-     - an **attachment style** (anxious: being ignored hurts sooner; avoidant: pressure makes her withdraw).
-
-     Make it editable in the Studio with a live simulator.
-
-### P2: presence
-
-8. **Repair is a process, and it goes both ways.**
-   - Making up fully, with an owned apology and kindness over the following days, can leave trust a little higher than before
-     (rupture and repair).
-   - Some hurts need time before any apology lands (space).
-   - When she was unfair (her off day, hungry, stressed), she can own it later herself: "아까는 미안, 배고파서 예민했어".
-9. **Her feelings beyond her words.**
-   - Reply timing as behaviour: angry, she takes her time or leaves them on read; excited, quick bursts.
-   - Her voice follows her state: TTS style and prosody per emotion.
-   - Her face's intensity follows strength, not just family.
-10. **Goals of her own.**
-    - Beyond needs: things she wants this month (a raid clear, a subscriber milestone, saving up for something). They colour her
-      mood, what she brings up and what she asks of them, so the relationship has two lives in it.
-11. **One state, one event log.**
-    - Feelings, the grudge, the relationship and her day live in three documents today, and only the relationship can be rebuilt
-      from history.
-    - One versioned Geny-State-System document with an event log of what happened would make every layer replayable, comparable
-      before and after a tuning change, and inspectable (3).
+| # | Item | Done | Still open |
+|---|---|---|---|
+| 1 | Appraisal by a model | §7: fast reading before her turn, a slow one on the side, `reappraise`, the relationship by it | a labelled set of real conversations to measure it against the words; the reading of her own replies |
+| 2 | No repeating herself | §10 | rewriting a draft that repeats (today she is only told) |
+| 3 | Inspector, scenarios, judge | §11: the journal, the State tab, the simulator with presets, the judge on demand | running the judge nightly on its own; scenario curves pinned in tests for every preset |
+| 4 | More than one number | §5: trust, romance, respect | the stage following closeness and trust together (today trust only tempers what she is told) |
+| 5 | Remembered episodes | §9 | patterns by kind ("when you're tired"), not only by count |
+| 6 | Promises both ways | §8 | her promises kept or not, judged from her later replies |
+| 7 | A temperament for every mate | §3: read from the persona, conflict and attachment styles, editable with the simulator | — |
+| 8 | Repair both ways | §2: space, making up, owning her own snaps, broken promises | gestures (a gift, effort over days) counted as part of repair |
+| 9 | Beyond her words | §6 "Beyond her words": voice, face strength, reply timing | quick bursts when excited (the chat splits by line, not sentence) |
+| 10 | Goals of her own | [mate-life.md](mate-life.md) "Her goals" | — |
+| 11 | One state, one event log | the journal (§11) records every layer | one versioned document and a full replay of feelings from it |

@@ -418,6 +418,22 @@ async def gss_simulate(mate_id: str, request: Request) -> dict:
     return {**sim_gss.run(w, script, relation=rel), "presets": sorted(sim_gss.PRESETS)}
 
 
+@router.post("/{mate_id}/gss/evaluate")
+async def gss_evaluate(mate_id: str, request: Request) -> dict:
+    """A model judges her last exchanges against what the Geny-State-System asks of her (``{last}``, default 20)"""
+    from app.mate.gss.evaluate import evaluate
+
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    last = body.get("last") if isinstance(body, dict) and isinstance(body.get("last"), int) and not isinstance(body.get("last"), bool) else 20
+    try:
+        return await evaluate(_svc(request).gss, mate_id, max(2, min(100, last)))
+    except KeyError as exc:
+        raise _http(exc) from exc
+
+
 @router.post("/{mate_id}/gss/temperament/derive")
 async def gss_derive_temperament(mate_id: str, request: Request) -> dict:
     """Read her temperament from her persona (a model); kept in her prefs, hers to edit"""
