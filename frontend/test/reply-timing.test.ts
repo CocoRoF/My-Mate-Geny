@@ -1,7 +1,10 @@
 // When her reply shows is behaviour too (frontend/src/mate/replyTiming.ts, docs/geny-state-system.md §6): angry at what they
 // did, she takes her time — longer the angrier — and what has arrived is never held longer than that
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { AT_THEM, heldBack, heldUntil, replyDelay, TAKES_LEAST_MS, TAKES_MOST_MS } from "../src/mate/replyTiming";
 import { restsOn } from "../src/mate/stateLook";
 import type { MateState, StateEmotion } from "../src/api/mates";
@@ -33,8 +36,10 @@ test("only anger at them, and enough of it: her day's temper, a little put out, 
   // (angry at them as the second feeling counts too)
   const both: MateState = { ...feeling("sad", 0.8, "hostile"), top: [{ emotion: "sad", v: 0.8, why: { code: "hostile" } }, { emotion: "angry", v: 0.9, why: { code: "hostile" } }] };
   assert.equal(replyDelay(both), TAKES_MOST_MS);
-  // (the same codes as app/mate/state.py AT_THEM)
-  assert.deepEqual([...AT_THEM].sort(), ["apology", "brushed_over", "curt", "declined_call", "dismissed", "hostile", "ignored", "interrupted", "missed_call", "pestered", "poked", "rude", "said"]);
+  // (the same codes as app/mate/state.py AT_THEM: read from its source, so a new one there without one here fails)
+  const backend = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "../../backend/app/mate/state.py"), "utf8");
+  const theirs = [.../^AT_THEM = \(([^)]*)\)/m.exec(backend)![1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
+  assert.deepEqual([...AT_THEM].sort(), [...theirs].sort());
 });
 
 test("what has arrived waits at most the delay, whatever the clocks say", () => {
