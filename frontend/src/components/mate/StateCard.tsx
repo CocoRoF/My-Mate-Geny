@@ -57,7 +57,8 @@ function LogLine({ e }: { e: StateLogEntry }) {
   );
 }
 
-function FeelingRow({ emotion, v, why }: { emotion: StateEmotion; v: number; why: string }) {
+/** one emotion: its bar and value, the word she is told for it (`word`, the State tab), and why */
+export function FeelingRow({ emotion, v, why, word }: { emotion: StateEmotion; v: number; why: string; word?: string }) {
   const t = useT();
   const pct = Math.round(Math.max(0, Math.min(1, v)) * 100);
   return (
@@ -69,6 +70,7 @@ function FeelingRow({ emotion, v, why }: { emotion: StateEmotion; v: number; why
         <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-3">
           <span className="block h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
         </span>
+        {word !== undefined && <span className="w-14 shrink-0 truncate text-right text-[11px] text-content-faint" data-testid="mate-state-feeling-word">{word}</span>}
         <span className="w-7 shrink-0 text-right text-[11.5px] tabular-nums text-content-dim">{pct}</span>
       </div>
       {why && <p className="mt-0.5 pl-[5.25rem] text-[11px] leading-snug text-content-faint">{why}</p>}

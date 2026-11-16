@@ -7,27 +7,9 @@ import Icon, { type IconName } from "../../ui/Icon";
 import { useFeed } from "./feed";
 import { axisBytes, bytes, C1, C2, C3, C4, niceBytes, niceMax, pct, rate } from "./fmt";
 import { CoreHeat, rampColor } from "./Spark";
-import TimeChart, { type ChartSeries, type RefLine } from "./TimeChart";
+import TimeChart, { Legend, type ChartSeries, type RefLine } from "./TimeChart";
 import type { Ser, View } from "./view";
 import { useT } from "../../../i18n";
-
-function Legend({ items }: { items: { label: string; color: string; value?: string; kind?: "area" | "line" }[] }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-content-dim">
-      {items.map((it) => (
-        <span key={it.label} className="inline-flex items-center gap-1.5 whitespace-nowrap">
-          {it.kind === "line" ? (
-            <span className="h-[2px] w-3 rounded" style={{ background: it.color }} />
-          ) : (
-            <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: it.color }} />
-          )}
-          {it.label}
-          {it.value !== undefined && <span className="font-medium text-content tabular-nums">{it.value}</span>}
-        </span>
-      ))}
-    </div>
-  );
-}
 
 export function ChartCard({ title, icon, legend, children, right, dim, wide }: {
   title: string; icon: IconName; legend?: ReactNode; children: ReactNode; right?: ReactNode; dim?: boolean; wide?: boolean;

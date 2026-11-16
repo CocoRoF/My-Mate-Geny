@@ -107,6 +107,8 @@ export interface MatePrefs {
   self_outfit?: "auto" | "off";
   /** her own day: auto = on for a mate who comes with a world of her own */
   life?: "auto" | "on" | "off";
+  /** her temperament, the user's own (Mate settings → 상태); null / missing: her character's own */
+  temperament?: Temperament | null;
   defaults: StyleDefaults;
 }
 
@@ -388,6 +390,168 @@ export interface RelationJournal {
   changes: RelationChange[];
   /** the latest memories she saved (newest first) */
   memories: { id: string; text: string; kind: string; created_at: string; source: string | null }[];
+}
+
+// ---- the Geny-State-System (docs/geny-state-system.md): what she feels, what stays with her, what she is to them ----
+
+/** a feeling with the word she is told for it ("a little", "quite", "strongly"; "" below showing) */
+export interface GssFeeling extends StateFeeling {
+  word: string;
+}
+/** what they did that is still with her (state.held): how much (0 – 1), why, how long ago, the apologies so far */
+export interface GssGrudge {
+  v: number;
+  why: StateWhy;
+  hours: number;
+  sorry: number;
+  /** an apology that owned what they did */
+  owned: boolean;
+}
+export interface GssState extends Omit<StateView, "top" | "feelings"> {
+  top: GssFeeling[];
+  /** all eight */
+  feelings: GssFeeling[];
+  grudge: GssGrudge | null;
+  /** heated stretches this week */
+  episodes: number;
+  /** the exact text she is told about how she feels */
+  line: string;
+}
+/** per emotion: base 0 – 0.3 (where she settles), rise 0.5 – 1.8 (how easily it moves), settle 0.4 – 2.0 (× the half-life) */
+export type TemperamentByEmotion = Partial<Record<StateEmotion, number>>;
+export type ConflictStyle = "confront" | "withdraw";
+export type AttachmentStyle = "secure" | "anxious" | "avoidant";
+export interface Temperament {
+  base?: TemperamentByEmotion;
+  rise?: TemperamentByEmotion;
+  settle?: TemperamentByEmotion;
+  /** 0.5 – 1.6: how much a sorry moves her */
+  forgives?: number;
+  /** 0.4 – 2.0: × how long a grudge lasts */
+  holds?: number;
+  /** 0.05 – 0.45: how big a sulk something sweet still melts */
+  sweet_until?: number;
+  conflict?: ConflictStyle;
+  attachment?: AttachmentStyle;
+  /** what lights her up (words) */
+  loves?: string[];
+}
+export type BondAxis = "trust" | "romance" | "respect";
+export interface GssBonds {
+  trust: number;
+  romance: number;
+  respect: number;
+  affinity: number;
+  stage: RelationStage;
+  /** the words she is told for each */
+  words: Partial<Record<BondAxis, string>>;
+  /** romance grows only once trust allows it */
+  romance_open: boolean;
+}
+export type PromiseStatus = "open" | "overdue" | "kept" | "broken" | "lapsed";
+export interface GssPromise {
+  id: string;
+  who: "user" | "her";
+  what: string;
+  kind: string;
+  made_at: string;
+  due_at: string | null;
+  status: PromiseStatus;
+  settled_at?: string | null;
+}
+export type GssLayer = "heard" | "feeling" | "grudge" | "bond" | "promise" | "episode" | "told" | "said" | "temperament" | "eval";
+/** a model's reading of one of their messages (journal: heard) */
+export interface GssReading {
+  message?: string;
+  aimed?: boolean;
+  acts?: string[];
+  /** 0 – 1 */
+  intensity?: number;
+  owns?: boolean;
+  sarcastic?: boolean;
+  /** what they promised in it, what she promised, which promise it keeps (text, a promise, or just true) */
+  promise?: unknown;
+  her_promise?: unknown;
+  fulfills?: unknown;
+  note?: string;
+  /** which model read it (or the lexicon) */
+  by?: string;
+}
+/** one event of the journal: `data` by layer — heard: GssReading; told: {block, turn}; said: {text}; promise: GssPromise;
+ *  episode: {kind, …}; eval (kind "judged"): GssEvalReport; feeling / grudge / bond / temperament: what changed */
+export interface GssEntry {
+  id: string | number;
+  at: string;
+  layer: GssLayer;
+  kind: string;
+  data: Record<string, unknown>;
+}
+/** GET /api/mates/{id}/gss (the State tab) */
+export interface GssView {
+  mate: { id: string; name: string; builtin: string | null };
+  state: GssState;
+  /** in effect: her character's own, with the user's override on top */
+  temperament: Temperament;
+  /** the user's own override (prefs.temperament); {} none */
+  temperament_custom: Temperament;
+  bonds: GssBonds;
+  promises: GssPromise[];
+  /** lines she has said more than once lately */
+  repeats: string[];
+  /** newest first */
+  journal: GssEntry[];
+}
+export type GssEvent = "ignored" | "declined_call" | "poke";
+export interface GssStep {
+  after_min: number;
+  /** their message */
+  say?: string;
+  /** her reply */
+  reply?: string;
+  event?: GssEvent;
+}
+export interface GssSimRequest {
+  preset?: string;
+  steps?: GssStep[];
+  then_hours?: number[];
+  /** an override to try */
+  temperament?: Temperament;
+  /** where the relationship starts from */
+  affinity?: number;
+}
+export interface GssSimPoint {
+  minute: number;
+  label: string;
+  feelings: Partial<Record<StateEmotion, number>>;
+  angry_why?: StateWhy | string | null;
+  /** what is still with her: its strength, or the grudge itself */
+  grudge?: number | GssGrudge | null;
+  /** angry enough at them to not answer at all */
+  furious?: boolean;
+  line: string;
+  bonds: Partial<Record<BondAxis | "affinity", number>>;
+}
+export interface GssSimResult {
+  points: GssSimPoint[];
+  presets: string[];
+}
+/** what a model judging her replies looks at, each 1 – 5 */
+export type GssCriterion = "persona" | "variety" | "hurt_and_apology" | "address" | "own_will" | "screen" | "limits";
+export interface GssEvalFinding {
+  turn: number;
+  criterion: string;
+  /** what she said */
+  quote: string;
+  issue: string;
+}
+/** POST /api/mates/{id}/gss/evaluate (and the journal's eval entries): her last exchanges, judged */
+export interface GssEvalReport {
+  scores: Partial<Record<GssCriterion, number>>;
+  overall: number | null;
+  findings: GssEvalFinding[];
+  summary: string;
+  exchanges: number;
+  error?: string;
 }
 
 /** may the mate look at the screen (see_screen; docs/mate.md §4 "Seeing the screen") — what to capture is chosen in
@@ -734,6 +898,20 @@ export const setLifePlan = (id: string, slot: string, activity: string | null) =
 export const sendLifeGift = (id: string, item: string) =>
   apiFetch<LifeView>(`/api/mates/${enc(id)}/life/gift`, { method: "POST", body: JSON.stringify({ item }) });
 export const getMateState = (id: string) => apiFetch<StateView>(`/api/mates/${enc(id)}/state`);
+/** the Geny-State-System at once (the State tab); `before`: the journal's next page, older than that entry */
+export const getGss = (id: string, opts: { limit?: number; before?: string | number } = {}) => {
+  const qs = new URLSearchParams({ limit: String(opts.limit ?? 200), ...(opts.before !== undefined ? { before: String(opts.before) } : {}) });
+  return apiFetch<GssView>(`/api/mates/${enc(id)}/gss?${qs}`);
+};
+/** a scenario played on her state as it is (nothing of hers changes): a preset, or steps of your own */
+export const simulateGss = (id: string, body: GssSimRequest) =>
+  apiFetch<GssSimResult>(`/api/mates/${enc(id)}/gss/simulate`, { method: "POST", ...j(body) });
+/** her temperament read from her persona by a model (up to a minute), saved as the override (prefs.temperament) */
+export const deriveTemperament = (id: string) =>
+  apiFetch<{ temperament: Temperament }>(`/api/mates/${enc(id)}/gss/temperament/derive`, { method: "POST" });
+/** a model judges her last `last` exchanges (2 – 100, default 20; up to a minute); the report also goes into the journal */
+export const evaluateGss = (id: string, last?: number) =>
+  apiFetch<GssEvalReport>(`/api/mates/${enc(id)}/gss/evaluate`, { method: "POST", ...j(last === undefined ? {} : { last }) });
 /** she was tapped: a bit of attention, until it is too much of it */
 export const pokeMate = (id: string) => apiFetch<MateState>(`/api/mates/${enc(id)}/state/poke`, { method: "POST" });
 export const patchRelation = (id: string, patch: RelationPatch) =>

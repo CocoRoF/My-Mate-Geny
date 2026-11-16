@@ -694,6 +694,7 @@ export default {
   deskResetHint: "Back to the corner of the main screen, at her usual size.",
   provKeyShared: "Using the API key from Language model providers. A key entered here is used instead.",
   provKeySharedPh: "Shared from Language model providers",
+  tabState: "State",
   tabCommon: "Common",
   deskShowsPicked: "{name} — the mate picked in the Mate view.",
 };

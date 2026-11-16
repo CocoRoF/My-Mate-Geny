@@ -1,6 +1,7 @@
 /**
  * Mate settings (docs/settings.md): Profile · Conversation style · Avatar and outfits · Voice · Language model ·
- * Relationship and memory (this mate) · Common (every mate: the same as Settings → 메이트 — her on the desktop, reading
+ * Relationship and memory (this mate) · State (her Geny-State-System: how she feels and why, what she is told, her
+ * temperament and a scenario simulator) · Common (every mate: the same as Settings → 메이트 — her on the desktop, reading
  * aloud, speaking first, screen sharing, Live2D; done by the mate picked here) · Delete. The header's 가이드 opens her
  * step-by-step guide again (guide/MateGuide).
  */
@@ -18,12 +19,13 @@ import ModelTab from "./ModelTab";
 import VoiceTab from "./VoiceTab";
 import { SaveBarSlot } from "./ui";
 import BondTab from "./BondTab";
+import StateTab from "./StateTab";
 import DangerTab from "./DangerTab";
 import MateTab from "../../settings/MateTab";
 import { openAppSettings } from "../../../lib/openAppSettings";
 import { useT, type MsgKey } from "../../../i18n";
 
-export type Tab = "profile" | "style" | "avatar" | "voice" | "model" | "bond" | "common" | "danger";
+export type Tab = "profile" | "style" | "avatar" | "voice" | "model" | "bond" | "state" | "common" | "danger";
 
 const TABS: { id: Tab; label: MsgKey }[] = [
   { id: "profile", label: "mateSettings.tabProfile" },
@@ -32,6 +34,7 @@ const TABS: { id: Tab; label: MsgKey }[] = [
   { id: "voice", label: "mateSettings.voiceVoice" },
   { id: "model", label: "mateSettings.modelTitle" },
   { id: "bond", label: "mateSettings.tabBond" },
+  { id: "state", label: "mateSettings.tabState" },
   // (what holds for every mate — the same as Settings → 메이트, here too)
   { id: "common", label: "mateSettings.tabCommon" },
   { id: "danger", label: "mateSettings.tabDanger" },
@@ -104,6 +107,7 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
           {tab === "model" && <ModelTab key={mate.id} mate={mate} />}
           {tab === "voice" && <VoiceTab key={mate.id} mate={mate} conv={conv} />}
           {tab === "bond" && <BondTab key={mate.id} mate={mate} />}
+          {tab === "state" && <StateTab key={mate.id} mate={mate} />}
           {tab === "common" && <MateTab />}
           {tab === "danger" && <DangerTab key={mate.id} mate={mate} onDeleted={onClose} />}
         </div>
