@@ -4,12 +4,16 @@ import android.app.Activity;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
+import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.util.Log;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import androidx.core.app.NotificationManagerCompat;
@@ -27,6 +31,8 @@ import java.util.List;
  * - begin / setSpeaker / end: the phone in call mode for the call (MODE_IN_COMMUNICATION; the loudspeaker or the
  *   earpiece — setCommunicationDevice on Android 12+, setSpeakerphoneOn before; the screen kept on, over the lock
  *   screen), and back after; the background link (GenyLinkService) holds the microphone meanwhile and shows the call.
+ *   The route is held for the whole call: the WebView sets its own when it opens the microphone (the loudspeaker, as
+ *   for a video call) — a change away from the chosen route is undone, and a headset plugged in or out re-routes.
  * - ring / cancelRing: her ringing as a call notification while the app is in the background or the phone is locked
  *   (CallNotifier); the page rings itself while it is in front. Taps come back to the page as "callAction"
  *   ({action: open | accept | decline, id}), kept until the page listens; 거절 is done without the page.
@@ -37,6 +43,7 @@ import java.util.List;
 @CapacitorPlugin(name = "GenyCall")
 public class GenyCallPlugin extends Plugin {
 
+    private static final String TAG = "GenyCall";
     static final String ACTION_OPEN = CallNotifier.ACTION_OPEN;
     static final String ACTION_ACCEPT = CallNotifier.ACTION_ACCEPT;
     static final String ACTION_DECLINE = CallNotifier.ACTION_DECLINE;
@@ -59,6 +66,18 @@ public class GenyCallPlugin extends Plugin {
         return p != null && p.inCall;
     }
     private int modeBefore = AudioManager.MODE_NORMAL;
+    /** the route chosen for the call: the loudspeaker, or the ear (a headset, else the earpiece) */
+    private boolean wantSpeaker = false;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    /** Android 12+: the communication device changed (the WebView, another app) */
+    private AudioManager.OnCommunicationDeviceChangedListener deviceChanged = null;
+    /** a headset plugged in or out */
+    private AudioDeviceCallback devicesChanged = null;
+    /** the route put back after a change (at most REROUTE_MAX in REROUTE_WINDOW_MS: never a tug of war) */
+    private long rerouteWindow = 0;
+    private int reroutes = 0;
+    private static final int REROUTE_MAX = 6;
+    private static final long REROUTE_WINDOW_MS = 10_000;
     /** the loaded plugin (one activity at a time): a ring that ends with no page to say so still lets the lock screen back */
     private static GenyCallPlugin current = null;
 
@@ -100,6 +119,7 @@ public class GenyCallPlugin extends Plugin {
     } : new int[0];
 
     private void route(boolean speaker) {
+        wantSpeaker = speaker;
         AudioManager am = audio();
         if (am == null) return;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -108,13 +128,74 @@ public class GenyCallPlugin extends Plugin {
             for (int type : want) {
                 for (AudioDeviceInfo d : devices) {
                     if (d.getType() == type) {
-                        am.setCommunicationDevice(d);
+                        boolean ok = am.setCommunicationDevice(d);
+                        Log.i(TAG, "call route: device " + type + (ok ? "" : " (refused)"));
                         return;
                     }
                 }
             }
         }
         am.setSpeakerphoneOn(speaker);
+        Log.i(TAG, "call route: speakerphone " + (speaker ? "on" : "off") + " (no device to pick)");
+    }
+
+    /** the device is where the chosen route goes (the loudspeaker; or a headset / the earpiece) */
+    private boolean onRoute(AudioDeviceInfo d) {
+        if (d == null) return false;
+        if (wantSpeaker) return d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER;
+        for (int t : TO_THE_EAR) if (d.getType() == t) return true;
+        return false;
+    }
+
+    /** the chosen route again, a moment after something else moved it (bounded) */
+    private void reroute() {
+        long now = System.currentTimeMillis();
+        if (now - rerouteWindow > REROUTE_WINDOW_MS) {
+            rerouteWindow = now;
+            reroutes = 0;
+        }
+        if (++reroutes > REROUTE_MAX) return;
+        main.postDelayed(() -> {
+            if (inCall) route(wantSpeaker);
+        }, 150);
+    }
+
+    /** for the call: undo a route moved away from the chosen one; re-route when a headset comes or goes */
+    private void holdRoute(AudioManager am) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && deviceChanged == null) {
+            deviceChanged = d -> {
+                if (inCall && !onRoute(d)) {
+                    Log.i(TAG, "call route moved to " + (d == null ? "none" : d.getType()) + " — putting back the "
+                            + (wantSpeaker ? "loudspeaker" : "earpiece / headset"));
+                    reroute();
+                }
+            };
+            am.addOnCommunicationDeviceChangedListener(getContext().getMainExecutor(), deviceChanged);
+        }
+        if (devicesChanged == null) {
+            devicesChanged = new AudioDeviceCallback() {
+                @Override
+                public void onAudioDevicesAdded(AudioDeviceInfo[] added) {
+                    if (inCall) reroute();
+                }
+
+                @Override
+                public void onAudioDevicesRemoved(AudioDeviceInfo[] removed) {
+                    if (inCall) reroute();
+                }
+            };
+            am.registerAudioDeviceCallback(devicesChanged, main);
+        }
+    }
+
+    private void letRouteGo(AudioManager am) {
+        main.removeCallbacksAndMessages(null);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && deviceChanged != null) {
+            am.removeOnCommunicationDeviceChangedListener(deviceChanged);
+        }
+        deviceChanged = null;
+        if (devicesChanged != null) am.unregisterAudioDeviceCallback(devicesChanged);
+        devicesChanged = null;
     }
 
     private void keepOn(boolean on) {
@@ -135,8 +216,10 @@ public class GenyCallPlugin extends Plugin {
                 am.setMode(AudioManager.MODE_IN_COMMUNICATION);
             }
             inCall = true;
+            reroutes = 0;
             // (the earpiece unless they pressed the loudspeaker: a call is held to the ear like any other)
             route(Boolean.TRUE.equals(call.getBoolean("speaker", false)));
+            if (am != null) holdRoute(am);
             keepOn(true);
             showOverLock(true); // (like a phone's call screen: over the lock screen while it lasts)
             String id = call.getString("id", "");
@@ -151,6 +234,7 @@ public class GenyCallPlugin extends Plugin {
     @PluginMethod
     public void setSpeaker(PluginCall call) {
         try {
+            reroutes = 0; // (their own choice: the bound on putting it back starts again)
             route(Boolean.TRUE.equals(call.getBoolean("on", false)));
             call.resolve();
         } catch (Exception e) {
@@ -162,6 +246,7 @@ public class GenyCallPlugin extends Plugin {
     public void end(PluginCall call) {
         try {
             AudioManager am = audio();
+            if (am != null) letRouteGo(am);
             if (am != null && inCall) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) am.clearCommunicationDevice();
                 else am.setSpeakerphoneOn(false);

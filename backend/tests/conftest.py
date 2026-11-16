@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import atexit
 import os
+import shutil
 import tempfile
 
 import pytest
@@ -19,15 +21,41 @@ os.environ.setdefault("AUTH_PASSWORD", "test-pass")
 os.environ.setdefault("SESSION_SECRET", "test-session-secret")
 os.environ.setdefault("COOKIE_SECURE", "false")
 os.environ.setdefault("STATIC_DIR", "")
+# The run's own folders, removed when it ends (each pytest-xdist worker has its own; they used to stay in /tmp, about
+# 30 MB a run). Only made when the environment doesn't name one already.
+_made: list[str] = []
+
+
+def _temp(prefix: str) -> str:
+    d = tempfile.mkdtemp(prefix=prefix)
+    _made.append(d)
+    return d
+
+
+def _default(key: str, make) -> None:
+    if not os.environ.get(key):
+        os.environ[key] = make()
+
+
+def _clean() -> None:
+    for d in _made:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+atexit.register(_clean)
+
+
+def pytest_unconfigure(config) -> None:  # (a pytest-xdist worker may end without running atexit)
+    _clean()
 # a fresh database every run: one left by an earlier run points at that run's MATES_ROOT (gone now)
-os.environ.setdefault("DB_PATH", os.path.join(tempfile.mkdtemp(prefix="hrh_test_db_"), "hrh_test_app.db"))
-os.environ.setdefault("UPLOADS_ROOT", tempfile.mkdtemp(prefix="hrh_test_uploads_"))
-os.environ.setdefault("MATES_ROOT", tempfile.mkdtemp(prefix="hrh_test_mates_"))
-os.environ.setdefault("HIGGSFIELD_ROOT", tempfile.mkdtemp(prefix="hrh_test_higgsfield_"))
-os.environ.setdefault("AVATAR_ROOT", tempfile.mkdtemp(prefix="hrh_test_avatars_"))
+_default("DB_PATH", lambda: os.path.join(_temp("hrh_test_db_"), "hrh_test_app.db"))
+_default("UPLOADS_ROOT", lambda: _temp("hrh_test_uploads_"))
+_default("MATES_ROOT", lambda: _temp("hrh_test_mates_"))
+_default("HIGGSFIELD_ROOT", lambda: _temp("hrh_test_higgsfield_"))
+_default("AVATAR_ROOT", lambda: _temp("hrh_test_avatars_"))
 # local voice models (app/voicehost): never the machine's own models, history or clips — on a GPU host the app under
 # test would otherwise find (and could load) the models installed there
-os.environ.setdefault("VOICE_HOME", tempfile.mkdtemp(prefix="hrh_test_voice_"))
+_default("VOICE_HOME", lambda: _temp("hrh_test_voice_"))
 # no registry / GitHub lookups from the CLI-versions service (tests/test_cli_tools.py fakes them)
 os.environ.setdefault("CLI_UPDATE_CHECK", "false")
 os.environ.setdefault("MEMORY_CONSOLIDATION_ENABLED", "false")

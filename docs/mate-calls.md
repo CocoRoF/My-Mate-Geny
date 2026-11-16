@@ -179,6 +179,17 @@ call** (it goes on with the screen off). There is no push service (FCM), so her 
   clock, **끊기** (`…/hangup`). It is the only foreground service the app runs by default, and only for the call.
 - **The earpiece**: a call starts on the earpiece — or a connected headset (Bluetooth, wired, USB) — like any phone
   call; the loudspeaker only when they press it, every call again (`mate/call/machine.ts`, `GenyCallPlugin.route`).
+  Setting the route once at the start wasn't enough: 0.5 still spoke on the loudspeaker. **The WebView sets its own
+  route when it opens the microphone** — it treats a page's microphone as a video call, switches the phone to call
+  mode and asks for the loudspeaker (unless a headset is connected), after `begin` had asked for the earpiece; the
+  latest request wins. Seen on Android 14 (WebView 113): `begin` at 12:54:24.9, then
+  `setCommunicationDevice(speaker)` from the app's own process as the microphone opened, 0.8 s later (`dumpsys audio`).
+  So the route they chose is asked for again once the microphone is open (`CallSession.reroute`: at once, 0.5 s and
+  1.5 s later, and again when the listening falls back to another way and opens the mic anew), and the plugin holds it
+  for the whole call: when the communication device moves away from the chosen route it is put back (Android 12+, at
+  most 6 times in 10 s, so never a tug of war; logged as `GenyCall`), and a headset plugged in or out re-routes.
+  Her voice plays as media (also an output opened after the microphone, checked); during a call the phone's audio
+  policy sends media where the call's route goes.
 - **Real-time calls** (an option, off by default — 0.5 turned it off for everyone once): Settings → 메이트 → 전화 →
   실시간 전화 keeps the old always-on line (`GET /api/mate-calls/link?device=`, server-sent events: `hello {calls, mate,
   ring}`, `call.ring`, `call.update`, `policy`, a `ping` every `calls.LINK_PING_S` = 45 s; back at once when the network
@@ -194,8 +205,8 @@ call** (it goes on with the screen off). There is no push service (FCM), so her 
 
 - `begin({speaker, id, mate, name})` / `setSpeaker({on})` / `end()`: `MODE_IN_COMMUNICATION` for the call, the
   loudspeaker or the earpiece (`setCommunicationDevice` on Android 12+, `setSpeakerphoneOn` before), the screen kept on
-  and over the lock screen; back after. (The WebView opening the mic switches the phone to call mode by itself, often
-  turning her down or onto the earpiece: this keeps her where the screen says.) The link holds the microphone meanwhile.
+  and over the lock screen; back after. The route is held while the call lasts (the WebView opening the mic sets its
+  own: above). The link holds the microphone meanwhile.
 - `ring({id, mate, title, body})` → `{shown}` / `cancelRing({id})`: her ringing (above). Taps come to the page as
   `callAction` (kept until it listens).
 - `link({device, faces})` / `status()` (`checks: {last, result}` — the check-ins) / `setBackground({on})` (the
@@ -205,8 +216,9 @@ call** (it goes on with the screen off). There is no push service (FCM), so her 
 
 **Limits**: a phone maker's own battery manager can still stop a background app (some do whatever the app asks); letting
 the app skip battery optimisation is the remedy, and the settings section asks for it. In deep sleep the line notices it
-dropped only when the phone wakes. Earpiece routing of the WebView's media playback depends on the phone; where it
-doesn't follow, "speaker off" is only quieter.
+dropped only when the phone wakes. Media following the call's route is the stock audio policy; a phone maker's own may
+differ (the emulator has no earpiece: the earpiece itself was not checked on a real phone). Before Android 12 the route
+is set again from the page only (there is no notice of a change to listen for).
 
 ## APIs
 

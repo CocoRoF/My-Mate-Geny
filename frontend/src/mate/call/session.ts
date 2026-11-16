@@ -61,6 +61,8 @@ interface Reply {
 
 /** (dialing) her voice waits for at least this much ring-back */
 const RING_AT_LEAST_MS = 1700;
+/** the route they chose, set again after the microphone opens: at once, then as the phone settles (ms) */
+const REROUTE_AT = [0, 500, 1500];
 /** the click of picking up, before her first words */
 const CLICK_MS = 140;
 /** her first words wait for the line: the phone in call mode, the microphone open, her voice's output warmed — then
@@ -84,6 +86,7 @@ export class CallSession {
   private replies = new Map<string, Reply>();
   private current: Reply | null = null;
   private listener: Listener | null = null;
+  private rerouteTimers: ReturnType<typeof setTimeout>[] = [];
   private tones = new Tones();
   private stopRing: (() => void) | null = null;
   private over = false;
@@ -257,10 +260,22 @@ export class CallSession {
     const capped = (p: Promise<unknown>) =>
       Promise.race([p.catch(() => {}), new Promise((r) => setTimeout(r, Math.max(0, deadline - Date.now())))]);
     await capped(Promise.all([callMode, mic]));
+    // (the WebView switched the phone to call mode itself when it opened the microphone — and picked the
+    // loudspeaker, as for a video call: the route they chose goes back on)
+    this.reroute();
     await capped(this.queue.warm());
     await new Promise((r) => setTimeout(r, LINE_SETTLE_MS));
     this.lineReady = true;
     if (!this.over && this.held.length && !this.holdTimer) this.release();
+  }
+
+  /** the route they chose, set again — at once and as the phone settles (the WebView sets its own when it opens a mic) */
+  private reroute(): void {
+    if (!nativeCalls()) return;
+    for (const t of this.rerouteTimers) clearTimeout(t);
+    this.rerouteTimers = REROUTE_AT.map((ms) => setTimeout(() => {
+      if (!this.over) void callNative.setSpeaker(this.speaker);
+    }, ms));
   }
 
   private say(r: Reply, s: Sentence): void {
@@ -420,7 +435,10 @@ export class CallSession {
         },
         onPartial: (text) => this.ev.partial(text),
         onLevel: (v) => this.ev.level(v),
-        onNotice: (text) => this.ev.notice(text),
+        onNotice: (text) => {
+          this.ev.notice(text);
+          if (text) this.reroute(); // (another way of listening: the microphone opens again, and the WebView reroutes)
+        },
         onFail: (text) => this.ev.deaf(text),
       },
     );
@@ -473,6 +491,8 @@ export class CallSession {
     this.listener = null;
     this.stopRing?.();
     this.stopRing = null;
+    for (const t of this.rerouteTimers) clearTimeout(t);
+    this.rerouteTimers = [];
     this.queue.dispose();
     if (reason !== "elsewhere") this.tones.play("hangup", Math.min(1, this.volume));
     const ws = this.ws;
