@@ -39,12 +39,59 @@ class HrhPcmTap extends AudioWorkletProcessor {
 registerProcessor("hrh-pcm-tap", HrhPcmTap);
 `;
 
+// ── a phone call's route (the Android app) ───────────────────────────────────────────────────────────────────────
+//
+// The Android WebView picks the phone's audio route by the microphone a page opens: its audio inputs are the routes —
+// "Speakerphone", "Headset earpiece", "Wired headset", "Bluetooth headset", "USB audio" — and with none asked for it
+// takes the loudspeaker, as for a video call. In a call (mate/call/session.ts) the microphone is opened on the call's
+// route instead: a headset when one is connected, else the earpiece; the loudspeaker only when they pressed it.
+
+export type CallRoute = "ear" | "speaker";
+let callRoute: CallRoute | null = null;
+
+/** the route the next microphone opens on (null: no call — the browser's own choice) */
+export function setCallRoute(route: CallRoute | null): void {
+  callRoute = route;
+}
+
+/** the WebView's audio input for a route, by its label (null: it has none — not an Android WebView, no such device) */
+export function routeInput(inputs: { deviceId: string; label: string }[], route: CallRoute): string | null {
+  const find = (re: RegExp) => inputs.find((d) => d.deviceId && re.test(d.label))?.deviceId ?? null;
+  if (route === "speaker") return find(/^speakerphone$/i);
+  return find(/^bluetooth headset$/i) ?? find(/^usb audio$/i) ?? find(/^wired headset$/i) ?? find(/^headset earpiece$/i);
+}
+
+/**
+ * The input for the call's route, or null. Labels show once the page may use the microphone: when none shows yet, one
+ * short open first (in a call, before her voice — the line waits for the microphone).
+ */
+export async function callRouteInput(): Promise<string | null> {
+  const route = callRoute;
+  const md = typeof navigator === "undefined" ? undefined : navigator.mediaDevices;
+  if (!route || !md?.enumerateDevices) return null;
+  const inputs = async () => (await md.enumerateDevices()).filter((d) => d.kind === "audioinput");
+  let list = await inputs();
+  if (!list.some((d) => d.label)) {
+    const probe = await md.getUserMedia({ audio: true });
+    probe.getTracks().forEach((t) => t.stop());
+    list = await inputs();
+  }
+  return routeInput(list, route);
+}
+
 export function micSupported(): boolean {
   return typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia && typeof AudioContext !== "undefined";
 }
 
 export async function openMic(onFrames: (samples: Float32Array, rate: number) => void): Promise<MicHandle> {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS });
+  const route = await callRouteInput().catch(() => null);
+  let stream: MediaStream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: route ? { ...MIC_CONSTRAINTS, deviceId: { exact: route } } : MIC_CONSTRAINTS });
+  } catch (e) {
+    if (!route) throw e;
+    stream = await navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS }); // (that route is gone: the default)
+  }
   let ctx: AudioContext | null = null;
   let url: string | null = null;
   const nodes: AudioNode[] = [];
