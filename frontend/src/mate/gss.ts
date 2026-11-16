@@ -180,6 +180,9 @@ const ACT_TONE: Record<string, Tone> = {
   apology: "ok",
   affection: "ok",
   compliment: "ok",
+  gratitude: "ok",
+  flirt: "ok",
+  distress: "warn",
 };
 
 /** what was promised in it (text, a promise, or just that there was one) */
