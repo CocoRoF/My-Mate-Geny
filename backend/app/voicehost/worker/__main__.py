@@ -138,6 +138,7 @@ class Worker:
             reference=Reference(**ref) if ref else None,
             instruct=msg.get("instruct") or "",
             params=msg.get("params") or {},
+            adapter=msg.get("adapter") or "",
         )
         seed = msg.get("seed")
         if seed is None:
@@ -156,7 +157,7 @@ class Worker:
             paths.append(path)
         total = sum(len(w) for w in wavs) / self.engine.sample_rate
         return {"paths": paths, "sample_rate": self.engine.sample_rate, "seconds": elapsed, "audio_seconds": total,
-                "seed": int(seed), "memory": self._mem()}
+                "seed": int(seed), "memory": self._mem(), "adapter": req.adapter}
 
     def op_sounds(self, msg: dict) -> dict:
         """A voice's own laugh (app/voicehost/sounds.py): ``takes`` takes of the lines given (``texts``: [text,

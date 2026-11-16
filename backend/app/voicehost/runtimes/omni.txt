@@ -10,6 +10,7 @@ cloudpickle==3.1.2
 decorator==5.3.1
 einops==0.8.2
 filelock==4.2.10
+flatbuffers==25.12.19
 fsspec==2026.9.0
 h11==0.16.0
 hf-xet==1.8.0
@@ -46,9 +47,12 @@ nvidia-nccl-cu12==2.27.3
 nvidia-nvjitlink-cu12==12.8.93
 nvidia-nvtx-cu12==12.8.90
 omnivoice==0.2.1
+onnxruntime==1.31.1
 packaging==26.3
+peft==0.21.3
 platformdirs==4.14.5
 pooch==1.9.0
+protobuf==7.36.2
 psutil==7.2.2
 pycparser==3.12
 pydantic==2.14.3

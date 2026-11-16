@@ -22,6 +22,7 @@ import { gateText, PAGES, StudioProvider, useStudio, type Page, gb } from "./sha
 const OverviewPage = lazy(() => import("./OverviewPage"));
 const ModelsPage = lazy(() => import("./ModelsPage"));
 const ProfilesPage = lazy(() => import("./ProfilesPage"));
+const TrainPage = lazy(() => import("./TrainPage"));
 const GeneratePage = lazy(() => import("./GeneratePage"));
 const BatchPage = lazy(() => import("./BatchPage"));
 const HistoryPage = lazy(() => import("./HistoryPage"));
@@ -32,6 +33,7 @@ const ICON: Record<Page, IconName> = {
   overview: "activity",
   models: "cpu",
   profiles: "user",
+  train: "graduation",
   generate: "sparkles",
   batch: "layers",
   history: "history",
@@ -98,6 +100,7 @@ function Studio() {
             {page === "overview" && <OverviewPage />}
             {page === "models" && <ModelsPage />}
             {page === "profiles" && <ProfilesPage />}
+            {page === "train" && <TrainPage />}
             {page === "generate" && <GeneratePage />}
             {page === "batch" && <BatchPage />}
             {page === "history" && <HistoryPage />}

@@ -360,6 +360,14 @@ class VoiceService:
                 key = f"{ref['path']}:{st.st_mtime_ns}:{st.st_size}:{ref.get('text', '')}"
             except OSError:
                 ref, key = None, ""
+        if h is not None and ref is not None and ref.get("voice_id"):
+            # (a voice trained since: its lines are said anew — app/voicehost/training.py)
+            from app.voicehost import catalog
+
+            spec = catalog.BY_ID.get(model)
+            trained = h.trainings.adapter_for(str(ref["voice_id"]), spec) if spec else None
+            if trained:
+                key += f":adapter={trained[0]}"
         return {"model": model, "ref": ref, "key": key, "instruct": str(tts.get("instruct") or "")}
 
     async def _tts_local(self, tts: dict, text: str, shape: dict, cfg: dict) -> tuple[bytes, str]:

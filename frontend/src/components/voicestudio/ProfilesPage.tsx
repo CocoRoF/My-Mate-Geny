@@ -84,6 +84,7 @@ export default function ProfilesPage() {
                     {v.starred && <Icon name="star" size={12} className="text-warning" />}
                     <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-content">{v.name}</span>
                     {v.builtin && <span className="pill border border-accent/30 bg-accent-soft text-[10px] text-accent">{t("localVoice.builtin")}</span>}
+                    {v.adapter && <span className="pill border border-success/30 bg-success/10 text-[10px] text-success" title={t("voiceStudio.trTrainedHint")}>{t("voiceStudio.trTrained")}</span>}
                   </span>
                   <span className="mt-1 flex items-center gap-1">
                     {FEELINGS.map((f) => (
@@ -210,6 +211,7 @@ function Profile({ v, onGone, onPick }: { v: LocalVoice; onGone: () => void; onP
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="text-[15px]">{v.name}</span>
             {v.builtin && <span className="pill border border-accent/30 bg-accent-soft text-accent">{t("localVoice.builtin")}</span>}
+            {v.adapter && <span className="pill border border-success/30 bg-success/10 text-success" title={t("voiceStudio.trTrainedHint")} data-testid="vs-profile-trained">{t("voiceStudio.trTrained")}</span>}
             {(v.tags ?? []).map((tag) => (
               <span key={tag} className="pill border border-border bg-surface-3/50 text-content-dim">#{tag}</span>
             ))}

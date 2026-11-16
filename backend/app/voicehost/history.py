@@ -1,6 +1,7 @@
 """Voice Studio's history (docs/local-voice.md "Voice Studio"): every line made there — in the studio, by a batch, a
 comparison or a seed search — with everything that made it (model, profile, the clip's feeling, mode, language,
-instruction, parameters, seed) and what it took, its WAV under <voice home>/history.
+instruction, parameters, seed, the voice's trained adapter if it spoke with one) and what it took, its WAV under
+<voice home>/history.
 
 A mate's own words are not kept here (they live in her speech cache). Limits (Voice Studio → 설정): at most
 ``history_max_entries`` lines and ``history_max_gb`` of audio; the oldest go first, never a starred one or a batch's
@@ -18,7 +19,7 @@ from app.services._ids import new_id, now_iso
 GiB = 1 << 30
 _COLS = ("id", "created_at", "source", "model_id", "voice_id", "voice_name", "feeling", "ref_label", "mode", "language",
          "text", "instruct", "params", "seed", "file", "sample_rate", "seconds", "ready_seconds", "generate_seconds",
-         "rtf", "size", "starred", "note", "batch_id", "batch_index")
+         "rtf", "size", "starred", "note", "batch_id", "batch_index", "adapter")
 
 
 class HistoryStore:
@@ -33,7 +34,9 @@ class HistoryStore:
                    "file TEXT NOT NULL, sample_rate INTEGER NOT NULL DEFAULT 0, seconds REAL NOT NULL DEFAULT 0, "
                    "ready_seconds REAL, generate_seconds REAL, rtf REAL, size INTEGER NOT NULL DEFAULT 0, starred "
                    "INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '', batch_id TEXT NOT NULL DEFAULT '', "
-                   "batch_index INTEGER)")
+                   "batch_index INTEGER, adapter TEXT NOT NULL DEFAULT '')")
+        if "adapter" not in {r[1] for r in db.query("PRAGMA table_info(voice_history)")}:
+            db.execute("ALTER TABLE voice_history ADD COLUMN adapter TEXT NOT NULL DEFAULT ''")
         db.execute("CREATE INDEX IF NOT EXISTS voice_history_by_time ON voice_history(created_at)")
         db.execute("CREATE INDEX IF NOT EXISTS voice_history_by_batch ON voice_history(batch_id, batch_index)")
 
@@ -65,7 +68,7 @@ class HistoryStore:
                    starred=0, note="", batch_id=meta.get("batch_id") or "")
         for k, default in (("source", "studio"), ("voice_id", ""), ("voice_name", ""), ("feeling", ""),
                            ("ref_label", ""), ("mode", "clone"), ("language", "auto"), ("instruct", ""),
-                           ("sample_rate", 0), ("seconds", 0)):
+                           ("sample_rate", 0), ("seconds", 0), ("adapter", "")):
             if row[k] is None:
                 row[k] = default
         self.db.execute(f"INSERT INTO voice_history({', '.join(_COLS)}) VALUES({', '.join('?' for _ in _COLS)})",
