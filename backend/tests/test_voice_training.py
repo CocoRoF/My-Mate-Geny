@@ -427,3 +427,14 @@ async def test_a_shipped_adapter_that_isnt_what_it_says_is_not_used(vh, tmp_path
     # nothing for a model not installed
     vh.shipped.catalog = {("builtin:chaerin", "cosyvoice3-0.5b"): entry}
     assert await vh.shipped.fetch_all() == []
+
+
+def test_the_shipped_adapters_are_listed_whole():
+    from app.voicehost import shipped
+
+    assert {v for v, _ in shipped.SHIPPED} == {"builtin:chaerin", "builtin:seoa"}
+    for (v, m), e in shipped.SHIPPED.items():
+        assert m in catalog.BY_ID and m in __import__("app.voicehost.training", fromlist=["NEED_GB"]).NEED_GB
+        assert len(e["sha256"]) == 64 and int(e["sha256"], 16) >= 0 and e["bytes"] > 1_000_000
+        assert e["asset"].startswith("higgs-audio-2-") and e["asset"].endswith(".zip")  # (Boson's 1.b.i: its name)
+    assert shipped.RELEASE.endswith("/releases/download/voice-adapters-v1")

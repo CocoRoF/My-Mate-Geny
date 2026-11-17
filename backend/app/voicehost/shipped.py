@@ -23,8 +23,21 @@ from typing import Any
 log = logging.getLogger("app.voicehost.shipped")
 
 RELEASE = "https://github.com/CocoRoF/My-Mate-Geny/releases/download/voice-adapters-v1"
-# (voice id, model id) → the release asset: its name, SHA-256, size, and the model revision it was made from
-SHIPPED: dict[tuple[str, str], dict[str, Any]] = {}
+# (voice id, model id) → the release asset: its name, SHA-256, size, and the model revision it was made from. Trained
+# 2026-11-17 with 학습 on ~17 / 19 minutes of speech the owner made with their own ElevenLabs voices (and each voice's
+# five clips; 서아's at half the learning rate, which kept her clips' likeness better). CAM++ similarity to her
+# recordings, through the worker as the app speaks (8 new sentences), without → with: from her five feeling clips
+# 한채린 0.841 → 0.852, 서아 0.837 → 0.846; with no clip 0.23 → 0.85 and 0.29 → 0.83 (CER 0).
+SHIPPED: dict[tuple[str, str], dict[str, Any]] = {
+    ("builtin:chaerin", "omnivoice"): {
+        "asset": "higgs-audio-2-omnivoice-lora-chaerin-v1.zip",
+        "sha256": "993b09c95b4fff0bbb34a4738daee810a99d6b20910ae40fcce23d48b3ba62ae", "bytes": 53835562,
+        "base_revision": "c5fdb5ccb189"},
+    ("builtin:seoa", "omnivoice"): {
+        "asset": "higgs-audio-2-omnivoice-lora-seoa-v1.zip",
+        "sha256": "91f268d804171be3be2a349c91ad5aa480dbb665ac613fb242d9723db65acd1f", "bytes": 53835545,
+        "base_revision": "c5fdb5ccb189"},
+}
 # what a release zip may hold (nothing else is unpacked, and never a path)
 FILES = {"adapter_config.json", "adapter_model.safetensors", "geny.json", "voice.safetensors", "NOTICE.md",
          "LICENSE-Boson-Higgs-Audio-2.txt", "LICENSE-Meta-Llama-3.txt"}
@@ -34,7 +47,8 @@ class Shipped:
     def __init__(self, host, catalog: dict[tuple[str, str], dict[str, Any]] | None = None) -> None:
         self.h = host
         self.s = host.s
-        self.catalog = SHIPPED if catalog is None else catalog
+        # (the stand-in engine — tests, a throwaway server — fetches nothing it isn't given)
+        self.catalog = (SHIPPED if self.s.engine_mode != "fake" else {}) if catalog is None else catalog
         self.failed: dict[tuple[str, str], str] = {}
         self._task: asyncio.Task | None = None
 

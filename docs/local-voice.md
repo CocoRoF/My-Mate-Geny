@@ -278,11 +278,17 @@ What each model learns (`train/recipe.py`: one recipe each, in the model's own r
   "기본 목소리는 학습된 어댑터로 말하기" turns them off (`shipped_adapters`); its line says whether they are here.
   A release asset carries the notices the Boson Higgs Audio 2 Community License asks of a model made with OmniVoice's
   tokenizer and made available ("Higgs Audio 2" at the start of its name, the agreement and Meta Llama 3's with it).
+  v1 (2026-11-17): 한채린's and 서아's OmniVoice adapters, from ~17 / 19 minutes of speech made with the owner's
+  ElevenLabs voices (`eleven_v4_turbo`, 174 / 175 lines written for each character) and their five clips; 서아's at
+  half the learning rate (5e-5), which kept her clips' likeness. Through the worker, 8 new sentences, without → with:
+  from her five feeling clips 한채린 0.841 → 0.852 (none of them worse), 서아 0.837 → 0.846; with no clip 0.23 → 0.85
+  and 0.29 → 0.83; CER 0. 54 MB each, fetched in ~5 s.
 - **What it needs**: the model installed; Whisper large-v3-turbo's weights (MIT) and CAM++'s (`campplus.onnx` from
   `FunAudioLLM/Fun-CosyVoice3-0.5B-2512`, 28 MB, Apache-2.0) — fetched for the first run after the user accepts them
   in the form once; `peft` (and `onnxruntime`) in each engine's runtime (in its lock: a runtime from an older lock keeps
   speaking and is brought up to date in place — 30 s after the server starts, or before the run). The GPU, free
-  (measured at most, and some room): OmniVoice and Qwen3-TTS 0.6B 6 GB, Qwen3-TTS 1.7B and CosyVoice3 8 GB; its
+  (measured at most, and some room): Qwen3-TTS 0.6B 6 GB, OmniVoice 7 GB (its measurements, a sentence at a
+  time after a 10 s clip, need more than its training), Qwen3-TTS 1.7B and CosyVoice3 8 GB; its
   process is held to 12 GB of RAM (`capped`, where there is one).
 - **Sharing the GPU**: one run at a time. It waits while a call holds its models or a mate spoke in the last 20 s, and
   while the GPU hasn't the room. While a mate speaks (an interactive job in the GPU queue) it pauses: compute
