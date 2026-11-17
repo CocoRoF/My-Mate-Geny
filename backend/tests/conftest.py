@@ -89,3 +89,49 @@ def _whatever_time_it_really_is(monkeypatch):
     from app.mate.life import profile
 
     monkeypatch.setattr(profile, "own", lambda key: False)
+
+
+def words_reading(user: str) -> str:
+    """A reading as the reader would give it, made from the message's words: tests never start Claude Code or Codex, and
+    their mates still feel what a message does (test_gss.py tests the reading itself)."""
+    import json
+    import re
+
+    from app.mate import affinity as A
+    from app.mate import state as S
+
+    m = re.search(r"<message>\n(.*)\n</message>", user, re.S)
+    text = m.group(1) if m else ""
+    name = (re.search(r"Her name: (.*?)\.", user) or [None, ""])[1]
+    c = A.cues(text, name=name)
+    acts = []
+    if c["hostile"]:
+        acts.append(c["hostile"])
+    elif c["rude"]:
+        acts.append("insult")
+    if S._APOLOGY.search(text):
+        acts.append("apology")
+    if S._DISMISSED.search(text):
+        acts.append("dismissal")
+    if c["warm"]:
+        acts.append("gratitude")
+    if S._LOVE.search(text):
+        acts.append("affection")
+    if S._LOOKS.search(text):
+        acts.append("compliment")
+    if c["distress"]:
+        acts.append("distress")
+    aimed = bool(c["hostile"] or c["rude"] or A.aimed(text, name) or acts)
+    return json.dumps({"aimed_at_her": aimed, "acts": acts or ["neutral"], "intensity": 0.5, "owns_it": bool(S._OWNED.search(text)),
+                       "sarcastic": False, "promise": None, "her_promise": None, "fulfills": [], "note": "words (tests)"})
+
+
+@pytest.fixture(autouse=True)
+def _a_reader_from_the_words(monkeypatch):
+    """The Geny-State-System's reader (Claude Code kept warm, else Codex) is never started in tests."""
+    from app.mate.gss import reader
+
+    async def ask(self, user):
+        return words_reading(user)
+
+    monkeypatch.setattr(reader.Reader, "ask", ask)

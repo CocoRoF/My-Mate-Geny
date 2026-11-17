@@ -42,9 +42,21 @@ def _service(db, logs=None):
     return MateService(svc, MateStore(db, vault), logs)
 
 
+def read_first(mates, session):
+    """What GSSRuntime.prepare does before a real turn: the user's latest message read (by the tests' words-made reader)."""
+    from app.mate.gss import appraisal as R
+    from conftest import words_reading
+
+    said = mates._users_latest(session["id"])
+    if said and mates.gss.appraiser.get(said["id"]) is None:
+        name = mates.store.get(session["mate_id"])["name"]
+        mates.gss.appraiser.put(said["id"], R.parse(words_reading(R.request(name, said["content"], [], []))))
+
+
 def _turn(mates, mate_id, text="hi"):
     session = mates.conversation(mate_id)["session"]
     req = TurnRequest(messages=[{"role": "user", "content": text}], model="", cwd="/tmp")
+    read_first(mates, session)
     mates.configure_engine(session, req)
     return req, open(req.system_prompt_file, encoding="utf-8").read()
 

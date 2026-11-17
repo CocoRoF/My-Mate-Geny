@@ -850,9 +850,11 @@ _READ_FLAGS = ("hostile", "rude", "apology", "owned", "dismissed", "warm", "love
 
 
 def hear(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, now: datetime, tz: Any,
-         reading: dict[str, Any] | None = None) -> None:
+         reading: dict[str, Any] | None = None, *, words: bool = True) -> None:
     """A message of the user's, once however often it is looked at, before she answers it. ``reading``: a model's reading of
-    it, when it came in time (else its words, and ``reappraise`` sets it right if one comes later)."""
+    it (app/mate/gss/appraisal.py). Without one: ``words`` reads it by its words (tests, the simulator, history from before
+    readings); a live mate's (``words=False``) waits for its reading instead — what it does to her counts when it comes
+    (``reappraise``), never a guess from its words. Words of self-harm count at once all the same: real trouble first."""
     if doc.get("heard") == message:
         return
     last = A._t(doc.get("heard_at"))
@@ -865,6 +867,12 @@ def hear(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, now: d
     if doc["curt"] >= CURT_FROM:
         _rise(doc, w, "lonely", CURT, {"code": "curt"}, now, tz)
         _owe(doc, "curt", now, message)
+    if reading is None and not words:
+        doc["heard_by"], doc["heard_read"], doc["heard_effect"] = "pending", {k: False for k in _READ_FLAGS}, None
+        if _CRISIS.search(text):
+            _reactions(doc, w, text, message, {**{k: False for k in _READ_FLAGS}, "hostile": None, "crisis": True,
+                                               "distress": True, "intensity": None, "by": "words"}, now, tz)
+        return
     f = read(text, w.get("name") or "", reading, w["closeness"])
     doc["heard_by"], doc["heard_read"] = f["by"], {k: f[k] for k in _READ_FLAGS}
     _react(doc, w, text, message, f, now, tz)
@@ -875,9 +883,13 @@ def reappraise(doc: dict[str, Any], w: dict[str, Any], text: str, message: str, 
     """A model's reading came after she heard the message by its words alone: where it reads it otherwise (a put-down the
     words missed, venting the words took for an insult, an apology that owns it), what the message did is undone and done
     again — only what it did: anything else since (her own ``feel``, a poke, a gift) stays. → whether anything changed."""
-    if doc.get("heard") != message or doc.get("heard_by") != "words":
+    if doc.get("heard") != message or doc.get("heard_by") not in ("words", "pending"):
         return False
     f = read((text or "").strip(), w.get("name") or "", reading, w["closeness"])
+    if doc["heard_by"] == "pending":  # (nothing was done by it yet: now it is)
+        doc["heard_by"], doc["heard_read"] = "model", {k: f[k] for k in _READ_FLAGS}
+        _react(doc, w, (text or "").strip(), message, f, now, tz)
+        return True
     doc["heard_by"] = "model"
     was = doc.get("heard_read") or {}
     if all(bool(f[k]) == bool(was.get(k)) for k in _READ_FLAGS) and f["hostile"] == was.get("hostile"):

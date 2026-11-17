@@ -20,6 +20,8 @@ import asyncio
 import base64
 import collections
 import json
+
+from app.mate.gss.appraisal import NEUTRAL as G_NEUTRAL
 import random
 import os
 import re
@@ -1039,8 +1041,8 @@ class MateService:
         mate_id = mate["id"]
         said = self._users_latest(mate.get("session_id") or "")
         reading = self.gss.appraiser.get(said["id"]) if said else None
-        summary = self._state_event(mate_id, (lambda doc, who, at, zone: S.hear(doc, who, said["content"], said["id"], at, zone, reading))
-                                    if said else None)
+        summary = self._state_event(mate_id, (lambda doc, who, at, zone: S.hear(doc, who, said["content"], said["id"], at, zone, reading,
+                                                                                words=False)) if said else None)
         feeling = ""
         changed = st.get("state") != S.signature(summary)
         strong = int(st.get("strong_n") or 0) + 1 if S.worth_repeating(summary) and not changed else 0
@@ -1148,8 +1150,8 @@ class MateService:
 
         def change(doc: dict[str, Any], who: dict[str, Any], now: datetime, tz: Any) -> None:
             if said:
-                S.hear(doc, who, said["content"], said["id"], now, tz, reading)
-                if reading is not None:  # (it came after she heard the words: what they did is read again, before her face counts)
+                S.hear(doc, who, said["content"], said["id"], now, tz, reading, words=False)
+                if reading is not None:  # (it came after she heard it: what it does to her counts now, before her face does)
                     S.reappraise(doc, who, said["content"], said["id"], reading, now, tz)
             if outcome.get("status") == "stopped":
                 S.interrupted(doc, who, now, tz)
@@ -1426,8 +1428,14 @@ class MateService:
             A.credit_gift(doc, now, tz)
         self._save_relation(mate_id, doc, before)
 
-    def _relation_turn(self, mate_id: str, outcome: dict[str, Any]) -> None:
-        """A mate turn ended: the user's own message counts, an internal one (a delegation result) doesn't."""
+    def _relation_turn(self, mate_id: str, outcome: dict[str, Any], reading: dict[str, Any] | None = None) -> None:
+        """A mate turn ended: the user's own message counts, an internal one (a delegation result) doesn't. By the model's
+        reading of it: one that hasn't come yet is waited for on the side (``_relation_turn_later``)."""
+        if not (outcome.get("meta") or {}).get("internal") and reading is None and mate_id:
+            said = self._users_latest(self.store.get(mate_id).get("session_id") or "")
+            if said and self.gss.appraiser.get(said["id"]) is None and self.gss.appraiser.pending(said["id"]):
+                asyncio.get_running_loop().create_task(self._relation_turn_later(mate_id, outcome, said["id"]))
+                return
         now, tz = datetime.now(timezone.utc), self.store.tz()
         doc = self.relation_doc(mate_id)
         before = A.clone(doc)
@@ -1435,7 +1443,8 @@ class MateService:
         if not (outcome.get("meta") or {}).get("internal"):
             name = (self.store.get(mate_id).get("name") if mate_id else "") or ""
             said = self._users_latest(self.store.get(mate_id).get("session_id") or "") if mate_id else None
-            reading = self.gss.appraiser.get(said["id"]) if said else None
+            if reading is None:
+                reading = (self.gss.appraiser.get(said["id"]) if said else None) or (G_NEUTRAL if said else None)
             if said:  # (the reading this turn was counted by, kept with the message: a recount counts it the same)
                 self.store._db.execute("UPDATE messages SET meta = json_set(CASE WHEN json_valid(meta) AND json_type(meta) = 'object' THEN meta "
                                        "ELSE '{}' END, '$.gss_reading', json(?)) WHERE id = ?",
@@ -1445,6 +1454,14 @@ class MateService:
                           reading)
         self._save_relation(mate_id, doc, before)
         self._relation_before = before
+
+    async def _relation_turn_later(self, mate_id: str, outcome: dict[str, Any], message_id: str) -> None:
+        """The turn's reading came after it ended (or never: then only that they talked counts)."""
+        reading = await self.gss.appraiser.settle(message_id, timeout=120)
+        try:
+            self._relation_turn(mate_id, outcome, reading or G_NEUTRAL)
+        except Exception as exc:  # noqa: BLE001 - never breaks anything
+            self._log("warning", f"relationship (late reading): {exc}")
 
     def _settings_note(self, mate_id: str, mate: dict[str, Any], relation: bool | None = None) -> str:
         """Compare the persona with the one the conversation last ran with

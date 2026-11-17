@@ -73,10 +73,30 @@ def test_the_relationship_counts_by_the_reading_too():
     assert r["affinity"] < s["affinity"] == 50
 
 
-def test_worth_a_look_spares_small_talk_on_the_slow_way():
-    assert not R.worth_a_look("ㅇㅇ 밥 먹었어", {}, False)
-    assert R.worth_a_look("이따 전화할게", {}, False) and R.worth_a_look("ㅇㅇ", {}, True)
-    assert R.worth_a_look("whatever", {}, False) and R.worth_a_look("x", {"rude": True}, False)
+async def test_every_message_is_read_and_one_that_comes_late_counts_when_it_comes():
+    import asyncio
+
+    gate = asyncio.Event()
+
+    async def slow(user):
+        await gate.wait()
+        return '{"aimed_at_her": true, "acts": ["insult"], "intensity": 0.6}'
+
+    seen = []
+    a = R.Appraiser(slow)
+    a.on_read = lambda mate, mid, r: seen.append((mid, r["acts"]))
+    assert await a.read("m", "msg1", "서아", "응 그렇구나", [], [], wait=0.05) is None  # (small talk is read too; not in time)
+    assert a.pending("msg1")
+    w, doc = S.who(name="서아"), S.new()
+    S.hear(doc, w, "미안한데 너 하꼬잖아", "msg1", NOON, TZ, None, words=False)  # (no guess from its words meanwhile)
+    assert doc["heard_by"] == "pending" and S.levels(doc, w, NOON, TZ)["angry"]["v"] == 0
+    gate.set()
+    r = await a.settle("msg1", 1.0)
+    assert seen == [("msg1", ["insult"])] and S.reappraise(doc, w, "미안한데 너 하꼬잖아", "msg1", r, NOON, TZ)
+    assert S.levels(doc, w, NOON, TZ)["angry"]["v"] > 0 and not (doc.get("grudge") or {}).get("sorry")  # (no apology in it)
+    crisis = S.new()
+    S.hear(crisis, w, "그냥 죽고 싶어", "c", NOON, TZ, None, words=False)  # (real trouble counts at once, read or not)
+    assert S.summary(crisis, w, NOON, TZ)["crisis"]
 
 
 # ---- the bonds ----

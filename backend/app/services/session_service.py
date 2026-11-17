@@ -1354,7 +1354,7 @@ class SessionService:
         if session.get("kind") == "mate" and self.mate_prepare is not None:
             # (the Geny-State-System reads the user's message first: waited for briefly, never for long — app/mate/gss)
             try:
-                await asyncio.wait_for(self.mate_prepare(session), timeout=3.0)
+                await asyncio.wait_for(self.mate_prepare(session), timeout=15.0)
             except Exception:  # noqa: BLE001 - her turn goes on with the words' guess
                 pass
         if session.get("kind") == "mate" and self.mate_engine is not None:

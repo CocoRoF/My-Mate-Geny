@@ -14,7 +14,8 @@ from typing import Any
 from app.mate import affinity as A
 from app.mate import state as S
 from app.mate.gss import echo, episodes as E, promises as P, temperament as T
-from app.mate.gss.appraisal import MODEL, Appraiser
+from app.mate.gss.appraisal import MODEL, SYSTEM as READER_SYSTEM, Appraiser
+from app.mate.gss.reader import Reader
 from app.mate.gss.journal import Journal
 
 RECENT = 6
@@ -29,32 +30,16 @@ class GSSRuntime:
         self.mates = mates
         self.store = mates.store
         self.journal = Journal(self.store._db)
-        self.appraiser = Appraiser(self._fast_key, self._slow)
+        from app.mate import files
+
+        # (every message is read by Claude Code kept warm, else Codex — never an API key on the side, never word patterns)
+        self.reader = Reader(mates._svc, READER_SYSTEM, files.root() / ".gss-reader")
+        self.appraiser = Appraiser(self.reader.ask)
         self.appraiser.on_read = self._on_read
         self._deriving: set[str] = set()
+        self._once = asyncio.Semaphore(1)
 
     # ---- the model: an API key's fast way, else a Claude Code one-shot ----
-
-    def _fast_key(self) -> str | None:
-        """An Anthropic API key, read without taking a turn of any account (the pool's balancing is for the chats), or None:
-        the pool's API-key accounts, else the Claude provider's key."""
-        svc = self.mates._svc
-        pool = svc._pool
-        if pool is not None:
-            for name in ("anthropic", "claude"):
-                try:
-                    accounts = pool.list(name)
-                except Exception:  # noqa: BLE001 - no such provider
-                    accounts = []
-                for acc in accounts:
-                    if (name == "anthropic" or acc.get("auth_mode") == "api_key") and acc.get("enabled", 1) not in (0, False):
-                        key = pool.api_key(acc)
-                        if key:
-                            return key
-        try:
-            return svc._providers.resolved_api_key("claude") or None
-        except Exception:  # noqa: BLE001
-            return None
 
     async def _slow(self, system: str, user: str) -> str | None:
         """Claude Code on the lightest model, no tools, nothing on disk: one answer."""
@@ -97,13 +82,8 @@ class GSSRuntime:
                 svc._pool.release(lease)
 
     async def ask(self, system: str, user: str) -> str | None:
-        fast = await asyncio.to_thread(self._fast_key)
-        if fast is not None:
-            try:
-                return await Appraiser._ask_api(fast, system, user)
-            except Exception:  # noqa: BLE001
-                pass
-        async with self.appraiser.slow_gate:  # (one Claude Code one-shot at a time: this machine is tight on memory)
+        """A one-shot with its own instructions (reading her temperament, judging her replies): Claude Code, one at a time."""
+        async with self._once:  # (one at a time: this machine is tight on memory)
             return await self._slow(system, user)
 
     # ---- before her turn ----
@@ -137,10 +117,7 @@ class GSSRuntime:
         except KeyError:
             return
         now, tz = datetime.now(timezone.utc), self.store.tz()
-        doc, w = self.store.state_doc(mate_id), self.store.state_who(mate_id)
-        words = A.cues(said["content"], name=mate["name"])
-        open_things = (S.grudge(doc, w, now) >= S.GRUDGE_SHOWN or S.levels(doc, w, now, tz)["angry"]["v"] >= S.SHOWN_FROM
-                       or bool(P.open_ones(doc)))
+        doc = self.store.state_doc(mate_id)
         settled: list[dict[str, Any]] = []
 
         last = A._t(doc.get("heard_at"))  # (their message before this one)
@@ -157,13 +134,19 @@ class GSSRuntime:
         self._repair(mate_id, mate, now, tz)
         if AWAY_WORDS.search(said["content"] or ""):  # (they say they'll be gone: the quiet days until then count for nothing)
             self.mates._relation_costs(mate_id, [{"code": "away", "until": A._iso(now + AWAY_GUESS)}], now, tz)
+        rel = self.store.relation_doc(mate_id)
+        stage = f"{rel['stage']} (trust {A.bond_words(rel)['trust']})" if rel and rel.get("enabled") else ""
         await self.appraiser.read(mate_id, said["id"], mate["name"], said["content"], self._recent(sid, said["id"]),
-                                  P.open_ones(self.store.state_doc(mate_id)), words=words, open_things=open_things)
+                                  P.open_ones(self.store.state_doc(mate_id)), stage=stage)
 
     # ---- a reading came ----
 
     def _on_read(self, mate_id: str, message_id: str, reading: dict[str, Any]) -> None:
         self.journal.record(mate_id, "heard", "reading", {"message": message_id, **reading})
+        row = self.store._db.query_one("SELECT content FROM messages WHERE id = ?", (message_id,))
+        if row is not None:  # (she heard it before the reading came: what it does to her counts now — a no-op otherwise)
+            self.mates._state_event(mate_id, lambda d, who, at, zone: S.reappraise(d, who, row["content"] or "", message_id, reading,
+                                                                                at, zone))
         try:
             mate = self.store.get(mate_id)
         except KeyError:

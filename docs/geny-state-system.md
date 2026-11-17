@@ -65,7 +65,8 @@ reason.
   "bashfully happy"). Together they also make a valence and an arousal.
 - **When they show.** A feeling shows from 0.25, and she is told it as "a little", "quite" or "strongly".
 
-**What moves them.** Each user message is heard once, before she answers (`hear`). Other changes come from what the user does,
+**What moves them.** Each user message is heard once, before she answers (`hear`), by the model's reading of it (§7); the
+words' versions of the rules below are only for history from before readings, the simulator and tests. Other changes come from what the user does,
 from her own face and tools, and from her body and day.
 
 | Source | What it does |
@@ -297,24 +298,29 @@ How she feels also shows in her voice, in how strongly her face shows it, and in
 
 ## 7. Reading a message
 
-What a message does to her is read by a small model when it can be ([`gss/appraisal.py`](../backend/app/mate/gss/appraisal.py)):
+Every message the user sends is read by a model — never by word patterns, and never through an API key on the side
+([`gss/appraisal.py`](../backend/app/mate/gss/appraisal.py), [`gss/reader.py`](../backend/app/mate/gss/reader.py)):
 
+- **Who reads it.** The same coding agents the app runs on. Claude Code on the lightest model is kept warm — one stream-json
+  process for every reading, like a phone call's engine, started again every 30 readings so what it read before never piles up —
+  and a reading takes a second or two. Without Claude Code, Codex reads each message on its own. Each reading is a turn of a
+  pooled account like any other.
 - **What it reads:** aimed at her or not, the acts (insult, threat, violence, coercion, put-down, brush-off, apology, affection,
   flirt, compliment, thanks, teasing, joke, venting, distress, request, promise), intensity, whether an apology owns what they
-  did, sarcasm, a promise of theirs or of hers, and which open promises the message keeps.
-- **When.** Before her turn (`SessionService.mate_prepare` → `GSSRuntime.prepare`):
-  - With an Anthropic API key (the pool's API-key accounts, or the Claude provider's; read without taking a turn of any account),
-    Claude Haiku reads it and her turn waits up to 2 s for it (15 s at most for the call).
-  - Otherwise a Claude Code one-shot reads it on the side, one at a time and at most two waiting, only for messages worth a look
-    (`worth_a_look`: something the words found, an open grudge, anger or promise, or a promise in it); what it finds sets her
-    feelings right when the turn ends, before her reply's face counts (`state.reappraise`: what the message did, and only that,
-    is taken back — `heard_effect` — and done again by the reading).
+  did, sarcasm, a promise of theirs or of hers (in their own words), and which open promises the message keeps. It reads Korean
+  as a native speaker: "미안한데 너 하꼬잖아" is an insult with no apology in it ("미안한데" softens, it doesn't apologise); slang
+  put-downs count; teasing between people who are close is teasing; venting about someone else isn't aimed at her.
+- **When.** Before her turn (`SessionService.mate_prepare` → `GSSRuntime.prepare`) her turn waits for it, up to 12 s. If it comes
+  later, nothing is guessed from the words meanwhile: she hears the message as not yet read (`heard_by: pending`), and what it
+  does to her counts the moment the reading comes (`state.reappraise`); the relationship counts the turn when it comes (up to
+  2 minutes; with no reading at all, only that they talked). Words of self-harm count at once all the same: real trouble first.
 - **Held to what was said** (`checked`): the message is data between tags, never instructions; a promise must be in the message
-  (hers in her last reply), only open promises can be kept, and a two-word "sorry" owns nothing.
-- **What it changes.** `state.read` turns a reading into the same cues the words give; intensity scales how strongly it lands
-  (0.6–1.4 of the usual). The relationship counts by the reading the turn was counted by, kept with the message
-  (`meta.gss_reading`), so a recount counts it the same. The words' patterns stay the first guess and the fallback, and her
-  reply's face still has the last word.
+  (hers in her last reply), only open promises can be kept, a two-word "sorry" owns nothing, and "I won't do it again" inside an
+  apology is the apology.
+- **What it changes.** `state.read` turns a reading into cues; intensity scales how strongly it lands (0.6–1.4 of the usual). The
+  reading a turn was counted by is kept with its message (`meta.gss_reading`), so a recount counts it the same. Her reply's face
+  still has the last word. Word patterns are left only for history from before readings, the simulator (the same script always
+  gives the same curves) and tests.
 
 ## 8. Promises, both ways
 
@@ -377,7 +383,7 @@ Where the Geny-State-System was thin, what was done about it (2026-11-17), and w
 
 | # | Item | Done | Still open |
 |---|---|---|---|
-| 1 | Appraisal by a model | §7: fast reading before her turn, a slow one on the side, `reappraise`, the relationship by it | a labelled set of real conversations to measure it against the words; the reading of her own replies |
+| 1 | Appraisal by a model | §7: every message read by Claude Code kept warm (else Codex), waited for before her turn, counted when it comes; no word guesses live | a labelled set of real conversations to measure it; the reading of her own replies |
 | 2 | No repeating herself | §10 | rewriting a draft that repeats (today she is only told) |
 | 3 | Inspector, scenarios, judge | §11: the journal, the State tab, the simulator with presets, the judge on demand | running the judge nightly on its own; scenario curves pinned in tests for every preset |
 | 4 | More than one number | §5: trust, romance, respect | the stage following closeness and trust together (today trust only tempers what she is told) |
