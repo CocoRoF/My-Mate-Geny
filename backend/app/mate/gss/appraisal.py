@@ -158,7 +158,7 @@ class Appraiser:
     """Readings by message id (kept for a while; a turn and its end ask for the same one). ``ask(user)``: the reader's raw
     answer for one request (app/mate/gss/reader.py), or None."""
 
-    def __init__(self, ask: Callable[[str], Any]) -> None:
+    def __init__(self, ask: Callable[..., Any]) -> None:
         self._ask = ask
         self._tasks: dict[str, asyncio.Task] = {}
         self._done: dict[str, dict[str, Any]] = {}
@@ -176,7 +176,7 @@ class Appraiser:
             self._done.pop(next(iter(self._done)))
 
     async def read(self, mate_id: str, message_id: str, name: str, text: str, recent: list[str], promises: list[dict[str, Any]],
-                   *, stage: str = "", wait: float = WAIT_S) -> dict[str, Any] | None:
+                   *, stage: str = "", wait: float = WAIT_S, provider: str | None = "claude") -> dict[str, Any] | None:
         """Read a message (once, every message), waiting for it up to ``wait``. → the reading, if it came by then (else it
         counts when it comes: ``on_read``)."""
         if message_id in self._done:
@@ -185,7 +185,7 @@ class Appraiser:
         if task is None:
             her_last = next((x[5:] for x in reversed(recent) if x.startswith("Her: ")), "")
             task = asyncio.create_task(self._run(mate_id, message_id, request(name, text, recent, promises, stage),
-                                                 (text, her_last, [p["id"] for p in promises])))
+                                                 (text, her_last, [p["id"] for p in promises]), provider))
             self._tasks[message_id] = task
         return await self.settle(message_id, wait)
 
@@ -198,9 +198,10 @@ class Appraiser:
         except (asyncio.TimeoutError, Exception):  # noqa: BLE001
             return self._done.get(message_id)
 
-    async def _run(self, mate_id: str, message_id: str, user: str, said: tuple[str, str, list[str]]) -> dict[str, Any] | None:
+    async def _run(self, mate_id: str, message_id: str, user: str, said: tuple[str, str, list[str]],
+                   provider: str | None = "claude") -> dict[str, Any] | None:
         try:
-            reading = checked(parse(await self._ask(user) or ""), *said)
+            reading = checked(parse(await self._ask(user, provider) or ""), *said)
             if reading is not None:
                 self.put(message_id, reading)
                 if self.on_read is not None:

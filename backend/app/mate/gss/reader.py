@@ -12,6 +12,21 @@ import asyncio
 from typing import Any
 
 MODEL_CLAUDE = "claude-haiku-5-5"
+MODEL_CODEX = "gpt-6-luna"  # (unless the live Codex list has a newer luna)
+
+
+def codex_light() -> str:
+    """The lightest Codex model: the newest "luna" in the live list the app keeps, else MODEL_CODEX."""
+    from app.providers import catalog
+
+    ids = [m.get("id") or "" for m in (catalog._cached("codex") or [])]
+    lunas = sorted((i for i in ids if "luna" in i), reverse=True)
+    return lunas[0] if lunas else MODEL_CODEX
+
+
+def engine_of(provider: str | None) -> str:
+    """Which agent reads for a mate on ``provider`` (her AI provider setting): Codex for Codex (and OpenAI), else Claude Code."""
+    return "codex" if provider in ("codex", "openai") else "claude"
 FRESH_AFTER = 30          # readings before the warm process is started again (what it read before stays out of the next)
 TIMEOUT_S = 40.0
 
@@ -94,7 +109,7 @@ class Reader:
 
     # ---- Codex, one message at a time ----
 
-    async def _ask_codex(self, user: str) -> str:
+    async def _ask_codex(self, user: str, system: str | None = None) -> str:
         from app.providers.base import TurnRequest
         from app.services.session_service import get_provider
 
@@ -107,11 +122,11 @@ class Reader:
                     env["CODEX_HOME"] = lease.config_dir
             root = self.workdir / "codex"
             root.mkdir(parents=True, exist_ok=True)
-            req = TurnRequest(messages=[{"role": "user", "content": user}], model="", effort="low", cwd=str(root),
-                              extra_env=env, timeout_s=90, system_prompt=self.system, sealed=True, ephemeral=True,
+            req = TurnRequest(messages=[{"role": "user", "content": user}], model=codex_light(), effort="low", cwd=str(root),
+                              extra_env=env, timeout_s=90, system_prompt=system or self.system, sealed=True, ephemeral=True,
                               require_sealed_catalog=True, tools=[], allowed_tools=[], mcp_config={"mcpServers": {}},
                               engine_home=str(root / "home"))
-            (root / "reader.md").write_text(self.system, "utf-8")
+            (root / "reader.md").write_text(system or self.system, "utf-8")
             req.system_prompt_file = str(root / "reader.md")
             text = ""
             async with asyncio.timeout(100):
@@ -130,17 +145,16 @@ class Reader:
                 svc._pool.end_turn(lease)
                 svc._pool.release(lease)
 
-    async def ask(self, user: str) -> str | None:
-        """One reading's answer (raw), from Claude Code kept warm, else Codex; None when neither could read it."""
+    async def ask(self, user: str, provider: str | None = "claude") -> str | None:
+        """One reading's answer (raw), by the agent her AI provider setting says: Claude Code (Haiku, kept warm) or Codex (luna).
+        None when it couldn't read it (why: ``failed``)."""
         async with self._lock:  # (one at a time: the warm process answers in order, and this machine is tight on memory)
             try:
+                if engine_of(provider) == "codex":
+                    return await self._ask_codex(user)
                 return await self._ask_warm(user)
-            except Exception as exc:  # noqa: BLE001 - no Claude Code: Codex reads it
-                self.failed = f"claude: {type(exc).__name__}: {str(exc)[:160]}"
-            try:
-                return await self._ask_codex(user)
-            except Exception as exc:  # noqa: BLE001
-                self.failed += f"; codex: {type(exc).__name__}: {str(exc)[:160]}"
+            except Exception as exc:  # noqa: BLE001 - no reading: the message counts for nothing but that they talked
+                self.failed = f"{engine_of(provider)}: {type(exc).__name__}: {str(exc)[:200]}"
                 return None
 
     async def close(self) -> None:

@@ -104,7 +104,7 @@ async def evaluate(runtime: Any, mate_id: str, last: int = 20) -> dict[str, Any]
     if not pairs:
         return {"scores": {}, "findings": [], "summary": "", "overall": None, "exchanges": 0}
     system, user = request(mate["name"], mate.get("persona") or {}, mate.get("prefs") or {}, pairs)
-    report = parse(await runtime.ask(system, user) or "")
+    report = parse(await runtime.ask(system, user, (mate.get("llm") or {}).get("provider")) or "")
     if report is None:
         return {"scores": {}, "findings": [], "summary": "", "overall": None, "exchanges": len(pairs), "error": "no judgement came back"}
     report["exchanges"] = len(pairs)

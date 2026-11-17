@@ -78,7 +78,7 @@ async def test_every_message_is_read_and_one_that_comes_late_counts_when_it_come
 
     gate = asyncio.Event()
 
-    async def slow(user):
+    async def slow(user, provider="claude"):
         await gate.wait()
         return '{"aimed_at_her": true, "acts": ["insult"], "intensity": 0.6}'
 

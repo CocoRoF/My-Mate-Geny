@@ -131,7 +131,7 @@ def _a_reader_from_the_words(monkeypatch):
     """The Geny-State-System's reader (Claude Code kept warm, else Codex) is never started in tests."""
     from app.mate.gss import reader
 
-    async def ask(self, user):
+    async def ask(self, user, provider="claude"):
         return words_reading(user)
 
     monkeypatch.setattr(reader.Reader, "ask", ask)

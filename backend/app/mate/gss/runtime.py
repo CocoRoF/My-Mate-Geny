@@ -39,7 +39,7 @@ class GSSRuntime:
         self._deriving: set[str] = set()
         self._once = asyncio.Semaphore(1)
 
-    # ---- the model: an API key's fast way, else a Claude Code one-shot ----
+    # ---- one-shots with their own instructions, on the agent her AI provider setting says ----
 
     async def _slow(self, system: str, user: str) -> str | None:
         """Claude Code on the lightest model, no tools, nothing on disk: one answer."""
@@ -81,9 +81,17 @@ class GSSRuntime:
                 svc._pool.end_turn(lease)
                 svc._pool.release(lease)
 
-    async def ask(self, system: str, user: str) -> str | None:
-        """A one-shot with its own instructions (reading her temperament, judging her replies): Claude Code, one at a time."""
+    async def ask(self, system: str, user: str, provider: str | None = "claude") -> str | None:
+        """A one-shot with its own instructions (reading her temperament, judging her replies), on the agent her AI provider
+        setting says: Claude Code on Haiku, or Codex on luna. One at a time."""
+        from app.mate.gss.reader import engine_of
+
         async with self._once:  # (one at a time: this machine is tight on memory)
+            if engine_of(provider) == "codex":
+                try:
+                    return await self.reader._ask_codex(user, system)
+                except Exception:  # noqa: BLE001
+                    return None
             return await self._slow(system, user)
 
     # ---- before her turn ----
@@ -137,7 +145,8 @@ class GSSRuntime:
         rel = self.store.relation_doc(mate_id)
         stage = f"{rel['stage']} (trust {A.bond_words(rel)['trust']})" if rel and rel.get("enabled") else ""
         await self.appraiser.read(mate_id, said["id"], mate["name"], said["content"], self._recent(sid, said["id"]),
-                                  P.open_ones(self.store.state_doc(mate_id)), stage=stage)
+                                  P.open_ones(self.store.state_doc(mate_id)), stage=stage,
+                                  provider=(mate.get("llm") or {}).get("provider") or "claude")  # (her AI provider setting)
 
     # ---- a reading came ----
 
@@ -305,7 +314,7 @@ class GSSRuntime:
         self._deriving.add(mate_id)
         try:
             system, user = T.request(mate.get("persona") or {}, mate["name"])
-            found = T.parse(await self.ask(system, user) or "")
+            found = T.parse(await self.ask(system, user, (mate.get("llm") or {}).get("provider")) or "")
             if found:  # (only that: whatever else was changed meanwhile stays)
                 self.store.update(mate_id, {"prefs": {"temperament": found}})
                 self.journal.record(mate_id, "temperament", "derived", found)
