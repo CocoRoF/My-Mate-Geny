@@ -130,6 +130,16 @@ import {
   LuWandSparkles,
   LuCircle,
   LuCopyPlus,
+  LuCrop,
+  LuBrush,
+  LuEraser,
+  LuHighlighter,
+  LuUndo2,
+  LuRedo2,
+  LuRotateCwSquare,
+  LuMoveUpRight,
+  LuType,
+  LuGrid3X3,
 } from "react-icons/lu";
 
 const MAP = {
@@ -264,6 +274,18 @@ const MAP = {
   wand: LuWandSparkles,
   record: LuCircle,
   duplicate: LuCopyPlus,
+  // the picture editor (components/attachments/ImageEditor)
+  crop: LuCrop,
+  brush: LuBrush,
+  eraser: LuEraser,
+  highlighter: LuHighlighter,
+  undo: LuUndo2,
+  redo: LuRedo2,
+  "rotate-cw": LuRotateCwSquare,
+  "shape-rect": LuSquare,
+  "shape-arrow": LuMoveUpRight,
+  text: LuType,
+  mosaic: LuGrid3X3,
 } satisfies Record<string, IconType>;
 
 export type IconName = keyof typeof MAP;

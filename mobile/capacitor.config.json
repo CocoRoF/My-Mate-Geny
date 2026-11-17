@@ -23,6 +23,7 @@
       "backgroundColor": "#0a0c10"
     },
     "LocalNotifications": {
+      "smallIcon": "ic_stat_geny",
       "iconColor": "#6e8bff"
     }
   }

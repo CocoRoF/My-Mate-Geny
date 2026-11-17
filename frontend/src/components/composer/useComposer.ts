@@ -4,6 +4,7 @@
  * - text, attached files and queued messages belong to the conversation (draftStore / composerStore, keyed by its
  *   session id): switching views or reloading keeps them;
  * - files: the + menu pickers (Photos, Camera on touch screens, Files), paste (Ctrl/⌘+V, named like `pasted-<stamp>.png`), drops — each uploads at once;
+ *   on a touch screen a single photo opens in the picture editor (components/attachments/ImageEditor) as it is added;
  * - sending: idle → a new turn; while a turn runs Enter steers it ("Add now"), Queue holds it for after the turn;
  *   queued messages go one at a time, each once the run before has ended (lib/queue.ts) — by the server's word
  *   (run.state), not when an answer looks done: a message the server didn't take (a steer the turn could no longer
@@ -152,7 +153,9 @@ export function useComposer(o: ComposerOptions) {
   const addFiles = useCallback(
     (files: File[]) => {
       if (!files.length) return;
-      add(sid, files);
+      // (a phone: one photo picked or taken opens in the editor at once — crop it, mark it, or just 완료)
+      const photo = files.length === 1 && /^image\/(?!gif|svg)/.test(files[0].type);
+      add(sid, files, { edit: touch && photo });
       setNotice("");
       // (a touch screen: no keyboard popping up over the conversation — the tray and ↑ are right there)
       if (!touch) taRef.current?.focus();

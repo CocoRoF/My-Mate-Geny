@@ -214,7 +214,7 @@ function ActivityChip({ tool }: { tool: ToolActivity }) {
       )}
       {shot && (
         <div className="max-w-full" data-testid="mate-screen-shot">
-          <MessageAttachments attachments={tool.images!} />
+          <MessageAttachments attachments={tool.images!} sid={useMateChat.getState().sid} />
         </div>
       )}
     </div>
@@ -238,7 +238,7 @@ function UserBubble({ text, attachments, pending, collecting, compact, messageId
           {!hasText && del}
           {/* (the full width: three thumbnails in a row don't fit 85 % of a phone) */}
           <div className="min-w-0 max-w-full" data-testid="mate-user-attachments">
-            <MessageAttachments attachments={attachments} />
+            <MessageAttachments attachments={attachments} sid={useMateChat.getState().sid} />
           </div>
         </div>
       )}

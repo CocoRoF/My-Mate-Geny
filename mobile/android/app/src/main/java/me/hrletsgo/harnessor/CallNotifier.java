@@ -196,7 +196,7 @@ final class CallNotifier {
         PendingIntent answer = activity(c, ACTION_ACCEPT, id, 4);
         PendingIntent decline = broadcast(c, ACTION_DECLINE, id, 3);
         NotificationCompat.Builder b = new NotificationCompat.Builder(c, CH_RING)
-                .setSmallIcon(android.R.drawable.sym_call_incoming)
+                .setSmallIcon(R.drawable.ic_stat_geny)
                 .setContentTitle(who)
                 .setContentText(text)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
@@ -222,7 +222,7 @@ final class CallNotifier {
         } catch (Exception e) {
             // (a phone that refuses a call-style notification here: the same with plain buttons)
             NotificationCompat.Builder plain = new NotificationCompat.Builder(c, CH_RING)
-                    .setSmallIcon(android.R.drawable.sym_call_incoming)
+                    .setSmallIcon(R.drawable.ic_stat_geny)
                     .setContentTitle(who)
                     .setContentText(text)
                     .setCategory(NotificationCompat.CATEGORY_CALL)
@@ -270,7 +270,7 @@ final class CallNotifier {
         channels(c);
         String who = name == null || name.isEmpty() ? c.getString(R.string.call_mate) : name;
         NotificationCompat.Builder b = new NotificationCompat.Builder(c, CH_MISSED)
-                .setSmallIcon(android.R.drawable.sym_call_missed)
+                .setSmallIcon(R.drawable.ic_stat_geny)
                 .setContentTitle(c.getString(R.string.call_missed_title))
                 .setContentText(c.getString(R.string.call_missed_text, who))
                 .setCategory(NotificationCompat.CATEGORY_MISSED_CALL)
@@ -300,7 +300,7 @@ final class CallNotifier {
         NotificationCompat.MessagingStyle style = new NotificationCompat.MessagingStyle(me)
                 .addMessage(text, when, person(c, mateId, who));
         NotificationCompat.Builder b = new NotificationCompat.Builder(c, CH_MESSAGES)
-                .setSmallIcon(android.R.drawable.stat_notify_chat)
+                .setSmallIcon(R.drawable.ic_stat_geny)
                 .setContentTitle(who)
                 .setContentText(text)
                 .setStyle(style)
@@ -324,7 +324,7 @@ final class CallNotifier {
     static Notification link(Context c, String title, String text) {
         channels(c);
         return new NotificationCompat.Builder(c, CH_LINK)
-                .setSmallIcon(android.R.drawable.stat_sys_phone_call)
+                .setSmallIcon(R.drawable.ic_stat_geny)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setPriority(NotificationCompat.PRIORITY_MIN)
@@ -343,7 +343,7 @@ final class CallNotifier {
         PendingIntent open = activity(c, Intent.ACTION_MAIN, id, 7);
         PendingIntent hangup = broadcast(c, ACTION_HANGUP, id, 8);
         NotificationCompat.Builder b = new NotificationCompat.Builder(c, CH_ONGOING)
-                .setSmallIcon(android.R.drawable.stat_sys_phone_call)
+                .setSmallIcon(R.drawable.ic_stat_geny)
                 .setContentTitle(who)
                 .setContentText(c.getString(R.string.call_ongoing_text))
                 .setCategory(NotificationCompat.CATEGORY_CALL)

@@ -4,6 +4,8 @@ import type { Attachment } from "../../types";
 import { downloadUrl } from "../../api/attachments";
 import Icon from "../ui/Icon";
 import Lightbox from "./Lightbox";
+import ImageEditor from "./ImageEditor";
+import { useComposerStore } from "../../stores/composerStore";
 import { useT } from "../../i18n";
 import { extOf, fileVisual, formatBytes, freshImg, opensInline } from "./fileMeta";
 
@@ -23,16 +25,21 @@ function Unavailable({ name, big }: { name: string; big?: boolean }) {
   );
 }
 
-/** Attachments shown in a sent message: image grid + file cards. */
+/** Attachments shown in a sent message: image grid + file cards. A picture opens in the lightbox; with `sid` (the
+ *  conversation it is in) its 편집 opens the picture editor, and the edited picture goes into that conversation's
+ *  message box, ready to send. */
 export default function MessageAttachments({
   attachments,
   align = "end",
+  sid,
 }: {
   attachments: Attachment[];
   align?: "start" | "end";
+  sid?: string | null;
 }) {
   const t = useT();
   const [viewing, setViewing] = useState<number | null>(null);
+  const [editing, setEditing] = useState<Attachment | null>(null);
   const [broken, setBroken] = useState<Record<string, true>>({});
   const fail = (id: string) => setBroken((b) => (b[id] ? b : { ...b, [id]: true }));
   attachments = visibleAttachments(attachments);
@@ -124,7 +131,21 @@ export default function MessageAttachments({
         );
       })}
 
-      {viewing !== null && <Lightbox images={images} start={viewing} onClose={() => setViewing(null)} />}
+      {viewing !== null && <Lightbox images={images} start={viewing} onClose={() => setViewing(null)} onEdit={sid ? setEditing : undefined} />}
+      {editing && sid && (
+        <ImageEditor
+          src={editing.url}
+          name={editing.name}
+          mime={editing.mime}
+          onClose={() => setEditing(null)}
+          onDone={(file) => {
+            setEditing(null);
+            if (!file) return;
+            useComposerStore.getState().add(sid, [file]);
+            setViewing(null);
+          }}
+        />
+      )}
     </div>
   );
 }

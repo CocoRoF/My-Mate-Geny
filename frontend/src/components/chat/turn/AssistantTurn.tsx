@@ -194,7 +194,7 @@ export default function AssistantTurn({ turn }: { turn: Turn }) {
                       </>
                     )}
                   </span>
-                  {s.item.attachments.length > 0 && <MessageAttachments attachments={s.item.attachments} />}
+                  {s.item.attachments.length > 0 && <MessageAttachments attachments={s.item.attachments} sid={useChatStore.getState().sid} />}
                   {s.item.text && (
                     <div
                       className={`max-w-[85%] rounded-2xl rounded-br-md border px-3.5 py-2 text-sm text-content whitespace-pre-wrap break-words ${

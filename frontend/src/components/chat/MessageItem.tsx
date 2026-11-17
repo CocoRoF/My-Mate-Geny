@@ -30,10 +30,11 @@ export default memo(function MessageItem({ turn }: { turn: Turn }) {
   if (turn.role === "user" && turn.meta?.hidden) return null; // (the user deleted it)
   if (turn.role === "user") {
     const atts = turn.attachments || [];
+    const sid = useChatStore.getState().sid;
     return (
       <div className="group flex flex-col items-end gap-1.5 animate-fade-in">
         <ViaBadge meta={turn.meta} />
-        {atts.length > 0 && <MessageAttachments attachments={atts} />}
+        {atts.length > 0 && <MessageAttachments attachments={atts} sid={sid} />}
         {turn.text && (
           <div className="max-w-[85%] sm:max-w-[78%] rounded-2xl rounded-br-md bg-accent-soft border border-accent/25 px-3.5 py-2 text-sm text-content whitespace-pre-wrap break-words">
             {turn.text}

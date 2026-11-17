@@ -115,3 +115,14 @@ test("on a call the phone goes dark at the ear, and the call goes on with the sc
   assert.match(service, /foreground\(\);\s+awake\(true\);/);
   assert.match(service, /callId = null;\s+awake\(false\);/);
 });
+
+test("every notification shows the app's own mark in the status bar, not Android's generic one", () => {
+  const icon = read(path.join(ROOT, "android/app/src/main/res/drawable/ic_stat_geny.xml"));
+  assert.match(icon, /<vector[\s\S]*android:viewportWidth="24"/);
+  assert.doesNotMatch(icon, /fillColor="#FF(?!FFFFFF)/, "white on clear only (Android uses the alpha)");
+  assert.doesNotMatch(notifier, /setSmallIcon\(android\.R\.drawable/);
+  assert.equal((notifier.match(/setSmallIcon\(R\.drawable\.ic_stat_geny\)/g) || []).length, 6);
+  // (the page's own notifications: Capacitor's LocalNotifications takes its icon from the config — else ic_dialog_info, the "i")
+  const config = JSON.parse(read(path.join(ROOT, "capacitor.config.json")));
+  assert.equal(config.plugins.LocalNotifications.smallIcon, "ic_stat_geny");
+});

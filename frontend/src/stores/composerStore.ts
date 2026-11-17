@@ -25,8 +25,14 @@ export interface PendingFile {
 interface ComposerState {
   items: PendingFile[];
   limits: { max_mb: number; max_files: number };
-  add: (sessionId: string, files: File[]) => void;
+  /** `edit`: the picture added opens in the editor at once (a single photo picked on a phone) */
+  add: (sessionId: string, files: File[], opts?: { edit?: boolean }) => void;
   remove: (localId: string) => void;
+  /** a picture of the tray edited (components/attachments/ImageEditor): the new one goes up in its place */
+  replace: (localId: string, file: File) => void;
+  /** the tray's picture open in the editor */
+  editing: string | null;
+  edit: (localId: string | null) => void;
   retry: (localId: string) => void;
   /** Drop the session's items after a send (keeps the server-side files). */
   clearSent: (sessionId: string) => void;
@@ -81,6 +87,8 @@ export const useComposerStore = create<ComposerState>((set, get) => {
   return {
     items: restoreDrafts(),
     limits: { max_mb: 50, max_files: 20 },
+    editing: null,
+    edit: (localId) => set({ editing: localId }),
 
     restore: (sessionId, attachments) =>
       set((s) => {
@@ -88,7 +96,7 @@ export const useComposerStore = create<ComposerState>((set, get) => {
         return { items: [...s.items, ...attachments.filter((a) => !known.has(a.id)).map((a) => uploaded(sessionId, a))] };
       }),
 
-    add: (sessionId, files) => {
+    add: (sessionId, files, opts) => {
       if (!limitsLoaded) {
         limitsLoaded = true;
         getUploadLimits()
@@ -120,6 +128,31 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       });
       set((s) => ({ items: [...s.items, ...fresh] }));
       fresh.filter((it) => it.status === "uploading").forEach(start);
+      const one = fresh.length === 1 ? fresh[0] : null;
+      if (opts?.edit && one && one.kind === "image" && one.status === "uploading") set({ editing: one.localId });
+    },
+
+    replace: (localId, file) => {
+      const it = get().items.find((x) => x.localId === localId);
+      if (!it) return;
+      // (a new id: whatever the old upload still says lands on nothing — its file, if it arrives, is deleted)
+      it.abort?.();
+      if (it.previewUrl) URL.revokeObjectURL(it.previewUrl);
+      if (it.attachment) deleteAttachment(it.attachment.id).catch(() => {});
+      const fresh: PendingFile = {
+        localId: `p${++seq}`,
+        sessionId: it.sessionId,
+        file,
+        name: file.name,
+        size: file.size,
+        mime: file.type || "image/jpeg",
+        kind: "image",
+        previewUrl: URL.createObjectURL(file),
+        progress: 0,
+        status: "uploading",
+      };
+      set((s) => ({ items: s.items.map((x) => (x.localId === localId ? fresh : x)), editing: s.editing === localId ? null : s.editing }));
+      start(fresh);
     },
 
     remove: (localId) => {
@@ -128,7 +161,7 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       it.abort?.();
       if (it.previewUrl) URL.revokeObjectURL(it.previewUrl);
       if (it.attachment) deleteAttachment(it.attachment.id).catch(() => {});
-      set((s) => ({ items: s.items.filter((x) => x.localId !== localId) }));
+      set((s) => ({ items: s.items.filter((x) => x.localId !== localId), editing: s.editing === localId ? null : s.editing }));
     },
 
     retry: (localId) => {

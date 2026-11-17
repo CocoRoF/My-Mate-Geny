@@ -14,10 +14,13 @@ export default function Lightbox({
   images,
   start,
   onClose,
+  onEdit,
 }: {
   images: Attachment[];
   start: number;
   onClose: () => void;
+  /** 편집: the picture shown, to the editor (its result goes into the message box) */
+  onEdit?: (img: Attachment) => void;
 }) {
   const t = useT();
   const [i, setI] = useState(start);
@@ -71,6 +74,12 @@ export default function Lightbox({
           {many ? ` · ${i + 1} / ${images.length}` : ""}
         </span>
         <span className="ml-auto flex items-center gap-1">
+          {onEdit && (
+            <button onClick={() => onEdit(img)} className="btn-ghost !text-white/85 hover:!text-white gap-1.5" title={t("files.edit")} data-testid="lightbox-edit">
+              <Icon name="pencil" size={15} />
+              <span className="text-xs">{t("files.edit")}</span>
+            </button>
+          )}
           <a href={img.url} target="_blank" rel="noreferrer" className="btn-ghost !text-white/75 hover:!text-white" title={t("files.openOriginal")}>
             <Icon name="external" size={16} />
           </a>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useComposerStore, type PendingFile } from "../../stores/composerStore";
 import Icon from "../ui/Icon";
-import Lightbox from "./Lightbox";
+import ImageEditor from "./ImageEditor";
 import { useT } from "../../i18n";
 import { extOf, fileVisual, formatBytes } from "./fileMeta";
 import ScrollRow from "../ui/ScrollRow";
@@ -36,16 +36,20 @@ function RemoveButton({ onClick }: { onClick: () => void }) {
 }
 
 function ImageTile({ it, onOpen }: { it: PendingFile; onOpen: () => void }) {
+  const t = useT();
   const remove = useComposerStore((s) => s.remove);
   const retry = useComposerStore((s) => s.retry);
   // The local preview first (instant); if it can't be read (an Android picker's content URI can refuse a second
   // read), the server's thumbnail once the upload is in; else an icon.
   const [failed, setFailed] = useState<string[]>([]);
   const src = [it.previewUrl, it.attachment?.preview_url].find((u) => u && !failed.includes(u));
+  // (a picture of its own here — the one picked, or the uploaded one — opens in the editor, even while it goes up)
+  const editable = it.status !== "error" && !!(it.previewUrl || it.attachment);
   return (
-    <div className="group relative shrink-0" title={it.error ? `${it.name} — ${it.error}` : it.name}>
+    <div className="group relative shrink-0" title={it.error ? `${it.name} — ${it.error}` : `${it.name} — ${t("files.editHint")}`}>
       <button
-        onClick={it.status === "done" ? onOpen : it.status === "error" ? () => retry(it.localId) : undefined}
+        onClick={it.status === "error" ? () => retry(it.localId) : editable ? onOpen : undefined}
+        data-testid="tray-image"
         className={`relative block w-16 h-16 overflow-hidden rounded-xl border bg-surface-3 ${
           it.status === "error" ? "border-danger/60" : "border-border"
         }`}
@@ -65,6 +69,11 @@ function ImageTile({ it, onOpen }: { it: PendingFile; onOpen: () => void }) {
         {it.status === "error" && (
           <span className="absolute inset-0 grid place-items-center bg-danger/35 text-white">
             <Icon name="refresh" size={16} />
+          </span>
+        )}
+        {it.status === "done" && (
+          <span className="absolute bottom-1 right-1 grid h-5 w-5 place-items-center rounded-full bg-black/55 text-white" aria-hidden>
+            <Icon name="pencil" size={11} />
           </span>
         )}
       </button>
@@ -113,28 +122,35 @@ function FileChip({ it }: { it: PendingFile }) {
   );
 }
 
-/** Pending attachments inside the composer box. */
+/** Pending attachments inside the composer box; a picture tapped opens in the editor (its edit goes up in its place). */
 export default function AttachmentTray({ items }: { items: PendingFile[] }) {
-  const [viewing, setViewing] = useState<number | null>(null);
-  const doneImages = items.filter((i) => i.kind === "image" && i.status === "done" && i.attachment);
+  const editing = useComposerStore((s) => s.editing);
+  const edit = useComposerStore((s) => s.edit);
+  const replace = useComposerStore((s) => s.replace);
+  // (only this tray's own: another conversation's tray may be on screen too)
+  const open = items.find((i) => i.localId === editing && i.kind === "image");
+  const openSrc = [open?.previewUrl, open?.attachment?.url].filter((u): u is string => !!u);
   if (!items.length) return null;
   return (
     <>
       <ScrollRow className="gap-2.5 px-1.5 pb-1.5 pt-2.5">
         {items.map((it) =>
           it.kind === "image" ? (
-            <ImageTile
-              key={it.localId}
-              it={it}
-              onOpen={() => setViewing(doneImages.findIndex((d) => d.localId === it.localId))}
-            />
+            <ImageTile key={it.localId} it={it} onOpen={() => edit(it.localId)} />
           ) : (
             <FileChip key={it.localId} it={it} />
           ),
         )}
       </ScrollRow>
-      {viewing !== null && viewing >= 0 && (
-        <Lightbox images={doneImages.map((d) => d.attachment!)} start={viewing} onClose={() => setViewing(null)} />
+      {open && openSrc.length > 0 && (
+        <ImageEditor
+          key={open.localId}
+          src={openSrc}
+          name={open.name}
+          mime={open.mime}
+          onDone={(file) => (file ? replace(open.localId, file) : edit(null))}
+          onClose={() => edit(null)}
+        />
       )}
     </>
   );
