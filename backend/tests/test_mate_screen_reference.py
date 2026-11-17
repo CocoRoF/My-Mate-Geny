@@ -32,5 +32,7 @@ def test_her_moments_say_what_the_moment_is_never_what_to_talk_about():
     assert "[SILENT]" in SPEAK_UP and "Whether you do is yours" in SPEAK_UP and "never just to fill the silence" in SPEAK_UP
     assert "don't describe it or make it the topic" in SCREEN_NOTE
     p = FixedPolicy(default_manifest(), clock=lambda: 100000, hour=9, screen_active=True)
+    p._consecutive_triggers["s"] = 1  # (after the first quiet moment: the screen is background, never first)
+    p._last_category_fire["s"] = {"time_morning": 100000}
     text, cat = p._pick_category_and_prompt("s", lambda _: False)
     assert cat.id == "screen_observation" and text == FIXED_CONTENT["screen_observation"] and "TRIGGER" not in text
