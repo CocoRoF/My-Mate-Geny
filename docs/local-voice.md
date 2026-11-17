@@ -224,51 +224,79 @@ Settings → 로컬 모델 호스팅 → **Voice Studio** (`frontend/src/compone
 
 Voice Studio → **학습** (`frontend/src/components/voicestudio/TrainPage.tsx`; the server: `app/voicehost/training.py`,
 the run: `app/voicehost/train/`). Cloning from a clip copies a voice; a profile taught by recordings of the person
-speaks like her with a short clip and with none. **What the user does: give the recordings** (any audio or video —
-a talk, a stream, voice notes — up to 12 files of 300 MB at once, one person) and start. Everything else is the run's:
+speaks more like her from a short clip — and, on OmniVoice and Qwen3-TTS, with no clip at all. Every speech model
+learns: **OmniVoice, Qwen3-TTS 0.6B / 1.7B and CosyVoice3** — each its own LoRA adapter. **What the user does: give the
+recordings** (any audio or video — a talk, a stream, voice notes — up to 12 files of 300 MB at once, one person) and
+start; the installed models are all ticked to begin with. Everything else is the runs': one per model, one after
+another, the recordings heard once (the first run's utterances and words are the others' — `group_id`, `shared_data`):
 
 | Stage | |
 |---|---|
 | prepare | each recording at 24 kHz, cut into utterances at its pauses (1.5 – 12 s, `train/segment.py`) |
-| transcribe | each utterance's words by Whisper large-v3-turbo; the language found by OmniVoice's own detector unless given |
+| transcribe | each utterance's words by Whisper large-v3-turbo; the language found by Whisper's detector unless given |
 | screen | only her: an utterance unlike the rest (CAM++ speaker embeddings, below the median − 0.18) is someone else; words that can't be right for its length, or the same words over and over; clipping, too quiet. At most 90 minutes are kept, at least 60 s must be |
-| tokens | the utterances as OmniVoice's audio tokens (25 a second) |
-| baseline | the profile as it clones now, measured on new sentences in her language with three references — a long clip (her own neutral clip, else her best 5 – 12 s utterance), a short one (~3 s) and none: how alike (CAM++ cosine to the centroid of her kept utterances) and how intelligible (Whisper's character error rate) |
-| train | LoRA (r 16, α 32) on the LLM's attention and MLP projections, the audio embedding and heads trained in full; bf16 autocast, gradient checkpointing, AdamW 1e-4 with warm-up and cosine. About 50 passes over her data (200 – 1500 steps); measured six times along the way |
-| done | the best checkpoint — the most alike over the three references, never less intelligible than before (CER at most +0.03 in each) — kept as an adapter (bf16, ~54 MB) with A/B samples, and put on the profile when it is better |
+| tokens | the utterances in the model's own terms (`train/<model>.py`): OmniVoice's audio tokens (25 a second); Qwen3-TTS's codes (12.5 frames a second × 16 codebooks) and speaker embeddings; CosyVoice3's speech tokens (25 a second) and its words |
+| baseline | the profile as it clones now, measured on new sentences in her language with a long clip (her own neutral clip, else her best 5 – 12 s utterance), a short one (~3 s) and none (OmniVoice: its own voice; Qwen3-TTS: her mean speaker embedding, no clip; CosyVoice3 can't speak without a clip — not measured): how alike (CAM++ cosine to the centroid of her kept utterances) and how intelligible (Whisper's character error rate) |
+| train | LoRA (r 16, α 32), AdamW 1e-4 with warm-up and cosine, bf16, gradient checkpointing, about 50 passes over her data (200 – 1500 steps), measured six times along the way — on each model's own way of speaking (below) |
+| done | the best checkpoint — the most alike over the references, never less intelligible than before (CER at most +0.03 in each) — kept as an adapter with A/B samples, and put on the profile for that model when it is better |
 
-- **On the profile**: a trained profile speaks with its adapter on OmniVoice — in the studio, in batches, as a mate's
-  voice (her speech cache's key includes the adapter: new lines for a new one). Other models clone from its clips as
-  before. The run's card turns it on and off; deleting the run takes it off and removes it. An adapter is for the
-  OmniVoice it was made with (the revision in `geny.json`): after a new OmniVoice the profile speaks without it.
-  A new profile gets her clearest utterance as its neutral clip. 프로필 marks a trained profile (학습됨), and 생성 /
-  히스토리 a line made with an adapter (`omnivoice (학습됨)`, the history's `adapter`).
-- **What it needs**: OmniVoice installed; Whisper large-v3-turbo's weights (MIT) and CAM++'s (`campplus.onnx` from
+What each model learns (`train/recipe.py`: one recipe each, in the model's own runtime):
+
+- **OmniVoice** (`train/omni.py`): LoRA on the LLM's attention and MLP projections, its audio embedding and heads in
+  full, with OmniVoice's own masked-token objective; fp32 weights under bf16. Adapter ~54 MB.
+- **Qwen3-TTS** (`train/qwen.py`): LoRA on the talker's layers only — the code predictor, which the engine runs as a
+  CUDA graph, stays as it was; its loss (the 15 other codebooks, 0.3 ×) still teaches the talker. Trained in the
+  layouts the engine speaks in: after another of her clips (in context: the clip's words then the line's, its codes,
+  the line's words fed a frame at a time) and from her voice alone (the speaker embedding only — her mean embedding is
+  kept beside the adapter, `voice.safetensors`, so the trained voice speaks without a clip). Not upstream's
+  finetuning script, whose loss doesn't match generation (its text projection missing, labels shifted twice, the
+  code predictor fed the frame it predicts — QwenLM/Qwen3-TTS #371, #278, #384). bf16 weights. Adapter ~35 – 70 MB.
+- **CosyVoice3** (`train/cosy.py`): both halves of it, one adapter (`engines/cosyvoice3.py`: `Learned`). Its LLM
+  (how her words go): LoRA on the Qwen2 layers, the speech-token decoder and embedding in full, on CosyVoice3LM's own
+  sequence ([sos, instruction + words, task, speech tokens] → the tokens and eos); half the samples put after another
+  of her utterances, as zero-shot inference puts a line after the clip. Its flow (her timbre — mel from the tokens,
+  with the clip's embedding and mel): LoRA on the DiT's attention and feed-forward, on its own flow-matching loss (a
+  random start of her mel as the prompt, as upstream trains it; her mel padded to whole tokens, 2 frames each). The
+  LLM alone hardly moved how like her it sounds (+0.00 / +0.01 — the flow carries the timbre); with the flow +0.02
+  with both clips. HiFT is left as it is. Adapter ~50 MB.
+
+- **On the profile**: a trained profile speaks with each model's adapter on that model — in the studio, in batches,
+  as a mate's voice (her speech cache's key includes the adapter: new lines for a new one) — `voice_adapters` (voice,
+  model → run); the models it wasn't trained for clone from its clips as before. The worker switches adapters per
+  line on one loaded model (peft, in place; the last four kept; off for a voice without one). A run's card turns its
+  adapter on and off; deleting the run takes it off and removes it; a newer run of the same model is put on instead.
+  An adapter is for the model it was made with (the revision in `geny.json`): after a new version the profile speaks
+  without it. A new profile gets her clearest utterance as its neutral clip. 프로필 marks a trained profile
+  (학습됨 · the models), and 생성 / 히스토리 a line made with an adapter (`omnivoice (학습됨)`, the history's `adapter`).
+- **What it needs**: the model installed; Whisper large-v3-turbo's weights (MIT) and CAM++'s (`campplus.onnx` from
   `FunAudioLLM/Fun-CosyVoice3-0.5B-2512`, 28 MB, Apache-2.0) — fetched for the first run after the user accepts them
-  in the form once; `peft` and `onnxruntime` in the omni runtime (in its lock: an omni runtime from an older lock keeps
-  speaking and is brought up to date in place — 30 s after the server starts, or before the first run). The GPU:
-  6 GB free (4.9 GB measured at most); its process is held to 12 GB of RAM (`capped`, where there is one).
+  in the form once; `peft` (and `onnxruntime`) in each engine's runtime (in its lock: a runtime from an older lock keeps
+  speaking and is brought up to date in place — 30 s after the server starts, or before the run). The GPU, free
+  (measured at most, and some room): OmniVoice and Qwen3-TTS 0.6B 6 GB, Qwen3-TTS 1.7B and CosyVoice3 8 GB; its
+  process is held to 12 GB of RAM (`capped`, where there is one).
 - **Sharing the GPU**: one run at a time. It waits while a call holds its models or a mate spoke in the last 20 s, and
-  while the GPU has less than 6 GB free. While a mate speaks (an interactive job in the GPU queue) it pauses: compute
+  while the GPU hasn't the room. While a mate speaks (an interactive job in the GPU queue) it pauses: compute
   stops, its memory stays. When the memory is wanted — a model that doesn't fit, an image job — it saves where it is
   and leaves (`released`), and goes on from that step when the GPU is free again; a server restart goes on the same
   way (a run cut off without a saved step starts over).
-- **What stays**: the recordings (to train again), the adapter, the samples and the report; the cut utterances and
-  the saved steps go when the run ends. Under `<voice home>/trainings/<run>/`. Nothing leaves the machine.
-- **License**: OmniVoice's audio tokenizer is under the Boson Higgs Audio 2 Community License (accepted with
-  OmniVoice). Its 1.b.v forbids using its output "to improve any other large language model (excluding Boson Higgs
-  Audio 2 or derivative works thereof)", and 1.b.i asks that a model fine-tuned with it that is *distributed or made
-  available* be named "Higgs Audio 2 …". Training here feeds the tokenizer's codes to OmniVoice's own LLM (which was
-  trained on them) and keeps the adapter on this machine; whether that falls under 1.b.v is the user's call (not
-  settled here). The adapters are never published by the app.
+- **What stays**: the recordings (to train again; hard links between a group's runs), the adapter, the samples and the
+  report; the cut utterances and the saved steps go when the run ends. Under `<voice home>/training/<run>/`. Nothing
+  leaves the machine.
+- **License**: Qwen3-TTS and CosyVoice3 are Apache-2.0 (code and weights). OmniVoice's audio tokenizer is under the
+  Boson Higgs Audio 2 Community License (accepted with OmniVoice). Its 1.b.v forbids using its output "to improve any
+  other large language model (excluding Boson Higgs Audio 2 or derivative works thereof)", and 1.b.i asks that a model
+  fine-tuned with it that is *distributed or made available* be named "Higgs Audio 2 …". Training OmniVoice feeds the
+  tokenizer's codes to OmniVoice's own LLM (which was trained on them) and keeps the adapter on this machine; whether
+  that falls under 1.b.v is the user's call (not settled here). The adapters are never published by the app.
 
 | | |
 |---|---|
-| `GET /trainings?voice_id=` | `{runs, kit}`: every run (state, stage, progress, data — kept, dropped by reason —, result, samples, applied) and what a run needs (`model`, `stt`, `speaker` — ready, size, license —, `runtime`, `need_gb`) |
-| `POST /trainings` (multipart `voice_id`, `files`, `language`, `accept_licenses`) | a run (`queued`). Refused: `no_voice`, `busy` (the profile has one), `license` (the weights aren't accepted), `too_short` (under 60 s of sound), `bad_audio`, `too_many`, `too_large` |
+| `GET /trainings?voice_id=` | `{runs, kit}`: every run (model, group, state, stage, progress, data — kept, dropped by reason —, result with the conditions it was measured with, samples, applied) and what a run needs (`models` — each that learns: installed, `need_gb` —, `stt`, `speaker` — ready, size, license) |
+| `POST /trainings` (multipart `voice_id`, `files`, `language`, `accept_licenses`, `models` — ids, comma-separated; none: every installed one that learns) | `{runs}`: one per model (`queued`). Refused: `no_voice`, `busy` (one of the models is learning the profile already), `not_trainable`, `needs_model`, `license` (the weights aren't accepted), `too_short` (under 60 s of sound), `bad_audio`, `too_many`, `too_large` |
 | `GET /trainings/{id}` · `POST /trainings/{id}/cancel` · `POST /trainings/{id}/apply` `{on}` · `DELETE /trainings/{id}` · `GET /trainings/{id}/samples/{name}` | one run, stop it, its adapter on / off, remove it, an A/B sample |
+| `GET /voices` | each profile with `adapters` (`{model id: run}`) |
 
-Measured (RTX 5070, OmniVoice 0.2.1, peft 0.21.3), speaker similarity (CAM++) with a long clip / a short one / none:
+Measured (RTX 5070, peft 0.21.3), speaker similarity (CAM++) with a long clip / a short one / none — OmniVoice 0.2.1:
 
 | Data | Steps | Before | After | CER | Time | GPU |
 |---|---|---|---|---|---|---|
@@ -279,6 +307,22 @@ Measured (RTX 5070, OmniVoice 0.2.1, peft 0.21.3), speaker similarity (CAM++) wi
 With no clip at all, the trained profile is as like her as the untrained one with a long clip; with a clip, about the
 same (the clip already carries most of it). 0.457 s a step; the run's process ~7 GB of RAM. A line in the trained voice afterwards: RTF 0.15 – 0.31, as
 before.
+
+The other models, on the same speaker (KSS joined into one 12-minute recording: 166 utterances, 8:29 kept; each run's
+best checkpoint, the six sentences it is measured with):
+
+| Model | Steps (best) | Before | After | CER | Time | GPU |
+|---|---|---|---|---|---|---|
+| Qwen3-TTS 0.6B | 500 (415) | 0.80 / 0.78 / 0.72 | 0.79 / 0.80 / 0.80 | 0.028 / 0.020 / 0 → 0 | 9.4 min | 4.1 GB |
+| Qwen3-TTS 1.7B | 500 (415) | 0.81 / 0.78 / 0.68 | 0.80 / 0.79 / 0.81 | 0 / 0 / 0.020 → 0 | 9.0 min | 6.1 GB |
+| CosyVoice3 (LLM + flow) | 280 (276) | 0.83 / 0.81 / – | 0.85 / 0.83 / – | 0 → 0 | 8.8 min | 7.0 GB |
+
+Qwen3-TTS gains most where a clip says least: without one (her learned embedding, +0.08 / +0.13) and from 3 s; with a
+long clip it was already close to her recordings and stays there (a checkpoint may not be more than 0.02 less like
+her with any reference). CosyVoice3 (no "none": it always speaks from a clip) gains with both. The worker switches
+an adapter on one loaded model in a few seconds the first time, then per line at no cost (OmniVoice, Qwen3-TTS — its
+code predictor's CUDA graph untouched — and CosyVoice3 checked on the GPU: none → adapter → none → adapter, and
+Qwen3-TTS with no clip).
 
 ## A mate on the local engine
 
@@ -375,11 +419,16 @@ ElevenLabs' audio tags for a mate. The measurements above: `backend/tools/nonver
 
 `backend/tests/test_voice_training.py` (the stand-in run in its own process, the stand-in engine): recordings cut at
 their pauses, how long a run trains, the server's word (pause, resume, release, stop), a run from upload to the adapter
-on the profile (the profile and its lines marked, off and on, another OmniVoice's adapter not used, removed), a new
-profile's clip, what is refused, a mate's words pausing a run and a model sending it away (and back from its step),
-the GPU queue's word, an omni runtime from an older lock brought up to date in place. In a browser (the stand-ins):
-`desktop/test/e2e/voice-training-browser.js` — the page without OmniVoice, a new profile from a picked recording, the
-licenses, the run to done, the report and samples, 학습됨 in 프로필 / 생성 / 히스토리, off / on, delete, en / ko, a phone.
+on the profile (the profile and its lines marked, off and on, another revision's adapter not used, removed), every
+installed model learning from the same recordings heard once (a run each, one group, each model speaking with its own
+adapter, a newer run put on instead, a model that doesn't learn refused), an OmniVoice adapter from before kept on, a
+new profile's clip, what is refused, a mate's words pausing a run and a model sending it away (and back from its step),
+the GPU queue's word, a runtime from an older lock brought up to date in place, how far a fetch is. In a browser (the
+stand-ins): `desktop/test/e2e/voice-training-browser.js` — the page without a model that learns, a new profile from a
+picked recording, the models (all ticked, one unticked), the licenses, a run per model to done, the reports and
+samples, 학습됨 with both models in 프로필 / 생성 / 히스토리, one off and on (the other stays), deleting one, CosyVoice3
+alone (no "none"), en / ko, a phone. On the GPU: each recipe through `python -m app.voicehost.train` and each engine
+switching adapters per line (the measurements above).
 
 `backend/tests/test_voicehost.py` (no GPU, no downloads: `VOICE_ENGINE_MODE=fake` and a stand-in engine in a real
 worker process): the gate for each refusal, the license before any download, disk room, placement (LRU, pinned, other

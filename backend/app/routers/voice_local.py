@@ -33,7 +33,8 @@ Voice Studio (Settings → 로컬 모델 호스팅 → Voice Studio):
 Training a voice (app/voicehost/training.py, docs/local-voice.md "Training a voice"):
     GET    /api/voice/trainings?voice_id=        the runs, and what a run needs (kit)
     POST   /api/voice/trainings                  multipart: voice_id, files[] (audio / video, any length), language?,
-                                                 accept_licenses? → the run (queued)
+                                                 accept_licenses?, models? (ids, comma-separated; none: every
+                                                 installed one that learns) → {runs} (queued, one per model)
     GET    /api/voice/trainings/{id}             a run: its stage, progress, data, result, recent events
     POST   /api/voice/trainings/{id}/cancel · /apply {on} · DELETE /api/voice/trainings/{id}
     GET    /api/voice/trainings/{id}/samples/{name}   its A/B samples (base-long-0.wav, tuned-none-1.wav, …)
@@ -157,17 +158,19 @@ async def unload(model_id: str, request: Request) -> Any:
 
 # ---- voices ----
 
-def _public_voice(v: dict[str, Any]) -> dict[str, Any]:
+def _public_voice(v: dict[str, Any], adapters: dict[str, str] | None = None) -> dict[str, Any]:
+    """a voice as the studio sees it; ``adapters``: {model id: run} it speaks with (Voice Studio → 학습)"""
     refs = [{k: r.get(k) for k in ("id", "label", "transcript", "language", "duration", "stats")}
             for r in v.get("references") or []]
     return {**{k: v.get(k) for k in ("id", "name", "language", "instruct", "builtin", "source", "rights",
                                      "description", "default_model", "default_params", "tags", "starred",
-                                     "created_at", "updated_at")}, "adapter": v.get("adapter") or "", "references": refs}
+                                     "created_at", "updated_at")}, "adapters": adapters or {}, "references": refs}
 
 
 @router.get("/voices")
 async def voices(request: Request) -> Any:
-    return {"voices": [_public_voice(v) for v in _host(request).voices.list()]}
+    h = _host(request)
+    return {"voices": [_public_voice(v, h.trainings.adapters(v["id"])) for v in h.voices.list()]}
 
 
 @router.post("/voices")
@@ -204,7 +207,7 @@ async def update_voice(vid: str, request: Request) -> Any:
     if v is None:
         raise HTTPException(status_code=404, detail="no such voice")
     h.on_change("voices")
-    return _public_voice({**v, "builtin": False})
+    return _public_voice({**v, "builtin": False}, h.trainings.adapters(vid))
 
 
 @router.delete("/voices/{vid}")
@@ -222,7 +225,7 @@ async def delete_voice(vid: str, request: Request) -> Any:
 async def duplicate_voice(vid: str, request: Request) -> Any:
     b = await _body(request)
     try:
-        return _public_voice(_host(request).duplicate_voice(vid, str(b.get("name") or "")))
+        return _public_voice(_host(request).duplicate_voice(vid, str(b.get("name") or "")))  # (a copy: untrained)
     except VoiceError as e:
         return _fail(e)
 
@@ -594,7 +597,8 @@ async def list_trainings(request: Request, voice_id: str = "") -> Any:
 
 @router.post("/trainings")
 async def create_training(request: Request, voice_id: str = Form(...), language: str = Form(""),
-                          accept_licenses: str = Form(""), files: list[UploadFile] = File(...)) -> Any:
+                          accept_licenses: str = Form(""), models: str = Form(""),
+                          files: list[UploadFile] = File(...)) -> Any:
     from app.voicehost.training import TrainingError
 
     h = _host(request)
@@ -608,8 +612,10 @@ async def create_training(request: Request, voice_id: str = Form(...), language:
                                 status_code=413)
         got.append((f.filename or "recording", data))
     try:
-        return await h.trainings.create(voice_id=voice_id, files=got, language=language,
-                                        accept_licenses=accept_licenses in ("1", "true", "yes"))
+        runs = await h.trainings.create(voice_id=voice_id, files=got, language=language,
+                                        accept_licenses=accept_licenses in ("1", "true", "yes"),
+                                        model_ids=[m.strip() for m in models.split(",") if m.strip()])
+        return {"runs": runs}
     except TrainingError as e:
         return _train_fail(e)
 

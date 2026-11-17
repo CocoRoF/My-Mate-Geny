@@ -1,10 +1,12 @@
-"""The real run (the omni runtime: torch, omnivoice, peft, transformers, onnxruntime). See __init__.py for the stages.
+"""The real run, in the runtime of the model it trains (torch, transformers, peft, onnxruntime and the model's own
+package). See __init__.py for the stages; what is the model's own (its tokens, speaking, LoRA, loss) is its recipe
+(recipe.py → omni.py, qwen.py, cosy.py); the rest is here: her utterances, the measurements, the best checkpoint.
 
-Measured on an RTX 5070 (12 GB) with one Korean speaker (KSS, 5 and 26 minutes): 0.45 s a step at 4k tokens, 4.9 GB
-at most on the GPU (gradient checkpointing; the audio tokenizer and Whisper off the GPU while training), 7 and 13
-minutes in all. Speaker similarity (CAM++, to her own recordings): with no reference 0.34 → 0.77, with a 3 s one
+Measured on an RTX 5070 (12 GB), OmniVoice, one Korean speaker (KSS, 5 and 26 minutes): 0.45 s a step at 4k tokens,
+4.9 GB at most on the GPU (gradient checkpointing; the audio tokenizer and Whisper off the GPU while training), 7 and
+13 minutes in all. Speaker similarity (CAM++, to her own recordings): with no reference 0.34 → 0.77, with a 3 s one
 0.73 → 0.75, with a 7 s one unchanged (0.79: the zero-shot clone of clean speech is already near her recordings'
-0.82); words heard back unchanged (CER 0).
+0.82); words heard back unchanged (CER 0). The other models: docs/local-voice.md "Training a voice".
 """
 
 from __future__ import annotations
@@ -24,13 +26,9 @@ import torch
 
 from . import segment, texts
 from .control import Control, Released
+from .recipe import Recipe, recipe_for, wav as _wav
 
-SR = 24_000
-# LoRA on the LLM's own projections only: the audio tokenizer (a submodule once loaded) has q_proj … of its own
-LLM_TARGETS = r"llm\.layers\.\d+\.(self_attn\.(q_proj|k_proj|v_proj|o_proj)|mlp\.(gate_proj|up_proj|down_proj))"
-SAVE_FULL = ["audio_embeddings", "audio_heads"]
-GEN = {"num_step": 32, "guidance_scale": 2.0, "t_shift": 0.1}
-CONDITIONS = ("long", "short", "none")
+SR = 24_000  # her utterances as kept
 
 Emit = Callable[..., None]
 
@@ -42,12 +40,6 @@ class RunError(Exception):
         super().__init__(message)
         self.code = code
         self.data = data
-
-
-def _wav(path: str | Path, sr: int) -> np.ndarray:
-    a, r = sf.read(str(path), dtype="float32", always_2d=True)
-    a = a.mean(axis=1)
-    return (soxr.resample(a, r, sr) if r != sr else a).astype(np.float32)
 
 
 class Speakers:
@@ -79,7 +71,12 @@ class Ears:
         self.dev = dev
         self.dtype = torch.float16 if dev.type == "cuda" else torch.float32
         self.proc = AutoProcessor.from_pretrained(model_dir)
-        self.model = AutoModelForSpeechSeq2Seq.from_pretrained(model_dir, dtype=self.dtype, attn_implementation="sdpa").eval()
+        import transformers
+
+        # (CosyVoice's runtime has a transformers from before ``dtype=``)
+        old = tuple(int(x) for x in transformers.__version__.split(".")[:2]) < (4, 56)
+        kw = {"torch_dtype" if old else "dtype": self.dtype}
+        self.model = AutoModelForSpeechSeq2Seq.from_pretrained(model_dir, attn_implementation="sdpa", **kw).eval()
         self.special = {self.proc.tokenizer.convert_tokens_to_ids(f"<|{c}|>"): c for c in texts.WHISPER}
 
     @torch.inference_mode()
@@ -116,15 +113,6 @@ class Ears:
             torch.cuda.empty_cache()
 
 
-def _half(path: Path) -> None:
-    """the adapter in bf16 (half the size; it is loaded in the model's own dtype anyway)"""
-    from safetensors.torch import load_file, save_file
-
-    t = load_file(str(path))
-    save_file({k: (v.to(torch.bfloat16) if v.is_floating_point() else v) for k, v in t.items()}, str(path),
-              metadata={"format": "pt"})
-
-
 def _repeats(t: str) -> bool:
     """Whisper's loops: the same character 8 times, or one short piece over and over"""
     s = texts.norm(t)
@@ -155,17 +143,44 @@ def run(job: dict, emit: Emit, ctl: Control) -> None:
         resume = json.loads((state_dir / "state.json").read_text())
     ears = Ears(job["whisper_dir"], dev)
     spk = Speakers(job["speaker_dir"])
-    if resume is None:
+    if resume is None and not (out / "data.json").exists() and job.get("shared_data"):
+        _cut_as(job, out, seg_dir, emit, ctl)  # (the same recordings, already heard by another model's run)
+    if resume is None and not (out / "data.json").exists():
         segs, kept, lang, centroid = _gather(job, out, seg_dir, emit, ctl, ears, spk, lim)
-    else:  # (going on from where it left the GPU: her utterances and their words as they were)
+    else:  # (her utterances and their words as they were: going on from where it left the GPU, or another run's)
         data = json.loads((out / "data.json").read_text())
         segs, lang = data["segments"], data["language"]
         kept = [g for g in segs if not g.get("left_out")]
         embs = np.stack([spk.embed(_wav(g["path"], 16000)) for g in kept])
         centroid = embs.mean(0)
         centroid /= np.linalg.norm(centroid) + 1e-9
+        if resume is None:
+            emit(stage="screen", kept=len(kept), kept_s=round(sum(g["seconds"] for g in kept), 1),
+                 dropped=data.get("dropped") or {"speaker": 0, "words": 0, "sound": 0}, language=lang)
     kept_s = sum(g["seconds"] for g in kept)
     _train(job, out, emit, ctl, ears, spk, lim, dev, rnd, segs, kept, kept_s, lang, centroid, resume, t_start)
+
+
+def _cut_as(job: dict, out: Path, seg_dir: Path, emit: Emit, ctl: Control) -> None:
+    """another run's utterances of the same recordings (their places and words) cut again from this run's copies:
+    no listening twice"""
+    data = json.loads(Path(job["shared_data"]).read_text())
+    by_file = {src.get("file") or Path(src["path"]).name: src["path"] for src in job["inputs"]}
+    if not all(g.get("file") in by_file for g in data["segments"]):
+        return  # (not the same recordings after all: heard again)
+    cache: dict[str, np.ndarray] = {}
+    for i, g in enumerate(data["segments"]):
+        if i % 50 == 0:
+            ctl.check()
+            emit(stage="prepare", done=i, total=len(data["segments"]))
+        x = cache.get(g["file"])
+        if x is None:
+            cache.clear()
+            x = cache[g["file"]] = _wav(by_file[g["file"]], SR)
+        p = seg_dir / f"{g['id']}.wav"
+        sf.write(str(p), x[int(g["start"] * SR):int(g["end"] * SR)], SR, subtype="PCM_16")
+        g["path"] = str(p)
+    (out / "data.json").write_text(json.dumps(data, ensure_ascii=False))
 
 
 def _gather(job: dict, out: Path, seg_dir: Path, emit: Emit, ctl: Control, ears: "Ears", spk: "Speakers",
@@ -243,7 +258,7 @@ def _gather(job: dict, out: Path, seg_dir: Path, emit: Emit, ctl: Control, ears:
             acc += g["seconds"]
         kept = cut
     kept_s = sum(g["seconds"] for g in kept)
-    (out / "data.json").write_text(json.dumps({"language": lang, "segments": segs}, ensure_ascii=False))
+    (out / "data.json").write_text(json.dumps({"language": lang, "segments": segs, "dropped": dropped}, ensure_ascii=False))
     emit(stage="screen", kept=len(kept), kept_s=round(kept_s, 1), dropped=dropped, language=lang)
     if kept_s < float(lim.get("min_seconds", 60)):
         raise RunError("Too little of her speech is left to learn from", "too_little", kept_s=round(kept_s, 1))
@@ -256,28 +271,16 @@ def _train(job: dict, out: Path, emit: Emit, ctl: Control, ears: "Ears", spk: "S
            dev: torch.device, rnd: random.Random, segs: list[dict], kept: list[dict], kept_s: float, lang: str,
            centroid: np.ndarray, resume: dict | None, t_start: float) -> None:
     state_dir = out / "state"
+    rec: Recipe = recipe_for(job.get("engine") or "omnivoice")(job, dev, lang, lim)
+    conditions = rec.conditions
     # ── tokens ──
-    from omnivoice.models.omnivoice import OmniVoice
-    from omnivoice.utils.lang_map import LANG_IDS
+    rec.load()
 
-    model = OmniVoice.from_pretrained(job["model_dir"], dtype=torch.float32, attn_implementation="sdpa").to(dev)
-    fe = model.feature_extractor
-    lang_id = lang if lang in LANG_IDS else "None"
+    def tokens_at(n: int) -> None:
+        ctl.check()
+        emit(stage="tokens", done=n, total=len(kept))
 
-    @torch.inference_mode()
-    def tokens_of(path: str) -> torch.Tensor:
-        w = _wav(path, SR)
-        w = w / (np.abs(w).max() + 1e-7) * 0.9  # (as OmniVoice's own data reader does)
-        x = fe(raw_audio=w, sampling_rate=SR, return_tensors="pt").to(dev)
-        return model.audio_tokenizer.encode(x["input_values"]).audio_codes.squeeze(0).to(torch.int16).cpu()
-
-    samples = []
-    for i, g in enumerate(kept):
-        if i % 20 == 0:
-            ctl.check()
-            emit(stage="tokens", done=i, total=len(kept))
-        samples.append({"audio_tokens": tokens_of(g["path"]), "label": {"id": g["id"], "text": g["text"], "language_id": lang_id}})
-    emit(stage="tokens", done=len(kept), total=len(kept))
+    rec.tokens(kept, tokens_at)
 
     # ── the references a run is measured with: her own clip when the voice has one, a long and a short utterance ──
     def best_of(lo: float, hi: float, near: float | None = None) -> dict:
@@ -288,41 +291,28 @@ def _train(job: dict, out: Path, emit: Emit, ctl: Control, ears: "Ears", spk: "S
 
     ref = job.get("reference") or {}
     long_ref = {"path": ref["path"], "text": ref["text"]} if ref.get("path") and ref.get("text") else best_of(5, 12)
+    long_ref = {**long_ref, "seconds": round(_wav(long_ref["path"], SR).size / SR, 2)}
     short_ref = best_of(2, 4.5, near=3.0)
-    prompts = {"long": model.create_voice_clone_prompt(ref_audio=long_ref["path"], ref_text=long_ref["text"]),
-               "short": model.create_voice_clone_prompt(ref_audio=short_ref["path"], ref_text=short_ref["text"]),
-               "none": None}
+    refs = {"long": long_ref, "short": short_ref, "none": None}
+    prompts = {c: rec.prompt(refs[c]) for c in conditions}
     sentences = list(texts.eval_texts(lang))
     samples_dir = out / "samples"
     samples_dir.mkdir(exist_ok=True)
-    peft_model = None
+    shown = [c for c in ("long", "none", "short") if c in conditions][:2]  # (the A/B samples kept)
 
-    @torch.inference_mode()
-    def measure(tag: str) -> dict:
-        (peft_model or model).eval()
-        model.audio_tokenizer.to(dev)
-        made: dict[str, list[np.ndarray]] = {}
-        for cond, pr in prompts.items():
-            wavs = []
-            for j in range(0, len(sentences), 2):  # (two at a time: fp32 with guidance's doubled batch)
-                ctl.check()
-                part = sentences[j:j + 2]
-                kw: dict[str, Any] = dict(GEN)
-                if lang_id != "None":
-                    kw["language"] = [lang_id] * len(part)
-                if pr is not None:
-                    kw["voice_clone_prompt"] = [pr] * len(part)
-                wavs += [np.asarray(a, dtype=np.float32).reshape(-1) for a in model.generate(text=part, **kw)]
-            made[cond] = wavs
-        model.audio_tokenizer.to("cpu")
+    def measure() -> dict:
+        rec.training(False)
+        rec.measuring(True)
+        made = {c: rec.speak(sentences, prompts[c], ctl.check) for c in conditions}
+        rec.measuring(False)
         if dev.type == "cuda":
             torch.cuda.empty_cache()
         res: dict[str, Any] = {}
-        heard_all = ears.hear([soxr.resample(w, SR, 16000) for c in CONDITIONS for w in made[c]], lang)
+        heard_all = ears.hear([soxr.resample(w, rec.sr, 16000) for c in conditions for w in made[c]], lang)
         ears.off()
         k = 0
-        for cond in CONDITIONS:
-            sims = [float(spk.embed(soxr.resample(w, SR, 16000)) @ centroid) for w in made[cond]]
+        for cond in conditions:
+            sims = [float(spk.embed(soxr.resample(w, rec.sr, 16000)) @ centroid) for w in made[cond]]
             cers = [texts.cer(t, heard_all[k + i]) for i, t in enumerate(sentences)]
             k += len(sentences)
             res[cond] = {"similarity": round(float(np.mean(sims)), 4), "worst": round(float(np.min(sims)), 4),
@@ -331,42 +321,29 @@ def _train(job: dict, out: Path, emit: Emit, ctl: Control, ears: "Ears", spk: "S
         return res
 
     def keep_samples(which: str, made: dict) -> None:
-        for cond in ("long", "none"):
+        for cond in shown:
             for i, w in enumerate(made[cond][:2]):
-                sf.write(str(samples_dir / f"{which}-{cond}-{i}.wav"), w, SR, subtype="PCM_16")
+                sf.write(str(samples_dir / f"{which}-{cond}-{i}.wav"), w, rec.sr, subtype="PCM_16")
 
     if resume is None:
-        base = measure("base")
+        base = measure()
         keep_samples("base", base.pop("_made"))
-        emit(stage="baseline", metrics=base, references={"long_s": round(_wav(long_ref["path"], SR).size / SR, 1),
-                                                         "short_s": short_ref["seconds"]})
+        emit(stage="baseline", metrics=base, references={"long_s": long_ref["seconds"], "short_s": short_ref["seconds"]})
     else:
         base = resume["base"]
 
     # ── train ──
-    from omnivoice.data.collator import PaddingDataCollator
-    from omnivoice.data.processor import OmniVoiceSampleProcessor
-    from peft import LoraConfig, get_peft_model
-
     rank = int(lim.get("rank", 16))
-    peft_model = get_peft_model(model, LoraConfig(r=rank, lora_alpha=2 * rank, lora_dropout=0.05, bias="none",
-                                                  target_modules=LLM_TARGETS, modules_to_save=SAVE_FULL))
-    model.llm.config.use_cache = False
-    model.llm.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
-    trainable = [p for p in peft_model.parameters() if p.requires_grad]
-    proc = OmniVoiceSampleProcessor(text_tokenizer=model.text_tokenizer, num_channels=8, audio_mask_id=1024,
-                                    prompt_ratio_range=(0.0, 0.3), mask_ratio_range=(0.0, 1.0), drop_cond_ratio=0.1,
-                                    language_ratio=0.8, use_pinyin_ratio=0.0, instruct_ratio=0.0,
-                                    only_instruct_ratio=0.0)
-    batch_tokens = int(lim.get("batch_tokens", 4096))
-    coll = PaddingDataCollator(proc, batch_tokens)
-    order = sorted(range(len(samples)), key=lambda i: samples[i]["audio_tokens"].shape[1])
+    trainable = rec.wrap(rank)
+    lens = rec.lengths()
+    order = sorted(range(len(lens)), key=lambda i: lens[i])
+    budget = int(lim.get("batch_tokens", rec.batch_tokens))
 
     def epoch_batches() -> list[list[int]]:
         groups, cur, longest = [], [], 0
         for i in order:
-            n = samples[i]["audio_tokens"].shape[1] + 60
-            if cur and max(longest, n) * (len(cur) + 1) > batch_tokens:
+            n = lens[i]
+            if cur and max(longest, n) * (len(cur) + 1) > budget:
                 groups.append(cur)
                 cur, longest = [], 0
             cur.append(i)
@@ -378,7 +355,7 @@ def _train(job: dict, out: Path, emit: Emit, ctl: Control, ears: "Ears", spk: "S
 
     per_epoch = len(epoch_batches())
     if resume is None:
-        steps = segment.steps_for(per_epoch, epochs=int(lim.get("epochs", 50)), least=int(lim.get("min_steps", 200)),
+        steps = segment.steps_for(per_epoch, epochs=int(lim.get("epochs", rec.epochs)), least=int(lim.get("min_steps", 200)),
                                   most=int(lim.get("max_steps", 1500)))
         every = segment.eval_every(steps)
     else:
@@ -388,16 +365,14 @@ def _train(job: dict, out: Path, emit: Emit, ctl: Control, ears: "Ears", spk: "S
     warm = max(1, int(steps * 0.03))
     sched = torch.optim.lr_scheduler.LambdaLR(
         opt, lambda s: (s + 1) / warm if s < warm else 0.5 * (1 + math.cos(math.pi * min(1.0, (s - warm) / max(1, steps - warm)))))
-    base_cer = max(base[c]["cer"] for c in CONDITIONS)
-    score = lambda m: sum(m[c]["similarity"] for c in CONDITIONS)  # noqa: E731
+    base_cer = {c: base[c]["cer"] for c in conditions}
+    score = lambda m: sum(m[c]["similarity"] for c in conditions)  # noqa: E731
     best: dict[str, Any] = {"step": 0, "score": score(base), "metrics": base}
     evals: list[dict] = []
     step, queue, losses = 0, [], []
     if resume is not None:
-        from peft import set_peft_model_state_dict
-
         st = torch.load(str(state_dir / "train.pt"), map_location="cpu", weights_only=False)
-        set_peft_model_state_dict(peft_model, st["lora"])
+        rec.load_lora_state(st["lora"])
         opt.load_state_dict(st["opt"])
         sched.load_state_dict(st["sched"])
         rnd.setstate(st["rng"])
@@ -405,11 +380,9 @@ def _train(job: dict, out: Path, emit: Emit, ctl: Control, ears: "Ears", spk: "S
 
     def save_state() -> None:
         """where it is: the adapter and the optimiser as they are, to go on from (each evaluation, and on leaving)"""
-        from peft import get_peft_model_state_dict
-
         state_dir.mkdir(exist_ok=True)
         tmp = state_dir / "train.pt.part"
-        torch.save({"lora": get_peft_model_state_dict(peft_model), "opt": opt.state_dict(), "sched": sched.state_dict(),
+        torch.save({"lora": rec.lora_state(), "opt": opt.state_dict(), "sched": sched.state_dict(),
                     "rng": rnd.getstate()}, str(tmp))
         tmp.replace(state_dir / "train.pt")
         (state_dir / "state.json").write_text(json.dumps({"step": step, "steps": steps, "every": every, "best": best,
@@ -429,16 +402,13 @@ def _train(job: dict, out: Path, emit: Emit, ctl: Control, ears: "Ears", spk: "S
 
     emit(stage="train", step=step, steps=steps, every=every, per_epoch=per_epoch, resumed=resume is not None,
          trainable_m=round(sum(p.numel() for p in trainable) / 1e6, 2))
-    peft_model.train()
+    rec.training(True)
     try:
         while step < steps:
             ctl.check(on_pause)
             if not queue:
                 queue = epoch_batches()
-            idx = queue.pop()
-            batch = {k: v.to(dev, non_blocking=True) for k, v in coll([proc(samples[i]) for i in idx]).items()}
-            with torch.autocast(dev.type, dtype=torch.bfloat16, enabled=dev.type == "cuda"):
-                loss = peft_model(**batch).loss
+            loss = rec.loss(queue.pop())
             loss.backward()
             torch.nn.utils.clip_grad_norm_(trainable, 1.0)
             opt.step()
@@ -453,15 +423,17 @@ def _train(job: dict, out: Path, emit: Emit, ctl: Control, ears: "Ears", spk: "S
                      vram_gb=round(torch.cuda.max_memory_allocated() / 2**30, 2) if dev.type == "cuda" else None)
             last_eval = evals[-1]["step"] if evals else 0
             if step % every == 0 or (step == steps and steps - last_eval > every // 2):
-                m = measure(f"s{step}")
+                m = measure()
                 made = m.pop("_made")
-                peft_model.train()
-                fair = all(m[c]["cer"] <= base_cer + 0.03 for c in CONDITIONS)
+                rec.training(True)
+                # (never less intelligible, nor noticeably less like her with any reference — only better overall)
+                fair = all(m[c]["cer"] <= base_cer[c] + 0.03 and m[c]["similarity"] >= base[c]["similarity"] - 0.02
+                           for c in conditions)
                 better = fair and score(m) > best["score"]
                 evals.append({"step": step, "metrics": m, "best": better})
                 if better:
                     best = {"step": step, "score": score(m), "metrics": m}
-                    peft_model.save_pretrained(str(out / "best"))
+                    rec.save(out / "best")
                     keep_samples("tuned", made)
                 emit(stage="eval", step=step, steps=steps, metrics=m, best=better)
             if step % every == 0 and step < steps:
@@ -476,13 +448,14 @@ def _train(job: dict, out: Path, emit: Emit, ctl: Control, ears: "Ears", spk: "S
         adapter = out / "adapter"
         shutil.rmtree(adapter, ignore_errors=True)
         shutil.copytree(out / "best", adapter)
-        _half(adapter / "adapter_model.safetensors")
-        (adapter / "README.md").unlink(missing_ok=True)
+        rec.export(adapter)
         (adapter / "geny.json").write_text(json.dumps({
-            "engine": "omnivoice", "base_revision": job.get("base_revision", ""), "language": lang, "step": best["step"],
-            "rank": rank, "metrics": {"base": base, "tuned": best["metrics"]}, "kept_s": round(kept_s, 1),
+            "engine": rec.engine, "model_id": job.get("model_id", ""), "base_revision": job.get("base_revision", ""),
+            "language": lang, "step": best["step"], "rank": rank, "conditions": list(conditions),
+            "metrics": {"base": base, "tuned": best["metrics"]}, "kept_s": round(kept_s, 1),
             "made_at": time.strftime("%Y-%m-%dT%H:%M:%S")}, ensure_ascii=False))
     shutil.rmtree(out / "best", ignore_errors=True)
     shutil.rmtree(state_dir, ignore_errors=True)
     emit(stage="done", improved=improved, best_step=best["step"], steps=steps, base=base, tuned=best["metrics"],
-         evals=evals, kept_s=round(kept_s, 1), language=lang, minutes=round((time.time() - t_start) / 60, 1))
+         evals=evals, kept_s=round(kept_s, 1), language=lang, minutes=round((time.time() - t_start) / 60, 1),
+         conditions=list(conditions))

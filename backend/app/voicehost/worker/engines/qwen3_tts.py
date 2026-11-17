@@ -1,13 +1,16 @@
-"""Qwen3-TTS (12 Hz) Base models: zero-shot voice cloning."""
+"""Qwen3-TTS (12 Hz) Base models: zero-shot voice cloning — and a voice's own trained adapter (a LoRA on the talker
+from app/voicehost/train), switched per line; with it, the voice speaks from its learned embedding when no clip is
+given."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
 
-from .base import Engine, SynthRequest
+from .base import Adapters, Engine, SynthRequest
 
 _LANG = {
     "auto": "auto", "ko": "korean", "en": "english", "zh": "chinese", "ja": "japanese", "de": "german",
@@ -28,6 +31,7 @@ class Qwen3TTSEngine(Engine):
         self.model = Qwen3TTSModel.from_pretrained(str(self.model_dir), **kwargs)
         self.model.model.eval()
         self.sample_rate = 24000
+        self.adapters = Adapters()  # (on the talker only: the code predictor's CUDA graph stays as it was made)
         self.fast = None
         if self.dev.is_cuda and self.options.get("fast_predictor", True):
             from .qwen_fast import install
@@ -49,6 +53,8 @@ class Qwen3TTSEngine(Engine):
 
     def _prompt(self, req: SynthRequest, x_vector_only: bool):
         ref = req.reference
+        if ref is None and req.adapter:  # (a trained voice: its own embedding, no clip)
+            return [self._learned_voice(req.adapter)]
         if ref is None:
             raise ValueError("Qwen3-TTS Base 모델은 레퍼런스 오디오가 필요합니다 (목소리 템플릿에 레퍼런스를 등록하세요)")
         if not x_vector_only and not ref.text.strip():
@@ -62,8 +68,22 @@ class Qwen3TTSEngine(Engine):
             self.prompts.put(key, items)
         return items
 
+    def _learned_voice(self, adapter: str):
+        from qwen_tts.inference.qwen3_tts_model import VoiceClonePromptItem
+        from safetensors.torch import load_file
+
+        key = ("learned", adapter, Adapters.name_of(adapter))
+        item = self.prompts.get(key)
+        if item is None:
+            spk = load_file(str(Path(adapter) / "voice.safetensors"))["spk"]
+            item = VoiceClonePromptItem(ref_code=None, ref_spk_embedding=spk.to(self.model.model.device),
+                                        x_vector_only_mode=True, icl_mode=False)
+            self.prompts.put(key, item)
+        return item
+
     @torch.inference_mode()
     def synthesize(self, req: SynthRequest) -> list[np.ndarray]:
+        self.adapters.use(self.model.model, req.adapter)
         p = req.params
         items = self._prompt(req, bool(p.get("x_vector_only")))
         lang = _LANG.get(req.language or "auto", "auto")

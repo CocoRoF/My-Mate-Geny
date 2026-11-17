@@ -14,14 +14,21 @@ from . import segment
 from .control import Control
 
 SR = 24_000
+# what each model is measured with (recipe.py: a model that can't speak without a clip has no "none")
+CONDITIONS = {"omnivoice": ("long", "short", "none"), "qwen3_tts": ("long", "short", "none"),
+              "cosyvoice3": ("long", "short")}
 
 
 def run(job: dict, emit, ctl: Control) -> None:
     out = Path(job["out_dir"])
     (out / "segments").mkdir(parents=True, exist_ok=True)
     delay = float((job.get("limits") or {}).get("fake_delay", 0.01))
+    conds = CONDITIONS.get(job.get("engine") or "omnivoice", ("long", "short", "none"))
     segs = []
-    for fi, src in enumerate(job["inputs"]):
+    if job.get("shared_data"):  # (the same recordings, heard by another model's run: not listened to again)
+        segs = json.loads(Path(job["shared_data"]).read_text())["segments"]
+        emit(stage="prepare", done=len(segs), total=len(segs))
+    for fi, src in enumerate([] if segs else job["inputs"]):
         ctl.check()
         x, sr = sf.read(src["path"], dtype="float32", always_2d=True)
         x = x.mean(axis=1)
@@ -36,7 +43,8 @@ def run(job: dict, emit, ctl: Control) -> None:
         from .run import RunError
 
         raise RunError("No speech was found in the recordings", "no_speech")
-    emit(stage="transcribe", done=len(segs), total=len(segs), language=job.get("language") or "ko")
+    if not job.get("shared_data"):
+        emit(stage="transcribe", done=len(segs), total=len(segs), language=job.get("language") or "ko")
     kept_s = sum(g["seconds"] for g in segs)
     (out / "data.json").write_text(json.dumps({"language": "ko", "segments": segs}, ensure_ascii=False))
     emit(stage="screen", kept=len(segs), kept_s=round(kept_s, 1), dropped={"speaker": 0, "words": 0, "sound": 0},
@@ -46,12 +54,12 @@ def run(job: dict, emit, ctl: Control) -> None:
 
         raise RunError("Too little of her speech is left to learn from", "too_little", kept_s=round(kept_s, 1))
     emit(stage="tokens", done=len(segs), total=len(segs))
-    m = lambda s: {c: {"similarity": s, "worst": s - 0.05, "cer": 0.0} for c in ("long", "short", "none")}  # noqa: E731
+    m = lambda s: {c: {"similarity": s, "worst": s - 0.05, "cer": 0.0} for c in conds}  # noqa: E731
     base = m(0.5)
     (out / "samples").mkdir(exist_ok=True)
     t = np.arange(int(SR * 0.6)) / SR
     for which, f in (("base", 330.0), ("tuned", 440.0)):
-        for cond in ("long", "none"):
+        for cond in [c for c in ("long", "none", "short") if c in conds][:2]:
             for i in range(2):
                 sf.write(str(out / "samples" / f"{which}-{cond}-{i}.wav"), (0.2 * np.sin(2 * np.pi * f * t)).astype(np.float32), SR)
     emit(stage="baseline", metrics=base, references={"long_s": 6.0, "short_s": 3.0})
@@ -68,7 +76,8 @@ def run(job: dict, emit, ctl: Control) -> None:
     adapter.mkdir(exist_ok=True)
     (adapter / "adapter_config.json").write_text(json.dumps({"peft_type": "LORA", "r": 16}))
     (adapter / "adapter_model.safetensors").write_bytes(b"fake")
-    (adapter / "geny.json").write_text(json.dumps({"engine": "omnivoice", "base_revision": job.get("base_revision", ""),
+    (adapter / "geny.json").write_text(json.dumps({"engine": job.get("engine") or "omnivoice", "model_id": job.get("model_id", ""),
+                                                   "base_revision": job.get("base_revision", ""),
                                                    "language": "ko", "step": steps, "metrics": {"base": base, "tuned": m(0.9)}}))
     emit(stage="done", improved=True, best_step=steps, steps=steps, base=base, tuned=m(0.9), evals=[], kept_s=round(kept_s, 1),
-         language="ko", minutes=0.0)
+         language="ko", minutes=0.0, conditions=list(conds))

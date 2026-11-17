@@ -1,4 +1,5 @@
-"""Fun-CosyVoice3 0.5B: zero-shot cloning, cross-lingual cloning and instruct control.
+"""Fun-CosyVoice3 0.5B: zero-shot cloning, cross-lingual cloning and instruct control — and a voice's own trained
+adapter (a LoRA on its LLM and its flow's DiT, from app/voicehost/train), switched per line.
 
 CosyVoice is not a pip package: its runtime install fetches a pinned archive of its source (and of its Matcha-TTS
 submodule) next to the environment, at GENY_VOICE_COSYVOICE_SRC (app/voicehost/installer.py).
@@ -12,7 +13,7 @@ import sys
 import numpy as np
 import torch
 
-from .base import Engine, SynthRequest
+from .base import Adapters, Engine, SynthRequest
 
 PREFIX = "You are a helpful assistant."
 END = "<|endofprompt|>"
@@ -54,6 +55,16 @@ def _wants_frontend(text: str, language: str) -> bool:
     return all(ord(c) < 0x3000 or 0x4E00 <= ord(c) <= 0x9FFF for c in text)
 
 
+class Learned(torch.nn.Module):
+    """what a voice's adapter goes on: the LLM (its words' rhythm and sound) and the flow (her timbre) — the same
+    module objects the model speaks with (peft puts its layers in them, in place)"""
+
+    def __init__(self, llm: torch.nn.Module, flow: torch.nn.Module) -> None:
+        super().__init__()
+        self.llm = llm
+        self.flow = flow
+
+
 class CosyVoice3Engine(Engine):
     name = "cosyvoice3"
 
@@ -69,6 +80,8 @@ class CosyVoice3Engine(Engine):
         fp16 = bool(self.options.get("fp16", self.dev.is_cuda))
         self.cosy = CosyVoice3(str(self.model_dir), load_trt=False, load_vllm=False, fp16=fp16)
         self.sample_rate = int(self.cosy.sample_rate)
+        self.adapters = Adapters()
+        self.learned = Learned(self.cosy.model.llm, self.cosy.model.flow)
         # Cached speakers live in the frontend's spk2info; drop them there when the cache lets one go.
         self.prompts.on_evict = lambda spk: self.cosy.frontend.spk2info.pop(spk, None)
 
@@ -92,6 +105,7 @@ class CosyVoice3Engine(Engine):
     def synthesize(self, req: SynthRequest) -> list[np.ndarray]:
         if req.reference is None:
             raise ValueError("CosyVoice3 는 레퍼런스 오디오가 필요합니다 (목소리 템플릿에 레퍼런스를 등록하세요)")
+        self.adapters.use(self.learned, req.adapter)  # (in place: the decoding's own paths stay as they are)
         p = req.params
         speed = float(p.get("speed", 1.0))
         mode = p.get("mode", "zero_shot")
