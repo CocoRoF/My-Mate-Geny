@@ -958,7 +958,7 @@ captures are deleted and no image bytes are copied into app logs or long-term me
   auto-send also hands-free.
 - **Local voice models** (`tts.engine` / `stt.engine` = `local`): OmniVoice, Qwen3-TTS, CosyVoice3 and Whisper served
   from this server's own NVIDIA GPU (refused without one), downloaded by the user after accepting each license;
-  `tts.model`, `tts.voice` (built-in 한채린 / 메스가키 or the user's own clips by feeling), `tts.instruct`. Not
+  `tts.model`, `tts.voice` (built-in 한채린 / 서아 or the user's own clips by feeling), `tts.instruct`. Not
   available → 204 + `X-Speech-Fallback: browser`. The whole contract: [local-voice](local-voice.md).
 - Phone calls (📞 on a phone, and her calling the Android app): Claude Haiku on its own line, her voice, the call in her
   conversation and her own engine's turn after it — docs/mate-calls.md.

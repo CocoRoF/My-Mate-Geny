@@ -6,7 +6,7 @@ voices they speak with, and a line said or heard to try them.
     POST   /api/voice/models/{id}/cancel
     DELETE /api/voice/models/{id}                weights (and its engine environment once no model needs it)
     POST   /api/voice/models/{id}/load · /unload {park?}
-    GET    /api/voice/voices                     built-in (한채린, 메스가키) and the user's own
+    GET    /api/voice/voices                     built-in (한채린, 서아) and the user's own
     POST   /api/voice/voices {name, language}    · PATCH / DELETE /api/voice/voices/{vid}
     POST   /api/voice/voices/{vid}/references    multipart: file, label (feeling), transcript?
     PATCH  /api/voice/references/{rid} · DELETE /api/voice/references/{rid}
@@ -170,7 +170,7 @@ def _public_voice(v: dict[str, Any], adapters: dict[str, str] | None = None) -> 
 @router.get("/voices")
 async def voices(request: Request) -> Any:
     h = _host(request)
-    return {"voices": [_public_voice(v, h.trainings.adapters(v["id"])) for v in h.voices.list()]}
+    return {"voices": [_public_voice(v, h.trainings.speaks_with(v["id"])) for v in h.voices.list()]}
 
 
 @router.post("/voices")
@@ -207,7 +207,7 @@ async def update_voice(vid: str, request: Request) -> Any:
     if v is None:
         raise HTTPException(status_code=404, detail="no such voice")
     h.on_change("voices")
-    return _public_voice({**v, "builtin": False}, h.trainings.adapters(vid))
+    return _public_voice({**v, "builtin": False}, h.trainings.speaks_with(vid))
 
 
 @router.delete("/voices/{vid}")

@@ -1,0 +1,141 @@
+"""The adapters that come with the built-in voices (docs/local-voice.md "Training a voice"): 한채린's and 서아's voices
+learned by a speech model — trained with Voice Studio → 학습 on the owner's recordings of their own voices — published
+as GitHub release assets (they are not in the repository), and fetched, checked against their SHA-256, once that model
+is installed. A built-in voice speaks with its shipped adapter unless the user trained one of their own for that model
+(app/voicehost/training.py) or turned shipped adapters off (Voice Studio → 설정).
+
+A release asset is a zip of the adapter's files (adapter_config.json, adapter_model.safetensors, geny.json, and the
+license notices that go with it); it is unpacked under <voice home>/adapters/<voice>/<model>/<sha256[:12]>/.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+import logging
+import shutil
+import urllib.request
+import zipfile
+from pathlib import Path
+from typing import Any
+
+log = logging.getLogger("app.voicehost.shipped")
+
+RELEASE = "https://github.com/CocoRoF/My-Mate-Geny/releases/download/voice-adapters-v1"
+# (voice id, model id) → the release asset: its name, SHA-256, size, and the model revision it was made from
+SHIPPED: dict[tuple[str, str], dict[str, Any]] = {}
+# what a release zip may hold (nothing else is unpacked, and never a path)
+FILES = {"adapter_config.json", "adapter_model.safetensors", "geny.json", "voice.safetensors", "NOTICE.md",
+         "LICENSE-Boson-Higgs-Audio-2.txt", "LICENSE-Meta-Llama-3.txt"}
+
+
+class Shipped:
+    def __init__(self, host, catalog: dict[tuple[str, str], dict[str, Any]] | None = None) -> None:
+        self.h = host
+        self.s = host.s
+        self.catalog = SHIPPED if catalog is None else catalog
+        self.failed: dict[tuple[str, str], str] = {}
+        self._task: asyncio.Task | None = None
+
+    @property
+    def root(self) -> Path:
+        return self.s.home / "adapters"
+
+    def _dir(self, voice_id: str, model_id: str) -> Path | None:
+        e = self.catalog.get((voice_id, model_id))
+        if e is None:
+            return None
+        return self.root / voice_id.split(":", 1)[-1] / model_id / e["sha256"][:12]
+
+    def run_id(self, voice_id: str, model_id: str) -> str:
+        """what stands for a shipped adapter where a training's id would (a speech cache key, the history)"""
+        e = self.catalog[(voice_id, model_id)]
+        return f"shipped-{voice_id.split(':', 1)[-1]}-{model_id}-{e['sha256'][:8]}"
+
+    def ready(self, voice_id: str, model_id: str) -> Path | None:
+        d = self._dir(voice_id, model_id)
+        return d if d is not None and (d / "adapter_config.json").is_file() else None
+
+    def of_voice(self, voice_id: str) -> dict[str, str]:
+        """{model id: run id} of the shipped adapters here for this voice"""
+        return {m: self.run_id(v, m) for (v, m) in self.catalog if v == voice_id and self.ready(v, m)}
+
+    def status(self) -> list[dict[str, Any]]:
+        return [{"voice_id": v, "model_id": m, "bytes": e.get("bytes", 0), "ready": bool(self.ready(v, m)),
+                 "error": self.failed.get((v, m), "")} for (v, m), e in self.catalog.items()]
+
+    # -- fetching --
+    def want(self, voice_id: str = "", model_id: str = "") -> None:
+        """fetch what is missing for the installed models, in the background (a line spoken meanwhile goes without)"""
+        if self._task is None or self._task.done():
+            try:
+                self._task = asyncio.get_running_loop().create_task(self.fetch_all())
+            except RuntimeError:  # (no loop: a thread — the next line asks again)
+                pass
+
+    async def fetch_all(self) -> list[str]:
+        from . import catalog
+
+        got = []
+        for (v, m), e in list(self.catalog.items()):
+            spec = catalog.BY_ID.get(m)
+            if spec is None or self.ready(v, m) or (v, m) in self.failed or not self.h.installer.installed(spec):
+                continue
+            dest = self._dir(v, m)
+            assert dest is not None
+            try:
+                await asyncio.to_thread(_fetch, f"{RELEASE}/{e['asset']}", e["sha256"], int(e.get("bytes") or 0), dest,
+                                        self.s.tmp_dir)
+                got.append(f"{v}/{m}")
+                self.h.on_change(f"voice:{v}")
+            except Exception as ex:  # noqa: BLE001 - said in the studio; tried again after a restart
+                self.failed[(v, m)] = str(ex)[:300]
+                log.warning("shipped adapter %s/%s: %s", v, m, ex)
+        return got
+
+
+def _fetch(url: str, sha256: str, size: int, dest: Path, tmp_dir: Path) -> None:
+    """the asset → checked → unpacked at ``dest`` (whole, or not at all); older versions of it removed"""
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    part = tmp_dir / f"{dest.parent.parent.name}-{dest.parent.name}-{sha256[:12]}.zip.part"
+    h = hashlib.sha256()
+    n = 0
+    req = urllib.request.Request(url, headers={"User-Agent": "my-mate-geny"})
+    with urllib.request.urlopen(req, timeout=60) as r, part.open("wb") as f:
+        while True:
+            chunk = r.read(1 << 20)
+            if not chunk:
+                break
+            h.update(chunk)
+            f.write(chunk)
+            n += len(chunk)
+            if size and n > size:
+                break
+    try:
+        if h.hexdigest() != sha256 or (size and n != size):
+            raise ValueError(f"{url}: not the expected file (SHA-256 or size differs)")
+        stage = dest.parent / (dest.name + ".part")
+        shutil.rmtree(stage, ignore_errors=True)
+        stage.mkdir(parents=True)
+        with zipfile.ZipFile(part) as z:
+            names = [i for i in z.infolist() if not i.is_dir()]
+            for i in names:
+                name = Path(i.filename).name
+                if name not in FILES or i.filename != name:
+                    continue
+                stage.joinpath(name).write_bytes(z.read(i))
+        try:
+            json.loads((stage / "geny.json").read_text("utf-8"))
+            if not (stage / "adapter_config.json").is_file() or not (stage / "adapter_model.safetensors").is_file():
+                raise ValueError
+        except (OSError, ValueError):
+            shutil.rmtree(stage, ignore_errors=True)
+            raise ValueError(f"{url}: no adapter in it") from None
+        shutil.rmtree(dest, ignore_errors=True)
+        stage.rename(dest)
+        for old in dest.parent.iterdir():  # (an earlier version of the same adapter)
+            if old != dest and old.is_dir():
+                shutil.rmtree(old, ignore_errors=True)
+    finally:
+        part.unlink(missing_ok=True)

@@ -88,7 +88,7 @@ async def test_the_history_is_searched_starred_and_kept_within_its_limits(vh):
     vh.history.update(first["id"], starred=True, note="keep")
     assert vh.history.list(starred=True)["total"] == 1
     facets = vh.history.facets()
-    assert facets["voices"][0]["name"] == "메스가키" and facets["models"][0]["value"] == "omnivoice"
+    assert facets["voices"][0]["name"] == "서아" and facets["models"][0]["value"] == "omnivoice"
     # a smaller limit: the oldest unstarred go, the starred one stays
     vh.put_settings({"history_max_entries": 50})
     vh.history.prune(3, 10**12)

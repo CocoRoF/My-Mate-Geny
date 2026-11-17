@@ -5,7 +5,7 @@ disgust, smile; one clip each — with its exact transcript; a cloning engine (Q
 a line like the clip of the feeling it is said in (a mate's emotion tag picks it, through a short chain: worried →
 fear, else sadness), else like the neutral one.
 
-- Built in: the voices that come with the app (app/mate/builtin/voices/<key>/voice.json — 한채린, 메스가키), read-only.
+- Built in: the voices that come with the app (app/mate/builtin/voices/<key>/voice.json — 한채린, 서아), read-only.
 - The user's own: made in Settings → 이미지 및 음성 공급자 → 로컬 음성 모델 (a name, clips uploaded as files; a clip
   without a transcript is transcribed by the local Whisper when it is installed).
 - A mate's own clip (her Voice tab's reference, ``voice.tts.ref``) works too, as a voice of one neutral clip.

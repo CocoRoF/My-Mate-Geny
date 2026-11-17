@@ -153,7 +153,8 @@ export interface LocalVoice {
   references: VoiceRef[];
   /** its sound clips (laugh, yawn: several of each) — apart from the feelings, so nothing clones from them */
   sounds: (Omit<VoiceRef, "label"> & { label: SoundLabel })[];
-  /** {model id: the training whose adapter it speaks with on that model} (Voice Studio → 학습) */
+  /** {model id: what it speaks with on that model}: a training's adapter (Voice Studio → 학습), or for a built-in
+   *  voice the one it came with ("shipped-…") */
   adapters?: Record<string, string>;
 }
 
@@ -362,6 +363,9 @@ export interface StudioSettings {
   /** a voice's own laugh made the first time a line of it laughs */
   auto_sounds: boolean;
   sound_maker: string;
+  /** the built-in voices speak with the adapters that come with them (fetched once their model is installed) */
+  shipped_adapters: boolean;
+  shipped: { voice_id: string; model_id: string; bytes: number; ready: boolean; error: string }[];
   paths: { home: string; models: string; runtimes: string; references: string; history: string };
   engine_mode: string;
   device: string;
@@ -477,7 +481,7 @@ export const AUDIO_FORMATS: AudioFormat[] = ["wav", "mp3", "ogg", "flac"];
 
 export const getOverview = (lang: string) => apiFetch<Overview>(`/api/voice/overview?lang=${enc(lang)}`);
 export const getStudioSettings = () => apiFetch<StudioSettings>("/api/voice/settings");
-export const putStudioSettings = (patch: Partial<Record<RuntimeKey, number | null>> & { default_tts?: string; default_stt?: string; default_voice?: string; auto_sounds?: boolean }) =>
+export const putStudioSettings = (patch: Partial<Record<RuntimeKey, number | null>> & { default_tts?: string; default_stt?: string; default_voice?: string; auto_sounds?: boolean; shipped_adapters?: boolean }) =>
   apiFetch<StudioSettings>("/api/voice/settings", { method: "PUT", ...j(patch) });
 export const getModelDefaults = (id: string) => apiFetch<{ params: Record<string, unknown> }>(`/api/voice/models/${enc(id)}/defaults`).then((r) => r.params);
 export const putModelDefaults = (id: string, params: Record<string, unknown>) =>
