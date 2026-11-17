@@ -28,6 +28,7 @@ class Recipe:
     conditions: tuple[str, ...] = ("long", "short", "none")
     batch_tokens = 4096  # a batch's budget, in the units of lengths()
     epochs = 50  # passes over her data (between 200 and 1500 steps)
+    progress = 0.0  # how far along the run is (0 – 1), set before each step
 
     def __init__(self, job: dict, dev: torch.device, lang: str, lim: dict) -> None:
         self.job, self.dev, self.lang, self.lim = job, dev, lang, lim
@@ -105,4 +106,8 @@ def recipe_for(engine: str) -> type[Recipe]:
         from .cosy import Cosy
 
         return Cosy
+    if engine == "voxcpm":
+        from .vox import Vox
+
+        return Vox
     raise ValueError(f"no training for {engine}")

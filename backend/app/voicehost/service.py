@@ -38,9 +38,10 @@ log = logging.getLogger("app.voicehost")
 
 # how each engine wants long text: Qwen3-TTS batches sentence segments in one call, CosyVoice3 takes them one by one,
 # OmniVoice chunks internally and is fastest given the whole text (measured, docs/local-voice.md)
-STRATEGY = {"qwen3_tts": ("batch", 4), "cosyvoice3": ("segments", 1), "omnivoice": ("whole", 1), "fake": ("segments", 1)}
+STRATEGY = {"qwen3_tts": ("batch", 4), "cosyvoice3": ("segments", 1), "omnivoice": ("whole", 1), "voxcpm": ("segments", 1),
+            "fake": ("segments", 1)}
 # a mate on the local engine without a model of her own speaks with the first of these that is installed
-DEFAULT_TTS = ("omnivoice", "qwen3-tts-1.7b-base", "qwen3-tts-0.6b-base", "cosyvoice3-0.5b")
+DEFAULT_TTS = ("omnivoice", "voxcpm2", "qwen3-tts-1.7b-base", "qwen3-tts-0.6b-base", "cosyvoice3-0.5b")
 DEFAULT_STT = ("whisper-large-v3-turbo",)
 
 INTERACTIVE, PREVIEW, BACKGROUND = 0, 1, 2  # GPU job priorities
@@ -177,7 +178,7 @@ class VoiceHost:
         self.engines.others.append(self.trainings.release_gpu)  # (a model that can't find room: a training leaves)
         self.queue.on_interactive = self.trainings.speaking  # (a mate's words: a training pauses)
         self.on_change: Callable[[str], None] = lambda what: None  # (every open window refetches: app/main.py)
-        self.installer.on_change = lambda model_id: self.on_change(f"model:{model_id}")
+        self.installer.on_change = self._model_changed
         self._gate: tuple[float, G.Gate] | None = None
         self._started = False
         # the GPU over the last half hour (Voice Studio's overview): a sample every 5 s while someone looks, else 30 s
@@ -185,6 +186,13 @@ class VoiceHost:
         self._sampler: asyncio.Task | None = None
         self._watch_until = 0.0
         self._apply_settings()
+
+    def _model_changed(self, model_id: str) -> None:
+        self.on_change(f"model:{model_id}")
+        # (a model just installed: the built-in voices' adapters for it fetched now, not at their first line on it)
+        spec = catalog.BY_ID.get(model_id)
+        if self._started and self.s.shipped_adapters and spec is not None and self.installer.installed(spec):
+            self.shipped.want()
 
     # -- lifecycle --------------------------------------------------------------------------------------------------
     async def start(self) -> None:
@@ -293,6 +301,8 @@ class VoiceHost:
         if "shipped_adapters" in patch:
             self.s.shipped_adapters = bool(patch["shipped_adapters"])
             self.store.put_setting("adapters:shipped", self.s.shipped_adapters)
+            if self.s.shipped_adapters and self._started:  # (on again: what is missing for the installed models)
+                self.shipped.want()
             self.on_change("voices")
         if any(k.startswith("history_") for k in patch):
             self._prune_history()

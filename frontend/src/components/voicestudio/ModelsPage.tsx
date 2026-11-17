@@ -52,7 +52,7 @@ export default function ModelsPage() {
         <span className="flex-1" />
         <span className="text-[11.5px] text-content-faint">{t("voiceStudio.mdInstalled", { n: installed.length, gb: gb(disk) })}</span>
       </div>
-      <p className="text-[11.5px] leading-snug text-content-faint">{t("localVoice.modelsHint", { min: Math.round(status.settings.idle_unload_seconds / 60) })}</p>
+      <p className="text-[11.5px] leading-snug text-content-faint">{status.settings.idle_unload_seconds > 0 ? t("localVoice.modelsHint", { min: Math.max(1, Math.round(status.settings.idle_unload_seconds / 60)) }) : t("localVoice.modelsHintKeep")}</p>
       <div className="space-y-3">
         {shown.map((m) => (
           <ModelCard key={m.id} m={m} status={status} onChange={reloadStatus} />

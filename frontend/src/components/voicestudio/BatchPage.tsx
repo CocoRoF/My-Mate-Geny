@@ -24,7 +24,7 @@ import { confirmDialog } from "../ui/ConfirmDialog";
 import Icon from "../ui/Icon";
 import { ErrorLine, Field, ProgressBar, Segmented, StatusBadge, type Status } from "../mate/settings/ui";
 import { LineForm, useDefaultLine, useTts, type LineSettings } from "./lineForm";
-import { Card, DownloadMenu, PlayButton, secs, useStudio } from "./shared";
+import { Card, DownloadMenu, PlayButton, secs, useStudio, errText, serverText } from "./shared";
 
 type Fmt = "txt" | "csv" | "json";
 const MAX_LINES = 500;
@@ -92,7 +92,7 @@ export default function BatchPage() {
       setRunning(r.running);
       setErr(null);
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(errText(t, e));
     }
   }, []);
   const active = batches.some((b) => b.state === "running" || b.state === "queued");
@@ -179,7 +179,7 @@ function NewBatch({ onStarted }: { onStarted: (b: Batch) => Promise<void> }) {
       setLabel("");
       await onStarted(b);
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(errText(t, e));
     } finally {
       setBusy(false);
     }
@@ -252,7 +252,7 @@ function NewBatch({ onStarted }: { onStarted: (b: Batch) => Promise<void> }) {
         <div className="mt-3 flex items-center gap-2">
           <span className="min-w-0 flex-1 text-[11px] leading-snug text-content-faint">{t("voiceStudio.btPriorityHint")}</span>
           <button className="btn-primary !px-4 !py-1.5 text-[13px]" disabled={busy || !p.lines.length || !!p.error || over} onClick={() => void start()} data-testid="vs-batch-start">
-            {busy ? <Icon name="spinner" size={13} spin /> : <Icon name="play" size={13} />} {t("voiceStudio.btStart", { n: p.lines.length })}
+            {busy ? <Icon name="spinner" size={13} spin /> : <Icon name="play" size={13} />} {p.lines.length ? t("voiceStudio.btStart", { n: p.lines.length }) : t("voiceStudio.btStartEmpty")}
           </button>
         </div>
         <ErrorLine text={err} />
@@ -270,7 +270,7 @@ function Job({ b, isRunning, open, onToggle, onChange }: { b: Batch; isRunning: 
   useEffect(() => {
     if (!open) return;
     let dead = false;
-    const get = () => getBatch(b.id).then((x) => !dead && setFull(x)).catch((e) => !dead && setErr((e as Error).message));
+    const get = () => getBatch(b.id).then((x) => !dead && setFull(x)).catch((e) => !dead && setErr(errText(t, e)));
     void get();
     const timer = live ? setInterval(get, 2000) : undefined;
     return () => {
@@ -283,7 +283,7 @@ function Job({ b, isRunning, open, onToggle, onChange }: { b: Batch; isRunning: 
     try {
       await fn();
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(errText(t, e));
     }
     await onChange();
   };
@@ -309,7 +309,7 @@ function Job({ b, isRunning, open, onToggle, onChange }: { b: Batch; isRunning: 
           {t("voiceStudio.btProgress", { done: b.done, total: b.total })}
           {b.failed ? ` · ${t("voiceStudio.btFailed", { n: b.failed })}` : ""} · {new Date(b.created_at).toLocaleString()}
         </p>
-        {b.error && <p className="mt-1 text-[11.5px] text-danger">{b.error}</p>}
+        {b.error && <p className="mt-1 text-[11.5px] text-danger">{serverText(t, b.error)}</p>}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {(live || isRunning) && (
@@ -361,7 +361,7 @@ function Job({ b, isRunning, open, onToggle, onChange }: { b: Batch; isRunning: 
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-content" title={it.text}>{it.text}</span>
                 {it.error ? (
-                  <span className="block truncate text-[11px] text-danger" title={it.error}>{it.error}</span>
+                  <span className="block truncate text-[11px] text-danger" title={serverText(t, it.error)}>{serverText(t, it.error)}</span>
                 ) : it.state === "done" ? (
                   <span className="block text-[11px] tabular-nums text-content-faint">
                     {secs(it.seconds)} · {t("voiceStudio.rtfN", { n: it.rtf != null ? it.rtf.toFixed(2) : "–" })} · {t("voiceStudio.gnSeedN", { n: String(it.seed ?? "–") })}

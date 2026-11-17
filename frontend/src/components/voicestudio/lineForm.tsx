@@ -7,7 +7,7 @@ import { useMemo, useState } from "react";
 import { FEELINGS, type Feeling, type LocalVoice, type Mode, type VoiceModel } from "../../api/voice";
 import { useT, type MsgKey } from "../../i18n";
 import { Field, Segmented } from "../mate/settings/ui";
-import { FEELING_COLOR, ParamControls, useLanguages, useStudio } from "./shared";
+import { FEELING_COLOR, ParamControls, useLanguages, useStudio, useLangLabel } from "./shared";
 
 export interface LineSettings {
   model_id: string;
@@ -77,6 +77,7 @@ export function LineForm({
   showParams?: boolean;
   testId?: string;
 }) {
+  const langLabel = useLangLabel();
   const t = useT();
   const { voices } = useStudio();
   const tts = useTts();
@@ -109,7 +110,7 @@ export function LineForm({
         </Field>
         <Field label={t("voiceStudio.gnModel")}>
           <select className="field" value={model?.id ?? ""} onChange={(e) => set({ model_id: e.target.value, params: voice?.default_model === e.target.value ? { ...(voice?.default_params ?? {}) } : {} })} data-testid={`${testId}-model`}>
-            {tts.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {tts.map((m) => <option key={m.id} value={m.id}>{m.name}{voice?.adapters?.[m.id] ? ` · ${t("voiceStudio.trTrained")}` : ""}</option>)}
           </select>
         </Field>
       </div>
@@ -152,7 +153,7 @@ export function LineForm({
           <select className="field" value={value.language} onChange={(e) => set({ language: e.target.value })} data-testid={`${testId}-language`}>
             {languages
               .filter((l) => !model || l === "auto" || model.languages.includes(l) || model.languages.includes("auto"))
-              .map((l) => <option key={l} value={l}>{l === "auto" ? t("voiceStudio.langAuto") : l}</option>)}
+              .map((l) => <option key={l} value={l}>{langLabel(l)}</option>)}
           </select>
         </Field>
         {showInstruct && (

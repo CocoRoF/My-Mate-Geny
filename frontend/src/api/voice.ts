@@ -365,7 +365,8 @@ export interface StudioSettings {
   sound_maker: string;
   /** the built-in voices speak with the adapters that come with them (fetched once their model is installed) */
   shipped_adapters: boolean;
-  shipped: { voice_id: string; model_id: string; bytes: number; ready: boolean; error: string }[];
+  /** each built-in voice's adapter for each model: fetched, its model installed (fetched once it is), why it failed */
+  shipped: { voice_id: string; model_id: string; bytes: number; ready: boolean; installed: boolean; error: string }[];
   paths: { home: string; models: string; runtimes: string; references: string; history: string };
   engine_mode: string;
   device: string;

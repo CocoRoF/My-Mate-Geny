@@ -1,12 +1,13 @@
 /**
  * Voice Studio → 학습 (docs/local-voice.md "Training a voice"): the recordings of one person → each chosen model
- * (OmniVoice, Qwen3-TTS, CosyVoice3) learns her voice (a LoRA adapter). Only recordings are asked for: they are cut
+ * (OmniVoice, VoxCPM2, Qwen3-TTS, CosyVoice3) learns her voice (a LoRA adapter). Only recordings are asked for: they are cut
  * into utterances, transcribed and kept to her voice once, then each model is trained on them, measured against the
  * voice without it (with a long clip, a short one and — where the model can — none), and the result, when it is
  * better, is put on the voice for that model. Runs one at a time, pausing while a mate speaks and stepping off the GPU
- * when it is needed; each run's report, A/B samples, and on / off / remove.
+ * when it is needed; each run's report, A/B samples, and on / off / remove — an older training's runs folded to a
+ * line.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyTraining,
   cancelTraining,
@@ -61,6 +62,12 @@ export default function TrainPage() {
     }
   }, []);
   const active = runs?.some((r) => ACTIVE.includes(r.state)) ?? false;
+  // (the newest training first; a training's runs in the order they run — the server lists the newest run first)
+  const shown = useMemo(() => {
+    const groups = new Map<string, TrainingRun[]>();
+    for (const r of runs ?? []) groups.set(r.group_id, [...(groups.get(r.group_id) ?? []), r]);
+    return [...groups.values()].flatMap((g) => g.reverse());
+  }, [runs]);
   useEffect(() => {
     void load();
     const timer = setInterval(() => void load(), active ? 2000 : 10000);
@@ -84,7 +91,8 @@ export default function TrainPage() {
         <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-[12.5px] text-content-faint">{t("voiceStudio.trNone")}</p>
       ) : (
         <div className="space-y-3">
-          {runs.map((r) => <RunCard key={r.id} run={r} onChanged={async () => { await load(); await reloadVoices(); }} />)}
+          {/* (the latest training's runs and any still going open; older ones folded to a line) */}
+          {shown.map((r) => <RunCard key={r.id} run={r} open={ACTIVE.includes(r.state) || r.group_id === runs[0].group_id} onChanged={async () => { await load(); await reloadVoices(); }} />)}
         </div>
       )}
     </div>
@@ -212,11 +220,13 @@ function NewRun({ kit, voices, onStarted, busy }: { kit: TrainingKit | null; voi
   );
 }
 
-function RunCard({ run, onChanged }: { run: TrainingRun; onChanged: () => Promise<void> }) {
+function RunCard({ run, open: openAtFirst, onChanged }: { run: TrainingRun; open: boolean; onChanged: () => Promise<void> }) {
   const t = useT();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const live = ACTIVE.includes(run.state);
+  const [folded, setFolded] = useState(!openAtFirst);
+  const open = live || !folded;
   const act = async (f: () => Promise<unknown>) => {
     setBusy(true);
     setErr(null);
@@ -247,35 +257,64 @@ function RunCard({ run, onChanged }: { run: TrainingRun; onChanged: () => Promis
         live ? (
           <button className="btn-ghost !py-1 text-[12px]" disabled={busy} onClick={() => void act(() => cancelTraining(run.id))} data-testid="vs-train-cancel">{t("common.cancel")}</button>
         ) : (
-          <button className="btn-ghost !py-1 text-[12px] text-content-faint" disabled={busy} data-testid="vs-train-delete"
-            onClick={async () => { if (await confirmDialog({ body: t("voiceStudio.trDeleteConfirm"), confirmLabel: t("common.delete"), danger: true })) void act(() => deleteTraining(run.id)); }}>
-            <Icon name="trash" size={12} /> {t("common.delete")}
-          </button>
+          <span className="flex items-center gap-1">
+            <button className="btn-ghost !py-1 text-[12px] text-content-dim" aria-expanded={open} onClick={() => setFolded(open)} data-testid="vs-train-fold">
+              <Icon name={open ? "chevron-up" : "chevron-down"} size={12} /> {t(open ? "voiceStudio.trFold" : "common.details")}
+            </button>
+            <button className="btn-ghost !py-1 text-[12px] text-content-faint" disabled={busy} data-testid="vs-train-delete"
+              onClick={async () => { if (await confirmDialog({ body: t("voiceStudio.trDeleteConfirm"), confirmLabel: t("common.delete"), danger: true })) void act(() => deleteTraining(run.id)); }}>
+              <Icon name="trash" size={12} /> {t("common.delete")}
+            </button>
+          </span>
         )
       }
     >
-      <div className="space-y-3" data-run={run.id} data-state={run.state}>
-        {run.state !== "failed" && run.state !== "canceled" && (
-          <ol className="flex flex-wrap items-center gap-x-1 gap-y-1 text-[11.5px]" data-testid="vs-train-steps">
-            {TRAINING_STAGES.map((s, i) => {
-              const doneStep = run.state === "done" || i < at;
-              const now = i === at && run.state !== "done";
-              return (
-                <li key={s} className={`flex items-center gap-1 rounded-full px-2 py-0.5 ${now ? "bg-accent-soft text-accent" : doneStep ? "text-content-dim" : "text-content-faint"}`}>
-                  {doneStep ? <Icon name="check" size={11} /> : now ? <Icon name="spinner" size={11} spin /> : <span className="inline-block h-1.5 w-1.5 rounded-full bg-current opacity-50" />}
-                  {t(`voiceStudio.trStage_${s}` as MsgKey)}
-                </li>
-              );
-            })}
-          </ol>
-        )}
-        {live && <Live run={run} />}
-        {(run.data.kept_s != null || run.state === "done") && <DataLine run={run} />}
-        {run.state === "done" && <Result run={run} busy={busy} onApply={(on) => act(() => applyTraining(run.id, on))} />}
-        {run.state === "failed" && <ErrorLine text={failText(t, run)} />}
-        <ErrorLine text={err} />
-      </div>
+      {!open ? (
+        <Folded run={run} />
+      ) : (
+        <div className="space-y-3" data-run={run.id} data-state={run.state}>
+          {run.state !== "done" && run.state !== "failed" && run.state !== "canceled" && (
+            <ol className="flex flex-wrap items-center gap-x-1 gap-y-1 text-[11.5px]" data-testid="vs-train-steps">
+              {TRAINING_STAGES.map((s, i) => {
+                const doneStep = i < at;
+                const now = i === at;
+                return (
+                  <li key={s} className={`flex items-center gap-1 rounded-full px-2 py-0.5 ${now ? "bg-accent-soft text-accent" : doneStep ? "text-content-dim" : "text-content-faint"}`}>
+                    {doneStep ? <Icon name="check" size={11} /> : now ? <Icon name="spinner" size={11} spin /> : <span className="inline-block h-1.5 w-1.5 rounded-full bg-current opacity-50" />}
+                    {t(`voiceStudio.trStage_${s}` as MsgKey)}
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+          {live && <Live run={run} />}
+          {(run.data.kept_s != null || run.state === "done") && <DataLine run={run} />}
+          {run.state === "done" && <Result run={run} busy={busy} onApply={(on) => act(() => applyTraining(run.id, on))} />}
+          {run.state === "failed" && <ErrorLine text={failText(t, run)} />}
+          <ErrorLine text={err} />
+        </div>
+      )}
+      {!open && <ErrorLine text={err} />}
     </Card>
+  );
+}
+
+/** a finished run folded to a line: how like her it got (before → after, each way it was measured), or why not */
+function Folded({ run }: { run: TrainingRun }) {
+  const t = useT();
+  const r = run.result;
+  const base = r.base as TrainingConditions | undefined;
+  const tuned = r.tuned as TrainingConditions | undefined;
+  const conds = (r.conditions ?? (["long", "short", "none"] as const)).filter((c) => base?.[c] && tuned?.[c]) as TrainingCondition[];
+  return (
+    <p className="text-[12px] text-content-dim" data-testid="vs-train-folded" data-run={run.id} data-state={run.state}>
+      {run.state === "failed" ? <span className="text-danger">{failText(t, run)}</span>
+        : run.state !== "done" ? t(`voiceStudio.trState_${run.state}` as MsgKey)
+        : !r.improved ? t("voiceStudio.trNoGain")
+        : <>{t("voiceStudio.trLikeness")}: {conds.map((c, i) => (
+          <Fragment key={c}>{i > 0 && " · "}<span className="whitespace-nowrap">{t(`voiceStudio.trCond_${c}` as MsgKey)} {pct(base![c]!.similarity)} → <b className="font-medium text-content">{pct(tuned![c]!.similarity)}</b></span></Fragment>
+        ))}</>}
+    </p>
   );
 }
 
@@ -419,7 +458,7 @@ function Result({ run, busy, onApply }: { run: TrainingRun; busy: boolean; onApp
             {t("voiceStudio.trApply")}
           </label>
         )}
-        <span className="text-content-faint">{t("voiceStudio.trStats", { step: r.best_step ?? 0, steps: r.steps ?? 0, m: r.minutes ?? 0 })}</span>
+        <span className="text-content-faint">{t((r.minutes ?? 0) >= 1 ? "voiceStudio.trStats" : "voiceStudio.trStatsQuick", { step: r.best_step ?? 0, steps: r.steps ?? 0, m: Math.round(r.minutes ?? 0) })}</span>
       </div>
     </div>
   );

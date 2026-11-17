@@ -26,7 +26,7 @@ import Icon from "../ui/Icon";
 import { ErrorLine, Field, Segmented } from "../mate/settings/ui";
 import { ClipModal, RecorderModal, type ClipSource } from "./clips";
 import { SoundsCard } from "./sounds";
-import { Card, FeelingDot, Modal, ParamControls, PlayButton, readableAudio, refUrl, secs, useLanguages, useStudio, Waveform } from "./shared";
+import { Card, FeelingDot, Modal, ParamControls, PlayButton, readableAudio, refUrl, secs, useLanguages, useStudio, Waveform, useLangLabel } from "./shared";
 
 /** what a feeling without a clip speaks like (backend voicehost/voices.py _CHAIN) */
 const FALLBACK: Partial<Record<Feeling, Feeling>> = { smile: "joy", fear: "sadness", disgust: "anger" };
@@ -124,6 +124,7 @@ export default function ProfilesPage() {
 }
 
 function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => Promise<void> }) {
+  const langLabel = useLangLabel();
   const t = useT();
   const languages = useLanguages();
   const [name, setName] = useState("");
@@ -152,7 +153,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
         </Field>
         <Field label={t("voiceStudio.language")} hint={t("voiceStudio.pfLanguageHint")}>
           <select className="field" value={language} onChange={(e) => setLanguage(e.target.value)}>
-            {languages.map((l) => <option key={l} value={l}>{l === "auto" ? t("voiceStudio.langAuto") : l}</option>)}
+            {languages.map((l) => <option key={l} value={l}>{langLabel(l)}</option>)}
           </select>
         </Field>
         <Field label={t("voiceStudio.pfDescription")}>
@@ -328,6 +329,7 @@ function ClipCell({
   onTrim: (r: VoiceRef) => void;
   onChange: () => Promise<void>;
 }) {
+  const langLabel = useLangLabel();
   const t = useT();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(clip?.transcript ?? "");
@@ -396,7 +398,7 @@ function ClipCell({
               <textarea className="field min-h-[48px] text-[12px]" value={text} onChange={(e) => setText(e.target.value)} data-testid={`vs-clip-text-${feeling}`} />
               <div className="flex items-center gap-1.5">
                 <select className="field !w-auto !py-1 text-[12px]" value={lang} onChange={(e) => setLang(e.target.value)}>
-                  {languages.map((l) => <option key={l} value={l}>{l === "auto" ? t("voiceStudio.langAuto") : l}</option>)}
+                  {languages.map((l) => <option key={l} value={l}>{langLabel(l)}</option>)}
                 </select>
                 <span className="flex-1" />
                 <button className="btn-ghost !py-0.5 text-[11.5px]" onClick={() => setEditing(false)}>{t("voiceStudio.cancel")}</button>
@@ -429,6 +431,7 @@ function ClipCell({
 
 /** a user's profile: what it says about itself and what its lines start from */
 function Details({ v }: { v: LocalVoice }) {
+  const langLabel = useLangLabel();
   const t = useT();
   const { status, reloadVoices } = useStudio();
   const languages = useLanguages();
@@ -475,7 +478,7 @@ function Details({ v }: { v: LocalVoice }) {
         </Field>
         <Field label={t("voiceStudio.language")} hint={t("voiceStudio.pfLanguageHint")}>
           <select className="field" value={form.language} onChange={(e) => patch({ language: e.target.value })}>
-            {languages.map((l) => <option key={l} value={l}>{l === "auto" ? t("voiceStudio.langAuto") : l}</option>)}
+            {languages.map((l) => <option key={l} value={l}>{langLabel(l)}</option>)}
           </select>
         </Field>
       </div>

@@ -7,7 +7,7 @@
  *   받아쓰기      a file → its words (the local Whisper)
  * Every line made here is in 히스토리 (비교, 시드 찾기).
  */
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { analyzeAudio, FEELINGS, generateVoice, transcribeLocal, type Analysis, type Feeling, type HistoryEntry } from "../../api/voice";
 import { useT, type MsgKey } from "../../i18n";
 import Icon from "../ui/Icon";
@@ -15,7 +15,7 @@ import { ErrorLine, Field, Segmented } from "../mate/settings/ui";
 import { ClipModal, type ClipSource } from "./clips";
 import { Result } from "./GeneratePage";
 import { LineForm, useDefaultLine, useTts, type LineSettings } from "./lineForm";
-import { Card, mb, readableAudio, secs, useLanguages, useStudio, Waveform } from "./shared";
+import { Card, mb, readableAudio, secs, useLanguages, useStudio, Waveform, useLangLabel, errText } from "./shared";
 
 type Tool = "compare" | "seeds" | "analyze" | "transcribe";
 
@@ -63,11 +63,20 @@ const MAX_VARIANTS = 5;
 function Compare() {
   const t = useT();
   const initial = useDefaultLine();
+  const tts = useTts();
   const [text, setText] = useState(() => t("localVoice.trySample"));
   const [variants, setVariants] = useState<{ line: LineSettings; seed: number | null }[]>(() => [
     { line: initial(), seed: null },
     { line: initial(), seed: null },
   ]);
+  // (B starts on another installed model: the same line on two models is what a comparison is for)
+  useEffect(() => {
+    setVariants((vs) => {
+      const other = tts.find((m) => m.id !== vs[0]?.line.model_id);
+      if (vs.length !== 2 || !other || vs[1].line.model_id !== vs[0].line.model_id) return vs;
+      return [vs[0], { ...vs[1], line: { ...vs[1].line, model_id: other.id, params: {} } }];
+    });
+  }, [tts]);
   const [results, setResults] = useState<(HistoryEntry | null)[]>([]);
   const [errors, setErrors] = useState<(string | null)[]>([]);
   const [busy, setBusy] = useState<number | null>(null);
@@ -176,7 +185,7 @@ function Seeds() {
         const e = await generateVoice({ ...line, voice_id: line.voice_id || undefined, text: text.trim(), seed: null, source: "seed" });
         setResults((r) => [...r, e]);
       } catch (x) {
-        setErr((x as Error).message);
+        setErr(errText(t, x));
         break;
       }
     }
@@ -256,7 +265,7 @@ function Analyze() {
     try {
       setA(await analyzeAudio(f, { transcribe: stt, window: w, filename: f.name }));
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(errText(t, e));
     } finally {
       setBusy(false);
     }
@@ -375,6 +384,7 @@ function Analyze() {
 // ---- transcription ------------------------------------------------------------------------------------------------
 
 function Transcribe() {
+  const langLabel = useLangLabel();
   const t = useT();
   const { status, go } = useStudio();
   const languages = useLanguages();
@@ -394,7 +404,7 @@ function Transcribe() {
         setOut((o) => [{ name: f.name, ...r }, ...o]);
       }
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(errText(t, e));
     } finally {
       setBusy(false);
       if (input.current) input.current.value = "";
@@ -413,7 +423,7 @@ function Transcribe() {
       <div className="flex flex-wrap items-end gap-2">
         <Field label={t("voiceStudio.language")}>
           <select className="field !w-auto" value={language} onChange={(e) => setLanguage(e.target.value)}>
-            {languages.map((l) => <option key={l} value={l}>{l === "auto" ? t("voiceStudio.langAuto") : l}</option>)}
+            {languages.map((l) => <option key={l} value={l}>{langLabel(l)}</option>)}
           </select>
         </Field>
         <input ref={input} type="file" multiple accept="audio/*,video/*" className="hidden" onChange={(e) => e.target.files?.length && void run(e.target.files)} data-testid="vs-transcribe-file" />
