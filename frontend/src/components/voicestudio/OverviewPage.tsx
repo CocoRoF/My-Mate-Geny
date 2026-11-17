@@ -3,12 +3,12 @@
  * (running, waiting, done — for whom: a mate, a call, the studio, a batch), the engines' events, the host.
  * Polled every 2 s while shown (the server samples the GPU every 5 s while someone looks, else every 30 s).
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { getOverview, unloadModel, loadModelFrom, type GpuJob, type GpuOverview, type GpuSample, type Overview, type ResidentEx } from "../../api/voice";
 import { useLang, useT, type MsgKey } from "../../i18n";
 import Icon from "../ui/Icon";
 import { ErrorLine, ProgressBar, Segmented, StatusBadge } from "../mate/settings/ui";
-import { Card, clock, gb, gateText, secs, sourceLabel, useStudio } from "./shared";
+import { Card, clock, gb, gateText, secs, size, sourceLabel, useStudio, useModelName, serverText } from "./shared";
 
 const OUR_COLORS = ["#8b5cf6", "#22d3ee", "#f59e0b", "#10b981", "#ef4444"];
 
@@ -284,6 +284,7 @@ function Residents({ residents, onChange }: { residents: ResidentEx[]; onChange:
 const kindLabel = (t: ReturnType<typeof useT>, k?: string) => (k ? t(`voiceStudio.kind_${k}` as MsgKey) : "–");
 
 function Queue({ q }: { q: Overview["queue"] }) {
+  const modelName = useModelName();
   const t = useT();
   const r = q.running;
   return (
@@ -292,7 +293,7 @@ function Queue({ q }: { q: Overview["queue"] }) {
         <div className="rounded-lg border border-accent/30 bg-accent-soft/40 px-2.5 py-2 text-[12.5px]" data-testid="vs-queue-running">
           <div className="flex items-center gap-1.5">
             <Icon name="spinner" size={12} spin />
-            <span className="font-medium text-content">{kindLabel(t, r.kind)} · {r.model_id}</span>
+            <span className="font-medium text-content">{kindLabel(t, r.kind)} · {modelName(r.model_id ?? "")}</span>
             <span className="flex-1" />
             <span className="tabular-nums text-content-dim">{r.started_at ? secs(Date.now() / 1000 - r.started_at) : ""}</span>
           </div>
@@ -306,7 +307,7 @@ function Queue({ q }: { q: Overview["queue"] }) {
           {q.waiting.map((w) => (
             <li key={w.id} className="flex items-center gap-1.5 text-content-dim">
               <Icon name="clock" size={11} />
-              <span className="min-w-0 flex-1 truncate">{kindLabel(t, w.kind)} · {w.model_id} · {sourceLabel(t, w.source)}</span>
+              <span className="min-w-0 flex-1 truncate">{kindLabel(t, w.kind)} · {modelName(w.model_id ?? "")} · {sourceLabel(t, w.source)}</span>
               <span className="tabular-nums">{secs(Date.now() / 1000 - w.queued_at)}</span>
             </li>
           ))}
@@ -318,6 +319,7 @@ function Queue({ q }: { q: Overview["queue"] }) {
 }
 
 function RecentJobs({ jobs }: { jobs: GpuJob[] }) {
+  const modelName = useModelName();
   const t = useT();
   const [who, setWho] = useState<string>("all");
   const kinds = useMemo(() => {
@@ -348,7 +350,29 @@ function RecentJobs({ jobs }: { jobs: GpuJob[] }) {
         <p className="text-[12px] text-content-faint">{t("voiceStudio.ovNoJobs")}</p>
       ) : (
         <div className="max-h-80 overflow-auto">
-          <table className="w-full text-left text-[12px]">
+          {/* (a phone: a line each — eight columns of Korean words would break a letter at a time) */}
+          <ul className="divide-y divide-border/50 sm:hidden" data-testid="vs-recent-list">
+            {shown.map((j) => (
+              <li key={j.id} className="py-1.5 text-[12px]" data-testid="vs-recent-item" data-source={j.source}>
+                <div className="flex items-baseline gap-2">
+                  <span className="min-w-0 flex-1 truncate text-content">
+                    {modelName(j.model_id ?? "")} <span className="text-content-dim">· {kindLabel(t, j.kind)}</span>
+                    {j.ok === false && <span className="ml-1 text-danger">{t("voiceStudio.failed")}</span>}
+                  </span>
+                  <span className="shrink-0 tabular-nums text-[11px] text-content-faint">{j.ended_at ? clock(j.ended_at) : ""}</span>
+                </div>
+                <div className="flex flex-wrap gap-x-2.5 text-[11px] tabular-nums text-content-faint">
+                  <span className="text-content-dim">{sourceLabel(t, j.source)}</span>
+                  {j.started_at ? <span>{t("voiceStudio.colWait")} {secs(j.started_at - j.queued_at)}</span> : null}
+                  {j.started_at && j.ended_at ? <span>{t("voiceStudio.colTook")} {secs(j.ended_at - j.started_at)}</span> : null}
+                  {j.audio_seconds != null && <span>{t("voiceStudio.colAudio")} {secs(j.audio_seconds)}</span>}
+                  {j.rtf != null && <span>RTF {j.rtf.toFixed(2)}</span>}
+                </div>
+                {j.ok === false && j.error && <p className="mt-0.5 text-[11px] text-danger/90">{serverText(t, j.error)}</p>}
+              </li>
+            ))}
+          </ul>
+          <table className="hidden w-full text-left text-[12px] sm:table">
             <thead className="sticky top-0 bg-surface-2 text-[11px] text-content-faint">
               <tr>
                 <th className="py-1 pr-2 font-medium">{t("voiceStudio.colTime")}</th>
@@ -363,19 +387,24 @@ function RecentJobs({ jobs }: { jobs: GpuJob[] }) {
             </thead>
             <tbody>
               {shown.map((j) => (
-                <tr key={j.id} className="border-t border-border/50" data-testid="vs-recent-row" data-source={j.source}>
-                  <td className="py-1 pr-2 tabular-nums text-content-faint">{j.ended_at ? clock(j.ended_at) : ""}</td>
-                  <td className="py-1 pr-2 text-content">{sourceLabel(t, j.source)}</td>
-                  <td className="py-1 pr-2 text-content-dim">
-                    {kindLabel(t, j.kind)}
-                    {j.ok === false && <span className="ml-1 text-danger" title={j.error}>{t("voiceStudio.failed")}</span>}
-                  </td>
-                  <td className="py-1 pr-2 text-content-dim">{j.model_id}</td>
-                  <td className="py-1 pr-2 text-right tabular-nums text-content-faint">{j.started_at ? secs(j.started_at - j.queued_at) : "–"}</td>
-                  <td className="py-1 pr-2 text-right tabular-nums text-content-dim">{j.started_at && j.ended_at ? secs(j.ended_at - j.started_at) : "–"}</td>
-                  <td className="py-1 pr-2 text-right tabular-nums text-content-dim">{j.audio_seconds != null ? secs(j.audio_seconds) : "–"}</td>
-                  <td className="py-1 text-right tabular-nums text-content-dim">{j.rtf != null ? j.rtf.toFixed(2) : "–"}</td>
-                </tr>
+                <Fragment key={j.id}>
+                  <tr className="border-t border-border/50" data-testid="vs-recent-row" data-source={j.source}>
+                    <td className="py-1 pr-2 tabular-nums text-content-faint">{j.ended_at ? clock(j.ended_at) : ""}</td>
+                    <td className="py-1 pr-2 text-content">{sourceLabel(t, j.source)}</td>
+                    <td className="py-1 pr-2 text-content-dim">
+                      {kindLabel(t, j.kind)}
+                      {j.ok === false && <span className="ml-1 text-danger">{t("voiceStudio.failed")}</span>}
+                    </td>
+                    <td className="py-1 pr-2 text-content-dim">{modelName(j.model_id ?? "")}</td>
+                    <td className="py-1 pr-2 text-right tabular-nums text-content-faint">{j.started_at ? secs(j.started_at - j.queued_at) : "–"}</td>
+                    <td className="py-1 pr-2 text-right tabular-nums text-content-dim">{j.started_at && j.ended_at ? secs(j.ended_at - j.started_at) : "–"}</td>
+                    <td className="py-1 pr-2 text-right tabular-nums text-content-dim">{j.audio_seconds != null ? secs(j.audio_seconds) : "–"}</td>
+                    <td className="py-1 text-right tabular-nums text-content-dim">{j.rtf != null ? j.rtf.toFixed(2) : "–"}</td>
+                  </tr>
+                  {j.ok === false && j.error && (
+                    <tr><td colSpan={8} className="pb-1.5 text-[11px] text-danger/90">{serverText(t, j.error)}</td></tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -386,6 +415,7 @@ function RecentJobs({ jobs }: { jobs: GpuJob[] }) {
 }
 
 function Events({ o }: { o: Overview }) {
+  const modelName = useModelName();
   const t = useT();
   // (a word the catalog doesn't know stays as the engine said it)
   const known = (key: string, raw: string) => {
@@ -404,7 +434,7 @@ function Events({ o }: { o: Overview }) {
             <li key={i} className="flex gap-2">
               <span className="shrink-0 tabular-nums text-content-faint">{clock(e.t)}</span>
               <span className="min-w-0 flex-1 text-content-dim">
-                <b className="font-medium text-content">{e.model_id}</b> {what(e.what)}
+                <b className="font-medium text-content">{modelName(e.model_id)}</b> {what(e.what)}
                 {e.why ? ` · ${why(e.why)}` : ""}
                 {e.seconds != null ? ` · ${secs(e.seconds)}` : ""}
                 {e.error ? <span className="text-danger"> · {e.error}</span> : null}
@@ -426,7 +456,7 @@ function Host({ o }: { o: Overview }) {
         <Tile label={t("voiceStudio.ovRam")} value={`${gb(m.total - m.available)} / ${gb(m.total, 0)} GB`} sub={m.limited ? t("voiceStudio.ovRamLimited") : undefined} />
         <Tile label={t("voiceStudio.ovCpu")} value={String(o.host.cpu.count)} sub={o.host.cpu.name} />
         <Tile label={t("voiceStudio.ovDiskModels")} value={`${gb(o.host.disk.models.free, 0)} GB`} sub={t("voiceStudio.ovFreeOf", { total: gb(o.host.disk.models.total, 0) })} />
-        <Tile label={t("voiceStudio.ovHistoryStore")} value={`${gb(o.history.bytes, 2)} GB`} sub={t("voiceStudio.ovHistoryCount", { n: o.history.count })} />
+        <Tile label={t("voiceStudio.ovHistoryStore")} value={size(o.history.bytes)} sub={t("voiceStudio.ovHistoryCount", { n: o.history.count })} />
       </div>
       <p className="mt-2 text-[11px] leading-snug text-content-faint">
         {t("voiceStudio.ovPolicy", {

@@ -200,8 +200,8 @@ async function main() {
       await until("a line", async () => (await page.locator('[data-testid="vs-gen-result"]').count()) > before, 60000);
       return page.innerText('[data-testid="vs-gen-stats"]');
     };
-    assert.match(await gen("qwen3-tts-0.6b-base"), /qwen3-tts-0\.6b-base \(학습됨\)/, "Qwen made with its own");
-    assert.match(await gen("omnivoice"), /omnivoice \(학습됨\)/, "OmniVoice made with its own");
+    assert.match(await gen("qwen3-tts-0.6b-base"), /Qwen3-TTS 0\.6B \(Base\) · 학습됨/, "Qwen made with its own");
+    assert.match(await gen("omnivoice"), /OmniVoice · 학습됨/, "OmniVoice made with its own");
     await shot(page, "04-generate-trained-light-ko");
     await open(page, "train");
     await page.uncheck(`${card("omnivoice")} [data-testid="vs-train-apply"]`);

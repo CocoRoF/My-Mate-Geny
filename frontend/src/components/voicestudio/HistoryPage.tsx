@@ -20,7 +20,7 @@ import { confirmDialog } from "../ui/ConfirmDialog";
 import Icon from "../ui/Icon";
 import { ErrorLine, ProgressBar } from "../mate/settings/ui";
 import { SaveAsRefModal } from "./clips";
-import { Card, DownloadMenu, gb, PlayButton, secs, sourceLabel, useStudio, Waveform } from "./shared";
+import { Card, DownloadMenu, gb, PlayButton, secs, size, sourceLabel, useStudio, Waveform, useModelName } from "./shared";
 
 const PAGE = 40;
 type Facets = Awaited<ReturnType<typeof historyFacets>>;
@@ -131,8 +131,8 @@ export default function HistoryPage() {
             </div>
             <div>
               <div className="flex justify-between text-[11px] tabular-nums text-content-faint">
-                <span>{t("voiceStudio.hsBytes", { gb: gb(u.bytes, 2), max: gb(lim.bytes, 1) })}</span>
-                <span>{t("voiceStudio.hsBatchBytes", { gb: gb(u.batch_bytes, 2) })}</span>
+                <span>{t("voiceStudio.hsBytes", { size: size(u.bytes), max: gb(lim.bytes, 1) })}</span>
+                <span>{t("voiceStudio.hsBatchBytes", { size: size(u.batch_bytes) })}</span>
               </div>
               <ProgressBar value={Math.min(1, u.bytes / Math.max(1, lim.bytes))} />
             </div>
@@ -215,6 +215,7 @@ function Row({
   onSave: () => void;
   onDelete: () => void;
 }) {
+  const modelName = useModelName();
   const t = useT();
   const url = historyAudioUrl(e.id);
   const when = new Date(e.created_at);
@@ -225,12 +226,12 @@ function Row({
         <PlayButton url={url} small testId="vs-history-play" />
         <button className="min-w-0 flex-1 text-left" onClick={onToggle} aria-expanded={open}>
           <span className="block truncate text-[12.5px] text-content">{e.text}</span>
-          <span className="block truncate text-[11px] tabular-nums text-content-faint">
+          <span className="block text-[11px] tabular-nums text-content-faint sm:truncate">
             {[
               when.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
               e.voice_name || t("voiceStudio.gnNoProfile"),
               e.ref_label ? t(`localVoice.feeling_${e.ref_label}` as MsgKey) : t(`voiceStudio.mode_${e.mode}` as MsgKey),
-              e.adapter ? `${e.model_id} (${t("voiceStudio.trTrained")})` : e.model_id,
+              e.adapter ? `${modelName(e.model_id)} · ${t("voiceStudio.trTrained")}` : modelName(e.model_id),
               secs(e.seconds),
               sourceLabel(t, e.source),
             ]
@@ -241,7 +242,7 @@ function Row({
         <button className="btn-ghost !p-1.5" onClick={() => void onStar()} title={e.starred ? t("voiceStudio.unstar") : t("voiceStudio.star")} data-testid="vs-history-star">
           <Icon name="star" size={13} className={e.starred ? "fill-current text-warning" : ""} />
         </button>
-        <DownloadMenu href={(f) => historyAudioUrl(e.id, f, true)} />
+        <DownloadMenu compact href={(f) => historyAudioUrl(e.id, f, true)} />
       </div>
       {open && (
         <div className="mt-2 space-y-2 border-t border-border/60 pt-2" data-testid="vs-history-detail">

@@ -49,6 +49,15 @@ def wav(x: np.ndarray, sr: int = SR) -> bytes:
     return buf.getvalue()
 
 
+@pytest.fixture(autouse=True)
+def a_free_gpu(monkeypatch):
+    """a GPU of 12 GB with room (not this machine's: a run waits for room on it, and that one may be busy)"""
+    from app.voicehost import system
+    from tests.test_voicehost import _gpu
+
+    monkeypatch.setattr(system, "gpus", lambda max_age=1.0: [_gpu()])
+
+
 @pytest.fixture()
 def vs(tmp_path):
     s = VoiceSettings(home=tmp_path / "voice", engine_mode="fake", idle_unload_seconds=0)
@@ -170,16 +179,16 @@ async def test_a_voice_trained_from_its_recordings_speaks_with_its_adapter(vh):
 
 
 async def test_every_model_learns_from_the_same_recordings_heard_once(db, vs):
-    mark_installed(vs, "qwen3-tts-0.6b-base", "cosyvoice3-0.5b")
+    mark_installed(vs, "qwen3-tts-0.6b-base", "cosyvoice3-0.5b", "voxcpm2")
     h = VoiceHost(db, vs)
     await h.start()
     try:
         v = h.voices.create("넷")
         runs = await h.trainings.create(voice_id=v["id"], files=[("a.wav", wav(talk(90, seed=2)))])
         # every installed model that learns (Qwen3-TTS 1.7B isn't installed), one run each, the recordings shared
-        assert [r["model_id"] for r in runs] == ["omnivoice", "qwen3-tts-0.6b-base", "cosyvoice3-0.5b"]
-        assert len({r["group_id"] for r in runs}) == 1 and runs[1]["model_name"] == "Qwen3-TTS 0.6B (Base)"
-        assert (h.trainings.run_dir(runs[2]["id"]) / "inputs" / runs[2]["inputs"][0]["file"]).is_file()
+        assert [r["model_id"] for r in runs] == ["omnivoice", "voxcpm2", "qwen3-tts-0.6b-base", "cosyvoice3-0.5b"]
+        assert len({r["group_id"] for r in runs}) == 1 and runs[2]["model_name"] == "Qwen3-TTS 0.6B (Base)"
+        assert (h.trainings.run_dir(runs[3]["id"]) / "inputs" / runs[3]["inputs"][0]["file"]).is_file()
         with pytest.raises(TrainingError) as e:  # (a model already learning this voice)
             await h.trainings.create(voice_id=v["id"], files=[("a.wav", wav(talk(90)))], model_ids=["cosyvoice3-0.5b"])
         assert e.value.code == "busy"
@@ -187,8 +196,9 @@ async def test_every_model_learns_from_the_same_recordings_heard_once(db, vs):
         assert all(r["state"] == "done" and r["applied"] for r in rs), [r["error"] for r in rs]
         # the others didn't listen again: they went on from what the first one heard
         assert any(ev.get("stage") == "transcribe" for ev in h.trainings.get(rs[0]["id"])["events"])
-        assert not any(ev.get("stage") == "transcribe" for ev in h.trainings.get(rs[1]["id"])["events"])
-        assert rs[2]["result"]["conditions"] == ["long", "short"]  # (CosyVoice3 can't speak without a clip)
+        assert not any(ev.get("stage") == "transcribe" for r in rs[1:] for ev in h.trainings.get(r["id"])["events"])
+        assert rs[3]["result"]["conditions"] == ["long", "short"]  # (CosyVoice3 can't speak without a clip)
+        assert rs[1]["result"]["conditions"] == ["long", "short", "none"]  # (VoxCPM2 can: its own voice, then hers)
         assert h.trainings.adapters(v["id"]) == {r["model_id"]: r["id"] for r in rs}
         ref = h.voices.resolve(v["id"], "neutral")
         for r in rs:  # each model speaks with its own adapter
@@ -205,7 +215,7 @@ async def test_every_model_learns_from_the_same_recordings_heard_once(db, vs):
         assert e.value.code == "not_trainable"
         r2 = await done(h, again[0]["id"])
         assert h.trainings.adapters(v["id"])["qwen3-tts-0.6b-base"] == r2["id"]  # (the newer one put on)
-        assert not h.trainings.get(rs[1]["id"])["applied"]
+        assert not h.trainings.get(rs[2]["id"])["applied"]
     finally:
         await h.stop()
 
@@ -399,7 +409,7 @@ async def test_the_built_in_voices_come_with_their_adapters(vh, tmp_path, monkey
     _, info = await vh.synthesize("omnivoice", "오늘은 정말 좋은 날이에요.", reference=ref, language="ko")
     assert info.get("adapter") == rid
     assert vh.settings_doc()["shipped"] == [{"voice_id": "builtin:seoa", "model_id": "omnivoice", "bytes": entry["bytes"],
-                                             "ready": True, "error": ""}]
+                                             "ready": True, "installed": True, "error": ""}]
     # off (Voice Studio → 설정): the voice as it was
     vh.put_settings({"shipped_adapters": False})
     assert vh.trainings.adapter_for("builtin:seoa", spec) is None and vh.trainings.speaks_with("builtin:seoa") == {}
@@ -429,6 +439,26 @@ async def test_a_shipped_adapter_that_isnt_what_it_says_is_not_used(vh, tmp_path
     assert await vh.shipped.fetch_all() == []
 
 
+async def test_a_model_just_installed_fetches_its_shipped_adapters(vh, tmp_path, monkeypatch):
+    from app.voicehost import shipped
+
+    rel = tmp_path / "release"
+    rel.mkdir()
+    _, entry = _asset(rel, {"adapter_config.json": b"{}", "adapter_model.safetensors": b"x", "voice.safetensors": b"v",
+                            "geny.json": b'{"model_id": "qwen3-tts-0.6b-base"}', "LICENSE-Apache-2.0.txt": b"Apache"})
+    monkeypatch.setattr(shipped, "RELEASE", rel.as_uri())
+    vh.shipped.catalog = {("builtin:chaerin", "qwen3-tts-0.6b-base"): entry}
+    vh.installer.on_change("qwen3-tts-0.6b-base")  # (an install's progress: not there yet, nothing fetched)
+    assert vh.shipped._task is None or await vh.shipped._task == []
+    mark_installed(vh.s, "qwen3-tts-0.6b-base")
+    vh.installer.on_change("qwen3-tts-0.6b-base")  # (as the installer says it is done)
+    assert vh.shipped._task is not None and await vh.shipped._task == ["builtin:chaerin/qwen3-tts-0.6b-base"]
+    d = vh.shipped.ready("builtin:chaerin", "qwen3-tts-0.6b-base")
+    assert d is not None and sorted(p.name for p in d.iterdir()) == ["LICENSE-Apache-2.0.txt", "adapter_config.json",
+                                                                     "adapter_model.safetensors", "geny.json",
+                                                                     "voice.safetensors"]
+
+
 def test_the_shipped_adapters_are_listed_whole():
     from app.voicehost import shipped
 
@@ -436,5 +466,25 @@ def test_the_shipped_adapters_are_listed_whole():
     for (v, m), e in shipped.SHIPPED.items():
         assert m in catalog.BY_ID and m in __import__("app.voicehost.training", fromlist=["NEED_GB"]).NEED_GB
         assert len(e["sha256"]) == 64 and int(e["sha256"], 16) >= 0 and e["bytes"] > 1_000_000
-        assert e["asset"].startswith("higgs-audio-2-") and e["asset"].endswith(".zip")  # (Boson's 1.b.i: its name)
+        assert e["asset"].endswith(f"-lora-{v.split(':')[1]}-v1.zip")
+        if m == "omnivoice":  # (Boson's 1.b.i: its name)
+            assert e["asset"].startswith("higgs-audio-2-")
+        # made from the revision the catalog installs
+        assert catalog.BY_ID[m].repos[0].revision.startswith(e["base_revision"])
     assert shipped.RELEASE.endswith("/releases/download/voice-adapters-v1")
+
+
+def test_voxcpm2_is_a_model_like_the_others():
+    from app.voicehost import installer
+    from app.voicehost.service import DEFAULT_TTS, STRATEGY
+    from app.voicehost.training import NEED_GB
+    from app.voicehost.worker.__main__ import ENGINES
+
+    spec = catalog.BY_ID["voxcpm2"]
+    assert spec.engine == "voxcpm" and spec.sample_rate == 48000 and spec.repos[0].revision != "main"
+    assert {"clone", "design", "instruct", "auto_voice"} <= set(spec.features) and "ko" in spec.languages
+    assert installer.RUNTIME_OF["voxcpm"].lock == "vox.txt" and "voxcpm" in ENGINES and "voxcpm" in STRATEGY
+    assert "voxcpm2" in NEED_GB and DEFAULT_TTS.index("voxcpm2") == 1
+    # every speech model is pinned to a commit (a shipped adapter fits what is installed)
+    assert all(r.revision != "main" for m in catalog.CATALOG for r in m.repos)
+    assert [m.id for m in catalog.CATALOG if m.kind == "tts"][:2] == ["omnivoice", "voxcpm2"]

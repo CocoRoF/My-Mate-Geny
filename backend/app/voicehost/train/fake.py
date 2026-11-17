@@ -16,7 +16,7 @@ from .control import Control
 SR = 24_000
 # what each model is measured with (recipe.py: a model that can't speak without a clip has no "none")
 CONDITIONS = {"omnivoice": ("long", "short", "none"), "qwen3_tts": ("long", "short", "none"),
-              "cosyvoice3": ("long", "short")}
+              "cosyvoice3": ("long", "short"), "voxcpm": ("long", "short", "none")}
 
 
 def run(job: dict, emit, ctl: Control) -> None:

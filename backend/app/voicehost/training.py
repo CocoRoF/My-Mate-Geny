@@ -38,7 +38,8 @@ GiB = system.GiB
 STT_ID = "whisper-large-v3-turbo"
 # the models that learn a voice, and what each takes on the GPU while it trains (measured at most on an RTX 5070, and
 # some room): docs/local-voice.md "Training a voice"
-NEED_GB = {"omnivoice": 7.0, "qwen3-tts-0.6b-base": 6.0, "qwen3-tts-1.7b-base": 8.0, "cosyvoice3-0.5b": 8.0}
+NEED_GB = {"omnivoice": 7.0, "voxcpm2": 10.0, "qwen3-tts-0.6b-base": 6.0, "qwen3-tts-1.7b-base": 8.0,
+           "cosyvoice3-0.5b": 8.0}
 HOST_GB = 12           # its process's memory ceiling (Whisper and OmniVoice in fp32, her data)
 MIN_SECONDS = 60.0     # less of her than this isn't worth a run
 CALM_S = 20.0          # a mate's words this recent: not yet (it would only pause again)
@@ -388,7 +389,7 @@ class Trainings:
             return False, "a call"
         if self._speaking or time.time() - self._last_word < CALM_S:
             return False, "speaking"
-        gpu = self.h.engines._gpu()
+        gpu = self.h.engines._gpu() if self.s.engine_mode != "fake" else None  # (the stand-in uses no GPU)
         if gpu is not None and gpu.free < need_gb * GiB:
             return False, "gpu"
         return True, ""

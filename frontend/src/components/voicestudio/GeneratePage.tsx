@@ -5,13 +5,13 @@
  * 하암~, 후우…) are made as sounds unless that is turned off (docs/local-voice.md "Laughs, sighs and yawns").
  */
 import { useEffect, useRef, useState } from "react";
-import { generateVoice, historyAudioUrl, updateHistory, type GenerateBody, type HistoryEntry } from "../../api/voice";
+import { generateVoice, historyAudioUrl, listHistory, updateHistory, type GenerateBody, type HistoryEntry } from "../../api/voice";
 import { useT, type MsgKey } from "../../i18n";
 import Icon from "../ui/Icon";
 import { ErrorLine } from "../mate/settings/ui";
 import { SaveAsRefModal } from "./clips";
 import { estimateSeconds, LineForm, useDefaultLine, useTts, type LineSettings } from "./lineForm";
-import { Card, DownloadMenu, PlayButton, secs, sourceLabel, useStudio, usePlayer, Waveform } from "./shared";
+import { Card, DownloadMenu, PlayButton, secs, sourceLabel, useStudio, usePlayer, Waveform, useModelName, errText } from "./shared";
 
 const MAX_CHARS = 2000;
 const NV_KEY = "vs_nonverbal";
@@ -71,6 +71,16 @@ export default function GeneratePage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [results, setResults] = useState<HistoryEntry[]>([]);
+  // (the lines made here last, from the history: the page doesn't open empty)
+  useEffect(() => {
+    let live = true;
+    listHistory({ source: "studio", limit: 4 })
+      .then((h) => live && setResults((r) => (r.length ? r : h.items)))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
   const player = usePlayer();
   const seen = useRef(draft?.nonce ?? 0);
   // (one asked for while the page is open)
@@ -103,7 +113,7 @@ export default function GeneratePage() {
       if (!lockSeed) setSeed(e.seed);
       player.play(historyAudioUrl(e.id));
     } catch (x) {
-      setErr((x as Error).message);
+      setErr(errText(t, x));
     } finally {
       setBusy(false);
     }
@@ -203,6 +213,7 @@ export default function GeneratePage() {
         </Card>
       </div>
       <div className="space-y-2" data-testid="vs-gen-results">
+        {results.length > 0 && <p className="px-1 text-[11.5px] font-medium text-content-faint">{t("voiceStudio.gnRecent")}</p>}
         {busy && (
           <Card>
             <p className="flex items-center gap-2 text-[12.5px] text-content-dim">
@@ -263,6 +274,7 @@ export function Result({
   onKeepSeed?: () => void;
   onChange: (n: HistoryEntry) => void;
 }) {
+  const modelName = useModelName();
   const t = useT();
   const [saving, setSaving] = useState(false);
   const url = historyAudioUrl(e.id);
@@ -281,7 +293,7 @@ export function Result({
           e.voice_name || t("voiceStudio.gnNoProfile"),
           t(`voiceStudio.mode_${e.mode}` as MsgKey),
           e.ref_label ? t(`localVoice.feeling_${e.ref_label}` as MsgKey) : "",
-          e.adapter ? `${e.model_id} (${t("voiceStudio.trTrained")})` : e.model_id,
+          e.adapter ? `${modelName(e.model_id)} · ${t("voiceStudio.trTrained")}` : modelName(e.model_id),
           t("voiceStudio.gnStat", { s: secs(e.seconds), gen: secs(e.generate_seconds), rtf: e.rtf != null ? e.rtf.toFixed(2) : "–" }),
           t("voiceStudio.gnSeedN", { n: String(e.seed ?? "–") }),
           e.source !== "studio" ? sourceLabel(t, e.source) : "",

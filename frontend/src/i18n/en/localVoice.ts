@@ -22,6 +22,8 @@ export default {
   modelsDir: "Models: {path}",
   modelsHint:
     "Download what you need. A model goes on the GPU when it is used and leaves it after {min} minutes idle; a phone call keeps its models loaded until it ends.",
+  modelsHintKeep:
+    "Download what you need. A model goes on the GPU when it is used and stays there until another model needs the room.",
   kind_tts: "Speech",
   kind_stt: "Recognition",
   sizes: "{dl} GB download · about {vram} GB of GPU memory",

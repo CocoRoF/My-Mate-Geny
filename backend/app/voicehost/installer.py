@@ -60,6 +60,7 @@ RUNTIMES = (
     Runtime("qwen", ("qwen3_tts", "whisper"), "qwen.txt", 3.7, 7.5),
     Runtime("omni", ("omnivoice",), "omni.txt", 3.7, 7.5),
     Runtime("cosy", ("cosyvoice3",), "cosy.txt", 3.9, 8.0),
+    Runtime("vox", ("voxcpm",), "vox.txt", 3.6, 7.0),
 )
 RUNTIME_OF = {e: r for r in RUNTIMES for e in r.engines}
 

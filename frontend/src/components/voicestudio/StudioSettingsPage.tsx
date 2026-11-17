@@ -10,7 +10,7 @@ import { getStudioSettings, putStudioSettings, type RuntimeKey, type StudioSetti
 import { useT, type MsgKey } from "../../i18n";
 import Icon from "../ui/Icon";
 import { ErrorLine, Field, ProgressBar } from "../mate/settings/ui";
-import { Card, useStudio } from "./shared";
+import { Card, useStudio, useModelName } from "./shared";
 
 /** how a value is shown and edited: seconds as minutes, a fraction as a percent */
 const UNIT: Record<RuntimeKey, { scale: number; step: number; unit: "pct" | "min" | "gb" | "n" }> = {
@@ -25,6 +25,7 @@ const ENGINE: RuntimeKey[] = ["vram_budget_fraction", "idle_unload_seconds", "pa
 const HISTORY: RuntimeKey[] = ["history_max_entries", "history_max_gb"];
 
 export default function StudioSettingsPage() {
+  const modelName = useModelName();
   const t = useT();
   const { status, voices, reloadStatus } = useStudio();
   const [doc, setDoc] = useState<StudioSettings | null>(null);
@@ -68,13 +69,13 @@ export default function StudioSettingsPage() {
         <div className="grid gap-2 sm:grid-cols-3">
           <Field label={t("voiceStudio.stDefaultTts")} hint={t("voiceStudio.stDefaultTtsHint")}>
             <select className="field" value={doc.default_tts} onChange={(e) => void put("tts", { default_tts: e.target.value })} data-testid="vs-settings-default-tts">
-              <option value="">{t("voiceStudio.stAutomatic", { model: status?.defaults.tts || "–" })}</option>
+              <option value="">{t("voiceStudio.stAutomatic", { model: status?.defaults.tts ? modelName(status.defaults.tts) : "–" })}</option>
               {models.filter((m) => m.kind === "tts").map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </Field>
           <Field label={t("voiceStudio.stDefaultStt")}>
             <select className="field" value={doc.default_stt} onChange={(e) => void put("stt", { default_stt: e.target.value })} data-testid="vs-settings-default-stt">
-              <option value="">{t("voiceStudio.stAutomatic", { model: status?.defaults.stt || "–" })}</option>
+              <option value="">{t("voiceStudio.stAutomatic", { model: status?.defaults.stt ? modelName(status.defaults.stt) : "–" })}</option>
               {models.filter((m) => m.kind === "stt").map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </Field>
@@ -99,11 +100,13 @@ export default function StudioSettingsPage() {
           <span>
             {t("voiceStudio.stAutoSounds")}
             <span className="mt-0.5 block text-[11.5px] leading-snug text-content-faint">
-              {doc.sound_maker ? t("voiceStudio.stAutoSoundsHint", { model: doc.sound_maker }) : t("voiceStudio.stAutoSoundsNone")}
+              {doc.sound_maker ? t("voiceStudio.stAutoSoundsHint", { model: modelName(doc.sound_maker) }) : t("voiceStudio.stAutoSoundsNone")}
             </span>
           </span>
         </label>
-        <label className="mt-3 flex items-start gap-2 text-[13px] text-content">
+      </Card>
+      <Card title={t("voiceStudio.stTrained")} testId="vs-settings-trained">
+        <label className="flex items-start gap-2 text-[13px] text-content">
           <input
             type="checkbox"
             className="mt-0.5"
@@ -114,14 +117,32 @@ export default function StudioSettingsPage() {
           />
           <span>
             {t("voiceStudio.stShipped")}
-            <span className="mt-0.5 block text-[11.5px] leading-snug text-content-faint" data-testid="vs-settings-shipped-state">
-              {doc.shipped.length === 0
-                ? t("voiceStudio.stShippedNone")
-                : doc.shipped.every((x) => x.ready)
-                  ? t("voiceStudio.stShippedReady")
-                  : doc.shipped.some((x) => x.error)
-                    ? t("voiceStudio.stShippedFailed", { error: doc.shipped.find((x) => x.error)?.error ?? "" })
-                    : t("voiceStudio.stShippedHint", { mb: Math.round(doc.shipped.filter((x) => !x.ready).reduce((n, x) => n + x.bytes, 0) / 1024 ** 2) })}
+            <span className="mt-0.5 block space-y-0.5 text-[11.5px] leading-snug text-content-faint" data-testid="vs-settings-shipped-state">
+              {doc.shipped.length === 0 ? (
+                t("voiceStudio.stShippedNone")
+              ) : (
+                <>
+                  <span className="block">{t("voiceStudio.stShippedLead")}</span>
+                  {/* (each model's: fetched, fetched once it is installed, or why not) */}
+                  {[...new Set(doc.shipped.map((x) => x.model_id))].map((m) => {
+                    const xs = doc.shipped.filter((x) => x.model_id === m);
+                    const ready = xs.every((x) => x.ready);
+                    const error = xs.find((x) => x.error)?.error;
+                    const mb = Math.max(1, Math.round(xs.filter((x) => !x.ready).reduce((n, x) => n + x.bytes, 0) / 1024 ** 2));
+                    return (
+                      <span key={m} className="flex flex-wrap gap-x-1.5" data-testid="vs-settings-shipped-model" data-model={m} data-ready={ready}>
+                        <span className="text-content-dim">{modelName(m)}</span>
+                        <span className={ready ? "text-success" : error ? "text-danger" : undefined}>
+                          {ready ? t("voiceStudio.stShippedReady")
+                            : error ? t("voiceStudio.stShippedFailed", { error })
+                            : xs.some((x) => x.installed) ? t("voiceStudio.stShippedSoon", { mb })
+                            : t("voiceStudio.stShippedLater", { mb })}
+                        </span>
+                      </span>
+                    );
+                  })}
+                </>
+              )}
             </span>
           </span>
         </label>

@@ -20,12 +20,28 @@ import {
   type VoiceRef,
   type VoiceStatus,
 } from "../../api/voice";
-import { useLang, useT, type MsgKey } from "../../i18n";
+import { localeOf, useLang, useT, type MsgKey } from "../../i18n";
 import { takeSettingsPageLink } from "../../lib/nav";
 import Icon from "../ui/Icon";
 
 export const GiB = 1024 ** 3;
 export const gb = (n: number | null | undefined, digits = 1) => (n == null || !Number.isFinite(n) ? "?" : (n / GiB).toFixed(digits));
+/** a stored size with its unit: GB from 1 GB, MB from 1 MB, KB below (a few lines aren't "0.00 GB") */
+export const size = (n: number | null | undefined) =>
+  n == null || !Number.isFinite(n) ? "?" : n >= GiB ? `${(n / GiB).toFixed(2)} GB` : n >= 1024 ** 2 ? `${Math.round(n / 1024 ** 2)} MB` : `${Math.round(n / 1024)} KB`;
+/** the server's words for a GPU without room (they are English: the job log keeps them as said) in the page's language */
+const NO_ROOM = /^Not enough GPU memory: this model needs about ([\d.]+) GB and ([\d.]+) GB is free \(of [\d.]+ GB, other programs use ([\d.]+) GB and our models ([\d.]+) GB\)$/;
+export function serverText(t: ReturnType<typeof useT>, text: string): string {
+  const m = NO_ROOM.exec(text.trim());
+  return m ? t("voiceStudio.errNoRoom", { need: m[1], free: m[2], others: m[3], ours: m[4] }) : text;
+}
+/** a failed request's message for the page: its code's own words where there are some */
+export function errText(t: ReturnType<typeof useT>, e: unknown): string {
+  const x = e as Error & { code?: string; data?: { need?: number; free?: number; others?: number; ours?: number } };
+  if (x?.code === "no_room" && x.data?.need != null)
+    return t("voiceStudio.errNoRoom", { need: gb(x.data.need), free: gb(x.data.free), others: gb(x.data.others), ours: gb(x.data.ours) });
+  return serverText(t, String(x?.message ?? e));
+}
 export const mb = (n: number | null | undefined) => (n == null || !Number.isFinite(n) ? "?" : (n / 1024 ** 2).toFixed(0));
 export const secs = (s: number | null | undefined, digits = 1) => (s == null || !Number.isFinite(s) ? "–" : `${s.toFixed(digits)}s`);
 export const clock = (t: number) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -204,6 +220,31 @@ export function useLanguages(): string[] {
     for (const m of status?.models ?? []) for (const l of m.languages) s.add(l);
     return [...s];
   }, [status]);
+}
+
+/** a model's name from its id (an id it doesn't know: as it is) */
+export function useModelName(): (id: string) => string {
+  const { status } = useStudio();
+  return useCallback((id: string) => status?.models.find((m) => m.id === id)?.name ?? id, [status]);
+}
+
+/** a language code as people read it, in the studio's language: "한국어 (ko)" / "Korean (ko)" ("auto": the word for it) */
+export function useLangLabel(): (code: string) => string {
+  const t = useT();
+  const lang = useLang();
+  return useMemo(() => {
+    let names: Intl.DisplayNames | null = null;
+    try {
+      names = new Intl.DisplayNames([localeOf(lang)], { type: "language" });
+    } catch {
+      names = null;
+    }
+    return (code: string) => {
+      if (code === "auto") return t("voiceStudio.langAuto");
+      const n = names?.of(code);
+      return n && n !== code ? `${n} (${code})` : code;
+    };
+  }, [lang, t]);
 }
 
 /** a profile's clip (its length in the address: a trimmed clip is read again) */
@@ -450,7 +491,8 @@ export function Waveform({
 
 // ---- download in a format ------------------------------------------------------------------------------------------
 
-export function DownloadMenu({ href, testId }: { href: (f: AudioFormat) => string; testId?: string }) {
+/** a download button with the formats; ``compact``: its word only where there is room (a phone: the icon) */
+export function DownloadMenu({ href, testId, compact }: { href: (f: AudioFormat) => string; testId?: string; compact?: boolean }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -462,8 +504,9 @@ export function DownloadMenu({ href, testId }: { href: (f: AudioFormat) => strin
   }, [open]);
   return (
     <div className="relative" ref={ref}>
-      <button type="button" className="btn-soft !px-2 !py-1 text-[12px]" onClick={() => setOpen((v) => !v)} data-testid={testId} aria-haspopup="menu" aria-expanded={open}>
-        <Icon name="download" size={12} /> {t("voiceStudio.download")}
+      <button type="button" className="btn-soft !px-2 !py-1 text-[12px]" onClick={() => setOpen((v) => !v)} data-testid={testId} aria-haspopup="menu" aria-expanded={open}
+        aria-label={t("voiceStudio.download")} title={compact ? t("voiceStudio.download") : undefined}>
+        <Icon name="download" size={12} /> <span className={compact ? "hidden sm:inline" : undefined}>{t("voiceStudio.download")}</span>
       </button>
       {open && (
         <div role="menu" className="absolute right-0 z-20 mt-1 min-w-[120px] rounded-lg border border-border bg-surface-2 p-1 shadow-lg">
@@ -571,9 +614,10 @@ export function Card({ title, right, children, testId, className = "" }: { title
   return (
     <section className={`rounded-xl border border-border bg-surface-2/50 p-3.5 ${className}`} data-testid={testId}>
       {(title || right) && (
-        <div className="mb-2.5 flex items-center gap-2">
-          {title && <h3 className="min-w-0 flex-1 text-[13px] font-semibold text-content">{title}</h3>}
-          {right}
+        <div className="mb-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+          {/* (the title takes the line's width it needs; on a narrow screen what is beside it goes under it) */}
+          {title && <h3 className="min-w-[min(100%,12rem)] flex-1 text-[13px] font-semibold text-content">{title}</h3>}
+          {right && <div className="shrink-0">{right}</div>}
         </div>
       )}
       {children}

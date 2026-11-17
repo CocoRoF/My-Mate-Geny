@@ -97,13 +97,13 @@ My Mate Geny는 **Claude Code**와 **Codex** CLI를 내 컴퓨터나 서버에�
   지원합니다. 답변 속 감정에 따라 표정이 바뀌고, 목소리에 맞춰 입을 움직입니다.
 - **음성 입출력**: 브라우저 음성(무료), OpenAI, ElevenLabs, OmniVoice(셀프 호스팅 음성 복제), OpenAI 호환
   HTTP TTS를 지원합니다. 음성 인식은 Whisper 호환 서버, OpenAI, ElevenLabs 실시간(말하는 동안 글자가 바로 나오고, 핸즈프리 자동 전송과 말로 끼어들기 지원)을 씁니다. 마이크를 누르고 말하면 됩니다.
-- **로컬 음성 모델 내장**: NVIDIA GPU 가 있는 머신이면 앱이 직접 OmniVoice, Qwen3-TTS, CosyVoice3, Whisper 를
+- **로컬 음성 모델 내장**: NVIDIA GPU 가 있는 머신이면 앱이 직접 OmniVoice, VoxCPM2, Qwen3-TTS, CosyVoice3, Whisper 를
   서빙합니다. GPU 를 확인하고, 라이선스에 동의한 모델만 내려받고, 필요할 때 GPU 에 올리고, 감정별 레퍼런스
   클립으로 목소리를 복제합니다 (기본 제공 한채린·서아 목소리 또는 내 목소리). **Voice Studio** 에서 GPU 에
   무엇이 누구를 위해 올라가 있는지 보고, 음성·일괄 생성·목소리 프로필을 만들고, 만든 것을 히스토리로 남깁니다.
-  **학습** 페이지에서는 그 사람의 녹음만 주면 모든 음성 모델(OmniVoice, Qwen3-TTS, CosyVoice3)이 목소리를 직접
+  **학습** 페이지에서는 그 사람의 녹음만 주면 모든 음성 모델(OmniVoice, VoxCPM2, Qwen3-TTS, CosyVoice3)이 목소리를 직접
   배웁니다 (모델마다 LoRA 어댑터: 자르기·받아쓰기·그 사람 목소리만 고르기·학습·측정·프로필에 적용까지 자동) —
-  그다음부터는 짧은 클립으로도, 클립 없이도 그 목소리에 더 가깝게 말합니다. 알맞은 GPU 가 없는 머신에서는 막혀 있습니다 ([docs/local-voice.md](docs/local-voice.md)).
+  그다음부터는 짧은 클립으로도, 클립 없이도 그 목소리에 더 가깝게 말합니다. 기본 제공 목소리는 모든 모델에서 학습된 채로 옵니다. 알맞은 GPU 가 없는 머신에서는 막혀 있습니다 ([docs/local-voice.md](docs/local-voice.md)).
 - **로컬 이미지 모델 내장**: **Image Studio** 에서 그림·영상 모델을 (라이선스에 동의한 뒤) 내려받아 같은 GPU 에서
   ComfyUI 로 돌립니다 — 캐릭터 시안, 말로 그림 바꾸기, 그림에서 시작해 그 그림으로 끝나는 반복 영상, 배경 제거.
   아바타 만들기는 각 단계를 Higgsfield 대신 내 GPU 에서 0 크레딧으로 돌릴 수 있습니다
@@ -340,7 +340,7 @@ My Mate Geny는 Anthropic, OpenAI, Higgsfield, Live2D와 관계가 없습니다.
   [Tailwind CSS](https://tailwindcss.com/), [Electron](https://www.electronjs.org/),
   [Capacitor](https://capacitorjs.com/).
 - 메이트의 목소리를 위한 [OmniVoice](https://github.com/CocoRoF/geny-audio-services)와 Whisper 호환 서버, 그리고
-  로컬 음성 모델 [OmniVoice](https://huggingface.co/k2-fsa/OmniVoice) (k2-fsa),
+  로컬 음성 모델 [OmniVoice](https://huggingface.co/k2-fsa/OmniVoice) (k2-fsa), [VoxCPM](https://github.com/OpenBMB/VoxCPM) (OpenBMB),
   [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS) (Qwen), [CosyVoice](https://github.com/FunAudioLLM/CosyVoice)
   (FunAudioLLM), [Whisper](https://huggingface.co/openai/whisper-large-v3-turbo) (OpenAI) — 서빙 코드는
   [geny-audio-module](https://github.com/CocoRoF/geny-audio-module) 에서 왔습니다.

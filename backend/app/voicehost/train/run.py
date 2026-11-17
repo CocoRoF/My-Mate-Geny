@@ -408,6 +408,7 @@ def _train(job: dict, out: Path, emit: Emit, ctl: Control, ears: "Ears", spk: "S
             ctl.check(on_pause)
             if not queue:
                 queue = epoch_batches()
+            rec.progress = step / max(1, steps)  # (how far along: VoxCPM2's objective changes with it)
             loss = rec.loss(queue.pop())
             loss.backward()
             torch.nn.utils.clip_grad_norm_(trainable, 1.0)

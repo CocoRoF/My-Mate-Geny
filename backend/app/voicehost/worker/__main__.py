@@ -25,6 +25,7 @@ ENGINES = {
     "qwen3_tts": ("app.voicehost.worker.engines.qwen3_tts", "Qwen3TTSEngine"),
     "omnivoice": ("app.voicehost.worker.engines.omnivoice", "OmniVoiceEngine"),
     "cosyvoice3": ("app.voicehost.worker.engines.cosyvoice3", "CosyVoice3Engine"),
+    "voxcpm": ("app.voicehost.worker.engines.voxcpm", "VoxCPMEngine"),
     "whisper": ("app.voicehost.worker.engines.whisper", "WhisperEngine"),
 }
 

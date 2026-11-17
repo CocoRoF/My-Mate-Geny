@@ -21,7 +21,7 @@ import {
 import { useT, type MsgKey } from "../../i18n";
 import Icon from "../ui/Icon";
 import { ErrorLine, Field } from "../mate/settings/ui";
-import { FeelingDot, Modal, readableAudio, secs, usePeaks, usePlayer, useStudio, Waveform } from "./shared";
+import { FeelingDot, Modal, readableAudio, secs, usePeaks, usePlayer, useStudio, Waveform, useLangLabel } from "./shared";
 
 const MAX_RECORD = 60;
 
@@ -135,6 +135,7 @@ export type ClipSource =
 
 /** a new clip for a profile (from a file, a recording, a line made here) or a clip it has, cut to the stretch kept */
 export function ClipModal({ src, onSaved, onClose, languages }: { src: ClipSource; onSaved: () => void; onClose: () => void; languages: string[] }) {
+  const langLabel = useLangLabel();
   const t = useT();
   const player = usePlayer();
   const [url] = useState(() => (src.kind === "new" ? URL.createObjectURL(src.blob) : src.url));
@@ -328,7 +329,7 @@ export function ClipModal({ src, onSaved, onClose, languages }: { src: ClipSourc
               </Field>
               <Field label={t("voiceStudio.language")}>
                 <select className="field" value={language} onChange={(e) => setLanguage(e.target.value)}>
-                  {languages.map((l) => <option key={l} value={l}>{l === "auto" ? t("voiceStudio.langAuto") : l}</option>)}
+                  {languages.map((l) => <option key={l} value={l}>{langLabel(l)}</option>)}
                 </select>
               </Field>
             </div>

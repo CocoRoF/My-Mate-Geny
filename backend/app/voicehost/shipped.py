@@ -24,10 +24,12 @@ log = logging.getLogger("app.voicehost.shipped")
 
 RELEASE = "https://github.com/CocoRoF/My-Mate-Geny/releases/download/voice-adapters-v1"
 # (voice id, model id) → the release asset: its name, SHA-256, size, and the model revision it was made from. Trained
-# 2026-11-17 with 학습 on ~17 / 19 minutes of speech the owner made with their own ElevenLabs voices (and each voice's
-# five clips; 서아's at half the learning rate, which kept her clips' likeness better). CAM++ similarity to her
-# recordings, through the worker as the app speaks (8 new sentences), without → with: from her five feeling clips
-# 한채린 0.841 → 0.852, 서아 0.837 → 0.846; with no clip 0.23 → 0.85 and 0.29 → 0.83 (CER 0).
+# 2026-11-17 with 학습 on ~18 / 19 minutes of speech the owner made with their own ElevenLabs voices (and each voice's
+# five clips). CAM++ similarity to her recordings, through the worker as the app speaks (8 new sentences), without →
+# with, from her five feeling clips (한채린 / 서아): OmniVoice 0.841 → 0.852 / 0.837 → 0.846 (서아's at half the learning
+# rate, which kept her clips' likeness), VoxCPM2 0.801 → 0.841 / 0.787 → 0.832, Qwen3-TTS 1.7B 0.787 → 0.880 /
+# 0.749 → 0.836, 0.6B 0.752 → 0.874 / 0.748 → 0.847, CosyVoice3 0.850 → 0.867 / 0.829 → 0.859 — no clip worse on any;
+# with no clip OmniVoice 0.23 → 0.85 / 0.29 → 0.83, VoxCPM2 0.22 → 0.87 / 0.17 → 0.85 (docs/local-voice.md).
 SHIPPED: dict[tuple[str, str], dict[str, Any]] = {
     ("builtin:chaerin", "omnivoice"): {
         "asset": "higgs-audio-2-omnivoice-lora-chaerin-v1.zip",
@@ -37,10 +39,42 @@ SHIPPED: dict[tuple[str, str], dict[str, Any]] = {
         "asset": "higgs-audio-2-omnivoice-lora-seoa-v1.zip",
         "sha256": "91f268d804171be3be2a349c91ad5aa480dbb665ac613fb242d9723db65acd1f", "bytes": 53835545,
         "base_revision": "c5fdb5ccb189"},
+    ("builtin:chaerin", "voxcpm2"): {
+        "asset": "voxcpm2-lora-chaerin-v1.zip",
+        "sha256": "2f35fee8fdc5b61cc90f4f7d78804ee6d8bfeb9ba0444e1c56e95cd410f8d474", "bytes": 18139415,
+        "base_revision": "7936080b4116"},
+    ("builtin:seoa", "voxcpm2"): {
+        "asset": "voxcpm2-lora-seoa-v1.zip",
+        "sha256": "252da5e59d07e7fc8fad1029c174e0d578b01bbb11c9f0eb9c387c9edf76cb96", "bytes": 18139411,
+        "base_revision": "7936080b4116"},
+    ("builtin:chaerin", "qwen3-tts-0.6b-base"): {
+        "asset": "qwen3-tts-0.6b-lora-chaerin-v1.zip",
+        "sha256": "d01f3cf81f6e1874c6d5708367bb20bb5017e259ff86451ded5c120306917700", "bytes": 20250451,
+        "base_revision": "5d83992436ea"},
+    ("builtin:seoa", "qwen3-tts-0.6b-base"): {
+        "asset": "qwen3-tts-0.6b-lora-seoa-v1.zip",
+        "sha256": "80f6ec662817f5398ed198668942f47a1fa0a0a85061be39a189475c9affd9fe", "bytes": 20250450,
+        "base_revision": "5d83992436ea"},
+    ("builtin:chaerin", "qwen3-tts-1.7b-base"): {
+        "asset": "qwen3-tts-1.7b-lora-chaerin-v1.zip",
+        "sha256": "ca6680028d1530664f92d06a85c1364b46881b2ec69439a3c5c9bbbfc0dcc9d4", "bytes": 34934461,
+        "base_revision": "fd4b25438912"},
+    ("builtin:seoa", "qwen3-tts-1.7b-base"): {
+        "asset": "qwen3-tts-1.7b-lora-seoa-v1.zip",
+        "sha256": "a8bf7a22c3dcadf3e06e9be5b2e12310be0acf6d9fcaf69465c8bbe8013bf04b", "bytes": 34934441,
+        "base_revision": "fd4b25438912"},
+    ("builtin:chaerin", "cosyvoice3-0.5b"): {
+        "asset": "cosyvoice3-0.5b-lora-chaerin-v1.zip",
+        "sha256": "538c46f3a9f72592b8a2d3fdd4aa79145beef53efe05c7a55d9446d2bc05215e", "bytes": 52017694,
+        "base_revision": "29e01c4e8d00"},
+    ("builtin:seoa", "cosyvoice3-0.5b"): {
+        "asset": "cosyvoice3-0.5b-lora-seoa-v1.zip",
+        "sha256": "c08e00ab56e178a5f2f942fa67f5588c531e6166d245601e45ba374fbda590f8", "bytes": 52017680,
+        "base_revision": "29e01c4e8d00"},
 }
 # what a release zip may hold (nothing else is unpacked, and never a path)
 FILES = {"adapter_config.json", "adapter_model.safetensors", "geny.json", "voice.safetensors", "NOTICE.md",
-         "LICENSE-Boson-Higgs-Audio-2.txt", "LICENSE-Meta-Llama-3.txt"}
+         "LICENSE-Boson-Higgs-Audio-2.txt", "LICENSE-Meta-Llama-3.txt", "LICENSE-Apache-2.0.txt"}
 
 
 class Shipped:
@@ -76,8 +110,14 @@ class Shipped:
         return {m: self.run_id(v, m) for (v, m) in self.catalog if v == voice_id and self.ready(v, m)}
 
     def status(self) -> list[dict[str, Any]]:
+        from . import catalog
+
+        def installed(m: str) -> bool:
+            spec = catalog.BY_ID.get(m)
+            return spec is not None and self.h.installer.installed(spec)
+
         return [{"voice_id": v, "model_id": m, "bytes": e.get("bytes", 0), "ready": bool(self.ready(v, m)),
-                 "error": self.failed.get((v, m), "")} for (v, m), e in self.catalog.items()]
+                 "installed": installed(m), "error": self.failed.get((v, m), "")} for (v, m), e in self.catalog.items()]
 
     # -- fetching --
     def want(self, voice_id: str = "", model_id: str = "") -> None:
