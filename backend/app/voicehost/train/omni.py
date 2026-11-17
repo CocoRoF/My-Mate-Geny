@@ -56,9 +56,9 @@ class Omni(Recipe):
     @torch.inference_mode()
     def speak(self, sentences: list[str], prompt: Any, check) -> list[np.ndarray]:
         out = []
-        for j in range(0, len(sentences), 2):  # (two at a time: fp32 with guidance's doubled batch)
+        for j in range(len(sentences)):  # (one at a time: fp32, guidance doubles the batch, a long clip before it)
             check()
-            part = sentences[j:j + 2]
+            part = sentences[j:j + 1]
             kw: dict[str, Any] = dict(GEN)
             if self.lang_id != "None":
                 kw["language"] = [self.lang_id] * len(part)
