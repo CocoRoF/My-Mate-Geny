@@ -21,6 +21,7 @@ Synthesized audio is cached on disk by a hash of everything that shapes it.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -132,6 +133,29 @@ def _eleven_failure(resp: netio.Response) -> tuple[str, str]:
     if resp.status == 429:
         return "busy", f"ElevenLabs is busy (too many sessions) — {msg}"
     return "upstream", f"ElevenLabs: {msg} (HTTP {resp.status})"
+
+
+TOKEN_RETRY_S = 0.4
+
+
+def keyterms(mate: dict[str, Any]) -> list[str]:
+    """The names said on her line — hers, the user's, what she calls them — for speech recognition to be biased towards
+    (at most :data:`MAX_KEYTERMS`, short, no repeats)."""
+    prefs = mate.get("prefs") or {}
+    persona = mate.get("persona") or {}
+    out: list[str] = []
+    for x in (mate.get("name"), prefs.get("user_name") or persona.get("user_name"), prefs.get("address") or persona.get("address")):
+        t = " ".join(str(x or "").split())
+        if t and len(t) <= 30 and t not in out:
+            out.append(t)
+    name = " ".join(str(mate.get("name") or "").split())
+    # (a Korean name is called by its given name: 한채린 → 채린)
+    if re.fullmatch(r"[가-힣]{3}", name) and name[1:] not in out:
+        out.append(name[1:])
+    return out[:MAX_KEYTERMS]
+
+
+MAX_KEYTERMS = 5
 
 
 class Speech:
@@ -593,12 +617,22 @@ class VoiceService:
             raise RealtimeError("Too many microphone sessions in a minute — wait a moment", "busy",
                                 self.stt_fallback(), 429)
         key = self.store.secret("elevenlabs_key")
-        try:
-            resp = await netio.request("POST", f"{elevenlabs_api()}/single-use-token/realtime_scribe", data=b"",
-                                       timeout=15, headers={"xi-api-key": key})
-        except netio.UpstreamError as exc:
-            raise RealtimeError(f"ElevenLabs can't be reached: {_no_secret(str(exc), key)}", "network",
-                                self.stt_fallback(), 502) from None
+        # (their side failing for a moment — a 5xx, the line — is asked once more before the page hears of it)
+        for attempt in range(2):
+            try:
+                resp = await netio.request("POST", f"{elevenlabs_api()}/single-use-token/realtime_scribe", data=b"",
+                                           timeout=15, headers={"xi-api-key": key})
+            except netio.UpstreamError as exc:
+                if attempt == 0:
+                    await asyncio.sleep(TOKEN_RETRY_S)
+                    continue
+                raise RealtimeError(f"ElevenLabs can't be reached: {_no_secret(str(exc), key)}", "network",
+                                    self.stt_fallback(), 502) from None
+            if resp.status >= 500 and attempt == 0:
+                log.warning("mate %s: realtime token: ElevenLabs answered %s, asking again", mate["id"], resp.status)
+                await asyncio.sleep(TOKEN_RETRY_S)
+                continue
+            break
         if resp.status >= 400:
             code, msg = _eleven_failure(resp)
             raise RealtimeError(_no_secret(msg, key), code, self.stt_fallback(eleven=code not in ("auth", "quota")), 502)
@@ -614,11 +648,14 @@ class VoiceService:
         silence = float(stt.get("silence") or 1.2)
         if call:
             silence = min(silence, CALL_SILENCE)
-        query ={"model_id": ELEVEN_REALTIME_MODELS[0]["id"], "token": token, "audio_format": "pcm_16000",
-                 "commit_strategy": "vad", "vad_silence_threshold_secs": f"{silence:g}"}
+        query: dict[str, Any] = {"model_id": ELEVEN_REALTIME_MODELS[0]["id"], "token": token, "audio_format": "pcm_16000",
+                                 "commit_strategy": "vad", "vad_silence_threshold_secs": f"{silence:g}"}
         if language:
             query["language_code"] = language
-        ws = re.sub(r"^http", "ws", elevenlabs_api()) + "/speech-to-text/realtime?" + urlencode(query)
+        terms = keyterms(mate)
+        if terms:
+            query["keyterms"] = terms  # (her name and theirs, as said on the line: heard as names, not as words like them)
+        ws = re.sub(r"^http", "ws", elevenlabs_api()) + "/speech-to-text/realtime?" + urlencode(query, doseq=True)
         log.info("mate %s: realtime speech-to-text token issued (lang=%s)", mate["id"], language or "auto")
         return {"url": ws, "model": query["model_id"], "sample_rate": 16000, "language": language,
                 "commit_strategy": "vad", "silence": silence, "expires_in": 900,

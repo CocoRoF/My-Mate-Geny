@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Chunker, pcmToBase64, Resampler, wavFromPcm, CHUNK_SAMPLES } from "../src/mate/stt/pcm.ts";
 import { audioFrame, closeFailure, fallbackPlan, joinText, parseScribeMessage } from "../src/mate/stt/scribe.ts";
-import { echoScore, EchoGate, meaningful, stripEcho, userWords } from "../src/mate/stt/echo.ts";
+import { echoScore, EchoGate, meaningful, ownWords, stripEcho, userWords } from "../src/mate/stt/echo.ts";
 import { RealtimeStt, TokenError, type RealtimeDeps } from "../src/mate/stt/realtime.ts";
 
 const sine = (rate: number, hz: number, seconds: number, amp = 0.5) =>
@@ -154,6 +154,37 @@ test("gate: barge-in on — her echo hidden, the user's words interrupt her", ()
   g.setVoicing(false, 800);
   assert.deepEqual(g.partial("좋아요", said, 2000), { show: "좋아요", barge: false });
   assert.equal(g.committed("좋아요.", said, 2100), "좋아요.");
+});
+
+test("echo: short answers of theirs count when nothing of them is in what she said", () => {
+  const said = ["오늘 뭐 했어? 밥은 먹었고?"];
+  assert.equal(ownWords("응", said), "응");
+  assert.equal(ownWords("네 먹었어", said), "네 먹었어");
+  assert.equal(ownWords("밥은", said), "", "a word of hers");
+  assert.equal(ownWords("오늘 뭐 했어", said), "");
+  assert.equal(userWords("응", said), "", "(too little to talk over her)");
+});
+
+test("gate: a quick \"응\" the moment she stops is theirs; while she still talks it is them listening", () => {
+  const said = ["오늘 뭐 했어? 밥은 먹었고?"];
+  const g = new EchoGate({ bargeIn: true, tailMs: 700 });
+  g.setVoicing(true, 0);
+  // (a backchannel while she talks: shown, no barge-in, not a turn)
+  assert.deepEqual(g.partial("응", said, 300), { show: "응", barge: false });
+  assert.equal(g.committed("응.", said, 500), null);
+  // (she stops; their answer comes inside the tail — before, the gate dropped it as too short)
+  g.setVoicing(false, 1000);
+  assert.deepEqual(g.partial("응", said, 1300), { show: "응", barge: false });
+  assert.equal(g.committed("응.", said, 1500), "응.");
+  // (her echo then their short answer in one segment: the answer stays)
+  g.setVoicing(true, 2000);
+  assert.deepEqual(g.partial("밥은 먹었고", said, 2300), { show: null, barge: false });
+  g.setVoicing(false, 2400);
+  assert.equal(g.committed("밥은 먹었고 아니", said, 2800), "아니");
+  // (enough words of theirs while she talks: a barge-in, once)
+  g.setVoicing(true, 3000);
+  assert.deepEqual(g.partial("잠깐만요 그거 말고", said, 3100), { show: "잠깐만요 그거 말고", barge: true });
+  assert.deepEqual(g.partial("잠깐만요 그거 말고 다른 거", said, 3200), { show: "잠깐만요 그거 말고 다른 거", barge: false });
 });
 
 // ── a whole session, against a fake socket / mic / clock ──

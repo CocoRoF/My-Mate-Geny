@@ -16,6 +16,7 @@ import { deviceVoicing, hushDevice, recentSpoken } from "../../mate/voiceOwner";
 import { MIC_CONSTRAINTS, micErrorKind, micSupported, openMic } from "../../mate/stt/capture";
 import { RealtimeStt, TokenError, type RealtimeNotice, type RealtimeState } from "../../mate/stt/realtime";
 import { fallbackPlan, type SttFailure } from "../../mate/stt/scribe";
+import { sttFailureText } from "../../mate/stt/failure";
 import { browserResults } from "../../mate/stt/browser";
 import { tr, useLang } from "../../i18n";
 
@@ -89,23 +90,7 @@ export function micUnavailable(mate: Mate | null): string | null {
 
 const ENGINE_NAME: Record<string, string> = { whisper: "Whisper", openai: "OpenAI", elevenlabs: "ElevenLabs Scribe" };
 
-/** a realtime failure in the user's words */
-export function sttFailureText(code: SttFailure, reason: string): string {
-  switch (code) {
-    case "missing":
-      return tr("mate.sttRtMissing");
-    case "auth":
-      return tr("mate.sttRtAuth", { reason });
-    case "quota":
-      return tr("mate.sttRtQuota", { reason });
-    case "busy":
-      return tr("mate.sttRtBusy");
-    case "network":
-      return tr("mate.sttRtNetwork", { reason });
-    default:
-      return tr("mate.sttFailed", { reason });
-  }
-}
+export { sttFailureText } from "../../mate/stt/failure";
 
 /** the short why of a fallback notice */
 const shortWhy = (code: SttFailure): string =>

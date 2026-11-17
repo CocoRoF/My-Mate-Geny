@@ -30,7 +30,10 @@ import java.util.List;
  *
  * - begin / setSpeaker / end: the phone in call mode for the call (MODE_IN_COMMUNICATION; the loudspeaker or the
  *   earpiece — setCommunicationDevice on Android 12+, setSpeakerphoneOn before; the screen kept on, over the lock
- *   screen), and back after; the background link (GenyLinkService) holds the microphone meanwhile and shows the call.
+ *   screen), and back after; the background link (GenyLinkService) holds the microphone, the CPU and the Wi-Fi meanwhile
+ *   and shows the call. Off the loudspeaker the proximity sensor turns the screen off at the ear (and back on away from
+ *   it), as a phone's call screen does — no cheek on the buttons. The page goes on with the screen off or locked
+ *   (CallWebView keeps it running as if in front).
  *   The route is held for the whole call: the WebView sets its own when it opens the microphone (the loudspeaker, as
  *   for a video call) — a change away from the chosen route is undone, and a headset plugged in or out re-routes.
  * - ring / cancelRing: her ringing as a call notification while the app is in the background or the phone is locked
@@ -198,6 +201,29 @@ public class GenyCallPlugin extends Plugin {
         devicesChanged = null;
     }
 
+    /** off the loudspeaker: the screen off while the phone is at the ear (the proximity sensor), on again away from it */
+    private PowerManager.WakeLock ear = null;
+
+    private void atTheEar(boolean on) {
+        try {
+            PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+            if (pm == null || !pm.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) return;
+            if (ear == null) {
+                ear = pm.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "geny:call-ear");
+                ear.setReferenceCounted(false);
+            }
+            if (on && !ear.isHeld()) ear.acquire(MAX_CALL_MS);
+            // (the screen comes back once the phone leaves the ear, not while it is still there)
+            else if (!on && ear.isHeld()) ear.release(PowerManager.RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY);
+            Log.i(TAG, "proximity screen-off " + (on ? "on" : "off"));
+        } catch (Exception e) {
+            Log.w(TAG, "proximity: " + e);
+        }
+    }
+
+    /** the longest a call holds the phone's locks (the server ends a call after an hour) */
+    static final long MAX_CALL_MS = 2 * 60 * 60 * 1000L;
+
     private void keepOn(boolean on) {
         Activity a = getActivity();
         if (a == null) return;
@@ -218,9 +244,12 @@ public class GenyCallPlugin extends Plugin {
             inCall = true;
             reroutes = 0;
             // (the earpiece unless they pressed the loudspeaker: a call is held to the ear like any other)
-            route(Boolean.TRUE.equals(call.getBoolean("speaker", false)));
+            boolean speaker = Boolean.TRUE.equals(call.getBoolean("speaker", false));
+            route(speaker);
             if (am != null) holdRoute(am);
             keepOn(true);
+            atTheEar(!speaker);
+            CallWebView.hold(true); // (the page goes on with the screen off or locked)
             showOverLock(true); // (like a phone's call screen: over the lock screen while it lasts)
             String id = call.getString("id", "");
             // (the microphone stays hers with the screen locked or another app in front; the call shows in the shade)
@@ -235,7 +264,9 @@ public class GenyCallPlugin extends Plugin {
     public void setSpeaker(PluginCall call) {
         try {
             reroutes = 0; // (their own choice: the bound on putting it back starts again)
-            route(Boolean.TRUE.equals(call.getBoolean("on", false)));
+            boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
+            route(on);
+            if (inCall) atTheEar(!on);
             call.resolve();
         } catch (Exception e) {
             call.reject("speaker: " + e.getMessage());
@@ -257,6 +288,8 @@ public class GenyCallPlugin extends Plugin {
         }
         inCall = false;
         keepOn(false);
+        atTheEar(false);
+        CallWebView.hold(false);
         showOverLock(false);
         GenyLinkService.callEnded();
         call.resolve();

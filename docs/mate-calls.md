@@ -55,15 +55,35 @@ log line `mate.call`).
 
 - **Listening** (`listen.ts`), as the server's plan says (`plan.stt`, from her voice settings):
   - **realtime** — her STT engine is ElevenLabs: Scribe v2 Realtime (`mate/stt/realtime.ts`) with a call's shorter pause
-    (`POST /api/mates/{id}/stt/realtime?call=1`: at most `voice.CALL_SILENCE` = 0.7 s), never stopping for quiet.
+    (`POST /api/mates/{id}/stt/realtime?call=1`: at most `voice.CALL_SILENCE` = 0.7 s), never stopping for quiet, and
+    the names said on the line as key terms (`voice.keyterms`: hers and her given name, theirs, what she calls them).
     Her echo is filtered by text (`echo.ts`); the user's own words while she speaks are a barge-in at once.
+    **It never goes deaf for a hiccup** (a call on 2026-11-17 heard nothing: one token request answered 502, and the
+    stream's fallback was a recording transcribed only at the end — of a call, that is never): the server asks
+    ElevenLabs once more on a 5xx or a dropped line, the page asks for the token again after 0.4 and 1.2 s
+    (`TOKEN_RETRY_MS`), then each utterance is recorded for the server's engine (as **record**, ElevenLabs batch with
+    the same key) while the stream is tried again at a quiet moment after 15 s, 45 s, then every 2 min
+    (`STREAM_RETRY_MS`; what the stream's own recording held is transcribed too). A key or credits that fail: no
+    retries — another engine if the server has one, else the screen says so.
   - **record** — a server engine (Whisper, OpenAI, Google, ElevenLabs batch, the local Whisper on this server's GPU):
     `vad.ts` cuts the utterances (an adaptive noise floor after a short calibration, 90 ms to start, 0.65 s of quiet to
-    end, blips < 260 ms dropped, 300 ms of pre-roll; while she speaks it takes 2.2 × louder speech for 240 ms), each
-    goes to `/transcribe` as a WAV; a transcript that is just her is dropped.
+    end, blips < 140 ms dropped — a short "응" or "네" is longer —, 300 ms of pre-roll; while she speaks it takes 2.2 ×
+    louder speech for 240 ms), each goes to `/transcribe` as a WAV; a transcript that is just her is dropped.
   - **browser** — Web Speech, continuous (desktop Chrome). The Android WebView has none: then the server's engine for a
     recording if there is one, else the call screen says plainly that speech recognition isn't available here (she can
     still be heard).
+- **What is theirs** (`listen.theirs`, `EchoGate`): what was heard while her voice didn't play is theirs as heard — all
+  of it, her own words in it (they repeat hers: "얘기하려고 전화했다고") and the shortest answers. Only what was heard
+  while her voice played, or within `HER_TAIL_MS` = 0.9 s after (the recognizer lags, the room rings), is filtered: her
+  words at its start and end go (`stripEcho`), and the rest is theirs when little of it is in what she said lately —
+  a short answer too (`ownWords`: "응" the moment she stops is an answer). A short word **while she still talks** is them
+  listening (a backchannel: not a turn, no barge-in); enough words of theirs talk over her. (Before, every short reply
+  heard within 20 s of her last line — nearly all of them — was dropped as "not enough to be someone talking".)
+- **What happened to the listening** is kept with the call (`diag` on the line → `mate_calls.metrics.diag`, at most
+  `DIAG_KEEP`): the way of listening, a token refused, the stream out and back, a recording instead, an utterance the
+  echo filter dropped (its text), a microphone that heard nothing at all for 10 s (`mic.silent`: the phone gave the app
+  silence), the app away and back, the line down and back, and her replies with nothing to say aloud
+  (`reply.silent` — [SILENT] on a call is dead air: the screen shows "…", never "[SILENT]").
 - **Her voice** (`session.ts`): her reply streams in as text; each finished sentence goes to her own TTS at once (a queue
   of the call's own, one ahead synthesized while one plays) and becomes the caption. Engine `browser` / `off`, or a
   server engine that isn't set up: the browser's voice; no voice at all on the device: her words show (the screen says
@@ -176,7 +196,18 @@ call** (it goes on with the screen off). There is no push service (FCM), so her 
   nobody took leaves **부재중 전화** in the shade.
 - **During a call** `GenyLinkService` holds the microphone (foreground service type `microphone`, started while the call
   screen is in front), so the call goes on with the screen locked or another app in front, and shows it: her face, the
-  clock, **끊기** (`…/hangup`). It is the only foreground service the app runs by default, and only for the call.
+  clock, **끊기** (`…/hangup`). It is the only foreground service the app runs by default, and only for the call. It
+  also keeps the CPU awake (a partial wake lock, `geny:call`) and the Wi-Fi out of power saving (a Wi-Fi lock): both
+  voices are streams.
+- **At the ear the screen goes dark** — off the loudspeaker, the proximity sensor turns the screen off while the phone is
+  held to the ear and on again once it leaves it (`PROXIMITY_SCREEN_OFF_WAKE_LOCK`, released with
+  `RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY`), as a phone's call screen does: no cheek on 종료 or 음소거. The loudspeaker
+  turns it off; the earpiece again turns it on.
+- **The screen off or locked** (the power button, the phone at the ear, another app in front): the page goes on as if it
+  were in front — the app's WebView is `CallWebView` (Capacitor's layout `capacitor_bridge_layout_main.xml` with it in
+  place of Capacitor's own): during a call its window counts as visible to the page whatever the screen does (timers
+  aren't held back, its voice and microphone aren't treated as a page no one sees) and its renderer keeps its
+  priority; out of a call it is Capacitor's WebView as before.
 - **The earpiece**: a call starts on the earpiece — or a connected headset (Bluetooth, wired, USB) — like any phone
   call; the loudspeaker only when they press it, every call again (`mate/call/machine.ts`, `GenyCallPlugin.route`).
   Setting the route once at the start wasn't enough: 0.5 still spoke on the loudspeaker. **The WebView picks the
@@ -212,8 +243,9 @@ call** (it goes on with the screen off). There is no push service (FCM), so her 
 
 - `begin({speaker, id, mate, name})` / `setSpeaker({on})` / `end()`: `MODE_IN_COMMUNICATION` for the call, the
   loudspeaker or the earpiece (`setCommunicationDevice` on Android 12+, `setSpeakerphoneOn` before), the screen kept on
-  and over the lock screen; back after. The route is held while the call lasts (the WebView opening the mic sets its
-  own: above). The link holds the microphone meanwhile.
+  (dark at the ear: the proximity lock off the loudspeaker) and over the lock screen, the page kept running
+  (`CallWebView.hold`); back after. The route is held while the call lasts (the WebView opening the mic sets its own:
+  above). The link holds the microphone, the CPU and the Wi-Fi meanwhile.
 - `ring({id, mate, title, body})` → `{shown}` / `cancelRing({id})`: her ringing (above). Taps come to the page as
   `callAction` (kept until it listens).
 - `link({device, faces})` / `status()` (`checks: {last, result}` — the check-ins) / `setBackground({on})` (the
@@ -232,13 +264,13 @@ is set again from the page only (there is no notice of a change to listen for).
 - `POST /api/mates/{id}/calls {device}` → `{call, plan}` (409 `code: busy`) · `GET /api/mate-calls/active` →
   `{call | null}` · `POST /api/mate-calls/{cid}/accept {device}` → `{call, plan}` · `…/answering` · `…/decline` ·
   `…/hangup` · `GET /api/mate-calls/link?device=` (the app's background link, above).
-- `/ws/mate-calls/{cid}`: client `say {text}`, `barge {rid, heard}`, `metric {rid, first_audio_ms, stt}`, `hangup`,
-  `ping`; server `state {call}`, `reply {rid, greeting}`, `delta {rid, text}`, `done {rid, text, ttft_ms}`,
+- `/ws/mate-calls/{cid}`: client `say {text}`, `barge {rid, heard}`, `metric {rid, first_audio_ms, stt}`,
+  `diag {ev, t, …}` (a few short values), `hangup`, `ping`; server `state {call}`, `reply {rid, greeting}`, `delta {rid, text}`, `done {rid, text, ttft_ms}`,
   `ended {reason, call}`, `pong`.
 - `/ws/sessions`: `call.ring {call}` (the phone she calls), `call.update {call}` (every window); the hello carries
   `native`, `calls`, `visible`.
 - Table `mate_calls` (id, mate, conversation, direction, status `ringing | dialing | active | talked | declined | missed |
-  cancelled | failed`, reason, device, times, end reason, engine, transcript, latency, `noted`).
+  cancelled | failed`, reason, device, times, end reason, engine, transcript, latency (+ `diag`: above), `noted`).
 - `plan`: `{stt: {mode: realtime | record | browser, engine, fallback}, tts: {engine}, model}`.
 
 ## Tests
@@ -249,8 +281,17 @@ is set again from the page only (there is no notice of a change to listen for).
   against the fake Anthropic API: no tools, thinking off, effort low, cache), the engine choice, her calls (phone app /
   speak first / her mate, by day, chatting, her reasons), declines and misses (feelings, the cooldown doubling, picking
   up resets), what waits for a call.
-- `frontend/test/mate-call.test.ts`: the state machine, the clock, the VAD, the tones.
-- `mobile/test/call.test.js`: the plugin registered, its methods and event named as the page calls them, the manifest.
+- `frontend/test/mate-call.test.ts`: the state machine, the clock, the VAD (a one-syllable answer is an utterance), the
+  tones. `frontend/test/call-listen.test.ts`: what is theirs (overlapping her voice or not, short answers, a
+  backchannel), a token refused for a moment, the stream out → a recording per utterance → the stream back, a key that
+  fails. `frontend/test/mate-stt.test.ts`: the echo gate (a quick "응" in the tail, a backchannel, a barge-in once).
+- `backend/tests/test_mate_stt_realtime.py`: the token's key terms, a 5xx asked once more.
+  `backend/tests/test_mate_calls.py`: the listening's `diag` kept with the call (line down and back, a silent reply).
+- `mobile/test/call.test.js`: the plugin registered, its methods and event named as the page calls them, the manifest,
+  the proximity lock, `CallWebView` in Capacitor's layout, the call's wake and Wi-Fi locks.
+- Live (2026-11-17, `scribe_v2_realtime`, the call's settings and key terms): short answers and lines as said —
+  "응." "네." "아니..." "여보세요, 들려?" "아니, 얘기하려고 전화했다고." "채린아, 뭐 해?" "그냥 얘기하려고 전화한 거지."
+  (the call that day heard "얘기" as "개기") — "좋아" alone came back "요하.".
 - Browser: `desktop/test/e2e/mate-call-browser.js` (a phone-sized page against `session-rewind-server.py`, the fake CLI
   as every engine): 📞 → ring-back → 통화 중, a reply, the pill, mute / speaker, hang-up → the card and her note; light,
   a 360 × 640 phone, her ringing.

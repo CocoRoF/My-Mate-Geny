@@ -8,7 +8,7 @@
  * - While she speaks (`guard`) it takes more (her voice from the loudspeaker can leak past echo cancellation): `guardRatio`
  *   × louder, for `guardStartMs`.
  * - Speech ends after `endMs` of quiet (a little hysteresis below the start level); shorter than `minSpeechMs` it was a
- *   blip (dropped). A very long run is cut at `maxSpeechMs`.
+ *   blip (dropped) — a short "응" or "네" is longer than that. A very long run is cut at `maxSpeechMs`.
  * - The audio of an utterance starts `preRollMs` before the start was noticed (the first syllable is never lost).
  */
 
@@ -42,7 +42,7 @@ export const VAD_DEFAULTS: Required<VadOptions> = {
   startMs: 90,
   guardStartMs: 240,
   endMs: 650,
-  minSpeechMs: 260,
+  minSpeechMs: 140,
   maxSpeechMs: 15000,
   preRollMs: 300,
   noiseAdapt: 0.05,

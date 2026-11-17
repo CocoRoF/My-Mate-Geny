@@ -238,6 +238,44 @@ async def test_a_dropped_line_ends_the_call_and_her_turn_still_comes(db, tmp_pat
         await svc.shutdown()
 
 
+async def test_what_happened_to_the_listening_is_kept_with_the_call(db, tmp_path, monkeypatch):
+    """The page says what happened to its listening (a token refused, a recording instead, the app away, a mic that heard
+    nothing); the line dropping and coming back and her replies with nothing to say are noted too — all kept, small, with
+    the call (mate_calls.metrics "diag"), for when it didn't hear them."""
+    monkeypatch.setattr(calls_mod, "RESUME_S", 5)
+    svc, store, mates, calls, line = _stack(db, tmp_path, monkeypatch)
+    mate = store.create(name="Haru", persona={"language": "en"}, llm={"model": "m1"})
+    try:
+        call = await calls.dial(mate["id"])
+        sent: list = []
+        sock = calls.attach(call, sent.append)
+        await _wait(lambda: any(m["type"] == "done" for m in sent))
+        await calls.receive(call, {"type": "diag", "ev": "token.error", "code": "upstream", "error": "x" * 500, "try": 1})
+        await calls.receive(call, {"type": "diag", "ev": "record", "engine": "elevenlabs", "a": 1, "b": 2, "c": 3, "d": 4, "e": 5})
+        await calls.receive(call, {"type": "diag", "ev": "app.away", "t": 123})
+        await calls.receive(call, {"type": "diag", "ev": ""})  # (nothing: not kept)
+        calls.detach(call, sock)
+        sock = calls.attach(call, sent.append)
+
+        async def silent(prompt, on_delta):
+            return "[SILENT]"
+        line.reply = silent
+        await calls.receive(call, {"type": "say", "text": "hello?"})
+        await calls.settle(call)
+        await _wait(lambda: not call.reply_task or call.reply_task.done())
+        await calls.receive(call, {"type": "hangup"})
+        evs = [x["ev"] for x in call.diag]
+        assert evs == ["token.error", "record", "app.away", "line.down", "line.back", "reply.silent"], evs
+        assert len(call.diag[0]["error"]) <= 120 and call.diag[0]["try"] == 1
+        assert len(call.diag[1]) <= 2 + 6, "a few values only"
+        assert call.diag[-1]["raw"] == "[SILENT]"
+        saved = json.loads(db.query_one("SELECT metrics FROM mate_calls WHERE id=?", (call.id,))["metrics"])
+        assert [x["ev"] for x in saved["diag"]] == evs and "n" in saved
+    finally:
+        await calls.stop()
+        await svc.shutdown()
+
+
 async def test_a_call_nobody_picked_up_is_only_a_card_and_she_still_knows_it_happened(db, tmp_path, monkeypatch):
     svc, store, mates, calls, line = _stack(db, tmp_path, monkeypatch)
     mate = store.create(name="Haru", persona={"language": "en"}, llm={"model": "m1"})

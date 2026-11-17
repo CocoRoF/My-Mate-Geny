@@ -6,7 +6,8 @@
  *      barge-in off → the mic sends silence (her voice never leaves the device);
  *      barge-in on  → audio goes out, but a transcript that is just what she is saying is dropped (echo), and only
  *                     words of the user's own (enough of them) count — they interrupt her (barge-in);
- *   3. committed text from such a stretch keeps only the user's words.
+ *   3. committed text from such a stretch keeps only the user's words — short ones too ("응", "네", "좋아") when nothing
+ *      of them is in what she said; a short word while she is still talking is them listening (a backchannel), not a turn.
  * Pure (tested in test/mate-stt.test.ts).
  */
 
@@ -69,10 +70,19 @@ export function meaningful(text: string): boolean {
   return text.trim().split(/\s+/).filter((w) => normalizeForEcho(w)).length >= 2 && n.length >= 3;
 }
 
-/** the user's own words in `heard` (after dropping her echo), or "" */
+/** the user's own words in `heard` (after dropping her echo), enough of them to talk over her — or "" */
 export function userWords(heard: string, spoken: string[]): string {
   const rest = stripEcho(heard, spoken);
   return rest && meaningful(rest) && echoScore(rest, spoken) < 0.5 ? rest : "";
+}
+
+/** the user's own words in `heard` (after dropping her echo), short ones too ("응", "네", "아니"): a short word counts when
+ *  next to nothing of it is in what she said — or "" */
+export function ownWords(heard: string, spoken: string[]): string {
+  const rest = stripEcho(heard, spoken);
+  if (!rest) return "";
+  const score = echoScore(rest, spoken);
+  return score < (meaningful(rest) ? 0.5 : 0.34) ? rest : "";
 }
 
 export interface GateOptions {
@@ -84,7 +94,8 @@ export interface GateOptions {
 /**
  * One listening session's view of "is she speaking". `setVoicing` follows the device (every change); `partial` /
  * `committed` filter what the recognizer sends. A segment (one utterance between two commits) that heard her becomes
- * "echo"; once the user's own words show up in it, it is "user" — and if she was still speaking, that is a barge-in.
+ * "echo"; once the user's own words show up in it, it is "user" — and once they are enough to talk over her while she is
+ * still speaking, that is a barge-in (once per segment).
  */
 export class EchoGate {
   bargeIn: boolean;
@@ -92,6 +103,7 @@ export class EchoGate {
   private voicing = false;
   private endedAt = -Infinity;
   private segment: "clean" | "echo" | "user" = "clean";
+  private barged = false;
 
   constructor(o: GateOptions) {
     this.bargeIn = o.bargeIn;
@@ -118,13 +130,15 @@ export class EchoGate {
     const g = this.gated(now);
     // barge-in off: the mic sent silence while she spoke — whatever is heard is the user's (said before she began)
     if (!this.bargeIn || (this.segment === "clean" && !g)) return { show: text, barge: false };
-    if (this.segment === "user") return { show: stripEcho(text, spoken) || null, barge: false };
-    const mine = userWords(text, spoken);
+    const mine = this.segment === "user" ? stripEcho(text, spoken) : ownWords(text, spoken);
     if (mine) {
       this.segment = "user";
-      return { show: mine, barge: this.voicing || g };
+      // (enough words of theirs while she speaks: they talk over her — a short "응" is them listening)
+      const barge = !this.barged && (this.voicing || g) && meaningful(mine) && echoScore(mine, spoken) < 0.5;
+      if (barge) this.barged = true;
+      return { show: mine, barge };
     }
-    this.segment = "echo";
+    if (this.segment !== "user") this.segment = "echo";
     return { show: null, barge: false };
   }
 
@@ -132,8 +146,11 @@ export class EchoGate {
   committed(text: string, spoken: string[], now: number): string | null {
     const seg = this.segment;
     this.segment = "clean";
+    this.barged = false;
     if (!this.bargeIn || (seg === "clean" && !this.gated(now))) return text.trim() || null;
-    if (seg === "user") return stripEcho(text, spoken) || null;
-    return userWords(text, spoken) || null;
+    const mine = seg === "user" ? stripEcho(text, spoken) : ownWords(text, spoken);
+    // (a short word while she is still talking is them listening, not a turn of theirs)
+    if (!mine || (this.voicing && !meaningful(mine))) return null;
+    return mine;
   }
 }

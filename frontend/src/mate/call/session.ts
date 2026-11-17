@@ -29,6 +29,7 @@ import { bcp47 } from "../useMateConversation";
 import { listen, type Listener } from "./listen";
 import type { EndReason } from "./machine";
 import { callNative, keepScreenOn, nativeCalls } from "./native";
+import { appActive, onAppActive } from "../../lib/appState";
 import { Tones } from "./tones";
 
 export interface SessionEvents {
@@ -53,6 +54,8 @@ interface Reply {
   stream: SentenceStream;
   /** what of it was said (started playing), in order */
   started: string[];
+  /** sentences of it said aloud */
+  lines: number;
   hushed: boolean;
   done: boolean;
   greeting: boolean;
@@ -76,6 +79,11 @@ const RETRY_MS = [500, 1500, 3000];
 const EARPIECE = 0.4;
 const DUCK = 0.3;
 const ECHO_MS = 20_000;
+/** her choice to say nothing (calls.py spoken(): no words) */
+const SILENT = /^\s*\[SILENT\]\s*$/i;
+/** the mic's loudness looked at in windows this long: a window with nothing at all in it (not muted) is said once */
+const LEVEL_WINDOW_MS = 10_000;
+const SILENT_LEVEL = 0.004;
 
 export class CallSession {
   readonly call: CallInfo;
@@ -110,6 +118,14 @@ export class CallSession {
   private listening = false;
   /** the line is ready for her voice (prepareLine) */
   private lineReady = false;
+  /** when her voice last stopped (ms) */
+  private voiceEndedAt = 0;
+  /** the mic's loudest in the window so far, the window's start, whether the last window heard nothing */
+  private levelMax = 0;
+  private levelFrom = 0;
+  private micSilent = false;
+  private offApp: (() => void) | null = null;
+  private diagLater: Record<string, unknown>[] = [];
 
   constructor(call: CallInfo, mate: Mate, plan: CallPlan, ev: SessionEvents, opts: { muted: boolean; speaker: boolean }) {
     this.call = call;
@@ -146,6 +162,7 @@ export class CallSession {
     this.applyVolume();
     q.onItemStart = (item) => this.onSound(item);
     q.onIdle = () => {
+      this.voiceEndedAt = Date.now();
       this.ev.speaking(false);
       this.unduck();
     };
@@ -165,6 +182,34 @@ export class CallSession {
     void this.prepareLine(callMode, mic);
     this.connect();
     this.pingTimer = setInterval(() => this.send({ type: "ping" }), 15_000);
+    // (the screen off, the app away: the call goes on — said to the server, for when it didn't hear them)
+    let wasActive = appActive();
+    this.offApp = onAppActive(() => {
+      const on = appActive();
+      if (on === wasActive) return;
+      wasActive = on;
+      this.diag(on ? "app.front" : "app.away");
+    });
+  }
+
+  /** what happened to the listening and the line, kept with the call on the server (calls.CallService "diag") */
+  private diag(ev: string, data: Record<string, unknown> = {}): void {
+    const msg = { type: "diag", ev, t: Date.now(), ...data };
+    // (before the line is up, or while it is down: sent once it is)
+    if (!this.send(msg)) this.diagLater = [...this.diagLater, msg].slice(-30);
+  }
+
+  /** the mic's loudness: a window of nothing at all (the phone gave the app silence) is said once, and its end */
+  private noteLevel(v: number): void {
+    const now = Date.now();
+    if (!this.levelFrom) this.levelFrom = now;
+    if (!this.muted) this.levelMax = Math.max(this.levelMax, v);
+    if (now - this.levelFrom < LEVEL_WINDOW_MS) return;
+    const silent = !this.muted && this.levelMax < SILENT_LEVEL;
+    if (silent !== this.micSilent) this.diag(silent ? "mic.silent" : "mic.back", { max: Math.round(this.levelMax * 1000) / 1000 });
+    this.micSilent = silent;
+    this.levelMax = 0;
+    this.levelFrom = now;
   }
 
   // ── the line ──
@@ -176,6 +221,9 @@ export class CallSession {
     ws.onopen = () => {
       if (this.retries) this.ev.reconnecting(false);
       this.retries = 0;
+      const later = this.diagLater;
+      this.diagLater = [];
+      for (const m of later) this.send(m);
     };
     ws.onmessage = (e) => {
       let msg: Record<string, any>;
@@ -233,6 +281,8 @@ export class CallSession {
         if (typeof msg.text === "string" && msg.text.startsWith(r.text)) r.text = msg.text;
         for (const s of r.stream.flush(r.text)) this.say(r, s);
         r.done = true;
+        // (she says nothing — silence is hers to keep: the screen shows it, so it isn't taken for a line gone dead)
+        if (!r.lines && !r.hushed && !r.greeting) this.ev.caption("…");
         // (a hello with nothing to say aloud: through all the same)
         if (r.greeting && !r.started.length && !this.held.length && !this.queue.getState().current && !this.queue.getState().pending) this.connectNow(Date.now());
         return;
@@ -244,7 +294,7 @@ export class CallSession {
   }
 
   private reply(rid: string, greeting: boolean): Reply {
-    const r: Reply = { rid, text: "", stream: new SentenceStream({ maxChars: 90 }), started: [], hushed: false, done: false, greeting, metric: this.pending, measured: false };
+    const r: Reply = { rid, text: "", stream: new SentenceStream({ maxChars: 90 }), started: [], lines: 0, hushed: false, done: false, greeting, metric: this.pending, measured: false };
     this.pending = null;
     this.replies.set(rid, r);
     if (this.replies.size > 30) this.replies.delete(this.replies.keys().next().value!);
@@ -285,8 +335,10 @@ export class CallSession {
 
   private say(r: Reply, s: Sentence): void {
     if (r.hushed || this.over) return;
-    // (the caption is what she says now — when her voice can't play here, what she says at all)
-    if (s.text && (this.voiceless || !s.speech)) this.ev.caption(s.text);
+    if (s.speech) r.lines++;
+    // (the caption is what she says now — when her voice can't play here, what she says at all; never [SILENT] itself)
+    const shown = SILENT.test(s.text) ? "" : s.text;
+    if (shown && (this.voiceless || !s.speech)) this.ev.caption(shown);
     if (!s.speech || this.voiceless) {
       if (this.voiceless && s.text) this.connectNow(Date.now());
       return;
@@ -378,6 +430,7 @@ export class CallSession {
     if (!q.current && !q.pending && !this.held.length && r.done) return; // (she was done)
     r.hushed = true;
     this.held = [];
+    this.voiceEndedAt = Date.now();
     this.queue.stop();
     this.unduck();
     this.ev.speaking(false);
@@ -422,6 +475,7 @@ export class CallSession {
         plan: this.plan.stt,
         speaking: this.speakingNow,
         spoken: this.spokenLately,
+        voicedAt: () => (this.speakingNow() ? Date.now() : this.voiceEndedAt),
         muted: () => this.muted,
       },
       {
@@ -439,14 +493,23 @@ export class CallSession {
           this.unduck();
         },
         onPartial: (text) => this.ev.partial(text),
-        onLevel: (v) => this.ev.level(v),
+        onLevel: (v) => {
+          this.ev.level(v);
+          this.noteLevel(v);
+        },
         onNotice: (text) => {
           this.ev.notice(text);
           if (text) this.reroute(); // (another way of listening: the microphone opens again, and the WebView reroutes)
         },
         onFail: (text) => this.ev.deaf(text),
+        onDiag: (ev, data) => {
+          this.diag(ev, data);
+          // (the microphone opened again for another way of listening: the WebView may have taken the loudspeaker)
+          if (ev === "record" || ev === "stream.retry") this.reroute();
+        },
       },
     );
+    this.diag("listen", { mode: this.listener.mode, plan: this.plan.stt.mode, engine: this.plan.stt.engine || "" });
     return this.listener.start();
   }
 
@@ -493,6 +556,8 @@ export class CallSession {
     clearTimeout(this.holdTimer);
     clearTimeout(this.duckTimer);
     clearInterval(this.pingTimer);
+    this.offApp?.();
+    this.offApp = null;
     this.listener?.stop();
     this.listener = null;
     this.stopRing?.();

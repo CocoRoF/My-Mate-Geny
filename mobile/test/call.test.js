@@ -93,3 +93,25 @@ test("the manifest has what a call needs", () => {
   // (taps come back to the one activity: onNewIntent)
   assert.match(manifest, /android:launchMode="singleTask"/);
 });
+
+test("on a call the phone goes dark at the ear, and the call goes on with the screen off or locked", () => {
+  // (off the loudspeaker: the proximity sensor turns the screen off at the ear — and on again only once it leaves it)
+  assert.match(plugin, /PROXIMITY_SCREEN_OFF_WAKE_LOCK/);
+  assert.match(plugin, /RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY/);
+  assert.match(plugin, /atTheEar\(!speaker\)/);
+  assert.match(plugin, /if \(inCall\) atTheEar\(!on\)/);
+  assert.match(plugin, /atTheEar\(false\);\s+CallWebView\.hold\(false\)/);
+  // (the page runs on as if in front: Capacitor's layout with the app's WebView)
+  const layout = read(path.join(ROOT, "android/app/src/main/res/layout/capacitor_bridge_layout_main.xml"));
+  assert.match(layout, /<me\.hrletsgo\.harnessor\.CallWebView\s+android:id="@\+id\/webview"/);
+  const web = read(path.join(JAVA, "CallWebView.java"));
+  assert.match(web, /extends CapacitorWebView/);
+  assert.match(web, /public CallWebView\(Context context, AttributeSet attrs\)/);
+  assert.match(web, /super\.onWindowVisibilityChanged\(held \? View\.VISIBLE : visibility\)/);
+  assert.match(plugin, /CallWebView\.hold\(true\)/);
+  // (the CPU and the Wi-Fi kept awake for the call's streams)
+  assert.match(service, /PARTIAL_WAKE_LOCK, "geny:call"/);
+  assert.match(service, /WIFI_MODE_FULL_HIGH_PERF/);
+  assert.match(service, /foreground\(\);\s+awake\(true\);/);
+  assert.match(service, /callId = null;\s+awake\(false\);/);
+});

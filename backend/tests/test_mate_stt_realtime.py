@@ -46,6 +46,8 @@ class Recorder:
         self.calls.append({"method": method, "url": url, "headers": headers or {}, "json": json_body, "data": data})
         for pred, resp in self.routes:
             if pred(method, url):
+                if isinstance(resp, list):  # (answers in turn, the last one again and again)
+                    resp = resp.pop(0) if len(resp) > 1 else resp[0]
                 if isinstance(resp, Exception):
                     raise resp
                 return resp
@@ -103,7 +105,7 @@ def test_token_url_and_no_key_anywhere(client, http, caplog):
     q = {k: v[0] for k, v in parse_qs(url.query).items()}
     assert url.scheme == "wss" and url.netloc == "api.elevenlabs.io" and url.path == "/v1/speech-to-text/realtime"
     assert q == {"model_id": "scribe_v2_realtime", "token": TOKEN, "audio_format": "pcm_16000",
-                 "commit_strategy": "vad", "vad_silence_threshold_secs": "0.9", "language_code": "ko"}
+                 "commit_strategy": "vad", "vad_silence_threshold_secs": "0.9", "language_code": "ko", "keyterms": "Ears"}
     assert out["sample_rate"] == 16000 and out["language"] == "ko" and out["expires_in"] == 900
     assert out["fallback"] == "elevenlabs"  # nothing else set up: the same key's batch model
     call = http.calls[-1]
@@ -153,6 +155,22 @@ def test_token_failures_have_a_code_and_a_fallback(client, http, caplog):
     client.put("/api/mates/settings", json={"elevenlabs_key": ""})
     r = client.post(f"/api/mates/{mid}/stt/realtime")
     assert r.status_code == 400 and r.json()["code"] == "missing" and r.json()["fallback"] is None
+
+
+def test_token_names_on_the_line_and_a_moment_of_failure(client, http):
+    """The names said on her line are speech recognition's key terms (hers — and her given name —, theirs, what she calls
+    them); their side failing for a moment (a 5xx) is asked once more before the page hears of it."""
+    r = client.post("/api/mates", json={"name": "한채린", "persona": {"language": "ko"}, "voice": {"stt": {"engine": "elevenlabs"}},
+                                        "prefs": {"user_name": "장하렴", "address": "자기야"}})
+    assert r.status_code == 200, r.text
+    mid = r.json()["id"]
+    http.on(is_token, [_json(503, {"detail": "busy upstream"}), _json(200, {"token": TOKEN})])
+    out = client.post(f"/api/mates/{mid}/stt/realtime?call=1")
+    assert out.status_code == 200, out.text
+    assert len([c for c in http.calls if is_token(c["method"], c["url"])]) == 2, "asked once more"
+    q = parse_qs(urlparse(out.json()["url"]).query)
+    assert q["keyterms"] == ["한채린", "장하렴", "자기야", "채린"]
+    assert q["vad_silence_threshold_secs"] == ["0.7"]
 
 
 def test_token_needs_the_engine_and_is_rate_limited(client, http):

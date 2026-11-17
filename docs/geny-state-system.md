@@ -301,9 +301,11 @@ How she feels also shows in her voice, in how strongly her face shows it, and in
 Every message the user sends is read by a model — never by word patterns, and never through an API key on the side
 ([`gss/appraisal.py`](../backend/app/mate/gss/appraisal.py), [`gss/reader.py`](../backend/app/mate/gss/reader.py)):
 
-- **Who reads it.** The same coding agents the app runs on. Claude Code on the lightest model is kept warm — one stream-json
-  process for every reading, like a phone call's engine, started again every 30 readings so what it read before never piles up —
-  and a reading takes a second or two. Without Claude Code, Codex reads each message on its own. Each reading is a turn of a
+- **Who reads it.** The agent her AI provider setting says (`reader.engine_of`), never the other one. A mate on Claude Code:
+  Claude Code on Haiku (`claude-haiku-5-5`), kept warm — one stream-json process for every reading, like a phone call's engine,
+  started again every 30 readings so what it read before never piles up — a reading takes a second or two. A mate on Codex:
+  Codex on luna (the newest "luna" in the live model list, else `gpt-6-luna`), each message on its own (about 5–10 s). The
+  one-shots beside it (her temperament read from her persona, the judge) follow the same setting. Each reading is a turn of a
   pooled account like any other.
 - **What it reads:** aimed at her or not, the acts (insult, threat, violence, coercion, put-down, brush-off, apology, affection,
   flirt, compliment, thanks, teasing, joke, venting, distress, request, promise), intensity, whether an apology owns what they

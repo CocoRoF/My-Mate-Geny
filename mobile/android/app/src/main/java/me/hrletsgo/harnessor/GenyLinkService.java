@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.net.ConnectivityManager;
 import android.net.Network;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -27,7 +28,8 @@ import org.json.JSONObject;
 
 /**
  * During a call: the microphone kept with the screen locked or another app in front (a foreground service of that type,
- * started while the call screen is in front), and the call shown — her face, the clock, 끊기. That is all it does by
+ * started while the call screen is in front), the CPU and the Wi-Fi kept awake for it (a partial wake lock, a Wi-Fi
+ * lock: the voice both ways is a stream), and the call shown — her face, the clock, 끊기. That is all it does by
  * default (docs/mate-calls.md "On Android": since 0.5 the app checks in now and then instead — GenyCheck — and holds no
  * line).
  *
@@ -156,6 +158,7 @@ public class GenyLinkService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
+        if (callId != null) awake(true);
         if (!wanted(this) && callId == null) {
             shutdown();
             return START_NOT_STICKY;
@@ -166,6 +169,7 @@ public class GenyLinkService extends Service {
 
     @Override
     public void onDestroy() {
+        awake(false);
         running = false;
         if (instance == this) instance = null;
         state = "off";
@@ -266,11 +270,44 @@ public class GenyLinkService extends Service {
         callName = nz(name);
         callSince = System.currentTimeMillis();
         foreground();
+        awake(true);
+    }
+
+    private PowerManager.WakeLock callCpu = null;
+    private WifiManager.WifiLock callWifi = null;
+
+    /** a call: the CPU and the Wi-Fi kept awake with the screen off (her voice and theirs stream all the while) */
+    @SuppressWarnings("deprecation")
+    private void awake(boolean on) {
+        try {
+            if (on) {
+                if (callCpu == null) {
+                    PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                    callCpu = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "geny:call");
+                    callCpu.setReferenceCounted(false);
+                }
+                if (!callCpu.isHeld()) callCpu.acquire(GenyCallPlugin.MAX_CALL_MS);
+                if (callWifi == null) {
+                    WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+                    if (wm != null) {
+                        callWifi = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "geny:call");
+                        callWifi.setReferenceCounted(false);
+                    }
+                }
+                if (callWifi != null && !callWifi.isHeld()) callWifi.acquire();
+            } else {
+                if (callCpu != null && callCpu.isHeld()) callCpu.release();
+                if (callWifi != null && callWifi.isHeld()) callWifi.release();
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "call wake locks: " + e);
+        }
     }
 
     private void outOfCall() {
         if (callId == null) return;
         callId = null;
+        awake(false);
         if (!wanted(this)) {
             shutdown();
             return;

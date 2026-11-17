@@ -83,6 +83,8 @@ export interface RealtimeCallbacks {
   onSegment?: (text: string, how: "realtime" | "fallback") => void;
   /** the user started talking while she speaks (barge-in on) */
   onBargeIn?: () => void;
+  /** a committed text the echo filter took for hers (or for them listening), not passed on */
+  onDropped?: (text: string) => void;
   onNotice?: (n: RealtimeNotice) => void;
   /** the session ended with a failure (start / mic / no fallback) */
   onError?: (code: SttFailure, message: string, serverFallback: string | null) => void;
@@ -285,6 +287,7 @@ export class RealtimeStt {
       }
       case "committed": {
         const mine = this.gate.committed(ev.text, this.d.spoken(), now);
+        if (!mine && ev.text.trim()) this.cb.onDropped?.(ev.text.trim());
         const text = mine?.trim() || this.carry;
         this.carry = "";
         this.partialText = "";

@@ -115,11 +115,13 @@ test("vad: an utterance starts after a little speech, ends after a pause, keeps 
   assert.equal(v.speaking, false);
 });
 
-test("vad: a click or a cough is not speech; a short word is a blip", () => {
+test("vad: a click or a cough is not speech; a blip is dropped — a short \"응\" or \"네\" is not", () => {
   const v = new Vad();
   assert.deepEqual(feed(v, [...repeat(0.002, 300), 0.3, 0.002, 0.3, ...repeat(0.002, 300)]), []);
-  const ev = feed(v, [...repeat(0.08, 150), ...repeat(0.002, 900)]);
+  const ev = feed(v, [...repeat(0.08, 90), ...repeat(0.002, 900)]);
   assert.deepEqual(ev.map((e) => e.type), ["start", "drop"]);
+  const word = feed(v, [...repeat(0.08, 180), ...repeat(0.002, 900)]);
+  assert.deepEqual(word.map((e) => e.type), ["start", "end"], "a one-syllable answer is an utterance");
 });
 
 test("vad: the noise floor follows the room; a pause shorter than the end is still one utterance", () => {

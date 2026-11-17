@@ -50,6 +50,7 @@ MAX_CALL_S = 60 * 60              # an hour at most
 MAX_REPLY_TOKENS = 400
 MAX_TEXT = 2000                   # one utterance
 MAX_TRANSCRIPT = 400              # lines kept
+DIAG_KEEP = 150                   # the page's listening diagnostics kept with a call (calls.CallService._diag)
 RECENT_MESSAGES = 16              # of the chat, for the call's prompt
 # when she may call (the user's clock): by day only
 CALL_HOURS = (10, 21)
@@ -328,6 +329,9 @@ class Call:
     transcript: list[dict[str, Any]] = field(default_factory=list)
     replies: dict[str, dict[str, Any]] = field(default_factory=dict)
     metrics: list[dict[str, Any]] = field(default_factory=list)
+    #: what happened to the listening and the line (the page's "diag", her silent replies): kept with the call, for when
+    #: it didn't hear them
+    diag: list[dict[str, Any]] = field(default_factory=list)
     send: Callable[[dict[str, Any]], None] | None = None
     socket: str = ""
     cut_note: str | None = None
@@ -531,6 +535,9 @@ class CallService:
     def attach(self, call: Call, send: Callable[[dict[str, Any]], None]) -> str:
         """The call screen connected (or came back): what it missed of the reply being said comes again."""
         sock = secrets.token_hex(6)
+        line = [x["ev"] for x in call.diag if x["ev"] in ("line.down", "line.back")]
+        if line and line[-1] == "line.down":
+            self._diag(call, "line.back", {})
         call.send, call.socket = send, sock
         send({"type": "state", "call": call.public()})
         for r in call.replies.values():
@@ -548,6 +555,7 @@ class CallService:
         if call.socket != sock or call.status == "ended":
             return
         call.send, call.socket = None, ""
+        self._diag(call, "line.down", {})
         self._later(call, RESUME_S, lambda: self._spawn(call, self.end(call, "network"))
                     if call.send is None and call.status != "ended" else None)
 
@@ -566,10 +574,25 @@ class CallService:
                 m["ttft_ms"] = r.get("ttft")
             if isinstance(m.get("first_audio_ms"), (int, float)) and 0 <= m["first_audio_ms"] < 60000:
                 call.metrics = [*call.metrics, m][-200:]
+        elif kind == "diag":
+            self._diag(call, str(msg.get("ev") or "")[:40], {k: v for k, v in msg.items() if k not in ("type", "ev")})
         elif kind == "hangup":
             await self.end(call, "hangup")
         elif kind == "ping":
             self._send(call, {"type": "pong"})
+
+    @staticmethod
+    def _diag(call: Call, ev: str, data: dict[str, Any]) -> None:
+        """One thing that happened to the listening or the line (small: a few short values), the oldest out."""
+        if not ev:
+            return
+        item: dict[str, Any] = {"ev": ev, "at": now_iso()}
+        for k, v in list(data.items())[:6]:
+            if isinstance(v, bool) or isinstance(v, (int, float)) or v is None:
+                item[str(k)[:20]] = v
+            else:
+                item[str(k)[:20]] = clip(str(v), 120)
+        call.diag = [*call.diag, item][-DIAG_KEEP:]
 
     @staticmethod
     async def _in_order(call: Call, coro: Awaitable[Any]) -> None:
@@ -758,6 +781,9 @@ class CallService:
         words = spoken(text)
         if words and not any(x.get("rid") == rid for x in call.transcript):
             self._line(call, "mate", words, rid=rid)
+        elif not words:
+            # (nothing to say aloud — [SILENT], only a tag, nothing at all: the line is quiet; kept, for when they asked why)
+            self._diag(call, "reply.silent", {"raw": text.strip()[:80], "ttft": r["ttft"]})
         self._send(call, {"type": "done", "rid": rid, "text": text, "ttft_ms": r["ttft"]})
         if call.send is not None:
             r["delivered"] = True
@@ -906,7 +932,9 @@ class CallService:
         db = self.store._db
         db.execute("UPDATE mate_calls SET status=?, answered_at=?, ended_at=?, end_reason=?, engine=?, transcript=?, metrics=? "
                    "WHERE id=?", (status, call.answered_at, call.ended_at, call.end_reason, call.engine_kind,
-                                  json.dumps(card["transcript"], ensure_ascii=False), json.dumps(card["latency"]), call.id))
+                                  json.dumps(card["transcript"], ensure_ascii=False),
+                                  json.dumps({**card["latency"], **({"diag": call.diag} if call.diag else {})}, ensure_ascii=False),
+                                  call.id))
         self.mates._log("info", f"call with “{call.name}” ({call.direction}) {status}: {card['duration_s']} s, "
                         f"{len(call.transcript)} lines, engine {call.engine_kind or '-'} ({CALL_MODEL}), first audio "
                         f"{card['latency']['first_audio_ms'] or '-'} ms, first token {card['latency']['ttft_ms'] or '-'} ms",
