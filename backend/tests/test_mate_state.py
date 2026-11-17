@@ -60,13 +60,13 @@ def test_keeping_up_the_insults_makes_her_angrier_each_time():
         S.hear(doc, w, "닥쳐, 쓸모없어", f"m{i}", NOON, TZ)
         seen.append(_lv(doc, w)["angry"])
     assert seen == pytest.approx([0.3, 0.7, 1.0])
-    assert S.levels(doc, w, NOON, TZ)["angry"]["why"] == {"code": "rude"}
+    assert S.levels(doc, w, NOON, TZ)["angry"]["why"]["code"] == "rude"
     # (furious with them: blowing up at them or not answering at all, hers to decide; short of that, angry out loud or cold)
     assert S.conduct(S.summary(doc, w, NOON, TZ)).startswith(S.REFUSE)
-    assert "blow up at them" in S.REFUSE and "reply with exactly [SILENT]" in S.REFUSE
+    assert "let it out at them" in S.REFUSE and "reply with exactly [SILENT]" in S.REFUSE
     hot = {**S.new(), "feelings": {"angry": {"v": 0.75, "at": S.A._iso(NOON), "why": {"code": "rude"}}}}
     said = S.conduct(S.summary(hot, w, NOON, TZ))
-    assert "tell them heatedly what they did" in said and "raise your voice" in said and "go cold and curt" in said
+    assert "let it out the way that is truest to you" in said and "“...”" not in said  # (no sample words to parrot)
     S.hear(doc, w, "닥쳐, 쓸모없어", "m2", NOON, TZ)  # (the same message, looked at again)
     assert _lv(doc, w)["angry"] == 1.0
     fresh = S.new()  # (one now and then isn't keeping it up)
@@ -92,7 +92,7 @@ def test_kindness_calms_her_but_good_things_land_less_while_she_is_angry():
     S.hear(doc, w, "내가 말이 심했어, 미안해", "sorry", NOON, TZ)
     eased = _lv(doc, w)["angry"]
     S.hear(doc, w, "고마워", "thanks again", NOON, TZ)
-    assert _lv(doc, w)["angry"] <= eased - S.WARM_CALMS + 0.001  # (after one that owns it, kindness does)
+    assert _lv(doc, w)["angry"] < eased  # (after one that owns it, kindness does — as far as the hurt has eased)
     calm = S.new()
     S.hear(calm, w, "고마워", "thanks", NOON, TZ)
     assert _lv(doc, w)["happy"] < _lv(calm, w)["happy"]
@@ -106,9 +106,9 @@ def test_an_apology_takes_the_edge_off():
     for i in range(2):
         S.hear(doc, w, "멍청아", f"m{i}", NOON, TZ)
     S.hear(doc, w, "미안해, 내가 잘못했어", "sorry", NOON, TZ)
-    # (owning it, the first time: half of the hurt goes, and her anger is still about what they said)
-    assert _lv(doc, w)["angry"] == pytest.approx(0.4, abs=0.01)
-    assert S.levels(doc, w, NOON, TZ)["angry"]["why"] == {"code": "rude"}
+    # (owning it, the first time but right after: half of the hurt, times 0.7 (TOO_SOON_RUDE), goes; still about what they said)
+    assert _lv(doc, w)["angry"] == pytest.approx(0.7 - S.APOLOGY * S.TOO_SOON_RUDE_WORTH, abs=0.01)
+    assert S.levels(doc, w, NOON, TZ)["angry"]["why"]["code"] == "rude"
     S.hear(doc, w, "멍청아", "again", NOON, TZ)
     assert doc["rude"]["n"] == 1  # (and it starts over)
 
@@ -267,7 +267,7 @@ def test_every_blend_is_of_real_emotions():
 
 
 @pytest.mark.parametrize(("emotion", "strength", "says"), [
-    ("angry", "strong", "raise your voice"), ("angry", "moderate", "snap at them"), ("angry", "slight", "a little curt"),
+    ("angry", "strong", "let it out the way that is truest"), ("angry", "moderate", "short with them"), ("angry", "slight", "a little curt"),
     ("shy", "strong", "flustered"), ("happy", "strong", "playful"), ("sad", "strong", "you may cry"), ("sleepy", "strong", "drowsy"),
 ])
 def test_how_she_feels_comes_out_in_how_she_talks(emotion, strength, says):
@@ -311,12 +311,14 @@ def test_closeness_takes_the_edge_off_where_it_starts_and_only_there():
 
 
 def test_it_rises_faster_in_that_outfit():
-    plain, on = S.who(closeness=0.0), S.who(closeness=0.0, outfit=CROP_TOP)
+    # (close enough for "예쁘다" to land fully: from a stranger it lands at a quarter — test_love_from_a_stranger…)
+    plain, on = S.who(closeness=S.LOVE_FROM_CLOSE), S.who(closeness=S.LOVE_FROM_CLOSE, outfit={**CROP_TOP, "since": None})
     a, b = S.new(), S.new()
     S.hear(a, plain, "예쁘다", "m", NOON, TZ)
     S.hear(b, on, "예쁘다", "m", NOON, TZ)
+    base = _lv(S.new(), on)["shy"]
     assert _lv(a, plain)["shy"] == pytest.approx(S.LOOKS)
-    assert _lv(b, on)["shy"] == pytest.approx(0.6 + S.LOOKS * 1.6)
+    assert _lv(b, on)["shy"] == pytest.approx(base + S.LOOKS * 1.6, abs=0.01)
 
 
 def test_taking_it_off_doesnt_end_it_at_once():
@@ -359,11 +361,13 @@ def test_asking_again_leans_her_towards_yes_until_it_makes_her_angry():
     w = S.who(closeness=0.5)
     doc = S.new()
     feel = {"shy": 0.6}
-    leans = []
+    leans, plain = [], []
     for i in range(1, 8):
         S.hear(doc, w, "크롭탑 입어줘 제발", f"m{i}", NOON, TZ)
         leans.append(S.leaning(doc, w, feel, NOON, TZ))
-    assert leans[0] == "rather_not" and "maybe" in leans  # (it wears her down)
+        plain.append(S.leaning(doc, w, None, NOON, TZ))
+    assert set(leans) == {"rather_not"}  # (nagging never wins what makes her shy)
+    assert "rather_not" not in plain[:3]  # (something plain: she may well, and asking again leans her a little)
     assert _lv(doc, w)["angry"] > 0  # (too much of it angers her)
     assert leans[-1] == "rather_not"  # (and then it doesn't help)
     assert S.asks_lately(doc, NOON + S.ASK_WINDOW + timedelta(minutes=1)) == 0
@@ -507,7 +511,7 @@ async def test_a_turn_hears_the_message_tells_her_and_leaves_it_at_that(db):
     sid = mates.conversation(mid)["session_id"]
     _says(mates, sid, "닥쳐")
     req, _prompt = _turn(mates, mid, "닥쳐")
-    assert "How you feel right now: angry, a little (they were rude to you)." in req.preamble
+    assert "How you feel right now: angry, a little (they were rude to you: “닥쳐”)." in req.preamble
     assert "How it comes out now: You are a bit put out" in req.preamble
     assert f"{oid} “잠옷”" in req.preamble and "default (your usual clothes" in req.preamble
     assert mates.get(mid)["state"]["label"] == "angry"
@@ -710,7 +714,8 @@ def test_what_they_did_stays_with_her_and_a_bare_sorry_doesnt_end_it():
     s = S.summary(doc, w, NOON, TZ)
     assert s["grudge"] and s["grudge"]["sorry"] == 1 and not s["grudge"]["owned"]
     line = S.line(s)
-    assert "Still with you: they threatened you: “죽여버린다 너”" in line and "just a bare sorry" in line and S.HELD[1] in line
+    # (a threat, and only a bare sorry: it still stings)
+    assert "Still with you: they threatened you: “죽여버린다 너”" in line and "just a bare sorry" in line and S.HELD[0] in line
     assert _lv(doc, w)["angry"] >= S.SHOWN_FROM
     # (hours later it hasn't settled the way a moment's anger does; days later it has)
     later = S.summary(doc, w, NOON + timedelta(hours=6), TZ)
@@ -761,8 +766,9 @@ def test_sweet_talk_that_skips_the_apology_rankles_and_lands_after_one_that_owns
 def test_how_readily_she_lets_go_is_her_own():
     def held(builtin, name, hours):
         w, doc = S.who(builtin=builtin, name=name), S.new()
-        _say(doc, w, [f"(서아를 때린다)" if builtin == "seoa" else "(한채린을 때린다)", "내가 잘못했어"], NOON)
-        return S.grudge(doc, w, NOON + timedelta(hours=hours))
+        _say(doc, w, [f"(서아를 때린다)" if builtin == "seoa" else "(한채린을 때린다)"], NOON)
+        _say(doc, w, ["내가 잘못했어"], NOON + timedelta(minutes=30))  # (past the first minutes: TOO_SOON)
+        return S.grudge(doc, w, NOON + timedelta(minutes=30, hours=hours))
 
     assert held("seoa", "서아", 0) < held("chaerin", "한채린", 0)  # (a sorry moves her more)
     assert held("seoa", "서아", 10) < S.GRUDGE_SHOWN < held("chaerin", "한채린", 10)  # (and it is gone sooner)

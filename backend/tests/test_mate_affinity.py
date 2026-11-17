@@ -101,8 +101,12 @@ def test_her_smiles_count_only_up_to_a_point_and_never_after_something_done_to_h
     assert sum(e["d"] for e in r["log"] if e["why"] == "smiled") == A.SMILED_CAP
     s = A.new()
     talk(s, day(0))
-    talk(s, day(0, 13), "닥쳐", "[smile] 네?")  # (a rude word: her smile doesn't make it a good turn)
-    assert "smiled" not in whys(s)
+    talk(s, day(0, 13), "닥쳐", "[angry] 뭐라고요?")  # (a rude word that landed: no smile, it costs)
+    assert "smiled" not in whys(s) and "rude" in whys(s)
+    t = A.new()
+    talk(t, day(0))
+    talk(t, day(0, 13), "닥쳐 ㅋㅋ", "[laugh] 아 뭐래ㅋㅋ")  # (one she laughed off: her reading stands, it costs nothing)
+    assert "rude" not in whys(t)
 
 
 def test_gifts_count_capped_per_day_and_a_recompute_keeps_them():

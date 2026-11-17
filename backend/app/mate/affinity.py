@@ -116,15 +116,21 @@ _AT_HER = re.compile(r"너를|너한테|너\s?(진짜|이|가|는|도|좀|같은
 _SHOWN = re.compile(r"\[\s*([A-Za-z_]{2,16})\s*(?::\s*[\d.]+)?\s*\]")
 
 
+def aimed(user_text: str, name: str = "") -> bool:
+    """Said to her: "you", her name, or a vocative."""
+    u = user_text or ""
+    return bool(_AT_HER.search(u)) or bool(name and len(name) >= 2 and (name in u or name[-2:] in u))
+
+
 def hostile(user_text: str, name: str = "") -> str | None:
     """What was done to her in this message, as far as the words tell: violence | coercion | threat | demeaning (the worst)."""
     u = user_text or ""
     acted = " ".join(next(g for g in m.groups() if g) for m in _ACTED.finditer(u))
-    aimed = bool(_AT_HER.search(u)) or bool(name and len(name) >= 2 and (name in u or name[-2:] in u))
+    aimed_ = aimed(u, name)
     for kind, lex in (("violence", _VIOLENT), ("coercion", _COERCE), ("threat", _THREAT)):
-        if lex.search(acted) or (aimed and lex.search(u)):
+        if lex.search(acted) or (aimed_ and lex.search(u)):
             return kind
-    if _DEMEAN_TO_HER.search(u) or (aimed and _SLUR.search(u)):
+    if _DEMEAN_TO_HER.search(u) or (aimed_ and _SLUR.search(u)):
         return "demeaning"
     return None
 
@@ -133,6 +139,24 @@ def calm_reply(reply_text: str) -> bool:
     """Her reply shows how she took it, and it wasn't as an attack: expression tags, none of them angry or sad."""
     shown = {t.lower() for t in _SHOWN.findall(reply_text or "")} - {"neutral", "silent"}
     return bool(shown) and not shown & {"angry", "anger", "mad", "annoyed", "pout", "sad", "sadness", "cry", "crying", "hurt"}
+
+
+# a rude word on its own (a short message is said to her), or aimed at her; venting about someone else is not; and a light one
+# with a laugh, between people who know each other, is teasing
+_LIGHT = re.compile(r"바보|멍청|바부|똥멍청|\bdumb\b|\bsilly\b|\bidiot\b", re.I)
+_LAUGH = re.compile(r"ㅋㅋ|ㅎㅎ|\blol\b|haha|ㅋ$|귀엽|귀여", re.I)
+_SHORT_TO_HER = 6  # (characters, spaces out: "닥쳐", "꺼져 진짜", "쓸모없어")
+_CALLED = re.compile(r"(멍청|바보|병신|등신|븅신|찐따)(이)?(아|야)(?![가-힣])")  # (called it: "멍청아")
+_TO_YOU = re.compile(r"닥쳐|꺼져|입 ?닥|\bshut up\b|\bget lost\b|\bscrew you\b", re.I)  # (said to whoever hears it)
+
+
+def rude_to_her(u: str, name: str = "", closeness: float = 0.33) -> bool:
+    if not _RUDE.search(u):
+        return False
+    light_only = not _RUDE.search(_LIGHT.sub("", u))  # (the only rude words in it are light ones)
+    if light_only and _LAUGH.search(u) and closeness >= 0.2:
+        return False  # (teasing)
+    return aimed(u, name) or bool(_TO_YOU.search(u) or _CALLED.search(u)) or len(re.sub(r"\s", "", u)) <= _SHORT_TO_HER
 
 
 _ROMANTIC = re.compile(r"사랑해|좋아해|보고 ?싶|안아 ?줘|안고 ?싶|뽀뽀|자기야|\blove you\b|miss you|\bi like you\b|\bkiss\b|\bhug\b", re.I)
@@ -379,7 +403,8 @@ def advance(r: dict[str, Any], now: datetime, tz: Any) -> None:
     refresh(r, now, tz)
 
 
-def cues(user_text: str, reply_text: str = "", name: str = "", reading: dict[str, Any] | None = None) -> dict[str, Any]:
+def cues(user_text: str, reply_text: str = "", name: str = "", reading: dict[str, Any] | None = None,
+         closeness: float = 0.33) -> dict[str, Any]:
     """What a user turn did, from its words — or from a model's reading of it when there is one (app/mate/gss/appraisal.py);
     either way what she showed of it in her reply has the last word on something done to her."""
     u = user_text or ""
@@ -387,13 +412,15 @@ def cues(user_text: str, reply_text: str = "", name: str = "", reading: dict[str
         from app.mate.gss.appraisal import cues as read_cues
 
         c = read_cues(reading) or {}
-        done = None if reply_text and calm_reply(reply_text) else c.get("hostile")
-        rude = done is not None or bool(c.get("rude"))
+        laughed_off = bool(reply_text) and calm_reply(reply_text)
+        done = None if laughed_off else c.get("hostile")
+        rude = done is not None or (bool(c.get("rude")) and not laughed_off)
         return {"warm": not rude and bool(c.get("warm")), "smiled": not rude and bool(_REPLY_POS.search(reply_text or "")),
                 "rude": rude, "hostile": done, "distress": bool(c.get("distress")) and done is None, "pos": bool(c.get("warm")),
                 "romantic": not rude and bool(c.get("love") or c.get("flirt")), "thanks": not rude and "gratitude" in (reading.get("acts") or [])}
-    done = None if reply_text and calm_reply(reply_text) else hostile(u, name)  # (what she showed of it decides, once she has)
-    rude = done is not None or bool(_RUDE.search(u))
+    laughed_off = bool(reply_text) and calm_reply(reply_text)  # (what she showed of it decides, once she has)
+    done = None if laughed_off else hostile(u, name)
+    rude = done is not None or (rude_to_her(u, name, closeness) and not laughed_off)
     return {"warm": not rude and bool(_POS.search(u)), "smiled": not rude and bool(_REPLY_POS.search(reply_text or "")),
             "rude": rude, "hostile": done, "distress": bool(_DISTRESS.search(u)) and done is None, "pos": bool(_POS.search(u)),
             "romantic": not rude and bool(_ROMANTIC.search(u)), "thanks": not rude and bool(_THANKS.search(u))}
@@ -416,7 +443,7 @@ def credit_turn(r: dict[str, Any], at: datetime, tz: Any, user_text: str = "", r
         r["streak_days"] = r["streak_days"] + 1 if last == day - timedelta(days=1) else 1
         r["active_days"] += 1
         r["last_active_day"] = day.isoformat()
-    c = cues(user_text, reply_text, name, reading)
+    c = cues(user_text, reply_text, name, reading, closeness=float(r["affinity"]) / 100)
     if not t["talked"] and not c["hostile"]:  # (a day that starts with hitting her is no day of talking together)
         t["talked"] = True
         if float(r.get("trust") or 0.0) < trust_room(r) and not float(t.get("hostile") or 0.0):

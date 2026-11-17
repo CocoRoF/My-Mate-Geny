@@ -62,8 +62,8 @@ def test_it_builds_up_she_is_offered_not_answering_and_sorry_twice_doesnt_end_it
     # (a minute apart: it settles a little in between; a bare sorry after being hit is worth little, one that owns it more,
     # and right after it all less still (she needs space) — neither ends it: half an hour on she talks to them again, still
     # angry, and what they did is with her for a day)
-    assert [v for v, _, _ in seen] == pytest.approx([0.45, 0.75, 1.0, 0.96, 0.88], abs=0.02)
-    assert [(f, offered) for _, f, offered in seen] == [(False, False), (False, False), (True, True), (True, True), (True, True)]
+    assert [v for v, _, _ in seen] == pytest.approx([0.6, 0.9, 1.0, 0.96, 0.87], abs=0.02)
+    assert [(f, offered) for _, f, offered in seen] == [(False, False), (True, True), (True, True), (True, True), (True, True)]
     later = EIGHT + timedelta(minutes=34)
     assert not S.furious(doc, w, later, TZ) and S.levels(doc, w, later, TZ)["angry"]["v"] >= 0.45
     assert S.summary(doc, w, EIGHT + timedelta(days=1), TZ)["grudge"]
@@ -72,7 +72,7 @@ def test_it_builds_up_she_is_offered_not_answering_and_sorry_twice_doesnt_end_it
     # (forcing something on her counts the same way as hitting her: no shortcut to the top)
     w2, doc2 = S.who(name="한채린"), S.new()
     S.hear(doc2, w2, "(옷을 벗긴다)", "x", EIGHT, TZ)
-    assert S.levels(doc2, w2, EIGHT, TZ)["angry"]["v"] == pytest.approx(0.45) and not S.furious(doc2, w2, EIGHT, TZ)
+    assert S.levels(doc2, w2, EIGHT, TZ)["angry"]["v"] == pytest.approx(S.HOSTILE) and not S.furious(doc2, w2, EIGHT, TZ)
     # (angry for being hungry or stressed, she is not offered it)
     doc3 = {**S.new(), "feelings": {"angry": {"v": 0.95, "at": A._iso(EIGHT), "why": {"code": "hungry"}}}}
     assert not S.furious(doc3, S.who(), EIGHT, TZ) and S.REFUSE not in S.line(S.summary(doc3, S.who(), EIGHT, TZ))
@@ -81,7 +81,7 @@ def test_it_builds_up_she_is_offered_not_answering_and_sorry_twice_doesnt_end_it
 def test_her_reading_has_the_last_word():
     w, doc = S.who(name="한채린"), S.new()
     S.hear(doc, w, "(한채린을 툭 때린다) ㅋㅋ", "p", EIGHT, TZ)
-    assert S.levels(doc, w, EIGHT, TZ)["angry"]["v"] == pytest.approx(0.45)
+    assert S.levels(doc, w, EIGHT, TZ)["angry"]["v"] == pytest.approx(S.HOSTILE)
     S.reply(doc, w, "[smile] 아 뭐야~ 장난치지 마ㅋㅋ", "(한채린을 툭 때린다) ㅋㅋ", EIGHT, TZ)  # (she took it as play)
     assert S.levels(doc, w, EIGHT, TZ)["angry"]["v"] == 0.0 and not doc.get("hostile")
     w2, doc2 = S.who(name="한채린"), S.new()
@@ -174,8 +174,7 @@ async def test_furious_she_chooses_not_to_answer_and_the_chat_says_so(db, tmp_pa
         await say("안녕")  # (the day's talk: warmth there is to lose)
         warm = store.relation_doc(mid)["affinity"]
         assert (await say("(한채린을 한 대 때린다) 빨리 가"))[0]["text"].startswith("echo[")  # (hurt and sharp: she answers)
-        assert (await say("여자가 왜 말대꾸야"))[0]["text"].startswith("echo[")              # (cold: still)
-        done, deltas = await say("(더 세게 때린다)")                                         # (furious: she is offered it, and takes it)
+        done, deltas = await say("여자가 왜 말대꾸야")                                       # (twice: furious — she is offered it, and takes it)
         assert done["refused"] and done["text"] in {"(한채린은 대답하지 않는다)", "(한채린은 대답하고 싶지 않은 것처럼 보인다)",
                                                     "(한채린은 고개를 돌린 채 아무 말도 하지 않는다)", "(한채린은 들은 척도 하지 않는다)"}
         assert not deltas  # (nothing of [SILENT] ever reached the chat)
@@ -183,7 +182,7 @@ async def test_furious_she_chooses_not_to_answer_and_the_chat_says_so(db, tmp_pa
         assert last["role"] == "assistant" and last["meta"] == {"refused": True} and last["content"] == done["text"]
         assert store.relation_doc(mid)["affinity"] < warm
         assert (await say("미안해"))[0]["refused"]                                          # (once isn't enough after that)
-        # (nor owning it, a minute after being hit: she needs space first — test_it_builds_up… has how it passes)
-        assert (await say("미안해 진짜 잘못했어"))[0]["refused"]
+        # (owning it: coldly, she answers again — a mate without 채린's slowness to forgive; hers is in test_it_builds_up…)
+        assert (await say("미안해 진짜 잘못했어"))[0]["text"].startswith("echo[")
     finally:
         await svc.shutdown()

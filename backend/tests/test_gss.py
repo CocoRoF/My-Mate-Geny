@@ -49,13 +49,18 @@ def test_sarcasm_the_words_miss_lands_and_venting_they_took_for_an_insult_doesnt
     S.hear(words, w, "와 진짜 대단하시네요 ㅎㅎ", "a", NOON, TZ)
     S.hear(model, w, "와 진짜 대단하시네요 ㅎㅎ", "a", NOON, TZ, reading(acts=["insult"], sarcastic=True, intensity=0.6))
     assert S.levels(words, w, NOON, TZ)["angry"]["v"] == 0 < S.levels(model, w, NOON, TZ)["angry"]["v"]
-    # (venting about a boss, with a rude word in it: read later, set right)
-    doc = S.new()
-    S.hear(doc, w, "팀장 진짜 병신같아", "b", NOON, TZ)
+    # (venting about a boss isn't aimed at her even by the words; teasing the words took for an insult: read later, set right)
+    vent = S.new()
+    S.hear(vent, w, "팀장 진짜 병신같아", "v", NOON, TZ)
+    assert S.levels(vent, w, NOON, TZ)["angry"]["v"] == 0
+    doc, w = S.new(), S.who(name="한채린", closeness=0.0)  # (strangers: the words take it at face value)
+    S.hear(doc, w, "너 진짜 멍청하다 ㅋㅋㅋ", "b", NOON, TZ)
     assert S.levels(doc, w, NOON, TZ)["angry"]["v"] > 0 and doc["heard_by"] == "words"
-    assert S.reappraise(doc, w, "팀장 진짜 병신같아", "b", reading(acts=["venting"], aimed_at_her=False), NOON, TZ)
+    S.report(doc, w, "sad", "moderate", "my own reason", NOON, TZ)  # (something of hers in between: it stays)
+    assert S.reappraise(doc, w, "너 진짜 멍청하다 ㅋㅋㅋ", "b", reading(acts=["teasing"], intensity=0.2), NOON, TZ)
     assert S.levels(doc, w, NOON, TZ)["angry"]["v"] == 0 and doc["heard_by"] == "model"
-    assert not S.reappraise(doc, w, "팀장 진짜 병신같아", "b", reading(acts=["venting"], aimed_at_her=False), NOON, TZ)
+    assert S.levels(doc, w, NOON, TZ)["sad"]["v"] == pytest.approx(S.STRENGTHS["moderate"], abs=0.02)
+    assert not S.reappraise(doc, w, "너 진짜 멍청하다 ㅋㅋㅋ", "b", reading(acts=["teasing"]), NOON, TZ)
 
 
 def test_the_relationship_counts_by_the_reading_too():
@@ -181,8 +186,10 @@ def test_an_apology_right_after_something_done_to_her_lands_less():
     def left(minutes):
         doc = S.new()
         S.hear(doc, w, "(한채린을 때린다)", "a", NOON, TZ)
-        S.hear(doc, w, "내가 잘못했어", "b", NOON + timedelta(minutes=minutes), TZ)
-        return S.grudge(doc, w, NOON + timedelta(minutes=minutes)) / S.grudge({**doc, "grudge": doc["before_heard"]["grudge"]}, w, NOON + timedelta(minutes=minutes))
+        at = NOON + timedelta(minutes=minutes)
+        before = S.grudge(doc, w, at)
+        S.hear(doc, w, "내가 잘못했어", "b", at, TZ)
+        return S.grudge(doc, w, at) / before
 
     assert left(5) > left(40)
 
@@ -195,8 +202,9 @@ def test_she_owns_snapping_at_them_when_it_was_her_day():
     assert doc["unfair"]["code"] == "hungry"
     fed = S.who(name="한채린")
     assert S.unfair_line(doc, fed, NOON + timedelta(minutes=10), TZ) == ""  # (too soon)
-    line = S.unfair_line(doc, fed, NOON + timedelta(hours=1), TZ)
-    assert "because you were hungry" in line and S.unfair_line(doc, fed, NOON + timedelta(hours=2), TZ) == ""
+    assert S.unfair_line(doc, fed, NOON + timedelta(hours=1), TZ) == ""  # (still cross from it)
+    line = S.unfair_line(doc, fed, NOON + timedelta(hours=3), TZ)
+    assert "because you were hungry" in line and S.unfair_line(doc, fed, NOON + timedelta(hours=4), TZ) == ""
 
 
 # ---- temperament ----

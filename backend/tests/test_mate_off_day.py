@@ -58,11 +58,11 @@ def _lv(w, at, doc=None):
 # ---- when ----
 
 @pytest.mark.parametrize("seed", [f"mate_{i:012x}" for i in range(8)])
-def test_the_first_within_five_days_then_every_three_to_four_weeks_two_days_long(seed):
+def test_the_first_after_two_weeks_then_every_three_to_four_weeks_two_days_long(seed):
     w = _her(seed)
     starts = _starts(w)
-    assert len(starts) >= 13
-    assert MET <= starts[0] <= MET + timedelta(days=5)
+    assert len(starts) >= 12
+    assert MET + S.OFF_DAY_NOT_BEFORE <= starts[0] <= MET + S.OFF_DAY_NOT_BEFORE + S.OFF_DAY_FIRST  # (not while they hardly know each other)
     for a, b in pairwise(starts):
         assert timedelta(days=21) <= b - a <= timedelta(days=28)
     for s in starts:
@@ -93,18 +93,18 @@ def test_day_one_and_day_two_start_where_they_do_and_never_go_below_the_floor():
     w = _her()
     start = _starts(w)[0]
     first = _lv(w, start)
-    assert first["angry"] == {"v": 0.9, "why": {"code": "off_day"}} and first["sleepy"] == {"v": 0.7, "why": {"code": "off_day"}}
+    assert first["angry"] == {"v": 0.5, "why": {"code": "off_day"}} and first["sleepy"] == {"v": 0.5, "why": {"code": "off_day"}}
     late = _lv(w, start + timedelta(hours=23, minutes=59))
-    assert 0.6 < late["angry"]["v"] < 0.75 and 0.6 < late["sleepy"]["v"] < 0.7  # (easing off very slowly)
+    assert 0.3 < late["angry"]["v"] < 0.4 and 0.35 < late["sleepy"]["v"] < 0.45  # (easing off slowly)
     second = _lv(w, start + timedelta(hours=24))
-    assert second["angry"]["v"] == 0.7 and second["sleepy"]["v"] == 0.7
+    assert second["angry"]["v"] == 0.4 and second["sleepy"]["v"] == 0.5
     t, angry, sleepy = start, [], []
     while t < start + timedelta(hours=48):
         lv = _lv(w, t)
         angry.append(lv["angry"]["v"])
         sleepy.append(lv["sleepy"]["v"])
         t += timedelta(minutes=30)
-    assert min(angry) >= 0.6 and min(sleepy) >= 0.6 and max(angry) == 0.9
+    assert min(angry) >= 0.3 and min(sleepy) >= 0.35 and max(angry) == 0.5
     assert all(a >= b for a, b in pairwise(angry[:48])) and all(a >= b for a, b in pairwise(angry[48:]))
     after = _lv(w, start + timedelta(hours=48))
     assert after["angry"]["v"] == 0.0 and after["sleepy"]["v"] == 0.0  # (over: back to how she usually is)
@@ -154,9 +154,10 @@ def _svc(db):
 def _met_so_that_her_first_began(store, mate_id, ago):
     """Their first meeting put where her first off day began ``ago`` before now."""
     draw = random.Random(f"off_day:{mate_id}").random()
-    met = datetime.now(UTC) - ago - S.OFF_DAY_FIRST * draw
+    met = datetime.now(UTC) - ago - S.OFF_DAY_NOT_BEFORE - S.OFF_DAY_FIRST * draw
     doc = store.relation_doc(mate_id) or A.new()
     doc["started_at"] = A._iso(met)
+    doc["affinity"] = 30.0  # (past being strangers: with one, it is half as strong)
     store.save_relation(mate_id, doc)
 
 
@@ -169,7 +170,8 @@ def test_a_woman_mate_shows_it_and_her_relationship_is_untouched(db):
         _met_so_that_her_first_began(store, m["id"], timedelta(hours=3))
     before = store.relation_doc(her["id"])["affinity"]
     got = store.get(her["id"])["state"]
-    assert got["label"] == "angry" and got["top"][0]["why"] == {"code": "off_day"}
+    assert {t["emotion"] for t in got["top"]} >= {"angry"} and all(t["why"] == {"code": "off_day"} for t in got["top"]
+                                                                if t["emotion"] in ("angry", "sleepy"))
     assert {f["emotion"]: f["why"] for f in mates.state_view(her["id"])["feelings"]}["sleepy"] == {"code": "off_day"}
     assert store.get(him["id"])["state"]["label"] == S.CALM
     mates._relation_turn(her["id"], {"input": "안녕", "text": "[angry] ...안녕.", "meta": None})
