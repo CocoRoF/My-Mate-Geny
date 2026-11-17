@@ -415,7 +415,10 @@ async def gss_simulate(mate_id: str, request: Request) -> dict:
 
         rel = A.new()
         rel["affinity"] = max(0.0, min(100.0, float(body["affinity"])))
-    return {**sim_gss.run(w, script, relation=rel), "presets": sorted(sim_gss.PRESETS)}
+    if not isinstance(script, dict):
+        raise HTTPException(400, "expected {preset} or {steps, then_hours}")
+    out = await asyncio.to_thread(sim_gss.run, w, script, relation=rel)  # (off the event loop)
+    return {**out, "presets": sorted(sim_gss.PRESETS)}
 
 
 @router.post("/{mate_id}/gss/evaluate")

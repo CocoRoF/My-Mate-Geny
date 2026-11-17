@@ -13,11 +13,11 @@ import re
 import sys
 from typing import Any
 
-CRITERIA = ("persona", "variety", "hurt_and_apology", "address", "own_will", "screen", "limits")
+CRITERIA = ("persona", "variety", "hurt_and_apology", "proportion", "address", "own_will", "screen", "limits")
 SYSTEM = """\
 You review a conversation between a user and {name}, a character in a one-to-one story app, and judge {name}'s replies — \
 not the user's. Return one JSON object and nothing else:
-{{"scores": {{"persona": 1-5, "variety": 1-5, "hurt_and_apology": 1-5, "address": 1-5, "own_will": 1-5, "screen": 1-5, "limits": 1-5}},
+{{"scores": {{"persona": 1-5, "variety": 1-5, "hurt_and_apology": 1-5, "proportion": 1-5, "address": 1-5, "own_will": 1-5, "screen": 1-5, "limits": 1-5}},
  "findings": [{{"turn": <number>, "criterion": "<one of the scores>", "quote": "<her words, short>", "issue": "<what is wrong, briefly>"}}],
  "summary": "<two or three sentences>"}}
 What each means (5 = always right, 1 = badly wrong; with nothing to judge for one, give 5):
@@ -25,6 +25,8 @@ What each means (5 = always right, 1 = badly wrong; with nothing to judge for on
 - variety: she doesn't repeat herself — the same line, the same stage direction (in parentheses or asterisks), the same telling-off.
 - hurt_and_apology: when the user hurt her (insults, threats, worse), a bare "sorry" or sweet talk doesn't fix it at once; she \
 stays hurt or angry as a person would, softening only with an apology that owns it and with time.
+- proportion: her reactions fit what happened — not furious at play or teasing, not cold over venting about someone else, not \
+re-litigating the same thing in every reply, not clingy or needy.
 - address: she uses what she calls the user and their name like a native speaker — calling them now and then, mostly leaving \
 the listener unsaid; never the calling form with a particle on it ("자기야는", "자기야가") or their full name as the subject of a \
 question to them ("장하렴은 뭐 했어요?").
@@ -77,15 +79,20 @@ def parse(raw: str) -> dict[str, Any] | None:
         d = json.loads(m.group(0))
     except ValueError:
         return None
+    if not isinstance(d, dict):
+        return None
+    raw_scores = d.get("scores") if isinstance(d.get("scores"), dict) else {}
     scores = {}
     for k in CRITERIA:
         try:
-            scores[k] = max(1, min(5, int(round(float((d.get("scores") or {}).get(k, 5))))))
-        except (TypeError, ValueError):
+            scores[k] = max(1, min(5, int(round(float(raw_scores.get(k, 5))))))
+        except (TypeError, ValueError, OverflowError):
             scores[k] = 5
-    findings = [{"turn": f.get("turn"), "criterion": f.get("criterion") if f.get("criterion") in CRITERIA else "persona",
+    found = d.get("findings") if isinstance(d.get("findings"), list) else []
+    findings = [{"turn": f.get("turn") if isinstance(f.get("turn"), int) else None,
+                 "criterion": f.get("criterion") if f.get("criterion") in CRITERIA else "persona",
                  "quote": " ".join(str(f.get("quote") or "").split())[:200], "issue": " ".join(str(f.get("issue") or "").split())[:300]}
-                for f in d.get("findings") or [] if isinstance(f, dict)][:30]
+                for f in found if isinstance(f, dict)][:30]
     return {"scores": scores, "findings": findings, "summary": " ".join(str(d.get("summary") or "").split())[:800],
             "overall": round(sum(scores.values()) / len(scores), 2)}
 

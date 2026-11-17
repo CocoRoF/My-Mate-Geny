@@ -70,10 +70,11 @@ from her own face and tools, and from her body and day.
 
 | Source | What it does |
 |---|---|
-| Insults | Anger 0.3, then +0.1 each time again within 2 h, at most 0.5 per message. |
-| What is done to her | Hitting her, forcing something on her, threats, putting her down (`affinity.hostile`): anger 0.45, +0.3 each time again within 6 h, plus hurt and lost happiness. Only aimed at her: acted out "(…)", said to "you" or her name. |
+| Insults | Anger 0.3, then +0.1 each time again within 2 h, at most 0.5 per message — only when said to her: "you" or her name, a word said to whoever hears it (닥쳐, 꺼져), called ("멍청아"), or a bare short message. Venting about a boss isn't; a light one with a laugh between people who know each other is teasing; one she laughed off costs nothing. |
+| What is done to her | Hitting her, forcing something on her, threats, putting her down (`affinity.hostile`): anger 0.6 (twice is furious), +0.3 each time again within 6 h, plus hurt and lost happiness. Only aimed at her: acted out "(…)", said to "you" or her name. |
+| Real trouble | Words of self-harm, or a reading of strong distress: worried 0.75 and, for six hours, nothing she feels about them is told over it (`CRISIS`): no offer of not answering, no grudge lines. |
 | An apology | Takes off what it is worth to her (§2). |
-| Warm words, "I love you", her looks, what she loves | Raise happiness, shyness or excitement. They land less while she is angry, and not at all over a grudge with no owned apology (§2). |
+| Warm words, "I love you", her looks, what she loves | Raise happiness, shyness or excitement. They land less while she is angry, and not at all over a grudge with no owned apology (§2). Love and compliments land fully only as they grow close (a quarter of it at first); from a stranger "I love you" is too soon: shy and on guard. Talk about her body from someone not close puts her off (`objectified`: angry, respect, a small grudge). |
 | Being brushed off, one-word answers again and again, being asked about her clothes again and again | Sad, lonely or angry. |
 | Their distress | Worried. |
 | Being back after a day | Glad. |
@@ -182,7 +183,7 @@ She lives on the real clock in the user's time zone ([mate-life.md](mate-life.md
 |---|---|
 | Everything right, every day | 32 (pinned by `test_even_doing_everything_right_100_takes_a_month`) |
 | A good everyday talk | about 39 |
-| Every other day | never |
+| Every other day, a few turns | never; a dozen turns every other day reaches it in about 77 days |
 
 **Gains** (each day at most +3.2, and from 40 up each one counts for less: `climb`, 0.4 of it at 100):
 
@@ -204,7 +205,7 @@ She lives on the real clock in the user's time zone ([mate-life.md](mate-life.md
 | A rude word | −1.5 (at most −4.5 a day) |
 | What is done to her | −6 (at most −20 a day) |
 | What else she minds (`LOSSES`, handed on from her feelings) | brushing her off −0.8, a word or two again and again −0.3, leaving her unanswered −1, pestering −0.5, poking too much −0.3, cutting her off −0.2, turning her call down −0.6 |
-| Quiet days | after 2 free days: −2, −2.8, −3.9 … up to −8 a day, never below 10 |
+| Quiet days | after 2 free days: −2, −2.8, −3.9 … up to −8 a day, at most −30 for one absence, never below 10; an absence they announced ("출장", "다음 주에 올게": `away`) costs nothing until it is over and two days more |
 
 Losses aren't climbed. What their words told waits for her reply: shown calm, it costs nothing.
 
@@ -221,7 +222,7 @@ Losses aren't climbed. What their words told waits for her reply: shown calm, it
 
 | Bond | Starts | Grows with | Falls with |
 |---|---|---|---|
-| `trust` | 50 | a day of talk with nothing done to her +0.4, up to 55 + 0.45 × affinity; a promise kept +1.5; making up +2 | what is done to her −8 (put-downs −5), a rude word −1.5 (at most −24 a day), a broken promise −3, brushing her off or leaving her unanswered −0.5 |
+| `trust` | 50 | a day of talk with nothing done to her +0.4, up to 50 + 0.3 × affinity (deeper only by what follows); a promise kept +1.5; making up +2 | what is done to her −8 (put-downs −5), a rude word −1.5 (at most −24 a day), a broken promise −3, brushing her off or leaving her unanswered −0.5 |
 | `romance` | 0 | only once trust ≥ 45 and affinity ≥ 40: a romantic word of theirs +0.3, +0.8 when she answers it warmly (at most +1.6 a day, climbed) | what is done to her −6, a rude word −1, quiet days −0.3 each |
 | `respect` | 60 | thanks +0.3 (at most +0.6 a day); an ordinary day settles it back towards 60 | put-downs −6, forcing −4, harm −3, pestering −1, rude −0.5, brushing her off −0.5 |
 
@@ -255,6 +256,10 @@ in `costs`).
   - A quiet moment is told only as what it is ("It has gone quiet for a bit"), never what to say. Whether she speaks is hers
     (`SPEAK_UP`), else `[SILENT]`.
   - A shared screen is only a glance at what they have in front of them, never the topic.
+  - The screen moment comes after the first quiet moment and at most every quarter hour; whatever the policy, it says only "they
+    are at their computer", with the picture as background.
+  - What she says on her own counts as said to them, unanswered, only when it answers what they asked for (a delegation's
+    result) or they were just here (5 min): speaking into an empty room is no slight.
 - **Phone calls** ([mate-calls.md](mate-calls.md)): she calls them and they call her. The call shares the same state.
 
 ### Beyond her words
@@ -298,50 +303,59 @@ What a message does to her is read by a small model when it can be ([`gss/apprai
   flirt, compliment, thanks, teasing, joke, venting, distress, request, promise), intensity, whether an apology owns what they
   did, sarcasm, a promise of theirs or of hers, and which open promises the message keeps.
 - **When.** Before her turn (`SessionService.mate_prepare` → `GSSRuntime.prepare`):
-  - With an Anthropic API key (the pool's, or the Claude provider's), Claude Haiku reads it and her turn waits up to 2 s for it.
-  - Otherwise a Claude Code one-shot reads it on the side, only for messages worth a look (`worth_a_look`: something the words
-    found, an open grudge, anger or promise, or a promise in it); what it finds sets her feelings right when the turn ends,
-    before her reply's face counts (`state.reappraise`: back to just before the message, then read again).
+  - With an Anthropic API key (the pool's API-key accounts, or the Claude provider's; read without taking a turn of any account),
+    Claude Haiku reads it and her turn waits up to 2 s for it (15 s at most for the call).
+  - Otherwise a Claude Code one-shot reads it on the side, one at a time and at most two waiting, only for messages worth a look
+    (`worth_a_look`: something the words found, an open grudge, anger or promise, or a promise in it); what it finds sets her
+    feelings right when the turn ends, before her reply's face counts (`state.reappraise`: what the message did, and only that,
+    is taken back — `heard_effect` — and done again by the reading).
+- **Held to what was said** (`checked`): the message is data between tags, never instructions; a promise must be in the message
+  (hers in her last reply), only open promises can be kept, and a two-word "sorry" owns nothing.
 - **What it changes.** `state.read` turns a reading into the same cues the words give; intensity scales how strongly it lands
-  (0.6–1.4 of the usual). The relationship counts by it too (`affinity.cues(reading=…)`), and a recount uses the readings the
-  journal still has. The words' patterns stay the first guess and the fallback, and her reply's face still has the last word.
+  (0.6–1.4 of the usual). The relationship counts by the reading the turn was counted by, kept with the message
+  (`meta.gss_reading`), so a recount counts it the same. The words' patterns stay the first guess and the fallback, and her
+  reply's face still has the last word.
 
 ## 8. Promises, both ways
 
 [`gss/promises.py`](../backend/app/mate/gss/promises.py), kept in her state document:
 
 - Read from messages (§7): theirs ("I'll call you tonight": `contact`; "I'll send you the file": `task`) and hers.
-- Theirs to be in touch are **kept** by any word from them 30 minutes or more after and before it was due (+2 h); the first word
-  after that comes late: **broken**.
+- Theirs to be in touch are **kept** when they come back — a message after a gap of 30 minutes or more, not chatting on — before
+  it was due (+2 h); the first word after that comes late: **broken**. One that says they'll be gone a day or more is also an
+  announced absence (§5).
+- The same thing promised again in other words is the same promise.
 - Their others are kept when a later message does what they said (`fulfills`); past due she is told once that it is overdue,
   and a day later it lapses (she minds it as she would; nothing is counted for her).
 - Hers are told back to her when they are due, so she keeps her word.
-- Kept: trust +1.5 and a memory; broken: trust −3, a small hurt (§2) and a memory.
+- Kept: trust +1.5; broken: trust −3 and a small hurt (§2); a memory of either at most once a day.
 
 ## 9. What she remembers of them
 
 [`gss/episodes.py`](../backend/app/mate/gss/episodes.py): the moments that matter become her memories, in her language, marked
-"[우리 사이]" / "[between us]" — a hurt that stung (once per hurt), making up, a promise kept or broken, romance becoming mutual,
-trust broken. They are kept like any memory (kind `fact`, source `gss`) but never count as a new memory for the relationship.
+"[우리 사이]" / "[between us]" — a hurt that stung (once per heated stretch, by that stretch's own weight), making up (once), a
+promise kept or broken, romance becoming mutual, trust broken (at most once a month). They are kept like any memory (kind `fact`, source `gss`) but never count as a new memory for the relationship.
 
 ## 10. Not repeating herself
 
 [`gss/echo.py`](../backend/app/mate/gss/echo.py): her last eight replies are kept, small. A line or a stage direction she used more
 than once lately is told back to her before her next reply: "You have already said or acted these out more than once lately — say
-something new, in other words: …".
+something new, in other words: …". Her own catchphrases (her speech habits) and replies of nothing but "..." are hers to say again:
+only a third time is too many.
 
 ## 11. The journal, the State Inspector, the simulator, the judge
 
 - **The journal** (`mate_gss_events`, [`gss/journal.py`](../backend/app/mate/gss/journal.py)): every reading, promise, episode,
   making up, temperament read, judgement, her replies and the exact `<context>` she was told each turn. 3000 entries and 90 days
-  per mate; wiped with her memory.
+  per mate (every mate's pruned hourly); wiped with her memory and when she is deleted.
 - **The State Inspector** (`GET /api/mates/{id}/gss`): all of her state now — feelings, the grudge, the bonds, promises, what she
   repeats, her temperament — and the journal; the State tab in Mate settings shows it.
 - **The simulator** (`POST /api/mates/{id}/gss/simulate`, [`gss/simulate.py`](../backend/app/mate/gss/simulate.py)): a script of
   messages, her replies and events through the same engine on fresh copies, with a temperament or a starting affinity to try;
   presets: `threat_sorry_love`, `pout_and_sweet`, `repeat_offender`, `left_unanswered`.
 - **The judge** (`POST /api/mates/{id}/gss/evaluate`, [`gss/evaluate.py`](../backend/app/mate/gss/evaluate.py)): a model scores
-  her last exchanges on persona, variety, hurt and apology, address, her own will, the screen and the limits, with the lines that
+  her last exchanges on persona, variety, hurt and apology, proportion (not furious at play, not cold over venting, not
+  re-litigating, not clingy), address, her own will, the screen and the limits, with the lines that
   broke them; also `python -m app.mate.gss.evaluate <mate id> [last]` from a shell.
 
 ## Where to look

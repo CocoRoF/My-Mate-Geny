@@ -41,14 +41,27 @@ def open_ones(doc: dict[str, Any], who: str | None = None) -> list[dict[str, Any
     return [p for p in listed(doc) if p.get("status") in ("open", "overdue") and (who is None or p.get("who") == who)]
 
 
+def _words(t: str) -> set[str]:
+    import re
+
+    return set(re.findall(r"[\w가-힣]{2,}", (t or "").lower()))
+
+
+def same(a: str, b: str) -> bool:
+    """The same thing said in other words (most of the words shared)."""
+    x, y = _words(a), _words(b)
+    return bool(x and y) and len(x & y) / min(len(x), len(y)) >= 0.6
+
+
 def add(doc: dict[str, Any], who: str, what: str, kind: str, made: datetime, due_hours: float | None,
         message: str = "") -> dict[str, Any] | None:
-    """A new promise (``who``: user | her). The same thing promised again while it is open is the same promise."""
+    """A new promise (``who``: user | her). The same thing promised again while it is open — in other words too — is the same
+    promise."""
     what = " ".join(str(what or "").split())[:160]
     if not what:
         return None
     for p in open_ones(doc, who):
-        if p["what"] == what:
+        if p["what"] == what or same(p["what"], what):
             return None
     due = made + timedelta(hours=due_hours if due_hours is not None else DEFAULT_DUE.get(kind, 48.0))
     p = {"id": "p" + hashlib.sha1(f"{who}|{what}|{_iso(made)}".encode()).hexdigest()[:8], "who": who, "what": what,
@@ -72,10 +85,13 @@ def fulfil(doc: dict[str, Any], ids: list[str], at: datetime) -> list[dict[str, 
     return out
 
 
-def heard_from_them(doc: dict[str, Any], at: datetime) -> list[dict[str, Any]]:
-    """They wrote or called: their promises to be in touch again are kept, or — the first word after one was due — broken.
-    → the ones settled now."""
+def heard_from_them(doc: dict[str, Any], at: datetime, last: datetime | None = None) -> list[dict[str, Any]]:
+    """They wrote or called after a while (``last``: their message before this one): their promises to be in touch again are
+    kept, or — the first word after one was due — broken. Chatting on in the same conversation keeps nothing. → the ones settled
+    now."""
     out = []
+    if last is not None and at - last < CONTACT_AFTER:
+        return out
     for p in open_ones(doc, "user"):
         if p["kind"] != "contact":
             continue
@@ -105,7 +121,7 @@ def lines(doc: dict[str, Any], now: datetime) -> list[str]:
     """What she is told about promises, once each when it matters: theirs overdue or just broken or kept, hers due."""
     out = []
     for p in listed(doc):
-        key = p["status"] + ("" if p["who"] == "user" else "_her")
+        key = p["status"] if p["who"] == "user" else "due_her"  # (hers: told once, when it is due)
         if p.get("told") == key:
             continue
         when = _t(p.get("settled_at") or p.get("due_at")) or now

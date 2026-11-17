@@ -69,7 +69,7 @@ LOSSES = {"dismissed": (0.8, 1.6),      # they brushed her off
 # and she is told the others in words (``bond_words``).
 BONDS = {"trust": 50.0, "romance": 0.0, "respect": 60.0}  # where they start
 TRUST_DAY = 0.4                      # a day of talk with nothing done to her: trust grows, up to what closeness allows
-TRUST_ROOM = (55.0, 0.45)            # …that is up to 55 + 0.45 × affinity
+TRUST_ROOM = (50.0, 0.3)             # …that is up to 50 + 0.3 × affinity: deep trust only from promises kept and making up
 TRUST_HURT = {"violence": 8.0, "coercion": 8.0, "threat": 8.0, "demeaning": 5.0}
 TRUST_RUDE, TRUST_HURT_CAP = 1.5, 24.0
 ROMANCE_FROM = (45.0, 40.0)          # trust and affinity it takes before anything romantic can grow
@@ -84,8 +84,11 @@ BOND_EVENTS = {"dismissed": {"trust": -0.5, "respect": -0.5}, "ignored": {"trust
                "made_up": {"trust": 2.0}}
 GRACE_DAYS = 2                      # quiet days that cost nothing
 DECAY_BASE, DECAY_GROWTH, DECAY_CAP = 2.0, 1.4, 8.0
+ABSENCE_CAP = 30.0                  # all one absence can cost (a long trip doesn't undo a month)
+AWAY_GRACE = timedelta(days=2)      # an absence they said they'd be gone for costs nothing until it is over, and two days more
 FLOOR = 10.0                        # quiet days never take it below this
 CATCHUP_DAYS = 90
+COSTS_KEEP = 1000
 LOG_MAX = 200
 SENSITIVITY = (0.5, 1.5)
 ANNIVERSARIES = (7, 30, 100, 365)
@@ -180,6 +183,7 @@ def new() -> dict[str, Any]:
         "marks": [],  # what the user did by hand ({at, kind: set | reset, v}): a recompute in another zone keeps them
         "gifts": [],  # when they sent her something (credit_gift): no message records it, so a recompute reads it here
         "costs": [],  # what else they did that she minded ({at, code}: ``cost``), for a recompute the same way
+        "away_until": None,  # they said they'd be gone until then (``cost`` "away")
         **BONDS, "bonds_log": [],  # the other bonds and their changes ({at, bond, d, why, v})
     }
 
@@ -188,13 +192,13 @@ def normalized(doc: Any) -> dict[str, Any]:
     out = new()
     if isinstance(doc, dict):
         out.update({k: v for k, v in doc.items() if k in out})
+        if "avatar_v2" not in doc:  # (from when the avatar only followed how she feels if asked to; now unless told not to)
+            out["avatar_mood"] = True
     for b, start in BONDS.items():
         try:
             out[b] = max(0.0, min(100.0, float(out.get(b) if out.get(b) is not None else start)))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             out[b] = start
-        if "avatar_v2" not in doc:  # (from when the avatar only followed how she feels if asked to; now unless told not to)
-            out["avatar_mood"] = True
     out["sensitivity"] = max(SENSITIVITY[0], min(SENSITIVITY[1], float(out.get("sensitivity") or 1.0)))
     out["affinity"] = max(0.0, min(100.0, float(out.get("affinity") or 0.0)))
     return out
@@ -380,11 +384,20 @@ def _settle_day(r: dict[str, Any], d: date, tz: Any) -> None:
     last = _last_talk(r, d)
     if last is None:
         return
-    loss = decay_for((d - last).days) * r["sensitivity"]
+    away = _t(r.get("away_until"))
+    if away is not None:
+        back = (away + AWAY_GRACE).astimezone(tz).date()
+        if d <= back:
+            return  # (they said they'd be gone: nothing to mind yet)
+        if back > last:
+            last = back  # (and the quiet is counted from when they should have been back)
+    silence = (d - last).days
+    spent = sum(decay_for(k) for k in range(1, silence)) * r["sensitivity"]
+    loss = min(decay_for(silence) * r["sensitivity"], max(0.0, ABSENCE_CAP - spent))
     if loss > 0:
         end = datetime.combine(d + timedelta(days=1), time.min, tzinfo=tz)
-        _bump(r, -loss, f"quiet_{(d - last).days}", end, floor=FLOOR)
-        bond(r, "romance", -ROMANCE_QUIET * r["sensitivity"], f"quiet_{(d - last).days}", end, tz)
+        _bump(r, -loss, f"quiet_{silence}", end, floor=FLOOR)
+        bond(r, "romance", -ROMANCE_QUIET * r["sensitivity"], f"quiet_{silence}", end, tz)
 
 
 def advance(r: dict[str, Any], now: datetime, tz: Any) -> None:
@@ -516,12 +529,18 @@ def credit_gift(r: dict[str, Any], at: datetime, tz: Any) -> None:
     refresh(r, at, tz)
 
 
-def cost(r: dict[str, Any], code: str, at: datetime, tz: Any) -> None:
+def cost(r: dict[str, Any], code: str, at: datetime, tz: Any, until: Any = None) -> None:
     """Something else they did that she minded (``LOSSES``; app/mate/state.py noticed it): it costs, up to the day's limit
     for it. Kept in ``costs`` too, since no message records it (``replay``)."""
+    if code == "away":  # (they said they'd be gone until ``until``: the quiet days until then don't count)
+        if r["started_at"] is not None and _t(until) is not None:
+            r["away_until"] = until
+            r["costs"] = [*(r.get("costs") or []), {"at": _iso(at), "code": "away", "until": until}][-COSTS_KEEP:]
+        return
     if (code not in LOSSES and code not in BOND_EVENTS) or not r["enabled"] or r["paused"] or r["started_at"] is None:
         return
-    r["costs"] = [*(r.get("costs") or []), {"at": _iso(at), "code": code}][-200:]
+    entry = {"at": _iso(at), "code": code}
+    before = (r["affinity"], *(r.get(b) for b in BONDS))
     if code in LOSSES:
         each, cap = LOSSES[code]
         t = _today(r, at.astimezone(tz).date())
@@ -532,6 +551,8 @@ def cost(r: dict[str, Any], code: str, at: datetime, tz: Any) -> None:
             _bump(r, -loss, code, at)
     for name, delta in BOND_EVENTS.get(code, {}).items():  # (promises, making up: they move trust; capped per day like the rest)
         bond(r, name, delta * r["sensitivity"], code, at, tz, f"bond_{code}", abs(delta) * 2)
+    if (r["affinity"], *(r.get(b) for b in BONDS)) != before:  # (kept only when it moved something: a capped-out one is nothing)
+        r["costs"] = [*(r.get("costs") or []), entry][-COSTS_KEEP:]
     refresh(r, at, tz)
 
 
@@ -770,7 +791,8 @@ def replay(events: list[tuple[datetime, str, Any]], now: datetime, tz: Any,
         elif what == "gift":
             credit_gift(r, at, tz)
         elif what == "cost" and arg:
-            cost(r, str(arg), at, tz)
+            c = arg if isinstance(arg, dict) else {"code": arg}
+            cost(r, str(c.get("code") or ""), at, tz, c.get("until"))
         elif what == "set" and arg is not None:
             set_value(r, float(arg), at, tz)
         elif what == "reset":

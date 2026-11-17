@@ -963,7 +963,8 @@ class MateService:
             pass
 
     def _life_diaries(self) -> None:
-        """A day has ended: she writes about it, one at a time, on the side."""
+        """A day has ended: she writes about it, one at a time, on the side. (And the GSS journal keeps to its bounds.)"""
+        self.gss.journal.maybe_prune_all()
         for row in self.store._db.query("SELECT id FROM mates WHERE draft = 0"):
             mate_id = row["id"]
             if mate_id in self._diaries:
@@ -1041,8 +1042,11 @@ class MateService:
         summary = self._state_event(mate_id, (lambda doc, who, at, zone: S.hear(doc, who, said["content"], said["id"], at, zone, reading))
                                     if said else None)
         feeling = ""
-        if (st.get("state") != S.signature(summary) or turn - int(st.get("state_turn") or 0) >= 10
-                or S.worth_repeating(summary)):
+        changed = st.get("state") != S.signature(summary)
+        strong = int(st.get("strong_n") or 0) + 1 if S.worth_repeating(summary) and not changed else 0
+        st["strong_n"] = strong
+        # (strong feelings are told again so they don't fade from a long talk — for three turns, then every fourth, not on and on)
+        if changed or turn - int(st.get("state_turn") or 0) >= 10 or (strong and (strong <= 3 or strong % 4 == 0)):
             st["state"], st["state_turn"] = S.signature(summary), turn
             feeling = S.line(summary)
         if (prefs.get("self_outfit") or "auto") == "off":
@@ -1087,7 +1091,7 @@ class MateService:
         before = A.clone(doc)
         A.advance(doc, now, tz)
         for e in owed:
-            A.cost(doc, str(e.get("code") or ""), now, tz)
+            A.cost(doc, str(e.get("code") or ""), now, tz, e.get("until"))
         if doc != before:
             self._save_relation(mate_id, doc, before)
 
@@ -1131,7 +1135,10 @@ class MateService:
             def own(doc: dict[str, Any], who: dict[str, Any], now: datetime, tz: Any) -> None:
                 if delegated:
                     S.work(doc, who, ok, now, tz)
-                if text.strip():
+                last = A._t(doc.get("heard_at"))
+                # (what she said on her own counts as said to them, unanswered, only if it answers what they asked for (a
+                # delegation's result) or they were just here: else she spoke into an empty room, and no answer is no slight)
+                if text.strip() and (delegated or (last is not None and now - last <= timedelta(minutes=5))):
                     S.spoke(doc, text, now)
 
             self._state_event(mate_id, own)
@@ -1169,8 +1176,8 @@ class MateService:
                 line += f", talking {streak} days in a row"
             lines.append(line + ".")
             if distant:
-                lines.append("It has been a while since you two talked: you still know them — be a little more "
-                             "reserved for now and let it close naturally as you talk. Never mention the gap.")
+                lines.append("It has been a while since you two talked: you still know them — a little more reserved for now, "
+                             "and let it close naturally as you talk. You may notice it as anyone would, lightly and without blame.")
             st["rel"], st["rel_turn"] = sig, turn
         return lines
 
@@ -1185,8 +1192,6 @@ class MateService:
             rows = self._svc._db.query(
                 "SELECT id, role, content, meta, created_at FROM messages WHERE session_id = ? AND role IN "
                 "('user', 'assistant') ORDER BY created_at, rowid", (sid,))
-            readings = {e["data"].get("message"): e["data"] for e in self.gss.journal.recent(mate["id"], limit=1000, layers=["heard"])
-                        if e["kind"] == "reading"}  # (a model's reading of a message, while the journal still has it)
             pending: tuple[datetime, str, Any] | None = None
             for r in rows:
                 try:
@@ -1201,7 +1206,8 @@ class MateService:
                 if r["role"] == "user":
                     if pending:
                         events.append((pending[0], "turn", (pending[1], "", pending[2])))
-                    pending = None if meta.get("internal") else (at, r["content"] or "", readings.get(r["id"]))
+                    # (the model's reading this turn was counted by, when there was one: kept with the message)
+                    pending = None if meta.get("internal") else (at, r["content"] or "", meta.get("gss_reading") or None)
                 elif pending:
                     events.append((pending[0], "turn", (pending[1], r["content"] or "", pending[2])))
                     pending = None
@@ -1217,10 +1223,10 @@ class MateService:
             at = A._t(g)
             if at is not None:
                 events.append((at, "gift", None))
-        for c in kept.get("costs") or []:  # (nor what she minded: A.cost)
+        for c in kept.get("costs") or []:  # (nor what she minded, promises, making up, an absence they announced: A.cost)
             at = A._t(c.get("at")) if isinstance(c, dict) else None
             if at is not None and c.get("code"):
-                events.append((at, "cost", c["code"]))
+                events.append((at, "cost", c))
         return events
 
     def _recompute(self, mate_id: str, settings: dict[str, Any] | None = None,
@@ -1430,6 +1436,10 @@ class MateService:
             name = (self.store.get(mate_id).get("name") if mate_id else "") or ""
             said = self._users_latest(self.store.get(mate_id).get("session_id") or "") if mate_id else None
             reading = self.gss.appraiser.get(said["id"]) if said else None
+            if said:  # (the reading this turn was counted by, kept with the message: a recount counts it the same)
+                self.store._db.execute("UPDATE messages SET meta = json_set(CASE WHEN json_valid(meta) AND json_type(meta) = 'object' THEN meta "
+                                       "ELSE '{}' END, '$.gss_reading', json(?)) WHERE id = ?",
+                                       (json.dumps(reading, ensure_ascii=False) if reading else "null", said["id"]))
             # (her refusal's line is no reply of hers: she showed nothing, so the guess stands)
             A.credit_turn(doc, now, tz, str(outcome.get("input") or ""), "" if outcome.get("refused") else str(outcome.get("text") or ""), name,
                           reading)

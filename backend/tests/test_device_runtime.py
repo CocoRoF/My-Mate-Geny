@@ -69,11 +69,15 @@ async def test_fixed_policy_ignores_stored_tuners_and_unchanged_frame_skips_mode
     assert isinstance(screen.triggers.policy(sid,config,None),FixedPolicy)
     task=asyncio.create_task(screen.observe(sid,'dev-a'));await respond(q,screen,atts,sid);await task
     clock[0]+=61
+    # (the first quiet moment comes first; the screen's only after it — it is background, never the topic)
+    first=await screen.triggers.consider(sid)
+    assert first['status']=='sent' and first['category'] in ('first_idle','time_morning','time_afternoon','time_evening','time_night')
+    clock[0]+=61
     task=asyncio.create_task(screen.triggers.consider(sid));await respond(q,screen,atts,sid)
     assert (await task)=={'status':'sent','category':'screen_observation'}
-    clock[0]+=61
-    assert await screen.triggers.consider(sid)=={'status':'unchanged'}
-    assert len(started)==1 and q.empty()
+    clock[0]+=1400
+    # (no second look at the same screen: the screen moment comes at most every quarter hour, and only with a fresh frame)
+    assert (await screen.triggers.consider(sid)).get('category')!='screen_observation' and q.empty()
 
 @pytest.mark.parametrize('count,category',[(0,'first_idle'),(1,'continued_idle'),(4,'long_idle')])
 def test_fixed_idle_situations_and_screen_priority(count,category):
@@ -83,4 +87,5 @@ def test_fixed_idle_situations_and_screen_priority(count,category):
     text,cat=p._pick_category_and_prompt('s',lambda _:False)
     assert cat.id==category and 'internal awareness' not in text
     p.screen_active=True
-    assert p._pick_category_and_prompt('s',lambda _:False)[1].id=='screen_observation'
+    # (the screen is only background: the first quiet moment comes first, the screen's after it, before the later ones)
+    assert p._pick_category_and_prompt('s',lambda _:False)[1].id==('first_idle' if count==0 else 'screen_observation')

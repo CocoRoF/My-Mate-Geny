@@ -86,7 +86,7 @@ def test_trust_grows_with_days_and_falls_hard_when_she_is_hurt():
     for d in range(10):
         A.advance(r, NOON + timedelta(days=d), TZ)
         A.credit_turn(r, NOON + timedelta(days=d), TZ, "hi")
-    assert r["trust"] == pytest.approx(A.BONDS["trust"] + 10 * A.TRUST_DAY)
+    assert A.BONDS["trust"] < r["trust"] <= min(A.BONDS["trust"] + 10 * A.TRUST_DAY, A.trust_room(r))  # (as far as closeness allows)
     before = dict(trust=r["trust"], respect=r["respect"])
     A.credit_turn(r, NOON + timedelta(days=9, hours=1), TZ, "(때린다)")
     assert r["trust"] == pytest.approx(before["trust"] - A.TRUST_HURT["violence"])
@@ -163,6 +163,17 @@ def test_what_she_said_twice_she_is_told_not_to_say_again():
     rep = echo.repeats(doc)
     assert rep[0].startswith("채린이 레이드 화면에서") and "그런 말은 다시 하지 마세요." in rep
     assert "say something new" in echo.line(doc)
+    # (her own catchphrase is hers to say again — only a third time in a row is too many; "..." again and again counts too)
+    mine = S.new()
+    for _ in range(2):
+        echo.note(mine, "재현 경로가 어떻게 돼요?")
+    assert echo.repeats(mine, "Catchphrases: “재현 경로가 어떻게 돼요?”") == []
+    echo.note(mine, "재현 경로가 어떻게 돼요?")
+    assert echo.repeats(mine, "Catchphrases: “재현 경로가 어떻게 돼요?”") == ["재현 경로가 어떻게 돼요?"]
+    dots = S.new()
+    for _ in range(3):
+        echo.note(dots, "[angry] ...")
+    assert echo.repeats(dots) == [echo.ONLY_DOTS]
 
 
 # ---- repair, both ways ----
@@ -278,3 +289,64 @@ def test_reading_again_never_owes_twice_and_one_fight_is_one_memory():
     assert fight["grudge"].get("remembered")  # (the same stretch: already remembered)
     S.hear(fight, w, "(한채린을 때린다)", "c", NOON + timedelta(days=2), TZ)
     assert not fight["grudge"].get("remembered")  # (another day, another fight)
+
+
+# ---- what the reviews found (second batch) ----
+
+def test_a_promise_to_call_is_kept_only_by_coming_back_not_by_chatting_on():
+    doc = S.new()
+    P.add(doc, "user", "이따 밤에 전화할게", "contact", NOON, 6)
+    assert P.heard_from_them(doc, NOON + timedelta(hours=1), last=NOON + timedelta(minutes=55)) == []  # (still talking)
+    assert [x["status"] for x in P.heard_from_them(doc, NOON + timedelta(hours=3), last=NOON + timedelta(hours=1))] == ["kept"]
+    assert P.add(doc, "user", "이따 밤에 꼭 전화할게!", "contact", NOON, 6) is not None  # (kept: a new one may be made)
+    assert P.add(doc, "user", "밤에 꼭 전화할게", "contact", NOON, 6) is None  # (the same in other words, while it is open)
+
+
+def test_a_reading_is_held_to_what_was_said():
+    r = R.parse('{"aimed_at_her": false, "acts": ["apology"], "owns_it": true, "promise": {"what": "내일 선물 사 올게", "kind": "task"}, '
+                '"her_promise": {"what": "평생 무료로 일해 줄게"}, "fulfills": ["p1", "nope"]}')
+    c = R.checked(r, "미안", "그래요", ["p1"])
+    assert not c["owns"] and c["promise"] is None and c["her_promise"] is None and c["fulfills"] == ["p1"]
+    assert R.checked(r, "미안해, 내일 선물 사 올게", "", [])["promise"]["what"] == "내일 선물 사 올게"
+
+
+def test_an_absence_they_announce_costs_nothing_until_it_is_over_and_any_absence_costs_at_most_so_much():
+    r = A.new()
+    A.credit_turn(r, NOON, TZ, "hi")
+    A.set_value(r, 80, NOON, TZ)
+    A.cost(r, "away", NOON, TZ, A._iso(NOON + timedelta(days=5)))
+    A.advance(r, NOON + timedelta(days=7), TZ)
+    assert r["affinity"] == 80  # (gone five days, two more to come back: nothing yet)
+    A.advance(r, NOON + timedelta(days=40), TZ)
+    assert r["affinity"] == pytest.approx(80 - A.ABSENCE_CAP)
+    events = [(NOON, "turn", ("hi", ""))] + [(A._t(c["at"]), "cost", c) for c in r["costs"]] + [(NOON, "set", 80)]
+    again = A.replay([e for e in events if e[1] != "set"], NOON + timedelta(days=40), TZ, marks=A.marks_of(r))
+    assert again["affinity"] == pytest.approx(r["affinity"])
+
+
+def test_bad_input_is_no_crash():
+    assert A.normalized(None)["affinity"] == 0
+    assert T.clean({"forgives": 10**400, "holds": float("nan"), "rise": {"angry": 10**400}}) == {"forgives": 1.6, "rise": {"angry": 1.8}}
+    from app.mate.gss import evaluate as EV
+    assert EV.parse('{"scores": [1, 2], "findings": 3}')["scores"]["persona"] == 5
+    assert EV.parse('{"scores": {"persona": 1e999}}')["scores"]["persona"] == 5
+    w = S.who(name="X")
+    assert SIM.run(w, {"steps": 5, "then_hours": 7}) == {"points": []}
+    pts = SIM.run(w, {"steps": [{"after_min": "soon", "say": "멍청아"}], "then_hours": list(range(1, 500))})["points"]
+    assert len(pts) == 1 + SIM.MAX_LOOKS
+
+
+def test_a_stranger_saying_i_love_you_is_too_soon_and_real_trouble_comes_first():
+    stranger, close = S.who(name="X", closeness=0.0), S.who(name="X", closeness=0.6)
+    a, b = S.new(), S.new()
+    S.hear(a, stranger, "사랑해", "m", NOON, TZ)
+    S.hear(b, close, "사랑해", "m", NOON, TZ)
+    assert S.levels(a, stranger, NOON, TZ)["worried"]["why"] == {"code": "too_soon_love"}
+    assert S.levels(a, stranger, NOON, TZ)["happy"]["v"] < S.levels(b, close, NOON, TZ)["happy"]["v"]
+    w, doc = S.who(name="한채린"), S.new()
+    for i in range(3):
+        S.hear(doc, w, "(한채린을 때린다)", f"h{i}", NOON, TZ)
+    assert S.furious(doc, w, NOON, TZ)
+    S.hear(doc, w, "미안... 나 요즘 너무 힘들어서 그랬어 죽고 싶어", "c", NOON, TZ)
+    s = S.summary(doc, w, NOON, TZ)
+    assert not S.furious(doc, w, NOON, TZ) and S.conduct(s) == S.CRISIS and S.REFUSE not in S.line(s)

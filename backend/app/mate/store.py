@@ -1322,6 +1322,7 @@ class MateStore:
             self._db.execute("DELETE FROM mate_relation WHERE mate_id = ?", (mate_id,))
             self._db.execute("DELETE FROM mate_state WHERE mate_id = ?", (mate_id,))
             self._db.execute("DELETE FROM mate_life WHERE mate_id = ?", (mate_id,))
+            self._db.execute("DELETE FROM mate_gss_events WHERE mate_id = ?", (mate_id,))  # (it quotes what was said)
             self._db.execute("DELETE FROM mate_style_changes WHERE mate_id = ?", (mate_id,))
             self._db.execute("DELETE FROM mate_settings WHERE key = ?", (f"styleok:{mate_id}",))
             self._db.execute("DELETE FROM mate_settings WHERE key = ?", (f"memchg:{mate_id}",))

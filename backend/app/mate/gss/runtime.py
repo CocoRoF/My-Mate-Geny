@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -17,6 +18,9 @@ from app.mate.gss.appraisal import MODEL, Appraiser
 from app.mate.gss.journal import Journal
 
 RECENT = 6
+AWAY_WORDS = re.compile(r"출장|여행|한동안|며칠 ?(동안|간)? ?(못|안)|다녀올게|휴가|입원|군대|\bbusiness trip\b|\bvacation\b|"
+                        r"\bfor a (few|couple of) days\b|\bfor a while\b", re.I)
+AWAY_GUESS = timedelta(days=3)  # (gone, with no word of how long)
 HURT_EPISODE_FROM = S.GRUDGE_STINGS  # (a hurt worth remembering: one that stung)
 
 
@@ -31,27 +35,26 @@ class GSSRuntime:
 
     # ---- the model: an API key's fast way, else a Claude Code one-shot ----
 
-    def _fast_key(self) -> Any:
-        """An Anthropic API key and what to call when done (the pool's, else the Claude provider's), or None."""
+    def _fast_key(self) -> str | None:
+        """An Anthropic API key, read without taking a turn of any account (the pool's balancing is for the chats), or None:
+        the pool's API-key accounts, else the Claude provider's key."""
         svc = self.mates._svc
         pool = svc._pool
         if pool is not None:
             for name in ("anthropic", "claude"):
                 try:
-                    lease = pool.select(name, begin_turn=True)
-                except Exception:  # noqa: BLE001 - no account of that kind
-                    lease = None
-                if lease is None:
-                    continue
-                if lease.api_key and (name == "anthropic" or lease.auth_mode == "api_key"):
-                    return lease.api_key, (lambda lease=lease: (pool.end_turn(lease), pool.release(lease)))
-                pool.end_turn(lease)
-                pool.release(lease)
+                    accounts = pool.list(name)
+                except Exception:  # noqa: BLE001 - no such provider
+                    accounts = []
+                for acc in accounts:
+                    if (name == "anthropic" or acc.get("auth_mode") == "api_key") and acc.get("enabled", 1) not in (0, False):
+                        key = pool.api_key(acc)
+                        if key:
+                            return key
         try:
-            key = svc._providers.resolved_api_key("claude")
+            return svc._providers.resolved_api_key("claude") or None
         except Exception:  # noqa: BLE001
-            key = None
-        return (key, None) if key else None
+            return None
 
     async def _slow(self, system: str, user: str) -> str | None:
         """Claude Code on the lightest model, no tools, nothing on disk: one answer."""
@@ -100,7 +103,8 @@ class GSSRuntime:
                 return await Appraiser._ask_api(fast, system, user)
             except Exception:  # noqa: BLE001
                 pass
-        return await self._slow(system, user)
+        async with self.appraiser.slow_gate:  # (one Claude Code one-shot at a time: this machine is tight on memory)
+            return await self._slow(system, user)
 
     # ---- before her turn ----
 
@@ -139,8 +143,10 @@ class GSSRuntime:
                        or bool(P.open_ones(doc)))
         settled: list[dict[str, Any]] = []
 
+        last = A._t(doc.get("heard_at"))  # (their message before this one)
+
         def contact(d: dict[str, Any], who: dict[str, Any], at: datetime, zone: Any) -> None:
-            settled.extend(P.heard_from_them(d, at))
+            settled.extend(P.heard_from_them(d, at, last))
             for p in settled:
                 if p["status"] == "broken":
                     S.broken_promise(d, who, p["what"], at, zone)
@@ -149,6 +155,8 @@ class GSSRuntime:
         self.mates._state_event(mate_id, contact)
         self._promises_settled(mate_id, mate, settled, now, tz)
         self._repair(mate_id, mate, now, tz)
+        if AWAY_WORDS.search(said["content"] or ""):  # (they say they'll be gone: the quiet days until then count for nothing)
+            self.mates._relation_costs(mate_id, [{"code": "away", "until": A._iso(now + AWAY_GUESS)}], now, tz)
         await self.appraiser.read(mate_id, said["id"], mate["name"], said["content"], self._recent(sid, said["id"]),
                                   P.open_ones(self.store.state_doc(mate_id)), words=words, open_things=open_things)
 
@@ -175,6 +183,8 @@ class GSSRuntime:
         self.mates._state_event(mate_id, promises)
         for p in made:
             self.journal.record(mate_id, "promise", "made", p)
+            if p["who"] == "user" and p["kind"] == "contact" and P._t(p["due_at"]) and P._t(p["due_at"]) - now >= timedelta(hours=20):
+                self.mates._relation_costs(mate_id, [{"code": "away", "until": p["due_at"]}], now, tz)  # (back by then, they said)
         self._promises_settled(mate_id, mate, kept, now, tz)
 
     def _promises_settled(self, mate_id: str, mate: dict[str, Any], settled: list[dict[str, Any]], now: datetime, tz: Any) -> None:
@@ -183,7 +193,8 @@ class GSSRuntime:
             self.journal.record(mate_id, "promise", p["status"], p)
             if p.get("who") == "user" and p["status"] in ("kept", "broken"):
                 costs.append({"code": f"promise_{p['status']}"})
-                self._remember(mate, f"promise_{p['status']}", {"what": p["what"]}, now)
+                if not self._remembered(mate_id, f"promise_{p['status']}", days=1):  # (one a day: they don't crowd out the rest)
+                    self._remember(mate, f"promise_{p['status']}", {"what": p["what"]}, now)
         if costs:
             self.mates._relation_costs(mate_id, costs, now, tz)
 
@@ -213,7 +224,7 @@ class GSSRuntime:
             if text.strip() and not outcome.get("refused"):
                 echo.note(d, text)
             g = d.get("grudge") if isinstance(d.get("grudge"), dict) else None
-            if g and float(g.get("peak") or 0) >= HURT_EPISODE_FROM and not g.get("remembered") and S.grudge(d, who, at) >= S.GRUDGE_SHOWN:
+            if g and float(g.get("weight") or 0) >= HURT_EPISODE_FROM and not g.get("remembered") and S.grudge(d, who, at) >= S.GRUDGE_SHOWN:
                 g["remembered"] = True
                 hurt.append(dict(g))
 
@@ -229,12 +240,13 @@ class GSSRuntime:
             was, now_words = A.bond_words(before), A.bond_words(rel)
             if was["romance"] != "mutual" and now_words["romance"] == "mutual" and not self._remembered(mate_id, "romance"):
                 self._remember(mate, "romance", {}, now)
-            if was["trust"] != "broken" and now_words["trust"] == "broken":
+            if was["trust"] != "broken" and now_words["trust"] == "broken" and not self._remembered(mate_id, "trust_broken", days=30):
                 self._remember(mate, "trust_broken", {}, now)
 
-    def _remembered(self, mate_id: str, kind: str) -> bool:
-        return bool(self.store._db.query_one("SELECT 1 FROM mate_gss_events WHERE mate_id = ? AND layer = 'episode' AND kind = ?",
-                                             (mate_id, kind)))
+    def _remembered(self, mate_id: str, kind: str, days: int | None = None) -> bool:
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds") if days else ""
+        return bool(self.store._db.query_one("SELECT 1 FROM mate_gss_events WHERE mate_id = ? AND layer = 'episode' AND kind = ? "
+                                             "AND at >= ?", (mate_id, kind, since)))
 
     def _remember(self, mate: dict[str, Any], kind: str, data: dict[str, Any], at: datetime) -> None:
         """A moment between them, as one of her memories (never counted as a new memory for the relationship)."""
@@ -283,7 +295,9 @@ class GSSRuntime:
         self.mates._state_event(mate_id, lines)
         out += told + unfair
         doc = self.store.state_doc(mate_id)
-        rep = echo.line(doc)
+        prefs = mate.get("prefs") or {}
+        rep = echo.line(doc, " ".join(str(x or "") for x in (prefs.get("speech_style"), (prefs.get("defaults") or {}).get("speech_style"),
+                                                            (mate.get("persona") or {}).get("personality"))))
         if rep and st.get("echo") != rep:
             st["echo"] = rep
             out.append(rep)
@@ -309,9 +323,8 @@ class GSSRuntime:
         try:
             system, user = T.request(mate.get("persona") or {}, mate["name"])
             found = T.parse(await self.ask(system, user) or "")
-            if found:
-                prefs = dict(mate.get("prefs") or {})
-                self.store.update(mate_id, {"prefs": {**prefs, "temperament": found}})
+            if found:  # (only that: whatever else was changed meanwhile stays)
+                self.store.update(mate_id, {"prefs": {"temperament": found}})
                 self.journal.record(mate_id, "temperament", "derived", found)
             return found
         finally:

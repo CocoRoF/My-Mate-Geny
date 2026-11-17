@@ -16,7 +16,15 @@ from app.mate import affinity as A
 from app.mate import state as S
 
 START = datetime(2026, 1, 5, 20, 0, tzinfo=timezone.utc)  # (a Monday evening, nothing special about it)
-MAX_STEPS = 60
+MAX_STEPS, MAX_LOOKS = 60, 20
+
+
+def _minutes(v: Any) -> float:
+    try:
+        x = float(v or 0.0)
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+    return 0.0 if x != x else max(0.0, min(60 * 24 * 14, x))
 
 PRESETS: dict[str, dict[str, Any]] = {
     "threat_sorry_love": {"steps": [{"after_min": 0, "say": "죽여버린다 너"}, {"after_min": 1, "say": "미안"},
@@ -51,11 +59,13 @@ def run(w: dict[str, Any], script: dict[str, Any], *, relation: dict[str, Any] |
     rel["enabled"], rel["paused"] = True, False
     if rel.get("started_at") is None:
         rel["started_at"] = A._iso(START - timedelta(days=1))
-    w = {**copy.deepcopy(w), "closeness": float(rel["affinity"]) / 100}
+    # (her own day and what she has on are left out: the same script always gives the same curves)
+    w = {**copy.deepcopy(w), "closeness": float(rel["affinity"]) / 100, "life": None, "outfit": None}
     at, minute, points = START, 0.0, []
-    steps = [s for s in (script.get("steps") or []) if isinstance(s, dict)][:MAX_STEPS]
+    steps = script.get("steps") if isinstance(script.get("steps"), list) else []
+    steps = [s for s in steps if isinstance(s, dict)][:MAX_STEPS]
     for i, step in enumerate(steps):
-        gap = max(0.0, min(60 * 24 * 14, float(step.get("after_min") or 0.0)))
+        gap = _minutes(step.get("after_min"))
         at, minute = at + timedelta(minutes=gap), minute + gap
         A.advance(rel, at, timezone.utc)
         said = str(step.get("say") or "").strip()
@@ -81,7 +91,9 @@ def run(w: dict[str, Any], script: dict[str, Any], *, relation: dict[str, Any] |
         for owed in S.take_owed(doc):
             A.cost(rel, owed["code"], at, timezone.utc)
         points.append(_point(doc, rel, w, at, minute, label))
-    for h in sorted({float(x) for x in script.get("then_hours") or [] if isinstance(x, (int, float)) and 0 < x <= 24 * 30}):
+    looks = script.get("then_hours") if isinstance(script.get("then_hours"), list) else []
+    hours = sorted({float(x) for x in looks if isinstance(x, (int, float)) and not isinstance(x, bool) and 0 < x <= 24 * 30})
+    for h in hours[:MAX_LOOKS]:
         t = at + timedelta(hours=h)
         A.advance(rel, t, timezone.utc)
         points.append(_point(doc, rel, w, t, minute + h * 60, f"+{h:g} h"))

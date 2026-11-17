@@ -28,6 +28,14 @@ Emotions: happy, excited, shy, angry, sad, lonely, worried, sleepy. Leave out wh
 text only; don't invent traits it doesn't suggest."""
 
 
+def _num(v: Any) -> float:
+    """A number as a float, however big (a huge one is just big; NaN stays NaN and is dropped by the caller)."""
+    try:
+        return float(v)
+    except OverflowError:
+        return float("inf") if v > 0 else float("-inf")
+
+
 def clean(raw: Any) -> dict[str, Any]:
     """A temperament as the engine takes it: known keys, clamped (anything else dropped)."""
     if not isinstance(raw, dict):
@@ -37,15 +45,15 @@ def clean(raw: Any) -> dict[str, Any]:
         lo, hi = RANGES[key]
         d = raw.get(key)
         if isinstance(d, dict):
-            vals = {e: round(max(lo, min(hi, float(v))), 2) for e, v in d.items()
-                    if e in EMOTIONS and isinstance(v, (int, float)) and not isinstance(v, bool)}
+            vals = {e: round(max(lo, min(hi, _num(v))), 2) for e, v in d.items()
+                    if e in EMOTIONS and isinstance(v, (int, float)) and not isinstance(v, bool) and _num(v) == _num(v)}
             if vals:
                 out[key] = vals
     for key in ("forgives", "holds", "sweet_until"):
         v = raw.get(key)
-        if isinstance(v, (int, float)) and not isinstance(v, bool):
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and _num(v) == _num(v):
             lo, hi = RANGES[key]
-            out[key] = round(max(lo, min(hi, float(v))), 2)
+            out[key] = round(max(lo, min(hi, _num(v))), 2)
     if raw.get("conflict") in CONFLICT:
         out["conflict"] = raw["conflict"]
     if raw.get("attachment") in ATTACHMENT:

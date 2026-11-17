@@ -58,5 +58,15 @@ class Journal:
         self._db.execute("DELETE FROM mate_gss_events WHERE mate_id = ? AND id NOT IN (SELECT id FROM mate_gss_events "
                          "WHERE mate_id = ? ORDER BY id DESC LIMIT ?)", (mate_id, mate_id, KEEP))
 
+    def maybe_prune_all(self, every_s: float = 3600) -> None:
+        """Every mate's journal to its bounds (KEEP, DAYS), at most once an hour (a mate who stopped talking too)."""
+        import time
+
+        if time.monotonic() - getattr(self, "_pruned_at", -1e9) < every_s:
+            return
+        self._pruned_at = time.monotonic()
+        for r in self._db.query("SELECT DISTINCT mate_id FROM mate_gss_events"):
+            self.prune(r["mate_id"])
+
     def wipe(self, mate_id: str) -> None:
         self._db.execute("DELETE FROM mate_gss_events WHERE mate_id = ?", (mate_id,))

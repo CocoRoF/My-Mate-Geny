@@ -53,7 +53,13 @@ def test_grace_days_then_accelerating_decay_with_cap_and_floor():
                       ("quiet_8", -8.0)]
     assert r["affinity"] == pytest.approx(80 - 29.89)
     A.advance(r, day(40), TZ)
-    assert r["affinity"] == A.FLOOR  # never below the floor
+    assert r["affinity"] == pytest.approx(80 - A.ABSENCE_CAP)  # (one absence costs at most this much)
+    low = A.new()
+    talk(low, day(0))
+    A.set_value(low, 25, day(0), TZ)
+    A.advance(low, day(40), TZ)
+    assert low["affinity"] == A.FLOOR  # never below the floor
+    r = A.clone(low)
     again = A.clone(r)
     A.advance(again, day(40, 18), TZ)
     assert again == r  # (the same day: nothing more)
@@ -218,7 +224,7 @@ def test_what_she_minds_costs_too_each_up_to_a_day_and_a_recompute_keeps_it():
     assert r["affinity"] == pytest.approx(50 - cap)
     A.cost(r, "ignored", day(0, 14), TZ)
     A.cost(r, "no_such_thing", day(0, 14), TZ)
-    assert whys(r)[-1] == "ignored" and len(r["costs"]) == 5  # (only what she minds; the over-limit ones are kept as they were)
+    assert whys(r)[-1] == "ignored" and len(r["costs"]) == 3  # (only what moved something: over the day's limit, nothing kept)
     A.advance(r, day(1, 9), TZ)
     A.cost(r, "dismissed", day(1, 9), TZ)  # (a new day: it costs again)
     assert [e["d"] for e in r["log"] if e["why"] == "dismissed"][-1] == -each
