@@ -253,6 +253,7 @@ export default {
   crit_own_will: "Her own will",
   crit_screen: "The screen",
   crit_limits: "Limits",
+  crit_proportion: "Proportion",
   simStart: "Start",
   simAfterM: "+{m}m",
   simAfterH: "+{h}h",

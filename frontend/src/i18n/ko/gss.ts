@@ -253,6 +253,7 @@ const ko: Messages<"gss"> = {
   crit_own_will: "스스로의 뜻",
   crit_screen: "화면",
   crit_limits: "지켜야 할 선",
+  crit_proportion: "반응의 균형",
   simStart: "시작",
   simAfterM: "+{m}분",
   simAfterH: "+{h}시간",
