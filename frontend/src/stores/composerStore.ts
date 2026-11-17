@@ -25,8 +25,7 @@ export interface PendingFile {
 interface ComposerState {
   items: PendingFile[];
   limits: { max_mb: number; max_files: number };
-  /** `edit`: the picture added opens in the editor at once (a single photo picked on a phone) */
-  add: (sessionId: string, files: File[], opts?: { edit?: boolean }) => void;
+  add: (sessionId: string, files: File[]) => void;
   remove: (localId: string) => void;
   /** a picture of the tray edited (components/attachments/ImageEditor): the new one goes up in its place */
   replace: (localId: string, file: File) => void;
@@ -96,7 +95,7 @@ export const useComposerStore = create<ComposerState>((set, get) => {
         return { items: [...s.items, ...attachments.filter((a) => !known.has(a.id)).map((a) => uploaded(sessionId, a))] };
       }),
 
-    add: (sessionId, files, opts) => {
+    add: (sessionId, files) => {
       if (!limitsLoaded) {
         limitsLoaded = true;
         getUploadLimits()
@@ -128,8 +127,6 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       });
       set((s) => ({ items: [...s.items, ...fresh] }));
       fresh.filter((it) => it.status === "uploading").forEach(start);
-      const one = fresh.length === 1 ? fresh[0] : null;
-      if (opts?.edit && one && one.kind === "image" && one.status === "uploading") set({ editing: one.localId });
     },
 
     replace: (localId, file) => {

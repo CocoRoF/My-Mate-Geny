@@ -1,13 +1,15 @@
 /**
- * The picture editor — a picture about to be sent (the composer's tray: tapped, or as soon as it is picked on a phone)
- * or one already sent (the lightbox's 편집: the result goes into the message box). Full screen, by finger or mouse:
+ * The picture editor — a picture about to be sent (the composer's tray: tapped once it is up) or one already sent (the
+ * lightbox's 편집: the result goes into the message box). Full screen, by finger or mouse:
  *
  * - 자르기: drag the corners, the edges or the inside; a ratio (자유, 원본, 1:1, 4:3, 3:4, 16:9, 9:16); 돌리기 turns it a
  *   quarter clockwise; 처음대로 takes the whole picture again.
  * - 펜, 형광펜, 모자이크 (the picture in big squares where the finger goes), 네모, 화살표, 글자 (tap where; drag words
  *   to move them), 지우개 (what it goes over is gone) — in a colour and a size.
  * - Undo / redo (and Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y); 완료 draws the result at full size (lib/imageEdit.ts exportEdit);
- *   unchanged, nothing is uploaded again. Esc, the back button or 취소 close it — asking first when something was done.
+ *   unchanged, nothing is uploaded again. Esc, the back button or ✕ close it — asking first when something was done.
+ * - On a phone: the tools are a strip — the ones used most first, the rest a swipe away; the picture keeps clear of the
+ *   screen's sides (Android's back swipe starts there) and a finger grabs the crop's corners from further off.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
@@ -42,21 +44,27 @@ const RATIOS: { key: string; value: number | "orig" | null }[] = [
   { key: "16:9", value: 16 / 9 },
   { key: "9:16", value: 9 / 16 },
 ];
+/** the tools, the ones used most first (on a phone the rest are a swipe away) */
 const TOOLS: { tool: Tool; icon: IconName; label: string }[] = [
   { tool: "crop", icon: "crop", label: "files.editCrop" },
   { tool: "pen", icon: "pencil", label: "files.editPen" },
-  { tool: "highlighter", icon: "highlighter", label: "files.editHighlighter" },
-  { tool: "mosaic", icon: "mosaic", label: "files.editMosaic" },
-  { tool: "rect", icon: "shape-rect", label: "files.editRect" },
-  { tool: "arrow", icon: "shape-arrow", label: "files.editArrow" },
   { tool: "text", icon: "text", label: "files.editText" },
+  { tool: "mosaic", icon: "mosaic", label: "files.editMosaic" },
+  { tool: "highlighter", icon: "highlighter", label: "files.editHighlighter" },
+  { tool: "arrow", icon: "shape-arrow", label: "files.editArrow" },
+  { tool: "rect", icon: "shape-rect", label: "files.editRect" },
   { tool: "eraser", icon: "eraser", label: "files.editEraser" },
 ];
-/** the room left around the picture (CSS px): the crop's handles stay reachable */
-const PAD = 22;
+/** a finger, not a mouse (lib/device's sense: the primary pointer is coarse) */
+const coarse = () => typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
+/** the room left around the picture (CSS px): the crop's corners stay reachable — on a phone clear of the screen's
+ *  sides, where Android's back swipe starts */
+const padOf = () => (coarse() ? { x: 38, y: 26 } : { x: 22, y: 22 });
+/** how far off a crop corner or edge is still grabbed (CSS px) */
+const GRAB = { touch: 34, other: 20 };
 
 type Gesture =
-  | { kind: "crop"; id: number; handle: Handle; start: Rect; p0: Pt }
+  | { kind: "crop"; id: number; handle: Handle; start: Rect; p0: Pt; cur: Rect }
   | { kind: "mark"; id: number; mark: Mark }
   | { kind: "erase"; id: number; path: Pt[] }
   | { kind: "move-text"; id: number; index: number; p0: Pt; at0: Pt; cur: Pt };
@@ -82,12 +90,26 @@ export default function ImageEditor({
   const t = useT();
   const [img, setImg] = useState<Loaded | null>(null);
   const [failed, setFailed] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [hist, setHist] = useState<{ list: EditState[]; at: number }>({ list: [], at: 0 });
   const [tool, setTool] = useState<Tool>(startTool);
   const [color, setColor] = useState(COLORS[2]);
   const [sizeIdx, setSizeIdx] = useState(1);
   const [ratio, setRatio] = useState<string>("free");
-  const [gesture, setGesture] = useState<Gesture | null>(null);
+  // (the gesture lives in a ref: a finger sends moves faster than renders, and each must build on the last)
+  const gestureRef = useRef<Gesture | null>(null);
+  const [, setFrame] = useState(0);
+  const frame = useRef(0);
+  const setGesture = (g: Gesture | null) => {
+    gestureRef.current = g;
+    if (!g) return setFrame((n) => n + 1);
+    if (frame.current) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0;
+      setFrame((n) => n + 1);
+    });
+  };
+  const gesture = gestureRef.current;
   const [typing, setTyping] = useState<{ at: Pt; value: string } | null>(null);
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -103,6 +125,8 @@ export default function ImageEditor({
   const srcKey = srcs.join("\n");
   useEffect(() => {
     let alive = true;
+    setFailed(false);
+    if (!srcs.length) return; // (still going up: the spinner until it is there)
     const load = (i: number) => {
       if (i >= srcs.length) return alive && setFailed(true);
       const el = new Image();
@@ -143,7 +167,8 @@ export default function ImageEditor({
     if (!img || !state || !box.w || !box.h) return null;
     const [W, H] = turnedSize(img.w, img.h, state.turn);
     const area: Rect = tool === "crop" ? { x: 0, y: 0, w: W, h: H } : state.crop;
-    const scale = Math.min((box.w - PAD * 2) / area.w, (box.h - PAD * 2) / area.h);
+    const pad = padOf();
+    const scale = Math.min((box.w - pad.x * 2) / area.w, (box.h - pad.y * 2) / area.h);
     return { W, H, area, scale, ox: (box.w - area.w * scale) / 2 - area.x * scale, oy: (box.h - area.h * scale) / 2 - area.y * scale };
   }, [img, state, box, tool]);
 
@@ -166,13 +191,12 @@ export default function ImageEditor({
   // ── drawing it ──
   const shown = useMemo<EditState | null>(() => {
     if (!state || !img) return null;
-    if (gesture?.kind === "crop") return state; // (the crop being dragged is drawn from the gesture)
+    if (gesture?.kind === "crop") return { ...state, crop: gesture.cur };
     if (gesture?.kind === "mark") return { ...state, marks: [...state.marks, gesture.mark] };
     if (gesture?.kind === "erase") return { ...state, marks: erase(state.marks, gesture.path, (SIZES.eraser[sizeIdx] / 2) / (view?.scale || 1)) };
     if (gesture?.kind === "move-text") return { ...state, marks: state.marks.map((m, i) => (i === gesture.index && m.kind === "text" ? { ...m, at: moved(gesture) } : m)) };
     return state;
-  }, [state, img, gesture, sizeIdx, view?.scale]);
-  const [liveCrop, setLiveCrop] = useState<Rect | null>(null);
+  }, [state, img, gesture, sizeIdx, view?.scale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const c = canvas.current;
@@ -188,7 +212,7 @@ export default function ImageEditor({
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, box.w, box.h);
-    const crop = liveCrop ?? shown.crop;
+    const crop = shown.crop;
     ctx.save();
     ctx.translate(view.ox, view.oy);
     ctx.scale(view.scale, view.scale);
@@ -201,11 +225,11 @@ export default function ImageEditor({
     drawEdit(ctx, img.el, img.w, img.h, shown, pixels, view.area, view.scale * dpr);
     ctx.restore();
     if (tool === "crop") drawCropFrame(ctx, crop, view, !!gesture);
-  }, [img, shown, view, box, pixels, tool, liveCrop, gesture]);
+  }, [img, shown, view, box, pixels, tool, gesture]);
 
   // ── fingers and the mouse ──
   const onDown = (e: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (!state || !view || gesture || busy) return;
+    if (!state || !view || gestureRef.current || busy) return;
     if (e.button !== undefined && e.button > 0) return;
     // (no focus moving to the page, no text selected: the words' box keeps the focus it is given)
     e.preventDefault();
@@ -214,8 +238,8 @@ export default function ImageEditor({
     const size = SIZES[tool === "crop" ? "pen" : tool][sizeIdx] / view.scale;
     let g: Gesture | null = null;
     if (tool === "crop") {
-      const handle = handleAt(liveCrop ?? state.crop, p, 24 / view.scale);
-      if (handle) g = { kind: "crop", id: e.pointerId, handle, start: state.crop, p0: p };
+      const handle = handleAt(state.crop, p, (e.pointerType === "touch" ? GRAB.touch : GRAB.other) / view.scale);
+      if (handle) g = { kind: "crop", id: e.pointerId, handle, start: state.crop, p0: p, cur: state.crop };
     } else if (!inside(p, state.crop)) {
       return;
     } else if (tool === "pen" || tool === "highlighter" || tool === "mosaic") {
@@ -239,11 +263,12 @@ export default function ImageEditor({
   };
 
   const onMove = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+    const gesture = gestureRef.current;
     if (!gesture || e.pointerId !== gesture.id || !view || !state) return;
     const p = toPicture(e);
     if (gesture.kind === "crop") {
       const r = ratioValue(ratio, view.W, view.H);
-      setLiveCrop(dragCrop(gesture.start, gesture.handle, p[0] - gesture.p0[0], p[1] - gesture.p0[1], view.W, view.H, r));
+      setGesture({ ...gesture, cur: dragCrop(gesture.start, gesture.handle, p[0] - gesture.p0[0], p[1] - gesture.p0[1], view.W, view.H, r) });
     } else if (gesture.kind === "mark") {
       const m = gesture.mark;
       if (isShape(m)) setGesture({ ...gesture, mark: { ...m, to: p } });
@@ -259,13 +284,12 @@ export default function ImageEditor({
   };
 
   const onUp = (e: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (!gesture || e.pointerId !== gesture.id || !state || !view) return;
-    const g = gesture;
+    const g = gestureRef.current;
+    if (!g || e.pointerId !== g.id || !state || !view) return;
     setGesture(null);
     if (g.kind === "crop") {
-      const c = liveCrop;
-      setLiveCrop(null);
-      if (c && (c.x !== state.crop.x || c.y !== state.crop.y || c.w !== state.crop.w || c.h !== state.crop.h)) commit({ ...state, crop: c });
+      const c = g.cur;
+      if (c.x !== state.crop.x || c.y !== state.crop.y || c.w !== state.crop.w || c.h !== state.crop.h) commit({ ...state, crop: c });
     } else if (g.kind === "mark") {
       const m = g.mark;
       if (isShape(m) && Math.hypot(m.to[0] - m.from[0], m.to[1] - m.from[1]) < 4 / view.scale) return;
@@ -313,6 +337,7 @@ export default function ImageEditor({
 
   const done = async () => {
     if (!img || !state || busy) return;
+    setSaveError("");
     // (words still being typed count: drawn from what is there now, the history's next state comes too late)
     const ty = typingRef.current;
     finishText();
@@ -320,8 +345,8 @@ export default function ImageEditor({
     try {
       const s = ty?.value.trim() && view ? withText(state, ty, color, SIZES.text[sizeIdx] / view.scale) : state;
       await onDone(edited(s, img.w, img.h) ? await exportEdit(img.el, img.w, img.h, s, name, mime) : null);
-    } catch {
-      setFailed(true);
+    } catch (e) {
+      setSaveError(String((e as Error)?.message || e));
     } finally {
       setBusy(false);
     }
@@ -362,10 +387,10 @@ export default function ImageEditor({
   return createPortal(
     <div role="dialog" aria-modal="true" aria-label={t("files.editTitle")} data-testid="image-editor" className="fixed inset-0 top-[var(--window-chrome-height,0px)] z-[110] flex flex-col bg-black text-white pt-safe pb-safe select-none animate-fade-in">
       <div className="flex h-14 shrink-0 items-center gap-1 px-2">
-        <button onClick={close} disabled={busy} className="btn-ghost !text-white/85 hover:!text-white" data-testid="image-editor-cancel">
-          {t("files.editCancel")}
+        <button onClick={close} disabled={busy} className="grid h-10 w-10 place-items-center rounded-full text-white/85 hover:bg-white/10 hover:text-white" title={t("files.editCancel")} aria-label={t("files.editCancel")} data-testid="image-editor-cancel">
+          <Icon name="x" size={20} />
         </button>
-        <span className="min-w-0 flex-1 truncate text-center text-sm font-medium">{t("files.editTitle")}</span>
+        <span className="flex-1" />
         <button onClick={undo} disabled={hist.at <= 0 || busy} className="btn-ghost !text-white/85 hover:!text-white disabled:opacity-30" title={t("files.editUndo")} aria-label={t("files.editUndo")} data-testid="image-editor-undo">
           <Icon name="undo" size={18} />
         </button>
@@ -394,7 +419,20 @@ export default function ImageEditor({
             <Icon name="spinner" size={22} spin />
           </span>
         )}
-        {failed && <span className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-white/80">{t("files.editFailed")}</span>}
+        {failed && (
+          <div className="absolute inset-0 grid place-items-center px-8" data-testid="image-editor-failed">
+            <div className="flex flex-col items-center gap-3 text-center text-sm text-white/80">
+              <Icon name="image" size={26} />
+              {t("files.editFailed")}
+              <button onClick={onClose} className="h-9 rounded-full bg-white/15 px-5 text-sm text-white">{t("common.close")}</button>
+            </div>
+          </div>
+        )}
+        {saveError && (
+          <div className="absolute inset-x-3 bottom-3 rounded-xl bg-danger/90 px-3 py-2 text-center text-xs text-white" role="alert">
+            {t("files.editSaveFailed", { error: saveError })}
+          </div>
+        )}
         {typing && typingAt && (
           <input
             ref={textInput}
@@ -430,6 +468,10 @@ export default function ImageEditor({
       <div className="mx-auto flex h-12 w-full max-w-2xl shrink-0 items-center gap-2 overflow-x-auto px-3 [scrollbar-width:none]">
         {!drawing ? (
           <>
+            <button onClick={turn} className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full bg-white/10 px-3 text-xs" data-testid="image-editor-rotate">
+              <Icon name="rotate-cw" size={14} /> {t("files.editRotate")}
+            </button>
+            <span className="mx-0.5 h-5 w-px shrink-0 bg-white/20" />
             {RATIOS.map((r) => (
               <button
                 key={r.key}
@@ -440,10 +482,7 @@ export default function ImageEditor({
                 {r.key === "free" ? t("files.editFree") : r.key === "orig" ? t("files.editOriginal") : r.key}
               </button>
             ))}
-            <span className="mx-1 h-5 w-px shrink-0 bg-white/20" />
-            <button onClick={turn} className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full bg-white/10 px-3 text-xs" data-testid="image-editor-rotate">
-              <Icon name="rotate-cw" size={14} /> {t("files.editRotate")}
-            </button>
+            <span className="mx-0.5 h-5 w-px shrink-0 bg-white/20" />
             <button onClick={reset} className="h-8 shrink-0 rounded-full bg-white/10 px-3 text-xs text-white/85">{t("files.editReset")}</button>
           </>
         ) : (
@@ -473,24 +512,48 @@ export default function ImageEditor({
         )}
       </div>
 
-      <div className="flex shrink-0 justify-center border-t border-white/10 px-1 pb-1 pt-1.5">
-       <div className="flex w-full max-w-2xl items-stretch justify-around gap-0.5">
+      <ToolStrip tool={tool} onPick={(x) => (typing && finishText(), setTool(x))} label={(k) => t(k as "files.editCrop")} />
+    </div>,
+    document.body,
+  );
+}
+
+/** the tools as a strip: on a phone the ones used most show, the rest a swipe away (a fade says there is more) */
+function ToolStrip({ tool, onPick, label }: { tool: Tool; onPick: (t: Tool) => void; label: (key: string) => string }) {
+  const row = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState({ left: false, right: false });
+  const look = useCallback(() => {
+    const el = row.current;
+    if (!el) return;
+    setMore({ left: el.scrollLeft > 10, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 10 });
+  }, []);
+  useLayoutEffect(() => {
+    look();
+    const el = row.current;
+    if (!el) return;
+    const ro = new ResizeObserver(look);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [look]);
+  return (
+    <div className="relative shrink-0 border-t border-white/10">
+      <div ref={row} onScroll={look} className="mx-auto flex max-w-2xl snap-x scroll-px-1.5 overflow-x-auto px-1.5 pb-1 pt-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-testid="image-editor-tools">
         {TOOLS.map((x) => (
           <button
             key={x.tool}
-            onClick={() => (typing && finishText(), setTool(x.tool))}
-            className={`flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg py-1 text-[10.5px] ${tool === x.tool ? "bg-white/15 text-white" : "text-white/65 hover:text-white"}`}
+            onClick={() => onPick(x.tool)}
+            className={`flex w-[74px] shrink-0 snap-start flex-col items-center gap-0.5 rounded-xl py-1.5 text-[11px] sm:w-auto sm:min-w-0 sm:flex-1 ${tool === x.tool ? "bg-white/15 text-white" : "text-white/65 hover:text-white"}`}
             aria-pressed={tool === x.tool}
             data-testid={`image-editor-tool-${x.tool}`}
           >
-            <Icon name={x.icon} size={19} />
-            <span className="truncate">{t(x.label as "files.editCrop")}</span>
+            <Icon name={x.icon} size={21} />
+            <span className="max-w-full truncate px-0.5">{label(x.label)}</span>
           </button>
         ))}
-       </div>
       </div>
-    </div>,
-    document.body,
+      {more.left && <span className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-black to-transparent" />}
+      {more.right && <span className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-black to-transparent" />}
+    </div>
   );
 }
 

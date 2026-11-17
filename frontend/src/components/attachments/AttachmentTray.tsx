@@ -36,17 +36,16 @@ function RemoveButton({ onClick }: { onClick: () => void }) {
 }
 
 function ImageTile({ it, onOpen }: { it: PendingFile; onOpen: () => void }) {
-  const t = useT();
   const remove = useComposerStore((s) => s.remove);
   const retry = useComposerStore((s) => s.retry);
   // The local preview first (instant); if it can't be read (an Android picker's content URI can refuse a second
   // read), the server's thumbnail once the upload is in; else an icon.
   const [failed, setFailed] = useState<string[]>([]);
   const src = [it.previewUrl, it.attachment?.preview_url].find((u) => u && !failed.includes(u));
-  // (a picture of its own here — the one picked, or the uploaded one — opens in the editor, even while it goes up)
-  const editable = it.status !== "error" && !!(it.previewUrl || it.attachment);
+  // (up on the server: a tap opens it in the editor)
+  const editable = it.status === "done" && !!it.attachment;
   return (
-    <div className="group relative shrink-0" title={it.error ? `${it.name} — ${it.error}` : `${it.name} — ${t("files.editHint")}`}>
+    <div className="group relative shrink-0" title={it.error ? `${it.name} — ${it.error}` : it.name}>
       <button
         onClick={it.status === "error" ? () => retry(it.localId) : editable ? onOpen : undefined}
         data-testid="tray-image"
@@ -129,6 +128,7 @@ export default function AttachmentTray({ items }: { items: PendingFile[] }) {
   const replace = useComposerStore((s) => s.replace);
   // (only this tray's own: another conversation's tray may be on screen too)
   const open = items.find((i) => i.localId === editing && i.kind === "image");
+  // (the picked file first — no download —, the uploaded copy when a phone's picker won't let it be read again)
   const openSrc = [open?.previewUrl, open?.attachment?.url].filter((u): u is string => !!u);
   if (!items.length) return null;
   return (

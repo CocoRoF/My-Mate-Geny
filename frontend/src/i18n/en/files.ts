@@ -39,9 +39,9 @@ export default {
   editDiscard: "Discard your edits?",
   editDiscardYes: "Discard",
   editKeep: "Keep editing",
-  editFailed: "This picture can't be edited here",
+  editFailed: "The picture couldn't be loaded",
+  editSaveFailed: "Couldn't save it: {error}",
   editSaving: "Saving…",
-  editHint: "Tap a picture to crop or draw on it",
   // a turn's changes
   filesChanged: { one: "{count} file changed", other: "{count} files changed" },
   viewAllFiles: "View all {count} files",

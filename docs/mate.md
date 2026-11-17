@@ -721,10 +721,14 @@ Live2D content. The originals are authoritative; see
   them, and the Mate views show them (thumbnails, file cards).
   **Pictures can be edited** (every chat, the mate's too; web, desktop and the
   phone alike — `components/attachments/ImageEditor.tsx`, the model in
-  `lib/imageEdit.ts`): a picture in the message box opens in the editor when
-  tapped (on a phone a single photo picked or taken opens in it at once), and a
-  sent one has **편집** in its viewer — the edited copy goes into the message box,
-  ready to send. 자르기 (corners, edges, the inside; 자유 / 원본 / 1:1 / 4:3 /
+  `lib/imageEdit.ts`): a picture goes up as it is added; once up, a tap on it in
+  the message box opens the editor (the picked file, else — a phone's picker can
+  refuse a second read — the uploaded copy), and a sent one has **편집** in its
+  viewer — the edited copy goes into the message box, ready to send. On a phone
+  the tools are a strip, the ones used most first (자르기, 펜, 글자, 모자이크,
+  형광펜) and the rest a swipe away; the picture keeps clear of the screen's
+  sides (Android's back swipe starts there) and a finger grabs a crop corner
+  from 34 px off. 자르기 (corners, edges, the inside; 자유 / 원본 / 1:1 / 4:3 /
   3:4 / 16:9 / 9:16; 돌리기 a quarter clockwise; 처음대로), 펜, 형광펜, 모자이크
   (the picture in squares where the finger goes), 네모, 화살표, 글자 (tap where;
   drag to move), 지우개, in seven colours and three sizes (on-screen sizes:
@@ -732,7 +736,8 @@ Live2D content. The originals are authoritative; see
   완료 draws it at full size (≤ 4096 px a side; PNG / WebP / GIF stay lossless
   PNG, the rest JPEG, named `…-edited`) and uploads it in the old one's place
   (the old upload deleted); unchanged, nothing is uploaded again. 취소 / Esc /
-  the back button ask first when something was done. The mate can't
+  the back button ask first when something was done; a picture that can't be
+  loaded says so with 닫기, a save that fails says why and the edit stays. The mate can't
   open files (no file tools on either engine), so for a mate session the text block of the
   envelope (`inline_files`, `app/providers/_inline_files.py`) holds, instead of
   paths, an `<attachments>` list with each file's id —

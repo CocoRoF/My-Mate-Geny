@@ -40,9 +40,9 @@ const ko: Messages<"files"> = {
   editDiscard: "편집한 내용을 버릴까요?",
   editDiscardYes: "버리기",
   editKeep: "계속 편집",
-  editFailed: "이 사진은 여기서 편집할 수 없어요",
+  editFailed: "사진을 불러오지 못했어요",
+  editSaveFailed: "저장하지 못했어요: {error}",
   editSaving: "저장 중…",
-  editHint: "사진을 눌러 자르기·그리기",
   // a turn's changes
   filesChanged: "파일 {count}개 변경됨",
   viewAllFiles: "파일 {count}개 모두 보기",
