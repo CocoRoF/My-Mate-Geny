@@ -255,7 +255,7 @@ async def test_what_a_run_refuses(vh):
     assert e.value.code == "too_short"
     assert not vh.trainings.root.exists() or not any(vh.trainings.root.iterdir())  # (nothing left of it)
     with pytest.raises(TrainingError) as e:
-        await vh.trainings.create(voice_id="builtin:chaerin", files=[("a.wav", wav(talk(90)))])
+        await vh.trainings.create(voice_id="no-such-voice", files=[("a.wav", wav(talk(90)))])
     assert e.value.code == "no_voice"
     with pytest.raises(TrainingError) as e:
         await vh.trainings.create(voice_id=v["id"], files=[("a.wav", b"not audio")])
@@ -342,3 +342,88 @@ async def test_a_runtime_from_an_older_lock_keeps_speaking_and_is_brought_up_to_
     assert ins.runtime_ready(rt) and keep.exists()  # (in place: nothing of it removed)
     assert ran and ran[0][:3] == ["uv", "pip", "install"] and "venv" not in ran[0]
     assert await ins.refresh_runtimes() == []  # (up to date: nothing to do)
+
+
+# ---- the built-in voices ----
+
+async def test_a_built_in_voice_learns_too(vh):
+    r = (await vh.trainings.create(voice_id="builtin:chaerin", files=[("a.wav", wav(talk(80, seed=6)))]))[0]
+    assert [i["name"] for i in r["inputs"] if i.get("clip")] == ["neutral.wav", "joy.wav", "sadness.wav", "anger.wav",
+                                                                "surprise.wav"]  # (her clips, not her laughs)
+    r = await done(vh, r["id"])
+    assert r["state"] == "done" and r["applied"] and vh.trainings.adapters("builtin:chaerin") == {"omnivoice": r["id"]}
+    ref = vh.voices.resolve("builtin:chaerin", "neutral")
+    _, info = await vh.synthesize("omnivoice", "오늘은 정말 좋은 날이에요.", reference=ref, language="ko")
+    assert info.get("adapter") == r["id"]
+    # (no clip given to a voice that has its own: her five clips and three laughs, as before)
+    assert len(vh.voices.get("builtin:chaerin")["references"]) == 8
+
+
+def _asset(tmp_path, files: dict[str, bytes], name: str = "a.zip") -> tuple[str, dict]:
+    import hashlib
+    import zipfile
+
+    z = tmp_path / name
+    with zipfile.ZipFile(z, "w") as f:
+        for n, b in files.items():
+            f.writestr(n, b)
+    data = z.read_bytes()
+    return name, {"asset": name, "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
+
+
+async def test_the_built_in_voices_come_with_their_adapters(vh, tmp_path, monkeypatch):
+    from app.voicehost import shipped
+
+    rel = tmp_path / "release"
+    rel.mkdir()
+    adapter = {"adapter_config.json": b'{"peft_type": "LORA"}', "adapter_model.safetensors": b"fake",
+               "geny.json": json.dumps({"engine": "omnivoice", "model_id": "omnivoice", "base_revision": ""}).encode(),
+               "NOTICE.md": b"Built with Higgs Materials", "../evil.txt": b"no", "sub/adapter_model.safetensors": b"no"}
+    name, entry = _asset(rel, adapter)
+    monkeypatch.setattr(shipped, "RELEASE", rel.as_uri())
+    vh.shipped.catalog = {("builtin:seoa", "omnivoice"): entry}
+    spec = catalog.BY_ID["omnivoice"]
+    # not fetched yet: no adapter (a line asks for it to be fetched meanwhile)
+    assert vh.trainings.adapter_for("builtin:seoa", spec) is None
+    await asyncio.sleep(0.2)
+    if vh.shipped.ready("builtin:seoa", "omnivoice") is None:
+        await vh.shipped.fetch_all()
+    d = vh.shipped.ready("builtin:seoa", "omnivoice")
+    assert d is not None and sorted(p.name for p in d.iterdir()) == ["NOTICE.md", "adapter_config.json",
+                                                                     "adapter_model.safetensors", "geny.json"]
+    assert not (vh.s.home / "adapters" / "evil.txt").exists() and not (d.parent / "evil.txt").exists()
+    rid = vh.shipped.run_id("builtin:seoa", "omnivoice")
+    assert vh.trainings.adapter_for("builtin:seoa", spec) == (rid, str(d))
+    assert _public_voice(vh.voices.get("builtin:seoa"), vh.trainings.speaks_with("builtin:seoa"))["adapters"] == {"omnivoice": rid}
+    ref = vh.voices.resolve("builtin:seoa", "neutral")
+    _, info = await vh.synthesize("omnivoice", "오늘은 정말 좋은 날이에요.", reference=ref, language="ko")
+    assert info.get("adapter") == rid
+    assert vh.settings_doc()["shipped"] == [{"voice_id": "builtin:seoa", "model_id": "omnivoice", "bytes": entry["bytes"],
+                                             "ready": True, "error": ""}]
+    # off (Voice Studio → 설정): the voice as it was
+    vh.put_settings({"shipped_adapters": False})
+    assert vh.trainings.adapter_for("builtin:seoa", spec) is None and vh.trainings.speaks_with("builtin:seoa") == {}
+    vh.put_settings({"shipped_adapters": True})
+    # her own, trained here, goes first; removed, the shipped one again
+    r = (await vh.trainings.create(voice_id="builtin:seoa", files=[("a.wav", wav(talk(80, seed=8)))]))[0]
+    r = await done(vh, r["id"])
+    assert vh.trainings.adapter_for("builtin:seoa", spec)[0] == r["id"]
+    await vh.trainings.delete(r["id"])
+    assert vh.trainings.adapter_for("builtin:seoa", spec)[0] == rid
+
+
+async def test_a_shipped_adapter_that_isnt_what_it_says_is_not_used(vh, tmp_path, monkeypatch):
+    from app.voicehost import shipped
+
+    rel = tmp_path / "release"
+    rel.mkdir()
+    _, entry = _asset(rel, {"adapter_config.json": b"{}", "adapter_model.safetensors": b"x", "geny.json": b"{}"})
+    monkeypatch.setattr(shipped, "RELEASE", rel.as_uri())
+    vh.shipped.catalog = {("builtin:chaerin", "omnivoice"): {**entry, "sha256": "0" * 64}}
+    await vh.shipped.fetch_all()
+    assert vh.shipped.ready("builtin:chaerin", "omnivoice") is None
+    assert "not the expected file" in vh.shipped.failed[("builtin:chaerin", "omnivoice")]
+    assert not any((vh.s.home / "adapters").rglob("adapter_model.safetensors"))
+    # nothing for a model not installed
+    vh.shipped.catalog = {("builtin:chaerin", "cosyvoice3-0.5b"): entry}
+    assert await vh.shipped.fetch_all() == []

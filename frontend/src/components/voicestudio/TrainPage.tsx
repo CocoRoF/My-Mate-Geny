@@ -66,7 +66,8 @@ export default function TrainPage() {
     const timer = setInterval(() => void load(), active ? 2000 : 10000);
     return () => clearInterval(timer);
   }, [load, active]);
-  const mine = useMemo(() => voices.filter((v) => !v.builtin), [voices]);
+  // (a built-in voice learns too: its own adapter goes before the one it came with)
+  const choosable = useMemo(() => [...voices.filter((v) => !v.builtin), ...voices.filter((v) => v.builtin)], [voices]);
   return (
     <div className="space-y-4" data-testid="vs-train">
       <p className="text-[13px] leading-relaxed text-content-dim">{t("voiceStudio.trHint")}</p>
@@ -75,7 +76,7 @@ export default function TrainPage() {
           {t("voiceStudio.trNeedsModel")}
         </Banner>
       )}
-      <NewRun kit={kit} voices={mine} onStarted={async () => { await reloadVoices(); await load(); }} busy={new Set((runs ?? []).filter((r) => ACTIVE.includes(r.state)).map((r) => `${r.voice_id}|${r.model_id}`))} />
+      <NewRun kit={kit} voices={choosable} onStarted={async () => { await reloadVoices(); await load(); }} busy={new Set((runs ?? []).filter((r) => ACTIVE.includes(r.state)).map((r) => `${r.voice_id}|${r.model_id}`))} />
       <ErrorLine text={err} />
       {!runs ? (
         <ProgressBar indeterminate />
@@ -90,7 +91,7 @@ export default function TrainPage() {
   );
 }
 
-function NewRun({ kit, voices, onStarted, busy }: { kit: TrainingKit | null; voices: { id: string; name: string; language: string }[]; onStarted: () => Promise<void>; busy: Set<string> }) {
+function NewRun({ kit, voices, onStarted, busy }: { kit: TrainingKit | null; voices: { id: string; name: string; language: string; builtin?: boolean }[]; onStarted: () => Promise<void>; busy: Set<string> }) {
   const t = useT();
   const [voice, setVoice] = useState<string>("");
   const installed = useMemo(() => (kit?.models ?? []).filter((m) => m.installed), [kit]);
@@ -107,8 +108,7 @@ function NewRun({ kit, voices, onStarted, busy }: { kit: TrainingKit | null; voi
   const [drag, setDrag] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (!voice && voices.length) setVoice(voices[0].id);
-    if (!voice && !voices.length) setVoice(NEW);
+    if (!voice) setVoice(voices.find((v) => !v.builtin)?.id ?? NEW);
   }, [voices, voice]);
   const fetches = kit ? [!kit.stt.ready && `Whisper large-v3-turbo (${kit.stt.gb.toFixed(1)} GB, ${kit.stt.license})`, !kit.speaker.ready && `CAM++ (${Math.max(0.03, kit.speaker.gb).toFixed(2)} GB, ${kit.speaker.license})`].filter(Boolean) as string[] : [];
   const totalMb = files.reduce((n, f) => n + f.size, 0) / 1024 ** 2;
@@ -142,7 +142,7 @@ function NewRun({ kit, voices, onStarted, busy }: { kit: TrainingKit | null; voi
         <Field label={t("voiceStudio.trVoice")} as="div">
           <div className="flex flex-wrap items-center gap-2">
             <select className="field !w-auto min-w-[12rem]" value={voice} onChange={(e) => setVoice(e.target.value)} data-testid="vs-train-voice">
-              {voices.map((v) => <option key={v.id} value={v.id}>{v.name}{busyVoice(v.id) ? ` · ${t("voiceStudio.trBusyVoice")}` : ""}</option>)}
+              {voices.map((v) => <option key={v.id} value={v.id}>{v.builtin ? t("voiceStudio.trBuiltinVoice", { name: v.name }) : v.name}{busyVoice(v.id) ? ` · ${t("voiceStudio.trBusyVoice")}` : ""}</option>)}
               <option value={NEW}>{t("voiceStudio.trNewVoice")}</option>
             </select>
             {voice === NEW && <input className="field !w-auto min-w-[12rem]" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("voiceStudio.trNewVoicePh")} data-testid="vs-train-name" />}

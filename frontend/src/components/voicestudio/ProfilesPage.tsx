@@ -1,7 +1,7 @@
 /**
  * Voice Studio → 프로필: the voices lines are made in. A profile is a clip per feeling (기본, 기쁨, 슬픔, 화남, 놀람, 두려움,
  * 혐오, 미소 — upload, record, trim, the exact words, its language), a description, tags, and what lines made in it
- * start from (a model, its parameters, a design prompt). Built-in ones (한채린, 메스가키) can be heard and duplicated.
+ * start from (a model, its parameters, a design prompt). Built-in ones (한채린, 서아) can be heard and duplicated.
  * A feeling without a clip speaks like the nearest one that has (미소 → 기쁨, 두려움 → 슬픔, 혐오 → 화남), else like 기본.
  * Its laughs (웃음 소리: sounds.tsx) are put into a line where it laughs.
  */
@@ -31,9 +31,11 @@ import { Card, FeelingDot, Modal, ParamControls, PlayButton, readableAudio, refU
 /** what a feeling without a clip speaks like (backend voicehost/voices.py _CHAIN) */
 const FALLBACK: Partial<Record<Feeling, Feeling>> = { smile: "joy", fear: "sadness", disgust: "anger" };
 
-/** the models it has learned to speak on (Voice Studio → 학습), by name; "" none */
+/** the models it has learned to speak on (Voice Studio → 학습; a built-in voice's own came with it), by name; "" none */
 const trainedOn = (v: LocalVoice, status: VoiceStatus | null) =>
   Object.keys(v.adapters ?? {}).map((id) => status?.models.find((m) => m.id === id)?.name ?? id).join(", ");
+/** only the adapters a built-in voice came with (none trained here) */
+const onlyShipped = (v: LocalVoice) => Object.values(v.adapters ?? {}).every((r) => r.startsWith("shipped-"));
 
 type Filter = "all" | "mine" | "builtin";
 
@@ -216,7 +218,7 @@ function Profile({ v, onGone, onPick }: { v: LocalVoice; onGone: () => void; onP
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="text-[15px]">{v.name}</span>
             {v.builtin && <span className="pill border border-accent/30 bg-accent-soft text-accent">{t("localVoice.builtin")}</span>}
-            {trainedOn(v, status) && <span className="pill border border-success/30 bg-success/10 text-success" title={t("voiceStudio.trTrainedHint", { models: trainedOn(v, status) })} data-testid="vs-profile-trained">{t("voiceStudio.trTrained")} · {trainedOn(v, status)}</span>}
+            {trainedOn(v, status) && <span className="pill border border-success/30 bg-success/10 text-success" title={t(onlyShipped(v) ? "voiceStudio.trShippedHint" : "voiceStudio.trTrainedHint", { models: trainedOn(v, status) })} data-testid="vs-profile-trained">{t("voiceStudio.trTrained")} · {trainedOn(v, status)}</span>}
             {(v.tags ?? []).map((tag) => (
               <span key={tag} className="pill border border-border bg-surface-3/50 text-content-dim">#{tag}</span>
             ))}

@@ -109,7 +109,7 @@ chat, keeps an eye on it and tells you how it went.
 - **Local voice models, built in**: on a machine with an NVIDIA GPU the app itself serves OmniVoice,
   Qwen3-TTS, CosyVoice3 and Whisper — it checks the GPU, downloads each model after you accept its
   license, keeps them on the GPU as needed, and clones voices from reference clips by feeling (the
-  built-in 한채린 and 메스가키 voices, or your own). **Voice Studio** shows what is on the GPU and for
+  built-in 한채린 and 서아 voices, or your own). **Voice Studio** shows what is on the GPU and for
   whom, and makes lines, batches and voice profiles, with a history of everything made. Its **학습**
   page teaches every speech model (OmniVoice, Qwen3-TTS, CosyVoice3) a person's voice from their
   recordings alone (a LoRA adapter each: cut, transcribed, kept to that person, trained, measured, put on

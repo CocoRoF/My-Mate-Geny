@@ -27,6 +27,8 @@ class VoiceSettings:
     max_text_chars: int = 5000
     # a voice's own laugh made the first time a line of it laughs (app/voicehost/sounds.py; Voice Studio → 설정)
     auto_sounds: bool = True
+    # the built-in voices speak with the adapters that come with them (app/voicehost/shipped.py; Voice Studio → 설정)
+    shipped_adapters: bool = True
     # Voice Studio's history: at most this many lines and this much audio (the oldest unstarred go first)
     history_max_entries: int = 2000
     history_max_gb: float = 5.0

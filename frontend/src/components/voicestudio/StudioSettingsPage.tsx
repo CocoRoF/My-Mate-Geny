@@ -103,6 +103,28 @@ export default function StudioSettingsPage() {
             </span>
           </span>
         </label>
+        <label className="mt-3 flex items-start gap-2 text-[13px] text-content">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={doc.shipped_adapters}
+            disabled={busy === "shipped"}
+            onChange={(e) => void put("shipped", { shipped_adapters: e.target.checked })}
+            data-testid="vs-settings-shipped"
+          />
+          <span>
+            {t("voiceStudio.stShipped")}
+            <span className="mt-0.5 block text-[11.5px] leading-snug text-content-faint" data-testid="vs-settings-shipped-state">
+              {doc.shipped.length === 0
+                ? t("voiceStudio.stShippedNone")
+                : doc.shipped.every((x) => x.ready)
+                  ? t("voiceStudio.stShippedReady")
+                  : doc.shipped.some((x) => x.error)
+                    ? t("voiceStudio.stShippedFailed", { error: doc.shipped.find((x) => x.error)?.error ?? "" })
+                    : t("voiceStudio.stShippedHint", { mb: Math.round(doc.shipped.filter((x) => !x.ready).reduce((n, x) => n + x.bytes, 0) / 1024 ** 2) })}
+            </span>
+          </span>
+        </label>
       </Card>
       <Card title={t("voiceStudio.stWhere")} testId="vs-settings-paths">
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]">

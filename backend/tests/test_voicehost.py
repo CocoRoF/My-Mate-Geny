@@ -1,6 +1,6 @@
 """Local voice models (app/voicehost, docs/local-voice.md): who may run them (the GPU check), the license before any
 download, the GPU placement (measured VRAM, other programs respected, pins for calls), a real worker process speaking
-and hearing with the stand-in engine (no GPU, no downloads), the voices (built-in 한채린 / 메스가키, the user's own,
+and hearing with the stand-in engine (no GPU, no downloads), the voices (built-in 한채린 / 서아, the user's own,
 clips by feeling), and a mate on the "local" engine — her speech, her transcription, her call."""
 
 from __future__ import annotations
@@ -293,7 +293,7 @@ async def test_a_mates_words_go_before_a_preview(vh, vs):
 def test_the_built_in_voices_have_a_clip_and_its_words_for_every_feeling():
     vs_ = {v["id"]: v for v in V.builtins()}
     assert {"builtin:chaerin", "builtin:seoa"} <= set(vs_)
-    assert vs_["builtin:chaerin"]["name"] == "한채린" and vs_["builtin:seoa"]["name"] == "메스가키"
+    assert vs_["builtin:chaerin"]["name"] == "한채린" and vs_["builtin:seoa"]["name"] == "서아"
     for v in (vs_["builtin:chaerin"], vs_["builtin:seoa"]):
         labels = {r["label"] for r in v["references"] if r["label"] not in V.SOUNDS}
         assert labels == {"neutral", "joy", "sadness", "anger", "surprise"} and labels <= set(V.FEELINGS), v["id"]

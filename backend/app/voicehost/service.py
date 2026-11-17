@@ -5,7 +5,7 @@
       ├─ installer     모델 받기: the engine's environment (uv, locked) + the weights, after the license is accepted
       ├─ engines       which models are on the GPU (measured VRAM, park / stop, pins for calls)
       ├─ queue         one GPU job at a time; a mate's words go before a preview, a preview before a load
-      └─ voices        reference clips by feeling: built in (한채린, 메스가키) and the user's own
+      └─ voices        reference clips by feeling: built in (한채린, 서아) and the user's own
 
 The server process never imports torch: each loaded model is a worker process in its engine's own environment.
 """
@@ -171,6 +171,9 @@ class VoiceHost:
         from .training import Trainings
 
         self.trainings = Trainings(self)
+        from .shipped import Shipped
+
+        self.shipped = Shipped(self)  # (the built-in voices' adapters, fetched once their model is here)
         self.engines.others.append(self.trainings.release_gpu)  # (a model that can't find room: a training leaves)
         self.queue.on_interactive = self.trainings.speaking  # (a mate's words: a training pauses)
         self.on_change: Callable[[str], None] = lambda what: None  # (every open window refetches: app/main.py)
@@ -211,6 +214,8 @@ class VoiceHost:
             await self.installer.refresh_runtimes()
         except Exception:  # noqa: BLE001
             log.exception("refreshing the runtimes")
+        if self.s.shipped_adapters:  # (and the built-in voices' adapters, for the models installed)
+            await self.shipped.fetch_all()
 
     async def stop(self) -> None:
         if self._started:
@@ -240,6 +245,9 @@ class VoiceHost:
         auto = self.store.setting("sounds:auto")
         if isinstance(auto, bool):
             self.s.auto_sounds = auto
+        shipped = self.store.setting("adapters:shipped")
+        if isinstance(shipped, bool):
+            self.s.shipped_adapters = shipped
 
     def settings_doc(self) -> dict[str, Any]:
         return {"values": {k: getattr(self.s, k) for k in RUNTIME},
@@ -248,6 +256,7 @@ class VoiceHost:
                 "default_tts": self.store.setting("default:tts") or "", "default_stt": self.store.setting("default:stt") or "",
                 "default_voice": self.store.setting("default:voice") or "",
                 "auto_sounds": self.s.auto_sounds, "sound_maker": self.sound_maker(),
+                "shipped_adapters": self.s.shipped_adapters, "shipped": self.shipped.status(),
                 "paths": {"home": str(self.s.home), "models": str(self.s.models_dir), "runtimes": str(self.s.runtimes_dir),
                           "references": str(self.s.refs_dir), "history": str(self.history.root)},
                 "engine_mode": self.s.engine_mode, "device": self.s.device, "hf_endpoint": self.s.hf_endpoint}
@@ -281,6 +290,10 @@ class VoiceHost:
         if "auto_sounds" in patch:
             self.s.auto_sounds = bool(patch["auto_sounds"])
             self.store.put_setting("sounds:auto", self.s.auto_sounds)
+        if "shipped_adapters" in patch:
+            self.s.shipped_adapters = bool(patch["shipped_adapters"])
+            self.store.put_setting("adapters:shipped", self.s.shipped_adapters)
+            self.on_change("voices")
         if any(k.startswith("history_") for k in patch):
             self._prune_history()
         self.on_change("settings")

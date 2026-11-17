@@ -137,7 +137,7 @@ of its feeling; a feeling without one falls back along a chain, then to neutral,
 | `disgust` | disgust → anger |
 
 - **Built in** (`backend/app/mate/builtin/voices/<key>/voice.json`, id `builtin:<key>`, read-only): **한채린**
-  (`builtin:chaerin`) and **메스가키** (`builtin:seoa`), five clips each (8 – 12 s, 24 kHz mono, levelled to −20 dBFS;
+  (`builtin:chaerin`) and **서아** (`builtin:seoa`), five clips each (8 – 12 s, 24 kHz mono, levelled to −20 dBFS;
   the other three feelings fall back as above). Duplicate one to make your own version.
   Made by the owner with their own ElevenLabs voices (each line generated twice, the take whose transcript matched the
   line kept); the owner holds all rights to them (`rights` in `voice.json`; THIRD-PARTY-NOTICES.md).
@@ -183,14 +183,14 @@ So:
   there a laugh that would leave such a part beside it stays in the line.
 - **Where a voice's laugh comes from**, the first found: its profile's own sound clips (프로필 → 웃음 소리: recorded or
   uploaded, label `laugh` / `yawn`, several of each, never cloned from); a built-in voice's (`sounds/` beside its clips:
-  48 takes made with OmniVoice, the best 3 kept — 한채린 0.42 / 0.39 / 0.35, 메스가키 0.51 / 0.45 / 0.43); the ones made
+  48 takes made with OmniVoice, the best 3 kept — 한채린 0.42 / 0.39 / 0.35, 서아 0.51 / 0.45 / 0.43); the ones made
   for the clip it is cloned from (`<home>/sounds/<clip key>/`). **Made**: 16 takes of `[laughter] 아하하하` /
   `[laughter] 하하하하` / `[laughter] hahaha` on the installed engine that laughs best (OmniVoice; else CosyVoice3 or
   Qwen3-TTS, whose laughs the check often refuses), each heard by the AudioSet classifier (`catalog.SOUND_CHECK`,
   MIT/ast-finetuned-audioset-10-10-0.4593, BSD-3-Clause, 350 MB, fetched the first time), the 3 that laugh most kept
   (at least 0.2; none: not tried again for a day). Made by itself, in the background, the first time a line of a voice
   laughs (Voice Studio → 설정 → 웃음 소리; that first line has the model's own laugh), or with 프로필 → 웃음 소리 →
-  웃음 만들기. 한채린's laugh was in 9 of 48 takes, 메스가키's in 17: 16 takes leave about three.
+  웃음 만들기. 한채린's laugh was in 9 of 48 takes, 서아's in 17: 16 takes leave about three.
 - **The rest** in the line, as each engine makes it best (`RECIPES`): OmniVoice gets its tags *before* the written sound
   — `[laughter] 헤헤` (when the voice has no laugh yet), `[sigh] 후우…`, `[sigh] 하암~`, `헉! [surprise-ah]`,
   `[surprise-wa] 우와`, `흥 [dissatisfaction-hnn]`; CosyVoice3 and Qwen3-TTS the syllables alone. Everywhere: a bare tag
@@ -268,6 +268,16 @@ What each model learns (`train/recipe.py`: one recipe each, in the model's own r
   An adapter is for the model it was made with (the revision in `geny.json`): after a new version the profile speaks
   without it. A new profile gets her clearest utterance as its neutral clip. 프로필 marks a trained profile
   (학습됨 · the models), and 생성 / 히스토리 a line made with an adapter (`omnivoice (학습됨)`, the history's `adapter`).
+- **The built-in voices** (한채린, 서아) learn like any profile — what they are trained into here goes before what they
+  came with — and **they come trained**: their OmniVoice adapters, trained with 학습 on the owner's own recordings of
+  their voices (made with the owner's ElevenLabs voices, which the owner holds every right to), are published as
+  release assets (`voice-adapters-v1`; not in the repository) and listed with their SHA-256 in
+  `app/voicehost/shipped.py`. Once OmniVoice is installed they are fetched (30 s after the server starts, or the first
+  time a built-in voice speaks on it — that line still without), checked, and unpacked under
+  `<voice home>/adapters/<voice>/<model>/`; only the adapter's own files are taken from the zip. Voice Studio → 설정 →
+  "기본 목소리는 학습된 어댑터로 말하기" turns them off (`shipped_adapters`); its line says whether they are here.
+  A release asset carries the notices the Boson Higgs Audio 2 Community License asks of a model made with OmniVoice's
+  tokenizer and made available ("Higgs Audio 2" at the start of its name, the agreement and Meta Llama 3's with it).
 - **What it needs**: the model installed; Whisper large-v3-turbo's weights (MIT) and CAM++'s (`campplus.onnx` from
   `FunAudioLLM/Fun-CosyVoice3-0.5B-2512`, 28 MB, Apache-2.0) — fetched for the first run after the user accepts them
   in the form once; `peft` (and `onnxruntime`) in each engine's runtime (in its lock: a runtime from an older lock keeps
@@ -294,7 +304,8 @@ What each model learns (`train/recipe.py`: one recipe each, in the model's own r
 | `GET /trainings?voice_id=` | `{runs, kit}`: every run (model, group, state, stage, progress, data — kept, dropped by reason —, result with the conditions it was measured with, samples, applied) and what a run needs (`models` — each that learns: installed, `need_gb` —, `stt`, `speaker` — ready, size, license) |
 | `POST /trainings` (multipart `voice_id`, `files`, `language`, `accept_licenses`, `models` — ids, comma-separated; none: every installed one that learns) | `{runs}`: one per model (`queued`). Refused: `no_voice`, `busy` (one of the models is learning the profile already), `not_trainable`, `needs_model`, `license` (the weights aren't accepted), `too_short` (under 60 s of sound), `bad_audio`, `too_many`, `too_large` |
 | `GET /trainings/{id}` · `POST /trainings/{id}/cancel` · `POST /trainings/{id}/apply` `{on}` · `DELETE /trainings/{id}` · `GET /trainings/{id}/samples/{name}` | one run, stop it, its adapter on / off, remove it, an A/B sample |
-| `GET /voices` | each profile with `adapters` (`{model id: run}`) |
+| `GET /voices` | each profile with `adapters` (`{model id: run}`; a built-in voice's shipped one is `shipped-…`) |
+| `GET/PUT /settings` | `shipped_adapters` (on / off), `shipped` (each shipped adapter: its voice and model, size, fetched, error) |
 
 Measured (RTX 5070, peft 0.21.3), speaker similarity (CAM++) with a long clip / a short one / none — OmniVoice 0.2.1:
 
@@ -385,7 +396,7 @@ A model's first use loads it (OmniVoice ~8 – 10 s); warm, it is ready in 0.1 �
 built-in voices were heard back by the local Whisper with a character error rate of 2 – 5 % (numbers written
 differently). Installing everything from nothing: the first runtime with Whisper ~2 min, the others ~15 s each.
 The same in a container given the GPU (`docker-compose.gpu.yml`, `python:3.12-slim` like the image): the gate passed,
-OmniVoice spoke in 메스가키's joy clip at 0.18, and Whisper heard the line back word for word.
+OmniVoice spoke in 서아's joy clip at 0.18, and Whisper heard the line back word for word.
 
 ## Not yet
 

@@ -29,6 +29,7 @@ from app.services._ids import new_id, now_iso
 
 from . import audio, catalog, system
 from .train import PREFIX
+from .voices import SOUNDS
 from .workerproc import SRC_ROOT, _capped
 
 log = logging.getLogger("app.voicehost.training")
@@ -162,6 +163,12 @@ class Trainings:
                             "license": catalog.SPEAKER_CHECK.license.name},
                 "min_seconds": MIN_SECONDS}
 
+    def speaks_with(self, voice_id: str) -> dict[str, str]:
+        """{model id: what the voice speaks with there}: its own runs' adapters, else a built-in voice's shipped ones
+        (app/voicehost/shipped.py) while they are on"""
+        out = self.h.shipped.of_voice(voice_id) if self.s.shipped_adapters else {}
+        return {**out, **self.adapters(voice_id)}
+
     def adapters(self, voice_id: str) -> dict[str, str]:
         """{model id: the run whose adapter the voice speaks with there}"""
         return {r["model_id"]: r["run_id"]
@@ -180,8 +187,8 @@ class Trainings:
         for s in need:
             self.h.store.accept_license(s.id, s.license.name, s.license.url)
         v = self.h.voices.get(voice_id)
-        if v is None or v.get("builtin"):
-            raise TrainingError("Pick one of your voices (or make one) to train", "no_voice", 404)
+        if v is None:  # (a built-in voice learns too: its own adapter then goes before the one it came with)
+            raise TrainingError("Pick a voice (or make one) to train", "no_voice", 404)
         ins = self.h.installer
         wanted = [m for m in dict.fromkeys(model_ids or []) if m]
         for m in wanted:
@@ -213,7 +220,7 @@ class Trainings:
                 total += len(x) / audio.REF_SR
             for ref in v.get("references") or []:  # (her clips are her too)
                 f = self.h.voices.reference_file(voice_id, ref["id"])
-                if f is not None and ref.get("label") not in ("laugh", "yawn"):
+                if f is not None and ref.get("label") not in SOUNDS:
                     p = d / "inputs" / f"ref-{ref['id']}.wav"
                     shutil.copyfile(f, p)
                     inputs.append({"name": f"{ref.get('label')}.wav", "file": p.name, "seconds": round(ref.get("duration") or 0, 1),
@@ -287,9 +294,16 @@ class Trainings:
         if spec.id not in NEED_GB or not voice_id:
             return None
         rid = self.adapters(voice_id).get(spec.id, "")
-        if not rid:
+        if rid:
+            a = self.run_dir(rid) / "adapter"
+        elif self.s.shipped_adapters and (voice_id, spec.id) in self.h.shipped.catalog:
+            got = self.h.shipped.ready(voice_id, spec.id)
+            if got is None:
+                self.h.shipped.want(voice_id, spec.id)  # (fetched meanwhile: the next line speaks with it)
+                return None
+            rid, a = self.h.shipped.run_id(voice_id, spec.id), got
+        else:
             return None
-        a = self.run_dir(rid) / "adapter"
         try:
             meta = json.loads((a / "geny.json").read_text())
         except (OSError, ValueError):
