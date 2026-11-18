@@ -10,7 +10,7 @@ import type { StateEmotion, Temperament } from "../../../../api/mates";
 import { useT, type MsgKey } from "../../../../i18n";
 import Icon from "../../../ui/Icon";
 import { STATE_EMOJI } from "../../../../mate/relationJournal";
-import { ATTACHMENTS, CONFLICTS, EMOTION_LABEL, EMOTIONS, isCustom, knob, RANGES, type EmotionKnob, type ScalarKnob } from "../../../../mate/gss";
+import { ATTACHMENTS, CONFLICTS, EMOTION_LABEL, EMOTIONS, isCustom, knob, NEUTRAL, RANGES, type EmotionKnob, type ScalarKnob } from "../../../../mate/gss";
 import { ErrorLine, Field, Section, Segmented } from "../ui";
 
 const SCALARS: { k: ScalarKnob; label: MsgKey; hint: MsgKey; step: number }[] = [
@@ -18,15 +18,19 @@ const SCALARS: { k: ScalarKnob; label: MsgKey; hint: MsgKey; step: number }[] = 
   { k: "holds", label: "gss.tempHolds", hint: "gss.tempHoldsHint", step: 0.05 },
   { k: "sweet_until", label: "gss.tempSweetUntil", hint: "gss.tempSweetUntilHint", step: 0.01 },
 ];
-const KNOBS: { id: EmotionKnob; label: MsgKey; hint: MsgKey; step: number }[] = [
-  { id: "rise", label: "gss.tempRise", hint: "gss.tempRiseHint", step: 0.05 },
-  { id: "settle", label: "gss.tempSettle", hint: "gss.tempSettleHint", step: 0.05 },
-  { id: "base", label: "gss.tempBase", hint: "gss.tempBaseHint", step: 0.01 },
+// (low / high: what either end of the bar means — each knob has its own range)
+const KNOBS: { id: EmotionKnob; label: MsgKey; hint: MsgKey; step: number; low: MsgKey; high: MsgKey }[] = [
+  { id: "rise", label: "gss.tempRise", hint: "gss.tempRiseHint", step: 0.05, low: "gss.tempRiseLow", high: "gss.tempRiseHigh" },
+  { id: "settle", label: "gss.tempSettle", hint: "gss.tempSettleHint", step: 0.05, low: "gss.tempSettleLow", high: "gss.tempSettleHigh" },
+  { id: "base", label: "gss.tempBase", hint: "gss.tempBaseHint", step: 0.01, low: "gss.tempBaseLow", high: "gss.tempBaseHigh" },
 ];
 const CONFLICT_LABEL: Record<(typeof CONFLICTS)[number], MsgKey> = { confront: "gss.tempConfront", withdraw: "gss.tempWithdraw" };
 const ATTACHMENT_LABEL: Record<(typeof ATTACHMENTS)[number], MsgKey> = { secure: "gss.tempSecure", anxious: "gss.tempAnxious", avoidant: "gss.tempAvoidant" };
 
-const fixed = (v: number) => v.toFixed(2);
+/** a knob's value in its own terms: a multiplier (×1.20; 1 is usual), or a share (12%) */
+const PERCENT = new Set<EmotionKnob | ScalarKnob>(["base", "sweet_until"]);
+const shown = (k: EmotionKnob | ScalarKnob, v: number) => (PERCENT.has(k) ? `${Math.round(v * 100)}%` : `×${v.toFixed(2)}`);
+const THUMB = 16; // px (the range input's thumb: the tick under it lines up with where the thumb would stand)
 
 /** the user's own value (prefs.temperament): a dot beside its name */
 function Mine({ on }: { on: boolean }) {
@@ -35,11 +39,27 @@ function Mine({ on }: { on: boolean }) {
   return <span className="ml-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-accent align-middle" title={t("gss.tempMine")} aria-label={t("gss.tempMine")} data-testid="mate-gss-temp-mine" />;
 }
 
-function Slider({ value, range, step, onChange, label, changed, testId }: { value: number; range: [number, number]; step: number; onChange: (v: number) => void; label: string; changed: boolean; testId?: string }) {
+/** a bar in a knob's own range, a tick at the usual value (1×) when it has one, the value in its own terms */
+function Slider({ k, value, step, onChange, label, changed, testId }: { k: EmotionKnob | ScalarKnob; value: number; step: number; onChange: (v: number) => void; label: string; changed: boolean; testId?: string }) {
+  const t = useT();
+  const [min, max] = RANGES[k];
+  const usual = NEUTRAL[k];
+  const at = (x: number) => (Math.max(min, Math.min(max, x)) - min) / (max - min);
+  const tick = !PERCENT.has(k) && usual > min && usual < max ? at(usual) : null;
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
-      <input type="range" min={range[0]} max={range[1]} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="min-w-0 flex-1" aria-label={label} data-testid={testId} />
-      <span className={`w-9 shrink-0 text-right text-[12px] tabular-nums ${changed ? "text-accent" : "text-content-dim"}`}>{fixed(value)}</span>
+      <div className="relative flex min-w-0 flex-1 items-center">
+        {tick !== null && (
+          <span
+            className="pointer-events-none absolute top-1/2 h-3.5 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-content-faint/60"
+            style={{ left: `calc(${tick * 100}% + ${(0.5 - tick) * THUMB}px)` }}
+            title={t("gss.tempUsual")}
+            aria-hidden
+          />
+        )}
+        <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="relative min-w-0 flex-1" aria-label={label} aria-valuetext={shown(k, value)} data-testid={testId} />
+      </div>
+      <span className={`w-12 shrink-0 text-right text-[12px] tabular-nums ${changed ? "text-accent" : "text-content-dim"}`}>{shown(k, value)}</span>
     </div>
   );
 }
@@ -126,7 +146,7 @@ export default function TemperamentEditor({
       </p>
       {SCALARS.map((s) => (
         <Field key={s.k} label={<>{t(s.label)}<Mine on={isCustom(custom, s.k)} /></>} hint={t(s.hint, { name })} as="div">
-          <Slider value={knob(form, s.k)} range={RANGES[s.k]} step={s.step} onChange={(v) => setScalar(s.k, v)} label={t(s.label)} changed={Math.abs(knob(form, s.k) - knob(effective, s.k)) > 0.001} testId={`mate-gss-temp-${s.k}`} />
+          <Slider k={s.k} value={knob(form, s.k)} step={s.step} onChange={(v) => setScalar(s.k, v)} label={t(s.label)} changed={Math.abs(knob(form, s.k) - knob(effective, s.k)) > 0.001} testId={`mate-gss-temp-${s.k}`} />
         </Field>
       ))}
       <Field label={<>{t("gss.tempConflict")}<Mine on={isCustom(custom, "conflict")} /></>} hint={t("gss.tempConflictHint", { name })} as="div">
@@ -147,16 +167,27 @@ export default function TemperamentEditor({
       </Field>
       <Field label={<>{t("gss.tempPerEmotion")}<Mine on={isCustom(custom, "rise") || isCustom(custom, "settle") || isCustom(custom, "base")} /></>} hint={t(per.hint)} as="div">
         <Segmented value={which} onChange={setWhich} options={KNOBS.map((x) => ({ id: x.id, label: t(x.label) }))} testId="mate-gss-temp-knob" />
-        <ul className="mt-2 space-y-1.5" data-testid="mate-gss-temp-emotions" data-knob={which}>
+        {/* what either end means (each of the three has its own range), over the bars' column */}
+        <div className="mt-2.5 flex items-center gap-2 text-[10.5px] text-content-faint" aria-hidden data-testid="mate-gss-temp-ends">
+          <span className="w-[5.25rem] shrink-0" />
+          <span className="flex min-w-0 flex-1 justify-between">
+            <span>{t(per.low)}</span>
+            <span>{t(per.high)}</span>
+          </span>
+          <span className="w-12 shrink-0" />
+        </div>
+        <ul className="mt-1 space-y-1.5" data-testid="mate-gss-temp-emotions" data-knob={which}>
           {EMOTIONS.map((e) => {
             const v = knob(form, which, e);
             return (
-              <li key={e} className="flex items-center gap-2">
+              // (keyed by the knob too: a range input that keeps its node while min / max / value all change at once
+              // clamps the value to the old range first — the bars went out of step with the numbers)
+              <li key={`${which}-${e}`} className="flex items-center gap-2">
                 <span className="flex w-[5.25rem] shrink-0 items-center gap-1 truncate text-[12px] text-content-dim">
                   <span aria-hidden>{STATE_EMOJI[e]}</span> {t(EMOTION_LABEL[e])}
                   <Mine on={isCustom(custom, which, e)} />
                 </span>
-                <Slider value={v} range={RANGES[which]} step={per.step} onChange={(x) => setPer(which, e, x)} label={`${t(per.label)} · ${t(EMOTION_LABEL[e])}`} changed={Math.abs(v - knob(effective, which, e)) > 0.001} testId={`mate-gss-temp-${which}-${e}`} />
+                <Slider k={which} value={v} step={per.step} onChange={(x) => setPer(which, e, x)} label={`${t(per.label)} · ${t(EMOTION_LABEL[e])}`} changed={Math.abs(v - knob(effective, which, e)) > 0.001} testId={`mate-gss-temp-${which}-${e}`} />
               </li>
             );
           })}

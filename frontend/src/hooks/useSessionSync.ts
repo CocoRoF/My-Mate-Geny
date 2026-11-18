@@ -11,7 +11,7 @@ import { useProviderStore } from "../stores/providerStore";
 import { useMcpStore } from "../stores/mcpStore";
 import { useCliToolsStore } from "../stores/cliToolsStore";
 import { useMateStore } from "../stores/mateStore";
-import { cancelCaptureRequest, clientHello, handleCaptureRequest } from "../mate/screenCapture";
+import { cancelCaptureRequest, clientHello, handleCaptureRequest, knowsSystemInput } from "../mate/screenCapture";
 import { useSessionStore } from "../stores/sessionStore";
 import { useCallStore } from "../stores/callStore";
 import { handWakes, useAlarmStore } from "../stores/alarmStore";
@@ -162,7 +162,12 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
     const focused = () => hello(ws, document.hasFocus());
     let inputTimer:ReturnType<typeof setTimeout>|undefined;
     const input=()=>{clearTimeout(inputTimer);inputTimer=setTimeout(focused,100);};
-    const presence=setInterval(()=>{if(document.hasFocus())focused();},5000);
+    // (every touch / key / click: the server learns at once that this is where the user is — mate/screenCapture.ts)
+    let usedAt=0;
+    const used=()=>{const now=Date.now();if(now-usedAt<2000)return;usedAt=now;input();};
+    // (and now and then: a focused page, and the desktop app's windows whether focused or not — they know the
+    // user's input anywhere on the computer)
+    const presence=setInterval(()=>{if(document.hasFocus()||knowsSystemInput())focused();},5000);
 
     const restart = () => {
       const old = ws;
@@ -190,6 +195,7 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
     window.addEventListener("online", check);
     window.addEventListener("focus", focused);
     window.addEventListener("input",input);
+    for(const ev of ["pointerdown","keydown","touchstart"])window.addEventListener(ev,used,{capture:true,passive:true});
     window.addEventListener("blur",focused);
     window.addEventListener("hrh:screen-sharing", focused);
     const offResync = onResync(check);
@@ -203,6 +209,7 @@ export function useSessionSync({ sessions = true }: { sessions?: boolean } = {})
       window.removeEventListener("online", check);
       clearInterval(presence);clearTimeout(inputTimer);
       window.removeEventListener("input",input);window.removeEventListener("blur",focused);
+      for(const ev of ["pointerdown","keydown","touchstart"])window.removeEventListener(ev,used,{capture:true});
       window.removeEventListener("focus", focused);
       window.removeEventListener("hrh:screen-sharing", focused);
       offResync();

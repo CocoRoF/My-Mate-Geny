@@ -1370,7 +1370,7 @@ export interface Study {
   topic: string;
   url: string;
   goal: string;
-  depth: "quick" | "normal" | "deep";
+  depth: "very_quick" | "quick" | "normal" | "deep" | "very_deep";
   requested_by: "user" | "mate" | "self";
   node_id: string | null;
   state: StudyState;

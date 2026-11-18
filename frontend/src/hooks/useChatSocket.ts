@@ -25,6 +25,8 @@ declare global {
       notify?: (title: string, body: string) => void;
       /** desktop: her call rings — the console comes up (restored, in front) and says so (desktop/src/main.js hrh:call-ring) */
       ringCall?: (title: string, body: string) => void;
+      /** desktop: seconds since the user's last input anywhere on the computer (mate/screenCapture.ts) */
+      idleSeconds?: () => Promise<number | null>;
       openExternal?: (url: string) => void;
       /** desktop: which window this page is in (console | mate-overlay | mate-quick | mate-chat | bar) */
       surface?: string;

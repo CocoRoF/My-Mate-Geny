@@ -165,6 +165,9 @@ contextBridge.exposeInMainWorld("hrhNative", {
   // outside this window (its CSS px)
   cursor: { follow: (on) => ipcRenderer.send("cursor:follow", on === true), onPoint: (cb) => listen("cursor:point", cb) },
   notify: (title, body) => ipcRenderer.invoke("hrh:notify", { title, body }),
+  // seconds since the user last touched this computer anywhere (keyboard / mouse — not only these windows): where they
+  // are, for her voice and her calls (frontend mate/screenCapture.ts → the server's "device in use")
+  idleSeconds: () => ipcRenderer.invoke("hrh:idle"),
   // her call rings here: the console comes up in front (main.js hrh:call-ring)
   ringCall: (title, body) => ipcRenderer.invoke("hrh:call-ring", { title, body }),
   openExternal: (url) => ipcRenderer.invoke("hrh:openExternal", url),

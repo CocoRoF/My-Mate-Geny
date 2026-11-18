@@ -42,12 +42,15 @@ from app.services._ids import new_id, now_iso
 BRIDGE = str(Path(__file__).with_name("mcp_bridge.py"))
 KINDS = ("topic", "url", "curiosity")
 DEPTHS = {
-    # pages, facts, minutes
+    # pages, facts, minutes — 매우 얕게 · 얕게 · 보통 · 깊게 · 매우 깊게 (the user picks; her own: quick)
+    "very_quick": (2, 15, 5),
     "quick": (4, 30, 10),
     "normal": (10, 70, 20),
     "deep": (20, 140, 40),
+    "very_deep": (50, 320, 90),
 }
-URL_FOLLOW = 3          # a URL study: the page, and at most this many pages it links to
+# a URL study: the page, and at most this many pages it links to (and they link to: very deep explores the site)
+URL_FOLLOW = {"very_quick": 0, "quick": 2, "normal": 5, "deep": 15, "very_deep": 40}
 CURIOSITY = {"off": 0, "sometimes": 1, "often": 3}   # studies of her own a day
 CURIOSITY_IDLE_MIN = 20  # … only when the user hasn't written for this long
 CURIOSITY_REVISIT_DAYS = 14
@@ -113,8 +116,20 @@ Budget: at most {pages} pages and {facts} facts.
 """
 
 URL_TASK = ("Read this page and file what is worth knowing from it: {url}\n"
-            "Start with read_page on it. If it is an index or the start of a series and the user's goal needs more, "
-            "follow at most {follow} of its links that stay on the subject.")
+            "Start with read_page on it. {more}")
+URL_MORE = {
+    "very_quick": "Only this page: follow none of its links.",
+    "quick": "If it is an index or the start of a series and the user's goal needs more, follow at most {follow} of its "
+             "links that stay on the subject.",
+    "normal": "If it is an index or the start of a series and the user's goal needs more, follow at most {follow} of its "
+              "links that stay on the subject.",
+    "deep": "Go through it properly: follow the links that stay on the subject — the parts of a series, the sections of "
+            "a guide, the pages it is the index of — up to {follow} pages besides this one.",
+    "very_deep": "Explore the site thoroughly: this page and what it leads to — follow the links that stay on the "
+                 "subject, and theirs in turn (the sections, every part of a series, the documentation's pages, the "
+                 "related articles of the same site), up to {follow} pages besides this one. Read widely before you "
+                 "stop; file what each page adds.",
+}
 
 
 class StudyError(ValueError):
@@ -194,7 +209,6 @@ class Studies:
         if kind == "url":
             if not re.match(r"^https?://", url):
                 raise StudyError("a URL study needs an http(s) address")
-            depth = "quick"
         elif not topic:
             raise StudyError("what to study? (a topic)")
         if depth not in DEPTHS:
@@ -271,7 +285,7 @@ class Studies:
         mate = self.mates.store.get(study["mate_id"])
         pages, facts, minutes = DEPTHS[study["depth"]]
         if study["kind"] == "url":
-            pages = 1 + URL_FOLLOW
+            pages = 1 + URL_FOLLOW.get(study["depth"], URL_FOLLOW["normal"])
         self.db.execute("UPDATE know_studies SET state='running',started_at=? WHERE id=?", (now_iso(), sid))
         self.event(sid, "started", study["topic"] or study["url"], pages=pages, facts=facts, minutes=minutes)
         token = secrets.token_urlsafe(32)
@@ -345,7 +359,8 @@ class Studies:
             task = {"study_id": study["id"], "kind": study["kind"], "depth": study["depth"],
                     "budget": {"pages": pages, "facts": facts, "minutes": minutes}}
             if study["kind"] == "url":
-                task["task"] = URL_TASK.format(url=study["url"], follow=URL_FOLLOW)
+                follow = URL_FOLLOW.get(study["depth"], URL_FOLLOW["normal"])
+                task["task"] = URL_TASK.format(url=study["url"], more=URL_MORE.get(study["depth"], URL_MORE["normal"]).format(follow=follow))
             elif study["kind"] == "curiosity":
                 task["task"] = (f"On your own initiative, catch up on: {study['topic']}. The user cares about it; find "
                                 "what is new or useful to talk about with them (keep it brief: a quick study).")

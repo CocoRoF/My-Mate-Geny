@@ -10,6 +10,9 @@
  * off to a side, her face cut by its edge. Against her figure another shape of box shows the same of her; she goes
  * wherever she is dragged — only never all the way out of the box (a sliver of her stays in sight, so she can't be lost);
  * and the console's stage fits her whole again when its shape changes a lot.
+ *
+ * One view is kept per shape of the box (up to KEEP_SHAPES): the stage beside the conversation, on top of it, a window
+ * made small or large again — each layout comes back as she was set in it, and setting her in one leaves the others.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
@@ -158,6 +161,64 @@ const num = (n: unknown): n is number => typeof n === "number" && Number.isFinit
 /** a view kept before there was a figure to keep it against: fractions of the box, its shape unknown */
 type BoxView = AvatarViewT;
 
+/** views kept per avatar box: one per shape of it (beside the conversation, on top of it, a window made small …) */
+export const KEEP_SHAPES = 6;
+
+/** every view kept under `key`, one per shape of the box it was made in (a single one from before comes back as one;
+ *  an older box view, its shape unknown, as `box`) */
+export function readKepts(key: string | null): { views: KeptView[]; box: BoxView | null } {
+  if (!key) return { views: [], box: null };
+  try {
+    const v = JSON.parse(localStorage.getItem(key) || "null");
+    if (v && Array.isArray(v.views)) {
+      const views = (v.views as unknown[]).filter(
+        (k): k is KeptView => !!k && typeof k === "object" && num((k as KeptView).z) && num((k as KeptView).ox) && num((k as KeptView).oy) && num((k as KeptView).shape) && (k as KeptView).shape > 0,
+      );
+      return { views: views.map((k) => ({ z: k.z, ox: k.ox, oy: k.oy, shape: k.shape })), box: null };
+    }
+  } catch {
+    return { views: [], box: null };
+  }
+  const one = readKept(key);
+  return one ? (isKept(one) ? { views: [one], box: null } : { views: [], box: one }) : { views: [], box: null };
+}
+
+/** the view for a box of shape `shape`: the one made in the closest shape — with `refit`, only one close enough to it
+ *  (else she is fitted there) */
+export function pickKept(views: KeptView[], shape: number, refit: boolean): KeptView | null {
+  let best: KeptView | null = null;
+  let d = Infinity;
+  for (const k of views) {
+    const x = Math.abs(Math.log(shape / k.shape));
+    if (x < d) {
+      best = k;
+      d = x;
+    }
+  }
+  return best && refit && d > Math.log(REFIT_SHAPE) ? null : best;
+}
+
+/** `views` with `k` as the one for a box of shape `shape` (null: fitted there): what was kept for a shape close to it
+ *  goes, the others stay; the newest KEEP_SHAPES are kept */
+export function storeKept(views: KeptView[], shape: number, k: KeptView | null): KeptView[] {
+  const rest = views.filter((x) => shapeMoved(x.shape, shape));
+  return (k ? [...rest, k] : rest).slice(-KEEP_SHAPES);
+}
+
+function writeKepts(key: string | null, views: KeptView[]) {
+  if (!key) return;
+  try {
+    if (!views.length) localStorage.removeItem(key);
+    else
+      localStorage.setItem(
+        key,
+        JSON.stringify({ views: views.map((v) => ({ z: +v.z.toFixed(4), ox: +v.ox.toFixed(4), oy: +v.oy.toFixed(4), shape: +v.shape.toFixed(4) })) }),
+      );
+  } catch {
+    /* private mode */
+  }
+}
+
 export const isKept = (v: KeptView | BoxView): v is KeptView => "shape" in v;
 
 /** the view kept under `key` (null: fitted). An older box view comes back as one. */
@@ -173,15 +234,6 @@ export function readKept(key: string | null): KeptView | BoxView | null {
   return null;
 }
 
-function writeKept(key: string | null, v: KeptView | null) {
-  if (!key) return;
-  try {
-    if (!v) localStorage.removeItem(key);
-    else localStorage.setItem(key, JSON.stringify({ z: +v.z.toFixed(4), ox: +v.ox.toFixed(4), oy: +v.oy.toFixed(4), shape: +v.shape.toFixed(4) }));
-  } catch {
-    /* private mode */
-  }
-}
 
 /**
  * The view to draw: what is kept, in a `box` (px) she is fitted in as `figure` says, kept in reach. `refit`: a box of
@@ -205,8 +257,8 @@ export const viewTransform = (v: AvatarViewT) =>
  * against her fitted figure — `setFigure` takes what the body fits (MateAvatar `onFigure`); `reset()` goes back to the
  * fitted view. Other windows with the same key follow (the storage event). `touch: false` leaves a finger alone (a
  * phone's page scrolls, a tap pokes her); `doubleClickReset`: a double click goes back to the fitted view (the console's
- * stage); `refit`: a box whose shape changed a lot since the view was made shows her fitted — the view stays kept, for
- * a box like the one it was made on, until another one is made (the console's stage).
+ * stage); `refit`: a box of a shape no view was made in shows her fitted (the console's stage). One view per shape of
+ * the box is kept (readKepts / storeKept): each layout keeps its own.
  */
 export function useAvatarView(
   ref: React.RefObject<HTMLElement | null>,
@@ -214,7 +266,7 @@ export function useAvatarView(
   enabled: boolean,
   { touch = true, doubleClickReset = false, refit = false }: { touch?: boolean; doubleClickReset?: boolean; refit?: boolean } = {},
 ) {
-  const [kept, setKept] = useState<KeptView | BoxView | null>(() => readKept(storageKey));
+  const [kepts, setKepts] = useState(() => readKepts(storageKey));
   const [box, setBox] = useState<{ w: number; h: number } | null>(null);
   const [figure, setFigureNow] = useState<FigureShape>(FIGURE_GUESS);
   const [dragging, setDragging] = useState(false);
@@ -223,6 +275,8 @@ export function useAvatarView(
     setFigureNow((was) => (was.aspect === next.aspect && was.scale === next.scale && was.anchorY === next.anchorY ? was : next));
   }, []);
 
+  const shapeNow = box ? box.w / box.h : 1;
+  const kept: KeptView | BoxView | null = kepts.box ?? pickKept(kepts.views, shapeNow, refit);
   const view = viewIn(kept, figure, box, refit);
   const fit = box ? fitRect(figure, box.w, box.h) : WHOLE;
   const viewRef = useRef(view);
@@ -230,22 +284,23 @@ export function useAvatarView(
   const fitRef = useRef(fit);
   fitRef.current = fit;
   const shapeRef = useRef(1);
-  shapeRef.current = box ? box.w / box.h : 1;
-  const keptRef = useRef<KeptView | null>(null);
+  shapeRef.current = shapeNow;
+  const keptsRef = useRef(kepts);
+  keptsRef.current = kepts;
 
-  useEffect(() => setKept(readKept(storageKey)), [storageKey]);
+  useEffect(() => setKepts(readKepts(storageKey)), [storageKey]);
   useEffect(() => {
-    const onStorage = (e: StorageEvent) => e.key === storageKey && setKept(readKept(storageKey));
+    const onStorage = (e: StorageEvent) => e.key === storageKey && setKepts(readKepts(storageKey));
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, [storageKey]);
 
   // (an older box view, its shape unknown, is no use where she is fitted again: let go)
   useEffect(() => {
-    if (!refit || !kept || isKept(kept)) return;
-    writeKept(storageKey, null);
-    setKept(null);
-  }, [refit, kept, storageKey]);
+    if (!refit || !kepts.box) return;
+    writeKepts(storageKey, kepts.views);
+    setKepts({ views: kepts.views, box: null });
+  }, [refit, kepts, storageKey]);
 
   // the box's size: where she is fitted in it (before the first paint, so a kept view never shows in the wrong place)
   useLayoutEffect(() => {
@@ -271,9 +326,11 @@ export function useAvatarView(
       const c = clampView(v, f);
       const k = isHome(c) ? null : toKept(c, f, shapeRef.current);
       viewRef.current = c;
-      keptRef.current = k;
-      setKept(k);
-      if (save) writeKept(storageKey, k);
+      // (this shape's view is what changed: the other layouts keep theirs)
+      const next = { views: storeKept(keptsRef.current.views, shapeRef.current, k), box: null };
+      keptsRef.current = next;
+      setKepts(next);
+      if (save) writeKepts(storageKey, next.views);
     },
     [storageKey],
   );
@@ -297,7 +354,7 @@ export function useAvatarView(
       if (next === viewRef.current) return;
       put(next, false);
       clearTimeout(saveTimer);
-      saveTimer = setTimeout(() => writeKept(storageKey, keptRef.current), 250);
+      saveTimer = setTimeout(() => writeKepts(storageKey, keptsRef.current.views), 250);
     };
     const onDouble = (e: MouseEvent) => {
       if ((e.target as HTMLElement).closest("button, a, input, textarea, select, [data-no-pan]")) return;
@@ -342,7 +399,7 @@ export function useAvatarView(
       } catch {
         /* ignore */
       }
-      writeKept(storageKey, keptRef.current);
+      writeKepts(storageKey, keptsRef.current.views);
     };
     const onClick = (e: MouseEvent) => {
       if (!swallowClick) return;

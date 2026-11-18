@@ -436,7 +436,13 @@ def test_a_study_of_her_own_that_found_nothing_is_not_brought_up(db):
 def test_a_url_study_and_bad_requests(db):
     store, mates, mid, g = setup(db)
     st = mates.studies.request(mid, kind="url", url="https://example.test/page")
-    assert st["depth"] == "quick" and st["url"] == "https://example.test/page"
+    assert st["depth"] == "normal" and st["url"] == "https://example.test/page"
+    # a URL study takes a depth too (very deep: the site explored, dozens of its pages)
+    from app.mate.study import URL_FOLLOW, URL_MORE
+
+    deep = mates.studies.request(mid, kind="url", url="https://example.test/docs", depth="very_deep")
+    assert deep["depth"] == "very_deep" and URL_FOLLOW["very_deep"] >= 40 and "thoroughly" in URL_MORE["very_deep"]
+    assert URL_FOLLOW["very_quick"] == 0 and "none of its links" in URL_MORE["very_quick"]
     with pytest.raises(ValueError):
         mates.studies.request(mid, kind="url", url="javascript:alert(1)")
     with pytest.raises(ValueError):

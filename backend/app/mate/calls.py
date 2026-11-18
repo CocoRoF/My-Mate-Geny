@@ -1143,7 +1143,10 @@ class CallService:
             if not self._takes_calls(c):
                 continue
             d = out.setdefault(c.device, {"kind": self._kind(c.native), "open": True, "active": 0.0, "visible": False})
-            d["active"] = max(d["active"], c.active_at)
+            # (when the user last did something there — a touch, a key, a click, anywhere on a computer with the desktop
+            # app — for pages that say; an older page: when it last had the focus)
+            used = self.broker.device_used(c.device) if c.reports_idle else None
+            d["active"] = max(d["active"], used if used is not None else c.active_at)
             d["visible"] = d["visible"] or c.visible
         for lk in self.links.values():
             if lk.device not in out:

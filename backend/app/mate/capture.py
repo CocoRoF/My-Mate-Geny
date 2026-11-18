@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 CAPTURE_BRIDGE = 1        # the desktop capture bridge this server speaks (hrhNative.capture.version)
+IN_USE_S = 30 * 60  # (a device the user last did something on longer ago than this: not where they are)
 MULTI_BRIDGE = 4          # … and from which one it sends every screen of an all-screens share, the main one first
 MAX_PICTURES = 6          # pictures per capture (screens; the desktop app takes at most as many: MAX_SCREENS)
 ASK_TIMEOUT_S = 45        # the desktop app's "may she look?" prompt: no answer → no
@@ -91,6 +92,7 @@ class Client:
     native: str = ""             # the app around the page: "android" (the phone app), "desktop-…", "" (a browser)
     calls: int = 0               # the phone-call screen this window has (app/mate/calls.py CALL_CLIENT; 0: none)
     visible: bool = True         # the page is on screen (an app sent to the background isn't)
+    reports_idle: bool = False   # its hello says when the user last touched it (``idle``): newer pages
 
 
 @dataclass
@@ -151,6 +153,9 @@ class CaptureBroker:
         self._pending: dict[str, Pending] = {}
         self.discard_upload = lambda aid: None
         self.on_consent_change = lambda: None
+        # where the user is: per device, when they last did something on it (a touch, a key, a click — on a computer
+        # running the desktop app, anywhere on it; a message typed from it). Monotonic.
+        self._used: dict[str, float] = {}
 
     # ---- the windows (one per /ws/sessions socket) ----
 
@@ -193,6 +198,42 @@ class CaptureBroker:
         self.on_consent_change()
         if msg.get("active"):
             c.active_at = time.monotonic()
+        idle = msg.get("idle")
+        if c.device and isinstance(idle, (int, float)) and not isinstance(idle, bool) and 0 <= idle < 1e8:
+            c.reports_idle = True
+            self.note_used(c.device, time.monotonic() - float(idle))
+
+    # ---- where the user is ----
+
+    def note_used(self, device: str, at: float | None = None) -> None:
+        """the user did something on ``device`` (at: monotonic; now by default) — a message typed from it, or its
+        window's word on their last input"""
+        if not device:
+            return
+        at = time.monotonic() if at is None else at
+        if at > self._used.get(device, -1e18):
+            self._used[device] = at
+        if len(self._used) > 64:
+            for k in sorted(self._used, key=self._used.__getitem__)[:32]:
+                self._used.pop(k, None)
+
+    def device_used(self, device: str) -> float | None:
+        """when the user last did something on ``device`` (monotonic), or None if nothing of it says (older pages)"""
+        return self._used.get(device)
+
+    def in_use(self, within: float = IN_USE_S) -> str | None:
+        """The device the user is on: of their devices that can speak now, the one they did something on last (within
+        ``within`` seconds) — not merely the one with a window in focus (a phone left on the desk with the app open is
+        not where they are). Can speak: a window on screen, a browser tab behind others, the desktop app even with its
+        windows hidden (its runtime window reads aloud) — not the phone app sent to the background. None: nothing says."""
+        now = time.monotonic()
+        shown = {c.device for c in self._clients.values() if c.device and (c.visible or c.native != "android")}
+        best, at = None, now - within
+        for dev in shown:
+            t = self._used.get(dev)
+            if t is not None and t > at:
+                best, at = dev, t
+        return best
 
     def disconnect(self, conn: str) -> None:
         self._clients.pop(conn, None)

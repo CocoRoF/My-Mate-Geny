@@ -1917,7 +1917,7 @@ class MateService:
     async def _tool_learn_url(self, mate, _sid, args):
         try:
             st = self.studies.request(mate["id"], kind="url", url=str(args.get("url") or ""),
-                                      goal=str(args.get("goal") or ""), by="mate")
+                                      goal=str(args.get("goal") or ""), depth=str(args.get("depth") or "normal"), by="mate")
         except StudyError as exc:
             raise MateError(str(exc)) from None
         return (f"Reading it in the background (study {st['id']}); the result reaches you as a <study_result>. Tell the "
