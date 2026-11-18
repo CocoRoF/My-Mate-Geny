@@ -89,7 +89,8 @@ def build(directory: Path, version: str, arch: str) -> Path:
                 str(output),
             ],
             check=True,
-            timeout=600,
+            # (a ~530 MB image on the Intel runners takes 9–12 min, so 10 min failed twice in a row on 2026-11-18)
+            timeout=1800,
         )
     subprocess.run(["hdiutil", "verify", str(output)], check=True, timeout=120)
     print(f"DMG_VERIFIED {output} ({output.stat().st_size} bytes)", flush=True)
