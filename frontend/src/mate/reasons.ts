@@ -22,6 +22,7 @@ const WHY: Record<string, MsgKey> = {
   warm: "mateSettings.relWhyWarm",
   smiled: "mateSettings.relWhySmiled",
   gift: "mateSettings.relWhyGift",
+  played: "mateSettings.relWhyPlayed",
   memory: "mateSettings.relWhyMemory",
   rude: "mateSettings.relWhyRude",
   hostile: "mateSettings.relWhyHostile",

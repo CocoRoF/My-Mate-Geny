@@ -112,4 +112,5 @@ export default {
   goalStep3: "Nearly there",
   goalSetback: "A setback lately",
   momentGoal: "Reached: {what}",
+  withMate: "with {name}",
 };

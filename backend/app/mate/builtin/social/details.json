@@ -1,0 +1,65 @@
+{
+  "_": "What only she knows of an outing, for the built-in mates (outings.json own is for anyone): {kind: [{ko, en}]}. Picked first, before the general ones.",
+  "chaerin": {
+    "cafe": [
+      {"ko": "나는 계절 한정 디저트를 시켜서 사진부터 찍었다.", "en": "I ordered the seasonal dessert and photographed it before anything else."},
+      {"ko": "나는 듣는 쪽이었지만 속으로는 꽤 즐거웠다.", "en": "I mostly listened, but inside I was enjoying it a lot."}
+    ],
+    "books": [
+      {"ko": "나는 테스트 자동화 책을 한참 들여다봤다.", "en": "I spent ages leafing through a book on test automation."},
+      {"ko": "나는 게임 아트북 코너에서 떠나질 못했다.", "en": "I couldn't tear myself away from the game art books."}
+    ],
+    "games": [
+      {"ko": "나는 리듬 게임에서 조용히 신기록을 냈다.", "en": "I quietly set a new record on a rhythm game."}
+    ],
+    "online": [
+      {"ko": "나는 길드장답게 차분하게 공략을 지휘했다.", "en": "I called the strategy calmly, like a guild master should."},
+      {"ko": "나는 버그를 하나 발견해서 몰래 메모해 뒀다.", "en": "I spotted a bug and quietly made a note of it."}
+    ],
+    "walk": [
+      {"ko": "나는 걷는 내내 다음 레이드 공략을 생각했다.", "en": "I spent the whole walk thinking about the next raid."}
+    ],
+    "call": [
+      {"ko": "나는 대부분 들었지만 가끔 한마디씩 거들었다.", "en": "I mostly listened and chimed in now and then."}
+    ]
+  },
+  "seoa": {
+    "cafe": [
+      {"ko": "나는 딸기 우유가 들어간 메뉴부터 찾았다.", "en": "I looked for anything with strawberry milk in it first."},
+      {"ko": "나는 카페 인테리어를 보고 다음 방송 배경 아이디어를 얻었다.", "en": "The café's look gave me an idea for my next stream background."}
+    ],
+    "karaoke": [
+      {"ko": "나는 노래 방송에서 부를 고음 곡을 몰래 연습했다.", "en": "I secretly practised the high-note song for my singing stream."}
+    ],
+    "food": [
+      {"ko": "나는 맵기 최고 단계에 도전했다가 후회했다.", "en": "I tried the hottest level and regretted it."}
+    ],
+    "online": [
+      {"ko": "나는 습관처럼 '채팅창 여러분'이라고 말했다가 웃음이 터졌다.", "en": "Out of habit I said \"hi chat\" and cracked up."}
+    ],
+    "walk": [
+      {"ko": "나는 브이로그에 쓰려고 영상을 조금 찍었다.", "en": "I filmed a little for a vlog."}
+    ],
+    "call": [
+      {"ko": "나는 쉬지 않고 떠들었다.", "en": "I talked non-stop."}
+    ]
+  },
+  "mao": {
+    "cafe": [
+      {"ko": "나는 따뜻한 허브차를 마셨다.", "en": "I had a warm herbal tea."},
+      {"ko": "나는 토끼 모자를 벗을까 말까 한참 고민했다.", "en": "I spent a while deciding whether to take off my rabbit hat."}
+    ],
+    "books": [
+      {"ko": "나는 마법 이야기가 나오는 동화책을 골랐다.", "en": "I picked a storybook with magic in it."}
+    ],
+    "games": [
+      {"ko": "나는 규칙을 다 외우기도 전에 게임이 끝나 버렸다.", "en": "The game was over before I had learned all the rules."}
+    ],
+    "walk": [
+      {"ko": "나는 기분이 좋아서 손끝에서 작은 불꽃이 튈 뻔했다.", "en": "I was so happy a tiny spark nearly flew from my fingertips."}
+    ],
+    "online": [
+      {"ko": "나는 조작이 자꾸 헷갈려서 몇 번이나 물어봤다.", "en": "I kept mixing up the controls and had to ask again and again."}
+    ]
+  }
+}

@@ -31,6 +31,7 @@ import { onAndroid } from "../../mate/call/native";
 import MateMessages from "./MateMessages";
 import MateStage, { BuiltinBadge, MateThumb, moodLabel } from "./MateStage";
 import type { StageWindowKind } from "./stage/StageMenu";
+import { gameBadge, useGameView } from "./stage/useGame";
 import { takeMatePanelLink } from "../../lib/nav";
 import { useT } from "../../i18n";
 import { useStudio } from "../../stores/studioStore";
@@ -43,6 +44,7 @@ const RelationPanel = lazy(() => import("./RelationPanel"));
 const StatusWindow = lazy(() => import("./stage/StatusWindow"));
 const PlacesWindow = lazy(() => import("./stage/PlacesWindow"));
 const OutfitsWindow = lazy(() => import("./stage/OutfitsWindow"));
+const GamesWindow = lazy(() => import("./stage/GamesWindow"));
 const MateStudio = lazy(() => import("./studio/MateStudio"));
 const MateGuide = lazy(() => import("./guide/MateGuide"));
 
@@ -106,6 +108,7 @@ export default function MateView() {
   const [panel, setPanel] = useState<"mate" | "relation" | null>(null);
   // her menu on the stage: one window at a time, over her (a sheet on a phone)
   const [stageWindow, setStageWindow] = useState<StageWindowKind | null>(null);
+  const game = useGameView(mate);
   const [mateTab, setMateTab] = useState<"profile" | "avatar" | "bond" | undefined>(undefined);
   const [bondTab, setBondTab] = useState<"memory" | "relation">("relation");
   const mateOpen = panel === "mate";
@@ -623,6 +626,8 @@ export default function MateView() {
         />
       ) : stageWindow === "places" ? (
         <PlacesWindow key={mate.id} mate={mate} phone={compact} onClose={closeWindow} onSay={say} />
+      ) : stageWindow === "games" ? (
+        <GamesWindow key={mate.id} mate={mate} phone={compact} game={game} onClose={closeWindow} onSend={(text) => conv.send(text)} />
       ) : (
         <OutfitsWindow
           key={mate.id}
@@ -675,7 +680,7 @@ export default function MateView() {
               }
               onTap={() => conv.poke("greet")}
               onLife={() => openWindow("status")}
-              menu={{ open: stageWindow, onOpen: openWindow, compact }}
+              menu={{ open: stageWindow, onOpen: openWindow, compact, badges: { games: gameBadge(game.v) } }}
               window={!compact && stageWindowNode}
             />
           )}

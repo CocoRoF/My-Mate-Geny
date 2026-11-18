@@ -92,6 +92,52 @@ function WebSearch() {
   );
 }
 
+/** 메이트끼리: the user's mates know each other, make plans and go out together (app/mate/social); and, between a man and a
+ * woman among them, now and then a spark. */
+function MatesTogether() {
+  const t = useT();
+  const [on, setOn] = useState<{ social: boolean; romance: boolean } | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let alive = true;
+    getVoiceSettings().then(
+      (s) => alive && s.social_on !== undefined && setOn({ social: s.social_on, romance: s.social_romance ?? true }),
+      () => {},
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (on === null) return null; // (an older server: nothing to switch)
+  const set = async (patch: { social_on?: boolean; social_romance?: boolean }) => {
+    setErr("");
+    const before = on;
+    setOn({ social: patch.social_on ?? on.social, romance: patch.social_romance ?? on.romance });
+    try {
+      const s = await putVoiceSettings(patch);
+      setOn({ social: s.social_on ?? true, romance: s.social_romance ?? true });
+    } catch (e) {
+      setOn(before);
+      setErr((e as Error).message);
+    }
+  };
+  return (
+    <Section title={t("social.settingsTitle")} testId="settings-mate-social">
+      <div className="flex items-center gap-1">
+        <Toggle on={on.social} onChange={(x) => void set({ social_on: x })} label={t("social.settingsOn")} testId="mate-social-on" />
+        <HelpTip>{t("social.settingsOnHelp")}</HelpTip>
+      </div>
+      {on.social && (
+        <div className="flex items-center gap-1">
+          <Toggle on={on.romance} onChange={(x) => void set({ social_romance: x })} label={t("social.settingsRomance")} testId="mate-social-romance" />
+          <HelpTip>{t("social.settingsRomanceHelp")}</HelpTip>
+        </div>
+      )}
+      <ErrorLine text={err} />
+    </Section>
+  );
+}
+
 /**
  * Her calls and messages on this phone (the Android app, docs/mate-calls.md "On Android"): with the app closed it checks
  * in now and then (no line held, nothing in the shade) — or, switched on, holds a line for her calls the moment she
@@ -225,6 +271,7 @@ export default function MateTab() {
       <DeviceSound />
       <SpeakFirst />
       <WebSearch />
+      <MatesTogether />
       {onAndroid() && <PhoneCalls />}
       {canShareScreen() && (
         <div data-testid="settings-screen">

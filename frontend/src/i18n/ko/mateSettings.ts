@@ -432,6 +432,7 @@ const ko: Messages<"mateSettings"> = {
   relWhyMemory: "새 기억",
   relWhySmiled: "함께 웃음",
   relWhyGift: "선물을 보냄",
+  relWhyPlayed: "같이 게임을 함",
   relWhyAnniversary: "함께한 지 {days}일",
   relWhyRude: "거친 말",
   relWhyHostile: "함부로 대함",

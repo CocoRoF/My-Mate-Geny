@@ -49,6 +49,7 @@ STREAK, STREAK_WEEK = 0.4, 1.0      # a talk day after a talk day; +1 more each 
 WARM, WARM_CAP = 0.25, 0.75         # a warm word of theirs; per day
 SMILED, SMILED_CAP = 0.25, 0.75     # a reply of hers that laughs or smiles (her face's tags); per day
 GIFT, GIFT_CAP = 0.8, 1.2           # something they sent her (app/mate/life); per day
+PLAY, PLAY_CAP = 0.5, 1.0           # a game they played with her to the end (app/mate/games.py); per day
 ANNIVERSARY = 2.0                   # talking on one of the ANNIVERSARIES (the 7th, 30th … day together)
 MEMORY, MEMORY_CAP = 0.4, 0.8       # a new memory; per day
 GAIN_CAP = 3.2                      # all gains of one day
@@ -182,6 +183,7 @@ def new() -> dict[str, Any]:
         "tz": None,  # the zone its days were counted in (store.tz_and_key); another → computed again from history
         "marks": [],  # what the user did by hand ({at, kind: set | reset, v}): a recompute in another zone keeps them
         "gifts": [],  # when they sent her something (credit_gift): no message records it, so a recompute reads it here
+        "played": [],  # when they finished a game with her (credit_play), the same way
         "costs": [],  # what else they did that she minded ({at, code}: ``cost``), for a recompute the same way
         "away_until": None,  # they said they'd be gone until then (``cost`` "away")
         **BONDS, "bonds_log": [],  # the other bonds and their changes ({at, bond, d, why, v})
@@ -295,7 +297,7 @@ def _bump(r: dict[str, Any], delta: float, why: str, at: datetime, *, floor: flo
 def _today(r: dict[str, Any], day: date) -> dict[str, Any]:
     if r["today"].get("day") != day.isoformat():
         r["today"] = {"day": day.isoformat(), "turns": 0, "talked": False, "lively": 0, "warm": 0.0, "smiled": 0.0,
-                      "gift": 0.0, "memory": 0.0, "rude": 0.0, "hostile": 0.0, "gained": 0.0}
+                      "gift": 0.0, "play": 0.0, "memory": 0.0, "rude": 0.0, "hostile": 0.0, "gained": 0.0}
     return r["today"]
 
 
@@ -526,6 +528,18 @@ def credit_gift(r: dict[str, Any], at: datetime, tz: Any) -> None:
     r["gifts"] = [*(r.get("gifts") or []), _iso(at)][-200:]
     t = _today(r, at.astimezone(tz).date())
     _gain(r, t, GIFT, "gift", at, "gift", GIFT_CAP)
+    refresh(r, at, tz)
+
+
+def credit_play(r: dict[str, Any], at: datetime, tz: Any) -> None:
+    """They played a game with her to the end (app/mate/games.py): kept in ``played`` for a recompute, like a gift."""
+    if not r["enabled"] or r["paused"]:
+        return
+    if r["started_at"] is None:
+        r["started_at"] = _iso(at)
+    r["played"] = [*(r.get("played") or []), _iso(at)][-200:]
+    t = _today(r, at.astimezone(tz).date())
+    _gain(r, t, PLAY, "played", at, "play", PLAY_CAP)
     refresh(r, at, tz)
 
 
@@ -779,7 +793,7 @@ def replay(events: list[tuple[datetime, str, Any]], now: datetime, tz: Any,
         at = _t(m.get("at"))
         if at is not None and m.get("kind") in ("set", "reset"):
             timeline.append((at, m["kind"], m.get("v")))
-    order = {"turn": 0, "memory": 1, "gift": 1, "cost": 1, "set": 2, "reset": 2}
+    order = {"turn": 0, "memory": 1, "gift": 1, "play": 1, "cost": 1, "set": 2, "reset": 2}
     seen = None
     for at, what, arg in sorted(timeline, key=lambda e: (e[0], order.get(e[1], 3))):
         advance(r, at, tz)
@@ -790,6 +804,8 @@ def replay(events: list[tuple[datetime, str, Any]], now: datetime, tz: Any,
             credit_memory(r, at, tz)
         elif what == "gift":
             credit_gift(r, at, tz)
+        elif what == "play":
+            credit_play(r, at, tz)
         elif what == "cost" and arg:
             c = arg if isinstance(arg, dict) else {"code": arg}
             cost(r, str(c.get("code") or ""), at, tz, c.get("until"))

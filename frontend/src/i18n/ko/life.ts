@@ -112,4 +112,5 @@ export default {
   goalStep3: "거의 다 왔어요",
   goalSetback: "최근에 한 번 주춤했어요",
   momentGoal: "{what}: 이뤘어요",
+  withMate: "{name:과} 함께",
 };

@@ -154,7 +154,7 @@ export default function MateStage({
   /** her status on the stage was tapped */
   onLife?: () => void;
   /** her menu on the stage (Status, Places, Outfits), and which of its windows is open */
-  menu?: { open: StageWindowKind | null; onOpen: (k: StageWindowKind) => void; compact?: boolean };
+  menu?: { open: StageWindowKind | null; onOpen: (k: StageWindowKind) => void; compact?: boolean; badges?: Partial<Record<StageWindowKind, string>> };
   /** the open window, drawn over her */
   window?: ReactNode;
   /** the view's layout (side by side, stacked): another one is another shape of stage, and she is fitted whole again */
@@ -222,7 +222,7 @@ export default function MateStage({
       </div>
       {menu && (
         <div className={`absolute z-20 ${menu.compact ? "right-2 top-2" : "right-3 top-3"}`}>
-          <StageMenu open={menu.open} onOpen={menu.onOpen} compact={menu.compact} />
+          <StageMenu open={menu.open} onOpen={menu.onOpen} compact={menu.compact} badges={menu.badges} />
         </div>
       )}
       {overlay}

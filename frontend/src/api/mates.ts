@@ -138,6 +138,8 @@ export interface MateLifeSummary {
   /** the picture of where she is, at this time of day */
   art?: string;
   weather?: "clear" | "cloudy" | "rain" | "snow";
+  /** the season where the user is (the light out of doors) */
+  season?: "spring" | "summer" | "autumn" | "winter";
   /** the real weather where the user is (life/world.py): °C now, the city; none without a location */
   temp?: number | null;
   city?: string;
@@ -156,6 +158,8 @@ export interface MateLifeSummary {
   asleep?: boolean;
   /** they are with her in person */
   with_user?: boolean;
+  /** she is out with a friend among the user's mates (app/mate/social), as they planned */
+  with_mate?: { id: string; name: string; kind: string } | null;
   needs?: Record<LifeNeed, number>;
   /** what today is where the user lives: a day she knows (Pepero Day, Chuseok …), else the public holiday by its name */
   observance?: LifeObservance | null;
@@ -749,6 +753,10 @@ export interface VoiceSettings {
   google_key_shared?: boolean;
   /** 스스로 인터넷 검색: every mate may search the web herself in a conversation (an older server: absent) */
   web_search?: boolean;
+  /** 메이트끼리 어울리기: the user's mates know each other, make plans and go out together (app/mate/social) */
+  social_on?: boolean;
+  /** …and between a man and a woman among them, now and then a spark */
+  social_romance?: boolean;
 }
 
 export interface UserLocation {
@@ -775,6 +783,8 @@ export type VoiceSettingsPatch = Partial<{
   whisper_url: string;
   http_tts_url: string;
   web_search: boolean;
+  social_on: boolean;
+  social_romance: boolean;
 }>;
 
 export interface VoiceOption {
@@ -905,6 +915,126 @@ export const getRelation = (id: string) => apiFetch<RelationView>(`/api/mates/${
 export const getRelationJournal = (id: string, days = 30) =>
   apiFetch<RelationJournal>(`/api/mates/${enc(id)}/relation/journal?days=${days}`);
 export const getLife = (id: string) => apiFetch<LifeView>(`/api/mates/${enc(id)}/life`);
+
+// ---- her friends among the user's mates (app/mate/social, docs/mate-social.md) ----
+
+export type SocialStage = "awkward" | "acquainted" | "friend" | "close" | "best";
+export type SocialSpark = "none" | "crush" | "mutual" | "theirs";
+export type SocialMood = "great" | "good" | "okay" | "awkward";
+
+export interface SocialTie {
+  /** the other mate */
+  id: string;
+  name: string;
+  icon: string;
+  stage: SocialStage;
+  /** how they came to know each other */
+  how: "builtin" | "introduced" | "met";
+  since: string;
+  story: LifeNames;
+  /** how fond she is of them, and they of her (0–100) */
+  fond: number;
+  fond_back: number;
+  /** how close they are (0–100) */
+  close: number;
+  together: number;
+  last: string | null;
+  /** only where sparks are on and fit */
+  spark: SocialSpark;
+}
+
+export interface SocialPlan {
+  id: string;
+  with: string;
+  kind: string;
+  names: LifeNames;
+  at: string;
+  until: string;
+  status: "planned" | "on";
+}
+
+export interface SocialEvent {
+  id: string;
+  type: "met" | "introduced" | "message" | "outing" | "called_off";
+  at: string;
+  until?: string | null;
+  with: string;
+  with_name: string;
+  kind?: string | null;
+  names: LifeNames;
+  mood?: SocialMood | null;
+  /** what both of them remember */
+  text: LifeNames;
+  /** what only she knows of it */
+  own: LifeNames;
+  mood_line: LifeNames;
+  note: string;
+  /** called off: who couldn't make it, and why */
+  by?: string | null;
+  why?: "asleep" | "with_user" | null;
+  /** she was the first of the two (introduced: the one the user told) */
+  first: boolean;
+  spark: boolean;
+}
+
+export interface MateSocial {
+  enabled: boolean;
+  romance: boolean;
+  ties: SocialTie[];
+  plans: SocialPlan[];
+  events: SocialEvent[];
+}
+
+export const getSocial = (id: string) => apiFetch<MateSocial>(`/api/mates/${enc(id)}/social`);
+
+// ---- little games with her (app/mate/games.py, docs/mate-games.md) ----
+
+export type GameKind = "wordchain" | "twenty" | "chosung" | "rps";
+export type RpsHand = "rock" | "scissors" | "paper";
+
+export interface GameState {
+  game: GameKind;
+  status: "on" | "done";
+  lang: string;
+  started: string;
+  at: string;
+  score: { user: number; mate: number };
+  result: "user" | "mate" | "draw" | "quit" | null;
+  turn: "user" | "mate" | null;
+  by: "user" | "mate";
+  last: Record<string, unknown>;
+  // 끝말잇기
+  words?: { w: string; by: "user" | "mate" }[];
+  next?: string[];
+  // 스무고개
+  category?: string;
+  asked?: number;
+  max?: number;
+  ready?: boolean;
+  /** what she kept secret: only once it is over */
+  answer?: string;
+  // 초성 퀴즈
+  initials?: string;
+  hint?: string;
+  round?: number;
+  rounds?: number;
+  tries?: number;
+  past?: { answer: string; won: boolean }[];
+  // 가위바위보
+  throws?: { user: RpsHand; mate: RpsHand; win: "user" | "mate" | "draw" }[];
+  to?: number;
+}
+
+export interface GameView {
+  game: GameState | null;
+  record: Record<GameKind, { user: number; mate: number }>;
+  /** the games she can play (초성 퀴즈 only in Korean) */
+  games: GameKind[];
+}
+
+export const getGame = (id: string) => apiFetch<GameView>(`/api/mates/${enc(id)}/game`);
+export const gameAction = (id: string, body: { action: "start"; game: GameKind } | { action: "throw"; hand: RpsHand } | { action: "give_up" | "close" }) =>
+  apiFetch<GameView>(`/api/mates/${enc(id)}/game`, { method: "POST", body: JSON.stringify(body) });
 export const setLifePlan = (id: string, slot: string, activity: string | null) =>
   apiFetch<LifeView>(`/api/mates/${enc(id)}/life/plan/${enc(slot)}`, { method: "PUT", body: JSON.stringify({ activity }) });
 export const sendLifeGift = (id: string, item: string) =>

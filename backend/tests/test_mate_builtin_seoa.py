@@ -411,7 +411,7 @@ def test_her_pack_holds_all_she_needs():
     from app.mate.life import profile as P
 
     world = P.load("seoa")
-    for place in world["places"]:
+    for place in [k for k, p in world["places"].items() if not p.get("hidden")]:  # (out with a friend: the friend's picture)
         for slot in SLOTS:
             assert (folder / "places" / f"{place}-{slot}.webp").is_file(), (place, slot)
     assert (folder / "places" / "map.webp").is_file()

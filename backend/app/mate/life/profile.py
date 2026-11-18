@@ -128,6 +128,13 @@ def check(doc: dict[str, Any]) -> dict[str, Any]:
     _check_more(doc)
     if "rest" not in activities:
         raise ValueError("life: there must be a `rest` she can always fall back on")
+    # (out with a friend somewhere of the friend's: every day has it, never on her map, and it shows the friend's picture of the
+    # place: social/outings.py)
+    places.setdefault(sim.OUT, {"names": {"ko": "친구와 외출", "en": "Out with a friend"}, "about": "out with a friend", "minutes": 20,
+                                "hidden": True})
+    activities.setdefault(sim.OUTING, {"names": {"ko": "친구와 함께", "en": "With a friend"}, "place": sim.OUT, "free": False,
+                                       "minutes": [60, 120], "needs": {"fun": -0.25, "stress": -0.1, "affection": -0.06},
+                                       "doing": "out with a friend"})
     return doc
 
 

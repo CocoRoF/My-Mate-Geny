@@ -129,7 +129,7 @@ test("promises: status in words and tone, and when (due, made, settled)", () => 
 test("what is still with her: how much, what, when, and what the apologies so far were", () => {
   const g = { v: 0.6, why: { code: "hostile", kind: "threat" }, hours: 3, sorry: 0, owned: false };
   assert.deepEqual(grudgeParts(KO, g), { strength: "아직 아픔", what: "위협을 받아서", ago: "3시간 전", sorry: "아직 없어요", stings: true });
-  assert.equal(grudgeParts(KO, { ...g, v: 0.3, sorry: 2 }).sorry, "2번, 그냥 미안하다는 말만");
+  assert.equal(grudgeParts(KO, { ...g, v: 0.3, sorry: 2 }).sorry, "2번, 미안하다는 말만");
   assert.equal(grudgeParts(KO, { ...g, v: 0.3 }).strength, "덜 풀림");
   assert.equal(grudgeParts(EN, { ...g, sorry: 1, owned: true }).sorry, "1, owning what you did");
   assert.equal(grudgeParts(KO, { ...g, why: {} }).what, "내가 한 일");
@@ -139,7 +139,7 @@ test("each journal entry in a line, by its layer", () => {
   const e = (layer: GssEntry["layer"], data: Record<string, unknown>, kind = "") => ({ layer, kind, data });
   assert.equal(entryText(KO, e("feeling", { emotion: "angry", from: 0.2, to: 0.62, why: { code: "rude" } })), "화남 ↑ 20 → 62 · 거친 말을 들어서");
   assert.equal(entryText(KO, e("feeling", { emotion: "happy", from: 0.6, to: 0.3 })), "기쁨 ↓ 60 → 30");
-  assert.equal(entryText(KO, e("grudge", { v: 0.5, why: { code: "dismissed" }, sorry: 1, owned: true })), "마음에 남음: 50 · 차갑게 넘겨서 · 1번, 잘못을 인정하며");
+  assert.equal(entryText(KO, e("grudge", { v: 0.5, why: { code: "dismissed" }, sorry: 1, owned: true })), "마음에 남음: 50 · 차갑게 넘겨서 · 1번, 잘못을 인정함");
   // (trust, romance, respect as 0 – 1 or 0 – 100; affinity always 0 – 100; a why of the relationship's log)
   assert.equal(entryText(KO, e("bond", { trust: { d: -0.05, v: 0.42 }, affinity: { d: -1.5, v: 31.2 }, why: "rude" })), "신뢰 −5 → 42, 호감도 −1.5 → 31 · 거친 말");
   assert.equal(entryText(EN, e("bond", { axis: "respect", d: 2, v: 55 })), "Respect +2 → 55");
