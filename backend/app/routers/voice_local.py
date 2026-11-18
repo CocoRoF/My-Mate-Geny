@@ -158,19 +158,23 @@ async def unload(model_id: str, request: Request) -> Any:
 
 # ---- voices ----
 
-def _public_voice(v: dict[str, Any], adapters: dict[str, str] | None = None) -> dict[str, Any]:
-    """a voice as the studio sees it; ``adapters``: {model id: run} it speaks with (Voice Studio → 학습)"""
+def _public_voice(v: dict[str, Any], adapters: dict[str, str] | None = None,
+                  trained: dict[str, str] | None = None) -> dict[str, Any]:
+    """a voice as the studio sees it; ``adapters``: {model id: run} it speaks with (Voice Studio → 학습); ``trained``:
+    every model it is trained for — ready, or (a built-in voice's) coming with the model once it is installed"""
     refs = [{k: r.get(k) for k in ("id", "label", "transcript", "language", "duration", "stats")}
             for r in v.get("references") or []]
-    return {**{k: v.get(k) for k in ("id", "name", "language", "instruct", "builtin", "source", "rights",
+    return {**{k: v.get(k) for k in ("id", "name", "language", "instruct", "builtin", "source", "rights", "source_ko", "rights_ko",
                                      "description", "default_model", "default_params", "tags", "starred",
-                                     "created_at", "updated_at")}, "adapters": adapters or {}, "references": refs}
+                                     "created_at", "updated_at")}, "adapters": adapters or {},
+            "trained": trained if trained is not None else {m: "ready" for m in adapters or {}}, "references": refs}
 
 
 @router.get("/voices")
 async def voices(request: Request) -> Any:
     h = _host(request)
-    return {"voices": [_public_voice(v, h.trainings.speaks_with(v["id"])) for v in h.voices.list()]}
+    return {"voices": [_public_voice(v, h.trainings.speaks_with(v["id"]), h.trainings.trained_for(v["id"]))
+                       for v in h.voices.list()]}
 
 
 @router.post("/voices")
@@ -300,13 +304,17 @@ async def voice_sounds(vid: str, request: Request) -> Any:
 
 @router.post("/voices/{vid}/sounds")
 async def make_voice_sounds(vid: str, request: Request) -> Any:
-    """make (again) this profile's laugh: the best takes of a laugh in its voice"""
+    """make (again) this profile's laugh: the best takes of a laugh in its voice — ``model_id`` (optional): made by that
+    model, in the voice it was trained into there"""
     h = _host(request)
     base = h.voices.resolve(vid)
     if base is None:
         return JSONResponse({"detail": "This profile has no clip yet", "code": "no_clip"}, status_code=400)
+    b = await _body(request)
     try:
-        made = await h.make_sounds(base)
+        mid = str(b.get("model_id") or "")
+        adapter = h.trainings.adapter_for(vid, h._spec(mid)) if mid else None
+        made = await h.make_sounds(base, model_id=mid, adapter=adapter)
         return {**h.voice_sounds(vid), "heard": made.get("heard")}
     except VoiceError as e:
         return _fail(e)
@@ -326,8 +334,8 @@ async def forget_voice_sounds(vid: str, request: Request) -> Any:
 
 
 @router.get("/voices/{vid}/sounds/{name}")
-async def voice_sound_audio(vid: str, name: str, request: Request) -> Any:
-    f = _host(request).made_sound_file(vid, name)
+async def voice_sound_audio(vid: str, name: str, request: Request, of: str = "") -> Any:
+    f = _host(request).made_sound_file(vid, name, of)
     if f is None:
         raise HTTPException(status_code=404, detail="no such sound")
     return FileResponse(str(f), media_type="audio/wav", headers={"Cache-Control": "private, max-age=300"})

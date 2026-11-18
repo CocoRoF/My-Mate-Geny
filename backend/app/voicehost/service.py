@@ -518,20 +518,24 @@ class VoiceHost:
                              code="needs_voice")
         if reference is not None and not (reference.get("text") or "").strip() and spec.engine == "omnivoice":
             raise VoiceError("OmniVoice clones from a clip with its transcript: this clip has none", code="needs_text")
+        # the voice's own trained adapter, where this model takes it (training.py; a built-in voice's: shipped.py)
+        vid = str((reference or {}).get("voice_id") or "")
+        trained = self.trainings.adapter_for(vid, spec)
+        adapter = trained[1] if trained else ""
         # the sounds in it: a laugh the voice has a clip of becomes a part of its own, the rest is said as this engine
-        # makes it (the voice's laughs: its own clips, else the ones made for its neutral clip)
-        base = (self.voices.resolve(reference["voice_id"]) if reference and reference.get("voice_id") else None) \
-            or reference
-        clips = self.sounds.clips(base, self.voices.sound_clips(str((reference or {}).get("voice_id") or ""))) \
+        # makes it (the voice's laughs: the clips recorded for it, else the ones this model made in this voice, else
+        # a built-in voice's, else any made for its clip — sounds.py)
+        base = (self.voices.resolve(vid) if vid else None) or reference
+        v = self.voices.get(vid) if vid else None
+        clips = self.sounds.clips(base, self.voices.sound_clips(vid), model_id=spec.id,
+                                  adapter=trained[0] if trained else "", recorded=not (v or {}).get("builtin")) \
             if reference is not None and nonverbal else {}
         plan, made = NV.parts(text, spec.engine, frozenset(clips), on=nonverbal)
         if not plan:
             raise VoiceError("Nothing to say", code="empty")
-        if nonverbal and base is not None and any(m["kind"] in ("laugh", "giggle") and not m.get("clip") for m in made):
-            self._want_sounds(base)
-        # the voice's own trained adapter, where this model takes it (OmniVoice: training.py)
-        trained = self.trainings.adapter_for(str((reference or {}).get("voice_id") or ""), spec)
-        adapter = trained[1] if trained else ""
+        if nonverbal and base is not None and any(m["kind"] in ("laugh", "giggle") for m in made):
+            self._want_sounds(base, spec, trained, has_clip=any(m.get("clip") for m in made),
+                              recorded=bool(self.voices.sound_clips(vid).get("laugh")) and not (v or {}).get("builtin"))
         if reference is not None:  # (the worker takes the clip itself; which feeling it was is ours to know)
             reference = {k: reference[k] for k in ("path", "text", "language") if k in reference}
         engine = spec.engine if self.s.engine_mode != "fake" else "fake"
@@ -612,36 +616,49 @@ class VoiceHost:
 
     # -- a voice's own laugh (sounds.py) ------------------------------------------------------------------------
     def sound_maker(self) -> str:
-        """the installed model that makes a voice's laugh best (measured: OmniVoice's laugh on its own), "" none"""
-        for mid in ("omnivoice", "cosyvoice3-0.5b", "qwen3-tts-1.7b-base", "qwen3-tts-0.6b-base"):
+        """the installed model that makes a voice's laugh best (measured: OmniVoice's laugh on its own, then
+        VoxCPM2's), "" none"""
+        for mid in ("omnivoice", "voxcpm2", "cosyvoice3-0.5b", "qwen3-tts-1.7b-base", "qwen3-tts-0.6b-base"):
             spec = catalog.BY_ID.get(mid)
             if spec and self.installer.installed(spec) and (spec.engine in NV.BANK_TEXTS
                                                             or self.s.engine_mode == "fake"):
                 return mid
         return ""
 
-    def _want_sounds(self, ref: dict[str, Any]) -> None:
-        """a line of this voice laughed and it has no laugh yet: make it in the background (the next lines have it)"""
-        key = S.ref_key(ref)
-        if not self.s.auto_sounds or key in self._making or not self.sound_maker() or not ref.get("text"):
+    def _want_sounds(self, ref: dict[str, Any], spec: catalog.ModelSpec, trained: tuple[str, str] | None, *,
+                     has_clip: bool, recorded: bool) -> None:
+        """A line of this voice laughed: its laugh made in the background where it is missing (the next lines have it)
+        — by the line's own model in the line's voice, when that model laughs on its own and nothing was recorded for
+        the voice; else, when the voice has no laugh at all, by the model that laughs best."""
+        if not self.s.auto_sounds or not ref.get("text") or recorded:
             return
-        if time.time() - self._made_none.get(key, 0) < 86400:
+        own = spec.engine in S.LAUGHS_ALONE
+        aid = trained[0] if trained else ""
+        if own and self.sounds.made(ref, spec.id, aid) is None:
+            model_id, adapter = spec.id, trained
+        elif not has_clip and self.sound_maker():
+            model_id, adapter = self.sound_maker(), None
+        else:
+            return
+        key = S.ref_key(ref) + f".{model_id}.{adapter[0] if adapter else ''}"
+        if key in self._making or time.time() - self._made_none.get(key, 0) < 86400:
             return
 
         async def run() -> None:
             try:
-                await self.make_sounds(ref, priority=BACKGROUND)
-            except Exception as e:  # noqa: BLE001 - a laugh not made is the inline sound again
+                await self.make_sounds(ref, model_id=model_id, adapter=adapter, priority=BACKGROUND)
+            except Exception as e:  # noqa: BLE001 - a laugh not made is another model's (or the inline sound) again
                 log.info("a voice's laugh not made: %s", e)
             finally:
                 self._making.pop(key, None)
 
         self._making[key] = asyncio.create_task(run())
 
-    async def make_sounds(self, ref: dict[str, Any], *, model_id: str = "", priority: int = PREVIEW,
-                          takes: int = 16, keep: int = 3) -> dict[str, Any]:
-        """A voice's own laugh: ``takes`` takes of a laugh in it (the lines that laugh best on the maker), the ``keep``
-        that an AudioSet classifier hears laughing most kept (sounds.py) → what was made (SoundBank.made)."""
+    async def make_sounds(self, ref: dict[str, Any], *, model_id: str = "", adapter: tuple[str, str] | None = None,
+                          priority: int = PREVIEW, takes: int = 16, keep: int = 3) -> dict[str, Any]:
+        """A voice's own laugh: ``takes`` takes of a laugh in it (the lines that laugh best on the maker; ``adapter``:
+        (run, folder) — in its trained voice there), the ``keep`` that an AudioSet classifier hears laughing most kept
+        (sounds.py) → what was made (SoundBank.made)."""
         from app.services._ids import new_id
 
         model_id = model_id or self.sound_maker()
@@ -654,6 +671,8 @@ class VoiceHost:
             raise VoiceError("OmniVoice clones from a clip with its transcript: this clip has none", code="needs_text")
         checked = await self.installer.ensure_sound_check()
         texts = NV.BANK_TEXTS.get(spec.engine) or NV.BANK_TEXTS["omnivoice"]
+        aid, apath = adapter or ("", "")
+        key = S.ref_key(ref) + f".{spec.id}.{aid}"
         tmp = self.s.tmp_dir / new_id("snd")
         tmp.mkdir(parents=True, exist_ok=True)
         worker_ref = {k: ref[k] for k in ("path", "text", "language") if k in ref}
@@ -664,7 +683,7 @@ class VoiceHost:
                 return await r.worker.call(
                     "sounds", timeout=900, reference=worker_ref, texts=[list(t) for t in texts["laugh"]],
                     takes=takes, keep=keep, min_score=0.2, check_dir=str(self.installer.sound_check_dir()) if checked
-                    else "", out_prefix=str(tmp / "t"), seed=random.randint(1, 10**6))
+                    else "", out_prefix=str(tmp / "t"), seed=random.randint(1, 10**6), adapter=apath)
             finally:
                 self.engines.release(r)
 
@@ -672,42 +691,51 @@ class VoiceHost:
             out = await self.queue.run(priority, f"laugh {spec.id}", job,
                                        {"kind": "speak", "model_id": spec.id, "source": "sounds"})
             if not out.get("takes"):
-                self._made_none[S.ref_key(ref)] = time.time()
+                self._made_none[key] = time.time()
                 raise VoiceError("None of the takes laughed: try again, or record a laugh for this voice",
                                  code="no_laugh", status=422, data={"heard": out.get("heard")})
             made = await asyncio.to_thread(self.sounds.save, ref, out["takes"], model_id=spec.id,
-                                           checked=bool(out.get("checked")))
+                                           checked=bool(out.get("checked")), adapter=aid)
         except NoRoom as e:
             raise VoiceError(str(e), code="no_room", status=409, data=e.data) from None
         except WorkerError as e:
             raise VoiceError(str(e), code="engine", status=502) from None
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
-        self._made_none.pop(S.ref_key(ref), None)
+        self._made_none.pop(key, None)
         self.on_change("voices")
         return {**made, "heard": out.get("heard")}
 
+    def laugh_makers(self) -> list[str]:
+        """the installed models a voice's laugh can be made with: those that laugh on their own (sounds.LAUGHS_ALONE),
+        else the one that laughs best"""
+        own = [m.id for m in catalog.CATALOG if m.engine in S.LAUGHS_ALONE and self.installer.installed(m)]
+        return own or ([self.sound_maker()] if self.sound_maker() else [])
+
     def voice_sounds(self, vid: str) -> dict[str, Any]:
-        """a profile's laughs: its own clips (by kind: how many), the ones made for it, whether one is being made"""
+        """a profile's laughs: its own clips (by kind: how many), the ones each model made for it (in its trained
+        voice there), whether one is being made, the models it can be made with"""
         base = self.voices.resolve(vid)
         if base is None:
             raise VoiceError("This profile has no clip yet", code="no_clip")
-        made = self.sounds.made(base)
+        key = S.ref_key(base)
         return {"own": {k: len(v) for k, v in self.voices.sound_clips(vid).items()},
-                "made": None if made is None else {
-                    "kinds": {k: [Path(f).name for f in fs] for k, fs in made["kinds"].items()},
-                    "scores": made.get("scores") or {}, "model_id": made.get("model_id"),
-                    "made_at": made.get("made_at"), "checked": made.get("checked")},
-                "making": S.ref_key(base) in self._making, "maker": self.sound_maker(),
-                "auto": self.s.auto_sounds}
+                "made": [{"id": m["id"], "kinds": {k: [Path(f).name for f in fs] for k, fs in m["kinds"].items()},
+                          "scores": m.get("scores") or {}, "model_id": m.get("model_id"),
+                          "adapter": m.get("adapter") or "", "made_at": m.get("made_at"), "checked": m.get("checked")}
+                         for m in self.sounds.all_made(base)],
+                "making": any(k == key or k.startswith(key + ".") for k in self._making),
+                "maker": self.sound_maker(), "makers": self.laugh_makers(), "auto": self.s.auto_sounds}
 
-    def made_sound_file(self, vid: str, name: str) -> Path | None:
+    def made_sound_file(self, vid: str, name: str, of: str = "") -> Path | None:
+        """a made laugh's file: ``of`` the set it is in (voice_sounds' made[].id; "" the first made before laughs were
+        per model)"""
         base = self.voices.resolve(vid)
-        made = self.sounds.made(base) if base else None
-        if not made or not re.fullmatch(r"[a-z]+-\d+\.wav", name):
+        if base is None or not re.fullmatch(r"[a-z]+-\d+\.wav", name):
             return None
-        f = Path(made["dir"]) / name
-        return f if f.is_file() else None
+        made = next((m for m in self.sounds.all_made(base) if m["id"] == of), None)
+        f = Path(made["dir"]) / name if made else None
+        return f if f is not None and f.is_file() else None
 
     # -- hearing ----------------------------------------------------------------------------------------------------
     async def transcribe(self, data: bytes, *, language: str = "auto", model_id: str = "",

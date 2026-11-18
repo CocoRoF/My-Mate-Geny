@@ -182,7 +182,8 @@ class Worker:
             if self.rt is not None:
                 self.rt.seed_everything(int(msg.get("seed", 7)) * 1000 + i)
             req = SynthRequest(text=[text] * min(per, n - len(takes)), language=lang,
-                               reference=Reference(**ref) if ref else None, params=msg.get("params") or {})
+                               reference=Reference(**ref) if ref else None, params=msg.get("params") or {},
+                               adapter=msg.get("adapter") or "")  # (a trained voice laughs in that voice)
             takes += [np.asarray(w, dtype=np.float32).reshape(-1) for w in self.engine.synthesize(req)]
             i += 1
         sr = self.engine.sample_rate

@@ -1,7 +1,8 @@
 /**
- * Voice Studio → 프로필 → 웃음 소리: the laughs put into a line of this voice where it laughs (헤헤, ㅋㅋ, 하하) — its own
- * clips (recorded or uploaded: label laugh / yawn), a built-in voice's, and the ones made for it (the best of 16 takes,
- * as an AudioSet classifier hears them: backend app/voicehost/sounds.py, docs/local-voice.md "Laughs, sighs and yawns").
+ * Voice Studio → 프로필 → 웃음·하품: the laughs put into a line of this voice where it laughs (헤헤, ㅋㅋ, 하하) — no
+ * model laughs inside a line, trained or not — its own clips (recorded or uploaded: label laugh / yawn), a built-in
+ * voice's, and the ones each model made in its voice (the best of 16 takes, as an AudioSet classifier hears them; a line
+ * takes its own model's first: backend app/voicehost/sounds.py, docs/local-voice.md "Laughs, sighs and yawns").
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -20,12 +21,13 @@ import { confirmDialog } from "../ui/ConfirmDialog";
 import Icon from "../ui/Icon";
 import { ErrorLine } from "../mate/settings/ui";
 import { RecorderModal } from "./clips";
-import { Card, PlayButton, readableAudio, refUrl, secs, Waveform } from "./shared";
+import { Card, PlayButton, readableAudio, refUrl, secs, useModelName, Waveform } from "./shared";
 
 export function SoundsCard({ v, own, onChange }: { v: LocalVoice; own: boolean; onChange: () => Promise<void> }) {
   const t = useT();
+  const modelName = useModelName();
   const [doc, setDoc] = useState<VoiceSounds | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null); // (the model a laugh is being made with)
   const [err, setErr] = useState<string | null>(null);
   const [recordFor, setRecordFor] = useState<SoundLabel | null>(null);
   const file = useRef<HTMLInputElement>(null);
@@ -41,16 +43,16 @@ export function SoundsCard({ v, own, onChange }: { v: LocalVoice; own: boolean; 
     return () => clearTimeout(id);
   }, [doc, load]);
 
-  const make = async () => {
-    setBusy(true);
+  const make = async (model: string) => {
+    setBusy(model);
     setErr(null);
     try {
-      setDoc(await makeVoiceSounds(v.id));
+      setDoc(await makeVoiceSounds(v.id, model));
     } catch (e) {
       const code = (e as { code?: string }).code;
       setErr(code === "no_laugh" ? t("voiceStudio.sdNoLaugh") : (e as Error).message);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
   const forget = async () => {
@@ -73,16 +75,16 @@ export function SoundsCard({ v, own, onChange }: { v: LocalVoice; own: boolean; 
     await onChange();
   };
 
-  const made = doc?.made;
-  const laughs = made?.kinds.laugh ?? [];
-  const none = !v.sounds.length && !laughs.length;
+  const made = (doc?.made ?? []).filter((m) => (m.kinds.laugh ?? []).length);
+  const none = !v.sounds.length && !made.length;
+  const makers = doc?.makers ?? [];
   return (
     <Card title={t("voiceStudio.sdTitle")} testId="vs-profile-sounds">
       <p className="mb-2 text-[11.5px] leading-snug text-content-faint">{t("voiceStudio.sdHint")}</p>
 
       {v.sounds.length > 0 && (
         <div className="mb-2">
-          <div className="mb-1 text-[11.5px] font-medium text-content-dim">{own ? t("voiceStudio.sdOwn") : t("voiceStudio.sdBuiltin")}</div>
+          <div className="mb-1 text-[11.5px] font-medium text-content-dim">{own ? t("voiceStudio.sdOwn") : t("voiceStudio.sdBuiltin", { model: modelName("omnivoice") })}</div>
           <div className="grid gap-1.5 sm:grid-cols-2">
             {v.sounds.map((r) => (
               <div key={r.id} className="flex items-center gap-2 rounded-lg border border-border/70 bg-surface/50 px-2 py-1.5" data-testid={`vs-sound-own-${r.label}`}>
@@ -104,15 +106,17 @@ export function SoundsCard({ v, own, onChange }: { v: LocalVoice; own: boolean; 
         </div>
       )}
 
-      {laughs.length > 0 && (
-        <div className="mb-2" data-testid="vs-sound-made">
-          <div className="mb-1 text-[11.5px] font-medium text-content-dim">{t("voiceStudio.sdMade", { model: made?.model_id ?? "" })}</div>
+      {made.map((m) => (
+        <div key={m.id} className="mb-2" data-testid="vs-sound-made" data-model={m.model_id}>
+          <div className="mb-1 text-[11.5px] font-medium text-content-dim">
+            {t(m.adapter ? "voiceStudio.sdMadeTrained" : "voiceStudio.sdMade", { model: modelName(m.model_id) })}
+          </div>
           <div className="grid gap-1.5 sm:grid-cols-3">
-            {laughs.map((name) => {
-              const score = made?.scores[name];
+            {(m.kinds.laugh ?? []).map((name) => {
+              const score = m.scores[name];
               return (
                 <div key={name} className="flex items-center gap-2 rounded-lg border border-border/70 bg-surface/50 px-2 py-1.5">
-                  <PlayButton url={`${voiceSoundUrl(v.id, name)}?t=${made?.made_at ?? 0}`} small testId={`vs-sound-play-${name}`} />
+                  <PlayButton url={`${voiceSoundUrl(v.id, name, m.id)}&t=${m.made_at ?? 0}`} small testId={`vs-sound-play-${m.model_id}-${name}`} />
                   <span className="text-[11px] tabular-nums text-content-faint">
                     {score != null ? t("voiceStudio.sdScore", { n: Math.round(score * 100) }) : t("voiceStudio.sdUnchecked")}
                   </span>
@@ -121,7 +125,7 @@ export function SoundsCard({ v, own, onChange }: { v: LocalVoice; own: boolean; 
             })}
           </div>
         </div>
-      )}
+      ))}
 
       {none && !doc?.making && (
         <p className="mb-2 text-[12px] text-content-dim" data-testid="vs-sound-none">
@@ -130,15 +134,18 @@ export function SoundsCard({ v, own, onChange }: { v: LocalVoice; own: boolean; 
       )}
 
       <div className="flex flex-wrap items-center gap-1.5">
-        {doc?.maker ? (
-          <button className="btn-soft !py-1 text-[12px]" disabled={busy || doc.making} onClick={() => void make()} data-testid="vs-sound-make">
-            {busy || doc.making ? <Icon name="spinner" size={12} spin /> : <Icon name="sparkles" size={12} />}
-            {busy || doc.making ? t("voiceStudio.sdMaking") : laughs.length ? t("voiceStudio.sdRemake") : t("voiceStudio.sdMake")}
-          </button>
-        ) : (
-          doc && <span className="text-[11.5px] text-content-faint">{t("voiceStudio.sdNoMaker")}</span>
-        )}
-        {laughs.length > 0 && !busy && (
+        {/* (with each model that laughs on its own: its laugh goes into its own lines) */}
+        {makers.map((model) => {
+          const has = made.some((m) => m.model_id === model);
+          return (
+            <button key={model} className="btn-soft !py-1 text-[12px]" disabled={!!busy || !!doc?.making} onClick={() => void make(model)} data-testid={`vs-sound-make-${model}`}>
+              {busy === model || (doc?.making && !busy) ? <Icon name="spinner" size={12} spin /> : <Icon name="sparkles" size={12} />}
+              {busy === model ? t("voiceStudio.sdMaking") : t(has ? "voiceStudio.sdRemakeWith" : "voiceStudio.sdMakeWith", { model: modelName(model) })}
+            </button>
+          );
+        })}
+        {doc && !makers.length && <span className="text-[11.5px] text-content-faint">{t("voiceStudio.sdNoMaker")}</span>}
+        {made.length > 0 && !busy && (
           <button className="btn-ghost !py-1 text-[12px] text-danger" onClick={() => void forget()} data-testid="vs-sound-forget">
             <Icon name="trash" size={12} /> {t("voiceStudio.sdForget")}
           </button>

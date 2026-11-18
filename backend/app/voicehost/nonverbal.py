@@ -261,4 +261,6 @@ BANK_TEXTS: dict[str, dict[str, tuple[tuple[str, str], ...]]] = {
     "omnivoice": {"laugh": (("[laughter] 아하하하", "ko"), ("[laughter] 하하하하", "ko"), ("[laughter] hahaha", "en"))},
     "cosyvoice3": {"laugh": (("[laughter] 아하하하", "ko"), ("하하하하하", "ko"))},
     "qwen3_tts": {"laugh": (("아하하하하!", "ko"), ("하하하하.", "ko"))},
+    # (measured with a trained voice: 아하하하하! 0.12 – 0.23, Hahahaha! up to 0.24, 하하하하하. up to 0.14)
+    "voxcpm": {"laugh": (("아하하하하!", "ko"), ("Hahahaha!", "en"), ("하하하하하.", "ko"))},
 }
