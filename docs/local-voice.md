@@ -166,7 +166,7 @@ People write the sounds they make — 헤헤, ㅋㅋ, 하하에헤, 하암~, 후
 the syllables. Every line here (Voice Studio, a mate's local voice, a batch) goes through `nonverbal.py` first: the
 sounds are found (whole words only — 아하, 하키, 휴가, 흥미, 이리 와 are words; tags a person writes count too:
 `[웃음]`, `(한숨)`, `*하품*`, `[laugh]`, an engine's own `[laughter]`), then given to the engine the way it makes them.
-Off (Voice Studio's 웃음·한숨을 소리로, `nonverbal: false`): read as written — but ㅋㅋ is still said 크크, ㅠㅠ and another
+Off (Voice Studio's 의성어를 소리로, `nonverbal: false`): read as written — but ㅋㅋ is still said 크크, ㅠㅠ and another
 engine's tags are still not read out.
 
 **Measured** (`tools/nonverbal_bench.py`; RTX 5070, 2026-11-15, 한채린's clip; an AudioSet classifier (AST) for whether a
@@ -200,8 +200,10 @@ So:
   silence on each side. A short laugh (하하, ㅋㅋㅋ, 헤헤) takes a **giggle**: the strongest second of a laugh, faded out.
   CosyVoice3 makes up words for a part of two or three syllables (“왜 그래” came out as “잠시만요” in 2 of 6 takes), so
   there a laugh that would leave such a part beside it stays in the line.
-- **Which laugh a line gets**, the first found: the clips recorded for its profile (프로필 → 웃음·하품: recorded or
-  uploaded, label `laugh` / `yawn`, several of each, never cloned from: the person laughing); the laughs **the line's
+- **A voice's 의성어 clips** (프로필 → 의성어: recorded or uploaded, label `laugh`, `sigh`, `yawn`, `gasp` or `sob`,
+  several of each, never cloned from): a line that makes one of those sounds gets the voice's clip of it there; a sound
+  it has no clip of is made by the engine as written (below).
+- **Which laugh a line gets**, the first found: the clips recorded for its profile (the person laughing); the laughs **the line's
   own model** made in the line's voice — with that voice's trained adapter there, where it has one — for the models
   that laugh on their own (`sounds.LAUGHS_ALONE`: OmniVoice, VoxCPM2; `<home>/sounds/<clip key>.<model>.<run>/`), so a
   VoxCPM2 line of 서아 laughs with VoxCPM2's laugh in her trained voice; a built-in voice's (`sounds/` beside its clips:
@@ -211,8 +213,8 @@ So:
   `Hahahaha!` on VoxCPM2), each heard by the AudioSet classifier (`catalog.SOUND_CHECK`,
   MIT/ast-finetuned-audioset-10-10-0.4593, BSD-3-Clause, 350 MB, fetched the first time), the 3 that laugh most kept
   (at least 0.2; none: not tried again for a day). Made by itself, in the background, the first time a line of a voice
-  laughs on a model that hasn't made one in that voice (Voice Studio → 설정 → 웃음; until then the line takes another's,
-  or the model's own laugh when there is none), or with 프로필 → 웃음·하품 → "<model>로 만들기". 한채린's laugh was in
+  laughs on a model that hasn't made one in that voice (Voice Studio → 설정 → 의성어; until then the line takes another's,
+  or the model's own laugh when there is none), or with 프로필 → 의성어 → "<model>로 만들기". 한채린's laugh was in
   9 of 48 OmniVoice takes, 서아's in 17: 16 takes leave about three.
 - **The rest** in the line, as each engine makes it best (`RECIPES`): OmniVoice gets its tags *before* the written sound
   — `[laughter] 헤헤` (when the voice has no laugh yet), `[sigh] 후우…`, `[sigh] 하암~`, `헉! [surprise-ah]`,
@@ -236,8 +238,8 @@ Settings → 로컬 모델 호스팅 → **Voice Studio** (`frontend/src/compone
 | 개요 | each GPU — load, temperature, power, clock, fan — and **whose its memory is**: this app's models (each worker's process, measured by the driver), other programs (`nvidia-smi --query-compute-apps`), and what no process here accounts for (the host's display, other containers); the last 30 minutes (sampled every 5 s while someone looks, else every 30 s); the models on the GPU (park, unload, load); the GPU queue — running, waiting, the last jobs and for whom; engine events; the machine's RAM and disk |
 | 모델 | the gate, each model's card (license, install, load / unload, default model), its default parameters (what every line made with it starts from: a mate's, the studio's, a batch's), the engines' environments |
 | 학습 | a profile taught its voice from recordings of the person: drop them in, start — the rest is the run's ([below](#training-a-voice)); each run's steps, progress, how much of the recordings it kept, before / after, A/B samples, on / off, delete |
-| 프로필 | the profiles (search, mine / built-in, ★), what it is trained for (학습됨 · the models it speaks with now; a built-in voice's adapters for models not installed yet: "설치하면 바로 이 목소리로 말해요"), the eight clips (play, upload, record, trim, words and language), its laughs (웃음·하품: its own laugh / yawn clips, each model's made ones with how much each laughs, make with a model, delete — [above](#laughs-sighs-and-yawns)), details (description, tags, default model and parameters, voice description; a built-in voice's rights and source in the page's language), duplicate, delete |
-| 생성 | a line: profile, model, mode (자동 / 복제 / 설계 — what the model and the profile allow), feeling (a dot where the profile has the clip), language, description presets, parameters, seed (random, or kept to make the same line again), 웃음·한숨을 소리로 (on: the sounds written in it — 헤헤, ㅋㅋ, 하암~, 후우… — made as sounds) → waveform, timings, what became a sound, download (WAV / MP3 / OGG / FLAC), ★, same seed again, save as a profile's clip; the recent lines under it |
+| 프로필 | the profiles (search, mine / built-in, ★), its LoRA adapters, a chip each (`LoRA · OmniVoice`; a built-in voice's for a model not installed yet faint: it speaks with it once the model is), the eight clips (play, upload, record, trim, words and language), its 의성어 (its own clips of each kind — laugh, sigh, yawn, gasp, sob —, each model's made laughs with how much each laughs, make with a model, delete — [above](#laughs-sighs-and-yawns)), details (description, tags, default model and parameters, voice description; a built-in voice's rights and source in the page's language), duplicate, delete |
+| 생성 | a line: profile, model, mode (자동 / 복제 / 설계 — what the model and the profile allow), feeling (a dot where the profile has the clip), language, description presets, parameters, seed (random, or kept to make the same line again), 의성어를 소리로 (on: the sounds written in it — 헤헤, ㅋㅋ, 하암~, 후우… — made as sounds) → waveform, timings, what became a sound, download (WAV / MP3 / OGG / FLAC), ★, same seed again, save as a profile's clip; the recent lines under it |
 | 일괄 생성 | text (a line each, `[joy] …`), CSV (`text` + any of `profile`, `feeling`, `seed`, `language`, `instruct`, `model`) or JSON, ≤ 500 lines, shared settings (a line's own columns win), one seed for all or one each; run at the lowest priority, one line at a time; progress, cancel, retry failed, resume one a restart stopped (`interrupted`), each line playable, a ZIP in a format with `manifest.json` |
 | 히스토리 | every line made here with everything that made it: search, filter (profile, model, where from, ★), play, download, make again (opens 생성 with its settings and seed), save as a clip, delete (one or many). Over `history_max_entries` (2000) or `history_max_gb` (5) the oldest go first; ★ lines and batches' lines stay |
 | 도구 | A/B comparison (one line, up to five settings, the same seed), seed search (one line, 2 – 12 seeds), a clip's analysis (format, level, silence, warnings, the best stretches → add one to a profile, its words and language), transcription |
@@ -301,7 +303,8 @@ What each model learns (`train/recipe.py`: one recipe each, in the model's own r
   before → after — and open again with 자세히.
   An adapter is for the model it was made with (the revision in `geny.json`): after a new version the profile speaks
   without it. A new profile gets her clearest utterance as its neutral clip. 프로필 marks a trained profile
-  (학습됨 · the models), and 생성 / 히스토리 a line made with an adapter (`OmniVoice · 학습됨`, the history's `adapter`).
+  (a `LoRA · <model>` chip for each adapter), and 생성 / 히스토리 a line made with one (`OmniVoice · LoRA`, the history's
+  `adapter`).
 - **The built-in voices** (한채린, 서아) learn like any profile — what they are trained into here goes before what they
   came with — and **they come trained, on every speech model**: their adapters, trained with 학습 on the owner's own
   recordings of their voices (made with the owner's ElevenLabs voices, which the owner holds every right to), are
@@ -503,7 +506,7 @@ new profile's clip, what is refused, a mate's words pausing a run and a model se
 the GPU queue's word, a runtime from an older lock brought up to date in place, how far a fetch is. In a browser (the
 stand-ins): `desktop/test/e2e/voice-training-browser.js` — the page without a model that learns, a new profile from a
 picked recording, the models (all ticked, one unticked), the licenses, a run per model to done, the reports and
-samples, 학습됨 with both models in 프로필 / 생성 / 히스토리, one off and on (the other stays), deleting one, CosyVoice3
+samples, a LoRA chip for both models in 프로필 and `· LoRA` in 생성 / 히스토리, one off and on (the other stays), deleting one, CosyVoice3
 alone (no "none"), en / ko, a phone. On the GPU: each recipe through `python -m app.voicehost.train` and each engine
 switching adapters per line (the measurements above).
 

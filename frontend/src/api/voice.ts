@@ -124,8 +124,9 @@ export type Feeling = "neutral" | "joy" | "sadness" | "anger" | "surprise" | "fe
 export const FEELINGS: Feeling[] = ["neutral", "joy", "sadness", "anger", "surprise", "fear", "disgust", "smile"];
 
 /** a profile's sound clips: put into a line where it laughs / yawns (backend app/voicehost/sounds.py), never cloned from */
-export type SoundLabel = "laugh" | "yawn";
-export const SOUND_LABELS: SoundLabel[] = ["laugh", "yawn"];
+/** a profile's 의성어 clips (backend voices.SOUNDS): put in where a line makes that sound, never cloned from */
+export type SoundLabel = "laugh" | "sigh" | "yawn" | "gasp" | "sob";
+export const SOUND_LABELS: SoundLabel[] = ["laugh", "sigh", "yawn", "gasp", "sob"];
 
 export interface VoiceRef {
   id: string;

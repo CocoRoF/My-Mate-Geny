@@ -10,8 +10,8 @@
 // Checks: with no model that learns the page says so and can't start; with three installed, a new profile from one
 // recording picked with 파일 고르기 (the list shows it), every model ticked to begin with (one unticked), start only once
 // what it fetches is accepted; a run per model through its steps to done — the report (with a long clip / a short one /
-// none), A/B samples playing, each adapter on; 프로필 marks it 학습됨 with both models; 생성 makes a line with each
-// model's own ("… (학습됨)", the history too) and without one once it is off (the other stays on); deleting a run takes
+// none), A/B samples playing, each adapter on; 프로필 shows a LoRA chip for both models; 생성 makes a line with each
+// model's own ("… · LoRA", the history too) and without one once it is off (the other stays on); deleting a run takes
 // only its adapter off; CosyVoice3 alone (no "none": it can't speak without a clip). Screenshots: ko / en, light /
 // dark, phone (no sideways scroll).
 "use strict";
@@ -180,10 +180,11 @@ async function main() {
     assert.ok(sample.ok() && /audio/.test(sample.headers()["content-type"]), "a sample plays");
     await shot(page, "02-done-light-ko");
 
-    step("프로필 marks it 학습됨 on both, a new profile got a clip");
+    step("프로필 shows a LoRA chip for each model, a new profile got a clip");
     await open(page, "profiles");
     await page.waitForSelector('[data-testid="vs-profile-trained"]');
-    assert.match(await page.innerText('[data-testid="vs-profile-trained"]'), /OmniVoice.*Qwen3-TTS 0\.6B|Qwen3-TTS 0\.6B.*OmniVoice/, "both models named");
+    const chips = await page.locator('[data-testid="vs-profile-trained"] [data-testid="vs-profile-lora"]').allInnerTexts();
+    assert.deepEqual(chips.sort(), ["LoRA · OmniVoice", "LoRA · Qwen3-TTS 0.6B (Base)"], "a LoRA chip for each model");
     const v = (await api(ctx, "GET", "/api/voice/voices")).body.voices.find((x) => x.id === run.voice_id);
     assert.deepEqual(v.adapters, { omnivoice: run.id, "qwen3-tts-0.6b-base": qrun.id }, "the profile speaks with each");
     assert.ok(v.references.length >= 1, "a new profile got a clip");
@@ -200,14 +201,14 @@ async function main() {
       await until("a line", async () => (await page.locator('[data-testid="vs-gen-result"]').count()) > before, 60000);
       return page.innerText('[data-testid="vs-gen-stats"]');
     };
-    assert.match(await gen("qwen3-tts-0.6b-base"), /Qwen3-TTS 0\.6B \(Base\) · 학습됨/, "Qwen made with its own");
-    assert.match(await gen("omnivoice"), /OmniVoice · 학습됨/, "OmniVoice made with its own");
+    assert.match(await gen("qwen3-tts-0.6b-base"), /Qwen3-TTS 0\.6B \(Base\) · LoRA/, "Qwen made with its own");
+    assert.match(await gen("omnivoice"), /OmniVoice · LoRA/, "OmniVoice made with its own");
     await shot(page, "04-generate-trained-light-ko");
     await open(page, "train");
     await page.uncheck(`${card("omnivoice")} [data-testid="vs-train-apply"]`);
     await until("off", async () => !(await page.locator(`${card("omnivoice")} [data-testid="vs-train-applied"]`).count()), 10000);
     assert.ok(await page.locator(`${card("qwen3-tts-0.6b-base")} [data-testid="vs-train-applied"]`).count(), "the other model's stays on");
-    assert.doesNotMatch(await gen("omnivoice"), /학습됨/, "made without it");
+    assert.doesNotMatch(await gen("omnivoice"), /LoRA/, "made without it");
     const h = (await api(ctx, "GET", "/api/voice/history?limit=3")).body;
     const lines = h.entries ?? h.items ?? [];
     assert.deepEqual(lines.map((e) => e.adapter), ["", run.id, qrun.id], "the history knows which");

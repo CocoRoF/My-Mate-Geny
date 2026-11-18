@@ -22,8 +22,9 @@ from .settings import VoiceSettings
 from .store import VoiceStore
 
 FEELINGS = ("neutral", "joy", "sadness", "anger", "surprise", "fear", "disgust", "smile")
-# a profile's sound clips: put into a line where it laughs / yawns (app/voicehost/sounds.py), never cloned from
-SOUNDS = ("laugh", "yawn")
+# a profile's 의성어 clips (nonverbal sounds: a laugh, a sigh, a yawn, a gasp, a sob — several of each): put into a
+# line where it makes that sound (app/voicehost/sounds.py), never cloned from
+SOUNDS = ("laugh", "sigh", "yawn", "gasp", "sob")
 # a mate's emotion tag (or a feeling) → the clips to try, in order; the neutral clip is always the last resort
 _CHAIN = {"joy": ("joy",), "laugh": ("joy",), "smile": ("smile", "joy"), "greet": ("smile", "joy"),
           "shy": ("smile",), "surprised": ("surprise",), "surprise": ("surprise",), "sad": ("sadness",),
@@ -149,7 +150,7 @@ class VoiceLibrary:
                 "ref_id": ref["id"], "voice_id": v["id"]}
 
     def sound_clips(self, vid: str) -> dict[str, list[str]]:
-        """kind → the voice's own sound clips (its profile's laugh / yawn clips; a built-in voice's, with the short
+        """kind → the voice's own 의성어 clips (its profile's laugh, sigh, yawn … clips; a built-in voice's, with the short
         giggles cut from its laughs)"""
         v = self.get(vid) if vid else None
         out: dict[str, list[str]] = {}
