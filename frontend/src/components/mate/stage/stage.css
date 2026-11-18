@@ -21,3 +21,13 @@
 @keyframes stage-fade{from{opacity:0}to{opacity:1}}
 @keyframes stage-rise{from{opacity:0;transform:translate(-50%,10px) scale(.985)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
 @media (prefers-reduced-motion:reduce){.stage-window,.stage-window-scrim{animation:none}.stage-menu-btn{transition:none}}
+
+/* light: the same windows and buttons in the page's light palette (the dark ones above are the app's original look) */
+html.light .stage-menu-btn{color:#161a23;background:linear-gradient(180deg,rgba(255,255,255,.94),rgba(235,238,243,.94));
+  border-color:rgba(22,26,35,.14);box-shadow:0 6px 18px rgba(22,26,35,.16),inset 0 1px 0 rgba(255,255,255,.9)}
+html.light .stage-menu-btn:hover{border-color:rgba(52,80,220,.5)}
+html.light .stage-menu-btn[aria-pressed="true"]{border-color:rgba(52,80,220,.8);box-shadow:0 0 0 2px rgba(52,80,220,.28),0 6px 18px rgba(22,26,35,.16)}
+html.light .stage-menu-btn:focus-visible{outline-color:rgba(52,80,220,.8)}
+html.light .stage-window-scrim{background:rgba(22,26,35,.28)}
+html.light .stage-window{background:linear-gradient(180deg,rgba(250,251,253,.98),rgba(241,243,247,.98));border-color:rgba(22,26,35,.12);
+  box-shadow:0 24px 60px rgba(22,26,35,.22),inset 0 1px 0 rgba(255,255,255,.9)}

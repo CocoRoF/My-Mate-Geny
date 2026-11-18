@@ -1,8 +1,9 @@
-/** Small pieces of the State tab (StateTab.tsx): a chip in a tone, a bar, a time before or after now, a box of exact text. */
+/** Small pieces of her state (the ♥ status window, gss/StateView.tsx, gss/Journal.tsx): a chip in a tone, a bar, a time
+ *  before or after now. */
 import { createContext, useContext, type ReactNode } from "react";
-import { useT } from "../../../../i18n";
-import { fmtDateTime } from "../../../../i18n/format";
-import { whenText, type Tone } from "../../../../mate/gss";
+import { useT } from "../../../i18n";
+import { fmtDateTime } from "../../../i18n/format";
+import { whenText, type Tone } from "../../../mate/gss";
 
 /** the tab's clock: relative times move on without a refetch */
 export const NowContext = createContext<number>(Date.now());
@@ -42,14 +43,5 @@ export function When({ at, className = "" }: { at: string; className?: string })
     <time dateTime={at} title={ok ? fmtDateTime(at) : undefined} className={`tabular-nums ${className}`}>
       {whenText(t, at, now)}
     </time>
-  );
-}
-
-/** text exactly as it is (what she is told) */
-export function Exact({ text, className = "", testId }: { text: string; className?: string; testId?: string }) {
-  return (
-    <pre className={`overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface px-2.5 py-2 font-mono text-[11px] leading-relaxed text-content-faint ${className}`} data-testid={testId}>
-      {text}
-    </pre>
   );
 }

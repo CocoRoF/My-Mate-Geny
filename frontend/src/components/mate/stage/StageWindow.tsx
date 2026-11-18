@@ -51,8 +51,8 @@ export default function StageWindow<T extends string>({
     return () => document.removeEventListener("keydown", key);
   }, [onClose]);
   const head = (
-    <div className="flex shrink-0 items-center gap-2.5 border-b border-white/10 px-4 py-3">
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-white/10 text-content">
+    <div className="flex shrink-0 items-center gap-2.5 border-b border-content/10 px-4 py-3">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-content/10 text-content">
         <Icon name={icon} size={15} />
       </span>
       <div className="min-w-0 flex-1">
@@ -65,7 +65,7 @@ export default function StageWindow<T extends string>({
     </div>
   );
   const tabBar = tabs && tabs.length > 1 && (
-    <ScrollRow className="shrink-0 gap-1 border-b border-white/10 px-3 py-2" role="tablist" aria-label={title} watch={tab}>
+    <ScrollRow className="shrink-0 gap-1 border-b border-content/10 px-3 py-2" role="tablist" aria-label={title} watch={tab}>
       {tabs.map((x) => (
         <button
           key={x.id}

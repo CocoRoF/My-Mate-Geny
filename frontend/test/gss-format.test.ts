@@ -17,7 +17,6 @@ import {
   criterionText,
   entryText,
   evalReport,
-  EVENTS,
   feelingWord,
   filterEntries,
   grudgeParts,
@@ -30,7 +29,6 @@ import {
   normalizeLoves,
   overrideOf,
   parseHours,
-  PRESETS,
   promiseStatusText,
   promiseTone,
   promiseWhen,
@@ -164,15 +162,11 @@ test("the journal: filtered by layer, the next page after the last without one e
   assert.equal(filterEntries(a, "all").length, 2);
 });
 
-test("every layer, preset and event has words in both languages", () => {
+test("every kind of the journal the user is shown has words in both languages; never her prompt nor a judge's report", () => {
   for (const [lang, t] of Object.entries(LANGS)) {
     for (const l of LAYERS) assert.ok(!t(LAYER_LABEL[l]).includes("gss."), `${lang} layer ${l}`);
-    for (const p of PRESETS) assert.ok(!t(`gss.preset_${p}` as never).includes("gss."), `${lang} preset ${p}`);
-    for (const ev of EVENTS) {
-      const key = ev === "ignored" ? "gss.eventIgnored" : ev === "declined_call" ? "gss.eventDeclinedCall" : "gss.eventPoke";
-      assert.ok(!t(key as never).includes("gss."), `${lang} event ${ev}`);
-    }
   }
+  assert.ok(!LAYERS.includes("told") && !LAYERS.includes("eval"));
 });
 
 test("her temperament: what lights her up as words, only what it can hold, each within its range", () => {

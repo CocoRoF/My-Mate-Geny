@@ -25,7 +25,8 @@ import type { MsgKey, TFunction } from "../i18n";
 import { stateWhy, whyText } from "./reasons";
 
 export const EMOTIONS: StateEmotion[] = ["happy", "excited", "shy", "angry", "sad", "lonely", "worried", "sleepy"];
-export const LAYERS: GssLayer[] = ["heard", "feeling", "grudge", "bond", "promise", "episode", "told", "said", "temperament", "eval"];
+/** the kinds of the journal the user is shown (never "told" — her prompt — nor "eval": the server leaves them out) */
+export const LAYERS: GssLayer[] = ["heard", "feeling", "grudge", "bond", "promise", "episode", "said", "temperament"];
 export const CRITERIA: GssCriterion[] = ["persona", "variety", "hurt_and_apology", "address", "own_will", "screen", "limits"];
 export const EVENTS = ["ignored", "declined_call", "poke"] as const;
 export const PRESETS = ["left_unanswered", "pout_and_sweet", "repeat_offender", "threat_sorry_love"];

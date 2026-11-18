@@ -19,7 +19,7 @@ import ModelTab from "./ModelTab";
 import VoiceTab from "./VoiceTab";
 import { SaveBarSlot } from "./ui";
 import BondTab from "./BondTab";
-import StateTab from "./StateTab";
+import TemperamentTab from "./TemperamentTab";
 import DangerTab from "./DangerTab";
 import MateTab from "../../settings/MateTab";
 import { openAppSettings } from "../../../lib/openAppSettings";
@@ -107,7 +107,7 @@ export default function MateSettings({ mate, conv, onClose, initialTab = "profil
           {tab === "model" && <ModelTab key={mate.id} mate={mate} />}
           {tab === "voice" && <VoiceTab key={mate.id} mate={mate} conv={conv} />}
           {tab === "bond" && <BondTab key={mate.id} mate={mate} />}
-          {tab === "state" && <StateTab key={mate.id} mate={mate} />}
+          {tab === "state" && <TemperamentTab key={mate.id} mate={mate} />}
           {tab === "common" && <MateTab />}
           {tab === "danger" && <DangerTab key={mate.id} mate={mate} onDeleted={onClose} />}
         </div>

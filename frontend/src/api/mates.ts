@@ -427,8 +427,6 @@ export interface GssState extends Omit<StateView, "top" | "feelings"> {
   grudge: GssGrudge | null;
   /** heated stretches this week */
   episodes: number;
-  /** the exact text she is told about how she feels */
-  line: string;
 }
 /** per emotion: base 0 – 0.3 (where she settles), rise 0.5 – 1.8 (how easily it moves), settle 0.4 – 2.0 (× the half-life) */
 export type TemperamentByEmotion = Partial<Record<StateEmotion, number>>;
@@ -509,8 +507,6 @@ export interface GssView {
   temperament_custom: Temperament;
   bonds: GssBonds;
   promises: GssPromise[];
-  /** lines she has said more than once lately */
-  repeats: string[];
   /** newest first */
   journal: GssEntry[];
 }
@@ -911,20 +907,14 @@ export const setLifePlan = (id: string, slot: string, activity: string | null) =
 export const sendLifeGift = (id: string, item: string) =>
   apiFetch<LifeView>(`/api/mates/${enc(id)}/life/gift`, { method: "POST", body: JSON.stringify({ item }) });
 export const getMateState = (id: string) => apiFetch<StateView>(`/api/mates/${enc(id)}/state`);
-/** the Geny-State-System at once (the State tab); `before`: the journal's next page, older than that entry */
+/** the Geny-State-System at once (the ♥ status window, Mate settings → 기질); `before`: the journal's next page, older than that entry */
 export const getGss = (id: string, opts: { limit?: number; before?: string | number } = {}) => {
   const qs = new URLSearchParams({ limit: String(opts.limit ?? 200), ...(opts.before !== undefined ? { before: String(opts.before) } : {}) });
   return apiFetch<GssView>(`/api/mates/${enc(id)}/gss?${qs}`);
 };
-/** a scenario played on her state as it is (nothing of hers changes): a preset, or steps of your own */
-export const simulateGss = (id: string, body: GssSimRequest) =>
-  apiFetch<GssSimResult>(`/api/mates/${enc(id)}/gss/simulate`, { method: "POST", ...j(body) });
 /** her temperament read from her persona by a model (up to a minute), saved as the override (prefs.temperament) */
 export const deriveTemperament = (id: string) =>
   apiFetch<{ temperament: Temperament }>(`/api/mates/${enc(id)}/gss/temperament/derive`, { method: "POST" });
-/** a model judges her last `last` exchanges (2 – 100, default 20; up to a minute); the report also goes into the journal */
-export const evaluateGss = (id: string, last?: number) =>
-  apiFetch<GssEvalReport>(`/api/mates/${enc(id)}/gss/evaluate`, { method: "POST", ...j(last === undefined ? {} : { last }) });
 /** she was tapped: a bit of attention, until it is too much of it */
 export const pokeMate = (id: string) => apiFetch<MateState>(`/api/mates/${enc(id)}/state/poke`, { method: "POST" });
 export const patchRelation = (id: string, patch: RelationPatch) =>

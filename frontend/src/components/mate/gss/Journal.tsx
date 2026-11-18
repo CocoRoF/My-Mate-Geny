@@ -1,17 +1,17 @@
 /**
- * The State tab's journal: every event of the Geny-State-System, newest first, filtered by layer — what she heard in
- * their message (a model's reading), how her feelings, the grudge and the relationship moved, promises, episodes, exactly
- * what she was told each turn (her <context>), what she said, and the judgements of her replies (eval). "Load more"
- * fetches the next page (`before`).
+ * The ♥ status window's 기록: what happened, newest first, filtered by kind — what she heard in their message (a
+ * model's reading), how her feelings, what is still with her and the relationship moved, promises, episodes, what she
+ * said. Never what she is told each turn, nor a model's judgement of her replies (the server leaves those out).
+ * "Load more" fetches the next page (`before`).
  */
 import { useMemo, useState } from "react";
-import type { GssEntry, GssLayer, GssPromise, GssReading } from "../../../../api/mates";
-import { useT } from "../../../../i18n";
-import Icon from "../../../ui/Icon";
-import { entryText, evalReport, filterEntries, kindText, LAYER_LABEL, LAYERS, promiseStatusText, promiseTone, promiseWhen, readingChips } from "../../../../mate/gss";
-import { ErrorLine, Section } from "../ui";
-import { Exact, ToneChip, When } from "./bits";
-import { EvalReportView } from "./Evaluate";
+import type { GssEntry, GssLayer, GssPromise, GssReading } from "../../../api/mates";
+import { useT } from "../../../i18n";
+import Icon from "../../ui/Icon";
+import { entryText, filterEntries, kindText, LAYER_LABEL, LAYERS, promiseStatusText, promiseTone, promiseWhen, readingChips } from "../../../mate/gss";
+import { ErrorLine } from "../settings/ui";
+import { Block } from "./StateView";
+import { ToneChip, When } from "./bits";
 
 function Reading({ r, name }: { r: GssReading; name: string }) {
   const t = useT();
@@ -29,23 +29,6 @@ function Reading({ r, name }: { r: GssReading; name: string }) {
         </div>
       )}
       {r.note && <p className="break-words text-[11.5px] leading-snug text-content-faint">{r.note}</p>}
-      {r.by && <p className="text-[10.5px] text-content-faint">{t("gss.readBy", { by: r.by })}</p>}
-    </div>
-  );
-}
-
-function Told({ data }: { data: Record<string, unknown> }) {
-  const t = useT();
-  const block = typeof data.block === "string" ? data.block : "";
-  return (
-    <div>
-      <p>{entryText(t, { layer: "told", kind: "", data })}</p>
-      {block && (
-        <details className="mt-1">
-          <summary className="cursor-pointer select-none text-[11.5px] text-content-faint hover:text-content-dim">{t("gss.toldShow")}</summary>
-          <Exact text={block} className="mt-1.5 max-h-80" testId="mate-gss-told-block" />
-        </details>
-      )}
     </div>
   );
 }
@@ -62,48 +45,28 @@ function PromiseBody({ p }: { p: Partial<GssPromise> }) {
   );
 }
 
-function Judged({ data }: { data: Record<string, unknown> }) {
-  const t = useT();
-  const r = evalReport(data);
-  if (!r) return null;
-  return (
-    <div>
-      <p className="break-words">{entryText(t, { layer: "eval", kind: "", data })}</p>
-      <details className="mt-1">
-        <summary className="cursor-pointer select-none text-[11.5px] text-content-faint hover:text-content-dim">{t("gss.evalShow")}</summary>
-        <div className="mt-2">
-          <EvalReportView r={r} />
-        </div>
-      </details>
-    </div>
-  );
-}
-
 function Body({ e, name }: { e: GssEntry; name: string }) {
   const t = useT();
   const d = e.data ?? {};
   if (e.layer === "heard") return <Reading r={d as GssReading} name={name} />;
-  if (e.layer === "told") return <Told data={d} />;
   if (e.layer === "promise") return <PromiseBody p={d as Partial<GssPromise>} />;
-  if (e.layer === "eval" && evalReport(d)) return <Judged data={d} />;
   const text = entryText(t, e);
   if (e.layer === "said" && text) return <p className="break-words text-content">“{text}”</p>;
-  if (text) return <p className="break-words">{text}</p>;
-  // (something this screen has no words for yet: as it came)
-  return <Exact text={JSON.stringify(d, null, 2)} className="max-h-40" />;
+  return text ? <p className="break-words">{text}</p> : null;
 }
 
 export default function Journal({ entries, name, more, onMore }: { entries: GssEntry[]; name: string; more: { busy: boolean; end: boolean; err: string | null }; onMore: () => void }) {
   const t = useT();
   const [layer, setLayer] = useState<GssLayer | "all">("all");
-  const shown = useMemo(() => filterEntries(entries, layer), [entries, layer]);
+  // (only what this window has words for: the kinds it shows)
+  const shown = useMemo(() => filterEntries(entries.filter((e) => LAYERS.includes(e.layer)), layer), [entries, layer]);
   const counts = useMemo(() => {
     const c: Partial<Record<GssLayer, number>> = {};
     for (const e of entries) c[e.layer] = (c[e.layer] ?? 0) + 1;
     return c;
   }, [entries]);
   return (
-    <Section title={t("gss.journalTitle")} hint={t("gss.journalHint", { name })} right={<span className="text-[11px] tabular-nums text-content-faint">{shown.length}</span>} testId="mate-gss-journal">
+    <Block title={t("gss.journalTitle")} help={t("gss.journalHint", { name })} right={<span className="text-[11px] tabular-nums text-content-faint">{shown.length}</span>} testId="mate-gss-journal">
       <div className="flex flex-wrap gap-1" role="radiogroup" aria-label={t("gss.journalTitle")}>
         {(["all", ...LAYERS] as const).map((f) => (
           <button
@@ -147,6 +110,6 @@ export default function Journal({ entries, name, more, onMore }: { entries: GssE
           {more.busy && <Icon name="spinner" size={13} spin />} {t("gss.journalMore")}
         </button>
       )}
-    </Section>
+    </Block>
   );
 }

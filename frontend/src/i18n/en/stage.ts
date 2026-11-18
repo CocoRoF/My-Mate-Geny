@@ -7,6 +7,8 @@ export default {
   statusTitle: "{name}'s status",
   statusSub: "How close you are, how she feels, where she is and how she's doing",
   tabNow: "Now",
+  tabRelation: "Between you",
+  tabLog: "Log",
   bond: "Relationship",
   bondOff: "Relationship off",
   bondMore: "More",
