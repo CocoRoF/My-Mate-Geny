@@ -6,10 +6,12 @@ from __future__ import annotations
 import pytest
 from test_mate_style import _service, _turn
 
+from app.mate.affinity import STAGES as A_STAGES
 from app.mate.prompt import _STAGE_GUIDES, base_prompt, prompt_key
 
-GUIDES = {"new": "You have only just met", "familiar": "You know each other's rhythm", "trusted": "You trust them and they trust you",
-          "companion": "They are your person"}
+GUIDES = {"hostile": "You can hardly stand them", "resentful": "You resent them", "dislike": "You don't like them right now",
+          "cold": "Things have gone a little sour", "new": "You have only just met", "familiar": "You know each other's rhythm",
+          "trusted": "You trust them and they trust you", "companion": "They are your person"}
 
 
 def test_she_is_a_character_in_a_story_not_a_service():
@@ -59,7 +61,7 @@ def test_with_the_relationship_off_there_is_no_closeness_but_still_the_story():
 
 def test_a_new_stage_reaches_the_engine_through_its_prompt():
     keys = {stage: prompt_key("채린", {}, 0, {}, relation=True, stage=stage) for stage in GUIDES}
-    assert len(set(keys.values())) == 4
+    assert len(set(keys.values())) == len(GUIDES) == len(A_STAGES)
 
 
 def test_the_affinity_decides_what_she_is_to_them(db):

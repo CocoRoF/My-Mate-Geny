@@ -253,14 +253,16 @@ def normalized(doc: Any) -> dict[str, Any]:
 
 def who(*, closeness: float = 0.33, sensitivity: float = 1.0, builtin: str | None = None, away: bool = False,
         outfit: dict[str, Any] | None = None, life: dict[str, Any] | None = None, name: str = "", gender: str = "",
-        met: Any = None, seed: str = "", temperament: dict[str, Any] | None = None) -> dict[str, Any]:
-    """``closeness``: 0 – 1. ``away``: the relationship is paused, so silence means nothing. ``outfit``: what she has on,
+        met: Any = None, seed: str = "", temperament: dict[str, Any] | None = None, dislike: float = 0.0) -> dict[str, Any]:
+    """``closeness``: 0 – 1; ``dislike``: 0 – 1, the ill feeling below zero affinity (app/mate/affinity.py: what they did to
+    her). ``away``: the relationship is paused, so silence means nothing. ``outfit``: what she has on,
     {id, name, feel, since}; None in her usual clothes or one that does nothing to her. ``life``: her own day when she has one
     (life/sim.py ``for_state``): {needs, feel, doing, asleep}. ``gender``: her persona's; ``met``: when they first met (ISO);
     ``seed``: her id — with these, her off days (``off_day``)."""
     from app.mate.gss.temperament import merged
 
-    return {"closeness": max(0.0, min(1.0, float(closeness))), "sensitivity": float(sensitivity), "away": bool(away),
+    return {"closeness": max(0.0, min(1.0, float(closeness))), "dislike": max(0.0, min(1.0, float(dislike))),
+            "sensitivity": float(sensitivity), "away": bool(away),
             "temperament": merged(TEMPERAMENTS.get(builtin or "", {}), temperament),
             "outfit": outfit if (outfit or {}).get("feel") else None, "life": life,
             "name": name, "gender": gender or "", "met": A._iso(met) if isinstance(met, datetime) else met, "seed": seed or ""}
@@ -279,12 +281,19 @@ def clean_feel(raw: Any) -> dict[str, float]:
 
 # ---- how she feels as of now ----
 
+#: ill feeling towards them (``dislike``, 0 – 1) where she settles: less glad, a little anger that stays
+DISLIKE_HAPPY, DISLIKE_ANGRY = 0.12, 0.16
+
+
 def _base(emotion: str, w: dict[str, Any]) -> float:
     own = float((w["temperament"].get("base") or {}).get(emotion) or 0.0)
+    dislike = float(w.get("dislike") or 0.0)
     if emotion == "happy":
-        return own + 0.05 + 0.2 * w["closeness"]
+        return max(0.0, own + 0.05 + 0.2 * w["closeness"] - DISLIKE_HAPPY * dislike)
     if emotion == "shy":
         return own * (1 - 0.5 * w["closeness"])
+    if emotion == "angry":
+        return own + DISLIKE_ANGRY * dislike
     return own
 
 
@@ -631,6 +640,7 @@ def leaning(doc: dict[str, Any], w: dict[str, Any], feel: dict[str, float] | Non
         x += 0.5 * w["closeness"] - 0.9 * exposure - 0.3 * lv["shy"]
     else:
         x += 0.2 * w["closeness"]
+    x -= 0.6 * float(w.get("dislike") or 0.0)  # (for someone she dislikes, rather not)
     return next((name for floor, name in LEANS if x >= floor), "rather_not")
 
 

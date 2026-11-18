@@ -86,7 +86,7 @@ export default function RelationshipTab({ mate }: { mate: Mate }) {
         <Toggle on={v.avatar_mood} onChange={(on) => void patch({ avatar_mood: on })} label={t("mateSettings.relAvatarMood")} hint={t("mateSettings.relAvatarMoodHint", { name: mate.name })} testId="mate-relation-avatar-mood" />
         <Field label={t("mateSettings.relManual")} hint={t("mateSettings.relManualHint")} as="div">
           <div className="flex items-center gap-2">
-            <input type="range" min={0} max={100} step={1} value={value} disabled={off} onChange={(e) => setManual(Number(e.target.value))} className="flex-1" aria-label={t("mateSettings.relManual")} data-testid="mate-relation-slider" />
+            <input type="range" min={-100} max={100} step={1} value={value} disabled={off} onChange={(e) => setManual(Number(e.target.value))} className="flex-1" aria-label={t("mateSettings.relManual")} data-testid="mate-relation-slider" />
             <span className="w-8 text-right text-[12px] tabular-nums text-content-dim">{value}</span>
             <button
               className="btn-soft shrink-0 !py-1 text-[12px]"

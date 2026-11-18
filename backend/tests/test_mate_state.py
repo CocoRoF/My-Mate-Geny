@@ -778,3 +778,9 @@ def test_how_readily_she_lets_go_is_her_own():
     was = _lv(doc, w)["happy"]
     _say(doc, w, ["귀여워"], NOON)
     assert _lv(doc, w)["happy"] > was
+
+
+def test_ill_feeling_towards_them_shows_in_where_she_settles():
+    calm, sour = S.who(closeness=0.0), S.who(closeness=0.0, dislike=0.8)
+    assert S._base("angry", sour) > S._base("angry", calm) and S._base("happy", sour) < S._base("happy", calm)
+    assert S.who(dislike=3)["dislike"] == 1.0 and S.who()["dislike"] == 0.0

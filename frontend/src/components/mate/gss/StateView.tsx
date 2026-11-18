@@ -130,7 +130,7 @@ export function Between({ b, name }: { b: GssBonds; name: string }) {
   const scale = bondScale(BOND_AXES.map((a) => b[a]));
   const rows = [
     ...BOND_AXES.map((a) => ({ id: a, label: t(BOND_LABEL[a]), v: bondPercent(b[a], scale), word: wordText(t, b.words?.[a]), color: undefined as string | undefined })),
-    { id: "affinity", label: t(BOND_LABEL.affinity), v: Math.round(Math.max(0, Math.min(100, b.affinity))), word: "", color: STAGE_COLOR[b.stage] },
+    { id: "affinity", label: t(BOND_LABEL.affinity), v: Math.round(Math.max(-100, Math.min(100, b.affinity))), word: "", color: STAGE_COLOR[b.stage] },
   ];
   return (
     <Block
@@ -148,7 +148,7 @@ export function Between({ b, name }: { b: GssBonds; name: string }) {
         {rows.map((r) => (
           <li key={r.id} className="flex items-center gap-2" data-testid="mate-gss-bond" data-axis={r.id} data-value={r.v}>
             <span className="w-[4.75rem] shrink-0 truncate text-[12px] text-content-dim">{r.label}</span>
-            <Meter ratio={r.v / 100} color={r.color} label={r.label} />
+            <Meter ratio={Math.abs(r.v) / 100} color={r.color} label={r.label} />
             <span className="w-14 shrink-0 truncate text-right text-[11px] text-content-faint">{r.word}</span>
             <span className="w-7 shrink-0 text-right text-[11.5px] tabular-nums text-content-dim">{r.v}</span>
           </li>

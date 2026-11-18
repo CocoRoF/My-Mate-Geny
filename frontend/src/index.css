@@ -47,6 +47,10 @@
   --graph-faint: rgba(148, 163, 184, 0.4);
   --graph-paper: rgba(15, 18, 25, 0.82);
   /* the mate's relationship stages (rings, bars, pills: --c-stage-ink is the text on a stage's fill) */
+  --c-stage-hostile: 220 60 60;
+  --c-stage-resentful: 236 98 72;
+  --c-stage-dislike: 240 146 82;
+  --c-stage-cold: 120 150 170;
   --c-stage-new: 148 163 184;
   --c-stage-familiar: 110 139 255;
   --c-stage-trusted: 167 139 250;
@@ -121,6 +125,10 @@ html.light,
   --graph-ink: #1e293b;
   --graph-faint: rgba(100, 116, 139, 0.4);
   --graph-paper: rgba(255, 255, 255, 0.85);
+  --c-stage-hostile: 180 30 36;
+  --c-stage-resentful: 196 64 40;
+  --c-stage-dislike: 194 102 32;
+  --c-stage-cold: 76 108 130;
   --c-stage-new: 100 116 139;
   --c-stage-familiar: 52 80 220;
   --c-stage-trusted: 112 72 214;
