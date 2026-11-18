@@ -1,29 +1,40 @@
-/* her world behind her (docs/mate-life.md): a picture of where she is, in today's light and weather.
-   Cheap on purpose: it sits under a video that changes 24 times a second, so nothing here may repaint per frame. Weather moves
-   by transform only (the compositor slides an already painted layer), and nothing on the stage blurs what is behind it. */
+/* her world behind her (docs/mate-life.md): a picture of where she is, in the light of the hour, the season and today's weather.
+   Cheap on purpose: it sits under a video that changes 24 times a second, so nothing here may repaint per frame. The weather is
+   still (painted once, never moved), and nothing on the stage blurs what is behind it. */
 .life-backdrop{position:absolute;inset:0;overflow:hidden;background:rgb(var(--c-surface-2,24 26 34));contain:strict}
 .life-backdrop-pic{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 50%;display:block}
 .life-backdrop-pic.incoming{animation:life-fade 1.4s ease-in-out both}
 @keyframes life-fade{from{opacity:0}to{opacity:1}}
 /* (her status and the name sit on it; the shade also takes the edge off the picture's brightness) */
 .life-backdrop-shade{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(10,12,22,.16),rgba(10,12,22,.06) 26%,rgba(10,12,22,.06) 68%,rgba(10,12,22,.58))}
-.life-sky-cloudy{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(92,100,120,.4),rgba(92,100,120,.08))}
-.life-sky-rain,.life-sky-snow{position:absolute;inset:0;overflow:hidden;pointer-events:none}
-.life-sky-rain{background:linear-gradient(to bottom,rgba(70,82,110,.3),rgba(70,82,110,.12))}
-/* a sheet two tiles taller than the stage, painted once, slid down by exactly one tile and back: seamless, and no repaint */
-.life-sky-rain::before,.life-sky-rain::after,.life-sky-snow::before,.life-sky-snow::after{content:"";position:absolute;left:-10%;right:-10%;will-change:transform}
-.life-sky-rain::before{top:-240px;bottom:0;background:repeating-linear-gradient(103deg,transparent 0 22px,rgba(210,225,255,.2) 22px 23px,transparent 23px 49px);
-  background-size:240px 240px;animation:life-fall-240 .55s linear infinite}
-.life-sky-rain::after{top:-180px;bottom:0;background:repeating-linear-gradient(101deg,transparent 0 37px,rgba(210,225,255,.13) 37px 38px,transparent 38px 71px);
-  background-size:180px 180px;animation:life-fall-180 .8s linear infinite}
-.life-sky-snow::before{top:-260px;bottom:0;background-image:radial-gradient(circle at 20% 30%,rgba(255,255,255,.9) 0 1.6px,transparent 2.2px),
-  radial-gradient(circle at 70% 60%,rgba(255,255,255,.75) 0 1.2px,transparent 1.8px);background-size:130px 130px,260px 260px;animation:life-fall-260 14s linear infinite}
-.life-sky-snow::after{top:-190px;bottom:0;background-image:radial-gradient(circle at 45% 80%,rgba(255,255,255,.65) 0 2px,transparent 2.6px);
-  background-size:190px 190px;animation:life-fall-190 9s linear infinite}
-@keyframes life-fall-240{from{transform:translate3d(0,0,0)}to{transform:translate3d(0,240px,0)}}
-@keyframes life-fall-180{from{transform:translate3d(0,0,0)}to{transform:translate3d(0,180px,0)}}
-@keyframes life-fall-260{from{transform:translate3d(0,0,0)}to{transform:translate3d(0,260px,0)}}
-@keyframes life-fall-190{from{transform:translate3d(0,0,0)}to{transform:translate3d(0,190px,0)}}
+/* the season's light out of doors: a wash, painted once */
+.life-season{position:absolute;inset:0;pointer-events:none}
+.life-season-spring{background:linear-gradient(to bottom,rgba(255,196,214,.08),rgba(255,226,236,.03))}
+.life-season-summer{background:linear-gradient(to bottom,rgba(255,236,170,.06),rgba(120,200,255,.03))}
+.life-season-autumn{background:linear-gradient(to bottom,rgba(255,170,90,.1),rgba(196,106,40,.06))}
+.life-season-winter{background:linear-gradient(to bottom,rgba(176,200,240,.12),rgba(226,234,248,.08))}
+/* the day's sky, still: out in it rain is drops on the glass and snow lies in the air and on the ground; indoors only the light
+   changes. Nothing falls: a moving layer the size of the stage is work for every frame of the video above it */
+.life-sky{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.life-sky-cloudy.out{background:linear-gradient(to bottom,rgba(92,100,120,.4),rgba(92,100,120,.08))}
+.life-sky-cloudy.in{background:rgba(70,78,96,.14)}
+.life-sky-rain.out{background:linear-gradient(to bottom,rgba(60,74,104,.42),rgba(70,82,110,.18))}
+.life-sky-rain.in{background:linear-gradient(to bottom,rgba(60,74,104,.22),rgba(70,82,110,.1))}
+.life-sky-rain.out::before{content:"";position:absolute;inset:0;
+  background-image:radial-gradient(ellipse 2.4px 3.6px at 18% 22%,rgba(235,242,255,.5),rgba(235,242,255,.12) 55%,transparent 72%),
+    radial-gradient(ellipse 3.4px 5px at 67% 58%,rgba(235,242,255,.42),rgba(235,242,255,.1) 55%,transparent 72%),
+    radial-gradient(ellipse 1.8px 2.6px at 41% 81%,rgba(235,242,255,.45),transparent 70%),
+    radial-gradient(ellipse 4.2px 6px at 83% 12%,rgba(235,242,255,.34),rgba(235,242,255,.08) 55%,transparent 72%),
+    radial-gradient(ellipse 2.2px 3.2px at 9% 67%,rgba(235,242,255,.4),transparent 70%);
+  background-size:173px 197px,241px 263px,131px 149px,311px 283px,199px 227px}
+.life-sky-snow.out{background:linear-gradient(to bottom,rgba(200,212,232,.3),rgba(236,240,248,.12) 60%,rgba(255,255,255,.22))}
+.life-sky-snow.in{background:linear-gradient(to bottom,rgba(214,224,242,.16),rgba(236,240,248,.08))}
+.life-sky-snow.out::before{content:"";position:absolute;inset:0;
+  background-image:radial-gradient(circle at 20% 30%,rgba(255,255,255,.85) 0 1.5px,transparent 2.2px),
+    radial-gradient(circle at 70% 60%,rgba(255,255,255,.7) 0 1.1px,transparent 1.8px),
+    radial-gradient(circle at 45% 80%,rgba(255,255,255,.6) 0 2px,transparent 2.7px),
+    radial-gradient(circle at 88% 18%,rgba(255,255,255,.55) 0 1.2px,transparent 1.9px);
+  background-size:130px 140px,260px 230px,190px 210px,310px 270px}
 /* she is asleep: the room goes dim, and something drifts up */
 .life-asleep{position:absolute;inset:0;background:rgba(10,12,30,.42)}
 .life-asleep span{position:absolute;left:62%;top:34%;color:rgba(255,255,255,.75);font-weight:600;font-size:18px;opacity:0;will-change:transform,opacity;animation:life-z 4.2s ease-out infinite}
@@ -34,6 +45,5 @@
 .life-chip{background:rgba(12,14,26,.74);border:1px solid rgba(255,255,255,.12);color:#f2f4fa}
 @media (prefers-reduced-motion:reduce){
   .life-backdrop-pic.incoming{animation-duration:.01s}
-  .life-sky-rain::before,.life-sky-rain::after,.life-sky-snow::before,.life-sky-snow::after{animation:none}
   .life-asleep span{animation:none;opacity:.7}
 }

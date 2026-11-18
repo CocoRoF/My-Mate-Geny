@@ -3,6 +3,7 @@ import type { Mate, MateLifeSummary } from "../../../api/mates";
 import type { BodyMood } from "../../../mate/types";
 import { useLang, useT } from "../../../i18n";
 import Icon from "../../ui/Icon";
+import { SKY } from "./LifeSections";
 import { lifeName } from "./needs";
 
 export default function LifeHud({ mate, life, mood, moodText, onOpen }: { mate: Mate; life: MateLifeSummary; mood: BodyMood; moodText: string; onOpen?: () => void }) {
@@ -10,6 +11,7 @@ export default function LifeHud({ mate, life, mood, moodText, onOpen }: { mate: 
   const locale = useLang();
   const place = lifeName(life.place_name, locale, life.place);
   const doing = lifeName(life.activity_name, locale);
+  const sky = life.weather ? SKY[life.weather] : null;
   return (
     <button
       type="button"
@@ -31,6 +33,12 @@ export default function LifeHud({ mate, life, mood, moodText, onOpen }: { mate: 
         <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] leading-tight opacity-85" data-testid="mate-life-where">
           <Icon name="map-pin" size={10} className="shrink-0" />
           <span className="truncate">{doing ? `${place} · ${doing}` : place}</span>
+          {sky && (
+            <span className="ml-0.5 inline-flex shrink-0 items-center gap-0.5 opacity-90" title={t(sky.label)} data-testid="mate-life-sky" data-sky={life.weather}>
+              <Icon name={sky.icon} size={10} />
+              {life.temp != null && <span className="tabular-nums">{life.temp}°</span>}
+            </span>
+          )}
         </span>
       </span>
     </button>

@@ -38,6 +38,22 @@ TZ_COUNTRY = {
     "America/Mexico_City": "MX", "America/Sao_Paulo": "BR", "America/Argentina/Buenos_Aires": "AR",
 }
 
+#: …and where it is, for the light of the day (sunrise and sunset: sim.slot) when they haven't said where they are
+TZ_WHERE = {
+    "Asia/Seoul": (37.57, 126.98), "Asia/Tokyo": (35.68, 139.69), "Asia/Shanghai": (31.23, 121.47), "Asia/Hong_Kong": (22.32, 114.17),
+    "Asia/Taipei": (25.03, 121.57), "Asia/Singapore": (1.35, 103.82), "Asia/Bangkok": (13.76, 100.5), "Asia/Ho_Chi_Minh": (10.82, 106.63),
+    "Asia/Jakarta": (-6.21, 106.85), "Asia/Manila": (14.6, 120.98), "Asia/Kolkata": (28.61, 77.21), "Australia/Sydney": (-33.87, 151.21),
+    "Australia/Melbourne": (-37.81, 144.96), "Pacific/Auckland": (-36.85, 174.76), "Europe/London": (51.51, -0.13),
+    "Europe/Dublin": (53.35, -6.26), "Europe/Paris": (48.86, 2.35), "Europe/Berlin": (52.52, 13.4), "Europe/Madrid": (40.42, -3.7),
+    "Europe/Rome": (41.9, 12.5), "Europe/Amsterdam": (52.37, 4.9), "Europe/Brussels": (50.85, 4.35), "Europe/Zurich": (47.38, 8.54),
+    "Europe/Vienna": (48.21, 16.37), "Europe/Stockholm": (59.33, 18.07), "Europe/Oslo": (59.91, 10.75), "Europe/Copenhagen": (55.68, 12.57),
+    "Europe/Helsinki": (60.17, 24.94), "Europe/Warsaw": (52.23, 21.01), "Europe/Prague": (50.08, 14.44), "Europe/Lisbon": (38.72, -9.14),
+    "America/New_York": (40.71, -74.01), "America/Chicago": (41.88, -87.63), "America/Denver": (39.74, -104.99),
+    "America/Los_Angeles": (34.05, -118.24), "America/Phoenix": (33.45, -112.07), "America/Anchorage": (61.22, -149.9),
+    "Pacific/Honolulu": (21.31, -157.86), "America/Toronto": (43.65, -79.38), "America/Vancouver": (49.28, -123.12),
+    "America/Mexico_City": (19.43, -99.13), "America/Sao_Paulo": (-23.55, -46.63), "America/Argentina/Buenos_Aires": (-34.6, -58.38),
+}
+
 #: WMO weather codes (Open-Meteo) → the four skies her day knows
 def sky_of(code: int) -> str:
     if code in (71, 73, 75, 77, 85, 86):
@@ -58,6 +74,13 @@ class World:
         self._weather_for: tuple[float, float] | None = None
         self._tried: dict[str, float] = {}
 
+    def where(self) -> tuple[float, float] | None:
+        """Where on earth they are, for sunrise and sunset: their location, else their time zone's city, else nowhere (the clock)."""
+        loc = self.store.location() or {}
+        if loc.get("lat") is not None and loc.get("lon") is not None:
+            return float(loc["lat"]), float(loc["lon"])
+        return TZ_WHERE.get(self.store.tz_and_key()[1])
+
     def country(self) -> str:
         loc = self.store.location() or {}
         if loc.get("country"):
@@ -69,6 +92,7 @@ class World:
         if not settings.life_world:
             return
         sim.REAL["country"] = self.country()  # (no network needed: the days of the year she knows there come with it)
+        sim.REAL["where"] = self.where()  # (nor for the light: sunrise and sunset are worked out here)
         try:
             if self._client is not None:
                 await self._refresh(self._client, force)
