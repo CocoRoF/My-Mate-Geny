@@ -50,8 +50,15 @@ def main() -> None:
         sock.bind(("127.0.0.1", 0))
     sock.listen(128)
     port = sock.getsockname()[1]
+    # Geny Net's way in (app/net/ingress.py): a second loopback socket only the app's own TLS pipes connect to
+    ingress = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+        ingress.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+    ingress.bind(("127.0.0.1", 0))
+    ingress.listen(128)
     configure(Path(args.data_dir).resolve(), Path(args.static_dir).resolve())
     os.environ["PORT"] = str(port)
+    os.environ["NET_INGRESS_PORT"] = str(ingress.getsockname()[1])
     # A native crash/forced Quit must not strand local engines, even on Windows.
     import threading, time
     import psutil
@@ -68,7 +75,12 @@ def main() -> None:
     from app.main import app
     os.environ.pop("LOCAL_BOOTSTRAP_SECRET", None)
 
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", loop="asyncio"))
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", loop="asyncio",
+                                           # (a phone's connections over Geny Net stay open between page loads)
+                                           timeout_keep_alive=65,
+                                           # (nothing proxies this backend: a request's client is the socket's peer —
+                                           # the Geny Net ingress tells its pipes apart by it, app/net/ingress.py)
+                                           proxy_headers=False))
     app.state.local_shutdown = lambda: setattr(server, "should_exit", True)
     # Emitted only after lifespan startup, not merely after a port was reserved.
     original_startup = server.startup
@@ -77,7 +89,7 @@ def main() -> None:
         if not server.should_exit:
             print("GENY_LOCAL_READY " + json.dumps({"port": port}), flush=True)
     server.startup = startup
-    server.run(sockets=[sock])
+    server.run(sockets=[sock, ingress])
 
 
 if __name__ == "__main__":

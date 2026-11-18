@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- usesCleartextTraffic: the user picks the server, and a self-hosted one
          on the home network is often plain http://192.168.x.x:port. Without
          this, Android 9+ refuses http:// in both the WebView and native HTTP.
          https:// servers are unaffected; addresses without a scheme try
          https:// first unless they are local (www/connect-core.js). -->
+    <!-- GenyApp: the Geny Net proxy (GenyNet.java) up in every process start once a computer is paired -->
     <application
+        android:name=".GenyApp"
         android:usesCleartextTraffic="true"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -26,7 +29,20 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+            <!-- Settings → 디바이스 인증's QR codes scanned with the camera app: geny://link (pair with a computer,
+                 Geny Net) and geny://login (sign in to a server) — the app asks before it follows one -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="geny" />
+            </intent-filter>
         </activity>
+        <!-- the QR scanner (GenyNetPlugin.scan, zxing-android-embedded): upright like the rest of the app -->
+        <activity
+            android:name="com.journeyapps.barcodescanner.CaptureActivity"
+            android:screenOrientation="fullSensor"
+            tools:replace="screenOrientation" />
 
         <!-- Her calls with the app closed (docs/mate-calls.md "On Android"): one line held open to the user's own server
              (there is no push service), and during a call the microphone kept with the screen locked. -->

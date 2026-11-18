@@ -52,6 +52,9 @@ final class GenyLink {
     }
 
     static String token(Context c) {
+        // (on a paired computer the phone holds no session: its requests carry the app's own pass to the Geny Net
+        // proxy, and the computer signs it in by its certificate — GenyNet.java)
+        if (GenyNet.active(c)) return GenyNet.proxyKey(c);
         return prefs(c).getString(K_TOKEN, null);
     }
 

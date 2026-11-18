@@ -76,6 +76,8 @@ _PUBLIC_PATHS = frozenset({
     # Icons + web manifest: fetched without cookies (and on the login page).
     "/favicon.svg", "/favicon-32.png", "/apple-touch-icon.png", "/icon-192.png", "/icon-512.png",
     "/icon-maskable-512.png", "/manifest.webmanifest", "/logo.png",
+    # A Geny Net relay's lookup (app/net/relay.py, only mounted with NET_RELAY=1; its WebSockets aren't gated here).
+    "/net/relay/where",
 })
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
@@ -350,7 +352,8 @@ class AuthManager:
 
     # ---- one-time exchange codes ----
 
-    def create_exchange_code(self, token: str) -> str:
+    def create_exchange_code(self, token: str, ttl: float = EXCHANGE_TTL_S) -> str:
+        """``ttl``: 60 s for a connect page; a sign-in QR code (Settings → 디바이스 인증) lives longer."""
         now = time.monotonic()
         for c, (exp, _t) in list(self._exchange.items()):
             if exp <= now:
@@ -358,11 +361,14 @@ class AuthManager:
         while len(self._exchange) >= _EXCHANGE_MAX:  # oldest first
             del self._exchange[next(iter(self._exchange))]
         code = secrets.token_urlsafe(32)
-        self._exchange[code] = (now + EXCHANGE_TTL_S, token)
+        self._exchange[code] = (now + ttl, token)
         return code
 
+    def discard_exchange_code(self, code: str) -> None:
+        self._exchange.pop(code, None)
+
     def consume_exchange_code(self, code: str | None) -> str | None:
-        """The session token behind a code: single use, 60 s, and only while
+        """The session token behind a code: single use, 60 s (or its own ttl), and only while
         the token itself is still valid (credentials unchanged)."""
         if not code:
             return None
@@ -556,6 +562,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         if path in _PUBLIC_PATHS:
             return await call_next(request)
+        # Pairing a device (app/net/ingress.py lets these through only for a device that came over Geny Net).
+        net_peer = request.scope.get("geny_net")
+        if net_peer is not None and net_peer.scope == "pair":
+            if path.startswith("/api/net/pair/"):
+                return await call_next(request)
+            return JSONResponse({"detail": "not found"}, status_code=404)
 
         if path.startswith(INTERNAL_PREFIX):
             # The mate MCP bridge (a child of the backend): loopback only, no

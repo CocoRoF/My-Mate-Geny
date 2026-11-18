@@ -346,6 +346,7 @@ Real turns need `claude` and/or `codex` on `PATH`
 A chat is **engine × workspace × conversation**. More:
 [architecture](docs/architecture.md) · [providers](docs/providers.md) ·
 [remote workspaces](docs/remote.md) · [Higgsfield](docs/higgsfield.md) · [Mate](docs/mate.md) · [auth](docs/auth.md) ·
+[Geny Net — your phone on the desktop app](docs/geny-net.md) ·
 [monitoring](docs/monitoring.md) · [deployment](docs/deploy.md)
 
 *(Formerly "hr-harnessor": some internal identifiers, such as the `~/.hr-harnessor` state

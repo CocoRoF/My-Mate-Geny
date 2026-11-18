@@ -122,3 +122,18 @@ test("capacitor.config.json has no built-in server", () => {
     if (/\.(html|js)$/.test(f)) assert.doesNotMatch(fs.readFileSync(path.join(WWW, f), "utf8"), /hrletsgo/, f);
   }
 });
+
+test("a scanned QR code: a server's sign-in, or pairing with the desktop app (docs/geny-net.md)", () => {
+  const ctx = load();
+  const { parseCode } = ctx.GenyMobile;
+  const login = parseCode("geny://login?v=1&u=https%3A%2F%2Fgeny.example.com%2F&c=a1b2-c3");
+  assert.equal(login.kind, "login");
+  assert.equal(login.server, "https://geny.example.com");
+  assert.equal(login.start, "https://geny.example.com/auth/exchange?code=a1b2-c3&next=/");
+  const link = parseCode(" geny://link?v=1&n=abcdefghijklmnopqrstuvwxyz&f=F&k=K&d=Desk%20PC&h=192.168.0.2&p=4000 ");
+  assert.equal(link.kind, "link");
+  assert.equal(link.name, "Desk PC");
+  for (const bad of ["", "https://geny.example.com", "geny://login?u=javascript%3Aalert(1)&c=x", "geny://login?u=https%3A%2F%2Fx", "geny://link?n=a&f=b", "geny://other?x=1"]) {
+    assert.equal(parseCode(bad), null, bad);
+  }
+});
