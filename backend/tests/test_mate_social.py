@@ -154,6 +154,13 @@ async def test_never_warmer_than_with_the_user(store, monkeypatch):
     assert r["affinity"] <= 8.0 and r["romance"] <= store.relation_doc(a["id"])["romance"]
     B.cap(r, None, datetime.now(timezone.utc), KST)
     assert r["affinity"] <= B.CAP_OFF["affinity"] and r["romance"] == 0
+    _close_to_user(store, a["id"], affinity=-40.0)  # (she dislikes the user: no warmer than neutral with others, not forced below)
+    r["affinity"] = 30.0
+    B.cap(r, store.relation_doc(a["id"]), datetime.now(timezone.utc), KST)
+    assert r["affinity"] == 0.0
+    r["affinity"] = -10.0
+    B.cap(r, store.relation_doc(a["id"]), datetime.now(timezone.utc), KST)
+    assert r["affinity"] == -10.0
     store.update_settings({"social_romance": False})
     mates = social.mates()
     assert not social.romance_fits(mates[a["id"]], mates[b["id"]])
@@ -324,3 +331,32 @@ def test_the_light_follows_the_sun_where_the_user_is():
         assert sim.season(june) == "summer" and sim.season(december) == "winter"
     finally:
         sim.REAL["where"] = None
+
+
+async def test_through_the_service_a_peek_touches_how_both_feel(db, tmp_path, monkeypatch):
+    from tests.test_mate_life_service import _service
+
+    _, store, mates = _service(db, monkeypatch, tmp_path)
+    a, b = _mate(store, "채린", "chaerin"), _mate(store, "서아", "seoa")
+    social = mates.social
+    now = datetime.now(timezone.utc)
+    doc = social.doc()
+    t = social._thread(doc, a["id"], b["id"], "own", now)
+    t["messages"] = [{"by": a["id"], "text": "안녕", "at": A._iso(now)}]
+    t["status"] = "done"
+    social._save(doc)
+    social.seen(b["id"], t["id"])
+    for m, other in ((a, "서아"), (b, "채린")):
+        top = store.get(m["id"])["state"]["top"]
+        assert any(x["emotion"] == "shy" and other in str((x.get("why") or {}).get("text") or "") for x in top), top
+    assert mates.social.prompt(a["id"]).startswith("## Other mates")
+
+
+def test_her_bridge_offers_the_mate_tools_when_it_is_on(monkeypatch):
+    from app.mate import mcp_bridge
+
+    monkeypatch.setenv("HRH_MATE_SOCIAL", "1")
+    names = {t["name"] for t in mcp_bridge.tools()}
+    assert {"introduce_friend", "talk_to_mate"} <= names
+    monkeypatch.delenv("HRH_MATE_SOCIAL")
+    assert "talk_to_mate" not in {t["name"] for t in mcp_bridge.tools()}

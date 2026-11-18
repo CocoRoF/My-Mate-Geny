@@ -83,10 +83,11 @@ def _rel(doc: dict[str, Any], me: str, other: str, at: datetime) -> dict[str, An
 
 
 def ceiling(user_rel: dict[str, Any] | None) -> dict[str, float]:
-    """How warm she may be with another mate: no warmer, no more trusting, no more romantic than with the user."""
+    """How warm she may be with another mate: no warmer, no more trusting, no more romantic than with the user — and where she
+    feels badly about the user, no more than neutral (ill feeling towards the user isn't ill feeling towards everyone)."""
     if not user_rel or not user_rel.get("enabled"):
         return dict(CAP_OFF)
-    return {"affinity": float(user_rel.get("affinity") or 0.0), "trust": float(user_rel.get("trust") or 0.0),
+    return {"affinity": max(0.0, float(user_rel.get("affinity") or 0.0)), "trust": max(A.BONDS["trust"], float(user_rel.get("trust") or 0.0)),
             "romance": float(user_rel.get("romance") or 0.0)}
 
 
