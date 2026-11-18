@@ -231,7 +231,9 @@ So:
 ## Voice Studio
 
 Settings → 로컬 모델 호스팅 → **Voice Studio** (`frontend/src/components/voicestudio/`; the page is in the address,
-`/?view=settings&tab=voice-studio&page=history`). Its pages:
+`/?view=settings&tab=voice-studio&page=history`). Its pages say little: what a card, a field or a setting is waits
+behind a (?) beside its title or label (`ui/HelpTip.tsx` — on hover with a mouse, on a tap or a click; a sheet on a
+phone), as in Image Studio. Its pages:
 
 | Page | What |
 |---|---|

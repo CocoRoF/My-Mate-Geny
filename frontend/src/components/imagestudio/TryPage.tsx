@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cancelImageJob, getImageJob, imageJobFileUrl, listImageJobs, submitImageJob, USES, type ImageJob, type ImageUse, type MediaInput } from "../../api/image";
 import { useT, type MsgKey } from "../../i18n";
+import HelpTip from "../ui/HelpTip";
 import Icon from "../ui/Icon";
 import { Banner, ErrorLine, Field, ProgressBar, Segmented } from "../mate/settings/ui";
 import { Card, duration, KIND_ICON, LiveLine, mainOutput, Preview, useImageStudio } from "./shared";
@@ -30,13 +31,15 @@ export default function TryPage() {
   return (
     <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" data-testid="is-try">
       <div className="space-y-3">
-        <Segmented
-          value={use}
-          onChange={(u) => setUse(u)}
-          options={USES.map((u) => ({ id: u, label: t(`imageStudio.use_${u}` as MsgKey) }))}
-          testId="is-try-use"
-        />
-        {recipe && <p className="text-[12px] leading-snug text-content-dim">{recipe.description}</p>}
+        <div className="flex items-center gap-1">
+          <Segmented
+            value={use}
+            onChange={(u) => setUse(u)}
+            options={USES.map((u) => ({ id: u, label: t(`imageStudio.use_${u}` as MsgKey) }))}
+            testId="is-try-use"
+          />
+          {recipe?.description && <HelpTip testId="is-try-about">{recipe.description}</HelpTip>}
+        </div>
         {recipe && !recipe.ready && (
           <Banner tone="warn" testId="is-try-no-model">
             {t("imageStudio.tryNoModel", { use: t(`imageStudio.use_${use}` as MsgKey) })}
@@ -107,7 +110,7 @@ function Form({ use, disabled, onJob }: { use: ImageUse; disabled: boolean; onJo
           </Field>
         )}
         {needsPrompt && (
-          <Field label={t(`imageStudio.tryPrompt_${use}` as MsgKey)} hint={t(`imageStudio.tryPromptHint_${use}` as MsgKey)}>
+          <Field label={t(`imageStudio.tryPrompt_${use}` as MsgKey)} help={t(`imageStudio.tryPromptHint_${use}` as MsgKey)}>
             <textarea
               className="field min-h-[84px] text-[13px]"
               value={prompt}
@@ -118,7 +121,7 @@ function Form({ use, disabled, onJob }: { use: ImageUse; disabled: boolean; onJo
           </Field>
         )}
         {use === "edit" && (
-          <Field label={t("imageStudio.tryRefs")} hint={t("imageStudio.tryRefsHint")} as="div">
+          <Field label={t("imageStudio.tryRefs")} help={t("imageStudio.tryRefsHint")} as="div">
             <div className="flex flex-wrap gap-2">
               {refs.map((r, i) => (
                 <MediaPick key={i} value={r} onChange={(v) => setRefs((rs) => (v ? rs.map((x, k) => (k === i ? v : x)) : rs.filter((_, k) => k !== i)))} small />
@@ -163,11 +166,11 @@ function Form({ use, disabled, onJob }: { use: ImageUse; disabled: boolean; onJo
             <textarea className="field mt-1.5 min-h-[56px] text-[12.5px]" value={negative} onChange={(e) => setNegative(e.target.value)} placeholder={t("imageStudio.tryNegativeHint")} />
           </details>
         )}
-        {use === "loop" && <p className="text-[11.5px] leading-snug text-content-faint">{t("imageStudio.tryLoopHint")}</p>}
         <div className="flex items-center gap-2">
           <button className="btn-primary !py-1.5 text-[13px]" disabled={!can} onClick={() => void submit()} data-testid={`is-try-run-${use}`}>
             {busy ? <Icon name="spinner" size={13} spin /> : <Icon name={KIND_ICON[use]} size={13} />} {t(`imageStudio.tryRun_${use}` as MsgKey)}
           </button>
+          {use === "loop" && <HelpTip>{t("imageStudio.tryLoopHint")}</HelpTip>}
           {status?.queue.running && <span className="text-[11.5px] text-content-faint">{t("imageStudio.tryQueued")}</span>}
         </div>
         <ErrorLine text={err} />
@@ -311,8 +314,7 @@ function Result({ job, onJob }: { job: ImageJob | null; onJob: (j: ImageJob) => 
       {["queued", "running"].includes(job.state) && (
         <div className="space-y-1.5">
           <ProgressBar value={job.live?.max ? job.live.value / job.live.max : undefined} indeterminate={!job.live?.max} />
-          <p className="text-[11.5px] text-content-dim">{job.live ? <LiveLine live={job.live} /> : t("imageStudio.state_queued")}</p>
-          <p className="text-[11px] text-content-faint">{t("imageStudio.firstLoadHint")}</p>
+          <p className="text-[11.5px] text-content-dim">{job.live ? <LiveLine live={job.live} /> : t("imageStudio.state_queued")}<HelpTip>{t("imageStudio.firstLoadHint")}</HelpTip></p>
           <button className="btn-ghost !px-2 !py-0.5 text-[11.5px]" onClick={() => void cancelImageJob(job.id)}>{t("imageStudio.cancel")}</button>
         </div>
       )}

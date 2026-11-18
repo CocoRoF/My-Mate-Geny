@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { generateVoice, historyAudioUrl, listHistory, updateHistory, type GenerateBody, type HistoryEntry } from "../../api/voice";
 import { useT, type MsgKey } from "../../i18n";
+import HelpTip from "../ui/HelpTip";
 import Icon from "../ui/Icon";
 import { ErrorLine } from "../mate/settings/ui";
 import { SaveAsRefModal } from "./clips";
@@ -138,12 +139,12 @@ export default function GeneratePage() {
             <span>{t("voiceStudio.gnShortcut")}</span>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="vs-gen-sounds">
-            <label className="flex items-center gap-1.5 text-[12px] text-content-dim" title={t("voiceStudio.nvToggleHint")}>
+            <label className="flex items-center gap-1.5 text-[12px] text-content-dim">
               <input type="checkbox" checked={nonverbal} onChange={(e) => keepNonverbal(e.target.checked)} data-testid="vs-gen-nonverbal" />
               {t("voiceStudio.nvToggle")}
             </label>
+            <HelpTip>{t("voiceStudio.nvToggleHint")}</HelpTip>
           </div>
-          {nonverbal && <p className="mt-1 text-[11px] leading-snug text-content-faint">{t("voiceStudio.nvToggleHint")}</p>}
         </Card>
         <Card title={t("voiceStudio.gnVoice")}>
           <LineForm value={line} onChange={setLine} testId="vs-gen" />
@@ -171,12 +172,12 @@ export default function GeneratePage() {
               <input type="checkbox" checked={lockSeed} onChange={(e) => setLockSeed(e.target.checked)} data-testid="vs-gen-seed-lock" />
               {t("voiceStudio.gnSeedLock")}
             </label>
+            <HelpTip>{t("voiceStudio.gnSeedHint")}</HelpTip>
             <span className="flex-1" />
             <button className="btn-primary !px-4 !py-1.5 text-[13px]" disabled={busy || !text.trim()} onClick={() => void make()} data-testid="vs-gen-go">
               {busy ? <Icon name="spinner" size={13} spin /> : <Icon name="sparkles" size={13} />} {t("voiceStudio.gnGo")}
             </button>
           </div>
-          <p className="mt-1.5 text-[11px] leading-snug text-content-faint">{t("voiceStudio.gnSeedHint")}</p>
           <ErrorLine text={err} />
         </Card>
       </div>

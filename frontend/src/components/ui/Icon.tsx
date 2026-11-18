@@ -3,6 +3,7 @@
 import type { IconType } from "react-icons";
 import {
   LuMessageSquare,
+  LuCircleHelp,
   LuPlug,
   LuServer,
   LuPlus,
@@ -178,6 +179,7 @@ const MAP = {
   shield: LuShieldCheck,
   warning: LuTriangleAlert,
   info: LuInfo,
+  help: LuCircleHelp,
   "alert-circle": LuCircleAlert,
   "file-text": LuFileText,
   "file-code": LuFileCode,

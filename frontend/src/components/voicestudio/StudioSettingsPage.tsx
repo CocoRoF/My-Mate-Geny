@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import { getStudioSettings, putStudioSettings, type RuntimeKey, type StudioSettings } from "../../api/voice";
 import { useT, type MsgKey } from "../../i18n";
+import HelpTip from "../ui/HelpTip";
 import Icon from "../ui/Icon";
 import { ErrorLine, Field, ProgressBar } from "../mate/settings/ui";
 import { Card, useStudio, useModelName } from "./shared";
@@ -67,7 +68,7 @@ export default function StudioSettingsPage() {
       </Card>
       <Card title={t("voiceStudio.stDefaults")} testId="vs-settings-defaults">
         <div className="grid gap-2 sm:grid-cols-3">
-          <Field label={t("voiceStudio.stDefaultTts")} hint={t("voiceStudio.stDefaultTtsHint")}>
+          <Field label={t("voiceStudio.stDefaultTts")} help={t("voiceStudio.stDefaultTtsHint")}>
             <select className="field" value={doc.default_tts} onChange={(e) => void put("tts", { default_tts: e.target.value })} data-testid="vs-settings-default-tts">
               <option value="">{t("voiceStudio.stAutomatic", { model: status?.defaults.tts ? modelName(status.defaults.tts) : "–" })}</option>
               {models.filter((m) => m.kind === "tts").map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -79,7 +80,7 @@ export default function StudioSettingsPage() {
               {models.filter((m) => m.kind === "stt").map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </Field>
-          <Field label={t("voiceStudio.stDefaultVoice")} hint={t("voiceStudio.stDefaultVoiceHint")}>
+          <Field label={t("voiceStudio.stDefaultVoice")} help={t("voiceStudio.stDefaultVoiceHint")}>
             <select className="field" value={doc.default_voice} onChange={(e) => void put("voice", { default_voice: e.target.value })} data-testid="vs-settings-default-voice">
               <option value="">{t("voiceStudio.stFirstVoice")}</option>
               {voices.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
@@ -87,7 +88,7 @@ export default function StudioSettingsPage() {
           </Field>
         </div>
       </Card>
-      <Card title={t("voiceStudio.stSounds")} testId="vs-settings-sounds">
+      <Card title={t("voiceStudio.stSounds")} help={doc.sound_maker ? t("voiceStudio.stAutoSoundsHint", { model: modelName(doc.sound_maker) }) : undefined} testId="vs-settings-sounds">
         <label className="flex items-start gap-2 text-[12.5px] text-content">
           <input
             type="checkbox"
@@ -97,15 +98,11 @@ export default function StudioSettingsPage() {
             onChange={(e) => void put("sounds", { auto_sounds: e.target.checked })}
             data-testid="vs-settings-auto-sounds"
           />
-          <span>
-            {t("voiceStudio.stAutoSounds")}
-            <span className="mt-0.5 block text-[11.5px] leading-snug text-content-faint">
-              {doc.sound_maker ? t("voiceStudio.stAutoSoundsHint", { model: modelName(doc.sound_maker) }) : t("voiceStudio.stAutoSoundsNone")}
-            </span>
-          </span>
+          <span>{t("voiceStudio.stAutoSounds")}</span>
         </label>
+        {!doc.sound_maker && <p className="mt-1 text-[11.5px] text-content-faint">{t("voiceStudio.stAutoSoundsNone")}</p>}
       </Card>
-      <Card title={t("voiceStudio.stTrained")} testId="vs-settings-trained">
+      <Card title={t("voiceStudio.stTrained")} help={t("voiceStudio.stShippedLead")} testId="vs-settings-trained">
         <label className="flex items-start gap-2 text-[13px] text-content">
           <input
             type="checkbox"
@@ -122,7 +119,6 @@ export default function StudioSettingsPage() {
                 t("voiceStudio.stShippedNone")
               ) : (
                 <>
-                  <span className="block">{t("voiceStudio.stShippedLead")}</span>
                   {/* (each model's: fetched, fetched once it is installed, or why not) */}
                   {[...new Set(doc.shipped.map((x) => x.model_id))].map((m) => {
                     const xs = doc.shipped.filter((x) => x.model_id === m);
@@ -147,7 +143,7 @@ export default function StudioSettingsPage() {
           </span>
         </label>
       </Card>
-      <Card title={t("voiceStudio.stWhere")} testId="vs-settings-paths">
+      <Card title={t("voiceStudio.stWhere")} help={t("voiceStudio.stEnvHint")} testId="vs-settings-paths">
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]">
           {(Object.keys(doc.paths) as (keyof StudioSettings["paths"])[]).map((k) => (
             <div key={k} className="contents">
@@ -166,7 +162,6 @@ export default function StudioSettingsPage() {
             </>
           )}
         </dl>
-        <p className="mt-2 text-[11px] leading-snug text-content-faint">{t("voiceStudio.stEnvHint")}</p>
       </Card>
       {changed.length > 0 && (
         <button
@@ -197,7 +192,7 @@ function Runtime({ k, doc, busy, onSave }: { k: RuntimeKey; doc: StudioSettings;
   return (
     <div data-testid={`vs-setting-${k}`}>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="min-w-0 flex-1 text-[12.5px] font-medium text-content">{t(`voiceStudio.rt_${k}` as MsgKey)}</span>
+        <span className="min-w-0 flex-1 text-[12.5px] font-medium text-content">{t(`voiceStudio.rt_${k}` as MsgKey)}<HelpTip>{t(`voiceStudio.rtHint_${k}` as MsgKey)}</HelpTip></span>
         <span className="text-[12px] tabular-nums text-content">{unit(draft)}</span>
         {!isDefault && <span className="text-[11px] text-content-faint">{t("voiceStudio.stDefaultIs", { v: unit(shown(doc.defaults[k])) })}</span>}
       </div>
@@ -220,7 +215,6 @@ function Runtime({ k, doc, busy, onSave }: { k: RuntimeKey; doc: StudioSettings;
           <Icon name="refresh" size={12} />
         </button>
       </div>
-      <p className="mt-0.5 text-[11px] leading-snug text-content-faint">{t(`voiceStudio.rtHint_${k}` as MsgKey)}</p>
     </div>
   );
 }

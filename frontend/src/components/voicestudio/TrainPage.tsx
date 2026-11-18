@@ -26,6 +26,7 @@ import {
 import { useT, type MsgKey } from "../../i18n";
 import { relTime } from "../../i18n/format";
 import { confirmDialog } from "../ui/ConfirmDialog";
+import HelpTip from "../ui/HelpTip";
 import Icon from "../ui/Icon";
 import { Banner, ErrorLine, Field, ProgressBar, Segmented, StatusBadge, type Status } from "../mate/settings/ui";
 import { Card, PlayButton, useStudio } from "./shared";
@@ -77,7 +78,6 @@ export default function TrainPage() {
   const choosable = useMemo(() => [...voices.filter((v) => !v.builtin), ...voices.filter((v) => v.builtin)], [voices]);
   return (
     <div className="space-y-4" data-testid="vs-train">
-      <p className="text-[13px] leading-relaxed text-content-dim">{t("voiceStudio.trHint")}</p>
       {kit && !kit.models.some((m) => m.installed) && (
         <Banner tone="warn" action={<button className="btn-soft !py-1 text-[12.5px]" onClick={() => go("models")}>{t("voiceStudio.trToModels")}</button>} testId="vs-train-needs-model">
           {t("voiceStudio.trNeedsModel")}
@@ -145,7 +145,7 @@ function NewRun({ kit, voices, onStarted, busy }: { kit: TrainingKit | null; voi
     }
   };
   return (
-    <Card title={<span className="flex items-center gap-1.5"><Icon name="sparkles" size={14} /> {t("voiceStudio.trNew")}</span>} testId="vs-train-new">
+    <Card title={<span className="flex items-center gap-1.5"><Icon name="sparkles" size={14} /> {t("voiceStudio.trNew")}</span>} help={t("voiceStudio.trHint")} testId="vs-train-new">
       <div className="space-y-3">
         <Field label={t("voiceStudio.trVoice")} as="div">
           <div className="flex flex-wrap items-center gap-2">
@@ -166,8 +166,8 @@ function NewRun({ kit, voices, onStarted, busy }: { kit: TrainingKit | null; voi
         >
           <Icon name="upload" size={20} className="mx-auto text-content-faint" />
           <p className="mt-1.5 text-[13px] text-content">{t("voiceStudio.trDrop")}</p>
-          <p className="mt-0.5 text-[11.5px] text-content-faint">{t("voiceStudio.trDropHint")}</p>
-          <button type="button" className="btn-soft mt-2.5 !py-1 text-[12.5px]" onClick={() => input.current?.click()}>{t("voiceStudio.trPick")}</button>
+          <p className="mt-0.5 text-[11.5px] text-content-faint">{t("voiceStudio.trDropShort")}<HelpTip>{t("voiceStudio.trDropHint")}</HelpTip></p>
+          <button type="button" className="btn-soft mt-2.5 !py-1 text-[12.5px]" onClick={() => input.current?.click()} data-testid="vs-train-pick">{t("voiceStudio.trPick")}</button>
           <input ref={input} type="file" multiple accept="audio/*,video/*" className="hidden" onChange={(e) => { add(e.target.files); e.target.value = ""; }} data-testid="vs-train-files" />
         </div>
         {files.length > 0 && (
@@ -184,7 +184,8 @@ function NewRun({ kit, voices, onStarted, busy }: { kit: TrainingKit | null; voi
           </ul>
         )}
         {installed.length > 0 && (
-          <Field label={t("voiceStudio.trModels")} as="div">
+          <Field label={t("voiceStudio.trModels")} as="div"
+            help={kit && kit.models.some((m) => !m.installed) ? t("voiceStudio.trModelsMore", { names: kit.models.filter((m) => !m.installed).map((m) => m.name).join(", ") }) : undefined}>
             <div className="flex flex-wrap gap-x-4 gap-y-1.5" data-testid="vs-train-models">
               {installed.map((m) => (
                 <label key={m.id} className="flex items-center gap-1.5 text-[12.5px] text-content">
@@ -194,9 +195,6 @@ function NewRun({ kit, voices, onStarted, busy }: { kit: TrainingKit | null; voi
                 </label>
               ))}
             </div>
-            {kit && kit.models.some((m) => !m.installed) && (
-              <p className="mt-1 text-[11.5px] text-content-faint">{t("voiceStudio.trModelsMore", { names: kit.models.filter((m) => !m.installed).map((m) => m.name).join(", ") })}</p>
-            )}
           </Field>
         )}
         <Field label={t("voiceStudio.trLanguage")} as="div">
@@ -209,7 +207,10 @@ function NewRun({ kit, voices, onStarted, busy }: { kit: TrainingKit | null; voi
           </label>
         )}
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <span className="min-w-0 flex-1 text-[11.5px] text-content-faint">{t(chosen.length > 1 ? "voiceStudio.trCostMany" : "voiceStudio.trCost", { gb: needGb || 6, n: chosen.length })}</span>
+          <span className="min-w-0 flex-1 text-[11.5px] text-content-faint">
+            {t("voiceStudio.trCostShort", { count: chosen.length, n: chosen.length, gb: needGb || 6 })}
+            <HelpTip>{t(chosen.length > 1 ? "voiceStudio.trCostMany" : "voiceStudio.trCost", { gb: needGb || 6, n: chosen.length })}</HelpTip>
+          </span>
           <button className="btn-primary !py-1.5 text-[13px]" disabled={!can} onClick={() => void start()} data-testid="vs-train-start">
             {working ? <Icon name="spinner" size={13} spin /> : <Icon name="sparkles" size={13} />} {t("voiceStudio.trStart")}
           </button>
@@ -410,7 +411,7 @@ function Result({ run, busy, onApply }: { run: TrainingRun; busy: boolean; onApp
               <tr className="text-left text-[11.5px] text-content-faint">
                 <th className="py-1 pr-2 font-medium">{t("voiceStudio.trWith")}</th>
                 <th className="py-1 pr-2 font-medium">{t("voiceStudio.trBefore")}</th>
-                <th className="py-1 pr-2 font-medium">{t("voiceStudio.trAfter")}</th>
+                <th className="py-1 pr-2 font-medium">{t("voiceStudio.trAfter")}<HelpTip>{t("voiceStudio.trTableHint")}</HelpTip></th>
                 <th className="py-1 font-medium">{t("voiceStudio.trWords")}</th>
               </tr>
             </thead>
@@ -431,7 +432,6 @@ function Result({ run, busy, onApply }: { run: TrainingRun; busy: boolean; onApp
               })}
             </tbody>
           </table>
-          <p className="mt-1 text-[11px] text-content-faint">{t("voiceStudio.trTableHint")}</p>
         </div>
       )}
       {run.samples.length > 0 && (

@@ -68,6 +68,8 @@ class License:
     # text that must be shown wherever the model's output is offered, if the license asks for one
     attribution: str = ""
     commercial: L = L("허용", "Allowed")
+    # the weights may not be used commercially (the model card shows it beside the name)
+    noncommercial: bool = False
 
 
 @dataclass(frozen=True)
@@ -131,6 +133,7 @@ class ModelSpec:
                 "summary": _t(self.license.summary, lang),
                 "attribution": self.license.attribution,
                 "commercial": self.license.commercial.get(lang),
+                "noncommercial": self.license.noncommercial,
             },
             "repos": [{"id": r.repo_id, "url": r.url, "revision": r.revision} for r in self.repos],
         }
@@ -205,6 +208,7 @@ CATALOG: tuple[ModelSpec, ...] = (
                         "License, Copyright © Boson AI USA, Inc. All Rights Reserved.",
             commercial=L("불가 — 모델 가중치가 CC-BY-NC (비상업 전용)",
                          "Not allowed — the model weights are CC-BY-NC (non-commercial only)"),
+            noncommercial=True,
         ),
         languages=("auto", "ko", "en", "zh", "ja", "de", "es", "fr", "it", "ru", "pt", "vi", "th", "id"),
         features=("clone", "design", "auto_voice", "tags"),

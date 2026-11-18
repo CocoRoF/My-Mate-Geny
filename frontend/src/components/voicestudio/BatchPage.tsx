@@ -21,6 +21,7 @@ import {
 } from "../../api/voice";
 import { useT, type MsgKey } from "../../i18n";
 import { confirmDialog } from "../ui/ConfirmDialog";
+import HelpTip from "../ui/HelpTip";
 import Icon from "../ui/Icon";
 import { ErrorLine, Field, ProgressBar, Segmented, StatusBadge, type Status } from "../mate/settings/ui";
 import { LineForm, useDefaultLine, useTts, type LineSettings } from "./lineForm";
@@ -203,6 +204,7 @@ function NewBatch({ onStarted }: { onStarted: (b: Batch) => Promise<void> }) {
               ]}
               testId="vs-batch-format"
             />
+            <HelpTip>{t(`voiceStudio.btHelp_${fmt}` as MsgKey)}</HelpTip>
             <span className="flex-1" />
             <input ref={file} type="file" accept=".txt,.csv,.json,text/plain,text/csv,application/json" className="hidden" onChange={(e) => e.target.files?.[0] && void load(e.target.files[0])} data-testid="vs-batch-file" />
             <button className="btn-soft !py-1 text-[12px]" onClick={() => file.current?.click()}>
@@ -216,7 +218,6 @@ function NewBatch({ onStarted }: { onStarted: (b: Batch) => Promise<void> }) {
             placeholder={t(`voiceStudio.btPh_${fmt}` as MsgKey)}
             data-testid="vs-batch-content"
           />
-          <p className="text-[11px] leading-snug text-content-faint">{t(`voiceStudio.btHelp_${fmt}` as MsgKey)}</p>
           {content.trim() && (
             <div className="rounded-lg border border-border/60 bg-surface/40 p-2" data-testid="vs-batch-preview">
               <p className={`text-[12px] ${p.error || over ? "text-danger" : "text-content-dim"}`}>
@@ -250,7 +251,8 @@ function NewBatch({ onStarted }: { onStarted: (b: Batch) => Promise<void> }) {
           {seedMode === "fixed" && <input className="field !w-32 !py-1 font-mono text-[12.5px]" type="number" min={0} value={seed} onChange={(e) => setSeed(Math.max(0, Math.floor(Number(e.target.value) || 0)))} />}
         </div>
         <div className="mt-3 flex items-center gap-2">
-          <span className="min-w-0 flex-1 text-[11px] leading-snug text-content-faint">{t("voiceStudio.btPriorityHint")}</span>
+          <span className="flex-1" />
+          <HelpTip>{t("voiceStudio.btPriorityHint")}</HelpTip>
           <button className="btn-primary !px-4 !py-1.5 text-[13px]" disabled={busy || !p.lines.length || !!p.error || over} onClick={() => void start()} data-testid="vs-batch-start">
             {busy ? <Icon name="spinner" size={13} spin /> : <Icon name="play" size={13} />} {p.lines.length ? t("voiceStudio.btStart", { n: p.lines.length }) : t("voiceStudio.btStartEmpty")}
           </button>
