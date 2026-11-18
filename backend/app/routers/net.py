@@ -10,7 +10,8 @@ Local execution (the desktop app) — Geny Net, app/net/service.py:
   on both screens).
 * ``PATCH /api/net/devices/{id}`` ``{name}`` · ``DELETE /api/net/devices/{id}`` — rename, remove (its connections
   end at once).
-* ``PUT /api/net/settings`` ``{lan?, relay?, relay_url?}``.
+* ``GET /api/net/where`` — how a paired phone reaches this node now (it asks over the link itself).
+* ``PUT /api/net/settings`` ``{lan?, upnp?, relay?, relay_url?}``.
 * ``POST /api/net/pair/request`` · ``POST /api/net/pair/result`` — the device's side of pairing: only over a Geny Net
   connection without a certificate (app/net/ingress.py).
 
@@ -72,6 +73,13 @@ async def status(request: Request) -> dict[str, Any]:
     return out
 
 
+@router.get("/where")
+async def where(request: Request) -> dict[str, Any]:
+    """how a paired phone reaches this node now: its LAN addresses and port, and the router's public ``ip:port``
+    (the phone asks over the link it has, so it follows a home address that changed — GenyNet.java)"""
+    return _net(request).where()
+
+
 @router.post("/offer")
 async def offer(request: Request) -> dict[str, Any]:
     return await _own(request).new_offer()
@@ -115,6 +123,7 @@ async def remove(device_id: str, request: Request) -> dict[str, Any]:
 
 class NetSettings(BaseModel):
     lan: bool | None = None
+    upnp: bool | None = None
     relay: bool | None = None
     relay_url: str | None = Field(default=None, max_length=300)
 

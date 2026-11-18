@@ -7,7 +7,7 @@ export default {
   // ---- local execution: Geny Net
   pairTitle: "Connect a phone",
   pairHelp:
-    "Scan this code with the My Mate Geny app on your phone (Connect with QR). Both screens then show the same six digits — allow it here and the phone reaches this computer directly on the same network, and from anywhere through the relay. Everything is end-to-end encrypted: the phone keeps a key of its own that never leaves it, and the relay only passes on bytes it can't read. A code pairs one phone and lasts 5 minutes. When this computer is off or the app is closed, the phone can't reach it.",
+    "Scan this code with the My Mate Geny app on your phone (Connect with QR). Both screens then show the same six digits — allow it here. From then on the phone reaches this computer directly on the same network, from the internet through your router when it can forward a port, and through the relay when nothing else works. Everything is end-to-end encrypted: the phone keeps a key of its own that never leaves it, and the relay only passes on bytes it can't read. A code pairs one phone and lasts 5 minutes. When this computer is off or the app is closed, the phone can't reach it.",
   showQr: "Show QR code",
   scanCaption: "Android app → Connect with QR",
   left: "{time} left",
@@ -22,14 +22,23 @@ export default {
   online: "Connected now",
   never: "Not connected yet",
   viaLan: "Same network",
+  viaWan: "Internet (direct)",
   viaRelay: "Relay",
   removeConfirm: "Disconnect {name} and remove it? To use it again, connect it with a new QR code.",
   waysTitle: "How the phone reaches this computer",
   lan: "Directly on the same network",
   lanHelp: "On the same Wi-Fi the phone connects straight to this computer. If your firewall asks, allow My Mate Geny on private networks.",
+  upnp: "Open a port on the router automatically",
+  upnpHelp:
+    "This computer asks your router (UPnP or NAT-PMP) to forward one port to it, so your phone reaches it from anywhere on the internet directly — no server in between. It only answers your paired phones. It doesn't work when the router has UPnP off or isn't on a public address itself (a second router in front of it, or the provider's own NAT); then the relay is used.",
+  upnpOpen: "Open",
+  upnpTrying: "Trying",
+  upnpUnavailable: "Not possible",
+  reachOk: "reachable from outside",
+  reachNo: "not reachable from outside",
   relay: "From anywhere (relay)",
   relayHelp:
-    "On another network the phone and this computer meet at a relay — both connect out to it, so no port has to be opened. The relay can't read anything: the encryption runs from the phone to this computer. Any My Mate Geny server started with NET_RELAY=1 can be the relay.",
+    "When neither works, the phone and this computer meet at a relay — both connect out to it. The relay can't read anything: the encryption runs from the phone to this computer. Any My Mate Geny server started with NET_RELAY=1 can be the relay.",
   relayUrl: "Relay address",
   relayOnline: "Connected",
   relayConnecting: "Connecting",

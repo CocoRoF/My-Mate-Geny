@@ -116,6 +116,7 @@ async def node(db, tmp_path, monkeypatch):
     app = _app(db, {})
     net = NetService(db, tmp_path, ingress.getsockname()[1], name="Desk")
     net.store.put_setting("relay", False)
+    net.store.put_setting("upnp", False)  # (never this machine's real router: test_net_portmap.py has a fake one)
     app.state.net = net
     server = uvicorn.Server(uvicorn.Config(app, log_level="warning", lifespan="off", loop="asyncio",
                                            proxy_headers=False))  # (as local_main.py runs it)
@@ -253,6 +254,10 @@ async def test_without_a_certificate_only_pairing(node, tmp_path) -> None:
     await net.start()
     ctx = _client_ctx(net)
     host = f"{net.identity.id}.geny.net"
+    # nothing being paired: a connection without a certificate isn't answered at all
+    st, _, _ = await _http(net.port, ctx, "GET", "/health", host=host)
+    assert st == 0
+    await net.new_offer()
     for path in ("/api/whoami", "/api/net/status", "/api/internal/thing"):
         st, _, _ = await _http(net.port, ctx, "GET", path, host=host)
         assert st == 404, path
@@ -374,7 +379,7 @@ async def test_a_phone_away_from_home_comes_through_the_relay(node, tmp_path) ->
         await asyncio.sleep(0.05)
     assert net.relay.state == "online"
     st, _, body = await _http(node["main"], None, "GET", f"/net/relay/where?n={net.identity.id}")
-    assert json.loads(body) == {"online": True, "lan": [], "port": 0}  # (same-network connections are off)
+    assert json.loads(body) == {"online": True, "lan": [], "port": 0, "wan": ""}  # (same-network connections off)
 
     async with websockets.connect(f"ws://127.0.0.1:{node['main']}/net/relay/connect?n={net.identity.id}") as ws:
         t = TlsOverWs(ws, dev["ctx"], dev["host"])

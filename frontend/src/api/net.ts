@@ -11,7 +11,7 @@ export interface NetDevice {
   platform: string;
   created_at: number;
   last_seen: number | null;
-  last_via: "lan" | "relay" | null;
+  last_via: "lan" | "wan" | "relay" | null;
   online: boolean;
 }
 
@@ -26,13 +26,16 @@ export interface NetRequest {
 export interface NetStatus {
   mode: "local" | "server";
   /** a request that came over Geny Net: which paired device this is (nothing else is shown to it) */
-  here?: { device: string; via: "lan" | "relay" };
+  here?: { device: string; via: "lan" | "wan" | "relay" };
   on?: boolean;
   node?: string;
   name?: string;
   port?: number;
   lan?: string[];
   lan_on?: boolean;
+  /** the router asked to forward a port (UPnP / NAT-PMP): the internet reaches this computer directly */
+  upnp_on?: boolean;
+  wan?: { state: "off" | "trying" | "open" | "unavailable"; endpoint: string; method: string; error: string; reach: boolean | null };
   relay_on?: boolean;
   relay_url?: string;
   relay?: "off" | "connecting" | "online" | "offline";
@@ -67,7 +70,7 @@ export const decide = (id: string, allow: boolean) =>
 export const renameDevice = (id: string, name: string) =>
   apiFetch<{ ok: boolean }>(`/api/net/devices/${encodeURIComponent(id)}`, json("PATCH", { name }));
 export const removeDevice = (id: string) => apiFetch<{ ok: boolean }>(`/api/net/devices/${encodeURIComponent(id)}`, json("DELETE"));
-export const putNetSettings = (p: { lan?: boolean; relay?: boolean; relay_url?: string }) =>
+export const putNetSettings = (p: { lan?: boolean; upnp?: boolean; relay?: boolean; relay_url?: string }) =>
   apiFetch<NetStatus>("/api/net/settings", json("PUT", p));
 export const loginCode = (origin: string) => apiFetch<LoginCode>("/api/net/login-code", json("POST", { origin }));
 export const cancelLoginCode = (code: string) => apiFetch<{ ok: boolean }>("/api/net/login-code/cancel", json("POST", { code }));

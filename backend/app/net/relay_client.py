@@ -2,7 +2,8 @@
 
 One WebSocket held open to ``<relay>/net/relay/host`` (outbound: nothing to open on the router), on which the node
 proves its id (the relay's challenge, signed with the node's CA key) and says where it is on its own network (so a
-device can try it directly next time). When a device asks the relay for this node, the relay sends ``open``; the node
+device can try it directly next time) — and, when the router forwards a port to it (portmap.py), that port: the relay
+tries it from outside and says whether it works (``reach``). When a device asks the relay for this node, the relay sends ``open``; the node
 opens ``<relay>/net/relay/accept`` (signed again) and pipes it into its own TLS listener through loopback — the device
 and the node talk TLS end to end; the relay forwards bytes it can't read.
 """
@@ -38,6 +39,7 @@ class RelayLink:
         self._task: asyncio.Task | None = None
         self._sessions: set[asyncio.Task] = set()
         self._ours: dict[tuple[str, int], str] = {}  # loopback ports of the relayed connections into the listener
+        self._ws: Any = None
 
     def start(self) -> None:
         self._task = asyncio.create_task(self._run())
@@ -71,15 +73,21 @@ class RelayLink:
                         "sig": self.net.identity.sign(("geny-net-host|" + challenge).encode()),
                         "lan": lan_addresses() if self.net.lan_on else [],
                         "port": self.net.port if self.net.lan_on else 0,
+                        "public_port": self._public_port(),
                     }))
-                    ok = json.loads(await asyncio.wait_for(ws.recv(), 15))
+                    ok = json.loads(await asyncio.wait_for(ws.recv(), 20))
                     if not ok.get("ok"):
                         raise RuntimeError(str(ok.get("error") or "refused"))
+                    self._heard(ok)
+                    self._ws = ws
                     self.state, self.error, backoff = "online", "", 1.0
                     self.net.on_change()
                     log.info("relay %s: online as %s", self.url, self.net.identity.id)
                     async for msg in ws:
                         m = json.loads(msg) if isinstance(msg, str) else {}
+                        if "reach" in m:
+                            self._heard(m)
+                            continue
                         sid = str(m.get("open") or "")
                         if sid and len(self._sessions) < MAX_SESSIONS:
                             t = asyncio.create_task(self._session(sid))
@@ -90,11 +98,28 @@ class RelayLink:
             except Exception as e:  # noqa: BLE001 - the relay is down or unreachable: try again later
                 self.error = f"{type(e).__name__}: {e}"[:200]
                 log.info("relay %s: %s", self.url, self.error)
+            self._ws = None
             self.state = "offline"
             self.net.on_change()
             await asyncio.sleep(backoff)
             backoff = min(60.0, backoff * 2)
             self.state = "connecting"
+
+    def _public_port(self) -> int:
+        wan = self.net.wan
+        return int(wan.rsplit(":", 1)[1]) if wan else 0
+
+    def _heard(self, m: dict) -> None:
+        """the relay's word on the router's forwarded port, tried from outside"""
+        if "reach" in m and self._public_port():
+            self.net.reach = m.get("reach") if isinstance(m.get("reach"), bool) else None
+            self.net.on_change()
+
+    def tell_public(self) -> None:
+        """the router's forwarded port changed: the relay tries it (again)"""
+        ws = self._ws
+        if ws is not None:
+            asyncio.ensure_future(_quiet(ws.send(json.dumps({"public_port": self._public_port()}))))
 
     async def _session(self, sid: str) -> None:
         """a device came through the relay: its WebSocket ↔ this node's TLS listener, byte for byte"""
@@ -117,6 +142,11 @@ class RelayLink:
             raise
         except Exception as e:  # noqa: BLE001
             log.info("relay session %s: %s", sid, e)
+
+
+async def _quiet(coro: Any) -> None:
+    with contextlib.suppress(Exception):
+        await coro
 
 
 async def _ws_tcp(ws: Any, r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
