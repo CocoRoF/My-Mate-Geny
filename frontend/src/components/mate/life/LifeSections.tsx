@@ -8,18 +8,13 @@ import { getLife, sendLifeGift, setLifePlan, type LifeDay, type LifeGift, type L
 import { fmtDate, fmtTime } from "../../../i18n/format";
 import { useLang, useT, type MsgKey } from "../../../i18n";
 import { useMateStore } from "../../../stores/mateStore";
-import Icon, { type IconName } from "../../ui/Icon";
+import Icon from "../../ui/Icon";
 import { milestoneText } from "../settings/RelationshipTab";
 import { lifeName, needStep, needTone, NEEDS, STATS } from "./needs";
 import "./life.css";
 
 export const SLOT_LABEL: Record<string, MsgKey> = { morning: "life.slotMorning", day: "life.slotDay", evening: "life.slotEvening", night: "life.slotNight" };
-export const SKY: Record<string, { icon: IconName; label: MsgKey }> = {
-  clear: { icon: "sun", label: "life.skyClear" },
-  cloudy: { icon: "cloud", label: "life.skyCloudy" },
-  rain: { icon: "cloud-rain", label: "life.skyRain" },
-  snow: { icon: "snowflake", label: "life.skySnow" },
-};
+export { SKY } from "./needs";
 
 /** her day as the server has it, refetched whenever the mate document's summary of it changes (a push brings that) */
 export function useLifeView(mate: Mate): { v: LifeView | null; setV: (v: LifeView) => void; err: string | null; setErr: (e: string | null) => void } {

@@ -839,7 +839,7 @@ class MateService:
         game_line, game_told = self._game_lines(mate_id, mate.get("session_id") or "")
         # (her friends among the user's mates: news, plans, what she remembers with one named: app/mate/social)
         try:
-            friends, friends_told = self.social.lines(mate_id, query)
+            friends, friends_told = self.social.lines(mate_id, query, day_of_her_own=self.store.life_profile(mate.get("builtin"), prefs) is not None)
         except Exception as exc:  # noqa: BLE001 - a turn never fails for her friends
             self._log("warning", f"social: {exc}")
             friends, friends_told = [], lambda: None

@@ -3,8 +3,7 @@ import type { Mate, MateLifeSummary } from "../../../api/mates";
 import type { BodyMood } from "../../../mate/types";
 import { useLang, useT } from "../../../i18n";
 import Icon from "../../ui/Icon";
-import { SKY } from "./LifeSections";
-import { lifeName } from "./needs";
+import { lifeName, SKY } from "./needs";
 
 export default function LifeHud({ mate, life, mood, moodText, onOpen }: { mate: Mate; life: MateLifeSummary; mood: BodyMood; moodText: string; onOpen?: () => void }) {
   const t = useT();

@@ -108,7 +108,7 @@ export default function GamesWindow({ mate, phone, game, onClose, onSend }: { ma
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   placeholder={t(`games.say_${g.game}` as MsgKey)}
-                  className="input min-w-0 flex-1 !py-1.5 text-[13px]"
+                  className="field min-w-0 flex-1 !py-1.5 text-[13px]"
                   data-testid="games-say"
                 />
                 <button type="submit" className="btn-primary shrink-0 !py-1.5 text-[12.5px]" disabled={!text.trim()} data-testid="games-send">
