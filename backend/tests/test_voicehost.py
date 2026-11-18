@@ -107,8 +107,9 @@ async def test_without_a_gpu_nothing_installs_or_loads(db, tmp_path, monkeypatch
         assert st["gate"]["code"] == "no_gpu" and len(st["models"]) == len(catalog.CATALOG)
         # (the models are still listed, with what they need, in the language asked for)
         omni = next(m for m in st["models"] if m["id"] == "omnivoice")
-        assert "Boson" in omni["license"]["name"] and omni["license"]["attribution"]
-        assert any("10만" in s for s in omni["license"]["summary"]) and omni["repos"][0]["url"].startswith("https://")
+        assert "Boson" in omni["license"]["name"] and "CC-BY-NC" in omni["license"]["name"] and omni["license"]["attribution"]
+        assert any("비상업" in s for s in omni["license"]["summary"]) and omni["repos"][0]["url"].startswith("https://")
+        assert "불가" in omni["license"]["commercial"]  # (its weights are non-commercial)
     finally:
         await h.stop()
 
@@ -133,12 +134,23 @@ async def test_a_license_is_accepted_before_anything_is_downloaded(vh, monkeypat
             break
         await asyncio.sleep(0.02)
     assert st["installed"] and st["progress"]["state"] == "done"
-    assert st["license_accepted"]["license"].startswith("Apache-2.0") and st["license_accepted"]["accepted_at"]
+    assert st["license_accepted"]["license"].startswith("CC-BY-NC") and st["license_accepted"]["accepted_at"]
     assert st["revisions"] == {"k2-fsa/OmniVoice": "deadbeef"}
     # accepted once: a reinstall needn't ask again
     await vh.remove("omnivoice")
     assert not next(m for m in vh.status()["models"] if m["id"] == "omnivoice")["installed"]
     vh.install("omnivoice", False)
+    # …unless it was accepted under another license (OmniVoice's weights turned out to be CC-BY-NC)
+    for _ in range(100):
+        if next(m for m in vh.status()["models"] if m["id"] == "omnivoice")["installed"]:
+            break
+        await asyncio.sleep(0.02)
+    await vh.remove("omnivoice")
+    vh.store.db.execute("UPDATE voice_licenses SET license=? WHERE model_id=?",
+                        ("Apache-2.0 (code) + Boson Higgs Audio 2 Community License (audio tokenizer)", "omnivoice"))
+    with pytest.raises(VoiceError) as e:
+        vh.install("omnivoice", False)
+    assert e.value.code == "license"
 
 
 async def test_stopping_the_app_stops_an_install_and_its_process(db, vs, monkeypatch):

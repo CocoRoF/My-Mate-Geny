@@ -180,29 +180,31 @@ CATALOG: tuple[ModelSpec, ...] = (
         host_gb=2.1,
         load_peak_gb=3.7,
         license=License(
-            name="Apache-2.0 (code) + Boson Higgs Audio 2 Community License (audio tokenizer)",
-            url="https://huggingface.co/k2-fsa/OmniVoice/blob/main/audio_tokenizer/LICENSE",
+            name="CC-BY-NC (model weights) + Apache-2.0 (code) + Boson Higgs Audio 2 Community License (audio tokenizer)",
+            url="https://huggingface.co/k2-fsa/OmniVoice/blob/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/README.md#license",
             summary=(
-                L("코드는 Apache-2.0 입니다. 모델 본체 가중치에는 Hugging Face 상 별도 라이선스 표기가 없습니다.",
-                  "The code is Apache-2.0. The main model weights carry no separate license on Hugging Face."),
-                L("함께 받는 오디오 토크나이저는 Boson Higgs Audio 2 Community License (Meta Llama 3 라이선스 기반)를 따릅니다.",
+                L("모델 가중치는 CC-BY-NC (비상업) 라이선스입니다: 학습 데이터(Emilia 등)의 제약 때문이라고 모델 카드에 적혀 "
+                  "있어요. 상업적으로 쓸 수 없고, 쓸 때는 출처(k2-fsa OmniVoice)를 밝혀야 합니다.",
+                  "The model weights are under CC-BY-NC (non-commercial), because of their training data (e.g. Emilia), "
+                  "as its model card says: no commercial use, and credit (k2-fsa OmniVoice) must be given."),
+                L("이 모델로 학습한 LoRA 어댑터 (기본 목소리의 것 포함)도 같은 비상업 조건을 따릅니다.",
+                  "A LoRA adapter trained on it (the built-in voices' too) is under the same non-commercial terms."),
+                L("코드는 Apache-2.0 입니다.", "The code is Apache-2.0."),
+                L("함께 받는 오디오 토크나이저는 Boson Higgs Audio 2 Community License (Meta Llama 3 라이선스 기반)를 따릅니다: "
+                  "그 결과물을 다른 대형 언어 모델 개선(학습)에 쓰면 안 되고, 배포할 때 'Built with Higgs Materials' 류의 "
+                  "출처 표기와 NOTICE가 필요하며, Llama 3 이용 정책(Acceptable Use Policy)을 지켜야 합니다.",
                   "The audio tokenizer downloaded with it is under the Boson Higgs Audio 2 Community License (based on "
-                  "the Meta Llama 3 license)."),
-                L("이 모델로 만든 결과물을 다른 대형 언어 모델 개선(학습)에 쓰면 안 됩니다.",
-                  "Its output must not be used to improve (train) other large language models."),
-                L("서비스의 연간 활성 사용자가 10만 명을 넘으면 Boson AI에 별도 라이선스를 받아야 합니다.",
-                  "A service with more than 100,000 annual active users needs a separate license from Boson AI."),
-                L("배포·서비스 시 'Built with Higgs Materials' 류의 출처 표기와 NOTICE 파일이 필요하고, Llama 3 이용 정책"
-                  "(Acceptable Use Policy)을 지켜야 합니다.",
-                  "Distribution or a service needs attribution (\"Built with Higgs Materials\") and the NOTICE file, "
-                  "and must follow the Llama 3 Acceptable Use Policy."),
+                  "the Meta Llama 3 license): its output must not be used to improve (train) other large language "
+                  "models, a distribution needs attribution (\"Built with Higgs Materials\") and the NOTICE file, and "
+                  "the Llama 3 Acceptable Use Policy must be followed."),
                 _CONSENT,
             ),
-            attribution="Meta Llama 3 is licensed under the Meta Llama 3 Community License, Copyright © Meta Platforms, "
-                        "Inc. All Rights Reserved. Boson Higgs Audio 2 is licensed under the Boson Community License, "
-                        "Copyright © Boson AI USA, Inc. All Rights Reserved.",
-            commercial=L("조건부 허용 (연간 활성 사용자 10만 명 이하, 이용 정책 준수)",
-                         "Allowed with conditions (≤ 100,000 annual active users, the use policy followed)"),
+            attribution="OmniVoice by k2-fsa (https://huggingface.co/k2-fsa/OmniVoice): model weights licensed under "
+                        "CC-BY-NC. Meta Llama 3 is licensed under the Meta Llama 3 Community License, Copyright © Meta "
+                        "Platforms, Inc. All Rights Reserved. Boson Higgs Audio 2 is licensed under the Boson Community "
+                        "License, Copyright © Boson AI USA, Inc. All Rights Reserved.",
+            commercial=L("불가 — 모델 가중치가 CC-BY-NC (비상업 전용)",
+                         "Not allowed — the model weights are CC-BY-NC (non-commercial only)"),
         ),
         languages=("auto", "ko", "en", "zh", "ja", "de", "es", "fr", "it", "ru", "pt", "vi", "th", "id"),
         features=("clone", "design", "auto_voice", "tags"),

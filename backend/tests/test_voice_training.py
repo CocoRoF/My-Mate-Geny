@@ -10,6 +10,7 @@ import asyncio
 import io
 import json
 import os
+import re
 import threading
 
 import numpy as np
@@ -474,7 +475,7 @@ def test_the_shipped_adapters_are_listed_whole():
     for (v, m), e in shipped.SHIPPED.items():
         assert m in catalog.BY_ID and m in __import__("app.voicehost.training", fromlist=["NEED_GB"]).NEED_GB
         assert len(e["sha256"]) == 64 and int(e["sha256"], 16) >= 0 and e["bytes"] > 1_000_000
-        assert e["asset"].endswith(f"-lora-{v.split(':')[1]}-v1.zip")
+        assert re.search(rf"-lora-{v.split(':')[1]}-v\d+\.zip$", e["asset"])
         if m == "omnivoice":  # (Boson's 1.b.i: its name)
             assert e["asset"].startswith("higgs-audio-2-")
         # made from the revision the catalog installs
