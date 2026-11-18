@@ -36,6 +36,7 @@ def _mate(store, name, builtin=None, gender=""):
 
 def _world(store, monkeypatch):
     monkeypatch.setattr(P, "own", lambda key: key in ("chaerin", "seoa"))
+    store.update_settings({"timezone": "Asia/Seoul"})  # (the user's clock, whatever the machine's)
     life = LifeRuntime(store)
     return life, SocialRuntime(store, life)
 
