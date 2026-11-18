@@ -28,7 +28,7 @@ _DROP_HEADERS = {b"cookie", b"authorization", b"x-forwarded-for", b"x-forwarded-
                  b"x-real-ip", b"cf-connecting-ip", b"forwarded"}
 _DEVICE_DENY = ("/api/internal/", "/api/local/", "/api/net/")
 _DEVICE_ALLOW = {("GET", "/api/net/status"), ("GET", "/api/net/where")}
-RELAY_CLIENT = "100.64.0.1"  # (a relayed device's address as the app sees it: not loopback, not a LAN one)
+NO_ADDR = "100.64.0.1"  # (a device whose address isn't known — never shown as loopback or a LAN one)
 
 
 class NetIngress:
@@ -68,7 +68,7 @@ class NetIngress:
         if kept:
             headers.append((b"cookie", "; ".join(kept).encode("latin-1")))
         scope["headers"] = headers
-        scope["client"] = (peer.addr or RELAY_CLIENT, 0)
+        scope["client"] = (peer.addr or NO_ADDR, 0)
         scope["geny_net"] = peer
         if peer.scope != "device" or scope["type"] != "http":
             return await self.app(scope, receive, send)

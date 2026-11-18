@@ -1,24 +1,19 @@
 """Geny Net from the internet without a server (docs/geny-net.md "From the internet, directly"): the desktop asks its
-router to forward a port (UPnP IGD, NAT-PMP) — here a fake router on loopback; the relay tries that port from outside;
-and the listener, now maybe on the internet, refuses what keeps failing."""
+router to forward a port (UPnP IGD, NAT-PMP) — here a fake router on loopback — and the listener, now maybe on the
+internet, refuses what keeps failing."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import socket
 import struct
 
 import pytest
 import uvicorn
-import websockets
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 
-from app.net import portmap, relay
-from app.net.identity import b64u, node_id_of, spki
+from app.net import portmap
 from app.net.service import BLOCK_S, FAILS_MAX, NetService
 
 
@@ -186,100 +181,8 @@ def test_an_address_that_keeps_failing_is_refused(db, tmp_path) -> None:
     net._blocked["198.51.100.7"] -= BLOCK_S + 1
     assert not net._is_blocked("198.51.100.7")
     for _ in range(FAILS_MAX * 2):
-        net._fail("127.0.0.1")  # (the relay's pipes: loopback is never blocked here)
+        net._fail("127.0.0.1")  # (this machine itself is never blocked)
     assert not net._is_blocked("127.0.0.1")
-
-
-# -- the relay: tries the router's port from outside; what it pipes is capped --------------------------------------
-
-@pytest.fixture
-async def relay_server(monkeypatch):
-    monkeypatch.setattr(relay, "PROBE_PRIVATE", True)
-    app = FastAPI()
-    app.include_router(relay.router)
-    sock = socket.socket()
-    sock.bind(("127.0.0.1", 0))
-    sock.listen(64)
-    server = uvicorn.Server(uvicorn.Config(app, log_level="warning", lifespan="off"))
-    task = asyncio.create_task(server.serve(sockets=[sock]))
-    while not server.started:
-        await asyncio.sleep(0.02)
-    yield f"ws://127.0.0.1:{sock.getsockname()[1]}", app
-    server.should_exit = True
-    await asyncio.wait_for(task, 10)
-
-
-def _sign(key, text: str) -> str:
-    return b64u(key.sign(text.encode(), ec.ECDSA(hashes.SHA256())))
-
-
-async def _host(url: str, key, public_port: int = 0):
-    nid = node_id_of(key.public_key())
-    ws = await websockets.connect(f"{url}/net/relay/host?n={nid}")
-    ch = json.loads(await ws.recv())["challenge"]
-    await ws.send(json.dumps({"pub": b64u(spki(key.public_key())), "sig": _sign(key, "geny-net-host|" + ch),
-                              "lan": [], "port": 0, "public_port": public_port}))
-    return nid, ws, json.loads(await ws.recv())
-
-
-async def test_the_relay_tries_the_routers_port_from_outside(relay_server) -> None:
-    url, _app = relay_server
-    listener = await asyncio.start_server(lambda r, w: w.close(), "127.0.0.1", 0)
-    open_port = listener.sockets[0].getsockname()[1]
-    closed = socket.socket()
-    closed.bind(("127.0.0.1", 0))
-    closed_port = closed.getsockname()[1]
-    closed.close()
-    try:
-        key = ec.generate_private_key(ec.SECP256R1())
-        nid, ws, ok = await _host(url, key, public_port=open_port)
-        assert ok["ok"] and ok["reach"] is True
-        import httpx
-
-        async with httpx.AsyncClient() as c:
-            where = (await c.get(url.replace("ws://", "http://") + f"/net/relay/where?n={nid}")).json()
-        assert where["wan"] == f"127.0.0.1:{open_port}"
-        await ws.send(json.dumps({"public_port": closed_port}))  # (the router's port changed)
-        assert json.loads(await ws.recv())["reach"] is False
-        await ws.close()
-    finally:
-        listener.close()
-
-
-async def test_what_a_session_pipes_is_capped(relay_server, monkeypatch) -> None:
-    url, _app = relay_server
-    monkeypatch.setattr(relay, "SESSION_MIB_S", 1.0)
-    key = ec.generate_private_key(ec.SECP256R1())
-
-    async def accept(nid, sid):
-        async with websockets.connect(f"{url}/net/relay/accept?n={nid}&s={sid}&sig={_sign(key, 'geny-net-accept|' + sid)}",
-                                      max_size=2**20) as ws:
-            async for m in ws:
-                await ws.send(m)
-
-    nid, host_ws, _ = await _host(url, key)
-
-    async def opens():
-        async for m in host_ws:
-            sid = json.loads(m).get("open")
-            if sid:
-                asyncio.create_task(accept(nid, sid))
-
-    t = asyncio.create_task(opens())
-    chunk = b"x" * 65536
-    loop = asyncio.get_running_loop()
-    async with websockets.connect(f"{url}/net/relay/connect?n={nid}", max_size=2**20) as ws:
-        start = loop.time()
-        for _ in range(48):  # 3 MiB there (and back)
-            await ws.send(chunk)
-        got = 0
-        while got < 48 * 65536:
-            got += len(await ws.recv())
-        took = loop.time() - start
-    t.cancel()
-    await host_ws.close()
-    # 3 MiB each way through a 1 MiB/s session (a second's burst allowed): at least ~2 s
-    assert took > 1.6, took
 
 
 async def test_a_node_offers_its_routers_address(db, tmp_path) -> None:
@@ -287,7 +190,6 @@ async def test_a_node_offers_its_routers_address(db, tmp_path) -> None:
 
     async with FakeRouter(permanent_only=False) as r:
         net = NetService(db, tmp_path, 1, name="Desk")
-        net.store.put_setting("relay", False)
         net.portmap_options = {"ssdp_target": r.ssdp_addr, "natpmp_port": 1}
         offer = await net.new_offer()
         for _ in range(100):

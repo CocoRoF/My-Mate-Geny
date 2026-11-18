@@ -1,5 +1,6 @@
 """Geny Net on a node (docs/geny-net.md): the desktop's local backend reachable from the user's own paired devices —
-on the same network directly, from anywhere through a relay — and from nothing else.
+on the same network directly, from the internet through the computer's own router — and from nothing else. No server
+of anyone's is in between.
 
 * **The listener** — TLS (1.3; 1.2 for older phones), on the LAN (``0.0.0.0``, its port kept across starts): it shows the node's server
   certificate (devices pin the node's CA by the fingerprint in the QR code) and asks for a client certificate — one
@@ -8,12 +9,7 @@ on the same network directly, from anywhere through a relay — and from nothing
   and the connection's local port is recorded first (``self.peers``), so the ASGI layer (app/net/ingress.py) knows
   which device a request came from — and refuses any connection to the ingress it didn't make.
 * **The router** (app/net/portmap.py) — the node asks its own router to forward a port to the listener (UPnP IGD,
-  else NAT-PMP) and learns the router's public address: a phone away from home connects straight to it, no server
-  in between. The relay is for when that can't work.
-* **The relay** (app/net/relay.py) — the node keeps a WebSocket open to it (outbound only: nothing to open on the
-  router) and proves its id with its CA key; a device away from home connects to the relay, the relay asks the node
-  to accept, and the node pipes that WebSocket into its own listener: the TLS runs end to end, the relay forwards
-  bytes it can't read.
+  else NAT-PMP) and learns the router's public address: a phone away from home connects straight to it.
 * **Pairing** — an offer (a one-time secret, 5 minutes, in the QR code with the CA fingerprint and how to reach the
   node); the device proves it has the secret over the pinned TLS channel and sends its public key; both screens show
   the same six digits; the user allows it on the desktop; the node issues the device its certificate.
@@ -55,7 +51,6 @@ FAILS_WINDOW_S = 600
 FAILS_MAX = 10
 BLOCK_S = 1800
 PAIR_PATHS = ("/api/net/pair/request", "/api/net/pair/result")
-DEFAULT_RELAY = "https://agent.hrletsgo.me"  # (the project's own relay: Settings → 디바이스 인증 changes it)
 
 
 def sas_of(secret: bytes, device_spki: bytes) -> str:
@@ -92,7 +87,7 @@ def lan_addresses() -> list[str]:
                     ip = ipaddress.ip_address(a.address)
                     if ip.is_private and not ip.is_loopback and not ip.is_link_local:
                         out.append(a.address)
-    except Exception:  # noqa: BLE001 - no addresses: the relay still works
+    except Exception:  # noqa: BLE001 - no addresses: the router's forwarded port still works
         pass
     # (home networks first: a 192.168 / 10 address before a container bridge)
     rank = lambda s: (0 if s.startswith("192.168.") else 1 if s.startswith("10.") else 2)  # noqa: E731
@@ -166,8 +161,8 @@ class NetStore:
 class Peer:
     scope: str                        # "device" | "pair"
     device_id: str = ""
-    via: str = ""                     # "lan" | "wan" (the internet, by the router's forwarded port) | "relay"
-    addr: str = ""                    # the device's address as it connected (a relayed one has none here)
+    via: str = ""                     # "lan" | "wan" (the internet, by the router's forwarded port)
+    addr: str = ""                    # the device's address as it connected
 
 
 class NetService:
@@ -191,11 +186,9 @@ class NetService:
         self._blocked: dict[str, float] = {}
         self._tls: ssl.SSLContext | None = None
         self.portmap = None               # PortMapper (portmap.py), while the router forwards a port
-        self.reach: bool | None = None    # the relay could reach that port from outside (None: not checked)
         self.portmap_options: dict[str, Any] = {}  # (tests: a fake router's addresses)
         self._server: asyncio.base_events.Server | None = None
         self.port = 0
-        self.relay = None                 # RelayLink (relay_client.py), while the relay is on
         self._started = False
 
     # -- the identity, made only when Geny Net is first used ---------------------------------------------------------
@@ -204,14 +197,6 @@ class NetService:
         if self._identity is None:
             self._identity = Identity(self.home / "net", self.name)
         return self._identity
-
-    @property
-    def relay_url(self) -> str:
-        return str(self.store.setting("relay_url", DEFAULT_RELAY) or "")
-
-    @property
-    def relay_on(self) -> bool:
-        return bool(self.store.setting("relay", True)) and bool(self.relay_url)
 
     @property
     def lan_on(self) -> bool:
@@ -240,19 +225,13 @@ class NetService:
         await self._listen()
         if self.upnp_on:
             self._portmap_up()
-        if self.relay_on:
-            await self._relay_up()
         self.on_change()
 
     async def stop(self) -> None:
         self._started = False
-        if self.relay is not None:
-            await self.relay.close()
-            self.relay = None
         if self.portmap is not None:
             await self.portmap.close()  # (the router's forwarded port goes with it)
             self.portmap = None
-        self.reach = None
         if self._server is not None:
             self._server.close()
             with contextlib.suppress(Exception):
@@ -264,13 +243,6 @@ class NetService:
         self._conns.clear()
 
     async def apply_settings(self, patch: dict[str, Any]) -> None:
-        if "relay" in patch:
-            self.store.put_setting("relay", bool(patch["relay"]))
-        if "relay_url" in patch:
-            url = str(patch["relay_url"] or "").strip().rstrip("/")
-            if url and not url.startswith(("https://", "http://")):
-                raise ValueError("The relay is an http(s) address")
-            self.store.put_setting("relay_url", url or DEFAULT_RELAY)
         if "lan" in patch:
             self.store.put_setting("lan", bool(patch["lan"]))
         if "upnp" in patch:
@@ -292,7 +264,7 @@ class NetService:
         return ctx
 
     async def _listen(self) -> None:
-        """the TLS listener: the LAN (0.0.0.0) when same-network connections are on, else loopback (the relay's way in)"""
+        """the TLS listener: the LAN (0.0.0.0) when same-network connections are on, else loopback only"""
         host = "0.0.0.0" if self.lan_on else "127.0.0.1"
         want = int(self.store.setting("port", 0) or 0)
         self._tls = self._tls_context()
@@ -315,24 +287,15 @@ class NetService:
             pm = self.portmap
             if pm is not None and pm.mapping is not None and pm.state == "open":
                 self.store.put_setting("wan_port", pm.mapping.external_port)
-            self.reach = None
-            if self.relay is not None:
-                self.relay.tell_public()  # (the relay checks the port from outside: status "reach")
             self.on_change()
 
         self.portmap = PortMapper(self.port, lan_addresses, changed, **self.portmap_options)
         self.portmap.start(int(self.store.setting("wan_port", 0) or 0))
 
-    async def _relay_up(self) -> None:
-        from .relay_client import RelayLink
-
-        self.relay = RelayLink(self, self.relay_url)
-        self.relay.start()
-
     # -- a connection -----------------------------------------------------------------------------------------------
     def _fail(self, ip: str) -> None:
         if not ip or _loopback(ip):
-            return  # (the relay's pipes come in by loopback: the relay limits its own callers)
+            return  # (this machine itself is never refused)
         now = time.time()
         q = [t for t in self._fails.get(ip, []) if now - t < FAILS_WINDOW_S] + [now]
         self._fails[ip] = q
@@ -402,13 +365,9 @@ class NetService:
     def _who(self, writer: asyncio.StreamWriter) -> Peer | None:
         sslobj = writer.get_extra_info("ssl_object")
         sock_peer = writer.get_extra_info("peername") or ("", 0)
-        # (a relayed connection comes in through loopback, from this process: relay_client.py marks its ports)
         ip = str(sock_peer[0])
-        if self.relay is not None and self.relay.is_ours(tuple(sock_peer[:2])):
-            via = "relay"
-        else:
-            via = "lan" if _private(ip) else "wan"
-        addr = ip if via != "relay" and not _loopback(ip) else ""
+        via = "lan" if _private(ip) else "wan"
+        addr = ip if not _loopback(ip) else ""
         der = sslobj.getpeercert(binary_form=True) if sslobj is not None else None
         if not der:
             return Peer("pair", via=via, addr=addr)
@@ -462,8 +421,6 @@ class NetService:
             params["p"] = str(self.port)
         if self.wan:
             params["w"] = self.wan
-        if self.relay_on:
-            params["r"] = self.relay_url
         return {"id": o.id, "expires": o.expires, "uri": "geny://link?" + urlencode(params, quote_via=quote)}
 
     def pair_request(self, body: dict[str, Any]) -> dict[str, Any]:
@@ -573,12 +530,11 @@ class NetService:
         return {
             "on": on, "node": ident.id if ident else "", "name": self.name,
             "port": self.port, "lan": lan_addresses() if on and self.lan_on else [],
-            "lan_on": self.lan_on, "relay_on": self.relay_on, "relay_url": self.relay_url,
-            "relay": self.relay.state if self.relay is not None else "off",
+            "lan_on": self.lan_on,
             "upnp_on": self.upnp_on,
             "wan": {"state": self.portmap.state if self.portmap is not None else "off", "endpoint": self.wan,
                     "method": self.portmap.mapping.method if self.portmap is not None and self.portmap.mapping else "",
-                    "error": self.portmap.error if self.portmap is not None else "", "reach": self.reach},
+                    "error": self.portmap.error if self.portmap is not None else ""},
             "devices": [{k: d[k] for k in ("id", "name", "platform", "created_at", "last_seen", "last_via")}
                         | {"online": bool(self._conns.get(d["id"]))} for d in self.store.devices()],
             "pending": self.pending(),

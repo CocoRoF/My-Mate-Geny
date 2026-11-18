@@ -1,6 +1,6 @@
-"""Geny Net (docs/geny-net.md): a phone pairs with the desktop and reaches it — directly, and through a relay.
+"""Geny Net (docs/geny-net.md): a phone pairs with the desktop and reaches it.
 
-The backend runs here for real (uvicorn on its two loopback sockets, the node's TLS listener, the relay routes); the
+The backend runs here for real (uvicorn on its two loopback sockets, the node's TLS listener); the
 "phone" is this test: an EC key of its own, TLS pinned to the node's CA, raw HTTP over it.
 """
 
@@ -22,8 +22,7 @@ from fastapi import FastAPI, Request, WebSocket
 
 from app.auth import COOKIE_NAME, AuthManager, AuthMiddleware
 from app.config import settings
-from app.net import relay
-from app.net.identity import Identity, b64u, node_id_of, spki, unb64u, verify_node
+from app.net.identity import Identity, b64u, node_id_of, spki, unb64u
 from app.net.ingress import NetIngress
 from app.net.service import NetService, proof_of, sas_of
 from app.routers import net as net_router
@@ -51,16 +50,6 @@ def test_a_device_certificate_is_for_its_own_key_and_chains_to_the_node(tmp_path
                                       ec.ECDSA(issued.cert.signature_hash_algorithm))
     with pytest.raises(ValueError):  # (only P-256)
         ident.issue(spki(ec.generate_private_key(ec.SECP384R1()).public_key()), "x")
-
-
-def test_only_the_key_holder_can_claim_a_node_id(tmp_path: Path) -> None:
-    ident = Identity(tmp_path / "a")
-    other = Identity(tmp_path / "b")
-    sig = ident.sign(b"geny-net-host|abc")
-    assert verify_node(ident.id, ident.ca_spki, b"geny-net-host|abc", sig)
-    assert not verify_node(ident.id, ident.ca_spki, b"geny-net-host|abd", sig)
-    assert not verify_node(other.id, ident.ca_spki, b"geny-net-host|abc", sig)  # (someone else's id)
-    assert not verify_node(ident.id, other.ca_spki, b"geny-net-host|abc", other.sign(b"geny-net-host|abc"))
 
 
 # -- the backend, for real ----------------------------------------------------------------------------------------
@@ -94,7 +83,6 @@ def _app(db, net_holder: dict) -> FastAPI:
         await ws.close()
 
     app.include_router(net_router.router)
-    app.include_router(relay.router)
     app.add_middleware(AuthMiddleware)
     app.add_middleware(NetIngress)
     app.state.auth = AuthManager(db)
@@ -115,7 +103,6 @@ async def node(db, tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "net_ingress_port", ingress.getsockname()[1])
     app = _app(db, {})
     net = NetService(db, tmp_path, ingress.getsockname()[1], name="Desk")
-    net.store.put_setting("relay", False)
     net.store.put_setting("upnp", False)  # (never this machine's real router: test_net_portmap.py has a fake one)
     app.state.net = net
     server = uvicorn.Server(uvicorn.Config(app, log_level="warning", lifespan="off", loop="asyncio",
@@ -314,93 +301,6 @@ async def test_a_removed_phone_is_cut_off_at_once(node, tmp_path) -> None:
     assert rest == b""
     w.close()
     assert not net._started  # (no device left: nothing listens)
-
-
-# -- through a relay ----------------------------------------------------------------------------------------------
-
-class TlsOverWs:
-    """the phone's side of a relayed connection: TLS to the node, its records in WebSocket messages"""
-
-    def __init__(self, ws, ctx: ssl.SSLContext, host: str) -> None:
-        self.ws = ws
-        self.inc, self.out = ssl.MemoryBIO(), ssl.MemoryBIO()
-        self.tls = ctx.wrap_bio(self.inc, self.out, server_hostname=host)
-
-    async def _flush(self) -> None:
-        data = self.out.read()
-        if data:
-            await self.ws.send(data)
-
-    async def _fill(self) -> bool:
-        try:
-            self.inc.write(await asyncio.wait_for(self.ws.recv(), 20))
-            return True
-        except websockets.ConnectionClosed:
-            self.inc.write_eof()
-            return False
-
-    async def handshake(self) -> None:
-        while True:
-            try:
-                self.tls.do_handshake()
-                break
-            except ssl.SSLWantReadError:
-                await self._flush()
-                await self._fill()
-        await self._flush()
-
-    async def request(self, raw: bytes) -> bytes:
-        self.tls.write(raw)
-        await self._flush()
-        got = b""
-        while True:
-            try:
-                chunk = self.tls.read(65536)
-                if not chunk:
-                    break
-                got += chunk
-            except ssl.SSLWantReadError:
-                await self._flush()
-                if not await self._fill():
-                    break
-            except (ssl.SSLZeroReturnError, ssl.SSLEOFError):
-                break
-        return got
-
-
-async def test_a_phone_away_from_home_comes_through_the_relay(node, tmp_path) -> None:
-    net: NetService = node["net"]
-    relay_url = f"http://127.0.0.1:{node['main']}"  # (this same app is the relay too)
-    dev = await _pair(node, tmp_path)
-    await net.apply_settings({"relay": True, "relay_url": relay_url, "lan": False})
-    for _ in range(100):
-        if net.relay is not None and net.relay.state == "online":
-            break
-        await asyncio.sleep(0.05)
-    assert net.relay.state == "online"
-    st, _, body = await _http(node["main"], None, "GET", f"/net/relay/where?n={net.identity.id}")
-    assert json.loads(body) == {"online": True, "lan": [], "port": 0, "wan": ""}  # (same-network connections off)
-
-    async with websockets.connect(f"ws://127.0.0.1:{node['main']}/net/relay/connect?n={net.identity.id}") as ws:
-        t = TlsOverWs(ws, dev["ctx"], dev["host"])
-        await t.handshake()
-        got = await t.request(b"GET /api/whoami HTTP/1.1\r\nHost: 127.0.0.1:41234\r\nConnection: close\r\n\r\n")
-    assert b" 200 " in got.split(b"\r\n")[0]
-    assert json.loads(got.partition(b"\r\n\r\n")[2])["client"] == "100.64.0.1"
-    assert net.store.device(dev["device"])["last_via"] == "relay"
-
-
-async def test_the_relay_hands_a_node_id_only_to_its_key(node, tmp_path) -> None:
-    other = Identity(tmp_path / "other")
-    async with websockets.connect(f"ws://127.0.0.1:{node['main']}/net/relay/host?n={node['net'].identity.id}") as ws:
-        challenge = json.loads(await ws.recv())["challenge"]
-        await ws.send(json.dumps({"pub": other.ca_spki, "sig": other.sign(("geny-net-host|" + challenge).encode())}))
-        assert json.loads(await ws.recv())["ok"] is False
-    # an offline node: the device is told so
-    with pytest.raises(websockets.ConnectionClosed) as e:
-        async with websockets.connect(f"ws://127.0.0.1:{node['main']}/net/relay/connect?n=nobody") as ws:
-            await ws.recv()
-    assert e.value.rcvd is not None and e.value.rcvd.code == 4404
 
 
 # -- server execution: a sign-in QR code ----------------------------------------------------------------------------

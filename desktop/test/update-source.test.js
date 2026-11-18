@@ -21,3 +21,14 @@ test('rolling publication pins a complete version instead of mixing feeds, files
  const calls=[];const source=createUpdateSource({readSettings:()=>({}),writeSettings:()=>{},cliToken:async()=>'',fetcher:async(url)=>{calls.push(url);if(url.endsWith('/tags/apps-latest'))return Response.json({tag_name:'apps-latest',body:'<!-- hrh-meta {"version":"0.4.2","commit":"stable2"} -->',assets:[{state:'uploaded',id:99,name:'my-mate-geny-0.4.3-windows-x64-setup.exe',size:4}]});if(url.endsWith('/tags/apps-v0.4.2'))return Response.json({tag_name:'apps-v0.4.2',body:'<!-- hrh-meta {"version":"0.4.2","commit":"stable2"} -->',assets:[{state:'uploaded',id:2,name:'my-mate-geny-0.4.2-windows-x64-setup.exe',size:4}]});throw Error('unexpected request');}});t.after(()=>source.close());const catalog=await source.catalog();assert.equal(catalog.version,'0.4.2');assert.equal(catalog.commit,'stable2');assert.deepEqual(catalog.assets.map(a=>a.name),['my-mate-geny-0.4.2-windows-x64-setup.exe']);assert(calls.some(url=>url.endsWith('/tags/apps-v0.4.2')));
 });
 test('a reachable repository without compatible installers has a useful reason',async t=>{const f=fixture({fetcher:async()=>Response.json({tag_name:'v1.2.3',assets:[{state:'uploaded',id:3,name:'unrelated.zip',size:4}]})});t.after(()=>f.source.close());const r=await f.source.catalog();assert.equal(r.available,false);assert.equal(r.reason,'incompatible_source');});
+test('a public repository hands the phone a direct download (the QR code on the Download page); a private one does not',async t=>{
+ const rel={tag_name:'apps-v0.6.1',body:'<!-- hrh-meta {"version":"0.6.1"} -->',assets:[{state:'uploaded',id:7,name:'my-mate-geny-0.6.1-android.apk',size:4,browser_download_url:'https://github.com/CocoRoF/My-Mate-Geny/releases/download/apps-v0.6.1/my-mate-geny-0.6.1-android.apk'}]};
+ for(const [priv,want] of [[false,true],[true,false]]){
+  let repoCalls=0;const source=createUpdateSource({readSettings:()=>({}),writeSettings:()=>{},cliToken:async()=>'',fetcher:async url=>{if(/\/repos\/[^/]+\/[^/]+$/.test(url)){repoCalls++;return Response.json({private:priv});}return Response.json(rel);}});
+  t.after(()=>source.close());
+  const apk=(await source.catalog()).assets.find(a=>a.platform==='android');
+  assert.equal(!!apk.public_url,want);if(want)assert.equal(apk.public_url,rel.assets[0].browser_download_url);
+  assert.match(apk.url,/^http:\/\/127\.0\.0\.1:/);
+  await source.catalog(true);assert.equal(repoCalls,1);// (asked once per repository)
+ }
+});

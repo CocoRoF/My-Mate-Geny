@@ -2,7 +2,8 @@
 
 Local execution (the desktop app) — Geny Net, app/net/service.py:
 
-* ``GET /api/net/status`` — on/off, how it's reached (LAN addresses, the relay), paired devices, requests waiting.
+* ``GET /api/net/status`` — on/off, how it's reached (LAN addresses, the router's forwarded port), paired devices,
+  requests waiting.
   Over Geny Net itself it also says which device is asking (``here``).
 * ``POST /api/net/offer`` — a pairing QR code (``geny://link?…``; one device, 5 minutes); starts Geny Net.
 * ``DELETE /api/net/offer/{id}`` — the code shown is closed.
@@ -11,7 +12,7 @@ Local execution (the desktop app) — Geny Net, app/net/service.py:
 * ``PATCH /api/net/devices/{id}`` ``{name}`` · ``DELETE /api/net/devices/{id}`` — rename, remove (its connections
   end at once).
 * ``GET /api/net/where`` — how a paired phone reaches this node now (it asks over the link itself).
-* ``PUT /api/net/settings`` ``{lan?, upnp?, relay?, relay_url?}``.
+* ``PUT /api/net/settings`` ``{lan?, upnp?}``.
 * ``POST /api/net/pair/request`` · ``POST /api/net/pair/result`` — the device's side of pairing: only over a Geny Net
   connection without a certificate (app/net/ingress.py).
 
@@ -124,8 +125,6 @@ async def remove(device_id: str, request: Request) -> dict[str, Any]:
 class NetSettings(BaseModel):
     lan: bool | None = None
     upnp: bool | None = None
-    relay: bool | None = None
-    relay_url: str | None = Field(default=None, max_length=300)
 
 
 @router.put("/settings")

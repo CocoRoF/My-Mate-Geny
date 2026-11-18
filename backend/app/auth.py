@@ -76,8 +76,6 @@ _PUBLIC_PATHS = frozenset({
     # Icons + web manifest: fetched without cookies (and on the login page).
     "/favicon.svg", "/favicon-32.png", "/apple-touch-icon.png", "/icon-192.png", "/icon-512.png",
     "/icon-maskable-512.png", "/manifest.webmanifest", "/logo.png",
-    # A Geny Net relay's lookup (app/net/relay.py, only mounted with NET_RELAY=1; its WebSockets aren't gated here).
-    "/net/relay/where",
 })
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 

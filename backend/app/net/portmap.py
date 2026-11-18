@@ -1,8 +1,8 @@
 """Geny Net's way in from the internet without any server (docs/geny-net.md "From the internet, directly"): the desktop
 asks its own router to forward a port to its TLS listener — UPnP IGD (most home routers: ipTIME, ASUS, Netgear …), or
 NAT-PMP (RFC 6886) where that's what the router speaks — and learns the router's public address. A paired phone away
-from home then connects straight to it; the relay is only for when this can't work (no UPnP, or the router isn't on
-a public address: a second router in front, an ISP's carrier-grade NAT).
+from home then connects straight to it. It can't work without UPnP / NAT-PMP on the router, or when the router isn't
+on a public address itself (a second router in front, an ISP's carrier-grade NAT): then only the same network does.
 
 No library: SSDP discovery (UDP multicast), the device description (XML over HTTP) and the SOAP calls the IGD spec
 names (``AddPortMapping`` / ``GetExternalIPAddress`` / ``DeletePortMapping``); NAT-PMP is two small UDP packets. Only
@@ -339,7 +339,7 @@ class PortMapper:
                 continue
             except asyncio.CancelledError:
                 raise
-            except Exception as e:  # noqa: BLE001 - no gateway / refused: try later, the relay covers meanwhile
+            except Exception as e:  # noqa: BLE001 - no gateway / refused: try again later
                 self.state, self.error = "unavailable", str(e)[:300]
                 log.info("no port mapping: %s", self.error)
                 self.on_change()

@@ -194,6 +194,9 @@ export default function DownloadsView() {
   const sameKind = upd?.how === "appimage" || upd?.how === "deb" ? mine.find((a) => a.kind === upd.how) : undefined;
   const primary = platform === "macos" ? mine.find((a) => a.arch === "arm64") || mine[0] : sameKind || mine[0];
   const pageUrl = `${window.location.origin}/?view=downloads`;
+  // what a phone scans for the Android app: this page on a server; the desktop app (local execution) hands it the APK
+  // straight from GitHub (a public repository only — the phone can't reach this computer's own download address)
+  const phoneUrl = (list: AppAsset[]) => (local ? list.find((a) => a.public_url)?.public_url : pageUrl);
   const legacy = assets.some((a) => a.name.startsWith("hr-harnessor")) && !assets.some((a) => a.name.startsWith("my-mate-geny"));
   const NOTES = notes(legacy);
 
@@ -292,7 +295,7 @@ export default function DownloadsView() {
                     </h2>
                     <p className="text-[12px] text-content-faint">{t(p.sub)}</p>
                   </div>
-                  {!local && p.id === "android" && list.length > 0 && platform !== "android" && <Qr text={pageUrl} />}
+                  {p.id === "android" && platform !== "android" && phoneUrl(list) && <Qr text={phoneUrl(list)!} />}
                 </div>
                 <div className="mt-3 space-y-2">
                   {list.length ? (
@@ -309,8 +312,8 @@ export default function DownloadsView() {
                     </li>
                   ))}
                 </ul>
-                {!local && p.id === "android" && list.length > 0 && platform !== "android" && (
-                  <p className="mt-2 text-[11px] text-content-faint">{t("downloads.scanHint")}</p>
+                {p.id === "android" && platform !== "android" && phoneUrl(list) && (
+                  <p className="mt-2 text-[11px] text-content-faint">{t(local ? "downloads.scanHintLocal" : "downloads.scanHint")}</p>
                 )}
               </section>
             );

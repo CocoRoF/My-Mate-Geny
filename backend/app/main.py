@@ -366,11 +366,6 @@ for r in (
 ):
     app.include_router(r)
 
-if settings.net_relay:  # a Geny Net relay for desktops away from their phones (app/net/relay.py)
-    from app.net import relay as net_relay
-
-    app.include_router(net_relay.router)
-
 app.include_router(stream.router)
 app.include_router(sessions_ws.router)
 app.include_router(system_ws.router)

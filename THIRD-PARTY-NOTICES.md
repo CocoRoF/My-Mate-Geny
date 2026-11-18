@@ -149,8 +149,7 @@ Electron binaries ship Chromium's own third-party notices inside the built app.
 Capacitor 8 (MIT). Transitive: MIT / ISC / Apache-2.0 / BlueOak / BSD / 0BSD
 / Unlicense; `@trapezedev/*` ("SEE LICENSE", dev-only tooling of
 @capacitor/assets). The Android project pulls AndroidX / Google libraries via
-Gradle (Apache-2.0), and for Geny Net (docs/geny-net.md) OkHttp 4 + Okio
-(Apache-2.0, with the Kotlin standard library, Apache-2.0) and
+Gradle (Apache-2.0), and for Geny Net (docs/geny-net.md)
 zxing-android-embedded 4 + ZXing core (Apache-2.0) for the QR scanner.
 
 ## 4. Notes for forks and redistributors

@@ -2,8 +2,9 @@ import { apiFetch } from "./client";
 
 /**
  * Settings → 디바이스 인증 (backend app/routers/net.py, docs/geny-net.md).
- * Local execution: Geny Net — this desktop pairs the user's phone by a QR code, then the phone reaches it directly on
- * the same network or through a relay, end-to-end encrypted. Server execution: a QR code that signs the phone in.
+ * Local execution: Geny Net — this desktop pairs the user's phone by a QR code, then the phone reaches it directly: on
+ * the same network, or from the internet through the computer's own router (UPnP / NAT-PMP), end-to-end encrypted.
+ * Server execution: a QR code that signs the phone in.
  */
 export interface NetDevice {
   id: string;
@@ -11,7 +12,7 @@ export interface NetDevice {
   platform: string;
   created_at: number;
   last_seen: number | null;
-  last_via: "lan" | "wan" | "relay" | null;
+  last_via: "lan" | "wan" | null;
   online: boolean;
 }
 
@@ -26,7 +27,7 @@ export interface NetRequest {
 export interface NetStatus {
   mode: "local" | "server";
   /** a request that came over Geny Net: which paired device this is (nothing else is shown to it) */
-  here?: { device: string; via: "lan" | "wan" | "relay" };
+  here?: { device: string; via: "lan" | "wan" };
   on?: boolean;
   node?: string;
   name?: string;
@@ -35,10 +36,7 @@ export interface NetStatus {
   lan_on?: boolean;
   /** the router asked to forward a port (UPnP / NAT-PMP): the internet reaches this computer directly */
   upnp_on?: boolean;
-  wan?: { state: "off" | "trying" | "open" | "unavailable"; endpoint: string; method: string; error: string; reach: boolean | null };
-  relay_on?: boolean;
-  relay_url?: string;
-  relay?: "off" | "connecting" | "online" | "offline";
+  wan?: { state: "off" | "trying" | "open" | "unavailable"; endpoint: string; method: string; error: string };
   devices?: NetDevice[];
   pending?: NetRequest[];
 }
@@ -70,7 +68,7 @@ export const decide = (id: string, allow: boolean) =>
 export const renameDevice = (id: string, name: string) =>
   apiFetch<{ ok: boolean }>(`/api/net/devices/${encodeURIComponent(id)}`, json("PATCH", { name }));
 export const removeDevice = (id: string) => apiFetch<{ ok: boolean }>(`/api/net/devices/${encodeURIComponent(id)}`, json("DELETE"));
-export const putNetSettings = (p: { lan?: boolean; upnp?: boolean; relay?: boolean; relay_url?: string }) =>
+export const putNetSettings = (p: { lan?: boolean; upnp?: boolean }) =>
   apiFetch<NetStatus>("/api/net/settings", json("PUT", p));
 export const loginCode = (origin: string) => apiFetch<LoginCode>("/api/net/login-code", json("POST", { origin }));
 export const cancelLoginCode = (code: string) => apiFetch<{ ok: boolean }>("/api/net/login-code/cancel", json("POST", { code }));

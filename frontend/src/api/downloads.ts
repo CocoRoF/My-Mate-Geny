@@ -10,6 +10,9 @@ export interface AppAsset {
   kind: string;
   label: string;
   updated_at?: string;
+  /** the desktop app (local execution), a public repository: the file straight from GitHub — what a phone's QR code
+   *  opens, since the phone can't reach this computer's own download address */
+  public_url?: string;
 }
 
 export interface AppRelease {
