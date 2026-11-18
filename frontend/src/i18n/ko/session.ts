@@ -1,7 +1,7 @@
 import type { Messages } from "..";
 
 const ko: Messages<"session"> = {
-  dropHint: "이미지는 에이전트에게 보여 주고 · 그 밖의 파일은 도구가 쓸 수 있게 저장해요",
+  dropHint: "이미지는 에이전트에게 보여 주고, 다른 파일은 도구가 쓸 수 있게 저장해요",
   remoteWorkspaceTitle: "원격 워크스페이스: {path} — 탐색기에서 보기",
   localWorkspaceTitle: "로컬 워크스페이스: {path} — 탐색기에서 보기",
   tasks: "작업",
@@ -31,11 +31,11 @@ const ko: Messages<"session"> = {
   mcpServers: "MCP 서버",
   subagents: "서브에이전트",
   skills: "스킬",
-  toolsAvailable: "도구 {count}개 사용 가능 · 입력창에 / 를 입력하세요",
+  toolsAvailable: "도구 {count}개 사용 가능 · 입력창에 /를 입력하세요",
   detailsLater: "첫 메시지를 보내면 자세한 정보가 나와요.",
   apiCost: "API 환산 비용",
   contextNow: "현재 컨텍스트",
   contextNowTitle: "마지막 모델 호출의 입력 + 캐시 토큰",
-  contextFilling: "컨텍스트가 거의 찼어요 — {n}에서 자동으로 압축돼요. 지금 /compact 하거나 /clear로 새로 시작하세요.",
+  contextFilling: "컨텍스트가 거의 찼어요. {n}에 이르면 자동으로 압축돼요. 지금 /compact로 압축하거나 /clear로 새로 시작하세요.",
 };
 export default ko;
