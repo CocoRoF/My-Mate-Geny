@@ -418,7 +418,10 @@ class VoiceHost:
     def install(self, model_id: str, accept_license: bool) -> dict[str, Any]:
         spec = self._spec(model_id)
         self._need_gate()
-        if not accept_license and not self.store.license_record(spec.id):
+        rec = self.store.license_record(spec.id)
+        # (accepted once — unless the license it was accepted under isn't this one any more: OmniVoice's weights turned
+        # out to be CC-BY-NC, which the card hadn't said)
+        if not accept_license and (not rec or rec.get("license") != spec.license.name):
             raise VoiceError(f"Read and accept the license of {spec.name} first ({spec.license.name})",
                              code="license", status=409, data={"license": spec.to_dict()["license"]})
         if accept_license:

@@ -30,14 +30,16 @@ RELEASE = "https://github.com/CocoRoF/My-Mate-Geny/releases/download/voice-adapt
 # rate, which kept her clips' likeness), VoxCPM2 0.801 → 0.841 / 0.787 → 0.832, Qwen3-TTS 1.7B 0.787 → 0.880 /
 # 0.749 → 0.836, 0.6B 0.752 → 0.874 / 0.748 → 0.847, CosyVoice3 0.850 → 0.867 / 0.829 → 0.859 — no clip worse on any;
 # with no clip OmniVoice 0.23 → 0.85 / 0.29 → 0.83, VoxCPM2 0.22 → 0.87 / 0.17 → 0.85 (docs/local-voice.md).
+# The OmniVoice ones are adaptations of its CC-BY-NC weights (non-commercial only): v2 says so in its NOTICE (v1, the
+# same adapters, left in the release for older versions, didn't).
 SHIPPED: dict[tuple[str, str], dict[str, Any]] = {
     ("builtin:chaerin", "omnivoice"): {
-        "asset": "higgs-audio-2-omnivoice-lora-chaerin-v1.zip",
-        "sha256": "993b09c95b4fff0bbb34a4738daee810a99d6b20910ae40fcce23d48b3ba62ae", "bytes": 53835562,
+        "asset": "higgs-audio-2-omnivoice-lora-chaerin-v2.zip",
+        "sha256": "9d728e43c88b8b91066245a3503e3f33efd28383ab32aebefe49172b9327281b", "bytes": 53835804,
         "base_revision": "c5fdb5ccb189"},
     ("builtin:seoa", "omnivoice"): {
-        "asset": "higgs-audio-2-omnivoice-lora-seoa-v1.zip",
-        "sha256": "91f268d804171be3be2a349c91ad5aa480dbb665ac613fb242d9723db65acd1f", "bytes": 53835545,
+        "asset": "higgs-audio-2-omnivoice-lora-seoa-v2.zip",
+        "sha256": "3e1a83da072286534916b6822cb88818a016e39a236f36cd17bb241d8d7ff752", "bytes": 53835787,
         "base_revision": "c5fdb5ccb189"},
     ("builtin:chaerin", "voxcpm2"): {
         "asset": "voxcpm2-lora-chaerin-v1.zip",

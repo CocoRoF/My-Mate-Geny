@@ -114,7 +114,8 @@ chat, keeps an eye on it and tells you how it went.
   page teaches every speech model (OmniVoice, VoxCPM2, Qwen3-TTS, CosyVoice3) a person's voice from their
   recordings alone (a LoRA adapter each: cut, transcribed, kept to that person, trained, measured, put on
   the profile) — then it sounds more like them from a short clip, or with none. The built-in voices come
-  trained for every model. Refused on a machine without a suitable GPU ([docs/local-voice.md](docs/local-voice.md)).
+  trained for every model. Mind the licences: OmniVoice's model weights are CC-BY-NC (non-commercial), and so are
+  adapters trained on them; VoxCPM2, Qwen3-TTS and CosyVoice3 are Apache-2.0. Refused on a machine without a suitable GPU ([docs/local-voice.md](docs/local-voice.md)).
 - **Local image models, built in**: **Image Studio** downloads picture and clip models (each after you
   accept its license) and runs them on the same GPU with ComfyUI — character drafts, a picture changed
   by words, loops that start and end on a picture, cut-outs. The avatar maker can then run any stage on

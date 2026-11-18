@@ -68,7 +68,7 @@ placement uses the measurement).
 
 | Model | Kind | Engine (runtime) | Download | GPU | License |
 |---|---|---|---|---|---|
-| OmniVoice | TTS: cloning, voice design from a description, its own voice; 600+ languages | `omnivoice` (omni) | 3.3 GB | 2.4 GB | Apache-2.0 code; the audio tokenizer is under the Boson Higgs Audio 2 Community License (Llama 3 based: no training other LLMs on its output, a licence from Boson AI above 100k annual active users, "Built with Higgs Materials" attribution) |
+| OmniVoice | TTS: cloning, voice design from a description, its own voice; 600+ languages | `omnivoice` (omni) | 3.3 GB | 2.4 GB | **Model weights CC-BY-NC (non-commercial)**: its model card ("The pre-trained model is licensed under the CC-BY-NC due to constraints from its training data (e.g., Emilia)"); code Apache-2.0; the audio tokenizer under the Boson Higgs Audio 2 Community License (Llama 3 based: no training other LLMs on its output, "Built with Higgs Materials" attribution) |
 | VoxCPM2 | TTS: cloning that goes on from a clip and its words (its timbre, pace and way of talking), voice design and instructions, its own voice; 30 languages, 48 kHz | `voxcpm` (vox) | 5.0 GB | 6.4 GB | Apache-2.0 |
 | Qwen3-TTS 1.7B (Base) | TTS: cloning from ~3 s, 10 languages | `qwen3_tts` (qwen) | 4.5 GB | 4.8 GB | Apache-2.0 |
 | Qwen3-TTS 0.6B (Base) | TTS: cloning, lighter | `qwen3_tts` (qwen) | 2.5 GB | 2.9 GB | Apache-2.0 |
@@ -314,9 +314,11 @@ What each model learns (`train/recipe.py`: one recipe each, in the model's own r
   `<voice home>/adapters/<voice>/<model>/`; only the adapter's own files are taken from the zip. Voice Studio → 설정 →
   "기본 목소리는 학습된 어댑터로 말하기" turns them off (`shipped_adapters`; on again, what is missing is fetched); under
   it each model's line says whether its are here, coming, or come once the model is installed.
-  An OmniVoice asset carries the notices the Boson Higgs Audio 2 Community License asks of a model made with
-  OmniVoice's tokenizer and made available ("Higgs Audio 2" at the start of its name, the agreement and Meta Llama
-  3's with it); the others the Apache License 2.0 and a `NOTICE.md` (what was trained, on what, the base model's
+  An OmniVoice asset says it is for non-commercial use only — OmniVoice's weights are CC-BY-NC, and the adapter is an
+  adaptation of them (credited to k2-fsa OmniVoice; `…-v2.zip`; the v1 zips, the same adapters, stay in the release
+  for older versions but lack that notice) — and carries the notices the Boson Higgs Audio 2 Community License asks of
+  a model made with OmniVoice's tokenizer and made available ("Higgs Audio 2" at the start of its name, the agreement
+  and Meta Llama 3's with it); the others the Apache License 2.0 and a `NOTICE.md` (what was trained, on what, the base model's
   weights not included).
   v1 (2026-11-17), from ~18 / 19 minutes of speech made with the owner's ElevenLabs voices (`eleven_v4_turbo`, 174 /
   175 lines written for each character) and their five clips. Through the worker as the app speaks (8 new sentences,
@@ -352,7 +354,10 @@ What each model learns (`train/recipe.py`: one recipe each, in the model's own r
 - **What stays**: the recordings (to train again; hard links between a group's runs), the adapter, the samples and the
   report; the cut utterances and the saved steps go when the run ends. Under `<voice home>/training/<run>/`. Nothing
   leaves the machine.
-- **License**: Qwen3-TTS, CosyVoice3 and VoxCPM2 are Apache-2.0 (code and weights). OmniVoice's audio tokenizer is under the
+- **License**: Qwen3-TTS, CosyVoice3 and VoxCPM2 are Apache-2.0 (code and weights). **OmniVoice's weights are CC-BY-NC**
+  (non-commercial; its model card: because of its training data, e.g. Emilia): a LoRA adapter trained on it — the
+  built-in voices' OmniVoice adapters too — is an adaptation of it, for non-commercial use only, with credit to
+  k2-fsa OmniVoice and the licence named. Its audio tokenizer is under the
   Boson Higgs Audio 2 Community License (accepted with OmniVoice). Its 1.b.v forbids using its output "to improve any
   other large language model (excluding Boson Higgs Audio 2 or derivative works thereof)", and 1.b.i asks that a model
   fine-tuned with it that is *distributed or made available* be named "Higgs Audio 2 …". Training OmniVoice feeds the
