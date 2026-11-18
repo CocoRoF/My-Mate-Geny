@@ -98,7 +98,8 @@ function Footer({ turn }: { turn: Turn }) {
     return null;
   });
   const isStreaming = useChatStore((s) => s.isStreaming);
-  const canRetry = isLast && !isStreaming && (turn.status === "error" || turn.status === "interrupted") && prevUser;
+  const ended = isLast && !isStreaming && (turn.status === "error" || turn.status === "interrupted");
+  const canRetry = ended && prevUser;
   const dur = turn.startedAt && turn.endedAt ? fmtMs(turn.endedAt - turn.startedAt) : null;
   const tk = tokens(turn.usage, t);
   const failed = turn.tools.filter((x) => x.isError && !wasStopped(x)).length;
@@ -120,6 +121,17 @@ function Footer({ turn }: { turn: Turn }) {
       {turn.endedAt ? (
         <span title={fmtDateTime(turn.endedAt)}>· {relTime(turn.endedAt)}</span>
       ) : null}
+      {ended && (
+        // (a turn cut off — a restart, a stop, an error: go on from where it was, instead of starting it again)
+        <button
+          onClick={() => requestResend("Continue")}
+          className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-accent hover:bg-accent-soft transition"
+          title={t("turn.continueTitle")}
+          data-testid="turn-continue"
+        >
+          <Icon name="play" size={11} /> {t("turn.continue")}
+        </button>
+      )}
       {canRetry && (
         <button
           onClick={() => requestResend(prevUser!.text)}

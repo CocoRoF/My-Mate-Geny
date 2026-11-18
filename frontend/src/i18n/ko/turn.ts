@@ -55,6 +55,8 @@ const ko: Messages<"turn"> = {
   stopped: "중지됨",
   failed: "실패",
   retryTitle: "같은 메시지를 다시 보내요",
+  continue: "계속",
+  continueTitle: "멈춘 데서 이어 가도록 \"Continue\"를 보내요",
   copyResponse: "답변 복사",
   startedByBackground: "백그라운드 작업이 끝난 뒤 Claude가 시작했어요",
   sendingToAgent: "에이전트에게 보내는 중…",

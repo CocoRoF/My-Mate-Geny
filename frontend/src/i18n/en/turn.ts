@@ -54,6 +54,8 @@ export default {
   stopped: "Stopped",
   failed: "Failed",
   retryTitle: "Send the same message again",
+  continue: "Continue",
+  continueTitle: "Send \"Continue\" so it goes on from where it stopped",
   copyResponse: "Copy response",
   startedByBackground: "Started by Claude after a background task finished",
   sendingToAgent: "sending to the agent…",
