@@ -16,7 +16,7 @@ export default {
   placesSub: "{name:은} 지금 {place}에 있어요",
   outfitsTitle: "의상",
   outfitsSub: "{name}의 옷장",
-  wearing: "입는 중",
+  wearing: "입고 있음",
   wear: "입히기",
   outfitNoNote: "설명이 없는 의상이에요.",
   outfitManage: "옷장 편집",

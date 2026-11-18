@@ -1,8 +1,8 @@
 import type { Messages } from "..";
 export default {
   issueDockerDaemon:
-    "Docker 명령은 있지만 Docker 엔진에 연결할 수 없어요. 실행 기기의 Docker 상태와 접근 권한을 확인하거나 카탈로그의 Docker 없는 방식을 선택하세요.",
-  registrationDone: "MCP 등록이 완료됐어요. 세션 패널에서 켜서 사용하세요.",
+    "Docker 명령은 있지만 Docker 엔진에 연결할 수 없어요. 실행 기기의 Docker 상태와 접근 권한을 확인하거나, 카탈로그에서 Docker가 필요 없는 방식을 고르세요.",
+  registrationDone: "MCP를 등록했어요. 세션 패널에서 켜면 쓸 수 있어요.",
   requiredCatalogField: "{field} 항목을 입력해 주세요.",
   setupChanged: "다른 창에서 설정이 바뀌었어요. 다시 불러와 테스트해 주세요.",
   downloadBusy: "다른 다운로드가 진행 중이에요. 완료된 뒤 다시 시도해 주세요.",
@@ -12,9 +12,9 @@ export default {
   catalogTab: "카탈로그",
   directTab: "직접 설정",
   directHint:
-    "실행 명령이나 서버 주소를 직접 설정해요. 연결해서 저장할 때는 초기화·도구 목록 테스트가 성공해야 등록돼요.",
+    "실행 파일이나 서버 주소를 직접 설정해요. 연결 상태로 저장하면 먼저 초기화와 도구 목록 조회를 테스트해요.",
   catalogHint:
-    "배포처와 다운로드 방법을 확인한 뒤 필요한 MCP만 설치하세요. 목록을 여는 것만으로 다운로드하거나 연결하지 않아요.",
+    "배포처와 다운로드 방법을 확인한 뒤 필요한 MCP만 설치하세요. 둘러보기만 해서는 아무것도 다운로드하거나 연결하지 않아요.",
   searchCatalog: "MCP 이름·기능 검색",
   catalogLoading: "카탈로그 불러오는 중…",
   noCatalogMatches: "검색 결과가 없어요.",
@@ -26,16 +26,16 @@ export default {
   installOnServer: "접속한 서버의 앱 전용 폴더에 설치해요.",
   downloadMethod: "다운로드 방법",
   startSetup: "설정 시작",
-  replaceExisting: "기존 등록 항목과 세션 선택을 유지하며 다시 설정해요.",
+  replaceExisting: "등록된 항목과 세션별 선택은 그대로 두고 다시 설정해요.",
   newRegistration: "테스트에 성공한 설정만 MCP 관리에 등록해요.",
   prepareConnection: "연결 준비",
   download: "다운로드",
   configureTest: "설정 및 테스트",
   registerSuccess: "MCP 등록",
   remotePreparation:
-    "다운로드 대신 인증 정보를 설정하고 이 실행 환경에서 서버에 연결하는지 확인해요.",
+    "다운로드는 필요 없어요. 인증 정보를 설정하고, 이 실행 환경에서 서버에 연결되는지 확인해요.",
   isolatedInstallHint:
-    "표시된 배포처의 패키지와 의존성을 앱 전용 환경에 내려받아요. Node.js/npm이 필요하면 함께 준비하며, 기존 시스템 설치와 계정은 바꾸지 않아요.",
+    "배포처의 패키지와 의존성을 앱 전용 환경에 내려받아요. Node.js/npm이 필요하면 함께 준비하고, 시스템에 이미 설치된 것과 계정은 건드리지 않아요.",
   publisherDocs: "배포처 설치 문서",
   sourceCode: "소스 코드",
   downloading: "패키지와 의존성을 다운로드하고 있어요…",
@@ -48,24 +48,24 @@ export default {
   testFailed: "연결 테스트에 실패했어요.",
   testExpired: "테스트 유효 시간이 지났어요. 다시 테스트해 주세요.",
   testScope:
-    "서버 초기화와 도구 목록 조회만 확인해요. 실제 파일 수정·이슈 생성 등의 작업은 실행하지 않아요.",
+    "서버 초기화와 도구 목록 조회만 확인해요. 파일 수정, 이슈 생성 같은 실제 작업은 하지 않아요.",
   registrationHint:
-    "등록 후 MCP 관리에서 연결 상태를 확인하세요. 각 세션의 패널에서 켠 경우에만 해당 세션에서 사용할 수 있어요.",
+    "등록한 뒤 MCP 관리에서 연결 상태를 확인하세요. 세션마다 패널에서 켜야 그 세션에서 쓸 수 있어요.",
   registerMcp: "MCP로 등록",
   repairWithCatalog: "카탈로그로 설치·설정 다시 하기",
   technicalDetails: "기술 정보",
   secretArgHint:
-    "보안 값이 들어 있는 인수는 null로 가려져요. null은 그 위치의 저장값을 유지해요.",
+    "인증 정보가 든 인수는 null로 가려져요. null로 두면 그 자리에 저장된 값을 그대로 써요.",
   issueDocker:
-    "이 실행 환경에 Docker 명령이 없어요. 카탈로그의 Docker 없는 설치·원격 연결 방식을 선택하거나, MCP가 실행되는 기기에 Docker를 준비해 주세요.",
+    "이 실행 환경에 Docker가 없어요. 카탈로그에서 Docker가 필요 없는 설치나 원격 연결을 고르거나, MCP를 실행하는 기기에 Docker를 설치해 주세요.",
   issueExecutable:
-    "이 실행 환경에서 실행 파일을 찾을 수 없어요. 실행 파일 경로와 설치 상태를 확인해 주세요. 서버 모드는 서버의 파일을 사용해요.",
+    "이 실행 환경에서 실행 파일을 찾을 수 없어요. 실행 파일 경로와 설치 상태를 확인해 주세요. 서버 모드에서는 서버에 있는 파일을 써요.",
   issuePermission: "실행 파일에 접근하거나 실행할 권한이 없어요.",
   issueFolder:
-    "작업 폴더가 이 실행 환경에 없어요. 폴더를 고치거나 기본 폴더를 쓰도록 비워 주세요.",
+    "작업 폴더가 이 실행 환경에 없어요. 경로를 고치거나, 비워서 기본 폴더를 쓰세요.",
   issueFolderPermission: "작업 폴더에 접근할 권한이 없어요.",
   issueDockerEnv:
-    "Docker 환경변수 인수가 올바르지 않아요. 토큰만 인수로 넣지 말고 카탈로그의 항목별 인증 설정을 사용해 주세요.",
+    "Docker 환경변수 인수가 올바르지 않아요. 인수에 토큰을 그대로 넣지 말고, 카탈로그의 인증 정보 칸을 써 주세요.",
   issueAuth:
     "서버가 인증을 거부했어요. 계정·토큰·접근 권한과 조직의 MCP 허용 정책을 확인해 주세요.",
   issueTimeout:
@@ -80,21 +80,21 @@ export default {
 
   diagnostics: "서버 진단 로그도 저장",
   diagnosticsHint:
-    "MCP가 출력하는 진단 내용을 추가로 저장해요. 환경변수·인증 헤더값은 가려지며, MCP가 출력한 다른 내용은 포함될 수 있어요.",
+    "MCP가 출력하는 진단 내용도 저장해요. 환경변수와 인증 헤더 값은 가리지만, MCP가 출력한 다른 내용은 남을 수 있어요.",
   cancelled: "취소",
   logs: "실행 로그",
 
   title: "MCP",
-  llmTitle: "언어모델 공급자",
-  llmIntro: "Claude Code·Codex는 설치·로그인·계정과 사용 한도를, Anthropic·OpenAI·Google은 API 키·모델·단가를 설정해요.",
-  mediaTitle: "이미지 및 음성 공급자",
+  llmTitle: "언어 모델 공급자",
+  llmIntro: "Claude Code·Codex의 설치, 로그인, 계정, 사용 한도와 Anthropic·OpenAI·Google의 API 키, 모델, 단가를 설정해요.",
+  mediaTitle: "이미지·음성 공급자",
   mediaIntro:
-    "이미지·영상 생성과 듣기(STT)·말하기(TTS)에 사용할 서비스를 연결해요.",
+    "이미지·영상 생성, 음성 인식(STT), 음성 합성(TTS)에 쓸 서비스를 연결해요.",
   intro: "MCP를 등록하고, 각 세션의 패널에서 필요한 도구만 켜세요.",
   localRuntime: "이 컴퓨터에서 MCP를 실행해요",
   serverRuntime: "접속한 서버에서 MCP를 실행해요",
   scopeHint:
-    "명령·파일 경로·환경변수는 이 실행 환경을 기준으로 사용돼요. 연결한 MCP는 세션에서 직접 켜야 사용할 수 있어요.",
+    "명령, 파일 경로, 환경변수는 이 실행 환경 기준이에요. MCP는 세션마다 켜야 쓸 수 있어요.",
   add: "MCP 추가",
   import: "설정 JSON 가져오기",
   refresh: "새로고침",
@@ -111,7 +111,7 @@ export default {
   failed: "연결 오류",
   edit: "설정 편집",
   delete: "삭제",
-  deleteHint: "이 MCP를 삭제하면 모든 세션에서 추가 호출을 할 수 없어요.",
+  deleteHint: "이 MCP를 삭제하면 어느 세션에서도 더는 호출할 수 없어요.",
   reconnect: "다시 연결",
   name: "표시 이름",
   transport: "연결 방식",
@@ -125,7 +125,7 @@ export default {
   environment: "환경변수 · API 키 등",
   headers: "인증 헤더",
   secretHint:
-    "값은 암호화해 저장해요. 저장한 값은 다시 표시하지 않으며, 빈칸으로 두면 기존 값을 유지해요. 행을 삭제하면 해당 값도 삭제돼요.",
+    "값은 암호화해서 저장하고, 다시 보여 주지 않아요. 저장된 값은 빈칸으로 두면 그대로 남고, 행을 지우면 삭제돼요.",
   keyName: "변수 또는 헤더 이름",
   keyValue: "값",
   keepSecret: "저장된 값 유지",
@@ -140,13 +140,13 @@ export default {
   saveConnect: "저장하고 연결",
   saving: "저장·연결 중…",
   invalidForm:
-    "인수 형식과 환경변수·헤더 이름이 중복되지 않았는지 확인해 주세요.",
+    "인수 형식이 맞는지, 환경변수·헤더 이름이 겹치지 않는지 확인해 주세요.",
   importHint:
-    "mcpServers가 있는 JSON을 붙여 넣으세요. 가져온 항목은 꺼진 상태로 등록돼요. 같은 이름이 있으면 기존 값을 유지해요.",
+    "mcpServers가 있는 JSON을 붙여 넣으세요. 가져온 항목은 꺼진 상태로 등록돼요. 같은 이름이 이미 있으면 기존 항목을 그대로 둬요.",
   invalidJson: "올바른 JSON 형식인지 확인해 주세요.",
   jsonConfig: "MCP 설정 JSON",
   sessionHint:
-    "켠 MCP는 다음 대화부터 사용할 수 있어요. 끄면 실행 중인 연결의 추가 호출도 즉시 차단돼요.",
+    "켠 MCP는 다음 턴부터 쓸 수 있어요. 끄면 실행 중인 연결도 바로 호출이 막혀요.",
   useInSession: "이 세션에서 {name} 사용",
   manage: "MCP 설정 열기",
   google: "Google Gemini",
@@ -158,7 +158,7 @@ export default {
   selfHosted: "직접 호스팅한 음성 서비스",
   systemTitle: "MCP 실행 및 호출 기록",
   systemHint:
-    "현재 실행의 연결·호출 집계와 저장된 기록을 확인해요. 기본 호출 기록에는 환경변수·인증 키·도구 입력과 결과 본문을 저장하지 않아요.",
+    "지금 실행 중인 연결·호출 수와 저장된 호출 기록을 봐요. 기본 호출 기록에는 환경변수, 인증 키, 도구 입력, 응답 본문을 저장하지 않아요.",
   calls: "호출",
   errors: "오류",
   lastLatency: "최근 소요 시간",
@@ -167,7 +167,7 @@ export default {
   allMcp: "모든 MCP",
   allLevels: "모든 상태",
   levelInfo: "정보",
-  levelWarning: "주의",
+  levelWarning: "경고",
   levelError: "오류",
   session: "세션",
 } satisfies Messages<"mcp">;
