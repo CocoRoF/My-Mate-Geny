@@ -19,7 +19,7 @@ function classify(name){
 function sourceError(code){return Object.assign(new Error(code),{code});}
 function createUpdateSource({readSettings,writeSettings,safeStorage,fetcher=globalThis.fetch,apiBase='https://api.github.com',cliToken,now=Date.now}){
   let memoryToken='',cache=null,inflight=null,epoch=0,server=null,starting=null,cap=crypto.randomBytes(24).toString('hex'),base='',closed=false;
-  let auth='none',cliCache=null;const controllers=new Set();
+  let auth='none',cliCache=null,visibility=null;const controllers=new Set();
   function config(){let repo;try{repo=repository(readSettings().updateSource?.repository);}catch{repo=DEFAULT_REPOSITORY;}
     return {repository:repo,defaultRepository:DEFAULT_REPOSITORY,hasToken:!!(memoryToken||readSettings().updateSource?.encryptedToken),authentication:auth,tokenPersistent:!!readSettings().updateSource?.encryptedToken};}
   function encryption(){try{return !!safeStorage?.isEncryptionAvailable?.()&&(process.platform!=='linux'||safeStorage.getSelectedStorageBackend?.()!=='basic_text');}catch{return false;}}
@@ -30,7 +30,7 @@ function createUpdateSource({readSettings,writeSettings,safeStorage,fetcher=glob
       const value=input.token.trim();if(value.length>4096||/[\r\n]/.test(value))throw sourceError('sourceInvalid');
       if(encryption()){memoryToken='';next.encryptedToken=safeStorage.encryptString(value).toString('base64');}else memoryToken=value;
     }else if(old.encryptedToken)next.encryptedToken=old.encryptedToken;
-    writeSettings({updateSource:next},{strict:true});cache=null;inflight=null;++epoch;cap=crypto.randomBytes(24).toString('hex');auth='none';return config();
+    writeSettings({updateSource:next},{strict:true});cache=null;inflight=null;visibility=null;++epoch;cap=crypto.randomBytes(24).toString('hex');auth='none';return config();
   }
   async function token(){
     if(memoryToken){auth='token';return memoryToken;}
@@ -68,7 +68,10 @@ function createUpdateSource({readSettings,writeSettings,safeStorage,fetcher=glob
       const files=new Map();
       for(const file of data.assets||[])if(file.state==='uploaded'&&Number.isSafeInteger(file.id)&&/^[\w.+-]+$/.test(file.name)&&file.size>0)files.set(file.name,file);
       let meta={};try{meta=JSON.parse(/<!--\s*hrh-meta\s*(\{.*?\})\s*-->/.exec(data.body||'')?.[1]||'{}');}catch{}
-      const value={repo,files,version:meta.version||String(data.tag_name||'').match(/\d+\.\d+\.\d+[^\s]*/)?.[0],commit:meta.commit,commit_message:meta.commit_message,built_at:meta.built_at||data.published_at,notes:String(data.body||'').replace(/<!--[\s\S]*?-->/g,'').trim()};
+      // A public repository's files can be fetched by anyone straight from GitHub — so a phone can scan a QR code for
+      // the APK (the Download page) without reaching this computer. Asked once per repository.
+      if(visibility?.repo!==repo){try{const r=await request(`${apiBase}/repos/${repo}`);if(r.ok)visibility={repo,public:(await r.json()).private===false};else await r.body?.cancel();}catch{}}
+      const value={repo,files,public:visibility?.repo===repo&&visibility.public,version:meta.version||String(data.tag_name||'').match(/\d+\.\d+\.\d+[^\s]*/)?.[0],commit:meta.commit,commit_message:meta.commit_message,built_at:meta.built_at||data.published_at,notes:String(data.body||'').replace(/<!--[\s\S]*?-->/g,'').trim()};
       if(generation!==epoch)throw sourceError('sourceChanged');cache={at:now(),value};return value;
     })();inflight=task;try{return await task;}finally{if(inflight===task)inflight=null;}
   }
@@ -99,7 +102,8 @@ function createUpdateSource({readSettings,writeSettings,safeStorage,fetcher=glob
     try{
       const m=await metadata(force);await start();const newest=new Map();
       for(const file of m.files.values()){const kind=classify(file.name);if(!kind)continue;const key=kind.platform+'/'+kind.arch+'/'+kind.kind,old=newest.get(key);if(!old||String(file.updated_at||'')>=String(old.updated_at||''))newest.set(key,file);}
-      const assets=[...newest.values()].map(f=>({id:f.id,name:f.name,size:f.size,url:`${base}/${cap}/${encodeURIComponent(f.name)}`,...classify(f.name)}));
+      const direct=f=>m.public&&/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/releases\/download\//.test(f.browser_download_url||'')?{public_url:f.browser_download_url}:{};
+      const assets=[...newest.values()].map(f=>({id:f.id,name:f.name,size:f.size,url:`${base}/${cap}/${encodeURIComponent(f.name)}`,...direct(f),...classify(f.name)}));
       return {available:assets.length>0,...(assets.length?{}:{reason:'incompatible_source'}),repository:config().repository,product:'My Mate Geny',version:m.version,commit:m.commit,commit_message:m.commit_message,built_at:m.built_at,notes:m.notes,assets};
     }catch(error){return {available:false,repository:config().repository,reason:error.code||'sourceUnavailable',assets:[]};}
   }

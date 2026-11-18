@@ -95,6 +95,7 @@ const ko: Messages<"downloads"> = {
   thisDevice: "이 기기",
   noBuild: "최신 릴리스에 이 플랫폼용 빌드가 없어요.",
   scanHint: "휴대폰으로 스캔하면 이 페이지가 열려요 (로그인한 뒤 다운로드하세요).",
+  scanHintLocal: "휴대폰 카메라로 스캔하면 Android 앱이 바로 내려받아져요.",
   whatsNew: "이 빌드의 변경 사항",
 };
 export default ko;

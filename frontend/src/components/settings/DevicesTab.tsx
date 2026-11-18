@@ -4,7 +4,7 @@
  *                                      show the same six digits, the user allows it here; then the paired devices
  *                                      (rename / remove: its connections end at once) and how they reach this computer
  *                                      (same network directly; from the internet through the router's forwarded port —
- *                                      UPnP / NAT-PMP; else through a relay — end-to-end encrypted every way).
+ *                                      UPnP / NAT-PMP — end-to-end encrypted either way, no server in between).
  *   Over Geny Net itself               which computer this phone is linked to (and unlinking it, in the app).
  *   Server execution                   a sign-in code: this server's address + a one-time code for this account.
  */
@@ -122,14 +122,7 @@ const WAN_STATE: Record<NonNullable<NetStatus["wan"]>["state"], { key: MsgKey; t
   off: { key: "net.off", tone: "off" },
 };
 
-const VIA: Record<string, MsgKey> = { lan: "net.viaLan", wan: "net.viaWan", relay: "net.viaRelay" };
-
-const RELAY_STATE: Record<NonNullable<NetStatus["relay"]>, { key: MsgKey; tone: "ok" | "warn" | "off" }> = {
-  online: { key: "net.relayOnline", tone: "ok" },
-  connecting: { key: "net.relayConnecting", tone: "warn" },
-  offline: { key: "net.relayOffline", tone: "warn" },
-  off: { key: "net.off", tone: "off" },
-};
+const VIA: Record<string, MsgKey> = { lan: "net.viaLan", wan: "net.viaWan" };
 
 function DeviceRow({ d, onChanged }: { d: NetDevice; onChanged: () => void }) {
   const t = useT();
@@ -199,10 +192,8 @@ function DeviceRow({ d, onChanged }: { d: NetDevice; onChanged: () => void }) {
 
 function Ways({ st, onChanged }: { st: NetStatus; onChanged: (s: NetStatus) => void }) {
   const t = useT();
-  const [url, setUrl] = useState(st.relay_url ?? "");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => setUrl(st.relay_url ?? ""), [st.relay_url]);
   const put = async (p: Parameters<typeof putNetSettings>[0]) => {
     setBusy(true);
     setErr("");
@@ -214,8 +205,7 @@ function Ways({ st, onChanged }: { st: NetStatus; onChanged: (s: NetStatus) => v
       setBusy(false);
     }
   };
-  const relay = RELAY_STATE[st.relay ?? "off"];
-  const wan = st.wan ?? { state: "off" as const, endpoint: "", method: "", error: "", reach: null };
+  const wan = st.wan ?? { state: "off" as const, endpoint: "", method: "", error: "" };
   const wanState = WAN_STATE[st.on ? wan.state : "off"];
   const where = st.on && st.lan_on && st.lan?.length ? st.lan.map((a) => `${a}:${st.port}`).join(" · ") : "";
   return (
@@ -240,43 +230,7 @@ function Ways({ st, onChanged }: { st: NetStatus; onChanged: (s: NetStatus) => v
           <HelpTip>{t("net.upnpHelp")}</HelpTip>
         </div>
         {st.upnp_on && st.on && wan.endpoint && (
-          <div className="flex flex-wrap items-center gap-2 font-mono text-[11.5px] text-content-faint sm:pl-12" data-testid="net-wan-where">
-            {wan.endpoint}
-            {wan.reach === true && <span className="font-sans text-success">· {t("net.reachOk")}</span>}
-            {wan.reach === false && <span className="font-sans text-warning">· {t("net.reachNo")}</span>}
-          </div>
-        )}
-        <div className="flex items-start gap-3">
-          <div className="flex-1">
-            <Toggle on={!!st.relay_on} disabled={busy} onChange={(v) => void put({ relay: v })} label={t("net.relay")} testId="net-relay" />
-          </div>
-          {st.relay_on && st.on && <Pill tone={relay.tone} testId="net-relay-state">{t(relay.key)}</Pill>}
-          <HelpTip>{t("net.relayHelp")}</HelpTip>
-        </div>
-        {st.relay_on && (
-          <form
-            className="flex gap-2 sm:pl-12"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void put({ relay_url: url.trim() });
-            }}
-          >
-            <input
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://"
-              autoCapitalize="none"
-              spellCheck={false}
-              aria-label={t("net.relayUrl")}
-              className="field !py-1.5 font-mono text-[12px]"
-              data-testid="net-relay-url"
-            />
-            {url.trim() !== (st.relay_url ?? "") && (
-              <button className="btn-primary shrink-0 !py-1.5 text-[12.5px]" disabled={busy}>
-                {t("common.save")}
-              </button>
-            )}
-          </form>
+          <div className="font-mono text-[11.5px] text-content-faint sm:pl-12" data-testid="net-wan-where">{wan.endpoint}</div>
         )}
         {err && <p className="text-[12px] text-danger" role="alert">{err}</p>}
       </div>

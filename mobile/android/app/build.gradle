@@ -55,8 +55,7 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     // the checks with the app closed (GenyCheck: her calls and messages, no line held open)
     implementation "androidx.work:work-runtime:2.10.0"
-    // Geny Net (GenyNet.java, docs/geny-net.md): the relay's WebSocket, and the QR scanner for pairing / sign-in codes
-    implementation "com.squareup.okhttp3:okhttp:4.12.0"
+    // Geny Net (GenyNet.java, docs/geny-net.md): the QR scanner for pairing / sign-in codes
     implementation "com.journeyapps:zxing-android-embedded:4.3.0"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"

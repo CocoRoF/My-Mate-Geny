@@ -95,5 +95,6 @@ export default {
   thisDevice: "this device",
   noBuild: "No build for this platform in the latest release.",
   scanHint: "Scan with your phone to open this page there (log in, then download).",
+  scanHintLocal: "Scan with your phone's camera to download the Android app.",
   whatsNew: "What's in this build",
 };

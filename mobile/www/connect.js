@@ -72,7 +72,7 @@
 
   var PAIR_ERRORS = {
     expired: "This code has expired or was already used. Show a new one on the computer.",
-    unreachable: "Can't reach the computer. Is My Mate Geny open on it? On another network, its relay has to be on.",
+    unreachable: "Can't reach the computer. Is My Mate Geny open on it? From another network, its router has to let it in (Settings → Device sign-in on the computer).",
     busy: "The computer has too many requests waiting. Try again in a moment.",
     full: "The computer has too many phones paired. Remove one there first.",
     mismatch: "Something answered that isn't the computer in this code. Nothing was paired.",

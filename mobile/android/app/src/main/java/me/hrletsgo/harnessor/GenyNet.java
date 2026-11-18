@@ -57,8 +57,8 @@ import javax.net.ssl.X509TrustManager;
 import org.json.JSONObject;
 
 /**
- * Geny Net on the phone (docs/geny-net.md): this app reaching the user's own desktop app — directly on the same
- * network, from anywhere through a relay — with no VPN app and no port opened anywhere.
+ * Geny Net on the phone (docs/geny-net.md): this app reaching the user's own desktop app directly — on the same
+ * network, and from the internet through the computer's own router — with no VPN app and no server in between.
  *
  * - Pairing: a QR code from the desktop's Settings → 디바이스 인증 (``geny://link?…``) carries the computer's id, the
  *   SHA-256 of its certificate authority (pinned: nothing else is trusted), a one-time secret and how to reach it. The
@@ -67,9 +67,8 @@ import org.json.JSONObject;
  *   computer, and the computer issues the phone a certificate for that key.
  * - Every connection is TLS to the computer (pinned to its CA, the phone's certificate in the handshake), tried in this
  *   order: over the LAN straight to its listener; from the internet straight to the port the computer's router forwards
- *   to it (UPnP / NAT-PMP, backend app/net/portmap.py) — no server in between; else through the relay — a WebSocket the
- *   relay pipes to the computer's own line to it, the TLS end to end, bytes it can't read (Relay.java). A way that
- *   failed is skipped for a while; where the computer is now is asked over the link itself (its address can change).
+ *   to it (UPnP / NAT-PMP, backend app/net/portmap.py). A way that failed is skipped for a while; where the computer is
+ *   now is asked over the link itself (its address can change).
  * - The WebView, the background checks and the call line all talk to a proxy on this phone's loopback
  *   (``http://127.0.0.1:<port>``: a secure context — the microphone works — with no certificate to install): each
  *   connection to it is let through only with the app's own key (the ``geny_net`` cookie the app sets for the WebView,
@@ -92,7 +91,6 @@ final class GenyNet {
     private static final String K_HOSTS = "hosts";
     private static final String K_PORT = "port";
     private static final String K_WAN = "wan";
-    private static final String K_RELAY = "relay";
     private static final String K_PROXY_PORT = "proxyPort";
     private static final String K_KEY = "key";
     private static final String K_VIA = "via";
@@ -170,17 +168,15 @@ final class GenyNet {
         final List<String> hosts;
         final int port;
         final String wan; // "ip:port": the computer's router, from the internet (null: none)
-        final String relay;
         final byte[] secret; // (the QR code's: pairing only)
 
-        Node(String id, String fp, String name, List<String> hosts, int port, String wan, String relay, byte[] secret) {
+        Node(String id, String fp, String name, List<String> hosts, int port, String wan, byte[] secret) {
             this.id = id;
             this.fp = fp;
             this.name = name;
             this.hosts = hosts;
             this.port = port;
             this.wan = wan;
-            this.relay = relay;
             this.secret = secret;
         }
 
@@ -207,9 +203,8 @@ final class GenyNet {
             } catch (Exception ignored) {
                 // no LAN
             }
-            String relay = GenyServerPlugin.cleanBase(u.getQueryParameter("r"));
             String name = u.getQueryParameter("d");
-            return new Node(id, fp, name == null ? "" : name, hosts, port, endpoint(u.getQueryParameter("w")), relay, unb64u(k));
+            return new Node(id, fp, name == null ? "" : name, hosts, port, endpoint(u.getQueryParameter("w")), unb64u(k));
         }
 
         static Node saved(Context c) {
@@ -217,7 +212,7 @@ final class GenyNet {
             String hosts = p.getString(K_HOSTS, "");
             List<String> list = hosts.isEmpty() ? new ArrayList<>() : new ArrayList<>(Arrays.asList(hosts.split(",")));
             return new Node(p.getString(K_NODE, ""), p.getString(K_FP, ""), p.getString(K_NAME, ""), list,
-                    p.getInt(K_PORT, 0), endpoint(p.getString(K_WAN, null)), p.getString(K_RELAY, null), null);
+                    p.getInt(K_PORT, 0), endpoint(p.getString(K_WAN, null)), null);
         }
     }
 
@@ -376,7 +371,7 @@ final class GenyNet {
     }
 
     /** a TLS connection to the computer: the LAN, then its router from the internet (each unless it failed a moment
-     *  ago), then the relay */
+     *  ago — then the other first, and it once more last) */
     static SSLSocket connect(Context c, Node n, SSLContext ctx) throws IOException {
         IOException last = null;
         long now = System.currentTimeMillis();
@@ -404,18 +399,8 @@ final class GenyNet {
                 last = e;
             }
         }
-        if (n.relay != null) {
-            try {
-                SSLSocket s = tls(ctx, Relay.open(n.relay, n.id), n);
-                note(c, "relay");
-                if (c != null && paired(c)) refreshWhere(c, n);
-                return s;
-            } catch (IOException e) {
-                last = e;
-            }
-        }
         if (n.port > 0 && !n.hosts.isEmpty() && !lanFresh) {
-            try { // (the relay is down too: the LAN once more)
+            try { // (the router's way didn't work either: the LAN once more)
                 SSLSocket s = tls(ctx, lan(n), n);
                 lanFailedAt = 0;
                 note(c, "lan");
@@ -503,7 +488,7 @@ final class GenyNet {
     }
 
     /** where the computer is now — its LAN addresses, its router's public ip:port — for the next direct try: asked
-     *  over the link itself (GET /api/net/where), else of the relay */
+     *  over the link itself (GET /api/net/where) */
     private static void refreshWhere(Context c, Node n) {
         long now = System.currentTimeMillis();
         if (now - whereAt < WHERE_EVERY_MS) return;
@@ -518,10 +503,6 @@ final class GenyNet {
                 Log.i(TAG, "where (link): " + e.getMessage());
             }
             try {
-                if (j == null && n.relay != null) {
-                    JSONObject w = Relay.where(n.relay, n.id);
-                    if (w != null && w.optBoolean("online")) j = w;
-                }
                 if (j == null) return;
                 List<String> hosts = new ArrayList<>();
                 if (j.optJSONArray("lan") != null) {
@@ -631,7 +612,6 @@ final class GenyNet {
                     .putString(K_HOSTS, String.join(",", pg.node.hosts))
                     .putInt(K_PORT, pg.node.port)
                     .putString(K_WAN, pg.node.wan)
-                    .putString(K_RELAY, pg.node.relay)
                     .putString(K_KEY, b64u(random(32)))
                     .remove(K_VIA)
                     .apply();

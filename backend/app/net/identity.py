@@ -5,8 +5,8 @@ The node (the desktop app's local backend) is its own CA: an EC P-256 key that n
 under the data home, 0600), a self-signed CA certificate, a server certificate for its TLS listener, and a client
 certificate for each paired device (issued for the device's own public key — its private key stays in the phone's
 keystore). A device trusts the node by the SHA-256 of the CA certificate it got from the QR code; the node trusts a
-device by the certificate it issued. The node id is derived from the CA public key, so a relay can check that whoever
-claims an id holds its key.
+device by the certificate it issued. The node id is derived from the CA public key (the listener's certificate is
+named after it).
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from cryptography import x509
-from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
@@ -181,19 +180,3 @@ class Identity:
             .sign(self.ca_key, hashes.SHA256())
         )
         return Issued(device_id, cert)
-
-    # -- proving the id to a relay ---------------------------------------------------------------------------------
-    def sign(self, data: bytes) -> str:
-        return b64u(self.ca_key.sign(data, ec.ECDSA(hashes.SHA256())))
-
-
-def verify_node(node_id: str, spki_b64: str, data: bytes, sig_b64: str) -> bool:
-    """does whoever claims ``node_id`` hold its key (``sig`` over ``data`` by the key whose SPKI is given)?"""
-    try:
-        pub = serialization.load_der_public_key(unb64u(spki_b64))
-        if not isinstance(pub, ec.EllipticCurvePublicKey) or node_id_of(pub) != node_id:
-            return False
-        pub.verify(unb64u(sig_b64), data, ec.ECDSA(hashes.SHA256()))
-        return True
-    except (ValueError, InvalidSignature, TypeError):
-        return False

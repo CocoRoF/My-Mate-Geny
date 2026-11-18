@@ -33,11 +33,8 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8080
     # Geny Net (docs/geny-net.md): the local backend's second loopback socket, the one its TLS pipes come in by
-    # (local_main.py sets it; 0 = none) — and, on a server, being a relay for desktops (NET_RELAY=1).
+    # (local_main.py sets it; 0 = none).
     net_ingress_port: int = 0
-    net_relay: bool = False
-    # what a relay pipes in all, MiB/s (~30 ms of CPU per MiB: 8 MiB/s ≈ a quarter of one core)
-    net_relay_mib_s: float = 8.0
 
     # CORS — comma-separated string in env, parsed to list
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
